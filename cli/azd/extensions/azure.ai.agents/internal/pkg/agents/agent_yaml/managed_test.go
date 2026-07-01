@@ -183,3 +183,99 @@ func TestCreateManagedAgentAPIRequest_SetsHarness(t *testing.T) {
 		t.Errorf("serialized request missing harness field:\n%s", data)
 	}
 }
+
+// TestCreateManagedAgentAPIRequest_ToolsPassthrough verifies that tools,
+// tool_choice, and structured_inputs authored in agent.yaml flow through
+// verbatim into the create request definition and are serialized with the
+// API's snake_case shape.
+func TestCreateManagedAgentAPIRequest_ToolsPassthrough(t *testing.T) {
+	yamlContent := []byte(`
+kind: managed
+name: kitchen-sink-agent
+model: gpt-4o
+instructions: You are a maximally capable assistant.
+tool_choice: auto
+structured_inputs:
+  user_context:
+    description: Extra context supplied per invocation
+    required: false
+tools:
+  - type: function
+    name: calculate_sum
+    description: Adds two numbers
+    parameters:
+      type: object
+      properties:
+        a: { type: number }
+        b: { type: number }
+      required: [a, b]
+    strict: true
+  - type: code_interpreter
+    container: auto
+  - type: file_search
+    vector_store_ids: [vs_12345]
+    max_num_results: 10
+  - type: mcp
+    server_label: github-mcp
+    server_url: https://api.githubcopilot.com/mcp
+    require_approval: always
+  - type: azure_ai_search
+    azure_ai_search:
+      index_name: my-index
+  - type: bing_grounding
+    bing_grounding:
+      search_configurations:
+        - project_connection_id: conn_bing_456
+  - type: toolbox_search_preview
+`)
+
+	var managed ManagedAgent
+	if err := yaml.Unmarshal(yamlContent, &managed); err != nil {
+		t.Fatalf("unmarshal managed agent: %v", err)
+	}
+	if len(managed.Tools) != 7 {
+		t.Fatalf("tools: got %d entries, want 7", len(managed.Tools))
+	}
+
+	req, err := CreateManagedAgentAPIRequest(managed, nil)
+	if err != nil {
+		t.Fatalf("CreateManagedAgentAPIRequest: %v", err)
+	}
+
+	def, ok := req.Definition.(agent_api.ManagedAgentDefinition)
+	if !ok {
+		t.Fatalf("definition: got %T, want agent_api.ManagedAgentDefinition", req.Definition)
+	}
+	if len(def.Tools) != 7 {
+		t.Errorf("definition tools: got %d, want 7", len(def.Tools))
+	}
+	if def.ToolChoice != "auto" {
+		t.Errorf("tool_choice: got %v, want auto", def.ToolChoice)
+	}
+	if _, ok := def.StructuredInputs["user_context"]; !ok {
+		t.Errorf("structured_inputs missing user_context: %+v", def.StructuredInputs)
+	}
+
+	// The serialized body must carry the verbatim snake_case tool shapes.
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	body := string(data)
+	for _, want := range []string{
+		`"tool_choice":"auto"`,
+		`"structured_inputs"`,
+		`"type":"function"`,
+		`"type":"code_interpreter"`,
+		`"type":"mcp"`,
+		`"server_label":"github-mcp"`,
+		`"type":"azure_ai_search"`,
+		`"type":"bing_grounding"`,
+		`"type":"toolbox_search_preview"`,
+		`"vector_store_ids"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("serialized request missing %s:\n%s", want, body)
+		}
+	}
+}

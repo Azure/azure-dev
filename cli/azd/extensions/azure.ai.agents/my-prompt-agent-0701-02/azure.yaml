@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+requiredVersions:
+    extensions:
+        azure.ai.agents: '>=0.1.0-preview'
+name: ai-foundry-starter-basic
+services:
+    my-prompt-agent-0701-02:
+        project: .
+        host: azure.ai.agent
+        language: ""
+        config:
+            deployments:
+                - model:
+                    format: OpenAI
+                    name: gpt-4.1-mini
+                    version: "2025-04-14"
+                  name: gpt-4.1-mini
+                  sku:
+                    capacity: 10
+                    name: GlobalStandard
+            promptAgent:
+                apiVersion: v1
+                baseUrl: https://ai.azure.com/api
+                modelEndpoint: https://kchawla-wus2-0726.services.ai.azure.com
+                projectEndpoint: https://kchawla-wus2-0726.services.ai.azure.com/api/projects/kchawla-wus2-0726-project
+                resourceGroup: kchawla-rg-wus2
+                subscriptionId: 2d385bf4-0756-4a76-aa95-28bf9ed3b625
+                workspace: kchawla-wus2-0726-project
+infra:
+    provider: bicep
+    path: ./infra

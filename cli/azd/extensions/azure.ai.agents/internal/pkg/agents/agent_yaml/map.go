@@ -482,6 +482,20 @@ func CreateManagedAgentAPIRequest(
 		managedDef.Skills = append([]string(nil), managedAgent.Skills...)
 	}
 
+	// Tools, tool_choice, and structured_inputs are passed through verbatim so
+	// authors can express any tool type the managed-agent API accepts without
+	// this layer having to model each one. The YAML is decoded into
+	// JSON-compatible values (maps/slices/scalars) and re-serialized as-is.
+	if len(managedAgent.Tools) > 0 {
+		managedDef.Tools = managedAgent.Tools
+	}
+	if managedAgent.ToolChoice != nil {
+		managedDef.ToolChoice = managedAgent.ToolChoice
+	}
+	if len(managedAgent.StructuredInputs) > 0 {
+		managedDef.StructuredInputs = managedAgent.StructuredInputs
+	}
+
 	// Build-time environment variables (if supplied) get carried into the
 	// managed environment block so the Hand sandbox can read them.
 	if buildConfig != nil && len(buildConfig.EnvironmentVariables) > 0 {

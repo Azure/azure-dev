@@ -256,6 +256,25 @@ type ManagedAgent struct {
 	// Skills is an optional list of Foundry skill names attached to the agent.
 	Skills []string `json:"skills,omitempty" yaml:"skills,omitempty"`
 
+	// Tools is an optional list of tool definitions attached to the agent.
+	// Entries are passed through verbatim to the Foundry managed-agent API, so
+	// author them using the API's snake_case tool schema. Supported types
+	// include (but are not limited to): function, code_interpreter, file_search,
+	// web_search, image_generation, mcp, azure_ai_search, azure_function,
+	// openapi, bing_grounding, bing_custom_search_preview,
+	// sharepoint_grounding_preview, memory_search_preview, fabric_iq_preview,
+	// fabric_dataagent_preview, work_iq_preview, a2a_preview,
+	// computer_use_preview, browser_automation_preview, toolbox_search_preview.
+	Tools []any `json:"tools,omitempty" yaml:"tools,omitempty"`
+
+	// ToolChoice controls how/whether the model calls tools (e.g. "auto",
+	// "required", "none", or a specific tool object). Passed through verbatim.
+	ToolChoice any `json:"tool_choice,omitempty" yaml:"tool_choice,omitempty"`
+
+	// StructuredInputs declares typed inputs the agent accepts per invocation.
+	// Passed through verbatim to the API.
+	StructuredInputs map[string]any `json:"structured_inputs,omitempty" yaml:"structured_inputs,omitempty"`
+
 	// Policies is an optional list of governance policies (e.g. RAI).
 	Policies []Policy `json:"policies,omitempty" yaml:"policies,omitempty"`
 }

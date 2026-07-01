@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.2 (2026-07-01)
+
+### Bugs Fixed
+
+- [[#8901]](https://github.com/Azure/azure-dev/pull/8901) Remove duplicate service-target provider claims from the `azure.ai.agents` extension manifest for hosts now owned by the split Foundry extensions (`azure.ai.projects`, `azure.ai.connections`, `azure.ai.toolboxes`). Thanks @huimiu for the contribution!
+
 ## 1.0.0-beta.1 (2026-06-30)
 
 ### Features Added

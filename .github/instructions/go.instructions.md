@@ -31,3 +31,13 @@ all existing imports or declarations.
 
 - When reviewing command input resolution, explicit CLI args and flags should win over defaults. Do not prompt the user toward a different default when they provided a valid new value; reserve prompts for ambiguous choices and preserve deterministic `--no-prompt` behavior for CI/scripts.
 - When filtering AI models or quota data by location, keep location-specific usage data associated with only the models available in that location. Empty or unknown usage data from an unrelated location must not make a model eligible elsewhere; add regression coverage for cross-location quota cases.
+
+## Test coverage symmetry
+
+When tests exist for one side of a symmetric code path, flag the missing counterpart:
+
+- **Prompt paths**: If there is a test for subscription prompt (success, error, cancellation), add equivalent tests for the location prompt and any other structurally identical prompts. Missing location-side tests allow regressions to go undetected.
+- **Serialisation round-trips**: For `MarshalYAML`/`UnmarshalYAML` or JSON encode/decode paths, add a load-back assertion (e.g. save the file then reload and verify the field) in addition to just testing the write direction.
+- **Compound constraint interactions**: When multiple constraints can interact (e.g., capacity step-alignment × max-capacity), add a test that exercises both simultaneously — not just each in isolation. The cross-case is often the one that surfaces bugs.
+
+_Source: [#8883](https://github.com/Azure/azure-dev/pull/8883), [#8874](https://github.com/Azure/azure-dev/pull/8874), [#8876](https://github.com/Azure/azure-dev/pull/8876)_

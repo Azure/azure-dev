@@ -17,6 +17,7 @@ jobs:
       - name: Upgrade bicep
         run: |
           BICEP_PATH=$(which bicep)
+          echo "$BICEP_PATH"
           sudo curl -o "$BICEP_PATH" -L https://github.com/Azure/bicep/releases/download/v0.44.1/bicep-linux-x64
           sudo chmod +x "$BICEP_PATH"
       - name: Lint .bicep files

@@ -26,7 +26,7 @@ type foundryProjectSetupResult struct {
 //
 //  1. --project-id provided: validate + select the specified project.
 //  2. --no-prompt with missing Azure context: defer setup (print what's needed).
-//  3. --no-prompt with Azure context present: configure new project headlessly.
+//  3. --no-prompt with Azure context present: configure new project without prompts.
 //  4. Interactive: prompt "Use an existing Foundry project" vs "Create new".
 //
 // This is the shared core extracted from configureModelChoice's

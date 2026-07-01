@@ -1713,7 +1713,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['connection'],
-					description: 'Manage Microsoft Foundry Connections from your terminal. (Beta)',
+					description: 'Manage Microsoft Foundry Connections from your terminal. (Preview)',
 					subcommands: [
 						{
 							name: ['context'],
@@ -2019,16 +2019,6 @@ const completionSpec: Fig.Spec = {
 							name: ['version'],
 							description: 'Display the extension version',
 							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-											suggestions: ['json'],
-										},
-									],
-								},
 								{
 									name: ['--project-endpoint', '-p'],
 									description: 'Foundry project endpoint URL (overrides env var and config)',
@@ -3352,7 +3342,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['project'],
-					description: 'Manage Microsoft Foundry Project resources from your terminal. (Beta)',
+					description: 'Manage Microsoft Foundry Project resources from your terminal. (Preview)',
 					subcommands: [
 						{
 							name: ['context'],
@@ -3414,7 +3404,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['routine'],
-					description: 'Manage Microsoft Foundry Routines from your terminal. (Beta)',
+					description: 'Manage Microsoft Foundry Routines from your terminal. (Preview)',
 					subcommands: [
 						{
 							name: ['context'],
@@ -4029,16 +4019,6 @@ const completionSpec: Fig.Spec = {
 							description: 'Display the extension version',
 							options: [
 								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-											suggestions: ['json'],
-										},
-									],
-								},
-								{
 									name: ['--project-endpoint', '-p'],
 									description: 'Foundry project endpoint URL (overrides env var and config)',
 									args: [
@@ -4053,7 +4033,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['skill'],
-					description: 'Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Beta)',
+					description: 'Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Preview)',
 					subcommands: [
 						{
 							name: ['context'],
@@ -4339,7 +4319,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['toolbox'],
-					description: 'Manage Microsoft Foundry Toolboxes from your terminal. (Beta)',
+					description: 'Manage Microsoft Foundry Toolboxes from your terminal. (Preview)',
 					subcommands: [
 						{
 							name: ['connection'],
@@ -4732,16 +4712,6 @@ const completionSpec: Fig.Spec = {
 							name: ['version'],
 							description: 'Display the extension version',
 							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-											suggestions: ['json'],
-										},
-									],
-								},
 								{
 									name: ['--project-endpoint'],
 									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',

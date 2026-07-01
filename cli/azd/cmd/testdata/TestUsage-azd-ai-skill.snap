@@ -1,5 +1,5 @@
 
-Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Beta)
+Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Preview)
 
 Usage
   azd ai skill [flags]

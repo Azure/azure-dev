@@ -5,7 +5,7 @@ on:
     paths:
       - "cli/azd/extensions/registry.json"
       - ".github/workflows/ext-registry-ci.yml"
-    branches: [main]
+    branches: [main, ext-snapshot-fixes]
 
 # If two events are triggered within a short time in the same PR, cancel the run of the oldest event
 concurrency:

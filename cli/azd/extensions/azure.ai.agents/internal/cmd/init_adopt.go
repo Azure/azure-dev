@@ -101,59 +101,32 @@ type foundryDeploymentEntry struct {
 	Deployment  project.Deployment
 }
 
+// azureYamlServices is the minimal typed structure for parsing deployments from
+// a unified azure.yaml. Only the fields needed for deployment verification are
+// declared; yaml.v3 ignores unrecognized keys.
+type azureYamlServices struct {
+	Services map[string]azureYamlService `yaml:"services"`
+}
+
+type azureYamlService struct {
+	Host        string               `yaml:"host"`
+	Deployments []project.Deployment `yaml:"deployments"`
+}
+
 // foundryDeployments parses the azure.yaml content and returns all model
 // deployments declared under services with `host: azure.ai.project`.
 func foundryDeployments(content []byte) []foundryDeploymentEntry {
-	var top map[string]any
-	if err := yaml.Unmarshal(content, &top); err != nil {
-		return nil
-	}
-
-	services, ok := top["services"].(map[string]any)
-	if !ok {
+	var doc azureYamlServices
+	if err := yaml.Unmarshal(content, &doc); err != nil {
 		return nil
 	}
 
 	var entries []foundryDeploymentEntry
-	for svcName, svc := range services {
-		svcMap, ok := svc.(map[string]any)
-		if !ok {
+	for svcName, svc := range doc.Services {
+		if svc.Host != "azure.ai.project" {
 			continue
 		}
-		host, _ := svcMap["host"].(string)
-		if host != "azure.ai.project" {
-			continue
-		}
-
-		rawDeployments, ok := svcMap["deployments"].([]any)
-		if !ok {
-			continue
-		}
-
-		for _, raw := range rawDeployments {
-			d, ok := raw.(map[string]any)
-			if !ok {
-				continue
-			}
-
-			dep := project.Deployment{
-				Name: stringField(d, "name"),
-			}
-
-			if model, ok := d["model"].(map[string]any); ok {
-				dep.Model = project.DeploymentModel{
-					Format:  stringField(model, "format"),
-					Name:    stringField(model, "name"),
-					Version: stringField(model, "version"),
-				}
-			}
-			if sku, ok := d["sku"].(map[string]any); ok {
-				dep.Sku = project.DeploymentSku{
-					Name:     stringField(sku, "name"),
-					Capacity: intField(sku, "capacity"),
-				}
-			}
-
+		for _, dep := range svc.Deployments {
 			entries = append(entries, foundryDeploymentEntry{
 				ServiceName: svcName,
 				Deployment:  dep,
@@ -161,25 +134,6 @@ func foundryDeployments(content []byte) []foundryDeploymentEntry {
 		}
 	}
 	return entries
-}
-
-// stringField safely extracts a string field from a map[string]any.
-func stringField(m map[string]any, key string) string {
-	v, _ := m[key].(string)
-	return v
-}
-
-// intField safely extracts an int field from a map[string]any, handling both
-// int and float64 (YAML unmarshals numbers as int with yaml.v3).
-func intField(m map[string]any, key string) int {
-	switch v := m[key].(type) {
-	case int:
-		return v
-	case float64:
-		return int(v)
-	default:
-		return 0
-	}
 }
 
 // verifyAzureYamlDeployments checks each model deployment declared in the

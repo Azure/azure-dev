@@ -418,27 +418,11 @@ services:
 }
 
 func TestStringField(t *testing.T) {
-	m := map[string]any{
-		"name":    "gpt-4o",
-		"number":  42,
-		"present": "",
-	}
-
-	require.Equal(t, "gpt-4o", stringField(m, "name"))
-	require.Equal(t, "", stringField(m, "number"))  // wrong type
-	require.Equal(t, "", stringField(m, "missing")) // absent
-	require.Equal(t, "", stringField(m, "present")) // empty string
+	// stringField was removed — this test is no longer needed.
+	t.Skip("stringField helper removed in favor of typed YAML unmarshal")
 }
 
 func TestIntField(t *testing.T) {
-	m := map[string]any{
-		"capacity_int":   50,
-		"capacity_float": float64(100),
-		"name":           "not-a-number",
-	}
-
-	require.Equal(t, 50, intField(m, "capacity_int"))
-	require.Equal(t, 100, intField(m, "capacity_float"))
-	require.Equal(t, 0, intField(m, "name"))    // wrong type
-	require.Equal(t, 0, intField(m, "missing")) // absent
+	// intField was removed — this test is no longer needed.
+	t.Skip("intField helper removed in favor of typed YAML unmarshal")
 }

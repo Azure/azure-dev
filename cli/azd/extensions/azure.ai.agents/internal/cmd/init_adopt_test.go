@@ -325,3 +325,33 @@ func TestAdoptedServiceHasCodeConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateImageFlagInAdoptionPath(t *testing.T) {
+	t.Run("image with deploy-mode code is rejected", func(t *testing.T) {
+		err := validateImageFlag("myacr.azurecr.io/agent:v1", "code")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "--image cannot be used with --deploy-mode code")
+	})
+
+	t.Run("image with deploy-mode container is allowed", func(t *testing.T) {
+		err := validateImageFlag("myacr.azurecr.io/agent:v1", "container")
+		require.NoError(t, err)
+	})
+
+	t.Run("image with no deploy-mode is allowed", func(t *testing.T) {
+		err := validateImageFlag("myacr.azurecr.io/agent:v1", "")
+		require.NoError(t, err)
+	})
+
+	t.Run("no image is always valid", func(t *testing.T) {
+		require.NoError(t, validateImageFlag("", "code"))
+		require.NoError(t, validateImageFlag("", "container"))
+		require.NoError(t, validateImageFlag("", ""))
+	})
+
+	t.Run("invalid image format is rejected", func(t *testing.T) {
+		err := validateImageFlag("not-a-valid-image", "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid image URL")
+	})
+}

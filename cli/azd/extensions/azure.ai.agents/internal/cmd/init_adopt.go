@@ -542,6 +542,11 @@ func applyDeployModeToAdoptedProject(
 	flags *initFlags,
 	azdClient *azdext.AzdClient,
 ) error {
+	// Validate --image flag early (incompatible with --deploy-mode code).
+	if err := validateImageFlag(flags.image, flags.deployMode); err != nil {
+		return err
+	}
+
 	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return fmt.Errorf("reading adopted project: %w", err)
@@ -560,6 +565,22 @@ func applyDeployModeToAdoptedProject(
 	if agentSvc == nil {
 		// No agent service found — nothing to configure.
 		return nil
+	}
+
+	// Apply --image override to the agent service when provided.
+	if flags.image != "" {
+		imageValue, _ := structpb.NewValue(flags.image)
+		if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+			ServiceName: agentServiceName,
+			Path:        "image",
+			Value:       imageValue,
+		}); err != nil {
+			return fmt.Errorf("writing image to agent service: %w", err)
+		}
+		log.Printf("Applied --image %q to agent service %q", flags.image, agentServiceName)
+
+		// --image implies container deploy; apply container config and return.
+		return applyContainerDeployToService(ctx, azdClient, agentServiceName)
 	}
 
 	// Check whether the service already specifies its deploy mode.

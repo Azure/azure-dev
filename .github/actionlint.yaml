@@ -7,4 +7,3 @@ paths:
   .github/workflows/agentics-maintenance.yml:
     ignore:
       - ".+"
-

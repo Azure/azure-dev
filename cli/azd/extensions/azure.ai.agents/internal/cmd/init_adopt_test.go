@@ -296,13 +296,13 @@ func TestAdoptedServiceHasCodeConfig(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "code_configuration present with struct value",
+			name: "codeConfiguration present with struct value",
 			svc: &azdext.ServiceConfig{
 				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
-					"code_configuration": structpb.NewStructValue(&structpb.Struct{
+					"codeConfiguration": structpb.NewStructValue(&structpb.Struct{
 						Fields: map[string]*structpb.Value{
-							"runtime":     structpb.NewStringValue("python_3_13"),
-							"entry_point": structpb.NewStringValue("app.py"),
+							"runtime":    structpb.NewStringValue("python_3_13"),
+							"entryPoint": structpb.NewStringValue("app.py"),
 						},
 					}),
 				}},
@@ -310,10 +310,10 @@ func TestAdoptedServiceHasCodeConfig(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "code_configuration present but null",
+			name: "codeConfiguration present but null",
 			svc: &azdext.ServiceConfig{
 				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
-					"code_configuration": structpb.NewNullValue(),
+					"codeConfiguration": structpb.NewNullValue(),
 				}},
 			},
 			want: false,

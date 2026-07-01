@@ -31,6 +31,7 @@ require (
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/Masterminds/semver/v3 v3.4.0
+	github.com/Microsoft/go-winio v0.6.2
 	github.com/adam-lavrik/go-imath v0.0.0-20210910152346-265a42a96f0b
 	github.com/benbjohnson/clock v1.3.5
 	github.com/blang/semver/v4 v4.0.0

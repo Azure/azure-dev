@@ -16,9 +16,9 @@ jobs:
       - uses: actions/checkout@v6
       - name: Upgrade bicep
         run: |
-          BICEP_PATH=$(which bicep)
-          sudo curl -o "$BICEP_PATH" -L https://github.com/Azure/bicep/releases/download/v0.44.1/bicep-linux-x64
-          sudo chmod +x "$BICEP_PATH"
+          which bicep
+          sudo curl -o "$(which bicep)" -L https://github.com/Azure/bicep/releases/download/v0.44.1/bicep-linux-x64
+          sudo chmod +x "$(which bicep)"
       - name: Lint .bicep files
         run: $ErrorActionPreference='Continue'; eng/scripts/Test-BicepLint.ps1 -Verbose
         shell: pwsh

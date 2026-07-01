@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestLooksLikeFoundryAzureYaml(t *testing.T) {
@@ -273,4 +275,53 @@ func TestStageAzureYamlTemplate_LocalRenamesToAzureYaml(t *testing.T) {
 	require.False(t, fileExists(filepath.Join(staging, "sample.yaml")))
 	// Sibling files are carried into the staging directory.
 	require.True(t, fileExists(filepath.Join(staging, "agents", "main.py")))
+}
+
+func TestAdoptedServiceHasCodeConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		svc  *azdext.ServiceConfig
+		want bool
+	}{
+		{
+			name: "nil additional properties",
+			svc:  &azdext.ServiceConfig{},
+			want: false,
+		},
+		{
+			name: "empty additional properties",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{}},
+			},
+			want: false,
+		},
+		{
+			name: "code_configuration present with struct value",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"code_configuration": structpb.NewStructValue(&structpb.Struct{
+						Fields: map[string]*structpb.Value{
+							"runtime":     structpb.NewStringValue("python_3_13"),
+							"entry_point": structpb.NewStringValue("app.py"),
+						},
+					}),
+				}},
+			},
+			want: true,
+		},
+		{
+			name: "code_configuration present but null",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"code_configuration": structpb.NewNullValue(),
+				}},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, adoptedServiceHasCodeConfig(tt.svc))
+		})
+	}
 }

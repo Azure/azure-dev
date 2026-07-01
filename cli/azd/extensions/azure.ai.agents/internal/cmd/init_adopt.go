@@ -25,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	"google.golang.org/protobuf/types/known/structpb"
 	"gopkg.in/yaml.v3"
 )
 
@@ -203,6 +204,14 @@ func runInitFromAzureYaml(
 	// microsoft.foundry`, but stamp it if missing so provisioning stays
 	// bicep-less by default.
 	if err := ensureFoundryProviderDeclared(ctx, azdClient); err != nil {
+		return err
+	}
+
+	// Apply deploy-mode configuration to the adopted agent service (#8923).
+	// When the user passes --deploy-mode (and optionally --runtime /
+	// --entry-point), or when the service doesn't already specify its deploy
+	// mode, resolve code vs container configuration and update the service.
+	if err := applyDeployModeToAdoptedProject(ctx, flags, azdClient); err != nil {
 		return err
 	}
 
@@ -521,4 +530,195 @@ func printAdoptionNextSteps(ctx context.Context, azdClient *azdext.AzdClient, fo
 	}
 	state, _ := nextstep.AssembleState(ctx, azdClient, stateOpts...)
 	_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state, readmeExistsForProject(ctx, azdClient)))
+}
+
+// applyDeployModeToAdoptedProject locates the azure.ai.agent service in the
+// adopted project and applies deploy-mode configuration (code or container)
+// based on the --deploy-mode, --runtime, and --entry-point flags. When no
+// explicit flag is passed and the service already has a code_configuration or
+// docker property, the service is left unchanged (the sample is pre-configured).
+func applyDeployModeToAdoptedProject(
+	ctx context.Context,
+	flags *initFlags,
+	azdClient *azdext.AzdClient,
+) error {
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("reading adopted project: %w", err)
+	}
+
+	// Find the agent service in the adopted project.
+	var agentServiceName string
+	var agentSvc *azdext.ServiceConfig
+	for name, svc := range resp.GetProject().GetServices() {
+		if svc.GetHost() == AiAgentHost {
+			agentServiceName = name
+			agentSvc = svc
+			break
+		}
+	}
+	if agentSvc == nil {
+		// No agent service found — nothing to configure.
+		return nil
+	}
+
+	// Check whether the service already specifies its deploy mode.
+	hasCodeConfig := adoptedServiceHasCodeConfig(agentSvc)
+	hasDocker := agentSvc.GetDocker() != nil
+
+	// When no explicit --deploy-mode flag is passed and the service is
+	// already configured, respect the sample's existing configuration.
+	if flags.deployMode == "" && (hasCodeConfig || hasDocker) {
+		return nil
+	}
+
+	// Resolve deploy mode via the same logic the manifest path uses.
+	// The target directory (project root after adoption) is used for
+	// language detection.
+	targetDir := "."
+	showCodeDeploy := isPythonProject(targetDir) || isDotnetProject(targetDir)
+	// userProvidedManifest is true: -m was explicitly provided.
+	deployMode, err := promptDeployMode(ctx, azdClient, flags.noPrompt, showCodeDeploy, flags.deployMode, true)
+	if err != nil {
+		return fmt.Errorf("resolving deploy mode for adopted project: %w", err)
+	}
+
+	if deployMode == "code" {
+		return applyCodeDeployToService(ctx, flags, azdClient, agentServiceName, targetDir)
+	}
+	return applyContainerDeployToService(ctx, azdClient, agentServiceName)
+}
+
+// adoptedServiceHasCodeConfig checks whether the adopted agent service already
+// declares a code_configuration in its properties.
+func adoptedServiceHasCodeConfig(svc *azdext.ServiceConfig) bool {
+	props := svc.GetAdditionalProperties()
+	if props == nil {
+		return false
+	}
+	fields := props.GetFields()
+	if fields == nil {
+		return false
+	}
+	v, ok := fields["code_configuration"]
+	if !ok {
+		return false
+	}
+	// A null value doesn't count as having a code_configuration.
+	return v != nil && v.GetStructValue() != nil
+}
+
+// applyCodeDeployToService writes code_configuration onto the adopted agent
+// service and updates the service language from "docker" to the appropriate
+// language for the selected runtime.
+func applyCodeDeployToService(
+	ctx context.Context,
+	flags *initFlags,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	targetDir string,
+) error {
+	codeConfig, err := promptCodeConfig(ctx, azdClient, targetDir, flags.noPrompt, codeDeployOptions{
+		runtime:       flags.runtime,
+		entryPoint:    flags.entryPoint,
+		depResolution: flags.depResolution,
+	}, true) // userProvidedManifest=true since -m was provided
+	if err != nil {
+		return fmt.Errorf("resolving code configuration for adopted project: %w", err)
+	}
+
+	// Write code_configuration onto the service.
+	codeConfigMap := map[string]any{
+		"runtime":     codeConfig.Runtime,
+		"entry_point": codeConfig.EntryPoint,
+	}
+	if codeConfig.DependencyResolution != nil {
+		codeConfigMap["dependency_resolution"] = *codeConfig.DependencyResolution
+	}
+
+	codeConfigValue, err := structpb.NewValue(codeConfigMap)
+	if err != nil {
+		return fmt.Errorf("encoding code_configuration: %w", err)
+	}
+
+	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        "code_configuration",
+		Value:       codeConfigValue,
+	}); err != nil {
+		return fmt.Errorf("writing code_configuration to agent service: %w", err)
+	}
+
+	// Update the service language to match the runtime.
+	language := "python"
+	if strings.HasPrefix(codeConfig.Runtime, "dotnet_") {
+		language = "csharp"
+	}
+	langValue, _ := structpb.NewValue(language)
+	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        "language",
+		Value:       langValue,
+	}); err != nil {
+		return fmt.Errorf("updating service language to %s: %w", language, err)
+	}
+
+	// Remove docker property if it was previously set (switching from container to code).
+	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        "docker",
+		Value:       structpb.NewNullValue(),
+	}); err != nil {
+		log.Printf("warning: could not clear docker property on service %q: %v", serviceName, err)
+	}
+
+	log.Printf("Applied code deploy configuration (runtime=%s, entry_point=%s) to service %q",
+		codeConfig.Runtime, codeConfig.EntryPoint, serviceName)
+	return nil
+}
+
+// applyContainerDeployToService sets the docker property on the adopted agent
+// service and ensures the language is "docker". Removes any code_configuration
+// if present.
+func applyContainerDeployToService(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+) error {
+	// Set docker property with remote build enabled.
+	dockerMap := map[string]any{"remoteBuild": true}
+	dockerValue, err := structpb.NewValue(dockerMap)
+	if err != nil {
+		return fmt.Errorf("encoding docker configuration: %w", err)
+	}
+
+	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        "docker",
+		Value:       dockerValue,
+	}); err != nil {
+		return fmt.Errorf("writing docker property to agent service: %w", err)
+	}
+
+	// Set language to docker.
+	langValue, _ := structpb.NewValue("docker")
+	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        "language",
+		Value:       langValue,
+	}); err != nil {
+		return fmt.Errorf("updating service language to docker: %w", err)
+	}
+
+	// Remove code_configuration if present (switching from code to container).
+	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        "code_configuration",
+		Value:       structpb.NewNullValue(),
+	}); err != nil {
+		log.Printf("warning: could not clear code_configuration on service %q: %v", serviceName, err)
+	}
+
+	log.Printf("Applied container deploy configuration to service %q", serviceName)
+	return nil
 }

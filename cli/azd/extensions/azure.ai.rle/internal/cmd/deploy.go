@@ -8,13 +8,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
 type rleDeployFlags struct {
-	projectId string
+	projectId  string
+	dockerfile string
 }
 
 func newDeployCommand() *cobra.Command {
@@ -25,56 +27,17 @@ func newDeployCommand() *cobra.Command {
 		Short: "Create or update the RLE environment",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Load the persisted session state. When .azd-rle.json is absent we treat this as a
-			// first-time bootstrap and initialize the state in-place (it is persisted on success),
-			// so `deploy` can run without a prior `init` as long as the folder has an rle.yaml.
-			state, err := loadRleState()
-			initialized := err == nil
+			state, initialized, err := resolveDeployState(flags)
 			if err != nil {
-				if localErr, ok := errors.AsType[*azdext.LocalError](err); !ok ||
-					localErr.Code != "rle_project_not_initialized" {
-					return err
-				}
-			}
-
-			manifest, err := loadRleManifest(rleManifestFile)
-			manifestExists := err == nil
-			if err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err
 			}
-
-			if !initialized && !manifestExists {
-				return &azdext.LocalError{
-					Message:  "RLE session has not been initialized.",
-					Code:     "rle_project_not_initialized",
-					Category: azdext.LocalErrorCategoryUser,
-					Suggestion: "Run azd ai rle init first, or add an " + rleManifestFile +
-						" manifest to this folder, then re-run deploy.",
-				}
-			}
-
 			if !initialized {
-				state = defaultRleState("")
-				if _, err := fmt.Fprintf(
-					cmd.OutOrStdout(),
-					"No %s found; initializing a new RLE session from %s.\n",
-					rleStateFile,
-					rleManifestFile,
-				); err != nil {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "No %s found; using current folder as the RLE source.\n",
+					rleStateFile); err != nil {
 					return err
 				}
 			}
 
-			if manifestExists {
-				manifestState, err := stateFromManifest(manifest)
-				if err != nil {
-					return err
-				}
-				state.Name = firstNonEmpty(manifestState.Name, state.Name)
-				state.LocalImage = manifestState.LocalImage
-				state.Image = manifestState.Image
-			}
-			state.Project = firstNonEmpty(flags.projectId, state.Project)
 			if state.Project == "" {
 				return &azdext.LocalError{
 					Message:    "RLE project is required for deploy.",
@@ -84,17 +47,30 @@ func newDeployCommand() *cobra.Command {
 				}
 			}
 
-			image := state.Image
-			if image == "" {
+			controlPlaneEndpoint := resolveControlPlaneEndpoint()
+			image, err := resolveDeployImage(flags, state)
+			if err != nil {
+				return err
+			}
+			if !isAcrImageReference(image) {
 				return &azdext.LocalError{
-					Message:    "RLE environment image is required for deploy.",
-					Code:       "rle_image_required",
+					Message:    fmt.Sprintf("RLE deploy image must be an ACR image reference, got %q.", image),
+					Code:       "rle_acr_image_required",
 					Category:   azdext.LocalErrorCategoryUser,
-					Suggestion: "Set template.environment.image in rle.yaml, then rerun deploy.",
+					Suggestion: "Set AZURE_CONTAINER_REGISTRY_ENDPOINT=<registry>.azurecr.io, then run deploy again.",
 				}
 			}
+			if err := buildLocalRuntimeImage(cmd, image, dockerBuildOptions{
+				source:     ".",
+				dockerfile: flags.dockerfile,
+			}); err != nil {
+				return err
+			}
+			if err := pushDockerImage(cmd, image); err != nil {
+				return err
+			}
 			environmentId := firstNonEmpty(state.EnvironmentId, slug(state.Name))
-			client := newRleClient(resolveControlPlaneEndpoint(""))
+			client := newRleClient(controlPlaneEndpoint)
 			request := v1EnvironmentRequest{
 				Name:         state.Name,
 				AcrImagePath: image,
@@ -178,7 +154,39 @@ func newDeployCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&flags.projectId, "project-id", "",
 		"RLE project id to deploy into. Required on first deploy; later deploys reuse the saved value.")
+	cmd.Flags().StringVar(&flags.dockerfile, "dockerfile", "",
+		"Dockerfile path relative to the current folder. Defaults to Dockerfile at the source root or server/Dockerfile.")
 	return cmd
+}
+
+func resolveDeployState(flags *rleDeployFlags) (rleState, bool, error) {
+	state, err := loadRleState()
+	initialized := err == nil
+	if err != nil {
+		if localErr, ok := errors.AsType[*azdext.LocalError](err); !ok ||
+			localErr.Code != "rle_project_not_initialized" {
+			return rleState{}, false, err
+		}
+		state = defaultRleState(defaultSourceName("."))
+	}
+
+	state.Name = firstNonEmpty(state.Name, defaultSourceName("."))
+	state.Project = firstNonEmpty(flags.projectId, state.Project)
+
+	return state, initialized, nil
+}
+
+func resolveDeployImage(flags *rleDeployFlags, state rleState) (string, error) {
+	registry := strings.Trim(strings.TrimSpace(os.Getenv("AZURE_CONTAINER_REGISTRY_ENDPOINT")), "/")
+	if registry == "" {
+		return "", &azdext.LocalError{
+			Message:    "ACR registry is required for deploy.",
+			Code:       "rle_acr_registry_required",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Set AZURE_CONTAINER_REGISTRY_ENDPOINT=<registry>.azurecr.io, then run deploy again.",
+		}
+	}
+	return fmt.Sprintf("%s/%s:latest", registry, slug(state.Name)), nil
 }
 
 type environmentOutput struct {

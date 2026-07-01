@@ -10,18 +10,18 @@ namespace: ai.rle
 tags:
   - ai
   - rle
-usage: azd ai rle <command> [options]
+usage: $env:AZD_AI_RLE_ENABLE = "true"; azd ai rle <command> [options]
 version: 0.1.0-preview
 examples:
   - name: init
-    description: Scaffold a local RLE environment.
-    usage: azd ai rle init
+    description: Copy the OpenEnv echo sample into a local RLE environment.
+    usage: $env:AZD_AI_RLE_ENABLE = "true"; azd ai rle init
   - name: deploy
-    description: Create or update the RLE environment.
-    usage: azd ai rle deploy --project-id <project-id>
+    description: Build, push, and create or update the RLE environment.
+    usage: $env:AZD_AI_RLE_ENABLE = "true"; $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = "<registry>.azurecr.io"; azd ai rle deploy --project-id <project-id>
   - name: run
-    description: Pull and run the local RLE environment container.
-    usage: azd ai rle run
+    description: Build and run the local RLE environment container.
+    usage: $env:AZD_AI_RLE_ENABLE = "true"; azd ai rle run
   - name: invoke
-    description: Open an OpenEnv runtime shell.
-    usage: azd ai rle invoke --local
+    description: Lease a deployed RLE sandbox and open an OpenEnv runtime shell.
+    usage: $env:AZD_AI_RLE_ENABLE = "true"; azd ai rle invoke

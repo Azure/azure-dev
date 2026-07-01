@@ -1,13 +1,12 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore abstractmethod asctime devrle gethostname kwargs openenv rstrip urlopen
-
 package cmd
 
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -16,17 +15,6 @@ import (
 )
 
 var envNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
-
-const defaultEchoManifest = `# RLE environment manifest (OpenEnv-style).
-spec_version: 1
-name: echo_env
-description: A local echo OpenEnv environment.
-template:
-  name: echo_env
-  kind: openenv
-  environment:
-    image: devrle.azurecr.io/echo-rl:latest
-`
 
 func validateEnvName(name string) (string, error) {
 	name = strings.TrimSpace(name)
@@ -53,9 +41,15 @@ func slug(name string) string {
 	return strings.Trim(builder.String(), "-")
 }
 
-func scaffoldRleSession(name string, dest string, localImage string, registrationImage string, force bool) (string, error) {
-	envClass := toPascal(name)
-	envTitle := toTitle(name)
+const (
+	openEnvRepoUrl        = "https://github.com/huggingface/OpenEnv.git"
+	openEnvRepoRef        = "main"
+	openEnvEchoSamplePath = "envs/echo_env"
+)
+
+var checkoutOpenEnvEchoSampleFunc = checkoutOpenEnvEchoSample
+
+func createRleSessionDir(name string, dest string, force bool) (string, error) {
 	sessionDir := filepath.Join(dest, name)
 	if entries, err := os.ReadDir(sessionDir); err == nil && len(entries) > 0 && !force {
 		return "", &azdext.LocalError{
@@ -67,459 +61,123 @@ func scaffoldRleSession(name string, dest string, localImage string, registratio
 	} else if err != nil && !os.IsNotExist(err) {
 		return "", err
 	}
-
-	files := map[string]string{
-		"models.py":                          modelsTemplate,
-		"client.py":                          clientTemplate,
-		"requirements.txt":                   requirementsTemplate,
-		rleManifestFile:                      manifestTemplate,
-		"README.md":                          readmeTemplate,
-		"rle_runtime.py":                     runtimeTemplate,
-		"server/" + name + "_environment.py": environmentTemplate,
-		"server/app.py":                      appTemplate,
-		"server/__init__.py":                 "",
-	}
-
-	replacements := map[string]string{
-		"__ENV_NAME__":    name,
-		"__ENV_CLASS__":   envClass,
-		"__ENV_TITLE__":   envTitle,
-		"__LOCAL_IMAGE__": localImage,
-		"__IMAGE__":       registrationImage,
-	}
-
-	for relativePath, content := range files {
-		for token, value := range replacements {
-			content = strings.ReplaceAll(content, token, value)
-		}
-		content = strings.ReplaceAll(content, "\n", "\r\n")
-		fullPath := filepath.Join(sessionDir, filepath.FromSlash(relativePath))
-		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
-			return "", err
-		}
-		if err := os.WriteFile(fullPath, []byte(content), 0600); err != nil {
+	if force {
+		if err := os.RemoveAll(sessionDir); err != nil {
 			return "", err
 		}
 	}
-
+	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+		return "", err
+	}
 	return sessionDir, nil
 }
 
-func toPascal(name string) string {
-	parts := strings.Split(name, "_")
-	for i, part := range parts {
-		if part == "" {
-			continue
-		}
-		parts[i] = strings.ToUpper(part[:1]) + part[1:]
+func checkoutOpenEnvEchoSample(name string, dest string, force bool) (string, error) {
+	sessionDir, err := createRleSessionDir(name, dest, force)
+	if err != nil {
+		return "", err
 	}
-	return strings.Join(parts, "")
+	tempDir, err := os.MkdirTemp("", "azd-rle-openenv-*")
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
+
+	if err := runGitCheckout(
+		"clone",
+		"--depth", "1",
+		"--filter=blob:none",
+		"--sparse",
+		"--branch", openEnvRepoRef,
+		openEnvRepoUrl,
+		tempDir,
+	); err != nil {
+		return "", err
+	}
+	if err := runGitCheckout("-C", tempDir, "sparse-checkout", "set", openEnvEchoSamplePath); err != nil {
+		return "", err
+	}
+
+	sourceDir := filepath.Join(tempDir, filepath.FromSlash(openEnvEchoSamplePath))
+	if err := copyDirectory(sourceDir, sessionDir); err != nil {
+		return "", err
+	}
+	return sessionDir, nil
 }
 
-func toTitle(name string) string {
-	parts := strings.Split(name, "_")
-	for i, part := range parts {
-		if part == "" {
-			continue
-		}
-		parts[i] = strings.ToUpper(part[:1]) + part[1:]
-	}
-	return strings.Join(parts, " ")
+func isSafeRelativePath(path string) bool {
+	return path != ".." &&
+		!filepath.IsAbs(path) &&
+		!strings.HasPrefix(path, ".."+string(os.PathSeparator))
 }
 
-const manifestTemplate = `# RLE environment manifest (OpenEnv-style).
-spec_version: 1
-name: __ENV_NAME__
-description: A local echo OpenEnv environment.
-template:
-  name: __ENV_NAME__
-  kind: openenv
-  local:
-    image: __LOCAL_IMAGE__
-  environment:
-    image: __IMAGE__
-`
-
-const requirementsTemplate = `fastapi>=0.110
-uvicorn>=0.29
-pydantic>=2.6
-`
-
-const modelsTemplate = `"""Data models for the __ENV_TITLE__ environment."""
-
-from pydantic import Field
-
-from rle_runtime import Action, Observation
-
-
-class __ENV_CLASS__Action(Action):
-    """Action for the __ENV_TITLE__ environment."""
-
-    message: str = Field(default="hello", description="Message to echo")
-
-
-class __ENV_CLASS__Observation(Observation):
-    """Observation returned by the __ENV_TITLE__ environment."""
-
-    message: str = Field(default="", description="Echo response")
-`
-
-const environmentTemplate = `"""__ENV_TITLE__ environment implementation."""
-
-import uuid
-from typing import Any, Optional
-
-from rle_runtime import Environment, State
-
-from models import __ENV_CLASS__Action, __ENV_CLASS__Observation
-
-
-class __ENV_CLASS__Environment(Environment):
-    """A minimal echo environment for smoke testing the OpenEnv runtime."""
-
-    def __init__(self) -> None:
-        self._episode_id: Optional[str] = None
-        self._step_count: int = 0
-
-    def reset(
-        self,
-        seed: Optional[int] = None,
-        episode_id: Optional[str] = None,
-        **kwargs: Any,
-    ) -> __ENV_CLASS__Observation:
-        self._episode_id = episode_id or str(uuid.uuid4())
-        self._step_count = 0
-        return __ENV_CLASS__Observation(
-            message="Echo environment reset.",
-            done=False,
-            reward=0.0,
-        )
-
-    def step(self, action: __ENV_CLASS__Action, **kwargs: Any) -> __ENV_CLASS__Observation:
-        self._step_count += 1
-        return __ENV_CLASS__Observation(
-            message=f"echo: {action.message}",
-            done=False,
-            reward=0.0,
-        )
-
-    @property
-    def state(self) -> State:
-        return State(episode_id=self._episode_id, step_count=self._step_count)
-`
-
-const appTemplate = `"""FastAPI application entrypoint for the __ENV_TITLE__ environment.
-
-Exposes the OpenEnv-compatible contract:
-    POST /reset, POST /step, GET /state, GET /health, GET /metadata, GET /schema
-
-Run locally:
-    uvicorn server.app:app --host 0.0.0.0 --port 8000
-"""
-
-from rle_runtime import create_app
-
-from models import __ENV_CLASS__Action, __ENV_CLASS__Observation
-from server.__ENV_NAME___environment import __ENV_CLASS__Environment
-
-app = create_app(
-    __ENV_CLASS__Environment,
-    __ENV_CLASS__Action,
-    __ENV_CLASS__Observation,
-    env_name="__ENV_NAME__",
-)
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-`
-
-const clientTemplate = `"""Minimal HTTP client for the __ENV_TITLE__ environment.
-
-Use this for quick local testing against the container directly
-(for example, http://localhost:32891).
-
-Example:
-    from client import __ENV_CLASS__Client
-
-    base = "http://localhost:8000"
-    c = __ENV_CLASS__Client(base)
-    print(c.reset())
-    print(c.step({"message": "hello"}))
-    print(c.state())
-"""
-
-from __future__ import annotations
-
-import json
-import urllib.request
-from typing import Any, Dict, Optional
-
-
-class __ENV_CLASS__Client:
-    def __init__(self, base_url: str, timeout_s: float = 30.0) -> None:
-        self.base_url = base_url.rstrip("/")
-        self.timeout_s = timeout_s
-
-    def _post(self, path: str, body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        data = json.dumps(body or {}).encode("utf-8")
-        req = urllib.request.Request(
-            f"{self.base_url}{path}",
-            data=data,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-
-    def _get(self, path: str) -> Dict[str, Any]:
-        req = urllib.request.Request(f"{self.base_url}{path}", method="GET")
-        with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-
-    def reset(self, seed: Optional[int] = None, episode_id: Optional[str] = None) -> Dict[str, Any]:
-        return self._post("/reset", {"seed": seed, "episode_id": episode_id})
-
-    def step(self, action: Dict[str, Any]) -> Dict[str, Any]:
-        return self._post("/step", {"action": action})
-
-    def state(self) -> Dict[str, Any]:
-        return self._get("/state")
-`
-
-const readmeTemplate = `# __ENV_TITLE__ RLE Environment
-
-An OpenEnv-style Reinforcement Learning Environment generated by the ` + "`rle`" + ` CLI.
-
-## Layout
-
-| File | Purpose |
-| --- | --- |
-| ` + "`rle_runtime.py`" + ` | OpenEnv-compatible runtime and FastAPI factory. |
-| ` + "`models.py`" + ` | ` + "`__ENV_CLASS__Action`" + ` / ` + "`__ENV_CLASS__Observation`" + ` data models. |
-| ` + "`server/__ENV_NAME___environment.py`" + ` | Environment reset/step/state logic. |
-| ` + "`server/app.py`" + ` | FastAPI app exposing the OpenEnv endpoints. |
-| ` + "`client.py`" + ` | Minimal HTTP client for testing. |
-| ` + "`rle.yaml`" + ` | Environment manifest. |
-
-## Run locally (no Docker)
-
-` + "```bash" + `
-pip install -r requirements.txt
-uvicorn server.app:app --host 0.0.0.0 --port 8000
-# in another shell:
-curl -X POST localhost:8000/reset
-curl -X POST localhost:8000/step -H 'content-type: application/json' \
-     -d '{"action": {"message": "hello"}}'
-curl localhost:8000/state
-` + "```" + `
-
-## Run with azd
-
-` + "```bash" + `
-azd ai rle run
-azd ai rle invoke --local
-` + "```" + `
-
-Inside the invoke shell:
-
-` + "```text" + `
-rle> health
-rle> reset {"seed":0}
-rle> step {"message":"hello"}
-rle> state
-rle> exit
-` + "```" + `
-
-` + "`run`" + ` uses ` + "`template.local.image`" + ` when set, falls back to
-` + "`template.environment.image`" + `, and runs that image locally with Docker.
-
-` + "`deploy`" + ` registers ` + "`template.environment.image`" + ` with RLE.
-`
-
-const runtimeTemplate = `# rle_runtime.py
-#
-# Self-contained, OpenEnv-compatible runtime for RLE environment containers.
-#
-# This single file provides:
-#   - Base data models: Action, Observation, State
-#   - The Environment abstract base class (reset / step / state)
-#   - create_app(): a FastAPI factory exposing the OpenEnv simulation contract:
-#         POST /reset   -> {observation, reward, done, metadata}
-#         POST /step    -> {observation, reward, done, metadata}
-#         GET  /state   -> State as dict
-#         GET  /health  -> {status: "healthy"}
-#         GET  /metadata, GET /schema
-#
-# It intentionally has NO dependency on the ` + "`openenv`" + ` package so that generated
-# environments are fully standalone and runnable with only fastapi/uvicorn/pydantic.
-from __future__ import annotations
-
-import logging
-import socket
-from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Type
-
-from fastapi import Body, FastAPI
-from pydantic import BaseModel, ConfigDict, Field
-
-# The container's hostname is, by default, the short Docker container id (we do
-# not pass --hostname), so it can be used directly with ` + "`docker logs <id>`" + `.
-CONTAINER_ID = socket.gethostname()
-
-
-def _make_logger(env_name: str) -> logging.Logger:
-    """A stdout logger whose lines are captured by ` + "`docker logs`" + `."""
-    logger = logging.getLogger(f"rle.{env_name}")
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter("%(asctime)s [rle] %(message)s"))
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-        logger.propagate = False
-    return logger
-
-
-# ---------------------------------------------------------------------------
-# Core data models (mirror openenv.core.env_server.types)
-# ---------------------------------------------------------------------------
-class Action(BaseModel):
-    """Base class for all environment actions."""
-
-    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-
-class Observation(BaseModel):
-    """Base class for all environment observations."""
-
-    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
-    done: bool = Field(default=False, description="Whether the episode has terminated")
-    reward: Optional[float] = Field(default=None, description="Reward from last action")
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-
-class State(BaseModel):
-    """Base class for environment state."""
-
-    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
-    episode_id: Optional[str] = Field(default=None)
-    step_count: int = Field(default=0)
-
-
-class Environment(ABC):
-    """Gym-style environment base class.
-
-    Subclasses implement reset(), step(), and the ` + "`state`" + ` property.
-    """
-
-    @abstractmethod
-    def reset(
-        self, seed: Optional[int] = None, episode_id: Optional[str] = None, **kwargs: Any
-    ) -> Observation:
-        """Reset the environment and return the initial observation."""
-
-    @abstractmethod
-    def step(self, action: Action, **kwargs: Any) -> Observation:
-        """Apply an action and return the resulting observation."""
-
-    @property
-    @abstractmethod
-    def state(self) -> State:
-        """Return the current environment state."""
-
-
-# ---------------------------------------------------------------------------
-# Wire models (mirror the OpenEnv HTTP contract)
-# ---------------------------------------------------------------------------
-class ResetRequest(BaseModel):
-    model_config = ConfigDict(extra="allow")
-    seed: Optional[int] = None
-    episode_id: Optional[str] = None
-
-
-class StepRequest(BaseModel):
-    model_config = ConfigDict(extra="allow")
-    action: Dict[str, Any]
-    timeout_s: Optional[float] = None
-    request_id: Optional[str] = None
-
-
-def _serialize_observation(obs: Observation) -> Dict[str, Any]:
-    """Convert an Observation into the OpenEnv wire format."""
-    obs_dict = obs.model_dump(exclude={"reward", "done"})
-    result: Dict[str, Any] = {
-        "observation": obs_dict,
-        "reward": obs.reward,
-        "done": obs.done,
-    }
-    if obs.metadata:
-        result["metadata"] = obs.metadata
-    return result
-
-
-def create_app(
-    environment_cls: Type[Environment],
-    action_cls: Type[Action],
-    observation_cls: Type[Observation],
-    env_name: str = "rle-env",
-) -> FastAPI:
-    """Build a FastAPI app exposing reset/step/state for the given environment.
-
-    A single environment instance is created at startup (single-session
-    simulation mode), which matches how the data plane proxies stateless calls.
-    """
-    app = FastAPI(title=f"{env_name} (RLE)", version="1.0.0")
-    env: Environment = environment_cls()
-    log = _make_logger(env_name)
-
-    @app.get("/health", tags=["Health"])
-    def health() -> Dict[str, str]:
-        return {"status": "healthy"}
-
-    @app.get("/metadata", tags=["Environment Info"])
-    def metadata() -> Dict[str, Any]:
-        return {
-            "name": env_name,
-            "description": f"{env_name} RLE environment",
-            "version": "1.0.0",
-            "container": CONTAINER_ID,
-        }
-
-    @app.get("/schema", tags=["Schema"])
-    def schema() -> Dict[str, Any]:
-        return {
-            "action": action_cls.model_json_schema(),
-            "observation": observation_cls.model_json_schema(),
-            "state": State.model_json_schema(),
-        }
-
-    @app.post("/reset", tags=["Environment Control"])
-    def reset(request: ResetRequest = Body(default_factory=ResetRequest)) -> Dict[str, Any]:
-        obs = env.reset(seed=request.seed, episode_id=request.episode_id)
-        st = env.state
-        log.info(
-            "[%s] RESET episode=%s seed=%s -> done=%s reward=%s",
-            CONTAINER_ID, st.episode_id, request.seed, obs.done, obs.reward,
-        )
-        return _serialize_observation(obs)
-
-    @app.post("/step", tags=["Environment Control"])
-    def step(request: StepRequest) -> Dict[str, Any]:
-        action = action_cls.model_validate(request.action)
-        obs = env.step(action)
-        st = env.state
-        log.info(
-            "[%s] STEP  episode=%s step=%s action=%s -> reward=%s done=%s",
-            CONTAINER_ID, st.episode_id, st.step_count, request.action, obs.reward, obs.done,
-        )
-        return _serialize_observation(obs)
-
-    @app.get("/state", tags=["State Management"])
-    def state() -> Dict[str, Any]:
-        return env.state.model_dump()
-
-    return app
-`
+func runGitCheckout(args ...string) error {
+	if _, err := exec.LookPath("git"); err != nil {
+		return &azdext.LocalError{
+			Message:    "Could not find \"git\" on PATH.",
+			Code:       "rle_git_not_found",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Install Git, then retry azd ai rle init.",
+		}
+	}
+	process := exec.Command("git", args...)
+	process.Env = os.Environ()
+	output, err := process.CombinedOutput()
+	if err != nil {
+		return &azdext.LocalError{
+			Message:    fmt.Sprintf("Failed to checkout OpenEnv echo sample: %v", err),
+			Code:       "rle_openenv_checkout_failed",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: strings.TrimSpace(string(output)),
+		}
+	}
+	return nil
+}
+
+func copyDirectory(sourceDir string, destDir string) error {
+	sourceInfo, err := os.Stat(sourceDir)
+	if err != nil {
+		return err
+	}
+	if !sourceInfo.IsDir() {
+		return &azdext.LocalError{
+			Message:    fmt.Sprintf("RLE source path %q is not a directory.", sourceDir),
+			Code:       "rle_source_path_not_directory",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Use a source directory when initializing an RLE environment.",
+		}
+	}
+	return filepath.WalkDir(sourceDir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() && entry.Name() == ".git" {
+			return filepath.SkipDir
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		relativePath, err := filepath.Rel(sourceDir, path)
+		if err != nil {
+			return err
+		}
+		if relativePath == "." {
+			return nil
+		}
+		targetPath := filepath.Join(destDir, relativePath)
+		if entry.IsDir() {
+			return os.MkdirAll(targetPath, 0755)
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(path) //nolint:gosec // path comes from the checked-out sample directory walk.
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(targetPath, data, info.Mode().Perm())
+	})
+}

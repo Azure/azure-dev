@@ -5,11 +5,15 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
+
+const rleEnableEnvVar = "AZD_AI_RLE_ENABLE"
 
 func NewRootCommand() *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
@@ -31,12 +35,23 @@ func NewRootCommand() *cobra.Command {
 		defaultHelp(cmd, args)
 	})
 
-	rootCmd.AddCommand(newDeployCommand())
-	rootCmd.AddCommand(newInitCommand())
-	rootCmd.AddCommand(newInvokeCommand())
-	rootCmd.AddCommand(newRunCommand())
-	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
+	userCommands := []*cobra.Command{
+		newDeployCommand(),
+		newInitCommand(),
+		newInvokeCommand(),
+		newRunCommand(),
+		newVersionCommand(&extCtx.OutputFormat),
+	}
+	for _, command := range userCommands {
+		command.Hidden = !rleCommandsEnabled()
+		rootCmd.AddCommand(command)
+	}
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
 
 	return rootCmd
+}
+
+func rleCommandsEnabled() bool {
+	enabled, err := strconv.ParseBool(os.Getenv(rleEnableEnvVar))
+	return err == nil && enabled
 }

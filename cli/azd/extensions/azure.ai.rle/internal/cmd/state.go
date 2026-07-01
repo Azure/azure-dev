@@ -13,15 +13,11 @@ import (
 )
 
 const (
-	rleStateFile    = ".azd-rle.json"
-	rleManifestFile = "rle.yaml"
+	rleStateFile = ".azd-rle.json"
 )
 
 type rleState struct {
 	Name               string `json:"name"`
-	LocalImage         string `json:"localImage,omitempty"`
-	Image              string `json:"image,omitempty"`
-	Port               int    `json:"port,omitempty"`
 	Project            string `json:"project"`
 	EnvironmentId      string `json:"environmentId,omitempty"`
 	EnvironmentVersion string `json:"environmentVersion,omitempty"`

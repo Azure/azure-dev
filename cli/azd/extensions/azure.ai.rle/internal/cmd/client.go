@@ -44,6 +44,23 @@ type environmentResource struct {
 	VersionLabel string `json:"versionLabel,omitempty"`
 }
 
+type sandboxCreateRequest struct {
+	Version string `json:"version,omitempty"`
+}
+
+type sandboxResource struct {
+	Id            string `json:"id"`
+	ProjectId     string `json:"projectId,omitempty"`
+	EnvironmentId string `json:"environmentId,omitempty"`
+	Version       string `json:"version,omitempty"`
+	Url           string `json:"url,omitempty"`
+	Endpoint      string `json:"endpoint,omitempty"`
+	Status        string `json:"status,omitempty"`
+	Error         string `json:"error,omitempty"`
+	CreatedAtUtc  string `json:"createdAtUtc,omitempty"`
+	UpdatedAtUtc  string `json:"updatedAtUtc,omitempty"`
+}
+
 type rleHTTPError struct {
 	statusCode int
 	body       string
@@ -81,14 +98,20 @@ func newRleClient(endpoint string) *rleClient {
 	}
 }
 
-func resolveControlPlaneEndpoint(endpoint string) string {
-	if endpoint != "" {
-		return endpoint
-	}
-	if endpoint = os.Getenv("RLE_ENDPOINT"); endpoint != "" {
+func resolveControlPlaneEndpoint() string {
+	if endpoint := os.Getenv("RLE_ENDPOINT"); endpoint != "" {
 		return endpoint
 	}
 	return defaultControlPlaneEndpoint
+}
+
+func isLocalControlPlaneEndpoint(endpoint string) bool {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 func (c *rleClient) createV1Environment(
@@ -127,6 +150,60 @@ func (c *rleClient) updateV1Environment(
 	}
 
 	return &result, nil
+}
+
+func (c *rleClient) createSandbox(
+	ctx context.Context,
+	project string,
+	environmentId string,
+	request sandboxCreateRequest,
+) (*sandboxResource, error) {
+	path := fmt.Sprintf(
+		"/rle/v1.0/projects/%s/environments/%s/sandboxes",
+		url.PathEscape(project),
+		url.PathEscape(environmentId),
+	)
+
+	var result sandboxResource
+	if err := c.do(ctx, http.MethodPost, path, request, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (c *rleClient) getSandbox(
+	ctx context.Context,
+	project string,
+	environmentId string,
+	sandboxId string,
+) (*sandboxResource, error) {
+	path := sandboxPath(project, environmentId, sandboxId)
+
+	var result sandboxResource
+	if err := c.do(ctx, http.MethodGet, path, nil, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (c *rleClient) deleteSandbox(
+	ctx context.Context,
+	project string,
+	environmentId string,
+	sandboxId string,
+) error {
+	return c.do(ctx, http.MethodDelete, sandboxPath(project, environmentId, sandboxId), nil, nil)
+}
+
+func sandboxPath(project string, environmentId string, sandboxId string) string {
+	return fmt.Sprintf(
+		"/rle/v1.0/projects/%s/environments/%s/sandboxes/%s",
+		url.PathEscape(project),
+		url.PathEscape(environmentId),
+		url.PathEscape(sandboxId),
+	)
 }
 
 func (c *rleClient) do(ctx context.Context, method string, path string, body any, target any) error {

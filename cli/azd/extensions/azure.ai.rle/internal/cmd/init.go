@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -14,8 +13,7 @@ import (
 )
 
 type rleInitFlags struct {
-	manifest string
-	force    bool
+	force bool
 }
 
 func newInitCommand() *cobra.Command {
@@ -23,48 +21,15 @@ func newInitCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Scaffold a local RLE environment",
-		Args:  cobra.NoArgs,
-		PreRunE: func(cmd *cobra.Command, args []string) error {
-			if initUsedLongManifestFlag(os.Args[1:]) {
-				return &azdext.LocalError{
-					Message:    "--manifest is not supported.",
-					Code:       "rle_manifest_long_flag_unsupported",
-					Category:   azdext.LocalErrorCategoryUser,
-					Suggestion: "Use -m <manifest>.",
-				}
-			}
-			return nil
-		},
+		Short: "Initialize a local RLE environment",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var manifestBytes []byte
-			if flags.manifest != "" {
-				var err error
-				manifestBytes, err = readManifestContent(cmd.Context(), flags.manifest)
-				if err != nil {
-					return err
-				}
-			} else {
-				manifestBytes = []byte(defaultEchoManifest)
+			envNameOverride := ""
+			if len(args) == 1 {
+				envNameOverride = args[0]
 			}
-
-			manifest, err := parseRleManifest(manifestBytes)
-			if err != nil {
-				return err
-			}
-			manifestState, err := stateFromManifest(manifest)
-			if err != nil {
-				return err
-			}
-			envName := manifestState.Name
-			if envName == "" {
-				return &azdext.LocalError{
-					Message:    "RLE manifest name is required.",
-					Code:       "rle_environment_name_required",
-					Category:   azdext.LocalErrorCategoryUser,
-					Suggestion: "Set name or template.name in the manifest.",
-				}
-			}
+			envName := firstNonEmpty(envNameOverride, "echo_env")
+			var err error
 			envName, err = validateEnvName(envName)
 			if err != nil {
 				return &azdext.LocalError{
@@ -75,21 +40,11 @@ func newInitCommand() *cobra.Command {
 				}
 			}
 
-			sessionDir, err := scaffoldRleSession(
-				envName,
-				".",
-				manifestState.LocalImage,
-				manifestState.Image,
-				flags.force,
-			)
+			sessionDir, err := checkoutOpenEnvEchoSampleFunc(envName, ".", flags.force)
 			if err != nil {
 				return err
 			}
-			if err := writeManifestToSession(manifestBytes, sessionDir); err != nil {
-				return err
-			}
-
-			if err := saveRleStateIn(sessionDir, manifestState); err != nil {
+			if err := saveRleStateIn(sessionDir, defaultRleState(envName)); err != nil {
 				return err
 			}
 
@@ -101,9 +56,9 @@ func newInitCommand() *cobra.Command {
 				cmd.OutOrStdout(),
 				"Created OpenEnv-style environment at: %s\n"+
 					"Next steps:\n"+
-					"  cd %s\n"+
+					"  cd %q\n"+
 					"  azd ai rle run\n"+
-					"  azd ai rle invoke --local\n"+
+					"  $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = \"<registry>.azurecr.io\"\n"+
 					"  azd ai rle deploy --project-id <project-id>\n",
 				displayDir,
 				displayDir,
@@ -114,40 +69,18 @@ func newInitCommand() *cobra.Command {
 
 	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		var help strings.Builder
-		help.WriteString("Scaffold a local RLE environment\n")
+		help.WriteString("Initialize a local RLE environment\n")
 		help.WriteString("Usage:\n")
-		help.WriteString("  rle init [flags]\n")
+		help.WriteString("  rle init [environment-name] [flags]\n")
 		help.WriteString("Flags:\n")
 		help.WriteString("      --force     Overwrite generated files in an existing non-empty session directory\n")
 		help.WriteString("  -h, --help      help for init\n")
-		help.WriteString("  -m string       Path or HTTPS URL to an RLE manifest to copy into the session.\n")
 		if cmd.InheritedFlags().HasAvailableFlags() {
 			help.WriteString("Global Flags:\n")
 			help.WriteString(cmd.InheritedFlags().FlagUsages())
 		}
 		_, _ = fmt.Fprint(cmd.OutOrStdout(), help.String())
 	})
-	cmd.Flags().StringVarP(
-		&flags.manifest,
-		"manifest",
-		"m",
-		"",
-		"Path or HTTPS URL to an RLE manifest to copy into the session.",
-	)
-	_ = cmd.Flags().MarkHidden("manifest")
 	cmd.Flags().BoolVar(&flags.force, "force", false, "Overwrite generated files in an existing non-empty session directory")
 	return cmd
-}
-
-func initUsedLongManifestFlag(args []string) bool {
-	for _, arg := range args {
-		if arg == "--manifest" || strings.HasPrefix(arg, "--manifest=") {
-			return true
-		}
-	}
-	return false
-}
-
-func writeManifestToSession(data []byte, sessionDir string) error {
-	return os.WriteFile(filepath.Join(sessionDir, rleManifestFile), data, 0600)
 }

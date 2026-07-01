@@ -1,7 +1,7 @@
 # Azure AI RLE extension for azd
 <!-- cspell:ignore openenv devrle -->
 
-Quickstart for the `azd ai rle` preview extension. The extension manages an OpenEnv-style RLE environment lifecycle: initialize a local session, run the environment container locally, invoke it through a shell, and register it with the RLE control plane.
+Quickstart for the `azd ai rle` preview extension. The extension manages an OpenEnv-style RLE environment lifecycle: copy OpenEnv sample source, build and run the environment container, test it through a playground UI or shell, and deploy the environment image to the RLE control plane.
 
 ## Prerequisites
 
@@ -49,13 +49,25 @@ azd extension install azure.ai.rle --source local --force
 
 ## Configure the RLE control plane
 
-The extension defaults to `http://localhost:5000`. To target another control plane:
+The extension defaults to the local RLE control plane at `http://localhost:5000`. To target another control plane:
 
 ```powershell
 $env:RLE_ENDPOINT = "https://<rle-control-plane>"
 ```
 
+Deploy uses an ACR image for the registered RLE environment. Set the registry once:
+
+```powershell
+$env:AZURE_CONTAINER_REGISTRY_ENDPOINT = "<registry>.azurecr.io"
+```
+
 ## Quickstart
+
+Enable the preview command surface:
+
+```powershell
+$env:AZD_AI_RLE_ENABLE = "true"
+```
 
 ### 1. Initialize an environment session
 
@@ -66,40 +78,18 @@ azd ai rle init
 cd .\echo_env
 ```
 
-The default echo session is driven by an embedded manifest. The generated `rle.yaml` includes:
+The default echo session downloads `huggingface/OpenEnv`, copies `envs/echo_env` into the session folder,
+and writes `.azd-rle.json` with the local environment name.
 
-```yaml
-name: echo_env
-template:
-  name: echo_env
-  kind: openenv
-  environment:
-    image: devrle.azurecr.io/echo-rl:latest
-```
+The copied session does not keep `.git` metadata from the upstream repository.
 
-A custom manifest uses the same OpenEnv-style shape:
-
-```yaml
-name: code_rl
-description: Code RL OpenEnv environment.
-template:
-  name: code_rl
-  kind: openenv
-  local:
-    image: devrle.azurecr.io/code_rl-env:latest
-  environment:
-    image: devrle.azurecr.io/code_rl-env:latest
-```
-
-`template.local.image` is optional. If omitted, local run/invoke use `template.environment.image`.
-
-To initialize from an existing manifest instead:
+Name the copied echo session:
 
 ```powershell
-azd ai rle init -m .\rle.yaml
+azd ai rle init code_rl
 ```
 
-`-m` accepts a local path or HTTPS/GitHub blob URL. The session folder name is always inferred from `name` or `template.name` in the manifest.
+For an existing source folder, skip `init` and run commands directly from that folder.
 
 ### 2. Run locally
 
@@ -107,7 +97,9 @@ azd ai rle init -m .\rle.yaml
 azd ai rle run
 ```
 
-`run` starts a Docker container and waits for `/health`. It uses `template.local.image` when present; otherwise it uses `template.environment.image`. The command does not build an image locally.
+`run` builds a local Docker image from the current source folder, removes any stale local container for the
+same environment name, starts a fresh container, waits for `/health`, opens the playground UI at `/web`, and
+keeps an OpenEnv shell attached. When the shell exits or Ctrl+C is received, `run` removes the local container.
 
 Use a custom host port:
 
@@ -115,15 +107,22 @@ Use a custom host port:
 azd ai rle run --port 9000
 ```
 
-The selected port is saved in `.azd-rle.json` and reused by local invoke.
+The selected port is only used for that run and is not saved in `.azd-rle.json`.
 
-### 3. Invoke locally
+`run` looks for `Dockerfile` at the source root, then `server\Dockerfile`. If the Dockerfile is elsewhere,
+pass it explicitly:
 
 ```powershell
-azd ai rle invoke --local
+azd ai rle run --dockerfile server\Dockerfile
 ```
 
-Inside the shell:
+Rebuild automatically while editing local source:
+
+```powershell
+azd ai rle run --watch
+```
+
+The shell supports these commands:
 
 ```text
 rle> health
@@ -145,22 +144,26 @@ Supported shell commands:
 | `schema` | `GET /schema` |
 | `exit` / `quit` | Exit shell |
 
-Per-request timeout:
+### 3. Deploy/register
 
 ```powershell
-azd ai rle invoke --local --timeout 60
-```
-
-### 4. Deploy/register
-
-```powershell
+$env:AZURE_CONTAINER_REGISTRY_ENDPOINT = "<registry>.azurecr.io"
 azd ai rle deploy --project-id <project-id>
 ```
 
-Deploy registers `template.environment.image` from `rle.yaml` with the RLE control plane and saves the project/environment details in `.azd-rle.json`.
+Deploy builds the Docker image as `<registry>.azurecr.io/<environment>:latest`, pushes it to ACR, registers that image with the RLE control plane, and saves the project/environment details in `.azd-rle.json`.
 
-## Upcoming features
+If needed, override the Dockerfile path the same way as local run:
 
-- Remote environment invocation with `azd ai rle invoke`.
-- Playground UI for exploring and testing RLE environments interactively.
-- `azd provision` integration to choose an existing Foundry project or create a new one.
+```powershell
+azd ai rle deploy --project-id <project-id> --dockerfile server\Dockerfile
+```
+
+### 4. Invoke remotely
+
+Remote invoke uses the deployed environment, leases a sandbox, opens the sandbox `/web` UI when available
+(or a local proxy UI otherwise), keeps the shell attached, and releases the sandbox when the shell exits:
+
+```powershell
+azd ai rle invoke --timeout 60
+```

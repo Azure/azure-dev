@@ -1,0 +1,6 @@
+paths:
+  # agentics-maintenance.yml is auto-generated (DO NOT EDIT) and intentionally uses an empty string
+  # as the default choice option for the 'operation' input.
+  .github/workflows/agentics-maintenance.yml:
+    ignore:
+      - 'string should not be empty'

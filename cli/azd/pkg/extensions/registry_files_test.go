@@ -15,8 +15,9 @@ import (
 )
 
 // collectValidationErrors returns only the error-level issues from a registry
-// validation result, each prefixed with the owning extension id. Warnings are
-// intentionally excluded so callers can assert on hard failures only.
+// validation result. Extension-level errors are prefixed with the owning extension
+// id; registry-level errors (which have no owning extension) are included as-is.
+// Warnings are intentionally excluded so callers can assert on hard failures only.
 func collectValidationErrors(result *RegistryValidationResult) []string {
 	var errs []string
 	for _, issue := range result.Issues {

@@ -638,8 +638,9 @@ func TestValidateExtensions_Dependencies_UnsatisfiableConstraintIsError(t *testi
 }
 
 func TestValidateExtensions_Dependencies_AbsentDependencyIsWarning(t *testing.T) {
-	// The dependency is not present in the registry at all; it may be provided by
-	// another source, so this is a warning rather than an error.
+	// The dependency id is not present in the registry at all. This is a warning
+	// rather than an error because the registry may be partial or the dependency
+	// may already be installed at resolution time.
 	parent := depExt("publisher.parent", ExtensionDependency{Id: "publisher.missing", Version: ">=1.0.0"})
 
 	result := ValidateExtensions([]*ExtensionMetadata{parent}, false)

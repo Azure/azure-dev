@@ -3,8 +3,8 @@ capabilities:
     - custom-commands
     - service-target-provider
     - metadata
-description: Manage Microsoft Foundry Project resources from your terminal. (Preview)
-displayName: Foundry Projects (Preview)
+description: Manage Microsoft Foundry Project resources from your terminal. (Beta)
+displayName: Foundry Projects (Beta)
 id: azure.ai.projects
 language: go
 namespace: ai.project
@@ -16,4 +16,5 @@ tags:
     - ai
     - project
 usage: azd ai project <command> [options]
-version: 0.1.1-preview
+version: 1.0.0-beta.1
+requiredAzdVersion: ">=1.27.0"

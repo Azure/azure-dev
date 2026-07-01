@@ -4,6 +4,10 @@ words:
   - tavily
   - tvly
   - conncmd
+  # Contributors
+  - harsheet
+  # Terms
+  - Reprompt
   # Azure region names
   - australiaeast
   - brazilsouth

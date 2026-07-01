@@ -902,6 +902,7 @@ func Test_NewExtensionShowAction(t *testing.T) {
 		mockinput.NewMockConsole(),
 		&output.JsonFormatter{},
 		&bytes.Buffer{},
+		nil, // sourceManager
 		nil, // extensionManager
 	)
 	require.NotNil(t, action)
@@ -938,6 +939,7 @@ func Test_NewExtensionUpgradeAction(t *testing.T) {
 		&output.NoneFormatter{},
 		&bytes.Buffer{},
 		mockinput.NewMockConsole(),
+		nil, // sourceManager
 		nil, // extensionManager
 	)
 	require.NotNil(t, action)

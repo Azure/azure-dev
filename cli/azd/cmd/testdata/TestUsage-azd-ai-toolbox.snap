@@ -1,5 +1,5 @@
 
-Manage Microsoft Foundry Toolboxes from your terminal. (Preview)
+Manage Microsoft Foundry Toolboxes from your terminal. (Beta)
 
 Usage
   azd ai toolbox [flags]

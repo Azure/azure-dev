@@ -1370,6 +1370,50 @@ func (c *AgentClient) DeleteSession(
 	return nil
 }
 
+// StopSession stops a running session without deleting its persistent
+// filesystem. The session can be resumed by a subsequent invocation.
+func (c *AgentClient) StopSession(
+	ctx context.Context,
+	agentName, sessionID, apiVersion string,
+	options *SessionRequestOptions,
+) error {
+	u, err := url.Parse(c.endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+
+	u.Path += fmt.Sprintf(
+		"/agents/%s/endpoint/sessions/%s:stop",
+		url.PathEscape(agentName), url.PathEscape(sessionID),
+	)
+
+	query := u.Query()
+	query.Set("api-version", apiVersion)
+	u.RawQuery = query.Encode()
+
+	req, err := runtime.NewRequest(ctx, http.MethodPost, u.String())
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
+	options.ApplyHeaders(req.Raw().Header)
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(
+		resp, http.StatusOK, http.StatusNoContent,
+	) {
+		return runtime.NewResponseError(resp)
+	}
+
+	return nil
+}
+
 // ListSessions returns a list of sessions for the specified agent.
 func (c *AgentClient) ListSessions(
 	ctx context.Context,

@@ -562,10 +562,10 @@
                         }
                     },
                     {
-                        "comment": "Traditional hosts - require project only, disable container-specific properties",
+                        "comment": "Traditional hosts (non-container only) - require project, disable container-specific properties",
                         "if": {
                             "properties": {
-                                "host": { "enum": ["appservice", "function", "springapp", "staticwebapp"] }
+                                "host": { "enum": ["function", "springapp", "staticwebapp"] }
                             }
                         },
                         "then": {
@@ -576,6 +576,20 @@
                                 "k8s": false,
                                 "apiVersion": false,
                                 "env": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "App Service supports docker/image/env for containers but not Kubernetes-specific properties",
+                        "if": {
+                            "properties": {
+                                "host": { "const": "appservice" }
+                            }
+                        },
+                        "then": {
+                            "properties": {
+                                "k8s": false,
+                                "apiVersion": false
                             }
                         }
                     },

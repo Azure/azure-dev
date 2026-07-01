@@ -206,6 +206,36 @@ func runInitFromAzureYaml(
 		return err
 	}
 
+	// --- Interactive Azure context setup (subscription, Foundry project) ---
+	// The scaffolding created an environment; load it and run the same Foundry
+	// project selection flow as the agent-manifest path so the user ends up
+	// with a provision-ready environment.
+	env := getExistingEnvironment(ctx, envName, azdClient)
+	if env == nil {
+		// Environment should exist after scaffoldProject; if not, create one.
+		env, err = createNewEnvironment(ctx, azdClient, envName)
+		if err != nil {
+			return err
+		}
+	}
+
+	azureContext, err := loadAzureContext(ctx, azdClient, env.Name)
+	if err != nil {
+		return err
+	}
+
+	_, err = configureFoundryProject(
+		ctx, azdClient, azureContext, env.Name,
+		flags.projectResourceId, flags.noPrompt,
+		true, // skipACR — unified azure.yaml does not use container builds
+	)
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return exterrors.Cancelled("initialization was cancelled")
+		}
+		return err
+	}
+
 	fmt.Printf(
 		"\nAdopted the sample's azure.yaml as the project manifest at %s.\n",
 		output.WithHighLightFormat("azure.yaml"),

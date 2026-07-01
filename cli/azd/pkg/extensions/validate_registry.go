@@ -147,6 +147,10 @@ func ValidateExtensions(exts []*ExtensionMetadata, strict bool) *RegistryValidat
 		Valid: true,
 	}
 
+	// Index published versions per extension id so declared dependencies can be
+	// checked against what the registry actually offers.
+	availableVersions := buildVersionIndex(exts)
+
 	for _, ext := range exts {
 		var extResult ExtensionValidationResult
 		if ext == nil {
@@ -156,6 +160,7 @@ func ValidateExtensions(exts []*ExtensionMetadata, strict bool) *RegistryValidat
 			}
 		} else {
 			extResult = validateExtension(ext, strict)
+			validateExtensionDependencies(&extResult, ext, availableVersions)
 		}
 		result.Extensions = append(result.Extensions, extResult)
 		if !extResult.Valid {
@@ -164,6 +169,22 @@ func ValidateExtensions(exts []*ExtensionMetadata, strict bool) *RegistryValidat
 	}
 
 	return result
+}
+
+// buildVersionIndex maps each extension id to the version strings it publishes.
+func buildVersionIndex(exts []*ExtensionMetadata) map[string][]string {
+	index := make(map[string][]string, len(exts))
+	for _, ext := range exts {
+		if ext == nil || ext.Id == "" {
+			continue
+		}
+		for _, ver := range ext.Versions {
+			if ver.Version != "" {
+				index[ext.Id] = append(index[ext.Id], ver.Version)
+			}
+		}
+	}
+	return index
 }
 
 // validateExtension validates a single extension metadata entry.
@@ -296,6 +317,72 @@ func validateVersion(result *ExtensionValidationResult, index int, ver *Extensio
 					"(supported: %s)", artifactPrefix, artifact.Checksum.Algorithm,
 					strings.Join(validChecksumAlgorithms, ", ")))
 			}
+		}
+	}
+}
+
+// validateExtensionDependencies checks the declared dependencies of every version
+// of an extension against what the registry publishes.
+func validateExtensionDependencies(
+	result *ExtensionValidationResult,
+	ext *ExtensionMetadata,
+	availableVersions map[string][]string,
+) {
+	for i := range ext.Versions {
+		validateDependencies(result, fmt.Sprintf("versions[%d]", i), &ext.Versions[i], availableVersions)
+	}
+}
+
+// validateDependencies checks that every dependency declared by ver can be
+// resolved within the registry. azd resolves an extension's dependencies from
+// the parent's own source at install time, so a registry is expected to be
+// self-contained for the dependencies it declares.
+//
+// A dependency whose id is not present in the registry is reported as a warning,
+// since it may be provided by another registered source. A dependency whose id is
+// present but whose version constraint matches no published version is reported as
+// an error, because it can never be resolved (this is the failure that breaks
+// coordinated multi-extension bumps). The same constraint matcher used by the
+// installer is reused so validation mirrors install-time resolution.
+func validateDependencies(
+	result *ExtensionValidationResult,
+	prefix string,
+	ver *ExtensionVersion,
+	availableVersions map[string][]string,
+) {
+	for _, dep := range ver.Dependencies {
+		depPrefix := fmt.Sprintf("%s.dependencies[%s]", prefix, dep.Id)
+
+		if dep.Id == "" {
+			result.addError(fmt.Sprintf("%s: dependency missing required field 'id'", prefix))
+			continue
+		}
+
+		versions, known := availableVersions[dep.Id]
+		if !known {
+			result.addWarning(fmt.Sprintf(
+				"%s: dependency '%s' is not present in this registry "+
+					"(it may be provided by another source)", depPrefix, dep.Id))
+			continue
+		}
+
+		// An empty constraint matches any published version.
+		if dep.Version == "" {
+			continue
+		}
+
+		satisfied := false
+		for _, candidate := range versions {
+			if matchesVersionConstraint(dep.Version, candidate) {
+				satisfied = true
+				break
+			}
+		}
+
+		if !satisfied {
+			result.addError(fmt.Sprintf(
+				"%s: dependency '%s' constraint %q is not satisfied by any published version (available: %s)",
+				depPrefix, dep.Id, dep.Version, strings.Join(versions, ", ")))
 		}
 	}
 }

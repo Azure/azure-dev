@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -344,6 +345,37 @@ func TestEnvironment_ConcurrentDotenvSet(t *testing.T) {
 		got := env.GetServiceProperty(fmt.Sprintf("svc%d", i), "KEY")
 		require.Equal(t, fmt.Sprintf("v%d", writesPerG-1), got, "lost-update for svc%d", i)
 	}
+}
+
+// TestEnviron_StripsUnsafeLoaderKeys verifies that dynamic-loader and injection control
+// variables are never propagated from the dotenv into subprocess environments. A dotenv value
+// for one of these keys (e.g. injected by a malicious template or a poisoned shared env store)
+// would otherwise load attacker-controlled code into tool subprocesses at launch time.
+func TestEnviron_StripsUnsafeLoaderKeys(t *testing.T) {
+	env := NewWithValues("test-env", map[string]string{
+		"AZURE_ENV_NAME":        "test-env",
+		"SAFE_VALUE":            "keep-me",
+		"LD_PRELOAD":            "/tmp/evil.so",
+		"LD_LIBRARY_PATH":       "/tmp/evil",
+		"LD_AUDIT":              "/tmp/audit.so",
+		"DYLD_INSERT_LIBRARIES": "/tmp/evil.dylib",
+		"DYLD_LIBRARY_PATH":     "/tmp/evil",
+		"DYLD_FRAMEWORK_PATH":   "/tmp/evil",
+		// Casing must not matter - dotenv keys are matched case-insensitively.
+		"ld_preload": "/tmp/evil-lower.so",
+	})
+
+	environ := env.Environ()
+
+	for _, entry := range environ {
+		key, _, _ := strings.Cut(entry, "=")
+		if _, unsafe := unsafeEnvironKeys[strings.ToUpper(key)]; unsafe {
+			t.Errorf("Environ() must not contain loader/injection key %q, got entry %q", key, entry)
+		}
+	}
+
+	require.Contains(t, environ, "SAFE_VALUE=keep-me")
+	require.Contains(t, environ, "AZURE_ENV_NAME=test-env")
 }
 
 // --- Test 10: Dotenv special characters round-trip ---

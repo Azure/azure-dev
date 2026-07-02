@@ -49,7 +49,7 @@ jobs:
           # Use the canonical ci-build.ps1 which includes security flags
           # (trimpath, pie, cfi, cfg, osusergo) matching release builds.
           # -BuildRecordMode produces both a production and a record-tagged binary.
-          pwsh -File ci-build.ps1 -BuildRecordMode -OutputFileName azure-ai-agents-linux-amd64 -Version $(cat version.txt | tr -d '\r\n')
+          pwsh -File ci-build.ps1 -BuildRecordMode -OutputFileName azure-ai-agents-linux-amd64 -Version "$(cat version.txt | tr -d '\r\n')"
           # Move production binary to bin/ where azd x pack expects it.
           mkdir -p bin
           mv azure-ai-agents-linux-amd64 bin/

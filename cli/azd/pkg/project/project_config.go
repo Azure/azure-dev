@@ -56,9 +56,9 @@ type RequiredVersions struct {
 
 // options supported in azure.yaml
 type PipelineOptions struct {
-	Provider  string   `yaml:"provider"`
-	Variables []string `yaml:"variables"`
-	Secrets   []string `yaml:"secrets"`
+	Provider  string   `yaml:"provider,omitempty"`
+	Variables []string `yaml:"variables,omitempty"`
+	Secrets   []string `yaml:"secrets,omitempty"`
 }
 
 // Project lifecycle event arguments

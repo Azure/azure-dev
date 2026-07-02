@@ -810,11 +810,15 @@ func (p *FoundryProvisioningProvider) brownfieldParams(
 	params := map[string]any{
 		"accountName": map[string]any{"value": account},
 		"deployments": map[string]any{"value": p.brownfieldDeployments},
+		// projectName feeds the unconditional existing `foundryAccountPreview::project`
+		// resource, so it must always be set -- even on the model-deployments-only
+		// reconcile path. Omitting it collapses the resource name to "<account>/"
+		// and fails ARM template validation with InvalidTemplate.
+		"projectName": map[string]any{"value": p.brownfieldProjectName()},
 	}
 	if createACR {
 		params["includeAcr"] = map[string]any{"value": true}
 		params["acrName"] = map[string]any{"value": p.brownfieldACRName(account)}
-		params["projectName"] = map[string]any{"value": p.brownfieldProjectName()}
 		params["tags"] = map[string]any{"value": map[string]string{"azd-env-name": p.envName}}
 		// Only set location when resolved; an empty value would override the
 		// template default (resourceGroup().location) and fail the deployment.

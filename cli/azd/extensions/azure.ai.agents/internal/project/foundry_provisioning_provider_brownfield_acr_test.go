@@ -172,13 +172,23 @@ func TestBrownfieldParams(t *testing.T) {
 
 	deployments := []synthesis.Deployment{{Name: "gpt-4o-mini"}}
 
-	t.Run("without ACR carries only account and deployments", func(t *testing.T) {
+	t.Run("without ACR still carries projectName for the existing project resource", func(t *testing.T) {
 		t.Parallel()
-		p := &FoundryProvisioningProvider{envName: "dev", brownfieldDeployments: deployments}
+		// The brownfield template declares `foundryAccountPreview::project` as an
+		// unconditional existing resource, so projectName must be supplied even
+		// when no ACR is created (model-deployments-only reconcile). Regression
+		// test for the InvalidTemplate failure where the name collapsed to
+		// "<account>/" because projectName was omitted.
+		p := &FoundryProvisioningProvider{
+			envName:               "dev",
+			brownfieldEndpoint:    "https://acct.services.ai.azure.com/api/projects/my-project",
+			brownfieldDeployments: deployments,
+		}
 		params := p.brownfieldParams(t.Context(), "acct", "rg", false)
 
 		assert.Equal(t, map[string]any{"value": "acct"}, params["accountName"])
 		assert.Equal(t, map[string]any{"value": deployments}, params["deployments"])
+		assert.Equal(t, map[string]any{"value": "my-project"}, params["projectName"])
 		assert.NotContains(t, params, "includeAcr")
 		assert.NotContains(t, params, "acrName")
 	})

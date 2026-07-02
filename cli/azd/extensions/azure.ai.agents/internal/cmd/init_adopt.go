@@ -151,28 +151,32 @@ func verifyAzureYamlDeployments(
 	noPrompt bool,
 	modelDeploymentFlag string,
 	modelFlag string,
-) (deploymentsToKeep []project.Deployment, referencedDeployments []project.Deployment, err error) {
+) (keptEntries []foundryDeploymentEntry, referencedDeployments []project.Deployment, modified bool, err error) {
 	// Get the Foundry project ID from the environment.
 	resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: envName,
 		Key:     "AZURE_AI_PROJECT_ID",
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get AZURE_AI_PROJECT_ID: %w", err)
+		return nil, nil, false, fmt.Errorf("failed to get AZURE_AI_PROJECT_ID: %w", err)
 	}
 
 	foundryProjectId := resp.Value
 	if foundryProjectId == "" {
 		// No project selected (deferred setup) — keep all deployments as-is.
 		for _, e := range entries {
-			deploymentsToKeep = append(deploymentsToKeep, e.Deployment)
+			keptEntries = append(keptEntries, e)
 		}
-		return deploymentsToKeep, nil, nil
+		// Return kept entries as referenced so AZURE_AI_MODEL_DEPLOYMENT_NAME is still written.
+		for _, e := range entries {
+			referencedDeployments = append(referencedDeployments, e.Deployment)
+		}
+		return keptEntries, referencedDeployments, false, nil
 	}
 
 	parts := strings.Split(foundryProjectId, "/")
 	if len(parts) < 9 {
-		return nil, nil, fmt.Errorf(
+		return nil, nil, false, fmt.Errorf(
 			"invalid AZURE_AI_PROJECT_ID format: expected at least 9 path segments, got %d", len(parts))
 	}
 
@@ -182,7 +186,7 @@ func verifyAzureYamlDeployments(
 
 	allDeployments, listErr := listProjectDeployments(ctx, credential, subscription, resourceGroup, accountName)
 	if listErr != nil {
-		return nil, nil, fmt.Errorf("failed to list deployments in Foundry project: %w", listErr)
+		return nil, nil, false, fmt.Errorf("failed to list deployments in Foundry project: %w", listErr)
 	}
 
 	// --model-deployment flag: auto-select the named deployment, skip interactive loop.
@@ -204,10 +208,10 @@ func verifyAzureYamlDeployments(
 					},
 				})
 				// All azure.yaml deployments are removed (existing deployment is used instead).
-				return nil, referencedDeployments, nil
+				return nil, referencedDeployments, true, nil
 			}
 		}
-		return nil, nil, exterrors.Validation(
+		return nil, nil, false, exterrors.Validation(
 			exterrors.CodeModelDeploymentNotFound,
 			fmt.Sprintf("model deployment %q not found in Foundry project", modelDeploymentFlag),
 			"verify the deployment name or omit --model-deployment to select interactively",
@@ -254,6 +258,7 @@ func verifyAzureYamlDeployments(
 						Capacity: existing.SkuCapacity,
 					},
 				})
+				modified = true
 				continue
 			}
 
@@ -306,9 +311,9 @@ func verifyAzureYamlDeployments(
 			})
 			if err != nil {
 				if exterrors.IsCancellation(err) {
-					return nil, nil, exterrors.Cancelled("model deployment verification was cancelled")
+					return nil, nil, false, exterrors.Cancelled("model deployment verification was cancelled")
 				}
-				return nil, nil, fmt.Errorf("failed to prompt for deployment choice: %w", err)
+				return nil, nil, false, fmt.Errorf("failed to prompt for deployment choice: %w", err)
 			}
 
 			selected := choices[*selectResp.Value].Value
@@ -328,23 +333,32 @@ func verifyAzureYamlDeployments(
 						Capacity: existing.SkuCapacity,
 					},
 				})
+				modified = true
 				fmt.Printf("Using existing deployment '%s'.\n", name)
 
 			case selected == "deploy":
-				deploymentsToKeep = append(deploymentsToKeep, dep)
+				keptEntries = append(keptEntries, foundryDeploymentEntry{
+					ServiceName: entry.ServiceName,
+					Deployment:  dep,
+				})
 				referencedDeployments = append(referencedDeployments, dep)
 
 			case selected == "change":
 				newDep, err := promptAlternativeDeployment(ctx, azdClient, azureContext, allDeployments, modelFlag)
 				if err != nil {
-					return nil, nil, err
+					return nil, nil, false, err
 				}
 				if newDep != nil {
-					deploymentsToKeep = append(deploymentsToKeep, *newDep)
+					keptEntries = append(keptEntries, foundryDeploymentEntry{
+						ServiceName: entry.ServiceName,
+						Deployment:  *newDep,
+					})
 					referencedDeployments = append(referencedDeployments, *newDep)
 				}
+				modified = true
 
 			case selected == "skip":
+				modified = true
 				fmt.Println(output.WithWarningFormat(
 					"Skipped model '%s'. It will be removed from the azure.yaml.", dep.Model.Name))
 			}
@@ -355,7 +369,10 @@ func verifyAzureYamlDeployments(
 				// Auto-deploy as specified.
 				log.Printf("--no-prompt: no matching deployment for model '%s', will deploy as specified",
 					dep.Model.Name)
-				deploymentsToKeep = append(deploymentsToKeep, dep)
+				keptEntries = append(keptEntries, foundryDeploymentEntry{
+					ServiceName: entry.ServiceName,
+					Deployment:  dep,
+				})
 				referencedDeployments = append(referencedDeployments, dep)
 				continue
 			}
@@ -384,34 +401,42 @@ func verifyAzureYamlDeployments(
 			})
 			if err != nil {
 				if exterrors.IsCancellation(err) {
-					return nil, nil, exterrors.Cancelled("model deployment verification was cancelled")
+					return nil, nil, false, exterrors.Cancelled("model deployment verification was cancelled")
 				}
-				return nil, nil, fmt.Errorf("failed to prompt for deployment choice: %w", err)
+				return nil, nil, false, fmt.Errorf("failed to prompt for deployment choice: %w", err)
 			}
 
 			switch noMatchChoices[*selectResp.Value].Value {
 			case "deploy":
-				deploymentsToKeep = append(deploymentsToKeep, dep)
+				keptEntries = append(keptEntries, foundryDeploymentEntry{
+					ServiceName: entry.ServiceName,
+					Deployment:  dep,
+				})
 				referencedDeployments = append(referencedDeployments, dep)
 
 			case "change":
 				newDep, err := promptAlternativeDeployment(ctx, azdClient, azureContext, allDeployments, modelFlag)
 				if err != nil {
-					return nil, nil, err
+					return nil, nil, false, err
 				}
 				if newDep != nil {
-					deploymentsToKeep = append(deploymentsToKeep, *newDep)
+					keptEntries = append(keptEntries, foundryDeploymentEntry{
+						ServiceName: entry.ServiceName,
+						Deployment:  *newDep,
+					})
 					referencedDeployments = append(referencedDeployments, *newDep)
 				}
+				modified = true
 
 			case "skip":
+				modified = true
 				fmt.Println(output.WithWarningFormat(
 					"Skipped model '%s'. It will be removed from the azure.yaml.", dep.Model.Name))
 			}
 		}
 	}
 
-	return deploymentsToKeep, referencedDeployments, nil
+	return keptEntries, referencedDeployments, modified, nil
 }
 
 // promptAlternativeDeployment lets the user browse the model catalog or pick an
@@ -769,7 +794,7 @@ func runInitFromAzureYaml(
 	// or skip, we update the on-disk azure.yaml accordingly.
 	deploymentEntries := foundryDeployments(content)
 	if len(deploymentEntries) > 0 && result != nil && result.Credential != nil {
-		deploymentsToKeep, referencedDeployments, err := verifyAzureYamlDeployments(
+		keptEntries, referencedDeployments, deploymentsModified, err := verifyAzureYamlDeployments(
 			ctx, azdClient, result.Credential, azureContext, env.Name,
 			deploymentEntries, flags.noPrompt, flags.modelDeployment, flags.model,
 		)
@@ -780,9 +805,9 @@ func runInitFromAzureYaml(
 			return err
 		}
 
-		// Update the azure.yaml if the kept deployments differ from the original.
-		if len(deploymentsToKeep) != len(deploymentEntries) || len(deploymentsToKeep) == 0 {
-			// Group deployments by service name for updating.
+		// Update the azure.yaml if deployments were modified.
+		if deploymentsModified {
+			// Group kept deployments by their originating service name.
 			byService := make(map[string][]project.Deployment)
 			for _, entry := range deploymentEntries {
 				// Initialize to empty — ensures services with all removed get an empty list.
@@ -790,31 +815,8 @@ func runInitFromAzureYaml(
 					byService[entry.ServiceName] = nil
 				}
 			}
-			for _, dep := range deploymentsToKeep {
-				// Find the service name for this deployment from original entries.
-				for _, entry := range deploymentEntries {
-					if entry.Deployment.Name == dep.Name || entry.Deployment.Model.Name == dep.Model.Name {
-						byService[entry.ServiceName] = append(byService[entry.ServiceName], dep)
-						break
-					}
-				}
-			}
-			// Also handle new deployments (from "choose different") that don't match original entries.
-			for _, dep := range deploymentsToKeep {
-				found := false
-				for _, entry := range deploymentEntries {
-					if entry.Deployment.Name == dep.Name || entry.Deployment.Model.Name == dep.Model.Name {
-						found = true
-						break
-					}
-				}
-				if !found {
-					// New model chosen — assign to the first service.
-					for svc := range byService {
-						byService[svc] = append(byService[svc], dep)
-						break
-					}
-				}
+			for _, kept := range keptEntries {
+				byService[kept.ServiceName] = append(byService[kept.ServiceName], kept.Deployment)
 			}
 
 			for svcName, deps := range byService {

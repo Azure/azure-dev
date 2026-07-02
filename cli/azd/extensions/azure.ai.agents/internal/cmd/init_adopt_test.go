@@ -416,13 +416,3 @@ services:
 		})
 	}
 }
-
-func TestStringField(t *testing.T) {
-	// stringField was removed — this test is no longer needed.
-	t.Skip("stringField helper removed in favor of typed YAML unmarshal")
-}
-
-func TestIntField(t *testing.T) {
-	// intField was removed — this test is no longer needed.
-	t.Skip("intField helper removed in favor of typed YAML unmarshal")
-}

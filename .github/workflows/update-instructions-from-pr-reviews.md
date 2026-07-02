@@ -54,19 +54,17 @@ permissions:
   copilot-requests: write
   pull-requests: read
   issues: read
+  actions: read
 
 engine: copilot
 
 tools:
   # Native GitHub MCP toolsets — no gh/jq/git needed. These let the agent list
-  # merged PRs and read their reviews, inline comments, and conversation comments.
+  # merged PRs, read their reviews/comments, and query workflow run history.
   github:
-    toolsets: [pull_requests, issues, repos]
+    toolsets: [pull_requests, issues, repos, actions]
   # Lets the agent read and edit the local .github/ customization files.
   edit:
-  # Remembers the last successful run date so "since last run" works with no
-  # external state. The agent reads/writes a small marker here each run.
-  cache-memory:
 
 safe-outputs:
   create-pull-request:
@@ -154,11 +152,13 @@ Decide which merged PRs to examine, in this order of preference:
 
 1. If the **Since** run parameter above is a real date (not `not set`), mine
    PRs merged on/after that date.
-2. Otherwise, read the **cache memory** for a marker file named
-   `last-run.txt`. If it exists, mine PRs merged after that timestamp ("since
-   last run").
-3. Otherwise (first ever run, no marker), mine PRs merged within the last 6
-   months, capped at the **Max PRs** run parameter.
+2. Otherwise, use the GitHub tools to list recent workflow runs for **this
+   workflow** (`Update Instructions From PR Reviews`) in the repository this
+   workflow runs in. Find the most recent **successful** (completed with
+   `conclusion: success`) run and use its `updated_at` timestamp as the
+   starting point — mine PRs merged after that date.
+3. Otherwise (no previous successful run found), mine PRs merged within the
+   last 6 months, capped at the **Max PRs** run parameter.
 
 The **Source repository** run parameter above already resolves to the repository
 this workflow runs in when no override was supplied, so mine PRs from whatever
@@ -279,11 +279,6 @@ automatically falls back to opening an **issue** (assigned to `copilot`) with a
 link to the pushed branch, so the proposed edits are never lost and Copilot can
 open the PR from there. You don't need to do anything special — write the body
 the same way; it's reused for the fallback issue.
-
-## 8. Record the run
-
-Write the current date (the high-water mark of mined PRs) to `last-run.txt` in
-**cache memory** so the next scheduled run only processes newer PRs.
 
 ## Guardrails
 

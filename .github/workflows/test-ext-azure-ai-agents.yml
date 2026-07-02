@@ -45,8 +45,9 @@ jobs:
       - name: Build & install inspector dependency from source
         working-directory: cli/azd/extensions/azure.ai.inspector
         run: |
-          # The azure.ai.inspector extension has not been published to the registry
-          # at 1.0.0-beta.1+ yet — build from source to satisfy the dependency.
+          # Build azure.ai.inspector from source to ensure PR CI always has a
+          # compatible version — dependency releases are post-merge, but PRs may
+          # include inspector changes from this same repo.
           pwsh -File ci-build.ps1 -OutputFileName azure-ai-inspector-linux-amd64 -Version $(cat version.txt | tr -d '\r\n')
           mkdir -p bin
           mv azure-ai-inspector-linux-amd64 bin/

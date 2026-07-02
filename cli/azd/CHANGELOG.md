@@ -8,6 +8,8 @@
 
 ### Bugs Fixed
 
+- [[#PRNUM]](https://github.com/Azure/azure-dev/pull/PRNUM) Dynamic linker/loader control variables (such as `LD_PRELOAD`, `LD_LIBRARY_PATH`, `LD_AUDIT`, and `DYLD_INSERT_LIBRARIES`) defined in an environment's `.env` file are no longer forwarded into tool subprocesses (docker, npm, python, and others).
+
 ### Other Changes
 
 ## 1.27.0 (2026-06-30)

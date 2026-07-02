@@ -1,5 +1,17 @@
 # Release History
 
+## 1.0.0-beta.3 (Unreleased)
+
+### Features Added
+
+### Breaking Changes
+
+### Bugs Fixed
+
+- `azd ai agent init` writes an agent service `environmentVariables` list that the `azure.ai.agent` schema did not define. Add the `environmentVariables` property (a list of `name`/`value` pairs) to the schema so the generated `azure.yaml` validates and editors complete it.
+
+### Other Changes
+
 ## 1.0.0-beta.2 (2026-07-01)
 
 ### Bugs Fixed

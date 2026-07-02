@@ -25,3 +25,8 @@ services:
     kind: hosted
     name: assistant
     description: A simple assistant.
+    environmentVariables:
+      - name: LOG_LEVEL
+        value: info
+      - name: MODEL_ENDPOINT
+        value: ${FOUNDRY_PROJECT_ENDPOINT}

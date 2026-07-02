@@ -108,6 +108,10 @@ type MemoryStoreObject struct {
 	Id          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+	// Definition reflects the live configuration of the memory store as stored by the
+	// service. It lets callers detect when a declared definition has diverged from an
+	// existing store.
+	Definition MemoryStoreDefinition `json:"definition"`
 }
 
 // CreateMemoryStore creates a new memory store in the Foundry project.

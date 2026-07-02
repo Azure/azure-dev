@@ -81,8 +81,11 @@ func TestGetMemoryStore_EscapesNameAndParsesResponse(t *testing.T) {
 			capturedReq = req
 			return &http.Response{
 				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(strings.NewReader(`{"id":"ms-2","name":"a b"}`)),
-				Request:    req,
+				Body: io.NopCloser(strings.NewReader(
+					`{"id":"ms-2","name":"a b","definition":{"kind":"default",` +
+						`"chat_model":"gpt-5.2","embedding_model":"text-embedding-3-small",` +
+						`"options":{"user_profile_enabled":true}}}`)),
+				Request: req,
 			}, nil
 		})
 
@@ -91,6 +94,13 @@ func TestGetMemoryStore_EscapesNameAndParsesResponse(t *testing.T) {
 	require.Equal(t, "ms-2", store.Id)
 	require.Equal(t, http.MethodGet, capturedReq.Method)
 	require.Equal(t, "/api/projects/proj/memory_stores/a%20b", capturedReq.URL.EscapedPath())
+
+	// The live definition is parsed so callers can detect drift against declared config.
+	require.Equal(t, "gpt-5.2", store.Definition.ChatModel)
+	require.Equal(t, "text-embedding-3-small", store.Definition.EmbeddingModel)
+	require.NotNil(t, store.Definition.Options)
+	require.NotNil(t, store.Definition.Options.UserProfileEnabled)
+	require.True(t, *store.Definition.Options.UserProfileEnabled)
 }
 
 func TestEnsureMemoryStore_ExistingStoreIsLeftAsIs(t *testing.T) {

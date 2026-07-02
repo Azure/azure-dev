@@ -1102,8 +1102,10 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 // provisionMemoryStores creates any Foundry memory stores declared in the service target
 // configuration. Provisioning is idempotent: a store that already exists is left unchanged,
-// so deployments are safe to re-run. ChatModel and EmbeddingModel reference model deployment
-// names that must already exist in the Foundry project.
+// so deployments are safe to re-run. Because azd never updates an existing store, a warning
+// is emitted when a declared definition diverges from the live store so a changed azure.yaml
+// value is not silently ignored. ChatModel and EmbeddingModel reference model deployment names
+// that must already exist in the Foundry project.
 func (p *AgentServiceTargetProvider) provisionMemoryStores(
 	ctx context.Context,
 	config *ServiceTargetAgentConfig,
@@ -1112,6 +1114,12 @@ func (p *AgentServiceTargetProvider) provisionMemoryStores(
 ) error {
 	if config == nil || len(config.MemoryStores) == 0 {
 		return nil
+	}
+
+	// Validate every declared store up front, before talking to the service, so a bad
+	// entry fails fast without half-provisioning the stores that precede it.
+	if err := validateMemoryStores(config.MemoryStores); err != nil {
+		return err
 	}
 
 	if projectEndpoint == "" {
@@ -1126,6 +1134,48 @@ func (p *AgentServiceTargetProvider) provisionMemoryStores(
 	client := azure.NewFoundryMemoryStoreClient(projectEndpoint, p.credential)
 
 	for _, store := range config.MemoryStores {
+		if progress != nil {
+			progress(fmt.Sprintf("Provisioning memory store %q", store.Name))
+		}
+
+		request := &azure.CreateMemoryStoreRequest{
+			Name:        store.Name,
+			Description: store.Description,
+			Definition: azure.MemoryStoreDefinition{
+				Kind:           azure.MemoryStoreKindDefault,
+				ChatModel:      store.ChatModel,
+				EmbeddingModel: store.EmbeddingModel,
+				Options:        mapMemoryStoreOptions(store.Options),
+			},
+		}
+
+		existing, created, err := client.EnsureMemoryStore(ctx, request)
+		if err != nil {
+			return exterrors.ServiceFromAzure(err, exterrors.OpProvisionMemoryStore)
+		}
+
+		if created {
+			if progress != nil {
+				progress(fmt.Sprintf("Created memory store %q", store.Name))
+			}
+			continue
+		}
+
+		// The store already exists. azd does not update existing stores, so surface any
+		// azure.yaml changes that were not applied instead of silently ignoring them.
+		if drift := memoryStoreDefinitionDrift(request.Definition, existing.Definition); len(drift) > 0 {
+			writeMemoryStoreDriftWarning(store.Name, drift)
+		} else if progress != nil {
+			progress(fmt.Sprintf("Memory store %q already exists; leaving as-is", store.Name))
+		}
+	}
+
+	return nil
+}
+
+// validateMemoryStores checks that every declared memory store has the required fields.
+func validateMemoryStores(stores []MemoryStore) error {
+	for _, store := range stores {
 		if store.Name == "" {
 			return exterrors.Validation(
 				exterrors.CodeInvalidMemoryStore,
@@ -1144,35 +1194,76 @@ func (p *AgentServiceTargetProvider) provisionMemoryStores(
 					"available in your Foundry project",
 			)
 		}
-
-		if progress != nil {
-			progress(fmt.Sprintf("Provisioning memory store %q", store.Name))
-		}
-
-		request := &azure.CreateMemoryStoreRequest{
-			Name:        store.Name,
-			Description: store.Description,
-			Definition: azure.MemoryStoreDefinition{
-				Kind:           azure.MemoryStoreKindDefault,
-				ChatModel:      store.ChatModel,
-				EmbeddingModel: store.EmbeddingModel,
-				Options:        mapMemoryStoreOptions(store.Options),
-			},
-		}
-
-		_, created, err := client.EnsureMemoryStore(ctx, request)
-		if err != nil {
-			return exterrors.ServiceFromAzure(err, exterrors.OpProvisionMemoryStore)
-		}
-
-		if created {
-			fmt.Println(output.WithSuccessFormat("Created memory store %q", store.Name))
-		} else {
-			fmt.Println(output.WithGrayFormat("Memory store %q already exists; leaving as-is", store.Name))
-		}
 	}
 
 	return nil
+}
+
+// memoryStoreDefinitionDrift returns a human-readable list of the fields where the declared
+// definition diverges from the live store. Only fields the user explicitly declared are
+// compared, so unset options (which fall back to service defaults) never report false drift.
+func memoryStoreDefinitionDrift(declared, live azure.MemoryStoreDefinition) []string {
+	var drift []string
+
+	if declared.ChatModel != live.ChatModel {
+		drift = append(drift, fmt.Sprintf("chatModel (declared %q, current %q)",
+			declared.ChatModel, live.ChatModel))
+	}
+	if declared.EmbeddingModel != live.EmbeddingModel {
+		drift = append(drift, fmt.Sprintf("embeddingModel (declared %q, current %q)",
+			declared.EmbeddingModel, live.EmbeddingModel))
+	}
+
+	if declared.Options == nil {
+		return drift
+	}
+
+	var liveOpts azure.MemoryStoreOptions
+	if live.Options != nil {
+		liveOpts = *live.Options
+	}
+
+	if boolPtrDiffers(declared.Options.ChatSummaryEnabled, liveOpts.ChatSummaryEnabled) {
+		drift = append(drift, fmt.Sprintf("options.chatSummaryEnabled (declared %v)",
+			*declared.Options.ChatSummaryEnabled))
+	}
+	if boolPtrDiffers(declared.Options.UserProfileEnabled, liveOpts.UserProfileEnabled) {
+		drift = append(drift, fmt.Sprintf("options.userProfileEnabled (declared %v)",
+			*declared.Options.UserProfileEnabled))
+	}
+	if boolPtrDiffers(declared.Options.ProceduralMemoryEnabled, liveOpts.ProceduralMemoryEnabled) {
+		drift = append(drift, fmt.Sprintf("options.proceduralMemoryEnabled (declared %v)",
+			*declared.Options.ProceduralMemoryEnabled))
+	}
+	if declared.Options.DefaultTTLSeconds != nil &&
+		(liveOpts.DefaultTTLSeconds == nil || *declared.Options.DefaultTTLSeconds != *liveOpts.DefaultTTLSeconds) {
+		drift = append(drift, fmt.Sprintf("options.defaultTtlSeconds (declared %d)",
+			*declared.Options.DefaultTTLSeconds))
+	}
+	if declared.Options.UserProfileDetails != "" &&
+		declared.Options.UserProfileDetails != liveOpts.UserProfileDetails {
+		drift = append(drift, "options.userProfileDetails")
+	}
+
+	return drift
+}
+
+// boolPtrDiffers reports whether a declared bool pointer is set and differs from the live value.
+func boolPtrDiffers(declared, live *bool) bool {
+	if declared == nil {
+		return false
+	}
+	return live == nil || *declared != *live
+}
+
+// writeMemoryStoreDriftWarning warns that azure.yaml changes were not applied to an existing store.
+func writeMemoryStoreDriftWarning(name string, drift []string) {
+	fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
+		"Memory store %q already exists; azd does not update existing memory stores, so the "+
+			"following azure.yaml change(s) were NOT applied: %s. To apply them, delete the store "+
+			"in the Foundry portal (or give it a new name) and redeploy.\n",
+		name, strings.Join(drift, ", "),
+	))
 }
 
 // mapMemoryStoreOptions converts the azure.yaml memory store options into the API request shape.

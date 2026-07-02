@@ -60,9 +60,9 @@ engine: copilot
 
 tools:
   # Native GitHub MCP toolsets — no gh/jq/git needed. These let the agent list
-  # merged PRs and read their reviews, inline comments, and conversation comments.
+  # merged PRs, read their reviews/comments, and query workflow run history.
   github:
-    toolsets: [pull_requests, issues, repos]
+    toolsets: [pull_requests, issues, repos, actions]
   # Lets the agent read and edit the local .github/ customization files.
   edit:
 

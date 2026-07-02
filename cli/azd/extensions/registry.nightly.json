@@ -464,7 +464,7 @@
       "description": "Manage Microsoft Foundry Project resources from your terminal. (Beta)",
       "versions": [
         {
-          "version": "1.0.0-beta.1.nightly.6505745",
+          "version": "1.0.0-beta.1.nightly.6511587",
           "requiredAzdVersion": ">=1.27.0",
           "capabilities": [
             "custom-commands",
@@ -484,7 +484,7 @@
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "375e831b9d9c635de37d58a9d4895a04caff0f24da22c0abd681e304bf933bd8"
+                "value": "cffb60296666190be1933147511c92f92e9af009d41431f794a444e71b77eae3"
               },
               "entryPoint": "azure-ai-projects-darwin-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-projects/nightly/azure-ai-projects-darwin-amd64.zip"
@@ -492,7 +492,7 @@
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "5161cf57e7589a04c58e26a7acc1cd3cc01ec85bd46ce985a66555d17fceaece"
+                "value": "25cecf2e542277b80b98a1c3b9a52dd4e2a49d690ccabf4b143dc0a29cab3341"
               },
               "entryPoint": "azure-ai-projects-darwin-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-projects/nightly/azure-ai-projects-darwin-arm64.zip"
@@ -500,7 +500,7 @@
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "0ad0a52fcbbc936d7d7585379c0fd450fc1a2a01cd197c57c361504c9b95c9e4"
+                "value": "a81b1826c0aed8dbc76aa777f6ae068bec8fff50c56c7fb41c977d4a0038ad06"
               },
               "entryPoint": "azure-ai-projects-linux-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-projects/nightly/azure-ai-projects-linux-amd64.tar.gz"
@@ -508,7 +508,7 @@
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "a2bfd84a011f53b655de77b7a815bacdecb7e77f7581036caeb68b28e62f68f4"
+                "value": "8ef14cc4be17444c82cedcadc9f523034f64b9ad4f367fae41a8aa31951b4c34"
               },
               "entryPoint": "azure-ai-projects-linux-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-projects/nightly/azure-ai-projects-linux-arm64.tar.gz"
@@ -516,7 +516,7 @@
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "56782ec449d037c4653cc6a5a8fa3c70dbf1705ddbcef770e54a8e5511fc081b"
+                "value": "f1595b4d159e0ed6e43596c91cae6dc3bbe350cfe2f17b75d01b9f0294e076ce"
               },
               "entryPoint": "azure-ai-projects-windows-amd64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-projects/nightly/azure-ai-projects-windows-amd64.zip"
@@ -524,7 +524,7 @@
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "9e479dca499dbf4152efc345f4d9dcbdd5129fdb1e478113ff1c098347edbf7e"
+                "value": "04ab924702ccc0ab2e33d60be94f5c5e8e6460d4b13f738fbd943a24ba990781"
               },
               "entryPoint": "azure-ai-projects-windows-arm64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-projects/nightly/azure-ai-projects-windows-arm64.zip"

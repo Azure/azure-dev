@@ -6,6 +6,7 @@ package cmd
 import (
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 	"context"
@@ -545,6 +546,15 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		CodeConfiguration: codeConfig,
 	}
 
+	// An activity-protocol (Teams) agent additionally advertises the friendly
+	// "activity" endpoint guarded by BotServiceRbac. Injecting it here mirrors
+	// the manifest-based init so the generated azure.yaml is identical and
+	// `azd deploy` provisions the Teams bot. Phase 1 covers the simple use case;
+	// digital-worker is a Phase 2 addition. No-op for non-activity agents.
+	if project.IsActivityProtocol(*definition) {
+		definition.AgentEndpoint = project.ActivityAgentEndpoint()
+	}
+
 	// Add model resource if a model was selected
 	if existingDeployment != nil {
 		// Existing deployment: reference it by name only. Per REFERENCE.md an
@@ -893,6 +903,7 @@ type protocolInfo struct {
 var knownProtocols = []protocolInfo{
 	{Name: "responses", Version: "2.0.0"},
 	{Name: "invocations", Version: "1.0.0"},
+	{Name: "activity_protocol", Version: "v1"},
 }
 
 // promptProtocols asks the user which protocols their agent supports.
@@ -933,6 +944,9 @@ func promptProtocols(
 				Protocol: name,
 				Version:  version,
 			})
+		}
+		if err := validateProtocolSelection(records); err != nil {
+			return nil, err
 		}
 		return records, nil
 	}
@@ -994,7 +1008,33 @@ func promptProtocols(
 		)
 	}
 
+	if err := validateProtocolSelection(records); err != nil {
+		return nil, err
+	}
+
 	return records, nil
+}
+
+// validateProtocolSelection rejects combining activity_protocol with any other
+// protocol. An activity-protocol (Teams) agent exposes only the activity
+// endpoint, matching how such agents are declared in a manifest; mixing it with
+// responses/invocations would produce an azure.yaml that does not match the
+// manifest shape and is not a supported activity configuration.
+func validateProtocolSelection(records []agent_yaml.ProtocolVersionRecord) error {
+	if len(records) < 2 {
+		return nil
+	}
+	for _, r := range records {
+		if agent_api.AgentProtocol(r.Protocol) == agent_api.AgentProtocolActivityProtocol {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				"activity_protocol cannot be combined with other protocols",
+				"An activity-protocol (Teams) agent exposes only the activity endpoint; "+
+					"select activity_protocol on its own.",
+			)
+		}
+	}
+	return nil
 }
 
 // knownProtocolNames returns a comma-separated list of known protocol names.

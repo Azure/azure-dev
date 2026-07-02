@@ -64,3 +64,18 @@ func ResolveActivityProfile(ca agent_yaml.ContainerAgent) ActivityProfile {
 	}
 	return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple}
 }
+
+// ActivityAgentEndpoint returns the agent_endpoint declaration an
+// activity-protocol (Teams) agent requires: the friendly "activity" protocol
+// guarded by the BotServiceRbac authorization scheme. `azd init` uses it to make
+// an activity agent scaffolded from local code carry the exact same declaration
+// as one initialized from a manifest, so the generated azure.yaml is identical
+// and `azd deploy` provisions the Teams bot. Phase 1 covers the simple use case.
+func ActivityAgentEndpoint() *agent_yaml.AgentEndpoint {
+	return &agent_yaml.AgentEndpoint{
+		Protocols: []string{string(agent_api.AgentEndpointProtocolActivity)},
+		AuthorizationSchemes: []agent_yaml.AuthorizationScheme{
+			{Type: string(agent_api.AgentEndpointAuthSchemeBotServiceRbac)},
+		},
+	}
+}

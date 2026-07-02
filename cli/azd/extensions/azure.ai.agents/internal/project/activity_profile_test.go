@@ -152,3 +152,25 @@ func TestActivityDeclarationSurvivesInitRoundTrip(t *testing.T) {
 	require.Len(t, got.AgentEndpoint.AuthorizationSchemes, 1)
 	require.Equal(t, "BotServiceRbac", got.AgentEndpoint.AuthorizationSchemes[0].Type)
 }
+
+// TestActivityAgentEndpoint pins the endpoint declaration that `azd init` from
+// local code injects for an activity_protocol agent. It must match the
+// manifest-based shape (friendly "activity" protocol guarded by BotServiceRbac)
+// so the two init paths produce identical azure.yaml and both satisfy deploy.
+func TestActivityAgentEndpoint(t *testing.T) {
+	ep := ActivityAgentEndpoint()
+	require.NotNil(t, ep)
+	require.Equal(t, []string{"activity"}, ep.Protocols)
+	require.Len(t, ep.AuthorizationSchemes, 1)
+	require.Equal(t, "BotServiceRbac", ep.AuthorizationSchemes[0].Type)
+
+	// A definition assembled the way init_from_code does (protocol record +
+	// injected endpoint) must be recognized as an activity agent.
+	ca := agent_yaml.ContainerAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindHosted, Name: "echo"},
+		Protocols:       []agent_yaml.ProtocolVersionRecord{{Protocol: "activity_protocol", Version: "v1"}},
+		AgentEndpoint:   ActivityAgentEndpoint(),
+	}
+	require.True(t, IsActivityProtocol(ca))
+	require.Equal(t, ActivityUseCaseSimple, ResolveActivityProfile(ca).UseCase)
+}

@@ -115,7 +115,7 @@ func newDeployCommand() *cobra.Command {
 				return serviceError(err)
 			}
 			state.EnvironmentId = environment.Id
-			state.EnvironmentVersion = firstNonEmpty(environment.Version, environment.VersionLabel)
+			state.EnvironmentVersion = environment.Version
 			if err := saveRleState(state); err != nil {
 				return err
 			}
@@ -135,9 +135,9 @@ func newDeployCommand() *cobra.Command {
 			}
 			body, err := json.MarshalIndent(environmentOutput{
 				EnvironmentId: environment.Id,
-				ProjectId:     firstNonEmpty(environment.ProjectId, state.Project),
-				Name:          firstNonEmpty(environment.Name, state.Name),
-				AcrImage:      firstNonEmpty(environment.AcrImagePath, image),
+				ProjectId:     environment.ProjectId,
+				Name:          environment.Name,
+				AcrImage:      environment.AcrImagePath,
 				Version:       state.EnvironmentVersion,
 				CreatedAt:     environment.CreatedAt,
 				UpdatedAt:     environment.UpdatedAt,

@@ -212,7 +212,8 @@ func TestInitCopiesOpenEnvEchoSampleByDefault(t *testing.T) {
 	if strings.Contains(output.String(), sessionDir) {
 		t.Fatalf("expected init output not to use absolute cd path, got %s", output.String())
 	}
-	if !strings.Contains(output.String(), `cd ".\echo_env"`) {
+	expectedCd := `cd "` + "." + string(os.PathSeparator) + "echo_env" + `"`
+	if !strings.Contains(output.String(), expectedCd) {
 		t.Fatalf("expected init output to quote relative cd path, got %s", output.String())
 	}
 }

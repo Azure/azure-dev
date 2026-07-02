@@ -27,10 +27,15 @@ func TestTeamsSetupGuideContent(t *testing.T) {
 	for _, link := range []string{
 		"learn.microsoft.com/microsoftteams/platform/concepts/build-and-test/apps-package",
 		"learn.microsoft.com/microsoftteams/platform/concepts/deploy-and-publish/apps-upload",
+		"dev.teams.microsoft.com/apps",
 	} {
 		if !strings.Contains(content, link) {
 			t.Errorf("guide missing official doc link %q", link)
 		}
+	}
+	// The guide must give the concrete sideload step, not just link out.
+	if !strings.Contains(content, "Upload a custom app") {
+		t.Errorf("guide missing the concrete sideload step")
 	}
 	if strings.Contains(content, "package-teams-app.ps1") {
 		t.Errorf("guide must not reference sample-specific scripts")

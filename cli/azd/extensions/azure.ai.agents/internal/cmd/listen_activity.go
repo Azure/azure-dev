@@ -127,46 +127,82 @@ func writeTeamsSetupGuide(
 	return guidePath
 }
 
-// teamsSetupGuideContent renders the Teams onboarding guide markdown. The single
-// value the user must not get wrong is the bot id: a Teams app manifest's
-// bots[].id MUST equal this bot's msaAppId, which azd bound to the agent
-// instance identity.
+// teamsSetupGuideContent renders the Teams onboarding guide markdown. It gives
+// concrete, minimal step-by-step instructions for the two manual actions
+// (package the Teams app, then sideload it) and links to the official docs for
+// detail. The single value the user must not get wrong is the bot id: a Teams
+// app manifest's bots[].botId MUST equal this bot's msaAppId, which azd bound to
+// the agent instance identity.
 func teamsSetupGuideContent(agentName, botName, msaAppID string) string {
 	return fmt.Sprintf(`# Connect %[1]s to Microsoft Teams
 
-`+"`azd deploy`"+` provisioned the Azure resources for you:
+`+"`azd deploy`"+` already did the Azure side for you:
 
 - Azure Bot: `+"`%[2]s`"+` (Microsoft Teams channel enabled)
-- Bot ID (msaAppId): `+"`%[3]s`"+`
+- Bot ID (msaAppId): `+"`%[3]s`"+`  <- you will paste this as the bot id
 
-Two manual steps remain on the Microsoft 365 side. They are the same for any
-activity-protocol agent.
+Two manual steps remain: (A) create a Teams app package, then (B) upload it.
+They are the same for any activity-protocol agent.
 
-## 1. Package the Teams app
+## A. Create the Teams app package
 
-Build a Teams app package (a .zip containing manifest.json + a color and outline
-icon). In the manifest, set the bot id to the value above:
+Pick ONE of the two ways below.
+
+### Easiest — Teams Developer Portal (no files by hand)
+
+1. Open https://dev.teams.microsoft.com/apps and select **+ New app**; enter a name.
+2. Fill **Basic information** (short/long description, developer name and URLs).
+3. Left menu **App features** -> **Bot** -> **Select an existing bot** -> enter the
+   Bot ID `+"`%[3]s`"+`, tick the **Personal** scope, then **Save**.
+4. **Publish** -> **Download the app package** — this gives you a ready-to-upload .zip.
+
+Developer Portal guide: https://learn.microsoft.com/microsoftteams/platform/concepts/build-and-test/teams-developer-portal
+
+### Or by hand — build the .zip yourself
+
+Put these three files in a folder and zip them at the **root** (not inside a subfolder):
+
+- `+"`manifest.json`"+` (below)
+- `+"`color.png`"+`  — 192x192 px
+- `+"`outline.png`"+` — 32x32 px, transparent background
 
 `+"```json"+`
-"bots": [{ "botId": "%[3]s", "scopes": ["personal"] }]
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.19/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.19",
+  "version": "1.0.0",
+  "id": "REPLACE-WITH-A-NEW-GUID",
+  "developer": {
+    "name": "Your Company",
+    "websiteUrl": "https://example.com",
+    "privacyUrl": "https://example.com/privacy",
+    "termsOfUseUrl": "https://example.com/terms"
+  },
+  "name": { "short": "%[1]s", "full": "%[1]s" },
+  "description": { "short": "%[1]s agent", "full": "%[1]s agent on Microsoft Teams" },
+  "icons": { "color": "color.png", "outline": "outline.png" },
+  "accentColor": "#FFFFFF",
+  "bots": [{ "botId": "%[3]s", "scopes": ["personal"] }]
+}
 `+"```"+`
 
-- App package overview: https://learn.microsoft.com/microsoftteams/platform/concepts/build-and-test/apps-package
-- Manifest schema: https://learn.microsoft.com/microsoftteams/platform/resources/schema/manifest-schema
-- Bots in Teams: https://learn.microsoft.com/microsoftteams/platform/bots/how-to/create-a-bot-for-teams
+Note: `+"`id`"+` is a NEW GUID for the app itself (generate one) — it is NOT the Bot ID.
+Only `+"`bots[].botId`"+` uses the Bot ID above.
 
-Tip: the Microsoft 365 Agents Toolkit can scaffold and package the manifest for you:
-https://learn.microsoft.com/microsoftteams/platform/toolkit/agents-toolkit-fundamentals
+- Package + icon requirements: https://learn.microsoft.com/microsoftteams/platform/concepts/build-and-test/apps-package
+- Manifest schema reference: https://learn.microsoft.com/microsoftteams/platform/resources/schema/manifest-schema
+- Validate your .zip before uploading: https://dev.teams.microsoft.com/tools/store-validation
 
-## 2. Sideload (upload) the app
+## B. Upload (sideload) the app
 
-Enable custom app upload for your tenant, then upload the package in Teams:
-Apps -> Manage your apps -> Upload an app -> Upload a custom app.
+Prerequisite: your tenant must allow custom app upload — a Teams admin enables it once:
+https://learn.microsoft.com/microsoftteams/platform/concepts/build-and-test/prepare-your-o365-tenant
 
-- Upload a custom app: https://learn.microsoft.com/microsoftteams/platform/concepts/deploy-and-publish/apps-upload
-- Enable custom app upload: https://learn.microsoft.com/microsoftteams/platform/concepts/build-and-test/prepare-your-o365-tenant
+1. In Teams, go to **Apps** -> **Manage your apps** -> **Upload an app**.
+2. Select **Upload a custom app**, choose your .zip, then **Add**.
+3. Select **Open**, then send a message to talk to your agent.
 
-Once uploaded, open the app in Teams and send a message to talk to your agent.
+Upload a custom app guide: https://learn.microsoft.com/microsoftteams/platform/concepts/deploy-and-publish/apps-upload
 `, agentName, botName, msaAppID)
 }
 

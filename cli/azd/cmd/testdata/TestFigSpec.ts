@@ -570,15 +570,6 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'chat-isolation-key',
-												},
-											],
-										},
-										{
 											name: ['--file', '-f'],
 											description: 'Remote file or directory path to delete',
 											args: [
@@ -601,11 +592,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
 												},
 											],
 										},
@@ -621,15 +612,6 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
-												},
-											],
-										},
-										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -661,11 +643,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
 												},
 											],
 										},
@@ -681,15 +663,6 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
-												},
-											],
-										},
-										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -713,11 +686,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
 												},
 											],
 										},
@@ -733,15 +706,6 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
-												},
-											],
-										},
-										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -764,11 +728,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
 												},
 											],
 										},
@@ -784,15 +748,6 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
-												},
-											],
-										},
-										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -816,11 +771,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
 												},
 											],
 										},
@@ -836,15 +791,6 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
-												},
-											],
-										},
-										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -876,11 +822,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
 												},
 											],
 										},
@@ -912,7 +858,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--deploy-mode'],
-									description: 'Deployment mode: \'container\' (Docker image) or \'code\' (ZIP upload). Defaults to \'container\' in --no-prompt.',
+									description: 'Deployment mode: \'container\' (Docker image) or \'code\' (ZIP upload). Defaults to \'code\' for Python/.NET projects in --no-prompt.',
 									args: [
 										{
 											name: 'deploy-mode',
@@ -934,8 +880,26 @@ const completionSpec: Fig.Spec = {
 									isDangerous: true,
 								},
 								{
+									name: ['--image'],
+									description: 'Pre-built container image URL (e.g., \'myacr.azurecr.io/agent:v1\'). When set without --manifest, skips template/language selection, code scaffolding, Dockerfile generation, and ACR setup, and requires --agent-name. Incompatible with --deploy-mode code.',
+									args: [
+										{
+											name: 'image',
+										},
+									],
+								},
+								{
+									name: ['--infra'],
+									description: 'Eject infrastructure-as-code from azure.yaml into ./infra/. A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets infra.provider: terraform; --infra=bicep is explicit Bicep. When azure.yaml already exists, runs as a standalone eject and skips the init prompts.',
+									args: [
+										{
+											name: 'infra',
+										},
+									],
+								},
+								{
 									name: ['--manifest', '-m'],
-									description: 'Path or URI to an agent manifest to add to your azd project',
+									description: 'Path or URI to an agent manifest, or to a sample\'s unified azure.yaml to adopt as the project manifest',
 									args: [
 										{
 											name: 'manifest',
@@ -1013,11 +977,11 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
-									name: ['--chat-isolation-key'],
-									description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+									name: ['--call-id'],
+									description: 'Call ID header value (sent as x-agent-foundry-call-id for local invocations only; ignored for remote requests)',
 									args: [
 										{
-											name: 'chat-isolation-key',
+											name: 'call-id',
 										},
 									],
 								},
@@ -1098,11 +1062,11 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
-									name: ['--user-isolation-key'],
-									description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+									name: ['--user-identity'],
+									description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 									args: [
 										{
-											name: 'user-isolation-key',
+											name: 'user-identity',
 										},
 									],
 								},
@@ -1121,15 +1085,6 @@ const completionSpec: Fig.Spec = {
 							name: ['monitor'],
 							description: 'Monitor logs from a hosted agent.',
 							options: [
-								{
-									name: ['--chat-isolation-key'],
-									description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-									args: [
-										{
-											name: 'chat-isolation-key',
-										},
-									],
-								},
 								{
 									name: ['--follow', '-f'],
 									description: 'Stream logs in real-time',
@@ -1166,11 +1121,11 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
-									name: ['--user-isolation-key'],
-									description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+									name: ['--user-identity'],
+									description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 									args: [
 										{
-											name: 'user-isolation-key',
+											name: 'user-identity',
 										},
 									],
 								},
@@ -1560,24 +1515,6 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'chat-isolation-key',
-												},
-											],
-										},
-										{
-											name: ['--isolation-key'],
-											description: 'Session ownership isolation key header value (x-session-isolation-key; derived from Entra token by default)',
-											args: [
-												{
-													name: 'isolation-key',
-												},
-											],
-										},
-										{
 											name: ['--output', '-o'],
 											description: 'The output format',
 											args: [
@@ -1597,11 +1534,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
 												},
 											],
 										},
@@ -1630,29 +1567,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'chat-isolation-key',
-												},
-											],
-										},
-										{
-											name: ['--isolation-key'],
-											description: 'Session ownership isolation key header value (x-session-isolation-key; derived from Entra token by default)',
-											args: [
-												{
-													name: 'isolation-key',
-												},
-											],
-										},
-										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
 												},
 											],
 										},
@@ -1668,15 +1587,6 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
-												},
-											],
-										},
-										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -1709,11 +1619,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
 												},
 											],
 										},
@@ -1733,15 +1643,6 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'chat-isolation-key',
-												},
-											],
-										},
-										{
 											name: ['--output', '-o'],
 											description: 'The output format',
 											args: [
@@ -1752,11 +1653,35 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['stop'],
+									description: 'Stop a running session.',
+									options: [
+										{
+											name: ['--agent-name', '-n'],
+											description: 'Agent name (matches azure.yaml service name; auto-detected when only one exists)',
+											args: [
+												{
+													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
+											args: [
+												{
+													name: 'user-identity',
 												},
 											],
 										},

@@ -193,16 +193,19 @@ Only `+"`bots[].botId`"+` uses the Bot ID above.
 - Manifest schema reference: https://learn.microsoft.com/microsoftteams/platform/resources/schema/manifest-schema
 - Validate your .zip before uploading: https://dev.teams.microsoft.com/tools/store-validation
 
-## B. Upload (sideload) the app
+## B. Upload (sideload) the app — just for yourself
 
-Prerequisite: your tenant must allow custom app upload — a Teams admin enables it once:
-https://learn.microsoft.com/microsoftteams/platform/concepts/build-and-test/prepare-your-o365-tenant
+You do NOT need a Teams admin to try it yourself:
 
 1. In Teams, go to **Apps** -> **Manage your apps** -> **Upload an app**.
 2. Select **Upload a custom app**, choose your .zip, then **Add**.
 3. Select **Open**, then send a message to talk to your agent.
 
 Upload a custom app guide: https://learn.microsoft.com/microsoftteams/platform/concepts/deploy-and-publish/apps-upload
+
+If **Upload a custom app** is missing or greyed out, custom app upload is turned off for
+your tenant, or you want everyone in your org to get it from the org app catalog. Both need
+a Teams admin: https://learn.microsoft.com/microsoftteams/platform/concepts/build-and-test/prepare-your-o365-tenant
 `, agentName, botName, msaAppID)
 }
 

@@ -380,6 +380,15 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		return fmt.Errorf("agent identity RBAC setup failed: %w", err)
 	}
 
+	// For activity-protocol (Teams) agents, provision the Azure Bot + Teams
+	// channel bound to the agent instance identity. No-op for other agents.
+	if err := ensureActivityBot(
+		ctx, azdClient, cred, envName, svc, args.Project,
+		endpointResp.Value, tenantResp.Value, versionObj,
+	); err != nil {
+		return fmt.Errorf("failed to configure Teams bot for agent %q: %w", svc.Name, err)
+	}
+
 	// Report optimization candidate deployment (best-effort: panics are logged, not propagated).
 	func() {
 		defer func() {
@@ -417,6 +426,10 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 			fmt.Printf("Cleaned up saved session and conversation for agent %q\n", svc.Name)
 		}
 	}
+
+	// Delete the Azure Bot created for activity-protocol agents so its globally
+	// unique name is freed for future redeploys. Best-effort.
+	teardownActivityBots(ctx, azdClient, envName, args.Project)
 
 	return nil
 }

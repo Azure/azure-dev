@@ -100,7 +100,7 @@ func TestEnsureBotIsIdempotentAcrossRuns(t *testing.T) {
 	channels := &fakeChannels{}
 	c := &Client{bots: bots, channels: channels}
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if err := c.EnsureBot(context.Background(), validConfig()); err != nil {
 			t.Fatalf("run %d: EnsureBot error: %v", i, err)
 		}

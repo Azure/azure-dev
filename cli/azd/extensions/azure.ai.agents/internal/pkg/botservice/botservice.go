@@ -149,15 +149,15 @@ func (c *Client) EnsureBot(ctx context.Context, cfg BotConfig) error {
 	}
 
 	bot := armbotservice.Bot{
-		Location: to.Ptr(botLocation),
+		Location: new(botLocation),
 		Kind:     to.Ptr(armbotservice.KindAzurebot),
 		SKU:      &armbotservice.SKU{Name: to.Ptr(armbotservice.SKUNameF0)},
 		Properties: &armbotservice.BotProperties{
-			DisplayName:    to.Ptr(cfg.displayName()),
-			Endpoint:       to.Ptr(cfg.MessagingEndpoint),
-			MsaAppID:       to.Ptr(cfg.MsaAppID),
+			DisplayName:    new(cfg.displayName()),
+			Endpoint:       new(cfg.MessagingEndpoint),
+			MsaAppID:       new(cfg.MsaAppID),
 			MsaAppType:     to.Ptr(armbotservice.MsaAppTypeSingleTenant),
-			MsaAppTenantID: to.Ptr(cfg.TenantID),
+			MsaAppTenantID: new(cfg.TenantID),
 		},
 	}
 
@@ -170,11 +170,11 @@ func (c *Client) EnsureBot(ctx context.Context, cfg BotConfig) error {
 
 func (c *Client) ensureTeamsChannel(ctx context.Context, resourceGroup, botName string) error {
 	channel := armbotservice.BotChannel{
-		Location: to.Ptr(botLocation),
+		Location: new(botLocation),
 		Properties: &armbotservice.MsTeamsChannel{
-			ChannelName: to.Ptr(teamsChannelName),
+			ChannelName: new(teamsChannelName),
 			Properties: &armbotservice.MsTeamsChannelProperties{
-				IsEnabled: to.Ptr(true),
+				IsEnabled: new(true),
 			},
 		},
 	}

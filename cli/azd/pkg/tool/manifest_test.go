@@ -4,6 +4,8 @@
 package tool
 
 import (
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -332,11 +334,12 @@ func TestSpecificToolDefinitions(t *testing.T) {
 			"azd extensions are self-contained; must not depend on az-cli")
 
 		for _, platform := range []string{"windows", "darwin", "linux"} {
-			strategy, ok := tool.InstallStrategies[platform]
+			strategies, ok := tool.InstallStrategies[platform]
 			require.True(t, ok, "missing install strategy for %s", platform)
-			assert.Contains(t, strategy.InstallCommand, "azure.ai.agents",
+			require.Len(t, strategies, 1)
+			assert.Contains(t, strategies[0].InstallCommand, "azure.ai.agents",
 				"%s install command must target azure.ai.agents", platform)
-			assert.Contains(t, strategy.InstallCommand, "--source azd",
+			assert.Contains(t, strategies[0].InstallCommand, "--source azd",
 				"%s install command must pin the azd source", platform)
 		}
 	})
@@ -370,8 +373,66 @@ func TestAllPlatforms(t *testing.T) {
 	for _, os := range []string{"windows", "darwin", "linux"} {
 		got, exists := result[os]
 		require.True(t, exists, "missing %s", os)
-		assert.Equal(t, strategy, got)
+		assert.Equal(t, []InstallStrategy{strategy}, got)
 	}
+
+	// Variadic form preserves order across all platforms.
+	a := InstallStrategy{PackageManager: "winget", PackageId: "A"}
+	b := InstallStrategy{PackageManager: "npm", PackageId: "B"}
+	multi := allPlatforms(a, b)
+	for _, os := range []string{"windows", "darwin", "linux"} {
+		assert.Equal(t, []InstallStrategy{a, b}, multi[os])
+	}
+}
+
+// TestGithubCopilotCLI_InstallStrategies guards that the per-platform install
+// strategies and the derived uninstall commands for the GitHub Copilot CLI
+// match the official docs (issue #8831): npm on all platforms, winget on
+// Windows, a Homebrew cask on macOS+Linux, and the install script (binary
+// removal on uninstall) on macOS+Linux.
+func TestGithubCopilotCLI_InstallStrategies(t *testing.T) {
+	t.Parallel()
+
+	tool := FindTool("github-copilot-cli")
+	require.NotNil(t, tool)
+
+	// helper: does the platform list contain a strategy matching pred?
+	has := func(platform string, pred func(InstallStrategy) bool) bool {
+		return slices.ContainsFunc(tool.InstallStrategies[platform], pred)
+	}
+	isWinget := func(s InstallStrategy) bool {
+		return s.PackageManager == "winget" && s.PackageId == "GitHub.Copilot"
+	}
+	isNpm := func(s InstallStrategy) bool {
+		return s.PackageManager == "npm" && s.PackageId == "@github/copilot"
+	}
+	isBrewCask := func(s InstallStrategy) bool {
+		return s.PackageManager == "brew" && s.PackageId == "copilot-cli" && s.Cask
+	}
+	isScript := func(s InstallStrategy) bool {
+		return s.PackageManager == "" &&
+			strings.Contains(s.InstallCommand, "copilot-install")
+	}
+
+	// Windows: winget (preferred) + npm.
+	assert.True(t, has("windows", isWinget), "windows winget")
+	assert.True(t, has("windows", isNpm), "windows npm")
+
+	// macOS: brew cask + npm + install script.
+	assert.True(t, has("darwin", isBrewCask), "darwin brew cask")
+	assert.True(t, has("darwin", isNpm), "darwin npm")
+	assert.True(t, has("darwin", isScript), "darwin install script")
+
+	// Linux: brew cask (preferred) + npm + install script.
+	assert.True(t, has("linux", isBrewCask), "linux brew cask")
+	assert.True(t, has("linux", isNpm), "linux npm")
+	assert.True(t, has("linux", isScript), "linux install script")
+
+	// The derived uninstall commands match the official documentation.
+	_, args := buildUninstallCommand("brew", "copilot-cli", true)
+	assert.Equal(t, []string{"uninstall", "--cask", "copilot-cli"}, args)
+	_, args = buildUninstallCommand("npm", "@github/copilot", false)
+	assert.Equal(t, []string{"uninstall", "-g", "@github/copilot"}, args)
 }
 
 // TestAzureSkillsHostVersionProbeRegex locks the per-host BinaryVersionRegex

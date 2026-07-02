@@ -24,7 +24,7 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "Error: Failed to get git commit hash"
     exit 1
 }
-$BUILD_DATE = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
+$BUILD_DATE = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
 # List of OS and architecture combinations
 if ($env:EXTENSION_PLATFORM) {

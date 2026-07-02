@@ -105,15 +105,6 @@ func resolveControlPlaneEndpoint() string {
 	return defaultControlPlaneEndpoint
 }
 
-func isLocalControlPlaneEndpoint(endpoint string) bool {
-	parsed, err := url.Parse(endpoint)
-	if err != nil {
-		return false
-	}
-	host := strings.ToLower(parsed.Hostname())
-	return host == "localhost" || host == "127.0.0.1" || host == "::1"
-}
-
 func (c *rleClient) createV1Environment(
 	ctx context.Context,
 	project string,

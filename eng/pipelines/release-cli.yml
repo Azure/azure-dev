@@ -145,4 +145,9 @@ extends:
     - ${{ if and(ne(variables['Build.Reason'], 'Schedule'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
       # Only publish if build is manually triggered & DoPublish is true, or if it's a CI build (push to main)
       - ${{ if or(and(eq('Manual', variables['Build.Reason']), eq('true', parameters.DoPublish)), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'PullRequest')) }}:
+
+        - template: /eng/common/pipelines/templates/steps/login-to-github.yml
+          parameters:
+            ExportAsOutputVariable: true
+
         - template: /eng/pipelines/templates/stages/publish.yml

@@ -24,10 +24,9 @@ func fixedAssembler(
 }
 
 // fixedProjectIDReader returns a readProjectResourceIDFn that yields
-// the supplied id (or error) on every call. Mirrors the rbac /
-// agent-identity-roles test pattern so checks that derive an ARM
-// scope from AZURE_AI_PROJECT_ID can be exercised without a real
-// azd env.
+// the supplied id (or error) on every call. Mirrors the rbac test
+// pattern so checks that derive an ARM scope from AZURE_AI_PROJECT_ID
+// can be exercised without a real azd env.
 func fixedProjectIDReader(
 	id string, err error,
 ) func(context.Context, *azdext.AzdClient) (string, error) {

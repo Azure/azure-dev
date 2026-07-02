@@ -362,8 +362,7 @@ func remediationForCheckID(id string) (remediation, bool) {
 	case "remote.auth":
 		return remediation{command: "azd auth login", desc: "sign in to Azure", order: 10}, true
 	case "remote.foundry-endpoint",
-		"remote.connections",
-		"remote.agent-identity-roles":
+		"remote.connections":
 		return remediation{
 			command: "azd provision",
 			desc:    "create the missing Foundry resources",

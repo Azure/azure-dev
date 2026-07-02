@@ -43,6 +43,7 @@ func TestGetRoutine_Success(t *testing.T) {
 	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
 		assert.Contains(t, r.URL.Path, "/routines/my-routine")
+		assert.Equal(t, routinesPreviewValue, r.Header.Get(routinesPreviewHeader))
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(routine)

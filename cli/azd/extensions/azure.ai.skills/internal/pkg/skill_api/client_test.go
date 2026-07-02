@@ -36,12 +36,14 @@ func newTestClient(t *testing.T, srv *httptest.Server) *Client {
 
 func TestClient_CreateVersionInline_SendsRequestEnvelope(t *testing.T) {
 	var capturedAPI string
+	var capturedFeatures string
 	var capturedContentType string
 	var capturedPath string
 	var capturedBody map[string]any
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedAPI = r.URL.Query().Get("api-version")
+		capturedFeatures = r.Header.Get(FoundryFeaturesHeader)
 		capturedContentType = r.Header.Get("Content-Type")
 		capturedPath = r.URL.Path
 		require.Equal(t, http.MethodPost, r.Method)
@@ -63,6 +65,7 @@ func TestClient_CreateVersionInline_SendsRequestEnvelope(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "/skills/my-skill/versions", capturedPath)
 	require.Equal(t, DataPlaneAPIVersion, capturedAPI)
+	require.Equal(t, SkillsPreviewOptIn, capturedFeatures)
 	require.Equal(t, ContentTypeJSON, capturedContentType)
 
 	inline, ok := capturedBody["inline_content"].(map[string]any)
@@ -127,6 +130,7 @@ func TestClient_CreateVersionFromZip_SendsMultipart(t *testing.T) {
 func TestClient_GetSkill_DecodesEnvelope(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/skills/my-skill", r.URL.Path)
+		require.Equal(t, SkillsPreviewOptIn, r.Header.Get(FoundryFeaturesHeader))
 		_, _ = io.WriteString(w, `{"id":"sk_1","name":"my-skill","description":"d","default_version":"2","latest_version":"3","created_at":42}`)
 	}))
 	defer srv.Close()

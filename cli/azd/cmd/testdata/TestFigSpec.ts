@@ -5622,6 +5622,10 @@ const completionSpec: Fig.Spec = {
 							isDangerous: true,
 						},
 						{
+							name: ['--no-dependencies'],
+							description: 'Install only the specified extension(s) without installing their declared dependencies',
+						},
+						{
 							name: ['--source', '-s'],
 							description: 'The extension source to use for installs. Accepts a registered source name or a registry location (URL or file path) to register and install from.',
 							args: [

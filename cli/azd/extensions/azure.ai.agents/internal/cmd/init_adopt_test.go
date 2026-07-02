@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestLooksLikeFoundryAzureYaml(t *testing.T) {
@@ -273,4 +275,139 @@ func TestStageAzureYamlTemplate_LocalRenamesToAzureYaml(t *testing.T) {
 	require.False(t, fileExists(filepath.Join(staging, "sample.yaml")))
 	// Sibling files are carried into the staging directory.
 	require.True(t, fileExists(filepath.Join(staging, "agents", "main.py")))
+}
+
+func TestAdoptedServiceHasCodeConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		svc  *azdext.ServiceConfig
+		want bool
+	}{
+		{
+			name: "nil additional properties",
+			svc:  &azdext.ServiceConfig{},
+			want: false,
+		},
+		{
+			name: "empty additional properties",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{}},
+			},
+			want: false,
+		},
+		{
+			name: "codeConfiguration present with struct value",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"codeConfiguration": structpb.NewStructValue(&structpb.Struct{
+						Fields: map[string]*structpb.Value{
+							"runtime":    structpb.NewStringValue("python_3_13"),
+							"entryPoint": structpb.NewStringValue("app.py"),
+						},
+					}),
+				}},
+			},
+			want: true,
+		},
+		{
+			name: "codeConfiguration present but null",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"codeConfiguration": structpb.NewNullValue(),
+				}},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, adoptedServiceHasCodeConfig(tt.svc))
+		})
+	}
+}
+
+func TestAdoptedServiceHasDocker(t *testing.T) {
+	tests := []struct {
+		name string
+		svc  *azdext.ServiceConfig
+		want bool
+	}{
+		{
+			name: "nil additional properties",
+			svc:  &azdext.ServiceConfig{},
+			want: false,
+		},
+		{
+			name: "empty additional properties",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{}},
+			},
+			want: false,
+		},
+		{
+			name: "docker present with struct value",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"docker": structpb.NewStructValue(&structpb.Struct{
+						Fields: map[string]*structpb.Value{
+							"remoteBuild": structpb.NewBoolValue(true),
+						},
+					}),
+				}},
+			},
+			want: true,
+		},
+		{
+			name: "docker present but null",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"docker": structpb.NewNullValue(),
+				}},
+			},
+			want: false,
+		},
+		{
+			name: "non-nil GetDocker but no docker in additionalProperties",
+			svc: &azdext.ServiceConfig{
+				Docker:               &azdext.DockerProjectOptions{},
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{}},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, adoptedServiceHasDocker(tt.svc))
+		})
+	}
+}
+
+func TestValidateImageFlagInAdoptionPath(t *testing.T) {
+	t.Run("image with deploy-mode code is rejected", func(t *testing.T) {
+		err := validateImageFlag("myacr.azurecr.io/agent:v1", "code")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "--image cannot be used with --deploy-mode code")
+	})
+
+	t.Run("image with deploy-mode container is allowed", func(t *testing.T) {
+		err := validateImageFlag("myacr.azurecr.io/agent:v1", "container")
+		require.NoError(t, err)
+	})
+
+	t.Run("image with no deploy-mode is allowed", func(t *testing.T) {
+		err := validateImageFlag("myacr.azurecr.io/agent:v1", "")
+		require.NoError(t, err)
+	})
+
+	t.Run("no image is always valid", func(t *testing.T) {
+		require.NoError(t, validateImageFlag("", "code"))
+		require.NoError(t, validateImageFlag("", "container"))
+		require.NoError(t, validateImageFlag("", ""))
+	})
+
+	t.Run("invalid image format is rejected", func(t *testing.T) {
+		err := validateImageFlag("not-a-valid-image", "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid image URL")
+	})
 }

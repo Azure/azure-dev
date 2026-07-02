@@ -4,6 +4,7 @@
 
 ### Bugs Fixed
 
+- [[#8917]](https://github.com/Azure/azure-dev/pull/8917) Fix an `InvalidTemplate` error when deploying a brownfield (`endpoint:`) Foundry project that declares model deployments without creating a container registry. The `projectName` ARM parameter is now always set, so the referenced `Microsoft.CognitiveServices/accounts/projects` resource gets a valid two-segment name.
 - [[#8901]](https://github.com/Azure/azure-dev/pull/8901) Remove duplicate service-target provider claims from the `azure.ai.agents` extension manifest for hosts now owned by the split Foundry extensions (`azure.ai.projects`, `azure.ai.connections`, `azure.ai.toolboxes`). Thanks @huimiu for the contribution!
 - [[#8586]](https://github.com/Azure/azure-dev/issues/8586) `azd ai agent files upload` now accepts `[agent] [file]` positional arguments, mirroring `azd ai agent invoke [agent] [message]`. The first positional is the agent name and the second is the file to upload (with a single positional, it is the file, or the agent when `--file/-f` already supplies the file). This fixes the previous trap where passing the agent name as the positional left the agent unset and, in multi-service projects without `-n/--agent-name`, hung silently on the interactive agent picker in non-TTY contexts.
 

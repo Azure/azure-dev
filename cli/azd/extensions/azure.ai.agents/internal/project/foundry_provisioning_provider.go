@@ -810,11 +810,15 @@ func (p *FoundryProvisioningProvider) brownfieldParams(
 	params := map[string]any{
 		"accountName": map[string]any{"value": account},
 		"deployments": map[string]any{"value": p.brownfieldDeployments},
+		// projectName is always required: the template unconditionally references
+		// the existing accounts/projects resource, whose ARM name is
+		// '<accountName>/<projectName>'. Leaving it empty yields a single-segment
+		// name and an InvalidTemplate error even when no ACR is created.
+		"projectName": map[string]any{"value": p.brownfieldProjectName()},
 	}
 	if createACR {
 		params["includeAcr"] = map[string]any{"value": true}
 		params["acrName"] = map[string]any{"value": p.brownfieldACRName(account)}
-		params["projectName"] = map[string]any{"value": p.brownfieldProjectName()}
 		params["tags"] = map[string]any{"value": map[string]string{"azd-env-name": p.envName}}
 		// Only set location when resolved; an empty value would override the
 		// template default (resourceGroup().location) and fail the deployment.

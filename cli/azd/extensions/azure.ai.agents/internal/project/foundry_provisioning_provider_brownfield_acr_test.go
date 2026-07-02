@@ -172,13 +172,20 @@ func TestBrownfieldParams(t *testing.T) {
 
 	deployments := []synthesis.Deployment{{Name: "gpt-4o-mini"}}
 
-	t.Run("without ACR carries only account and deployments", func(t *testing.T) {
+	t.Run("without ACR carries account, deployments and projectName", func(t *testing.T) {
 		t.Parallel()
-		p := &FoundryProvisioningProvider{envName: "dev", brownfieldDeployments: deployments}
+		p := &FoundryProvisioningProvider{
+			envName:               "dev",
+			brownfieldDeployments: deployments,
+			brownfieldEndpoint:    "https://acct.services.ai.azure.com/api/projects/my-project",
+		}
 		params := p.brownfieldParams(t.Context(), "acct", "rg", false)
 
 		assert.Equal(t, map[string]any{"value": "acct"}, params["accountName"])
 		assert.Equal(t, map[string]any{"value": deployments}, params["deployments"])
+		// projectName is always required so the existing accounts/projects
+		// resource gets a valid two-segment ARM name.
+		assert.Equal(t, map[string]any{"value": "my-project"}, params["projectName"])
 		assert.NotContains(t, params, "includeAcr")
 		assert.NotContains(t, params, "acrName")
 	})

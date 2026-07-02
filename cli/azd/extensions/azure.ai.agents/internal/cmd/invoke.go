@@ -997,7 +997,6 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
-	req.Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 	if raw {
 		// Disable Go's transparent gzip handling so the dumped headers and
@@ -1235,7 +1234,6 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 	req.Header.Set("Content-Type", contentTypeForBody(body))
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
-	req.Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 	if raw {
 		// Disable Go's transparent gzip handling so the dumped headers and
@@ -1584,7 +1582,6 @@ func handleInvocationLRO(
 		if bearerToken != "" {
 			req.Header.Set("Authorization", "Bearer "+bearerToken)
 		}
-		req.Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 		options.ApplyHeaders(req.Header)
 		if raw {
 			// Disable Go's transparent gzip handling so the dumped headers
@@ -1705,7 +1702,6 @@ func createConversation(
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+bearerToken)
-	req.Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	options.ApplyHeaders(req.Header)
 
 	client := &http.Client{Timeout: 30 * time.Second}

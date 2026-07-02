@@ -23,12 +23,8 @@ import (
 )
 
 const (
-	// DataPlaneAPIVersion: skills live under v1; preview opt-in is via the
-	// Foundry-Features header (SkillsPreviewOptIn).
+	// DataPlaneAPIVersion: skills live under v1.
 	DataPlaneAPIVersion = "v1"
-
-	FoundryFeaturesHeader = "Foundry-Features"
-	SkillsPreviewOptIn    = "Skills=V1Preview"
 
 	ContentTypeJSON = "application/json"
 	// ContentTypeZip is the response content type for /skills/{name}/content
@@ -500,7 +496,6 @@ func setJSONBody(req *policy.Request, body []byte) error {
 
 func addStandardHeaders(req *policy.Request) {
 	h := req.Raw().Header
-	h.Set(FoundryFeaturesHeader, SkillsPreviewOptIn)
 	if h.Get("Accept") == "" {
 		h.Set("Accept", ContentTypeJSON)
 	}

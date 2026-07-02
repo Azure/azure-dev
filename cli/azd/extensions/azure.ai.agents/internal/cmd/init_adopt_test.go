@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/project"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -273,4 +275,144 @@ func TestStageAzureYamlTemplate_LocalRenamesToAzureYaml(t *testing.T) {
 	require.False(t, fileExists(filepath.Join(staging, "sample.yaml")))
 	// Sibling files are carried into the staging directory.
 	require.True(t, fileExists(filepath.Join(staging, "agents", "main.py")))
+}
+
+func TestFoundryDeployments(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    []foundryDeploymentEntry
+	}{
+		{
+			name: "single deployment under ai-project",
+			content: `name: foundry-simple
+services:
+  ai-project:
+    host: azure.ai.project
+    deployments:
+      - name: gpt-4o-mini
+        model:
+          format: OpenAI
+          name: gpt-4o-mini
+          version: "2024-07-18"
+        sku:
+          name: GlobalStandard
+          capacity: 50
+  assistant:
+    host: azure.ai.agent
+`,
+			want: []foundryDeploymentEntry{
+				{
+					ServiceName: "ai-project",
+					Deployment: project.Deployment{
+						Name:  "gpt-4o-mini",
+						Model: project.DeploymentModel{Format: "OpenAI", Name: "gpt-4o-mini", Version: "2024-07-18"},
+						Sku:   project.DeploymentSku{Name: "GlobalStandard", Capacity: 50},
+					},
+				},
+			},
+		},
+		{
+			name: "multiple deployments",
+			content: `name: multi-model
+services:
+  ai-project:
+    host: azure.ai.project
+    deployments:
+      - name: gpt-4o
+        model:
+          format: OpenAI
+          name: gpt-4o
+          version: "2024-08-06"
+        sku:
+          name: GlobalStandard
+          capacity: 100
+      - name: text-embedding
+        model:
+          format: OpenAI
+          name: text-embedding-ada-002
+          version: "2"
+        sku:
+          name: Standard
+          capacity: 10
+`,
+			want: []foundryDeploymentEntry{
+				{
+					ServiceName: "ai-project",
+					Deployment: project.Deployment{
+						Name:  "gpt-4o",
+						Model: project.DeploymentModel{Format: "OpenAI", Name: "gpt-4o", Version: "2024-08-06"},
+						Sku:   project.DeploymentSku{Name: "GlobalStandard", Capacity: 100},
+					},
+				},
+				{
+					ServiceName: "ai-project",
+					Deployment: project.Deployment{
+						Name:  "text-embedding",
+						Model: project.DeploymentModel{Format: "OpenAI", Name: "text-embedding-ada-002", Version: "2"},
+						Sku:   project.DeploymentSku{Name: "Standard", Capacity: 10},
+					},
+				},
+			},
+		},
+		{
+			name: "no deployments section",
+			content: `name: no-deploy
+services:
+  ai-project:
+    host: azure.ai.project
+`,
+			want: nil,
+		},
+		{
+			name: "non-project host ignored",
+			content: `name: agent-only
+services:
+  assistant:
+    host: azure.ai.agent
+    deployments:
+      - name: should-be-ignored
+        model:
+          name: gpt-4o
+`,
+			want: nil,
+		},
+		{
+			name:    "empty content",
+			content: "",
+			want:    nil,
+		},
+		{
+			name:    "malformed yaml",
+			content: "name: [oops",
+			want:    nil,
+		},
+		{
+			name: "missing model and sku fields",
+			content: `name: partial
+services:
+  ai-project:
+    host: azure.ai.project
+    deployments:
+      - name: bare-deploy
+`,
+			want: []foundryDeploymentEntry{
+				{
+					ServiceName: "ai-project",
+					Deployment: project.Deployment{
+						Name:  "bare-deploy",
+						Model: project.DeploymentModel{},
+						Sku:   project.DeploymentSku{},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := foundryDeployments([]byte(tt.content))
+			require.Equal(t, tt.want, got)
+		})
+	}
 }

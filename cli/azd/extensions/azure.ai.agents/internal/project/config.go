@@ -70,34 +70,34 @@ type ResourceSettings struct {
 // Deployment represents a single model deployment
 type Deployment struct {
 	// Specify the name of model deployment.
-	Name string `json:"name"`
+	Name string `json:"name" yaml:"name"`
 
 	// Required. Properties of model deployment.
-	Model DeploymentModel `json:"model"`
+	Model DeploymentModel `json:"model" yaml:"model"`
 
 	// The resource model definition representing SKU.
-	Sku DeploymentSku `json:"sku"`
+	Sku DeploymentSku `json:"sku" yaml:"sku"`
 }
 
 // DeploymentModel represents the model configuration for a model deployment
 type DeploymentModel struct {
 	// Required. The name of model deployment.
-	Name string `json:"name"`
+	Name string `json:"name" yaml:"name"`
 
 	// Required. The format of model deployment.
-	Format string `json:"format"`
+	Format string `json:"format" yaml:"format"`
 
 	// Required. The version of model deployment.
-	Version string `json:"version"`
+	Version string `json:"version" yaml:"version"`
 }
 
 // DeploymentSku represents the resource model definition representing SKU
 type DeploymentSku struct {
 	// Required. The name of the resource model definition representing SKU.
-	Name string `json:"name"`
+	Name string `json:"name" yaml:"name"`
 
 	// The capacity of the resource model definition representing SKU.
-	Capacity int `json:"capacity"`
+	Capacity int `json:"capacity" yaml:"capacity"`
 }
 
 // Resource represents an external resource for agent execution

@@ -451,6 +451,7 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.version.from` | string | Version before an upgrade or promotion (`ext.upgrade`, `ext.promote`) |
 | `extension.version.to` | string | Version after an upgrade or promotion (`ext.upgrade`, `ext.promote`) |
 | `extension.source` | string | Registry source used for an upgrade (`ext.upgrade`) |
+| `extension.source.kind` | string | Kind of `--source` argument: `none`, `registered`, or `location` (`azd extension list`, `show`, `install`, `upgrade`) |
 | `extension.source.from` | string | Registry source before a promotion (`ext.promote`) |
 | `extension.source.to` | string | Registry source after a promotion (`ext.promote`) |
 | `extension.upgrade.duration_ms` | measurement | Duration (ms) of a single upgrade (`ext.upgrade`) |

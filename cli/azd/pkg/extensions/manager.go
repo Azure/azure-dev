@@ -30,7 +30,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -111,6 +110,9 @@ type FilterOptions struct {
 	Version string
 	// Source is used to specify the source of the extension to install
 	Source string
+	// SourceConfig restricts lookup to one source that is not persisted or cached.
+	// It takes precedence over Source.
+	SourceConfig *SourceConfig
 	// Tags is used to specify the tags of the extension to install
 	Tags []string
 	// Capability is used to filter extensions by capability type
@@ -440,10 +442,30 @@ func (m *Manager) FindExtensions(ctx context.Context, options *FilterOptions) ([
 		}
 	}
 
-	// Use the centralized extension filter
-	extensionFilter := createExtensionFilter(options)
+	filterOptions := options
+	if options.SourceConfig != nil {
+		filterOptionsCopy := *options
+		filterOptionsCopy.Source = ""
+		filterOptions = &filterOptionsCopy
+	}
 
-	sources, err := m.getSources(ctx, sourceFilterPredicate)
+	// Use the centralized extension filter
+	extensionFilter := createExtensionFilter(filterOptions)
+
+	var sources []Source
+	var err error
+	if options.SourceConfig != nil {
+		source, err := m.sourceManager.CreateSource(ctx, options.SourceConfig)
+		if err != nil {
+			if schemaErr, ok := errors.AsType[*ErrUnsupportedRegistrySchema](err); ok {
+				return nil, NewUnsupportedRegistrySchemaError(schemaErr)
+			}
+			return nil, fmt.Errorf("failed initializing extension source: %w", err)
+		}
+		sources = []Source{source}
+	} else {
+		sources, err = m.getSources(ctx, sourceFilterPredicate)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed listing extensions: %w", err)
 	}
@@ -1272,16 +1294,7 @@ func (tm *Manager) createSourcesFromConfig(
 	// Only hard-fail when every source had an incompatible schema and
 	// no usable sources remain.
 	if len(sources) == 0 && len(schemaErrors) > 0 {
-		return nil, &errorhandler.ErrorWithSuggestion{
-			Err:     schemaErrors[0],
-			Message: schemaErrors[0].Error(),
-			Suggestion: "Upgrade azd to the latest version " +
-				"to use this registry",
-			Links: []errorhandler.ErrorLink{{
-				URL:   "https://aka.ms/azd/install",
-				Title: "Install/upgrade azd",
-			}},
-		}
+		return nil, NewUnsupportedRegistrySchemaError(schemaErrors[0])
 	}
 
 	return sources, nil

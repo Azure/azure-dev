@@ -1,5 +1,17 @@
 # Release History
 
+## 1.0.0-beta.1 (2026-06-30)
+
+### Features Added
+
+- [[#8818]](https://github.com/Azure/azure-dev/pull/8818) The `azure.ai.skills` extension now registers an `azure.ai.skill` service-target host so `azd deploy`/`azd up` can upsert Foundry skills declared as `host: azure.ai.skill` services in `azure.yaml`.
+- [[#8890]](https://github.com/Azure/azure-dev/pull/8890) Bump `requiredAzdVersion` to `>=1.27.0`.
+- [[#8651]](https://github.com/Azure/azure-dev/pull/8651) Update Go to 1.26.4 and bump golang.org/x/crypto and golang.org/x/net. Thanks @hemarina for the contribution!
+
+### Bugs Fixed
+
+- [[#8791]](https://github.com/Azure/azure-dev/pull/8791) Fix silent data loss on SKILL.md round-trips: `ParseSkillMd` now extracts `license`, `compatibility`, and `allowed_tools` from front matter. Also removes dead code paths, fixes test-unsafe mutable globals, and adds missing validation.
+
 ## 0.1.1-preview (2026-06-05)
 
 - [[#8509]](https://github.com/Azure/azure-dev/pull/8509) Accept `.zip` and

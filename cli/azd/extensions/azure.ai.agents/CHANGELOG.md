@@ -1,5 +1,11 @@
 # Release History
 
+## Unreleased
+
+### Features Added
+
+- [[#8742]](https://github.com/Azure/azure-dev/issues/8742) Provision Foundry memory stores during `azd deploy`. Declare one or more memory stores under the agent service's `memoryStores` list in `azure.yaml` (with `chatModel`, `embeddingModel`, and optional extraction/retention `options`), and azd creates them in the Foundry project before deploying the agent. Provisioning is idempotent: existing stores are left unchanged, so deployments are safe to re-run. azd does not update an existing store; if a declared definition diverges from the live store, deploy warns which `azure.yaml` change(s) were not applied.
+
 ## 1.0.0-beta.2 (2026-07-01)
 
 ### Bugs Fixed

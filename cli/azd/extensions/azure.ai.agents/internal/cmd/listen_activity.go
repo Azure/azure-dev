@@ -222,7 +222,7 @@ zip -j %[1]s-teams-app.zip manifest.json color.png outline.png          # bash
 Compress-Archive manifest.json,color.png,outline.png %[1]s-teams-app.zip # PowerShell
 `+"```"+`
 
-Sideload for yourself with the Microsoft 365 Agents Toolkit CLI (atk). ` + "`--scope Personal`" + ` is a
+Sideload for yourself with the Microsoft 365 Agents Toolkit CLI (atk). `+"`--scope Personal`"+` is a
 per-user install and needs NO Teams admin:
 
 `+"```"+`sh

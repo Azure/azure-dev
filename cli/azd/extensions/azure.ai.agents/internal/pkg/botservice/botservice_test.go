@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -95,7 +96,7 @@ func TestEnsureBotCreatesSingleTenantBotAndTeamsChannel(t *testing.T) {
 	}
 }
 
-func TestEnsureBotIsIdempotentAcrossRuns(t *testing.T) {
+func TestEnsureBotIssuesUpsertOnEveryRun(t *testing.T) {
 	bots := &fakeBots{}
 	channels := &fakeChannels{}
 	c := &Client{bots: bots, channels: channels}
@@ -105,8 +106,9 @@ func TestEnsureBotIsIdempotentAcrossRuns(t *testing.T) {
 			t.Fatalf("run %d: EnsureBot error: %v", i, err)
 		}
 	}
-	// Create is a PUT (create-or-update); re-running is safe and re-applies
-	// the same desired state each time.
+	// EnsureBot uses a PUT (create-or-update) each run, so re-running is safe and
+	// re-applies the same desired state every time. This asserts the upsert is
+	// issued on every run, not server-side resource idempotency.
 	if len(bots.createCalls) != 3 || len(channels.createCalls) != 3 {
 		t.Errorf("expected 3 bot + 3 channel calls, got %d + %d",
 			len(bots.createCalls), len(channels.createCalls))
@@ -145,8 +147,23 @@ func TestDeleteBotPropagatesOtherErrors(t *testing.T) {
 }
 
 func TestBotName(t *testing.T) {
-	if got := BotName("echo28ju3pm"); got != "echo28ju3pm-bot-uai" {
-		t.Errorf("BotName = %q, want echo28ju3pm-bot-uai", got)
+	salt := BotScopeSalt("sub-1", "rg-1")
+	got := BotName("echo", salt)
+
+	// Deterministic for a given scope, so redeploys update the same bot.
+	if got2 := BotName("echo", salt); got != got2 {
+		t.Errorf("BotName not deterministic: %q vs %q", got, got2)
+	}
+	// A different scope must yield a different name to avoid global collisions.
+	if other := BotName("echo", BotScopeSalt("sub-2", "rg-1")); other == got {
+		t.Errorf("BotName should differ across scopes; both were %q", got)
+	}
+	if !strings.HasPrefix(got, "echo-bot-") {
+		t.Errorf("BotName = %q, want prefix echo-bot-", got)
+	}
+	// A long agent name is truncated so the resource name stays within the limit.
+	if n := BotName(strings.Repeat("a", 100), salt); len(n) > botNameMaxLen {
+		t.Errorf("BotName %q exceeds max length %d", n, botNameMaxLen)
 	}
 }
 

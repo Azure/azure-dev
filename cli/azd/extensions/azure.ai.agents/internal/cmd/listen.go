@@ -386,7 +386,12 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		ctx, azdClient, cred, envName, svc, args.Project,
 		endpointResp.Value, tenantResp.Value, versionObj,
 	); err != nil {
-		return fmt.Errorf("failed to configure Teams bot for agent %q: %w", svc.Name, err)
+		return fmt.Errorf(
+			"agent %q deployed successfully, but configuring its Microsoft Teams bot failed: %w\n"+
+				"  The agent version is active — only the Teams channel binding is missing "+
+				"(commonly Azure Bot permissions or quota). Resolve the cause and re-run 'azd deploy'.",
+			svc.Name, err,
+		)
 	}
 
 	// Report optimization candidate deployment (best-effort: panics are logged, not propagated).

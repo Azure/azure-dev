@@ -80,7 +80,7 @@ func ensureActivityBot(
 	// The API agent name is the service name (deploy fetched the version with it),
 	// so the messaging endpoint and bot name must use the same value.
 	agentName := svc.Name
-	botName := botservice.BotName(agentName)
+	botName := botservice.BotName(agentName, botservice.BotScopeSalt(subscriptionID, resourceGroup))
 
 	cfg := botservice.BotConfig{
 		ResourceGroup:     resourceGroup,
@@ -265,7 +265,7 @@ func teardownActivityBots(
 	}
 
 	for _, agentName := range activityAgents {
-		botName := botservice.BotName(agentName)
+		botName := botservice.BotName(agentName, botservice.BotScopeSalt(subscriptionID, resourceGroup))
 		if err := botClient.DeleteBot(ctx, resourceGroup, botName); err != nil {
 			log.Printf("postdown: failed to delete Azure Bot %q: %v", botName, err)
 			continue

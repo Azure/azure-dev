@@ -10,6 +10,8 @@ package botservice
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -29,11 +31,20 @@ const (
 	// carries in its ChannelName field.
 	teamsChannelName = "MsTeamsChannel"
 	// messagingEndpointAPIVersion is the api-version the activity-protocol
-	// messaging endpoint URL is pinned to (verified against the POC).
+	// messaging endpoint URL is pinned to (verified against the POC). This is the
+	// BotService messaging-endpoint contract and is intentionally independent of
+	// the agent-plane deploy api-version used elsewhere; the two evolve
+	// separately, so keep them as distinct constants rather than sharing one.
 	messagingEndpointAPIVersion = "2025-05-15-preview"
-	// botNameSuffix is appended to the agent name to form the bot resource name.
-	// BotService names are globally unique, so teardown must delete the bot.
-	botNameSuffix = "-bot-uai"
+	// botNameSuffix separates the agent name from the uniqueness token in the bot
+	// resource name.
+	botNameSuffix = "-bot-"
+	// botNameTokenLen is the number of hex chars of the scope hash appended to the
+	// bot name to keep it globally unique.
+	botNameTokenLen = 8
+	// botNameMaxLen caps the bot resource name length (Azure BotService handle
+	// limit) so a long agent name cannot push it over the limit.
+	botNameMaxLen = 42
 )
 
 // botsAPI and channelsAPI are the narrow slices of the armbotservice clients this
@@ -80,11 +91,27 @@ func NewClient(
 	return &Client{bots: bots, channels: channels}, nil
 }
 
-// BotName returns the conventional Azure Bot resource name for an agent. It
-// matches the name used by the sample's setup-instance-bot.ps1 so an existing
-// bot is reused rather than duplicated.
-func BotName(agentName string) string {
-	return agentName + botNameSuffix
+// BotName returns a deterministic Azure Bot resource name for an agent. Because
+// BotService resource names are globally unique across all of Azure, the name is
+// salted with a short hash of the deployment scope (subscription + resource
+// group) so that two environments deploying an agent with the same name do not
+// collide. The name is stable for a given scope, so redeploys update the same bot
+// rather than creating a new one.
+func BotName(agentName, scopeSalt string) string {
+	sum := sha256.Sum256([]byte(scopeSalt))
+	suffix := botNameSuffix + hex.EncodeToString(sum[:])[:botNameTokenLen]
+	if maxAgent := botNameMaxLen - len(suffix); len(agentName) > maxAgent {
+		agentName = agentName[:maxAgent]
+	}
+	// Avoid a doubled hyphen if truncation (or the agent name) leaves a trailing '-'.
+	return strings.TrimRight(agentName, "-") + suffix
+}
+
+// BotScopeSalt builds the deployment-scope salt for BotName from the subscription
+// and resource group. Callers that create and later delete the same bot must use
+// the same salt so the names match.
+func BotScopeSalt(subscriptionID, resourceGroup string) string {
+	return subscriptionID + "/" + resourceGroup
 }
 
 // MessagingEndpoint returns the activity-protocol messaging endpoint URL the bot

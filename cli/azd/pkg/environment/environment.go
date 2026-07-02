@@ -307,6 +307,33 @@ func (e *Environment) SetServiceProperty(serviceName string, propertyName string
 	e.DotenvSet(fmt.Sprintf("SERVICE_%s_%s", Key(serviceName), propertyName), value)
 }
 
+// isLoaderControlKey reports whether key is in the reserved dynamic linker/loader namespace
+// (LD_ for Linux ld.so, DYLD_ for macOS dyld), matched case-insensitively. Variables in this
+// namespace change how a process resolves and loads shared libraries at launch, so they are not
+// carried from an environment's dotenv into the tools azd runs. Names outside the namespace, such
+// as LDFLAGS or LDLIBS (no trailing underscore), are not matched.
+func isLoaderControlKey(key string) bool {
+	upper := strings.ToUpper(key)
+	return strings.HasPrefix(upper, "LD_") || strings.HasPrefix(upper, "DYLD_")
+}
+
+// FilterLoaderControlKeys returns a copy of env with dynamic linker/loader control variables (the
+// reserved LD_/DYLD_ namespace, see [isLoaderControlKey]) removed. Use it when building the
+// environment for a tool subprocess from an azd environment's dotenv values (see
+// [Environment.Dotenv]) so those variables are not propagated. [Environment.Environ] applies the
+// same filtering when it builds the subprocess environment slice.
+func FilterLoaderControlKeys(env map[string]string) map[string]string {
+	filtered := make(map[string]string, len(env))
+	for k, v := range env {
+		if isLoaderControlKey(k) {
+			continue
+		}
+		filtered[k] = v
+	}
+
+	return filtered
+}
+
 // Creates a slice of key value pairs, based on the entries in the `.env` file like `KEY=VALUE` that
 // can be used to pass into command runner or similar constructs.
 //
@@ -317,12 +344,7 @@ func (e *Environment) Environ() []string {
 	defer e.mu.RUnlock()
 	envVars := []string{}
 	for k, v := range e.dotenv {
-		// Skip dynamic linker/loader control variables (the reserved LD_/DYLD_ namespace): they
-		// change how a process resolves and loads shared libraries at launch, so they must not be
-		// carried from the dotenv into tool subprocess environments. Matched case-insensitively;
-		// LDFLAGS/LDLIBS (no underscore) are intentionally unaffected.
-		upper := strings.ToUpper(k)
-		if strings.HasPrefix(upper, "LD_") || strings.HasPrefix(upper, "DYLD_") {
+		if isLoaderControlKey(k) {
 			continue
 		}
 		envVars = append(envVars, fmt.Sprintf("%s=%s", k, v))

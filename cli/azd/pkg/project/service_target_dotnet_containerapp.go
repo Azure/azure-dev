@@ -329,7 +329,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 		}
 	}
 	// Add the environment variables from the azd environment
-	maps.Copy(env, at.env.Dotenv())
+	maps.Copy(env, environment.FilterLoaderControlKeys(at.env.Dotenv()))
 
 	builder := strings.Builder{}
 	err = tmpl.Execute(&builder, struct {

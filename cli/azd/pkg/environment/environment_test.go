@@ -391,6 +391,32 @@ func TestEnviron_ExcludesLoaderControlKeys(t *testing.T) {
 	require.Contains(t, environ, "LDLIBS=-lfoo")
 }
 
+// TestFilterLoaderControlKeys verifies the shared helper used by the subprocess-env paths that
+// build their environment from Dotenv() (e.g. azd exec, kubectl, container app bicep context)
+// removes the reserved LD_/DYLD_ namespace while preserving everything else.
+func TestFilterLoaderControlKeys(t *testing.T) {
+	filtered := FilterLoaderControlKeys(map[string]string{
+		"AZURE_ENV_NAME":             "test-env",
+		"SAFE_VALUE":                 "keep-me",
+		"LD_PRELOAD":                 "/tmp/a.so",
+		"LD_LIBRARY_PATH":            "/tmp/a",
+		"DYLD_INSERT_LIBRARIES":      "/tmp/a.dylib",
+		"DYLD_FALLBACK_LIBRARY_PATH": "/tmp/a",
+		// Case-insensitive match.
+		"dyld_library_path": "/tmp/a",
+		// Outside the reserved namespace - preserved.
+		"LDFLAGS": "-L/opt/lib",
+		"LDLIBS":  "-lfoo",
+	})
+
+	require.Equal(t, map[string]string{
+		"AZURE_ENV_NAME": "test-env",
+		"SAFE_VALUE":     "keep-me",
+		"LDFLAGS":        "-L/opt/lib",
+		"LDLIBS":         "-lfoo",
+	}, filtered)
+}
+
 // --- Test 10: Dotenv special characters round-trip ---
 
 func TestDotenvSpecialCharacters_RoundTrip(t *testing.T) {

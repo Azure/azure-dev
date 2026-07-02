@@ -25,3 +25,8 @@ services:
     kind: hosted
     name: assistant
     description: A simple assistant.
+    environmentVariables:
+      - name: LOG_LEVEL
+        value: info
+      - name: AZURE_AI_MODEL_DEPLOYMENT_NAME
+        value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}

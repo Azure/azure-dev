@@ -436,6 +436,7 @@
                                 },
                                 "k8s": false,
                                 "apiVersion": false,
+                                "env": false,
                                 "network": false
                             }
                         }

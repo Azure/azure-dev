@@ -221,17 +221,15 @@
                     "host": {
                         "type": "string",
                         "title": "Required. The type of Azure resource used for service implementation",
-                        "description": "The Azure service that will be used as the target for deployment operations for the service.",
-                        "examples": [
+                        "description": "The Azure service that will be used as the target for deployment operations for the service. Limited to the host types azd recognizes; hosts contributed by extensions are resolved by azd at runtime and may not be listed here.",
+                        "enum": [
                             "appservice",
                             "containerapp",
                             "function",
-                            "springapp",
                             "staticwebapp",
                             "aks",
                             "ai.endpoint",
                             "azure.ai.agent",
-                            "microsoft.foundry",
                             "azure.ai.project",
                             "azure.ai.connection",
                             "azure.ai.toolbox",

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 
@@ -347,35 +346,49 @@ func TestEnvironment_ConcurrentDotenvSet(t *testing.T) {
 	}
 }
 
-// TestEnviron_StripsUnsafeLoaderKeys verifies that dynamic-loader and injection control
-// variables are never propagated from the dotenv into subprocess environments. A dotenv value
-// for one of these keys (e.g. injected by a malicious template or a poisoned shared env store)
-// would otherwise load attacker-controlled code into tool subprocesses at launch time.
-func TestEnviron_StripsUnsafeLoaderKeys(t *testing.T) {
+// TestEnviron_ExcludesLoaderControlKeys verifies that dynamic linker/loader control variables
+// (names in the reserved LD_/DYLD_ namespace) are not carried from the dotenv into the environment
+// passed to tool subprocesses, while ordinary values - including similarly named keys such as
+// LDFLAGS/LDLIBS that are not in that namespace - are preserved.
+func TestEnviron_ExcludesLoaderControlKeys(t *testing.T) {
 	env := NewWithValues("test-env", map[string]string{
-		"AZURE_ENV_NAME":        "test-env",
-		"SAFE_VALUE":            "keep-me",
-		"LD_PRELOAD":            "/tmp/evil.so",
-		"LD_LIBRARY_PATH":       "/tmp/evil",
-		"LD_AUDIT":              "/tmp/audit.so",
-		"DYLD_INSERT_LIBRARIES": "/tmp/evil.dylib",
-		"DYLD_LIBRARY_PATH":     "/tmp/evil",
-		"DYLD_FRAMEWORK_PATH":   "/tmp/evil",
-		// Casing must not matter - dotenv keys are matched case-insensitively.
-		"ld_preload": "/tmp/evil-lower.so",
+		"AZURE_ENV_NAME": "test-env",
+		"SAFE_VALUE":     "keep-me",
+		// Reserved LD_/DYLD_ loader namespace - must be excluded.
+		"LD_PRELOAD":                  "/tmp/a.so",
+		"LD_LIBRARY_PATH":             "/tmp/a",
+		"LD_AUDIT":                    "/tmp/audit.so",
+		"DYLD_INSERT_LIBRARIES":       "/tmp/a.dylib",
+		"DYLD_LIBRARY_PATH":           "/tmp/a",
+		"DYLD_FRAMEWORK_PATH":         "/tmp/a",
+		"DYLD_FALLBACK_LIBRARY_PATH":  "/tmp/a",
+		"DYLD_VERSIONED_LIBRARY_PATH": "/tmp/a",
+		// Casing must not matter - keys are matched case-insensitively.
+		"ld_preload": "/tmp/a-lower.so",
+		// Not in the reserved namespace (no trailing underscore) - must be kept.
+		"LDFLAGS": "-L/opt/lib",
+		"LDLIBS":  "-lfoo",
 	})
 
 	environ := env.Environ()
 
-	for _, entry := range environ {
-		key, _, _ := strings.Cut(entry, "=")
-		if _, unsafe := unsafeEnvironKeys[strings.ToUpper(key)]; unsafe {
-			t.Errorf("Environ() must not contain loader/injection key %q, got entry %q", key, entry)
-		}
-	}
+	// Reserved LD_/DYLD_ namespace entries must be dropped (asserted with literal values so the
+	// test does not depend on the production filter's own logic).
+	require.NotContains(t, environ, "LD_PRELOAD=/tmp/a.so")
+	require.NotContains(t, environ, "LD_LIBRARY_PATH=/tmp/a")
+	require.NotContains(t, environ, "LD_AUDIT=/tmp/audit.so")
+	require.NotContains(t, environ, "DYLD_INSERT_LIBRARIES=/tmp/a.dylib")
+	require.NotContains(t, environ, "DYLD_LIBRARY_PATH=/tmp/a")
+	require.NotContains(t, environ, "DYLD_FRAMEWORK_PATH=/tmp/a")
+	require.NotContains(t, environ, "DYLD_FALLBACK_LIBRARY_PATH=/tmp/a")
+	require.NotContains(t, environ, "DYLD_VERSIONED_LIBRARY_PATH=/tmp/a")
+	require.NotContains(t, environ, "ld_preload=/tmp/a-lower.so")
 
+	// Ordinary values, and similarly named keys outside the reserved namespace, are preserved.
 	require.Contains(t, environ, "SAFE_VALUE=keep-me")
 	require.Contains(t, environ, "AZURE_ENV_NAME=test-env")
+	require.Contains(t, environ, "LDFLAGS=-L/opt/lib")
+	require.Contains(t, environ, "LDLIBS=-lfoo")
 }
 
 // --- Test 10: Dotenv special characters round-trip ---

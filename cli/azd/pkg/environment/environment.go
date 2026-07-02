@@ -307,32 +307,22 @@ func (e *Environment) SetServiceProperty(serviceName string, propertyName string
 	e.DotenvSet(fmt.Sprintf("SERVICE_%s_%s", Key(serviceName), propertyName), value)
 }
 
-// unsafeEnvironKeys are dynamic-loader and injection control variables that must never be
-// propagated from an azd environment's dotenv into tool subprocesses (docker, npm, python,
-// maven, go, dotnet, bicep, az, etc.). A dotenv value for any of these keys would let
-// attacker-controlled code be loaded into a subprocess at launch time. These variables have no
-// legitimate reason to live in an azd dotenv, so they are stripped at the single source that
-// feeds every subprocess environment.
-var unsafeEnvironKeys = map[string]struct{}{
-	"LD_PRELOAD":            {},
-	"LD_LIBRARY_PATH":       {},
-	"LD_AUDIT":              {},
-	"DYLD_INSERT_LIBRARIES": {},
-	"DYLD_LIBRARY_PATH":     {},
-	"DYLD_FRAMEWORK_PATH":   {},
-}
-
 // Creates a slice of key value pairs, based on the entries in the `.env` file like `KEY=VALUE` that
 // can be used to pass into command runner or similar constructs.
 //
-// Dynamic-loader and injection control variables (see [unsafeEnvironKeys]) are omitted so they are
-// never propagated from the dotenv into tool subprocesses.
+// Dynamic linker/loader control variables (the reserved LD_/DYLD_ namespace) are omitted so they
+// are not carried from the dotenv into the environment of tools azd runs.
 func (e *Environment) Environ() []string {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	envVars := []string{}
 	for k, v := range e.dotenv {
-		if _, unsafe := unsafeEnvironKeys[strings.ToUpper(k)]; unsafe {
+		// Skip dynamic linker/loader control variables (the reserved LD_/DYLD_ namespace): they
+		// change how a process resolves and loads shared libraries at launch, so they must not be
+		// carried from the dotenv into tool subprocess environments. Matched case-insensitively;
+		// LDFLAGS/LDLIBS (no underscore) are intentionally unaffected.
+		upper := strings.ToUpper(k)
+		if strings.HasPrefix(upper, "LD_") || strings.HasPrefix(upper, "DYLD_") {
 			continue
 		}
 		envVars = append(envVars, fmt.Sprintf("%s=%s", k, v))

@@ -326,6 +326,62 @@ func TestAdoptedServiceHasCodeConfig(t *testing.T) {
 	}
 }
 
+func TestAdoptedServiceHasDocker(t *testing.T) {
+	tests := []struct {
+		name string
+		svc  *azdext.ServiceConfig
+		want bool
+	}{
+		{
+			name: "nil additional properties",
+			svc:  &azdext.ServiceConfig{},
+			want: false,
+		},
+		{
+			name: "empty additional properties",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{}},
+			},
+			want: false,
+		},
+		{
+			name: "docker present with struct value",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"docker": structpb.NewStructValue(&structpb.Struct{
+						Fields: map[string]*structpb.Value{
+							"remoteBuild": structpb.NewBoolValue(true),
+						},
+					}),
+				}},
+			},
+			want: true,
+		},
+		{
+			name: "docker present but null",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"docker": structpb.NewNullValue(),
+				}},
+			},
+			want: false,
+		},
+		{
+			name: "non-nil GetDocker but no docker in additionalProperties",
+			svc: &azdext.ServiceConfig{
+				Docker:               &azdext.DockerProjectOptions{},
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{}},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, adoptedServiceHasDocker(tt.svc))
+		})
+	}
+}
+
 func TestValidateImageFlagInAdoptionPath(t *testing.T) {
 	t.Run("image with deploy-mode code is rejected", func(t *testing.T) {
 		err := validateImageFlag("myacr.azurecr.io/agent:v1", "code")

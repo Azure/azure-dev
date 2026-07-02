@@ -606,7 +606,7 @@ func applyDeployModeToService(
 
 	// Check whether the service already specifies its deploy mode.
 	hasCodeConfig := adoptedServiceHasCodeConfig(svc)
-	hasDocker := svc.GetDocker() != nil
+	hasDocker := adoptedServiceHasDocker(svc)
 
 	// When no explicit --deploy-mode flag is passed and the service is
 	// already configured, respect the sample's existing configuration.
@@ -648,6 +648,27 @@ func adoptedServiceHasCodeConfig(svc *azdext.ServiceConfig) bool {
 		return false
 	}
 	// A null value doesn't count as having a codeConfiguration.
+	return v != nil && v.GetStructValue() != nil
+}
+
+// adoptedServiceHasDocker checks whether the adopted agent service already
+// declares a docker configuration in its properties. We check
+// additionalProperties rather than svc.GetDocker() because the gRPC mapper
+// always returns a non-nil Docker pointer (even for the zero-value struct).
+func adoptedServiceHasDocker(svc *azdext.ServiceConfig) bool {
+	props := svc.GetAdditionalProperties()
+	if props == nil {
+		return false
+	}
+	fields := props.GetFields()
+	if fields == nil {
+		return false
+	}
+	v, ok := fields["docker"]
+	if !ok {
+		return false
+	}
+	// A null value doesn't count as having docker configured.
 	return v != nil && v.GetStructValue() != nil
 }
 

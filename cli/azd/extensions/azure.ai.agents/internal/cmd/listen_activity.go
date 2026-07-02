@@ -7,9 +7,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/botservice"
+	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -94,24 +96,97 @@ func ensureActivityBot(
 		return err
 	}
 
-	printTeamsNextSteps(agentName, botName)
+	// Write a persistent, generic setup guide next to the agent code (the azd
+	// progress UI swallows postdeploy stdout, so a file is the reliable way to
+	// hand the user the manual M365 steps) and print a short pointer to it.
+	guidePath := writeTeamsSetupGuide(proj, svc, agentName, botName, msaAppID)
+	printTeamsNextSteps(botName, msaAppID, guidePath)
 	return nil
 }
 
-// printTeamsNextSteps prints the manual, out-of-azd steps needed to make the
-// Teams bot reachable from a Teams client: package the Teams app (botId = the
-// bot's msaAppId) and sideload/install it. These live on the M365 plane.
-func printTeamsNextSteps(agentName, botName string) {
+// teamsSetupGuideFile is the name of the generated Teams onboarding guide.
+const teamsSetupGuideFile = "TEAMS_APP_SETUP.md"
+
+// writeTeamsSetupGuide writes a generic, simplified Teams onboarding guide next
+// to the agent source so the user can package and sideload their Teams app after
+// deploy. It returns the written path, or "" on any failure (best-effort: never
+// blocks or fails the deploy). The guide is deploy-agnostic and links to the
+// official Microsoft Learn docs rather than any sample-specific scripts.
+func writeTeamsSetupGuide(
+	proj *azdext.ProjectConfig, svc *azdext.ServiceConfig, agentName, botName, msaAppID string,
+) string {
+	guidePath, err := paths.JoinAllowRoot(proj.GetPath(), svc.GetRelativePath(), teamsSetupGuideFile)
+	if err != nil {
+		log.Printf("postdeploy: skipping Teams setup guide: %v", err)
+		return ""
+	}
+	if err := os.WriteFile(guidePath, []byte(teamsSetupGuideContent(agentName, botName, msaAppID)), 0o644); err != nil {
+		log.Printf("postdeploy: failed to write Teams setup guide %q: %v", guidePath, err)
+		return ""
+	}
+	return guidePath
+}
+
+// teamsSetupGuideContent renders the Teams onboarding guide markdown. The single
+// value the user must not get wrong is the bot id: a Teams app manifest's
+// bots[].id MUST equal this bot's msaAppId, which azd bound to the agent
+// instance identity.
+func teamsSetupGuideContent(agentName, botName, msaAppID string) string {
+	return fmt.Sprintf(`# Connect %[1]s to Microsoft Teams
+
+`+"`azd deploy`"+` provisioned the Azure resources for you:
+
+- Azure Bot: `+"`%[2]s`"+` (Microsoft Teams channel enabled)
+- Bot ID (msaAppId): `+"`%[3]s`"+`
+
+Two manual steps remain on the Microsoft 365 side. They are the same for any
+activity-protocol agent.
+
+## 1. Package the Teams app
+
+Build a Teams app package (a .zip containing manifest.json + a color and outline
+icon). In the manifest, set the bot id to the value above:
+
+`+"```json"+`
+"bots": [{ "botId": "%[3]s", "scopes": ["personal"] }]
+`+"```"+`
+
+- App package overview: https://learn.microsoft.com/microsoftteams/platform/concepts/build-and-test/apps-package
+- Manifest schema: https://learn.microsoft.com/microsoftteams/platform/resources/schema/manifest-schema
+- Bots in Teams: https://learn.microsoft.com/microsoftteams/platform/bots/how-to/create-a-bot-for-teams
+
+Tip: the Microsoft 365 Agents Toolkit can scaffold and package the manifest for you:
+https://learn.microsoft.com/microsoftteams/platform/toolkit/agents-toolkit-fundamentals
+
+## 2. Sideload (upload) the app
+
+Enable custom app upload for your tenant, then upload the package in Teams:
+Apps -> Manage your apps -> Upload an app -> Upload a custom app.
+
+- Upload a custom app: https://learn.microsoft.com/microsoftteams/platform/concepts/deploy-and-publish/apps-upload
+- Enable custom app upload: https://learn.microsoft.com/microsoftteams/platform/concepts/build-and-test/prepare-your-o365-tenant
+
+Once uploaded, open the app in Teams and send a message to talk to your agent.
+`, agentName, botName, msaAppID)
+}
+
+// printTeamsNextSteps prints a short pointer to the generated setup guide. The
+// full instructions live in the guide file because the azd progress UI does not
+// reliably surface postdeploy stdout.
+func printTeamsNextSteps(botName, msaAppID, guidePath string) {
 	fmt.Println(output.WithHighLightFormat("\nTeams bot ready."))
 	fmt.Printf("  Azure Bot:  %s (Microsoft Teams channel enabled)\n", botName)
-	fmt.Println("\nNext steps (outside azd — Teams app packaging & install):")
-	fmt.Println(output.WithGrayFormat(
-		"  1. Package the Teams app with botId = the bot's msaAppId " +
-			"(see scripts/package-teams-app.ps1 or the Microsoft 365 Agents Toolkit).",
-	))
-	fmt.Println(output.WithGrayFormat(
-		"  2. Sideload it: Teams -> Apps -> Manage your apps -> Upload a custom app.",
-	))
+	fmt.Printf("  Bot ID:     %s\n", msaAppID)
+	if guidePath != "" {
+		fmt.Println(output.WithGrayFormat(fmt.Sprintf(
+			"  Next steps (package + sideload the Teams app): see %s", guidePath,
+		)))
+	} else {
+		fmt.Println(output.WithGrayFormat(
+			"  Next steps: package the Teams app (bots[].id = the Bot ID above) and " +
+				"upload it in Teams -> Apps -> Manage your apps -> Upload a custom app.",
+		))
+	}
 }
 
 // readEnvValue reads a required environment value, returning a descriptive error

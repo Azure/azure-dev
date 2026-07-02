@@ -13,7 +13,7 @@ import (
 func TestNewFrameworkService(t *testing.T) {
 	t.Parallel()
 	container := ioc.NewNestedContainer(nil)
-	svc := NewFrameworkService(container, nil)
+	svc := NewFrameworkService(container, nil, nil)
 	require.NotNil(t, svc)
 }
 

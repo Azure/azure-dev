@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -42,6 +43,7 @@ type ExternalFrameworkService struct {
 	languageName string
 	languageKind ServiceLanguageKind
 	console      input.Console
+	env          *environment.Environment
 
 	broker *grpcbroker.MessageBroker[azdext.FrameworkServiceMessage]
 }
@@ -53,12 +55,14 @@ func NewExternalFrameworkService(
 	extension *extensions.Extension,
 	broker *grpcbroker.MessageBroker[azdext.FrameworkServiceMessage],
 	console input.Console,
+	env *environment.Environment,
 ) FrameworkService {
 	service := &ExternalFrameworkService{
 		extension:    extension,
 		languageName: name,
 		languageKind: kind,
 		console:      console,
+		env:          env,
 		broker:       broker,
 	}
 
@@ -225,8 +229,8 @@ func (efs *ExternalFrameworkService) Build(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
-	protoServiceConfig := &azdext.ServiceConfig{}
-	if err := mapper.Convert(serviceConfig, &protoServiceConfig); err != nil {
+	protoServiceConfig, err := efs.toProtoServiceConfig(serviceConfig)
+	if err != nil {
 		return nil, err
 	}
 
@@ -271,8 +275,8 @@ func (efs *ExternalFrameworkService) Package(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	protoServiceConfig := &azdext.ServiceConfig{}
-	if err := mapper.Convert(serviceConfig, &protoServiceConfig); err != nil {
+	protoServiceConfig, err := efs.toProtoServiceConfig(serviceConfig)
+	if err != nil {
 		return nil, err
 	}
 
@@ -316,14 +320,8 @@ func (efs *ExternalFrameworkService) toProtoServiceConfig(serviceConfig *Service
 		return nil, nil
 	}
 
-	// Use an empty resolver since ExternalFrameworkService doesn't have access to environment
-	// The extension is responsible for handling environment variable substitution
-	emptyResolver := func(key string) string {
-		return ""
-	}
-
 	var protoConfig *azdext.ServiceConfig
-	err := mapper.WithResolver(emptyResolver).Convert(serviceConfig, &protoConfig)
+	err := mapper.WithResolver(envResolver(efs.env)).Convert(serviceConfig, &protoConfig)
 	if err != nil {
 		return nil, fmt.Errorf("converting service config: %w", err)
 	}

@@ -527,6 +527,29 @@ func Test_ExternalFrameworkService_toProtoNil(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func Test_ExternalFrameworkService_toProtoServiceConfigExpandsEnvironment(t *testing.T) {
+	env := environment.NewWithValues("test", map[string]string{
+		"SERVICE_VALUE": "resolved",
+	})
+	efs := &ExternalFrameworkService{env: env}
+	serviceConfig := &ServiceConfig{
+		Name: "api",
+		Environment: osutil.ExpandableMap{
+			"FROM_ENV": osutil.NewExpandableString("${SERVICE_VALUE}"),
+			"STATIC":   osutil.NewExpandableString("static"),
+		},
+	}
+
+	cfg, err := efs.toProtoServiceConfig(serviceConfig)
+
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+	assert.Equal(t, map[string]string{
+		"FROM_ENV": "resolved",
+		"STATIC":   "static",
+	}, cfg.Environment)
+}
+
 func Test_mergeDefaultEnvVars(t *testing.T) {
 	// Test that user env overrides defaults
 	defaults := map[string]string{

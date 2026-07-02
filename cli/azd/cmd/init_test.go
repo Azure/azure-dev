@@ -1060,7 +1060,7 @@ func Test_EnvSetSecretAction_VaultNotProvisioned_Cancel(t *testing.T) {
 
 	_, err := action.Run(t.Context())
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "operation cancelled by user")
+	assert.Contains(t, err.Error(), "operation canceled by user")
 }
 
 func Test_EnvSetSecretAction_VaultNotProvisioned_SelectError(t *testing.T) {
@@ -1559,7 +1559,7 @@ func Test_EnvSetSecretAction_VaultDefinedButNotProvisioned(t *testing.T) {
 
 	_, err := action.Run(t.Context())
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "cancelled")
+	require.Contains(t, err.Error(), "canceled")
 }
 
 func Test_SelectDistinctExtension_ZeroMatches(t *testing.T) {

@@ -218,8 +218,8 @@ func (o *Options) validateLayers() error {
 type SkippedReasonType string
 
 const (
-	DeploymentStateSkipped  SkippedReasonType = "deployment State"
-	PreflightAbortedSkipped SkippedReasonType = "preflight aborted"
+	DeploymentStateSkipped             SkippedReasonType = "deployment state"
+	ProvisionValidationCanceledSkipped SkippedReasonType = "provision validation canceled"
 )
 
 type DeployResult struct {

@@ -190,7 +190,7 @@ func (er *ExtensionHost) WithProvisioningProvider(
 }
 
 // WithValidationCheck registers a validation check to be wired when Run is invoked.
-// The checkType identifies the validation context (e.g. "local-preflight"),
+// The checkType identifies the validation context (e.g. "provision"),
 // and the ruleID is a stable identifier for this check.
 func (er *ExtensionHost) WithValidationCheck(
 	reg ValidationCheckRegistration,

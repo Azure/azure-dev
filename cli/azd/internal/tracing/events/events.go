@@ -43,11 +43,11 @@ const (
 	CopilotSessionEvent = "copilot.session"
 )
 
-// Preflight validation events.
+// Provision validation events.
 const (
-	// PreflightValidationEvent tracks the local preflight validation operation
-	// and its outcome (passed, warnings accepted, aborted).
-	PreflightValidationEvent = "validation.preflight"
+	// ProvisionValidationEvent tracks the local provision validation operation
+	// and its outcome (passed, warnings accepted, canceled).
+	ProvisionValidationEvent = "validation.provision"
 )
 
 // Hook execution events.

@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test_CLI_PreflightQuota_RG_DefaultCapacity verifies that the ai_model_quota preflight
+// Test_CLI_ProvisionValidationQuota_RG_DefaultCapacity verifies that the ai_model_quota validation
 // check fires a quota warning for RG-scoped deployments when capacity is absurdly high.
-func Test_CLI_PreflightQuota_RG_DefaultCapacity(t *testing.T) {
+func Test_CLI_ProvisionValidationQuota_RG_DefaultCapacity(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -38,7 +38,7 @@ func Test_CLI_PreflightQuota_RG_DefaultCapacity(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	// Persist AZURE_LOCATION to the azd environment so the preflight check
+	// Persist AZURE_LOCATION to the azd environment so the validation check
 	// can resolve it for RG-scoped deployments where the RG doesn't exist yet.
 	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_LOCATION", "eastus2")
 	require.NoError(t, err)
@@ -46,12 +46,12 @@ func Test_CLI_PreflightQuota_RG_DefaultCapacity(t *testing.T) {
 	// Provision with default params (capacity=99999) — expect quota warning, answer No.
 	result, err := cli.RunCommandWithStdIn(
 		ctx,
-		stdinForRGProvisionWithPreflightNo(),
+		stdinForRGProvisionWithValidationNo(),
 		"provision",
 	)
 	require.NoError(t, err)
 	// The user declined the warning, so azd should stop before provisioning.
-	// In this flow, declining the preflight warning is expected to return successfully,
+	// In this flow, declining the validation warning is expected to return successfully,
 	// and the output should contain the quota warning.
 	output := result.Stdout + result.Stderr
 	require.Contains(t, output, "Insufficient quota",
@@ -60,9 +60,9 @@ func Test_CLI_PreflightQuota_RG_DefaultCapacity(t *testing.T) {
 		"expected actionable suggestion in output")
 }
 
-// Test_CLI_PreflightQuota_RG_InvalidModelName verifies a warning when the model name
+// Test_CLI_ProvisionValidationQuota_RG_InvalidModelName verifies a warning when the model name
 // doesn't exist in the Azure AI catalog.
-func Test_CLI_PreflightQuota_RG_InvalidModelName(t *testing.T) {
+func Test_CLI_ProvisionValidationQuota_RG_InvalidModelName(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -89,7 +89,7 @@ func Test_CLI_PreflightQuota_RG_InvalidModelName(t *testing.T) {
 
 	result, err := cli.RunCommandWithStdIn(
 		ctx,
-		stdinForRGProvisionWithPreflightNo(),
+		stdinForRGProvisionWithValidationNo(),
 		"provision",
 	)
 	require.NoError(t, err)
@@ -99,9 +99,9 @@ func Test_CLI_PreflightQuota_RG_InvalidModelName(t *testing.T) {
 	require.Contains(t, output, "gpt-nonexistent-model")
 }
 
-// Test_CLI_PreflightQuota_RG_InvalidVersion verifies a warning when the model version
+// Test_CLI_ProvisionValidationQuota_RG_InvalidVersion verifies a warning when the model version
 // is not available in the catalog.
-func Test_CLI_PreflightQuota_RG_InvalidVersion(t *testing.T) {
+func Test_CLI_ProvisionValidationQuota_RG_InvalidVersion(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -128,7 +128,7 @@ func Test_CLI_PreflightQuota_RG_InvalidVersion(t *testing.T) {
 
 	result, err := cli.RunCommandWithStdIn(
 		ctx,
-		stdinForRGProvisionWithPreflightNo(),
+		stdinForRGProvisionWithValidationNo(),
 		"provision",
 	)
 	require.NoError(t, err)
@@ -137,9 +137,9 @@ func Test_CLI_PreflightQuota_RG_InvalidVersion(t *testing.T) {
 		"expected model-not-found warning for invalid version")
 }
 
-// Test_CLI_PreflightQuota_Sub_DefaultCapacity verifies the quota check for
+// Test_CLI_ProvisionValidationQuota_Sub_DefaultCapacity verifies the quota check for
 // subscription-scoped deployments.
-func Test_CLI_PreflightQuota_Sub_DefaultCapacity(t *testing.T) {
+func Test_CLI_ProvisionValidationQuota_Sub_DefaultCapacity(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -161,7 +161,7 @@ func Test_CLI_PreflightQuota_Sub_DefaultCapacity(t *testing.T) {
 
 	result, err := cli.RunCommandWithStdIn(
 		ctx,
-		stdinForProvisionWithPreflightNo(),
+		stdinForProvisionWithValidationNo(),
 		"provision",
 	)
 	require.NoError(t, err)
@@ -170,9 +170,9 @@ func Test_CLI_PreflightQuota_Sub_DefaultCapacity(t *testing.T) {
 		"expected quota exceeded warning in output")
 }
 
-// Test_CLI_PreflightQuota_Sub_InvalidModelName verifies model-not-found for
+// Test_CLI_ProvisionValidationQuota_Sub_InvalidModelName verifies model-not-found for
 // subscription-scoped deployments with a bad model name.
-func Test_CLI_PreflightQuota_Sub_InvalidModelName(t *testing.T) {
+func Test_CLI_ProvisionValidationQuota_Sub_InvalidModelName(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -196,7 +196,7 @@ func Test_CLI_PreflightQuota_Sub_InvalidModelName(t *testing.T) {
 
 	result, err := cli.RunCommandWithStdIn(
 		ctx,
-		stdinForProvisionWithPreflightNo(),
+		stdinForProvisionWithValidationNo(),
 		"provision",
 	)
 	require.NoError(t, err)
@@ -206,9 +206,9 @@ func Test_CLI_PreflightQuota_Sub_InvalidModelName(t *testing.T) {
 	require.Contains(t, output, "gpt-555-turbo")
 }
 
-// Test_CLI_PreflightQuota_Sub_DifferentLocation verifies quota checking against
+// Test_CLI_ProvisionValidationQuota_Sub_DifferentLocation verifies quota checking against
 // a different location than the primary deployment location.
-func Test_CLI_PreflightQuota_Sub_DifferentLocation(t *testing.T) {
+func Test_CLI_ProvisionValidationQuota_Sub_DifferentLocation(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -232,7 +232,7 @@ func Test_CLI_PreflightQuota_Sub_DifferentLocation(t *testing.T) {
 
 	result, err := cli.RunCommandWithStdIn(
 		ctx,
-		stdinForProvisionWithPreflightNo(),
+		stdinForProvisionWithValidationNo(),
 		"provision",
 	)
 	require.NoError(t, err)
@@ -242,28 +242,28 @@ func Test_CLI_PreflightQuota_Sub_DifferentLocation(t *testing.T) {
 		"expected quota check against the override location")
 }
 
-// stdinForProvisionWithPreflightNo provides stdin for subscription-scoped provision that:
+// stdinForProvisionWithValidationNo provides stdin for subscription-scoped provision that:
 // 1. Accepts default subscription
 // 2. Accepts default location
-// 3. Answers "No" to the preflight warning prompt
-func stdinForProvisionWithPreflightNo() string {
+// 3. Answers "No" to the validation warning prompt
+func stdinForProvisionWithValidationNo() string {
 	return strings.Join([]string{
 		"",  // choose subscription (default)
 		"",  // choose location (default)
-		"n", // decline preflight warning
+		"n", // decline validation warning
 	}, "\n")
 }
 
-// stdinForRGProvisionWithPreflightNo provides stdin for resource-group-scoped provision:
+// stdinForRGProvisionWithValidationNo provides stdin for resource-group-scoped provision:
 // 1. Accepts default subscription
 // 2. Accepts default resource group (create new)
 // 3. Accepts default resource group name
-// 4. Answers "No" to the preflight warning prompt
-func stdinForRGProvisionWithPreflightNo() string {
+// 4. Answers "No" to the validation warning prompt
+func stdinForRGProvisionWithValidationNo() string {
 	return strings.Join([]string{
 		"",  // choose subscription (default)
 		"",  // choose resource group (default = create new)
 		"",  // accept default resource group name
-		"n", // decline preflight warning
+		"n", // decline validation warning
 	}, "\n")
 }

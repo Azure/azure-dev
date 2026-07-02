@@ -946,7 +946,7 @@ Extensions can provide AI agent tools through the Model Context Protocol, enabli
 Extensions can contribute validation checks to azd's validation pipeline. Currently
 supported check types:
 
-- **`local-preflight`** — Checks run during `azd provision` before deployment. The
+- **`provision`** — Checks run during `azd provision` before deployment. The
   extension receives the Bicep snapshot, ARM template, ARM parameters, and Azure
   location as context.
 
@@ -958,7 +958,7 @@ changes.
 ```go
 host := azdext.NewExtensionHost(azdClient).
     WithValidationCheck(azdext.ValidationCheckRegistration{
-        CheckType: "local-preflight",
+        CheckType: "provision",
         RuleID:    "my_naming_rule",
         Factory: func() azdext.ValidationCheckProvider {
             return &MyNamingCheck{}
@@ -966,7 +966,7 @@ host := azdext.NewExtensionHost(azdClient).
     })
 ```
 
-See [`local-preflight-validation.md`](../design/local-preflight-validation.md#extension-provided-checks)
+See [`provision-validation.md`](../design/provision-validation.md#extension-provided-checks)
 for full details on the check interface and context keys.
 
 #### Future Considerations
@@ -1078,7 +1078,7 @@ Extensions can declare the following capabilities in their manifest:
 - **`service-target-provider`**: Provide custom service deployment targets
 - **`framework-service-provider`**: Provide custom language frameworks and build systems
 - **`provisioning-provider`**: Provide a custom infrastructure provisioning experience (alternative to Bicep / Terraform)
-- **`validation-provider`**: Contribute validation checks to azd's preflight and future validation pipelines
+- **`validation-provider`**: Contribute validation checks to azd's provision and future validation pipelines
 - **`metadata`**: Provide comprehensive metadata about commands and configuration schemas
 
 #### Complete Extension Manifest Example

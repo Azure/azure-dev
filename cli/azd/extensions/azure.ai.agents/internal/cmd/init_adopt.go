@@ -601,7 +601,7 @@ func applyDeployModeToService(
 		log.Printf("Applied --image %q to agent service %q", flags.image, serviceName)
 
 		// --image implies container deploy; apply container config and return.
-		return applyContainerDeployToService(ctx, azdClient, serviceName)
+		return applyContainerDeployToService(ctx, azdClient, serviceName, svc)
 	}
 
 	// Check whether the service already specifies its deploy mode.
@@ -627,9 +627,9 @@ func applyDeployModeToService(
 	}
 
 	if deployMode == "code" {
-		return applyCodeDeployToService(ctx, flags, azdClient, serviceName, targetDir)
+		return applyCodeDeployToService(ctx, flags, azdClient, serviceName, targetDir, svc)
 	}
-	return applyContainerDeployToService(ctx, azdClient, serviceName)
+	return applyContainerDeployToService(ctx, azdClient, serviceName, svc)
 }
 
 // adoptedServiceHasCodeConfig checks whether the adopted agent service already
@@ -681,6 +681,7 @@ func applyCodeDeployToService(
 	azdClient *azdext.AzdClient,
 	serviceName string,
 	targetDir string,
+	svc *azdext.ServiceConfig,
 ) error {
 	codeConfig, err := promptCodeConfig(ctx, azdClient, targetDir, flags.noPrompt, codeDeployOptions{
 		runtime:       flags.runtime,
@@ -732,12 +733,13 @@ func applyCodeDeployToService(
 	}
 
 	// Remove docker property if it was previously set (switching from container to code).
-	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
-		ServiceName: serviceName,
-		Path:        "docker",
-		Value:       structpb.NewNullValue(),
-	}); err != nil {
-		log.Printf("warning: could not clear docker property on service %q: %v", serviceName, err)
+	if adoptedServiceHasDocker(svc) {
+		if _, err := azdClient.Project().UnsetServiceConfig(ctx, &azdext.UnsetServiceConfigRequest{
+			ServiceName: serviceName,
+			Path:        "docker",
+		}); err != nil {
+			log.Printf("warning: could not clear docker property on service %q: %v", serviceName, err)
+		}
 	}
 
 	log.Printf("Applied code deploy configuration (runtime=%s, entryPoint=%s) to service %q",
@@ -752,6 +754,7 @@ func applyContainerDeployToService(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	serviceName string,
+	svc *azdext.ServiceConfig,
 ) error {
 	// Set docker property with remote build enabled.
 	dockerMap := map[string]any{"remoteBuild": true}
@@ -782,12 +785,13 @@ func applyContainerDeployToService(
 	}
 
 	// Remove codeConfiguration if present (switching from code to container).
-	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
-		ServiceName: serviceName,
-		Path:        "codeConfiguration",
-		Value:       structpb.NewNullValue(),
-	}); err != nil {
-		log.Printf("warning: could not clear codeConfiguration on service %q: %v", serviceName, err)
+	if adoptedServiceHasCodeConfig(svc) {
+		if _, err := azdClient.Project().UnsetServiceConfig(ctx, &azdext.UnsetServiceConfigRequest{
+			ServiceName: serviceName,
+			Path:        "codeConfiguration",
+		}); err != nil {
+			log.Printf("warning: could not clear codeConfiguration on service %q: %v", serviceName, err)
+		}
 	}
 
 	log.Printf("Applied container deploy configuration to service %q", serviceName)

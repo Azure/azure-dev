@@ -161,32 +161,23 @@ func verifyAzureYamlDeployments(
 		return nil, nil, false, fmt.Errorf("failed to get AZURE_AI_PROJECT_ID: %w", err)
 	}
 
+	var allDeployments []FoundryDeploymentInfo
 	foundryProjectId := resp.Value
-	if foundryProjectId == "" {
-		// No project selected (deferred setup) — keep all deployments as-is.
-		for _, e := range entries {
-			keptEntries = append(keptEntries, e)
+	if foundryProjectId != "" {
+		parts := strings.Split(foundryProjectId, "/")
+		if len(parts) < 9 {
+			return nil, nil, false, fmt.Errorf(
+				"invalid AZURE_AI_PROJECT_ID format: expected at least 9 path segments, got %d", len(parts))
 		}
-		// Return kept entries as referenced so AZURE_AI_MODEL_DEPLOYMENT_NAME is still written.
-		for _, e := range entries {
-			referencedDeployments = append(referencedDeployments, e.Deployment)
+
+		subscription := parts[2]
+		resourceGroup := parts[4]
+		accountName := parts[8]
+
+		allDeployments, err = listProjectDeployments(ctx, credential, subscription, resourceGroup, accountName)
+		if err != nil {
+			return nil, nil, false, fmt.Errorf("failed to list deployments in Foundry project: %w", err)
 		}
-		return keptEntries, referencedDeployments, false, nil
-	}
-
-	parts := strings.Split(foundryProjectId, "/")
-	if len(parts) < 9 {
-		return nil, nil, false, fmt.Errorf(
-			"invalid AZURE_AI_PROJECT_ID format: expected at least 9 path segments, got %d", len(parts))
-	}
-
-	subscription := parts[2]
-	resourceGroup := parts[4]
-	accountName := parts[8]
-
-	allDeployments, listErr := listProjectDeployments(ctx, credential, subscription, resourceGroup, accountName)
-	if listErr != nil {
-		return nil, nil, false, fmt.Errorf("failed to list deployments in Foundry project: %w", listErr)
 	}
 
 	// --model-deployment flag: auto-select the named deployment, skip interactive loop.
@@ -268,7 +259,7 @@ func verifyAzureYamlDeployments(
 			fmt.Printf("  SKU: %s, capacity %d\n", dep.Sku.Name, dep.Sku.Capacity)
 			fmt.Println()
 
-			fmt.Println("Matching deployment(s) already exist in your Foundry project:")
+			fmt.Println("Existing deployment(s) using the same model were found in your Foundry project:")
 			for _, name := range sortedNames {
 				d := matchingDeployments[name]
 				fmt.Printf("  • %s — version %s, SKU: %s (capacity %d)\n",
@@ -276,7 +267,7 @@ func verifyAzureYamlDeployments(
 			}
 			fmt.Println()
 
-			// Build prompt choices: use each existing + deploy as specified + choose different + skip
+			// Build prompt choices: use each existing + optionally deploy as specified + choose different + skip
 			choices := make([]*azdext.SelectChoice, 0, len(sortedNames)+3)
 			for _, name := range sortedNames {
 				d := matchingDeployments[name]
@@ -286,11 +277,24 @@ func verifyAzureYamlDeployments(
 						name, d.Version, d.SkuName),
 				})
 			}
-			choices = append(choices,
-				&azdext.SelectChoice{
+			// Only offer "deploy as specified" if no existing deployment is an exact match.
+			hasExactMatch := false
+			for _, d := range matchingDeployments {
+				if d.Name == dep.Name &&
+					d.Version == dep.Model.Version &&
+					d.SkuName == dep.Sku.Name &&
+					d.SkuCapacity == dep.Sku.Capacity {
+					hasExactMatch = true
+					break
+				}
+			}
+			if !hasExactMatch {
+				choices = append(choices, &azdext.SelectChoice{
 					Value: "deploy",
 					Label: "Deploy as specified in azure.yaml",
-				},
+				})
+			}
+			choices = append(choices,
 				&azdext.SelectChoice{
 					Value: "change",
 					Label: "Choose a different model",
@@ -344,15 +348,17 @@ func verifyAzureYamlDeployments(
 				referencedDeployments = append(referencedDeployments, dep)
 
 			case selected == "change":
-				newDep, err := promptAlternativeDeployment(ctx, azdClient, azureContext, allDeployments, modelFlag)
+				newDep, isExisting, err := promptAlternativeDeployment(ctx, azdClient, azureContext, allDeployments, modelFlag)
 				if err != nil {
 					return nil, nil, false, err
 				}
 				if newDep != nil {
-					keptEntries = append(keptEntries, foundryDeploymentEntry{
-						ServiceName: entry.ServiceName,
-						Deployment:  *newDep,
-					})
+					if !isExisting {
+						keptEntries = append(keptEntries, foundryDeploymentEntry{
+							ServiceName: entry.ServiceName,
+							Deployment:  *newDep,
+						})
+					}
 					referencedDeployments = append(referencedDeployments, *newDep)
 				}
 				modified = true
@@ -364,7 +370,7 @@ func verifyAzureYamlDeployments(
 			}
 
 		} else {
-			// No matching deployment in the project.
+			// No matching deployment in the project (or no project yet).
 			if noPrompt {
 				// Auto-deploy as specified.
 				log.Printf("--no-prompt: no matching deployment for model '%s', will deploy as specified",
@@ -377,11 +383,17 @@ func verifyAzureYamlDeployments(
 				continue
 			}
 
-			color.Yellow(
-				"\nNo existing deployment for model '%s' was found in your Foundry project.\n",
-				dep.Model.Name,
-			)
-			fmt.Printf("Model deployment %s is defined in the azure.yaml:\n", output.WithHighLightFormat("'%s'", dep.Name))
+			if foundryProjectId == "" {
+				fmt.Printf("\nModel deployment %s is defined in the azure.yaml:\n",
+					output.WithHighLightFormat("'%s'", dep.Name))
+			} else {
+				color.Yellow(
+					"\nNo existing deployment for model '%s' was found in your Foundry project.\n",
+					dep.Model.Name,
+				)
+				fmt.Printf("Model deployment %s is defined in the azure.yaml:\n",
+					output.WithHighLightFormat("'%s'", dep.Name))
+			}
 			fmt.Printf("  Model: %s (%s), version %s\n", dep.Model.Name, dep.Model.Format, dep.Model.Version)
 			fmt.Printf("  SKU: %s, capacity %d\n\n", dep.Sku.Name, dep.Sku.Capacity)
 
@@ -415,15 +427,17 @@ func verifyAzureYamlDeployments(
 				referencedDeployments = append(referencedDeployments, dep)
 
 			case "change":
-				newDep, err := promptAlternativeDeployment(ctx, azdClient, azureContext, allDeployments, modelFlag)
+				newDep, isExisting, err := promptAlternativeDeployment(ctx, azdClient, azureContext, allDeployments, modelFlag)
 				if err != nil {
 					return nil, nil, false, err
 				}
 				if newDep != nil {
-					keptEntries = append(keptEntries, foundryDeploymentEntry{
-						ServiceName: entry.ServiceName,
-						Deployment:  *newDep,
-					})
+					if !isExisting {
+						keptEntries = append(keptEntries, foundryDeploymentEntry{
+							ServiceName: entry.ServiceName,
+							Deployment:  *newDep,
+						})
+					}
 					referencedDeployments = append(referencedDeployments, *newDep)
 				}
 				modified = true
@@ -441,41 +455,41 @@ func verifyAzureYamlDeployments(
 
 // promptAlternativeDeployment lets the user browse the model catalog or pick an
 // existing deployment from the project. It returns the chosen deployment, or nil
-// if no selection was made.
+// if no selection was made. The isExisting flag indicates whether the user picked
+// an already-deployed model (true) or a new one from the catalog (false).
 func promptAlternativeDeployment(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	azureContext *azdext.AzureContext,
 	allDeployments []FoundryDeploymentInfo,
 	modelFlag string,
-) (*project.Deployment, error) {
-	// Offer "browse catalog" or "use existing deployment" if any exist.
-	altChoices := []*azdext.SelectChoice{
-		{Value: "catalog", Label: "Browse the model catalog"},
-	}
+) (dep *project.Deployment, isExisting bool, err error) {
+	// Determine whether to prompt for catalog vs existing, or skip straight to catalog.
+	useCatalog := true
 	if len(allDeployments) > 0 {
-		altChoices = append(altChoices, &azdext.SelectChoice{
-			Value: "existing", Label: "Use an existing deployment from this project",
-		})
-	}
-
-	defaultIdx := int32(0)
-	altResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message:       "How would you like to choose a model?",
-			Choices:       altChoices,
-			SelectedIndex: &defaultIdx,
-		},
-	})
-	if err != nil {
-		if exterrors.IsCancellation(err) {
-			return nil, exterrors.Cancelled("model selection was cancelled")
+		altChoices := []*azdext.SelectChoice{
+			{Value: "catalog", Label: "Browse the model catalog"},
+			{Value: "existing", Label: "Use an existing deployment from this project"},
 		}
-		return nil, fmt.Errorf("failed to prompt for alternative model choice: %w", err)
+
+		defaultIdx := int32(0)
+		altResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message:       "How would you like to choose a model?",
+				Choices:       altChoices,
+				SelectedIndex: &defaultIdx,
+			},
+		})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return nil, false, exterrors.Cancelled("model selection was cancelled")
+			}
+			return nil, false, fmt.Errorf("failed to prompt for alternative model choice: %w", err)
+		}
+		useCatalog = altChoices[*altResp.Value].Value == "catalog"
 	}
 
-	switch altChoices[*altResp.Value].Value {
-	case "catalog":
+	if useCatalog {
 		// Use the full model + deployment prompt which handles version,
 		// SKU, and capacity selection (same as manifest path).
 		defaultModel := "gpt-4.1-mini"
@@ -494,9 +508,9 @@ func promptAlternativeDeployment(
 		modelResp, err := azdClient.Prompt().PromptAiModel(ctx, promptReq)
 		if err != nil {
 			if exterrors.IsCancellation(err) {
-				return nil, exterrors.Cancelled("model selection was cancelled")
+				return nil, false, exterrors.Cancelled("model selection was cancelled")
 			}
-			return nil, fmt.Errorf("failed to prompt for model selection: %w", err)
+			return nil, false, fmt.Errorf("failed to prompt for model selection: %w", err)
 		}
 
 		model := modelResp.Model
@@ -515,9 +529,9 @@ func promptAlternativeDeployment(
 		})
 		if err != nil {
 			if exterrors.IsCancellation(err) {
-				return nil, exterrors.Cancelled("deployment configuration was cancelled")
+				return nil, false, exterrors.Cancelled("deployment configuration was cancelled")
 			}
-			return nil, fmt.Errorf("failed to prompt for deployment details: %w", err)
+			return nil, false, fmt.Errorf("failed to prompt for deployment details: %w", err)
 		}
 
 		d := deploymentResp.Deployment
@@ -537,66 +551,63 @@ func promptAlternativeDeployment(
 				Name:     skuName,
 				Capacity: int(d.Capacity),
 			},
-		}, nil
-
-	case "existing":
-		// Let user pick from all deployments in the project.
-		type labeledDep struct {
-			label string
-			info  *FoundryDeploymentInfo
-		}
-		items := make([]labeledDep, 0, len(allDeployments))
-		for i := range allDeployments {
-			d := &allDeployments[i]
-			items = append(items, labeledDep{
-				label: fmt.Sprintf("%s (%s, version %s)", d.Name, d.ModelName, d.Version),
-				info:  d,
-			})
-		}
-		slices.SortFunc(items, func(a, b labeledDep) int {
-			return strings.Compare(a.label, b.label)
-		})
-
-		choices := make([]*azdext.SelectChoice, len(items))
-		for i, item := range items {
-			choices[i] = &azdext.SelectChoice{
-				Value: item.label,
-				Label: item.label,
-			}
-		}
-
-		defaultIdx := int32(0)
-		selResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-			Options: &azdext.SelectOptions{
-				Message:       "Select a deployment",
-				Choices:       choices,
-				SelectedIndex: &defaultIdx,
-			},
-		})
-		if err != nil {
-			if exterrors.IsCancellation(err) {
-				return nil, exterrors.Cancelled("deployment selection was cancelled")
-			}
-			return nil, fmt.Errorf("failed to select existing deployment: %w", err)
-		}
-
-		selected := items[*selResp.Value]
-		d := selected.info
-		return &project.Deployment{
-			Name: d.Name,
-			Model: project.DeploymentModel{
-				Name:    d.ModelName,
-				Format:  d.ModelFormat,
-				Version: d.Version,
-			},
-			Sku: project.DeploymentSku{
-				Name:     d.SkuName,
-				Capacity: d.SkuCapacity,
-			},
-		}, nil
+		}, false, nil
 	}
 
-	return nil, nil
+	// Let user pick from all deployments in the project.
+	type labeledDep struct {
+		label string
+		info  *FoundryDeploymentInfo
+	}
+	items := make([]labeledDep, 0, len(allDeployments))
+	for i := range allDeployments {
+		d := &allDeployments[i]
+		items = append(items, labeledDep{
+			label: fmt.Sprintf("%s (%s, version %s)", d.Name, d.ModelName, d.Version),
+			info:  d,
+		})
+	}
+	slices.SortFunc(items, func(a, b labeledDep) int {
+		return strings.Compare(a.label, b.label)
+	})
+
+	choices := make([]*azdext.SelectChoice, len(items))
+	for i, item := range items {
+		choices[i] = &azdext.SelectChoice{
+			Value: item.label,
+			Label: item.label,
+		}
+	}
+
+	defaultIdx := int32(0)
+	selResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       "Select a deployment",
+			Choices:       choices,
+			SelectedIndex: &defaultIdx,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return nil, false, exterrors.Cancelled("deployment selection was cancelled")
+		}
+		return nil, false, fmt.Errorf("failed to select existing deployment: %w", err)
+	}
+
+	selected := items[*selResp.Value]
+	d := selected.info
+	return &project.Deployment{
+		Name: d.Name,
+		Model: project.DeploymentModel{
+			Name:    d.ModelName,
+			Format:  d.ModelFormat,
+			Version: d.Version,
+		},
+		Sku: project.DeploymentSku{
+			Name:     d.SkuName,
+			Capacity: d.SkuCapacity,
+		},
+	}, true, nil
 }
 
 // updateAzureYamlDeployments writes the filtered deployment list back to the

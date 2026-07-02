@@ -120,7 +120,7 @@ func writeTeamsSetupGuide(
 		log.Printf("postdeploy: skipping Teams setup guide: %v", err)
 		return ""
 	}
-	if err := os.WriteFile(guidePath, []byte(teamsSetupGuideContent(agentName, botName, msaAppID)), 0o644); err != nil {
+	if err := os.WriteFile(guidePath, []byte(teamsSetupGuideContent(agentName, botName, msaAppID)), 0o600); err != nil {
 		log.Printf("postdeploy: failed to write Teams setup guide %q: %v", guidePath, err)
 		return ""
 	}

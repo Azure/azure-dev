@@ -41,7 +41,7 @@ func TestWriteTeamsSetupGuide(t *testing.T) {
 	root := t.TempDir()
 	proj := &azdext.ProjectConfig{Path: root}
 	svc := &azdext.ServiceConfig{Name: "echo-agent", RelativePath: "src"}
-	if err := os.MkdirAll(filepath.Join(root, "src"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o750); err != nil {
 		t.Fatal(err)
 	}
 

@@ -1,6 +1,6 @@
 # Azure AI RLE extension for azd
 
-Quickstart for the `azd ai rle` preview extension. The extension manages an OpenEnv-style RLE environment lifecycle: copy OpenEnv sample source, build and run the environment container, test it through a playground UI or shell, and deploy the environment image to the RLE control plane.
+Quickstart for the `azd ai rle` preview extension. The extension manages an OpenEnv-style RLE environment lifecycle: init, build and run the environment container, test it through a playground UI or shell, and deploy the environment image to the RLE control plane.
 
 ## Prerequisites
 
@@ -8,8 +8,8 @@ Install:
 
 - Azure Developer CLI (`azd`): https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd
 - Docker Desktop: https://www.docker.com/products/docker-desktop/
-- Go, if installing from this local source checkout: https://go.dev/doc/install
-- Git, if installing from this local source checkout: https://git-scm.com/downloads
+- Go, if building from source: https://go.dev/doc/install
+- Git, if building from source: https://git-scm.com/downloads
 
 Verify:
 
@@ -62,7 +62,7 @@ $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = "<registry>.azurecr.io"
 
 ## Quickstart
 
-Enable the preview command surface:
+Discovery for all commands is currently disabled using azd env flag. To enable:
 
 ```powershell
 $env:AZD_AI_RLE_ENABLE = "true"
@@ -88,8 +88,7 @@ Name the copied echo session:
 azd ai rle init code_rl
 ```
 
-For an existing source folder, skip `init` and run commands directly from that folder. If `.azd-rle.json`
-does not exist, `run` creates it with only the inferred local environment name.
+For an existing source folder, skip `init` and run commands directly from that folder.
 
 ### 2. Run locally
 
@@ -100,16 +99,15 @@ azd ai rle run
 `run` builds a local Docker image from the current source folder, removes any stale local container for the
 same environment name, starts a fresh container, waits for `/health`, opens the playground UI at `/web`, and
 keeps an OpenEnv shell attached. When the shell exits or Ctrl+C is received, `run` removes the local container.
-When `.azd-rle.json` is missing, `run` prints a message that it is using the current folder as the RLE source
-and creates `.azd-rle.json` with only the `name` field.
+
+If `.azd-rle.json`
+does not exist, `run` creates it with only the inferred local environment name.
 
 Use a custom host port:
 
 ```powershell
 azd ai rle run --port 9000
 ```
-
-The selected port is only used for that run and is not saved in `.azd-rle.json`.
 
 `run` looks for `Dockerfile` at the source root, then `server\Dockerfile`. If the Dockerfile is elsewhere,
 pass it explicitly:
@@ -124,7 +122,7 @@ Rebuild automatically while editing local source:
 azd ai rle run --watch
 ```
 
-The shell supports these commands:
+The shell supports the standard OpenEnv commands:
 
 ```text
 rle> health

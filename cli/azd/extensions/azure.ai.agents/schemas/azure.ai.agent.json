@@ -4,13 +4,6 @@
   "description": "Custom configuration for the Azure AI Agent Service target",
   "type": "object",
   "properties": {
-    "env": {
-      "type": "object",
-      "description": "Environment variables as key-value pairs",
-      "additionalProperties": {
-        "type": "string"
-      }
-    },
     "environmentVariables": {
       "type": "array",
       "description": "Environment variables for the hosted agent container, as a list of name/value pairs. Values support ${ENV_VAR} substitution resolved from the azd environment at deploy time.",

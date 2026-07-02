@@ -28,5 +28,5 @@ services:
     environmentVariables:
       - name: LOG_LEVEL
         value: info
-      - name: MODEL_ENDPOINT
-        value: ${FOUNDRY_PROJECT_ENDPOINT}
+      - name: AZURE_AI_MODEL_DEPLOYMENT_NAME
+        value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}

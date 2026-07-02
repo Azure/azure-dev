@@ -8,7 +8,7 @@
 
 ### Bugs Fixed
 
-- [[#8935]](https://github.com/Azure/azure-dev/pull/8935) `azd ai agent init` writes an agent service `environmentVariables` list that the `azure.ai.agent` schema did not define. Add the `environmentVariables` property (a list of `name`/`value` pairs) to the schema so the generated `azure.yaml` validates and editors complete it.
+- [[#8935]](https://github.com/Azure/azure-dev/pull/8935) `azd ai agent init` writes an agent service `environmentVariables` list that the `azure.ai.agent` schema did not define. Add the `environmentVariables` property (a list of `name`/`value` pairs) to the schema so the generated `azure.yaml` validates and editors complete it, and disallow service-level `env` for `azure.ai.agent` services because azd core does not forward it to extensions.
 
 ### Other Changes
 

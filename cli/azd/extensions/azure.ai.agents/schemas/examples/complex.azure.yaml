@@ -106,9 +106,11 @@ services:
     startupCommand: python main.py
     toolboxes:
       - research-tools
-    env:
-      LOG_LEVEL: info
-      MODEL_ENDPOINT: ${{project.endpoint}}
+    environmentVariables:
+      - name: LOG_LEVEL
+        value: info
+      - name: AZURE_AI_MODEL_DEPLOYMENT_NAME
+        value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
     protocols:
       - protocol: a2a
         version: "0.2"

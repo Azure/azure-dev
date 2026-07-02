@@ -1534,6 +1534,9 @@ To re-generate gRPC clients:
 
 The following are a list of available gRPC services for extension developer to integrate with `azd` core.
 
+Service-level `env` entries from `azure.yaml` are expanded by `azd` and forwarded to extension
+providers as `ServiceConfig.environment`.
+
 ### Table of Contents
 
 - [Project Service](#project-service)

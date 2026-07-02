@@ -15,7 +15,6 @@ import (
 	"sync"
 
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/project"
 
@@ -295,13 +294,10 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		return nil
 	}
 
-	// Collect agent identity from the hosted agent service that was deployed.
-	// After deploy, each hosted agent's name/version is stored as AGENT_{SERVICE_KEY}_NAME/VERSION.
-	// We fetch the full agent version object from the API to get the instance identity principal ID,
-	// which allows us to skip the slow Graph API discovery during RBAC assignment.
+	// Set up the project endpoint and credential used by optimization reporting.
 	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		return fmt.Errorf("failed to get current environment for agent identity RBAC: %w", err)
+		return fmt.Errorf("failed to get current environment: %w", err)
 	}
 
 	envName := envResp.Environment.Name
@@ -337,47 +333,7 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create credential for agent identity RBAC: %w", err)
-	}
-
-	agentClient := agent_api.NewAgentClient(endpointResp.Value, cred)
-
-	// Fetch the agent version to get the instance identity principal ID.
-	serviceKey := toServiceKey(svc.Name)
-
-	versionResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envName,
-		Key:     fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
-	})
-	if err != nil {
-		return fmt.Errorf(
-			"failed to read AGENT_%s_VERSION from environment: %w",
-			serviceKey, err,
-		)
-	}
-	if versionResp.Value == "" {
-		return nil
-	}
-
-	versionObj, err := agentClient.GetAgentVersion(
-		ctx, svc.Name, versionResp.Value, DefaultAgentAPIVersion,
-	)
-	if err != nil {
-		return fmt.Errorf(
-			"failed to fetch agent version for %s/%s: %w",
-			svc.Name, versionResp.Value, err,
-		)
-	}
-
-	principalID := ""
-	if versionObj.InstanceIdentity != nil {
-		principalID = versionObj.InstanceIdentity.PrincipalID
-	}
-
-	agentIdentities := map[string]string{svc.Name: principalID}
-
-	if err := project.EnsureAgentIdentityRBAC(ctx, azdClient, agentIdentities); err != nil {
-		return fmt.Errorf("agent identity RBAC setup failed: %w", err)
+		return fmt.Errorf("failed to create credential: %w", err)
 	}
 
 	// Report optimization candidate deployment (best-effort: panics are logged, not propagated).

@@ -80,6 +80,8 @@ func TestServiceConfigMappingWithResolver(t *testing.T) {
 			return "resolved-service"
 		case "REGISTRY":
 			return "myregistry.azurecr.io"
+		case "API_ENDPOINT":
+			return "https://api.contoso.test"
 		default:
 			return ""
 		}
@@ -90,6 +92,10 @@ func TestServiceConfigMappingWithResolver(t *testing.T) {
 		Host:         ContainerAppTarget,
 		Language:     ServiceLanguageDotNet,
 		RelativePath: "./src/api",
+		Environment: osutil.ExpandableMap{
+			"API_ENDPOINT": osutil.NewExpandableString("${API_ENDPOINT}"),
+			"STATIC_ENV":   osutil.NewExpandableString("static-value"),
+		},
 	}
 
 	var protoConfig *azdext.ServiceConfig
@@ -98,6 +104,10 @@ func TestServiceConfigMappingWithResolver(t *testing.T) {
 	require.NotNil(t, protoConfig)
 	require.Equal(t, "test-service", protoConfig.Name)
 	require.Equal(t, string(ContainerAppTarget), protoConfig.Host)
+	require.Equal(t, map[string]string{
+		"API_ENDPOINT": "https://api.contoso.test",
+		"STATIC_ENV":   "static-value",
+	}, protoConfig.Environment)
 }
 
 func TestServiceConfigMappingWithConfig(t *testing.T) {
@@ -218,6 +228,9 @@ func TestServiceConfigReverseMapping(t *testing.T) {
 					Language:     string(ServiceLanguageDotNet),
 					RelativePath: "./src/api",
 					Config:       nil,
+					Environment: map[string]string{
+						"FROM_EXTENSION": "extension-value",
+					},
 				}
 			},
 			validateFn: func(t *testing.T, result *ServiceConfig) {
@@ -227,6 +240,9 @@ func TestServiceConfigReverseMapping(t *testing.T) {
 				require.Equal(t, "./src/api", result.RelativePath)
 				require.Nil(t, result.Config)
 				require.Nil(t, result.AdditionalProperties)
+				require.Equal(t, map[string]string{
+					"FROM_EXTENSION": "extension-value",
+				}, result.Environment.MustExpand(func(string) string { return "" }))
 			},
 		},
 		{
@@ -351,15 +367,28 @@ func TestServiceConfigRoundTripMapping(t *testing.T) {
 		RelativePath: "./src/api",
 		Config:       originalConfig,
 		Uses:         []string{"db", "cache"},
+		Environment: osutil.ExpandableMap{
+			"FROM_ENV": osutil.NewExpandableString("${SERVICE_VALUE}"),
+			"STATIC":   osutil.NewExpandableString("static"),
+		},
 		AdditionalProperties: map[string]any{
 			"roundTripField": "roundTripValue",
 			"nestedData":     map[string]any{"key": "value"},
 		},
 	} // Convert to proto
 	var protoConfig *azdext.ServiceConfig
-	err := mapper.Convert(originalServiceConfig, &protoConfig)
+	err := mapper.WithResolver(func(key string) string {
+		if key == "SERVICE_VALUE" {
+			return "resolved"
+		}
+		return ""
+	}).Convert(originalServiceConfig, &protoConfig)
 	require.NoError(t, err)
 	require.NotNil(t, protoConfig)
+	require.Equal(t, map[string]string{
+		"FROM_ENV": "resolved",
+		"STATIC":   "static",
+	}, protoConfig.Environment)
 
 	// Convert back to ServiceConfig
 	var roundTripServiceConfig *ServiceConfig
@@ -373,6 +402,10 @@ func TestServiceConfigRoundTripMapping(t *testing.T) {
 	require.Equal(t, originalServiceConfig.Language, roundTripServiceConfig.Language)
 	require.Equal(t, originalServiceConfig.RelativePath, roundTripServiceConfig.RelativePath)
 	require.Equal(t, originalServiceConfig.Uses, roundTripServiceConfig.Uses)
+	require.Equal(t, map[string]string{
+		"FROM_ENV": "resolved",
+		"STATIC":   "static",
+	}, roundTripServiceConfig.Environment.MustExpand(func(string) string { return "" }))
 
 	// Verify config data (note: some type conversions are expected due to JSON/protobuf handling)
 	require.NotNil(t, roundTripServiceConfig.Config)
@@ -628,6 +661,9 @@ func TestFromProtoServiceConfigMapping(t *testing.T) {
 		Language:          "csharp",
 		OutputPath:        "./dist",
 		Image:             "nginx:latest",
+		Environment: map[string]string{
+			"APP_SETTING": "setting-value",
+		},
 		Docker: &azdext.DockerProjectOptions{
 			Path:        "./Dockerfile",
 			Context:     ".",
@@ -654,6 +690,9 @@ func TestFromProtoServiceConfigMapping(t *testing.T) {
 	require.Equal(t, ServiceLanguageCsharp, serviceConfig.Language)
 	require.Equal(t, "./dist", serviceConfig.OutputPath)
 	require.Equal(t, "nginx:latest", serviceConfig.Image.MustEnvsubst(func(string) string { return "" }))
+	require.Equal(t, map[string]string{
+		"APP_SETTING": "setting-value",
+	}, serviceConfig.Environment.MustExpand(func(string) string { return "" }))
 
 	// Verify docker options conversion
 	require.Equal(t, "./Dockerfile", serviceConfig.Docker.Path)

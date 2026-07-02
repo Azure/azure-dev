@@ -874,6 +874,7 @@ type ServiceConfig struct {
 	Config               *structpb.Struct       `protobuf:"bytes,11,opt,name=config,proto3" json:"config,omitempty"`
 	AdditionalProperties *structpb.Struct       `protobuf:"bytes,12,opt,name=additional_properties,json=additionalProperties,proto3" json:"additional_properties,omitempty"`
 	Uses                 []string               `protobuf:"bytes,13,rep,name=uses,proto3" json:"uses,omitempty"`
+	Environment          map[string]string      `protobuf:"bytes,14,rep,name=environment,proto3" json:"environment,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -995,6 +996,13 @@ func (x *ServiceConfig) GetAdditionalProperties() *structpb.Struct {
 func (x *ServiceConfig) GetUses() []string {
 	if x != nil {
 		return x.Uses
+	}
+	return nil
+}
+
+func (x *ServiceConfig) GetEnvironment() map[string]string {
+	if x != nil {
+		return x.Environment
 	}
 	return nil
 }
@@ -1424,7 +1432,7 @@ const file_models_proto_rawDesc = "" +
 	"\x10RequiredVersions\x12\x10\n" +
 	"\x03azd\x18\x01 \x01(\tR\x03azd\"-\n" +
 	"\x0fProjectMetadata\x12\x1a\n" +
-	"\btemplate\x18\x01 \x01(\tR\btemplate\"\xee\x03\n" +
+	"\btemplate\x18\x01 \x01(\tR\btemplate\"\xf8\x04\n" +
 	"\rServiceConfig\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12.\n" +
 	"\x13resource_group_name\x18\x02 \x01(\tR\x11resourceGroupName\x12#\n" +
@@ -1441,7 +1449,11 @@ const file_models_proto_rawDesc = "" +
 	" \x01(\v2\x1c.azdext.DockerProjectOptionsR\x06docker\x12/\n" +
 	"\x06config\x18\v \x01(\v2\x17.google.protobuf.StructR\x06config\x12L\n" +
 	"\x15additional_properties\x18\f \x01(\v2\x17.google.protobuf.StructR\x14additionalProperties\x12\x12\n" +
-	"\x04uses\x18\r \x03(\tR\x04uses\"V\n" +
+	"\x04uses\x18\r \x03(\tR\x04uses\x12H\n" +
+	"\venvironment\x18\x0e \x03(\v2&.azdext.ServiceConfig.EnvironmentEntryR\venvironment\x1a>\n" +
+	"\x10EnvironmentEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"V\n" +
 	"\fInfraOptions\x12\x1a\n" +
 	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x16\n" +
@@ -1502,7 +1514,7 @@ func file_models_proto_rawDescGZIP() []byte {
 }
 
 var file_models_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_models_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_models_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_models_proto_goTypes = []any{
 	(ArtifactKind)(0),            // 0: azdext.ArtifactKind
 	(LocationKind)(0),            // 1: azdext.LocationKind
@@ -1525,33 +1537,35 @@ var file_models_proto_goTypes = []any{
 	(*ArtifactList)(nil),         // 18: azdext.ArtifactList
 	(*Artifact)(nil),             // 19: azdext.Artifact
 	nil,                          // 20: azdext.ProjectConfig.ServicesEntry
-	nil,                          // 21: azdext.Artifact.MetadataEntry
-	(*structpb.Struct)(nil),      // 22: google.protobuf.Struct
+	nil,                          // 21: azdext.ServiceConfig.EnvironmentEntry
+	nil,                          // 22: azdext.Artifact.MetadataEntry
+	(*structpb.Struct)(nil),      // 23: google.protobuf.Struct
 }
 var file_models_proto_depIdxs = []int32{
 	7,  // 0: azdext.AzureContext.scope:type_name -> azdext.AzureScope
 	13, // 1: azdext.ProjectConfig.metadata:type_name -> azdext.ProjectMetadata
 	20, // 2: azdext.ProjectConfig.services:type_name -> azdext.ProjectConfig.ServicesEntry
 	15, // 3: azdext.ProjectConfig.infra:type_name -> azdext.InfraOptions
-	22, // 4: azdext.ProjectConfig.additional_properties:type_name -> google.protobuf.Struct
+	23, // 4: azdext.ProjectConfig.additional_properties:type_name -> google.protobuf.Struct
 	16, // 5: azdext.ServiceConfig.docker:type_name -> azdext.DockerProjectOptions
-	22, // 6: azdext.ServiceConfig.config:type_name -> google.protobuf.Struct
-	22, // 7: azdext.ServiceConfig.additional_properties:type_name -> google.protobuf.Struct
-	19, // 8: azdext.ServiceContext.restore:type_name -> azdext.Artifact
-	19, // 9: azdext.ServiceContext.build:type_name -> azdext.Artifact
-	19, // 10: azdext.ServiceContext.package:type_name -> azdext.Artifact
-	19, // 11: azdext.ServiceContext.publish:type_name -> azdext.Artifact
-	19, // 12: azdext.ServiceContext.deploy:type_name -> azdext.Artifact
-	19, // 13: azdext.ArtifactList.artifacts:type_name -> azdext.Artifact
-	0,  // 14: azdext.Artifact.kind:type_name -> azdext.ArtifactKind
-	1,  // 15: azdext.Artifact.location_kind:type_name -> azdext.LocationKind
-	21, // 16: azdext.Artifact.metadata:type_name -> azdext.Artifact.MetadataEntry
-	14, // 17: azdext.ProjectConfig.ServicesEntry.value:type_name -> azdext.ServiceConfig
-	18, // [18:18] is the sub-list for method output_type
-	18, // [18:18] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	23, // 6: azdext.ServiceConfig.config:type_name -> google.protobuf.Struct
+	23, // 7: azdext.ServiceConfig.additional_properties:type_name -> google.protobuf.Struct
+	21, // 8: azdext.ServiceConfig.environment:type_name -> azdext.ServiceConfig.EnvironmentEntry
+	19, // 9: azdext.ServiceContext.restore:type_name -> azdext.Artifact
+	19, // 10: azdext.ServiceContext.build:type_name -> azdext.Artifact
+	19, // 11: azdext.ServiceContext.package:type_name -> azdext.Artifact
+	19, // 12: azdext.ServiceContext.publish:type_name -> azdext.Artifact
+	19, // 13: azdext.ServiceContext.deploy:type_name -> azdext.Artifact
+	19, // 14: azdext.ArtifactList.artifacts:type_name -> azdext.Artifact
+	0,  // 15: azdext.Artifact.kind:type_name -> azdext.ArtifactKind
+	1,  // 16: azdext.Artifact.location_kind:type_name -> azdext.LocationKind
+	22, // 17: azdext.Artifact.metadata:type_name -> azdext.Artifact.MetadataEntry
+	14, // 18: azdext.ProjectConfig.ServicesEntry.value:type_name -> azdext.ServiceConfig
+	19, // [19:19] is the sub-list for method output_type
+	19, // [19:19] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_models_proto_init() }
@@ -1565,7 +1579,7 @@ func file_models_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_models_proto_rawDesc), len(file_models_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   20,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

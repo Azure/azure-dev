@@ -118,6 +118,14 @@ func registerProjectMappings() {
 			return nil, fmt.Errorf("envsubst image: %w", err)
 		}
 
+		var serviceEnv map[string]string
+		if len(src.Environment) > 0 {
+			serviceEnv, err = src.Environment.Expand(envResolver)
+			if err != nil {
+				return nil, fmt.Errorf("envsubst service environment: %w", err)
+			}
+		}
+
 		// Convert Docker options
 		var docker *azdext.DockerProjectOptions
 		err = mapper.WithResolver(resolver).Convert(src.Docker, &docker)
@@ -159,6 +167,7 @@ func registerProjectMappings() {
 			Config:               protoConfig,
 			AdditionalProperties: protoAdditionalProperties,
 			Uses:                 src.Uses,
+			Environment:          serviceEnv,
 		}, nil
 	})
 
@@ -396,6 +405,13 @@ func registerProjectMappings() {
 
 		if src.AdditionalProperties != nil {
 			result.AdditionalProperties = src.AdditionalProperties.AsMap()
+		}
+
+		if len(src.Environment) > 0 {
+			result.Environment = make(osutil.ExpandableMap, len(src.Environment))
+			for key, value := range src.Environment {
+				result.Environment[key] = osutil.NewExpandableString(value)
+			}
 		}
 
 		return result, nil

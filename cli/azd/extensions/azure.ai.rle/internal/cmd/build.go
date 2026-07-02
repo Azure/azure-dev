@@ -18,11 +18,6 @@ type dockerBuildOptions struct {
 	dockerfile string
 }
 
-func resolveDockerBuild(opts dockerBuildOptions) (source string, dockerfile string, err error) {
-	source, dockerfile, _, err = prepareDockerBuild(opts)
-	return source, dockerfile, err
-}
-
 func prepareDockerBuild(opts dockerBuildOptions) (source string, dockerfile string, cleanup func(), err error) {
 	source = strings.TrimSpace(opts.source)
 	if source == "" {
@@ -33,7 +28,6 @@ func prepareDockerBuild(opts dockerBuildOptions) (source string, dockerfile stri
 		return "", "", nil, err
 	}
 
-	dockerfile = ""
 	dockerfile = strings.TrimSpace(opts.dockerfile)
 	if dockerfile != "" {
 		if !isSafeRelativePath(filepath.Clean(filepath.FromSlash(dockerfile))) {
@@ -119,7 +113,7 @@ func pushDockerImage(cmd *cobra.Command, image string) error {
 			Message:    fmt.Sprintf("Failed to push Docker image %q: %v", image, err),
 			Code:       "rle_docker_push_failed",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Ensure Docker is authenticated for the target registry, then retry.",
+			Suggestion: "Run az acr login --name <namespace>, then retry.",
 		}
 	}
 	return nil

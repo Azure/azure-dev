@@ -39,8 +39,8 @@ type environmentResource struct {
 	Name         string `json:"name,omitempty"`
 	AcrImagePath string `json:"acrImagePath,omitempty"`
 	Version      string `json:"version,omitempty"`
-	CreatedAtUtc string `json:"createdAtUtc,omitempty"`
-	UpdatedAtUtc string `json:"updatedAtUtc,omitempty"`
+	CreatedAt    string `json:"createdAtUtc,omitempty"`
+	UpdatedAt    string `json:"updatedAtUtc,omitempty"`
 	VersionLabel string `json:"versionLabel,omitempty"`
 }
 
@@ -57,8 +57,8 @@ type sandboxResource struct {
 	Endpoint      string `json:"endpoint,omitempty"`
 	Status        string `json:"status,omitempty"`
 	Error         string `json:"error,omitempty"`
-	CreatedAtUtc  string `json:"createdAtUtc,omitempty"`
-	UpdatedAtUtc  string `json:"updatedAtUtc,omitempty"`
+	CreatedAt     string `json:"createdAtUtc,omitempty"`
+	UpdatedAt     string `json:"updatedAtUtc,omitempty"`
 }
 
 type rleHTTPError struct {
@@ -75,8 +75,8 @@ func serviceError(err error) error {
 		Message:     err.Error(),
 		ServiceName: "rle-control-plane",
 		Suggestion: fmt.Sprintf(
-			"Ensure the RLE control plane is running and reachable, e.g. %s.",
-			defaultControlPlaneEndpoint,
+			"Ensure the RLE control plane is running and reachable. Trying at %s; adjust if needed by setting RLE_ENDPOINT=<endpoint>.",
+			resolveControlPlaneEndpoint(),
 		),
 	}
 }

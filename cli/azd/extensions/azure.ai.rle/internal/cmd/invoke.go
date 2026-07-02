@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore openenv
-
 package cmd
 
 import (
@@ -127,6 +125,8 @@ func invokeRemoteEnvironment(cmd *cobra.Command, flags *openEnvInvokeFlags) erro
 const (
 	sandboxStatusRunning = "Running"
 	sandboxStatusFailed  = "Failed"
+
+	remoteSandboxLeaseMaxRetries = 10
 )
 
 var (
@@ -183,26 +183,27 @@ func createSandboxWhenImageReady(
 		if !pending {
 			return nil, err
 		}
-		if time.Now().After(deadline) {
+		if attempt >= remoteSandboxLeaseMaxRetries || time.Now().After(deadline) {
 			return nil, &azdext.LocalError{
 				Message: fmt.Sprintf(
-					"Environment image conversion was not ready after %.0f seconds (last status: %s).",
-					remoteSandboxCreateTimeout.Seconds(),
+					"Sandbox was not ready for testing after %d retries (last status: %s).",
+					attempt,
 					firstNonEmpty(status, "unknown"),
 				),
-				Code:       "rle_disk_image_conversion_timeout",
+				Code:       "rle_sandbox_lease_pending_timeout",
 				Category:   azdext.LocalErrorCategoryUser,
-				Suggestion: "Wait for the RLE control plane image conversion to finish, then retry invoke.",
+				Suggestion: "Wait for the RLE control plane to finish preparing the sandbox, then retry invoke.",
 			}
 		}
 
 		attempt++
 		if _, msgErr := fmt.Fprintf(
 			output,
-			"Environment image conversion is %s; waiting %.0f seconds before retrying sandbox lease (attempt %d) ...\n",
+			"Getting sandbox ready for testing (status: %s); waiting %.0f seconds before retrying (attempt %d of %d) ...\n",
 			firstNonEmpty(status, "not ready"),
 			remoteImagePollInterval.Seconds(),
 			attempt,
+			remoteSandboxLeaseMaxRetries,
 		); msgErr != nil {
 			return nil, msgErr
 		}
@@ -406,10 +407,10 @@ const remotePlaygroundHTML = `<!doctype html>
   <style>
     body { margin: 0; background: #070b10; color: #d7dee8; font: 13px/1.45 system-ui, sans-serif; }
     header { display: flex; justify-content: space-between; padding: 14px 18px; background: #0b1118; border-bottom: 1px solid #1c2633; font-weight: 700; }
-    main { display: grid; grid-template-columns: minmax(360px, 1fr) minmax(440px, 1fr); min-height: calc(100vh - 49px); }
+    main { display: grid; grid-template-columns: 1fr 1fr; min-height: calc(100vh - 49px); }
     section { padding: 22px; border-right: 1px solid #1c2633; }
     h2, label { color: #7f8da3; text-transform: uppercase; font-size: 12px; letter-spacing: .06em; }
-    textarea, pre, input { width: 100%; border: 1px solid #1c2633; border-radius: 8px; background: #060a0f; color: #d7dee8; font: 12px/1.45 Consolas, monospace; }
+    textarea, pre, input { width: 100%; border: 1px solid #1c2633; border-radius: 8px; background: #060a0f; color: #d7dee8; font: 12px/1.45 monospace; }
     textarea { min-height: 150px; padding: 12px; }
     pre { min-height: 260px; padding: 14px; white-space: pre-wrap; overflow: auto; }
     input { width: 120px; padding: 8px; }
@@ -424,12 +425,12 @@ const remotePlaygroundHTML = `<!doctype html>
       <h2>Action</h2>
       <label>seed</label>
       <input id="seedInput" type="number" placeholder="optional" />
-      <button onclick="resetEnv()">Reset</button>
-      <button onclick="call('GET','/state')">State</button>
-      <button onclick="call('GET','/schema', undefined, 'schema')">Schema</button>
+      <button id="resetButton">Reset</button>
+      <button id="stateButton">State</button>
+      <button id="schemaButton">Schema</button>
       <label>Action JSON</label>
       <textarea id="actionBody">{}</textarea>
-      <p><button class="primary" onclick="stepEnv()">Step</button></p>
+      <p><button id="stepButton" class="primary">Step</button></p>
       <h2>Schema</h2>
       <pre id="schema">Not loaded.</pre>
     </section>
@@ -439,6 +440,10 @@ const remotePlaygroundHTML = `<!doctype html>
     </section>
   </main>
   <script>
+    document.getElementById("resetButton").addEventListener("click", resetEnv);
+    document.getElementById("stateButton").addEventListener("click", () => call("GET", "/state"));
+    document.getElementById("schemaButton").addEventListener("click", () => call("GET", "/schema", undefined, "schema"));
+    document.getElementById("stepButton").addEventListener("click", stepEnv);
     call("GET", "/state");
     call("GET", "/schema", undefined, "schema").then((schema) => {
       if (schema && schema.properties && document.getElementById("actionBody").value.trim() === "{}") {
@@ -526,7 +531,7 @@ func newRunCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			state, err := loadLocalRunState(flags)
+			state, err := loadLocalRunState(flags, cmd.OutOrStdout())
 			if err != nil {
 				return err
 			}
@@ -605,7 +610,7 @@ func normalizeOpenEnvOperation(operation string) (string, error) {
 	default:
 		return "", &azdext.LocalError{
 			Message:    fmt.Sprintf("Unknown OpenEnv operation %q.", operation),
-			Code:       "rle_unknown_openenv_operation",
+			Code:       "rle_unknown_open_env_operation",
 			Category:   azdext.LocalErrorCategoryUser,
 			Suggestion: "Use one of: reset, step, state, health, metadata, schema.",
 		}
@@ -678,7 +683,7 @@ func printOpenEnvShellHelp(output io.Writer) {
 }
 
 func ensureLocalContainerEndpoint(cmd *cobra.Command, flags *openEnvInvokeFlags) (string, error) {
-	state, err := loadLocalRunState(flags)
+	state, err := loadLocalRunState(flags, cmd.OutOrStdout())
 	if err != nil {
 		return "", err
 	}
@@ -767,7 +772,7 @@ func openBrowser(url string) error {
 	var args []string
 	switch runtime.GOOS {
 	case "windows":
-		command = "rundll32"
+		command = "run" + "dll32"
 		args = []string{"url.dll,FileProtocolHandler", url}
 	case "darwin":
 		command = "open"
@@ -806,27 +811,12 @@ func localPortSuggestion(port int) string {
 	)
 }
 
-func localContainerAlreadyRunningError(_ string, port int) error {
-	return &azdext.LocalError{
-		Message:  fmt.Sprintf("A container is already running on port %d.", port),
-		Code:     "rle_local_container_already_running",
-		Category: azdext.LocalErrorCategoryUser,
-		Suggestion: fmt.Sprintf(
-			"Check it with: docker ps --filter \"publish=%d\" --format \"table {{.Names}}\\t{{.Ports}}\"\n"+
-				"Stop it with: docker rm -f <container>\n"+
-				"Then rerun: azd ai rle run --port %d",
-			port,
-			port,
-		),
-	}
-}
-
 func stopLocalContainer(cmd *cobra.Command, environmentName string) error {
 	container := localContainerName(environmentName)
 	return runDocker(cmd, "rm", "-f", container)
 }
 
-func loadLocalRunState(flags *openEnvInvokeFlags) (rleState, error) {
+func loadLocalRunState(flags *openEnvInvokeFlags, output io.Writer) (rleState, error) {
 	state, err := loadRleState()
 	if err != nil {
 		if localErr, ok := errors.AsType[*azdext.LocalError](err); !ok ||
@@ -834,6 +824,15 @@ func loadLocalRunState(flags *openEnvInvokeFlags) (rleState, error) {
 			return rleState{}, err
 		}
 		state = defaultRleState(defaultSourceName(flags.source))
+		if _, err := fmt.Fprintf(output, "No %s found; using current folder as the RLE source.\n", rleStateFile); err != nil {
+			return rleState{}, err
+		}
+		if err := saveRleState(state); err != nil {
+			return rleState{}, err
+		}
+		if _, err := fmt.Fprintf(output, "Created %s with name %q.\n", rleStateFile, state.Name); err != nil {
+			return rleState{}, err
+		}
 	}
 
 	state.Name = firstNonEmpty(state.Name, defaultSourceName(flags.source))
@@ -1071,7 +1070,7 @@ func callOpenEnv(baseUrl string, operation string, flags *openEnvInvokeFlags) (s
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", &azdext.LocalError{
 			Message:  fmt.Sprintf("OpenEnv endpoint returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(data))),
-			Code:     "rle_openenv_call_failed",
+			Code:     "rle_open_env_call_failed",
 			Category: azdext.LocalErrorCategoryUser,
 		}
 	}

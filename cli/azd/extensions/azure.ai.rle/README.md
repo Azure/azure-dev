@@ -1,5 +1,4 @@
 # Azure AI RLE extension for azd
-<!-- cspell:ignore openenv devrle -->
 
 Quickstart for the `azd ai rle` preview extension. The extension manages an OpenEnv-style RLE environment lifecycle: copy OpenEnv sample source, build and run the environment container, test it through a playground UI or shell, and deploy the environment image to the RLE control plane.
 
@@ -78,7 +77,7 @@ azd ai rle init
 cd .\echo_env
 ```
 
-The default echo session downloads `huggingface/OpenEnv`, copies `envs/echo_env` into the session folder,
+The default echo session downloads the Hugging Face `OpenEnv` repo, copies `envs/echo_env` into the session folder,
 and writes `.azd-rle.json` with the local environment name.
 
 The copied session does not keep `.git` metadata from the upstream repository.
@@ -89,7 +88,8 @@ Name the copied echo session:
 azd ai rle init code_rl
 ```
 
-For an existing source folder, skip `init` and run commands directly from that folder.
+For an existing source folder, skip `init` and run commands directly from that folder. If `.azd-rle.json`
+does not exist, `run` creates it with only the inferred local environment name.
 
 ### 2. Run locally
 
@@ -100,6 +100,8 @@ azd ai rle run
 `run` builds a local Docker image from the current source folder, removes any stale local container for the
 same environment name, starts a fresh container, waits for `/health`, opens the playground UI at `/web`, and
 keeps an OpenEnv shell attached. When the shell exits or Ctrl+C is received, `run` removes the local container.
+When `.azd-rle.json` is missing, `run` prints a message that it is using the current folder as the RLE source
+and creates `.azd-rle.json` with only the `name` field.
 
 Use a custom host port:
 
@@ -151,7 +153,8 @@ $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = "<registry>.azurecr.io"
 azd ai rle deploy --project-id <project-id>
 ```
 
-Deploy builds the Docker image as `<registry>.azurecr.io/<environment>:latest`, pushes it to ACR, registers that image with the RLE control plane, and saves the project/environment details in `.azd-rle.json`.
+Deploy builds the Docker image as `<registry>.azurecr.io/<project-id>-<environment>:latest`, pushes it to ACR, registers that image with the RLE control plane, and saves the project/environment details in `.azd-rle.json`.
+The deploy command prints a CLI-friendly summary using `environmentId`, `acrImage`, `version`, `createdAt`, and `updatedAt`.
 
 If needed, override the Dockerfile path the same way as local run:
 

@@ -6,7 +6,6 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -210,8 +209,11 @@ func TestInitCopiesOpenEnvEchoSampleByDefault(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(sessionDir, ".git")); !os.IsNotExist(err) {
 		t.Fatalf("expected copied sample not to include .git metadata, got err=%v", err)
 	}
-	if !strings.Contains(output.String(), fmt.Sprintf("cd %q", sessionDir)) {
-		t.Fatalf("expected init output to quote cd path, got %s", output.String())
+	if strings.Contains(output.String(), sessionDir) {
+		t.Fatalf("expected init output not to use absolute cd path, got %s", output.String())
+	}
+	if !strings.Contains(output.String(), `cd ".\echo_env"`) {
+		t.Fatalf("expected init output to quote relative cd path, got %s", output.String())
 	}
 }
 

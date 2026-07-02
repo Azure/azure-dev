@@ -5,7 +5,7 @@ package cmd
 
 import (
 	"fmt"
-	"path/filepath"
+	"os"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -48,15 +48,12 @@ func newInitCommand() *cobra.Command {
 				return err
 			}
 
-			displayDir, err := filepath.Abs(sessionDir)
-			if err != nil {
-				return err
-			}
+			displayDir := "." + string(os.PathSeparator) + sessionDir
 			_, err = fmt.Fprintf(
 				cmd.OutOrStdout(),
 				"Created OpenEnv-style environment at: %s\n"+
 					"Next steps:\n"+
-					"  cd %q\n"+
+					"  cd \"%s\"\n"+
 					"  azd ai rle run\n"+
 					"  $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = \"<registry>.azurecr.io\"\n"+
 					"  azd ai rle deploy --project-id <project-id>\n",

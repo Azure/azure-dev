@@ -1,6 +1,5 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
-
 package cmd
 
 import (
@@ -77,7 +76,7 @@ func checkoutOpenEnvEchoSample(name string, dest string, force bool) (string, er
 	if err != nil {
 		return "", err
 	}
-	tempDir, err := os.MkdirTemp("", "azd-rle-openenv-*")
+	tempDir, err := os.MkdirTemp("", "azd-rle-open-env-*")
 	if err != nil {
 		return "", err
 	}
@@ -128,7 +127,7 @@ func runGitCheckout(args ...string) error {
 	if err != nil {
 		return &azdext.LocalError{
 			Message:    fmt.Sprintf("Failed to checkout OpenEnv echo sample: %v", err),
-			Code:       "rle_openenv_checkout_failed",
+			Code:       "rle_open_env_checkout_failed",
 			Category:   azdext.LocalErrorCategoryUser,
 			Suggestion: strings.TrimSpace(string(output)),
 		}

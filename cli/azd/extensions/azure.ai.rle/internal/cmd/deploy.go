@@ -134,13 +134,13 @@ func newDeployCommand() *cobra.Command {
 				return err
 			}
 			body, err := json.MarshalIndent(environmentOutput{
-				Id:           environment.Id,
-				ProjectId:    firstNonEmpty(environment.ProjectId, state.Project),
-				Name:         firstNonEmpty(environment.Name, state.Name),
-				AcrImagePath: firstNonEmpty(environment.AcrImagePath, image),
-				Version:      state.EnvironmentVersion,
-				CreatedAtUtc: environment.CreatedAtUtc,
-				UpdatedAtUtc: environment.UpdatedAtUtc,
+				EnvironmentId: environment.Id,
+				ProjectId:     firstNonEmpty(environment.ProjectId, state.Project),
+				Name:          firstNonEmpty(environment.Name, state.Name),
+				AcrImage:      firstNonEmpty(environment.AcrImagePath, image),
+				Version:       state.EnvironmentVersion,
+				CreatedAt:     environment.CreatedAt,
+				UpdatedAt:     environment.UpdatedAt,
 			}, "", "  ")
 			if err != nil {
 				return err
@@ -186,15 +186,15 @@ func resolveDeployImage(flags *rleDeployFlags, state rleState) (string, error) {
 			Suggestion: "Set AZURE_CONTAINER_REGISTRY_ENDPOINT=<registry>.azurecr.io, then run deploy again.",
 		}
 	}
-	return fmt.Sprintf("%s/%s:latest", registry, slug(state.Name)), nil
+	return fmt.Sprintf("%s/%s-%s:latest", registry, slug(state.Project), slug(state.Name)), nil
 }
 
 type environmentOutput struct {
-	Id           string `json:"id"`
-	ProjectId    string `json:"projectId"`
-	Name         string `json:"name"`
-	AcrImagePath string `json:"acrImagePath"`
-	Version      string `json:"version"`
-	CreatedAtUtc string `json:"createdAtUtc"`
-	UpdatedAtUtc string `json:"updatedAtUtc"`
+	EnvironmentId string `json:"environmentId"`
+	ProjectId     string `json:"projectId"`
+	Name          string `json:"name"`
+	AcrImage      string `json:"acrImage"`
+	Version       string `json:"version"`
+	CreatedAt     string `json:"createdAt"`
+	UpdatedAt     string `json:"updatedAt"`
 }

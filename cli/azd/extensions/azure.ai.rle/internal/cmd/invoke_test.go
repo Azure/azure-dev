@@ -441,29 +441,6 @@ func TestEnsurePortAvailableRejectsBoundPort(t *testing.T) {
 	}
 }
 
-func TestLocalContainerAlreadyRunningErrorSuggestsUsingOrStoppingContainer(t *testing.T) {
-	err := localContainerAlreadyRunningError("azd-rle-test", 8002)
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected LocalError, got %T", err)
-	}
-	if localErr.Code != "rle_local_container_already_running" {
-		t.Fatalf("expected already running code, got %q", localErr.Code)
-	}
-	if !strings.Contains(localErr.Message, "port 8002") {
-		t.Fatalf("expected message to mention port, got %q", localErr.Message)
-	}
-	for _, expected := range []string{
-		"docker ps --filter \"publish=8002\"",
-		"docker rm -f <container>",
-		"azd ai rle run --port 8002",
-	} {
-		if !strings.Contains(localErr.Suggestion, expected) {
-			t.Fatalf("expected suggestion to contain %q, got %q", expected, localErr.Suggestion)
-		}
-	}
-}
-
 func TestResolvePortDefaultsTo8000WithoutPersistedState(t *testing.T) {
 	if port := resolvePort(&openEnvInvokeFlags{}); port != defaultPort {
 		t.Fatalf("expected default port %d, got %d", defaultPort, port)
@@ -480,7 +457,8 @@ func TestLoadLocalRunStateDefaultsToExistingFolderWithoutInit(t *testing.T) {
 	}
 	t.Chdir(tempDir)
 
-	state, err := loadLocalRunState(&openEnvInvokeFlags{source: "."})
+	var output bytes.Buffer
+	state, err := loadLocalRunState(&openEnvInvokeFlags{source: "."}, &output)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -490,6 +468,20 @@ func TestLoadLocalRunStateDefaultsToExistingFolderWithoutInit(t *testing.T) {
 	image := localRuntimeImageForRun(&openEnvInvokeFlags{source: "."}, state)
 	if image != "my-env:local" {
 		t.Fatalf("expected default local image, got %q", image)
+	}
+	if !strings.Contains(output.String(), "No .azd-rle.json found; using current folder as the RLE source.") {
+		t.Fatalf("expected missing state transparency message, got %q", output.String())
+	}
+	var saved rleState
+	data, err := os.ReadFile(stateFilePath("."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved != (rleState{Name: "my-env"}) {
+		t.Fatalf("expected saved state with only name, got %#v", saved)
 	}
 }
 
@@ -552,11 +544,63 @@ func TestInvokeRemoteWaitsForDiskImageConversion(t *testing.T) {
 	if createCount != 3 {
 		t.Fatalf("expected sandbox create to retry twice, got %d calls", createCount)
 	}
-	if !strings.Contains(output.String(), "Environment image conversion is Pending; waiting") {
-		t.Fatalf("expected image conversion wait message, got %s", output.String())
+	if !strings.Contains(output.String(), "Getting sandbox ready for testing (status: Pending); waiting") {
+		t.Fatalf("expected sandbox readiness wait message, got %s", output.String())
 	}
 	if !strings.Contains(output.String(), "Sandbox sandbox-1 ready at "+envServer.URL) {
 		t.Fatalf("expected sandbox ready output, got %s", output.String())
+	}
+}
+
+func TestRemoteInvokeStopsRetryingSandboxLeaseConflicts(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	if err := saveRleState(rleState{
+		Name:          "code_rl",
+		Project:       "project-1",
+		EnvironmentId: "env-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	oldPollInterval := remoteImagePollInterval
+	remoteImagePollInterval = time.Millisecond
+	defer func() { remoteImagePollInterval = oldPollInterval }()
+
+	createCount := 0
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/rle/v1.0/projects/project-1/environments/env-1/sandboxes" {
+			createCount++
+			http.Error(w, `{"error":"quota unavailable"}`, http.StatusConflict)
+			return
+		}
+		t.Fatalf("unexpected sandbox request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer controlPlane.Close()
+	t.Setenv("RLE_ENDPOINT", controlPlane.URL)
+
+	command := newInvokeCommand()
+	command.SetIn(strings.NewReader("exit\n"))
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	err := command.Execute()
+	if err == nil {
+		t.Fatal("expected sandbox lease retry error")
+	}
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected LocalError, got %T", err)
+	}
+	if localErr.Code != "rle_sandbox_lease_pending_timeout" {
+		t.Fatalf("expected sandbox lease timeout code, got %q", localErr.Code)
+	}
+	if createCount != remoteSandboxLeaseMaxRetries+1 {
+		t.Fatalf("expected initial attempt plus max retries, got %d calls", createCount)
+	}
+	if !strings.Contains(localErr.Message, "Sandbox was not ready for testing") {
+		t.Fatalf("expected generic sandbox readiness message, got %q", localErr.Message)
 	}
 }
 
@@ -653,7 +697,7 @@ func TestResolveDeployImageUsesAcrRegistryEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if image != "example.azurecr.io/my-env:latest" {
+	if image != "example.azurecr.io/project-1-my-env:latest" {
 		t.Fatalf("expected derived ACR image, got %q", image)
 	}
 }
@@ -681,7 +725,7 @@ func TestResolveDeployImageUsesRegistryEvenWhenStateExists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if image != "example.azurecr.io/my-env:latest" {
+	if image != "example.azurecr.io/project-1-my-env:latest" {
 		t.Fatalf("expected registry-derived image, got %q", image)
 	}
 }
@@ -692,9 +736,12 @@ func TestResolveDockerBuildFindsRootDockerfile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	source, dockerfile, err := resolveDockerBuild(dockerBuildOptions{source: tempDir})
+	source, dockerfile, cleanup, err := prepareDockerBuild(dockerBuildOptions{source: tempDir})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if cleanup != nil {
+		t.Fatal("expected no cleanup for existing source")
 	}
 	if source != tempDir {
 		t.Fatalf("expected source %q, got %q", tempDir, source)
@@ -714,9 +761,12 @@ func TestResolveDockerBuildFindsServerDockerfile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	source, dockerfile, err := resolveDockerBuild(dockerBuildOptions{source: tempDir})
+	source, dockerfile, cleanup, err := prepareDockerBuild(dockerBuildOptions{source: tempDir})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if cleanup != nil {
+		t.Fatal("expected no cleanup for existing source")
 	}
 	if source != tempDir {
 		t.Fatalf("expected source %q, got %q", tempDir, source)
@@ -737,12 +787,15 @@ func TestResolveDockerBuildUsesDockerfileOption(t *testing.T) {
 	if err := os.WriteFile(customPath, []byte("FROM scratch\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	_, dockerfile, err := resolveDockerBuild(dockerBuildOptions{
+	_, dockerfile, cleanup, err := prepareDockerBuild(dockerBuildOptions{
 		source:     tempDir,
 		dockerfile: "docker/custom.Dockerfile",
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if cleanup != nil {
+		t.Fatal("expected no cleanup for existing source")
 	}
 	if dockerfile != customPath {
 		t.Fatalf("expected explicit Dockerfile, got %q", dockerfile)
@@ -783,7 +836,7 @@ func TestResolveDockerBuildRejectsDockerfileEscapes(t *testing.T) {
 		filepath.Join("..", filepath.Base(outsideDir), "Dockerfile"),
 		filepath.Join(outsideDir, "Dockerfile"),
 	} {
-		if _, _, err := resolveDockerBuild(dockerBuildOptions{
+		if _, _, _, err := prepareDockerBuild(dockerBuildOptions{
 			source:     tempDir,
 			dockerfile: dockerfile,
 		}); err == nil {

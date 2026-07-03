@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.4 (2026-07-03)
+
+### Bugs Fixed
+
+- [[#8947]](https://github.com/Azure/azure-dev/pull/8947) Fix brownfield Foundry provisioning failing with `InvalidTemplate` when a deploy reconciled model deployments without creating a container registry. `projectName` is now always passed to the brownfield template, so the existing project reference stays valid on the non-ACR path.
+
 ## 1.0.0-beta.3 (2026-07-03)
 
 ### Features Added

@@ -1486,7 +1486,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--type'],
-											description: 'Filter by template type. Supported values: agent, azd.',
+											description: 'Filter by template type. Supported values: agent, azd, azure.yaml.',
 											args: [
 												{
 													name: 'type',

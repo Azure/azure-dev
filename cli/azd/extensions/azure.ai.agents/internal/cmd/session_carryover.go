@@ -9,10 +9,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
-	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -45,23 +46,26 @@ import (
 // pointer at it (postdeploy). The next `azd ai agent invoke` then resumes the
 // same session on the new code, preserving the /home/session volume.
 //
-// The behavior is OPT-IN per agent service via `resumeSessionOnDeploy: true` in
-// azure.yaml. It is always best-effort and never fails a deploy.
+// The behavior is OPT-IN via the `resumeSessionOnDeploy` environment variable
+// (set to a truthy value: 1/true/yes/on). It is always best-effort and never
+// fails a deploy.
 
-// sessionCarryoverEnabledForService reports whether the agent service opted into
-// carrying its session across deploys via `resumeSessionOnDeploy: true` in
-// azure.yaml. Defaults to false (a redeploy starts a fresh session). Any error
-// reading the service config is treated as "disabled" so carry-over never
-// interferes with a deploy.
-func sessionCarryoverEnabledForService(svc *azdext.ServiceConfig) bool {
-	if svc == nil {
+// sessionCarryoverEnvVar opts an azd process into carrying a hosted agent's
+// session across deploys when set to a truthy value (1/true/yes/on). Unset or
+// any other value leaves carry-over disabled, so a redeploy starts a fresh
+// session.
+const sessionCarryoverEnvVar = "resumeSessionOnDeploy"
+
+// sessionCarryoverEnabled reports whether automatic session carry-over is
+// active. It is OPT-IN: off unless the resumeSessionOnDeploy environment
+// variable is truthy.
+func sessionCarryoverEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(sessionCarryoverEnvVar))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
 		return false
 	}
-	cfg, err := project.LoadServiceTargetAgentConfig(svc)
-	if err != nil || cfg == nil {
-		return false
-	}
-	return cfg.ResumeSessionOnDeploy
 }
 
 // pendingSessionCarryover holds the pre-deploy session id for each hosted agent
@@ -123,7 +127,7 @@ func captureSessionForCarryover(
 	azdClient *azdext.AzdClient,
 	svc *azdext.ServiceConfig,
 ) {
-	if !sessionCarryoverEnabledForService(svc) {
+	if !sessionCarryoverEnabled() || svc == nil {
 		return
 	}
 
@@ -177,7 +181,7 @@ func carryOverSessionAfterDeploy(
 	svc *azdext.ServiceConfig,
 	envName string,
 ) {
-	if !sessionCarryoverEnabledForService(svc) || agentClient == nil {
+	if !sessionCarryoverEnabled() || svc == nil || agentClient == nil {
 		return
 	}
 

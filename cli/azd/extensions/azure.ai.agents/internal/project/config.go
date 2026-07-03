@@ -54,14 +54,6 @@ type ServiceTargetAgentConfig struct {
 	Connections     []Connection       `json:"connections,omitempty"`
 	MemoryStores    []MemoryStore      `json:"memoryStores,omitempty"`
 	StartupCommand  string             `json:"startupCommand,omitempty"`
-
-	// ResumeSessionOnDeploy, when true, carries the agent's active session across
-	// a redeploy: azd stops the current session during deploy and re-points the
-	// newly deployed version's session pointer at it, so the next
-	// `azd ai agent invoke` resumes the same session on the new code (its
-	// /home/session volume is preserved). Opt-in; defaults to false, in which
-	// case a redeploy starts a fresh session on the next invoke.
-	ResumeSessionOnDeploy bool `json:"resumeSessionOnDeploy,omitempty"`
 }
 
 // ContainerSettings provides container configuration for the Azure AI Service target

@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/project"
 
@@ -375,6 +376,7 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 	// Resume the pre-deploy session on the newly deployed version so the next
 	// invoke continues on the new code with the session's persisted volume
 	// intact (see session_carryover.go). Best-effort; never blocks deploy.
+	agentClient := agent_api.NewAgentClient(endpointResp.Value, cred)
 	carryOverSessionAfterDeploy(ctx, azdClient, agentClient, svc, envName)
 
 	return nil

@@ -112,7 +112,6 @@ func classifyStopSessionErr(err error) stopSessionOutcome {
 	return stopOutcomeSkip
 }
 
-
 // captureSessionForCarryover records the current (pre-deploy) session pointer
 // for a hosted agent service so it can be resumed after the deploy assigns a new
 // version. It is a no-op — leaving nothing to carry — when the service has not

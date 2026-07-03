@@ -118,7 +118,7 @@ func newExecAction(
 func (a *execAction) buildChildEnv(ctx context.Context) ([]string, error) {
 	childEnv := os.Environ()
 	subscriptionId := a.env.GetSubscriptionId()
-	for key, value := range environment.FilterLoaderControlKeys(a.env.Dotenv()) {
+	for key, value := range a.env.Dotenv() {
 		resolved := value
 		if keyvault.IsSecretReference(value) {
 			secret, err := a.keyvaultService.SecretFromKeyVaultReference(ctx, value, subscriptionId)

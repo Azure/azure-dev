@@ -221,10 +221,25 @@ func (e *Environment) DotenvDelete(key string) {
 }
 
 // Dotenv returns a copy of the key value pairs from the .env file in the environment.
+//
+// Dynamic linker/loader control variables (names in the reserved LD_/DYLD_ namespace, e.g.
+// LD_PRELOAD or DYLD_INSERT_LIBRARIES) are excluded, because these values flow into the
+// environments of the external tools azd runs (directly, and via extensions that read them over
+// the gRPC bridge), where the platform dynamic loader would honor them at process launch. They
+// remain in the persisted .env file; only what azd hands to callers here is filtered. Matching is
+// case-insensitive; names outside that namespace (e.g. LDFLAGS, LDLIBS) are unaffected.
 func (e *Environment) Dotenv() map[string]string {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return maps.Clone(e.dotenv)
+	myDotenv := make(map[string]string, len(e.dotenv))
+	for k, v := range e.dotenv {
+		upper := strings.ToUpper(k)
+		if strings.HasPrefix(upper, "LD_") || strings.HasPrefix(upper, "DYLD_") {
+			continue
+		}
+		myDotenv[k] = v
+	}
+	return myDotenv
 }
 
 // DotenvSet sets the value of [key] to [value] in the .env file associated with the environment. [Save] should be
@@ -307,46 +322,15 @@ func (e *Environment) SetServiceProperty(serviceName string, propertyName string
 	e.DotenvSet(fmt.Sprintf("SERVICE_%s_%s", Key(serviceName), propertyName), value)
 }
 
-// isLoaderControlKey reports whether key is in the reserved dynamic linker/loader namespace
-// (LD_ for Linux ld.so, DYLD_ for macOS dyld), matched case-insensitively. Variables in this
-// namespace change how a process resolves and loads shared libraries at launch, so they are not
-// carried from an environment's dotenv into the tools azd runs. Names outside the namespace, such
-// as LDFLAGS or LDLIBS (no trailing underscore), are not matched.
-func isLoaderControlKey(key string) bool {
-	upper := strings.ToUpper(key)
-	return strings.HasPrefix(upper, "LD_") || strings.HasPrefix(upper, "DYLD_")
-}
-
-// FilterLoaderControlKeys returns a copy of env with dynamic linker/loader control variables (the
-// reserved LD_/DYLD_ namespace, see [isLoaderControlKey]) removed. Use it when building the
-// environment for a tool subprocess from an azd environment's dotenv values (see
-// [Environment.Dotenv]) so those variables are not propagated. [Environment.Environ] applies the
-// same filtering when it builds the subprocess environment slice.
-func FilterLoaderControlKeys(env map[string]string) map[string]string {
-	filtered := make(map[string]string, len(env))
-	for k, v := range env {
-		if isLoaderControlKey(k) {
-			continue
-		}
-		filtered[k] = v
-	}
-
-	return filtered
-}
-
-// Creates a slice of key value pairs, based on the entries in the `.env` file like `KEY=VALUE` that
-// can be used to pass into command runner or similar constructs.
+// Environ creates a slice of key value pairs, based on the entries in the `.env` file like
+// `KEY=VALUE` that can be used to pass into command runner or similar constructs.
 //
-// Dynamic linker/loader control variables (the reserved LD_/DYLD_ namespace) are omitted so they
-// are not carried from the dotenv into the environment of tools azd runs.
+// The values come from [Environment.Dotenv], so dynamic linker/loader control variables (the
+// reserved LD_/DYLD_ namespace) are excluded from the returned environment.
 func (e *Environment) Environ() []string {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	envVars := []string{}
-	for k, v := range e.dotenv {
-		if isLoaderControlKey(k) {
-			continue
-		}
+	dotenv := e.Dotenv()
+	envVars := make([]string, 0, len(dotenv))
+	for k, v := range dotenv {
 		envVars = append(envVars, fmt.Sprintf("%s=%s", k, v))
 	}
 

@@ -252,7 +252,7 @@ func (t *aksTarget) Deploy(
 	artifacts := ArtifactCollection{}
 
 	// Sync environment
-	t.kubectl.SetEnv(environment.FilterLoaderControlKeys(t.env.Dotenv()))
+	t.kubectl.SetEnv(t.env.Dotenv())
 
 	// Deploy k8s resources in the following order:
 	// 1. Helm
@@ -917,7 +917,7 @@ func (t *aksTarget) setK8sContext(
 	serviceConfig *ServiceConfig,
 	eventName ext.Event,
 ) error {
-	t.kubectl.SetEnv(environment.FilterLoaderControlKeys(t.env.Dotenv()))
+	t.kubectl.SetEnv(t.env.Dotenv())
 	hasCustomKubeConfig := false
 
 	// If a KUBECONFIG env var is set, use it.

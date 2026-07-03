@@ -105,7 +105,7 @@ func TestResolveActivityProfile(t *testing.T) {
 	})
 }
 
-// TestActivityDeclarationSurvivesInitRoundTrip locks the behaviour that
+// TestActivityDeclarationSurvivesInitRoundTrip locks the behavior that
 // `azd ai agent init` preserves the activity-protocol declaration (container
 // protocols + agent_endpoint) when it moves an agent definition into azure.yaml
 // service properties. Without this, postdeploy's activity gate would never fire

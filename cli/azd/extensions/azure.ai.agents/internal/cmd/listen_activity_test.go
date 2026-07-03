@@ -17,7 +17,7 @@ func TestTeamsSetupGuideContent(t *testing.T) {
 	content := teamsSetupGuideContent("echo-agent", "echo-agent-bot-uai", msaAppID)
 
 	// The bot id is the one value the user must not get wrong: it has to be
-	// carried verbatim into the Teams manifest bots[].id.
+	// carried verbatim into the Teams manifest bots[].botId.
 	if !strings.Contains(content, `"botId": "`+msaAppID+`"`) {
 		t.Fatalf("guide must set bots[].botId to the msaAppId; got:\n%s", content)
 	}

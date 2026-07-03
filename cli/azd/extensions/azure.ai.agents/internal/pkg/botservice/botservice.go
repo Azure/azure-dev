@@ -227,6 +227,6 @@ func (c *Client) DeleteBot(ctx context.Context, resourceGroup, botName string) e
 }
 
 func isNotFound(err error) bool {
-	var respErr *azcore.ResponseError
-	return errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound
+	respErr, ok := errors.AsType[*azcore.ResponseError](err)
+	return ok && respErr.StatusCode == http.StatusNotFound
 }

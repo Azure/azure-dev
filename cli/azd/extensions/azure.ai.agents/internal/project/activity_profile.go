@@ -26,7 +26,7 @@ const (
 
 // ActivityProfile summarizes the activity-protocol characteristics of a hosted
 // agent definition. It is the single gate that keeps all Teams/bot-specific
-// behaviour off the path of non-activity agents: when IsActivity is false the
+// behavior off the path of non-activity agents: when IsActivity is false the
 // native provision/deploy flow is completely unchanged.
 type ActivityProfile struct {
 	// IsActivity reports whether the agent opts into the Activity protocol.

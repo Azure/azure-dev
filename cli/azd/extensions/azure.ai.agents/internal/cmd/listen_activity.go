@@ -278,7 +278,7 @@ func printTeamsNextSteps(botName, msaAppID, guidePath string) {
 		)))
 	} else {
 		fmt.Println(output.WithGrayFormat(
-			"  Next steps: package the Teams app (bots[].id = the Bot ID above) and " +
+			"  Next steps: package the Teams app (bots[].botId = the Bot ID above) and " +
 				"upload it in Teams -> Apps -> Manage your apps -> Upload a custom app.",
 		))
 	}

@@ -38,7 +38,6 @@ func ensureActivityBot(
 	proj *azdext.ProjectConfig,
 	projectEndpoint string,
 	tenantID string,
-	versionObj *agent_api.AgentVersionObject,
 ) error {
 	ca, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
 	if err != nil || !isHosted {
@@ -50,9 +49,39 @@ func ensureActivityBot(
 		return nil
 	}
 
+	// Only activity agents pay for the version lookup below; this keeps the base
+	// postdeploy path (slimmed on main) untouched for every other agent.
+	//
 	// Phase 1 supports the simple use case only: the bot msaAppId is the agent
 	// instance identity client id, which only exists after the agent version is
-	// created during deploy.
+	// created during deploy. Fetch the active version to read that identity.
+	serviceKey := toServiceKey(svc.Name)
+	versionResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to read AGENT_%s_VERSION for %q: %w", serviceKey, svc.Name, err)
+	}
+	if versionResp.Value == "" {
+		return fmt.Errorf(
+			"activity agent %q has no recorded version yet; cannot bind the Teams bot. "+
+				"Re-run 'azd deploy' once the agent version is active.",
+			svc.Name,
+		)
+	}
+
+	agentClient := agent_api.NewAgentClient(projectEndpoint, cred)
+	versionObj, err := agentClient.GetAgentVersion(
+		ctx, svc.Name, versionResp.Value, DefaultAgentAPIVersion,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to fetch agent version for %s/%s: %w",
+			svc.Name, versionResp.Value, err,
+		)
+	}
+
 	if versionObj == nil || versionObj.InstanceIdentity == nil ||
 		versionObj.InstanceIdentity.ClientID == "" {
 		return fmt.Errorf(

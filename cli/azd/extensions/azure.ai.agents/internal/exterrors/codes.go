@@ -141,6 +141,11 @@ const (
 	CodeMissingConnectionField = "missing_connection_field"
 )
 
+// Error codes for memory store operations.
+const (
+	CodeInvalidMemoryStore = "invalid_memory_store"
+)
+
 // Error codes for agent identity RBAC operations.
 const (
 	CodeAgentIdentityNotFound   = "agent_identity_not_found"
@@ -185,6 +190,7 @@ const (
 	OpListSessions          = "list_sessions"
 	OpCreateToolboxVersion  = "create_toolbox_version"
 	OpGetToolbox            = "get_toolbox"
+	OpProvisionMemoryStore  = "provision_memory_store"
 )
 
 // Error codes for eval and optimize operations.

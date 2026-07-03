@@ -295,9 +295,14 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 	}
 
 	// Set up the project endpoint and credential used by optimization reporting.
+	// This path now feeds only best-effort optimization telemetry (the client-side
+	// agent-identity RBAC assignment was removed), so any setup failure is logged as
+	// a warning and skipped rather than failing an otherwise-successful deploy.
 	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		return fmt.Errorf("failed to get current environment: %w", err)
+		log.Printf("postdeploy: skipping optimization reporting for %s: "+
+			"failed to get current environment: %v", svc.Name, err)
+		return nil
 	}
 
 	envName := envResp.Environment.Name
@@ -308,10 +313,14 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		Key:     "FOUNDRY_PROJECT_ENDPOINT",
 	})
 	if err != nil {
-		return fmt.Errorf("failed to read FOUNDRY_PROJECT_ENDPOINT: %w", err)
+		log.Printf("postdeploy: skipping optimization reporting for %s: "+
+			"failed to read FOUNDRY_PROJECT_ENDPOINT: %v", svc.Name, err)
+		return nil
 	}
 	if endpointResp.Value == "" {
-		return fmt.Errorf("FOUNDRY_PROJECT_ENDPOINT is not set in the environment")
+		log.Printf("postdeploy: skipping optimization reporting for %s: "+
+			"FOUNDRY_PROJECT_ENDPOINT is not set in the environment", svc.Name)
+		return nil
 	}
 
 	// Create a credential for API calls.
@@ -320,10 +329,14 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		Key:     "AZURE_TENANT_ID",
 	})
 	if err != nil {
-		return fmt.Errorf("failed to read AZURE_TENANT_ID: %w", err)
+		log.Printf("postdeploy: skipping optimization reporting for %s: "+
+			"failed to read AZURE_TENANT_ID: %v", svc.Name, err)
+		return nil
 	}
 	if tenantResp.Value == "" {
-		return fmt.Errorf("AZURE_TENANT_ID is not set in the environment")
+		log.Printf("postdeploy: skipping optimization reporting for %s: "+
+			"AZURE_TENANT_ID is not set in the environment", svc.Name)
+		return nil
 	}
 
 	cred, err := azidentity.NewAzureDeveloperCLICredential(
@@ -333,7 +346,9 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create credential: %w", err)
+		log.Printf("postdeploy: skipping optimization reporting for %s: "+
+			"failed to create credential: %v", svc.Name, err)
+		return nil
 	}
 
 	// Report optimization candidate deployment (best-effort: panics are logged, not propagated).

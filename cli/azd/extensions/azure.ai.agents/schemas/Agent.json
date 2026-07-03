@@ -117,6 +117,11 @@
               "type": "string",
               "description": "Command to start the agent process (e.g., 'python main.py')."
             },
+            "resumeSessionOnDeploy": {
+              "type": "boolean",
+              "description": "When true, azd carries the agent's active session across a redeploy: the current session is stopped during 'azd deploy' and the newly deployed version's session pointer is re-pointed at it, so the next 'azd ai agent invoke' resumes the same session on the new code (its persisted /home/session volume is preserved). Defaults to false, in which case a redeploy starts a fresh session on the next invoke.",
+              "default": false
+            },
             "container": {
               "type": "object",
               "description": "Container runtime settings.",

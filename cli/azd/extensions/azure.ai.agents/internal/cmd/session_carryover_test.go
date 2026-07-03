@@ -7,40 +7,54 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
-// azdextServiceConfigForTest builds a minimal hosted-agent service config for
-// carry-over guard tests.
-func azdextServiceConfigForTest(name string) azdext.ServiceConfig {
-	return azdext.ServiceConfig{Name: name, Host: AiAgentHost}
+// agentServiceWithCarryover builds a hosted-agent service config whose
+// service-level azure.yaml properties carry resumeSessionOnDeploy=resume.
+func agentServiceWithCarryover(t *testing.T, name string, resume bool) *azdext.ServiceConfig {
+	t.Helper()
+	props, err := structpb.NewStruct(map[string]any{
+		"kind":                  "hosted",
+		"resumeSessionOnDeploy": resume,
+	})
+	if err != nil {
+		t.Fatalf("failed to build service props: %v", err)
+	}
+	return &azdext.ServiceConfig{
+		Name:                 name,
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}
 }
 
-func TestSessionCarryoverEnabled(t *testing.T) {
-	tests := []struct {
-		name  string
-		value string
-		want  bool
-	}{
-		{name: "unset defaults to enabled", value: "", want: true},
-		{name: "1 disables", value: "1", want: false},
-		{name: "true disables", value: "true", want: false},
-		{name: "TRUE (case-insensitive) disables", value: "TRUE", want: false},
-		{name: "yes disables", value: "yes", want: false},
-		{name: "on disables", value: "on", want: false},
-		{name: "padded true disables", value: "  true  ", want: false},
-		{name: "0 stays enabled", value: "0", want: true},
-		{name: "false stays enabled", value: "false", want: true},
-		{name: "garbage stays enabled", value: "maybe", want: true},
-	}
+func TestSessionCarryoverEnabledForService(t *testing.T) {
+	t.Run("opted in", func(t *testing.T) {
+		svc := agentServiceWithCarryover(t, "opt-in-svc", true)
+		if !sessionCarryoverEnabledForService(svc) {
+			t.Fatalf("expected carry-over enabled when resumeSessionOnDeploy=true")
+		}
+	})
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv(sessionCarryoverOptOutEnvVar, tc.value)
-			if got := sessionCarryoverEnabled(); got != tc.want {
-				t.Fatalf("sessionCarryoverEnabled() with %q = %v, want %v", tc.value, got, tc.want)
-			}
-		})
-	}
+	t.Run("explicit false", func(t *testing.T) {
+		svc := agentServiceWithCarryover(t, "opt-out-svc", false)
+		if sessionCarryoverEnabledForService(svc) {
+			t.Fatalf("expected carry-over disabled when resumeSessionOnDeploy=false")
+		}
+	})
+
+	t.Run("field absent defaults to disabled", func(t *testing.T) {
+		svc := &azdext.ServiceConfig{Name: "no-field", Host: AiAgentHost}
+		if sessionCarryoverEnabledForService(svc) {
+			t.Fatalf("expected carry-over disabled when field is absent")
+		}
+	})
+
+	t.Run("nil service is disabled", func(t *testing.T) {
+		if sessionCarryoverEnabledForService(nil) {
+			t.Fatalf("expected carry-over disabled for nil service")
+		}
+	})
 }
 
 // stashSessionForTest seeds the package-level carry-over stash and registers
@@ -64,49 +78,41 @@ func stashedSession(service string) (string, bool) {
 	return v, ok
 }
 
-func TestCaptureSessionForCarryover_DisabledIsNoOp(t *testing.T) {
-	t.Setenv(sessionCarryoverOptOutEnvVar, "1")
+func TestCaptureSessionForCarryover_NotOptedInIsNoOp(t *testing.T) {
+	// Field absent -> disabled. nil azdClient must not be dereferenced.
+	svc := &azdext.ServiceConfig{Name: "capture-disabled", Host: AiAgentHost}
+	captureSessionForCarryover(t.Context(), nil, svc)
 
-	// nil azdClient must not be dereferenced when carry-over is disabled.
-	svc := azdextServiceConfigForTest("disabled-svc")
-	captureSessionForCarryover(t.Context(), nil, &svc)
-
-	if _, ok := stashedSession("disabled-svc"); ok {
-		t.Fatalf("expected no session stashed when carry-over is disabled")
+	if _, ok := stashedSession(svc.Name); ok {
+		t.Fatalf("expected no session stashed when service has not opted in")
 	}
 }
 
 func TestCaptureSessionForCarryover_NilServiceIsNoOp(t *testing.T) {
-	t.Setenv(sessionCarryoverOptOutEnvVar, "")
-
 	// nil service and nil client: must return without panic.
 	captureSessionForCarryover(t.Context(), nil, nil)
 }
 
-func TestCarryOverSessionAfterDeploy_DisabledIsNoOp(t *testing.T) {
-	t.Setenv(sessionCarryoverOptOutEnvVar, "1")
-
-	svc := azdextServiceConfigForTest("disabled-carry")
+func TestCarryOverSessionAfterDeploy_NotOptedInIsNoOp(t *testing.T) {
+	svc := &azdext.ServiceConfig{Name: "carry-disabled", Host: AiAgentHost}
 	stashSessionForTest(t, svc.Name, "sess-123")
 
-	// Disabled: must return before touching the (nil) client and must leave the
-	// stash untouched.
-	carryOverSessionAfterDeploy(t.Context(), nil, nil, &svc, "env")
+	// Not opted in: must return before touching the (nil) client and must leave
+	// the stash untouched.
+	carryOverSessionAfterDeploy(t.Context(), nil, nil, svc, "env")
 
 	if got, ok := stashedSession(svc.Name); !ok || got != "sess-123" {
-		t.Fatalf("expected stash untouched when disabled, got %q (present=%v)", got, ok)
+		t.Fatalf("expected stash untouched when not opted in, got %q (present=%v)", got, ok)
 	}
 }
 
 func TestCarryOverSessionAfterDeploy_NilAgentClientIsNoOp(t *testing.T) {
-	t.Setenv(sessionCarryoverOptOutEnvVar, "")
-
-	svc := azdextServiceConfigForTest("nil-client")
+	svc := agentServiceWithCarryover(t, "nil-client", true)
 	stashSessionForTest(t, svc.Name, "sess-abc")
 
-	// nil agentClient: guard must return before any RPC and leave the stash so a
-	// later, well-formed call could still consume it.
-	carryOverSessionAfterDeploy(t.Context(), nil, nil, &svc, "env")
+	// Opted in but nil agentClient: guard must return before any RPC and leave
+	// the stash so a later, well-formed call could still consume it.
+	carryOverSessionAfterDeploy(t.Context(), nil, nil, svc, "env")
 
 	if got, ok := stashedSession(svc.Name); !ok || got != "sess-abc" {
 		t.Fatalf("expected stash untouched when agentClient is nil, got %q (present=%v)", got, ok)

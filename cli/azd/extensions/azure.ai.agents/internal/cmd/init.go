@@ -2026,157 +2026,17 @@ func (a *InitAction) configureModelChoice(
 	// When --project-id is provided, use the existing project to derive location
 	// and configure Foundry env vars (ACR, AppInsights, etc.) instead of prompting.
 	if !hasModelResources {
-		if a.flags.projectResourceId != "" {
-			newCred, err := ensureSubscription(
-				ctx, a.azdClient, a.azureContext, a.environment.Name,
-				"Select an Azure subscription to provision your agent and Foundry project resources.",
-			)
-			if err != nil {
-				return nil, err
-			}
-			a.credential = newCred
-
-			selectedProject, err := selectFoundryProject(
-				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
-				a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
-				a.skipACR(),
-				true, // bicepless
-			)
-			if err != nil {
-				return nil, err
-			}
-			a.selectedFoundryProject = selectedProject
-
-			if selectedProject == nil {
-				return nil, fmt.Errorf("specified foundry project was not found or is not eligible for the current configuration: %s", a.flags.projectResourceId)
-			}
-
-			// Signal Bicep to skip project/role/connection provisioning for this existing project
-			if err := setEnvValue(
-				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
-			); err != nil {
-				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
-			}
-			if err := updatePendingProjectSignal(
-				ctx, a.azdClient, a.environment.Name, true,
-			); err != nil {
-				log.Printf("warning: failed to update project provision signal: %v", err)
-			}
-		} else if a.flags.noPrompt {
-			newCred, err := configureNewProjectForNoPrompt(
-				ctx, a.azdClient, a.environment.Name, a.azureContext,
-				"Select an Azure subscription to provision your agent and Foundry project resources.",
-			)
-			if err != nil {
-				return nil, err
-			}
-			a.credential = newCred
-		} else {
-			// Prompt user to pick an existing Foundry project or create new resources
-			projectChoices := []*azdext.SelectChoice{
-				{Label: "Use an existing Foundry project", Value: "existing"},
-				{Label: "Create a new Foundry project", Value: "new"},
-			}
-
-			defaultIdx := int32(0)
-			projectResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-				Options: &azdext.SelectOptions{
-					Message:       "Select a Foundry project to host your agent and any models or tools it uses.",
-					Choices:       projectChoices,
-					SelectedIndex: &defaultIdx,
-				},
-			})
-			if err != nil {
-				if exterrors.IsCancellation(err) {
-					return nil, exterrors.Cancelled("project selection was cancelled")
-				}
-				return nil, exterrors.FromPrompt(err, "failed to prompt for Foundry project configuration choice")
-			}
-
-			switch projectChoices[*projectResp.Value].Value {
-			case "existing":
-				newCred, err := ensureSubscription(
-					ctx, a.azdClient, a.azureContext, a.environment.Name,
-					"Select an Azure subscription to find existing Foundry projects.",
-				)
-				if err != nil {
-					return nil, err
-				}
-				a.credential = newCred
-
-				selectedProject, err := selectFoundryProject(
-					ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
-					a.azureContext.Scope.SubscriptionId, "",
-					a.skipACR(),
-					true, // bicepless
-				)
-				if err != nil {
-					return nil, err
-				}
-				a.selectedFoundryProject = selectedProject
-
-				if selectedProject == nil {
-					// No existing project selected → fall back to "create new" path
-					_, _ = color.New(color.Faint).Println(
-						"No existing Foundry project was selected. Falling back to creating new resources.",
-					)
-					if err := setEnvValue(
-						ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
-					); err != nil {
-						return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
-					}
-					if err := updatePendingProjectSignal(
-						ctx, a.azdClient, a.environment.Name, false,
-					); err != nil {
-						log.Printf("warning: failed to update project provision signal: %v", err)
-					}
-					if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
-						return nil, err
-					}
-				} else {
-					// Signal Bicep to skip project/role/connection provisioning for this existing project
-					if err := setEnvValue(
-						ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
-					); err != nil {
-						return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
-					}
-					if err := updatePendingProjectSignal(
-						ctx, a.azdClient, a.environment.Name, true,
-					); err != nil {
-						log.Printf("warning: failed to update project provision signal: %v", err)
-					}
-				}
-			default:
-				newCred, err := ensureSubscriptionAndLocation(
-					ctx, a.azdClient, a.azureContext, a.environment.Name,
-					"Select an Azure subscription to provision your agent and Foundry project resources.",
-				)
-				if err != nil {
-					return nil, err
-				}
-				a.credential = newCred
-
-				// Creating new resources — clear any stale existing-project flag
-				if err := setEnvValue(
-					ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
-				); err != nil {
-					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
-				}
-				if err := updatePendingProjectSignal(
-					ctx, a.azdClient, a.environment.Name, false,
-				); err != nil {
-					log.Printf("warning: failed to update project provision signal: %v", err)
-				}
-			}
-		}
-
-		// Persist the ACR-skip signal for the no-model-resources path too.
-		// The deferred-headless and main model-config paths set this, but a
-		// completing no-model flow (e.g. a pre-built --image agent) otherwise
-		// would not, leaving Bicep to provision an ACR the user doesn't need.
-		if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, a.skipACR()); err != nil {
+		result, err := configureFoundryProject(
+			ctx, a.azdClient, a.azureContext, a.environment.Name,
+			a.flags.projectResourceId, a.flags.noPrompt, a.skipACR(),
+		)
+		if err != nil {
 			return nil, err
 		}
+		if result.Credential != nil {
+			a.credential = result.Credential
+		}
+		a.selectedFoundryProject = result.FoundryProject
 
 		return agentManifest, nil
 	}

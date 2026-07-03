@@ -41,6 +41,71 @@ func TestPostdeployHandler_NonHostedAgent_NoOp(t *testing.T) {
 	}
 }
 
+// TestPostdeployHandler_MissingTelemetryEnv_ReturnsNil verifies that a hosted
+// agent whose environment is missing the optional telemetry inputs
+// (FOUNDRY_PROJECT_ENDPOINT / AZURE_TENANT_ID) does NOT fail the post-deploy
+// hook. Since the client-side agent-identity RBAC assignment was removed, this
+// endpoint/tenant/credential setup now feeds only best-effort optimization
+// reporting, so a missing value is logged and skipped rather than propagated as
+// an error that would fail an otherwise-successful deploy (PR #8941 follow-up).
+func TestPostdeployHandler_MissingTelemetryEnv_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	// Lay down a minimal hosted agent.yaml so isHostedAgentService returns true
+	// and the handler proceeds past the non-hosted early return.
+	projectRoot := t.TempDir()
+	serviceDir := filepath.Join(projectRoot, "echo")
+	if err := os.MkdirAll(serviceDir, 0o750); err != nil {
+		t.Fatalf("failed to create service dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(serviceDir, "agent.yaml"),
+		[]byte("kind: hostedAgent\nname: echo\n"), 0o600); err != nil {
+		t.Fatalf("failed to write agent.yaml: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		values map[string]map[string]string
+	}{
+		{
+			name:   "FOUNDRY_PROJECT_ENDPOINT not set",
+			values: nil, // GetValue returns NotFound for every key
+		},
+		{
+			name:   "FOUNDRY_PROJECT_ENDPOINT empty",
+			values: map[string]map[string]string{"dev": {"FOUNDRY_PROJECT_ENDPOINT": ""}},
+		},
+		{
+			name: "AZURE_TENANT_ID not set",
+			values: map[string]map[string]string{
+				"dev": {"FOUNDRY_PROJECT_ENDPOINT": "https://example.services.ai.azure.com/api/projects/p"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			envServer := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "dev"},
+				values:  tt.values,
+			}
+			azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+			args := &azdext.ServiceEventArgs{
+				Project: &azdext.ProjectConfig{Path: projectRoot},
+				Service: &azdext.ServiceConfig{Name: "echo", Host: AiAgentHost, RelativePath: "echo"},
+			}
+
+			if err := postdeployHandler(t.Context(), azdClient, args); err != nil {
+				t.Fatalf("expected nil (best-effort telemetry setup must not fail deploy), got: %v", err)
+			}
+		})
+	}
+}
+
 func TestIsHostedAgentServiceRejectsTraversal(t *testing.T) {
 	t.Parallel()
 

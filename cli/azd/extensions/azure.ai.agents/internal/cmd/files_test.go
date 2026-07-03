@@ -164,6 +164,73 @@ func TestFilesStatCommand_HasUserIdentityFlag(t *testing.T) {
 	}
 }
 
+func TestBindUploadPositionals(t *testing.T) {
+	tests := []struct {
+		name          string
+		args          []string
+		agentName     string // current --agent-name/-n value
+		file          string // current --file/-f value
+		wantAgentName string
+		wantFile      string
+	}{
+		{
+			name:          "two args set agent then file",
+			args:          []string{"my-agent", "./input.csv"},
+			wantAgentName: "my-agent",
+			wantFile:      "./input.csv",
+		},
+		{
+			name:          "single arg is file when no file flag",
+			args:          []string{"./input.csv"},
+			wantAgentName: "",
+			wantFile:      "./input.csv",
+		},
+		{
+			name:          "single arg is agent when file flag set",
+			args:          []string{"my-agent"},
+			file:          "./input.csv",
+			wantAgentName: "my-agent",
+			wantFile:      "./input.csv",
+		},
+		{
+			name:          "no args keeps flag values",
+			args:          nil,
+			agentName:     "my-agent",
+			file:          "./input.csv",
+			wantAgentName: "my-agent",
+			wantFile:      "./input.csv",
+		},
+		{
+			name:          "two args override flag values",
+			args:          []string{"pos-agent", "./pos.csv"},
+			agentName:     "flag-agent",
+			file:          "./flag.csv",
+			wantAgentName: "pos-agent",
+			wantFile:      "./pos.csv",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotAgent, gotFile := bindUploadPositionals(tc.args, tc.agentName, tc.file)
+			assert.Equal(t, tc.wantAgentName, gotAgent)
+			assert.Equal(t, tc.wantFile, gotFile)
+		})
+	}
+}
+
+func TestFilesUploadCommand_AcceptsAgentAndFilePositionals(t *testing.T) {
+	cmd := newFilesUploadCommand(nil)
+
+	assert.Equal(t, "upload [agent] [file]", cmd.Use)
+	// Accepts zero, one, or two positional arguments.
+	require.NotNil(t, cmd.Args)
+	assert.NoError(t, cmd.Args(cmd, []string{}))
+	assert.NoError(t, cmd.Args(cmd, []string{"agent"}))
+	assert.NoError(t, cmd.Args(cmd, []string{"agent", "file"}))
+	assert.Error(t, cmd.Args(cmd, []string{"a", "b", "c"}))
+}
+
 func TestPrintFileListJSON(t *testing.T) {
 	modified := agent_api.FlexibleTimestamp("2025-01-01T00:00:00Z")
 	fileList := &agent_api.SessionFileList{

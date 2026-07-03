@@ -4,8 +4,13 @@
 package cmd
 
 import (
+	"errors"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -116,5 +121,65 @@ func TestCarryOverSessionAfterDeploy_NilAgentClientIsNoOp(t *testing.T) {
 
 	if got, ok := stashedSession(svc.Name); !ok || got != "sess-abc" {
 		t.Fatalf("expected stash untouched when agentClient is nil, got %q (present=%v)", got, ok)
+	}
+}
+
+// respErr builds an azcore.ResponseError with the given HTTP status and Foundry
+// error code, mirroring what StopSession surfaces from the service.
+func respErr(status int, code string) error {
+	return &azcore.ResponseError{
+		StatusCode: status,
+		ErrorCode:  code,
+		RawResponse: &http.Response{
+			StatusCode: status,
+			Body:       io.NopCloser(strings.NewReader("")),
+		},
+	}
+}
+
+func TestClassifyStopSessionErr(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want stopSessionOutcome
+	}{
+		{
+			name: "nil error -> proceed",
+			err:  nil,
+			want: stopOutcomeProceed,
+		},
+		{
+			name: "409 session_already_stopped -> proceed",
+			err:  respErr(http.StatusConflict, "session_already_stopped"),
+			want: stopOutcomeProceed,
+		},
+		{
+			name: "404 not found -> skip",
+			err:  respErr(http.StatusNotFound, "session_not_found"),
+			want: stopOutcomeSkip,
+		},
+		{
+			name: "409 with a different code -> skip",
+			err:  respErr(http.StatusConflict, "some_other_conflict"),
+			want: stopOutcomeSkip,
+		},
+		{
+			name: "500 server error -> skip",
+			err:  respErr(http.StatusInternalServerError, ""),
+			want: stopOutcomeSkip,
+		},
+		{
+			name: "non-response error -> skip",
+			err:  errors.New("connection reset"),
+			want: stopOutcomeSkip,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := classifyStopSessionErr(tc.err); got != tc.want {
+				t.Fatalf("classifyStopSessionErr() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

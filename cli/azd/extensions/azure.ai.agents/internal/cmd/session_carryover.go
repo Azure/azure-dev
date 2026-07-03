@@ -73,6 +73,46 @@ var pendingSessionCarryover = struct {
 	byService map[string]string
 }{byService: map[string]string{}}
 
+// sessionStoreWriteMu serializes carry-over writes to the shared "sessions" map
+// in UserConfig. setAgentSpecificContextValue does a read-modify-write on that
+// single map, which is last-writer-wins across keys (see its doc comment in
+// config_store.go). Because postdeploy handlers for multiple agent services can
+// run concurrently, unsynchronized writes could drop one service's carried
+// session. This mutex makes the carry-over path's read-modify-write atomic.
+var sessionStoreWriteMu sync.Mutex
+
+// stopSessionOutcome classifies how carry-over should react to the result of
+// StopSession.
+type stopSessionOutcome int
+
+const (
+	// stopOutcomeProceed: the previous session is stopped (or was already
+	// stopped) — carry it forward to the new version.
+	stopOutcomeProceed stopSessionOutcome = iota
+	// stopOutcomeSkip: the session is gone or the stop failed — do not carry it
+	// forward; the next invoke starts a fresh session.
+	stopOutcomeSkip
+)
+
+// classifyStopSessionErr maps a StopSession error to a carry-over outcome:
+//   - nil error -> proceed (stopped successfully).
+//   - 409 session_already_stopped -> proceed (resuming still re-binds it).
+//   - 404 -> skip (session deleted/expired; nothing to resume).
+//   - any other error -> skip (leave the next invoke on a safe fresh session).
+func classifyStopSessionErr(err error) stopSessionOutcome {
+	if err == nil {
+		return stopOutcomeProceed
+	}
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
+		if respErr.StatusCode == http.StatusConflict &&
+			respErr.ErrorCode == "session_already_stopped" {
+			return stopOutcomeProceed
+		}
+	}
+	return stopOutcomeSkip
+}
+
+
 // captureSessionForCarryover records the current (pre-deploy) session pointer
 // for a hosted agent service so it can be resumed after the deploy assigns a new
 // version. It is a no-op — leaving nothing to carry — when the service has not
@@ -142,6 +182,13 @@ func carryOverSessionAfterDeploy(
 		return
 	}
 
+	// Consume the captured session up-front (read + delete). Consumption is
+	// intentionally single-shot and non-retriable: if the stop succeeds but a
+	// later step here fails, the id is already gone from the stash so a
+	// subsequent redeploy won't re-attempt carry-over for it. That is the
+	// desired best-effort behavior — the fallback (a fresh session on the new
+	// version at the next invoke) is always safe, and retrying a stop against a
+	// half-carried session would add complexity for no benefit.
 	pendingSessionCarryover.Lock()
 	sessionID := pendingSessionCarryover.byService[svc.Name]
 	delete(pendingSessionCarryover.byService, svc.Name)
@@ -156,38 +203,16 @@ func carryOverSessionAfterDeploy(
 	// Stop the previous session so that resuming it re-binds it to the new
 	// version. A still-running session keeps serving the old code.
 	err := agentClient.StopSession(ctx, svc.Name, sessionID, DefaultAgentAPIVersion, nil)
-	if err != nil {
-		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
-			switch {
-			case respErr.StatusCode == http.StatusConflict &&
-				respErr.ErrorCode == "session_already_stopped":
-				// Already stopped — resuming still re-binds it to the new
-				// version, so proceed to carry it forward.
-			case respErr.StatusCode == http.StatusNotFound:
-				// The session was deleted or expired (e.g. idle cleanup). There
-				// is nothing to resume; let the next invoke start fresh.
-				log.Printf(
-					"session carry-over: session %q for agent %q no longer exists; "+
-						"the next invoke will start a new session",
-					sessionID, svc.Name,
-				)
-				return
-			default:
-				log.Printf(
-					"session carry-over: failed to stop session %q for agent %q: %v; "+
-						"the next invoke will start a new session",
-					sessionID, svc.Name, err,
-				)
-				return
-			}
-		} else {
-			log.Printf(
-				"session carry-over: failed to stop session %q for agent %q: %v; "+
-					"the next invoke will start a new session",
-				sessionID, svc.Name, err,
-			)
-			return
-		}
+	if classifyStopSessionErr(err) == stopOutcomeSkip {
+		// Session gone (404), or the stop failed for another reason. Do not carry
+		// it forward — the next invoke will start a fresh session on the new
+		// version, which is always safe.
+		log.Printf(
+			"session carry-over: not carrying session %q for agent %q "+
+				"(stop result: %v); the next invoke will start a new session",
+			sessionID, svc.Name, err,
+		)
+		return
 	}
 
 	// Re-point the NEW version's session pointer at the carried session. The
@@ -206,7 +231,12 @@ func carryOverSessionAfterDeploy(
 	}
 
 	newKey := buildRemoteAgentKeyFromEndpoint(newEndpointResp.Value)
-	if err := setAgentSpecificContextValue(ctx, azdClient, "sessions", newKey, sessionID); err != nil {
+	// Serialize the read-modify-write of the shared sessions map so concurrent
+	// postdeploy handlers can't clobber each other's carried session.
+	sessionStoreWriteMu.Lock()
+	err = setAgentSpecificContextValue(ctx, azdClient, "sessions", newKey, sessionID)
+	sessionStoreWriteMu.Unlock()
+	if err != nil {
 		log.Printf(
 			"session carry-over: failed to persist carried session %q for agent %q: %v",
 			sessionID, svc.Name, err,

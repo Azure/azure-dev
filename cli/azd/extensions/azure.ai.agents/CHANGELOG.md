@@ -1,10 +1,17 @@
 # Release History
 
-## Unreleased
+## 1.0.0-beta.3 (2026-07-03)
 
 ### Features Added
 
-- [[#8742]](https://github.com/Azure/azure-dev/issues/8742) Provision Foundry memory stores during `azd deploy`. Declare one or more memory stores under the agent service's `memoryStores` list in `azure.yaml` (with `chatModel`, `embeddingModel`, and optional extraction/retention `options`), and azd creates them in the Foundry project before deploying the agent. Provisioning is idempotent: existing stores are left unchanged, so deployments are safe to re-run. azd does not update an existing store; if a declared definition diverges from the live store, deploy warns which `azure.yaml` change(s) were not applied.
+- [[#8852]](https://github.com/Azure/azure-dev/pull/8852) Provision Foundry memory stores during `azd deploy`. Declare one or more memory stores under the agent service's `memoryStores` list in `azure.yaml` (with `chatModel`, `embeddingModel`, and optional extraction/retention `options`), and azd creates them in the Foundry project before deploying the agent. Provisioning is idempotent: existing stores are left unchanged, so deployments are safe to re-run. azd does not update an existing store; if a declared definition diverges from the live store, deploy warns which `azure.yaml` change(s) were not applied.
+- [[#8952]](https://github.com/Azure/azure-dev/pull/8952) `azd ai agent init` now routes unified `azure.yaml` templates selected from the template picker through the Foundry adoption flow, so choosing one downloads the `azure.yaml` and its sibling files and scaffolds the project instead of failing while trying to `git clone` a file URL.
+
+### Bugs Fixed
+
+- [[#8941]](https://github.com/Azure/azure-dev/pull/8941) Fix hosted agent deploys failing for users who lack `Microsoft.Authorization/roleAssignments/write`: the extension no longer assigns the redundant `Azure AI User` role to each per-agent managed identity after deploy, since Microsoft Foundry now grants that permission internally. Thanks @m5i-work for the contribution!
+- [[#8926]](https://github.com/Azure/azure-dev/pull/8926) Fix `--deploy-mode`, `--runtime`, and `--entry-point` being silently ignored when `azd ai agent init -m <azure.yaml>` adopts a unified Foundry `azure.yaml`; the flags now apply `code_configuration` to the agent service, and an explicit `--deploy-mode` overrides a sample's pre-configured deploy mode.
+- [[#8933]](https://github.com/Azure/azure-dev/pull/8933) Fix `azd ai agent init -m <azure.yaml>` returning early after scaffolding without running subscription selection, Foundry project setup, or model deployment verification, which left an environment that could not provision without manual configuration.
 
 ## 1.0.0-beta.2 (2026-07-01)
 

@@ -31,11 +31,11 @@ func setupDebugLogging(flags *pflag.FlagSet) func() {
 		return func() {}
 	}
 
-	currentDate := time.Now().Format("2006-01-02")
-	logFileName := fmt.Sprintf("azd-ai-agents-%s.log", currentDate)
-
-	//nolint:gosec // log file name is generated locally from date and not user-controlled
-	logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	logFile, err := os.CreateTemp("", "azd-ai-agents-*.log")
+	if err == nil {
+		logFile.Close()
+		logFile, err = os.OpenFile(logFile.Name(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	}
 
 	var w io.Writer
 	var closeFile func()
@@ -66,6 +66,11 @@ func isDebug(flags *pflag.FlagSet) bool {
 		return true
 	}
 
-	debug, _ := strconv.ParseBool(os.Getenv("AZD_EXT_DEBUG"))
-	return debug
+	debugEnv := os.Getenv("AZD_EXT_DEBUG")
+	if debugEnv == "" {
+		return false
+	}
+
+	debug, err := strconv.ParseBool(debugEnv)
+	return err == nil && debug
 }

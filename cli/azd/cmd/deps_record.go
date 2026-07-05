@@ -18,8 +18,6 @@ import (
 
 func createHttpClient() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	// Allow for self-signed certificates, which is what the recording proxy uses.
-	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	// AZD_TEST_HTTPS_PROXY is the proxy setting that only affects azd in record mode.
 	// This is useful since the recording proxy server isn't trusted by other processes currently.
 	if val, ok := os.LookupEnv("AZD_TEST_HTTPS_PROXY"); ok {
@@ -29,12 +27,9 @@ func createHttpClient() *http.Client {
 		}
 
 		transport.Proxy = http.ProxyURL(proxyUrl)
-		http.DefaultTransport = transport
 	}
 
-	http.DefaultClient.Transport = transport
-
-	return http.DefaultClient
+	return &http.Client{Transport: transport}
 }
 
 func createClock() clock.Clock {

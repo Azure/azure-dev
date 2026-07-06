@@ -69,6 +69,17 @@ extends:
             # preempts the in-test teardown: 2x the per-mode 60 min runTimeout
             # (tier2_live_test.go) + per-run cleanup + build/setup steps.
             timeoutInMinutes: 150
+            # The 1ES pipeline template (via 1es-redirect.yml) forbids the raw
+            # PublishPipelineArtifact@1 task; artifacts must be declared as
+            # job-level outputs using `output: pipelineArtifact`. `condition`
+            # is supported here, so `always()` still publishes logs on failure.
+            templateContext:
+              outputs:
+                - output: pipelineArtifact
+                  path: $(Build.ArtifactStagingDirectory)
+                  artifact: tier2-live-logs-$(Build.BuildId)
+                  condition: always()
+                  displayName: Publish test logs
             steps:
               - checkout: self
 
@@ -184,13 +195,6 @@ extends:
                   # azure-sdk org PAT (ambient in the ADO project) used only to
                   # avoid anonymous GitHub rate limits when cloning the template.
                   GH_TOKEN: $(azuresdk-github-pat)
-
-              - task: PublishPipelineArtifact@1
-                condition: always()
-                inputs:
-                  targetPath: $(Build.ArtifactStagingDirectory)
-                  artifactName: tier2-live-logs-$(Build.BuildId)
-                displayName: Publish test logs
 
               # Safety net for hard crashes / step timeout: the in-test teardown
               # runs `azd down` already, but if the run died mid-way, force-purge

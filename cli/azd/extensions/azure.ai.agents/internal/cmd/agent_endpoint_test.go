@@ -261,7 +261,7 @@ func TestBuildInvocationsURL(t *testing.T) {
 	})
 }
 
-// TestBuildA2AURL verifies the a2a URL builder targets the .../protocols/a2a
+// TestBuildA2AInvokeURL verifies the a2a URL builder targets the .../protocols/a2a
 // tail, applies the default api-version, and URL-encodes both the api-version
 // and any session id.
 func TestBuildA2AInvokeURL(t *testing.T) {

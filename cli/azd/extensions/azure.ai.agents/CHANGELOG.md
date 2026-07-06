@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.5 (Unreleased)
+
+### Bugs Fixed
+
+- [[#8987]](https://github.com/Azure/azure-dev/pull/8987) Fix `azd ai agent init -m <manifest>` not prompting for the agent name. The prompt default and project folder are now derived from the manifest's `template.name` (falling back to the top-level `name`), matching the interactive and template flows.
+
 ## 1.0.0-beta.4 (2026-07-03)
 
 ### Bugs Fixed

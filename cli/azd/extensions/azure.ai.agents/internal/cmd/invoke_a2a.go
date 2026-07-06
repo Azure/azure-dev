@@ -373,5 +373,5 @@ func a2aTextFromParts(partsAny any) string {
 			texts = append(texts, text)
 		}
 	}
-	return strings.Join(texts, "")
+	return strings.Join(texts, "\n")
 }

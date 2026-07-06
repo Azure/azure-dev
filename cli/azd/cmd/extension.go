@@ -805,10 +805,11 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 }
 
 type extensionInstallFlags struct {
-	version string
-	source  string
-	force   bool
-	global  *internal.GlobalCommandOptions
+	version        string
+	source         string
+	force          bool
+	noDependencies bool
+	global         *internal.GlobalCommandOptions
 }
 
 func newExtensionInstallFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *extensionInstallFlags {
@@ -822,6 +823,8 @@ func newExtensionInstallFlags(cmd *cobra.Command, global *internal.GlobalCommand
 	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to install")
 	cmd.Flags().
 		BoolVarP(&flags.force, "force", "f", false, "Force installation, including downgrades and reinstalls")
+	cmd.Flags().BoolVar(&flags.noDependencies, "no-dependencies", false,
+		"Install only the specified extension(s) without installing their declared dependencies")
 
 	return flags
 }
@@ -1047,7 +1050,8 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			extensionVersion, _, err = a.extensionManager.Upgrade(
 				ctx, compatibleExtension, extensions.UpgradeOptions{
 					VersionPreference:   a.flags.version,
-					UpgradeDependencies: true,
+					UpgradeDependencies: !a.flags.noDependencies,
+					SkipDependencies:    a.flags.noDependencies,
 					AzdVersion:          azdVersion,
 				},
 			)
@@ -1068,6 +1072,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 				extensions.InstallOptions{
 					VersionPreference: a.flags.version,
 					AzdVersion:        azdVersion,
+					SkipDependencies:  a.flags.noDependencies,
 				},
 			)
 			if err != nil {
@@ -1079,7 +1084,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			a.console.StopSpinner(ctx, stepMessage, input.StepDone)
 		}
 
-		if len(extensionVersion.Dependencies) > 0 {
+		if !a.flags.noDependencies && len(extensionVersion.Dependencies) > 0 {
 			// Render dependencies flat with the parent step.
 			displayInstalledDependencies(
 				ctx, a.console, a.extensionManager,

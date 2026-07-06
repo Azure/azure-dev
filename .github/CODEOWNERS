@@ -25,10 +25,10 @@
 /cli/azd/extensions/microsoft.foundry/      @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030
 
 # ── Extensions ────────────────────────────────────────────────────────────────
-/ext/                                       @vhvb1989 @tg-msft @RickWinter @karolz-ms
+/ext/                                       @vhvb1989 @tg-msft @RickWinter
 /ext/azuredevops/                           @vhvb1989 @hemarina @tg-msft @RickWinter
 /ext/devcontainer/                          @vhvb1989 @hemarina @tg-msft @RickWinter
-/ext/vscode/                                @vhvb1989 @tg-msft @RickWinter @karolz-ms @bwateratmsft
+/ext/vscode/                                @vhvb1989 @tg-msft @RickWinter @bwateratmsft
 
 # ── Infra / CI / Engineering ─────────────────────────────────────────────────
 /.github/                                   @danieljurek @vhvb1989 @tg-msft @RickWinter

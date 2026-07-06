@@ -147,6 +147,10 @@ func ValidateExtensions(exts []*ExtensionMetadata, strict bool) *RegistryValidat
 		Valid: true,
 	}
 
+	// Index published versions per extension id so declared dependencies can be
+	// checked against what the registry actually offers.
+	availableVersions := buildVersionIndex(exts)
+
 	for _, ext := range exts {
 		var extResult ExtensionValidationResult
 		if ext == nil {
@@ -156,6 +160,7 @@ func ValidateExtensions(exts []*ExtensionMetadata, strict bool) *RegistryValidat
 			}
 		} else {
 			extResult = validateExtension(ext, strict)
+			validateExtensionDependencies(&extResult, ext, availableVersions)
 		}
 		result.Extensions = append(result.Extensions, extResult)
 		if !extResult.Valid {
@@ -164,6 +169,22 @@ func ValidateExtensions(exts []*ExtensionMetadata, strict bool) *RegistryValidat
 	}
 
 	return result
+}
+
+// buildVersionIndex maps each extension id to the version strings it publishes.
+func buildVersionIndex(exts []*ExtensionMetadata) map[string][]string {
+	index := make(map[string][]string, len(exts))
+	for _, ext := range exts {
+		if ext == nil || ext.Id == "" {
+			continue
+		}
+		for _, ver := range ext.Versions {
+			if ver.Version != "" {
+				index[ext.Id] = append(index[ext.Id], ver.Version)
+			}
+		}
+	}
+	return index
 }
 
 // validateExtension validates a single extension metadata entry.
@@ -296,6 +317,76 @@ func validateVersion(result *ExtensionValidationResult, index int, ver *Extensio
 					"(supported: %s)", artifactPrefix, artifact.Checksum.Algorithm,
 					strings.Join(validChecksumAlgorithms, ", ")))
 			}
+		}
+	}
+}
+
+// validateExtensionDependencies checks the declared dependencies of every version
+// of an extension against what the registry publishes.
+func validateExtensionDependencies(
+	result *ExtensionValidationResult,
+	ext *ExtensionMetadata,
+	availableVersions map[string][]string,
+) {
+	for i := range ext.Versions {
+		validateDependencies(result, &ext.Versions[i], availableVersions)
+	}
+}
+
+// validateDependencies checks that every dependency declared by ver can be
+// resolved within the registry. azd resolves an extension's dependencies from
+// the parent's own source at install time, so a registry is expected to be
+// self-contained for the dependencies it declares.
+//
+// A dependency whose id is not present in the registry is reported as a warning
+// rather than an error: the validator may run against a partial or in-progress
+// registry, and the dependency could already be installed at resolution time. A
+// dependency whose id is present but whose version constraint matches no published
+// version is reported as an error, because it can never be resolved (this is the
+// failure that breaks coordinated multi-extension bumps). The same constraint
+// matcher used by the installer is reused so validation mirrors install-time
+// resolution.
+//
+// Messages name the depending version and dependency directly (rather than array
+// indices) so a failure reads clearly on its own; the owning extension id is
+// supplied by the caller's context (grouped output or a test prefix).
+func validateDependencies(
+	result *ExtensionValidationResult,
+	ver *ExtensionVersion,
+	availableVersions map[string][]string,
+) {
+	for _, dep := range ver.Dependencies {
+		if dep.Id == "" {
+			result.addError(fmt.Sprintf("version %s declares a dependency with no 'id'", ver.Version))
+			continue
+		}
+
+		versions, known := availableVersions[dep.Id]
+		if !known {
+			result.addWarning(fmt.Sprintf(
+				"version %s depends on %s, which is not in this registry "+
+					"(to resolve, it must be published in this registry or already installed)",
+				ver.Version, dep.Id))
+			continue
+		}
+
+		// An empty constraint matches any published version.
+		if dep.Version == "" {
+			continue
+		}
+
+		satisfied := false
+		for _, candidate := range versions {
+			if matchesVersionConstraint(dep.Version, candidate) {
+				satisfied = true
+				break
+			}
+		}
+
+		if !satisfied {
+			result.addError(fmt.Sprintf(
+				"version %s depends on %s %q, but no published version satisfies it (available: %s)",
+				ver.Version, dep.Id, dep.Version, strings.Join(versions, ", ")))
 		}
 	}
 }

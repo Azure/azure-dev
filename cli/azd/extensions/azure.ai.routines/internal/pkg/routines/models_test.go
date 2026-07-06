@@ -126,7 +126,7 @@ func TestRoutineRun_NewFieldsRoundTrip(t *testing.T) {
 	assert.Equal(t, "ep-1", run.AgentEndpointID)
 	assert.Equal(t, "conv-1", run.ConversationID)
 	assert.Equal(t, "sess-1", run.SessionID)
-	assert.Equal(t, "2026-01-01T00:00:00Z", run.ScheduledFireAt)
+	assert.Equal(t, "2026-01-01T00:00:00Z", run.ScheduledFireAt.String())
 	require.NotNil(t, run.ErrorStatusCode)
 	assert.Equal(t, status, *run.ErrorStatusCode)
 }
@@ -174,4 +174,56 @@ func TestRoutineAction_ConversationField(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(data), `"conversation":"conv-1"`)
 	assert.NotContains(t, string(data), `"conversation_id"`)
+}
+
+// FlexibleTimestamp must decode from a JSON string unchanged.
+func TestFlexibleTimestamp_UnmarshalString(t *testing.T) {
+	t.Parallel()
+	var ts FlexibleTimestamp
+	require.NoError(t, json.Unmarshal([]byte(`"2026-01-01T00:00:00Z"`), &ts))
+	assert.Equal(t, "2026-01-01T00:00:00Z", ts.String())
+}
+
+// FlexibleTimestamp must decode a JSON number as Unix epoch seconds.
+func TestFlexibleTimestamp_UnmarshalNumberSeconds(t *testing.T) {
+	t.Parallel()
+	var ts FlexibleTimestamp
+	// 1735689600 == 2025-01-01T00:00:00Z
+	require.NoError(t, json.Unmarshal([]byte(`1735689600`), &ts))
+	assert.Equal(t, "2025-01-01T00:00:00Z", ts.String())
+}
+
+// FlexibleTimestamp must decode a large JSON number as Unix epoch milliseconds.
+func TestFlexibleTimestamp_UnmarshalNumberMilliseconds(t *testing.T) {
+	t.Parallel()
+	var ts FlexibleTimestamp
+	// 1735689600000 ms == 2025-01-01T00:00:00Z
+	require.NoError(t, json.Unmarshal([]byte(`1735689600000`), &ts))
+	assert.Equal(t, "2025-01-01T00:00:00Z", ts.String())
+}
+
+// FlexibleTimestamp always marshals back to a JSON string, preserving the
+// request wire shape.
+func TestFlexibleTimestamp_MarshalsAsString(t *testing.T) {
+	t.Parallel()
+	data, err := json.Marshal(FlexibleTimestamp("2026-04-24T15:00:00Z"))
+	require.NoError(t, err)
+	assert.Equal(t, `"2026-04-24T15:00:00Z"`, string(data))
+}
+
+// Regression for #8984: a Routine whose service response carries numeric
+// created_at and timer triggers.<name>.at must decode without the
+// "cannot unmarshal number into Go struct field ... of type string" error.
+func TestRoutine_NumericTimestampsDecode(t *testing.T) {
+	t.Parallel()
+	raw := []byte(`{
+		"name":"my-schedule-routine",
+		"created_at":1735689600,
+		"triggers":{"default":{"type":"timer","at":1735689600}}
+	}`)
+	var r Routine
+	require.NoError(t, json.Unmarshal(raw, &r))
+	assert.Equal(t, "2025-01-01T00:00:00Z", r.CreatedAt.String())
+	require.Contains(t, r.Triggers, "default")
+	assert.Equal(t, "2025-01-01T00:00:00Z", r.Triggers["default"].At.String())
 }

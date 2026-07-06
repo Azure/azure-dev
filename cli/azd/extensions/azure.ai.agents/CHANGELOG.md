@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.5 (Unreleased)
+
+### Features Added
+
+- [[#8989]](https://github.com/Azure/azure-dev/pull/8989) Add `a2a` protocol support to `azd ai agent invoke`. A plain message is wrapped in a JSON-RPC 2.0 `message/send` request, `--input-file` sends a complete JSON-RPC request, and `--output raw` dumps the response verbatim. A2A is remote-only (not available with `--local`).
+
 ## 1.0.0-beta.4 (2026-07-03)
 
 ### Bugs Fixed

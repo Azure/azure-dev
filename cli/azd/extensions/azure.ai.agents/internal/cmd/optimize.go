@@ -16,7 +16,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"azureaiagent/internal/pkg/agents/eval_api"
@@ -39,26 +38,24 @@ type optimizeAgentContext struct {
 
 // resolveOptimizeAgent resolves the agent name and project directory.
 // Resolution order:
-//  1. Explicit --agent flag
-//  2. azd project context (resolveAgentService + environment variables)
-//  3. Error with guidance
+//  1. azd project context — if --agent is given it is matched as a service
+//     name; otherwise the single agent service is auto-selected (or the user
+//     is prompted). The Foundry agent name is read from the environment.
+//  2. No azd project — --agent is treated as the Foundry agent name directly.
+//  3. Error with guidance.
 func resolveOptimizeAgent(ctx context.Context, flagValue, envName string, noPrompt bool) (*optimizeAgentContext, error) {
-	if flagValue != "" {
-		return &optimizeAgentContext{agentName: flagValue}, nil
-	}
-
-	// Try resolving from azd project — single resolveAgentService call
-	// to get both project path and agent info from environment.
+	// Try resolving from azd project first — --agent (if set) is interpreted
+	// as a service name, consistent with show/delete/run.
 	azdClient, err := azdext.NewAzdClient()
 	if err == nil {
 		defer azdClient.Close()
 
-		svc, project, svcErr := resolveAgentService(ctx, azdClient, "", noPrompt)
+		svc, project, svcErr := resolveAgentService(ctx, azdClient, flagValue, noPrompt)
 		if svcErr == nil && svc != nil && project != nil {
 			agentProject := filepath.Join(project.Path, svc.RelativePath)
 			serviceKey := toServiceKey(svc.Name)
 
-			// Read agent name and version from azd environment
+			// Read agent name and version from azd environment.
 			if env := getExistingEnvironment(ctx, envName, azdClient); env != nil {
 				nameKey := fmt.Sprintf("AGENT_%s_NAME", serviceKey)
 				if v, e := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
@@ -82,6 +79,12 @@ func resolveOptimizeAgent(ctx context.Context, flagValue, envName string, noProm
 				}
 			}
 		}
+	}
+
+	// Outside an azd project (or project resolution failed): treat --agent as
+	// the Foundry agent name directly, matching the eval without-project path.
+	if flagValue != "" {
+		return &optimizeAgentContext{agentName: flagValue}, nil
 	}
 
 	return nil, fmt.Errorf("agent name is required: use --agent <name>, or run from an azd project after 'azd deploy'")
@@ -146,7 +149,7 @@ Use --config for a custom YAML spec, or just provide the agent name to use sensi
 	}
 
 	cmd.Flags().StringVarP(&flags.configFile, "config", "c", "", "Path to YAML config file (optional — values are prompted interactively if omitted)")
-	cmd.Flags().StringVarP(&flags.agent, "agent", "a", "", "Agent name (auto-detected from azd project if omitted)")
+	cmd.Flags().StringVarP(&flags.agent, "agent", "a", "", "Agent service name from azure.yaml, or Foundry agent name outside a project")
 	cmd.Flags().StringVarP(&flags.dataset, "dataset", "d", "", "Existing local file or registered dataset name")
 	cmd.Flags().StringVarP(&flags.evalModel, "eval-model", "m", "", "Model for evaluation (required)")
 	cmd.Flags().StringVar(&flags.optimizationModel, "optimize-model", "",
@@ -155,7 +158,7 @@ Use --config for a custom YAML spec, or just provide the agent name to use sensi
 		"Built-in or custom evaluator name (repeatable; required when not set in config)")
 	cmd.Flags().IntVar(&flags.maxCandidates, "max-candidates", 0, "Maximum number of optimization candidates to generate (must be >= 1; default: 5)")
 	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Submit job and return immediately without waiting for completion")
-	cmd.Flags().IntVar(&flags.pollInterval, "poll-interval", 5, "Polling interval in seconds")
+	cmd.Flags().IntVar(&flags.pollInterval, "poll-interval", 10, "Polling interval in seconds")
 	flags.optimizeConnectionFlags.register(cmd)
 
 	cmd.AddCommand(newOptimizeStatusCommand(extCtx))
@@ -179,10 +182,9 @@ type OptimizeAction struct {
 func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 	out := cmd.OutOrStdout()
 
-	fmt.Fprintf(out, "\n  %s Optimization will create new versions of your agent. If your application routes\n"+
-		"  traffic to the \"latest\" version, these new versions may serve live traffic immediately.\n"+
-		"  Consider pinning to a specific version before starting optimization.\n\n",
-		color.YellowString("Warning:"))
+	fmt.Fprintf(out, "\n  %s Optimization creates candidate agents as draft versions.\n"+
+		"  Your live agent versions are not affected until you explicitly deploy a candidate.\n\n",
+		color.CyanString("Note:"))
 
 	endpoint, err := a.flags.resolve(ctx, a.envName)
 	if err != nil {
@@ -212,7 +214,7 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 	}
 
 	if !a.flags.noWait && !optimize_api.IsTerminal(resp.Status) {
-		finalStatus, err := pollOptimizeJob(cmd, client, a.flags.pollInterval, resp.OperationID)
+		finalStatus, err := pollOptimizeJob(cmd, client, a.flags.pollInterval, resp.OperationID, a.envName)
 		if err != nil {
 			return err
 		}
@@ -528,43 +530,133 @@ func (a *OptimizeAction) submitJob(
 }
 
 // pollOptimizeJob polls the optimization job until it reaches a terminal state.
+// While polling it renders a live-updating candidate results table that shows
+// completed candidates, the candidate currently being evaluated, and any
+// queued candidates. The table is redrawn in place on each poll tick.
 func pollOptimizeJob(
 	cmd *cobra.Command,
 	client *optimize_api.OptimizeClient,
 	pollInterval int,
 	operationID string,
+	envName string,
 ) (*optimize_api.OptimizeJobStatus, error) {
 	out := cmd.OutOrStdout()
+	ctx := cmd.Context()
 	spinFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	frameIdx := 0
-	startTime := time.Now()
+
+	// Track how many candidate rows have already been printed so we only
+	// append new rows when new candidates complete.
+	printedCandidates := 0
+	headerPrinted := false
+	hasStatusLine := false
+	lastCandidateTime := time.Now()
+
+	// Create azdClient once for eval URL lookups across all candidates.
+	var (
+		evalAzdClient   *azdext.AzdClient
+		evalEnvResolved string
+	)
+	if c, err := azdext.NewAzdClient(); err == nil {
+		evalAzdClient = c
+		if env := getExistingEnvironment(ctx, envName, c); env != nil {
+			evalEnvResolved = env.Name
+		}
+	}
 
 	poller := &optimize_api.Poller{
 		Client:      client,
 		OperationID: operationID,
 		Interval:    time.Duration(pollInterval) * time.Second,
 		OnProgress: func(status *optimize_api.OptimizeJobStatus) {
-			elapsed := time.Since(startTime).Truncate(time.Second)
 			spin := spinFrames[frameIdx%len(spinFrames)]
 			frameIdx++
+			candidates := status.Candidates()
 
-			progress := fmt.Sprintf("\r  %s %s", spin, status.Status)
-			if status.Progress != nil {
-				p := status.Progress
-				progress += fmt.Sprintf(" · candidates completed: %d", p.CandidatesCompleted)
-				if p.BestScore > 0 {
-					progress += fmt.Sprintf(" · best score: %.2f", p.BestScore)
-				}
+			// Erase the previous status line (spinner / "Evaluating…") so the
+			// new candidate row or header takes its place.
+			if hasStatusLine {
+				fmt.Fprintf(out, "\033[1A\033[2K")
+				hasStatusLine = false
 			}
-			progress += fmt.Sprintf(" · %s", elapsed)
-			fmt.Fprintf(out, "%-80s", progress)
+
+			// Print the table header once before the first candidate row.
+			// Eval and Strategy columns are always shown during polling.
+			if !headerPrinted && len(candidates) > 0 {
+				headerPrinted = true
+				header, sep := candidateTableHeader(true, true)
+				fmt.Fprintln(out, header)
+				fmt.Fprintln(out, sep)
+			}
+
+			bestName := ""
+			if best := status.BestCandidate(); best != nil {
+				bestName = best.Name
+			}
+
+			// Append rows for newly completed candidates. Eval URLs are
+			// constructed per-candidate on the spot using the lazily
+			// initialized azdClient.
+			for i := printedCandidates; i < len(candidates); i++ {
+				c := candidates[i]
+				isBest := bestName != "" && c.Name == bestName
+				evalCell := ""
+				if c.EvalID != "" && c.EvalRunID != "" && evalAzdClient != nil {
+					if url := buildEvalReportURL(ctx, evalAzdClient, evalEnvResolved, c.EvalID, c.EvalRunID); url != "" {
+						evalCell = terminalHyperlink(url, "View")
+					}
+				}
+				line := formatCandidateRow(
+					candidateDisplayName(c.Name, isBest), c.AvgScore,
+					evalCell, c.MutationKeys(), true, true)
+				writeCandidateRow(out, line, isBest)
+			}
+			if printedCandidates < len(candidates) {
+				lastCandidateTime = time.Now()
+			}
+			printedCandidates = len(candidates)
+
+			// Print or update the in-progress status line. This single line
+			// gets overwritten on the next tick.
+			if !optimize_api.IsTerminal(status.Status) {
+				var statusLine string
+				if status.Progress != nil && status.Progress.InProgressCandidate != nil {
+					statusLine = fmt.Sprintf("  %s Generating candidates", spin)
+					candElapsed := time.Since(lastCandidateTime).Truncate(time.Second)
+					statusLine += fmt.Sprintf(" · %s elapsed", candElapsed)
+				} else {
+					statusLine = fmt.Sprintf("  %s Waiting for candidates…", spin)
+					if status.CreatedAt > 0 {
+						elapsed := time.Since(time.Unix(status.CreatedAt, 0)).Truncate(time.Second)
+						statusLine += fmt.Sprintf(" · %s elapsed", elapsed)
+					}
+				}
+				fmt.Fprintln(out, statusLine)
+				hasStatusLine = true
+			}
 		},
 	}
 
-	finalStatus, err := poller.PollUntilDone(cmd.Context())
-	fmt.Fprintln(out)
+	finalStatus, err := poller.PollUntilDone(ctx)
+
+	// Clean up the lazily initialized azdClient.
+	if evalAzdClient != nil {
+		evalAzdClient.Close()
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed while polling optimization job: %w", err)
+	}
+
+	// Clear the last status line so the final results table prints cleanly.
+	if hasStatusLine {
+		fmt.Fprintf(out, "\033[1A\033[2K")
+	}
+
+	// Print total job duration from server timestamps.
+	if finalStatus.CreatedAt != 0 && finalStatus.UpdatedAt != 0 && finalStatus.UpdatedAt > finalStatus.CreatedAt {
+		duration := time.Duration(finalStatus.UpdatedAt-finalStatus.CreatedAt) * time.Second
+		fmt.Fprintf(out, "\n  Total time: %s\n", duration)
 	}
 
 	return finalStatus, nil
@@ -581,7 +673,6 @@ func printOptimizeResults(ctx context.Context, out io.Writer, status *optimize_a
 	}
 
 	bold := color.New(color.Bold)
-	green := color.New(color.FgGreen)
 
 	_, _ = bold.Fprintln(out, "\nResults:")
 	// Resolve eval portal prefix once for building hyperlinks in the table.
@@ -605,44 +696,22 @@ func printOptimizeResults(ctx context.Context, out io.Writer, status *optimize_a
 		}
 	}
 
-	header := fmt.Sprintf("  %-20s %7s", "Candidate", "Score")
-	sep := fmt.Sprintf("  %-20s %7s",
-		strings.Repeat("─", 20),
-		strings.Repeat("─", 7))
-	if hasEvalLinks {
-		header += "  Eval"
-		sep += "  " + strings.Repeat("─", 4)
-	}
-	if hasStrategy {
-		header += "  Strategy"
-		sep += "  " + strings.Repeat("─", 8)
-	}
+	header, sep := candidateTableHeader(hasEvalLinks, hasStrategy)
 	fmt.Fprintln(out, header)
 	fmt.Fprintln(out, sep)
 
 	for _, c := range candidates {
 		isBest := c.Name == bestName
-		name := c.Name
-		if isBest {
-			name += " ★"
-		}
-
-		line := fmt.Sprintf("  %-20s %7.2f", name, c.AvgScore)
+		evalCell := ""
 		if hasEvalLinks {
 			if url, ok := evalURLs[c.Name]; ok {
-				line += "  " + terminalHyperlink(url, "View")
+				evalCell = terminalHyperlink(url, "View")
 			}
 		}
-		if hasStrategy {
-			// MutationKeys returns the keys in stable (sorted) order.
-			strategy := strings.Join(c.MutationKeys(), ", ")
-			line += "  " + strategy
-		}
-		if isBest {
-			_, _ = green.Fprintln(out, line)
-		} else {
-			fmt.Fprintln(out, line)
-		}
+		line := formatCandidateRow(
+			candidateDisplayName(c.Name, isBest), c.AvgScore,
+			evalCell, c.MutationKeys(), hasEvalLinks, hasStrategy)
+		writeCandidateRow(out, line, isBest)
 	}
 
 	// Print candidate IDs for deploy

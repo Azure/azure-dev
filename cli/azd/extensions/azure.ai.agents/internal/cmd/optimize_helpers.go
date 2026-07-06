@@ -3,7 +3,7 @@
 
 // optimize_helpers.go provides shared utilities for optimize commands:
 // connection flag resolution, job ID persistence in the azd environment,
-// and portal link construction.
+// portal link construction, and candidate table rendering.
 
 package cmd
 
@@ -19,6 +19,7 @@ import (
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -185,31 +186,6 @@ func loadOptimizeJobIDForAgent(ctx context.Context, agentName, envName string) s
 		}); err == nil && resp != nil && resp.Value != "" {
 			return resp.Value
 		}
-	}
-
-	resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: env.Name,
-		Key:     optimizeLastJobIDKey,
-	})
-	if err != nil || resp == nil {
-		return ""
-	}
-	return resp.Value
-}
-
-// loadLastOptimizeJobID retrieves the global last optimization job ID from the
-// azd environment. Used by `optimize status`, which has no agent context.
-// Returns empty string if not available.
-func loadLastOptimizeJobID(ctx context.Context, envName string) string {
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return ""
-	}
-	defer azdClient.Close()
-
-	env := getExistingEnvironment(ctx, envName, azdClient)
-	if env == nil {
-		return ""
 	}
 
 	resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
@@ -398,5 +374,73 @@ func reportSvcOptimizationDeployment(
 		Value:   "",
 	}); err != nil {
 		log.Printf("postdeploy: failed to clear %s: %v", candidateKey, err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Candidate table rendering helpers
+// ---------------------------------------------------------------------------
+
+// candidateDisplayName returns the candidate name with a " ★" suffix when
+// isBest is true.
+func candidateDisplayName(name string, isBest bool) string {
+	if isBest {
+		return name + " ★"
+	}
+	return name
+}
+
+// candidateTableHeader returns the header and separator lines for a
+// candidate results table. When showEval/showStrategy are true the
+// respective columns are included.
+func candidateTableHeader(showEval, showStrategy bool) (header, sep string) {
+	header = fmt.Sprintf("  %-20s %8s", "Candidate", "Score")
+	sep = fmt.Sprintf("  %-20s %8s",
+		strings.Repeat("─", 20),
+		strings.Repeat("─", 8))
+	if showEval {
+		header += "  Eval"
+		sep += "  " + strings.Repeat("─", 4)
+	}
+	if showStrategy {
+		header += "  Strategy"
+		sep += "  " + strings.Repeat("─", 8)
+	}
+	return header, sep
+}
+
+// formatCandidateRow builds a formatted table row for a single candidate.
+// evalCell is the rendered eval link (or empty); strategyKeys is the list of
+// mutation attribute names (or nil). showEval/showStrategy control whether the
+// columns are included.
+func formatCandidateRow(
+	name string, score float64, evalCell string,
+	strategyKeys []string, showEval, showStrategy bool,
+) string {
+	line := fmt.Sprintf("  %-20s %8.3f", name, score)
+	if showEval {
+		if evalCell == "" {
+			evalCell = "-"
+		}
+		line += fmt.Sprintf("  %-4s", evalCell)
+	}
+	if showStrategy {
+		if len(strategyKeys) == 0 {
+			line += "  -"
+		} else {
+			line += "  " + strings.Join(strategyKeys, ", ")
+		}
+	}
+	return line
+}
+
+// writeCandidateRow writes a formatted candidate row to out, applying
+// green colour when the candidate is the best.
+func writeCandidateRow(out io.Writer, line string, isBest bool) {
+	if isBest {
+		green := color.New(color.FgGreen)
+		_, _ = green.Fprintln(out, line)
+	} else {
+		fmt.Fprintln(out, line)
 	}
 }

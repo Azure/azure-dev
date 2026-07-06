@@ -9,6 +9,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
@@ -52,7 +53,7 @@ Use --watch to poll until the job completes.`,
 			if len(args) > 0 {
 				operationID = args[0]
 			} else {
-				operationID = loadLastOptimizeJobID(ctx, flags.envName)
+				operationID = loadOptimizeJobIDForAgent(ctx, "", flags.envName)
 				if operationID == "" {
 					return fmt.Errorf("operation ID is required: provide it as an argument, or run 'azd ai agent optimize' first")
 				}
@@ -63,7 +64,7 @@ Use --watch to poll until the job completes.`,
 	}
 
 	cmd.Flags().BoolVar(&flags.watch, "watch", false, "Poll until job completes")
-	cmd.Flags().IntVar(&flags.pollInterval, "poll-interval", 5, "Polling interval in seconds")
+	cmd.Flags().IntVar(&flags.pollInterval, "poll-interval", 10, "Polling interval in seconds")
 	flags.optimizeConnectionFlags.register(cmd)
 
 	return cmd
@@ -93,7 +94,7 @@ func runOptimizeStatus(cmd *cobra.Command, flags *optimizeStatusFlags, operation
 	hasProject := isInAzdProject(cmd.Context())
 
 	if flags.watch && !optimize_api.IsTerminal(status.Status) {
-		finalStatus, err := pollOptimizeJob(cmd, client, flags.pollInterval, operationID)
+		finalStatus, err := pollOptimizeJob(cmd, client, flags.pollInterval, operationID, flags.envName)
 		if err != nil {
 			return err
 		}
@@ -127,6 +128,13 @@ func printOptimizeJobSummary(out io.Writer, status *optimize_api.OptimizeJobStat
 	}
 	if status.CreatedAt != 0 {
 		fmt.Fprintf(out, "  Created: %s\n", eval_api.FormatTimestamp(status.CreatedAt))
+	}
+	if status.UpdatedAt != 0 {
+		fmt.Fprintf(out, "  Updated: %s\n", eval_api.FormatTimestamp(status.UpdatedAt))
+	}
+	if status.CreatedAt != 0 && status.UpdatedAt != 0 && status.UpdatedAt > status.CreatedAt {
+		duration := time.Duration(status.UpdatedAt-status.CreatedAt) * time.Second
+		fmt.Fprintf(out, "  Duration: %s\n", duration)
 	}
 	if status.Error != nil {
 		fmt.Fprintf(out, "  Error:   %s\n", color.RedString(status.Error.Message))

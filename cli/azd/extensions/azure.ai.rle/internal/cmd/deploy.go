@@ -15,7 +15,6 @@ import (
 )
 
 type rleDeployFlags struct {
-	projectId  string
 	dockerfile string
 }
 
@@ -38,16 +37,15 @@ func newDeployCommand() *cobra.Command {
 				}
 			}
 
-			if state.Project == "" {
+			if state.ProjectEndpoint == "" {
 				return &azdext.LocalError{
-					Message:    "RLE project is required for deploy.",
+					Message:    "Foundry project endpoint is required for deploy.",
 					Code:       "rle_project_required",
 					Category:   azdext.LocalErrorCategoryUser,
-					Suggestion: "Pass --project-id <project-id> when running azd ai rle deploy.",
+					Suggestion: fmt.Sprintf("Set %s=https://<account>.services.ai.azure.com/api/projects/<project>.", foundryProjectEndpointEnvVar),
 				}
 			}
 
-			controlPlaneEndpoint := resolveControlPlaneEndpoint()
 			image, err := resolveDeployImage(flags, state)
 			if err != nil {
 				return err
@@ -69,8 +67,12 @@ func newDeployCommand() *cobra.Command {
 			if err := pushDockerImage(cmd, image); err != nil {
 				return err
 			}
+			project, err := projectRouteSegment(state)
+			if err != nil {
+				return err
+			}
 			environmentId := firstNonEmpty(state.EnvironmentId, slug(state.Name))
-			client := newRleClient(controlPlaneEndpoint)
+			client := newRleClient(resolveControlPlaneEndpoint())
 			request := v1EnvironmentRequest{
 				Name:         state.Name,
 				AcrImagePath: image,
@@ -93,9 +95,9 @@ func newDeployCommand() *cobra.Command {
 				return err
 			}
 			if state.EnvironmentId == "" {
-				environment, err = client.createV1Environment(cmd.Context(), state.Project, request)
+				environment, err = client.createV1Environment(cmd.Context(), project, request)
 			} else {
-				environment, err = client.updateV1Environment(cmd.Context(), state.Project, environmentId, request)
+				environment, err = client.updateV1Environment(cmd.Context(), project, environmentId, request)
 				if isNotFoundError(err) {
 					// The recorded environment no longer exists in the target project
 					// (e.g. the project changed or the control plane was reset). Recreate it.
@@ -103,12 +105,12 @@ func newDeployCommand() *cobra.Command {
 						cmd.OutOrStdout(),
 						"Environment '%s' not found in project '%s'; creating a new one.\n",
 						environmentId,
-						state.Project,
+						project,
 					); msgErr != nil {
 						return msgErr
 					}
 					created = true
-					environment, err = client.createV1Environment(cmd.Context(), state.Project, request)
+					environment, err = client.createV1Environment(cmd.Context(), project, request)
 				}
 			}
 			if err != nil {
@@ -152,8 +154,6 @@ func newDeployCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&flags.projectId, "project-id", "",
-		"RLE project id to deploy into. Required on first deploy; later deploys reuse the saved value.")
 	cmd.Flags().StringVar(&flags.dockerfile, "dockerfile", "",
 		"Dockerfile path relative to the current folder. Defaults to Dockerfile at the source root or server/Dockerfile.")
 	return cmd
@@ -171,7 +171,12 @@ func resolveDeployState(flags *rleDeployFlags) (rleState, bool, error) {
 	}
 
 	state.Name = firstNonEmpty(state.Name, defaultSourceName("."))
-	state.Project = firstNonEmpty(flags.projectId, state.Project)
+
+	projectEndpoint, err := resolveFoundryProjectEndpoint()
+	if err != nil {
+		return rleState{}, false, err
+	}
+	state.ProjectEndpoint = projectEndpoint
 
 	return state, initialized, nil
 }
@@ -186,7 +191,11 @@ func resolveDeployImage(flags *rleDeployFlags, state rleState) (string, error) {
 			Suggestion: "Set AZURE_CONTAINER_REGISTRY_ENDPOINT=<registry>.azurecr.io, then run deploy again.",
 		}
 	}
-	return fmt.Sprintf("%s/%s-%s:latest", registry, slug(state.Project), slug(state.Name)), nil
+	project, err := projectRouteSegment(state)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s-%s:latest", registry, slug(project), slug(state.Name)), nil
 }
 
 type environmentOutput struct {

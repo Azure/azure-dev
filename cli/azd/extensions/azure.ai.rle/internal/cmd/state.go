@@ -18,7 +18,7 @@ const (
 
 type rleState struct {
 	Name               string `json:"name"`
-	Project            string `json:"project,omitempty"`
+	ProjectEndpoint    string `json:"projectEndpoint,omitempty"`
 	EnvironmentId      string `json:"environmentId,omitempty"`
 	EnvironmentVersion string `json:"environmentVersion,omitempty"`
 }

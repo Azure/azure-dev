@@ -25,12 +25,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type openEnvInvokeFlags struct {
+type remoteInvokeFlags struct {
+	timeout int
+}
+
+type localRunFlags struct {
 	port         int
-	timeout      int
-	action       string
-	body         string
-	name         string
 	source       string
 	dockerfile   string
 	watch        bool
@@ -38,10 +38,15 @@ type openEnvInvokeFlags struct {
 	reuseRunning bool
 }
 
+type openEnvCallFlags struct {
+	timeout int
+	action  string
+	body    string
+}
+
 func newInvokeCommand() *cobra.Command {
-	flags := &openEnvInvokeFlags{
-		timeout:      30,
-		reuseRunning: true,
+	flags := &remoteInvokeFlags{
+		timeout: 30,
 	}
 
 	cmd := &cobra.Command{
@@ -62,7 +67,7 @@ func newInvokeCommand() *cobra.Command {
 	return cmd
 }
 
-func invokeRemoteEnvironment(cmd *cobra.Command, flags *openEnvInvokeFlags) error {
+func invokeRemoteEnvironment(cmd *cobra.Command, flags *remoteInvokeFlags) error {
 	state, err := loadRleState()
 	if err != nil {
 		return err
@@ -153,7 +158,11 @@ func leaseRemoteSandbox(
 			Suggestion: "Check the RLE control plane sandbox response, then retry.",
 		}
 	}
-	readySandbox, err := waitForRemoteSandbox(ctx, client, state.Project, state.EnvironmentId, sandbox)
+	project, err := projectRouteSegment(state)
+	if err != nil {
+		return nil, err
+	}
+	readySandbox, err := waitForRemoteSandbox(ctx, client, project, state.EnvironmentId, sandbox)
 	if err != nil {
 		if releaseErr := releaseRemoteSandbox(client, state, sandbox.Id); releaseErr != nil {
 			return nil, fmt.Errorf("%w; additionally failed to release sandbox %s: %v", err, sandbox.Id, releaseErr)
@@ -172,7 +181,11 @@ func createSandboxWhenImageReady(
 	deadline := time.Now().Add(remoteSandboxCreateTimeout)
 	attempt := 0
 	for {
-		sandbox, err := client.createSandbox(ctx, state.Project, state.EnvironmentId, sandboxCreateRequest{
+		project, err := projectRouteSegment(state)
+		if err != nil {
+			return nil, err
+		}
+		sandbox, err := client.createSandbox(ctx, project, state.EnvironmentId, sandboxCreateRequest{
 			Version: state.EnvironmentVersion,
 		})
 		if err == nil {
@@ -290,7 +303,11 @@ func waitForRemoteSandbox(
 func releaseRemoteSandbox(client *rleClient, state rleState, sandboxId string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	return client.deleteSandbox(ctx, state.Project, state.EnvironmentId, sandboxId)
+	project, err := projectRouteSegment(state)
+	if err != nil {
+		return err
+	}
+	return client.deleteSandbox(ctx, project, state.EnvironmentId, sandboxId)
 }
 
 func remotePlaygroundUrl(ctx context.Context, sandboxUrl string) (string, func(), error) {
@@ -477,12 +494,12 @@ const remotePlaygroundHTML = `<!doctype html>
 </html>`
 
 func requireDeployedEnvironment(state rleState) error {
-	if strings.TrimSpace(state.Project) == "" {
+	if strings.TrimSpace(state.ProjectEndpoint) == "" {
 		return &azdext.LocalError{
-			Message:    "RLE project is required for remote invoke.",
+			Message:    "Foundry project endpoint is required for remote invoke.",
 			Code:       "rle_project_required",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Set AZURE_CONTAINER_REGISTRY_ENDPOINT=<registry>.azurecr.io, then run azd ai rle deploy --project-id <project-id> first.",
+			Suggestion: "Run azd ai rle deploy first with FOUNDRY_PROJECT_ENDPOINT set.",
 		}
 	}
 	if strings.TrimSpace(state.EnvironmentId) == "" {
@@ -517,7 +534,9 @@ func runOpenEnvShellWithContext(
 }
 
 func newRunCommand() *cobra.Command {
-	flags := &openEnvInvokeFlags{}
+	flags := &localRunFlags{
+		reuseRunning: true,
+	}
 
 	cmd := &cobra.Command{
 		Use:   "run",
@@ -645,7 +664,7 @@ func runOpenEnvShell(input io.Reader, output io.Writer, baseUrl string, timeout 
 			continue
 		}
 		payload = strings.TrimSpace(payload)
-		flags := &openEnvInvokeFlags{timeout: timeout}
+		flags := &openEnvCallFlags{timeout: timeout}
 		switch operation {
 		case "reset":
 			flags.body = payload
@@ -682,7 +701,7 @@ func printOpenEnvShellHelp(output io.Writer) {
 	fmt.Fprintln(output, "  exit")
 }
 
-func ensureLocalContainerEndpoint(cmd *cobra.Command, flags *openEnvInvokeFlags) (string, error) {
+func ensureLocalContainerEndpoint(cmd *cobra.Command, flags *localRunFlags) (string, error) {
 	state, err := loadLocalRunState(flags, cmd.OutOrStdout())
 	if err != nil {
 		return "", err
@@ -816,7 +835,7 @@ func stopLocalContainer(cmd *cobra.Command, environmentName string) error {
 	return runDocker(cmd, "rm", "-f", container)
 }
 
-func loadLocalRunState(flags *openEnvInvokeFlags, output io.Writer) (rleState, error) {
+func loadLocalRunState(flags *localRunFlags, output io.Writer) (rleState, error) {
 	state, err := loadRleState()
 	if err != nil {
 		if localErr, ok := errors.AsType[*azdext.LocalError](err); !ok ||
@@ -839,7 +858,7 @@ func loadLocalRunState(flags *openEnvInvokeFlags, output io.Writer) (rleState, e
 	return state, nil
 }
 
-func localRuntimeImageForRun(flags *openEnvInvokeFlags, state rleState) string {
+func localRuntimeImageForRun(flags *localRunFlags, state rleState) string {
 	return slug(firstNonEmpty(state.Name, defaultSourceName(flags.source))) + ":local"
 }
 
@@ -886,7 +905,7 @@ func buildLocalRuntimeImage(cmd *cobra.Command, image string, opts dockerBuildOp
 	return nil
 }
 
-func watchLocalContainer(cmd *cobra.Command, flags *openEnvInvokeFlags) error {
+func watchLocalContainer(cmd *cobra.Command, flags *localRunFlags) error {
 	last, err := sourceSnapshot(flags.source)
 	if err != nil {
 		return err
@@ -975,7 +994,7 @@ func shouldSkipWatchDir(name string) bool {
 	}
 }
 
-func resolvePort(flags *openEnvInvokeFlags) int {
+func resolvePort(flags *localRunFlags) int {
 	if flags.port > 0 {
 		return flags.port
 	}
@@ -1034,7 +1053,7 @@ func waitForOpenEnvHealth(baseUrl string, timeout time.Duration) error {
 	}
 }
 
-func callOpenEnv(baseUrl string, operation string, flags *openEnvInvokeFlags) (string, error) {
+func callOpenEnv(baseUrl string, operation string, flags *openEnvCallFlags) (string, error) {
 	method := http.MethodGet
 	var body io.Reader
 	if operation == "reset" || operation == "step" {
@@ -1085,7 +1104,7 @@ func openEnvHTTPClient(timeoutSeconds int) *http.Client {
 	return &http.Client{Timeout: time.Duration(timeoutSeconds) * time.Second}
 }
 
-func openEnvRequestBody(operation string, flags *openEnvInvokeFlags) ([]byte, error) {
+func openEnvRequestBody(operation string, flags *openEnvCallFlags) ([]byte, error) {
 	if strings.TrimSpace(flags.body) != "" {
 		return validateJsonObject(flags.body, "body")
 	}

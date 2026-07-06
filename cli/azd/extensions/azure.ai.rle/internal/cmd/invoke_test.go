@@ -23,7 +23,7 @@ import (
 )
 
 func TestOpenEnvRequestBodyWrapsAction(t *testing.T) {
-	body, err := openEnvRequestBody("step", &openEnvInvokeFlags{action: `{"message":"hello"}`})
+	body, err := openEnvRequestBody("step", &openEnvCallFlags{action: `{"message":"hello"}`})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestOpenEnvRequestBodyWrapsAction(t *testing.T) {
 }
 
 func TestOpenEnvRequestBodyUsesRawBody(t *testing.T) {
-	body, err := openEnvRequestBody("step", &openEnvInvokeFlags{
+	body, err := openEnvRequestBody("step", &openEnvCallFlags{
 		action: `{"message":"hello"}`,
 		body:   `{"action":{"message":"override"},"metadata":{"x":1}}`,
 	})
@@ -128,7 +128,7 @@ func TestInvokeRemoteCreatesSandboxAndRunsShell(t *testing.T) {
 	t.Chdir(tempDir)
 	if err := saveRleState(rleState{
 		Name:               "code_rl",
-		Project:            "project-1",
+		ProjectEndpoint:    "https://account.services.ai.azure.com/api/projects/project-1",
 		EnvironmentId:      "env-1",
 		EnvironmentVersion: "v1",
 	}); err != nil {
@@ -195,9 +195,9 @@ func TestInvokeRemoteUsesSandboxWebWhenAvailable(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	if err := saveRleState(rleState{
-		Name:          "code_rl",
-		Project:       "project-1",
-		EnvironmentId: "env-1",
+		Name:            "code_rl",
+		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
+		EnvironmentId:   "env-1",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -291,9 +291,9 @@ func TestInvokeRemotePollsSandboxUntilRunning(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	if err := saveRleState(rleState{
-		Name:          "code_rl",
-		Project:       "project-1",
-		EnvironmentId: "env-1",
+		Name:            "code_rl",
+		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
+		EnvironmentId:   "env-1",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -354,9 +354,9 @@ func TestInvokeRemoteFailsWhenSandboxFails(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	if err := saveRleState(rleState{
-		Name:          "code_rl",
-		Project:       "project-1",
-		EnvironmentId: "env-1",
+		Name:            "code_rl",
+		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
+		EnvironmentId:   "env-1",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -397,7 +397,7 @@ func TestInvokeRemoteFailsWhenSandboxFails(t *testing.T) {
 }
 
 func TestRequireDeployedEnvironmentRejectsMissingEnvironmentId(t *testing.T) {
-	err := requireDeployedEnvironment(rleState{Project: "project-1"})
+	err := requireDeployedEnvironment(rleState{ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1"})
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	if !ok {
 		t.Fatalf("expected LocalError, got %T", err)
@@ -442,10 +442,10 @@ func TestEnsurePortAvailableRejectsBoundPort(t *testing.T) {
 }
 
 func TestResolvePortDefaultsTo8000WithoutPersistedState(t *testing.T) {
-	if port := resolvePort(&openEnvInvokeFlags{}); port != defaultPort {
+	if port := resolvePort(&localRunFlags{}); port != defaultPort {
 		t.Fatalf("expected default port %d, got %d", defaultPort, port)
 	}
-	if port := resolvePort(&openEnvInvokeFlags{port: 9000}); port != 9000 {
+	if port := resolvePort(&localRunFlags{port: 9000}); port != 9000 {
 		t.Fatalf("expected explicit port 9000, got %d", port)
 	}
 }
@@ -458,14 +458,14 @@ func TestLoadLocalRunStateDefaultsToExistingFolderWithoutInit(t *testing.T) {
 	t.Chdir(tempDir)
 
 	var output bytes.Buffer
-	state, err := loadLocalRunState(&openEnvInvokeFlags{source: "."}, &output)
+	state, err := loadLocalRunState(&localRunFlags{source: "."}, &output)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if state.Name != "my-env" {
 		t.Fatalf("expected source-folder name, got %q", state.Name)
 	}
-	image := localRuntimeImageForRun(&openEnvInvokeFlags{source: "."}, state)
+	image := localRuntimeImageForRun(&localRunFlags{source: "."}, state)
 	if image != "my-env:local" {
 		t.Fatalf("expected default local image, got %q", image)
 	}
@@ -490,9 +490,9 @@ func TestInvokeRemoteWaitsForDiskImageConversion(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	if err := saveRleState(rleState{
-		Name:          "code_rl",
-		Project:       "project-1",
-		EnvironmentId: "env-1",
+		Name:            "code_rl",
+		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
+		EnvironmentId:   "env-1",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -556,9 +556,9 @@ func TestRemoteInvokeStopsRetryingSandboxLeaseConflicts(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	if err := saveRleState(rleState{
-		Name:          "code_rl",
-		Project:       "project-1",
-		EnvironmentId: "env-1",
+		Name:            "code_rl",
+		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
+		EnvironmentId:   "env-1",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -650,10 +650,9 @@ func TestResolveDeployStateDefaultsToExistingFolderWithoutInit(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(tempDir)
+	t.Setenv(foundryProjectEndpointEnvVar, "https://account.services.ai.azure.com/api/projects/project-1")
 
-	state, initialized, err := resolveDeployState(&rleDeployFlags{
-		projectId: "project-1",
-	})
+	state, initialized, err := resolveDeployState(&rleDeployFlags{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -663,17 +662,17 @@ func TestResolveDeployStateDefaultsToExistingFolderWithoutInit(t *testing.T) {
 	if state.Name != "my-env" {
 		t.Fatalf("expected source-folder name, got %q", state.Name)
 	}
-	if state.Project != "project-1" {
-		t.Fatalf("expected project flag, got %q", state.Project)
+	if state.ProjectEndpoint != "https://account.services.ai.azure.com/api/projects/project-1" {
+		t.Fatalf("expected saved project endpoint, got %q", state.ProjectEndpoint)
 	}
 }
 
 func TestResolveDeployStateDoesNotPersistDockerfileFlag(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
+	t.Setenv(foundryProjectEndpointEnvVar, "https://account.services.ai.azure.com/api/projects/project-1")
 
 	state, initialized, err := resolveDeployState(&rleDeployFlags{
-		projectId:  "project-1",
 		dockerfile: "server/Dockerfile",
 	})
 	if err != nil {
@@ -685,15 +684,15 @@ func TestResolveDeployStateDoesNotPersistDockerfileFlag(t *testing.T) {
 	if state.Name != filepath.Base(tempDir) {
 		t.Fatalf("expected source folder name, got %q", state.Name)
 	}
-	if state.Project != "project-1" {
-		t.Fatalf("expected project flag, got %q", state.Project)
-	}
 }
 
-func TestResolveDeployImageUsesAcrRegistryEnvironment(t *testing.T) {
+func TestResolveDeployImageUsesTerminalAcrRegistryEnvironment(t *testing.T) {
 	t.Setenv("AZURE_CONTAINER_REGISTRY_ENDPOINT", "example.azurecr.io")
 
-	image, err := resolveDeployImage(&rleDeployFlags{}, rleState{Name: "My Env", Project: "Project 1"})
+	image, err := resolveDeployImage(
+		&rleDeployFlags{},
+		rleState{Name: "My Env", ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/Project 1"},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -703,9 +702,10 @@ func TestResolveDeployImageUsesAcrRegistryEnvironment(t *testing.T) {
 }
 
 func TestResolveDeployImageRequiresAcrRegistry(t *testing.T) {
-	t.Setenv("AZURE_CONTAINER_REGISTRY_ENDPOINT", "")
-
-	_, err := resolveDeployImage(&rleDeployFlags{}, rleState{Name: "my-env", Project: "project-1"})
+	_, err := resolveDeployImage(
+		&rleDeployFlags{},
+		rleState{Name: "my-env", ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1"},
+	)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	if !ok {
 		t.Fatalf("expected LocalError, got %T", err)
@@ -720,7 +720,11 @@ func TestResolveDeployImageUsesRegistryEvenWhenStateExists(t *testing.T) {
 
 	image, err := resolveDeployImage(
 		&rleDeployFlags{},
-		rleState{Name: "my-env", Project: "project-1", EnvironmentId: "env-1"},
+		rleState{
+			Name:            "my-env",
+			ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
+			EnvironmentId:   "env-1",
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -818,7 +822,7 @@ func TestLocalRuntimeImageForRunDefaultsToSourceFolder(t *testing.T) {
 	}
 
 	image := localRuntimeImageForRun(
-		&openEnvInvokeFlags{source: tempDir},
+		&localRunFlags{source: tempDir},
 		rleState{Name: defaultSourceName(tempDir)},
 	)
 	if image != "my-env:local" {

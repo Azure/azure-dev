@@ -55,14 +55,17 @@ func TestRleUserCommandsHiddenUnlessEnabled(t *testing.T) {
 	}
 }
 
-func TestDeployExposesProjectIdFlag(t *testing.T) {
+func TestDeployExposesStandaloneFlags(t *testing.T) {
 	rootCmd := NewRootCommand()
 	command, _, err := rootCmd.Find([]string{"deploy"})
 	if err != nil {
 		t.Fatalf("expected deploy command to be registered: %v", err)
 	}
-	if flag := command.Flags().Lookup("project-id"); flag == nil {
-		t.Fatal("expected deploy to expose --project-id")
+	if flag := command.Flags().Lookup("project-endpoint"); flag != nil {
+		t.Fatal("expected deploy not to expose --project-endpoint")
+	}
+	if flag := command.Flags().Lookup("project-id"); flag != nil {
+		t.Fatal("expected deploy not to expose --project-id")
 	}
 	if flag := command.Flags().Lookup("image"); flag != nil {
 		t.Fatal("expected deploy not to expose --image")

@@ -18,7 +18,7 @@ examples:
     usage: $env:AZD_AI_RLE_ENABLE = "true"; azd ai rle init
   - name: deploy
     description: Build, push, and create or update the RLE environment.
-    usage: $env:AZD_AI_RLE_ENABLE = "true"; $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = "<registry>.azurecr.io"; azd ai rle deploy --project-id <project-id>
+    usage: $env:AZD_AI_RLE_ENABLE = "true"; $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"; $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = "<registry>.azurecr.io"; azd ai rle deploy
   - name: run
     description: Build and run the local RLE environment container.
     usage: $env:AZD_AI_RLE_ENABLE = "true"; azd ai rle run

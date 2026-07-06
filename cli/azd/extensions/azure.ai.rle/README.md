@@ -54,15 +54,16 @@ The extension defaults to the local RLE control plane at `http://localhost:5000`
 $env:RLE_ENDPOINT = "https://<rle-control-plane>"
 ```
 
-Deploy uses an ACR image for the registered RLE environment. Set the registry once:
+Deploy uses a Foundry project endpoint and an ACR image for the registered RLE environment. Set them once:
 
 ```powershell
+$env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
 $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = "<registry>.azurecr.io"
 ```
 
 ## Quickstart
 
-Discovery for all commands is currently disabled using azd env flag. To enable:
+Discovery for all commands is currently disabled using `AZD_AI_RLE_ENABLE`. To enable:
 
 ```powershell
 $env:AZD_AI_RLE_ENABLE = "true"
@@ -147,17 +148,18 @@ Supported shell commands:
 ### 3. Deploy/register
 
 ```powershell
+$env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
 $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = "<registry>.azurecr.io"
-azd ai rle deploy --project-id <project-id>
+azd ai rle deploy
 ```
 
-Deploy builds the Docker image as `<registry>.azurecr.io/<project-id>-<environment>:latest`, pushes it to ACR, registers that image with the RLE control plane, and saves the project/environment details in `.azd-rle.json`.
+Deploy reads the Foundry project endpoint from `FOUNDRY_PROJECT_ENDPOINT` and the ACR registry from `AZURE_CONTAINER_REGISTRY_ENDPOINT` in the terminal environment. It derives the project route segment from `/api/projects/<project>`, builds the Docker image as `<registry>.azurecr.io/<project>-<environment>:latest`, pushes it to ACR, registers that image with the RLE control plane, and saves the project/environment details in `.azd-rle.json`.
 The deploy command prints a CLI-friendly summary using `environmentId`, `acrImage`, `version`, `createdAt`, and `updatedAt`.
 
 If needed, override the Dockerfile path the same way as local run:
 
 ```powershell
-azd ai rle deploy --project-id <project-id> --dockerfile server\Dockerfile
+azd ai rle deploy --dockerfile server\Dockerfile
 ```
 
 ### 4. Invoke remotely

@@ -59,6 +59,12 @@ a Foundry project.`,
 	return rootCmd
 }
 
-// configureExtensionHost is the listen callback. Skills register no
-// lifecycle hooks, so it's a no-op.
-func configureExtensionHost(host *azdext.ExtensionHost) { _ = host }
+// configureExtensionHost is the listen callback. It registers the
+// azure.ai.skill service target so `azd up`/`azd deploy` upsert skills declared
+// as services in azure.yaml.
+func configureExtensionHost(host *azdext.ExtensionHost) {
+	azdClient := host.Client()
+	host.WithServiceTarget(aiSkillHost, func() azdext.ServiceTargetProvider {
+		return newSkillServiceTarget(azdClient)
+	})
+}

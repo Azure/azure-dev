@@ -30,7 +30,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -111,6 +110,9 @@ type FilterOptions struct {
 	Version string
 	// Source is used to specify the source of the extension to install
 	Source string
+	// SourceConfig restricts lookup to one source that is not persisted or cached.
+	// It takes precedence over Source.
+	SourceConfig *SourceConfig
 	// Tags is used to specify the tags of the extension to install
 	Tags []string
 	// Capability is used to filter extensions by capability type
@@ -440,10 +442,30 @@ func (m *Manager) FindExtensions(ctx context.Context, options *FilterOptions) ([
 		}
 	}
 
-	// Use the centralized extension filter
-	extensionFilter := createExtensionFilter(options)
+	filterOptions := options
+	if options.SourceConfig != nil {
+		filterOptionsCopy := *options
+		filterOptionsCopy.Source = ""
+		filterOptions = &filterOptionsCopy
+	}
 
-	sources, err := m.getSources(ctx, sourceFilterPredicate)
+	// Use the centralized extension filter
+	extensionFilter := createExtensionFilter(filterOptions)
+
+	var sources []Source
+	var err error
+	if options.SourceConfig != nil {
+		source, err := m.sourceManager.CreateSource(ctx, options.SourceConfig)
+		if err != nil {
+			if schemaErr, ok := errors.AsType[*ErrUnsupportedRegistrySchema](err); ok {
+				return nil, NewUnsupportedRegistrySchemaError(schemaErr)
+			}
+			return nil, fmt.Errorf("failed initializing extension source: %w", err)
+		}
+		sources = []Source{source}
+	} else {
+		sources, err = m.getSources(ctx, sourceFilterPredicate)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed listing extensions: %w", err)
 	}
@@ -498,6 +520,12 @@ type InstallOptions struct {
 	VersionPreference string
 	// AzdVersion limits selected extension versions to those compatible with azd.
 	AzdVersion *semver.Version
+	// SkipDependencies installs only the target extension, without resolving or
+	// installing its declared dependencies and without enforcing the installed
+	// dependency version constraints. It is used when the caller only needs the
+	// extension's own binary (e.g. generating command snapshots) and cannot
+	// guarantee that the registry's dependency graph is internally consistent.
+	SkipDependencies bool
 }
 
 // InstallWithOptions installs an extension using the supplied options.
@@ -562,8 +590,11 @@ func (m *Manager) installInternal(
 		return nil, fmt.Errorf("no binaries or dependencies available for this version")
 	}
 
-	// Install dependencies
-	if len(selectedVersion.Dependencies) > 0 {
+	// Install dependencies unless the caller opted out. Skipping bypasses both the
+	// dependency install loop and the installed-dependency constraint check, so the
+	// target extension installs even when the registry's dependency graph is
+	// transiently inconsistent (e.g. during a coordinated multi-extension bump).
+	if !opts.SkipDependencies && len(selectedVersion.Dependencies) > 0 {
 		for _, dependency := range selectedVersion.Dependencies {
 			installedDependency, err := m.GetInstalled(FilterOptions{Id: dependency.Id})
 			if err == nil && installedDependency != nil {
@@ -805,6 +836,13 @@ type UpgradeOptions struct {
 	UpgradeDependencies bool
 	// AzdVersion limits selected extension versions to those compatible with azd.
 	AzdVersion *semver.Version
+	// SkipDependencies reinstalls only the target extension, without resolving or
+	// installing its declared dependencies, without enforcing the installed
+	// dependency version constraints, and without reconciling installed dependency
+	// versions. It mirrors InstallOptions.SkipDependencies for the reinstall an
+	// upgrade performs, so `--no-dependencies` behaves the same whether the
+	// extension is being installed fresh or over an existing install.
+	SkipDependencies bool
 }
 
 // DefaultUpgradeOptions returns UpgradeOptions with dependency upgrades enabled.
@@ -872,9 +910,16 @@ func (m *Manager) upgradeInternal(
 	extensionVersion, err := m.installInternal(ctx, extension, InstallOptions{
 		VersionPreference: opts.VersionPreference,
 		AzdVersion:        opts.AzdVersion,
+		SkipDependencies:  opts.SkipDependencies,
 	}, true, map[string]struct{}{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to install extension: %w", err)
+	}
+
+	// When dependencies are skipped, the reinstall above installs only the target
+	// extension; do not resolve or reconcile any dependency versions.
+	if opts.SkipDependencies {
+		return extensionVersion, nil, nil
 	}
 
 	if extensionVersion == nil || len(extensionVersion.Dependencies) == 0 {
@@ -1272,16 +1317,7 @@ func (tm *Manager) createSourcesFromConfig(
 	// Only hard-fail when every source had an incompatible schema and
 	// no usable sources remain.
 	if len(sources) == 0 && len(schemaErrors) > 0 {
-		return nil, &errorhandler.ErrorWithSuggestion{
-			Err:     schemaErrors[0],
-			Message: schemaErrors[0].Error(),
-			Suggestion: "Upgrade azd to the latest version " +
-				"to use this registry",
-			Links: []errorhandler.ErrorLink{{
-				URL:   "https://aka.ms/azd/install",
-				Title: "Install/upgrade azd",
-			}},
-		}
+		return nil, NewUnsupportedRegistrySchemaError(schemaErrors[0])
 	}
 
 	return sources, nil

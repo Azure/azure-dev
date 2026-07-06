@@ -83,6 +83,28 @@ type SkillHost struct {
 	// captured group as InstalledVersion). A host with an empty
 	// VersionRegex is never reported as installed.
 	VersionRegex string
+	// BinaryVersionArgs are the CLI arguments that make the host binary
+	// print its own version (e.g. ["--version"]). Together with
+	// BinaryVersionRegex these let the installer confirm the host is a
+	// genuine, functional CLI before installing through it — not merely a
+	// file of the same name on PATH. Some environments place a launcher
+	// stub on PATH (e.g. the VS Code GitHub Copilot Chat extension drops a
+	// small `copilot` stub into its globalStorage and adds that folder to
+	// the integrated terminal's PATH) that exits 0 but only prompts to
+	// install the real CLI; such a stub passes a bare PATH existence check
+	// yet cannot install the skill. When empty, the installer falls back to
+	// an existence-only check.
+	BinaryVersionArgs []string
+	// BinaryVersionRegex is a Go regular expression whose first capture
+	// group matches the host binary's own version. To avoid mistaking a
+	// launcher stub for a real CLI, anchor it to the host's `--version`
+	// banner with `(?m)^` (e.g. `(?m)^GitHub Copilot CLI\s+v?(\d+\.\d+\.\d+)`)
+	// rather than matching a bare semver: a stub's output may contain an
+	// incidental version-shaped token (a bundled runtime version, a path
+	// build number, a URL) that must not count. The installer treats a match
+	// against the probe output as proof the host CLI is genuinely installed.
+	// When empty, the functional probe is skipped.
+	BinaryVersionRegex string
 }
 
 // InstallStrategy describes how to install a tool on a specific platform.
@@ -364,6 +386,12 @@ func azureSkills() *ToolDefinition {
 				PluginName:             "azure@azure-skills",
 				// Sample: "  • azure@azure-skills (v1.1.70)"
 				VersionRegex: `azure@azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
+				// Probe the host binary itself so a launcher stub that only
+				// prompts to install the real CLI is not mistaken for a host.
+				// Anchored to copilot's `--version` banner ("GitHub Copilot
+				// CLI 1.0.64-3") so an incidental semver cannot pass.
+				BinaryVersionArgs:  []string{"--version"},
+				BinaryVersionRegex: `(?m)^GitHub Copilot CLI\s+v?(\d+\.\d+\.\d+)`,
 			},
 			{
 				Host: "claude",
@@ -388,6 +416,12 @@ func azureSkills() *ToolDefinition {
 				// "version" follows "id" within the same object, so [^}]
 				// keeps the capture scoped to the azure@azure-skills entry.
 				VersionRegex: `"id":\s*"azure@azure-skills"[^}]*?"version":\s*"v?(\d+\.\d+\.\d+)"`,
+				// Probe the host binary itself so a launcher stub that only
+				// prompts to install the real CLI is not mistaken for a host.
+				// Anchored to claude's `--version` banner ("2.1.178 (Claude
+				// Code)") so an incidental semver cannot pass.
+				BinaryVersionArgs:  []string{"--version"},
+				BinaryVersionRegex: `(?m)^v?(\d+\.\d+\.\d+)\s+\(Claude Code\)`,
 			},
 		},
 	}

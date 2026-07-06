@@ -1,0 +1,168 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/schemas/Agent.json",
+  "title": "Foundry agent definition",
+  "description": "Hosted or prompt agent. Items in an agents array may be inline (hosted or prompt) or a $ref to an external file.",
+  "oneOf": [
+    { "$ref": "#/definitions/HostedAgent" },
+    { "$ref": "#/definitions/PromptAgent" },
+    { "$ref": "FileRef.json" }
+  ],
+  "definitions": {
+    "CommonProps": {
+      "type": "object",
+      "properties": {
+        "name":        { "type": "string", "description": "Name of the agent." },
+        "kind":        { "type": "string", "enum": ["hosted", "prompt"] },
+        "description": { "type": "string" },
+        "env": {
+          "type": "object",
+          "description": "Environment variables for the agent runtime. Values may use ${VAR} (azd env) or ${{...}} (Foundry server-side resolution).",
+          "additionalProperties": { "type": "string" }
+        },
+        "toolboxes": {
+          "type": "array",
+          "description": "Names of toolboxes the agent uses (declared in toolboxes[]).",
+          "items": { "type": "string" }
+        },
+        "tools": {
+          "type": "array",
+          "description": "Tools attached directly to this agent (alternative or in addition to toolboxes[]).",
+          "items": {
+            "type": "object",
+            "required": ["type"],
+            "additionalProperties": true,
+            "properties": {
+              "type":       { "type": "string" },
+              "connection": { "type": "string" }
+            }
+          }
+        },
+        "skill": {
+          "type": "string",
+          "description": "Name of a skill (declared in skills[]) this agent is backed by."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Free-form metadata key-value pairs.",
+          "additionalProperties": true
+        }
+      }
+    },
+    "HostedAgent": {
+      "allOf": [
+        { "$ref": "#/definitions/CommonProps" },
+        {
+          "type": "object",
+          "required": ["name", "kind"],
+          "allOf": [
+            {
+              "if": { "anyOf": [{ "required": ["docker"] }, { "required": ["runtime"] }] },
+              "then": { "required": ["project"] }
+            }
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name":        true,
+            "kind":        { "const": "hosted" },
+            "description": true,
+            "env":         true,
+            "toolboxes":   true,
+            "tools":       true,
+            "skill":       true,
+            "metadata":    true,
+            "protocols": {
+              "type": "array",
+              "description": "Protocols the agent implements.",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["protocol", "version"],
+                "additionalProperties": false,
+                "properties": {
+                  "protocol": { "type": "string" },
+                  "version":  { "type": "string" }
+                }
+              }
+            },
+            "project": {
+              "type": "string",
+              "description": "Relative path to the agent source directory. Required when docker: or runtime: is set."
+            },
+            "image": {
+              "type": "string",
+              "description": "Pre-built container image. Mutually exclusive with project + docker / runtime."
+            },
+            "docker": {
+              "type": "object",
+              "description": "Container build options. Mutually exclusive with runtime:.",
+              "additionalProperties": false,
+              "properties": {
+                "path":        { "type": "string", "description": "Path to Dockerfile relative to project." },
+                "remoteBuild": { "type": "boolean", "description": "If true, build in Azure Container Registry instead of locally." }
+              }
+            },
+            "runtime": {
+              "type": "object",
+              "description": "Code-deploy runtime stack. Mutually exclusive with docker:.",
+              "required": ["stack"],
+              "additionalProperties": false,
+              "properties": {
+                "stack":       { "type": "string", "enum": ["python", "dotnet", "node", "java"] },
+                "version":     { "type": "string" },
+                "remoteBuild": { "type": "boolean" }
+              }
+            },
+            "startupCommand": {
+              "type": "string",
+              "description": "Command to start the agent process (e.g., 'python main.py')."
+            },
+            "container": {
+              "type": "object",
+              "description": "Container runtime settings.",
+              "additionalProperties": false,
+              "properties": {
+                "resources": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "cpu":    { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?m?$" },
+                    "memory": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "PromptAgent": {
+      "allOf": [
+        { "$ref": "#/definitions/CommonProps" },
+        {
+          "type": "object",
+          "required": ["name", "kind"],
+          "anyOf": [
+            { "required": ["instructions"] },
+            { "required": ["skill"] }
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name":        true,
+            "kind":        { "const": "prompt" },
+            "description": true,
+            "env":         true,
+            "toolboxes":   true,
+            "tools":       true,
+            "skill":       true,
+            "metadata":    true,
+            "instructions": {
+              "type": "string",
+              "description": "Inline prompt text or a relative path to a markdown file the extension reads at deploy time."
+            }
+          }
+        }
+      ]
+    }
+  }
+}

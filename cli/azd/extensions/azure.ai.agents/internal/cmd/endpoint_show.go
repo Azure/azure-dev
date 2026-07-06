@@ -12,12 +12,10 @@ import (
 	"text/tabwriter"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/paths"
+	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
-	goyaml "go.yaml.in/yaml/v3"
 )
 
 type endpointShowFlags struct {
@@ -83,19 +81,14 @@ func runEndpointShow(
 		return err
 	}
 
-	// Read agent.yaml to get agent name.
-	agentYamlPath, err := paths.JoinAllowRoot(proj.Path, svc.RelativePath, "agent.yaml")
+	// Resolve the agent definition (inline on the service entry, or a legacy
+	// agent.yaml on disk) to get the agent name.
+	agentDef, _, source, err := project.LoadAgentDefinition(svc, proj.Path)
 	if err != nil {
-		return fmt.Errorf("invalid agent.yaml path: %w", err)
+		return fmt.Errorf("failed to resolve agent definition: %w", err)
 	}
-	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // path validated by JoinAllowRoot
-	if err != nil {
-		return fmt.Errorf("failed to read agent.yaml: %w", err)
-	}
-
-	var agentDef agent_yaml.ContainerAgent
-	if err := goyaml.Unmarshal(data, &agentDef); err != nil {
-		return fmt.Errorf("failed to parse agent.yaml: %w", err)
+	if source.IsLegacy() {
+		project.WarnLegacyAgentShape(source)
 	}
 
 	// Resolve endpoint and create client.

@@ -1,6 +1,6 @@
 # Release History
 
-## 1.27.0-beta.1 (Unreleased)
+## 1.28.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -8,7 +8,26 @@
 
 ### Bugs Fixed
 
+- [[#8949]](https://github.com/Azure/azure-dev/pull/8949) Dynamic linker/loader control variables (such as `LD_PRELOAD`, `LD_LIBRARY_PATH`, `LD_AUDIT`, and `DYLD_INSERT_LIBRARIES`) defined in an environment's `.env` file are no longer forwarded into tool subprocesses (docker, npm, python, and others).
+
 ### Other Changes
+
+## 1.27.0 (2026-06-30)
+
+### Features Added
+
+- [[#8792]](https://github.com/Azure/azure-dev/pull/8792) `azd extension install`, `azd extension upgrade`, and `azd extension list` now accept a registry location directly via `-s/--source` (a URL or local path), removing the need to run `azd extension source add` first. Direct locations are validated and registered as persisted sources before extension resolution continues.
+- [[#8794]](https://github.com/Azure/azure-dev/pull/8794) Add the `azd tool uninstall` command to complete the tool install/upgrade/uninstall lifecycle. It supports `--all`, `--dry-run`, interactive multi-select, per-host skill removal via `--host`, and `--output json`.
+- [[#8818]](https://github.com/Azure/azure-dev/pull/8818) Add support for modeling Azure AI Foundry projects, agents, and related resources directly in `azure.yaml`, including `$ref` file includes, secure-by-default networking, and Bicep-less / Terraform-less init paths.
+- [[#8847]](https://github.com/Azure/azure-dev/pull/8847) Add container deployment support for App Service. Services configured with `host: appservice` and `language: docker` (or `docker.path`) now push the container image to ACR and update the site's container configuration, enabling Web App for Containers scenarios.
+
+### Bugs Fixed
+
+- [[#8805]](https://github.com/Azure/azure-dev/pull/8805) Fix `azd tool install azure-skills` mistaking the VS Code Copilot Chat launcher stub for a working Copilot CLI host. Host selection now uses a functional probe, so installs no longer silently no-op (macOS) or get stuck on a PATH prompt (Linux).
+
+### Other Changes
+
+- [[#8838]](https://github.com/Azure/azure-dev/pull/8838) Expose a service's `uses` (dependency) list on the extension SDK `ServiceConfig`, so extensions can read service and resource dependencies directly instead of via `SetServiceConfigValue`.
 
 ## 1.26.0 (2026-06-24)
 

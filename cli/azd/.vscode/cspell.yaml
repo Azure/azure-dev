@@ -1,5 +1,11 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
+  - braydonk
+  - osutil
+  - upserted
+  - upserting
+  - upserts
+  - yamlnode
   - agentcopilot
   - agentdetect
   - Authenticode
@@ -13,6 +19,15 @@ words:
   - toplevel
   - truncatable
   - wrappable
+  - myacr
+  - myconn
+  - myorg
+  - myprivacr
+  - privatelink
+  - cheatsheet
+  - aerr
+  - rerr
+  - perr
   - azcloud
   - azdext
   - azdxignore
@@ -141,6 +156,9 @@ words:
   - secretversion
   - TTLs
   - vaultname
+  - DYLD
+  - dyld
+  - LDLIBS
 languageSettings:
   - languageId: go
     ignoreRegExpList:

@@ -1154,6 +1154,12 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
+	// ExtensionSourceKind is the kind of --source argument: none, registered, or location.
+	ExtensionSourceKind = AttributeKey{
+		Key:            attribute.Key("extension.source.kind"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 	// ExtensionSourceFrom is the registry source before a promotion.
 	ExtensionSourceFrom = AttributeKey{
 		Key:            attribute.Key("extension.source.from"),

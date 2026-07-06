@@ -187,6 +187,47 @@ func TestGetSession_404ReturnsError(t *testing.T) {
 	require.Error(t, err, "404 should be an error from GetSession")
 }
 
+func TestStopSession_Accepts204(t *testing.T) {
+	client := newTestClient(
+		"https://test.example.com/api/projects/proj",
+		&fakeTransport{statusCode: http.StatusNoContent},
+	)
+
+	err := client.StopSession(
+		t.Context(), "my-agent", "sess-1", AgentEndpointAPIVersion, nil,
+	)
+	require.NoError(t, err, "204 No Content should be treated as success")
+}
+
+func TestStopSession_Rejects500(t *testing.T) {
+	client := newTestClient(
+		"https://test.example.com/api/projects/proj",
+		&fakeTransport{statusCode: http.StatusInternalServerError},
+	)
+
+	err := client.StopSession(
+		t.Context(), "my-agent", "sess-1", AgentEndpointAPIVersion, nil,
+	)
+	require.Error(t, err, "500 should be an error")
+}
+
+func TestStopSession_PostsToStopPath(t *testing.T) {
+	client, transport := newCaptureClient(http.StatusNoContent, "")
+
+	err := client.StopSession(
+		t.Context(), "my-agent", "sess-1", AgentEndpointAPIVersion, nil,
+	)
+	require.NoError(t, err)
+	require.Len(t, transport.requests, 1)
+
+	req := transport.requests[0]
+	require.Equal(t, http.MethodPost, req.Method)
+	require.Contains(
+		t, req.URL.Path,
+		"/agents/my-agent/endpoint/sessions/sess-1:stop",
+	)
+}
+
 // fakeBodyTransport returns a canned status code and JSON body.
 type fakeBodyTransport struct {
 	statusCode int
@@ -358,7 +399,6 @@ func TestSessionLifecycleOperations_ApplyUserIdentityHeader(t *testing.T) {
 
 			require.NoError(t, tt.call(client, options))
 			require.Len(t, transport.requests, 1)
-			require.Equal(t, "HostedAgents=V1Preview", transport.requests[0].Header.Get("Foundry-Features"))
 			requireUserIdentityHeader(t, transport.requests[0], "user-1")
 		})
 	}
@@ -521,7 +561,6 @@ func TestGetAgentSessionLogStream_ApplyUserIdentityHeader(t *testing.T) {
 	}
 	require.NotNil(t, request)
 	require.Equal(t, "Bearer test-token", request.Header.Get("Authorization"))
-	require.Equal(t, "HostedAgents=V1Preview", request.Header.Get("Foundry-Features"))
 	requireUserIdentityHeader(t, request, "user-1")
 }
 
@@ -724,7 +763,6 @@ func TestZipDeployRequest_MultipartFormat(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify required headers
-	require.Equal(t, "CodeAgents=V1Preview,HostedAgents=V1Preview", transport.lastReq.Header.Get("Foundry-Features"))
 	require.Equal(t, sha256Hex, transport.lastReq.Header.Get("x-ms-code-zip-sha256"))
 	require.Equal(t, "test-agent", transport.lastReq.Header.Get("x-ms-agent-name"))
 
@@ -775,44 +813,7 @@ func TestZipDeployRequest_NoAgentNameHeader_OnUpdate(t *testing.T) {
 	// x-ms-agent-name should NOT be set for updates
 	require.Empty(t, transport.lastReq.Header.Get("x-ms-agent-name"))
 	// But other required headers should still be present
-	require.Equal(t, "CodeAgents=V1Preview,HostedAgents=V1Preview", transport.lastReq.Header.Get("Foundry-Features"))
 	require.Equal(t, "sha", transport.lastReq.Header.Get("x-ms-code-zip-sha256"))
-}
-
-func TestCreateAgentVersion_SetsHostedAgentsPreviewHeader(t *testing.T) {
-	// The Foundry v1 endpoint gates POST /agents/{name}/versions on the
-	// HostedAgents=V1Preview opt-in header and returns 403 preview_feature_required
-	// without it. Make sure the client always sends the header so callers don't
-	// silently regress to the pre-v1 (preview-API-version) behavior.
-	versionResp := `{
-		"object": "agent.version",
-		"id": "test-agent:1",
-		"name": "test-agent",
-		"version": "1"
-	}`
-	transport := &capturingTransport{statusCode: http.StatusCreated, respBody: versionResp}
-	client := newTestClient("https://test.example.com/api/projects/proj", transport)
-
-	desc := "test desc"
-	req := &CreateAgentVersionRequest{Description: &desc}
-
-	_, err := client.CreateAgentVersion(context.Background(), "test-agent", req, "v1")
-	require.NoError(t, err)
-
-	require.NotNil(t, transport.lastReq, "expected request to be captured")
-	require.Equal(t, http.MethodPost, transport.lastReq.Method)
-	require.Equal(
-		t,
-		"https://test.example.com/api/projects/proj/agents/test-agent/versions",
-		transport.lastReq.URL.Scheme+"://"+transport.lastReq.URL.Host+transport.lastReq.URL.Path,
-	)
-	require.Equal(t, "v1", transport.lastReq.URL.Query().Get("api-version"))
-	require.Equal(
-		t,
-		"HostedAgents=V1Preview",
-		transport.lastReq.Header.Get("Foundry-Features"),
-		"CreateAgentVersion must opt in to HostedAgents=V1Preview on the v1 endpoint",
-	)
 }
 
 // ---------------------------------------------------------------------------
@@ -881,25 +882,6 @@ func TestDownloadAgentCode_IncludesVersionParam(t *testing.T) {
 	defer result.Body.Close()
 
 	require.Equal(t, "3", transport.lastReq.URL.Query().Get("agent_version"))
-}
-
-func TestDownloadAgentCode_SetsFeatureHeader(t *testing.T) {
-	transport := &downloadTransport{
-		statusCode: http.StatusOK,
-		respBody:   "fake-zip",
-		respHeader: http.Header{},
-	}
-	client := newTestClient("https://test.example.com/api/projects/proj", transport)
-
-	result, err := client.DownloadAgentCode(context.Background(), "my-agent", "v1", "")
-	require.NoError(t, err)
-	defer result.Body.Close()
-
-	require.Equal(
-		t,
-		"CodeAgents=V1Preview,HostedAgents=V1Preview",
-		transport.lastReq.Header.Get("Foundry-Features"),
-	)
 }
 
 func TestDownloadAgentCode_ReturnsResponseHeaders(t *testing.T) {

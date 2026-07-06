@@ -362,11 +362,6 @@ func (c *AgentClient) CreateAgentVersion(ctx context.Context, agentName string, 
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Opt-in to the hosted-agents preview feature. The Foundry v1 endpoint
-	// gates POST /agents/{name}/versions with definition.kind=="hosted" behind
-	// this header and returns HTTP 403 (preview_feature_required) without it.
-	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
-
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
 		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
@@ -483,7 +478,6 @@ func (c *AgentClient) zipDeployRequest(
 	}
 
 	// Required headers
-	req.Raw().Header.Set("Foundry-Features", "CodeAgents=V1Preview,HostedAgents=V1Preview")
 	req.Raw().Header.Set("x-ms-code-zip-sha256", sha256Hex)
 	if agentName != "" {
 		req.Raw().Header.Set("x-ms-agent-name", agentName)
@@ -819,7 +813,6 @@ func (c *AgentClient) GetAgentSessionLogStream(
 
 	req.Header.Set("Authorization", "Bearer "+token.Token)
 	req.Header.Set("User-Agent", fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version))
-	req.Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	options.ApplyHeaders(req.Header)
 
 	httpClient := &http.Client{}
@@ -881,7 +874,6 @@ func (c *AgentClient) UploadSessionFile(
 		return fmt.Errorf("failed to set request body: %w", err)
 	}
 
-	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)
@@ -927,7 +919,6 @@ func (c *AgentClient) DownloadSessionFile(
 
 	runtime.SkipBodyDownload(req)
 
-	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)
@@ -981,8 +972,6 @@ func (c *AgentClient) DownloadAgentCode(
 
 	runtime.SkipBodyDownload(req)
 
-	req.Raw().Header.Set("Foundry-Features", "CodeAgents=V1Preview,HostedAgents=V1Preview")
-
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
@@ -1029,7 +1018,6 @@ func (c *AgentClient) ListSessionFiles(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)
@@ -1086,7 +1074,6 @@ func (c *AgentClient) RemoveSessionFile(
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)
@@ -1134,7 +1121,6 @@ func (c *AgentClient) MkdirSessionFile(
 	}
 
 	req.Raw().Header.Set("Content-Type", "application/json")
-	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	options.ApplyHeaders(req.Raw().Header)
 
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(body)), "application/json"); err != nil {
@@ -1180,7 +1166,6 @@ func (c *AgentClient) StatSessionFile(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)
@@ -1250,7 +1235,6 @@ func (c *AgentClient) CreateSession(
 		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
 
-	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)
@@ -1301,7 +1285,6 @@ func (c *AgentClient) GetSession(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)
@@ -1348,6 +1331,49 @@ func (c *AgentClient) DeleteSession(
 	u.RawQuery = query.Encode()
 
 	req, err := runtime.NewRequest(ctx, http.MethodDelete, u.String())
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	options.ApplyHeaders(req.Raw().Header)
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(
+		resp, http.StatusOK, http.StatusNoContent,
+	) {
+		return runtime.NewResponseError(resp)
+	}
+
+	return nil
+}
+
+// StopSession stops a running session without deleting its persistent
+// filesystem. The session can be resumed by a subsequent invocation.
+func (c *AgentClient) StopSession(
+	ctx context.Context,
+	agentName, sessionID, apiVersion string,
+	options *SessionRequestOptions,
+) error {
+	u, err := url.Parse(c.endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+
+	u.Path += fmt.Sprintf(
+		"/agents/%s/endpoint/sessions/%s:stop",
+		url.PathEscape(agentName), url.PathEscape(sessionID),
+	)
+
+	query := u.Query()
+	query.Set("api-version", apiVersion)
+	u.RawQuery = query.Encode()
+
+	req, err := runtime.NewRequest(ctx, http.MethodPost, u.String())
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -1401,7 +1427,6 @@ func (c *AgentClient) ListSessions(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)

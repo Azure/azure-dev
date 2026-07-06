@@ -21,6 +21,7 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -595,6 +596,212 @@ func Test_Install_PackDependency_UsesCompatibleDependencyVersion(t *testing.T) {
 	require.Equal(t, "1.0.0", installed.Version)
 }
 
+// Test_Install_SkipDependencies verifies that InstallOptions.SkipDependencies
+// installs only the target extension and does not pull in its declared
+// dependencies.
+func Test_Install_SkipDependencies(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "test.pack",
+				Versions: []ExtensionVersion{
+					{
+						Version:      "1.0.0",
+						Artifacts:    sampleArtifacts,
+						Dependencies: []ExtensionDependency{{Id: "test.child", Version: ">=1.0.0"}},
+					},
+				},
+			},
+			{
+				Id: "test.child",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0", Artifacts: sampleArtifacts},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
+	require.NoError(t, err)
+	_, err = manager.InstallWithOptions(*mockContext.Context, packs[0], InstallOptions{
+		SkipDependencies: true,
+	})
+	require.NoError(t, err)
+
+	// The parent is installed but the dependency is not.
+	installedPack, err := manager.GetInstalled(FilterOptions{Id: "test.pack"})
+	require.NoError(t, err)
+	require.NotNil(t, installedPack)
+
+	_, err = manager.GetInstalled(FilterOptions{Id: "test.child"})
+	require.ErrorIs(t, err, ErrInstalledExtensionNotFound,
+		"dependency must not be installed when SkipDependencies is set")
+}
+
+// Test_Install_SkipDependencies_BypassesConstraintCheck verifies that
+// SkipDependencies installs the parent even when an already-installed dependency
+// does not satisfy the parent's constraint. This is the scenario that breaks a
+// coordinated multi-extension bump: a meta-package still pins an old constraint
+// against a newer, already-installed child.
+func Test_Install_SkipDependencies_BypassesConstraintCheck(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "test.pack",
+				Versions: []ExtensionVersion{
+					{
+						Version:      "1.0.0",
+						Artifacts:    sampleArtifacts,
+						Dependencies: []ExtensionDependency{{Id: "test.child", Version: ">=2.0.0"}},
+					},
+				},
+			},
+			{
+				Id: "test.child",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0", Artifacts: sampleArtifacts},
+					{Version: "2.0.0", Artifacts: sampleArtifacts},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	// Install an older child that does NOT satisfy the pack's >=2.0.0 constraint.
+	children, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, children[0], "1.0.0")
+	require.NoError(t, err)
+
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
+	require.NoError(t, err)
+
+	// Without SkipDependencies this fails the installed-dependency constraint check.
+	_, err = manager.Install(*mockContext.Context, packs[0], "")
+	require.Error(t, err)
+
+	// With SkipDependencies the parent installs regardless of the stale constraint.
+	_, err = manager.InstallWithOptions(*mockContext.Context, packs[0], InstallOptions{
+		SkipDependencies: true,
+	})
+	require.NoError(t, err)
+}
+
+// Test_Upgrade_SkipDependencies verifies that UpgradeOptions.SkipDependencies is
+// honored on the reinstall/upgrade path: a parent with an unresolvable (missing)
+// dependency upgrades successfully without attempting to install the dependency
+// and without leaving the parent uninstalled.
+func Test_Upgrade_SkipDependencies(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "test.parent",
+				Versions: []ExtensionVersion{
+					{
+						Version:      "1.0.0",
+						Artifacts:    sampleArtifacts,
+						Dependencies: []ExtensionDependency{{Id: "test.missing", Version: ">=1.0.0"}},
+					},
+					{
+						Version:      "2.0.0",
+						Artifacts:    sampleArtifacts,
+						Dependencies: []ExtensionDependency{{Id: "test.missing", Version: ">=1.0.0"}},
+					},
+				},
+			},
+			// Note: test.missing is intentionally absent from the registry.
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	parents, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.parent"})
+	require.NoError(t, err)
+
+	// Fresh install at 1.0.0 with dependencies skipped.
+	_, err = manager.InstallWithOptions(*mockContext.Context, parents[0], InstallOptions{
+		VersionPreference: "1.0.0",
+		SkipDependencies:  true,
+	})
+	require.NoError(t, err)
+
+	// Upgrade to 2.0.0 with dependencies skipped: must not try to install the
+	// missing dependency, must not error, and must not leave the parent removed.
+	_, _, err = manager.Upgrade(*mockContext.Context, parents[0], UpgradeOptions{
+		VersionPreference: "2.0.0",
+		SkipDependencies:  true,
+	})
+	require.NoError(t, err)
+
+	installedParent, err := manager.GetInstalled(FilterOptions{Id: "test.parent"})
+	require.NoError(t, err)
+	require.Equal(t, "2.0.0", installedParent.Version)
+
+	_, err = manager.GetInstalled(FilterOptions{Id: "test.missing"})
+	require.ErrorIs(t, err, ErrInstalledExtensionNotFound,
+		"missing dependency must not be installed when SkipDependencies is set on upgrade")
+}
+
 func Test_DownloadArtifact_Remote(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 
@@ -1013,6 +1220,173 @@ func Test_FindExtensions_MultipleMatches_ErrorHandling(t *testing.T) {
 	}
 	require.True(t, sourceNames["source1"])
 	require.True(t, sourceNames["source2"])
+}
+
+func Test_FindExtensions_SourceConfigDirectSource(t *testing.T) {
+	t.Parallel()
+
+	registryPath := writeExtensionRegistryFile(t, Registry{
+		SchemaVersion: CurrentRegistrySchemaVersion,
+		Extensions: []*ExtensionMetadata{
+			{
+				Id:          "direct.extension",
+				DisplayName: "Direct Extension",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0"},
+				},
+			},
+		},
+	})
+
+	manager := newTestManager(t)
+
+	extensions, err := manager.FindExtensions(t.Context(), &FilterOptions{
+		Id:     "direct.extension",
+		Source: "ignored-source-filter",
+		SourceConfig: &SourceConfig{
+			Name:     "direct",
+			Type:     SourceKindFile,
+			Location: registryPath,
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, extensions, 1)
+	require.Equal(t, "direct.extension", extensions[0].Id)
+	require.Equal(t, "direct", extensions[0].Source)
+}
+
+func Test_FindExtensions_SourceConfigMissingFileReturnsError(t *testing.T) {
+	t.Parallel()
+
+	manager := newTestManager(t)
+
+	_, err := manager.FindExtensions(t.Context(), &FilterOptions{
+		SourceConfig: &SourceConfig{
+			Name:     "missing",
+			Type:     SourceKindFile,
+			Location: filepath.Join(t.TempDir(), "missing-registry.json"),
+		},
+	})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "failed initializing extension source")
+}
+
+func Test_FindExtensions_SourceConfigUnsupportedSchemaReturnsSuggestion(t *testing.T) {
+	t.Parallel()
+
+	registryPath := writeExtensionRegistryFile(t, Registry{
+		SchemaVersion: "2.0",
+		Extensions:    []*ExtensionMetadata{},
+	})
+
+	manager := newTestManager(t)
+
+	_, err := manager.FindExtensions(t.Context(), &FilterOptions{
+		SourceConfig: &SourceConfig{
+			Name:     "future",
+			Type:     SourceKindFile,
+			Location: registryPath,
+		},
+	})
+	require.Error(t, err)
+	require.ErrorAs(t, err, new(*ErrUnsupportedRegistrySchema))
+	require.ErrorAs(t, err, new(*errorhandler.ErrorWithSuggestion))
+}
+
+func Test_UpdateInstalled_UpdatesConfigAndInvalidatesCache(t *testing.T) {
+	t.Parallel()
+
+	manager := newTestManager(t)
+	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+		"test.extension": {
+			Id:      "test.extension",
+			Version: "1.0.0",
+		},
+	}))
+
+	manager.installed = map[string]*Extension{
+		"test.extension": {
+			Id:      "test.extension",
+			Version: "1.0.0",
+		},
+	}
+
+	err := manager.UpdateInstalled(&Extension{
+		Id:      "test.extension",
+		Version: "2.0.0",
+	})
+	require.NoError(t, err)
+	require.Nil(t, manager.installed)
+
+	updated, err := manager.GetInstalled(FilterOptions{Id: "test.extension"})
+	require.NoError(t, err)
+	require.Equal(t, "2.0.0", updated.Version)
+}
+
+func Test_UpdateInstalled_MissingExtension(t *testing.T) {
+	t.Parallel()
+
+	manager := newTestManager(t)
+
+	err := manager.UpdateInstalled(&Extension{Id: "missing"})
+	require.ErrorIs(t, err, ErrInstalledExtensionNotFound)
+}
+
+func Test_InvalidateSourceCache(t *testing.T) {
+	t.Parallel()
+
+	manager := newTestManager(t)
+	manager.sources = []Source{&mockSource{name: "cached"}}
+
+	manager.InvalidateSourceCache()
+
+	require.Nil(t, manager.sources)
+}
+
+func Test_HasMetadataCapability(t *testing.T) {
+	t.Parallel()
+
+	manager := newTestManager(t)
+	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+		"metadata.extension": {
+			Id:           "metadata.extension",
+			Capabilities: []CapabilityType{MetadataCapability},
+		},
+		"plain.extension": {
+			Id: "plain.extension",
+		},
+	}))
+
+	require.True(t, manager.HasMetadataCapability("metadata.extension"))
+	require.False(t, manager.HasMetadataCapability("plain.extension"))
+	require.False(t, manager.HasMetadataCapability("missing.extension"))
+}
+
+func newTestManager(t *testing.T) *Manager {
+	t.Helper()
+
+	mockContext := mocks.NewMockContext(t.Context())
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	return manager
+}
+
+func writeExtensionRegistryFile(t *testing.T, registry Registry) string {
+	t.Helper()
+
+	data, err := json.Marshal(registry)
+	require.NoError(t, err)
+
+	registryPath := filepath.Join(t.TempDir(), "registry.json")
+	require.NoError(t, os.WriteFile(registryPath, data, 0600))
+
+	return registryPath
 }
 
 // mockSource is a test implementation of the Source interface

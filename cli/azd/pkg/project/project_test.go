@@ -484,6 +484,39 @@ postbuild:
 	})
 }
 
+func TestServiceImageSavedToYaml(t *testing.T) {
+	t.Parallel()
+
+	projectConfig := &ProjectConfig{
+		Name: "test-project",
+		Services: map[string]*ServiceConfig{
+			"agent": {
+				RelativePath: "src/agent",
+				Host:         "azure.ai.agent",
+				Language:     "docker",
+				Image:        osutil.NewExpandableString("myacr.azurecr.io/agent:v1"),
+			},
+		},
+	}
+	projectFile := filepath.Join(t.TempDir(), "azure.yaml")
+
+	err := Save(t.Context(), projectConfig, projectFile)
+	require.NoError(t, err)
+
+	fileContent, err := os.ReadFile(projectFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(fileContent), "image: myacr.azurecr.io/agent:v1")
+
+	loadedProject, err := Load(t.Context(), projectFile)
+	require.NoError(t, err)
+	require.Contains(t, loadedProject.Services, "agent")
+	assert.Equal(
+		t,
+		"myacr.azurecr.io/agent:v1",
+		loadedProject.Services["agent"].Image.MustEnvsubst(func(string) string { return "" }),
+	)
+}
+
 func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 	t.Run("DefaultValuesNotWritten", func(t *testing.T) {
 		// Create a minimal project config with no infra settings
@@ -1197,6 +1230,35 @@ func Test_Save(t *testing.T) {
 	assert.Contains(t, content, "test-save")
 	// Path should be set
 	assert.Equal(t, dir, prjConfig.Path)
+}
+
+func Test_Save_OmitsEmptyServiceSourceFields(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "azure.yaml")
+
+	prjConfig := &ProjectConfig{
+		Name: "test-save",
+		Services: map[string]*ServiceConfig{
+			"foundry": {
+				Host: ServiceTargetKind("azure.ai.project"),
+				AdditionalProperties: map[string]any{
+					"endpoint": "https://account.services.ai.azure.com/api/projects/project",
+				},
+			},
+		},
+	}
+
+	err := Save(t.Context(), prjConfig, filePath)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filePath)
+	require.NoError(t, err)
+
+	content := string(data)
+	assert.Contains(t, content, "host: azure.ai.project")
+	assert.Contains(t, content, "endpoint: https://account.services.ai.azure.com/api/projects/project")
+	assert.NotContains(t, content, "project: \"\"")
+	assert.NotContains(t, content, "language: \"\"")
 }
 
 func Test_Save_CustomSchemaVersion(t *testing.T) {

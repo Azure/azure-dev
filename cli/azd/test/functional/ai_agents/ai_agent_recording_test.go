@@ -110,11 +110,15 @@ func Test_AIAgent_Init_NoPrompt_Defer(t *testing.T) {
 	require.NoError(t, err, "ai agent init failed: stdout=%s, stderr=%s", result.Stdout, result.Stderr)
 	require.Contains(t, result.Stdout, "AI agent definition added to your azd project successfully!")
 
-	// Verify generated files exist under agent source dir
-	// Init creates: <dir>/test-defer-agent/src/test-defer-agent/agent.yaml
-	agentDir := filepath.Join(dir, "test-defer-agent", "src", "test-defer-agent")
+	// Verify generated files exist under agent source dir.
+	// The agent definition is now inline in azure.yaml (no agent.yaml on disk).
+	// Init creates: <dir>/test-defer-agent/azure.yaml (project root)
+	//               <dir>/test-defer-agent/src/test-defer-agent/.agentignore
+	projectDir := filepath.Join(dir, "test-defer-agent")
+	require.FileExists(t, filepath.Join(projectDir, "azure.yaml"))
+	agentDir := filepath.Join(projectDir, "src", "test-defer-agent")
 	require.DirExists(t, agentDir)
-	require.FileExists(t, filepath.Join(agentDir, "agent.yaml"))
+	require.FileExists(t, filepath.Join(agentDir, ".agentignore"))
 }
 
 // Test_AIAgent_Init_NoPrompt_WithProject verifies init with --project-id resolves the project,
@@ -173,15 +177,15 @@ func Test_AIAgent_Init_NoPrompt_WithProject(t *testing.T) {
 	require.Contains(t, result.Stdout, "AI agent definition added to your azd project successfully!")
 
 	// Init creates a project directory named after the agent inside the working dir.
-	// Layout: <dir>/pr-gate-test-agent/azure.yaml (project root)
-	//         <dir>/pr-gate-test-agent/src/pr-gate-test-agent/agent.yaml (agent source)
+	// Layout: <dir>/pr-gate-test-agent/azure.yaml (project root, agent definition inline)
+	//         <dir>/pr-gate-test-agent/src/pr-gate-test-agent/.agentignore
 	projectDir := filepath.Join(dir, "pr-gate-test-agent")
 	agentDir := filepath.Join(projectDir, "src", "pr-gate-test-agent")
 
 	// Verify project structure
 	require.FileExists(t, filepath.Join(projectDir, "azure.yaml"))
 	require.DirExists(t, agentDir)
-	require.FileExists(t, filepath.Join(agentDir, "agent.yaml"))
+	require.FileExists(t, filepath.Join(agentDir, ".agentignore"))
 
 	// Verify ARM resolution: the model deployment name is written to the azd environment
 	// .env file. The --model-deployment flag's existence routes no-prompt to the "existing"
@@ -200,12 +204,12 @@ func Test_AIAgent_Init_NoPrompt_WithProject(t *testing.T) {
 	require.Contains(t, envStr, `AZURE_AI_MODEL_DEPLOYMENT_NAME="gpt-4.1"`,
 		"model deployment should be resolved from manifest resource id via ARM catalog")
 
-	// Cross-check: agent.yaml should also have the resolved value, not ${...} placeholder.
-	agentContent, err := os.ReadFile(filepath.Join(agentDir, "agent.yaml"))
+	// Cross-check: azure.yaml should have the resolved model value inline, not ${...} placeholder.
+	azureYamlContent, err := os.ReadFile(filepath.Join(projectDir, "azure.yaml"))
 	require.NoError(t, err)
-	agentStr := string(agentContent)
-	require.NotContains(t, agentStr, "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
-		"agent.yaml should have resolved model name, not azd env placeholder")
+	azureYamlStr := string(azureYamlContent)
+	require.NotContains(t, azureYamlStr, "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
+		"azure.yaml should have resolved model name, not azd env placeholder")
 }
 
 // Test_AIAgent_Init_NegativeControl_BadCassette verifies that the recording cassette is actually

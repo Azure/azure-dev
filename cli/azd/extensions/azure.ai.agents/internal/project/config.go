@@ -41,6 +41,10 @@ var ResourceTiers = []ResourceTier{
 
 // ServiceTargetAgentConfig provides custom configuration for the Azure AI Service target
 type ServiceTargetAgentConfig struct {
+	// Endpoint, when set on the azure.ai.project service, points at an existing
+	// Foundry project. Its presence is the brownfield signal that makes provision
+	// connect to that project instead of creating a new one.
+	Endpoint        string             `json:"endpoint,omitempty"`
 	Environment     map[string]string  `json:"env,omitempty"`
 	Container       *ContainerSettings `json:"container,omitempty"`
 	Deployments     []Deployment       `json:"deployments,omitempty"`
@@ -48,6 +52,7 @@ type ServiceTargetAgentConfig struct {
 	ToolConnections []ToolConnection   `json:"toolConnections,omitempty"`
 	Toolboxes       []Toolbox          `json:"toolboxes,omitempty"`
 	Connections     []Connection       `json:"connections,omitempty"`
+	MemoryStores    []MemoryStore      `json:"memoryStores,omitempty"`
 	StartupCommand  string             `json:"startupCommand,omitempty"`
 }
 
@@ -65,34 +70,34 @@ type ResourceSettings struct {
 // Deployment represents a single model deployment
 type Deployment struct {
 	// Specify the name of model deployment.
-	Name string `json:"name"`
+	Name string `json:"name" yaml:"name"`
 
 	// Required. Properties of model deployment.
-	Model DeploymentModel `json:"model"`
+	Model DeploymentModel `json:"model" yaml:"model"`
 
 	// The resource model definition representing SKU.
-	Sku DeploymentSku `json:"sku"`
+	Sku DeploymentSku `json:"sku" yaml:"sku"`
 }
 
 // DeploymentModel represents the model configuration for a model deployment
 type DeploymentModel struct {
 	// Required. The name of model deployment.
-	Name string `json:"name"`
+	Name string `json:"name" yaml:"name"`
 
 	// Required. The format of model deployment.
-	Format string `json:"format"`
+	Format string `json:"format" yaml:"format"`
 
 	// Required. The version of model deployment.
-	Version string `json:"version"`
+	Version string `json:"version" yaml:"version"`
 }
 
 // DeploymentSku represents the resource model definition representing SKU
 type DeploymentSku struct {
 	// Required. The name of the resource model definition representing SKU.
-	Name string `json:"name"`
+	Name string `json:"name" yaml:"name"`
 
 	// The capacity of the resource model definition representing SKU.
-	Capacity int `json:"capacity"`
+	Capacity int `json:"capacity" yaml:"capacity"`
 }
 
 // Resource represents an external resource for agent execution
@@ -106,6 +111,27 @@ type Toolbox struct {
 	Name        string           `json:"name"`
 	Description string           `json:"description,omitempty"`
 	Tools       []map[string]any `json:"tools"`
+}
+
+// MemoryStore represents a Foundry memory store provisioned (create-if-not-exists)
+// during deployment. It backs the agent's memory_search tool, letting the agent retain
+// context across sessions. ChatModel and EmbeddingModel reference model deployment names
+// available in the Foundry project.
+type MemoryStore struct {
+	Name           string              `json:"name"`
+	Description    string              `json:"description,omitempty"`
+	ChatModel      string              `json:"chatModel"`
+	EmbeddingModel string              `json:"embeddingModel"`
+	Options        *MemoryStoreOptions `json:"options,omitempty"`
+}
+
+// MemoryStoreOptions controls extraction behavior and retention defaults for a memory store.
+type MemoryStoreOptions struct {
+	ChatSummaryEnabled      *bool  `json:"chatSummaryEnabled,omitempty"`
+	UserProfileEnabled      *bool  `json:"userProfileEnabled,omitempty"`
+	ProceduralMemoryEnabled *bool  `json:"proceduralMemoryEnabled,omitempty"`
+	DefaultTtlSeconds       *int   `json:"defaultTtlSeconds,omitempty"`
+	UserProfileDetails      string `json:"userProfileDetails,omitempty"`
 }
 
 // Connection represents a project connection matching the Bicep ConnectionPropertiesV2 spec.

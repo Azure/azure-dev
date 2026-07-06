@@ -5,9 +5,10 @@ Usage
   azd extension install <extension-id|extension-bundle.zip> [flags]
 
 Flags
-    -f, --force          	: Force installation, including downgrades and reinstalls
-    -s, --source string  	: The extension source to use for installs. Accepts a registered source name or a registry location (URL or file path) to register and install from.
-    -v, --version string 	: The version of the extension to install
+    -f, --force           	: Force installation, including downgrades and reinstalls
+        --no-dependencies 	: Install only the specified extension(s) without installing their declared dependencies
+    -s, --source string   	: The extension source to use for installs. Accepts a registered source name or a registry location (URL or file path) to register and install from.
+    -v, --version string  	: The version of the extension to install
 
 Global Flags
     -C, --cwd string         	: Sets the current working directory.

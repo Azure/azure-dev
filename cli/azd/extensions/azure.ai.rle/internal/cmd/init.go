@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 
+	rleproject "azure.ai.rle/internal/project"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -15,6 +17,14 @@ import (
 type rleInitFlags struct {
 	force bool
 }
+
+type initAction struct {
+	cmd             *cobra.Command
+	flags           *rleInitFlags
+	envNameOverride string
+}
+
+var checkoutOpenEnvEchoSampleFunc = rleproject.CheckoutOpenEnvEchoSample
 
 func newInitCommand() *cobra.Command {
 	flags := &rleInitFlags{}
@@ -28,40 +38,7 @@ func newInitCommand() *cobra.Command {
 			if len(args) == 1 {
 				envNameOverride = args[0]
 			}
-			envName := firstNonEmpty(envNameOverride, "echo_env")
-			var err error
-			envName, err = validateEnvName(envName)
-			if err != nil {
-				return &azdext.LocalError{
-					Message:    err.Error(),
-					Code:       "rle_invalid_environment_name",
-					Category:   azdext.LocalErrorCategoryUser,
-					Suggestion: "Use snake_case starting with a letter, for example code_rl.",
-				}
-			}
-
-			sessionDir, err := checkoutOpenEnvEchoSampleFunc(envName, ".", flags.force)
-			if err != nil {
-				return err
-			}
-			if err := saveRleStateIn(sessionDir, defaultRleState(envName)); err != nil {
-				return err
-			}
-
-			displayDir := "." + string(os.PathSeparator) + sessionDir
-			_, err = fmt.Fprintf(
-				cmd.OutOrStdout(),
-				"Created OpenEnv-style environment at: %s\n"+
-					"Next steps:\n"+
-					"  cd \"%s\"\n"+
-					"  azd ai rle run\n"+
-					"  $env:FOUNDRY_PROJECT_ENDPOINT = \"https://<account>.services.ai.azure.com/api/projects/<project>\"\n"+
-					"  $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = \"<registry>.azurecr.io\"\n"+
-					"  azd ai rle deploy\n",
-				displayDir,
-				displayDir,
-			)
-			return err
+			return (&initAction{cmd: cmd, flags: flags, envNameOverride: envNameOverride}).Run()
 		},
 	}
 
@@ -81,4 +58,42 @@ func newInitCommand() *cobra.Command {
 	})
 	cmd.Flags().BoolVar(&flags.force, "force", false, "Overwrite generated files in an existing non-empty session directory")
 	return cmd
+}
+
+func (a *initAction) Run() error {
+	envName := firstNonEmpty(a.envNameOverride, "echo_env")
+	var err error
+	envName, err = rleproject.ValidateEnvironmentName(envName)
+	if err != nil {
+		return &azdext.LocalError{
+			Message:    err.Error(),
+			Code:       "rle_invalid_environment_name",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Use snake_case starting with a letter, for example code_rl.",
+		}
+	}
+
+	sessionDir, err := checkoutOpenEnvEchoSampleFunc(envName, ".", a.flags.force)
+	if err != nil {
+		return err
+	}
+
+	if err := saveRleStateIn(sessionDir, defaultRleState(envName)); err != nil {
+		return err
+	}
+
+	displayDir := "." + string(os.PathSeparator) + sessionDir
+	_, err = fmt.Fprintf(
+		a.cmd.OutOrStdout(),
+		"Created OpenEnv-style environment at: %s\n"+
+			"Next steps:\n"+
+			"  cd \"%s\"\n"+
+			"  azd ai rle run\n"+
+			"  $env:FOUNDRY_PROJECT_ENDPOINT = \"https://<account>.services.ai.azure.com/api/projects/<project>\"\n"+
+			"  $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = \"<registry>.azurecr.io\"\n"+
+			"  azd ai rle deploy\n",
+		displayDir,
+		displayDir,
+	)
+	return err
 }

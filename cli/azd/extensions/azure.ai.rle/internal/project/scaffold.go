@@ -1,52 +1,22 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
-package cmd
+package project
 
 import (
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
-
-var envNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
-
-func validateEnvName(name string) (string, error) {
-	name = strings.TrimSpace(name)
-	if !envNamePattern.MatchString(name) {
-		return "", fmt.Errorf("invalid environment name %q", name)
-	}
-	return name, nil
-}
-
-func slug(name string) string {
-	var builder strings.Builder
-	lastDash := false
-	for _, r := range strings.ToLower(strings.TrimSpace(name)) {
-		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
-			builder.WriteRune(r)
-			lastDash = false
-			continue
-		}
-		if !lastDash && builder.Len() > 0 {
-			builder.WriteRune('-')
-			lastDash = true
-		}
-	}
-	return strings.Trim(builder.String(), "-")
-}
 
 const (
 	openEnvRepoUrl        = "https://github.com/huggingface/OpenEnv.git"
 	openEnvRepoRef        = "main"
 	openEnvEchoSamplePath = "envs/echo_env"
 )
-
-var checkoutOpenEnvEchoSampleFunc = checkoutOpenEnvEchoSample
 
 func createRleSessionDir(name string, dest string, force bool) (string, error) {
 	sessionDir := filepath.Join(dest, name)
@@ -65,13 +35,17 @@ func createRleSessionDir(name string, dest string, force bool) (string, error) {
 			return "", err
 		}
 	}
-	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+	if err := os.MkdirAll(sessionDir, 0750); err != nil {
 		return "", err
 	}
 	return sessionDir, nil
 }
 
-func checkoutOpenEnvEchoSample(name string, dest string, force bool) (string, error) {
+func CheckoutOpenEnvEchoSample(name string, dest string, force bool) (string, error) {
+	name, err := ValidateEnvironmentName(name)
+	if err != nil {
+		return "", err
+	}
 	sessionDir, err := createRleSessionDir(name, dest, force)
 	if err != nil {
 		return "", err
@@ -106,12 +80,6 @@ func checkoutOpenEnvEchoSample(name string, dest string, force bool) (string, er
 	return sessionDir, nil
 }
 
-func isSafeRelativePath(path string) bool {
-	return path != ".." &&
-		!filepath.IsAbs(path) &&
-		!strings.HasPrefix(path, ".."+string(os.PathSeparator))
-}
-
 func runGitCheckout(args ...string) error {
 	if _, err := exec.LookPath("git"); err != nil {
 		return &azdext.LocalError{
@@ -121,7 +89,7 @@ func runGitCheckout(args ...string) error {
 			Suggestion: "Install Git, then retry azd ai rle init.",
 		}
 	}
-	process := exec.Command("git", args...)
+	process := exec.Command("git", args...) //nolint:gosec // args are fixed by init's OpenEnv sample checkout flow.
 	process.Env = os.Environ()
 	output, err := process.CombinedOutput()
 	if err != nil {
@@ -167,7 +135,7 @@ func copyDirectory(sourceDir string, destDir string) error {
 		}
 		targetPath := filepath.Join(destDir, relativePath)
 		if entry.IsDir() {
-			return os.MkdirAll(targetPath, 0755)
+			return os.MkdirAll(targetPath, 0750)
 		}
 		info, err := entry.Info()
 		if err != nil {
@@ -177,6 +145,6 @@ func copyDirectory(sourceDir string, destDir string) error {
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(targetPath, data, info.Mode().Perm())
+		return os.WriteFile(targetPath, data, info.Mode().Perm()) //nolint:gosec // target path is derived from walking the trusted source sample and preserves source file mode.
 	})
 }

@@ -15,8 +15,8 @@ func TestServiceErrorSuggestionShowsCurrentEndpoint(t *testing.T) {
 	t.Setenv("RLE_ENDPOINT", "https://rle.example.test")
 
 	err := serviceError(errors.New("dial tcp failed"))
-	serviceErr, ok := err.(*azdext.ServiceError)
-	if !ok {
+	var serviceErr *azdext.ServiceError
+	if !errors.As(err, &serviceErr) {
 		t.Fatalf("expected ServiceError, got %T", err)
 	}
 

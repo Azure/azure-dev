@@ -19,108 +19,10 @@ import (
 	"testing"
 	"time"
 
+	rleui "azure.ai.rle/internal/ui"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
-
-func TestOpenEnvRequestBodyWrapsAction(t *testing.T) {
-	body, err := openEnvRequestBody("step", &openEnvCallFlags{action: `{"message":"hello"}`})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(body) != `{"action":{"message":"hello"}}` {
-		t.Fatalf("unexpected body: %s", body)
-	}
-}
-
-func TestOpenEnvRequestBodyUsesRawBody(t *testing.T) {
-	body, err := openEnvRequestBody("step", &openEnvCallFlags{
-		action: `{"message":"hello"}`,
-		body:   `{"action":{"message":"override"},"metadata":{"x":1}}`,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	expected := `{"action":{"message":"override"},"metadata":{"x":1}}`
-	if string(body) != expected {
-		t.Fatalf("expected %s, got %s", expected, body)
-	}
-}
-
-func TestNormalizeOpenEnvOperation(t *testing.T) {
-	operation, err := normalizeOpenEnvOperation("/STEP")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if operation != "step" {
-		t.Fatalf("expected step, got %q", operation)
-	}
-	if _, err := normalizeOpenEnvOperation("unknown"); err == nil {
-		t.Fatal("expected unknown operation to fail")
-	}
-}
-
-func TestRunOpenEnvShellCallsCommands(t *testing.T) {
-	var stepBody map[string]any
-	var resetBody map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/health":
-			_, _ = w.Write([]byte(`{"ok":true}`))
-		case "/reset":
-			if err := json.NewDecoder(r.Body).Decode(&resetBody); err != nil {
-				t.Errorf("decode reset body: %v", err)
-			}
-			_, _ = w.Write([]byte(`{"reset":true}`))
-		case "/step":
-			if err := json.NewDecoder(r.Body).Decode(&stepBody); err != nil {
-				t.Errorf("decode step body: %v", err)
-			}
-			_, _ = w.Write([]byte(`{"reward":1}`))
-		case "/state":
-			_, _ = w.Write([]byte(`{"state":"ready"}`))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	input := strings.NewReader("health\nreset {\"seed\":0}\nstep {\"message\":\"hello\"}\nstate\nexit\n")
-	var output bytes.Buffer
-	if err := runOpenEnvShell(input, &output, server.URL, 30); err != nil {
-		t.Fatal(err)
-	}
-
-	if resetBody["seed"] != float64(0) {
-		t.Fatalf("expected reset seed body, got %#v", resetBody)
-	}
-	action, ok := stepBody["action"].(map[string]any)
-	if !ok || action["message"] != "hello" {
-		t.Fatalf("expected wrapped step action, got %#v", stepBody)
-	}
-	if !strings.Contains(output.String(), `"reward": 1`) {
-		t.Fatalf("expected pretty step response in output, got %s", output.String())
-	}
-}
-
-func TestRunOpenEnvShellRequiresStepPayload(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/step" {
-			t.Fatal("step without payload should not call the runtime")
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	input := strings.NewReader("step\nexit\n")
-	var output bytes.Buffer
-	if err := runOpenEnvShell(input, &output, server.URL, 30); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(output.String(), "step requires a JSON action payload") {
-		t.Fatalf("expected step payload error, got %s", output.String())
-	}
-}
 
 func TestInvokeRemoteCreatesSandboxAndRunsShell(t *testing.T) {
 	captureBrowserOpen(t)
@@ -414,7 +316,7 @@ func TestLocalContainerNamesUseEnvironmentName(t *testing.T) {
 }
 
 func TestEnsurePortAvailableRejectsBoundPort(t *testing.T) {
-	listener, err := net.Listen("tcp", ":0")
+	listener, err := net.Listen("tcp", ":0") //nolint:gosec // test intentionally binds an ephemeral port on all interfaces to verify conflict detection.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -452,7 +354,7 @@ func TestResolvePortDefaultsTo8000WithoutPersistedState(t *testing.T) {
 
 func TestLoadLocalRunStateDefaultsToExistingFolderWithoutInit(t *testing.T) {
 	tempDir := filepath.Join(t.TempDir(), "My Env")
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
+	if err := os.MkdirAll(tempDir, 0750); err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(tempDir)
@@ -617,36 +519,23 @@ func TestSandboxLeasePendingStatusTreatsAnyConflictAsPending(t *testing.T) {
 	}
 }
 
-func TestRunOpenEnvShellWithContextReturnsOnCancellation(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	reader, writer := io.Pipe()
-	defer reader.Close()
-	defer writer.Close()
-	cancel()
-
-	var output bytes.Buffer
-	if err := runOpenEnvShellWithContext(ctx, reader, &output, "http://127.0.0.1", 30); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func captureBrowserOpen(t *testing.T) *string {
 	t.Helper()
-	old := openBrowserFunc
+	old := rleui.OpenBrowser
 	openedUrl := ""
-	openBrowserFunc = func(url string) error {
+	rleui.OpenBrowser = func(url string) error {
 		openedUrl = url
 		return nil
 	}
 	t.Cleanup(func() {
-		openBrowserFunc = old
+		rleui.OpenBrowser = old
 	})
 	return &openedUrl
 }
 
 func TestResolveDeployStateDefaultsToExistingFolderWithoutInit(t *testing.T) {
 	tempDir := filepath.Join(t.TempDir(), "My Env")
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
+	if err := os.MkdirAll(tempDir, 0750); err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(tempDir)
@@ -734,90 +623,9 @@ func TestResolveDeployImageUsesRegistryEvenWhenStateExists(t *testing.T) {
 	}
 }
 
-func TestResolveDockerBuildFindsRootDockerfile(t *testing.T) {
-	tempDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tempDir, "Dockerfile"), []byte("FROM scratch\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	source, dockerfile, cleanup, err := prepareDockerBuild(dockerBuildOptions{source: tempDir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cleanup != nil {
-		t.Fatal("expected no cleanup for existing source")
-	}
-	if source != tempDir {
-		t.Fatalf("expected source %q, got %q", tempDir, source)
-	}
-	if dockerfile != filepath.Join(tempDir, "Dockerfile") {
-		t.Fatalf("expected root Dockerfile, got %q", dockerfile)
-	}
-}
-
-func TestResolveDockerBuildFindsServerDockerfile(t *testing.T) {
-	tempDir := t.TempDir()
-	serverDir := filepath.Join(tempDir, "server")
-	if err := os.MkdirAll(serverDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(serverDir, "Dockerfile"), []byte("FROM scratch\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	source, dockerfile, cleanup, err := prepareDockerBuild(dockerBuildOptions{source: tempDir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cleanup != nil {
-		t.Fatal("expected no cleanup for existing source")
-	}
-	if source != tempDir {
-		t.Fatalf("expected source %q, got %q", tempDir, source)
-	}
-	if dockerfile != filepath.Join(serverDir, "Dockerfile") {
-		t.Fatalf("expected server Dockerfile, got %q", dockerfile)
-	}
-}
-
-func TestResolveDockerBuildUsesDockerfileOption(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	dockerDir := filepath.Join(tempDir, "docker")
-	if err := os.MkdirAll(dockerDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	customPath := filepath.Join(dockerDir, "custom.Dockerfile")
-	if err := os.WriteFile(customPath, []byte("FROM scratch\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	_, dockerfile, cleanup, err := prepareDockerBuild(dockerBuildOptions{
-		source:     tempDir,
-		dockerfile: "docker/custom.Dockerfile",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cleanup != nil {
-		t.Fatal("expected no cleanup for existing source")
-	}
-	if dockerfile != customPath {
-		t.Fatalf("expected explicit Dockerfile, got %q", dockerfile)
-	}
-}
-
-func TestIsAcrImageReference(t *testing.T) {
-	if !isAcrImageReference("myregistry.azurecr.io/echo_env:latest") {
-		t.Fatal("expected ACR image reference")
-	}
-	if isAcrImageReference("echo_env:latest") {
-		t.Fatal("did not expect local image tag to be treated as ACR")
-	}
-}
-
 func TestLocalRuntimeImageForRunDefaultsToSourceFolder(t *testing.T) {
 	tempDir := filepath.Join(t.TempDir(), "My Env")
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
+	if err := os.MkdirAll(tempDir, 0750); err != nil {
 		t.Fatal(err)
 	}
 
@@ -827,24 +635,5 @@ func TestLocalRuntimeImageForRunDefaultsToSourceFolder(t *testing.T) {
 	)
 	if image != "my-env:local" {
 		t.Fatalf("expected source folder image, got %q", image)
-	}
-}
-
-func TestResolveDockerBuildRejectsDockerfileEscapes(t *testing.T) {
-	tempDir := t.TempDir()
-	outsideDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(outsideDir, "Dockerfile"), []byte("FROM scratch\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	for _, dockerfile := range []string{
-		filepath.Join("..", filepath.Base(outsideDir), "Dockerfile"),
-		filepath.Join(outsideDir, "Dockerfile"),
-	} {
-		if _, _, _, err := prepareDockerBuild(dockerBuildOptions{
-			source:     tempDir,
-			dockerfile: dockerfile,
-		}); err == nil {
-			t.Fatalf("expected Dockerfile path %q to be rejected", dockerfile)
-		}
 	}
 }

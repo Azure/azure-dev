@@ -195,7 +195,7 @@ func TestInitCopiesOpenEnvEchoSampleByDefault(t *testing.T) {
 	}
 
 	sessionDir := filepath.Join(tempDir, "echo_env")
-	stateBytes, err := os.ReadFile(filepath.Join(sessionDir, rleStateFile))
+	stateBytes, err := os.ReadFile(filepath.Join(sessionDir, rleStateFile)) //nolint:gosec // test reads the state file from its own temporary session directory.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +236,7 @@ func TestInitUsesPositionalNameForDefaultSample(t *testing.T) {
 	}
 
 	sessionDir := filepath.Join(tempDir, "code_rl")
-	stateBytes, err := os.ReadFile(filepath.Join(sessionDir, rleStateFile))
+	stateBytes, err := os.ReadFile(filepath.Join(sessionDir, rleStateFile)) //nolint:gosec // test reads the state file from its own temporary session directory.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,12 +253,17 @@ func stubOpenEnvEchoCheckout(t *testing.T) {
 	t.Helper()
 	old := checkoutOpenEnvEchoSampleFunc
 	checkoutOpenEnvEchoSampleFunc = func(name string, dest string, force bool) (string, error) {
-		sessionDir, err := createRleSessionDir(name, dest, force)
-		if err != nil {
+		sessionDir := filepath.Join(dest, name)
+		if force {
+			if err := os.RemoveAll(sessionDir); err != nil {
+				return "", err
+			}
+		}
+		if err := os.MkdirAll(sessionDir, 0750); err != nil {
 			return "", err
 		}
 		serverDir := filepath.Join(sessionDir, "server")
-		if err := os.MkdirAll(serverDir, 0755); err != nil {
+		if err := os.MkdirAll(serverDir, 0750); err != nil {
 			return "", err
 		}
 		if err := os.WriteFile(filepath.Join(serverDir, "Dockerfile"), []byte("FROM scratch\n"), 0600); err != nil {

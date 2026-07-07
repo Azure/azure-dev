@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package cmd
+package project
 
 import (
 	"fmt"
@@ -10,16 +10,15 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/spf13/cobra"
 )
 
-type dockerBuildOptions struct {
-	source     string
-	dockerfile string
+type BuildOptions struct {
+	Source     string
+	Dockerfile string
 }
 
-func prepareDockerBuild(opts dockerBuildOptions) (source string, dockerfile string, cleanup func(), err error) {
-	source = strings.TrimSpace(opts.source)
+func PrepareDockerBuild(opts BuildOptions) (source string, dockerfile string, cleanup func(), err error) {
+	source = strings.TrimSpace(opts.Source)
 	if source == "" {
 		source = "."
 	}
@@ -28,7 +27,7 @@ func prepareDockerBuild(opts dockerBuildOptions) (source string, dockerfile stri
 		return "", "", nil, err
 	}
 
-	dockerfile = strings.TrimSpace(opts.dockerfile)
+	dockerfile = strings.TrimSpace(opts.Dockerfile)
 	if dockerfile != "" {
 		if !isSafeRelativePath(filepath.Clean(filepath.FromSlash(dockerfile))) {
 			return "", "", cleanup, &azdext.LocalError{
@@ -76,12 +75,23 @@ func prepareDockerBuild(opts dockerBuildOptions) (source string, dockerfile stri
 	return "", "", cleanup, missingDockerfileError(source)
 }
 
+func IsAcrImageReference(image string) bool {
+	firstSegment, _, _ := strings.Cut(strings.TrimSpace(image), "/")
+	return strings.HasSuffix(strings.ToLower(firstSegment), ".azurecr.io")
+}
+
 func isPathWithinRoot(root string, path string) bool {
 	relativePath, err := filepath.Rel(root, path)
 	if err != nil {
 		return false
 	}
 	return isSafeRelativePath(filepath.Clean(relativePath))
+}
+
+func isSafeRelativePath(path string) bool {
+	return path != ".." &&
+		!filepath.IsAbs(path) &&
+		!strings.HasPrefix(path, ".."+string(os.PathSeparator))
 }
 
 func fileExists(path string) (bool, error) {
@@ -102,24 +112,4 @@ func missingDockerfileError(source string) error {
 		Category:   azdext.LocalErrorCategoryUser,
 		Suggestion: "Add Dockerfile at the source root or server/Dockerfile, or pass --dockerfile <path>.",
 	}
-}
-
-func pushDockerImage(cmd *cobra.Command, image string) error {
-	if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Pushing image %s ...\n", image); err != nil {
-		return err
-	}
-	if err := runDocker(cmd, "push", image); err != nil {
-		return &azdext.LocalError{
-			Message:    fmt.Sprintf("Failed to push Docker image %q: %v", image, err),
-			Code:       "rle_docker_push_failed",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Run az acr login --name <namespace>, then retry.",
-		}
-	}
-	return nil
-}
-
-func isAcrImageReference(image string) bool {
-	firstSegment, _, _ := strings.Cut(strings.TrimSpace(image), "/")
-	return strings.HasSuffix(strings.ToLower(firstSegment), ".azurecr.io")
 }

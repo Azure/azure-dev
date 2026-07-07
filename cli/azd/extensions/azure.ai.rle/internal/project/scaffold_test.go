@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package cmd
+package project
 
 import (
 	"os"
@@ -13,7 +13,7 @@ import (
 func TestCopyDirectorySkipsGitMetadata(t *testing.T) {
 	sourceDir := t.TempDir()
 	destDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(sourceDir, ".git"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(sourceDir, ".git"), 0750); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(sourceDir, ".git", "config"), []byte("[remote]\n"), 0600); err != nil {
@@ -38,7 +38,7 @@ func TestCopyDirectorySkipsSymlinksAndPreservesFileMode(t *testing.T) {
 	sourceDir := t.TempDir()
 	destDir := t.TempDir()
 	scriptPath := filepath.Join(sourceDir, "run.sh")
-	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\n"), 0755); err != nil {
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\n"), 0700); err != nil { //nolint:gosec // test fixture needs an executable bit to verify mode preservation.
 		t.Fatal(err)
 	}
 	if err := os.Symlink(scriptPath, filepath.Join(sourceDir, "linked-run.sh")); err != nil {
@@ -52,7 +52,7 @@ func TestCopyDirectorySkipsSymlinksAndPreservesFileMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if runtime.GOOS != "windows" && info.Mode().Perm() != 0755 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0700 {
 		t.Fatalf("expected executable bit to be preserved, got %v", info.Mode().Perm())
 	}
 	if _, err := os.Stat(filepath.Join(destDir, "linked-run.sh")); !os.IsNotExist(err) {
@@ -67,5 +67,20 @@ func TestCopyDirectoryRejectsFileSource(t *testing.T) {
 	}
 	if err := copyDirectory(sourceFile, t.TempDir()); err == nil {
 		t.Fatal("expected file source path to be rejected")
+	}
+}
+
+func TestCheckoutOpenEnvEchoSampleRejectsInvalidNameBeforeChangingDestination(t *testing.T) {
+	destDir := t.TempDir()
+	sentinel := filepath.Join(destDir, "sentinel.txt")
+	if err := os.WriteFile(sentinel, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := CheckoutOpenEnvEchoSample("../bad", destDir, true); err == nil {
+		t.Fatal("expected invalid environment name to be rejected")
+	}
+	if _, err := os.Stat(sentinel); err != nil {
+		t.Fatalf("expected destination to be unchanged: %v", err)
 	}
 }

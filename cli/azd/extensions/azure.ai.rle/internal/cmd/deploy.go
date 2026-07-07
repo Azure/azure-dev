@@ -10,12 +10,19 @@ import (
 	"os"
 	"strings"
 
+	rleproject "azure.ai.rle/internal/project"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
 type rleDeployFlags struct {
 	dockerfile string
+}
+
+type deployAction struct {
+	cmd   *cobra.Command
+	flags *rleDeployFlags
 }
 
 func newDeployCommand() *cobra.Command {
@@ -26,137 +33,141 @@ func newDeployCommand() *cobra.Command {
 		Short: "Create or update the RLE environment",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			state, initialized, err := resolveDeployState(flags)
-			if err != nil {
-				return err
-			}
-			if !initialized {
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "No %s found; using current folder as the RLE source.\n",
-					rleStateFile); err != nil {
-					return err
-				}
-			}
-
-			if state.ProjectEndpoint == "" {
-				return &azdext.LocalError{
-					Message:    "Foundry project endpoint is required for deploy.",
-					Code:       "rle_project_required",
-					Category:   azdext.LocalErrorCategoryUser,
-					Suggestion: fmt.Sprintf("Set %s=https://<account>.services.ai.azure.com/api/projects/<project>.", foundryProjectEndpointEnvVar),
-				}
-			}
-
-			image, err := resolveDeployImage(flags, state)
-			if err != nil {
-				return err
-			}
-			if !isAcrImageReference(image) {
-				return &azdext.LocalError{
-					Message:    fmt.Sprintf("RLE deploy image must be an ACR image reference, got %q.", image),
-					Code:       "rle_acr_image_required",
-					Category:   azdext.LocalErrorCategoryUser,
-					Suggestion: "Set AZURE_CONTAINER_REGISTRY_ENDPOINT=<registry>.azurecr.io, then run deploy again.",
-				}
-			}
-			if err := buildLocalRuntimeImage(cmd, image, dockerBuildOptions{
-				source:     ".",
-				dockerfile: flags.dockerfile,
-			}); err != nil {
-				return err
-			}
-			if err := pushDockerImage(cmd, image); err != nil {
-				return err
-			}
-			project, err := projectRouteSegment(state)
-			if err != nil {
-				return err
-			}
-			environmentId := firstNonEmpty(state.EnvironmentId, slug(state.Name))
-			client := newRleClient(resolveControlPlaneEndpoint())
-			request := v1EnvironmentRequest{
-				Name:         state.Name,
-				AcrImagePath: image,
-			}
-
-			var environment *environmentResource
-			created := state.EnvironmentId == ""
-			action := "Creating"
-			if !created {
-				action = "Updating"
-			}
-
-			if _, err := fmt.Fprintf(
-				cmd.OutOrStdout(),
-				"%s environment '%s' (image=%s) ...\n",
-				action,
-				state.Name,
-				image,
-			); err != nil {
-				return err
-			}
-			if state.EnvironmentId == "" {
-				environment, err = client.createV1Environment(cmd.Context(), project, request)
-			} else {
-				environment, err = client.updateV1Environment(cmd.Context(), project, environmentId, request)
-				if isNotFoundError(err) {
-					// The recorded environment no longer exists in the target project
-					// (e.g. the project changed or the control plane was reset). Recreate it.
-					if _, msgErr := fmt.Fprintf(
-						cmd.OutOrStdout(),
-						"Environment '%s' not found in project '%s'; creating a new one.\n",
-						environmentId,
-						project,
-					); msgErr != nil {
-						return msgErr
-					}
-					created = true
-					environment, err = client.createV1Environment(cmd.Context(), project, request)
-				}
-			}
-			if err != nil {
-				return serviceError(err)
-			}
-			state.EnvironmentId = environment.Id
-			state.EnvironmentVersion = environment.Version
-			if err := saveRleState(state); err != nil {
-				return err
-			}
-
-			label := "Created"
-			if !created {
-				label = "Updated"
-			}
-			if _, err := fmt.Fprintf(
-				cmd.OutOrStdout(),
-				"\n%s environment '%s' (%s).\n",
-				label,
-				state.Name,
-				state.EnvironmentId,
-			); err != nil {
-				return err
-			}
-			body, err := json.MarshalIndent(environmentOutput{
-				EnvironmentId: environment.Id,
-				ProjectId:     environment.ProjectId,
-				Name:          environment.Name,
-				AcrImage:      environment.AcrImagePath,
-				Version:       state.EnvironmentVersion,
-				CreatedAt:     environment.CreatedAt,
-				UpdatedAt:     environment.UpdatedAt,
-			}, "", "  ")
-			if err != nil {
-				return err
-			}
-			if _, err := fmt.Fprintln(cmd.OutOrStdout(), string(body)); err != nil {
-				return err
-			}
-			return nil
+			return (&deployAction{cmd: cmd, flags: flags}).Run()
 		},
 	}
 
 	cmd.Flags().StringVar(&flags.dockerfile, "dockerfile", "",
 		"Dockerfile path relative to the current folder. Defaults to Dockerfile at the source root or server/Dockerfile.")
 	return cmd
+}
+
+func (a *deployAction) Run() error {
+	state, initialized, err := resolveDeployState(a.flags)
+	if err != nil {
+		return err
+	}
+	if !initialized {
+		if _, err := fmt.Fprintf(a.cmd.OutOrStdout(), "No %s found; using current folder as the RLE source.\n",
+			rleStateFile); err != nil {
+			return err
+		}
+	}
+
+	if state.ProjectEndpoint == "" {
+		return &azdext.LocalError{
+			Message:    "Foundry project endpoint is required for deploy.",
+			Code:       "rle_project_required",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: fmt.Sprintf("Set %s=https://<account>.services.ai.azure.com/api/projects/<project>.", foundryProjectEndpointEnvVar),
+		}
+	}
+
+	image, err := resolveDeployImage(a.flags, state)
+	if err != nil {
+		return err
+	}
+	if !rleproject.IsAcrImageReference(image) {
+		return &azdext.LocalError{
+			Message:    fmt.Sprintf("RLE deploy image must be an ACR image reference, got %q.", image),
+			Code:       "rle_acr_image_required",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Set AZURE_CONTAINER_REGISTRY_ENDPOINT=<registry>.azurecr.io, then run deploy again.",
+		}
+	}
+	if err := rleproject.BuildRuntimeImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image, rleproject.BuildOptions{
+		Source:     ".",
+		Dockerfile: a.flags.dockerfile,
+	}); err != nil {
+		return err
+	}
+	if err := rleproject.PushImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image); err != nil {
+		return err
+	}
+	project, err := projectRouteSegment(state)
+	if err != nil {
+		return err
+	}
+	environmentId := firstNonEmpty(state.EnvironmentId, rleproject.Slug(state.Name))
+	client := newRleClient(resolveControlPlaneEndpoint())
+	request := v1EnvironmentRequest{
+		Name:         state.Name,
+		AcrImagePath: image,
+	}
+
+	var environment *environmentResource
+	created := state.EnvironmentId == ""
+	action := "Creating"
+	if !created {
+		action = "Updating"
+	}
+
+	if _, err := fmt.Fprintf(
+		a.cmd.OutOrStdout(),
+		"%s environment '%s' (image=%s) ...\n",
+		action,
+		state.Name,
+		image,
+	); err != nil {
+		return err
+	}
+	if state.EnvironmentId == "" {
+		environment, err = client.createV1Environment(a.cmd.Context(), project, request)
+	} else {
+		environment, err = client.updateV1Environment(a.cmd.Context(), project, environmentId, request)
+		if isNotFoundError(err) {
+			// The recorded environment no longer exists in the target project
+			// (e.g. the project changed or the control plane was reset). Recreate it.
+			if _, msgErr := fmt.Fprintf(
+				a.cmd.OutOrStdout(),
+				"Environment '%s' not found in project '%s'; creating a new one.\n",
+				environmentId,
+				project,
+			); msgErr != nil {
+				return msgErr
+			}
+			created = true
+			environment, err = client.createV1Environment(a.cmd.Context(), project, request)
+		}
+	}
+	if err != nil {
+		return serviceError(err)
+	}
+	state.EnvironmentId = environment.Id
+	state.EnvironmentVersion = environment.Version
+	if err := saveRleState(state); err != nil {
+		return err
+	}
+
+	label := "Created"
+	if !created {
+		label = "Updated"
+	}
+	if _, err := fmt.Fprintf(
+		a.cmd.OutOrStdout(),
+		"\n%s environment '%s' (%s).\n",
+		label,
+		state.Name,
+		state.EnvironmentId,
+	); err != nil {
+		return err
+	}
+	body, err := json.MarshalIndent(environmentOutput{
+		EnvironmentId: environment.Id,
+		ProjectId:     environment.ProjectId,
+		Name:          environment.Name,
+		AcrImage:      environment.AcrImagePath,
+		Version:       state.EnvironmentVersion,
+		CreatedAt:     environment.CreatedAt,
+		UpdatedAt:     environment.UpdatedAt,
+	}, "", "  ")
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(a.cmd.OutOrStdout(), string(body)); err != nil {
+		return err
+	}
+	return nil
 }
 
 func resolveDeployState(flags *rleDeployFlags) (rleState, bool, error) {
@@ -195,7 +206,7 @@ func resolveDeployImage(flags *rleDeployFlags, state rleState) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s/%s-%s:latest", registry, slug(project), slug(state.Name)), nil
+	return fmt.Sprintf("%s/%s-%s:latest", registry, rleproject.Slug(project), rleproject.Slug(state.Name)), nil
 }
 
 type environmentOutput struct {

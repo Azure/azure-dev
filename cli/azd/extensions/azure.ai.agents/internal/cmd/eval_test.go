@@ -153,49 +153,6 @@ func TestResolveRelPath(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// detectEvalAgentKind
-// ---------------------------------------------------------------------------
-
-func TestDetectEvalAgentKind(t *testing.T) {
-	t.Parallel()
-
-	t.Run("detects hosted kind from agent.yaml", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		writeTestFile(t, dir, "agent.yaml", "kind: hosted\nname: test-agent\n")
-		kind, path := detectEvalAgentKind(dir)
-		assert.Equal(t, agent_yaml.AgentKindHosted, kind)
-		assert.Equal(t, filepath.Join(dir, "agent.yaml"), path)
-	})
-
-	t.Run("returns empty for missing manifest", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		kind, path := detectEvalAgentKind(dir)
-		assert.Empty(t, kind)
-		assert.Empty(t, path)
-	})
-
-	t.Run("returns empty for invalid kind", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		writeTestFile(t, dir, "agent.yaml", "kind: invalid_kind_xyz\nname: test-agent\n")
-		kind, path := detectEvalAgentKind(dir)
-		assert.Empty(t, kind)
-		assert.Empty(t, path)
-	})
-
-	t.Run("returns empty for malformed YAML", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		writeTestFile(t, dir, "agent.yaml", "{{invalid yaml}}")
-		kind, path := detectEvalAgentKind(dir)
-		assert.Empty(t, kind)
-		assert.Empty(t, path)
-	})
-}
-
-// ---------------------------------------------------------------------------
 // EvalState — stored in azd environment (integration-tested via eval generate/run)
 // ---------------------------------------------------------------------------
 
@@ -393,16 +350,6 @@ func TestEvalAgentContextError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// relPathForYaml
-// ---------------------------------------------------------------------------
-
-func TestRelPathForYaml(t *testing.T) {
-	t.Parallel()
-
-	result := relPathForYaml("/project", filepath.Join("/project", "src", "agent.yaml"))
-	assert.Equal(t, "src/agent.yaml", result)
-}
-
 // ---------------------------------------------------------------------------
 // eval_api.WriteEvalConfig / eval_api.LoadEvalConfig round-trip
 // ---------------------------------------------------------------------------

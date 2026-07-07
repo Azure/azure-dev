@@ -81,7 +81,7 @@ the agent project root. Use --no-wait to write pending operation IDs and return.
 
 	cmd.Flags().StringVar(&flags.name, "name", "", "Name for the eval suite")
 	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Submit generation jobs and return immediately")
-	cmd.Flags().StringVar(&flags.agent, "agent", "", "Target agent name")
+	cmd.Flags().StringVar(&flags.agent, "agent", "", "Agent service name from azure.yaml, or Foundry agent name outside a project")
 	cmd.Flags().StringVarP(&flags.projectEndpoint, "project-endpoint", "p", "", "Microsoft Foundry project endpoint URL")
 	cmd.Flags().StringVarP(&flags.instruction, "gen-instruction", "g", "", "Agent instruction used for dataset and evaluator generation")
 	cmd.Flags().StringVarP(&flags.instructionFile, "gen-instruction-file", "", "", "Path to a file containing the agent instruction")

@@ -5,6 +5,8 @@ package cmd
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -12,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -403,11 +406,21 @@ func newHelpersTestAzdClient(
 	return azdClient
 }
 
+// withInteractiveAgentSelection overrides the agent-service picker's TTY check for the
+// duration of the test. The seam is process-global, so tests that use it must not run in
+// parallel (nor use parallel subtests) to avoid racing on the shared variable.
+func withInteractiveAgentSelection(t *testing.T, interactive bool) {
+	t.Helper()
+	prev := agentSelectionInteractive
+	agentSelectionInteractive = func() bool { return interactive }
+	t.Cleanup(func() { agentSelectionInteractive = prev })
+}
+
 // TestResolveAgentProtocol_ReturnsServiceName verifies that resolveAgentProtocol
 // returns the resolved service name alongside the protocol, so callers can cache
 // it and avoid a redundant prompt.
 func TestResolveAgentProtocol_ReturnsServiceName(t *testing.T) {
-	t.Parallel()
+	withInteractiveAgentSelection(t, true)
 
 	// Create a temp dir with a hosted agent.yaml declaring the "responses" protocol.
 	svcDir := t.TempDir()
@@ -462,8 +475,6 @@ func TestResolveAgentProtocol_ReturnsServiceName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			projectServer := &helpersProjectServer{
 				project: &azdext.ProjectConfig{
 					Path:     svcDir,
@@ -488,7 +499,7 @@ func TestResolveAgentProtocol_ReturnsServiceName(t *testing.T) {
 // call to resolveAgentProtocol triggers exactly one prompt when there are
 // multiple agent services and no name is provided.
 func TestResolveAgentProtocol_MultipleServicesPromptsOnce(t *testing.T) {
-	t.Parallel()
+	withInteractiveAgentSelection(t, true)
 
 	svcDir := t.TempDir()
 	agentYaml := "kind: hosted\nname: my-agent\nprotocols:\n  - protocol: responses\n    version: \"1.0\"\n"
@@ -511,4 +522,77 @@ func TestResolveAgentProtocol_MultipleServicesPromptsOnce(t *testing.T) {
 	require.Equal(t, "svc-a", serviceName)
 	require.Equal(t, int32(1), promptServer.selectCalls.Load(),
 		"resolveAgentProtocol should trigger exactly one prompt")
+}
+
+func twoAgentServices() []*azdext.ServiceConfig {
+	return []*azdext.ServiceConfig{
+		{Name: "svc-b", Host: AiAgentHost, RelativePath: "."},
+		{Name: "svc-a", Host: AiAgentHost, RelativePath: "."},
+	}
+}
+
+// TestPromptForAgentService_NonInteractiveFailsFast verifies that, without a TTY, the picker
+// fails fast with a structured error instead of blocking on stdin, and never calls the host prompt.
+func TestPromptForAgentService_NonInteractiveFailsFast(t *testing.T) {
+	withInteractiveAgentSelection(t, false)
+
+	promptServer := &helpersPromptServer{}
+	azdClient := newHelpersTestAzdClient(t, &helpersProjectServer{}, promptServer)
+
+	svc, err := promptForAgentService(t.Context(), azdClient, twoAgentServices(), false)
+	require.Nil(t, svc)
+	require.Error(t, err)
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "expected a *azdext.LocalError")
+	require.Equal(t, exterrors.CodeNonInteractiveAgentSelection, localErr.Code)
+	// The available services are listed to help the user pick one.
+	require.Contains(t, localErr.Error(), "svc-a")
+	require.Contains(t, localErr.Error(), "svc-b")
+
+	require.Equal(t, int32(0), promptServer.selectCalls.Load(),
+		"the host prompt must not be invoked in a non-interactive context")
+}
+
+// TestPromptForAgentService_NoPromptFailsFast verifies that --no-prompt fails fast without
+// invoking the host prompt, independent of TTY state.
+func TestPromptForAgentService_NoPromptFailsFast(t *testing.T) {
+	withInteractiveAgentSelection(t, true)
+
+	promptServer := &helpersPromptServer{}
+	azdClient := newHelpersTestAzdClient(t, &helpersProjectServer{}, promptServer)
+
+	svc, err := promptForAgentService(t.Context(), azdClient, twoAgentServices(), true)
+	require.Nil(t, svc)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "svc-a")
+	require.Equal(t, int32(0), promptServer.selectCalls.Load())
+}
+
+// TestPromptForAgentService_InteractivePrintsBanner verifies that, with a TTY, a one-line banner
+// is written to stderr before the picker is rendered.
+func TestPromptForAgentService_InteractivePrintsBanner(t *testing.T) {
+	withInteractiveAgentSelection(t, true)
+
+	// Capture stderr for the duration of the call.
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stderr = w
+	t.Cleanup(func() { os.Stderr = oldStderr })
+
+	promptServer := &helpersPromptServer{selectIndex: 0}
+	azdClient := newHelpersTestAzdClient(t, &helpersProjectServer{}, promptServer)
+
+	svc, err := promptForAgentService(t.Context(), azdClient, twoAgentServices(), false)
+	require.NoError(t, w.Close())
+	os.Stderr = oldStderr
+
+	require.NoError(t, err)
+	require.NotNil(t, svc)
+	require.Equal(t, int32(1), promptServer.selectCalls.Load())
+
+	out, readErr := io.ReadAll(r)
+	require.NoError(t, readErr)
+	require.Contains(t, string(out), "azd is waiting for your agent service selection")
 }

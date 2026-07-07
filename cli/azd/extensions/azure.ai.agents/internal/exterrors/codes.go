@@ -146,6 +146,11 @@ const (
 	CodeInvalidMemoryStore = "invalid_memory_store"
 )
 
+// Error codes for interactive agent selection.
+const (
+	CodeNonInteractiveAgentSelection = "non_interactive_agent_selection"
+)
+
 // Error codes for agent identity RBAC operations.
 const (
 	CodeAgentIdentityNotFound   = "agent_identity_not_found"

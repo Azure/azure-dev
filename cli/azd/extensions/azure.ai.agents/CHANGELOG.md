@@ -4,6 +4,7 @@
 
 ### Bugs Fixed
 
+- [[#8584]](https://github.com/Azure/azure-dev/issues/8584) Fix `azd ai agent` commands hanging silently in non-TTY contexts (CI, agent harnesses, or output piped through `tee`/`tail`) when the target agent is ambiguous. The interactive "Select an agent service" picker now detects a non-interactive terminal and fails fast with an actionable error (listing the available services and how to pass one) instead of blocking forever on stdin. In interactive mode it also prints a one-line banner to stderr before the picker so piped/CI logs show why azd is waiting.
 - [[#8987]](https://github.com/Azure/azure-dev/pull/8987) Fix `azd ai agent init -m <manifest>` not prompting for the agent name. The prompt default and project folder are now derived from the manifest's `template.name` (falling back to the top-level `name`), matching the interactive and template flows.
 - [[#8981]](https://github.com/Azure/azure-dev/pull/8981) Fix `azd ai agent init -m <azure.yaml> --deploy-mode container` not resolving a container registry when adopting a unified Foundry `azure.yaml` on an existing Foundry project, which made `azd deploy` fail with `could not determine container registry endpoint`. The deploy mode is now resolved before Foundry project setup, so a container agent wires `AZURE_CONTAINER_REGISTRY_ENDPOINT` (or is signaled to create one on provision) while code deploy and `--image` still skip ACR.
 

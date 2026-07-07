@@ -550,7 +550,6 @@ func pollOptimizeJob(
 	printedCandidates := 0
 	headerPrinted := false
 	hasStatusLine := false
-	lastCandidateTime := time.Now()
 
 	// Create azdClient once for eval URL lookups across all candidates.
 	var (
@@ -611,9 +610,6 @@ func pollOptimizeJob(
 					evalCell, c.MutationKeys(), true, true)
 				writeCandidateRow(out, line, isBest)
 			}
-			if printedCandidates < len(candidates) {
-				lastCandidateTime = time.Now()
-			}
 			printedCandidates = len(candidates)
 
 			// Print or update the in-progress status line. This single line
@@ -621,9 +617,21 @@ func pollOptimizeJob(
 			if !optimize_api.IsTerminal(status.Status) {
 				var statusLine string
 				if status.Progress != nil && status.Progress.InProgressCandidate != nil {
-					statusLine = fmt.Sprintf("  %s Generating candidates", spin)
-					candElapsed := time.Since(lastCandidateTime).Truncate(time.Second)
-					statusLine += fmt.Sprintf(" · %s elapsed", candElapsed)
+					inProg := status.Progress.InProgressCandidate
+					phase := "Generating"
+					if inProg.CandidateGenerated {
+						phase = "Evaluating"
+					}
+					num := status.Progress.CandidatesCompleted + 1
+					progress := fmt.Sprintf("%d", num)
+					if status.Inputs != nil && status.Inputs.Options.MaxCandidates != nil {
+						progress = fmt.Sprintf("%d/%d", num, *status.Inputs.Options.MaxCandidates)
+					}
+					statusLine = fmt.Sprintf("  %s %s candidate %s", spin, phase, progress)
+					if inProg.CreatedAt > 0 {
+						elapsed := time.Since(time.Unix(inProg.CreatedAt, 0)).Truncate(time.Second)
+						statusLine += fmt.Sprintf(" · %s elapsed", elapsed)
+					}
 				} else {
 					statusLine = fmt.Sprintf("  %s Waiting for candidates…", spin)
 					if status.CreatedAt > 0 {

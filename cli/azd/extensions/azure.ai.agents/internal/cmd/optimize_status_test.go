@@ -106,3 +106,28 @@ func TestPrintOptimizeJobSummary_NoDurationWhenEqual(t *testing.T) {
 	assert.Contains(t, out, "Updated:")
 	assert.NotContains(t, out, "Duration:", "duration should not appear when updated == created")
 }
+
+func TestOptimizeStatusCommand_OutputFlagOptions(t *testing.T) {
+	cmd := newOptimizeStatusCommand(&azdext.ExtensionContext{})
+	assertOutputFlagOptions(t, cmd, "table", []string{"json", "table"})
+}
+
+func TestPrintOptimizeStatusJSON(t *testing.T) {
+	t.Parallel()
+
+	status := &optimize_api.OptimizeJobStatus{
+		ID:        "opt-json-test",
+		Status:    optimize_api.StatusCompleted,
+		CreatedAt: 1720000000,
+		UpdatedAt: 1720000300,
+	}
+
+	var buf strings.Builder
+	err := printOptimizeStatusJSON(&buf, status)
+	require.NoError(t, err)
+
+	out := buf.String()
+	assert.Contains(t, out, `"id": "opt-json-test"`)
+	assert.Contains(t, out, `"status": "completed"`)
+	assert.Contains(t, out, `"created_at": 1720000000`)
+}

@@ -542,8 +542,8 @@ func TestPrintOptimizeResults_StrategyDashForMixedMutations(t *testing.T) {
 	assert.Contains(t, out, "Strategy")
 	assert.Contains(t, out, "system_prompt")
 	// The baseline row (no mutations) should contain a dash placeholder.
-	lines := strings.Split(out, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(out, "\n")
+	for line := range lines {
 		if strings.Contains(line, "baseline") && strings.Contains(line, "0.800") {
 			assert.Contains(t, line, "-", "baseline row should show dash for empty strategy")
 		}

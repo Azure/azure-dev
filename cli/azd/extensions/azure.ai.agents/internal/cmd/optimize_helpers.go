@@ -435,7 +435,7 @@ func formatCandidateRow(
 }
 
 // writeCandidateRow writes a formatted candidate row to out, applying
-// green colour when the candidate is the best.
+// green color when the candidate is the best.
 func writeCandidateRow(out io.Writer, line string, isBest bool) {
 	if isBest {
 		green := color.New(color.FgGreen)

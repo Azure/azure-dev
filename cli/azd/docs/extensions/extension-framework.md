@@ -928,6 +928,24 @@ Extensions can provide custom language and framework support for build, restore,
 - Custom package managers
 - Specialized build toolchains
 
+##### Provisioning Providers (`provisioning-provider`)
+
+> Extensions must declare the `provisioning-provider` capability in their `extension.yaml` file.
+
+Extensions can provide a custom infrastructure provisioning experience as an alternative to the built-in Bicep and Terraform providers. Each provider is registered under a name (via `WithProvisioningProvider`) that must match the `infra.provider` value in `azure.yaml`. Examples include:
+
+- Provisioning without an on-disk `infra/` directory (templates synthesized from `azure.yaml`)
+- Custom deployment engines or resource orchestration
+- Provider-managed state and outputs
+
+A provisioning provider implements the full lifecycle (`Initialize`, `State`, `Deploy`, `Preview`, `Destroy`, `EnsureEnv`, `Parameters`, `PlannedOutputs`), but two of these matter beyond `azd provision`/`up`:
+
+- **`State`** is what `azd env refresh` calls to pull the latest deployment outputs into the local `.env`. Because `env refresh` is read-only and does not run infrastructure, `State` must read persisted deployment state on its own (for example, by querying the deployment in Azure) rather than depending on an on-disk template being compiled first.
+- When no deployment exists yet, `State` should return an **empty** state result rather than an error, so `env refresh` can report that there is nothing to refresh yet and exit successfully instead of failing.
+
+> [!NOTE]
+> Commands such as `azd env refresh` do not run the full extension lifecycle. When a project's `infra.provider` names an extension-provided provider, `azd` starts only that extension on demand to resolve the provider, then stops it once the operation completes.
+
 ##### Model Context Protocol Server (`mcp-server`)
 
 > Extensions must declare the `mcp-server` capability in their `extension.yaml` file.

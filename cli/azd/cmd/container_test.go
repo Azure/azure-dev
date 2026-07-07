@@ -638,3 +638,18 @@ func Test_ResolveAction_WithNilMiddleware(t *testing.T) {
 	_, err := resolveAction[*coverageTestAction](container, "test-action")
 	require.Error(t, err) // not registered
 }
+
+// Verifies the ExtensionActivator used by env refresh resolves from the IoC container.
+func Test_Resolve_ExtensionActivator(t *testing.T) {
+	t.Parallel()
+	container := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(container, context.Background())
+	ioc.RegisterInstance(container, &internal.GlobalCommandOptions{})
+	ioc.RegisterInstance(container, &cobra.Command{})
+	registerCommonDependencies(container)
+
+	var activator *middleware.ExtensionActivator
+	err := container.Resolve(&activator)
+	require.NoError(t, err)
+	require.NotNil(t, activator)
+}

@@ -472,9 +472,9 @@ func newToolInstallFlags(cmd *cobra.Command) *toolInstallFlags {
 		&flags.all, "all", false, "Install all recommended tools",
 	)
 	cmd.Flags().StringSliceVar(
-		&flags.hosts, "host", nil,
-		"Install the skill for the specified agent host(s): copilot, claude. "+
-			"Use --host all for every detected host (skill tools only)",
+		&flags.hosts, "agent", nil,
+		"Install the skill for the specified agent(s): copilot, claude. "+
+			"Use --agent all for every detected agent (skill tools only)",
 	)
 	cmd.Flags().BoolVar(
 		&flags.dryRun, "dry-run", false,
@@ -549,7 +549,7 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 	tracing.SetUsageAttributes(idAttrs...)
 
 	// Resolve which agent host(s) to install skills for, based on the
-	// --host flag. When no host is given and several are detected, the
+	// --agent flag. When no agent is given and several are detected, the
 	// user is asked to choose explicitly.
 	hostOpts, hostErr := a.resolveHostOptions(ctx, tools)
 	if hostErr != nil {
@@ -590,8 +590,8 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}, nil
 }
 
-// allHostsKeyword is the reserved --host value that selects every
-// detected agent host.
+// allHostsKeyword is the reserved --agent value that selects every
+// detected agent.
 const allHostsKeyword = "all"
 
 // firstSkillTool returns the first skill tool among tools, or nil when
@@ -605,18 +605,18 @@ func firstSkillTool(tools []*tool.ToolDefinition) *tool.ToolDefinition {
 	return nil
 }
 
-// resolveExplicitSkillHosts maps an explicit --host flag value to install
+// resolveExplicitSkillHosts maps an explicit --agent flag value to install
 // options. The reserved value "all" installs through every available
 // host (resolved at install time); otherwise the named hosts are passed
 // through for the installer to validate. Shared by the install and
 // upgrade actions.
 func resolveExplicitSkillHosts(hosts []string) ([]tool.InstallOption, error) {
-	// --host all selects every detected host. It cannot be mixed with
-	// specific host names.
+	// --agent all selects every detected agent. It cannot be mixed with
+	// specific agent names.
 	if slices.Contains(hosts, allHostsKeyword) {
 		if len(hosts) > 1 {
 			return nil, fmt.Errorf(
-				"--host all cannot be combined with specific hosts",
+				"--agent all cannot be combined with specific agents",
 			)
 		}
 		return []tool.InstallOption{tool.WithAllAvailableHosts()}, nil
@@ -627,8 +627,8 @@ func resolveExplicitSkillHosts(hosts []string) ([]tool.InstallOption, error) {
 }
 
 // resolveHostOptions determines which agentic CLI host(s) a skill should
-// be installed for. With --host it targets the named host(s); --host all
-// targets every detected host. Without --host, a skill pulled in by a
+// be installed for. With --agent it targets the named agent(s); --agent all
+// targets every detected agent. Without --agent, a skill pulled in by a
 // batch (--all or the interactive picker) installs through every
 // available host, while an explicitly-named skill with several detected
 // hosts returns guidance asking the user to choose. It returns the
@@ -637,8 +637,8 @@ func resolveExplicitSkillHosts(hosts []string) ([]tool.InstallOption, error) {
 //
 // When an explicitly-named skill has several hosts on PATH, an
 // interactive terminal is prompted to choose which host(s) to install
-// for (we still print a --host hint); in non-interactive mode it falls
-// back to a guidance error telling the user to re-run with --host.
+// for (we still print a --agent hint); in non-interactive mode it falls
+// back to a guidance error telling the user to re-run with --agent.
 func (a *toolInstallAction) resolveHostOptions(
 	ctx context.Context,
 	tools []*tool.ToolDefinition,
@@ -647,7 +647,7 @@ func (a *toolInstallAction) resolveHostOptions(
 	skill := firstSkillTool(tools)
 
 	if explicit && skill == nil {
-		return nil, fmt.Errorf("--host only applies to skill tools")
+		return nil, fmt.Errorf("--agent only applies to skill tools")
 	}
 	if skill == nil {
 		return nil, nil
@@ -666,7 +666,7 @@ func (a *toolInstallAction) resolveHostOptions(
 		return resolveExplicitSkillHosts(a.flags.hosts)
 	}
 
-	// No --host. A skill the user did not name explicitly (batch --all or
+	// No --agent. A skill the user did not name explicitly (batch --all or
 	// interactive selection) installs through every available host,
 	// resolved at install time so host CLIs installed earlier in the same
 	// batch are picked up. This is also why --all does not abort when
@@ -680,13 +680,13 @@ func (a *toolInstallAction) resolveHostOptions(
 	present := a.manager.AvailableSkillHosts(ctx, skill)
 	if len(present) > 1 {
 		// Interactive terminal: prompt the user to pick the host(s),
-		// after surfacing the --host hint so they learn the shortcut too.
+		// after surfacing the --agent hint so they learn the shortcut too.
 		if a.console.IsSpinnerInteractive() && !a.console.IsNoPromptMode() {
 			a.console.Message(ctx, fmt.Sprintf(
-				"Multiple agent hosts detected. You can install "+
-					"directly with `azd tool install %s --host <host>` "+
-					"or `azd tool install %s --host all`.",
-				skill.Id, skill.Id,
+				"Multiple AI agents detected.\nTip: Use `%s` or `%s` "+
+					"to select a specific agent or all agents.",
+				output.WithHighLightFormat("--agent <agent>"),
+				output.WithHighLightFormat("--agent all"),
 			))
 
 			opts, err := a.promptForSkillHosts(ctx, skill, present)
@@ -700,14 +700,14 @@ func (a *toolInstallAction) resolveHostOptions(
 		}
 
 		return nil, &internal.ErrorWithSuggestion{
-			Err: fmt.Errorf("multiple agent hosts detected for %s", skill.Name),
+			Err: fmt.Errorf("multiple AI agents detected for %s", skill.Name),
 			Message: fmt.Sprintf(
-				"Detected multiple hosts: %s", strings.Join(present, ", "),
+				"Detected multiple agents: %s", strings.Join(present, ", "),
 			),
 			Suggestion: fmt.Sprintf(
-				"Specify which host(s) to install for:\n\n"+
-					"    azd tool install %s --host <host>\n\n"+
-					"    azd tool install %s --host all",
+				"Specify which agent(s) to install for:\n\n"+
+					"    azd tool install %s --agent <agent>\n\n"+
+					"    azd tool install %s --agent all",
 				skill.Id, skill.Id,
 			),
 		}
@@ -717,7 +717,7 @@ func (a *toolInstallAction) resolveHostOptions(
 	return nil, nil
 }
 
-// resolveUnavailableHostPrompt handles an explicit --host whose named
+// resolveUnavailableHostPrompt handles an explicit --agent whose named
 // host(s) are not usable (unknown name or not on PATH). In an
 // interactive terminal it tells the user the requested host is
 // unavailable and prompts them to pick from the hosts detected on PATH;
@@ -753,7 +753,7 @@ func (a *toolInstallAction) resolveUnavailableHostPrompt(
 	}
 
 	a.console.Message(ctx, fmt.Sprintf(
-		"Host %s is not available for %s. Choose from the hosts detected "+
+		"Agent %s is not available for %s. Choose from the agents detected "+
 			"on your PATH:",
 		strings.Join(unavailable, ", "), skill.Name,
 	))
@@ -780,7 +780,7 @@ func (a *toolInstallAction) promptForSkillHosts(
 ) ([]tool.InstallOption, error) {
 	selected, err := a.console.MultiSelect(ctx, input.ConsoleOptions{
 		Message: fmt.Sprintf(
-			"Select the agent host(s) to install %s for", skill.Name,
+			"Select the agent(s) to install %s for", skill.Name,
 		),
 		Options:      available,
 		DefaultValue: []string{available[0]},
@@ -953,9 +953,9 @@ func newToolUpgradeFlags(cmd *cobra.Command) *toolUpgradeFlags {
 		"Preview what would be upgraded without making changes",
 	)
 	cmd.Flags().StringSliceVar(
-		&flags.hosts, "host", nil,
-		"Upgrade the skill for the specified agent host(s): copilot, claude. "+
-			"Use --host all for every detected host (skill tools only)",
+		&flags.hosts, "agent", nil,
+		"Upgrade the skill for the specified agent(s): copilot, claude. "+
+			"Use --agent all for every detected agent (skill tools only)",
 	)
 	return flags
 }
@@ -1111,8 +1111,8 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 }
 
 // resolveHostOptions determines which agentic CLI host(s) a skill should
-// be upgraded for, based on the --host flag. --host all targets every
-// detected host; specific names target those hosts. When --host is
+// be upgraded for, based on the --agent flag. --agent all targets every
+// detected host; specific names target those hosts. When --agent is
 // omitted it returns no options, letting the installer upgrade every host
 // the skill is already installed through.
 func (a *toolUpgradeAction) resolveHostOptions(
@@ -1124,7 +1124,7 @@ func (a *toolUpgradeAction) resolveHostOptions(
 
 	skill := firstSkillTool(tools)
 	if skill == nil {
-		return nil, fmt.Errorf("--host only applies to skill tools")
+		return nil, fmt.Errorf("--agent only applies to skill tools")
 	}
 
 	return resolveExplicitSkillHosts(a.flags.hosts)
@@ -1194,9 +1194,9 @@ func newToolUninstallFlags(cmd *cobra.Command) *toolUninstallFlags {
 		&flags.all, "all", false, "Uninstall all installed tools",
 	)
 	cmd.Flags().StringSliceVar(
-		&flags.hosts, "host", nil,
-		"Uninstall the skill from the specified agent host(s): copilot, claude. "+
-			"Use --host all (or omit --host) to remove the skill from every host it is "+
+		&flags.hosts, "agent", nil,
+		"Uninstall the skill from the specified agent(s): copilot, claude. "+
+			"Use --agent all (or omit --agent) to remove the skill from every agent it is "+
 			"installed through (skill tools only)",
 	)
 	cmd.Flags().BoolVar(
@@ -1308,8 +1308,8 @@ func (a *toolUninstallAction) Run(ctx context.Context) (*actions.ActionResult, e
 }
 
 // resolveHostOptions determines which agentic CLI host(s) a skill should
-// be uninstalled from, based on the --host flag. --host all targets every
-// detected host; specific names target those hosts. When --host is
+// be uninstalled from, based on the --agent flag. --agent all targets every
+// detected host; specific names target those hosts. When --agent is
 // omitted it returns no options, letting the installer remove the skill
 // from every host it is installed through.
 func (a *toolUninstallAction) resolveHostOptions(
@@ -1321,7 +1321,7 @@ func (a *toolUninstallAction) resolveHostOptions(
 
 	skill := firstSkillTool(tools)
 	if skill == nil {
-		return nil, fmt.Errorf("--host only applies to skill tools")
+		return nil, fmt.Errorf("--agent only applies to skill tools")
 	}
 
 	return resolveExplicitSkillHosts(a.flags.hosts)

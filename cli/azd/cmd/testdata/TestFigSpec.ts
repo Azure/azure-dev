@@ -6290,22 +6290,22 @@ const completionSpec: Fig.Spec = {
 					description: 'Install specified tools.',
 					options: [
 						{
+							name: ['--agent'],
+							description: 'Install the skill for the specified agent(s): copilot, claude. Use --agent all for every detected agent (skill tools only)',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'agent',
+								},
+							],
+						},
+						{
 							name: ['--all'],
 							description: 'Install all recommended tools',
 						},
 						{
 							name: ['--dry-run'],
 							description: 'Preview what would be installed without making changes',
-						},
-						{
-							name: ['--host'],
-							description: 'Install the skill for the specified agent host(s): copilot, claude. Use --host all for every detected host (skill tools only)',
-							isRepeatable: true,
-							args: [
-								{
-									name: 'host',
-								},
-							],
 						},
 					],
 					args: {
@@ -6329,22 +6329,22 @@ const completionSpec: Fig.Spec = {
 					description: 'Uninstall installed tools.',
 					options: [
 						{
+							name: ['--agent'],
+							description: 'Uninstall the skill from the specified agent(s): copilot, claude. Use --agent all (or omit --agent) to remove the skill from every agent it is installed through (skill tools only)',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'agent',
+								},
+							],
+						},
+						{
 							name: ['--all'],
 							description: 'Uninstall all installed tools',
 						},
 						{
 							name: ['--dry-run'],
 							description: 'Preview what would be uninstalled without making changes',
-						},
-						{
-							name: ['--host'],
-							description: 'Uninstall the skill from the specified agent host(s): copilot, claude. Use --host all (or omit --host) to remove the skill from every host it is installed through (skill tools only)',
-							isRepeatable: true,
-							args: [
-								{
-									name: 'host',
-								},
-							],
 						},
 					],
 					args: {
@@ -6357,18 +6357,18 @@ const completionSpec: Fig.Spec = {
 					description: 'Upgrade installed tools.',
 					options: [
 						{
-							name: ['--dry-run'],
-							description: 'Preview what would be upgraded without making changes',
-						},
-						{
-							name: ['--host'],
-							description: 'Upgrade the skill for the specified agent host(s): copilot, claude. Use --host all for every detected host (skill tools only)',
+							name: ['--agent'],
+							description: 'Upgrade the skill for the specified agent(s): copilot, claude. Use --agent all for every detected agent (skill tools only)',
 							isRepeatable: true,
 							args: [
 								{
-									name: 'host',
+									name: 'agent',
 								},
 							],
+						},
+						{
+							name: ['--dry-run'],
+							description: 'Preview what would be upgraded without making changes',
 						},
 					],
 					args: {

@@ -486,11 +486,14 @@ func (p *MultiSelect) renderFooter(printer Printer) {
 
 	printer.Fprintln()
 	printer.Fprintln(output.WithGrayFormat("───────────────────────────────────────"))
-	printer.Fprintln(output.WithGrayFormat("Use arrows to move, use space to select"))
-	printer.Fprintln(output.WithGrayFormat("Use left/right to select none/all"))
+
+	hint := output.WithHighLightFormat("↑↓") + output.WithGrayFormat(" Move") +
+		output.WithGrayFormat(" • ") + output.WithHighLightFormat("Space") +
+		output.WithGrayFormat(" Select") + output.WithGrayFormat(" • ") +
+		output.WithHighLightFormat("Enter") + output.WithGrayFormat(" Confirm")
 	if p.options.HelpMessage != "" {
-		printer.Fprintln(output.WithGrayFormat("Use enter to submit, type ? for help"))
-	} else {
-		printer.Fprintln(output.WithGrayFormat("Use enter to submit"))
+		hint += output.WithGrayFormat(" • ") + output.WithHighLightFormat("?") +
+			output.WithGrayFormat(" Help")
 	}
+	printer.Fprintln(hint)
 }

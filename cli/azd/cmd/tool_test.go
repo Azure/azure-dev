@@ -647,7 +647,7 @@ func TestToolUpgradeAction_FailureDoesNotEmitToVersion(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// resolveHostOptions — --host / --all-hosts flag handling
+// resolveHostOptions — --agent / --all-agents flag handling
 // ---------------------------------------------------------------------------
 
 func TestResolveHostOptions(t *testing.T) {
@@ -687,7 +687,7 @@ func TestResolveHostOptions(t *testing.T) {
 		a := newAction(nil, &toolInstallFlags{hosts: []string{"all", "copilot"}}, []string{"copilot", "claude"})
 		_, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "cannot be combined with specific hosts")
+		assert.Contains(t, err.Error(), "cannot be combined with specific agents")
 	})
 
 	t.Run("ExplicitHostsReturnsOptions", func(t *testing.T) {
@@ -705,7 +705,7 @@ func TestResolveHostOptions(t *testing.T) {
 	})
 
 	t.Run("HostAllDefersEvenWhenNoneDetected", func(t *testing.T) {
-		// --host all resolves at install time, so it returns an option
+		// --agent all resolves at install time, so it returns an option
 		// even when no host is on PATH yet (the installer surfaces the
 		// no-host guidance later).
 		a := newAction(nil, &toolInstallFlags{hosts: []string{"all"}}, nil)
@@ -724,7 +724,7 @@ func TestResolveHostOptions(t *testing.T) {
 		var sug *internal.ErrorWithSuggestion
 		require.ErrorAs(t, err, &sug)
 		assert.Contains(t, sug.Message, "copilot, claude")
-		assert.Contains(t, sug.Suggestion, "--host all")
+		assert.Contains(t, sug.Suggestion, "--agent all")
 	})
 
 	t.Run("ExplicitlyNamedMultipleHostsInteractivePrompts", func(t *testing.T) {
@@ -761,7 +761,7 @@ func TestResolveHostOptions(t *testing.T) {
 
 	t.Run("ExplicitlyNamedMultipleHostsEmptySelectionFallsBackToError", func(t *testing.T) {
 		// Selecting nothing in the picker falls back to the guidance
-		// error telling the user to re-run with --host.
+		// error telling the user to re-run with --agent.
 		a := newAction([]string{"azure-skills"}, &toolInstallFlags{}, []string{"copilot", "claude"})
 		mockConsole := a.console.(*mockinput.MockConsole)
 		mockConsole.SetTerminal(true)
@@ -773,11 +773,11 @@ func TestResolveHostOptions(t *testing.T) {
 		require.Error(t, err)
 		var sug *internal.ErrorWithSuggestion
 		require.ErrorAs(t, err, &sug)
-		assert.Contains(t, sug.Suggestion, "--host all")
+		assert.Contains(t, sug.Suggestion, "--agent all")
 	})
 
 	t.Run("ExplicitUnavailableHostInteractivePrompts", func(t *testing.T) {
-		// `--host gemini` names a host that isn't supported/available.
+		// `--agent gemini` names a host that isn't supported/available.
 		// In an interactive terminal we prompt over the hosts that ARE
 		// on PATH instead of hard-failing.
 		a := newAction(
@@ -822,7 +822,7 @@ func TestResolveHostOptions(t *testing.T) {
 	})
 
 	t.Run("ExplicitUnavailableHostNoneOnPathDefersToGuidance", func(t *testing.T) {
-		// `--host gemini` with no supported host on PATH: skip the picker
+		// `--agent gemini` with no supported host on PATH: skip the picker
 		// and target every available host so the installer surfaces its
 		// install-a-CLI-host guidance.
 		a := newAction(
@@ -885,7 +885,7 @@ func TestResolveHostOptions(t *testing.T) {
 	})
 
 	t.Run("ExplicitAvailableHostSkipsPrompt", func(t *testing.T) {
-		// A valid, available --host is used directly without prompting,
+		// A valid, available --agent is used directly without prompting,
 		// even in an interactive terminal.
 		a := newAction(
 			[]string{"azure-skills"},
@@ -966,7 +966,7 @@ func TestResolveHostOptions_Upgrade(t *testing.T) {
 		a := newAction(&toolUpgradeFlags{hosts: []string{"all", "copilot"}}, []string{"copilot", "claude"})
 		_, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "cannot be combined with specific hosts")
+		assert.Contains(t, err.Error(), "cannot be combined with specific agents")
 	})
 
 	t.Run("ExplicitHostsReturnsOptions", func(t *testing.T) {
@@ -984,7 +984,7 @@ func TestResolveHostOptions_Upgrade(t *testing.T) {
 	})
 
 	t.Run("HostAllDefersEvenWhenNoneDetected", func(t *testing.T) {
-		// --host all resolves at install time, so it returns an option
+		// --agent all resolves at install time, so it returns an option
 		// even when no host is on PATH yet.
 		a := newAction(&toolUpgradeFlags{hosts: []string{"all"}}, nil)
 		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
@@ -992,7 +992,7 @@ func TestResolveHostOptions_Upgrade(t *testing.T) {
 		assert.Len(t, opts, 1)
 	})
 
-	// Unlike install, upgrade with no --host never errors on multiple
+	// Unlike install, upgrade with no --agent never errors on multiple
 	// hosts: the installer upgrades the host the skill is installed
 	// through, so no explicit choice is required.
 	t.Run("MultipleHostsNoFlagReturnsNil", func(t *testing.T) {
@@ -1026,7 +1026,7 @@ func TestResolveHostOptions_Uninstall(t *testing.T) {
 		a := newAction(&toolUninstallFlags{})
 		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
 		require.NoError(t, err)
-		assert.Nil(t, opts, "no --host removes from every installed host")
+		assert.Nil(t, opts, "no --agent removes from every installed host")
 	})
 
 	t.Run("HostWithoutSkillTool", func(t *testing.T) {
@@ -1054,7 +1054,7 @@ func TestResolveHostOptions_Uninstall(t *testing.T) {
 		a := newAction(&toolUninstallFlags{hosts: []string{"all", "copilot"}})
 		_, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "cannot be combined with specific hosts")
+		assert.Contains(t, err.Error(), "cannot be combined with specific agents")
 	})
 }
 

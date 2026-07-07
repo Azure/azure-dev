@@ -5,9 +5,9 @@ Usage
   azd tool uninstall [tool-name...] [flags]
 
 Flags
-        --all          	: Uninstall all installed tools
-        --dry-run      	: Preview what would be uninstalled without making changes
-        --host strings 	: Uninstall the skill from the specified agent host(s): copilot, claude. Use --host all (or omit --host) to remove the skill from every host it is installed through (skill tools only)
+        --agent strings 	: Uninstall the skill from the specified agent(s): copilot, claude. Use --agent all (or omit --agent) to remove the skill from every agent it is installed through (skill tools only)
+        --all           	: Uninstall all installed tools
+        --dry-run       	: Preview what would be uninstalled without making changes
 
 Global Flags
     -C, --cwd string         	: Sets the current working directory.

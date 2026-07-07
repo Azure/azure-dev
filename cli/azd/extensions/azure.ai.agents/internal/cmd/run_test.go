@@ -1064,3 +1064,135 @@ func TestCheckPythonVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestPlaygroundMessagesURLUsesIPv4Loopback(t *testing.T) {
+	t.Parallel()
+
+	got := playgroundMessagesURL(8088)
+	want := "http://127.0.0.1:8088/api/messages"
+	if got != want {
+		t.Fatalf("playgroundMessagesURL = %q, want %q", got, want)
+	}
+	if strings.Contains(got, "localhost") {
+		t.Fatalf("playground URL must use 127.0.0.1, not localhost: %q", got)
+	}
+}
+
+func TestPlaygroundCommandArgs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("explicit channel", func(t *testing.T) {
+		t.Parallel()
+
+		got := playgroundCommandArgs(9090, "emulator")
+		want := []string{"agentsplayground", "-e", "http://127.0.0.1:9090/api/messages", "-c", "emulator"}
+		if !slices.Equal(got, want) {
+			t.Fatalf("playgroundCommandArgs = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("empty channel falls back to default", func(t *testing.T) {
+		t.Parallel()
+
+		got := playgroundCommandArgs(8088, "")
+		want := []string{"agentsplayground", "-e", "http://127.0.0.1:8088/api/messages", "-c", "emulator"}
+		if !slices.Equal(got, want) {
+			t.Fatalf("playgroundCommandArgs = %v, want %v", got, want)
+		}
+	})
+}
+
+func TestResolveActivityRunProfile(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil definition is not activity", func(t *testing.T) {
+		t.Parallel()
+
+		if resolveActivityRunProfile(nil).IsActivity {
+			t.Fatal("nil definition should not resolve as activity")
+		}
+	})
+
+	t.Run("activity endpoint resolves as activity", func(t *testing.T) {
+		t.Parallel()
+
+		def := &agent_yaml.ContainerAgent{
+			AgentEndpoint: &agent_yaml.AgentEndpoint{Protocols: []string{"activity"}},
+		}
+		if !resolveActivityRunProfile(def).IsActivity {
+			t.Fatal("activity endpoint should resolve as activity")
+		}
+	})
+
+	t.Run("container-level activity protocol resolves as activity", func(t *testing.T) {
+		t.Parallel()
+
+		for _, name := range []string{"activity", "activity_protocol"} {
+			def := &agent_yaml.ContainerAgent{
+				Protocols: []agent_yaml.ProtocolVersionRecord{{Protocol: name}},
+			}
+			if !resolveActivityRunProfile(def).IsActivity {
+				t.Fatalf("protocol %q should resolve as activity", name)
+			}
+		}
+	})
+
+	t.Run("non-activity definition is not activity", func(t *testing.T) {
+		t.Parallel()
+
+		if resolveActivityRunProfile(&agent_yaml.ContainerAgent{}).IsActivity {
+			t.Fatal("empty definition should not resolve as activity")
+		}
+	})
+}
+
+func TestRunCommandActivityFlags(t *testing.T) {
+	t.Parallel()
+
+	cmd := newRunCommand(nil)
+	if cmd.Flags().Lookup("no-client") == nil {
+		t.Fatal("run command should expose --no-client")
+	}
+	channel := cmd.Flags().Lookup("channel")
+	if channel == nil {
+		t.Fatal("run command should expose --channel")
+	}
+	if channel.DefValue != defaultPlaygroundChannel {
+		t.Fatalf("--channel default = %q, want %q", channel.DefValue, defaultPlaygroundChannel)
+	}
+	// --no-inspector is kept for back-compat but deprecated in favor of
+	// --no-client: it must still resolve (so existing scripts work) yet carry
+	// a deprecation message (so cobra hides it from help and warns on use).
+	noInspector := cmd.Flags().Lookup("no-inspector")
+	if noInspector == nil {
+		t.Fatal("run command should still expose --no-inspector for back-compat")
+	}
+	if noInspector.Deprecated == "" {
+		t.Fatal("--no-inspector should be marked deprecated in favor of --no-client")
+	}
+}
+
+func TestHandlePlaygroundAutoLaunchSuppressed(t *testing.T) {
+	t.Parallel()
+
+	var buf lockedBuffer
+	// Suppressed: must not warn or attempt anything even if the CLI is missing.
+	handlePlaygroundAutoLaunch(t.Context(), 8088, "emulator", true, &buf)
+	if buf.String() != "" {
+		t.Fatalf("suppressed auto-launch should be silent, got: %q", buf.String())
+	}
+}
+
+func TestMissingPlaygroundWarning(t *testing.T) {
+	t.Parallel()
+
+	warning := missingPlaygroundWarning(9090, "emulator")
+	for _, want := range []string{
+		"winget install agentsplayground",
+		"agentsplayground -e http://127.0.0.1:9090/api/messages -c emulator",
+	} {
+		if !strings.Contains(warning, want) {
+			t.Fatalf("warning missing %q:\n%s", want, warning)
+		}
+	}
+}

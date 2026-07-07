@@ -100,3 +100,7 @@ words:
   - testdir
   # Test infrastructure
   - recordproxy
+  # Activity protocol local run (Playground)
+  - agentsplayground
+  - winget
+  - ECONNREFUSED

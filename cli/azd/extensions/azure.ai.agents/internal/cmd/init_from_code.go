@@ -893,6 +893,7 @@ type protocolInfo struct {
 var knownProtocols = []protocolInfo{
 	{Name: "responses", Version: "2.0.0"},
 	{Name: "invocations", Version: "1.0.0"},
+	{Name: "invocations_ws", Version: "2.0.0"},
 }
 
 // promptProtocols asks the user which protocols their agent supports.

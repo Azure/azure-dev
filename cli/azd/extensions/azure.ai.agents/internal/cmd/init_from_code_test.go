@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -598,6 +599,13 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 			},
 		},
 		{
+			name:          "invocations_ws only",
+			flagProtocols: []string{"invocations_ws"},
+			wantProtocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "invocations_ws", Version: "2.0.0"},
+			},
+		},
+		{
 			name:          "both protocols",
 			flagProtocols: []string{"responses", "invocations"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
@@ -681,6 +689,9 @@ func TestKnownProtocolNames(t *testing.T) {
 	if !strings.Contains(result, "invocations") {
 		t.Errorf("knownProtocolNames() = %q, want to contain 'invocations'", result)
 	}
+	if !strings.Contains(result, "invocations_ws") {
+		t.Errorf("knownProtocolNames() = %q, want to contain 'invocations_ws'", result)
+	}
 }
 
 // fakePromptClient is a lightweight test double for azdext.PromptServiceClient.
@@ -718,6 +729,7 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 					Values: []*azdext.MultiSelectChoice{
 						{Value: "responses", Label: "responses", Selected: true},
 						{Value: "invocations", Label: "invocations", Selected: true},
+						{Value: "invocations_ws", Label: "invocations_ws", Selected: false},
 					},
 				}, nil
 			},
@@ -733,11 +745,27 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 					Values: []*azdext.MultiSelectChoice{
 						{Value: "responses", Label: "responses", Selected: true},
 						{Value: "invocations", Label: "invocations", Selected: false},
+						{Value: "invocations_ws", Label: "invocations_ws", Selected: false},
 					},
 				}, nil
 			},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
 				{Protocol: "responses", Version: "2.0.0"},
+			},
+		},
+		{
+			name: "websocket protocol selected",
+			multiSelectFn: func(_ context.Context, _ *azdext.MultiSelectRequest, _ ...grpc.CallOption) (*azdext.MultiSelectResponse, error) {
+				return &azdext.MultiSelectResponse{
+					Values: []*azdext.MultiSelectChoice{
+						{Value: "responses", Label: "responses", Selected: false},
+						{Value: "invocations", Label: "invocations", Selected: false},
+						{Value: "invocations_ws", Label: "invocations_ws", Selected: true},
+					},
+				}, nil
+			},
+			wantProtocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "invocations_ws", Version: "2.0.0"},
 			},
 		},
 		{
@@ -755,6 +783,7 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 					Values: []*azdext.MultiSelectChoice{
 						{Value: "responses", Label: "responses", Selected: false},
 						{Value: "invocations", Label: "invocations", Selected: false},
+						{Value: "invocations_ws", Label: "invocations_ws", Selected: false},
 					},
 				}, nil
 			},
@@ -799,6 +828,33 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPromptProtocols_ChoicesIncludeInvocationsWsWithoutChangingDefault(t *testing.T) {
+	t.Parallel()
+
+	client := &fakePromptClient{multiSelectFn: func(
+		_ context.Context,
+		in *azdext.MultiSelectRequest,
+		_ ...grpc.CallOption,
+	) (*azdext.MultiSelectResponse, error) {
+		choices := in.Options.Choices
+		require.Len(t, choices, 3)
+		require.Equal(t, "responses", choices[0].Value)
+		require.True(t, choices[0].Selected)
+		require.Equal(t, "invocations", choices[1].Value)
+		require.False(t, choices[1].Selected)
+		require.Equal(t, "invocations_ws", choices[2].Value)
+		require.False(t, choices[2].Selected)
+
+		return &azdext.MultiSelectResponse{Values: choices}, nil
+	}}
+
+	got, err := promptProtocols(t.Context(), client, false, nil)
+	require.NoError(t, err)
+	require.Equal(t, []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "responses", Version: "2.0.0"},
+	}, got)
 }
 
 func TestPromptDeployMode_FlagOverride(t *testing.T) {

@@ -4,6 +4,7 @@
 
 ### Bugs Fixed
 
+- [[#8954]](https://github.com/Azure/azure-dev/issues/8954) Fix `azd ai agent run` failing with `Python 3.13+ is required` when a compatible Python is installed but not first on `PATH`. When falling back to `pip`, azd now probes multiple interpreters (including the Windows `py -3` launcher, which selects the newest installed Python 3) and checks each one's version, selecting the first that satisfies the runtime instead of hard-failing on whichever `python` appears first on `PATH`.
 - [[#8987]](https://github.com/Azure/azure-dev/pull/8987) Fix `azd ai agent init -m <manifest>` not prompting for the agent name. The prompt default and project folder are now derived from the manifest's `template.name` (falling back to the top-level `name`), matching the interactive and template flows.
 - [[#8981]](https://github.com/Azure/azure-dev/pull/8981) Fix `azd ai agent init -m <azure.yaml> --deploy-mode container` not resolving a container registry when adopting a unified Foundry `azure.yaml` on an existing Foundry project, which made `azd deploy` fail with `could not determine container registry endpoint`. The deploy mode is now resolved before Foundry project setup, so a container agent wires `AZURE_CONTAINER_REGISTRY_ENDPOINT` (or is signaled to create one on provision) while code deploy and `--image` still skip ACR.
 

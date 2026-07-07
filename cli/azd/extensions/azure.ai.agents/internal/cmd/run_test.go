@@ -1011,56 +1011,157 @@ func TestVenvPip(t *testing.T) {
 	}
 }
 
-func TestFindSystemPython(t *testing.T) {
-	t.Run("finds python3 on PATH", func(t *testing.T) {
-		dir := t.TempDir()
-
-		// Create a fake python3 executable
-		name := "python3"
-		if runtime.GOOS == "windows" {
-			name = "python3.exe"
+func TestPythonVersionOK(t *testing.T) {
+	tests := []struct {
+		major, minor int
+		want         bool
+	}{
+		{3, 13, true},
+		{3, 14, true},
+		{4, 0, true},
+		{3, 12, false},
+		{3, 11, false},
+		{2, 7, false},
+	}
+	for _, tc := range tests {
+		if got := pythonVersionOK(tc.major, tc.minor); got != tc.want {
+			t.Errorf("pythonVersionOK(%d, %d) = %v, want %v", tc.major, tc.minor, got, tc.want)
 		}
-		fakePython := filepath.Join(dir, name)
-		err := os.WriteFile(fakePython, []byte(""), 0o755) //nolint:gosec // G306: test binary needs exec permission
-		if err != nil {
-			t.Fatal(err)
-		}
+	}
+}
 
-		t.Setenv("PATH", dir)
-		result, err := findSystemPython()
+func TestFirstCompatiblePython(t *testing.T) {
+	// versionMap maps interpreter path -> version parts returned by the fake
+	// version function. A missing entry simulates a candidate that fails to
+	// report its version (e.g. a Windows Store stub) and should be skipped.
+	newVersionFn := func(versions map[string][3]any) func(pythonInterpreter) (int, int, string, error) {
+		return func(p pythonInterpreter) (int, int, string, error) {
+			v, ok := versions[p.path]
+			if !ok {
+				return 0, 0, "", errors.New("cannot run")
+			}
+			return v[0].(int), v[1].(int), v[2].(string), nil
+		}
+	}
+
+	t.Run("prefers first compatible candidate", func(t *testing.T) {
+		// Mirrors the Windows repro: `python` (first on PATH) is 3.11 but the
+		// `py -3` launcher (probed first) selects 3.13.
+		candidates := []pythonInterpreter{
+			{path: "py", args: []string{"-3"}},
+			{path: "python", args: nil},
+		}
+		versionFn := newVersionFn(map[string][3]any{
+			"py":     {3, 13, "3.13.2"},
+			"python": {3, 11, "3.11.9"},
+		})
+
+		got, err := firstCompatiblePython(candidates, versionFn)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if result != fakePython {
-			t.Errorf("expected %q, got %q", fakePython, result)
+		if got.path != "py" || !slices.Equal(got.args, []string{"-3"}) {
+			t.Errorf("got %+v, want py -3", got)
 		}
 	})
 
-	t.Run("returns error when no python on PATH", func(t *testing.T) {
-		dir := t.TempDir() // empty directory
-		t.Setenv("PATH", dir)
-		_, err := findSystemPython()
+	t.Run("skips too-old candidate for a later compatible one", func(t *testing.T) {
+		candidates := []pythonInterpreter{
+			{path: "python3"},
+			{path: "python"},
+		}
+		versionFn := newVersionFn(map[string][3]any{
+			"python3": {3, 11, "3.11.9"},
+			"python":  {3, 13, "3.13.0"},
+		})
+
+		got, err := firstCompatiblePython(candidates, versionFn)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.path != "python" {
+			t.Errorf("got %q, want python", got.path)
+		}
+	})
+
+	t.Run("errors naming newest incompatible version", func(t *testing.T) {
+		candidates := []pythonInterpreter{
+			{path: "python3"},
+			{path: "python"},
+		}
+		versionFn := newVersionFn(map[string][3]any{
+			"python3": {3, 11, "3.11.9"},
+			"python":  {3, 12, "3.12.4"},
+		})
+
+		_, err := firstCompatiblePython(candidates, versionFn)
 		if err == nil {
-			t.Fatal("expected error when no python on PATH")
+			t.Fatal("expected an error when all candidates are too old")
+		}
+		if !strings.Contains(err.Error(), "3.13+ is required") ||
+			!strings.Contains(err.Error(), "3.12.4") {
+			t.Errorf("error should name the required and newest-found versions, got: %v", err)
+		}
+	})
+
+	t.Run("skips candidates whose version cannot be determined", func(t *testing.T) {
+		candidates := []pythonInterpreter{
+			{path: "broken"},
+			{path: "python"},
+		}
+		versionFn := newVersionFn(map[string][3]any{
+			// "broken" intentionally absent -> versionFn returns an error.
+			"python": {3, 13, "3.13.1"},
+		})
+
+		got, err := firstCompatiblePython(candidates, versionFn)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.path != "python" {
+			t.Errorf("got %q, want python", got.path)
+		}
+	})
+
+	t.Run("errors when no candidates resolve a version", func(t *testing.T) {
+		_, err := firstCompatiblePython(nil, newVersionFn(nil))
+		if err == nil {
+			t.Fatal("expected an error when there are no candidates")
+		}
+		if !strings.Contains(err.Error(), "no compatible Python") {
+			t.Errorf("unexpected error: %v", err)
 		}
 	})
 }
 
-func TestCheckPythonVersion(t *testing.T) {
-	// This test requires a real python on PATH to run --version.
-	// Skip if python is not available or can't execute.
-	pythonBin, err := findSystemPython()
-	if err != nil {
+func TestFindSystemPython_NoPython(t *testing.T) {
+	dir := t.TempDir() // empty directory, no python on PATH
+	t.Setenv("PATH", dir)
+	if _, err := findSystemPython(); err == nil {
+		t.Fatal("expected error when no python on PATH")
+	}
+}
+
+func TestPythonVersion(t *testing.T) {
+	// Requires a real python on PATH to run --version.
+	candidates := pythonCandidates()
+	if len(candidates) == 0 {
 		t.Skip("python not available on PATH")
 	}
 
-	err = checkPythonVersion(pythonBin)
+	major, minor, raw, err := pythonVersion(candidates[0])
 	if err != nil {
-		// Accept either a version-too-old error or an execution error
-		// (e.g., Windows Store stub that LookPath finds but can't run).
-		if !strings.Contains(err.Error(), "3.13+ is required") &&
-			!strings.Contains(err.Error(), "failed to check Python version") {
-			t.Errorf("unexpected error: %v", err)
+		// A Windows Store stub can be found by LookPath but fail to execute.
+		if strings.Contains(err.Error(), "failed to check Python version") {
+			t.Skip("python present but not executable")
 		}
+		t.Fatalf("unexpected error: %v", err)
 	}
+	if major <= 0 {
+		t.Errorf("expected a positive major version, got %d", major)
+	}
+	if raw == "" {
+		t.Error("expected a non-empty raw version string")
+	}
+	_ = minor
 }

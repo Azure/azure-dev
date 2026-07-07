@@ -546,11 +546,11 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		CodeConfiguration: codeConfig,
 	}
 
-	// An activity-protocol (Teams) agent additionally advertises the friendly
-	// "activity" endpoint guarded by BotServiceRbac. Injecting it here mirrors
-	// the manifest-based init so the generated azure.yaml is identical and
-	// `azd deploy` provisions the Teams bot. Phase 1 covers the simple use case;
-	// digital-worker is a Phase 2 addition. No-op for non-activity agents.
+	// An activity agent additionally advertises the friendly "activity" endpoint
+	// guarded by BotServiceRbac. Injecting it here mirrors the manifest-based init
+	// so the generated azure.yaml is identical and `azd deploy` provisions the
+	// Azure Bot connector. Phase 1 covers the simple use case; digital-worker is a
+	// Phase 2 addition. No-op for non-activity agents.
 	if project.IsActivityProtocol(*definition) {
 		definition.AgentEndpoint = project.ActivityAgentEndpoint()
 	}
@@ -903,7 +903,12 @@ type protocolInfo struct {
 var knownProtocols = []protocolInfo{
 	{Name: "responses", Version: "2.0.0"},
 	{Name: "invocations", Version: "1.0.0"},
-	{Name: "activity_protocol", Version: "v1"},
+	// "activity" is the canonical protocol name (legacy alias: "activity_protocol").
+	// Version is a platform routing selector, not a free version string: "v1" and
+	// "1.0.0" route to /api/messages, "2.0.0" to /activity/messages. Our sample
+	// serves /api/messages, so "1.0.0" keeps that routing while matching the
+	// semver style of responses/invocations.
+	{Name: "activity", Version: "1.0.0"},
 }
 
 // promptProtocols asks the user which protocols their agent supports.
@@ -1015,22 +1020,26 @@ func promptProtocols(
 	return records, nil
 }
 
-// validateProtocolSelection rejects combining activity_protocol with any other
-// protocol. An activity-protocol (Teams) agent exposes only the activity
-// endpoint, matching how such agents are declared in a manifest; mixing it with
-// responses/invocations would produce an azure.yaml that does not match the
-// manifest shape and is not a supported activity configuration.
+// validateProtocolSelection rejects selecting activity alongside any other
+// protocol. When an agent speaks the Activity protocol, init injects a single
+// agent-level endpoint (ActivityAgentEndpoint — the "activity" endpoint guarded
+// by BotServiceRbac) that overrides AgentEndpoint wholesale. That injection only
+// models the activity endpoint and can't compose with the endpoints other
+// protocols (responses/invocations) require, so combining them would emit an
+// azure.yaml that advertises those protocols but wires up only the activity
+// endpoint. This is not a platform limitation — the platform allows coexistence;
+// it is a Phase-1 scoping choice.
 func validateProtocolSelection(records []agent_yaml.ProtocolVersionRecord) error {
 	if len(records) < 2 {
 		return nil
 	}
 	for _, r := range records {
-		if agent_api.AgentProtocol(r.Protocol) == agent_api.AgentProtocolActivityProtocol {
+		if agent_api.IsActivityProtocolName(agent_api.AgentProtocol(r.Protocol)) {
 			return exterrors.Validation(
 				exterrors.CodeInvalidAgentManifest,
-				"activity_protocol cannot be combined with other protocols",
-				"An activity-protocol (Teams) agent exposes only the activity endpoint; "+
-					"select activity_protocol on its own.",
+				"activity cannot be combined with other protocols",
+				"An activity agent exposes only the activity endpoint; "+
+					"select activity on its own.",
 			)
 		}
 	}

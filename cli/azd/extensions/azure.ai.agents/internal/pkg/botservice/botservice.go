@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 // Package botservice provisions and tears down the Azure Bot and Microsoft Teams
-// channel that front an activity-protocol (Teams) agent. It ports the Azure
+// channel that front an activity agent. It ports the Azure
 // resource-plane steps of setup-instance-bot.ps1 (create bot, enable Teams
 // channel, set messaging endpoint) into the native azd deploy flow. Teams app
 // packaging and install stay out of scope — they live on the M365/Graph plane.
@@ -170,6 +170,12 @@ func (cfg BotConfig) displayName() string {
 // to MsaAppID and ensures the Microsoft Teams channel is enabled. The bot Create
 // call is a PUT (create-or-update), so re-running after every deploy is a no-op
 // when nothing changed and refreshes the messaging endpoint when it did.
+//
+// This is a required Azure connector, not an optional extra: the Bot Service
+// resource and its Teams channel are what let the agent receive Activity traffic,
+// and the bot is bound to the agent identity via MsaAppID (the Bot Service token
+// is validated against that identity). It is the resource-plane Teams *channel*
+// only — the Teams *app* (M365 packaging/sideload) is a separate manual step.
 func (c *Client) EnsureBot(ctx context.Context, cfg BotConfig) error {
 	if err := cfg.validate(); err != nil {
 		return err
@@ -195,6 +201,10 @@ func (c *Client) EnsureBot(ctx context.Context, cfg BotConfig) error {
 	return c.ensureTeamsChannel(ctx, cfg.ResourceGroup, cfg.BotName)
 }
 
+// ensureTeamsChannel enables the Microsoft Teams channel on the Azure Bot. This
+// is the resource-plane channel toggle (an armbotservice MsTeamsChannel), which
+// is required for the agent to exchange Activity messages over Teams. It does NOT
+// create or publish a Teams *app*; sideloading that app stays a manual M365 step.
 func (c *Client) ensureTeamsChannel(ctx context.Context, resourceGroup, botName string) error {
 	channel := armbotservice.BotChannel{
 		Location: new(botLocation),

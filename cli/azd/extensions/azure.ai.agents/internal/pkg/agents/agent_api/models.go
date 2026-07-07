@@ -14,15 +14,28 @@ import (
 type AgentProtocol string
 
 const (
-	AgentProtocolActivityProtocol AgentProtocol = "activity_protocol"
-	AgentProtocolInvocations      AgentProtocol = "invocations"
-	AgentProtocolInvocationsWS    AgentProtocol = "invocations_ws"
-	AgentProtocolResponses        AgentProtocol = "responses"
-	AgentProtocolA2A              AgentProtocol = "a2a"
+	// AgentProtocolActivityProtocol is the canonical Activity protocol wire value.
+	// Upstream renamed it from "activity_protocol" to "activity"; the legacy value
+	// is still accepted on read via AgentProtocolActivityProtocolLegacy.
+	AgentProtocolActivityProtocol AgentProtocol = "activity"
+	// AgentProtocolActivityProtocolLegacy is the pre-rename Activity wire value,
+	// preserved for back-compat when reading manifests authored before the rename.
+	AgentProtocolActivityProtocolLegacy AgentProtocol = "activity_protocol"
+	AgentProtocolInvocations            AgentProtocol = "invocations"
+	AgentProtocolInvocationsWS          AgentProtocol = "invocations_ws"
+	AgentProtocolResponses              AgentProtocol = "responses"
+	AgentProtocolA2A                    AgentProtocol = "a2a"
 )
 
+// IsActivityProtocolName reports whether the given definition-level protocol name
+// denotes the Activity protocol. It accepts both the canonical "activity" and the
+// legacy "activity_protocol" value (upstream renamed it; legacy stays accepted).
+func IsActivityProtocolName(p AgentProtocol) bool {
+	return p == AgentProtocolActivityProtocol || p == AgentProtocolActivityProtocolLegacy
+}
+
 // InvocableProtocols returns the set of protocols that azd can invoke directly.
-// A2A and activity_protocol are deployment-only — they cannot be used for local
+// A2A and activity are deployment-only — they cannot be used for local
 // or remote invocation through azd.
 func InvocableProtocols() []AgentProtocol {
 	return []AgentProtocol{

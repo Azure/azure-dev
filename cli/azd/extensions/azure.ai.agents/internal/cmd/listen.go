@@ -351,7 +351,7 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		return nil
 	}
 
-	// For activity-protocol (Teams) agents, provision the Azure Bot + Teams
+	// For activity agents, provision the Azure Bot + Teams
 	// channel bound to the agent instance identity. No-op for other agents.
 	if err := ensureActivityBot(
 		ctx, azdClient, cred, envName, svc, args.Project,

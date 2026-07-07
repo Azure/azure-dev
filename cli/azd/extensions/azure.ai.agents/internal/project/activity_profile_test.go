@@ -19,10 +19,10 @@ func TestIsActivityProtocol(t *testing.T) {
 		want bool
 	}{
 		{
-			name: "container activity_protocol",
+			name: "container activity",
 			ca: agent_yaml.ContainerAgent{
 				Protocols: []agent_yaml.ProtocolVersionRecord{
-					{Protocol: "activity_protocol", Version: "v1"},
+					{Protocol: "activity", Version: "1.0.0"},
 				},
 			},
 			want: true,
@@ -37,7 +37,7 @@ func TestIsActivityProtocol(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "activity_protocol with surrounding whitespace",
+			name: "legacy activity_protocol with surrounding whitespace",
 			ca: agent_yaml.ContainerAgent{
 				Protocols: []agent_yaml.ProtocolVersionRecord{
 					{Protocol: " activity_protocol ", Version: "v1"},
@@ -77,7 +77,7 @@ func TestResolveActivityProfile(t *testing.T) {
 	t.Run("activity agent resolves simple", func(t *testing.T) {
 		ca := agent_yaml.ContainerAgent{
 			Protocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "activity_protocol", Version: "v1"},
+				{Protocol: "activity", Version: "1.0.0"},
 			},
 		}
 		got := ResolveActivityProfile(ca)

@@ -4,10 +4,13 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	_ "embed"
 	"fmt"
 	"log"
 	"os"
+	"text/template"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/botservice"
@@ -20,15 +23,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
-// ensureActivityBot provisions the Azure Bot + Microsoft Teams channel for an
-// activity-protocol (Teams) agent during postdeploy. It is a no-op for any agent
-// that does not opt into the Activity protocol, so non-activity deployments are
+// ensureActivityBot runs during postdeploy for an agent that speaks the Activity
+// protocol; it is a no-op for any other agent, so non-activity deployments are
 // completely unaffected.
 //
-// Scope: azd owns the Azure resource plane only — create the bot, bind it to the
-// agent instance identity, enable the Teams channel, and point its messaging
-// endpoint at the agent. Teams app packaging and install live on the M365/Graph
-// plane and stay out of azd; postdeploy prints a guide for those manual steps.
+// It provisions ONLY the Azure resource plane: create the Azure Bot, bind it to
+// the agent instance identity, enable the bot's Microsoft Teams *channel*, and
+// point the bot's messaging endpoint at the agent. That "Teams channel" is an
+// Azure Bot Service resource toggle — NOT a Teams app. Packaging and sideloading
+// the Teams *app* live on the M365/Graph plane, stay out of azd, and are left to
+// the user; postdeploy writes TEAMS_APP_SETUP.md with those manual steps.
 func ensureActivityBot(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -156,6 +160,16 @@ func writeTeamsSetupGuide(
 	return guidePath
 }
 
+//go:embed assets/teams_app_setup_guide.md
+var teamsSetupGuideMarkdown string
+
+// teamsSetupGuideTmpl is the compiled onboarding guide. Keeping the markdown in
+// an actual .md file (assets/teams_app_setup_guide.md) lets editors render and
+// lint it and catch formatting errors that a Go string literal hides.
+var teamsSetupGuideTmpl = template.Must(
+	template.New("teamsSetupGuide").Parse(teamsSetupGuideMarkdown),
+)
+
 // teamsSetupGuideContent renders the Teams onboarding guide markdown. It gives
 // concrete, minimal step-by-step instructions for the two manual actions
 // (package the Teams app, then sideload it) and links to the official docs for
@@ -163,106 +177,15 @@ func writeTeamsSetupGuide(
 // app manifest's bots[].botId MUST equal this bot's msaAppId, which azd bound to
 // the agent instance identity.
 func teamsSetupGuideContent(agentName, botName, msaAppID string) string {
-	return fmt.Sprintf(`# Connect %[1]s to Microsoft Teams
-
-`+"`azd deploy`"+` already did the Azure side for you:
-
-- Azure Bot: `+"`%[2]s`"+` (Microsoft Teams channel enabled)
-- Bot ID (msaAppId): `+"`%[3]s`"+`  <- you will paste this as the bot id
-
-Two manual steps remain: (A) create a Teams app package, then (B) upload it.
-They are the same for any activity-protocol agent.
-
-## A. Create the Teams app package
-
-Pick ONE of the two ways below.
-
-### Easiest — Teams Developer Portal (no files by hand)
-
-1. Open https://dev.teams.microsoft.com/apps and select **+ New app**; enter a name.
-2. Fill **Basic information** (short/long description, developer name and URLs).
-3. Left menu **App features** -> **Bot** -> **Select an existing bot** -> enter the
-   Bot ID `+"`%[3]s`"+`, tick the **Personal** scope, then **Save**.
-4. **Publish** -> **Download the app package** — this gives you a ready-to-upload .zip.
-
-Developer Portal guide: https://learn.microsoft.com/microsoftteams/platform/concepts/build-and-test/teams-developer-portal
-
-### Or by hand — build the .zip yourself
-
-Put these three files in a folder and zip them at the **root** (not inside a subfolder):
-
-- `+"`manifest.json`"+` (below)
-- `+"`color.png`"+`  — 192x192 px
-- `+"`outline.png`"+` — 32x32 px, transparent background
-
-`+"```json"+`
-{
-  "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.19/MicrosoftTeams.schema.json",
-  "manifestVersion": "1.19",
-  "version": "1.0.0",
-  "id": "REPLACE-WITH-A-NEW-GUID",
-  "developer": {
-    "name": "Your Company",
-    "websiteUrl": "https://example.com",
-    "privacyUrl": "https://example.com/privacy",
-    "termsOfUseUrl": "https://example.com/terms"
-  },
-  "name": { "short": "%[1]s", "full": "%[1]s" },
-  "description": { "short": "%[1]s agent", "full": "%[1]s agent on Microsoft Teams" },
-  "icons": { "color": "color.png", "outline": "outline.png" },
-  "accentColor": "#FFFFFF",
-  "bots": [{ "botId": "%[3]s", "scopes": ["personal"] }]
-}
-`+"```"+`
-
-Note: `+"`id`"+` is a NEW GUID for the app itself (generate one) — it is NOT the Bot ID.
-Only `+"`bots[].botId`"+` uses the Bot ID above.
-
-- Package + icon requirements: https://learn.microsoft.com/microsoftteams/platform/concepts/build-and-test/apps-package
-- Manifest schema reference: https://learn.microsoft.com/microsoftteams/platform/resources/schema/manifest-schema
-- Validate your .zip before uploading: https://dev.teams.microsoft.com/tools/store-validation
-
-## B. Upload (sideload) the app — just for yourself
-
-You do NOT need a Teams admin to try it yourself:
-
-1. In Teams, go to **Apps** -> **Manage your apps** -> **Upload an app**.
-2. Select **Upload a custom app**, choose your .zip, then **Add**.
-3. Select **Open**, then send a message to talk to your agent.
-
-Upload a custom app guide: https://learn.microsoft.com/microsoftteams/platform/concepts/deploy-and-publish/apps-upload
-
-If **Upload a custom app** is missing or greyed out, custom app upload is turned off for
-your tenant, or you want everyone in your org to get it from the org app catalog. Both need
-a Teams admin: https://learn.microsoft.com/microsoftteams/platform/concepts/build-and-test/prepare-your-o365-tenant
-
-## C. Optional — do both from the command line
-
-Steps A and B can be scripted. This is a convenience path for repeat runs; it needs extra
-tooling and does NOT bypass the tenant custom-app-upload setting above.
-
-Package: put the manifest.json from section A (its Bot ID is already filled in) next to your
-two icons, then zip the three files at the root:
-
-`+"```"+`sh
-zip -j %[1]s-teams-app.zip manifest.json color.png outline.png          # bash
-`+"```"+`
-`+"```"+`powershell
-Compress-Archive manifest.json,color.png,outline.png %[1]s-teams-app.zip # PowerShell
-`+"```"+`
-
-Sideload for yourself with the Microsoft 365 Agents Toolkit CLI (atk). `+"`--scope Personal`"+` is a
-per-user install and needs NO Teams admin:
-
-`+"```"+`sh
-npm install -g @microsoft/m365agentstoolkit-cli          # one-time; requires Node.js
-atk auth login                                           # sign in with your M365 account
-atk install --file-path %[1]s-teams-app.zip --scope Personal
-`+"```"+`
-
-atk prints a TitleId and a Teams deep link you can open to launch the agent.
-atk CLI reference: https://learn.microsoft.com/microsoftteams/platform/toolkit/microsoft-365-agents-toolkit-cli
-`, agentName, botName, msaAppID)
+	var buf bytes.Buffer
+	// Inputs are azd-controlled resource names and the template is compile-time
+	// embedded, so execution cannot realistically fail.
+	_ = teamsSetupGuideTmpl.Execute(&buf, struct {
+		AgentName string
+		BotName   string
+		MsaAppID  string
+	}{AgentName: agentName, BotName: botName, MsaAppID: msaAppID})
+	return buf.String()
 }
 
 // printTeamsNextSteps prints a short pointer to the generated setup guide. The

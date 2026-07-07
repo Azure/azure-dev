@@ -37,11 +37,11 @@ type ActivityProfile struct {
 }
 
 // IsActivityProtocol reports whether a hosted agent definition opts into the
-// Activity protocol, either through a container-level activity_protocol entry or
+// Activity protocol, either through a container-level activity entry or
 // an agent_endpoint that advertises the friendly "activity" protocol.
 func IsActivityProtocol(ca agent_yaml.ContainerAgent) bool {
 	for _, p := range ca.Protocols {
-		if agent_api.AgentProtocol(strings.TrimSpace(p.Protocol)) == agent_api.AgentProtocolActivityProtocol {
+		if agent_api.IsActivityProtocolName(agent_api.AgentProtocol(strings.TrimSpace(p.Protocol))) {
 			return true
 		}
 	}
@@ -65,12 +65,12 @@ func ResolveActivityProfile(ca agent_yaml.ContainerAgent) ActivityProfile {
 	return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple}
 }
 
-// ActivityAgentEndpoint returns the agent_endpoint declaration an
-// activity-protocol (Teams) agent requires: the friendly "activity" protocol
-// guarded by the BotServiceRbac authorization scheme. `azd init` uses it to make
-// an activity agent scaffolded from local code carry the exact same declaration
-// as one initialized from a manifest, so the generated azure.yaml is identical
-// and `azd deploy` provisions the Teams bot. Phase 1 covers the simple use case.
+// ActivityAgentEndpoint returns the agent_endpoint declaration an activity agent
+// requires: the friendly "activity" protocol guarded by the BotServiceRbac
+// authorization scheme. `azd init` uses it to make an activity agent scaffolded
+// from local code carry the exact same declaration as one initialized from a
+// manifest, so the generated azure.yaml is identical and `azd deploy` provisions
+// the Azure Bot connector. Phase 1 covers the simple use case.
 func ActivityAgentEndpoint() *agent_yaml.AgentEndpoint {
 	return &agent_yaml.AgentEndpoint{
 		Protocols: []string{string(agent_api.AgentEndpointProtocolActivity)},

@@ -620,15 +620,15 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 			},
 		},
 		{
-			name:          "activity_protocol only",
-			flagProtocols: []string{"activity_protocol"},
+			name:          "activity only",
+			flagProtocols: []string{"activity"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "activity_protocol", Version: "v1"},
+				{Protocol: "activity", Version: "1.0.0"},
 			},
 		},
 		{
-			name:           "activity_protocol cannot be combined",
-			flagProtocols:  []string{"activity_protocol", "responses"},
+			name:           "activity cannot be combined",
+			flagProtocols:  []string{"activity", "responses"},
 			wantErr:        true,
 			wantErrContain: "cannot be combined",
 		},
@@ -694,8 +694,8 @@ func TestKnownProtocolNames(t *testing.T) {
 	if !strings.Contains(result, "invocations") {
 		t.Errorf("knownProtocolNames() = %q, want to contain 'invocations'", result)
 	}
-	if !strings.Contains(result, "activity_protocol") {
-		t.Errorf("knownProtocolNames() = %q, want to contain 'activity_protocol'", result)
+	if !strings.Contains(result, "activity") {
+		t.Errorf("knownProtocolNames() = %q, want to contain 'activity'", result)
 	}
 }
 

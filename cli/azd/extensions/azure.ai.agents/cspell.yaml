@@ -106,6 +106,7 @@ words:
   - Azurebot
   - idempotently
   - sideload
+  - sideloading
   - microsoftteams
   - upsert
   - m365agentstoolkit

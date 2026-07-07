@@ -4,11 +4,167 @@
 package middleware
 
 import (
+	"net/http"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	provisioningTest "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
+
+const testExtensionRegistryURL = "https://aka.ms/azd/extensions/registry"
+
+// stubProviderRegistry makes the extension registry respond with a single extension that declares
+// the given provisioning provider, so registry lookups resolve deterministically without network.
+func stubProviderRegistry(mockCtx *mocks.MockContext, extensionID, providerName string) {
+	registry := extensions.Registry{
+		Extensions: []*extensions.ExtensionMetadata{
+			{
+				Id: extensionID,
+				Versions: []extensions.ExtensionVersion{
+					{
+						Version:      "1.0.0",
+						Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
+						Providers:    []extensions.Provider{{Name: providerName}},
+					},
+				},
+			},
+		},
+	}
+
+	mockCtx.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == testExtensionRegistryURL
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+}
+
+// newTestExtensionActivator builds an ExtensionActivator backed by an in-memory extension manager
+// seeded with the given installed extensions, using the mock context's container as the service
+// locator so tests can register (or omit) resolvable provisioning providers.
+func newTestExtensionActivator(
+	t *testing.T,
+	mockCtx *mocks.MockContext,
+	installed map[string]*extensions.Extension,
+) *ExtensionActivator {
+	t.Helper()
+	manager := createExtensionsManager(t, mockCtx, installed)
+	runner := extensions.NewRunner(exec.NewCommandRunner(nil))
+	return NewExtensionActivator(mockCtx.Container, manager, runner, &internal.GlobalCommandOptions{})
+}
+
+func Test_NewExtensionActivator(t *testing.T) {
+	t.Parallel()
+	mockCtx := mocks.NewMockContext(t.Context())
+	activator := newTestExtensionActivator(t, mockCtx, nil)
+	require.NotNil(t, activator)
+}
+
+func Test_ExtensionActivator_providerResolvable(t *testing.T) {
+	t.Parallel()
+	mockCtx := mocks.NewMockContext(t.Context())
+
+	// Register a named provisioning provider so it resolves from the container, as if the owning
+	// extension host were already running.
+	ioc.RegisterNamedInstance[provisioning.Provider](
+		mockCtx.Container, "microsoft.foundry", provisioningTest.NewTestProvider(nil, nil, nil, nil))
+
+	activator := newTestExtensionActivator(t, mockCtx, nil)
+
+	require.True(t, activator.providerResolvable("microsoft.foundry"))
+	require.False(t, activator.providerResolvable("bicep"))
+}
+
+func Test_EnsureProvisioningProviders_NoMatchingExtension(t *testing.T) {
+	t.Parallel()
+	mockCtx := mocks.NewMockContext(t.Context())
+
+	// The installed extension declares a different provider, so nothing is started for the
+	// requested name; it is left to native resolution.
+	installed := map[string]*extensions.Extension{
+		"other.ext": {
+			Id:           "other.ext",
+			Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
+			Providers:    []extensions.Provider{{Name: "other.provider"}},
+		},
+	}
+	activator := newTestExtensionActivator(t, mockCtx, installed)
+
+	cleanup, err := activator.EnsureProvisioningProviders(t.Context(), []string{"microsoft.foundry"}, "env1")
+	require.NoError(t, err)
+	require.NotNil(t, cleanup)
+	cleanup()
+}
+
+func Test_EnsureProvisioningProviders_AlreadyResolvable(t *testing.T) {
+	t.Parallel()
+	mockCtx := mocks.NewMockContext(t.Context())
+
+	// The provider is already registered (extension host already running), so activation is a no-op
+	// and no extension process is started.
+	ioc.RegisterNamedInstance[provisioning.Provider](
+		mockCtx.Container, "microsoft.foundry", provisioningTest.NewTestProvider(nil, nil, nil, nil))
+
+	installed := map[string]*extensions.Extension{
+		"azure.ai.agents": {
+			Id:           "azure.ai.agents",
+			Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
+			Providers:    []extensions.Provider{{Name: "microsoft.foundry"}},
+		},
+	}
+	activator := newTestExtensionActivator(t, mockCtx, installed)
+
+	cleanup, err := activator.EnsureProvisioningProviders(t.Context(), []string{"microsoft.foundry"}, "env1")
+	require.NoError(t, err)
+	require.NotNil(t, cleanup)
+	cleanup()
+}
+
+func Test_SuggestExtensionForProvider(t *testing.T) {
+	t.Parallel()
+
+	t.Run("EmptyName", func(t *testing.T) {
+		mockCtx := mocks.NewMockContext(t.Context())
+		activator := newTestExtensionActivator(t, mockCtx, nil)
+		require.Empty(t, activator.SuggestExtensionForProvider(t.Context(), "  "))
+	})
+
+	// An installed extension already declares the provider, so an install suggestion would be
+	// misleading and none is returned.
+	t.Run("InstalledDeclaresProvider", func(t *testing.T) {
+		mockCtx := mocks.NewMockContext(t.Context())
+		installed := map[string]*extensions.Extension{
+			"azure.ai.agents": {
+				Id:           "azure.ai.agents",
+				Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
+				Providers:    []extensions.Provider{{Name: "microsoft.foundry"}},
+			},
+		}
+		activator := newTestExtensionActivator(t, mockCtx, installed)
+		require.Empty(t, activator.SuggestExtensionForProvider(t.Context(), "microsoft.foundry"))
+	})
+
+	// No installed extension declares the provider, but the registry does: suggest that extension.
+	t.Run("RegistryMatch", func(t *testing.T) {
+		mockCtx := mocks.NewMockContext(t.Context())
+		stubProviderRegistry(mockCtx, "azure.ai.agents", "microsoft.foundry")
+		activator := newTestExtensionActivator(t, mockCtx, nil)
+		require.Equal(t, "azure.ai.agents", activator.SuggestExtensionForProvider(t.Context(), "microsoft.foundry"))
+	})
+
+	// No installed extension and no registry match yields no suggestion.
+	t.Run("NoRegistryMatch", func(t *testing.T) {
+		mockCtx := mocks.NewMockContext(t.Context())
+		stubProviderRegistry(mockCtx, "azure.ai.agents", "microsoft.foundry")
+		activator := newTestExtensionActivator(t, mockCtx, nil)
+		require.Empty(t, activator.SuggestExtensionForProvider(t.Context(), "unknown.provider"))
+	})
+}
 
 func Test_providerFromExtension(t *testing.T) {
 	t.Parallel()

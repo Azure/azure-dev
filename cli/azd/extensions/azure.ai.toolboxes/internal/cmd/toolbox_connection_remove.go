@@ -18,7 +18,8 @@ import (
 
 // connectionRemoveFlags carries the verb-specific flags for `connection remove`.
 type connectionRemoveFlags struct {
-	force bool
+	force       bool
+	fromVersion string
 }
 
 // newToolboxConnectionRemoveCommand returns the `connection remove` command.
@@ -55,6 +56,7 @@ Examples:
 		&flags.force, "force", false,
 		"Skip confirmation prompts and apply the removal immediately.",
 	)
+	registerFromVersionFlag(cmd, &flags.fromVersion)
 	registerToolboxOutputFlag(cmd)
 	return cmd
 }
@@ -121,7 +123,11 @@ func runConnectionRemoveWith(
 	if err != nil {
 		return toolboxNotFoundOrService(err, toolboxName, exterrors.OpGetToolbox)
 	}
-	current, err := client.GetToolboxVersion(ctx, toolboxName, tb.DefaultVersion)
+	branch, err := resolveBranchVersion(ctx, client, toolboxName, tb, verb.fromVersion)
+	if err != nil {
+		return err
+	}
+	current, err := client.GetToolboxVersion(ctx, toolboxName, branch.Branch)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolboxVersion)
 	}
@@ -140,8 +146,8 @@ func runConnectionRemoveWith(
 			return exterrors.Validation(
 				exterrors.CodeConnectionNotInToolbox,
 				fmt.Sprintf(
-					"connection %q is not attached to toolbox %q's current default version",
-					name, toolboxName,
+					"connection %q is not attached to version %s of toolbox %q",
+					name, branch.Branch, toolboxName,
 				),
 				fmt.Sprintf("run 'azd ai toolbox connection list %q'", toolboxName),
 			)
@@ -203,7 +209,11 @@ func runConnectionRemoveWith(
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
 	}
 
-	return emitConnectionRemoveResult(toolboxName, created.Version, removedConns, parent.output)
+	if err := emitConnectionRemoveResult(toolboxName, created.Version, removedConns, parent.output); err != nil {
+		return err
+	}
+	printBranchNote(parent.output, branch)
+	return nil
 }
 
 // summarizeConnectionNames renders "connection \"a\"" or "connections [\"a\", \"b\"]".

@@ -18,7 +18,8 @@ import (
 
 // skillAddFlags carries the verb-specific flags for `skill add`.
 type skillAddFlags struct {
-	fromFile string
+	fromFile    string
+	fromVersion string
 }
 
 // newToolboxSkillAddCommand returns the `skill add` command.
@@ -70,6 +71,7 @@ Examples:
 		&flags.fromFile, "from-file", "",
 		"Path to a JSON/YAML file listing skills to attach (skills[] block).",
 	)
+	registerFromVersionFlag(cmd, &flags.fromVersion)
 	registerToolboxOutputFlag(cmd)
 	return cmd
 }
@@ -125,12 +127,16 @@ func runSkillAddWith(
 	if err != nil {
 		return toolboxNotFoundOrService(err, toolboxName, exterrors.OpGetToolbox)
 	}
-	current, err := client.GetToolboxVersion(ctx, toolboxName, tb.DefaultVersion)
+	branch, err := resolveBranchVersion(ctx, client, toolboxName, tb, verb.fromVersion)
+	if err != nil {
+		return err
+	}
+	current, err := client.GetToolboxVersion(ctx, toolboxName, branch.Branch)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolboxVersion)
 	}
 
-	// Reject duplicates within the input and against the current default.
+	// Reject duplicates within the input and against the version being extended.
 	seen := map[string]struct{}{}
 	for _, sk := range current.Skills {
 		if n, ok := sk["name"].(string); ok && n != "" {
@@ -142,9 +148,9 @@ func runSkillAddWith(
 			return exterrors.Validation(
 				exterrors.CodeSkillAlreadyAttached,
 				fmt.Sprintf(
-					"skill %q is already attached to toolbox %q's current default version "+
+					"skill %q is already attached to version %s of toolbox %q "+
 						"(or appears more than once in the input)",
-					sp.Name, toolboxName,
+					sp.Name, branch.Branch, toolboxName,
 				),
 				fmt.Sprintf(
 					"remove the existing reference with `azd ai toolbox skill remove %q %q` first",
@@ -171,7 +177,11 @@ func runSkillAddWith(
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
 	}
 
-	return emitSkillAddResult(toolboxName, created.Version, specs, parent.output)
+	if err := emitSkillAddResult(toolboxName, created.Version, specs, parent.output); err != nil {
+		return err
+	}
+	printBranchNote(parent.output, branch)
+	return nil
 }
 
 // collectSkillSpecs picks the active input mode and returns the parsed list.

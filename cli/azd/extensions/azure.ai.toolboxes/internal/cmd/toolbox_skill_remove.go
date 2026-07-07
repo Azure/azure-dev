@@ -18,7 +18,8 @@ import (
 
 // skillRemoveFlags carries the verb-specific flags for `skill remove`.
 type skillRemoveFlags struct {
-	force bool
+	force       bool
+	fromVersion string
 }
 
 // newToolboxSkillRemoveCommand returns the `skill remove` command.
@@ -52,6 +53,7 @@ Examples:
 		&flags.force, "force", false,
 		"Skip confirmation prompts and apply the removal immediately.",
 	)
+	registerFromVersionFlag(cmd, &flags.fromVersion)
 	registerToolboxOutputFlag(cmd)
 	return cmd
 }
@@ -111,7 +113,11 @@ func runSkillRemoveWith(
 	if err != nil {
 		return toolboxNotFoundOrService(err, toolboxName, exterrors.OpGetToolbox)
 	}
-	current, err := client.GetToolboxVersion(ctx, toolboxName, tb.DefaultVersion)
+	branch, err := resolveBranchVersion(ctx, client, toolboxName, tb, verb.fromVersion)
+	if err != nil {
+		return err
+	}
+	current, err := client.GetToolboxVersion(ctx, toolboxName, branch.Branch)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolboxVersion)
 	}
@@ -124,8 +130,8 @@ func runSkillRemoveWith(
 			return exterrors.Validation(
 				exterrors.CodeSkillNotInToolbox,
 				fmt.Sprintf(
-					"skill %q is not attached to toolbox %q's current default version",
-					name, toolboxName,
+					"skill %q is not attached to version %s of toolbox %q",
+					name, branch.Branch, toolboxName,
 				),
 				fmt.Sprintf("run 'azd ai toolbox skill list %q'", toolboxName),
 			)
@@ -172,7 +178,11 @@ func runSkillRemoveWith(
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
 	}
 
-	return emitSkillRemoveResult(toolboxName, created.Version, names, parent.output)
+	if err := emitSkillRemoveResult(toolboxName, created.Version, names, parent.output); err != nil {
+		return err
+	}
+	printBranchNote(parent.output, branch)
+	return nil
 }
 
 // summarizeSkillNames renders "skill \"a\"" or "skills [\"a\", \"b\"]".

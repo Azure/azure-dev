@@ -10,7 +10,7 @@ import (
 	"os"
 	"strings"
 
-	rleproject "azure.ai.rle/internal/project"
+	"azure.ai.rle/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -67,7 +67,7 @@ func (a *deployAction) Run() error {
 	if err != nil {
 		return err
 	}
-	if !rleproject.IsAcrImageReference(image) {
+	if !project.IsAcrImageReference(image) {
 		return &azdext.LocalError{
 			Message:    fmt.Sprintf("RLE deploy image must be an ACR image reference, got %q.", image),
 			Code:       "rle_acr_image_required",
@@ -75,20 +75,20 @@ func (a *deployAction) Run() error {
 			Suggestion: "Set AZURE_CONTAINER_REGISTRY_ENDPOINT=<registry>.azurecr.io, then run deploy again.",
 		}
 	}
-	if err := rleproject.BuildRuntimeImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image, rleproject.BuildOptions{
+	if err := project.BuildRuntimeImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image, project.BuildOptions{
 		Source:     ".",
 		Dockerfile: a.flags.dockerfile,
 	}); err != nil {
 		return err
 	}
-	if err := rleproject.PushImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image); err != nil {
+	if err := project.PushImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image); err != nil {
 		return err
 	}
-	project, err := projectRouteSegment(state)
+	projectName, err := projectRouteSegment(state)
 	if err != nil {
 		return err
 	}
-	environmentId := firstNonEmpty(state.EnvironmentId, rleproject.Slug(state.Name))
+	environmentId := firstNonEmpty(state.EnvironmentId, project.Slug(state.Name))
 	client := newRleClient(resolveControlPlaneEndpoint())
 	request := v1EnvironmentRequest{
 		Name:         state.Name,
@@ -112,9 +112,9 @@ func (a *deployAction) Run() error {
 		return err
 	}
 	if state.EnvironmentId == "" {
-		environment, err = client.createV1Environment(a.cmd.Context(), project, request)
+		environment, err = client.createV1Environment(a.cmd.Context(), projectName, request)
 	} else {
-		environment, err = client.updateV1Environment(a.cmd.Context(), project, environmentId, request)
+		environment, err = client.updateV1Environment(a.cmd.Context(), projectName, environmentId, request)
 		if isNotFoundError(err) {
 			// The recorded environment no longer exists in the target project
 			// (e.g. the project changed or the control plane was reset). Recreate it.
@@ -122,12 +122,12 @@ func (a *deployAction) Run() error {
 				a.cmd.OutOrStdout(),
 				"Environment '%s' not found in project '%s'; creating a new one.\n",
 				environmentId,
-				project,
+				projectName,
 			); msgErr != nil {
 				return msgErr
 			}
 			created = true
-			environment, err = client.createV1Environment(a.cmd.Context(), project, request)
+			environment, err = client.createV1Environment(a.cmd.Context(), projectName, request)
 		}
 	}
 	if err != nil {
@@ -202,11 +202,11 @@ func resolveDeployImage(flags *rleDeployFlags, state rleState) (string, error) {
 			Suggestion: "Set AZURE_CONTAINER_REGISTRY_ENDPOINT=<registry>.azurecr.io, then run deploy again.",
 		}
 	}
-	project, err := projectRouteSegment(state)
+	projectName, err := projectRouteSegment(state)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s/%s-%s:latest", registry, rleproject.Slug(project), rleproject.Slug(state.Name)), nil
+	return fmt.Sprintf("%s/%s-%s:latest", registry, project.Slug(projectName), project.Slug(state.Name)), nil
 }
 
 type environmentOutput struct {

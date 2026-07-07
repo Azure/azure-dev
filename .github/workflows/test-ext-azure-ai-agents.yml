@@ -1,0 +1,98 @@
+name: ext-azure-ai-agents-test
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/extensions/azure.ai.agents/**"
+      - "cli/azd/extensions/azure.ai.inspector/**"
+      - "cli/azd/test/functional/ai_agents/**"
+      - ".github/workflows/test-ext-azure-ai-agents.yml"
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: cli/azd/go.mod
+
+      - name: Build azd
+        working-directory: cli/azd
+        run: |
+          go build -tags=record -o azd-record ./
+          # Make the record-tagged binary available as "azd" on PATH.
+          # Required by extension sub-processes (azd x publish) and by
+          # azidentity.AzureDeveloperCLICredential (exec.LookPath("azd")) in playback.
+          sudo ln -sf "$GITHUB_WORKSPACE/cli/azd/azd-record" /usr/local/bin/azd
+
+      - name: Install extension toolchain
+        run: |
+          # Install the developer extension (provides 'azd x' commands).
+          # The built-in 'azd' source is auto-registered, so no source-add needed.
+          azd extension install microsoft.azd.extensions --no-prompt
+
+      - name: Build & install inspector dependency from source
+        working-directory: cli/azd/extensions/azure.ai.inspector
+        run: |
+          # Build azure.ai.inspector from source to ensure PR CI always has a
+          # compatible version — dependency releases are post-merge, but PRs may
+          # include inspector changes from this same repo.
+          pwsh -File ci-build.ps1 -OutputFileName azure-ai-inspector-linux-amd64 -Version $(cat version.txt | tr -d '\r\n')
+          mkdir -p bin
+          mv azure-ai-inspector-linux-amd64 bin/
+          azd x pack
+          azd x publish
+          azd extension install azure.ai.inspector --source local --force --no-prompt
+
+      - name: Build extension (ci-build.ps1)
+        working-directory: cli/azd/extensions/azure.ai.agents
+        run: |
+          # Use the canonical ci-build.ps1 which includes security flags
+          # (trimpath, pie, cfi, cfg, osusergo) matching release builds.
+          # -BuildRecordMode produces both a production and a record-tagged binary.
+          pwsh -File ci-build.ps1 -BuildRecordMode -OutputFileName azure-ai-agents-linux-amd64 -Version "$(cat version.txt | tr -d '\r\n')"
+          # Move production binary to bin/ where azd x pack expects it.
+          mkdir -p bin
+          mv azure-ai-agents-linux-amd64 bin/
+
+      - name: Pack, publish & install extension (production)
+        working-directory: cli/azd/extensions/azure.ai.agents
+        run: |
+          azd x pack
+          azd x publish
+          azd extension install azure.ai.agents --source local --force --no-prompt
+
+      - name: Run Tier 0 tests (offline, production extension)
+        working-directory: cli/azd
+        env:
+          CLI_TEST_AZD_PATH: ${{ github.workspace }}/cli/azd/azd-record
+        run: |
+          go test -tags=record -run "Test_AIAgent_(Version|Help|Init_NoPrompt_MissingFlags|Doctor_Help)" \
+            ./test/functional/ai_agents/ -v -timeout 5m
+
+      - name: Swap extension to record binary for Tier 1
+        run: |
+          # Overwrite the installed production binary with the record-tagged
+          # binary so Tier 1 tests can intercept/replay HTTP traffic.
+          cp "${{ github.workspace }}/cli/azd/extensions/azure.ai.agents/azure-ai-agents-linux-amd64-record" \
+            ~/.azd/extensions/azure.ai.agents/azure-ai-agents-linux-amd64
+
+      - name: Run Tier 1 tests (playback, record extension)
+        working-directory: cli/azd
+        env:
+          AZURE_RECORD_MODE: playback
+          CLI_TEST_AZD_PATH: ${{ github.workspace }}/cli/azd/azd-record
+        run: |
+          go test -tags=record -run "Test_AIAgent_(Init_(NoPrompt_(Defer|WithProject)|NegativeControl_BadCassette)|SampleList_(Recorded|JSON_Recorded))" \
+            ./test/functional/ai_agents/ -v -timeout 5m

@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	rleproject "azure.ai.rle/internal/project"
-	rleui "azure.ai.rle/internal/ui"
+	"azure.ai.rle/internal/project"
+	"azure.ai.rle/internal/ui"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -97,7 +97,7 @@ func (a *remoteInvokeAction) Run() error {
 	); err != nil {
 		return err
 	}
-	if err := rleproject.WaitForHealth(sandboxUrl, 60*time.Second); err != nil {
+	if err := project.WaitForHealth(sandboxUrl, 60*time.Second); err != nil {
 		return err
 	}
 	playgroundUrl, stopPlayground, err := remotePlaygroundUrl(ctx, sandboxUrl)
@@ -108,10 +108,10 @@ func (a *remoteInvokeAction) Run() error {
 	if _, err := fmt.Fprintf(a.cmd.OutOrStdout(), "Playground UI: %s\n", playgroundUrl); err != nil {
 		return err
 	}
-	if err := rleui.OpenBrowser(playgroundUrl); err != nil {
+	if err := ui.OpenBrowser(playgroundUrl); err != nil {
 		_, _ = fmt.Fprintf(a.cmd.ErrOrStderr(), "Warning: failed to open playground UI: %v\n", err)
 	}
-	return rleproject.RunShellWithContext(ctx, a.cmd.InOrStdin(), a.cmd.OutOrStdout(), sandboxUrl, a.flags.timeout)
+	return project.RunShellWithContext(ctx, a.cmd.InOrStdin(), a.cmd.OutOrStdout(), sandboxUrl, a.flags.timeout)
 }
 
 const (
@@ -354,7 +354,7 @@ func remotePlaygroundHandler(sandboxUrl string) http.Handler {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" || r.URL.Path == "/web" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_, _ = io.WriteString(w, rleui.RemotePlaygroundHTML)
+			_, _ = io.WriteString(w, ui.RemotePlaygroundHTML)
 			return
 		}
 		proxyOpenEnvToSandbox(w, r, sandboxUrl)
@@ -389,7 +389,7 @@ func proxyOpenEnvToSandbox(w http.ResponseWriter, r *http.Request, sandboxUrl st
 	if contentType := r.Header.Get("Content-Type"); contentType != "" {
 		target.Header.Set("Content-Type", contentType)
 	}
-	resp, err := rleproject.HTTPClient(60).Do(target) //nolint:gosec // local UI proxy intentionally forwards only fixed OpenEnv operations to the active sandbox.
+	resp, err := project.HTTPClient(60).Do(target) //nolint:gosec // local UI proxy intentionally forwards only fixed OpenEnv operations to the active sandbox.
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return

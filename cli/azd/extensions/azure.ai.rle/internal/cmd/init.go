@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	rleproject "azure.ai.rle/internal/project"
+	"azure.ai.rle/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -24,7 +24,7 @@ type initAction struct {
 	envNameOverride string
 }
 
-var checkoutOpenEnvEchoSampleFunc = rleproject.CheckoutOpenEnvEchoSample
+var checkoutOpenEnvEchoSampleFunc = project.CheckoutOpenEnvEchoSample
 
 func newInitCommand() *cobra.Command {
 	flags := &rleInitFlags{}
@@ -63,7 +63,7 @@ func newInitCommand() *cobra.Command {
 func (a *initAction) Run() error {
 	envName := firstNonEmpty(a.envNameOverride, "echo_env")
 	var err error
-	envName, err = rleproject.ValidateEnvironmentName(envName)
+	envName, err = project.ValidateEnvironmentName(envName)
 	if err != nil {
 		return &azdext.LocalError{
 			Message:    err.Error(),

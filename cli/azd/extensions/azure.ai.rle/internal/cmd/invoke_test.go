@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -19,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	rleui "azure.ai.rle/internal/ui"
+	"azure.ai.rle/internal/ui"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -162,8 +161,7 @@ func TestRemotePlaygroundProxyForwardsToSandbox(t *testing.T) {
 	}))
 	defer envServer.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	playgroundUrl, stop, err := remotePlaygroundUrl(ctx, envServer.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -521,14 +519,14 @@ func TestSandboxLeasePendingStatusTreatsAnyConflictAsPending(t *testing.T) {
 
 func captureBrowserOpen(t *testing.T) *string {
 	t.Helper()
-	old := rleui.OpenBrowser
+	old := ui.OpenBrowser
 	openedUrl := ""
-	rleui.OpenBrowser = func(url string) error {
+	ui.OpenBrowser = func(url string) error {
 		openedUrl = url
 		return nil
 	}
 	t.Cleanup(func() {
-		rleui.OpenBrowser = old
+		ui.OpenBrowser = old
 	})
 	return &openedUrl
 }

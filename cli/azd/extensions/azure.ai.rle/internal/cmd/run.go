@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	rleproject "azure.ai.rle/internal/project"
-	rleui "azure.ai.rle/internal/ui"
+	"azure.ai.rle/internal/project"
+	"azure.ai.rle/internal/ui"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -111,10 +111,10 @@ func (a *localRunAction) Run() error {
 	if err != nil {
 		return err
 	}
-	if err := rleui.OpenBrowser(webUrl); err != nil {
+	if err := ui.OpenBrowser(webUrl); err != nil {
 		_, _ = fmt.Fprintf(a.cmd.ErrOrStderr(), "Warning: failed to open playground UI: %v\n", err)
 	}
-	shellErr := rleproject.RunShellWithContext(ctx, a.cmd.InOrStdin(), a.cmd.OutOrStdout(), baseUrl, 0)
+	shellErr := project.RunShellWithContext(ctx, a.cmd.InOrStdin(), a.cmd.OutOrStdout(), baseUrl, 0)
 	if a.flags.watch {
 		select {
 		case err := <-watchDone:
@@ -159,19 +159,19 @@ func ensureLocalContainerEndpoint(cmd *cobra.Command, flags *localRunFlags) (str
 	container := localContainerName(state.Name)
 	baseUrl := fmt.Sprintf("http://localhost:%d", port)
 
-	if running, exists := rleproject.ContainerStatus(cmd.Context(), container); exists {
+	if running, exists := project.ContainerStatus(cmd.Context(), container); exists {
 		if running && flags.reuseRunning && !flags.restart {
-			if err := rleproject.WaitForHealth(baseUrl, 30*time.Second); err != nil {
+			if err := project.WaitForHealth(baseUrl, 30*time.Second); err != nil {
 				return "", err
 			}
 			return baseUrl, nil
 		}
-		_ = rleproject.RunDocker(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), "rm", "-f", container)
+		_ = project.RunDocker(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), "rm", "-f", container)
 	}
 	if err := ensurePortAvailable(port); err != nil {
 		return "", err
 	}
-	if err := rleproject.BuildRuntimeImage(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), image, rleproject.BuildOptions{
+	if err := project.BuildRuntimeImage(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), image, project.BuildOptions{
 		Source:     flags.source,
 		Dockerfile: flags.dockerfile,
 	}); err != nil {
@@ -194,7 +194,7 @@ func ensureLocalContainerEndpoint(cmd *cobra.Command, flags *localRunFlags) (str
 		"-p", portMapping,
 		image,
 	}
-	if err := rleproject.RunDocker(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), runArgs...); err != nil {
+	if err := project.RunDocker(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), runArgs...); err != nil {
 		return "", &azdext.LocalError{
 			Message:    fmt.Sprintf("Failed to start local Docker container %q: %v", container, err),
 			Code:       "rle_local_docker_run_failed",
@@ -205,11 +205,11 @@ func ensureLocalContainerEndpoint(cmd *cobra.Command, flags *localRunFlags) (str
 	started := true
 	cleanupStartedContainer := func() {
 		if started {
-			_ = rleproject.RunDocker(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), "rm", "-f", container)
+			_ = project.RunDocker(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), "rm", "-f", container)
 		}
 	}
 
-	if err := rleproject.WaitForHealth(baseUrl, 30*time.Second); err != nil {
+	if err := project.WaitForHealth(baseUrl, 30*time.Second); err != nil {
 		cleanupStartedContainer()
 		return "", err
 	}
@@ -244,7 +244,7 @@ func localPortSuggestion(port int) string {
 
 func stopLocalContainer(cmd *cobra.Command, environmentName string) error {
 	container := localContainerName(environmentName)
-	return rleproject.RunDocker(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), "rm", "-f", container)
+	return project.RunDocker(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), "rm", "-f", container)
 }
 
 func loadLocalRunState(flags *localRunFlags, output io.Writer) (rleState, error) {
@@ -271,7 +271,7 @@ func loadLocalRunState(flags *localRunFlags, output io.Writer) (rleState, error)
 }
 
 func localRuntimeImageForRun(flags *localRunFlags, state rleState) string {
-	return rleproject.Slug(firstNonEmpty(state.Name, defaultSourceName(flags.source))) + ":local"
+	return project.Slug(firstNonEmpty(state.Name, defaultSourceName(flags.source))) + ":local"
 }
 
 func defaultSourceName(source string) string {
@@ -287,7 +287,7 @@ func defaultSourceName(source string) string {
 	if name == "." || name == string(filepath.Separator) || name == "" {
 		return "rle_env"
 	}
-	return rleproject.Slug(name)
+	return project.Slug(name)
 }
 
 func watchLocalContainer(cmd *cobra.Command, flags *localRunFlags) error {
@@ -387,5 +387,5 @@ func resolvePort(flags *localRunFlags) int {
 }
 
 func localContainerName(envName string) string {
-	return "azd-rle-" + rleproject.Slug(firstNonEmpty(envName, "environment"))
+	return "azd-rle-" + project.Slug(firstNonEmpty(envName, "environment"))
 }

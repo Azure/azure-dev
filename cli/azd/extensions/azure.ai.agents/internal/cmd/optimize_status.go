@@ -120,6 +120,9 @@ func runOptimizeStatus(cmd *cobra.Command, flags *optimizeStatusFlags, operation
 		}
 		printOptimizeResults(cmd.Context(), out, finalStatus, hasProject, flags.envName)
 	} else if len(status.Candidates()) > 0 {
+		if flags.output == "json" {
+			return printOptimizeStatusJSON(out, status)
+		}
 		printOptimizeResults(cmd.Context(), out, status, hasProject, flags.envName)
 	}
 

@@ -78,6 +78,15 @@ func resolveOptimizeAgent(ctx context.Context, flagValue, envName string, noProm
 					}, nil
 				}
 			}
+
+			// Service resolved in the azd project, but no deployed agent name
+			// was found in the environment. Return an explicit error so the
+			// service name isn't silently reused as a Foundry agent name.
+			return nil, fmt.Errorf(
+				"service '%s' resolved in azd project but no deployed agent name found "+
+					"(expected environment variable AGENT_%s_NAME) — run 'azd deploy' first",
+				svc.Name, serviceKey,
+			)
 		}
 	}
 

@@ -50,6 +50,11 @@ var DefaultMultiSelectOptions MultiSelectOptions = MultiSelectOptions{
 	AllowEmptySelection: new(false),
 }
 
+// multiSelectFilterThreshold is the minimum number of choices at which the
+// interactive text filter and the None/All shortcut are offered. Shorter lists
+// are easy to scan and toggle directly, so both are hidden to reduce clutter.
+const multiSelectFilterThreshold = 6
+
 type MultiSelectChoice struct {
 	Value    string
 	Label    string
@@ -141,7 +146,7 @@ func (p *MultiSelect) Ask(ctx context.Context) ([]*MultiSelectChoice, error) {
 		p.canvas.Close()
 	}()
 
-	if !*p.options.EnableFiltering {
+	if !p.filteringEnabled() {
 		p.cursor.HideCursor()
 	}
 
@@ -169,7 +174,7 @@ func (p *MultiSelect) Ask(ctx context.Context) ([]*MultiSelectChoice, error) {
 
 		p.showHelp = args.Hint
 
-		if *p.options.EnableFiltering {
+		if p.filteringEnabled() {
 			p.filter = strings.TrimSpace(args.Value)
 		}
 
@@ -249,6 +254,13 @@ func (p *MultiSelect) sortSelectedChoices() []*MultiSelectChoice {
 	}
 
 	return finalSelected
+}
+
+// filteringEnabled reports whether interactive text filtering is offered: the
+// caller must allow it and the list must be long enough to be worth filtering
+// (see multiSelectFilterThreshold).
+func (p *MultiSelect) filteringEnabled() bool {
+	return *p.options.EnableFiltering && len(p.choices) >= multiSelectFilterThreshold
 }
 
 func (p *MultiSelect) applyFilter() {
@@ -435,7 +447,7 @@ func (p *MultiSelect) renderMessage(printer Printer) {
 	printer.Fprintln()
 
 	// Filter
-	if !p.cancelled && !p.complete && *p.options.EnableFiltering {
+	if !p.cancelled && !p.complete && p.filteringEnabled() {
 		printer.Fprintln()
 		printer.Fprintf("  Filter: ")
 
@@ -487,8 +499,12 @@ func (p *MultiSelect) renderFooter(printer Printer) {
 	printer.Fprintln()
 	printer.Fprintln(output.WithGrayFormat("───────────────────────────────────────"))
 
-	hint := output.WithHighLightFormat("↑↓") + output.WithGrayFormat(" Move") +
-		output.WithGrayFormat(" • ") + output.WithHighLightFormat("Space") +
+	hint := output.WithHighLightFormat("↑↓") + output.WithGrayFormat(" Move")
+	if len(p.choices) >= multiSelectFilterThreshold {
+		hint += output.WithGrayFormat(" • ") + output.WithHighLightFormat("←→") +
+			output.WithGrayFormat(" None/All")
+	}
+	hint += output.WithGrayFormat(" • ") + output.WithHighLightFormat("Space") +
 		output.WithGrayFormat(" Select") + output.WithGrayFormat(" • ") +
 		output.WithHighLightFormat("Enter") + output.WithGrayFormat(" Confirm")
 	if p.options.HelpMessage != "" {

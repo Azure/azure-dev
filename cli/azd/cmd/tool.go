@@ -682,12 +682,12 @@ func (a *toolInstallAction) resolveHostOptions(
 		// Interactive terminal: prompt the user to pick the host(s),
 		// after surfacing the --agent hint so they learn the shortcut too.
 		if a.console.IsSpinnerInteractive() && !a.console.IsNoPromptMode() {
-			a.console.Message(ctx, fmt.Sprintf(
-				"Multiple AI agents detected.\nTip: Use `%s` or `%s` "+
-					"to select a specific agent or all agents.",
-				output.WithHighLightFormat("--agent <agent>"),
-				output.WithHighLightFormat("--agent all"),
-			))
+			a.console.Message(ctx, "Multiple AI agents detected.\n"+
+				output.WithGrayFormat("Tip: Use `")+
+				output.WithHighLightFormat("--agent <agent>")+
+				output.WithGrayFormat("` or `")+
+				output.WithHighLightFormat("--agent all")+
+				output.WithGrayFormat("` to select a specific agent or all agents.\n"))
 
 			opts, err := a.promptForSkillHosts(ctx, skill, present)
 			if err != nil {

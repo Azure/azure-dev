@@ -1466,7 +1466,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")
 
 	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
-		"Protocols supported by the agent (e.g., 'responses', 'invocations'). Can be specified multiple times.")
+		"Protocols supported by the agent (e.g., 'responses', 'invocations', 'invocations_ws'). Can be specified multiple times.")
 
 	cmd.Flags().StringVar(&flags.deployMode, "deploy-mode", "",
 		"Deployment mode: 'container' (Docker image) or 'code' (ZIP upload). Defaults to 'code' for Python/.NET projects in --no-prompt.")

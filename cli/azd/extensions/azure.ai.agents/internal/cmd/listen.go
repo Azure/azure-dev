@@ -38,6 +38,13 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		WithProvisioningProvider(project.FoundryProviderName, func() azdext.ProvisioningProvider {
 			return project.NewFoundryProvisioningProvider(azdClient)
 		}).
+		WithValidationCheck(azdext.ValidationCheckRegistration{
+			CheckType: "local-preflight",
+			RuleID:    project.ResourceGroupLocationRuleID,
+			Factory: func() azdext.ValidationCheckProvider {
+				return project.NewResourceGroupLocationCheck(azdClient)
+			},
+		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return preprovisionHandler(ctx, azdClient, args)
 		}).

@@ -938,9 +938,9 @@ Extensions can provide a custom infrastructure provisioning experience as an alt
 - Custom deployment engines or resource orchestration
 - Provider-managed state and outputs
 
-A provisioning provider implements the full lifecycle (`Initialize`, `State`, `Deploy`, `Preview`, `Destroy`, `EnsureEnv`, `Parameters`, `PlannedOutputs`), but two of these matter beyond `azd provision`/`up`:
+A provisioning provider implements the full lifecycle (`Initialize`, `State`, `Deploy`, `Preview`, `Destroy`, `EnsureEnv`, `Parameters`, `PlannedOutputs`). Two aspects of its `State` method matter beyond `azd provision`/`up`:
 
-- **`State`** is what `azd env refresh` calls to pull the latest deployment outputs into the local `.env`. Because `env refresh` is read-only and does not run infrastructure, `State` must read persisted deployment state on its own (for example, by querying the deployment in Azure) rather than depending on an on-disk template being compiled first.
+- `azd env refresh` calls `State` to pull the latest deployment outputs into the local `.env`. Because `env refresh` is read-only and does not run infrastructure, `State` must read persisted deployment state on its own (for example, by querying the deployment in Azure) rather than depending on an on-disk template being compiled first.
 - When no deployment exists yet, `State` should return an **empty** state result rather than an error, so `env refresh` can report that there is nothing to refresh yet and exit successfully instead of failing.
 
 > [!NOTE]

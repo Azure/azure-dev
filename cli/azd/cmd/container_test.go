@@ -643,7 +643,7 @@ func Test_ResolveAction_WithNilMiddleware(t *testing.T) {
 func Test_Resolve_ExtensionActivator(t *testing.T) {
 	t.Parallel()
 	container := ioc.NewNestedContainer(nil)
-	ioc.RegisterInstance(container, context.Background())
+	ioc.RegisterInstance(container, t.Context())
 	ioc.RegisterInstance(container, &internal.GlobalCommandOptions{})
 	ioc.RegisterInstance(container, &cobra.Command{})
 	registerCommonDependencies(container)

@@ -55,35 +55,51 @@ func (p *PackageManagerVersionProvider) GetLatestVersion(
 	ctx context.Context,
 	tool *ToolDefinition,
 ) (string, error) {
-	strategy, ok := tool.InstallStrategies[runtime.GOOS]
-	if !ok {
+	// Try each configured package manager in preference order, returning the
+	// first that answers. A multi-method tool (e.g. the Copilot CLI:
+	// brew -> npm) may list a manager that is not installed; querying it then
+	// fails (missing binary or command error) and the next one is tried. This
+	// is more robust than a PATH pre-check because it also handles a manager
+	// whose binary exists but whose command fails for other reasons.
+	strategies := tool.InstallStrategies[runtime.GOOS]
+	hasManager := false
+	var lastErr error
+	for _, s := range strategies {
+		if s.PackageManager == "" || s.PackageId == "" {
+			continue
+		}
+		hasManager = true
+
+		var version string
+		var err error
+		switch s.PackageManager {
+		case "npm":
+			version, err = p.queryNpm(ctx, s.PackageId)
+		case "winget":
+			version, err = p.queryWinget(ctx, s.PackageId)
+		case "brew":
+			version, err = p.queryBrew(ctx, s.PackageId)
+		case "apt":
+			version, err = p.queryApt(ctx, s.PackageId)
+		default:
+			err = fmt.Errorf(
+				"unsupported package manager %q for version query",
+				s.PackageManager,
+			)
+		}
+		if err == nil {
+			return version, nil
+		}
+		lastErr = err
+	}
+
+	if !hasManager {
 		return "", fmt.Errorf(
-			"no install strategy for %s on %s",
+			"no package manager configured for %s on %s",
 			tool.Id, runtime.GOOS,
 		)
 	}
-
-	if strategy.PackageManager == "" || strategy.PackageId == "" {
-		return "", fmt.Errorf(
-			"no package manager configured for %s", tool.Id,
-		)
-	}
-
-	switch strategy.PackageManager {
-	case "npm":
-		return p.queryNpm(ctx, strategy.PackageId)
-	case "winget":
-		return p.queryWinget(ctx, strategy.PackageId)
-	case "brew":
-		return p.queryBrew(ctx, strategy.PackageId)
-	case "apt":
-		return p.queryApt(ctx, strategy.PackageId)
-	default:
-		return "", fmt.Errorf(
-			"unsupported package manager %q for version query",
-			strategy.PackageManager,
-		)
-	}
+	return "", lastErr
 }
 
 // queryNpm runs `npm view <pkg> version` and returns the trimmed stdout.
@@ -151,13 +167,17 @@ func parseWingetVersion(output string) (string, error) {
 	)
 }
 
-// brewInfoJSON models the relevant subset of `brew info --json=v2`.
+// brewInfoJSON models the relevant subset of `brew info --json=v2`. brew
+// returns separate arrays for formulae and casks; the Copilot CLI is a cask.
 type brewInfoJSON struct {
 	Formulae []struct {
 		Versions struct {
 			Stable string `json:"stable"`
 		} `json:"versions"`
 	} `json:"formulae"`
+	Casks []struct {
+		Version string `json:"version"`
+	} `json:"casks"`
 }
 
 // queryBrew runs `brew info <pkg> --json=v2` and parses the stable
@@ -185,14 +205,18 @@ func (p *PackageManagerVersionProvider) queryBrew(
 		)
 	}
 
-	if len(info.Formulae) == 0 ||
-		info.Formulae[0].Versions.Stable == "" {
-		return "", fmt.Errorf(
-			"no stable version found for %s in brew", packageID,
-		)
+	if len(info.Formulae) > 0 &&
+		info.Formulae[0].Versions.Stable != "" {
+		return info.Formulae[0].Versions.Stable, nil
 	}
 
-	return info.Formulae[0].Versions.Stable, nil
+	if len(info.Casks) > 0 && info.Casks[0].Version != "" {
+		return info.Casks[0].Version, nil
+	}
+
+	return "", fmt.Errorf(
+		"no stable version found for %s in brew", packageID,
+	)
 }
 
 // queryApt runs `apt-cache policy <pkg>` and parses the Candidate
@@ -467,9 +491,9 @@ func SelectVersionProvider(
 		return nil
 
 	default:
-		// CLI and Server tools: check if a package manager
-		// strategy is available for the current platform.
-		if strategy, ok := tool.InstallStrategies[runtime.GOOS]; ok {
+		// CLI and Server tools: check if any package-manager strategy for
+		// the current platform is queryable for the latest version.
+		for _, strategy := range tool.InstallStrategies[runtime.GOOS] {
 			if strategy.PackageManager != "" &&
 				strategy.PackageId != "" &&
 				isQueryableManager(strategy.PackageManager) {

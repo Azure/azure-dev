@@ -4,12 +4,23 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
+	"io"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
 
 func TestRunningOnCodespacesBrowser(t *testing.T) {
@@ -121,4 +132,87 @@ func TestParseUseDeviceCode(t *testing.T) {
 			require.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func Test_NewAuthLoginAction_Constructor(t *testing.T) {
+	t.Parallel()
+	formatter := &output.JsonFormatter{}
+	console := mockinput.NewMockConsole()
+	annotations := CmdAnnotations{"key": "value"}
+	a := newAuthLoginAction(
+		formatter, io.Discard, nil, nil,
+		&authLoginFlags{}, console, annotations, nil,
+	)
+	la := a.(*loginAction)
+	require.NotNil(t, la.flags)
+	require.Equal(t, annotations, la.annotations)
+}
+
+func Test_AlphaFeatureManager_WithConfig(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewEmptyConfig()
+	fm := alpha.NewFeaturesManagerWithConfig(cfg)
+	require.NotNil(t, fm)
+}
+
+func Test_ProjectConfig_Basic(t *testing.T) {
+	t.Parallel()
+	cfg := &project.ProjectConfig{Name: "test"}
+	require.Equal(t, "test", cfg.Name)
+}
+
+func Test_NewAuthLoginAction(t *testing.T) {
+	t.Parallel()
+	action := newAuthLoginAction(
+		&output.JsonFormatter{},
+		&bytes.Buffer{},
+		nil, // authManager
+		nil, // accountSubManager
+		&authLoginFlags{},
+		mockinput.NewMockConsole(),
+		CmdAnnotations{},
+		nil, // commandRunner
+	)
+	require.NotNil(t, action)
+}
+
+func Test_NewAuthLoginFlags(t *testing.T) {
+	t.Parallel()
+	cmd := &cobra.Command{Use: "test"}
+	global := &internal.GlobalCommandOptions{}
+	flags := newAuthLoginFlags(cmd, global)
+	require.NotNil(t, flags)
+}
+
+func Test_StringPtr_SetAndString(t *testing.T) {
+	t.Parallel()
+	var sp stringPtr
+
+	// Before set, String() returns ""
+	assert.Equal(t, "", sp.String())
+	assert.Equal(t, "string", sp.Type())
+
+	// After set
+	err := sp.Set("hello")
+	require.NoError(t, err)
+	assert.Equal(t, "hello", sp.String())
+
+	// Set empty string
+	err = sp.Set("")
+	require.NoError(t, err)
+	assert.Equal(t, "", sp.String())
+}
+
+func Test_BoolPtr_SetAndString(t *testing.T) {
+	t.Parallel()
+	var bp boolPtr
+
+	// Before set returns "false"
+	assert.Equal(t, "false", bp.String())
+	assert.Equal(t, "", bp.Type())
+
+	// After set
+	err := bp.Set("true")
+	require.NoError(t, err)
+	assert.Equal(t, "true", bp.String())
 }

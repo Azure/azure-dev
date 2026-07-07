@@ -1,14 +1,20 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
 capabilities:
     - custom-commands
+    - service-target-provider
     - metadata
-description: Manage Microsoft Foundry Routines from your terminal. (Preview)
-displayName: Foundry Routines (Preview)
+description: Manage Microsoft Foundry Routines from your terminal. (Beta)
+displayName: Foundry Routines (Beta)
 id: azure.ai.routines
 language: go
 namespace: ai.routine
+providers:
+    - name: azure.ai.routine
+      type: service-target
+      description: Upserts Foundry routines declared as azure.ai.routine services in azure.yaml
 tags:
     - ai
     - routine
 usage: azd ai routine <command> [options]
-version: 0.1.0-preview
+version: 1.0.0-beta.1
+requiredAzdVersion: ">=1.27.0"

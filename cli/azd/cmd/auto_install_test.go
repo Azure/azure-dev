@@ -4,15 +4,20 @@
 package cmd
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
-	"github.com/spf13/cobra"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
 
 func TestFindFirstNonFlagArg(t *testing.T) {
@@ -792,4 +797,73 @@ func TestParseGlobalFlags_OutputAttachedShortForm(t *testing.T) {
 			require.NoError(t, err, "ParseGlobalFlags must not error for args: %v", tc.args)
 		})
 	}
+}
+
+func Test_PromptForExtensionChoice_Single(t *testing.T) {
+	t.Parallel()
+	ext := &extensions.ExtensionMetadata{Id: "my.ext", DisplayName: "My Ext"}
+	result, err := promptForExtensionChoice(
+		t.Context(), mockinput.NewMockConsole(),
+		[]*extensions.ExtensionMetadata{ext},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "my.ext", result.Id)
+}
+
+func Test_PromptForExtensionChoice_Multiple_SelectFirst(t *testing.T) {
+	t.Parallel()
+	exts := []*extensions.ExtensionMetadata{
+		{Id: "ext.a", DisplayName: "Ext A", Source: "s", Description: "A"},
+		{Id: "ext.b", DisplayName: "Ext B", Source: "s", Description: "B"},
+	}
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).Respond(0)
+	result, err := promptForExtensionChoice(t.Context(), console, exts)
+	require.NoError(t, err)
+	assert.Equal(t, "ext.a", result.Id)
+}
+
+func Test_PromptForExtensionChoice_Multiple_SelectSecond(t *testing.T) {
+	t.Parallel()
+	exts := []*extensions.ExtensionMetadata{
+		{Id: "ext.a", DisplayName: "Ext A", Source: "s", Description: "A"},
+		{Id: "ext.b", DisplayName: "Ext B", Source: "s", Description: "B"},
+	}
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).Respond(1)
+	result, err := promptForExtensionChoice(t.Context(), console, exts)
+	require.NoError(t, err)
+	assert.Equal(t, "ext.b", result.Id)
+}
+
+func Test_PromptForExtensionChoice_Multiple_Error(t *testing.T) {
+	t.Parallel()
+	exts := []*extensions.ExtensionMetadata{
+		{Id: "ext.a", DisplayName: "Ext A", Source: "s", Description: "A"},
+		{Id: "ext.b", DisplayName: "Ext B", Source: "s", Description: "B"},
+	}
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).
+		RespondFn(func(_ input.ConsoleOptions) (any, error) { return 0, fmt.Errorf("cancelled") })
+	_, err := promptForExtensionChoice(t.Context(), console, exts)
+	require.Error(t, err)
+}
+
+func Test_TryAutoInstall_NoAnnotation(t *testing.T) {
+	t.Parallel()
+	cmd := &cobra.Command{Use: "root"}
+	container := ioc.NewNestedContainer(nil)
+	result := tryAutoInstallForPartialNamespace(t.Context(), container, cmd, nil)
+	assert.False(t, result)
+}
+
+func Test_TryAutoInstall_HasSubcommand(t *testing.T) {
+	t.Parallel()
+	root := &cobra.Command{Use: "azd"}
+	child := &cobra.Command{Use: "deploy"}
+	root.AddCommand(child)
+	container := ioc.NewNestedContainer(nil)
+	// The "deploy" command already exists as sub-command, so partial namespace shouldn't trigger
+	result := tryAutoInstallForPartialNamespace(t.Context(), container, root, []string{"deploy"})
+	assert.False(t, result)
 }

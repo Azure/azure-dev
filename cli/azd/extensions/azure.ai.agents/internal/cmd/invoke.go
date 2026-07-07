@@ -29,7 +29,7 @@ import (
 )
 
 type invokeFlags struct {
-	isolationHeaderFlags
+	userIdentityFlags
 	message         string
 	inputFile       string
 	local           bool
@@ -44,6 +44,7 @@ type invokeFlags struct {
 	agentEndpoint   string
 	version         string
 	outputFmt       string
+	callID          string
 }
 
 // outputRaw is the sentinel value of the inherited --output flag that selects
@@ -94,8 +95,13 @@ session automatically. Pass --new-session to force a reset.
 Use --version to invoke a specific deployed agent version. When provided,
 azd creates or reuses a hosted agent session backed by that version.
 
-For agents configured with header-based isolation, pass --user-isolation-key
-and --chat-isolation-key on each remote invoke.
+For agents configured with header-based isolation, pass --user-identity
+on each invoke. Locally it is sent as the x-agent-user-id header; for
+remote invokes it is sent as the x-ms-user-identity header.
+
+Use --call-id to send a call ID with a local invoke. It is sent as the
+x-agent-foundry-call-id header and applies only to local invocations; it is
+ignored for remote requests.
 
 Use --output raw (or -o raw) to dump the unmodified server response (status
 line, headers, and body verbatim) to stdout. Useful for debugging server
@@ -119,6 +125,9 @@ suppressed in raw mode.`,
 
   # Invoke locally (agent must be running via 'azd ai agent run')
   azd ai agent invoke --local "Hello!"
+
+  # Invoke a specific agent locally (useful in multi-agent projects)
+  azd ai agent invoke my-agent --local "Hello!"
 
   # Start a new session (discard conversation history)
   azd ai agent invoke --new-session "Hello!"
@@ -194,14 +203,6 @@ suppressed in raw mode.`,
 				return err
 			}
 
-			if flags.name != "" && flags.local {
-				return exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					"cannot use --local with a named agent; named agents are always invoked remotely on Foundry",
-					"omit the agent name for local invocation, or remove --local for remote",
-				)
-			}
-
 			if flags.protocol != "" {
 				p := agent_api.AgentProtocol(flags.protocol)
 				if !p.IsInvocable() {
@@ -232,7 +233,14 @@ suppressed in raw mode.`,
 	cmd.Flags().BoolVar(&flags.newSession, "new-session", false, "Force a new session (discard saved one)")
 	cmd.Flags().StringVar(&flags.conversation, "conversation-id", "", "Explicit conversation ID override")
 	cmd.Flags().BoolVar(&flags.newConversation, "new-conversation", false, "Force a new conversation (discard saved one)")
-	addIsolationHeaderFlags(cmd, &flags.isolationHeaderFlags)
+	addUserIdentityFlag(cmd, &flags.userIdentityFlags)
+	cmd.Flags().StringVar(
+		&flags.callID,
+		"call-id",
+		"",
+		"Call ID header value (sent as "+agent_api.AgentFoundryCallIDHeader+" for local invocations only; "+
+			"ignored for remote requests)",
+	)
 	cmd.Flags().StringVar(
 		&flags.agentEndpoint,
 		"agent-endpoint",
@@ -461,18 +469,9 @@ func (a *InvokeAction) resolveProtocol(
 	}
 	defer azdClient.Close()
 
-	var protocol agent_api.AgentProtocol
-	var serviceName string
-
-	if a.flags.local {
-		protocol, serviceName, err = resolveAgentProtocol(
-			ctx, azdClient, "", a.noPrompt,
-		)
-	} else {
-		protocol, serviceName, err = resolveAgentProtocol(
-			ctx, azdClient, a.flags.name, a.noPrompt,
-		)
-	}
+	protocol, serviceName, err := resolveAgentProtocol(
+		ctx, azdClient, a.flags.name, a.noPrompt,
+	)
 	if err != nil {
 		return "", err
 	}
@@ -598,6 +597,8 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	applyLocalUserIdentityHeader(req, &a.flags.userIdentityFlags)
+	applyLocalCallIDHeader(req, a.flags.callID)
 	if raw {
 		// Disable Go's transparent gzip handling so the dumped headers and
 		// body match what the server actually sent on the wire.
@@ -996,8 +997,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
-	req.Header.Set("Foundry-Features", "HostedAgents=V1Preview")
-	applyIsolationHeaders(req, &a.flags.isolationHeaderFlags)
+	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 	if raw {
 		// Disable Go's transparent gzip handling so the dumped headers and
 		// body match what the server actually sent on the wire.
@@ -1123,6 +1123,8 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", contentTypeForBody(body))
+	applyLocalUserIdentityHeader(req, &a.flags.userIdentityFlags)
+	applyLocalCallIDHeader(req, a.flags.callID)
 	if raw {
 		// Disable Go's transparent gzip handling so the dumped headers and
 		// body match what the server actually sent on the wire.
@@ -1232,8 +1234,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 	req.Header.Set("Content-Type", contentTypeForBody(body))
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
-	req.Header.Set("Foundry-Features", "HostedAgents=V1Preview")
-	applyIsolationHeaders(req, &a.flags.isolationHeaderFlags)
+	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 	if raw {
 		// Disable Go's transparent gzip handling so the dumped headers and
 		// body match what the server actually sent on the wire.
@@ -1581,7 +1582,6 @@ func handleInvocationLRO(
 		if bearerToken != "" {
 			req.Header.Set("Authorization", "Bearer "+bearerToken)
 		}
-		req.Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 		options.ApplyHeaders(req.Header)
 		if raw {
 			// Disable Go's transparent gzip handling so the dumped headers
@@ -1702,7 +1702,6 @@ func createConversation(
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+bearerToken)
-	req.Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	options.ApplyHeaders(req.Header)
 
 	client := &http.Client{Timeout: 30 * time.Second}

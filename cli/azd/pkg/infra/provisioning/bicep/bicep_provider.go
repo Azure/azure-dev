@@ -36,6 +36,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -68,6 +69,13 @@ const (
 	// apiVersion for checking if a resource group exists
 	apiVersionResourceGroupExistence = "2025-03-01"
 )
+
+// extensionValidationTimeout bounds how long core preflight waits for
+// extension-provided validation checks to complete. If an extension's check
+// blocks or never responds, dispatch is abandoned once this deadline elapses
+// and preflight continues with the core results. This preserves the guarantee
+// that extensions cannot hang core preflight.
+const extensionValidationTimeout = 60 * time.Second
 
 // Azure reserved resource name words.
 // See https://learn.microsoft.com/azure/azure-resource-manager/templates/error-reserved-resource-name
@@ -2604,10 +2612,62 @@ func (p *BicepProvider) validatePreflight(
 		Fn:     p.checkReservedResourceNames,
 	})
 
-	results, err := localPreflight.validate(ctx, p.console, armTemplate, armParameters)
+	valCtx, results, err := localPreflight.validate(ctx, p.console, armTemplate, armParameters)
 	if err != nil {
 		p.setPreflightOutcome(span, preflightOutcomeError, nil)
 		return false, fmt.Errorf("local preflight validation failed: %w", err)
+	}
+
+	// Dispatch to extension-provided validation checks for "local-preflight".
+	// Extensions register checks via the validation-provider capability.
+	// The dispatcher is optional — if no extensions are loaded, skip silently.
+	var extRuleIDs []string
+	var dispatcher provisioning.ValidationCheckDispatcher
+	if resolveErr := p.serviceLocator.Resolve(&dispatcher); resolveErr == nil && valCtx != nil {
+		// Build context from the validation context — includes all serializable data
+		// (ARM template, parameters, snapshot, location). New fields added to
+		// validationContext.extensionContext() are automatically available to extensions.
+		checkContext := valCtx.extensionContext(armTemplate, armParameters)
+
+		// Bound extension dispatch so a blocked or unresponsive extension check
+		// cannot hang core preflight. A timeout surfaces as extErr below and is
+		// treated as a non-fatal skip (logged; preflight continues).
+		dispatchCtx, cancelDispatch := context.WithTimeout(ctx, extensionValidationTimeout)
+		extResults, invokedRuleIDs, extErr := dispatcher.DispatchChecks(
+			dispatchCtx, "local-preflight", checkContext,
+		)
+		cancelDispatch()
+		if extErr != nil {
+			if errors.Is(extErr, context.DeadlineExceeded) {
+				log.Printf(
+					"extension validation checks timed out after %s; skipping: %v",
+					extensionValidationTimeout, extErr,
+				)
+			} else {
+				log.Printf("extension validation checks failed: %v", extErr)
+			}
+		}
+		extRuleIDs = append(extRuleIDs, invokedRuleIDs...)
+		for _, extResult := range extResults {
+			severity := PreflightCheckWarning
+			if extResult.Severity ==
+				azdext.ValidationCheckSeverity_VALIDATION_CHECK_SEVERITY_ERROR {
+				severity = PreflightCheckError
+			}
+			links := make([]ux.PreflightReportLink, len(extResult.Links))
+			for i, l := range extResult.Links {
+				links[i] = ux.PreflightReportLink{
+					Title: l.Text, URL: l.Url,
+				}
+			}
+			results = append(results, PreflightCheckResult{
+				Severity:     severity,
+				DiagnosticID: extResult.DiagnosticId,
+				Message:      extResult.Message,
+				Suggestion:   extResult.Suggestion,
+				Links:        links,
+			})
+		}
 	}
 
 	// Record the rule IDs that actually executed. This is done after validate()
@@ -2623,6 +2683,11 @@ func (p *BicepProvider) validatePreflight(
 			ruleIDs[i] = check.RuleID
 		}
 		span.SetAttributes(fields.PreflightRulesKey.StringSlice(ruleIDs))
+	}
+
+	// Record extension-provided rule IDs separately for telemetry attribution.
+	if len(extRuleIDs) > 0 {
+		span.SetAttributes(fields.PreflightExtensionRulesKey.StringSlice(extRuleIDs))
 	}
 
 	// Compute telemetry metrics from the results.
@@ -3749,4 +3814,14 @@ func (p *BicepProvider) PlannedOutputs(ctx context.Context) ([]provisioning.Plan
 	}
 
 	return outputs, nil
+}
+
+// armParametersJSON serializes ARM parameters to JSON for passing
+// to extension validation checks. Returns nil on error.
+func armParametersJSON(params azure.ArmParameters) []byte {
+	data, err := json.Marshal(params)
+	if err != nil {
+		return nil
+	}
+	return data
 }

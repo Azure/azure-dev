@@ -4,6 +4,10 @@ words:
   - tavily
   - tvly
   - conncmd
+  # Contributors
+  - harsheet
+  # Terms
+  - Reprompt
   # Azure region names
   - australiaeast
   - brazilsouth
@@ -28,7 +32,10 @@ words:
   - westeurope
   # Project terms
   - ABAC
+  - abbrs
   - acrpush
+  - alnum
+  - foundryproject
   - agentignore
   - ADLS
   - agentserver
@@ -38,6 +45,8 @@ words:
   - aoai
   - authorizationfailed
   - azdaiagent
+  - azuresdk
+  - bicepless
   - CLIENTSECRET
   - curr
   - dataagent
@@ -53,9 +62,11 @@ words:
   - mcpservertoolalwaysrequireapprovalmode
   - mcpservertoolneverrequireapprovalmode
   - mcpservertoolspecifyapprovalmode
+  - purgeable
   - mypy
   - myregistry
   - normalises
+  - ondisk
   - openapitool
   - posixpath
   - projectpkg
@@ -64,6 +75,7 @@ words:
   - schedulerun
   - Toolsets
   - underscoped
+  - unparseable
   - Vnext
   - webp
   # Doctor / next-step terms
@@ -81,3 +93,10 @@ words:
   - deepseek
   - ttfb
   - Bhadauria
+  - ensurepip
+  # Live E2E (Tier 2) Go driver
+  - creack
+  - elive
+  - testdir
+  # Test infrastructure
+  - recordproxy

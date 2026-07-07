@@ -885,8 +885,8 @@ func TestCreateHostedAgentAPIRequest_FullConfig(t *testing.T) {
 	if imgDef.Kind != agent_api.AgentKindHosted {
 		t.Errorf("Kind = %q", imgDef.Kind)
 	}
-	if imgDef.Image != "myregistry.azurecr.io/agent:v1" {
-		t.Errorf("Image = %q", imgDef.Image)
+	if imgDef.ContainerConfiguration == nil || imgDef.ContainerConfiguration.Image != "myregistry.azurecr.io/agent:v1" {
+		t.Errorf("ContainerConfiguration.Image = %v", imgDef.ContainerConfiguration)
 	}
 	if imgDef.CPU != "4" {
 		t.Errorf("CPU = %q", imgDef.CPU)
@@ -932,7 +932,7 @@ func TestCreateHostedAgentAPIRequest_DefaultProtocols(t *testing.T) {
 	if imgDef.ProtocolVersions[0].Protocol != agent_api.AgentProtocolResponses {
 		t.Errorf("default protocol = %q", imgDef.ProtocolVersions[0].Protocol)
 	}
-	if imgDef.ProtocolVersions[0].Version != "1.0.0" {
+	if imgDef.ProtocolVersions[0].Version != "2.0.0" {
 		t.Errorf("default version = %q", imgDef.ProtocolVersions[0].Version)
 	}
 }
@@ -977,8 +977,8 @@ func TestCreateHostedAgentAPIRequest_UsesAgentImage(t *testing.T) {
 	}
 
 	imgDef := req.Definition.(agent_api.HostedAgentDefinition)
-	if imgDef.Image != "myregistry.azurecr.io/agent-image:v1" {
-		t.Errorf("Image = %q", imgDef.Image)
+	if imgDef.ContainerConfiguration == nil || imgDef.ContainerConfiguration.Image != "myregistry.azurecr.io/agent-image:v1" {
+		t.Errorf("ContainerConfiguration.Image = %v", imgDef.ContainerConfiguration)
 	}
 }
 
@@ -1001,8 +1001,8 @@ func TestCreateHostedAgentAPIRequest_BuildConfigImageOverridesAgentImage(t *test
 	}
 
 	imgDef := req.Definition.(agent_api.HostedAgentDefinition)
-	if imgDef.Image != "myregistry.azurecr.io/published:v2" {
-		t.Errorf("Image = %q", imgDef.Image)
+	if imgDef.ContainerConfiguration == nil || imgDef.ContainerConfiguration.Image != "myregistry.azurecr.io/published:v2" {
+		t.Errorf("ContainerConfiguration.Image = %v", imgDef.ContainerConfiguration)
 	}
 }
 
@@ -1105,8 +1105,8 @@ func TestCreateAgentAPIRequestFromDefinition_HostedWithBuildOptions(t *testing.T
 	}
 
 	imgDef := req.Definition.(agent_api.HostedAgentDefinition)
-	if imgDef.Image != "myimg:v2" {
-		t.Errorf("Image = %q", imgDef.Image)
+	if imgDef.ContainerConfiguration == nil || imgDef.ContainerConfiguration.Image != "myimg:v2" {
+		t.Errorf("ContainerConfiguration.Image = %v", imgDef.ContainerConfiguration)
 	}
 	if imgDef.CPU != "2" {
 		t.Errorf("CPU = %q", imgDef.CPU)
@@ -1394,6 +1394,46 @@ func TestCreateAgentAPIRequest_CodeDeploy_DotnetRuntime(t *testing.T) {
 	// Verify dependency resolution
 	if codeDef.CodeConfiguration.DependencyResolution != "remote_build" {
 		t.Errorf("DependencyResolution = %q, want %q", codeDef.CodeConfiguration.DependencyResolution, "remote_build")
+	}
+}
+
+func TestCreateAgentAPIRequest_CodeDeploy_DefaultsDependencyResolution(t *testing.T) {
+	// When CodeConfiguration omits dependency_resolution (nil or empty), the
+	// request must still carry a value; Foundry rejects an empty one with a 400.
+	empty := ""
+	for _, tc := range []struct {
+		name   string
+		depRes *string
+	}{
+		{name: "nil", depRes: nil},
+		{name: "empty", depRes: &empty},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agent := ContainerAgent{
+				AgentDefinition: AgentDefinition{Name: "code-agent", Kind: AgentKindHosted},
+				Protocols:       []ProtocolVersionRecord{{Protocol: "responses", Version: "1.0.0"}},
+				CodeConfiguration: &CodeConfiguration{
+					Runtime:              "python_3_13",
+					EntryPoint:           "main.py",
+					DependencyResolution: tc.depRes,
+				},
+			}
+
+			req, err := CreateAgentAPIRequestFromDefinition(agent)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			codeDef, ok := req.Definition.(agent_api.HostedAgentDefinition)
+			if !ok {
+				t.Fatalf("expected HostedAgentDefinition, got %T", req.Definition)
+			}
+
+			if codeDef.CodeConfiguration.DependencyResolution != DefaultDependencyResolution {
+				t.Errorf("DependencyResolution = %q, want %q",
+					codeDef.CodeConfiguration.DependencyResolution, DefaultDependencyResolution)
+			}
+		})
 	}
 }
 

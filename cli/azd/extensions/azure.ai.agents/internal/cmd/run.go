@@ -29,7 +29,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -194,7 +193,7 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	// the Foundry data plane). Agent definition env vars do not override
 	// values already present in the process environment.
 	endpoint, _ := resolveAgentEndpoint(ctx, "", "")
-	defEnv, defErr := resolveAgentDefinitionEnvVars(ctx, projectDir, azdEnvVars, endpoint)
+	defEnv, defErr := resolveAgentDefinitionEnvVars(ctx, runCtx.Definition, azdEnvVars, endpoint)
 	if defErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: %s\n", defErr)
 	}
@@ -456,38 +455,22 @@ func shouldWarnLoadAzdEnvironmentFailure(err error) bool {
 	return !strings.Contains(strings.ToLower(msg), "default environment not found")
 }
 
-// resolveAgentDefinitionEnvVars loads agent.yaml from projectDir, extracts
+// resolveAgentDefinitionEnvVars takes a resolved agent definition, extracts its
 // environment_variables, and resolves all value types:
 //   - Hardcoded values are used as-is
 //   - ${VAR} references are resolved using azdEnvVars via envsubst
 //   - ${{connections.<name>.credentials.<key>}} are resolved via Foundry API
 //
-// Returns nil if no agent.yaml is found or it has no environment_variables.
+// Returns nil when the definition is nil or has no environment_variables.
 // Errors during connection resolution are returned so the caller can decide
 // whether to warn or fail.
 func resolveAgentDefinitionEnvVars(
 	ctx context.Context,
-	projectDir string,
+	agentDef *agent_yaml.ContainerAgent,
 	azdEnvVars map[string]string,
 	endpoint string,
 ) ([]string, error) {
-	// Find agent.yaml in projectDir
-	agentYamlPath := findAgentYaml(projectDir)
-	if agentYamlPath == "" {
-		return nil, nil
-	}
-
-	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // G304: path from findAgentYaml which checks known filenames in projectDir
-	if err != nil {
-		return nil, fmt.Errorf("could not read agent definition %s: %w", agentYamlPath, err)
-	}
-
-	var agentDef agent_yaml.ContainerAgent
-	if err := yaml.Unmarshal(data, &agentDef); err != nil {
-		return nil, fmt.Errorf("could not parse agent definition %s: %w", agentYamlPath, err)
-	}
-
-	if agentDef.EnvironmentVariables == nil || len(*agentDef.EnvironmentVariables) == 0 {
+	if agentDef == nil || agentDef.EnvironmentVariables == nil || len(*agentDef.EnvironmentVariables) == 0 {
 		return nil, nil
 	}
 
@@ -623,9 +606,66 @@ func installPythonDeps(projectDir string) error {
 }
 
 func installPythonDepsPip(projectDir string) error {
+	venvDir := filepath.Join(projectDir, ".venv")
+
+	info, err := os.Stat(venvDir)
+	switch {
+	case err == nil && !info.IsDir():
+		return fmt.Errorf(".venv exists but is not a directory")
+	case err != nil && !os.IsNotExist(err):
+		return fmt.Errorf("failed to check .venv: %w", err)
+	case os.IsNotExist(err):
+		fmt.Println("Setting up Python environment...")
+		pythonBin, findErr := findSystemPython()
+		if findErr != nil {
+			return findErr
+		}
+		if err := checkPythonVersion(pythonBin); err != nil {
+			return err
+		}
+		//nolint:gosec // G204: venvDir is derived from the project directory path
+		cmd := exec.Command(pythonBin, "-m", "venv", venvDir)
+		cmd.Dir = projectDir
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to create venv: %w", err)
+		}
+	}
+
+	pipPath := venvPip(venvDir)
+
+	// If the venv was created by uv (which omits pip by default), bootstrap pip.
+	if !fileExists(pipPath) {
+		pythonPath := venvPython(venvDir)
+		fmt.Println("Bootstrapping pip in virtual environment...")
+		//nolint:gosec // G204: pythonPath is derived from the project venv directory
+		cmd := exec.Command(pythonPath, "-m", "ensurepip", "--upgrade")
+		cmd.Dir = projectDir
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to bootstrap pip in venv: %w", err)
+		}
+	}
+
+	if fileExists(filepath.Join(projectDir, "pyproject.toml")) {
+		fmt.Println("Installing dependencies (pyproject.toml)...")
+		//nolint:gosec // G204: pipPath is derived from the project venv directory
+		cmd := exec.Command(pipPath, "install", "-e", ".", "-q")
+		cmd.Dir = projectDir
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("pip install failed: %w", err)
+		}
+		fmt.Println("  ✓ Dependencies installed (pyproject.toml)")
+	}
+
 	if fileExists(filepath.Join(projectDir, "requirements.txt")) {
 		fmt.Println("Installing dependencies (requirements.txt)...")
-		cmd := exec.Command("pip", "install", "-r", "requirements.txt", "-q")
+		//nolint:gosec // G204: pipPath is derived from the project venv directory
+		cmd := exec.Command(pipPath, "install", "-r", "requirements.txt", "-q")
 		cmd.Dir = projectDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -634,6 +674,7 @@ func installPythonDepsPip(projectDir string) error {
 		}
 		fmt.Println("  ✓ Dependencies installed (requirements.txt)")
 	}
+
 	return nil
 }
 
@@ -723,6 +764,67 @@ func venvBinDir(venvDir string) string {
 		return filepath.Join(venvDir, "Scripts")
 	}
 	return filepath.Join(venvDir, "bin")
+}
+
+func venvPip(venvDir string) string {
+	if runtime.GOOS == "windows" {
+		return filepath.Join(venvDir, "Scripts", "pip.exe")
+	}
+	return filepath.Join(venvDir, "bin", "pip")
+}
+
+func findSystemPython() (string, error) {
+	candidates := []string{"python3", "python"}
+	if runtime.GOOS == "windows" {
+		candidates = append(candidates, "py")
+	}
+	for _, name := range candidates {
+		if p, err := exec.LookPath(name); err == nil {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf(
+		"python not found on PATH. Install Python 3.13+ from https://www.python.org/downloads/")
+}
+
+// checkPythonVersion verifies the Python binary is >= 3.13 (matching the uv path's
+// --python ">=3.13" constraint). Returns an error if the version is too old.
+func checkPythonVersion(pythonBin string) error {
+	//nolint:gosec // G204: pythonBin is from findSystemPython (exec.LookPath result)
+	out, err := exec.Command(pythonBin, "--version").Output()
+	if err != nil {
+		return fmt.Errorf("failed to check Python version: %w", err)
+	}
+
+	// Output is like "Python 3.13.2"
+	version := strings.TrimSpace(string(out))
+	parts := strings.SplitN(version, " ", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("unexpected python --version output: %s", version)
+	}
+
+	segments := strings.SplitN(parts[1], ".", 3)
+	if len(segments) < 2 {
+		return fmt.Errorf("unexpected python version format: %s", parts[1])
+	}
+
+	major, err := strconv.Atoi(segments[0])
+	if err != nil {
+		return fmt.Errorf("unexpected python major version: %s", segments[0])
+	}
+	minor, err := strconv.Atoi(segments[1])
+	if err != nil {
+		return fmt.Errorf("unexpected python minor version: %s", segments[1])
+	}
+
+	if major < 3 || (major == 3 && minor < 13) {
+		return fmt.Errorf(
+			"Python 3.13+ is required (found %s). "+
+				"Install Python 3.13+ from https://www.python.org/downloads/",
+			parts[1])
+	}
+
+	return nil
 }
 
 // appendFoundryEnvVars translates azd environment keys to FOUNDRY_* env vars that hosted

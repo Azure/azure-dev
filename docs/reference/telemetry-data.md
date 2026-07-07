@@ -365,6 +365,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 | `validation.preflight.outcome` | string | `passed`, `warnings_accepted`, `aborted_by_errors`, `aborted_by_user`, `skipped`, `error` |
 | `validation.preflight.diagnostics` | string[] | Diagnostic IDs emitted |
 | `validation.preflight.rules` | string[] | Rule IDs executed |
+| `validation.preflight.extension_rules` | string[] | Rule IDs executed from extension-provided validation checks |
 | `validation.preflight.warning.count` | measurement | Number of warnings |
 | `validation.preflight.error.count` | measurement | Number of errors |
 </details>
@@ -388,6 +389,16 @@ Emitted on `azd provision` / `azd up` to measure adoption and safety of `infra.l
 | `provision.layer.max_parallel` | measurement | Largest number of layers scheduled in one dependency level (max achievable parallelism) |
 | `provision.layer.safe_fallback_count` | measurement | Layers forced to depend on all earlier layers by the safe-by-default detector |
 | `provision.layer.explicit_dependson_count` | measurement | Layers using the explicit `infra.layers[].dependsOn` override |
+</details>
+
+<details>
+<summary><strong>Foundry Private Networking</strong></summary>
+
+Emitted at provision start by the `microsoft.foundry` provisioning provider (the `azure.ai.agents` extension) to measure secured-agent adoption and the BYO-vs-managed split.
+
+| Field Key | Type | Description |
+|-----------|------|-------------|
+| `provision.network_mode` | string | `none` (public account, no `network:` block), `byo` (customer VNet), or `managed` (Foundry-managed VNet) |
 </details>
 
 <details>
@@ -440,6 +451,7 @@ Emitted on `azd provision` / `azd up` to measure adoption and safety of `infra.l
 | `extension.version.from` | string | Version before an upgrade or promotion (`ext.upgrade`, `ext.promote`) |
 | `extension.version.to` | string | Version after an upgrade or promotion (`ext.upgrade`, `ext.promote`) |
 | `extension.source` | string | Registry source used for an upgrade (`ext.upgrade`) |
+| `extension.source.kind` | string | Kind of `--source` argument: `none`, `registered`, or `location` (`azd extension list`, `show`, `install`, `upgrade`) |
 | `extension.source.from` | string | Registry source before a promotion (`ext.promote`) |
 | `extension.source.to` | string | Registry source after a promotion (`ext.promote`) |
 | `extension.upgrade.duration_ms` | measurement | Duration (ms) of a single upgrade (`ext.upgrade`) |
@@ -474,7 +486,7 @@ Built-in tool IDs come from azd's curated tool manifest (run `azd tool list` to 
 | `tool.firstrun.install_failed_ids` | string | Comma-separated tool IDs that failed during first-run |
 | `tool.firstrun.install_duration_ms` | measurement | Total first-run install duration (ms) |
 
-**Install / upgrade / check operations:**
+**Install / upgrade / uninstall / check operations:**
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
@@ -482,11 +494,11 @@ Built-in tool IDs come from azd's curated tool manifest (run `azd tool list` to 
 | `tool.ids` | string | Comma-separated tool IDs for a batch operation |
 | `tool.dry_run` | string | Whether `--dry-run` was specified |
 | `tool.install.strategy` | string | Install strategy used. Package-manager values come from the tool manifest (`winget`, `brew`, `apt`, `npm`, `code`); the installer may also report `direct-download`, `command`, or `manual` (no available manager) |
-| `tool.install.success` | string | Whether a single-target install/upgrade succeeded |
-| `tool.install.success_count` | measurement | Tools that succeeded in a batch install/upgrade |
-| `tool.install.failure_count` | measurement | Tools that failed in a batch install/upgrade |
-| `tool.install.failed_ids` | string | Comma-separated tool IDs whose install/upgrade failed |
-| `tool.install.duration_ms` | measurement | Total install/upgrade duration (ms) |
+| `tool.install.success` | string | Whether a single-target install, upgrade, or uninstall succeeded |
+| `tool.install.success_count` | measurement | Tools that succeeded in a batch install/upgrade/uninstall |
+| `tool.install.failure_count` | measurement | Tools that failed in a batch install/upgrade/uninstall |
+| `tool.install.failed_ids` | string | Comma-separated tool IDs whose install/upgrade/uninstall failed |
+| `tool.install.duration_ms` | measurement | Total install/upgrade/uninstall duration (ms) |
 | `tool.upgrade.from_version` | string | Previous version (single-target upgrade) |
 | `tool.upgrade.to_version` | string | New version after a successful upgrade (single-target) |
 | `tool.check.updates_available` | measurement | Installed tools with an available update (`azd tool check`) |
@@ -658,7 +670,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Self-Update** | `cmd.update` | `update.installMethod`, `update.fromVersion` | Update adoption |
 | **Hooks** | `hooks.exec` | `hooks.name`, `hooks.type`, `hooks.kind` | Hook usage by type |
 | **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `pack.builder.image` | Build method usage, success rates |
-| **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.upgrade`, `cmd.tool.check` | `tool.id`, `tool.install.strategy`, `tool.firstrun.outcome` | First-run adoption, install/upgrade success, update availability |
+| **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.upgrade`, `cmd.tool.uninstall`, `cmd.tool.check` | `tool.id`, `tool.install.strategy`, `tool.firstrun.outcome` | First-run adoption, install/upgrade/uninstall success, update availability |
 
 ## See Also
 

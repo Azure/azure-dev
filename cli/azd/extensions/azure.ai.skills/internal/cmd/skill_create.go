@@ -150,9 +150,12 @@ func (a *createAction) runFileMd(ctx context.Context, client *skill_api.Client) 
 
 	version, err := client.CreateVersionInline(ctx, a.flags.name, skill_api.CreateVersionRequest{
 		InlineContent: &skill_api.SkillInlineContent{
-			Description:  parsed.Description,
-			Instructions: parsed.Instructions,
-			Metadata:     parsed.Metadata,
+			Description:   parsed.Description,
+			Instructions:  parsed.Instructions,
+			Metadata:      parsed.Metadata,
+			License:       parsed.License,
+			Compatibility: parsed.Compatibility,
+			AllowedTools:  parsed.AllowedTools,
 		},
 		Default: true,
 	})
@@ -276,6 +279,7 @@ func (a *createAction) printCreateResult(ctx context.Context, client *skill_api.
 	if err != nil {
 		// Don't fail the create just because the follow-up GET failed; fall
 		// back to printing the version envelope instead.
+		fmt.Fprintf(os.Stderr, "Warning: could not fetch skill details: %v\n", err)
 		return printSkillVersionDetail(version, outputTable)
 	}
 	return printSkillDetail(skill, outputTable)
@@ -540,8 +544,8 @@ skill of the same name before creating.`,
 	return cmd
 }
 
-// readFileWithLimit reads up to 1 MiB from path. SKILL.md is small in practice;
-// the cap guards against reading a giant file by accident.
+// readFileWithLimit reads up to 1 MiB from path. Skill files are small in
+// practice; the cap guards against reading a giant file by accident.
 func readFileWithLimit(path string) ([]byte, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -554,15 +558,15 @@ func readFileWithLimit(path string) ([]byte, error) {
 	if info.IsDir() {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidSkillFile,
-			fmt.Sprintf("--file %s is a directory; expected a SKILL.md file", path),
-			"pass a single .md file",
+			fmt.Sprintf("%s is a directory; expected a skill file", path),
+			"pass a single file",
 		)
 	}
 	const maxBytes = 1 << 20
 	if info.Size() > maxBytes {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidSkillFile,
-			fmt.Sprintf("%s exceeds the 1 MiB SKILL.md size limit (got %d bytes)", path, info.Size()),
+			fmt.Sprintf("%s exceeds the 1 MiB skill file size limit (got %d bytes)", path, info.Size()),
 			"split the file into smaller assets and use a package upload",
 		)
 	}

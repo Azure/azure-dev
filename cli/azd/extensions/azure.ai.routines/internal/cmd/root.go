@@ -27,6 +27,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.PersistentFlags().StringP("project-endpoint", "p", "",
 		"Foundry project endpoint URL (overrides env var and config)")
 
+	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
 	rootCmd.AddCommand(newContextCommand())
 	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
@@ -41,4 +42,14 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newRoutineRunCommand(extCtx))
 
 	return rootCmd
+}
+
+// configureExtensionHost is the listen callback. It registers the
+// azure.ai.routine service target so `azd up`/`azd deploy` upsert routines
+// declared as services in azure.yaml.
+func configureExtensionHost(host *azdext.ExtensionHost) {
+	azdClient := host.Client()
+	host.WithServiceTarget(aiRoutineHost, func() azdext.ServiceTargetProvider {
+		return newRoutineServiceTarget(azdClient)
+	})
 }

@@ -25,6 +25,11 @@ func (e ExpandableString) Empty() bool {
 	return e.template == ""
 }
 
+// IsZero reports whether the template is empty for YAML omitempty handling.
+func (e ExpandableString) IsZero() bool {
+	return e.Empty()
+}
+
 // Envsubst evaluates the template, substituting values as [envsubst.Eval] would.
 func (e ExpandableString) Envsubst(mapping func(string) string) (string, error) {
 	return envsubst.Eval(e.template, mapping)

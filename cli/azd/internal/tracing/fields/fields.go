@@ -690,6 +690,17 @@ var (
 		Purpose:        FeatureInsight,
 		IsMeasurement:  true,
 	}
+
+	// PreflightExtensionRulesKey records the list of rule IDs from extension-provided
+	// validation checks that were executed. Separate from PreflightRulesKey (core rules)
+	// to distinguish the source of checks in telemetry.
+	//
+	// Example: ["todo_resource_name", "naming_convention"]
+	PreflightExtensionRulesKey = AttributeKey{
+		Key:            attribute.Key("validation.preflight.extension_rules"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // Provision-related fields
@@ -1140,6 +1151,12 @@ var (
 	// ExtensionSource is the registry source used for the upgrade.
 	ExtensionSource = AttributeKey{
 		Key:            attribute.Key("extension.source"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// ExtensionSourceKind is the kind of --source argument: none, registered, or location.
+	ExtensionSourceKind = AttributeKey{
+		Key:            attribute.Key("extension.source.kind"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}

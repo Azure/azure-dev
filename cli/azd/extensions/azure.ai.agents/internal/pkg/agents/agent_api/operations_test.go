@@ -89,61 +89,34 @@ func newCaptureClient(statusCode int, body string) (*AgentClient, *captureTransp
 	), transport
 }
 
-func requireIsolationHeaders(
+func requireUserIdentityHeader(
 	t *testing.T,
 	req *http.Request,
-	wantUser, wantChat, wantSession string,
+	wantUser string,
 ) {
 	t.Helper()
 
 	if wantUser == "" {
-		require.Empty(t, req.Header.Values(AgentUserIsolationKeyHeader))
+		require.Empty(t, req.Header.Values(UserIdentityHeader))
 	} else {
-		require.Equal(t, wantUser, req.Header.Get(AgentUserIsolationKeyHeader))
-	}
-
-	if wantChat == "" {
-		require.Empty(t, req.Header.Values(AgentChatIsolationKeyHeader))
-	} else {
-		require.Equal(t, wantChat, req.Header.Get(AgentChatIsolationKeyHeader))
-	}
-
-	if wantSession == "" {
-		require.Empty(t, req.Header.Values(SessionIsolationKeyHeader))
-	} else {
-		require.Equal(t, wantSession, req.Header.Get(SessionIsolationKeyHeader))
+		require.Equal(t, wantUser, req.Header.Get(UserIdentityHeader))
 	}
 }
 
 func TestSessionRequestOptions_ApplyHeaders(t *testing.T) {
 	tests := []struct {
-		name        string
-		options     *SessionRequestOptions
-		wantUser    string
-		wantChat    string
-		wantSession string
+		name     string
+		options  *SessionRequestOptions
+		wantUser string
 	}{
 		{
-			name:     "both user and chat set",
-			options:  &SessionRequestOptions{UserIsolationKey: "user-1", ChatIsolationKey: "chat-1"},
+			name:     "user identity set",
+			options:  &SessionRequestOptions{UserIdentity: "user-1"},
 			wantUser: "user-1",
-			wantChat: "chat-1",
 		},
 		{
-			name:     "user key only",
-			options:  &SessionRequestOptions{UserIsolationKey: "user-only"},
-			wantUser: "user-only",
-		},
-		{
-			name:     "chat key only",
-			options:  &SessionRequestOptions{ChatIsolationKey: "chat-only"},
-			wantChat: "chat-only",
-		},
-		{
-			name:        "session key with user key",
-			options:     &SessionRequestOptions{SessionIsolationKey: "sess-1", UserIsolationKey: "u"},
-			wantUser:    "u",
-			wantSession: "sess-1",
+			name:    "empty user identity",
+			options: &SessionRequestOptions{},
 		},
 		{
 			name:    "nil options is a no-op",
@@ -161,9 +134,7 @@ func TestSessionRequestOptions_ApplyHeaders(t *testing.T) {
 			tt.options.ApplyHeaders(headers)
 
 			require.Equal(t, "Bearer unchanged", headers.Get("Authorization"))
-			require.Equal(t, tt.wantUser, headers.Get(AgentUserIsolationKeyHeader))
-			require.Equal(t, tt.wantChat, headers.Get(AgentChatIsolationKeyHeader))
-			require.Equal(t, tt.wantSession, headers.Get(SessionIsolationKeyHeader))
+			require.Equal(t, tt.wantUser, headers.Get(UserIdentityHeader))
 		})
 	}
 }
@@ -214,6 +185,47 @@ func TestGetSession_404ReturnsError(t *testing.T) {
 		t.Context(), "my-agent", "sess-1", AgentEndpointAPIVersion, nil,
 	)
 	require.Error(t, err, "404 should be an error from GetSession")
+}
+
+func TestStopSession_Accepts204(t *testing.T) {
+	client := newTestClient(
+		"https://test.example.com/api/projects/proj",
+		&fakeTransport{statusCode: http.StatusNoContent},
+	)
+
+	err := client.StopSession(
+		t.Context(), "my-agent", "sess-1", AgentEndpointAPIVersion, nil,
+	)
+	require.NoError(t, err, "204 No Content should be treated as success")
+}
+
+func TestStopSession_Rejects500(t *testing.T) {
+	client := newTestClient(
+		"https://test.example.com/api/projects/proj",
+		&fakeTransport{statusCode: http.StatusInternalServerError},
+	)
+
+	err := client.StopSession(
+		t.Context(), "my-agent", "sess-1", AgentEndpointAPIVersion, nil,
+	)
+	require.Error(t, err, "500 should be an error")
+}
+
+func TestStopSession_PostsToStopPath(t *testing.T) {
+	client, transport := newCaptureClient(http.StatusNoContent, "")
+
+	err := client.StopSession(
+		t.Context(), "my-agent", "sess-1", AgentEndpointAPIVersion, nil,
+	)
+	require.NoError(t, err)
+	require.Len(t, transport.requests, 1)
+
+	req := transport.requests[0]
+	require.Equal(t, http.MethodPost, req.Method)
+	require.Contains(
+		t, req.URL.Path,
+		"/agents/my-agent/endpoint/sessions/sess-1:stop",
+	)
 }
 
 // fakeBodyTransport returns a canned status code and JSON body.
@@ -301,7 +313,7 @@ func TestListSessions_Returns200WithPagination(t *testing.T) {
 	require.Equal(t, "next-page-abc", *result.PaginationToken)
 }
 
-func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
+func TestSessionLifecycleOperations_ApplyUserIdentityHeader(t *testing.T) {
 	sessionBody := `{
 		"agent_session_id": "sess-1",
 		"version_indicator": {"type": "version_ref", "agent_version": "3"},
@@ -312,11 +324,10 @@ func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
 	}`
 
 	tests := []struct {
-		name        string
-		statusCode  int
-		body        string
-		call        func(*AgentClient, *SessionRequestOptions) error
-		wantSession string
+		name       string
+		statusCode int
+		body       string
+		call       func(*AgentClient, *SessionRequestOptions) error
 	}{
 		{
 			name:       "create",
@@ -332,7 +343,6 @@ func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
 				)
 				return err
 			},
-			wantSession: "session-1",
 		},
 		{
 			name:       "get",
@@ -361,7 +371,6 @@ func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
 					options,
 				)
 			},
-			wantSession: "session-1",
 		},
 		{
 			name:       "list",
@@ -385,20 +394,17 @@ func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			client, transport := newCaptureClient(tt.statusCode, tt.body)
 			options := &SessionRequestOptions{
-				SessionIsolationKey: tt.wantSession,
-				UserIsolationKey:    "user-1",
-				ChatIsolationKey:    "chat-1",
+				UserIdentity: "user-1",
 			}
 
 			require.NoError(t, tt.call(client, options))
 			require.Len(t, transport.requests, 1)
-			require.Equal(t, "HostedAgents=V1Preview", transport.requests[0].Header.Get("Foundry-Features"))
-			requireIsolationHeaders(t, transport.requests[0], "user-1", "chat-1", tt.wantSession)
+			requireUserIdentityHeader(t, transport.requests[0], "user-1")
 		})
 	}
 }
 
-func TestSessionFileOperations_ApplyIsolationHeaders(t *testing.T) {
+func TestSessionFileOperations_ApplyUserIdentityHeader(t *testing.T) {
 	tests := []struct {
 		name       string
 		statusCode int
@@ -506,18 +512,17 @@ func TestSessionFileOperations_ApplyIsolationHeaders(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			client, transport := newCaptureClient(tt.statusCode, tt.body)
 			options := &SessionRequestOptions{
-				UserIsolationKey: "user-1",
-				ChatIsolationKey: "chat-1",
+				UserIdentity: "user-1",
 			}
 
 			require.NoError(t, tt.call(client, options))
 			require.Len(t, transport.requests, 1)
-			requireIsolationHeaders(t, transport.requests[0], "user-1", "chat-1", "")
+			requireUserIdentityHeader(t, transport.requests[0], "user-1")
 		})
 	}
 }
 
-func TestGetAgentSessionLogStream_ApplyIsolationHeaders(t *testing.T) {
+func TestGetAgentSessionLogStream_ApplyUserIdentityHeader(t *testing.T) {
 	reqCh := make(chan *http.Request, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
@@ -543,8 +548,7 @@ func TestGetAgentSessionLogStream_ApplyIsolationHeaders(t *testing.T) {
 		50,
 		false,
 		&SessionRequestOptions{
-			UserIsolationKey: "user-1",
-			ChatIsolationKey: "chat-1",
+			UserIdentity: "user-1",
 		},
 	)
 	require.NoError(t, err)
@@ -557,8 +561,7 @@ func TestGetAgentSessionLogStream_ApplyIsolationHeaders(t *testing.T) {
 	}
 	require.NotNil(t, request)
 	require.Equal(t, "Bearer test-token", request.Header.Get("Authorization"))
-	require.Equal(t, "HostedAgents=V1Preview", request.Header.Get("Foundry-Features"))
-	requireIsolationHeaders(t, request, "user-1", "chat-1", "")
+	requireUserIdentityHeader(t, request, "user-1")
 }
 
 func TestDeleteAgent_ForceTrue(t *testing.T) {
@@ -760,7 +763,6 @@ func TestZipDeployRequest_MultipartFormat(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify required headers
-	require.Equal(t, "CodeAgents=V1Preview,HostedAgents=V1Preview", transport.lastReq.Header.Get("Foundry-Features"))
 	require.Equal(t, sha256Hex, transport.lastReq.Header.Get("x-ms-code-zip-sha256"))
 	require.Equal(t, "test-agent", transport.lastReq.Header.Get("x-ms-agent-name"))
 
@@ -811,44 +813,7 @@ func TestZipDeployRequest_NoAgentNameHeader_OnUpdate(t *testing.T) {
 	// x-ms-agent-name should NOT be set for updates
 	require.Empty(t, transport.lastReq.Header.Get("x-ms-agent-name"))
 	// But other required headers should still be present
-	require.Equal(t, "CodeAgents=V1Preview,HostedAgents=V1Preview", transport.lastReq.Header.Get("Foundry-Features"))
 	require.Equal(t, "sha", transport.lastReq.Header.Get("x-ms-code-zip-sha256"))
-}
-
-func TestCreateAgentVersion_SetsHostedAgentsPreviewHeader(t *testing.T) {
-	// The Foundry v1 endpoint gates POST /agents/{name}/versions on the
-	// HostedAgents=V1Preview opt-in header and returns 403 preview_feature_required
-	// without it. Make sure the client always sends the header so callers don't
-	// silently regress to the pre-v1 (preview-API-version) behavior.
-	versionResp := `{
-		"object": "agent.version",
-		"id": "test-agent:1",
-		"name": "test-agent",
-		"version": "1"
-	}`
-	transport := &capturingTransport{statusCode: http.StatusCreated, respBody: versionResp}
-	client := newTestClient("https://test.example.com/api/projects/proj", transport)
-
-	desc := "test desc"
-	req := &CreateAgentVersionRequest{Description: &desc}
-
-	_, err := client.CreateAgentVersion(context.Background(), "test-agent", req, "v1")
-	require.NoError(t, err)
-
-	require.NotNil(t, transport.lastReq, "expected request to be captured")
-	require.Equal(t, http.MethodPost, transport.lastReq.Method)
-	require.Equal(
-		t,
-		"https://test.example.com/api/projects/proj/agents/test-agent/versions",
-		transport.lastReq.URL.Scheme+"://"+transport.lastReq.URL.Host+transport.lastReq.URL.Path,
-	)
-	require.Equal(t, "v1", transport.lastReq.URL.Query().Get("api-version"))
-	require.Equal(
-		t,
-		"HostedAgents=V1Preview",
-		transport.lastReq.Header.Get("Foundry-Features"),
-		"CreateAgentVersion must opt in to HostedAgents=V1Preview on the v1 endpoint",
-	)
 }
 
 // ---------------------------------------------------------------------------
@@ -917,25 +882,6 @@ func TestDownloadAgentCode_IncludesVersionParam(t *testing.T) {
 	defer result.Body.Close()
 
 	require.Equal(t, "3", transport.lastReq.URL.Query().Get("agent_version"))
-}
-
-func TestDownloadAgentCode_SetsFeatureHeader(t *testing.T) {
-	transport := &downloadTransport{
-		statusCode: http.StatusOK,
-		respBody:   "fake-zip",
-		respHeader: http.Header{},
-	}
-	client := newTestClient("https://test.example.com/api/projects/proj", transport)
-
-	result, err := client.DownloadAgentCode(context.Background(), "my-agent", "v1", "")
-	require.NoError(t, err)
-	defer result.Body.Close()
-
-	require.Equal(
-		t,
-		"CodeAgents=V1Preview,HostedAgents=V1Preview",
-		transport.lastReq.Header.Get("Foundry-Features"),
-	)
 }
 
 func TestDownloadAgentCode_ReturnsResponseHeaders(t *testing.T) {

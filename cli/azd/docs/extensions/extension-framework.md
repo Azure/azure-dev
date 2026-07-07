@@ -118,21 +118,29 @@ Extensions are a collection of executable artifacts that extend or enhance funct
 Lists matching extensions from one or more extension sources.
 
 - `--installed` When set displays a list of installed extensions.
-- `--source` When set will only list extensions from the specified source.
+- `-s, --source` Filters by registered source name or registry location (URL or file path). Locations are queried read-only and are not registered. Extensions from an unregistered location show the location itself in the `SOURCE` column.
 - `--tags` Allows filtering extensions by tags (e.g., AI, test)
 
 #### `azd extension show <extension-id> [flags]`
 
 Shows detailed information for a specific extension, including description, tags, versions, and installation status.
 
-- `-s, --source` The extension source to use. Use this flag when the same extension ID exists in multiple sources.
+- `-s, --source` Uses a registered source name or registry location (URL or file path). Locations are queried read-only and are not registered.
 
 #### `azd extension install <extension-ids> [flags]`
 
 Installs one or more extensions from any configured extension source.
 
 - `-v, --version` Specifies the exact version to install.
-- `-s, --source` Specifies the extension source used for installations.
+- `-s, --source` Specifies the extension source used for installations. In addition to registered source names, this accepts a registry location (URL or file path). `azd` registers the location as a source, prompting for a name and confirming first for URLs, then installs from it:
+
+  ```bash
+  azd extension install <id> -s https://link/to/registry.json
+  ```
+
+  If the same location is already registered, `azd` reuses that source. File paths are stored as absolute paths.
+
+  Under `--no-prompt`, registering a source from a location is not allowed; add the source first with `azd extension source add`.
 
 #### `azd extension uninstall <extension-ids> [flags]`
 
@@ -146,7 +154,7 @@ Upgrades one or more extensions to the latest versions.
 
 - `--all` Upgrades all previously installed extensions when specified.
 - `-v, --version` Upgrades a specified extension to an exact version, if provided.
-- `-s, --source` Specifies the extension source used for installations.
+- `-s, --source` Specifies the source used for the upgrade. In addition to registered source names, this accepts a registry location (URL or file path). `azd` registers the location as a source before resolving the extension, updates the extension's stored source after a successful upgrade, and rejects locations under `--no-prompt`; add the source first with `azd extension source add`.
 - `--no-dependency-upgrades` Skips upgrading dependencies declared by extension packs.
 
 ## Developing Extensions
@@ -931,6 +939,36 @@ Extensions can provide AI agent tools through the Model Context Protocol, enabli
 - Azure service automation for AI agents
 - Custom development workflows for AI-assisted development
 
+##### Validation Provider (`validation-provider`)
+
+> Extensions must declare the `validation-provider` capability in their `extension.yaml` file.
+
+Extensions can contribute validation checks to azd's validation pipeline. Currently
+supported check types:
+
+- **`local-preflight`** — Checks run during `azd provision` before deployment. The
+  extension receives the Bicep snapshot, ARM template, ARM parameters, and Azure
+  location as context.
+
+Future check types (e.g., `project-config`, `auth`) can be added without protocol
+changes.
+
+**Example:**
+
+```go
+host := azdext.NewExtensionHost(azdClient).
+    WithValidationCheck(azdext.ValidationCheckRegistration{
+        CheckType: "local-preflight",
+        RuleID:    "my_naming_rule",
+        Factory: func() azdext.ValidationCheckProvider {
+            return &MyNamingCheck{}
+        },
+    })
+```
+
+See [`local-preflight-validation.md`](../design/local-preflight-validation.md#extension-provided-checks)
+for full details on the check interface and context keys.
+
 #### Future Considerations
 
 Future ideas include:
@@ -1040,6 +1078,7 @@ Extensions can declare the following capabilities in their manifest:
 - **`service-target-provider`**: Provide custom service deployment targets
 - **`framework-service-provider`**: Provide custom language frameworks and build systems
 - **`provisioning-provider`**: Provide a custom infrastructure provisioning experience (alternative to Bicep / Terraform)
+- **`validation-provider`**: Contribute validation checks to azd's preflight and future validation pipelines
 - **`metadata`**: Provide comprehensive metadata about commands and configuration schemas
 
 #### Complete Extension Manifest Example
@@ -1060,6 +1099,7 @@ capabilities:
   - lifecycle-events
   - service-target-provider
   - framework-service-provider
+  - validation-provider
   - mcp-server
   - metadata
 

@@ -1,15 +1,33 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
+  - braydonk
+  - osutil
+  - upserted
+  - upserting
+  - upserts
+  - yamlnode
   - agentcopilot
   - agentdetect
   - Authenticode
   - azdignore
+  - borderless
   - gofmt
   - golangci
   - golangtools
   - lightspeed
   - runewidth
   - toplevel
+  - truncatable
+  - wrappable
+  - myacr
+  - myconn
+  - myorg
+  - myprivacr
+  - privatelink
+  - cheatsheet
+  - aerr
+  - rerr
+  - perr
   - azcloud
   - azdext
   - azdxignore
@@ -138,6 +156,9 @@ words:
   - secretversion
   - TTLs
   - vaultname
+  - DYLD
+  - dyld
+  - LDLIBS
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -465,6 +486,8 @@ overrides:
     words:
       - filesystems
       - redirections
+      - APPINSTALLER
+      - idempotently
   - filename: internal/agent/copilot/session_config.go
     words:
       - MCPHTTP

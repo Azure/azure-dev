@@ -114,7 +114,7 @@ type sampleListResponse struct {
 var knownSampleListLanguages = []string{"python", "dotnetCsharp"}
 
 // Known template type filter values.
-var knownSampleListTypes = []string{TemplateTypeAgent, TemplateTypeAzd}
+var knownSampleListTypes = []string{TemplateTypeAgent, TemplateTypeAzd, TemplateTypeAzureYaml}
 
 // SampleListAction owns the catalog-fetch + render side of `sample list`.
 //
@@ -291,6 +291,9 @@ func mapAgentTemplateToDTO(t AgentTemplate) TemplateListItem {
 
 	switch effective {
 	case TemplateTypeAgent:
+		item.ManifestURL = t.Source
+		item.InitCommand = fmt.Sprintf("azd ai agent init -m %q", t.Source)
+	case TemplateTypeAzureYaml:
 		item.ManifestURL = t.Source
 		item.InitCommand = fmt.Sprintf("azd ai agent init -m %q", t.Source)
 	case TemplateTypeAzd:

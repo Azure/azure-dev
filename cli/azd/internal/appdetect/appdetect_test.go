@@ -184,9 +184,10 @@ func TestDetect(t *testing.T) {
 			},
 		},
 	}
+	// Subtests intentionally do not call t.Parallel(): they run sequentially to avoid
+	// concurrent Maven invocations racing on the shared ~/.m2 cache, which caused flakiness.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			// Skip subtests that include Java projects when Maven is not installed.
 			for _, p := range tt.want {
 				if p.Language == Java {

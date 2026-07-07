@@ -1,5 +1,12 @@
 # Release History
 
+## 1.0.0-beta.1 (2026-06-30)
+
+### Features Added
+
+- [[#8890]](https://github.com/Azure/azure-dev/pull/8890) Bump `requiredAzdVersion` to `>=1.27.0`.
+- [[#8651]](https://github.com/Azure/azure-dev/pull/8651) Update Go to 1.26.4 and bump golang.org/x/crypto and golang.org/x/net. Thanks @hemarina for the contribution!
+
 ## 0.0.1-preview (2026-05-22)
 
 Initial preview release of the Agent Inspector extension.

@@ -421,52 +421,57 @@ func TestInvokeVersionFlagValidation(t *testing.T) {
 	}
 }
 
-func TestInvokeCommandIsolationFlags(t *testing.T) {
+func TestInvokeCommand_HasUserIdentityFlag(t *testing.T) {
 	t.Parallel()
 
 	cmd := newInvokeCommand(nil)
-	for _, name := range []string{"user-isolation-key", "chat-isolation-key"} {
-		flag := cmd.Flags().Lookup(name)
-		if flag == nil {
-			t.Fatalf("%s flag not registered", name)
-		}
-		if flag.DefValue != "" {
-			t.Errorf("%s default = %q, want empty", name, flag.DefValue)
-		}
+	flag := cmd.Flags().Lookup("user-identity")
+	if flag == nil {
+		t.Fatal("user-identity flag not registered")
+	}
+	if flag.DefValue != "" {
+		t.Errorf("user-identity default = %q, want empty", flag.DefValue)
 	}
 }
 
-func TestIsolationHeaderFlags_SessionRequestOptions(t *testing.T) {
+// TestInvokeLocalWithNamedAgent verifies that --local combined with a
+// positional agent name passes validation (no "cannot use --local with a
+// named agent" error). The command will still fail at Run time (no azd
+// project), but the validation stage must not reject it.
+func TestInvokeLocalWithNamedAgent(t *testing.T) {
+	t.Parallel()
+
+	cmd := newInvokeCommand(nil)
+	cmd.SetArgs([]string{"my-agent", "--local", "Hello!"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	err := cmd.Execute()
+
+	if err == nil {
+		t.Fatal("expected an error (no azd project), got nil")
+	}
+	if strings.Contains(err.Error(), "cannot use --local with a named agent") {
+		t.Fatalf("unexpected validation rejection: %v", err)
+	}
+}
+
+func TestUserIdentityFlags_SessionRequestOptions(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name     string
-		flags    *isolationHeaderFlags
+		flags    *userIdentityFlags
 		wantNil  bool
 		wantUser string
-		wantChat string
 	}{
 		{
-			name:     "both keys set",
-			flags:    &isolationHeaderFlags{userIsolationKey: "u", chatIsolationKey: "c"},
+			name:     "user identity set",
+			flags:    &userIdentityFlags{userIdentity: "u"},
 			wantUser: "u",
-			wantChat: "c",
 		},
 		{
-			name:     "user key only",
-			flags:    &isolationHeaderFlags{userIsolationKey: "u"},
-			wantUser: "u",
-			wantChat: "",
-		},
-		{
-			name:     "chat key only",
-			flags:    &isolationHeaderFlags{chatIsolationKey: "c"},
-			wantUser: "",
-			wantChat: "c",
-		},
-		{
-			name:    "neither key set returns nil",
-			flags:   &isolationHeaderFlags{},
+			name:    "empty user identity returns nil",
+			flags:   &userIdentityFlags{},
 			wantNil: true,
 		},
 		{
@@ -489,11 +494,8 @@ func TestIsolationHeaderFlags_SessionRequestOptions(t *testing.T) {
 			if opts == nil {
 				t.Fatal("sessionRequestOptions() returned nil, want non-nil")
 			}
-			if opts.UserIsolationKey != tt.wantUser {
-				t.Errorf("UserIsolationKey = %q, want %q", opts.UserIsolationKey, tt.wantUser)
-			}
-			if opts.ChatIsolationKey != tt.wantChat {
-				t.Errorf("ChatIsolationKey = %q, want %q", opts.ChatIsolationKey, tt.wantChat)
+			if opts.UserIdentity != tt.wantUser {
+				t.Errorf("UserIdentity = %q, want %q", opts.UserIdentity, tt.wantUser)
 			}
 		})
 	}
@@ -574,75 +576,6 @@ func TestValidateInvokeVersionValue(t *testing.T) {
 			}
 			if !tt.wantErr && err != nil {
 				t.Fatalf("unexpected error: %v", err)
-			}
-		})
-	}
-}
-
-func TestIsolationHeaderFlags_SessionRequestOptionsWithSessionKey(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name        string
-		flags       *isolationHeaderFlags
-		sessionKey  string
-		wantNil     bool
-		wantUser    string
-		wantChat    string
-		wantSession string
-	}{
-		{
-			name:        "session key appended to existing options",
-			flags:       &isolationHeaderFlags{userIsolationKey: "u"},
-			sessionKey:  "sess",
-			wantUser:    "u",
-			wantSession: "sess",
-		},
-		{
-			name:        "session key creates options when flags are empty",
-			flags:       &isolationHeaderFlags{},
-			sessionKey:  "sess",
-			wantSession: "sess",
-		},
-		{
-			name:    "no keys at all returns nil",
-			flags:   &isolationHeaderFlags{},
-			wantNil: true,
-		},
-		{
-			name:        "nil flags with session key creates options",
-			flags:       nil,
-			sessionKey:  "sess",
-			wantSession: "sess",
-		},
-		{
-			name:    "nil flags with empty session key returns nil",
-			flags:   nil,
-			wantNil: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			opts := tt.flags.sessionRequestOptionsWithSessionKey(tt.sessionKey)
-			if tt.wantNil {
-				if opts != nil {
-					t.Errorf("sessionRequestOptionsWithSessionKey() = %+v, want nil", opts)
-				}
-				return
-			}
-			if opts == nil {
-				t.Fatal("sessionRequestOptionsWithSessionKey() returned nil, want non-nil")
-			}
-			if opts.UserIsolationKey != tt.wantUser {
-				t.Errorf("UserIsolationKey = %q, want %q", opts.UserIsolationKey, tt.wantUser)
-			}
-			if opts.ChatIsolationKey != tt.wantChat {
-				t.Errorf("ChatIsolationKey = %q, want %q", opts.ChatIsolationKey, tt.wantChat)
-			}
-			if opts.SessionIsolationKey != tt.wantSession {
-				t.Errorf("SessionIsolationKey = %q, want %q", opts.SessionIsolationKey, tt.wantSession)
 			}
 		})
 	}
@@ -1532,12 +1465,11 @@ func TestHandleInvocationLRO(t *testing.T) {
 	}
 }
 
-func TestHandleInvocationLRO_PropagatesIsolationHeaders(t *testing.T) {
+func TestHandleInvocationLRO_PropagatesUserIdentityHeader(t *testing.T) {
 	pollRequests := captureInvocationLROPollRequests(
 		t,
 		&agent_api.SessionRequestOptions{
-			UserIsolationKey: "user-1",
-			ChatIsolationKey: "chat-1",
+			UserIdentity: "user-1",
 		},
 		`{"status":"running"}`,
 		`{"status":"completed"}`,
@@ -1545,38 +1477,17 @@ func TestHandleInvocationLRO_PropagatesIsolationHeaders(t *testing.T) {
 	if len(pollRequests) < 2 {
 		t.Fatalf("poll request count = %d, want at least 2", len(pollRequests))
 	}
-	assertPollRequestsHaveHeaders(t, pollRequests, "user-1", "chat-1")
+	assertPollRequestsHaveHeaders(t, pollRequests, "user-1")
 }
 
-func TestHandleInvocationLRO_PropagatesPartialIsolationHeaders(t *testing.T) {
-	tests := []struct {
-		name     string
-		options  *agent_api.SessionRequestOptions
-		wantUser string
-		wantChat string
-	}{
-		{
-			name: "user only",
-			options: &agent_api.SessionRequestOptions{
-				UserIsolationKey: "user-1",
-			},
-			wantUser: "user-1",
+func TestHandleInvocationLRO_PropagatesPartialUserIdentityHeader(t *testing.T) {
+	pollRequests := captureInvocationLROPollRequests(
+		t,
+		&agent_api.SessionRequestOptions{
+			UserIdentity: "user-1",
 		},
-		{
-			name: "chat only",
-			options: &agent_api.SessionRequestOptions{
-				ChatIsolationKey: "chat-1",
-			},
-			wantChat: "chat-1",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			pollRequests := captureInvocationLROPollRequests(t, tt.options)
-			assertPollRequestsHaveHeaders(t, pollRequests, tt.wantUser, tt.wantChat)
-		})
-	}
+	)
+	assertPollRequestsHaveHeaders(t, pollRequests, "user-1")
 }
 
 func captureInvocationLROPollRequests(
@@ -1591,7 +1502,7 @@ func captureInvocationLROPollRequests(
 	t.Cleanup(func() { defaultLROPollInterval = origInterval })
 
 	// Use two-poll scenario: first poll returns "running", second returns "completed".
-	// Verify that isolation headers are sent on every poll, not just the first.
+	// Verify that the user-identity header is sent on every poll, not just the first.
 	if len(pollBodies) == 0 {
 		pollBodies = []string{
 			`{"status":"running"}`,
@@ -1655,7 +1566,6 @@ func assertPollRequestsHaveHeaders(
 	t *testing.T,
 	pollRequests []*http.Request,
 	wantUser string,
-	wantChat string,
 ) {
 	t.Helper()
 
@@ -1664,14 +1574,8 @@ func assertPollRequestsHaveHeaders(
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {
 			t.Errorf("poll %d: Authorization = %q, want Bearer token", pollNumber, got)
 		}
-		if got := r.Header.Get("Foundry-Features"); got != "HostedAgents=V1Preview" {
-			t.Errorf("poll %d: Foundry-Features = %q, want HostedAgents=V1Preview", pollNumber, got)
-		}
-		if got := r.Header.Get(agent_api.AgentUserIsolationKeyHeader); got != wantUser {
-			t.Errorf("poll %d: %s = %q, want %q", pollNumber, agent_api.AgentUserIsolationKeyHeader, got, wantUser)
-		}
-		if got := r.Header.Get(agent_api.AgentChatIsolationKeyHeader); got != wantChat {
-			t.Errorf("poll %d: %s = %q, want %q", pollNumber, agent_api.AgentChatIsolationKeyHeader, got, wantChat)
+		if got := r.Header.Get(agent_api.UserIdentityHeader); got != wantUser {
+			t.Errorf("poll %d: %s = %q, want %q", pollNumber, agent_api.UserIdentityHeader, got, wantUser)
 		}
 	}
 }
@@ -1805,7 +1709,7 @@ func TestCreateConversation(t *testing.T) {
 	}
 }
 
-func TestCreateConversation_PropagatesIsolationHeaders(t *testing.T) {
+func TestCreateConversation_PropagatesUserIdentityHeader(t *testing.T) {
 	t.Parallel()
 
 	reqCh := make(chan *http.Request, 1)
@@ -1823,8 +1727,7 @@ func TestCreateConversation_PropagatesIsolationHeaders(t *testing.T) {
 		"test-token",
 		"v1",
 		&agent_api.SessionRequestOptions{
-			UserIsolationKey: "user-1",
-			ChatIsolationKey: "chat-1",
+			UserIdentity: "user-1",
 		},
 	)
 	if err != nil {
@@ -1835,14 +1738,8 @@ func TestCreateConversation_PropagatesIsolationHeaders(t *testing.T) {
 	}
 
 	request := <-reqCh
-	if got := request.Header.Get("Foundry-Features"); got != "HostedAgents=V1Preview" {
-		t.Errorf("Foundry-Features = %q, want HostedAgents=V1Preview", got)
-	}
-	if got := request.Header.Get(agent_api.AgentUserIsolationKeyHeader); got != "user-1" {
-		t.Errorf("%s = %q, want user-1", agent_api.AgentUserIsolationKeyHeader, got)
-	}
-	if got := request.Header.Get(agent_api.AgentChatIsolationKeyHeader); got != "chat-1" {
-		t.Errorf("%s = %q, want chat-1", agent_api.AgentChatIsolationKeyHeader, got)
+	if got := request.Header.Get(agent_api.UserIdentityHeader); got != "user-1" {
+		t.Errorf("%s = %q, want user-1", agent_api.UserIdentityHeader, got)
 	}
 }
 

@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"azureaiagent/internal/pkg/agents/agent_api"
 )
 
 // TestBuildA2ARequestBody_WrapsMessage verifies a plain message is wrapped into
@@ -185,6 +187,31 @@ func TestA2ALocal_NotSupported(t *testing.T) {
 	a := &InvokeAction{flags: &invokeFlags{local: true, message: "hi"}}
 	if err := a.a2aLocal(t.Context()); err == nil {
 		t.Fatal("expected an error for local a2a invocation, got nil")
+	}
+}
+
+// TestApplyA2ARequestHeaders verifies the explicit A2A-Version header (so the
+// server negotiates deterministically), the bearer token, and the user identity
+// header are set on the request.
+func TestApplyA2ARequestHeaders(t *testing.T) {
+	t.Parallel()
+	req, err := http.NewRequest(http.MethodPost, "https://example.com/a2a", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	applyA2ARequestHeaders(req, "test-token", &userIdentityFlags{userIdentity: "user-1"})
+
+	if got := req.Header.Get(a2aVersionHeader); got != a2aProtocolVersion {
+		t.Errorf("%s = %q, want %q", a2aVersionHeader, got, a2aProtocolVersion)
+	}
+	if a2aProtocolVersion != "0.3" {
+		t.Errorf("a2aProtocolVersion = %q, want %q (must match the message/send body shape)", a2aProtocolVersion, "0.3")
+	}
+	if got := req.Header.Get("Authorization"); got != "Bearer test-token" {
+		t.Errorf("Authorization = %q, want %q", got, "Bearer test-token")
+	}
+	if got := req.Header.Get(agent_api.UserIdentityHeader); got != "user-1" {
+		t.Errorf("%s = %q, want %q", agent_api.UserIdentityHeader, got, "user-1")
 	}
 }
 

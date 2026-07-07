@@ -28,6 +28,20 @@ const a2aJSONRPCVersion = "2.0"
 // See the A2A protocol spec (https://a2a-protocol.org/latest/specification/).
 const a2aSendMethod = "message/send"
 
+// a2aVersionHeader is the A2A protocol version header (§3.2). Sending it makes
+// the request's protocol version explicit; if the server does not support it,
+// the A2A spec has the agent return VersionNotSupportedError rather than
+// silently applying a compatibility default.
+const a2aVersionHeader = "A2A-Version"
+
+// a2aProtocolVersion is the A2A protocol version this client speaks. It is a
+// constant tied to the request shape we emit (the v0.3 JSON-RPC message/send
+// envelope in buildA2ARequestBody), not derived from the agent's advertised
+// protocol version: the header must describe the body we actually send. The A2A
+// spec treats an omitted version as a 0.3 compatibility default; we send it
+// explicitly so a Foundry endpoint on a newer contract negotiates deterministically.
+const a2aProtocolVersion = "0.3"
+
 // buildA2ARequestBody returns the JSON request body for an A2A invoke and a
 // human-readable label describing it.
 //
@@ -81,6 +95,16 @@ func (a *InvokeAction) a2aLocal(_ context.Context) error {
 		"omit --local to invoke the deployed agent over a2a, "+
 			"or use --protocol responses/invocations for local invocation",
 	)
+}
+
+// applyA2ARequestHeaders sets the A2A-specific request headers: the explicit
+// A2A-Version header (so the server negotiates deterministically instead of
+// applying an implicit default), the Foundry bearer token, and the remote user
+// identity header. The caller sets Content-Type and any raw-mode headers.
+func applyA2ARequestHeaders(req *http.Request, bearerToken string, identity *userIdentityFlags) {
+	req.Header.Set(a2aVersionHeader, a2aProtocolVersion)
+	req.Header.Set("Authorization", "Bearer "+bearerToken)
+	applyRemoteUserIdentityHeader(req, identity)
 }
 
 // a2aRemote sends the user's message to a deployed Foundry agent using the A2A
@@ -144,8 +168,7 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
-	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
+	applyA2ARequestHeaders(req, rc.bearerToken, &a.flags.userIdentityFlags)
 	if raw {
 		// Disable Go's transparent gzip handling so the dumped headers and
 		// body match what the server actually sent on the wire.

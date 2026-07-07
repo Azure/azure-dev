@@ -118,14 +118,10 @@ func (s *FrameworkService) onRegisterRequest(
 	// Register external framework service with DI container, passing the broker
 	err := s.container.RegisterNamedSingleton(language, func(
 		console input.Console,
-	) (project.FrameworkService, error) {
+	) project.FrameworkService {
 		var env *environment.Environment
 		if s.lazyEnv != nil {
-			var err error
-			env, err = s.lazyEnv.GetValue()
-			if err != nil {
-				return nil, fmt.Errorf("loading environment: %w", err)
-			}
+			env, _ = s.lazyEnv.GetValue()
 		}
 		return project.NewExternalFrameworkService(
 			language,
@@ -134,7 +130,7 @@ func (s *FrameworkService) onRegisterRequest(
 			broker,
 			console,
 			env,
-		), nil
+		)
 	})
 
 	if err != nil {

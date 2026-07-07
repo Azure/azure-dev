@@ -77,7 +77,10 @@ extends:
               outputs:
                 - output: pipelineArtifact
                   path: $(Build.ArtifactStagingDirectory)
-                  artifact: tier2-live-logs-$(Build.BuildId)
+                  # Include JobAttempt so re-running a failed job in the same
+                  # build publishes to a distinct artifact name (BuildId alone
+                  # collides across attempts).
+                  artifact: tier2-live-logs-$(Build.BuildId)-$(System.JobAttempt)
                   condition: always()
                   displayName: Publish test logs
             steps:

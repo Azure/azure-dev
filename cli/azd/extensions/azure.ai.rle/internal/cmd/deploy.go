@@ -153,13 +153,13 @@ func (a *deployAction) Run() error {
 		return err
 	}
 	body, err := json.MarshalIndent(environmentOutput{
-		EnvironmentId: environment.Id,
-		ProjectId:     environment.ProjectId,
-		Name:          environment.Name,
-		AcrImage:      environment.AcrImagePath,
-		Version:       state.EnvironmentVersion,
-		CreatedAt:     environment.CreatedAt,
-		UpdatedAt:     environment.UpdatedAt,
+		EnvironmentId:          environment.Id,
+		EnvironmentVersion:     state.EnvironmentVersion,
+		Name:                   environment.Name,
+		FoundryProjectEndpoint: state.ProjectEndpoint,
+		AcrImage:               environment.AcrImagePath,
+		CreatedAt:              environment.CreatedAt,
+		UpdatedAt:              environment.UpdatedAt,
 	}, "", "  ")
 	if err != nil {
 		return err
@@ -210,11 +210,11 @@ func resolveDeployImage(flags *rleDeployFlags, state rleState) (string, error) {
 }
 
 type environmentOutput struct {
-	EnvironmentId string `json:"environmentId"`
-	ProjectId     string `json:"projectId"`
-	Name          string `json:"name"`
-	AcrImage      string `json:"acrImage"`
-	Version       string `json:"version"`
-	CreatedAt     string `json:"createdAt"`
-	UpdatedAt     string `json:"updatedAt"`
+	EnvironmentId          string `json:"environmentId"`
+	EnvironmentVersion     string `json:"environmentVersion"`
+	Name                   string `json:"name"`
+	FoundryProjectEndpoint string `json:"foundryProjectEndpoint"`
+	AcrImage               string `json:"acrImage"`
+	CreatedAt              string `json:"createdAt"`
+	UpdatedAt              string `json:"updatedAt"`
 }

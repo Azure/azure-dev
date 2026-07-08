@@ -40,12 +40,12 @@ func NewRootCommand() *cobra.Command {
 		newInitCommand(),
 		newInvokeCommand(),
 		newRunCommand(),
-		newVersionCommand(&extCtx.OutputFormat),
 	}
 	for _, command := range userCommands {
 		command.Hidden = !rleCommandsEnabled()
 		rootCmd.AddCommand(command)
 	}
+	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
 
 	return rootCmd

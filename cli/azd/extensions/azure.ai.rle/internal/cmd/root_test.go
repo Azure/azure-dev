@@ -25,7 +25,7 @@ func TestNewRootCommandIncludesExpectedCommands(t *testing.T) {
 func TestRleUserCommandsHiddenUnlessEnabled(t *testing.T) {
 	t.Setenv(rleEnableEnvVar, "")
 	rootCmd := NewRootCommand()
-	for _, commandName := range []string{"deploy", "init", "invoke", "run", "version"} {
+	for _, commandName := range []string{"deploy", "init", "invoke", "run"} {
 		command, _, err := rootCmd.Find([]string{commandName})
 		if err != nil {
 			t.Fatalf("expected command %q to be registered: %v", commandName, err)
@@ -33,6 +33,13 @@ func TestRleUserCommandsHiddenUnlessEnabled(t *testing.T) {
 		if !command.Hidden {
 			t.Fatalf("expected command %q to be hidden when %s is not true", commandName, rleEnableEnvVar)
 		}
+	}
+	versionCommand, _, err := rootCmd.Find([]string{"version"})
+	if err != nil {
+		t.Fatalf("expected version command to be registered: %v", err)
+	}
+	if versionCommand.Hidden {
+		t.Fatal("expected version command to remain visible when preview lifecycle commands are hidden")
 	}
 	metadataCommand, _, err := rootCmd.Find([]string{"metadata"})
 	if err != nil {

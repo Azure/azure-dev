@@ -93,6 +93,44 @@ func (c *ValidationContext) EnvLocation() (string, bool) {
 	return string(v), true
 }
 
+// EnvName returns the azd environment name from a "provision" check context.
+func (c *ValidationContext) EnvName() (string, bool) {
+	v, ok := c.Data[ValidationContextEnvName]
+	if !ok {
+		return "", false
+	}
+	return string(v), true
+}
+
+// SubscriptionID returns the Azure subscription id from a "provision" check context.
+func (c *ValidationContext) SubscriptionID() (string, bool) {
+	v, ok := c.Data[ValidationContextSubscriptionID]
+	if !ok {
+		return "", false
+	}
+	return string(v), true
+}
+
+// ResourceGroup returns the target resource group name from a "provision" check
+// context. It returns ("", false) for subscription-scoped deployments.
+func (c *ValidationContext) ResourceGroup() (string, bool) {
+	v, ok := c.Data[ValidationContextResourceGroup]
+	if !ok {
+		return "", false
+	}
+	return string(v), true
+}
+
+// TargetScope returns the deployment target scope ("subscription" or
+// "resourceGroup") from a "provision" check context.
+func (c *ValidationContext) TargetScope() (string, bool) {
+	v, ok := c.Data[ValidationContextTargetScope]
+	if !ok {
+		return "", false
+	}
+	return string(v), true
+}
+
 // ValidationCheckProvider is the extension-side interface for a validation check.
 // Extensions implement this to provide custom checks that run during the azd
 // validation pipeline (e.g. local-preflight during provisioning).
@@ -118,6 +156,24 @@ type ValidationCheckRegistration struct {
 	Factory ValidationCheckProviderFactory
 }
 
+// --- Check type constants ---
+
+const (
+	// ValidationCheckTypeLocalPreflight is the check type dispatched by the
+	// Bicep provider during ARM-template preflight validation. Its context
+	// carries ARM-specific data (template, parameters, resource snapshot) and
+	// therefore only runs for Bicep-provisioned deployments.
+	ValidationCheckTypeLocalPreflight = "local-preflight"
+
+	// ValidationCheckTypeProvision is the provider-agnostic check type
+	// dispatched immediately before provisioning runs, regardless of the
+	// provisioning provider (Bicep, Terraform, or extension-provided providers
+	// such as microsoft.foundry and demo). Its context is lean and carries no
+	// ARM template — only the environment, subscription, location, resource
+	// group and target scope.
+	ValidationCheckTypeProvision = "provision"
+)
+
 // --- Context key constants for "local-preflight" checks ---
 
 const (
@@ -135,6 +191,25 @@ const (
 	// parameters JSON in a "local-preflight" check context.
 	ValidationContextARMParameters = "arm_parameters"
 	// ValidationContextEnvLocation is the key for the Azure deployment
-	// location string in a "local-preflight" check context.
+	// location string. It is present in both "local-preflight" and
+	// "provision" check contexts.
 	ValidationContextEnvLocation = "env_location"
+)
+
+// --- Context key constants for "provision" (provider-agnostic) checks ---
+
+const (
+	// ValidationContextEnvName is the key for the azd environment name in a
+	// "provision" check context.
+	ValidationContextEnvName = "env_name"
+	// ValidationContextSubscriptionID is the key for the Azure subscription id
+	// in a "provision" check context.
+	ValidationContextSubscriptionID = "subscription_id"
+	// ValidationContextResourceGroup is the key for the target resource group
+	// name in a "provision" check context. It is empty for subscription-scoped
+	// deployments.
+	ValidationContextResourceGroup = "resource_group"
+	// ValidationContextTargetScope is the key for the deployment target scope
+	// ("subscription" or "resourceGroup") in a "provision" check context.
+	ValidationContextTargetScope = "target_scope"
 )

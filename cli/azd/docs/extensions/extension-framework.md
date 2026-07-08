@@ -946,9 +946,15 @@ Extensions can provide AI agent tools through the Model Context Protocol, enabli
 Extensions can contribute validation checks to azd's validation pipeline. Currently
 supported check types:
 
-- **`local-preflight`** — Checks run during `azd provision` before deployment. The
-  extension receives the Bicep snapshot, ARM template, ARM parameters, and Azure
-  location as context.
+- **`local-preflight`** — Bicep-only checks run during `azd provision` before
+  deployment. The extension receives the Bicep snapshot, ARM template, ARM
+  parameters, and Azure location as context. These only fire for Bicep-provisioned
+  deployments.
+- **`provision`** — Provider-agnostic checks run immediately before provisioning,
+  regardless of the provider (Bicep, Terraform, or extension-provided providers such
+  as `microsoft.foundry` and `demo`). The context is lean — environment name,
+  subscription id, location, resource group, and target scope — and carries **no**
+  ARM template. Use this check type when your check must run for a non-Bicep provider.
 
 Future check types (e.g., `project-config`, `auth`) can be added without protocol
 changes.
@@ -958,10 +964,10 @@ changes.
 ```go
 host := azdext.NewExtensionHost(azdClient).
     WithValidationCheck(azdext.ValidationCheckRegistration{
-        CheckType: "local-preflight",
-        RuleID:    "my_naming_rule",
+        CheckType: azdext.ValidationCheckTypeProvision, // provider-agnostic
+        RuleID:    "my_location_rule",
         Factory: func() azdext.ValidationCheckProvider {
-            return &MyNamingCheck{}
+            return &MyLocationCheck{}
         },
     })
 ```

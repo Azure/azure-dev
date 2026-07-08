@@ -664,7 +664,8 @@ type provisionErrorDeps struct {
 // JSON state dump on failure has something to render.
 func wrapProvisionError(ctx context.Context, err error, deps provisionErrorDeps) error {
 	// Preflight-aborted → ErrAbortedByUser with success message.
-	if errors.Is(err, errPreflightAbortedByUser) {
+	if errors.Is(err, errPreflightAbortedByUser) ||
+		errors.Is(err, provisioning.ErrProvisionValidationAborted) {
 		deps.console.MessageUxItem(ctx, &ux.ActionResult{
 			SuccessMessage: "Provisioning was cancelled.",
 		})

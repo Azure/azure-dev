@@ -8,6 +8,7 @@
 
 ### Bugs Fixed
 
+- [[#8839]](https://github.com/Azure/azure-dev/issues/8839) Fix `azd down` on a Foundry (`microsoft.foundry`) project failing outright without `--force`. It now prompts for confirmation (naming the resource group to be deleted, defaulting to "no") like the built-in Bicep provider, and only falls back to requiring `--force` when there is no interactive terminal (for example under `--no-prompt` or in CI).
 - [[#8987]](https://github.com/Azure/azure-dev/pull/8987) Fix `azd ai agent init -m <manifest>` not prompting for the agent name. The prompt default and project folder are now derived from the manifest's `template.name` (falling back to the top-level `name`), matching the interactive and template flows.
 - [[#8981]](https://github.com/Azure/azure-dev/pull/8981) Fix `azd ai agent init -m <azure.yaml> --deploy-mode container` not resolving a container registry when adopting a unified Foundry `azure.yaml` on an existing Foundry project, which made `azd deploy` fail with `could not determine container registry endpoint`. The deploy mode is now resolved before Foundry project setup, so a container agent wires `AZURE_CONTAINER_REGISTRY_ENDPOINT` (or is signaled to create one on provision) while code deploy and `--image` still skip ACR.
 

@@ -48,7 +48,7 @@ jobs:
           # Build azure.ai.inspector from source to ensure PR CI always has a
           # compatible version — dependency releases are post-merge, but PRs may
           # include inspector changes from this same repo.
-          pwsh -File ci-build.ps1 -OutputFileName azure-ai-inspector-linux-amd64 -Version $(cat version.txt | tr -d '\r\n')
+          pwsh -File ci-build.ps1 -OutputFileName azure-ai-inspector-linux-amd64 -Version "$(cat version.txt | tr -d '\r\n')"
           mkdir -p bin
           mv azure-ai-inspector-linux-amd64 bin/
           azd x pack

@@ -242,6 +242,8 @@ func declaredProviders(ext *extensions.Extension, providerNames []string) []stri
 }
 
 // providerFromExtension reports whether the extension declares a provider with the given name.
+// Extension discovery is case-insensitive, but IoC provider resolution remains case-sensitive;
+// azure.yaml must still use the provider spelling registered by the extension.
 func providerFromExtension(ext *extensions.Extension, providerName string) bool {
 	return slices.ContainsFunc(ext.Providers, func(p extensions.Provider) bool {
 		return strings.EqualFold(p.Name, providerName)

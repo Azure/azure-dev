@@ -112,7 +112,10 @@ func (c *ValidationContext) SubscriptionID() (string, bool) {
 }
 
 // ResourceGroup returns the target resource group name from a "provision" check
-// context. It returns ("", false) for subscription-scoped deployments.
+// context. The "provision" dispatch always includes the resource group key, so
+// ok is true whenever the context originates from a provision check; the value
+// is an empty string for subscription-scoped deployments (use TargetScope to
+// distinguish scopes rather than relying on ok).
 func (c *ValidationContext) ResourceGroup() (string, bool) {
 	v, ok := c.Data[ValidationContextResourceGroup]
 	if !ok {

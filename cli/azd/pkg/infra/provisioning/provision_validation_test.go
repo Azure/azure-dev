@@ -222,3 +222,29 @@ func TestManagerDeployProvisionValidation_DispatchErrorIsNonFatal(t *testing.T) 
 	require.NoError(t, err)
 	require.False(t, abort)
 }
+
+func TestManagerDeployProvisionValidation_SubscriptionScoped(t *testing.T) {
+	// No AZURE_RESOURCE_GROUP → subscription-scoped deployment.
+	env := environment.NewWithValues("test-env", map[string]string{
+		"AZURE_SUBSCRIPTION_ID": "SUBSCRIPTION_ID",
+		"AZURE_LOCATION":        "eastus2",
+	})
+	mockContext := mocks.NewMockContext(t.Context())
+
+	dispatcher := &fakeValidationDispatcher{}
+
+	mgr := newProvisionValidationManager(t, mockContext, env, dispatcher)
+
+	abort, err := mgr.RunProvisionValidation(*mockContext.Context, false)
+
+	require.NoError(t, err)
+	require.False(t, abort)
+	require.Equal(t, 1, dispatcher.invocations)
+
+	// The context still includes the resource group key, with an empty value,
+	// and reports the subscription target scope.
+	rg, ok := dispatcher.gotContext[azdext.ValidationContextResourceGroup]
+	require.True(t, ok, "resource group key should always be present")
+	require.Empty(t, string(rg))
+	require.Equal(t, "subscription", string(dispatcher.gotContext[azdext.ValidationContextTargetScope]))
+}

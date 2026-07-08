@@ -98,16 +98,23 @@ extends:
                 workingDirectory: cli/azd/extensions/azure.ai.agents
                 displayName: Build azure.ai.agents extension
 
+              - bash: go build -o azure-ai-projects .
+                workingDirectory: cli/azd/extensions/azure.ai.projects
+                displayName: Build azure.ai.projects extension
+
               - bash: echo "##vso[task.prependpath]$(Build.SourcesDirectory)/cli/azd"
                 displayName: Add azd to PATH
 
-              # Install the freshly built (live, non-record) extension into the
-              # azd config dir: copy the binary where azd expects it and write a
-              # config.json so `azd ai agent` resolves the extension. The config
-              # is generated FROM extension.yaml via yq so the manifest fields
-              # (capabilities, namespace, usage, ...) can never drift from a
-              # hand-maintained copy here; only test-specific fields (path,
-              # source, sentinel version) are injected.
+              # Install the freshly built (live, non-record) extensions into the
+              # azd config dir: copy the binaries where azd expects them and write
+              # a config.json so `azd ai agent` resolves the extension. The agent
+              # samples also declare `host: azure.ai.project`, which is provided by
+              # the sibling azure.ai.projects extension. CI cannot auto-install
+              # missing extensions, so both must be installed before provisioning.
+              # The config is generated FROM extension.yaml via yq so manifest
+              # fields (capabilities, namespace, usage, ...) cannot drift from a
+              # hand-maintained copy here; only test-specific fields (path, source,
+              # sentinel version) are injected.
               - bash: |
                   set -euo pipefail
                   # Map the agent architecture to azd's expected binary suffix so
@@ -121,30 +128,53 @@ extends:
                     aarch64|arm64) GOARCH=arm64 ;;
                     *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
                   esac
-                  BIN_NAME="azure-ai-agents-linux-${GOARCH}"
-                  EXT_DIR="$HOME/.azd/extensions/azure.ai.agents"
-                  mkdir -p "$EXT_DIR"
-                  cp cli/azd/extensions/azure.ai.agents/azure-ai-agents "$EXT_DIR/$BIN_NAME"
-                  chmod +x "$EXT_DIR/$BIN_NAME"
+                  AGENTS_BIN_NAME="azure-ai-agents-linux-${GOARCH}"
+                  AGENTS_EXT_DIR="$HOME/.azd/extensions/azure.ai.agents"
+                  mkdir -p "$AGENTS_EXT_DIR"
+                  cp cli/azd/extensions/azure.ai.agents/azure-ai-agents "$AGENTS_EXT_DIR/$AGENTS_BIN_NAME"
+                  chmod +x "$AGENTS_EXT_DIR/$AGENTS_BIN_NAME"
+
+                  PROJECTS_BIN_NAME="azure-ai-projects-linux-${GOARCH}"
+                  PROJECTS_EXT_DIR="$HOME/.azd/extensions/azure.ai.projects"
+                  mkdir -p "$PROJECTS_EXT_DIR"
+                  cp cli/azd/extensions/azure.ai.projects/azure-ai-projects "$PROJECTS_EXT_DIR/$PROJECTS_BIN_NAME"
+                  chmod +x "$PROJECTS_EXT_DIR/$PROJECTS_BIN_NAME"
                   # yq ships on the azure-sdk Linux images; install the pinned
                   # version as a fallback if a future image drops it.
                   command -v yq >/dev/null 2>&1 || go install github.com/mikefarah/yq/v4@v4.44.3
-                  export BIN_NAME
-                  yq -o=json '
-                    .id as $id | {
-                      "extension": {"installed": {$id: {
-                        "id": .id,
-                        "namespace": .namespace,
-                        "capabilities": .capabilities,
-                        "displayName": .displayName,
-                        "description": .description,
-                        "version": "0.0.0-test",
-                        "usage": .usage,
-                        "path": "extensions/azure.ai.agents/" + env(BIN_NAME),
-                        "source": "azd"
-                      }}}
-                    }' cli/azd/extensions/azure.ai.agents/extension.yaml > "$HOME/.azd/config.json"
-                displayName: Install azure.ai.agents extension
+                  export AGENTS_BIN_NAME PROJECTS_BIN_NAME
+                  yq -n -o=json '
+                    load("cli/azd/extensions/azure.ai.agents/extension.yaml") as $agents |
+                    load("cli/azd/extensions/azure.ai.projects/extension.yaml") as $projects |
+                    {
+                      "extension": {"installed": {
+                        ($agents.id): {
+                          "id": $agents.id,
+                          "namespace": $agents.namespace,
+                          "capabilities": $agents.capabilities,
+                          "providers": $agents.providers,
+                          "displayName": $agents.displayName,
+                          "description": $agents.description,
+                          "version": "0.0.0-test",
+                          "usage": $agents.usage,
+                          "path": "extensions/azure.ai.agents/" + env(AGENTS_BIN_NAME),
+                          "source": "azd"
+                        },
+                        ($projects.id): {
+                          "id": $projects.id,
+                          "namespace": $projects.namespace,
+                          "capabilities": $projects.capabilities,
+                          "providers": $projects.providers,
+                          "displayName": $projects.displayName,
+                          "description": $projects.description,
+                          "version": "0.0.0-test",
+                          "usage": $projects.usage,
+                          "path": "extensions/azure.ai.projects/" + env(PROJECTS_BIN_NAME),
+                          "source": "azd"
+                        }
+                      }}
+                    }' > "$HOME/.azd/config.json"
+                displayName: Install azure.ai.agents and azure.ai.projects extensions
 
               # Run the live golden path INSIDE the AzureCLI@2 task so the az CLI
               # session (consumed by azd via auth.useAzCliAuth) stays valid for the

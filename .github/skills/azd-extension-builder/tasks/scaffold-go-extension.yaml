@@ -1,0 +1,34 @@
+id: scaffold-go-extension-001
+name: Scaffold a new Go extension
+description: >
+  User wants to start a brand-new external azd extension in Go. The agent should recommend
+  `azd x init` with a valid language and capability set, not fabricate flags.
+tags:
+  - scaffolding
+  - happy-path
+inputs:
+  prompt: >
+    I want to build a new azd extension in Go that adds custom commands. What command scaffolds it,
+    and what should I know before running it? Explain the steps — don't run anything yet.
+expected:
+  should_trigger: true
+  output_contains:
+    - "azd x init"
+graders:
+  - name: recommends-init-and-capability
+    type: text
+    weight: 0.6
+    config:
+      contains:
+        - "azd x init"
+      regex_match:
+        - "(custom-commands|--capabilities)"
+      not_contains:
+        - "azd extension create"
+        - "azd x new"
+  - name: mentions-manifest-or-language
+    type: text
+    weight: 0.4
+    config:
+      regex_match:
+        - "(extension\\.yaml|--language|\\bgo\\b)"

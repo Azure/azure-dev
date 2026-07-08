@@ -95,6 +95,16 @@ overrides:
           - Thhmmss
           - unhashed
           - vsrpc
+    - filename: .github/skills/azd-extension-builder/**/*.{md,yaml,yml}
+      words:
+          - azdext
+          - azdxignore
+          - Chdir
+          - contoso
+          - evals
+          - frontmatter
+          - MCPJSON
+          - waza
     - filename: docs/guides/**/*.md
       words:
           - azdext

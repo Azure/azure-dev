@@ -1,0 +1,29 @@
+id: capability-mcp-server-001
+name: Expose extension tools via MCP server capability
+description: >
+  User wants AI agents to call their extension's tools. The agent should recommend the
+  mcp-server capability and the MCP server builder pattern.
+tags:
+  - capabilities
+  - happy-path
+inputs:
+  prompt: "How do I expose my azd extension's functionality as tools that an AI agent / MCP client can call?"
+expected:
+  should_trigger: true
+  output_contains:
+    - "mcp-server"
+graders:
+  - name: recommends-mcp-capability
+    type: text
+    weight: 0.7
+    config:
+      contains:
+        - "mcp-server"
+      regex_match:
+        - "(MCPServerBuilder|MCP server|stdio)"
+  - name: mentions-manifest-or-capabilities
+    type: text
+    weight: 0.3
+    config:
+      regex_match:
+        - "(extension\\.yaml|capabilities)"

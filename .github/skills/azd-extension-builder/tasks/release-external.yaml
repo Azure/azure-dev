@@ -1,0 +1,31 @@
+id: release-external-001
+name: Release and publish an external extension
+description: >
+  User wants to release + publish their extension from their own GitHub repo. The agent should
+  recommend the pack -> release -> publish sequence with --repo.
+tags:
+  - release
+  - happy-path
+inputs:
+  prompt: "My azd extension lives in my own GitHub repo (contoso/tagger). How do I cut a release and make it installable by others?"
+expected:
+  should_trigger: true
+  output_contains:
+    - "azd x release"
+    - "azd x publish"
+graders:
+  - name: recommends-release-publish
+    type: text
+    weight: 0.5
+    config:
+      contains:
+        - "azd x release"
+        - "azd x publish"
+      regex_match:
+        - "(--repo|gh auth|GITHUB_TOKEN)"
+  - name: correct-pack-release-publish-order
+    type: text
+    weight: 0.5
+    config:
+      regex_match:
+        - "azd x pack[\\s\\S]*azd x release[\\s\\S]*azd x publish"

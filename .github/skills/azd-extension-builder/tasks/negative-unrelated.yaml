@@ -1,0 +1,30 @@
+id: negative-unrelated-001
+name: Unrelated question should not trigger extension guidance
+description: >
+  User asks an unrelated general coding question. The agent should answer helpfully and NOT
+  steer them toward azd extension tooling.
+tags:
+  - anti-trigger
+  - negative-test
+inputs:
+  prompt: "How do I write a Python function that sorts a list of dictionaries by a key?"
+expected:
+  should_trigger: false
+  output_not_contains:
+    - "azd x init"
+    - "microsoft.azd.extensions"
+graders:
+  - name: no-extension-steering
+    type: text
+    weight: 0.6
+    config:
+      not_contains:
+        - "azd x init"
+        - "extension.yaml"
+        - "microsoft.azd.extensions"
+  - name: answers-the-python-question
+    type: text
+    weight: 0.4
+    config:
+      regex_match:
+        - "(sorted\\(|\\.sort\\(|key=|lambda)"

@@ -1,0 +1,40 @@
+id: release-first-party-001
+name: Release a first-party extension via two-PR flow
+description: >
+  User wants to ship a new version of an existing first-party extension inside Azure/azure-dev.
+  The agent should describe the 2-PR flow (version bump, then registry.json update) and NOT tell
+  the user to run `azd x release` directly against the Azure/azure-dev repo.
+tags:
+  - release
+  - first-party
+inputs:
+  prompt: "How do I ship a new version of an existing first-party azd extension that lives in the Azure/azure-dev repo?"
+expected:
+  should_trigger: true
+  output_contains:
+    - "registry.json"
+graders:
+  - name: describes-two-pr-flow
+    type: text
+    weight: 0.6
+    config:
+      contains:
+        - "registry.json"
+      regex_match:
+        - "(version.txt|two PR|2 PR|CHANGELOG)"
+  - name: does-not-recommend-release-against-core-repo
+    type: prompt
+    weight: 0.4
+    config:
+      continue_session: true
+      prompt: >
+        Evaluate the answer you just gave in this session about shipping a new version of a
+        FIRST-PARTY azd extension that lives in the Azure/azure-dev repo. The correct guidance is a
+        two-PR flow: PR1 bumps version.txt / extension.yaml / CHANGELOG.md (CI builds and publishes
+        the GitHub release), then PR2 updates cli/azd/extensions/registry.json (e.g. via
+        `azd x publish`).
+        Call set_waza_grade_pass if the answer does NOT instruct the user to run `azd x release`
+        directly against the Azure/azure-dev repo as an actual shipping step — it is fine, and good,
+        for the answer to explicitly warn against doing so.
+        Call set_waza_grade_fail only if the answer tells the user to run `azd x release` against
+        Azure/azure-dev as a real step in shipping the extension.

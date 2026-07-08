@@ -55,7 +55,8 @@ batch summary at the end.
 
 ## Error Handling
 
-- **waza not installed** → offer: `go install github.com/microsoft/waza/cmd/waza@latest`
+- **waza not installed** → offer: `npm install -g waza` (or the official installer:
+  `curl -fsSL https://raw.githubusercontent.com/microsoft/waza/main/install.sh | bash`)
 - **Skill not found** → list available skills, ask user to select
 - **Eval run fails** → report error, continue with compliance check only
 - **waza suggest fails** → fall back to manual improvement suggestions

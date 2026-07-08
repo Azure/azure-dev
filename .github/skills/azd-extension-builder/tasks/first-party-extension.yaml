@@ -1,0 +1,29 @@
+id: first-party-extension-001
+name: First-party extension inside azure-dev
+description: >
+  A member of the Azure/azure-dev team wants to add a first-party extension. The agent should
+  point to `azd x init --internal` and the codeowners requirement, distinct from external flow.
+tags:
+  - first-party
+  - happy-path
+inputs:
+  prompt: "I'm on the Azure/azure-dev team and need to add a first-party azd extension in the repo. What's different from a normal one?"
+expected:
+  should_trigger: true
+  output_contains:
+    - "--internal"
+graders:
+  - name: recommends-internal-flow
+    type: text
+    weight: 0.7
+    config:
+      contains:
+        - "--internal"
+      regex_match:
+        - "(?i)(codeowners|cli/azd/extensions)"
+  - name: mentions-go-or-first-party
+    type: text
+    weight: 0.3
+    config:
+      regex_match:
+        - "(?i)(\\bgo\\b|first-party)"

@@ -919,22 +919,6 @@ func (r *runner) initOutputDiagnostics() string {
 	return strings.TrimSpace(b.String())
 }
 
-// hasAgentYAML reports whether an agent.yaml exists anywhere under root.
-func hasAgentYAML(root string) bool {
-	found := false
-	_ = filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if !d.IsDir() && d.Name() == "agent.yaml" {
-			found = true
-			return filepath.SkipAll
-		}
-		return nil
-	})
-	return found
-}
-
 // lineLogger forwards a stream to t.Log one line at a time so long-running azd
 // output is visible live in the CI log.
 type lineLogger struct {

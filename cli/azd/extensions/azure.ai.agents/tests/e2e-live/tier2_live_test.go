@@ -189,6 +189,11 @@ func setupConfigDir(t *testing.T, configDir string) {
 
 // run executes the phases in order, stopping at the first failure. Teardown is
 // registered separately as a cleanup, so it always runs.
+//
+// E2E_SKIP_DEPLOY=true runs only init → provision → down, skipping deploy and
+// invoke. Those phases don't affect the interactive `azd down` teardown, so
+// this is the fast way to iterate on the provision/down path (issue #8839)
+// without paying for a full agent deploy.
 func (r *runner) run(ctx context.Context) {
 	if err := r.phaseInitWithRetry(ctx); err != nil {
 		r.t.Errorf("init: %v", err)
@@ -198,12 +203,20 @@ func (r *runner) run(ctx context.Context) {
 		r.t.Errorf("provision: %v", err)
 		return
 	}
-	if err := r.phaseDeploy(ctx); err != nil {
-		r.t.Errorf("deploy: %v", err)
-		return
+	if envTrue("E2E_SKIP_DEPLOY") {
+		r.t.Log("E2E_SKIP_DEPLOY=true: skipping deploy and invoke phases")
+	} else {
+		if err := r.phaseDeploy(ctx); err != nil {
+			r.t.Errorf("deploy: %v", err)
+			return
+		}
+		if err := r.phaseInvoke(ctx); err != nil {
+			r.t.Errorf("invoke: %v", err)
+			return
+		}
 	}
-	if err := r.phaseInvoke(ctx); err != nil {
-		r.t.Errorf("invoke: %v", err)
+	if err := r.phaseDown(ctx); err != nil {
+		r.t.Errorf("down: %v", err)
 		return
 	}
 }
@@ -342,7 +355,15 @@ func (r *runner) driveInit(ctx context.Context, exited <-chan struct{}) error {
 				r.enter()
 				continue
 			}
-			if strings.Contains(prompt, "model") || strings.Contains(prompt, "is specified") {
+			// The model select/deployment prompts can legitimately need a
+			// different option than the default (e.g. the manifest model isn't
+			// available in the chosen region), so nudge to the next choice. Scope
+			// this strictly to the model prompts: the Foundry-project prompt text
+			// ("...host your agent and any models or tools it uses.") also contains
+			// "model", and must NOT be treated as a model prompt here.
+			isModelPrompt := strings.Contains(prompt, "select a model") ||
+				strings.Contains(prompt, "is specified in the agent manifest")
+			if isModelPrompt {
 				r.t.Log("loop detected on model prompt; trying next option")
 				r.c.send(keyDown)
 				r.c.waitForQuiet(listSettle)
@@ -617,6 +638,161 @@ func (r *runner) phaseInvoke(ctx context.Context) error {
 		return nil
 	}
 	return errors.New("invoke failed after all retries")
+}
+
+// phaseDown exercises the interactive `azd down` teardown. With no --force flag
+// the Foundry provider must prompt for confirmation (issue #8839) instead of
+// failing outright. This drives the confirmation prompt over a pseudo-terminal,
+// verifies it names the resource group, answers "yes", waits for the delete to
+// finish, and asserts the resource group is actually gone. The registered
+// force+purge teardown remains as an idempotent safety net.
+func (r *runner) phaseDown(ctx context.Context) error {
+	// Capture the resource group + subscription BEFORE deleting, so we can
+	// verify the group is gone afterward: `azd down` invalidates the env values.
+	vals := r.azdEnvValues(ctx)
+	rg := vals["AZURE_RESOURCE_GROUP"]
+	sub := vals["AZURE_SUBSCRIPTION_ID"]
+	if rg == "" {
+		return errors.New("AZURE_RESOURCE_GROUP not found in azd env; cannot exercise interactive down")
+	}
+
+	if err := r.runAzdDownInteractive(ctx, rg); err != nil {
+		return err
+	}
+
+	// Verify the resource group was actually deleted. `az group exists` prints
+	// "true"/"false". A verification hiccup (az error) is logged but not fatal —
+	// the force teardown safety net still guarantees cleanup — but a group that
+	// still exists means the interactive down did not actually tear down.
+	args := []string{"group", "exists", "--name", rg}
+	if sub != "" {
+		args = append(args, "--subscription", sub)
+	}
+	out, code := r.runQuiet(ctx, r.projectDir, tagTimeout, "az", args...)
+	if code != 0 {
+		r.t.Logf("warning: could not verify resource group deletion (exit %d): %s",
+			code, truncate(strings.TrimSpace(out), 200))
+		return nil
+	}
+	if strings.Contains(strings.ToLower(out), "true") {
+		return fmt.Errorf("resource group %q still exists after interactive `azd down`", rg)
+	}
+	r.t.Logf("interactive `azd down` deleted resource group %q", rg)
+	return nil
+}
+
+// runAzdDownInteractive runs `azd down --purge` (no --force) attached to a
+// pseudo-terminal and drives the destroy confirmation prompt to completion.
+// --purge is included so soft-deleted Cognitive Services accounts don't block a
+// later re-provision; the confirmation prompt fires regardless of --purge.
+func (r *runner) runAzdDownInteractive(ctx context.Context, rg string) error {
+	c, err := newConsole(initCols, initRows)
+	if err != nil {
+		return err
+	}
+	defer c.close()
+
+	dctx, cancel := context.WithTimeout(ctx, teardownTimeout)
+	defer cancel()
+
+	//nolint:gosec // azd is a trusted fixed binary; args are test-controlled.
+	cmd := exec.CommandContext(dctx, "azd", "down", "--purge")
+	cmd.Dir = r.projectDir
+	cmd.Env = r.env
+	cmd.Stdin = c.tty()
+	cmd.Stdout = c.tty()
+	cmd.Stderr = c.tty()
+	// Give the child the pts as its controlling terminal so the prompt library
+	// treats it as a real interactive terminal (mirrors phaseInit).
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start azd down: %w", err)
+	}
+
+	exited := make(chan struct{})
+	var waitErr error
+	go func() {
+		waitErr = cmd.Wait()
+		close(exited)
+	}()
+
+	confirmed, driveErr := r.driveDown(dctx, c, exited, rg)
+
+	// Ensure the child is gone before returning (it normally exits itself).
+	select {
+	case <-exited:
+	case <-time.After(15 * time.Second):
+		_ = cmd.Process.Kill()
+		<-exited
+	}
+
+	if driveErr != nil {
+		return driveErr
+	}
+	if !confirmed {
+		return fmt.Errorf("azd down exited without prompting for confirmation\n--- tail ---\n%s",
+			tail(c.tailString(), 2000))
+	}
+	if code := exitCode(waitErr); code != 0 {
+		return fmt.Errorf("azd down (interactive) failed (exit %d)\n--- tail ---\n%s",
+			code, tail(c.tailString(), 2000))
+	}
+	return nil
+}
+
+// driveDown waits for the Foundry destroy confirmation prompt, verifies it names
+// the resource group, and answers "yes". It returns confirmed=true once it has
+// answered, then keeps draining output (rendering the delete progress) until the
+// child exits or ctx is cancelled.
+func (r *runner) driveDown(
+	ctx context.Context, c *console, exited <-chan struct{}, rg string,
+) (confirmed bool, err error) {
+	for {
+		select {
+		case <-ctx.Done():
+			return confirmed, fmt.Errorf("azd down timed out: %w\n--- tail ---\n%s",
+				ctx.Err(), tail(c.tailString(), 2000))
+		case <-exited:
+			return confirmed, nil
+		default:
+		}
+
+		// Block until the UI stops emitting (prompt drawn, awaiting input) or
+		// the child exits.
+		if c.waitForQuiet(promptQuiet) {
+			return confirmed, nil // child exited
+		}
+		if confirmed {
+			continue // already answered; just drain until exit
+		}
+
+		screen := c.screen()
+		// Only answer once survey is actively blocking on a "?" prompt.
+		if activePrompt(screen) == "" {
+			continue
+		}
+		if !isDestroyConfirmScreen(screen) {
+			continue
+		}
+
+		r.t.Log("down: destroy confirmation prompt detected")
+		if !screenContains(screen, rg) {
+			return confirmed, fmt.Errorf(
+				"destroy confirmation did not name resource group %q\n--- screen ---\n%s", rg, screen)
+		}
+		c.send("y" + keyEnter)
+		confirmed = true
+	}
+}
+
+// isDestroyConfirmScreen reports whether the rendered screen shows the Foundry
+// provider's destroy confirmation prompt. Source: confirmDestroy in
+// foundry_provisioning_provider.go prints "... Are you sure you want to
+// continue?" as a survey Confirm.
+func isDestroyConfirmScreen(screen string) bool {
+	return screenContains(screen, "are you sure you want to continue") &&
+		screenContains(screen, "delete resource group")
 }
 
 // teardown runs `azd down` so a run never leaves billable resources behind. It

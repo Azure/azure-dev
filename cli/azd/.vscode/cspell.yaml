@@ -156,6 +156,9 @@ words:
   - secretversion
   - TTLs
   - vaultname
+  - DYLD
+  - dyld
+  - LDLIBS
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -483,6 +486,8 @@ overrides:
     words:
       - filesystems
       - redirections
+      - APPINSTALLER
+      - idempotently
   - filename: internal/agent/copilot/session_config.go
     words:
       - MCPHTTP

@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -29,6 +30,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
+
+// wingetNoPackageFoundExitCode is winget's
+// APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND ("No packages found"),
+// returned when no installed package matches the uninstall criteria. It is
+// locale-independent, unlike the printed "No installed package found
+// matching input criteria." text. Windows reports it as the unsigned DWORD
+// 0x8A150014; Go's os/exec surfaces it as the int 2316632084, while shells
+// display the signed -1978335212. Comparing via uint32 matches all
+// representations. See:
+// https://github.com/microsoft/winget-cli/blob/master/doc/windows/package-manager/winget/returnCodes.md
+const wingetNoPackageFoundExitCode uint32 = 0x8A150014
 
 // InstallResult captures the outcome of an install or upgrade operation.
 type InstallResult struct {
@@ -185,6 +197,9 @@ type installer struct {
 	// retries (doubled each attempt). Defaults to 1s; tests may shorten
 	// it to keep the suite fast.
 	retryBackoff time.Duration
+	// lookPath resolves an executable's absolute path on PATH. Defaults to
+	// os/exec.LookPath; tests may substitute a deterministic resolver.
+	lookPath func(string) (string, error)
 }
 
 // httpDoer is an interface satisfied by [*http.Client] for testing.
@@ -206,6 +221,7 @@ func NewInstaller(
 		detector:         detector,
 		httpClient:       http.DefaultClient,
 		retryBackoff:     time.Second,
+		lookPath:         osexec.LookPath,
 	}
 }
 
@@ -223,6 +239,7 @@ func NewInstallerWithHTTPClient(
 		detector:         detector,
 		httpClient:       httpClient,
 		retryBackoff:     time.Second,
+		lookPath:         osexec.LookPath,
 	}
 }
 
@@ -314,7 +331,8 @@ func (i *installer) runUninstall(
 		return result, nil
 	}
 
-	// 2. Select the strategy used to install on this platform.
+	// 2. Select the strategy used to install on this platform. SelectStrategy
+	//    returns the install-preferred (first available) strategy.
 	strategy := i.platformDetector.SelectStrategy(tool, platform)
 	if strategy == nil {
 		result.Error = fmt.Errorf(
@@ -323,6 +341,26 @@ func (i *installer) runUninstall(
 		)
 		result.Duration = time.Since(start)
 		return result, nil
+	}
+
+	// 2a. For tools with several install methods, the install-preferred
+	//     strategy is not necessarily the one that installed the tool. Detect
+	//     which method actually owns the install and uninstall via that
+	//     (detect-then-remove).
+	if strategies := i.platformDetector.SelectStrategies(
+		tool, platform,
+	); len(strategies) > 1 {
+		if detected := i.detectInstallingStrategy(
+			ctx, strategies, platform,
+		); detected != nil {
+			strategy = detected
+		} else {
+			// No package manager has a record of the tool. If it is still
+			// detected on PATH it was installed by a self-contained method
+			// (install script / direct download); guide the user to the
+			// binary. Otherwise it is already gone.
+			return i.uninstallWithoutManagerOwner(ctx, tool, start)
+		}
 	}
 
 	// 3. Execute the uninstall using the matching mechanism. An explicit
@@ -369,21 +407,59 @@ func (i *installer) runUninstall(
 			return result, nil
 		}
 
-		if err := i.executeUninstall(ctx, strategy); err != nil {
-			// The package manager could not remove the tool. This commonly
-			// happens when a self-updating CLI replaced the copy the package
-			// manager installed (e.g. `copilot update`), so the manager no
-			// longer has a record of the package. If the tool is already
-			// gone, treat the uninstall as complete (idempotent); otherwise
-			// guide the user to remove it manually, since neither the package
-			// manager nor azd can.
+		if res, err := i.executeUninstall(ctx, strategy); err != nil {
+			// The package manager could not remove the tool. If the tool is
+			// already gone, treat the uninstall as complete (idempotent);
+			// otherwise classify the failure below so the user gets guidance
+			// that matches the actual cause.
 			status, detectErr := i.detector.DetectTool(ctx, tool)
 			if detectErr == nil && !status.Installed {
 				result.Success = true
 				result.Duration = time.Since(start)
 				return result, nil
 			}
-			result.Error = i.packageManagerUninstallFailedError(tool, strategy, err)
+
+			// VS Code refuses to remove an extension that other installed
+			// extensions depend on (and `--force` does not override this).
+			// Surface accurate, actionable guidance instead of the generic
+			// "no record" message, which would misattribute the cause.
+			if detail, ok := vscodeDependencyConflict(strategy.PackageManager, res.Stderr); ok {
+				result.Error = i.vscodeDependencyUninstallError(tool, detail)
+				result.Duration = time.Since(start)
+				return result, nil
+			}
+
+			// The package manager no longer has a record of the package
+			// (e.g. a self-updating CLI replaced the manager-installed copy
+			// via its own `update` command). Only this signature warrants
+			// the "updated outside the package manager" guidance.
+			if packageManagerLostRecord(strategy.PackageManager, res) {
+				// Echo the manager's own message when it has one; some
+				// managers signal the lost-record case via an exit code with
+				// little or no output, so fall back to the command error to
+				// avoid a blank/noisy message.
+				reported := strings.TrimSpace(res.Stdout + "\n" + res.Stderr)
+				if reported == "" {
+					reported = err.Error()
+				}
+				result.Error = i.packageManagerUninstallFailedError(tool, strategy, reported)
+				result.Duration = time.Since(start)
+				return result, nil
+			}
+
+			// Any other package-manager failure (permissions, locks,
+			// network, manager-internal errors, etc.): return the actual
+			// error directly without speculating about the cause.
+			if res.Stderr != "" {
+				result.Error = fmt.Errorf(
+					"uninstalling %s with %s failed: %s",
+					tool.Name, strategy.PackageManager, res.Stderr,
+				)
+			} else {
+				result.Error = fmt.Errorf(
+					"running uninstall command for %s: %w", tool.Name, err,
+				)
+			}
 			result.Duration = time.Since(start)
 			return result, nil
 		}
@@ -433,6 +509,162 @@ func (i *installer) runUninstall(
 	result.Success = true
 	result.Duration = time.Since(start)
 	return result, nil
+}
+
+// detectInstallingStrategy returns the strategy whose package manager currently
+// has a record of the tool installed, or nil when no package-manager strategy
+// owns it. Strategies are checked in list order, so the preferred manager wins
+// when several report the tool. A nil result combined with the tool still being
+// detected on PATH indicates a self-contained install (e.g. the install
+// script) that no package manager tracks.
+func (i *installer) detectInstallingStrategy(
+	ctx context.Context,
+	strategies []InstallStrategy,
+	platform *Platform,
+) *InstallStrategy {
+	for idx := range strategies {
+		s := &strategies[idx]
+		if s.PackageManager == "" || s.PackageId == "" {
+			continue
+		}
+		if !platform.HasManager(s.PackageManager) {
+			continue
+		}
+		if i.managerHasPackage(ctx, s) {
+			return s
+		}
+	}
+	return nil
+}
+
+// managerHasPackage reports whether the strategy's package manager currently
+// has a record of the package installed. Each manager exposes a different
+// "list" command, but all exit non-zero when the package is absent. For npm
+// and winget the package id must also appear in the output as a guard against
+// partial matches; brew's list prints artifact paths, so its exit code alone
+// is used.
+func (i *installer) managerHasPackage(
+	ctx context.Context,
+	s *InstallStrategy,
+) bool {
+	switch s.PackageManager {
+	case "npm":
+		res, err := i.commandRunner.Run(ctx, exec.NewRunArgs(
+			"npm", "ls", "-g", s.PackageId, "--depth=0",
+		))
+		return err == nil && strings.Contains(res.Stdout, s.PackageId)
+	case "brew":
+		args := []string{"list"}
+		if s.Cask {
+			args = append(args, "--cask")
+		}
+		args = append(args, s.PackageId)
+		_, err := i.commandRunner.Run(ctx, exec.NewRunArgs("brew", args...))
+		return err == nil
+	case "winget":
+		res, err := i.commandRunner.Run(ctx, exec.NewRunArgs(
+			"winget", "list", "--id", s.PackageId, "-e",
+			"--accept-source-agreements",
+		))
+		return err == nil && strings.Contains(res.Stdout, s.PackageId)
+	default:
+		return false
+	}
+}
+
+// uninstallWithoutManagerOwner handles a multi-method tool that no package
+// manager has a record of. When the tool is already gone the uninstall is
+// idempotently successful; otherwise it was installed by a self-contained
+// method (install script / direct download), so azd guides the user to remove
+// the detected binary.
+func (i *installer) uninstallWithoutManagerOwner(
+	ctx context.Context,
+	tool *ToolDefinition,
+	start time.Time,
+) (*InstallResult, error) {
+	result := &InstallResult{Tool: tool, Strategy: "manual"}
+
+	if status, err := i.detector.DetectTool(ctx, tool); err == nil &&
+		!status.Installed {
+		result.Success = true
+		result.Duration = time.Since(start)
+		return result, nil
+	}
+
+	result.Error = i.binaryRemovalUninstallError(tool)
+	result.Duration = time.Since(start)
+	return result, nil
+}
+
+// binaryRemovalUninstallError builds an [errorhandler.ErrorWithSuggestion] for
+// a tool that is present but not tracked by any package manager azd can use
+// (installed via the install script or a direct download). It names the actual
+// on-PATH binary and the command to remove it.
+func (i *installer) binaryRemovalUninstallError(tool *ToolDefinition) error {
+	binaryPath := ""
+	if tool.DetectCommand != "" && i.lookPath != nil {
+		if resolved, err := i.lookPath(tool.DetectCommand); err == nil {
+			binaryPath = resolved
+		}
+	}
+
+	return &errorhandler.ErrorWithSuggestion{
+		Err: fmt.Errorf(
+			"%s is not tracked by a package manager on this system", tool.Name,
+		),
+		Message:    "Cannot uninstall " + tool.Name,
+		Suggestion: selfManagedRemovalSuggestion(tool, binaryPath),
+	}
+}
+
+// selfManagedRemovalSuggestion builds manual-removal guidance for a binary not
+// tracked by a package manager. When binaryPath is non-empty it names the exact
+// file and the command to remove it (with sudo for system locations).
+func selfManagedRemovalSuggestion(tool *ToolDefinition, binaryPath string) string {
+	intro := fmt.Sprintf(
+		"%s was installed outside a package manager azd can use on this "+
+			"platform (for example via the install script or a direct "+
+			"download).",
+		tool.Name,
+	)
+
+	if binaryPath == "" {
+		return fmt.Sprintf(
+			"%s Remove the %q binary from your PATH manually.",
+			intro, tool.DetectCommand,
+		)
+	}
+
+	return fmt.Sprintf(
+		"%s Remove it manually:\n\n%s",
+		intro, removeCommandFor(binaryPath),
+	)
+}
+
+// removeCommandFor returns the OS-appropriate command to delete the file at
+// binaryPath, prefixing sudo for system locations on Unix.
+func removeCommandFor(binaryPath string) string {
+	if runtime.GOOS == "windows" {
+		return fmt.Sprintf("Remove-Item '%s'", binaryPath)
+	}
+	if isSystemBinaryPath(binaryPath) {
+		return fmt.Sprintf("sudo rm %q", binaryPath)
+	}
+	return fmt.Sprintf("rm %q", binaryPath)
+}
+
+// isSystemBinaryPath reports whether binaryPath lives in a system-owned
+// location that typically requires elevated privileges to modify.
+func isSystemBinaryPath(binaryPath string) bool {
+	systemPrefixes := []string{
+		"/usr/", "/opt/", "/bin/", "/sbin/", "/Library/",
+	}
+	for _, prefix := range systemPrefixes {
+		if strings.HasPrefix(binaryPath, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // runSkillUninstall removes a skill from the resolved target host(s) and
@@ -1385,20 +1617,25 @@ func (i *installer) executeStrategy(
 // given strategy. It is only reached for strategies backed by a known
 // package manager; direct-download and unsupported strategies are
 // handled by runUninstall before this point.
+//
+// The full command result (stdout, stderr, exit code) is returned
+// alongside any error so callers can inspect package-manager diagnostics —
+// for example, VS Code's refusal to remove an extension that other
+// extensions depend on (stderr), or winget reporting that it has no record
+// of the package (stdout).
 func (i *installer) executeUninstall(
 	ctx context.Context,
 	strategy *InstallStrategy,
-) error {
+) (exec.RunResult, error) {
 	cmd, args := buildUninstallCommand(
-		strategy.PackageManager, strategy.PackageId,
+		strategy.PackageManager, strategy.PackageId, strategy.Cask,
 	)
 	if cmd == "" {
-		return fmt.Errorf("strategy produced an empty uninstall command")
+		return exec.RunResult{}, fmt.Errorf("strategy produced an empty uninstall command")
 	}
 
 	runArgs := exec.NewRunArgs(cmd, args...)
-	_, err := i.commandRunner.Run(ctx, runArgs)
-	return err
+	return i.commandRunner.Run(ctx, runArgs)
 }
 
 // executeUninstallCommand runs an explicit uninstall command string (the
@@ -1440,6 +1677,7 @@ func (i *installer) buildCommand(
 			strategy.PackageManager,
 			strategy.PackageId,
 			true,
+			strategy.Cask,
 		)
 	}
 
@@ -1455,6 +1693,7 @@ func (i *installer) buildCommand(
 			strategy.PackageManager,
 			strategy.PackageId,
 			false,
+			strategy.Cask,
 		)
 	}
 
@@ -1518,31 +1757,114 @@ func (i *installer) managerUnavailableUninstallError(
 }
 
 // packageManagerUninstallFailedError builds an
-// [errorhandler.ErrorWithSuggestion] for the case where the package
-// manager is present but could not remove a tool that azd still detects
-// as installed. The common cause is a self-updating CLI (for example one
-// updated via its own `update` command) that replaced the copy the
-// package manager installed, so the manager no longer has a record of the
-// package. Since neither the package manager nor azd can remove it
-// automatically, the user is guided to delete it manually.
+// [errorhandler.ErrorWithSuggestion] for the specific case where the
+// package manager is present but no longer has a record of a tool that azd
+// still detects as installed. This is the signature of a self-updating CLI
+// (for example one updated via its own `update` command) that replaced the
+// copy the package manager installed. It is only used when
+// packageManagerLostRecord matches; other failures surface the package
+// manager's error directly. The package manager's reported message (when
+// available) is echoed back, and the user is guided to delete the tool
+// manually since neither the package manager nor azd can.
 func (i *installer) packageManagerUninstallFailedError(
 	tool *ToolDefinition,
 	strategy *InstallStrategy,
-	cause error,
+	reported string,
 ) error {
-	removal := fmt.Sprintf("Please remove %s manually.", tool.Name)
+	suggestion := fmt.Sprintf(
+		"%s could not be removed with %s, which no longer has a record "+
+			"of it. This usually means the tool was updated outside the "+
+			"package manager (for example via its own update command). "+
+			"Please remove %s manually.", tool.Name,
+		strategy.PackageManager,
+		tool.Name,
+	)
 
 	return &errorhandler.ErrorWithSuggestion{
 		Err: fmt.Errorf(
-			"running uninstall command for %s: %w", tool.Name, cause,
+			"running uninstall command for %s: %s", tool.Name, reported,
 		),
-		Message: "Cannot uninstall " + tool.Name,
-		Suggestion: fmt.Sprintf(
-			"%s could not be removed with %s, which no longer has a record "+
-				"of it. This usually means the tool was updated outside the "+
-				"package manager (for example via its own update command). %s",
-			tool.Name, strategy.PackageManager, removal,
+		Message:    "Cannot uninstall " + tool.Name,
+		Suggestion: suggestion,
+	}
+}
+
+// vscodeDependencyConflict reports whether a failed `code
+// --uninstall-extension` run was rejected because other installed
+// extensions depend on the target extension. VS Code blocks this by
+// design (even with --force), printing a message such as:
+//
+//	Cannot uninstall 'Azure Resources' extension. 'Azure App Service'
+//	extension depends on this.
+//
+// When matched, the trimmed VS Code message is returned so callers can
+// echo the specific dependent extensions back to the user.
+func vscodeDependencyConflict(packageManager, stderr string) (string, bool) {
+	if packageManager != "code" {
+		return "", false
+	}
+
+	lower := strings.ToLower(stderr)
+	if strings.Contains(lower, "depend on this") ||
+		strings.Contains(lower, "depends on this") {
+		return strings.TrimSpace(stderr), true
+	}
+
+	return "", false
+}
+
+// packageManagerLostRecord reports whether a failed uninstall indicates the
+// package manager no longer has a record of the package. This is
+// winget-specific: winget tracks installs via the Windows Add/Remove
+// Programs registry, so a self-updating CLI (for example `copilot update`
+// after `winget install GitHub.Copilot`) can replace itself and unregister,
+// leaving winget with no record even though the binary is still on PATH.
+// winget then fails with APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND and
+// prints "No installed package found matching input criteria.".
+//
+// Other managers are intentionally excluded: brew, npm and apt track
+// installs via their own manifests, which self-updates do not disturb, and
+// their "nothing to remove" uninstalls typically exit 0 (npm, for example,
+// prints "up to date"), so they do not reach this path. Their genuine
+// failures surface directly instead, carrying the manager's own message.
+func packageManagerLostRecord(packageManager string, res exec.RunResult) bool {
+	if packageManager != "winget" {
+		return false
+	}
+
+	// Windows exit codes are unsigned 32-bit values, so compare the low 32
+	// bits to match regardless of how the sign bit is represented.
+	exitCode := uint32(res.ExitCode) //nolint:gosec // 32-bit Windows exit code
+	return exitCode == wingetNoPackageFoundExitCode ||
+		strings.Contains(
+			strings.ToLower(res.Stdout+"\n"+res.Stderr),
+			"no installed package found",
+		)
+}
+
+// vscodeDependencyUninstallError builds an
+// [errorhandler.ErrorWithSuggestion] for the case where VS Code refuses to
+// remove an extension because other installed extensions depend on it.
+// Unlike packageManagerUninstallFailedError, this guides the user to
+// remove the dependent extensions first rather than implying the tool was
+// updated outside the package manager.
+func (i *installer) vscodeDependencyUninstallError(
+	tool *ToolDefinition,
+	detail string,
+) error {
+	suggestion := fmt.Sprintf(
+		"%s cannot be removed because other installed VS Code extensions "+
+			"depend on it. Uninstall the dependent extension(s) first, then "+
+			"remove %s.",
+		tool.Name, tool.Name,
+	)
+
+	return &errorhandler.ErrorWithSuggestion{
+		Err: fmt.Errorf(
+			"running uninstall command for %s: %s", tool.Name, detail,
 		),
+		Message:    "Cannot uninstall " + tool.Name,
+		Suggestion: suggestion,
 	}
 }
 
@@ -1803,17 +2125,19 @@ func copyFilePath(src, dst string) error {
 // -----------------------------------------------------------------------
 
 // buildManagerCommand returns the command and arguments for a
-// well-known package manager install or upgrade operation.
+// well-known package manager install or upgrade operation. cask applies
+// only to Homebrew, adding the `--cask` flag.
 func buildManagerCommand(
 	manager string,
 	packageID string,
 	upgrade bool,
+	cask bool,
 ) (string, []string) {
 	switch manager {
 	case "winget":
 		return buildWingetCommand(packageID, upgrade)
 	case "brew":
-		return buildBrewCommand(packageID, upgrade)
+		return buildBrewCommand(packageID, upgrade, cask)
 	case "apt":
 		return buildAptCommand(packageID, upgrade)
 	case "npm":
@@ -1842,13 +2166,18 @@ func buildWingetCommand(
 }
 
 func buildBrewCommand(
-	packageID string, upgrade bool,
+	packageID string, upgrade bool, cask bool,
 ) (string, []string) {
 	action := "install"
 	if upgrade {
 		action = "upgrade"
 	}
-	return "brew", []string{action, packageID}
+	args := []string{action}
+	if cask {
+		args = append(args, "--cask")
+	}
+	args = append(args, packageID)
+	return "brew", args
 }
 
 func buildAptCommand(
@@ -1885,11 +2214,13 @@ func buildCodeCommand(
 }
 
 // buildUninstallCommand returns the command and arguments to remove a
-// package previously installed by the given package manager. It returns
-// an empty command for unknown managers.
+// package previously installed by the given package manager. cask applies
+// only to Homebrew, adding the `--cask` flag. It returns an empty command
+// for unknown managers.
 func buildUninstallCommand(
 	manager string,
 	packageID string,
+	cask bool,
 ) (string, []string) {
 	switch manager {
 	case "winget":
@@ -1900,7 +2231,12 @@ func buildUninstallCommand(
 			"-e",
 		}
 	case "brew":
-		return "brew", []string{"uninstall", packageID}
+		args := []string{"uninstall"}
+		if cask {
+			args = append(args, "--cask")
+		}
+		args = append(args, packageID)
+		return "brew", args
 	case "apt":
 		return "sudo", []string{"apt-get", "remove", "-y", packageID}
 	case "npm":

@@ -113,6 +113,11 @@ type InstallStrategy struct {
 	PackageManager string
 	// PackageId is the identifier within the package manager (e.g. "Microsoft.AzureCLI").
 	PackageId string
+	// Cask indicates that PackageId is a Homebrew cask rather than a formula.
+	// When true, azd adds the `--cask` flag to brew install/upgrade/uninstall
+	// and reads the cask version from `brew info` output. Ignored for managers
+	// other than "brew".
+	Cask bool
 	// InstallCommand is the full shell command when a simple package-manager install
 	// does not apply (e.g. "curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash").
 	InstallCommand string
@@ -155,9 +160,15 @@ type ToolDefinition struct {
 	// VersionRegex is a Go regular expression with a capture group for the semver portion
 	// of the version output (e.g. `azure-cli\s+(\d+\.\d+\.\d+)`).
 	VersionRegex string
-	// InstallStrategies maps a GOOS value ("windows", "darwin", "linux") to the
-	// platform-specific installation strategy.
-	InstallStrategies map[string]InstallStrategy
+	// InstallStrategies maps a GOOS value ("windows", "darwin", "linux") to an
+	// ordered list of platform-specific installation strategies. The list is in
+	// preference order: install/upgrade use the first strategy whose package
+	// manager is available (or that runs a self-contained command); uninstall
+	// detects which strategy actually installed the tool and removes it via
+	// that one. Most tools have a single strategy per platform; tools with
+	// several official install methods (e.g. the GitHub Copilot CLI) list them
+	// all.
+	InstallStrategies map[string][]InstallStrategy
 	// SkillHosts describes the agent CLI hosts that can install this tool when
 	// Category == ToolCategorySkill. Hosts are listed in preference order: by
 	// default the first host on PATH is used, but install/upgrade can target
@@ -226,21 +237,21 @@ func azCLI() *ToolDefinition {
 		DetectCommand: "az",
 		VersionArgs:   []string{"--version"},
 		VersionRegex:  `azure-cli\s+(\d+\.\d+\.\d+)`,
-		InstallStrategies: map[string]InstallStrategy{
-			"windows": {
+		InstallStrategies: map[string][]InstallStrategy{
+			"windows": {{
 				PackageManager: "winget",
 				PackageId:      "Microsoft.AzureCLI",
-			},
-			"darwin": {
+			}},
+			"darwin": {{
 				PackageManager: "brew",
 				PackageId:      "azure-cli",
-			},
-			"linux": {
+			}},
+			"linux": {{
 				PackageManager: "apt",
 				PackageId:      "azure-cli",
 				InstallCommand: "curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash",
 				FallbackUrl:    "https://learn.microsoft.com/cli/azure/install-azure-cli",
-			},
+			}},
 		},
 	}
 }
@@ -256,19 +267,23 @@ func githubCopilotCLI() *ToolDefinition {
 		DetectCommand: "copilot",
 		VersionArgs:   []string{"--version"},
 		VersionRegex:  `(\d+\.\d+\.\d+)`,
-		InstallStrategies: map[string]InstallStrategy{
+		// The Copilot CLI can be installed several ways per platform (see the
+		// official docs). They are listed in preference order; install picks
+		// the first available, and uninstall detects which one was used.
+		InstallStrategies: map[string][]InstallStrategy{
 			"windows": {
-				PackageManager: "winget",
-				PackageId:      "GitHub.Copilot",
+				{PackageManager: "winget", PackageId: "GitHub.Copilot"},
+				{PackageManager: "npm", PackageId: "@github/copilot"},
 			},
 			"darwin": {
-				PackageManager: "brew",
-				PackageId:      "copilot-cli",
+				{PackageManager: "brew", PackageId: "copilot-cli", Cask: true},
+				{PackageManager: "npm", PackageId: "@github/copilot"},
+				{InstallCommand: "curl -fsSL https://gh.io/copilot-install | bash"},
 			},
 			"linux": {
-				PackageManager: "npm",
-				PackageId:      "@github/copilot",
-				InstallCommand: "npm install -g @github/copilot",
+				{PackageManager: "brew", PackageId: "copilot-cli", Cask: true},
+				{PackageManager: "npm", PackageId: "@github/copilot"},
+				{InstallCommand: "curl -fsSL https://gh.io/copilot-install | bash"},
 			},
 		},
 	}
@@ -427,12 +442,13 @@ func azureSkills() *ToolDefinition {
 	}
 }
 
-// allPlatforms returns an [InstallStrategies] map that uses the same strategy
-// for Windows, macOS and Linux.
-func allPlatforms(s InstallStrategy) map[string]InstallStrategy {
-	return map[string]InstallStrategy{
-		"windows": s,
-		"darwin":  s,
-		"linux":   s,
+// allPlatforms returns an [InstallStrategies] map that uses the same ordered
+// strategy list for Windows, macOS and Linux. A single strategy is the common
+// case; pass several for tools installable multiple ways on every platform.
+func allPlatforms(strategies ...InstallStrategy) map[string][]InstallStrategy {
+	return map[string][]InstallStrategy{
+		"windows": strategies,
+		"darwin":  strategies,
+		"linux":   strategies,
 	}
 }

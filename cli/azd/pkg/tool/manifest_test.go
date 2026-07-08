@@ -445,7 +445,9 @@ func TestAzureSkillsHostVersionProbeRegex(t *testing.T) {
 
 	rx := map[string]string{}
 	for _, h := range azureSkills().SkillHosts {
-		rx[h.Host] = h.BinaryVersionRegex
+		// Key by lowercase host id so the cases below are independent of
+		// the manifest's display casing (e.g. "Copilot" vs "copilot").
+		rx[strings.ToLower(h.Host)] = h.BinaryVersionRegex
 	}
 
 	cases := []struct {

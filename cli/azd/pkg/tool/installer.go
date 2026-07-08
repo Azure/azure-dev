@@ -17,8 +17,10 @@ import (
 	"os"
 	osexec "os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
@@ -158,6 +161,11 @@ type installConfig struct {
 	// set of available hosts is not known until the skill's turn. Ignored
 	// when hosts is non-empty or for non-skill tools.
 	allAvailableHosts bool
+	// renderer, when set, renders a live step spinner around each
+	// install/upgrade/uninstall step (each host for a skill tool, or the
+	// tool itself otherwise). When nil the
+	// installer prints a plain per-host header instead.
+	renderer StepRenderer
 }
 
 // InstallOption customizes an install or upgrade operation.
@@ -176,6 +184,35 @@ func WithHosts(hosts ...string) InstallOption {
 // is overridden by WithHosts.
 func WithAllAvailableHosts() InstallOption {
 	return func(c *installConfig) { c.allAvailableHosts = true }
+}
+
+// StepRenderer renders live per-step progress. It is the subset of
+// input.Console the installer uses to show a step spinner per host,
+// matching azd provision/down. input.Console satisfies it.
+type StepRenderer interface {
+	ShowSpinner(ctx context.Context, title string, format input.SpinnerUxType)
+	StopSpinner(ctx context.Context, lastMessage string, format input.SpinnerUxType)
+	Message(ctx context.Context, message string)
+}
+
+// WithStepProgress renders a live step spinner around each
+// install/upgrade/uninstall step via the given renderer (typically the
+// console), like azd provision/down. It is opt-in so shared callers that
+// manage their own progress (e.g. the first-run middleware) are unaffected.
+func WithStepProgress(renderer StepRenderer) InstallOption {
+	return func(c *installConfig) { c.renderer = renderer }
+}
+
+// stepError returns the effective error for a step: an operation error, or
+// the result's recorded error, or nil.
+func stepError(result *InstallResult, err error) error {
+	if err != nil {
+		return err
+	}
+	if result != nil {
+		return result.Error
+	}
+	return nil
 }
 
 // installer is the default, unexported implementation of [Installer].
@@ -307,9 +344,19 @@ func (i *installer) Uninstall(
 		// the explicit host names need to be threaded through; the
 		// empty-hosts branch of resolveSkillUninstallTargets handles both
 		// the default and `--host all`.
-		return i.runSkillUninstall(ctx, tool, cfg.hosts)
+		return i.runSkillUninstall(ctx, tool, cfg.hosts, cfg.renderer)
 	}
-	return i.runUninstall(ctx, tool)
+
+	// Non-skill tools uninstall as a single step; render one spinner for
+	// the tool (no host) when a renderer is supplied.
+	if cfg.renderer == nil {
+		return i.runUninstall(ctx, tool)
+	}
+	title := fmt.Sprintf("Uninstalling %s", tool.Name)
+	cfg.renderer.ShowSpinner(ctx, title, input.Step)
+	result, err := i.runUninstall(ctx, tool)
+	cfg.renderer.StopSpinner(ctx, title, input.GetStepResultFormat(stepError(result, err)))
+	return result, err
 }
 
 // runUninstall removes a non-skill tool using the platform's package
@@ -675,6 +722,7 @@ func (i *installer) runSkillUninstall(
 	ctx context.Context,
 	tool *ToolDefinition,
 	hosts []string,
+	renderer StepRenderer,
 ) (*InstallResult, error) {
 	start := time.Now()
 	result := &InstallResult{Tool: tool}
@@ -697,8 +745,17 @@ func (i *installer) runSkillUninstall(
 		failures  []error
 	)
 	for _, host := range targets {
-		fmt.Fprintf(os.Stderr, "\nUninstalling %s from %s\n", tool.Name, host.Host)
-		if hostErr := i.uninstallSkillForHost(ctx, tool, host); hostErr != nil {
+		title := fmt.Sprintf("Uninstalling %s from %s", tool.Name, host.Host)
+		if renderer != nil {
+			renderer.ShowSpinner(ctx, title, input.Step)
+		} else {
+			fmt.Fprintf(os.Stderr, "\nUninstalling %s from %s\n", tool.Name, host.Host)
+		}
+		hostErr := i.uninstallSkillForHost(ctx, tool, host)
+		if renderer != nil {
+			renderer.StopSpinner(ctx, title, input.GetStepResultFormat(hostErr))
+		}
+		if hostErr != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", host.Host, hostErr))
 			continue
 		}
@@ -798,11 +855,11 @@ func (i *installer) runSkillHostUninstallCommand(
 		)
 	}
 
-	runArgs := exec.NewRunArgs(host.Host, cmd...).WithInteractive(true)
+	runArgs := exec.NewRunArgs(host.Command, cmd...).WithInteractive(true)
 	if _, err := i.commandRunner.Run(ctx, runArgs); err != nil {
 		return fmt.Errorf(
 			"running `%s %s`: %w",
-			host.Host, strings.Join(cmd, " "), err,
+			host.Command, strings.Join(cmd, " "), err,
 		)
 	}
 
@@ -860,9 +917,33 @@ func (i *installer) run(
 	// agentic CLI native plugin command rather than the platform's
 	// package manager, so we short-circuit before platform detection.
 	if tool.Category == ToolCategorySkill {
-		return i.runSkill(ctx, tool, upgrade, cfg.hosts, cfg.allAvailableHosts)
+		return i.runSkill(ctx, tool, upgrade, cfg.hosts, cfg.allAvailableHosts, cfg.renderer)
 	}
 
+	// Non-skill tools install as a single step through the platform
+	// package manager; render one spinner for the tool (no host) when a
+	// renderer is supplied.
+	if cfg.renderer == nil {
+		return i.runToolInstall(ctx, tool, upgrade)
+	}
+	verb := "Installing"
+	if upgrade {
+		verb = "Upgrading"
+	}
+	title := fmt.Sprintf("%s %s", verb, tool.Name)
+	cfg.renderer.ShowSpinner(ctx, title, input.Step)
+	result, err := i.runToolInstall(ctx, tool, upgrade)
+	cfg.renderer.StopSpinner(ctx, title, input.GetStepResultFormat(stepError(result, err)))
+	return result, err
+}
+
+// runToolInstall installs or upgrades a non-skill tool through the platform
+// package manager (or a direct download) and verifies the result.
+func (i *installer) runToolInstall(
+	ctx context.Context,
+	tool *ToolDefinition,
+	upgrade bool,
+) (*InstallResult, error) {
 	start := time.Now()
 	result := &InstallResult{Tool: tool}
 
@@ -1052,6 +1133,7 @@ func (i *installer) runSkill(
 	upgrade bool,
 	hosts []string,
 	allAvailable bool,
+	renderer StepRenderer,
 ) (*InstallResult, error) {
 	start := time.Now()
 	result := &InstallResult{Tool: tool}
@@ -1084,13 +1166,15 @@ func (i *installer) runSkill(
 		)+output.WithLinkFormat("https://nodejs.org/"))
 	}
 
-	// 3. Install / upgrade for each target host, collecting outcomes.
-	//    Print a header before each host so the host CLI's streamed
-	//    output (it runs interactively) is clearly attributed to the
-	//    host it belongs to.
+	// 3. Install / upgrade for each target host, collecting outcomes. When
+	//    a renderer is supplied, show a step spinner per host; otherwise
+	//    print a header so captured host output on failure is attributable
+	//    to the host it belongs to.
 	verb := "Installing"
+	pastVerb := "Installed"
 	if upgrade {
 		verb = "Upgrading"
+		pastVerb = "Upgraded"
 	}
 	var (
 		succeeded []string
@@ -1098,8 +1182,19 @@ func (i *installer) runSkill(
 		version   string
 	)
 	for _, host := range targets {
-		fmt.Fprintf(os.Stderr, "\n%s %s in %s\n", verb, tool.Name, host.Host)
-		hostVersion, hostErr := i.installSkillForHost(ctx, tool, host, upgrade)
+		title := fmt.Sprintf("%s %s in %s", verb, tool.Name, host.Host)
+		if renderer != nil {
+			renderer.ShowSpinner(ctx, title, input.Step)
+		} else {
+			fmt.Fprintf(os.Stderr, "\n%s %s in %s\n", verb, tool.Name, host.Host)
+		}
+		hostVersion, skillCount, hostErr := i.installSkillForHost(ctx, tool, host, upgrade)
+		if renderer != nil {
+			renderer.StopSpinner(ctx, title, input.GetStepResultFormat(hostErr))
+			if hostErr == nil && skillCount > 0 {
+				renderer.Message(ctx, fmt.Sprintf("            %s %d skills", pastVerb, skillCount))
+			}
+		}
 		if hostErr != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", host.Host, hostErr))
 			continue
@@ -1297,7 +1392,7 @@ func (i *installer) explicitSkillHostTargets(
 // skill install/upgrade and uninstall paths.
 func findSkillHost(tool *ToolDefinition, name string) (SkillHost, bool) {
 	idx := slices.IndexFunc(tool.SkillHosts, func(h SkillHost) bool {
-		return h.Host == name
+		return strings.EqualFold(h.Host, name)
 	})
 	if idx < 0 {
 		return SkillHost{}, false
@@ -1339,7 +1434,7 @@ func configuredSkillHostsFor(tool *ToolDefinition, installed []InstalledSkillHos
 // assumes an on-PATH host binary is not swapped mid-command, which azd never
 // does.
 func (i *installer) hostUsable(ctx context.Context, host SkillHost) bool {
-	if i.commandRunner.ToolInPath(host.Host) != nil {
+	if i.commandRunner.ToolInPath(host.Command) != nil {
 		return false
 	}
 
@@ -1370,7 +1465,7 @@ func (i *installer) probeOnPathHost(ctx context.Context, host SkillHost) bool {
 	}
 	result, err := i.commandRunner.Run(
 		ctx,
-		exec.NewRunArgs(host.Host, host.BinaryVersionArgs...).
+		exec.NewRunArgs(host.Command, host.BinaryVersionArgs...).
 			WithStdIn(strings.NewReader("")),
 	)
 	// A cancelled/timed-out probe is not evidence the host is a stub; do
@@ -1426,18 +1521,22 @@ func (i *installer) pickSkillHost(
 }
 
 // installSkillForHost installs (or upgrades) the skill through a single
-// host and verifies the result, returning the detected version.
+// host and verifies the result, returning the detected version and the
+// number of skills the host CLI reported installing (0 when unknown).
 func (i *installer) installSkillForHost(
 	ctx context.Context,
 	tool *ToolDefinition,
 	host SkillHost,
 	upgrade bool,
-) (string, error) {
-	if err := i.runSkillHostCommand(ctx, host, upgrade); err != nil {
-		return "", err
+) (version string, skillCount int, err error) {
+	out, err := i.runSkillHostCommand(ctx, host, upgrade)
+	if err != nil {
+		return "", 0, err
 	}
+	skillCount = parseSkillCount(out)
 
-	return i.verifySkillInstalled(ctx, tool, host)
+	version, err = i.verifySkillInstalled(ctx, tool, host)
+	return version, skillCount, err
 }
 
 // verifySkillInstalled confirms the skill is detectable **through the
@@ -1485,10 +1584,13 @@ func (i *installer) verifySkillInstalled(
 	return version, nil
 }
 
-// runSkillHostCommand executes the host's install (or update) command
-// with stdin/stdout/stderr connected to the user (WithInteractive=true)
-// so any prompts the host CLI surfaces are answered by the user
-// directly. azd never pipes canned answers on the user's behalf.
+// runSkillHostCommand executes the host's install (or update) command,
+// capturing its output and returning stdout so the caller can parse a
+// reported skill count. Output is captured rather than streamed so the
+// command layer can render a clean progress spinner; on failure the
+// captured output is carried in the returned error. The marketplace-add
+// and plugin-install commands are non-interactive, so azd does not
+// connect stdin.
 //
 // For fresh installs it first runs MarketplaceAddCommand when the host
 // declares one. Hosts that declare no MarketplaceAddCommand skip this
@@ -1501,7 +1603,7 @@ func (i *installer) runSkillHostCommand(
 	ctx context.Context,
 	host SkillHost,
 	upgrade bool,
-) error {
+) (string, error) {
 	cmd := host.PluginInstallCommand
 	verb := "install"
 	if upgrade {
@@ -1509,26 +1611,26 @@ func (i *installer) runSkillHostCommand(
 		verb = "update"
 	}
 	if len(cmd) == 0 {
-		return fmt.Errorf(
+		return "", fmt.Errorf(
 			"host %q has no %s command configured", host.Host, verb,
 		)
 	}
 
 	if !upgrade && len(host.MarketplaceAddCommand) > 0 {
 		if err := i.runMarketplaceAdd(ctx, host); err != nil {
-			return err
+			return "", err
 		}
 	}
 
-	runArgs := exec.NewRunArgs(host.Host, cmd...).WithInteractive(true)
-	if _, err := i.commandRunner.Run(ctx, runArgs); err != nil {
-		return fmt.Errorf(
+	res, err := i.commandRunner.Run(ctx, exec.NewRunArgs(host.Command, cmd...))
+	if err != nil {
+		return "", fmt.Errorf(
 			"running `%s %s`: %w",
-			host.Host, strings.Join(cmd, " "), err,
+			host.Command, strings.Join(cmd, " "), err,
 		)
 	}
 
-	return nil
+	return res.Stdout, nil
 }
 
 // runMarketplaceAdd registers the skill marketplace with the host CLI.
@@ -1541,7 +1643,7 @@ func (i *installer) runMarketplaceAdd(
 	ctx context.Context,
 	host SkillHost,
 ) error {
-	args := exec.NewRunArgs(host.Host, host.MarketplaceAddCommand...)
+	args := exec.NewRunArgs(host.Command, host.MarketplaceAddCommand...)
 	result, err := i.commandRunner.Run(ctx, args)
 	if err == nil {
 		return nil
@@ -1551,7 +1653,7 @@ func (i *installer) runMarketplaceAdd(
 	}
 	return fmt.Errorf(
 		"running `%s %s`: %w",
-		host.Host, strings.Join(host.MarketplaceAddCommand, " "), err,
+		host.Command, strings.Join(host.MarketplaceAddCommand, " "), err,
 	)
 }
 
@@ -1564,6 +1666,25 @@ func isMarketplaceAlreadyAdded(output string) bool {
 	return strings.Contains(lower, "already registered") ||
 		strings.Contains(lower, "already added") ||
 		strings.Contains(lower, "already on disk")
+}
+
+// skillCountRegex captures the number of skills a host CLI reports
+// installing from its stdout, e.g. "Installed 28 skills". Best-effort:
+// host CLIs are not guaranteed to print a count and the wording varies.
+var skillCountRegex = regexp.MustCompile(`(?i)(\d+)\s+skills?\b`)
+
+// parseSkillCount returns the skill count reported in the host CLI output,
+// or 0 when no count could be determined.
+func parseSkillCount(out string) int {
+	m := skillCountRegex.FindStringSubmatch(out)
+	if m == nil {
+		return 0
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // ensurePlatform lazily detects the current platform using a mutex

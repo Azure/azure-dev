@@ -54,8 +54,14 @@ type Checksum struct {
 // (the first on PATH), but install/upgrade can target specific or all
 // detected hosts when the caller selects them (e.g. via `--host`).
 type SkillHost struct {
-	// Host is the binary name of the agent CLI (e.g. "copilot", "claude").
+	// Host is the agent's display name, shown to the user and matched
+	// (case-insensitively) by --agent (e.g. "Copilot", "Claude").
 	Host string
+	// Command is the agent CLI's executable name, used to run plugin
+	// commands and version probes (e.g. "copilot", "claude"). It must be
+	// the real, case-correct binary name so exec works on case-sensitive
+	// filesystems (Linux). When empty it falls back to Host.
+	Command string
 	// MarketplaceAddCommand is the optional one-time command that registers
 	// the plugin marketplace with the host (e.g. ["plugin", "marketplace",
 	// "add", "microsoft/azure-skills"]). Empty when not required.
@@ -392,7 +398,8 @@ func azureSkills() *ToolDefinition {
 		Website:  "https://github.com/microsoft/azure-skills",
 		SkillHosts: []SkillHost{
 			{
-				Host:                   "copilot",
+				Host:                   "GitHub Copilot CLI",
+				Command:                "copilot",
 				MarketplaceAddCommand:  []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
 				PluginInstallCommand:   []string{"plugin", "install", "azure@azure-skills"},
 				PluginUpdateCommand:    []string{"plugin", "update", "azure@azure-skills"},
@@ -403,13 +410,14 @@ func azureSkills() *ToolDefinition {
 				VersionRegex: `azure@azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
 				// Probe the host binary itself so a launcher stub that only
 				// prompts to install the real CLI is not mistaken for a host.
-				// Anchored to copilot's `--version` banner ("GitHub Copilot
+				// Anchored to GitHub Copilot CLI's `--version` banner ("GitHub Copilot
 				// CLI 1.0.64-3") so an incidental semver cannot pass.
 				BinaryVersionArgs:  []string{"--version"},
 				BinaryVersionRegex: `(?m)^GitHub Copilot CLI\s+v?(\d+\.\d+\.\d+)`,
 			},
 			{
-				Host: "claude",
+				Host:    "Claude Code CLI",
+				Command: "claude",
 				MarketplaceAddCommand: []string{
 					"plugin", "marketplace", "add", "https://github.com/microsoft/azure-skills",
 				},

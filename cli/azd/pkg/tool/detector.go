@@ -561,7 +561,7 @@ func (d *detector) skillHostVersion(
 	// rather than guessing from the error output (which often echoes the
 	// queried name).
 	result, err := d.commandRunner.Run(ctx, exec.RunArgs{
-		Cmd:  host.Host,
+		Cmd:  host.Command,
 		Args: host.PluginListCommand,
 	})
 	if err != nil {

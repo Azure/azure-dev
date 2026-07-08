@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -556,15 +557,34 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, hostErr
 	}
 
-	operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
-		return a.manager.InstallTools(ctx, allIDs, hostOpts...)
+	start := time.Now()
+
+	var (
+		installResults []*toolInstallResultItem
+		rawResults     []*tool.InstallResult
+		opErr          error
+	)
+
+	if useStepSpinner(a.console, a.formatter, tools) {
+		// Tools render live per-step progress with the step spinner (like
+		// azd provision). JSON output is gated out of this path and
+		// handled below via the per-tool results.
+		rawResults, opErr = runStepSpinner(
+			ctx, a.console, tools,
+			func(ctx context.Context, ids []string, progress tool.InstallOption) ([]*tool.InstallResult, error) {
+				return a.manager.InstallTools(ctx, ids, append(slices.Clone(hostOpts), progress)...)
+			},
+		)
+	} else {
+		operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
+			return a.manager.InstallTools(ctx, allIDs, hostOpts...)
+		}
+		outcome := runToolOperation(ctx, tools, operationFn, "Installing", "install", a.console)
+		installResults = outcome.Items
+		rawResults = outcome.Results
+		opErr = outcome.Err
 	}
 
-	start := time.Now()
-	outcome := runToolOperation(ctx, tools, operationFn, "Installing", "install", a.console)
-	installResults := outcome.Items
-	rawResults := outcome.Results
-	opErr := outcome.Err
 	emitToolInstallTelemetry(rawResults, time.Since(start), opErr, tools)
 
 	if len(rawResults) == 1 {
@@ -577,8 +597,7 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	// When one or more tools failed, surface the error so the command
 	// exits non-zero and the success header is NOT printed. The per-tool
-	// failures and a summary warning were already shown by
-	// runToolOperation.
+	// failures were already shown inline.
 	if opErr != nil {
 		return nil, opErr
 	}
@@ -792,6 +811,55 @@ func (a *toolInstallAction) promptForSkillHosts(
 		return nil, nil
 	}
 	return []tool.InstallOption{tool.WithHosts(selected...)}, nil
+}
+
+// useStepSpinner reports whether a tool operation should render live
+// per-step progress with the step spinner (like azd provision) instead of
+// the batch task list. It applies to any interactive, non-JSON operation.
+func useStepSpinner(
+	console input.Console,
+	formatter output.Formatter,
+	tools []*tool.ToolDefinition,
+) bool {
+	return len(tools) > 0 &&
+		formatter.Kind() != output.JsonFormat &&
+		console.IsSpinnerInteractive()
+}
+
+// runStepSpinner runs a tool install/upgrade/uninstall with a live per-step
+// step spinner (like azd provision): the installer renders each step via the
+// console (each targeted agent for a skill tool, or the tool itself
+// otherwise). run performs the manager call with the step-progress option
+// appended to its own options. It returns the per-tool results (for
+// telemetry) and an aggregate error when any step failed.
+func runStepSpinner(
+	ctx context.Context,
+	console input.Console,
+	tools []*tool.ToolDefinition,
+	run func(context.Context, []string, tool.InstallOption) ([]*tool.InstallResult, error),
+) ([]*tool.InstallResult, error) {
+	ids := make([]string, len(tools))
+	for i, t := range tools {
+		ids[i] = t.Id
+	}
+
+	results, err := run(ctx, ids, tool.WithStepProgress(console))
+	if err != nil {
+		return results, err
+	}
+
+	// Per-step failures were shown inline by the installer; surface an
+	// aggregate error so the command still exits non-zero.
+	var failed []error
+	for _, r := range results {
+		if r.Error != nil {
+			failed = append(failed, r.Error)
+		}
+	}
+	if len(failed) > 0 {
+		return results, errors.Join(failed...)
+	}
+	return results, nil
 }
 
 // dryRun detects the current status of the requested tools and
@@ -1062,19 +1130,35 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		TitleNote: "Upgrades installed tools to their latest versions",
 	})
 
-	operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
-		hostOpts, hostErr := a.resolveHostOptions(toolsToUpgrade)
-		if hostErr != nil {
-			return nil, hostErr
-		}
-		return a.manager.UpgradeTools(ctx, allIDs, hostOpts...)
+	hostOpts, hostErr := a.resolveHostOptions(toolsToUpgrade)
+	if hostErr != nil {
+		return nil, hostErr
 	}
 
 	start := time.Now()
-	outcome := runToolOperation(ctx, toolsToUpgrade, operationFn, "Upgrading", "upgrade", a.console)
-	upgradeResults := outcome.Items
-	rawResults := outcome.Results
-	opErr := outcome.Err
+
+	var (
+		upgradeResults []*toolInstallResultItem
+		rawResults     []*tool.InstallResult
+		opErr          error
+	)
+
+	if useStepSpinner(a.console, a.formatter, toolsToUpgrade) {
+		rawResults, opErr = runStepSpinner(
+			ctx, a.console, toolsToUpgrade,
+			func(ctx context.Context, ids []string, progress tool.InstallOption) ([]*tool.InstallResult, error) {
+				return a.manager.UpgradeTools(ctx, ids, append(slices.Clone(hostOpts), progress)...)
+			},
+		)
+	} else {
+		operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
+			return a.manager.UpgradeTools(ctx, allIDs, hostOpts...)
+		}
+		outcome := runToolOperation(ctx, toolsToUpgrade, operationFn, "Upgrading", "upgrade", a.console)
+		upgradeResults = outcome.Items
+		rawResults = outcome.Results
+		opErr = outcome.Err
+	}
 	emitToolInstallTelemetry(rawResults, time.Since(start), opErr, toolsToUpgrade)
 
 	if len(rawResults) == 1 {
@@ -1269,19 +1353,35 @@ func (a *toolUninstallAction) Run(ctx context.Context) (*actions.ActionResult, e
 		TitleNote: "Uninstalls specified tools from the local machine",
 	})
 
-	operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
-		hostOpts, hostErr := a.resolveHostOptions(tools)
-		if hostErr != nil {
-			return nil, hostErr
-		}
-		return a.manager.UninstallTools(ctx, allIDs, hostOpts...)
+	hostOpts, hostErr := a.resolveHostOptions(tools)
+	if hostErr != nil {
+		return nil, hostErr
 	}
 
 	start := time.Now()
-	outcome := runToolOperation(ctx, tools, operationFn, "Uninstalling", "uninstall", a.console)
-	uninstallResults := outcome.Items
-	rawResults := outcome.Results
-	opErr := outcome.Err
+
+	var (
+		uninstallResults []*toolInstallResultItem
+		rawResults       []*tool.InstallResult
+		opErr            error
+	)
+
+	if useStepSpinner(a.console, a.formatter, tools) {
+		rawResults, opErr = runStepSpinner(
+			ctx, a.console, tools,
+			func(ctx context.Context, ids []string, progress tool.InstallOption) ([]*tool.InstallResult, error) {
+				return a.manager.UninstallTools(ctx, ids, append(slices.Clone(hostOpts), progress)...)
+			},
+		)
+	} else {
+		operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
+			return a.manager.UninstallTools(ctx, allIDs, hostOpts...)
+		}
+		outcome := runToolOperation(ctx, tools, operationFn, "Uninstalling", "uninstall", a.console)
+		uninstallResults = outcome.Items
+		rawResults = outcome.Results
+		opErr = outcome.Err
+	}
 	emitToolInstallTelemetry(rawResults, time.Since(start), opErr, tools)
 
 	if len(rawResults) == 1 {

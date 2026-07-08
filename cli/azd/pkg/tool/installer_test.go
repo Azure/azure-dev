@@ -23,10 +23,31 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// fakeStepRenderer records the step spinner calls the installer makes, so
+// tests can assert the per-step titles and any skill-count sub-line.
+type fakeStepRenderer struct {
+	starts   []string
+	stops    []string
+	messages []string
+}
+
+func (f *fakeStepRenderer) ShowSpinner(_ context.Context, title string, _ input.SpinnerUxType) {
+	f.starts = append(f.starts, title)
+}
+
+func (f *fakeStepRenderer) StopSpinner(_ context.Context, lastMessage string, _ input.SpinnerUxType) {
+	f.stops = append(f.stops, lastMessage)
+}
+
+func (f *fakeStepRenderer) Message(_ context.Context, message string) {
+	f.messages = append(f.messages, message)
+}
 
 // ---------------------------------------------------------------------------
 // mockDetector — simple in-package mock for the Detector interface
@@ -172,6 +193,55 @@ func TestInstall_WithPackageManager(t *testing.T) {
 	assert.Equal(t, "npm", capturedCmd)
 	assert.Contains(t, capturedArgs, "install")
 	assert.Contains(t, capturedArgs, "@test/tool")
+}
+
+// TestRunToolInstall_StepProgress verifies that a non-skill tool install
+// renders a single step spinner for the tool (no per-host title) and no
+// skill-count sub-line.
+func TestRunToolInstall_StepProgress(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "install")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: true, InstalledVersion: "2.64.0"}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	nonSkill := &ToolDefinition{
+		Id:       "test-tool",
+		Name:     "Test Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/tool",
+		}),
+	}
+
+	r := &fakeStepRenderer{}
+	result, err := inst.Install(t.Context(), nonSkill, WithStepProgress(r))
+	require.NoError(t, err)
+	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
+
+	assert.Equal(t, []string{"Installing Test Tool"}, r.starts)
+	assert.Equal(t, []string{"Installing Test Tool"}, r.stops)
+	assert.Empty(t, r.messages, "non-skill install reports no skill count")
 }
 
 func TestInstall_WithInstallCommand(t *testing.T) {
@@ -1188,6 +1258,140 @@ func newSkillTool() *ToolDefinition {
 			},
 		},
 	}
+}
+
+// TestParseSkillCount covers the best-effort extraction of the number of
+// skills a host CLI reports installing from its stdout.
+func TestParseSkillCount(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		in   string
+		want int
+	}{
+		{"Installed", "Installed 28 skills", 28},
+		{"SingularSkill", "Installed 1 skill", 1},
+		{"WordyOutput", "done\nSuccessfully installed 7 skills into copilot\n", 7},
+		{"CaseInsensitive", "Added 12 Skills", 12},
+		{"NoCount", "Plugin installed successfully", 0},
+		{"Empty", "", 0},
+		{"NumberButNotSkills", "downloaded 28 files", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, parseSkillCount(tc.in))
+		})
+	}
+}
+
+// TestRunSkill_StepProgressAndSkillCount verifies that a skill install
+// renders a step spinner per host (shown then stopped, with the capitalized
+// agent name) and reports the skill count parsed from the host CLI's
+// captured install output.
+func TestRunSkill_StepProgressAndSkillCount(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+
+	// The "plugin install" call reports a count on stdout; marketplace add
+	// (also a "plugin ..." command) responds with an empty success. The
+	// version-probe ("--version") is handled by mockHostPresence.
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "plugin")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		if strings.HasPrefix(strings.Join(args.Args, " "), "plugin install") {
+			return exec.RunResult{ExitCode: 0, Stdout: "Installed 28 skills"}, nil
+		}
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillHostsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillHost, error) {
+				return []InstalledSkillHost{{Host: "copilot", Version: "1.1.70"}}, nil
+			},
+		},
+	)
+
+	var r fakeStepRenderer
+	result, err := inst.Install(
+		t.Context(), newSkillTool(),
+		WithHosts("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
+
+	// One step spinner for the agent, shown then stopped, using the host's
+	// display name, plus a skill-count sub-line from the captured install
+	// output.
+	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.starts)
+	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.stops)
+	require.Len(t, r.messages, 1)
+	assert.Contains(t, r.messages[0], "Installed 28 skills")
+}
+
+// TestSkillHost_DisplayVsCommand verifies the split between the display-cased
+// Host and the lowercase Command: the CLI is exec'd by Command, the step
+// spinner uses Host, and --agent matches Host case-insensitively.
+func TestSkillHost_DisplayVsCommand(t *testing.T) {
+	t.Parallel()
+
+	skill := &ToolDefinition{
+		Id:       "test-azure-skills",
+		Name:     "Test Azure Skills",
+		Category: ToolCategorySkill,
+		SkillHosts: []SkillHost{{
+			Host:                  "Copilot", // display / --agent identity
+			Command:               "copilot", // exec binary
+			MarketplaceAddCommand: []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
+			PluginInstallCommand:  []string{"plugin", "install", "azure@azure-skills"},
+			PluginListCommand:     []string{"plugin", "list"},
+			PluginName:            "azure@azure-skills",
+			BinaryVersionArgs:     []string{"--version"},
+			BinaryVersionRegex:    `(?m)^GitHub Copilot CLI\s+v?(\d+\.\d+\.\d+)`,
+		}},
+	}
+
+	runner := mockexec.NewMockCommandRunner()
+	runner.MockToolInPath("copilot", nil) // looked up by the lowercase Command
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "GitHub Copilot CLI 1.1.70"})
+	var execCmds []string
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "plugin")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		execCmds = append(execCmds, args.Cmd)
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	det := &mockDetector{
+		detectSkillHostsFn: func(_ context.Context, _ *ToolDefinition) ([]InstalledSkillHost, error) {
+			return []InstalledSkillHost{{Host: "Copilot", Version: "1.1.70"}}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	// --agent "copilot" (lowercase) must resolve against Host "Copilot".
+	var r fakeStepRenderer
+	result, err := inst.Install(t.Context(), skill, WithHosts("copilot"), WithStepProgress(&r))
+	require.NoError(t, err)
+	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
+
+	require.NotEmpty(t, execCmds, "the host CLI must be exec'd")
+	for _, c := range execCmds {
+		assert.Equal(t, "copilot", c, "exec must use the lowercase Command, not display Host")
+	}
+	assert.Equal(t, []string{"Installing Test Azure Skills in Copilot"}, r.starts,
+		"the step spinner must use the display-cased Host")
 }
 
 // mockHostPresence wires ToolInPath responses so only the named hosts
@@ -3514,6 +3718,44 @@ func TestUninstallSkill_RemovesFromInstalledHosts(t *testing.T) {
 	require.NotNil(t, result)
 	assert.True(t, result.Success)
 	assert.ElementsMatch(t, []string{"copilot", "claude"}, uninstalledHosts)
+}
+
+// TestRunSkillUninstall_StepProgress verifies the step spinner is rendered
+// per host (shown then stopped, capitalized) for a skill uninstall, with no
+// skill-count sub-line.
+func TestRunSkillUninstall_StepProgress(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot")
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "uninstall")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	// After uninstall, copilot no longer reports the skill so verification
+	// passes.
+	det := &mockDetector{
+		detectSkillHostsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillHost, error) {
+			return nil, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	var r fakeStepRenderer
+	result, err := inst.Uninstall(
+		t.Context(), newSkillTool(),
+		WithHosts("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "uninstall must succeed; err=%v", result.Error)
+
+	assert.Equal(t, []string{"Uninstalling Test Azure Skills from copilot"}, r.starts)
+	assert.Equal(t, []string{"Uninstalling Test Azure Skills from copilot"}, r.stops)
+	assert.Empty(t, r.messages, "uninstall reports no skill count")
 }
 
 func TestUninstallSkill_ExplicitHost_RemovesOnlyThatHost(t *testing.T) {

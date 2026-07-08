@@ -190,7 +190,7 @@ func setupConfigDir(t *testing.T, configDir string) {
 // run executes the phases in order, stopping at the first failure. Teardown is
 // registered separately as a cleanup, so it always runs.
 func (r *runner) run(ctx context.Context) {
-	if err := r.phaseInit(ctx); err != nil {
+	if err := r.phaseInitWithRetry(ctx); err != nil {
 		r.t.Errorf("init: %v", err)
 		return
 	}
@@ -206,6 +206,26 @@ func (r *runner) run(ctx context.Context) {
 		r.t.Errorf("invoke: %v", err)
 		return
 	}
+}
+
+// phaseInitWithRetry retries once when a bad GitHub token from the pipeline
+// environment causes gh to fail before the public sample is downloaded. The
+// retry drops token override env vars so gh can use any ambient auth state.
+func (r *runner) phaseInitWithRetry(ctx context.Context) error {
+	err := r.phaseInit(ctx)
+	if err == nil || !isInvalidGitHubTokenError(err) {
+		return err
+	}
+
+	r.t.Log("init failed because GH_TOKEN/GITHUB_TOKEN is invalid; retrying without token override env vars")
+	r.env = withoutGitHubTokenEnv(r.env)
+	if err := os.RemoveAll(r.testDir); err != nil {
+		return fmt.Errorf("reset test dir after GitHub token failure: %w", err)
+	}
+	if err := os.MkdirAll(r.testDir, 0o700); err != nil {
+		return fmt.Errorf("recreate test dir after GitHub token failure: %w", err)
+	}
+	return r.phaseInit(ctx)
 }
 
 // phaseInit runs `azd ai agent init` attached to a pseudo-terminal and drives
@@ -968,6 +988,23 @@ func ghToken() string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+func isInvalidGitHubTokenError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "The token in GH_TOKEN is invalid") ||
+		strings.Contains(msg, "The token in GITHUB_TOKEN is invalid")
+}
+
+func withoutGitHubTokenEnv(env []string) []string {
+	out := env[:0]
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "GH_TOKEN=") || strings.HasPrefix(kv, "GITHUB_TOKEN=") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }
 
 // shortHash returns a short, non-cryptographic uniqueness suffix for the agent

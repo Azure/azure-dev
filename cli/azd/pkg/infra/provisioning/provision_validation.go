@@ -108,7 +108,16 @@ func (m *Manager) runProvisionValidation(ctx context.Context, preview bool) (abo
 	}
 
 	if len(results) == 0 {
-		span.SetAttributes(fields.PreflightOutcomeKey.String(provisionValidationOutcomePassed))
+		// Distinguish a genuine pass (checks ran and found nothing) from a
+		// dispatch failure/timeout where the checks did not actually run.
+		// Provisioning proceeds either way (dispatch errors are non-fatal), but
+		// recording "passed" for a failed dispatch would mask the failure in
+		// telemetry, so report the error outcome instead.
+		outcome := provisionValidationOutcomePassed
+		if dispatchErr != nil {
+			outcome = provisionValidationOutcomeError
+		}
+		span.SetAttributes(fields.PreflightOutcomeKey.String(outcome))
 		return false, nil
 	}
 

@@ -84,7 +84,10 @@ func (c *ValidationContext) ARMParameters() ([]byte, bool) {
 	return v, ok
 }
 
-// EnvLocation returns the Azure deployment location from the context.
+// EnvLocation returns the Azure deployment location from the context. For
+// "provision" checks this is a best-effort ambient value that may be empty on a
+// cold first-time run, since the dispatch precedes the provider's location
+// resolution/prompt.
 func (c *ValidationContext) EnvLocation() (string, bool) {
 	v, ok := c.Data[ValidationContextEnvLocation]
 	if !ok {
@@ -102,7 +105,10 @@ func (c *ValidationContext) EnvName() (string, bool) {
 	return string(v), true
 }
 
-// SubscriptionID returns the Azure subscription id from a "provision" check context.
+// SubscriptionID returns the Azure subscription id from a "provision" check
+// context. This is a best-effort ambient value: the "provision" dispatch runs
+// before the provider resolves/prompts for the subscription, so it may be empty
+// on a cold first-time run. Treat an empty value as "not yet known".
 func (c *ValidationContext) SubscriptionID() (string, bool) {
 	v, ok := c.Data[ValidationContextSubscriptionID]
 	if !ok {
@@ -116,6 +122,10 @@ func (c *ValidationContext) SubscriptionID() (string, bool) {
 // ok is true whenever the context originates from a provision check; the value
 // is an empty string for subscription-scoped deployments (use TargetScope to
 // distinguish scopes rather than relying on ok).
+//
+// This is a best-effort ambient value read from AZURE_RESOURCE_GROUP before the
+// provider resolves/prompts for the resource group, so it may be empty on a
+// cold run even for an RG-scoped template. Treat it as best-effort.
 func (c *ValidationContext) ResourceGroup() (string, bool) {
 	v, ok := c.Data[ValidationContextResourceGroup]
 	if !ok {
@@ -126,6 +136,13 @@ func (c *ValidationContext) ResourceGroup() (string, bool) {
 
 // TargetScope returns the deployment target scope ("subscription" or
 // "resourceGroup") from a "provision" check context.
+//
+// This is best-effort, not authoritative: it is inferred solely from the
+// presence of AZURE_RESOURCE_GROUP in the environment at dispatch time, before
+// the provider (e.g. Bicep) determines the template's actual target scope. On a
+// cold run it can report "subscription" for an RG-scoped template, or
+// "resourceGroup" from a stale env var for a subscription-scoped deployment.
+// Do not rely on it as the definitive scope.
 func (c *ValidationContext) TargetScope() (string, bool) {
 	v, ok := c.Data[ValidationContextTargetScope]
 	if !ok {
@@ -174,6 +191,15 @@ const (
 	// such as microsoft.foundry and demo). Its context is lean and carries no
 	// ARM template — only the environment, subscription, location, resource
 	// group and target scope.
+	//
+	// These values are best-effort ambient values read from the azd
+	// environment at dispatch time. The dispatch happens before the provider
+	// resolves and prompts for subscription/location/resource group, so on a
+	// cold first-time run (no flags, no persisted env values) subscription_id,
+	// env_location, and resource_group may be empty, and target_scope is
+	// inferred only from the presence of AZURE_RESOURCE_GROUP. Checks that
+	// depend on these values must treat them as best-effort and tolerate empty
+	// or not-yet-authoritative values (e.g. skip rather than fail when unset).
 	ValidationCheckTypeProvision = "provision"
 )
 

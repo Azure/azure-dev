@@ -78,7 +78,7 @@ func TestDestroy_PromptDeclineReturnsCancelled(t *testing.T) {
 	prompt := &destroyConfirmStubPromptServer{confirmValue: false}
 	client := newDestroyConfirmTestClient(t, prompt)
 
-	p := &FoundryProvisioningProvider{azdClient: client, rgName: "rg-foundry-test"}
+	p := &FoundryProvisioningProvider{azdClient: client, rgName: "rg-foundry-test", rgExplicit: true}
 	_, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: false}, func(string) {})
 
 	require.Error(t, err)
@@ -100,7 +100,7 @@ func TestDestroy_PromptRequiredFallsBackToForce(t *testing.T) {
 	}
 	client := newDestroyConfirmTestClient(t, prompt)
 
-	p := &FoundryProvisioningProvider{azdClient: client, rgName: "rg-foundry-test"}
+	p := &FoundryProvisioningProvider{azdClient: client, rgName: "rg-foundry-test", rgExplicit: true}
 	_, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: false}, func(string) {})
 
 	require.Error(t, err)
@@ -121,7 +121,7 @@ func TestDestroy_PromptCancelledReturnsCancelled(t *testing.T) {
 	}
 	client := newDestroyConfirmTestClient(t, prompt)
 
-	p := &FoundryProvisioningProvider{azdClient: client, rgName: "rg-foundry-test"}
+	p := &FoundryProvisioningProvider{azdClient: client, rgName: "rg-foundry-test", rgExplicit: true}
 	_, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: false}, func(string) {})
 
 	require.Error(t, err)

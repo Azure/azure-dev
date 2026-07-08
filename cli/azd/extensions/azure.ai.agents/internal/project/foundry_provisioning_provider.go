@@ -1239,19 +1239,11 @@ func (p *FoundryProvisioningProvider) Destroy(
 		return &azdext.ProvisioningDestroyResult{}, nil
 	}
 
-	if !options.GetForce() {
-		confirmed, err := p.confirmDestroy(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if !confirmed {
-			return nil, exterrors.Cancelled("destroy cancelled")
-		}
-	}
-
 	// Fail closed when AZURE_RESOURCE_GROUP was never set: rgName is the rg-<env>
 	// default the provider made up, not a group it provisioned. Deleting it could
 	// wipe an unrelated group that happens to match a common env name like "dev".
+	// Check this before prompting so we never ask the user to confirm a deletion
+	// we are going to refuse anyway.
 	if !p.rgExplicit {
 		return nil, exterrors.Validation(
 			exterrors.CodeMissingResourceGroup,
@@ -1260,6 +1252,16 @@ func (p *FoundryProvisioningProvider) Destroy(
 			fmt.Sprintf("set the group to delete with `azd env set %s <name>` if it was provisioned here",
 				envKeyResourceGroup),
 		)
+	}
+
+	if !options.GetForce() {
+		confirmed, err := p.confirmDestroy(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !confirmed {
+			return nil, exterrors.Cancelled("destroy cancelled")
+		}
 	}
 
 	if err := p.ensureCredential(ctx); err != nil {
@@ -1355,13 +1357,12 @@ func (p *FoundryProvisioningProvider) confirmDestroy(ctx context.Context) (bool,
 		return false, forceRequired
 	}
 
-	defaultValue := false
 	resp, err := p.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
 			Message: fmt.Sprintf(
 				"microsoft.foundry will delete resource group %q and all resources "+
 					"inside it. Are you sure you want to continue?", p.rgName),
-			DefaultValue: &defaultValue,
+			DefaultValue: new(false),
 		},
 	})
 	if err != nil {

@@ -602,7 +602,8 @@ func TestDestroy_RefusesWithoutForceWhenNonInteractive(t *testing.T) {
 	// and return success, leaving the Foundry account + ACR + role assignments
 	// live with no warning.
 	p := &FoundryProvisioningProvider{
-		rgName: "rg-foundry-test",
+		rgName:     "rg-foundry-test",
+		rgExplicit: true,
 	}
 	_, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: false}, func(string) {})
 	require.Error(t, err)

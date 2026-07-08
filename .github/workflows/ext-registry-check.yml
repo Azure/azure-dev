@@ -1,0 +1,35 @@
+name: ext-registry-check
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/extensions/registry.json"
+    branches: [main, azd-auto-approve-simple-updates]
+    types: [opened, edited, synchronize, labeled, unlabeled, reopened, ready_for_review]
+
+# If two events are triggered within a short time in the same PR, cancel the run of the oldest event
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  pull-requests: write
+  issues: write
+  contents: read
+
+jobs:
+  extension-registry-check:
+    name: Extension registry auto-approve check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Check extension registry update
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const script = require('./.github/scripts/ext-registry-check.js');
+            await script({ github, context, core });
+  

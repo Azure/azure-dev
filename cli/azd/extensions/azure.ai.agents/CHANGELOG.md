@@ -1,14 +1,17 @@
 # Release History
 
-## 1.0.0-beta.5 (Unreleased)
+## 1.0.0-beta.5 (2026-07-08)
 
 ### Features Added
 
 - [[#8989]](https://github.com/Azure/azure-dev/pull/8989) Add `a2a` protocol support to `azd ai agent invoke`. A plain message is wrapped in a JSON-RPC 2.0 `message/send` request, `--input-file` sends a complete JSON-RPC request, and `--output raw` dumps the response verbatim. A2A is remote-only (not available with `--local`).
+- [[#9003]](https://github.com/Azure/azure-dev/pull/9003) Improve `azd ai agent optimize` with a live-updating candidate table, phase-aware progress indicators, and `--output json` support for `optimize status`. Thanks @Zyysurely for the contribution!
+- [[#8866]](https://github.com/Azure/azure-dev/pull/8866) Foundry hosted-agent and code-agent APIs are now generally available (GA); the `Foundry-Features: V1Preview` opt-in headers have been removed.
 
 ### Bugs Fixed
 
-- [[#8839]](https://github.com/Azure/azure-dev/issues/8839) Fix `azd down` on a Foundry (`microsoft.foundry`) project failing outright without `--force`. It now prompts for confirmation (naming the resource group to be deleted, defaulting to "no") like the built-in Bicep provider, and only falls back to requiring `--force` when there is no interactive terminal (for example under `--no-prompt` or in CI).
+- [[#9022]](https://github.com/Azure/azure-dev/pull/9022) Fix `azd down` on a Foundry (`microsoft.foundry`) project failing outright without `--force`. It now prompts for confirmation (naming the resource group to be deleted, defaulting to "no") like the built-in Bicep provider, and only falls back to requiring `--force` when there is no interactive terminal (for example under `--no-prompt` or in CI).
+- [[#9003]](https://github.com/Azure/azure-dev/pull/9003) Fix `azd ai agent optimize` ignoring the azd project when `--agent` is provided; the flag now resolves the service from `azure.yaml` before falling back to a raw Foundry agent name. Thanks @Zyysurely for the contribution!
 - [[#8987]](https://github.com/Azure/azure-dev/pull/8987) Fix `azd ai agent init -m <manifest>` not prompting for the agent name. The prompt default and project folder are now derived from the manifest's `template.name` (falling back to the top-level `name`), matching the interactive and template flows.
 - [[#8981]](https://github.com/Azure/azure-dev/pull/8981) Fix `azd ai agent init -m <azure.yaml> --deploy-mode container` not resolving a container registry when adopting a unified Foundry `azure.yaml` on an existing Foundry project, which made `azd deploy` fail with `could not determine container registry endpoint`. The deploy mode is now resolved before Foundry project setup, so a container agent wires `AZURE_CONTAINER_REGISTRY_ENDPOINT` (or is signaled to create one on provision) while code deploy and `--image` still skip ACR.
 

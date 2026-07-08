@@ -38,16 +38,20 @@ const (
 	provisionValidationOutcomeError            = "error"
 )
 
-// ErrProvisionValidationAborted is returned by [Manager.Preview] when the
-// provider-agnostic provision validation aborts (an error-severity finding, or
-// the user declining to continue past warnings). The command layer translates
-// it into the standard "aborted by user" outcome. [Manager.Deploy] signals the
-// same condition through a DeployResult with [PreflightAbortedSkipped] instead.
+// ErrProvisionValidationAborted signals that the provider-agnostic provision
+// validation aborted (an error-severity finding, or the user declining to
+// continue past warnings). The provision/up command layer passes it through
+// wrapProvisionError, which emits the "Provisioning was cancelled." message and
+// translates it into the standard [internal.ErrAbortedByUser] outcome.
 var ErrProvisionValidationAborted = errors.New("provisioning aborted during validation")
 
-// runProvisionValidation dispatches the provider-agnostic "provision"
-// validation checks registered by extensions, immediately before the
-// provisioning provider runs. Unlike the Bicep-only "local-preflight" dispatch,
+// RunProvisionValidation dispatches the provider-agnostic "provision"
+// validation checks registered by extensions. It is invoked once per
+// `azd provision` / `azd up`, before the layer graph runs, rather than inside
+// [Manager.Deploy]/[Manager.Preview] — in multi-layer provisioning each layer
+// has its own Manager whose Deploy runs concurrently, so dispatching here keeps
+// the checks (and any warning confirmation prompt) firing exactly once with the
+// single, env-scoped context. Unlike the Bicep-only "local-preflight" dispatch,
 // this runs for every provider (Bicep, Terraform, and extension-provided
 // providers such as microsoft.foundry and demo).
 //
@@ -59,7 +63,7 @@ var ErrProvisionValidationAborted = errors.New("provisioning aborted during vali
 //   - abort=false, err=nil: validation passed or was skipped; proceed.
 //
 // The preview flag only affects the confirmation prompt wording.
-func (m *Manager) runProvisionValidation(ctx context.Context, preview bool) (abort bool, err error) {
+func (m *Manager) RunProvisionValidation(ctx context.Context, preview bool) (abort bool, err error) {
 	// Respect the same gate as the Bicep preflight so users can disable all
 	// client-side validation with a single setting.
 	if m.provisionValidationDisabled() {

@@ -97,16 +97,6 @@ var AzdOperationsFeatureKey = alpha.MustFeatureKey("azd.operations")
 
 // Deploys the Azure infrastructure for the specified project
 func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
-	// Provider-agnostic client-side validation runs before any provider so that
-	// extension-registered "provision" checks fire regardless of the
-	// provisioning provider (Bicep, Terraform, or extension providers such as
-	// microsoft.foundry and demo).
-	if abort, err := m.runProvisionValidation(ctx, false); err != nil {
-		return nil, err
-	} else if abort {
-		return &DeployResult{SkippedReason: PreflightAbortedSkipped}, nil
-	}
-
 	// Apply the infrastructure deployment
 	deployResult, err := m.provider.Deploy(ctx)
 	if err != nil {
@@ -282,15 +272,6 @@ func bindMountOperation(
 
 // Preview generates the list of changes to be applied as part of the provisioning.
 func (m *Manager) Preview(ctx context.Context) (*DeployPreviewResult, error) {
-	// Run the same provider-agnostic validation before previewing so that
-	// error-severity findings surface (and abort) before a potentially
-	// misleading preview is generated.
-	if abort, err := m.runProvisionValidation(ctx, true); err != nil {
-		return nil, err
-	} else if abort {
-		return nil, ErrProvisionValidationAborted
-	}
-
 	// Apply the infrastructure deployment
 	deployResult, err := m.provider.Preview(ctx)
 

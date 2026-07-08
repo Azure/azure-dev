@@ -184,6 +184,26 @@ func (u *UpGraphAction) Run(
 		}
 	}
 
+	// 1a. Provider-agnostic provision validation (once per `azd up`). Dispatch
+	// extension-registered "provision" checks a single time, before the unified
+	// graph runs, so the checks — and any warning confirmation prompt — fire
+	// once rather than once per concurrently-provisioned layer. Skipped when
+	// there are no provision layers (nothing to provision). On abort, surface
+	// the shared "Provisioning was cancelled." UX via wrapProvisionError.
+	if len(layers) > 0 {
+		if abort, err := u.provisionManager.RunProvisionValidation(ctx, false); err != nil {
+			return nil, err
+		} else if abort {
+			return nil, wrapProvisionError(ctx, provisioning.ErrProvisionValidationAborted, provisionErrorDeps{
+				console:          u.console,
+				formatter:        u.formatter,
+				writer:           u.writer,
+				provisionManager: u.provisionManager,
+				portalUrlBase:    u.portalUrlBase,
+			})
+		}
+	}
+
 	// 2. Initialize project and enumerate services.
 	stableServices, err := u.initializeServices(ctx)
 	if err != nil {

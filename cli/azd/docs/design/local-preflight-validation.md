@@ -308,18 +308,34 @@ provider — never route through `BicepProvider`, so a `"local-preflight"` check
 registered by such an extension would be dead code.
 
 To let a check run **before provisioning regardless of the provider**, register
-it under the `"provision"` check type instead. This dispatch happens in the
-provider-agnostic `provisioning.Manager.Deploy()` (and `Manager.Preview()`),
-immediately before the selected provider runs:
+it under the `"provision"` check type instead. The provider-agnostic dispatch is
+exposed as `provisioning.Manager.RunProvisionValidation()` and is invoked **once
+per `azd provision` / `azd up`** by the command layer, before the layer
+execution graph runs — not inside `Manager.Deploy()`/`Manager.Preview()`.
+Multi-layer provisioning (`infra.layers[]`) runs each layer's `Deploy` through
+its own `Manager` concurrently, so dispatching per-`Deploy` would fire the
+checks — and any warning confirmation prompt — once per layer with an identical,
+env-scoped context. Hoisting the call to the action guarantees a single
+dispatch and a single prompt:
 
 ```
 azd provision
   │
-  ├── ► Provider-agnostic "provision" validation  ← runs here, all providers
-  ├── provider.Deploy()
-  │     └── (Bicep only) "local-preflight" validation
+  ├── ► Provider-agnostic "provision" validation  ← runs once, all providers
+  │        (provisionLayersGraph / up graph, before the layer graph)
+  │
+  ├── per-layer graph (may run layers concurrently)
+  │     └── provider.Deploy()
+  │           └── (Bicep only) "local-preflight" validation
   └── ...
 ```
+
+On abort (an error-severity finding, or a declined warning),
+`RunProvisionValidation` returns `abort=true`; the action surfaces
+`provisioning.ErrProvisionValidationAborted` through `wrapProvisionError`, which
+emits the shared "Provisioning was cancelled." UX and maps to
+`internal.ErrAbortedByUser` (exit code 0). Both the deploy and `--preview` paths
+route through the same single call.
 
 ### Lean, Provider-Agnostic Context
 

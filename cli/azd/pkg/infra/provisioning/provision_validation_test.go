@@ -103,11 +103,10 @@ func TestManagerDeployRunsProvisionValidation_Warning(t *testing.T) {
 
 	mgr := newProvisionValidationManager(t, mockContext, env, dispatcher)
 
-	abort, err := mgr.RunProvisionValidation(*mockContext.Context, false)
+	err := mgr.RunProvisionValidation(*mockContext.Context, false)
 
+	// Warning accepted → provisioning proceeds (no error).
 	require.NoError(t, err)
-	// Warning accepted → provisioning proceeds (not aborted).
-	require.False(t, abort)
 	require.True(t, confirmed, "expected a confirmation prompt for the warning")
 
 	// The provider-agnostic check type and lean context were dispatched.
@@ -139,11 +138,10 @@ func TestManagerDeployRunsProvisionValidation_WarningDeclined(t *testing.T) {
 
 	mgr := newProvisionValidationManager(t, mockContext, env, dispatcher)
 
-	abort, err := mgr.RunProvisionValidation(*mockContext.Context, false)
+	err := mgr.RunProvisionValidation(*mockContext.Context, false)
 
-	require.NoError(t, err)
 	// User declined → validation aborts (provisioning is skipped).
-	require.True(t, abort)
+	require.ErrorIs(t, err, provisioning.ErrProvisionValidationAborted)
 }
 
 func TestManagerDeployRunsProvisionValidation_Error(t *testing.T) {
@@ -162,11 +160,10 @@ func TestManagerDeployRunsProvisionValidation_Error(t *testing.T) {
 
 	mgr := newProvisionValidationManager(t, mockContext, env, dispatcher)
 
-	abort, err := mgr.RunProvisionValidation(*mockContext.Context, false)
+	err := mgr.RunProvisionValidation(*mockContext.Context, false)
 
-	require.NoError(t, err)
 	// Error severity → validation aborts without prompting.
-	require.True(t, abort)
+	require.ErrorIs(t, err, provisioning.ErrProvisionValidationAborted)
 }
 
 func TestManagerPreviewRunsProvisionValidation_Error(t *testing.T) {
@@ -185,10 +182,9 @@ func TestManagerPreviewRunsProvisionValidation_Error(t *testing.T) {
 	mgr := newProvisionValidationManager(t, mockContext, env, dispatcher)
 
 	// preview=true only affects prompt wording; an error still aborts.
-	abort, err := mgr.RunProvisionValidation(*mockContext.Context, true)
+	err := mgr.RunProvisionValidation(*mockContext.Context, true)
 
-	require.NoError(t, err)
-	require.True(t, abort)
+	require.ErrorIs(t, err, provisioning.ErrProvisionValidationAborted)
 }
 
 func TestManagerDeployProvisionValidation_NoResultsProceeds(t *testing.T) {
@@ -199,10 +195,9 @@ func TestManagerDeployProvisionValidation_NoResultsProceeds(t *testing.T) {
 
 	mgr := newProvisionValidationManager(t, mockContext, env, dispatcher)
 
-	abort, err := mgr.RunProvisionValidation(*mockContext.Context, false)
+	err := mgr.RunProvisionValidation(*mockContext.Context, false)
 
 	require.NoError(t, err)
-	require.False(t, abort)
 	require.Equal(t, 1, dispatcher.invocations)
 }
 
@@ -216,11 +211,10 @@ func TestManagerDeployProvisionValidation_DispatchErrorIsNonFatal(t *testing.T) 
 
 	mgr := newProvisionValidationManager(t, mockContext, env, dispatcher)
 
-	abort, err := mgr.RunProvisionValidation(*mockContext.Context, false)
+	err := mgr.RunProvisionValidation(*mockContext.Context, false)
 
 	// A dispatch failure is logged and skipped; provisioning proceeds.
 	require.NoError(t, err)
-	require.False(t, abort)
 }
 
 func TestManagerDeployProvisionValidation_SubscriptionScoped(t *testing.T) {
@@ -235,10 +229,9 @@ func TestManagerDeployProvisionValidation_SubscriptionScoped(t *testing.T) {
 
 	mgr := newProvisionValidationManager(t, mockContext, env, dispatcher)
 
-	abort, err := mgr.RunProvisionValidation(*mockContext.Context, false)
+	err := mgr.RunProvisionValidation(*mockContext.Context, false)
 
 	require.NoError(t, err)
-	require.False(t, abort)
 	require.Equal(t, 1, dispatcher.invocations)
 
 	// The context still includes the resource group key, with an empty value,

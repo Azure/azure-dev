@@ -55,27 +55,30 @@ var ErrProvisionValidationAborted = errors.New("provisioning aborted during vali
 // this runs for every provider (Bicep, Terraform, and extension-provided
 // providers such as microsoft.foundry and demo).
 //
-// Findings render through the uniform preflight report and follow the standard
-// (abort, err) semantics:
-//   - abort=true, err=nil: an error-severity finding (or a declined warning)
-//     means provisioning should be skipped (exit code 0).
-//   - abort=false, err!=nil: the confirmation prompt itself failed to run
-//     (dispatch/timeout failures are non-fatal and skipped, returning err=nil).
-//   - abort=false, err=nil: validation passed or was skipped; proceed.
+// Findings render through the uniform preflight report. The return value is a
+// single error the command layer passes to wrapProvisionError:
+//   - [ErrProvisionValidationAborted]: an error-severity finding, or the user
+//     declining to continue past warnings. wrapProvisionError translates this
+//     into the standard [internal.ErrAbortedByUser] outcome (exit code 0).
+//   - any other error: the confirmation prompt itself failed to run.
+//   - nil: validation passed, was skipped, or its warnings were accepted.
+//
+// Dispatch/timeout failures are non-fatal: they are logged and treated as a
+// skip (nil), so a blocked or unreachable extension never blocks provisioning.
 //
 // The preview flag only affects the confirmation prompt wording.
-func (m *Manager) RunProvisionValidation(ctx context.Context, preview bool) (abort bool, err error) {
+func (m *Manager) RunProvisionValidation(ctx context.Context, preview bool) (err error) {
 	// Respect the same gate as the Bicep preflight so users can disable all
 	// client-side validation with a single setting.
 	if m.provisionValidationDisabled() {
-		return false, nil
+		return nil
 	}
 
 	// The dispatcher is optional — when no extensions are loaded it is not
 	// registered, so there is nothing to validate.
 	var dispatcher ValidationCheckDispatcher
 	if resolveErr := m.serviceLocator.Resolve(&dispatcher); resolveErr != nil {
-		return false, nil
+		return nil
 	}
 
 	ctx, span := tracing.Start(ctx, events.PreflightValidationEvent)
@@ -123,7 +126,7 @@ func (m *Manager) RunProvisionValidation(ctx context.Context, preview bool) (abo
 			outcome = provisionValidationOutcomeError
 		}
 		span.SetAttributes(fields.PreflightOutcomeKey.String(outcome))
-		return false, nil
+		return nil
 	}
 
 	report := &ux.PreflightReport{}
@@ -164,7 +167,7 @@ func (m *Manager) RunProvisionValidation(ctx context.Context, preview bool) (abo
 		// aborted — this is not an internal failure (exit code 0).
 		m.console.Message(ctx, "Provision validation detected errors, provisioning aborted.")
 		span.SetAttributes(fields.PreflightOutcomeKey.String(provisionValidationOutcomeAbortedByErrors))
-		return true, nil
+		return ErrProvisionValidationAborted
 	}
 
 	if report.HasWarnings() {
@@ -179,16 +182,16 @@ func (m *Manager) RunProvisionValidation(ctx context.Context, preview bool) (abo
 		})
 		if promptErr != nil {
 			span.SetAttributes(fields.PreflightOutcomeKey.String(provisionValidationOutcomeError))
-			return false, fmt.Errorf("prompting for provision validation confirmation: %w", promptErr)
+			return fmt.Errorf("prompting for provision validation confirmation: %w", promptErr)
 		}
 		if !continueProvision {
 			span.SetAttributes(fields.PreflightOutcomeKey.String(provisionValidationOutcomeAbortedByUser))
-			return true, nil
+			return ErrProvisionValidationAborted
 		}
 		span.SetAttributes(fields.PreflightOutcomeKey.String(provisionValidationOutcomeWarningsAccepted))
 	}
 
-	return false, nil
+	return nil
 }
 
 // provisionValidationDisabled reports whether client-side provision validation

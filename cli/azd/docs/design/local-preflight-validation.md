@@ -331,11 +331,12 @@ azd provision
 ```
 
 On abort (an error-severity finding, or a declined warning),
-`RunProvisionValidation` returns `abort=true`; the action surfaces
-`provisioning.ErrProvisionValidationAborted` through `wrapProvisionError`, which
-emits the shared "Provisioning was cancelled." UX and maps to
-`internal.ErrAbortedByUser` (exit code 0). Both the deploy and `--preview` paths
-route through the same single call.
+`RunProvisionValidation` returns `provisioning.ErrProvisionValidationAborted`;
+the action passes it through `wrapProvisionError`, which emits the shared
+"Provisioning was cancelled." UX and maps it to `internal.ErrAbortedByUser`
+(exit code 0). Any other error (a failure of the confirmation prompt itself) is
+returned as-is, while a passing or skipped run returns `nil`. Both the deploy
+and `--preview` paths route through the same single call.
 
 ### Lean, Provider-Agnostic Context
 

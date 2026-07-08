@@ -91,12 +91,11 @@ func (p *ProvisionAction) provisionLayersGraph(
 	// provisioning runs each layer's Deploy concurrently through its own
 	// Manager, so dispatching per-Deploy would fire the checks — and any
 	// warning confirmation prompt — once per layer with an identical,
-	// env-scoped context. On abort, translate through wrapProvisionError so
-	// preview and deploy share the "Provisioning was cancelled." UX.
-	if abort, err := p.provisionManager.RunProvisionValidation(ctx, previewMode); err != nil {
-		return nil, err
-	} else if abort {
-		return nil, p.wrapProvisionError(ctx, provisioning.ErrProvisionValidationAborted)
+	// env-scoped context. On abort (or a prompt failure), translate through
+	// wrapProvisionError so preview and deploy share the same UX: an abort
+	// becomes the "Provisioning was cancelled." message.
+	if err := p.provisionManager.RunProvisionValidation(ctx, previewMode); err != nil {
+		return nil, p.wrapProvisionError(ctx, err)
 	}
 
 	// ── preview ──────────────────────────────────────────────────────────

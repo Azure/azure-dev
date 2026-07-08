@@ -188,13 +188,12 @@ func (u *UpGraphAction) Run(
 	// extension-registered "provision" checks a single time, before the unified
 	// graph runs, so the checks — and any warning confirmation prompt — fire
 	// once rather than once per concurrently-provisioned layer. Skipped when
-	// there are no provision layers (nothing to provision). On abort, surface
-	// the shared "Provisioning was cancelled." UX via wrapProvisionError.
+	// there are no provision layers (nothing to provision). On abort (or a
+	// prompt failure), surface the shared UX via wrapProvisionError — an abort
+	// becomes the "Provisioning was cancelled." message.
 	if len(layers) > 0 {
-		if abort, err := u.provisionManager.RunProvisionValidation(ctx, false); err != nil {
-			return nil, err
-		} else if abort {
-			return nil, wrapProvisionError(ctx, provisioning.ErrProvisionValidationAborted, provisionErrorDeps{
+		if err := u.provisionManager.RunProvisionValidation(ctx, false); err != nil {
+			return nil, wrapProvisionError(ctx, err, provisionErrorDeps{
 				console:          u.console,
 				formatter:        u.formatter,
 				writer:           u.writer,

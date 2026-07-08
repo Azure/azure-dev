@@ -37,6 +37,18 @@ type PredictedResource struct {
 // ValidationContext holds the assembled context data for a validation check.
 // It is populated from PrepareValidationContextChunk messages and injected
 // into the provider's Validate call by the ValidationManager.
+//
+// The contents of Data depend on CheckType — use the typed accessors below
+// rather than reading Data directly:
+//
+//   - ValidationCheckTypeLocalPreflight ("local-preflight"): a Bicep-only,
+//     ARM-rich context. Accessors: ARMTemplate, ARMParameters,
+//     ResourcesSnapshot, PredictedResources (plus EnvLocation).
+//   - ValidationCheckTypeProvision ("provision"): a provider-agnostic, lean
+//     context carrying no ARM data — only ambient environment values.
+//     Accessors: EnvName, SubscriptionID, EnvLocation, ResourceGroup,
+//     TargetScope. These are best-effort and may be empty on a cold run (see
+//     ValidationCheckTypeProvision for details).
 type ValidationContext struct {
 	// ContextID is the unique identifier for this context delivery.
 	ContextID string

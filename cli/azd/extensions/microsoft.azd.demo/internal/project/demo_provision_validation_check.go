@@ -15,8 +15,9 @@ import (
 // Unlike DemoValidationCheck (which relies on the Bicep snapshot), this check
 // registers under the "provision" check type and therefore runs before
 // provisioning for every provider — including this demo extension's own
-// provisioning provider. It demonstrates reading the lean provision context
-// (environment, subscription, location, resource group, target scope).
+// provisioning provider. It demonstrates reading the lean provision context;
+// see azdext.ValidationContext (and azdext.ValidationCheckTypeProvision) for
+// the authoritative description of that context's contents.
 type DemoProvisionValidationCheck struct{}
 
 // NewDemoProvisionValidationCheck creates a new DemoProvisionValidationCheck.

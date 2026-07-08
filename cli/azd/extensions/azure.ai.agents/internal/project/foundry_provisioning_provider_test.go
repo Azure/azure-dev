@@ -627,6 +627,33 @@ func TestFindFoundryProjectService_DependencyCategory(t *testing.T) {
 		"missing foundry project service is a Dependency, not a Validation")
 }
 
+func TestSynthesizeWithEnvPrompt_NoClientSurfacesActionableError(t *testing.T) {
+	// Without an azd client (which also stands in for the
+	// --no-prompt path), an unresolved network ${VAR} cannot be
+	// prompted for and must surface as an actionable dependency
+	// error naming the variable, not a raw synthesizer failure.
+	// The variable name is one the process environment does not set.
+	const varName = "AZURE_DEV_TEST_UNSET_VNET_ID"
+	require.Empty(t, os.Getenv(varName), "test precondition: %s must be unset", varName)
+
+	yaml := `
+services:
+  my-project:
+    host: azure.ai.project
+    network:
+      peSubnet: {vnet: "${` + varName + `}", name: pe}
+`
+	p := &FoundryProvisioningProvider{} // azdClient intentionally nil
+	_, err := p.synthesizeWithEnvPrompt(t.Context(), []byte(yaml), "my-project", "")
+	require.Error(t, err)
+
+	var local *azdext.LocalError
+	require.True(t, errors.As(err, &local), "want *azdext.LocalError, got %T", err)
+	assert.Equal(t, azdext.LocalErrorCategoryDependency, local.Category)
+	assert.Contains(t, local.Message, varName)
+	assert.Contains(t, local.Suggestion, "azd env set")
+}
+
 func TestOnDiskTemplatePresent(t *testing.T) {
 	t.Parallel()
 	// Empty project root: no infra/, so on-disk template absent.

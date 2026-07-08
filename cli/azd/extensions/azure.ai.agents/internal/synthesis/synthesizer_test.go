@@ -615,6 +615,30 @@ services:
 	assert.Contains(t, err.Error(), "not a well-formed")
 }
 
+func TestSynthesize_UnresolvedVarIsTyped(t *testing.T) {
+	// The provision path (resolve on) must surface a typed
+	// UnresolvedEnvVarError naming the variable so the provider
+	// can prompt for it. Field context is still wrapped via %w.
+	yaml := `
+services:
+  my-project:
+    host: azure.ai.project
+    network:
+      peSubnet: {vnet: "${AZURE_VNET_ID}", name: pe}
+`
+	_, err := Synthesize(Input{
+		RawAzureYAML:  []byte(yaml),
+		ServiceName:   "my-project",
+		AcceptedHosts: []string{"azure.ai.project"},
+	})
+	require.Error(t, err)
+
+	var unresolved *UnresolvedEnvVarError
+	require.True(t, errors.As(err, &unresolved), "want *UnresolvedEnvVarError, got %T", err)
+	assert.Equal(t, "AZURE_VNET_ID", unresolved.Name)
+	assert.Contains(t, err.Error(), "services.my-project.network")
+}
+
 func TestSynthesize_ResolvesDeploymentRef(t *testing.T) {
 	// A deployment item authored as a $ref must be loaded so synthesis sees the
 	// real deployment, not a zero-valued {"$ref": ...} placeholder.

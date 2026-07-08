@@ -155,13 +155,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 		return p.resolveEnv(ctx)
 	}
 
-	res, err := synthesis.Synthesize(synthesis.Input{
-		RawAzureYAML:  rawYAML,
-		ServiceName:   svcName,
-		AcceptedHosts: FoundryProvisioningServiceHosts,
-		Env:           p.networkEnvMap(ctx),
-		ProjectRoot:   projectPath,
-	})
+	res, err := p.synthesizeWithEnvPrompt(ctx, rawYAML, svcName, projectPath)
 	switch {
 	case errors.Is(err, synthesis.ErrEndpointBrownfield):
 		// endpoint: reuse — connect to the existing project, skip provisioning.
@@ -179,6 +173,13 @@ func (p *FoundryProvisioningProvider) Initialize(
 			fmt.Sprintf("add a service with `host: %s` to azure.yaml", FoundryProjectHost),
 		)
 	case err != nil:
+		// Cancellation and --no-prompt guidance from the env-var
+		// prompt are already actionable LocalErrors; surface them
+		// as-is rather than rewrapping in a generic azure.yaml error.
+		var localErr *azdext.LocalError
+		if errors.As(err, &localErr) {
+			return err
+		}
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
 			fmt.Sprintf("synthesize foundry project service %q: %s", svcName, err),
@@ -240,7 +241,144 @@ func (p *FoundryProvisioningProvider) networkEnvMap(ctx context.Context) map[str
 	return out
 }
 
-// warnNetworkIgnoredInBrownfield logs a warning when a service declares both
+// maxEnvVarPrompts bounds the synthesize/prompt retry loop so a
+// reference that stays unresolved cannot spin forever. Each pass
+// resolves at most one variable; this ceiling comfortably covers
+// the few ${VAR} refs a network block can carry (two subnets plus
+// dns.subscription).
+const maxEnvVarPrompts = 16
+
+// synthesizeWithEnvPrompt runs the synthesizer and, when a network
+// ${VAR} reference cannot be resolved from the azd environment or
+// the process environment, prompts for the value, persists it to
+// the azd environment, and retries. Under --no-prompt the azd host
+// reports "prompt required", which is surfaced as an actionable
+// error naming the variable so CI/CD stays deterministic. Other
+// synthesize errors (brownfield, service-not-found, validation) are
+// returned unchanged for the caller's switch.
+func (p *FoundryProvisioningProvider) synthesizeWithEnvPrompt(
+	ctx context.Context,
+	rawYAML []byte,
+	svcName string,
+	projectPath string,
+) (*synthesis.Result, error) {
+	// networkEnvMap may return nil; copy into a mutable map we can
+	// augment as the user supplies values across retries.
+	env := p.networkEnvMap(ctx)
+	if env == nil {
+		env = map[string]string{}
+	}
+
+	prompted := map[string]struct{}{}
+
+	for range maxEnvVarPrompts {
+		res, err := synthesis.Synthesize(synthesis.Input{
+			RawAzureYAML:  rawYAML,
+			ServiceName:   svcName,
+			AcceptedHosts: FoundryProvisioningServiceHosts,
+			Env:           env,
+			ProjectRoot:   projectPath,
+		})
+		if err == nil {
+			return res, nil
+		}
+
+		var unresolved *synthesis.UnresolvedEnvVarError
+		if !errors.As(err, &unresolved) {
+			// Brownfield, service-not-found, or a validation error:
+			// hand it back to the caller unchanged.
+			return nil, err
+		}
+
+		// A variable still unresolved after we set it signals a
+		// value we cannot honor; fail with the original error.
+		if _, seen := prompted[unresolved.Name]; seen {
+			return nil, err
+		}
+		prompted[unresolved.Name] = struct{}{}
+
+		value, perr := p.promptNetworkEnvVar(ctx, unresolved.Name)
+		if perr != nil {
+			return nil, perr
+		}
+		env[unresolved.Name] = value
+	}
+
+	return nil, exterrors.Validation(
+		exterrors.CodeInvalidAzureYaml,
+		fmt.Sprintf("too many unresolved environment variables while synthesizing service %q", svcName),
+		"resolve the ${VAR} references under the service's network: block, then re-run provision",
+	)
+}
+
+// promptNetworkEnvVar asks the user for the value of a ${VAR}
+// reference that the network: block uses but the environment does
+// not define, then persists it to the azd environment so later runs
+// and `azd env get-values` see it. Cancellation and --no-prompt are
+// handled like promptSubscription: interactive callers get a prompt,
+// headless callers get an actionable error.
+func (p *FoundryProvisioningProvider) promptNetworkEnvVar(ctx context.Context, name string) (string, error) {
+	if p.azdClient == nil {
+		return "", exterrors.Dependency(
+			exterrors.CodeEnvironmentValuesFailed,
+			fmt.Sprintf("environment variable %s referenced in azure.yaml is not set", name),
+			fmt.Sprintf("run `azd env set %s <value>` and re-run provision", name),
+		)
+	}
+	if err := p.ensureEnvName(ctx); err != nil {
+		return "", err
+	}
+
+	resp, err := p.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message: fmt.Sprintf("Enter value for environment variable %s", name),
+			HelpMessage: fmt.Sprintf(
+				"azure.yaml references ${%s} in the service network configuration, "+
+					"but it is not set in the azd environment or the shell.", name),
+			IgnoreHintKeys: true,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return "", exterrors.Cancelled(fmt.Sprintf("entry for %s was cancelled", name))
+		}
+		if exterrors.IsPromptRequired(err) {
+			return "", exterrors.Dependency(
+				exterrors.CodeEnvironmentValuesFailed,
+				fmt.Sprintf("environment variable %s is referenced in azure.yaml but not set", name),
+				fmt.Sprintf("run `azd env set %s <value>`, or run interactively to provide it", name),
+			)
+		}
+		return "", exterrors.FromPrompt(err, fmt.Sprintf("failed to prompt for environment variable %s", name))
+	}
+
+	value := strings.TrimSpace(resp.Value)
+	if err := p.setEnv(ctx, name, value); err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+// ensureEnvName populates p.envName from the current azd environment
+// when it has not been resolved yet. Synthesis (and any env-var
+// prompt it triggers) runs before resolveEnv, so the name may be
+// unset at prompt time; setEnv needs it to persist the value.
+func (p *FoundryProvisioningProvider) ensureEnvName(ctx context.Context) error {
+	if p.envName != "" {
+		return nil
+	}
+	curr, err := p.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil || curr.GetEnvironment() == nil {
+		return exterrors.Dependency(
+			exterrors.CodeEnvironmentNotFound,
+			fmt.Sprintf("get current azd environment: %v", err),
+			"run 'azd env new' to create an environment",
+		)
+	}
+	p.envName = curr.GetEnvironment().GetName()
+	return nil
+}
+
 // endpoint: (brownfield) and network:. The account's network posture is fixed
 // by whoever created it, so the network: block has no effect.
 func warnNetworkIgnoredInBrownfield(rawYAML []byte, svcName string) {

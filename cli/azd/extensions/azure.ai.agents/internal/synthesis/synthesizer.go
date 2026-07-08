@@ -38,6 +38,22 @@ var (
 	ErrServiceNotFound = errors.New("synthesis: service not found or host not accepted")
 )
 
+// UnresolvedEnvVarError reports a ${VAR} reference in a network
+// field that could not be resolved from the supplied env map or
+// the process environment. It is a typed error (not a plain
+// string) so the provisioning provider can detect it with
+// errors.As, prompt for the value, and retry — or fail with
+// actionable guidance under --no-prompt. Callers wrap it with
+// field context via %w, so the wrapped chain still matches.
+type UnresolvedEnvVarError struct {
+	// Name is the referenced variable, e.g. AZURE_VNET_ID.
+	Name string
+}
+
+func (e *UnresolvedEnvVarError) Error() string {
+	return fmt.Sprintf("unresolved environment variable ${%s}", e.Name)
+}
+
 // Input is the synthesizer's view of azure.yaml.
 type Input struct {
 	// RawAzureYAML is the full bytes of azure.yaml.
@@ -603,7 +619,7 @@ func resolveVars(s string, env map[string]string) (string, error) {
 		return match
 	})
 	if unresolved != "" {
-		return "", fmt.Errorf("unresolved environment variable ${%s}", unresolved)
+		return "", &UnresolvedEnvVarError{Name: unresolved}
 	}
 	return out, nil
 }

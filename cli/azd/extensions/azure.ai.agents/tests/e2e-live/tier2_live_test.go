@@ -316,6 +316,12 @@ func (r *runner) driveInit(ctx context.Context, exited <-chan struct{}) error {
 			repeat, lastKey = 1, key
 		}
 		if repeat >= 3 {
+			if strings.Contains(prompt, "subscription") || strings.Contains(prompt, "location") ||
+				strings.Contains(prompt, "region") {
+				r.t.Log("loop detected on picker prompt; accepting current selection")
+				r.enter()
+				continue
+			}
 			if strings.Contains(prompt, "model") || strings.Contains(prompt, "is specified") {
 				r.t.Log("loop detected on model prompt; trying next option")
 				r.c.send(keyDown)
@@ -393,27 +399,27 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 
 	// Language select — "Select a language" (promptAgentTemplate).
 	case has("select a language"):
-		r.selectByText("Python")
+		r.selectByText(screen, "Python")
 
 	// Template select — "Select a starter template" / "Select an agent template"
 	// (promptAgentTemplate).
 	case has("starter template") || has("agent template"):
-		r.selectByText("Basic agent (Invocations")
+		r.selectByText(screen, "Basic agent (Invocations")
 
 	// Foundry project hosting — "Select a Foundry project to host your agent..."
 	// (runInitFromManifest); choices "Use an existing..." / "Create a new...".
 	case has("foundry project to host"):
 		if r.createProject() {
-			r.selectByText("Create a new Foundry project")
+			r.selectByText(screen, "Create a new Foundry project")
 		} else {
-			r.selectByText("Use an existing Foundry project")
+			r.selectByText(screen, "Use an existing Foundry project")
 		}
 
 	// Existing-project picker — "Select a Foundry project"
 	// (selectFoundryProject); only when reusing a project.
 	case has("select a foundry project"):
 		if p := os.Getenv("E2E_PROJECT"); p != "" {
-			r.selectByText(p)
+			r.selectByText(screen, p)
 		} else {
 			r.enter()
 		}
@@ -425,7 +431,7 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 	// — match that, not the preamble.
 	case has("select subscription"):
 		if sub := os.Getenv("E2E_SUBSCRIPTION"); sub != "" {
-			r.selectByText(sub[:min(8, len(sub))])
+			r.selectByText(screen, sub[:min(8, len(sub))])
 		} else {
 			r.enter()
 		}
@@ -433,7 +439,7 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 	// Location — preamble "Select an Azure location..." (ensureLocation) +
 	// azd-core picker.
 	case has("location") || has("region"):
-		r.selectByText(getenvDefault("E2E_LOCATION", "eastus2"))
+		r.selectByText(screen, getenvDefault("E2E_LOCATION", "eastus2"))
 
 	// Manifest model decision — "Model '%s' is specified in the agent manifest."
 	// (getModelDetails); keep the manifest model (default first choice).
@@ -450,7 +456,7 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 
 	// Model select — "Select a model" (promptForAlternativeModel etc.).
 	case has("select a model"):
-		r.selectByText("gpt-4o-mini")
+		r.selectByText(screen, "gpt-4o-mini")
 
 	// Deployment version / SKU / capacity — azd-core's PromptAiDeployment renders
 	// these exact picker messages; accept defaults. Match the full message rather
@@ -702,13 +708,17 @@ func (r *runner) runQuiet(
 	return string(out), exitCode(err)
 }
 
-// selectByText filters a survey list by typing target, waits (event-driven) for
-// the filtered list to stop redrawing, then confirms with Enter. This assumes
-// the survey / azd-core Select supports type-to-filter; that behavior is only
-// verifiable against a live run (documented in README). waitForQuiet's exited
-// result is intentionally ignored: a child that exited mid-select makes the
-// trailing Enter a harmless no-op on the closed pty.
-func (r *runner) selectByText(target string) {
+// selectByText filters a survey list by typing target unless the target is
+// already selected, then confirms with Enter. Some survey redraws briefly expose
+// the same prompt after a selection is accepted; treating an already-selected
+// target as done keeps the driver idempotent and avoids appending stale filter
+// text into the next prompt.
+func (r *runner) selectByText(screen, target string) {
+	if currentSelectionHas(screen, target) {
+		r.enter()
+		return
+	}
+	r.clearFilter()
 	r.c.send(target)
 	r.c.waitForQuiet(listSettle)
 	r.c.send(keyEnter)
@@ -717,6 +727,29 @@ func (r *runner) selectByText(target string) {
 // enter accepts a prompt's default by pressing Enter.
 func (r *runner) enter() {
 	r.c.send(keyEnter)
+}
+
+// clearFilter removes any stale type-to-filter text left in the active survey
+// prompt before typing a new target. Ctrl+U covers readline-style inputs; Del is
+// repeated as a fallback for survey prompts that treat the filter as a simple
+// editable field.
+func (r *runner) clearFilter() {
+	r.c.send(keyCtrlU)
+	r.c.send(strings.Repeat(keyDel, 64))
+}
+
+func currentSelectionHas(screen, target string) bool {
+	target = strings.ToLower(target)
+	for _, line := range nonEmptyLines(screen) {
+		line = strings.ToLower(line)
+		if strings.HasPrefix(line, "?") && strings.Contains(line, target) {
+			return true
+		}
+		if strings.Contains(line, ">") && strings.Contains(line, target) {
+			return true
+		}
+	}
+	return false
 }
 
 // createProject reports whether the run should create a fresh Foundry project.

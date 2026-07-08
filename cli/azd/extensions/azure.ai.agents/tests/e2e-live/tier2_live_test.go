@@ -343,8 +343,8 @@ func (r *runner) finishInit(ctx context.Context) error {
 		return nil
 	}
 	return fmt.Errorf(
-		"init finished but expected artifacts are missing on disk\n--- tail ---\n%s",
-		tail(r.c.tailString(), 2000),
+		"init finished but expected artifacts are missing on disk\n--- test dir ---\n%s\n--- tail ---\n%s",
+		r.initOutputDiagnostics(), tail(r.c.tailString(), 2000),
 	)
 }
 
@@ -760,11 +760,14 @@ func (r *runner) findServiceName() string {
 	}
 	// A struct unmarshal is more robust than scanning lines: it tolerates
 	// comments and indentation changes that a naive parser would mishandle.
-	var proj struct {
-		Services map[string]any `yaml:"services"`
-	}
+	var proj azdProjectManifest
 	if err := yaml.Unmarshal(data, &proj); err != nil || len(proj.Services) == 0 {
 		return ""
+	}
+	for name, svc := range proj.Services {
+		if svc.Host == "azure.ai.agent" {
+			return name
+		}
 	}
 	for name := range proj.Services {
 		return name
@@ -772,8 +775,18 @@ func (r *runner) findServiceName() string {
 	return ""
 }
 
-// validateInitOutput confirms init produced an agent project on disk: a project
-// dir whose azure.yaml targets the agent host and a nested agent.yaml.
+type azdProjectManifest struct {
+	Services map[string]azdService `yaml:"services"`
+}
+
+type azdService struct {
+	Host string `yaml:"host"`
+}
+
+// validateInitOutput confirms init produced an azd project on disk. Current
+// unified azure.yaml samples can inline the agent definition in azure.yaml
+// instead of writing a separate agent.yaml, so the stable contract is that init
+// created a project directory with a parseable azure.yaml containing services.
 func (r *runner) validateInitOutput() bool {
 	entries, err := os.ReadDir(r.testDir)
 	if err != nil {
@@ -784,18 +797,73 @@ func (r *runner) validateInitOutput() bool {
 			continue
 		}
 		subdir := filepath.Join(r.testDir, e.Name())
-		//nolint:gosec // azure.yaml path is under the test-controlled testDir.
-		data, err := os.ReadFile(filepath.Join(subdir, "azure.yaml"))
-		if err != nil {
-			continue
-		}
-		content := string(data)
-		if strings.Contains(content, "host:") && strings.Contains(content, "azure.ai.agent") &&
-			hasAgentYAML(subdir) {
+		if hasProjectManifest(subdir) {
 			return true
 		}
 	}
 	return false
+}
+
+// hasProjectManifest reports whether root contains a parseable azd project
+// manifest with an azure.ai.agent service. Current unified azure.yaml samples
+// can inline the agent definition there rather than writing agent.yaml.
+func hasProjectManifest(root string) bool {
+	//nolint:gosec // azure.yaml path is under the test-controlled testDir.
+	data, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
+	if err != nil {
+		return false
+	}
+	var proj azdProjectManifest
+	if err := yaml.Unmarshal(data, &proj); err != nil {
+		return false
+	}
+	for _, svc := range proj.Services {
+		if svc.Host == "azure.ai.agent" {
+			return true
+		}
+	}
+	return false
+}
+
+// initOutputDiagnostics returns a bounded file listing to make scaffold-layout
+// drift visible in CI logs without dumping generated source files.
+func (r *runner) initOutputDiagnostics() string {
+	var b strings.Builder
+	count := 0
+	const maxEntries = 80
+
+	err := filepath.WalkDir(r.testDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			fmt.Fprintf(&b, "%s: %v\n", path, err)
+			return nil
+		}
+		rel, relErr := filepath.Rel(r.testDir, path)
+		if relErr != nil || rel == "." {
+			return nil
+		}
+		if count >= maxEntries {
+			return filepath.SkipAll
+		}
+		if strings.Count(filepath.ToSlash(rel), "/") > 3 {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			rel += "/"
+		}
+		fmt.Fprintln(&b, rel)
+		count++
+		return nil
+	})
+	if err != nil {
+		fmt.Fprintf(&b, "walk failed: %v\n", err)
+	}
+	if count >= maxEntries {
+		fmt.Fprintf(&b, "... truncated after %d entries\n", maxEntries)
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // hasAgentYAML reports whether an agent.yaml exists anywhere under root.

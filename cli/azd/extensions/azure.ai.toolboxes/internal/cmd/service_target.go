@@ -7,7 +7,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
+	"azure.ai.toolboxes/internal/exterrors"
 	"azure.ai.toolboxes/internal/foundry/projectctx"
 	"azure.ai.toolboxes/internal/pkg/azure"
 
@@ -29,6 +31,12 @@ var _ azdext.ServiceTargetProvider = (*toolboxServiceTarget)(nil)
 // not a body field. Each tool is a verbatim data-plane tool object; a tool that names a
 // `connection` is resolved to its project_connection_id at deploy time.
 type toolboxServiceConfig struct {
+	// Endpoint points at an existing Foundry toolbox version's MCP
+	// endpoint (bring-your-own). Its presence is the reuse signal:
+	// azd publishes it for agents instead of creating a new version,
+	// mirroring the azure.ai.project brownfield endpoint. Mutually
+	// exclusive with Tools and Description (a version is immutable).
+	Endpoint    string           `json:"endpoint,omitempty"`
 	Description string           `json:"description,omitempty"`
 	Tools       []map[string]any `json:"tools,omitempty"`
 }
@@ -109,6 +117,8 @@ func (p *toolboxServiceTarget) Publish(
 // against the azd environment; Foundry ${{...}} expressions pass through untouched.
 // Removing the service from azure.yaml stops azd managing the toolbox but does not delete
 // it (use `azd ai toolbox delete`).
+// When the entry sets `endpoint` instead, azd reuses that existing
+// toolbox and skips version creation (see deployReuse).
 func (p *toolboxServiceTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
@@ -121,6 +131,12 @@ func (p *toolboxServiceTarget) Deploy(
 		return nil, err
 	}
 	name := serviceConfig.GetName()
+
+	// Reuse (bring-your-own): endpoint set means azd resolves ${VAR}
+	// and publishes it for agents instead of creating a version.
+	if strings.TrimSpace(cfg.Endpoint) != "" {
+		return p.deployReuse(ctx, name, cfg, progress)
+	}
 
 	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{})
 	if err != nil {
@@ -162,6 +178,80 @@ func (p *toolboxServiceTarget) Deploy(
 	}
 
 	return &azdext.ServiceDeployResult{}, nil
+}
+
+// deployReuse publishes an existing toolbox's MCP endpoint to
+// the azd environment instead of creating a new version. It
+// mirrors the azure.ai.project brownfield endpoint: the
+// toolbox is managed elsewhere, so azd only wires the
+// consumption endpoint for agents.
+func (p *toolboxServiceTarget) deployReuse(
+	ctx context.Context,
+	name string,
+	cfg *toolboxServiceConfig,
+	progress azdext.ProgressReporter,
+) (*azdext.ServiceDeployResult, error) {
+	env, err := p.currentEnvValues(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	resolved, err := resolveReuseEndpoint(name, cfg, env)
+	if err != nil {
+		return nil, err
+	}
+
+	if progress != nil {
+		progress(fmt.Sprintf("Reusing existing toolbox %q", name))
+	}
+
+	if err := setToolboxEndpointEnvFunc(ctx, name, resolved); err != nil {
+		return nil, err
+	}
+	return &azdext.ServiceDeployResult{}, nil
+}
+
+// resolveReuseEndpoint validates a reuse (bring-your-own)
+// toolbox entry and returns its ${VAR}-expanded endpoint.
+// Because a toolbox version is immutable, endpoint must not be
+// combined with tools or a description; an endpoint that
+// resolves to empty is also rejected.
+func resolveReuseEndpoint(
+	name string, cfg *toolboxServiceConfig, env map[string]string,
+) (string, error) {
+	if len(cfg.Tools) > 0 || strings.TrimSpace(cfg.Description) != "" {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"toolbox %q sets 'endpoint' together with 'tools'/'description'",
+				name,
+			),
+			"set 'endpoint' to reuse an existing toolbox, or remove it to "+
+				"create a new version from 'tools'",
+		)
+	}
+
+	resolved, err := foundry.ExpandEnv(
+		cfg.Endpoint, func(k string) string { return env[k] },
+	)
+	if err != nil {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("resolving 'endpoint' for toolbox %q: %s", name, err),
+			"check the ${VAR} references in 'endpoint'",
+		)
+	}
+
+	resolved = strings.TrimSpace(resolved)
+	if resolved == "" {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("toolbox %q 'endpoint' resolved to an empty value", name),
+			"set 'endpoint' to an existing toolbox MCP endpoint (see "+
+				"'azd ai toolbox show')",
+		)
+	}
+	return resolved, nil
 }
 
 // buildToolEntries renders each declared tool into a data-plane tool object: ${VAR}

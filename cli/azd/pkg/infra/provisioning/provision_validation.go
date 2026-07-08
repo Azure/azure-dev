@@ -78,6 +78,11 @@ func (m *Manager) runProvisionValidation(ctx context.Context, preview bool) (abo
 		span.EndWithStatus(err)
 	}()
 
+	// Tag the dispatch site so this event can be distinguished from the Bicep
+	// provider's "local-preflight" emission (both share PreflightValidationEvent
+	// and, for Bicep provisions, both fire in a single run).
+	span.SetAttributes(fields.PreflightCheckTypeKey.String(azdext.ValidationCheckTypeProvision))
+
 	checkContext := m.provisionValidationContext()
 
 	// Bound extension dispatch so a blocked check cannot hang provisioning. A

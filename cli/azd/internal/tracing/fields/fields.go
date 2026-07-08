@@ -701,6 +701,20 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
+
+	// PreflightCheckTypeKey records which validation dispatch site emitted the
+	// event, since the same PreflightValidationEvent is emitted from both the
+	// Bicep-only "local-preflight" dispatch and the provider-agnostic
+	// "provision" dispatch. Without it, downstream consumers would double-count
+	// the event for Bicep provisions (where both sites fire). Values are the
+	// fixed, code-defined check-type identifiers.
+	//
+	// Example: "local-preflight", "provision"
+	PreflightCheckTypeKey = AttributeKey{
+		Key:            attribute.Key("validation.preflight.check_type"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // Provision-related fields

@@ -1486,7 +1486,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--type'],
-											description: 'Filter by template type. Supported values: agent, azd.',
+											description: 'Filter by template type. Supported values: agent, azd, azure.yaml.',
 											args: [
 												{
 													name: 'type',
@@ -5620,6 +5620,10 @@ const completionSpec: Fig.Spec = {
 							name: ['--force', '-f'],
 							description: 'Force installation, including downgrades and reinstalls',
 							isDangerous: true,
+						},
+						{
+							name: ['--no-dependencies'],
+							description: 'Install only the specified extension(s) without installing their declared dependencies',
 						},
 						{
 							name: ['--source', '-s'],

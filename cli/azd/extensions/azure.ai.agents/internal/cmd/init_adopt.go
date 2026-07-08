@@ -787,10 +787,26 @@ func runInitFromAzureYaml(
 		return err
 	}
 
+	// Apply deploy-mode configuration to the adopted agent
+	// service(s) before configuring the Foundry project. Whether an
+	// Azure Container Registry must be wired (skipACR) depends on the
+	// resolved deploy mode: a container agent on an existing project
+	// needs AZURE_CONTAINER_REGISTRY_ENDPOINT set here, while a code
+	// agent (or a user-supplied --image) does not.
+	usesContainer, err := applyDeployModeToAdoptedProject(ctx, flags, azdClient)
+	if err != nil {
+		return err
+	}
+
+	// skipACR is false only for a container deploy whose registry azd
+	// manages. Code deploy and --image (bring your own registry) both
+	// skip ACR.
+	skipACR := !usesContainer || flags.image != ""
+
 	result, err := configureFoundryProject(
 		ctx, azdClient, azureContext, env.Name,
 		flags.projectResourceId, flags.noPrompt,
-		true, // skipACR — unified azure.yaml does not use container builds
+		skipACR,
 	)
 	if err != nil {
 		if exterrors.IsCancellation(err) {
@@ -844,14 +860,6 @@ func runInitFromAzureYaml(
 		if err := persistFirstDeploymentName(ctx, setEnv, referencedDeployments); err != nil {
 			return fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
 		}
-	}
-
-	// Apply deploy-mode configuration to the adopted agent service (#8923).
-	// When the user passes --deploy-mode (and optionally --runtime /
-	// --entry-point), or when the service doesn't already specify its deploy
-	// mode, resolve code vs container configuration and update the service.
-	if err := applyDeployModeToAdoptedProject(ctx, flags, azdClient); err != nil {
-		return err
 	}
 
 	fmt.Printf(
@@ -1176,19 +1184,24 @@ func printAdoptionNextSteps(ctx context.Context, azdClient *azdext.AzdClient, fo
 // based on the --deploy-mode, --runtime, and --entry-point flags. When no
 // explicit flag is passed and the service already has a codeConfiguration or
 // docker property, the service is left unchanged (the sample is pre-configured).
+//
+// It reports whether any agent service resolved to a container
+// (Docker) deploy so the caller can decide whether an Azure
+// Container Registry must be wired (existing project) or created
+// on provision.
 func applyDeployModeToAdoptedProject(
 	ctx context.Context,
 	flags *initFlags,
 	azdClient *azdext.AzdClient,
-) error {
+) (bool, error) {
 	// Validate --image flag early (incompatible with --deploy-mode code).
 	if err := validateImageFlag(flags.image, flags.deployMode); err != nil {
-		return err
+		return false, err
 	}
 
 	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		return fmt.Errorf("reading adopted project: %w", err)
+		return false, fmt.Errorf("reading adopted project: %w", err)
 	}
 
 	// Collect all agent services in the adopted project.
@@ -1204,53 +1217,68 @@ func applyDeployModeToAdoptedProject(
 	}
 	if len(agentServices) == 0 {
 		// No agent service found -- nothing to configure.
-		return nil
+		return false, nil
 	}
 
-	// Apply configuration to each agent service.
+	// Apply configuration to each agent service, tracking whether any
+	// resolves to a container deploy so the caller can wire an ACR.
+	usesContainer := false
 	for _, agent := range agentServices {
-		if err := applyDeployModeToService(ctx, flags, azdClient, agent.name, agent.svc); err != nil {
-			return err
+		container, err := applyDeployModeToService(ctx, flags, azdClient, agent.name, agent.svc)
+		if err != nil {
+			return false, err
+		}
+		if container {
+			usesContainer = true
 		}
 	}
-	return nil
+	return usesContainer, nil
 }
 
-// applyDeployModeToService applies deploy-mode configuration to a single agent service.
+// applyDeployModeToService applies deploy-mode configuration to a
+// single agent service and reports whether the resolved mode is a
+// container (Docker) deploy. A container deploy that azd builds
+// requires an Azure Container Registry; a code (ZIP) deploy does
+// not. A user-provided --image is a container deploy but uses the
+// caller's own registry, so callers treat --image as skip-ACR.
 func applyDeployModeToService(
 	ctx context.Context,
 	flags *initFlags,
 	azdClient *azdext.AzdClient,
 	serviceName string,
 	svc *azdext.ServiceConfig,
-) error {
+) (bool, error) {
 	// Apply --image override to the agent service when provided.
 	if flags.image != "" {
 		imageValue, err := structpb.NewValue(flags.image)
 		if err != nil {
-			return fmt.Errorf("encoding image value: %w", err)
+			return false, fmt.Errorf("encoding image value: %w", err)
 		}
 		if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
 			ServiceName: serviceName,
 			Path:        "image",
 			Value:       imageValue,
 		}); err != nil {
-			return fmt.Errorf("writing image to agent service %q: %w", serviceName, err)
+			return false, fmt.Errorf("writing image to agent service %q: %w", serviceName, err)
 		}
 		log.Printf("Applied --image %q to agent service %q", flags.image, serviceName)
 
 		// --image implies container deploy; apply container config and return.
-		return applyContainerDeployToService(ctx, azdClient, serviceName, svc)
+		if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc); err != nil {
+			return false, err
+		}
+		return true, nil
 	}
 
 	// Check whether the service already specifies its deploy mode.
 	hasCodeConfig := adoptedServiceHasCodeConfig(svc)
 	hasDocker := adoptedServiceHasDocker(svc)
 
-	// When no explicit --deploy-mode flag is passed and the service is
-	// already configured, respect the sample's existing configuration.
+	// When no explicit --deploy-mode flag is passed and the service
+	// is already configured, respect the sample's existing config. A
+	// pre-configured docker property means container deploy.
 	if flags.deployMode == "" && (hasCodeConfig || hasDocker) {
-		return nil
+		return hasDocker, nil
 	}
 
 	// Use the service's subdirectory for language detection (not project root).
@@ -1262,13 +1290,16 @@ func applyDeployModeToService(
 	// userProvidedManifest is true: -m was explicitly provided.
 	deployMode, err := promptDeployMode(ctx, azdClient, flags.noPrompt, showCodeDeploy, flags.deployMode, true)
 	if err != nil {
-		return fmt.Errorf("resolving deploy mode for adopted project: %w", err)
+		return false, fmt.Errorf("resolving deploy mode for adopted project: %w", err)
 	}
 
 	if deployMode == "code" {
-		return applyCodeDeployToService(ctx, flags, azdClient, serviceName, targetDir, svc)
+		return false, applyCodeDeployToService(ctx, flags, azdClient, serviceName, targetDir, svc)
 	}
-	return applyContainerDeployToService(ctx, azdClient, serviceName, svc)
+	if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // adoptedServiceHasCodeConfig checks whether the adopted agent service already

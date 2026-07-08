@@ -34,14 +34,30 @@ jobs:
       - name: Build azd
         run: go build .
 
+      # Validates registry.json and fails on any hard validation error. The most
+      # important case is a declared dependency constraint that no published version
+      # satisfies, which is the inconsistency a coordinated multi-extension bump can
+      # introduce, but schema, id, and artifact errors also fail here. Warnings (e.g.
+      # an absent dependency id) do not fail this step, so routine extension releases
+      # are not blocked. Runs on the same trigger as registry.json.
+      - name: Validate registry dependency consistency
+        run: |
+          if ! go test ./pkg/extensions -run '^TestRegistryFileIsValid$' -v; then
+            echo "::error::registry.json failed validation. See the test output above for the specific error(s)."
+            echo "Suggestion: a common cause is a dependency pinned to a version that is not yet published in the registry; ensure that version is published before updating the dependent extension."
+            exit 1
+          fi
+
       - name: Run FigSpec snapshot test
+        id: figspec
         run: go test ./cmd -v -run TestFigSpec
 
       - name: Run Usage snapshot test
+        id: usage
         run: go test ./cmd -v -run TestUsage
 
       - name: Check snapshot test results
-        if: failure()
+        if: failure() && (steps.figspec.outcome == 'failure' || steps.usage.outcome == 'failure')
         run: |
           echo "::error::Snapshots may be out of date. Run the following locally to update them:"
           echo ""

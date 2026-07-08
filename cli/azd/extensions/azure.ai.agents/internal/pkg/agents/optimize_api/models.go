@@ -203,9 +203,21 @@ func (s *OptimizeJobStatus) BaselineCandidate() *CandidateResult {
 
 // JobProgress reports candidate-level progress for a running optimization job.
 type JobProgress struct {
-	CandidatesCompleted int     `json:"candidates_completed"`
-	BestScore           float64 `json:"best_score"`
-	ElapsedSeconds      float64 `json:"elapsed_seconds"`
+	CandidatesCompleted int                  `json:"candidates_completed"`
+	BaselineScore       float64              `json:"baseline_score"`
+	BestScore           float64              `json:"best_score"`
+	ElapsedSeconds      float64              `json:"elapsed_seconds"`
+	InProgressCandidate *InProgressCandidate `json:"in_progress_candidate,omitempty"`
+}
+
+// InProgressCandidate describes the candidate currently being generated or
+// evaluated while an optimization job is still running.
+type InProgressCandidate struct {
+	// CreatedAt is the Unix timestamp (seconds) when the candidate started.
+	CreatedAt int64 `json:"created_at"`
+	// CandidateGenerated reports whether the candidate has been generated and
+	// is now being evaluated (true) versus still being generated (false).
+	CandidateGenerated bool `json:"candidate_generated"`
 }
 
 // JobError captures an error from a failed job.

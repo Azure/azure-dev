@@ -67,7 +67,7 @@ Use 'optimize apply' instead if you want to localize the config into your azd pr
 	}
 
 	cmd.Flags().StringVar(&flags.candidate, "candidate", "", "Candidate ID from optimization results (required)")
-	cmd.Flags().StringVar(&flags.agent, "agent", "", "Agent name to deploy to (auto-detected from agent.yaml)")
+	cmd.Flags().StringVar(&flags.agent, "agent", "", "Agent service name from azure.yaml, or Foundry agent name outside a project")
 	_ = cmd.MarkFlagRequired("candidate")
 	flags.optimizeConnectionFlags.register(cmd)
 
@@ -94,7 +94,7 @@ func (a *OptimizeDeployAction) runDirect(
 	out io.Writer,
 	bold *color.Color,
 ) error {
-	// Resolve agent name from flag or agent.yaml in current directory.
+	// Resolve agent name from flag or azd project environment.
 	resolved, err := resolveOptimizeAgent(ctx, a.flags.agent, a.envName, false)
 	if err != nil {
 		return err

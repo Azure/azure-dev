@@ -3129,6 +3129,52 @@ func TestPeekManifestName_LocalFile_NestedFieldsIgnored(t *testing.T) {
 	}
 }
 
+// Regression for #8945: a manifest carries the agent identity under
+// template.name, so the -m flow must peek that (not the top-level manifest
+// name) to prompt with — and default the folder to — the agent's own name,
+// matching the interactive flow.
+func TestPeekManifestName_LocalFile_PrefersTemplateName(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.manifest.yaml")
+	manifest := "" +
+		"name: my-manifest\n" +
+		"displayName: My Agent\n" +
+		"template:\n" +
+		"  name: my-agent\n" +
+		"  kind: hosted\n"
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(path, []byte(manifest), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got := peekManifestName(t.Context(), path, &http.Client{})
+	if got != "my-agent" {
+		t.Errorf("peekManifestName = %q, want %q (template.name)", got, "my-agent")
+	}
+}
+
+// When a manifest declares template: but the template omits name, the peek
+// falls back to the top-level manifest name, mirroring ExtractAgentDefinition.
+func TestPeekManifestName_LocalFile_TemplateWithoutNameFallsBack(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.manifest.yaml")
+	manifest := "" +
+		"name: fallback-agent\n" +
+		"template:\n" +
+		"  kind: hosted\n"
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(path, []byte(manifest), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got := peekManifestName(t.Context(), path, &http.Client{})
+	if got != "fallback-agent" {
+		t.Errorf("peekManifestName = %q, want %q (top-level fallback)", got, "fallback-agent")
+	}
+}
+
 func TestPeekManifestName_EmptyPointer(t *testing.T) {
 	t.Parallel()
 	got := peekManifestName(t.Context(), "", &http.Client{})

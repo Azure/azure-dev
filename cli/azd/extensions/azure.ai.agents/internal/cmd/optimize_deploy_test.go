@@ -33,13 +33,13 @@ func TestOptimizeDeployCommand_CandidateIsRequired(t *testing.T) {
 	assert.Contains(t, err.Error(), "candidate")
 }
 
-func TestOptimizeDeployCommand_AgentResolvedFromFlagOrYaml(t *testing.T) {
+func TestOptimizeDeployCommand_AgentResolvedFromFlagOrProject(t *testing.T) {
 	cmd := newOptimizeDeployCommand(&azdext.ExtensionContext{})
 
-	// --agent is no longer MarkFlagRequired; it falls back to agent.yaml
+	// --agent is no longer MarkFlagRequired; it falls back to azd project
 	agentFlag := cmd.Flags().Lookup("agent")
 	require.NotNil(t, agentFlag)
-	// Without --agent and without agent.yaml, should error about agent name
+	// Without --agent and without azd project context, should error about agent name
 	cmd.SetArgs([]string{"--candidate", "cand_123"})
 	err := cmd.Execute()
 	assert.Error(t, err)

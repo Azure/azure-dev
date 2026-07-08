@@ -142,7 +142,12 @@ type FilterOptions struct {
 	// Formats filters by model format, e.g. ["OpenAI"].
 	Formats []string
 	// Statuses filters by version lifecycle status. Models are included only if
-	// at least one version matches.
+	// at least one version matches. When unset, the default new-deployment view
+	// excludes ARM "Deprecating" (customer-facing Deprecated) and "Deprecated"
+	// (Retired) versions. Set Statuses to opt back into those lifecycle statuses,
+	// for example for existing-customer management scenarios. Versions whose
+	// inference endpoint has retired (deprecation.inference <= now) are always
+	// excluded, even when explicitly requested.
 	Statuses []string
 	// ExcludeModelNames excludes models by name (for multi-model selection flows).
 	ExcludeModelNames []string

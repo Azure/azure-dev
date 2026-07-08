@@ -520,6 +520,12 @@ type InstallOptions struct {
 	VersionPreference string
 	// AzdVersion limits selected extension versions to those compatible with azd.
 	AzdVersion *semver.Version
+	// SkipDependencies installs only the target extension, without resolving or
+	// installing its declared dependencies and without enforcing the installed
+	// dependency version constraints. It is used when the caller only needs the
+	// extension's own binary (e.g. generating command snapshots) and cannot
+	// guarantee that the registry's dependency graph is internally consistent.
+	SkipDependencies bool
 }
 
 // InstallWithOptions installs an extension using the supplied options.
@@ -584,8 +590,11 @@ func (m *Manager) installInternal(
 		return nil, fmt.Errorf("no binaries or dependencies available for this version")
 	}
 
-	// Install dependencies
-	if len(selectedVersion.Dependencies) > 0 {
+	// Install dependencies unless the caller opted out. Skipping bypasses both the
+	// dependency install loop and the installed-dependency constraint check, so the
+	// target extension installs even when the registry's dependency graph is
+	// transiently inconsistent (e.g. during a coordinated multi-extension bump).
+	if !opts.SkipDependencies && len(selectedVersion.Dependencies) > 0 {
 		for _, dependency := range selectedVersion.Dependencies {
 			installedDependency, err := m.GetInstalled(FilterOptions{Id: dependency.Id})
 			if err == nil && installedDependency != nil {
@@ -827,6 +836,13 @@ type UpgradeOptions struct {
 	UpgradeDependencies bool
 	// AzdVersion limits selected extension versions to those compatible with azd.
 	AzdVersion *semver.Version
+	// SkipDependencies reinstalls only the target extension, without resolving or
+	// installing its declared dependencies, without enforcing the installed
+	// dependency version constraints, and without reconciling installed dependency
+	// versions. It mirrors InstallOptions.SkipDependencies for the reinstall an
+	// upgrade performs, so `--no-dependencies` behaves the same whether the
+	// extension is being installed fresh or over an existing install.
+	SkipDependencies bool
 }
 
 // DefaultUpgradeOptions returns UpgradeOptions with dependency upgrades enabled.
@@ -894,9 +910,16 @@ func (m *Manager) upgradeInternal(
 	extensionVersion, err := m.installInternal(ctx, extension, InstallOptions{
 		VersionPreference: opts.VersionPreference,
 		AzdVersion:        opts.AzdVersion,
+		SkipDependencies:  opts.SkipDependencies,
 	}, true, map[string]struct{}{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to install extension: %w", err)
+	}
+
+	// When dependencies are skipped, the reinstall above installs only the target
+	// extension; do not resolve or reconcile any dependency versions.
+	if opts.SkipDependencies {
+		return extensionVersion, nil, nil
 	}
 
 	if extensionVersion == nil || len(extensionVersion.Dependencies) == 0 {

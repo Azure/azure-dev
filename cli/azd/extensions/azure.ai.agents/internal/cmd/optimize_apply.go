@@ -5,8 +5,9 @@
 // an optimization candidate and applies it locally to the azd project.
 //
 // It writes the candidate's instruction, skills, and tool definitions
-// into .agent_configs/<candidate-id>/, updates agent.yaml environment
-// variables, and shows a diff summary (prompt and skills) against the
+// into .agent_configs/<candidate-id>/, updates the agent definition's
+// environment variables (inline in azure.yaml, or legacy agent.yaml on
+// disk), and shows a diff summary (prompt and skills) against the
 // baseline.
 
 package cmd
@@ -70,7 +71,7 @@ After applying, run 'azd deploy' to deploy the optimized agent version.`,
 	}
 
 	cmd.Flags().StringVar(&flags.candidate, "candidate", "", "Candidate ID from optimization results (required)")
-	cmd.Flags().StringVar(&flags.agent, "agent", "", "Agent service name (auto-detected from azure.yaml)")
+	cmd.Flags().StringVar(&flags.agent, "agent", "", "Agent service name from azure.yaml (auto-detected if only one exists)")
 	_ = cmd.MarkFlagRequired("candidate")
 	flags.optimizeConnectionFlags.register(cmd)
 

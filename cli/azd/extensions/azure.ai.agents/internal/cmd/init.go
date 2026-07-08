@@ -443,14 +443,20 @@ func folderNameStrippingParenSuffix(title string) string {
 	return sanitizeAgentName(title)
 }
 
-// peekManifestName makes a best-effort attempt to read just the top-level
-// "name" field from an agent manifest at the given pointer. It is used by the
-// -m flow to derive a project folder name before the full manifest is loaded
-// inside InitAction.Run. Any failure (read error, parse error, missing name,
-// unsupported pointer type) returns an empty string, leaving the caller to
-// choose a conservative fallback. Errors are logged at debug level only — the
-// authoritative download/parse happens later in downloadAgentYaml and surfaces
-// the real diagnostic to the user.
+// peekManifestName makes a best-effort attempt to read the agent name from an
+// agent manifest at the given pointer. It is used by the -m flow to derive a
+// project folder name and seed the agent-name prompt before the full manifest
+// is loaded inside InitAction.Run. Any failure (read error, parse error,
+// missing name, unsupported pointer type) returns an empty string, leaving the
+// caller to choose a conservative fallback. Errors are logged at debug level
+// only — the authoritative download/parse happens later in downloadAgentYaml
+// and surfaces the real diagnostic to the user.
+//
+// The manifest format nests the agent identity under "template.name", while a
+// bare agent definition carries "name" at the top level. This prefers the
+// template name (the identity used downstream by ExtractAgentDefinition) and
+// falls back to the top-level name, so the -m flow reliably prompts with the
+// agent's own name — matching the interactive and template flows.
 //
 // Supported pointer types:
 //   - local file paths (read via os.ReadFile)
@@ -471,11 +477,20 @@ func peekManifestName(ctx context.Context, manifestPointer string, httpClient *h
 	}
 
 	var head struct {
-		Name string `yaml:"name"`
+		Name     string `yaml:"name"`
+		Template struct {
+			Name string `yaml:"name"`
+		} `yaml:"template"`
 	}
 	if err := yaml.Unmarshal(content, &head); err != nil {
 		log.Printf("peek manifest name: parse: %v", err)
 		return ""
+	}
+	// Prefer the manifest's template.name (the agent identity used downstream),
+	// falling back to the top-level name for bare agent definitions — mirroring
+	// ExtractAgentDefinition's precedence.
+	if name := strings.TrimSpace(head.Template.Name); name != "" {
+		return name
 	}
 	return strings.TrimSpace(head.Name)
 }
@@ -1309,95 +1324,50 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					}
 
 					switch selectedTemplate.EffectiveType() {
-					case TemplateTypeAzd:
-						// Full azd template - dispatch azd init -t <repo>
-						// Create project in a new subdirectory derived from the template title.
-						folderName := folderNameStrippingParenSuffix(selectedTemplate.Title)
-						// Check whether the target directory already exists so we
-						// only report "created" when a new directory was made.
-						_, statErr := os.Stat(folderName)
-						newlyCreated := errors.Is(statErr, fs.ErrNotExist)
-						initArgs := []string{"init", "-t", selectedTemplate.Source, folderName}
-						if flags.env != "" {
-							initArgs = append(initArgs, "--environment", flags.env)
-						} else {
-							base := sanitizeAgentName(folderName)
-							if len(base) > 59 {
-								base = strings.TrimRight(base[:59], "-")
-							}
-							defaultEnvName := base + "-dev"
-							initArgs = append(
-								initArgs, "--environment", defaultEnvName,
-							)
-						}
-
-						workflow := &azdext.Workflow{
-							Name: "init",
-							Steps: []*azdext.WorkflowStep{
-								{Command: &azdext.WorkflowCommand{Args: initArgs}},
-							},
-						}
-
-						_, err := azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
-							Workflow: workflow,
-						})
-						if err != nil {
-							if exterrors.IsCancellation(err) {
-								return exterrors.Cancelled("initialization was cancelled")
-							}
+					case TemplateTypeAzureYaml:
+						// Unified azure.yaml template — download and adopt via
+						// the Foundry adoption flow (not git clone).
+						flags.manifestPointer = selectedTemplate.Source
+						content, ok := readManifestContentForInitDetection(
+							ctx, azdClient, flags.manifestPointer, httpClient,
+						)
+						if !ok {
 							return exterrors.Dependency(
 								exterrors.CodeProjectInitFailed,
 								fmt.Sprintf(
-									"failed to initialize project from template: %s", err,
+									"failed to download template source: %s",
+									selectedTemplate.Source,
 								),
 								"",
 							)
 						}
 
-						fmt.Printf(
-							"\nProject initialized from template: %s\n",
-							selectedTemplate.Title,
-						)
-
-						// Sync the extension process into the new project directory.
-						// The azd host already chdir'd when it processed the init command.
-						if err := os.Chdir(folderName); err != nil {
-							return fmt.Errorf(
-								"changing to project directory %q: %w",
-								folderName, err,
-							)
-						}
-						// Compute display path for created folder (used in nextstep).
-						// Only show cd hint for brand-new projects, not when adding
-						// a template subfolder to an existing project.
-						var folderDisplay string
-						if newlyCreated && !existingProject {
-							folderDisplay = filepath.ToSlash(folderName)
+						// Resolve the agent name BEFORE creating the project
+						// folder so the folder and agent identity use the same
+						// name. Use the azure.yaml project name as the default,
+						// falling back to the template title.
+						defaultName := foundryProjectName(content)
+						if defaultName == "" {
+							defaultName = folderNameStrippingParenSuffix(selectedTemplate.Title)
 						}
 
-						// Search for an agent manifest in the scaffolded project
-						cwd, err := os.Getwd()
+						resolvedName, err := resolveInitAgentName(ctx, azdClient, flags, defaultName)
 						if err != nil {
-							return fmt.Errorf("getting current directory: %w", err)
-						}
-
-						manifestPath, err := findAgentManifest(cwd)
-						if err != nil {
-							return fmt.Errorf("searching for agent manifest: %w", err)
-						}
-
-						if manifestPath != "" {
-							flags.manifestPointer = manifestPath
-							if err := runInitFromManifest(
-								ctx, flags, azdClient, httpClient, ".", folderDisplay, true,
-							); err != nil {
-								if exterrors.IsCancellation(err) {
-									return exterrors.Cancelled("initialization was cancelled")
-								}
-								return err
+							if exterrors.IsCancellation(err) {
+								return exterrors.Cancelled("initialization was cancelled")
 							}
-						} else {
-							fmt.Println("No agent manifest found in the scaffolded project.")
+							return err
+						}
+
+						if flags.src == "" && resolvedName != "" {
+							flags.src = sanitizeAgentName(resolvedName)
+						}
+
+						if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content); err != nil {
+							if exterrors.IsCancellation(err) {
+								return exterrors.Cancelled("initialization was cancelled")
+							}
+							return err
 						}
 
 					default:

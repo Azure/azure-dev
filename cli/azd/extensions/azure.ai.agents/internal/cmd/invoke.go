@@ -84,10 +84,12 @@ agent name and the second is the message.
 
 Use --input-file/-f to send the contents of a file as the request body
 instead of a positional message argument. This is useful for structured
-or large payloads with the invocations protocol.
+or large payloads with the invocations protocol, or for sending a complete
+JSON-RPC request with the a2a protocol.
 
 Use --local to target a locally running agent (started via 'azd ai agent run')
-instead of Foundry.
+instead of Foundry. The a2a protocol is remote-only and cannot be used with
+--local.
 
 Sessions are persisted per-agent — consecutive invokes reuse the same
 session automatically. Pass --new-session to force a reset.
@@ -116,6 +118,12 @@ suppressed in raw mode.`,
 
   # Invoke using a specific protocol
   azd ai agent invoke --protocol invocations "Hello!"
+
+  # Invoke a deployed agent over the a2a protocol
+  azd ai agent invoke --protocol a2a "Hello!"
+
+  # Invoke the a2a protocol with a complete JSON-RPC request from a file
+  azd ai agent invoke --protocol a2a -f a2a-request.json
 
   # Invoke with a file as the request body
   azd ai agent invoke -f request.json
@@ -209,7 +217,15 @@ suppressed in raw mode.`,
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
 						fmt.Sprintf("unsupported protocol %q for invocation", flags.protocol),
-						"supported protocols are: responses, invocations",
+						"supported protocols are: responses, invocations, a2a",
+					)
+				}
+				if flags.local && !p.IsLocalInvocable() {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						fmt.Sprintf("the %s protocol cannot be invoked against a local agent", flags.protocol),
+						"omit --local to invoke the deployed agent, "+
+							"or use --protocol responses/invocations for local invocation",
 					)
 				}
 			}
@@ -220,7 +236,8 @@ suppressed in raw mode.`,
 
 	cmd.Flags().BoolVarP(&flags.local, "local", "l", false, "Invoke on localhost instead of Foundry")
 	cmd.Flags().StringVarP(&flags.inputFile, "input-file", "f", "", "Path to a file whose contents are sent as the request body")
-	cmd.Flags().StringVarP(&flags.protocol, "protocol", "p", "", "Protocol to use: responses (default) or invocations")
+	cmd.Flags().StringVarP(&flags.protocol, "protocol", "p", "",
+		"Protocol to use: responses (default), invocations, or a2a (a2a is remote-only)")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(
 		&flags.timeout,
@@ -373,16 +390,22 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		switch protocol {
 		case agent_api.AgentProtocolInvocations:
 			return a.invocationsLocal(ctx)
+		case agent_api.AgentProtocolA2A:
+			return a.a2aLocal(ctx)
 		default:
 			return a.responsesLocal(ctx)
 		}
 	}
 
 	// Remote: route by protocol.
-	if protocol == agent_api.AgentProtocolInvocations {
+	switch protocol {
+	case agent_api.AgentProtocolInvocations:
 		return a.invocationsRemote(ctx)
+	case agent_api.AgentProtocolA2A:
+		return a.a2aRemote(ctx)
+	default:
+		return a.responsesRemote(ctx)
 	}
-	return a.responsesRemote(ctx)
 }
 
 // emitInvokeSuccessNextStep prints the resolver-driven Next: block after a
@@ -997,7 +1020,6 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
-	req.Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 	if raw {
 		// Disable Go's transparent gzip handling so the dumped headers and
@@ -1235,7 +1257,6 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 	req.Header.Set("Content-Type", contentTypeForBody(body))
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
-	req.Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 	if raw {
 		// Disable Go's transparent gzip handling so the dumped headers and
@@ -1584,7 +1605,6 @@ func handleInvocationLRO(
 		if bearerToken != "" {
 			req.Header.Set("Authorization", "Bearer "+bearerToken)
 		}
-		req.Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 		options.ApplyHeaders(req.Header)
 		if raw {
 			// Disable Go's transparent gzip handling so the dumped headers
@@ -1705,7 +1725,6 @@ func createConversation(
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+bearerToken)
-	req.Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	options.ApplyHeaders(req.Header)
 
 	client := &http.Client{Timeout: 30 * time.Second}

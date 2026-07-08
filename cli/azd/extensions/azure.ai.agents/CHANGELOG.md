@@ -4,6 +4,7 @@
 
 ### Features Added
 
+- [[#9025]](https://github.com/Azure/azure-dev/pull/9025) `azd provision` now prompts for unresolved `${VAR}` references in a Foundry service's `network:` block (for example `peSubnet.vnet` or `dns.subscription`) instead of failing, then persists the value to the azd environment so later runs and `azd env get-values` see it. Resolution order is azd environment, then the process environment, then a prompt; under `--no-prompt` it returns an actionable error naming the variable so CI/CD stays deterministic.
 - [[#8989]](https://github.com/Azure/azure-dev/pull/8989) Add `a2a` protocol support to `azd ai agent invoke`. A plain message is wrapped in a JSON-RPC 2.0 `message/send` request, `--input-file` sends a complete JSON-RPC request, and `--output raw` dumps the response verbatim. A2A is remote-only (not available with `--local`).
 
 ### Bugs Fixed

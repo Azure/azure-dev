@@ -14,13 +14,13 @@
 
 ### Features Added
 
-- [[#8927]](https://github.com/Azure/azure-dev/pull/8927) Add `--no-dependencies` flag to `azd extension install` that installs only the named extension without resolving or installing its declared dependencies; add registry consistency validation that detects unsatisfiable dependency constraints when `registry.json` is modified.
+- [[#8927]](https://github.com/Azure/azure-dev/pull/8927) Add `--no-dependencies` flag to `azd extension install` that installs only the named extension without resolving or installing its declared dependencies.
 
 ### Bugs Fixed
 
 - [[#8949]](https://github.com/Azure/azure-dev/pull/8949) Dynamic linker/loader control variables (such as `LD_PRELOAD`, `LD_LIBRARY_PATH`, `LD_AUDIT`, and `DYLD_INSERT_LIBRARIES`) defined in an environment's `.env` file are no longer forwarded into tool subprocesses (docker, npm, python, and others).
-- [[#8875]](https://github.com/Azure/azure-dev/pull/8875) Fix `azd tool uninstall` failing for VS Code extensions that have dependents and for the GitHub Copilot CLI when installed via Homebrew cask on macOS/Linux; uninstall now detects which package manager owns the install and removes via that manager, with accurate guidance when a self-managed install requires manual removal.
-- [[#8842]](https://github.com/Azure/azure-dev/pull/8842) Fix AI model selection offering ARM `Deprecating` (customer-facing Deprecated) models as candidates for new deployments; deprecated models are now excluded by default from model catalog and quota prompts.
+- [[#8875]](https://github.com/Azure/azure-dev/pull/8875) Fix `azd tool uninstall` failing for VS Code extensions that have dependents (eg: vscode-azure-tools) and for the GitHub Copilot CLI when installed via Homebrew cask on macOS/Linux. Uninstall now detects which package manager owns the install and removes via the appropriate package manager, with guidance when a self-managed install requires manual removal.
+- [[#8842]](https://github.com/Azure/azure-dev/pull/8842) Deprecated models are now excluded by default from model catalog and quota prompts.
 - [[#8937]](https://github.com/Azure/azure-dev/pull/8937) Fix `azure.yaml` serialization writing empty `project` and `language` fields for services using code-less resource hosts such as `azure.ai.project`, `azure.ai.connection`, and `microsoft.foundry`; these fields are now omitted when empty.
 
 ## 1.27.0 (2026-06-30)

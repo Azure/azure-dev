@@ -118,11 +118,31 @@ func TestResolveReuseEndpoint_RejectsDescriptionWithEndpoint(t *testing.T) {
 func TestResolveReuseEndpoint_RejectsEmptyResolved(t *testing.T) {
 	t.Parallel()
 
-	// ${MISSING} expands to empty against an env that does not define it.
+	// ${MISSING} expands to empty when env does not define it.
 	cfg := &toolboxServiceConfig{Endpoint: "${MISSING}"}
 
 	_, err := resolveReuseEndpoint("research", cfg, map[string]string{})
 	require.Error(t, err)
+}
+
+func TestPublishReuseEndpoint_WritesExpandedEndpoint(t *testing.T) {
+	// No t.Parallel: stubToolboxEndpointEnv swaps a package-level seam.
+	const wantURL = "https://acct.services.ai.azure.com/api/projects/p/toolboxes/research/versions/3/mcp?api-version=v1"
+
+	calls := stubToolboxEndpointEnv(t)
+
+	// A zero-value target proves the reuse path never builds a toolbox
+	// client or creates a version (it holds no azd client or resolver).
+	tgt := &toolboxServiceTarget{}
+	cfg := &toolboxServiceConfig{Endpoint: "${RESEARCH_TOOLBOX_ENDPOINT}"}
+	env := map[string]string{"RESEARCH_TOOLBOX_ENDPOINT": wantURL}
+
+	res, err := tgt.publishReuseEndpoint(t.Context(), "research", cfg, env, nil)
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	require.Len(t, *calls, 1)
+	assert.Equal(t, "research", (*calls)[0].name)
+	assert.Equal(t, wantURL, (*calls)[0].value)
 }
 
 func TestBuildToolEntries_ResolvesConnectionRef(t *testing.T) {

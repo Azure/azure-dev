@@ -195,7 +195,21 @@ func (p *toolboxServiceTarget) deployReuse(
 	if err != nil {
 		return nil, err
 	}
+	return p.publishReuseEndpoint(ctx, name, cfg, env, progress)
+}
 
+// publishReuseEndpoint resolves the reuse endpoint against env and
+// writes it to the azd environment for agents to consume. It never
+// contacts the toolbox data plane, so reusing a toolbox does not
+// create a new version. Split from deployReuse so the publish path
+// is unit-testable without a live azd environment.
+func (p *toolboxServiceTarget) publishReuseEndpoint(
+	ctx context.Context,
+	name string,
+	cfg *toolboxServiceConfig,
+	env map[string]string,
+	progress azdext.ProgressReporter,
+) (*azdext.ServiceDeployResult, error) {
 	resolved, err := resolveReuseEndpoint(name, cfg, env)
 	if err != nil {
 		return nil, err

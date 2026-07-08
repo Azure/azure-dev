@@ -22,23 +22,31 @@ const (
 )
 
 // InvocableProtocols returns the set of protocols that azd can invoke directly.
-// A2A and activity_protocol are deployment-only — they cannot be used for local
-// or remote invocation through azd.
+// activity_protocol is deployment-only — it cannot be used for local or remote
+// invocation through azd. A2A is remote-only (see IsInvocable / IsLocalInvocable).
 func InvocableProtocols() []AgentProtocol {
 	return []AgentProtocol{
 		AgentProtocolResponses,
 		AgentProtocolInvocations,
+		AgentProtocolA2A,
 	}
 }
 
 // IsInvocable reports whether the protocol can be used for invocation through azd.
 func (p AgentProtocol) IsInvocable() bool {
 	switch p {
-	case AgentProtocolResponses, AgentProtocolInvocations:
+	case AgentProtocolResponses, AgentProtocolInvocations, AgentProtocolA2A:
 		return true
 	default:
 		return false
 	}
+}
+
+// IsLocalInvocable reports whether the protocol can be invoked against a locally
+// running agent (azd ai agent run). A2A is a remote agent-to-agent protocol and
+// is only invocable against a deployed Foundry agent.
+func (p AgentProtocol) IsLocalInvocable() bool {
+	return p.IsInvocable() && p != AgentProtocolA2A
 }
 
 // AgentKind represents the different types of agents

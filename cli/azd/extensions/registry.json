@@ -6695,7 +6695,7 @@
     {
       "id": "azure.ai.inspector",
       "namespace": "ai.inspector",
-      "displayName": "Foundry agent inspector (Beta)",
+      "displayName": "Foundry Agent Inspector (Beta)",
       "description": "Browser-based inspector UI for locally running Foundry agents. (Beta)",
       "versions": [
         {
@@ -6709,7 +6709,7 @@
           "examples": [
             {
               "name": "launch",
-              "description": "Launch the inspector against a local agent on the default port (8088).",
+              "description": "Launch the inspector against a local agent on the default agent port (8088), serving the inspector UI on the default inspector port (8087).",
               "usage": "azd ai inspector launch"
             },
             {
@@ -6780,7 +6780,7 @@
           "examples": [
             {
               "name": "launch",
-              "description": "Launch the inspector against a local agent on the default port (8088).",
+              "description": "Launch the inspector against a local agent on the default agent port (8088), serving the inspector UI on the default inspector port (8087).",
               "usage": "azd ai inspector launch"
             },
             {

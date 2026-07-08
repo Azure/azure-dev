@@ -1200,7 +1200,7 @@ func TestIsInvocable(t *testing.T) {
 	}{
 		{AgentProtocolResponses, true},
 		{AgentProtocolInvocations, true},
-		{AgentProtocolA2A, false},
+		{AgentProtocolA2A, true},
 		{AgentProtocolActivityProtocol, false},
 		{AgentProtocol("unknown"), false},
 	}
@@ -1210,6 +1210,30 @@ func TestIsInvocable(t *testing.T) {
 			t.Parallel()
 			if got := tt.protocol.IsInvocable(); got != tt.want {
 				t.Errorf("IsInvocable() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsLocalInvocable(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		protocol AgentProtocol
+		want     bool
+	}{
+		{AgentProtocolResponses, true},
+		{AgentProtocolInvocations, true},
+		{AgentProtocolA2A, false}, // remote-only
+		{AgentProtocolActivityProtocol, false},
+		{AgentProtocol("unknown"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.protocol), func(t *testing.T) {
+			t.Parallel()
+			if got := tt.protocol.IsLocalInvocable(); got != tt.want {
+				t.Errorf("IsLocalInvocable() = %v, want %v", got, tt.want)
 			}
 		})
 	}

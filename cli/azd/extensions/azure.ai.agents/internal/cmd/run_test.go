@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -1008,6 +1009,15 @@ func TestVenvPip(t *testing.T) {
 		if result != expected {
 			t.Errorf("expected %q, got %q", expected, result)
 		}
+	}
+}
+
+func TestMinPythonUvSpec(t *testing.T) {
+	// The uv `--python` specifier must derive from the shared constants so the
+	// uv and pip paths cannot drift apart.
+	want := fmt.Sprintf(">=%d.%d", minPythonMajor, minPythonMinor)
+	if got := minPythonUvSpec(); got != want {
+		t.Errorf("minPythonUvSpec() = %q, want %q", got, want)
 	}
 }
 

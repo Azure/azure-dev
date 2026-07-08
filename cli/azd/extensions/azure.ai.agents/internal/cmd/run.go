@@ -567,7 +567,7 @@ func installPythonDeps(projectDir string) error {
 	venvDir := filepath.Join(projectDir, ".venv")
 	if _, err := os.Stat(venvDir); os.IsNotExist(err) {
 		fmt.Println("Setting up Python environment...")
-		cmd := exec.Command("uv", "venv", venvDir, "--python", ">=3.13") //nolint:gosec // G204: venvDir is derived from the project directory path
+		cmd := exec.Command("uv", "venv", venvDir, "--python", minPythonUvSpec()) //nolint:gosec // G204: venvDir is derived from the project directory path
 		cmd.Dir = projectDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -769,12 +769,20 @@ func venvPip(venvDir string) string {
 	return filepath.Join(venvDir, "bin", "pip")
 }
 
-// Minimum supported system Python runtime. Kept in sync with the uv path's
-// `uv venv --python ">=3.13"` constraint.
+// Minimum supported system Python runtime. This is the single source of truth
+// for the required Python version across both the uv and pip installation
+// paths (see minPythonUvSpec and the version checks below).
 const (
 	minPythonMajor = 3
 	minPythonMinor = 13
 )
+
+// minPythonUvSpec returns the minimum runtime as a uv `--python` version
+// specifier (e.g. ">=3.13"), derived from the constants so the uv path stays in
+// sync with the pip-path version checks.
+func minPythonUvSpec() string {
+	return fmt.Sprintf(">=%d.%d", minPythonMajor, minPythonMinor)
+}
 
 // pythonInterpreter is a resolved interpreter invocation: the executable to run
 // plus any leading launcher arguments needed to select a specific version (for

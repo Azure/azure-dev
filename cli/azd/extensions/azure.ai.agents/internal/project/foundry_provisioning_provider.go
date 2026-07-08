@@ -87,6 +87,12 @@ type FoundryProvisioningProvider struct {
 	// account at Deploy time; the existing account itself is never re-created.
 	brownfieldDeployments []synthesis.Deployment
 
+	// brownfieldConnections are the host: azure.ai.connection services declared
+	// alongside a brownfield (endpoint:) project. They are created/upserted on
+	// the existing project at Deploy time, mirroring greenfield synthesis, so
+	// the deploy-time connection service target does not have to create them.
+	brownfieldConnections []synthesis.Connection
+
 	// Lazily constructed on first compile. nil until needed.
 	bicepCliInstance bicepCompiler
 }
@@ -147,7 +153,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 		if endpoint := foundryServiceEndpoint(rawYAML, svcName); endpoint != "" {
 			warnNetworkIgnoredInBrownfield(rawYAML, svcName)
 			p.brownfieldEndpoint = endpoint
-			if err := p.captureBrownfieldDeployments(rawYAML, svcName); err != nil {
+			if err := p.captureBrownfieldDeployments(ctx, rawYAML, svcName); err != nil {
 				return err
 			}
 			return p.resolveEnvName(ctx)
@@ -168,7 +174,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 		// network: has no effect in brownfield mode; warn if both are present.
 		warnNetworkIgnoredInBrownfield(rawYAML, svcName)
 		p.brownfieldEndpoint = foundryServiceEndpoint(rawYAML, svcName)
-		if err := p.captureBrownfieldDeployments(rawYAML, svcName); err != nil {
+		if err := p.captureBrownfieldDeployments(ctx, rawYAML, svcName); err != nil {
 			return err
 		}
 		return p.resolveEnvName(ctx)
@@ -693,7 +699,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 // captureBrownfieldDeployments records the model deployments declared on a
 // brownfield (endpoint:) project service so Deploy can create them on the
 // existing account. No-op (nil) when none are declared.
-func (p *FoundryProvisioningProvider) captureBrownfieldDeployments(rawYAML []byte, svcName string) error {
+func (p *FoundryProvisioningProvider) captureBrownfieldDeployments(
+	ctx context.Context, rawYAML []byte, svcName string,
+) error {
 	deployments, err := synthesis.BrownfieldDeployments(rawYAML, svcName)
 	if err != nil {
 		return exterrors.Validation(
@@ -703,6 +711,16 @@ func (p *FoundryProvisioningProvider) captureBrownfieldDeployments(rawYAML []byt
 		)
 	}
 	p.brownfieldDeployments = deployments
+
+	connections, err := synthesis.BrownfieldConnections(rawYAML, p.networkEnvMap(ctx))
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf("read connections for existing Foundry project service %q: %s", svcName, err),
+			"check the host: azure.ai.connection services in azure.yaml",
+		)
+	}
+	p.brownfieldConnections = connections
 	return nil
 }
 
@@ -718,7 +736,7 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 ) (*azdext.ProvisioningDeployResult, error) {
 	createACR := p.brownfieldACRRequested(ctx)
 
-	if len(p.brownfieldDeployments) == 0 && !createACR {
+	if len(p.brownfieldDeployments) == 0 && !createACR && len(p.brownfieldConnections) == 0 {
 		progress("Using existing Foundry project (endpoint set); skipping provisioning")
 		// Best-effort tenant lookup so AZURE_TENANT_ID is still surfaced for the
 		// existing-project path (no resources are provisioned here). Log on
@@ -810,6 +828,7 @@ func (p *FoundryProvisioningProvider) brownfieldParams(
 	params := map[string]any{
 		"accountName": map[string]any{"value": account},
 		"deployments": map[string]any{"value": p.brownfieldDeployments},
+		"connections": map[string]any{"value": p.brownfieldConnections},
 		// projectName feeds the unconditional existing `foundryAccountPreview::project`
 		// resource, so it must always be set -- even on the model-deployments-only
 		// reconcile path. Omitting it collapses the resource name to "<account>/"
@@ -838,7 +857,7 @@ func (p *FoundryProvisioningProvider) previewBrownfield(
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningPreviewResult, error) {
 	createACR := p.brownfieldACRRequested(ctx)
-	if len(p.brownfieldDeployments) == 0 && !createACR {
+	if len(p.brownfieldDeployments) == 0 && !createACR && len(p.brownfieldConnections) == 0 {
 		progress("Using existing Foundry project (endpoint set); nothing to provision")
 		return &azdext.ProvisioningPreviewResult{
 			Preview: &azdext.ProvisioningDeploymentPreview{},
@@ -909,8 +928,9 @@ func (p *FoundryProvisioningProvider) brownfieldACRRequested(ctx context.Context
 	return false
 }
 
-// brownfieldProjectName returns the existing project name for the ACR connection,
-// preferring the value parsed from the endpoint and falling back to p.foundryName.
+// brownfieldProjectName returns the existing project name for project-scoped
+// resources (the ACR connection and user connections), preferring the value
+// parsed from the endpoint and falling back to p.foundryName.
 func (p *FoundryProvisioningProvider) brownfieldProjectName() string {
 	if name := projectNameFromEndpoint(p.brownfieldEndpoint); name != "" {
 		return name

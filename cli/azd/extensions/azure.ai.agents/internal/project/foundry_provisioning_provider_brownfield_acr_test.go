@@ -188,9 +188,27 @@ func TestBrownfieldParams(t *testing.T) {
 
 		assert.Equal(t, map[string]any{"value": "acct"}, params["accountName"])
 		assert.Equal(t, map[string]any{"value": deployments}, params["deployments"])
+		assert.Equal(t, map[string]any{"value": []synthesis.Connection(nil)}, params["connections"])
 		assert.Equal(t, map[string]any{"value": "my-project"}, params["projectName"])
 		assert.NotContains(t, params, "includeAcr")
 		assert.NotContains(t, params, "acrName")
+	})
+
+	t.Run("connections without ACR carry connections and set projectName", func(t *testing.T) {
+		t.Parallel()
+		conns := []synthesis.Connection{{Name: "search-conn", Category: "CognitiveSearch"}}
+		p := &FoundryProvisioningProvider{
+			envName:               "dev",
+			brownfieldEndpoint:    "https://acct.services.ai.azure.com/api/projects/my-project",
+			brownfieldConnections: conns,
+		}
+		params := p.brownfieldParams(t.Context(), "acct", "rg", false)
+
+		assert.Equal(t, map[string]any{"value": conns}, params["connections"])
+		// Connections are project-scoped, so projectName must be supplied even
+		// without ACR.
+		assert.Equal(t, map[string]any{"value": "my-project"}, params["projectName"])
+		assert.NotContains(t, params, "includeAcr")
 	})
 
 	t.Run("with ACR adds registry params", func(t *testing.T) {

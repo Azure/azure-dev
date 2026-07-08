@@ -303,6 +303,61 @@ services:
 	assert.Equal(t, false, doc.Parameters["includeAcr"].Value)
 }
 
+func TestEjectInfra_EjectsConnectionServices(t *testing.T) {
+	// See TestEjectInfra_HappyPath_WritesExpectedFiles for why this is not parallel.
+	// A host: azure.ai.connection service must be synthesized into the
+	// connections param, its module copied into the ejected tree, and any
+	// ${VAR} in credentials kept verbatim (environment-portable).
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+services:
+  my-foundry:
+    host: azure.ai.project
+    deployments: []
+  search-conn:
+    host: azure.ai.connection
+    uses: [my-foundry]
+    category: CognitiveSearch
+    target: https://my-search.search.windows.net
+    authType: ApiKey
+    credentials:
+      key: ${SEARCH_API_KEY}
+`)
+
+	withCapturedStdout(t, func() {
+		require.NoError(t, ejectInfra(dir, "bicep"))
+	})
+
+	// The connections module is part of the ejected tree.
+	_, err := os.Stat(filepath.Join(dir, "infra", "modules", "connections.bicep"))
+	assert.NoError(t, err, "connections.bicep module must be ejected")
+
+	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec // G304: test file path from t.TempDir()
+	require.NoError(t, err)
+	var doc struct {
+		Parameters map[string]struct {
+			Value any `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &doc))
+
+	require.Contains(t, doc.Parameters, "connections")
+	conns, ok := doc.Parameters["connections"].Value.([]any)
+	require.True(t, ok, "connections should be an array, got %T", doc.Parameters["connections"].Value)
+	require.Len(t, conns, 1)
+
+	conn, ok := conns[0].(map[string]any)
+	require.True(t, ok, "connection entry should be an object, got %T", conns[0])
+	assert.Equal(t, "search-conn", conn["name"])
+	assert.Equal(t, "CognitiveSearch", conn["category"])
+	assert.Equal(t, "ApiKey", conn["authType"])
+
+	// ${VAR} in credentials must be preserved verbatim on the eject path.
+	creds, ok := conn["credentials"].(map[string]any)
+	require.True(t, ok, "credentials should be an object, got %T", conn["credentials"])
+	assert.Equal(t, "${SEARCH_API_KEY}", creds["key"])
+}
+
 func TestEjectInfra_PreservesNetworkVarRefs(t *testing.T) {
 	// See TestEjectInfra_HappyPath_WritesExpectedFiles for why this is not parallel.
 	// Eject must keep ${VAR} references verbatim in main.parameters.json so the

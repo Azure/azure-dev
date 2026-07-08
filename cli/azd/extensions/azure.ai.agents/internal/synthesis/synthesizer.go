@@ -106,6 +106,38 @@ type DeploymentSku struct {
 	Capacity int    `yaml:"capacity" json:"capacity"`
 }
 
+// Connection mirrors the connectionType in modules/connections.bicep. It is the
+// synthesized shape of a host: azure.ai.connection service in azure.yaml: the
+// service key becomes Name, and the body carries the connection properties.
+// Credentials and Metadata are passed through as-is so any auth type (ApiKey,
+// CustomKeys, OAuth2, identity tokens, ...) can be expressed; ${VAR} references
+// in Target and in string credential/metadata values are resolved on the
+// provision path and kept verbatim on the eject path.
+type Connection struct {
+	Name        string            `yaml:"name" json:"name"`
+	Category    string            `yaml:"category" json:"category"`
+	Target      string            `yaml:"target" json:"target"`
+	AuthType    string            `yaml:"authType" json:"authType"`
+	Credentials map[string]any    `yaml:"credentials,omitempty" json:"credentials,omitempty"`
+	Metadata    map[string]string `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+}
+
+// connectionService is the subset of a host: azure.ai.connection service body
+// the synthesizer reads. The service key (not a body field) is the connection
+// name; see collectConnections.
+type connectionService struct {
+	Host        string            `yaml:"host"`
+	Category    string            `yaml:"category,omitempty"`
+	Target      string            `yaml:"target,omitempty"`
+	AuthType    string            `yaml:"authType,omitempty"`
+	Credentials map[string]any    `yaml:"credentials,omitempty"`
+	Metadata    map[string]string `yaml:"metadata,omitempty"`
+}
+
+// aiConnectionHost is the host: value that marks a service as a Foundry
+// connection. Matches the azure.ai.connection service-target provider name.
+const aiConnectionHost = "azure.ai.connection"
+
 // codeConfigBlock marks an agent as a code (ZIP) deploy. Its presence is the
 // signal; the keys are camelCase because the unified azure.ai.agent service
 // entry is serialized from the agent definition's JSON tags.
@@ -230,6 +262,11 @@ func Synthesize(in Input) (*Result, error) {
 		deployments = []Deployment{}
 	}
 
+	connections, err := collectConnections(root.Services, in.Env, !in.PreserveVarRefs)
+	if err != nil {
+		return nil, err
+	}
+
 	netParams, netMode, err := synthesizeNetwork(svc.Network, in.ServiceName, in.Env, !in.PreserveVarRefs)
 	if err != nil {
 		return nil, err
@@ -238,6 +275,7 @@ func Synthesize(in Input) (*Result, error) {
 	params := map[string]any{
 		"deployments": deployments,
 		"includeAcr":  includeAcr,
+		"connections": connections,
 	}
 	maps.Copy(params, netParams)
 
@@ -276,6 +314,28 @@ func BrownfieldDeployments(raw []byte, serviceName string) ([]Deployment, error)
 	}
 
 	return svc.Deployments, nil
+}
+
+// BrownfieldConnections returns the host: azure.ai.connection services declared
+// in azure.yaml, for a brownfield (endpoint:) project. Synthesize short-circuits
+// with ErrEndpointBrownfield before collecting connections, so the provider uses
+// this to create the same connections on the existing account that Synthesize
+// would create for a greenfield one. Connections are project-scoped and
+// independent of which project service is the entry point, so the whole
+// services map is scanned. ${VAR} is resolved from env (brownfield provisions,
+// so references must be concrete); Foundry ${{...}} expressions pass through.
+// Returns an empty slice (not an error) when no connection services exist.
+func BrownfieldConnections(raw []byte, env map[string]string) ([]Connection, error) {
+	if len(raw) == 0 {
+		return nil, errors.New("synthesis: raw azure.yaml is empty")
+	}
+
+	var root projectFile
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return nil, fmt.Errorf("parse azure.yaml: %w", err)
+	}
+
+	return collectConnections(root.Services, env, true)
 }
 
 // resolveServiceRefs expands $ref file includes in one service entry. It decodes
@@ -349,6 +409,154 @@ func agentNeedsAcr(a agentBlock) bool {
 	// default-to-hosted with an explicit allowlist so it does not trigger ACR.
 	kind := strings.TrimSpace(a.Kind)
 	return kind == "" || strings.EqualFold(kind, "hosted")
+}
+
+// collectConnections scans all services for host: azure.ai.connection entries
+// and returns them as a slice the connections module consumes. The service key
+// is the connection name. Results are sorted by name so the synthesized
+// parameter (and thus the ARM deployment / ejected params file) is
+// deterministic regardless of YAML map iteration order.
+//
+// ${VAR} references in target and in string credential/metadata values are
+// expanded from env when resolve is true (provision path) and kept verbatim
+// when false (eject path); Foundry server-side ${{...}} expressions are always
+// preserved. This mirrors synthesizeNetwork's handling of ${VAR}.
+func collectConnections(
+	services map[string]yaml.Node,
+	env map[string]string,
+	resolve bool,
+) ([]Connection, error) {
+	connections := []Connection{}
+
+	for name, node := range services {
+		var svc connectionService
+		if err := node.Decode(&svc); err != nil {
+			continue
+		}
+		if svc.Host != aiConnectionHost {
+			continue
+		}
+
+		target, err := maybeExpand(svc.Target, env, resolve)
+		if err != nil {
+			return nil, fmt.Errorf("services.%s.target: %w", name, err)
+		}
+
+		credentials, err := expandCredentials(svc.Credentials, env, resolve)
+		if err != nil {
+			return nil, fmt.Errorf("services.%s.credentials: %w", name, err)
+		}
+
+		metadata, err := expandMetadata(svc.Metadata, env, resolve)
+		if err != nil {
+			return nil, fmt.Errorf("services.%s.metadata: %w", name, err)
+		}
+
+		connections = append(connections, Connection{
+			Name:        name,
+			Category:    svc.Category,
+			Target:      target,
+			AuthType:    svc.AuthType,
+			Credentials: credentials,
+			Metadata:    metadata,
+		})
+	}
+
+	slices.SortFunc(connections, func(a, b Connection) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	return connections, nil
+}
+
+// maybeExpand expands ${VAR} references in s when resolve is true, preserving
+// Foundry ${{...}} expressions; when resolve is false it returns s unchanged so
+// the eject path keeps references verbatim.
+func maybeExpand(s string, env map[string]string, resolve bool) (string, error) {
+	if !resolve || s == "" {
+		return s, nil
+	}
+	return foundry.ExpandEnv(s, func(name string) string {
+		if v, ok := env[name]; ok {
+			return v
+		}
+		v, _ := os.LookupEnv(name)
+		return v
+	})
+}
+
+// expandCredentials deep-copies a credentials map, expanding ${VAR} in every
+// string leaf (recursing into nested maps like CustomKeys' keys:). Non-string
+// leaves are copied as-is. A nil map returns nil so the connection omits
+// credentials entirely (e.g. None / identity auth).
+func expandCredentials(
+	creds map[string]any,
+	env map[string]string,
+	resolve bool,
+) (map[string]any, error) {
+	if creds == nil {
+		return nil, nil
+	}
+	out := make(map[string]any, len(creds))
+	for k, v := range creds {
+		expanded, err := expandValue(v, env, resolve)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = expanded
+	}
+	return out, nil
+}
+
+// expandValue recursively expands ${VAR} in string values, map values, and
+// slice elements, leaving other types untouched.
+func expandValue(v any, env map[string]string, resolve bool) (any, error) {
+	switch val := v.(type) {
+	case string:
+		return maybeExpand(val, env, resolve)
+	case map[string]any:
+		out := make(map[string]any, len(val))
+		for k, inner := range val {
+			expanded, err := expandValue(inner, env, resolve)
+			if err != nil {
+				return nil, err
+			}
+			out[k] = expanded
+		}
+		return out, nil
+	case []any:
+		out := make([]any, len(val))
+		for i, inner := range val {
+			expanded, err := expandValue(inner, env, resolve)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = expanded
+		}
+		return out, nil
+	default:
+		return v, nil
+	}
+}
+
+// expandMetadata deep-copies a metadata map, expanding ${VAR} in each value.
+// A nil map returns nil so the connection omits metadata entirely.
+func expandMetadata(
+	metadata map[string]string,
+	env map[string]string,
+	resolve bool,
+) (map[string]string, error) {
+	if metadata == nil {
+		return nil, nil
+	}
+	out := make(map[string]string, len(metadata))
+	for k, v := range metadata {
+		expanded, err := maybeExpand(v, env, resolve)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = expanded
+	}
+	return out, nil
 }
 
 // Network mode values surfaced for telemetry and emitted as bicep params.

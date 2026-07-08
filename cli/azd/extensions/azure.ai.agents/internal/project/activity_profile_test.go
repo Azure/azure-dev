@@ -174,3 +174,55 @@ func TestActivityAgentEndpoint(t *testing.T) {
 	require.True(t, IsActivityProtocol(ca))
 	require.Equal(t, ActivityUseCaseSimple, ResolveActivityProfile(ca).UseCase)
 }
+
+// TestComposeActivityAgentEndpoint verifies that Activity requirements are folded
+// into an agent's agent_endpoint instead of overwriting it, so Activity can
+// coexist with other protocols. A pure-activity agent must still produce the
+// exact ActivityAgentEndpoint() shape.
+func TestComposeActivityAgentEndpoint(t *testing.T) {
+	t.Run("pure activity matches ActivityAgentEndpoint", func(t *testing.T) {
+		ep := ComposeActivityAgentEndpoint(nil, []agent_yaml.ProtocolVersionRecord{
+			{Protocol: "activity", Version: "1.0.0"},
+		})
+		require.Equal(t, []string{"activity"}, ep.Protocols)
+		require.Len(t, ep.AuthorizationSchemes, 1)
+		require.Equal(t, "BotServiceRbac", ep.AuthorizationSchemes[0].Type)
+	})
+
+	t.Run("activity coexists with responses and invocations", func(t *testing.T) {
+		ep := ComposeActivityAgentEndpoint(nil, []agent_yaml.ProtocolVersionRecord{
+			{Protocol: "responses", Version: "2.0.0"},
+			{Protocol: "invocations", Version: "1.0.0"},
+			{Protocol: "activity", Version: "1.0.0"},
+		})
+		require.Equal(t, []string{"responses", "invocations", "activity"}, ep.Protocols)
+		require.Len(t, ep.AuthorizationSchemes, 1)
+		require.Equal(t, "BotServiceRbac", ep.AuthorizationSchemes[0].Type)
+	})
+
+	t.Run("legacy activity_protocol is normalized to activity", func(t *testing.T) {
+		ep := ComposeActivityAgentEndpoint(nil, []agent_yaml.ProtocolVersionRecord{
+			{Protocol: "responses", Version: "2.0.0"},
+			{Protocol: "activity_protocol", Version: "v1"},
+		})
+		require.Equal(t, []string{"responses", "activity"}, ep.Protocols)
+	})
+
+	t.Run("existing schemes are preserved and rbac is not duplicated", func(t *testing.T) {
+		existing := &agent_yaml.AgentEndpoint{
+			Protocols: []string{"responses"},
+			AuthorizationSchemes: []agent_yaml.AuthorizationScheme{
+				{Type: "EntraId"},
+				{Type: "BotServiceRbac"},
+			},
+		}
+		ep := ComposeActivityAgentEndpoint(existing, []agent_yaml.ProtocolVersionRecord{
+			{Protocol: "responses", Version: "2.0.0"},
+			{Protocol: "activity", Version: "1.0.0"},
+		})
+		require.Equal(t, []string{"responses", "activity"}, ep.Protocols)
+		require.Len(t, ep.AuthorizationSchemes, 2)
+		require.Equal(t, "EntraId", ep.AuthorizationSchemes[0].Type)
+		require.Equal(t, "BotServiceRbac", ep.AuthorizationSchemes[1].Type)
+	})
+}

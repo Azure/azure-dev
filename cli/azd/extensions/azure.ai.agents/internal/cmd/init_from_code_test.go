@@ -627,10 +627,12 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 			},
 		},
 		{
-			name:           "activity cannot be combined",
-			flagProtocols:  []string{"activity", "responses"},
-			wantErr:        true,
-			wantErrContain: "cannot be combined",
+			name:          "activity coexists with other protocols",
+			flagProtocols: []string{"activity", "responses"},
+			wantProtocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "activity", Version: "1.0.0"},
+				{Protocol: "responses", Version: "2.0.0"},
+			},
 		},
 	}
 

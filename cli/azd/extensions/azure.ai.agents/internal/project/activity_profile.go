@@ -79,3 +79,59 @@ func ActivityAgentEndpoint() *agent_yaml.AgentEndpoint {
 		},
 	}
 }
+
+// ComposeActivityAgentEndpoint folds the Activity endpoint requirements into an
+// agent's agent_endpoint declaration instead of overwriting it, so the Activity
+// protocol can coexist with the other protocols the agent speaks
+// (responses/invocations/...). Activity is not exclusive: the platform models
+// every protocol as a sibling per-protocol entry on the same endpoint, and the
+// endpoint carries a list of protocols and a list of authorization schemes. This
+// helper therefore (1) advertises every selected protocol on the endpoint,
+// normalizing the legacy "activity_protocol" spelling to the canonical
+// "activity", and (2) ensures the BotServiceRbac scheme Activity requires is
+// present without dropping any scheme already declared. For a pure-activity
+// agent the result is identical to ActivityAgentEndpoint(): protocols=["activity"]
+// guarded by BotServiceRbac. No-op inputs (nil existing endpoint) start fresh.
+func ComposeActivityAgentEndpoint(
+	existing *agent_yaml.AgentEndpoint,
+	protocols []agent_yaml.ProtocolVersionRecord,
+) *agent_yaml.AgentEndpoint {
+	ep := existing
+	if ep == nil {
+		ep = &agent_yaml.AgentEndpoint{}
+	}
+
+	// Advertise every selected protocol on the endpoint (dedup, preserve order),
+	// normalizing activity_protocol -> activity so the endpoint carries the
+	// canonical wire value.
+	seen := make(map[string]bool, len(ep.Protocols))
+	for _, p := range ep.Protocols {
+		seen[strings.TrimSpace(p)] = true
+	}
+	for _, p := range protocols {
+		name := strings.TrimSpace(p.Protocol)
+		if name == "" {
+			continue
+		}
+		if agent_api.IsActivityProtocolName(agent_api.AgentProtocol(name)) {
+			name = string(agent_api.AgentEndpointProtocolActivity)
+		}
+		if seen[name] {
+			continue
+		}
+		ep.Protocols = append(ep.Protocols, name)
+		seen[name] = true
+	}
+
+	// Ensure the BotServiceRbac scheme Activity requires is present, keeping any
+	// scheme already declared for the other protocols.
+	for _, s := range ep.AuthorizationSchemes {
+		if s.Type == string(agent_api.AgentEndpointAuthSchemeBotServiceRbac) {
+			return ep
+		}
+	}
+	ep.AuthorizationSchemes = append(ep.AuthorizationSchemes, agent_yaml.AuthorizationScheme{
+		Type: string(agent_api.AgentEndpointAuthSchemeBotServiceRbac),
+	})
+	return ep
+}

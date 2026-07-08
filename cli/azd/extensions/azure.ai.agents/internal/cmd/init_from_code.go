@@ -6,7 +6,6 @@ package cmd
 import (
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 	"context"
@@ -547,12 +546,16 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	}
 
 	// An activity agent additionally advertises the friendly "activity" endpoint
-	// guarded by BotServiceRbac. Injecting it here mirrors the manifest-based init
-	// so the generated azure.yaml is identical and `azd deploy` provisions the
-	// Azure Bot connector. Phase 1 covers the simple use case; digital-worker is a
-	// Phase 2 addition. No-op for non-activity agents.
+	// guarded by BotServiceRbac. We compose this into any existing agent_endpoint
+	// rather than overwriting it, so Activity can coexist with the other
+	// protocols the agent selected (responses/invocations). Injecting it here
+	// mirrors the manifest-based init so the generated azure.yaml is identical and
+	// `azd deploy` provisions the Azure Bot connector. Phase 1 covers the simple
+	// use case; digital-worker is a Phase 2 addition. No-op for non-activity agents.
 	if project.IsActivityProtocol(*definition) {
-		definition.AgentEndpoint = project.ActivityAgentEndpoint()
+		definition.AgentEndpoint = project.ComposeActivityAgentEndpoint(
+			definition.AgentEndpoint, definition.Protocols,
+		)
 	}
 
 	// Add model resource if a model was selected
@@ -950,9 +953,6 @@ func promptProtocols(
 				Version:  version,
 			})
 		}
-		if err := validateProtocolSelection(records); err != nil {
-			return nil, err
-		}
 		return records, nil
 	}
 
@@ -1013,37 +1013,7 @@ func promptProtocols(
 		)
 	}
 
-	if err := validateProtocolSelection(records); err != nil {
-		return nil, err
-	}
-
 	return records, nil
-}
-
-// validateProtocolSelection rejects selecting activity alongside any other
-// protocol. When an agent speaks the Activity protocol, init injects a single
-// agent-level endpoint (ActivityAgentEndpoint — the "activity" endpoint guarded
-// by BotServiceRbac) that overrides AgentEndpoint wholesale. That injection only
-// models the activity endpoint and can't compose with the endpoints other
-// protocols (responses/invocations) require, so combining them would emit an
-// azure.yaml that advertises those protocols but wires up only the activity
-// endpoint. This is not a platform limitation — the platform allows coexistence;
-// it is a Phase-1 scoping choice.
-func validateProtocolSelection(records []agent_yaml.ProtocolVersionRecord) error {
-	if len(records) < 2 {
-		return nil
-	}
-	for _, r := range records {
-		if agent_api.IsActivityProtocolName(agent_api.AgentProtocol(r.Protocol)) {
-			return exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				"activity cannot be combined with other protocols",
-				"An activity agent exposes only the activity endpoint; "+
-					"select activity on its own.",
-			)
-		}
-	}
-	return nil
 }
 
 // knownProtocolNames returns a comma-separated list of known protocol names.

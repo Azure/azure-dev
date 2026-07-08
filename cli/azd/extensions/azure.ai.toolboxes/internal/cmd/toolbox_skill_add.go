@@ -171,6 +171,7 @@ func runSkillAddWith(
 		Metadata:    current.Metadata,
 		Tools:       current.Tools,
 		Skills:      newSkills,
+		Policies:    current.Policies,
 	}
 	created, err := client.CreateToolboxVersion(ctx, toolboxName, req)
 	if err != nil {

@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -52,6 +53,13 @@ func registerFromVersionFlag(cmd *cobra.Command, fromVersion *string) {
 // An explicit --from-version overrides this (the prior default-snapshot behavior
 // is still reachable via --from-version <default>).
 //
+// "Latest" is the most recently created version: the toolbox API exposes no
+// canonical latest/head pointer (ToolboxObject carries only default_version), so
+// we derive it from the version list, preferring the newest CreatedAt and
+// falling back to the highest version number when CreatedAt is unavailable or
+// tied. Version numbers are monotonic, so this matches the true tip even if a
+// version is later deleted.
+//
 // When the toolbox reports no versions (an edge case; a real toolbox always has
 // its default), it falls back to the default version so the operation still
 // succeeds. A --from-version that does not exist is rejected.
@@ -70,9 +78,7 @@ func resolveBranchVersion(
 	latest := tb.DefaultVersion
 	if len(versions) > 0 {
 		sorted := slices.Clone(versions)
-		slices.SortFunc(sorted, func(a, b azure.ToolboxVersionObject) int {
-			return versionSortDescending(a.Version, b.Version)
-		})
+		slices.SortFunc(sorted, latestFirst)
 		latest = sorted[0].Version
 	}
 
@@ -98,6 +104,16 @@ func resolveBranchVersion(
 
 	res.Branch = fromVersion
 	return res, nil
+}
+
+// latestFirst orders two toolbox versions newest-first: by CreatedAt descending,
+// then by the numeric-aware version comparator as a deterministic tiebreaker
+// (and the sole signal when CreatedAt is not populated).
+func latestFirst(a, b azure.ToolboxVersionObject) int {
+	if a.CreatedAt != b.CreatedAt {
+		return cmp.Compare(b.CreatedAt, a.CreatedAt)
+	}
+	return versionSortDescending(a.Version, b.Version)
 }
 
 // printBranchNote surfaces, in text output only, that a new version was branched

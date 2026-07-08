@@ -172,6 +172,7 @@ func runSkillRemoveWith(
 		Metadata:    current.Metadata,
 		Tools:       current.Tools,
 		Skills:      filtered,
+		Policies:    current.Policies,
 	}
 	created, err := client.CreateToolboxVersion(ctx, toolboxName, req)
 	if err != nil {

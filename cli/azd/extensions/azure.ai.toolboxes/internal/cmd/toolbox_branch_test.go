@@ -158,6 +158,79 @@ func TestRunConnectionAddWith_BranchesFromLatestNotDefault(t *testing.T) {
 		"tools from latest version (v2: a,b) must be carried forward plus the new one (c)")
 }
 
+// Regression for review feedback (#8674 PR): skill add/remove must carry
+// forward the branched-from version's policies (e.g. rai_config), matching
+// connection add/remove — otherwise a skill mutation silently drops governance.
+func TestRunSkillAddWith_CarriesForwardPolicies(t *testing.T) {
+	policies := &azure.ToolboxPolicies{RaiConfig: &azure.RaiConfig{RaiPolicyName: "strict"}}
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{Name: "tb", DefaultVersion: "1"}}
+	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "1",
+		Tools:    []map[string]any{{"type": "mcp", "name": "a", "project_connection_id": "/c/a"}},
+		Policies: policies,
+	}}
+
+	err := runSkillAddWith(t.Context(), client, "tb", "new-skill", skillAddFlags{}, toolboxFlags{output: "json"})
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	assert.Equal(t, policies, client.createVersionCalls[0].req.Policies,
+		"policies must be carried forward into the new version")
+}
+
+func TestRunSkillRemoveWith_CarriesForwardPolicies(t *testing.T) {
+	policies := &azure.ToolboxPolicies{RaiConfig: &azure.RaiConfig{RaiPolicyName: "strict"}}
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{Name: "tb", DefaultVersion: "1"}}
+	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "1",
+		Tools:    []map[string]any{{"type": "mcp", "name": "a", "project_connection_id": "/c/a"}},
+		Skills:   []map[string]any{{"type": "skill_reference", "name": "greeting"}},
+		Policies: policies,
+	}}
+
+	err := runSkillRemoveWith(
+		t.Context(), client, "tb", []string{"greeting"},
+		skillRemoveFlags{force: true}, toolboxFlags{output: "json", noPrompt: true},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	assert.Equal(t, policies, client.createVersionCalls[0].req.Policies,
+		"policies must be carried forward into the new version")
+}
+
+// resolveBranchVersion derives "latest" by recency (CreatedAt) first, so the
+// most recently created version wins even when it is not the highest number
+// (addresses the review question about max-numeric != true tip).
+func TestResolveBranchVersion_LatestByCreatedAt(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	tb := &azure.ToolboxObject{Name: "tb", DefaultVersion: "1"}
+	// Version "2" is numerically highest but "10" was created most recently.
+	client.listVersionsResults["tb"] = []azure.ToolboxVersionObject{
+		{Name: "tb", Version: "2", CreatedAt: 100},
+		{Name: "tb", Version: "10", CreatedAt: 200},
+	}
+
+	got, err := resolveBranchVersion(t.Context(), client, "tb", tb, "")
+	require.NoError(t, err)
+	assert.Equal(t, "10", got.Latest, "most recently created version wins")
+	assert.Equal(t, "10", got.Branch)
+}
+
+// With CreatedAt unset (tied at 0), the numeric-aware comparator breaks the tie.
+func TestResolveBranchVersion_LatestNumericFallback(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	tb := &azure.ToolboxObject{Name: "tb", DefaultVersion: "1"}
+	client.listVersionsResults["tb"] = []azure.ToolboxVersionObject{
+		{Name: "tb", Version: "1"},
+		{Name: "tb", Version: "2"},
+	}
+
+	got, err := resolveBranchVersion(t.Context(), client, "tb", tb, "")
+	require.NoError(t, err)
+	assert.Equal(t, "2", got.Latest, "highest version wins when CreatedAt is unset")
+}
+
 // skillNames extracts the "name" of each skill entry for assertions.
 func skillNames(skills []map[string]any) []string {
 	out := make([]string, 0, len(skills))

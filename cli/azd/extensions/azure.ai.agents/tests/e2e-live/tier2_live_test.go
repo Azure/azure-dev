@@ -195,7 +195,7 @@ func setupConfigDir(t *testing.T, configDir string) {
 // this is the fast way to iterate on the provision/down path (issue #8839)
 // without paying for a full agent deploy.
 func (r *runner) run(ctx context.Context) {
-	if err := r.phaseInit(ctx); err != nil {
+	if err := r.phaseInitWithRetry(ctx); err != nil {
 		r.t.Errorf("init: %v", err)
 		return
 	}
@@ -219,6 +219,26 @@ func (r *runner) run(ctx context.Context) {
 		r.t.Errorf("down: %v", err)
 		return
 	}
+}
+
+// phaseInitWithRetry retries once when a bad GitHub token from the pipeline
+// environment causes gh to fail before the public sample is downloaded. The
+// retry drops token override env vars so gh can use any ambient auth state.
+func (r *runner) phaseInitWithRetry(ctx context.Context) error {
+	err := r.phaseInit(ctx)
+	if err == nil || !isInvalidGitHubTokenError(err) {
+		return err
+	}
+
+	r.t.Log("init failed because GH_TOKEN/GITHUB_TOKEN is invalid; retrying without token override env vars")
+	r.env = withoutGitHubTokenEnv(r.env)
+	if err := os.RemoveAll(r.testDir); err != nil {
+		return fmt.Errorf("reset test dir after GitHub token failure: %w", err)
+	}
+	if err := os.MkdirAll(r.testDir, 0o700); err != nil {
+		return fmt.Errorf("recreate test dir after GitHub token failure: %w", err)
+	}
+	return r.phaseInit(ctx)
 }
 
 // phaseInit runs `azd ai agent init` attached to a pseudo-terminal and drives
@@ -329,6 +349,12 @@ func (r *runner) driveInit(ctx context.Context, exited <-chan struct{}) error {
 			repeat, lastKey = 1, key
 		}
 		if repeat >= 3 {
+			if strings.Contains(prompt, "subscription") || strings.Contains(prompt, "location") ||
+				strings.Contains(prompt, "region") {
+				r.t.Log("loop detected on picker prompt; accepting current selection")
+				r.enter()
+				continue
+			}
 			// The model select/deployment prompts can legitimately need a
 			// different option than the default (e.g. the manifest model isn't
 			// available in the chosen region), so nudge to the next choice. Scope
@@ -364,8 +390,8 @@ func (r *runner) finishInit(ctx context.Context) error {
 		return nil
 	}
 	return fmt.Errorf(
-		"init finished but expected artifacts are missing on disk\n--- tail ---\n%s",
-		tail(r.c.tailString(), 2000),
+		"init finished but expected artifacts are missing on disk\n--- test dir ---\n%s\n--- tail ---\n%s",
+		r.initOutputDiagnostics(), tail(r.c.tailString(), 2000),
 	)
 }
 
@@ -414,27 +440,27 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 
 	// Language select — "Select a language" (promptAgentTemplate).
 	case has("select a language"):
-		r.selectByText("Python")
+		r.selectByText(screen, "Python")
 
 	// Template select — "Select a starter template" / "Select an agent template"
 	// (promptAgentTemplate).
 	case has("starter template") || has("agent template"):
-		r.selectByText("Basic agent (Invocations")
+		r.selectByText(screen, "Basic agent (Invocations")
 
 	// Foundry project hosting — "Select a Foundry project to host your agent..."
 	// (runInitFromManifest); choices "Use an existing..." / "Create a new...".
 	case has("foundry project to host"):
 		if r.createProject() {
-			r.selectByText("Create a new Foundry project")
+			r.selectByText(screen, "Create a new Foundry project")
 		} else {
-			r.selectByText("Use an existing Foundry project")
+			r.selectByText(screen, "Use an existing Foundry project")
 		}
 
 	// Existing-project picker — "Select a Foundry project"
 	// (selectFoundryProject); only when reusing a project.
 	case has("select a foundry project"):
 		if p := os.Getenv("E2E_PROJECT"); p != "" {
-			r.selectByText(p)
+			r.selectByText(screen, p)
 		} else {
 			r.enter()
 		}
@@ -446,7 +472,7 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 	// — match that, not the preamble.
 	case has("select subscription"):
 		if sub := os.Getenv("E2E_SUBSCRIPTION"); sub != "" {
-			r.selectByText(sub[:min(8, len(sub))])
+			r.selectByText(screen, sub[:min(8, len(sub))])
 		} else {
 			r.enter()
 		}
@@ -454,7 +480,7 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 	// Location — preamble "Select an Azure location..." (ensureLocation) +
 	// azd-core picker.
 	case has("location") || has("region"):
-		r.selectByText(getenvDefault("E2E_LOCATION", "eastus2"))
+		r.selectByText(screen, getenvDefault("E2E_LOCATION", "eastus2"))
 
 	// Manifest model decision — "Model '%s' is specified in the agent manifest."
 	// (getModelDetails); keep the manifest model (default first choice).
@@ -471,7 +497,7 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 
 	// Model select — "Select a model" (promptForAlternativeModel etc.).
 	case has("select a model"):
-		r.selectByText("gpt-4o-mini")
+		r.selectByText(screen, "gpt-4o-mini")
 
 	// Deployment version / SKU / capacity — azd-core's PromptAiDeployment renders
 	// these exact picker messages; accept defaults. Match the full message rather
@@ -878,13 +904,17 @@ func (r *runner) runQuiet(
 	return string(out), exitCode(err)
 }
 
-// selectByText filters a survey list by typing target, waits (event-driven) for
-// the filtered list to stop redrawing, then confirms with Enter. This assumes
-// the survey / azd-core Select supports type-to-filter; that behavior is only
-// verifiable against a live run (documented in README). waitForQuiet's exited
-// result is intentionally ignored: a child that exited mid-select makes the
-// trailing Enter a harmless no-op on the closed pty.
-func (r *runner) selectByText(target string) {
+// selectByText filters a survey list by typing target unless the target is
+// already selected, then confirms with Enter. Some survey redraws briefly expose
+// the same prompt after a selection is accepted; treating an already-selected
+// target as done keeps the driver idempotent and avoids appending stale filter
+// text into the next prompt.
+func (r *runner) selectByText(screen, target string) {
+	if currentSelectionHas(screen, target) {
+		r.enter()
+		return
+	}
+	r.clearFilter()
 	r.c.send(target)
 	r.c.waitForQuiet(listSettle)
 	r.c.send(keyEnter)
@@ -893,6 +923,29 @@ func (r *runner) selectByText(target string) {
 // enter accepts a prompt's default by pressing Enter.
 func (r *runner) enter() {
 	r.c.send(keyEnter)
+}
+
+// clearFilter removes any stale type-to-filter text left in the active survey
+// prompt before typing a new target. Ctrl+U covers readline-style inputs; Del is
+// repeated as a fallback for survey prompts that treat the filter as a simple
+// editable field.
+func (r *runner) clearFilter() {
+	r.c.send(keyCtrlU)
+	r.c.send(strings.Repeat(keyDel, 64))
+}
+
+func currentSelectionHas(screen, target string) bool {
+	target = strings.ToLower(target)
+	for _, line := range nonEmptyLines(screen) {
+		line = strings.ToLower(line)
+		if strings.HasPrefix(line, "?") && strings.Contains(line, target) {
+			return true
+		}
+		if strings.Contains(line, ">") && strings.Contains(line, target) {
+			return true
+		}
+	}
+	return false
 }
 
 // createProject reports whether the run should create a fresh Foundry project.
@@ -936,11 +989,14 @@ func (r *runner) findServiceName() string {
 	}
 	// A struct unmarshal is more robust than scanning lines: it tolerates
 	// comments and indentation changes that a naive parser would mishandle.
-	var proj struct {
-		Services map[string]any `yaml:"services"`
-	}
+	var proj azdProjectManifest
 	if err := yaml.Unmarshal(data, &proj); err != nil || len(proj.Services) == 0 {
 		return ""
+	}
+	for name, svc := range proj.Services {
+		if svc.Host == "azure.ai.agent" {
+			return name
+		}
 	}
 	for name := range proj.Services {
 		return name
@@ -948,8 +1004,18 @@ func (r *runner) findServiceName() string {
 	return ""
 }
 
-// validateInitOutput confirms init produced an agent project on disk: a project
-// dir whose azure.yaml targets the agent host and a nested agent.yaml.
+type azdProjectManifest struct {
+	Services map[string]azdService `yaml:"services"`
+}
+
+type azdService struct {
+	Host string `yaml:"host"`
+}
+
+// validateInitOutput confirms init produced an azd project on disk. Current
+// unified azure.yaml samples can inline the agent definition in azure.yaml
+// instead of writing a separate agent.yaml, so the stable contract is that init
+// created a project directory with a parseable azure.yaml containing services.
 func (r *runner) validateInitOutput() bool {
 	entries, err := os.ReadDir(r.testDir)
 	if err != nil {
@@ -960,34 +1026,73 @@ func (r *runner) validateInitOutput() bool {
 			continue
 		}
 		subdir := filepath.Join(r.testDir, e.Name())
-		//nolint:gosec // azure.yaml path is under the test-controlled testDir.
-		data, err := os.ReadFile(filepath.Join(subdir, "azure.yaml"))
-		if err != nil {
-			continue
-		}
-		content := string(data)
-		if strings.Contains(content, "host:") && strings.Contains(content, "azure.ai.agent") &&
-			hasAgentYAML(subdir) {
+		if hasProjectManifest(subdir) {
 			return true
 		}
 	}
 	return false
 }
 
-// hasAgentYAML reports whether an agent.yaml exists anywhere under root.
-func hasAgentYAML(root string) bool {
-	found := false
-	_ = filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
+// hasProjectManifest reports whether root contains a parseable azd project
+// manifest with an azure.ai.agent service. Current unified azure.yaml samples
+// can inline the agent definition there rather than writing agent.yaml.
+func hasProjectManifest(root string) bool {
+	//nolint:gosec // azure.yaml path is under the test-controlled testDir.
+	data, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
+	if err != nil {
+		return false
+	}
+	var proj azdProjectManifest
+	if err := yaml.Unmarshal(data, &proj); err != nil {
+		return false
+	}
+	for _, svc := range proj.Services {
+		if svc.Host == "azure.ai.agent" {
+			return true
+		}
+	}
+	return false
+}
+
+// initOutputDiagnostics returns a bounded file listing to make scaffold-layout
+// drift visible in CI logs without dumping generated source files.
+func (r *runner) initOutputDiagnostics() string {
+	var b strings.Builder
+	count := 0
+	const maxEntries = 80
+
+	err := filepath.WalkDir(r.testDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			fmt.Fprintf(&b, "%s: %v\n", path, err)
 			return nil
 		}
-		if !d.IsDir() && d.Name() == "agent.yaml" {
-			found = true
+		rel, relErr := filepath.Rel(r.testDir, path)
+		if relErr != nil || rel == "." {
+			return nil
+		}
+		if count >= maxEntries {
 			return filepath.SkipAll
 		}
+		if strings.Count(filepath.ToSlash(rel), "/") > 3 {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			rel += "/"
+		}
+		fmt.Fprintln(&b, rel)
+		count++
 		return nil
 	})
-	return found
+	if err != nil {
+		fmt.Fprintf(&b, "walk failed: %v\n", err)
+	}
+	if count >= maxEntries {
+		fmt.Fprintf(&b, "... truncated after %d entries\n", maxEntries)
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // lineLogger forwards a stream to t.Log one line at a time so long-running azd
@@ -1043,6 +1148,23 @@ func ghToken() string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+func isInvalidGitHubTokenError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "The token in GH_TOKEN is invalid") ||
+		strings.Contains(msg, "The token in GITHUB_TOKEN is invalid")
+}
+
+func withoutGitHubTokenEnv(env []string) []string {
+	out := env[:0]
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "GH_TOKEN=") || strings.HasPrefix(kv, "GITHUB_TOKEN=") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }
 
 // shortHash returns a short, non-cryptographic uniqueness suffix for the agent

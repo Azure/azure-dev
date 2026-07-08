@@ -59,7 +59,8 @@ var ErrProvisionValidationAborted = errors.New("provisioning aborted during vali
 // (abort, err) semantics:
 //   - abort=true, err=nil: an error-severity finding (or a declined warning)
 //     means provisioning should be skipped (exit code 0).
-//   - abort=false, err!=nil: dispatch or prompting failed to run.
+//   - abort=false, err!=nil: the confirmation prompt itself failed to run
+//     (dispatch/timeout failures are non-fatal and skipped, returning err=nil).
 //   - abort=false, err=nil: validation passed or was skipped; proceed.
 //
 // The preview flag only affects the confirmation prompt wording.

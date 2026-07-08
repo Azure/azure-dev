@@ -153,12 +153,26 @@ func TestActivityDeclarationSurvivesInitRoundTrip(t *testing.T) {
 	require.Equal(t, "BotServiceRbac", got.AgentEndpoint.AuthorizationSchemes[0].Type)
 }
 
+// expectedActivityEndpoint is the agent_endpoint shape a pure-activity agent must
+// carry: the friendly "activity" protocol guarded by BotServiceRbac. It is the
+// expected-shape oracle for these tests — it mirrors what ComposeActivityAgentEndpoint
+// produces for an activity-only selection and what the manifest path emits, so the
+// tests can assert both init paths converge on the same declaration.
+func expectedActivityEndpoint() *agent_yaml.AgentEndpoint {
+	return &agent_yaml.AgentEndpoint{
+		Protocols: []string{"activity"},
+		AuthorizationSchemes: []agent_yaml.AuthorizationScheme{
+			{Type: "BotServiceRbac"},
+		},
+	}
+}
+
 // TestActivityAgentEndpoint pins the endpoint declaration that `azd init` from
 // local code injects for an activity_protocol agent. It must match the
 // manifest-based shape (friendly "activity" protocol guarded by BotServiceRbac)
 // so the two init paths produce identical azure.yaml and both satisfy deploy.
 func TestActivityAgentEndpoint(t *testing.T) {
-	ep := ActivityAgentEndpoint()
+	ep := expectedActivityEndpoint()
 	require.NotNil(t, ep)
 	require.Equal(t, []string{"activity"}, ep.Protocols)
 	require.Len(t, ep.AuthorizationSchemes, 1)
@@ -169,7 +183,7 @@ func TestActivityAgentEndpoint(t *testing.T) {
 	ca := agent_yaml.ContainerAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindHosted, Name: "echo"},
 		Protocols:       []agent_yaml.ProtocolVersionRecord{{Protocol: "activity_protocol", Version: "v1"}},
-		AgentEndpoint:   ActivityAgentEndpoint(),
+		AgentEndpoint:   expectedActivityEndpoint(),
 	}
 	require.True(t, IsActivityProtocol(ca))
 	require.Equal(t, ActivityUseCaseSimple, ResolveActivityProfile(ca).UseCase)
@@ -178,9 +192,9 @@ func TestActivityAgentEndpoint(t *testing.T) {
 // TestComposeActivityAgentEndpoint verifies that Activity requirements are folded
 // into an agent's agent_endpoint instead of overwriting it, so Activity can
 // coexist with other protocols. A pure-activity agent must still produce the
-// exact ActivityAgentEndpoint() shape.
+// exact expectedActivityEndpoint() shape.
 func TestComposeActivityAgentEndpoint(t *testing.T) {
-	t.Run("pure activity matches ActivityAgentEndpoint", func(t *testing.T) {
+	t.Run("pure activity matches expectedActivityEndpoint", func(t *testing.T) {
 		ep := ComposeActivityAgentEndpoint(nil, []agent_yaml.ProtocolVersionRecord{
 			{Protocol: "activity", Version: "1.0.0"},
 		})

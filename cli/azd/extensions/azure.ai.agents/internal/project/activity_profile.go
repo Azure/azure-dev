@@ -65,21 +65,6 @@ func ResolveActivityProfile(ca agent_yaml.ContainerAgent) ActivityProfile {
 	return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple}
 }
 
-// ActivityAgentEndpoint returns the agent_endpoint declaration an activity agent
-// requires: the friendly "activity" protocol guarded by the BotServiceRbac
-// authorization scheme. `azd init` uses it to make an activity agent scaffolded
-// from local code carry the exact same declaration as one initialized from a
-// manifest, so the generated azure.yaml is identical and `azd deploy` provisions
-// the Azure Bot connector. Phase 1 covers the simple use case.
-func ActivityAgentEndpoint() *agent_yaml.AgentEndpoint {
-	return &agent_yaml.AgentEndpoint{
-		Protocols: []string{string(agent_api.AgentEndpointProtocolActivity)},
-		AuthorizationSchemes: []agent_yaml.AuthorizationScheme{
-			{Type: string(agent_api.AgentEndpointAuthSchemeBotServiceRbac)},
-		},
-	}
-}
-
 // ComposeActivityAgentEndpoint folds the Activity endpoint requirements into an
 // agent's agent_endpoint declaration instead of overwriting it, so the Activity
 // protocol can coexist with the other protocols the agent speaks
@@ -90,8 +75,8 @@ func ActivityAgentEndpoint() *agent_yaml.AgentEndpoint {
 // normalizing the legacy "activity_protocol" spelling to the canonical
 // "activity", and (2) ensures the BotServiceRbac scheme Activity requires is
 // present without dropping any scheme already declared. For a pure-activity
-// agent the result is identical to ActivityAgentEndpoint(): protocols=["activity"]
-// guarded by BotServiceRbac. No-op inputs (nil existing endpoint) start fresh.
+// agent the result is protocols=["activity"] guarded by BotServiceRbac — the same
+// declaration the manifest path emits. No-op inputs (nil existing endpoint) start fresh.
 func ComposeActivityAgentEndpoint(
 	existing *agent_yaml.AgentEndpoint,
 	protocols []agent_yaml.ProtocolVersionRecord,

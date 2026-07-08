@@ -340,10 +340,11 @@ Typed accessors (`EnvName()`, `SubscriptionID()`, `EnvLocation()`,
 
 The `"provision"` dispatch reuses the same machinery as `"local-preflight"`:
 parallel dispatch, the uniform preflight report, severity/abort semantics
-(WARNING prompts to continue; ERROR aborts with exit code 0), the
-`extensionValidationTimeout` bound, and the `provision.preflight` config gate
-(`off` disables both dispatch sites). Registration still requires the
-`validation-provider` capability.
+(WARNING prompts to continue; ERROR aborts with exit code 0), an equivalent
+60s dispatch timeout (`provisionValidationTimeout` in `provision_validation.go`,
+mirroring the Bicep path's `extensionValidationTimeout`), and the
+`provision.preflight` config gate (`off` disables both dispatch sites).
+Registration still requires the `validation-provider` capability.
 
 ### Extension Code Example
 

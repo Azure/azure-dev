@@ -200,9 +200,13 @@ const (
 	// ValidationCheckTypeProvision is the provider-agnostic check type
 	// dispatched immediately before provisioning runs, regardless of the
 	// provisioning provider (Bicep, Terraform, or extension-provided providers
-	// such as microsoft.foundry and demo). Its context is lean and carries no
-	// ARM template — only the environment, subscription, location, resource
-	// group and target scope.
+	// such as microsoft.foundry and demo). Its context is "lean" because it
+	// deliberately omits all of the ARM-derived data that "local-preflight"
+	// carries — there is no ARM template, no resolved parameters, no resources
+	// snapshot, and no predicted resources — since non-ARM providers do not
+	// produce them. It carries only ambient environment values: the
+	// environment name, subscription, location, resource group, and target
+	// scope.
 	//
 	// These values are best-effort ambient values read from the azd
 	// environment at dispatch time. The dispatch happens before the provider

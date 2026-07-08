@@ -119,17 +119,13 @@ func (s *FrameworkService) onRegisterRequest(
 	err := s.container.RegisterNamedSingleton(language, func(
 		console input.Console,
 	) project.FrameworkService {
-		var env *environment.Environment
-		if s.lazyEnv != nil {
-			env, _ = s.lazyEnv.GetValue()
-		}
 		return project.NewExternalFrameworkService(
 			language,
 			project.ServiceLanguageKind(language),
 			extension,
 			broker,
 			console,
-			env,
+			s.lazyEnv,
 		)
 	})
 

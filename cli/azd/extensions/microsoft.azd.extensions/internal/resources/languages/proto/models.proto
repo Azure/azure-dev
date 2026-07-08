@@ -91,6 +91,7 @@ message ServiceConfig {
   string output_path = 8;
   string image = 9;
   repeated string uses = 13;
+  map<string, string> environment = 14;
 }
 
 // InfraOptions message definition

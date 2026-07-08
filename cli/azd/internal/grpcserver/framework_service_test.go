@@ -25,60 +25,58 @@ func TestNewFrameworkService(t *testing.T) {
 	require.NotNil(t, svc)
 }
 
-func TestFrameworkService_onRegisterRequest_EnvLoadErrorUsesNilEnv(t *testing.T) {
+// Registration and resolution of an external framework service must succeed regardless of
+// whether the environment can be loaded — the environment is resolved lazily per operation.
+// Expansion behavior with and without an environment is covered by the
+// Test_ExternalFrameworkService_toProtoServiceConfig* tests in pkg/project.
+func TestFrameworkService_onRegisterRequest(t *testing.T) {
 	t.Parallel()
 
-	container := ioc.NewNestedContainer(nil)
-	ioc.RegisterInstance[input.Console](container, mockinput.NewMockConsole())
+	testCases := []struct {
+		name    string
+		lazyEnv *lazy.Lazy[*environment.Environment]
+	}{
+		{
+			name:    "no lazy env",
+			lazyEnv: nil,
+		},
+		{
+			name: "env load error",
+			lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+				return nil, errors.New("no environment")
+			}),
+		},
+		{
+			name:    "env available",
+			lazyEnv: lazy.From(environment.NewWithValues("test", nil)),
+		},
+	}
 
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
-		return nil, errors.New("no environment")
-	})
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	svc := NewFrameworkService(container, nil, lazyEnv).(*FrameworkService)
+			container := ioc.NewNestedContainer(nil)
+			ioc.RegisterInstance[input.Console](container, mockinput.NewMockConsole())
 
-	var language string
-	_, err := svc.onRegisterRequest(
-		t.Context(),
-		&azdext.RegisterFrameworkServiceRequest{Language: "rust"},
-		&extensions.Extension{Id: "test.framework"},
-		nil,
-		&language,
-	)
-	require.NoError(t, err)
+			svc := NewFrameworkService(container, nil, tc.lazyEnv).(*FrameworkService)
 
-	var frameworkService project.FrameworkService
-	err = container.ResolveNamed("rust", &frameworkService)
-	require.NoError(t, err)
-	require.NotNil(t, frameworkService)
-}
+			var language string
+			_, err := svc.onRegisterRequest(
+				t.Context(),
+				&azdext.RegisterFrameworkServiceRequest{Language: "rust"},
+				&extensions.Extension{Id: "test.framework"},
+				nil,
+				&language,
+			)
+			require.NoError(t, err)
 
-func TestFrameworkService_onRegisterRequest_ResolvesWithEnv(t *testing.T) {
-	t.Parallel()
-
-	container := ioc.NewNestedContainer(nil)
-	ioc.RegisterInstance[input.Console](container, mockinput.NewMockConsole())
-
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
-		return environment.NewWithValues("test", nil), nil
-	})
-
-	svc := NewFrameworkService(container, nil, lazyEnv).(*FrameworkService)
-
-	var language string
-	_, err := svc.onRegisterRequest(
-		t.Context(),
-		&azdext.RegisterFrameworkServiceRequest{Language: "rust"},
-		&extensions.Extension{Id: "test.framework"},
-		nil,
-		&language,
-	)
-	require.NoError(t, err)
-
-	var frameworkService project.FrameworkService
-	err = container.ResolveNamed("rust", &frameworkService)
-	require.NoError(t, err)
-	require.NotNil(t, frameworkService)
+			var frameworkService project.FrameworkService
+			err = container.ResolveNamed("rust", &frameworkService)
+			require.NoError(t, err)
+			require.NotNil(t, frameworkService)
+		})
+	}
 }
 
 func TestNewServiceTargetService(t *testing.T) {

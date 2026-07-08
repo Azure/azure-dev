@@ -230,6 +230,9 @@ func TestServiceConfigReverseMapping(t *testing.T) {
 					Config:       nil,
 					Environment: map[string]string{
 						"FROM_EXTENSION": "extension-value",
+						// Values are literals: '$' must survive later expansions unchanged.
+						"WITH_DOLLARS":  "pa$$word",
+						"WITH_TEMPLATE": "${NOT_A_TEMPLATE}",
 					},
 				}
 			},
@@ -240,9 +243,13 @@ func TestServiceConfigReverseMapping(t *testing.T) {
 				require.Equal(t, "./src/api", result.RelativePath)
 				require.Nil(t, result.Config)
 				require.Nil(t, result.AdditionalProperties)
+				expanded, err := result.Environment.Expand(func(string) string { return "unexpected" })
+				require.NoError(t, err)
 				require.Equal(t, map[string]string{
 					"FROM_EXTENSION": "extension-value",
-				}, result.Environment.MustExpand(func(string) string { return "" }))
+					"WITH_DOLLARS":   "pa$$word",
+					"WITH_TEMPLATE":  "${NOT_A_TEMPLATE}",
+				}, expanded)
 			},
 		},
 		{
@@ -379,14 +386,15 @@ func TestServiceConfigRoundTripMapping(t *testing.T) {
 	var protoConfig *azdext.ServiceConfig
 	err := mapper.WithResolver(func(key string) string {
 		if key == "SERVICE_VALUE" {
-			return "resolved"
+			// Expanded values containing '$' must survive the reverse mapping intact.
+			return "re$olved$$value"
 		}
 		return ""
 	}).Convert(originalServiceConfig, &protoConfig)
 	require.NoError(t, err)
 	require.NotNil(t, protoConfig)
 	require.Equal(t, map[string]string{
-		"FROM_ENV": "resolved",
+		"FROM_ENV": "re$olved$$value",
 		"STATIC":   "static",
 	}, protoConfig.Environment)
 
@@ -402,10 +410,12 @@ func TestServiceConfigRoundTripMapping(t *testing.T) {
 	require.Equal(t, originalServiceConfig.Language, roundTripServiceConfig.Language)
 	require.Equal(t, originalServiceConfig.RelativePath, roundTripServiceConfig.RelativePath)
 	require.Equal(t, originalServiceConfig.Uses, roundTripServiceConfig.Uses)
+	roundTripEnv, err := roundTripServiceConfig.Environment.Expand(func(string) string { return "unexpected" })
+	require.NoError(t, err)
 	require.Equal(t, map[string]string{
-		"FROM_ENV": "resolved",
+		"FROM_ENV": "re$olved$$value",
 		"STATIC":   "static",
-	}, roundTripServiceConfig.Environment.MustExpand(func(string) string { return "" }))
+	}, roundTripEnv)
 
 	// Verify config data (note: some type conversions are expected due to JSON/protobuf handling)
 	require.NotNil(t, roundTripServiceConfig.Config)
@@ -662,7 +672,8 @@ func TestFromProtoServiceConfigMapping(t *testing.T) {
 		OutputPath:        "./dist",
 		Image:             "nginx:latest",
 		Environment: map[string]string{
-			"APP_SETTING": "setting-value",
+			"APP_SETTING":  "setting-value",
+			"WITH_DOLLARS": "pa$$word",
 		},
 		Docker: &azdext.DockerProjectOptions{
 			Path:        "./Dockerfile",
@@ -690,9 +701,12 @@ func TestFromProtoServiceConfigMapping(t *testing.T) {
 	require.Equal(t, ServiceLanguageCsharp, serviceConfig.Language)
 	require.Equal(t, "./dist", serviceConfig.OutputPath)
 	require.Equal(t, "nginx:latest", serviceConfig.Image.MustEnvsubst(func(string) string { return "" }))
+	envValues, err := serviceConfig.Environment.Expand(func(string) string { return "unexpected" })
+	require.NoError(t, err)
 	require.Equal(t, map[string]string{
-		"APP_SETTING": "setting-value",
-	}, serviceConfig.Environment.MustExpand(func(string) string { return "" }))
+		"APP_SETTING":  "setting-value",
+		"WITH_DOLLARS": "pa$$word",
+	}, envValues)
 
 	// Verify docker options conversion
 	require.Equal(t, "./Dockerfile", serviceConfig.Docker.Path)
@@ -1025,6 +1039,10 @@ func TestProjectConfigMapping(t *testing.T) {
 					Host:         ContainerAppTarget,
 					Language:     ServiceLanguagePython,
 					RelativePath: "./src",
+					Environment: osutil.ExpandableMap{
+						"ENV_NAME": osutil.NewExpandableString("${ENVIRONMENT_NAME}"),
+						"STATIC":   osutil.NewExpandableString("static-value"),
+					},
 				},
 				"api": {
 					Name:         "api",
@@ -1060,6 +1078,12 @@ func TestProjectConfigMapping(t *testing.T) {
 		require.Contains(t, protoConfig.Services, "api")
 		require.Equal(t, "containerapp", protoConfig.Services["web"].Host)
 		require.Equal(t, "appservice", protoConfig.Services["api"].Host)
+		// The resolver must propagate into nested service conversions so service-level
+		// env values resolve the same way as in direct ServiceConfig conversions.
+		require.Equal(t, map[string]string{
+			"ENV_NAME": "dev",
+			"STATIC":   "static-value",
+		}, protoConfig.Services["web"].Environment)
 	})
 
 	t.Run("proto ProjectConfig -> ProjectConfig", func(t *testing.T) {

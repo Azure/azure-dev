@@ -410,7 +410,10 @@ func registerProjectMappings() {
 		if len(src.Environment) > 0 {
 			result.Environment = make(osutil.ExpandableMap, len(src.Environment))
 			for key, value := range src.Environment {
-				result.Environment[key] = osutil.NewExpandableString(value)
+				// Incoming values are expanded literals, not templates: escape them so a
+				// later expansion (or a round trip back into azure.yaml) cannot reinterpret
+				// or corrupt values containing `$`.
+				result.Environment[key] = osutil.NewLiteralExpandableString(value)
 			}
 		}
 
@@ -716,8 +719,8 @@ func registerProjectMappings() {
 		services := make(map[string]*azdext.ServiceConfig, len(src.Services))
 		for i, svc := range src.Services {
 			var serviceConfig *azdext.ServiceConfig
-			if err := mapper.Convert(svc, &serviceConfig); err != nil {
-				return nil, err
+			if err := mapper.WithResolver(resolver).Convert(svc, &serviceConfig); err != nil {
+				return nil, fmt.Errorf("converting service %q: %w", i, err)
 			}
 
 			services[i] = serviceConfig

@@ -4,6 +4,7 @@
 
 ### Features Added
 
+- [[#8478]](https://github.com/Azure/azure-dev/issues/8478) Add `--client-header` to `azd ai agent invoke` for sending custom `x-client-*` request headers in `"Name: Value"` format (repeatable). The responses and invocations protocols forward the `x-client-*` header family to the agent; other header names are rejected, and the flag is not supported with the `a2a` protocol (which does not propagate `x-client-*` headers). Managed headers (`Authorization`, `Content-Type`, user identity) always take precedence.
 - [[#8989]](https://github.com/Azure/azure-dev/pull/8989) Add `a2a` protocol support to `azd ai agent invoke`. A plain message is wrapped in a JSON-RPC 2.0 `message/send` request, `--input-file` sends a complete JSON-RPC request, and `--output raw` dumps the response verbatim. A2A is remote-only (not available with `--local`).
 
 ### Bugs Fixed

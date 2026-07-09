@@ -8,6 +8,10 @@ parameters:
   - name: PublishToRegistry
     type: string
     default: stable
+    values:
+      - stable
+      - dev
+      - nightly
 
 stages:
   - stage: PublishExtension

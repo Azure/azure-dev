@@ -225,12 +225,16 @@ func stepError(result *InstallResult, err error) error {
 //
 // It shows a step spinner (like azd provision) with title and passes work an
 // output writer. Skill operations route the host CLI's stdout/stderr through
-// that writer (see skillCommandRunArgs), with stdin still connected, so each
-// line the CLI emits — progress or an interactive prompt — is printed above
-// the spinner while the spinner stays pinned below it: the console tears the
-// spinner down and re-renders it around each printed line (see
-// AskerConsole.println), so the bar is kept, not lost. The user answers any
-// prompt directly via the connected stdin. When the CLI stays silent the
+// that writer (see skillCommandRunArgs), with stdin still connected.
+//
+// streamOutput controls how that output is surfaced. When true, each line the
+// CLI emits — progress or an interactive prompt — is printed above the spinner
+// while the spinner stays pinned below it: the console tears the spinner down
+// and re-renders it around each printed line (see AskerConsole.println), so
+// the bar is kept, not lost, and the user can answer any prompt via the
+// connected stdin. When false, the output is buffered and replayed only if the
+// step fails, so a step that completes without error stays quiet (used for
+// non-interactive operations such as uninstall). When the CLI stays silent the
 // spinner simply runs to completion.
 //
 // work returns the message to show on the result line; when empty the spinner
@@ -244,6 +248,7 @@ func renderSkillStep(
 	ctx context.Context,
 	renderer StepRenderer,
 	title string,
+	streamOutput bool,
 	work func(out io.Writer) (doneTitle string, err error),
 ) error {
 	if renderer == nil {
@@ -253,10 +258,24 @@ func renderSkillStep(
 	}
 
 	renderer.ShowSpinner(ctx, title, input.Step)
-	out := &lineWriter{emit: func(line string) { renderer.Message(ctx, line) }}
+
+	// Stream the host CLI's output live (so interactive prompts are visible),
+	// or buffer it and replay only on failure so a successful step is quiet.
+	var buffered []string
+	emit := func(line string) { renderer.Message(ctx, line) }
+	if !streamOutput {
+		emit = func(line string) { buffered = append(buffered, line) }
+	}
+	out := &lineWriter{emit: emit}
+
 	doneTitle, err := work(out)
 	if doneTitle == "" {
 		doneTitle = title
+	}
+	if !streamOutput && err != nil {
+		for _, line := range buffered {
+			renderer.Message(ctx, line)
+		}
 	}
 	renderer.StopSpinner(ctx, doneTitle, input.GetStepResultFormat(err))
 	return err
@@ -854,7 +873,7 @@ func (i *installer) runSkillUninstall(
 	)
 	for _, host := range targets {
 		title := fmt.Sprintf("Uninstalling %s from %s", tool.Name, host.Host)
-		hostErr := renderSkillStep(ctx, renderer, title, func(out io.Writer) (string, error) {
+		hostErr := renderSkillStep(ctx, renderer, title, false, func(out io.Writer) (string, error) {
 			return "", i.uninstallSkillForHost(ctx, tool, host, out)
 		})
 		if hostErr != nil {
@@ -1296,7 +1315,7 @@ func (i *installer) runSkill(
 			hostVersion  string
 			hostUpToDate bool
 		)
-		hostErr := renderSkillStep(ctx, renderer, title, func(out io.Writer) (string, error) {
+		hostErr := renderSkillStep(ctx, renderer, title, true, func(out io.Writer) (string, error) {
 			v, upToDate, e := i.installSkillForHost(ctx, tool, host, upgrade, out)
 			hostVersion = v
 			hostUpToDate = upToDate

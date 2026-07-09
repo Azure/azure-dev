@@ -3924,6 +3924,86 @@ func TestRunSkillUninstall_StepProgress(t *testing.T) {
 	assert.Empty(t, r.messages)
 }
 
+// TestRunSkillUninstall_StepProgress_SuccessHidesOutput verifies that when the
+// host CLI prints output and the uninstall completes without error, that
+// output is NOT surfaced above the spinner — a successful step stays quiet.
+func TestRunSkillUninstall_StepProgress_SuccessHidesOutput(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot")
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		if args.StdOut != nil {
+			_, _ = args.StdOut.Write([]byte("Plugin \"azure@azure-skills\" uninstalled successfully.\n"))
+		}
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	// After uninstall the skill is gone, so verification passes.
+	det := &mockDetector{
+		detectSkillHostsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillHost, error) {
+			return nil, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	var r fakeStepRenderer
+	result, err := inst.Uninstall(
+		t.Context(), newSkillTool(),
+		WithHosts("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "uninstall must succeed; err=%v", result.Error)
+
+	assert.Empty(t, r.messages,
+		"host CLI output must be hidden when uninstall completes without error")
+	assert.Equal(t, []string{"Uninstalling Test Azure Skills from copilot"}, r.stops)
+}
+
+// TestRunSkillUninstall_StepProgress_FailureShowsOutput verifies the converse:
+// when the uninstall fails, the buffered host CLI output is replayed so the
+// user can see what went wrong.
+func TestRunSkillUninstall_StepProgress_FailureShowsOutput(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot")
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		if args.StdOut != nil {
+			_, _ = args.StdOut.Write([]byte("could not remove plugin\n"))
+		}
+		return exec.RunResult{ExitCode: 1}, errors.New("exit code 1")
+	})
+
+	det := &mockDetector{
+		detectSkillHostsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillHost, error) {
+			return []InstalledSkillHost{{Host: "copilot", Version: "1.0.0"}}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	var r fakeStepRenderer
+	result, _ := inst.Uninstall(
+		t.Context(), newSkillTool(),
+		WithHosts("copilot"),
+		WithStepProgress(&r),
+	)
+	require.False(t, result.Success)
+	require.Error(t, result.Error)
+
+	assert.Contains(t, r.messages, "could not remove plugin",
+		"host CLI output must be shown when uninstall fails")
+}
+
 func TestUninstallSkill_ExplicitHost_RemovesOnlyThatHost(t *testing.T) {
 	t.Parallel()
 

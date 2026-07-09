@@ -623,7 +623,8 @@ func TestDisplayableProtocolFor(t *testing.T) {
 			wantURLScheme:    "wss",
 			wantURLOmitAgent: true,
 		},
-		{name: "activity_protocol excluded", protocol: "activity_protocol", wantNil: true},
+		{name: "activity excluded", protocol: "activity", wantNil: true},
+		{name: "legacy activity_protocol excluded", protocol: "activity_protocol", wantNil: true},
 		{name: "unknown excluded", protocol: "unknown_proto", wantNil: true},
 	}
 

@@ -318,7 +318,7 @@ func (a *toolAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Tool installation complete",
+			Header: "Your tool is installed.",
 		},
 	}, nil
 }
@@ -604,7 +604,7 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Tool installation complete",
+			Header: "Your tool is installed.",
 		},
 	}, nil
 }
@@ -1415,7 +1415,7 @@ func (a *toolUninstallAction) Run(ctx context.Context) (*actions.ActionResult, e
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Tool uninstall complete",
+			Header: "Your tool is uninstalled.",
 		},
 	}, nil
 }

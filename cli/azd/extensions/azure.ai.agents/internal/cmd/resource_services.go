@@ -233,6 +233,35 @@ func projectNameHint(
 	return v
 }
 
+// stampProjectEndpoint writes the selected project's endpoint onto the existing
+// azure.ai.project service in azure.yaml. This is a no-op when the project is
+// nil, has no endpoint, or when no ai-project service exists yet.
+func stampProjectEndpoint(ctx context.Context, azdClient *azdext.AzdClient, selectedProject *FoundryProjectInfo) error {
+	if selectedProject == nil {
+		return nil
+	}
+	endpoint := selectedProject.Endpoint()
+	if endpoint == "" {
+		return nil
+	}
+	projectSvcKey := existingProjectServiceKey(ctx, azdClient)
+	if projectSvcKey == "" {
+		return nil
+	}
+	endpointVal, err := structpb.NewValue(endpoint)
+	if err != nil {
+		return fmt.Errorf("encoding project endpoint: %w", err)
+	}
+	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+		ServiceName: projectSvcKey,
+		Path:        "endpoint",
+		Value:       endpointVal,
+	}); err != nil {
+		return fmt.Errorf("writing project endpoint to azure.yaml: %w", err)
+	}
+	return nil
+}
+
 // addResourceService adds a single Foundry resource service to azure.yaml with
 // its keys composed at the service level (inline, via AdditionalProperties, the
 // same shape the agent service uses) and optionally wires its uses: list. The

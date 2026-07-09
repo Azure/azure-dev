@@ -4,6 +4,7 @@
 
 ### Features Added
 
+- [[#8939]](https://github.com/Azure/azure-dev/pull/8939) Add native support for the Activity protocol to `azd ai agent`. `azd ai agent init` can now scaffold an Activity-protocol agent (defaulting to the service-recommended version `2.0.0`), `azd deploy` provisions a companion Azure Bot Service registration authenticated with `BotServiceRbac` and prints Microsoft Teams setup guidance, and `azd down` tears the bot down. Both init-from-code and init-from-manifest flows are supported.
 - [[#8989]](https://github.com/Azure/azure-dev/pull/8989) Add `a2a` protocol support to `azd ai agent invoke`. A plain message is wrapped in a JSON-RPC 2.0 `message/send` request, `--input-file` sends a complete JSON-RPC request, and `--output raw` dumps the response verbatim. A2A is remote-only (not available with `--local`).
 
 ### Bugs Fixed

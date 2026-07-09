@@ -32,7 +32,9 @@ import run from '../src/ext-registry-check.js';
 
 const {
   diffRegistry,
+  getCoreReviewers,
   isAllowedRegistryJsonUpdate,
+  isApprovedByCoreTeam,
 } = run.forTests;
 
 /**
@@ -360,7 +362,7 @@ describe('isAllowedRegistryJsonUpdate', () => {
 });
 
 describe('run', () => {
-  it('fails fast when an empty core team is injected', async () => {
+  it('fails fast when an empty core review team is injected', async () => {
     const core = createNoopCore();
 
     await run({
@@ -373,7 +375,36 @@ describe('run', () => {
     expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('Invalid parameter - coreteam must be populated'));
   });
 
-  it('allows a simple registry-only PR without core team review', async () => {
+  it('loads registry maintainers from the GitHub team when no core review team is injected', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension()]),
+      pr: registry([extension()]),
+      files: [
+        { filename: 'cli/azd/extensions/registry.json' },
+        { filename: 'cli/azd/extensions/README.md' },
+      ],
+      teamMembers: [
+        { login: 'registry-maintainer' },
+      ],
+    });
+    const context = createRegistryContext({ author: 'registry-maintainer' });
+
+    await run({
+      github: octokit,
+      context,
+      core,
+    });
+
+    expect(core.setFailed).not.toHaveBeenCalled();
+    expect(octokit.paginate).toHaveBeenCalledWith(octokit.rest.teams.listMembersInOrg, expect.objectContaining({
+      org: 'Azure',
+      team_slug: 'azure-dev-extregistry-maintain',
+    }));
+    expect(octokit.paginate).not.toHaveBeenCalledWith(octokit.rest.pulls.listFiles, expect.anything());
+  });
+
+  it('allows a simple registry-only PR without core review', async () => {
     const core = createNoopCore();
     const octokit = createRegistryOctokit({
       base: registry([extension({ versions: [version({ version: '1.0.0' })] })]),
@@ -393,7 +424,7 @@ describe('run', () => {
     }));
   });
 
-  it('skips changed-file review when a core team member authored the PR', async () => {
+  it('skips changed-file review when a registry maintainer authored the PR', async () => {
     const core = createNoopCore();
     const octokit = createRegistryOctokit({
       base: registry([extension()]),
@@ -417,7 +448,7 @@ describe('run', () => {
     expect(octokit.rest.repos.getContent).not.toHaveBeenCalled();
   });
 
-  it('skips changed-file review when a core team member approved the current head commit', async () => {
+  it('skips changed-file review when a registry maintainer approved the current head commit', async () => {
     const core = createNoopCore();
     const octokit = createRegistryOctokit({
       base: registry([extension()]),
@@ -443,7 +474,7 @@ describe('run', () => {
     expect(octokit.rest.repos.getContent).not.toHaveBeenCalled();
   });
 
-  it('requires review when a core team approval is for an older head commit', async () => {
+  it('requires review when a registry maintainer approval is for an older head commit', async () => {
     const core = createNoopCore();
     const octokit = createRegistryOctokit({
       base: registry([extension()]),
@@ -468,6 +499,91 @@ describe('run', () => {
     expect(octokit.paginate).toHaveBeenCalledWith(octokit.rest.pulls.listFiles, expect.objectContaining({
       pull_number: 1,
     }));
+  });
+
+  it('skips changed-file review when a maintainer approved the head commit and later only commented', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension()]),
+      pr: registry([extension()]),
+      files: [
+        { filename: 'cli/azd/extensions/registry.json' },
+        { filename: 'cli/azd/extensions/README.md' },
+      ],
+      // A trailing COMMENTED review is not a verdict and must not shadow the earlier approval.
+      reviews: [
+        { user: { login: 'core-member' }, state: 'APPROVED', commit_id: 'abc123' },
+        { user: { login: 'core-member' }, state: 'COMMENTED', commit_id: 'abc123' },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).not.toHaveBeenCalled();
+    expect(octokit.paginate).not.toHaveBeenCalledWith(octokit.rest.pulls.listFiles, expect.anything());
+    expect(octokit.rest.repos.getContent).not.toHaveBeenCalled();
+  });
+
+  it('requires review when a maintainer approved the head commit and later requested changes', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension()]),
+      pr: registry([extension()]),
+      files: [
+        { filename: 'cli/azd/extensions/registry.json' },
+        { filename: 'cli/azd/extensions/README.md' },
+      ],
+      // Approval followed by a later request-changes (same head) is a withdrawal - do not bypass.
+      reviews: [
+        { user: { login: 'core-member' }, state: 'APPROVED', commit_id: 'abc123' },
+        { user: { login: 'core-member' }, state: 'CHANGES_REQUESTED', commit_id: 'abc123' },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('files outside cli/azd/extensions/registry.json'));
+    expect(octokit.paginate).toHaveBeenCalledWith(octokit.rest.pulls.listFiles, expect.objectContaining({
+      pull_number: 1,
+    }));
+  });
+
+  it('skips changed-file review when a maintainer requested changes and then approved the head commit', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension()]),
+      pr: registry([extension()]),
+      files: [
+        { filename: 'cli/azd/extensions/registry.json' },
+        { filename: 'cli/azd/extensions/README.md' },
+      ],
+      // Latest decisive review is the approval, so the change is bypassed.
+      reviews: [
+        { user: { login: 'core-member' }, state: 'CHANGES_REQUESTED', commit_id: 'abc123' },
+        { user: { login: 'core-member' }, state: 'APPROVED', commit_id: 'abc123' },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).not.toHaveBeenCalled();
+    expect(octokit.paginate).not.toHaveBeenCalledWith(octokit.rest.pulls.listFiles, expect.anything());
+    expect(octokit.rest.repos.getContent).not.toHaveBeenCalled();
   });
 
   it('uses the pull request base sha as the registry comparison base by default', async () => {
@@ -513,16 +629,41 @@ describe('run', () => {
   });
 });
 
+describe('getCoreReviewers', () => {
+  it('loads logins from the registry maintainer GitHub team', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([]),
+      pr: registry([]),
+      teamMembers: [
+        { login: 'tg-msft' },
+        { login: 'azd-bot' },
+      ],
+    });
+
+    await expect(getCoreReviewers({
+      octokit,
+      context: createRegistryContext(),
+      core,
+    })).resolves.toEqual(new Set(['azd-bot', 'tg-msft']));
+
+    expect(core.info).toHaveBeenCalledWith(expect.stringContaining('Loaded 2 registry maintainer(s)'));
+  });
+});
+
 /**
- * @param {{ base: RegistryJson, pr: RegistryJson, files?: { filename: string, previous_filename?: string }[], reviews?: { user: { login: string }, state: string, commit_id: string }[] }} args
+ * @param {{ base: RegistryJson, pr: RegistryJson, files?: { filename: string, previous_filename?: string }[], reviews?: { user: { login: string }, state: string, commit_id: string }[], teamMembers?: { login?: string }[] }} args
  * @returns {Octokit}
  */
-function createRegistryOctokit({ base, pr, files = [{ filename: 'cli/azd/extensions/registry.json' }], reviews = [] }) {
+function createRegistryOctokit({ base, pr, files = [{ filename: 'cli/azd/extensions/registry.json' }], reviews = [], teamMembers = [] }) {
   const octokit = {
     rest: {
       pulls: {
         listReviews: vi.fn(),
         listFiles: vi.fn(),
+      },
+      teams: {
+        listMembersInOrg: vi.fn(),
       },
       repos: {
         getContent: vi.fn(({ ref }) => Promise.resolve({
@@ -537,6 +678,10 @@ function createRegistryOctokit({ base, pr, files = [{ filename: 'cli/azd/extensi
 
       if (endpoint === octokit.rest.pulls.listReviews) {
         return Promise.resolve(reviews);
+      }
+
+      if (endpoint === octokit.rest.teams.listMembersInOrg) {
+        return Promise.resolve(teamMembers);
       }
 
       return Promise.resolve([]);
@@ -613,17 +758,18 @@ async function createLiveOctokit() {
 /**
  * @param {Octokit} octokit
  * @param {number} prNumber
+ * @param {{ owner?: string, repo?: string }} [target]
  * @returns {Promise<Context>}
  */
-async function createLiveContext(octokit, prNumber) {
+async function createLiveContext(octokit, prNumber, { owner = LIVE_TEST_OWNER, repo = LIVE_TEST_REPO } = {}) {
   const { data: pr } = await octokit.rest.pulls.get({
-    owner: LIVE_TEST_OWNER,
-    repo: LIVE_TEST_REPO,
+    owner,
+    repo,
     pull_number: prNumber,
   });
 
   return /** @type {Context} */ (/** @type {unknown} */ ({
-    repo: { owner: LIVE_TEST_OWNER, repo: LIVE_TEST_REPO },
+    repo: { owner, repo },
     payload: {
       pull_request: {
         number: pr.number,
@@ -719,7 +865,7 @@ liveDescribe('[live] registry diff PR scenarios', () => {
     if (sample.noReviewRequired) {
       expect(core.setFailed).not.toHaveBeenCalled();
     } else {
-      expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('requires core team review'));
+      expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('Core review required'));
     }
   }
 
@@ -727,12 +873,12 @@ liveDescribe('[live] registry diff PR scenarios', () => {
 
   describe("core approval bypass", () => {
     // https://github.com/Azure/azure-dev/pull/9027
-    it('[live] PR 9027 => core team member is the author', async () => {
+    it('[live] PR 9027 => core reviewer is the author', async () => {
       await runTestAgainstLivePr({ number: 9027, noReviewRequired: true });
     }, 90_000);
 
     // https://github.com/Azure/azure-dev/pull/8958
-    it('[live] PR 8958 => core team member approved', async () => {
+    it('[live] PR 8958 => core reviewer approved', async () => {
       await runTestAgainstLivePr({ number: 8958, noReviewRequired: true });
     }, 90_000);
   })
@@ -748,8 +894,53 @@ liveDescribe('[live] registry diff PR scenarios', () => {
   }, 90_000);
 
   // https://github.com/Azure/azure-dev/pull/8972
-  it('[live] PR 8972 => core team approval required because the PR changes another file', async () => {
+  it('[live] PR 8972 => core review required because the PR changes another file', async () => {
     await runTestAgainstLivePr({ number: 8972, noReviewRequired: false });
+  }, 90_000);
+});
+
+// Point this at a PR you're experimenting with (e.g. approve it, then leave a COMMENTED review, or
+// request changes) to verify the maintainer-approval short-circuit against GitHub's live review
+// state. It compares isApprovedByCoreTeam's verdict to what you expect. Requires RUN_LIVE_TESTS=1
+// plus:
+//   LIVE_APPROVAL_PR        - PR number to inspect
+//   LIVE_APPROVAL_EXPECTED  - 'true' or 'false' (expected isApprovedByCoreTeam result)
+//   LIVE_APPROVAL_TEAM      - optional comma-separated maintainer logins to treat as the core team
+//                             (defaults to the live registry maintainer team via getCoreReviewers)
+//   LIVE_APPROVAL_REPO      - optional 'owner/name' (defaults to Azure/azure-dev)
+const LIVE_APPROVAL_PR = process.env['LIVE_APPROVAL_PR'];
+const approvalLiveDescribe = RUN_LIVE_TESTS && LIVE_APPROVAL_PR ? describe : describe.skip;
+
+approvalLiveDescribe('[live] maintainer approval verdict', () => {
+  it('[live] isApprovedByCoreTeam matches the expected verdict for LIVE_APPROVAL_PR', async () => {
+    const prNumber = Number(LIVE_APPROVAL_PR);
+    if (!Number.isInteger(prNumber)) {
+      throw new Error(`LIVE_APPROVAL_PR must be a PR number, got: ${LIVE_APPROVAL_PR}`);
+    }
+
+    const expectedRaw = process.env['LIVE_APPROVAL_EXPECTED'];
+    if (expectedRaw !== 'true' && expectedRaw !== 'false') {
+      throw new Error(`LIVE_APPROVAL_EXPECTED must be 'true' or 'false', got: ${expectedRaw}`);
+    }
+    const expected = expectedRaw === 'true';
+
+    const [owner = LIVE_TEST_OWNER, repo = LIVE_TEST_REPO] = (process.env['LIVE_APPROVAL_REPO'] || '').split('/');
+
+    const octokit = await createLiveOctokit();
+    const context = await createLiveContext(octokit, prNumber, { owner, repo });
+    const core = createNoopCore();
+
+    const teamEnv = (process.env['LIVE_APPROVAL_TEAM'] || '')
+      .split(',')
+      .map((login) => login.trim())
+      .filter((login) => login.length > 0);
+    const coreTeam = teamEnv.length > 0
+      ? new Set(teamEnv)
+      : await getCoreReviewers({ octokit, context, core });
+
+    const approved = await isApprovedByCoreTeam({ octokit, context, core, coreTeam });
+
+    expect(approved).toBe(expected);
   }, 90_000);
 });
 

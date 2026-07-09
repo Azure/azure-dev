@@ -6,28 +6,14 @@ module.exports = run;
 // Test-only helpers exposed on the action entry point.
 module.exports.forTests = {
   getRegistryJson,
+  getCoreReviewers,
   isApprovedByCoreTeam,
   isAllowedRegistryJsonUpdate,
   isCreatedByCoreTeam,
-  coreExtensionApprovers,
   diffRegistry,
 }
 
-/**
- * Users that, when they approve, bypass any checks in this file.
- */
-function coreExtensionApprovers() {
-  return new Set([
-    "hemarina",
-    "JeffreyCA",
-    "RickWinter",
-    // TODO: bring me back from the dead!
-    // "richardpark-msft",
-    "tg-msft",
-    "vhvb1989",
-  ]);
-}
-
+const CORE_REVIEW_TEAM_SLUG = 'azure-dev-extregistry-maintain';
 const REGISTRY_JSON_PATH = 'cli/azd/extensions/registry.json';
 
 // GitHub action types
@@ -73,30 +59,31 @@ const REGISTRY_JSON_PATH = 'cli/azd/extensions/registry.json';
 /**
  * @param {{ github: Octokit, context: Context, core: Core, coreTeam?: Set<string>, registryBaseRef?: string }} args
  */
-async function run({ github: octokit, context, core, coreTeam = coreExtensionApprovers(), registryBaseRef }) {
+async function run({ github: octokit, context, core, coreTeam, registryBaseRef }) {
   try {
     assertHasPullRequest(context);
     const baseRef = registryBaseRef ?? context.payload.pull_request['base']?.sha ?? 'main';
+    const coreReviewers = coreTeam ?? await getCoreReviewers({ octokit, context, core });
 
-    // no extra checks needed if a core team member authored the PR.
-    if (isCreatedByCoreTeam({ context, core, coreTeam })) {
-      core.info(`PR was created by a core team, no further checks needed`)
+    // no extra checks needed if a registry maintainer authored the PR.
+    if (isCreatedByCoreTeam({ context, core, coreTeam: coreReviewers })) {
+      core.info(`PR was created by a registry maintainer, no further checks needed`)
       return;
     }
 
-    // no extra checks needed if a core team member has already approved it.
-    if (await isApprovedByCoreTeam({ octokit, context, core, coreTeam })) {
-      core.info(`PR was approved by a core team member, no further checks needed`)
+    // no extra checks needed if a registry maintainer has already approved it.
+    if (await isApprovedByCoreTeam({ octokit, context, core, coreTeam: coreReviewers })) {
+      core.info(`PR was approved by a registry maintainer, no further checks needed`)
       return;
     }
 
-    // Non-registry file changes require core-team review.
+    // Non-registry file changes require core review.
     const changedFileReviewReasons = await getChangedFileReviewReasons({
       octokit,
       context,
     });
 
-    // Simple release-only registry changes can proceed without core-team review.
+    // Simple release-only registry changes can proceed without core review.
     const registryReviewReasons = await isAllowedRegistryJsonUpdate({
       octokit,
       context,
@@ -106,20 +93,52 @@ async function run({ github: octokit, context, core, coreTeam = coreExtensionApp
     const reviewReasons = changedFileReviewReasons.concat(registryReviewReasons);
 
     if (reviewReasons.length === 0) {
-      core.info(`PR registry changes do not require core team review (no changes in capabilities, providers)`)
+      core.info(`PR registry changes do not require core review (no changes in capabilities, providers)`)
       return;
     }
 
     core.setFailed(
-      "PR changes the extension registry in a way that requires core team review:\n" +
+      "Core review required for this extension registry change:\n" +
       reviewReasons.map((r) => `- ${r}`).join("\n") +
       "\n\nTo fix:\n" +
-      `1. Have any core team member review and approve this PR. Core team members: (${[...coreExtensionApprovers()].join(", ")})\n` +
+      `1. Have a member of @${context.repo.owner}/${CORE_REVIEW_TEAM_SLUG} review and approve this PR.\n` +
       `2. After approval, re-run this build step so it'll re-evaluate the PR - no commits or pushes needed.`
     );
   } catch (err) {
     core.setFailed(`Internal failure in script: ${err instanceof Error ? err.message : err}`);
   }
+}
+
+/**
+ * @param {{ octokit: Octokit, context: Context, core: Core }} args
+ * @returns {Promise<Set<string>>}
+ */
+async function getCoreReviewers({ octokit, context, core }) {
+  let members;
+  try {
+    members = await octokit.paginate(octokit.rest.teams.listMembersInOrg, {
+      org: context.repo.owner,
+      team_slug: CORE_REVIEW_TEAM_SLUG,
+      per_page: 100,
+    });
+  } catch (err) {
+    throw new Error(
+      `Unable to load registry maintainers from @${context.repo.owner}/${CORE_REVIEW_TEAM_SLUG}; ` +
+      `the workflow token may not have permission to read organization team membership: ${err instanceof Error ? err.message : err}`
+    );
+  }
+
+  const logins = members
+    .map((member) => member.login)
+    .filter((login) => typeof login === 'string' && login.length > 0)
+    .sort();
+
+  if (logins.length === 0) {
+    throw new Error(`No registry maintainers found in @${context.repo.owner}/${CORE_REVIEW_TEAM_SLUG}`);
+  }
+
+  core.info(`Loaded ${logins.length} registry maintainer(s) from @${context.repo.owner}/${CORE_REVIEW_TEAM_SLUG}: ${logins.join(', ')}`);
+  return new Set(logins);
 }
 
 /**
@@ -143,16 +162,25 @@ async function isApprovedByCoreTeam({ octokit, context, core, coreTeam }) {
     throw new Error('Unable to determine PR head sha for approval freshness check');
   }
 
-  // users can have multiple reviews (ie, they requested changes, then they approved), so we'll
-  // make sure we get their absolutely latest review state.
+  // Users can have multiple reviews (ie, they requested changes, then they approved), so we'll
+  // make sure we get their absolutely latest *decisive* review state.
+
+  // COMMENTED / PENDING reviews are not a verdict - GitHub itself never treats them as changing a
+  // reviewer's approval standing, so we ignore them here too. Otherwise a maintainer who approves
+  // the head commit and then merely leaves a comment (a new COMMENTED review row) would look like
+  // they had withdrawn their approval. We keep APPROVED / CHANGES_REQUESTED / DISMISSED so that a
+  // later request-changes (or dismissal) from the same maintainer correctly overrides an earlier
+  // approval - we don't want to skip review for a PR that a maintainer both approved and then
+  // requested changes on.
+  const IGNORED_REVIEW_STATES = new Set(['COMMENTED', 'PENDING']);
 
   // NOTE: api docs indicate reviews always come back in chronological order, according to their docs,
-  // and Map.set keeps the last entry per key - so this is "latest review per core-team user".
+  // and Map.set keeps the last entry per key - so this is "latest decisive review per registry maintainer".
   /** @type {Map<string, { state: Review['state'], commitId: Review['commit_id'] }>} */
   const latestByUser = new Map();
 
   for (const review of reviews) {
-    if (review.user != null && coreTeam.has(review.user.login)) {
+    if (review.user != null && coreTeam.has(review.user.login) && !IGNORED_REVIEW_STATES.has(review.state)) {
       latestByUser.set(review.user.login, {
         state: review.state,
         commitId: review.commit_id,
@@ -160,13 +188,12 @@ async function isApprovedByCoreTeam({ octokit, context, core, coreTeam }) {
     }
   }
 
-  // GitHub will take care of blocking the PR if reviewers did a request-changes, for instance.
   const coreApprovals = [...latestByUser]
     .filter(([, review]) => review.state === 'APPROVED' && review.commitId === headSha)
     .map(([login]) => login);
 
   if (coreApprovals != null && coreApprovals.length > 0) {
-    core.info(`PR head commit approved by member(s) of the AZD team (${coreApprovals.join(",")})`)
+    core.info(`PR head commit approved by registry maintainer(s) (${coreApprovals.join(",")})`)
     return true;
   }
 
@@ -175,7 +202,7 @@ async function isApprovedByCoreTeam({ octokit, context, core, coreTeam }) {
 
 /**
  * @param {{ context: Context, core: Core, coreTeam: Set<string> }} args
- * @returns {boolean} true if the PR author is a member of the core team, false otherwise.
+ * @returns {boolean} true if the PR author is a registry maintainer, false otherwise.
  */
 function isCreatedByCoreTeam({ context, core, coreTeam }) {
   if (coreTeam == null || coreTeam.size === 0) {
@@ -198,7 +225,7 @@ function isCreatedByCoreTeam({ context, core, coreTeam }) {
  * Checks whether the registry update is simple enough to proceed without core-team review.
  *
  * @param {{ octokit: Octokit, context: Context, registryBaseRef?: string }} args
- * @returns {Promise<string[]>} the reasons core team review is needed; empty means the change is approved
+ * @returns {Promise<string[]>} the reasons core review is needed; empty means the change is approved
  */
 async function isAllowedRegistryJsonUpdate({ octokit, context, registryBaseRef = 'main' }) {
   assertHasPullRequest(context);
@@ -267,7 +294,7 @@ function diffChangedFiles(changedFiles) {
   }
 
   return [
-    `PR changes files outside ${REGISTRY_JSON_PATH}; registry auto-approval only applies to registry-only PRs: ${unexpectedFiles.join(', ')}`,
+    `PR changes files outside ${REGISTRY_JSON_PATH}; core review required for non-registry-only PRs: ${unexpectedFiles.join(', ')}`,
   ];
 }
 
@@ -297,15 +324,15 @@ async function getRegistryJson({ octokit, owner, repo, ref }) {
 
 /**
  * Diffs the base (main) registry against the registry proposed by a PR and decides
- * whether the change is safe enough to auto-approve, or whether a core team member
+ * whether the change can proceed without core review, or whether a core reviewer
  * needs to review it.
  *
- * New releases can be auto-approved when they keep the previous release's
+ * New releases can proceed without core review when they keep the previous release's
  * capabilities and providers, and only add a new release to an existing extension.
  * 
  * @param {RegistryJson} baseRegistry  registry.json as it exists on main
  * @param {RegistryJson} prRegistry    registry.json as proposed by the PR
- * @returns {string[]} the reasons core team review is needed; empty means the change is approved
+ * @returns {string[]} the reasons core review is needed; empty means the change is approved
  */
 function diffRegistry(baseRegistry, prRegistry) {
   /** @type {string[]} */
@@ -314,17 +341,17 @@ function diffRegistry(baseRegistry, prRegistry) {
   const baseExtensions = new Map((baseRegistry.extensions ?? []).map((e) => [e.id, e]));
   const prExtensions = new Map((prRegistry.extensions ?? []).map((e) => [e.id, e]));
 
-  // brand new extensions can't be auto-approved.
+  // brand new extensions require core review.
   for (const id of prExtensions.keys()) {
     if (!baseExtensions.has(id)) {
-      reasons.push(`extension '${id}' is new; new extensions cannot be auto-approved`);
+      reasons.push(`extension '${id}' is new; new extensions require core review`);
     }
   }
 
-  // removing an existing extension can't be auto-approved.
+  // removing an existing extension requires core review.
   for (const id of baseExtensions.keys()) {
     if (!prExtensions.has(id)) {
-      reasons.push(`extension '${id}' was removed; removing extensions cannot be auto-approved`);
+      reasons.push(`extension '${id}' was removed; removing extensions requires core review`);
     }
   }
 
@@ -336,7 +363,7 @@ function diffRegistry(baseRegistry, prRegistry) {
     }
 
     if (baseExtension.namespace !== prExtension.namespace) {
-      reasons.push(`extension '${id}' namespace changed; namespace changes cannot be auto-approved`);
+      reasons.push(`extension '${id}' namespace changed; namespace changes require core review`);
     }
 
     const baseVersions = new Map((baseExtension.versions ?? []).map((v) => [v.version, v]));

@@ -330,6 +330,8 @@ no file paths, no user-identifiable data, no raw error text.
 | Outcome | `validation.preflight.outcome` | SystemMetadata | FeatureInsight | Values: `passed`, `warnings_accepted`, `aborted_by_errors`, `aborted_by_user`, `skipped`, `error` |
 | Diagnostic IDs | `validation.preflight.diagnostics` | SystemMetadata | FeatureInsight | List of diagnostic IDs emitted by preflight checks (fixed code-defined enum, e.g. `role_assignment_missing`, `role_assignment_conditional`) |
 | Rule IDs | `validation.preflight.rules` | SystemMetadata | FeatureInsight | List of rule IDs that were executed (fixed code-defined enum, e.g. `role_assignment_permissions`) |
+| Extension rule IDs | `validation.preflight.extension_rules` | SystemMetadata | FeatureInsight | List of rule IDs from extension-provided validation checks (fixed code-defined enum) |
+| Check type | `validation.preflight.check_type` | SystemMetadata | FeatureInsight | Dispatch site: `local-preflight` (Bicep provider) or `provision` (provider-agnostic). Both share `validation.preflight`; on Bicep provisions both fire, so consumers must group/filter by this to avoid double-counting |
 | Warning count | `validation.preflight.warning.count` | SystemMetadata | FeatureInsight | **Measurement** |
 | Error count | `validation.preflight.error.count` | SystemMetadata | FeatureInsight | **Measurement** |
 

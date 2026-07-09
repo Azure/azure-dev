@@ -946,9 +946,15 @@ Extensions can provide AI agent tools through the Model Context Protocol, enabli
 Extensions can contribute validation checks to azd's validation pipeline. Currently
 supported check types:
 
-- **`local-preflight`** — Checks run during `azd provision` before deployment. The
-  extension receives the Bicep snapshot, ARM template, ARM parameters, and Azure
-  location as context.
+- **`local-preflight`** — Bicep-only checks run during `azd provision` before
+  deployment. The extension receives the Bicep snapshot, ARM template, ARM
+  parameters, and Azure location as context. These only fire for Bicep-provisioned
+  deployments.
+- **`provision`** — Provider-agnostic checks run immediately before provisioning,
+  regardless of the provider (Bicep, Terraform, or extension-provided providers such
+  as `microsoft.foundry` and `demo`). The context is lean — environment name,
+  subscription id, location, resource group, and target scope — and carries **no**
+  ARM template. Use this check type when your check must run for a non-Bicep provider.
 
 Future check types (e.g., `project-config`, `auth`) can be added without protocol
 changes.
@@ -958,10 +964,10 @@ changes.
 ```go
 host := azdext.NewExtensionHost(azdClient).
     WithValidationCheck(azdext.ValidationCheckRegistration{
-        CheckType: "local-preflight",
-        RuleID:    "my_naming_rule",
+        CheckType: azdext.ValidationCheckTypeProvision, // provider-agnostic
+        RuleID:    "my_location_rule",
         Factory: func() azdext.ValidationCheckProvider {
-            return &MyNamingCheck{}
+            return &MyLocationCheck{}
         },
     })
 ```
@@ -1533,6 +1539,23 @@ To re-generate gRPC clients:
 ## gRPC Services
 
 The following are a list of available gRPC services for extension developer to integrate with `azd` core.
+
+Service-level `env` entries from `azure.yaml` are expanded by `azd` against the environment for
+the current session and forwarded to extensions as `ServiceConfig.environment`. The forwarded
+values are the expanded results, not the raw `${VAR}` templates. When a service config is written
+back through `ProjectService.AddService`, entries whose values are unchanged keep their original
+`${VAR}` references in `azure.yaml`, while new or changed values are persisted as literals (any
+`$` or `\` in a stored literal is escaped in `azure.yaml` so the value round-trips unchanged).
+
+Because `ServiceConfig.environment` carries expanded values, `AddService` cannot author `${VAR}`
+references: a new service or a new env key is always persisted as a literal. To create or edit
+raw `${VAR}` templates in `azure.yaml`, use the service config RPCs instead —
+`GetServiceConfigSection`/`SetServiceConfigSection` (or the `Value` variants) with the `env`
+path — which read and write the raw document exactly as written. Two caveats when using them:
+values written through the config RPCs are treated as templates, so escape `$` as `$$` when a
+literal dollar is intended; and when editing templates, read them through the config RPCs too —
+writing values taken from `ServiceConfig.environment` back through a config RPC would persist
+the expanded results in place of the original `${VAR}` references.
 
 ### Table of Contents
 

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -15,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/google/uuid"
@@ -26,7 +28,7 @@ type ExternalServiceTarget struct {
 	targetKind ServiceTargetKind
 	console    input.Console
 	prompters  prompt.Prompter
-	env        *environment.Environment
+	lazyEnv    *lazy.Lazy[*environment.Environment]
 
 	broker *grpcbroker.MessageBroker[azdext.ServiceTargetMessage]
 }
@@ -48,7 +50,7 @@ func NewExternalServiceTarget(
 	broker *grpcbroker.MessageBroker[azdext.ServiceTargetMessage],
 	console input.Console,
 	prompters prompt.Prompter,
-	env *environment.Environment,
+	lazyEnv *lazy.Lazy[*environment.Environment],
 ) ServiceTarget {
 	target := &ExternalServiceTarget{
 		extension:  extension,
@@ -56,11 +58,17 @@ func NewExternalServiceTarget(
 		targetKind: kind,
 		console:    console,
 		prompters:  prompters,
-		env:        env,
+		lazyEnv:    lazyEnv,
 		broker:     broker,
 	}
 
 	return target
+}
+
+// toProtoServiceConfig converts a ServiceConfig to its proto representation, expanding
+// expandable values against the environment for the current session.
+func (est *ExternalServiceTarget) toProtoServiceConfig(serviceConfig *ServiceConfig) (*azdext.ServiceConfig, error) {
+	return serviceConfigToProto(est.lazyEnv, serviceConfig)
 }
 
 // Publish implements ServiceTarget.
@@ -72,8 +80,7 @@ func (est *ExternalServiceTarget) Publish(
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
 ) (*ServicePublishResult, error) {
-	var protoServiceConfig *azdext.ServiceConfig
-	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, &protoServiceConfig)
+	protoServiceConfig, err := est.toProtoServiceConfig(serviceConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -128,8 +135,7 @@ func (est *ExternalServiceTarget) Initialize(ctx context.Context, serviceConfig 
 		return errors.New("service configuration is required")
 	}
 
-	var protoServiceConfig *azdext.ServiceConfig
-	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, &protoServiceConfig)
+	protoServiceConfig, err := est.toProtoServiceConfig(serviceConfig)
 	if err != nil {
 		return err
 	}
@@ -162,8 +168,7 @@ func (est *ExternalServiceTarget) Package(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	var protoServiceConfig *azdext.ServiceConfig
-	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, &protoServiceConfig)
+	protoServiceConfig, err := est.toProtoServiceConfig(serviceConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -211,8 +216,7 @@ func (est *ExternalServiceTarget) Deploy(
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
 	// Convert project types to protobuf types
-	var protoServiceConfig *azdext.ServiceConfig
-	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, &protoServiceConfig)
+	protoServiceConfig, err := est.toProtoServiceConfig(serviceConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -265,8 +269,7 @@ func (est *ExternalServiceTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
-	var protoServiceConfig *azdext.ServiceConfig
-	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, &protoServiceConfig)
+	protoServiceConfig, err := est.toProtoServiceConfig(serviceConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -306,8 +309,7 @@ func (est *ExternalServiceTarget) ResolveTargetResource(
 	serviceConfig *ServiceConfig,
 	defaultResolver func() (*environment.TargetResource, error),
 ) (*environment.TargetResource, error) {
-	var protoServiceConfig *azdext.ServiceConfig
-	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, &protoServiceConfig)
+	protoServiceConfig, err := est.toProtoServiceConfig(serviceConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -368,6 +370,39 @@ func envResolver(env *environment.Environment) mapper.Resolver {
 
 		return env.Getenv(key)
 	}
+}
+
+// serviceConfigToProto converts a ServiceConfig to its proto representation for an external
+// provider, resolving the environment from lazyEnv at call time so values reflect the current
+// session environment. When the environment cannot be loaded, the failure is logged and
+// expandable values are expanded with empty strings.
+func serviceConfigToProto(
+	lazyEnv *lazy.Lazy[*environment.Environment],
+	serviceConfig *ServiceConfig,
+) (*azdext.ServiceConfig, error) {
+	if serviceConfig == nil {
+		return nil, nil
+	}
+
+	var env *environment.Environment
+	if lazyEnv != nil {
+		var err error
+		env, err = lazyEnv.GetValue()
+		if err != nil {
+			log.Printf(
+				"converting service config %q: environment unavailable, expanding with empty values: %v",
+				serviceConfig.Name,
+				err,
+			)
+		}
+	}
+
+	var protoConfig *azdext.ServiceConfig
+	if err := mapper.WithResolver(envResolver(env)).Convert(serviceConfig, &protoConfig); err != nil {
+		return nil, fmt.Errorf("converting service config: %w", err)
+	}
+
+	return protoConfig, nil
 }
 
 func createProgressFunc(progress *async.Progress[ServiceProgress]) func(string) {

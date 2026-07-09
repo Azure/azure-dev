@@ -341,9 +341,21 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 // templates/ root into infraDir, preserving the relative tree, and returns the
 // files written (with sizes). On any error it removes the partial infraDir.
 //
-// main.arm.json (the pre-compiled ARM JSON) is skipped: eject hands the user
-// the human-readable Bicep, and the embedded JSON would be stale once they
-// edit main.bicep.
+// Three files are skipped:
+//   - main.arm.json (the pre-compiled ARM JSON): eject hands the user the
+//     human-readable Bicep, and the embedded JSON would be stale once they
+//     edit main.bicep.
+//   - brownfield.bicep and brownfield.arm.json: dead weight in a greenfield
+//     eject. ejectInfra already refuses to eject a brownfield (endpoint:)
+//     project (see CodeInfraEjectBrownfieldUnsupported above), so this
+//     function only ever runs for greenfield services. main.bicep has no
+//     module reference to brownfield.bicep, and the provider's brownfield
+//     deploy/preview path always loads the embedded
+//     synthesis.BrownfieldARMTemplate() rather than anything under infra/ —
+//     even if a service is later converted to brownfield by adding endpoint:
+//     while infra/main.bicep still exists on disk. So these two files would
+//     never be compiled, deployed, or read by anything; shipping them in
+//     every eject only invited the question "are these required?".
 func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
 	//nolint:gosec // G301: ejected infra/ directory must be readable/traversable by IDEs, Git, and CI
 	if err := os.MkdirAll(infraDir, 0o755); err != nil {
@@ -385,7 +397,8 @@ func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
 			return nil
 		}
 
-		if filepath.Base(p) == "main.arm.json" {
+		switch filepath.Base(p) {
+		case "main.arm.json", "brownfield.bicep", "brownfield.arm.json":
 			return nil
 		}
 

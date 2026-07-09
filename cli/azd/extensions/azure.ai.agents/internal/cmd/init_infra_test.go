@@ -180,12 +180,14 @@ func TestEjectInfra_HappyPath_WritesExpectedFiles(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	// Every embedded template under templates/ (except main.arm.json) should
+	// Every embedded template under templates/ (except main.arm.json and the
+	// dead-in-a-greenfield-eject brownfield.bicep/brownfield.arm.json) should
 	// be on disk under ./infra/, plus the synthesized main.parameters.json.
 	expected := []string{
 		filepath.Join("infra", "main.bicep"),
 		filepath.Join("infra", "abbreviations.json"),
 		filepath.Join("infra", "modules", "acr.bicep"),
+		filepath.Join("infra", "modules", "connections.bicep"),
 		filepath.Join("infra", "modules", "network.bicep"),
 		filepath.Join("infra", "modules", "subnet.bicep"),
 		filepath.Join("infra", "modules", "private-endpoint-dns.bicep"),
@@ -203,6 +205,22 @@ func TestEjectInfra_HappyPath_WritesExpectedFiles(t *testing.T) {
 	assert.True(t, os.IsNotExist(err),
 		"main.arm.json should be excluded from the ejected tree (it would be stale "+
 			"the moment the user edits main.bicep)")
+
+	// brownfield.bicep/brownfield.arm.json are deliberately excluded too: a
+	// brownfield (endpoint:) project can't eject at all (see
+	// TestEjectInfra_RefusesWhenBrownfieldEndpoint), and the provider's
+	// brownfield deploy/preview path always loads the embedded
+	// synthesis.BrownfieldARMTemplate(), never anything under infra/ — so
+	// these files would never be compiled, deployed, or read by anything in
+	// a greenfield eject.
+	for _, rel := range []string{
+		filepath.Join("infra", "brownfield.bicep"),
+		filepath.Join("infra", "brownfield.arm.json"),
+	} {
+		_, err := os.Stat(filepath.Join(dir, rel))
+		assert.True(t, os.IsNotExist(err),
+			"%s should be excluded from the ejected tree (unused in a greenfield eject)", rel)
+	}
 
 	// Spec's success block elements.
 	assert.Contains(t, stdout, "Generating infrastructure files from azure.yaml")

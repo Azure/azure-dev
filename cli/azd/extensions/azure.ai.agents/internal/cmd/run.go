@@ -952,11 +952,22 @@ func emitNextAfterBind(
 	_ = printNextIfTerminal(os.Stdout, nextstep.ResolveAfterRun(state, serviceName, readmeExistsForProject(ctx, azdClient)))
 }
 
-// portReadyBudget is the wall-clock ceiling for waitForPortReady;
-// most agent runtimes (uvicorn, dotnet, node) bind within a second
-// of start so 5 s is generous without making a failed boot drag
-// the user's attention.
-const portReadyBudget = 5 * time.Second
+// portReadyBudget is the wall-clock ceiling for waitForPortReady, which
+// spans process-start → the server accepting on the loopback port.
+// (Dependency setup — venv creation + pip install — runs before the
+// server process is spawned, so it is NOT part of this window.) The gap
+// this budget covers is the interpreter booting and importing the agent
+// stack before it binds: empirically ~3–5 s for a minimal sample and
+// ~8 s once heavier frameworks (e.g. agent_framework) are imported, with
+// more on cold caches or slow CI. A short budget gives up before the
+// listener is up, so the "Agent ready" signal never prints and a user
+// (or coding agent) following the quickstart fires `invoke --local`
+// against a listener that isn't accepting yet. 90 s leaves generous
+// headroom for slow imports while still bounding a genuinely stuck boot.
+// The budget is effectively free: it only governs a background goroutine
+// that prints a readiness hint, and waitForPortReady honors ctx.Done, so
+// Ctrl+C during the wait returns immediately. See issue #8411.
+const portReadyBudget = 90 * time.Second
 
 // portReadyPollInterval is how often waitForPortReady probes the
 // loopback address; 100 ms is short enough to feel snappy while

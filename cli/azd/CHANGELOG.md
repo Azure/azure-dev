@@ -1,6 +1,6 @@
 # Release History
 
-## 1.29.0-beta.1 (Unreleased)
+## 1.28.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -10,7 +10,7 @@
 
 ### Other Changes
 
-## 1.28.0 (2026-07-08)
+## 1.27.1 (2026-07-09)
 
 ### Features Added
 

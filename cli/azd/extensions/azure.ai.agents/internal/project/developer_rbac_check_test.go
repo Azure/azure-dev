@@ -66,7 +66,7 @@ func TestSufficientRoleLists(t *testing.T) {
 	assert.Contains(t, sufficientAIUserRoles, roleAzureAIUser)
 	assert.Contains(t, sufficientAIUserRoles, roleAzureAIDeveloper)
 
-	// Role-assignment write: Owner, UAA, RBAC Admin, Azure AI Project Manager, Azure AI Account Owner;
+	// Role-assignment write: Owner, UAA, RBAC Admin, Foundry Project Manager, Foundry Account Owner;
 	// Contributor must NOT be included.
 	assert.Contains(t, sufficientRoleAssignWriteRoles, roleOwner)
 	assert.Contains(t, sufficientRoleAssignWriteRoles, roleUserAccessAdministrator)

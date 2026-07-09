@@ -31,8 +31,9 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.PersistentFlags().StringP("project-endpoint", "p", "",
 		"Foundry project endpoint URL (overrides env var and config)")
 	rootCmd.PersistentFlags().String(routineHTTPTimeoutFlag, "",
-		fmt.Sprintf("HTTP request timeout (for example, 2m or 90s). Defaults to %s.",
-			routines.DefaultRequestTimeout))
+		fmt.Sprintf("HTTP request timeout override (for example, 2m or 90s). "+
+			"Defaults to %s for reads and %s for writes.",
+			routines.DefaultReadRequestTimeout, routines.DefaultWriteRequestTimeout))
 
 	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
 	rootCmd.AddCommand(newContextCommand())

@@ -165,7 +165,7 @@ func parseRoutineServiceConfig(svc *azdext.ServiceConfig) (*routines.Routine, er
 // upserts. It mirrors newRoutineClient but takes no cobra command, since a
 // service target has no flags.
 func newRoutineServiceClient(ctx context.Context) (*routines.Client, error) {
-	requestTimeout, err := routineHTTPTimeoutFromEnv()
+	requestTimeout, err := routineHTTPTimeoutOverrideFromEnv()
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func newRoutineServiceClient(ctx context.Context) (*routines.Client, error) {
 	return routines.NewClient(
 		resolved.Endpoint,
 		cred,
-		&routines.ClientOptions{RequestTimeout: requestTimeout},
+		routineClientOptions(requestTimeout),
 	), nil
 }
 

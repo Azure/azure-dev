@@ -27,7 +27,7 @@ const (
 
 // newRoutineClient resolves an authenticated routine client.
 func newRoutineClient(ctx context.Context, cmd *cobra.Command) (*routines.Client, string, error) {
-	requestTimeout, err := routineHTTPTimeoutFromCommand(cmd)
+	requestTimeout, err := routineHTTPTimeoutOverrideFromCommand(cmd)
 	if err != nil {
 		return nil, "", err
 	}
@@ -53,11 +53,18 @@ func newRoutineClient(ctx context.Context, cmd *cobra.Command) (*routines.Client
 	return routines.NewClient(
 		resolved.Endpoint,
 		cred,
-		&routines.ClientOptions{RequestTimeout: requestTimeout},
+		routineClientOptions(requestTimeout),
 	), resolved.Endpoint, nil
 }
 
-func routineHTTPTimeoutFromCommand(cmd *cobra.Command) (time.Duration, error) {
+func routineClientOptions(timeoutOverride time.Duration) *routines.ClientOptions {
+	if timeoutOverride <= 0 {
+		return nil
+	}
+	return &routines.ClientOptions{RequestTimeout: timeoutOverride}
+}
+
+func routineHTTPTimeoutOverrideFromCommand(cmd *cobra.Command) (time.Duration, error) {
 	if cmd != nil {
 		if flag := cmd.Flag(routineHTTPTimeoutFlag); flag != nil && flag.Changed {
 			return parseRoutineHTTPTimeout(
@@ -66,13 +73,13 @@ func routineHTTPTimeoutFromCommand(cmd *cobra.Command) (time.Duration, error) {
 			)
 		}
 	}
-	return routineHTTPTimeoutFromEnv()
+	return routineHTTPTimeoutOverrideFromEnv()
 }
 
-func routineHTTPTimeoutFromEnv() (time.Duration, error) {
+func routineHTTPTimeoutOverrideFromEnv() (time.Duration, error) {
 	raw, ok := os.LookupEnv(routineHTTPTimeoutEnvVar)
 	if !ok {
-		return routines.DefaultRequestTimeout, nil
+		return 0, nil
 	}
 	return parseRoutineHTTPTimeout(raw, routineHTTPTimeoutEnvVar)
 }

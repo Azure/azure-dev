@@ -34,26 +34,26 @@ func unsetEnv(t *testing.T, key string) {
 
 // --- HTTP timeout config
 
-func TestRoutineHTTPTimeoutFromEnv_Default(t *testing.T) {
+func TestRoutineHTTPTimeoutOverrideFromEnv_Default(t *testing.T) {
 	unsetEnv(t, routineHTTPTimeoutEnvVar)
 
-	got, err := routineHTTPTimeoutFromEnv()
+	got, err := routineHTTPTimeoutOverrideFromEnv()
 	require.NoError(t, err)
-	assert.Equal(t, routines.DefaultRequestTimeout, got)
+	assert.Zero(t, got)
 }
 
-func TestRoutineHTTPTimeoutFromEnv_Override(t *testing.T) {
+func TestRoutineHTTPTimeoutOverrideFromEnv_Override(t *testing.T) {
 	t.Setenv(routineHTTPTimeoutEnvVar, "90s")
 
-	got, err := routineHTTPTimeoutFromEnv()
+	got, err := routineHTTPTimeoutOverrideFromEnv()
 	require.NoError(t, err)
 	assert.Equal(t, 90*time.Second, got)
 }
 
-func TestRoutineHTTPTimeoutFromEnv_Invalid(t *testing.T) {
+func TestRoutineHTTPTimeoutOverrideFromEnv_Invalid(t *testing.T) {
 	t.Setenv(routineHTTPTimeoutEnvVar, "soon")
 
-	_, err := routineHTTPTimeoutFromEnv()
+	_, err := routineHTTPTimeoutOverrideFromEnv()
 	require.Error(t, err)
 
 	var localErr *azdext.LocalError
@@ -62,18 +62,18 @@ func TestRoutineHTTPTimeoutFromEnv_Invalid(t *testing.T) {
 	assert.Contains(t, localErr.Message, routineHTTPTimeoutEnvVar)
 }
 
-func TestRoutineHTTPTimeoutFromCommand_FlagWins(t *testing.T) {
+func TestRoutineHTTPTimeoutOverrideFromCommand_FlagWins(t *testing.T) {
 	t.Setenv(routineHTTPTimeoutEnvVar, "5m")
 	cmd := &cobra.Command{}
 	cmd.Flags().String(routineHTTPTimeoutFlag, "", "")
 	require.NoError(t, cmd.Flags().Set(routineHTTPTimeoutFlag, "90s"))
 
-	got, err := routineHTTPTimeoutFromCommand(cmd)
+	got, err := routineHTTPTimeoutOverrideFromCommand(cmd)
 	require.NoError(t, err)
 	assert.Equal(t, 90*time.Second, got)
 }
 
-func TestRoutineHTTPTimeoutFromCommand_InheritedFlagWins(t *testing.T) {
+func TestRoutineHTTPTimeoutOverrideFromCommand_InheritedFlagWins(t *testing.T) {
 	t.Setenv(routineHTTPTimeoutEnvVar, "5m")
 	var got time.Duration
 
@@ -83,7 +83,7 @@ func TestRoutineHTTPTimeoutFromCommand_InheritedFlagWins(t *testing.T) {
 		Use: "child",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var err error
-			got, err = routineHTTPTimeoutFromCommand(cmd)
+			got, err = routineHTTPTimeoutOverrideFromCommand(cmd)
 			return err
 		},
 	}
@@ -92,6 +92,13 @@ func TestRoutineHTTPTimeoutFromCommand_InheritedFlagWins(t *testing.T) {
 
 	require.NoError(t, rootCmd.Execute())
 	assert.Equal(t, 90*time.Second, got)
+}
+
+func TestRoutineClientOptions_DefaultsToSeparateTimeouts(t *testing.T) {
+	assert.Nil(t, routineClientOptions(0))
+	assert.Equal(t, &routines.ClientOptions{
+		RequestTimeout: 90 * time.Second,
+	}, routineClientOptions(90*time.Second))
 }
 
 func TestRootCommandRegistersTimeoutFlag(t *testing.T) {

@@ -28,13 +28,19 @@ const (
 	routinesPreviewValue  = "Routines=V1Preview"
 )
 
-// DefaultRequestTimeout is the default timeout for each HTTP try.
-const DefaultRequestTimeout = 2 * time.Minute
+const (
+	// DefaultReadRequestTimeout is the default timeout for read tries.
+	DefaultReadRequestTimeout = 30 * time.Second
+
+	// DefaultWriteRequestTimeout is the default timeout for write tries.
+	DefaultWriteRequestTimeout = 2 * time.Minute
+)
 
 // Client is a Foundry Routines data-plane client.
 type Client struct {
-	endpoint string
-	pipeline runtime.Pipeline
+	endpoint      string
+	readPipeline  runtime.Pipeline
+	writePipeline runtime.Pipeline
 }
 
 // ClientOptions configures a Routines data-plane client.
@@ -65,16 +71,24 @@ func newHTTPClient(requestTimeout time.Duration) *http.Client {
 	return &http.Client{Transport: transport}
 }
 
-func resolveRequestTimeout(options *ClientOptions) time.Duration {
+func resolveRequestTimeouts(options *ClientOptions) (time.Duration, time.Duration) {
 	if options != nil && options.RequestTimeout > 0 {
-		return options.RequestTimeout
+		return options.RequestTimeout, options.RequestTimeout
 	}
-	return DefaultRequestTimeout
+	return DefaultReadRequestTimeout, DefaultWriteRequestTimeout
 }
 
 // NewClient creates a new Routines data-plane client.
 func NewClient(endpoint string, cred azcore.TokenCredential, options *ClientOptions) *Client {
-	requestTimeout := resolveRequestTimeout(options)
+	readTimeout, writeTimeout := resolveRequestTimeouts(options)
+	return &Client{
+		endpoint:      strings.TrimRight(endpoint, "/"),
+		readPipeline:  newPipeline(cred, readTimeout),
+		writePipeline: newPipeline(cred, writeTimeout),
+	}
+}
+
+func newPipeline(cred azcore.TokenCredential, requestTimeout time.Duration) runtime.Pipeline {
 	clientOptions := &policy.ClientOptions{
 		Transport: newHTTPClient(requestTimeout),
 		Logging: policy.LogOptions{
@@ -95,14 +109,12 @@ func NewClient(endpoint string, cred azcore.TokenCredential, options *ClientOpti
 		},
 	}
 
-	pipeline := runtime.NewPipeline(
+	return runtime.NewPipeline(
 		"azure-ai-routines",
 		"v0.1.0",
 		runtime.PipelineOptions{},
 		clientOptions,
 	)
-
-	return &Client{endpoint: strings.TrimRight(endpoint, "/"), pipeline: pipeline}
 }
 
 // routineURL returns the URL for a named routine.
@@ -146,7 +158,7 @@ func (c *Client) GetRoutine(ctx context.Context, name string) (*Routine, error) 
 	}
 	addPreviewHeader(req)
 
-	resp, err := c.pipeline.Do(req)
+	resp, err := c.readPipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -192,7 +204,7 @@ func (c *Client) getPage(ctx context.Context, pageURL string, out any) error {
 	}
 	addPreviewHeader(req)
 
-	resp, err := c.pipeline.Do(req)
+	resp, err := c.readPipeline.Do(req)
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -217,7 +229,7 @@ func (c *Client) PutRoutine(ctx context.Context, name string, body *Routine) (*R
 		return nil, err
 	}
 
-	resp, err := c.pipeline.Do(req)
+	resp, err := c.writePipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -242,7 +254,7 @@ func (c *Client) DeleteRoutine(ctx context.Context, name string) error {
 	}
 	addPreviewHeader(req)
 
-	resp, err := c.pipeline.Do(req)
+	resp, err := c.writePipeline.Do(req)
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -274,7 +286,7 @@ func (c *Client) postRoutineAction(ctx context.Context, name, action string) (*R
 	}
 	addPreviewHeader(req)
 
-	resp, err := c.pipeline.Do(req)
+	resp, err := c.writePipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -309,7 +321,7 @@ func (c *Client) DispatchRoutineAsync(
 		}
 	}
 
-	resp, err := c.pipeline.Do(req)
+	resp, err := c.writePipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}

@@ -1200,9 +1200,27 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, opErr
 	}
 
+	// Choose the success header based on whether anything actually changed:
+	// when every upgraded tool reported it was already at the latest version,
+	// say so; otherwise report an upgrade. AlreadyUpToDate is only set for
+	// skills, so non-skill upgrades always read as "upgraded".
+	header := "Tool is upgraded."
+	if len(rawResults) > 0 {
+		allUpToDate := true
+		for _, r := range rawResults {
+			if !r.AlreadyUpToDate {
+				allUpToDate = false
+				break
+			}
+		}
+		if allUpToDate {
+			header = "Tool is already up to date."
+		}
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Tool upgrade complete",
+			Header: header,
 		},
 	}, nil
 }

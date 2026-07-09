@@ -1307,11 +1307,142 @@ func TestRunSkill_StepProgress(t *testing.T) {
 	assert.Empty(t, r.messages)
 }
 
-// TestRunSkill_StreamedOutputStopsSpinner verifies that when the host CLI
-// writes to the terminal (a progress line or an interactive prompt), the
-// step spinner is torn down immediately (stopped with an empty message) and
-// the step result is printed inline afterwards, so the spinner never
-// overwrites the CLI's own output.
+// TestParseUpgradeOutput covers extracting the version and the "already at
+// latest" state from each host CLI's plugin-update output.
+func TestParseUpgradeOutput(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name            string
+		in              string
+		wantVersion     string
+		wantAlreadyLast bool
+	}{
+		{
+			name:            "CopilotAlreadyLatest",
+			in:              `updated successfully (v1.1.86, already at latest). 27 skills.`,
+			wantVersion:     "1.1.86",
+			wantAlreadyLast: true,
+		},
+		{
+			name:            "ClaudeUpdatedFromTo",
+			in:              `✔ Plugin "azure" updated from 1.1.73 to 1.1.86 for scope user. Restart to apply changes.`,
+			wantVersion:     "1.1.86",
+			wantAlreadyLast: false,
+		},
+		{
+			name:            "ClaudeAlreadyLatest",
+			in:              `✔ azure is already at the latest version (1.1.86).`,
+			wantVersion:     "1.1.86",
+			wantAlreadyLast: true,
+		},
+		{
+			name:            "NoVersion",
+			in:              "Plugin updated.",
+			wantVersion:     "",
+			wantAlreadyLast: false,
+		},
+		{
+			name:            "Empty",
+			in:              "",
+			wantVersion:     "",
+			wantAlreadyLast: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			gotVersion, gotAlreadyLast := parseUpgradeOutput(tc.in)
+			assert.Equal(t, tc.wantVersion, gotVersion)
+			assert.Equal(t, tc.wantAlreadyLast, gotAlreadyLast)
+		})
+	}
+}
+
+// TestRunSkill_Upgrade_StepResultShowsVersion verifies that an upgrade shows a
+// plain in-progress spinner title and reports the version — parsed from the
+// update command's output — on the result line only.
+func TestRunSkill_Upgrade_StepResultShowsVersion(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+	// The update command reports the new version (claude-style "from A to B").
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "update")
+	}).Respond(exec.RunResult{
+		ExitCode: 0,
+		Stdout:   `Plugin "azure" updated from 1.1.73 to 1.1.86 for scope user.`,
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillHostsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillHost, error) {
+				return []InstalledSkillHost{{Host: "copilot", Version: "1.1.86"}}, nil
+			},
+		},
+	)
+
+	var r fakeStepRenderer
+	result, err := inst.Upgrade(
+		t.Context(), newSkillTool(),
+		WithHosts("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "upgrade must succeed; err=%v", result.Error)
+	assert.False(t, result.AlreadyUpToDate, "an actual upgrade is not up-to-date")
+
+	// Spinner title has no version; the result line appends the new version.
+	assert.Equal(t, []string{"Upgrading Test Azure Skills in copilot"}, r.starts)
+	assert.Equal(t, []string{"Upgrading Test Azure Skills in copilot (v1.1.86)"}, r.stops)
+}
+
+// TestRunSkill_Upgrade_AlreadyUpToDate verifies that when the host reports the
+// skill is already at the latest version, the result line says so (with the
+// version) and the result is flagged AlreadyUpToDate.
+func TestRunSkill_Upgrade_AlreadyUpToDate(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "update")
+	}).Respond(exec.RunResult{
+		ExitCode: 0,
+		Stdout:   `updated successfully (v1.1.86, already at latest). 27 skills.`,
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillHostsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillHost, error) {
+				return []InstalledSkillHost{{Host: "copilot", Version: "1.1.86"}}, nil
+			},
+		},
+	)
+
+	var r fakeStepRenderer
+	result, err := inst.Upgrade(
+		t.Context(), newSkillTool(),
+		WithHosts("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "upgrade must succeed; err=%v", result.Error)
+	assert.True(t, result.AlreadyUpToDate, "nothing changed, so already up to date")
+
+	assert.Equal(t, []string{"Upgrading Test Azure Skills in copilot"}, r.starts)
+	assert.Equal(t, []string{"Test Azure Skills are already up to date (v1.1.86)."}, r.stops)
+}
+
 // TestRunSkill_StreamedOutputPrintedAboveSpinner verifies that when the host
 // CLI writes to the terminal (a progress line or an interactive prompt),
 // each line is surfaced via Message (which the console prints above the

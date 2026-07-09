@@ -17,6 +17,7 @@ import (
 	"os"
 	osexec "os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -52,6 +53,11 @@ type InstallResult struct {
 	Success bool
 	// InstalledVersion is the version detected after installation.
 	InstalledVersion string
+	// AlreadyUpToDate is set for an upgrade when every targeted host
+	// reported the skill was already at the latest version, so nothing was
+	// changed. The command layer uses it to show an "already up to date"
+	// result instead of an "upgraded" one.
+	AlreadyUpToDate bool
 	// Strategy describes what was used to install the tool
 	// (e.g. "winget", "brew", "manual").
 	Strategy string
@@ -217,33 +223,42 @@ func stepError(result *InstallResult, err error) error {
 // renderSkillStep frames one skill step (install, upgrade or uninstall) with
 // a live spinner that stays visible while the host CLI talks to the user.
 //
-// It shows a step spinner (like azd provision) and passes work an output
-// writer. Skill operations route the host CLI's stdout/stderr through that
-// writer (see skillCommandRunArgs), with stdin still connected, so each line
-// the CLI emits — progress or an interactive prompt — is printed above the
-// spinner while the spinner stays pinned below it: the console tears the
+// It shows a step spinner (like azd provision) with title and passes work an
+// output writer. Skill operations route the host CLI's stdout/stderr through
+// that writer (see skillCommandRunArgs), with stdin still connected, so each
+// line the CLI emits — progress or an interactive prompt — is printed above
+// the spinner while the spinner stays pinned below it: the console tears the
 // spinner down and re-renders it around each printed line (see
 // AskerConsole.println), so the bar is kept, not lost. The user answers any
 // prompt directly via the connected stdin. When the CLI stays silent the
-// spinner simply runs to completion. Either way the step ends by stopping the
-// spinner with the result. When renderer is nil (e.g. the first-run
-// middleware manages its own progress) it prints a stderr header and runs
-// work with a nil writer, so the command runs fully interactively.
+// spinner simply runs to completion.
+//
+// work returns the message to show on the result line; when empty the spinner
+// title is reused. This lets a step whose outcome is only known after running
+// (e.g. an upgrade that reports the version or "already up to date") show a
+// result line that differs from the in-progress title. When renderer is nil
+// (e.g. the first-run middleware manages its own progress) it prints a stderr
+// header and runs work with a nil writer, so the command runs fully
+// interactively.
 func renderSkillStep(
 	ctx context.Context,
 	renderer StepRenderer,
 	title string,
-	work func(out io.Writer) error,
+	work func(out io.Writer) (doneTitle string, err error),
 ) error {
 	if renderer == nil {
 		fmt.Fprintf(os.Stderr, "\n%s\n", title)
-		return work(nil)
+		_, err := work(nil)
+		return err
 	}
 
 	renderer.ShowSpinner(ctx, title, input.Step)
 	out := &lineWriter{emit: func(line string) { renderer.Message(ctx, line) }}
-	err := work(out)
-	renderer.StopSpinner(ctx, title, input.GetStepResultFormat(err))
+	doneTitle, err := work(out)
+	if doneTitle == "" {
+		doneTitle = title
+	}
+	renderer.StopSpinner(ctx, doneTitle, input.GetStepResultFormat(err))
 	return err
 }
 
@@ -276,6 +291,31 @@ func skillCommandRunArgs(base exec.RunArgs, out io.Writer) exec.RunArgs {
 		return base.WithInteractive(true)
 	}
 	return base.WithStdIn(os.Stdin).WithStdOut(out).WithStdErr(out)
+}
+
+// semverRegex matches a bare semantic version (no leading "v") anywhere in a
+// string. Used to pull the version a host CLI prints after an update.
+var semverRegex = regexp.MustCompile(`\d+\.\d+\.\d+`)
+
+// parseUpgradeOutput extracts, from a host CLI's plugin-update output, the
+// version it reports and whether it said the plugin was already at the latest
+// version. Best-effort across host CLIs, e.g.:
+//
+//	copilot: `... updated successfully (v1.1.86, already at latest). Updated 27 skills.`
+//	claude:  `... updated from 1.1.73 to 1.1.86 for scope user. ...`
+//	claude:  `... azure is already at the latest version (1.1.86).`
+//
+// The version is the last semver in the output, so an "updated from A to B"
+// line yields the new version B. alreadyLatest is true when the output says
+// the plugin was already current (nothing changed).
+func parseUpgradeOutput(out string) (version string, alreadyLatest bool) {
+	lower := strings.ToLower(out)
+	alreadyLatest = strings.Contains(lower, "already") &&
+		(strings.Contains(lower, "latest") || strings.Contains(lower, "up to date"))
+	if m := semverRegex.FindAllString(out, -1); len(m) > 0 {
+		version = m[len(m)-1]
+	}
+	return version, alreadyLatest
 }
 
 // installer is the default, unexported implementation of [Installer].
@@ -814,8 +854,8 @@ func (i *installer) runSkillUninstall(
 	)
 	for _, host := range targets {
 		title := fmt.Sprintf("Uninstalling %s from %s", tool.Name, host.Host)
-		hostErr := renderSkillStep(ctx, renderer, title, func(out io.Writer) error {
-			return i.uninstallSkillForHost(ctx, tool, host, out)
+		hostErr := renderSkillStep(ctx, renderer, title, func(out io.Writer) (string, error) {
+			return "", i.uninstallSkillForHost(ctx, tool, host, out)
 		})
 		if hostErr != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", host.Host, hostErr))
@@ -1234,36 +1274,64 @@ func (i *installer) runSkill(
 		)+output.WithLinkFormat("https://nodejs.org/"))
 	}
 
-	// 3. Install / upgrade for each target host, collecting outcomes. Each
-	//    host runs interactively: renderSkillStep prints a step header and a
-	//    result line around the host CLI's streamed output, so the user can
-	//    answer any prompts the host surfaces.
+	// 3. Install / upgrade for each target host, collecting outcomes.
+	//    renderSkillStep shows a step spinner per host. For an install the
+	//    host CLI's output streams above the spinner (so prompts are
+	//    answerable); for an upgrade the update command's output is captured
+	//    and parsed for the version and whether the skill was already at the
+	//    latest, which the result line reports.
 	verb := "Installing"
 	if upgrade {
 		verb = "Upgrading"
 	}
 	var (
-		succeeded []string
-		failures  []error
-		version   string
+		succeeded   []string
+		failures    []error
+		version     string
+		anyUpgraded bool // an upgrade actually changed at least one host
 	)
 	for _, host := range targets {
 		title := fmt.Sprintf("%s %s in %s", verb, tool.Name, host.Host)
-		var hostVersion string
-		hostErr := renderSkillStep(ctx, renderer, title, func(out io.Writer) error {
-			v, e := i.installSkillForHost(ctx, tool, host, upgrade, out)
+		var (
+			hostVersion  string
+			hostUpToDate bool
+		)
+		hostErr := renderSkillStep(ctx, renderer, title, func(out io.Writer) (string, error) {
+			v, upToDate, e := i.installSkillForHost(ctx, tool, host, upgrade, out)
 			hostVersion = v
-			return e
+			hostUpToDate = upToDate
+			if e != nil {
+				return "", e
+			}
+			// Result line: for an upgrade, report the version and whether the
+			// skill was already current; otherwise reuse the step title.
+			done := title
+			switch {
+			case upgrade && upToDate && v != "":
+				done = fmt.Sprintf("%s are already up to date (v%s).", tool.Name, v)
+			case upgrade && upToDate:
+				done = fmt.Sprintf("%s are already up to date.", tool.Name)
+			case upgrade && v != "":
+				done = fmt.Sprintf("%s (v%s)", title, v)
+			}
+			return done, nil
 		})
 		if hostErr != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", host.Host, hostErr))
 			continue
 		}
 		succeeded = append(succeeded, host.Command)
+		if !hostUpToDate {
+			anyUpgraded = true
+		}
 		if version == "" {
 			version = hostVersion
 		}
 	}
+
+	// An upgrade that changed nothing (every targeted host was already at the
+	// latest version) is reported as "already up to date" by the caller.
+	result.AlreadyUpToDate = upgrade && len(succeeded) > 0 && !anyUpgraded
 
 	result.Strategy = strings.Join(succeeded, ", ")
 	result.InstalledVersion = version
@@ -1583,21 +1651,38 @@ func (i *installer) pickSkillHost(
 	}
 }
 
-// installSkillForHost installs (or upgrades) the skill through a single
-// host and verifies the result, returning the detected version. out, when
-// non-nil, receives the host CLI's output line-by-line for display above the
-// step spinner.
+// installSkillForHost installs (or upgrades) the skill through a single host
+// and verifies the result. It returns the version and, for an upgrade,
+// whether the host reported the skill was already at the latest version. For
+// an upgrade the version comes from the update command's output (falling back
+// to the detected version); for an install it comes from post-install
+// detection. out, when non-nil, receives an install's streamed host output
+// for display above the step spinner.
 func (i *installer) installSkillForHost(
 	ctx context.Context,
 	tool *ToolDefinition,
 	host SkillHost,
 	upgrade bool,
 	out io.Writer,
-) (version string, err error) {
-	if err := i.runSkillHostCommand(ctx, host, upgrade, out); err != nil {
-		return "", err
+) (version string, alreadyLatest bool, err error) {
+	cmdOutput, err := i.runSkillHostCommand(ctx, host, upgrade, out)
+	if err != nil {
+		return "", false, err
 	}
-	return i.verifySkillInstalled(ctx, tool, host)
+	if upgrade {
+		version, alreadyLatest = parseUpgradeOutput(cmdOutput)
+	}
+
+	detectedVersion, err := i.verifySkillInstalled(ctx, tool, host)
+	if err != nil {
+		return "", false, err
+	}
+	// Prefer the version the update command reported; fall back to the
+	// version detected via the plugin list.
+	if version == "" {
+		version = detectedVersion
+	}
+	return version, alreadyLatest, nil
 }
 
 // verifySkillInstalled confirms the skill is detectable **through the
@@ -1645,18 +1730,20 @@ func (i *installer) verifySkillInstalled(
 	return version, nil
 }
 
-// runSkillHostCommand executes the host's install (or update) command. When
-// a step spinner is showing (out is non-nil) the command's output is routed
-// through out so each line the host CLI writes — including any interactive
-// prompt — is printed above the spinner, which stays pinned below it, with
-// stdin connected so the user answers directly; when no spinner is active the
-// command runs fully interactively (see skillCommandRunArgs). azd never pipes
-// canned answers on the user's behalf, and captures nothing, so there is no
-// output to return.
+// runSkillHostCommand executes the host's install or update command and
+// returns the command's stdout (empty for a streamed install).
 //
-// For fresh installs it first runs MarketplaceAddCommand when the host
-// declares one. Hosts that declare no MarketplaceAddCommand skip this
-// step entirely.
+// Install and update connect to the terminal differently:
+//   - Install streams the host CLI's output through out (when a spinner is
+//     showing) or runs fully interactively (out nil), with stdin connected so
+//     the user answers any prompt (marketplace trust, install confirmation).
+//     azd never pipes canned answers. Nothing is captured, so "" is returned.
+//     For a fresh install it first runs MarketplaceAddCommand when the host
+//     declares one.
+//   - Update captures the output (no streaming) and returns it so the caller
+//     can parse the version and whether the skill was already at the latest.
+//     The plugin is already installed (marketplace trusted), so the update is
+//     non-interactive.
 //
 // A non-zero exit is returned to the caller as an error; the caller is
 // expected to verify via the detector and decide whether to treat the
@@ -1666,7 +1753,7 @@ func (i *installer) runSkillHostCommand(
 	host SkillHost,
 	upgrade bool,
 	out io.Writer,
-) error {
+) (string, error) {
 	cmd := host.PluginInstallCommand
 	verb := "install"
 	if upgrade {
@@ -1674,26 +1761,39 @@ func (i *installer) runSkillHostCommand(
 		verb = "update"
 	}
 	if len(cmd) == 0 {
-		return fmt.Errorf(
+		return "", fmt.Errorf(
 			"host %q has no %s command configured", host.Host, verb,
 		)
 	}
 
-	if !upgrade && len(host.MarketplaceAddCommand) > 0 {
+	// Update: capture the output so the caller can parse the version and the
+	// "already at latest" state; do not stream it above the spinner.
+	if upgrade {
+		res, err := i.commandRunner.Run(ctx, exec.NewRunArgs(host.Command, cmd...))
+		if err != nil {
+			return "", fmt.Errorf(
+				"running `%s %s`: %w",
+				host.Command, strings.Join(cmd, " "), err,
+			)
+		}
+		return res.Stdout, nil
+	}
+
+	if len(host.MarketplaceAddCommand) > 0 {
 		if err := i.runMarketplaceAdd(ctx, host); err != nil {
-			return err
+			return "", err
 		}
 	}
 
 	runArgs := skillCommandRunArgs(exec.NewRunArgs(host.Command, cmd...), out)
 	if _, err := i.commandRunner.Run(ctx, runArgs); err != nil {
-		return fmt.Errorf(
+		return "", fmt.Errorf(
 			"running `%s %s`: %w",
 			host.Command, strings.Join(cmd, " "), err,
 		)
 	}
 
-	return nil
+	return "", nil
 }
 
 // runMarketplaceAdd registers the skill marketplace with the host CLI.

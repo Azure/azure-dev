@@ -228,6 +228,61 @@ func TestRunSkillRemoveWith_NotAttached(t *testing.T) {
 	requireLocalError(t, err, exterrors.CodeSkillNotInToolbox)
 }
 
+// Regression test for azure-dev#9034: sequential `skill remove` calls (with
+// no --from-version) must chain onto each other by branching from the latest
+// version, not both forking from the stale default version.
+func TestRunSkillRemoveWith_SequentialRemovesChainFromLatest(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
+		Name: "tb", DefaultVersion: "1",
+	}}
+	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "1",
+		Tools: []map[string]any{{"type": "mcp", "name": "a", "project_connection_id": "/c/a"}},
+		Skills: []map[string]any{
+			{"type": "skill_reference", "name": "alpha"},
+			{"type": "skill_reference", "name": "beta"},
+			{"type": "skill_reference", "name": "gamma"},
+		},
+	}}
+	client.listVersionsResults["tb"] = []azure.ToolboxVersionObject{
+		{Name: "tb", Version: "1"},
+	}
+
+	// Step 1: remove "alpha".
+	err := runSkillRemoveWith(t.Context(), client, "tb", []string{"alpha"},
+		skillRemoveFlags{force: true}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	firstReq := client.createVersionCalls[0].req
+	require.Len(t, firstReq.Skills, 2, "beta and gamma remain after removing alpha")
+
+	// Simulate the real service state after step 1.
+	client.versionResults["tb/2"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "2", Tools: firstReq.Tools, Skills: firstReq.Skills,
+	}}
+	client.listVersionsResults["tb"] = []azure.ToolboxVersionObject{
+		{Name: "tb", Version: "1"},
+		{Name: "tb", Version: "2"},
+	}
+
+	// Step 2: remove "beta" with no --from-version. Pre-fix, this would
+	// branch from the still-default version "1" (which still has alpha,
+	// beta, gamma) and produce a sibling that never reflects step 1's
+	// removal. Post-fix, it must branch from latest ("2": beta, gamma) and
+	// end up with only "gamma".
+	err = runSkillRemoveWith(t.Context(), client, "tb", []string{"beta"},
+		skillRemoveFlags{force: true}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 2)
+	secondReq := client.createVersionCalls[1].req
+	require.Len(t, secondReq.Skills, 1,
+		"second remove must branch from latest (post-step-1 state), not the stale default")
+	assert.Equal(t, "gamma", secondReq.Skills[0]["name"])
+}
+
 func TestRunSkillRemove_NoPromptWithoutForce(t *testing.T) {
 	err := runSkillRemove(
 		t.Context(), "tb", []string{"any-skill"},
@@ -300,6 +355,93 @@ func TestRunSkillRemoveWith_VariadicPositionals(t *testing.T) {
 	require.Len(t, client.createVersionCalls, 1, "one new version created for the whole batch")
 	require.Len(t, client.createVersionCalls[0].req.Skills, 1)
 	assert.Equal(t, "beta", client.createVersionCalls[0].req.Skills[0]["name"])
+}
+
+// Regression test for azure-dev#9034: sequential `skill add` calls (with no
+// --from-version) must chain onto each other by branching from the latest
+// version, not both forking from the stale default version.
+func TestRunSkillAddWith_SequentialAddsChainFromLatest(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
+		Name: "tb", DefaultVersion: "1",
+	}}
+	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "1", Description: "base",
+		Tools: []map[string]any{{"type": "mcp", "name": "a", "project_connection_id": "/c/a"}},
+	}}
+	client.listVersionsResults["tb"] = []azure.ToolboxVersionObject{
+		{Name: "tb", Version: "1"},
+	}
+
+	// Step 1: attach "greeting". Only version "1" exists so this branches
+	// from it either way; the mock synthesizes the created version.
+	err := runSkillAddWith(t.Context(), client, "tb", "greeting", skillAddFlags{}, toolboxFlags{output: "json"})
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	firstReq := client.createVersionCalls[0].req
+	require.Len(t, firstReq.Skills, 1)
+	assert.Equal(t, "greeting", firstReq.Skills[0]["name"])
+
+	// Simulate what the real service does after step 1: the new version "2"
+	// now exists with the content just sent, the default is still "1" (no
+	// auto-promotion — see toolbox_publish.go), and versions-list reports both.
+	client.versionResults["tb/2"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "2", Description: firstReq.Description,
+		Tools: firstReq.Tools, Skills: firstReq.Skills,
+	}}
+	client.listVersionsResults["tb"] = []azure.ToolboxVersionObject{
+		{Name: "tb", Version: "1"},
+		{Name: "tb", Version: "2"},
+	}
+
+	// Step 2: attach "code-review" with no --from-version. Pre-fix, this
+	// would branch from the still-default version "1" and silently drop
+	// "greeting" (the exact #9034 repro). Post-fix, it must branch from the
+	// latest version "2" and carry "greeting" forward.
+	err = runSkillAddWith(t.Context(), client, "tb", "code-review", skillAddFlags{}, toolboxFlags{output: "json"})
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 2)
+	secondReq := client.createVersionCalls[1].req
+	names := make([]string, 0, len(secondReq.Skills))
+	for _, s := range secondReq.Skills {
+		names = append(names, s["name"].(string))
+	}
+	assert.ElementsMatch(t, []string{"greeting", "code-review"}, names,
+		"second add must carry the first add's skill forward (branch from latest, not default)")
+}
+
+// --from-version default opts back into the pre-#9034-fix behavior: branch
+// from the toolbox's current default rather than the latest version.
+func TestRunSkillAddWith_FromVersionDefaultOptsOutOfLatest(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
+		Name: "tb", DefaultVersion: "1",
+	}}
+	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "1",
+		Skills: []map[string]any{{"type": "skill_reference", "name": "in-default"}},
+	}}
+	client.versionResults["tb/2"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "2",
+		Skills: []map[string]any{{"type": "skill_reference", "name": "in-latest"}},
+	}}
+	client.listVersionsResults["tb"] = []azure.ToolboxVersionObject{
+		{Name: "tb", Version: "1"},
+		{Name: "tb", Version: "2"},
+	}
+
+	err := runSkillAddWith(
+		t.Context(), client, "tb", "new-skill",
+		skillAddFlags{fromVersion: "default"}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	names := make([]string, 0, 2)
+	for _, s := range client.createVersionCalls[0].req.Skills {
+		names = append(names, s["name"].(string))
+	}
+	assert.ElementsMatch(t, []string{"in-default", "new-skill"}, names,
+		"--from-version default must branch from the default version, not the latest")
 }
 
 // Batch attachment via --from-file.

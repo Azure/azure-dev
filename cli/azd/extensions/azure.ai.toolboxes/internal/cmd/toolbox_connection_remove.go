@@ -18,7 +18,8 @@ import (
 
 // connectionRemoveFlags carries the verb-specific flags for `connection remove`.
 type connectionRemoveFlags struct {
-	force bool
+	force       bool
+	fromVersion string
 }
 
 // newToolboxConnectionRemoveCommand returns the `connection remove` command.
@@ -32,7 +33,8 @@ func newToolboxConnectionRemoveCommand(extCtx *azdext.ExtensionContext) *cobra.C
 		Long: `Detach one or more connections from a toolbox and create a new version.
 
 Pass one or more connection short names as positionals. All removals are
-applied atomically: each invocation creates exactly one new toolbox version.
+applied atomically: each invocation creates exactly one new toolbox version,
+branched from the toolbox's latest version by default (see --from-version).
 
 Refuses to leave the toolbox with zero tools (use 'toolbox delete' instead).
 
@@ -55,6 +57,7 @@ Examples:
 		&flags.force, "force", false,
 		"Skip confirmation prompts and apply the removal immediately.",
 	)
+	registerFromVersionFlag(cmd, &flags.fromVersion)
 	registerToolboxOutputFlag(cmd)
 	return cmd
 }
@@ -121,9 +124,13 @@ func runConnectionRemoveWith(
 	if err != nil {
 		return toolboxNotFoundOrService(err, toolboxName, exterrors.OpGetToolbox)
 	}
-	current, err := client.GetToolboxVersion(ctx, toolboxName, tb.DefaultVersion)
+	baseVersion, err := resolveBaseVersion(ctx, client, toolboxName, tb, verb.fromVersion)
 	if err != nil {
-		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolboxVersion)
+		return err
+	}
+	current, err := client.GetToolboxVersion(ctx, toolboxName, baseVersion)
+	if err != nil {
+		return toolboxVersionNotFoundOrService(err, toolboxName, baseVersion, exterrors.OpGetToolboxVersion)
 	}
 
 	// Resolve each name and strip from the tools[].
@@ -140,8 +147,8 @@ func runConnectionRemoveWith(
 			return exterrors.Validation(
 				exterrors.CodeConnectionNotInToolbox,
 				fmt.Sprintf(
-					"connection %q is not attached to toolbox %q's current default version",
-					name, toolboxName,
+					"connection %q is not attached to toolbox %q's base version %q",
+					name, toolboxName, baseVersion,
 				),
 				fmt.Sprintf("run 'azd ai toolbox connection list %q'", toolboxName),
 			)
@@ -203,7 +210,7 @@ func runConnectionRemoveWith(
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
 	}
 
-	return emitConnectionRemoveResult(toolboxName, created.Version, removedConns, parent.output)
+	return emitConnectionRemoveResult(toolboxName, created.Version, baseVersion, removedConns, parent.output)
 }
 
 // summarizeConnectionNames renders "connection \"a\"" or "connections [\"a\", \"b\"]".
@@ -219,13 +226,14 @@ func summarizeConnectionNames(conns []*projectConnection) string {
 }
 
 func emitConnectionRemoveResult(
-	toolboxName, newVersion string, conns []*projectConnection, output string,
+	toolboxName, newVersion, baseVersion string, conns []*projectConnection, output string,
 ) error {
 	if output == "json" {
 		if len(conns) == 1 {
 			return emitJSON(map[string]any{
 				"toolbox":       toolboxName,
 				"version":       newVersion,
+				"base_version":  baseVersion,
 				"connection":    conns[0].Name,
 				"connection_id": conns[0].ID,
 			})
@@ -238,9 +246,10 @@ func emitConnectionRemoveResult(
 			})
 		}
 		return emitJSON(map[string]any{
-			"toolbox":     toolboxName,
-			"version":     newVersion,
-			"connections": rows,
+			"toolbox":      toolboxName,
+			"version":      newVersion,
+			"base_version": baseVersion,
+			"connections":  rows,
 		})
 	}
 	if len(conns) == 1 {
@@ -258,7 +267,10 @@ func emitConnectionRemoveResult(
 			toolboxName, newVersion, strings.Join(names, ", "),
 		)
 	}
-	fmt.Printf("The default version is unchanged; "+
-		"run `azd ai toolbox publish %q %q` to promote.\n", toolboxName, newVersion)
+	fmt.Printf(
+		"Branched from version %s; the default version is unchanged. "+
+			"Run `azd ai toolbox publish %q %q` to promote.\n",
+		baseVersion, toolboxName, newVersion,
+	)
 	return nil
 }

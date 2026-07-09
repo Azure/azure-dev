@@ -18,7 +18,8 @@ import (
 
 // skillRemoveFlags carries the verb-specific flags for `skill remove`.
 type skillRemoveFlags struct {
-	force bool
+	force       bool
+	fromVersion string
 }
 
 // newToolboxSkillRemoveCommand returns the `skill remove` command.
@@ -32,7 +33,8 @@ func newToolboxSkillRemoveCommand(extCtx *azdext.ExtensionContext) *cobra.Comman
 		Long: `Detach one or more skill references from a toolbox and create a new version.
 
 Pass one or more skill short names as positionals. All removals are applied
-atomically: each invocation creates exactly one new toolbox version.
+atomically: each invocation creates exactly one new toolbox version, branched
+from the toolbox's latest version by default (see --from-version).
 
 Removing the last skill is allowed.
 
@@ -52,6 +54,7 @@ Examples:
 		&flags.force, "force", false,
 		"Skip confirmation prompts and apply the removal immediately.",
 	)
+	registerFromVersionFlag(cmd, &flags.fromVersion)
 	registerToolboxOutputFlag(cmd)
 	return cmd
 }
@@ -111,9 +114,13 @@ func runSkillRemoveWith(
 	if err != nil {
 		return toolboxNotFoundOrService(err, toolboxName, exterrors.OpGetToolbox)
 	}
-	current, err := client.GetToolboxVersion(ctx, toolboxName, tb.DefaultVersion)
+	baseVersion, err := resolveBaseVersion(ctx, client, toolboxName, tb, verb.fromVersion)
 	if err != nil {
-		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolboxVersion)
+		return err
+	}
+	current, err := client.GetToolboxVersion(ctx, toolboxName, baseVersion)
+	if err != nil {
+		return toolboxVersionNotFoundOrService(err, toolboxName, baseVersion, exterrors.OpGetToolboxVersion)
 	}
 
 	filtered := slices.Clone(current.Skills)
@@ -124,8 +131,8 @@ func runSkillRemoveWith(
 			return exterrors.Validation(
 				exterrors.CodeSkillNotInToolbox,
 				fmt.Sprintf(
-					"skill %q is not attached to toolbox %q's current default version",
-					name, toolboxName,
+					"skill %q is not attached to toolbox %q's base version %q",
+					name, toolboxName, baseVersion,
 				),
 				fmt.Sprintf("run 'azd ai toolbox skill list %q'", toolboxName),
 			)
@@ -172,7 +179,7 @@ func runSkillRemoveWith(
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
 	}
 
-	return emitSkillRemoveResult(toolboxName, created.Version, names, parent.output)
+	return emitSkillRemoveResult(toolboxName, created.Version, baseVersion, names, parent.output)
 }
 
 // summarizeSkillNames renders "skill \"a\"" or "skills [\"a\", \"b\"]".
@@ -187,19 +194,21 @@ func summarizeSkillNames(names []string) string {
 	return "skills [" + strings.Join(quoted, ", ") + "]"
 }
 
-func emitSkillRemoveResult(toolboxName, newVersion string, names []string, output string) error {
+func emitSkillRemoveResult(toolboxName, newVersion, baseVersion string, names []string, output string) error {
 	if output == "json" {
 		if len(names) == 1 {
 			return emitJSON(map[string]any{
-				"toolbox": toolboxName,
-				"version": newVersion,
-				"skill":   names[0],
+				"toolbox":      toolboxName,
+				"version":      newVersion,
+				"base_version": baseVersion,
+				"skill":        names[0],
 			})
 		}
 		return emitJSON(map[string]any{
-			"toolbox": toolboxName,
-			"version": newVersion,
-			"skills":  names,
+			"toolbox":      toolboxName,
+			"version":      newVersion,
+			"base_version": baseVersion,
+			"skills":       names,
 		})
 	}
 	if len(names) == 1 {
@@ -213,7 +222,10 @@ func emitSkillRemoveResult(toolboxName, newVersion string, names []string, outpu
 			toolboxName, newVersion, strings.Join(names, ", "),
 		)
 	}
-	fmt.Printf("The default version is unchanged; "+
-		"run `azd ai toolbox publish %q %q` to promote.\n", toolboxName, newVersion)
+	fmt.Printf(
+		"Branched from version %s; the default version is unchanged. "+
+			"Run `azd ai toolbox publish %q %q` to promote.\n",
+		baseVersion, toolboxName, newVersion,
+	)
 	return nil
 }

@@ -18,7 +18,8 @@ import (
 
 // skillAddFlags carries the verb-specific flags for `skill add`.
 type skillAddFlags struct {
-	fromFile string
+	fromFile    string
+	fromVersion string
 }
 
 // newToolboxSkillAddCommand returns the `skill add` command.
@@ -32,7 +33,8 @@ func newToolboxSkillAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Attach one or more skill references to a toolbox.
 
 Pass a single skill as the positional, or many via --from-file. Either way
-the invocation creates exactly one new toolbox version. The toolbox's
+the invocation creates exactly one new toolbox version, branched from the
+toolbox's latest version by default (see --from-version). The toolbox's
 default version is unchanged; run
 'azd ai toolbox publish <toolbox> <version>' to promote it.
 
@@ -70,6 +72,7 @@ Examples:
 		&flags.fromFile, "from-file", "",
 		"Path to a JSON/YAML file listing skills to attach (skills[] block).",
 	)
+	registerFromVersionFlag(cmd, &flags.fromVersion)
 	registerToolboxOutputFlag(cmd)
 	return cmd
 }
@@ -125,12 +128,16 @@ func runSkillAddWith(
 	if err != nil {
 		return toolboxNotFoundOrService(err, toolboxName, exterrors.OpGetToolbox)
 	}
-	current, err := client.GetToolboxVersion(ctx, toolboxName, tb.DefaultVersion)
+	baseVersion, err := resolveBaseVersion(ctx, client, toolboxName, tb, verb.fromVersion)
 	if err != nil {
-		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolboxVersion)
+		return err
+	}
+	current, err := client.GetToolboxVersion(ctx, toolboxName, baseVersion)
+	if err != nil {
+		return toolboxVersionNotFoundOrService(err, toolboxName, baseVersion, exterrors.OpGetToolboxVersion)
 	}
 
-	// Reject duplicates within the input and against the current default.
+	// Reject duplicates within the input and against the base version.
 	seen := map[string]struct{}{}
 	for _, sk := range current.Skills {
 		if n, ok := sk["name"].(string); ok && n != "" {
@@ -142,9 +149,9 @@ func runSkillAddWith(
 			return exterrors.Validation(
 				exterrors.CodeSkillAlreadyAttached,
 				fmt.Sprintf(
-					"skill %q is already attached to toolbox %q's current default version "+
+					"skill %q is already attached to toolbox %q's base version %q "+
 						"(or appears more than once in the input)",
-					sp.Name, toolboxName,
+					sp.Name, toolboxName, baseVersion,
 				),
 				fmt.Sprintf(
 					"remove the existing reference with `azd ai toolbox skill remove %q %q` first",
@@ -171,7 +178,7 @@ func runSkillAddWith(
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
 	}
 
-	return emitSkillAddResult(toolboxName, created.Version, specs, parent.output)
+	return emitSkillAddResult(toolboxName, created.Version, baseVersion, specs, parent.output)
 }
 
 // collectSkillSpecs picks the active input mode and returns the parsed list.
@@ -207,13 +214,14 @@ func collectSkillSpecs(rawSkill string, verb skillAddFlags) ([]skillSpec, error)
 	return []skillSpec{sp}, nil
 }
 
-func emitSkillAddResult(toolboxName, newVersion string, specs []skillSpec, output string) error {
+func emitSkillAddResult(toolboxName, newVersion, baseVersion string, specs []skillSpec, output string) error {
 	if output == "json" {
 		if len(specs) == 1 {
 			payload := map[string]any{
-				"toolbox": toolboxName,
-				"version": newVersion,
-				"skill":   specs[0].Name,
+				"toolbox":      toolboxName,
+				"version":      newVersion,
+				"base_version": baseVersion,
+				"skill":        specs[0].Name,
 			}
 			if specs[0].Version != "" {
 				payload["skill_version"] = specs[0].Version
@@ -229,9 +237,10 @@ func emitSkillAddResult(toolboxName, newVersion string, specs []skillSpec, outpu
 			rows = append(rows, row)
 		}
 		return emitJSON(map[string]any{
-			"toolbox": toolboxName,
-			"version": newVersion,
-			"skills":  rows,
+			"toolbox":      toolboxName,
+			"version":      newVersion,
+			"base_version": baseVersion,
+			"skills":       rows,
 		})
 	}
 
@@ -258,7 +267,10 @@ func emitSkillAddResult(toolboxName, newVersion string, specs []skillSpec, outpu
 			toolboxName, newVersion, strings.Join(names, ", "),
 		)
 	}
-	fmt.Printf("The default version is unchanged; "+
-		"run `azd ai toolbox publish %q %q` to promote.\n", toolboxName, newVersion)
+	fmt.Printf(
+		"Branched from version %s; the default version is unchanged. "+
+			"Run `azd ai toolbox publish %q %q` to promote.\n",
+		baseVersion, toolboxName, newVersion,
+	)
 	return nil
 }

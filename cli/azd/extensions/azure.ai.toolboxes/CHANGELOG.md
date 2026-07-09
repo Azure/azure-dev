@@ -1,5 +1,11 @@
 # Release History
 
+## Unreleased
+
+### Bugs Fixed
+
+- [[#9034]](https://github.com/Azure/azure-dev/issues/9034) `azd ai toolbox skill add/remove` and `azd ai toolbox connection add/remove` now branch the new version from the toolbox's **latest** version by default, instead of its **default** version. Previously, two sequential mutations without an intervening `publish` produced sibling versions that each carried only one of the changes, silently dropping the other. A new `--from-version` flag lets callers opt back into the old behavior (`--from-version default`) or fork from a specific version.
+
 ## 1.0.0-beta.1 (2026-06-30)
 
 ### Features Added

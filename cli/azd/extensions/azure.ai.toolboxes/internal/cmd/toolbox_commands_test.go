@@ -233,6 +233,64 @@ func TestRunConnectionAddWith_AppendsAndPromotesDefault(t *testing.T) {
 	assert.Empty(t, client.setDefaultCalls, "mutation verbs no longer auto-promote default")
 }
 
+// Regression test for azure-dev#9034: sequential `connection add` calls
+// (with no --from-version) must chain onto each other by branching from the
+// latest version, not both forking from the stale default version.
+func TestRunConnectionAddWith_SequentialAddsChainFromLatest(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
+		Name: "tb", DefaultVersion: "1",
+	}}
+	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "1", Tools: []map[string]any{},
+	}}
+	client.listVersionsResults["tb"] = []azure.ToolboxVersionObject{
+		{Name: "tb", Version: "1"},
+	}
+
+	resolver := newStubConnectionResolver()
+	resolver.byName["mcp-a"] = &projectConnection{
+		ID: "/c/a", Category: connections.ConnectionTypeRemoteTool, Name: "mcp-a", Target: "https://mcp-a",
+	}
+	resolver.byName["mcp-b"] = &projectConnection{
+		ID: "/c/b", Category: connections.ConnectionTypeRemoteTool, Name: "mcp-b", Target: "https://mcp-b",
+	}
+
+	// Step 1: attach "mcp-a".
+	err := runConnectionAddWith(
+		t.Context(), client, resolver, "https://e/",
+		"tb", "mcp-a", connectionAddFlags{}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	firstReq := client.createVersionCalls[0].req
+	require.Len(t, firstReq.Tools, 1)
+
+	// Simulate the real service state after step 1: version "2" now exists,
+	// default is still "1" (no auto-promotion).
+	client.versionResults["tb/2"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "2", Tools: firstReq.Tools,
+	}}
+	client.listVersionsResults["tb"] = []azure.ToolboxVersionObject{
+		{Name: "tb", Version: "1"},
+		{Name: "tb", Version: "2"},
+	}
+
+	// Step 2: attach "mcp-b" with no --from-version. Pre-fix, this would
+	// branch from the still-default version "1" (empty tools) and silently
+	// drop "mcp-a". Post-fix, it must branch from latest ("2": mcp-a) and
+	// end up with both.
+	err = runConnectionAddWith(
+		t.Context(), client, resolver, "https://e/",
+		"tb", "mcp-b", connectionAddFlags{}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 2)
+	secondReq := client.createVersionCalls[1].req
+	require.Len(t, secondReq.Tools, 2,
+		"second add must carry mcp-a forward (branch from latest, not default)")
+}
+
 func TestRunConnectionAddWith_ConnectionNotFound(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
 	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{Name: "tb", DefaultVersion: "1"}}
@@ -357,6 +415,103 @@ func TestRunConnectionRemoveWith_FilteredAndPromoted(t *testing.T) {
 	require.NotNil(t, req.Policies, "policies must be carried forward on remove")
 	assert.Equal(t, "Microsoft.Default", req.Policies.RaiConfig.RaiPolicyName)
 	assert.Empty(t, client.setDefaultCalls)
+}
+
+// Regression test for azure-dev#9034: sequential `connection remove` calls
+// (with no --from-version) must chain onto each other by branching from the
+// latest version, not both forking from the stale default version.
+func TestRunConnectionRemoveWith_SequentialRemovesChainFromLatest(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
+		Name: "tb", DefaultVersion: "1",
+	}}
+	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "1", Tools: []map[string]any{
+			{"type": "mcp", "name": "a", "project_connection_id": "/c/a"},
+			{"type": "mcp", "name": "b", "project_connection_id": "/c/b"},
+			{"type": "mcp", "name": "c", "project_connection_id": "/c/c"},
+		},
+	}}
+	client.listVersionsResults["tb"] = []azure.ToolboxVersionObject{
+		{Name: "tb", Version: "1"},
+	}
+	resolver := newStubConnectionResolver()
+	resolver.byName["a"] = &projectConnection{ID: "/c/a", Category: connections.ConnectionTypeRemoteTool, Name: "a"}
+	resolver.byName["b"] = &projectConnection{ID: "/c/b", Category: connections.ConnectionTypeRemoteTool, Name: "b"}
+
+	// Step 1: remove "a".
+	err := runConnectionRemoveWith(
+		t.Context(), client, resolver, "https://e/",
+		"tb", []string{"a"}, connectionRemoveFlags{force: true}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	firstReq := client.createVersionCalls[0].req
+	require.Len(t, firstReq.Tools, 2, "b and c remain after removing a")
+
+	// Simulate the real service state after step 1.
+	client.versionResults["tb/2"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "2", Tools: firstReq.Tools,
+	}}
+	client.listVersionsResults["tb"] = []azure.ToolboxVersionObject{
+		{Name: "tb", Version: "1"},
+		{Name: "tb", Version: "2"},
+	}
+
+	// Step 2: remove "b" with no --from-version. Pre-fix, this would branch
+	// from the still-default version "1" (a, b, c) and produce a sibling
+	// that never reflects step 1's removal. Post-fix, it must branch from
+	// latest ("2": b, c) and end up with only "c".
+	err = runConnectionRemoveWith(
+		t.Context(), client, resolver, "https://e/",
+		"tb", []string{"b"}, connectionRemoveFlags{force: true}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 2)
+	secondReq := client.createVersionCalls[1].req
+	require.Len(t, secondReq.Tools, 1,
+		"second remove must branch from latest (post-step-1 state), not the stale default")
+	assert.Equal(t, "/c/c", secondReq.Tools[0]["project_connection_id"])
+}
+
+// --from-version accepts an explicit version, forking from a specific point
+// in history rather than "default" or "latest".
+func TestRunConnectionRemoveWith_FromVersionExplicitOverride(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
+		Name: "tb", DefaultVersion: "1",
+	}}
+	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "1", Tools: []map[string]any{
+			{"type": "mcp", "name": "a", "project_connection_id": "/c/a"},
+		},
+	}}
+	// Version "3" is neither default ("1") nor latest; --from-version "3"
+	// must still be honored verbatim.
+	client.versionResults["tb/3"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "3", Tools: []map[string]any{
+			{"type": "mcp", "name": "a", "project_connection_id": "/c/a"},
+			{"type": "mcp", "name": "z", "project_connection_id": "/c/z"},
+		},
+	}}
+	client.listVersionsResults["tb"] = []azure.ToolboxVersionObject{
+		{Name: "tb", Version: "1"},
+		{Name: "tb", Version: "3"},
+	}
+	resolver := newStubConnectionResolver()
+	resolver.byName["z"] = &projectConnection{ID: "/c/z", Category: connections.ConnectionTypeRemoteTool, Name: "z"}
+
+	err := runConnectionRemoveWith(
+		t.Context(), client, resolver, "https://e/",
+		"tb", []string{"z"},
+		connectionRemoveFlags{force: true, fromVersion: "3"},
+		toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	req := client.createVersionCalls[0].req
+	require.Len(t, req.Tools, 1, "must branch from explicit version 3, not default/latest")
+	assert.Equal(t, "/c/a", req.Tools[0]["project_connection_id"])
 }
 
 func TestRunConnectionRemoveWith_ConnectionNotInToolbox(t *testing.T) {

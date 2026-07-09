@@ -26,6 +26,22 @@ func toolboxNotFoundOrService(err error, name, op string) error {
 	return exterrors.ServiceFromAzure(err, op)
 }
 
+// toolboxVersionNotFoundOrService maps a GetToolboxVersion error for a
+// resolved base/shown version to the right structured error:
+// Dependency(CodeToolboxNotFound) on 404, ServiceError otherwise. Used
+// whenever the version came from user input (--version, --from-version)
+// rather than being read back verbatim from the toolbox object.
+func toolboxVersionNotFoundOrService(err error, toolboxName, version, op string) error {
+	if isAzureNotFound(err) {
+		return exterrors.Dependency(
+			exterrors.CodeToolboxNotFound,
+			fmt.Sprintf("version %q of toolbox %q not found", version, toolboxName),
+			fmt.Sprintf("run 'azd ai toolbox versions list %q' to see available versions", toolboxName),
+		)
+	}
+	return exterrors.ServiceFromAzure(err, op)
+}
+
 // forEachToolConnectionID invokes fn for every project_connection_id reference
 // in tools[] (top-level on mcp entries, nested under azure_ai_search.indexes
 // on search entries). fn returns true to stop early.

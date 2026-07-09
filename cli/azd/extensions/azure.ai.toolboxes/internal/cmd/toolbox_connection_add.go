@@ -21,6 +21,7 @@ type connectionAddFlags struct {
 	index        string
 	instanceName string
 	fromFile     string
+	fromVersion  string
 }
 
 // newToolboxConnectionAddCommand returns the `connection add` command.
@@ -49,10 +50,11 @@ File mode:
 
 Provide a JSON or YAML file with multiple connections. All inputs from a
 single invocation create exactly one new toolbox version, so adding three
-connections this way produces v(N+1), not v(N+3).
+connections this way produces one new version, not three.
 
-The new version is created but the toolbox's default version is unchanged;
-run 'azd ai toolbox publish <toolbox> <version>' to promote it.
+The new version is branched from the toolbox's latest version by default
+(see --from-version), and the toolbox's default version is unchanged; run
+'azd ai toolbox publish <toolbox> <version>' to promote it.
 
 ` + fileShapeBlurb(false) + `
 
@@ -111,6 +113,7 @@ Examples:
 		&flags.fromFile, "from-file", "",
 		"Path to a JSON/YAML file describing the connections to add (see --help for the file shape).",
 	)
+	registerFromVersionFlag(cmd, &flags.fromVersion)
 	registerToolboxOutputFlag(cmd)
 	return cmd
 }
@@ -164,9 +167,13 @@ func runConnectionAddWith(
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolbox)
 	}
 
-	current, err := client.GetToolboxVersion(ctx, toolboxName, tb.DefaultVersion)
+	baseVersion, err := resolveBaseVersion(ctx, client, toolboxName, tb, verb.fromVersion)
 	if err != nil {
-		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolboxVersion)
+		return err
+	}
+	current, err := client.GetToolboxVersion(ctx, toolboxName, baseVersion)
+	if err != nil {
+		return toolboxVersionNotFoundOrService(err, toolboxName, baseVersion, exterrors.OpGetToolboxVersion)
 	}
 
 	newEntries := []map[string]any{}
@@ -247,7 +254,7 @@ func runConnectionAddWith(
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
 	}
 
-	return emitConnectionAddResult(toolboxName, created.Version, addedConnectionNames, parent.output, endpoint)
+	return emitConnectionAddResult(toolboxName, created.Version, baseVersion, addedConnectionNames, parent.output, endpoint)
 }
 
 // rejectDuplicatesAgainstCurrentAndBatch flags a duplicate if any new entry
@@ -287,15 +294,16 @@ func rejectDuplicatesAgainstCurrentAndBatch(current, added []map[string]any) err
 
 // emitConnectionAddResult prints the standard output for a successful add.
 func emitConnectionAddResult(
-	toolboxName, newVersion string, connectionNames []string, output, endpoint string,
+	toolboxName, newVersion, baseVersion string, connectionNames []string, output, endpoint string,
 ) error {
 	mcpURL := buildToolboxMcpURL(endpoint, toolboxName, newVersion)
 	if output == "json" {
 		payload := map[string]any{
-			"toolbox":     toolboxName,
-			"version":     newVersion,
-			"connections": connectionNames,
-			"endpoint":    mcpURL,
+			"toolbox":      toolboxName,
+			"version":      newVersion,
+			"base_version": baseVersion,
+			"connections":  connectionNames,
+			"endpoint":     mcpURL,
 		}
 		return emitJSON(payload)
 	}
@@ -305,7 +313,10 @@ func emitConnectionAddResult(
 		fmt.Printf("Connections: %s\n", strings.Join(connectionNames, ", "))
 	}
 	fmt.Printf("Endpoint: %s\n", mcpURL)
-	fmt.Printf("The default version is unchanged; "+
-		"run `azd ai toolbox publish %q %q` to promote.\n", toolboxName, newVersion)
+	fmt.Printf(
+		"Branched from version %s; the default version is unchanged. "+
+			"Run `azd ai toolbox publish %q %q` to promote.\n",
+		baseVersion, toolboxName, newVersion,
+	)
 	return nil
 }

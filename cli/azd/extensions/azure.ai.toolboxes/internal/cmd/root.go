@@ -17,8 +17,9 @@ func NewRootCommand() *cobra.Command {
 
 A toolbox is a versioned, named collection of connection-backed tools that
 agents reference at run time. Each version is immutable: mutations (connection
-add/remove, skill add/remove) create a new version but never change which
-version is the default. Use 'azd ai toolbox publish <toolbox> <version>'
+add/remove, skill add/remove) create a new version, branched from the
+toolbox's latest version by default, but never change which version is the
+default. Use 'azd ai toolbox publish <toolbox> <version>'
 to promote a version.`,
 	})
 

@@ -6,6 +6,8 @@ package project
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"azureaiagent/internal/pkg/azure"
@@ -68,6 +70,18 @@ func (c *ResourceGroupLocationCheck) Validate(
 	// valid, so running the check there would raise a false positive. Skip
 	// unless the current project actually provisions through microsoft.foundry.
 	if !c.usesFoundryProvider(ctx) {
+		return empty, nil
+	}
+
+	// Skip brownfield (bring-your-own) projects. When the Foundry service sets
+	// `endpoint:`, the microsoft.foundry provider connects to that existing
+	// project and provisions nothing — it creates no resource group and derives
+	// its target from AZURE_AI_PROJECT_ID, ignoring AZURE_RESOURCE_GROUP. Running
+	// this check there would compare AZURE_LOCATION against an unrelated, stale
+	// resource group of the same name and could wrongly block provisioning while
+	// suggesting the deletion of a resource group that has nothing to do with the
+	// deployment.
+	if c.isBrownfieldFoundryProject(ctx) {
 		return empty, nil
 	}
 
@@ -192,6 +206,34 @@ func (c *ResourceGroupLocationCheck) usesFoundryProvider(ctx context.Context) bo
 		return false
 	}
 	return resp.GetProject().GetInfra().GetProvider() == FoundryProviderName
+}
+
+// isBrownfieldFoundryProject reports whether the current project's Foundry
+// service is brownfield — i.e. it sets `endpoint:` to connect to an existing
+// Foundry project. It reuses the same helpers the provider uses so the two stay
+// in sync: findFoundryProjectService locates the service and foundryServiceEndpoint
+// reports whether `endpoint:` is set. It is best-effort: if the project or
+// azure.yaml cannot be read, or no Foundry service is found, it returns false so
+// the check proceeds (the greenfield path, which is where the region conflict can
+// actually occur).
+func (c *ResourceGroupLocationCheck) isBrownfieldFoundryProject(ctx context.Context) bool {
+	resp, err := c.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || resp.GetProject() == nil {
+		return false
+	}
+
+	// ProjectConfig.Path is the project directory that contains azure.yaml.
+	rawYAML, err := os.ReadFile(filepath.Join(resp.GetProject().GetPath(), "azure.yaml"))
+	if err != nil {
+		return false
+	}
+
+	svcName, err := findFoundryProjectService(rawYAML)
+	if err != nil {
+		return false
+	}
+
+	return foundryServiceEndpoint(rawYAML, svcName) != ""
 }
 
 // envValueOrEmpty returns the trimmed value of key in the named azd environment,

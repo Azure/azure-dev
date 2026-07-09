@@ -421,12 +421,15 @@ func collectConnections(
 	connections := []Connection{}
 
 	for name, node := range services {
-		var svc connectionService
-		if err := node.Decode(&svc); err != nil {
+		var host struct {
+			Host string `yaml:"host"`
+		}
+		if err := node.Decode(&host); err != nil || host.Host != aiConnectionHost {
 			continue
 		}
-		if svc.Host != aiConnectionHost {
-			continue
+		var svc connectionService
+		if err := node.Decode(&svc); err != nil {
+			return nil, fmt.Errorf("services.%s: decode connection: %w", name, err)
 		}
 
 		target, err := maybeExpand(svc.Target, env, resolve)

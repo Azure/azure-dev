@@ -2,7 +2,6 @@
   "name": "scripts",
   "version": "1.0.0",
   "description": "",
-  "main": "pr-approval-foundry-extensions-shared.js",
   "scripts": {
     "test": "vitest run"
   },

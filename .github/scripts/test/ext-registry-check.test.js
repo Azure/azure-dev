@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { describe, it, expect, vi } from 'vitest';
-import run from '../ext-registry-check.js';
+import run from '../src/ext-registry-check.js';
 
 /**
  * @typedef {typeof import('@actions/github').context} Context

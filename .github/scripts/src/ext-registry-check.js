@@ -1,7 +1,3 @@
-// This is the workhorse behind the .github/workflows/ext-registry-check.yml workflow, which checks to see
-// if a registry.json update is "safe" and can just be approved by any member of the team, or extended
-// team of extension authors, or if it requires _specific_ review.
-//
 const { isDeepStrictEqual } = require('node:util');
 
 // GitHub Actions entry point.

@@ -29,6 +29,6 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const script = require('./.github/scripts/ext-registry-check.js');
+            const script = require('./.github/scripts/src/ext-registry-check.js');
             await script({ github, context, core });
   

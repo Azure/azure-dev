@@ -6,6 +6,7 @@ Usage
 
 Flags
         --agent strings 	: Upgrade the skill for the specified agent(s): copilot, claude. Use --agent all for every detected agent (skill tools only)
+        --all           	: Upgrade all installed tools
         --dry-run       	: Preview what would be upgraded without making changes
 
 Global Flags

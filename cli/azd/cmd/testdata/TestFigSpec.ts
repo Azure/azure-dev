@@ -6367,6 +6367,10 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['--all'],
+							description: 'Upgrade all installed tools',
+						},
+						{
 							name: ['--dry-run'],
 							description: 'Preview what would be upgraded without making changes',
 						},

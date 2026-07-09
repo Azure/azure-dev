@@ -328,12 +328,19 @@ func (a *toolAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 // ---------------------------------------------------------------------------
 
 type toolListItem struct {
-	Id       string `json:"id"`
-	Name     string `json:"name"`
+	Id   string `json:"id"`
+	Name string `json:"name"`
+	// Agent is the agentic CLI host a skill row is installed through (e.g.
+	// "copilot"), empty for non-skill tools.
+	Agent    string `json:"agent,omitempty"`
 	Category string `json:"category"`
 	Priority string `json:"priority"`
 	Status   string `json:"status"`
 	Version  string `json:"version"`
+	// DisplayName is the NAME cell shown in the table: a skill row is
+	// prefixed with its host label (e.g. "[Copilot] Azure Skills"), other
+	// rows use the plain name. Excluded from JSON, which carries Name + Agent.
+	DisplayName string `json:"-"`
 }
 
 type toolListAction struct {
@@ -381,6 +388,24 @@ func (a *toolListAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	rows := make([]toolListItem, 0, len(statuses))
 	for _, s := range statuses {
+		// A skill installed on one or more hosts expands into one row per
+		// host, each prefixed with the host label (e.g. "[Copilot] ...").
+		if s.Tool.Category == tool.ToolCategorySkill && len(s.SkillHosts) > 0 {
+			for _, h := range s.SkillHosts {
+				rows = append(rows, toolListItem{
+					Id:          s.Tool.Id,
+					Name:        s.Tool.Name,
+					Agent:       h.Host,
+					DisplayName: fmt.Sprintf("[%s] %s", output.WithWarningFormat(h.Host), s.Tool.Name),
+					Category:    string(s.Tool.Category),
+					Priority:    string(s.Tool.Priority),
+					Status:      "Installed",
+					Version:     h.Version,
+				})
+			}
+			continue
+		}
+
 		status := "Not installed"
 		version := ""
 		if s.Installed {
@@ -389,12 +414,13 @@ func (a *toolListAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		}
 
 		rows = append(rows, toolListItem{
-			Id:       s.Tool.Id,
-			Name:     s.Tool.Name,
-			Category: string(s.Tool.Category),
-			Priority: string(s.Tool.Priority),
-			Status:   status,
-			Version:  version,
+			Id:          s.Tool.Id,
+			Name:        s.Tool.Name,
+			DisplayName: s.Tool.Name,
+			Category:    string(s.Tool.Category),
+			Priority:    string(s.Tool.Priority),
+			Status:      status,
+			Version:     version,
 		})
 	}
 
@@ -413,7 +439,7 @@ func (a *toolListAction) Run(ctx context.Context) (*actions.ActionResult, error)
 				Priority: 1,
 			},
 			{
-				Column:      output.Column{Heading: "NAME", ValueTemplate: "{{.Name}}"},
+				Column:      output.Column{Heading: "NAME", ValueTemplate: "{{.DisplayName}}"},
 				Priority:    2,
 				CardTitle:   true,
 				Wrappable:   true,
@@ -435,11 +461,6 @@ func (a *toolListAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			},
 			{
 				Column:      output.Column{Heading: "CATEGORY", ValueTemplate: "{{.Category}}"},
-				Priority:    3,
-				Truncatable: true,
-			},
-			{
-				Column:      output.Column{Heading: "PRIORITY", ValueTemplate: "{{.Priority}}"},
 				Priority:    3,
 				Truncatable: true,
 			},
@@ -1023,12 +1044,17 @@ func (a *toolInstallAction) resolveToolIds(ctx context.Context) ([]string, error
 // ---------------------------------------------------------------------------
 
 type toolUpgradeFlags struct {
+	all    bool
 	dryRun bool
 	hosts  []string
 }
 
 func newToolUpgradeFlags(cmd *cobra.Command) *toolUpgradeFlags {
 	flags := &toolUpgradeFlags{}
+	cmd.Flags().BoolVar(
+		&flags.all, "all", false,
+		"Upgrade all installed tools",
+	)
 	cmd.Flags().BoolVar(
 		&flags.dryRun, "dry-run", false,
 		"Preview what would be upgraded without making changes",
@@ -1082,7 +1108,22 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 	// for upgrading.
 	fromVersions := make(map[string]string)
 
-	if len(a.args) > 0 {
+	switch {
+	case a.flags.all:
+		// --all: upgrade every installed tool.
+		statuses, err := a.detectInstalledTools(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, s := range statuses {
+			if s.Installed {
+				toolsToUpgrade = append(toolsToUpgrade, s.Tool)
+				if s.Tool != nil {
+					fromVersions[s.Tool.Id] = s.InstalledVersion
+				}
+			}
+		}
+	case len(a.args) > 0:
 		for _, id := range a.args {
 			toolDef, findErr := a.manager.FindTool(id)
 			if findErr != nil {
@@ -1094,25 +1135,31 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 				fromVersions[toolDef.Id] = status.InstalledVersion
 			}
 		}
-	} else {
-		var statuses []*tool.ToolStatus
-		spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
-			Text:        "Detecting installed tools...",
-			ClearOnStop: true,
-		})
-		if err := spinner.Run(ctx, func(ctx context.Context) error {
-			var detectErr error
-			statuses, detectErr = a.manager.DetectAll(ctx)
-			return detectErr
-		}); err != nil {
-			return nil, fmt.Errorf("detecting installed tools: %w", err)
+	default:
+		// No args: prompt the user to pick from installed tools (like
+		// `azd tool install`), or upgrade every installed tool when running
+		// non-interactively.
+		statuses, err := a.detectInstalledTools(ctx)
+		if err != nil {
+			return nil, err
 		}
+		var installed []*tool.ToolStatus
 		for _, s := range statuses {
 			if s.Installed {
-				toolsToUpgrade = append(toolsToUpgrade, s.Tool)
-				if s.Tool != nil {
-					fromVersions[s.Tool.Id] = s.InstalledVersion
-				}
+				installed = append(installed, s)
+			}
+		}
+		chosen := installed
+		if a.console.IsSpinnerInteractive() && len(installed) > 0 {
+			chosen, err = a.promptForUpgradeTools(ctx, installed)
+			if err != nil {
+				return nil, err
+			}
+		}
+		for _, s := range chosen {
+			toolsToUpgrade = append(toolsToUpgrade, s.Tool)
+			if s.Tool != nil {
+				fromVersions[s.Tool.Id] = s.InstalledVersion
 			}
 		}
 	}
@@ -1223,6 +1270,68 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 			Header: header,
 		},
 	}, nil
+}
+
+// detectInstalledTools runs DetectAll behind a spinner and returns the full
+// set of tool statuses. Used by the --all and interactive upgrade paths.
+func (a *toolUpgradeAction) detectInstalledTools(ctx context.Context) ([]*tool.ToolStatus, error) {
+	var statuses []*tool.ToolStatus
+	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
+		Text:        "Detecting installed tools...",
+		ClearOnStop: true,
+	})
+	if err := spinner.Run(ctx, func(ctx context.Context) error {
+		var detectErr error
+		statuses, detectErr = a.manager.DetectAll(ctx)
+		return detectErr
+	}); err != nil {
+		return nil, fmt.Errorf("detecting installed tools: %w", err)
+	}
+	return statuses, nil
+}
+
+// promptForUpgradeTools shows an interactive multi-select of the installed
+// tools (all pre-selected) and returns the statuses the user chose to
+// upgrade, mirroring the selection prompt in `azd tool install`.
+func (a *toolUpgradeAction) promptForUpgradeTools(
+	ctx context.Context,
+	installed []*tool.ToolStatus,
+) ([]*tool.ToolStatus, error) {
+	choices := make([]*uxlib.MultiSelectChoice, len(installed))
+	for i, s := range installed {
+		choices[i] = &uxlib.MultiSelectChoice{
+			Value:    s.Tool.Id,
+			Label:    s.Tool.Name,
+			Selected: true,
+		}
+	}
+
+	multiSelect := uxlib.NewMultiSelect(&uxlib.MultiSelectOptions{
+		Writer:  a.console.Handles().Stdout,
+		Reader:  a.console.Handles().Stdin,
+		Message: "Select tools to upgrade",
+		Choices: choices,
+	})
+
+	selected, err := multiSelect.Ask(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("selecting tools: %w", err)
+	}
+
+	byID := make(map[string]*tool.ToolStatus, len(installed))
+	for _, s := range installed {
+		byID[s.Tool.Id] = s
+	}
+
+	var chosen []*tool.ToolStatus
+	for _, choice := range selected {
+		if choice.Selected {
+			if s, ok := byID[choice.Value]; ok {
+				chosen = append(chosen, s)
+			}
+		}
+	}
+	return chosen, nil
 }
 
 // resolveHostOptions determines which agentic CLI host(s) a skill should
@@ -1588,14 +1697,21 @@ func (a *toolUninstallAction) dryRun(
 // ---------------------------------------------------------------------------
 
 type toolCheckItem struct {
-	Id               string `json:"id"`
-	Name             string `json:"name"`
+	Id   string `json:"id"`
+	Name string `json:"name"`
+	// Agent is the agentic CLI host a skill row is checked through (e.g.
+	// "copilot"), empty for non-skill tools.
+	Agent            string `json:"agent,omitempty"`
 	InstalledVersion string `json:"installedVersion"`
 	LatestVersion    string `json:"latestVersion"`
 	UpdateAvailable  bool   `json:"updateAvailable"`
 	// Status is a human-readable installation/update status indicator.
 	// Populated only for pretty-table rendering; omitted from JSON.
 	Status string `json:"-"`
+	// DisplayName is the NAME cell shown in the table: a skill row is
+	// prefixed with its host label (e.g. "[Copilot] Azure Skills"), other
+	// rows use the plain name. Excluded from JSON, which carries Name + Agent.
+	DisplayName string `json:"-"`
 }
 
 type toolCheckAction struct {
@@ -1647,9 +1763,28 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 		if r.UpdateAvailable {
 			updatesAvailable++
 		}
+		// A skill installed on one or more hosts expands into one row per
+		// host, each prefixed with the host label and carrying that host's
+		// installed version and update status.
+		if r.Tool.Category == tool.ToolCategorySkill && len(r.SkillHosts) > 0 {
+			for _, h := range r.SkillHosts {
+				rows = append(rows, toolCheckItem{
+					Id:               r.Tool.Id,
+					Name:             r.Tool.Name,
+					Agent:            h.Host,
+					DisplayName:      fmt.Sprintf("[%s] %s", output.WithWarningFormat(h.Host), r.Tool.Name),
+					InstalledVersion: h.CurrentVersion,
+					LatestVersion:    r.LatestVersion,
+					UpdateAvailable:  h.UpdateAvailable,
+					Status:           toolCheckStatus(h.CurrentVersion != "", h.UpdateAvailable),
+				})
+			}
+			continue
+		}
 		rows = append(rows, toolCheckItem{
 			Id:               r.Tool.Id,
 			Name:             r.Tool.Name,
+			DisplayName:      r.Tool.Name,
 			InstalledVersion: r.CurrentVersion,
 			LatestVersion:    r.LatestVersion,
 			UpdateAvailable:  r.UpdateAvailable,
@@ -1675,7 +1810,7 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 				Priority: 1,
 			},
 			{
-				Column:      output.Column{Heading: "NAME", ValueTemplate: "{{.Name}}"},
+				Column:      output.Column{Heading: "NAME", ValueTemplate: "{{.DisplayName}}"},
 				Priority:    2,
 				CardTitle:   true,
 				Wrappable:   true,
@@ -1725,8 +1860,12 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 			if hasUpdates {
 				a.console.Message(ctx, "")
 				a.console.Message(ctx, fmt.Sprintf(
-					"Run %s to upgrade all installed tools.",
-					output.WithHighLightFormat("azd tool upgrade"),
+					"To upgrade: %s",
+					output.WithHighLightFormat("azd tool upgrade <tool-id>"),
+				))
+				a.console.Message(ctx, fmt.Sprintf(
+					"To upgrade all: %s",
+					output.WithHighLightFormat("azd tool upgrade --all"),
 				))
 			}
 		}

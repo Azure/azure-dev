@@ -26,6 +26,10 @@ type ToolStatus struct {
 	// output. It is empty when the tool is not installed or when
 	// version parsing fails.
 	InstalledVersion string
+	// SkillHosts lists every agentic CLI host the skill is installed
+	// through, with the version installed via each, in manifest order.
+	// Populated only for skill tools (see detectSkill); nil otherwise.
+	SkillHosts []InstalledSkillHost
 	// Error records any unexpected failure during detection (e.g. a
 	// timeout). A tool that is simply not installed has Error == nil.
 	Error error
@@ -461,15 +465,18 @@ func (d *detector) detectAzdExtension(
 // Skill detection
 // ---------------------------------------------------------------------------
 
-// detectSkill checks whether a skill is installed by running each
+// detectSkill checks whether a skill is installed by probing every
 // SkillHost's PluginListCommand. A host is reported as having the skill
 // installed only when its PluginName appears in the listing AND its
 // (required) VersionRegex captures a version. Because a host's list
 // command reports every installed plugin, the regex anchors on this
 // skill's identity so another plugin's version is never mistaken for
-// it. The captured group becomes InstalledVersion. Hosts whose binary
-// is not on PATH are skipped silently — a missing host is not an error,
-// it just means the skill cannot be installed through that host.
+// it. Every host the skill is installed through is recorded in
+// SkillHosts (in manifest order); Installed and InstalledVersion reflect
+// the first such host, so a skill installed anywhere reads as installed.
+// Hosts whose binary is not on PATH are skipped silently — a missing
+// host is not an error, it just means the skill cannot be installed
+// through that host.
 func (d *detector) detectSkill(
 	ctx context.Context,
 	tool *ToolDefinition,
@@ -480,17 +487,16 @@ func (d *detector) detectSkill(
 		return status
 	}
 
-	for _, host := range tool.SkillHosts {
-		version, err := d.skillHostVersion(ctx, host)
-		if err != nil {
-			status.Error = err
-			return status
-		}
-		if version != "" {
-			status.Installed = true
-			status.InstalledVersion = version
-			return status
-		}
+	hosts, err := d.DetectSkillHosts(ctx, tool)
+	if err != nil {
+		status.Error = err
+		return status
+	}
+
+	status.SkillHosts = hosts
+	if len(hosts) > 0 {
+		status.Installed = true
+		status.InstalledVersion = hosts[0].Version
 	}
 
 	return status

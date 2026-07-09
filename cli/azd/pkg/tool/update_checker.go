@@ -77,6 +77,22 @@ type UpdateCheckResult struct {
 	// UpdateAvailable is true when LatestVersion is non-empty and
 	// differs from CurrentVersion.
 	UpdateAvailable bool
+	// SkillHosts lists, for a skill tool, the per-host installed version
+	// and whether an update is available for it (LatestVersion is the same
+	// for every host). Populated only for skills; nil otherwise.
+	SkillHosts []SkillHostUpdate
+}
+
+// SkillHostUpdate pairs an agentic CLI host with the skill version installed
+// through it and whether a newer version is available.
+type SkillHostUpdate struct {
+	// Host is the agentic CLI host binary name (e.g. "copilot").
+	Host string
+	// CurrentVersion is the skill version installed through this host.
+	CurrentVersion string
+	// UpdateAvailable is true when a newer version than CurrentVersion is
+	// available for this host.
+	UpdateAvailable bool
 }
 
 // UpdateChecker performs periodic update checks for registered tools,
@@ -208,14 +224,22 @@ func (uc *UpdateChecker) Check(
 	for _, t := range tools {
 		status := statusByID[t.Id]
 
-		var currentVer string
-		if status != nil {
-			currentVer = status.InstalledVersion
-		}
-
 		latestVer := uc.resolveLatestVersion(
 			ctx, t, existing, cacheValid,
 		)
+
+		var currentVer string
+		var skillHosts []SkillHostUpdate
+		if status != nil {
+			currentVer = status.InstalledVersion
+			for _, h := range status.SkillHosts {
+				skillHosts = append(skillHosts, SkillHostUpdate{
+					Host:            h.Host,
+					CurrentVersion:  h.Version,
+					UpdateAvailable: isNewerVersion(latestVer, h.Version),
+				})
+			}
+		}
 
 		cache.Tools[t.Id] = CachedToolVersion{
 			LatestVersion: latestVer,
@@ -226,6 +250,7 @@ func (uc *UpdateChecker) Check(
 			CurrentVersion:  currentVer,
 			LatestVersion:   latestVer,
 			UpdateAvailable: isNewerVersion(latestVer, currentVer),
+			SkillHosts:      skillHosts,
 		})
 	}
 

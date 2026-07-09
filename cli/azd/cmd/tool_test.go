@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -1167,4 +1168,89 @@ func TestToolUninstallAction_DryRun_DoesNotDelegate(t *testing.T) {
 	gotDry, ok := lookupToolBoolUsage(string(fields.ToolDryRunKey.Key))
 	require.True(t, ok, "tool.dry_run must be emitted on dry-run uninstall")
 	assert.True(t, gotDry)
+}
+
+// TestToolUpgradeAction_All_UpgradesInstalledTools verifies that
+// `azd tool upgrade --all` upgrades every installed tool (and only those),
+// without an interactive selection prompt.
+func TestToolUpgradeAction_All_UpgradesInstalledTools(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+
+	var installedIDs []string
+	detector := &cmdMockDetector{
+		detectAll: func(_ context.Context, tools []*tool.ToolDefinition) ([]*tool.ToolStatus, error) {
+			statuses := make([]*tool.ToolStatus, len(tools))
+			for i, td := range tools {
+				// Mark the first two manifest tools installed; the rest not.
+				installed := i < 2
+				statuses[i] = &tool.ToolStatus{Tool: td, Installed: installed}
+				if installed {
+					statuses[i].InstalledVersion = "1.0.0"
+					installedIDs = append(installedIDs, td.Id)
+				}
+			}
+			return statuses, nil
+		},
+	}
+
+	var upgradedIDs []string
+	installer := &cmdMockInstaller{
+		upgrade: func(_ context.Context, td *tool.ToolDefinition, _ ...tool.InstallOption) (*tool.InstallResult, error) {
+			upgradedIDs = append(upgradedIDs, td.Id)
+			return &tool.InstallResult{Tool: td, Success: true, InstalledVersion: "2.0.0"}, nil
+		},
+	}
+	manager := tool.NewManager(detector, installer, nil)
+
+	action := newToolUpgradeAction(
+		nil,
+		&toolUpgradeFlags{all: true},
+		manager,
+		mockinput.NewMockConsole(),
+		&output.NoneFormatter{},
+		io.Discard,
+	)
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+
+	require.Len(t, installedIDs, 2)
+	assert.ElementsMatch(t, installedIDs, upgradedIDs,
+		"--all must upgrade exactly the installed tools")
+}
+
+// TestAgentLabel verifies the host command identity is capitalized for
+// display (e.g. "copilot" -> "Copilot"), with an empty command mapping to "".
+func TestAgentLabel(t *testing.T) {
+	cases := map[string]string{
+		"copilot": "Copilot",
+		"claude":  "Claude",
+		"gemini":  "Gemini",
+		"":        "",
+	}
+	for in, want := range cases {
+		assert.Equal(t, want, agentLabel(in))
+	}
+}
+
+// TestSkillDisplayName verifies a skill name is prefixed with its bracketed
+// host label.
+func TestSkillDisplayName(t *testing.T) {
+	assert.Equal(t, "[Copilot] Azure Skills", skillDisplayName("Azure Skills", "copilot"))
+	assert.Equal(t, "[Claude] Azure Skills", skillDisplayName("Azure Skills", "claude"))
+}
+
+// TestColorAgentPrefix verifies only a leading "[Agent]" token is decorated:
+// names without a bracket prefix are returned unchanged, and a prefixed name
+// keeps its trailing text intact regardless of whether color is enabled.
+func TestColorAgentPrefix(t *testing.T) {
+	// No bracket prefix: returned verbatim.
+	assert.Equal(t, "Azure CLI", colorAgentPrefix("Azure CLI"))
+	assert.Equal(t, "", colorAgentPrefix(""))
+
+	// Bracket prefix: the token and trailing name are both preserved.
+	got := colorAgentPrefix("[Copilot] Azure Skills")
+	assert.Contains(t, got, "[Copilot]")
+	assert.True(t, strings.HasSuffix(got, "] Azure Skills"),
+		"trailing tool name must be preserved uncolored")
 }

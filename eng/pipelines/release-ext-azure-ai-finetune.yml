@@ -26,10 +26,9 @@ parameters:
   - name: PublishToRegistry
     displayName: Publish to registry
     type: string
-    ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
-      default: nightly
-    ${{ else }}:
-      default: stable
+    # Scheduled (nightly) runs override this in the shared templates; the runtime
+    # parameter default must be a literal because it renders before variables exist.
+    default: stable
     values:
       - stable
       - dev

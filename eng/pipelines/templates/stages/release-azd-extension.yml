@@ -67,8 +67,9 @@ stages:
             # CodeQL on macOS not supported by the Azure DevOps task as-of current.
             # Codeql.BuildIdentifier: cli_darwin
 
-        ${{ if eq(parameters.PublishToRegistry, 'nightly') }}:
-          # Only run this build during nightly (scheduled or manual nightly) pipeline executions.
+        ${{ if or(eq(variables['Build.Reason'], 'Schedule'), eq(parameters.PublishToRegistry, 'nightly')) }}:
+          # Only run this build for nightly publishes (scheduled runs, or a manual
+          # run that selected the 'nightly' registry channel).
           MacAppleSilicon:
             Pool: Azure Pipelines
             OSVmImage: $(MACVMIMAGEM1)
@@ -82,9 +83,10 @@ stages:
               SetExecutableBit: true
               AZURE_DEV_CI_OS: mac-arm64
 
-  # Sign and release on manual builds (stable/dev release) and scheduled builds
-  # (nightly) from internal. Nightly builds reuse the same sign + package + publish path;
-  # publish-extension.yml branches its behavior on Build.Reason.
+  # Sign and release on manual builds (stable/dev/nightly release) and scheduled
+  # builds (nightly) from internal. Nightly builds reuse the same sign + package +
+  # publish path; publish-extension.yml branches its behavior on both the schedule
+  # trigger (Build.Reason) and the selected PublishToRegistry channel.
   - ${{ if and(eq(variables['System.TeamProject'], 'internal'), in(variables['Build.Reason'], 'Manual', 'Schedule')) }}:
     - template: /eng/pipelines/templates/stages/sign-extension.yml
       parameters:

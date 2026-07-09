@@ -28,19 +28,33 @@ const (
 	routinesPreviewValue  = "Routines=V1Preview"
 )
 
-// Client is the data-plane client for Foundry Routines API operations.
+const (
+	// DefaultReadRequestTimeout is the default timeout for read tries.
+	DefaultReadRequestTimeout = 30 * time.Second
+
+	// DefaultWriteRequestTimeout is the default timeout for write tries.
+	DefaultWriteRequestTimeout = 2 * time.Minute
+)
+
+// Client is a Foundry Routines data-plane client.
 type Client struct {
-	endpoint string
-	pipeline runtime.Pipeline
+	endpoint      string
+	readPipeline  runtime.Pipeline
+	writePipeline runtime.Pipeline
 }
 
-// newHTTPClient returns the *http.Client used by the data-plane pipeline.
+// ClientOptions configures a Routines data-plane client.
+type ClientOptions struct {
+	// RequestTimeout caps each HTTP request try.
+	RequestTimeout time.Duration
+}
+
+// newHTTPClient returns the data-plane pipeline's HTTP client.
 //
-// The default azcore transport relies on Go's HTTP/2 client, which can wait
-// minutes before surfacing a server-side stream reset (RST_STREAM). We set
-// explicit response-header and connection-level timeouts so failures surface
-// within tens of seconds.
-func newHTTPClient() *http.Client {
+// The default azcore transport relies on Go's HTTP/2 client, which
+// can wait minutes before surfacing a server-side stream reset
+// (RST_STREAM). Explicit timeouts keep failures bounded.
+func newHTTPClient(requestTimeout time.Duration) *http.Client {
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
@@ -52,21 +66,37 @@ func newHTTPClient() *http.Client {
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
-		ResponseHeaderTimeout: 60 * time.Second,
+		ResponseHeaderTimeout: requestTimeout,
 	}
 	return &http.Client{Transport: transport}
 }
 
+func resolveRequestTimeouts(options *ClientOptions) (time.Duration, time.Duration) {
+	if options != nil && options.RequestTimeout > 0 {
+		return options.RequestTimeout, options.RequestTimeout
+	}
+	return DefaultReadRequestTimeout, DefaultWriteRequestTimeout
+}
+
 // NewClient creates a new Routines data-plane client.
-func NewClient(endpoint string, cred azcore.TokenCredential) *Client {
+func NewClient(endpoint string, cred azcore.TokenCredential, options *ClientOptions) *Client {
+	readTimeout, writeTimeout := resolveRequestTimeouts(options)
+	return &Client{
+		endpoint:      strings.TrimRight(endpoint, "/"),
+		readPipeline:  newPipeline(cred, readTimeout),
+		writePipeline: newPipeline(cred, writeTimeout),
+	}
+}
+
+func newPipeline(cred azcore.TokenCredential, requestTimeout time.Duration) runtime.Pipeline {
 	clientOptions := &policy.ClientOptions{
-		Transport: newHTTPClient(),
+		Transport: newHTTPClient(requestTimeout),
 		Logging: policy.LogOptions{
 			AllowedHeaders: []string{azsdk.MsCorrelationIdHeader},
 		},
 		Retry: policy.RetryOptions{
 			MaxRetries: 1,
-			TryTimeout: 30 * time.Second,
+			TryTimeout: requestTimeout,
 		},
 		PerCallPolicies: []policy.Policy{
 			runtime.NewBearerTokenPolicy(
@@ -79,14 +109,12 @@ func NewClient(endpoint string, cred azcore.TokenCredential) *Client {
 		},
 	}
 
-	pipeline := runtime.NewPipeline(
+	return runtime.NewPipeline(
 		"azure-ai-routines",
 		"v0.1.0",
 		runtime.PipelineOptions{},
 		clientOptions,
 	)
-
-	return &Client{endpoint: strings.TrimRight(endpoint, "/"), pipeline: pipeline}
 }
 
 // routineURL returns the URL for a named routine.
@@ -130,7 +158,7 @@ func (c *Client) GetRoutine(ctx context.Context, name string) (*Routine, error) 
 	}
 	addPreviewHeader(req)
 
-	resp, err := c.pipeline.Do(req)
+	resp, err := c.readPipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -176,7 +204,7 @@ func (c *Client) getPage(ctx context.Context, pageURL string, out any) error {
 	}
 	addPreviewHeader(req)
 
-	resp, err := c.pipeline.Do(req)
+	resp, err := c.readPipeline.Do(req)
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -201,7 +229,7 @@ func (c *Client) PutRoutine(ctx context.Context, name string, body *Routine) (*R
 		return nil, err
 	}
 
-	resp, err := c.pipeline.Do(req)
+	resp, err := c.writePipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -226,7 +254,7 @@ func (c *Client) DeleteRoutine(ctx context.Context, name string) error {
 	}
 	addPreviewHeader(req)
 
-	resp, err := c.pipeline.Do(req)
+	resp, err := c.writePipeline.Do(req)
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -258,7 +286,7 @@ func (c *Client) postRoutineAction(ctx context.Context, name, action string) (*R
 	}
 	addPreviewHeader(req)
 
-	resp, err := c.pipeline.Do(req)
+	resp, err := c.writePipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -293,7 +321,7 @@ func (c *Client) DispatchRoutineAsync(
 		}
 	}
 
-	resp, err := c.pipeline.Do(req)
+	resp, err := c.writePipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}

@@ -165,6 +165,11 @@ func parseRoutineServiceConfig(svc *azdext.ServiceConfig) (*routines.Routine, er
 // upserts. It mirrors newRoutineClient but takes no cobra command, since a
 // service target has no flags.
 func newRoutineServiceClient(ctx context.Context) (*routines.Client, error) {
+	requestTimeout, err := routineHTTPTimeoutOverrideFromEnv()
+	if err != nil {
+		return nil, err
+	}
+
 	resolved, err := resolveProjectEndpoint(ctx, "")
 	if err != nil {
 		return nil, err
@@ -173,7 +178,11 @@ func newRoutineServiceClient(ctx context.Context) (*routines.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
 	}
-	return routines.NewClient(resolved.Endpoint, cred), nil
+	return routines.NewClient(
+		resolved.Endpoint,
+		cred,
+		routineClientOptions(requestTimeout),
+	), nil
 }
 
 // currentEnvValues loads all key-value pairs from the active azd environment, used to

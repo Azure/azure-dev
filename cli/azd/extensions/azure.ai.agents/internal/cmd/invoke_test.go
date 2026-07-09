@@ -645,6 +645,12 @@ func TestProtocolFlagValidation(t *testing.T) {
 			wantErr: true,
 			errSub:  "unsupported protocol",
 		},
+		{
+			name:    "rejects --client-header with a2a",
+			args:    []string{"--protocol", "a2a", "--client-header", "x-client-request-id: abc", "hello"},
+			wantErr: true,
+			errSub:  "--client-header is not supported with the a2a protocol",
+		},
 	}
 
 	for _, tt := range tests {

@@ -45,6 +45,7 @@ type invokeFlags struct {
 	version         string
 	outputFmt       string
 	callID          string
+	clientHeaders   []string
 }
 
 // outputRaw is the sentinel value of the inherited --output flag that selects
@@ -63,9 +64,10 @@ const maxInvokeVersionLength = 128
 var createInvokeVersionSession = createInvokeVersionSessionImpl
 
 type InvokeAction struct {
-	flags    *invokeFlags
-	noPrompt bool
-	endpoint *parsedAgentEndpoint
+	flags         *invokeFlags
+	noPrompt      bool
+	endpoint      *parsedAgentEndpoint
+	clientHeaders http.Header
 }
 
 func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -104,6 +106,12 @@ remote invokes it is sent as the x-ms-user-identity header.
 Use --call-id to send a call ID with a local invoke. It is sent as the
 x-agent-foundry-call-id header and applies only to local invocations; it is
 ignored for remote requests.
+
+Use --client-header to send custom x-client-* request headers in "Name: Value"
+format (repeatable). The responses and invocations protocols forward the
+x-client-* header family to the agent; other header names are rejected, and
+the flag is not supported with the a2a protocol (which does not propagate
+x-client-* headers). For identity headers use --user-identity or --call-id.
 
 Use --output raw (or -o raw) to dump the unmodified server response (status
 line, headers, and body verbatim) to stdout. Useful for debugging server
@@ -145,6 +153,9 @@ suppressed in raw mode.`,
 
   # Dump the raw server response (status line, headers, body) for debugging
   azd ai agent invoke --output raw "Hello!"
+
+  # Send custom x-client-* headers (repeatable)
+  azd ai agent invoke --client-header "x-client-request-id: abc123" --client-header "x-client-tenant: contoso" "Hello!"
 
   # Invoke a deployed agent from any directory using the endpoint URL shown by 'azd ai agent show'
   azd ai agent invoke \
@@ -230,6 +241,23 @@ suppressed in raw mode.`,
 				}
 			}
 
+			clientHeaders, err := parseCustomHeaders(flags.clientHeaders)
+			if err != nil {
+				return err
+			}
+			// A2A routes through a translating proxy with its own fixed header
+			// set and does not propagate x-client-* to the agent, so accepting
+			// the flag there would silently drop the headers.
+			if len(clientHeaders) > 0 && agent_api.AgentProtocol(flags.protocol) == agent_api.AgentProtocolA2A {
+				return exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					"--client-header is not supported with the a2a protocol",
+					"the a2a protocol does not forward x-client-* headers to the agent; "+
+						"use --protocol responses or invocations to send client headers",
+				)
+			}
+			action.clientHeaders = clientHeaders
+
 			return action.Run(ctx)
 		},
 	}
@@ -257,6 +285,14 @@ suppressed in raw mode.`,
 		"",
 		"Call ID header value (sent as "+agent_api.AgentFoundryCallIDHeader+" for local invocations only; "+
 			"ignored for remote requests)",
+	)
+	cmd.Flags().StringArrayVar(
+		&flags.clientHeaders,
+		"client-header",
+		nil,
+		`Custom x-client-* request header in "Name: Value" format (repeatable). `+
+			"The responses and invocations protocols forward the x-client-* header family to the agent; "+
+			"other header names are rejected and the flag is not supported with a2a.",
 	)
 	cmd.Flags().StringVar(
 		&flags.agentEndpoint,
@@ -384,6 +420,21 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	protocol, err := a.resolveProtocol(ctx)
 	if err != nil {
 		return err
+	}
+
+	// Re-validate after protocol resolution: when --protocol was omitted the
+	// protocol may have been auto-detected as a2a (e.g. from agent.yaml). In
+	// that case the flag-parse guard above was skipped and clientHeaders was
+	// populated, but a2aRemote never calls applyCustomHeaders — the headers
+	// would be silently dropped, which is the exact silent no-op the guard
+	// intends to prevent.
+	if len(a.clientHeaders) > 0 && protocol == agent_api.AgentProtocolA2A {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--client-header is not supported with the a2a protocol",
+			"the a2a protocol does not forward x-client-* headers to the agent; "+
+				"use --protocol responses or invocations to send client headers",
+		)
 	}
 
 	if a.flags.local {
@@ -619,6 +670,7 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
+	applyCustomHeaders(req, a.clientHeaders)
 	req.Header.Set("Content-Type", "application/json")
 	applyLocalUserIdentityHeader(req, &a.flags.userIdentityFlags)
 	applyLocalCallIDHeader(req, a.flags.callID)
@@ -1018,6 +1070,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
+	applyCustomHeaders(req, a.clientHeaders)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
@@ -1145,6 +1198,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
+	applyCustomHeaders(req, a.clientHeaders)
 	req.Header.Set("Content-Type", contentTypeForBody(body))
 	applyLocalUserIdentityHeader(req, &a.flags.userIdentityFlags)
 	applyLocalCallIDHeader(req, a.flags.callID)
@@ -1255,6 +1309,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
+	applyCustomHeaders(req, a.clientHeaders)
 	req.Header.Set("Content-Type", contentTypeForBody(body))
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)

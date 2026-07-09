@@ -4,6 +4,7 @@
 
 ### Features Added
 
+- [[#8478]](https://github.com/Azure/azure-dev/issues/8478) Add `--client-header` to `azd ai agent invoke` for sending custom `x-client-*` request headers in `"Name: Value"` format (repeatable). The responses and invocations protocols forward the `x-client-*` header family to the agent; other header names are rejected, and the flag is not supported with the `a2a` protocol (which does not propagate `x-client-*` headers). Managed headers (`Authorization`, `Content-Type`, user identity) always take precedence.
 - [[#8939]](https://github.com/Azure/azure-dev/pull/8939) Add native support for the Activity protocol to `azd ai agent`. `azd ai agent init` can now scaffold an Activity-protocol agent (defaulting to the service-recommended version `2.0.0`), `azd deploy` provisions a companion Azure Bot Service registration authenticated with `BotServiceRbac` and prints Microsoft Teams setup guidance, and `azd down` tears the bot down. Both init-from-code and init-from-manifest flows are supported.
 - [[#8989]](https://github.com/Azure/azure-dev/pull/8989) Add `a2a` protocol support to `azd ai agent invoke`. A plain message is wrapped in a JSON-RPC 2.0 `message/send` request, `--input-file` sends a complete JSON-RPC request, and `--output raw` dumps the response verbatim. A2A is remote-only (not available with `--local`).
 

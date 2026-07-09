@@ -619,6 +619,21 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 				{Protocol: "invocations", Version: "1.0.0"},
 			},
 		},
+		{
+			name:          "activity only",
+			flagProtocols: []string{"activity"},
+			wantProtocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "activity", Version: "2.0.0"},
+			},
+		},
+		{
+			name:          "activity coexists with other protocols",
+			flagProtocols: []string{"activity", "responses"},
+			wantProtocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "activity", Version: "2.0.0"},
+				{Protocol: "responses", Version: "2.0.0"},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -680,6 +695,9 @@ func TestKnownProtocolNames(t *testing.T) {
 	}
 	if !strings.Contains(result, "invocations") {
 		t.Errorf("knownProtocolNames() = %q, want to contain 'invocations'", result)
+	}
+	if !strings.Contains(result, "activity") {
+		t.Errorf("knownProtocolNames() = %q, want to contain 'activity'", result)
 	}
 }
 

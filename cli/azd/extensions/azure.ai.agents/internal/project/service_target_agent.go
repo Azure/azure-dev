@@ -19,7 +19,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -94,16 +93,17 @@ func buildInvocationsProtocolURL(projectEndpoint, agentName string) string {
 	)
 }
 
-// buildInvocationsWSProtocolURL builds the Foundry dispatcher-form WebSocket URL for the
-// "invocations_ws" protocol. Unlike the per-agent HTTP protocols, invocations_ws uses a
-// fixed data-plane route under /api/projects/agents/endpoint/protocols/invocations_ws and
-// selects the agent via the project_name and agent_name query parameters. Callers must add
-// their own agent_session_id query parameter when establishing a session.
+// buildInvocationsWSProtocolURL builds the Foundry data-plane WebSocket URL for the
+// "invocations_ws" protocol. The route is path-based and mirrors the HTTP "invocations" shape:
+// the project and agent are carried as path segments under
+// /api/projects/<project>/agents/<agent>/endpoint/protocols/invocations_ws, differing only in the
+// wss:// scheme and the trailing invocations_ws segment. The only WebSocket query parameters are
+// the required api-version and an optional agent_session_id; callers must add their own
+// agent_session_id when establishing a session.
 //
-// Returns "" if projectEndpoint cannot be parsed into a URL with a host: the dispatcher route
-// requires both a host (for the wss:// authority) and a project name (derived from the URL
-// path) to be callable, so emitting a partial URL would only register a non-callable endpoint.
-// Callers (agentInvocationEndpoints) filter out empty results.
+// Returns "" if projectEndpoint cannot be parsed into a URL with a host: the route requires a host
+// (for the wss:// authority) to be callable, so emitting a partial URL would only register a
+// non-callable endpoint. Callers (agentInvocationEndpoints) filter out empty results.
 func buildInvocationsWSProtocolURL(projectEndpoint, agentName string) string {
 	projectEndpoint = strings.TrimSpace(projectEndpoint)
 	u, err := url.Parse(projectEndpoint)
@@ -111,14 +111,9 @@ func buildInvocationsWSProtocolURL(projectEndpoint, agentName string) string {
 		return ""
 	}
 
-	projectName := path.Base(u.Path)
-	q := url.Values{}
-	q.Set("api-version", agent_api.AgentEndpointAPIVersion)
-	q.Set("project_name", projectName)
-	q.Set("agent_name", agentName)
 	return fmt.Sprintf(
-		"wss://%s/api/projects/agents/endpoint/protocols/invocations_ws?%s",
-		u.Host, q.Encode(),
+		"wss://%s%s/agents/%s/endpoint/protocols/invocations_ws?api-version=%s",
+		u.Host, u.Path, agentName, agent_api.AgentEndpointAPIVersion,
 	)
 }
 

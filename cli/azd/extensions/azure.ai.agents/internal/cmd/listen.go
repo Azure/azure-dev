@@ -286,6 +286,40 @@ func warnDuplicateAgentNames(proj *azdext.ProjectConfig) {
 	}
 }
 
+// gatherPostdeployInputs reads the environment inputs shared by the two postdeploy
+// steps (activity-bot provisioning and optimization reporting): the current
+// environment name, the Foundry project endpoint, the tenant, and a credential
+// built from that tenant. It only gathers and returns the first error encountered;
+// it does NOT decide skip-vs-fail, so each caller can apply its own policy to the
+// returned error (the required Teams bot fails; best-effort reporting skips).
+func gatherPostdeployInputs(
+	ctx context.Context, azdClient *azdext.AzdClient,
+) (envName, endpoint, tenant string, cred *azidentity.AzureDeveloperCLICredential, err error) {
+	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return "", "", "", nil, fmt.Errorf("failed to get current environment: %w", err)
+	}
+	envName = envResp.Environment.Name
+
+	if endpoint, err = readEnvValue(ctx, azdClient, envName, "FOUNDRY_PROJECT_ENDPOINT"); err != nil {
+		return envName, "", "", nil, err
+	}
+	if tenant, err = readEnvValue(ctx, azdClient, envName, "AZURE_TENANT_ID"); err != nil {
+		return envName, endpoint, "", nil, err
+	}
+
+	cred, err = azidentity.NewAzureDeveloperCLICredential(
+		&azidentity.AzureDeveloperCLICredentialOptions{
+			TenantID:                   tenant,
+			AdditionallyAllowedTenants: []string{"*"},
+		},
+	)
+	if err != nil {
+		return envName, endpoint, tenant, nil, fmt.Errorf("failed to create credential: %w", err)
+	}
+	return envName, endpoint, tenant, cred, nil
+}
+
 func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
 	svc := args.Service
 
@@ -294,71 +328,59 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		return nil
 	}
 
-	// Set up the project endpoint and credential used by optimization reporting.
-	// This path now feeds only best-effort optimization telemetry (the client-side
-	// agent-identity RBAC assignment was removed), so any setup failure is logged as
-	// a warning and skipped rather than failing an otherwise-successful deploy.
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		log.Printf("postdeploy: skipping optimization reporting for %s: "+
-			"failed to get current environment: %v", svc.Name, err)
-		return nil
+	// Whether this service is an activity agent decides how the shared inputs below
+	// are treated: an activity agent requires the Teams bot connector, so a missing
+	// input must fail the deploy; every other agent only feeds best-effort
+	// optimization reporting, which is safe to skip.
+	isActivity := false
+	if ca, isHosted, _, defErr := project.LoadAgentDefinition(svc, args.Project.Path); defErr == nil && isHosted {
+		isActivity = project.ResolveActivityProfile(ca).IsActivity
 	}
 
-	envName := envResp.Environment.Name
+	// Read the inputs both steps draw from once. Gathering does not decide
+	// skip-vs-fail; each step below applies its own policy to inputErr, so the
+	// required Teams bot never inherits optimization reporting's "log and skip"
+	// preconditions and vice versa.
+	envName, endpoint, tenant, cred, inputErr := gatherPostdeployInputs(ctx, azdClient)
 
-	// Read the project endpoint for API calls.
-	endpointResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envName,
-		Key:     "FOUNDRY_PROJECT_ENDPOINT",
-	})
-	if err != nil {
-		log.Printf("postdeploy: skipping optimization reporting for %s: "+
-			"failed to read FOUNDRY_PROJECT_ENDPOINT: %v", svc.Name, err)
-		return nil
-	}
-	if endpointResp.Value == "" {
-		log.Printf("postdeploy: skipping optimization reporting for %s: "+
-			"FOUNDRY_PROJECT_ENDPOINT is not set in the environment", svc.Name)
-		return nil
-	}
-
-	// Create a credential for API calls.
-	tenantResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envName,
-		Key:     "AZURE_TENANT_ID",
-	})
-	if err != nil {
-		log.Printf("postdeploy: skipping optimization reporting for %s: "+
-			"failed to read AZURE_TENANT_ID: %v", svc.Name, err)
-		return nil
-	}
-	if tenantResp.Value == "" {
-		log.Printf("postdeploy: skipping optimization reporting for %s: "+
-			"AZURE_TENANT_ID is not set in the environment", svc.Name)
-		return nil
+	// Step 1 — activity bot: a required connector, provisioned and validated on its
+	// own terms. A missing prerequisite fails the deploy rather than being skipped,
+	// consistent with the EnsureBot failure handled just below. No-op for other agents.
+	if isActivity {
+		if inputErr != nil {
+			return fmt.Errorf(
+				"agent %q deployed successfully, but its required Microsoft Teams bot could not be "+
+					"configured: %w\n"+
+					"  Ensure the agent is provisioned in this environment, then re-run 'azd deploy'.",
+				svc.Name, inputErr,
+			)
+		}
+		if err := ensureActivityBot(
+			ctx, azdClient, cred, envName, svc, args.Project, endpoint, tenant,
+		); err != nil {
+			return fmt.Errorf(
+				"agent %q deployed successfully, but configuring its Microsoft Teams bot failed: %w\n"+
+					"  The agent version is active — only the Teams channel binding is missing "+
+					"(commonly Azure Bot permissions or quota). Resolve the cause and re-run 'azd deploy'.",
+				svc.Name, err,
+			)
+		}
 	}
 
-	cred, err := azidentity.NewAzureDeveloperCLICredential(
-		&azidentity.AzureDeveloperCLICredentialOptions{
-			TenantID:                   tenantResp.Value,
-			AdditionallyAllowedTenants: []string{"*"},
-		},
-	)
-	if err != nil {
-		log.Printf("postdeploy: skipping optimization reporting for %s: "+
-			"failed to create credential: %v", svc.Name, err)
+	// Step 2 — optimization reporting: best-effort, skipped on its own terms. A
+	// missing input only logs and skips; it never fails an otherwise-successful
+	// deploy (the client-side agent-identity RBAC assignment was removed).
+	if inputErr != nil {
+		log.Printf("postdeploy: skipping optimization reporting for %s: %v", svc.Name, inputErr)
 		return nil
 	}
-
-	// Report optimization candidate deployment (best-effort: panics are logged, not propagated).
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
 				log.Printf("postdeploy: optimization reporting panicked for %s: %v", svc.Name, r)
 			}
 		}()
-		reportSvcOptimizationDeployment(ctx, azdClient, svc, envName, endpointResp.Value,
+		reportSvcOptimizationDeployment(ctx, azdClient, svc, envName, endpoint,
 			func(endpoint string) *optimize_api.OptimizeClient {
 				return optimize_api.NewOptimizeClient(endpoint, cred)
 			},
@@ -388,6 +410,10 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 			fmt.Printf("Cleaned up saved session and conversation for agent %q\n", svc.Name)
 		}
 	}
+
+	// Delete the Azure Bot created for activity-protocol agents so its globally
+	// unique name is freed for future redeploys. Best-effort.
+	teardownActivityBots(ctx, azdClient, envName, args.Project)
 
 	return nil
 }

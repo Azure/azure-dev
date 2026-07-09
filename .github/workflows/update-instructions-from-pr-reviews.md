@@ -155,7 +155,7 @@ Decide which merged PRs to examine, in this order of preference:
 2. Otherwise, use the GitHub tools to list recent workflow runs for **this
    workflow** (`Update Instructions From PR Reviews`) in the repository this
    workflow runs in. Find the most recent **successful** (completed with
-   `conclusion: success`) run and use its `updated_at` timestamp as the
+   `conclusion: success`) run and use its `run_started_at` timestamp as the
    starting point — mine PRs merged after that date.
 3. Otherwise (no previous successful run found), mine PRs merged within the
    last 6 months, capped at the **Max PRs** run parameter.

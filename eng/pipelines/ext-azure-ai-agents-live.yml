@@ -8,7 +8,11 @@
 # This pipeline is the live counterpart to the PR-gate checks in
 # `.github/workflows/lint-ext-azure-ai-agents.yml` (Tier 0 offline + Tier 1
 # recording/playback). Live Azure access is intentionally kept OUT of the
-# automatic PR pipeline (per Azure SDK EngSys / SFI guidance) and runs here only:
+# automatic PR pipeline (per Azure SDK EngSys / SFI guidance). The PR trigger
+# below only associates this pipeline with PRs targeting main so `/azp run
+# ext-azure-ai-agents-live` can queue it; the ADO pipeline definition must be
+# configured to require a team member comment before building PRs.
+# It runs only:
 #   - On demand via the PR comment:  /azp run ext-azure-ai-agents-live
 #     (requires write permission on the repo)
 #   - On the weekly schedule below.
@@ -23,7 +27,10 @@
 #     project) to avoid anonymous rate limits — no extra secret setup required.
 
 trigger: none
-pr: none
+pr:
+  branches:
+    include:
+      - main
 
 schedules:
   # 7am UTC Monday (offset from other weekly E2E pipelines to reduce contention).

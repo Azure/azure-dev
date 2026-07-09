@@ -100,6 +100,12 @@ words:
   - testdir
   # Test infrastructure
   - recordproxy
+  # Activity protocol local run (Playground)
+  - agentsplayground
+  - winget
+  - ECONNREFUSED
+  - wsae
+  - WSAECONNREFUSED
   # Activity protocol / Teams bot terms
   - armbotservice
   - botservice

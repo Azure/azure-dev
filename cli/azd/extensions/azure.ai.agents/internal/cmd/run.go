@@ -43,6 +43,8 @@ type runFlags struct {
 	name         string
 	startCommand string
 	noInspector  bool
+	noClient     bool
+	channel      string
 }
 
 func newRunCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -64,8 +66,9 @@ The startup command is read from the startupCommand property of the
 agent service in azure.yaml. If not set, it is auto-detected from the
 project type. Use --start-command to override both.
 
-By default, this also opens Agent Inspector after the local agent starts
-listening. Use --no-inspector to skip this.`,
+By default, this also opens a local client after the agent starts listening:
+Agent Inspector for responses/invocations agents, or the Microsoft 365 Agents
+Playground for activity agents. Use --no-client to skip this.`,
 		Example: `  # Start the agent in the current directory
   azd ai agent run
 
@@ -75,8 +78,8 @@ listening. Use --no-inspector to skip this.`,
   # Start on a custom port
   azd ai agent run --port 9090
 
-  # Start without opening Agent Inspector
-  azd ai agent run --no-inspector
+  # Start without opening a local client
+  azd ai agent run --no-client
 
   # Start with an explicit command
   azd ai agent run --start-command "python app.py"`,
@@ -93,7 +96,15 @@ listening. Use --no-inspector to skip this.`,
 	cmd.Flags().IntVarP(&flags.port, "port", "p", DefaultPort, "Port to listen on")
 	cmd.Flags().StringVarP(&flags.startCommand, "start-command", "c", "",
 		"Explicit startup command (overrides azure.yaml and auto-detection)")
-	cmd.Flags().BoolVar(&flags.noInspector, "no-inspector", false, "Do not open Agent Inspector")
+	cmd.Flags().BoolVar(&flags.noInspector, "no-inspector", false, "Do not open the local client (Agent Inspector or Playground)")
+	cmd.Flags().BoolVar(&flags.noClient, "no-client", false,
+		"Do not open the local client (Agent Inspector or Playground)")
+	// --no-inspector predates the Playground; --no-client is the canonical,
+	// protocol-neutral name. Keep --no-inspector working for back-compat but
+	// hide it from help and nudge users to --no-client.
+	_ = cmd.Flags().MarkDeprecated("no-inspector", "use --no-client instead")
+	cmd.Flags().StringVar(&flags.channel, "channel", defaultPlaygroundChannel,
+		"Channel for the Microsoft 365 Agents Playground (activity-protocol agents only)")
 
 	return cmd
 }
@@ -123,6 +134,13 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	// Detect project type early — used for both start-command resolution and
 	// environment setup (e.g., setting ASPNETCORE_URLS for .NET).
 	pt := detectProjectType(projectDir)
+
+	// Detect whether the target service is an activity agent.
+	// This is the single gate that keeps all activity-specific local behavior off
+	// the path of non-activity (responses/invocations) agents — they are entirely
+	// unaffected. Detection is self-contained (reads the agent definition), so
+	// this command has no dependency on the deploy-side activity work.
+	activityProfile := resolveActivityRunProfile(runCtx.Definition)
 
 	// Resolve start command: --start-command flag > azure.yaml startupCommand > detect
 	startCmd := flags.startCommand
@@ -204,7 +222,27 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 		}
 	}
 
-	url := fmt.Sprintf("http://localhost:%d", flags.port)
+	// Activity agents bind IPv4 and are reached at 127.0.0.1 everywhere else
+	// (the port-readiness check and the Playground URL), because `localhost`
+	// can resolve to IPv6 ::1 first and fail the connection. Keep the display
+	// URL consistent so a user copying it hits the same address that works.
+	displayHost := "localhost"
+	if activityProfile.IsActivity {
+		displayHost = "127.0.0.1"
+	}
+	url := fmt.Sprintf("http://%s:%d", displayHost, flags.port)
+
+	// Activity agents only round-trip locally in the anonymous
+	// "digital-worker" auth model. The default "simple" model needs a managed
+	// identity that doesn't exist off-box, so every message 500s locally.
+	// Force the toggle on for the local process only — deploy is unaffected
+	// because this env var is never set outside `run`. Appended last so it wins
+	// over any duplicate (Go exec uses the last value for a duplicate key).
+	if activityProfile.IsActivity {
+		env = append(env, fmt.Sprintf("%s=1", agentDigitalWorkerEnvVar))
+		fmt.Printf(
+			"Activity agent detected: starting in digital-worker (anonymous) mode for local Playground testing.\n")
+	}
 
 	// `run` holds the foreground TTY for the agent process and the
 	// `Next:` block is a "wait + new terminal" sequence. Emitting it
@@ -231,20 +269,29 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 		return fmt.Errorf("failed to start agent: %w", err)
 	}
 
-	inspectorInstalled := false
-	var inspectorInstallErr error
-	if !flags.noInspector {
-		inspectorInstalled, inspectorInstallErr = isInspectorExtensionInstalled(ctx, azdClient)
+	// Auto-launch the local client once the agent binds its port. Activity
+	// agents use the Microsoft 365 Agents Playground (the only local client that
+	// speaks the Activity protocol); everything else uses Agent Inspector. Both
+	// are suppressed by --no-inspector or its neutral alias --no-client.
+	suppressClient := flags.noInspector || flags.noClient
+	if activityProfile.IsActivity {
+		handlePlaygroundAutoLaunch(ctx, flags.port, flags.channel, suppressClient, os.Stderr)
+	} else {
+		inspectorInstalled := false
+		var inspectorInstallErr error
+		if !suppressClient {
+			inspectorInstalled, inspectorInstallErr = isInspectorExtensionInstalled(ctx, azdClient)
+		}
+		handleInspectorAutoLaunch(
+			ctx,
+			azdClient.Workflow(),
+			flags.port,
+			suppressClient,
+			inspectorInstalled,
+			inspectorInstallErr,
+			os.Stderr,
+		)
 	}
-	handleInspectorAutoLaunch(
-		ctx,
-		azdClient.Workflow(),
-		flags.port,
-		flags.noInspector,
-		inspectorInstalled,
-		inspectorInstallErr,
-		os.Stderr,
-	)
 
 	// Emit the `Next:` block once the agent's port is open. We don't
 	// want users alt-tabbing to a fresh terminal and pasting the
@@ -1048,11 +1095,22 @@ func emitNextAfterBind(
 	_ = printNextIfTerminal(os.Stdout, nextstep.ResolveAfterRun(state, serviceName, readmeExistsForProject(ctx, azdClient)))
 }
 
-// portReadyBudget is the wall-clock ceiling for waitForPortReady;
-// most agent runtimes (uvicorn, dotnet, node) bind within a second
-// of start so 5 s is generous without making a failed boot drag
-// the user's attention.
-const portReadyBudget = 5 * time.Second
+// portReadyBudget is the wall-clock ceiling for waitForPortReady, which
+// spans process-start → the server accepting on the loopback port.
+// (Dependency setup — venv creation + pip install — runs before the
+// server process is spawned, so it is NOT part of this window.) The gap
+// this budget covers is the interpreter booting and importing the agent
+// stack before it binds: empirically ~3–5 s for a minimal sample and
+// ~8 s once heavier frameworks (e.g. agent_framework) are imported, with
+// more on cold caches or slow CI. A short budget gives up before the
+// listener is up, so the "Agent ready" signal never prints and a user
+// (or coding agent) following the quickstart fires `invoke --local`
+// against a listener that isn't accepting yet. 90 s leaves generous
+// headroom for slow imports while still bounding a genuinely stuck boot.
+// The budget is effectively free: it only governs a background goroutine
+// that prints a readiness hint, and waitForPortReady honors ctx.Done, so
+// Ctrl+C during the wait returns immediately. See issue #8411.
+const portReadyBudget = 90 * time.Second
 
 // portReadyPollInterval is how often waitForPortReady probes the
 // loopback address; 100 ms is short enough to feel snappy while

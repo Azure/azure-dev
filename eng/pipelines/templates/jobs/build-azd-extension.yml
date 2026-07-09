@@ -21,6 +21,9 @@ parameters:
   - name: SkipTests
     type: boolean
     default: false
+  - name: PublishToRegistry
+    type: string
+    default: stable
 
 jobs:
   - job: BuildExtension_${{ parameters.NameSuffix }}
@@ -47,6 +50,7 @@ jobs:
           filePath: eng/scripts/Set-ExtensionVersionVariable.ps1
           arguments: >-
             -ExtensionDirectory ${{ parameters.AzdExtensionDirectory }}
+            -PublishToRegistry ${{ parameters.PublishToRegistry }}
       
       - ${{ if not(parameters.SkipTests) }}:
         - task: PowerShell@2

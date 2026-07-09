@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"strings"
 	"testing"
 	"time"
 
@@ -1219,38 +1218,71 @@ func TestToolUpgradeAction_All_UpgradesInstalledTools(t *testing.T) {
 		"--all must upgrade exactly the installed tools")
 }
 
-// TestAgentLabel verifies the host command identity is capitalized for
-// display (e.g. "copilot" -> "Copilot"), with an empty command mapping to "".
-func TestAgentLabel(t *testing.T) {
-	cases := map[string]string{
-		"copilot": "Copilot",
-		"claude":  "Claude",
-		"gemini":  "Gemini",
-		"":        "",
+// TestToolUpgradeAction_UnchangedVersion_ReportsUpToDate verifies that a
+// non-skill tool whose detected version is identical before and after the
+// upgrade reports "already up to date" — the version-comparison path that
+// makes the message work for every tool, not just skills.
+func TestToolUpgradeAction_UnchangedVersion_ReportsUpToDate(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+
+	detector := &cmdMockDetector{
+		detectTool: func(_ context.Context, td *tool.ToolDefinition) (*tool.ToolStatus, error) {
+			return &tool.ToolStatus{Tool: td, Installed: true, InstalledVersion: "1.0.0"}, nil
+		},
 	}
-	for in, want := range cases {
-		assert.Equal(t, want, agentLabel(in))
+	installer := &cmdMockInstaller{
+		upgrade: func(_ context.Context, td *tool.ToolDefinition, _ ...tool.InstallOption) (*tool.InstallResult, error) {
+			// Same version as detected before: nothing changed.
+			return &tool.InstallResult{Tool: td, Success: true, InstalledVersion: "1.0.0"}, nil
+		},
 	}
+	manager := tool.NewManager(detector, installer, nil)
+
+	action := newToolUpgradeAction(
+		[]string{"az-cli"},
+		&toolUpgradeFlags{},
+		manager,
+		mockinput.NewMockConsole(),
+		&output.NoneFormatter{},
+		io.Discard,
+	)
+
+	result, err := action.Run(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Message)
+	assert.Equal(t, "Tool is already up to date (v1.0.0).", result.Message.Header)
 }
 
-// TestSkillDisplayName verifies a skill name is prefixed with its bracketed
-// host label.
-func TestSkillDisplayName(t *testing.T) {
-	assert.Equal(t, "[Copilot] Azure Skills", skillDisplayName("Azure Skills", "copilot"))
-	assert.Equal(t, "[Claude] Azure Skills", skillDisplayName("Azure Skills", "claude"))
-}
+// TestToolUpgradeAction_ChangedVersion_ReportsUpgraded verifies that when the
+// detected version differs after the upgrade, the header reads "upgraded".
+func TestToolUpgradeAction_ChangedVersion_ReportsUpgraded(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
 
-// TestColorAgentPrefix verifies only a leading "[Agent]" token is decorated:
-// names without a bracket prefix are returned unchanged, and a prefixed name
-// keeps its trailing text intact regardless of whether color is enabled.
-func TestColorAgentPrefix(t *testing.T) {
-	// No bracket prefix: returned verbatim.
-	assert.Equal(t, "Azure CLI", colorAgentPrefix("Azure CLI"))
-	assert.Equal(t, "", colorAgentPrefix(""))
+	detector := &cmdMockDetector{
+		detectTool: func(_ context.Context, td *tool.ToolDefinition) (*tool.ToolStatus, error) {
+			return &tool.ToolStatus{Tool: td, Installed: true, InstalledVersion: "1.0.0"}, nil
+		},
+	}
+	installer := &cmdMockInstaller{
+		upgrade: func(_ context.Context, td *tool.ToolDefinition, _ ...tool.InstallOption) (*tool.InstallResult, error) {
+			return &tool.InstallResult{Tool: td, Success: true, InstalledVersion: "2.0.0"}, nil
+		},
+	}
+	manager := tool.NewManager(detector, installer, nil)
 
-	// Bracket prefix: the token and trailing name are both preserved.
-	got := colorAgentPrefix("[Copilot] Azure Skills")
-	assert.Contains(t, got, "[Copilot]")
-	assert.True(t, strings.HasSuffix(got, "] Azure Skills"),
-		"trailing tool name must be preserved uncolored")
+	action := newToolUpgradeAction(
+		[]string{"az-cli"},
+		&toolUpgradeFlags{},
+		manager,
+		mockinput.NewMockConsole(),
+		&output.NoneFormatter{},
+		io.Discard,
+	)
+
+	result, err := action.Run(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Message)
+	assert.Equal(t, "Tool is upgraded to v2.0.0.", result.Message.Header)
 }

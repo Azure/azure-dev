@@ -1247,21 +1247,40 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, opErr
 	}
 
-	// Choose the success header based on whether anything actually changed:
-	// when every upgraded tool reported it was already at the latest version,
-	// say so; otherwise report an upgrade. AlreadyUpToDate is only set for
-	// skills, so non-skill upgrades always read as "upgraded".
-	header := "Tool is upgraded."
-	if len(rawResults) > 0 {
-		allUpToDate := true
-		for _, r := range rawResults {
-			if !r.AlreadyUpToDate {
-				allUpToDate = false
-				break
-			}
+	// Choose the success header based on whether anything actually changed.
+	// A tool is "already up to date" when the installer flagged it (skills
+	// report this per host) or its detected version is unchanged by the
+	// upgrade — comparing the version detected before the upgrade
+	// (fromVersions) with the one detected after (InstalledVersion). A
+	// missing version on either side counts as a change, so azd never claims
+	// "up to date" without evidence and it reads as "upgraded".
+	allUpToDate := len(rawResults) > 0
+	for _, r := range rawResults {
+		upToDate := r.AlreadyUpToDate
+		if !upToDate && r.Tool != nil {
+			before := fromVersions[r.Tool.Id]
+			upToDate = before != "" && r.InstalledVersion != "" &&
+				before == r.InstalledVersion
 		}
+		if !upToDate {
+			allUpToDate = false
+			break
+		}
+	}
+
+	header := "Tool is upgraded."
+	if allUpToDate {
+		header = "Tool is already up to date."
+	}
+	// For a single tool, include the resulting version in the done message,
+	// e.g. "Tool is upgraded to v2.0.0." or
+	// "Tool is already up to date (v1.1.75).".
+	if len(rawResults) == 1 && rawResults[0].InstalledVersion != "" {
+		version := rawResults[0].InstalledVersion
 		if allUpToDate {
-			header = "Tool is already up to date."
+			header = fmt.Sprintf("Tool is already up to date (v%s).", version)
+		} else {
+			header = fmt.Sprintf("Tool is upgraded to v%s.", version)
 		}
 	}
 

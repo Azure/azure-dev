@@ -245,7 +245,7 @@ suppressed in raw mode.`,
 			if err != nil {
 				return err
 			}
-			// A2A routes through a translating head with its own fixed header
+			// A2A routes through a translating proxy with its own fixed header
 			// set and does not propagate x-client-* to the agent, so accepting
 			// the flag there would silently drop the headers.
 			if len(clientHeaders) > 0 && agent_api.AgentProtocol(flags.protocol) == agent_api.AgentProtocolA2A {
@@ -420,6 +420,21 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	protocol, err := a.resolveProtocol(ctx)
 	if err != nil {
 		return err
+	}
+
+	// Re-validate after protocol resolution: when --protocol was omitted the
+	// protocol may have been auto-detected as a2a (e.g. from agent.yaml). In
+	// that case the flag-parse guard above was skipped and clientHeaders was
+	// populated, but a2aRemote never calls applyCustomHeaders — the headers
+	// would be silently dropped, which is the exact silent no-op the guard
+	// intends to prevent.
+	if len(a.clientHeaders) > 0 && protocol == agent_api.AgentProtocolA2A {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--client-header is not supported with the a2a protocol",
+			"the a2a protocol does not forward x-client-* headers to the agent; "+
+				"use --protocol responses or invocations to send client headers",
+		)
 	}
 
 	if a.flags.local {

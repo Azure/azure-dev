@@ -132,9 +132,6 @@ func TestApplyCustomHeaders(t *testing.T) {
 		t.Fatalf("expected 2 values for X-Client-Tag, got %v", values)
 	}
 
-	// Managed headers set after applyCustomHeaders must win.
-	req.Header.Set("Content-Type", "application/json")
-	applyCustomHeaders(req, http.Header{"Content-Type": {"text/plain"}})
 	// Simulate builder order: custom applied first, managed overrides.
 	req2 := httptest.NewRequest(http.MethodPost, "http://localhost/responses", nil)
 	applyCustomHeaders(req2, http.Header{"Content-Type": {"text/plain"}})

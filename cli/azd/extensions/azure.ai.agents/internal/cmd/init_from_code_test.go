@@ -623,14 +623,14 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 			name:          "activity only",
 			flagProtocols: []string{"activity"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "activity", Version: "1.0.0"},
+				{Protocol: "activity", Version: "2.0.0"},
 			},
 		},
 		{
 			name:          "activity coexists with other protocols",
 			flagProtocols: []string{"activity", "responses"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "activity", Version: "1.0.0"},
+				{Protocol: "activity", Version: "2.0.0"},
 				{Protocol: "responses", Version: "2.0.0"},
 			},
 		},

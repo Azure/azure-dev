@@ -22,7 +22,7 @@ func TestIsActivityProtocol(t *testing.T) {
 			name: "container activity",
 			ca: agent_yaml.ContainerAgent{
 				Protocols: []agent_yaml.ProtocolVersionRecord{
-					{Protocol: "activity", Version: "1.0.0"},
+					{Protocol: "activity", Version: "2.0.0"},
 				},
 			},
 			want: true,
@@ -77,7 +77,7 @@ func TestResolveActivityProfile(t *testing.T) {
 	t.Run("activity agent resolves simple", func(t *testing.T) {
 		ca := agent_yaml.ContainerAgent{
 			Protocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "activity", Version: "1.0.0"},
+				{Protocol: "activity", Version: "2.0.0"},
 			},
 		}
 		got := ResolveActivityProfile(ca)
@@ -196,7 +196,7 @@ func TestActivityAgentEndpoint(t *testing.T) {
 func TestComposeActivityAgentEndpoint(t *testing.T) {
 	t.Run("pure activity matches expectedActivityEndpoint", func(t *testing.T) {
 		ep := ComposeActivityAgentEndpoint(nil, []agent_yaml.ProtocolVersionRecord{
-			{Protocol: "activity", Version: "1.0.0"},
+			{Protocol: "activity", Version: "2.0.0"},
 		})
 		require.Equal(t, []string{"activity"}, ep.Protocols)
 		require.Len(t, ep.AuthorizationSchemes, 1)
@@ -207,7 +207,7 @@ func TestComposeActivityAgentEndpoint(t *testing.T) {
 		ep := ComposeActivityAgentEndpoint(nil, []agent_yaml.ProtocolVersionRecord{
 			{Protocol: "responses", Version: "2.0.0"},
 			{Protocol: "invocations", Version: "1.0.0"},
-			{Protocol: "activity", Version: "1.0.0"},
+			{Protocol: "activity", Version: "2.0.0"},
 		})
 		require.Equal(t, []string{"responses", "invocations", "activity"}, ep.Protocols)
 		require.Len(t, ep.AuthorizationSchemes, 1)
@@ -232,7 +232,7 @@ func TestComposeActivityAgentEndpoint(t *testing.T) {
 		}
 		ep := ComposeActivityAgentEndpoint(existing, []agent_yaml.ProtocolVersionRecord{
 			{Protocol: "responses", Version: "2.0.0"},
-			{Protocol: "activity", Version: "1.0.0"},
+			{Protocol: "activity", Version: "2.0.0"},
 		})
 		require.Equal(t, []string{"responses", "activity"}, ep.Protocols)
 		require.Len(t, ep.AuthorizationSchemes, 2)

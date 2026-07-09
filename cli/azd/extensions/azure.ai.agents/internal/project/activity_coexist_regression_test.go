@@ -59,7 +59,7 @@ func TestActivityCoexistenceRegression(t *testing.T) {
 
 		t.Run("activity only keeps the single-protocol bot endpoint", func(t *testing.T) {
 			def, _ := assembleFromCode(t, []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "activity", Version: "1.0.0"},
+				{Protocol: "activity", Version: "2.0.0"},
 			})
 			require.True(t, IsActivityProtocol(def))
 			require.NotNil(t, def.AgentEndpoint)
@@ -71,7 +71,7 @@ func TestActivityCoexistenceRegression(t *testing.T) {
 			def, _ := assembleFromCode(t, []agent_yaml.ProtocolVersionRecord{
 				{Protocol: "responses", Version: "2.0.0"},
 				{Protocol: "invocations", Version: "1.0.0"},
-				{Protocol: "activity", Version: "1.0.0"},
+				{Protocol: "activity", Version: "2.0.0"},
 			})
 			require.True(t, IsActivityProtocol(def))
 			require.NotNil(t, def.AgentEndpoint)
@@ -97,7 +97,7 @@ template:
     - protocol: responses
       version: 2.0.0
     - protocol: activity
-      version: 1.0.0
+      version: 2.0.0
   agent_endpoint:
     protocols:
       - responses

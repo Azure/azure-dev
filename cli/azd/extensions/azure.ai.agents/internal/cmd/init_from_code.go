@@ -907,11 +907,13 @@ var knownProtocols = []protocolInfo{
 	{Name: "responses", Version: "2.0.0"},
 	{Name: "invocations", Version: "1.0.0"},
 	// "activity" is the canonical protocol name (legacy alias: "activity_protocol").
-	// Version is a platform routing selector, not a free version string: "v1" and
-	// "1.0.0" route to /api/messages, "2.0.0" to /activity/messages. Our sample
-	// serves /api/messages, so "1.0.0" keeps that routing while matching the
-	// semver style of responses/invocations.
-	{Name: "activity", Version: "1.0.0"},
+	// The version selects the platform's internal container route ("v1"/"1.0.0" ->
+	// /api/messages, "2.0.0" -> /activity/messages), but that hop is Bot Service ->
+	// container inside the platform: the client, the Bot Service messaging endpoint,
+	// and the agent sample are all unaffected by the choice. "2.0.0" is the service's
+	// official/recommended version ("1.0.0" is accepted but deprecated going forward),
+	// so new agents default to it, matching the latest-version convention responses uses.
+	{Name: "activity", Version: "2.0.0"},
 }
 
 // promptProtocols asks the user which protocols their agent supports.

@@ -1540,6 +1540,23 @@ To re-generate gRPC clients:
 
 The following are a list of available gRPC services for extension developer to integrate with `azd` core.
 
+Service-level `env` entries from `azure.yaml` are expanded by `azd` against the environment for
+the current session and forwarded to extensions as `ServiceConfig.environment`. The forwarded
+values are the expanded results, not the raw `${VAR}` templates. When a service config is written
+back through `ProjectService.AddService`, entries whose values are unchanged keep their original
+`${VAR}` references in `azure.yaml`, while new or changed values are persisted as literals (any
+`$` or `\` in a stored literal is escaped in `azure.yaml` so the value round-trips unchanged).
+
+Because `ServiceConfig.environment` carries expanded values, `AddService` cannot author `${VAR}`
+references: a new service or a new env key is always persisted as a literal. To create or edit
+raw `${VAR}` templates in `azure.yaml`, use the service config RPCs instead —
+`GetServiceConfigSection`/`SetServiceConfigSection` (or the `Value` variants) with the `env`
+path — which read and write the raw document exactly as written. Two caveats when using them:
+values written through the config RPCs are treated as templates, so escape `$` as `$$` when a
+literal dollar is intended; and when editing templates, read them through the config RPCs too —
+writing values taken from `ServiceConfig.environment` back through a config RPC would persist
+the expanded results in place of the original `${VAR}` references.
+
 ### Table of Contents
 
 - [Project Service](#project-service)

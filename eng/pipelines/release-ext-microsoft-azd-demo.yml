@@ -24,10 +24,17 @@ pr:
       - cli/azd/docs/**
 
 parameters:
-  - name: PublishToDevRegistry
-    displayName: Publish to dev registry
-    type: boolean
-    default: false
+  - name: PublishToRegistry
+    displayName: Publish to registry
+    type: string
+    ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+      default: nightly
+    ${{ else }}:
+      default: stable
+    values:
+      - stable
+      - dev
+      - nightly
 
 extends:
   template: /eng/pipelines/templates/stages/1es-redirect.yml
@@ -38,4 +45,4 @@ extends:
           AzdExtensionId: microsoft.azd.demo
           SanitizedExtensionId: microsoft-azd-demo
           AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.demo
-          PublishToDevRegistry: ${{ parameters.PublishToDevRegistry }}
+          PublishToRegistry: ${{ parameters.PublishToRegistry }}

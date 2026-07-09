@@ -23,10 +23,17 @@ pr:
       - cli/azd/docs/**
 
 parameters:
-  - name: PublishToDevRegistry
-    displayName: Publish to dev registry
-    type: boolean
-    default: false
+  - name: PublishToRegistry
+    displayName: Publish to registry
+    type: string
+    ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+      default: nightly
+    ${{ else }}:
+      default: stable
+    values:
+      - stable
+      - dev
+      - nightly
 
 extends:
   template: /eng/pipelines/templates/stages/1es-redirect.yml
@@ -37,4 +44,4 @@ extends:
           AzdExtensionId: azure.ai.skills
           SanitizedExtensionId: azure-ai-skills
           AzdExtensionDirectory: cli/azd/extensions/azure.ai.skills
-          PublishToDevRegistry: ${{ parameters.PublishToDevRegistry }}
+          PublishToRegistry: ${{ parameters.PublishToRegistry }}

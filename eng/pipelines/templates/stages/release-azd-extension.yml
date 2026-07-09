@@ -8,9 +8,9 @@ parameters:
   - name: SkipTests
     type: boolean
     default: false
-  - name: PublishToDevRegistry
-    type: boolean
-    default: false
+  - name: PublishToRegistry
+    type: string
+    default: stable
 
 stages: 
   - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
@@ -63,8 +63,8 @@ stages:
             # CodeQL on macOS not supported by the Azure DevOps task as-of current.
             # Codeql.BuildIdentifier: cli_darwin
 
-        ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
-          # Only run this build during scheduled pipeline executions.
+        ${{ if eq(parameters.PublishToRegistry, 'nightly') }}:
+          # Only run this build during nightly (scheduled or manual nightly) pipeline executions.
           MacAppleSilicon:
             Pool: Azure Pipelines
             OSVmImage: $(MACVMIMAGEM1)
@@ -91,4 +91,4 @@ stages:
         AzdExtensionId: ${{ parameters.AzdExtensionId }}
         AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
         SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
-        PublishToDevRegistry: ${{ parameters.PublishToDevRegistry }}
+        PublishToRegistry: ${{ parameters.PublishToRegistry }}

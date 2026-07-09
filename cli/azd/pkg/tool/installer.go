@@ -17,10 +17,8 @@ import (
 	"os"
 	osexec "os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -213,6 +211,70 @@ func stepError(result *InstallResult, err error) error {
 		return result.Error
 	}
 	return nil
+}
+
+// renderSkillStep frames one skill step (install, upgrade or uninstall) with
+// a live spinner that stays visible while the host CLI talks to the user.
+//
+// It shows a step spinner (like azd provision) and passes work an output
+// writer. Skill operations route the host CLI's stdout/stderr through that
+// writer (see skillCommandRunArgs), with stdin still connected, so each line
+// the CLI emits — progress or an interactive prompt — is printed above the
+// spinner while the spinner stays pinned below it: the console tears the
+// spinner down and re-renders it around each printed line (see
+// AskerConsole.println), so the bar is kept, not lost. The user answers any
+// prompt directly via the connected stdin. When the CLI stays silent the
+// spinner simply runs to completion. Either way the step ends by stopping the
+// spinner with the result. When renderer is nil (e.g. the first-run
+// middleware manages its own progress) it prints a stderr header and runs
+// work with a nil writer, so the command runs fully interactively.
+func renderSkillStep(
+	ctx context.Context,
+	renderer StepRenderer,
+	title string,
+	work func(out io.Writer) error,
+) error {
+	if renderer == nil {
+		fmt.Fprintf(os.Stderr, "\n%s\n", title)
+		return work(nil)
+	}
+
+	renderer.ShowSpinner(ctx, title, input.Step)
+	out := &lineWriter{emit: func(line string) { renderer.Message(ctx, line) }}
+	err := work(out)
+	renderer.StopSpinner(ctx, title, input.GetStepResultFormat(err))
+	return err
+}
+
+// lineWriter splits writes into lines and hands each to emit. Skill host
+// commands use it to surface the host CLI's output through the console so it
+// prints above the step spinner (which the console re-renders around each
+// line), keeping the spinner visible. Content is emitted as it arrives —
+// including a trailing line with no newline, e.g. an interactive prompt — so
+// nothing is withheld from the user while the CLI waits for input.
+type lineWriter struct {
+	emit func(string)
+}
+
+func (l *lineWriter) Write(p []byte) (int, error) {
+	for _, line := range strings.Split(strings.TrimRight(string(p), "\n"), "\n") {
+		l.emit(line)
+	}
+	return len(p), nil
+}
+
+// skillCommandRunArgs configures how a skill host command (install, upgrade
+// or uninstall) connects to the terminal. When out is non-nil (a step
+// spinner is showing) the command's stdout/stderr are routed through it so
+// the CLI's output prints above the spinner, while stdin stays connected so
+// the user can answer prompts. When out is nil (no spinner) the command runs
+// fully interactively against the terminal. azd never pipes canned answers on
+// the user's behalf.
+func skillCommandRunArgs(base exec.RunArgs, out io.Writer) exec.RunArgs {
+	if out == nil {
+		return base.WithInteractive(true)
+	}
+	return base.WithStdIn(os.Stdin).WithStdOut(out).WithStdErr(out)
 }
 
 // installer is the default, unexported implementation of [Installer].
@@ -746,15 +808,9 @@ func (i *installer) runSkillUninstall(
 	)
 	for _, host := range targets {
 		title := fmt.Sprintf("Uninstalling %s from %s", tool.Name, host.Host)
-		if renderer != nil {
-			renderer.ShowSpinner(ctx, title, input.Step)
-		} else {
-			fmt.Fprintf(os.Stderr, "\nUninstalling %s from %s\n", tool.Name, host.Host)
-		}
-		hostErr := i.uninstallSkillForHost(ctx, tool, host)
-		if renderer != nil {
-			renderer.StopSpinner(ctx, title, input.GetStepResultFormat(hostErr))
-		}
+		hostErr := renderSkillStep(ctx, renderer, title, func(out io.Writer) error {
+			return i.uninstallSkillForHost(ctx, tool, host, out)
+		})
 		if hostErr != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", host.Host, hostErr))
 			continue
@@ -828,25 +884,31 @@ func (i *installer) resolveSkillUninstallTargets(
 }
 
 // uninstallSkillForHost removes the skill through a single host and
-// verifies it is no longer present on that host.
+// verifies it is no longer present on that host. out, when non-nil, receives
+// the host CLI's output line-by-line for display above the step spinner.
 func (i *installer) uninstallSkillForHost(
 	ctx context.Context,
 	tool *ToolDefinition,
 	host SkillHost,
+	out io.Writer,
 ) error {
-	if err := i.runSkillHostUninstallCommand(ctx, host); err != nil {
+	if err := i.runSkillHostUninstallCommand(ctx, host, out); err != nil {
 		return err
 	}
 	return i.verifySkillUninstalled(ctx, tool, host)
 }
 
-// runSkillHostUninstallCommand executes the host's plugin-uninstall
-// command interactively (so any host prompts are answered by the user
-// directly). A non-zero exit is returned as an error; the caller verifies
-// via the detector and decides whether the error is fatal.
+// runSkillHostUninstallCommand executes the host's plugin-uninstall command.
+// When a step spinner is showing (out is non-nil) the host CLI's output is
+// routed through out so any prompt is printed above the spinner and
+// answerable via the connected stdin; otherwise the command runs fully
+// interactively (see skillCommandRunArgs). A non-zero exit is returned as an
+// error; the caller verifies via the detector and decides whether the error
+// is fatal.
 func (i *installer) runSkillHostUninstallCommand(
 	ctx context.Context,
 	host SkillHost,
+	out io.Writer,
 ) error {
 	cmd := host.PluginUninstallCommand
 	if len(cmd) == 0 {
@@ -855,7 +917,7 @@ func (i *installer) runSkillHostUninstallCommand(
 		)
 	}
 
-	runArgs := exec.NewRunArgs(host.Command, cmd...).WithInteractive(true)
+	runArgs := skillCommandRunArgs(exec.NewRunArgs(host.Command, cmd...), out)
 	if _, err := i.commandRunner.Run(ctx, runArgs); err != nil {
 		return fmt.Errorf(
 			"running `%s %s`: %w",
@@ -1166,15 +1228,13 @@ func (i *installer) runSkill(
 		)+output.WithLinkFormat("https://nodejs.org/"))
 	}
 
-	// 3. Install / upgrade for each target host, collecting outcomes. When
-	//    a renderer is supplied, show a step spinner per host; otherwise
-	//    print a header so captured host output on failure is attributable
-	//    to the host it belongs to.
+	// 3. Install / upgrade for each target host, collecting outcomes. Each
+	//    host runs interactively: renderSkillStep prints a step header and a
+	//    result line around the host CLI's streamed output, so the user can
+	//    answer any prompts the host surfaces.
 	verb := "Installing"
-	pastVerb := "Installed"
 	if upgrade {
 		verb = "Upgrading"
-		pastVerb = "Upgraded"
 	}
 	var (
 		succeeded []string
@@ -1183,18 +1243,12 @@ func (i *installer) runSkill(
 	)
 	for _, host := range targets {
 		title := fmt.Sprintf("%s %s in %s", verb, tool.Name, host.Host)
-		if renderer != nil {
-			renderer.ShowSpinner(ctx, title, input.Step)
-		} else {
-			fmt.Fprintf(os.Stderr, "\n%s %s in %s\n", verb, tool.Name, host.Host)
-		}
-		hostVersion, skillCount, hostErr := i.installSkillForHost(ctx, tool, host, upgrade)
-		if renderer != nil {
-			renderer.StopSpinner(ctx, title, input.GetStepResultFormat(hostErr))
-			if hostErr == nil && skillCount > 0 {
-				renderer.Message(ctx, fmt.Sprintf("            %s %d skills", pastVerb, skillCount))
-			}
-		}
+		var hostVersion string
+		hostErr := renderSkillStep(ctx, renderer, title, func(out io.Writer) error {
+			v, e := i.installSkillForHost(ctx, tool, host, upgrade, out)
+			hostVersion = v
+			return e
+		})
 		if hostErr != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", host.Host, hostErr))
 			continue
@@ -1388,11 +1442,15 @@ func (i *installer) explicitSkillHostTargets(
 }
 
 // findSkillHost returns the configured SkillHost with the given host name and
-// whether one was found. It centralizes the SkillHosts lookup shared by the
-// skill install/upgrade and uninstall paths.
+// whether one was found. It matches case-insensitively against both the
+// display Host (e.g. "GitHub Copilot CLI", as surfaced by the interactive
+// picker) and the exec Command (e.g. "copilot", the short name advertised in
+// the --agent flag help), so both `--agent copilot` and a picker selection
+// resolve. It centralizes the SkillHosts lookup shared by the skill
+// install/upgrade and uninstall paths.
 func findSkillHost(tool *ToolDefinition, name string) (SkillHost, bool) {
 	idx := slices.IndexFunc(tool.SkillHosts, func(h SkillHost) bool {
-		return strings.EqualFold(h.Host, name)
+		return strings.EqualFold(h.Command, name)
 	})
 	if idx < 0 {
 		return SkillHost{}, false
@@ -1521,22 +1579,20 @@ func (i *installer) pickSkillHost(
 }
 
 // installSkillForHost installs (or upgrades) the skill through a single
-// host and verifies the result, returning the detected version and the
-// number of skills the host CLI reported installing (0 when unknown).
+// host and verifies the result, returning the detected version. out, when
+// non-nil, receives the host CLI's output line-by-line for display above the
+// step spinner.
 func (i *installer) installSkillForHost(
 	ctx context.Context,
 	tool *ToolDefinition,
 	host SkillHost,
 	upgrade bool,
-) (version string, skillCount int, err error) {
-	out, err := i.runSkillHostCommand(ctx, host, upgrade)
-	if err != nil {
-		return "", 0, err
+	out io.Writer,
+) (version string, err error) {
+	if err := i.runSkillHostCommand(ctx, host, upgrade, out); err != nil {
+		return "", err
 	}
-	skillCount = parseSkillCount(out)
-
-	version, err = i.verifySkillInstalled(ctx, tool, host)
-	return version, skillCount, err
+	return i.verifySkillInstalled(ctx, tool, host)
 }
 
 // verifySkillInstalled confirms the skill is detectable **through the
@@ -1584,13 +1640,14 @@ func (i *installer) verifySkillInstalled(
 	return version, nil
 }
 
-// runSkillHostCommand executes the host's install (or update) command,
-// capturing its output and returning stdout so the caller can parse a
-// reported skill count. Output is captured rather than streamed so the
-// command layer can render a clean progress spinner; on failure the
-// captured output is carried in the returned error. The marketplace-add
-// and plugin-install commands are non-interactive, so azd does not
-// connect stdin.
+// runSkillHostCommand executes the host's install (or update) command. When
+// a step spinner is showing (out is non-nil) the command's output is routed
+// through out so each line the host CLI writes — including any interactive
+// prompt — is printed above the spinner, which stays pinned below it, with
+// stdin connected so the user answers directly; when no spinner is active the
+// command runs fully interactively (see skillCommandRunArgs). azd never pipes
+// canned answers on the user's behalf, and captures nothing, so there is no
+// output to return.
 //
 // For fresh installs it first runs MarketplaceAddCommand when the host
 // declares one. Hosts that declare no MarketplaceAddCommand skip this
@@ -1603,7 +1660,8 @@ func (i *installer) runSkillHostCommand(
 	ctx context.Context,
 	host SkillHost,
 	upgrade bool,
-) (string, error) {
+	out io.Writer,
+) error {
 	cmd := host.PluginInstallCommand
 	verb := "install"
 	if upgrade {
@@ -1611,26 +1669,26 @@ func (i *installer) runSkillHostCommand(
 		verb = "update"
 	}
 	if len(cmd) == 0 {
-		return "", fmt.Errorf(
+		return fmt.Errorf(
 			"host %q has no %s command configured", host.Host, verb,
 		)
 	}
 
 	if !upgrade && len(host.MarketplaceAddCommand) > 0 {
 		if err := i.runMarketplaceAdd(ctx, host); err != nil {
-			return "", err
+			return err
 		}
 	}
 
-	res, err := i.commandRunner.Run(ctx, exec.NewRunArgs(host.Command, cmd...))
-	if err != nil {
-		return "", fmt.Errorf(
+	runArgs := skillCommandRunArgs(exec.NewRunArgs(host.Command, cmd...), out)
+	if _, err := i.commandRunner.Run(ctx, runArgs); err != nil {
+		return fmt.Errorf(
 			"running `%s %s`: %w",
 			host.Command, strings.Join(cmd, " "), err,
 		)
 	}
 
-	return res.Stdout, nil
+	return nil
 }
 
 // runMarketplaceAdd registers the skill marketplace with the host CLI.
@@ -1666,25 +1724,6 @@ func isMarketplaceAlreadyAdded(output string) bool {
 	return strings.Contains(lower, "already registered") ||
 		strings.Contains(lower, "already added") ||
 		strings.Contains(lower, "already on disk")
-}
-
-// skillCountRegex captures the number of skills a host CLI reports
-// installing from its stdout, e.g. "Installed 28 skills". Best-effort:
-// host CLIs are not guaranteed to print a count and the wording varies.
-var skillCountRegex = regexp.MustCompile(`(?i)(\d+)\s+skills?\b`)
-
-// parseSkillCount returns the skill count reported in the host CLI output,
-// or 0 when no count could be determined.
-func parseSkillCount(out string) int {
-	m := skillCountRegex.FindStringSubmatch(out)
-	if m == nil {
-		return 0
-	}
-	n, err := strconv.Atoi(m[1])
-	if err != nil {
-		return 0
-	}
-	return n
 }
 
 // ensurePlatform lazily detects the current platform using a mutex

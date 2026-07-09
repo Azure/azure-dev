@@ -550,8 +550,12 @@ func (d *detector) skillHostVersion(
 	}
 
 	// A host that is not on PATH cannot have the skill installed through
-	// it; skip silently.
-	if err := d.commandRunner.ToolInPath(host.Host); err != nil {
+	// it; skip silently. Probe the exec binary (Command), not the display
+	// Host, so this PATH check matches the command actually run below —
+	// otherwise a manifest whose Host differs from its binary (e.g. Host
+	// "Claude Code CLI" / Command "claude") is never detected and a
+	// just-completed install fails verification.
+	if err := d.commandRunner.ToolInPath(host.Command); err != nil {
 		return "", nil
 	}
 

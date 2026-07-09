@@ -452,7 +452,8 @@ func TestDetectTool_Skill_Copilot(t *testing.T) {
 			Category: ToolCategorySkill,
 			SkillHosts: []SkillHost{
 				{
-					Host:              "copilot",
+					Host:              "GitHub Copilot CLI",
+					Command:           "copilot",
 					PluginListCommand: []string{"plugin", "list"},
 					PluginName:        "azure@azure-skills",
 					VersionRegex:      `azure@azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
@@ -518,7 +519,8 @@ func TestDetectTool_Skill_Claude(t *testing.T) {
 			Category: ToolCategorySkill,
 			SkillHosts: []SkillHost{
 				{
-					Host:              "claude",
+					Host:              "Claude Code CLI",
+					Command:           "claude",
 					PluginListCommand: []string{"plugin", "list", "--json"},
 					PluginName:        "azure@azure-skills",
 					VersionRegex:      `"id":\s*"azure@azure-skills"[^}]*?"version":\s*"v?(\d+\.\d+\.\d+)"`,
@@ -593,13 +595,15 @@ func TestDetectSkillHosts(t *testing.T) {
 			Category: ToolCategorySkill,
 			SkillHosts: []SkillHost{
 				{
-					Host:              "copilot",
+					Host:              "GitHub Copilot CLI",
+					Command:           "copilot",
 					PluginListCommand: []string{"plugin", "list"},
 					PluginName:        "azure@azure-skills",
 					VersionRegex:      `azure@azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
 				},
 				{
-					Host:              "claude",
+					Host:              "Claude Code CLI",
+					Command:           "claude",
 					PluginListCommand: []string{"plugin", "list", "--json"},
 					PluginName:        "azure@azure-skills",
 					VersionRegex:      `"id":\s*"azure@azure-skills"[^}]*?"version":\s*"v?(\d+\.\d+\.\d+)"`,
@@ -624,21 +628,21 @@ func TestDetectSkillHosts(t *testing.T) {
 			copilot: copilotInstalled,
 			claude:  claudeInstalled,
 			wantHosts: []InstalledSkillHost{
-				{Host: "copilot", Version: "1.1.71"},
-				{Host: "claude", Version: "1.1.71"},
+				{Host: "GitHub Copilot CLI", Version: "1.1.71"},
+				{Host: "Claude Code CLI", Version: "1.1.71"},
 			},
 		},
 		{
 			name:      "OnlyClaude",
 			copilot:   notInstalled,
 			claude:    claudeInstalled,
-			wantHosts: []InstalledSkillHost{{Host: "claude", Version: "1.1.71"}},
+			wantHosts: []InstalledSkillHost{{Host: "Claude Code CLI", Version: "1.1.71"}},
 		},
 		{
 			name:      "OnlyCopilot",
 			copilot:   copilotInstalled,
 			claude:    notInstalled,
-			wantHosts: []InstalledSkillHost{{Host: "copilot", Version: "1.1.71"}},
+			wantHosts: []InstalledSkillHost{{Host: "GitHub Copilot CLI", Version: "1.1.71"}},
 		},
 		{
 			name:      "NoneInstalled",

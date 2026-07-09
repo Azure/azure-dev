@@ -1234,6 +1234,7 @@ func newSkillTool() *ToolDefinition {
 		SkillHosts: []SkillHost{
 			{
 				Host:                   "copilot",
+				Command:                "copilot",
 				MarketplaceAddCommand:  []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
 				PluginInstallCommand:   []string{"plugin", "install", "azure@azure-skills"},
 				PluginUpdateCommand:    []string{"plugin", "update", "azure@azure-skills"},
@@ -1244,7 +1245,8 @@ func newSkillTool() *ToolDefinition {
 				BinaryVersionRegex:     `(?m)^GitHub Copilot CLI\s+v?(\d+\.\d+\.\d+)`,
 			},
 			{
-				Host: "claude",
+				Host:    "claude",
+				Command: "claude",
 				MarketplaceAddCommand: []string{
 					"plugin", "marketplace", "add", "https://github.com/microsoft/azure-skills",
 				},
@@ -1260,51 +1262,76 @@ func newSkillTool() *ToolDefinition {
 	}
 }
 
-// TestParseSkillCount covers the best-effort extraction of the number of
-// skills a host CLI reports installing from its stdout.
-func TestParseSkillCount(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name string
-		in   string
-		want int
-	}{
-		{"Installed", "Installed 28 skills", 28},
-		{"SingularSkill", "Installed 1 skill", 1},
-		{"WordyOutput", "done\nSuccessfully installed 7 skills into copilot\n", 7},
-		{"CaseInsensitive", "Added 12 Skills", 12},
-		{"NoCount", "Plugin installed successfully", 0},
-		{"Empty", "", 0},
-		{"NumberButNotSkills", "downloaded 28 files", 0},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, tc.want, parseSkillCount(tc.in))
-		})
-	}
-}
-
-// TestRunSkill_StepProgressAndSkillCount verifies that a skill install
-// renders a step spinner per host (shown then stopped, with the capitalized
-// agent name) and reports the skill count parsed from the host CLI's
-// captured install output.
-func TestRunSkill_StepProgressAndSkillCount(t *testing.T) {
+// TestRunSkill_StepProgress verifies that a silent skill install (the host
+// CLI writes nothing to the terminal) shows the step spinner for the whole
+// step and stops it with the result, using the display-cased agent name. No
+// skill count is emitted.
+func TestRunSkill_StepProgress(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
 	mockHostPresence(runner, "copilot")
 	runner.MockToolInPath("node", nil)
 
-	// The "plugin install" call reports a count on stdout; marketplace add
-	// (also a "plugin ..." command) responds with an empty success. The
-	// version-probe ("--version") is handled by mockHostPresence.
+	// The version-probe ("--version") is handled by mockHostPresence; the
+	// marketplace-add and plugin-install commands succeed.
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "plugin")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillHostsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillHost, error) {
+				return []InstalledSkillHost{{Host: "copilot", Version: "1.1.70"}}, nil
+			},
+		},
+	)
+
+	var r fakeStepRenderer
+	result, err := inst.Install(
+		t.Context(), newSkillTool(),
+		WithHosts("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
+
+	// A silent install (the mock host CLI writes nothing) keeps the spinner
+	// for the whole step, then stops it with the result — no early teardown,
+	// no streamed-output result line, and no skill count.
+	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.starts)
+	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.stops)
+	assert.Empty(t, r.messages)
+}
+
+// TestRunSkill_StreamedOutputStopsSpinner verifies that when the host CLI
+// writes to the terminal (a progress line or an interactive prompt), the
+// step spinner is torn down immediately (stopped with an empty message) and
+// the step result is printed inline afterwards, so the spinner never
+// overwrites the CLI's own output.
+// TestRunSkill_StreamedOutputPrintedAboveSpinner verifies that when the host
+// CLI writes to the terminal (a progress line or an interactive prompt),
+// each line is surfaced via Message (which the console prints above the
+// spinner, keeping the spinner pinned below), and the spinner is stopped with
+// the step result at the end rather than torn down early.
+func TestRunSkill_StreamedOutputPrintedAboveSpinner(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+
+	// The plugin command writes to the terminal (StdOut), simulating the
+	// host CLI surfacing progress or a prompt. marketplace-add is captured
+	// (no StdOut) so it stays silent; only the install writes.
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return args.Cmd == "copilot" && slices.Contains(args.Args, "plugin")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		if strings.HasPrefix(strings.Join(args.Args, " "), "plugin install") {
-			return exec.RunResult{ExitCode: 0, Stdout: "Installed 28 skills"}, nil
+		if args.StdOut != nil {
+			_, _ = args.StdOut.Write([]byte("Installing plugin...\n"))
 		}
 		return exec.RunResult{ExitCode: 0}, nil
 	})
@@ -1329,18 +1356,18 @@ func TestRunSkill_StepProgressAndSkillCount(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
 
-	// One step spinner for the agent, shown then stopped, using the host's
-	// display name, plus a skill-count sub-line from the captured install
-	// output.
+	// The spinner is shown, the host CLI's line is surfaced via Message (the
+	// console prints it above the spinner), and the spinner is stopped with
+	// the step result at the end — it is kept, not torn down early.
 	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.starts)
 	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.stops)
-	require.Len(t, r.messages, 1)
-	assert.Contains(t, r.messages[0], "Installed 28 skills")
+	assert.Contains(t, r.messages, "Installing plugin...")
 }
 
-// TestSkillHost_DisplayVsCommand verifies the split between the display-cased
-// Host and the lowercase Command: the CLI is exec'd by Command, the step
-// spinner uses Host, and --agent matches Host case-insensitively.
+// TestSkillHost_DisplayVsCommand verifies the split between the display Host
+// and the lowercase Command: the CLI is exec'd by Command, the step spinner
+// uses the display Host, and --agent resolves via Command even when it
+// differs from the Host.
 func TestSkillHost_DisplayVsCommand(t *testing.T) {
 	t.Parallel()
 
@@ -1349,8 +1376,8 @@ func TestSkillHost_DisplayVsCommand(t *testing.T) {
 		Name:     "Test Azure Skills",
 		Category: ToolCategorySkill,
 		SkillHosts: []SkillHost{{
-			Host:                  "Copilot", // display / --agent identity
-			Command:               "copilot", // exec binary
+			Host:                  "GitHub Copilot CLI", // display name (differs from Command)
+			Command:               "copilot",            // exec binary
 			MarketplaceAddCommand: []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
 			PluginInstallCommand:  []string{"plugin", "install", "azure@azure-skills"},
 			PluginListCommand:     []string{"plugin", "list"},
@@ -1375,12 +1402,13 @@ func TestSkillHost_DisplayVsCommand(t *testing.T) {
 
 	det := &mockDetector{
 		detectSkillHostsFn: func(_ context.Context, _ *ToolDefinition) ([]InstalledSkillHost, error) {
-			return []InstalledSkillHost{{Host: "Copilot", Version: "1.1.70"}}, nil
+			return []InstalledSkillHost{{Host: "GitHub Copilot CLI", Version: "1.1.70"}}, nil
 		},
 	}
 	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
 
-	// --agent "copilot" (lowercase) must resolve against Host "Copilot".
+	// --agent "copilot" (the Command) must resolve even though the Host is the
+	// full display name "GitHub Copilot CLI".
 	var r fakeStepRenderer
 	result, err := inst.Install(t.Context(), skill, WithHosts("copilot"), WithStepProgress(&r))
 	require.NoError(t, err)
@@ -1390,7 +1418,8 @@ func TestSkillHost_DisplayVsCommand(t *testing.T) {
 	for _, c := range execCmds {
 		assert.Equal(t, "copilot", c, "exec must use the lowercase Command, not display Host")
 	}
-	assert.Equal(t, []string{"Installing Test Azure Skills in Copilot"}, r.starts,
+	require.NotEmpty(t, r.starts, "the step spinner must be shown")
+	assert.Equal(t, []string{"Installing Test Azure Skills in GitHub Copilot CLI"}, r.starts,
 		"the step spinner must use the display-cased Host")
 }
 
@@ -3753,9 +3782,11 @@ func TestRunSkillUninstall_StepProgress(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.Success, "uninstall must succeed; err=%v", result.Error)
 
+	// A silent uninstall keeps the spinner for the whole step, then stops it
+	// with the result.
 	assert.Equal(t, []string{"Uninstalling Test Azure Skills from copilot"}, r.starts)
 	assert.Equal(t, []string{"Uninstalling Test Azure Skills from copilot"}, r.stops)
-	assert.Empty(t, r.messages, "uninstall reports no skill count")
+	assert.Empty(t, r.messages)
 }
 
 func TestUninstallSkill_ExplicitHost_RemovesOnlyThatHost(t *testing.T) {
@@ -4202,6 +4233,7 @@ func TestUninstallSkill_NoUninstallCommandConfigured(t *testing.T) {
 		SkillHosts: []SkillHost{
 			{
 				Host:              "copilot",
+				Command:           "copilot",
 				PluginListCommand: []string{"plugin", "list"},
 				PluginName:        "azure@azure-skills",
 				VersionRegex:      `(\d+\.\d+\.\d+)`,

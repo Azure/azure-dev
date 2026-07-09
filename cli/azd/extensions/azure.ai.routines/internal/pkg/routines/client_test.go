@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -17,6 +18,27 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// --- Client options
+
+func TestResolveRequestTimeout(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, DefaultRequestTimeout, resolveRequestTimeout(nil))
+	assert.Equal(t, DefaultRequestTimeout, resolveRequestTimeout(&ClientOptions{}))
+	assert.Equal(t, 90*time.Second, resolveRequestTimeout(&ClientOptions{
+		RequestTimeout: 90 * time.Second,
+	}))
+}
+
+func TestNewHTTPClient_UsesRequestTimeout(t *testing.T) {
+	t.Parallel()
+
+	client := newHTTPClient(90 * time.Second)
+	transport, ok := client.Transport.(*http.Transport)
+	require.True(t, ok)
+	assert.Equal(t, 90*time.Second, transport.ResponseHeaderTimeout)
+}
 
 // newTestClient creates a Client with a pipeline that skips auth (no TLS
 // requirement) pointing at a local httptest server.

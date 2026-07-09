@@ -28,19 +28,27 @@ const (
 	routinesPreviewValue  = "Routines=V1Preview"
 )
 
-// Client is the data-plane client for Foundry Routines API operations.
+// DefaultRequestTimeout is the default timeout for each HTTP try.
+const DefaultRequestTimeout = 2 * time.Minute
+
+// Client is a Foundry Routines data-plane client.
 type Client struct {
 	endpoint string
 	pipeline runtime.Pipeline
 }
 
-// newHTTPClient returns the *http.Client used by the data-plane pipeline.
+// ClientOptions configures a Routines data-plane client.
+type ClientOptions struct {
+	// RequestTimeout caps each HTTP request try.
+	RequestTimeout time.Duration
+}
+
+// newHTTPClient returns the data-plane pipeline's HTTP client.
 //
-// The default azcore transport relies on Go's HTTP/2 client, which can wait
-// minutes before surfacing a server-side stream reset (RST_STREAM). We set
-// explicit response-header and connection-level timeouts so failures surface
-// within tens of seconds.
-func newHTTPClient() *http.Client {
+// The default azcore transport relies on Go's HTTP/2 client, which
+// can wait minutes before surfacing a server-side stream reset
+// (RST_STREAM). Explicit timeouts keep failures bounded.
+func newHTTPClient(requestTimeout time.Duration) *http.Client {
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
@@ -52,21 +60,29 @@ func newHTTPClient() *http.Client {
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
-		ResponseHeaderTimeout: 60 * time.Second,
+		ResponseHeaderTimeout: requestTimeout,
 	}
 	return &http.Client{Transport: transport}
 }
 
+func resolveRequestTimeout(options *ClientOptions) time.Duration {
+	if options != nil && options.RequestTimeout > 0 {
+		return options.RequestTimeout
+	}
+	return DefaultRequestTimeout
+}
+
 // NewClient creates a new Routines data-plane client.
-func NewClient(endpoint string, cred azcore.TokenCredential) *Client {
+func NewClient(endpoint string, cred azcore.TokenCredential, options *ClientOptions) *Client {
+	requestTimeout := resolveRequestTimeout(options)
 	clientOptions := &policy.ClientOptions{
-		Transport: newHTTPClient(),
+		Transport: newHTTPClient(requestTimeout),
 		Logging: policy.LogOptions{
 			AllowedHeaders: []string{azsdk.MsCorrelationIdHeader},
 		},
 		Retry: policy.RetryOptions{
 			MaxRetries: 1,
-			TryTimeout: 30 * time.Second,
+			TryTimeout: requestTimeout,
 		},
 		PerCallPolicies: []policy.Policy{
 			runtime.NewBearerTokenPolicy(

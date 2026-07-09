@@ -4,10 +4,103 @@
 package cmd
 
 import (
+	"errors"
+	"os"
 	"testing"
+	"time"
 
+	"azure.ai.routines/internal/exterrors"
+	"azure.ai.routines/internal/pkg/routines"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func unsetEnv(t *testing.T, key string) {
+	t.Helper()
+
+	old, found := os.LookupEnv(key)
+	require.NoError(t, os.Unsetenv(key))
+	t.Cleanup(func() {
+		if found {
+			require.NoError(t, os.Setenv(key, old))
+			return
+		}
+		require.NoError(t, os.Unsetenv(key))
+	})
+}
+
+// --- HTTP timeout config
+
+func TestRoutineHTTPTimeoutFromEnv_Default(t *testing.T) {
+	unsetEnv(t, routineHTTPTimeoutEnvVar)
+
+	got, err := routineHTTPTimeoutFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, routines.DefaultRequestTimeout, got)
+}
+
+func TestRoutineHTTPTimeoutFromEnv_Override(t *testing.T) {
+	t.Setenv(routineHTTPTimeoutEnvVar, "90s")
+
+	got, err := routineHTTPTimeoutFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, 90*time.Second, got)
+}
+
+func TestRoutineHTTPTimeoutFromEnv_Invalid(t *testing.T) {
+	t.Setenv(routineHTTPTimeoutEnvVar, "soon")
+
+	_, err := routineHTTPTimeoutFromEnv()
+	require.Error(t, err)
+
+	var localErr *azdext.LocalError
+	require.True(t, errors.As(err, &localErr))
+	assert.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
+	assert.Contains(t, localErr.Message, routineHTTPTimeoutEnvVar)
+}
+
+func TestRoutineHTTPTimeoutFromCommand_FlagWins(t *testing.T) {
+	t.Setenv(routineHTTPTimeoutEnvVar, "5m")
+	cmd := &cobra.Command{}
+	cmd.Flags().String(routineHTTPTimeoutFlag, "", "")
+	require.NoError(t, cmd.Flags().Set(routineHTTPTimeoutFlag, "90s"))
+
+	got, err := routineHTTPTimeoutFromCommand(cmd)
+	require.NoError(t, err)
+	assert.Equal(t, 90*time.Second, got)
+}
+
+func TestRoutineHTTPTimeoutFromCommand_InheritedFlagWins(t *testing.T) {
+	t.Setenv(routineHTTPTimeoutEnvVar, "5m")
+	var got time.Duration
+
+	rootCmd := &cobra.Command{Use: "root"}
+	rootCmd.PersistentFlags().String(routineHTTPTimeoutFlag, "", "")
+	childCmd := &cobra.Command{
+		Use: "child",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var err error
+			got, err = routineHTTPTimeoutFromCommand(cmd)
+			return err
+		},
+	}
+	rootCmd.AddCommand(childCmd)
+	rootCmd.SetArgs([]string{"--timeout", "90s", "child"})
+
+	require.NoError(t, rootCmd.Execute())
+	assert.Equal(t, 90*time.Second, got)
+}
+
+func TestRootCommandRegistersTimeoutFlag(t *testing.T) {
+	rootCmd := NewRootCommand()
+
+	flag := rootCmd.PersistentFlags().Lookup(routineHTTPTimeoutFlag)
+	require.NotNil(t, flag)
+	assert.Empty(t, flag.DefValue)
+}
 
 // ─── boolStr ─────────────────────────────────────────────────────────────────
 

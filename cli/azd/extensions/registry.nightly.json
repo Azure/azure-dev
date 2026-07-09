@@ -712,6 +712,98 @@
         "ai",
         "skill"
       ]
+    },
+    {
+      "id": "azure.ai.rle",
+      "namespace": "ai.rle",
+      "displayName": "RLE (Preview)",
+      "description": "Manage RLE resources from your terminal. (Preview)",
+      "versions": [
+        {
+          "version": "0.1.0-preview.nightly.6539716",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "$env:AZD_AI_RLE_ENABLE = \"true\"; azd ai rle <command> [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Copy the OpenEnv echo sample into a local RLE environment.",
+              "usage": "$env:AZD_AI_RLE_ENABLE = \"true\"; azd ai rle init"
+            },
+            {
+              "name": "deploy",
+              "description": "Build, push, and create or update the RLE environment.",
+              "usage": "$env:AZD_AI_RLE_ENABLE = \"true\"; $env:FOUNDRY_PROJECT_ENDPOINT = \"https://<account>.services.ai.azure.com/api/projects/<project>\"; $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = \"<registry>.azurecr.io\"; azd ai rle deploy"
+            },
+            {
+              "name": "run",
+              "description": "Build and run the local RLE environment container.",
+              "usage": "$env:AZD_AI_RLE_ENABLE = \"true\"; azd ai rle run"
+            },
+            {
+              "name": "invoke",
+              "description": "Lease a deployed RLE sandbox and open an OpenEnv runtime shell.",
+              "usage": "$env:AZD_AI_RLE_ENABLE = \"true\"; azd ai rle invoke"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "8e7c119c328f004a0135e7a6c0a2c25be23ffd7a382df814c50d7895fc069de7"
+              },
+              "entryPoint": "azure-ai-rle-darwin-amd64",
+              "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-rle/nightly/azure-ai-rle-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "5d0255406c4b3315cd7fe9425e2769c6a4bf2426bf0113d05db1131631d502de"
+              },
+              "entryPoint": "azure-ai-rle-darwin-arm64",
+              "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-rle/nightly/azure-ai-rle-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "08ee124527f2e86874169c8a7e2d3153e4e37fbb46e3acfc9df39feb0d733c7b"
+              },
+              "entryPoint": "azure-ai-rle-linux-amd64",
+              "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-rle/nightly/azure-ai-rle-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "98354a56e032d2201f470d901fa82500a948615fd1a1a18c185379bef04f45a0"
+              },
+              "entryPoint": "azure-ai-rle-linux-arm64",
+              "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-rle/nightly/azure-ai-rle-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "b11a0122ed06f4e3322434c66a460ae41bbf8ca7c8e7bd3437d8e334caafba0f"
+              },
+              "entryPoint": "azure-ai-rle-windows-amd64.exe",
+              "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-rle/nightly/azure-ai-rle-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "5202d35407771d481b4968e79a32359bab96aaf3ca2a1ef1b3ce28cb10bc6c60"
+              },
+              "entryPoint": "azure-ai-rle-windows-arm64.exe",
+              "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-rle/nightly/azure-ai-rle-windows-arm64.zip"
+            }
+          }
+        }
+      ],
+      "tags": [
+        "ai",
+        "rle"
+      ]
     }
   ]
 }

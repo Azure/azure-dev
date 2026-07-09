@@ -2581,6 +2581,11 @@ func (p *BicepProvider) validatePreflight(
 		span.EndWithStatus(err)
 	}()
 
+	// Tag the dispatch site so this Bicep "local-preflight" emission can be
+	// distinguished from the provider-agnostic "provision" dispatch, which
+	// shares PreflightValidationEvent and also fires on Bicep provisions.
+	span.SetAttributes(fields.PreflightCheckTypeKey.String(azdext.ValidationCheckTypeLocalPreflight))
+
 	// Run local preflight validation before sending to Azure.
 	// Local validation catches common issues without requiring a network round-trip.
 	// Resolve the environment location for RG-scoped deployments: prefer the actual
@@ -2634,7 +2639,7 @@ func (p *BicepProvider) validatePreflight(
 		// treated as a non-fatal skip (logged; preflight continues).
 		dispatchCtx, cancelDispatch := context.WithTimeout(ctx, extensionValidationTimeout)
 		extResults, invokedRuleIDs, extErr := dispatcher.DispatchChecks(
-			dispatchCtx, "local-preflight", checkContext,
+			dispatchCtx, azdext.ValidationCheckTypeLocalPreflight, checkContext,
 		)
 		cancelDispatch()
 		if extErr != nil {

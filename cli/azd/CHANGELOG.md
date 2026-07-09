@@ -4,6 +4,8 @@
 
 ### Features Added
 
+- [[#9019]](https://github.com/Azure/azure-dev/pull/9019) Add a provider-agnostic `provision` validation check type dispatched before provisioning for every provider. Extensions with the `validation-provider` capability can now contribute client-side checks that run regardless of the provisioning provider (Bicep, Terraform, or an extension-provided provider), not just during Bicep local preflight.
+
 ### Breaking Changes
 
 ### Bugs Fixed

@@ -63,7 +63,7 @@ async function run({ github: octokit, context, core, coreTeam, registryBaseRef }
   try {
     assertHasPullRequest(context);
     const baseRef = registryBaseRef ?? context.payload.pull_request['base']?.sha ?? 'main';
-    const coreReviewers = coreTeam ?? await getCoreReviewers({ octokit, context, core });
+    const coreReviewers = coreTeam ?? getCoreReviewers({ core });
 
     // no extra checks needed if a registry maintainer authored the PR.
     if (isCreatedByCoreTeam({ context, core, coreTeam: coreReviewers })) {
@@ -110,34 +110,28 @@ async function run({ github: octokit, context, core, coreTeam, registryBaseRef }
 }
 
 /**
- * @param {{ octokit: Octokit, context: Context, core: Core }} args
- * @returns {Promise<Set<string>>}
+ * Registry maintainers whose PRs skip the extra checks and whose approval
+ * clears a PR for merge.
+ *
+ * This is intentionally a hard-coded list: the workflow's GITHUB_TOKEN can't read
+ * organization team membership (@${owner}/azure-dev-extregistry-maintain), and the
+ * membership is fairly static. Keep this in sync with that team.
+ *
+ * @param {{ core: Core }} args
+ * @returns {Set<string>}
  */
-async function getCoreReviewers({ octokit, context, core }) {
-  let members;
-  try {
-    members = await octokit.paginate(octokit.rest.teams.listMembersInOrg, {
-      org: context.repo.owner,
-      team_slug: CORE_REVIEW_TEAM_SLUG,
-      per_page: 100,
-    });
-  } catch (err) {
-    throw new Error(
-      `Unable to load registry maintainers from @${context.repo.owner}/${CORE_REVIEW_TEAM_SLUG}; ` +
-      `the workflow token may not have permission to read organization team membership: ${err instanceof Error ? err.message : err}`
-    );
-  }
+function getCoreReviewers({ core }) {
+  const logins = [
+    'hemarina',
+    'JeffreyCA',
+    'RickWinter',
+    // TODO: bring me back from the dead!
+    // 'richardpark-msft',
+    'tg-msft',
+    'vhvb1989',
+  ];
 
-  const logins = members
-    .map((member) => member.login)
-    .filter((login) => typeof login === 'string' && login.length > 0)
-    .sort();
-
-  if (logins.length === 0) {
-    throw new Error(`No registry maintainers found in @${context.repo.owner}/${CORE_REVIEW_TEAM_SLUG}`);
-  }
-
-  core.info(`Loaded ${logins.length} registry maintainer(s) from @${context.repo.owner}/${CORE_REVIEW_TEAM_SLUG}: ${logins.join(', ')}`);
+  core.info(`Loaded ${logins.length} registry maintainer(s): ${logins.join(', ')}`);
   return new Set(logins);
 }
 

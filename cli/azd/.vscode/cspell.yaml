@@ -88,6 +88,8 @@ words:
   - subtests
   - syncmap
   - syscall
+  - wsae
+  - WSAECONNREFUSED
   - tsx
   - triaging
   - Retryable

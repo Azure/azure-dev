@@ -50,7 +50,19 @@ func TestEvaluateResourceGroupLocation(t *testing.T) {
 		// The suggestion should offer all three remediation paths.
 		assert.Contains(t, result.Suggestion, "azd env set AZURE_LOCATION eastus")
 		assert.Contains(t, result.Suggestion, "azd env set AZURE_RESOURCE_GROUP")
-		assert.Contains(t, result.Suggestion, "az group delete --name "+resourceGroup)
+		// The resource-group name is shell-quoted (%q) so a name containing shell
+		// metacharacters (parentheses are valid in Azure RG names) stays copy-pasteable.
+		assert.Contains(t, result.Suggestion, `az group delete --name "`+resourceGroup+`"`)
 		assert.Contains(t, result.Suggestion, subscriptionID)
+	})
+
+	t.Run("resource group name with shell metacharacters is quoted in the delete command", func(t *testing.T) {
+		const parenRG = "rg(test)"
+		resp := evaluateResourceGroupLocation(parenRG, "eastus", "westus2", subscriptionID)
+		require.NotNil(t, resp)
+		require.Len(t, resp.Results, 1)
+
+		// Without quoting, "az group delete --name rg(test)" is a shell syntax error.
+		assert.Contains(t, resp.Results[0].Suggestion, `az group delete --name "rg(test)"`)
 	})
 }

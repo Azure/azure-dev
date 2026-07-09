@@ -18,8 +18,15 @@ import (
 )
 
 // ResourceGroupLocationRuleID is the stable identifier for the resource-group
-// location-mismatch provision validation check.
-const ResourceGroupLocationRuleID = "resource_group_location_mismatch"
+// location-mismatch provision validation check. It doubles as both the
+// registration RuleID and the result DiagnosticId.
+//
+// The identifier is prefixed with the owning extension id (azure.ai.agents)
+// because the provision validation rule namespace is global — core enforces
+// uniqueness on check_type + rule_id across every installed extension. Namespacing
+// keeps the rule unambiguously mappable back to this extension for future
+// features such as suppressions and rule sets.
+const ResourceGroupLocationRuleID = "azure.ai.agents.resource_group_location_mismatch"
 
 // ResourceGroupLocationCheck is a provider-agnostic "provision" validation check
 // (azdext.ValidationCheckTypeProvision) that detects an immutable resource-group
@@ -39,11 +46,27 @@ const ResourceGroupLocationRuleID = "resource_group_location_mismatch"
 // actionable guidance during azd's validation phase.
 type ResourceGroupLocationCheck struct {
 	azdClient *azdext.AzdClient
+
+	// resourceGroupLocation resolves the region of an existing resource group.
+	// It is a field so tests can inject a fake without Azure access; production
+	// code uses armResourceGroupLocation (set by the constructor).
+	resourceGroupLocation resourceGroupLocationLookup
 }
+
+// resourceGroupLocationLookup resolves the Azure region of an existing resource
+// group. It returns (location, found, err): found=false means the group does not
+// exist (or its region is unknown), which is not a conflict; a non-nil err is
+// treated as non-blocking by the caller (the check never blocks on its own
+// inability to determine the situation).
+type resourceGroupLocationLookup func(
+	ctx context.Context, subscriptionID, resourceGroup string,
+) (location string, found bool, err error)
 
 // NewResourceGroupLocationCheck creates a new ResourceGroupLocationCheck.
 func NewResourceGroupLocationCheck(azdClient *azdext.AzdClient) *ResourceGroupLocationCheck {
-	return &ResourceGroupLocationCheck{azdClient: azdClient}
+	c := &ResourceGroupLocationCheck{azdClient: azdClient}
+	c.resourceGroupLocation = c.armResourceGroupLocation
+	return c
 }
 
 // Validate implements azdext.ValidationCheckProvider.
@@ -96,12 +119,22 @@ func (c *ResourceGroupLocationCheck) Validate(
 	// fall back to reading the azd environment directly. Context values are
 	// best-effort and may be empty on a cold first run (dispatch happens before
 	// the provider resolves and prompts for subscription/location/resource group).
+	//
+	// The context accessors return the environment value verbatim
+	// (provisionValidationContext sources them from Environment.Getenv without
+	// trimming), so trim here too. Otherwise a persisted value with surrounding
+	// whitespace would bypass the trimmed envValueOrEmpty fallback and either
+	// produce a false mismatch (AZURE_LOCATION) or target the wrong resource
+	// group name and silently skip the check — while the Foundry provider, which
+	// trims, provisions into the real group.
 	subscriptionID, ok := valCtx.SubscriptionID()
+	subscriptionID = strings.TrimSpace(subscriptionID)
 	if !ok || subscriptionID == "" {
 		subscriptionID = envValueOrEmpty(ctx, envClient, envName, "AZURE_SUBSCRIPTION_ID")
 	}
 
 	location, ok := valCtx.EnvLocation()
+	location = strings.TrimSpace(location)
 	if !ok || location == "" {
 		location = envValueOrEmpty(ctx, envClient, envName, "AZURE_LOCATION")
 	}
@@ -111,6 +144,7 @@ func (c *ResourceGroupLocationCheck) Validate(
 	}
 
 	resourceGroup, ok := valCtx.ResourceGroup()
+	resourceGroup = strings.TrimSpace(resourceGroup)
 	if !ok || resourceGroup == "" {
 		resourceGroup = envValueOrEmpty(ctx, envClient, envName, "AZURE_RESOURCE_GROUP")
 	}
@@ -121,11 +155,30 @@ func (c *ResourceGroupLocationCheck) Validate(
 		resourceGroup = defaultResourceGroupName(envName)
 	}
 
+	existingLocation, found, err := c.resourceGroupLocation(ctx, subscriptionID, resourceGroup)
+	if err != nil || !found {
+		// Non-critical: a missing resource group (404), auth/tenant failure, or any
+		// other lookup error is treated as non-blocking so the check never blocks
+		// provisioning on its own inability to determine the situation.
+		return empty, nil
+	}
+
+	return evaluateResourceGroupLocation(resourceGroup, existingLocation, location, subscriptionID), nil
+}
+
+// armResourceGroupLocation is the production resourceGroupLocationLookup. It
+// resolves the resource group's region via ARM, using the azd credential scoped
+// to the subscription's tenant. Every failure mode is non-blocking: it returns
+// found=false (or an error the caller ignores) so the check never blocks
+// provisioning on its own inability to determine the situation.
+func (c *ResourceGroupLocationCheck) armResourceGroupLocation(
+	ctx context.Context, subscriptionID, resourceGroup string,
+) (string, bool, error) {
 	tenantResponse, err := c.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
 		SubscriptionId: subscriptionID,
 	})
 	if err != nil {
-		return empty, nil // Non-critical: can't resolve tenant.
+		return "", false, err // Non-critical: can't resolve tenant.
 	}
 
 	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
@@ -133,26 +186,26 @@ func (c *ResourceGroupLocationCheck) Validate(
 		AdditionallyAllowedTenants: []string{"*"},
 	})
 	if err != nil {
-		return empty, nil // Non-critical: auth issues will surface during provision.
+		return "", false, err // Non-critical: auth issues will surface during provision.
 	}
 
 	rgClient, err := armresources.NewResourceGroupsClient(subscriptionID, cred, azure.NewArmClientOptions())
 	if err != nil {
-		return empty, nil // Non-critical: can't create the client.
+		return "", false, err // Non-critical: can't create the client.
 	}
 
 	getResp, err := rgClient.Get(ctx, resourceGroup, nil)
 	if err != nil {
 		// A 404 means the resource group does not exist yet — provision will create it in
 		// AZURE_LOCATION, so there is no conflict. Any other error is treated as non-blocking.
-		return empty, nil
+		return "", false, err
 	}
 
 	if getResp.Location == nil {
-		return empty, nil
+		return "", false, nil
 	}
 
-	return evaluateResourceGroupLocation(resourceGroup, *getResp.Location, location, subscriptionID), nil
+	return *getResp.Location, true, nil
 }
 
 // evaluateResourceGroupLocation compares an existing resource group's region against the
@@ -179,7 +232,7 @@ func evaluateResourceGroupLocation(
 			"  • Use the existing region:          azd env set AZURE_LOCATION %s\n"+
 			"  • Target a different resource group: azd env set AZURE_RESOURCE_GROUP <new-name>\n"+
 			"  • Delete the resource group if it is no longer needed: "+
-			"az group delete --name %s --subscription %s",
+			"az group delete --name %q --subscription %s",
 		existingLocation, resourceGroup, subscriptionID,
 	)
 

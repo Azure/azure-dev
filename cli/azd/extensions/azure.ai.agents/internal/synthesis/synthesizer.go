@@ -106,13 +106,10 @@ type DeploymentSku struct {
 	Capacity int    `yaml:"capacity" json:"capacity"`
 }
 
-// Connection mirrors the connectionType in modules/connections.bicep. It is the
-// synthesized shape of a host: azure.ai.connection service in azure.yaml: the
-// service key becomes Name, and the body carries the connection properties.
-// Credentials and Metadata are passed through as-is so any auth type (ApiKey,
-// CustomKeys, OAuth2, identity tokens, ...) can be expressed; ${VAR} references
-// in Target and in string credential/metadata values are resolved on the
-// provision path and kept verbatim on the eject path.
+// Connection mirrors the connectionType in modules/connections.bicep: the
+// synthesized shape of a host: azure.ai.connection service, where the service
+// key becomes Name. Credentials and Metadata pass through as-is so any auth
+// type (ApiKey, CustomKeys, OAuth2, identity tokens, ...) can be expressed.
 type Connection struct {
 	Name        string            `yaml:"name" json:"name"`
 	Category    string            `yaml:"category" json:"category"`
@@ -319,12 +316,10 @@ func BrownfieldDeployments(raw []byte, serviceName string) ([]Deployment, error)
 // BrownfieldConnections returns the host: azure.ai.connection services declared
 // in azure.yaml, for a brownfield (endpoint:) project. Synthesize short-circuits
 // with ErrEndpointBrownfield before collecting connections, so the provider uses
-// this to create the same connections on the existing account that Synthesize
-// would create for a greenfield one. Connections are project-scoped and
-// independent of which project service is the entry point, so the whole
-// services map is scanned. ${VAR} is resolved from env (brownfield provisions,
-// so references must be concrete); Foundry ${{...}} expressions pass through.
-// Returns an empty slice (not an error) when no connection services exist.
+// this to create the same connections on the existing account. ${VAR} is
+// resolved from env since brownfield provisions immediately; Foundry ${{...}}
+// expressions pass through. Returns an empty slice (not an error) when none
+// are declared.
 func BrownfieldConnections(raw []byte, env map[string]string) ([]Connection, error) {
 	if len(raw) == 0 {
 		return nil, errors.New("synthesis: raw azure.yaml is empty")
@@ -412,15 +407,12 @@ func agentNeedsAcr(a agentBlock) bool {
 }
 
 // collectConnections scans all services for host: azure.ai.connection entries
-// and returns them as a slice the connections module consumes. The service key
-// is the connection name. Results are sorted by name so the synthesized
-// parameter (and thus the ARM deployment / ejected params file) is
-// deterministic regardless of YAML map iteration order.
+// (the service key is the connection name) and returns them sorted by name so
+// the synthesized parameter is deterministic regardless of YAML map order.
 //
-// ${VAR} references in target and in string credential/metadata values are
-// expanded from env when resolve is true (provision path) and kept verbatim
-// when false (eject path); Foundry server-side ${{...}} expressions are always
-// preserved. This mirrors synthesizeNetwork's handling of ${VAR}.
+// ${VAR} in target/credentials/metadata is expanded from env when resolve is
+// true (provision path) and kept verbatim when false (eject path); Foundry
+// ${{...}} expressions are always preserved, mirroring synthesizeNetwork.
 func collectConnections(
 	services map[string]yaml.Node,
 	env map[string]string,

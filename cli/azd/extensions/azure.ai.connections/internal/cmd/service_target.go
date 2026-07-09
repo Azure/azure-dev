@@ -10,18 +10,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// aiConnectionHost is the azure.yaml service host kind owned by this extension. A
-// `host: azure.ai.connection` service entry carries one Foundry project connection,
-// keyed by the connection name. The connection is created at PROVISION time by the
-// microsoft.foundry provider (synthesis), so this target's Deploy is a no-op.
+// aiConnectionHost is the azure.yaml service host kind owned by this extension.
+// A `host: azure.ai.connection` service entry carries one Foundry project
+// connection, keyed by the connection name.
 const aiConnectionHost = "azure.ai.connection"
 
 var _ azdext.ServiceTargetProvider = (*connectionServiceTarget)(nil)
 
 // connectionServiceTarget owns the azure.ai.connection host so azd can walk a
-// connection entry in the deploy graph. Package, Publish, and Deploy are all
-// no-ops: the connection resource is provisioned from azure.yaml by the
-// microsoft.foundry provider at provision time.
+// connection entry in the deploy graph. All lifecycle methods are no-ops; see
+// Deploy for why.
 type connectionServiceTarget struct {
 	azdClient     *azdext.AzdClient
 	serviceConfig *azdext.ServiceConfig
@@ -86,20 +84,16 @@ func (p *connectionServiceTarget) Publish(
 	return &azdext.ServicePublishResult{}, nil
 }
 
-// Deploy is a no-op. Foundry project connections declared as
-// host: azure.ai.connection services are created at PROVISION time by the
-// microsoft.foundry provider (its synthesizer emits a connections param that a
-// Bicep module turns into project connections, for both greenfield and
-// brownfield/endpoint: projects). Creating them again here would be a redundant
-// ARM write and would make deploy the de-facto source of truth for key-based
-// connections. This mirrors the azure.ai.project target, whose Deploy is also a
-// no-op because the project is provisioned by the same provider.
+// Deploy is a no-op. Connections declared as host: azure.ai.connection
+// services are created at provision time by the microsoft.foundry provider
+// (for both greenfield and brownfield projects), so creating them again here
+// would be a redundant ARM write. This mirrors azure.ai.project's Deploy,
+// which is a no-op for the same reason.
 //
-// The service target still exists so the azure.ai.connections extension owns the
-// azure.ai.connection host and azd can walk a connection entry in the deploy
-// graph (satisfying `uses:` ordering for toolboxes/agents that depend on it).
-// Removing a connection from azure.yaml stops azd managing it but does not delete
-// it (use `azd ai connection delete`).
+// The target still exists so azd can order a connection's deploy step via
+// `uses:` (toolboxes/agents that depend on it). Removing a connection from
+// azure.yaml stops azd managing it but does not delete it (use
+// `azd ai connection delete`).
 func (p *connectionServiceTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,

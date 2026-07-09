@@ -813,14 +813,11 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 	}, nil
 }
 
-// brownfieldReconcileMessage builds the progress line describing what
-// deployBrownfield is about to reconcile on the existing project. Callers
-// reach it only when at least one of hasDeployments/createACR/hasConnections
-// is true (the caller's own guard skips provisioning entirely otherwise), so
-// every combination here names something that is actually happening —
-// unlike a fixed message, this never claims to reconcile model deployments
-// when none are declared (e.g. a brownfield project with only a pending
-// connection).
+// brownfieldReconcileMessage builds the progress line for what deployBrownfield
+// is about to reconcile. Callers reach it only when at least one argument is
+// true (the caller's guard skips provisioning otherwise), so the message never
+// claims work that isn't actually happening -- e.g. a brownfield project with
+// only a pending connection no longer says "reconciling model deployments".
 func brownfieldReconcileMessage(hasDeployments, createACR, hasConnections bool) string {
 	var parts []string
 	if hasDeployments {

@@ -206,13 +206,8 @@ func TestEjectInfra_HappyPath_WritesExpectedFiles(t *testing.T) {
 		"main.arm.json should be excluded from the ejected tree (it would be stale "+
 			"the moment the user edits main.bicep)")
 
-	// brownfield.bicep/brownfield.arm.json are deliberately excluded too: a
-	// brownfield (endpoint:) project can't eject at all (see
-	// TestEjectInfra_RefusesWhenBrownfieldEndpoint), and the provider's
-	// brownfield deploy/preview path always loads the embedded
-	// synthesis.BrownfieldARMTemplate(), never anything under infra/ — so
-	// these files would never be compiled, deployed, or read by anything in
-	// a greenfield eject.
+	// brownfield.bicep/brownfield.arm.json are excluded too: unreachable in a
+	// greenfield eject (see TestEjectInfra_RefusesWhenBrownfieldEndpoint).
 	for _, rel := range []string{
 		filepath.Join("infra", "brownfield.bicep"),
 		filepath.Join("infra", "brownfield.arm.json"),

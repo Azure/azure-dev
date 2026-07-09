@@ -343,7 +343,7 @@ const completionSpec: Fig.Spec = {
 									options: [
 										{
 											name: ['--agent'],
-											description: 'Target agent name',
+											description: 'Agent service name from azure.yaml, or Foundry agent name outside a project',
 											args: [
 												{
 													name: 'agent',
@@ -986,6 +986,16 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--client-header'],
+									description: 'Custom x-client-* request header in "Name: Value" format (repeatable). The responses and invocations protocols forward the x-client-* header family to the agent; other header names are rejected and the flag is not supported with a2a.',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'client-header',
+										},
+									],
+								},
+								{
 									name: ['--conversation-id'],
 									description: 'Explicit conversation ID override',
 									args: [
@@ -1036,7 +1046,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--protocol', '-p'],
-									description: 'Protocol to use: responses (default) or invocations',
+									description: 'Protocol to use: responses (default), invocations, or a2a (a2a is remote-only)',
 									args: [
 										{
 											name: 'protocol',
@@ -1145,7 +1155,7 @@ const completionSpec: Fig.Spec = {
 									options: [
 										{
 											name: ['--agent'],
-											description: 'Agent service name (auto-detected from azure.yaml)',
+											description: 'Agent service name from azure.yaml (auto-detected if only one exists)',
 											args: [
 												{
 													name: 'agent',
@@ -1211,7 +1221,7 @@ const completionSpec: Fig.Spec = {
 									options: [
 										{
 											name: ['--agent'],
-											description: 'Agent name to deploy to (auto-detected from agent.yaml)',
+											description: 'Agent service name from azure.yaml, or Foundry agent name outside a project',
 											args: [
 												{
 													name: 'agent',
@@ -1303,6 +1313,16 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+										{
 											name: ['--poll-interval'],
 											description: 'Polling interval in seconds',
 											args: [
@@ -1330,7 +1350,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--agent', '-a'],
-									description: 'Agent name (auto-detected from azd project if omitted)',
+									description: 'Agent service name from azure.yaml, or Foundry agent name outside a project',
 									args: [
 										{
 											name: 'agent',
@@ -1430,8 +1450,17 @@ const completionSpec: Fig.Spec = {
 							description: 'Run your agent locally for development.',
 							options: [
 								{
-									name: ['--no-inspector'],
-									description: 'Do not open Agent Inspector',
+									name: ['--channel'],
+									description: 'Channel for the Microsoft 365 Agents Playground (activity-protocol agents only)',
+									args: [
+										{
+											name: 'channel',
+										},
+									],
+								},
+								{
+									name: ['--no-client'],
+									description: 'Do not open the local client (Agent Inspector or Playground)',
 								},
 								{
 									name: ['--port', '-p'],

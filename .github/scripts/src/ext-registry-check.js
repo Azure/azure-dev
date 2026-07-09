@@ -114,7 +114,7 @@ async function run({ github: octokit, context, core, coreTeam, registryBaseRef }
  * clears a PR for merge.
  *
  * This is intentionally a hard-coded list: the workflow's GITHUB_TOKEN can't read
- * organization team membership (@${owner}/azure-dev-extregistry-maintain), and the
+ * organization team membership (@Azure/azure-dev-extregistry-maintain), and the
  * membership is fairly static. Keep this in sync with that team.
  *
  * @param {{ core: Core }} args

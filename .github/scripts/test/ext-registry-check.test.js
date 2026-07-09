@@ -375,7 +375,7 @@ describe('run', () => {
     expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('Invalid parameter - coreteam must be populated'));
   });
 
-  it('loads registry maintainers from the GitHub team when no core review team is injected', async () => {
+  it('uses the hardcoded registry maintainer list when no core review team is injected', async () => {
     const core = createNoopCore();
     const octokit = createRegistryOctokit({
       base: registry([extension()]),
@@ -384,11 +384,8 @@ describe('run', () => {
         { filename: 'cli/azd/extensions/registry.json' },
         { filename: 'cli/azd/extensions/README.md' },
       ],
-      teamMembers: [
-        { login: 'registry-maintainer' },
-      ],
     });
-    const context = createRegistryContext({ author: 'registry-maintainer' });
+    const context = createRegistryContext({ author: 'tg-msft' });
 
     await run({
       github: octokit,
@@ -397,10 +394,6 @@ describe('run', () => {
     });
 
     expect(core.setFailed).not.toHaveBeenCalled();
-    expect(octokit.paginate).toHaveBeenCalledWith(octokit.rest.teams.listMembersInOrg, expect.objectContaining({
-      org: 'Azure',
-      team_slug: 'azure-dev-extregistry-maintain',
-    }));
     expect(octokit.paginate).not.toHaveBeenCalledWith(octokit.rest.pulls.listFiles, expect.anything());
   });
 
@@ -538,8 +531,9 @@ describe('run', () => {
         { filename: 'cli/azd/extensions/registry.json' },
         { filename: 'cli/azd/extensions/README.md' },
       ],
-      // Approval followed by a later request-changes (same head) is a withdrawal - do not bypass.
       reviews: [
+        // basically, the user approved it, but then (on the same commit), requested changes. 
+        // the ordering here will be correct, but we need to make sure we note that they are NOT approved.
         { user: { login: 'core-member' }, state: 'APPROVED', commit_id: 'abc123' },
         { user: { login: 'core-member' }, state: 'CHANGES_REQUESTED', commit_id: 'abc123' },
       ],
@@ -630,40 +624,28 @@ describe('run', () => {
 });
 
 describe('getCoreReviewers', () => {
-  it('loads logins from the registry maintainer GitHub team', async () => {
+  it('returns the hardcoded registry maintainer logins', () => {
     const core = createNoopCore();
-    const octokit = createRegistryOctokit({
-      base: registry([]),
-      pr: registry([]),
-      teamMembers: [
-        { login: 'tg-msft' },
-        { login: 'azd-bot' },
-      ],
-    });
 
-    await expect(getCoreReviewers({
-      octokit,
-      context: createRegistryContext(),
-      core,
-    })).resolves.toEqual(new Set(['azd-bot', 'tg-msft']));
+    const reviewers = getCoreReviewers({ core });
 
-    expect(core.info).toHaveBeenCalledWith(expect.stringContaining('Loaded 2 registry maintainer(s)'));
+    expect(reviewers).toBeInstanceOf(Set);
+    expect(reviewers.size).toBeGreaterThan(0);
+    expect(reviewers.has('tg-msft')).toBe(true);
+    expect(core.info).toHaveBeenCalledWith(expect.stringContaining(`Loaded ${reviewers.size} registry maintainer(s)`));
   });
 });
 
 /**
- * @param {{ base: RegistryJson, pr: RegistryJson, files?: { filename: string, previous_filename?: string }[], reviews?: { user: { login: string }, state: string, commit_id: string }[], teamMembers?: { login?: string }[] }} args
+ * @param {{ base: RegistryJson, pr: RegistryJson, files?: { filename: string, previous_filename?: string }[], reviews?: { user: { login: string }, state: string, commit_id: string }[] }} args
  * @returns {Octokit}
  */
-function createRegistryOctokit({ base, pr, files = [{ filename: 'cli/azd/extensions/registry.json' }], reviews = [], teamMembers = [] }) {
+function createRegistryOctokit({ base, pr, files = [{ filename: 'cli/azd/extensions/registry.json' }], reviews = [] }) {
   const octokit = {
     rest: {
       pulls: {
         listReviews: vi.fn(),
         listFiles: vi.fn(),
-      },
-      teams: {
-        listMembersInOrg: vi.fn(),
       },
       repos: {
         getContent: vi.fn(({ ref }) => Promise.resolve({
@@ -678,10 +660,6 @@ function createRegistryOctokit({ base, pr, files = [{ filename: 'cli/azd/extensi
 
       if (endpoint === octokit.rest.pulls.listReviews) {
         return Promise.resolve(reviews);
-      }
-
-      if (endpoint === octokit.rest.teams.listMembersInOrg) {
-        return Promise.resolve(teamMembers);
       }
 
       return Promise.resolve([]);
@@ -936,7 +914,7 @@ approvalLiveDescribe('[live] maintainer approval verdict', () => {
       .filter((login) => login.length > 0);
     const coreTeam = teamEnv.length > 0
       ? new Set(teamEnv)
-      : await getCoreReviewers({ octokit, context, core });
+      : getCoreReviewers({ core });
 
     const approved = await isApprovedByCoreTeam({ octokit, context, core, coreTeam });
 

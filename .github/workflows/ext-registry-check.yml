@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "cli/azd/extensions/registry.json"
+    # NOTE, if you're doing some testing on this workflow you're welcome to use `azd-auto-approve-simple-updates`
+    # as your branch name
     branches: [main, azd-auto-approve-simple-updates]
     types: [opened, edited, synchronize, labeled, unlabeled, reopened, ready_for_review]
 
@@ -18,7 +20,7 @@ permissions:
 
 jobs:
   extension-registry-check:
-    name: Extension registry auto-approve check
+    name: Extension registry "core team approval required" check
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

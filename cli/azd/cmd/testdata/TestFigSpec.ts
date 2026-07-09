@@ -3458,6 +3458,15 @@ const completionSpec: Fig.Spec = {
 										},
 									],
 								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
 							],
 						},
 						{
@@ -3646,6 +3655,15 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
+								{
 									name: ['--trigger'],
 									description: 'Trigger type: timer, recurring, github-issue, or custom (required unless --file is used)',
 									args: [
@@ -3684,6 +3702,15 @@ const completionSpec: Fig.Spec = {
 										},
 									],
 								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
 							],
 						},
 						{
@@ -3706,6 +3733,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
 										},
 									],
 								},
@@ -3747,6 +3783,15 @@ const completionSpec: Fig.Spec = {
 										},
 									],
 								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
 							],
 						},
 						{
@@ -3772,6 +3817,15 @@ const completionSpec: Fig.Spec = {
 										},
 									],
 								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
 							],
 						},
 						{
@@ -3794,6 +3848,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
 										},
 									],
 								},
@@ -3836,6 +3899,15 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--timeout'],
+											description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+											args: [
+												{
+													name: 'timeout',
+												},
+											],
+										},
+										{
 											name: ['--top'],
 											description: 'Maximum total number of runs to return (0 = no cap)',
 											args: [
@@ -3854,6 +3926,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
 										},
 									],
 								},
@@ -3879,6 +3960,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
 										},
 									],
 								},
@@ -4051,6 +4141,15 @@ const completionSpec: Fig.Spec = {
 										},
 									],
 								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
 							],
 						},
 						{
@@ -4073,6 +4172,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
 										},
 									],
 								},

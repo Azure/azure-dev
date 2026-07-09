@@ -819,20 +819,8 @@ func runInitFromAzureYaml(
 	// azure.ai.project service so the provisioning provider recognizes the
 	// brownfield signal and reuses the project instead of creating a new one.
 	if result.FoundryProject != nil {
-		if endpoint := result.FoundryProject.Endpoint(); endpoint != "" {
-			if projectSvcKey := existingProjectServiceKey(ctx, azdClient); projectSvcKey != "" {
-				endpointVal, err := structpb.NewValue(endpoint)
-				if err != nil {
-					return fmt.Errorf("encoding project endpoint: %w", err)
-				}
-				if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
-					ServiceName: projectSvcKey,
-					Path:        "endpoint",
-					Value:       endpointVal,
-				}); err != nil {
-					return fmt.Errorf("writing project endpoint to azure.yaml: %w", err)
-				}
-			}
+		if err := stampProjectEndpoint(ctx, azdClient, result.FoundryProject); err != nil {
+			return err
 		}
 	}
 

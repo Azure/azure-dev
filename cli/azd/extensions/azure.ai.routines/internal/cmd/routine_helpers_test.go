@@ -56,8 +56,8 @@ func TestRoutineHTTPTimeoutOverrideFromEnv_Invalid(t *testing.T) {
 	_, err := routineHTTPTimeoutOverrideFromEnv()
 	require.Error(t, err)
 
-	var localErr *azdext.LocalError
-	require.True(t, errors.As(err, &localErr))
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
 	assert.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
 	assert.Contains(t, localErr.Message, routineHTTPTimeoutEnvVar)
 }

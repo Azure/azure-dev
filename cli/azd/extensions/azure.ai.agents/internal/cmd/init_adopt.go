@@ -815,6 +815,27 @@ func runInitFromAzureYaml(
 		return err
 	}
 
+	// When an existing project was selected, stamp its endpoint onto the
+	// azure.ai.project service so the provisioning provider recognizes the
+	// brownfield signal and reuses the project instead of creating a new one.
+	if result.FoundryProject != nil {
+		if endpoint := result.FoundryProject.Endpoint(); endpoint != "" {
+			if projectSvcKey := existingProjectServiceKey(ctx, azdClient); projectSvcKey != "" {
+				endpointVal, err := structpb.NewValue(endpoint)
+				if err != nil {
+					return fmt.Errorf("encoding project endpoint: %w", err)
+				}
+				if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+					ServiceName: projectSvcKey,
+					Path:        "endpoint",
+					Value:       endpointVal,
+				}); err != nil {
+					return fmt.Errorf("writing project endpoint to azure.yaml: %w", err)
+				}
+			}
+		}
+	}
+
 	// --- Model deployment verification ---
 	// Parse deployments from the azure.yaml and verify them against the
 	// selected Foundry project. If the user opts to use existing deployments

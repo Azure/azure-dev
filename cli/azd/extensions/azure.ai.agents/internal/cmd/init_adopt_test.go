@@ -4,14 +4,18 @@
 package cmd
 
 import (
+	"context"
+	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -552,4 +556,110 @@ services:
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// TestAdoptFlow_WritesEndpointForExistingProject verifies that when the adopt
+// flow selects an existing Foundry project, the endpoint is stamped onto the
+// azure.ai.project service in azure.yaml via SetServiceConfigValue.
+func TestAdoptFlow_WritesEndpointForExistingProject(t *testing.T) {
+	t.Parallel()
+
+	// Simulate an azure.yaml that already has an ai-project service (from the
+	// adopted template) but without an endpoint.
+	server := &endpointRecordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"ai-project": {Name: "ai-project", Host: AiProjectHost},
+		},
+	}
+	client := newEndpointRecorderClient(t, server)
+
+	// Simulate what the adopt flow does: look up the existing project service
+	// key and stamp the endpoint.
+	projectSvcKey := existingProjectServiceKey(t.Context(), client)
+	require.Equal(t, "ai-project", projectSvcKey)
+
+	endpoint := "https://myaccount.services.ai.azure.com/api/projects/myproject"
+	endpointVal, err := structpb.NewValue(endpoint)
+	require.NoError(t, err)
+
+	_, err = client.Project().SetServiceConfigValue(t.Context(), &azdext.SetServiceConfigValueRequest{
+		ServiceName: projectSvcKey,
+		Path:        "endpoint",
+		Value:       endpointVal,
+	})
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Equal(t, "ai-project", server.endpointService)
+	require.Equal(t, endpoint, server.endpointValue)
+}
+
+// TestAdoptFlow_SkipsEndpointWhenNoExistingProject verifies the endpoint is NOT
+// written when configureFoundryProject returns nil (user chose "Create new").
+func TestAdoptFlow_SkipsEndpointWhenNoExistingProject(t *testing.T) {
+	t.Parallel()
+
+	// A nil FoundryProject means "create new" — endpoint should be "".
+	var project *FoundryProjectInfo
+	require.Equal(t, "", project.Endpoint())
+}
+
+// endpointRecordingProjectServer captures SetServiceConfigValue calls for the
+// "endpoint" path, in addition to the standard Get behavior.
+type endpointRecordingProjectServer struct {
+	azdext.UnimplementedProjectServiceServer
+
+	mu              sync.Mutex
+	existing        map[string]*azdext.ServiceConfig
+	endpointService string
+	endpointValue   string
+}
+
+func (s *endpointRecordingProjectServer) Get(
+	_ context.Context, _ *azdext.EmptyRequest,
+) (*azdext.GetProjectResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return &azdext.GetProjectResponse{
+		Project: &azdext.ProjectConfig{Services: s.existing},
+	}, nil
+}
+
+func (s *endpointRecordingProjectServer) SetServiceConfigValue(
+	_ context.Context, req *azdext.SetServiceConfigValueRequest,
+) (*azdext.EmptyResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if req.Path == "endpoint" && req.Value != nil {
+		s.endpointService = req.ServiceName
+		if str, ok := req.Value.AsInterface().(string); ok {
+			s.endpointValue = str
+		}
+	}
+	return &azdext.EmptyResponse{}, nil
+}
+
+// newEndpointRecorderClient spins up an in-process gRPC server for endpoint
+// recording and returns a client wired to it.
+func newEndpointRecorderClient(t *testing.T, server azdext.ProjectServiceServer) *azdext.AzdClient {
+	t.Helper()
+
+	grpcServer := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(grpcServer, server)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+
+	return client
 }

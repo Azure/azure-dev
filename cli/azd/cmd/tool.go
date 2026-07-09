@@ -696,7 +696,7 @@ func (a *toolInstallAction) resolveHostOptions(
 
 	// Explicitly-named skill: when multiple hosts are detected we cannot
 	// safely guess which the user wants.
-	present := a.manager.AvailableSkillHosts(ctx, skill)
+	present, presentName := a.manager.AvailableSkillHosts(ctx, skill)
 	if len(present) > 1 {
 		// Interactive terminal: prompt the user to pick the host(s),
 		// after surfacing the --agent hint so they learn the shortcut too.
@@ -708,7 +708,7 @@ func (a *toolInstallAction) resolveHostOptions(
 				output.WithHighLightFormat("--agent all")+
 				output.WithGrayFormat("` to select a specific agent or all agents.\n"))
 
-			opts, err := a.promptForSkillHosts(ctx, skill, present)
+			opts, err := a.promptForSkillHosts(ctx, skill, present, presentName)
 			if err != nil {
 				return nil, err
 			}
@@ -721,7 +721,7 @@ func (a *toolInstallAction) resolveHostOptions(
 		return nil, &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf("multiple AI agents detected for %s", skill.Name),
 			Message: fmt.Sprintf(
-				"Detected multiple agents: %s", strings.Join(present, ", "),
+				"Detected multiple agents: %s", strings.Join(presentName, ", "),
 			),
 			Suggestion: fmt.Sprintf(
 				"Specify which agent(s) to install for:\n\n"+
@@ -753,7 +753,7 @@ func (a *toolInstallAction) resolveUnavailableHostPrompt(
 		return nil, false, nil
 	}
 
-	available := a.manager.AvailableSkillHosts(ctx, skill)
+	available, availableNames := a.manager.AvailableSkillHosts(ctx, skill)
 	var unavailable []string
 	for _, host := range a.flags.hosts {
 		if !slices.Contains(available, host) {
@@ -776,7 +776,7 @@ func (a *toolInstallAction) resolveUnavailableHostPrompt(
 			"on your PATH:",
 		strings.Join(unavailable, ", "), skill.Name,
 	))
-	picked, err := a.promptForSkillHosts(ctx, skill, available)
+	picked, err := a.promptForSkillHosts(ctx, skill, available, availableNames)
 	if err != nil {
 		return nil, false, err
 	}
@@ -791,18 +791,26 @@ func (a *toolInstallAction) resolveUnavailableHostPrompt(
 // promptForSkillHosts shows an interactive multi-select over the given
 // available hosts and returns the matching install option, or (nil, nil)
 // when the user selects nothing so callers can fall back to their own
-// guidance.
+// guidance. commands and names are index-aligned (from AvailableSkillHosts):
+// the picker displays the friendly name for each host and maps the selection
+// back to its command so the installer resolves it by command.
 func (a *toolInstallAction) promptForSkillHosts(
 	ctx context.Context,
 	skill *tool.ToolDefinition,
-	available []string,
+	commands []string,
+	names []string,
 ) ([]tool.InstallOption, error) {
+	toCommand := make(map[string]string, len(names))
+	for i, name := range names {
+		toCommand[name] = commands[i]
+	}
+
 	selected, err := a.console.MultiSelect(ctx, input.ConsoleOptions{
 		Message: fmt.Sprintf(
 			"Select the agent(s) to install %s for", skill.Name,
 		),
-		Options:      available,
-		DefaultValue: []string{available[0]},
+		Options:      names,
+		DefaultValue: []string{names[0]},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("selecting hosts: %w", err)
@@ -810,7 +818,12 @@ func (a *toolInstallAction) promptForSkillHosts(
 	if len(selected) == 0 {
 		return nil, nil
 	}
-	return []tool.InstallOption{tool.WithHosts(selected...)}, nil
+
+	picked := make([]string, len(selected))
+	for i, name := range selected {
+		picked[i] = toCommand[name]
+	}
+	return []tool.InstallOption{tool.WithHosts(picked...)}, nil
 }
 
 // useStepSpinner reports whether a tool operation should render live

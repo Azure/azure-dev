@@ -125,12 +125,13 @@ type Installer interface {
 		opts ...InstallOption,
 	) (*InstallResult, error)
 
-	// AvailableSkillHosts returns the names of the tool's configured
-	// SkillHosts that are currently usable (a functional CLI on PATH, per
-	// hostUsable), in manifest order (preferred host first). It returns nil
-	// for non-skill tools or when none of the hosts are usable. It probes
-	// the host binaries, so it takes a context.
-	AvailableSkillHosts(ctx context.Context, tool *ToolDefinition) []string
+	// AvailableSkillHosts returns the tool's configured SkillHosts that are
+	// currently usable (a functional CLI on PATH, per hostUsable), in
+	// manifest order (preferred host first), as two index-aligned slices: the
+	// command identities (used for matching) and their display names (shown
+	// to the user). Both are nil for non-skill tools or when none of the
+	// hosts are usable. It probes the host binaries, so it takes a context.
+	AvailableSkillHosts(ctx context.Context, tool *ToolDefinition) (commands []string, names []string)
 
 	// Uninstall removes the given tool from the current platform. For
 	// skill tools the optional [WithHosts] option restricts removal to
@@ -364,24 +365,29 @@ func (i *installer) Upgrade(
 	return i.run(ctx, tool, true, opts)
 }
 
-// AvailableSkillHosts returns the names of the tool's configured
-// SkillHosts that are currently usable, in manifest order (preferred host
-// first). A host counts only if [installer.hostUsable] confirms it is a
-// functional CLI — not merely a same-named launcher stub on PATH — so the
-// interactive host picker never offers a host the install path would later
-// reject. It returns nil for non-skill tools or when none of the hosts are
-// usable.
-func (i *installer) AvailableSkillHosts(ctx context.Context, tool *ToolDefinition) []string {
+// AvailableSkillHosts returns the tool's configured SkillHosts that are
+// currently usable, in manifest order (preferred host first), as two
+// index-aligned slices: the command identities (e.g. "copilot", used for
+// matching via --agent/findSkillHost) and their friendly display names (e.g.
+// "GitHub Copilot CLI", shown to the user). A host counts only if
+// [installer.hostUsable] confirms it is a functional CLI — not merely a
+// same-named launcher stub on PATH — so the interactive host picker never
+// offers a host the install path would later reject. Both are nil for
+// non-skill tools or when none of the hosts are usable.
+func (i *installer) AvailableSkillHosts(
+	ctx context.Context,
+	tool *ToolDefinition,
+) (commands []string, names []string) {
 	if tool.Category != ToolCategorySkill {
-		return nil
+		return nil, nil
 	}
-	var present []string
 	for _, host := range tool.SkillHosts {
 		if i.hostUsable(ctx, host) {
-			present = append(present, host.Host)
+			commands = append(commands, host.Command)
+			names = append(names, host.Host)
 		}
 	}
-	return present
+	return commands, names
 }
 
 // Uninstall removes a tool from the current platform. Skills are
@@ -815,7 +821,7 @@ func (i *installer) runSkillUninstall(
 			failures = append(failures, fmt.Errorf("%s: %w", host.Host, hostErr))
 			continue
 		}
-		succeeded = append(succeeded, host.Host)
+		succeeded = append(succeeded, host.Command)
 	}
 
 	result.Strategy = strings.Join(succeeded, ", ")
@@ -945,7 +951,7 @@ func (i *installer) verifySkillUninstalled(
 			return false, detectErr
 		}
 		for _, h := range installed {
-			if h.Host == host.Host {
+			if h.Host == host.Command {
 				return false, nil // still installed on this host
 			}
 		}
@@ -1253,7 +1259,7 @@ func (i *installer) runSkill(
 			failures = append(failures, fmt.Errorf("%s: %w", host.Host, hostErr))
 			continue
 		}
-		succeeded = append(succeeded, host.Host)
+		succeeded = append(succeeded, host.Command)
 		if version == "" {
 			version = hostVersion
 		}
@@ -1341,7 +1347,7 @@ func (i *installer) resolveSkillTargets(
 			}
 			var targets []SkillHost
 			for _, host := range onPath {
-				if installedSet[host.Host] {
+				if installedSet[host.Command] {
 					targets = append(targets, host)
 					continue
 				}
@@ -1441,13 +1447,12 @@ func (i *installer) explicitSkillHostTargets(
 	return targets, nil
 }
 
-// findSkillHost returns the configured SkillHost with the given host name and
-// whether one was found. It matches case-insensitively against both the
-// display Host (e.g. "GitHub Copilot CLI", as surfaced by the interactive
-// picker) and the exec Command (e.g. "copilot", the short name advertised in
-// the --agent flag help), so both `--agent copilot` and a picker selection
-// resolve. It centralizes the SkillHosts lookup shared by the skill
-// install/upgrade and uninstall paths.
+// findSkillHost returns the configured SkillHost whose command identity
+// matches name (case-insensitively) and whether one was found. Matching is by
+// Command only (e.g. "copilot"), never the display Host: --agent values are
+// command names, and the interactive picker maps its display selection back
+// to the command before resolving here. It centralizes the SkillHosts lookup
+// shared by the skill install/upgrade and uninstall paths.
 func findSkillHost(tool *ToolDefinition, name string) (SkillHost, bool) {
 	idx := slices.IndexFunc(tool.SkillHosts, func(h SkillHost) bool {
 		return strings.EqualFold(h.Command, name)
@@ -1500,7 +1505,7 @@ func (i *installer) hostUsable(ctx context.Context, host SkillHost) bool {
 	if i.hostProbe == nil {
 		i.hostProbe = map[string]bool{}
 	}
-	usable, ok := i.hostProbe[host.Host]
+	usable, ok := i.hostProbe[host.Command]
 	i.hostProbeMu.Unlock()
 	if ok {
 		return usable
@@ -1509,7 +1514,7 @@ func (i *installer) hostUsable(ctx context.Context, host SkillHost) bool {
 	usable = i.probeOnPathHost(ctx, host)
 
 	i.hostProbeMu.Lock()
-	i.hostProbe[host.Host] = usable
+	i.hostProbe[host.Command] = usable
 	i.hostProbeMu.Unlock()
 	return usable
 }
@@ -1550,7 +1555,7 @@ func (i *installer) pickSkillHost(
 		if i.hostUsable(ctx, host) {
 			return host, nil
 		}
-		checked = append(checked, host.Host)
+		checked = append(checked, host.Command)
 	}
 
 	suggestion := fmt.Sprintf(
@@ -1619,7 +1624,7 @@ func (i *installer) verifySkillInstalled(
 			return false, detectErr
 		}
 		for _, h := range installed {
-			if h.Host == host.Host {
+			if h.Host == host.Command {
 				version = h.Version
 				return true, nil
 			}

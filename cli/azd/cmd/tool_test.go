@@ -350,7 +350,7 @@ type cmdMockInstaller struct {
 	uninstall func(
 		ctx context.Context, t *tool.ToolDefinition, opts ...tool.InstallOption,
 	) (*tool.InstallResult, error)
-	availableSkillHosts func(ctx context.Context, t *tool.ToolDefinition) []string
+	availableSkillHosts func(ctx context.Context, t *tool.ToolDefinition) (commands []string, names []string)
 }
 
 func (m *cmdMockInstaller) Install(
@@ -371,11 +371,35 @@ func (m *cmdMockInstaller) Upgrade(
 	return &tool.InstallResult{Tool: t, Success: true}, nil
 }
 
-func (m *cmdMockInstaller) AvailableSkillHosts(ctx context.Context, t *tool.ToolDefinition) []string {
+func (m *cmdMockInstaller) AvailableSkillHosts(
+	ctx context.Context,
+	t *tool.ToolDefinition,
+) (commands []string, names []string) {
 	if m.availableSkillHosts != nil {
 		return m.availableSkillHosts(ctx, t)
 	}
-	return nil
+	return nil, nil
+}
+
+// mockAvailableSkillHosts returns commands unchanged plus the display name for
+// each, derived from the tool's SkillHosts (falling back to the command when
+// no host matches). It mirrors installer.AvailableSkillHosts so the mock
+// yields the same (commands, names) shape from a plain list of commands.
+func mockAvailableSkillHosts(td *tool.ToolDefinition, commands []string) ([]string, []string) {
+	if len(commands) == 0 {
+		return nil, nil
+	}
+	names := make([]string, len(commands))
+	for i, c := range commands {
+		names[i] = c
+		for _, h := range td.SkillHosts {
+			if h.Command == c {
+				names[i] = h.Host
+				break
+			}
+		}
+	}
+	return commands, names
 }
 
 func (m *cmdMockInstaller) Uninstall(
@@ -655,6 +679,10 @@ func TestResolveHostOptions(t *testing.T) {
 		Id:       "azure-skills",
 		Name:     "Azure Skills",
 		Category: tool.ToolCategorySkill,
+		SkillHosts: []tool.SkillHost{
+			{Host: "GitHub Copilot CLI", Command: "copilot"},
+			{Host: "Claude Code CLI", Command: "claude"},
+		},
 	}
 	nonSkill := &tool.ToolDefinition{
 		Id:       "azure-mcp-server",
@@ -663,8 +691,8 @@ func TestResolveHostOptions(t *testing.T) {
 
 	newAction := func(args []string, flags *toolInstallFlags, present []string) *toolInstallAction {
 		installer := &cmdMockInstaller{
-			availableSkillHosts: func(_ context.Context, _ *tool.ToolDefinition) []string {
-				return present
+			availableSkillHosts: func(_ context.Context, td *tool.ToolDefinition) ([]string, []string) {
+				return mockAvailableSkillHosts(td, present)
 			},
 		}
 		manager := tool.NewManager(&cmdMockDetector{}, installer, nil)
@@ -723,23 +751,28 @@ func TestResolveHostOptions(t *testing.T) {
 		require.Error(t, err)
 		var sug *internal.ErrorWithSuggestion
 		require.ErrorAs(t, err, &sug)
-		assert.Contains(t, sug.Message, "copilot, claude")
+		assert.Contains(t, sug.Message, "GitHub Copilot CLI, Claude Code CLI")
 		assert.Contains(t, sug.Suggestion, "--agent all")
 	})
 
 	t.Run("ExplicitlyNamedMultipleHostsInteractivePrompts", func(t *testing.T) {
 		// In an interactive terminal the user is prompted to pick the
-		// host(s) instead of erroring out.
+		// host(s) instead of erroring out. The picker shows friendly Host
+		// display names, and the user's selection maps back to the command.
 		a := newAction([]string{"azure-skills"}, &toolInstallFlags{}, []string{"copilot", "claude"})
 		mockConsole := a.console.(*mockinput.MockConsole)
 		mockConsole.SetTerminal(true)
+		var prompted []string
 		mockConsole.WhenMultiSelect(func(options input.ConsoleOptions) bool {
+			prompted = options.Options
 			return true
-		}).Respond([]string{"claude"})
+		}).Respond([]string{"Claude Code CLI"})
 
 		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Len(t, opts, 1)
+		// The picker offers friendly display names, not command identities.
+		assert.Equal(t, []string{"GitHub Copilot CLI", "Claude Code CLI"}, prompted)
 	})
 
 	t.Run("ExplicitlyNamedMultipleHostsPromptErrorPropagates", func(t *testing.T) {
@@ -791,13 +824,14 @@ func TestResolveHostOptions(t *testing.T) {
 		mockConsole.WhenMultiSelect(func(options input.ConsoleOptions) bool {
 			prompted = options.Options
 			return true
-		}).Respond([]string{"copilot"})
+		}).Respond([]string{"GitHub Copilot CLI"})
 
 		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Len(t, opts, 1)
-		// The picker offered the available hosts, not the bogus request.
-		assert.Equal(t, []string{"copilot", "claude"}, prompted)
+		// The picker offered the available hosts (friendly display names),
+		// not the bogus request.
+		assert.Equal(t, []string{"GitHub Copilot CLI", "Claude Code CLI"}, prompted)
 	})
 
 	t.Run("ExplicitUnavailableHostNonInteractivePassesThrough", func(t *testing.T) {
@@ -944,8 +978,8 @@ func TestResolveHostOptions_Upgrade(t *testing.T) {
 
 	newAction := func(flags *toolUpgradeFlags, present []string) *toolUpgradeAction {
 		installer := &cmdMockInstaller{
-			availableSkillHosts: func(_ context.Context, _ *tool.ToolDefinition) []string {
-				return present
+			availableSkillHosts: func(_ context.Context, td *tool.ToolDefinition) ([]string, []string) {
+				return mockAvailableSkillHosts(td, present)
 			},
 		}
 		manager := tool.NewManager(&cmdMockDetector{}, installer, nil)

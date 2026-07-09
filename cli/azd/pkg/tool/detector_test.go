@@ -628,21 +628,21 @@ func TestDetectSkillHosts(t *testing.T) {
 			copilot: copilotInstalled,
 			claude:  claudeInstalled,
 			wantHosts: []InstalledSkillHost{
-				{Host: "GitHub Copilot CLI", Version: "1.1.71"},
-				{Host: "Claude Code CLI", Version: "1.1.71"},
+				{Host: "copilot", Version: "1.1.71"},
+				{Host: "claude", Version: "1.1.71"},
 			},
 		},
 		{
 			name:      "OnlyClaude",
 			copilot:   notInstalled,
 			claude:    claudeInstalled,
-			wantHosts: []InstalledSkillHost{{Host: "Claude Code CLI", Version: "1.1.71"}},
+			wantHosts: []InstalledSkillHost{{Host: "claude", Version: "1.1.71"}},
 		},
 		{
 			name:      "OnlyCopilot",
 			copilot:   copilotInstalled,
 			claude:    notInstalled,
-			wantHosts: []InstalledSkillHost{{Host: "GitHub Copilot CLI", Version: "1.1.71"}},
+			wantHosts: []InstalledSkillHost{{Host: "copilot", Version: "1.1.71"}},
 		},
 		{
 			name:      "NoneInstalled",

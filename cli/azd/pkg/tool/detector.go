@@ -521,7 +521,7 @@ func (d *detector) DetectSkillHosts(
 		}
 		if version != "" {
 			hosts = append(hosts, InstalledSkillHost{
-				Host:    host.Host,
+				Host:    host.Command,
 				Version: version,
 			})
 		}

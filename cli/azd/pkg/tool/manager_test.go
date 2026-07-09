@@ -33,7 +33,7 @@ type mockInstaller struct {
 		tool *ToolDefinition,
 		opts ...InstallOption,
 	) (*InstallResult, error)
-	availableSkillHostsFn func(ctx context.Context, tool *ToolDefinition) []string
+	availableSkillHostsFn func(ctx context.Context, tool *ToolDefinition) (commands []string, names []string)
 }
 
 func (m *mockInstaller) Install(
@@ -64,11 +64,14 @@ func (m *mockInstaller) Upgrade(
 	}, nil
 }
 
-func (m *mockInstaller) AvailableSkillHosts(ctx context.Context, tool *ToolDefinition) []string {
+func (m *mockInstaller) AvailableSkillHosts(
+	ctx context.Context,
+	tool *ToolDefinition,
+) (commands []string, names []string) {
 	if m.availableSkillHostsFn != nil {
 		return m.availableSkillHostsFn(ctx, tool)
 	}
-	return nil
+	return nil, nil
 }
 
 func (m *mockInstaller) Uninstall(
@@ -804,15 +807,16 @@ func TestManager_UpgradeAll(t *testing.T) {
 
 func TestManager_AvailableSkillHosts(t *testing.T) {
 	installer := &mockInstaller{
-		availableSkillHostsFn: func(_ context.Context, _ *ToolDefinition) []string {
-			return []string{"copilot", "claude"}
+		availableSkillHostsFn: func(_ context.Context, _ *ToolDefinition) (commands []string, names []string) {
+			return []string{"copilot", "claude"}, []string{"GitHub Copilot CLI", "Claude Code CLI"}
 		},
 	}
 	m := NewManager(&mockDetector{}, installer, nil)
 
-	got := m.AvailableSkillHosts(t.Context(), &ToolDefinition{
+	commands, names := m.AvailableSkillHosts(t.Context(), &ToolDefinition{
 		Id:       "azure-skills",
 		Category: ToolCategorySkill,
 	})
-	assert.Equal(t, []string{"copilot", "claude"}, got)
+	assert.Equal(t, []string{"copilot", "claude"}, commands)
+	assert.Equal(t, []string{"GitHub Copilot CLI", "Claude Code CLI"}, names)
 }

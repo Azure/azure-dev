@@ -1402,7 +1402,9 @@ func TestSkillHost_DisplayVsCommand(t *testing.T) {
 
 	det := &mockDetector{
 		detectSkillHostsFn: func(_ context.Context, _ *ToolDefinition) ([]InstalledSkillHost, error) {
-			return []InstalledSkillHost{{Host: "GitHub Copilot CLI", Version: "1.1.70"}}, nil
+			// DetectSkillHosts reports the command identity (see
+			// InstalledSkillHost.Host), so verification matches by command.
+			return []InstalledSkillHost{{Host: "copilot", Version: "1.1.70"}}, nil
 		},
 	}
 	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
@@ -2686,10 +2688,10 @@ func TestAvailableSkillHosts_ReturnsPresentInManifestOrder(t *testing.T) {
 
 	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
 
-	assert.Equal(t,
-		[]string{"copilot", "claude"},
-		inst.AvailableSkillHosts(t.Context(), newSkillTool()),
-	)
+	commands, names := inst.AvailableSkillHosts(t.Context(), newSkillTool())
+	// newSkillTool uses Host == Command, so both slices match.
+	assert.Equal(t, []string{"copilot", "claude"}, commands)
+	assert.Equal(t, []string{"copilot", "claude"}, names)
 }
 
 func TestAvailableSkillHosts_NonSkillToolReturnsNil(t *testing.T) {
@@ -2698,10 +2700,12 @@ func TestAvailableSkillHosts_NonSkillToolReturnsNil(t *testing.T) {
 	runner := mockexec.NewMockCommandRunner()
 	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
 
-	assert.Nil(t, inst.AvailableSkillHosts(t.Context(), &ToolDefinition{
+	commands, names := inst.AvailableSkillHosts(t.Context(), &ToolDefinition{
 		Id:       "not-a-skill",
 		Category: ToolCategoryServer,
-	}))
+	})
+	assert.Nil(t, commands)
+	assert.Nil(t, names)
 }
 
 // ---------------------------------------------------------------------------
@@ -4273,10 +4277,10 @@ func TestHostUsable_OnPathProbeMemoizedAcrossPasses(t *testing.T) {
 	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
 
 	// Two separate host-resolution passes on the same installer.
-	require.Equal(t, []string{"copilot"},
-		inst.AvailableSkillHosts(t.Context(), newSkillTool()))
-	require.Equal(t, []string{"copilot"},
-		inst.AvailableSkillHosts(t.Context(), newSkillTool()))
+	commands1, _ := inst.AvailableSkillHosts(t.Context(), newSkillTool())
+	require.Equal(t, []string{"copilot"}, commands1)
+	commands2, _ := inst.AvailableSkillHosts(t.Context(), newSkillTool())
+	require.Equal(t, []string{"copilot"}, commands2)
 
 	assert.Equal(t, 1, copilotVersionCalls,
 		"on-PATH host `--version` must be probed at most once per command")
@@ -4296,7 +4300,8 @@ func TestHostUsable_NotOnPathResultNotMemoized(t *testing.T) {
 	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
 
 	// First pass: copilot absent.
-	require.Empty(t, inst.AvailableSkillHosts(t.Context(), newSkillTool()))
+	commandsAbsent, _ := inst.AvailableSkillHosts(t.Context(), newSkillTool())
+	require.Empty(t, commandsAbsent)
 
 	// copilot becomes available and functional mid-command.
 	runner.MockToolInPath("copilot", nil)
@@ -4305,6 +4310,6 @@ func TestHostUsable_NotOnPathResultNotMemoized(t *testing.T) {
 	}).Respond(exec.RunResult{Stdout: "GitHub Copilot CLI 1.1.70", ExitCode: 0})
 
 	// Second pass picks it up: the earlier "not on PATH" result was not cached.
-	assert.Equal(t, []string{"copilot"},
-		inst.AvailableSkillHosts(t.Context(), newSkillTool()))
+	commandsPresent, _ := inst.AvailableSkillHosts(t.Context(), newSkillTool())
+	assert.Equal(t, []string{"copilot"}, commandsPresent)
 }

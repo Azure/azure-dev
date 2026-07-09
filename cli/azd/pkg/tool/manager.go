@@ -68,11 +68,15 @@ func (m *Manager) FindTool(id string) (*ToolDefinition, error) {
 	return nil, fmt.Errorf("finding tool %q: not found", id)
 }
 
-// AvailableSkillHosts returns the names of the given skill tool's
-// configured agentic CLI hosts that are currently usable (a functional CLI
-// on PATH), in manifest order (preferred host first). It returns nil for
-// non-skill tools or when none of the hosts are usable.
-func (m *Manager) AvailableSkillHosts(ctx context.Context, tool *ToolDefinition) []string {
+// AvailableSkillHosts returns the given skill tool's configured agentic CLI
+// hosts that are currently usable (a functional CLI on PATH), in manifest
+// order (preferred host first), as two index-aligned slices: the command
+// identities and their display names. Both are nil for non-skill tools or
+// when none of the hosts are usable.
+func (m *Manager) AvailableSkillHosts(
+	ctx context.Context,
+	tool *ToolDefinition,
+) (commands []string, names []string) {
 	return m.installer.AvailableSkillHosts(ctx, tool)
 }
 

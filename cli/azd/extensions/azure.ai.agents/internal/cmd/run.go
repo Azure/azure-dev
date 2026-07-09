@@ -614,7 +614,7 @@ func installPythonDeps(projectDir string) error {
 	venvDir := filepath.Join(projectDir, ".venv")
 	if _, err := os.Stat(venvDir); os.IsNotExist(err) {
 		fmt.Println("Setting up Python environment...")
-		cmd := exec.Command("uv", "venv", venvDir, "--python", ">=3.13") //nolint:gosec // G204: venvDir is derived from the project directory path
+		cmd := exec.Command("uv", "venv", venvDir, "--python", minPythonUvSpec()) //nolint:gosec // G204: venvDir is derived from the project directory path
 		cmd.Dir = projectDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -663,15 +663,11 @@ func installPythonDepsPip(projectDir string) error {
 		return fmt.Errorf("failed to check .venv: %w", err)
 	case os.IsNotExist(err):
 		fmt.Println("Setting up Python environment...")
-		pythonBin, findErr := findSystemPython()
+		python, findErr := findSystemPython()
 		if findErr != nil {
 			return findErr
 		}
-		if err := checkPythonVersion(pythonBin); err != nil {
-			return err
-		}
-		//nolint:gosec // G204: venvDir is derived from the project directory path
-		cmd := exec.Command(pythonBin, "-m", "venv", venvDir)
+		cmd := python.command("-m", "venv", venvDir)
 		cmd.Dir = projectDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -820,58 +816,158 @@ func venvPip(venvDir string) string {
 	return filepath.Join(venvDir, "bin", "pip")
 }
 
-func findSystemPython() (string, error) {
-	candidates := []string{"python3", "python"}
-	if runtime.GOOS == "windows" {
-		candidates = append(candidates, "py")
-	}
-	for _, name := range candidates {
-		if p, err := exec.LookPath(name); err == nil {
-			return p, nil
-		}
-	}
-	return "", fmt.Errorf(
-		"python not found on PATH. Install Python 3.13+ from https://www.python.org/downloads/")
+// Minimum supported system Python runtime. This is the single source of truth
+// for the required Python version across both the uv and pip installation
+// paths (see minPythonUvSpec and the version checks below).
+const (
+	minPythonMajor = 3
+	minPythonMinor = 13
+)
+
+// minPythonUvSpec returns the minimum runtime as a uv `--python` version
+// specifier (e.g. ">=3.13"), derived from the constants so the uv path stays in
+// sync with the pip-path version checks.
+func minPythonUvSpec() string {
+	return fmt.Sprintf(">=%d.%d", minPythonMajor, minPythonMinor)
 }
 
-// checkPythonVersion verifies the Python binary is >= 3.13 (matching the uv path's
-// --python ">=3.13" constraint). Returns an error if the version is too old.
-func checkPythonVersion(pythonBin string) error {
-	//nolint:gosec // G204: pythonBin is from findSystemPython (exec.LookPath result)
-	out, err := exec.Command(pythonBin, "--version").Output()
-	if err != nil {
-		return fmt.Errorf("failed to check Python version: %w", err)
+// pythonInterpreter is a resolved interpreter invocation: the executable to run
+// plus any leading launcher arguments needed to select a specific version (for
+// example the Windows `py -3` launcher, which selects the newest installed
+// Python 3 rather than whichever python.exe happens to appear first on PATH).
+type pythonInterpreter struct {
+	// path is the resolved path to the interpreter or launcher (from LookPath).
+	path string
+	// args are leading arguments applied before any command (e.g. ["-3"]).
+	args []string
+}
+
+// command builds an *exec.Cmd that invokes the interpreter with the provided
+// trailing arguments, preserving any launcher args (e.g. `py -3 -m venv ...`).
+func (p pythonInterpreter) command(extra ...string) *exec.Cmd {
+	args := append(slices.Clone(p.args), extra...)
+	//nolint:gosec // G204: path is an exec.LookPath result; args are static/derived
+	return exec.Command(p.path, args...)
+}
+
+// pythonCandidates returns the ordered interpreter candidates to probe, limited
+// to those that resolve on PATH. On Windows the `py -3` launcher is preferred
+// because it selects the newest installed Python 3, which is frequently newer
+// than the first python.exe on PATH.
+func pythonCandidates() []pythonInterpreter {
+	type candidate struct {
+		name string
+		args []string
 	}
 
-	// Output is like "Python 3.13.2"
+	var candidates []candidate
+	if runtime.GOOS == "windows" {
+		candidates = []candidate{
+			{"py", []string{"-3"}},
+			{"python3", nil},
+			{"python", nil},
+			{"py", nil},
+		}
+	} else {
+		candidates = []candidate{
+			{"python3", nil},
+			{"python", nil},
+		}
+	}
+
+	var resolved []pythonInterpreter
+	for _, c := range candidates {
+		p, err := exec.LookPath(c.name)
+		if err != nil {
+			continue
+		}
+		resolved = append(resolved, pythonInterpreter{path: p, args: c.args})
+	}
+	return resolved
+}
+
+// pythonVersion runs `--version` on the interpreter and returns the parsed major
+// and minor version numbers along with the raw version string (e.g. "3.13.2").
+func pythonVersion(interpreter pythonInterpreter) (major, minor int, raw string, err error) {
+	out, err := interpreter.command("--version").Output()
+	if err != nil {
+		return 0, 0, "", fmt.Errorf("failed to check Python version: %w", err)
+	}
+
+	// Output is like "Python 3.13.2".
 	version := strings.TrimSpace(string(out))
 	parts := strings.SplitN(version, " ", 2)
 	if len(parts) != 2 {
-		return fmt.Errorf("unexpected python --version output: %s", version)
+		return 0, 0, "", fmt.Errorf("unexpected python --version output: %s", version)
 	}
+	raw = parts[1]
 
-	segments := strings.SplitN(parts[1], ".", 3)
+	segments := strings.SplitN(raw, ".", 3)
 	if len(segments) < 2 {
-		return fmt.Errorf("unexpected python version format: %s", parts[1])
+		return 0, 0, "", fmt.Errorf("unexpected python version format: %s", raw)
 	}
 
-	major, err := strconv.Atoi(segments[0])
+	major, err = strconv.Atoi(segments[0])
 	if err != nil {
-		return fmt.Errorf("unexpected python major version: %s", segments[0])
+		return 0, 0, "", fmt.Errorf("unexpected python major version: %s", segments[0])
 	}
-	minor, err := strconv.Atoi(segments[1])
+	minor, err = strconv.Atoi(segments[1])
 	if err != nil {
-		return fmt.Errorf("unexpected python minor version: %s", segments[1])
+		return 0, 0, "", fmt.Errorf("unexpected python minor version: %s", segments[1])
 	}
 
-	if major < 3 || (major == 3 && minor < 13) {
-		return fmt.Errorf(
-			"Python 3.13+ is required (found %s). "+
-				"Install Python 3.13+ from https://www.python.org/downloads/",
-			parts[1])
+	return major, minor, raw, nil
+}
+
+// pythonVersionOK reports whether the given version satisfies the minimum
+// supported Python runtime.
+func pythonVersionOK(major, minor int) bool {
+	return major > minPythonMajor || (major == minPythonMajor && minor >= minPythonMinor)
+}
+
+// firstCompatiblePython returns the first candidate whose version satisfies the
+// minimum supported runtime. Candidates whose version cannot be determined are
+// skipped. If every resolvable candidate is too old, the error names the newest
+// incompatible version found so the user knows what is on their machine.
+func firstCompatiblePython(
+	candidates []pythonInterpreter,
+	versionFn func(pythonInterpreter) (int, int, string, error),
+) (pythonInterpreter, error) {
+	newestRaw := ""
+	newestMajor, newestMinor := -1, -1
+	for _, c := range candidates {
+		major, minor, raw, err := versionFn(c)
+		if err != nil {
+			continue
+		}
+		if pythonVersionOK(major, minor) {
+			return c, nil
+		}
+		if major > newestMajor || (major == newestMajor && minor > newestMinor) {
+			newestMajor, newestMinor, newestRaw = major, minor, raw
+		}
 	}
 
-	return nil
+	if newestRaw != "" {
+		return pythonInterpreter{}, fmt.Errorf(
+			"Python %d.%d+ is required (found %s). "+
+				"Install Python %d.%d+ from https://www.python.org/downloads/",
+			minPythonMajor, minPythonMinor, newestRaw, minPythonMajor, minPythonMinor)
+	}
+
+	return pythonInterpreter{}, fmt.Errorf(
+		"no compatible Python found on PATH. "+
+			"Install Python %d.%d+ from https://www.python.org/downloads/",
+		minPythonMajor, minPythonMinor)
+}
+
+// findSystemPython locates a system Python interpreter that satisfies the
+// minimum supported runtime (>= 3.13). It probes several candidates and checks
+// each one's version rather than blindly using the first python on PATH,
+// because on Windows the first python.exe on PATH is frequently older than the
+// newest installed Python (which the `py -3` launcher can locate).
+func findSystemPython() (pythonInterpreter, error) {
+	return firstCompatiblePython(pythonCandidates(), pythonVersion)
 }
 
 // appendFoundryEnvVars translates azd environment keys to FOUNDRY_* env vars that hosted

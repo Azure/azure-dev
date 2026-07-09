@@ -138,25 +138,35 @@ async function isApprovedByCoreTeam({ octokit, context, core, coreTeam }) {
     pull_number: context.payload.pull_request.number,
   });
 
-  // users can have multiple reviews (ie, they requested changes, then they approved), so we'll 
+  const headSha = context.payload.pull_request['head']?.sha;
+  if (!headSha) {
+    throw new Error('Unable to determine PR head sha for approval freshness check');
+  }
+
+  // users can have multiple reviews (ie, they requested changes, then they approved), so we'll
   // make sure we get their absolutely latest review state.
 
   // NOTE: api docs indicate reviews always come back in chronological order, according to their docs,
   // and Map.set keeps the last entry per key - so this is "latest review per core-team user".
-  /** @type {Map<string, Review['state']>} */
+  /** @type {Map<string, { state: Review['state'], commitId: Review['commit_id'] }>} */
   const latestByUser = new Map();
 
   for (const review of reviews) {
     if (review.user != null && coreTeam.has(review.user.login)) {
-      latestByUser.set(review.user.login, review.state);
+      latestByUser.set(review.user.login, {
+        state: review.state,
+        commitId: review.commit_id,
+      });
     }
   }
 
   // GitHub will take care of blocking the PR if reviewers did a request-changes, for instance.
-  const coreApprovals = [...latestByUser].filter(([, v]) => v === 'APPROVED').map(([k]) => k);
+  const coreApprovals = [...latestByUser]
+    .filter(([, review]) => review.state === 'APPROVED' && review.commitId === headSha)
+    .map(([login]) => login);
 
   if (coreApprovals != null && coreApprovals.length > 0) {
-    core.info(`PR approved by member(s) of the AZD team (${coreApprovals.join(",")})`)
+    core.info(`PR head commit approved by member(s) of the AZD team (${coreApprovals.join(",")})`)
     return true;
   }
 

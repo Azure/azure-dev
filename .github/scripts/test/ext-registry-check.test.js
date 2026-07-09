@@ -417,6 +417,59 @@ describe('run', () => {
     expect(octokit.rest.repos.getContent).not.toHaveBeenCalled();
   });
 
+  it('skips changed-file review when a core team member approved the current head commit', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension()]),
+      pr: registry([extension()]),
+      files: [
+        { filename: 'cli/azd/extensions/registry.json' },
+        { filename: 'cli/azd/extensions/README.md' },
+      ],
+      reviews: [
+        { user: { login: 'core-member' }, state: 'APPROVED', commit_id: 'abc123' },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).not.toHaveBeenCalled();
+    expect(octokit.paginate).not.toHaveBeenCalledWith(octokit.rest.pulls.listFiles, expect.anything());
+    expect(octokit.rest.repos.getContent).not.toHaveBeenCalled();
+  });
+
+  it('requires review when a core team approval is for an older head commit', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension()]),
+      pr: registry([extension()]),
+      files: [
+        { filename: 'cli/azd/extensions/registry.json' },
+        { filename: 'cli/azd/extensions/README.md' },
+      ],
+      reviews: [
+        { user: { login: 'core-member' }, state: 'APPROVED', commit_id: 'older-commit' },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('files outside cli/azd/extensions/registry.json'));
+    expect(octokit.paginate).toHaveBeenCalledWith(octokit.rest.pulls.listFiles, expect.objectContaining({
+      pull_number: 1,
+    }));
+  });
+
   it('uses the pull request base sha as the registry comparison base by default', async () => {
     const core = createNoopCore();
     const octokit = createRegistryOctokit({ base: registry([extension()]), pr: registry([extension()]) });
@@ -461,10 +514,10 @@ describe('run', () => {
 });
 
 /**
- * @param {{ base: RegistryJson, pr: RegistryJson, files?: { filename: string, previous_filename?: string }[] }} args
+ * @param {{ base: RegistryJson, pr: RegistryJson, files?: { filename: string, previous_filename?: string }[], reviews?: { user: { login: string }, state: string, commit_id: string }[] }} args
  * @returns {Octokit}
  */
-function createRegistryOctokit({ base, pr, files = [{ filename: 'cli/azd/extensions/registry.json' }] }) {
+function createRegistryOctokit({ base, pr, files = [{ filename: 'cli/azd/extensions/registry.json' }], reviews = [] }) {
   const octokit = {
     rest: {
       pulls: {
@@ -480,6 +533,10 @@ function createRegistryOctokit({ base, pr, files = [{ filename: 'cli/azd/extensi
     paginate: vi.fn((endpoint) => {
       if (endpoint === octokit.rest.pulls.listFiles) {
         return Promise.resolve(files);
+      }
+
+      if (endpoint === octokit.rest.pulls.listReviews) {
+        return Promise.resolve(reviews);
       }
 
       return Promise.resolve([]);

@@ -16,11 +16,15 @@ import (
 )
 
 // ResourceGroupLocationRuleID is the stable identifier for the resource-group
-// location-mismatch local-preflight check.
+// location-mismatch provision validation check.
 const ResourceGroupLocationRuleID = "resource_group_location_mismatch"
 
-// ResourceGroupLocationCheck is a local-preflight validation check that detects an
-// immutable resource-group region conflict before provisioning starts.
+// ResourceGroupLocationCheck is a provider-agnostic "provision" validation check
+// (azdext.ValidationCheckTypeProvision) that detects an immutable resource-group
+// region conflict before provisioning starts. It is registered under the
+// provision check type — rather than the Bicep-only "local-preflight" type —
+// because the azure.ai.agents extension provisions through its own
+// microsoft.foundry provider, which never triggers local-preflight checks.
 //
 // The azure.ai.agents extension writes a stable, salted resource group name to
 // AZURE_RESOURCE_GROUP at init. If AZURE_LOCATION is later changed (for example by
@@ -54,6 +58,19 @@ func (c *ResourceGroupLocationCheck) Validate(
 ) (*azdext.ValidationCheckResponse, error) {
 	empty := &azdext.ValidationCheckResponse{}
 
+	// The "provision" check type is dispatched for every project whenever this
+	// extension is installed, but the InvalidResourceGroupLocation conflict this
+	// check guards against is specific to the microsoft.foundry provisioning
+	// provider — it runs a subscription-scoped deployment that CREATES the
+	// resource group at AZURE_LOCATION. For any other provider (core Bicep,
+	// Terraform, or an unrelated project that merely has this extension
+	// installed) an existing resource group in a different region is perfectly
+	// valid, so running the check there would raise a false positive. Skip
+	// unless the current project actually provisions through microsoft.foundry.
+	if !c.usesFoundryProvider(ctx) {
+		return empty, nil
+	}
+
 	envClient := c.azdClient.Environment()
 	envResp, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
@@ -61,9 +78,15 @@ func (c *ResourceGroupLocationCheck) Validate(
 	}
 	envName := envResp.Environment.Name
 
-	subscriptionID := envValue(ctx, envClient, envName, "AZURE_SUBSCRIPTION_ID")
+	// Prefer the values supplied in the lean "provision" validation context;
+	// fall back to reading the azd environment directly. Context values are
+	// best-effort and may be empty on a cold first run (dispatch happens before
+	// the provider resolves and prompts for subscription/location/resource group).
+	subscriptionID, ok := valCtx.SubscriptionID()
+	if !ok || subscriptionID == "" {
+		subscriptionID = envValue(ctx, envClient, envName, "AZURE_SUBSCRIPTION_ID")
+	}
 
-	// Prefer the location supplied in the validation context; fall back to the env value.
 	location, ok := valCtx.EnvLocation()
 	if !ok || location == "" {
 		location = envValue(ctx, envClient, envName, "AZURE_LOCATION")
@@ -73,7 +96,10 @@ func (c *ResourceGroupLocationCheck) Validate(
 		return empty, nil
 	}
 
-	resourceGroup := envValue(ctx, envClient, envName, "AZURE_RESOURCE_GROUP")
+	resourceGroup, ok := valCtx.ResourceGroup()
+	if !ok || resourceGroup == "" {
+		resourceGroup = envValue(ctx, envClient, envName, "AZURE_RESOURCE_GROUP")
+	}
 	if resourceGroup == "" {
 		// Mirror azd's default when AZURE_RESOURCE_GROUP is unset.
 		resourceGroup = fmt.Sprintf("rg-%s", envName)
@@ -151,6 +177,19 @@ func evaluateResourceGroupLocation(
 			},
 		},
 	}
+}
+
+// usesFoundryProvider reports whether the current azd project provisions through
+// the microsoft.foundry provider (azure.yaml `infra.provider: microsoft.foundry`).
+// It is best-effort: when the project configuration cannot be read it returns
+// false so the check is skipped rather than risk a false positive on a project
+// that has nothing to do with Foundry agents.
+func (c *ResourceGroupLocationCheck) usesFoundryProvider(ctx context.Context) bool {
+	resp, err := c.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || resp.GetProject() == nil {
+		return false
+	}
+	return resp.GetProject().GetInfra().GetProvider() == FoundryProviderName
 }
 
 // envValue returns the value of key in the named azd environment, or an empty string when

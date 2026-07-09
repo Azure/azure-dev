@@ -17,6 +17,7 @@ capabilities:
   - mcp-server
   - service-target-provider
   - provisioning-provider
+  - validation-provider
   - metadata
 providers:
   - name: azure.ai.agent

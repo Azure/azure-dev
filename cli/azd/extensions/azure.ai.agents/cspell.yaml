@@ -104,6 +104,8 @@ words:
   - agentsplayground
   - winget
   - ECONNREFUSED
+  - wsae
+  - WSAECONNREFUSED
   # Activity protocol / Teams bot terms
   - armbotservice
   - botservice

@@ -129,6 +129,23 @@ describe('diffRegistry', () => {
     const reasons = diffRegistry(base, pr);
     expect(reasons).not.toEqual([]);
     expect(reasons).toContainEqual(expect.stringContaining('changes capabilities'));
+    expect(reasons).toContainEqual(expect.stringContaining('added: lifecycle-events'));
+  });
+
+  it('lists added and removed capabilities in review reasons', () => {
+    const base = registry([extension({ versions: [version({ version: '1.0.0', capabilities: ['custom-commands', 'lifecycle-events'] })] })]);
+    const pr = registry([
+      extension({
+        versions: [
+          version({ version: '1.0.0', capabilities: ['custom-commands', 'lifecycle-events'] }),
+          version({ version: '1.1.0', capabilities: ['resource-group'] }),
+        ],
+      }),
+    ]);
+    const reasons = diffRegistry(base, pr);
+
+    expect(reasons).toContainEqual(expect.stringContaining('added: resource-group'));
+    expect(reasons).toContainEqual(expect.stringContaining('removed: custom-commands, lifecycle-events'));
   });
 
   it('fails when a new release changes providers (name or type)', () => {
@@ -144,6 +161,41 @@ describe('diffRegistry', () => {
     const reasons = diffRegistry(base, pr);
     expect(reasons).not.toEqual([]);
     expect(reasons).toContainEqual(expect.stringContaining('changes providers'));
+    expect(reasons).toContainEqual(expect.stringContaining('added: p (host)'));
+    expect(reasons).toContainEqual(expect.stringContaining('removed: p (service-target)'));
+  });
+
+  it('lists added and removed providers in review reasons', () => {
+    const base = registry([extension({
+      versions: [version({
+        version: '1.0.0', providers: [
+          { name: 'p', type: 'service-target' },
+          { name: 'old', type: 'host' },
+        ]
+      })]
+    })]);
+    const pr = registry([
+      extension({
+        versions: [
+          version({
+            version: '1.0.0', providers: [
+              { name: 'p', type: 'service-target' },
+              { name: 'old', type: 'host' },
+            ]
+          }),
+          version({
+            version: '1.1.0', providers: [
+              { name: 'p', type: 'service-target' },
+              { name: 'new', type: 'host' },
+            ]
+          }),
+        ],
+      }),
+    ]);
+    const reasons = diffRegistry(base, pr);
+
+    expect(reasons).toContainEqual(expect.stringContaining('added: new (host)'));
+    expect(reasons).toContainEqual(expect.stringContaining('removed: old (host)'));
   });
 
   it('uses the latest semver release as the baseline for new release capability checks', () => {

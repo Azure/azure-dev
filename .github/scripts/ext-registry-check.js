@@ -356,12 +356,14 @@ function diffPublishedReleases(id, baseVersions, prVersions) {
       continue;
     }
 
-    if (!sameCapabilities(baseVersion, prVersion)) {
-      reasons.push(`extension '${id}' release '${version}' changes capabilities; published capability declarations require core review`);
+    const capabilityChanges = diffArrays(baseVersion.capabilities ?? [], prVersion.capabilities ?? []);
+    if (capabilityChanges.length > 0) {
+      reasons.push(`extension '${id}' release '${version}' changes capabilities (${capabilityChanges.join('; ')}); published capability declarations require core review`);
     }
 
-    if (!sameProviders(baseVersion, prVersion)) {
-      reasons.push(`extension '${id}' release '${version}' changes providers; published provider declarations require core review`);
+    const providerChanges = diffArrays(providerIdentityLabels(baseVersion), providerIdentityLabels(prVersion));
+    if (providerChanges.length > 0) {
+      reasons.push(`extension '${id}' release '${version}' changes providers (${providerChanges.join('; ')}); published provider declarations require core review`);
     }
 
     if (!isDeepStrictEqual(baseVersion, prVersion)) {
@@ -394,15 +396,17 @@ function diffNewReleases(id, baseVersionList, baseVersions, prVersions) {
       continue;
     }
 
-    if (!sameCapabilities(previousRelease, prVersion)) {
+    const capabilityChanges = diffArrays(previousRelease.capabilities ?? [], prVersion.capabilities ?? []);
+    if (capabilityChanges.length > 0) {
       reasons.push(
-        `extension '${id}' release '${version}' changes capabilities from the previous release '${previousRelease.version}'`,
+        `extension '${id}' release '${version}' changes capabilities from the previous release '${previousRelease.version}' (${capabilityChanges.join('; ')})`,
       );
     }
 
-    if (!sameProviders(previousRelease, prVersion)) {
+    const providerChanges = diffArrays(providerIdentityLabels(previousRelease), providerIdentityLabels(prVersion));
+    if (providerChanges.length > 0) {
       reasons.push(
-        `extension '${id}' release '${version}' changes providers from the previous release '${previousRelease.version}'`,
+        `extension '${id}' release '${version}' changes providers from the previous release '${previousRelease.version}' (${providerChanges.join('; ')})`,
       );
     }
   }
@@ -411,21 +415,35 @@ function diffNewReleases(id, baseVersionList, baseVersions, prVersions) {
 }
 
 /**
- * @param {ExtensionVersion} a
- * @param {ExtensionVersion} b
- * @returns {boolean}
+ * @param {string[]} baseItems
+ * @param {string[]} prItems
+ * @returns {string[]}
  */
-function sameCapabilities(a, b) {
-  return isDeepStrictEqual((a.capabilities ?? []).sort(), (b.capabilities ?? []).sort());
+function diffArrays(baseItems, prItems) {
+  const baseSet = new Set(baseItems);
+  const prSet = new Set(prItems);
+  const added = [...prSet].filter((item) => !baseSet.has(item)).sort();
+  const removed = [...baseSet].filter((item) => !prSet.has(item)).sort();
+  /** @type {string[]} */
+  const changes = [];
+
+  if (added.length > 0) {
+    changes.push(`added: ${added.join(', ')}`);
+  }
+
+  if (removed.length > 0) {
+    changes.push(`removed: ${removed.join(', ')}`);
+  }
+
+  return changes;
 }
 
 /**
- * @param {ExtensionVersion} a
- * @param {ExtensionVersion} b
- * @returns {boolean}
+ * @param {ExtensionVersion} version
+ * @returns {string[]}
  */
-function sameProviders(a, b) {
-  return isDeepStrictEqual(providerIdentities(a.providers ?? []), providerIdentities(b.providers ?? []));
+function providerIdentityLabels(version) {
+  return providerIdentities(version.providers ?? []).map((provider) => `${provider.name} (${provider.type})`);
 }
 
 /**

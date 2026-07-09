@@ -104,3 +104,14 @@ words:
   - agentsplayground
   - winget
   - ECONNREFUSED
+  # Activity protocol / Teams bot terms
+  - armbotservice
+  - botservice
+  - Azurebot
+  - idempotently
+  - sideload
+  - sideloading
+  - microsoftteams
+  - upsert
+  - m365agentstoolkit
+  - atk

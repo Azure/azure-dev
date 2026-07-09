@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.2 (Unreleased)
+
+### Bugs Fixed
+
+- [[#8986]](https://github.com/Azure/azure-dev/pull/8986) Fix `azd ai routine` commands failing to decode routine responses when the service returns numeric (Unix epoch) timestamp values for fields such as schedule `created_at` and timer `triggers.<name>.at`.
+
 ## 1.0.0-beta.1 (2026-06-30)
 
 ### Features Added

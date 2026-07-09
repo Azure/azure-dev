@@ -2,8 +2,15 @@
 
 ## 1.0.0-beta.5 (Unreleased)
 
+### Features Added
+
+- [[#8939]](https://github.com/Azure/azure-dev/pull/8939) Add native support for the Activity protocol to `azd ai agent`. `azd ai agent init` can now scaffold an Activity-protocol agent (defaulting to the service-recommended version `2.0.0`), `azd deploy` provisions a companion Azure Bot Service registration authenticated with `BotServiceRbac` and prints Microsoft Teams setup guidance, and `azd down` tears the bot down. Both init-from-code and init-from-manifest flows are supported.
+- [[#8989]](https://github.com/Azure/azure-dev/pull/8989) Add `a2a` protocol support to `azd ai agent invoke`. A plain message is wrapped in a JSON-RPC 2.0 `message/send` request, `--input-file` sends a complete JSON-RPC request, and `--output raw` dumps the response verbatim. A2A is remote-only (not available with `--local`).
+
 ### Bugs Fixed
 
+- [[#8839]](https://github.com/Azure/azure-dev/issues/8839) Fix `azd down` on a Foundry (`microsoft.foundry`) project failing outright without `--force`. It now prompts for confirmation (naming the resource group to be deleted, defaulting to "no") like the built-in Bicep provider, and only falls back to requiring `--force` when there is no interactive terminal (for example under `--no-prompt` or in CI).
+- [[#8987]](https://github.com/Azure/azure-dev/pull/8987) Fix `azd ai agent init -m <manifest>` not prompting for the agent name. The prompt default and project folder are now derived from the manifest's `template.name` (falling back to the top-level `name`), matching the interactive and template flows.
 - [[#8981]](https://github.com/Azure/azure-dev/pull/8981) Fix `azd ai agent init -m <azure.yaml> --deploy-mode container` not resolving a container registry when adopting a unified Foundry `azure.yaml` on an existing Foundry project, which made `azd deploy` fail with `could not determine container registry endpoint`. The deploy mode is now resolved before Foundry project setup, so a container agent wires `AZURE_CONTAINER_REGISTRY_ENDPOINT` (or is signaled to create one on provision) while code deploy and `--image` still skip ACR.
 
 ## 1.0.0-beta.4 (2026-07-03)

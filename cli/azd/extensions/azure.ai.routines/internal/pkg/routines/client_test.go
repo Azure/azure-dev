@@ -178,7 +178,7 @@ func TestPutRoutine_Created(t *testing.T) {
 	got, err := client.PutRoutine(t.Context(), "new-routine", input)
 	require.NoError(t, err)
 	assert.Equal(t, "new-routine", got.Name)
-	assert.Equal(t, "2025-01-01T00:00:00Z", got.CreatedAt)
+	assert.Equal(t, "2025-01-01T00:00:00Z", got.CreatedAt.String())
 }
 
 func TestPutRoutine_Updated(t *testing.T) {
@@ -191,7 +191,7 @@ func TestPutRoutine_Updated(t *testing.T) {
 
 	got, err := client.PutRoutine(t.Context(), "existing", &Routine{Name: "existing"})
 	require.NoError(t, err)
-	assert.Equal(t, "2025-06-01T00:00:00Z", got.UpdatedAt)
+	assert.Equal(t, "2025-06-01T00:00:00Z", got.UpdatedAt.String())
 }
 
 func TestPutRoutine_Conflict(t *testing.T) {

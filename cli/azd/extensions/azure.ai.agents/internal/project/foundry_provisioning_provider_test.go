@@ -592,15 +592,18 @@ func TestArmParameters_NilSafeOnMissingSynthResult(t *testing.T) {
 		"synthesizer-derived parameters should be absent when synthResult is nil")
 }
 
-func TestDestroy_RefusesWithoutForce(t *testing.T) {
+func TestDestroy_RefusesWithoutForceWhenNonInteractive(t *testing.T) {
 	// Destroy must NEVER silently delete (or, worse, silently leak)
-	// resources. Without --force the user gets a structured error
-	// telling them exactly what would have been deleted and how to
-	// confirm it. This is the bug we fixed: prior behavior was to
-	// delete only the deployment record and return success, leaving
-	// the Foundry account + ACR + role assignments live with no warning.
+	// resources. Without --force the provider prompts for confirmation, but
+	// when there is no interactive host attached (azdClient == nil, as in
+	// --no-prompt / CI) it falls back to a structured error telling the user
+	// exactly what would have been deleted and how to confirm it. The bug this
+	// guards against: prior behavior was to delete only the deployment record
+	// and return success, leaving the Foundry account + ACR + role assignments
+	// live with no warning.
 	p := &FoundryProvisioningProvider{
-		rgName: "rg-foundry-test",
+		rgName:     "rg-foundry-test",
+		rgExplicit: true,
 	}
 	_, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: false}, func(string) {})
 	require.Error(t, err)

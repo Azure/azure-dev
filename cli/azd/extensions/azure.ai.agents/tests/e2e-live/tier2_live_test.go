@@ -189,8 +189,13 @@ func setupConfigDir(t *testing.T, configDir string) {
 
 // run executes the phases in order, stopping at the first failure. Teardown is
 // registered separately as a cleanup, so it always runs.
+//
+// E2E_SKIP_DEPLOY=true runs only init → provision → down, skipping deploy and
+// invoke. Those phases don't affect the interactive `azd down` teardown, so
+// this is the fast way to iterate on the provision/down path (issue #8839)
+// without paying for a full agent deploy.
 func (r *runner) run(ctx context.Context) {
-	if err := r.phaseInit(ctx); err != nil {
+	if err := r.phaseInitWithRetry(ctx); err != nil {
 		r.t.Errorf("init: %v", err)
 		return
 	}
@@ -198,14 +203,42 @@ func (r *runner) run(ctx context.Context) {
 		r.t.Errorf("provision: %v", err)
 		return
 	}
-	if err := r.phaseDeploy(ctx); err != nil {
-		r.t.Errorf("deploy: %v", err)
+	if envTrue("E2E_SKIP_DEPLOY") {
+		r.t.Log("E2E_SKIP_DEPLOY=true: skipping deploy and invoke phases")
+	} else {
+		if err := r.phaseDeploy(ctx); err != nil {
+			r.t.Errorf("deploy: %v", err)
+			return
+		}
+		if err := r.phaseInvoke(ctx); err != nil {
+			r.t.Errorf("invoke: %v", err)
+			return
+		}
+	}
+	if err := r.phaseDown(ctx); err != nil {
+		r.t.Errorf("down: %v", err)
 		return
 	}
-	if err := r.phaseInvoke(ctx); err != nil {
-		r.t.Errorf("invoke: %v", err)
-		return
+}
+
+// phaseInitWithRetry retries once when a bad GitHub token from the pipeline
+// environment causes gh to fail before the public sample is downloaded. The
+// retry drops token override env vars so gh can use any ambient auth state.
+func (r *runner) phaseInitWithRetry(ctx context.Context) error {
+	err := r.phaseInit(ctx)
+	if err == nil || !isInvalidGitHubTokenError(err) {
+		return err
 	}
+
+	r.t.Log("init failed because GH_TOKEN/GITHUB_TOKEN is invalid; retrying without token override env vars")
+	r.env = withoutGitHubTokenEnv(r.env)
+	if err := os.RemoveAll(r.testDir); err != nil {
+		return fmt.Errorf("reset test dir after GitHub token failure: %w", err)
+	}
+	if err := os.MkdirAll(r.testDir, 0o700); err != nil {
+		return fmt.Errorf("recreate test dir after GitHub token failure: %w", err)
+	}
+	return r.phaseInit(ctx)
 }
 
 // phaseInit runs `azd ai agent init` attached to a pseudo-terminal and drives
@@ -316,7 +349,21 @@ func (r *runner) driveInit(ctx context.Context, exited <-chan struct{}) error {
 			repeat, lastKey = 1, key
 		}
 		if repeat >= 3 {
-			if strings.Contains(prompt, "model") || strings.Contains(prompt, "is specified") {
+			if strings.Contains(prompt, "subscription") || strings.Contains(prompt, "location") ||
+				strings.Contains(prompt, "region") {
+				r.t.Log("loop detected on picker prompt; accepting current selection")
+				r.enter()
+				continue
+			}
+			// The model select/deployment prompts can legitimately need a
+			// different option than the default (e.g. the manifest model isn't
+			// available in the chosen region), so nudge to the next choice. Scope
+			// this strictly to the model prompts: the Foundry-project prompt text
+			// ("...host your agent and any models or tools it uses.") also contains
+			// "model", and must NOT be treated as a model prompt here.
+			isModelPrompt := strings.Contains(prompt, "select a model") ||
+				strings.Contains(prompt, "is specified in the agent manifest")
+			if isModelPrompt {
 				r.t.Log("loop detected on model prompt; trying next option")
 				r.c.send(keyDown)
 				r.c.waitForQuiet(listSettle)
@@ -343,8 +390,8 @@ func (r *runner) finishInit(ctx context.Context) error {
 		return nil
 	}
 	return fmt.Errorf(
-		"init finished but expected artifacts are missing on disk\n--- tail ---\n%s",
-		tail(r.c.tailString(), 2000),
+		"init finished but expected artifacts are missing on disk\n--- test dir ---\n%s\n--- tail ---\n%s",
+		r.initOutputDiagnostics(), tail(r.c.tailString(), 2000),
 	)
 }
 
@@ -393,27 +440,27 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 
 	// Language select — "Select a language" (promptAgentTemplate).
 	case has("select a language"):
-		r.selectByText("Python")
+		r.selectByText(screen, "Python")
 
 	// Template select — "Select a starter template" / "Select an agent template"
 	// (promptAgentTemplate).
 	case has("starter template") || has("agent template"):
-		r.selectByText("Basic agent (Invocations")
+		r.selectByText(screen, "Basic agent (Invocations")
 
 	// Foundry project hosting — "Select a Foundry project to host your agent..."
 	// (runInitFromManifest); choices "Use an existing..." / "Create a new...".
 	case has("foundry project to host"):
 		if r.createProject() {
-			r.selectByText("Create a new Foundry project")
+			r.selectByText(screen, "Create a new Foundry project")
 		} else {
-			r.selectByText("Use an existing Foundry project")
+			r.selectByText(screen, "Use an existing Foundry project")
 		}
 
 	// Existing-project picker — "Select a Foundry project"
 	// (selectFoundryProject); only when reusing a project.
 	case has("select a foundry project"):
 		if p := os.Getenv("E2E_PROJECT"); p != "" {
-			r.selectByText(p)
+			r.selectByText(screen, p)
 		} else {
 			r.enter()
 		}
@@ -425,7 +472,7 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 	// — match that, not the preamble.
 	case has("select subscription"):
 		if sub := os.Getenv("E2E_SUBSCRIPTION"); sub != "" {
-			r.selectByText(sub[:min(8, len(sub))])
+			r.selectByText(screen, sub[:min(8, len(sub))])
 		} else {
 			r.enter()
 		}
@@ -433,7 +480,7 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 	// Location — preamble "Select an Azure location..." (ensureLocation) +
 	// azd-core picker.
 	case has("location") || has("region"):
-		r.selectByText(getenvDefault("E2E_LOCATION", "eastus2"))
+		r.selectByText(screen, getenvDefault("E2E_LOCATION", "eastus2"))
 
 	// Manifest model decision — "Model '%s' is specified in the agent manifest."
 	// (getModelDetails); keep the manifest model (default first choice).
@@ -450,7 +497,7 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 
 	// Model select — "Select a model" (promptForAlternativeModel etc.).
 	case has("select a model"):
-		r.selectByText("gpt-4o-mini")
+		r.selectByText(screen, "gpt-4o-mini")
 
 	// Deployment version / SKU / capacity — azd-core's PromptAiDeployment renders
 	// these exact picker messages; accept defaults. Match the full message rather
@@ -593,6 +640,161 @@ func (r *runner) phaseInvoke(ctx context.Context) error {
 	return errors.New("invoke failed after all retries")
 }
 
+// phaseDown exercises the interactive `azd down` teardown. With no --force flag
+// the Foundry provider must prompt for confirmation (issue #8839) instead of
+// failing outright. This drives the confirmation prompt over a pseudo-terminal,
+// verifies it names the resource group, answers "yes", waits for the delete to
+// finish, and asserts the resource group is actually gone. The registered
+// force+purge teardown remains as an idempotent safety net.
+func (r *runner) phaseDown(ctx context.Context) error {
+	// Capture the resource group + subscription BEFORE deleting, so we can
+	// verify the group is gone afterward: `azd down` invalidates the env values.
+	vals := r.azdEnvValues(ctx)
+	rg := vals["AZURE_RESOURCE_GROUP"]
+	sub := vals["AZURE_SUBSCRIPTION_ID"]
+	if rg == "" {
+		return errors.New("AZURE_RESOURCE_GROUP not found in azd env; cannot exercise interactive down")
+	}
+
+	if err := r.runAzdDownInteractive(ctx, rg); err != nil {
+		return err
+	}
+
+	// Verify the resource group was actually deleted. `az group exists` prints
+	// "true"/"false". A verification hiccup (az error) is logged but not fatal —
+	// the force teardown safety net still guarantees cleanup — but a group that
+	// still exists means the interactive down did not actually tear down.
+	args := []string{"group", "exists", "--name", rg}
+	if sub != "" {
+		args = append(args, "--subscription", sub)
+	}
+	out, code := r.runQuiet(ctx, r.projectDir, tagTimeout, "az", args...)
+	if code != 0 {
+		r.t.Logf("warning: could not verify resource group deletion (exit %d): %s",
+			code, truncate(strings.TrimSpace(out), 200))
+		return nil
+	}
+	if strings.Contains(strings.ToLower(out), "true") {
+		return fmt.Errorf("resource group %q still exists after interactive `azd down`", rg)
+	}
+	r.t.Logf("interactive `azd down` deleted resource group %q", rg)
+	return nil
+}
+
+// runAzdDownInteractive runs `azd down --purge` (no --force) attached to a
+// pseudo-terminal and drives the destroy confirmation prompt to completion.
+// --purge is included so soft-deleted Cognitive Services accounts don't block a
+// later re-provision; the confirmation prompt fires regardless of --purge.
+func (r *runner) runAzdDownInteractive(ctx context.Context, rg string) error {
+	c, err := newConsole(initCols, initRows)
+	if err != nil {
+		return err
+	}
+	defer c.close()
+
+	dctx, cancel := context.WithTimeout(ctx, teardownTimeout)
+	defer cancel()
+
+	//nolint:gosec // azd is a trusted fixed binary; args are test-controlled.
+	cmd := exec.CommandContext(dctx, "azd", "down", "--purge")
+	cmd.Dir = r.projectDir
+	cmd.Env = r.env
+	cmd.Stdin = c.tty()
+	cmd.Stdout = c.tty()
+	cmd.Stderr = c.tty()
+	// Give the child the pts as its controlling terminal so the prompt library
+	// treats it as a real interactive terminal (mirrors phaseInit).
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start azd down: %w", err)
+	}
+
+	exited := make(chan struct{})
+	var waitErr error
+	go func() {
+		waitErr = cmd.Wait()
+		close(exited)
+	}()
+
+	confirmed, driveErr := r.driveDown(dctx, c, exited, rg)
+
+	// Ensure the child is gone before returning (it normally exits itself).
+	select {
+	case <-exited:
+	case <-time.After(15 * time.Second):
+		_ = cmd.Process.Kill()
+		<-exited
+	}
+
+	if driveErr != nil {
+		return driveErr
+	}
+	if !confirmed {
+		return fmt.Errorf("azd down exited without prompting for confirmation\n--- tail ---\n%s",
+			tail(c.tailString(), 2000))
+	}
+	if code := exitCode(waitErr); code != 0 {
+		return fmt.Errorf("azd down (interactive) failed (exit %d)\n--- tail ---\n%s",
+			code, tail(c.tailString(), 2000))
+	}
+	return nil
+}
+
+// driveDown waits for the Foundry destroy confirmation prompt, verifies it names
+// the resource group, and answers "yes". It returns confirmed=true once it has
+// answered, then keeps draining output (rendering the delete progress) until the
+// child exits or ctx is cancelled.
+func (r *runner) driveDown(
+	ctx context.Context, c *console, exited <-chan struct{}, rg string,
+) (confirmed bool, err error) {
+	for {
+		select {
+		case <-ctx.Done():
+			return confirmed, fmt.Errorf("azd down timed out: %w\n--- tail ---\n%s",
+				ctx.Err(), tail(c.tailString(), 2000))
+		case <-exited:
+			return confirmed, nil
+		default:
+		}
+
+		// Block until the UI stops emitting (prompt drawn, awaiting input) or
+		// the child exits.
+		if c.waitForQuiet(promptQuiet) {
+			return confirmed, nil // child exited
+		}
+		if confirmed {
+			continue // already answered; just drain until exit
+		}
+
+		screen := c.screen()
+		// Only answer once survey is actively blocking on a "?" prompt.
+		if activePrompt(screen) == "" {
+			continue
+		}
+		if !isDestroyConfirmScreen(screen) {
+			continue
+		}
+
+		r.t.Log("down: destroy confirmation prompt detected")
+		if !screenContains(screen, rg) {
+			return confirmed, fmt.Errorf(
+				"destroy confirmation did not name resource group %q\n--- screen ---\n%s", rg, screen)
+		}
+		c.send("y" + keyEnter)
+		confirmed = true
+	}
+}
+
+// isDestroyConfirmScreen reports whether the rendered screen shows the Foundry
+// provider's destroy confirmation prompt. Source: confirmDestroy in
+// foundry_provisioning_provider.go prints "... Are you sure you want to
+// continue?" as a survey Confirm.
+func isDestroyConfirmScreen(screen string) bool {
+	return screenContains(screen, "are you sure you want to continue") &&
+		screenContains(screen, "delete resource group")
+}
+
 // teardown runs `azd down` so a run never leaves billable resources behind. It
 // uses a fresh context because the per-run deadline may already have fired.
 func (r *runner) teardown() {
@@ -702,13 +904,17 @@ func (r *runner) runQuiet(
 	return string(out), exitCode(err)
 }
 
-// selectByText filters a survey list by typing target, waits (event-driven) for
-// the filtered list to stop redrawing, then confirms with Enter. This assumes
-// the survey / azd-core Select supports type-to-filter; that behavior is only
-// verifiable against a live run (documented in README). waitForQuiet's exited
-// result is intentionally ignored: a child that exited mid-select makes the
-// trailing Enter a harmless no-op on the closed pty.
-func (r *runner) selectByText(target string) {
+// selectByText filters a survey list by typing target unless the target is
+// already selected, then confirms with Enter. Some survey redraws briefly expose
+// the same prompt after a selection is accepted; treating an already-selected
+// target as done keeps the driver idempotent and avoids appending stale filter
+// text into the next prompt.
+func (r *runner) selectByText(screen, target string) {
+	if currentSelectionHas(screen, target) {
+		r.enter()
+		return
+	}
+	r.clearFilter()
 	r.c.send(target)
 	r.c.waitForQuiet(listSettle)
 	r.c.send(keyEnter)
@@ -717,6 +923,29 @@ func (r *runner) selectByText(target string) {
 // enter accepts a prompt's default by pressing Enter.
 func (r *runner) enter() {
 	r.c.send(keyEnter)
+}
+
+// clearFilter removes any stale type-to-filter text left in the active survey
+// prompt before typing a new target. Ctrl+U covers readline-style inputs; Del is
+// repeated as a fallback for survey prompts that treat the filter as a simple
+// editable field.
+func (r *runner) clearFilter() {
+	r.c.send(keyCtrlU)
+	r.c.send(strings.Repeat(keyDel, 64))
+}
+
+func currentSelectionHas(screen, target string) bool {
+	target = strings.ToLower(target)
+	for _, line := range nonEmptyLines(screen) {
+		line = strings.ToLower(line)
+		if strings.HasPrefix(line, "?") && strings.Contains(line, target) {
+			return true
+		}
+		if strings.Contains(line, ">") && strings.Contains(line, target) {
+			return true
+		}
+	}
+	return false
 }
 
 // createProject reports whether the run should create a fresh Foundry project.
@@ -760,11 +989,14 @@ func (r *runner) findServiceName() string {
 	}
 	// A struct unmarshal is more robust than scanning lines: it tolerates
 	// comments and indentation changes that a naive parser would mishandle.
-	var proj struct {
-		Services map[string]any `yaml:"services"`
-	}
+	var proj azdProjectManifest
 	if err := yaml.Unmarshal(data, &proj); err != nil || len(proj.Services) == 0 {
 		return ""
+	}
+	for name, svc := range proj.Services {
+		if svc.Host == "azure.ai.agent" {
+			return name
+		}
 	}
 	for name := range proj.Services {
 		return name
@@ -772,8 +1004,18 @@ func (r *runner) findServiceName() string {
 	return ""
 }
 
-// validateInitOutput confirms init produced an agent project on disk: a project
-// dir whose azure.yaml targets the agent host and a nested agent.yaml.
+type azdProjectManifest struct {
+	Services map[string]azdService `yaml:"services"`
+}
+
+type azdService struct {
+	Host string `yaml:"host"`
+}
+
+// validateInitOutput confirms init produced an azd project on disk. Current
+// unified azure.yaml samples can inline the agent definition in azure.yaml
+// instead of writing a separate agent.yaml, so the stable contract is that init
+// created a project directory with a parseable azure.yaml containing services.
 func (r *runner) validateInitOutput() bool {
 	entries, err := os.ReadDir(r.testDir)
 	if err != nil {
@@ -784,34 +1026,73 @@ func (r *runner) validateInitOutput() bool {
 			continue
 		}
 		subdir := filepath.Join(r.testDir, e.Name())
-		//nolint:gosec // azure.yaml path is under the test-controlled testDir.
-		data, err := os.ReadFile(filepath.Join(subdir, "azure.yaml"))
-		if err != nil {
-			continue
-		}
-		content := string(data)
-		if strings.Contains(content, "host:") && strings.Contains(content, "azure.ai.agent") &&
-			hasAgentYAML(subdir) {
+		if hasProjectManifest(subdir) {
 			return true
 		}
 	}
 	return false
 }
 
-// hasAgentYAML reports whether an agent.yaml exists anywhere under root.
-func hasAgentYAML(root string) bool {
-	found := false
-	_ = filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
+// hasProjectManifest reports whether root contains a parseable azd project
+// manifest with an azure.ai.agent service. Current unified azure.yaml samples
+// can inline the agent definition there rather than writing agent.yaml.
+func hasProjectManifest(root string) bool {
+	//nolint:gosec // azure.yaml path is under the test-controlled testDir.
+	data, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
+	if err != nil {
+		return false
+	}
+	var proj azdProjectManifest
+	if err := yaml.Unmarshal(data, &proj); err != nil {
+		return false
+	}
+	for _, svc := range proj.Services {
+		if svc.Host == "azure.ai.agent" {
+			return true
+		}
+	}
+	return false
+}
+
+// initOutputDiagnostics returns a bounded file listing to make scaffold-layout
+// drift visible in CI logs without dumping generated source files.
+func (r *runner) initOutputDiagnostics() string {
+	var b strings.Builder
+	count := 0
+	const maxEntries = 80
+
+	err := filepath.WalkDir(r.testDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			fmt.Fprintf(&b, "%s: %v\n", path, err)
 			return nil
 		}
-		if !d.IsDir() && d.Name() == "agent.yaml" {
-			found = true
+		rel, relErr := filepath.Rel(r.testDir, path)
+		if relErr != nil || rel == "." {
+			return nil
+		}
+		if count >= maxEntries {
 			return filepath.SkipAll
 		}
+		if strings.Count(filepath.ToSlash(rel), "/") > 3 {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			rel += "/"
+		}
+		fmt.Fprintln(&b, rel)
+		count++
 		return nil
 	})
-	return found
+	if err != nil {
+		fmt.Fprintf(&b, "walk failed: %v\n", err)
+	}
+	if count >= maxEntries {
+		fmt.Fprintf(&b, "... truncated after %d entries\n", maxEntries)
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // lineLogger forwards a stream to t.Log one line at a time so long-running azd
@@ -867,6 +1148,23 @@ func ghToken() string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+func isInvalidGitHubTokenError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "The token in GH_TOKEN is invalid") ||
+		strings.Contains(msg, "The token in GITHUB_TOKEN is invalid")
+}
+
+func withoutGitHubTokenEnv(env []string) []string {
+	out := env[:0]
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "GH_TOKEN=") || strings.HasPrefix(kv, "GITHUB_TOKEN=") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }
 
 // shortHash returns a short, non-cryptographic uniqueness suffix for the agent

@@ -84,12 +84,12 @@ func (c *ResourceGroupLocationCheck) Validate(
 	// the provider resolves and prompts for subscription/location/resource group).
 	subscriptionID, ok := valCtx.SubscriptionID()
 	if !ok || subscriptionID == "" {
-		subscriptionID = envValue(ctx, envClient, envName, "AZURE_SUBSCRIPTION_ID")
+		subscriptionID = envValueOrEmpty(ctx, envClient, envName, "AZURE_SUBSCRIPTION_ID")
 	}
 
 	location, ok := valCtx.EnvLocation()
 	if !ok || location == "" {
-		location = envValue(ctx, envClient, envName, "AZURE_LOCATION")
+		location = envValueOrEmpty(ctx, envClient, envName, "AZURE_LOCATION")
 	}
 	if subscriptionID == "" || location == "" {
 		// Without both values there is nothing to compare; provision will prompt for them.
@@ -98,11 +98,13 @@ func (c *ResourceGroupLocationCheck) Validate(
 
 	resourceGroup, ok := valCtx.ResourceGroup()
 	if !ok || resourceGroup == "" {
-		resourceGroup = envValue(ctx, envClient, envName, "AZURE_RESOURCE_GROUP")
+		resourceGroup = envValueOrEmpty(ctx, envClient, envName, "AZURE_RESOURCE_GROUP")
 	}
 	if resourceGroup == "" {
-		// Mirror azd's default when AZURE_RESOURCE_GROUP is unset.
-		resourceGroup = fmt.Sprintf("rg-%s", envName)
+		// Mirror azd's default when AZURE_RESOURCE_GROUP is unset, reusing the
+		// same helper the foundry provisioning path uses so the check stays in
+		// sync if the default naming convention ever changes.
+		resourceGroup = defaultResourceGroupName(envName)
 	}
 
 	tenantResponse, err := c.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
@@ -192,12 +194,18 @@ func (c *ResourceGroupLocationCheck) usesFoundryProvider(ctx context.Context) bo
 	return resp.GetProject().GetInfra().GetProvider() == FoundryProviderName
 }
 
-// envValue returns the value of key in the named azd environment, or an empty string when
-// it is unset or cannot be read.
-func envValue(ctx context.Context, envClient azdext.EnvironmentServiceClient, envName, key string) string {
+// envValueOrEmpty returns the trimmed value of key in the named azd environment,
+// or an empty string when it is unset or cannot be read. Trimming matches
+// FoundryProvisioningProvider.envValue and prevents a stray leading/trailing
+// space in AZURE_LOCATION or AZURE_RESOURCE_GROUP from producing a
+// false-positive region mismatch (the comparison uses strings.EqualFold, which
+// does not trim). The distinct name avoids confusion with that method, which
+// has different error semantics (it propagates the error rather than swallowing
+// it).
+func envValueOrEmpty(ctx context.Context, envClient azdext.EnvironmentServiceClient, envName, key string) string {
 	resp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{EnvName: envName, Key: key})
 	if err != nil {
 		return ""
 	}
-	return resp.Value
+	return strings.TrimSpace(resp.Value)
 }

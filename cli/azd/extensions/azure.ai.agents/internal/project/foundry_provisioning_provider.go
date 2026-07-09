@@ -752,14 +752,7 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 		}, nil
 	}
 
-	switch {
-	case len(p.brownfieldDeployments) > 0 && createACR:
-		progress("Using existing Foundry project; reconciling model deployments and container registry...")
-	case createACR:
-		progress("Using existing Foundry project; creating container registry...")
-	default:
-		progress("Using existing Foundry project; reconciling declared model deployments...")
-	}
+	progress(brownfieldReconcileMessage(len(p.brownfieldDeployments) > 0, createACR, len(p.brownfieldConnections) > 0))
 
 	// Locate the existing account (subscription, resource group, account name).
 	// resolveBrownfieldTarget sets p.subID, which the deployments client needs.
@@ -818,6 +811,28 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 			Outputs: p.withTenantOutput(outputs),
 		},
 	}, nil
+}
+
+// brownfieldReconcileMessage builds the progress line describing what
+// deployBrownfield is about to reconcile on the existing project. Callers
+// reach it only when at least one of hasDeployments/createACR/hasConnections
+// is true (the caller's own guard skips provisioning entirely otherwise), so
+// every combination here names something that is actually happening —
+// unlike a fixed message, this never claims to reconcile model deployments
+// when none are declared (e.g. a brownfield project with only a pending
+// connection).
+func brownfieldReconcileMessage(hasDeployments, createACR, hasConnections bool) string {
+	var parts []string
+	if hasDeployments {
+		parts = append(parts, "model deployments")
+	}
+	if createACR {
+		parts = append(parts, "container registry")
+	}
+	if hasConnections {
+		parts = append(parts, "connections")
+	}
+	return fmt.Sprintf("Using existing Foundry project; reconciling %s...", strings.Join(parts, ", "))
 }
 
 // brownfieldParams builds the ARM parameter set for brownfield.arm.json, shared

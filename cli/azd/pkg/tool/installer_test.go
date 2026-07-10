@@ -1493,21 +1493,21 @@ func TestRunSkill_Upgrade_AlreadyUpToDate(t *testing.T) {
 	assert.Equal(t, []string{"Test Azure Skills are already up to date (v1.1.86)."}, r.stops)
 }
 
-// TestRunSkill_StreamedOutputPrintedAboveSpinner verifies that when the host
-// CLI writes to the terminal (a progress line or an interactive prompt),
-// each line is surfaced via Message (which the console prints above the
-// spinner, keeping the spinner pinned below), and the spinner is stopped with
-// the step result at the end rather than torn down early.
-func TestRunSkill_StreamedOutputPrintedAboveSpinner(t *testing.T) {
+// TestRunSkill_Install_SuccessHidesHostOutput verifies that a successful skill
+// install does NOT surface the host CLI's raw output above the spinner — only
+// the Done line shows. (On failure the buffered output is replayed; see
+// TestRunSkill_InstallCommandFails_SurfacesError and the uninstall failure
+// test.) When the host reports no skill count, no detail line is added either.
+func TestRunSkill_Install_SuccessHidesHostOutput(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
 	mockHostPresence(runner, "copilot")
 	runner.MockToolInPath("node", nil)
 
-	// The plugin command writes to the terminal (StdOut), simulating the
-	// host CLI surfacing progress or a prompt. marketplace-add is captured
-	// (no StdOut) so it stays silent; only the install writes.
+	// The plugin command writes progress to the terminal (StdOut); on success
+	// it must be suppressed rather than surfaced. marketplace-add runs without
+	// a captured writer (StdOut nil) so it stays silent; only the install writes.
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return args.Cmd == "copilot" && slices.Contains(args.Args, "plugin")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -1537,12 +1537,86 @@ func TestRunSkill_StreamedOutputPrintedAboveSpinner(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
 
-	// The spinner is shown, the host CLI's line is surfaced via Message (the
-	// console prints it above the spinner), and the spinner is stopped with
-	// the step result at the end — it is kept, not torn down early.
+	// The spinner is shown and stopped with the step result; the host CLI's
+	// output is not surfaced, and with no count reported there is no detail line.
 	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.starts)
 	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.stops)
-	assert.Contains(t, r.messages, "Installing plugin...")
+	assert.Empty(t, r.messages, "a successful install must not surface the host CLI output")
+}
+
+// TestRunSkill_Install_ReportsSkillCount verifies that a fresh install parses
+// the number of skills the host CLI reports and shows it as an indented detail
+// line under the Done line — without surfacing the raw host output.
+func TestRunSkill_Install_ReportsSkillCount(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "plugin")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		if args.StdOut != nil {
+			_, _ = args.StdOut.Write(
+				[]byte("Plugin azure@azure-skills installed successfully. Installed 27 skills.\n"),
+			)
+		}
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillHostsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillHost, error) {
+				return []InstalledSkillHost{{Host: "copilot", Version: "1.1.70"}}, nil
+			},
+		},
+	)
+
+	var r fakeStepRenderer
+	result, err := inst.Install(
+		t.Context(), newSkillTool(),
+		WithHosts("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
+
+	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.stops)
+	// The count is surfaced as a single indented detail line; the raw CLI text
+	// (e.g. "installed successfully") is not.
+	require.Len(t, r.messages, 1)
+	assert.Contains(t, r.messages[0], "Installed 27 skills")
+	assert.NotContains(t, r.messages[0], "installed successfully")
+}
+
+// TestParseSkillCount verifies the best-effort parsing of the skill count from
+// a host CLI's install output: the number before "skill"/"skills", 0 when no
+// count is present, and pluralization handled by the caller.
+func TestParseSkillCount(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		out  string
+		want int
+	}{
+		{"CopilotStyle", "Plugin installed successfully. Installed 27 skills.", 27},
+		{"Singular", "Installed 1 skill.", 1},
+		{"PicksNumberBeforeSkills", "Found 99 plugins. Installed 3 skills.", 3},
+		{"NoCount", "Installing plugin...", 0},
+		{"Empty", "", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, parseSkillCount(tt.out))
+		})
+	}
 }
 
 // TestSkillHost_DisplayVsCommand verifies the split between the display Host
@@ -4587,7 +4661,7 @@ func TestLineWriter_Write_SerializesEmit(t *testing.T) {
 	const writers = 100
 	var wg sync.WaitGroup
 	wg.Add(writers)
-	for i := 0; i < writers; i++ {
+	for range writers {
 		go func() {
 			defer wg.Done()
 			_, _ = lw.Write([]byte("a\nb\nc\n")) // 3 lines per write

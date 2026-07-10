@@ -4,6 +4,7 @@
 package tool
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/sha512"
@@ -20,6 +21,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -249,11 +251,11 @@ func renderSkillStep(
 	renderer StepRenderer,
 	title string,
 	streamOutput bool,
-	work func(out io.Writer) (doneTitle string, err error),
+	work func(out io.Writer) (doneTitle string, note string, err error),
 ) error {
 	if renderer == nil {
 		fmt.Fprintf(os.Stderr, "\n%s\n", title)
-		_, err := work(nil)
+		_, _, err := work(nil)
 		return err
 	}
 
@@ -268,7 +270,7 @@ func renderSkillStep(
 	}
 	out := &lineWriter{emit: emit}
 
-	doneTitle, err := work(out)
+	doneTitle, note, err := work(out)
 	if doneTitle == "" {
 		doneTitle = title
 	}
@@ -278,6 +280,11 @@ func renderSkillStep(
 		}
 	}
 	renderer.StopSpinner(ctx, doneTitle, input.GetStepResultFormat(err))
+	// A successful step may attach a detail line under its result (e.g. the
+	// number of skills installed); print it below the Done line.
+	if err == nil && note != "" {
+		renderer.Message(ctx, note)
+	}
 	return err
 }
 
@@ -344,6 +351,38 @@ func parseUpgradeOutput(out string) (version string, alreadyLatest bool) {
 		version = m[len(m)-1]
 	}
 	return version, alreadyLatest
+}
+
+// skillCountRegex captures the number of skills a host CLI reports installing,
+// e.g. copilot's `... installed successfully. Installed 27 skills.`
+var skillCountRegex = regexp.MustCompile(`(\d+)\s+skills?\b`)
+
+// skillDetailIndent aligns a step's detail line (e.g. "Installed 27 skills")
+// under the step title, past the console's "(✓) Done: " result prefix.
+const skillDetailIndent = "          "
+
+// pluralizeSkill returns "skill" for a count of one and "skills" otherwise.
+func pluralizeSkill(count int) string {
+	if count == 1 {
+		return "skill"
+	}
+	return "skills"
+}
+
+// parseSkillCount extracts the count of skills a host CLI reports from its
+// install output (0 when the output does not mention a count — e.g. claude's
+// install line has no number). Best-effort and used only to annotate the
+// install result line.
+func parseSkillCount(out string) int {
+	m := skillCountRegex.FindStringSubmatch(out)
+	if len(m) < 2 {
+		return 0
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // installer is the default, unexported implementation of [Installer].
@@ -882,8 +921,8 @@ func (i *installer) runSkillUninstall(
 	)
 	for _, host := range targets {
 		title := fmt.Sprintf("Uninstalling %s from %s", tool.Name, host.Host)
-		hostErr := renderSkillStep(ctx, renderer, title, false, func(out io.Writer) (string, error) {
-			return "", i.uninstallSkillForHost(ctx, tool, host, out)
+		hostErr := renderSkillStep(ctx, renderer, title, false, func(out io.Writer) (string, string, error) {
+			return "", "", i.uninstallSkillForHost(ctx, tool, host, out)
 		})
 		if hostErr != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", host.Host, hostErr))
@@ -1330,12 +1369,16 @@ func (i *installer) runSkill(
 			hostVersion  string
 			hostUpToDate bool
 		)
-		hostErr := renderSkillStep(ctx, renderer, title, true, func(out io.Writer) (string, error) {
-			v, upToDate, e := i.installSkillForHost(ctx, tool, host, upgrade, out)
+		// Buffer the host CLI's output (do not stream it): a successful step
+		// stays quiet, and the output is replayed only on failure. A fresh
+		// install additionally parses the skill count from that output to
+		// annotate the result line.
+		hostErr := renderSkillStep(ctx, renderer, title, false, func(out io.Writer) (string, string, error) {
+			v, upToDate, count, e := i.installSkillForHost(ctx, tool, host, upgrade, out)
 			hostVersion = v
 			hostUpToDate = upToDate
 			if e != nil {
-				return "", e
+				return "", "", e
 			}
 			// Result line: for an upgrade, report the version and whether the
 			// skill was already current; otherwise reuse the step title.
@@ -1348,7 +1391,13 @@ func (i *installer) runSkill(
 			case upgrade && v != "":
 				done = fmt.Sprintf("%s (v%s)", title, v)
 			}
-			return done, nil
+			// For a fresh install, annotate how many skills were installed when
+			// the host CLI reported a count (some hosts do not).
+			note := ""
+			if !upgrade && count > 0 {
+				note = skillDetailIndent + fmt.Sprintf("Installed %d %s", count, pluralizeSkill(count))
+			}
+			return done, note, nil
 		})
 		if hostErr != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", host.Host, hostErr))
@@ -1687,36 +1736,39 @@ func (i *installer) pickSkillHost(
 
 // installSkillForHost installs (or upgrades) the skill through a single host
 // and verifies the result. It returns the version and, for an upgrade,
-// whether the host reported the skill was already at the latest version. For
-// an upgrade the version comes from the update command's output (falling back
-// to the detected version); for an install it comes from post-install
-// detection. out, when non-nil, receives an install's streamed host output
-// for display above the step spinner.
+// whether the host reported the skill was already at the latest version, plus
+// (for a fresh install) the number of skills the host CLI reported installing
+// (0 when it reports none). For an upgrade the version comes from the update
+// command's output (falling back to the detected version); for an install it
+// comes from post-install detection. out, when non-nil, receives the host
+// CLI's output (buffered by the caller and replayed only on failure).
 func (i *installer) installSkillForHost(
 	ctx context.Context,
 	tool *ToolDefinition,
 	host SkillHost,
 	upgrade bool,
 	out io.Writer,
-) (version string, alreadyLatest bool, err error) {
+) (version string, alreadyLatest bool, skillCount int, err error) {
 	cmdOutput, err := i.runSkillHostCommand(ctx, host, upgrade, out)
 	if err != nil {
-		return "", false, err
+		return "", false, 0, err
 	}
 	if upgrade {
 		version, alreadyLatest = parseUpgradeOutput(cmdOutput)
+	} else {
+		skillCount = parseSkillCount(cmdOutput)
 	}
 
 	detectedVersion, err := i.verifySkillInstalled(ctx, tool, host)
 	if err != nil {
-		return "", false, err
+		return "", false, 0, err
 	}
 	// Prefer the version the update command reported; fall back to the
 	// version detected via the plugin list.
 	if version == "" {
 		version = detectedVersion
 	}
-	return version, alreadyLatest, nil
+	return version, alreadyLatest, skillCount, nil
 }
 
 // verifySkillInstalled confirms the skill is detectable **through the
@@ -1764,16 +1816,19 @@ func (i *installer) verifySkillInstalled(
 	return version, nil
 }
 
-// runSkillHostCommand executes the host's install or update command and
-// returns the command's stdout (empty for a streamed install).
+// runSkillHostCommand executes the host's install or update command and returns
+// the command's stdout so the caller can parse it — the skill count for an
+// install, the version and "already latest" state for an update. The
+// fully-interactive first-run path (out nil) captures nothing and returns "".
 //
 // Install and update connect to the terminal differently:
-//   - Install streams the host CLI's output through out (when a spinner is
-//     showing) or runs fully interactively (out nil), with stdin connected so
-//     the user answers any prompt (marketplace trust, install confirmation).
-//     azd never pipes canned answers. Nothing is captured, so "" is returned.
-//     For a fresh install it first runs MarketplaceAddCommand when the host
-//     declares one.
+//   - Install, when a spinner is showing (out non-nil), routes the host CLI's
+//     output to out (which buffers it for a failure replay) while also
+//     capturing it so the caller can parse the skill count. With out nil it
+//     runs fully interactively — stdin connected so the user answers any prompt
+//     (marketplace trust, install confirmation), azd never pipes canned
+//     answers — and captures nothing. A fresh install first runs
+//     MarketplaceAddCommand when the host declares one.
 //   - Update captures the output (no streaming) and returns it so the caller
 //     can parse the version and whether the skill was already at the latest.
 //     The plugin is already installed (marketplace trusted), so the update is
@@ -1819,15 +1874,32 @@ func (i *installer) runSkillHostCommand(
 		}
 	}
 
-	runArgs := skillCommandRunArgs(exec.NewRunArgs(host.Command, cmd...), out)
+	// Fully interactive first-run path (no spinner): talk to the terminal
+	// directly without capturing, so its output and any prompt are visible.
+	if out == nil {
+		runArgs := skillCommandRunArgs(exec.NewRunArgs(host.Command, cmd...), nil)
+		if _, err := i.commandRunner.Run(ctx, runArgs); err != nil {
+			return "", fmt.Errorf(
+				"running `%s %s`: %w",
+				host.Command, strings.Join(cmd, " "), err,
+			)
+		}
+		return "", nil
+	}
+
+	// Install with a spinner: capture the host CLI's output (so the caller can
+	// parse the skill count) while still routing it to out, which buffers it
+	// for a failure replay.
+	var captured bytes.Buffer
+	runArgs := skillCommandRunArgs(exec.NewRunArgs(host.Command, cmd...), io.MultiWriter(out, &captured))
 	if _, err := i.commandRunner.Run(ctx, runArgs); err != nil {
-		return "", fmt.Errorf(
+		return captured.String(), fmt.Errorf(
 			"running `%s %s`: %w",
 			host.Command, strings.Join(cmd, " "), err,
 		)
 	}
 
-	return "", nil
+	return captured.String(), nil
 }
 
 // runMarketplaceAdd registers the skill marketplace with the host CLI.

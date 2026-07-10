@@ -1286,3 +1286,19 @@ func TestToolUpgradeAction_ChangedVersion_ReportsUpgraded(t *testing.T) {
 	require.NotNil(t, result.Message)
 	assert.Equal(t, "Tool is upgraded to v2.0.0.", result.Message.Header)
 }
+
+// TestSkillHostDisplayName verifies an installed host's command identity is
+// mapped to the agent's display name from the tool manifest (e.g. "copilot"
+// -> "GitHub Copilot CLI"), falling back to the command when unmatched.
+func TestSkillHostDisplayName(t *testing.T) {
+	td := &tool.ToolDefinition{
+		SkillHosts: []tool.SkillHost{
+			{Host: "GitHub Copilot CLI", Command: "copilot"},
+			{Host: "Claude Code CLI", Command: "claude"},
+		},
+	}
+	assert.Equal(t, "GitHub Copilot CLI", skillHostDisplayName(td, "copilot"))
+	assert.Equal(t, "Claude Code CLI", skillHostDisplayName(td, "claude"))
+	// An unknown command falls back to itself.
+	assert.Equal(t, "gemini", skillHostDisplayName(td, "gemini"))
+}

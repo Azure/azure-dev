@@ -393,14 +393,15 @@ func (a *toolListAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		if s.Tool.Category == tool.ToolCategorySkill && len(s.SkillHosts) > 0 {
 			for _, h := range s.SkillHosts {
 				rows = append(rows, toolListItem{
-					Id:          s.Tool.Id,
-					Name:        s.Tool.Name,
-					Agent:       h.Host,
-					DisplayName: fmt.Sprintf("[%s] %s", output.WithWarningFormat(h.Host), s.Tool.Name),
-					Category:    string(s.Tool.Category),
-					Priority:    string(s.Tool.Priority),
-					Status:      "Installed",
-					Version:     h.Version,
+					Id:    s.Tool.Id,
+					Name:  s.Tool.Name,
+					Agent: h.Host,
+					DisplayName: fmt.Sprintf("[%s] %s",
+						output.WithWarningFormat(skillHostDisplayName(s.Tool, h.Host)), s.Tool.Name),
+					Category: string(s.Tool.Category),
+					Priority: string(s.Tool.Priority),
+					Status:   "Installed",
+					Version:  h.Version,
 				})
 			}
 			continue
@@ -1788,10 +1789,11 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 		if r.Tool.Category == tool.ToolCategorySkill && len(r.SkillHosts) > 0 {
 			for _, h := range r.SkillHosts {
 				rows = append(rows, toolCheckItem{
-					Id:               r.Tool.Id,
-					Name:             r.Tool.Name,
-					Agent:            h.Host,
-					DisplayName:      fmt.Sprintf("[%s] %s", output.WithWarningFormat(h.Host), r.Tool.Name),
+					Id:    r.Tool.Id,
+					Name:  r.Tool.Name,
+					Agent: h.Host,
+					DisplayName: fmt.Sprintf("[%s] %s",
+						output.WithWarningFormat(skillHostDisplayName(r.Tool, h.Host)), r.Tool.Name),
 					InstalledVersion: h.CurrentVersion,
 					LatestVersion:    r.LatestVersion,
 					UpdateAvailable:  h.UpdateAvailable,
@@ -2405,4 +2407,17 @@ func toolCheckStatus(installed, updateAvailable bool) string {
 	default:
 		return statusUpToDate
 	}
+}
+
+// skillHostDisplayName maps an installed skill host's command identity (e.g.
+// "copilot") to the agent's display name from the tool's manifest (e.g.
+// "GitHub Copilot CLI"), used to prefix skill rows in the list/check tables.
+// It falls back to the command when no configured host matches.
+func skillHostDisplayName(t *tool.ToolDefinition, command string) string {
+	for _, host := range t.SkillHosts {
+		if host.Command == command {
+			return host.Host
+		}
+	}
+	return command
 }

@@ -448,7 +448,8 @@ func TestManifest_SkillsListedAfterHostCLIs(t *testing.T) {
 		})
 	}
 
-	// Maps a host binary name to the manifest tool id that provides it.
+	// Maps a host binary name (SkillHost.Command) to the manifest tool id
+	// that provides it.
 	hostToolID := map[string]string{
 		"copilot": "github-copilot-cli",
 	}
@@ -459,7 +460,7 @@ func TestManifest_SkillsListedAfterHostCLIs(t *testing.T) {
 		}
 		skillIdx := indexOf(td.Id)
 		for _, host := range td.SkillHosts {
-			cliID, ok := hostToolID[host.Host]
+			cliID, ok := hostToolID[host.Command]
 			if !ok {
 				continue // host has no installable CLI in the manifest
 			}

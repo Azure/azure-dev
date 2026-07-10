@@ -631,7 +631,6 @@ function validateArtifactURLs(id, version) {
 
 /**
  * @param {string} value
- * @returns {boolean}
  */
 function isAllowedArtifactURL(value) {
   let url;

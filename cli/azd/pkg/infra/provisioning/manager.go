@@ -532,10 +532,6 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 		providerKey = defaultProvider
 	}
 
-	// Record the resolved IaC provider (bicep / terraform / ...) as a usage attribute so it flows
-	// onto the host command span (provision / up / down), letting telemetry split runs by provider.
-	tracing.SetUsageAttributes(fields.InfraProviderKey.String(string(providerKey)))
-
 	var provider Provider
 	err = m.serviceLocator.ResolveNamed(string(providerKey), &provider)
 	if err != nil {
@@ -543,4 +539,55 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 	}
 
 	return provider, nil
+}
+
+// InfraProviderMixed is the infra.provider telemetry value recorded when a project's
+// provisioning layers do not all resolve to the same IaC provider.
+const InfraProviderMixed = "mixed"
+
+// RecordInfraProviderUsage records the resolved IaC provider for a provisioning command
+// (provision / up / down) as the infra.provider usage attribute on the ambient command span.
+// When every layer resolves to the same provider it records that provider (for example
+// "bicep", "terraform", "arm"); when layers resolve to different providers it records
+// InfraProviderMixed ("mixed"). Layers that leave the provider unspecified resolve through
+// defaultProvider. It is a no-op when no provider can be resolved.
+//
+// Callers must invoke this once per command, after provisioning has succeeded, so that only
+// providers that actually resolved are recorded and the value is computed deterministically
+// (rather than racing concurrent per-layer resolution).
+func RecordInfraProviderUsage(layers []Options, defaultProvider DefaultProviderResolver) {
+	seen := map[ProviderKind]struct{}{}
+	for _, layer := range layers {
+		kind := layer.Provider
+		if kind == NotSpecified {
+			if defaultProvider == nil {
+				continue
+			}
+
+			resolved, err := defaultProvider()
+			if err != nil {
+				continue
+			}
+
+			kind = resolved
+		}
+
+		parsed, err := ParseProvider(kind)
+		if err != nil {
+			continue
+		}
+
+		seen[parsed] = struct{}{}
+	}
+
+	switch len(seen) {
+	case 0:
+		return
+	case 1:
+		for kind := range seen {
+			tracing.SetUsageAttributes(fields.InfraProviderKey.String(string(kind)))
+		}
+	default:
+		tracing.SetUsageAttributes(fields.InfraProviderKey.String(InfraProviderMixed))
+	}
 }

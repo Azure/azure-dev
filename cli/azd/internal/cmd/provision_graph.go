@@ -306,6 +306,10 @@ func (p *ProvisionAction) provisionLayersGraph(
 		return nil, p.wrapProvisionError(ctx, unwrapStepErrors(result))
 	}
 
+	// Record the resolved IaC provider (bicep / terraform / ... or "mixed") on the command
+	// span now that provisioning succeeded, so it reflects only providers that resolved.
+	provisioning.RecordInfraProviderUsage(layers, p.defaultProvider)
+
 	// ── shared finalization ──────────────────────────────────────────────
 	if allSkipped {
 		return &actions.ActionResult{

@@ -122,7 +122,7 @@ command-specific telemetry fields provide analytical value beyond the command na
 | Hooks kind | `hooks.kind` | `hooks run` | Distinguishes the script runtime used to execute the hook (`sh`, `pwsh`, `js`, `ts`, `python`, `dotnet`) |
 | Pipeline provider | `pipeline.provider` | `pipeline config` | Distinguishes GitHub vs Azure DevOps |
 | Pipeline auth | `pipeline.auth` | `pipeline config` | Distinguishes federated vs client-credentials |
-| Infra provider | `infra.provider` | `infra generate`, `infra synth`, `provision`, `up`, `down` | Distinguishes Bicep vs Terraform |
+| Infra provider | `infra.provider` | `infra generate`, `infra synth`, `provision`, `up`, `down` | Resolved IaC provider (`bicep`/`terraform`/`arm`/`pulumi`/custom); `mixed` when a project's layers differ; `auto` on generate/synth before resolution |
 | Tool ID | `tool.id` / `tool.ids` | `tool *` | Identifies which managed tool (e.g., bicep, gh, kubectl) the command acted on |
 | Tool install metrics | `tool.install.*` | `tool install`, `tool upgrade`, `tool uninstall`, first-run middleware | Success count, failure count, duration, strategy — quantitative install health |
 | Tool upgrade versions | `tool.upgrade.from_version`, `tool.upgrade.to_version` | `tool upgrade` | Tracks adoption of new tool versions |

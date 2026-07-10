@@ -345,7 +345,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `infra.provider` | string | `bicep`, `terraform`, `auto` |
+| `infra.provider` | string | `bicep`, `terraform`, `arm`, `pulumi`, custom provider name, `mixed` (layers differ), or `auto` (generate/synth) |
 </details>
 
 <details>
@@ -678,7 +678,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Container Apps (Aspire)** | `cmd.deploy`, `cmd.provision` | `project.service.targets` = `containerapp-dotnet`, `platform.type` = `aca` | Aspire-specific adoption and success |
 | **Language Support** | `cmd.deploy`, `cmd.package`, `cmd.restore` | `project.service.languages`, `project.service.language` | Usage by language |
 | **Templates** | `cmd.init`, `cmd.up` | `project.template.id` (hashed — join with template lookup to resolve) | Template adoption, success by template |
-| **Provisioning (IaC)** | `cmd.provision`, `cmd.up`, `cmd.down`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`, `terraform`) | Provision success, ARM errors, duration |
+| **Provisioning (IaC)** | `cmd.provision`, `cmd.up`, `cmd.down`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`/`terraform`/`arm`/`pulumi`/custom, or `mixed`) | Provision success, ARM errors, duration |
 | **Authentication** | `cmd.auth.login` | `auth.method` | Auth method usage, failure rates |
 | **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
 | **Extensions** | `ext.run`, `ext.install`, `ext.upgrade` | `extension.id`, `extension.version`, `extension.installed` | Extension adoption, errors |

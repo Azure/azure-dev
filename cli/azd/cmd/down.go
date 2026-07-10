@@ -67,6 +67,7 @@ type downAction struct {
 	flags               *downFlags
 	args                []string
 	provisionManager    *provisioning.Manager
+	defaultProvider     provisioning.DefaultProviderResolver
 	importManager       *project.ImportManager
 	env                 *environment.Environment
 	envManager          environment.Manager
@@ -79,6 +80,7 @@ func newDownAction(
 	args []string,
 	flags *downFlags,
 	provisionManager *provisioning.Manager,
+	defaultProvider provisioning.DefaultProviderResolver,
 	env *environment.Environment,
 	envManager environment.Manager,
 	projectConfig *project.ProjectConfig,
@@ -89,6 +91,7 @@ func newDownAction(
 	return &downAction{
 		flags:               flags,
 		provisionManager:    provisionManager,
+		defaultProvider:     defaultProvider,
 		env:                 env,
 		envManager:          envManager,
 		console:             console,
@@ -153,6 +156,9 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, fmt.Errorf("deleting infrastructure: %w", err)
 		}
 	}
+
+	// Record the resolved IaC provider(s) now that teardown succeeded (no-op when there are no layers).
+	provisioning.RecordInfraProviderUsage(layers, a.defaultProvider)
 
 	// Invalidate cache after successful down so azd show will refresh
 	if err := a.envManager.InvalidateEnvCache(ctx, a.env.Name()); err != nil {

@@ -637,6 +637,9 @@ func (u *UpGraphAction) Run(
 		tracing.SetUsageAttributes(fields.PerfDeployDurationMs.Int64(deployDur.Milliseconds()))
 	}
 
+	// Record the resolved IaC provider(s) now that up succeeded (no-op when there are no layers).
+	provisioning.RecordInfraProviderUsage(layers, u.defaultProvider)
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: fmt.Sprintf(

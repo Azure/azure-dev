@@ -5,9 +5,6 @@ on:
     paths:
       - ".github/scripts/**"
       - ".github/workflows/scripts-ci.yml"
-    # NOTE, if you're doing some testing on this workflow you're welcome to use `azd-auto-approve-simple-updates`
-    # as your branch name
-    branches: [main, azd-auto-approve-simple-updates]
 
 # If two events are triggered within a short time in the same PR, cancel the run of the oldest event
 concurrency:

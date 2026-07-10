@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -90,7 +91,17 @@ func PackRemoteBuildSource(ctx context.Context, root string, dockerfile string) 
 				return err
 			}
 
-			hdr, err := tar.FileInfoHeader(info, info.Name())
+			linkTarget := ""
+			if info.Mode()&fs.ModeSymlink != 0 {
+				target, err := os.Readlink(path)
+				if err != nil {
+					return err
+				}
+
+				linkTarget = target
+			}
+
+			hdr, err := tar.FileInfoHeader(info, linkTarget)
 			if err != nil {
 				return err
 			}
@@ -100,22 +111,24 @@ func PackRemoteBuildSource(ctx context.Context, root string, dockerfile string) 
 				return err
 			}
 
-			err = func() error {
-				f, err := os.Open(path)
+			if info.Mode().IsRegular() {
+				err = func() error {
+					f, err := os.Open(path)
+					if err != nil {
+						return err
+					}
+					defer f.Close()
+
+					_, err = io.Copy(tw, f)
+					if err != nil {
+						return err
+					}
+
+					return nil
+				}()
 				if err != nil {
 					return err
 				}
-				defer f.Close()
-
-				_, err = io.Copy(tw, f)
-				if err != nil {
-					return err
-				}
-
-				return nil
-			}()
-			if err != nil {
-				return err
 			}
 
 			if path == dockerfile {

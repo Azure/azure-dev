@@ -1,12 +1,10 @@
 name: ext-registry-check
 
 on:
-  pull_request:
+  pull_request_target:
     paths:
       - "cli/azd/extensions/registry.json"
-    # NOTE, if you're doing some testing on this workflow you're welcome to use `azd-auto-approve-simple-updates`
-    # as your branch name
-    branches: [main, azd-auto-approve-simple-updates]
+    branches: [main]
     types: [opened, edited, synchronize, labeled, unlabeled, reopened, ready_for_review]
 
 # If two events are triggered within a short time in the same PR, cancel the run of the oldest event
@@ -19,6 +17,10 @@ permissions:
   contents: read
 
 jobs:
+  # NOTE: this is running with pull_request_target, which means that any check or code
+  # that runs in here should be strictly controlled to come from stable/verified places
+  # (for instance, our script below uses the .github folder from 'main', and not from the
+  #  users' branch, we don't npm install any packages, etc..)
   extension-registry-check:
     name: Extension registry "core team approval required" check
     runs-on: ubuntu-latest

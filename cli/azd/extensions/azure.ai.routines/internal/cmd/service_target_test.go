@@ -57,3 +57,25 @@ func TestParseRoutineServiceConfig_ConfigFallback(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "legacy", body.Description)
 }
+
+func TestExpandRoutineValue(t *testing.T) {
+	t.Parallel()
+
+	serviceConfig := &azdext.ServiceConfig{
+		Environment: map[string]string{"DIGEST_TOPIC": "weekly changes"},
+	}
+	environment, err := (&routineServiceTarget{}).environmentValues(
+		t.Context(),
+		serviceConfig,
+	)
+	require.NoError(t, err)
+	input := map[string]any{
+		"topic":  "${DIGEST_TOPIC}",
+		"secret": "${{connections.search.credentials.key}}",
+	}
+
+	assert.Equal(t, map[string]any{
+		"topic":  "weekly changes",
+		"secret": "${{connections.search.credentials.key}}",
+	}, expandRoutineValue(input, environment))
+}

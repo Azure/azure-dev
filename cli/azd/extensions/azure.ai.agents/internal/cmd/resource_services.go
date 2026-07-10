@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -33,6 +34,10 @@ const (
 	// idempotent (AddService overwrites by name) so there is one project
 	// service per project, matching the unified Foundry config design.
 	aiProjectServiceName = "ai-project"
+)
+
+var envReferencePattern = regexp.MustCompile(
+	`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`,
 )
 
 // emitResourceServices writes the Foundry resource sibling services that the
@@ -275,6 +280,7 @@ func addResourceService(
 	cfg *structpb.Struct,
 	uses []string,
 ) error {
+	environment := serviceEnvironmentTemplates(cfg)
 	svc := &azdext.ServiceConfig{
 		Name:                 name,
 		Host:                 host,
@@ -285,12 +291,101 @@ func addResourceService(
 		return fmt.Errorf("adding %s service %q: %w", host, name, err)
 	}
 
+	if err := setServiceEnvironment(
+		ctx,
+		azdClient,
+		name,
+		environment,
+	); err != nil {
+		return err
+	}
+
 	if len(uses) > 0 {
 		if err := setServiceUses(ctx, azdClient, name, uses); err != nil {
 			return err
 		}
 	}
 
+	return nil
+}
+
+func serviceEnvironmentTemplates(cfg *structpb.Struct) map[string]string {
+	if cfg == nil {
+		return nil
+	}
+
+	environment := map[string]string{}
+	collectEnvironmentTemplates(cfg.AsMap(), environment)
+	if len(environment) == 0 {
+		return nil
+	}
+	return environment
+}
+
+func collectEnvironmentTemplates(value any, environment map[string]string) {
+	switch typed := value.(type) {
+	case string:
+		for _, match := range envReferencePattern.FindAllStringSubmatchIndex(
+			typed,
+			-1,
+		) {
+			if match[0] > 0 && typed[match[0]-1] == '$' {
+				continue
+			}
+			name := typed[match[2]:match[3]]
+			environment[name] = typed[match[0]:match[1]]
+		}
+	case map[string]any:
+		for _, nested := range typed {
+			collectEnvironmentTemplates(nested, environment)
+		}
+	case []any:
+		for _, nested := range typed {
+			collectEnvironmentTemplates(nested, environment)
+		}
+	}
+}
+
+func setServiceEnvironment(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	environment map[string]string,
+) error {
+	if len(environment) == 0 {
+		return nil
+	}
+
+	sectionValues := make(map[string]any, len(environment))
+	for key, value := range environment {
+		sectionValues[key] = value
+	}
+	section, err := structpb.NewStruct(sectionValues)
+	if err != nil {
+		return fmt.Errorf(
+			"encoding env for service %q: %w",
+			serviceName,
+			err,
+		)
+	}
+
+	// ServiceConfig.Environment only carries expanded values.
+	// The config RPC preserves raw ${VAR} templates.
+	_, err = azdClient.Project().SetServiceConfigSection(
+		ctx,
+		&azdext.SetServiceConfigSectionRequest{
+			ServiceName: serviceName,
+			Path:        "env",
+			Section:     section,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"setting env for service %q: %w",
+			serviceName,
+			err,
+		)
+	}
 	return nil
 }
 

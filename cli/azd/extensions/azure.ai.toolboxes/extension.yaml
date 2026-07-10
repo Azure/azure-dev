@@ -17,4 +17,4 @@ tags:
     - toolbox
 usage: azd ai toolbox <command> [options]
 version: 1.0.0-beta.2
-requiredAzdVersion: ">=1.27.0"
+requiredAzdVersion: ">=1.27.1"

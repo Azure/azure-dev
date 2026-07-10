@@ -12,7 +12,7 @@
     },
     "tools": {
       "type": "array",
-      "description": "List of tools in the toolbox.",
+      "description": "List of tools in the toolbox. Values may use ${VAR} declared in the service-level env object.",
       "items": {
         "type": "object",
         "required": ["type"],

@@ -36,7 +36,7 @@
       "properties": {
         "type": { "type": "string", "description": "Action variant (e.g. invoke_agent_responses_api, invoke_agent_invocations_api)." },
         "agent_name": { "type": "string", "description": "Name of the azure.ai.agent service the routine invokes." },
-        "input": { "description": "Static JSON input sent to the agent when the routine fires. Values may use ${VAR} or ${{...}}." }
+        "input": { "description": "Static JSON input sent to the agent when the routine fires. Values may use ${VAR} declared in the service-level env object or ${{...}} for Foundry server-side resolution." }
       }
     }
   }

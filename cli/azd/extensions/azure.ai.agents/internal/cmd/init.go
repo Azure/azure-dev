@@ -2857,6 +2857,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	if err != nil {
 		return err
 	}
+	agentEnvironment := project.AgentEnvironment(containerDef)
 
 	serviceConfig := &azdext.ServiceConfig{
 		Name:                 a.serviceNameOverride,
@@ -2889,6 +2890,14 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 
 	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
 		return fmt.Errorf("adding agent service to project: %w", err)
+	}
+	if err := setServiceEnvironment(
+		ctx,
+		a.azdClient,
+		a.serviceNameOverride,
+		agentEnvironment,
+	); err != nil {
+		return err
 	}
 
 	// Emit the sibling Foundry resource services (project + deployments,

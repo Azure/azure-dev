@@ -79,14 +79,26 @@ func TestBuildToolEntries_ResolvesConnectionRef(t *testing.T) {
 func TestExpandToolboxValue(t *testing.T) {
 	t.Parallel()
 
-	env := map[string]string{"MCP_URL": "https://resolved.example.com"}
+	serviceConfig := &azdext.ServiceConfig{
+		Environment: map[string]string{
+			"MCP_URL": "https://resolved.example.com",
+		},
+	}
+	environment, err := (&toolboxServiceTarget{}).environmentValues(
+		t.Context(),
+		serviceConfig,
+	)
+	require.NoError(t, err)
 	in := map[string]any{
 		"type":       "mcp",
 		"server_url": "${MCP_URL}",
 		"headers":    []any{"x-secret: ${{secrets.token}}"},
 	}
 
-	out, ok := expandToolboxValue(in, env).(map[string]any)
+	out, ok := expandToolboxValue(
+		in,
+		environment,
+	).(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "https://resolved.example.com", out["server_url"])
 	// Foundry ${{...}} passes through untouched.

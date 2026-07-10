@@ -147,7 +147,6 @@ func TestServiceTargetAgentConfig_MultipleToolboxes(t *testing.T) {
 // alongside other ServiceTargetAgentConfig fields.
 func TestServiceTargetAgentConfig_WithOtherFields(t *testing.T) {
 	original := ServiceTargetAgentConfig{
-		Environment: map[string]string{"KEY": "VALUE"},
 		Deployments: []Deployment{
 			{
 				Name: "test-deployment",
@@ -185,10 +184,6 @@ func TestServiceTargetAgentConfig_WithOtherFields(t *testing.T) {
 	var roundTripped ServiceTargetAgentConfig
 	if err := UnmarshalStruct(s, &roundTripped); err != nil {
 		t.Fatalf("UnmarshalStruct failed: %v", err)
-	}
-
-	if roundTripped.Environment["KEY"] != "VALUE" {
-		t.Errorf("Expected env KEY=VALUE, got '%s'", roundTripped.Environment["KEY"])
 	}
 
 	if len(roundTripped.Deployments) != 1 {

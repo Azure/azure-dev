@@ -41,18 +41,21 @@ type connectionServiceConfig struct {
 // project's connection; the resource name is the service key. Package and Publish are
 // no-ops because a connection has no build artifact.
 type connectionServiceTarget struct {
-	azdClient     *azdext.AzdClient
-	serviceConfig *azdext.ServiceConfig
+	azdClient *azdext.AzdClient
 }
 
 // newConnectionServiceTarget creates the azure.ai.connection service-target provider.
-func newConnectionServiceTarget(azdClient *azdext.AzdClient) azdext.ServiceTargetProvider {
+func newConnectionServiceTarget(
+	azdClient *azdext.AzdClient,
+) azdext.ServiceTargetProvider {
 	return &connectionServiceTarget{azdClient: azdClient}
 }
 
-// Initialize stores the service configuration; no other setup is required.
-func (p *connectionServiceTarget) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
-	p.serviceConfig = serviceConfig
+// Initialize requires no setup.
+func (p *connectionServiceTarget) Initialize(
+	_ context.Context,
+	_ *azdext.ServiceConfig,
+) error {
 	return nil
 }
 
@@ -105,8 +108,8 @@ func (p *connectionServiceTarget) Publish(
 }
 
 // Deploy upserts the connection on its project via an idempotent ARM CreateOrUpdate.
-// ${VAR} references in the target and credential values resolve against the azd
-// environment; Foundry server-side ${{...}} expressions pass through untouched.
+// ${VAR} references resolve from the forwarded service environment.
+// Foundry server-side ${{...}} expressions pass through untouched.
 // Removing the service from azure.yaml stops azd managing the connection but does not
 // delete it (use `azd ai connection delete`).
 func (p *connectionServiceTarget) Deploy(
@@ -122,7 +125,7 @@ func (p *connectionServiceTarget) Deploy(
 	}
 	name := serviceConfig.GetName()
 
-	env, err := p.currentEnvValues(ctx)
+	env, err := p.environmentValues(ctx, serviceConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -189,16 +192,27 @@ func parseConnectionServiceConfig(svc *azdext.ServiceConfig) (*connectionService
 	return cfg, nil
 }
 
-// currentEnvValues loads all key-value pairs from the active azd environment, used to
-// resolve ${VAR} references in connection fields at deploy time.
-func (p *connectionServiceTarget) currentEnvValues(ctx context.Context) (map[string]string, error) {
-	current, err := p.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+func (p *connectionServiceTarget) environmentValues(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+) (map[string]string, error) {
+	if environment := serviceConfig.GetEnvironment(); len(environment) > 0 {
+		return environment, nil
+	}
+
+	current, err := p.azdClient.Environment().GetCurrent(
+		ctx,
+		&azdext.EmptyRequest{},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("resolving current azd environment: %w", err)
 	}
-	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
-		Name: current.GetEnvironment().GetName(),
-	})
+	resp, err := p.azdClient.Environment().GetValues(
+		ctx,
+		&azdext.GetEnvironmentRequest{
+			Name: current.GetEnvironment().GetName(),
+		},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("loading azd environment values: %w", err)
 	}
@@ -209,9 +223,7 @@ func (p *connectionServiceTarget) currentEnvValues(ctx context.Context) (map[str
 	return values, nil
 }
 
-// resolveConnectionEnv expands ${VAR} references against the azd environment while
-// preserving Foundry server-side ${{...}} expressions. On expansion error the original
-// value is returned unchanged.
+// resolveConnectionEnv expands ${VAR} from the service environment.
 func resolveConnectionEnv(value string, env map[string]string) string {
 	resolved, err := foundry.ExpandEnv(value, func(name string) string { return env[name] })
 	if err != nil {

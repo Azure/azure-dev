@@ -12,6 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // sampleContainerAgent returns a hosted ContainerAgent with the fields that the
@@ -51,11 +52,14 @@ func TestAgentDefinitionRoundTrip(t *testing.T) {
 
 	props, err := AgentDefinitionToServiceProperties(ca, extra)
 	require.NoError(t, err)
+	_, hasInlineEnvironment := props.GetFields()["environmentVariables"]
+	require.False(t, hasInlineEnvironment)
 
 	svc := &azdext.ServiceConfig{
 		Name:                 "basic-agent",
 		Host:                 "azure.ai.agent",
 		AdditionalProperties: props,
+		Environment:          AgentEnvironment(ca),
 	}
 
 	got, isHosted, found, source, err := AgentDefinitionFromService(svc)
@@ -108,6 +112,35 @@ func TestAgentDefinitionFromService_LegacyConfigShape(t *testing.T) {
 	require.Equal(t, AgentDefinitionSourceLegacyConfig, source)
 	require.True(t, source.IsLegacy())
 	require.Equal(t, "basic-agent", got.Name)
+}
+
+func TestAgentDefinitionFromService_LegacyEnvironment(t *testing.T) {
+	props, err := AgentDefinitionToServiceProperties(
+		sampleContainerAgent(),
+		nil,
+	)
+	require.NoError(t, err)
+	legacyEnvironment, err := structpb.NewValue([]any{
+		map[string]any{
+			"name":  "LEGACY_KEY",
+			"value": "${LEGACY_KEY}",
+		},
+	})
+	require.NoError(t, err)
+	props.Fields["environmentVariables"] = legacyEnvironment
+
+	svc := &azdext.ServiceConfig{
+		Name:   "basic-agent",
+		Host:   "azure.ai.agent",
+		Config: props,
+	}
+	got, _, found, source, err := AgentDefinitionFromService(svc)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, AgentDefinitionSourceLegacyConfig, source)
+	require.Equal(t, map[string]string{
+		"LEGACY_KEY": "${LEGACY_KEY}",
+	}, AgentEnvironment(got))
 }
 
 // TestAgentDefinitionFromService_NoDefinition verifies that a service without an
@@ -211,9 +244,15 @@ func TestLoadAgentDefinition_DiskFallback(t *testing.T) {
 // TestUpsertAgentEnvVars verifies that env vars are added/updated on the inline
 // definition while preserving the other definition keys.
 func TestUpsertAgentEnvVars(t *testing.T) {
-	props, err := AgentDefinitionToServiceProperties(sampleContainerAgent(), nil)
+	ca := sampleContainerAgent()
+	props, err := AgentDefinitionToServiceProperties(ca, nil)
 	require.NoError(t, err)
-	svc := &azdext.ServiceConfig{Name: "basic-agent", Host: "azure.ai.agent", AdditionalProperties: props}
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+		Environment:          AgentEnvironment(ca),
+	}
 
 	require.NoError(t, UpsertAgentEnvVars(svc, map[string]string{
 		"FOUNDRY_MODEL_DEPLOYMENT_NAME": "gpt-4o", // update existing
@@ -225,11 +264,10 @@ func TestUpsertAgentEnvVars(t *testing.T) {
 	require.True(t, found)
 	require.Equal(t, "basic-agent", got.Name) // other keys preserved
 	require.NotNil(t, got.EnvironmentVariables)
+	_, hasInlineEnvironment := props.GetFields()["environmentVariables"]
+	require.False(t, hasInlineEnvironment)
 
-	values := map[string]string{}
-	for _, ev := range *got.EnvironmentVariables {
-		values[ev.Name] = ev.Value
-	}
+	values := AgentEnvironment(got)
 	require.Equal(t, "gpt-4o", values["FOUNDRY_MODEL_DEPLOYMENT_NAME"])
 	require.Equal(t, "cand-1", values["OPTIMIZATION_CANDIDATE_ID"])
 }

@@ -88,6 +88,53 @@ func TestReserveServiceName(t *testing.T) {
 	assert.Contains(t, err.Error(), "agent service")
 }
 
+func TestServiceEnvironmentTemplates(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := project.MarshalStruct(&project.Connection{
+		Credentials: map[string]any{
+			"key": "${SEARCH_KEY}",
+		},
+		Metadata: map[string]string{
+			"server":  "${SERVER_NAME}",
+			"token":   "${{connections.search.credentials.key}}",
+			"literal": "$${LITERAL}",
+		},
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, map[string]string{
+		"SEARCH_KEY":  "${SEARCH_KEY}",
+		"SERVER_NAME": "${SERVER_NAME}",
+	}, serviceEnvironmentTemplates(cfg))
+}
+
+func TestAddResourceServiceWritesEnvironment(t *testing.T) {
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	cfg, err := project.MarshalStruct(&project.Connection{
+		Credentials: map[string]any{"key": "${SEARCH_KEY}"},
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, addResourceService(
+		t.Context(),
+		client,
+		"search",
+		AiConnectionHost,
+		cfg,
+		nil,
+	))
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Len(t, server.added, 1)
+	assert.Empty(t, server.added[0].GetEnvironment())
+	assert.Equal(t, map[string]any{
+		"SEARCH_KEY": "${SEARCH_KEY}",
+	}, server.env["search"])
+}
+
 // TestCollectProjectDeployments verifies deployments are sourced only from
 // azure.ai.project services and ignore sibling hosts.
 func TestCollectProjectDeployments(t *testing.T) {
@@ -251,6 +298,7 @@ type recordingProjectServer struct {
 	mu    sync.Mutex
 	added []*azdext.ServiceConfig
 	uses  map[string][]string
+	env   map[string]map[string]any
 	// configValues records non-"uses" SetServiceConfigValue calls keyed by path.
 	configValues map[string]configValueRecord
 	// existing is returned by Get to simulate services already present in the
@@ -311,6 +359,21 @@ func (s *recordingProjectServer) SetServiceConfigValue(
 				value:       str,
 			}
 		}
+	}
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *recordingProjectServer) SetServiceConfigSection(
+	_ context.Context,
+	req *azdext.SetServiceConfigSectionRequest,
+) (*azdext.EmptyResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.env == nil {
+		s.env = map[string]map[string]any{}
+	}
+	if req.Path == "env" && req.Section != nil {
+		s.env[req.ServiceName] = req.Section.AsMap()
 	}
 	return &azdext.EmptyResponse{}, nil
 }

@@ -8,6 +8,7 @@ import (
 	"log"
 	"maps"
 	"os"
+	"slices"
 	"sync"
 
 	"azureaiagent/internal/exterrors"
@@ -83,11 +84,12 @@ func WarnLegacyAgentShape(source AgentDefinitionSource) {
 type AgentDefinitionInline struct {
 	agent_yaml.AgentDefinition `json:",inline"`
 	Protocols                  []agent_yaml.ProtocolVersionRecord `json:"protocols,omitempty"`
-	EnvironmentVariables       *[]agent_yaml.EnvironmentVariable  `json:"environmentVariables,omitempty"`
-	AgentEndpoint              *agent_yaml.AgentEndpoint          `json:"agentEndpoint,omitempty"`
-	AgentCard                  *agent_yaml.AgentCard              `json:"agentCard,omitempty"`
-	CodeConfiguration          *agent_yaml.CodeConfiguration      `json:"codeConfiguration,omitempty"`
-	Policies                   []agent_yaml.Policy                `json:"policies,omitempty"`
+	// EnvironmentVariables reads the deprecated inline shape.
+	EnvironmentVariables *[]agent_yaml.EnvironmentVariable `json:"environmentVariables,omitempty"`
+	AgentEndpoint        *agent_yaml.AgentEndpoint         `json:"agentEndpoint,omitempty"`
+	AgentCard            *agent_yaml.AgentCard             `json:"agentCard,omitempty"`
+	CodeConfiguration    *agent_yaml.CodeConfiguration     `json:"codeConfiguration,omitempty"`
+	Policies             []agent_yaml.Policy               `json:"policies,omitempty"`
 }
 
 // agentDefinitionToInline splits a ContainerAgent into the inline definition,
@@ -96,13 +98,12 @@ type AgentDefinitionInline struct {
 // returned separately so the caller can place them on their respective homes.
 func agentDefinitionToInline(ca agent_yaml.ContainerAgent) (AgentDefinitionInline, *ContainerSettings, string) {
 	inline := AgentDefinitionInline{
-		AgentDefinition:      ca.AgentDefinition,
-		Protocols:            ca.Protocols,
-		EnvironmentVariables: ca.EnvironmentVariables,
-		AgentEndpoint:        ca.AgentEndpoint,
-		AgentCard:            ca.AgentCard,
-		CodeConfiguration:    ca.CodeConfiguration,
-		Policies:             ca.Policies,
+		AgentDefinition:   ca.AgentDefinition,
+		Protocols:         ca.Protocols,
+		AgentEndpoint:     ca.AgentEndpoint,
+		AgentCard:         ca.AgentCard,
+		CodeConfiguration: ca.CodeConfiguration,
+		Policies:          ca.Policies,
 	}
 
 	var container *ContainerSettings
@@ -118,12 +119,21 @@ func agentDefinitionToInline(ca agent_yaml.ContainerAgent) (AgentDefinitionInlin
 // toContainerAgent rebuilds the agent_yaml.ContainerAgent from the inline
 // definition, the CPU/memory carried in the `container` config, and the image
 // carried on the core service field.
-func (d AgentDefinitionInline) toContainerAgent(container *ContainerSettings, image string) agent_yaml.ContainerAgent {
+func (d AgentDefinitionInline) toContainerAgent(
+	container *ContainerSettings,
+	image string,
+	environment map[string]string,
+) agent_yaml.ContainerAgent {
+	environmentVariables := d.EnvironmentVariables
+	if len(environment) > 0 {
+		environmentVariables = environmentVariablesFromMap(environment)
+	}
+
 	ca := agent_yaml.ContainerAgent{
 		AgentDefinition:      d.AgentDefinition,
 		Image:                image,
 		Protocols:            d.Protocols,
-		EnvironmentVariables: d.EnvironmentVariables,
+		EnvironmentVariables: environmentVariables,
 		AgentEndpoint:        d.AgentEndpoint,
 		AgentCard:            d.AgentCard,
 		CodeConfiguration:    d.CodeConfiguration,
@@ -138,6 +148,40 @@ func (d AgentDefinitionInline) toContainerAgent(container *ContainerSettings, im
 	}
 
 	return ca
+}
+
+// AgentEnvironment converts an agent environment list to a map.
+func AgentEnvironment(ca agent_yaml.ContainerAgent) map[string]string {
+	if ca.EnvironmentVariables == nil || len(*ca.EnvironmentVariables) == 0 {
+		return nil
+	}
+
+	environment := make(map[string]string, len(*ca.EnvironmentVariables))
+	for _, variable := range *ca.EnvironmentVariables {
+		environment[variable.Name] = variable.Value
+	}
+	return environment
+}
+
+func environmentVariablesFromMap(
+	environment map[string]string,
+) *[]agent_yaml.EnvironmentVariable {
+	if len(environment) == 0 {
+		return nil
+	}
+
+	variables := make(
+		[]agent_yaml.EnvironmentVariable,
+		0,
+		len(environment),
+	)
+	for _, name := range slices.Sorted(maps.Keys(environment)) {
+		variables = append(variables, agent_yaml.EnvironmentVariable{
+			Name:  name,
+			Value: environment[name],
+		})
+	}
+	return &variables
 }
 
 // structHasKind reports whether the struct carries a non-empty string `kind`,
@@ -197,7 +241,11 @@ func AgentDefinitionFromService(
 		}
 	}
 
-	ca, isHosted, err := agentDefinitionFromStruct(inlineStruct, svc.GetImage())
+	ca, isHosted, err := agentDefinitionFromStruct(
+		inlineStruct,
+		svc.GetImage(),
+		svc.GetEnvironment(),
+	)
 	return ca, isHosted, true, source, err
 }
 
@@ -228,11 +276,7 @@ func ServiceConfigProps(svc *azdext.ServiceConfig) *structpb.Struct {
 	return svc.GetConfig()
 }
 
-// UpsertAgentEnvVars adds or updates environment variables on the agent
-// definition carried inline on the service entry, preserving every other key.
-// It is used by commands that mutate the definition (e.g. `optimize apply`).
-// Returns an error when the service carries no inline definition; callers fall
-// back to mutating a legacy on-disk agent.yaml in that case.
+// UpsertAgentEnvVars updates the service-level environment map.
 func UpsertAgentEnvVars(svc *azdext.ServiceConfig, kv map[string]string) error {
 	ca, _, found, source, err := AgentDefinitionFromService(svc)
 	if err != nil {
@@ -242,40 +286,19 @@ func UpsertAgentEnvVars(svc *azdext.ServiceConfig, kv map[string]string) error {
 		return fmt.Errorf("service %q does not carry an inline agent definition", svc.GetName())
 	}
 
-	envVars := []agent_yaml.EnvironmentVariable{}
-	if ca.EnvironmentVariables != nil {
-		envVars = *ca.EnvironmentVariables
+	environment := AgentEnvironment(ca)
+	if environment == nil {
+		environment = map[string]string{}
 	}
-	for key, value := range kv {
-		idx := -1
-		for i := range envVars {
-			if envVars[i].Name == key {
-				idx = i
-				break
-			}
-		}
-		if idx >= 0 {
-			envVars[idx].Value = value
-		} else {
-			envVars = append(envVars, agent_yaml.EnvironmentVariable{Name: key, Value: value})
-		}
-	}
-	ca.EnvironmentVariables = &envVars
+	maps.Copy(environment, kv)
+	svc.Environment = environment
 
-	cfg, err := LoadServiceTargetAgentConfig(svc)
-	if err != nil {
-		return err
-	}
-
-	props, err := AgentDefinitionToServiceProperties(ca, cfg)
-	if err != nil {
-		return err
-	}
-
+	props := svc.GetAdditionalProperties()
 	if source == AgentDefinitionSourceLegacyConfig {
-		svc.Config = props
-	} else {
-		svc.AdditionalProperties = props
+		props = svc.GetConfig()
+	}
+	if props != nil {
+		delete(props.Fields, "environmentVariables")
 	}
 	return nil
 }
@@ -318,7 +341,11 @@ func SetAgentContainerSettings(svc *azdext.ServiceConfig, container *ContainerSe
 // struct that carries the agent definition as service-level properties. coreImage
 // is the value of the service's `image` field, which is carried on the core
 // [azdext.ServiceConfig] rather than in the inline property bag.
-func agentDefinitionFromStruct(s *structpb.Struct, coreImage string) (agent_yaml.ContainerAgent, bool, error) {
+func agentDefinitionFromStruct(
+	s *structpb.Struct,
+	coreImage string,
+	environment map[string]string,
+) (agent_yaml.ContainerAgent, bool, error) {
 	var inline AgentDefinitionInline
 	if err := UnmarshalStruct(s, &inline); err != nil {
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
@@ -341,7 +368,7 @@ func agentDefinitionFromStruct(s *structpb.Struct, coreImage string) (agent_yaml
 		)
 	}
 
-	ca := inline.toContainerAgent(cfg.Container, coreImage)
+	ca := inline.toContainerAgent(cfg.Container, coreImage, environment)
 
 	// Validate the inline definition with the same rules the on-disk agent.yaml
 	// path uses (kind, name format, policies), so an inline definition cannot

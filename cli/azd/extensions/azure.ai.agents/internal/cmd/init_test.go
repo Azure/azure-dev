@@ -364,6 +364,9 @@ func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
 			Protocols: []agent_yaml.ProtocolVersionRecord{
 				{Protocol: "responses", Version: "2.0.0"},
 			},
+			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
+				{Name: "LOG_LEVEL", Value: "info"},
+			},
 		},
 	}
 
@@ -387,9 +390,16 @@ func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
 	require.Equal(t, "docker", agentService.GetLanguage())
 	require.NotNil(t, agentService.GetDocker())
 	require.NotNil(t, agentService.GetAdditionalProperties())
+	require.Empty(t, agentService.GetEnvironment())
+	require.Equal(t, map[string]any{
+		"LOG_LEVEL": "info",
+	}, server.env["my-agent"])
 
 	_, hasInlineImage := agentService.GetAdditionalProperties().GetFields()["image"]
 	require.False(t, hasInlineImage, "pre-built image must ride on the top-level service image field")
+	_, hasInlineEnvironment := agentService.GetAdditionalProperties().
+		GetFields()["environmentVariables"]
+	require.False(t, hasInlineEnvironment)
 }
 
 func TestValidateInitAgentName(t *testing.T) {

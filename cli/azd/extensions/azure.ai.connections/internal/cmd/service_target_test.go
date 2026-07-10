@@ -87,13 +87,29 @@ func TestConnectionCredentialArgs(t *testing.T) {
 func TestResolveConnectionEnv(t *testing.T) {
 	t.Parallel()
 
-	env := map[string]string{"SEARCH_KEY": "resolved-secret"}
+	serviceConfig := &azdext.ServiceConfig{
+		Environment: map[string]string{"SEARCH_KEY": "resolved-secret"},
+	}
+	environment, err := (&connectionServiceTarget{}).environmentValues(
+		t.Context(),
+		serviceConfig,
+	)
+	require.NoError(t, err)
 
-	// ${VAR} resolves from the azd env; Foundry ${{...}} passes through untouched.
-	assert.Equal(t, "resolved-secret", resolveConnectionEnv("${SEARCH_KEY}", env))
+	// Foundry server-side expressions pass through untouched.
+	assert.Equal(t,
+		"resolved-secret",
+		resolveConnectionEnv(
+			"${SEARCH_KEY}",
+			environment,
+		),
+	)
 	assert.Equal(t,
 		"${{connections.x.credentials.key}}",
-		resolveConnectionEnv("${{connections.x.credentials.key}}", env),
+		resolveConnectionEnv(
+			"${{connections.x.credentials.key}}",
+			environment,
+		),
 	)
 }
 

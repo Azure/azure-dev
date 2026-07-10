@@ -471,6 +471,57 @@ func TestCheck(t *testing.T) {
 		assert.Equal(t, "2.0.0", results[0].LatestVersion)
 		assert.True(t, results[0].UpdateAvailable)
 	})
+
+	t.Run("SkillAggregatesAnyHostUpdate", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		mgr := newMockUserConfigManager()
+
+		// The aggregate InstalledVersion is the first host (current), but a
+		// second host is behind — the tool must still report an update.
+		det := &mockDetector{
+			detectAllFn: func(
+				_ context.Context, tools []*ToolDefinition,
+			) ([]*ToolStatus, error) {
+				return []*ToolStatus{{
+					Tool:             tools[0],
+					Installed:        true,
+					InstalledVersion: "2.0.0",
+					SkillHosts: []InstalledSkillHost{
+						{Host: "copilot", Version: "2.0.0"},
+						{Host: "claude", Version: "1.0.0"},
+					},
+				}}, nil
+			},
+		}
+
+		uc := NewUpdateChecker(mgr, det, staticDir(tmpDir), nil)
+
+		seedCache := &UpdateCheckCache{
+			CheckedAt: time.Now().UTC(),
+			ExpiresAt: time.Now().UTC().Add(time.Hour),
+			Tools: map[string]CachedToolVersion{
+				"azure-skills": {LatestVersion: "2.0.0"},
+			},
+		}
+		require.NoError(t, uc.SaveCache(seedCache))
+
+		tools := []*ToolDefinition{
+			{Id: "azure-skills", Name: "Azure Skills", Category: ToolCategorySkill},
+		}
+
+		results, err := uc.Check(t.Context(), tools)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+
+		assert.Equal(t, "2.0.0", results[0].CurrentVersion)
+		assert.True(t, results[0].UpdateAvailable,
+			"a stale second host must mark the skill as updatable")
+		require.Len(t, results[0].SkillHosts, 2)
+		assert.False(t, results[0].SkillHosts[0].UpdateAvailable)
+		assert.True(t, results[0].SkillHosts[1].UpdateAvailable)
+	})
 }
 
 // ---------------------------------------------------------------------------

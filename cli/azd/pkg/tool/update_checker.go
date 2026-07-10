@@ -95,6 +95,20 @@ type SkillHostUpdate struct {
 	UpdateAvailable bool
 }
 
+// anyHostUpdatable reports whether any of a skill's installed hosts is behind
+// the latest version. A skill installed on multiple hosts exposes only the
+// first host's version as the tool's aggregate InstalledVersion, so tool-level
+// update checks must consider every host — otherwise a stale host is missed
+// when the first is current. Returns false for non-skills (no SkillHosts).
+func anyHostUpdatable(latest string, hosts []InstalledSkillHost) bool {
+	for _, h := range hosts {
+		if isNewerVersion(latest, h.Version) {
+			return true
+		}
+	}
+	return false
+}
+
 // UpdateChecker performs periodic update checks for registered tools,
 // caching results to disk so that expensive remote lookups are amortized
 // across CLI invocations.
@@ -245,11 +259,19 @@ func (uc *UpdateChecker) Check(
 			LatestVersion: latestVer,
 		}
 
+		// For a skill installed on multiple hosts, currentVer reflects only
+		// the first host, so treat the tool as updatable when ANY host is
+		// behind the latest version.
+		updateAvailable := isNewerVersion(latestVer, currentVer)
+		if status != nil && anyHostUpdatable(latestVer, status.SkillHosts) {
+			updateAvailable = true
+		}
+
 		results = append(results, &UpdateCheckResult{
 			Tool:            t,
 			CurrentVersion:  currentVer,
 			LatestVersion:   latestVer,
-			UpdateAvailable: isNewerVersion(latestVer, currentVer),
+			UpdateAvailable: updateAvailable,
 			SkillHosts:      skillHosts,
 		})
 	}
@@ -455,7 +477,13 @@ func (uc *UpdateChecker) HasUpdatesAvailable(
 	count := 0
 	for _, s := range statuses {
 		latest, ok := candidates[s.Tool.Id]
-		if ok && s.Installed && isNewerVersion(latest, s.InstalledVersion) {
+		if !ok || !s.Installed {
+			continue
+		}
+		// Count a skill whose first host is current but another host is stale
+		// (anyHostUpdatable), as well as the plain single-version case.
+		if isNewerVersion(latest, s.InstalledVersion) ||
+			anyHostUpdatable(latest, s.SkillHosts) {
 			count++
 		}
 	}

@@ -79,7 +79,6 @@
         {
           "version": "0.3.0",
           "capabilities": [
-            "hello",
             "custom-commands",
             "lifecycle-events",
             "mcp-server"
@@ -326,6 +325,107 @@
         },
         {
           "version": "0.6.0",
+          "capabilities": [
+            "custom-commands",
+            "lifecycle-events",
+            "mcp-server",
+            "service-target-provider",
+            "framework-service-provider",
+            "metadata"
+          ],
+          "providers": [
+            {
+              "name": "demo",
+              "type": "service-target",
+              "description": "Deploys application components to demo"
+            }
+          ],
+          "usage": "azd demo <command> [options]",
+          "examples": [
+            {
+              "name": "context",
+              "description": "Displays the current `azd` project & environment context.",
+              "usage": "azd demo context"
+            },
+            {
+              "name": "prompt",
+              "description": "Display prompt capabilities.",
+              "usage": "azd demo prompt"
+            },
+            {
+              "name": "ai models",
+              "description": "Browse available AI models interactively.",
+              "usage": "azd demo ai models"
+            },
+            {
+              "name": "ai deployment",
+              "description": "Select model/version/SKU/capacity and resolve a deployment configuration.",
+              "usage": "azd demo ai deployment"
+            },
+            {
+              "name": "ai quota",
+              "description": "View usage meters and limits for a selected location.",
+              "usage": "azd demo ai quota"
+            },
+            {
+              "name": "mcp",
+              "description": "Start MCP server with demo tools.",
+              "usage": "azd demo mcp start"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "c130f6534223fa998bffc6716b3db4dde86b420053e4e41e780d4b7961e891b9"
+              },
+              "entryPoint": "microsoft-azd-demo-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.6.0/microsoft-azd-demo-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "bcc6d26d044362ab23bb82c59452d9967bdf5d2dec1b67cf56a7e035e93f248f"
+              },
+              "entryPoint": "microsoft-azd-demo-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.6.0/microsoft-azd-demo-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "673a66c3ab482e27b055534be13f3ff61970eac9cc1a559663ee5e77efc22c35"
+              },
+              "entryPoint": "microsoft-azd-demo-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.6.0/microsoft-azd-demo-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "2e41ce4464989e0c3ad401c7ce84ae0cb5e5287abe2e60d901a790fde0fb7ea3"
+              },
+              "entryPoint": "microsoft-azd-demo-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.6.0/microsoft-azd-demo-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "8ddc09442c399e6597931b364a0e38f3712b5fe932b3270fc4f722b10d45df36"
+              },
+              "entryPoint": "microsoft-azd-demo-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.6.0/microsoft-azd-demo-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "7026c30919eeb5bdb6e80d6a2afb2a8614259137b9646607f58e5a231d3276f4"
+              },
+              "entryPoint": "microsoft-azd-demo-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.6.0/microsoft-azd-demo-windows-arm64.zip"
+            }
+          }
+        },
+        {
+          "version": "0.7.0",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",

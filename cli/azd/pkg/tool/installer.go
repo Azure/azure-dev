@@ -1069,7 +1069,13 @@ func (i *installer) run(
 	title := fmt.Sprintf("%s %s", verb, tool.Name)
 	cfg.renderer.ShowSpinner(ctx, title, input.Step)
 	result, err := i.runToolInstall(ctx, tool, upgrade)
-	cfg.renderer.StopSpinner(ctx, title, input.GetStepResultFormat(stepError(result, err)))
+	// On a successful upgrade, append the resulting version to the result
+	// line, mirroring skills — e.g. "Upgrading Azure CLI (v2.0.0)".
+	doneTitle := title
+	if upgrade && err == nil && result != nil && result.Success && result.InstalledVersion != "" {
+		doneTitle = fmt.Sprintf("%s (v%s)", title, result.InstalledVersion)
+	}
+	cfg.renderer.StopSpinner(ctx, doneTitle, input.GetStepResultFormat(stepError(result, err)))
 	return result, err
 }
 

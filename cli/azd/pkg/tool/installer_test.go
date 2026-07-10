@@ -245,6 +245,55 @@ func TestRunToolInstall_StepProgress(t *testing.T) {
 	assert.Empty(t, r.messages, "non-skill install reports no skill count")
 }
 
+// TestRunToolUpgrade_StepProgress_ShowsVersion verifies that a non-skill
+// upgrade appends the resulting version to the step result line — the same
+// treatment skills get — e.g. "Upgrading Test Tool (v2.64.0)".
+func TestRunToolUpgrade_StepProgress_ShowsVersion(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "update")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: true, InstalledVersion: "2.64.0"}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	nonSkill := &ToolDefinition{
+		Id:       "test-tool",
+		Name:     "Test Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/tool",
+		}),
+	}
+
+	r := &fakeStepRenderer{}
+	result, err := inst.Upgrade(t.Context(), nonSkill, WithStepProgress(r))
+	require.NoError(t, err)
+	require.True(t, result.Success, "upgrade must succeed; err=%v", result.Error)
+
+	assert.Equal(t, []string{"Upgrading Test Tool"}, r.starts)
+	assert.Equal(t, []string{"Upgrading Test Tool (v2.64.0)"}, r.stops,
+		"a non-skill upgrade must report the resulting version, like skills")
+}
+
 func TestInstall_WithInstallCommand(t *testing.T) {
 	t.Parallel()
 

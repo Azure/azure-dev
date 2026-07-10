@@ -1268,16 +1268,17 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 
 	// Choose the success header based on whether anything actually changed.
-	// A tool is "already up to date" when the installer flagged it (skills
-	// report this per host) or its detected version is unchanged by the
-	// upgrade — comparing the version detected before the upgrade
-	// (fromVersions) with the one detected after (InstalledVersion). A
+	// A tool is "already up to date" when the installer flagged it. For skills
+	// this flag is authoritative (set per host, so an upgrade on any host
+	// clears it), so we trust it as-is. For non-skill tools — which never set
+	// the flag — fall back to comparing the version detected before the
+	// upgrade (fromVersions) with the one detected after (InstalledVersion); a
 	// missing version on either side counts as a change, so azd never claims
-	// "up to date" without evidence and it reads as "upgraded".
+	// "up to date" without evidence.
 	allUpToDate := len(rawResults) > 0
 	for _, r := range rawResults {
 		upToDate := r.AlreadyUpToDate
-		if !upToDate && r.Tool != nil {
+		if !upToDate && r.Tool != nil && r.Tool.Category != tool.ToolCategorySkill {
 			before := fromVersions[r.Tool.Id]
 			upToDate = before != "" && r.InstalledVersion != "" &&
 				before == r.InstalledVersion

@@ -1444,3 +1444,48 @@ func TestToolUninstallAction_resolveToolIds_NoPromptDefaultsToAllInstalled(t *te
 	assert.ElementsMatch(t, []string{"a", "b"}, ids,
 		"--no-prompt must skip the picker and default to all installed tools")
 }
+
+// TestToolUpgradeAction_MultiHostSkill_UpgradedNotUpToDate reproduces the
+// multi-host skill case: the aggregate InstalledVersion (first host) is
+// unchanged, but the installer set AlreadyUpToDate=false because another host
+// WAS upgraded. The header must read "upgraded", not "already up to date" —
+// version comparison must not run for skills.
+func TestToolUpgradeAction_MultiHostSkill_UpgradedNotUpToDate(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+
+	detector := &cmdMockDetector{
+		detectTool: func(_ context.Context, td *tool.ToolDefinition) (*tool.ToolStatus, error) {
+			// First host is current before the upgrade.
+			return &tool.ToolStatus{Tool: td, Installed: true, InstalledVersion: "1.1.87"}, nil
+		},
+	}
+	installer := &cmdMockInstaller{
+		upgrade: func(_ context.Context, td *tool.ToolDefinition, _ ...tool.InstallOption) (*tool.InstallResult, error) {
+			// Aggregate version unchanged (first host current), but a different
+			// host was upgraded, so AlreadyUpToDate is false.
+			return &tool.InstallResult{
+				Tool:             td,
+				Success:          true,
+				AlreadyUpToDate:  false,
+				InstalledVersion: "1.1.87",
+			}, nil
+		},
+	}
+	manager := tool.NewManager(detector, installer, nil)
+
+	action := newToolUpgradeAction(
+		[]string{"azure-skills"}, // a manifest skill tool
+		&toolUpgradeFlags{},
+		manager,
+		mockinput.NewMockConsole(),
+		&output.NoneFormatter{},
+		io.Discard,
+	)
+
+	result, err := action.Run(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Message)
+	assert.Equal(t, "Tool is upgraded to v1.1.87.", result.Message.Header,
+		"a multi-host skill with an upgraded host must not read as already up to date")
+}

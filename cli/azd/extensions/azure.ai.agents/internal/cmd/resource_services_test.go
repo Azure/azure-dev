@@ -251,9 +251,17 @@ type recordingProjectServer struct {
 	mu    sync.Mutex
 	added []*azdext.ServiceConfig
 	uses  map[string][]string
+	// configValues records non-"uses" SetServiceConfigValue calls keyed by path.
+	configValues map[string]configValueRecord
 	// existing is returned by Get to simulate services already present in the
 	// project (e.g. a prior init's azure.ai.project service).
 	existing map[string]*azdext.ServiceConfig
+}
+
+// configValueRecord captures a single SetServiceConfigValue call.
+type configValueRecord struct {
+	serviceName string
+	value       string
 }
 
 func (s *recordingProjectServer) Get(
@@ -283,6 +291,9 @@ func (s *recordingProjectServer) SetServiceConfigValue(
 	if s.uses == nil {
 		s.uses = map[string][]string{}
 	}
+	if s.configValues == nil {
+		s.configValues = map[string]configValueRecord{}
+	}
 	if req.Path == "uses" && req.Value != nil {
 		if list, ok := req.Value.AsInterface().([]any); ok {
 			vals := make([]string, 0, len(list))
@@ -292,6 +303,13 @@ func (s *recordingProjectServer) SetServiceConfigValue(
 				}
 			}
 			s.uses[req.ServiceName] = vals
+		}
+	} else if req.Value != nil {
+		if str, ok := req.Value.AsInterface().(string); ok {
+			s.configValues[req.Path] = configValueRecord{
+				serviceName: req.ServiceName,
+				value:       str,
+			}
 		}
 	}
 	return &azdext.EmptyResponse{}, nil

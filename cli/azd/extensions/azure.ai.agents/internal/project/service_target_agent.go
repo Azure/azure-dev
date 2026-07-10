@@ -113,7 +113,7 @@ func buildInvocationsWSProtocolURL(projectEndpoint, agentName string) string {
 
 	return fmt.Sprintf(
 		"wss://%s%s/agents/%s/endpoint/protocols/invocations_ws?api-version=%s",
-		u.Host, u.Path, agentName, agent_api.AgentEndpointAPIVersion,
+		u.Host, strings.TrimRight(u.Path, "/"), agentName, agent_api.AgentEndpointAPIVersion,
 	)
 }
 

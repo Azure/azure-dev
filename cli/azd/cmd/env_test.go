@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,7 +32,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -1221,6 +1225,7 @@ func Test_NewEnvRefreshAction(t *testing.T) {
 		nil, // provisionManager
 		&project.ProjectConfig{},
 		nil, // projectManager
+		nil, // extensionActivator
 		environment.NewWithValues("test", nil),
 		nil, // envManager
 		nil, // prompters
@@ -1232,6 +1237,218 @@ func Test_NewEnvRefreshAction(t *testing.T) {
 		nil, // alphaFeatureManager
 	)
 	require.NotNil(t, action)
+}
+
+// stubProviderActivator is a no-op provisioningProviderActivator for tests.
+type stubProviderActivator struct {
+	suggestion string
+}
+
+func (s *stubProviderActivator) EnsureProvisioningProviders(
+	_ context.Context, _ []string, _ string,
+) (func(), error) {
+	return func() {}, nil
+}
+
+func (s *stubProviderActivator) SuggestExtensionForProvider(_ context.Context, _ string) string {
+	return s.suggestion
+}
+
+// The install suggestion must fire only for provider-resolution failures; any other provisioning
+// initialization error skips the registry lookup entirely.
+func Test_suggestionForUnresolvedProvider(t *testing.T) {
+	t.Parallel()
+	activator := &stubProviderActivator{suggestion: "azure.ai.agents"}
+
+	resolveErr := fmt.Errorf("initializing provisioning manager: %w",
+		fmt.Errorf("failed resolving IaC provider 'microsoft.foundry': %w", ioc.ErrResolveInstance))
+	require.Equal(t, "azure.ai.agents",
+		suggestionForUnresolvedProvider(t.Context(), resolveErr, activator, "microsoft.foundry"))
+
+	require.Empty(t,
+		suggestionForUnresolvedProvider(t.Context(), errors.New("deployment failed"), activator, "microsoft.foundry"))
+}
+
+// mockRefreshProvider is a provisioning.Provider whose State behavior is configurable.
+type mockRefreshProvider struct {
+	stateResult *provisioning.StateResult
+	stateErr    error
+}
+
+func (p *mockRefreshProvider) Name() string { return "mock" }
+
+func (p *mockRefreshProvider) Initialize(_ context.Context, _ string, _ provisioning.Options) error {
+	return nil
+}
+
+func (p *mockRefreshProvider) State(
+	_ context.Context, _ *provisioning.StateOptions,
+) (*provisioning.StateResult, error) {
+	return p.stateResult, p.stateErr
+}
+
+func (p *mockRefreshProvider) Deploy(_ context.Context) (*provisioning.DeployResult, error) {
+	return nil, nil
+}
+
+func (p *mockRefreshProvider) Preview(_ context.Context) (*provisioning.DeployPreviewResult, error) {
+	return nil, nil
+}
+
+func (p *mockRefreshProvider) Destroy(
+	_ context.Context, _ provisioning.DestroyOptions,
+) (*provisioning.DestroyResult, error) {
+	return nil, nil
+}
+
+func (p *mockRefreshProvider) EnsureEnv(_ context.Context) error { return nil }
+
+func (p *mockRefreshProvider) Parameters(_ context.Context) ([]provisioning.Parameter, error) {
+	return nil, nil
+}
+
+func (p *mockRefreshProvider) PlannedOutputs(_ context.Context) ([]provisioning.PlannedOutput, error) {
+	return nil, nil
+}
+
+// newTestEnvRefreshAction wires an envRefreshAction against a real provisioning.Manager backed by
+// the given mock provider, mirroring the setup in internal/cmd/provision_test.go.
+func newTestEnvRefreshAction(
+	t *testing.T,
+	provider provisioning.Provider,
+	flags *envRefreshFlags,
+) (*envRefreshAction, *mockinput.MockConsole, *mockenv.MockEnvManager, *mockProjectManager) {
+	projectDir := t.TempDir()
+	infraDir := filepath.Join(projectDir, "infra")
+	require.NoError(t, os.MkdirAll(infraDir, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(infraDir, "main.bicep"), []byte("targetScope = 'subscription'\n"), 0o600))
+
+	container := ioc.NewNestedContainer(nil)
+	ioc.RegisterNamedInstance(container, string(provisioning.Test), provider)
+
+	env := environment.New("test-env")
+	env.SetSubscriptionId("00000000-0000-0000-0000-000000000000")
+	env.SetLocation("eastus2")
+
+	console := mockinput.NewMockConsole()
+
+	provisionManager := provisioning.NewManager(
+		container,
+		func() (provisioning.ProviderKind, error) { return provisioning.Test, nil },
+		nil, // envManager - the mock provider does not prompt
+		env,
+		console,
+		alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+		nil, // fileShareService
+		cloud.AzurePublic(),
+	)
+
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("EnvPath", mock.Anything).Return(filepath.Join(projectDir, ".azure", "test-env", ".env"))
+
+	pm := &mockProjectManager{}
+
+	projectConfig := &project.ProjectConfig{
+		Name: "test-project",
+		Path: projectDir,
+		Infra: provisioning.Options{
+			Provider: provisioning.Test,
+			Path:     "infra",
+			Module:   "main",
+		},
+	}
+
+	action := &envRefreshAction{
+		provisionManager:    provisionManager,
+		projectConfig:       projectConfig,
+		projectManager:      pm,
+		extensionActivator:  &stubProviderActivator{},
+		env:                 env,
+		envManager:          envManager,
+		flags:               flags,
+		console:             console,
+		formatter:           &output.NoneFormatter{},
+		writer:              io.Discard,
+		importManager:       project.NewImportManager(nil),
+		alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+	}
+
+	return action, console, envManager, pm
+}
+
+func Test_EnvRefreshAction_Run_NoDeployments(t *testing.T) {
+	t.Parallel()
+
+	// The no-deployment case is informational, not an error: refresh completes, nothing is saved,
+	// and no service events are raised (issue #7195).
+	t.Run("InformationalWithoutHint", func(t *testing.T) {
+		provider := &mockRefreshProvider{stateErr: fmt.Errorf("looking up: %w", infra.ErrDeploymentsNotFound)}
+		action, console, envManager, pm := newTestEnvRefreshAction(t, provider, &envRefreshFlags{})
+
+		result, err := action.Run(t.Context())
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Contains(t,
+			strings.Join(console.Output(), "\n"), "No deployment was found for environment 'test-env'")
+		envManager.AssertNotCalled(t, "Save", mock.Anything, mock.Anything)
+		pm.AssertNotCalled(t, "InitializeFrameworks", mock.Anything, mock.Anything)
+	})
+
+	// An explicit --hint that matches nothing must stay a hard error: deployments may exist, and
+	// reporting "nothing to refresh yet" would misdiagnose a mistyped hint.
+	t.Run("HardErrorWithExplicitHint", func(t *testing.T) {
+		provider := &mockRefreshProvider{stateErr: fmt.Errorf("matching hint: %w", infra.ErrDeploymentsNotFound)}
+		action, _, _, _ := newTestEnvRefreshAction(t, provider, &envRefreshFlags{hint: "not-a-match"})
+
+		result, err := action.Run(t.Context())
+
+		require.Error(t, err)
+		require.ErrorIs(t, err, infra.ErrDeploymentsNotFound)
+		require.Nil(t, result)
+	})
+}
+
+// A provider may return a StateResult with a nil State: the gRPC proxy for extension-provided
+// providers does this when the extension replies with an unset state result. Refresh must treat it
+// like the no-deployment case instead of panicking.
+func Test_EnvRefreshAction_Run_NilStateResult(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockRefreshProvider{stateResult: &provisioning.StateResult{}}
+	action, console, envManager, pm := newTestEnvRefreshAction(t, provider, &envRefreshFlags{})
+
+	result, err := action.Run(t.Context())
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, strings.Join(console.Output(), "\n"), "No deployment state was found")
+	envManager.AssertNotCalled(t, "Save", mock.Anything, mock.Anything)
+	pm.AssertNotCalled(t, "InitializeFrameworks", mock.Anything, mock.Anything)
+}
+
+func Test_EnvRefreshAction_Run_RefreshesOutputs(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockRefreshProvider{stateResult: &provisioning.StateResult{
+		State: &provisioning.State{
+			Outputs: map[string]provisioning.OutputParameter{
+				"MY_OUTPUT": {Type: provisioning.ParameterTypeString, Value: "value"},
+			},
+		},
+	}}
+	action, _, envManager, pm := newTestEnvRefreshAction(t, provider, &envRefreshFlags{})
+	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
+	pm.On("InitializeFrameworks", mock.Anything, mock.Anything).Return(nil, nil, nil)
+
+	result, err := action.Run(t.Context())
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "value", action.env.Dotenv()["MY_OUTPUT"])
+	envManager.AssertCalled(t, "Save", mock.Anything, mock.Anything)
+	pm.AssertExpectations(t)
 }
 
 func Test_NewEnvSetSecretAction(t *testing.T) {

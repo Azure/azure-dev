@@ -1,5 +1,15 @@
 # Release History
 
+## 1.0.0-beta.2 (2026-07-09)
+
+### Bugs Fixed
+
+- [[#8958]](https://github.com/Azure/azure-dev/pull/8958) Fix inspector display name and example description. Thanks @anchenyi for the contribution!
+
+### Other Changes
+
+- [[#9027]](https://github.com/Azure/azure-dev/pull/9027) Bump `golang.org/x/crypto` to v0.53.0 (and transitively `golang.org/x/net` to v0.55.0) to address security advisories.
+
 ## 1.0.0-beta.1 (2026-06-30)
 
 ### Features Added

@@ -621,7 +621,8 @@ func TestDisplayableProtocolFor(t *testing.T) {
 			wantURLContains: "/api/projects/proj/agents/my-agent/endpoint/protocols/invocations_ws",
 			wantURLScheme:   "wss",
 		},
-		{name: "activity_protocol excluded", protocol: "activity_protocol", wantNil: true},
+		{name: "activity excluded", protocol: "activity", wantNil: true},
+		{name: "legacy activity_protocol excluded", protocol: "activity_protocol", wantNil: true},
 		{name: "unknown excluded", protocol: "unknown_proto", wantNil: true},
 	}
 
@@ -780,6 +781,20 @@ func TestBuildInvocationsWSProtocolURL_TrimsWhitespace(t *testing.T) {
 	require.Contains(t, got, "wss://myproject.services.ai.azure.com")
 	require.Contains(t, got, "/api/projects/proj/agents/my-agent/endpoint/protocols/invocations_ws")
 	require.Contains(t, got, "api-version="+agent_api.AgentEndpointAPIVersion)
+}
+
+func TestBuildInvocationsWSProtocolURL_TrimsTrailingSlash(t *testing.T) {
+	t.Parallel()
+
+	got := buildInvocationsWSProtocolURL(
+		"https://myproject.services.ai.azure.com/api/projects/proj/",
+		"my-agent",
+	)
+	require.Equal(t,
+		"wss://myproject.services.ai.azure.com/api/projects/proj/agents/my-agent/"+
+			"endpoint/protocols/invocations_ws?api-version="+agent_api.AgentEndpointAPIVersion,
+		got,
+	)
 }
 
 func TestAgentInvocationEndpoints_SkipsInvocationsWSWithMalformedEndpoint(t *testing.T) {

@@ -2448,20 +2448,34 @@ func skillHostDisplayName(t *tool.ToolDefinition, command string) string {
 	return command
 }
 
-// colorAgentPrefix colors a leading "[agent]" token (as prepended to skill
+// colorAgentPrefix colors a leading "[agent]" label (as prepended to skill
 // names for the list/check tables) so the agent stands out, leaving the rest
-// of the name — and any name without a bracket prefix — unchanged. It is the
+// of the name — and any name without a bracket label — unchanged. It is the
 // NAME column's ColorFunc: the pretty table applies it per rendered line after
 // layout, so the cell value itself stays plain and the table can wrap and
 // align it correctly at narrow terminal widths (embedding ANSI in the value
 // would suppress wrapping and break the alignment of later columns).
+//
+// Because it runs per line, it must also color a label the table wrapped
+// across lines (e.g. "[GitHub Copilot" then "CLI] Azure Skills"): the opening
+// line ("[" with no "]") is colored whole, and a continuation line carrying
+// the label tail is colored up to and including its "]".
 func colorAgentPrefix(s string) string {
-	if !strings.HasPrefix(s, "[") {
+	switch {
+	case strings.HasPrefix(s, "["):
+		// Whole label on this line ("[..]"), or the first line of a label the
+		// table wrapped (no "]" yet, so it continues on the next line).
+		if end := strings.IndexByte(s, ']'); end >= 0 {
+			return output.WithWarningFormat(s[:end+1]) + s[end+1:]
+		}
+		return output.WithWarningFormat(s)
+	case !strings.ContainsRune(s, '[') && strings.ContainsRune(s, ']'):
+		// Continuation line carrying a wrapped label's tail: color up to and
+		// including "]". Guarded by "no '[' on this line" so plain tool names
+		// (which carry no brackets at all) are never touched.
+		end := strings.IndexByte(s, ']')
+		return output.WithWarningFormat(s[:end+1]) + s[end+1:]
+	default:
 		return s
 	}
-	end := strings.Index(s, "]")
-	if end < 0 {
-		return s
-	}
-	return output.WithWarningFormat(s[:end+1]) + s[end+1:]
 }

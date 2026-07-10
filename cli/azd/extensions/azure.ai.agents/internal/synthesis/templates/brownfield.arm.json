@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "18238410234443260141"
+      "templateHash": "13884339769371824597"
     }
   },
   "definitions": {
@@ -53,6 +53,43 @@
       },
       "metadata": {
         "description": "Shape of a single model deployment."
+      }
+    },
+    "connectionsType": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/connectionType"
+      },
+      "metadata": {
+        "description": "Shape of a list of Foundry project connections."
+      }
+    },
+    "connectionType": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "authType": {
+          "type": "string"
+        },
+        "credentials": {
+          "type": "object",
+          "nullable": true
+        },
+        "metadata": {
+          "type": "object",
+          "nullable": true
+        }
+      },
+      "metadata": {
+        "description": "Shape of one Foundry project connection (a host: azure.ai.connection service)."
       }
     }
   },
@@ -105,6 +142,13 @@
       "defaultValue": "",
       "metadata": {
         "description": "Container registry name. 5-50 alphanumeric chars. Required when includeAcr is true."
+      }
+    },
+    "connections": {
+      "$ref": "#/definitions/connectionsType",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Foundry project connections to create on the existing project (host: azure.ai.connection services)."
       }
     }
   },
@@ -203,6 +247,16 @@
         "foundryAcrPull",
         "registry"
       ]
+    },
+    "projectConnections": {
+      "copy": {
+        "name": "projectConnections",
+        "count": "[length(parameters('connections'))]"
+      },
+      "type": "Microsoft.CognitiveServices/accounts/projects/connections",
+      "apiVersion": "2025-04-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('accountName'), parameters('projectName'), parameters('connections')[copyIndex()].name)]",
+      "properties": "[union(createObject('category', parameters('connections')[copyIndex()].category, 'target', parameters('connections')[copyIndex()].target, 'authType', parameters('connections')[copyIndex()].authType), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'credentials'), null())), createObject('credentials', tryGet(parameters('connections')[copyIndex()], 'credentials')), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'metadata'), null())), createObject('metadata', tryGet(parameters('connections')[copyIndex()], 'metadata')), createObject()))]"
     }
   },
   "outputs": {
@@ -217,6 +271,10 @@
     "AZURE_AI_PROJECT_ACR_CONNECTION_NAME": {
       "type": "string",
       "value": "[if(parameters('includeAcr'), format('{0}-conn', parameters('acrName')), '')]"
+    },
+    "AZURE_AI_PROJECT_CONNECTION_NAMES": {
+      "type": "string",
+      "value": "[join(map(parameters('connections'), lambda('c', lambdaVariables('c').name)), ',')]"
     }
   }
 }

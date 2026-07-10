@@ -341,9 +341,14 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 // templates/ root into infraDir, preserving the relative tree, and returns the
 // files written (with sizes). On any error it removes the partial infraDir.
 //
-// main.arm.json (the pre-compiled ARM JSON) is skipped: eject hands the user
-// the human-readable Bicep, and the embedded JSON would be stale once they
-// edit main.bicep.
+// Three files are skipped:
+//   - main.arm.json (the pre-compiled ARM JSON): would be stale once the user
+//     edits main.bicep.
+//   - brownfield.bicep and brownfield.arm.json: unreachable in a greenfield
+//     eject. ejectInfra already refuses to eject a brownfield (endpoint:)
+//     project, main.bicep never references brownfield.bicep, and the
+//     provider's brownfield path always loads the embedded
+//     synthesis.BrownfieldARMTemplate() instead of anything under infra/.
 func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
 	//nolint:gosec // G301: ejected infra/ directory must be readable/traversable by IDEs, Git, and CI
 	if err := os.MkdirAll(infraDir, 0o755); err != nil {
@@ -385,7 +390,8 @@ func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
 			return nil
 		}
 
-		if filepath.Base(p) == "main.arm.json" {
+		switch filepath.Base(p) {
+		case "main.arm.json", "brownfield.bicep", "brownfield.arm.json":
 			return nil
 		}
 

@@ -1,3 +1,6 @@
+// This script runs as part of the .github/workflows/ext-registry-check.yml. It lets the core azd team ensure that complicated
+// registry updates (changes to capabilities, or providers) and other assorted changes always fall under core team review, while
+// simple changes (simple version bump, no changes to important fields) can go by with just a simple approval from any developer.
 const { isDeepStrictEqual } = require('node:util');
 
 // GitHub Actions entry point.
@@ -60,6 +63,7 @@ const ALLOWED_EXTENSION_METADATA_CHANGES = new Set(['displayName', 'description'
  * @property {ExtensionVersion[]} versions
  *
  * @typedef {object} RegistryJson
+ * @property {string} [schemaVersion]
  * @property {Extension[]} extensions
  */
 
@@ -355,6 +359,8 @@ function diffRegistry(baseRegistry, prRegistry) {
     return m; // inferred Map<K, T>
   }
 
+  reasons.push(...diffRegistryMetadata(baseRegistry, prRegistry));
+
   const baseExtensions = toMap(baseRegistry.extensions, (e) => e.id);
   const prExtensions = toMap(prRegistry.extensions, (e) => e.id);
 
@@ -392,6 +398,44 @@ function diffRegistry(baseRegistry, prRegistry) {
 }
 
 /**
+ * Compares the registry-level metadata (everything except `extensions`, which has its own
+ * diffing rules) between the base and PR registries. Any difference requires core review,
+ * since these root fields (for example `schemaVersion`) govern how azd loads the entire
+ * registry and can make it unusable. We don't track or know about specific fields: anything
+ * outside `extensions` is expected to be identical.
+ *
+ * @param {RegistryJson} baseRegistry
+ * @param {RegistryJson} prRegistry
+ * @returns {string[]}
+ */
+function diffRegistryMetadata(baseRegistry, prRegistry) {
+  const baseMetadata = registryMetadata(baseRegistry);
+  const prMetadata = registryMetadata(prRegistry);
+
+  const changedFields = changedMetadataFields(baseMetadata, prMetadata);
+
+  if (changedFields.length === 0) {
+    return [];
+  }
+
+  return [
+    `registry changes top-level metadata that requires core review (${changedFields.join(', ')}); only extension changes may proceed without core review`,
+  ];
+}
+
+/**
+ * Returns a copy of the registry without `extensions` (which has its own diffing rules).
+ *
+ * @param {RegistryJson} registry
+ * @returns {Record<string, unknown>}
+ */
+function registryMetadata(registry) {
+  return Object.fromEntries(
+    Object.entries(registry).filter(([name]) => name !== 'extensions'),
+  );
+}
+
+/**
  * Compares the extension-level metadata (everything except `versions`) between the base
  * and PR registries. Any difference requires core review, except for the cosmetic fields
  * in ALLOWED_EXTENSION_METADATA_CHANGES. We don't track or know about specific fields:
@@ -406,11 +450,7 @@ function diffExtensionMetadata(id, baseExtension, prExtension) {
   const baseMetadata = extensionMetadata(baseExtension);
   const prMetadata = extensionMetadata(prExtension);
 
-  const changedFields = [
-    ...new Set([...Object.keys(baseMetadata), ...Object.keys(prMetadata)]),
-  ]
-    .filter((field) => !isDeepStrictEqual(baseMetadata[field], prMetadata[field]))
-    .sort();
+  const changedFields = changedMetadataFields(baseMetadata, prMetadata);
 
   if (changedFields.length === 0) {
     return [];
@@ -435,6 +475,19 @@ function extensionMetadata(extension) {
       ([name]) => name !== 'versions' && !ALLOWED_EXTENSION_METADATA_CHANGES.has(name),
     )
   );
+}
+
+/**
+ * @param {Record<string, unknown>} baseMetadata
+ * @param {Record<string, unknown>} prMetadata
+ * @returns {string[]}
+ */
+function changedMetadataFields(baseMetadata, prMetadata) {
+  return [
+    ...new Set([...Object.keys(baseMetadata), ...Object.keys(prMetadata)]),
+  ]
+    .filter((field) => !isDeepStrictEqual(baseMetadata[field], prMetadata[field]))
+    .sort();
 }
 
 /**
@@ -484,32 +537,56 @@ function diffNewReleases(id, baseVersionList, baseVersions, prVersions) {
   const reasons = [];
   const previousRelease = latestVersionBySemver(baseVersionList);
 
-  for (const [version, prVersion] of prVersions) {
-    if (baseVersions.has(version)) {
-      continue;
-    }
+  const newReleases = [...prVersions].filter(([version]) => !baseVersions.has(version));
 
-    if (previousRelease == null) {
-      reasons.push(`extension '${id}' release '${version}' has no previous release to compare against`);
-      continue;
-    }
-
-    const capabilityChanges = diffArrays(previousRelease.capabilities ?? [], prVersion.capabilities ?? []);
-    if (capabilityChanges.length > 0) {
-      reasons.push(
-        `extension '${id}' release '${version}' changes capabilities from the previous release '${previousRelease.version}' (${capabilityChanges.join('; ')})`,
-      );
-    }
-
-    const providerChanges = diffArrays(providerIdentityLabels(previousRelease), providerIdentityLabels(prVersion));
-    if (providerChanges.length > 0) {
-      reasons.push(
-        `extension '${id}' release '${version}' changes providers from the previous release '${previousRelease.version}' (${providerChanges.join('; ')})`,
-      );
-    }
-
-    reasons.push(...validateArtifactURLs(id, prVersion));
+  if (newReleases.length === 0) {
+    return reasons;
   }
+
+  // A simple version bump adds exactly one release. Anything more (or a first-ever release with
+  // no baseline to compare against) needs a human to look at it.
+  if (newReleases.length > 1) {
+    const added = newReleases.map(([version]) => version).sort();
+    reasons.push(
+      `extension '${id}' adds ${newReleases.length} new releases (${added.join(', ')}); only a single new release may be added without core review`,
+    );
+    return reasons;
+  }
+
+  const newRelease = newReleases[0];
+  if (newRelease == null) {
+    return reasons;
+  }
+  const [version, prVersion] = newRelease;
+
+  if (previousRelease == null) {
+    reasons.push(`extension '${id}' release '${version}' has no previous release to compare against`);
+    return reasons;
+  }
+
+  // The new release must move the extension forward; re-adding an older version (or one that ties
+  // the current latest) isn't a simple bump and could downgrade what azd resolves.
+  if (compareSemver(version, previousRelease.version) <= 0) {
+    reasons.push(
+      `extension '${id}' release '${version}' is not newer than the current latest release '${previousRelease.version}'; only forward version bumps may proceed without core review`,
+    );
+  }
+
+  const capabilityChanges = diffArrays(previousRelease.capabilities ?? [], prVersion.capabilities ?? []);
+  if (capabilityChanges.length > 0) {
+    reasons.push(
+      `extension '${id}' release '${version}' changes capabilities from the previous release '${previousRelease.version}' (${capabilityChanges.join('; ')})`,
+    );
+  }
+
+  const providerChanges = diffArrays(providerIdentityLabels(previousRelease), providerIdentityLabels(prVersion));
+  if (providerChanges.length > 0) {
+    reasons.push(
+      `extension '${id}' release '${version}' changes providers from the previous release '${previousRelease.version}' (${providerChanges.join('; ')})`,
+    );
+  }
+
+  reasons.push(...validateArtifactURLs(id, prVersion));
 
   return reasons;
 }

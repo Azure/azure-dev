@@ -261,6 +261,32 @@ describe('diffRegistry', () => {
     expect(diffRegistry(base, pr)).toEqual([]);
   });
 
+  it('approves a GA release after beta releases for the same version', () => {
+    const base = registry([
+      extension({
+        id: 'azure.ai.agents',
+        versions: [
+          version({ version: '1.0.0-beta.2', capabilities: ['custom-commands'] }),
+          version({ version: '1.0.0-beta.3', capabilities: ['custom-commands'] }),
+          version({ version: '1.0.0-beta.4', capabilities: ['custom-commands'] }),
+        ],
+      }),
+    ]);
+    const pr = registry([
+      extension({
+        id: 'azure.ai.agents',
+        versions: [
+          version({ version: '1.0.0-beta.2', capabilities: ['custom-commands'] }),
+          version({ version: '1.0.0-beta.3', capabilities: ['custom-commands'] }),
+          version({ version: '1.0.0-beta.4', capabilities: ['custom-commands'] }),
+          version({ version: '1.0.0', capabilities: ['custom-commands'] }),
+        ],
+      }),
+    ]);
+
+    expect(diffRegistry(base, pr)).toEqual([]);
+  });
+
   it('fails when an already-published release is modified', () => {
     const base = registry([extension({ versions: [version({ version: '1.0.0', capabilities: ['custom-commands'] })] })]);
     const pr = registry([extension({ versions: [version({ version: '1.0.0', capabilities: ['something-else'] })] })]);
@@ -383,6 +409,57 @@ describe('diffRegistry', () => {
       }),
     ]);
     expect(() => diffRegistry(base, pr)).toThrow("artifact 'linux/amd64' has no string URL (got undefined)");
+  });
+
+  it('fails when a registry-level metadata field changes', () => {
+    const base = { ...registry([extension()]), schemaVersion: '1.0' };
+    const pr = { ...registry([extension()]), schemaVersion: '2.0' };
+    const reasons = diffRegistry(base, pr);
+    expect(reasons).not.toEqual([]);
+    expect(reasons).toContainEqual(expect.stringContaining('changes top-level metadata that requires core review'));
+    expect(reasons).toContainEqual(expect.stringContaining('schemaVersion'));
+  });
+
+  it('fails when a new registry-level metadata field is added', () => {
+    const base = registry([extension()]);
+    const pr = { ...registry([extension()]), schemaVersion: '1.0' };
+    const reasons = diffRegistry(base, pr);
+    expect(reasons).not.toEqual([]);
+    expect(reasons).toContainEqual(expect.stringContaining('changes top-level metadata that requires core review'));
+    expect(reasons).toContainEqual(expect.stringContaining('schemaVersion'));
+  });
+
+  it('approves an identical registry that carries top-level metadata', () => {
+    const base = { ...registry([extension()]), schemaVersion: '1.0' };
+    const pr = { ...registry([extension()]), schemaVersion: '1.0' };
+    expect(diffRegistry(base, pr)).toEqual([]);
+  });
+
+  it('fails when more than one new release is added at once', () => {
+    const base = registry([extension({ versions: [version({ version: '1.0.0' })] })]);
+    const pr = registry([
+      extension({
+        versions: [
+          version({ version: '1.0.0' }),
+          version({ version: '1.1.0' }),
+          version({ version: '1.2.0' }),
+        ],
+      }),
+    ]);
+    const reasons = diffRegistry(base, pr);
+    expect(reasons).not.toEqual([]);
+    expect(reasons).toContainEqual(expect.stringContaining('adds 2 new releases (1.1.0, 1.2.0)'));
+    expect(reasons).toContainEqual(expect.stringContaining('only a single new release may be added without core review'));
+  });
+
+  it('fails when the new release is older than the current latest release', () => {
+    const base = registry([extension({ versions: [version({ version: '2.0.0' })] })]);
+    const pr = registry([
+      extension({ versions: [version({ version: '2.0.0' }), version({ version: '1.9.0' })] }),
+    ]);
+    const reasons = diffRegistry(base, pr);
+    expect(reasons).not.toEqual([]);
+    expect(reasons).toContainEqual(expect.stringContaining("release '1.9.0' is not newer than the current latest release '2.0.0'"));
   });
 });
 

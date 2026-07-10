@@ -9,9 +9,9 @@
 # `.github/workflows/lint-ext-azure-ai-agents.yml` (Tier 0 offline + Tier 1
 # recording/playback). Live Azure access is intentionally kept OUT of the
 # automatic PR pipeline (per Azure SDK EngSys / SFI guidance). The PR trigger
-# below only associates this pipeline with PRs targeting main so `/azp run
-# ext-azure-ai-agents-live` can queue it; the ADO pipeline definition must be
-# configured to require a team member comment before building PRs.
+# below only associates this pipeline with relevant PRs targeting main so
+# `/azp run ext-azure-ai-agents-live` can queue it; the ADO pipeline definition
+# must be configured to require a team member comment before building PRs.
 # It runs only:
 #   - On demand via the PR comment:  /azp run ext-azure-ai-agents-live
 #     (requires write permission on the repo)
@@ -31,6 +31,13 @@ pr:
   branches:
     include:
       - main
+  paths:
+    include:
+      - eng/pipelines/ext-azure-ai-agents-live.yml
+      - cli/azd/go.mod
+      - cli/azd/go.sum
+      - cli/azd/extensions/azure.ai.agents/**
+      - cli/azd/extensions/azure.ai.projects/**
 
 schedules:
   # 7am UTC Monday (offset from other weekly E2E pipelines to reduce contention).

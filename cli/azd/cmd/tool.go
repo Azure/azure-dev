@@ -397,7 +397,7 @@ func (a *toolListAction) Run(ctx context.Context) (*actions.ActionResult, error)
 					Name:  s.Tool.Name,
 					Agent: h.Host,
 					DisplayName: fmt.Sprintf("[%s] %s",
-						output.WithWarningFormat(skillHostDisplayName(s.Tool, h.Host)), s.Tool.Name),
+						skillHostDisplayName(s.Tool, h.Host), s.Tool.Name),
 					Category: string(s.Tool.Category),
 					Priority: string(s.Tool.Priority),
 					Status:   "Installed",
@@ -445,6 +445,7 @@ func (a *toolListAction) Run(ctx context.Context) (*actions.ActionResult, error)
 				CardTitle:   true,
 				Wrappable:   true,
 				Truncatable: true,
+				ColorFunc:   colorAgentPrefix,
 			},
 			{
 				Column:      output.Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
@@ -1817,7 +1818,7 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 					Name:  r.Tool.Name,
 					Agent: h.Host,
 					DisplayName: fmt.Sprintf("[%s] %s",
-						output.WithWarningFormat(skillHostDisplayName(r.Tool, h.Host)), r.Tool.Name),
+						skillHostDisplayName(r.Tool, h.Host), r.Tool.Name),
 					InstalledVersion: h.CurrentVersion,
 					LatestVersion:    r.LatestVersion,
 					UpdateAvailable:  h.UpdateAvailable,
@@ -1860,6 +1861,7 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 				CardTitle:   true,
 				Wrappable:   true,
 				Truncatable: true,
+				ColorFunc:   colorAgentPrefix,
 			},
 			{
 				Column:      output.Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
@@ -2444,4 +2446,22 @@ func skillHostDisplayName(t *tool.ToolDefinition, command string) string {
 		}
 	}
 	return command
+}
+
+// colorAgentPrefix colors a leading "[agent]" token (as prepended to skill
+// names for the list/check tables) so the agent stands out, leaving the rest
+// of the name — and any name without a bracket prefix — unchanged. It is the
+// NAME column's ColorFunc: the pretty table applies it per rendered line after
+// layout, so the cell value itself stays plain and the table can wrap and
+// align it correctly at narrow terminal widths (embedding ANSI in the value
+// would suppress wrapping and break the alignment of later columns).
+func colorAgentPrefix(s string) string {
+	if !strings.HasPrefix(s, "[") {
+		return s
+	}
+	end := strings.Index(s, "]")
+	if end < 0 {
+		return s
+	}
+	return output.WithWarningFormat(s[:end+1]) + s[end+1:]
 }

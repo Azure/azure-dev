@@ -4,9 +4,11 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -1488,4 +1490,64 @@ func TestToolUpgradeAction_MultiHostSkill_UpgradedNotUpToDate(t *testing.T) {
 	require.NotNil(t, result.Message)
 	assert.Equal(t, "Tool is upgraded to v1.1.87.", result.Message.Header,
 		"a multi-host skill with an upgraded host must not read as already up to date")
+}
+
+// TestColorAgentPrefix verifies the NAME-column ColorFunc colors only a leading
+// "[agent]" token and leaves everything else untouched.
+func TestColorAgentPrefix(t *testing.T) {
+	// No leading bracket: returned unchanged.
+	assert.Equal(t, "Azure CLI", colorAgentPrefix("Azure CLI"))
+	assert.Equal(t, "", colorAgentPrefix(""))
+	// Unterminated bracket: returned unchanged.
+	assert.Equal(t, "[oops no close", colorAgentPrefix("[oops no close"))
+	// A leading "[agent]" token: the visible text is preserved (the bracketed
+	// token and the trailing name both remain present).
+	got := colorAgentPrefix("[GitHub Copilot CLI] Azure Skills")
+	assert.Contains(t, got, "[GitHub Copilot CLI]")
+	assert.Contains(t, got, "Azure Skills")
+}
+
+// TestToolNameColumn_PlainValueWrapsUnlikeAnsiValue guards the narrow-terminal
+// wrapping fix: the NAME cell value must be plain text (with color applied via
+// the ColorFunc), because the pretty table refuses to wrap a cell whose value
+// embeds ANSI escapes. It renders the same long skill name two ways at a narrow
+// width — plain (the fix) vs. ANSI embedded in the value (the old bug) — and
+// asserts the plain value wraps onto more lines.
+func TestToolNameColumn_PlainValueWrapsUnlikeAnsiValue(t *testing.T) {
+	render := func(displayName string, colorFn func(string) string) string {
+		var buf bytes.Buffer
+		formatter := &output.PrettyTableFormatter{ConsoleWidthFn: func() int { return 70 }}
+		err := formatter.Format(
+			[]struct {
+				DisplayName string `json:"displayName"`
+			}{{DisplayName: displayName}},
+			&buf,
+			output.PrettyTableFormatterOptions{
+				Columns: []output.PrettyColumn{
+					{
+						Column:    output.Column{Heading: "NAME", ValueTemplate: "{{.DisplayName}}"},
+						Priority:  2,
+						Wrappable: true,
+						ColorFunc: colorFn,
+					},
+					{Column: output.Column{Heading: "STATUS", ValueTemplate: "Installed"}, Priority: 1},
+					{Column: output.Column{Heading: "INSTALLED", ValueTemplate: "1.1.87"}, Priority: 1},
+				},
+			},
+		)
+		require.NoError(t, err)
+		return buf.String()
+	}
+
+	const tail = " Azure Skills Extended Preview Bundle"
+	// The fix: a plain NAME value, with color applied via the ColorFunc.
+	plain := render("[GitHub Copilot CLI]"+tail, colorAgentPrefix)
+	// The old bug: ANSI escapes embedded directly in the cell value. A literal
+	// SGR sequence keeps this deterministic regardless of the environment's
+	// color settings. The pretty table refuses to wrap such a value, so it
+	// stays on one line.
+	embedded := render("\x1b[33m[GitHub Copilot CLI]\x1b[0m"+tail, nil)
+
+	assert.Greater(t, strings.Count(plain, "\n"), strings.Count(embedded, "\n"),
+		"a plain NAME value must wrap at narrow width, unlike an ANSI-embedded value")
 }

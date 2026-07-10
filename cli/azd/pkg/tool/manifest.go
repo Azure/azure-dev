@@ -58,9 +58,11 @@ type SkillHost struct {
 	// (case-insensitively) by --agent (e.g. "Copilot", "Claude").
 	Host string
 	// Command is the agent CLI's executable name, used to run plugin
-	// commands and version probes (e.g. "copilot", "claude"). It must be
-	// the real, case-correct binary name so exec works on case-sensitive
-	// filesystems (Linux). When empty it falls back to Host.
+	// commands and version probes (e.g. "copilot", "claude"). Required and
+	// must be non-empty: it is the real, case-correct binary name run
+	// directly by the installer and detector paths, so exec works on
+	// case-sensitive filesystems (Linux). TestBuiltInTools_SkillHostsHaveCommand
+	// enforces that every configured host sets it.
 	Command string
 	// MarketplaceAddCommand is the optional one-time command that registers
 	// the plugin marketplace with the host (e.g. ["plugin", "marketplace",

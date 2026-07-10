@@ -496,3 +496,18 @@ func TestAzureSkillsHostVersionProbeRegex(t *testing.T) {
 		})
 	}
 }
+
+// TestBuiltInTools_SkillHostsHaveCommand guarantees that every configured skill
+// host sets a non-empty Command. Installer and detector paths run host.Command
+// directly (no fallback), so a missing Command would try to exec an empty
+// string — this test fails fast if a new manifest entry omits it.
+func TestBuiltInTools_SkillHostsHaveCommand(t *testing.T) {
+	t.Parallel()
+
+	for _, td := range BuiltInTools() {
+		for _, host := range td.SkillHosts {
+			assert.NotEmpty(t, host.Command,
+				"tool %q host %q must set a non-empty Command", td.Id, host.Host)
+		}
+	}
+}

@@ -157,24 +157,19 @@ async function isApprovedByCoreTeam({ octokit, context, core, coreTeam }) {
   }
 
   // Users can have multiple reviews (ie, they requested changes, then they approved), so we'll
-  // make sure we get their absolutely latest *decisive* review state.
+  // make sure we get their absolutely latest *decisive* review state. There's a bit of trickiness
+  // that you can have multiple states (order preserved) associated with the same commit SHA 
+  // (for instance, you approve a PR, then request changes, etc..)
+  const END_STATES = new Set(['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED']);
 
-  // COMMENTED / PENDING reviews are not a verdict - GitHub itself never treats them as changing a
-  // reviewer's approval standing, so we ignore them here too. Otherwise a maintainer who approves
-  // the head commit and then merely leaves a comment (a new COMMENTED review row) would look like
-  // they had withdrawn their approval. We keep APPROVED / CHANGES_REQUESTED / DISMISSED so that a
-  // later request-changes (or dismissal) from the same maintainer correctly overrides an earlier
-  // approval - we don't want to skip review for a PR that a maintainer both approved and then
-  // requested changes on.
-  const IGNORED_REVIEW_STATES = new Set(['COMMENTED', 'PENDING']);
-
-  // NOTE: api docs indicate reviews always come back in chronological order, according to their docs,
-  // and Map.set keeps the last entry per key - so this is "latest decisive review per registry maintainer".
+  // NOTE: reviews come back in chronological order (see "List reviews for a pull request":
+  // https://docs.github.com/en/rest/pulls/reviews#list-reviews-for-a-pull-request), which is
+  // critical for us since we have to actually know the last state of the review.
   /** @type {Map<string, { state: Review['state'], commitId: Review['commit_id'] }>} */
   const latestByUser = new Map();
 
   for (const review of reviews) {
-    if (review.user != null && coreTeam.has(review.user.login) && !IGNORED_REVIEW_STATES.has(review.state)) {
+    if (review.user != null && coreTeam.has(review.user.login) && END_STATES.has(review.state)) {
       latestByUser.set(review.user.login, {
         state: review.state,
         commitId: review.commit_id,
@@ -332,8 +327,25 @@ function diffRegistry(baseRegistry, prRegistry) {
   /** @type {string[]} */
   const reasons = [];
 
-  const baseExtensions = new Map((baseRegistry.extensions ?? []).map((e) => [e.id, e]));
-  const prExtensions = new Map((prRegistry.extensions ?? []).map((e) => [e.id, e]));
+  /**
+   * Builds a Map keyed by `k(item)`, throwing on duplicate keys.
+   * @template T, K
+   * @param {Iterable<T>} items
+   * @param {(item: T) => K} k
+   */
+  function toMap(items, k) {
+    /** @type {Map<K, T>} */
+    const m = new Map();
+    for (const item of items ?? []) {
+      const key = k(item);
+      if (m.has(key)) throw new Error(`duplicate key: ${key}`);
+      m.set(key, item);
+    }
+    return m; // inferred Map<K, T>
+  }
+
+  const baseExtensions = toMap(baseRegistry.extensions, (e) => e.id);
+  const prExtensions = toMap(prRegistry.extensions, (e) => e.id);
 
   // brand new extensions require core review.
   for (const id of prExtensions.keys()) {
@@ -360,8 +372,8 @@ function diffRegistry(baseRegistry, prRegistry) {
       reasons.push(`extension '${id}' namespace changed; namespace changes require core review`);
     }
 
-    const baseVersions = new Map((baseExtension.versions ?? []).map((v) => [v.version, v]));
-    const prVersions = new Map((prExtension.versions ?? []).map((v) => [v.version, v]));
+    const baseVersions = toMap(baseExtension.versions, (v) => v.version);
+    const prVersions = toMap(prExtension.versions, (v) => v.version);
 
     reasons.push(...diffPublishedReleases(id, baseVersions, prVersions));
     reasons.push(...diffNewReleases(id, baseExtension.versions ?? [], baseVersions, prVersions));

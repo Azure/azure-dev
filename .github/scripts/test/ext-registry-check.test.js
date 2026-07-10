@@ -34,7 +34,6 @@ const {
   diffRegistry,
   getCoreReviewers,
   isAllowedRegistryJsonUpdate,
-  isApprovedByCoreTeam,
 } = run.forTests;
 
 /**
@@ -306,6 +305,26 @@ describe('diffRegistry', () => {
 
     expect(reasons).not.toEqual([]);
     expect(reasons).toContainEqual(expect.stringContaining("release '1.0.0' was modified"));
+  });
+
+  it('throws when the PR registry has duplicate extension ids', () => {
+    const base = registry([extension({ id: 'ext.one' })]);
+    const pr = registry([extension({ id: 'ext.one' }), extension({ id: 'ext.one' })]);
+    expect(() => diffRegistry(base, pr)).toThrow('duplicate key: ext.one');
+  });
+
+  it('throws when the base registry has duplicate extension ids', () => {
+    const base = registry([extension({ id: 'ext.one' }), extension({ id: 'ext.one' })]);
+    const pr = registry([extension({ id: 'ext.one' })]);
+    expect(() => diffRegistry(base, pr)).toThrow('duplicate key: ext.one');
+  });
+
+  it('throws when an extension has duplicate version entries', () => {
+    const base = registry([extension({ id: 'ext.one', versions: [version({ version: '1.0.0' })] })]);
+    const pr = registry([
+      extension({ id: 'ext.one', versions: [version({ version: '1.0.0' }), version({ version: '1.0.0' })] }),
+    ]);
+    expect(() => diffRegistry(base, pr)).toThrow('duplicate key: 1.0.0');
   });
 });
 
@@ -874,51 +893,6 @@ liveDescribe('[live] registry diff PR scenarios', () => {
   // https://github.com/Azure/azure-dev/pull/8972
   it('[live] PR 8972 => core review required because the PR changes another file', async () => {
     await runTestAgainstLivePr({ number: 8972, noReviewRequired: false });
-  }, 90_000);
-});
-
-// Point this at a PR you're experimenting with (e.g. approve it, then leave a COMMENTED review, or
-// request changes) to verify the maintainer-approval short-circuit against GitHub's live review
-// state. It compares isApprovedByCoreTeam's verdict to what you expect. Requires RUN_LIVE_TESTS=1
-// plus:
-//   LIVE_APPROVAL_PR        - PR number to inspect
-//   LIVE_APPROVAL_EXPECTED  - 'true' or 'false' (expected isApprovedByCoreTeam result)
-//   LIVE_APPROVAL_TEAM      - optional comma-separated maintainer logins to treat as the core team
-//                             (defaults to the live registry maintainer team via getCoreReviewers)
-//   LIVE_APPROVAL_REPO      - optional 'owner/name' (defaults to Azure/azure-dev)
-const LIVE_APPROVAL_PR = process.env['LIVE_APPROVAL_PR'];
-const approvalLiveDescribe = RUN_LIVE_TESTS && LIVE_APPROVAL_PR ? describe : describe.skip;
-
-approvalLiveDescribe('[live] maintainer approval verdict', () => {
-  it('[live] isApprovedByCoreTeam matches the expected verdict for LIVE_APPROVAL_PR', async () => {
-    const prNumber = Number(LIVE_APPROVAL_PR);
-    if (!Number.isInteger(prNumber)) {
-      throw new Error(`LIVE_APPROVAL_PR must be a PR number, got: ${LIVE_APPROVAL_PR}`);
-    }
-
-    const expectedRaw = process.env['LIVE_APPROVAL_EXPECTED'];
-    if (expectedRaw !== 'true' && expectedRaw !== 'false') {
-      throw new Error(`LIVE_APPROVAL_EXPECTED must be 'true' or 'false', got: ${expectedRaw}`);
-    }
-    const expected = expectedRaw === 'true';
-
-    const [owner = LIVE_TEST_OWNER, repo = LIVE_TEST_REPO] = (process.env['LIVE_APPROVAL_REPO'] || '').split('/');
-
-    const octokit = await createLiveOctokit();
-    const context = await createLiveContext(octokit, prNumber, { owner, repo });
-    const core = createNoopCore();
-
-    const teamEnv = (process.env['LIVE_APPROVAL_TEAM'] || '')
-      .split(',')
-      .map((login) => login.trim())
-      .filter((login) => login.length > 0);
-    const coreTeam = teamEnv.length > 0
-      ? new Set(teamEnv)
-      : getCoreReviewers({ core });
-
-    const approved = await isApprovedByCoreTeam({ octokit, context, core, coreTeam });
-
-    expect(approved).toBe(expected);
   }, 90_000);
 });
 

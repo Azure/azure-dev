@@ -589,14 +589,13 @@ func TestDisplayableProtocolFor(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name             string
-		protocol         string
-		wantNil          bool
-		wantProtocol     agent_api.AgentProtocol
-		wantEnvSuffix    string
-		wantURLContains  string
-		wantURLScheme    string // "https" or "wss"
-		wantURLOmitAgent bool   // true when the protocol does not embed the agent name in the path
+		name            string
+		protocol        string
+		wantNil         bool
+		wantProtocol    agent_api.AgentProtocol
+		wantEnvSuffix   string
+		wantURLContains string
+		wantURLScheme   string // "https" or "wss"
 	}{
 		{
 			name:            "responses",
@@ -615,13 +614,12 @@ func TestDisplayableProtocolFor(t *testing.T) {
 			wantURLScheme:   "https",
 		},
 		{
-			name:             "invocations_ws",
-			protocol:         "invocations_ws",
-			wantProtocol:     agent_api.AgentProtocolInvocationsWS,
-			wantEnvSuffix:    "INVOCATIONS_WS",
-			wantURLContains:  "/api/projects/agents/endpoint/protocols/invocations_ws",
-			wantURLScheme:    "wss",
-			wantURLOmitAgent: true,
+			name:            "invocations_ws",
+			protocol:        "invocations_ws",
+			wantProtocol:    agent_api.AgentProtocolInvocationsWS,
+			wantEnvSuffix:   "INVOCATIONS_WS",
+			wantURLContains: "/api/projects/proj/agents/my-agent/endpoint/protocols/invocations_ws",
+			wantURLScheme:   "wss",
 		},
 		{name: "activity excluded", protocol: "activity", wantNil: true},
 		{name: "legacy activity_protocol excluded", protocol: "activity_protocol", wantNil: true},
@@ -650,11 +648,6 @@ func TestDisplayableProtocolFor(t *testing.T) {
 			require.True(t, strings.HasPrefix(url, tt.wantURLScheme+"://"),
 				"url %q should use %s scheme", url, tt.wantURLScheme)
 			require.Contains(t, url, tt.wantURLContains)
-			if tt.wantURLOmitAgent {
-				require.NotContains(t, url, "/agents/"+agentName+"/")
-				require.Contains(t, url, "agent_name="+agentName)
-				require.Contains(t, url, "project_name=proj")
-			}
 		})
 	}
 }
@@ -666,11 +659,9 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 	const agentName = "my-agent"
 	baseURL := endpoint + "/agents/" + agentName + "/endpoint/protocols/"
 
-	const wsBase = "wss://myproject.services.ai.azure.com" +
-		"/api/projects/agents/endpoint/protocols/invocations_ws"
-	const wsQuery = "agent_name=" + agentName +
-		"&api-version=" + agent_api.AgentEndpointAPIVersion +
-		"&project_name=proj"
+	const wsURL = "wss://myproject.services.ai.azure.com" +
+		"/api/projects/proj/agents/" + agentName +
+		"/endpoint/protocols/invocations_ws?api-version=" + agent_api.AgentEndpointAPIVersion
 
 	tests := []struct {
 		name      string
@@ -702,14 +693,14 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 			},
 		},
 		{
-			name: "single invocations_ws protocol uses dispatcher form",
+			name: "single invocations_ws protocol uses path-based form",
 			protocols: []agent_yaml.ProtocolVersionRecord{
 				{Protocol: "invocations_ws", Version: "1.0.0"},
 			},
 			expected: []protocolEndpointInfo{
 				{
 					Protocol: "invocations_ws",
-					URL:      wsBase + "?" + wsQuery,
+					URL:      wsURL,
 				},
 			},
 		},
@@ -732,7 +723,7 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 				},
 				{
 					Protocol: "invocations_ws",
-					URL:      wsBase + "?" + wsQuery,
+					URL:      wsURL,
 				},
 			},
 		},
@@ -788,8 +779,22 @@ func TestBuildInvocationsWSProtocolURL_TrimsWhitespace(t *testing.T) {
 	)
 	require.NotEmpty(t, got)
 	require.Contains(t, got, "wss://myproject.services.ai.azure.com")
-	require.Contains(t, got, "project_name=proj")
-	require.Contains(t, got, "agent_name=my-agent")
+	require.Contains(t, got, "/api/projects/proj/agents/my-agent/endpoint/protocols/invocations_ws")
+	require.Contains(t, got, "api-version="+agent_api.AgentEndpointAPIVersion)
+}
+
+func TestBuildInvocationsWSProtocolURL_TrimsTrailingSlash(t *testing.T) {
+	t.Parallel()
+
+	got := buildInvocationsWSProtocolURL(
+		"https://myproject.services.ai.azure.com/api/projects/proj/",
+		"my-agent",
+	)
+	require.Equal(t,
+		"wss://myproject.services.ai.azure.com/api/projects/proj/agents/my-agent/"+
+			"endpoint/protocols/invocations_ws?api-version="+agent_api.AgentEndpointAPIVersion,
+		got,
+	)
 }
 
 func TestAgentInvocationEndpoints_SkipsInvocationsWSWithMalformedEndpoint(t *testing.T) {

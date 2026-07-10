@@ -587,10 +587,10 @@ func writeOutputsFile(infraDir string, includeAcr bool) (ejectArtifact, error) {
 
 // writeTfvarsFile emits infra/main.tfvars.json. azd-core's Terraform provider
 // reads this file and substitutes the ${...} placeholders from the azd
-// environment at provision time. The synthesizer-known value `deployments` is
-// written literally; deploy-time inputs (location, resource_group_name,
-// foundry_project_name, principal_id, subscription_id, environment_name,
-// resource_token_salt) are left as ${AZURE_*} placeholders.
+// environment at provision time. The synthesizer-known values `deployments`
+// and `connections` are written literally; deploy-time inputs (location,
+// resource_group_name, foundry_project_name, principal_id, subscription_id,
+// environment_name, resource_token_salt) are left as ${AZURE_*} placeholders.
 //
 // include_acr is NOT written: whether ACR is provisioned is decided at eject
 // time by the presence of acr.tf, not by a Terraform variable.
@@ -608,9 +608,17 @@ func writeTfvarsFile(infraDir string, params map[string]any) (ejectArtifact, err
 		"resource_token_salt":  "${AZURE_RESOURCE_TOKEN_SALT}",
 	}
 
-	// deployments is the only synthesizer-derived value written to tfvars.
+	// deployments and connections are the only synthesizer-derived values
+	// written to tfvars. ${VAR} references nested inside connections'
+	// credentials/metadata (e.g. an API key) are resolved the same way as the
+	// top-level placeholders above: azd's Terraform provider substitutes
+	// ${...} over the whole file's raw text before parsing it, so nesting
+	// depth does not matter.
 	if v, ok := params["deployments"]; ok {
 		doc["deployments"] = v
+	}
+	if v, ok := params["connections"]; ok {
+		doc["connections"] = v
 	}
 
 	data, err := json.MarshalIndent(doc, "", "  ")

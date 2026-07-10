@@ -621,6 +621,7 @@ func TestEjectInfra_Terraform_HappyPath_WritesExpectedFiles(t *testing.T) {
 		filepath.Join("infra", "variables.tf"),
 		filepath.Join("infra", "main.tf"),
 		filepath.Join("infra", "acr.tf"),
+		filepath.Join("infra", "connections.tf"),
 		filepath.Join("infra", "outputs.tf"),
 		filepath.Join("infra", "main.tfvars.json"),
 	}
@@ -716,6 +717,70 @@ func TestEjectInfra_Terraform_TfvarsShape(t *testing.T) {
 	deps, ok := doc["deployments"].([]any)
 	require.True(t, ok, "deployments should be an array, got %T", doc["deployments"])
 	require.Len(t, deps, 1)
+
+	// connections is always present too (empty here: the fixture declares
+	// none), so a project with no host: azure.ai.connection services still
+	// gets a well-typed empty list rather than a missing key.
+	conns, ok := doc["connections"].([]any)
+	require.True(t, ok, "connections should be an array, got %T", doc["connections"])
+	assert.Empty(t, conns)
+}
+
+func TestEjectInfra_Terraform_EjectsConnectionServices(t *testing.T) {
+	// Not parallel: captures os.Stdout.
+	// A host: azure.ai.connection service must be synthesized into the
+	// connections tfvars value, connections.tf must be part of the ejected
+	// tree, and any ${VAR} in credentials kept verbatim (environment-portable
+	// -- azd's Terraform provider substitutes ${...} at provision time).
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+services:
+  my-foundry:
+    host: azure.ai.project
+    deployments: []
+  search-conn:
+    host: azure.ai.connection
+    uses: [my-foundry]
+    category: CognitiveSearch
+    target: https://my-search.search.windows.net
+    authType: ApiKey
+    credentials:
+      key: ${SEARCH_API_KEY}
+`)
+
+	withCapturedStdout(t, func() {
+		require.NoError(t, ejectInfra(dir, "terraform"))
+	})
+
+	// connections.tf is part of the ejected tree.
+	_, err := os.Stat(filepath.Join(dir, "infra", "connections.tf"))
+	assert.NoError(t, err, "connections.tf must be ejected")
+
+	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.tfvars.json")) //nolint:gosec // G304: test file path from t.TempDir()
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(raw, &doc))
+
+	conns, ok := doc["connections"].([]any)
+	require.True(t, ok, "connections should be an array, got %T", doc["connections"])
+	require.Len(t, conns, 1)
+
+	conn, ok := conns[0].(map[string]any)
+	require.True(t, ok, "connection entry should be an object, got %T", conns[0])
+	assert.Equal(t, "search-conn", conn["name"])
+	assert.Equal(t, "CognitiveSearch", conn["category"])
+	assert.Equal(t, "ApiKey", conn["authType"])
+
+	// ${VAR} in credentials must be preserved verbatim on the eject path.
+	creds, ok := conn["credentials"].(map[string]any)
+	require.True(t, ok, "credentials should be an object, got %T", conn["credentials"])
+	assert.Equal(t, "${SEARCH_API_KEY}", creds["key"])
+
+	// outputs.tf always carries the connection-names output, unconditional on
+	// includeAcr (unlike the ACR outputs).
+	outputs, err := os.ReadFile(filepath.Join(dir, "infra", "outputs.tf")) //nolint:gosec // G304: test path from t.TempDir()
+	require.NoError(t, err)
+	assert.Contains(t, string(outputs), "AZURE_AI_PROJECT_CONNECTION_NAMES")
 }
 
 func TestEjectInfra_Terraform_NoDockerOmitsAcr(t *testing.T) {

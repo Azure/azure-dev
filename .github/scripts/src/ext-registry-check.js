@@ -17,7 +17,12 @@ module.exports.forTests = {
 }
 
 const REGISTRY_JSON_PATH = 'cli/azd/extensions/registry.json';
-const ALLOWED_ARTIFACT_URL_PREFIX = 'https://github.com/Azure/azure-dev/releases';
+
+// We only allow URLs that point to our GitHub releases page.
+// NOTE: this script is only for production registry.json - nightlies go to a non-releases spot, etc...
+const ALLOWED_ARTIFACT_URL_ORIGIN = 'https://github.com';
+const ALLOWED_ARTIFACT_URL_PATH_PREFIX = '/Azure/azure-dev/releases/download/';
+const ALLOWED_ARTIFACT_URL_PREFIX = `${ALLOWED_ARTIFACT_URL_ORIGIN}${ALLOWED_ARTIFACT_URL_PATH_PREFIX}`;
 
 // Extension-level fields that may change without core review, since they're cosmetic. 
 // Everything else on an extension object (aside from `versions`, which has its own release 
@@ -614,7 +619,7 @@ function validateArtifactURLs(id, version) {
         `extension '${id}' release '${version.version}' artifact '${platform}' has no string URL (got ${JSON.stringify(url)})`,
       );
     }
-    if (!url.startsWith(ALLOWED_ARTIFACT_URL_PREFIX)) {
+    if (!isAllowedArtifactURL(url)) {
       reasons.push(
         `extension '${id}' release '${version.version}' artifact '${platform}' has a URL outside ${ALLOWED_ARTIFACT_URL_PREFIX} (${url}); release artifacts must be hosted there`,
       );
@@ -622,6 +627,22 @@ function validateArtifactURLs(id, version) {
   }
 
   return reasons;
+}
+
+/**
+ * @param {string} value
+ * @returns {boolean}
+ */
+function isAllowedArtifactURL(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+
+  return url.origin === ALLOWED_ARTIFACT_URL_ORIGIN &&
+    url.pathname.startsWith(ALLOWED_ARTIFACT_URL_PATH_PREFIX);
 }
 
 /**

@@ -2,7 +2,7 @@
 
 ## 1.0.0-beta.6 (Unreleased)
 
-### Bugs Fixed
+### Other Changes
 
 - [[#9049]](https://github.com/Azure/azure-dev/pull/9049) Switch the `invocations_ws` agent endpoint from the preview dispatcher form to the GA path-based route. `azd deploy` now registers `AGENT_{KEY}_INVOCATIONS_WS_ENDPOINT` (and `azd ai agent show` displays `Endpoint (invocations_ws)`) as `wss://<account>.services.ai.azure.com/api/projects/<project>/agents/<agent>/endpoint/protocols/invocations_ws?api-version=v1`, carrying the project and agent as path segments to mirror the HTTP `invocations` route. The previous form embedded them as `project_name`/`agent_name` query parameters on a single literal `/api/projects/agents/...` path.
 

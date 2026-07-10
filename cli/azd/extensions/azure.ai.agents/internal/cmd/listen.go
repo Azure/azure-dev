@@ -57,9 +57,15 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	agentServiceCount := 0
+	hostedAgentCount := 0
 	for _, svc := range args.Project.Services {
 		switch svc.Host {
 		case AiAgentHost:
+			agentServiceCount++
+			if isHostedAgentService(svc, args.Project) {
+				hostedAgentCount++
+			}
 			// Prompt (kind=managed) agents have no container to provision
 			// settings for — the harness owns the runtime. But they DO carry a
 			// model deployment in their service config, so still run envUpdate
@@ -73,6 +79,25 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 			}
 			if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
 				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
+			}
+		}
+	}
+
+	// Reconcile ENABLE_HOSTED_AGENTS for the project. kindEnvUpdate sets it to
+	// "true" for hosted agents but never clears it, so a project that once had a
+	// hosted agent and now has only prompt (kind=managed) agents would keep a
+	// stale "true" — which makes the starter Bicep provision an ACR plus role
+	// assignments the user may not be permitted to create. When there is at
+	// least one agent service and none are hosted, force it to "false" so a
+	// prompt-only project never provisions hosted-agent infrastructure.
+	if agentServiceCount > 0 && hostedAgentCount == 0 {
+		envName, err := currentEnvName(ctx, azdClient)
+		if err != nil {
+			return fmt.Errorf("failed to look up current environment: %w", err)
+		}
+		if envName != "" {
+			if err := setEnvVar(ctx, azdClient, envName, "ENABLE_HOSTED_AGENTS", "false"); err != nil {
+				return fmt.Errorf("failed to set ENABLE_HOSTED_AGENTS=false: %w", err)
 			}
 		}
 	}

@@ -181,6 +181,18 @@ func ExtractResourceDefinitions(manifestYamlContent []byte) ([]any, error) {
 				return nil, fmt.Errorf("failed to unmarshal to ConnectionResource: %w", err)
 			}
 			resourceDefs = append(resourceDefs, connDef)
+		case ResourceKindSkill:
+			var skillDef SkillResource
+			if err := yaml.Unmarshal(resourceBytes, &skillDef); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal to SkillResource: %w", err)
+			}
+			resourceDefs = append(resourceDefs, skillDef)
+		case ResourceKindFile:
+			var fileDef FileResource
+			if err := yaml.Unmarshal(resourceBytes, &fileDef); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal to FileResource: %w", err)
+			}
+			resourceDefs = append(resourceDefs, fileDef)
 		default:
 			return nil, fmt.Errorf("unrecognized resource kind: %s", resourceDef.Kind)
 		}
@@ -432,9 +444,13 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 					if strings.TrimSpace(agent.Model) == "" {
 						errors = append(errors, "template.model is required for managed agents")
 					}
-					if strings.TrimSpace(agent.Instructions) == "" {
-						errors = append(errors, "template.instructions is required for managed agents")
-					}
+					// Instructions are intentionally NOT required inline here:
+					// prompt agents may supply them via a sibling instructions.md
+					// file (the deploy engine reads it when the inline value is
+					// empty). The deploy-time graph validation enforces that
+					// instructions are present from one source or the other, so a
+					// truly instruction-less agent is still rejected — just with a
+					// clearer, convention-aware message.
 					for i, policy := range agent.Policies {
 						switch policy.Type {
 						case PolicyTypeRai:

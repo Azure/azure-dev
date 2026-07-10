@@ -1,5 +1,16 @@
 # Release History
 
+## Unreleased
+
+- Prompt (kind: managed) agents now support a convention-over-configuration deploy pipeline. `azd up` resolves an internal dependency graph before publishing the agent and validates the whole graph first so a failure never leaves a half-wired agent:
+  - A sibling `instructions.md` supplies the agent's instructions when none are declared inline (inline wins).
+  - A non-empty `files/` folder is uploaded to a vector store and wired into an auto-added `file_search` tool (content-hash dedupe; existing `file_search` tools are merged, not duplicated).
+  - A non-empty `skills/` folder registers each `SKILL.md` bundle into a Foundry toolbox version and attaches its MCP endpoint as an `mcp` tool; an explicit `toolbox:` reference attaches an existing toolbox instead.
+  - A `connections:` block resolves through a precedence ladder (use existing, create-if-missing with Entra default, auto-fill target from provisioning outputs, or provision/fail-fast), and each tool's required role is surfaced for assignment.
+  - The model deployment is create-if-missing, and container-only fields (`image`, `protocols`, `code_configuration`, …) are rejected for prompt agents.
+  - The manifest parser recognizes `skill` and `file` resource kinds.
+- `azd ai agent init` now scaffolds the prompt-agent authoring layout: an `instructions.md` sidecar (instructions are written there instead of inline in `agent.yaml`) plus empty `files/` and `skills/` folders so the deploy conventions are discoverable from a fresh init.
+
 ## 0.1.41-preview (2026-06-19)
 
 - [[#8731]](https://github.com/Azure/azure-dev/pull/8731) Improve the post-deploy `Next:` guidance with a stacked layout that puts each command on its own line above its description, adds a blank line between suggestions, and highlights `azd` commands. The new layout applies across deploy, `azd ai agent show`, `init`, and `doctor`. Thanks @therealjohn for the contribution!

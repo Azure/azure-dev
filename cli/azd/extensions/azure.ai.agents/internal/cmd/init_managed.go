@@ -143,14 +143,23 @@ func runInitManaged(
 			Name: agentName,
 			Kind: agent_yaml.AgentKindManaged,
 		},
-		Model:        model,
-		Instructions: instructions,
+		Model: model,
+		// Instructions are written to a sibling instructions.md by the
+		// convention scaffolding below, so they are omitted inline here. The
+		// deploy engine reads instructions.md when no inline value is present.
 	}
 	if strings.TrimSpace(description) != "" {
 		desc := strings.TrimSpace(description)
 		managedAgent.AgentDefinition.Description = &desc
 	}
 	if err := writeManagedAgentYAML(serviceRelPath, &managedAgent); err != nil {
+		return err
+	}
+
+	// Scaffold the convention-based authoring layout (instructions.md + empty
+	// files/ and skills/ folders) so the deploy engine's folder conventions are
+	// discoverable from a fresh init.
+	if err := scaffoldPromptConventionFolders(serviceRelPath, instructions); err != nil {
 		return err
 	}
 
@@ -425,6 +434,47 @@ func writeManagedAgentYAML(targetDir string, managedAgent *agent_yaml.ManagedAge
 	return nil
 }
 
+// scaffoldPromptConventionFolders writes the convention-based authoring layout
+// next to agent.yaml so the deploy engine's folder conventions are discoverable
+// from a fresh init:
+//
+//   - instructions.md — the agent's instructions (deploy uses this when the
+//     agent.yaml has no inline instructions).
+//   - files/          — drop documents here to get file_search automatically.
+//   - skills/         — add one subfolder per skill (each with a SKILL.md).
+//
+// The empty folders are kept with a .gitkeep placeholder. The deploy scanners
+// ignore dotfiles, so .gitkeep never contributes content. An existing
+// instructions.md is never overwritten so re-running init preserves edits.
+func scaffoldPromptConventionFolders(targetDir, instructions string) error {
+	if strings.TrimSpace(instructions) == "" {
+		instructions = "You are a helpful AI assistant."
+	}
+
+	instructionsPath := filepath.Join(targetDir, "instructions.md")
+	if !fileExists(instructionsPath) {
+		content := strings.TrimRight(instructions, "\n") + "\n"
+		if err := os.WriteFile(instructionsPath, []byte(content), osutil.PermissionFile); err != nil {
+			return fmt.Errorf("writing instructions.md: %w", err)
+		}
+		log.Printf("Wrote instructions.md at %s", instructionsPath)
+	}
+
+	for _, sub := range []string{"files", "skills"} {
+		dir := filepath.Join(targetDir, sub)
+		if err := os.MkdirAll(dir, osutil.PermissionDirectory); err != nil {
+			return fmt.Errorf("creating %s folder: %w", sub, err)
+		}
+		keep := filepath.Join(dir, ".gitkeep")
+		if !fileExists(keep) {
+			if err := os.WriteFile(keep, []byte{}, osutil.PermissionFile); err != nil {
+				return fmt.Errorf("writing %s/.gitkeep: %w", sub, err)
+			}
+		}
+	}
+	return nil
+}
+
 // printManagedInitSummary prints a concise summary plus next-step hint.
 func printManagedInitSummary(
 	agentName, model, serviceRelPath, projectTargetDir string,
@@ -449,6 +499,17 @@ func printManagedInitSummary(
 	if settings.ModelEndpoint != "" && settings.ModelEndpoint != project.DefaultPromptModelEndpoint {
 		fmt.Printf("  Model endpoint: %s\n", settings.ModelEndpoint)
 	}
+
+	// Point at the convention-based authoring layout the scaffold created.
+	dirPrefix := ""
+	if serviceRelPath != "." {
+		dirPrefix = filepath.ToSlash(serviceRelPath) + "/"
+	}
+	fmt.Println()
+	fmt.Println("Authoring layout (edit these to add capabilities):")
+	fmt.Printf("  %sinstructions.md  the agent's instructions\n", dirPrefix)
+	fmt.Printf("  %sfiles/           drop documents here for automatic file search\n", dirPrefix)
+	fmt.Printf("  %sskills/          add a subfolder per skill (each with a SKILL.md)\n", dirPrefix)
 
 	fmt.Println()
 	fmt.Println("Next steps:")

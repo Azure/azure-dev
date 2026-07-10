@@ -90,8 +90,9 @@ func TestManagedAgent_YAMLRoundTrip(t *testing.T) {
 }
 
 // TestValidateAgentDefinition_Managed_RequiresModelAndInstructions ensures the
-// validator surfaces actionable errors when required managed-agent fields are
-// missing.
+// validator requires a model for managed agents. Instructions are intentionally
+// not required inline (they may come from a sibling instructions.md), so an
+// agent.yaml without inline instructions must still validate here.
 func TestValidateAgentDefinition_Managed_RequiresModelAndInstructions(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -110,14 +111,13 @@ instructions: ok
 			shouldError: true,
 		},
 		{
-			name: "missing instructions",
+			name: "missing inline instructions is allowed (may come from instructions.md)",
 			yamlContent: `
 name: n
 kind: managed
 model: gpt-4.1-mini
 `,
-			wantSubstr:  "instructions",
-			shouldError: true,
+			shouldError: false,
 		},
 		{
 			name: "valid",

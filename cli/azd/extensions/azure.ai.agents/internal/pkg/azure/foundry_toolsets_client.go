@@ -67,10 +67,15 @@ func NewFoundryToolboxClient(
 
 // CreateToolboxVersionRequest is the request body for creating a new toolbox version.
 // The toolbox name is provided in the URL path, not in the body.
+//
+// Skills are attached via a separate top-level `skills` array (skill references),
+// distinct from `tools`. Each skill reference is
+// {"type": "skill_reference", "name": <skill>, "version": <optional>}.
 type CreateToolboxVersionRequest struct {
 	Description string            `json:"description,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 	Tools       []map[string]any  `json:"tools"`
+	Skills      []map[string]any  `json:"skills,omitempty"`
 }
 
 // ToolboxObject is the lightweight response for a toolbox (no tools list).

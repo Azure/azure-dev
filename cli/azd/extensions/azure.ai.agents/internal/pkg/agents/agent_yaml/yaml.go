@@ -44,6 +44,8 @@ const (
 	ResourceKindTool       ResourceKind = "tool"
 	ResourceKindToolbox    ResourceKind = "toolbox"
 	ResourceKindConnection ResourceKind = "connection"
+	ResourceKindSkill      ResourceKind = "skill"
+	ResourceKindFile       ResourceKind = "file"
 )
 
 type ToolKind string
@@ -251,7 +253,9 @@ type ManagedAgent struct {
 	Model string `json:"model" yaml:"model"`
 
 	// Instructions is the system/developer message inserted into the model's context.
-	Instructions string `json:"instructions" yaml:"instructions"`
+	// It may be omitted here when supplied by a sibling instructions.md file
+	// (the deploy engine falls back to that convention); inline always wins.
+	Instructions string `json:"instructions,omitempty" yaml:"instructions,omitempty"`
 
 	// Skills is an optional list of Foundry skill names attached to the agent.
 	Skills []string `json:"skills,omitempty" yaml:"skills,omitempty"`
@@ -277,6 +281,61 @@ type ManagedAgent struct {
 
 	// Policies is an optional list of governance policies (e.g. RAI).
 	Policies []Policy `json:"policies,omitempty" yaml:"policies,omitempty"`
+
+	// Connections declares project connections that the agent's tools depend on.
+	// The deploy engine resolves each connection through the resolution ladder
+	// (reference existing, create-if-missing, auto-fill target, provision) and
+	// assigns the required role. Only tools that need external wiring reference a
+	// connection by name; connections themselves are declared here once.
+	Connections []PromptConnection `json:"connections,omitempty" yaml:"connections,omitempty"`
+
+	// Toolbox optionally references an existing Foundry toolbox by name and
+	// version. When set, the deploy engine attaches that toolbox's MCP endpoint
+	// as an mcp tool instead of registering skills from the skills/ folder.
+	Toolbox *ToolboxReference `json:"toolbox,omitempty" yaml:"toolbox,omitempty"`
+}
+
+// ToolboxReference points at an existing Foundry toolbox version so a prompt
+// agent can consume it without the deploy engine registering local skills.
+type ToolboxReference struct {
+	// Name is the toolbox name.
+	Name string `json:"name" yaml:"name"`
+
+	// Version is the toolbox version. When empty the toolbox's default version
+	// is used.
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+}
+
+// PromptConnection is a project connection declared on a prompt agent. It mirrors
+// the fields the Foundry connection API accepts and is intentionally distinct
+// from the AI-service Connection type used elsewhere in this package. AuthType
+// defaults to Entra (secret-free) when empty; ApiKey auth reads its secret from
+// Credentials.
+type PromptConnection struct {
+	// Name is the connection name, referenced by a tool's connection field.
+	Name string `json:"name" yaml:"name"`
+
+	// Category is the connection category (e.g. "CognitiveSearch", "RemoteTool").
+	Category string `json:"category" yaml:"category"`
+
+	// Target is the endpoint of the backing Azure resource. When empty, the
+	// deploy engine attempts to fill it from provisioning outputs.
+	Target string `json:"target,omitempty" yaml:"target,omitempty"`
+
+	// AuthType selects the authentication mode ("Entra" default, or "ApiKey").
+	AuthType string `json:"authType,omitempty" yaml:"authType,omitempty"`
+
+	// Credentials carries auth material for non-Entra auth (e.g. an API key,
+	// possibly as a ${ENV_VAR} reference resolved at deploy time).
+	Credentials map[string]any `json:"credentials,omitempty" yaml:"credentials,omitempty"`
+
+	// Metadata is optional additional connection metadata.
+	Metadata map[string]string `json:"metadata,omitempty" yaml:"metadata,omitempty"`
+
+	// Provision opts into the deploy engine creating the backing Azure resource
+	// (via an emitted Bicep module) when no existing connection or target can be
+	// resolved. Defaults to false (fail fast with guidance).
+	Provision bool `json:"provision,omitempty" yaml:"provision,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.
@@ -808,6 +867,26 @@ type ConnectionResource struct {
 
 	// ConnectorName is the connector name for OAuth2 auth type, where Microsoft provides a managed OAuth2 app
 	ConnectorName string `json:"connectorName,omitempty" yaml:"connectorName,omitempty"`
+}
+
+// SkillResource Represents a skill bundle required by the agent. Skills are
+// normally discovered by convention from a local `skills/` folder, but a
+// manifest may declare one explicitly. Path points at the skill bundle
+// directory (containing SKILL.md); Version pins the registered skill version.
+type SkillResource struct {
+	Resource `json:",inline" yaml:",inline"`
+	Path     string `json:"path,omitempty" yaml:"path,omitempty"`
+	Version  string `json:"version,omitempty" yaml:"version,omitempty"`
+}
+
+// FileResource Represents a file (or folder of files) contributed to the
+// agent's vector store. Files are normally discovered by convention from a
+// local `files/` folder, but a manifest may declare one explicitly. Path points
+// at a file or directory; Purpose is the optional Foundry Files purpose.
+type FileResource struct {
+	Resource `json:",inline" yaml:",inline"`
+	Path     string `json:"path,omitempty" yaml:"path,omitempty"`
+	Purpose  string `json:"purpose,omitempty" yaml:"purpose,omitempty"`
 }
 
 // Template Template model for defining prompt templates.

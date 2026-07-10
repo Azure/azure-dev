@@ -5,6 +5,7 @@ package azure
 
 import (
 	"azureaiagent/internal/version"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 )
 
@@ -192,6 +194,70 @@ func (c *FoundryProjectsClient) GetConnectionWithCredentials(ctx context.Context
 		return nil, fmt.Errorf("failed to unmarshal connection response: %w", err)
 	}
 
+	return &connection, nil
+}
+
+// CreateConnectionRequest is the body for creating or updating a project
+// connection. It mirrors the ConnectionPropertiesV2 shape the data-plane
+// accepts under a `properties` envelope.
+type CreateConnectionRequest struct {
+	Category    string            `json:"category"`
+	Target      string            `json:"target"`
+	AuthType    string            `json:"authType"`
+	Credentials map[string]any    `json:"credentials,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+}
+
+// CreateConnection creates (or updates) a project connection by name and
+// returns the created connection. AuthType defaults to Entra/AAD when empty.
+func (c *FoundryProjectsClient) CreateConnection(
+	ctx context.Context,
+	name string,
+	request *CreateConnectionRequest,
+) (*Connection, error) {
+	if request.AuthType == "" {
+		request.AuthType = "AAD"
+	}
+	targetEndpoint := fmt.Sprintf(
+		"%s/connections/%s?api-version=%s",
+		c.baseEndpoint, url.PathEscape(name), c.apiVersion,
+	)
+
+	payload, err := json.Marshal(map[string]any{"properties": request})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal connection request: %w", err)
+	}
+
+	req, err := runtime.NewRequest(ctx, http.MethodPut, targetEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	if err := req.SetBody(
+		streaming.NopCloser(bytes.NewReader(payload)),
+		"application/json",
+	); err != nil {
+		return nil, fmt.Errorf("failed to set request body: %w", err)
+	}
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var connection Connection
+	if err := json.Unmarshal(body, &connection); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal connection response: %w", err)
+	}
 	return &connection, nil
 }
 

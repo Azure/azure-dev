@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -72,6 +73,10 @@ func (p *AgentServiceTargetProvider) promptAgentSettings() (*PromptAgentSettings
 }
 
 // loadPromptAgentDefinition reads the agent.yaml as a bare ManagedAgent.
+//
+// Convention: when the YAML omits inline `instructions:`, a sibling
+// `instructions.md` (next to agent.yaml) is used as the agent's instructions.
+// Inline `instructions:` always takes precedence over the file.
 func (p *AgentServiceTargetProvider) loadPromptAgentDefinition() (agent_yaml.ManagedAgent, error) {
 	data, err := os.ReadFile(p.agentDefinitionPath)
 	if err != nil {
@@ -80,6 +85,9 @@ func (p *AgentServiceTargetProvider) loadPromptAgentDefinition() (agent_yaml.Man
 			fmt.Sprintf("failed to read agent manifest file: %s", err),
 			"verify the agent.yaml file exists and is readable",
 		)
+	}
+	if err := validatePromptAgentRawFields(data); err != nil {
+		return agent_yaml.ManagedAgent{}, err
 	}
 	var managed agent_yaml.ManagedAgent
 	if err := yaml.Unmarshal(data, &managed); err != nil {
@@ -96,7 +104,61 @@ func (p *AgentServiceTargetProvider) loadPromptAgentDefinition() (agent_yaml.Man
 			"use kind: managed for prompt agents",
 		)
 	}
+
+	// Convention: fall back to a sibling instructions.md when instructions are
+	// not declared inline. Inline instructions win.
+	if strings.TrimSpace(managed.Instructions) == "" {
+		instructionsPath := filepath.Join(filepath.Dir(p.agentDefinitionPath), promptInstructionsFileName)
+		if content, readErr := os.ReadFile(instructionsPath); readErr == nil {
+			managed.Instructions = string(content)
+		}
+	}
+
 	return managed, nil
+}
+
+// promptInstructionsFileName is the conventional sidecar file whose contents
+// become the prompt agent's instructions when none are declared inline.
+const promptInstructionsFileName = "instructions.md"
+
+// containerOnlyPromptFields lists agent.yaml keys that are only meaningful for
+// hosted (container) agents and are therefore rejected for kind: prompt.
+var containerOnlyPromptFields = []string{
+	"image",
+	"protocols",
+	"agent_endpoint",
+	"agent_card",
+	"code_configuration",
+	"docker",
+	"runtime",
+	"startupCommand",
+	"startup_command",
+}
+
+// validatePromptAgentRawFields rejects container-only fields on a prompt agent.
+//
+// The YAML decoder silently drops unknown fields, so a probe decode into a
+// generic map is used to detect container-only keys that the typed ManagedAgent
+// would otherwise ignore, surfacing a clear error instead of silently ignoring
+// misplaced configuration.
+func validatePromptAgentRawFields(data []byte) error {
+	var probe map[string]any
+	if err := yaml.Unmarshal(data, &probe); err != nil {
+		// A malformed document is reported by the typed decode with a better
+		// message; don't duplicate the error here.
+		return nil
+	}
+	for _, field := range containerOnlyPromptFields {
+		if _, ok := probe[field]; ok {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("field %q is not valid for a prompt (kind: managed) agent", field),
+				"remove container-only fields (image, protocols, code_configuration, ...) "+
+					"or use kind: hosted for container agents",
+			)
+		}
+	}
+	return nil
 }
 
 // deployPromptAgent creates (or updates) the prompt agent on the managed
@@ -174,6 +236,16 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 			// Keep the explicit workspace from azure.yaml / env and skip discovery.
 			fmt.Fprintf(os.Stderr, "Using configured prompt workspace %q.\n", settings.Workspace)
 		}
+	}
+
+	// Resolve the prompt agent's dependency graph. This validates the whole
+	// graph (model + instructions, and — as later stages land — folders,
+	// connections, and skills) and resolves convention-based dependencies,
+	// enriching the definition before the create request is built. Env values
+	// are best-effort; a nil map simply means nothing to overlay.
+	graphEnv, _ := p.azdEnvValues(ctx)
+	if err := p.resolvePromptAgentGraph(ctx, &managed, settings, graphEnv, progress); err != nil {
+		return nil, err
 	}
 
 	request, err := agent_yaml.CreateManagedAgentAPIRequest(managed, nil)

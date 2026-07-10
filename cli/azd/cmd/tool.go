@@ -1016,6 +1016,19 @@ func (a *toolInstallAction) resolveToolIds(ctx context.Context) ([]string, error
 		return nil, nil
 	}
 
+	// Non-interactive (no TTY) or --no-prompt: skip the picker and default to
+	// the recommended set — the picker's own pre-selection, and the same set
+	// `--all` installs — so automation never blocks or errors on input.
+	if !a.console.IsSpinnerInteractive() || a.console.IsNoPromptMode() {
+		var ids []string
+		for _, s := range uninstalled {
+			if s.Tool.Priority == tool.ToolPriorityRecommended {
+				ids = append(ids, s.Tool.Id)
+			}
+		}
+		return ids, nil
+	}
+
 	choices := make([]*uxlib.MultiSelectChoice, len(uninstalled))
 	for i, s := range uninstalled {
 		choices[i] = &uxlib.MultiSelectChoice{
@@ -1157,7 +1170,7 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 			}
 		}
 		chosen := installed
-		if a.console.IsSpinnerInteractive() && len(installed) > 0 {
+		if a.console.IsSpinnerInteractive() && !a.console.IsNoPromptMode() && len(installed) > 0 {
 			chosen, err = a.promptForUpgradeTools(ctx, installed)
 			if err != nil {
 				return nil, err
@@ -1632,8 +1645,12 @@ func (a *toolUninstallAction) resolveToolIds(ctx context.Context) ([]string, err
 	// --all selects every installed tool. --dry-run does the same without
 	// prompting: a preview never mutates anything, so it defaults to all
 	// installed tools (a skill is previewed against the host(s) it is
-	// installed through) instead of asking the user to pick.
-	if a.flags.all || a.flags.dryRun {
+	// installed through) instead of asking the user to pick. A non-interactive
+	// terminal or --no-prompt likewise skips the picker and defaults to every
+	// installed tool (matching --all and `azd tool upgrade`), so automation
+	// never blocks or errors on input.
+	if a.flags.all || a.flags.dryRun ||
+		!a.console.IsSpinnerInteractive() || a.console.IsNoPromptMode() {
 		ids := make([]string, 0, len(installed))
 		for _, s := range installed {
 			ids = append(ids, s.Tool.Id)

@@ -1218,6 +1218,58 @@ func TestToolUpgradeAction_All_UpgradesInstalledTools(t *testing.T) {
 		"--all must upgrade exactly the installed tools")
 }
 
+// TestToolUpgradeAction_NoPrompt_UpgradesAllInstalled verifies that
+// `azd tool upgrade --no-prompt` (even in a TTY) skips the interactive picker
+// and upgrades every installed tool, so automation never blocks on input.
+func TestToolUpgradeAction_NoPrompt_UpgradesAllInstalled(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+
+	var installedIDs []string
+	detector := &cmdMockDetector{
+		detectAll: func(_ context.Context, tools []*tool.ToolDefinition) ([]*tool.ToolStatus, error) {
+			statuses := make([]*tool.ToolStatus, len(tools))
+			for i, td := range tools {
+				installed := i < 2
+				statuses[i] = &tool.ToolStatus{Tool: td, Installed: installed}
+				if installed {
+					statuses[i].InstalledVersion = "1.0.0"
+					installedIDs = append(installedIDs, td.Id)
+				}
+			}
+			return statuses, nil
+		},
+	}
+
+	var upgradedIDs []string
+	installer := &cmdMockInstaller{
+		upgrade: func(_ context.Context, td *tool.ToolDefinition, _ ...tool.InstallOption) (*tool.InstallResult, error) {
+			upgradedIDs = append(upgradedIDs, td.Id)
+			return &tool.InstallResult{Tool: td, Success: true, InstalledVersion: "2.0.0"}, nil
+		},
+	}
+	manager := tool.NewManager(detector, installer, nil)
+
+	console := mockinput.NewMockConsole()
+	console.SetTerminal(true)     // a TTY ...
+	console.SetNoPromptMode(true) // ... but --no-prompt
+
+	action := newToolUpgradeAction(
+		nil,
+		&toolUpgradeFlags{},
+		manager,
+		console,
+		&output.NoneFormatter{},
+		io.Discard,
+	)
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+
+	require.Len(t, installedIDs, 2)
+	assert.ElementsMatch(t, installedIDs, upgradedIDs,
+		"--no-prompt must skip the picker and upgrade all installed tools")
+}
+
 // TestToolUpgradeAction_UnchangedVersion_ReportsUpToDate verifies that a
 // non-skill tool whose detected version is identical before and after the
 // upgrade reports "already up to date" — the version-comparison path that
@@ -1331,4 +1383,64 @@ func TestToolInstallAction_resolveUnavailableHostPrompt_CaseInsensitive(t *testi
 	assert.False(t, handled,
 		"--agent Copilot must match available 'copilot' case-insensitively, not prompt")
 	assert.Nil(t, opts)
+}
+
+// TestToolInstallAction_resolveToolIds_NoPromptDefaultsToRecommended verifies
+// that --no-prompt (even in a TTY) skips the interactive picker and defaults to
+// the recommended, not-yet-installed tools — its --all behavior, mirroring
+// upgrade — so automation never blocks or errors on input.
+func TestToolInstallAction_resolveToolIds_NoPromptDefaultsToRecommended(t *testing.T) {
+	detector := &cmdMockDetector{
+		detectAll: func(_ context.Context, _ []*tool.ToolDefinition) ([]*tool.ToolStatus, error) {
+			return []*tool.ToolStatus{
+				{Tool: &tool.ToolDefinition{Id: "rec", Priority: tool.ToolPriorityRecommended}},
+				{Tool: &tool.ToolDefinition{Id: "opt", Priority: tool.ToolPriorityOptional}},
+				{Tool: &tool.ToolDefinition{Id: "already", Priority: tool.ToolPriorityRecommended},
+					Installed: true},
+			}, nil
+		},
+	}
+	manager := tool.NewManager(detector, &cmdMockInstaller{}, nil)
+
+	console := mockinput.NewMockConsole()
+	console.SetTerminal(true)     // a TTY ...
+	console.SetNoPromptMode(true) // ... but --no-prompt
+
+	action := newToolInstallAction(
+		nil, &toolInstallFlags{}, manager, console, &output.NoneFormatter{}, io.Discard,
+	).(*toolInstallAction)
+
+	ids, err := action.resolveToolIds(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, []string{"rec"}, ids,
+		"--no-prompt must skip the picker and default to recommended uninstalled tools")
+}
+
+// TestToolUninstallAction_resolveToolIds_NoPromptDefaultsToAllInstalled verifies
+// that --no-prompt (even in a TTY) skips the interactive picker and defaults to
+// every installed tool — its --all behavior, mirroring upgrade.
+func TestToolUninstallAction_resolveToolIds_NoPromptDefaultsToAllInstalled(t *testing.T) {
+	detector := &cmdMockDetector{
+		detectAll: func(_ context.Context, _ []*tool.ToolDefinition) ([]*tool.ToolStatus, error) {
+			return []*tool.ToolStatus{
+				{Tool: &tool.ToolDefinition{Id: "a"}, Installed: true},
+				{Tool: &tool.ToolDefinition{Id: "b"}, Installed: true},
+				{Tool: &tool.ToolDefinition{Id: "c"}},
+			}, nil
+		},
+	}
+	manager := tool.NewManager(detector, &cmdMockInstaller{}, nil)
+
+	console := mockinput.NewMockConsole()
+	console.SetTerminal(true)
+	console.SetNoPromptMode(true)
+
+	action := newToolUninstallAction(
+		nil, &toolUninstallFlags{}, manager, console, &output.NoneFormatter{}, io.Discard,
+	).(*toolUninstallAction)
+
+	ids, err := action.resolveToolIds(t.Context())
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"a", "b"}, ids,
+		"--no-prompt must skip the picker and default to all installed tools")
 }

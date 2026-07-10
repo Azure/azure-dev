@@ -540,6 +540,112 @@ func TestVersion_RunnerFailure(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestEnsureInstalled_RedownloadsOnVersionCheckFailure verifies that when a pre-existing managed
+// bicep binary fails its version check (e.g. wrong architecture, corrupt), ensureInstalled
+// re-downloads it once and succeeds if the fresh binary is functional.
+func TestEnsureInstalled_RedownloadsOnVersionCheckFailure(t *testing.T) {
+	const brokenBinary = "broken-wrong-arch-bicep"
+	const freshBinary = "good-bicep-contents"
+
+	configRoot := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configRoot)
+	t.Setenv("AZD_BICEP_TOOL_PATH", "")
+
+	bicepPath, err := azdBicepPath()
+	require.NoError(t, err)
+
+	// Seed a "broken" pre-existing binary.
+	require.NoError(t, os.MkdirAll(filepath.Dir(bicepPath), osutil.PermissionDirectory))
+	require.NoError(t, os.WriteFile(bicepPath, []byte(brokenBinary), osutil.PermissionExecutableFile))
+
+	mockContext := mocks.NewMockContext(t.Context())
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && request.URL.Host == "downloads.bicep.azure.com"
+	}).Respond(&http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewBufferString(freshBinary)),
+	})
+
+	// Version check fails for the broken binary but succeeds after re-download.
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && len(args.Args) == 1 && args.Args[0] == "--version"
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		contents, err := os.ReadFile(bicepPath)
+		if err != nil {
+			return exec.NewRunResult(-1, "", "read error"), err
+		}
+		switch string(contents) {
+		case brokenBinary:
+			return exec.NewRunResult(255, "", "qemu-x86_64: Could not open '/lib64/ld-linux-x86-64.so.2'"),
+				errors.New("exit code: 255")
+		case freshBinary:
+			return exec.NewRunResult(0, fmt.Sprintf("Bicep CLI version %s (abcdef0123)", Version.String()), ""), nil
+		}
+		return exec.NewRunResult(-1, "", "unexpected binary contents"), nil
+	})
+
+	cli := newCliWithTransporter(mockContext.Console, mockContext.CommandRunner, mockContext.HttpClient)
+	err = cli.ensureInstalledOnce(*mockContext.Context)
+	require.NoError(t, err)
+
+	// Re-download spinner must have fired.
+	ops := mockContext.Console.SpinnerOps()
+	require.Equal(t, 2, len(ops))
+	require.Equal(t, mockinput.SpinnerOp{
+		Op:      mockinput.SpinnerOpShow,
+		Message: "Downloading Bicep",
+		Format:  input.Step,
+	}, ops[0])
+	require.Equal(t, mockinput.SpinnerOp{
+		Op:      mockinput.SpinnerOpStop,
+		Message: "Downloading Bicep",
+		Format:  input.StepDone,
+	}, ops[1])
+
+	// The binary should now contain the fresh download.
+	contents, err := os.ReadFile(bicepPath)
+	require.NoError(t, err)
+	require.Equal(t, []byte(freshBinary), contents)
+}
+
+// TestEnsureInstalled_RedownloadStillFails verifies that if the re-downloaded binary
+// also fails its version check, ensureInstalled propagates the error.
+func TestEnsureInstalled_RedownloadStillFails(t *testing.T) {
+	configRoot := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configRoot)
+	t.Setenv("AZD_BICEP_TOOL_PATH", "")
+
+	bicepPath, err := azdBicepPath()
+	require.NoError(t, err)
+
+	// Seed a pre-existing binary that will fail.
+	require.NoError(t, os.MkdirAll(filepath.Dir(bicepPath), osutil.PermissionDirectory))
+	require.NoError(t, os.WriteFile(bicepPath, []byte("broken"), osutil.PermissionExecutableFile))
+
+	mockContext := mocks.NewMockContext(t.Context())
+
+	// Re-download also returns a broken binary.
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && request.URL.Host == "downloads.bicep.azure.com"
+	}).Respond(&http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewBufferString("still-broken")),
+	})
+
+	// Version check always fails.
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return len(args.Args) == 1 && args.Args[0] == "--version"
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(255, "", "boom"), errors.New("exit code: 255")
+	})
+
+	cli := newCliWithTransporter(mockContext.Console, mockContext.CommandRunner, mockContext.HttpClient)
+	err = cli.ensureInstalledOnce(*mockContext.Context)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "checking bicep version")
+}
+
 func TestEnsureInstalled_VersionCheckFailure(t *testing.T) {
 	configRoot := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", configRoot)

@@ -201,6 +201,8 @@ async function isApprovedByCoreTeam({ octokit, context, core, coreTeam }) {
     .filter(([, review]) => review.state === 'APPROVED' && review.commitId === headSha)
     .map(([login]) => login);
 
+  // If the review state changes without a push, this workflow won't be retriggered;
+  // normal GitHub branch protection still blocks the PR when changes are requested.
   if (coreApprovals != null && coreApprovals.length > 0) {
     core.info(`PR head commit approved by registry maintainer(s) (${coreApprovals.join(",")})`)
     return true;
@@ -633,15 +635,18 @@ function validateArtifactURLs(id, version) {
  * @param {string} value
  */
 function isAllowedArtifactURL(value) {
-  let url;
   try {
-    url = new URL(value);
+    const decodedValue = decodeURIComponent(value);
+    if (decodedValue !== value) {
+      return false;
+    }
+
+    const url = new URL(value);
+    return url.origin === ALLOWED_ARTIFACT_URL_ORIGIN &&
+      url.pathname.startsWith(ALLOWED_ARTIFACT_URL_PATH_PREFIX);
   } catch {
     return false;
   }
-
-  return url.origin === ALLOWED_ARTIFACT_URL_ORIGIN &&
-    url.pathname.startsWith(ALLOWED_ARTIFACT_URL_PATH_PREFIX);
 }
 
 /**

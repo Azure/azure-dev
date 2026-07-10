@@ -400,6 +400,36 @@ describe('diffRegistry', () => {
     expect(reasons).toContainEqual(expect.stringContaining('has a URL outside https://github.com/Azure/azure-dev/releases/download/'));
   });
 
+  it('fails when a new release artifact URL uses encoded paths (like %2f, etc..) to go outside the azure-dev releases location', () => {
+    const base = registry([extension({ versions: [version({ version: '1.0.0' })] })]);
+    const pr = registry([
+      extension({
+        versions: [
+          version({ version: '1.0.0' }),
+          { ...version({ version: '1.1.0' }), artifacts: { 'linux/amd64': { url: 'https://github.com/Azure/azure-dev/releases/download/..%2f..%2fattacker/repo/releases/download/v1/x.zip' } } },
+        ],
+      }),
+    ]);
+    const reasons = diffRegistry(base, pr);
+    expect(reasons).not.toEqual([]);
+    expect(reasons).toContainEqual(expect.stringContaining('has a URL outside https://github.com/Azure/azure-dev/releases/download/'));
+  });
+
+  it('fails when a new release artifact URL contains any percent-encoded characters', () => {
+    const base = registry([extension({ versions: [version({ version: '1.0.0' })] })]);
+    const pr = registry([
+      extension({
+        versions: [
+          version({ version: '1.0.0' }),
+          { ...version({ version: '1.1.0' }), artifacts: { 'linux/amd64': { url: 'https://github.com/Azure/azure-dev/releases/download/ext_1.1.0/file%41.zip' } } },
+        ],
+      }),
+    ]);
+    const reasons = diffRegistry(base, pr);
+    expect(reasons).not.toEqual([]);
+    expect(reasons).toContainEqual(expect.stringContaining('has a URL outside https://github.com/Azure/azure-dev/releases/download/'));
+  });
+
   it('approves a new release whose artifact URLs are hosted under the azure-dev releases location', () => {
     const base = registry([extension({ versions: [version({ version: '1.0.0' })] })]);
     const pr = registry([

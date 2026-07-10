@@ -778,7 +778,13 @@ func (a *toolInstallAction) resolveUnavailableHostPrompt(
 	available, availableNames := a.manager.AvailableSkillHosts(ctx, skill)
 	var unavailable []string
 	for _, host := range a.flags.hosts {
-		if !slices.Contains(available, host) {
+		// Match case-insensitively, mirroring findSkillHost and the --agent
+		// contract, so e.g. "--agent Copilot" is not falsely reported
+		// unavailable (and does not open another prompt) when the installer
+		// would accept it.
+		if !slices.ContainsFunc(available, func(cmd string) bool {
+			return strings.EqualFold(cmd, host)
+		}) {
 			unavailable = append(unavailable, fmt.Sprintf("%q", host))
 		}
 	}

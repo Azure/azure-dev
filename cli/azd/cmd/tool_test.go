@@ -1302,3 +1302,33 @@ func TestSkillHostDisplayName(t *testing.T) {
 	// An unknown command falls back to itself.
 	assert.Equal(t, "gemini", skillHostDisplayName(td, "gemini"))
 }
+
+// TestToolInstallAction_resolveUnavailableHostPrompt_CaseInsensitive verifies
+// that an explicit --agent value is matched against the available hosts
+// case-insensitively (like findSkillHost). "--agent Copilot" must match the
+// available "copilot" command and NOT be reported unavailable or open a
+// prompt.
+func TestToolInstallAction_resolveUnavailableHostPrompt_CaseInsensitive(t *testing.T) {
+	installer := &cmdMockInstaller{
+		availableSkillHosts: func(_ context.Context, _ *tool.ToolDefinition) ([]string, []string) {
+			return []string{"copilot"}, []string{"GitHub Copilot CLI"}
+		},
+	}
+	manager := tool.NewManager(&cmdMockDetector{}, installer, nil)
+
+	console := mockinput.NewMockConsole()
+	console.SetTerminal(true) // interactive, so the unavailable-host path is reachable
+
+	action := newToolInstallAction(
+		nil,
+		&toolInstallFlags{hosts: []string{"Copilot"}},
+		manager, console, &output.NoneFormatter{}, io.Discard,
+	).(*toolInstallAction)
+
+	skill := &tool.ToolDefinition{Id: "azure-skills", Category: tool.ToolCategorySkill}
+	opts, handled, err := action.resolveUnavailableHostPrompt(t.Context(), skill)
+	require.NoError(t, err)
+	assert.False(t, handled,
+		"--agent Copilot must match available 'copilot' case-insensitively, not prompt")
+	assert.Nil(t, opts)
+}

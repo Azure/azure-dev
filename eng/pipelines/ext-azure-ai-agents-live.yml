@@ -13,7 +13,9 @@
 # `/azp run ext-azure-ai-agents-live` can queue it; the ADO pipeline definition
 # must be configured to require a team member comment before building PRs.
 # It runs only:
-#   - On demand via the PR comment:  /azp run ext-azure-ai-agents-live
+#   - On demand via the PR comment:
+#       /azp run azure-dev - live - ext - azure.ai.agents
+#     (or, if accepted by Azure Pipelines: /azp run ext-azure-ai-agents-live)
 #     (requires write permission on the repo)
 #   - On the weekly schedule below.
 #

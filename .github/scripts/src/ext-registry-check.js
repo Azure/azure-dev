@@ -13,8 +13,8 @@ module.exports.forTests = {
   diffRegistry,
 }
 
-const CORE_REVIEW_TEAM_SLUG = 'azure-dev-extregistry-maintain';
 const REGISTRY_JSON_PATH = 'cli/azd/extensions/registry.json';
+const ALLOWED_ARTIFACT_URL_PREFIX = 'https://github.com/Azure/azure-dev/releases';
 
 // GitHub action types
 
@@ -36,10 +36,14 @@ const REGISTRY_JSON_PATH = 'cli/azd/extensions/registry.json';
  * @property {string} type
  * @property {string} [description]
  *
+ * @typedef {object} Artifact
+ * @property {string} url
+ *
  * @typedef {object} ExtensionVersion
  * @property {string} version
  * @property {string[]} [capabilities]
  * @property {Provider[]} [providers]
+ * @property {Object<string, Artifact>} [artifacts]
  *
  * @typedef {object} Extension
  * @property {string} id
@@ -101,7 +105,7 @@ async function run({ github: octokit, context, core, coreTeam, registryBaseRef }
       "Core review required for this extension registry change:\n" +
       reviewReasons.map((r) => `- ${r}`).join("\n") +
       "\n\nTo fix:\n" +
-      `1. Have a member of @${context.repo.owner}/${CORE_REVIEW_TEAM_SLUG} review and approve this PR.\n` +
+      `1. Have one of these registry maintainers review and approve this PR: ${[...coreReviewers].join(', ')}.\n` +
       `2. After approval, re-run this build step so it'll re-evaluate the PR - no commits or pushes needed.`
     );
   } catch (err) {
@@ -450,6 +454,41 @@ function diffNewReleases(id, baseVersionList, baseVersions, prVersions) {
     if (providerChanges.length > 0) {
       reasons.push(
         `extension '${id}' release '${version}' changes providers from the previous release '${previousRelease.version}' (${providerChanges.join('; ')})`,
+      );
+    }
+
+    reasons.push(...validateArtifactURLs(id, prVersion));
+  }
+
+  return reasons;
+}
+
+/**
+ * Flags any artifact whose download URL is not hosted under the official azure-dev
+ * releases location, so a new release can't point auto-approval at an arbitrary blob.
+ *
+ * A missing or non-string URL is malformed registry data, so we throw outright rather
+ * than routing it to review.
+ *
+ * @param {string} id
+ * @param {ExtensionVersion} version
+ * @returns {string[]}
+ * @throws {Error} if an artifact has no string URL
+ */
+function validateArtifactURLs(id, version) {
+  /** @type {string[]} */
+  const reasons = [];
+
+  for (const [platform, artifact] of Object.entries(version.artifacts ?? {})) {
+    const url = artifact?.url;
+    if (typeof url !== 'string') {
+      throw new Error(
+        `extension '${id}' release '${version.version}' artifact '${platform}' has no string URL (got ${JSON.stringify(url)})`,
+      );
+    }
+    if (!url.startsWith(ALLOWED_ARTIFACT_URL_PREFIX)) {
+      reasons.push(
+        `extension '${id}' release '${version.version}' artifact '${platform}' has a URL outside ${ALLOWED_ARTIFACT_URL_PREFIX} (${url}); release artifacts must be hosted there`,
       );
     }
   }

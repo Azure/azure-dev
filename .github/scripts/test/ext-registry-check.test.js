@@ -16,7 +16,7 @@ import run from '../src/ext-registry-check.js';
  * @property {string} version
  * @property {string[]} [capabilities]
  * @property {Provider[]} [providers]
- * @property {Record<string, unknown>} [artifacts]
+ * @property {Object<string, { url: string }>} [artifacts]
  * @property {string} [usage]
  *
  * @typedef {object} Extension
@@ -325,6 +325,47 @@ describe('diffRegistry', () => {
       extension({ id: 'ext.one', versions: [version({ version: '1.0.0' }), version({ version: '1.0.0' })] }),
     ]);
     expect(() => diffRegistry(base, pr)).toThrow('duplicate key: 1.0.0');
+  });
+
+  it('fails when a new release artifact URL is hosted outside the azure-dev releases location', () => {
+    const base = registry([extension({ versions: [version({ version: '1.0.0' })] })]);
+    const pr = registry([
+      extension({
+        versions: [
+          version({ version: '1.0.0' }),
+          { ...version({ version: '1.1.0' }), artifacts: { 'linux/amd64': { url: 'https://evil.example.com/x.zip' } } },
+        ],
+      }),
+    ]);
+    const reasons = diffRegistry(base, pr);
+    expect(reasons).not.toEqual([]);
+    expect(reasons).toContainEqual(expect.stringContaining('has a URL outside https://github.com/Azure/azure-dev/releases'));
+  });
+
+  it('approves a new release whose artifact URLs are hosted under the azure-dev releases location', () => {
+    const base = registry([extension({ versions: [version({ version: '1.0.0' })] })]);
+    const pr = registry([
+      extension({
+        versions: [
+          version({ version: '1.0.0' }),
+          { ...version({ version: '1.1.0' }), artifacts: { 'linux/amd64': { url: 'https://github.com/Azure/azure-dev/releases/download/ext_1.1.0/x.zip' } } },
+        ],
+      }),
+    ]);
+    expect(diffRegistry(base, pr)).toEqual([]);
+  });
+
+  it('throws when a new release artifact is missing a URL', () => {
+    const base = registry([extension({ versions: [version({ version: '1.0.0' })] })]);
+    const pr = registry([
+      extension({
+        versions: [
+          version({ version: '1.0.0' }),
+          { ...version({ version: '1.1.0' }), artifacts: { 'linux/amd64': /** @type {any} */ ({ entryPoint: 'x' }) } },
+        ],
+      }),
+    ]);
+    expect(() => diffRegistry(base, pr)).toThrow("artifact 'linux/amd64' has no string URL (got undefined)");
   });
 });
 

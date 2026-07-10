@@ -608,9 +608,9 @@ func promptForAgentService(
 		)
 	}
 
-	// Print a banner to stderr before the (interactive) picker. When the picker is visible this
-	// is harmless; when stdout is piped the banner still shows up in tee/tail/CI logs and
-	// explains why azd is blocked waiting for a selection.
+	// Print a banner to stderr before the interactive picker. Reaching this point means both
+	// stdin and stdout are TTYs (the non-interactive case already returned above), so the picker
+	// is visible; the banner is a harmless hint explaining why azd is blocked on a selection.
 	fmt.Fprintln(os.Stderr, output.WithHintFormat("azd is waiting for your agent service selection below..."))
 
 	choices := make([]*azdext.SelectChoice, len(services))

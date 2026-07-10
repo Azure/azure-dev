@@ -136,6 +136,10 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 	slices.Reverse(layers)
 
+	// Record the resolved IaC provider (single, or "mixed") on the command span up front, so it is
+	// present on success and failure alike (no-op when there are no layers).
+	provisioning.RecordInfraProviderUsage(layers, a.defaultProvider)
+
 	for _, layer := range layers {
 		if downLayer != "" || len(layers) > 1 {
 			a.console.EnsureBlankLine(ctx)
@@ -156,9 +160,6 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, fmt.Errorf("deleting infrastructure: %w", err)
 		}
 	}
-
-	// Record the resolved IaC provider(s) now that teardown succeeded (no-op when there are no layers).
-	provisioning.RecordInfraProviderUsage(layers, a.defaultProvider)
 
 	// Invalidate cache after successful down so azd show will refresh
 	if err := a.envManager.InvalidateEnvCache(ctx, a.env.Name()); err != nil {

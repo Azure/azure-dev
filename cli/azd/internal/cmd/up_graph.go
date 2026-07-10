@@ -34,6 +34,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/pflag"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // UpGraphAction is the single implementation of `azd up`'s default path: it
@@ -168,11 +169,17 @@ func (u *UpGraphAction) Run(
 		// any values set during Run. Globals (e.g. SubscriptionIdKey) are
 		// applied automatically by wrapperSpan.End().
 		usageAttrs := tracing.GetUsageAttributes()
-		packageSpan.SetAttributes(usageAttrs...)
+		// infra.provider is scoped to the provisioning lifecycle; keep it off the synthetic
+		// cmd.package span (it belongs on cmd.provision and the parent cmd.up span only).
+		packageSpan.SetAttributes(usageAttributesExcluding(usageAttrs, fields.InfraProviderKey.Key)...)
 		packageSpan.End()
 		provisionSpan.SetAttributes(usageAttrs...)
 		provisionSpan.End()
 	}()
+
+	// Record the resolved IaC provider (single, or "mixed") on the command span up front, so it is
+	// present on success and failure alike (no-op when there are no provision layers).
+	provisioning.RecordInfraProviderUsage(layers, u.defaultProvider)
 
 	// 1. Analyze provision layer dependencies. Empty layers → empty graph.
 	var layerDeps *bicep.LayerDependencies
@@ -637,9 +644,6 @@ func (u *UpGraphAction) Run(
 		tracing.SetUsageAttributes(fields.PerfDeployDurationMs.Int64(deployDur.Milliseconds()))
 	}
 
-	// Record the resolved IaC provider(s) now that up succeeded (no-op when there are no layers).
-	provisioning.RecordInfraProviderUsage(layers, u.defaultProvider)
-
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: fmt.Sprintf(
@@ -674,6 +678,19 @@ func phaseTimingBreakdown(steps []exegraph.StepTiming) string {
 
 // phaseDurations computes the wall-clock duration for provisioning and deploying phases.
 // Returns zero durations for phases that were not executed.
+// usageAttributesExcluding returns usageAttrs without the attribute matching exclude. It keeps
+// provisioning-scoped attributes (for example infra.provider) off the synthetic cmd.package span.
+func usageAttributesExcluding(usageAttrs []attribute.KeyValue, exclude attribute.Key) []attribute.KeyValue {
+	filtered := make([]attribute.KeyValue, 0, len(usageAttrs))
+	for _, attr := range usageAttrs {
+		if attr.Key != exclude {
+			filtered = append(filtered, attr)
+		}
+	}
+
+	return filtered
+}
+
 func phaseDurations(steps []exegraph.StepTiming) (provision, deploy time.Duration) {
 	var provStart, deployStart time.Time
 	var provEnd, deployEnd time.Time

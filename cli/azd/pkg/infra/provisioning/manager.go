@@ -552,9 +552,9 @@ const InfraProviderMixed = "mixed"
 // InfraProviderMixed ("mixed"). Layers that leave the provider unspecified resolve through
 // defaultProvider. It is a no-op when no provider can be resolved.
 //
-// Callers must invoke this once per command, after provisioning has succeeded, so that only
-// providers that actually resolved are recorded and the value is computed deterministically
-// (rather than racing concurrent per-layer resolution).
+// Callers must invoke this once per command, before provider work begins, so the attribute is
+// present on success, failure, and preview spans alike. The value is computed deterministically
+// from configuration (rather than racing concurrent per-layer resolution).
 func RecordInfraProviderUsage(layers []Options, defaultProvider DefaultProviderResolver) {
 	seen := map[ProviderKind]struct{}{}
 	for _, layer := range layers {

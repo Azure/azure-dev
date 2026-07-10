@@ -7,8 +7,28 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 )
+
+func TestUsageAttributesExcluding(t *testing.T) {
+	t.Parallel()
+
+	attrs := []attribute.KeyValue{
+		fields.InfraProviderKey.String("bicep"),
+		fields.PerfProvisionDurationMs.Int64(42),
+	}
+
+	got := usageAttributesExcluding(attrs, fields.InfraProviderKey.Key)
+
+	require.Len(t, got, 1)
+	require.Equal(t, fields.PerfProvisionDurationMs.Key, got[0].Key)
+	for _, a := range got {
+		require.NotEqual(t, fields.InfraProviderKey.Key, a.Key, "infra.provider must be excluded from cmd.package span")
+	}
+}
 
 func TestPhaseTimingBreakdown(t *testing.T) {
 	t.Parallel()

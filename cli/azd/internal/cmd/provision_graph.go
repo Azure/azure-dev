@@ -84,6 +84,10 @@ func (p *ProvisionAction) provisionLayersGraph(
 		}, nil
 	}
 
+	// Record the resolved IaC provider (single, or "mixed") on the command span up front, so it is
+	// present on success, failure, and preview runs alike — scoped to the provisioning lifecycle.
+	provisioning.RecordInfraProviderUsage(layers, p.defaultProvider)
+
 	// ── provider-agnostic provision validation (once per command) ─────────
 	// Dispatch extension-registered "provision" checks a single time, before
 	// the preview / single-layer / multi-layer paths run. This deliberately
@@ -305,10 +309,6 @@ func (p *ProvisionAction) provisionLayersGraph(
 		// ErrAbortedByUser, state dump on provider failure, etc.).
 		return nil, p.wrapProvisionError(ctx, unwrapStepErrors(result))
 	}
-
-	// Record the resolved IaC provider (bicep / terraform / ... or "mixed") on the command
-	// span now that provisioning succeeded, so it reflects only providers that resolved.
-	provisioning.RecordInfraProviderUsage(layers, p.defaultProvider)
 
 	// ── shared finalization ──────────────────────────────────────────────
 	if allSkipped {

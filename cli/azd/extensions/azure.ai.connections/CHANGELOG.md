@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.3 (Unreleased)
+
+### Bugs Fixed
+
+- [[#9079]](https://github.com/Azure/azure-dev/pull/9079) Resolve `${VAR}` references from the service-level `env` object forwarded by azd core. Existing services without `env` keep falling back to the active azd environment.
+
 ## 1.0.0-beta.2 (2026-07-09)
 
 ### Bugs Fixed

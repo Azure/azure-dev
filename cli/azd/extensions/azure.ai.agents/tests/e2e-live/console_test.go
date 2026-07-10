@@ -22,6 +22,8 @@ const (
 	keyEnter = "\r"
 	keyDown  = "\x1b[B"
 	keyUp    = "\x1b[A"
+	keyCtrlU = "\x15"
+	keyDel   = "\x7f"
 )
 
 // tailBytes caps the rolling raw-output buffer kept for failure diagnostics

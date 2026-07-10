@@ -98,6 +98,7 @@ message ServiceConfig {
   google.protobuf.Struct config = 11;
   google.protobuf.Struct additional_properties = 12;
   repeated string uses = 13;
+  map<string, string> environment = 14;
 }
 
 // InfraOptions message definition

@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.2 (2026-07-09)
+
+### Other Changes
+
+- [[#8866]](https://github.com/Azure/azure-dev/pull/8866) Remove `Foundry-Features: Toolboxes=V1Preview` opt-in header now that Foundry toolbox APIs are GA.
+
 ## 1.0.0-beta.1 (2026-06-30)
 
 ### Features Added

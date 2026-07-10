@@ -5,6 +5,7 @@ package osutil
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/drone/envsubst"
 )
@@ -12,6 +13,19 @@ import (
 func NewExpandableString(template string) ExpandableString {
 	return ExpandableString{
 		template: template,
+	}
+}
+
+// NewLiteralExpandableString creates an ExpandableString whose expansion always yields the
+// given literal value. Any `$` or `\` in the value is escaped so envsubst does not interpret
+// it as a substitution reference or an escape sequence. Use this when wrapping values that
+// are data rather than templates.
+func NewLiteralExpandableString(value string) ExpandableString {
+	escaped := strings.ReplaceAll(value, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, "$", "$$")
+
+	return ExpandableString{
+		template: escaped,
 	}
 }
 

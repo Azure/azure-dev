@@ -1206,8 +1206,10 @@ func (p *FoundryProvisioningProvider) Preview(
 
 // Destroy tears down the Foundry deployment.
 //
-//   - Force == false (default): refuse with a structured error. This provider
-//     does not prompt, so deletion must be an explicit --force choice.
+//   - Force == false (default): prompt the user for confirmation before
+//     deleting, mirroring the built-in bicep provider. Under --no-prompt (or
+//     with no azd host attached) there is nothing to prompt, so deletion falls
+//     back to requiring an explicit --force choice via a structured error.
 //   - Force == true: delete every model deployment under the resource group's
 //     Cognitive Services accounts, then delete the resource group (Foundry
 //     account, project, and any ACR). Deployments must go first: Azure refuses
@@ -1237,20 +1239,11 @@ func (p *FoundryProvisioningProvider) Destroy(
 		return &azdext.ProvisioningDestroyResult{}, nil
 	}
 
-	if !options.GetForce() {
-		return nil, exterrors.Validation(
-			exterrors.CodeDestroyRequiresForce,
-			fmt.Sprintf("microsoft.foundry destroy will delete resource group %q "+
-				"and all resources inside it; this provider does not prompt for "+
-				"confirmation, so --force is required", p.rgName),
-			"re-run with `azd down --force` (add `--purge` to also purge "+
-				"soft-deleted Cognitive Services accounts)",
-		)
-	}
-
 	// Fail closed when AZURE_RESOURCE_GROUP was never set: rgName is the rg-<env>
 	// default the provider made up, not a group it provisioned. Deleting it could
 	// wipe an unrelated group that happens to match a common env name like "dev".
+	// Check this before prompting so we never ask the user to confirm a deletion
+	// we are going to refuse anyway.
 	if !p.rgExplicit {
 		return nil, exterrors.Validation(
 			exterrors.CodeMissingResourceGroup,
@@ -1259,6 +1252,16 @@ func (p *FoundryProvisioningProvider) Destroy(
 			fmt.Sprintf("set the group to delete with `azd env set %s <name>` if it was provisioned here",
 				envKeyResourceGroup),
 		)
+	}
+
+	if !options.GetForce() {
+		confirmed, err := p.confirmDestroy(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !confirmed {
+			return nil, exterrors.Cancelled("destroy cancelled")
+		}
 	}
 
 	if err := p.ensureCredential(ctx); err != nil {
@@ -1327,7 +1330,54 @@ func (p *FoundryProvisioningProvider) Destroy(
 	return invalidatedEnvKeysResult(), nil
 }
 
-// purgeableAccount captures the minimum state required to purge a
+// confirmDestroy asks the user to confirm resource-group deletion when the
+// caller didn't pass --force. It mirrors the built-in bicep provider, which
+// prompts instead of hard-failing.
+//
+// Fails closed in the non-interactive cases so we never silently delete:
+//   - No azd host attached (azdClient == nil): return the actionable
+//     CodeDestroyRequiresForce error.
+//   - Under `--no-prompt` the host returns a "prompt required" error; that is
+//     surfaced as the same CodeDestroyRequiresForce error so CI/scripts stay
+//     deterministic and are told to pass --force.
+//
+// A user cancellation (Ctrl-C) or an explicit "no" both return (false, nil) so
+// the caller reports a clean cancellation rather than an error.
+func (p *FoundryProvisioningProvider) confirmDestroy(ctx context.Context) (bool, error) {
+	forceRequired := exterrors.Validation(
+		exterrors.CodeDestroyRequiresForce,
+		fmt.Sprintf("microsoft.foundry destroy will delete resource group %q "+
+			"and all resources inside it; no interactive prompt is available, "+
+			"so --force is required", p.rgName),
+		"re-run with `azd down --force` (add `--purge` to also purge "+
+			"soft-deleted Cognitive Services accounts)",
+	)
+
+	if p.azdClient == nil {
+		return false, forceRequired
+	}
+
+	resp, err := p.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+		Options: &azdext.ConfirmOptions{
+			Message: fmt.Sprintf(
+				"microsoft.foundry will delete resource group %q and all resources "+
+					"inside it. Are you sure you want to continue?", p.rgName),
+			DefaultValue: new(false),
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return false, nil
+		}
+		if exterrors.IsPromptRequired(err) {
+			return false, forceRequired
+		}
+		return false, fmt.Errorf("prompting for destroy confirmation: %w", err)
+	}
+
+	return resp.GetValue(), nil
+}
+
 // soft-deleted Cognitive Services account: its name and the location it
 // was created in (the soft-delete record is keyed by location, not by
 // resource group alone).

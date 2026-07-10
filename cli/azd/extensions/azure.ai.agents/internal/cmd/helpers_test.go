@@ -215,6 +215,11 @@ func TestProtocolFromAgentYaml(t *testing.T) {
 			wantProto: "invocations",
 		},
 		{
+			name:      "single protocol a2a",
+			yaml:      "protocols:\n  - protocol: a2a\n    version: \"1.0\"\n",
+			wantProto: "a2a",
+		},
+		{
 			name:       "no protocols field",
 			yaml:       "name: my-agent\n",
 			wantErr:    true,
@@ -255,8 +260,8 @@ func TestProtocolFromAgentYaml(t *testing.T) {
 			errContain: "declares multiple protocols",
 		},
 		{
-			name:       "a2a only is not invocable",
-			yaml:       "protocols:\n  - protocol: a2a\n    version: \"1.0\"\n",
+			name:       "activity_protocol only is not invocable",
+			yaml:       "protocols:\n  - protocol: activity_protocol\n    version: \"1.0\"\n",
 			wantErr:    true,
 			errContain: "non-invocable protocols",
 		},

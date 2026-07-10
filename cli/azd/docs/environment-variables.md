@@ -162,6 +162,12 @@ specific version of the tool installed on the machine.
 | `ENABLE_CONTAINER_AGENTS` | If set, indicates that container agents are enabled for the current azd environment. |
 | `AGENT_DEFINITION_PATH` | Path to an agent definition file for AI agent workflows. |
 
+### azure.ai.routines
+
+| Variable | Description |
+| --- | --- |
+| `AZURE_AI_ROUTINES_HTTP_TIMEOUT` | Overrides the `azure.ai.routines` HTTP request timeout when no `--timeout` flag is provided. Parsed with Go's `time.ParseDuration` format (for example, `90s`, `2m`, or `1m30s`) and must be a positive duration. |
+
 ## UI Prompt Integration
 
 | Variable | Description |

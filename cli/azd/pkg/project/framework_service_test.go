@@ -18,7 +18,7 @@ import (
 )
 
 func Test_NewExternalFrameworkService(t *testing.T) {
-	svc := NewExternalFrameworkService("test-lang", ServiceLanguageCustom, nil, nil, nil)
+	svc := NewExternalFrameworkService("test-lang", ServiceLanguageCustom, nil, nil, nil, nil)
 	require.NotNil(t, svc)
 }
 

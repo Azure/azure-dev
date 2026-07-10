@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
@@ -529,6 +531,10 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 
 		providerKey = defaultProvider
 	}
+
+	// Record the resolved IaC provider (bicep / terraform / ...) as a usage attribute so it flows
+	// onto the host command span (provision / up / down), letting telemetry split runs by provider.
+	tracing.SetUsageAttributes(fields.InfraProviderKey.String(string(providerKey)))
 
 	var provider Provider
 	err = m.serviceLocator.ResolveNamed(string(providerKey), &provider)

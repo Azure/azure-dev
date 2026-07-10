@@ -287,11 +287,20 @@ func renderSkillStep(
 // line), keeping the spinner visible. Content is emitted as it arrives —
 // including a trailing line with no newline, e.g. an interactive prompt — so
 // nothing is withheld from the user while the CLI waits for input.
+//
+// CommandRunner wires a command's stdout and stderr to distinct io.MultiWriter
+// values, so os/exec may call Write from two goroutines at once. The mutex
+// serializes those calls so emit (which may append to an unsynchronized buffer
+// or write to the console) is never invoked concurrently — avoiding a data
+// race and interleaved/lost host output.
 type lineWriter struct {
+	mu   sync.Mutex
 	emit func(string)
 }
 
 func (l *lineWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	for line := range strings.SplitSeq(strings.TrimRight(string(p), "\n"), "\n") {
 		l.emit(line)
 	}

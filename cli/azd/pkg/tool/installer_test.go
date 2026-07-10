@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -4523,4 +4524,28 @@ func TestHostUsable_NotOnPathResultNotMemoized(t *testing.T) {
 	// Second pass picks it up: the earlier "not on PATH" result was not cached.
 	commandsPresent, _ := inst.AvailableSkillHosts(t.Context(), newSkillTool())
 	assert.Equal(t, []string{"copilot"}, commandsPresent)
+}
+
+// TestLineWriter_Write_SerializesEmit drives lineWriter.Write from many
+// goroutines at once — as os/exec does when a command's stdout and stderr are
+// written concurrently — with an unsynchronized emit (mirroring the buffered
+// slice in renderSkillStep). The mutex must serialize emit so no line is lost
+// or corrupted. Run under -race to catch a regression.
+func TestLineWriter_Write_SerializesEmit(t *testing.T) {
+	var got []string // deliberately unsynchronized, like renderSkillStep's buffer
+	lw := &lineWriter{emit: func(s string) { got = append(got, s) }}
+
+	const writers = 100
+	var wg sync.WaitGroup
+	wg.Add(writers)
+	for i := 0; i < writers; i++ {
+		go func() {
+			defer wg.Done()
+			_, _ = lw.Write([]byte("a\nb\nc\n")) // 3 lines per write
+		}()
+	}
+	wg.Wait()
+
+	assert.Len(t, got, writers*3,
+		"every emitted line must be recorded without loss under concurrent writes")
 }

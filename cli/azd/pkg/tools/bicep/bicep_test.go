@@ -635,7 +635,7 @@ func TestEnsureInstalled_RedownloadStillFails(t *testing.T) {
 
 	// Version check always fails.
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return len(args.Args) == 1 && args.Args[0] == "--version"
+		return strings.Contains(args.Cmd, "bicep") && len(args.Args) == 1 && args.Args[0] == "--version"
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(255, "", "boom"), errors.New("exit code: 255")
 	})

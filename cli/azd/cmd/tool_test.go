@@ -1492,19 +1492,29 @@ func TestToolUpgradeAction_MultiHostSkill_UpgradedNotUpToDate(t *testing.T) {
 		"a multi-host skill with an upgraded host must not read as already up to date")
 }
 
-// TestColorAgentPrefix verifies the NAME-column ColorFunc colors only a leading
-// "[agent]" token and leaves everything else untouched.
+// TestColorAgentPrefix verifies the NAME-column ColorFunc colors the "[agent]"
+// label — including when the table wraps it across lines — while leaving plain
+// tool names untouched. Expected values are built with the same formatter the
+// implementation uses, so the assertions hold whether or not color is enabled.
 func TestColorAgentPrefix(t *testing.T) {
-	// No leading bracket: returned unchanged.
+	// Plain names (no brackets) are returned untouched.
 	assert.Equal(t, "Azure CLI", colorAgentPrefix("Azure CLI"))
 	assert.Equal(t, "", colorAgentPrefix(""))
-	// Unterminated bracket: returned unchanged.
-	assert.Equal(t, "[oops no close", colorAgentPrefix("[oops no close"))
-	// A leading "[agent]" token: the visible text is preserved (the bracketed
-	// token and the trailing name both remain present).
-	got := colorAgentPrefix("[GitHub Copilot CLI] Azure Skills")
-	assert.Contains(t, got, "[GitHub Copilot CLI]")
-	assert.Contains(t, got, "Azure Skills")
+
+	// A full label on one line: only the "[...]" label is formatted.
+	assert.Equal(t,
+		output.WithWarningFormat("[Claude Code CLI]")+" Azure Skills",
+		colorAgentPrefix("[Claude Code CLI] Azure Skills"))
+
+	// A label the table wrapped across lines: BOTH the opening line ("[..."
+	// with no "]") and the tail line ("...]" with no "[") are formatted — the
+	// bug was that neither was.
+	assert.Equal(t,
+		output.WithWarningFormat("[GitHub Copilot"),
+		colorAgentPrefix("[GitHub Copilot"))
+	assert.Equal(t,
+		output.WithWarningFormat("CLI]")+" Azure Skills",
+		colorAgentPrefix("CLI] Azure Skills"))
 }
 
 // TestToolNameColumn_PlainValueWrapsUnlikeAnsiValue guards the narrow-terminal

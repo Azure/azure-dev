@@ -8,6 +8,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -17,6 +18,19 @@ import (
 	"github.com/moby/patternmatcher"
 	"github.com/moby/patternmatcher/ignorefile"
 )
+
+func getSymlinkTarget(path string, mode fs.FileMode) (string, error) {
+	if mode.Type() != fs.ModeSymlink {
+		return "", nil
+	}
+
+	target, err := os.Readlink(path)
+	if err != nil {
+		return "", fmt.Errorf("reading symlink %s: %w", path, err)
+	}
+
+	return target, nil
+}
 
 // PackRemoteBuildSource creates a tarball of the specified context directory into a temporary file and returns the path to
 // it. It ensures that the dockerfile is present in the tarball and returns the relative path of it in the archive. If the
@@ -91,14 +105,9 @@ func PackRemoteBuildSource(ctx context.Context, root string, dockerfile string) 
 				return err
 			}
 
-			linkTarget := ""
-			if info.Mode()&fs.ModeSymlink != 0 {
-				target, err := os.Readlink(path)
-				if err != nil {
-					return err
-				}
-
-				linkTarget = target
+			linkTarget, err := getSymlinkTarget(path, info.Mode())
+			if err != nil {
+				return err
 			}
 
 			hdr, err := tar.FileInfoHeader(info, linkTarget)
@@ -112,20 +121,13 @@ func PackRemoteBuildSource(ctx context.Context, root string, dockerfile string) 
 			}
 
 			if info.Mode().IsRegular() {
-				err = func() error {
-					f, err := os.Open(path)
-					if err != nil {
-						return err
-					}
-					defer f.Close()
+				f, err := os.Open(path)
+				if err != nil {
+					return err
+				}
+				defer f.Close()
 
-					_, err = io.Copy(tw, f)
-					if err != nil {
-						return err
-					}
-
-					return nil
-				}()
+				_, err = io.Copy(tw, f)
 				if err != nil {
 					return err
 				}

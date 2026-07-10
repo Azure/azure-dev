@@ -69,6 +69,7 @@ func readArchiveHeaders(t *testing.T, archivePath string) map[string]*tar.Header
 		}
 		require.NoError(t, err)
 
+		// Copy header because tar.Reader.Next reuses the same tar.Header instance for each entry.
 		headerCopy := *hdr
 		headers[hdr.Name] = &headerCopy
 
@@ -250,7 +251,7 @@ func TestPackRemoteBuildSource_EmptyContextWithDockerfileOnly(t *testing.T) {
 
 func TestPackRemoteBuildSource_SymlinkToDirectory(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("symlink creation in tests is not consistently available on windows")
+		t.Skip("symlink creation in tests is not consistently available on Windows")
 	}
 
 	root := t.TempDir()
@@ -258,7 +259,9 @@ func TestPackRemoteBuildSource_SymlinkToDirectory(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "docs", "user"), 0700))
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "src", "content"), 0700))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "Dockerfile"), []byte("FROM alpine"), 0600))
-	require.NoError(t, os.Symlink("../../docs/user", filepath.Join(root, "src", "content", "docs")))
+	// From src/content/docs, ../../docs/user points back to docs/user.
+	symlinkTarget := "../../docs/user"
+	require.NoError(t, os.Symlink(symlinkTarget, filepath.Join(root, "src", "content", "docs")))
 
 	archivePath, _, err := PackRemoteBuildSource(
 		t.Context(), root, filepath.Join(root, "Dockerfile"),
@@ -272,12 +275,12 @@ func TestPackRemoteBuildSource_SymlinkToDirectory(t *testing.T) {
 	headers := readArchiveHeaders(t, archivePath)
 	require.Contains(t, headers, "src/content/docs")
 	require.Equal(t, byte(tar.TypeSymlink), headers["src/content/docs"].Typeflag)
-	require.Equal(t, "../../docs/user", headers["src/content/docs"].Linkname)
+	require.Equal(t, symlinkTarget, headers["src/content/docs"].Linkname)
 }
 
 func TestPackRemoteBuildSource_SymlinkToFile(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("symlink creation in tests is not consistently available on windows")
+		t.Skip("symlink creation in tests is not consistently available on Windows")
 	}
 
 	root := t.TempDir()
@@ -286,7 +289,9 @@ func TestPackRemoteBuildSource_SymlinkToFile(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "config"), 0700))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "Dockerfile"), []byte("FROM alpine"), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "config", "settings.json"), []byte("{}"), 0600))
-	require.NoError(t, os.Symlink("../config/settings.json", filepath.Join(root, "src", "settings.json")))
+	// From src/settings.json, ../config/settings.json points to config/settings.json.
+	symlinkTarget := "../config/settings.json"
+	require.NoError(t, os.Symlink(symlinkTarget, filepath.Join(root, "src", "settings.json")))
 
 	archivePath, _, err := PackRemoteBuildSource(
 		t.Context(), root, filepath.Join(root, "Dockerfile"),
@@ -300,7 +305,7 @@ func TestPackRemoteBuildSource_SymlinkToFile(t *testing.T) {
 	headers := readArchiveHeaders(t, archivePath)
 	require.Contains(t, headers, "src/settings.json")
 	require.Equal(t, byte(tar.TypeSymlink), headers["src/settings.json"].Typeflag)
-	require.Equal(t, "../config/settings.json", headers["src/settings.json"].Linkname)
+	require.Equal(t, symlinkTarget, headers["src/settings.json"].Linkname)
 }
 
 func TestNewRemoteBuildManager(t *testing.T) {

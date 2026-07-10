@@ -560,7 +560,7 @@ var agentSelectionInteractive = func() bool {
 	return isTerminal(os.Stdin.Fd()) && isTerminal(os.Stdout.Fd())
 }
 
-// serviceNames returns the sorted-order names of the given services.
+// serviceNames returns the names of the given services, in their current slice order.
 func serviceNames(services []*azdext.ServiceConfig) []string {
 	names := make([]string, len(services))
 	for i, s := range services {

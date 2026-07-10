@@ -89,12 +89,13 @@ func resolveBranchVersion(
 		return res, nil
 	}
 
-	// Validate the requested version exists when we have a version list to
-	// check against. If the list is empty (edge case), trust the caller; a
-	// bad value surfaces as a not-found on the subsequent GetToolboxVersion.
-	if len(versions) > 0 && !slices.ContainsFunc(versions, func(v azure.ToolboxVersionObject) bool {
-		return v.Version == fromVersion
-	}) {
+	versionExists := fromVersion == tb.DefaultVersion
+	if len(versions) > 0 {
+		versionExists = slices.ContainsFunc(versions, func(v azure.ToolboxVersionObject) bool {
+			return v.Version == fromVersion
+		})
+	}
+	if !versionExists {
 		return branchResolution{}, exterrors.Validation(
 			exterrors.CodeToolboxVersionNotFound,
 			fmt.Sprintf("version %q does not exist for toolbox %q", fromVersion, toolboxName),

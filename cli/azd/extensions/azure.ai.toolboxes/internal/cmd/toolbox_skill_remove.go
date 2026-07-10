@@ -133,7 +133,7 @@ func runSkillRemoveWith(
 					"skill %q is not attached to version %s of toolbox %q",
 					name, branch.Branch, toolboxName,
 				),
-				fmt.Sprintf("run 'azd ai toolbox skill list %q'", toolboxName),
+				fmt.Sprintf("run 'azd ai toolbox show %q --version %q'", toolboxName, branch.Branch),
 			)
 		}
 	}

@@ -116,6 +116,14 @@ func TestResolveBranchVersion_EmptyListFallsBackToDefault(t *testing.T) {
 	assert.False(t, got.branchedFromNonDefault())
 }
 
+func TestResolveBranchVersion_EmptyListRejectsUnknownFromVersion(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	tb := &azure.ToolboxObject{Name: "tb", DefaultVersion: "1"}
+
+	_, err := resolveBranchVersion(t.Context(), client, "tb", tb, "99")
+	requireLocalError(t, err, exterrors.CodeToolboxVersionNotFound)
+}
+
 // `connection add` also branches from the latest version, carrying forward the
 // tools attached to v2 rather than v1 (default).
 func TestRunConnectionAddWith_BranchesFromLatestNotDefault(t *testing.T) {
@@ -156,6 +164,45 @@ func TestRunConnectionAddWith_BranchesFromLatestNotDefault(t *testing.T) {
 	})
 	assert.ElementsMatch(t, []string{"/c/a", "/c/b", "/c/c"}, ids,
 		"tools from latest version (v2: a,b) must be carried forward plus the new one (c)")
+}
+
+func TestRunConnectionRemoveWith_BranchesFromLatestNotDefault(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
+		Name: "tb", DefaultVersion: "1",
+	}}
+	client.listVersionsResults["tb"] = []azure.ToolboxVersionObject{
+		{Name: "tb", Version: "1"}, {Name: "tb", Version: "2"},
+	}
+	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "1",
+		Tools: []map[string]any{{"type": "mcp", "name": "a", "project_connection_id": "/c/a"}},
+	}}
+	client.versionResults["tb/2"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "2",
+		Tools: []map[string]any{
+			{"type": "mcp", "name": "a", "project_connection_id": "/c/a"},
+			{"type": "mcp", "name": "b", "project_connection_id": "/c/b"},
+		},
+		Skills: []map[string]any{{"type": "skill_reference", "name": "greeting"}},
+	}}
+	resolver := newStubConnectionResolver()
+	resolver.byName["b"] = &projectConnection{
+		ID: "/c/b", Category: connections.ConnectionTypeRemoteTool, Name: "b",
+	}
+
+	err := runConnectionRemoveWith(
+		t.Context(), client, resolver, "https://e/",
+		"tb", []string{"b"}, connectionRemoveFlags{force: true}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+
+	req := client.createVersionCalls[0].req
+	require.Len(t, req.Tools, 1)
+	assert.Equal(t, "/c/a", req.Tools[0]["project_connection_id"])
+	assert.Equal(t, []string{"greeting"}, skillNames(req.Skills),
+		"skills from latest version must be carried forward")
 }
 
 // Regression for review feedback (#8674 PR): skill add/remove must carry

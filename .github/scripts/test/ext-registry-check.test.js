@@ -24,6 +24,7 @@ import run from '../src/ext-registry-check.js';
  * @property {string} [namespace]
  * @property {string} [displayName]
  * @property {string} [description]
+ * @property {string[]} [tags]
  * @property {ExtensionVersion[]} versions
  *
  * @typedef {object} RegistryJson
@@ -291,7 +292,23 @@ describe('diffRegistry', () => {
     const pr = registry([{ ...extension({ id: 'ext.one' }), namespace: 'other' }]);
     const reasons = diffRegistry(base, pr);
     expect(reasons).not.toEqual([]);
-    expect(reasons).toContainEqual(expect.stringContaining('namespace changed'));
+    expect(reasons).toContainEqual(expect.stringContaining('changes metadata that requires core review'));
+    expect(reasons).toContainEqual(expect.stringContaining('namespace'));
+  });
+
+  it('approves extension tag changes', () => {
+    const base = registry([{ ...extension({ id: 'ext.one' }), tags: ['ai'] }]);
+    const pr = registry([{ ...extension({ id: 'ext.one' }), tags: ['ai', 'foundry'] }]);
+    expect(diffRegistry(base, pr)).toEqual([]);
+  });
+
+  it('fails when any non-allowlisted extension metadata changes', () => {
+    const base = registry([extension({ id: 'ext.one' })]);
+    const pr = registry([/** @type {Extension} */ ({ ...extension({ id: 'ext.one' }), platform: 'windows' })]);
+    const reasons = diffRegistry(base, pr);
+    expect(reasons).not.toEqual([]);
+    expect(reasons).toContainEqual(expect.stringContaining('changes metadata that requires core review'));
+    expect(reasons).toContainEqual(expect.stringContaining('platform'));
   });
 
   it('fails when an existing release metadata field changes', () => {
@@ -376,7 +393,7 @@ describe('isAllowedRegistryJsonUpdate', () => {
     const octokit = createRegistryOctokit({ base, pr });
     const context = createRegistryContext();
 
-    await expect(isAllowedRegistryJsonUpdate({ octokit, context })).resolves.toContainEqual(expect.stringContaining('namespace changed'));
+    await expect(isAllowedRegistryJsonUpdate({ octokit, context })).resolves.toContainEqual(expect.stringContaining('changes metadata that requires core review'));
     expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
       owner: 'Azure',
       repo: 'azure-dev',
@@ -399,7 +416,7 @@ describe('isAllowedRegistryJsonUpdate', () => {
       octokit,
       context,
       registryBaseRef: 'base-before-pr',
-    })).resolves.toContainEqual(expect.stringContaining('namespace changed'));
+    })).resolves.toContainEqual(expect.stringContaining('changes metadata that requires core review'));
     expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
       owner: 'Azure',
       repo: 'azure-dev',

@@ -16,6 +16,12 @@ module.exports.forTests = {
 const REGISTRY_JSON_PATH = 'cli/azd/extensions/registry.json';
 const ALLOWED_ARTIFACT_URL_PREFIX = 'https://github.com/Azure/azure-dev/releases';
 
+// Extension-level fields that may change without core review, since they're cosmetic. 
+// Everything else on an extension object (aside from `versions`, which has its own release 
+// rules) must be identical between the base and PR registries. Note, we're not trying to 
+// understand those other fields, just preserve the status quo. 
+const ALLOWED_EXTENSION_METADATA_CHANGES = new Set(['displayName', 'description', 'tags']);
+
 // GitHub action types
 
 /**
@@ -50,6 +56,7 @@ const ALLOWED_ARTIFACT_URL_PREFIX = 'https://github.com/Azure/azure-dev/releases
  * @property {string} [namespace]
  * @property {string} [displayName]
  * @property {string} [description]
+ * @property {string[]} [tags]
  * @property {ExtensionVersion[]} versions
  *
  * @typedef {object} RegistryJson
@@ -372,9 +379,7 @@ function diffRegistry(baseRegistry, prRegistry) {
       continue; // already reported as a new extension above
     }
 
-    if (baseExtension.namespace !== prExtension.namespace) {
-      reasons.push(`extension '${id}' namespace changed; namespace changes require core review`);
-    }
+    reasons.push(...diffExtensionMetadata(id, baseExtension, prExtension));
 
     const baseVersions = toMap(baseExtension.versions, (v) => v.version);
     const prVersions = toMap(prExtension.versions, (v) => v.version);
@@ -384,6 +389,52 @@ function diffRegistry(baseRegistry, prRegistry) {
   }
 
   return reasons;
+}
+
+/**
+ * Compares the extension-level metadata (everything except `versions`) between the base
+ * and PR registries. Any difference requires core review, except for the cosmetic fields
+ * in ALLOWED_EXTENSION_METADATA_CHANGES. We don't track or know about specific fields:
+ * anything not in the allowlist is expected to be identical.
+ *
+ * @param {string} id
+ * @param {Extension} baseExtension
+ * @param {Extension} prExtension
+ * @returns {string[]}
+ */
+function diffExtensionMetadata(id, baseExtension, prExtension) {
+  const baseMetadata = extensionMetadata(baseExtension);
+  const prMetadata = extensionMetadata(prExtension);
+
+  const changedFields = [
+    ...new Set([...Object.keys(baseMetadata), ...Object.keys(prMetadata)]),
+  ]
+    .filter((field) => !isDeepStrictEqual(baseMetadata[field], prMetadata[field]))
+    .sort();
+
+  if (changedFields.length === 0) {
+    return [];
+  }
+
+  return [
+    `extension '${id}' changes metadata that requires core review (${changedFields.join(', ')}); only ${[...ALLOWED_EXTENSION_METADATA_CHANGES].join(', ')} may change without core review`,
+  ];
+}
+
+/**
+ * Returns a copy of an extension without `versions` (which has its own release rules) or
+ * any allowlisted cosmetic field.
+ *
+ * @param {Extension} extension
+ * @returns {Record<string, unknown>}
+ */
+function extensionMetadata(extension) {
+  return Object.fromEntries(
+    Object.entries(extension).filter(
+      // we compare versions elsewhere.
+      ([name]) => name !== 'versions' && !ALLOWED_EXTENSION_METADATA_CHANGES.has(name),
+    )
+  );
 }
 
 /**

@@ -255,3 +255,15 @@ func TestIsStdinTerminal_NoPanic(t *testing.T) {
 func TestIsStdoutTerminal_NoPanic(t *testing.T) {
 	_ = IsStdoutTerminal()
 }
+
+func TestIsPromptSupported_ForceTTY(t *testing.T) {
+	t.Setenv("AZD_FORCE_TTY", "true")
+	if !IsPromptSupported() {
+		t.Error("IsPromptSupported() = false with AZD_FORCE_TTY=true, want true")
+	}
+
+	t.Setenv("AZD_FORCE_TTY", "false")
+	if IsPromptSupported() {
+		t.Error("IsPromptSupported() = true with AZD_FORCE_TTY=false, want false")
+	}
+}

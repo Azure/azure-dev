@@ -406,6 +406,7 @@ func newHelpersTestAzdClient(
 
 	azdClient, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
 	require.NoError(t, err)
+	t.Setenv("AZD_SERVER", listener.Addr().String())
 	t.Cleanup(func() { azdClient.Close() })
 
 	return azdClient
@@ -557,6 +558,7 @@ func TestPromptForAgentService_NonInteractiveFailsFast(t *testing.T) {
 
 	require.Equal(t, int32(0), promptServer.selectCalls.Load(),
 		"the host prompt must not be invoked in a non-interactive context")
+	require.Contains(t, localErr.Suggestion, "--agent")
 }
 
 // TestPromptForAgentService_NoPromptFailsFast verifies that --no-prompt fails fast without
@@ -600,4 +602,44 @@ func TestPromptForAgentService_InteractivePrintsBanner(t *testing.T) {
 	out, readErr := io.ReadAll(r)
 	require.NoError(t, readErr)
 	require.Contains(t, string(out), "azd is waiting for your agent service selection")
+}
+
+func TestNonInteractiveAgentSelectionErrorPreservedByCommandPaths(t *testing.T) {
+	withInteractiveAgentSelection(t, false)
+
+	projectServer := &helpersProjectServer{
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"svc-a": {Name: "svc-a", Host: AiAgentHost, RelativePath: "."},
+				"svc-b": {Name: "svc-b", Host: AiAgentHost, RelativePath: "."},
+			},
+		},
+	}
+	promptServer := &helpersPromptServer{}
+	azdClient := newHelpersTestAzdClient(t, projectServer, promptServer)
+
+	assertLocalError := func(t *testing.T, err error) {
+		t.Helper()
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok, "expected a *azdext.LocalError")
+		require.Equal(t, exterrors.CodeNonInteractiveAgentSelection, localErr.Code)
+		require.Contains(t, localErr.Suggestion, "--agent")
+	}
+
+	t.Run("invoke protocol resolution", func(t *testing.T) {
+		_, _, err := resolveAgentProtocol(t.Context(), azdClient, "", false)
+		assertLocalError(t, err)
+	})
+
+	t.Run("eval context resolution", func(t *testing.T) {
+		_, err := resolveEvalContext(t.Context(), evalContextOptions{requireAgent: true})
+		assertLocalError(t, err)
+	})
+
+	t.Run("optimize agent resolution", func(t *testing.T) {
+		_, err := resolveOptimizeAgent(t.Context(), "", "", false)
+		assertLocalError(t, err)
+	})
+
+	require.Equal(t, int32(0), promptServer.selectCalls.Load())
 }

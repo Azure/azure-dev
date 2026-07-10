@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -553,12 +554,9 @@ type AgentServiceInfo struct {
 
 // agentSelectionInteractive reports whether the current process can render the interactive
 // agent-service picker. The picker is drawn by the azd host and reads from stdin, so both
-// stdin and stdout must be terminals for it to work; otherwise (CI, piped output, an agent
-// harness) it would block forever on stdin that never arrives. It is a variable so tests can
-// simulate a terminal.
-var agentSelectionInteractive = func() bool {
-	return isTerminal(os.Stdin.Fd()) && isTerminal(os.Stdout.Fd())
-}
+// stdin and stdout must be terminals and the host must allow prompting. It is a variable so
+// tests can simulate a terminal.
+var agentSelectionInteractive = azdext.IsPromptSupported
 
 // serviceNames returns the names of the given services, in their current slice order.
 func serviceNames(services []*azdext.ServiceConfig) []string {
@@ -598,13 +596,12 @@ func promptForAgentService(
 		return nil, exterrors.Validation(
 			exterrors.CodeNonInteractiveAgentSelection,
 			fmt.Sprintf(
-				"cannot prompt for agent service selection in a non-interactive context "+
-					"(stdin/stdout is not a TTY); multiple azure.ai.agent services are defined "+
-					"in azure.yaml: %s",
+				"cannot prompt for agent service selection because interactive prompting is disabled; "+
+					"multiple azure.ai.agent services are defined in azure.yaml: %s",
 				strings.Join(serviceNames(services), ", "),
 			),
-			"pass the agent service name explicitly (as the command's positional argument or "+
-				"--agent-name), or run with --no-prompt to fail fast without prompting",
+			"pass the agent service name explicitly using the command's positional argument, "+
+				"--agent, or --agent-name (as supported by the command), or run with --no-prompt",
 		)
 	}
 
@@ -848,6 +845,9 @@ func resolveAgentProtocol(
 ) (agent_api.AgentProtocol, string, error) {
 	svc, proj, err := resolveAgentService(ctx, azdClient, name, noPrompt)
 	if err != nil {
+		if _, ok := errors.AsType[*azdext.LocalError](err); ok {
+			return "", "", err
+		}
 		return "", "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf(

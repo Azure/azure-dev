@@ -345,7 +345,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `infra.provider` | string | `bicep`, `terraform`, `arm`, `pulumi`, custom provider name, `mixed` (layers differ), or `auto` (generate/synth) |
+| `infra.provider` | string | `bicep`, `terraform`, `arm`, `pulumi`, `custom` (any other/extension provider; raw name not emitted), `mixed` (layers differ), or `auto` (generate/synth) |
 </details>
 
 <details>

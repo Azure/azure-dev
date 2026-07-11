@@ -541,22 +541,31 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 	return provider, nil
 }
 
-// InfraProviderMixed is the infra.provider telemetry value recorded when a project's
-// provisioning layers do not all resolve to the same IaC provider.
-const InfraProviderMixed = "mixed"
+const (
+	// InfraProviderMixed is the infra.provider telemetry value recorded when a project's
+	// provisioning layers do not all resolve to the same IaC provider.
+	InfraProviderMixed = "mixed"
+
+	// InfraProviderCustom is the infra.provider telemetry value recorded for a provider that is
+	// not one of the built-in kinds (for example an extension-registered provider). The raw name
+	// is never emitted because it may embed user-chosen project or organization identifiers.
+	InfraProviderCustom = "custom"
+)
 
 // RecordInfraProviderUsage records the resolved IaC provider for a provisioning command
 // (provision / up / down) as the infra.provider usage attribute on the ambient command span.
 // When every layer resolves to the same provider it records that provider (for example
-// "bicep", "terraform", "arm"); when layers resolve to different providers it records
-// InfraProviderMixed ("mixed"). Layers that leave the provider unspecified resolve through
-// defaultProvider. It is a no-op when no provider can be resolved.
+// "bicep", "terraform", "arm"); non-built-in (extension) providers are bucketed to
+// InfraProviderCustom ("custom") so raw user-chosen names are never emitted. When layers
+// resolve to different providers it records InfraProviderMixed ("mixed"). Layers that leave
+// the provider unspecified resolve through defaultProvider. It is a no-op when no provider
+// can be resolved.
 //
 // Callers must invoke this once per command, before provider work begins, so the attribute is
 // present on success, failure, and preview spans alike. The value is computed deterministically
 // from configuration (rather than racing concurrent per-layer resolution).
 func RecordInfraProviderUsage(layers []Options, defaultProvider DefaultProviderResolver) {
-	seen := map[ProviderKind]struct{}{}
+	seen := map[string]struct{}{}
 	for _, layer := range layers {
 		kind := layer.Provider
 		if kind == NotSpecified {
@@ -577,17 +586,29 @@ func RecordInfraProviderUsage(layers []Options, defaultProvider DefaultProviderR
 			continue
 		}
 
-		seen[parsed] = struct{}{}
+		seen[infraProviderTelemetryValue(parsed)] = struct{}{}
 	}
 
 	switch len(seen) {
 	case 0:
 		return
 	case 1:
-		for kind := range seen {
-			tracing.SetUsageAttributes(fields.InfraProviderKey.String(string(kind)))
+		for value := range seen {
+			tracing.SetUsageAttributes(fields.InfraProviderKey.String(value))
 		}
 	default:
 		tracing.SetUsageAttributes(fields.InfraProviderKey.String(InfraProviderMixed))
+	}
+}
+
+// infraProviderTelemetryValue maps a provider kind to a value that is safe to emit raw. Built-in
+// kinds are returned verbatim; any other (custom / extension-registered) provider is bucketed to
+// InfraProviderCustom so a user-chosen provider name is never sent as telemetry.
+func infraProviderTelemetryValue(kind ProviderKind) string {
+	switch kind {
+	case Bicep, Terraform, Arm, Pulumi, Test:
+		return string(kind)
+	default:
+		return InfraProviderCustom
 	}
 }

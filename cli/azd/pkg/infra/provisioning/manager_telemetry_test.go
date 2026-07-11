@@ -62,6 +62,27 @@ func TestRecordInfraProviderUsage(t *testing.T) {
 			expected:        provisioning.InfraProviderMixed,
 		},
 		{
+			name:            "single explicit arm",
+			layers:          []provisioning.Options{{Provider: provisioning.Arm}},
+			defaultProvider: bicepDefault,
+			expected:        "arm",
+		},
+		{
+			name:            "custom provider is bucketed",
+			layers:          []provisioning.Options{{Provider: provisioning.ProviderKind("my-extension-provider")}},
+			defaultProvider: bicepDefault,
+			expected:        provisioning.InfraProviderCustom,
+		},
+		{
+			name: "built-in plus custom records mixed",
+			layers: []provisioning.Options{
+				{Provider: provisioning.Bicep},
+				{Provider: provisioning.ProviderKind("my-extension-provider")},
+			},
+			defaultProvider: bicepDefault,
+			expected:        provisioning.InfraProviderMixed,
+		},
+		{
 			name:            "no layers records nothing",
 			layers:          nil,
 			defaultProvider: bicepDefault,

@@ -177,10 +177,6 @@ func (u *UpGraphAction) Run(
 		provisionSpan.End()
 	}()
 
-	// Record the resolved IaC provider (single, or "mixed") on the command span up front, so it is
-	// present on success and failure alike (no-op when there are no provision layers).
-	provisioning.RecordInfraProviderUsage(layers, u.defaultProvider)
-
 	// 1. Analyze provision layer dependencies. Empty layers → empty graph.
 	var layerDeps *bicep.LayerDependencies
 	if len(layers) > 0 {
@@ -676,8 +672,6 @@ func phaseTimingBreakdown(steps []exegraph.StepTiming) string {
 	return strings.Join(lines, "\n")
 }
 
-// phaseDurations computes the wall-clock duration for provisioning and deploying phases.
-// Returns zero durations for phases that were not executed.
 // usageAttributesExcluding returns usageAttrs without the attribute matching exclude. It keeps
 // provisioning-scoped attributes (for example infra.provider) off the synthetic cmd.package span.
 func usageAttributesExcluding(usageAttrs []attribute.KeyValue, exclude attribute.Key) []attribute.KeyValue {
@@ -691,6 +685,8 @@ func usageAttributesExcluding(usageAttrs []attribute.KeyValue, exclude attribute
 	return filtered
 }
 
+// phaseDurations computes the wall-clock duration for provisioning and deploying phases.
+// Returns zero durations for phases that were not executed.
 func phaseDurations(steps []exegraph.StepTiming) (provision, deploy time.Duration) {
 	var provStart, deployStart time.Time
 	var provEnd, deployEnd time.Time

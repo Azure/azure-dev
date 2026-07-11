@@ -686,6 +686,65 @@ func TestDetectSkillHosts(t *testing.T) {
 	})
 }
 
+// TestDetectSkill_EarlierHostFound_LaterHostContextError verifies that when a
+// skill is installed on an earlier host but a later host's probe hits a context
+// error (e.g. cancellation/timeout mid-detection), the skill is still reported
+// as installed from the host already found — the context error must not discard
+// an earlier positive match. Regression test: multi-host detection previously
+// returned "not installed" with the error, dropping the skill from tool and
+// update-check results.
+func TestDetectSkill_EarlierHostFound_LaterHostContextError(t *testing.T) {
+	t.Parallel()
+
+	skill := &ToolDefinition{
+		Id:       "azure-skills",
+		Name:     "Azure Skills",
+		Category: ToolCategorySkill,
+		SkillHosts: []SkillHost{
+			{
+				Host:              "GitHub Copilot CLI",
+				Command:           "copilot",
+				PluginListCommand: []string{"plugin", "list"},
+				PluginName:        "azure@azure-skills",
+				VersionRegex:      `azure@azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
+			},
+			{
+				Host:              "Claude Code CLI",
+				Command:           "claude",
+				PluginListCommand: []string{"plugin", "list", "--json"},
+				PluginName:        "azure@azure-skills",
+				VersionRegex:      `"id":\s*"azure@azure-skills"[^}]*?"version":\s*"v?(\d+\.\d+\.\d+)"`,
+			},
+		},
+	}
+
+	runner := mockexec.NewMockCommandRunner()
+	runner.MockToolInPath("copilot", nil)
+	runner.MockToolInPath("claude", nil)
+	// copilot (first host) has the skill installed ...
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot"
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "  • azure@azure-skills (v1.1.71)\n"})
+	// ... but claude (later host) is probed with a cancelled/expired context.
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "claude"
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{}, context.DeadlineExceeded
+	})
+
+	d := NewDetector(runner)
+	status, err := d.DetectTool(t.Context(), skill)
+	require.NoError(t, err)
+	require.NotNil(t, status)
+
+	assert.True(t, status.Installed,
+		"a skill found on an earlier host must stay installed when a later host's probe is cancelled")
+	assert.NoError(t, status.Error,
+		"a positive match must not be masked by a later host's context error")
+	assert.Equal(t, "1.1.71", status.InstalledVersion)
+	assert.Equal(t, []InstalledSkillHost{{Host: "copilot", Version: "1.1.71"}}, status.SkillHosts)
+}
+
 // ---------------------------------------------------------------------------
 // DetectTool — Server / Library (commandBased)
 // ---------------------------------------------------------------------------

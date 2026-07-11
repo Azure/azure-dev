@@ -488,15 +488,21 @@ func (d *detector) detectSkill(
 	}
 
 	hosts, err := d.DetectSkillHosts(ctx, tool)
-	if err != nil {
-		status.Error = err
+	status.SkillHosts = hosts
+	if len(hosts) > 0 {
+		// The skill was found on at least one host; report it installed even if
+		// a later host's probe errored (e.g. was cancelled), mirroring the
+		// first-match behavior from before multi-host detection. Installed and
+		// InstalledVersion reflect the first such host.
+		status.Installed = true
+		status.InstalledVersion = hosts[0].Version
 		return status
 	}
 
-	status.SkillHosts = hosts
-	if len(hosts) > 0 {
-		status.Installed = true
-		status.InstalledVersion = hosts[0].Version
+	// Nothing was found: surface a detection error (e.g. context cancellation)
+	// so a genuinely failed probe is not silently reported as "not installed".
+	if err != nil {
+		status.Error = err
 	}
 
 	return status
@@ -523,7 +529,10 @@ func (d *detector) DetectSkillHosts(
 	for _, host := range tool.SkillHosts {
 		version, err := d.skillHostVersion(ctx, host)
 		if err != nil {
-			return nil, err
+			// Return the hosts discovered before the error (e.g. a later host's
+			// probe was cancelled) so a caller — detectSkill in particular — can
+			// still act on an earlier match instead of losing it.
+			return hosts, err
 		}
 		if version != "" {
 			hosts = append(hosts, InstalledSkillHost{

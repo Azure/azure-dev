@@ -114,7 +114,7 @@ func (m *mockDetector) DetectSkillHosts(
 			hosts := make([]InstalledSkillHost, 0, len(tool.SkillHosts))
 			for _, h := range tool.SkillHosts {
 				hosts = append(hosts, InstalledSkillHost{
-					Host:    h.Host,
+					Host:    h.Command,
 					Version: status.InstalledVersion,
 				})
 			}

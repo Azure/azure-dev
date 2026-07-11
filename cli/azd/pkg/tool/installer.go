@@ -1706,7 +1706,7 @@ func (i *installer) installSkillForHost(
 	var beforeVersion string
 	if upgrade {
 		if installed, detectErr := i.detector.DetectSkillHosts(ctx, tool); detectErr == nil {
-			beforeVersion, _ = skillHostVersion(installed, host.Command)
+			beforeVersion, _ = installedHostVersion(installed, host.Command)
 		}
 	}
 
@@ -1744,11 +1744,12 @@ func (i *installer) installSkillForHost(
 	return version, alreadyLatest, nil
 }
 
-// skillHostVersion returns the installed version of the skill for the given
+// installedHostVersion returns the installed version of the skill for the given
 // host command from a DetectSkillHosts result, and whether that host was
 // found. InstalledSkillHost.Host carries the executable identity, so the match
-// is against host.Command.
-func skillHostVersion(installed []InstalledSkillHost, command string) (string, bool) {
+// is against host.Command. (Distinct from detector.skillHostVersion, which
+// probes the host CLI; this only looks up an already-detected list.)
+func installedHostVersion(installed []InstalledSkillHost, command string) (string, bool) {
 	for _, h := range installed {
 		if h.Host == command {
 			return h.Version, true
@@ -1780,7 +1781,7 @@ func (i *installer) verifySkillInstalled(
 		if detectErr != nil {
 			return false, detectErr
 		}
-		if v, ok := skillHostVersion(installed, host.Command); ok {
+		if v, ok := installedHostVersion(installed, host.Command); ok {
 			version = v
 			return true, nil
 		}

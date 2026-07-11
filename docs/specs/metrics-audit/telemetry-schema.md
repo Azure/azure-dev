@@ -274,7 +274,7 @@ The following fields are defined in `fields.go`.
 | Hooks kind | `hooks.kind` | SystemMetadata | FeatureInsight | Executor used to run the hook. Values: `sh`, `pwsh`, `python`, `js`, `ts`, `dotnet` |
 | Pipeline provider | `pipeline.provider` | SystemMetadata | FeatureInsight | Resolved provider display name after auto-detection: `GitHub`, `Azure DevOps` |
 | Pipeline auth | `pipeline.auth` | SystemMetadata | FeatureInsight | Emitted only when `--auth-type` is set on `pipeline config`: `federated`, `client-credentials` |
-| Infra provider | `infra.provider` | SystemMetadata | FeatureInsight | Resolved IaC provider `bicep`, `terraform`, `arm`, `pulumi`, or `custom` for any other (extension) provider — the raw name is never emitted; `mixed` when a project's layers differ (provision/up/down); `auto` on `infra generate`/`synth` before resolution |
+| Infra provider | `infra.provider` | SystemMetadata | FeatureInsight | provision/up/down: resolved `bicep`/`terraform`/`arm`/`pulumi`, `custom` for any other (extension) provider (raw name not emitted), or `mixed` when layers differ. `infra generate`/`synth`: the configured `--provider` value directly (`bicep`/`terraform`/`auto`, or a raw custom name) |
 
 ### App Service Deploy
 

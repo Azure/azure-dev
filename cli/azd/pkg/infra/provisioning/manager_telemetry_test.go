@@ -83,6 +83,15 @@ func TestRecordInfraProviderUsage(t *testing.T) {
 			expected:        provisioning.InfraProviderMixed,
 		},
 		{
+			name: "two distinct custom providers record mixed",
+			layers: []provisioning.Options{
+				{Provider: provisioning.ProviderKind("vendor.one")},
+				{Provider: provisioning.ProviderKind("vendor.two")},
+			},
+			defaultProvider: bicepDefault,
+			expected:        provisioning.InfraProviderMixed,
+		},
+		{
 			name:            "no layers records nothing",
 			layers:          nil,
 			defaultProvider: bicepDefault,

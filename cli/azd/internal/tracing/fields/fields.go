@@ -397,9 +397,11 @@ var (
 
 // Infrastructure command related fields
 var (
-	// The IaC provider used for infrastructure generation.
+	// The IaC provider. Emitted by `infra generate` / `synth` (the configured `--provider` value,
+	// for example "bicep", "terraform", "auto") and by provision / up / down (the resolved
+	// provider, "mixed" when layers differ, or "custom" for a non-built-in extension provider).
 	//
-	// Example: "bicep", "terraform"
+	// Example: "bicep", "terraform", "arm", "pulumi", "mixed", "custom"
 	InfraProviderKey = AttributeKey{
 		Key:            attribute.Key("infra.provider"),
 		Classification: SystemMetadata,

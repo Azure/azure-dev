@@ -565,7 +565,7 @@ const (
 // present on success, failure, and preview spans alike. The value is computed deterministically
 // from configuration (rather than racing concurrent per-layer resolution).
 func RecordInfraProviderUsage(layers []Options, defaultProvider DefaultProviderResolver) {
-	seen := map[string]struct{}{}
+	seen := map[ProviderKind]struct{}{}
 	for _, layer := range layers {
 		kind := layer.Provider
 		if kind == NotSpecified {
@@ -586,15 +586,17 @@ func RecordInfraProviderUsage(layers []Options, defaultProvider DefaultProviderR
 			continue
 		}
 
-		seen[infraProviderTelemetryValue(parsed)] = struct{}{}
+		seen[parsed] = struct{}{}
 	}
 
+	// Distinct resolved kinds are collected first so that two different custom providers still
+	// record "mixed" (bucketing only the single-provider result, not before counting).
 	switch len(seen) {
 	case 0:
 		return
 	case 1:
-		for value := range seen {
-			tracing.SetUsageAttributes(fields.InfraProviderKey.String(value))
+		for kind := range seen {
+			tracing.SetUsageAttributes(fields.InfraProviderKey.String(infraProviderTelemetryValue(kind)))
 		}
 	default:
 		tracing.SetUsageAttributes(fields.InfraProviderKey.String(InfraProviderMixed))
@@ -606,7 +608,7 @@ func RecordInfraProviderUsage(layers []Options, defaultProvider DefaultProviderR
 // InfraProviderCustom so a user-chosen provider name is never sent as telemetry.
 func infraProviderTelemetryValue(kind ProviderKind) string {
 	switch kind {
-	case Bicep, Terraform, Arm, Pulumi, Test:
+	case Bicep, Terraform, Arm, Pulumi:
 		return string(kind)
 	default:
 		return InfraProviderCustom

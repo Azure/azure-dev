@@ -1222,10 +1222,50 @@ func TestToolUpgradeAction_All_UpgradesInstalledTools(t *testing.T) {
 		"--all must upgrade exactly the installed tools")
 }
 
-// TestToolUpgradeAction_NoPrompt_UpgradesAllInstalled verifies that
-// `azd tool upgrade --no-prompt` (even in a TTY) skips the interactive picker
-// and upgrades every installed tool, so automation never blocks on input.
-func TestToolUpgradeAction_NoPrompt_UpgradesAllInstalled(t *testing.T) {
+// TestToolUpgradeAction_NoPrompt_WithoutTarget_Errors verifies that
+// `azd tool upgrade` with --no-prompt (or a non-interactive terminal) and no
+// tool IDs and no --all fails with guidance instead of implicitly upgrading
+// every installed tool — consistent with install/uninstall and azd's
+// --no-prompt contract.
+func TestToolUpgradeAction_NoPrompt_WithoutTarget_Errors(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+
+	detector := &cmdMockDetector{
+		detectAll: func(_ context.Context, tools []*tool.ToolDefinition) ([]*tool.ToolStatus, error) {
+			statuses := make([]*tool.ToolStatus, len(tools))
+			for i, td := range tools {
+				statuses[i] = &tool.ToolStatus{Tool: td, Installed: i < 2}
+			}
+			return statuses, nil
+		},
+	}
+	installer := &cmdMockInstaller{
+		upgrade: func(_ context.Context, td *tool.ToolDefinition, _ ...tool.InstallOption) (*tool.InstallResult, error) {
+			t.Errorf("upgrade must not run without an explicit target; got %s", td.Id)
+			return &tool.InstallResult{Tool: td, Success: true}, nil
+		},
+	}
+	manager := tool.NewManager(detector, installer, nil)
+
+	console := mockinput.NewMockConsole()
+	console.SetTerminal(true)     // a TTY ...
+	console.SetNoPromptMode(true) // ... but --no-prompt
+
+	action := newToolUpgradeAction(
+		nil, &toolUpgradeFlags{}, manager, console, &output.NoneFormatter{}, io.Discard,
+	)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	var ews *internal.ErrorWithSuggestion
+	require.ErrorAs(t, err, &ews)
+	assert.Contains(t, ews.Suggestion, "--all",
+		"the guidance must tell the user to pass tool IDs or --all")
+}
+
+// TestToolUpgradeAction_AllFlag_NoPrompt upgrades every installed tool when
+// --all is given, without prompting.
+func TestToolUpgradeAction_AllFlag_NoPrompt(t *testing.T) {
 	tracing.ResetUsageAttributesForTest()
 
 	var installedIDs []string
@@ -1254,12 +1294,12 @@ func TestToolUpgradeAction_NoPrompt_UpgradesAllInstalled(t *testing.T) {
 	manager := tool.NewManager(detector, installer, nil)
 
 	console := mockinput.NewMockConsole()
-	console.SetTerminal(true)     // a TTY ...
-	console.SetNoPromptMode(true) // ... but --no-prompt
+	console.SetTerminal(true)
+	console.SetNoPromptMode(true)
 
 	action := newToolUpgradeAction(
 		nil,
-		&toolUpgradeFlags{},
+		&toolUpgradeFlags{all: true},
 		manager,
 		console,
 		&output.NoneFormatter{},
@@ -1271,7 +1311,7 @@ func TestToolUpgradeAction_NoPrompt_UpgradesAllInstalled(t *testing.T) {
 
 	require.Len(t, installedIDs, 2)
 	assert.ElementsMatch(t, installedIDs, upgradedIDs,
-		"--no-prompt must skip the picker and upgrade all installed tools")
+		"--all must upgrade every installed tool without prompting")
 }
 
 // TestToolUpgradeAction_UnchangedVersion_ReportsUpToDate verifies that a
@@ -1389,18 +1429,16 @@ func TestToolInstallAction_resolveUnavailableHostPrompt_CaseInsensitive(t *testi
 	assert.Nil(t, opts)
 }
 
-// TestToolInstallAction_resolveToolIds_NoPromptDefaultsToRecommended verifies
-// that --no-prompt (even in a TTY) skips the interactive picker and defaults to
-// the recommended, not-yet-installed tools — its --all behavior, mirroring
-// upgrade — so automation never blocks or errors on input.
-func TestToolInstallAction_resolveToolIds_NoPromptDefaultsToRecommended(t *testing.T) {
+// TestToolInstallAction_resolveToolIds_NoPromptWithoutTarget_Errors verifies
+// that --no-prompt (or a non-interactive terminal) with no tool IDs and no
+// --all fails with guidance instead of implicitly installing the recommended
+// set — consistent with upgrade/uninstall and azd's --no-prompt contract.
+func TestToolInstallAction_resolveToolIds_NoPromptWithoutTarget_Errors(t *testing.T) {
 	detector := &cmdMockDetector{
 		detectAll: func(_ context.Context, _ []*tool.ToolDefinition) ([]*tool.ToolStatus, error) {
 			return []*tool.ToolStatus{
 				{Tool: &tool.ToolDefinition{Id: "rec", Priority: tool.ToolPriorityRecommended}},
 				{Tool: &tool.ToolDefinition{Id: "opt", Priority: tool.ToolPriorityOptional}},
-				{Tool: &tool.ToolDefinition{Id: "already", Priority: tool.ToolPriorityRecommended},
-					Installed: true},
 			}, nil
 		},
 	}
@@ -1415,9 +1453,38 @@ func TestToolInstallAction_resolveToolIds_NoPromptDefaultsToRecommended(t *testi
 	).(*toolInstallAction)
 
 	ids, err := action.resolveToolIds(t.Context())
+	require.Error(t, err)
+	assert.Nil(t, ids)
+	var ews *internal.ErrorWithSuggestion
+	require.ErrorAs(t, err, &ews)
+	assert.Contains(t, ews.Suggestion, "--all",
+		"the guidance must tell the user to pass tool IDs or --all")
+}
+
+// TestToolInstallAction_resolveToolIds_AllFlag installs the recommended,
+// not-yet-installed tools when --all is given, without prompting.
+func TestToolInstallAction_resolveToolIds_AllFlag(t *testing.T) {
+	detector := &cmdMockDetector{
+		detectAll: func(_ context.Context, _ []*tool.ToolDefinition) ([]*tool.ToolStatus, error) {
+			return []*tool.ToolStatus{
+				{Tool: &tool.ToolDefinition{Id: "rec", Priority: tool.ToolPriorityRecommended}},
+				{Tool: &tool.ToolDefinition{Id: "opt", Priority: tool.ToolPriorityOptional}},
+				{Tool: &tool.ToolDefinition{Id: "already", Priority: tool.ToolPriorityRecommended},
+					Installed: true},
+			}, nil
+		},
+	}
+	manager := tool.NewManager(detector, &cmdMockInstaller{}, nil)
+
+	action := newToolInstallAction(
+		nil, &toolInstallFlags{all: true}, manager, mockinput.NewMockConsole(),
+		&output.NoneFormatter{}, io.Discard,
+	).(*toolInstallAction)
+
+	ids, err := action.resolveToolIds(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, []string{"rec"}, ids,
-		"--no-prompt must skip the picker and default to recommended uninstalled tools")
+		"--all installs recommended, not-yet-installed tools")
 }
 
 // TestToolUninstallAction_resolveToolIds_NoPromptWithoutTarget_Errors verifies

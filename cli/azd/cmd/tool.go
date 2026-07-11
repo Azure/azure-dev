@@ -961,6 +961,24 @@ func (a *toolInstallAction) dryRun(
 	return nil, nil
 }
 
+// noToolTargetError builds the guidance error returned when a tool operation
+// cannot determine which tools to act on: prompting is unavailable (a
+// non-interactive terminal or --no-prompt) and the user gave neither tool IDs
+// nor --all. All three commands (install, upgrade, uninstall) require an
+// explicit target here rather than guessing, matching azd's --no-prompt
+// contract of failing with a structured error instead of an implicit default.
+func noToolTargetError(command string) error {
+	return &internal.ErrorWithSuggestion{
+		Err: fmt.Errorf("no tools specified to %s", command),
+		Suggestion: fmt.Sprintf(
+			"Specify one or more tool IDs, or --all:\n\n"+
+				"    azd tool %s <tool-id> [<tool-id> ...]\n\n"+
+				"    azd tool %s --all",
+			command, command,
+		),
+	}
+}
+
 // resolveToolIds determines which tool IDs to install based on flags and arguments.
 func (a *toolInstallAction) resolveToolIds(ctx context.Context) ([]string, error) {
 	// --all: install all recommended tools that are not already installed.
@@ -1017,17 +1035,11 @@ func (a *toolInstallAction) resolveToolIds(ctx context.Context) ([]string, error
 		return nil, nil
 	}
 
-	// Non-interactive (no TTY) or --no-prompt: skip the picker and default to
-	// the recommended set — the picker's own pre-selection, and the same set
-	// `--all` installs — so automation never blocks or errors on input.
+	// Non-interactive (no TTY) or --no-prompt: the picker can't run, so require
+	// an explicit target (tool IDs or --all) rather than implicitly installing
+	// the recommended set.
 	if !a.console.IsSpinnerInteractive() || a.console.IsNoPromptMode() {
-		var ids []string
-		for _, s := range uninstalled {
-			if s.Tool.Priority == tool.ToolPriorityRecommended {
-				ids = append(ids, s.Tool.Id)
-			}
-		}
-		return ids, nil
+		return nil, noToolTargetError("install")
 	}
 
 	choices := make([]*uxlib.MultiSelectChoice, len(uninstalled))
@@ -1158,8 +1170,8 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	default:
 		// No args: prompt the user to pick from installed tools (like
-		// `azd tool install`), or upgrade every installed tool when running
-		// non-interactively.
+		// `azd tool install`). When prompting is unavailable, require an
+		// explicit target instead of upgrading everything implicitly.
 		statuses, err := a.detectInstalledTools(ctx)
 		if err != nil {
 			return nil, err
@@ -1169,6 +1181,12 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 			if s.Installed {
 				installed = append(installed, s)
 			}
+		}
+		// Non-interactive (no TTY) or --no-prompt: the picker can't run, so
+		// require an explicit target (tool IDs or --all) rather than implicitly
+		// upgrading every installed tool.
+		if len(installed) > 0 && (!a.console.IsSpinnerInteractive() || a.console.IsNoPromptMode()) {
+			return nil, noToolTargetError("upgrade")
 		}
 		chosen := installed
 		if a.console.IsSpinnerInteractive() && !a.console.IsNoPromptMode() && len(installed) > 0 {
@@ -1647,17 +1665,22 @@ func (a *toolUninstallAction) resolveToolIds(ctx context.Context) ([]string, err
 	// --all selects every installed tool. --dry-run does the same without
 	// prompting: a preview never mutates anything, so it defaults to all
 	// installed tools (a skill is previewed against the host(s) it is
-	// installed through) instead of asking the user to pick. A non-interactive
-	// terminal or --no-prompt likewise skips the picker and defaults to every
-	// installed tool (matching --all and `azd tool upgrade`), so automation
-	// never blocks or errors on input.
-	if a.flags.all || a.flags.dryRun ||
-		!a.console.IsSpinnerInteractive() || a.console.IsNoPromptMode() {
+	// installed through) instead of asking the user to pick.
+	if a.flags.all || a.flags.dryRun {
 		ids := make([]string, 0, len(installed))
 		for _, s := range installed {
 			ids = append(ids, s.Tool.Id)
 		}
 		return ids, nil
+	}
+
+	// Uninstall is destructive, so — unlike `azd tool install`/`upgrade`, which
+	// only add — it must never treat "no target" as "all". When prompting is
+	// unavailable (a non-interactive terminal or --no-prompt) and the user gave
+	// neither tool IDs nor --all, fail with explicit guidance instead of
+	// silently removing every installed tool.
+	if !a.console.IsSpinnerInteractive() || a.console.IsNoPromptMode() {
+		return nil, noToolTargetError("uninstall")
 	}
 
 	// Interactive: let the user pick from installed tools. Nothing is

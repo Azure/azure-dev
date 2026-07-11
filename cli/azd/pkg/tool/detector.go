@@ -491,16 +491,17 @@ func (d *detector) detectSkill(
 	status.SkillHosts = hosts
 	if len(hosts) > 0 {
 		// The skill was found on at least one host; report it installed even if
-		// a later host's probe errored (e.g. was cancelled), mirroring the
-		// first-match behavior from before multi-host detection. Installed and
-		// InstalledVersion reflect the first such host.
+		// a later host's probe errored, mirroring the first-match behavior from
+		// before multi-host detection. Installed and InstalledVersion reflect
+		// the first such host.
 		status.Installed = true
 		status.InstalledVersion = hosts[0].Version
-		return status
 	}
 
-	// Nothing was found: surface a detection error (e.g. context cancellation)
-	// so a genuinely failed probe is not silently reported as "not installed".
+	// Record any detection failure (e.g. a later host's timeout/cancellation)
+	// even when an earlier host was found: SkillHosts may be incomplete, so per
+	// ToolStatus.Error's contract we surface the failure rather than present a
+	// truncated result as a complete detection.
 	if err != nil {
 		status.Error = err
 	}

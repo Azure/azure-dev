@@ -171,6 +171,12 @@ type installConfig struct {
 	// tool itself otherwise). When nil the
 	// installer prints a plain per-host header instead.
 	renderer StepRenderer
+	// stdin, when set, is the input reader a skill host command reads from
+	// while a step spinner is showing (so prompts are answered on the same
+	// stream the console owns, e.g. Cobra's redirected input). When nil the
+	// host command falls back to the process terminal. Ignored when no
+	// spinner is active (the command then runs against the runner's streams).
+	stdin io.Reader
 }
 
 // InstallOption customizes an install or upgrade operation.
@@ -206,6 +212,15 @@ type StepRenderer interface {
 // manage their own progress (e.g. the first-run middleware) are unaffected.
 func WithStepProgress(renderer StepRenderer) InstallOption {
 	return func(c *installConfig) { c.renderer = renderer }
+}
+
+// WithInput supplies the reader a skill host command should read stdin from
+// while a step spinner is showing — typically the console's input
+// (console.Handles().Stdin), so a host prompt is answered on the same stream
+// azd owns rather than the process-global os.Stdin. It is opt-in; without it
+// the skill command falls back to the process terminal.
+func WithInput(stdin io.Reader) InstallOption {
+	return func(c *installConfig) { c.stdin = stdin }
 }
 
 // stepError returns the effective error for a step: an operation error, or
@@ -310,15 +325,21 @@ func (l *lineWriter) Write(p []byte) (int, error) {
 // skillCommandRunArgs configures how a skill host command (install, upgrade
 // or uninstall) connects to the terminal. When out is non-nil (a step
 // spinner is showing) the command's stdout/stderr are routed through it so
-// the CLI's output prints above the spinner, while stdin stays connected so
-// the user can answer prompts. When out is nil (no spinner) the command runs
-// fully interactively against the terminal. azd never pipes canned answers on
-// the user's behalf.
-func skillCommandRunArgs(base exec.RunArgs, out io.Writer) exec.RunArgs {
+// the CLI's output prints above the spinner, while stdin is connected to the
+// supplied reader (the console's input, threaded from the step-progress
+// caller) so the user can answer prompts. When out is nil (no spinner) the
+// command runs fully interactively against the runner's configured streams.
+// azd never pipes canned answers on the user's behalf.
+func skillCommandRunArgs(base exec.RunArgs, out io.Writer, stdin io.Reader) exec.RunArgs {
 	if out == nil {
 		return base.WithInteractive(true)
 	}
-	return base.WithStdIn(os.Stdin).WithStdOut(out).WithStdErr(out)
+	if stdin == nil {
+		// No input reader supplied (e.g. a non-cmd caller); fall back to the
+		// process terminal so prompts remain answerable.
+		stdin = os.Stdin
+	}
+	return base.WithStdIn(stdin).WithStdOut(out).WithStdErr(out)
 }
 
 // semverRegex matches a bare semantic version (no leading "v") anywhere in a
@@ -480,7 +501,7 @@ func (i *installer) Uninstall(
 		// the explicit host names need to be threaded through; the
 		// empty-hosts branch of resolveSkillUninstallTargets handles both
 		// the default and `--host all`.
-		return i.runSkillUninstall(ctx, tool, cfg.hosts, cfg.renderer)
+		return i.runSkillUninstall(ctx, tool, cfg.hosts, cfg.renderer, cfg.stdin)
 	}
 
 	// Non-skill tools uninstall as a single step; render one spinner for
@@ -859,6 +880,7 @@ func (i *installer) runSkillUninstall(
 	tool *ToolDefinition,
 	hosts []string,
 	renderer StepRenderer,
+	stdin io.Reader,
 ) (*InstallResult, error) {
 	start := time.Now()
 	result := &InstallResult{Tool: tool}
@@ -883,7 +905,7 @@ func (i *installer) runSkillUninstall(
 	for _, host := range targets {
 		title := fmt.Sprintf("Uninstalling %s from %s", tool.Name, host.Host)
 		hostErr := renderSkillStep(ctx, renderer, title, false, func(out io.Writer) (string, error) {
-			return "", i.uninstallSkillForHost(ctx, tool, host, out)
+			return "", i.uninstallSkillForHost(ctx, tool, host, out, stdin)
 		})
 		if hostErr != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", host.Host, hostErr))
@@ -965,8 +987,9 @@ func (i *installer) uninstallSkillForHost(
 	tool *ToolDefinition,
 	host SkillHost,
 	out io.Writer,
+	stdin io.Reader,
 ) error {
-	if err := i.runSkillHostUninstallCommand(ctx, host, out); err != nil {
+	if err := i.runSkillHostUninstallCommand(ctx, host, out, stdin); err != nil {
 		return err
 	}
 	return i.verifySkillUninstalled(ctx, tool, host)
@@ -983,6 +1006,7 @@ func (i *installer) runSkillHostUninstallCommand(
 	ctx context.Context,
 	host SkillHost,
 	out io.Writer,
+	stdin io.Reader,
 ) error {
 	cmd := host.PluginUninstallCommand
 	if len(cmd) == 0 {
@@ -991,7 +1015,7 @@ func (i *installer) runSkillHostUninstallCommand(
 		)
 	}
 
-	runArgs := skillCommandRunArgs(exec.NewRunArgs(host.Command, cmd...), out)
+	runArgs := skillCommandRunArgs(exec.NewRunArgs(host.Command, cmd...), out, stdin)
 	if _, err := i.commandRunner.Run(ctx, runArgs); err != nil {
 		return fmt.Errorf(
 			"running `%s %s`: %w",
@@ -1053,7 +1077,7 @@ func (i *installer) run(
 	// agentic CLI native plugin command rather than the platform's
 	// package manager, so we short-circuit before platform detection.
 	if tool.Category == ToolCategorySkill {
-		return i.runSkill(ctx, tool, upgrade, cfg.hosts, cfg.allAvailableHosts, cfg.renderer)
+		return i.runSkill(ctx, tool, upgrade, cfg.hosts, cfg.allAvailableHosts, cfg.renderer, cfg.stdin)
 	}
 
 	// Non-skill tools install as a single step through the platform
@@ -1276,6 +1300,7 @@ func (i *installer) runSkill(
 	hosts []string,
 	allAvailable bool,
 	renderer StepRenderer,
+	stdin io.Reader,
 ) (*InstallResult, error) {
 	start := time.Now()
 	result := &InstallResult{Tool: tool}
@@ -1331,7 +1356,7 @@ func (i *installer) runSkill(
 			hostUpToDate bool
 		)
 		hostErr := renderSkillStep(ctx, renderer, title, true, func(out io.Writer) (string, error) {
-			v, upToDate, e := i.installSkillForHost(ctx, tool, host, upgrade, out)
+			v, upToDate, e := i.installSkillForHost(ctx, tool, host, upgrade, out, stdin)
 			hostVersion = v
 			hostUpToDate = upToDate
 			if e != nil {
@@ -1342,9 +1367,9 @@ func (i *installer) runSkill(
 			done := title
 			switch {
 			case upgrade && upToDate && v != "":
-				done = fmt.Sprintf("%s are already up to date (v%s).", tool.Name, v)
+				done = fmt.Sprintf("%s in %s are already up to date (v%s).", tool.Name, host.Host, v)
 			case upgrade && upToDate:
-				done = fmt.Sprintf("%s are already up to date.", tool.Name)
+				done = fmt.Sprintf("%s in %s are already up to date.", tool.Name, host.Host)
 			case upgrade && v != "":
 				done = fmt.Sprintf("%s (v%s)", title, v)
 			}
@@ -1537,7 +1562,7 @@ func (i *installer) explicitSkillHostTargets(
 		if !ok || !i.hostUsable(ctx, host) {
 			supported := make([]string, len(tool.SkillHosts))
 			for j, h := range tool.SkillHosts {
-				supported[j] = h.Host
+				supported[j] = h.Command
 			}
 			return nil, fmt.Errorf(
 				"host %q is not available for %s; supported hosts: %s",
@@ -1698,6 +1723,7 @@ func (i *installer) installSkillForHost(
 	host SkillHost,
 	upgrade bool,
 	out io.Writer,
+	stdin io.Reader,
 ) (version string, alreadyLatest bool, err error) {
 	// For an upgrade, record the host's installed version before updating so
 	// "already up to date" is decided by comparing the actual version before
@@ -1710,7 +1736,7 @@ func (i *installer) installSkillForHost(
 		}
 	}
 
-	cmdOutput, err := i.runSkillHostCommand(ctx, host, upgrade, out)
+	cmdOutput, err := i.runSkillHostCommand(ctx, host, upgrade, out, stdin)
 	if err != nil {
 		return "", false, err
 	}
@@ -1824,6 +1850,7 @@ func (i *installer) runSkillHostCommand(
 	host SkillHost,
 	upgrade bool,
 	out io.Writer,
+	stdin io.Reader,
 ) (string, error) {
 	cmd := host.PluginInstallCommand
 	verb := "install"
@@ -1856,7 +1883,7 @@ func (i *installer) runSkillHostCommand(
 		}
 	}
 
-	runArgs := skillCommandRunArgs(exec.NewRunArgs(host.Command, cmd...), out)
+	runArgs := skillCommandRunArgs(exec.NewRunArgs(host.Command, cmd...), out, stdin)
 	if _, err := i.commandRunner.Run(ctx, runArgs); err != nil {
 		return "", fmt.Errorf(
 			"running `%s %s`: %w",

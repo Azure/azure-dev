@@ -594,8 +594,8 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 		// handled below via the per-tool results.
 		rawResults, opErr = runStepSpinner(
 			ctx, a.console, tools,
-			func(ctx context.Context, ids []string, progress tool.InstallOption) ([]*tool.InstallResult, error) {
-				return a.manager.InstallTools(ctx, ids, append(slices.Clone(hostOpts), progress)...)
+			func(ctx context.Context, ids []string, progress ...tool.InstallOption) ([]*tool.InstallResult, error) {
+				return a.manager.InstallTools(ctx, ids, append(slices.Clone(hostOpts), progress...)...)
 			},
 		)
 	} else {
@@ -878,14 +878,14 @@ func runStepSpinner(
 	ctx context.Context,
 	console input.Console,
 	tools []*tool.ToolDefinition,
-	run func(context.Context, []string, tool.InstallOption) ([]*tool.InstallResult, error),
+	run func(context.Context, []string, ...tool.InstallOption) ([]*tool.InstallResult, error),
 ) ([]*tool.InstallResult, error) {
 	ids := make([]string, len(tools))
 	for i, t := range tools {
 		ids[i] = t.Id
 	}
 
-	results, err := run(ctx, ids, tool.WithStepProgress(console))
+	results, err := run(ctx, ids, tool.WithStepProgress(console), tool.WithInput(console.Handles().Stdin))
 	if err != nil {
 		return results, err
 	}
@@ -1245,8 +1245,8 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 	if useStepSpinner(a.console, a.formatter, toolsToUpgrade) {
 		rawResults, opErr = runStepSpinner(
 			ctx, a.console, toolsToUpgrade,
-			func(ctx context.Context, ids []string, progress tool.InstallOption) ([]*tool.InstallResult, error) {
-				return a.manager.UpgradeTools(ctx, ids, append(slices.Clone(hostOpts), progress)...)
+			func(ctx context.Context, ids []string, progress ...tool.InstallOption) ([]*tool.InstallResult, error) {
+				return a.manager.UpgradeTools(ctx, ids, append(slices.Clone(hostOpts), progress...)...)
 			},
 		)
 	} else {
@@ -1568,8 +1568,8 @@ func (a *toolUninstallAction) Run(ctx context.Context) (*actions.ActionResult, e
 	if useStepSpinner(a.console, a.formatter, tools) {
 		rawResults, opErr = runStepSpinner(
 			ctx, a.console, tools,
-			func(ctx context.Context, ids []string, progress tool.InstallOption) ([]*tool.InstallResult, error) {
-				return a.manager.UninstallTools(ctx, ids, append(slices.Clone(hostOpts), progress)...)
+			func(ctx context.Context, ids []string, progress ...tool.InstallOption) ([]*tool.InstallResult, error) {
+				return a.manager.UninstallTools(ctx, ids, append(slices.Clone(hostOpts), progress...)...)
 			},
 		)
 	} else {

@@ -690,7 +690,8 @@ func TestDetectSkillHosts(t *testing.T) {
 // skill is installed on an earlier host but a later host's probe hits a context
 // error (e.g. cancellation/timeout mid-detection), the skill is still reported
 // as installed from the host already found — the context error must not discard
-// an earlier positive match. Regression test: multi-host detection previously
+// an earlier positive match. The error is still recorded on the status
+// (detection was incomplete). Regression test: multi-host detection previously
 // returned "not installed" with the error, dropping the skill from tool and
 // update-check results.
 func TestDetectSkill_EarlierHostFound_LaterHostContextError(t *testing.T) {
@@ -739,10 +740,11 @@ func TestDetectSkill_EarlierHostFound_LaterHostContextError(t *testing.T) {
 
 	assert.True(t, status.Installed,
 		"a skill found on an earlier host must stay installed when a later host's probe is cancelled")
-	assert.NoError(t, status.Error,
-		"a positive match must not be masked by a later host's context error")
 	assert.Equal(t, "1.1.71", status.InstalledVersion)
 	assert.Equal(t, []InstalledSkillHost{{Host: "copilot", Version: "1.1.71"}}, status.SkillHosts)
+	// The later host's context error is still recorded — detection was
+	// incomplete, so SkillHosts may be missing a host.
+	require.ErrorIs(t, status.Error, context.DeadlineExceeded)
 }
 
 // ---------------------------------------------------------------------------

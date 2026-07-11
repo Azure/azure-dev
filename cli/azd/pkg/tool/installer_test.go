@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -1271,6 +1272,55 @@ func TestAggregateInstallResults_EmptyInputs(t *testing.T) {
 // fall back to the real PATH on the developer's machine.
 var allSkillHostNames = []string{"copilot", "claude"}
 
+// TestRunSkill_Install_UsesConfiguredStdin verifies that when a step spinner is
+// showing, the skill host command reads stdin from the reader supplied via
+// WithInput (the console's input) rather than the process-global os.Stdin — so
+// a host prompt is answered on the stream azd owns (e.g. Cobra's redirected
+// input), not the wrong one.
+func TestRunSkill_Install_UsesConfiguredStdin(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+
+	myInput := strings.NewReader("y\n")
+	var pluginStdin io.Reader
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "marketplace")
+	}).Respond(exec.RunResult{ExitCode: 0})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "install")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		pluginStdin = args.StdIn
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillHostsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillHost, error) {
+				return []InstalledSkillHost{{Host: "copilot", Version: "1.1.70"}}, nil
+			},
+		},
+	)
+
+	var r fakeStepRenderer
+	result, err := inst.Install(
+		t.Context(), newSkillTool(),
+		WithHosts("copilot"),
+		WithStepProgress(&r),
+		WithInput(myInput),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
+
+	assert.Same(t, myInput, pluginStdin,
+		"the plugin install command must read stdin from the WithInput reader, not os.Stdin")
+}
+
 // newSkillTool returns a minimal ToolDefinition exercising the
 // codepaths covered by these tests. The host commands are simplified
 // but preserve the structural distinctions (copilot/claude each with a
@@ -1500,7 +1550,7 @@ func TestRunSkill_Upgrade_AlreadyUpToDate(t *testing.T) {
 	assert.True(t, result.AlreadyUpToDate, "nothing changed, so already up to date")
 
 	assert.Equal(t, []string{"Upgrading Test Azure Skills in copilot"}, r.starts)
-	assert.Equal(t, []string{"Test Azure Skills are already up to date (v1.1.86)."}, r.stops)
+	assert.Equal(t, []string{"Test Azure Skills in copilot are already up to date (v1.1.86)."}, r.stops)
 }
 
 // TestRunSkill_StreamedOutputPrintedAboveSpinner verifies that when the host

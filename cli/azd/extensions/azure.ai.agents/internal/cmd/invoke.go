@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -16,6 +17,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"azureaiagent/internal/cmd/nextstep"
@@ -45,6 +47,7 @@ type invokeFlags struct {
 	version         string
 	outputFmt       string
 	callID          string
+	clientHeaders   []string
 }
 
 // outputRaw is the sentinel value of the inherited --output flag that selects
@@ -63,9 +66,10 @@ const maxInvokeVersionLength = 128
 var createInvokeVersionSession = createInvokeVersionSessionImpl
 
 type InvokeAction struct {
-	flags    *invokeFlags
-	noPrompt bool
-	endpoint *parsedAgentEndpoint
+	flags         *invokeFlags
+	noPrompt      bool
+	endpoint      *parsedAgentEndpoint
+	clientHeaders http.Header
 }
 
 func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -104,6 +108,12 @@ remote invokes it is sent as the x-ms-user-identity header.
 Use --call-id to send a call ID with a local invoke. It is sent as the
 x-agent-foundry-call-id header and applies only to local invocations; it is
 ignored for remote requests.
+
+Use --client-header to send custom x-client-* request headers in "Name: Value"
+format (repeatable). The responses and invocations protocols forward the
+x-client-* header family to the agent; other header names are rejected, and
+the flag is not supported with the a2a protocol (which does not propagate
+x-client-* headers). For identity headers use --user-identity or --call-id.
 
 Use --output raw (or -o raw) to dump the unmodified server response (status
 line, headers, and body verbatim) to stdout. Useful for debugging server
@@ -145,6 +155,9 @@ suppressed in raw mode.`,
 
   # Dump the raw server response (status line, headers, body) for debugging
   azd ai agent invoke --output raw "Hello!"
+
+  # Send custom x-client-* headers (repeatable)
+  azd ai agent invoke --client-header "x-client-request-id: abc123" --client-header "x-client-tenant: contoso" "Hello!"
 
   # Invoke a deployed agent from any directory using the endpoint URL shown by 'azd ai agent show'
   azd ai agent invoke \
@@ -230,6 +243,23 @@ suppressed in raw mode.`,
 				}
 			}
 
+			clientHeaders, err := parseCustomHeaders(flags.clientHeaders)
+			if err != nil {
+				return err
+			}
+			// A2A routes through a translating proxy with its own fixed header
+			// set and does not propagate x-client-* to the agent, so accepting
+			// the flag there would silently drop the headers.
+			if len(clientHeaders) > 0 && agent_api.AgentProtocol(flags.protocol) == agent_api.AgentProtocolA2A {
+				return exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					"--client-header is not supported with the a2a protocol",
+					"the a2a protocol does not forward x-client-* headers to the agent; "+
+						"use --protocol responses or invocations to send client headers",
+				)
+			}
+			action.clientHeaders = clientHeaders
+
 			return action.Run(ctx)
 		},
 	}
@@ -257,6 +287,14 @@ suppressed in raw mode.`,
 		"",
 		"Call ID header value (sent as "+agent_api.AgentFoundryCallIDHeader+" for local invocations only; "+
 			"ignored for remote requests)",
+	)
+	cmd.Flags().StringArrayVar(
+		&flags.clientHeaders,
+		"client-header",
+		nil,
+		`Custom x-client-* request header in "Name: Value" format (repeatable). `+
+			"The responses and invocations protocols forward the x-client-* header family to the agent; "+
+			"other header names are rejected and the flag is not supported with a2a.",
 	)
 	cmd.Flags().StringVar(
 		&flags.agentEndpoint,
@@ -384,6 +422,21 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	protocol, err := a.resolveProtocol(ctx)
 	if err != nil {
 		return err
+	}
+
+	// Re-validate after protocol resolution: when --protocol was omitted the
+	// protocol may have been auto-detected as a2a (e.g. from agent.yaml). In
+	// that case the flag-parse guard above was skipped and clientHeaders was
+	// populated, but a2aRemote never calls applyCustomHeaders — the headers
+	// would be silently dropped, which is the exact silent no-op the guard
+	// intends to prevent.
+	if len(a.clientHeaders) > 0 && protocol == agent_api.AgentProtocolA2A {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--client-header is not supported with the a2a protocol",
+			"the a2a protocol does not forward x-client-* headers to the agent; "+
+				"use --protocol responses or invocations to send client headers",
+		)
 	}
 
 	if a.flags.local {
@@ -555,6 +608,81 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%.3fs", d.Seconds())
 }
 
+// localConnectRetryBudget bounds how long a `--local` invoke waits for the
+// agent's listener to start accepting connections before giving up. The first
+// `azd ai agent run` in a fresh project can take 30–60 s to bind (Python venv
+// + pip install + Foundry handshake), and the listener binds a few seconds
+// after `run` reports ready, so a single connect attempt frequently races
+// startup. Retrying connection-refused errors within this budget makes the
+// quickstart's immediate `invoke --local` deterministic. See issue #8411.
+const localConnectRetryBudget = 60 * time.Second
+
+// localConnectRetryInitialBackoff and localConnectRetryMaxBackoff bound the
+// exponential backoff between connect attempts.
+const (
+	localConnectRetryInitialBackoff = 500 * time.Millisecond
+	localConnectRetryMaxBackoff     = 2 * time.Second
+)
+
+// isConnectionRefused reports whether err is a TCP connection-refused error.
+// A refused connection guarantees the request bytes were never delivered to
+// the server, so this is the only failure class that is safe to retry for a
+// non-idempotent local invoke (retrying can't produce a duplicate side effect).
+func isConnectionRefused(err error) bool {
+	if errors.Is(err, syscall.ECONNREFUSED) {
+		return true
+	}
+	// On Windows a refused dial surfaces as WSAECONNREFUSED rather than the
+	// POSIX syscall.ECONNREFUSED, so the check above misses it.
+	return isPlatformConnRefused(err)
+}
+
+// doLocalRequestWithRetry sends the request built by newReq, retrying only on
+// connection-refused errors within localConnectRetryBudget. This covers the
+// window where the local agent process is running but its listener hasn't
+// bound yet. Any other error (timeout, mid-flight failure, non-2xx status) is
+// returned to the caller unchanged so genuine failures surface immediately.
+// The request is rebuilt on each attempt because client.Do consumes the body.
+func doLocalRequestWithRetry(
+	ctx context.Context,
+	client *http.Client,
+	newReq func() (*http.Request, error),
+) (*http.Response, error) {
+	deadline := time.Now().Add(localConnectRetryBudget)
+	backoff := localConnectRetryInitialBackoff
+	notified := false
+	for {
+		req, err := newReq()
+		if err != nil {
+			return nil, err
+		}
+		resp, err := client.Do(req) //nolint:gosec // G704: URL targets localhost with user-configured port
+		if err == nil {
+			return resp, nil
+		}
+		if !isConnectionRefused(err) || time.Now().After(deadline) {
+			return nil, err
+		}
+		if !notified {
+			// Progress note on stderr keeps raw-mode stdout clean while
+			// reassuring the user we're waiting rather than hung.
+			fmt.Fprintln(os.Stderr, "Waiting for the local agent to accept connections...")
+			notified = true
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(backoff):
+		}
+		if backoff < localConnectRetryMaxBackoff {
+			backoff *= 2
+			if backoff > localConnectRetryMaxBackoff {
+				backoff = localConnectRetryMaxBackoff
+			}
+		}
+	}
+}
+
 func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	port := a.flags.port
 
@@ -615,22 +743,26 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	}
 
 	reqURL := fmt.Sprintf("http://localhost:%d/responses", port)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(payload))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	applyLocalUserIdentityHeader(req, &a.flags.userIdentityFlags)
-	applyLocalCallIDHeader(req, a.flags.callID)
-	if raw {
-		// Disable Go's transparent gzip handling so the dumped headers and
-		// body match what the server actually sent on the wire.
-		req.Header.Set("Accept-Encoding", "identity")
+	newReq := func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(payload))
+		if err != nil {
+			return nil, err
+		}
+		applyCustomHeaders(req, a.clientHeaders)
+		req.Header.Set("Content-Type", "application/json")
+		applyLocalUserIdentityHeader(req, &a.flags.userIdentityFlags)
+		applyLocalCallIDHeader(req, a.flags.callID)
+		if raw {
+			// Disable Go's transparent gzip handling so the dumped headers and
+			// body match what the server actually sent on the wire.
+			req.Header.Set("Accept-Encoding", "identity")
+		}
+		return req, nil
 	}
 
 	client := &http.Client{Timeout: a.httpTimeout()}
 	invokeStart := time.Now()
-	resp, err := client.Do(req) //nolint:gosec // G704: URL targets localhost with user-configured port
+	resp, err := doLocalRequestWithRetry(ctx, client, newReq)
 	if err != nil {
 		return fmt.Errorf(
 			"could not connect to localhost:%d -- is the agent running? Start it with: azd ai agent run",
@@ -1018,6 +1150,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
+	applyCustomHeaders(req, a.clientHeaders)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
@@ -1141,22 +1274,26 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		invURL += "?agent_session_id=" + url.QueryEscape(sid)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, invURL, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", contentTypeForBody(body))
-	applyLocalUserIdentityHeader(req, &a.flags.userIdentityFlags)
-	applyLocalCallIDHeader(req, a.flags.callID)
-	if raw {
-		// Disable Go's transparent gzip handling so the dumped headers and
-		// body match what the server actually sent on the wire.
-		req.Header.Set("Accept-Encoding", "identity")
+	newReq := func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, invURL, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		applyCustomHeaders(req, a.clientHeaders)
+		req.Header.Set("Content-Type", contentTypeForBody(body))
+		applyLocalUserIdentityHeader(req, &a.flags.userIdentityFlags)
+		applyLocalCallIDHeader(req, a.flags.callID)
+		if raw {
+			// Disable Go's transparent gzip handling so the dumped headers and
+			// body match what the server actually sent on the wire.
+			req.Header.Set("Accept-Encoding", "identity")
+		}
+		return req, nil
 	}
 
 	client := &http.Client{Timeout: a.httpTimeout()}
 	invokeStart := time.Now()
-	resp, err := client.Do(req) //nolint:gosec // G704: URL targets localhost with user-configured port
+	resp, err := doLocalRequestWithRetry(ctx, client, newReq)
 	if err != nil {
 		return fmt.Errorf(
 			"could not connect to localhost:%d -- is the agent running? Start it with: azd ai agent run",
@@ -1255,6 +1392,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
+	applyCustomHeaders(req, a.clientHeaders)
 	req.Header.Set("Content-Type", contentTypeForBody(body))
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)

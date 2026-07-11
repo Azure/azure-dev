@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.2 (2026-07-09)
+
+### Bugs Fixed
+
+- [[#9053]](https://github.com/Azure/azure-dev/pull/9053) Fix `azd ai connection` commands and `azd deploy` for `host: azure.ai.connection` services failing with `Tenant provided in token does not match resource token` for multi-tenant/guest users. The extension now scopes the credential to the subscription's user-access tenant. Also fixes first-connection creation on projects with no existing connections. Thanks @therealjohn for the contribution!
+
 ## 1.0.0-beta.1 (2026-06-30)
 
 ### Features Added

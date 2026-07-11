@@ -362,8 +362,11 @@ func TestRunConnectionRemoveWith_FilteredAndPromoted(t *testing.T) {
 func TestRunConnectionRemoveWith_ConnectionNotInToolbox(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
 	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{Name: "tb", DefaultVersion: "1"}}
-	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
-		Name: "tb", Version: "1", Tools: []map[string]any{
+	client.listVersionsResults["tb"] = []azure.ToolboxVersionObject{
+		{Name: "tb", Version: "1"}, {Name: "tb", Version: "2"},
+	}
+	client.versionResults["tb/2"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "2", Tools: []map[string]any{
 			{"type": "mcp", "name": "other", "project_connection_id": "/c/other"},
 		},
 	}}
@@ -378,7 +381,8 @@ func TestRunConnectionRemoveWith_ConnectionNotInToolbox(t *testing.T) {
 		connectionRemoveFlags{force: true},
 		toolboxFlags{output: "table"},
 	)
-	requireLocalError(t, err, exterrors.CodeConnectionNotInToolbox)
+	localErr := requireLocalError(t, err, exterrors.CodeConnectionNotInToolbox)
+	assert.Contains(t, localErr.Suggestion, `azd ai toolbox show "tb" --version "2"`)
 }
 
 func TestRunConnectionListWith_EmitsAllShapes(t *testing.T) {

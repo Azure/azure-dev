@@ -16,6 +16,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -26,9 +27,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -1100,10 +1103,18 @@ func newEnvRefreshCmd() *cobra.Command {
 	return cmd
 }
 
+// provisioningProviderActivator is the narrow slice of *middleware.ExtensionActivator that env
+// refresh consumes; it exists so tests can stub extension activation.
+type provisioningProviderActivator interface {
+	EnsureProvisioningProviders(ctx context.Context, providerNames []string, environmentName string) (func(), error)
+	SuggestExtensionForProvider(ctx context.Context, providerName string) string
+}
+
 type envRefreshAction struct {
 	provisionManager    *provisioning.Manager
 	projectConfig       *project.ProjectConfig
 	projectManager      project.ProjectManager
+	extensionActivator  provisioningProviderActivator
 	env                 *environment.Environment
 	envManager          environment.Manager
 	prompters           prompt.Prompter
@@ -1119,6 +1130,7 @@ func newEnvRefreshAction(
 	provisionManager *provisioning.Manager,
 	projectConfig *project.ProjectConfig,
 	projectManager project.ProjectManager,
+	extensionActivator *middleware.ExtensionActivator,
 	env *environment.Environment,
 	envManager environment.Manager,
 	prompters prompt.Prompter,
@@ -1132,6 +1144,7 @@ func newEnvRefreshAction(
 	return &envRefreshAction{
 		provisionManager:    provisionManager,
 		projectManager:      projectManager,
+		extensionActivator:  extensionActivator,
 		env:                 env,
 		envManager:          envManager,
 		prompters:           prompters,
@@ -1145,34 +1158,60 @@ func newEnvRefreshAction(
 	}
 }
 
+// suggestionForUnresolvedProvider returns the id of a registry extension to suggest installing
+// when err is a provider-resolution failure; any other initialization error skips the registry
+// lookup and returns an empty string.
+func suggestionForUnresolvedProvider(
+	ctx context.Context,
+	err error,
+	activator provisioningProviderActivator,
+	providerName string,
+) string {
+	if !errors.Is(err, ioc.ErrResolveInstance) {
+		return ""
+	}
+
+	return activator.SuggestExtensionForProvider(ctx, providerName)
+}
+
 func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Command title
 	ef.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: fmt.Sprintf("Refreshing environment %s (azd env refresh)", ef.env.Name()),
 	})
 
-	if err := ef.projectManager.Initialize(ctx, ef.projectConfig); err != nil {
-		return nil, err
-	}
-
-	if err := ef.projectManager.EnsureAllTools(ctx, ef.projectConfig, nil); err != nil {
-		return nil, err
-	}
-
-	infra, err := ef.importManager.ProjectInfrastructure(ctx, ef.projectConfig)
+	// `env refresh` is read-only: it deliberately skips service-target initialization and tool
+	// checks, which would fail for extension-provided hosts (for example `azure.ai.agent`).
+	// Framework lifecycle hooks are wired best-effort after the outputs are pulled - see below.
+	projectInfra, err := ef.importManager.ProjectInfrastructure(ctx, ef.projectConfig)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = infra.Cleanup() }()
+	defer func() { _ = projectInfra.Cleanup() }()
 
-	layers := infra.Options.GetLayers()
+	layers := projectInfra.Options.GetLayers()
 	if ef.flags.layer != "" {
-		layerOpt, err := infra.Options.GetLayer(ef.flags.layer)
+		layerOpt, err := projectInfra.Options.GetLayer(ef.flags.layer)
 		if err != nil {
 			return nil, err
 		}
 		layers = []provisioning.Options{layerOpt}
 	}
+
+	// Extension-provided provisioning providers (for example `microsoft.foundry`) are only
+	// resolvable while the owning extension runs, and `env refresh` does not run the extensions
+	// middleware. Start just the installed extension(s) declaring the configured provider(s);
+	// all other names resolve natively as in every other command.
+	providerNames := make([]string, 0, len(layers))
+	for _, layer := range layers {
+		providerNames = append(providerNames, string(layer.Provider))
+	}
+
+	cleanupProviders, err := ef.extensionActivator.EnsureProvisioningProviders(ctx, providerNames, ef.env.Name())
+	if err != nil {
+		return nil, fmt.Errorf("activating provisioning provider extensions: %w", err)
+	}
+	defer cleanupProviders()
 
 	// If resource group is defined within the project but not in the environment then
 	// add it to the environment to support BYOI lookup scenarios like ADE
@@ -1183,6 +1222,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 
 	var state provisioning.State
+	stateRefreshed := false
 	for _, layer := range layers {
 		if ef.flags.layer != "" || len(layers) > 1 {
 			ef.console.EnsureBlankLine(ctx)
@@ -1200,13 +1240,54 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 				return nil, err
 			}
 		} else if err != nil {
-			return nil, fmt.Errorf("initializing provisioning manager: %w", err)
+			err = fmt.Errorf("initializing provisioning manager: %w", err)
+
+			// A resolution failure for a provider that a registry (non-installed) extension
+			// declares is almost certainly the missing extension: suggest installing it.
+			if extensionId := suggestionForUnresolvedProvider(
+				ctx, err, ef.extensionActivator, string(layer.Provider)); extensionId != "" {
+				return nil, &internal.ErrorWithSuggestion{
+					Err: err,
+					Suggestion: fmt.Sprintf(
+						"Provisioning provider '%s' is supplied by the '%s' extension. To install it, run %s",
+						layer.Provider,
+						extensionId,
+						output.WithHighLightFormat("azd extension install %s", extensionId),
+					),
+				}
+			}
+
+			return nil, err
 		}
 
 		stateOptions := provisioning.NewStateOptions(ef.flags.hint)
 		result, err := ef.provisionManager.State(ctx, stateOptions)
 		if err != nil {
+			// No deployment exists yet (for example, refresh before `azd provision`): this is
+			// informational, not an error - continue so any other layers still refresh. An
+			// explicit --hint stays a hard error because CompletedDeployments wraps the same
+			// sentinel when deployments exist but none matches the hint.
+			if errors.Is(err, infra.ErrDeploymentsNotFound) && ef.flags.hint == "" {
+				ef.console.Message(ctx, fmt.Sprintf(
+					"No deployment was found for environment '%s'; there are no outputs to refresh yet. "+
+						"Run %s to create one.",
+					ef.env.Name(),
+					output.WithHighLightFormat("azd provision"),
+				))
+				continue
+			}
+
 			return nil, fmt.Errorf("getting deployment: %w", err)
+		}
+
+		// Extension providers may reply with an empty state result (nothing deployed yet); treat
+		// it like the no-deployment case rather than dereferencing a nil state.
+		if result == nil || result.State == nil {
+			ef.console.Message(ctx, fmt.Sprintf(
+				"No deployment state was found for environment '%s'; there are no outputs to refresh yet.",
+				ef.env.Name(),
+			))
+			continue
 		}
 
 		if err := provisioning.UpdateEnvironment(ctx, result.State.Outputs, ef.env, ef.envManager); err != nil {
@@ -1214,6 +1295,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 
 		state.MergeInto(*result.State)
+		stateRefreshed = true
 	}
 
 	if ef.formatter.Kind() == output.JsonFormat {
@@ -1223,23 +1305,36 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	servicesStable, err := ef.importManager.ServiceStable(ctx, ef.projectConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, svc := range servicesStable {
-		eventArgs := project.ServiceLifecycleEventArgs{
-			Project:        ef.projectConfig,
-			Service:        svc,
-			ServiceContext: project.NewServiceContext(),
-			Args: map[string]any{
-				"bicepOutput": state.Outputs,
-			},
+	// Wire framework lifecycle hooks (such as the .NET ServiceEventEnvUpdated handler that syncs
+	// outputs into user-secrets) best-effort per service, and raise the event only when a layer
+	// actually produced state. Services whose framework fails to initialize are reported and
+	// skipped rather than failing the refresh.
+	if stateRefreshed {
+		initializedServices, skipped, err := ef.projectManager.InitializeFrameworks(ctx, ef.projectConfig)
+		if err != nil {
+			return nil, err
 		}
 
-		if err := svc.RaiseEvent(ctx, project.ServiceEventEnvUpdated, eventArgs); err != nil {
-			return nil, err
+		for _, skip := range skipped {
+			ef.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: fmt.Sprintf(
+					"Skipping environment update events for service '%s': %v", skip.Service.Name, skip.Err),
+			})
+		}
+
+		for _, svc := range initializedServices {
+			eventArgs := project.ServiceLifecycleEventArgs{
+				Project:        ef.projectConfig,
+				Service:        svc,
+				ServiceContext: project.NewServiceContext(),
+				Args: map[string]any{
+					"bicepOutput": state.Outputs,
+				},
+			}
+
+			if err := svc.RaiseEvent(ctx, project.ServiceEventEnvUpdated, eventArgs); err != nil {
+				return nil, err
+			}
 		}
 	}
 

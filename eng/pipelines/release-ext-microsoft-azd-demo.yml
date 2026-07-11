@@ -24,10 +24,16 @@ pr:
       - cli/azd/docs/**
 
 parameters:
-  - name: PublishToDevRegistry
-    displayName: Publish to dev registry
-    type: boolean
-    default: false
+  - name: PublishToRegistry
+    displayName: Publish to registry
+    type: string
+    # Scheduled (nightly) runs override this in the shared templates; the runtime
+    # parameter default must be a literal because it renders before variables exist.
+    default: stable
+    values:
+      - stable
+      - dev
+      - nightly
 
 extends:
   template: /eng/pipelines/templates/stages/1es-redirect.yml
@@ -38,4 +44,4 @@ extends:
           AzdExtensionId: microsoft.azd.demo
           SanitizedExtensionId: microsoft-azd-demo
           AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.demo
-          PublishToDevRegistry: ${{ parameters.PublishToDevRegistry }}
+          PublishToRegistry: ${{ parameters.PublishToRegistry }}

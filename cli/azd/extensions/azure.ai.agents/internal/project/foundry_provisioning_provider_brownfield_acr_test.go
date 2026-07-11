@@ -188,9 +188,27 @@ func TestBrownfieldParams(t *testing.T) {
 
 		assert.Equal(t, map[string]any{"value": "acct"}, params["accountName"])
 		assert.Equal(t, map[string]any{"value": deployments}, params["deployments"])
+		assert.Equal(t, map[string]any{"value": []synthesis.Connection(nil)}, params["connections"])
 		assert.Equal(t, map[string]any{"value": "my-project"}, params["projectName"])
 		assert.NotContains(t, params, "includeAcr")
 		assert.NotContains(t, params, "acrName")
+	})
+
+	t.Run("connections without ACR carry connections and set projectName", func(t *testing.T) {
+		t.Parallel()
+		conns := []synthesis.Connection{{Name: "search-conn", Category: "CognitiveSearch"}}
+		p := &FoundryProvisioningProvider{
+			envName:               "dev",
+			brownfieldEndpoint:    "https://acct.services.ai.azure.com/api/projects/my-project",
+			brownfieldConnections: conns,
+		}
+		params := p.brownfieldParams(t.Context(), "acct", "rg", false)
+
+		assert.Equal(t, map[string]any{"value": conns}, params["connections"])
+		// Connections are project-scoped, so projectName must be supplied even
+		// without ACR.
+		assert.Equal(t, map[string]any{"value": "my-project"}, params["projectName"])
+		assert.NotContains(t, params, "includeAcr")
 	})
 
 	t.Run("with ACR adds registry params", func(t *testing.T) {
@@ -222,4 +240,81 @@ func TestBrownfieldParams(t *testing.T) {
 		assert.Contains(t, params, "includeAcr")
 		assert.NotContains(t, params, "location")
 	})
+}
+
+// TestBrownfieldReconcileMessage covers every combination the caller can
+// reach (deployBrownfield's own guard skips provisioning entirely when all
+// three are false, so at least one is always true here). Regression guard
+// for a live-tested bug: a brownfield project declaring only a connection
+// (no deployments, no ACR) previously printed "reconciling declared model
+// deployments..." even though zero deployments existed.
+func TestBrownfieldReconcileMessage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		hasDeployments bool
+		createACR      bool
+		hasConnections bool
+		want           string
+	}{
+		{
+			name:           "connections only (the live-tested regression case)",
+			hasConnections: true,
+			want:           "Using existing Foundry project; reconciling connections...",
+		},
+		{
+			name:           "deployments only",
+			hasDeployments: true,
+			want:           "Using existing Foundry project; reconciling model deployments...",
+		},
+		{
+			name:      "ACR only",
+			createACR: true,
+			want:      "Using existing Foundry project; reconciling container registry...",
+		},
+		{
+			name:           "deployments and ACR",
+			hasDeployments: true,
+			createACR:      true,
+			want:           "Using existing Foundry project; reconciling model deployments, container registry...",
+		},
+		{
+			name:           "deployments and connections",
+			hasDeployments: true,
+			hasConnections: true,
+			want:           "Using existing Foundry project; reconciling model deployments, connections...",
+		},
+		{
+			name:           "ACR and connections",
+			createACR:      true,
+			hasConnections: true,
+			want:           "Using existing Foundry project; reconciling container registry, connections...",
+		},
+		{
+			name:           "all three",
+			hasDeployments: true,
+			createACR:      true,
+			hasConnections: true,
+			want:           "Using existing Foundry project; reconciling model deployments, container registry, connections...",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := brownfieldReconcileMessage(tt.hasDeployments, tt.createACR, tt.hasConnections)
+			assert.Equal(t, tt.want, got)
+			// Never claim to reconcile something that isn't actually pending.
+			if !tt.hasDeployments {
+				assert.NotContains(t, got, "model deployments")
+			}
+			if !tt.createACR {
+				assert.NotContains(t, got, "container registry")
+			}
+			if !tt.hasConnections {
+				assert.NotContains(t, got, "connections")
+			}
+		})
+	}
 }

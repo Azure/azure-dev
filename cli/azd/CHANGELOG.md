@@ -4,13 +4,26 @@
 
 ### Features Added
 
+- [[#9019]](https://github.com/Azure/azure-dev/pull/9019) Add a provider-agnostic `provision` validation check type dispatched before provisioning for every provider. Extensions with the `validation-provider` capability can now contribute client-side checks that run regardless of the provisioning provider (Bicep, Terraform, or an extension-provided provider), not just during Bicep local preflight.
+
 ### Breaking Changes
 
 ### Bugs Fixed
 
-- [[#8949]](https://github.com/Azure/azure-dev/pull/8949) Dynamic linker/loader control variables (such as `LD_PRELOAD`, `LD_LIBRARY_PATH`, `LD_AUDIT`, and `DYLD_INSERT_LIBRARIES`) defined in an environment's `.env` file are no longer forwarded into tool subprocesses (docker, npm, python, and others).
-
 ### Other Changes
+
+## 1.27.1 (2026-07-09)
+
+### Features Added
+
+- [[#8927]](https://github.com/Azure/azure-dev/pull/8927) Add `--no-dependencies` flag to `azd extension install` that installs only the named extension without resolving or installing its declared dependencies.
+
+### Bugs Fixed
+
+- [[#8949]](https://github.com/Azure/azure-dev/pull/8949) Dynamic linker/loader control variables (such as `LD_PRELOAD`, `LD_LIBRARY_PATH`, `LD_AUDIT`, and `DYLD_INSERT_LIBRARIES`) defined in an environment's `.env` file are no longer forwarded into tool subprocesses (docker, npm, python, and others).
+- [[#8875]](https://github.com/Azure/azure-dev/pull/8875) Fix `azd tool uninstall` failing for VS Code extensions that have dependents (eg: vscode-azure-tools) and for the GitHub Copilot CLI when installed via Homebrew cask on macOS/Linux. Uninstall now detects which package manager owns the install and removes via the appropriate package manager, with guidance when a self-managed install requires manual removal.
+- [[#8842]](https://github.com/Azure/azure-dev/pull/8842) Deprecated models are now excluded by default from model catalog and quota prompts.
+- [[#8937]](https://github.com/Azure/azure-dev/pull/8937) Fix `azure.yaml` serialization writing empty `project` and `language` fields for services using code-less resource hosts such as `azure.ai.project`, `azure.ai.connection`, and `microsoft.foundry`; these fields are now omitted when empty.
 
 ## 1.27.0 (2026-06-30)
 

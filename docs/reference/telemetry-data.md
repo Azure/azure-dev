@@ -366,6 +366,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 | `validation.preflight.diagnostics` | string[] | Diagnostic IDs emitted |
 | `validation.preflight.rules` | string[] | Rule IDs executed |
 | `validation.preflight.extension_rules` | string[] | Rule IDs executed from extension-provided validation checks |
+| `validation.preflight.check_type` | string | Dispatch site that emitted the event: `local-preflight` (Bicep provider) or `provision` (provider-agnostic). Distinguishes the two emissions so Bicep provisions are not double-counted |
 | `validation.preflight.warning.count` | measurement | Number of warnings |
 | `validation.preflight.error.count` | measurement | Number of errors |
 </details>
@@ -623,6 +624,25 @@ OperationId: 28ce1f2898a4fec84522107e36c22038
 // ✅ Or be explicit about only first attempts
 | where Name == 'cmd.deploy'
 | summarize arg_min(TimeGenerated, *) by OperationId
+```
+
+### `validation.preflight` Emitted Twice Per Bicep Provision
+
+The `validation.preflight` event is emitted from **two** dispatch sites:
+
+- The provider-agnostic **`provision`** validation in `provisioning.Manager` (runs for every provider before provisioning), and
+- The Bicep provider's **`local-preflight`** validation (runs only for Bicep, using the ARM template snapshot).
+
+For a **Bicep** provision with a `validation-provider` extension loaded, **both** fire in a single run, producing two `validation.preflight` rows (each with its own `outcome`, warning/error counts, and rule lists). Use the `validation.preflight.check_type` field (`provision` vs `local-preflight`) to distinguish them.
+
+**Impact on queries:**
+```kql
+// ❌ WRONG — double-counts Bicep provisions
+| where Name == 'validation.preflight' | summarize count()
+
+// ✅ CORRECT — group/filter by the dispatch site
+| where Name == 'validation.preflight'
+| summarize count() by tostring(customDimensions['validation.preflight.check_type'])
 ```
 
 ### The `internal.unclassified` / `internal.errors_errorString` Catch-All

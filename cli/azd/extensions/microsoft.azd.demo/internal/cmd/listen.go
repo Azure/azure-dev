@@ -39,10 +39,24 @@ func newListenCommand() *cobra.Command {
 					return project.NewDemoProvisioningProvider(azdClient)
 				}).
 				WithValidationCheck(azdext.ValidationCheckRegistration{
-					CheckType: "local-preflight",
+					// Bicep-only check: runs during BicepProvider preflight and
+					// receives the Bicep snapshot / ARM template context. It is
+					// skipped gracefully when no snapshot is available (e.g. a
+					// non-Bicep provider), but is not dead code for Bicep.
+					CheckType: azdext.ValidationCheckTypeLocalPreflight,
 					RuleID:    "demo_warning",
 					Factory: func() azdext.ValidationCheckProvider {
 						return project.NewDemoValidationCheck()
+					},
+				}).
+				WithValidationCheck(azdext.ValidationCheckRegistration{
+					// Provider-agnostic check: runs before provisioning for every
+					// provider (Bicep, Terraform, and extension providers such as
+					// this demo provider). Receives the lean provision context.
+					CheckType: azdext.ValidationCheckTypeProvision,
+					RuleID:    "demo_provision_warning",
+					Factory: func() azdext.ValidationCheckProvider {
+						return project.NewDemoProvisionValidationCheck()
 					},
 				}).
 				WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {

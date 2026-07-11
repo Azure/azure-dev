@@ -52,15 +52,17 @@ type Checksum struct {
 // Claude Code) installs and updates a skill. Skill tools carry one or more
 // SkillHost entries; by default the installer targets the preferred host
 // (the first on PATH), but install/upgrade can target specific or all
-// detected hosts when the caller selects them (e.g. via `--host`).
+// detected hosts when the caller selects them (e.g. via `--agent`).
 type SkillHost struct {
-	// Host is the agent's display name, shown to the user and matched
-	// (case-insensitively) by --agent (e.g. "Copilot", "Claude").
+	// Host is the agent's display name, shown to the user (e.g. "GitHub
+	// Copilot CLI", "Claude Code CLI"). Display-only: it is NOT the value
+	// --agent matches against — see Command.
 	Host string
 	// Command is the agent CLI's executable name, used to run plugin
-	// commands and version probes (e.g. "copilot", "claude"). Required and
-	// must be non-empty: it is the real, case-correct binary name run
-	// directly by the installer and detector paths, so exec works on
+	// commands and version probes (e.g. "copilot", "claude"), and the value
+	// --agent is matched against (case-insensitively, by findSkillHost).
+	// Required and must be non-empty: it is the real, case-correct binary
+	// name run directly by the installer and detector paths, so exec works on
 	// case-sensitive filesystems (Linux). TestBuiltInTools_SkillHostsHaveCommand
 	// enforces that every configured host sets it.
 	Command string

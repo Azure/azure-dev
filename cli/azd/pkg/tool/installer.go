@@ -1749,12 +1749,20 @@ func (i *installer) installSkillForHost(
 	upgrade bool,
 	out io.Writer,
 ) (version string, alreadyLatest bool, skillCount int, err error) {
+	var beforeVersion string
+	if upgrade {
+		if installed, detectErr := i.detector.DetectSkillHosts(ctx, tool); detectErr == nil {
+			beforeVersion, _ = skillHostVersion(installed, host.Command)
+		}
+	}
+
 	cmdOutput, err := i.runSkillHostCommand(ctx, host, upgrade, out)
 	if err != nil {
 		return "", false, 0, err
 	}
+	var proseLatest bool
 	if upgrade {
-		version, alreadyLatest = parseUpgradeOutput(cmdOutput)
+		version, proseLatest = parseUpgradeOutput(cmdOutput)
 	} else {
 		skillCount = parseSkillCount(cmdOutput)
 	}
@@ -1768,7 +1776,33 @@ func (i *installer) installSkillForHost(
 	if version == "" {
 		version = detectedVersion
 	}
+
+	if upgrade {
+		// The authoritative "already up to date" signal is an unchanged
+		// version. Only when a version is unavailable on either side fall back
+		// to the host CLI's prose, so azd neither claims up to date without
+		// evidence nor misreports an upgrade when the wording is unrecognized.
+		if beforeVersion != "" && detectedVersion != "" {
+			alreadyLatest = beforeVersion == detectedVersion
+		} else {
+			alreadyLatest = proseLatest
+		}
+	}
+
 	return version, alreadyLatest, skillCount, nil
+}
+
+// skillHostVersion returns the installed version of the skill for the given
+// host command from a DetectSkillHosts result, and whether that host was
+// found. InstalledSkillHost.Host carries the executable identity, so the match
+// is against host.Command.
+func skillHostVersion(installed []InstalledSkillHost, command string) (string, bool) {
+	for _, h := range installed {
+		if h.Host == command {
+			return h.Version, true
+		}
+	}
+	return "", false
 }
 
 // verifySkillInstalled confirms the skill is detectable **through the
@@ -1794,11 +1828,9 @@ func (i *installer) verifySkillInstalled(
 		if detectErr != nil {
 			return false, detectErr
 		}
-		for _, h := range installed {
-			if h.Host == host.Command {
-				version = h.Version
-				return true, nil
-			}
+		if v, ok := skillHostVersion(installed, host.Command); ok {
+			version = v
+			return true, nil
 		}
 		return false, nil
 	})

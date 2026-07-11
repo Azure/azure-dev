@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tool"
@@ -1418,10 +1420,12 @@ func TestToolInstallAction_resolveToolIds_NoPromptDefaultsToRecommended(t *testi
 		"--no-prompt must skip the picker and default to recommended uninstalled tools")
 }
 
-// TestToolUninstallAction_resolveToolIds_NoPromptDefaultsToAllInstalled verifies
-// that --no-prompt (even in a TTY) skips the interactive picker and defaults to
-// every installed tool — its --all behavior, mirroring upgrade.
-func TestToolUninstallAction_resolveToolIds_NoPromptDefaultsToAllInstalled(t *testing.T) {
+// TestToolUninstallAction_resolveToolIds_NoPromptWithoutTarget_Errors verifies
+// that uninstall — unlike install/upgrade, which only add — never treats "no
+// target" as "all". With --no-prompt (or a non-interactive terminal) and
+// neither tool IDs nor --all, it fails with guidance instead of silently
+// removing every installed tool.
+func TestToolUninstallAction_resolveToolIds_NoPromptWithoutTarget_Errors(t *testing.T) {
 	detector := &cmdMockDetector{
 		detectAll: func(_ context.Context, _ []*tool.ToolDefinition) ([]*tool.ToolStatus, error) {
 			return []*tool.ToolStatus{
@@ -1442,9 +1446,42 @@ func TestToolUninstallAction_resolveToolIds_NoPromptDefaultsToAllInstalled(t *te
 	).(*toolUninstallAction)
 
 	ids, err := action.resolveToolIds(t.Context())
+	require.Error(t, err, "no target in non-interactive mode must not default to all")
+	assert.Nil(t, ids)
+
+	var ews *internal.ErrorWithSuggestion
+	require.ErrorAs(t, err, &ews)
+	assert.Contains(t, ews.Suggestion, "--all",
+		"the guidance must tell the user to pass tool IDs or --all")
+}
+
+// TestToolUninstallAction_resolveToolIds_AllFlag_NoPrompt verifies the explicit
+// destructive path still works: --all (even with --no-prompt) selects every
+// installed tool.
+func TestToolUninstallAction_resolveToolIds_AllFlag_NoPrompt(t *testing.T) {
+	detector := &cmdMockDetector{
+		detectAll: func(_ context.Context, _ []*tool.ToolDefinition) ([]*tool.ToolStatus, error) {
+			return []*tool.ToolStatus{
+				{Tool: &tool.ToolDefinition{Id: "a"}, Installed: true},
+				{Tool: &tool.ToolDefinition{Id: "b"}, Installed: true},
+				{Tool: &tool.ToolDefinition{Id: "c"}},
+			}, nil
+		},
+	}
+	manager := tool.NewManager(detector, &cmdMockInstaller{}, nil)
+
+	console := mockinput.NewMockConsole()
+	console.SetTerminal(true)
+	console.SetNoPromptMode(true)
+
+	action := newToolUninstallAction(
+		nil, &toolUninstallFlags{all: true}, manager, console, &output.NoneFormatter{}, io.Discard,
+	).(*toolUninstallAction)
+
+	ids, err := action.resolveToolIds(t.Context())
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"a", "b"}, ids,
-		"--no-prompt must skip the picker and default to all installed tools")
+		"--all must select every installed tool")
 }
 
 // TestToolUpgradeAction_MultiHostSkill_UpgradedNotUpToDate reproduces the
@@ -1560,4 +1597,139 @@ func TestToolNameColumn_PlainValueWrapsUnlikeAnsiValue(t *testing.T) {
 
 	assert.Greater(t, strings.Count(plain, "\n"), strings.Count(embedded, "\n"),
 		"a plain NAME value must wrap at narrow width, unlike an ANSI-embedded value")
+}
+
+// TestToolListAction_JsonFormat_SkillPerHostRows locks the machine-readable
+// contract for `azd tool list --output json`: a skill installed on multiple
+// agents expands into one row per host, each carrying the original tool name,
+// the command-valued agent, and that host's installed version.
+func TestToolListAction_JsonFormat_SkillPerHostRows(t *testing.T) {
+	t.Parallel()
+
+	skill := &tool.ToolDefinition{
+		Id:       "azure-skills",
+		Name:     "Azure Skills",
+		Category: tool.ToolCategorySkill,
+		Priority: tool.ToolPriorityRecommended,
+		SkillHosts: []tool.SkillHost{
+			{Host: "GitHub Copilot CLI", Command: "copilot"},
+			{Host: "Claude Code CLI", Command: "claude"},
+		},
+	}
+	detector := &cmdMockDetector{
+		detectAll: func(_ context.Context, _ []*tool.ToolDefinition) ([]*tool.ToolStatus, error) {
+			return []*tool.ToolStatus{{
+				Tool:      skill,
+				Installed: true,
+				SkillHosts: []tool.InstalledSkillHost{
+					{Host: "copilot", Version: "1.0.0"},
+					{Host: "claude", Version: "2.0.0"},
+				},
+			}}, nil
+		},
+	}
+	manager := tool.NewManager(detector, &cmdMockInstaller{}, nil)
+
+	var buf bytes.Buffer
+	action := newToolListAction(manager, mockinput.NewMockConsole(), &output.JsonFormatter{}, &buf)
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+
+	var rows []toolListItem
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &rows))
+
+	byAgent := make(map[string]toolListItem)
+	for _, r := range rows {
+		if r.Agent != "" {
+			byAgent[r.Agent] = r
+		}
+	}
+	require.Len(t, byAgent, 2, "a two-host skill must produce two agent rows")
+	assert.Equal(t, "Azure Skills", byAgent["copilot"].Name)
+	assert.Equal(t, "1.0.0", byAgent["copilot"].Version)
+	assert.Equal(t, "Azure Skills", byAgent["claude"].Name)
+	assert.Equal(t, "2.0.0", byAgent["claude"].Version)
+}
+
+// TestToolCheckAction_JsonFormat_SkillPerHostRows locks the machine-readable
+// contract for `azd tool check --output json`: each skill host is a row with
+// the command-valued agent, its installed version, the tool's latest version,
+// and a per-host update flag (so a stale host reports an update while a current
+// one does not).
+func TestToolCheckAction_JsonFormat_SkillPerHostRows(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+
+	detector := &cmdMockDetector{
+		detectAll: func(_ context.Context, _ []*tool.ToolDefinition) ([]*tool.ToolStatus, error) {
+			return []*tool.ToolStatus{{
+				Tool:      &tool.ToolDefinition{Id: "azure-skills"},
+				Installed: true,
+				SkillHosts: []tool.InstalledSkillHost{
+					{Host: "copilot", Version: "1.0.0"}, // behind latest
+					{Host: "claude", Version: "2.0.0"},  // current
+				},
+			}}, nil
+		},
+	}
+
+	cacheDir := t.TempDir()
+	updateChecker := tool.NewUpdateChecker(
+		&memUserConfigManager{},
+		detector,
+		func() (string, error) { return cacheDir, nil },
+		map[string]tool.LatestVersionProvider{
+			"azure-skills": stubVersionProvider{version: "2.0.0"},
+		},
+	)
+	manager := tool.NewManager(detector, &cmdMockInstaller{}, updateChecker)
+
+	var buf bytes.Buffer
+	action := newToolCheckAction(manager, mockinput.NewMockConsole(), &output.JsonFormatter{}, &buf)
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+
+	var rows []toolCheckItem
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &rows))
+
+	byAgent := make(map[string]toolCheckItem)
+	for _, r := range rows {
+		if r.Agent != "" {
+			byAgent[r.Agent] = r
+		}
+	}
+	require.Len(t, byAgent, 2, "a two-host skill must produce two agent rows")
+
+	assert.Equal(t, "1.0.0", byAgent["copilot"].InstalledVersion)
+	assert.Equal(t, "2.0.0", byAgent["copilot"].LatestVersion)
+	assert.True(t, byAgent["copilot"].UpdateAvailable, "a stale host must report an update")
+
+	assert.Equal(t, "2.0.0", byAgent["claude"].InstalledVersion)
+	assert.Equal(t, "2.0.0", byAgent["claude"].LatestVersion)
+	assert.False(t, byAgent["claude"].UpdateAvailable, "a current host must not report an update")
+}
+
+// memUserConfigManager is an in-memory config.UserConfigManager for tests that
+// drive a real UpdateChecker without touching the user's config on disk.
+type memUserConfigManager struct{ cfg config.Config }
+
+func (m *memUserConfigManager) Load() (config.Config, error) {
+	if m.cfg == nil {
+		m.cfg = config.NewEmptyConfig()
+	}
+	return m.cfg, nil
+}
+
+func (m *memUserConfigManager) Save(c config.Config) error {
+	m.cfg = c
+	return nil
+}
+
+// stubVersionProvider is a tool.LatestVersionProvider that returns a fixed
+// version, so update checks are deterministic and offline.
+type stubVersionProvider struct{ version string }
+
+func (s stubVersionProvider) GetLatestVersion(
+	context.Context, *tool.ToolDefinition,
+) (string, error) {
+	return s.version, nil
 }

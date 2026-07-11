@@ -1419,11 +1419,15 @@ func TestRunSkill_Upgrade_StepResultShowsVersion(t *testing.T) {
 	mockHostPresence(runner, "copilot")
 	runner.MockToolInPath("node", nil)
 	// The update command reports the new version (claude-style "from A to B").
+	var upgraded bool
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return args.Cmd == "copilot" && slices.Contains(args.Args, "update")
-	}).Respond(exec.RunResult{
-		ExitCode: 0,
-		Stdout:   `Plugin "azure" updated from 1.1.73 to 1.1.86 for scope user.`,
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		upgraded = true
+		return exec.RunResult{
+			ExitCode: 0,
+			Stdout:   `Plugin "azure" updated from 1.1.73 to 1.1.86 for scope user.`,
+		}, nil
 	})
 
 	inst := NewInstaller(
@@ -1432,7 +1436,13 @@ func TestRunSkill_Upgrade_StepResultShowsVersion(t *testing.T) {
 			detectSkillHostsFn: func(
 				_ context.Context, _ *ToolDefinition,
 			) ([]InstalledSkillHost, error) {
-				return []InstalledSkillHost{{Host: "copilot", Version: "1.1.86"}}, nil
+				// An actual upgrade: the old version before the update runs,
+				// the new version afterwards.
+				version := "1.1.73"
+				if upgraded {
+					version = "1.1.86"
+				}
+				return []InstalledSkillHost{{Host: "copilot", Version: version}}, nil
 			},
 		},
 	)
@@ -4660,12 +4670,10 @@ func TestLineWriter_Write_SerializesEmit(t *testing.T) {
 
 	const writers = 100
 	var wg sync.WaitGroup
-	wg.Add(writers)
 	for range writers {
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, _ = lw.Write([]byte("a\nb\nc\n")) // 3 lines per write
-		}()
+		})
 	}
 	wg.Wait()
 

@@ -27,6 +27,11 @@ func createHttpClient() *http.Client {
 		}
 
 		transport.Proxy = http.ProxyURL(proxyUrl)
+		// The recording proxy uses a self-signed certificate, so we must skip TLS verification.
+		// This code only compiles under the "record" build tag and never runs in production.
+		transport.TLSClientConfig = &tls.Config{
+			InsecureSkipVerify: true,
+		}
 	}
 
 	return &http.Client{Transport: transport}

@@ -31,11 +31,8 @@ func setupDebugLogging(flags *pflag.FlagSet) func() {
 		return func() {}
 	}
 
-	logFile, err := os.CreateTemp("", "azd-ai-agents-*.log")
-	if err == nil {
-		logFile.Close()
-		logFile, err = os.OpenFile(logFile.Name(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
-	}
+	logFileName := fmt.Sprintf("azd-ai-agents-%s.log", time.Now().Format("2006-01-02"))
+	logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600) //nolint:gosec // path derived from time.Now(), not user input
 
 	var w io.Writer
 	var closeFile func()

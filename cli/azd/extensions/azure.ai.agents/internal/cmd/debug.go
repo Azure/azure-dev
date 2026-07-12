@@ -63,11 +63,6 @@ func isDebug(flags *pflag.FlagSet) bool {
 		return true
 	}
 
-	debugEnv := os.Getenv("AZD_EXT_DEBUG")
-	if debugEnv == "" {
-		return false
-	}
-
-	debug, err := strconv.ParseBool(debugEnv)
-	return err == nil && debug
+	debug, _ := strconv.ParseBool(os.Getenv("AZD_EXT_DEBUG"))
+	return debug
 }

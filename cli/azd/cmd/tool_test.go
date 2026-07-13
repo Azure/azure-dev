@@ -63,6 +63,7 @@ func TestRunToolOperationUnsuccessfulResultReturnsError(t *testing.T) {
 		"Installing",
 		"install",
 		console,
+		false,
 	)
 	results, err := outcome.Items, outcome.Err
 
@@ -97,6 +98,7 @@ func TestRunToolOperationSuccessfulResultReturnsNoError(t *testing.T) {
 		"Installing",
 		"install",
 		console,
+		false,
 	)
 	results, err := outcome.Items, outcome.Err
 
@@ -1222,6 +1224,77 @@ func TestToolUpgradeAction_All_UpgradesInstalledTools(t *testing.T) {
 		"--all must upgrade exactly the installed tools")
 }
 
+// TestToolUpgradeAction_All_JsonFormat_EmitsCleanJson exercises the reviewer's
+// exact trigger — `azd tool upgrade --all --output json` — and verifies the
+// writer receives parseable JSON. In JSON mode the detection spinner is
+// bypassed (detectAllTools) so no control bytes can corrupt the stream.
+func TestToolUpgradeAction_All_JsonFormat_EmitsCleanJson(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+
+	detector := &cmdMockDetector{
+		detectAll: func(_ context.Context, tools []*tool.ToolDefinition) ([]*tool.ToolStatus, error) {
+			statuses := make([]*tool.ToolStatus, len(tools))
+			for i, td := range tools {
+				statuses[i] = &tool.ToolStatus{Tool: td, Installed: i < 1, InstalledVersion: "1.0.0"}
+			}
+			return statuses, nil
+		},
+	}
+	installer := &cmdMockInstaller{
+		upgrade: func(_ context.Context, td *tool.ToolDefinition, _ ...tool.InstallOption) (*tool.InstallResult, error) {
+			return &tool.InstallResult{Tool: td, Success: true, InstalledVersion: "2.0.0"}, nil
+		},
+	}
+	manager := tool.NewManager(detector, installer, nil)
+
+	var buf bytes.Buffer
+	action := newToolUpgradeAction(
+		nil,
+		&toolUpgradeFlags{all: true},
+		manager,
+		mockinput.NewMockConsole(),
+		&output.JsonFormatter{},
+		&buf,
+	)
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+
+	var items []toolInstallResultItem
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &items),
+		"upgrade --all --output json must emit parseable JSON")
+	require.NotEmpty(t, items, "at least one installed tool must be reported")
+}
+
+// TestToolUpgradeAction_IDsWithAll_Errors verifies that `azd tool upgrade foo
+// --all` is rejected rather than silently ignoring foo and upgrading everything.
+func TestToolUpgradeAction_IDsWithAll_Errors(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+
+	var upgraded bool
+	installer := &cmdMockInstaller{
+		upgrade: func(_ context.Context, td *tool.ToolDefinition, _ ...tool.InstallOption) (*tool.InstallResult, error) {
+			upgraded = true
+			return &tool.InstallResult{Tool: td, Success: true}, nil
+		},
+	}
+	manager := tool.NewManager(&cmdMockDetector{}, installer, nil)
+
+	action := newToolUpgradeAction(
+		[]string{"foo"},
+		&toolUpgradeFlags{all: true},
+		manager,
+		mockinput.NewMockConsole(),
+		&output.NoneFormatter{},
+		io.Discard,
+	)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, internal.ErrInvalidFlagCombination)
+	assert.False(t, upgraded, "no tool must be upgraded when the flag combination is invalid")
+}
+
 // TestToolUpgradeAction_NoPrompt_WithoutTarget_Errors verifies that
 // `azd tool upgrade` with --no-prompt (or a non-interactive terminal) and no
 // tool IDs and no --all fails with guidance instead of implicitly upgrading
@@ -1487,6 +1560,22 @@ func TestToolInstallAction_resolveToolIds_AllFlag(t *testing.T) {
 		"--all installs recommended, not-yet-installed tools")
 }
 
+// TestToolInstallAction_resolveToolIds_IDsWithAll_Errors verifies that passing
+// both tool IDs and --all is rejected rather than silently ignoring the IDs.
+func TestToolInstallAction_resolveToolIds_IDsWithAll_Errors(t *testing.T) {
+	manager := tool.NewManager(&cmdMockDetector{}, &cmdMockInstaller{}, nil)
+
+	action := newToolInstallAction(
+		[]string{"foo"}, &toolInstallFlags{all: true}, manager, mockinput.NewMockConsole(),
+		&output.NoneFormatter{}, io.Discard,
+	).(*toolInstallAction)
+
+	ids, err := action.resolveToolIds(t.Context())
+	require.Error(t, err)
+	assert.Nil(t, ids)
+	assert.ErrorIs(t, err, internal.ErrInvalidFlagCombination)
+}
+
 // TestToolUninstallAction_resolveToolIds_NoPromptWithoutTarget_Errors verifies
 // that uninstall — unlike install/upgrade, which only add — never treats "no
 // target" as "all". With --no-prompt (or a non-interactive terminal) and
@@ -1549,6 +1638,22 @@ func TestToolUninstallAction_resolveToolIds_AllFlag_NoPrompt(t *testing.T) {
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"a", "b"}, ids,
 		"--all must select every installed tool")
+}
+
+// TestToolUninstallAction_resolveToolIds_IDsWithAll_Errors verifies that passing
+// both tool IDs and --all is rejected rather than silently ignoring one of them.
+func TestToolUninstallAction_resolveToolIds_IDsWithAll_Errors(t *testing.T) {
+	manager := tool.NewManager(&cmdMockDetector{}, &cmdMockInstaller{}, nil)
+
+	action := newToolUninstallAction(
+		[]string{"a"}, &toolUninstallFlags{all: true}, manager, mockinput.NewMockConsole(),
+		&output.NoneFormatter{}, io.Discard,
+	).(*toolUninstallAction)
+
+	ids, err := action.resolveToolIds(t.Context())
+	require.Error(t, err)
+	assert.Nil(t, ids)
+	assert.ErrorIs(t, err, internal.ErrInvalidFlagCombination)
 }
 
 // TestToolUpgradeAction_MultiAgentSkill_UpgradedNotUpToDate reproduces the

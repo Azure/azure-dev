@@ -311,7 +311,7 @@ func (a *toolAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return a.manager.InstallTools(ctx, allIDs)
 	}
 
-	_ = runToolOperation(ctx, tools, operationFn, "Installing", "install", a.console)
+	_ = runToolOperation(ctx, tools, operationFn, "Installing", "install", a.console, false)
 	// runToolOperation already displayed warnings; we intentionally
 	// discard the outcome here — child tasks have surfaced what the user
 	// needs to see, and this caller does not propagate the task error.
@@ -602,7 +602,8 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 		operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
 			return a.manager.InstallTools(ctx, allIDs, agentOpts...)
 		}
-		outcome := runToolOperation(ctx, tools, operationFn, "Installing", "install", a.console)
+		outcome := runToolOperation(ctx, tools, operationFn, "Installing", "install", a.console,
+			a.formatter.Kind() == output.JsonFormat)
 		installResults = outcome.Items
 		rawResults = outcome.Results
 		opErr = outcome.Err
@@ -855,6 +856,36 @@ func (a *toolInstallAction) promptForSkillAgents(
 	return []tool.InstallOption{tool.WithAgents(picked...)}, nil
 }
 
+// detectAllTools runs manager.DetectAll to get the status of every tool,
+// showing a detection spinner with the given text. The spinner is skipped when
+// the output format is JSON: it writes control bytes to stdout and would
+// corrupt the machine-readable stream (matching tool list/check, which also
+// bypass the spinner in JSON mode).
+func detectAllTools(
+	ctx context.Context,
+	manager *tool.Manager,
+	formatter output.Formatter,
+	spinnerText string,
+) ([]*tool.ToolStatus, error) {
+	if formatter != nil && formatter.Kind() == output.JsonFormat {
+		return manager.DetectAll(ctx)
+	}
+
+	var statuses []*tool.ToolStatus
+	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
+		Text:        spinnerText,
+		ClearOnStop: true,
+	})
+	if err := spinner.Run(ctx, func(ctx context.Context) error {
+		var detectErr error
+		statuses, detectErr = manager.DetectAll(ctx)
+		return detectErr
+	}); err != nil {
+		return nil, err
+	}
+	return statuses, nil
+}
+
 // useStepSpinner reports whether a tool operation should render live
 // per-step progress with the step spinner (like azd provision) instead of
 // the batch task list. It applies to any interactive, non-JSON operation.
@@ -980,20 +1011,33 @@ func noToolTargetError(command string) error {
 	}
 }
 
+// toolIDsWithAllError is returned when a tool operation is given both explicit
+// tool IDs and --all. --all applies only when no tool ID is specified, so the
+// combination is rejected rather than silently ignoring one of them
+func toolIDsWithAllError(command string) error {
+	return &internal.ErrorWithSuggestion{
+		Err: fmt.Errorf(
+			"cannot specify both tool IDs and --all: %w",
+			internal.ErrInvalidFlagCombination),
+		Message: "Tool IDs and --all cannot be combined.",
+		Suggestion: fmt.Sprintf(
+			"Use either:\n"+
+				"    azd tool %s <tool-id>\n"+
+				"    azd tool %s --all",
+			command, command),
+	}
+}
+
 // resolveToolIds determines which tool IDs to install based on flags and arguments.
 func (a *toolInstallAction) resolveToolIds(ctx context.Context) ([]string, error) {
+	if len(a.args) > 0 && a.flags.all {
+		return nil, toolIDsWithAllError("install")
+	}
+
 	// --all: install all recommended tools that are not already installed.
 	if a.flags.all {
-		var statuses []*tool.ToolStatus
-		spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
-			Text:        "Detecting tool status...",
-			ClearOnStop: true,
-		})
-		if err := spinner.Run(ctx, func(ctx context.Context) error {
-			var detectErr error
-			statuses, detectErr = a.manager.DetectAll(ctx)
-			return detectErr
-		}); err != nil {
+		statuses, err := detectAllTools(ctx, a.manager, a.formatter, "Detecting tool status...")
+		if err != nil {
 			return nil, fmt.Errorf("detecting tools: %w", err)
 		}
 
@@ -1012,16 +1056,8 @@ func (a *toolInstallAction) resolveToolIds(ctx context.Context) ([]string, error
 	}
 
 	// Interactive: let the user pick from uninstalled tools.
-	var statuses []*tool.ToolStatus
-	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
-		Text:        "Detecting tool status...",
-		ClearOnStop: true,
-	})
-	if err := spinner.Run(ctx, func(ctx context.Context) error {
-		var detectErr error
-		statuses, detectErr = a.manager.DetectAll(ctx)
-		return detectErr
-	}); err != nil {
+	statuses, err := detectAllTools(ctx, a.manager, a.formatter, "Detecting tool status...")
+	if err != nil {
 		return nil, fmt.Errorf("detecting tools: %w", err)
 	}
 
@@ -1142,6 +1178,10 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 	// for upgrading.
 	fromVersions := make(map[string]string)
 
+	if len(a.args) > 0 && a.flags.all {
+		return nil, toolIDsWithAllError("upgrade")
+	}
+
 	switch {
 	case a.flags.all:
 		// --all: upgrade every installed tool.
@@ -1254,7 +1294,8 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
 			return a.manager.UpgradeTools(ctx, allIDs, agentOpts...)
 		}
-		outcome := runToolOperation(ctx, toolsToUpgrade, operationFn, "Upgrading", "upgrade", a.console)
+		outcome := runToolOperation(ctx, toolsToUpgrade, operationFn, "Upgrading", "upgrade", a.console,
+			a.formatter.Kind() == output.JsonFormat)
 		upgradeResults = outcome.Items
 		rawResults = outcome.Results
 		opErr = outcome.Err
@@ -1335,16 +1376,8 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 // detectInstalledTools runs DetectAll behind a spinner and returns the full
 // set of tool statuses. Used by the --all and interactive upgrade paths.
 func (a *toolUpgradeAction) detectInstalledTools(ctx context.Context) ([]*tool.ToolStatus, error) {
-	var statuses []*tool.ToolStatus
-	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
-		Text:        "Detecting installed tools...",
-		ClearOnStop: true,
-	})
-	if err := spinner.Run(ctx, func(ctx context.Context) error {
-		var detectErr error
-		statuses, detectErr = a.manager.DetectAll(ctx)
-		return detectErr
-	}); err != nil {
+	statuses, err := detectAllTools(ctx, a.manager, a.formatter, "Detecting installed tools...")
+	if err != nil {
 		return nil, fmt.Errorf("detecting installed tools: %w", err)
 	}
 	return statuses, nil
@@ -1577,7 +1610,8 @@ func (a *toolUninstallAction) Run(ctx context.Context) (*actions.ActionResult, e
 		operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
 			return a.manager.UninstallTools(ctx, allIDs, agentOpts...)
 		}
-		outcome := runToolOperation(ctx, tools, operationFn, "Uninstalling", "uninstall", a.console)
+		outcome := runToolOperation(ctx, tools, operationFn, "Uninstalling", "uninstall", a.console,
+			a.formatter.Kind() == output.JsonFormat)
 		uninstallResults = outcome.Items
 		rawResults = outcome.Results
 		opErr = outcome.Err
@@ -1632,6 +1666,10 @@ func (a *toolUninstallAction) resolveAgentOptions(
 // mutates) select every installed tool; otherwise the interactive path
 // lets the user pick from installed tools.
 func (a *toolUninstallAction) resolveToolIds(ctx context.Context) ([]string, error) {
+	if len(a.args) > 0 && a.flags.all {
+		return nil, toolIDsWithAllError("uninstall")
+	}
+
 	// Positional args: uninstall specified tools by ID.
 	if len(a.args) > 0 {
 		return a.args, nil
@@ -1639,16 +1677,8 @@ func (a *toolUninstallAction) resolveToolIds(ctx context.Context) ([]string, err
 
 	// --all, --dry-run, and the interactive picker all need the current
 	// installed set.
-	var statuses []*tool.ToolStatus
-	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
-		Text:        "Detecting installed tools...",
-		ClearOnStop: true,
-	})
-	if err := spinner.Run(ctx, func(ctx context.Context) error {
-		var detectErr error
-		statuses, detectErr = a.manager.DetectAll(ctx)
-		return detectErr
-	}); err != nil {
+	statuses, err := detectAllTools(ctx, a.manager, a.formatter, "Detecting installed tools...")
+	if err != nil {
 		return nil, fmt.Errorf("detecting installed tools: %w", err)
 	}
 
@@ -2239,6 +2269,9 @@ type toolOpOutcome struct {
 //   - title: verb for task titles (e.g. "Installing", "Upgrading")
 //   - action: action label for result items (e.g. "install", "upgrade")
 //   - console: for displaying warnings on partial failure
+//   - quiet: when true (JSON output) the per-tool TaskList is routed to
+//     io.Discard so its progress/control bytes never corrupt the
+//     machine-readable stream; the results are still collected for the caller.
 func runToolOperation(
 	ctx context.Context,
 	tools []*tool.ToolDefinition,
@@ -2246,6 +2279,7 @@ func runToolOperation(
 	title string,
 	action string,
 	console input.Console,
+	quiet bool,
 ) toolOpOutcome {
 	// Collect all IDs and run the operation once.
 	ids := make([]string, len(tools))
@@ -2272,9 +2306,13 @@ func runToolOperation(
 		requestedIDs[t.Id] = true
 	}
 
-	taskList := uxlib.NewTaskList(
-		&uxlib.TaskListOptions{ContinueOnError: true},
-	)
+	taskListOptions := &uxlib.TaskListOptions{ContinueOnError: true}
+	if quiet {
+		// JSON output: suppress the TaskList UI so it cannot write progress or
+		// control bytes to stdout ahead of the JSON payload.
+		taskListOptions.Writer = io.Discard
+	}
+	taskList := uxlib.NewTaskList(taskListOptions)
 
 	for _, t := range tools {
 		capturedTool := t

@@ -4,6 +4,7 @@
 package tool
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/sha512"
@@ -285,6 +286,7 @@ func renderSkillStep(
 	out := &lineWriter{emit: emit}
 
 	doneTitle, err := work(out)
+	out.Flush()
 	if doneTitle == "" {
 		doneTitle = title
 	}
@@ -297,30 +299,58 @@ func renderSkillStep(
 	return err
 }
 
-// lineWriter splits writes into lines and hands each to emit. Skill agent
-// commands use it to surface the agent CLI's output through the console so it
-// prints above the step spinner (which the console re-renders around each
-// line), keeping the spinner visible. Content is emitted as it arrives —
-// including a trailing line with no newline, e.g. an interactive prompt — so
-// nothing is withheld from the user while the CLI waits for input.
+// lineWriter buffers agent CLI output and hands each complete line to emit.
+// Skill agent commands use it to surface the agent CLI's output through the
+// console so it prints above the step spinner (which the console re-renders
+// around each line), keeping the spinner visible.
+//
+// os/exec may deliver a single logical line across several Write calls (and
+// several lines in one call), so Write accumulates bytes and emits only on a
+// newline — never per-write fragments — while preserving empty lines. Bytes
+// after the final newline are retained until a later Write completes the line
+// or Flush is called. Flush must be called once the command has finished
+// writing so a trailing line with no newline (e.g. the CLI's last output line)
+// is not lost.
 //
 // CommandRunner wires a command's stdout and stderr to distinct io.MultiWriter
 // values, so os/exec may call Write from two goroutines at once. The mutex
-// serializes those calls so emit (which may append to an unsynchronized buffer
-// or write to the console) is never invoked concurrently — avoiding a data
-// race and interleaved/lost agent output.
+// serializes those calls (and Flush) so emit and the shared buffer are never
+// accessed concurrently — avoiding a data race and interleaved/lost agent
+// output.
 type lineWriter struct {
 	mu   sync.Mutex
+	buf  []byte
 	emit func(string)
 }
 
+// Write accumulates p and emits every complete, newline-terminated line via
+// emit (without the trailing newline), preserving empty lines. Any bytes after
+// the final newline are retained for the next Write or Flush.
 func (l *lineWriter) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	for line := range strings.SplitSeq(strings.TrimRight(string(p), "\n"), "\n") {
-		l.emit(line)
+	l.buf = append(l.buf, p...)
+	for {
+		i := bytes.IndexByte(l.buf, '\n')
+		if i < 0 {
+			break
+		}
+		l.emit(string(l.buf[:i]))
+		l.buf = l.buf[i+1:]
 	}
 	return len(p), nil
+}
+
+// Flush emits any buffered content not terminated by a newline. It is called
+// once the command has finished writing so a final line without a trailing
+// newline is surfaced rather than dropped.
+func (l *lineWriter) Flush() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.buf) > 0 {
+		l.emit(string(l.buf))
+		l.buf = nil
+	}
 }
 
 // skillCommandRunArgs configures how a skill agent command (install, upgrade

@@ -4657,3 +4657,27 @@ func TestLineWriter_Write_SerializesEmit(t *testing.T) {
 	assert.Len(t, got, writers*3,
 		"every emitted line must be recorded without loss under concurrent writes")
 }
+
+// TestLineWriter_BuffersAcrossWritesAndPreservesEmptyLines verifies the
+// line-splitting contract: a logical line split across multiple Write calls is
+// emitted once (os/exec chunks arbitrarily), empty lines are preserved, and a
+// trailing line with no newline is held until Flush rather than dropped.
+func TestLineWriter_BuffersAcrossWritesAndPreservesEmptyLines(t *testing.T) {
+	var got []string
+	lw := &lineWriter{emit: func(s string) { got = append(got, s) }}
+
+	// A single logical line split across two writes must emit once, joined.
+	_, _ = lw.Write([]byte("hel"))
+	_, _ = lw.Write([]byte("lo\n"))
+	// Consecutive newlines yield preserved empty lines.
+	_, _ = lw.Write([]byte("a\n\nb\n"))
+	// Trailing content with no newline is buffered, not emitted yet.
+	_, _ = lw.Write([]byte("no newline"))
+
+	assert.Equal(t, []string{"hello", "a", "", "b"}, got,
+		"complete lines emit once, empty lines preserved, partial line held")
+
+	lw.Flush()
+	assert.Equal(t, []string{"hello", "a", "", "b", "no newline"}, got,
+		"Flush emits the trailing line that had no terminating newline")
+}

@@ -402,7 +402,7 @@ func azureSkills() *ToolDefinition {
 		Website:  "https://github.com/microsoft/azure-skills",
 		SkillHosts: []SkillHost{
 			{
-				Host:                   "GitHub Copilot CLI",
+				Host:                   "GitHub",
 				Command:                "copilot",
 				MarketplaceAddCommand:  []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
 				PluginInstallCommand:   []string{"plugin", "install", "azure@azure-skills"},
@@ -420,7 +420,7 @@ func azureSkills() *ToolDefinition {
 				BinaryVersionRegex: `(?m)^GitHub Copilot CLI\s+v?(\d+\.\d+\.\d+)`,
 			},
 			{
-				Host:    "Claude Code CLI",
+				Host:    "Claude",
 				Command: "claude",
 				MarketplaceAddCommand: []string{
 					"plugin", "marketplace", "add", "https://github.com/microsoft/azure-skills",

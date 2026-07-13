@@ -127,7 +127,7 @@ func newRunner(t *testing.T, mode string) *runner {
 	configDir := filepath.Join(os.TempDir(), "e2e-azd-config-"+mode)
 	setupConfigDir(t, configDir)
 
-	env := os.Environ()
+	env := withoutGitHubTokenEnv(os.Environ())
 	env = append(env, "AZD_CONFIG_DIR="+configDir)
 	if tenant := os.Getenv("E2E_TENANT"); tenant != "" {
 		env = append(env, "AZURE_TENANT_ID="+tenant)
@@ -1151,27 +1151,52 @@ func exitCode(err error) int {
 	return -1
 }
 
-// ghToken resolves a GitHub token from the environment, falling back to `gh`.
+// ghToken resolves a usable GitHub token from the environment, falling back to `gh`.
 func ghToken() string {
 	for _, k := range []string{"GITHUB_TOKEN", "GH_TOKEN"} {
 		if v := os.Getenv(k); v != "" {
-			return v
+			if isUsableGitHubToken(v) {
+				return v
+			}
+			return ""
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	//nolint:gosec // gh is a trusted fixed binary; no user input in args.
-	out, err := exec.CommandContext(ctx, "gh", "auth", "token").Output()
+	cmd := exec.CommandContext(ctx, "gh", "auth", "token")
+	cmd.Env = withoutGitHubTokenEnv(os.Environ())
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
 }
 
+func isUsableGitHubToken(token string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	//nolint:gosec // gh is a trusted fixed binary; no user input in args.
+	cmd := exec.CommandContext(ctx, "gh", "auth", "status", "--hostname", "github.com")
+	cmd.Env = append(withoutGitHubTokenEnv(os.Environ()), "GH_TOKEN="+token, "GITHUB_TOKEN="+token)
+	return cmd.Run() == nil
+}
+
 func isInvalidGitHubTokenError(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "The token in GH_TOKEN is invalid") ||
 		strings.Contains(msg, "The token in GITHUB_TOKEN is invalid")
+}
+
+func withoutGitHubTokenEnv(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "GH_TOKEN=") || strings.HasPrefix(kv, "GITHUB_TOKEN=") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }
 
 // shortHash returns a short, non-cryptographic uniqueness suffix for the agent

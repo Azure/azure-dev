@@ -148,7 +148,11 @@ func (p *skillServiceTarget) Deploy(
 	}
 
 	if cfg.Archive != "" {
-		archivePath, err := resolveSkillArchivePath(serviceConfig, cfg.Archive)
+		projectResp, err := p.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			return nil, fmt.Errorf("resolving azd project path for skill archive: %w", err)
+		}
+		archivePath, err := resolveSkillArchivePath(projectResp.GetProject().GetPath(), serviceConfig, cfg.Archive)
 		if err != nil {
 			return nil, err
 		}
@@ -246,7 +250,7 @@ type preparedSkillArchive struct {
 	Reader io.ReadCloser
 }
 
-func resolveSkillArchivePath(svc *azdext.ServiceConfig, archive string) (string, error) {
+func resolveSkillArchivePath(projectPath string, svc *azdext.ServiceConfig, archive string) (string, error) {
 	path := strings.TrimSpace(archive)
 	if filepath.IsAbs(path) {
 		return path, nil
@@ -262,7 +266,7 @@ func resolveSkillArchivePath(svc *azdext.ServiceConfig, archive string) (string,
 	if baseDir == "" {
 		baseDir = "."
 	}
-	return filepath.Join(baseDir, path), nil
+	return filepath.Join(projectPath, baseDir, path), nil
 }
 
 func prepareSkillArchive(path string) (*preparedSkillArchive, error) {

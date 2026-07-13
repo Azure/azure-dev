@@ -37,15 +37,15 @@ type createFlags struct {
 
 type createAction struct{ flags *createFlags }
 
-func (a *createAction) saveService(
+func (a *createAction) prepareService(
 	ctx context.Context,
 	cfg skillServiceConfig,
 	archiveSource string,
-) error {
+) (*preparedSkillService, error) {
 	if !a.flags.saveToAzureYaml {
-		return nil
+		return &preparedSkillService{}, nil
 	}
-	return saveSkillServiceToProject(ctx, skillServiceDeclaration{
+	return prepareSkillServiceToProject(ctx, skillServiceDeclaration{
 		Name:          a.flags.name,
 		Config:        cfg,
 		ArchiveSource: archiveSource,
@@ -91,12 +91,6 @@ func (a *createAction) Run(ctx context.Context) error {
 		}
 	}
 
-	if a.flags.force {
-		if _, delErr := skillCtx.client.DeleteSkill(ctx, a.flags.name); delErr != nil && !isNotFound(delErr) {
-			return exterrors.ServiceFromAzure(delErr, exterrors.OpDeleteSkill)
-		}
-	}
-
 	switch mode {
 	case modeInline:
 		return a.runInline(ctx, skillCtx.client)
@@ -130,6 +124,18 @@ func (a *createAction) runInline(ctx context.Context, client *skill_api.Client) 
 		)
 	}
 
+	service, err := a.prepareService(ctx, skillServiceConfig{
+		Description:  a.flags.description,
+		Instructions: a.flags.instructions,
+	}, "")
+	if err != nil {
+		return err
+	}
+	defer service.Close()
+
+	if err := a.deleteExistingSkill(ctx, client); err != nil {
+		return err
+	}
 	version, err := client.CreateVersionInline(ctx, a.flags.name, skill_api.CreateVersionRequest{
 		InlineContent: &skill_api.SkillInlineContent{
 			Description:  a.flags.description,
@@ -140,10 +146,7 @@ func (a *createAction) runInline(ctx context.Context, client *skill_api.Client) 
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateSkill)
 	}
-	if err := a.saveService(ctx, skillServiceConfig{
-		Description:  a.flags.description,
-		Instructions: a.flags.instructions,
-	}, ""); err != nil {
+	if err := service.Save(ctx); err != nil {
 		return err
 	}
 	return a.printCreateResult(ctx, client, version)
@@ -170,6 +173,19 @@ func (a *createAction) runFileMd(ctx context.Context, client *skill_api.Client) 
 		)
 	}
 
+	service, err := a.prepareService(ctx, skillServiceConfig{
+		Description:  parsed.Description,
+		Instructions: parsed.Instructions,
+		Tools:        parsed.AllowedTools,
+	}, "")
+	if err != nil {
+		return err
+	}
+	defer service.Close()
+
+	if err := a.deleteExistingSkill(ctx, client); err != nil {
+		return err
+	}
 	version, err := client.CreateVersionInline(ctx, a.flags.name, skill_api.CreateVersionRequest{
 		InlineContent: &skill_api.SkillInlineContent{
 			Description:   parsed.Description,
@@ -184,11 +200,7 @@ func (a *createAction) runFileMd(ctx context.Context, client *skill_api.Client) 
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateSkill)
 	}
-	if err := a.saveService(ctx, skillServiceConfig{
-		Description:  parsed.Description,
-		Instructions: parsed.Instructions,
-		Tools:        parsed.AllowedTools,
-	}, ""); err != nil {
+	if err := service.Save(ctx); err != nil {
 		return err
 	}
 	return a.printCreateResult(ctx, client, version)
@@ -221,11 +233,20 @@ func (a *createAction) runFilePackage(ctx context.Context, client *skill_api.Cli
 	}
 	defer f.Close()
 
+	service, err := a.prepareService(ctx, skillServiceConfig{}, a.flags.file)
+	if err != nil {
+		return err
+	}
+	defer service.Close()
+
+	if err := a.deleteExistingSkill(ctx, client); err != nil {
+		return err
+	}
 	version, err := client.CreateVersionFromZip(ctx, a.flags.name, filepath.Base(a.flags.file), f, true)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateSkill)
 	}
-	if err := a.saveService(ctx, skillServiceConfig{}, a.flags.file); err != nil {
+	if err := service.Save(ctx); err != nil {
 		return err
 	}
 	return a.printCreateResult(ctx, client, version)
@@ -257,14 +278,33 @@ func (a *createAction) runFileDirectory(ctx context.Context, client *skill_api.C
 	}
 
 	archiveName := filepath.Base(filepath.Clean(a.flags.file)) + ".zip"
+	service, err := a.prepareService(ctx, skillServiceConfig{}, a.flags.file)
+	if err != nil {
+		return err
+	}
+	defer service.Close()
+
+	if err := a.deleteExistingSkill(ctx, client); err != nil {
+		return err
+	}
 	version, err := client.CreateVersionFromZip(ctx, a.flags.name, archiveName, bytes.NewReader(data), true)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateSkill)
 	}
-	if err := a.saveService(ctx, skillServiceConfig{}, a.flags.file); err != nil {
+	if err := service.Save(ctx); err != nil {
 		return err
 	}
 	return a.printCreateResult(ctx, client, version)
+}
+
+func (a *createAction) deleteExistingSkill(ctx context.Context, client *skill_api.Client) error {
+	if !a.flags.force {
+		return nil
+	}
+	if _, err := client.DeleteSkill(ctx, a.flags.name); err != nil && !isNotFound(err) {
+		return exterrors.ServiceFromAzure(err, exterrors.OpDeleteSkill)
+	}
+	return nil
 }
 
 // classifyArchiveDirectoryError wraps ArchiveDirectory's sentinel errors in

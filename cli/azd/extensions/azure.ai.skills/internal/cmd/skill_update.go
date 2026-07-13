@@ -38,15 +38,15 @@ type updateFlags struct {
 
 type updateAction struct{ flags *updateFlags }
 
-func (a *updateAction) saveService(
+func (a *updateAction) prepareService(
 	ctx context.Context,
 	cfg skillServiceConfig,
 	archiveSource string,
-) error {
+) (*preparedSkillService, error) {
 	if !a.flags.saveToAzureYaml {
-		return nil
+		return &preparedSkillService{}, nil
 	}
-	return saveSkillServiceToProject(ctx, skillServiceDeclaration{
+	return prepareSkillServiceToProject(ctx, skillServiceDeclaration{
 		Name:          a.flags.name,
 		Config:        cfg,
 		ArchiveSource: archiveSource,
@@ -122,6 +122,16 @@ func (a *updateAction) runInline(ctx context.Context, client *skill_api.Client) 
 		return err
 	}
 
+	service, err := a.prepareService(ctx, skillServiceConfig{
+		Description:  content.Description,
+		Instructions: content.Instructions,
+		Tools:        content.AllowedTools,
+	}, "")
+	if err != nil {
+		return err
+	}
+	defer service.Close()
+
 	version, err := client.CreateVersionInline(ctx, a.flags.name, skill_api.CreateVersionRequest{
 		InlineContent: content,
 		Default:       true,
@@ -129,11 +139,7 @@ func (a *updateAction) runInline(ctx context.Context, client *skill_api.Client) 
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpUpdateSkill)
 	}
-	if err := a.saveService(ctx, skillServiceConfig{
-		Description:  content.Description,
-		Instructions: content.Instructions,
-		Tools:        content.AllowedTools,
-	}, ""); err != nil {
+	if err := service.Save(ctx); err != nil {
 		return err
 	}
 	return a.printUpdateResult(ctx, client, version)
@@ -169,11 +175,17 @@ func (a *updateAction) runFilePackage(ctx context.Context, client *skill_api.Cli
 	}
 	defer f.Close()
 
+	service, err := a.prepareService(ctx, skillServiceConfig{}, a.flags.file)
+	if err != nil {
+		return err
+	}
+	defer service.Close()
+
 	version, err := client.CreateVersionFromZip(ctx, a.flags.name, filepath.Base(a.flags.file), f, true)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpUpdateSkill)
 	}
-	if err := a.saveService(ctx, skillServiceConfig{}, a.flags.file); err != nil {
+	if err := service.Save(ctx); err != nil {
 		return err
 	}
 	return a.printUpdateResult(ctx, client, version)
@@ -206,11 +218,17 @@ func (a *updateAction) runFileDirectory(ctx context.Context, client *skill_api.C
 	}
 
 	archiveName := filepath.Base(filepath.Clean(a.flags.file)) + ".zip"
+	service, err := a.prepareService(ctx, skillServiceConfig{}, a.flags.file)
+	if err != nil {
+		return err
+	}
+	defer service.Close()
+
 	version, err := client.CreateVersionFromZip(ctx, a.flags.name, archiveName, bytes.NewReader(data), true)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpUpdateSkill)
 	}
-	if err := a.saveService(ctx, skillServiceConfig{}, a.flags.file); err != nil {
+	if err := service.Save(ctx); err != nil {
 		return err
 	}
 	return a.printUpdateResult(ctx, client, version)

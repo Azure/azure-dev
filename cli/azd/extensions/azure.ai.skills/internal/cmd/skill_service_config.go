@@ -55,14 +55,49 @@ type skillProjectClient interface {
 	) (*azdext.EmptyResponse, error)
 }
 
-func saveSkillServiceToProject(ctx context.Context, declaration skillServiceDeclaration) error {
+type preparedSkillService struct {
+	projectClient skillProjectClient
+	addRequest    *azdext.AddServiceRequest
+	setRequest    *azdext.SetServiceConfigSectionRequest
+	close         func()
+}
+
+func prepareSkillServiceToProject(
+	ctx context.Context,
+	declaration skillServiceDeclaration,
+) (*preparedSkillService, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
-		return fmt.Errorf("creating azd client to update azure.yaml: %w", err)
+		return nil, fmt.Errorf("creating azd client to update azure.yaml: %w", err)
 	}
-	defer azdClient.Close()
 
-	return upsertSkillService(ctx, azdClient.Project(), declaration)
+	prepared, err := prepareSkillServiceUpsert(ctx, azdClient.Project(), declaration)
+	if err != nil {
+		azdClient.Close()
+		return nil, err
+	}
+	prepared.close = azdClient.Close
+	return prepared, nil
+}
+
+func (p *preparedSkillService) Save(ctx context.Context) error {
+	switch {
+	case p.addRequest != nil:
+		if _, err := p.projectClient.AddService(ctx, p.addRequest); err != nil {
+			return fmt.Errorf("adding azure.ai.skill service %q: %w", p.addRequest.GetService().GetName(), err)
+		}
+	case p.setRequest != nil:
+		if _, err := p.projectClient.SetServiceConfigSection(ctx, p.setRequest); err != nil {
+			return fmt.Errorf("updating azure.ai.skill service %q in azure.yaml: %w", p.setRequest.GetServiceName(), err)
+		}
+	}
+	return nil
+}
+
+func (p *preparedSkillService) Close() {
+	if p.close != nil {
+		p.close()
+	}
 }
 
 // upsertSkillService adds or updates the azure.ai.skill service owned by this
@@ -72,9 +107,21 @@ func upsertSkillService(
 	projectClient skillProjectClient,
 	declaration skillServiceDeclaration,
 ) error {
+	prepared, err := prepareSkillServiceUpsert(ctx, projectClient, declaration)
+	if err != nil {
+		return err
+	}
+	return prepared.Save(ctx)
+}
+
+func prepareSkillServiceUpsert(
+	ctx context.Context,
+	projectClient skillProjectClient,
+	declaration skillServiceDeclaration,
+) (*preparedSkillService, error) {
 	projectResp, err := projectClient.Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		return exterrors.Dependency(
+		return nil, exterrors.Dependency(
 			exterrors.CodeProjectManifestNotFound,
 			fmt.Sprintf("cannot save skill %q to azure.yaml: %s", declaration.Name, err),
 			"run this command from an azd project containing azure.yaml, or omit --save-to-azure-yaml",
@@ -82,48 +129,16 @@ func upsertSkillService(
 	}
 	project := projectResp.GetProject()
 	if project == nil {
-		return exterrors.Dependency(
+		return nil, exterrors.Dependency(
 			exterrors.CodeProjectManifestNotFound,
 			fmt.Sprintf("cannot save skill %q to azure.yaml: no azd project is loaded", declaration.Name),
 			"run this command from an azd project containing azure.yaml, or omit --save-to-azure-yaml",
 		)
 	}
 
-	cfg := declaration.Config
-	if declaration.ArchiveSource != "" {
-		archive, err := portableSkillArchiveReference(project.GetPath(), declaration.ArchiveSource)
-		if err != nil {
-			return err
-		}
-		cfg.Archive = archive
-	}
-
-	cfgMap, err := skillServiceConfigMap(cfg)
-	if err != nil {
-		return fmt.Errorf("encoding skill service %q: %w", declaration.Name, err)
-	}
-	cfgStruct, err := structpb.NewStruct(cfgMap)
-	if err != nil {
-		return fmt.Errorf("encoding skill service %q: %w", declaration.Name, err)
-	}
-
 	existing, found := project.GetServices()[declaration.Name]
-	if !found {
-		_, err := projectClient.AddService(ctx, &azdext.AddServiceRequest{
-			Service: &azdext.ServiceConfig{
-				Name:                 declaration.Name,
-				Host:                 aiSkillHost,
-				AdditionalProperties: cfgStruct,
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("adding azure.ai.skill service %q: %w", declaration.Name, err)
-		}
-		return nil
-	}
-
-	if existing.GetHost() != aiSkillHost {
-		return exterrors.Validation(
+	if found && existing.GetHost() != aiSkillHost {
+		return nil, exterrors.Validation(
 			exterrors.CodeSkillServiceConflict,
 			fmt.Sprintf(
 				"cannot save skill %q to azure.yaml: service %q already uses host %q",
@@ -135,11 +150,46 @@ func upsertSkillService(
 		)
 	}
 
+	cfg := declaration.Config
+	if declaration.ArchiveSource != "" {
+		serviceRoot := project.GetPath()
+		if found && existing.GetRelativePath() != "" {
+			serviceRoot = filepath.Join(serviceRoot, existing.GetRelativePath())
+		}
+		archive, err := portableSkillArchiveReference(serviceRoot, declaration.ArchiveSource)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Archive = archive
+	}
+
+	cfgMap, err := skillServiceConfigMap(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("encoding skill service %q: %w", declaration.Name, err)
+	}
+	cfgStruct, err := structpb.NewStruct(cfgMap)
+	if err != nil {
+		return nil, fmt.Errorf("encoding skill service %q: %w", declaration.Name, err)
+	}
+
+	if !found {
+		return &preparedSkillService{
+			projectClient: projectClient,
+			addRequest: &azdext.AddServiceRequest{
+				Service: &azdext.ServiceConfig{
+					Name:                 declaration.Name,
+					Host:                 aiSkillHost,
+					AdditionalProperties: cfgStruct,
+				},
+			},
+		}, nil
+	}
+
 	sectionResp, err := projectClient.GetServiceConfigSection(ctx, &azdext.GetServiceConfigSectionRequest{
 		ServiceName: declaration.Name,
 	})
 	if err != nil {
-		return fmt.Errorf("reading azure.ai.skill service %q from azure.yaml: %w", declaration.Name, err)
+		return nil, fmt.Errorf("reading azure.ai.skill service %q from azure.yaml: %w", declaration.Name, err)
 	}
 
 	merged := map[string]any{"host": aiSkillHost}
@@ -154,16 +204,16 @@ func upsertSkillService(
 
 	section, err := structpb.NewStruct(merged)
 	if err != nil {
-		return fmt.Errorf("encoding updated skill service %q: %w", declaration.Name, err)
-	}
-	if _, err := projectClient.SetServiceConfigSection(ctx, &azdext.SetServiceConfigSectionRequest{
-		ServiceName: declaration.Name,
-		Section:     section,
-	}); err != nil {
-		return fmt.Errorf("updating azure.ai.skill service %q in azure.yaml: %w", declaration.Name, err)
+		return nil, fmt.Errorf("encoding updated skill service %q: %w", declaration.Name, err)
 	}
 
-	return nil
+	return &preparedSkillService{
+		projectClient: projectClient,
+		setRequest: &azdext.SetServiceConfigSectionRequest{
+			ServiceName: declaration.Name,
+			Section:     section,
+		},
+	}, nil
 }
 
 func skillServiceConfigMap(cfg skillServiceConfig) (map[string]any, error) {

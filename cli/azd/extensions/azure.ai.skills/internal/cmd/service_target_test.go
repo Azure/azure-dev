@@ -132,12 +132,28 @@ func TestResolveSkillArchivePath_PathTraversal(t *testing.T) {
 
 	for _, archive := range []string{"../skill.zip", "../../secret", "sub/../../escape.zip"} {
 		_, err := resolveSkillArchivePath(
+			t.TempDir(),
 			&azdext.ServiceConfig{Name: "traversal", RelativePath: t.TempDir()},
 			archive,
 		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must not contain '..'")
 	}
+}
+
+func TestResolveSkillArchivePath_FromNestedWorkingDirectory(t *testing.T) {
+	projectDir := t.TempDir()
+	nestedDir := filepath.Join(projectDir, "scripts", "nested")
+	require.NoError(t, os.MkdirAll(nestedDir, 0750))
+	t.Chdir(nestedDir)
+
+	path, err := resolveSkillArchivePath(
+		projectDir,
+		&azdext.ServiceConfig{Name: "code-review", RelativePath: "skills"},
+		"code-review",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(projectDir, "skills", "code-review"), path)
 }
 
 func TestPrepareSkillArchive_Directory(t *testing.T) {

@@ -161,6 +161,53 @@ func TestUpsertSkillService_SavesPortableArchiveReference(t *testing.T) {
 	assert.Equal(t, "skills/triage-rules", client.added.GetAdditionalProperties().AsMap()["archive"])
 }
 
+func TestUpsertSkillService_SavesArchiveRelativeToExistingServicePath(t *testing.T) {
+	projectDir := t.TempDir()
+	archiveDir := filepath.Join(projectDir, "skills", "triage-rules")
+	require.NoError(t, writeSkillMd(archiveDir, "triage-rules"))
+
+	client := &fakeSkillProjectClient{
+		project: &azdext.ProjectConfig{
+			Path: projectDir,
+			Services: map[string]*azdext.ServiceConfig{
+				"triage-rules": {
+					Name:         "triage-rules",
+					Host:         aiSkillHost,
+					RelativePath: "skills",
+				},
+			},
+		},
+		current: map[string]any{"host": aiSkillHost},
+	}
+
+	err := upsertSkillService(t.Context(), client, skillServiceDeclaration{
+		Name:          "triage-rules",
+		ArchiveSource: archiveDir,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "triage-rules", client.updated["archive"])
+}
+
+func TestPrepareSkillServiceUpsert_DoesNotWriteProject(t *testing.T) {
+	client := &fakeSkillProjectClient{
+		project: &azdext.ProjectConfig{
+			Path:     t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{},
+		},
+	}
+
+	prepared, err := prepareSkillServiceUpsert(t.Context(), client, skillServiceDeclaration{
+		Name:   "triage-rules",
+		Config: skillServiceConfig{Instructions: "Triage issues."},
+	})
+	require.NoError(t, err)
+	assert.Nil(t, client.added)
+	assert.Nil(t, client.updated)
+
+	require.NoError(t, prepared.Save(t.Context()))
+	assert.NotNil(t, client.added)
+}
+
 func TestUpsertSkillService_RejectsArchiveOutsideProject(t *testing.T) {
 	projectDir := t.TempDir()
 	outsideDir := t.TempDir()

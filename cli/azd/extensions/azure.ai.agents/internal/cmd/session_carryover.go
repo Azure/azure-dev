@@ -127,7 +127,7 @@ func captureSessionForCarryover(
 	azdClient *azdext.AzdClient,
 	svc *azdext.ServiceConfig,
 ) {
-	if !sessionCarryoverEnabled() || svc == nil {
+	if !sessionCarryoverEnabled() || svc == nil || azdClient == nil {
 		return
 	}
 
@@ -181,7 +181,8 @@ func carryOverSessionAfterDeploy(
 	svc *azdext.ServiceConfig,
 	envName string,
 ) {
-	if !sessionCarryoverEnabled() || svc == nil || agentClient == nil {
+	if !sessionCarryoverEnabled() || svc == nil || agentClient == nil ||
+		azdClient == nil || envName == "" {
 		return
 	}
 

@@ -1158,7 +1158,6 @@ func ghToken() string {
 			if isUsableGitHubToken(v) {
 				return v
 			}
-			return ""
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

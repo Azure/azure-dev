@@ -194,10 +194,40 @@ func activePrompt(screen string) string {
 	lines := nonEmptyLines(screen)
 	for i := len(lines) - 1; i >= 0; i-- {
 		if strings.HasPrefix(lines[i], "?") {
+			if hasInitProgressAfterPrompt(lines[i+1:]) {
+				return ""
+			}
 			return strings.ToLower(lines[i])
 		}
 	}
 	return ""
+}
+
+// isInitProgressLine reports whether line is progress emitted after a prompt was
+// already answered. Survey leaves answered prompts on screen while the extension
+// downloads/copies samples; those stale prompts should not be treated as active.
+func isInitProgressLine(line string) bool {
+	line = strings.ToLower(line)
+	return strings.Contains(line, "downloading sample from github") ||
+		strings.HasPrefix(line, "agents.md") ||
+		strings.HasPrefix(line, "claude.md") ||
+		strings.HasPrefix(line, "readme.md") ||
+		strings.HasPrefix(line, "azure.yaml") ||
+		strings.HasPrefix(line, "src/") ||
+		strings.Contains(line, "setting up github connection") ||
+		strings.Contains(line, "adopting the sample's azure.yaml") ||
+		strings.Contains(line, "initializing an app to run on azure") ||
+		strings.Contains(line, "copying template code from local path") ||
+		strings.Contains(line, "installing required extensions")
+}
+
+func hasInitProgressAfterPrompt(lines []string) bool {
+	for _, line := range lines {
+		if isInitProgressLine(line) {
+			return true
+		}
+	}
+	return false
 }
 
 // screenContains reports whether screen contains sub (case-insensitive).

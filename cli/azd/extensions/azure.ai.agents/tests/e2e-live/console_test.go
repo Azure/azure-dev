@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	expect "github.com/Netflix/go-expect"
@@ -195,7 +196,8 @@ func activePrompt(screen string) string {
 	lines := nonEmptyLines(screen)
 	for i := len(lines) - 1; i >= 0; i-- {
 		if strings.HasPrefix(lines[i], "?") {
-			if hasInitProgressAfterPrompt(lines[i+1:]) {
+			after := lines[i+1:]
+			if hasInitProgressAfterPrompt(after) || isAnsweredTemplatePrompt(lines[i], after) {
 				return ""
 			}
 			return strings.ToLower(lines[i])
@@ -226,7 +228,45 @@ func hasInitProgressAfterPrompt(lines []string) bool {
 	return slices.ContainsFunc(lines, isInitProgressLine)
 }
 
+func isAnsweredTemplatePrompt(line string, after []string) bool {
+	line = strings.ToLower(line)
+	if !strings.Contains(line, "starter template") && !strings.Contains(line, "agent template") {
+		return false
+	}
+	if !strings.Contains(line, ":") {
+		return false
+	}
+	return !slices.ContainsFunc(after, isSurveyChoiceLine)
+}
+
+func isSurveyChoiceLine(line string) bool {
+	return strings.HasPrefix(strings.TrimSpace(line), ">")
+}
+
 // screenContains reports whether screen contains sub (case-insensitive).
 func screenContains(screen, sub string) bool {
 	return strings.Contains(strings.ToLower(screen), strings.ToLower(sub))
+}
+
+func TestActivePromptIgnoresAnsweredSelectWithoutChoices(t *testing.T) {
+	screen := strings.Join([]string{
+		"? Select a language: Python",
+		"? Select a starter template: Basic agent (Invocations, Agent Framework, Python)",
+	}, "\n")
+
+	if got := activePrompt(screen); got != "" {
+		t.Fatalf("activePrompt() = %q, want empty", got)
+	}
+}
+
+func TestActivePromptKeepsActiveSelectWithChoices(t *testing.T) {
+	screen := strings.Join([]string{
+		"? Select a starter template: Basic agent (Invocations, Agent Framework, Python)",
+		"> Basic agent (Invocations, Agent Framework, Python)",
+	}, "\n")
+
+	want := "? select a starter template: basic agent (invocations, agent framework, python)"
+	if got := activePrompt(screen); got != want {
+		t.Fatalf("activePrompt() = %q, want %q", got, want)
+	}
 }

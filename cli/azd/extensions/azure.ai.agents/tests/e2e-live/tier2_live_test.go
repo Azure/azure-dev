@@ -1169,7 +1169,11 @@ func ghToken() string {
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(out))
+	token := strings.TrimSpace(string(out))
+	if token == "" || !isUsableGitHubToken(token) {
+		return ""
+	}
+	return token
 }
 
 func isUsableGitHubToken(token string) bool {

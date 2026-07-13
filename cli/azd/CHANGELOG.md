@@ -8,6 +8,8 @@
 
 ### Breaking Changes
 
+- [[#9045]](https://github.com/Azure/azure-dev/pull/9045) The `azd tool install` skill flag `--host` has been renamed to `--agent`. Update any scripts or automation that pass `--host` to `azd tool install` to use `--agent` instead.
+
 ### Bugs Fixed
 
 ### Other Changes

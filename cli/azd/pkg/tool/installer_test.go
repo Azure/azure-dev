@@ -1566,8 +1566,8 @@ func TestRunSkill_StreamedOutputPrintedAboveSpinner(t *testing.T) {
 	runner.MockToolInPath("node", nil)
 
 	// The plugin command writes to the terminal (StdOut), simulating the
-	// host CLI surfacing progress or a prompt. marketplace-add is captured
-	// (no StdOut) so it stays silent; only the install writes.
+	// host CLI surfacing progress or a prompt. Both marketplace-add and install
+	// stream their output through the step writer so prompts stay visible.
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return args.Cmd == "copilot" && slices.Contains(args.Args, "plugin")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -4034,10 +4034,11 @@ func TestRunSkillUninstall_StepProgress(t *testing.T) {
 	assert.Empty(t, r.messages)
 }
 
-// TestRunSkillUninstall_StepProgress_SuccessHidesOutput verifies that when the
-// host CLI prints output and the uninstall completes without error, that
-// output is NOT surfaced above the spinner — a successful step stays quiet.
-func TestRunSkillUninstall_StepProgress_SuccessHidesOutput(t *testing.T) {
+// TestRunSkillUninstall_StepProgress_SuccessStreamsOutput verifies that the
+// host CLI's output is surfaced above the spinner as it arrives — even when the
+// uninstall completes without error — so an interactive uninstall confirmation
+// prompt stays visible and answerable rather than being buffered until failure.
+func TestRunSkillUninstall_StepProgress_SuccessStreamsOutput(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
@@ -4070,8 +4071,8 @@ func TestRunSkillUninstall_StepProgress_SuccessHidesOutput(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.Success, "uninstall must succeed; err=%v", result.Error)
 
-	assert.Empty(t, r.messages,
-		"host CLI output must be hidden when uninstall completes without error")
+	assert.Contains(t, r.messages, "Plugin \"azure@azure-skills\" uninstalled successfully.",
+		"host CLI output must be streamed live so interactive prompts stay visible")
 	assert.Equal(t, []string{"Uninstalling Test Azure Skills from copilot"}, r.stops)
 }
 

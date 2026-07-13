@@ -969,7 +969,8 @@ func (a *toolInstallAction) dryRun(
 // contract of failing with a structured error instead of an implicit default.
 func noToolTargetError(command string) error {
 	return &internal.ErrorWithSuggestion{
-		Err: fmt.Errorf("no tools specified to %s", command),
+		Err:     fmt.Errorf("no tools specified to %s", command),
+		Message: fmt.Sprintf("A tool ID is required to %s", command),
 		Suggestion: fmt.Sprintf(
 			"Specify one or more tool IDs, or --all:\n\n"+
 				"    azd tool %s <tool-id> [<tool-id> ...]\n\n"+

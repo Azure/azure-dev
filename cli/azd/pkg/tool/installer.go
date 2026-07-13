@@ -247,9 +247,10 @@ func stepError(result *InstallResult, err error) error {
 // while the spinner stays pinned below it: the console tears the spinner down
 // and re-renders it around each printed line (see AskerConsole.println), so
 // the bar is kept, not lost, and the user can answer any prompt via the
-// connected stdin. When false, the output is buffered and replayed only if the
-// step fails, so a step that completes without error stays quiet (used for
-// non-interactive operations such as uninstall). When the CLI stays silent the
+// connected stdin (used for interactive operations such as install, upgrade
+// and uninstall, whose host CLIs may prompt for confirmation). When false, the
+// output is buffered and replayed only if the step fails, so a step that
+// completes without error stays quiet. When the CLI stays silent the
 // spinner simply runs to completion.
 //
 // work returns the message to show on the result line; when empty the spinner
@@ -904,7 +905,7 @@ func (i *installer) runSkillUninstall(
 	)
 	for _, host := range targets {
 		title := fmt.Sprintf("Uninstalling %s from %s", tool.Name, host.Host)
-		hostErr := renderSkillStep(ctx, renderer, title, false, func(out io.Writer) (string, error) {
+		hostErr := renderSkillStep(ctx, renderer, title, true, func(out io.Writer) (string, error) {
 			return "", i.uninstallSkillForHost(ctx, tool, host, out, stdin)
 		})
 		if hostErr != nil {
@@ -1878,7 +1879,7 @@ func (i *installer) runSkillHostCommand(
 	}
 
 	if len(host.MarketplaceAddCommand) > 0 {
-		if err := i.runMarketplaceAdd(ctx, host); err != nil {
+		if err := i.runMarketplaceAdd(ctx, host, out, stdin); err != nil {
 			return "", err
 		}
 	}
@@ -1895,6 +1896,14 @@ func (i *installer) runSkillHostCommand(
 }
 
 // runMarketplaceAdd registers the skill marketplace with the host CLI.
+// out and stdin thread the step spinner's writer and the console's input
+// through skillCommandRunArgs so the host CLI's output prints above the
+// spinner and any marketplace trust prompt stays visible and answerable
+// while the spinner runs (matching the install phase). When out routes the
+// output through a writer, CommandRunner still captures it (io.MultiWriter),
+// so the captured stdout/stderr remains available for the already-added
+// check below.
+//
 // Some hosts (e.g. copilot) return a non-zero exit when the marketplace
 // is already registered; we recognize that case from the captured
 // output and treat it as success so the install can proceed. Hosts that
@@ -1903,8 +1912,10 @@ func (i *installer) runSkillHostCommand(
 func (i *installer) runMarketplaceAdd(
 	ctx context.Context,
 	host SkillHost,
+	out io.Writer,
+	stdin io.Reader,
 ) error {
-	args := exec.NewRunArgs(host.Command, host.MarketplaceAddCommand...)
+	args := skillCommandRunArgs(exec.NewRunArgs(host.Command, host.MarketplaceAddCommand...), out, stdin)
 	result, err := i.commandRunner.Run(ctx, args)
 	if err == nil {
 		return nil

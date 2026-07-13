@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
@@ -379,18 +380,23 @@ func (s *helpersPromptServer) Select(
 	return &azdext.SelectResponse{Value: &idx}, nil
 }
 
-// newHelpersTestAzdClient spins up a gRPC server with the supplied Project and
-// Prompt stubs and returns a client wired to its address.
+// newHelpersTestAzdClient spins up a gRPC server with the supplied Project,
+// Prompt, and optional Environment stubs and returns a client wired to its
+// address.
 func newHelpersTestAzdClient(
 	t *testing.T,
 	projectServer *helpersProjectServer,
 	promptServer *helpersPromptServer,
+	environmentServers ...azdext.EnvironmentServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
 
 	grpcServer := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(grpcServer, projectServer)
 	azdext.RegisterPromptServiceServer(grpcServer, promptServer)
+	if len(environmentServers) > 0 {
+		azdext.RegisterEnvironmentServiceServer(grpcServer, environmentServers[0])
+	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -406,6 +412,91 @@ func newHelpersTestAzdClient(
 	t.Cleanup(func() { azdClient.Close() })
 
 	return azdClient
+}
+
+// TestResolveAgentServiceFromProject_UsesInlineNameBeforeDeploy is a regression
+// test for #9109. Brownfield init writes the hosted agent definition inline in
+// azure.yaml, but AGENT_<SERVICE>_NAME is not populated until deploy. Remote
+// invoke must use the inline name rather than reporting that no agent service
+// can be resolved.
+func TestResolveAgentServiceFromProject_UsesInlineNameBeforeDeploy(t *testing.T) {
+	t.Parallel()
+
+	props, err := projectpkg.AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindHosted,
+			Name: "inline-agent",
+		},
+		Protocols: []agent_yaml.ProtocolVersionRecord{{
+			Protocol: "invocations",
+			Version:  "2.0.0",
+		}},
+	}, nil)
+	require.NoError(t, err)
+
+	projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+		Path: t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{
+			"service-key": {
+				Name:                 "service-key",
+				Host:                 AiAgentHost,
+				AdditionalProperties: props,
+			},
+		},
+	}}
+	envServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "test"},
+		values:  map[string]map[string]string{"test": {}},
+	}
+	azdClient := newHelpersTestAzdClient(
+		t, projectServer, &helpersPromptServer{}, envServer,
+	)
+
+	info, err := resolveAgentServiceFromProject(t.Context(), azdClient, "", true)
+	require.NoError(t, err)
+	require.Equal(t, "service-key", info.ServiceName)
+	require.Equal(t, "inline-agent", info.AgentName,
+		"inline agent name should be available before deployment outputs exist")
+}
+
+// TestResolveAgentServiceFromProject_EnvironmentNameWins verifies a deployed
+// agent name remains authoritative when it differs from the current inline
+// definition.
+func TestResolveAgentServiceFromProject_EnvironmentNameWins(t *testing.T) {
+	t.Parallel()
+
+	props, err := projectpkg.AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindHosted,
+			Name: "inline-agent",
+		},
+	}, nil)
+	require.NoError(t, err)
+
+	projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+		Path: t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{
+			"service-key": {
+				Name:                 "service-key",
+				Host:                 AiAgentHost,
+				AdditionalProperties: props,
+			},
+		},
+	}}
+	envServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "test"},
+		values: map[string]map[string]string{"test": {
+			"AGENT_SERVICE_KEY_NAME": "deployed-agent",
+		}},
+	}
+	azdClient := newHelpersTestAzdClient(
+		t, projectServer, &helpersPromptServer{}, envServer,
+	)
+
+	info, err := resolveAgentServiceFromProject(t.Context(), azdClient, "", true)
+	require.NoError(t, err)
+	require.Equal(t, "deployed-agent", info.AgentName,
+		"deployed environment output should override the inline definition")
 }
 
 // TestResolveAgentProtocol_ReturnsServiceName verifies that resolveAgentProtocol

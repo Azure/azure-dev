@@ -545,7 +545,7 @@ func fileExists(path string) bool {
 // AgentServiceInfo holds the resolved name and version for an agent service.
 type AgentServiceInfo struct {
 	ServiceName   string // azure.yaml service key
-	AgentName     string // deployed agent name from env
+	AgentName     string // deployed agent name from env, falling back to the inline definition
 	Version       string // deployed agent version from env
 	AgentEndpoint string // full AGENT_{SVC}_ENDPOINT URL (includes name + version)
 }
@@ -657,7 +657,10 @@ func resolveAgentService(
 }
 
 // resolveAgentServiceFromProject finds the azure.ai.agent service in azure.yaml
-// and resolves its deployed agent name and version from the azd environment.
+// and resolves its agent name and deployed version. The inline service
+// definition supplies the name before the first deploy (for example, after
+// brownfield init against an existing Foundry project); AGENT_<SERVICE>_NAME
+// overrides it once deployment outputs are available.
 func resolveAgentServiceFromProject(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) (*AgentServiceInfo, error) {
 	svc, _, err := resolveAgentService(ctx, azdClient, name, noPrompt)
 	if err != nil {
@@ -666,7 +669,18 @@ func resolveAgentServiceFromProject(ctx context.Context, azdClient *azdext.AzdCl
 
 	info := &AgentServiceInfo{ServiceName: svc.Name}
 
-	// Resolve agent name and version from azd environment
+	// Seed the agent name from the inline/config-nested service definition so
+	// remote invoke works before a deploy has populated AGENT_<SERVICE>_NAME.
+	// This deliberately does not fall back to the service key: service and
+	// deployed agent names may differ.
+	if definition, isHosted, found, _, defErr := projectpkg.AgentDefinitionFromService(svc); defErr != nil {
+		log.Printf("resolve agent service %q: failed to read inline agent definition: %v", svc.Name, defErr)
+	} else if found && isHosted {
+		info.AgentName = strings.TrimSpace(definition.Name)
+	}
+
+	// Resolve deployed agent name and version from the azd environment. The
+	// deployed name wins because it reflects the resource actually created.
 	envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return info, nil

@@ -35,14 +35,14 @@ echo ""
 # --- Step 1: Build azd core ---
 echo "▸ Building azd core (linux/amd64)..."
 
-COMMIT=$(cd "$REPO_ROOT" && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+COMMIT=$(cd "$REPO_ROOT" && git rev-parse HEAD 2>/dev/null || echo "0000000000000000000000000000000000000000")
 VERSION="0.0.0-dev.0"
 LDFLAGS="-X 'github.com/azure/azure-dev/cli/azd/internal.Version=${VERSION} (commit ${COMMIT})'"
 
-GOOS=linux GOARCH=amd64 go build \
+(cd "$AZD_DIR" && GOOS=linux GOARCH=amd64 go build \
     -ldflags="$LDFLAGS" \
     -o /usr/local/bin/azd \
-    "$AZD_DIR"
+    .)
 
 echo "  ✓ Installed /usr/local/bin/azd"
 echo ""
@@ -58,10 +58,10 @@ EXT_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EXT_VERSION=$(cat "$EXTENSION_DIR/version.txt" 2>/dev/null || echo "0.0.0-dev")
 VERSION_PATH="azureaiagent/internal/version"
 
-GOOS=linux GOARCH=amd64 go build \
+(cd "$EXTENSION_DIR" && GOOS=linux GOARCH=amd64 go build \
     -ldflags="-X '${VERSION_PATH}.Version=${EXT_VERSION}' -X '${VERSION_PATH}.Commit=${EXT_COMMIT}' -X '${VERSION_PATH}.BuildDate=${EXT_BUILD_DATE}'" \
     -o "$EXTENSION_INSTALL_DIR/azure-ai-agents-linux-amd64" \
-    "$EXTENSION_DIR"
+    .)
 
 # Copy extension.yaml (azd needs it to discover the extension)
 cp "$EXTENSION_DIR/extension.yaml" "$EXTENSION_INSTALL_DIR/extension.yaml"

@@ -5,6 +5,22 @@
 Run the checks in `prerequisites.md`. If a hard prerequisite is missing, stop with a clear
 message. Don't auto-install or work around a missing MCP server or profile.
 
+### Step 1b — Rebuild WSL binaries (Windows only)
+
+Before running any scenarios, rebuild the native Linux `azd` and extension binaries from the
+current repo source so the tester always exercises the latest local code. Execute
+`setup-wsl.sh` inside WSL via the tester:
+
+```text
+start_session(command="bash /mnt/c/<path-to-scenarios>/setup-wsl.sh",
+              cwd="/mnt/c/<path-to-repo>/cli/azd/extensions/azure.ai.agents",
+              session_id="setup-wsl-<timestamp>",
+              run_name="setup-wsl")
+```
+
+Wait for it to print "Done. WSL is ready for scenario testing." and then `finish_session`.
+If the build fails, stop and report the build error — do not proceed with stale binaries.
+
 ### Step 2 — Resolve the PR
 
 ```bash

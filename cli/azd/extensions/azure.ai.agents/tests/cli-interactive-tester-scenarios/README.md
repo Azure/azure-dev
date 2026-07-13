@@ -264,6 +264,11 @@ its bugs:
   fail-loud: a missing target raises `LookupError`, surfaced as
   `ERROR during 'select': …`. **Report a finding and stop** — do not retry with a
   different `choice_text`/`choice_index` to work around it.
+- **Never retry a failed scenario.** If a scenario fails (command errors,
+  unexpected output, non-zero exit), report the finding and move on. Do **not**
+  re-run the scenario hoping for a different result — unless the scenario's
+  `goals:` explicitly instruct a retry. Retrying masks flaky behavior and makes
+  the test suite unreliable as a regression signal.
 - **Prefer `choice_text` over `choice_index`** when the label is stable (indices
   shift between releases).
 - **Clear a pre-filled text field before typing.** Some prompts (e.g. the agent

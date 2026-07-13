@@ -45,6 +45,10 @@ For each selected scenario:
 - **Treat a select miss as a hard failure.** `select_by_text` is fail-loud
   (`ERROR during 'select': …`). Report a finding and stop that scenario — do **not** retry
   with a different `choice_text`/`choice_index`.
+- **Never retry a failed scenario.** If a scenario fails (command errors, unexpected output,
+  non-zero exit), report the finding and move on. Do **not** re-run the scenario hoping for
+  a different result — unless the scenario's `goals:` explicitly instruct a retry. Retrying
+  masks flaky behavior and makes the test suite unreliable as a regression signal.
 - **Prefer `choice_text` over `choice_index`** (indices shift between releases).
 - **Clear a pre-filled text field before typing** (e.g. the agent-name prompt); otherwise
   your value *appends* to the default (`defaultyourvalue`).

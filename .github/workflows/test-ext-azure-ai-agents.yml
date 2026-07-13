@@ -20,6 +20,9 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      TIER_0_TEST_PATTERN: '^Test_AIAgent_(Version|Help|Init_NoPrompt_MissingFlags|Doctor_Help)$'
+      TIER_1_TEST_PATTERN: '^Test_AIAgent_(Init_(NoPrompt_(Defer|WithProject)|NegativeControl_BadCassette)|SampleList_(Recorded|JSON_Recorded))$'
     steps:
       - uses: actions/checkout@v6
 
@@ -73,12 +76,75 @@ jobs:
           azd x publish
           azd extension install azure.ai.agents --source local --force --no-prompt
 
+      - name: Validate tier test selectors
+        working-directory: cli/azd
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          list_tests() {
+            go test -tags=record -list "$1" ./test/functional/ai_agents/ |
+              awk '/^Test_AIAgent_/ { print }' |
+              tr -d '\r'
+          }
+
+          all_tests="$(list_tests '^Test_AIAgent_')"
+          tier_0_tests="$(list_tests "$TIER_0_TEST_PATTERN")"
+          tier_1_tests="$(list_tests "$TIER_1_TEST_PATTERN")"
+
+          if [[ -z "$all_tests" ]]; then
+            echo "::error::No Test_AIAgent_ tests were discovered."
+            exit 1
+          fi
+          if [[ -z "$tier_0_tests" ]]; then
+            echo "::error::The Tier 0 test selector matched no tests."
+            exit 1
+          fi
+          if [[ -z "$tier_1_tests" ]]; then
+            echo "::error::The Tier 1 test selector matched no tests."
+            exit 1
+          fi
+
+          duplicate_tests="$(
+            printf '%s\n%s\n' "$tier_0_tests" "$tier_1_tests" |
+              sort |
+              uniq -d |
+              tr -d '\r'
+          )"
+          if [[ -n "$duplicate_tests" ]]; then
+            echo "::error::Tests are assigned to multiple tiers:"
+            echo "$duplicate_tests"
+            exit 1
+          fi
+
+          all_tests_sorted="$(
+            printf '%s\n' "$all_tests" |
+              sort |
+              tr -d '\r'
+          )"
+          selected_tests_sorted="$(
+            printf '%s\n%s\n' "$tier_0_tests" "$tier_1_tests" |
+              sort |
+              tr -d '\r'
+          )"
+          if ! diff -u \
+            <(printf '%s\n' "$all_tests_sorted") \
+            <(printf '%s\n' "$selected_tests_sorted"); then
+            echo "::error::Tier selectors must cover every Test_AIAgent_ test exactly once."
+            exit 1
+          fi
+
+          echo "Tier 0 tests:"
+          echo "$tier_0_tests"
+          echo "Tier 1 tests:"
+          echo "$tier_1_tests"
+
       - name: Run Tier 0 tests (offline, production extension)
         working-directory: cli/azd
         env:
           CLI_TEST_AZD_PATH: ${{ github.workspace }}/cli/azd/azd-record
         run: |
-          go test -tags=record -run "Test_AIAgent_(Version|Help|Init_NoPrompt_MissingFlags|Doctor_Help)" \
+          go test -tags=record -run "$TIER_0_TEST_PATTERN" \
             ./test/functional/ai_agents/ -v -timeout 5m
 
       - name: Swap extension to record binary for Tier 1
@@ -94,5 +160,5 @@ jobs:
           AZURE_RECORD_MODE: playback
           CLI_TEST_AZD_PATH: ${{ github.workspace }}/cli/azd/azd-record
         run: |
-          go test -tags=record -run "Test_AIAgent_(Init_(NoPrompt_(Defer|WithProject)|NegativeControl_BadCassette)|SampleList_(Recorded|JSON_Recorded))" \
+          go test -tags=record -run "$TIER_1_TEST_PATTERN" \
             ./test/functional/ai_agents/ -v -timeout 5m

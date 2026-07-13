@@ -109,6 +109,28 @@ WSL side, **not** on the orchestrator side. On Windows hosts, pass a POSIX path:
 path style is almost certainly the cause — translate `C:\…` to `/mnt/c/…` and
 retry one call before fanning out.
 
+### Installing azd in WSL (Windows developers)
+
+The scenarios must run **native Linux binaries** inside WSL. Symlinking to
+`azd.exe` on the Windows side does not work — it causes `git safe.directory`
+errors, TTY detection failures, and file locking issues.
+
+To build and install your local dev code as native Linux binaries in WSL:
+
+```bash
+# From inside WSL:
+cd /mnt/c/Repos/azure-dev/cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios
+bash setup-wsl.sh
+```
+
+This script:
+1. Cross-compiles `azd` core (`linux/amd64`) → `/usr/local/bin/azd`
+2. Cross-compiles the extension (`linux/amd64`) → `~/.azd/extensions/azure.ai.agents/`
+3. Prints version confirmation
+
+**Re-run `setup-wsl.sh` after every local code change** you want to test.
+Requires the Go toolchain installed in WSL.
+
 ## Authentication
 
 Tier 1 and Tier 2 scenarios read from / write to Azure, so a **human must log in

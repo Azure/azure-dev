@@ -21,6 +21,7 @@ the user exactly what to fix — do **not** try to work around it.
 | `git` + `gh` CLIs | `gh auth status` | Ask the user to run `gh auth login`. |
 | cli-interactive-tester MCP server | The `list_scenarios` / `start_session` MCP tools are available to you | Stop. Tell the user to register the cli-interactive-tester MCP server (see its README) and re-run. |
 | `profile.local.yaml` | File exists in the scenarios dir | Stop. Tell the user to `cp profile.local.yaml.example profile.local.yaml` and set `prefix` + `subscription`. |
+| Native Linux `azd` in WSL (Windows only) | `azd version` inside the tester returns a dev build, not a Windows `.exe` interop version | Stop. Tell the user to run `bash setup-wsl.sh` from the scenarios directory inside WSL. Symlinking to `azd.exe` does not work (causes git safe.directory, TTY, and file-locking errors). |
 
 ### Auth (tier-dependent — only enforce for tiers actually selected)
 

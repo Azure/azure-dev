@@ -54,9 +54,11 @@ For each selected scenario:
 ## Parallelism & ordering
 
 - **Tier 0 / Tier 1** (`parallel-safe`): fan out in small waves (4–6 at a time), one
-  sub-agent per scenario, each with a distinct descriptive `session_id` (e.g.
-  `fleet-10-init-from-code`). No `instance_id` is needed — each scenario's `cwd` already
-  isolates itself (defaults to the `-main` suffix).
+  sub-agent per scenario, each with a distinct descriptive `session_id` **postfixed with a
+  timestamp** (e.g. `fleet-10-init-from-code-1752434100`). The timestamp (Unix epoch
+  seconds) prevents collisions when multiple agent sessions drive the tester concurrently.
+  No `instance_id` is needed — each scenario's `cwd` already isolates itself (defaults to
+  the `-main` suffix).
 - **Same scenario N times** in parallel: pass `instance_id="1"`, `"2"`, … See the README's
   parallel-readiness section for which scenarios support it.
 - **Tier 2** (`serial-only`): never parallelize. Run `20-setup-deploy-shared-agent` first,

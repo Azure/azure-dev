@@ -84,6 +84,20 @@ func (p *ProvisionAction) provisionLayersGraph(
 		}, nil
 	}
 
+	// ── provider-agnostic provision validation (once per command) ─────────
+	// Dispatch extension-registered "provision" checks a single time, before
+	// the preview / single-layer / multi-layer paths run. This deliberately
+	// sits here rather than inside Manager.Deploy/Preview: multi-layer
+	// provisioning runs each layer's Deploy concurrently through its own
+	// Manager, so dispatching per-Deploy would fire the checks — and any
+	// warning confirmation prompt — once per layer with an identical,
+	// env-scoped context. On abort (or a prompt failure), translate through
+	// wrapProvisionError so preview and deploy share the same UX: an abort
+	// becomes the "Provisioning was cancelled." message.
+	if err := p.provisionManager.RunProvisionValidation(ctx, previewMode); err != nil {
+		return nil, p.wrapProvisionError(ctx, err)
+	}
+
 	// ── preview ──────────────────────────────────────────────────────────
 	// Preview calls mgr.Preview() (not Deploy) and has completely different
 	// UX (no hooks, no env updates, no cache invalidation). It always
@@ -664,7 +678,8 @@ type provisionErrorDeps struct {
 // JSON state dump on failure has something to render.
 func wrapProvisionError(ctx context.Context, err error, deps provisionErrorDeps) error {
 	// Preflight-aborted → ErrAbortedByUser with success message.
-	if errors.Is(err, errPreflightAbortedByUser) {
+	if errors.Is(err, errPreflightAbortedByUser) ||
+		errors.Is(err, provisioning.ErrProvisionValidationAborted) {
 		deps.console.MessageUxItem(ctx, &ux.ActionResult{
 			SuccessMessage: "Provisioning was cancelled.",
 		})

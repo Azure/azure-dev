@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "cli/azd/extensions/azure.ai.agents/**"
+      - "cli/azd/extensions/azure.ai.inspector/**"
       - "cli/azd/test/functional/ai_agents/**"
       - ".github/workflows/test-ext-azure-ai-agents.yml"
     branches: [main]
@@ -40,8 +41,19 @@ jobs:
           # Install the developer extension (provides 'azd x' commands).
           # The built-in 'azd' source is auto-registered, so no source-add needed.
           azd extension install microsoft.azd.extensions --no-prompt
-          # Pre-install the inspector dependency so the local install can resolve it.
-          azd extension install azure.ai.inspector --no-prompt
+
+      - name: Build & install inspector dependency from source
+        working-directory: cli/azd/extensions/azure.ai.inspector
+        run: |
+          # Build azure.ai.inspector from source to ensure PR CI always has a
+          # compatible version — dependency releases are post-merge, but PRs may
+          # include inspector changes from this same repo.
+          pwsh -File ci-build.ps1 -OutputFileName azure-ai-inspector-linux-amd64 -Version "$(cat version.txt | tr -d '\r\n')"
+          mkdir -p bin
+          mv azure-ai-inspector-linux-amd64 bin/
+          azd x pack
+          azd x publish
+          azd extension install azure.ai.inspector --source local --force --no-prompt
 
       - name: Build extension (ci-build.ps1)
         working-directory: cli/azd/extensions/azure.ai.agents

@@ -123,7 +123,6 @@ func TestCreateToolboxVersion_RequiredHeaders(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, capturedReq)
 
-	require.Equal(t, toolboxesFeatureHeader, capturedReq.Header.Get("Foundry-Features"))
 	require.Equal(t, "application/json", capturedReq.Header.Get("Content-Type"))
 }
 
@@ -200,7 +199,6 @@ func TestGetToolbox_URLConstruction(t *testing.T) {
 
 			require.Equal(t, http.MethodGet, capturedReq.Method)
 			require.Equal(t, tt.wantPath, capturedReq.URL.EscapedPath())
-			require.Equal(t, toolboxesFeatureHeader, capturedReq.Header.Get("Foundry-Features"))
 		})
 	}
 }

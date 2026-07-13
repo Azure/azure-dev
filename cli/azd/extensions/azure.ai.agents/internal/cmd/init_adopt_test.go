@@ -553,3 +553,85 @@ services:
 		})
 	}
 }
+
+// TestStampProjectEndpoint_WritesEndpoint verifies that stampProjectEndpoint
+// writes the endpoint to the existing azure.ai.project service via
+// SetServiceConfigValue when a valid project is provided.
+func TestStampProjectEndpoint_WritesEndpoint(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"ai-project": {Name: "ai-project", Host: AiProjectHost},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	selectedProject := &FoundryProjectInfo{
+		AccountName: "myaccount",
+		ProjectName: "myproject",
+	}
+
+	err := stampProjectEndpoint(t.Context(), client, selectedProject)
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+
+	// The recording server captures SetServiceConfigValue calls in uses map
+	// for "uses" path, but for "endpoint" we check the raw call was made by
+	// verifying through the actual project state. Since recordingProjectServer
+	// returns success, we verify the function didn't error and the endpoint
+	// would have been written. For a deeper assertion, check the call was made
+	// with the correct service name and value by inspecting configValues.
+	require.Equal(t, "ai-project", server.configValues["endpoint"].serviceName)
+	require.Equal(t,
+		"https://myaccount.services.ai.azure.com/api/projects/myproject",
+		server.configValues["endpoint"].value,
+	)
+}
+
+// TestStampProjectEndpoint_NilProject verifies stampProjectEndpoint is a no-op
+// when the selected project is nil (user chose "Create new").
+func TestStampProjectEndpoint_NilProject(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"ai-project": {Name: "ai-project", Host: AiProjectHost},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	err := stampProjectEndpoint(t.Context(), client, nil)
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Empty(t, server.configValues, "no SetServiceConfigValue calls expected for nil project")
+}
+
+// TestStampProjectEndpoint_NoExistingService verifies stampProjectEndpoint is a
+// no-op when no azure.ai.project service exists in the project yet.
+func TestStampProjectEndpoint_NoExistingService(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"my-agent": {Name: "my-agent", Host: AiAgentHost},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	selectedProject := &FoundryProjectInfo{
+		AccountName: "myaccount",
+		ProjectName: "myproject",
+	}
+
+	err := stampProjectEndpoint(t.Context(), client, selectedProject)
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Empty(t, server.configValues, "no SetServiceConfigValue calls expected when no project service exists")
+}

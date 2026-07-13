@@ -118,6 +118,14 @@ func registerProjectMappings() {
 			return nil, fmt.Errorf("envsubst image: %w", err)
 		}
 
+		var serviceEnv map[string]string
+		if len(src.Environment) > 0 {
+			serviceEnv, err = src.Environment.Expand(envResolver)
+			if err != nil {
+				return nil, fmt.Errorf("envsubst service environment: %w", err)
+			}
+		}
+
 		// Convert Docker options
 		var docker *azdext.DockerProjectOptions
 		err = mapper.WithResolver(resolver).Convert(src.Docker, &docker)
@@ -159,6 +167,7 @@ func registerProjectMappings() {
 			Config:               protoConfig,
 			AdditionalProperties: protoAdditionalProperties,
 			Uses:                 src.Uses,
+			Environment:          serviceEnv,
 		}, nil
 	})
 
@@ -396,6 +405,16 @@ func registerProjectMappings() {
 
 		if src.AdditionalProperties != nil {
 			result.AdditionalProperties = src.AdditionalProperties.AsMap()
+		}
+
+		if len(src.Environment) > 0 {
+			result.Environment = make(osutil.ExpandableMap, len(src.Environment))
+			for key, value := range src.Environment {
+				// Incoming values are expanded literals, not templates: escape them so a
+				// later expansion (or a round trip back into azure.yaml) cannot reinterpret
+				// or corrupt values containing `$`.
+				result.Environment[key] = osutil.NewLiteralExpandableString(value)
+			}
 		}
 
 		return result, nil
@@ -700,8 +719,8 @@ func registerProjectMappings() {
 		services := make(map[string]*azdext.ServiceConfig, len(src.Services))
 		for i, svc := range src.Services {
 			var serviceConfig *azdext.ServiceConfig
-			if err := mapper.Convert(svc, &serviceConfig); err != nil {
-				return nil, err
+			if err := mapper.WithResolver(resolver).Convert(svc, &serviceConfig); err != nil {
+				return nil, fmt.Errorf("converting service %q: %w", i, err)
 			}
 
 			services[i] = serviceConfig

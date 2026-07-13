@@ -531,6 +531,13 @@ type AiModelFilterOptions struct {
 	// Include model versions whose lifecycle status matches one of these values.
 	// Filtering is applied before aggregation, so returned versions, derived
 	// AiModel.lifecycle_status, and locations reflect only matching versions.
+	//
+	// When unset, the default listing excludes ARM "Deprecating" (customer-facing
+	// Deprecated) and "Deprecated" (Retired) versions so only models available for
+	// new deployments are returned. Set statuses to opt back into those lifecycle
+	// statuses (for example, for existing-customer management). Versions whose
+	// inference endpoint has retired (deprecation.inference <= now) are always
+	// excluded, even when explicitly requested.
 	Statuses []string `protobuf:"bytes,4,rep,name=statuses,proto3" json:"statuses,omitempty"`
 	// Exclude models by exact model name (for example: "gpt-4o-mini").
 	ExcludeModelNames []string `protobuf:"bytes,5,rep,name=exclude_model_names,json=excludeModelNames,proto3" json:"exclude_model_names,omitempty"`

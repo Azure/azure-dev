@@ -72,7 +72,7 @@ func TestOptimizeCommand_DefaultFlags(t *testing.T) {
 
 	pollVal, err := cmd.Flags().GetInt("poll-interval")
 	require.NoError(t, err)
-	assert.Equal(t, 5, pollVal, "--poll-interval should default to 5")
+	assert.Equal(t, 10, pollVal, "--poll-interval should default to 10")
 }
 
 func TestIsTerminal_ViaOptimizeAPI(t *testing.T) {
@@ -514,4 +514,41 @@ func TestPrintOptimizeResults_NoStrategyColumnWhenNoMutations(t *testing.T) {
 	printOptimizeResults(t.Context(), &buf, status, false, "")
 
 	assert.NotContains(t, buf.String(), "Strategy")
+}
+
+func TestPrintOptimizeResults_StrategyDashForMixedMutations(t *testing.T) {
+	t.Parallel()
+
+	// One candidate with mutations, one without — both are printed in the
+	// Strategy column. The candidate without mutations should show "-".
+	status := &optimize_api.OptimizeJobStatus{
+		Result: &optimize_api.OptimizeResult{
+			Best: "candidate_1",
+			Candidates: []optimize_api.CandidateResult{
+				{Name: "baseline", AvgScore: 0.80},
+				{
+					Name:      "candidate_1",
+					AvgScore:  0.95,
+					Mutations: map[string]any{"system_prompt": "new"},
+				},
+			},
+		},
+	}
+
+	var buf strings.Builder
+	printOptimizeResults(t.Context(), &buf, status, false, "")
+	out := buf.String()
+
+	assert.Contains(t, out, "Strategy")
+	assert.Contains(t, out, "system_prompt")
+	// The baseline row (no mutations) should contain a dash placeholder.
+	lines := strings.SplitSeq(out, "\n")
+	found := false
+	for line := range lines {
+		if strings.Contains(line, "baseline") && strings.Contains(line, "0.800") {
+			found = true
+			assert.Contains(t, line, "-", "baseline row should show dash for empty strategy")
+		}
+	}
+	assert.True(t, found, "expected a baseline row with score 0.800 in output:\n%s", out)
 }

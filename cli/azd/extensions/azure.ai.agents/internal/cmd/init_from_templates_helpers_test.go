@@ -18,9 +18,10 @@ func TestEffectiveType(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		source   string
-		expected string
+		name         string
+		source       string
+		templateType string
+		expected     string
 	}{
 		{
 			name:     "agent.yaml suffix",
@@ -72,12 +73,42 @@ func TestEffectiveType(t *testing.T) {
 			source:   "https://github.com/org/repo/blob/main/config.yaml",
 			expected: TemplateTypeAzd,
 		},
+		{
+			name:         "azure.yaml with extension.ai.agent templateType",
+			source:       "https://github.com/org/repo/blob/main/samples/basic/azure.yaml",
+			templateType: "extension.ai.agent",
+			expected:     TemplateTypeAzureYaml,
+		},
+		{
+			name:         "azure.yml with extension.ai.agent templateType",
+			source:       "https://github.com/org/repo/blob/main/samples/basic/azure.yml",
+			templateType: "extension.ai.agent",
+			expected:     TemplateTypeAzureYaml,
+		},
+		{
+			name:         "bare azure.yaml with extension.ai.agent templateType",
+			source:       "azure.yaml",
+			templateType: "extension.ai.agent",
+			expected:     TemplateTypeAzureYaml,
+		},
+		{
+			name:         "azure.yaml without extension.ai.agent templateType falls back to azd",
+			source:       "https://github.com/org/repo/blob/main/samples/basic/azure.yaml",
+			templateType: "",
+			expected:     TemplateTypeAzd,
+		},
+		{
+			name:         "azure.yaml with different templateType falls back to azd",
+			source:       "https://github.com/org/repo/blob/main/samples/basic/azure.yaml",
+			templateType: "extension.something.else",
+			expected:     TemplateTypeAzd,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			template := &AgentTemplate{Source: tt.source}
+			template := &AgentTemplate{Source: tt.source, TemplateType: tt.templateType}
 			require.Equal(t, tt.expected, template.EffectiveType())
 		})
 	}

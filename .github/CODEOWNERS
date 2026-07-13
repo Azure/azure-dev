@@ -18,6 +18,7 @@
 /cli/azd/extensions/azure.ai.inspector/     @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @anchenyi @XiaofuHuang
 /cli/azd/extensions/azure.ai.models/        @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
 /cli/azd/extensions/azure.ai.projects/      @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030
+/cli/azd/extensions/azure.ai.rle/           @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030
 /cli/azd/extensions/azure.ai.routines/      @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030
 /cli/azd/extensions/azure.ai.skills/        @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030
 /cli/azd/extensions/azure.ai.toolboxes/     @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030
@@ -25,10 +26,10 @@
 /cli/azd/extensions/microsoft.foundry/      @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030
 
 # ── Extensions ────────────────────────────────────────────────────────────────
-/ext/                                       @vhvb1989 @tg-msft @RickWinter @karolz-ms
+/ext/                                       @vhvb1989 @tg-msft @RickWinter
 /ext/azuredevops/                           @vhvb1989 @hemarina @tg-msft @RickWinter
 /ext/devcontainer/                          @vhvb1989 @hemarina @tg-msft @RickWinter
-/ext/vscode/                                @vhvb1989 @tg-msft @RickWinter @karolz-ms @bwateratmsft
+/ext/vscode/                                @vhvb1989 @tg-msft @RickWinter @bwateratmsft
 
 # ── Infra / CI / Engineering ─────────────────────────────────────────────────
 /.github/                                   @danieljurek @vhvb1989 @tg-msft @RickWinter

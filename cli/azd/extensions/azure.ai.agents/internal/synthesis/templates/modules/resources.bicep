@@ -27,6 +27,19 @@ type deploymentType = {
   }
 }
 
+@description('Shape of a list of Foundry project connections.')
+type connectionsType = connectionType[]
+
+@description('Shape of one Foundry project connection (a host: azure.ai.connection service).')
+type connectionType = {
+  name: string
+  category: string
+  target: string
+  authType: string
+  credentials: object?
+  metadata: object?
+}
+
 // Parameters
 
 @description('Azure region for all resources.')
@@ -48,6 +61,9 @@ param deployments deploymentsType = []
 
 @description('Include an Azure Container Registry. Set true when any agent uses docker:.')
 param includeAcr bool = false
+
+@description('Foundry project connections to create (host: azure.ai.connection services).')
+param connections connectionsType = []
 
 @description('Object id of the developer running azd. When set, grants Cognitive Services User on the project. Empty disables the role assignment so headless / CI runs do not fail.')
 param principalId string = ''
@@ -270,6 +286,19 @@ module privateEndpointDns 'private-endpoint-dns.bicep' = if (enableNetworkIsolat
   }
 }
 
+// Project connections (RemoteTool/MCP, CognitiveSearch, ...) declared as
+// host: azure.ai.connection services. Created at provision time so a toolbox
+// that references a connection by name resolves it at deploy. Depends on the
+// project via foundryAccount.name / project.name so ordering is correct.
+module projectConnections 'connections.bicep' = if (!empty(connections)) {
+  name: 'foundry-connections'
+  params: {
+    foundryAccountName: foundryAccount.name
+    foundryProjectName: foundryAccount::project.name
+    connections: connections
+  }
+}
+
 // Grant the developer Cognitive Services User on the project so they can call
 // the Foundry data-plane (chat/completions, agents API) from their machine.
 resource developerCognitiveServicesUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(principalId)) {
@@ -292,5 +321,6 @@ output FOUNDRY_PROJECT_ENDPOINT string = 'https://${foundryAccount.name}.service
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = includeAcr ? acr!.outputs.loginServer : ''
 output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = includeAcr ? acr!.outputs.resourceId : ''
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = includeAcr ? acr!.outputs.connectionName : ''
+output AZURE_AI_PROJECT_CONNECTION_NAMES string = empty(connections) ? '' : projectConnections!.outputs.connectionNames
 output AZURE_FOUNDRY_NETWORK_MODE string = !enableNetworkIsolation ? 'none' : (useManagedEgress ? 'managed' : 'byo')
 output AZURE_FOUNDRY_MANAGED_ISOLATION_MODE string = useManagedNetwork ? managedIsolationMode : ''

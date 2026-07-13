@@ -11,10 +11,12 @@ import (
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -25,6 +27,7 @@ type FrameworkService struct {
 	azdext.UnimplementedFrameworkServiceServer
 	container        *ioc.NestedContainer
 	extensionManager *extensions.Manager
+	lazyEnv          *lazy.Lazy[*environment.Environment]
 	providerMap      map[string]*grpcbroker.MessageBroker[azdext.FrameworkServiceMessage]
 	providerMapMu    sync.Mutex
 }
@@ -33,10 +36,12 @@ type FrameworkService struct {
 func NewFrameworkService(
 	container *ioc.NestedContainer,
 	extensionManager *extensions.Manager,
+	lazyEnv *lazy.Lazy[*environment.Environment],
 ) azdext.FrameworkServiceServer {
 	return &FrameworkService{
 		container:        container,
 		extensionManager: extensionManager,
+		lazyEnv:          lazyEnv,
 		providerMap:      make(map[string]*grpcbroker.MessageBroker[azdext.FrameworkServiceMessage]),
 	}
 }
@@ -120,6 +125,7 @@ func (s *FrameworkService) onRegisterRequest(
 			extension,
 			broker,
 			console,
+			s.lazyEnv,
 		)
 	})
 

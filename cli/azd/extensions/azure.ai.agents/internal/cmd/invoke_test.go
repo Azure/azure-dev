@@ -645,6 +645,12 @@ func TestProtocolFlagValidation(t *testing.T) {
 			wantErr: true,
 			errSub:  "unsupported protocol",
 		},
+		{
+			name:    "rejects --client-header with a2a",
+			args:    []string{"--protocol", "a2a", "--client-header", "x-client-request-id: abc", "hello"},
+			wantErr: true,
+			errSub:  "--client-header is not supported with the a2a protocol",
+		},
 	}
 
 	for _, tt := range tests {
@@ -1574,9 +1580,6 @@ func assertPollRequestsHaveHeaders(
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {
 			t.Errorf("poll %d: Authorization = %q, want Bearer token", pollNumber, got)
 		}
-		if got := r.Header.Get("Foundry-Features"); got != "HostedAgents=V1Preview" {
-			t.Errorf("poll %d: Foundry-Features = %q, want HostedAgents=V1Preview", pollNumber, got)
-		}
 		if got := r.Header.Get(agent_api.UserIdentityHeader); got != wantUser {
 			t.Errorf("poll %d: %s = %q, want %q", pollNumber, agent_api.UserIdentityHeader, got, wantUser)
 		}
@@ -1741,9 +1744,6 @@ func TestCreateConversation_PropagatesUserIdentityHeader(t *testing.T) {
 	}
 
 	request := <-reqCh
-	if got := request.Header.Get("Foundry-Features"); got != "HostedAgents=V1Preview" {
-		t.Errorf("Foundry-Features = %q, want HostedAgents=V1Preview", got)
-	}
 	if got := request.Header.Get(agent_api.UserIdentityHeader); got != "user-1" {
 		t.Errorf("%s = %q, want user-1", agent_api.UserIdentityHeader, got)
 	}

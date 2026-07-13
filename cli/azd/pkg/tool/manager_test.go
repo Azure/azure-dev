@@ -33,7 +33,7 @@ type mockInstaller struct {
 		tool *ToolDefinition,
 		opts ...InstallOption,
 	) (*InstallResult, error)
-	availableSkillHostsFn func(ctx context.Context, tool *ToolDefinition) (commands []string, names []string)
+	availableSkillAgentsFn func(ctx context.Context, tool *ToolDefinition) (commands []string, names []string)
 }
 
 func (m *mockInstaller) Install(
@@ -64,12 +64,12 @@ func (m *mockInstaller) Upgrade(
 	}, nil
 }
 
-func (m *mockInstaller) AvailableSkillHosts(
+func (m *mockInstaller) AvailableSkillAgents(
 	ctx context.Context,
 	tool *ToolDefinition,
 ) (commands []string, names []string) {
-	if m.availableSkillHostsFn != nil {
-		return m.availableSkillHostsFn(ctx, tool)
+	if m.availableSkillAgentsFn != nil {
+		return m.availableSkillAgentsFn(ctx, tool)
 	}
 	return nil, nil
 }
@@ -432,13 +432,13 @@ func TestManager_InstallToolsDependencyResolution(t *testing.T) {
 	})
 }
 
-// TestManifest_SkillsListedAfterHostCLIs verifies the ordering invariant
+// TestManifest_SkillsListedAfterAgentCLIs verifies the ordering invariant
 // the install flow relies on: every skill tool appears AFTER any agent
-// host CLI it could install through (e.g. github-copilot-cli) in the
+// agent CLI it could install through (e.g. github-copilot-cli) in the
 // built-in manifest. Batch installs (--all, interactive picker) derive
 // their order from the manifest, so this ordering is what guarantees the
-// host CLI is installed before the skill — no runtime re-sorting needed.
-func TestManifest_SkillsListedAfterHostCLIs(t *testing.T) {
+// agent CLI is installed before the skill — no runtime re-sorting needed.
+func TestManifest_SkillsListedAfterAgentCLIs(t *testing.T) {
 	t.Parallel()
 
 	tools := BuiltInTools()
@@ -448,9 +448,9 @@ func TestManifest_SkillsListedAfterHostCLIs(t *testing.T) {
 		})
 	}
 
-	// Maps a host binary name (SkillHost.Command) to the manifest tool id
+	// Maps an agent binary name (SkillAgent.Command) to the manifest tool id
 	// that provides it.
-	hostToolID := map[string]string{
+	agentToolID := map[string]string{
 		"copilot": "github-copilot-cli",
 	}
 
@@ -459,18 +459,18 @@ func TestManifest_SkillsListedAfterHostCLIs(t *testing.T) {
 			continue
 		}
 		skillIdx := indexOf(td.Id)
-		for _, host := range td.SkillHosts {
-			cliID, ok := hostToolID[host.Command]
+		for _, agent := range td.SkillAgents {
+			cliID, ok := agentToolID[agent.Command]
 			if !ok {
-				continue // host has no installable CLI in the manifest
+				continue // agent has no installable CLI in the manifest
 			}
 			cliIdx := indexOf(cliID)
 			if cliIdx < 0 {
 				continue
 			}
 			assert.Greater(t, skillIdx, cliIdx,
-				"skill %q must be listed after its host CLI %q in the "+
-					"manifest so batch installs install the host CLI first",
+				"skill %q must be listed after its agent CLI %q in the "+
+					"manifest so batch installs install the agent CLI first",
 				td.Id, cliID)
 		}
 	}
@@ -593,7 +593,7 @@ func TestManager_UninstallTools(t *testing.T) {
 		_, err := mgr.UninstallTools(
 			t.Context(),
 			[]string{"az-cli"},
-			WithHosts("copilot"),
+			WithAgents("copilot"),
 		)
 
 		require.NoError(t, err)
@@ -629,7 +629,7 @@ func TestManager_UninstallTools(t *testing.T) {
 		assert.True(t, results[1].Success)
 	})
 
-	t.Run("UninstallsSkillsBeforeHostCLIs", func(t *testing.T) {
+	t.Run("UninstallsSkillsBeforeAgentCLIs", func(t *testing.T) {
 		t.Parallel()
 
 		var order []string
@@ -646,10 +646,10 @@ func TestManager_UninstallTools(t *testing.T) {
 
 		mgr := NewManager(&mockDetector{}, inst, nil)
 
-		// IDs supplied in manifest order (host CLI before skill), which is
+		// IDs supplied in manifest order (agent CLI before skill), which is
 		// what `--all` and the interactive picker produce. The skill must
-		// still be uninstalled first so its host CLI is on PATH to remove
-		// it; otherwise removing the host first would orphan the skill.
+		// still be uninstalled first so its agent CLI is on PATH to remove
+		// it; otherwise removing the agent first would orphan the skill.
 		_, err := mgr.UninstallTools(
 			t.Context(),
 			[]string{"github-copilot-cli", "azure-skills"},
@@ -803,18 +803,18 @@ func TestManager_UpgradeAll(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// AvailableSkillHosts
+// AvailableSkillAgents
 // ---------------------------------------------------------------------------
 
-func TestManager_AvailableSkillHosts(t *testing.T) {
+func TestManager_AvailableSkillAgents(t *testing.T) {
 	installer := &mockInstaller{
-		availableSkillHostsFn: func(_ context.Context, _ *ToolDefinition) (commands []string, names []string) {
+		availableSkillAgentsFn: func(_ context.Context, _ *ToolDefinition) (commands []string, names []string) {
 			return []string{"copilot", "claude"}, []string{"GitHub Copilot CLI", "Claude Code CLI"}
 		},
 	}
 	m := NewManager(&mockDetector{}, installer, nil)
 
-	commands, names := m.AvailableSkillHosts(t.Context(), &ToolDefinition{
+	commands, names := m.AvailableSkillAgents(t.Context(), &ToolDefinition{
 		Id:       "azure-skills",
 		Category: ToolCategorySkill,
 	})

@@ -472,14 +472,14 @@ func TestCheck(t *testing.T) {
 		assert.True(t, results[0].UpdateAvailable)
 	})
 
-	t.Run("SkillAggregatesAnyHostUpdate", func(t *testing.T) {
+	t.Run("SkillAggregatesAnyAgentUpdate", func(t *testing.T) {
 		t.Parallel()
 
 		tmpDir := t.TempDir()
 		mgr := newMockUserConfigManager()
 
-		// The aggregate InstalledVersion is the first host (current), but a
-		// second host is behind — the tool must still report an update.
+		// The aggregate InstalledVersion is the first agent (current), but a
+		// second agent is behind — the tool must still report an update.
 		det := &mockDetector{
 			detectAllFn: func(
 				_ context.Context, tools []*ToolDefinition,
@@ -488,9 +488,9 @@ func TestCheck(t *testing.T) {
 					Tool:             tools[0],
 					Installed:        true,
 					InstalledVersion: "2.0.0",
-					SkillHosts: []InstalledSkillHost{
-						{Host: "copilot", Version: "2.0.0"},
-						{Host: "claude", Version: "1.0.0"},
+					SkillAgents: []InstalledSkillAgent{
+						{Agent: "copilot", Version: "2.0.0"},
+						{Agent: "claude", Version: "1.0.0"},
 					},
 				}}, nil
 			},
@@ -517,10 +517,10 @@ func TestCheck(t *testing.T) {
 
 		assert.Equal(t, "2.0.0", results[0].CurrentVersion)
 		assert.True(t, results[0].UpdateAvailable,
-			"a stale second host must mark the skill as updatable")
-		require.Len(t, results[0].SkillHosts, 2)
-		assert.False(t, results[0].SkillHosts[0].UpdateAvailable)
-		assert.True(t, results[0].SkillHosts[1].UpdateAvailable)
+			"a stale second agent must mark the skill as updatable")
+		require.Len(t, results[0].SkillAgents, 2)
+		assert.False(t, results[0].SkillAgents[0].UpdateAvailable)
+		assert.True(t, results[0].SkillAgents[1].UpdateAvailable)
 	})
 }
 

@@ -338,9 +338,9 @@ func (m *cmdMockDetector) DetectAll(
 	return results, nil
 }
 
-func (m *cmdMockDetector) DetectSkillHosts(
+func (m *cmdMockDetector) DetectSkillAgents(
 	ctx context.Context, t *tool.ToolDefinition,
-) ([]tool.InstalledSkillHost, error) {
+) ([]tool.InstalledSkillAgent, error) {
 	return nil, nil
 }
 
@@ -354,7 +354,7 @@ type cmdMockInstaller struct {
 	uninstall func(
 		ctx context.Context, t *tool.ToolDefinition, opts ...tool.InstallOption,
 	) (*tool.InstallResult, error)
-	availableSkillHosts func(ctx context.Context, t *tool.ToolDefinition) (commands []string, names []string)
+	availableSkillAgents func(ctx context.Context, t *tool.ToolDefinition) (commands []string, names []string)
 }
 
 func (m *cmdMockInstaller) Install(
@@ -375,30 +375,30 @@ func (m *cmdMockInstaller) Upgrade(
 	return &tool.InstallResult{Tool: t, Success: true}, nil
 }
 
-func (m *cmdMockInstaller) AvailableSkillHosts(
+func (m *cmdMockInstaller) AvailableSkillAgents(
 	ctx context.Context,
 	t *tool.ToolDefinition,
 ) (commands []string, names []string) {
-	if m.availableSkillHosts != nil {
-		return m.availableSkillHosts(ctx, t)
+	if m.availableSkillAgents != nil {
+		return m.availableSkillAgents(ctx, t)
 	}
 	return nil, nil
 }
 
-// mockAvailableSkillHosts returns commands unchanged plus the display name for
-// each, derived from the tool's SkillHosts (falling back to the command when
-// no host matches). It mirrors installer.AvailableSkillHosts so the mock
+// mockAvailableSkillAgents returns commands unchanged plus the display name for
+// each, derived from the tool's SkillAgents (falling back to the command when
+// no agent matches). It mirrors installer.AvailableSkillAgents so the mock
 // yields the same (commands, names) shape from a plain list of commands.
-func mockAvailableSkillHosts(td *tool.ToolDefinition, commands []string) ([]string, []string) {
+func mockAvailableSkillAgents(td *tool.ToolDefinition, commands []string) ([]string, []string) {
 	if len(commands) == 0 {
 		return nil, nil
 	}
 	names := make([]string, len(commands))
 	for i, c := range commands {
 		names[i] = c
-		for _, h := range td.SkillHosts {
+		for _, h := range td.SkillAgents {
 			if h.Command == c {
-				names[i] = h.Host
+				names[i] = h.DisplayName
 				break
 			}
 		}
@@ -675,17 +675,17 @@ func TestToolUpgradeAction_FailureDoesNotEmitToVersion(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// resolveHostOptions — --agent / --all-agents flag handling
+// resolveAgentOptions — --agent / --all-agents flag handling
 // ---------------------------------------------------------------------------
 
-func TestResolveHostOptions(t *testing.T) {
+func TestResolveAgentOptions(t *testing.T) {
 	skill := &tool.ToolDefinition{
 		Id:       "azure-skills",
 		Name:     "Azure Skills",
 		Category: tool.ToolCategorySkill,
-		SkillHosts: []tool.SkillHost{
-			{Host: "GitHub Copilot CLI", Command: "copilot"},
-			{Host: "Claude Code CLI", Command: "claude"},
+		SkillAgents: []tool.SkillAgent{
+			{DisplayName: "GitHub Copilot CLI", Command: "copilot"},
+			{DisplayName: "Claude Code CLI", Command: "claude"},
 		},
 	}
 	nonSkill := &tool.ToolDefinition{
@@ -695,8 +695,8 @@ func TestResolveHostOptions(t *testing.T) {
 
 	newAction := func(args []string, flags *toolInstallFlags, present []string) *toolInstallAction {
 		installer := &cmdMockInstaller{
-			availableSkillHosts: func(_ context.Context, td *tool.ToolDefinition) ([]string, []string) {
-				return mockAvailableSkillHosts(td, present)
+			availableSkillAgents: func(_ context.Context, td *tool.ToolDefinition) ([]string, []string) {
+				return mockAvailableSkillAgents(td, present)
 			},
 		}
 		manager := tool.NewManager(&cmdMockDetector{}, installer, nil)
@@ -708,50 +708,50 @@ func TestResolveHostOptions(t *testing.T) {
 
 	ctx := context.Background()
 
-	t.Run("HostWithoutSkillTool", func(t *testing.T) {
-		a := newAction(nil, &toolInstallFlags{hosts: []string{"copilot"}}, nil)
-		_, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{nonSkill})
+	t.Run("AgentWithoutSkillTool", func(t *testing.T) {
+		a := newAction(nil, &toolInstallFlags{agents: []string{"copilot"}}, nil)
+		_, err := a.resolveAgentOptions(ctx, []*tool.ToolDefinition{nonSkill})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "only applies to skill tools")
 	})
 
-	t.Run("HostAllCannotMixWithSpecificHosts", func(t *testing.T) {
-		a := newAction(nil, &toolInstallFlags{hosts: []string{"all", "copilot"}}, []string{"copilot", "claude"})
-		_, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+	t.Run("AgentAllCannotMixWithSpecificAgents", func(t *testing.T) {
+		a := newAction(nil, &toolInstallFlags{agents: []string{"all", "copilot"}}, []string{"copilot", "claude"})
+		_, err := a.resolveAgentOptions(ctx, []*tool.ToolDefinition{skill})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "cannot be combined with specific agents")
 	})
 
-	t.Run("ExplicitHostsReturnsOptions", func(t *testing.T) {
-		a := newAction(nil, &toolInstallFlags{hosts: []string{"claude"}}, []string{"copilot", "claude"})
-		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+	t.Run("ExplicitAgentsReturnsOptions", func(t *testing.T) {
+		a := newAction(nil, &toolInstallFlags{agents: []string{"claude"}}, []string{"copilot", "claude"})
+		opts, err := a.resolveAgentOptions(ctx, []*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Len(t, opts, 1)
 	})
 
-	t.Run("HostAllReturnsDeferredOption", func(t *testing.T) {
-		a := newAction(nil, &toolInstallFlags{hosts: []string{"all"}}, []string{"copilot", "claude"})
-		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+	t.Run("AgentAllReturnsDeferredOption", func(t *testing.T) {
+		a := newAction(nil, &toolInstallFlags{agents: []string{"all"}}, []string{"copilot", "claude"})
+		opts, err := a.resolveAgentOptions(ctx, []*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Len(t, opts, 1)
 	})
 
-	t.Run("HostAllDefersEvenWhenNoneDetected", func(t *testing.T) {
+	t.Run("AgentAllDefersEvenWhenNoneDetected", func(t *testing.T) {
 		// --agent all resolves at install time, so it returns an option
-		// even when no host is on PATH yet (the installer surfaces the
-		// no-host guidance later).
-		a := newAction(nil, &toolInstallFlags{hosts: []string{"all"}}, nil)
-		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		// even when no agent is on PATH yet (the installer surfaces the
+		// no-agent guidance later).
+		a := newAction(nil, &toolInstallFlags{agents: []string{"all"}}, nil)
+		opts, err := a.resolveAgentOptions(ctx, []*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Len(t, opts, 1)
 	})
 
-	t.Run("ExplicitlyNamedMultipleHostsAsksToChoose", func(t *testing.T) {
+	t.Run("ExplicitlyNamedMultipleAgentsAsksToChoose", func(t *testing.T) {
 		// `azd tool install azure-skills` (skill named in args) with
-		// several hosts present in a non-interactive terminal must surface
+		// several agents present in a non-interactive terminal must surface
 		// the guidance error asking the user to choose.
 		a := newAction([]string{"azure-skills"}, &toolInstallFlags{}, []string{"copilot", "claude"})
-		_, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		_, err := a.resolveAgentOptions(ctx, []*tool.ToolDefinition{skill})
 		require.Error(t, err)
 		var sug *internal.ErrorWithSuggestion
 		require.ErrorAs(t, err, &sug)
@@ -759,9 +759,9 @@ func TestResolveHostOptions(t *testing.T) {
 		assert.Contains(t, sug.Suggestion, "--agent all")
 	})
 
-	t.Run("ExplicitlyNamedMultipleHostsInteractivePrompts", func(t *testing.T) {
+	t.Run("ExplicitlyNamedMultipleAgentsInteractivePrompts", func(t *testing.T) {
 		// In an interactive terminal the user is prompted to pick the
-		// host(s) instead of erroring out. The picker shows friendly Host
+		// agents instead of erroring out. The picker shows friendly Agent
 		// display names, and the user's selection maps back to the command.
 		a := newAction([]string{"azure-skills"}, &toolInstallFlags{}, []string{"copilot", "claude"})
 		mockConsole := a.console.(*mockinput.MockConsole)
@@ -772,14 +772,14 @@ func TestResolveHostOptions(t *testing.T) {
 			return true
 		}).Respond([]string{"Claude Code CLI"})
 
-		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		opts, err := a.resolveAgentOptions(ctx, []*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Len(t, opts, 1)
 		// The picker offers friendly display names, not command identities.
 		assert.Equal(t, []string{"GitHub Copilot CLI", "Claude Code CLI"}, prompted)
 	})
 
-	t.Run("ExplicitlyNamedMultipleHostsPromptErrorPropagates", func(t *testing.T) {
+	t.Run("ExplicitlyNamedMultipleAgentsPromptErrorPropagates", func(t *testing.T) {
 		// A failing prompt surfaces the error rather than silently
 		// falling back.
 		a := newAction([]string{"azure-skills"}, &toolInstallFlags{}, []string{"copilot", "claude"})
@@ -791,12 +791,12 @@ func TestResolveHostOptions(t *testing.T) {
 			return []string(nil), errors.New("prompt boom")
 		})
 
-		_, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		_, err := a.resolveAgentOptions(ctx, []*tool.ToolDefinition{skill})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "prompt boom")
 	})
 
-	t.Run("ExplicitlyNamedMultipleHostsEmptySelectionFallsBackToError", func(t *testing.T) {
+	t.Run("ExplicitlyNamedMultipleAgentsEmptySelectionFallsBackToError", func(t *testing.T) {
 		// Selecting nothing in the picker falls back to the guidance
 		// error telling the user to re-run with --agent.
 		a := newAction([]string{"azure-skills"}, &toolInstallFlags{}, []string{"copilot", "claude"})
@@ -806,20 +806,20 @@ func TestResolveHostOptions(t *testing.T) {
 			return true
 		}).Respond([]string{})
 
-		_, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		_, err := a.resolveAgentOptions(ctx, []*tool.ToolDefinition{skill})
 		require.Error(t, err)
 		var sug *internal.ErrorWithSuggestion
 		require.ErrorAs(t, err, &sug)
 		assert.Contains(t, sug.Suggestion, "--agent all")
 	})
 
-	t.Run("ExplicitUnavailableHostInteractivePrompts", func(t *testing.T) {
-		// `--agent gemini` names a host that isn't supported/available.
-		// In an interactive terminal we prompt over the hosts that ARE
+	t.Run("ExplicitUnavailableAgentInteractivePrompts", func(t *testing.T) {
+		// `--agent gemini` names an agent that isn't supported/available.
+		// In an interactive terminal we prompt over the agents that ARE
 		// on PATH instead of hard-failing.
 		a := newAction(
 			[]string{"azure-skills"},
-			&toolInstallFlags{hosts: []string{"gemini"}},
+			&toolInstallFlags{agents: []string{"gemini"}},
 			[]string{"copilot", "claude"},
 		)
 		mockConsole := a.console.(*mockinput.MockConsole)
@@ -830,20 +830,20 @@ func TestResolveHostOptions(t *testing.T) {
 			return true
 		}).Respond([]string{"GitHub Copilot CLI"})
 
-		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		opts, err := a.resolveAgentOptions(ctx, []*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Len(t, opts, 1)
-		// The picker offered the available hosts (friendly display names),
+		// The picker offered the available agents (friendly display names),
 		// not the bogus request.
 		assert.Equal(t, []string{"GitHub Copilot CLI", "Claude Code CLI"}, prompted)
 	})
 
-	t.Run("ExplicitUnavailableHostNonInteractivePassesThrough", func(t *testing.T) {
+	t.Run("ExplicitUnavailableAgentNonInteractivePassesThrough", func(t *testing.T) {
 		// Without a TTY we cannot prompt, so the request is passed
 		// through unchanged for the installer to validate and reject.
 		a := newAction(
 			[]string{"azure-skills"},
-			&toolInstallFlags{hosts: []string{"gemini"}},
+			&toolInstallFlags{agents: []string{"gemini"}},
 			[]string{"copilot", "claude"},
 		)
 		mockConsole := a.console.(*mockinput.MockConsole)
@@ -853,19 +853,19 @@ func TestResolveHostOptions(t *testing.T) {
 			return true
 		}).Respond([]string{"copilot"})
 
-		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		opts, err := a.resolveAgentOptions(ctx, []*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Len(t, opts, 1)
 		assert.False(t, prompted, "must not prompt without a terminal")
 	})
 
-	t.Run("ExplicitUnavailableHostNoneOnPathDefersToGuidance", func(t *testing.T) {
-		// `--agent gemini` with no supported host on PATH: skip the picker
-		// and target every available host so the installer surfaces its
-		// install-a-CLI-host guidance.
+	t.Run("ExplicitUnavailableAgentNoneOnPathDefersToGuidance", func(t *testing.T) {
+		// `--agent gemini` with no supported agent on PATH: skip the picker
+		// and target every available agent so the installer surfaces its
+		// install-a-CLI-agent guidance.
 		a := newAction(
 			[]string{"azure-skills"},
-			&toolInstallFlags{hosts: []string{"gemini"}},
+			&toolInstallFlags{agents: []string{"gemini"}},
 			nil,
 		)
 		mockConsole := a.console.(*mockinput.MockConsole)
@@ -876,18 +876,18 @@ func TestResolveHostOptions(t *testing.T) {
 			return true
 		}).Respond([]string{"copilot"})
 
-		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		opts, err := a.resolveAgentOptions(ctx, []*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Len(t, opts, 1)
-		assert.False(t, prompted, "must not prompt when no host is available")
+		assert.False(t, prompted, "must not prompt when no agent is available")
 	})
 
-	t.Run("ExplicitUnavailableHostMultiSelectErrorPropagates", func(t *testing.T) {
-		// A failing picker during the unavailable-host fallback surfaces
+	t.Run("ExplicitUnavailableAgentMultiSelectErrorPropagates", func(t *testing.T) {
+		// A failing picker during the unavailable-agent fallback surfaces
 		// the error.
 		a := newAction(
 			[]string{"azure-skills"},
-			&toolInstallFlags{hosts: []string{"gemini"}},
+			&toolInstallFlags{agents: []string{"gemini"}},
 			[]string{"copilot", "claude"},
 		)
 		mockConsole := a.console.(*mockinput.MockConsole)
@@ -898,17 +898,17 @@ func TestResolveHostOptions(t *testing.T) {
 			return []string(nil), errors.New("picker boom")
 		})
 
-		_, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		_, err := a.resolveAgentOptions(ctx, []*tool.ToolDefinition{skill})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "picker boom")
 	})
 
-	t.Run("ExplicitUnavailableHostEmptySelectionPassesThrough", func(t *testing.T) {
+	t.Run("ExplicitUnavailableAgentEmptySelectionPassesThrough", func(t *testing.T) {
 		// Selecting nothing leaves the original request intact so the
-		// installer surfaces its validation error for the bad host.
+		// installer surfaces its validation error for the bad agent.
 		a := newAction(
 			[]string{"azure-skills"},
-			&toolInstallFlags{hosts: []string{"gemini"}},
+			&toolInstallFlags{agents: []string{"gemini"}},
 			[]string{"copilot", "claude"},
 		)
 		mockConsole := a.console.(*mockinput.MockConsole)
@@ -917,17 +917,17 @@ func TestResolveHostOptions(t *testing.T) {
 			return true
 		}).Respond([]string{})
 
-		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		opts, err := a.resolveAgentOptions(ctx, []*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Len(t, opts, 1)
 	})
 
-	t.Run("ExplicitAvailableHostSkipsPrompt", func(t *testing.T) {
+	t.Run("ExplicitAvailableAgentSkipsPrompt", func(t *testing.T) {
 		// A valid, available --agent is used directly without prompting,
 		// even in an interactive terminal.
 		a := newAction(
 			[]string{"azure-skills"},
-			&toolInstallFlags{hosts: []string{"copilot"}},
+			&toolInstallFlags{agents: []string{"copilot"}},
 			[]string{"copilot", "claude"},
 		)
 		mockConsole := a.console.(*mockinput.MockConsole)
@@ -938,38 +938,38 @@ func TestResolveHostOptions(t *testing.T) {
 			return true
 		}).Respond([]string{"claude"})
 
-		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		opts, err := a.resolveAgentOptions(ctx, []*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Len(t, opts, 1)
-		assert.False(t, prompted, "available host must not trigger a prompt")
+		assert.False(t, prompted, "available agent must not trigger a prompt")
 	})
 
-	t.Run("ExplicitlyNamedSingleHostReturnsNil", func(t *testing.T) {
+	t.Run("ExplicitlyNamedSingleAgentReturnsNil", func(t *testing.T) {
 		a := newAction([]string{"azure-skills"}, &toolInstallFlags{}, []string{"copilot"})
-		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		opts, err := a.resolveAgentOptions(ctx, []*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Nil(t, opts)
 	})
 
-	t.Run("BatchInstallsAllAvailableHosts", func(t *testing.T) {
+	t.Run("BatchInstallsAllAvailableAgents", func(t *testing.T) {
 		// A skill pulled in by --all / the interactive picker (not named
-		// in args) installs through every available host instead of
+		// in args) installs through every available agent instead of
 		// aborting on ambiguity.
 		a := newAction(nil, &toolInstallFlags{all: true}, []string{"copilot", "claude"})
-		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		opts, err := a.resolveAgentOptions(ctx, []*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Len(t, opts, 1)
 	})
 
 	t.Run("NonSkillNoFlagReturnsNil", func(t *testing.T) {
 		a := newAction(nil, &toolInstallFlags{}, nil)
-		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{nonSkill})
+		opts, err := a.resolveAgentOptions(ctx, []*tool.ToolDefinition{nonSkill})
 		require.NoError(t, err)
 		assert.Nil(t, opts)
 	})
 }
 
-func TestResolveHostOptions_Upgrade(t *testing.T) {
+func TestResolveAgentOptions_Upgrade(t *testing.T) {
 	skill := &tool.ToolDefinition{
 		Id:       "azure-skills",
 		Name:     "Azure Skills",
@@ -982,8 +982,8 @@ func TestResolveHostOptions_Upgrade(t *testing.T) {
 
 	newAction := func(flags *toolUpgradeFlags, present []string) *toolUpgradeAction {
 		installer := &cmdMockInstaller{
-			availableSkillHosts: func(_ context.Context, td *tool.ToolDefinition) ([]string, []string) {
-				return mockAvailableSkillHosts(td, present)
+			availableSkillAgents: func(_ context.Context, td *tool.ToolDefinition) ([]string, []string) {
+				return mockAvailableSkillAgents(td, present)
 			},
 		}
 		manager := tool.NewManager(&cmdMockDetector{}, installer, nil)
@@ -993,55 +993,55 @@ func TestResolveHostOptions_Upgrade(t *testing.T) {
 		).(*toolUpgradeAction)
 	}
 
-	t.Run("HostWithoutSkillTool", func(t *testing.T) {
-		a := newAction(&toolUpgradeFlags{hosts: []string{"copilot"}}, nil)
-		_, err := a.resolveHostOptions([]*tool.ToolDefinition{nonSkill})
+	t.Run("AgentWithoutSkillTool", func(t *testing.T) {
+		a := newAction(&toolUpgradeFlags{agents: []string{"copilot"}}, nil)
+		_, err := a.resolveAgentOptions([]*tool.ToolDefinition{nonSkill})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "only applies to skill tools")
 	})
 
-	t.Run("HostAllCannotMixWithSpecificHosts", func(t *testing.T) {
-		a := newAction(&toolUpgradeFlags{hosts: []string{"all", "copilot"}}, []string{"copilot", "claude"})
-		_, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+	t.Run("AgentAllCannotMixWithSpecificAgents", func(t *testing.T) {
+		a := newAction(&toolUpgradeFlags{agents: []string{"all", "copilot"}}, []string{"copilot", "claude"})
+		_, err := a.resolveAgentOptions([]*tool.ToolDefinition{skill})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "cannot be combined with specific agents")
 	})
 
-	t.Run("ExplicitHostsReturnsOptions", func(t *testing.T) {
-		a := newAction(&toolUpgradeFlags{hosts: []string{"claude"}}, []string{"copilot", "claude"})
-		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+	t.Run("ExplicitAgentsReturnsOptions", func(t *testing.T) {
+		a := newAction(&toolUpgradeFlags{agents: []string{"claude"}}, []string{"copilot", "claude"})
+		opts, err := a.resolveAgentOptions([]*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Len(t, opts, 1)
 	})
 
-	t.Run("HostAllIteratesDetectedHosts", func(t *testing.T) {
-		a := newAction(&toolUpgradeFlags{hosts: []string{"all"}}, []string{"copilot", "claude"})
-		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+	t.Run("AgentAllIteratesDetectedAgents", func(t *testing.T) {
+		a := newAction(&toolUpgradeFlags{agents: []string{"all"}}, []string{"copilot", "claude"})
+		opts, err := a.resolveAgentOptions([]*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Len(t, opts, 1)
 	})
 
-	t.Run("HostAllDefersEvenWhenNoneDetected", func(t *testing.T) {
+	t.Run("AgentAllDefersEvenWhenNoneDetected", func(t *testing.T) {
 		// --agent all resolves at install time, so it returns an option
-		// even when no host is on PATH yet.
-		a := newAction(&toolUpgradeFlags{hosts: []string{"all"}}, nil)
-		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+		// even when no agent is on PATH yet.
+		a := newAction(&toolUpgradeFlags{agents: []string{"all"}}, nil)
+		opts, err := a.resolveAgentOptions([]*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Len(t, opts, 1)
 	})
 
 	// Unlike install, upgrade with no --agent never errors on multiple
-	// hosts: the installer upgrades the host the skill is installed
+	// agents: the installer upgrades the agent the skill is installed
 	// through, so no explicit choice is required.
-	t.Run("MultipleHostsNoFlagReturnsNil", func(t *testing.T) {
+	t.Run("MultipleAgentsNoFlagReturnsNil", func(t *testing.T) {
 		a := newAction(&toolUpgradeFlags{}, []string{"copilot", "claude"})
-		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+		opts, err := a.resolveAgentOptions([]*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Nil(t, opts)
 	})
 }
 
-func TestResolveHostOptions_Uninstall(t *testing.T) {
+func TestResolveAgentOptions_Uninstall(t *testing.T) {
 	skill := &tool.ToolDefinition{
 		Id:       "azure-skills",
 		Name:     "Azure Skills",
@@ -1062,35 +1062,35 @@ func TestResolveHostOptions_Uninstall(t *testing.T) {
 
 	t.Run("NoFlagReturnsNil", func(t *testing.T) {
 		a := newAction(&toolUninstallFlags{})
-		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+		opts, err := a.resolveAgentOptions([]*tool.ToolDefinition{skill})
 		require.NoError(t, err)
-		assert.Nil(t, opts, "no --agent removes from every installed host")
+		assert.Nil(t, opts, "no --agent removes from every installed agent")
 	})
 
-	t.Run("HostWithoutSkillTool", func(t *testing.T) {
-		a := newAction(&toolUninstallFlags{hosts: []string{"copilot"}})
-		_, err := a.resolveHostOptions([]*tool.ToolDefinition{nonSkill})
+	t.Run("AgentWithoutSkillTool", func(t *testing.T) {
+		a := newAction(&toolUninstallFlags{agents: []string{"copilot"}})
+		_, err := a.resolveAgentOptions([]*tool.ToolDefinition{nonSkill})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "only applies to skill tools")
 	})
 
-	t.Run("ExplicitHostReturnsOptions", func(t *testing.T) {
-		a := newAction(&toolUninstallFlags{hosts: []string{"claude"}})
-		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+	t.Run("ExplicitAgentReturnsOptions", func(t *testing.T) {
+		a := newAction(&toolUninstallFlags{agents: []string{"claude"}})
+		opts, err := a.resolveAgentOptions([]*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Len(t, opts, 1)
 	})
 
-	t.Run("HostAllReturnsOptions", func(t *testing.T) {
-		a := newAction(&toolUninstallFlags{hosts: []string{"all"}})
-		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+	t.Run("AgentAllReturnsOptions", func(t *testing.T) {
+		a := newAction(&toolUninstallFlags{agents: []string{"all"}})
+		opts, err := a.resolveAgentOptions([]*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Len(t, opts, 1)
 	})
 
-	t.Run("HostAllCannotMixWithSpecificHosts", func(t *testing.T) {
-		a := newAction(&toolUninstallFlags{hosts: []string{"all", "copilot"}})
-		_, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+	t.Run("AgentAllCannotMixWithSpecificAgents", func(t *testing.T) {
+		a := newAction(&toolUninstallFlags{agents: []string{"all", "copilot"}})
+		_, err := a.resolveAgentOptions([]*tool.ToolDefinition{skill})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "cannot be combined with specific agents")
 	})
@@ -1383,46 +1383,46 @@ func TestToolUpgradeAction_ChangedVersion_ReportsUpgraded(t *testing.T) {
 	assert.Equal(t, "Tool is upgraded to v2.0.0.", result.Message.Header)
 }
 
-// TestSkillHostDisplayName verifies an installed host's command identity is
+// TestSkillAgentDisplayName verifies an installed agent's command identity is
 // mapped to the agent's display name from the tool manifest (e.g. "copilot"
 // -> "GitHub Copilot CLI"), falling back to the command when unmatched.
-func TestSkillHostDisplayName(t *testing.T) {
+func TestSkillAgentDisplayName(t *testing.T) {
 	td := &tool.ToolDefinition{
-		SkillHosts: []tool.SkillHost{
-			{Host: "GitHub Copilot CLI", Command: "copilot"},
-			{Host: "Claude Code CLI", Command: "claude"},
+		SkillAgents: []tool.SkillAgent{
+			{DisplayName: "GitHub Copilot CLI", Command: "copilot"},
+			{DisplayName: "Claude Code CLI", Command: "claude"},
 		},
 	}
-	assert.Equal(t, "GitHub Copilot CLI", skillHostDisplayName(td, "copilot"))
-	assert.Equal(t, "Claude Code CLI", skillHostDisplayName(td, "claude"))
+	assert.Equal(t, "GitHub Copilot CLI", skillAgentDisplayName(td, "copilot"))
+	assert.Equal(t, "Claude Code CLI", skillAgentDisplayName(td, "claude"))
 	// An unknown command falls back to itself.
-	assert.Equal(t, "gemini", skillHostDisplayName(td, "gemini"))
+	assert.Equal(t, "gemini", skillAgentDisplayName(td, "gemini"))
 }
 
-// TestToolInstallAction_resolveUnavailableHostPrompt_CaseInsensitive verifies
-// that an explicit --agent value is matched against the available hosts
-// case-insensitively (like findSkillHost). "--agent Copilot" must match the
+// TestToolInstallAction_resolveUnavailableAgentPrompt_CaseInsensitive verifies
+// that an explicit --agent value is matched against the available agents
+// case-insensitively (like findSkillAgent). "--agent Copilot" must match the
 // available "copilot" command and NOT be reported unavailable or open a
 // prompt.
-func TestToolInstallAction_resolveUnavailableHostPrompt_CaseInsensitive(t *testing.T) {
+func TestToolInstallAction_resolveUnavailableAgentPrompt_CaseInsensitive(t *testing.T) {
 	installer := &cmdMockInstaller{
-		availableSkillHosts: func(_ context.Context, _ *tool.ToolDefinition) ([]string, []string) {
+		availableSkillAgents: func(_ context.Context, _ *tool.ToolDefinition) ([]string, []string) {
 			return []string{"copilot"}, []string{"GitHub Copilot CLI"}
 		},
 	}
 	manager := tool.NewManager(&cmdMockDetector{}, installer, nil)
 
 	console := mockinput.NewMockConsole()
-	console.SetTerminal(true) // interactive, so the unavailable-host path is reachable
+	console.SetTerminal(true) // interactive, so the unavailable-agent path is reachable
 
 	action := newToolInstallAction(
 		nil,
-		&toolInstallFlags{hosts: []string{"Copilot"}},
+		&toolInstallFlags{agents: []string{"Copilot"}},
 		manager, console, &output.NoneFormatter{}, io.Discard,
 	).(*toolInstallAction)
 
 	skill := &tool.ToolDefinition{Id: "azure-skills", Category: tool.ToolCategorySkill}
-	opts, handled, err := action.resolveUnavailableHostPrompt(t.Context(), skill)
+	opts, handled, err := action.resolveUnavailableAgentPrompt(t.Context(), skill)
 	require.NoError(t, err)
 	assert.False(t, handled,
 		"--agent Copilot must match available 'copilot' case-insensitively, not prompt")
@@ -1551,24 +1551,24 @@ func TestToolUninstallAction_resolveToolIds_AllFlag_NoPrompt(t *testing.T) {
 		"--all must select every installed tool")
 }
 
-// TestToolUpgradeAction_MultiHostSkill_UpgradedNotUpToDate reproduces the
-// multi-host skill case: the aggregate InstalledVersion (first host) is
-// unchanged, but the installer set AlreadyUpToDate=false because another host
+// TestToolUpgradeAction_MultiAgentSkill_UpgradedNotUpToDate reproduces the
+// multi-agent skill case: the aggregate InstalledVersion (first agent) is
+// unchanged, but the installer set AlreadyUpToDate=false because another agent
 // WAS upgraded. The header must read "upgraded", not "already up to date" —
 // version comparison must not run for skills.
-func TestToolUpgradeAction_MultiHostSkill_UpgradedNotUpToDate(t *testing.T) {
+func TestToolUpgradeAction_MultiAgentSkill_UpgradedNotUpToDate(t *testing.T) {
 	tracing.ResetUsageAttributesForTest()
 
 	detector := &cmdMockDetector{
 		detectTool: func(_ context.Context, td *tool.ToolDefinition) (*tool.ToolStatus, error) {
-			// First host is current before the upgrade.
+			// First agent is current before the upgrade.
 			return &tool.ToolStatus{Tool: td, Installed: true, InstalledVersion: "1.1.87"}, nil
 		},
 	}
 	installer := &cmdMockInstaller{
 		upgrade: func(_ context.Context, td *tool.ToolDefinition, _ ...tool.InstallOption) (*tool.InstallResult, error) {
-			// Aggregate version unchanged (first host current), but a different
-			// host was upgraded, so AlreadyUpToDate is false.
+			// Aggregate version unchanged (first agent current), but a different
+			// agent was upgraded, so AlreadyUpToDate is false.
 			return &tool.InstallResult{
 				Tool:             td,
 				Success:          true,
@@ -1593,7 +1593,7 @@ func TestToolUpgradeAction_MultiHostSkill_UpgradedNotUpToDate(t *testing.T) {
 	require.NotNil(t, result)
 	require.NotNil(t, result.Message)
 	assert.Equal(t, "Tool is upgraded to v1.1.87.", result.Message.Header,
-		"a multi-host skill with an upgraded host must not read as already up to date")
+		"a multi-agent skill with an upgraded agent must not read as already up to date")
 }
 
 // TestColorAgentPrefix verifies the NAME-column ColorFunc colors the "[agent]"
@@ -1666,11 +1666,11 @@ func TestToolNameColumn_PlainValueWrapsUnlikeAnsiValue(t *testing.T) {
 		"a plain NAME value must wrap at narrow width, unlike an ANSI-embedded value")
 }
 
-// TestToolListAction_JsonFormat_SkillPerHostRows locks the machine-readable
+// TestToolListAction_JsonFormat_SkillPerAgentRows locks the machine-readable
 // contract for `azd tool list --output json`: a skill installed on multiple
-// agents expands into one row per host, each carrying the original tool name,
-// the command-valued agent, and that host's installed version.
-func TestToolListAction_JsonFormat_SkillPerHostRows(t *testing.T) {
+// agents expands into one row per agent, each carrying the original tool name,
+// the command-valued agent, and that agent's installed version.
+func TestToolListAction_JsonFormat_SkillPerAgentRows(t *testing.T) {
 	t.Parallel()
 
 	skill := &tool.ToolDefinition{
@@ -1678,9 +1678,9 @@ func TestToolListAction_JsonFormat_SkillPerHostRows(t *testing.T) {
 		Name:     "Azure Skills",
 		Category: tool.ToolCategorySkill,
 		Priority: tool.ToolPriorityRecommended,
-		SkillHosts: []tool.SkillHost{
-			{Host: "GitHub Copilot CLI", Command: "copilot"},
-			{Host: "Claude Code CLI", Command: "claude"},
+		SkillAgents: []tool.SkillAgent{
+			{DisplayName: "GitHub Copilot CLI", Command: "copilot"},
+			{DisplayName: "Claude Code CLI", Command: "claude"},
 		},
 	}
 	detector := &cmdMockDetector{
@@ -1688,9 +1688,9 @@ func TestToolListAction_JsonFormat_SkillPerHostRows(t *testing.T) {
 			return []*tool.ToolStatus{{
 				Tool:      skill,
 				Installed: true,
-				SkillHosts: []tool.InstalledSkillHost{
-					{Host: "copilot", Version: "1.0.0"},
-					{Host: "claude", Version: "2.0.0"},
+				SkillAgents: []tool.InstalledSkillAgent{
+					{Agent: "copilot", Version: "1.0.0"},
+					{Agent: "claude", Version: "2.0.0"},
 				},
 			}}, nil
 		},
@@ -1711,19 +1711,19 @@ func TestToolListAction_JsonFormat_SkillPerHostRows(t *testing.T) {
 			byAgent[r.Agent] = r
 		}
 	}
-	require.Len(t, byAgent, 2, "a two-host skill must produce two agent rows")
+	require.Len(t, byAgent, 2, "a two-agent skill must produce two agent rows")
 	assert.Equal(t, "Azure Skills", byAgent["copilot"].Name)
 	assert.Equal(t, "1.0.0", byAgent["copilot"].Version)
 	assert.Equal(t, "Azure Skills", byAgent["claude"].Name)
 	assert.Equal(t, "2.0.0", byAgent["claude"].Version)
 }
 
-// TestToolCheckAction_JsonFormat_SkillPerHostRows locks the machine-readable
-// contract for `azd tool check --output json`: each skill host is a row with
+// TestToolCheckAction_JsonFormat_SkillPerAgentRows locks the machine-readable
+// contract for `azd tool check --output json`: each skill agent is a row with
 // the command-valued agent, its installed version, the tool's latest version,
-// and a per-host update flag (so a stale host reports an update while a current
+// and a per-agent update flag (so a stale agent reports an update while a current
 // one does not).
-func TestToolCheckAction_JsonFormat_SkillPerHostRows(t *testing.T) {
+func TestToolCheckAction_JsonFormat_SkillPerAgentRows(t *testing.T) {
 	tracing.ResetUsageAttributesForTest()
 
 	detector := &cmdMockDetector{
@@ -1731,9 +1731,9 @@ func TestToolCheckAction_JsonFormat_SkillPerHostRows(t *testing.T) {
 			return []*tool.ToolStatus{{
 				Tool:      &tool.ToolDefinition{Id: "azure-skills"},
 				Installed: true,
-				SkillHosts: []tool.InstalledSkillHost{
-					{Host: "copilot", Version: "1.0.0"}, // behind latest
-					{Host: "claude", Version: "2.0.0"},  // current
+				SkillAgents: []tool.InstalledSkillAgent{
+					{Agent: "copilot", Version: "1.0.0"}, // behind latest
+					{Agent: "claude", Version: "2.0.0"},  // current
 				},
 			}}, nil
 		},
@@ -1764,15 +1764,15 @@ func TestToolCheckAction_JsonFormat_SkillPerHostRows(t *testing.T) {
 			byAgent[r.Agent] = r
 		}
 	}
-	require.Len(t, byAgent, 2, "a two-host skill must produce two agent rows")
+	require.Len(t, byAgent, 2, "a two-agent skill must produce two agent rows")
 
 	assert.Equal(t, "1.0.0", byAgent["copilot"].InstalledVersion)
 	assert.Equal(t, "2.0.0", byAgent["copilot"].LatestVersion)
-	assert.True(t, byAgent["copilot"].UpdateAvailable, "a stale host must report an update")
+	assert.True(t, byAgent["copilot"].UpdateAvailable, "a stale agent must report an update")
 
 	assert.Equal(t, "2.0.0", byAgent["claude"].InstalledVersion)
 	assert.Equal(t, "2.0.0", byAgent["claude"].LatestVersion)
-	assert.False(t, byAgent["claude"].UpdateAvailable, "a current host must not report an update")
+	assert.False(t, byAgent["claude"].UpdateAvailable, "a current agent must not report an update")
 }
 
 // memUserConfigManager is an in-memory config.UserConfigManager for tests that

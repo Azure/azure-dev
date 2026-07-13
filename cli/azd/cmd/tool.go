@@ -330,7 +330,7 @@ func (a *toolAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 type toolListItem struct {
 	Id   string `json:"id"`
 	Name string `json:"name"`
-	// Agent is the agentic CLI host a skill row is installed through (e.g.
+	// Agent is the agent CLI a skill row is installed through (e.g.
 	// "copilot"), empty for non-skill tools.
 	Agent    string `json:"agent,omitempty"`
 	Category string `json:"category"`
@@ -338,7 +338,7 @@ type toolListItem struct {
 	Status   string `json:"status"`
 	Version  string `json:"version"`
 	// DisplayName is the NAME cell shown in the table: a skill row is
-	// prefixed with its host label (e.g. "[Copilot] Azure Skills"), other
+	// prefixed with its agent label (e.g. "[Copilot] Azure Skills"), other
 	// rows use the plain name. Excluded from JSON, which carries Name + Agent.
 	DisplayName string `json:"-"`
 }
@@ -388,16 +388,16 @@ func (a *toolListAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	rows := make([]toolListItem, 0, len(statuses))
 	for _, s := range statuses {
-		// A skill installed on one or more hosts expands into one row per
-		// host, each prefixed with the host label (e.g. "[Copilot] ...").
-		if s.Tool.Category == tool.ToolCategorySkill && len(s.SkillHosts) > 0 {
-			for _, h := range s.SkillHosts {
+		// A skill installed on one or more agents expands into one row per
+		// agent, each prefixed with the agent label (e.g. "[Copilot] ...").
+		if s.Tool.Category == tool.ToolCategorySkill && len(s.SkillAgents) > 0 {
+			for _, h := range s.SkillAgents {
 				rows = append(rows, toolListItem{
 					Id:    s.Tool.Id,
 					Name:  s.Tool.Name,
-					Agent: h.Host,
+					Agent: h.Agent,
 					DisplayName: fmt.Sprintf("[%s] %s",
-						skillHostDisplayName(s.Tool, h.Host), s.Tool.Name),
+						skillAgentDisplayName(s.Tool, h.Agent), s.Tool.Name),
 					Category: string(s.Tool.Category),
 					Priority: string(s.Tool.Priority),
 					Status:   "Installed",
@@ -486,7 +486,7 @@ func (a *toolListAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 type toolInstallFlags struct {
 	all    bool
-	hosts  []string
+	agents []string
 	dryRun bool
 }
 
@@ -496,7 +496,7 @@ func newToolInstallFlags(cmd *cobra.Command) *toolInstallFlags {
 		&flags.all, "all", false, "Install all recommended tools",
 	)
 	cmd.Flags().StringSliceVar(
-		&flags.hosts, "agent", nil,
+		&flags.agents, "agent", nil,
 		"Install the skill for the specified agent(s): copilot, claude. "+
 			"Use --agent all for every detected agent (skill tools only)",
 	)
@@ -572,12 +572,12 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 	idAttrs := toolIDUsageAttrs(a.flags.dryRun, resolvedIDs)
 	tracing.SetUsageAttributes(idAttrs...)
 
-	// Resolve which agent host(s) to install skills for, based on the
+	// Resolve which agents to install skills for, based on the
 	// --agent flag. When no agent is given and several are detected, the
 	// user is asked to choose explicitly.
-	hostOpts, hostErr := a.resolveHostOptions(ctx, tools)
-	if hostErr != nil {
-		return nil, hostErr
+	agentOpts, agentErr := a.resolveAgentOptions(ctx, tools)
+	if agentErr != nil {
+		return nil, agentErr
 	}
 
 	start := time.Now()
@@ -595,12 +595,12 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 		rawResults, opErr = runStepSpinner(
 			ctx, a.console, tools,
 			func(ctx context.Context, ids []string, progress ...tool.InstallOption) ([]*tool.InstallResult, error) {
-				return a.manager.InstallTools(ctx, ids, append(slices.Clone(hostOpts), progress...)...)
+				return a.manager.InstallTools(ctx, ids, append(slices.Clone(agentOpts), progress...)...)
 			},
 		)
 	} else {
 		operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
-			return a.manager.InstallTools(ctx, allIDs, hostOpts...)
+			return a.manager.InstallTools(ctx, allIDs, agentOpts...)
 		}
 		outcome := runToolOperation(ctx, tools, operationFn, "Installing", "install", a.console)
 		installResults = outcome.Items
@@ -632,9 +632,9 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}, nil
 }
 
-// allHostsKeyword is the reserved --agent value that selects every
+// allAgentsKeyword is the reserved --agent value that selects every
 // detected agent.
-const allHostsKeyword = "all"
+const allAgentsKeyword = "all"
 
 // firstSkillTool returns the first skill tool among tools, or nil when
 // none are present.
@@ -647,45 +647,45 @@ func firstSkillTool(tools []*tool.ToolDefinition) *tool.ToolDefinition {
 	return nil
 }
 
-// resolveExplicitSkillHosts maps an explicit --agent flag value to install
+// resolveExplicitSkillAgents maps an explicit --agent flag value to install
 // options. The reserved value "all" installs through every available
-// host (resolved at install time); otherwise the named hosts are passed
+// agent (resolved at install time); otherwise the named agents are passed
 // through for the installer to validate. Shared by the install and
 // upgrade actions.
-func resolveExplicitSkillHosts(hosts []string) ([]tool.InstallOption, error) {
+func resolveExplicitSkillAgents(agents []string) ([]tool.InstallOption, error) {
 	// --agent all selects every detected agent. It cannot be mixed with
 	// specific agent names.
-	if slices.Contains(hosts, allHostsKeyword) {
-		if len(hosts) > 1 {
+	if slices.Contains(agents, allAgentsKeyword) {
+		if len(agents) > 1 {
 			return nil, fmt.Errorf(
 				"--agent all cannot be combined with specific agents",
 			)
 		}
-		return []tool.InstallOption{tool.WithAllAvailableHosts()}, nil
+		return []tool.InstallOption{tool.WithAllAvailableAgents()}, nil
 	}
-	// The installer validates that each named host is configured and on
+	// The installer validates that each named agent is configured and on
 	// PATH, surfacing a descriptive error otherwise.
-	return []tool.InstallOption{tool.WithHosts(hosts...)}, nil
+	return []tool.InstallOption{tool.WithAgents(agents...)}, nil
 }
 
-// resolveHostOptions determines which agentic CLI host(s) a skill should
+// resolveAgentOptions determines which agent CLI(s) a skill should
 // be installed for. With --agent it targets the named agent(s); --agent all
 // targets every detected agent. Without --agent, a skill pulled in by a
 // batch (--all or the interactive picker) installs through every
-// available host, while an explicitly-named skill with several detected
-// hosts returns guidance asking the user to choose. It returns the
+// available agent, while an explicitly-named skill with several detected
+// agents returns guidance asking the user to choose. It returns the
 // install options to pass to the installer (nil selects the single
-// preferred host).
+// preferred agent).
 //
-// When an explicitly-named skill has several hosts on PATH, an
-// interactive terminal is prompted to choose which host(s) to install
+// When an explicitly-named skill has several agents on PATH, an
+// interactive terminal is prompted to choose which agents to install
 // for (we still print a --agent hint); in non-interactive mode it falls
 // back to a guidance error telling the user to re-run with --agent.
-func (a *toolInstallAction) resolveHostOptions(
+func (a *toolInstallAction) resolveAgentOptions(
 	ctx context.Context,
 	tools []*tool.ToolDefinition,
 ) ([]tool.InstallOption, error) {
-	explicit := len(a.flags.hosts) > 0
+	explicit := len(a.flags.agents) > 0
 	skill := firstSkillTool(tools)
 
 	if explicit && skill == nil {
@@ -696,32 +696,32 @@ func (a *toolInstallAction) resolveHostOptions(
 	}
 
 	if explicit {
-		// "all" expands to every detected host and is validated at
-		// install time. Specific host names are checked here so an
-		// unusable host (unknown name or not on PATH) can fall back to
+		// "all" expands to every detected agent and is validated at
+		// install time. Specific agent names are checked here so an
+		// unusable agent (unknown name or not on PATH) can fall back to
 		// an interactive picker instead of hard-failing.
-		if !slices.Contains(a.flags.hosts, allHostsKeyword) {
-			if opts, handled, err := a.resolveUnavailableHostPrompt(ctx, skill); handled || err != nil {
+		if !slices.Contains(a.flags.agents, allAgentsKeyword) {
+			if opts, handled, err := a.resolveUnavailableAgentPrompt(ctx, skill); handled || err != nil {
 				return opts, err
 			}
 		}
-		return resolveExplicitSkillHosts(a.flags.hosts)
+		return resolveExplicitSkillAgents(a.flags.agents)
 	}
 
 	// No --agent. A skill the user did not name explicitly (batch --all or
-	// interactive selection) installs through every available host,
-	// resolved at install time so host CLIs installed earlier in the same
+	// interactive selection) installs through every available agent,
+	// resolved at install time so agent CLIs installed earlier in the same
 	// batch are picked up. This is also why --all does not abort when
-	// several hosts are present.
+	// several agents are present.
 	if !slices.Contains(a.args, skill.Id) {
-		return []tool.InstallOption{tool.WithAllAvailableHosts()}, nil
+		return []tool.InstallOption{tool.WithAllAvailableAgents()}, nil
 	}
 
-	// Explicitly-named skill: when multiple hosts are detected we cannot
+	// Explicitly-named skill: when multiple agents are detected we cannot
 	// safely guess which the user wants.
-	present, presentName := a.manager.AvailableSkillHosts(ctx, skill)
+	present, presentName := a.manager.AvailableSkillAgents(ctx, skill)
 	if len(present) > 1 {
-		// Interactive terminal: prompt the user to pick the host(s),
+		// Interactive terminal: prompt the user to pick the agent(s),
 		// after surfacing the --agent hint so they learn the shortcut too.
 		if a.console.IsSpinnerInteractive() && !a.console.IsNoPromptMode() {
 			a.console.Message(ctx, "Multiple AI agents detected.\n"+
@@ -731,7 +731,7 @@ func (a *toolInstallAction) resolveHostOptions(
 				output.WithHighLightFormat("--agent all")+
 				output.WithGrayFormat("` to select a specific agent or all agents.\n"))
 
-			opts, err := a.promptForSkillHosts(ctx, skill, present, presentName)
+			opts, err := a.promptForSkillAgents(ctx, skill, present, presentName)
 			if err != nil {
 				return nil, err
 			}
@@ -747,7 +747,7 @@ func (a *toolInstallAction) resolveHostOptions(
 				"Detected multiple agents: %s", strings.Join(presentName, ", "),
 			),
 			Suggestion: fmt.Sprintf(
-				"Specify which agent(s) to install for:\n\n"+
+				"Specify which agents to install for:\n\n"+
 					"    azd tool install %s --agent <agent>\n\n"+
 					"    azd tool install %s --agent all",
 				skill.Id, skill.Id,
@@ -755,20 +755,20 @@ func (a *toolInstallAction) resolveHostOptions(
 		}
 	}
 
-	// Zero or one host detected: keep the single preferred-host default.
+	// Zero or one agent detected: keep the single preferred-agent default.
 	return nil, nil
 }
 
-// resolveUnavailableHostPrompt handles an explicit --agent whose named
-// host(s) are not usable (unknown name or not on PATH). In an
-// interactive terminal it tells the user the requested host is
-// unavailable and prompts them to pick from the hosts detected on PATH;
-// the chosen host(s) are returned with handled=true. When no supported
-// host is on PATH at all it defers to the installer's install guidance
-// (handled=true via WithAllAvailableHosts). In non-interactive mode, or
-// when every requested host is already available, it returns
+// resolveUnavailableAgentPrompt handles an explicit --agent whose named
+// agents are not usable (unknown name or not on PATH). In an
+// interactive terminal it tells the user the requested agent is
+// unavailable and prompts them to pick from the agents detected on PATH;
+// the chosen agents are returned with handled=true. When no supported
+// agent is on PATH at all it defers to the installer's install guidance
+// (handled=true via WithAllAvailableAgents). In non-interactive mode, or
+// when every requested agent is already available, it returns
 // handled=false so the caller validates the request as usual.
-func (a *toolInstallAction) resolveUnavailableHostPrompt(
+func (a *toolInstallAction) resolveUnavailableAgentPrompt(
 	ctx context.Context,
 	skill *tool.ToolDefinition,
 ) (opts []tool.InstallOption, handled bool, err error) {
@@ -776,28 +776,28 @@ func (a *toolInstallAction) resolveUnavailableHostPrompt(
 		return nil, false, nil
 	}
 
-	available, availableNames := a.manager.AvailableSkillHosts(ctx, skill)
+	available, availableNames := a.manager.AvailableSkillAgents(ctx, skill)
 	var unavailable []string
-	for _, host := range a.flags.hosts {
-		// Match case-insensitively, mirroring findSkillHost and the --agent
+	for _, agent := range a.flags.agents {
+		// Match case-insensitively, mirroring findSkillAgent and the --agent
 		// contract, so e.g. "--agent Copilot" is not falsely reported
 		// unavailable (and does not open another prompt) when the installer
 		// would accept it.
 		if !slices.ContainsFunc(available, func(cmd string) bool {
-			return strings.EqualFold(cmd, host)
+			return strings.EqualFold(cmd, agent)
 		}) {
-			unavailable = append(unavailable, fmt.Sprintf("%q", host))
+			unavailable = append(unavailable, fmt.Sprintf("%q", agent))
 		}
 	}
 	if len(unavailable) == 0 {
 		return nil, false, nil
 	}
 
-	// No usable host on PATH — defer to the installer's install guidance
-	// (recommends installing a CLI host first) by targeting every
-	// available host.
+	// No usable agent on PATH — defer to the installer's install guidance
+	// (recommends installing a CLI agent first) by targeting every
+	// available agent.
 	if len(available) == 0 {
-		return []tool.InstallOption{tool.WithAllAvailableHosts()}, true, nil
+		return []tool.InstallOption{tool.WithAllAvailableAgents()}, true, nil
 	}
 
 	a.console.Message(ctx, fmt.Sprintf(
@@ -805,25 +805,25 @@ func (a *toolInstallAction) resolveUnavailableHostPrompt(
 			"on your PATH:",
 		strings.Join(unavailable, ", "), skill.Name,
 	))
-	picked, err := a.promptForSkillHosts(ctx, skill, available, availableNames)
+	picked, err := a.promptForSkillAgents(ctx, skill, available, availableNames)
 	if err != nil {
 		return nil, false, err
 	}
 	// Nothing selected — let the caller surface the installer's
-	// validation error for the originally requested host.
+	// validation error for the originally requested agent.
 	if picked == nil {
 		return nil, false, nil
 	}
 	return picked, true, nil
 }
 
-// promptForSkillHosts shows an interactive multi-select over the given
-// available hosts and returns the matching install option, or (nil, nil)
+// promptForSkillAgents shows an interactive multi-select over the given
+// available agents and returns the matching install option, or (nil, nil)
 // when the user selects nothing so callers can fall back to their own
-// guidance. commands and names are index-aligned (from AvailableSkillHosts):
-// the picker displays the friendly name for each host and maps the selection
+// guidance. commands and names are index-aligned (from AvailableSkillAgents):
+// the picker displays the friendly name for each agent and maps the selection
 // back to its command so the installer resolves it by command.
-func (a *toolInstallAction) promptForSkillHosts(
+func (a *toolInstallAction) promptForSkillAgents(
 	ctx context.Context,
 	skill *tool.ToolDefinition,
 	commands []string,
@@ -836,13 +836,13 @@ func (a *toolInstallAction) promptForSkillHosts(
 
 	selected, err := a.console.MultiSelect(ctx, input.ConsoleOptions{
 		Message: fmt.Sprintf(
-			"Select the agent(s) to install %s for", skill.Name,
+			"Select the agents to install %s for", skill.Name,
 		),
 		Options:      names,
 		DefaultValue: []string{names[0]},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("selecting hosts: %w", err)
+		return nil, fmt.Errorf("selecting agents: %w", err)
 	}
 	if len(selected) == 0 {
 		return nil, nil
@@ -852,7 +852,7 @@ func (a *toolInstallAction) promptForSkillHosts(
 	for i, name := range selected {
 		picked[i] = toCommand[name]
 	}
-	return []tool.InstallOption{tool.WithHosts(picked...)}, nil
+	return []tool.InstallOption{tool.WithAgents(picked...)}, nil
 }
 
 // useStepSpinner reports whether a tool operation should render live
@@ -1080,7 +1080,7 @@ func (a *toolInstallAction) resolveToolIds(ctx context.Context) ([]string, error
 type toolUpgradeFlags struct {
 	all    bool
 	dryRun bool
-	hosts  []string
+	agents []string
 }
 
 func newToolUpgradeFlags(cmd *cobra.Command) *toolUpgradeFlags {
@@ -1094,7 +1094,7 @@ func newToolUpgradeFlags(cmd *cobra.Command) *toolUpgradeFlags {
 		"Preview what would be upgraded without making changes",
 	)
 	cmd.Flags().StringSliceVar(
-		&flags.hosts, "agent", nil,
+		&flags.agents, "agent", nil,
 		"Upgrade the skill for the specified agent(s): copilot, claude. "+
 			"Use --agent all for every detected agent (skill tools only)",
 	)
@@ -1230,9 +1230,9 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		TitleNote: "Upgrades installed tools to their latest versions",
 	})
 
-	hostOpts, hostErr := a.resolveHostOptions(toolsToUpgrade)
-	if hostErr != nil {
-		return nil, hostErr
+	agentOpts, agentErr := a.resolveAgentOptions(toolsToUpgrade)
+	if agentErr != nil {
+		return nil, agentErr
 	}
 
 	start := time.Now()
@@ -1247,12 +1247,12 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		rawResults, opErr = runStepSpinner(
 			ctx, a.console, toolsToUpgrade,
 			func(ctx context.Context, ids []string, progress ...tool.InstallOption) ([]*tool.InstallResult, error) {
-				return a.manager.UpgradeTools(ctx, ids, append(slices.Clone(hostOpts), progress...)...)
+				return a.manager.UpgradeTools(ctx, ids, append(slices.Clone(agentOpts), progress...)...)
 			},
 		)
 	} else {
 		operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
-			return a.manager.UpgradeTools(ctx, allIDs, hostOpts...)
+			return a.manager.UpgradeTools(ctx, allIDs, agentOpts...)
 		}
 		outcome := runToolOperation(ctx, toolsToUpgrade, operationFn, "Upgrading", "upgrade", a.console)
 		upgradeResults = outcome.Items
@@ -1289,7 +1289,7 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	// Choose the success header based on whether anything actually changed.
 	// A tool is "already up to date" when the installer flagged it. For skills
-	// this flag is authoritative (set per host, so an upgrade on any host
+	// this flag is authoritative (set per agent, so an upgrade on any agent
 	// clears it), so we trust it as-is. For non-skill tools — which never set
 	// the flag — fall back to comparing the version detected before the
 	// upgrade (fromVersions) with the one detected after (InstalledVersion); a
@@ -1394,15 +1394,15 @@ func (a *toolUpgradeAction) promptForUpgradeTools(
 	return chosen, nil
 }
 
-// resolveHostOptions determines which agentic CLI host(s) a skill should
+// resolveAgentOptions determines which agent CLI(s) a skill should
 // be upgraded for, based on the --agent flag. --agent all targets every
-// detected host; specific names target those hosts. When --agent is
-// omitted it returns no options, letting the installer upgrade every host
+// detected agent; specific names target those agents. When --agent is
+// omitted it returns no options, letting the installer upgrade every agent
 // the skill is already installed through.
-func (a *toolUpgradeAction) resolveHostOptions(
+func (a *toolUpgradeAction) resolveAgentOptions(
 	tools []*tool.ToolDefinition,
 ) ([]tool.InstallOption, error) {
-	if len(a.flags.hosts) == 0 {
+	if len(a.flags.agents) == 0 {
 		return nil, nil
 	}
 
@@ -1411,7 +1411,7 @@ func (a *toolUpgradeAction) resolveHostOptions(
 		return nil, fmt.Errorf("--agent only applies to skill tools")
 	}
 
-	return resolveExplicitSkillHosts(a.flags.hosts)
+	return resolveExplicitSkillAgents(a.flags.agents)
 }
 
 // dryRun detects the current status of the tools and displays what
@@ -1468,7 +1468,7 @@ func (a *toolUpgradeAction) dryRun(
 
 type toolUninstallFlags struct {
 	all    bool
-	hosts  []string
+	agents []string
 	dryRun bool
 }
 
@@ -1478,7 +1478,7 @@ func newToolUninstallFlags(cmd *cobra.Command) *toolUninstallFlags {
 		&flags.all, "all", false, "Uninstall all installed tools",
 	)
 	cmd.Flags().StringSliceVar(
-		&flags.hosts, "agent", nil,
+		&flags.agents, "agent", nil,
 		"Uninstall the skill from the specified agent(s): copilot, claude. "+
 			"Use --agent all (or omit --agent) to remove the skill from every agent it is "+
 			"installed through (skill tools only)",
@@ -1553,9 +1553,9 @@ func (a *toolUninstallAction) Run(ctx context.Context) (*actions.ActionResult, e
 		TitleNote: "Uninstalls specified tools from the local machine",
 	})
 
-	hostOpts, hostErr := a.resolveHostOptions(tools)
-	if hostErr != nil {
-		return nil, hostErr
+	agentOpts, agentErr := a.resolveAgentOptions(tools)
+	if agentErr != nil {
+		return nil, agentErr
 	}
 
 	start := time.Now()
@@ -1570,12 +1570,12 @@ func (a *toolUninstallAction) Run(ctx context.Context) (*actions.ActionResult, e
 		rawResults, opErr = runStepSpinner(
 			ctx, a.console, tools,
 			func(ctx context.Context, ids []string, progress ...tool.InstallOption) ([]*tool.InstallResult, error) {
-				return a.manager.UninstallTools(ctx, ids, append(slices.Clone(hostOpts), progress...)...)
+				return a.manager.UninstallTools(ctx, ids, append(slices.Clone(agentOpts), progress...)...)
 			},
 		)
 	} else {
 		operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
-			return a.manager.UninstallTools(ctx, allIDs, hostOpts...)
+			return a.manager.UninstallTools(ctx, allIDs, agentOpts...)
 		}
 		outcome := runToolOperation(ctx, tools, operationFn, "Uninstalling", "uninstall", a.console)
 		uninstallResults = outcome.Items
@@ -1607,15 +1607,15 @@ func (a *toolUninstallAction) Run(ctx context.Context) (*actions.ActionResult, e
 	}, nil
 }
 
-// resolveHostOptions determines which agentic CLI host(s) a skill should
+// resolveAgentOptions determines which agent CLI(s) a skill should
 // be uninstalled from, based on the --agent flag. --agent all targets every
-// detected host; specific names target those hosts. When --agent is
+// detected agent; specific names target those agents. When --agent is
 // omitted it returns no options, letting the installer remove the skill
-// from every host it is installed through.
-func (a *toolUninstallAction) resolveHostOptions(
+// from every agent it is installed through.
+func (a *toolUninstallAction) resolveAgentOptions(
 	tools []*tool.ToolDefinition,
 ) ([]tool.InstallOption, error) {
-	if len(a.flags.hosts) == 0 {
+	if len(a.flags.agents) == 0 {
 		return nil, nil
 	}
 
@@ -1624,7 +1624,7 @@ func (a *toolUninstallAction) resolveHostOptions(
 		return nil, fmt.Errorf("--agent only applies to skill tools")
 	}
 
-	return resolveExplicitSkillHosts(a.flags.hosts)
+	return resolveExplicitSkillAgents(a.flags.agents)
 }
 
 // resolveToolIds determines which tool IDs to uninstall based on flags
@@ -1665,7 +1665,7 @@ func (a *toolUninstallAction) resolveToolIds(ctx context.Context) ([]string, err
 
 	// --all selects every installed tool. --dry-run does the same without
 	// prompting: a preview never mutates anything, so it defaults to all
-	// installed tools (a skill is previewed against the host(s) it is
+	// installed tools (a skill is previewed against the agents it is
 	// installed through) instead of asking the user to pick.
 	if a.flags.all || a.flags.dryRun {
 		ids := make([]string, 0, len(installed))
@@ -1768,7 +1768,7 @@ func (a *toolUninstallAction) dryRun(
 type toolCheckItem struct {
 	Id   string `json:"id"`
 	Name string `json:"name"`
-	// Agent is the agentic CLI host a skill row is checked through (e.g.
+	// Agent is the agent CLI a skill row is checked through (e.g.
 	// "copilot"), empty for non-skill tools.
 	Agent            string `json:"agent,omitempty"`
 	InstalledVersion string `json:"installedVersion"`
@@ -1778,7 +1778,7 @@ type toolCheckItem struct {
 	// Populated only for pretty-table rendering; omitted from JSON.
 	Status string `json:"-"`
 	// DisplayName is the NAME cell shown in the table: a skill row is
-	// prefixed with its host label (e.g. "[Copilot] Azure Skills"), other
+	// prefixed with its agent label (e.g. "[Copilot] Azure Skills"), other
 	// rows use the plain name. Excluded from JSON, which carries Name + Agent.
 	DisplayName string `json:"-"`
 }
@@ -1832,17 +1832,17 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 		if r.UpdateAvailable {
 			updatesAvailable++
 		}
-		// A skill installed on one or more hosts expands into one row per
-		// host, each prefixed with the host label and carrying that host's
+		// A skill installed on one or more agents expands into one row per
+		// agent, each prefixed with the agent label and carrying that agent's
 		// installed version and update status.
-		if r.Tool.Category == tool.ToolCategorySkill && len(r.SkillHosts) > 0 {
-			for _, h := range r.SkillHosts {
+		if r.Tool.Category == tool.ToolCategorySkill && len(r.SkillAgents) > 0 {
+			for _, h := range r.SkillAgents {
 				rows = append(rows, toolCheckItem{
 					Id:    r.Tool.Id,
 					Name:  r.Tool.Name,
-					Agent: h.Host,
+					Agent: h.Agent,
 					DisplayName: fmt.Sprintf("[%s] %s",
-						skillHostDisplayName(r.Tool, h.Host), r.Tool.Name),
+						skillAgentDisplayName(r.Tool, h.Agent), r.Tool.Name),
 					InstalledVersion: h.CurrentVersion,
 					LatestVersion:    r.LatestVersion,
 					UpdateAvailable:  h.UpdateAvailable,
@@ -2459,14 +2459,14 @@ func toolCheckStatus(installed, updateAvailable bool) string {
 	}
 }
 
-// skillHostDisplayName maps an installed skill host's command identity (e.g.
+// skillAgentDisplayName maps an installed skill agent's command identity (e.g.
 // "copilot") to the agent's display name from the tool's manifest (e.g.
 // "GitHub Copilot CLI"), used to prefix skill rows in the list/check tables.
-// It falls back to the command when no configured host matches.
-func skillHostDisplayName(t *tool.ToolDefinition, command string) string {
-	for _, host := range t.SkillHosts {
-		if host.Command == command {
-			return host.Host
+// It falls back to the command when no configured agent matches.
+func skillAgentDisplayName(t *tool.ToolDefinition, command string) string {
+	for _, agent := range t.SkillAgents {
+		if agent.Command == command {
+			return agent.DisplayName
 		}
 	}
 	return command

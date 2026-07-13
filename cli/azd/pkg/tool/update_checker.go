@@ -77,31 +77,31 @@ type UpdateCheckResult struct {
 	// UpdateAvailable is true when LatestVersion is non-empty and
 	// differs from CurrentVersion.
 	UpdateAvailable bool
-	// SkillHosts lists, for a skill tool, the per-host installed version
+	// SkillAgents lists, for a skill tool, the per-agent installed version
 	// and whether an update is available for it (LatestVersion is the same
-	// for every host). Populated only for skills; nil otherwise.
-	SkillHosts []SkillHostUpdate
+	// for every agent). Populated only for skills; nil otherwise.
+	SkillAgents []SkillAgentUpdate
 }
 
-// SkillHostUpdate pairs an agentic CLI host with the skill version installed
+// SkillAgentUpdate pairs an agent CLI with the skill version installed
 // through it and whether a newer version is available.
-type SkillHostUpdate struct {
-	// Host is the agentic CLI host binary name (e.g. "copilot").
-	Host string
-	// CurrentVersion is the skill version installed through this host.
+type SkillAgentUpdate struct {
+	// Agent is the agent CLI binary name (e.g. "copilot").
+	Agent string
+	// CurrentVersion is the skill version installed through this agent.
 	CurrentVersion string
 	// UpdateAvailable is true when a newer version than CurrentVersion is
-	// available for this host.
+	// available for this agent.
 	UpdateAvailable bool
 }
 
-// anyHostUpdatable reports whether any of a skill's installed hosts is behind
-// the latest version. A skill installed on multiple hosts exposes only the
-// first host's version as the tool's aggregate InstalledVersion, so tool-level
-// update checks must consider every host — otherwise a stale host is missed
-// when the first is current. Returns false for non-skills (no SkillHosts).
-func anyHostUpdatable(latest string, hosts []InstalledSkillHost) bool {
-	for _, h := range hosts {
+// anyAgentUpdatable reports whether any of a skill's installed agents is behind
+// the latest version. A skill installed on multiple agents exposes only the
+// first agent's version as the tool's aggregate InstalledVersion, so tool-level
+// update checks must consider every agent — otherwise a stale agent is missed
+// when the first is current. Returns false for non-skills (no SkillAgents).
+func anyAgentUpdatable(latest string, agents []InstalledSkillAgent) bool {
+	for _, h := range agents {
 		if isNewerVersion(latest, h.Version) {
 			return true
 		}
@@ -243,12 +243,12 @@ func (uc *UpdateChecker) Check(
 		)
 
 		var currentVer string
-		var skillHosts []SkillHostUpdate
+		var skillAgents []SkillAgentUpdate
 		if status != nil {
 			currentVer = status.InstalledVersion
-			for _, h := range status.SkillHosts {
-				skillHosts = append(skillHosts, SkillHostUpdate{
-					Host:            h.Host,
+			for _, h := range status.SkillAgents {
+				skillAgents = append(skillAgents, SkillAgentUpdate{
+					Agent:           h.Agent,
 					CurrentVersion:  h.Version,
 					UpdateAvailable: isNewerVersion(latestVer, h.Version),
 				})
@@ -259,11 +259,11 @@ func (uc *UpdateChecker) Check(
 			LatestVersion: latestVer,
 		}
 
-		// For a skill installed on multiple hosts, currentVer reflects only
-		// the first host, so treat the tool as updatable when ANY host is
+		// For a skill installed on multiple agents, currentVer reflects only
+		// the first agent, so treat the tool as updatable when ANY agent is
 		// behind the latest version.
 		updateAvailable := isNewerVersion(latestVer, currentVer)
-		if status != nil && anyHostUpdatable(latestVer, status.SkillHosts) {
+		if status != nil && anyAgentUpdatable(latestVer, status.SkillAgents) {
 			updateAvailable = true
 		}
 
@@ -272,7 +272,7 @@ func (uc *UpdateChecker) Check(
 			CurrentVersion:  currentVer,
 			LatestVersion:   latestVer,
 			UpdateAvailable: updateAvailable,
-			SkillHosts:      skillHosts,
+			SkillAgents:     skillAgents,
 		})
 	}
 
@@ -480,10 +480,10 @@ func (uc *UpdateChecker) HasUpdatesAvailable(
 		if !ok || !s.Installed {
 			continue
 		}
-		// Count a skill whose first host is current but another host is stale
-		// (anyHostUpdatable), as well as the plain single-version case.
+		// Count a skill whose first agent is current but another agent is stale
+		// (anyAgentUpdatable), as well as the plain single-version case.
 		if isNewerVersion(latest, s.InstalledVersion) ||
-			anyHostUpdatable(latest, s.SkillHosts) {
+			anyAgentUpdatable(latest, s.SkillAgents) {
 			count++
 		}
 	}

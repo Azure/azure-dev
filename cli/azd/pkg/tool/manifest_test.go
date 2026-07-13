@@ -121,9 +121,9 @@ func TestBuiltInTools(t *testing.T) {
 		tools := BuiltInTools()
 		for _, tool := range tools {
 			if tool.Category == ToolCategorySkill {
-				// Skill tools install via SkillHosts, not InstallStrategies.
-				assert.NotEmpty(t, tool.SkillHosts,
-					"skill tool %q must have SkillHosts",
+				// Skill tools install via SkillAgents, not InstallStrategies.
+				assert.NotEmpty(t, tool.SkillAgents,
+					"skill tool %q must have SkillAgents",
 					tool.Id)
 				continue
 			}
@@ -435,55 +435,55 @@ func TestGithubCopilotCLI_InstallStrategies(t *testing.T) {
 	assert.Equal(t, []string{"uninstall", "-g", "@github/copilot"}, args)
 }
 
-// TestAzureSkillsHostVersionProbeRegex locks the per-host BinaryVersionRegex
-// against real `--version` banners: each host's regex must capture the version
-// from that host's genuine output and reject non-version output (a launcher
+// TestAzureSkillsAgentVersionProbeRegex locks the per-agent BinaryVersionRegex
+// against real `--version` banners: each agent's regex must capture the version
+// from that agent's genuine output and reject non-version output (a launcher
 // stub prompt, the banner prefix without a version, or an incidental semver
 // elsewhere in the stream).
-func TestAzureSkillsHostVersionProbeRegex(t *testing.T) {
+func TestAzureSkillsAgentVersionProbeRegex(t *testing.T) {
 	t.Parallel()
 
 	rx := map[string]string{}
-	for _, h := range azureSkills().SkillHosts {
+	for _, h := range azureSkills().SkillAgents {
 		// Key by the exec binary (Command, e.g. "copilot"/"claude") so the
-		// cases below are independent of the manifest's display Host (e.g.
+		// cases below are independent of the manifest's display Agent (e.g.
 		// "GitHub Copilot CLI").
 		rx[h.Command] = h.BinaryVersionRegex
 	}
 
 	cases := []struct {
 		name    string
-		host    string
+		agent   string
 		output  string
-		wantVer string // "" => must not match (host treated as unusable)
+		wantVer string // "" => must not match (agent treated as unusable)
 	}{
 		{
 			name:    "copilot real banner",
-			host:    "copilot",
+			agent:   "copilot",
 			output:  "GitHub Copilot CLI 1.0.64-3.\nRun 'copilot update' to check for updates.",
 			wantVer: "1.0.64",
 		},
 		{
 			name:    "claude real banner",
-			host:    "claude",
+			agent:   "claude",
 			output:  "2.1.178 (Claude Code)",
 			wantVer: "2.1.178",
 		},
 		{
 			name:    "copilot stub prompt",
-			host:    "copilot",
+			agent:   "copilot",
 			output:  "Cannot find GitHub Copilot CLI (https://docs.github.com/copilot)\nInstall GitHub Copilot CLI? ['y/N']",
 			wantVer: "",
 		},
 		{
 			name:    "copilot banner prefix without version",
-			host:    "copilot",
+			agent:   "copilot",
 			output:  "GitHub Copilot CLI is not installed\nnode v20.11.1",
 			wantVer: "",
 		},
 		{
 			name:    "claude version not at line start",
-			host:    "claude",
+			agent:   "claude",
 			output:  "see https://example.com/1.2.3 (Claude Code plugin)",
 			wantVer: "",
 		},
@@ -492,22 +492,22 @@ func TestAzureSkillsHostVersionProbeRegex(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tc.wantVer, matchVersion(tc.output, rx[tc.host]))
+			assert.Equal(t, tc.wantVer, matchVersion(tc.output, rx[tc.agent]))
 		})
 	}
 }
 
-// TestBuiltInTools_SkillHostsHaveCommand guarantees that every configured skill
-// host sets a non-empty Command. Installer and detector paths run host.Command
+// TestBuiltInTools_SkillAgentsHaveCommand guarantees that every configured skill
+// agent sets a non-empty Command. Installer and detector paths run agent.Command
 // directly (no fallback), so a missing Command would try to exec an empty
 // string — this test fails fast if a new manifest entry omits it.
-func TestBuiltInTools_SkillHostsHaveCommand(t *testing.T) {
+func TestBuiltInTools_SkillAgentsHaveCommand(t *testing.T) {
 	t.Parallel()
 
 	for _, td := range BuiltInTools() {
-		for _, host := range td.SkillHosts {
-			assert.NotEmpty(t, host.Command,
-				"tool %q host %q must set a non-empty Command", td.Id, host.Host)
+		for _, agent := range td.SkillAgents {
+			assert.NotEmpty(t, agent.Command,
+				"tool %q agent %q must set a non-empty Command", td.Id, agent.DisplayName)
 		}
 	}
 }

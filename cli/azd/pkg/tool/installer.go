@@ -53,7 +53,7 @@ type InstallResult struct {
 	Success bool
 	// InstalledVersion is the version detected after installation.
 	InstalledVersion string
-	// AlreadyUpToDate is set for an upgrade when every targeted host
+	// AlreadyUpToDate is set for an upgrade when every targeted agent
 	// reported the skill was already at the latest version, so nothing was
 	// changed. The command layer uses it to show an "already up to date"
 	// result instead of an "upgraded" one.
@@ -114,8 +114,8 @@ func AggregateInstallResults(
 type Installer interface {
 	// Install attempts to install the given tool using the best
 	// strategy available for the current platform. For skill tools the
-	// optional [WithHosts] option restricts installation to the named
-	// agentic CLI hosts.
+	// optional [WithAgents] option restricts installation to the named
+	// agent CLIs.
 	Install(
 		ctx context.Context,
 		tool *ToolDefinition,
@@ -131,18 +131,18 @@ type Installer interface {
 		opts ...InstallOption,
 	) (*InstallResult, error)
 
-	// AvailableSkillHosts returns the tool's configured SkillHosts that are
-	// currently usable (a functional CLI on PATH, per hostUsable), in
-	// manifest order (preferred host first), as two index-aligned slices: the
+	// AvailableSkillAgents returns the tool's configured SkillAgents that are
+	// currently usable (a functional CLI on PATH, per agentUsable), in
+	// manifest order (preferred agent first), as two index-aligned slices: the
 	// command identities (used for matching) and their display names (shown
 	// to the user). Both are nil for non-skill tools or when none of the
-	// hosts are usable. It probes the host binaries, so it takes a context.
-	AvailableSkillHosts(ctx context.Context, tool *ToolDefinition) (commands []string, names []string)
+	// agents are usable. It probes the agent binaries, so it takes a context.
+	AvailableSkillAgents(ctx context.Context, tool *ToolDefinition) (commands []string, names []string)
 
 	// Uninstall removes the given tool from the current platform. For
-	// skill tools the optional [WithHosts] option restricts removal to
-	// the named agentic CLI hosts; with neither [WithHosts] nor
-	// [WithAllAvailableHosts] the skill is removed from every host it is
+	// skill tools the optional [WithAgents] option restricts removal to
+	// the named agent CLIs; with neither [WithAgents] nor
+	// [WithAllAvailableAgents] the skill is removed from every agent it is
 	// installed through.
 	Uninstall(
 		ctx context.Context,
@@ -154,27 +154,27 @@ type Installer interface {
 // installConfig holds the resolved options for an install or upgrade
 // operation.
 type installConfig struct {
-	// hosts, when non-empty, restricts a skill install/upgrade to the
-	// named agentic CLI hosts (e.g. "copilot", "claude"). An empty slice
-	// selects the single preferred host (the first configured host on
+	// agents, when non-empty, restricts a skill install/upgrade to the
+	// named agent CLIs (e.g. "copilot", "claude"). An empty slice
+	// selects the single preferred agent (the first configured agent on
 	// PATH). Ignored for non-skill tools.
-	hosts []string
-	// allAvailableHosts, when true, installs a skill through every
-	// configured host that is on PATH, resolved at install time. It is
-	// used by batch flows (e.g. `azd tool install --all`) where the host
+	agents []string
+	// allAvailableAgents, when true, installs a skill through every
+	// configured agent that is on PATH, resolved at install time. It is
+	// used by batch flows (e.g. `azd tool install --all`) where the agent
 	// CLIs may themselves be installed earlier in the same batch, so the
-	// set of available hosts is not known until the skill's turn. Ignored
-	// when hosts is non-empty or for non-skill tools.
-	allAvailableHosts bool
+	// set of available agents is not known until the skill's turn. Ignored
+	// when agents is non-empty or for non-skill tools.
+	allAvailableAgents bool
 	// renderer, when set, renders a live step spinner around each
-	// install/upgrade/uninstall step (each host for a skill tool, or the
+	// install/upgrade/uninstall step (each agent for a skill tool, or the
 	// tool itself otherwise). When nil the
-	// installer prints a plain per-host header instead.
+	// installer prints a plain per-agent header instead.
 	renderer StepRenderer
-	// stdin, when set, is the input reader a skill host command reads from
+	// stdin, when set, is the input reader a skill agent command reads from
 	// while a step spinner is showing (so prompts are answered on the same
 	// stream the console owns, e.g. Cobra's redirected input). When nil the
-	// host command falls back to the process terminal. Ignored when no
+	// agent command falls back to the process terminal. Ignored when no
 	// spinner is active (the command then runs against the runner's streams).
 	stdin io.Reader
 }
@@ -182,23 +182,23 @@ type installConfig struct {
 // InstallOption customizes an install or upgrade operation.
 type InstallOption func(*installConfig)
 
-// WithHosts restricts a skill install/upgrade to the named agentic CLI
-// hosts. It is ignored for non-skill tools. Passing no hosts (or not
-// using this option) selects the single preferred host.
-func WithHosts(hosts ...string) InstallOption {
-	return func(c *installConfig) { c.hosts = hosts }
+// WithAgents restricts a skill install/upgrade to the named agentic CLI
+// agents. It is ignored for non-skill tools. Passing no agents (or not
+// using this option) selects the single preferred agent.
+func WithAgents(agents ...string) InstallOption {
+	return func(c *installConfig) { c.agents = agents }
 }
 
-// WithAllAvailableHosts installs a skill through every configured host
+// WithAllAvailableAgents installs a skill through every configured agent
 // on PATH, resolved at install time. Use it for batch flows where the
-// host set is not known up front. It is ignored for non-skill tools and
-// is overridden by WithHosts.
-func WithAllAvailableHosts() InstallOption {
-	return func(c *installConfig) { c.allAvailableHosts = true }
+// agent set is not known up front. It is ignored for non-skill tools and
+// is overridden by WithAgents.
+func WithAllAvailableAgents() InstallOption {
+	return func(c *installConfig) { c.allAvailableAgents = true }
 }
 
 // StepRenderer renders live per-step progress. It is the subset of
-// input.Console the installer uses to show a step spinner per host,
+// input.Console the installer uses to show a step spinner per agent,
 // matching azd provision/down. input.Console satisfies it.
 type StepRenderer interface {
 	ShowSpinner(ctx context.Context, title string, format input.SpinnerUxType)
@@ -214,9 +214,9 @@ func WithStepProgress(renderer StepRenderer) InstallOption {
 	return func(c *installConfig) { c.renderer = renderer }
 }
 
-// WithInput supplies the reader a skill host command should read stdin from
+// WithInput supplies the reader a skill agent command should read stdin from
 // while a step spinner is showing — typically the console's input
-// (console.Handles().Stdin), so a host prompt is answered on the same stream
+// (console.Handles().Stdin), so an agent prompt is answered on the same stream
 // azd owns rather than the process-global os.Stdin. It is opt-in; without it
 // the skill command falls back to the process terminal.
 func WithInput(stdin io.Reader) InstallOption {
@@ -236,10 +236,10 @@ func stepError(result *InstallResult, err error) error {
 }
 
 // renderSkillStep frames one skill step (install, upgrade or uninstall) with
-// a live spinner that stays visible while the host CLI talks to the user.
+// a live spinner that stays visible while the agent CLI talks to the user.
 //
 // It shows a step spinner (like azd provision) with title and passes work an
-// output writer. Skill operations route the host CLI's stdout/stderr through
+// output writer. Skill operations route the agent CLI's stdout/stderr through
 // that writer (see skillCommandRunArgs), with stdin still connected.
 //
 // streamOutput controls how that output is surfaced. When true, each line the
@@ -248,7 +248,7 @@ func stepError(result *InstallResult, err error) error {
 // and re-renders it around each printed line (see AskerConsole.println), so
 // the bar is kept, not lost, and the user can answer any prompt via the
 // connected stdin (used for interactive operations such as install, upgrade
-// and uninstall, whose host CLIs may prompt for confirmation). When false, the
+// and uninstall, whose agent CLIs may prompt for confirmation). When false, the
 // output is buffered and replayed only if the step fails, so a step that
 // completes without error stays quiet. When the CLI stays silent the
 // spinner simply runs to completion.
@@ -275,7 +275,7 @@ func renderSkillStep(
 
 	renderer.ShowSpinner(ctx, title, input.Step)
 
-	// Stream the host CLI's output live (so interactive prompts are visible),
+	// Stream the agent CLI's output live (so interactive prompts are visible),
 	// or buffer it and replay only on failure so a successful step is quiet.
 	var buffered []string
 	emit := func(line string) { renderer.Message(ctx, line) }
@@ -297,8 +297,8 @@ func renderSkillStep(
 	return err
 }
 
-// lineWriter splits writes into lines and hands each to emit. Skill host
-// commands use it to surface the host CLI's output through the console so it
+// lineWriter splits writes into lines and hands each to emit. Skill agent
+// commands use it to surface the agent CLI's output through the console so it
 // prints above the step spinner (which the console re-renders around each
 // line), keeping the spinner visible. Content is emitted as it arrives —
 // including a trailing line with no newline, e.g. an interactive prompt — so
@@ -308,7 +308,7 @@ func renderSkillStep(
 // values, so os/exec may call Write from two goroutines at once. The mutex
 // serializes those calls so emit (which may append to an unsynchronized buffer
 // or write to the console) is never invoked concurrently — avoiding a data
-// race and interleaved/lost host output.
+// race and interleaved/lost agent output.
 type lineWriter struct {
 	mu   sync.Mutex
 	emit func(string)
@@ -323,7 +323,7 @@ func (l *lineWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// skillCommandRunArgs configures how a skill host command (install, upgrade
+// skillCommandRunArgs configures how a skill agent command (install, upgrade
 // or uninstall) connects to the terminal. When out is non-nil (a step
 // spinner is showing) the command's stdout/stderr are routed through it so
 // the CLI's output prints above the spinner, while stdin is connected to the
@@ -344,12 +344,12 @@ func skillCommandRunArgs(base exec.RunArgs, out io.Writer, stdin io.Reader) exec
 }
 
 // semverRegex matches a bare semantic version (no leading "v") anywhere in a
-// string. Used to pull the version a host CLI prints after an update.
+// string. Used to pull the version an agent CLI prints after an update.
 var semverRegex = regexp.MustCompile(`\d+\.\d+\.\d+`)
 
-// parseUpgradeOutput extracts, from a host CLI's plugin-update output, the
+// parseUpgradeOutput extracts, from an agent CLI's plugin-update output, the
 // version it reports and whether it said the plugin was already at the latest
-// version. Best-effort across host CLIs, e.g.:
+// version. Best-effort across agent CLIs, e.g.:
 //
 //	copilot: `... updated successfully (v1.1.86, already at latest). Updated 27 skills.`
 //	claude:  `... updated from 1.1.73 to 1.1.86 for scope user. ...`
@@ -376,13 +376,13 @@ type installer struct {
 	httpClient       httpDoer
 	platformMu       sync.Mutex
 	platform         *Platform // lazily populated by ensurePlatform
-	// hostProbe memoizes hostUsable's version-probe result per host for the
+	// agentProbe memoizes agentUsable's version-probe result per agent for the
 	// installer's lifetime (one process == one command), so the several
-	// host-resolution call sites do not re-spawn `--version` for the same
-	// host. Only on-PATH results are stored (see hostUsable). Guarded by
-	// hostProbeMu.
-	hostProbeMu sync.Mutex
-	hostProbe   map[string]bool
+	// agent-resolution call sites do not re-spawn `--version` for the same
+	// agent. Only on-PATH results are stored (see agentUsable). Guarded by
+	// agentProbeMu.
+	agentProbeMu sync.Mutex
+	agentProbe   map[string]bool
 	// retryBackoff is the initial wait between post-install detection
 	// retries (doubled each attempt). Defaults to 1s; tests may shorten
 	// it to keep the suite fast.
@@ -455,33 +455,33 @@ func (i *installer) Upgrade(
 	return i.run(ctx, tool, true, opts)
 }
 
-// AvailableSkillHosts returns the tool's configured SkillHosts that are
-// currently usable, in manifest order (preferred host first), as two
+// AvailableSkillAgents returns the tool's configured SkillAgents that are
+// currently usable, in manifest order (preferred agent first), as two
 // index-aligned slices: the command identities (e.g. "copilot", used for
-// matching via --agent/findSkillHost) and their friendly display names (e.g.
-// "GitHub Copilot CLI", shown to the user). A host counts only if
-// [installer.hostUsable] confirms it is a functional CLI — not merely a
-// same-named launcher stub on PATH — so the interactive host picker never
-// offers a host the install path would later reject. Both are nil for
-// non-skill tools or when none of the hosts are usable.
-func (i *installer) AvailableSkillHosts(
+// matching via --agent/findSkillAgent) and their friendly display names (e.g.
+// "GitHub Copilot CLI", shown to the user). An agent counts only if
+// [installer.agentUsable] confirms it is a functional CLI — not merely a
+// same-named launcher stub on PATH — so the interactive agent picker never
+// offers an agent the install path would later reject. Both are nil for
+// non-skill tools or when none of the agents are usable.
+func (i *installer) AvailableSkillAgents(
 	ctx context.Context,
 	tool *ToolDefinition,
 ) (commands []string, names []string) {
 	if tool.Category != ToolCategorySkill {
 		return nil, nil
 	}
-	for _, host := range tool.SkillHosts {
-		if i.hostUsable(ctx, host) {
-			commands = append(commands, host.Command)
-			names = append(names, host.Host)
+	for _, agent := range tool.SkillAgents {
+		if i.agentUsable(ctx, agent) {
+			commands = append(commands, agent.Command)
+			names = append(names, agent.DisplayName)
 		}
 	}
 	return commands, names
 }
 
 // Uninstall removes a tool from the current platform. Skills are
-// removed through their agent host plugin command(s); other tools are
+// removed through their agent plugin command(s); other tools are
 // removed via the platform package manager (or by deleting a
 // directly-downloaded artifact).
 func (i *installer) Uninstall(
@@ -495,18 +495,18 @@ func (i *installer) Uninstall(
 	}
 
 	if tool.Category == ToolCategorySkill {
-		// For uninstall, both an explicit `--host all`
-		// (cfg.allAvailableHosts) and an omitted --host mean "remove the
-		// skill from every host it is installed through" — azd cannot
-		// remove a plugin from a host that never installed it. So only
-		// the explicit host names need to be threaded through; the
-		// empty-hosts branch of resolveSkillUninstallTargets handles both
-		// the default and `--host all`.
-		return i.runSkillUninstall(ctx, tool, cfg.hosts, cfg.renderer, cfg.stdin)
+		// For uninstall, both an explicit `--agent all`
+		// (cfg.allAvailableAgents) and an omitted --agent mean "remove the
+		// skill from every agent it is installed through" — azd cannot
+		// remove a plugin from an agent that never installed it. So only
+		// the explicit agent names need to be threaded through; the
+		// empty-agents branch of resolveSkillUninstallTargets handles both
+		// the default and `--agent all`.
+		return i.runSkillUninstall(ctx, tool, cfg.agents, cfg.renderer, cfg.stdin)
 	}
 
 	// Non-skill tools uninstall as a single step; render one spinner for
-	// the tool (no host) when a renderer is supplied.
+	// the tool (no agent) when a renderer is supplied.
 	if cfg.renderer == nil {
 		return i.runUninstall(ctx, tool)
 	}
@@ -872,27 +872,27 @@ func isSystemBinaryPath(binaryPath string) bool {
 	return false
 }
 
-// runSkillUninstall removes a skill from the resolved target host(s) and
-// verifies, per host, that the skill is no longer present. It mirrors
-// runSkill but uses each host's PluginUninstallCommand and inverts the
+// runSkillUninstall removes a skill from the resolved target agents and
+// verifies, per agent, that the skill is no longer present. It mirrors
+// runSkill but uses each agent's PluginUninstallCommand and inverts the
 // verification (success means the plugin is gone).
 func (i *installer) runSkillUninstall(
 	ctx context.Context,
 	tool *ToolDefinition,
-	hosts []string,
+	agents []string,
 	renderer StepRenderer,
 	stdin io.Reader,
 ) (*InstallResult, error) {
 	start := time.Now()
 	result := &InstallResult{Tool: tool}
 
-	if len(tool.SkillHosts) == 0 {
-		result.Error = fmt.Errorf("%s has no SkillHosts configured", tool.Name)
+	if len(tool.SkillAgents) == 0 {
+		result.Error = fmt.Errorf("%s has no SkillAgents configured", tool.Name)
 		result.Duration = time.Since(start)
 		return result, nil
 	}
 
-	targets, err := i.resolveSkillUninstallTargets(ctx, tool, hosts)
+	targets, err := i.resolveSkillUninstallTargets(ctx, tool, agents)
 	if err != nil {
 		result.Error = err
 		result.Duration = time.Since(start)
@@ -903,23 +903,23 @@ func (i *installer) runSkillUninstall(
 		succeeded []string
 		failures  []error
 	)
-	for _, host := range targets {
-		title := fmt.Sprintf("Uninstalling %s from %s", tool.Name, host.Host)
-		hostErr := renderSkillStep(ctx, renderer, title, true, func(out io.Writer) (string, error) {
-			return "", i.uninstallSkillForHost(ctx, tool, host, out, stdin)
+	for _, agent := range targets {
+		title := fmt.Sprintf("Uninstalling %s from %s", tool.Name, agent.DisplayName)
+		agentErr := renderSkillStep(ctx, renderer, title, true, func(out io.Writer) (string, error) {
+			return "", i.uninstallSkillForAgent(ctx, tool, agent, out, stdin)
 		})
-		if hostErr != nil {
-			failures = append(failures, fmt.Errorf("%s: %w", host.Host, hostErr))
+		if agentErr != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", agent.DisplayName, agentErr))
 			continue
 		}
-		succeeded = append(succeeded, host.Command)
+		succeeded = append(succeeded, agent.Command)
 	}
 
 	result.Strategy = strings.Join(succeeded, ", ")
 	result.Duration = time.Since(start)
 
-	// On failure, preserve the wrapped error for a single host so callers
-	// can match it with errors.Is/As; summarize when several hosts fail.
+	// On failure, preserve the wrapped error for a single agent so callers
+	// can match it with errors.Is/As; summarize when several agents fail.
 	if len(failures) > 0 {
 		if len(failures) == 1 {
 			result.Error = failures[0]
@@ -929,7 +929,7 @@ func (i *installer) runSkillUninstall(
 				msgs[j] = f.Error()
 			}
 			result.Error = fmt.Errorf(
-				"%s could not be uninstalled for %d host(s): %s",
+				"%s could not be uninstalled for %d agent(s): %s",
 				tool.Name, len(failures), strings.Join(msgs, "; "),
 			)
 		}
@@ -940,39 +940,39 @@ func (i *installer) runSkillUninstall(
 	return result, nil
 }
 
-// resolveSkillUninstallTargets resolves the host(s) a skill should be
-// removed from. With explicit host names, each must be a configured
-// SkillHost that is a usable (functional) CLI on PATH. Without explicit
-// hosts (the default, and also `--host all`), it targets every host the
+// resolveSkillUninstallTargets resolves the agents a skill should be
+// removed from. With explicit agent names, each must be a configured
+// SkillAgent that is a usable (functional) CLI on PATH. Without explicit
+// agents (the default, and also `--agent all`), it targets every agent the
 // skill is currently installed through; an error is returned when the
-// skill is not installed on any host.
+// skill is not installed on any agent.
 func (i *installer) resolveSkillUninstallTargets(
 	ctx context.Context,
 	tool *ToolDefinition,
-	hosts []string,
-) ([]SkillHost, error) {
-	if len(hosts) > 0 {
-		return i.explicitSkillHostTargets(ctx, tool, hosts)
+	agents []string,
+) ([]SkillAgent, error) {
+	if len(agents) > 0 {
+		return i.explicitSkillAgentTargets(ctx, tool, agents)
 	}
 
-	// Default / --host all: remove from every host the skill is
+	// Default / --agent all: remove from every agent the skill is
 	// currently installed through.
-	installed, err := i.detector.DetectSkillHosts(ctx, tool)
+	installed, err := i.detector.DetectSkillAgents(ctx, tool)
 	if err != nil {
 		return nil, err
 	}
 
-	targets := configuredSkillHostsFor(tool, installed)
+	targets := configuredSkillAgentsFor(tool, installed)
 
 	if len(targets) == 0 {
 		// Nothing to do. No Links: the suggestion is self-contained.
 		return nil, &errorhandler.ErrorWithSuggestion{
 			Err: fmt.Errorf(
-				"%s is not installed on any available host", tool.Name,
+				"%s is not installed on any available agent", tool.Name,
 			),
 			Message: "Cannot uninstall " + tool.Name,
 			Suggestion: fmt.Sprintf(
-				"%s is not installed through any agent host, so there is "+
+				"%s is not installed through any agent, so there is "+
 					"nothing to uninstall.", tool.Name,
 			),
 		}
@@ -980,47 +980,47 @@ func (i *installer) resolveSkillUninstallTargets(
 	return targets, nil
 }
 
-// uninstallSkillForHost removes the skill through a single host and
-// verifies it is no longer present on that host. out, when non-nil, receives
-// the host CLI's output line-by-line for display above the step spinner.
-func (i *installer) uninstallSkillForHost(
+// uninstallSkillForAgent removes the skill through a single agent and
+// verifies it is no longer present on that agent. out, when non-nil, receives
+// the agent CLI's output line-by-line for display above the step spinner.
+func (i *installer) uninstallSkillForAgent(
 	ctx context.Context,
 	tool *ToolDefinition,
-	host SkillHost,
+	agent SkillAgent,
 	out io.Writer,
 	stdin io.Reader,
 ) error {
-	if err := i.runSkillHostUninstallCommand(ctx, host, out, stdin); err != nil {
+	if err := i.runSkillAgentUninstallCommand(ctx, agent, out, stdin); err != nil {
 		return err
 	}
-	return i.verifySkillUninstalled(ctx, tool, host)
+	return i.verifySkillUninstalled(ctx, tool, agent)
 }
 
-// runSkillHostUninstallCommand executes the host's plugin-uninstall command.
-// When a step spinner is showing (out is non-nil) the host CLI's output is
+// runSkillAgentUninstallCommand executes the agent's plugin-uninstall command.
+// When a step spinner is showing (out is non-nil) the agent CLI's output is
 // routed through out so any prompt is printed above the spinner and
 // answerable via the connected stdin; otherwise the command runs fully
 // interactively (see skillCommandRunArgs). A non-zero exit is returned as an
 // error; the caller verifies via the detector and decides whether the error
 // is fatal.
-func (i *installer) runSkillHostUninstallCommand(
+func (i *installer) runSkillAgentUninstallCommand(
 	ctx context.Context,
-	host SkillHost,
+	agent SkillAgent,
 	out io.Writer,
 	stdin io.Reader,
 ) error {
-	cmd := host.PluginUninstallCommand
+	cmd := agent.PluginUninstallCommand
 	if len(cmd) == 0 {
 		return fmt.Errorf(
-			"host %q has no uninstall command configured", host.Host,
+			"agent %q has no uninstall command configured", agent.DisplayName,
 		)
 	}
 
-	runArgs := skillCommandRunArgs(exec.NewRunArgs(host.Command, cmd...), out, stdin)
+	runArgs := skillCommandRunArgs(exec.NewRunArgs(agent.Command, cmd...), out, stdin)
 	if _, err := i.commandRunner.Run(ctx, runArgs); err != nil {
 		return fmt.Errorf(
 			"running `%s %s`: %w",
-			host.Command, strings.Join(cmd, " "), err,
+			agent.Command, strings.Join(cmd, " "), err,
 		)
 	}
 
@@ -1028,27 +1028,27 @@ func (i *installer) runSkillHostUninstallCommand(
 }
 
 // verifySkillUninstalled confirms the skill is no longer detectable
-// through the specific host it was removed via. Like verifySkillInstalled
-// it is host-scoped and retries with backoff because plugin-list output
+// through the specific agent it was removed via. Like verifySkillInstalled
+// it is agent-scoped and retries with backoff because plugin-list output
 // can lag the uninstall action.
 func (i *installer) verifySkillUninstalled(
 	ctx context.Context,
 	tool *ToolDefinition,
-	host SkillHost,
+	agent SkillAgent,
 ) error {
 	const maxAttempts = 4 // 1 initial + 3 retries
 
 	gone, err := i.retryDetect(ctx, maxAttempts, tool.Name, func() (bool, error) {
-		installed, detectErr := i.detector.DetectSkillHosts(ctx, tool)
+		installed, detectErr := i.detector.DetectSkillAgents(ctx, tool)
 		if detectErr != nil {
 			return false, detectErr
 		}
 		for _, h := range installed {
-			if h.Host == host.Command {
-				return false, nil // still installed on this host
+			if h.Agent == agent.Command {
+				return false, nil // still installed on this agent
 			}
 		}
-		return true, nil // no longer installed via this host
+		return true, nil // no longer installed via this agent
 	})
 	if err != nil {
 		return fmt.Errorf("verifying removal of %s: %w", tool.Name, err)
@@ -1056,7 +1056,7 @@ func (i *installer) verifySkillUninstalled(
 	if !gone {
 		return fmt.Errorf(
 			"%s was uninstalled via %s but verification failed",
-			tool.Name, host.Host,
+			tool.Name, agent.DisplayName,
 		)
 	}
 	return nil
@@ -1074,15 +1074,15 @@ func (i *installer) run(
 		opt(&cfg)
 	}
 
-	// Skills follow a different flow: they install through the host
-	// agentic CLI native plugin command rather than the platform's
+	// Skills follow a different flow: they install through the agent CLI
+	// native plugin command rather than the platform's
 	// package manager, so we short-circuit before platform detection.
 	if tool.Category == ToolCategorySkill {
-		return i.runSkill(ctx, tool, upgrade, cfg.hosts, cfg.allAvailableHosts, cfg.renderer, cfg.stdin)
+		return i.runSkill(ctx, tool, upgrade, cfg.agents, cfg.allAvailableAgents, cfg.renderer, cfg.stdin)
 	}
 
 	// Non-skill tools install as a single step through the platform
-	// package manager; render one spinner for the tool (no host) when a
+	// package manager; render one spinner for the tool (no agent) when a
 	// renderer is supplied.
 	if cfg.renderer == nil {
 		return i.runToolInstall(ctx, tool, upgrade)
@@ -1276,29 +1276,29 @@ func (i *installer) retryDetect(
 // ---------------------------------------------------------------------------
 
 // runSkill installs (or upgrades) a skill across one or more agentic CLI
-// hosts.
+// agents.
 //
 // Prerequisite rules:
-//  1. HARD — at least one supported agentic CLI host (copilot or claude)
+//  1. HARD — at least one supported agent CLI (copilot or claude)
 //     must be on PATH. We do NOT install one ourselves; if none is
 //     present resolveSkillTargets fails with an
 //     [errorhandler.ErrorWithSuggestion] pointing at the install docs.
 //  2. SOFT — Node.js (`node`) on PATH. The Azure MCP server is started
 //     via `npx`, so its absence breaks MCP-backed scenarios but does NOT
 //     prevent installing the skill files. We warn and continue.
-//  3. Git is NOT pre-checked. The host CLI fetches the skill repo itself
+//  3. Git is NOT pre-checked. The agent CLI fetches the skill repo itself
 //     and surfaces its own diagnostic when git is missing.
 //
-// The hosts argument, when non-empty, restricts the operation to the
-// named hosts. When allAvailable is true (and hosts is empty) the skill
-// is installed through every configured host on PATH. Otherwise the
-// single preferred host (first on PATH) is used (or, for an upgrade,
-// every host the skill is already installed through).
+// The agents argument, when non-empty, restricts the operation to the
+// named agents. When allAvailable is true (and agents is empty) the skill
+// is installed through every configured agent on PATH. Otherwise the
+// single preferred agent (first on PATH) is used (or, for an upgrade,
+// every agent the skill is already installed through).
 func (i *installer) runSkill(
 	ctx context.Context,
 	tool *ToolDefinition,
 	upgrade bool,
-	hosts []string,
+	agents []string,
 	allAvailable bool,
 	renderer StepRenderer,
 	stdin io.Reader,
@@ -1306,14 +1306,14 @@ func (i *installer) runSkill(
 	start := time.Now()
 	result := &InstallResult{Tool: tool}
 
-	if len(tool.SkillHosts) == 0 {
-		result.Error = fmt.Errorf("%s has no SkillHosts configured", tool.Name)
+	if len(tool.SkillAgents) == 0 {
+		result.Error = fmt.Errorf("%s has no SkillAgents configured", tool.Name)
 		result.Duration = time.Since(start)
 		return result, nil
 	}
 
-	// 1. HARD prerequisite: resolve the target host(s).
-	targets, err := i.resolveSkillTargets(ctx, tool, hosts, allAvailable, upgrade)
+	// 1. HARD prerequisite: resolve the target agent(s).
+	targets, err := i.resolveSkillTargets(ctx, tool, agents, allAvailable, upgrade)
 	if err != nil {
 		result.Error = err
 		result.Duration = time.Since(start)
@@ -1334,9 +1334,9 @@ func (i *installer) runSkill(
 		)+output.WithLinkFormat("https://nodejs.org/"))
 	}
 
-	// 3. Install / upgrade for each target host, collecting outcomes.
-	//    renderSkillStep shows a step spinner per host. For an install the
-	//    host CLI's output streams above the spinner (so prompts are
+	// 3. Install / upgrade for each target agent, collecting outcomes.
+	//    renderSkillStep shows a step spinner per agent. For an install the
+	//    agent CLI's output streams above the spinner (so prompts are
 	//    answerable); for an upgrade the update command's output is captured
 	//    and parsed for the version and whether the skill was already at the
 	//    latest, which the result line reports.
@@ -1348,18 +1348,18 @@ func (i *installer) runSkill(
 		succeeded   []string
 		failures    []error
 		version     string
-		anyUpgraded bool // an upgrade actually changed at least one host
+		anyUpgraded bool // an upgrade actually changed at least one agent
 	)
-	for _, host := range targets {
-		title := fmt.Sprintf("%s %s in %s", verb, tool.Name, host.Host)
+	for _, agent := range targets {
+		title := fmt.Sprintf("%s %s in %s", verb, tool.Name, agent.DisplayName)
 		var (
-			hostVersion  string
-			hostUpToDate bool
+			agentVersion  string
+			agentUpToDate bool
 		)
-		hostErr := renderSkillStep(ctx, renderer, title, true, func(out io.Writer) (string, error) {
-			v, upToDate, e := i.installSkillForHost(ctx, tool, host, upgrade, out, stdin)
-			hostVersion = v
-			hostUpToDate = upToDate
+		agentErr := renderSkillStep(ctx, renderer, title, true, func(out io.Writer) (string, error) {
+			v, upToDate, e := i.installSkillForAgent(ctx, tool, agent, upgrade, out, stdin)
+			agentVersion = v
+			agentUpToDate = upToDate
 			if e != nil {
 				return "", e
 			}
@@ -1368,28 +1368,28 @@ func (i *installer) runSkill(
 			done := title
 			switch {
 			case upgrade && upToDate && v != "":
-				done = fmt.Sprintf("%s in %s are already up to date (v%s).", tool.Name, host.Host, v)
+				done = fmt.Sprintf("%s in %s are already up to date (v%s).", tool.Name, agent.DisplayName, v)
 			case upgrade && upToDate:
-				done = fmt.Sprintf("%s in %s are already up to date.", tool.Name, host.Host)
+				done = fmt.Sprintf("%s in %s are already up to date.", tool.Name, agent.DisplayName)
 			case upgrade && v != "":
 				done = fmt.Sprintf("%s (v%s)", title, v)
 			}
 			return done, nil
 		})
-		if hostErr != nil {
-			failures = append(failures, fmt.Errorf("%s: %w", host.Host, hostErr))
+		if agentErr != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", agent.DisplayName, agentErr))
 			continue
 		}
-		succeeded = append(succeeded, host.Command)
-		if !hostUpToDate {
+		succeeded = append(succeeded, agent.Command)
+		if !agentUpToDate {
 			anyUpgraded = true
 		}
 		if version == "" {
-			version = hostVersion
+			version = agentVersion
 		}
 	}
 
-	// An upgrade that changed nothing (every targeted host was already at the
+	// An upgrade that changed nothing (every targeted agent was already at the
 	// latest version) is reported as "already up to date" by the caller.
 	result.AlreadyUpToDate = upgrade && len(succeeded) > 0 && !anyUpgraded
 
@@ -1397,8 +1397,8 @@ func (i *installer) runSkill(
 	result.InstalledVersion = version
 	result.Duration = time.Since(start)
 
-	// On failure, preserve the wrapped error for a single host so callers
-	// can match it with errors.Is/As; summarize when several hosts fail.
+	// On failure, preserve the wrapped error for a single agent so callers
+	// can match it with errors.Is/As; summarize when several agents fail.
 	if len(failures) > 0 {
 		if len(failures) == 1 {
 			result.Error = failures[0]
@@ -1408,7 +1408,7 @@ func (i *installer) runSkill(
 				msgs[j] = f.Error()
 			}
 			result.Error = fmt.Errorf(
-				"%s could not be installed for %d host(s): %s",
+				"%s could not be installed for %d agent(s): %s",
 				tool.Name, len(failures), strings.Join(msgs, "; "),
 			)
 		}
@@ -1419,78 +1419,78 @@ func (i *installer) runSkill(
 	return result, nil
 }
 
-// resolveSkillTargets resolves the host(s) a skill should be installed
-// to. With an explicit selection (hosts) every named host must be a
-// configured SkillHost that is on PATH; otherwise an error naming the
-// available hosts is returned. With allAvailable it acts on every
-// configured host on PATH: for install, all of them; for upgrade, only
+// resolveSkillTargets resolves the agents a skill should be installed
+// to. With an explicit selection (agents) every named agent must be a
+// configured SkillAgent that is on PATH; otherwise an error naming the
+// available agents is returned. With allAvailable it acts on every
+// configured agent on PATH: for install, all of them; for upgrade, only
 // the ones that already have the skill installed (the rest are skipped
 // with a warning, and an error is returned when none have it). With
-// neither it returns a single host for install (the preferred host on
-// PATH) or, for an upgrade, every host the skill is already installed
+// neither it returns a single agent for install (the preferred agent on
+// PATH) or, for an upgrade, every agent the skill is already installed
 // through.
 func (i *installer) resolveSkillTargets(
 	ctx context.Context,
 	tool *ToolDefinition,
-	hosts []string,
+	agents []string,
 	allAvailable bool,
 	upgrade bool,
-) ([]SkillHost, error) {
-	if len(hosts) == 0 {
-		// Batch / --host all: act on every configured host on PATH,
-		// resolved here (at run time) so host CLIs installed earlier in
+) ([]SkillAgent, error) {
+	if len(agents) == 0 {
+		// Batch / --agent all: act on every configured agent on PATH,
+		// resolved here (at run time) so agent CLIs installed earlier in
 		// the same batch are picked up.
 		if allAvailable {
-			var onPath []SkillHost
-			for _, host := range tool.SkillHosts {
-				if i.hostUsable(ctx, host) {
-					onPath = append(onPath, host)
+			var onPath []SkillAgent
+			for _, agent := range tool.SkillAgents {
+				if i.agentUsable(ctx, agent) {
+					onPath = append(onPath, agent)
 				}
 			}
-			// No usable host CLI present at all — surface the install
+			// No usable agent CLI present at all — surface the install
 			// guidance.
 			if len(onPath) == 0 {
-				host, err := i.pickSkillHost(ctx, tool)
+				agent, err := i.pickSkillAgent(ctx, tool)
 				if err != nil {
 					return nil, err
 				}
-				return []SkillHost{host}, nil
+				return []SkillAgent{agent}, nil
 			}
 
-			// For install, target every host on PATH.
+			// For install, target every agent on PATH.
 			if !upgrade {
 				return onPath, nil
 			}
 
-			// For upgrade, target only hosts that actually have the skill
-			// installed; warn-and-skip the rest, since a host CLI cannot
+			// For upgrade, target only agents that actually have the skill
+			// installed; warn-and-skip the rest, since an agent CLI cannot
 			// upgrade a plugin it never installed.
-			installed, err := i.detector.DetectSkillHosts(ctx, tool)
+			installed, err := i.detector.DetectSkillAgents(ctx, tool)
 			if err != nil {
 				return nil, err
 			}
 			installedSet := map[string]bool{}
 			for _, h := range installed {
-				installedSet[h.Host] = true
+				installedSet[h.Agent] = true
 			}
-			var targets []SkillHost
-			for _, host := range onPath {
-				if installedSet[host.Command] {
-					targets = append(targets, host)
+			var targets []SkillAgent
+			for _, agent := range onPath {
+				if installedSet[agent.Command] {
+					targets = append(targets, agent)
 					continue
 				}
 				fmt.Fprintln(os.Stderr, output.WithWarningFormat(
 					"Skipping upgrade for %s: %s is not installed on it.",
-					host.Host, tool.Name,
+					agent.DisplayName, tool.Name,
 				))
 			}
 			if len(targets) == 0 {
 				onPathNames := make([]string, len(onPath))
 				for j, h := range onPath {
-					onPathNames[j] = h.Host
+					onPathNames[j] = h.DisplayName
 				}
 				return nil, fmt.Errorf(
-					"%s is not installed on any available host (%s); "+
+					"%s is not installed on any available agent (%s); "+
 						"nothing to upgrade",
 					tool.Name, strings.Join(onPathNames, ", "),
 				)
@@ -1498,32 +1498,32 @@ func (i *installer) resolveSkillTargets(
 			return targets, nil
 		}
 
-		// For an upgrade with no explicit host, refresh every host the
+		// For an upgrade with no explicit agent, refresh every agent the
 		// skill is currently installed through — not just the first —
-		// so a multi-host install (e.g. copilot AND claude) is kept
+		// so a multi-agent install (e.g. copilot AND claude) is kept
 		// fully up to date. We also avoid running an update against a
-		// host that never installed it.
+		// agent that never installed it.
 		if upgrade {
-			installed, err := i.detector.DetectSkillHosts(ctx, tool)
+			installed, err := i.detector.DetectSkillAgents(ctx, tool)
 			if err != nil {
 				return nil, err
 			}
 
 			if len(installed) > 0 {
-				if targets := configuredSkillHostsFor(tool, installed); len(targets) > 0 {
+				if targets := configuredSkillAgentsFor(tool, installed); len(targets) > 0 {
 					return targets, nil
 				}
 			}
 
-			// The skill is not installed on any available host. Don't
-			// fall through to pickSkillHost — updating a plugin that was
+			// The skill is not installed on any available agent. Don't
+			// fall through to pickSkillAgent — updating a plugin that was
 			// never installed only produces a confusing "verification
 			// failed" error. Point the user at install instead. No Links:
 			// the suggestion is a self-contained azd command, so there is
 			// nothing to link (cf. managerUnavailableError).
 			return nil, &errorhandler.ErrorWithSuggestion{
 				Err: fmt.Errorf(
-					"%s is not installed on any available host",
+					"%s is not installed on any available agent",
 					tool.Name,
 				),
 				Message: "Cannot upgrade " + tool.Name,
@@ -1534,79 +1534,79 @@ func (i *installer) resolveSkillTargets(
 				),
 			}
 		}
-		host, err := i.pickSkillHost(ctx, tool)
+		agent, err := i.pickSkillAgent(ctx, tool)
 		if err != nil {
 			return nil, err
 		}
-		return []SkillHost{host}, nil
+		return []SkillAgent{agent}, nil
 	}
 
-	return i.explicitSkillHostTargets(ctx, tool, hosts)
+	return i.explicitSkillAgentTargets(ctx, tool, agents)
 }
 
-// explicitSkillHostTargets resolves an explicit list of requested host
-// names to their [SkillHost] definitions. A requested host is usable only
-// when it is a configured SkillHost that is also a functional CLI on PATH
-// (see [installer.hostUsable]); an unknown name, a host not on PATH, and a
-// host present only as a launcher stub all fail with an error naming the
-// supported hosts. Shared by the install/upgrade (resolveSkillTargets) and
-// uninstall (resolveSkillUninstallTargets) paths so the host-availability
+// explicitSkillAgentTargets resolves an explicit list of requested agent
+// names to their [SkillAgent] definitions. A requested agent is usable only
+// when it is a configured SkillAgent that is also a functional CLI on PATH
+// (see [installer.agentUsable]); an unknown name, an agent not on PATH, and a
+// agent present only as a launcher stub all fail with an error naming the
+// supported agents. Shared by the install/upgrade (resolveSkillTargets) and
+// uninstall (resolveSkillUninstallTargets) paths so the agent-availability
 // rule lives in one place.
-func (i *installer) explicitSkillHostTargets(
+func (i *installer) explicitSkillAgentTargets(
 	ctx context.Context,
 	tool *ToolDefinition,
-	hosts []string,
-) ([]SkillHost, error) {
-	targets := make([]SkillHost, 0, len(hosts))
-	for _, name := range hosts {
-		host, ok := findSkillHost(tool, name)
-		if !ok || !i.hostUsable(ctx, host) {
-			supported := make([]string, len(tool.SkillHosts))
-			for j, h := range tool.SkillHosts {
+	agents []string,
+) ([]SkillAgent, error) {
+	targets := make([]SkillAgent, 0, len(agents))
+	for _, name := range agents {
+		agent, ok := findSkillAgent(tool, name)
+		if !ok || !i.agentUsable(ctx, agent) {
+			supported := make([]string, len(tool.SkillAgents))
+			for j, h := range tool.SkillAgents {
 				supported[j] = h.Command
 			}
 			return nil, fmt.Errorf(
-				"host %q is not available for %s; supported hosts: %s",
+				"agent %q is not available for %s; supported agents: %s",
 				name, tool.Name, strings.Join(supported, ", "),
 			)
 		}
-		targets = append(targets, host)
+		targets = append(targets, agent)
 	}
 	return targets, nil
 }
 
-// findSkillHost returns the configured SkillHost whose command identity
+// findSkillAgent returns the configured SkillAgent whose command identity
 // matches name (case-insensitively) and whether one was found. Matching is by
-// Command only (e.g. "copilot"), never the display Host: --agent values are
+// Command only (e.g. "copilot"), never the display Agent: --agent values are
 // command names, and the interactive picker maps its display selection back
-// to the command before resolving here. It centralizes the SkillHosts lookup
+// to the command before resolving here. It centralizes the SkillAgents lookup
 // shared by the skill install/upgrade and uninstall paths.
-func findSkillHost(tool *ToolDefinition, name string) (SkillHost, bool) {
-	idx := slices.IndexFunc(tool.SkillHosts, func(h SkillHost) bool {
+func findSkillAgent(tool *ToolDefinition, name string) (SkillAgent, bool) {
+	idx := slices.IndexFunc(tool.SkillAgents, func(h SkillAgent) bool {
 		return strings.EqualFold(h.Command, name)
 	})
 	if idx < 0 {
-		return SkillHost{}, false
+		return SkillAgent{}, false
 	}
-	return tool.SkillHosts[idx], true
+	return tool.SkillAgents[idx], true
 }
 
-// configuredSkillHostsFor maps a set of installed hosts back to their
-// configured SkillHost definitions, in installed order, skipping any host that
-// is no longer a configured SkillHost. Shared by the upgrade
+// configuredSkillAgentsFor maps a set of installed agents back to their
+// configured SkillAgent definitions, in installed order, skipping any agent that
+// is no longer a configured SkillAgent. Shared by the upgrade
 // (resolveSkillTargets) and uninstall (resolveSkillUninstallTargets) paths,
-// which both act on "the hosts the skill is currently installed through".
-func configuredSkillHostsFor(tool *ToolDefinition, installed []InstalledSkillHost) []SkillHost {
-	targets := make([]SkillHost, 0, len(installed))
+// which both act on "the agents the skill is currently installed through".
+func configuredSkillAgentsFor(tool *ToolDefinition, installed []InstalledSkillAgent) []SkillAgent {
+	targets := make([]SkillAgent, 0, len(installed))
 	for _, inst := range installed {
-		if host, ok := findSkillHost(tool, inst.Host); ok {
-			targets = append(targets, host)
+		if agent, ok := findSkillAgent(tool, inst.Agent); ok {
+			targets = append(targets, agent)
 		}
 	}
 	return targets
 }
 
-// hostUsable reports whether an agentic CLI host on PATH is a functional
+// agentUsable reports whether an agent CLI on PATH is a functional
 // CLI rather than a same-named launcher stub.
 //
 // Some environments put a stub on PATH — notably the VS Code Copilot Chat
@@ -1614,76 +1614,76 @@ func configuredSkillHostsFor(tool *ToolDefinition, installed []InstalledSkillHos
 // and exits 0. It passes a bare existence check but cannot install the skill,
 // which used to surface as a misleading "verification failed".
 //
-// To tell them apart, hostUsable runs the host's version command (with empty
-// stdin so a prompting stub reads EOF and exits) and accepts the host only
-// when the output matches its BinaryVersionRegex, anchored to the host's
-// `--version` banner. Hosts without a version probe fall back to the
+// To tell them apart, agentUsable runs the agent's version command (with empty
+// stdin so a prompting stub reads EOF and exits) and accepts the agent only
+// when the output matches its BinaryVersionRegex, anchored to the agent's
+// `--version` banner. Agents without a version probe fall back to the
 // existence check.
 //
-// Results are memoized per host (hostProbe); only on-PATH hosts are cached,
-// so a host installed earlier in the same batch is still picked up. The cache
-// assumes an on-PATH host binary is not swapped mid-command, which azd never
+// Results are memoized per agent (agentProbe); only on-PATH agents are cached,
+// so an agent installed earlier in the same batch is still picked up. The cache
+// assumes an on-PATH agent binary is not swapped mid-command, which azd never
 // does.
-func (i *installer) hostUsable(ctx context.Context, host SkillHost) bool {
-	if i.commandRunner.ToolInPath(host.Command) != nil {
+func (i *installer) agentUsable(ctx context.Context, agent SkillAgent) bool {
+	if i.commandRunner.ToolInPath(agent.Command) != nil {
 		return false
 	}
 
-	i.hostProbeMu.Lock()
-	if i.hostProbe == nil {
-		i.hostProbe = map[string]bool{}
+	i.agentProbeMu.Lock()
+	if i.agentProbe == nil {
+		i.agentProbe = map[string]bool{}
 	}
-	usable, ok := i.hostProbe[host.Command]
-	i.hostProbeMu.Unlock()
+	usable, ok := i.agentProbe[agent.Command]
+	i.agentProbeMu.Unlock()
 	if ok {
 		return usable
 	}
 
-	usable = i.probeOnPathHost(ctx, host)
+	usable = i.probeOnPathAgent(ctx, agent)
 
-	i.hostProbeMu.Lock()
-	i.hostProbe[host.Command] = usable
-	i.hostProbeMu.Unlock()
+	i.agentProbeMu.Lock()
+	i.agentProbe[agent.Command] = usable
+	i.agentProbeMu.Unlock()
 	return usable
 }
 
-// probeOnPathHost runs the version probe for a host already confirmed to be on
+// probeOnPathAgent runs the version probe for an agent already confirmed to be on
 // PATH and reports whether it is a functional CLI. It is the uncached half of
-// hostUsable; see that method for the rationale behind the matching.
-func (i *installer) probeOnPathHost(ctx context.Context, host SkillHost) bool {
-	if len(host.BinaryVersionArgs) == 0 || host.BinaryVersionRegex == "" {
+// agentUsable; see that method for the rationale behind the matching.
+func (i *installer) probeOnPathAgent(ctx context.Context, agent SkillAgent) bool {
+	if len(agent.BinaryVersionArgs) == 0 || agent.BinaryVersionRegex == "" {
 		return true
 	}
 	result, err := i.commandRunner.Run(
 		ctx,
-		exec.NewRunArgs(host.Command, host.BinaryVersionArgs...).
+		exec.NewRunArgs(agent.Command, agent.BinaryVersionArgs...).
 			WithStdIn(strings.NewReader("")),
 	)
-	// A cancelled/timed-out probe is not evidence the host is a stub; do
+	// A cancelled/timed-out probe is not evidence the agent is a stub; do
 	// not penalize it here (context handling is the caller's concern).
 	if isContextErr(err) {
 		return true
 	}
-	return matchVersion(result.Stdout+"\n"+result.Stderr, host.BinaryVersionRegex) != ""
+	return matchVersion(result.Stdout+"\n"+result.Stderr, agent.BinaryVersionRegex) != ""
 }
 
-// pickSkillHost returns the first SkillHost that is a usable (functional)
-// CLI — see [installer.hostUsable], which rejects launcher stubs that merely
-// share the host's name on PATH. When none of the configured hosts is usable
+// pickSkillAgent returns the first SkillAgent that is a usable (functional)
+// CLI — see [installer.agentUsable], which rejects launcher stubs that merely
+// share the agent's name on PATH. When none of the configured agents is usable
 // it returns an [errorhandler.ErrorWithSuggestion] (all four fields populated
 // per the AGENTS.md completeness rule) that recommends installing GitHub
 // Copilot CLI via `azd tool install github-copilot-cli` — a single command
 // the user can copy-paste without leaving azd.
-func (i *installer) pickSkillHost(
+func (i *installer) pickSkillAgent(
 	ctx context.Context,
 	tool *ToolDefinition,
-) (SkillHost, error) {
+) (SkillAgent, error) {
 	var checked []string
-	for _, host := range tool.SkillHosts {
-		if i.hostUsable(ctx, host) {
-			return host, nil
+	for _, agent := range tool.SkillAgents {
+		if i.agentUsable(ctx, agent) {
+			return agent, nil
 		}
-		checked = append(checked, host.Command)
+		checked = append(checked, agent.Command)
 	}
 
 	suggestion := fmt.Sprintf(
@@ -1695,9 +1695,9 @@ func (i *installer) pickSkillHost(
 		tool.Name, tool.Id, strings.Join(checked, ", "),
 	)
 
-	return SkillHost{}, &errorhandler.ErrorWithSuggestion{
+	return SkillAgent{}, &errorhandler.ErrorWithSuggestion{
 		Err: fmt.Errorf(
-			"no supported agentic CLI host found on PATH for %s",
+			"no supported agent CLI found on PATH for %s",
 			tool.Name,
 		),
 		Message:    "Cannot install " + tool.Name,
@@ -1711,33 +1711,33 @@ func (i *installer) pickSkillHost(
 	}
 }
 
-// installSkillForHost installs (or upgrades) the skill through a single host
+// installSkillForAgent installs (or upgrades) the skill through a single agent
 // and verifies the result. It returns the version and, for an upgrade,
-// whether the host reported the skill was already at the latest version. For
+// whether the agent reported the skill was already at the latest version. For
 // an upgrade the version comes from the update command's output (falling back
 // to the detected version); for an install it comes from post-install
-// detection. out, when non-nil, receives an install's streamed host output
+// detection. out, when non-nil, receives an install's streamed agent output
 // for display above the step spinner.
-func (i *installer) installSkillForHost(
+func (i *installer) installSkillForAgent(
 	ctx context.Context,
 	tool *ToolDefinition,
-	host SkillHost,
+	agent SkillAgent,
 	upgrade bool,
 	out io.Writer,
 	stdin io.Reader,
 ) (version string, alreadyLatest bool, err error) {
-	// For an upgrade, record the host's installed version before updating so
+	// For an upgrade, record the agent's installed version before updating so
 	// "already up to date" is decided by comparing the actual version before
-	// and after — not by parsing the host CLI's prose, which varies by host
+	// and after — not by parsing the agent CLI's prose, which varies by agent
 	// and misfires when the wording is not recognized.
 	var beforeVersion string
 	if upgrade {
-		if installed, detectErr := i.detector.DetectSkillHosts(ctx, tool); detectErr == nil {
-			beforeVersion, _ = installedHostVersion(installed, host.Command)
+		if installed, detectErr := i.detector.DetectSkillAgents(ctx, tool); detectErr == nil {
+			beforeVersion, _ = installedAgentVersion(installed, agent.Command)
 		}
 	}
 
-	cmdOutput, err := i.runSkillHostCommand(ctx, host, upgrade, out, stdin)
+	cmdOutput, err := i.runSkillAgentCommand(ctx, agent, upgrade, out, stdin)
 	if err != nil {
 		return "", false, err
 	}
@@ -1746,7 +1746,7 @@ func (i *installer) installSkillForHost(
 		version, proseLatest = parseUpgradeOutput(cmdOutput)
 	}
 
-	detectedVersion, err := i.verifySkillInstalled(ctx, tool, host)
+	detectedVersion, err := i.verifySkillInstalled(ctx, tool, agent)
 	if err != nil {
 		return "", false, err
 	}
@@ -1759,7 +1759,7 @@ func (i *installer) installSkillForHost(
 	if upgrade {
 		// The authoritative "already up to date" signal is an unchanged
 		// version. Only when a version is unavailable on either side fall back
-		// to the host CLI's prose, so azd neither claims up to date without
+		// to the agent CLI's prose, so azd neither claims up to date without
 		// evidence nor misreports an upgrade when the wording is unrecognized.
 		if beforeVersion != "" && detectedVersion != "" {
 			alreadyLatest = beforeVersion == detectedVersion
@@ -1771,14 +1771,14 @@ func (i *installer) installSkillForHost(
 	return version, alreadyLatest, nil
 }
 
-// installedHostVersion returns the installed version of the skill for the given
-// host command from a DetectSkillHosts result, and whether that host was
-// found. InstalledSkillHost.Host carries the executable identity, so the match
-// is against host.Command. (Distinct from detector.skillHostVersion, which
-// probes the host CLI; this only looks up an already-detected list.)
-func installedHostVersion(installed []InstalledSkillHost, command string) (string, bool) {
+// installedAgentVersion returns the installed version of the skill for the given
+// agent command from a DetectSkillAgents result, and whether that agent was
+// found. InstalledSkillAgent.Agent carries the executable identity, so the match
+// is against agent.Command. (Distinct from detector.skillAgentVersion, which
+// probes the agent CLI; this only looks up an already-detected list.)
+func installedAgentVersion(installed []InstalledSkillAgent, command string) (string, bool) {
 	for _, h := range installed {
-		if h.Host == command {
+		if h.Agent == command {
 			return h.Version, true
 		}
 	}
@@ -1786,29 +1786,29 @@ func installedHostVersion(installed []InstalledSkillHost, command string) (strin
 }
 
 // verifySkillInstalled confirms the skill is detectable **through the
-// specific host** it was just installed via, and returns that host's
-// version. This is host-scoped on purpose: verifying via the generic
-// DetectTool would report success whenever ANY host has the skill, so a
-// silent no-op install on a secondary host (e.g. `--host claude` while
+// specific agent** it was just installed via, and returns that agent's
+// version. This is agent-scoped on purpose: verifying via the generic
+// DetectTool would report success whenever ANY agent has the skill, so a
+// silent no-op install on a secondary agent (e.g. `--agent claude` while
 // copilot already has it) would be falsely reported as success with the
-// wrong host's version. Plugin-list output sometimes lags the install
+// wrong agent's version. Plugin-list output sometimes lags the install
 // action (the pre-existing copilot CLI integration documents the same
 // race — see internal/agent/copilot/cli.go), so it retries a few times
 // with exponential backoff.
 func (i *installer) verifySkillInstalled(
 	ctx context.Context,
 	tool *ToolDefinition,
-	host SkillHost,
+	agent SkillAgent,
 ) (string, error) {
 	const maxAttempts = 4 // 1 initial + 3 retries
 	var version string
 
 	found, err := i.retryDetect(ctx, maxAttempts, tool.Name, func() (bool, error) {
-		installed, detectErr := i.detector.DetectSkillHosts(ctx, tool)
+		installed, detectErr := i.detector.DetectSkillAgents(ctx, tool)
 		if detectErr != nil {
 			return false, detectErr
 		}
-		if v, ok := installedHostVersion(installed, host.Command); ok {
+		if v, ok := installedAgentVersion(installed, agent.Command); ok {
 			version = v
 			return true, nil
 		}
@@ -1822,21 +1822,21 @@ func (i *installer) verifySkillInstalled(
 	if !found {
 		return "", fmt.Errorf(
 			"%s was installed via %s but verification failed",
-			tool.Name, host.Host,
+			tool.Name, agent.DisplayName,
 		)
 	}
 	return version, nil
 }
 
-// runSkillHostCommand executes the host's install or update command and
+// runSkillAgentCommand executes the agent's install or update command and
 // returns the command's stdout (empty for a streamed install).
 //
 // Install and update connect to the terminal differently:
-//   - Install streams the host CLI's output through out (when a spinner is
+//   - Install streams the agent CLI's output through out (when a spinner is
 //     showing) or runs fully interactively (out nil), with stdin connected so
 //     the user answers any prompt (marketplace trust, install confirmation).
 //     azd never pipes canned answers. Nothing is captured, so "" is returned.
-//     For a fresh install it first runs MarketplaceAddCommand when the host
+//     For a fresh install it first runs MarketplaceAddCommand when the agent
 //     declares one.
 //   - Update captures the output (no streaming) and returns it so the caller
 //     can parse the version and whether the skill was already at the latest.
@@ -1845,77 +1845,77 @@ func (i *installer) verifySkillInstalled(
 //
 // A non-zero exit is returned to the caller as an error; the caller is
 // expected to verify via the detector and decide whether to treat the
-// error as fatal (some hosts return non-zero on idempotent re-install).
-func (i *installer) runSkillHostCommand(
+// error as fatal (some agents return non-zero on idempotent re-install).
+func (i *installer) runSkillAgentCommand(
 	ctx context.Context,
-	host SkillHost,
+	agent SkillAgent,
 	upgrade bool,
 	out io.Writer,
 	stdin io.Reader,
 ) (string, error) {
-	cmd := host.PluginInstallCommand
+	cmd := agent.PluginInstallCommand
 	verb := "install"
 	if upgrade {
-		cmd = host.PluginUpdateCommand
+		cmd = agent.PluginUpdateCommand
 		verb = "update"
 	}
 	if len(cmd) == 0 {
 		return "", fmt.Errorf(
-			"host %q has no %s command configured", host.Host, verb,
+			"agent %q has no %s command configured", agent.DisplayName, verb,
 		)
 	}
 
 	// Update: capture the output so the caller can parse the version and the
 	// "already at latest" state; do not stream it above the spinner.
 	if upgrade {
-		res, err := i.commandRunner.Run(ctx, exec.NewRunArgs(host.Command, cmd...))
+		res, err := i.commandRunner.Run(ctx, exec.NewRunArgs(agent.Command, cmd...))
 		if err != nil {
 			return "", fmt.Errorf(
 				"running `%s %s`: %w",
-				host.Command, strings.Join(cmd, " "), err,
+				agent.Command, strings.Join(cmd, " "), err,
 			)
 		}
 		return res.Stdout, nil
 	}
 
-	if len(host.MarketplaceAddCommand) > 0 {
-		if err := i.runMarketplaceAdd(ctx, host, out, stdin); err != nil {
+	if len(agent.MarketplaceAddCommand) > 0 {
+		if err := i.runMarketplaceAdd(ctx, agent, out, stdin); err != nil {
 			return "", err
 		}
 	}
 
-	runArgs := skillCommandRunArgs(exec.NewRunArgs(host.Command, cmd...), out, stdin)
+	runArgs := skillCommandRunArgs(exec.NewRunArgs(agent.Command, cmd...), out, stdin)
 	if _, err := i.commandRunner.Run(ctx, runArgs); err != nil {
 		return "", fmt.Errorf(
 			"running `%s %s`: %w",
-			host.Command, strings.Join(cmd, " "), err,
+			agent.Command, strings.Join(cmd, " "), err,
 		)
 	}
 
 	return "", nil
 }
 
-// runMarketplaceAdd registers the skill marketplace with the host CLI.
+// runMarketplaceAdd registers the skill marketplace with the agent CLI.
 // out and stdin thread the step spinner's writer and the console's input
-// through skillCommandRunArgs so the host CLI's output prints above the
+// through skillCommandRunArgs so the agent CLI's output prints above the
 // spinner and any marketplace trust prompt stays visible and answerable
 // while the spinner runs (matching the install phase). When out routes the
 // output through a writer, CommandRunner still captures it (io.MultiWriter),
 // so the captured stdout/stderr remains available for the already-added
 // check below.
 //
-// Some hosts (e.g. copilot) return a non-zero exit when the marketplace
+// Some agents (e.g. copilot) return a non-zero exit when the marketplace
 // is already registered; we recognize that case from the captured
-// output and treat it as success so the install can proceed. Hosts that
+// output and treat it as success so the install can proceed. Agents that
 // already exit 0 in the "already added" case (e.g. claude) flow
 // through naturally. Any other failure is returned to the caller.
 func (i *installer) runMarketplaceAdd(
 	ctx context.Context,
-	host SkillHost,
+	agent SkillAgent,
 	out io.Writer,
 	stdin io.Reader,
 ) error {
-	args := skillCommandRunArgs(exec.NewRunArgs(host.Command, host.MarketplaceAddCommand...), out, stdin)
+	args := skillCommandRunArgs(exec.NewRunArgs(agent.Command, agent.MarketplaceAddCommand...), out, stdin)
 	result, err := i.commandRunner.Run(ctx, args)
 	if err == nil {
 		return nil
@@ -1925,12 +1925,12 @@ func (i *installer) runMarketplaceAdd(
 	}
 	return fmt.Errorf(
 		"running `%s %s`: %w",
-		host.Command, strings.Join(host.MarketplaceAddCommand, " "), err,
+		agent.Command, strings.Join(agent.MarketplaceAddCommand, " "), err,
 	)
 }
 
-// isMarketplaceAlreadyAdded reports whether the host CLI output indicates
-// the marketplace is already registered. Observed wording per host:
+// isMarketplaceAlreadyAdded reports whether the agent CLI output indicates
+// the marketplace is already registered. Observed wording per agent:
 //   - copilot: "Failed to add marketplace: ... already registered"
 //   - claude:  "Marketplace ... already on disk"
 func isMarketplaceAlreadyAdded(output string) bool {

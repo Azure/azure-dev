@@ -25,8 +25,8 @@ const (
 	ToolCategoryServer ToolCategory = "server"
 	// ToolCategoryAzdExtension is an azd extension installed via `azd extension install`.
 	ToolCategoryAzdExtension ToolCategory = "azd-extension"
-	// ToolCategorySkill is a skill hosted by an agent CLI that azd installs through the
-	// host's native plugin commands.
+	// ToolCategorySkill is a skill installed through an agent CLI's native
+	// plugin commands.
 	ToolCategorySkill ToolCategory = "skill"
 )
 
@@ -48,54 +48,54 @@ type Checksum struct {
 	Value string
 }
 
-// SkillHost describes how a single agent CLI host (e.g. GitHub Copilot CLI,
+// SkillAgent describes how a single agent CLI (e.g. GitHub Copilot CLI,
 // Claude Code) installs and updates a skill. Skill tools carry one or more
-// SkillHost entries; by default the installer targets the preferred host
+// SkillAgent entries; by default the installer targets the preferred agent
 // (the first on PATH), but install/upgrade can target specific or all
-// detected hosts when the caller selects them (e.g. via `--agent`).
-type SkillHost struct {
-	// Host is the agent's display name, shown to the user (e.g. "GitHub
+// detected agents when the caller selects them (e.g. via `--agent`).
+type SkillAgent struct {
+	// DisplayName is the agent's display name, shown to the user (e.g. "GitHub
 	// Copilot CLI", "Claude Code CLI"). Display-only: it is NOT the value
 	// --agent matches against — see Command.
-	Host string
+	DisplayName string
 	// Command is the agent CLI's executable name, used to run plugin
 	// commands and version probes (e.g. "copilot", "claude"), and the value
-	// --agent is matched against (case-insensitively, by findSkillHost).
+	// --agent is matched against (case-insensitively, by findSkillAgent).
 	// Required and must be non-empty: it is the real, case-correct binary
 	// name run directly by the installer and detector paths, so exec works on
-	// case-sensitive filesystems (Linux). TestBuiltInTools_SkillHostsHaveCommand
-	// enforces that every configured host sets it.
+	// case-sensitive filesystems (Linux). TestBuiltInTools_SkillAgentsHaveCommand
+	// enforces that every configured agent sets it.
 	Command string
 	// MarketplaceAddCommand is the optional one-time command that registers
-	// the plugin marketplace with the host (e.g. ["plugin", "marketplace",
+	// the plugin marketplace with the agent (e.g. ["plugin", "marketplace",
 	// "add", "microsoft/azure-skills"]). Empty when not required.
 	MarketplaceAddCommand []string
-	// PluginInstallCommand installs the plugin via the host
+	// PluginInstallCommand installs the plugin via the agent
 	// (e.g. ["plugin", "install", "azure@azure-skills"]).
 	PluginInstallCommand []string
 	// PluginUpdateCommand updates the plugin to its latest version.
 	PluginUpdateCommand []string
-	// PluginUninstallCommand removes the plugin from the host
+	// PluginUninstallCommand removes the plugin from the agent
 	// (e.g. ["plugin", "uninstall", "azure@azure-skills"]).
 	PluginUninstallCommand []string
-	// PluginListCommand lists installed plugins on the host
+	// PluginListCommand lists installed plugins on the agent
 	// (e.g. ["plugin", "list"]). The detector runs this command and
 	// searches the output for PluginName to decide whether the skill
 	// is installed.
 	PluginListCommand []string
-	// PluginName is the plugin's short name as reported by the host's
+	// PluginName is the plugin's short name as reported by the agent's
 	// plugin listing (e.g. "azure"). Used by the detector.
 	PluginName string
 	// VersionRegex is a Go regular expression with a capture group for
 	// the semver portion of the version output of PluginListCommand.
 	// Required: the detector treats a VersionRegex match as the
 	// authoritative signal that the skill is installed (and uses the
-	// captured group as InstalledVersion). A host with an empty
+	// captured group as InstalledVersion). An agent with an empty
 	// VersionRegex is never reported as installed.
 	VersionRegex string
-	// BinaryVersionArgs are the CLI arguments that make the host binary
+	// BinaryVersionArgs are the CLI arguments that make the agent binary
 	// print its own version (e.g. ["--version"]). Together with
-	// BinaryVersionRegex these let the installer confirm the host is a
+	// BinaryVersionRegex these let the installer confirm the agent is a
 	// genuine, functional CLI before installing through it — not merely a
 	// file of the same name on PATH. Some environments place a launcher
 	// stub on PATH (e.g. the VS Code GitHub Copilot Chat extension drops a
@@ -106,13 +106,13 @@ type SkillHost struct {
 	// an existence-only check.
 	BinaryVersionArgs []string
 	// BinaryVersionRegex is a Go regular expression whose first capture
-	// group matches the host binary's own version. To avoid mistaking a
-	// launcher stub for a real CLI, anchor it to the host's `--version`
+	// group matches the agent binary's own version. To avoid mistaking a
+	// launcher stub for a real CLI, anchor it to the agent's `--version`
 	// banner with `(?m)^` (e.g. `(?m)^GitHub Copilot CLI\s+v?(\d+\.\d+\.\d+)`)
 	// rather than matching a bare semver: a stub's output may contain an
 	// incidental version-shaped token (a bundled runtime version, a path
 	// build number, a URL) that must not count. The installer treats a match
-	// against the probe output as proof the host CLI is genuinely installed.
+	// against the probe output as proof the agent CLI is genuinely installed.
 	// When empty, the functional probe is skipped.
 	BinaryVersionRegex string
 }
@@ -179,13 +179,13 @@ type ToolDefinition struct {
 	// several official install methods (e.g. the GitHub Copilot CLI) list them
 	// all.
 	InstallStrategies map[string][]InstallStrategy
-	// SkillHosts describes the agent CLI hosts that can install this tool when
-	// Category == ToolCategorySkill. Hosts are listed in preference order: by
-	// default the first host on PATH is used, but install/upgrade can target
-	// specific or all detected hosts (e.g. `--host all`). Platform-agnostic
-	// because the host CLI's plugin command syntax does not vary between
+	// SkillAgents describes the agent CLIs that can install this tool when
+	// Category == ToolCategorySkill. Agents are listed in preference order: by
+	// default the first agent on PATH is used, but install/upgrade can target
+	// specific or all detected agents (e.g. `--agent all`). Platform-agnostic
+	// because the agent CLI's plugin command syntax does not vary between
 	// operating systems. Ignored for other categories.
-	SkillHosts []SkillHost
+	SkillAgents []SkillAgent
 	// Dependencies lists the IDs of tools that must be installed before this one.
 	Dependencies []string
 }
@@ -400,9 +400,9 @@ func azureSkills() *ToolDefinition {
 		Category: ToolCategorySkill,
 		Priority: ToolPriorityRecommended,
 		Website:  "https://github.com/microsoft/azure-skills",
-		SkillHosts: []SkillHost{
+		SkillAgents: []SkillAgent{
 			{
-				Host:                   "GitHub",
+				DisplayName:            "GitHub",
 				Command:                "copilot",
 				MarketplaceAddCommand:  []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
 				PluginInstallCommand:   []string{"plugin", "install", "azure@azure-skills"},
@@ -412,16 +412,16 @@ func azureSkills() *ToolDefinition {
 				PluginName:             "azure@azure-skills",
 				// Sample: "  • azure@azure-skills (v1.1.70)"
 				VersionRegex: `azure@azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
-				// Probe the host binary itself so a launcher stub that only
-				// prompts to install the real CLI is not mistaken for a host.
+				// Probe the agent binary itself so a launcher stub that only
+				// prompts to install the real CLI is not mistaken for an agent.
 				// Anchored to GitHub Copilot CLI's `--version` banner ("GitHub Copilot
 				// CLI 1.0.64-3") so an incidental semver cannot pass.
 				BinaryVersionArgs:  []string{"--version"},
 				BinaryVersionRegex: `(?m)^GitHub Copilot CLI\s+v?(\d+\.\d+\.\d+)`,
 			},
 			{
-				Host:    "Claude",
-				Command: "claude",
+				DisplayName: "Claude",
+				Command:     "claude",
 				MarketplaceAddCommand: []string{
 					"plugin", "marketplace", "add", "https://github.com/microsoft/azure-skills",
 				},
@@ -443,8 +443,8 @@ func azureSkills() *ToolDefinition {
 				// "version" follows "id" within the same object, so [^}]
 				// keeps the capture scoped to the azure@azure-skills entry.
 				VersionRegex: `"id":\s*"azure@azure-skills"[^}]*?"version":\s*"v?(\d+\.\d+\.\d+)"`,
-				// Probe the host binary itself so a launcher stub that only
-				// prompts to install the real CLI is not mistaken for a host.
+				// Probe the agent binary itself so a launcher stub that only
+				// prompts to install the real CLI is not mistaken for an agent.
 				// Anchored to claude's `--version` banner ("2.1.178 (Claude
 				// Code)") so an incidental semver cannot pass.
 				BinaryVersionArgs:  []string{"--version"},

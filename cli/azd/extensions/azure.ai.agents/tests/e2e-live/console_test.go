@@ -189,9 +189,10 @@ func nonEmptyLines(screen string) []string {
 	return out
 }
 
-// activePrompt returns the lowercased text of the last survey "?" prompt line on
-// screen, or "" if none is visible. The last "?" line is the one survey is
-// currently blocking on (earlier "?" lines are answered prompts it echoed).
+// activePrompt returns the lowercased text of the last active survey "?" prompt
+// line on screen, or "" if none is visible. Survey leaves answered prompts on
+// screen, so a prompt followed by init progress or an answered template selection
+// without choice rows is treated as stale.
 func activePrompt(screen string) string {
 	lines := nonEmptyLines(screen)
 	for i := len(lines) - 1; i >= 0; i-- {
@@ -256,6 +257,32 @@ func TestActivePromptIgnoresAnsweredSelectWithoutChoices(t *testing.T) {
 
 	if got := activePrompt(screen); got != "" {
 		t.Fatalf("activePrompt() = %q, want empty", got)
+	}
+}
+
+func TestActivePromptIgnoresPromptFollowedByInitProgress(t *testing.T) {
+	screen := strings.Join([]string{
+		"? Select a language: Python",
+		"Downloading sample from GitHub: Azure-Samples/azure-ai-agent-service-enterprise-demo",
+		"azure.yaml",
+	}, "\n")
+
+	if got := activePrompt(screen); got != "" {
+		t.Fatalf("activePrompt() = %q, want empty", got)
+	}
+}
+
+func TestActivePromptKeepsLaterRealPromptAfterProgress(t *testing.T) {
+	screen := strings.Join([]string{
+		"? Select a language: Python",
+		"Downloading sample from GitHub: Azure-Samples/azure-ai-agent-service-enterprise-demo",
+		"? Select an Azure subscription: Contoso Test Subscription",
+		"> Contoso Test Subscription",
+	}, "\n")
+
+	want := "? select an azure subscription: contoso test subscription"
+	if got := activePrompt(screen); got != want {
+		t.Fatalf("activePrompt() = %q, want %q", got, want)
 	}
 }
 

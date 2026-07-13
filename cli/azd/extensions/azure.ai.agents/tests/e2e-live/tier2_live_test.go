@@ -195,7 +195,7 @@ func setupConfigDir(t *testing.T, configDir string) {
 // this is the fast way to iterate on the provision/down path (issue #8839)
 // without paying for a full agent deploy.
 func (r *runner) run(ctx context.Context) {
-	if err := r.phaseInitWithRetry(ctx); err != nil {
+	if err := r.phaseInitWithTokenCheck(ctx); err != nil {
 		r.t.Errorf("init: %v", err)
 		return
 	}
@@ -221,18 +221,22 @@ func (r *runner) run(ctx context.Context) {
 	}
 }
 
-// phaseInitWithRetry keeps the init failure mode explicit when a bad GitHub
+// phaseInitWithTokenCheck keeps the init failure mode explicit when a bad GitHub
 // token from the pipeline environment causes gh to fail before the public sample
 // is downloaded. Retrying without the token is unsafe in CI: gh can fall back to
 // an interactive browser/device-login flow that the PTY driver would otherwise
 // keep answering.
-func (r *runner) phaseInitWithRetry(ctx context.Context) error {
+func (r *runner) phaseInitWithTokenCheck(ctx context.Context) error {
 	err := r.phaseInit(ctx)
 	if err == nil || !isInvalidGitHubTokenError(err) {
 		return err
 	}
 
-	return fmt.Errorf("init failed because GH_TOKEN/GITHUB_TOKEN is invalid; refusing to retry without token because gh can prompt for interactive authentication in CI: %w", err)
+	return fmt.Errorf(
+		"init failed because GH_TOKEN/GITHUB_TOKEN is invalid; refusing to retry without token "+
+			"because gh can prompt for interactive authentication in CI: %w",
+		err,
+	)
 }
 
 // phaseInit runs `azd ai agent init` attached to a pseudo-terminal and drives
@@ -423,7 +427,11 @@ func (r *runner) dispatchPrompt(screen, prompt string) error {
 
 	switch {
 	case isGitHubAuthPrompt(prompt):
-		return fmt.Errorf("init reached interactive GitHub CLI authentication prompt: %q; check GH_TOKEN/GITHUB_TOKEN for the live pipeline", prompt)
+		return fmt.Errorf(
+			"init reached interactive GitHub CLI authentication prompt: %q; "+
+				"check GH_TOKEN/GITHUB_TOKEN for the live pipeline",
+			prompt,
+		)
 
 	// Yes/No confirms. "Continue with this existing agent name?"
 	// (resolveExistingAgentNameConflictWithChecker) only fires when the unique

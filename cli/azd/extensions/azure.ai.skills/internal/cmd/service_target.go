@@ -4,12 +4,16 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
+	"azureaiskills/internal/exterrors"
 	"azureaiskills/internal/pkg/skill_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -29,12 +33,13 @@ type skillServiceConfig struct {
 	Description  string   `json:"description,omitempty"`
 	Instructions string   `json:"instructions,omitempty"`
 	Tools        []string `json:"tools,omitempty"`
+	Archive      string   `json:"archive,omitempty"`
 }
 
 // skillServiceTarget upserts a Foundry skill declared as an azure.ai.skill
-// service. Deploy creates a new default skill version from the entry's inline
-// instructions; the resource name is the service key. Package and Publish are
-// no-ops because a skill has no build artifact.
+// service. Deploy creates a new default skill version from either inline
+// instructions or an archive reference; the resource name is the service key.
+// Package and Publish are no-ops because a skill has no build artifact.
 type skillServiceTarget struct {
 	azdClient     *azdext.AzdClient
 	serviceConfig *azdext.ServiceConfig
@@ -100,9 +105,9 @@ func (p *skillServiceTarget) Publish(
 }
 
 // Deploy upserts the skill by creating a new default version from the entry's
-// instructions. Re-running deploy creates another immutable version rather than
-// failing. Removing the service from azure.yaml stops azd managing the skill but
-// does not delete it (use `azd ai skill delete`).
+// inline instructions or archive reference. Re-running deploy creates another
+// immutable version rather than failing. Removing the service from azure.yaml
+// stops azd managing the skill but does not delete it (use `azd ai skill delete`).
 func (p *skillServiceTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
@@ -114,12 +119,23 @@ func (p *skillServiceTarget) Deploy(
 	if err != nil {
 		return nil, err
 	}
-	instructions, err := resolveSkillInstructions(serviceConfig, cfg.Instructions)
-	if err != nil {
-		return nil, err
+	hasInline := cfg.Description != "" || cfg.Instructions != "" || len(cfg.Tools) > 0
+	if cfg.Archive != "" && hasInline {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"skill service %q cannot combine archive with description, instructions, or tools",
+				serviceConfig.GetName(),
+			),
+			"configure either archive, or inline description/instructions/tools, but not both",
+		)
 	}
-	if instructions == "" {
-		return nil, fmt.Errorf("skill service %q requires instructions", serviceConfig.GetName())
+	if cfg.Archive == "" && cfg.Instructions == "" {
+		return nil, exterrors.Validation(
+			exterrors.CodeMissingRequiredField,
+			fmt.Sprintf("skill service %q requires instructions or archive", serviceConfig.GetName()),
+			"set instructions to inline text/a .md or .txt path, or set archive to a .zip/directory path",
+		)
 	}
 
 	if progress != nil {
@@ -131,19 +147,45 @@ func (p *skillServiceTarget) Deploy(
 		return nil, err
 	}
 
-	if _, err := skillCtx.client.CreateVersionInline(
-		ctx,
-		serviceConfig.GetName(),
-		skill_api.CreateVersionRequest{
-			InlineContent: &skill_api.SkillInlineContent{
-				Description:  cfg.Description,
-				Instructions: instructions,
-				AllowedTools: cfg.Tools,
+	if cfg.Archive != "" {
+		archivePath, err := resolveSkillArchivePath(serviceConfig, cfg.Archive)
+		if err != nil {
+			return nil, err
+		}
+		archive, err := prepareSkillArchive(archivePath)
+		if err != nil {
+			return nil, err
+		}
+		defer archive.Reader.Close()
+
+		if _, err := skillCtx.client.CreateVersionFromZip(
+			ctx,
+			serviceConfig.GetName(),
+			archive.Name,
+			archive.Reader,
+			true,
+		); err != nil {
+			return nil, exterrors.ServiceFromAzure(err, exterrors.OpReconcileSkill)
+		}
+	} else {
+		instructions, err := resolveSkillInstructions(serviceConfig, cfg.Instructions)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := skillCtx.client.CreateVersionInline(
+			ctx,
+			serviceConfig.GetName(),
+			skill_api.CreateVersionRequest{
+				InlineContent: &skill_api.SkillInlineContent{
+					Description:  cfg.Description,
+					Instructions: instructions,
+					AllowedTools: cfg.Tools,
+				},
+				Default: true,
 			},
-			Default: true,
-		},
-	); err != nil {
-		return nil, fmt.Errorf("upserting skill %q: %w", serviceConfig.GetName(), err)
+		); err != nil {
+			return nil, exterrors.ServiceFromAzure(err, exterrors.OpReconcileSkill)
+		}
 	}
 
 	return &azdext.ServiceDeployResult{}, nil
@@ -199,6 +241,87 @@ func resolveSkillInstructions(svc *azdext.ServiceConfig, instructions string) (s
 	return string(data), nil
 }
 
+type preparedSkillArchive struct {
+	Name   string
+	Reader io.ReadCloser
+}
+
+func resolveSkillArchivePath(svc *azdext.ServiceConfig, archive string) (string, error) {
+	path := strings.TrimSpace(archive)
+	if filepath.IsAbs(path) {
+		return path, nil
+	}
+	if hasParentTraversal(path) {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidSkillFile,
+			fmt.Sprintf("skill archive path %q must not contain '..' or escape the service directory", archive),
+			"move the archive inside the service directory and use a relative path without '..'",
+		)
+	}
+	baseDir := svc.GetRelativePath()
+	if baseDir == "" {
+		baseDir = "."
+	}
+	return filepath.Join(baseDir, path), nil
+}
+
+func prepareSkillArchive(path string) (*preparedSkillArchive, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidSkillFile,
+			fmt.Sprintf("cannot inspect skill archive %s: %s", path, err),
+			"verify the archive or directory exists and is readable",
+		)
+	}
+
+	if info.IsDir() {
+		if _, found, err := skill_api.LocateSkillMdInDir(path); err != nil {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidSkillFile,
+				fmt.Sprintf("cannot inspect SKILL.md in %s: %s", path, err),
+				"verify the directory is readable and SKILL.md is a regular file",
+			)
+		} else if !found {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidSkillFile,
+				fmt.Sprintf("skill archive directory %s does not contain SKILL.md at its root", path),
+				"add SKILL.md to the directory root or reference a .zip archive",
+			)
+		}
+
+		data, err := skill_api.ArchiveDirectory(path, skill_api.ArchiveOptions{})
+		if err != nil {
+			return nil, classifyArchiveDirectoryError(err, path)
+		}
+		name := filepath.Base(filepath.Clean(path)) + ".zip"
+		return &preparedSkillArchive{
+			Name:   name,
+			Reader: io.NopCloser(bytes.NewReader(data)),
+		}, nil
+	}
+
+	if !strings.EqualFold(filepath.Ext(path), ".zip") {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidSkillFile,
+			fmt.Sprintf("skill archive %s must be a .zip file or a directory containing SKILL.md", path),
+			"set archive to a .zip file or a directory containing SKILL.md",
+		)
+	}
+	file, err := os.Open(path) //nolint:gosec // user-authored azure.yaml path opened on user's behalf
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidSkillFile,
+			fmt.Sprintf("cannot open skill archive %s: %s", path, err),
+			"verify the archive is readable",
+		)
+	}
+	return &preparedSkillArchive{
+		Name:   filepath.Base(path),
+		Reader: file,
+	}, nil
+}
+
 // hasParentTraversal reports whether a relative path contains a ".." segment
 // that could escape its base directory, treating both '/' and '\' as separators.
 func hasParentTraversal(p string) bool {
@@ -211,7 +334,11 @@ func hasParentTraversal(p string) bool {
 }
 
 func isInstructionFilePath(instructions string) bool {
-	switch strings.ToLower(filepath.Ext(strings.TrimSpace(instructions))) {
+	value := strings.TrimSpace(instructions)
+	if strings.ContainsAny(value, "\r\n") {
+		return false
+	}
+	switch strings.ToLower(filepath.Ext(value)) {
 	case ".md", ".txt":
 		return true
 	default:

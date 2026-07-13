@@ -11,10 +11,12 @@ azd ai skill create <name> [--description "..." --instructions "..."]
 azd ai skill create <name> --file ./SKILL.md
 azd ai skill create <name> --file ./skill.zip
 azd ai skill create <name> --file ./skill-src/
+azd ai skill create <name> --file ./SKILL.md --save-to-azure-yaml
 
 azd ai skill update <name> [--description "..."] [--instructions "..."] [--file ./SKILL.md]
 azd ai skill update <name> --file ./skill.zip
 azd ai skill update <name> --file ./skill-src/
+azd ai skill update <name> --file ./skill-src/ --save-to-azure-yaml
 azd ai skill update <name> --set-default-version <version>
 azd ai skill show <name>
 azd ai skill list [--top N] [--orderby <field>]
@@ -46,6 +48,46 @@ manual zip step.
 
 All commands accept the standard cross-cutting flags: `-p` / `--project-endpoint`,
 `--output table|json`, `--no-prompt`, and `--debug`.
+
+## Composing skills in `azure.yaml`
+
+Pass `--save-to-azure-yaml` to `skill create` or `skill update` to opt the
+skill into the current azd project. The extension adds or updates one service
+keyed by the skill name:
+
+```yaml
+services:
+  triage-rules:
+    host: azure.ai.skill
+    description: Rules for triaging incoming issues
+    instructions: Classify the issue, identify its owner, and recommend next steps.
+
+  support-agent:
+    host: azure.ai.agent
+    uses:
+      - triage-rules
+```
+
+Inline flags and `SKILL.md` inputs are stored as inline `description`,
+`instructions`, and `tools` properties. ZIP and directory inputs are stored as
+a portable `archive` path relative to the azd project:
+
+```yaml
+services:
+  triage-rules:
+    host: azure.ai.skill
+    archive: skills/triage-rules
+```
+
+`azd deploy` and `azd up` reconcile either shape by creating a new immutable
+default skill version. Re-running deploy creates another version. Removing the
+service stops azd managing the skill but does not delete it; use
+`azd ai skill delete` for deletion.
+
+The skill command does not infer which agents consume the skill. Add the skill
+service name to each consuming agent's `uses:` list to declare deployment
+ordering explicitly. Existing `uses:` and unrelated service fields are
+preserved when `--save-to-azure-yaml` updates a skill block.
 
 ## Project endpoint resolution
 

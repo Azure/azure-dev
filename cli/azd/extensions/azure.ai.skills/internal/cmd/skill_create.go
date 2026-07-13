@@ -26,6 +26,7 @@ type createFlags struct {
 	instructions    string
 	file            string
 	force           bool
+	saveToAzureYaml bool
 	noPrompt        bool
 	output          string
 	projectEndpoint string
@@ -35,6 +36,21 @@ type createFlags struct {
 }
 
 type createAction struct{ flags *createFlags }
+
+func (a *createAction) saveService(
+	ctx context.Context,
+	cfg skillServiceConfig,
+	archiveSource string,
+) error {
+	if !a.flags.saveToAzureYaml {
+		return nil
+	}
+	return saveSkillServiceToProject(ctx, skillServiceDeclaration{
+		Name:          a.flags.name,
+		Config:        cfg,
+		ArchiveSource: archiveSource,
+	})
+}
 
 func (a *createAction) Run(ctx context.Context) error {
 	if err := validateSkillName(a.flags.name); err != nil {
@@ -124,6 +140,12 @@ func (a *createAction) runInline(ctx context.Context, client *skill_api.Client) 
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateSkill)
 	}
+	if err := a.saveService(ctx, skillServiceConfig{
+		Description:  a.flags.description,
+		Instructions: a.flags.instructions,
+	}, ""); err != nil {
+		return err
+	}
 	return a.printCreateResult(ctx, client, version)
 }
 
@@ -162,6 +184,13 @@ func (a *createAction) runFileMd(ctx context.Context, client *skill_api.Client) 
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateSkill)
 	}
+	if err := a.saveService(ctx, skillServiceConfig{
+		Description:  parsed.Description,
+		Instructions: parsed.Instructions,
+		Tools:        parsed.AllowedTools,
+	}, ""); err != nil {
+		return err
+	}
 	return a.printCreateResult(ctx, client, version)
 }
 
@@ -196,6 +225,9 @@ func (a *createAction) runFilePackage(ctx context.Context, client *skill_api.Cli
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateSkill)
 	}
+	if err := a.saveService(ctx, skillServiceConfig{}, a.flags.file); err != nil {
+		return err
+	}
 	return a.printCreateResult(ctx, client, version)
 }
 
@@ -228,6 +260,9 @@ func (a *createAction) runFileDirectory(ctx context.Context, client *skill_api.C
 	version, err := client.CreateVersionFromZip(ctx, a.flags.name, archiveName, bytes.NewReader(data), true)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateSkill)
+	}
+	if err := a.saveService(ctx, skillServiceConfig{}, a.flags.file); err != nil {
+		return err
 	}
 	return a.printCreateResult(ctx, client, version)
 }
@@ -516,9 +551,15 @@ round-trip works without a manual zip step.
 
 Skills are versioned. ` + "`create`" + ` creates a new skill (if it does not exist)
 and uploads its first version as the default. Pass --force to delete an existing
-skill of the same name before creating.`,
+skill of the same name before creating.
+
+Pass --save-to-azure-yaml to add or update a host: azure.ai.skill service in
+the current azd project's azure.yaml. Inline and SKILL.md inputs are saved as
+inline service properties; ZIP and directory inputs are saved as portable
+archive references for azd deploy/up to reconcile.`,
 		Example: `  azd ai skill create greet-user --description "Welcomes a new user" --instructions "Greet ..."
   azd ai skill create greet-user --file ./SKILL.md
+  azd ai skill create greet-user --file ./SKILL.md --save-to-azure-yaml
   azd ai skill create greet-user --file ./skill.zip --force
   azd ai skill create greet-user --file ./skill-src/ --force`,
 		Args: cobra.ExactArgs(1),
@@ -538,6 +579,12 @@ skill of the same name before creating.`,
 	cmd.Flags().StringVar(&flags.file, "file", "",
 		"Path to SKILL.md (.md), a ZIP package (.zip), or a directory containing SKILL.md at its root")
 	cmd.Flags().BoolVar(&flags.force, "force", false, "Delete an existing skill of the same name before creating")
+	cmd.Flags().BoolVar(
+		&flags.saveToAzureYaml,
+		"save-to-azure-yaml",
+		false,
+		"Add or update this skill as a host: azure.ai.skill service in the current azure.yaml",
+	)
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name: "output", AllowedValues: []string{outputJSON, outputTable}, Default: outputJSON,
 	})

@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -62,12 +63,38 @@ func TestParseSkillServiceConfig_Empty(t *testing.T) {
 	assert.Empty(t, cfg.Instructions)
 }
 
+func TestParseSkillServiceConfig_Archive(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"archive": "skills/code-review",
+	})
+	require.NoError(t, err)
+
+	cfg, err := parseSkillServiceConfig(&azdext.ServiceConfig{
+		Name:                 "code-review",
+		Host:                 aiSkillHost,
+		AdditionalProperties: props,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "skills/code-review", cfg.Archive)
+}
+
 func TestResolveSkillInstructions_Inline(t *testing.T) {
 	t.Parallel()
 
 	got, err := resolveSkillInstructions(&azdext.ServiceConfig{Name: "inline"}, "Review code for correctness.")
 	require.NoError(t, err)
 	assert.Equal(t, "Review code for correctness.", got)
+}
+
+func TestResolveSkillInstructions_MultilineBodyEndingInFileExtensionIsInline(t *testing.T) {
+	t.Parallel()
+
+	instructions := "# Rules\nSee CONTRIBUTING.md"
+	got, err := resolveSkillInstructions(&azdext.ServiceConfig{Name: "inline"}, instructions)
+	require.NoError(t, err)
+	assert.Equal(t, instructions, got)
 }
 
 func TestResolveSkillInstructions_FilePath(t *testing.T) {
@@ -98,4 +125,57 @@ func TestResolveSkillInstructions_PathTraversal(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must not contain '..'")
 	}
+}
+
+func TestResolveSkillArchivePath_PathTraversal(t *testing.T) {
+	t.Parallel()
+
+	for _, archive := range []string{"../skill.zip", "../../secret", "sub/../../escape.zip"} {
+		_, err := resolveSkillArchivePath(
+			&azdext.ServiceConfig{Name: "traversal", RelativePath: t.TempDir()},
+			archive,
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must not contain '..'")
+	}
+}
+
+func TestPrepareSkillArchive_Directory(t *testing.T) {
+	t.Parallel()
+
+	dir := writeSkillDir(t, "code-review")
+	archive, err := prepareSkillArchive(dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = archive.Reader.Close() })
+
+	assert.Equal(t, filepath.Base(dir)+".zip", archive.Name)
+	data, err := io.ReadAll(archive.Reader)
+	require.NoError(t, err)
+	assert.NotEmpty(t, data)
+}
+
+func TestPrepareSkillArchive_Zip(t *testing.T) {
+	t.Parallel()
+
+	path := writeZipWithSkillMd(t, "code-review")
+	archive, err := prepareSkillArchive(path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = archive.Reader.Close() })
+
+	assert.Equal(t, filepath.Base(path), archive.Name)
+	data, err := io.ReadAll(archive.Reader)
+	require.NoError(t, err)
+	assert.NotEmpty(t, data)
+}
+
+func TestPrepareSkillArchive_RejectsUnsupportedFile(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "SKILL.md")
+	require.NoError(t, os.WriteFile(path, []byte("instructions"), 0600))
+
+	archive, err := prepareSkillArchive(path)
+	require.Error(t, err)
+	assert.Nil(t, archive)
+	assert.Contains(t, err.Error(), ".zip")
 }

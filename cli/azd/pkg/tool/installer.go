@@ -1398,9 +1398,9 @@ func (i *installer) runSkill(
 			done := title
 			switch {
 			case upgrade && upToDate && v != "":
-				done = fmt.Sprintf("%s in %s are already up to date (v%s).", tool.Name, agent.DisplayName, v)
+				done = fmt.Sprintf("%s in %s is already up to date (v%s).", tool.Name, agent.DisplayName, v)
 			case upgrade && upToDate:
-				done = fmt.Sprintf("%s in %s are already up to date.", tool.Name, agent.DisplayName)
+				done = fmt.Sprintf("%s in %s is already up to date.", tool.Name, agent.DisplayName)
 			case upgrade && v != "":
 				done = fmt.Sprintf("%s (v%s)", title, v)
 			}

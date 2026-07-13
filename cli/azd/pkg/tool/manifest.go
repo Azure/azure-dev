@@ -54,8 +54,8 @@ type Checksum struct {
 // (the first on PATH), but install/upgrade can target specific or all
 // detected agents when the caller selects them (e.g. via `--agent`).
 type SkillAgent struct {
-	// DisplayName is the agent's display name, shown to the user (e.g. "GitHub
-	// Copilot CLI", "Claude Code CLI"). Display-only: it is NOT the value
+	// DisplayName is the agent's display name, shown to the user (e.g. "Copilot",
+	// "Claude"). Display-only: it is NOT the value
 	// --agent matches against — see Command.
 	DisplayName string
 	// Command is the agent CLI's executable name, used to run plugin
@@ -402,7 +402,7 @@ func azureSkills() *ToolDefinition {
 		Website:  "https://github.com/microsoft/azure-skills",
 		SkillAgents: []SkillAgent{
 			{
-				DisplayName:            "GitHub",
+				DisplayName:            "Copilot",
 				Command:                "copilot",
 				MarketplaceAddCommand:  []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
 				PluginInstallCommand:   []string{"plugin", "install", "azure@azure-skills"},

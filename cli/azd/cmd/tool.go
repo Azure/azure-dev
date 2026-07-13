@@ -316,9 +316,13 @@ func (a *toolAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// discard the outcome here — child tasks have surfaced what the user
 	// needs to see, and this caller does not propagate the task error.
 
+	header := "Your tool is installed."
+	if len(tools) > 1 {
+		header = "Your tools are installed."
+	}
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Your tool is installed.",
+			Header: header,
 		},
 	}, nil
 }
@@ -626,9 +630,13 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, opErr
 	}
 
+	header := "Your tool is installed."
+	if len(tools) > 1 {
+		header = "Your tools are installed."
+	}
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Your tool is installed.",
+			Header: header,
 		},
 	}, nil
 }
@@ -1354,6 +1362,12 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 	if allUpToDate {
 		header = "Tool is already up to date."
 	}
+	if len(rawResults) > 1 {
+		header = "Tools are upgraded."
+		if allUpToDate {
+			header = "Tools are already up to date."
+		}
+	}
 	// For a single tool, include the resulting version in the done message,
 	// e.g. "Tool is upgraded to v2.0.0." or
 	// "Tool is already up to date (v1.1.75).".
@@ -1634,9 +1648,13 @@ func (a *toolUninstallAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return nil, opErr
 	}
 
+	header := "Your tool is uninstalled."
+	if len(tools) > 1 {
+		header = "Your tools are uninstalled."
+	}
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Your tool is uninstalled.",
+			Header: header,
 		},
 	}, nil
 }
@@ -2491,7 +2509,9 @@ func toolCheckStatus(installed, updateAvailable bool) string {
 	case !installed:
 		return statusNotInstall
 	case updateAvailable:
-		return statusUpdate
+		// Use "upgrade" to match the `azd tool upgrade` command and the
+		// check hints, rather than the shared extension "Update available".
+		return "Upgrade available"
 	default:
 		return statusUpToDate
 	}

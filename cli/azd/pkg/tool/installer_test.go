@@ -1550,7 +1550,7 @@ func TestRunSkill_Upgrade_AlreadyUpToDate(t *testing.T) {
 	assert.True(t, result.AlreadyUpToDate, "nothing changed, so already up to date")
 
 	assert.Equal(t, []string{"Upgrading Test Azure Skills in copilot"}, r.starts)
-	assert.Equal(t, []string{"Test Azure Skills in copilot are already up to date (v1.1.86)."}, r.stops)
+	assert.Equal(t, []string{"Test Azure Skills in copilot is already up to date (v1.1.86)."}, r.stops)
 }
 
 // TestRunSkill_StreamedOutputPrintedAboveSpinner verifies that when the agent

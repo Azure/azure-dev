@@ -42,11 +42,11 @@ Each resource service is attributed to its own `azure.yaml` service key and chec
 
 ### Core-rendered guidance
 
-Core accepts one project-scoped post-command contribution with a stable identity. Post-provision writes or updates that contribution after refreshing state. Project post-deploy recomputes and replaces it, so `azd up` renders only the final post-deploy guidance. Service postdeploy handlers do not contribute user guidance.
+Core accepts one project-scoped post-command contribution with a stable identity. Post-provision writes or updates that contribution after refreshing state. Project post-deploy recomputes and replaces it, so `azd up` renders only the final post-deploy guidance. Service postdeploy handlers do not contribute user guidance. The concrete SDK/proto shape, identity namespace, and multi-extension conflict rules are deferred to the implementation design once Decision 1 confirms the contract is in scope.
 
-The contribution is structured rather than direct stdout. Core renders it once after the command result and applies output-mode suppression. Contribution assembly failures remain diagnostic and do not change a successful command result.
+The contribution is structured rather than direct stdout. Core renders it once after the command result and applies output-mode suppression.
 
-Malformed unified configuration produces a service-scoped validation or doctor error instead of an empty state. Legacy fallback keeps the single warning path in `project.WarnLegacyAgentShape`.
+Malformed configuration is handled per caller: `provision` and `deploy` fail with a service-scoped validation error, `doctor` reports it as a failed check, and next-step guidance degrades to best-effort so a broken snapshot never blocks a successful command. Guidance assembly failures stay diagnostic only. Legacy fallback keeps the single warning path in `project.WarnLegacyAgentShape`.
 
 ## Decisions for John
 

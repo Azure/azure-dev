@@ -270,3 +270,25 @@ func TestActivePromptKeepsActiveSelectWithChoices(t *testing.T) {
 		t.Fatalf("activePrompt() = %q, want %q", got, want)
 	}
 }
+
+func TestIsGitHubAuthPrompt(t *testing.T) {
+	cases := []struct {
+		name   string
+		prompt string
+		want   bool
+	}{
+		{"git protocol", "? what is your preferred protocol for git operations on this host?", true},
+		{"git credentials", "? authenticate git with your github credentials? (y/n)", true},
+		{"browser auth", "? how would you like to authenticate github cli? login with a web browser", true},
+		{"device login", "Press Enter to open https://github.com/login/device", true},
+		{"regular prompt", "? select a starter template: basic agent", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isGitHubAuthPrompt(tc.prompt); got != tc.want {
+				t.Fatalf("isGitHubAuthPrompt(%q) = %v, want %v", tc.prompt, got, tc.want)
+			}
+		})
+	}
+}

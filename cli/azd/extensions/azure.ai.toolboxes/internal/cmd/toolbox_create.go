@@ -40,6 +40,11 @@ tool entry, so 'create' takes its inputs from a JSON or YAML file via
 
 At least one of 'connections' or 'tools' must be non-empty.
 
+On success the toolbox's runtime MCP endpoint is written to the active azd
+environment under the TOOLBOX_<NORMALIZED_NAME>_MCP_ENDPOINT variable (the same
+key agents consume), where <NORMALIZED_NAME> is the toolbox name uppercased with
+non-alphanumeric character runs replaced by underscores.
+
 Examples:
 
   azd ai toolbox create research --from-file ./tools.json
@@ -179,11 +184,17 @@ func runToolboxCreateWith(
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
 	}
 
-	return emitCreateResult(name, created.Version, parent.output, endpoint)
+	mcpURL := buildToolboxMcpURL(endpoint, name, created.Version)
+
+	// Surface the endpoint to agents (and the developer) without re-running.
+	if err := setToolboxEndpointEnvFunc(ctx, name, mcpURL); err != nil {
+		return err
+	}
+
+	return emitCreateResult(name, created.Version, parent.output, mcpURL)
 }
 
-func emitCreateResult(name, version, output, endpoint string) error {
-	mcpURL := buildToolboxMcpURL(endpoint, name, version)
+func emitCreateResult(name, version, output, mcpURL string) error {
 	if output == "json" {
 		return emitJSON(map[string]any{
 			"toolbox":  name,

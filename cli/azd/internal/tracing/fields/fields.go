@@ -461,7 +461,7 @@ var (
 	// ToolFirstRunToolsSelectedNamesKey records the comma-separated list of
 	// built-in tool IDs the user selected for installation during first-run.
 	//
-	// Example: "az-cli,docker,git"
+	// Example: "az-cli,vscode-bicep,github-copilot-cli"
 	ToolFirstRunToolsSelectedNamesKey = AttributeKey{
 		Key:            attribute.Key("tool.firstrun.tools_selected_names"),
 		Classification: SystemMetadata,
@@ -501,7 +501,7 @@ var (
 	// ToolIdKey records the built-in tool ID for single-tool operations
 	// (e.g., `azd tool show`, single-target `azd tool install`).
 	//
-	// Example: "az-cli", "docker", "git", "node"
+	// Example: "az-cli", "vscode-bicep", "github-copilot-cli", "azure-mcp-server"
 	ToolIdKey = AttributeKey{
 		Key:            attribute.Key("tool.id"),
 		Classification: SystemMetadata,
@@ -509,7 +509,7 @@ var (
 	}
 
 	// ToolIdsKey records the comma-separated list of built-in tool IDs
-	// targeted by a batch operation (e.g., `azd tool install az-cli docker`).
+	// targeted by a batch operation (e.g., `azd tool install az-cli vscode-bicep`).
 	ToolIdsKey = AttributeKey{
 		Key:            attribute.Key("tool.ids"),
 		Classification: SystemMetadata,
@@ -690,6 +690,31 @@ var (
 		Purpose:        FeatureInsight,
 		IsMeasurement:  true,
 	}
+
+	// PreflightExtensionRulesKey records the list of rule IDs from extension-provided
+	// validation checks that were executed. Separate from PreflightRulesKey (core rules)
+	// to distinguish the source of checks in telemetry.
+	//
+	// Example: ["todo_resource_name", "naming_convention"]
+	PreflightExtensionRulesKey = AttributeKey{
+		Key:            attribute.Key("validation.preflight.extension_rules"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// PreflightCheckTypeKey records which validation dispatch site emitted the
+	// event, since the same PreflightValidationEvent is emitted from both the
+	// Bicep-only "local-preflight" dispatch and the provider-agnostic
+	// "provision" dispatch. Without it, downstream consumers would double-count
+	// the event for Bicep provisions (where both sites fire). Values are the
+	// fixed, code-defined check-type identifiers.
+	//
+	// Example: "local-preflight", "provision"
+	PreflightCheckTypeKey = AttributeKey{
+		Key:            attribute.Key("validation.preflight.check_type"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // Provision-related fields
@@ -741,6 +766,9 @@ var (
 	}
 
 	// ExeGraphStepNameKey records the step name within an exegraph.step span.
+	// Hashed: step names embed user-chosen service or layer names from
+	// azure.yaml (e.g., "deploy-<svc.Name>", "<layer.Name>"); emit via
+	// fields.StringHashed.
 	ExeGraphStepNameKey = AttributeKey{
 		Key:            attribute.Key("exegraph.step.name"),
 		Classification: SystemMetadata,
@@ -748,13 +776,18 @@ var (
 	}
 
 	// ExeGraphStepDepsKey records the dependency list for a step.
+	// Hashed: each entry is another step name and therefore embeds user-chosen
+	// identifiers; emit via fields.StringSliceHashed.
 	ExeGraphStepDepsKey = AttributeKey{
 		Key:            attribute.Key("exegraph.step.deps"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 	}
 
-	// ExeGraphStepTagsKey records the tags for a step.
+	// ExeGraphStepTagsKey records the tags for a step. Tags are a fixed
+	// internal vocabulary (e.g., "provision", "deploy", "package", "cmdhook",
+	// "event") set by azd code; they do not contain user input and are
+	// emitted raw.
 	ExeGraphStepTagsKey = AttributeKey{
 		Key:            attribute.Key("exegraph.step.tags"),
 		Classification: SystemMetadata,
@@ -1132,6 +1165,12 @@ var (
 	// ExtensionSource is the registry source used for the upgrade.
 	ExtensionSource = AttributeKey{
 		Key:            attribute.Key("extension.source"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// ExtensionSourceKind is the kind of --source argument: none, registered, or location.
+	ExtensionSourceKind = AttributeKey{
+		Key:            attribute.Key("extension.source.kind"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}

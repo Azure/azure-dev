@@ -79,6 +79,7 @@ Additional mage targets:
 
 - `mage record` — re-record functional test cassettes against a live Azure subscription. Accepts an optional `-filter=TestName` flag to re-record specific tests. Typically only core maintainers need to run this; external contributors can rely on playback mode (the default) which requires no Azure access. Requires `azd auth login` and a configured test subscription (see `docs/recording-functional-tests-guide.md`).
 - `mage coverage:pr` — preview the CI PR coverage gate locally before pushing. Resolves PR-touched `.go` files via `git merge-base origin/main HEAD` for the per-package summary, runs the diff against the latest `main` baseline, and fails (exit 2) on **either** breach type: any PR-touched package drops more than 0.5 pp, or overall coverage falls below 69% (defaults match CI; override via `COVERAGE_MAX_PACKAGE_DECREASE`, `COVERAGE_MIN_OVERALL`). See `docs/code-coverage-guide.md` for details.
+- `mage updateGoVersion <version>` — bump the pinned Go toolchain version everywhere it is referenced (every `cli/azd` `go.mod`, the ADO `setup-go` template, Dockerfiles, and the devcontainer Go feature). `cli/azd/go.mod` is the source of truth enforced by the `validate-go-version` workflow. This is the single source of truth for the sync logic. Example: `mage updateGoVersion 1.26.4`.
 
 ```bash
 gofmt -s -w .
@@ -241,6 +242,59 @@ variable `azd` reads. When adding or modifying an `os.Getenv` / `os.LookupEnv` c
 2. Include a one-line description that explains what it controls and its default if non-obvious.
 3. Place debug/internal variables under **Debug Variables** with the unsupported warning.
 
+#### Adding or Changing Telemetry (Events & Fields)
+
+`azd` telemetry coverage is tracked by an ongoing metrics audit whose authoritative spec lives in
+`docs/specs/metrics-audit/`. When you add or change a telemetry event or field you MUST update the
+code, **all** telemetry docs, and the coverage test in the same change — otherwise the audit, the
+public reference, and downstream Kusto/LENS consumers drift out of sync. Verify every claim against
+**actual code behavior**, not comments.
+
+**1. Code**
+
+- **Field** — define an `AttributeKey` in `cli/azd/internal/tracing/fields/fields.go` (this file
+  holds the field/key definitions; within the same package `features.go` holds feature-name
+  attribute values and `domains.go` the Azure host-domain table). Every field MUST set a
+  `Classification` (e.g. `SystemMetadata`, `OrganizationalIdentifiableInformation`,
+  `EndUserPseudonymizedInformation`; never emit `CustomerContent`) and a `Purpose`
+  (`FeatureInsight` / `BusinessInsight` / `PerformanceAndHealth`).
+- **Event** — define a constant in `cli/azd/internal/tracing/events/events.go` following the
+  `prefix.noun.verb` naming convention.
+- **Emit** at the call site via `tracing.Start` (spans/events) plus `tracing.SetUsageAttributes`
+  or `span.SetAttributes` (attributes).
+- **Hash user-derived values** with `fields.StringHashed` / `fields.StringSliceHashed`
+  (`cli/azd/internal/tracing/fields/key.go`). Hash anything that embeds a user-chosen name, path,
+  repo URL, or project / env / service / layer identifier (e.g. `exegraph.step.name`, `hooks.name`).
+  Emit raw only for fixed enums or compile-time literals.
+
+**2. Documentation — keep all of these in sync**
+
+- `docs/reference/telemetry-data.md` — public, user-facing reference for every event/field. Add to
+  **Events Reference** / **Fields Reference** with a one-line description, value type
+  (string/bool/number), and applicable events/commands; note conditional or feature-gated behavior
+  under **Data Nuances & Gotchas** and/or **Feature → Telemetry Mapping**.
+- `docs/specs/metrics-audit/telemetry-schema.md` — authoritative schema: add a row with the OTel
+  key, classification, purpose, whether it is hashed, whether it is a measurement, and the allowed
+  enum values.
+- `docs/specs/metrics-audit/feature-telemetry-matrix.md` — command→telemetry inventory: update the
+  command's row (and/or the Cross-Cutting Subsystems table) and the ✅/⚠️/❌ coverage flags.
+- `docs/specs/metrics-audit/privacy-review-checklist.md` — if the field is hashed (always or
+  conditionally), add it to the matching hashing table, and copy the **PR Checklist Template** into
+  your PR description.
+
+**3. Tests**
+
+- `cli/azd/cmd/telemetry_test.go` — classify the command in exactly one of
+  `commandsWithSpecificTelemetry` / `commandsWithOnlyGlobalTelemetry` (both lists are kept sorted),
+  and add field-constant assertions where applicable.
+
+**4. Privacy & downstream**
+
+- A privacy review is required for any new field/event, any classification/purpose change, or any
+  removal of hashing — see the triggers in `privacy-review-checklist.md`.
+- If the field is queried downstream, coordinate Kusto-function / cooked-table / dashboard updates
+  per the recurring process in `docs/specs/metrics-audit/audit-process.md`.
+
 ### Modern Go
 
 This project uses Go 1.26. Use modern standard library features:
@@ -367,3 +421,7 @@ When creating or modifying GitHub Actions workflows:
 - **Cross-workflow artifacts**: `actions/download-artifact@v4` without `run-id` only downloads artifacts from the *current* workflow run. Cross-workflow artifact sharing requires `run-id` and `repository` parameters
 - **Prefer Azure DevOps pipelines** for jobs that need secrets or Azure credentials — the team uses internal ADO pipelines for authenticated workloads in this public repo
 - **No placeholder steps**: Don't add workflow steps that echo "TODO" or list directories without producing output. If downstream steps depend on generated files, implement the generation or remove the dependency
+
+## Copilot Code Review
+
+When reviewing code in Copilot Code Review, also use the azd-code-reviewer skill to look for azd-specific criteria.

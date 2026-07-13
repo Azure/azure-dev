@@ -179,7 +179,7 @@ suite('TemplateToolsTreeDataProvider', () => {
         const rootItems = await testProvider.getChildren();
         const aiSection = rootItems.find((item: vscode.TreeItem) => item.contextValue === 'aiTemplates');
         const templateItems = await testProvider.getChildren(aiSection);
-        const templateItem = templateItems[0] as vscode.TreeItem;
+        const templateItem = templateItems[0];
 
         expect(
             templateItem.contextValue,

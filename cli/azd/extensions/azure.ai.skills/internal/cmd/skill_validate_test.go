@@ -121,20 +121,24 @@ func TestUpdateAction_ConflictingArgs(t *testing.T) {
 	require.Equal(t, exterrors.CodeConflictingArguments, le.Code)
 }
 
-func TestUpdateAction_RejectsZipFile(t *testing.T) {
+// TestUpdateAction_AcceptsZipFile guards the issue-#8489 fix: `update`
+// must accept `.zip` (and `.ZIP`) inputs and route them to the package
+// upload path, matching `create` parity. Prior to the fix the same input
+// was rejected with a destructive `create --force` pointer.
+func TestUpdateAction_AcceptsZipFile(t *testing.T) {
 	for _, f := range []string{"./pkg.zip", "./PKG.ZIP"} {
-		a := &updateAction{flags: &updateFlags{file: f}}
-		err := a.validateFlags()
-		require.Errorf(t, err, "file %q", f)
-		var le *azdext.LocalError
-		require.True(t, errors.As(err, &le), "file %q", f)
-		require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code, "file %q", f)
+		mode, err := selectUpdateMode(&updateFlags{file: f})
+		require.NoError(t, err, "file %q", f)
+		require.Equal(t, updateModeFilePackage, mode, "file %q", f)
 	}
 }
 
 func TestUpdateAction_AcceptsMdFile(t *testing.T) {
 	a := &updateAction{flags: &updateFlags{file: "./SKILL.md"}}
 	require.NoError(t, a.validateFlags())
+	mode, err := selectUpdateMode(&updateFlags{file: "./SKILL.md"})
+	require.NoError(t, err)
+	require.Equal(t, updateModeFileMd, mode)
 }
 
 func TestUpdateAction_UnknownExtension(t *testing.T) {

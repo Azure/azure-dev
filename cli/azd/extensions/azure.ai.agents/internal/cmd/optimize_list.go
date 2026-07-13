@@ -11,20 +11,23 @@ import (
 	"io"
 	"strings"
 
+	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
 // optimizeListFlags holds CLI flags for the optimize list command.
 type optimizeListFlags struct {
-	limit  int    // maximum number of results
-	status string // filter by job status
+	envName string // explicit environment name (from -e flag)
+	limit   int    // maximum number of results
+	status  string // filter by job status
 	optimizeConnectionFlags
 }
 
-func newOptimizeListCommand() *cobra.Command {
+func newOptimizeListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &optimizeListFlags{}
 
 	cmd := &cobra.Command{
@@ -42,6 +45,7 @@ Use --status to filter by job status and --limit to control page size.`,
   # Show last 5 runs
   azd ai agent optimize list --limit 5`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			flags.envName = extCtx.Environment
 			return runOptimizeList(cmd, flags)
 		},
 	}
@@ -62,7 +66,7 @@ func runOptimizeList(cmd *cobra.Command, flags *optimizeListFlags) error {
 		}
 	}
 
-	endpoint, err := flags.resolve(cmd.Context())
+	endpoint, err := flags.resolve(cmd.Context(), flags.envName)
 	if err != nil {
 		return err
 	}
@@ -97,32 +101,26 @@ func runOptimizeList(cmd *cobra.Command, flags *optimizeListFlags) error {
 func printOptimizeListTable(out io.Writer, jobs []optimize_api.OptimizeJobStatus) {
 	bold := color.New(color.Bold)
 
-	_, _ = bold.Fprintf(out, "  %-38s %-12s %-14s %7s   %s\n", "ID", "Status", "Agent", "Score", "Created")
-	fmt.Fprintf(out, "  %-38s %-12s %-14s %7s   %s\n",
+	_, _ = bold.Fprintf(out, "  %-38s %-12s %-14s   %s\n", "ID", "Status", "Agent", "Created")
+	fmt.Fprintf(out, "  %-38s %-12s %-14s   %s\n",
 		strings.Repeat("─", 38), strings.Repeat("─", 12),
-		strings.Repeat("─", 14), strings.Repeat("─", 7), strings.Repeat("─", 19))
+		strings.Repeat("─", 14), strings.Repeat("─", 19))
 
 	for _, job := range jobs {
-		scoreStr := "—"
-		if job.Best != nil {
-			scoreStr = fmt.Sprintf("%.2f", job.Best.AvgScore)
-		}
-
 		agentName := "—"
-		if job.Agent != nil && job.Agent.AgentName != "" {
-			agentName = job.Agent.AgentName
+		if name := job.AgentName(); name != "" {
+			agentName = name
 		}
 
-		created := job.CreatedAt
-		if created == "" {
-			created = "—"
+		created := "—"
+		if job.CreatedAt != 0 {
+			created = eval_api.FormatTimestamp(job.CreatedAt)
 		}
 
-		fmt.Fprintf(out, "  %-38s %-12s %-14s %7s   %s\n",
-			job.OperationID,
+		fmt.Fprintf(out, "  %-38s %-12s %-14s   %s\n",
+			job.ID,
 			formatOptimizeStatus(job.Status),
 			truncateString(agentName, 14),
-			scoreStr,
 			truncateString(created, 19),
 		)
 	}

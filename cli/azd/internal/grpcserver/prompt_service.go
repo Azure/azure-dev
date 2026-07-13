@@ -612,15 +612,14 @@ func (s *promptService) PromptAiModel(
 		}
 
 		var err error
-		// Always fetch canonical model data across subscription locations.
-		// Location scoping is applied as a filter so model.Locations remains canonical.
-		models, err = s.aiModelService.ListModels(ctx, subscriptionId, nil)
+		// Both paths fetch canonical model data across subscription locations.
+		if effectiveFilter != nil {
+			models, err = s.aiModelService.ListFilteredModels(ctx, subscriptionId, effectiveFilter)
+		} else {
+			models, err = s.aiModelService.ListModels(ctx, subscriptionId, nil)
+		}
 		if err != nil {
 			return fmt.Errorf("listing models: %w", err)
-		}
-
-		if effectiveFilter != nil {
-			models = ai.FilterModels(models, effectiveFilter)
 		}
 
 		if req.Quota != nil {
@@ -1197,8 +1196,15 @@ func (s *promptService) PromptAiModelLocationWithQuota(
 		EnableFiltering: new(true),
 	}
 	for i, loc := range locations {
-		quotaLabel := output.WithGrayFormat("[up to %.0f quota available]", loc.MaxRemainingQuota)
-		label := fmt.Sprintf("%s %s", loc.Location, quotaLabel)
+		var label string
+		if loc.MaxRemainingQuota == ai.QuotaRemainingUnknown {
+			label = loc.Location
+		} else {
+			quotaLabel := output.WithGrayFormat(
+				"[up to %.0f quota available]",
+				loc.MaxRemainingQuota)
+			label = fmt.Sprintf("%s %s", loc.Location, quotaLabel)
+		}
 		selectOpts.Choices[i] = &ux.SelectChoice{
 			Value: loc.Location,
 			Label: label,

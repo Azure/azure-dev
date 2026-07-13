@@ -6,26 +6,21 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
+	"sort"
 	"strings"
+	"sync"
 
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/agents/agent_api"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/optimize_api"
-	"azureaiagent/internal/pkg/azure"
-	"azureaiagent/internal/pkg/envkey"
-	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/braydonk/yaml"
-	"github.com/drone/envsubst"
-	"google.golang.org/protobuf/types/known/structpb"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 // configureExtensionHost wires the service target and event handlers on the
@@ -40,31 +35,54 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		WithServiceTarget(AiAgentHost, func() azdext.ServiceTargetProvider {
 			return project.NewAgentServiceTargetProvider(azdClient)
 		}).
+		WithProvisioningProvider(project.FoundryProviderName, func() azdext.ProvisioningProvider {
+			return project.NewFoundryProvisioningProvider(azdClient)
+		}).
+		WithValidationCheck(azdext.ValidationCheckRegistration{
+			// Provider-agnostic check: runs before provisioning regardless of the
+			// provisioning provider. This matters because the azure.ai.agents
+			// extension provisions through its own microsoft.foundry provider,
+			// which never triggers the Bicep-only "local-preflight" checks.
+			CheckType: azdext.ValidationCheckTypeProvision,
+			RuleID:    project.ResourceGroupLocationRuleID,
+			Factory: func() azdext.ValidationCheckProvider {
+				return project.NewResourceGroupLocationCheck(azdClient)
+			},
+		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return preprovisionHandler(ctx, azdClient, args)
 		}).
 		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return postprovisionHandler(ctx, azdClient, args)
 		}).
-		WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+		WithServiceEventHandler("predeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			return predeployHandler(ctx, azdClient, args)
-		}).
-		WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
+		WithServiceEventHandler("postdeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			return postdeployHandler(ctx, azdClient, args)
-		}).
+		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
 		WithProjectEventHandler("postdown", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return postdownHandler(ctx, azdClient, args)
 		})
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	deployments, err := collectProjectDeployments(args.Project.Services)
+	if err != nil {
+		return err
+	}
+	connections, err := collectConnections(args.Project.Services)
+	if err != nil {
+		return err
+	}
+
 	for _, svc := range args.Project.Services {
 		switch svc.Host {
 		case AiAgentHost:
 			if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
 				return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
 			}
-			if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
+			if err := envUpdate(ctx, azdClient, args.Project, svc, deployments, connections); err != nil {
 				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 			}
 		}
@@ -78,18 +96,16 @@ func postprovisionHandler(
 	azdClient *azdext.AzdClient,
 	args *azdext.ProjectEventArgs,
 ) error {
+	// Toolboxes are reconciled at deploy time by the azure.ai.toolbox service
+	// target (the azure.ai.toolboxes extension), not at provision. The agent
+	// service's uses: edges order each toolbox before the agent that consumes
+	// it, so the toolbox MCP endpoints are published before the agent deploys.
+
 	hasAgent := false
 	for _, svc := range args.Project.Services {
-		if svc.Host != AiAgentHost {
-			continue
-		}
-		hasAgent = true
-
-		if err := provisionToolboxes(ctx, azdClient, svc); err != nil {
-			return fmt.Errorf(
-				"failed to provision toolboxes for service %q: %w",
-				svc.Name, err,
-			)
+		if svc.Host == AiAgentHost {
+			hasAgent = true
+			break
 		}
 	}
 
@@ -151,170 +167,236 @@ func currentEnvName(ctx context.Context, azdClient *azdext.AzdClient) (string, e
 	return resp.Environment.Name, nil
 }
 
-func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	hasHostedAgentService := false
-	for _, svc := range args.Project.Services {
-		if svc.Host != AiAgentHost {
-			continue
-		}
+// developerRBACOnce ensures CheckDeveloperRBAC runs at most once per extension
+// process lifetime. Service-level predeploy handlers fire per-service, but the
+// RBAC pre-flight check is project-scoped and idempotent — running it once is
+// sufficient and avoids duplicate ARM/Graph calls and noisy output.
+var (
+	developerRBACOnce sync.Once
+	developerRBACErr  error
+)
 
-		if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
-			return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
-		}
-		if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
-			return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
-		}
+// duplicateAgentNameWarnOnce ensures the duplicate agent-name warning is emitted
+// at most once per extension process lifetime. Service-level predeploy handlers
+// fire per-service, but the check is project-scoped — a single pass over every
+// azure.ai.agent service surfaces all collisions without repeating the warning
+// for each colliding service.
+var duplicateAgentNameWarnOnce sync.Once
 
-		if !hasHostedAgentService && isHostedAgentService(svc, args.Project) {
-			hasHostedAgentService = true
-		}
+func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
+	svc := args.Service
+
+	// Warn (once) when multiple agent services resolve to the same Foundry agent
+	// name. Foundry identifies an agent by its name, so such services overwrite
+	// each other on deploy. Advisory only — deploy continues.
+	duplicateAgentNameWarnOnce.Do(func() {
+		warnDuplicateAgentNames(args.Project)
+	})
+
+	deployments, err := collectProjectDeployments(args.Project.Services)
+	if err != nil {
+		return err
+	}
+	connections, err := collectConnections(args.Project.Services)
+	if err != nil {
+		return err
+	}
+
+	if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
+		return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
+	}
+	if err := envUpdate(ctx, azdClient, args.Project, svc, deployments, connections); err != nil {
+		return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 	}
 
 	// Run developer RBAC pre-flight checks only for hosted agent deployments.
-	if hasHostedAgentService {
-		if err := project.CheckDeveloperRBAC(ctx, azdClient); err != nil {
-			return err
+	// Guarded by sync.Once since this handler fires per-service but the check
+	// is project-scoped.
+	if isHostedAgentService(svc, args.Project) {
+		developerRBACOnce.Do(func() {
+			developerRBACErr = project.CheckDeveloperRBAC(ctx, azdClient)
+		})
+		if developerRBACErr != nil {
+			return developerRBACErr
 		}
 	}
 
 	return nil
 }
 
-// isHostedAgentService checks if a service is a hosted (container) agent by reading
-// the agent.yaml kind from the service directory.
+// isHostedAgentService checks if a service is a hosted (container) agent by
+// resolving its agent definition from the service entry (the unified inline
+// shape, or a legacy agent.yaml on disk).
 func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig) bool {
-	agentYamlPath, err := paths.JoinAllowRoot(proj.Path, svc.RelativePath, "agent.yaml")
-	if err != nil {
-		return false
-	}
-	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // path from azd project config
-	if err != nil {
-		return false
-	}
-	var generic map[string]any
-	if err := yaml.Unmarshal(data, &generic); err != nil {
-		return false
-	}
-	kind, ok := generic["kind"].(string)
-	return ok && kind == string(agent_yaml.AgentKindHosted)
+	_, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
+	return err == nil && isHosted
 }
 
-func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	// Skip when the project has no hosted agent services. `postdeploy` fires on every
-	// `azd deploy`, so without this guard the FOUNDRY_PROJECT_ENDPOINT/AZURE_TENANT_ID
-	// reads below would fail for projects that don't use this extension. See #7373.
-	var hostedAgents []*azdext.ServiceConfig
-	for _, svc := range args.Project.Services {
-		if svc.Host == AiAgentHost && isHostedAgentService(svc, args.Project) {
-			hostedAgents = append(hostedAgents, svc)
-		}
-	}
-	if len(hostedAgents) == 0 {
+// duplicateAgentNameGroup is a Foundry agent name referenced by more than one
+// azure.ai.agent service, with the colliding azure.yaml service keys sorted for
+// stable output.
+type duplicateAgentNameGroup struct {
+	agentName    string
+	serviceNames []string
+}
+
+// findDuplicateAgentNames groups hosted azure.ai.agent services by their resolved
+// Foundry agent name and returns the groups referenced by two or more services.
+// Foundry uses the agent name as an agent's unique identifier, so services that
+// share a name deploy to the same agent and overwrite each other.
+//
+// Services whose definition can't be resolved, that aren't hosted agents, or that
+// carry an empty name are skipped — their own deploy surfaces any real error. The
+// returned groups (and the service keys within each) are sorted for deterministic
+// output.
+func findDuplicateAgentNames(proj *azdext.ProjectConfig) []duplicateAgentNameGroup {
+	if proj == nil {
 		return nil
 	}
 
-	// Collect agent identities from hosted agent services that were deployed.
-	// After deploy, each hosted agent's name/version is stored as AGENT_{SERVICE_KEY}_NAME/VERSION.
-	// We fetch the full agent version object from the API to get the instance identity principal ID,
-	// which allows us to skip the slow Graph API discovery during RBAC assignment.
+	servicesByAgentName := map[string][]string{}
+	for serviceName, svc := range proj.Services {
+		if svc.GetHost() != AiAgentHost {
+			continue
+		}
+		ca, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
+		if err != nil || !isHosted {
+			continue
+		}
+		agentName := strings.TrimSpace(ca.Name)
+		if agentName == "" {
+			continue
+		}
+		servicesByAgentName[agentName] = append(servicesByAgentName[agentName], serviceName)
+	}
+
+	var groups []duplicateAgentNameGroup
+	for agentName, serviceNames := range servicesByAgentName {
+		if len(serviceNames) < 2 {
+			continue
+		}
+		sort.Strings(serviceNames)
+		groups = append(groups, duplicateAgentNameGroup{agentName: agentName, serviceNames: serviceNames})
+	}
+	sort.Slice(groups, func(i, j int) bool { return groups[i].agentName < groups[j].agentName })
+	return groups
+}
+
+// warnDuplicateAgentNames prints one warning per agent name shared by multiple
+// azure.ai.agent services. The warning names the colliding service keys and the
+// shared agent name so the user can give each agent a unique name in azure.yaml.
+// It is advisory: deploy continues.
+func warnDuplicateAgentNames(proj *azdext.ProjectConfig) {
+	for _, group := range findDuplicateAgentNames(proj) {
+		fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
+			"WARNING: agent name %q is used by multiple services (%s). Foundry identifies an agent "+
+				"by its name, so these services deploy to the same agent and overwrite each other. "+
+				"Give each agent a unique name in azure.yaml.\n",
+			group.agentName, strings.Join(group.serviceNames, ", "),
+		))
+	}
+}
+
+// gatherPostdeployInputs reads the environment inputs shared by the two postdeploy
+// steps (activity-bot provisioning and optimization reporting): the current
+// environment name, the Foundry project endpoint, the tenant, and a credential
+// built from that tenant. It only gathers and returns the first error encountered;
+// it does NOT decide skip-vs-fail, so each caller can apply its own policy to the
+// returned error (the required Teams bot fails; best-effort reporting skips).
+func gatherPostdeployInputs(
+	ctx context.Context, azdClient *azdext.AzdClient,
+) (envName, endpoint, tenant string, cred *azidentity.AzureDeveloperCLICredential, err error) {
 	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		return fmt.Errorf("failed to get current environment for agent identity RBAC: %w", err)
+		return "", "", "", nil, fmt.Errorf("failed to get current environment: %w", err)
+	}
+	envName = envResp.Environment.Name
+
+	if endpoint, err = readEnvValue(ctx, azdClient, envName, "FOUNDRY_PROJECT_ENDPOINT"); err != nil {
+		return envName, "", "", nil, err
+	}
+	if tenant, err = readEnvValue(ctx, azdClient, envName, "AZURE_TENANT_ID"); err != nil {
+		return envName, endpoint, "", nil, err
 	}
 
-	envName := envResp.Environment.Name
-
-	// Read the project endpoint for API calls.
-	endpointResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envName,
-		Key:     "FOUNDRY_PROJECT_ENDPOINT",
-	})
-	if err != nil {
-		return fmt.Errorf("failed to read FOUNDRY_PROJECT_ENDPOINT: %w", err)
-	}
-	if endpointResp.Value == "" {
-		return fmt.Errorf("FOUNDRY_PROJECT_ENDPOINT is not set in the environment")
-	}
-
-	// Create a credential for API calls.
-	tenantResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envName,
-		Key:     "AZURE_TENANT_ID",
-	})
-	if err != nil {
-		return fmt.Errorf("failed to read AZURE_TENANT_ID: %w", err)
-	}
-	if tenantResp.Value == "" {
-		return fmt.Errorf("AZURE_TENANT_ID is not set in the environment")
-	}
-
-	cred, err := azidentity.NewAzureDeveloperCLICredential(
+	cred, err = azidentity.NewAzureDeveloperCLICredential(
 		&azidentity.AzureDeveloperCLICredentialOptions{
-			TenantID:                   tenantResp.Value,
+			TenantID:                   tenant,
 			AdditionallyAllowedTenants: []string{"*"},
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create credential for agent identity RBAC: %w", err)
+		return envName, endpoint, tenant, nil, fmt.Errorf("failed to create credential: %w", err)
 	}
+	return envName, endpoint, tenant, cred, nil
+}
 
-	agentClient := agent_api.NewAgentClient(endpointResp.Value, cred)
+func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
+	svc := args.Service
 
-	// Build name→principalID map by fetching the agent version for each hosted service.
-	agentIdentities := make(map[string]string)
-	for _, svc := range hostedAgents {
-		serviceKey := toServiceKey(svc.Name)
-
-		versionResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: envName,
-			Key:     fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
-		})
-		if err != nil {
-			return fmt.Errorf(
-				"failed to read AGENT_%s_VERSION from environment: %w",
-				serviceKey, err,
-			)
-		}
-		if versionResp.Value == "" {
-			continue
-		}
-
-		// Fetch the agent version to get the instance identity principal ID.
-		versionObj, err := agentClient.GetAgentVersion(
-			ctx, svc.Name, versionResp.Value, DefaultAgentAPIVersion,
-		)
-		if err != nil {
-			return fmt.Errorf(
-				"failed to fetch agent version for %s/%s: %w",
-				svc.Name, versionResp.Value, err,
-			)
-		}
-
-		principalID := ""
-		if versionObj.InstanceIdentity != nil {
-			principalID = versionObj.InstanceIdentity.PrincipalID
-		}
-
-		agentIdentities[svc.Name] = principalID
-	}
-
-	if len(agentIdentities) == 0 {
+	// Skip when the service is not a hosted agent.
+	if !isHostedAgentService(svc, args.Project) {
 		return nil
 	}
 
-	if err := project.EnsureAgentIdentityRBAC(ctx, azdClient, agentIdentities); err != nil {
-		return fmt.Errorf("agent identity RBAC setup failed: %w", err)
+	// Whether this service is an activity agent decides how the shared inputs below
+	// are treated: an activity agent requires the Teams bot connector, so a missing
+	// input must fail the deploy; every other agent only feeds best-effort
+	// optimization reporting, which is safe to skip.
+	isActivity := false
+	if ca, isHosted, _, defErr := project.LoadAgentDefinition(svc, args.Project.Path); defErr == nil && isHosted {
+		isActivity = project.ResolveActivityProfile(ca).IsActivity
 	}
 
-	// Report optimization candidate deployments to the optimization service.
-	// If a service has AGENT_{KEY}_OPTIMIZATION_CANDIDATE_ID in the azd environment,
-	// the agent was deployed from an optimization candidate. We notify the
-	// optimization service so it can track which candidates have been deployed.
-	reportOptimizationDeployments(ctx, azdClient, hostedAgents, envName, endpointResp.Value,
-		func(endpoint string) *optimize_api.OptimizeClient {
-			return optimize_api.NewOptimizeClient(endpoint, cred)
-		},
-	)
+	// Read the inputs both steps draw from once. Gathering does not decide
+	// skip-vs-fail; each step below applies its own policy to inputErr, so the
+	// required Teams bot never inherits optimization reporting's "log and skip"
+	// preconditions and vice versa.
+	envName, endpoint, tenant, cred, inputErr := gatherPostdeployInputs(ctx, azdClient)
+
+	// Step 1 — activity bot: a required connector, provisioned and validated on its
+	// own terms. A missing prerequisite fails the deploy rather than being skipped,
+	// consistent with the EnsureBot failure handled just below. No-op for other agents.
+	if isActivity {
+		if inputErr != nil {
+			return fmt.Errorf(
+				"agent %q deployed successfully, but its required Microsoft Teams bot could not be "+
+					"configured: %w\n"+
+					"  Ensure the agent is provisioned in this environment, then re-run 'azd deploy'.",
+				svc.Name, inputErr,
+			)
+		}
+		if err := ensureActivityBot(
+			ctx, azdClient, cred, envName, svc, args.Project, endpoint, tenant,
+		); err != nil {
+			return fmt.Errorf(
+				"agent %q deployed successfully, but configuring its Microsoft Teams bot failed: %w\n"+
+					"  The agent version is active — only the Teams channel binding is missing "+
+					"(commonly Azure Bot permissions or quota). Resolve the cause and re-run 'azd deploy'.",
+				svc.Name, err,
+			)
+		}
+	}
+
+	// Step 2 — optimization reporting: best-effort, skipped on its own terms. A
+	// missing input only logs and skips; it never fails an otherwise-successful
+	// deploy (the client-side agent-identity RBAC assignment was removed).
+	if inputErr != nil {
+		log.Printf("postdeploy: skipping optimization reporting for %s: %v", svc.Name, inputErr)
+		return nil
+	}
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("postdeploy: optimization reporting panicked for %s: %v", svc.Name, r)
+			}
+		}()
+		reportSvcOptimizationDeployment(ctx, azdClient, svc, envName, endpoint,
+			func(endpoint string) *optimize_api.OptimizeClient {
+				return optimize_api.NewOptimizeClient(endpoint, cred)
+			},
+		)
+	}()
 
 	return nil
 }
@@ -335,42 +417,58 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 			continue
 		}
 
-		serviceKey := toServiceKey(svc.Name)
-
-		endpointResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: envName,
-			Key:     fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
-		})
-		if err != nil || endpointResp.Value == "" {
-			continue
-		}
-
-		agentKey := buildRemoteAgentKeyFromEndpoint(endpointResp.Value)
-
-		// Remove stored sessions and conversations for this agent.
-		var failed bool
-		if err := deleteContextValue(ctx, azdClient, "sessions", agentKey); err != nil {
-			log.Printf("postdown: failed to clean sessions for %s: %v", agentKey, err)
-			failed = true
-		}
-		if err := deleteContextValue(ctx, azdClient, "conversations", agentKey); err != nil {
-			log.Printf("postdown: failed to clean conversations for %s: %v", agentKey, err)
-			failed = true
-		}
-
-		if !failed {
+		if cleanupAgentSessionState(ctx, azdClient, envName, svc.Name) {
 			fmt.Printf("Cleaned up saved session and conversation for agent %q\n", svc.Name)
 		}
 	}
 
+	// Delete the Azure Bot created for activity-protocol agents so its globally
+	// unique name is freed for future redeploys. Best-effort.
+	teardownActivityBots(ctx, azdClient, envName, args.Project)
+
 	return nil
 }
 
-func envUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {
+// cleanupAgentSessionState removes saved session and conversation IDs for a
+// single agent service. Returns true if cleanup succeeded, false otherwise.
+// Shared by postdownHandler and delete command.
+func cleanupAgentSessionState(ctx context.Context, azdClient *azdext.AzdClient, envName, serviceName string) bool {
+	serviceKey := toServiceKey(serviceName)
 
-	var foundryAgentConfig *project.ServiceTargetAgentConfig
+	endpointResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
+	})
+	if err != nil || endpointResp.Value == "" {
+		return false
+	}
 
-	if err := project.UnmarshalStruct(svc.Config, &foundryAgentConfig); err != nil {
+	agentKey := buildRemoteAgentKeyFromEndpoint(endpointResp.Value)
+
+	var failed bool
+	if err := deleteContextValue(ctx, azdClient, "sessions", agentKey); err != nil {
+		log.Printf("cleanupAgentSessionState: failed to clean sessions for %s: %v", agentKey, err)
+		failed = true
+	}
+	if err := deleteContextValue(ctx, azdClient, "conversations", agentKey); err != nil {
+		log.Printf("cleanupAgentSessionState: failed to clean conversations for %s: %v", agentKey, err)
+		failed = true
+	}
+
+	return !failed
+}
+
+func envUpdate(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azdProject *azdext.ProjectConfig,
+	svc *azdext.ServiceConfig,
+	deployments []project.Deployment,
+	connections []project.Connection,
+) error {
+
+	foundryAgentConfig, err := project.LoadServiceTargetAgentConfig(svc)
+	if err != nil {
 		return fmt.Errorf("failed to parse foundry agent config: %w", err)
 	}
 
@@ -383,28 +481,31 @@ func envUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azd
 		return err
 	}
 
-	if len(foundryAgentConfig.Deployments) > 0 {
-		if err := deploymentEnvUpdate(ctx, foundryAgentConfig.Deployments, azdClient, currentEnvResponse.Environment.Name); err != nil {
+	// Deployments and connections are sourced from the sibling
+	// azure.ai.project and azure.ai.connection services. Resources and tool
+	// connections stay on the agent service.
+	if len(deployments) > 0 {
+		if err := deploymentEnvUpdate(ctx, deployments, azdClient, currentEnvResponse.Environment.Name); err != nil {
 			return err
 		}
 	}
 
-	if len(foundryAgentConfig.Resources) > 0 {
+	if foundryAgentConfig != nil && len(foundryAgentConfig.Resources) > 0 {
 		if err := resourcesEnvUpdate(ctx, foundryAgentConfig.Resources, azdClient, currentEnvResponse.Environment.Name); err != nil {
 			return err
 		}
 	}
 
-	if len(foundryAgentConfig.Connections) > 0 {
+	if len(connections) > 0 {
 		if err := connectionsEnvUpdate(
-			ctx, foundryAgentConfig.Connections,
+			ctx, connections,
 			azdClient, currentEnvResponse.Environment.Name,
 		); err != nil {
 			return err
 		}
 	}
 
-	if len(foundryAgentConfig.ToolConnections) > 0 {
+	if foundryAgentConfig != nil && len(foundryAgentConfig.ToolConnections) > 0 {
 		if err := toolConnectionsEnvUpdate(
 			ctx, foundryAgentConfig.ToolConnections,
 			azdClient, currentEnvResponse.Environment.Name,
@@ -416,35 +517,45 @@ func envUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azd
 	return nil
 }
 
-func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig, envName string) error {
-	agentYamlPath, err := paths.JoinAllowRoot(project.Path, svc.RelativePath, "agent.yaml")
+// kindEnvUpdate inspects the service's on-disk agent.yaml (when present) and
+// stamps env vars that signal the agent kind -- today ENABLE_HOSTED_AGENTS=true
+// and ENABLE_CAPABILITY_HOST=false for `kind: hosted`; every other kind is a
+// no-op past the parse.
+//
+// Tolerates a missing agent.yaml: the bicepless flow lets users declare prompt
+// agents inline in azure.yaml, so a missing file short-circuits cleanly here.
+// Service-targets that truly need agent.yaml still surface the error where they
+// read its contents.
+func kindEnvUpdate(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azdProject *azdext.ProjectConfig,
+	svc *azdext.ServiceConfig,
+	envName string,
+) error {
+	// The agent definition is carried inline on the service entry (unified shape)
+	// or, for older projects, in a legacy agent.yaml on disk. A missing or
+	// unreadable definition is tolerated here: the bicepless inline path lets
+	// users declare prompt agents that carry no hosted definition, and service
+	// targets that truly need the definition surface the error where they read it.
+	_, isHosted, source, err := project.LoadAgentDefinition(svc, azdProject.Path)
 	if err != nil {
-		return fmt.Errorf("invalid service path: %w", err)
+		// Tolerate only a missing definition: the bicepless inline path lets users
+		// declare prompt agents that carry no hosted definition. Validation and
+		// path-traversal errors still propagate so a malformed or out-of-tree
+		// definition fails fast here.
+		if localErr, ok := errors.AsType[*azdext.LocalError](err); ok &&
+			localErr.Code == exterrors.CodeAgentDefinitionNotFound {
+			log.Printf("[debug] kindEnvUpdate: no agent definition for %s; skipping (inline-agents path)", svc.Name)
+			return nil
+		}
+		return err
+	}
+	if source.IsLegacy() {
+		project.WarnLegacyAgentShape(source)
 	}
 
-	//nolint:gosec // agentYamlPath is resolved from project/service paths in current workspace
-	data, err := os.ReadFile(agentYamlPath)
-	if err != nil {
-		return fmt.Errorf("failed to read YAML file: %w", err)
-	}
-
-	err = agent_yaml.ValidateAgentDefinition(data)
-	if err != nil {
-		return fmt.Errorf("agent.yaml is not valid: %w", err)
-	}
-
-	var genericTemplate map[string]any
-	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
-		return fmt.Errorf("YAML content is not valid: %w", err)
-	}
-
-	kind, ok := genericTemplate["kind"].(string)
-	if !ok {
-		return fmt.Errorf("kind field is not a valid string")
-	}
-
-	switch kind {
-	case string(agent_yaml.AgentKindHosted):
+	if isHosted {
 		if err := setEnvVar(ctx, azdClient, envName, "ENABLE_HOSTED_AGENTS", "true"); err != nil {
 			return err
 		}
@@ -592,50 +703,32 @@ func setEnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string,
 }
 
 func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient, svc *azdext.ServiceConfig) error {
-	var foundryAgentConfig *project.ServiceTargetAgentConfig
-	if err := project.UnmarshalStruct(svc.Config, &foundryAgentConfig); err != nil {
+	foundryAgentConfig, err := project.LoadServiceTargetAgentConfig(svc)
+	if err != nil {
 		return fmt.Errorf("failed to parse foundry agent config: %w", err)
 	}
 
-	// Initialize result with existing values
-	result := &project.ContainerSettings{}
-
-	// Check and populate base object
-	containerSettings := foundryAgentConfig.Container
-	if containerSettings == nil {
-		containerSettings = &project.ContainerSettings{}
-	}
-
-	// Check and populate Resources
-	if containerSettings.Resources == nil {
-		result.Resources = &project.ResourceSettings{}
-	} else {
-		result.Resources = &project.ResourceSettings{
-			Memory: containerSettings.Resources.Memory,
-			Cpu:    containerSettings.Resources.Cpu,
-		}
+	// Resolve the container resources, applying defaults when unset.
+	result := &project.ResourceSettings{}
+	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
+		result.Memory = foundryAgentConfig.Container.Resources.Memory
+		result.Cpu = foundryAgentConfig.Container.Resources.Cpu
 	}
 
 	// Set default values if zero or empty
-	if result.Resources.Memory == "" {
-		result.Resources.Memory = project.DefaultMemory
+	if result.Memory == "" {
+		result.Memory = project.DefaultMemory
 	}
 
-	if result.Resources.Cpu == "" {
-		result.Resources.Cpu = project.DefaultCpu
+	if result.Cpu == "" {
+		result.Cpu = project.DefaultCpu
 	}
 
-	// Update the container settings in the existing config
-	foundryAgentConfig.Container = result
-
-	// Marshal the complete updated agent config back to the service config
-	var agentConfigStruct *structpb.Struct
-	var err error
-	if agentConfigStruct, err = project.MarshalStruct(foundryAgentConfig); err != nil {
-		return fmt.Errorf("failed to marshal agent config: %w", err)
+	// Persist the resolved container settings back onto the service's inline
+	// properties, preserving the agent definition and other config keys.
+	if err := project.SetAgentContainerSettings(svc, &project.ContainerSettings{Resources: result}); err != nil {
+		return fmt.Errorf("failed to update agent container settings: %w", err)
 	}
-
-	svc.Config = agentConfigStruct
 
 	// Need to add the service config back to the project for use further down the pipeline
 	req := &azdext.AddServiceRequest{Service: svc}
@@ -645,172 +738,6 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 	}
 
 	return nil
-}
-
-// provisionToolboxes creates or updates Foundry Toolsets for each toolbox
-// in the service config. Called during post-provision after the project
-// endpoint has been created by Bicep.
-func provisionToolboxes(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	svc *azdext.ServiceConfig,
-) error {
-	var config *project.ServiceTargetAgentConfig
-	if err := project.UnmarshalStruct(svc.Config, &config); err != nil {
-		return fmt.Errorf("failed to parse service config: %w", err)
-	}
-
-	if config == nil || len(config.Toolboxes) == 0 {
-		return nil
-	}
-
-	currentEnv, err := azdClient.Environment().GetCurrent(
-		ctx, &azdext.EmptyRequest{},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to get current environment: %w", err)
-	}
-
-	envValue, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: currentEnv.Environment.Name,
-		Key:     "FOUNDRY_PROJECT_ENDPOINT",
-	})
-	if err != nil || envValue.Value == "" {
-		return exterrors.Dependency(
-			exterrors.CodeMissingAiProjectEndpoint,
-			"FOUNDRY_PROJECT_ENDPOINT is required for toolbox provisioning",
-			"run 'azd provision' to create the AI project first",
-		)
-	}
-	projectEndpoint := envValue.Value
-
-	envValue, err = azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: currentEnv.Environment.Name,
-		Key:     "AZURE_TENANT_ID",
-	})
-	if err != nil || envValue.Value == "" {
-		return exterrors.Dependency(
-			exterrors.CodeMissingAzureTenantId,
-			"AZURE_TENANT_ID is required for toolbox provisioning",
-			"run 'azd auth login' to authenticate",
-		)
-	}
-	tenantId := envValue.Value
-
-	cred, err := azidentity.NewAzureDeveloperCLICredential(
-		&azidentity.AzureDeveloperCLICredentialOptions{
-			TenantID:                   tenantId,
-			AdditionallyAllowedTenants: []string{"*"},
-		},
-	)
-	if err != nil {
-		return exterrors.Auth(
-			exterrors.CodeCredentialCreationFailed,
-			fmt.Sprintf("failed to create credential: %s", err),
-			"run 'azd auth login' to authenticate",
-		)
-	}
-
-	toolboxClient := azure.NewFoundryToolboxClient(
-		projectEndpoint, cred,
-	)
-
-	// Build azd env lookup for resolving ${VAR} references in tool entries
-	azdEnv, err := getAllEnvVars(ctx, azdClient, currentEnv.Environment.Name)
-	if err != nil {
-		return fmt.Errorf("failed to load environment variables: %w", err)
-	}
-
-	// Build connection ID lookup from bicep outputs (name → ARM resource ID)
-	connIDMap, err := parseConnectionIDs(azdEnv["AI_PROJECT_CONNECTION_IDS_JSON"])
-	if err != nil {
-		return fmt.Errorf("loading connection IDs: %w", err)
-	}
-
-	// Build connection lookup for enriching tool entries with server_url/server_label
-	connByName := toolboxConnectionsByName(config)
-
-	for _, toolbox := range config.Toolboxes {
-		fmt.Fprintf(
-			os.Stderr, "Provisioning toolbox: %s\n", toolbox.Name,
-		)
-
-		// Resolve ${VAR} references in tool map values before sending to API
-		resolveToolboxEnvVars(&toolbox, azdEnv)
-
-		// Fill in server_url/server_label from connection data
-		enrichToolboxFromConnections(&toolbox, connByName)
-
-		// Replace project_connection_id friendly names with ARM resource IDs
-		resolveToolboxConnectionIDs(&toolbox, connIDMap)
-
-		version, err := createToolboxVersion(
-			ctx, toolboxClient, toolbox,
-		)
-		if err != nil {
-			return err
-		}
-
-		if err := registerToolboxEnvVars(
-			ctx, azdClient,
-			currentEnv.Environment.Name,
-			projectEndpoint, toolbox.Name, version,
-		); err != nil {
-			return err
-		}
-
-		fmt.Fprintf(
-			os.Stderr, "Toolbox '%s' provisioned\n", toolbox.Name,
-		)
-	}
-
-	return nil
-}
-
-// createToolboxVersion creates a new version of a toolbox.
-// If the toolbox does not exist, it will be created automatically.
-// Returns the version identifier of the newly created version.
-func createToolboxVersion(
-	ctx context.Context,
-	client *azure.FoundryToolboxClient,
-	toolbox project.Toolbox,
-) (string, error) {
-	req := &azure.CreateToolboxVersionRequest{
-		Description: toolbox.Description,
-		Tools:       toolbox.Tools,
-	}
-
-	result, err := client.CreateToolboxVersion(ctx, toolbox.Name, req)
-	if err != nil {
-		return "", exterrors.Internal(
-			exterrors.CodeCreateToolboxVersionFailed,
-			fmt.Sprintf("failed to create toolbox version '%s': %s", toolbox.Name, err),
-		)
-	}
-
-	return result.Version, nil
-}
-
-// registerToolboxEnvVars sets TOOLBOX_{NAME}_MCP_ENDPOINT with the versioned URL.
-func registerToolboxEnvVars(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	envName string,
-	projectEndpoint string,
-	toolboxName string,
-	toolboxVersion string,
-) error {
-	envKey := envkey.ToolboxMCPEndpoint(toolboxName)
-
-	endpoint := strings.TrimRight(projectEndpoint, "/")
-	mcpEndpoint := fmt.Sprintf(
-		"%s/toolboxes/%s/versions/%s/mcp?api-version=v1",
-		endpoint, url.PathEscape(toolboxName), url.PathEscape(toolboxVersion),
-	)
-
-	return setEnvVar(
-		ctx, azdClient, envName, envKey, mcpEndpoint,
-	)
 }
 
 // resolveToolboxEnvVars resolves ${VAR} references in toolbox name, description,
@@ -924,9 +851,10 @@ func resolveTemplateRef(s string) string {
 	return s
 }
 
-// resolveEnvValue resolves ${VAR} references in a string using envsubst.
+// resolveEnvValue resolves ${VAR} references in a string against the azd environment while
+// leaving Foundry server-side ${{...}} expressions untouched. See [project.ExpandEnv].
 func resolveEnvValue(value string, azdEnv map[string]string) string {
-	resolved, err := envsubst.Eval(value, func(varName string) string {
+	resolved, err := project.ExpandEnv(value, func(varName string) string {
 		return azdEnv[varName]
 	})
 	if err != nil {

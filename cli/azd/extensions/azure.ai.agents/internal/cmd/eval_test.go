@@ -48,10 +48,12 @@ func TestNewEvalCommand_HasExpectedSubcommands(t *testing.T) {
 		names = append(names, sub.Name())
 	}
 
-	assert.Contains(t, names, "init")
+	assert.Contains(t, names, "generate")
 	assert.Contains(t, names, "run")
 	assert.Contains(t, names, "list")
 	assert.Contains(t, names, "show")
+	// "init" remains registered as a hidden deprecated alias for "generate".
+	assert.Contains(t, names, "init")
 }
 
 func TestNewEvalCommand_UseString(t *testing.T) {
@@ -151,50 +153,7 @@ func TestResolveRelPath(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// detectEvalAgentKind
-// ---------------------------------------------------------------------------
-
-func TestDetectEvalAgentKind(t *testing.T) {
-	t.Parallel()
-
-	t.Run("detects hosted kind from agent.yaml", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		writeTestFile(t, dir, "agent.yaml", "kind: hosted\nname: test-agent\n")
-		kind, path := detectEvalAgentKind(dir)
-		assert.Equal(t, agent_yaml.AgentKindHosted, kind)
-		assert.Equal(t, filepath.Join(dir, "agent.yaml"), path)
-	})
-
-	t.Run("returns empty for missing manifest", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		kind, path := detectEvalAgentKind(dir)
-		assert.Empty(t, kind)
-		assert.Empty(t, path)
-	})
-
-	t.Run("returns empty for invalid kind", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		writeTestFile(t, dir, "agent.yaml", "kind: invalid_kind_xyz\nname: test-agent\n")
-		kind, path := detectEvalAgentKind(dir)
-		assert.Empty(t, kind)
-		assert.Empty(t, path)
-	})
-
-	t.Run("returns empty for malformed YAML", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		writeTestFile(t, dir, "agent.yaml", "{{invalid yaml}}")
-		kind, path := detectEvalAgentKind(dir)
-		assert.Empty(t, kind)
-		assert.Empty(t, path)
-	})
-}
-
-// ---------------------------------------------------------------------------
-// EvalState — stored in azd environment (integration-tested via eval init/run)
+// EvalState — stored in azd environment (integration-tested via eval generate/run)
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -206,7 +165,7 @@ func TestWriteEvalReviewArtifacts(t *testing.T) {
 	dir := t.TempDir()
 
 	cfg := &evalConfig{}
-	cfg.DatasetReference = &evalDatasetRef{Name: "test-data", Version: "v1"}
+	cfg.Dataset = &evalDatasetRef{Name: "test-data", Version: "v1"}
 	cfg.Evaluators = opt_eval.EvaluatorList{{Name: "quality"}}
 
 	err := eval_api.WriteEvalReviewArtifacts(dir, cfg)
@@ -391,16 +350,6 @@ func TestEvalAgentContextError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// relPathForYaml
-// ---------------------------------------------------------------------------
-
-func TestRelPathForYaml(t *testing.T) {
-	t.Parallel()
-
-	result := relPathForYaml("/project", filepath.Join("/project", "src", "agent.yaml"))
-	assert.Equal(t, "src/agent.yaml", result)
-}
-
 // ---------------------------------------------------------------------------
 // eval_api.WriteEvalConfig / eval_api.LoadEvalConfig round-trip
 // ---------------------------------------------------------------------------
@@ -418,8 +367,8 @@ func TestEvalConfigRoundTrip(t *testing.T) {
 				Kind:    agent_yaml.AgentKindHosted,
 				Version: "v1",
 			},
-			DatasetReference: &evalDatasetRef{Name: "ds", Version: "v1"},
-			Evaluators:       opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			Dataset:    &evalDatasetRef{Name: "ds", Version: "v1"},
+			Evaluators: opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
 		},
 		Options: &opt_eval.Options{
 			EvalModel: "gpt-4o",
@@ -439,8 +388,8 @@ func TestEvalConfigRoundTrip(t *testing.T) {
 	assert.Equal(t, original.Agent.Version, loaded.Agent.Version)
 	assert.Equal(t, "gpt-4o", loaded.Options.EvalModel)
 	assert.Equal(t, original.MaxSamples, loaded.MaxSamples)
-	require.NotNil(t, loaded.DatasetReference)
-	assert.Equal(t, "ds", loaded.DatasetReference.Name)
+	require.NotNil(t, loaded.Dataset)
+	assert.Equal(t, "ds", loaded.Dataset.Name)
 	require.Len(t, loaded.Evaluators, 1)
 	assert.Equal(t, "builtin.task_adherence", loaded.Evaluators[0].Name)
 }

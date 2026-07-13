@@ -14,7 +14,7 @@ import (
 )
 
 func newListenCommand() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "listen",
 		Short: "Starts the extension and listens for events.",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -37,6 +37,27 @@ func newListenCommand() *cobra.Command {
 				}).
 				WithProvisioningProvider("demo", func() azdext.ProvisioningProvider {
 					return project.NewDemoProvisioningProvider(azdClient)
+				}).
+				WithValidationCheck(azdext.ValidationCheckRegistration{
+					// Bicep-only check: runs during BicepProvider preflight and
+					// receives the Bicep snapshot / ARM template context. It is
+					// skipped gracefully when no snapshot is available (e.g. a
+					// non-Bicep provider), but is not dead code for Bicep.
+					CheckType: azdext.ValidationCheckTypeLocalPreflight,
+					RuleID:    "demo_warning",
+					Factory: func() azdext.ValidationCheckProvider {
+						return project.NewDemoValidationCheck()
+					},
+				}).
+				WithValidationCheck(azdext.ValidationCheckRegistration{
+					// Provider-agnostic check: runs before provisioning for every
+					// provider (Bicep, Terraform, and extension providers such as
+					// this demo provider). Receives the lean provision context.
+					CheckType: azdext.ValidationCheckTypeProvision,
+					RuleID:    "demo_provision_warning",
+					Factory: func() azdext.ValidationCheckProvider {
+						return project.NewDemoProvisionValidationCheck()
+					},
 				}).
 				WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 					for i := 1; i <= 20; i++ {
@@ -88,4 +109,6 @@ func newListenCommand() *cobra.Command {
 			return nil
 		},
 	}
+
+	return cmd
 }

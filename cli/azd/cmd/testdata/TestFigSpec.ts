@@ -220,15 +220,50 @@ const completionSpec: Fig.Spec = {
 			subcommands: [
 				{
 					name: ['agent'],
-					description: 'Ship agents with Microsoft Foundry from your terminal. (Preview)',
+					description: 'Ship agents with Microsoft Foundry from your terminal. (Beta)',
 					subcommands: [
 						{
-							name: ['doctor'],
-							description: 'Diagnose problems with an azd ai agent project.',
+							name: ['code'],
+							description: 'Manage agent source code. (Preview)',
+							subcommands: [
+								{
+									name: ['download'],
+									description: 'Download agent source code from Foundry. (Preview)',
+									options: [
+										{
+											name: ['--dest', '-d'],
+											description: 'Destination path (default: ./<agent-name>/ or ./<agent-name>.zip)',
+											args: [
+												{
+													name: 'dest',
+												},
+											],
+										},
+										{
+											name: ['--version', '-v'],
+											description: 'Agent version to download (default: latest)',
+											args: [
+												{
+													name: 'version',
+												},
+											],
+										},
+										{
+											name: ['--zip'],
+											description: 'Save as zip file instead of extracting',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['delete'],
+							description: 'Delete a hosted agent.',
 							options: [
 								{
-									name: ['--local-only'],
-									description: 'Skip remote (network-dependent) checks. Useful when offline, behind a proxy, or for a fast local triage.',
+									name: ['--force'],
+									description: 'Force deletion even if the agent has active sessions',
+									isDangerous: true,
 								},
 								{
 									name: ['--output', '-o'],
@@ -236,8 +271,28 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'output',
+											suggestions: ['json', 'none'],
 										},
 									],
+								},
+								{
+									name: ['--version'],
+									description: 'Delete a specific version only (the agent itself remains)',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['doctor'],
+							description: 'Diagnose problems with an azd ai agent project.',
+							options: [
+								{
+									name: ['--local-only'],
+									description: 'Skip remote (network-dependent) checks. Useful when offline, behind a proxy, or for a fast local triage.',
 								},
 								{
 									name: ['--unredacted'],
@@ -250,8 +305,8 @@ const completionSpec: Fig.Spec = {
 							description: 'Manage agent endpoint and card configuration.',
 							subcommands: [
 								{
-									name: ['update'],
-									description: 'Update an agent\'s endpoint and card configuration without deploying a new version.',
+									name: ['show'],
+									description: 'Show the current endpoint and card configuration of an agent.',
 									options: [
 										{
 											name: ['--output', '-o'],
@@ -259,19 +314,20 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'output',
+													suggestions: ['json', 'table'],
 												},
 											],
 										},
 									],
 								},
-							],
-							options: [
 								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
+									name: ['update'],
+									description: 'Update an agent\'s endpoint and card configuration without deploying a new version.',
+									options: [
 										{
-											name: 'output',
+											name: ['--force'],
+											description: 'Skip confirmation prompts for breaking changes',
+											isDangerous: true,
 										},
 									],
 								},
@@ -282,12 +338,12 @@ const completionSpec: Fig.Spec = {
 							description: 'Create and run quick evals for an agent.',
 							subcommands: [
 								{
-									name: ['init'],
+									name: ['generate'],
 									description: 'Generate a local eval suite for a deployed agent.',
 									options: [
 										{
 											name: ['--agent'],
-											description: 'Target agent name',
+											description: 'Agent service name from azure.yaml, or Foundry agent name outside a project',
 											args: [
 												{
 													name: 'agent',
@@ -372,15 +428,6 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
-												},
-											],
-										},
-										{
 											name: ['--project-endpoint', '-p'],
 											description: 'Microsoft Foundry project endpoint URL',
 											args: [
@@ -417,15 +464,6 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
-												},
-											],
-										},
 									],
 								},
 								{
@@ -453,15 +491,6 @@ const completionSpec: Fig.Spec = {
 										{
 											name: ['--no-wait'],
 											description: 'Start the run and return immediately without waiting for results',
-										},
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
-												},
-											],
 										},
 									],
 								},
@@ -496,15 +525,6 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
-												},
-											],
-										},
 									],
 								},
 								{
@@ -528,26 +548,6 @@ const completionSpec: Fig.Spec = {
 											name: ['--evaluator-only'],
 											description: 'Only update evaluators',
 										},
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
-												},
-											],
-										},
-									],
-								},
-							],
-							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-										},
 									],
 								},
 							],
@@ -570,29 +570,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'chat-isolation-key',
-												},
-											],
-										},
-										{
 											name: ['--file', '-f'],
 											description: 'Remote file or directory path to delete',
 											args: [
 												{
 													name: 'file',
-												},
-											],
-										},
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
 												},
 											],
 										},
@@ -610,11 +592,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
 												},
 											],
 										},
@@ -634,29 +616,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'chat-isolation-key',
-												},
-											],
-										},
-										{
 											name: ['--file', '-f'],
 											description: 'Remote file path to download',
 											args: [
 												{
 													name: 'file',
-												},
-											],
-										},
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
 												},
 											],
 										},
@@ -679,11 +643,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
 												},
 											],
 										},
@@ -703,15 +667,6 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'chat-isolation-key',
-												},
-											],
-										},
-										{
 											name: ['--output', '-o'],
 											description: 'The output format',
 											args: [
@@ -731,11 +686,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
 												},
 											],
 										},
@@ -755,29 +710,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'chat-isolation-key',
-												},
-											],
-										},
-										{
 											name: ['--dir', '-d'],
 											description: 'Remote directory path to create',
 											args: [
 												{
 													name: 'dir',
-												},
-											],
-										},
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
 												},
 											],
 										},
@@ -791,11 +728,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
 												},
 											],
 										},
@@ -811,15 +748,6 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
-												},
-											],
-										},
-										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -843,11 +771,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
 												},
 											],
 										},
@@ -867,29 +795,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'chat-isolation-key',
-												},
-											],
-										},
-										{
 											name: ['--file', '-f'],
 											description: 'Local file path to upload',
 											args: [
 												{
 													name: 'file',
-												},
-											],
-										},
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
 												},
 											],
 										},
@@ -912,24 +822,13 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
 												},
 											],
-										},
-									],
-								},
-							],
-							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
 										},
 									],
 								},
@@ -959,7 +858,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--deploy-mode'],
-									description: 'Deployment mode: \'container\' (Docker image) or \'code\' (ZIP upload). Defaults to \'container\' in --no-prompt.',
+									description: 'Deployment mode: \'container\' (Docker image) or \'code\' (ZIP upload). Defaults to \'code\' for Python/.NET projects in --no-prompt.',
 									args: [
 										{
 											name: 'deploy-mode',
@@ -981,8 +880,26 @@ const completionSpec: Fig.Spec = {
 									isDangerous: true,
 								},
 								{
+									name: ['--image'],
+									description: 'Pre-built container image URL (e.g., \'myacr.azurecr.io/agent:v1\'). When set without --manifest, skips template/language selection, code scaffolding, Dockerfile generation, and ACR setup, and requires --agent-name. Incompatible with --deploy-mode code.',
+									args: [
+										{
+											name: 'image',
+										},
+									],
+								},
+								{
+									name: ['--infra'],
+									description: 'Eject infrastructure-as-code from azure.yaml into ./infra/. A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets infra.provider: terraform; --infra=bicep is explicit Bicep. When azure.yaml already exists, runs as a standalone eject and skips the init prompts.',
+									args: [
+										{
+											name: 'infra',
+										},
+									],
+								},
+								{
 									name: ['--manifest', '-m'],
-									description: 'Path or URI to an agent manifest to add to your azd project',
+									description: 'Path or URI to an agent manifest, or to a sample\'s unified azure.yaml to adopt as the project manifest',
 									args: [
 										{
 											name: 'manifest',
@@ -1004,15 +921,6 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'model-deployment',
-										},
-									],
-								},
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
 										},
 									],
 								},
@@ -1069,11 +977,21 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
-									name: ['--chat-isolation-key'],
-									description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+									name: ['--call-id'],
+									description: 'Call ID header value (sent as x-agent-foundry-call-id for local invocations only; ignored for remote requests)',
 									args: [
 										{
-											name: 'chat-isolation-key',
+											name: 'call-id',
+										},
+									],
+								},
+								{
+									name: ['--client-header'],
+									description: 'Custom x-client-* request header in "Name: Value" format (repeatable). The responses and invocations protocols forward the x-client-* header family to the agent; other header names are rejected and the flag is not supported with a2a.',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'client-header',
 										},
 									],
 								},
@@ -1128,7 +1046,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--protocol', '-p'],
-									description: 'Protocol to use: responses (default) or invocations',
+									description: 'Protocol to use: responses (default), invocations, or a2a (a2a is remote-only)',
 									args: [
 										{
 											name: 'protocol',
@@ -1154,11 +1072,11 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
-									name: ['--user-isolation-key'],
-									description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+									name: ['--user-identity'],
+									description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 									args: [
 										{
-											name: 'user-isolation-key',
+											name: 'user-identity',
 										},
 									],
 								},
@@ -1178,26 +1096,8 @@ const completionSpec: Fig.Spec = {
 							description: 'Monitor logs from a hosted agent.',
 							options: [
 								{
-									name: ['--chat-isolation-key'],
-									description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-									args: [
-										{
-											name: 'chat-isolation-key',
-										},
-									],
-								},
-								{
 									name: ['--follow', '-f'],
 									description: 'Stream logs in real-time',
-								},
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-										},
-									],
 								},
 								{
 									name: ['--raw'],
@@ -1231,11 +1131,11 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
-									name: ['--user-isolation-key'],
-									description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+									name: ['--user-identity'],
+									description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 									args: [
 										{
-											name: 'user-isolation-key',
+											name: 'user-identity',
 										},
 									],
 								},
@@ -1255,7 +1155,7 @@ const completionSpec: Fig.Spec = {
 									options: [
 										{
 											name: ['--agent'],
-											description: 'Agent service name (auto-detected from azure.yaml)',
+											description: 'Agent service name from azure.yaml (auto-detected if only one exists)',
 											args: [
 												{
 													name: 'agent',
@@ -1277,15 +1177,6 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'endpoint',
-												},
-											],
-										},
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
 												},
 											],
 										},
@@ -1314,15 +1205,6 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
-												},
-											],
-										},
-										{
 											name: ['--project-endpoint', '-p'],
 											description: 'Foundry project endpoint URL',
 											args: [
@@ -1339,7 +1221,7 @@ const completionSpec: Fig.Spec = {
 									options: [
 										{
 											name: ['--agent'],
-											description: 'Agent name to deploy to (auto-detected from agent.yaml)',
+											description: 'Agent service name from azure.yaml, or Foundry agent name outside a project',
 											args: [
 												{
 													name: 'agent',
@@ -1361,15 +1243,6 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'endpoint',
-												},
-											],
-										},
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
 												},
 											],
 										},
@@ -1403,15 +1276,6 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'limit',
-												},
-											],
-										},
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
 												},
 											],
 										},
@@ -1454,6 +1318,7 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'output',
+													suggestions: ['json', 'table'],
 												},
 											],
 										},
@@ -1485,7 +1350,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--agent', '-a'],
-									description: 'Agent name (auto-detected from azd project if omitted)',
+									description: 'Agent service name from azure.yaml, or Foundry agent name outside a project',
 									args: [
 										{
 											name: 'agent',
@@ -1529,11 +1394,21 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
-									name: ['--max-iterations'],
-									description: 'Maximum number of optimization iterations (must be >= 1; default: 5)',
+									name: ['--evaluator'],
+									description: 'Built-in or custom evaluator name (repeatable; required when not set in config)',
+									isRepeatable: true,
 									args: [
 										{
-											name: 'max-iterations',
+											name: 'evaluator',
+										},
+									],
+								},
+								{
+									name: ['--max-candidates'],
+									description: 'Maximum number of optimization candidates to generate (must be >= 1; default: 5)',
+									args: [
+										{
+											name: 'max-candidates',
 										},
 									],
 								},
@@ -1543,19 +1418,10 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--optimize-model'],
-									description: 'Model for optimization reasoning (gpt-5 family recommended; falls back to eval model when not set)',
+									description: 'Model for optimization reasoning (gpt-5 family recommended; required)',
 									args: [
 										{
 											name: 'optimize-model',
-										},
-									],
-								},
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
 										},
 									],
 								},
@@ -1584,17 +1450,17 @@ const completionSpec: Fig.Spec = {
 							description: 'Run your agent locally for development.',
 							options: [
 								{
-									name: ['--no-inspector'],
-									description: 'Do not open Agent Inspector',
-								},
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
+									name: ['--channel'],
+									description: 'Channel for the Microsoft 365 Agents Playground (activity-protocol agents only)',
 									args: [
 										{
-											name: 'output',
+											name: 'channel',
 										},
 									],
+								},
+								{
+									name: ['--no-client'],
+									description: 'Do not open the local client (Agent Inspector or Playground)',
 								},
 								{
 									name: ['--port', '-p'],
@@ -1649,23 +1515,12 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--type'],
-											description: 'Filter by template type. Supported values: agent, azd.',
+											description: 'Filter by template type. Supported values: agent, azd, azure.yaml.',
 											args: [
 												{
 													name: 'type',
 												},
 											],
-										},
-									],
-								},
-							],
-							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
 										},
 									],
 								},
@@ -1689,24 +1544,6 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'chat-isolation-key',
-												},
-											],
-										},
-										{
-											name: ['--isolation-key'],
-											description: 'Session ownership isolation key header value (x-session-isolation-key; derived from Entra token by default)',
-											args: [
-												{
-													name: 'isolation-key',
-												},
-											],
-										},
-										{
 											name: ['--output', '-o'],
 											description: 'The output format',
 											args: [
@@ -1726,11 +1563,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
 												},
 											],
 										},
@@ -1759,38 +1596,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'chat-isolation-key',
-												},
-											],
-										},
-										{
-											name: ['--isolation-key'],
-											description: 'Session ownership isolation key header value (x-session-isolation-key; derived from Entra token by default)',
-											args: [
-												{
-													name: 'isolation-key',
-												},
-											],
-										},
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
-												},
-											],
-										},
-										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
 												},
 											],
 										},
@@ -1806,15 +1616,6 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
-												},
-											],
-										},
-										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -1847,11 +1648,11 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
 												},
 											],
 										},
@@ -1871,15 +1672,6 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--chat-isolation-key'],
-											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
-											args: [
-												{
-													name: 'chat-isolation-key',
-												},
-											],
-										},
-										{
 											name: ['--output', '-o'],
 											description: 'The output format',
 											args: [
@@ -1890,24 +1682,37 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--user-isolation-key'],
-											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
 											args: [
 												{
-													name: 'user-isolation-key',
+													name: 'user-identity',
 												},
 											],
 										},
 									],
 								},
-							],
-							options: [
 								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
+									name: ['stop'],
+									description: 'Stop a running session.',
+									options: [
 										{
-											name: 'output',
+											name: ['--agent-name', '-n'],
+											description: 'Agent name (matches azure.yaml service name; auto-detected when only one exists)',
+											args: [
+												{
+													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
+											args: [
+												{
+													name: 'user-identity',
+												},
+											],
 										},
 									],
 								},
@@ -1932,37 +1737,17 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['version'],
 							description: 'Prints the version of the application',
-							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-										},
-									],
-								},
-							],
 						},
 					],
 				},
 				{
 					name: ['connection'],
-					description: 'Manage Microsoft Foundry Connections from your terminal. (Preview)',
+					description: 'Manage Microsoft Foundry Connections from your terminal. (Beta)',
 					subcommands: [
 						{
 							name: ['context'],
 							description: 'Get the context of the azd project & environment.',
 							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-										},
-									],
-								},
 								{
 									name: ['--project-endpoint', '-p'],
 									description: 'Foundry project endpoint URL (overrides env var and config)',
@@ -2076,15 +1861,6 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-										},
-									],
-								},
-								{
 									name: ['--project-endpoint', '-p'],
 									description: 'Foundry project endpoint URL (overrides env var and config)',
 									args: [
@@ -2140,15 +1916,6 @@ const completionSpec: Fig.Spec = {
 									name: ['--force'],
 									description: 'Skip confirmation prompt',
 									isDangerous: true,
-								},
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-										},
-									],
 								},
 								{
 									name: ['--project-endpoint', '-p'],
@@ -2226,7 +1993,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['update'],
-							description: 'Update a connection\'s target or credentials.',
+							description: 'Update a connection\'s target, credentials, or metadata.',
 							options: [
 								{
 									name: ['--custom-key'],
@@ -2248,11 +2015,12 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
-									name: ['--output', '-o'],
-									description: 'The output format',
+									name: ['--metadata'],
+									description: 'Set metadata key=value (repeatable, merged with existing metadata)',
+									isRepeatable: true,
 									args: [
 										{
-											name: 'output',
+											name: 'metadata',
 										},
 									],
 								},
@@ -2286,6 +2054,7 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'output',
+											suggestions: ['json'],
 										},
 									],
 								},
@@ -2761,7 +2530,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['inspector'],
-					description: 'Browser-based inspector UI for locally running Foundry agents. (Preview)',
+					description: 'Browser-based inspector UI for locally running Foundry agents. (Beta)',
 					subcommands: [
 						{
 							name: ['launch'],
@@ -2782,15 +2551,6 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'inspector-port',
-										},
-									],
-								},
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
 										},
 									],
 								},
@@ -2817,17 +2577,6 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['version'],
 							description: 'Display the extension version',
-							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-										},
-									],
-								},
-							],
 						},
 					],
 				},
@@ -3632,22 +3381,11 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['project'],
-					description: 'Manage Microsoft Foundry Project resources from your terminal. (Preview)',
+					description: 'Manage Microsoft Foundry Project resources from your terminal. (Beta)',
 					subcommands: [
 						{
 							name: ['context'],
 							description: 'Get the context of the azd project & environment.',
-							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-										},
-									],
-								},
-							],
 						},
 						{
 							name: ['set'],
@@ -3700,43 +3438,32 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['version'],
 							description: 'Display the extension version',
-							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-										},
-									],
-								},
-							],
 						},
 					],
 				},
 				{
 					name: ['routine'],
-					description: 'Manage Microsoft Foundry Routines from your terminal. (Preview)',
+					description: 'Manage Microsoft Foundry Routines from your terminal. (Beta)',
 					subcommands: [
 						{
 							name: ['context'],
 							description: 'Get the context of the azd project & environment.',
 							options: [
 								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-										},
-									],
-								},
-								{
 									name: ['--project-endpoint', '-p'],
 									description: 'Foundry project endpoint URL (overrides env var and config)',
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
 										},
 									],
 								},
@@ -3928,6 +3655,15 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
+								{
 									name: ['--trigger'],
 									description: 'Trigger type: timer, recurring, github-issue, or custom (required unless --file is used)',
 									args: [
@@ -3966,6 +3702,15 @@ const completionSpec: Fig.Spec = {
 										},
 									],
 								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
 							],
 						},
 						{
@@ -3988,6 +3733,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
 										},
 									],
 								},
@@ -4029,6 +3783,15 @@ const completionSpec: Fig.Spec = {
 										},
 									],
 								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
 							],
 						},
 						{
@@ -4054,6 +3817,15 @@ const completionSpec: Fig.Spec = {
 										},
 									],
 								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
 							],
 						},
 						{
@@ -4076,6 +3848,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
 										},
 									],
 								},
@@ -4118,6 +3899,15 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--timeout'],
+											description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+											args: [
+												{
+													name: 'timeout',
+												},
+											],
+										},
+										{
 											name: ['--top'],
 											description: 'Maximum total number of runs to return (0 = no cap)',
 											args: [
@@ -4131,20 +3921,20 @@ const completionSpec: Fig.Spec = {
 							],
 							options: [
 								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-										},
-									],
-								},
-								{
 									name: ['--project-endpoint', '-p'],
 									description: 'Foundry project endpoint URL (overrides env var and config)',
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
 										},
 									],
 								},
@@ -4170,6 +3960,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
 										},
 									],
 								},
@@ -4342,6 +4141,15 @@ const completionSpec: Fig.Spec = {
 										},
 									],
 								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
 							],
 						},
 						{
@@ -4354,6 +4162,7 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'output',
+											suggestions: ['json'],
 										},
 									],
 								},
@@ -4366,27 +4175,27 @@ const completionSpec: Fig.Spec = {
 										},
 									],
 								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
 							],
 						},
 					],
 				},
 				{
 					name: ['skill'],
-					description: 'Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Preview)',
+					description: 'Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Beta)',
 					subcommands: [
 						{
 							name: ['context'],
 							description: 'Get the context of the azd project & environment.',
 							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-										},
-									],
-								},
 								{
 									name: ['--project-endpoint', '-p'],
 									description: 'Foundry project endpoint URL (overrides env vars and global config)',
@@ -4602,7 +4411,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--file'],
-									description: 'Path to a SKILL.md file whose values become the next version\'s inline content',
+									description: 'Path to a SKILL.md file, a .zip archive, or a directory whose contents become the next version. Archives and directories must contain a SKILL.md at the root.',
 									args: [
 										{
 											name: 'file',
@@ -4653,15 +4462,6 @@ const completionSpec: Fig.Spec = {
 							description: 'Print the extension version.',
 							options: [
 								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-										},
-									],
-								},
-								{
 									name: ['--project-endpoint', '-p'],
 									description: 'Foundry project endpoint URL (overrides env vars and global config)',
 									args: [
@@ -4676,7 +4476,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['toolbox'],
-					description: 'Manage Microsoft Foundry Toolboxes from your terminal. (Preview)',
+					description: 'Manage Microsoft Foundry Toolboxes from your terminal. (Beta)',
 					subcommands: [
 						{
 							name: ['connection'],
@@ -4791,15 +4591,6 @@ const completionSpec: Fig.Spec = {
 								},
 							],
 							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-										},
-									],
-								},
 								{
 									name: ['--project-endpoint'],
 									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
@@ -5064,15 +4855,6 @@ const completionSpec: Fig.Spec = {
 							],
 							options: [
 								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-										},
-									],
-								},
-								{
 									name: ['--project-endpoint'],
 									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
 									args: [
@@ -5093,6 +4875,7 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'output',
+											suggestions: ['json'],
 										},
 									],
 								},
@@ -5138,15 +4921,6 @@ const completionSpec: Fig.Spec = {
 								},
 							],
 							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-										},
-									],
-								},
 								{
 									name: ['--project-endpoint'],
 									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
@@ -5365,6 +5139,12 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['fig'],
 					description: 'Generate Fig autocomplete spec.',
+					options: [
+						{
+							name: ['--include-help-subcommands'],
+							description: 'Include subcommands under the help command in the Fig spec',
+						},
+					],
 				},
 				{
 					name: ['fish'],
@@ -5441,6 +5221,20 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['show'],
 					description: 'Show all the configuration values.',
+				},
+				{
+					name: ['sub-filter'],
+					description: 'Manage subscription filters for tenant-scoped subscription prompts.',
+					subcommands: [
+						{
+							name: ['remove'],
+							description: 'Remove a saved subscription filter for a tenant.',
+						},
+						{
+							name: ['set'],
+							description: 'Set a subscription filter for a tenant.',
+						},
+					],
 				},
 				{
 					name: ['unset'],
@@ -5965,8 +5759,12 @@ const completionSpec: Fig.Spec = {
 							isDangerous: true,
 						},
 						{
+							name: ['--no-dependencies'],
+							description: 'Install only the specified extension(s) without installing their declared dependencies',
+						},
+						{
 							name: ['--source', '-s'],
-							description: 'The extension source to use for installs',
+							description: 'The extension source to use for installs. Accepts a registered source name or a registry location (URL or file path) to register and install from.',
 							args: [
 								{
 									name: 'source',
@@ -5984,8 +5782,9 @@ const completionSpec: Fig.Spec = {
 						},
 					],
 					args: {
-						name: 'extension-id',
+						name: 'extension-id|extension-bundle.zip',
 						generators: azdGenerators.listExtensions,
+						template: 'filepaths',
 					},
 				},
 				{
@@ -5997,8 +5796,8 @@ const completionSpec: Fig.Spec = {
 							description: 'List installed extensions',
 						},
 						{
-							name: ['--source'],
-							description: 'Filter extensions by source',
+							name: ['--source', '-s'],
+							description: 'Filter extensions by registered source name or registry location (URL or file path).',
 							args: [
 								{
 									name: 'source',
@@ -6023,7 +5822,7 @@ const completionSpec: Fig.Spec = {
 					options: [
 						{
 							name: ['--source', '-s'],
-							description: 'The extension source to use.',
+							description: 'The registered source name or registry location (URL or file path) to use.',
 							args: [
 								{
 									name: 'source',
@@ -6128,7 +5927,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--source', '-s'],
-							description: 'The extension source to use for upgrades',
+							description: 'The registered source name or registry location (URL or file path) to use for upgrades.',
 							args: [
 								{
 									name: 'source',
@@ -6635,6 +6434,16 @@ const completionSpec: Fig.Spec = {
 							name: ['--dry-run'],
 							description: 'Preview what would be installed without making changes',
 						},
+						{
+							name: ['--host'],
+							description: 'Install the skill for the specified agent host(s): copilot, claude. Use --host all for every detected host (skill tools only)',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'host',
+								},
+							],
+						},
 					],
 					args: {
 						name: 'tool-name...',
@@ -6653,12 +6462,50 @@ const completionSpec: Fig.Spec = {
 					},
 				},
 				{
+					name: ['uninstall'],
+					description: 'Uninstall installed tools.',
+					options: [
+						{
+							name: ['--all'],
+							description: 'Uninstall all installed tools',
+						},
+						{
+							name: ['--dry-run'],
+							description: 'Preview what would be uninstalled without making changes',
+						},
+						{
+							name: ['--host'],
+							description: 'Uninstall the skill from the specified agent host(s): copilot, claude. Use --host all (or omit --host) to remove the skill from every host it is installed through (skill tools only)',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'host',
+								},
+							],
+						},
+					],
+					args: {
+						name: 'tool-name...',
+						isOptional: true,
+					},
+				},
+				{
 					name: ['upgrade'],
 					description: 'Upgrade installed tools.',
 					options: [
 						{
 							name: ['--dry-run'],
 							description: 'Preview what would be upgraded without making changes',
+						},
+						{
+							name: ['--host'],
+							description: 'Upgrade the skill for the specified agent host(s): copilot, claude. Use --host all for every detected host (skill tools only)',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'host',
+								},
+							],
 						},
 					],
 					args: {
@@ -6762,6 +6609,16 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['--codeowners'],
+							description: 'GitHub handles or teams for the generated CODEOWNERS entry when --internal is set.',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'codeowners',
+								},
+							],
+						},
+						{
 							name: ['--id'],
 							description: 'The extension identifier (e.g., company.extension).',
 							args: [
@@ -6769,6 +6626,10 @@ const completionSpec: Fig.Spec = {
 									name: 'id',
 								},
 							],
+						},
+						{
+							name: ['--internal'],
+							description: 'Scaffold Azure/azure-dev first-party extension files. Currently supports Go extensions only.',
 						},
 						{
 							name: ['--language'],
@@ -6798,15 +6659,6 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
-							name: ['--output', '-o'],
-							description: 'The output format',
-							args: [
-								{
-									name: 'output',
-								},
-							],
-						},
-						{
 							name: ['--registry', '-r'],
 							description: 'When set will create a local extension source registry.',
 						},
@@ -6826,6 +6678,10 @@ const completionSpec: Fig.Spec = {
 					name: ['pack'],
 					description: 'Build and pack extension artifacts',
 					options: [
+						{
+							name: ['--bundle'],
+							description: 'Produce a single self-contained bundle (.zip) containing a registry.json and the extension artifacts, installable via \'azd extension install <bundle.zip>\'.',
+						},
 						{
 							name: ['--input', '-i'],
 							description: 'Path to the input directory.',
@@ -6861,15 +6717,6 @@ const completionSpec: Fig.Spec = {
 							args: [
 								{
 									name: 'artifacts',
-								},
-							],
-						},
-						{
-							name: ['--output', '-o'],
-							description: 'The output format',
-							args: [
-								{
-									name: 'output',
 								},
 							],
 						},
@@ -6943,15 +6790,6 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
-							name: ['--output', '-o'],
-							description: 'The output format',
-							args: [
-								{
-									name: 'output',
-								},
-							],
-						},
-						{
 							name: ['--prerelease'],
 							description: 'Create a pre-release version',
 						},
@@ -6987,1058 +6825,16 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['version'],
 					description: 'Prints the version of the application',
-					options: [
-						{
-							name: ['--output', '-o'],
-							description: 'The output format',
-							args: [
-								{
-									name: 'output',
-								},
-							],
-						},
-					],
 				},
 				{
 					name: ['watch'],
 					description: 'Watches the azd extension project for file changes and rebuilds it.',
-					options: [
-						{
-							name: ['--output', '-o'],
-							description: 'The output format',
-							args: [
-								{
-									name: 'output',
-								},
-							],
-						},
-					],
 				},
 			],
 		},
 		{
 			name: ['help'],
 			description: 'Help about any command',
-			subcommands: [
-				{
-					name: ['add'],
-					description: 'Add a component to your project.',
-				},
-				{
-					name: ['ai'],
-					description: 'Commands for the ai extension namespace.',
-					subcommands: [
-						{
-							name: ['agent'],
-							description: 'Ship agents with Microsoft Foundry from your terminal. (Preview)',
-							subcommands: [
-								{
-									name: ['doctor'],
-									description: 'Diagnose problems with an azd ai agent project.',
-								},
-								{
-									name: ['endpoint'],
-									description: 'Manage agent endpoint and card configuration.',
-									subcommands: [
-										{
-											name: ['update'],
-											description: 'Update an agent\'s endpoint and card configuration without deploying a new version.',
-										},
-									],
-								},
-								{
-									name: ['eval'],
-									description: 'Create and run quick evals for an agent.',
-									subcommands: [
-										{
-											name: ['init'],
-											description: 'Generate a local eval suite for a deployed agent.',
-										},
-										{
-											name: ['list'],
-											description: 'List evaluations for the current project.',
-										},
-										{
-											name: ['run'],
-											description: 'Execute an evaluation run from eval.yaml.',
-										},
-										{
-											name: ['show'],
-											description: 'Show an eval definition, run history, or run details.',
-										},
-										{
-											name: ['update'],
-											description: 'Update evaluators and datasets from local files.',
-										},
-									],
-								},
-								{
-									name: ['files'],
-									description: 'Manage files in a hosted agent session.',
-									subcommands: [
-										{
-											name: ['delete', 'remove', 'rm'],
-											description: 'Delete a file or directory from a hosted agent session.',
-										},
-										{
-											name: ['download'],
-											description: 'Download a file from a hosted agent session.',
-										},
-										{
-											name: ['list', 'ls'],
-											description: 'List files in a hosted agent session.',
-										},
-										{
-											name: ['mkdir'],
-											description: 'Create a directory in a hosted agent session.',
-										},
-										{
-											name: ['stat'],
-											description: 'Get file or directory metadata in a hosted agent session.',
-										},
-										{
-											name: ['upload'],
-											description: 'Upload a file to a hosted agent session.',
-										},
-									],
-								},
-								{
-									name: ['init'],
-									description: 'Initialize a new AI agent project. (Preview)',
-								},
-								{
-									name: ['invoke'],
-									description: 'Send a message to your agent.',
-								},
-								{
-									name: ['monitor'],
-									description: 'Monitor logs from a hosted agent.',
-								},
-								{
-									name: ['optimize'],
-									description: 'Evaluate and optimize AI agents.',
-									subcommands: [
-										{
-											name: ['apply'],
-											description: 'Apply optimized candidate configuration locally to your azd project.',
-										},
-										{
-											name: ['cancel'],
-											description: 'Cancel a running optimization job.',
-										},
-										{
-											name: ['deploy'],
-											description: 'Deploy a winning optimization candidate as a new agent version via the API.',
-										},
-										{
-											name: ['list'],
-											description: 'List recent optimization runs.',
-										},
-										{
-											name: ['status'],
-											description: 'Check the status of an optimization job.',
-										},
-									],
-								},
-								{
-									name: ['run'],
-									description: 'Run your agent locally for development.',
-								},
-								{
-									name: ['sample'],
-									description: 'Browse the curated catalog of agent samples and azd templates.',
-									subcommands: [
-										{
-											name: ['list', 'ls'],
-											description: 'List available agent samples that can be used with `azd ai agent init -m`.',
-										},
-									],
-								},
-								{
-									name: ['sessions'],
-									description: 'Manage sessions for a hosted agent endpoint.',
-									subcommands: [
-										{
-											name: ['create'],
-											description: 'Create a new session for a hosted agent.',
-										},
-										{
-											name: ['delete'],
-											description: 'Delete a session.',
-										},
-										{
-											name: ['list'],
-											description: 'List sessions for a hosted agent.',
-										},
-										{
-											name: ['show'],
-											description: 'Show details of a session.',
-										},
-									],
-								},
-								{
-									name: ['show'],
-									description: 'Show the status of a hosted agent.',
-								},
-								{
-									name: ['version'],
-									description: 'Prints the version of the application',
-								},
-							],
-						},
-						{
-							name: ['connection'],
-							description: 'Manage Microsoft Foundry Connections from your terminal. (Preview)',
-							subcommands: [
-								{
-									name: ['context'],
-									description: 'Get the context of the azd project & environment.',
-								},
-								{
-									name: ['create'],
-									description: 'Create a new Foundry project connection.',
-								},
-								{
-									name: ['delete'],
-									description: 'Delete a connection.',
-								},
-								{
-									name: ['list'],
-									description: 'List connections in the Foundry project.',
-								},
-								{
-									name: ['show'],
-									description: 'Show connection details.',
-								},
-								{
-									name: ['update'],
-									description: 'Update a connection\'s target or credentials.',
-								},
-								{
-									name: ['version'],
-									description: 'Display the extension version',
-								},
-							],
-						},
-						{
-							name: ['finetuning'],
-							description: 'Extension for Foundry Fine Tuning. (Preview)',
-							subcommands: [
-								{
-									name: ['init'],
-									description: 'Initialize a new AI Fine-tuning project. (Preview)',
-								},
-								{
-									name: ['jobs'],
-									description: 'Manage fine-tuning jobs',
-									subcommands: [
-										{
-											name: ['cancel'],
-											description: 'Cancels a running or queued fine-tuning job.',
-										},
-										{
-											name: ['deploy'],
-											description: 'Deploy a fine-tuned model to Azure Cognitive Services',
-										},
-										{
-											name: ['list'],
-											description: 'List fine-tuning jobs.',
-										},
-										{
-											name: ['pause'],
-											description: 'Pauses a running fine-tuning job.',
-										},
-										{
-											name: ['resume'],
-											description: 'Resumes a paused fine-tuning job.',
-										},
-										{
-											name: ['show'],
-											description: 'Shows detailed information about a specific job.',
-										},
-										{
-											name: ['submit'],
-											description: 'Submit fine-tuning job.',
-										},
-									],
-								},
-								{
-									name: ['version'],
-									description: 'Prints the version of the application',
-								},
-							],
-						},
-						{
-							name: ['inspector'],
-							description: 'Browser-based inspector UI for locally running Foundry agents. (Preview)',
-							subcommands: [
-								{
-									name: ['launch'],
-									description: 'Launch the Agent Inspector UI in a browser, pointed at a local agent.',
-								},
-								{
-									name: ['version'],
-									description: 'Display the extension version',
-								},
-							],
-						},
-						{
-							name: ['models'],
-							description: 'Extension for managing custom models in Azure AI Foundry. (Preview)',
-							subcommands: [
-								{
-									name: ['create'],
-									description: 'Upload and register a custom model',
-								},
-								{
-									name: ['custom'],
-									description: 'Manage custom models in Azure AI Foundry',
-									subcommands: [
-										{
-											name: ['create'],
-											description: 'Upload and register a custom model',
-										},
-										{
-											name: ['delete'],
-											description: 'Delete a custom model',
-										},
-										{
-											name: ['list'],
-											description: 'List all custom models',
-										},
-										{
-											name: ['show'],
-											description: 'Show details of a custom model',
-										},
-										{
-											name: ['update'],
-											description: 'Update a custom model',
-										},
-									],
-								},
-								{
-									name: ['delete'],
-									description: 'Delete a custom model',
-								},
-								{
-									name: ['init'],
-									description: 'Initialize a new AI models project. (Preview)',
-								},
-								{
-									name: ['list'],
-									description: 'List all custom models',
-								},
-								{
-									name: ['show'],
-									description: 'Show details of a custom model',
-								},
-								{
-									name: ['update'],
-									description: 'Update a custom model',
-								},
-								{
-									name: ['version'],
-									description: 'Prints the version of the application',
-								},
-							],
-						},
-						{
-							name: ['project'],
-							description: 'Manage Microsoft Foundry Project resources from your terminal. (Preview)',
-							subcommands: [
-								{
-									name: ['context'],
-									description: 'Get the context of the azd project & environment.',
-								},
-								{
-									name: ['set'],
-									description: 'Persist a default Foundry project endpoint.',
-								},
-								{
-									name: ['show'],
-									description: 'Display the currently resolved Foundry project endpoint.',
-								},
-								{
-									name: ['unset'],
-									description: 'Clear the persisted Foundry project endpoint.',
-								},
-								{
-									name: ['version'],
-									description: 'Display the extension version',
-								},
-							],
-						},
-						{
-							name: ['routine'],
-							description: 'Manage Microsoft Foundry Routines from your terminal. (Preview)',
-							subcommands: [
-								{
-									name: ['context'],
-									description: 'Get the context of the azd project & environment.',
-								},
-								{
-									name: ['create'],
-									description: 'Create a new routine.',
-								},
-								{
-									name: ['delete'],
-									description: 'Delete a routine.',
-								},
-								{
-									name: ['disable'],
-									description: 'Disable a routine.',
-								},
-								{
-									name: ['dispatch'],
-									description: 'Manually trigger a routine.',
-								},
-								{
-									name: ['enable'],
-									description: 'Enable a routine.',
-								},
-								{
-									name: ['list'],
-									description: 'List all routines in the Foundry project.',
-								},
-								{
-									name: ['run'],
-									description: 'Manage routine run history.',
-									subcommands: [
-										{
-											name: ['list'],
-											description: 'List runs for a routine.',
-										},
-									],
-								},
-								{
-									name: ['show'],
-									description: 'Show details of a routine.',
-								},
-								{
-									name: ['update'],
-									description: 'Update an existing routine.',
-								},
-								{
-									name: ['version'],
-									description: 'Display the extension version',
-								},
-							],
-						},
-						{
-							name: ['skill'],
-							description: 'Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Preview)',
-							subcommands: [
-								{
-									name: ['context'],
-									description: 'Get the context of the azd project & environment.',
-								},
-								{
-									name: ['create'],
-									description: 'Create a new Foundry skill.',
-								},
-								{
-									name: ['delete'],
-									description: 'Delete a Foundry skill.',
-								},
-								{
-									name: ['download'],
-									description: 'Download a Foundry skill package.',
-								},
-								{
-									name: ['list'],
-									description: 'List Foundry skills in the project.',
-								},
-								{
-									name: ['show'],
-									description: 'Show metadata for a Foundry skill.',
-								},
-								{
-									name: ['update'],
-									description: 'Create a new default version for a Foundry skill.',
-								},
-								{
-									name: ['version'],
-									description: 'Print the extension version.',
-								},
-							],
-						},
-						{
-							name: ['toolbox'],
-							description: 'Manage Microsoft Foundry Toolboxes from your terminal. (Preview)',
-							subcommands: [
-								{
-									name: ['connection'],
-									description: 'Manage the connection-backed tools attached to a toolbox.',
-									subcommands: [
-										{
-											name: ['add'],
-											description: 'Attach one or more connections to a toolbox.',
-										},
-										{
-											name: ['list'],
-											description: 'List the connection-backed tools attached to a toolbox.',
-										},
-										{
-											name: ['remove'],
-											description: 'Detach one or more connections from a toolbox.',
-										},
-									],
-								},
-								{
-									name: ['create'],
-									description: 'Create a toolbox and its initial version from a file.',
-								},
-								{
-									name: ['delete'],
-									description: 'Delete a toolbox or a single version.',
-								},
-								{
-									name: ['list'],
-									description: 'List toolboxes on the project.',
-								},
-								{
-									name: ['publish'],
-									description: 'Set the default version for a toolbox.',
-								},
-								{
-									name: ['show'],
-									description: 'Show a toolbox version, including its computed MCP endpoint.',
-								},
-								{
-									name: ['skill'],
-									description: 'Manage skill references attached to a toolbox.',
-									subcommands: [
-										{
-											name: ['add'],
-											description: 'Attach one or more skill references to a toolbox.',
-										},
-										{
-											name: ['list'],
-											description: 'List the skill references attached to a toolbox.',
-										},
-										{
-											name: ['remove'],
-											description: 'Detach one or more skill references from a toolbox.',
-										},
-									],
-								},
-								{
-									name: ['version'],
-									description: 'Display the extension version',
-								},
-								{
-									name: ['versions'],
-									description: 'Inspect toolbox versions.',
-									subcommands: [
-										{
-											name: ['list'],
-											description: 'List published versions for a toolbox.',
-										},
-									],
-								},
-							],
-						},
-					],
-				},
-				{
-					name: ['appservice'],
-					description: 'Extension for managing Azure App Service resources.',
-					subcommands: [
-						{
-							name: ['swap'],
-							description: 'Swap deployment slots for an App Service.',
-						},
-						{
-							name: ['version'],
-							description: 'Display the version of the extension.',
-						},
-					],
-				},
-				{
-					name: ['auth'],
-					description: 'Authenticate with Azure.',
-					subcommands: [
-						{
-							name: ['login'],
-							description: 'Log in to Azure.',
-						},
-						{
-							name: ['logout'],
-							description: 'Log out of Azure.',
-						},
-						{
-							name: ['status'],
-							description: 'Show the current authentication status.',
-						},
-					],
-				},
-				{
-					name: ['coding-agent'],
-					description: 'This extension configures GitHub Copilot Coding Agent access to Azure',
-					subcommands: [
-						{
-							name: ['config'],
-							description: 'Configure the GitHub Copilot coding agent to access Azure resources via the Azure MCP',
-						},
-						{
-							name: ['version'],
-							description: 'Prints the version of the application',
-						},
-					],
-				},
-				{
-					name: ['completion'],
-					description: 'Generate shell completion scripts.',
-					subcommands: [
-						{
-							name: ['bash'],
-							description: 'Generate bash completion script.',
-						},
-						{
-							name: ['fig'],
-							description: 'Generate Fig autocomplete spec.',
-						},
-						{
-							name: ['fish'],
-							description: 'Generate fish completion script.',
-						},
-						{
-							name: ['powershell'],
-							description: 'Generate PowerShell completion script.',
-						},
-						{
-							name: ['zsh'],
-							description: 'Generate zsh completion script.',
-						},
-					],
-				},
-				{
-					name: ['concurx'],
-					description: 'Concurrent execution for azd deployment',
-					subcommands: [
-						{
-							name: ['up'],
-							description: 'Runs azd up in concurrent mode',
-						},
-						{
-							name: ['version'],
-							description: 'Prints the version of the application',
-						},
-					],
-				},
-				{
-					name: ['config'],
-					description: 'Manage azd configurations (ex: default Azure subscription, location).',
-					subcommands: [
-						{
-							name: ['get'],
-							description: 'Gets a configuration.',
-						},
-						{
-							name: ['list-alpha'],
-							description: 'Display the list of available features in alpha stage.',
-						},
-						{
-							name: ['options'],
-							description: 'List all available configuration settings.',
-						},
-						{
-							name: ['reset'],
-							description: 'Resets configuration to default.',
-						},
-						{
-							name: ['set'],
-							description: 'Sets a configuration.',
-						},
-						{
-							name: ['show'],
-							description: 'Show all the configuration values.',
-						},
-						{
-							name: ['unset'],
-							description: 'Unsets a configuration.',
-						},
-					],
-				},
-				{
-					name: ['copilot'],
-					description: 'Manage GitHub Copilot agent settings. (Preview)',
-					subcommands: [
-						{
-							name: ['consent'],
-							description: 'Manage tool consent.',
-							subcommands: [
-								{
-									name: ['grant'],
-									description: 'Grant consent trust rules.',
-								},
-								{
-									name: ['list'],
-									description: 'List consent rules.',
-								},
-								{
-									name: ['revoke'],
-									description: 'Revoke consent rules.',
-								},
-							],
-						},
-					],
-				},
-				{
-					name: ['demo'],
-					description: 'This extension provides examples of the azd extension framework.',
-					subcommands: [
-						{
-							name: ['ai'],
-							description: 'Interactive AI model discovery, deployment, and quota demos.',
-							subcommands: [
-								{
-									name: ['deployment'],
-									description: 'Select model/version/SKU/capacity and resolve a valid deployment configuration.',
-								},
-								{
-									name: ['models'],
-									description: 'Browse available AI models interactively.',
-								},
-								{
-									name: ['quota'],
-									description: 'View usage meters and limits for a selected location.',
-								},
-							],
-						},
-						{
-							name: ['colors', 'colours'],
-							description: 'Displays all ASCII colors with their standard and high-intensity variants.',
-						},
-						{
-							name: ['config'],
-							description: 'Set up monitoring configuration for the project and services',
-						},
-						{
-							name: ['context'],
-							description: 'Get the context of the azd project & environment.',
-						},
-						{
-							name: ['gh-url-parse'],
-							description: 'Parse a GitHub URL and extract repository information.',
-						},
-						{
-							name: ['listen'],
-							description: 'Starts the extension and listens for events.',
-						},
-						{
-							name: ['mcp'],
-							description: 'MCP server commands for demo extension',
-							subcommands: [
-								{
-									name: ['start'],
-									description: 'Start MCP server with demo tools',
-								},
-							],
-						},
-						{
-							name: ['prompt'],
-							description: 'Examples of prompting the user for input.',
-						},
-						{
-							name: ['version'],
-							description: 'Prints the version of the application',
-						},
-					],
-				},
-				{
-					name: ['deploy'],
-					description: 'Deploy your project code to Azure.',
-				},
-				{
-					name: ['down'],
-					description: 'Delete your project\'s Azure resources.',
-				},
-				{
-					name: ['env'],
-					description: 'Manage environments (ex: default environment, environment variables).',
-					subcommands: [
-						{
-							name: ['config'],
-							description: 'Manage environment configuration (ex: stored in .azure/<environment>/config.json).',
-							subcommands: [
-								{
-									name: ['get'],
-									description: 'Gets a configuration value from the environment.',
-								},
-								{
-									name: ['set'],
-									description: 'Sets a configuration value in the environment.',
-								},
-								{
-									name: ['unset'],
-									description: 'Unsets a configuration value in the environment.',
-								},
-							],
-						},
-						{
-							name: ['get-value'],
-							description: 'Get specific environment value.',
-						},
-						{
-							name: ['get-values'],
-							description: 'Get all environment values.',
-						},
-						{
-							name: ['list', 'ls'],
-							description: 'List environments.',
-						},
-						{
-							name: ['new'],
-							description: 'Create a new environment and set it as the default.',
-						},
-						{
-							name: ['refresh'],
-							description: 'Refresh environment values by using information from a previous infrastructure provision.',
-						},
-						{
-							name: ['remove', 'rm'],
-							description: 'Remove an environment.',
-						},
-						{
-							name: ['select'],
-							description: 'Set the default environment.',
-						},
-						{
-							name: ['set'],
-							description: 'Set one or more environment values.',
-						},
-						{
-							name: ['set-secret'],
-							description: 'Set a name as a reference to a Key Vault secret in the environment.',
-						},
-					],
-				},
-				{
-					name: ['exec'],
-					description: 'Execute commands and scripts with azd environment context.',
-				},
-				{
-					name: ['extension', 'ext'],
-					description: 'Manage azd extensions.',
-					subcommands: [
-						{
-							name: ['install'],
-							description: 'Installs specified extensions.',
-						},
-						{
-							name: ['list'],
-							description: 'List available extensions.',
-						},
-						{
-							name: ['show'],
-							description: 'Show details for a specific extension.',
-						},
-						{
-							name: ['source'],
-							description: 'View and manage extension sources',
-							subcommands: [
-								{
-									name: ['add'],
-									description: 'Add an extension source with the specified name',
-								},
-								{
-									name: ['list'],
-									description: 'List extension sources',
-								},
-								{
-									name: ['remove'],
-									description: 'Remove an extension source with the specified name',
-								},
-								{
-									name: ['validate'],
-									description: 'Validate an extension source\'s registry.json file.',
-								},
-							],
-						},
-						{
-							name: ['uninstall'],
-							description: 'Uninstall specified extensions.',
-						},
-						{
-							name: ['upgrade'],
-							description: 'Upgrade installed extensions to the latest version.',
-						},
-					],
-				},
-				{
-					name: ['hooks'],
-					description: 'Develop, test and run hooks for a project.',
-					subcommands: [
-						{
-							name: ['run'],
-							description: 'Runs the specified hook for the project, provisioning layers, and services',
-						},
-					],
-				},
-				{
-					name: ['infra'],
-					description: 'Manage your Infrastructure as Code (IaC).',
-					subcommands: [
-						{
-							name: ['generate', 'gen', 'synth'],
-							description: 'Write IaC for your project to disk, allowing you to manually manage it.',
-						},
-					],
-				},
-				{
-					name: ['init'],
-					description: 'Initialize a new application.',
-				},
-				{
-					name: ['mcp'],
-					description: 'Manage Model Context Protocol (MCP) server. (Alpha)',
-					subcommands: [
-						{
-							name: ['start'],
-							description: 'Starts the MCP server.',
-						},
-					],
-				},
-				{
-					name: ['monitor'],
-					description: 'Monitor a deployed project.',
-				},
-				{
-					name: ['package'],
-					description: 'Packages the project\'s code to be deployed to Azure.',
-				},
-				{
-					name: ['pipeline'],
-					description: 'Manage and configure your deployment pipelines.',
-					subcommands: [
-						{
-							name: ['config'],
-							description: 'Configure your deployment pipeline to connect securely to Azure. (Beta)',
-						},
-					],
-				},
-				{
-					name: ['provision'],
-					description: 'Provision Azure resources for your project.',
-				},
-				{
-					name: ['publish'],
-					description: 'Publish a service to a container registry.',
-				},
-				{
-					name: ['restore'],
-					description: 'Restores the project\'s dependencies.',
-				},
-				{
-					name: ['show'],
-					description: 'Display information about your project and its resources.',
-				},
-				{
-					name: ['template'],
-					description: 'Find and view template details.',
-					subcommands: [
-						{
-							name: ['list', 'ls'],
-							description: 'Show list of sample azd templates. (Beta)',
-						},
-						{
-							name: ['show'],
-							description: 'Show details for a given template. (Beta)',
-						},
-						{
-							name: ['source'],
-							description: 'View and manage template sources. (Beta)',
-							subcommands: [
-								{
-									name: ['add'],
-									description: 'Adds an azd template source with the specified key. (Beta)',
-								},
-								{
-									name: ['list', 'ls'],
-									description: 'Lists the configured azd template sources. (Beta)',
-								},
-								{
-									name: ['remove'],
-									description: 'Removes the specified azd template source (Beta)',
-								},
-							],
-						},
-					],
-				},
-				{
-					name: ['tool'],
-					description: 'Manage Azure development tools.',
-					subcommands: [
-						{
-							name: ['check'],
-							description: 'Check for tool updates.',
-						},
-						{
-							name: ['install'],
-							description: 'Install specified tools.',
-						},
-						{
-							name: ['list'],
-							description: 'List all tools with status.',
-						},
-						{
-							name: ['show'],
-							description: 'Show details for a specific tool.',
-						},
-						{
-							name: ['upgrade'],
-							description: 'Upgrade installed tools.',
-						},
-					],
-				},
-				{
-					name: ['up'],
-					description: 'Provision and deploy your project to Azure with a single command.',
-				},
-				{
-					name: ['update'],
-					description: 'Updates azd to the latest version.',
-				},
-				{
-					name: ['version'],
-					description: 'Print the version number of Azure Developer CLI.',
-				},
-				{
-					name: ['x'],
-					description: 'This extension provides a set of tools for azd extension developers to test and debug their extensions.',
-					subcommands: [
-						{
-							name: ['build'],
-							description: 'Build the azd extension project',
-						},
-						{
-							name: ['init'],
-							description: 'Initialize a new azd extension project',
-						},
-						{
-							name: ['pack'],
-							description: 'Build and pack extension artifacts',
-						},
-						{
-							name: ['publish'],
-							description: 'Publish the extension to the extension source',
-						},
-						{
-							name: ['release'],
-							description: 'Create a new extension release from the packaged artifacts',
-						},
-						{
-							name: ['version'],
-							description: 'Prints the version of the application',
-						},
-						{
-							name: ['watch'],
-							description: 'Watches the azd extension project for file changes and rebuilds it.',
-						},
-					],
-				},
-			],
 		},
 	],
 	options: [

@@ -34,7 +34,7 @@ func (pt Language) Display() string {
 	case DotNet:
 		return ".NET"
 	case DotNetAppHost:
-		return ".NET (Aspire)"
+		return "Aspire"
 	case Java:
 		return "Java"
 	case JavaScript:

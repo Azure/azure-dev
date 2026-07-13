@@ -27,12 +27,13 @@ const agentEndpointHint = "run `azd ai agent show` to see the agent endpoint URL
 //
 //	[1] project name (URL-escaped),
 //	[2] agent name (URL-escaped),
-//	[3] protocol tail ("invocations" or "openai/responses").
+//	[3] protocol tail ("invocations", "a2a", or "openai/responses").
 //
 // The "openai/v1/responses" tail is also accepted and rebuilt to the canonical
 // query-parameter form when invoked.
 var agentEndpointPathRegex = regexp.MustCompile(
-	`^/api/projects/([^/]+)/agents/([^/]+)/endpoint/protocols/(invocations|openai/v1/responses|openai/responses)/?$`,
+	`^/api/projects/([^/]+)/agents/([^/]+)/endpoint/protocols/` +
+		`(invocations|a2a|openai/v1/responses|openai/responses)/?$`,
 )
 
 // parsedAgentEndpoint describes a deployed agent invocation endpoint.
@@ -134,6 +135,8 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 	switch protocolTail {
 	case "invocations":
 		protocol = agent_api.AgentProtocolInvocations
+	case "a2a":
+		protocol = agent_api.AgentProtocolA2A
 	case "openai/responses", "openai/v1/responses":
 		protocol = agent_api.AgentProtocolResponses
 	}
@@ -186,4 +189,25 @@ func buildInvocationsURL(projectEndpoint, agentName, apiVersion, sid string) str
 		invURL += "&agent_session_id=" + url.QueryEscape(sid)
 	}
 	return invURL
+}
+
+// buildA2AInvokeURL builds the Foundry "a2a" protocol URL for an agent. When sid
+// is non-empty, an agent_session_id query parameter is appended (URL-encoded) so
+// the request routes to the same agent session, matching the invocations protocol.
+//
+// NOTE: The A2A endpoint path tail (protocols/a2a) follows the same convention as
+// the responses/invocations endpoints. It is centralized here so it can be
+// adjusted in one place if the Foundry A2A contract differs.
+func buildA2AInvokeURL(projectEndpoint, agentName, apiVersion, sid string) string {
+	if apiVersion == "" {
+		apiVersion = DefaultAgentAPIVersion
+	}
+	endpointURL := fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/a2a?api-version=%s",
+		projectEndpoint, agentName, url.QueryEscape(apiVersion),
+	)
+	if sid != "" {
+		endpointURL += "&agent_session_id=" + url.QueryEscape(sid)
+	}
+	return endpointURL
 }

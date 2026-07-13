@@ -29,6 +29,18 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newProjectSetCommand(extCtx))
 	rootCmd.AddCommand(newProjectUnsetCommand(extCtx))
 	rootCmd.AddCommand(newProjectShowCommand(extCtx))
+	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
 
 	return rootCmd
+}
+
+// configureExtensionHost is the listen callback. It registers the
+// azure.ai.project service target so `azd up`/`azd deploy` can walk the project
+// service declared in azure.yaml. The project itself is provisioned by the
+// built-in microsoft.foundry Bicep provider, so the target is a no-op at deploy.
+func configureExtensionHost(host *azdext.ExtensionHost) {
+	azdClient := host.Client()
+	host.WithServiceTarget(aiProjectHost, func() azdext.ServiceTargetProvider {
+		return newProjectServiceTarget(azdClient)
+	})
 }

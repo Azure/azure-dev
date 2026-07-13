@@ -681,7 +681,7 @@
     },
     "devDependencies": {
         "@azure/core-auth": "~1",
-        "@microsoft/vscode-azext-eng": "1.0.0-alpha.16",
+        "@microsoft/vscode-azext-eng": "1.1.0-alpha.1",
         "@types/node": "~22",
         "@types/semver": "~7",
         "@types/sinon": "~21",
@@ -691,7 +691,8 @@
         "@vscode/vsce": "*",
         "esbuild": "*",
         "esbuild-plugin-copy": "*",
-        "sinon": "~21"
+        "sinon": "~21",
+        "tsx": "*"
     },
     "dependencies": {
         "@microsoft/vscode-azext-utils": "~4",
@@ -701,5 +702,8 @@
         "dotenv": "~17",
         "semver": "~7",
         "yaml": "~2"
+    },
+    "overrides": {
+        "serialize-javascript@<7.0.5": "^7.0.5"
     }
 }

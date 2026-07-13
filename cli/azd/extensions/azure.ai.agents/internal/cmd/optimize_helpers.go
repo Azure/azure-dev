@@ -3,7 +3,7 @@
 
 // optimize_helpers.go provides shared utilities for optimize commands:
 // connection flag resolution, job ID persistence in the azd environment,
-// and portal link construction.
+// portal link construction, and candidate table rendering.
 
 package cmd
 
@@ -19,6 +19,7 @@ import (
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -49,7 +50,8 @@ func projectEndpointFromEnv() string {
 }
 
 // Priority: --endpoint flag → --project-endpoint → azd environment → FOUNDRY_PROJECT_ENDPOINT env var.
-func (f *optimizeConnectionFlags) resolve(ctx context.Context) (string, error) {
+// envName selects a specific azd environment; empty means "current default".
+func (f *optimizeConnectionFlags) resolve(ctx context.Context, envName string) (string, error) {
 	if f.endpoint != "" {
 		return strings.TrimRight(f.endpoint, "/"), nil
 	}
@@ -59,7 +61,16 @@ func (f *optimizeConnectionFlags) resolve(ctx context.Context) (string, error) {
 		return strings.TrimRight(f.projectEndpoint, "/"), nil
 	}
 
-	// Try azd environment (works when running under azd)
+	// When an explicit envName is provided, read FOUNDRY_PROJECT_ENDPOINT
+	// directly from that environment instead of relying on the default
+	// cascade (which always reads the current/default environment).
+	if envName != "" {
+		if ep := endpointFromNamedEnv(ctx, envName); ep != "" {
+			return strings.TrimRight(ep, "/"), nil
+		}
+	}
+
+	// Try azd environment / global config cascade (works when running under azd)
 	projectEndpoint, err := resolveAgentEndpoint(ctx, "", "")
 	if err != nil {
 		// Fall back to FOUNDRY_PROJECT_ENDPOINT or AZURE_AI_PROJECT_ENDPOINT env var (works standalone)
@@ -74,46 +85,111 @@ func (f *optimizeConnectionFlags) resolve(ctx context.Context) (string, error) {
 	return projectEndpoint, nil
 }
 
-// optimizeLastJobIDKey is the azd environment key for the last optimization job ID.
+// endpointFromNamedEnv reads FOUNDRY_PROJECT_ENDPOINT from the specified
+// azd environment. Returns empty string on any failure.
+func endpointFromNamedEnv(ctx context.Context, envName string) string {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return ""
+	}
+	defer azdClient.Close()
+
+	env := getExistingEnvironment(ctx, envName, azdClient)
+	if env == nil {
+		return ""
+	}
+	v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: env.Name,
+		Key:     "FOUNDRY_PROJECT_ENDPOINT",
+	})
+	if err != nil || v.Value == "" {
+		return ""
+	}
+	return v.Value
+}
+
+// optimizeLastJobIDKey is the global azd environment key for the most recent
+// optimization job ID. It is used by `optimize status` (which has no agent
+// context) and as a fallback when a per-agent job ID is not set.
 const optimizeLastJobIDKey = "OPTIMIZE_LAST_OPERATION_ID"
 
-// saveLastOptimizeJobID stores the operation ID in the azd environment.
-// Best-effort — silently ignores errors (e.g., when running outside azd).
-func saveLastOptimizeJobID(ctx context.Context, operationID string) {
+// optimizeEnvKeyName returns the identifier used to derive per-agent optimize
+// env keys (job ID, candidate ID). It prefers the azd service name so the keys
+// align with AGENT_{KEY}_NAME / AGENT_{KEY}_OPTIMIZATION_CANDIDATE_ID, and
+// falls back to the agent name for standalone --agent usage without a project.
+func optimizeEnvKeyName(serviceName, agentName string) string {
+	if serviceName != "" {
+		return serviceName
+	}
+	return agentName
+}
+
+// optimizeJobIDKeyForAgent returns the per-agent azd environment key that stores
+// the optimization job ID, mirroring AGENT_{KEY}_OPTIMIZATION_CANDIDATE_ID. The
+// name should be the azd service name (see optimizeEnvKeyName).
+func optimizeJobIDKeyForAgent(name string) string {
+	return fmt.Sprintf("AGENT_%s_OPTIMIZATION_JOB_ID", toServiceKey(name))
+}
+
+// saveLastOptimizeJobID stores the operation ID in the azd environment under
+// both the per-agent key (AGENT_{KEY}_OPTIMIZATION_JOB_ID) and the global
+// last-job key. Best-effort — silently ignores errors (e.g., when running
+// outside azd).
+func saveLastOptimizeJobID(ctx context.Context, agentName, operationID, envName string) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return
 	}
 	defer azdClient.Close()
 
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || envResp == nil {
+	env := getExistingEnvironment(ctx, envName, azdClient)
+	if env == nil {
 		return
 	}
 
+	// Per-agent key — used by apply/deploy/postdeploy to promote the correct job.
+	if agentName != "" {
+		_, _ = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: env.Name,
+			Key:     optimizeJobIDKeyForAgent(agentName),
+			Value:   operationID,
+		})
+	}
+
+	// Global key — convenience for `optimize status` and a fallback.
 	_, _ = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: envResp.Environment.Name,
+		EnvName: env.Name,
 		Key:     optimizeLastJobIDKey,
 		Value:   operationID,
 	})
 }
 
-// loadLastOptimizeJobID retrieves the last operation ID from the azd environment.
-// Returns empty string if not available.
-func loadLastOptimizeJobID(ctx context.Context) string {
+// loadOptimizeJobIDForAgent retrieves the optimization job ID for a specific
+// agent, preferring the per-agent key and falling back to the global last-job
+// key. Returns empty string if neither is available.
+func loadOptimizeJobIDForAgent(ctx context.Context, agentName, envName string) string {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return ""
 	}
 	defer azdClient.Close()
 
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || envResp == nil {
+	env := getExistingEnvironment(ctx, envName, azdClient)
+	if env == nil {
 		return ""
 	}
 
+	if agentName != "" {
+		if resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: env.Name,
+			Key:     optimizeJobIDKeyForAgent(agentName),
+		}); err == nil && resp != nil && resp.Value != "" {
+			return resp.Value
+		}
+	}
+
 	resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envResp.Environment.Name,
+		EnvName: env.Name,
 		Key:     optimizeLastJobIDKey,
 	})
 	if err != nil || resp == nil {
@@ -124,19 +200,19 @@ func loadLastOptimizeJobID(ctx context.Context) string {
 
 // printOptimizePortalLink prints the Foundry portal URL for an optimization job.
 // Best-effort — silently skips if the portal prefix cannot be resolved.
-func printOptimizePortalLink(ctx context.Context, out io.Writer, agentName, operationID string) {
+func printOptimizePortalLink(ctx context.Context, out io.Writer, agentName, operationID, envName string) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return
 	}
 	defer azdClient.Close()
 
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || envResp == nil {
+	env := getExistingEnvironment(ctx, envName, azdClient)
+	if env == nil {
 		return
 	}
 
-	printPortalLink(ctx, out, azdClient, envResp.Environment.Name, func(prefix *eval_api.PortalPrefix) string {
+	printPortalLink(ctx, out, azdClient, env.Name, func(prefix *eval_api.PortalPrefix) string {
 		return prefix.OptimizationURL(agentName, operationID)
 	})
 }
@@ -159,6 +235,7 @@ func isInAzdProject(ctx context.Context) bool {
 func buildCandidateEvalURLs(
 	ctx context.Context,
 	candidates []optimize_api.CandidateResult,
+	explicitEnvName string,
 ) (result map[string]string) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -173,11 +250,11 @@ func buildCandidateEvalURLs(
 	}
 	defer azdClient.Close()
 
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || envResp == nil || envResp.Environment == nil {
+	env := getExistingEnvironment(ctx, explicitEnvName, azdClient)
+	if env == nil {
 		return nil
 	}
-	envName := envResp.Environment.Name
+	envName := env.Name
 
 	urls := make(map[string]string)
 	for _, c := range candidates {
@@ -257,8 +334,29 @@ func reportSvcOptimizationDeployment(
 	log.Printf("postdeploy: promoting candidate %s for %s (version %s)",
 		candidateResp.Value, svc.Name, versionResp.Value)
 
+	// Candidate promotion is nested under the optimization job; resolve the
+	// per-agent job ID (AGENT_{KEY}_OPTIMIZATION_JOB_ID), falling back to the
+	// global last-job key.
+	jobIDKey := optimizeJobIDKeyForAgent(svc.Name)
+	jobID := ""
+	if jobResp, jobErr := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     jobIDKey,
+	}); jobErr == nil && jobResp != nil && jobResp.Value != "" {
+		jobID = jobResp.Value
+	} else if jobResp, jobErr := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     optimizeLastJobIDKey,
+	}); jobErr == nil && jobResp != nil {
+		jobID = jobResp.Value
+	}
+	if jobID == "" {
+		log.Printf("postdeploy: no optimization job ID for %s, skipping promotion", svc.Name)
+		return
+	}
+
 	optClient := newClient(projectEndpoint)
-	if err := optClient.ReportDeployment(ctx, &optimize_api.DeploymentReport{
+	if err := optClient.ReportDeployment(ctx, jobID, &optimize_api.DeploymentReport{
 		CandidateID:  candidateResp.Value,
 		AgentName:    svc.Name,
 		AgentVersion: versionResp.Value,
@@ -276,5 +374,73 @@ func reportSvcOptimizationDeployment(
 		Value:   "",
 	}); err != nil {
 		log.Printf("postdeploy: failed to clear %s: %v", candidateKey, err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Candidate table rendering helpers
+// ---------------------------------------------------------------------------
+
+// candidateDisplayName returns the candidate name with a " ★" suffix when
+// isBest is true.
+func candidateDisplayName(name string, isBest bool) string {
+	if isBest {
+		return name + " ★"
+	}
+	return name
+}
+
+// candidateTableHeader returns the header and separator lines for a
+// candidate results table. When showEval/showStrategy are true the
+// respective columns are included.
+func candidateTableHeader(showEval, showStrategy bool) (header, sep string) {
+	header = fmt.Sprintf("  %-20s %8s", "Candidate", "Score")
+	sep = fmt.Sprintf("  %-20s %8s",
+		strings.Repeat("─", 20),
+		strings.Repeat("─", 8))
+	if showEval {
+		header += "  Eval"
+		sep += "  " + strings.Repeat("─", 4)
+	}
+	if showStrategy {
+		header += "  Strategy"
+		sep += "  " + strings.Repeat("─", 8)
+	}
+	return header, sep
+}
+
+// formatCandidateRow builds a formatted table row for a single candidate.
+// evalCell is the rendered eval link (or empty); strategyKeys is the list of
+// mutation attribute names (or nil). showEval/showStrategy control whether the
+// columns are included.
+func formatCandidateRow(
+	name string, score float64, evalCell string,
+	strategyKeys []string, showEval, showStrategy bool,
+) string {
+	line := fmt.Sprintf("  %-20s %8.3f", name, score)
+	if showEval {
+		if evalCell == "" {
+			evalCell = "-"
+		}
+		line += fmt.Sprintf("  %-4s", evalCell)
+	}
+	if showStrategy {
+		if len(strategyKeys) == 0 {
+			line += "  -"
+		} else {
+			line += "  " + strings.Join(strategyKeys, ", ")
+		}
+	}
+	return line
+}
+
+// writeCandidateRow writes a formatted candidate row to out, applying
+// green color when the candidate is the best.
+func writeCandidateRow(out io.Writer, line string, isBest bool) {
+	if isBest {
+		green := color.New(color.FgGreen)
+		_, _ = green.Fprintln(out, line)
+	} else {
+		fmt.Fprintln(out, line)
 	}
 }

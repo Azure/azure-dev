@@ -14,31 +14,52 @@ import (
 type AgentProtocol string
 
 const (
-	AgentProtocolActivityProtocol AgentProtocol = "activity_protocol"
-	AgentProtocolInvocations      AgentProtocol = "invocations"
-	AgentProtocolInvocationsWS    AgentProtocol = "invocations_ws"
-	AgentProtocolResponses        AgentProtocol = "responses"
-	AgentProtocolA2A              AgentProtocol = "a2a"
+	// AgentProtocolActivityProtocol is the canonical Activity protocol wire value.
+	// Upstream renamed it from "activity_protocol" to "activity"; the legacy value
+	// is still accepted on read via AgentProtocolActivityProtocolLegacy.
+	AgentProtocolActivityProtocol AgentProtocol = "activity"
+	// AgentProtocolActivityProtocolLegacy is the pre-rename Activity wire value,
+	// preserved for back-compat when reading manifests authored before the rename.
+	AgentProtocolActivityProtocolLegacy AgentProtocol = "activity_protocol"
+	AgentProtocolInvocations            AgentProtocol = "invocations"
+	AgentProtocolInvocationsWS          AgentProtocol = "invocations_ws"
+	AgentProtocolResponses              AgentProtocol = "responses"
+	AgentProtocolA2A                    AgentProtocol = "a2a"
 )
 
+// IsActivityProtocolName reports whether the given definition-level protocol name
+// denotes the Activity protocol. It accepts both the canonical "activity" and the
+// legacy "activity_protocol" value (upstream renamed it; legacy stays accepted).
+func IsActivityProtocolName(p AgentProtocol) bool {
+	return p == AgentProtocolActivityProtocol || p == AgentProtocolActivityProtocolLegacy
+}
+
 // InvocableProtocols returns the set of protocols that azd can invoke directly.
-// A2A and activity_protocol are deployment-only — they cannot be used for local
-// or remote invocation through azd.
+// activity is deployment-only — it cannot be used for local or remote
+// invocation through azd. A2A is remote-only (see IsInvocable / IsLocalInvocable).
 func InvocableProtocols() []AgentProtocol {
 	return []AgentProtocol{
 		AgentProtocolResponses,
 		AgentProtocolInvocations,
+		AgentProtocolA2A,
 	}
 }
 
 // IsInvocable reports whether the protocol can be used for invocation through azd.
 func (p AgentProtocol) IsInvocable() bool {
 	switch p {
-	case AgentProtocolResponses, AgentProtocolInvocations:
+	case AgentProtocolResponses, AgentProtocolInvocations, AgentProtocolA2A:
 		return true
 	default:
 		return false
 	}
+}
+
+// IsLocalInvocable reports whether the protocol can be invoked against a locally
+// running agent (azd ai agent run). A2A is a remote agent-to-agent protocol and
+// is only invocable against a deployed Foundry agent.
+func (p AgentProtocol) IsLocalInvocable() bool {
+	return p.IsInvocable() && p != AgentProtocolA2A
 }
 
 // AgentKind represents the different types of agents
@@ -116,9 +137,10 @@ type VersionSelector struct {
 type AgentEndpointAuthorizationSchemeType string
 
 const (
-	AgentEndpointAuthSchemeEntra          AgentEndpointAuthorizationSchemeType = "Entra"
-	AgentEndpointAuthSchemeBotService     AgentEndpointAuthorizationSchemeType = "BotService"
-	AgentEndpointAuthSchemeBotServiceRbac AgentEndpointAuthorizationSchemeType = "BotServiceRbac"
+	AgentEndpointAuthSchemeEntra            AgentEndpointAuthorizationSchemeType = "Entra"
+	AgentEndpointAuthSchemeBotService       AgentEndpointAuthorizationSchemeType = "BotService"
+	AgentEndpointAuthSchemeBotServiceRbac   AgentEndpointAuthorizationSchemeType = "BotServiceRbac"
+	AgentEndpointAuthSchemeBotServiceTenant AgentEndpointAuthorizationSchemeType = "BotServiceTenant"
 )
 
 // IsolationKeySourceKind represents the kind of isolation key source.
@@ -142,11 +164,43 @@ type AgentEndpointAuthorizationScheme struct {
 	IsolationKeySource *IsolationKeySource                  `json:"isolation_key_source,omitempty"`
 }
 
+// ActivityProtocolConfiguration describes configuration specific to the activity protocol.
+type ActivityProtocolConfiguration struct {
+	EnableM365PublicEndpoint *bool `json:"enable_m365_public_endpoint,omitempty"`
+}
+
+// ResponsesProtocolConfiguration describes configuration specific to the responses protocol.
+type ResponsesProtocolConfiguration struct{}
+
+// A2AProtocolConfiguration describes configuration specific to the A2A protocol.
+type A2AProtocolConfiguration struct{}
+
+// MCPProtocolConfiguration describes configuration specific to the MCP protocol.
+type MCPProtocolConfiguration struct{}
+
+// InvocationsProtocolConfiguration describes configuration specific to the invocations protocol.
+type InvocationsProtocolConfiguration struct{}
+
+// InvocationsWSProtocolConfiguration describes configuration specific to the WebSocket-based invocations protocol.
+type InvocationsWSProtocolConfiguration struct{}
+
+// ProtocolConfiguration describes per-protocol configuration for the agent endpoint.
+// The presence of a key declares the protocol is enabled.
+type ProtocolConfiguration struct {
+	Activity      *ActivityProtocolConfiguration      `json:"activity,omitempty"`
+	Responses     *ResponsesProtocolConfiguration     `json:"responses,omitempty"`
+	A2A           *A2AProtocolConfiguration           `json:"a2a,omitempty"`
+	MCP           *MCPProtocolConfiguration           `json:"mcp,omitempty"`
+	Invocations   *InvocationsProtocolConfiguration   `json:"invocations,omitempty"`
+	InvocationsWS *InvocationsWSProtocolConfiguration `json:"invocations_ws,omitempty"`
+}
+
 // AgentEndpoint describes the endpoint configuration for an agent.
 type AgentEndpoint struct {
-	VersionSelector      *VersionSelector                   `json:"version_selector,omitempty"`
-	Protocols            []AgentEndpointProtocol            `json:"protocols,omitempty"`
-	AuthorizationSchemes []AgentEndpointAuthorizationScheme `json:"authorization_schemes,omitempty"`
+	VersionSelector       *VersionSelector                   `json:"version_selector,omitempty"`
+	Protocols             []AgentEndpointProtocol            `json:"protocols,omitempty"`
+	ProtocolConfiguration *ProtocolConfiguration             `json:"protocol_configuration,omitempty"`
+	AuthorizationSchemes  []AgentEndpointAuthorizationScheme `json:"authorization_schemes,omitempty"`
 }
 
 // AgentCardSkill describes a single capability that an agent can perform.
@@ -178,54 +232,34 @@ type CodeConfigurationAPI struct {
 	DependencyResolution string   `json:"dependency_resolution,omitempty"`
 }
 
-// HostedAgentDefinition represents a hosted agent that can be either container-based
-// (with Image) or code-based (with CodeConfiguration). The protocol versions JSON
-// field name differs: container uses "container_protocol_versions" while code uses
-// "protocol_versions". Custom marshaling handles this automatically.
-type HostedAgentDefinition struct {
-	AgentDefinition
-	ProtocolVersions     []ProtocolVersionRecord `json:"-"` // marshaled dynamically based on deploy mode
-	CPU                  string                  `json:"cpu"`
-	Memory               string                  `json:"memory"`
-	EnvironmentVariables map[string]string       `json:"environment_variables,omitempty"`
-	Image                string                  `json:"image,omitempty"`              // container deploy only
-	CodeConfiguration    *CodeConfigurationAPI   `json:"code_configuration,omitempty"` // code deploy only
+// ContainerConfigurationAPI represents the container_configuration block in the API request.
+// Used for container deploy mode to specify the pre-built container image.
+type ContainerConfigurationAPI struct {
+	Image string `json:"image"`
 }
 
-// MarshalJSON implements custom JSON marshaling for HostedAgentDefinition.
-// Code deploy agents use "protocol_versions"; container agents use "container_protocol_versions".
-func (d HostedAgentDefinition) MarshalJSON() ([]byte, error) {
-	type Alias HostedAgentDefinition
-
-	if d.CodeConfiguration != nil {
-		// Code deploy: use protocol_versions
-		return json.Marshal(struct {
-			Alias
-			ProtocolVersions []ProtocolVersionRecord `json:"protocol_versions"`
-		}{
-			Alias:            Alias(d),
-			ProtocolVersions: d.ProtocolVersions,
-		})
-	}
-
-	// Container deploy: use container_protocol_versions
-	return json.Marshal(struct {
-		Alias
-		ContainerProtocolVersions []ProtocolVersionRecord `json:"container_protocol_versions"`
-	}{
-		Alias:                     Alias(d),
-		ContainerProtocolVersions: d.ProtocolVersions,
-	})
+// HostedAgentDefinition represents a hosted agent that can be either container-based
+// (with ContainerConfiguration) or code-based (with CodeConfiguration).
+// Both deploy modes now use "protocol_versions" in the serialized JSON.
+type HostedAgentDefinition struct {
+	AgentDefinition
+	ProtocolVersions       []ProtocolVersionRecord    `json:"protocol_versions,omitempty"`
+	CPU                    string                     `json:"cpu"`
+	Memory                 string                     `json:"memory"`
+	EnvironmentVariables   map[string]string          `json:"environment_variables,omitempty"`
+	ContainerConfiguration *ContainerConfigurationAPI `json:"container_configuration,omitempty"` // container deploy only
+	CodeConfiguration      *CodeConfigurationAPI      `json:"code_configuration,omitempty"`      // code deploy only
+	Image                  string                     `json:"image,omitempty"`                   // deprecated: for backward compat deserialization only
 }
 
 // UnmarshalJSON implements custom JSON unmarshaling for HostedAgentDefinition.
-// It reads protocol versions from either "protocol_versions" or "container_protocol_versions".
+// It reads protocol versions from either "protocol_versions" or legacy "container_protocol_versions",
+// and image from either "container_configuration.image" or legacy top-level "image".
 func (d *HostedAgentDefinition) UnmarshalJSON(data []byte) error {
 	type Alias HostedAgentDefinition
 
 	var raw struct {
 		Alias
-		ProtocolVersions          []ProtocolVersionRecord `json:"protocol_versions"`
 		ContainerProtocolVersions []ProtocolVersionRecord `json:"container_protocol_versions"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -233,11 +267,18 @@ func (d *HostedAgentDefinition) UnmarshalJSON(data []byte) error {
 	}
 
 	*d = HostedAgentDefinition(raw.Alias)
-	if len(raw.ProtocolVersions) > 0 {
-		d.ProtocolVersions = raw.ProtocolVersions
-	} else {
+
+	// Backward compat: if protocol_versions is empty, fall back to legacy container_protocol_versions
+	if len(d.ProtocolVersions) == 0 && len(raw.ContainerProtocolVersions) > 0 {
 		d.ProtocolVersions = raw.ContainerProtocolVersions
 	}
+
+	// Backward compat: if container_configuration is not set but legacy top-level image is, migrate it
+	if d.ContainerConfiguration == nil && d.Image != "" {
+		d.ContainerConfiguration = &ContainerConfigurationAPI{Image: d.Image}
+		d.Image = "" // clear deprecated field
+	}
+
 	return nil
 }
 
@@ -315,10 +356,16 @@ type AgentVersionError struct {
 
 // AgentObject represents an agent
 type AgentObject struct {
-	Object   string `json:"object"`
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Versions struct {
+	Object             string              `json:"object"`
+	ID                 string              `json:"id"`
+	Name               string              `json:"name"`
+	State              string              `json:"state,omitempty"`
+	AgentEndpoint      *AgentEndpoint      `json:"agent_endpoint,omitempty"`
+	AgentCard          *AgentCard          `json:"agent_card,omitempty"`
+	InstanceIdentity   *AgentIdentityInfo  `json:"instance_identity,omitempty"`
+	Blueprint          *BlueprintInfo      `json:"blueprint,omitempty"`
+	BlueprintReference *BlueprintReference `json:"blueprint_reference,omitempty"`
+	Versions           struct {
 		Latest AgentVersionObject `json:"latest"`
 	} `json:"versions"`
 }

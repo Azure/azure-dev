@@ -218,9 +218,174 @@ pkg/
 │   ├── role_assignment_check_test.go  # Tests for the role assignment check
 │   ├── generate_bicep_param_test.go   # Tests for .bicepparam generation
 │   └── bicep_provider.go          # validatePreflight() integration, checkRoleAssignmentPermissions
+├── infra/provisioning/
+│   └── validation_dispatcher.go   # ValidationCheckDispatcher interface (DI decoupling)
 ├── output/ux/
 │   ├── preflight_report.go        # PreflightReport UxItem
 │   └── preflight_report_test.go   # Tests for PreflightReport
 └── tools/bicep/
     └── bicep.go                   # Snapshot() method, SnapshotOptions builder
 ```
+
+## Extension-Provided Checks
+
+Extensions can contribute validation checks to the local preflight pipeline using
+the `validation-provider` capability. This allows extensions to inspect the Bicep
+deployment data (ARM template, snapshot, parameters, location) and return additional
+warnings or errors that are merged into the preflight report.
+
+### How It Works
+
+1. The extension declares `validation-provider` in its `extension.yaml` capabilities.
+2. During startup, the extension registers one or more checks with a `check_type`
+   (e.g., `"local-preflight"`) and a stable `rule_id`.
+3. When `BicepProvider.validatePreflight()` runs, after the built-in checks complete,
+   it dispatches to all extension-registered checks matching `check_type: "local-preflight"`.
+4. Each extension check receives a context map with:
+   - `resources_snapshot` — Bicep snapshot JSON (`predictedResources`)
+   - `predicted_resources` — Parsed resource array from the snapshot
+   - `arm_template` — Compiled ARM template JSON
+   - `arm_parameters` — Resolved ARM parameters JSON
+   - `env_location` — Azure location string
+5. The extension returns `ValidationCheckResult` items (severity, message, suggestion, links)
+   which are appended to the preflight report.
+
+### Extension Code Example
+
+```go
+// In your extension's listen command:
+host := azdext.NewExtensionHost(azdClient).
+    WithValidationCheck(azdext.ValidationCheckRegistration{
+        CheckType: "local-preflight",
+        RuleID:    "my_naming_rule",
+        Factory: func() azdext.ValidationCheckProvider {
+            return &MyNamingCheck{}
+        },
+    })
+
+// The check implementation:
+type MyNamingCheck struct{}
+
+func (c *MyNamingCheck) Validate(
+    ctx context.Context,
+    valCtx *azdext.ValidationContext,
+    req *azdext.ValidationCheckRequest,
+) (*azdext.ValidationCheckResponse, error) {
+    resources, err := valCtx.ParsePredictedResources()
+    if err != nil || len(resources) == 0 {
+        return &azdext.ValidationCheckResponse{}, nil
+    }
+
+    // Inspect resources, return results...
+    return &azdext.ValidationCheckResponse{
+        Results: results,
+    }, nil
+}
+```
+
+### Failure Handling
+
+If an extension check returns an error (the `Validate` method fails), the error is
+logged as a warning but does **not** block the deployment. Only the extension's
+results are omitted. Built-in check failures still follow the standard error behavior
+described above.
+
+### Future Check Types
+
+The `check_type` field is designed for extensibility. Two check types are
+currently supported — `"local-preflight"` (Bicep-only, ARM-rich context) and
+`"provision"` (provider-agnostic, lean context; see below). Future check types
+(e.g., `"project-config"`, `"auth"`) can be added without changing the protocol.
+Each check type defines its own context keys.
+
+## Provider-Agnostic Provision Checks (`"provision"`)
+
+The `"local-preflight"` dispatch above only runs for **Bicep**-provisioned
+deployments, because its context is built from the compiled ARM template and
+Bicep snapshot. Extensions that ship their own provisioning provider (e.g.
+`microsoft.foundry`, the `demo` provider) — as well as the core Terraform
+provider — never route through `BicepProvider`, so a `"local-preflight"` check
+registered by such an extension would be dead code.
+
+To let a check run **before provisioning regardless of the provider**, register
+it under the `"provision"` check type instead. The provider-agnostic dispatch is
+exposed as `provisioning.Manager.RunProvisionValidation()` and is invoked **once
+per `azd provision` / `azd up`** by the command layer, before the layer
+execution graph runs — not inside `Manager.Deploy()`/`Manager.Preview()`.
+Multi-layer provisioning (`infra.layers[]`) runs each layer's `Deploy` through
+its own `Manager` concurrently, so dispatching per-`Deploy` would fire the
+checks — and any warning confirmation prompt — once per layer with an identical,
+env-scoped context. Hoisting the call to the action guarantees a single
+dispatch and a single prompt:
+
+```
+azd provision
+  │
+  ├── ► Provider-agnostic "provision" validation  ← runs once, all providers
+  │        (provisionLayersGraph / up graph, before the layer graph)
+  │
+  ├── per-layer graph (may run layers concurrently)
+  │     └── provider.Deploy()
+  │           └── (Bicep only) "local-preflight" validation
+  └── ...
+```
+
+On abort (an error-severity finding, or a declined warning),
+`RunProvisionValidation` returns `provisioning.ErrProvisionValidationAborted`;
+the action passes it through `wrapProvisionError`, which emits the shared
+"Provisioning was cancelled." UX and maps it to `internal.ErrAbortedByUser`
+(exit code 0). Any other error (a failure of the confirmation prompt itself) is
+returned as-is, while a passing or skipped run returns `nil`. Both the deploy
+and `--preview` paths route through the same single call.
+
+### Lean, Provider-Agnostic Context
+
+Because Terraform and extension providers do not produce an ARM template, the
+`"provision"` context is intentionally lean and carries **no** template,
+parameters, or resource snapshot. Each check receives:
+
+- `env_name` — the azd environment name
+- `subscription_id` — the target Azure subscription id
+- `env_location` — the Azure location string
+- `resource_group` — the target resource group name (empty for subscription-scoped)
+- `target_scope` — `"subscription"` or `"resourceGroup"`
+
+Typed accessors (`EnvName()`, `SubscriptionID()`, `EnvLocation()`,
+`ResourceGroup()`, `TargetScope()`) are available on `azdext.ValidationContext`.
+
+### Shared Behavior
+
+The `"provision"` dispatch reuses the same machinery as `"local-preflight"`:
+parallel dispatch, the uniform preflight report, severity/abort semantics
+(WARNING prompts to continue; ERROR aborts with exit code 0), an equivalent
+60s dispatch timeout (`provisionValidationTimeout` in `provision_validation.go`,
+mirroring the Bicep path's `extensionValidationTimeout`), and the
+`provision.preflight` config gate (`off` disables both dispatch sites).
+Registration still requires the `validation-provider` capability.
+
+### Extension Code Example
+
+```go
+host := azdext.NewExtensionHost(azdClient).
+    WithValidationCheck(azdext.ValidationCheckRegistration{
+        CheckType: azdext.ValidationCheckTypeProvision, // "provision"
+        RuleID:    "resource_group_location",
+        Factory: func() azdext.ValidationCheckProvider {
+            return &MyLocationCheck{}
+        },
+    })
+```
+
+### Registering Both Check Types
+
+An extension can register **both** check types at once — they are independent and
+both fire when applicable. The `microsoft.azd.demo` extension does exactly this as
+a reference:
+
+- `demo_warning` under `"local-preflight"` — inspects the Bicep snapshot; runs only
+  for Bicep and is skipped gracefully when no snapshot is available.
+- `demo_provision_warning` under `"provision"` — reads the lean provision context;
+  runs before provisioning for every provider, including the demo provider.
+
+Because registrations are keyed by `check_type` + `rule_id`, the same extension can
+safely register a check under each type.

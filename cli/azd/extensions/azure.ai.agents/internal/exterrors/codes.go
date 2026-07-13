@@ -13,6 +13,11 @@ const (
 // These are usually paired with [Validation] when user input, manifests,
 // or configuration values fail validation.
 const (
+	// CodeInvalidAgentManifest is retained while azd still reads the deprecated
+	// on-disk agent manifest (agent.yaml/agent.manifest.yaml) during the
+	// migration window. Rename or retire it once the on-disk manifest path is
+	// removed and the agent definition is read only from azure.yaml (see the
+	// unify-azure-yaml design, §2.9).
 	CodeInvalidAgentManifest      = "invalid_agent_manifest"
 	CodeInvalidManifestPointer    = "invalid_manifest_pointer"
 	CodeInvalidProjectResourceId  = "invalid_project_resource_id"
@@ -55,7 +60,6 @@ const (
 	CodeMissingAgentEnvVars       = "missing_agent_env_vars"
 	CodeMissingProjectEndpoint    = "missing_project_endpoint"
 	CodeGitHubDownloadFailed      = "github_download_failed"
-	CodeScaffoldTemplateFailed    = "scaffold_template_failed"
 	CodePromptFailed              = "prompt_failed"
 )
 
@@ -101,11 +105,27 @@ const (
 	CodeSessionNotFound = "session_not_found"
 )
 
+// Error codes for agent delete errors.
+const (
+	CodeAgentNotFound          = "agent_not_found"
+	CodeAgentHasActiveSessions = "agent_has_active_sessions"
+)
+
 // Error codes for file operation errors.
 const (
 	CodeFileNotFound     = "file_not_found"
 	CodeFileUploadFailed = "file_upload_failed"
 	CodeInvalidFilePath  = "invalid_file_path"
+)
+
+// Error codes for packaging/deploy errors.
+const (
+	CodeBundledDepsNotFound = "bundled_deps_not_found"
+)
+
+// Error codes for $ref file-include resolution.
+const (
+	CodeInvalidFileRef = "invalid_file_ref"
 )
 
 // Error codes for toolbox operations.
@@ -119,6 +139,11 @@ const (
 	CodeInvalidConnection      = "invalid_connection"
 	CodeConnectionCreationFail = "connection_creation_failed"
 	CodeMissingConnectionField = "missing_connection_field"
+)
+
+// Error codes for memory store operations.
+const (
+	CodeInvalidMemoryStore = "invalid_memory_store"
 )
 
 // Error codes for agent identity RBAC operations.
@@ -155,14 +180,17 @@ const (
 	OpContainerPackage      = "container_package"
 	OpContainerPublish      = "container_publish"
 	OpCreateAgent           = "create_agent"
+	OpDeleteAgent           = "delete_agent"
 	OpStartContainer        = "start_container"
 	OpGetContainerOperation = "get_container_operation"
 	OpCreateSession         = "create_session"
 	OpGetSession            = "get_session"
 	OpDeleteSession         = "delete_session"
+	OpStopSession           = "stop_session"
 	OpListSessions          = "list_sessions"
 	OpCreateToolboxVersion  = "create_toolbox_version"
 	OpGetToolbox            = "get_toolbox"
+	OpProvisionMemoryStore  = "provision_memory_store"
 )
 
 // Error codes for eval and optimize operations.
@@ -175,4 +203,44 @@ const (
 	CodeOptimizeJobTimeout = "optimize_job_timeout"
 	CodeInvalidTargetAttr  = "invalid_target_attribute"
 	CodeReservedEnvVar     = "reserved_env_var"
+)
+
+// Error codes for the microsoft.foundry provisioning provider.
+const (
+	CodeInvalidAzureYaml            = "invalid_azure_yaml"
+	CodeProvisioningServiceNotFound = "provisioning_service_not_found"
+	CodeBrownfieldNotSupported      = "brownfield_not_supported"
+	CodeMissingFoundryProjectName   = "missing_foundry_project_name"
+	CodeMissingResourceGroup        = "missing_resource_group"
+	CodeMissingAzureLocation        = "missing_azure_location"
+	CodeDestroyRequiresForce        = "destroy_requires_force"
+	CodeOnDiskBicepCompileFailed    = "ondisk_bicep_compile_failed"
+	CodeOnDiskBicepParseFailed      = "ondisk_bicep_parse_failed"
+	CodeOnDiskParametersInvalid     = "ondisk_parameters_invalid"
+	CodeOnDiskTemplateMissing       = "ondisk_template_missing"
+	CodeArmWhatIfFailed             = "arm_what_if_failed"
+)
+
+// Error codes for `azd ai agent init --infra` (infrastructure eject).
+const (
+	CodeInfraEjectExists                  = "infra_eject_exists"
+	CodeInfraEjectNoFoundryService        = "infra_eject_no_foundry_service"
+	CodeInfraEjectMultipleFoundryServices = "infra_eject_multiple_foundry_services"
+	CodeInfraEjectAzureYamlMissing        = "infra_eject_azure_yaml_missing"
+	CodeInfraEjectWriteFailed             = "infra_eject_write_failed"
+	CodeInfraEjectConflictingArguments    = "infra_eject_conflicting_arguments"
+	CodeInfraEjectNetworkUnsupported      = "infra_eject_network_unsupported"
+	CodeInfraEjectBrownfieldUnsupported   = "infra_eject_brownfield_unsupported"
+)
+
+// Operation names for the microsoft.foundry provisioning provider.
+const (
+	OpArmDeploymentCreate       = "arm_deployment_create"
+	OpArmDeploymentGet          = "arm_deployment_get"
+	OpArmDeploymentWhatIf       = "arm_deployment_what_if"
+	OpResourceGroupDelete       = "resource_group_delete"
+	OpCognitiveAccountList      = "cognitive_account_list"
+	OpCognitiveAccountPurge     = "cognitive_account_purge"
+	OpCognitiveDeploymentList   = "cognitive_deployment_list"
+	OpCognitiveDeploymentDelete = "cognitive_deployment_delete"
 )

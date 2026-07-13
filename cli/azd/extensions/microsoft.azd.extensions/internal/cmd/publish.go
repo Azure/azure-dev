@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -494,12 +495,15 @@ func addOrUpdateExtension(
 }
 
 func saveRegistry(path string, registry *extensions.Registry) error {
-	data, err := json.MarshalIndent(registry, "", "  ")
-	if err != nil {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(registry); err != nil {
 		return err
 	}
 
-	return os.WriteFile(path, data, osutil.PermissionFile)
+	return os.WriteFile(path, buf.Bytes(), osutil.PermissionFile)
 }
 
 func createPlatformMetadata(

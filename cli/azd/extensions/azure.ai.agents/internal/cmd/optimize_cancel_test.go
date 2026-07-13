@@ -6,11 +6,12 @@ package cmd
 import (
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestOptimizeCancelCommand_RequiresPositionalArg(t *testing.T) {
-	cmd := newOptimizeCancelCommand()
+	cmd := newOptimizeCancelCommand(&azdext.ExtensionContext{})
 
 	err := cmd.Args(cmd, []string{})
 	assert.Error(t, err)
@@ -23,7 +24,7 @@ func TestOptimizeCancelCommand_RequiresPositionalArg(t *testing.T) {
 }
 
 func TestOptimizeCancelCommand_HasConnectionFlags(t *testing.T) {
-	cmd := newOptimizeCancelCommand()
+	cmd := newOptimizeCancelCommand(&azdext.ExtensionContext{})
 
 	assert.NotNil(t, cmd.Flags().Lookup("endpoint"))
 	assert.NotNil(t, cmd.Flags().Lookup("project-endpoint"))

@@ -43,7 +43,7 @@ func TestFormatSubscriptionDisplayName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := formatSubscriptionDisplayName(sub, tt.hideId)
+			result := FormatSubscriptionDisplay(sub, tt.hideId)
 			require.NotEmpty(t, result)
 
 			if tt.exactMatch != "" {
@@ -156,7 +156,7 @@ func TestIsDemoModeEnabled(t *testing.T) {
 				t.Setenv("AZD_DEMO_MODE", "")
 			}
 
-			result := isDemoModeEnabled()
+			result := IsDemoModeEnabled()
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -167,7 +167,7 @@ func TestIsDemoModeEnabled_Unset(t *testing.T) {
 	// process env (which should not have it in CI).
 	// This tests the "env var not present" path.
 	t.Setenv("AZD_DEMO_MODE", "")
-	assert.False(t, isDemoModeEnabled())
+	assert.False(t, IsDemoModeEnabled())
 }
 
 func TestNewEmptyAzureContext(t *testing.T) {

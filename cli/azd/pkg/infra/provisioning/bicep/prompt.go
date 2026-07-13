@@ -82,16 +82,18 @@ func autoGenerate(parameter string, azdMetadata azure.AzdMetadata) (string, erro
 // locationsWithQuotaFor finds locations that have sufficient quota for the given usage requirements.
 //
 // The quotaFor parameter uses the Bicep metadata format: "UsageName" or "UsageName, Capacity".
-// An implicit requirement for "OpenAI.S0.AccountCount" with capacity 2 is always included.
+// An implicit requirement for "OpenAI.S0.AccountCount" with capacity 1 is always included.
 func (a *BicepProvider) locationsWithQuotaFor(
 	ctx context.Context, subId string, locations []string, quotaFor []string) ([]string, error) {
 	if a.aiModelService == nil {
 		return nil, fmt.Errorf("AI model service is not configured")
 	}
 
-	// Always require minimum S0 account quota
+	// Always require at least 1 remaining S0 account slot.
+	// Each CognitiveServices/accounts resource consumes exactly 1 unit of
+	// the OpenAI.S0.AccountCount quota regardless of subscription tier.
 	requirements := []ai.QuotaRequirement{
-		{UsageName: "OpenAI.S0.AccountCount", MinCapacity: 2},
+		{UsageName: "OpenAI.S0.AccountCount", MinCapacity: 1},
 	}
 
 	for _, definedUsageName := range quotaFor {

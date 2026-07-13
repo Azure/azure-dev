@@ -326,6 +326,18 @@ func (m *Manager) updateViaBrew(ctx context.Context, cfg *UpdateConfig, writer i
 
 	targetChannel := cfg.Channel
 
+	// `azure/azd` is azd's own Homebrew source (the `azure/azd` tap for
+	// github.com/Azure/homebrew-azd, which publishes the `azd` and `azd@daily`
+	// casks). Homebrew refuses to load casks from untrusted third-party sources —
+	// blocking install, upgrade, and even uninstall — so trust azd's source before
+	// the cask operations below.
+	fmt.Fprintf(writer, "Trusting azd's Homebrew source (azure/azd)...\n")
+	trustArgs := exec.NewRunArgs("brew", "trust", "azure/azd").
+		WithStdOut(writer).WithStdErr(writer).WithInteractive(true)
+	if _, err := m.commandRunner.Run(ctx, trustArgs); err != nil {
+		log.Printf("brew trust azure/azd failed: %v", err)
+	}
+
 	if !hasAzd && !hasAzdDaily {
 		// azd is not installed as a cask (formula install or other).
 		// Uninstall the non-cask version and install the correct cask.
@@ -950,7 +962,9 @@ func IsPackageManagerInstall() bool {
 func PackageManagerUninstallCmd(installedBy installer.InstallType) string {
 	switch installedBy {
 	case installer.InstallTypeBrew:
-		return "brew uninstall azd"
+		// `brew uninstall azd` reads the azure/azd cask metadata, which Homebrew
+		// blocks until the source is trusted, so trust it first.
+		return "brew trust azure/azd && brew uninstall azd"
 	case installer.InstallTypeWinget:
 		return "winget uninstall Microsoft.Azd"
 	case installer.InstallTypeChoco:

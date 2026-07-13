@@ -14,6 +14,7 @@ import (
 	"hash"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -29,7 +30,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -47,6 +47,59 @@ var (
 	ErrExtensionInstalled         = errors.New("extension already installed")
 )
 
+// DependencyNotFoundError indicates that a required dependency of an extension
+// could not be located in the same source as its parent. azd does not perform
+// cross-source dependency resolution during install, so the dependency must be
+// available in the parent's source or already installed.
+type DependencyNotFoundError struct {
+	// DependencyId is the id of the dependency that could not be resolved.
+	DependencyId string
+	// ParentId is the id of the extension that declares the dependency.
+	ParentId string
+}
+
+func (e *DependencyNotFoundError) Error() string {
+	return fmt.Sprintf("dependency %s required by %s was not found", e.DependencyId, e.ParentId)
+}
+
+// DependencyAmbiguousSourceError indicates that a required dependency of an
+// extension was found in more than one configured source, so azd cannot decide
+// which one to use. The caller must disambiguate by specifying an exact source.
+type DependencyAmbiguousSourceError struct {
+	// DependencyId is the id of the dependency that matched multiple sources.
+	DependencyId string
+	// ParentId is the id of the extension that declares the dependency.
+	ParentId string
+	// Sources lists the source names the dependency was found in.
+	Sources []string
+}
+
+func (e *DependencyAmbiguousSourceError) Error() string {
+	if len(e.Sources) > 0 {
+		return fmt.Sprintf(
+			"dependency %s required by %s was found in multiple sources (%s); specify an exact source",
+			e.DependencyId, e.ParentId, strings.Join(e.Sources, ", "),
+		)
+	}
+	return fmt.Sprintf(
+		"dependency %s required by %s was found in multiple sources; specify an exact source",
+		e.DependencyId, e.ParentId,
+	)
+}
+
+// dependencySources returns the de-duplicated, sorted source names present in a
+// set of extension matches. It is used to report which sources a dependency was
+// found in when the match is ambiguous.
+func dependencySources(matches []*ExtensionMetadata) []string {
+	seen := map[string]struct{}{}
+	for _, m := range matches {
+		if m.Source != "" {
+			seen[m.Source] = struct{}{}
+		}
+	}
+	return slices.Sorted(maps.Keys(seen))
+}
+
 // FilterOptions is used to filter, lookup, and list extensions with various criteria
 type FilterOptions struct {
 	// Id is used to specify the id of the extension to install
@@ -57,6 +110,9 @@ type FilterOptions struct {
 	Version string
 	// Source is used to specify the source of the extension to install
 	Source string
+	// SourceConfig restricts lookup to one source that is not persisted or cached.
+	// It takes precedence over Source.
+	SourceConfig *SourceConfig
 	// Tags is used to specify the tags of the extension to install
 	Tags []string
 	// Capability is used to filter extensions by capability type
@@ -386,10 +442,30 @@ func (m *Manager) FindExtensions(ctx context.Context, options *FilterOptions) ([
 		}
 	}
 
-	// Use the centralized extension filter
-	extensionFilter := createExtensionFilter(options)
+	filterOptions := options
+	if options.SourceConfig != nil {
+		filterOptionsCopy := *options
+		filterOptionsCopy.Source = ""
+		filterOptions = &filterOptionsCopy
+	}
 
-	sources, err := m.getSources(ctx, sourceFilterPredicate)
+	// Use the centralized extension filter
+	extensionFilter := createExtensionFilter(filterOptions)
+
+	var sources []Source
+	var err error
+	if options.SourceConfig != nil {
+		source, err := m.sourceManager.CreateSource(ctx, options.SourceConfig)
+		if err != nil {
+			if schemaErr, ok := errors.AsType[*ErrUnsupportedRegistrySchema](err); ok {
+				return nil, NewUnsupportedRegistrySchemaError(schemaErr)
+			}
+			return nil, fmt.Errorf("failed initializing extension source: %w", err)
+		}
+		sources = []Source{source}
+	} else {
+		sources, err = m.getSources(ctx, sourceFilterPredicate)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed listing extensions: %w", err)
 	}
@@ -444,6 +520,12 @@ type InstallOptions struct {
 	VersionPreference string
 	// AzdVersion limits selected extension versions to those compatible with azd.
 	AzdVersion *semver.Version
+	// SkipDependencies installs only the target extension, without resolving or
+	// installing its declared dependencies and without enforcing the installed
+	// dependency version constraints. It is used when the caller only needs the
+	// extension's own binary (e.g. generating command snapshots) and cannot
+	// guarantee that the registry's dependency graph is internally consistent.
+	SkipDependencies bool
 }
 
 // InstallWithOptions installs an extension using the supplied options.
@@ -508,8 +590,11 @@ func (m *Manager) installInternal(
 		return nil, fmt.Errorf("no binaries or dependencies available for this version")
 	}
 
-	// Install dependencies
-	if len(selectedVersion.Dependencies) > 0 {
+	// Install dependencies unless the caller opted out. Skipping bypasses both the
+	// dependency install loop and the installed-dependency constraint check, so the
+	// target extension installs even when the registry's dependency graph is
+	// transiently inconsistent (e.g. during a coordinated multi-extension bump).
+	if !opts.SkipDependencies && len(selectedVersion.Dependencies) > 0 {
 		for _, dependency := range selectedVersion.Dependencies {
 			installedDependency, err := m.GetInstalled(FilterOptions{Id: dependency.Id})
 			if err == nil && installedDependency != nil {
@@ -537,11 +622,15 @@ func (m *Manager) installInternal(
 			}
 
 			if len(dependencyMatches) == 0 {
-				return nil, fmt.Errorf("dependency %s not found", dependency.Id)
+				return nil, &DependencyNotFoundError{DependencyId: dependency.Id, ParentId: extension.Id}
 			}
 
 			if len(dependencyMatches) > 1 {
-				return nil, fmt.Errorf("dependency %s found in multiple sources, specify exact source", dependency.Id)
+				return nil, &DependencyAmbiguousSourceError{
+					DependencyId: dependency.Id,
+					ParentId:     extension.Id,
+					Sources:      dependencySources(dependencyMatches),
+				}
 			}
 
 			dependencyMetadata := dependencyMatches[0]
@@ -747,6 +836,13 @@ type UpgradeOptions struct {
 	UpgradeDependencies bool
 	// AzdVersion limits selected extension versions to those compatible with azd.
 	AzdVersion *semver.Version
+	// SkipDependencies reinstalls only the target extension, without resolving or
+	// installing its declared dependencies, without enforcing the installed
+	// dependency version constraints, and without reconciling installed dependency
+	// versions. It mirrors InstallOptions.SkipDependencies for the reinstall an
+	// upgrade performs, so `--no-dependencies` behaves the same whether the
+	// extension is being installed fresh or over an existing install.
+	SkipDependencies bool
 }
 
 // DefaultUpgradeOptions returns UpgradeOptions with dependency upgrades enabled.
@@ -814,9 +910,16 @@ func (m *Manager) upgradeInternal(
 	extensionVersion, err := m.installInternal(ctx, extension, InstallOptions{
 		VersionPreference: opts.VersionPreference,
 		AzdVersion:        opts.AzdVersion,
+		SkipDependencies:  opts.SkipDependencies,
 	}, true, map[string]struct{}{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to install extension: %w", err)
+	}
+
+	// When dependencies are skipped, the reinstall above installs only the target
+	// extension; do not resolve or reconcile any dependency versions.
+	if opts.SkipDependencies {
+		return extensionVersion, nil, nil
 	}
 
 	if extensionVersion == nil || len(extensionVersion.Dependencies) == 0 {
@@ -1026,7 +1129,11 @@ func (m *Manager) findDependencyChild(
 		return nil, fmt.Errorf("dependency %s not found in any registry", childId)
 	}
 	if len(matches) > 1 {
-		return nil, fmt.Errorf("dependency %s found in multiple sources, specify exact source", childId)
+		return nil, &DependencyAmbiguousSourceError{
+			DependencyId: childId,
+			ParentId:     parent.Id,
+			Sources:      dependencySources(matches),
+		}
 	}
 	return matches[0], nil
 }
@@ -1133,11 +1240,34 @@ func (m *Manager) copyFromLocalPath(artifactPath string) (string, error) {
 	return tempFilePath, nil
 }
 
+// InvalidateSourceCache clears the in-memory extension source cache so that
+// subsequent source lookups re-read the configured sources. This is required
+// when a source is added within the same process (e.g. registering a bundle
+// source during install) after the source list may already have been cached.
+func (tm *Manager) InvalidateSourceCache() {
+	tm.sources = nil
+}
+
+// ReloadUserConfig re-reads the user configuration from disk into the manager's
+// cached copy. This is required when the configuration is mutated out-of-band
+// within the same process (e.g. registering a bundle source during install);
+// without it, a subsequent install save would persist the manager's stale
+// snapshot and clobber the externally added changes.
+func (tm *Manager) ReloadUserConfig() error {
+	userConfig, err := tm.configManager.Load()
+	if err != nil {
+		return fmt.Errorf("reloading user configuration: %w", err)
+	}
+
+	tm.userConfig = userConfig
+	tm.installed = nil
+	return nil
+}
+
 func (tm *Manager) getSources(ctx context.Context, filter sourceFilterPredicate) ([]Source, error) {
 	if tm.sources != nil {
 		return tm.sources, nil
 	}
-
 	configs, err := tm.sourceManager.List(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed parsing extension sources: %w", err)
@@ -1187,16 +1317,7 @@ func (tm *Manager) createSourcesFromConfig(
 	// Only hard-fail when every source had an incompatible schema and
 	// no usable sources remain.
 	if len(sources) == 0 && len(schemaErrors) > 0 {
-		return nil, &errorhandler.ErrorWithSuggestion{
-			Err:     schemaErrors[0],
-			Message: schemaErrors[0].Error(),
-			Suggestion: "Upgrade azd to the latest version " +
-				"to use this registry",
-			Links: []errorhandler.ErrorLink{{
-				URL:   "https://aka.ms/azd/install",
-				Title: "Install/upgrade azd",
-			}},
-		}
+		return nil, NewUnsupportedRegistrySchemaError(schemaErrors[0])
 	}
 
 	return sources, nil

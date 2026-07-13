@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -213,17 +213,17 @@ func TestConvertToAiModels_FiltersDeprecatedVersionsAndSkus(t *testing.T) {
 	}
 
 	models := svc.convertToAiModelsAt(rawModels, now, nil)
-	require.Len(t, models, 2)
+	require.Len(t, models, 1)
 
+	// gpt-35-turbo (ARM "Deprecated"/Retired with past inference), gpt-4o
+	// (ARM "Deprecating"/customer-facing Deprecated), and all-expired (no surviving
+	// SKUs) are all excluded from the default new-deployment view. Only gpt-4.1-mini
+	// (GenerallyAvailable with a future SKU deprecation date) remains.
 	require.Equal(t, "gpt-4.1-mini", models[0].Name)
-	require.Equal(t, "gpt-4o", models[1].Name)
-
-	require.Len(t, models[1].Versions, 1)
-	require.Equal(t, "2024-08-06", models[1].Versions[0].Version)
-	require.Equal(t, "Deprecating", models[1].Versions[0].LifecycleStatus)
-	require.Len(t, models[1].Versions[0].Skus, 1)
-	require.Equal(t, "GlobalStandard", models[1].Versions[0].Skus[0].Name)
-	require.Equal(t, "OpenAI.GlobalStandard.gpt-4o", models[1].Versions[0].Skus[0].UsageName)
+	require.Len(t, models[0].Versions, 1)
+	require.Equal(t, "2025-04-14", models[0].Versions[0].Version)
+	require.Len(t, models[0].Versions[0].Skus, 1)
+	require.Equal(t, "GlobalStandard", models[0].Versions[0].Skus[0].Name)
 }
 
 func TestConvertToAiModels_PreservesVersionLifecycleStatus(t *testing.T) {
@@ -238,7 +238,7 @@ func TestConvertToAiModels_PreservesVersionLifecycleStatus(t *testing.T) {
 				Model: &armcognitiveservices.AccountModel{
 					Name:            new("gpt-4o"),
 					Version:         new("2024-08-06"),
-					LifecycleStatus: new(armcognitiveservices.ModelLifecycleStatus("Deprecating")),
+					LifecycleStatus: new(armcognitiveservices.ModelLifecycleStatus("Preview")),
 					SKUs: []*armcognitiveservices.ModelSKU{
 						{
 							Name:            new("GlobalStandard"),
@@ -278,7 +278,7 @@ func TestConvertToAiModels_PreservesVersionLifecycleStatus(t *testing.T) {
 	}
 
 	require.Equal(t, map[string]string{
-		"2024-08-06": "Deprecating",
+		"2024-08-06": "Preview",
 		"2024-11-20": "GenerallyAvailable",
 	}, versionStatuses)
 }
@@ -333,6 +333,70 @@ func TestConvertToAiModels_FiltersStatusesBeforeAggregation(t *testing.T) {
 	require.Len(t, models[0].Versions, 1)
 	require.Equal(t, "2024-11-20", models[0].Versions[0].Version)
 	require.Equal(t, "GenerallyAvailable", models[0].Versions[0].LifecycleStatus)
+}
+
+func TestConvertToAiModels_ExcludesDeprecatingByDefaultButAllowsOptIn(t *testing.T) {
+	t.Parallel()
+
+	svc := NewAiModelService(nil, nil)
+	now := time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC)
+
+	// gpt-4.1-mini mirrors the ARM Models API response: lifecycleStatus "Deprecating"
+	// (customer-facing Deprecated) with a future deprecation.inference date. It still
+	// serves inference, so the old SKU-only filter kept it, but it must not be offered
+	// for new deployments by default.
+	rawModels := map[string][]*armcognitiveservices.Model{
+		"eastus": {
+			{
+				Model: &armcognitiveservices.AccountModel{
+					Name:            new("gpt-4.1-mini"),
+					Version:         new("2025-04-14"),
+					LifecycleStatus: new(armcognitiveservices.ModelLifecycleStatus("Deprecating")),
+					Deprecation: &armcognitiveservices.ModelDeprecationInfo{
+						FineTune:  new("2026-10-14T00:00:00Z"),
+						Inference: new("2026-10-14T00:00:00Z"),
+					},
+					SKUs: []*armcognitiveservices.ModelSKU{
+						{
+							Name:            new("GlobalStandard"),
+							UsageName:       new("OpenAI.GlobalStandard.gpt-4.1-mini"),
+							DeprecationDate: new(time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC)),
+						},
+					},
+				},
+			},
+			{
+				Model: &armcognitiveservices.AccountModel{
+					Name:             new("gpt-4o"),
+					Version:          new("2024-11-20"),
+					IsDefaultVersion: new(true),
+					LifecycleStatus:  new(armcognitiveservices.ModelLifecycleStatus("GenerallyAvailable")),
+					SKUs: []*armcognitiveservices.ModelSKU{
+						{
+							Name:            new("GlobalStandard"),
+							UsageName:       new("OpenAI.GlobalStandard.gpt-4o"),
+							DeprecationDate: new(time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Default view: gpt-4.1-mini ("Deprecating") is excluded even though its inference
+	// endpoint is still active.
+	defaultModels := svc.convertToAiModelsAt(rawModels, now, nil)
+	require.Len(t, defaultModels, 1)
+	require.Equal(t, "gpt-4o", defaultModels[0].Name)
+
+	// Opt-in: callers can request "Deprecating" models explicitly for existing-customer
+	// management scenarios.
+	optIn := svc.convertToAiModelsAt(rawModels, now, []string{"Deprecating"})
+	require.Len(t, optIn, 1)
+	require.Equal(t, "gpt-4.1-mini", optIn[0].Name)
+	require.Len(t, optIn[0].Versions, 1)
+	require.Equal(t, "2025-04-14", optIn[0].Versions[0].Version)
+	require.Equal(t, "Deprecating", optIn[0].Versions[0].LifecycleStatus)
 }
 
 func TestConvertToAiModels_ExcludesLocationsWithOnlyDeprecatedEntries(t *testing.T) {
@@ -482,10 +546,10 @@ func TestFilterModelsByQuota(t *testing.T) {
 			expected:     []string{"gpt-4o"},
 		},
 		{
-			name:         "empty usages excludes all models",
+			name:         "empty usages includes models with SKUs",
 			usages:       []AiModelUsage{},
 			minRemaining: 1,
-			expected:     []string{},
+			expected:     []string{"gpt-4o", "gpt-4o-mini", "text-embedding-ada-002"},
 		},
 	}
 
@@ -775,6 +839,61 @@ func TestFilterModelsByAnyLocationQuota(t *testing.T) {
 	require.Equal(t, []string{"model-a", "model-b"}, filteredNames)
 }
 
+func TestFilterModelsByAnyLocationQuota_EmptyUsagesDoNotLeakAcrossLocations(t *testing.T) {
+	// Regression test: a model available only in location A with exhausted
+	// quota should NOT become eligible because location B returns empty
+	// usages (e.g. free-tier subscription).
+	models := []AiModel{
+		{
+			Name:      "model-a",
+			Locations: []string{"eastus"},
+			Versions: []AiModelVersion{
+				{
+					Version: "1",
+					Skus: []AiModelSku{
+						{Name: "Standard", UsageName: "a_usage"},
+					},
+				},
+			},
+		},
+		{
+			Name:      "model-b",
+			Locations: []string{"eastus", "westus"},
+			Versions: []AiModelVersion{
+				{
+					Version: "1",
+					Skus: []AiModelSku{
+						{Name: "Standard", UsageName: "b_usage"},
+					},
+				},
+			},
+		},
+	}
+
+	usagesByLocation := map[string][]AiModelUsage{
+		// eastus: model-a exhausted, model-b has quota
+		"eastus": {
+			{Name: "a_usage", CurrentValue: 10, Limit: 10},
+			{Name: "b_usage", CurrentValue: 0, Limit: 100},
+		},
+		// westus: empty usages (free-tier). model-a is NOT
+		// available here, so it must not become eligible.
+		"westus": {},
+	}
+
+	filtered := filterModelsByAnyLocationQuota(
+		models, usagesByLocation, 1)
+	names := make([]string, 0, len(filtered))
+	for _, m := range filtered {
+		names = append(names, m.Name)
+	}
+
+	// model-a should be excluded (exhausted in eastus,
+	// not available in westus).
+	// model-b should be included (has quota in eastus).
+	require.Equal(t, []string{"model-b"}, names)
+}
+
 func TestIsFinetuneUsageName(t *testing.T) {
 	tests := []struct {
 		usageName string
@@ -794,4 +913,55 @@ func TestIsFinetuneUsageName(t *testing.T) {
 			require.Equal(t, tt.expected, IsFinetuneUsageName(tt.usageName))
 		})
 	}
+}
+
+func TestModelHasQuota_EmptyUsages(t *testing.T) {
+	modelWithSkus := AiModel{
+		Name: "gpt-4o",
+		Versions: []AiModelVersion{
+			{
+				Version: "2024-05-13",
+				Skus:    []AiModelSku{{Name: "Standard", UsageName: "OpenAI.Standard.gpt-4o"}},
+			},
+		},
+	}
+	modelNoSkus := AiModel{
+		Name:     "empty-model",
+		Versions: []AiModelVersion{{Version: "1.0"}},
+	}
+
+	emptyUsages := map[string]AiModelUsage{}
+
+	// Model with SKUs should be considered eligible when usage data is empty
+	require.True(t, modelHasQuota(modelWithSkus, emptyUsages, 1))
+
+	// Model with no SKUs should not be considered eligible even with empty usage data
+	require.False(t, modelHasQuota(modelNoSkus, emptyUsages, 1))
+}
+
+func TestMaxModelRemainingQuota_EmptyUsages(t *testing.T) {
+	modelWithSkus := AiModel{
+		Name: "gpt-4o",
+		Versions: []AiModelVersion{
+			{
+				Version: "2024-05-13",
+				Skus:    []AiModelSku{{Name: "Standard", UsageName: "OpenAI.Standard.gpt-4o"}},
+			},
+		},
+	}
+	modelNoSkus := AiModel{
+		Name:     "empty-model",
+		Versions: []AiModelVersion{{Version: "1.0"}},
+	}
+
+	emptyUsages := map[string]AiModelUsage{}
+
+	// Model with SKUs: found=true, remaining=QuotaRemainingUnknown
+	remaining, found := maxModelRemainingQuota(modelWithSkus, emptyUsages)
+	require.True(t, found)
+	require.Equal(t, QuotaRemainingUnknown, remaining)
+
+	// Model with no SKUs: found=false
+	_, found = maxModelRemainingQuota(modelNoSkus, emptyUsages)
+	require.False(t, found)
 }

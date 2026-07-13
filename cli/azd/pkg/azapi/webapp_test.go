@@ -6,11 +6,19 @@ package azapi
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
 
 func Test_isBuildFailure(t *testing.T) {
@@ -71,7 +79,7 @@ func Test_waitForScmReady_ContextCanceled(t *testing.T) {
 	defer cancel()
 
 	// Mock returns not-ready on first probe, then context.Canceled on the second call
-	// to exercise the error propagation path inside the ticker loop (lines 306-311).
+	// to exercise the error propagation path inside the ticker loop.
 	mock := &mockScmChecker{fn: func(_ context.Context, call int) (bool, error) {
 		if call == 1 {
 			return false, nil // immediate probe: not ready
@@ -121,4 +129,267 @@ func Test_waitForScmReady_ContextDeadlineExceeded(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.GreaterOrEqual(t, int(mock.calls.Load()), 2, "IsScmReady should be called at least twice")
+}
+
+func Test_AzureClient_GetAppServiceProperties(t *testing.T) {
+	mockCtx := mocks.NewMockContext(t.Context())
+	client := newAzureClientFromMockContext(mockCtx)
+
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodGet &&
+			strings.Contains(req.URL.Path, "/Microsoft.Web/sites/my-app") &&
+			!strings.Contains(req.URL.Path, "/slots/")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
+			armappservice.Site{
+				ID:       new("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.Web/sites/my-app"),
+				Name:     new("my-app"),
+				Location: new("eastus"),
+				Kind:     new("app,linux"),
+				Properties: &armappservice.SiteProperties{
+					DefaultHostName:   new("my-app.azurewebsites.net"),
+					HTTPSOnly:         new(true),
+					EnabledHostNames:  []*string{new("my-app.azurewebsites.net")},
+					HostNameSSLStates: []*armappservice.HostNameSSLState{},
+					SiteConfig:        &armappservice.SiteConfig{LinuxFxVersion: new("NODE|18-lts")},
+					AvailabilityState: to.Ptr(armappservice.SiteAvailabilityStateNormal),
+				},
+			})
+	})
+
+	props, err := client.GetAppServiceProperties(*mockCtx.Context, "SUB", "RG", "my-app")
+	require.NoError(t, err)
+	assert.Contains(t, props.HostNames, "my-app.azurewebsites.net")
+}
+
+func Test_AzureClient_GetAppServiceSlotProperties(t *testing.T) {
+	mockCtx := mocks.NewMockContext(t.Context())
+	client := newAzureClientFromMockContext(mockCtx)
+
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodGet &&
+			strings.Contains(req.URL.Path, "/slots/staging")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
+			armappservice.Site{
+				ID:       new("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.Web/sites/my-app/slots/staging"),
+				Name:     new("my-app/staging"),
+				Location: new("eastus"),
+				Kind:     new("app,linux"),
+				Properties: &armappservice.SiteProperties{
+					DefaultHostName:   new("my-app-staging.azurewebsites.net"),
+					HTTPSOnly:         new(true),
+					EnabledHostNames:  []*string{new("my-app-staging.azurewebsites.net")},
+					HostNameSSLStates: []*armappservice.HostNameSSLState{},
+					SiteConfig:        &armappservice.SiteConfig{LinuxFxVersion: new("NODE|18-lts")},
+					AvailabilityState: to.Ptr(armappservice.SiteAvailabilityStateNormal),
+				},
+			})
+	})
+
+	props, err := client.GetAppServiceSlotProperties(*mockCtx.Context, "SUB", "RG", "my-app", "staging")
+	require.NoError(t, err)
+	assert.Contains(t, props.HostNames, "my-app-staging.azurewebsites.net")
+}
+
+func Test_AzureClient_UpdateAppServiceContainerImage(t *testing.T) {
+	mockCtx := mocks.NewMockContext(t.Context())
+	client := newAzureClientFromMockContext(mockCtx)
+
+	var capturedBody string
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodPatch &&
+			strings.Contains(req.URL.Path, "/Microsoft.Web/sites/my-app") &&
+			!strings.Contains(req.URL.Path, "/slots/")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		bodyBytes, _ := io.ReadAll(req.Body)
+		capturedBody = string(bodyBytes)
+		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
+			armappservice.Site{
+				ID:       new("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.Web/sites/my-app"),
+				Name:     new("my-app"),
+				Location: new("eastus"),
+				Kind:     new("app,linux,container"),
+				Properties: &armappservice.SiteProperties{
+					DefaultHostName: new("my-app.azurewebsites.net"),
+					SiteConfig: &armappservice.SiteConfig{
+						LinuxFxVersion: new("DOCKER|myregistry.azurecr.io/myapp:v1"),
+					},
+				},
+			})
+	})
+
+	err := client.UpdateAppServiceContainerImage(
+		*mockCtx.Context, "SUB", "RG", "my-app", "myregistry.azurecr.io/myapp:v1")
+	require.NoError(t, err)
+	assert.NotEmpty(t, capturedBody, "Update should have been called with a body")
+	assert.Contains(t, capturedBody, "DOCKER|myregistry.azurecr.io/myapp:v1",
+		"body should contain the correct linuxFxVersion")
+	assert.NotContains(t, capturedBody, "acrUseManagedIdentityCreds",
+		"should NOT set acrUseManagedIdentityCreds (IaC responsibility)")
+}
+
+func Test_AzureClient_UpdateAppServiceContainerImage_Error(t *testing.T) {
+	mockCtx := mocks.NewMockContext(t.Context())
+	client := newAzureClientFromMockContext(mockCtx)
+
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodPatch &&
+			strings.Contains(req.URL.Path, "/Microsoft.Web/sites/my-app")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		return mocks.CreateEmptyHttpResponse(req, http.StatusInternalServerError)
+	})
+
+	err := client.UpdateAppServiceContainerImage(
+		*mockCtx.Context, "SUB", "RG", "my-app", "myregistry.azurecr.io/myapp:v1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "updating container image")
+}
+
+func Test_AzureClient_UpdateAppServiceSlotContainerImage(t *testing.T) {
+	mockCtx := mocks.NewMockContext(t.Context())
+	client := newAzureClientFromMockContext(mockCtx)
+
+	var capturedBody string
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodPatch &&
+			strings.Contains(req.URL.Path, "/slots/staging")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		bodyBytes, _ := io.ReadAll(req.Body)
+		capturedBody = string(bodyBytes)
+		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
+			armappservice.Site{
+				ID:   new("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.Web/sites/my-app/slots/staging"),
+				Name: new("my-app/staging"),
+				Properties: &armappservice.SiteProperties{
+					DefaultHostName: new("my-app-staging.azurewebsites.net"),
+					SiteConfig: &armappservice.SiteConfig{
+						LinuxFxVersion: new("DOCKER|myregistry.azurecr.io/myapp:v1"),
+					},
+				},
+			})
+	})
+
+	err := client.UpdateAppServiceSlotContainerImage(
+		*mockCtx.Context, "SUB", "RG", "my-app", "staging", "myregistry.azurecr.io/myapp:v1")
+	require.NoError(t, err)
+	assert.NotEmpty(t, capturedBody, "UpdateSlot should have been called with a body")
+	assert.Contains(t, capturedBody, "DOCKER|myregistry.azurecr.io/myapp:v1",
+		"body should contain the correct linuxFxVersion")
+	assert.NotContains(t, capturedBody, "acrUseManagedIdentityCreds",
+		"should NOT set acrUseManagedIdentityCreds (IaC responsibility)")
+}
+
+func Test_AzureClient_ValidateAppServiceForContainerDeploy(t *testing.T) {
+	t.Run("ValidLinuxContainer_NoError", func(t *testing.T) {
+		mockCtx := mocks.NewMockContext(t.Context())
+		client := newAzureClientFromMockContext(mockCtx)
+
+		mockCtx.HttpClient.When(func(req *http.Request) bool {
+			return req.Method == http.MethodGet &&
+				strings.Contains(req.URL.Path, "/Microsoft.Web/sites/my-app")
+		}).RespondFn(func(req *http.Request) (*http.Response, error) {
+			return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
+				armappservice.Site{
+					Kind: new("app,linux,container"),
+					Properties: &armappservice.SiteProperties{
+						SiteConfig: &armappservice.SiteConfig{
+							LinuxFxVersion: new("DOCKER|myregistry.azurecr.io/myapp:v1"),
+						},
+					},
+				})
+		})
+
+		err := client.ValidateAppServiceForContainerDeploy(*mockCtx.Context, "SUB", "RG", "my-app")
+		require.NoError(t, err)
+	})
+
+	t.Run("NotLinux_ReturnsError", func(t *testing.T) {
+		mockCtx := mocks.NewMockContext(t.Context())
+		client := newAzureClientFromMockContext(mockCtx)
+
+		mockCtx.HttpClient.When(func(req *http.Request) bool {
+			return req.Method == http.MethodGet &&
+				strings.Contains(req.URL.Path, "/Microsoft.Web/sites/my-app")
+		}).RespondFn(func(req *http.Request) (*http.Response, error) {
+			return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
+				armappservice.Site{
+					Kind: new("app"),
+					Properties: &armappservice.SiteProperties{
+						SiteConfig: &armappservice.SiteConfig{},
+					},
+				})
+		})
+
+		err := client.ValidateAppServiceForContainerDeploy(*mockCtx.Context, "SUB", "RG", "my-app")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not configured as a Linux app")
+	})
+
+	t.Run("NoDockerFxVersion_ReturnsError", func(t *testing.T) {
+		mockCtx := mocks.NewMockContext(t.Context())
+		client := newAzureClientFromMockContext(mockCtx)
+
+		mockCtx.HttpClient.When(func(req *http.Request) bool {
+			return req.Method == http.MethodGet &&
+				strings.Contains(req.URL.Path, "/Microsoft.Web/sites/my-app")
+		}).RespondFn(func(req *http.Request) (*http.Response, error) {
+			return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
+				armappservice.Site{
+					Kind: new("app,linux"),
+					Properties: &armappservice.SiteProperties{
+						SiteConfig: &armappservice.SiteConfig{
+							LinuxFxVersion: new("NODE|18-lts"),
+						},
+					},
+				})
+		})
+
+		err := client.ValidateAppServiceForContainerDeploy(*mockCtx.Context, "SUB", "RG", "my-app")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not configured for container deployment")
+	})
+}
+
+func Test_AzureClient_UpdateAppServiceAppSettings(t *testing.T) {
+	t.Run("MergesWithExisting", func(t *testing.T) {
+		mockCtx := mocks.NewMockContext(t.Context())
+		client := newAzureClientFromMockContext(mockCtx)
+
+		mockCtx.HttpClient.When(func(req *http.Request) bool {
+			return req.Method == http.MethodPost &&
+				strings.Contains(req.URL.Path, "/config/appsettings/list")
+		}).RespondFn(func(req *http.Request) (*http.Response, error) {
+			return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
+				armappservice.StringDictionary{
+					Properties: map[string]*string{
+						"EXISTING_KEY": new("existing_value"),
+					},
+				})
+		})
+
+		var capturedBody string
+		mockCtx.HttpClient.When(func(req *http.Request) bool {
+			return req.Method == http.MethodPut &&
+				strings.Contains(req.URL.Path, "/config/appsettings") &&
+				!strings.Contains(req.URL.Path, "/list")
+		}).RespondFn(func(req *http.Request) (*http.Response, error) {
+			bodyBytes, _ := io.ReadAll(req.Body)
+			capturedBody = string(bodyBytes)
+			return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
+				armappservice.StringDictionary{
+					Properties: map[string]*string{
+						"EXISTING_KEY": new("existing_value"),
+						"NEW_KEY":      new("new_value"),
+					},
+				})
+		})
+
+		err := client.UpdateAppServiceAppSettings(
+			*mockCtx.Context, "SUB", "RG", "my-app",
+			map[string]string{"NEW_KEY": "new_value"})
+		require.NoError(t, err)
+		assert.Contains(t, capturedBody, "EXISTING_KEY", "should preserve existing settings")
+		assert.Contains(t, capturedBody, "NEW_KEY", "should include new settings")
+	})
 }

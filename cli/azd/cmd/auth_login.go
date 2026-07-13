@@ -33,6 +33,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // The parent of the login command.
@@ -214,6 +215,10 @@ func newLoginCmd(parent string) *cobra.Command {
 		To log in using a managed identity, pass --managed-identity, which will use the system assigned managed identity.
 		To use a user assigned managed identity, pass --client-id in addition to --managed-identity with the client id of
 		the user assigned managed identity you wish to use.
+
+		When already logged in, azd automatically clears cached authentication data (such as stale tokens)
+		before re-authenticating. This ensures a clean login state and prevents issues with expired or
+		corrupted cached credentials.
 		`),
 		Annotations: map[string]string{
 			loginCmdParentAnnotation: parent,
@@ -360,6 +365,26 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				LoginType:  ux.LoginType(details.LoginType),
 			})
 			return nil, nil
+		}
+	}
+
+	// When already logged in with interactive/device-code auth (or when login state cannot be
+	// determined due to corrupted cache), clear cached auth data before re-authenticating. This
+	// prevents issues with stale MSAL refresh tokens that can cause AADSTS700082 errors even
+	// after a successful login.
+	// Skip cleanup for MI and SP re-logins: they don't use refresh tokens, so the stale-token
+	// issue doesn't apply, and unnecessary cleanup could block an otherwise valid login.
+	isServicePrincipalOrMI := la.flags.managedIdentity || la.flags.clientID != ""
+	if !isServicePrincipalOrMI {
+		if _, err := la.authManager.LogInDetails(ctx); !errors.Is(err, auth.ErrNoCurrentUser) {
+			if err := la.authManager.CleanAllAuthCache(); err != nil {
+				tracing.SetUsageAttributes(attribute.String("auth.cache_clear_failed", "auth"))
+				return nil, fmt.Errorf("clearing auth cache: %w", err)
+			}
+			if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
+				tracing.SetUsageAttributes(attribute.String("auth.cache_clear_failed", "subscriptions"))
+				return nil, fmt.Errorf("clearing subscriptions cache: %w", err)
+			}
 		}
 	}
 

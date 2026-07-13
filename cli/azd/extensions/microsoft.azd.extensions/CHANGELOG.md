@@ -1,5 +1,19 @@
 # Release History
 
+<!-- cspell:ignore aiohttp -->
+
+## 0.12.0 (2026-06-22)
+
+- [[#8697]](https://github.com/Azure/azure-dev/pull/8697) Add `azd x pack --bundle` (alias `--zip`) to emit a portable bundle `.zip` containing a `registry.json` with relative artifact URLs plus the platform artifacts, installable via `azd extension install <bundle.zip>` without hosting a registry.
+- [[#8550]](https://github.com/Azure/azure-dev/pull/8550) Embed language template dotfiles so generated extensions include a `.gitignore` (the Go template excludes `bin/`).
+- [[#8550]](https://github.com/Azure/azure-dev/pull/8550) Warn during `azd x build` when the local extension source registry is missing or does not contain the extension, since the binaries are installed but the extension would not appear in `azd extension list`.
+- [[#8570]](https://github.com/Azure/azure-dev/pull/8570) Add `--internal` to `azd x init` to scaffold first-party Go extensions in the `Azure/azure-dev` repository, including CI workflows, release pipeline, and a suitable `.github/CODEOWNERS` entry.
+- [[#8531]](https://github.com/Azure/azure-dev/pull/8531) [[#8660]](https://github.com/Azure/azure-dev/pull/8660) Bump the `aiohttp` dependency in Python extension scaffolding from 3.13.4 to 3.14.1.
+
+## 0.11.1 (2026-06-03)
+
+- [[#8498]](https://github.com/Azure/azure-dev/pull/8498) Disable HTML escaping when writing `registry.json` during `azd x publish` and local registry creation.
+
 ## 0.11.0 (2026-05-19)
 
 - [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Treat extension metadata warnings as non-fatal during `azd x build`, while keeping required fields and unusable metadata as validation errors.

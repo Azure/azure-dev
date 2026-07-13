@@ -5,11 +5,19 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -17,11 +25,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // Test_ProjectService_NoProject ensures that when no project exists,
@@ -41,9 +48,6 @@ func Test_ProjectService_NoProject(t *testing.T) {
 	lazyAzdContext := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
 		return nil, azdcontext.ErrNoProject
 	})
-	lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
-		return nil, azdcontext.ErrNoProject
-	})
 	lazyProjectConfig := lazy.NewLazy(func() (*project.ProjectConfig, error) {
 		return nil, azdcontext.ErrNoProject
 	})
@@ -53,7 +57,7 @@ func Test_ProjectService_NoProject(t *testing.T) {
 
 	// Create the service with ImportManager.
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, ghCli)
+	service := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, ghCli)
 	_, err := service.Get(*mockContext.Context, &azdext.EmptyRequest{})
 	require.Error(t, err)
 }
@@ -91,7 +95,6 @@ func Test_ProjectService_Flow(t *testing.T) {
 
 	// Create lazy-loaded instances.
 	lazyAzdContext := lazy.From(azdContext)
-	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(&projectConfig)
 
 	// Create an environment and set an environment variable.
@@ -109,7 +112,7 @@ func Test_ProjectService_Flow(t *testing.T) {
 
 	// Create the service with ImportManager.
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, ghCli)
+	service := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, ghCli)
 
 	// Test: Retrieve project details.
 	getResponse, err := service.Get(*mockContext.Context, &azdext.EmptyRequest{})
@@ -140,16 +143,8 @@ func Test_ProjectService_AddService(t *testing.T) {
 	err := project.Save(*mockContext.Context, &projectConfig, azdContext.ProjectPath())
 	require.NoError(t, err)
 
-	// Configure and initialize environment manager.
-	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
-	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
-	require.NoError(t, err)
-	require.NotNil(t, envManager)
-
 	// Create lazy-loaded instances.
 	lazyAzdContext := lazy.From(azdContext)
-	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(&projectConfig)
 
 	// Create mock GitHub CLI.
@@ -157,7 +152,7 @@ func Test_ProjectService_AddService(t *testing.T) {
 
 	// Create the project service with ImportManager.
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, ghCli)
+	service := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, ghCli)
 
 	// Prepare a new service addition request.
 	serviceRequest := &azdext.AddServiceRequest{
@@ -184,6 +179,208 @@ func Test_ProjectService_AddService(t *testing.T) {
 	require.Equal(t, filepath.Join("src", "service1"), serviceConfig.RelativePath)
 	require.Equal(t, project.ServiceLanguagePython, serviceConfig.Language)
 	require.Equal(t, project.ContainerAppTarget, serviceConfig.Host)
+}
+
+// Test_ProjectService_Get_ResolvesServiceEnvironment verifies that service-level env values
+// in Get responses are expanded against the session environment (the same lazy environment
+// used by the framework, service target and event services).
+func Test_ProjectService_Get_ResolvesServiceEnvironment(t *testing.T) {
+	projectConfig := &project.ProjectConfig{
+		Name: "test",
+		Services: map[string]*project.ServiceConfig{
+			"api": {
+				Name:         "api",
+				RelativePath: "./src/api",
+				Language:     project.ServiceLanguagePython,
+				Host:         project.ContainerAppTarget,
+				Environment: osutil.ExpandableMap{
+					"FROM_ENV": osutil.NewExpandableString("${SERVICE_VALUE}"),
+					"STATIC":   osutil.NewExpandableString("static-value"),
+				},
+			},
+		},
+	}
+
+	env := environment.NewWithValues("test", map[string]string{
+		"SERVICE_VALUE": "resolved",
+	})
+
+	service := NewProjectService(
+		nil, nil, lazy.From(env), lazy.From(projectConfig), project.NewImportManager(nil), nil)
+
+	getResponse, err := service.Get(t.Context(), &azdext.EmptyRequest{})
+	require.NoError(t, err)
+	require.NotNil(t, getResponse)
+	require.Equal(t, map[string]string{
+		"FROM_ENV": "resolved",
+		"STATIC":   "static-value",
+	}, getResponse.Project.Services["api"].Environment)
+}
+
+// Test_ProjectService_AddService_PreservesEnvTemplates verifies that a read-modify-write
+// round trip through AddService keeps the original ${VAR} env templates in azure.yaml for
+// values the caller did not change, while changed or added values are persisted as literals
+// (with any '$' escaped so the stored value round-trips unchanged).
+func Test_ProjectService_AddService_PreservesEnvTemplates(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	temp := t.TempDir()
+
+	// Mock GitHub CLI version check.
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
+	}).Respond(exec.RunResult{
+		Stdout: github.Version.String(),
+	})
+
+	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
+
+	onDiskYaml := "" +
+		"name: test\n" +
+		"services:\n" +
+		"  api:\n" +
+		"    project: ./src/api\n" +
+		"    host: containerapp\n" +
+		"    language: python\n" +
+		"    env:\n" +
+		"      FROM_ENV: ${SERVICE_VALUE}\n" +
+		"      CHANGED: ${OTHER_VALUE}\n"
+	require.NoError(t, os.WriteFile(azdContext.ProjectPath(), []byte(onDiskYaml), 0600))
+
+	projectConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+	require.NoError(t, err)
+
+	env := environment.NewWithValues("test", map[string]string{
+		"SERVICE_VALUE": "resolved",
+		"OTHER_VALUE":   "other-old",
+	})
+
+	service := NewProjectService(
+		lazy.From(azdContext),
+		nil,
+		lazy.From(env),
+		lazy.From(projectConfig),
+		project.NewImportManager(nil),
+		github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner),
+	)
+
+	// Simulates an extension echoing back the expanded config it received, with one
+	// value changed and one added.
+	serviceRequest := &azdext.AddServiceRequest{
+		Service: &azdext.ServiceConfig{
+			Name:         "api",
+			RelativePath: "./src/api",
+			Language:     "python",
+			Host:         "containerapp",
+			Environment: map[string]string{
+				"FROM_ENV": "resolved",  // unchanged: template must be preserved
+				"CHANGED":  "brand-new", // changed: persisted as literal
+				"ADDED":    "pa$$word",  // added: persisted as escaped literal
+			},
+		},
+	}
+
+	_, err = service.AddService(*mockContext.Context, serviceRequest)
+	require.NoError(t, err)
+
+	rawYaml, err := os.ReadFile(azdContext.ProjectPath())
+	require.NoError(t, err)
+	require.Contains(t, string(rawYaml), "${SERVICE_VALUE}")
+	require.NotContains(t, string(rawYaml), "${OTHER_VALUE}")
+
+	updatedConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+	require.NoError(t, err)
+	updatedEnv, err := updatedConfig.Services["api"].Environment.Expand(func(key string) string {
+		if key == "SERVICE_VALUE" {
+			return "resolved-later"
+		}
+		return ""
+	})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"FROM_ENV": "resolved-later", // still a template resolving against the environment
+		"CHANGED":  "brand-new",
+		"ADDED":    "pa$$word",
+	}, updatedEnv)
+}
+
+// Test_ProjectService_AddService_PreservesExistingProperties is a regression
+// test for issue #8678: AddService must not drop top-level azure.yaml
+// properties (e.g. hooks) or pre-existing services that are present on disk but
+// absent from a stale in-memory lazyProjectConfig cache. It reproduces the init
+// flow where azure.yaml is materialized/updated after the lazy cache was first
+// resolved.
+func Test_ProjectService_AddService_PreservesExistingProperties(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	temp := t.TempDir()
+
+	// Mock GitHub CLI version check.
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
+	}).Respond(exec.RunResult{
+		Stdout: github.Version.String(),
+	})
+
+	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
+
+	// The azure.yaml on disk has hooks, a custom top-level key, and an existing
+	// service — none of which are in the stale cache seeded below.
+	onDiskYaml := "" +
+		"name: test\n" +
+		"metadata:\n" +
+		"  template: foo@1.0\n" +
+		"hooks:\n" +
+		"  preprovision:\n" +
+		"    shell: sh\n" +
+		"    run: ./scripts/pre.sh\n" +
+		"customTopLevel:\n" +
+		"  foo: bar\n" +
+		"services:\n" +
+		"  existing:\n" +
+		"    project: ./src/existing\n" +
+		"    host: containerapp\n" +
+		"    language: python\n"
+	require.NoError(t, os.WriteFile(azdContext.ProjectPath(), []byte(onDiskYaml), 0600))
+
+	lazyAzdContext := lazy.From(azdContext)
+
+	// Seed the cache with a STALE minimal config that does not reflect what is
+	// on disk (mirrors the lazy being resolved before the template azure.yaml
+	// was written). Without the reload fix, AddService would persist this stale
+	// config and wipe hooks/custom keys/existing services.
+	staleConfig := &project.ProjectConfig{Name: "test"}
+	lazyProjectConfig := lazy.From(staleConfig)
+
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
+	importManager := project.NewImportManager(&project.DotNetImporter{})
+	service := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, ghCli)
+
+	serviceRequest := &azdext.AddServiceRequest{
+		Service: &azdext.ServiceConfig{
+			Name:         "service1",
+			RelativePath: filepath.Join("src", "service1"),
+			Language:     "python",
+			Host:         "containerapp",
+		},
+	}
+
+	_, err := service.AddService(*mockContext.Context, serviceRequest)
+	require.NoError(t, err)
+
+	// The raw file must still contain the pre-existing top-level properties.
+	saved, err := os.ReadFile(azdContext.ProjectPath())
+	require.NoError(t, err)
+	require.Contains(t, string(saved), "hooks", "hooks must be preserved")
+	require.Contains(t, string(saved), "customTopLevel", "unknown top-level properties must be preserved")
+
+	// And a structured reload must show both the existing and the new service
+	// plus the hooks.
+	updatedConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+	require.NoError(t, err)
+	require.NotEmpty(t, updatedConfig.Hooks, "hooks must be preserved")
+	require.Contains(t, updatedConfig.Services, "existing", "existing service must be preserved")
+	require.Contains(t, updatedConfig.Services, "service1", "new service must be added")
+	require.Contains(t, updatedConfig.AdditionalProperties, "customTopLevel",
+		"unknown top-level properties must be preserved")
 }
 
 func Test_ProjectService_ConfigSection(t *testing.T) {
@@ -214,15 +411,10 @@ func Test_ProjectService_ConfigSection(t *testing.T) {
 
 	// Setup lazy dependencies
 	lazyAzdContext := lazy.From(azdContext)
-	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
-	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
-	require.NoError(t, err)
-	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(projectConfig)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("GetConfigSection_Success", func(t *testing.T) {
 		resp, err := service.GetConfigSection(*mockContext.Context, &azdext.GetProjectConfigSectionRequest{
@@ -283,15 +475,10 @@ func Test_ProjectService_ConfigValue(t *testing.T) {
 
 	// Setup lazy dependencies
 	lazyAzdContext := lazy.From(azdContext)
-	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
-	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
-	require.NoError(t, err)
-	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(projectConfig)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("GetConfigValue_String", func(t *testing.T) {
 		resp, err := service.GetConfigValue(*mockContext.Context, &azdext.GetProjectConfigValueRequest{
@@ -357,15 +544,10 @@ func Test_ProjectService_SetConfigSection(t *testing.T) {
 
 	// Setup lazy dependencies
 	lazyAzdContext := lazy.From(azdContext)
-	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
-	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
-	require.NoError(t, err)
-	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(projectConfig)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("SetConfigSection_NewSection", func(t *testing.T) {
 		// Create section data
@@ -440,15 +622,10 @@ func Test_ProjectService_SetConfigValue(t *testing.T) {
 
 	// Setup lazy dependencies
 	lazyAzdContext := lazy.From(azdContext)
-	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
-	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
-	require.NoError(t, err)
-	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(projectConfig)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("SetConfigValue_String", func(t *testing.T) {
 		value, err := structpb.NewValue("test-string")
@@ -537,15 +714,10 @@ func Test_ProjectService_UnsetConfig(t *testing.T) {
 
 	// Setup lazy dependencies
 	lazyAzdContext := lazy.From(azdContext)
-	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
-	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
-	require.NoError(t, err)
-	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(projectConfig)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("UnsetConfig_NestedValue", func(t *testing.T) {
 		_, err := service.UnsetConfig(*mockContext.Context, &azdext.UnsetProjectConfigRequest{
@@ -607,15 +779,10 @@ func Test_ProjectService_ConfigNilAdditionalProperties(t *testing.T) {
 
 	// Setup lazy dependencies
 	lazyAzdContext := lazy.From(azdContext)
-	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
-	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
-	require.NoError(t, err)
-	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(projectConfig)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("GetConfigValue_NilAdditionalProperties", func(t *testing.T) {
 		resp, err := service.GetConfigValue(*mockContext.Context, &azdext.GetProjectConfigValueRequest{
@@ -690,21 +857,13 @@ func Test_ProjectService_ServiceConfiguration(t *testing.T) {
 	err := project.Save(*mockContext.Context, projectConfig, azdContext.ProjectPath())
 	require.NoError(t, err)
 
-	// Configure and initialize environment manager.
-	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
-	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
-	require.NoError(t, err)
-	require.NotNil(t, envManager)
-
 	// Create lazy loaders.
 	lazyAzdContext := lazy.From(azdContext)
-	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(projectConfig)
 
 	// Create the service.
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("GetServiceConfigSection_Found", func(t *testing.T) {
 		resp, err := service.GetServiceConfigSection(*mockContext.Context, &azdext.GetServiceConfigSectionRequest{
@@ -966,21 +1125,13 @@ func Test_ProjectService_ServiceConfiguration_NilAdditionalProperties(t *testing
 	err := project.Save(*mockContext.Context, projectConfig, azdContext.ProjectPath())
 	require.NoError(t, err)
 
-	// Configure and initialize environment manager.
-	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
-	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
-	require.NoError(t, err)
-	require.NotNil(t, envManager)
-
 	// Create lazy loaders.
 	lazyAzdContext := lazy.From(azdContext)
-	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(projectConfig)
 
 	// Create the service.
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("GetServiceConfigSection_NilAdditionalProperties", func(t *testing.T) {
 		resp, err := service.GetServiceConfigSection(*mockContext.Context, &azdext.GetServiceConfigSectionRequest{
@@ -1046,15 +1197,10 @@ func Test_ProjectService_ChangeServiceHost(t *testing.T) {
 
 	// Setup lazy dependencies
 	lazyAzdContext := lazy.From(azdContext)
-	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
-	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
-	require.NoError(t, err)
-	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(projectConfig)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, nil)
 
 	// Test 1: Get the current host value
 	getResp, err := service.GetServiceConfigValue(*mockContext.Context, &azdext.GetServiceConfigValueRequest{
@@ -1123,21 +1269,10 @@ func Test_ProjectService_TypeValidation_InvalidChangesNotPersisted(t *testing.T)
 
 	// Setup lazy dependencies
 	lazyAzdContext := lazy.From(azdContext)
-	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
-	envManager, err := environment.NewManager(
-		mockContext.Container,
-		azdContext,
-		mockContext.Console,
-		localDataStore,
-		nil,
-	)
-	require.NoError(t, err)
-	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(loadedConfig)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("Project_SetInfraToInt_ShouldFailAndNotPersist", func(t *testing.T) {
 		// Try to set "infra" (which should be an object) to an integer
@@ -1316,21 +1451,10 @@ func Test_ProjectService_TypeValidation_CoercedValues(t *testing.T) {
 
 	// Setup lazy dependencies
 	lazyAzdContext := lazy.From(azdContext)
-	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
-	envManager, err := environment.NewManager(
-		mockContext.Container,
-		azdContext,
-		mockContext.Console,
-		localDataStore,
-		nil,
-	)
-	require.NoError(t, err)
-	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(loadedConfig)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("SetNameToInt_GetsCoercedToString", func(t *testing.T) {
 		// Try to set "name" (which should be a string) to an integer
@@ -1410,17 +1534,6 @@ func Test_ProjectService_EventDispatcherPreservation(t *testing.T) {
 
 	// Setup lazy dependencies
 	lazyAzdContext := lazy.From(azdContext)
-	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
-	envManager, err := environment.NewManager(
-		mockContext.Container,
-		azdContext,
-		mockContext.Console,
-		localDataStore,
-		nil,
-	)
-	require.NoError(t, err)
-	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(loadedConfig)
 
 	// Step 2: Register event handlers for project and services
@@ -1463,7 +1576,7 @@ func Test_ProjectService_EventDispatcherPreservation(t *testing.T) {
 
 	// Create project service
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, nil)
 
 	// Step 3: Modify project configuration
 	customValue, err := structpb.NewValue("project-custom-value")
@@ -1613,17 +1726,6 @@ func Test_ProjectService_EventDispatcherPreservation_MultipleUpdates(t *testing.
 	require.NoError(t, err)
 
 	lazyAzdContext := lazy.From(azdContext)
-	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
-	envManager, err := environment.NewManager(
-		mockContext.Container,
-		azdContext,
-		mockContext.Console,
-		localDataStore,
-		nil,
-	)
-	require.NoError(t, err)
-	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(loadedConfig)
 
 	// Register event handler (EventDispatcher already initialized by project.Load())
@@ -1639,7 +1741,7 @@ func Test_ProjectService_EventDispatcherPreservation_MultipleUpdates(t *testing.
 	require.NoError(t, err)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, nil)
 
 	// Perform multiple configuration updates
 	for i := 1; i <= 3; i++ {
@@ -1696,20 +1798,13 @@ func Test_ProjectService_ServiceConfigValue_EmptyPath(t *testing.T) {
 	err := project.Save(*mockContext.Context, &projectConfig, azdContext.ProjectPath())
 	require.NoError(t, err)
 
-	// Configure and initialize environment manager
-	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
-	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
-	require.NoError(t, err)
-
 	// Create lazy-loaded instances
 	lazyAzdContext := lazy.From(azdContext)
-	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(&projectConfig)
 
 	// Create the service
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	projectService := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
+	projectService := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("GetServiceConfigValue_EmptyPath", func(t *testing.T) {
 		_, err := projectService.GetServiceConfigValue(*mockContext.Context, &azdext.GetServiceConfigValueRequest{
@@ -1761,20 +1856,13 @@ func Test_ProjectService_EmptyStringValidation(t *testing.T) {
 	err := project.Save(*mockContext.Context, &projectConfig, azdContext.ProjectPath())
 	require.NoError(t, err)
 
-	// Configure and initialize environment manager
-	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
-	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
-	require.NoError(t, err)
-
 	// Create lazy-loaded instances
 	lazyAzdContext := lazy.From(azdContext)
-	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(&projectConfig)
 
 	// Create the service
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	projectService := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
+	projectService := NewProjectService(lazyAzdContext, nil, nil, lazyProjectConfig, importManager, nil)
 
 	// Project-level config method validations
 	t.Run("GetConfigValue_EmptyPath", func(t *testing.T) {
@@ -1878,4 +1966,771 @@ func Test_ProjectService_EmptyStringValidation(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "service name cannot be empty")
 	})
+}
+
+func TestNewProjectService(t *testing.T) {
+	t.Parallel()
+	svc := NewProjectService(nil, nil, nil, nil, nil, nil)
+	require.NotNil(t, svc)
+}
+
+func TestProjectService_GetServiceTargetResource_EmptyServiceName(t *testing.T) {
+	t.Parallel()
+	svc := NewProjectService(nil, nil, nil, nil, nil, nil)
+	_, err := svc.GetServiceTargetResource(t.Context(), &azdext.GetServiceTargetResourceRequest{
+		ServiceName: "",
+	})
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.InvalidArgument, st.Code())
+}
+
+func TestProjectService_GetServiceTargetResource_ProjectConfigError(t *testing.T) {
+	t.Parallel()
+	lazyProject := lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return nil, errors.New("config error")
+	})
+	svc := NewProjectService(nil, nil, nil, lazyProject, nil, nil)
+
+	_, err := svc.GetServiceTargetResource(t.Context(), &azdext.GetServiceTargetResourceRequest{
+		ServiceName: "web",
+	})
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.Internal, st.Code())
+}
+
+func TestProjectService_GetServiceTargetResource_ServiceNotFound(t *testing.T) {
+	t.Parallel()
+	lazyProject := lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return &project.ProjectConfig{
+			Services: map[string]*project.ServiceConfig{},
+		}, nil
+	})
+	svc := NewProjectService(nil, nil, nil, lazyProject, nil, nil)
+
+	_, err := svc.GetServiceTargetResource(t.Context(), &azdext.GetServiceTargetResourceRequest{
+		ServiceName: "nonexistent",
+	})
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.NotFound, st.Code())
+}
+
+func TestProjectService_GetServiceTargetResource_EnvError(t *testing.T) {
+	t.Parallel()
+	lazyProject := lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return &project.ProjectConfig{
+			Services: map[string]*project.ServiceConfig{
+				"web": {Name: "web"},
+			},
+		}, nil
+	})
+	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+		return nil, errors.New("env not found")
+	})
+	svc := NewProjectService(nil, nil, lazyEnv, lazyProject, nil, nil)
+
+	_, err := svc.GetServiceTargetResource(t.Context(), &azdext.GetServiceTargetResourceRequest{
+		ServiceName: "web",
+	})
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.Internal, st.Code())
+}
+
+func TestProjectService_GetServiceTargetResource_SubscriptionEmpty(t *testing.T) {
+	t.Parallel()
+	lazyProject := lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return &project.ProjectConfig{
+			Services: map[string]*project.ServiceConfig{
+				"web": {Name: "web"},
+			},
+		}, nil
+	})
+	// environment.New returns env with NO AZURE_SUBSCRIPTION_ID set
+	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+		return environment.New("test"), nil
+	})
+	svc := NewProjectService(nil, nil, lazyEnv, lazyProject, nil, nil)
+
+	_, err := svc.GetServiceTargetResource(t.Context(), &azdext.GetServiceTargetResourceRequest{
+		ServiceName: "web",
+	})
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.FailedPrecondition, st.Code())
+	require.Contains(t, st.Message(), "AZURE_SUBSCRIPTION_ID")
+}
+
+func TestProjectService_GetServiceTargetResource_ResourceManagerError(t *testing.T) {
+	t.Parallel()
+	lazyProject := lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return &project.ProjectConfig{
+			Services: map[string]*project.ServiceConfig{
+				"web": {Name: "web"},
+			},
+		}, nil
+	})
+	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+		return environment.NewWithValues("test", map[string]string{
+			"AZURE_SUBSCRIPTION_ID": "sub-123",
+		}), nil
+	})
+	lazyRM := lazy.NewLazy(func() (project.ResourceManager, error) {
+		return nil, errors.New("resource manager unavailable")
+	})
+	svc := NewProjectService(nil, lazyRM, lazyEnv, lazyProject, nil, nil)
+
+	_, err := svc.GetServiceTargetResource(t.Context(), &azdext.GetServiceTargetResourceRequest{
+		ServiceName: "web",
+	})
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.Internal, st.Code())
+	require.Contains(t, st.Message(), "resource manager")
+}
+
+// mockResourceManager implements project.ResourceManager for testing.
+type mockResourceManager struct {
+	getTargetResourceFunc func(
+		ctx context.Context, subscriptionId string, serviceConfig *project.ServiceConfig,
+	) (*environment.TargetResource, error)
+}
+
+func (m *mockResourceManager) GetResourceGroupName(
+	_ context.Context, _ string, _ osutil.ExpandableString,
+) (string, error) {
+	return "", nil
+}
+
+func (m *mockResourceManager) GetServiceResources(
+	_ context.Context, _ string, _ string, _ *project.ServiceConfig,
+) ([]*azapi.ResourceExtended, error) {
+	return nil, nil
+}
+
+func (m *mockResourceManager) GetServiceResource(
+	_ context.Context, _ string, _ string, _ *project.ServiceConfig, _ string,
+) (*azapi.ResourceExtended, error) {
+	return nil, nil
+}
+
+func (m *mockResourceManager) GetTargetResource(
+	ctx context.Context, subscriptionId string, serviceConfig *project.ServiceConfig,
+) (*environment.TargetResource, error) {
+	if m.getTargetResourceFunc != nil {
+		return m.getTargetResourceFunc(ctx, subscriptionId, serviceConfig)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func TestProjectService_GetServiceTargetResource_GetTargetResourceError(t *testing.T) {
+	t.Parallel()
+	lazyProject := lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return &project.ProjectConfig{
+			Services: map[string]*project.ServiceConfig{
+				"web": {Name: "web"},
+			},
+		}, nil
+	})
+	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+		return environment.NewWithValues("test", map[string]string{
+			"AZURE_SUBSCRIPTION_ID": "sub-123",
+		}), nil
+	})
+	rm := &mockResourceManager{
+		getTargetResourceFunc: func(
+			_ context.Context, _ string, _ *project.ServiceConfig,
+		) (*environment.TargetResource, error) {
+			return nil, errors.New("target resource error")
+		},
+	}
+	lazyRM := lazy.NewLazy(func() (project.ResourceManager, error) {
+		return rm, nil
+	})
+	svc := NewProjectService(nil, lazyRM, lazyEnv, lazyProject, nil, nil)
+
+	_, err := svc.GetServiceTargetResource(t.Context(), &azdext.GetServiceTargetResourceRequest{
+		ServiceName: "web",
+	})
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.Internal, st.Code())
+	require.Contains(t, st.Message(), "target resource error")
+}
+
+func TestProjectService_GetServiceTargetResource_Success(t *testing.T) {
+	t.Parallel()
+	lazyProject := lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return &project.ProjectConfig{
+			Services: map[string]*project.ServiceConfig{
+				"web": {Name: "web"},
+			},
+		}, nil
+	})
+	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+		return environment.NewWithValues("test", map[string]string{
+			"AZURE_SUBSCRIPTION_ID": "sub-123",
+		}), nil
+	})
+	rm := &mockResourceManager{
+		getTargetResourceFunc: func(
+			_ context.Context, subId string, _ *project.ServiceConfig,
+		) (*environment.TargetResource, error) {
+			return environment.NewTargetResource(subId, "rg-test", "web-app", "Microsoft.Web/sites"), nil
+		},
+	}
+	lazyRM := lazy.NewLazy(func() (project.ResourceManager, error) {
+		return rm, nil
+	})
+	svc := NewProjectService(nil, lazyRM, lazyEnv, lazyProject, nil, nil)
+
+	resp, err := svc.GetServiceTargetResource(t.Context(), &azdext.GetServiceTargetResourceRequest{
+		ServiceName: "web",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp.TargetResource)
+	require.Equal(t, "sub-123", resp.TargetResource.SubscriptionId)
+	require.Equal(t, "rg-test", resp.TargetResource.ResourceGroupName)
+	require.Equal(t, "web-app", resp.TargetResource.ResourceName)
+	require.Equal(t, "Microsoft.Web/sites", resp.TargetResource.ResourceType)
+}
+
+func TestProjectService_GetResolvedServices_AzdContextError(t *testing.T) {
+	t.Parallel()
+	lazyCtx := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
+		return nil, errors.New("no azd context")
+	})
+	svc := NewProjectService(lazyCtx, nil, nil, nil, nil, nil)
+
+	_, err := svc.GetResolvedServices(t.Context(), &azdext.EmptyRequest{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no azd context")
+}
+
+func TestProjectService_ParseGitHubUrl_Empty(t *testing.T) {
+	t.Parallel()
+	svc := NewProjectService(nil, nil, nil, nil, nil, nil)
+	_, err := svc.ParseGitHubUrl(t.Context(), &azdext.ParseGitHubUrlRequest{
+		Url: "",
+	})
+	// Empty URL should fail parsing
+	require.Error(t, err)
+}
+
+// newProjectServiceWithYaml creates a projectService backed by a temp dir with a minimal azure.yaml.
+func newProjectServiceWithYaml(t *testing.T, yamlContent string) azdext.ProjectServiceServer {
+	t.Helper()
+	dir := t.TempDir()
+	err := os.WriteFile(filepath.Join(dir, "azure.yaml"), []byte(yamlContent), 0600)
+	require.NoError(t, err)
+
+	ctx := azdcontext.NewAzdContextWithDirectory(dir)
+	lazyCtx := lazy.NewLazy(func() (*azdcontext.AzdContext, error) { return ctx, nil })
+
+	pc, err := project.Load(t.Context(), filepath.Join(dir, "azure.yaml"))
+	require.NoError(t, err)
+	lazyPC := lazy.NewLazy(func() (*project.ProjectConfig, error) { return pc, nil })
+
+	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+		return environment.NewWithValues("dev", nil), nil
+	})
+
+	return NewProjectService(lazyCtx, nil, lazyEnv, lazyPC, nil, nil)
+}
+
+func TestProjectService_GetConfigValue_EmptyPath(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, "name: test-project\n")
+	_, err := svc.GetConfigValue(t.Context(), &azdext.GetProjectConfigValueRequest{Path: ""})
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.InvalidArgument, st.Code())
+}
+
+func TestProjectService_GetConfigValue_Found(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, "name: test-project\n")
+	resp, err := svc.GetConfigValue(t.Context(), &azdext.GetProjectConfigValueRequest{Path: "name"})
+	require.NoError(t, err)
+	require.True(t, resp.Found)
+	require.Equal(t, "test-project", resp.Value.GetStringValue())
+}
+
+func TestProjectService_GetConfigValue_NotFound(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, "name: test-project\n")
+	resp, err := svc.GetConfigValue(t.Context(), &azdext.GetProjectConfigValueRequest{Path: "nonexistent"})
+	require.NoError(t, err)
+	require.False(t, resp.Found)
+}
+
+func TestProjectService_GetConfigSection_AzdContextError(t *testing.T) {
+	t.Parallel()
+	lazyCtx := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
+		return nil, errors.New("no azd context")
+	})
+	svc := NewProjectService(lazyCtx, nil, nil, nil, nil, nil)
+	_, err := svc.GetConfigSection(t.Context(), &azdext.GetProjectConfigSectionRequest{Path: "infra"})
+	require.Error(t, err)
+}
+
+func TestProjectService_GetConfigSection_NotFound(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, "name: test-project\n")
+	resp, err := svc.GetConfigSection(t.Context(), &azdext.GetProjectConfigSectionRequest{Path: "missing"})
+	require.NoError(t, err)
+	require.False(t, resp.Found)
+}
+
+func TestProjectService_SetConfigSection_EmptyPath(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, "name: test-project\n")
+	section, _ := structpb.NewStruct(map[string]any{"key": "value"})
+	_, err := svc.SetConfigSection(t.Context(), &azdext.SetProjectConfigSectionRequest{
+		Path:    "",
+		Section: section,
+	})
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.InvalidArgument, st.Code())
+}
+
+func TestProjectService_SetConfigSection_AzdContextError(t *testing.T) {
+	t.Parallel()
+	lazyCtx := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
+		return nil, errors.New("no ctx")
+	})
+	svc := NewProjectService(lazyCtx, nil, nil, nil, nil, nil)
+	section, _ := structpb.NewStruct(map[string]any{"key": "val"})
+	_, err := svc.SetConfigSection(t.Context(), &azdext.SetProjectConfigSectionRequest{
+		Path:    "custom",
+		Section: section,
+	})
+	require.Error(t, err)
+}
+
+func TestProjectService_SetConfigValue_EmptyPath(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, "name: test-project\n")
+	_, err := svc.SetConfigValue(t.Context(), &azdext.SetProjectConfigValueRequest{Path: ""})
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.InvalidArgument, st.Code())
+}
+
+func TestProjectService_SetConfigValue_AzdContextError(t *testing.T) {
+	t.Parallel()
+	lazyCtx := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
+		return nil, errors.New("no ctx")
+	})
+	svc := NewProjectService(lazyCtx, nil, nil, nil, nil, nil)
+	val, _ := structpb.NewValue("test")
+	_, err := svc.SetConfigValue(t.Context(), &azdext.SetProjectConfigValueRequest{
+		Path:  "custom.key",
+		Value: val,
+	})
+	require.Error(t, err)
+}
+
+func TestProjectService_UnsetConfig_EmptyPath(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, "name: test-project\n")
+	_, err := svc.UnsetConfig(t.Context(), &azdext.UnsetProjectConfigRequest{Path: ""})
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.InvalidArgument, st.Code())
+}
+
+func TestProjectService_UnsetConfig_AzdContextError(t *testing.T) {
+	t.Parallel()
+	lazyCtx := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
+		return nil, errors.New("no ctx")
+	})
+	svc := NewProjectService(lazyCtx, nil, nil, nil, nil, nil)
+	_, err := svc.UnsetConfig(t.Context(), &azdext.UnsetProjectConfigRequest{Path: "custom"})
+	require.Error(t, err)
+}
+
+func TestProjectService_AddService_EmptyName(t *testing.T) {
+	t.Parallel()
+	svc := NewProjectService(nil, nil, nil, nil, nil, nil)
+	_, err := svc.AddService(t.Context(), &azdext.AddServiceRequest{
+		Service: &azdext.ServiceConfig{Name: ""},
+	})
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.InvalidArgument, st.Code())
+}
+
+func TestProjectService_AddService_NilService(t *testing.T) {
+	t.Parallel()
+	svc := NewProjectService(nil, nil, nil, nil, nil, nil)
+	_, err := svc.AddService(t.Context(), &azdext.AddServiceRequest{Service: nil})
+	require.Error(t, err)
+}
+
+func TestProjectService_AddService_AzdContextError(t *testing.T) {
+	t.Parallel()
+	lazyCtx := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
+		return nil, errors.New("no ctx")
+	})
+	svc := NewProjectService(lazyCtx, nil, nil, nil, nil, nil)
+	_, err := svc.AddService(t.Context(), &azdext.AddServiceRequest{
+		Service: &azdext.ServiceConfig{Name: "web"},
+	})
+	require.Error(t, err)
+}
+
+func TestProjectService_AddService_ProjectConfigError(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	ctx := azdcontext.NewAzdContextWithDirectory(dir)
+	lazyCtx := lazy.NewLazy(func() (*azdcontext.AzdContext, error) { return ctx, nil })
+	lazyPC := lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return nil, errors.New("config error")
+	})
+	svc := NewProjectService(lazyCtx, nil, nil, lazyPC, nil, nil)
+	_, err := svc.AddService(t.Context(), &azdext.AddServiceRequest{
+		Service: &azdext.ServiceConfig{Name: "web"},
+	})
+	require.Error(t, err)
+}
+
+func TestProjectService_ValidateServiceExists_ConfigError(t *testing.T) {
+	t.Parallel()
+	lazyPC := lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return nil, errors.New("config error")
+	})
+	svc := &projectService{lazyProjectConfig: lazyPC}
+	err := svc.validateServiceExists(t.Context(), "web")
+	require.Error(t, err)
+}
+
+func TestProjectService_ValidateServiceExists_NotFound(t *testing.T) {
+	t.Parallel()
+	lazyPC := lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return &project.ProjectConfig{
+			Services: map[string]*project.ServiceConfig{},
+		}, nil
+	})
+	svc := &projectService{lazyProjectConfig: lazyPC}
+	err := svc.validateServiceExists(t.Context(), "nonexistent")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not found")
+}
+
+func TestProjectService_ValidateServiceExists_NilServices(t *testing.T) {
+	t.Parallel()
+	lazyPC := lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return &project.ProjectConfig{Services: nil}, nil
+	})
+	svc := &projectService{lazyProjectConfig: lazyPC}
+	err := svc.validateServiceExists(t.Context(), "web")
+	require.Error(t, err)
+}
+
+func TestProjectService_ValidateServiceExists_Found(t *testing.T) {
+	t.Parallel()
+	lazyPC := lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return &project.ProjectConfig{
+			Services: map[string]*project.ServiceConfig{
+				"web": {Name: "web"},
+			},
+		}, nil
+	})
+	svc := &projectService{lazyProjectConfig: lazyPC}
+	err := svc.validateServiceExists(t.Context(), "web")
+	require.NoError(t, err)
+}
+
+func TestProjectService_Get_ProjectConfigError(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	ctx := azdcontext.NewAzdContextWithDirectory(dir)
+	lazyCtx := lazy.NewLazy(func() (*azdcontext.AzdContext, error) { return ctx, nil })
+	lazyPC := lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return nil, errors.New("config error")
+	})
+	svc := NewProjectService(lazyCtx, nil, nil, lazyPC, nil, nil)
+	_, err := svc.Get(t.Context(), &azdext.EmptyRequest{})
+	require.Error(t, err)
+}
+
+func TestProjectService_GetResolvedServices_ProjectConfigError(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	ctx := azdcontext.NewAzdContextWithDirectory(dir)
+	lazyCtx := lazy.NewLazy(func() (*azdcontext.AzdContext, error) { return ctx, nil })
+	lazyPC := lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return nil, errors.New("config error")
+	})
+	svc := NewProjectService(lazyCtx, nil, nil, lazyPC, nil, nil)
+	_, err := svc.GetResolvedServices(t.Context(), &azdext.EmptyRequest{})
+	require.Error(t, err)
+}
+
+// Test service config methods with validation errors
+
+func TestProjectService_GetServiceConfigSection_EmptyServiceName(t *testing.T) {
+	t.Parallel()
+	svc := NewProjectService(nil, nil, nil, nil, nil, nil)
+	_, err := svc.GetServiceConfigSection(t.Context(), &azdext.GetServiceConfigSectionRequest{
+		ServiceName: "",
+	})
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.InvalidArgument, st.Code())
+}
+
+func TestProjectService_GetServiceConfigValue_EmptyServiceName(t *testing.T) {
+	t.Parallel()
+	svc := NewProjectService(nil, nil, nil, nil, nil, nil)
+	_, err := svc.GetServiceConfigValue(t.Context(), &azdext.GetServiceConfigValueRequest{
+		ServiceName: "",
+	})
+	require.Error(t, err)
+}
+
+func TestProjectService_SetServiceConfigSection_EmptyServiceName(t *testing.T) {
+	t.Parallel()
+	svc := NewProjectService(nil, nil, nil, nil, nil, nil)
+	_, err := svc.SetServiceConfigSection(t.Context(), &azdext.SetServiceConfigSectionRequest{
+		ServiceName: "",
+	})
+	require.Error(t, err)
+}
+
+func TestProjectService_SetServiceConfigValue_EmptyServiceName(t *testing.T) {
+	t.Parallel()
+	svc := NewProjectService(nil, nil, nil, nil, nil, nil)
+	_, err := svc.SetServiceConfigValue(t.Context(), &azdext.SetServiceConfigValueRequest{
+		ServiceName: "",
+	})
+	require.Error(t, err)
+}
+
+func TestProjectService_UnsetServiceConfig_EmptyServiceName(t *testing.T) {
+	t.Parallel()
+	svc := NewProjectService(nil, nil, nil, nil, nil, nil)
+	_, err := svc.UnsetServiceConfig(t.Context(), &azdext.UnsetServiceConfigRequest{
+		ServiceName: "",
+	})
+	require.Error(t, err)
+}
+
+// --- Happy path tests for Set/Unset config ---
+
+func TestProjectService_SetConfigSection_HappyPath(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, "name: test-project\n")
+	section, err := structpb.NewStruct(map[string]any{"key1": "value1"})
+	require.NoError(t, err)
+
+	_, err = svc.SetConfigSection(t.Context(), &azdext.SetProjectConfigSectionRequest{
+		Path:    "metadata",
+		Section: section,
+	})
+	require.NoError(t, err)
+}
+
+func TestProjectService_SetConfigValue_HappyPath(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, "name: test-project\n")
+	val := structpb.NewStringValue("hello")
+
+	_, err := svc.SetConfigValue(t.Context(), &azdext.SetProjectConfigValueRequest{
+		Path:  "metadata.greeting",
+		Value: val,
+	})
+	require.NoError(t, err)
+}
+
+func TestProjectService_UnsetConfig_HappyPath(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, "name: test-project\nmetadata:\n  key1: value1\n")
+
+	_, err := svc.UnsetConfig(t.Context(), &azdext.UnsetProjectConfigRequest{
+		Path: "metadata",
+	})
+	require.NoError(t, err)
+}
+
+func TestProjectService_Get_HappyPath(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	yamlContent := "name: test-project\nservices:\n  api:\n" +
+		"    host: appservice\n    language: python\n    project: ./src/api\n"
+	err := os.WriteFile(filepath.Join(dir, "azure.yaml"), []byte(yamlContent), 0600)
+	require.NoError(t, err)
+
+	ctx := azdcontext.NewAzdContextWithDirectory(dir)
+	lazyCtx := lazy.NewLazy(func() (*azdcontext.AzdContext, error) { return ctx, nil })
+	pc, err := project.Load(t.Context(), filepath.Join(dir, "azure.yaml"))
+	require.NoError(t, err)
+	lazyPC := lazy.NewLazy(func() (*project.ProjectConfig, error) { return pc, nil })
+
+	svc := NewProjectService(lazyCtx, nil, nil, lazyPC, nil, nil)
+	resp, err := svc.Get(t.Context(), &azdext.EmptyRequest{})
+	require.NoError(t, err)
+	require.NotNil(t, resp.Project)
+	require.Equal(t, "test-project", resp.Project.Name)
+}
+
+// Get must succeed even when no session environment is available; expandable values
+// then resolve to empty strings.
+func TestProjectService_Get_NoSessionEnv(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	yamlContent := "name: test-project\n"
+	err := os.WriteFile(filepath.Join(dir, "azure.yaml"), []byte(yamlContent), 0600)
+	require.NoError(t, err)
+
+	ctx := azdcontext.NewAzdContextWithDirectory(dir)
+	lazyCtx := lazy.NewLazy(func() (*azdcontext.AzdContext, error) { return ctx, nil })
+	pc, err := project.Load(t.Context(), filepath.Join(dir, "azure.yaml"))
+	require.NoError(t, err)
+	lazyPC := lazy.NewLazy(func() (*project.ProjectConfig, error) { return pc, nil })
+
+	svc := NewProjectService(lazyCtx, nil, nil, lazyPC, nil, nil)
+	resp, err := svc.Get(t.Context(), &azdext.EmptyRequest{})
+	require.NoError(t, err)
+	require.NotNil(t, resp.Project)
+}
+
+// --- Happy path tests for service-level config ---
+
+const yamlWithService = `name: test-project
+services:
+  api:
+    host: appservice
+    language: python
+    project: ./src/api
+`
+
+func TestProjectService_SetServiceConfigSection_HappyPath(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, yamlWithService)
+	section, err := structpb.NewStruct(map[string]any{"port": float64(8080)})
+	require.NoError(t, err)
+
+	_, err = svc.SetServiceConfigSection(t.Context(), &azdext.SetServiceConfigSectionRequest{
+		ServiceName: "api",
+		Path:        "custom",
+		Section:     section,
+	})
+	require.NoError(t, err)
+}
+
+func TestProjectService_SetServiceConfigValue_HappyPath(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, yamlWithService)
+	val := structpb.NewStringValue("containerapp")
+
+	_, err := svc.SetServiceConfigValue(t.Context(), &azdext.SetServiceConfigValueRequest{
+		ServiceName: "api",
+		Path:        "host",
+		Value:       val,
+	})
+	require.NoError(t, err)
+}
+
+func TestProjectService_UnsetServiceConfig_HappyPath(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, yamlWithService)
+
+	_, err := svc.UnsetServiceConfig(t.Context(), &azdext.UnsetServiceConfigRequest{
+		ServiceName: "api",
+		Path:        "language",
+	})
+	require.NoError(t, err)
+}
+
+func TestProjectService_AddService_HappyPath(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, "name: test-project\n")
+
+	_, err := svc.AddService(t.Context(), &azdext.AddServiceRequest{
+		Service: &azdext.ServiceConfig{
+			Name:         "web",
+			Host:         "appservice",
+			Language:     "javascript",
+			RelativePath: "./src/web",
+		},
+	})
+	require.NoError(t, err)
+}
+
+func TestProjectService_GetConfigSection_Found(t *testing.T) {
+	t.Parallel()
+	yaml := "name: test-project\nmetadata:\n  key1: value1\n  key2: value2\n"
+	svc := newProjectServiceWithYaml(t, yaml)
+
+	resp, err := svc.GetConfigSection(t.Context(), &azdext.GetProjectConfigSectionRequest{
+		Path: "metadata",
+	})
+	require.NoError(t, err)
+	require.True(t, resp.Found)
+	require.NotNil(t, resp.Section)
+}
+
+func TestProjectService_GetServiceConfigSection_HappyPath(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, yamlWithService)
+
+	resp, err := svc.GetServiceConfigSection(t.Context(), &azdext.GetServiceConfigSectionRequest{
+		ServiceName: "api",
+		Path:        "",
+	})
+	require.NoError(t, err)
+	require.True(t, resp.Found)
+	require.NotNil(t, resp.Section)
+}
+
+func TestProjectService_GetServiceConfigValue_HappyPath(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, yamlWithService)
+
+	resp, err := svc.GetServiceConfigValue(t.Context(), &azdext.GetServiceConfigValueRequest{
+		ServiceName: "api",
+		Path:        "host",
+	})
+	require.NoError(t, err)
+	require.True(t, resp.Found)
+	require.NotNil(t, resp.Value)
+}
+
+func TestProjectService_ParseGitHubUrl_Valid(t *testing.T) {
+	t.Parallel()
+	// ParseGitHubUrl requires ghCli for HTTPS urls, so just test that it's called correctly
+	// with an API URL that doesn't need authentication
+	svc := NewProjectService(nil, nil, nil, nil, nil, nil)
+	_, err := svc.ParseGitHubUrl(t.Context(), &azdext.ParseGitHubUrlRequest{
+		Url: "https://api.github.com/repos/Azure/azure-dev/contents/README.md?ref=main",
+	})
+	// API URL format succeeds without ghCli
+	require.NoError(t, err)
+}
+
+func TestProjectService_ParseGitHubUrl_Invalid(t *testing.T) {
+	t.Parallel()
+	svc := NewProjectService(nil, nil, nil, nil, nil, nil)
+	_, err := svc.ParseGitHubUrl(t.Context(), &azdext.ParseGitHubUrlRequest{
+		Url: "not-a-url",
+	})
+	require.Error(t, err)
 }

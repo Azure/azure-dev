@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"testing"
 
 	"azure.ai.toolboxes/internal/pkg/azure"
 
@@ -219,3 +220,34 @@ func (s *stubConnectionResolver) resolveConnection(
 // compile-time guard.
 var _ toolboxClient = (*mockToolboxClient)(nil)
 var _ connectionResolver = (*stubConnectionResolver)(nil)
+
+type toolboxEnvCall struct {
+	name  string
+	value string
+}
+
+// stubToolboxEndpointEnv records env-sync calls and returns nil.
+func stubToolboxEndpointEnv(t *testing.T) *[]toolboxEnvCall {
+	t.Helper()
+	calls := &[]toolboxEnvCall{}
+	prev := setToolboxEndpointEnvFunc
+	setToolboxEndpointEnvFunc = func(_ context.Context, name, value string) error {
+		*calls = append(*calls, toolboxEnvCall{name: name, value: value})
+		return nil
+	}
+	t.Cleanup(func() { setToolboxEndpointEnvFunc = prev })
+	return calls
+}
+
+// stubToolboxEndpointEnvErr records env-sync calls and returns err.
+func stubToolboxEndpointEnvErr(t *testing.T, err error) *[]toolboxEnvCall {
+	t.Helper()
+	calls := &[]toolboxEnvCall{}
+	prev := setToolboxEndpointEnvFunc
+	setToolboxEndpointEnvFunc = func(_ context.Context, name, value string) error {
+		*calls = append(*calls, toolboxEnvCall{name: name, value: value})
+		return err
+	}
+	t.Cleanup(func() { setToolboxEndpointEnvFunc = prev })
+	return calls
+}

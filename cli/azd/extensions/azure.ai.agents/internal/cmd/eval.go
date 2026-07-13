@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 // eval.go implements the top-level "eval" command group and shared context
-// resolution logic used by all eval subcommands (init, run, update, list, show).
+// resolution logic used by all eval subcommands (generate, run, update, list, show).
 //
 // The evalResolvedContext struct holds the resolved agent, project, and
 // endpoint information. It is built from azd project state, environment
@@ -25,12 +25,12 @@ import (
 	"azureaiagent/internal/pkg/agents/dataset_api"
 	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opt_eval"
+	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v3"
 )
 
 // Default values for eval configuration.
@@ -72,6 +72,7 @@ type evalResolvedContext struct {
 
 // evalContextOptions configures the behavior of resolveEvalContext.
 type evalContextOptions struct {
+	envName         string // explicit environment name (from -e flag)
 	agent           string // explicit agent name (from --agent flag)
 	projectEndpoint string // explicit project endpoint (from --project-endpoint flag)
 	requireAgent    bool   // fail if agent name cannot be resolved
@@ -85,20 +86,38 @@ func newEvalCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Create and run quick evals for an agent.
 
 Subcommands:
-  init    Generate an eval config and dataset from a hosted agent
-  run     Execute an evaluation run from eval.yaml
-  update  Update an existing eval configuration
-  list    List evaluations for the current project
-  show    Show details of an evaluation run`,
+  generate  Generate an eval config and dataset from a hosted agent
+  run       Execute an evaluation run from eval.yaml
+  update    Update an existing eval configuration
+  list      List evaluations for the current project
+  show      Show details of an evaluation run`,
 	}
 
-	cmd.AddCommand(newEvalInitCommand(extCtx))
+	cmd.AddCommand(newEvalGenerateCommand(extCtx))
+	cmd.AddCommand(newDeprecatedEvalInitCommand())
 	cmd.AddCommand(newEvalRunCommand(extCtx))
 	cmd.AddCommand(newEvalUpdateCommand(extCtx))
-	cmd.AddCommand(newEvalListCommand())
-	cmd.AddCommand(newEvalShowCommand())
+	cmd.AddCommand(newEvalListCommand(extCtx))
+	cmd.AddCommand(newEvalShowCommand(extCtx))
 
 	return cmd
+}
+
+// newDeprecatedEvalInitCommand returns a hidden "init" command that tells users
+// to use "eval generate" instead. This preserves discoverability during the
+// deprecation period without silently accepting the old name.
+func newDeprecatedEvalInitCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:        "init",
+		Short:      "(deprecated) Use 'eval generate' instead.",
+		Hidden:     true,
+		Deprecated: "use 'azd ai agent eval generate' instead",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return fmt.Errorf(
+				"'eval init' has been renamed to 'eval generate'.\n\n" +
+					"Please run: azd ai agent eval generate")
+		},
+	}
 }
 
 // resolveEvalContext resolves the context for an eval operation by reading azd project state,
@@ -125,9 +144,8 @@ func resolveEvalContext(ctx context.Context, options evalContextOptions) (*evalR
 
 	// Read the current azd environment once — used for agent info, endpoint, and env name.
 	var envName string
-	envResp, envErr := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if envErr == nil && envResp.Environment != nil {
-		envName = envResp.Environment.Name
+	if env := getExistingEnvironment(ctx, options.envName, azdClient); env != nil {
+		envName = env.Name
 	}
 
 	getEnvValue := func(key string) string {
@@ -221,9 +239,21 @@ func resolveEvalContext(ctx context.Context, options evalContextOptions) (*evalR
 			agentVersion = info.Version
 			agentVersionSource = fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 		}
-		if detectedKind, manifestPath := detectEvalAgentKind(agentProject); detectedKind != "" {
-			agentKind = detectedKind
-			agentKindSource = relPathForYaml(project.Path, manifestPath)
+		if ca, _, source, loadErr := projectpkg.LoadAgentDefinition(svc, project.Path); loadErr == nil {
+			if agent_yaml.IsValidAgentKind(ca.Kind) {
+				agentKind = ca.Kind
+				switch source {
+				case projectpkg.AgentDefinitionSourceInline:
+					agentKindSource = "azure.yaml (inline)"
+				case projectpkg.AgentDefinitionSourceLegacyConfig:
+					agentKindSource = "azure.yaml (config)"
+				case projectpkg.AgentDefinitionSourceDisk:
+					agentKindSource = "agent.yaml"
+				}
+			}
+			if source.IsLegacy() {
+				projectpkg.WarnLegacyAgentShape(source)
+			}
 		}
 	}
 	if agentKind == "" {
@@ -393,28 +423,6 @@ func printEvalField(label, value, source string) {
 	}
 }
 
-func detectEvalAgentKind(agentProject string) (agent_yaml.AgentKind, string) {
-	for _, fileName := range []string{"agent.yaml", "agent.yml"} {
-		path := filepath.Join(agentProject, fileName)
-		data, err := os.ReadFile(path) //nolint:gosec // local agent manifest path is derived from azure.yaml service project
-		if err != nil {
-			continue
-		}
-
-		var manifest struct {
-			Kind agent_yaml.AgentKind `yaml:"kind"`
-		}
-		if err := yaml.Unmarshal(data, &manifest); err != nil {
-			continue
-		}
-		if agent_yaml.IsValidAgentKind(manifest.Kind) {
-			return manifest.Kind, path
-		}
-	}
-
-	return "", ""
-}
-
 func evalAgentContextError(cause error) error {
 	message := "agent context could not be resolved"
 	if cause != nil {
@@ -474,11 +482,4 @@ func pollEvalOperationWithSpinner(
 
 	progress.setDone(label)
 	return job, nil
-}
-
-func relPathForYaml(baseDir string, target string) string {
-	if rel, err := filepath.Rel(baseDir, target); err == nil {
-		return filepath.ToSlash(rel)
-	}
-	return filepath.ToSlash(target)
 }

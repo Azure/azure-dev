@@ -1,0 +1,292 @@
+# Live E2E: azure.ai.agents extension — Tier 2 golden path
+#
+# Runs the full agent lifecycle (init -> provision -> deploy -> invoke -> down)
+# against LIVE Azure resources. The interactive `azd ai agent init` prompts are
+# driven by the Go pseudo-terminal test driver (go-expect + vt10x); the other
+# phases shell out to azd with --no-prompt. See tests/e2e-live/README.md.
+#
+# This pipeline is the live counterpart to the PR-gate checks in
+# `.github/workflows/lint-ext-azure-ai-agents.yml` (Tier 0 offline + Tier 1
+# recording/playback). Live Azure access is intentionally kept OUT of the
+# automatic PR pipeline (per Azure SDK EngSys / SFI guidance). The PR trigger
+# below only associates this pipeline with relevant PRs targeting main so
+# `/azp run ext-azure-ai-agents-live` can queue it; the ADO pipeline definition
+# must be configured to require a team member comment before building PRs.
+# It runs only:
+#   - On demand via the PR comment:
+#       /azp run azure-dev - live - ext - azure.ai.agents
+#     (or, if accepted by Azure Pipelines: /azp run ext-azure-ai-agents-live)
+#     (requires write permission on the repo)
+#   - On the weekly schedule below.
+#
+# Required ADO setup (one-time, admin) — see tests/e2e-live/README.md:
+#   - Register this YAML as a pipeline named `ext-azure-ai-agents-live`.
+#   - Service connection (parameter `serviceConnection`, default `azure-sdk-tests`)
+#     must map to the shared TME test subscription with Contributor + the RBAC
+#     needed to create Foundry projects and deploy models.
+#   - GitHub clones of the starter template authenticate with the azure-sdk org
+#     secret `azuresdk-github-pat` (already provided by the Azure SDK ADO
+#     project) to avoid anonymous rate limits — no extra secret setup required.
+
+trigger: none
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - eng/pipelines/ext-azure-ai-agents-live.yml
+      - cli/azd/go.mod
+      - cli/azd/go.sum
+      - cli/azd/extensions/azure.ai.agents/**
+      - cli/azd/extensions/azure.ai.projects/**
+
+schedules:
+  # 7am UTC Monday (offset from other weekly E2E pipelines to reduce contention).
+  - cron: "0 7 * * 1"
+    displayName: Weekly live golden-path E2E
+    branches:
+      include:
+        - main
+    always: true
+
+parameters:
+  - name: deployModes
+    displayName: "Tier 2 deploy modes"
+    type: string
+    default: both
+    values:
+      - both
+      - code
+      - container
+  - name: serviceConnection
+    displayName: "Azure service connection (TME subscription)"
+    type: string
+    default: azure-sdk-tests
+
+extends:
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
+  parameters:
+    stages:
+      - stage: AiAgentsLiveE2E
+        displayName: AI Agents Live Golden Path
+        variables:
+          - template: /eng/pipelines/templates/variables/image.yml
+        jobs:
+          - job: Tier2
+            displayName: Tier 2 — init/provision/deploy/invoke/down
+            pool:
+              name: $(LINUXPOOL)
+              image: $(LINUXVMIMAGE)
+              os: linux
+            # Two golden paths (code + container) run sequentially (~13-15 min
+            # each in the typical case), plus build/provision overhead. The cap
+            # is sized for the worst case so an ungraceful job timeout never
+            # preempts the in-test teardown: 2x the per-mode 60 min runTimeout
+            # (tier2_live_test.go) + per-run cleanup + build/setup steps.
+            timeoutInMinutes: 150
+            # The 1ES pipeline template (via 1es-redirect.yml) forbids the raw
+            # PublishPipelineArtifact@1 task; artifacts must be declared as
+            # job-level outputs using `output: pipelineArtifact`. `condition`
+            # is supported here, so `always()` still publishes logs on failure.
+            templateContext:
+              outputs:
+                - output: pipelineArtifact
+                  path: $(Build.ArtifactStagingDirectory)
+                  # Include JobAttempt so re-running a failed job in the same
+                  # build publishes to a distinct artifact name (BuildId alone
+                  # collides across attempts).
+                  artifact: tier2-live-logs-$(Build.BuildId)-$(System.JobAttempt)
+                  condition: always()
+                  displayName: Publish test logs
+            steps:
+              - checkout: self
+
+              - template: /eng/pipelines/templates/steps/setup-go.yml
+
+              # Live build — NO `-tags=record`, so the CLI/extension talk to real
+              # Azure instead of the recording proxy used by the PR-gate tests.
+              - bash: go build -o azd .
+                workingDirectory: cli/azd
+                displayName: Build azd
+
+              - bash: go build -o azure-ai-agents .
+                workingDirectory: cli/azd/extensions/azure.ai.agents
+                displayName: Build azure.ai.agents extension
+
+              - bash: go build -o azure-ai-projects .
+                workingDirectory: cli/azd/extensions/azure.ai.projects
+                displayName: Build azure.ai.projects extension
+
+              - bash: echo "##vso[task.prependpath]$(Build.SourcesDirectory)/cli/azd"
+                displayName: Add azd to PATH
+
+              # Install the freshly built (live, non-record) extensions into the
+              # azd config dir: copy the binaries where azd expects them and write
+              # a config.json so `azd ai agent` resolves the extension. The agent
+              # samples also declare `host: azure.ai.project`, which is provided by
+              # the sibling azure.ai.projects extension. CI cannot auto-install
+              # missing extensions, so both must be installed before provisioning.
+              # The config is generated FROM extension.yaml via yq so manifest
+              # fields (capabilities, namespace, usage, ...) cannot drift from a
+              # hand-maintained copy here; only test-specific fields (path, source,
+              # sentinel version) are injected.
+              - bash: |
+                  set -euo pipefail
+                  # Map the agent architecture to azd's expected binary suffix so
+                  # this keeps working if the pool ever moves off linux/amd64.
+                  # Use backticks (not $(...)) for the command substitution so
+                  # Azure DevOps cannot mistake it for a $(macro) variable; assign
+                  # once and reference the plain shell var ($ARCH) thereafter.
+                  ARCH=`uname -m`
+                  case "$ARCH" in
+                    x86_64|amd64) GOARCH=amd64 ;;
+                    aarch64|arm64) GOARCH=arm64 ;;
+                    *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
+                  esac
+                  AGENTS_BIN_NAME="azure-ai-agents-linux-${GOARCH}"
+                  AGENTS_EXT_DIR="$HOME/.azd/extensions/azure.ai.agents"
+                  mkdir -p "$AGENTS_EXT_DIR"
+                  cp cli/azd/extensions/azure.ai.agents/azure-ai-agents "$AGENTS_EXT_DIR/$AGENTS_BIN_NAME"
+                  chmod +x "$AGENTS_EXT_DIR/$AGENTS_BIN_NAME"
+
+                  PROJECTS_BIN_NAME="azure-ai-projects-linux-${GOARCH}"
+                  PROJECTS_EXT_DIR="$HOME/.azd/extensions/azure.ai.projects"
+                  mkdir -p "$PROJECTS_EXT_DIR"
+                  cp cli/azd/extensions/azure.ai.projects/azure-ai-projects "$PROJECTS_EXT_DIR/$PROJECTS_BIN_NAME"
+                  chmod +x "$PROJECTS_EXT_DIR/$PROJECTS_BIN_NAME"
+                  # yq ships on the azure-sdk Linux images; install the pinned
+                  # version as a fallback if a future image drops it.
+                  command -v yq >/dev/null 2>&1 || go install github.com/mikefarah/yq/v4@v4.44.3
+                  export AGENTS_BIN_NAME PROJECTS_BIN_NAME
+                  yq -n -o=json '
+                    load("cli/azd/extensions/azure.ai.agents/extension.yaml") as $agents |
+                    load("cli/azd/extensions/azure.ai.projects/extension.yaml") as $projects |
+                    {
+                      "extension": {"installed": {
+                        ($agents.id): {
+                          "id": $agents.id,
+                          "namespace": $agents.namespace,
+                          "capabilities": $agents.capabilities,
+                          "providers": $agents.providers,
+                          "displayName": $agents.displayName,
+                          "description": $agents.description,
+                          "version": "0.0.0-test",
+                          "usage": $agents.usage,
+                          "path": "extensions/azure.ai.agents/" + env(AGENTS_BIN_NAME),
+                          "source": "azd"
+                        },
+                        ($projects.id): {
+                          "id": $projects.id,
+                          "namespace": $projects.namespace,
+                          "capabilities": $projects.capabilities,
+                          "providers": $projects.providers,
+                          "displayName": $projects.displayName,
+                          "description": $projects.description,
+                          "version": "0.0.0-test",
+                          "usage": $projects.usage,
+                          "path": "extensions/azure.ai.projects/" + env(PROJECTS_BIN_NAME),
+                          "source": "azd"
+                        }
+                      }}
+                    }' > "$HOME/.azd/config.json"
+                displayName: Install azure.ai.agents and azure.ai.projects extensions
+
+              # Run the live golden path INSIDE the AzureCLI@2 task so the az CLI
+              # session (consumed by azd via auth.useAzCliAuth) stays valid for the
+              # whole run. keepAzSessionActive is REQUIRED: the service connection
+              # uses Workload Identity Federation and the test runs well past the
+              # ~10 min default token lifetime. A separate login step would NOT
+              # work — AzureCLI@2 isolates AZURE_CONFIG_DIR to a task-temp dir, so
+              # the session does not persist to later plain bash steps.
+              - task: AzureCLI@2
+                displayName: Run Tier 2 live golden path
+                # Holds BOTH deploy modes run sequentially. `go test -timeout`
+                # (below) self-caps at 125 min — under this 130 min step budget —
+                # so the test process exits before ADO force-kills the step, and
+                # the per-mode 60 min runTimeout drives the graceful azd teardown.
+                timeoutInMinutes: 130
+                inputs:
+                  azureSubscription: ${{ parameters.serviceConnection }}
+                  keepAzSessionActive: true
+                  visibleAzLogin: false
+                  scriptType: bash
+                  scriptLocation: inlineScript
+                  workingDirectory: cli/azd/extensions/azure.ai.agents
+                  inlineScript: |
+                    set -euo pipefail
+                    azd config set auth.useAzCliAuth true
+                    # Assign first (not `export X=$(...)`, which hides command
+                    # substitution failures from set -e), then verify non-empty.
+                    E2E_SUBSCRIPTION="$(az account show --query id -o tsv)"
+                    E2E_TENANT="$(az account show --query tenantId -o tsv)"
+                    if [ -z "$E2E_SUBSCRIPTION" ] || [ -z "$E2E_TENANT" ]; then
+                      echo "ERROR: failed to resolve subscription/tenant from az account show" >&2
+                      exit 1
+                    fi
+                    export E2E_SUBSCRIPTION E2E_TENANT
+                    echo "Using subscription: $E2E_SUBSCRIPTION"
+                    mkdir -p "$(Build.ArtifactStagingDirectory)/logs"
+                    # Drive the live golden path through the Go pseudo-terminal
+                    # test driver. -v streams per-phase logs; -count=1 defeats the
+                    # test cache (a live test must always re-run); -timeout self-
+                    # caps the process under this step's budget so the per-mode
+                    # teardown (t.Cleanup) runs before ADO force-kills the step.
+                    go test -run TestTier2Live -count=1 -timeout 125m -v ./tests/e2e-live/ 2>&1 \
+                      | tee "$(Build.ArtifactStagingDirectory)/logs/tier2.log"
+                env:
+                  # Gate + mode selection consumed by tier2_live_test.go.
+                  AZURE_AI_AGENTS_E2E_LIVE: "1"
+                  E2E_DEPLOY_MODES: ${{ parameters.deployModes }}
+                  E2E_CREATE_PROJECT: "true"
+                  E2E_LOCATION: eastus2
+                  E2E_USE_AZ_CLI_AUTH: "true"
+                  # azure-sdk org PAT (ambient in the ADO project) used only to
+                  # avoid anonymous GitHub rate limits when cloning the template.
+                  GH_TOKEN: $(azuresdk-github-pat)
+
+              # Safety net for hard crashes / step timeout: the in-test teardown
+              # runs `azd down` already, but if the run died mid-way, force-purge
+              # any leftover project environments. Must run inside AzureCLI@2 so it
+              # is authenticated — the previous task's az session does not persist.
+              - task: AzureCLI@2
+                condition: always()
+                continueOnError: true
+                displayName: Cleanup leaked Azure resources
+                inputs:
+                  azureSubscription: ${{ parameters.serviceConnection }}
+                  keepAzSessionActive: true
+                  visibleAzLogin: false
+                  scriptType: bash
+                  scriptLocation: inlineScript
+                  inlineScript: |
+                    azd config set auth.useAzCliAuth true
+                    echo "Best-effort teardown of any leaked resources..."
+                    # RFC 3339 UTC instant for the EngSys DeleteAfter cleanup tag.
+                    delete_after=$(date -u -d '+2 days' +%Y-%m-%dT%H:%M:%SZ)
+                    for dir in /tmp/e2e-tests/tier2-*/; do
+                      [ -d "$dir" ] || continue
+                      proj=$(find "$dir" -maxdepth 2 -name azure.yaml -exec dirname {} \; | head -1)
+                      [ -n "$proj" ] || continue
+                      (
+                        cd "$proj"
+                        # Tag the resource group(s) before attempting `azd down` so
+                        # the EngSys garbage collector can still reclaim them if the
+                        # delete below fails - the cleanup pipeline keys off
+                        # DeleteAfter. Enumerate by azd env name rather than reading
+                        # AZURE_RESOURCE_GROUP from env values, which a provision that
+                        # times out may not have persisted yet; azd creates the group
+                        # as rg-<env> at the start of provisioning, so the name is
+                        # known even when the run dies mid-deploy.
+                        for d in .azure/*/; do
+                          [ -d "$d" ] || continue
+                          name=${d#.azure/}
+                          name=${name%/}
+                          rg="rg-$name"
+                          echo "Tagging $rg (env=$name) with DeleteAfter=$delete_after"
+                          az group update --name "$rg" \
+                            --set "tags.DeleteAfter=$delete_after" --output none || true
+                        done
+                        azd down --force --purge --no-prompt
+                      ) 2>&1 || true
+                    done

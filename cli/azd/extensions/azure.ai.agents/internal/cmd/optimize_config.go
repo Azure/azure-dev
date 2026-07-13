@@ -27,12 +27,27 @@ type OptimizeConfig struct {
 	opt_eval.Config `yaml:",inline"`
 
 	// Optimize-specific YAML fields.
-	ValidationReference *opt_eval.DatasetRef `yaml:"validation_reference,omitempty"`
-	Options             *opt_eval.Options    `yaml:"options"`
+	ValidationDataset *opt_eval.DatasetRef `yaml:"validation_dataset,omitempty"`
+	// LegacyValidationReference reads the deprecated `validation_reference`
+	// YAML key. Use ValidationDataset instead; this is consulted only for
+	// backward compatibility and is merged into ValidationDataset by
+	// normalizeValidationDataset at load time.
+	LegacyValidationReference *opt_eval.DatasetRef `yaml:"validation_reference,omitempty"`
+	Options                   *opt_eval.Options    `yaml:"options"`
 
 	// Runtime-only: resolved skill directory and tools file (not serialized to YAML).
 	SkillDir  string `yaml:"-"`
 	ToolsFile string `yaml:"-"`
+}
+
+// normalizeValidationDataset merges the deprecated `validation_reference` key
+// into ValidationDataset when it is unset, then clears the legacy field so it
+// is not re-written.
+func (c *OptimizeConfig) normalizeValidationDataset() {
+	if c.ValidationDataset == nil && c.LegacyValidationReference != nil {
+		c.ValidationDataset = c.LegacyValidationReference
+	}
+	c.LegacyValidationReference = nil
 }
 
 // LoadOptimizeConfig reads and parses a YAML optimization config file.
@@ -46,11 +61,13 @@ func LoadOptimizeConfig(path string) (*OptimizeConfig, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
+	cfg.NormalizeDataset()
+	cfg.normalizeValidationDataset()
 
 	return &cfg, nil
 }
 
-// Validate checks required fields and mutual exclusivity constraints.
+// Validate checks required fields and dataset constraints.
 func (c *OptimizeConfig) Validate() error {
 	if c.Agent.Name == "" {
 		return fmt.Errorf("agent.name is required")
@@ -60,32 +77,39 @@ func (c *OptimizeConfig) Validate() error {
 		return fmt.Errorf("options.eval_model is required")
 	}
 
-	hasFile := c.DatasetFile != ""
-	hasRef := c.DatasetReference != nil
-
-	if hasFile && hasRef {
-		return fmt.Errorf("dataset_file and dataset_reference are mutually exclusive; specify one, not both")
+	if c.Options.OptimizationModel == "" {
+		return fmt.Errorf(
+			"options.optimization_model is required: pass --optimize-model <name>, " +
+				"or add 'optimization_model' under 'options:' in your config")
 	}
 
-	if !hasFile && !hasRef {
+	if len(c.Evaluators) == 0 {
 		return fmt.Errorf(
-			"a dataset is required: provide dataset_file or dataset_reference in your config, " +
-				"or run 'azd ai agent eval init' to generate one")
+			"at least one evaluator is required: pass --evaluator <name> (repeatable), " +
+				"add an 'evaluators:' section to your config, or run 'azd ai agent eval generate' to generate one")
+	}
+
+	hasLocal := c.LocalDatasetPath() != ""
+	hasRemote := c.RemoteDatasetReference() != nil
+
+	if !hasLocal && !hasRemote {
+		return fmt.Errorf(
+			"a dataset is required: provide a local or registered dataset in your config, " +
+				"or run 'azd ai agent eval generate' to generate one")
 	}
 
 	return nil
 }
 
 // defaultOptimizeConfig returns a minimal config skeleton with sensible defaults.
-// Dataset, eval model, and other values are resolved interactively or via flags.
+// Dataset, eval model, evaluators, and other values are resolved interactively or via flags.
 func defaultOptimizeConfig(agentName string) *OptimizeConfig {
 	return &OptimizeConfig{
 		Config: opt_eval.Config{
-			Agent:      opt_eval.AgentRef{Name: agentName},
-			Evaluators: opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			Agent: opt_eval.AgentRef{Name: agentName},
 		},
 		Options: &opt_eval.Options{
-			MaxIterations: new(5),
+			MaxCandidates: new(5),
 		},
 	}
 }
@@ -99,10 +123,10 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 			AgentName:    c.Agent.Name,
 			AgentVersion: c.Agent.Version,
 		},
-		Evaluators: c.Evaluators.Names(),
+		Evaluators: evaluatorRefs(c.Evaluators),
 		Options: optimize_api.OptimizeOptions{
 			EvalModel:         c.Options.EvalModel,
-			MaxIterations:     c.Options.MaxIterations,
+			MaxCandidates:     c.Options.MaxCandidates,
 			OptimizationModel: c.Options.OptimizationModel,
 			EvaluationLevel:   c.Options.EvaluationLevel,
 		},
@@ -113,40 +137,42 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 		req.Options.OptimizationConfig = c.Options.OptimizationConfig
 	}
 
-	// Put baselineModel into optimizationConfig.
+	// Put the baseline model into optimization_config as "model".
 	if c.Agent.Model != "" {
 		if req.Options.OptimizationConfig == nil {
 			req.Options.OptimizationConfig = make(map[string]json.RawMessage)
 		}
 		raw, _ := json.Marshal(c.Agent.Model)
-		req.Options.OptimizationConfig["baselineModel"] = raw
+		req.Options.OptimizationConfig["model"] = raw
 	}
 
 	var warnings []string
 
-	if c.DatasetReference != nil {
-		req.TrainDatasetReference = &optimize_api.DatasetReference{
-			Name:    c.DatasetReference.Name,
-			Version: c.DatasetReference.Version,
-		}
-	}
-
-	if c.ValidationReference != nil {
-		req.ValidationDatasetReference = &optimize_api.DatasetReference{
-			Name:    c.ValidationReference.Name,
-			Version: c.ValidationReference.Version,
-		}
-	}
-
+	// Train dataset: the deprecated dataset_file is normalized into a
+	// DatasetRef so both forms go through the same conversion path.
+	trainRef := c.Dataset
 	if c.DatasetFile != "" {
-		lines, err := loadJSONLRawFile(c.DatasetFile)
+		trainRef = &opt_eval.DatasetRef{LocalURI: c.DatasetFile}
+	}
+	if trainRef != nil {
+		ds, err := datasetRefToAPI(trainRef)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("train dataset: %w", err)
 		}
-		req.Dataset = lines
+		req.TrainDataset = ds
 	}
 
-	// Populate optimization_config with systemPrompt, skills, tools.
+	// Validation dataset (optional): supports both inline (local_uri) and
+	// registered reference (name/version), mirroring the train dataset.
+	if c.ValidationDataset != nil {
+		ds, err := datasetRefToAPI(c.ValidationDataset)
+		if err != nil {
+			return nil, nil, fmt.Errorf("validation dataset: %w", err)
+		}
+		req.ValidationDataset = ds
+	}
+
+	// Populate optimization_config with system_prompt, skills, tools.
 	ensureOptConfig := func() {
 		if req.Options.OptimizationConfig == nil {
 			req.Options.OptimizationConfig = make(map[string]json.RawMessage)
@@ -156,7 +182,7 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 	if prompt := c.Agent.ResolvedSystemPrompt(); prompt != "" {
 		ensureOptConfig()
 		raw, _ := json.Marshal(prompt)
-		req.Options.OptimizationConfig["systemPrompt"] = raw
+		req.Options.OptimizationConfig["system_prompt"] = raw
 	}
 
 	// Load skills from skill_dir if specified.
@@ -183,6 +209,60 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 	}
 
 	return req, warnings, nil
+}
+
+// datasetRefToAPI converts a DatasetRef into the API Dataset payload. A local
+// dataset (local_uri, no name) is sent inline with its JSONL items; a
+// registered dataset (name/version) is sent as a reference.
+func datasetRefToAPI(ref *opt_eval.DatasetRef) (*optimize_api.Dataset, error) {
+	if ref.IsLocal() {
+		lines, err := loadJSONLRawFile(ref.LocalURI)
+		if err != nil {
+			return nil, err
+		}
+		return &optimize_api.Dataset{
+			Type:  optimize_api.DatasetTypeInline,
+			Items: lines,
+		}, nil
+	}
+	return &optimize_api.Dataset{
+		Type:    optimize_api.DatasetTypeReference,
+		Name:    ref.Name,
+		Version: ref.Version,
+	}, nil
+}
+
+// evaluatorRefs converts a YAML evaluator list into API evaluator references,
+// preserving each evaluator's name and optional version.
+func evaluatorRefs(list opt_eval.EvaluatorList) []optimize_api.EvaluatorRef {
+	if len(list) == 0 {
+		return nil
+	}
+	refs := make([]optimize_api.EvaluatorRef, 0, len(list))
+	for _, e := range list {
+		refs = append(refs, optimize_api.EvaluatorRef{Name: e.Name, Version: e.Version})
+	}
+	return refs
+}
+
+// mergeEvaluators appends add to base, skipping entries whose name already
+// exists in base (case-sensitive). Order is preserved: base first, then any
+// new entries from add. Used to layer --evaluator flags on top of config
+// evaluators without dropping the config entries.
+func mergeEvaluators(base, add opt_eval.EvaluatorList) opt_eval.EvaluatorList {
+	seen := make(map[string]struct{}, len(base))
+	for _, e := range base {
+		seen[e.Name] = struct{}{}
+	}
+	merged := base
+	for _, e := range add {
+		if _, ok := seen[e.Name]; ok {
+			continue
+		}
+		seen[e.Name] = struct{}{}
+		merged = append(merged, e)
+	}
+	return merged
 }
 
 // loadToolDefinitions reads an OpenAI-format tools JSON file, deserializes

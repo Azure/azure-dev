@@ -12,6 +12,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -282,4 +283,99 @@ func TestExtractTarGzToDirectory(t *testing.T) {
 		require.NoError(err)
 		require.Equal(expectedContent, string(content))
 	}
+}
+
+// TestCreateFromDirectory_ExecutableMatcher verifies that WithExecutableMatcher
+// marks only the matched entries as executable, while leaving other files untouched.
+// This is the cross-platform path Go function deploys rely on (on Windows the
+// filesystem does not track Unix execute bits).
+func TestCreateFromDirectory_ExecutableMatcher(t *testing.T) {
+	require := require.New(t)
+
+	srcDir := t.TempDir()
+
+	// Binary that must end up executable. Write without the execute bit so the
+	// matcher is solely responsible for setting it (mirrors the Windows case).
+	binaryPath := filepath.Join(srcDir, "app")
+	require.NoError(os.WriteFile(binaryPath, []byte("binary-content"), 0600))
+
+	// Regular file that must NOT be made executable.
+	configPath := filepath.Join(srcDir, "host.json")
+	require.NoError(os.WriteFile(configPath, []byte("{}"), 0600))
+
+	zipPath := filepath.Join(t.TempDir(), "test.zip")
+	zipFile, err := os.Create(zipPath)
+	require.NoError(err)
+
+	matcher := func(src string, info os.FileInfo) bool {
+		return !info.IsDir() && info.Name() == "app"
+	}
+	err = rzip.CreateFromDirectory(srcDir, zipFile, nil, rzip.WithExecutableMatcher(matcher))
+	require.NoError(err)
+	require.NoError(zipFile.Close())
+
+	reader, err := zip.OpenReader(zipPath)
+	require.NoError(err)
+	defer reader.Close()
+
+	modes := make(map[string]os.FileMode)
+	for _, f := range reader.File {
+		modes[f.Name] = f.Mode()
+	}
+
+	appMode, ok := modes["app"]
+	require.True(ok, "app should exist in zip")
+	require.NotZero(appMode&0111, "matched binary should have execute bits, got %o", appMode)
+
+	configMode, ok := modes["host.json"]
+	require.True(ok, "host.json should exist in zip")
+	require.Zero(configMode&0111, "unmatched file should not have execute bits, got %o", configMode)
+}
+
+func TestCreateFromDirectory_PreservesUnixPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits are not reliably preserved on Windows filesystems")
+	}
+	require := require.New(t)
+
+	srcDir := t.TempDir()
+
+	// Create a file with execute permission (like a compiled binary)
+	executablePath := filepath.Join(srcDir, "app")
+	err := os.WriteFile(executablePath, []byte("binary-content"), 0600) //#nosec G306
+	require.NoError(err)
+	require.NoError(os.Chmod(executablePath, 0755))
+
+	// Create a regular file without execute permission
+	regularPath := filepath.Join(srcDir, "config.json")
+	err = os.WriteFile(regularPath, []byte("{}"), 0600)
+	require.NoError(err)
+
+	// Create zip
+	zipPath := filepath.Join(t.TempDir(), "test.zip")
+	zipFile, err := os.Create(zipPath)
+	require.NoError(err)
+	err = rzip.CreateFromDirectory(srcDir, zipFile, nil)
+	require.NoError(err)
+	require.NoError(zipFile.Close())
+
+	// Read the zip and verify file modes
+	reader, err := zip.OpenReader(zipPath)
+	require.NoError(err)
+	defer reader.Close()
+
+	modes := make(map[string]os.FileMode)
+	for _, f := range reader.File {
+		modes[f.Name] = f.Mode()
+	}
+
+	// Verify executable has execute bit set
+	appMode, ok := modes["app"]
+	require.True(ok, "app should exist in zip")
+	require.NotZero(appMode&0111, "app should have execute permission bits set, got %o", appMode)
+
+	// Verify regular file does not have execute bit set
+	configMode, ok := modes["config.json"]
+	require.True(ok, "config.json should exist in zip")
+	require.Zero(configMode&0111, "config.json should not have execute permission bits, got %o", configMode)
 }

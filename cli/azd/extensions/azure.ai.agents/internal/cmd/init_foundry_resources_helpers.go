@@ -34,6 +34,20 @@ type FoundryProjectInfo struct {
 	ProjectName       string
 	Location          string // may be empty when parsed from resource ID alone
 	ResourceId        string // full ARM resource ID
+	// NetworkInjected is true when the owning Foundry account has VNET network
+	// injection (agent scenario); used to disable remote build.
+	NetworkInjected bool
+}
+
+// Endpoint returns the Foundry project data-plane endpoint derived from the
+// account and project names, or "" when the project is nil or either name is
+// missing. The endpoint is the brownfield signal written onto the
+// azure.ai.project service so provision connects to the existing project.
+func (p *FoundryProjectInfo) Endpoint() string {
+	if p == nil || p.AccountName == "" || p.ProjectName == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", p.AccountName, p.ProjectName)
 }
 
 // FoundryDeploymentInfo holds information about an existing model deployment in a Foundry project.
@@ -213,12 +227,14 @@ func getFoundryProject(
 		return nil, fmt.Errorf("provided project resource ID does not match the selected subscription")
 	}
 
-	projectsClient, err := armcognitiveservices.NewProjectsClient(project.SubscriptionId, credential, azure.NewArmClientOptions())
+	projectsClient, err := armcognitiveservices.NewProjectsClient(
+		project.SubscriptionId, credential, azure.NewArmClientOptions())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create projects client: %w", err)
 	}
 
-	response, err := projectsClient.Get(ctx, project.ResourceGroupName, project.AccountName, project.ProjectName, nil)
+	response, err := projectsClient.Get(
+		ctx, project.ResourceGroupName, project.AccountName, project.ProjectName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get Foundry project: %w", err)
 	}
@@ -226,6 +242,45 @@ func getFoundryProject(
 	updateFoundryProjectInfo(project, &response.Project)
 
 	return project, nil
+}
+
+// foundryAccountNetworkInjected reports whether the Foundry account that owns the
+// project has VNET network injection (agent scenario), used to disable remote
+// build. Best-effort: any failure returns false with a logged warning so init is
+// never blocked.
+func foundryAccountNetworkInjected(
+	ctx context.Context,
+	credential azcore.TokenCredential,
+	project *FoundryProjectInfo,
+) bool {
+	accountsClient, err := armcognitiveservices.NewAccountsClient(
+		project.SubscriptionId, credential, azure.NewArmClientOptions())
+	if err != nil {
+		log.Printf("warning: could not create Cognitive Services accounts client for "+
+			"network-injection check, assuming no injection: %v", err)
+		return false
+	}
+
+	response, err := accountsClient.Get(ctx, project.ResourceGroupName, project.AccountName, nil)
+	if err != nil {
+		log.Printf("warning: could not read Foundry account '%s' for network-injection "+
+			"check, assuming no injection: %v", project.AccountName, err)
+		return false
+	}
+
+	props := response.Account.Properties
+	if props == nil {
+		return false
+	}
+
+	for _, injection := range props.NetworkInjections {
+		if injection != nil && injection.Scenario != nil &&
+			*injection.Scenario == armcognitiveservices.ScenarioTypeAgent {
+			return true
+		}
+	}
+
+	return false
 }
 
 // listProjectDeployments lists all model deployments in a Foundry account.
@@ -327,6 +382,9 @@ func lookupAcrResourceId(
 // configureFoundryProjectEnv sets all Foundry project environment variables and discovers
 // ACR and AppInsights connections. This is the shared implementation used by both init flows.
 // When skipACR is true, ACR connection discovery and configuration is skipped (used for code deploy).
+// When bicepless is true, AppInsights is left to the provisioning provider; ACR is still configured
+// for a container agent (skipACR false) so its endpoint is wired here when the project already has a
+// registry connection, or the provider is signaled to create one on provision (the create-new path).
 func configureFoundryProjectEnv(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -335,6 +393,7 @@ func configureFoundryProjectEnv(
 	project FoundryProjectInfo,
 	subscriptionId string,
 	skipACR bool,
+	bicepless bool,
 ) error {
 	resourceId := project.ResourceId
 	if resourceId == "" {
@@ -359,7 +418,7 @@ func configureFoundryProjectEnv(
 		return err
 	}
 
-	aiFoundryEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", project.AccountName, project.ProjectName)
+	aiFoundryEndpoint := project.Endpoint()
 	if err := setEnvValue(ctx, azdClient, envName, "FOUNDRY_PROJECT_ENDPOINT", aiFoundryEndpoint); err != nil {
 		return err
 	}
@@ -367,6 +426,15 @@ func configureFoundryProjectEnv(
 	aoaiEndpoint := fmt.Sprintf("https://%s.openai.azure.com/", project.AccountName)
 	if err := setEnvValue(ctx, azdClient, envName, "AZURE_OPENAI_ENDPOINT", aoaiEndpoint); err != nil {
 		return err
+	}
+
+	if bicepless {
+		// The provisioning provider owns ACR/AppInsights for a new project, but a
+		// container agent on an existing project needs a registry it won't create.
+		if skipACR {
+			return nil
+		}
+		return configureExistingProjectAcr(ctx, azdClient, credential, envName, project, subscriptionId)
 	}
 
 	// Discover and configure connections (ACR, AppInsights)
@@ -412,6 +480,39 @@ func configureFoundryProjectEnv(
 	}
 
 	return nil
+}
+
+// configureExistingProjectAcr discovers the ACR connections on an existing
+// Foundry project and runs the ACR selection/question for a container agent in
+// the bicepless flow. A failure to list connections is non-fatal: configureAcrConnection
+// then prompts for a login server (or to create one during provision).
+func configureExistingProjectAcr(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	credential azcore.TokenCredential,
+	envName string,
+	project FoundryProjectInfo,
+	subscriptionId string,
+) error {
+	var acrConnections []azure.Connection
+	foundryClient, err := azure.NewFoundryProjectsClient(project.AccountName, project.ProjectName, credential)
+	if err != nil {
+		return fmt.Errorf("creating Foundry client: %w", err)
+	}
+	connections, err := foundryClient.GetAllConnections(ctx)
+	if err != nil {
+		fmt.Printf(
+			"Could not get Microsoft Foundry project connections: %v. "+
+				"You will be asked to provide a container registry.\n", err)
+	} else {
+		for _, conn := range connections {
+			if conn.Type == azure.ConnectionTypeContainerRegistry {
+				acrConnections = append(acrConnections, conn)
+			}
+		}
+	}
+
+	return configureAcrConnection(ctx, azdClient, credential, envName, subscriptionId, acrConnections)
 }
 
 // configureAcrConnection handles ACR connection selection and env var setting.
@@ -509,6 +610,33 @@ func configureAcrConnection(
 	return nil
 }
 
+// tracingOverviewURL points to an overview of agent tracing/telemetry behavior.
+const tracingOverviewURL = "https://aka.ms/tracing-overview"
+
+// disableTracingURL points to guidance on disabling agent tracing/telemetry.
+const disableTracingURL = "https://aka.ms/disable-tracing"
+
+// tracingDisclaimer returns the telemetry/tracing disclaimer shown during init
+// wherever Application Insights is connected or added. The body is rendered in a
+// muted (gray) style. The "Learn more" label renders as a clickable hyperlink to
+// tracingOverviewURL (and as the plain URL in non-terminal output), and
+// disableTracingURL renders as a clickable hyperlink in a terminal and as the
+// plain URL in non-terminal output.
+func tracingDisclaimer() string {
+	return output.WithGrayFormat(
+		"When using Hosted Agents apply appropriate safeguards. "+
+			"You are responsible for managing all data that may flow outside "+
+			"your organization's compliance and geographic boundaries. "+
+			"Use third-party systems at your own risk. ") +
+		output.WithHyperlink(tracingOverviewURL, "Learn more") +
+		output.WithGrayFormat(
+			". When AppInsights is enabled, this project logs traces to help "+
+				"you monitor your agents. Certain project members may be able to "+
+				"view user data. See ") +
+		output.WithHyperlink(disableTracingURL, disableTracingURL) +
+		output.WithGrayFormat(".")
+}
+
 // configureAppInsightsConnection handles AppInsights connection selection and env var setting.
 func configureAppInsightsConnection(
 	ctx context.Context,
@@ -516,14 +644,19 @@ func configureAppInsightsConnection(
 	envName string,
 	appInsightsConnections []azure.Connection,
 ) error {
+	// Show the tracing/telemetry disclaimer once, before any branch, since each
+	// path below connects or adds an Application Insights resource.
+	fmt.Println(tracingDisclaimer())
+	fmt.Println()
+
 	if len(appInsightsConnections) == 0 {
-		fmt.Println("\n" +
+		fmt.Println(
 			"Application Insights (optional)\n\n" +
-			"Enable telemetry to collect logs, traces, and diagnostics for this agent.\n\n" +
-			"You can:\n" +
-			"  • Use an existing Application Insights resource\n" +
-			"  • Or create a new one during 'azd up'\n\n" +
-			"Docs: " + output.WithLinkFormat("https://aka.ms/azdaiagent/docs"))
+				"Enable telemetry to collect logs, traces, and diagnostics for this agent.\n\n" +
+				"You can:\n" +
+				"  • Use an existing Application Insights resource\n" +
+				"  • Or create a new one during 'azd up'\n\n" +
+				"Docs: " + output.WithLinkFormat("https://aka.ms/azdaiagent/docs"))
 
 		resourceIdResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
@@ -1080,6 +1213,7 @@ func resolveModelDeployments(
 		ModelName:    model.Name,
 		Options: &azdext.AiModelDeploymentOptions{
 			Locations: []string{location},
+			Capacity:  new(defaultDeploymentCapacity),
 		},
 		Quota: &azdext.QuotaCheckOptions{
 			MinRemainingCapacity: 1,
@@ -1187,6 +1321,9 @@ func sortModelDeploymentCandidates(candidates []*azdext.AiModelDeployment, defau
 // finds the matching project without prompting. Returns nil if user chose
 // "Create a new Foundry project" or no projects exist.
 // When a project is selected, configures all project-related environment variables.
+// skipACR skips ACR connection discovery (used for code deploy);
+// bicepless skips both ACR and AppInsights prompts (see
+// configureFoundryProjectEnv).
 func selectFoundryProject(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -1196,6 +1333,7 @@ func selectFoundryProject(
 	subscriptionId string,
 	projectResourceId string,
 	skipACR bool,
+	bicepless bool,
 ) (*FoundryProjectInfo, error) {
 	spinnerText := "Searching for Foundry projects in your subscription..."
 	if projectResourceId != "" {
@@ -1233,8 +1371,8 @@ func selectFoundryProject(
 		return nil, fmt.Errorf("failed to list Foundry projects: %w", err)
 	}
 
-	// When code deploy is selected, restrict to regions that support hosted agents.
-	// Code deploy is available in all hosted-agent regions (no separate allowlist).
+	// When ACR is skipped (code deploy, or a pre-built --image), the agent runs as a
+	// hosted agent, so restrict to regions that support hosted agents.
 	if skipACR {
 		supportedRegions, regErr := supportedRegionsForInit(ctx)
 		if regErr != nil {
@@ -1307,6 +1445,11 @@ func selectFoundryProject(
 
 	selectedProject := projects[selectedIdx]
 
+	// Resolve the account's VNET network-injection status for the chosen project
+	// (best-effort) so remote build is disabled when injection is present. Done here
+	// so both the provided-id and interactive-picker paths are covered from one place.
+	selectedProject.NetworkInjected = foundryAccountNetworkInjected(ctx, credential, &selectedProject)
+
 	// Set location from the selected project
 	azureContext.Scope.Location = selectedProject.Location
 	if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", selectedProject.Location); err != nil {
@@ -1323,7 +1466,9 @@ func selectFoundryProject(
 	}
 
 	// Configure all Foundry project environment variables
-	if err := configureFoundryProjectEnv(ctx, azdClient, credential, envName, selectedProject, subscriptionId, skipACR); err != nil {
+	if err := configureFoundryProjectEnv(
+		ctx, azdClient, credential, envName, selectedProject, subscriptionId, skipACR, bicepless,
+	); err != nil {
 		return nil, fmt.Errorf("failed to configure Foundry project environment: %w", err)
 	}
 

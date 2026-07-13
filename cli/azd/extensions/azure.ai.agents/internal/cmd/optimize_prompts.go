@@ -309,6 +309,7 @@ func resolveOptimizeEvalModel(
 	azdClient *azdext.AzdClient,
 	cfg *OptimizeConfig,
 	noPrompt bool,
+	envName string,
 ) error {
 	if noPrompt {
 		return fmt.Errorf("options.eval_model is required: use --eval-model <model> to specify the evaluation model")
@@ -318,9 +319,9 @@ func resolveOptimizeEvalModel(
 		return fmt.Errorf("eval_model is required but cannot prompt")
 	}
 
-	deployedModel := getDeployedModelFromEnv(ctx, azdClient)
+	deployedModel := getDeployedModelFromEnv(ctx, azdClient, envName)
 
-	selected, err := promptModelSelection(ctx, azdClient, "Select the model for evaluation", deployedModel)
+	selected, err := promptModelSelection(ctx, azdClient, "Select the model for evaluation", deployedModel, envName)
 	if err != nil {
 		return err
 	}
@@ -340,8 +341,8 @@ func resolveOptimizeDataset(
 ) error {
 	if noPrompt {
 		return fmt.Errorf(
-			"a dataset is required: use --dataset <file-or-name>, or provide dataset_file / dataset_reference " +
-				"in your config, or run 'azd ai agent eval init' to generate one")
+			"a dataset is required: use --dataset <file-or-name>, or provide a dataset " +
+				"in your config, or run 'azd ai agent eval generate' to generate one")
 	}
 
 	if azdClient == nil {
@@ -353,16 +354,17 @@ func resolveOptimizeDataset(
 		return err
 	}
 	cfg.DatasetFile = file
-	cfg.DatasetReference = ref
+	cfg.Dataset = ref
 	return nil
 }
 
-// hasModelConfig reports whether OptimizationConfig contains a "model" entry.
+// hasModelConfig reports whether OptimizationConfig contains a
+// "model_search_space" entry.
 func hasModelConfig(oc opt_eval.OptimizationConfig) bool {
 	if oc == nil {
 		return false
 	}
-	_, ok := oc["model"]
+	_, ok := oc["model_search_space"]
 	return ok
 }
 
@@ -373,6 +375,7 @@ func resolveOptimizeTargetModels(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	cfg *OptimizeConfig,
+	envName string,
 ) error {
 	if azdClient == nil {
 		return nil
@@ -391,7 +394,7 @@ func resolveOptimizeTargetModels(
 	}
 
 	// Fetch deployed models from the Foundry project.
-	choices := buildOptimizeModelChoices(ctx, azdClient, currentModel)
+	choices := buildOptimizeModelChoices(ctx, azdClient, currentModel, envName)
 
 	message := "Select target models for optimization"
 	if currentModel != "" {
@@ -418,7 +421,7 @@ func resolveOptimizeTargetModels(
 		if cfg.Options.OptimizationConfig == nil {
 			cfg.Options.OptimizationConfig = make(opt_eval.OptimizationConfig)
 		}
-		cfg.Options.OptimizationConfig["model"] = modelJSON
+		cfg.Options.OptimizationConfig["model_search_space"] = modelJSON
 	}
 
 	return nil
@@ -451,13 +454,13 @@ func isRecommendedOptimizationModel(modelName string) bool {
 // model. Recommended deployments (gpt-5 family, deepseek) are listed first,
 // followed by the remaining deployments. If the user picks a model not in
 // the recommended set, a warning is printed.
-func resolveOptimizeOptimizationModel(ctx context.Context, azdClient *azdext.AzdClient, cfg *OptimizeConfig) error {
+func resolveOptimizeOptimizationModel(ctx context.Context, azdClient *azdext.AzdClient, cfg *OptimizeConfig, envName string) error {
 	if azdClient == nil {
 		return nil
 	}
 
 	// Fetch deployments once and build a single list: recommended first, then others.
-	deployments := listDeploymentsFromEnv(ctx, azdClient)
+	deployments := listDeploymentsFromEnv(ctx, azdClient, envName)
 
 	var recommended, others []*azdext.SelectChoice
 	seen := make(map[string]bool)
@@ -515,8 +518,8 @@ func resolveOptimizeOptimizationModel(ctx context.Context, azdClient *azdext.Azd
 // MultiSelectChoice items. The baseline model (currentModel) is excluded
 // from the list since it is already used as the baseline.
 // Falls back to an empty list if deployments cannot be fetched.
-func buildOptimizeModelChoices(ctx context.Context, azdClient *azdext.AzdClient, currentModel string) []*azdext.MultiSelectChoice {
-	deployments := listDeploymentsFromEnv(ctx, azdClient)
+func buildOptimizeModelChoices(ctx context.Context, azdClient *azdext.AzdClient, currentModel, envName string) []*azdext.MultiSelectChoice {
+	deployments := listDeploymentsFromEnv(ctx, azdClient, envName)
 
 	var choices []*azdext.MultiSelectChoice
 	seen := make(map[string]bool)
@@ -544,16 +547,17 @@ func buildOptimizeModelChoices(ctx context.Context, azdClient *azdext.AzdClient,
 	return choices
 }
 
-// listDeploymentsFromEnv reads AZURE_AI_PROJECT_ID from the azd environment
-// and returns the Foundry project's model deployments. Returns nil on failure.
-func listDeploymentsFromEnv(ctx context.Context, azdClient *azdext.AzdClient) []FoundryDeploymentInfo {
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || envResp == nil || envResp.Environment == nil {
+// listDeploymentsFromEnv reads AZURE_AI_PROJECT_ID from the specified (or
+// current) azd environment and returns the Foundry project's model
+// deployments. Returns nil on failure.
+func listDeploymentsFromEnv(ctx context.Context, azdClient *azdext.AzdClient, envName string) []FoundryDeploymentInfo {
+	env := getExistingEnvironment(ctx, envName, azdClient)
+	if env == nil {
 		return nil
 	}
 
 	v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envResp.Environment.Name,
+		EnvName: env.Name,
 		Key:     "AZURE_AI_PROJECT_ID",
 	})
 	if err != nil || v.Value == "" {

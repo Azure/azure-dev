@@ -6,12 +6,13 @@ package cmd
 import (
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestOptimizeListCommand_AcceptsLimitAndStatusFlags(t *testing.T) {
-	cmd := newOptimizeListCommand()
+	cmd := newOptimizeListCommand(&azdext.ExtensionContext{})
 
 	limitFlag := cmd.Flags().Lookup("limit")
 	require.NotNil(t, limitFlag, "--limit flag should be registered")
@@ -29,7 +30,7 @@ func TestOptimizeListCommand_AcceptsLimitAndStatusFlags(t *testing.T) {
 }
 
 func TestOptimizeListCommand_HasConnectionFlags(t *testing.T) {
-	cmd := newOptimizeListCommand()
+	cmd := newOptimizeListCommand(&azdext.ExtensionContext{})
 
 	assert.NotNil(t, cmd.Flags().Lookup("endpoint"))
 	assert.NotNil(t, cmd.Flags().Lookup("project-endpoint"))

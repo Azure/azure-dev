@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
@@ -353,8 +354,10 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 	})
 
 	mockContext.Container.MustRegisterSingleton(azapi.NewResourceService)
+	mockContext.Container.MustRegisterSingleton(func() config.UserConfigManager {
+		return config.NewUserConfigManager(mockContext.ConfigManager)
+	})
 	mockContext.Container.MustRegisterSingleton(prompt.NewDefaultPrompter)
-	mockContext.Container.MustRegisterSingleton(azapi.NewResourceService)
 	mockContext.Container.MustRegisterNamedTransient(string(provisioning.Test), test.NewTestProvider)
 	mockContext.Container.MustRegisterSingleton(func() account.Manager {
 		return &mockaccount.MockAccountManager{

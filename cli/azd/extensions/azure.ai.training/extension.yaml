@@ -4,7 +4,7 @@ namespace: ai.training
 displayName: Microsoft Foundry Training (Preview)
 description: Extension for Microsoft Foundry training jobs. (Preview)
 usage: azd ai training <command> [options]
-version: 0.0.1-preview
+version: 0.0.2-preview
 requiredAzdVersion: ">=1.25.1"
 language: go
 capabilities:

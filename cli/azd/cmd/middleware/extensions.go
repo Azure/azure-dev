@@ -31,6 +31,7 @@ var (
 		extensions.ServiceTargetProviderCapability,
 		extensions.FrameworkServiceProviderCapability,
 		extensions.ProvisioningProviderCapability,
+		extensions.ValidationProviderCapability,
 	}
 )
 
@@ -118,6 +119,19 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	var mu sync.Mutex
 	var failedExtensions []extensionFailure
 
+	// Read global flags once for propagation to every extension's `listen` process.
+	debugEnabled, _ := m.options.Flags.GetBool("debug")
+	cwd, _ := m.options.Flags.GetString("cwd")
+	envName, _ := m.options.Flags.GetString("environment")
+	startOpts := extensionStartOptions{
+		debug:       debugEnabled,
+		cwd:         cwd,
+		environment: envName,
+		// Use globalOptions.NoPrompt which includes agent detection, not just the --no-prompt CLI flag
+		noPrompt:   m.globalOptions.NoPrompt,
+		forceColor: forceColor,
+	}
+
 	// Track total time for all extensions to become ready
 	allExtensionsStartTime := time.Now()
 	log.Printf("Starting %d extensions...\n", len(extensionList))
@@ -126,72 +140,13 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	for _, extension := range extensionList {
 		ext := extension
 		wg.Go(func() {
-
-			jwtToken, err := grpcserver.GenerateExtensionToken(ext, serverInfo)
-			if err != nil {
-				log.Printf("failed to generate JWT token for '%s' extension: %v", ext.Id, err)
-				ext.Fail(err)
-				return
-			}
-
-			// Start the extension process in a separate goroutine
-			go func() {
-				allEnv := []string{
-					fmt.Sprintf("AZD_SERVER=%s", serverInfo.Address),
-					fmt.Sprintf("AZD_ACCESS_TOKEN=%s", jwtToken),
-				}
-
-				if forceColor {
-					allEnv = append(allEnv, "FORCE_COLOR=1")
-				}
-
-				// Read global flags for propagation via InvokeOptions
-				debugEnabled, _ := m.options.Flags.GetBool("debug")
-				cwd, _ := m.options.Flags.GetString("cwd")
-				env, _ := m.options.Flags.GetString("environment")
-
-				// Use globalOptions.NoPrompt which includes agent detection,
-				// not just the --no-prompt CLI flag
-				noPrompt := m.globalOptions.NoPrompt
-
-				// Propagate trace context to the extension process
-				if traceEnv := tracing.Environ(ctx); len(traceEnv) > 0 {
-					allEnv = append(allEnv, traceEnv...)
-				}
-
-				args := []string{"listen"}
-				if debugEnabled {
-					args = append(args, "--debug")
-				}
-
-				options := &extensions.InvokeOptions{
-					Args:        args,
-					Env:         allEnv,
-					StdIn:       ext.StdIn(),
-					StdOut:      ext.StdOut(),
-					StdErr:      ext.StdErr(),
-					Debug:       debugEnabled,
-					NoPrompt:    noPrompt,
-					Cwd:         cwd,
-					Environment: env,
-				}
-
-				if _, err := m.extensionRunner.Invoke(ctx, ext, options); err != nil {
-					log.Printf("%v", err)
-					ext.Fail(err)
-				}
-			}()
-
-			// Wait for the extension to signal readiness or failure.
-			// If AZD_EXT_DEBUG is set to a truthy value, wait indefinitely for debugger attachment
-			// If AZD_EXT_TIMEOUT is set to a number (seconds), use that as the timeout (default: 15 seconds)
-			readyCtx, cancel := getReadyContext(ctx)
-			defer cancel()
-
 			startTime := time.Now()
-			if err := ext.WaitUntilReady(readyCtx); err != nil {
+			if err := startAndWaitExtension(ctx, ext, m.extensionRunner, serverInfo, startOpts); err != nil {
 				elapsed := time.Since(startTime)
 				log.Printf("'%s' extension failed to become ready after %v: %v\n", ext.Id, elapsed, err)
+				if reportedErr := ext.GetReportedError(); reportedErr != nil {
+					log.Printf("'%s' extension reported error: %v\n", ext.Id, reportedErr)
+				}
 
 				// Track failed extensions for warning display
 				mu.Lock()
@@ -356,4 +311,80 @@ func getReadyContext(ctx context.Context) (context.Context, context.CancelFunc) 
 	}
 
 	return context.WithTimeout(ctx, timeout)
+}
+
+// extensionStartOptions carries the flag/context values propagated to an extension's `listen`
+// process. They mirror the values ExtensionsMiddleware reads from the command flags.
+type extensionStartOptions struct {
+	debug       bool
+	cwd         string
+	environment string
+	noPrompt    bool
+	forceColor  bool
+}
+
+// startAndWaitExtension launches an extension's `listen` process against the gRPC server described
+// by serverInfo and blocks until the extension signals readiness or fails. It is the per-extension
+// startup shared by ExtensionsMiddleware (every listen-capable extension) and ExtensionActivator
+// (a targeted subset).
+func startAndWaitExtension(
+	ctx context.Context,
+	ext *extensions.Extension,
+	runner *extensions.Runner,
+	serverInfo *grpcserver.ServerInfo,
+	opts extensionStartOptions,
+) error {
+	jwtToken, err := grpcserver.GenerateExtensionToken(ext, serverInfo)
+	if err != nil {
+		err = fmt.Errorf("generating extension token for '%s': %w", ext.Id, err)
+		ext.Fail(err)
+		return err
+	}
+
+	// Start the extension process in a separate goroutine
+	go func() {
+		allEnv := []string{
+			fmt.Sprintf("AZD_SERVER=%s", serverInfo.Address),
+			fmt.Sprintf("AZD_ACCESS_TOKEN=%s", jwtToken),
+		}
+
+		if opts.forceColor {
+			allEnv = append(allEnv, "FORCE_COLOR=1")
+		}
+
+		// Propagate trace context to the extension process
+		if traceEnv := tracing.Environ(ctx); len(traceEnv) > 0 {
+			allEnv = append(allEnv, traceEnv...)
+		}
+
+		args := []string{"listen"}
+		if opts.debug {
+			args = append(args, "--debug")
+		}
+
+		invokeOptions := &extensions.InvokeOptions{
+			Args:        args,
+			Env:         allEnv,
+			StdIn:       ext.StdIn(),
+			StdOut:      ext.StdOut(),
+			StdErr:      ext.StdErr(),
+			Debug:       opts.debug,
+			NoPrompt:    opts.noPrompt,
+			Cwd:         opts.cwd,
+			Environment: opts.environment,
+		}
+
+		if _, err := runner.Invoke(ctx, ext, invokeOptions); err != nil {
+			log.Printf("%v", err)
+			ext.Fail(err)
+		}
+	}()
+
+	// Wait for the extension to signal readiness or failure.
+	// If AZD_EXT_DEBUG is set to a truthy value, wait indefinitely for debugger attachment.
+	// If AZD_EXT_TIMEOUT is set to a number (seconds), use that as the timeout (default: 15 seconds).
+	readyCtx, cancel := getReadyContext(ctx)
+	defer cancel()
+
+	return ext.WaitUntilReady(readyCtx)
 }

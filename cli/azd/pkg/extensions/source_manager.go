@@ -22,15 +22,26 @@ type SourceKind string
 const (
 	SourceKindFile SourceKind = "file"
 	SourceKindUrl  SourceKind = "url"
+	// SourceKindBundle is a self-contained extension bundle extracted from a
+	// portable .zip. It behaves like a file source but anchors relative
+	// artifact paths to the extracted bundle directory.
+	SourceKindBundle SourceKind = "bundle"
 
 	baseConfigKey      string = "extension.sources"
 	installedConfigKey string = "extension.installed"
+
+	// BundleSourceName is the reserved source recorded for extensions installed
+	// from a self-contained bundle (.zip). The bundle's own source is ephemeral
+	// and removed after install, so the extension is marked with this name; it has
+	// no live registry to track updates against and cannot be user-configured.
+	BundleSourceName string = "bundle"
 )
 
 var (
 	ErrSourceNotFound    = errors.New("extension source not found")
 	ErrSourceExists      = errors.New("extension source already exists")
 	ErrSourceTypeInvalid = errors.New("invalid extension source type")
+	ErrSourceReserved    = errors.New("extension source name is reserved")
 )
 
 // SourceConfig represents the configuration for an extension source.
@@ -77,7 +88,14 @@ func (sm *SourceManager) Get(ctx context.Context, name string) (*SourceConfig, e
 
 // Add adds a new extension source.
 func (sm *SourceManager) Add(ctx context.Context, name string, source *SourceConfig) error {
-	newKey := normalizeKey(name)
+	newKey := NormalizeSourceKey(name)
+
+	if strings.EqualFold(newKey, BundleSourceName) {
+		return fmt.Errorf(
+			"'%s' is reserved for extensions installed from a self-contained bundle, %w",
+			BundleSourceName, ErrSourceReserved,
+		)
+	}
 
 	existing, err := sm.Get(ctx, newKey)
 	if existing != nil && err == nil {
@@ -95,7 +113,7 @@ func (sm *SourceManager) Add(ctx context.Context, name string, source *SourceCon
 
 // Remove removes an extension source.
 func (sm *SourceManager) Remove(ctx context.Context, name string) error {
-	name = normalizeKey(name)
+	name = NormalizeSourceKey(name)
 
 	_, err := sm.Get(ctx, name)
 	if err != nil && errors.Is(err, ErrSourceNotFound) {
@@ -190,6 +208,8 @@ func (sm *SourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 	switch config.Type {
 	case SourceKindFile:
 		source, err = newFileSource(config.Name, config.Location)
+	case SourceKindBundle:
+		source, err = newBundleSource(config.Name, config.Location)
 	case SourceKindUrl:
 		source, err = newUrlSource(ctx, config.Name, config.Location, sm.transport)
 	default:
@@ -227,8 +247,8 @@ func (sm *SourceManager) addInternal(source *SourceConfig) error {
 	return nil
 }
 
-// normalizeKey normalizes a key for use in the configuration.
-func normalizeKey(key string) string {
+// NormalizeSourceKey normalizes an extension source name for use in configuration keys.
+func NormalizeSourceKey(key string) string {
 	key = strings.ToLower(key)
 	key = strings.ReplaceAll(key, " ", "-")
 

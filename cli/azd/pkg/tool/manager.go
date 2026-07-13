@@ -68,6 +68,14 @@ func (m *Manager) FindTool(id string) (*ToolDefinition, error) {
 	return nil, fmt.Errorf("finding tool %q: not found", id)
 }
 
+// AvailableSkillHosts returns the names of the given skill tool's
+// configured agentic CLI hosts that are currently usable (a functional CLI
+// on PATH), in manifest order (preferred host first). It returns nil for
+// non-skill tools or when none of the hosts are usable.
+func (m *Manager) AvailableSkillHosts(ctx context.Context, tool *ToolDefinition) []string {
+	return m.installer.AvailableSkillHosts(ctx, tool)
+}
+
 // DetectAll probes every tool in the manifest and returns a status
 // entry for each one. Individual detection failures are captured in
 // each [ToolStatus.Error]; the returned error is non-nil only for
@@ -100,6 +108,7 @@ func (m *Manager) DetectTool(
 func (m *Manager) InstallTools(
 	ctx context.Context,
 	ids []string,
+	opts ...InstallOption,
 ) ([]*InstallResult, error) {
 	// 1. Resolve every requested id to its definition.
 	requested, err := m.resolveTools(ids)
@@ -132,7 +141,7 @@ func (m *Manager) InstallTools(
 			continue
 		}
 
-		result, installErr := m.installer.Install(ctx, tool)
+		result, installErr := m.installer.Install(ctx, tool, opts...)
 		if installErr != nil {
 			results = append(results, &InstallResult{
 				Tool:  tool,
@@ -157,6 +166,7 @@ func (m *Manager) InstallTools(
 func (m *Manager) UpgradeTools(
 	ctx context.Context,
 	ids []string,
+	opts ...InstallOption,
 ) ([]*InstallResult, error) {
 	tools, err := m.resolveTools(ids)
 	if err != nil {
@@ -165,7 +175,7 @@ func (m *Manager) UpgradeTools(
 
 	var results []*InstallResult
 	for _, tool := range tools {
-		result, upgradeErr := m.installer.Upgrade(ctx, tool)
+		result, upgradeErr := m.installer.Upgrade(ctx, tool, opts...)
 		if upgradeErr != nil {
 			results = append(results, &InstallResult{
 				Tool:  tool,
@@ -199,6 +209,63 @@ func (m *Manager) UpgradeAll(
 			results = append(results, &InstallResult{
 				Tool:  status.Tool,
 				Error: upgradeErr,
+			})
+			continue
+		}
+		results = append(results, result)
+	}
+	return results, nil
+}
+
+// UninstallTools removes the tools identified by the given ids. Each id
+// is resolved against the manifest and then passed to the installer's
+// Uninstall method. Failures are recorded per tool so that one failure
+// does not abort the batch. For skill tools the optional install options
+// (e.g. [WithHosts]) select which agent host(s) to remove the skill
+// from. Dependencies are intentionally left in place — azd does not
+// auto-remove tools that other tools may rely on.
+//
+// Skills are uninstalled before any other tool. A skill is installed as a
+// plugin inside an agent host CLI (e.g. azure-skills inside copilot), so
+// that host CLI must still be on PATH to remove the skill cleanly. The
+// built-in manifest lists skills AFTER their host CLIs (see
+// TestManifest_SkillsListedAfterHostCLIs) so installs add the host first;
+// uninstall needs the reverse. Without this ordering a batch such as
+// `azd tool uninstall --all` would remove the host CLI first and orphan
+// the skill, leaving it undetectable and impossible to clean up via azd.
+func (m *Manager) UninstallTools(
+	ctx context.Context,
+	ids []string,
+	opts ...InstallOption,
+) ([]*InstallResult, error) {
+	tools, err := m.resolveTools(ids)
+	if err != nil {
+		return nil, err
+	}
+
+	// Order skills first (see the note above). Two passes over the tiny
+	// tool set partition skills ahead of everything else while preserving
+	// each group's original order — simpler and cheaper than a full sort.
+	ordered := make([]*ToolDefinition, 0, len(tools))
+	for _, t := range tools {
+		if t.Category == ToolCategorySkill {
+			ordered = append(ordered, t)
+		}
+	}
+	for _, t := range tools {
+		if t.Category != ToolCategorySkill {
+			ordered = append(ordered, t)
+		}
+	}
+	tools = ordered
+
+	var results []*InstallResult
+	for _, tool := range tools {
+		result, uninstallErr := m.installer.Uninstall(ctx, tool, opts...)
+		if uninstallErr != nil {
+			results = append(results, &InstallResult{
+				Tool:  tool,
+				Error: uninstallErr,
 			})
 			continue
 		}

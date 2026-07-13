@@ -7,13 +7,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/stretchr/testify/require"
 )
 
-func TestModelLifecycleDeprecated(t *testing.T) {
+func TestModelLifecycleExcluded(t *testing.T) {
 	t.Parallel()
 
+	deprecating := armcognitiveservices.ModelLifecycleStatus("Deprecating")
+	deprecatingLower := armcognitiveservices.ModelLifecycleStatus("deprecating")
 	deprecated := armcognitiveservices.ModelLifecycleStatus("Deprecated")
 	deprecatedLower := armcognitiveservices.ModelLifecycleStatus("deprecated")
 	preview := armcognitiveservices.ModelLifecycleStatus("Preview")
@@ -24,15 +26,17 @@ func TestModelLifecycleDeprecated(t *testing.T) {
 		want   bool
 	}{
 		{"nil status returns false", nil, false},
+		{"deprecating returns true", &deprecating, true},
+		{"case-insensitive deprecating returns true", &deprecatingLower, true},
 		{"deprecated returns true", &deprecated, true},
 		{"case-insensitive deprecated returns true", &deprecatedLower, true},
-		{"non-deprecated returns false", &preview, false},
+		{"non-excluded returns false", &preview, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tt.want, modelLifecycleDeprecated(tt.status))
+			require.Equal(t, tt.want, modelLifecycleExcluded(tt.status))
 		})
 	}
 }
@@ -46,7 +50,7 @@ func TestModelLifecycleStatusValue(t *testing.T) {
 	require.Equal(t, "GenerallyAvailable", modelLifecycleStatusValue(&status))
 }
 
-func TestModelDeprecationReached(t *testing.T) {
+func TestModelInferenceRetired(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
@@ -80,7 +84,7 @@ func TestModelDeprecationReached(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tt.want, modelDeprecationReached(tt.info, now))
+			require.Equal(t, tt.want, modelInferenceRetired(tt.info, now))
 		})
 	}
 }
@@ -111,11 +115,12 @@ func TestDeprecationReached(t *testing.T) {
 	}
 }
 
-func TestModelVersionDeprecated(t *testing.T) {
+func TestModelVersionExcluded(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 
+	deprecating := armcognitiveservices.ModelLifecycleStatus("Deprecating")
 	deprecated := armcognitiveservices.ModelLifecycleStatus("Deprecated")
 	ga := armcognitiveservices.ModelLifecycleStatus("GenerallyAvailable")
 	past := "2025-01-01T00:00:00Z"
@@ -127,6 +132,19 @@ func TestModelVersionDeprecated(t *testing.T) {
 		want  bool
 	}{
 		{"nil model returns false", nil, false},
+		{
+			name:  "deprecating lifecycle returns true",
+			model: &armcognitiveservices.AccountModel{LifecycleStatus: &deprecating},
+			want:  true,
+		},
+		{
+			name: "deprecating lifecycle with future inference returns true",
+			model: &armcognitiveservices.AccountModel{
+				LifecycleStatus: &deprecating,
+				Deprecation:     &armcognitiveservices.ModelDeprecationInfo{Inference: &future},
+			},
+			want: true,
+		},
 		{
 			name:  "deprecated lifecycle returns true",
 			model: &armcognitiveservices.AccountModel{LifecycleStatus: &deprecated},
@@ -158,7 +176,7 @@ func TestModelVersionDeprecated(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tt.want, modelVersionDeprecated(tt.model, now))
+			require.Equal(t, tt.want, modelVersionExcluded(tt.model, now))
 		})
 	}
 }

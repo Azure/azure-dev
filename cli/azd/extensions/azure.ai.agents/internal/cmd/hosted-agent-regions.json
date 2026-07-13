@@ -4,6 +4,7 @@
         "brazilsouth",
         "canadacentral",
         "canadaeast",
+        "centralus",
         "eastus2",
         "francecentral",
         "germanywestcentral",
@@ -18,6 +19,7 @@
         "spaincentral",
         "swedencentral",
         "switzerlandnorth",
+        "uksouth",
         "westus",
         "westus3"
     ]

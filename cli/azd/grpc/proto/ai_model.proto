@@ -114,6 +114,13 @@ message AiModelFilterOptions {
   // Include model versions whose lifecycle status matches one of these values.
   // Filtering is applied before aggregation, so returned versions, derived
   // AiModel.lifecycle_status, and locations reflect only matching versions.
+  //
+  // When unset, the default listing excludes ARM "Deprecating" (customer-facing
+  // Deprecated) and "Deprecated" (Retired) versions so only models available for
+  // new deployments are returned. Set statuses to opt back into those lifecycle
+  // statuses (for example, for existing-customer management). Versions whose
+  // inference endpoint has retired (deprecation.inference <= now) are always
+  // excluded, even when explicitly requested.
   repeated string statuses = 4;
 
   // Exclude models by exact model name (for example: "gpt-4o-mini").
@@ -194,7 +201,10 @@ message ListLocationsWithQuotaResponse {
 message ModelLocationQuota {
   // Location where model quota was evaluated.
   Location location = 1;
-  double max_remaining_quota = 2;                // max remaining quota across model SKUs
+  // Maximum remaining quota across model SKUs.
+  // A value of -1 indicates that usage data was unavailable (e.g. free-tier
+  // subscriptions) and the actual remaining quota is unknown.
+  double max_remaining_quota = 2;
 }
 
 message ListModelLocationsWithQuotaRequest {

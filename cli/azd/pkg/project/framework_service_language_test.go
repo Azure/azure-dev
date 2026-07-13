@@ -71,6 +71,16 @@ func Test_parseServiceLanguage(t *testing.T) {
 			expected: ServiceLanguagePython,
 		},
 		{
+			name:     "go",
+			input:    ServiceLanguageGo,
+			expected: ServiceLanguageGo,
+		},
+		{
+			name:     "golang alias resolves to go",
+			input:    ServiceLanguageKind("golang"),
+			expected: ServiceLanguageGo,
+		},
+		{
 			name:     "unknown language passes through",
 			input:    ServiceLanguageKind("rust"),
 			expected: ServiceLanguageKind("rust"),
@@ -133,8 +143,13 @@ func Test_ServiceLanguageKind_IsDotNet(t *testing.T) {
 			expected: false,
 		},
 		{
-			name:     "unknown is not dotnet",
-			kind:     ServiceLanguageKind("go"),
+			name:     "go is not dotnet",
+			kind:     ServiceLanguageGo,
+			expected: false,
+		},
+		{
+			name:     "unknown language is not dotnet",
+			kind:     ServiceLanguageKind("forth"),
 			expected: false,
 		},
 	}

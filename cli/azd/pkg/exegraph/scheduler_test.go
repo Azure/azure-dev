@@ -13,8 +13,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 func TestRun_SingleStep(t *testing.T) {
@@ -1158,4 +1161,44 @@ func TestRunWithResult_FailFast_DrainClassifiesCorrectly(t *testing.T) {
 	require.NotNil(t, blockerTiming, "blocker should appear in results")
 	assert.Equal(t, StepSkipped, blockerTiming.Status,
 		"in-flight step canceled by FailFast should be skipped, not failed")
+}
+
+// TestSetStepSpanAttributes guards the privacy behavior that execution-graph step
+// names and dependency lists — which embed user-defined service / layer names from
+// azure.yaml — are hashed before emission, while tags (a fixed internal vocabulary)
+// remain raw.
+func TestSetStepSpanAttributes(t *testing.T) {
+	const stepName = "deploy-myservice"
+	const depName = "build-myservice"
+
+	span := &mocktracing.Span{}
+	setStepSpanAttributes(span, &Step{
+		Name:      stepName,
+		DependsOn: []string{depName},
+		Tags:      []string{"deploy"},
+	})
+
+	nameVal := stepAttr(t, span, fields.ExeGraphStepNameKey.Key)
+	assert.Equal(t, fields.CaseInsensitiveHash(stepName), nameVal.AsString())
+	assert.NotEqual(t, stepName, nameVal.AsString(), "raw step name must not be emitted")
+
+	depsVal := stepAttr(t, span, fields.ExeGraphStepDepsKey.Key)
+	assert.Equal(t, []string{fields.CaseInsensitiveHash(depName)}, depsVal.AsStringSlice())
+	assert.NotContains(t, depsVal.AsStringSlice(), depName, "raw dependency name must not be emitted")
+
+	// Tags are compile-time literals and must remain raw.
+	tagsVal := stepAttr(t, span, fields.ExeGraphStepTagsKey.Key)
+	assert.Equal(t, []string{"deploy"}, tagsVal.AsStringSlice())
+}
+
+// stepAttr returns the value of the attribute with the given key set on span.
+func stepAttr(t *testing.T, span *mocktracing.Span, key attribute.Key) attribute.Value {
+	t.Helper()
+	for _, a := range span.Attributes {
+		if a.Key == key {
+			return a.Value
+		}
+	}
+	t.Fatalf("attribute %q was not set", key)
+	return attribute.Value{}
 }

@@ -144,6 +144,47 @@ func TestResolve_FoundryEnvFallback(t *testing.T) {
 	assert.Equal(t, SourceFoundryEnv, result.Source)
 }
 
+func TestResolve_AzureAiHostEnvFallback(t *testing.T) {
+	// When FOUNDRY_PROJECT_ENDPOINT is unset, the resolver falls back to the
+	// AZURE_AI_PROJECT_ENDPOINT host env var (the key azd ai agent init / azd
+	// add persist). See https://github.com/Azure/azure-dev/issues/8688.
+	isolateFromAzdDaemon(t)
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
+	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "https://azureai.services.ai.azure.com/api/projects/p")
+
+	result, err := Resolve(t.Context(), ResolveOpts{})
+	require.NoError(t, err)
+	assert.Equal(t, "https://azureai.services.ai.azure.com/api/projects/p", result.Endpoint)
+	assert.Equal(t, SourceFoundryEnv, result.Source)
+}
+
+func TestResolve_FoundryHostEnvWinsOverAzureAi(t *testing.T) {
+	// With both host env vars set, FOUNDRY_PROJECT_ENDPOINT takes precedence.
+	isolateFromAzdDaemon(t)
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.services.ai.azure.com/api/projects/f")
+	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "https://azureai.services.ai.azure.com/api/projects/a")
+
+	result, err := Resolve(t.Context(), ResolveOpts{})
+	require.NoError(t, err)
+	assert.Equal(t, "https://foundry.services.ai.azure.com/api/projects/f", result.Endpoint)
+	assert.Equal(t, SourceFoundryEnv, result.Source)
+}
+
+func TestResolve_InvalidAzureAiHostEnvRejected(t *testing.T) {
+	// An invalid AZURE_AI_PROJECT_ENDPOINT fallback is a hard error, not a
+	// silent skip to level 5.
+	isolateFromAzdDaemon(t)
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
+	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "http://not-https.services.ai.azure.com/api/projects/p")
+
+	_, err := Resolve(t.Context(), ResolveOpts{})
+	require.Error(t, err)
+
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Contains(t, localErr.Message, "https")
+}
+
 func TestResolve_FoundryEnvNormalized(t *testing.T) {
 	isolateFromAzdDaemon(t)
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "  https://X.SERVICES.AI.AZURE.COM/api/projects/p/  ")
@@ -182,6 +223,7 @@ func TestResolve_InvalidFoundryEnvRejected(t *testing.T) {
 func TestResolve_NothingResolvable(t *testing.T) {
 	isolateFromAzdDaemon(t)
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
+	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "")
 
 	_, err := Resolve(t.Context(), ResolveOpts{})
 	require.Error(t, err)

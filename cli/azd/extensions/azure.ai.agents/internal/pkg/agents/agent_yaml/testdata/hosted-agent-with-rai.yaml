@@ -1,0 +1,11 @@
+template:
+  kind: hosted
+  name: hosted-rai-agent
+  description: A hosted container agent with a content-safety guardrail policy
+  policies:
+    - type: rai_policy
+      # Full ARM resource ID of the RAI policy on the Cognitive Services account.
+      rai_policy_name: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/raiPolicies/Microsoft.DefaultV2
+  protocols:
+    - protocol: responses
+      version: "1.0.0"

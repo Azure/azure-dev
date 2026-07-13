@@ -16,7 +16,7 @@ import (
 )
 
 type monitorFlags struct {
-	isolationHeaderFlags
+	userIdentityFlags
 	name      string
 	sessionID string
 	follow    bool
@@ -51,8 +51,8 @@ The agent name and version are resolved automatically from the azure.yaml servic
 configuration and the current azd environment. Optionally specify the service name
 (from azure.yaml) as a positional argument when multiple agent services exist.
 
-For agents configured with header-based isolation, pass --user-isolation-key
-and --chat-isolation-key when streaming session logs.`,
+For agents configured with header-based isolation, pass --user-identity
+when streaming session logs.`,
 		Example: `  # Monitor session logs (auto-resolves session from last invocation)
   azd ai agent monitor
 
@@ -139,7 +139,7 @@ and --chat-isolation-key when streaming session logs.`,
 		"Type of logs: 'console' (stdout/stderr) or 'system' (container events)")
 	cmd.Flags().BoolVar(&flags.utc, "utc", false, "Display timestamps in UTC instead of local time")
 	cmd.Flags().BoolVar(&flags.raw, "raw", false, "Print the raw SSE stream without formatting")
-	addIsolationHeaderFlags(cmd, &flags.isolationHeaderFlags)
+	addUserIdentityFlag(cmd, &flags.userIdentityFlags)
 
 	return cmd
 }

@@ -249,6 +249,15 @@ func (m *mockDeployProjectManager) Initialize(ctx context.Context, projectConfig
 	return args.Error(0)
 }
 
+func (m *mockDeployProjectManager) InitializeFrameworks(
+	ctx context.Context, projectConfig *project.ProjectConfig,
+) ([]*project.ServiceConfig, []project.ServiceFrameworkInitFailure, error) {
+	args := m.Called(projectConfig)
+	services, _ := args.Get(0).([]*project.ServiceConfig)
+	skipped, _ := args.Get(1).([]project.ServiceFrameworkInitFailure)
+	return services, skipped, args.Error(2)
+}
+
 func (m *mockDeployProjectManager) DefaultServiceFromWd(
 	ctx context.Context,
 	projectConfig *project.ProjectConfig,
@@ -309,6 +318,12 @@ func (m *mockDeployServiceManager) GetRequiredTools(
 }
 
 func (m *mockDeployServiceManager) Initialize(ctx context.Context, serviceConfig *project.ServiceConfig) error {
+	return nil
+}
+
+func (m *mockDeployServiceManager) InitializeFrameworkService(
+	ctx context.Context, serviceConfig *project.ServiceConfig,
+) error {
 	return nil
 }
 

@@ -8,9 +8,13 @@ parameters:
   - name: SkipTests
     type: boolean
     default: false
-  - name: PublishToDevRegistry
-    type: boolean
-    default: false
+  - name: PublishToRegistry
+    type: string
+    default: stable
+    values:
+      - stable
+      - dev
+      - nightly
 
 stages: 
   - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
@@ -18,6 +22,7 @@ stages:
       AzdExtensionId: ${{ parameters.AzdExtensionId }}
       AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
       SkipTests: ${{ parameters.SkipTests }}
+      PublishToRegistry: ${{ parameters.PublishToRegistry }}
       BuildMatrix:
         Windows:
           Pool: $(WINDOWSPOOL)
@@ -63,8 +68,9 @@ stages:
             # CodeQL on macOS not supported by the Azure DevOps task as-of current.
             # Codeql.BuildIdentifier: cli_darwin
 
-        ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
-          # Only run this build during scheduled pipeline executions
+        ${{ if or(eq(variables['Build.Reason'], 'Schedule'), eq(parameters.PublishToRegistry, 'nightly')) }}:
+          # Only run this build for nightly publishes (scheduled runs, or a manual
+          # run that selected the 'nightly' registry channel).
           MacAppleSilicon:
             Pool: Azure Pipelines
             OSVmImage: $(MACVMIMAGEM1)
@@ -78,8 +84,11 @@ stages:
               SetExecutableBit: true
               AZURE_DEV_CI_OS: mac-arm64
 
-  # Only sign and release on manual builds from internal
-  - ${{ if and(eq(variables['System.TeamProject'], 'internal'), eq(variables['Build.Reason'], 'Manual')) }}:
+  # Sign and release on manual builds (stable/dev/nightly release) and scheduled
+  # builds (nightly) from internal. Nightly builds reuse the same sign + package +
+  # publish path; publish-extension.yml branches its behavior on both the schedule
+  # trigger (Build.Reason) and the selected PublishToRegistry channel.
+  - ${{ if and(eq(variables['System.TeamProject'], 'internal'), in(variables['Build.Reason'], 'Manual', 'Schedule')) }}:
     - template: /eng/pipelines/templates/stages/sign-extension.yml
       parameters:
         SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
@@ -89,4 +98,4 @@ stages:
         AzdExtensionId: ${{ parameters.AzdExtensionId }}
         AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
         SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
-        PublishToDevRegistry: ${{ parameters.PublishToDevRegistry }}
+        PublishToRegistry: ${{ parameters.PublishToRegistry }}

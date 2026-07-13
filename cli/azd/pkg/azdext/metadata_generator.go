@@ -138,6 +138,11 @@ func generateFlags(cmd *cobra.Command) []extensions.Flag {
 	var flags []extensions.Flag
 
 	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
+		ov, hasOverride := overrides[flag.Name]
+		if !hasOverride && isDefaultInheritedOutputFlag(flag) {
+			return
+		}
+
 		flagMeta := extensions.Flag{
 			Name:        flag.Name,
 			Shorthand:   flag.Shorthand,
@@ -154,7 +159,7 @@ func generateFlags(cmd *cobra.Command) []extensions.Flag {
 			flagMeta.Deprecated = flag.Deprecated
 		}
 
-		if ov, ok := overrides[flag.Name]; ok {
+		if hasOverride {
 			if ov.Usage != "" {
 				flagMeta.Description = ov.Usage
 			}
@@ -172,6 +177,13 @@ func generateFlags(cmd *cobra.Command) []extensions.Flag {
 	})
 
 	return flags
+}
+
+func isDefaultInheritedOutputFlag(flag *pflag.Flag) bool {
+	return flag.Name == "output" &&
+		flag.Shorthand == "o" &&
+		flag.Usage == defaultOutputFlagUsage &&
+		flag.DefValue == "default"
 }
 
 // getFlagType maps Cobra/pflag types to metadata type strings

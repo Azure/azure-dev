@@ -30,6 +30,7 @@ id: my.custom.extension
 namespace: my.extension
 displayName: My Custom Language Extension
 description: Adds support for Rust programming language
+usage: azd my extension <command> [options]
 version: 1.0.0
 capabilities:
   - framework-service-provider
@@ -266,12 +267,13 @@ func newListenCommand() *cobra.Command {
             }
             defer azdClient.Close()
 
-            // Create your framework service provider
-            rustFrameworkProvider := NewRustFrameworkServiceProvider(azdClient)
-            
-            // Register it with the extension host
+            // Register your framework service provider with the extension host.
+            // WithFrameworkService takes a factory function that returns a new
+            // provider instance, so the provider is constructed lazily when needed.
             host := azdext.NewExtensionHost(azdClient).
-                WithFrameworkService("rust", rustFrameworkProvider)
+                WithFrameworkService("rust", func() azdext.FrameworkServiceProvider {
+                    return NewRustFrameworkServiceProvider(azdClient)
+                })
             
             // Start listening for events
             return host.Run(ctx)

@@ -129,3 +129,101 @@ func TestValidatePostInit_PythonSkipsValidation(t *testing.T) {
 	}
 	validatePostInit("/any/path", codeConfig)
 }
+
+func TestValidateBundledHint_PythonBundled(t *testing.T) {
+	dir := t.TempDir()
+	err := os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("azure-ai-agents>=1.0\n"), 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bundled := "bundled"
+	codeConfig := &agent_yaml.CodeConfiguration{
+		Runtime:              "python_3_14",
+		EntryPoint:           "main.py",
+		DependencyResolution: &bundled,
+	}
+
+	output, _ := captureStdout(t, func() error {
+		validateBundledHint(dir, codeConfig)
+		return nil
+	})
+
+	if !strings.Contains(output, "NOTE:") {
+		t.Errorf("expected NOTE in output, got: %s", output)
+	}
+	if !strings.Contains(output, "Example command") {
+		t.Errorf("expected 'Example command' in output, got: %s", output)
+	}
+	if !strings.Contains(output, "--python-version 3.14") {
+		t.Errorf("expected python version 3.14 in output, got: %s", output)
+	}
+	if !strings.Contains(output, "--only-binary=:all:") {
+		t.Errorf("expected --only-binary flag in output, got: %s", output)
+	}
+}
+
+func TestValidateBundledHint_RemoteBuildSkipped(t *testing.T) {
+	dir := t.TempDir()
+	err := os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("azure-ai-agents>=1.0\n"), 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	remoteBuild := "remote_build"
+	codeConfig := &agent_yaml.CodeConfiguration{
+		Runtime:              "python_3_13",
+		EntryPoint:           "main.py",
+		DependencyResolution: &remoteBuild,
+	}
+
+	output, _ := captureStdout(t, func() error {
+		validateBundledHint(dir, codeConfig)
+		return nil
+	})
+
+	if output != "" {
+		t.Errorf("expected no output for remote_build, got: %s", output)
+	}
+}
+
+func TestValidateBundledHint_DotnetBundledSkipped(t *testing.T) {
+	dir := t.TempDir()
+
+	bundled := "bundled"
+	codeConfig := &agent_yaml.CodeConfiguration{
+		Runtime:              "dotnet_9",
+		EntryPoint:           "Agent.dll",
+		DependencyResolution: &bundled,
+	}
+
+	output, _ := captureStdout(t, func() error {
+		validateBundledHint(dir, codeConfig)
+		return nil
+	})
+
+	if output != "" {
+		t.Errorf("expected no output for dotnet bundled, got: %s", output)
+	}
+}
+
+func TestValidateBundledHint_NoRequirements(t *testing.T) {
+	dir := t.TempDir()
+	// No requirements.txt
+
+	bundled := "bundled"
+	codeConfig := &agent_yaml.CodeConfiguration{
+		Runtime:              "python_3_13",
+		EntryPoint:           "main.py",
+		DependencyResolution: &bundled,
+	}
+
+	output, _ := captureStdout(t, func() error {
+		validateBundledHint(dir, codeConfig)
+		return nil
+	})
+
+	if output != "" {
+		t.Errorf("expected no output without requirements.txt, got: %s", output)
+	}
+}

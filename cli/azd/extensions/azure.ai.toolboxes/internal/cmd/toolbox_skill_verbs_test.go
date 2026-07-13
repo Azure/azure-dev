@@ -214,8 +214,11 @@ func TestRunSkillRemoveWith_NotAttached(t *testing.T) {
 	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
 		Name: "tb", DefaultVersion: "1",
 	}}
-	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
-		Name: "tb", Version: "1",
+	client.listVersionsResults["tb"] = []azure.ToolboxVersionObject{
+		{Name: "tb", Version: "1"}, {Name: "tb", Version: "2"},
+	}
+	client.versionResults["tb/2"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "2",
 		Tools: []map[string]any{{"type": "mcp", "name": "a"}},
 		Skills: []map[string]any{
 			{"type": "skill_reference", "name": "other"},
@@ -225,7 +228,8 @@ func TestRunSkillRemoveWith_NotAttached(t *testing.T) {
 	err := runSkillRemoveWith(t.Context(), client, "tb", []string{"missing"},
 		skillRemoveFlags{force: true}, toolboxFlags{output: "json"},
 	)
-	requireLocalError(t, err, exterrors.CodeSkillNotInToolbox)
+	localErr := requireLocalError(t, err, exterrors.CodeSkillNotInToolbox)
+	assert.Contains(t, localErr.Suggestion, `azd ai toolbox show "tb" --version "2"`)
 }
 
 func TestRunSkillRemove_NoPromptWithoutForce(t *testing.T) {

@@ -64,7 +64,7 @@ type DeveloperRBACResult struct {
 	PrincipalDisplay string
 
 	// HasSufficientAIRole is true when the principal has at least
-	// one of `sufficientAIUserRoles` (Owner, Contributor, Azure AI
+	// one of `sufficientAIUserRoles` (Owner, Contributor, Foundry
 	// User, Azure AI Developer) on the project scope.
 	HasSufficientAIRole bool
 

@@ -221,10 +221,25 @@ func (e *Environment) DotenvDelete(key string) {
 }
 
 // Dotenv returns a copy of the key value pairs from the .env file in the environment.
+//
+// Dynamic linker/loader control variables (names in the reserved LD_/DYLD_ namespace, e.g.
+// LD_PRELOAD or DYLD_INSERT_LIBRARIES) are excluded, because these values flow into the
+// environments of the external tools azd runs (directly, and via extensions that read them over
+// the gRPC bridge), where the platform dynamic loader would honor them at process launch. They
+// remain in the persisted .env file; only what azd hands to callers here is filtered. Matching is
+// case-insensitive; names outside that namespace (e.g. LDFLAGS, LDLIBS) are unaffected.
 func (e *Environment) Dotenv() map[string]string {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return maps.Clone(e.dotenv)
+	myDotenv := make(map[string]string, len(e.dotenv))
+	for k, v := range e.dotenv {
+		upper := strings.ToUpper(k)
+		if strings.HasPrefix(upper, "LD_") || strings.HasPrefix(upper, "DYLD_") {
+			continue
+		}
+		myDotenv[k] = v
+	}
+	return myDotenv
 }
 
 // DotenvSet sets the value of [key] to [value] in the .env file associated with the environment. [Save] should be
@@ -307,13 +322,15 @@ func (e *Environment) SetServiceProperty(serviceName string, propertyName string
 	e.DotenvSet(fmt.Sprintf("SERVICE_%s_%s", Key(serviceName), propertyName), value)
 }
 
-// Creates a slice of key value pairs, based on the entries in the `.env` file like `KEY=VALUE` that
-// can be used to pass into command runner or similar constructs.
+// Environ creates a slice of key value pairs, based on the entries in the `.env` file like
+// `KEY=VALUE` that can be used to pass into command runner or similar constructs.
+//
+// The values come from [Environment.Dotenv], so dynamic linker/loader control variables (the
+// reserved LD_/DYLD_ namespace) are excluded from the returned environment.
 func (e *Environment) Environ() []string {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	envVars := []string{}
-	for k, v := range e.dotenv {
+	dotenv := e.Dotenv()
+	envVars := make([]string, 0, len(dotenv))
+	for k, v := range dotenv {
 		envVars = append(envVars, fmt.Sprintf("%s=%s", k, v))
 	}
 

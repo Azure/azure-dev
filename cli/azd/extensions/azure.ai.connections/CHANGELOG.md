@@ -1,5 +1,34 @@
 # Release History
 
+## 1.0.0-beta.2 (2026-07-09)
+
+### Bugs Fixed
+
+- [[#9053]](https://github.com/Azure/azure-dev/pull/9053) Fix `azd ai connection` commands and `azd deploy` for `host: azure.ai.connection` services failing with `Tenant provided in token does not match resource token` for multi-tenant/guest users. The extension now scopes the credential to the subscription's user-access tenant. Also fixes first-connection creation on projects with no existing connections. Thanks @therealjohn for the contribution!
+
+## 1.0.0-beta.1 (2026-06-30)
+
+### Features Added
+
+- [[#8818]](https://github.com/Azure/azure-dev/pull/8818) The `azure.ai.connections` extension now registers an `azure.ai.connection` service-target host. `azd deploy`/`azd up` upsert each `host: azure.ai.connection` service in `azure.yaml` onto the Foundry project with an idempotent ARM CreateOrUpdate, expanding `${VAR}` secrets from the azd environment while passing Foundry server-side `${{...}}` expressions through untouched.
+- [[#8890]](https://github.com/Azure/azure-dev/pull/8890) Bump `requiredAzdVersion` to `>=1.27.0`.
+
+## 0.1.2-preview (2026-06-19)
+
+### Bugs Fixed
+
+- [[#8688]](https://github.com/Azure/azure-dev/issues/8688) Resolve the project endpoint that `azd ai agent init` stores. `azd ai connection` commands now fall back to `AZURE_AI_PROJECT_ENDPOINT` (after `FOUNDRY_PROJECT_ENDPOINT`) in both the active azd environment and the host environment, so the resolution cascade no longer fails with "no Foundry project endpoint resolved" when only the `AZURE_AI_*` key is set.
+
+## 0.1.1-preview (2026-06-05)
+
+### Features Added
+
+- [[#8475]](https://github.com/Azure/azure-dev/pull/8475) Add `--metadata key=value` flag (repeatable) to `azd ai connection update`, allowing metadata to be set or merged on existing connections without recreating them. Also fixes the update path for OAuth2 connections: emit the credentials object in the PUT body (resolves HTTP 400 "Credentials Property can't be empty for auth type OAuth2") and preserve existing OAuth2 fields (connectorName, authorizationUrl, tokenUrl, scopes, etc.) on target/metadata-only updates.
+
+### Bugs Fixed
+
+- [[#8539]](https://github.com/Azure/azure-dev/pull/8539) Remove leaked debug log from `resolveConnectionContext` that surfaced the resolved endpoint and source as user-visible noise on every `azd ai connection` invocation.
+
 ## 0.1.0-preview (2026-05-28)
 
 Initial release of the `azure.ai.connections` extension. Provides CRUD management

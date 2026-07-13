@@ -6,12 +6,14 @@ This document describes how the Azure Developer CLI (`azd`) resolves extensions 
 
 ### Source Types
 
-Extension sources are manifests that describe the extensions available for installation. Each source has a name, a type, and a location. `azd` supports two source types:
+Extension sources are manifests that describe the extensions available for installation. Each source has a name, a type, and a location. `azd` supports two configurable source types:
 
 | Type | Location | Description |
 |------|----------|-------------|
 | `url` | HTTP/HTTPS endpoint | Remote JSON manifest fetched over the network. |
 | `file` | Local filesystem path | Local JSON file, useful for development and offline scenarios. |
+
+In addition, extensions installed from a [self-contained bundle](#self-contained-bundles) are tagged with a reserved `bundle` source. `bundle` is not a configurable source type and never appears in `azd extension source list` — it simply marks an extension that has no live registry to track updates against. Such extensions are listed with their `bundle` source in `azd extension list` and are skipped by `azd extension upgrade`. The name `bundle` is reserved, so it cannot be used as a user-configured source name.
 
 Sources are configured in `~/.azd/config.json`. You can manage them with the following commands:
 
@@ -146,7 +148,7 @@ When `azd` resolves versions, it filters them into compatible and incompatible s
 Once a version is resolved, installation proceeds through these steps:
 
 1. **Resolve version** — Apply the version constraint against available versions, filter by `azd` compatibility, and select the highest match.
-2. **Resolve dependencies** — If the extension declares dependencies, resolve each one recursively from the **same source as the parent extension**. Cross-source dependency resolution is not performed. Dependencies use the declared version constraint (or `latest`) but do **not** go through `azd` version compatibility filtering — `requiredAzdVersion` checks are only applied to the top-level extension.
+2. **Resolve dependencies** — If the extension declares dependencies, resolve each one recursively from the **same source as the parent extension**. Cross-source dependency resolution is not performed. Dependencies use the declared version constraint (or `latest`) but do **not** go through `azd` version compatibility filtering — `requiredAzdVersion` checks are only applied to the top-level extension. Passing `--no-dependencies` skips this step entirely: only the named extension is installed, its declared dependencies are neither resolved nor installed, and the installed-dependency version constraints are not enforced. This is intended for callers that only need the extension's own binary (for example, generating command snapshots) and cannot guarantee the registry's dependency graph is internally consistent.
 3. **Match platform artifact** — Find the artifact for the current OS and architecture. `azd` first looks for `<os>/<arch>` (for example, `linux/amd64` or `windows/amd64`). If no exact match is found, it falls back to `<os>` only (for example, `linux` or `windows`).
 4. **Download** — Fetch the artifact from its URL (HTTP/HTTPS) or copy from a local file path.
 5. **Validate checksum** — Verify the downloaded file against the published checksum. Supported algorithms are `sha256` and `sha512`.
@@ -156,6 +158,75 @@ Once a version is resolved, installation proceeds through these steps:
    - Other — treated as a raw binary and copied directly
 7. **Set permissions** — On Unix-like systems, set the executable permission on the extension binary.
 8. **Update configuration** — Record the installed extension and version in `~/.azd/config.json` under the `extension.installed` section.
+
+### Re-installing over an existing extension
+
+`azd extension install <id>` keys off the extension **id**, so installing an id that is already present is handled based on whether the **source** is changing and on the version relationship. `--force` bypasses all of these guards.
+
+When the source is **not** changing (same source as the installed extension):
+
+- **Same version** — a no-op; the install is skipped.
+- **Newer version** — upgraded in place.
+- **Older version** — a downgrade; `azd` **prompts for confirmation** before replacing the newer install with an older one. Declining skips the install. In `--no-prompt` mode `azd` skips with guidance to pass `--force`, and `--force` proceeds without prompting.
+
+When the source **is** changing (for example installing a bundle build over a registry build, or vice versa), the artifacts may differ, so `azd` does not silently proceed, no-op, or block a downgrade. Instead it **prompts for confirmation** before replacing the installed extension. The prompt states the version transition explicitly — *Reinstall*, *Upgrade to `<version>`*, or *Downgrade to `<version>`* — and the target source. Declining skips the install; confirming reinstalls and re-points the extension to the new source. In `--no-prompt` mode `azd` skips with guidance to pass `--force`, and `--force` proceeds without prompting.
+
+Because each bundle install registers a unique transient source, installing from **any** bundle over an already-installed extension is always treated as a source change — so it prompts even when the bundled version matches the installed one (the two builds may not be byte-identical).
+
+If a required dependency cannot be resolved from the parent's source and is not already installed, the install fails with an actionable error directing you to install the dependency first (consistent with the no cross-source dependency resolution behavior described above).
+
+## Self-Contained Bundles
+
+A **self-contained bundle** is a single portable `.zip` that contains a well-known `registry.json` plus the extension artifacts it references. It lets you share a one-off build (for example, a PR build or an internal extension) without hosting a registry or making the artifacts reachable over the network — the recipient runs a single command to install everything from the file.
+
+### Producing a bundle
+
+Extension authors create a bundle with the `azd x` developer extension:
+
+```bash
+azd x pack --bundle
+```
+
+This builds the platform artifacts and emits a single `<id>_<version>.zip` whose root contains a `registry.json` and an `artifacts/` directory. The registry's artifact URLs are **relative** (for example, `artifacts/my-ext-linux-amd64.tar.gz`), and each artifact carries an embedded `sha256` checksum. Extension packs (which have no binaries of their own) are supported as registry-only bundles.
+
+### Installing a bundle
+
+Consumers install a bundle by passing its path to `azd extension install`:
+
+```bash
+azd extension install ./my-ext_1.0.0.zip
+```
+
+The install flow treats the bundle as an **installer, not a registry** — nothing about the bundle persists as a configured source once installation finishes:
+
+1. **Extract** the bundle into a temporary directory.
+2. **Register an ephemeral source** that reads the extracted `registry.json` and rewrites each relative artifact URL to an absolute path anchored inside the extracted directory. This is what allows the standard install flow — including checksum validation — to resolve the bundled artifacts unchanged. Relative paths that escape the bundle directory are rejected. The source name is transient and is never surfaced to the user.
+3. **Install** the bundled extension through the normal install path. Bundles are produced per extension by `azd x pack --bundle`, so a bundle declares a single extension.
+4. **Clean up** — once the extension is installed, `azd` re-points it to the reserved `bundle` source, removes the ephemeral source, and deletes the temporary extraction directory. The only durable state left behind is the installed extension itself (its binary under `~/.azd/extensions/<id>/` and its `extension.installed` record).
+
+### Lifecycle of a bundle-installed extension
+
+Because a bundle does not register a lasting source, a bundle-installed extension is tracked under the reserved `bundle` source:
+
+- `azd extension list` shows it with its `bundle` source and a normal `✓ Up to date` status. It has no "latest" version to compare against, so no update is ever reported.
+- `azd extension upgrade` skips bundle-installed extensions with a note that they were installed from a self-contained bundle.
+- `azd extension source list` does **not** show an entry for the bundle — there is no leftover source to clean up.
+
+To update a bundle-installed extension, install a newer bundle:
+
+```bash
+azd extension install ./my-ext_2.0.0.zip
+```
+
+To switch a bundle-installed extension back to a registry-tracked one, install it explicitly from a configured source:
+
+```bash
+azd extension install <extension-id> --source <source-name>
+```
+
+### Trust model
+
+Bundles run arbitrary extension binaries on your machine. The embedded `sha256` checksums protect the **integrity** of each artifact within the bundle (they guarantee the bytes were not altered after packing), but bundles are **not signed** — there is no verification of the publisher's identity. Only install bundles you obtained from a source you trust.
 
 ## Declaring Extensions in `azure.yaml`
 
@@ -546,6 +617,54 @@ If the dev registry URL is unreachable (network issue, DNS failure), operations 
 ```bash
 azd extension source remove dev
 ```
+
+## Nightly Extension Registry
+
+The nightly registry contains **automatically built, always-latest** development snapshots of first-party extensions. Each scheduled pipeline run rebuilds an extension from `main`, signs the Windows and macOS binaries, uploads them to an always-latest storage folder, and updates a single entry in the nightly registry. Installing a nightly always gives you the most recent nightly build available at that time.
+
+| Property | Main Registry | Nightly Registry |
+|----------|---------------|------------------|
+| URL | `https://aka.ms/azd/extensions/registry` | `https://raw.githubusercontent.com/Azure/azure-dev/nightly/cli/azd/extensions/registry.nightly.json` |
+| Source file | `cli/azd/extensions/registry.json` (on `main`) | `cli/azd/extensions/registry.nightly.json` (on the `nightly` branch) |
+| Source name | `azd` (built-in default) | `nightly` (opt-in) |
+| Version shape | `1.2.3` | `1.2.3-nightly.<buildId>` (or `1.2.3-preview.nightly.<buildId>`) |
+| Signed binaries | Yes | Windows/macOS signed; Linux unsigned |
+| History retained | Yes | No — only the latest nightly per extension |
+| Support | Covered by Azure support | **Not covered** |
+
+> [!CAUTION]
+> Nightly extensions are built from `main` and come with **no stability guarantees**. Only the current nightly version is retained - older nightly versions are not installable.
+
+### Adding the Nightly Registry
+
+The nightly registry must be added, manually. To opt in:
+
+```bash
+# Add the nightly registry as a source named "nightly"
+azd extension source add -n nightly -t url -l "https://raw.githubusercontent.com/Azure/azure-dev/nightly/cli/azd/extensions/registry.nightly.json"
+```
+
+Then, to install a nightly-built extension:
+
+```bash
+azd extension install <extension-id> --source nightly
+```
+
+To remove the nightly registry later:
+
+```bash
+azd extension source remove nightly
+```
+
+### Upgrade and Nightly→Main Promotion
+
+Nightly versions use semver prerelease labels, so the standard `azd extension upgrade` flow works:
+
+- A newer nightly (higher build id, or a higher base version) supersedes an older one, so `azd extension upgrade` pulls the latest nightly.
+- When the extension ships a **stable** release whose base version matches your nightly (for example stable `1.2.3` versus `1.2.3-nightly.200`), the stable release outranks the nightly and you are **automatically promoted** to the `azd` registry on your next upgrade.
+
+> [!NOTE]
+> If your nightly was built from a **prerelease** base (for example `1.2.3-preview.nightly.60`), it sorts **above** the matching stable prerelease `1.2.3-preview`. In that case you are not promoted until the stable registry advances to a higher base version. This is expected semver precedence behavior.
 
 ## Related Documentation
 

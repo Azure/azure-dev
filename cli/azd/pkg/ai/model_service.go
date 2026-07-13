@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/syncmap"
@@ -250,6 +250,16 @@ func (s *AiModelService) ListLocationsWithQuota(
 
 	var results []string
 	sharedResults.Range(func(loc string, usages []*armcognitiveservices.Usage) bool {
+		// When the /usages API returns an empty list (e.g. free-tier subscriptions
+		// that have not yet provisioned Cognitive Services resources), treat the
+		// location as having full quota available.  The AI Services account SKU
+		// (AIServices/S0) was already confirmed available in this region; empty
+		// usages means no consumption data exists, not that quota is zero.
+		if len(usages) == 0 {
+			results = append(results, loc)
+			return true
+		}
+
 		for _, req := range requirements {
 			minCap := req.MinCapacity
 			if minCap <= 0 {
@@ -332,8 +342,15 @@ func (s *AiModelService) ListModelLocationsWithQuota(
 			usageMap[usage.Name] = usage
 		}
 
-		maxRemainingAtLocation, found := maxModelRemainingQuota(*targetModel, usageMap)
-		if found && maxRemainingAtLocation >= minRemaining {
+		maxRemainingAtLocation, found := maxModelRemainingQuota(
+			*targetModel, usageMap)
+		// Include the location when the model has at least one
+		// deployable SKU and either: (a) usage data confirms
+		// sufficient remaining quota, or (b) usage data is
+		// unavailable (e.g. free-tier subscriptions).
+		if found &&
+			(maxRemainingAtLocation == QuotaRemainingUnknown ||
+				maxRemainingAtLocation >= minRemaining) {
 			results = append(results, ModelLocationQuota{
 				Location:          loc,
 				MaxRemainingQuota: maxRemainingAtLocation,
@@ -469,9 +486,10 @@ func (s *AiModelService) resolveDeployments(
 				continue
 			}
 
-			// Quota check
+			// Quota check — skip when usage data is empty (e.g. free-tier
+			// subscriptions where the /usages API returns no entries).
 			capacity := ResolveCapacity(sku, options.Capacity)
-			if quotaOpts != nil && usageMap != nil {
+			if quotaOpts != nil && usageMap != nil && len(usageMap) > 0 {
 				usage, ok := usageMap[sku.UsageName]
 				if !ok {
 					continue
@@ -603,10 +621,22 @@ func (s *AiModelService) convertToAiModelsAt(
 
 	for loc, models := range rawByLocation {
 		for _, m := range models {
-			if m.Model == nil || m.Model.Name == nil || modelVersionDeprecated(m.Model, now) {
+			if m.Model == nil || m.Model.Name == nil {
 				continue
 			}
-			if len(statuses) > 0 && !slices.Contains(statuses, modelLifecycleStatusValue(m.Model.LifecycleStatus)) {
+			// Always drop versions whose inference endpoint has retired, regardless
+			// of any explicitly requested lifecycle statuses.
+			if modelInferenceRetired(m.Model.Deprecation, now) {
+				continue
+			}
+			if len(statuses) > 0 {
+				// Explicit opt-in: return only versions whose lifecycle status was
+				// requested. This includes ARM "Deprecating"/"Deprecated" so callers can
+				// support existing-customer management scenarios.
+				if !slices.Contains(statuses, modelLifecycleStatusValue(m.Model.LifecycleStatus)) {
+					continue
+				}
+			} else if modelVersionExcluded(m.Model, now) {
 				continue
 			}
 			name := *m.Model.Name
@@ -700,24 +730,33 @@ func (s *AiModelService) convertToAiModelsAt(
 	return result
 }
 
-func modelVersionDeprecated(model *armcognitiveservices.AccountModel, now time.Time) bool {
+// modelVersionExcluded reports whether a model version should be excluded from the
+// default new-deployment view. A version is excluded when its ARM lifecycleStatus is
+// "Deprecating" (customer-facing Deprecated) or "Deprecated" (Retired), or when its
+// inference endpoint has retired (deprecation.inference <= now).
+func modelVersionExcluded(model *armcognitiveservices.AccountModel, now time.Time) bool {
 	if model == nil {
 		return false
 	}
 
-	if modelLifecycleDeprecated(model.LifecycleStatus) {
+	if modelLifecycleExcluded(model.LifecycleStatus) {
 		return true
 	}
 
-	return modelDeprecationReached(model.Deprecation, now)
+	return modelInferenceRetired(model.Deprecation, now)
 }
 
-func modelLifecycleDeprecated(status *armcognitiveservices.ModelLifecycleStatus) bool {
+// modelLifecycleExcluded reports whether an ARM lifecycleStatus maps to a customer-facing
+// stage that should be excluded from default new-deployment selection. ARM "Deprecating"
+// maps to the customer-facing "Deprecated" stage (existing customers only) and ARM
+// "Deprecated" maps to "Retired"; both are excluded.
+func modelLifecycleExcluded(status *armcognitiveservices.ModelLifecycleStatus) bool {
 	if status == nil {
 		return false
 	}
 
-	return strings.EqualFold(string(*status), "Deprecated")
+	return strings.EqualFold(string(*status), "Deprecating") ||
+		strings.EqualFold(string(*status), "Deprecated")
 }
 
 func modelLifecycleStatusValue(status *armcognitiveservices.ModelLifecycleStatus) string {
@@ -728,7 +767,9 @@ func modelLifecycleStatusValue(status *armcognitiveservices.ModelLifecycleStatus
 	return string(*status)
 }
 
-func modelDeprecationReached(info *armcognitiveservices.ModelDeprecationInfo, now time.Time) bool {
+// modelInferenceRetired reports whether a model version's inference endpoint has retired
+// (ARM deprecation.inference <= now). Such versions return 410 Gone and are always excluded.
+func modelInferenceRetired(info *armcognitiveservices.ModelDeprecationInfo, now time.Time) bool {
 	if info == nil || info.Inference == nil {
 		return false
 	}
@@ -953,6 +994,17 @@ func ModelHasDefaultVersion(model AiModel) bool {
 }
 
 func modelHasQuota(model AiModel, usageMap map[string]AiModelUsage, minRemaining float64) bool {
+	// When usage data is empty (e.g. free-tier subscriptions), assume the
+	// model is eligible as long as it has at least one deployable SKU.
+	if len(usageMap) == 0 {
+		for _, version := range model.Versions {
+			if len(version.Skus) > 0 {
+				return true
+			}
+		}
+		return false
+	}
+
 	for _, version := range model.Versions {
 		for _, sku := range version.Skus {
 			usage, ok := usageMap[sku.UsageName]
@@ -971,6 +1023,19 @@ func modelHasQuota(model AiModel, usageMap map[string]AiModelUsage, minRemaining
 }
 
 func maxModelRemainingQuota(model AiModel, usageMap map[string]AiModelUsage) (float64, bool) {
+	// When usage data is empty (e.g. free-tier subscriptions), treat the
+	// model as available if it has at least one SKU.  Return
+	// QuotaRemainingUnknown to signal that the actual remaining quota
+	// is unknown.
+	if len(usageMap) == 0 {
+		for _, version := range model.Versions {
+			if len(version.Skus) > 0 {
+				return QuotaRemainingUnknown, true
+			}
+		}
+		return 0, false
+	}
+
 	var maxRemaining float64
 	found := false
 	for _, version := range model.Versions {
@@ -1019,8 +1084,20 @@ func filterModelsByAnyLocationQuota(
 ) []AiModel {
 	eligible := map[string]struct{}{}
 
-	for _, usages := range usagesByLocation {
-		for _, model := range FilterModelsByQuota(models, usages, minRemaining) {
+	for loc, usages := range usagesByLocation {
+		// Only consider models that are actually available in this
+		// location.  Without this filter, empty usages from an
+		// unrelated location could mark a model as eligible even
+		// when its quota is exhausted in its actual location.
+		locModels := make([]AiModel, 0, len(models))
+		for _, m := range models {
+			if slices.Contains(m.Locations, loc) {
+				locModels = append(locModels, m)
+			}
+		}
+
+		for _, model := range FilterModelsByQuota(
+			locModels, usages, minRemaining) {
 			eligible[model.Name] = struct{}{}
 		}
 	}

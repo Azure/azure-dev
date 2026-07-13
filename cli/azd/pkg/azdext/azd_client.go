@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	_ "google.golang.org/grpc/encoding/gzip" // registers gzip compressor for gRPC streams
 	"google.golang.org/grpc/metadata"
 )
 
@@ -35,6 +36,7 @@ type AzdClient struct {
 	aiClient            AiModelServiceClient
 	copilotClient       CopilotServiceClient
 	provisioningClient  ProvisioningServiceClient
+	validationClient    ValidationServiceClient
 }
 
 // WithAddress sets the address of the `azd` gRPC server.
@@ -250,4 +252,13 @@ func (c *AzdClient) Provisioning() ProvisioningServiceClient {
 	}
 
 	return c.provisioningClient
+}
+
+// Validation returns the validation service client.
+func (c *AzdClient) Validation() ValidationServiceClient {
+	if c.validationClient == nil {
+		c.validationClient = NewValidationServiceClient(c.connection)
+	}
+
+	return c.validationClient
 }

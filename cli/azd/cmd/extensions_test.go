@@ -7,10 +7,13 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 )
 
 // findChildByName returns the child action descriptor with the given name, or nil if not found.
@@ -237,4 +240,13 @@ func TestStripCwdFlag(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func Test_ExtensionAction_MissingAnnotation(t *testing.T) {
+	t.Parallel()
+	cmd := &cobra.Command{Use: "test"}
+	action := &extensionAction{cmd: cmd}
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, internal.ErrExtensionNotFound)
 }

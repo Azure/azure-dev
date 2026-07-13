@@ -84,6 +84,18 @@ func constructBuildConfig(options ...AgentBuildOption) *AgentBuildConfig {
 	return config
 }
 
+// mapRaiConfig flattens the manifest-level policies list into the data-plane
+// rai_config field. It returns the RAI config derived from the first policy of
+// type "rai_policy" that has a policy name, or nil when none is configured.
+func mapRaiConfig(policies []Policy) *agent_api.RaiConfig {
+	for _, policy := range policies {
+		if policy.Type == PolicyTypeRai && policy.RaiPolicyName != "" {
+			return &agent_api.RaiConfig{RaiPolicyName: policy.RaiPolicyName}
+		}
+	}
+	return nil
+}
+
 // MapEndpointAndCard maps YAML-layer endpoint and card fields to API model types
 // without requiring or validating the full agent definition. This is used by the
 // endpoint update command where only endpoint/card patching is needed.
@@ -381,7 +393,7 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 	} else {
 		// Set default protocol versions if none specified
 		protocolVersions = []agent_api.ProtocolVersionRecord{
-			{Protocol: agent_api.AgentProtocolResponses, Version: "1.0.0"},
+			{Protocol: agent_api.AgentProtocolResponses, Version: "2.0.0"},
 		}
 	}
 
@@ -389,14 +401,19 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 	if hostedAgent.CodeConfiguration != nil {
 		cmdPrefix := RuntimeCmdPrefix(hostedAgent.CodeConfiguration.Runtime)
 		entryPoint := []string{cmdPrefix, hostedAgent.CodeConfiguration.EntryPoint}
-		depRes := ""
-		if hostedAgent.CodeConfiguration.DependencyResolution != nil {
+		// Foundry requires dependency_resolution for code deploy; default to
+		// remote_build (matching `azd ai agent init --dep-resolution`) when the
+		// author omits it, so the create-agent request isn't rejected with a 400.
+		depRes := DefaultDependencyResolution
+		if hostedAgent.CodeConfiguration.DependencyResolution != nil &&
+			*hostedAgent.CodeConfiguration.DependencyResolution != "" {
 			depRes = *hostedAgent.CodeConfiguration.DependencyResolution
 		}
 
 		codeDef := agent_api.HostedAgentDefinition{
 			AgentDefinition: agent_api.AgentDefinition{
-				Kind: agent_api.AgentKindHosted,
+				Kind:      agent_api.AgentKindHosted,
+				RaiConfig: mapRaiConfig(hostedAgent.Policies),
 			},
 			ProtocolVersions:     protocolVersions,
 			CPU:                  cpu,
@@ -420,13 +437,16 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 
 	imageDef := agent_api.HostedAgentDefinition{
 		AgentDefinition: agent_api.AgentDefinition{
-			Kind: agent_api.AgentKindHosted,
+			Kind:      agent_api.AgentKindHosted,
+			RaiConfig: mapRaiConfig(hostedAgent.Policies),
 		},
 		ProtocolVersions:     protocolVersions,
 		CPU:                  cpu,
 		Memory:               memory,
 		EnvironmentVariables: envVars,
-		Image:                imageURL,
+		ContainerConfiguration: &agent_api.ContainerConfigurationAPI{
+			Image: imageURL,
+		},
 	}
 
 	return createAgentAPIRequest(hostedAgent.AgentDefinition, imageDef,

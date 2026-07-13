@@ -5,7 +5,8 @@ Usage
   azd tool upgrade [tool-name...] [flags]
 
 Flags
-        --dry-run 	: Preview what would be upgraded without making changes
+        --dry-run      	: Preview what would be upgraded without making changes
+        --host strings 	: Upgrade the skill for the specified agent host(s): copilot, claude. Use --host all for every detected host (skill tools only)
 
 Global Flags
     -C, --cwd string         	: Sets the current working directory.

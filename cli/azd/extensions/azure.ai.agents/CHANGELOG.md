@@ -1,5 +1,125 @@
 # Release History
 
+## 1.0.0-beta.6 (Unreleased)
+
+### Other Changes
+
+- [[#9049]](https://github.com/Azure/azure-dev/pull/9049) Switch the `invocations_ws` agent endpoint from the preview dispatcher form to the GA path-based route. `azd deploy` now registers `AGENT_{KEY}_INVOCATIONS_WS_ENDPOINT` (and `azd ai agent show` displays `Endpoint (invocations_ws)`) as `wss://<account>.services.ai.azure.com/api/projects/<project>/agents/<agent>/endpoint/protocols/invocations_ws?api-version=v1`, carrying the project and agent as path segments to mirror the HTTP `invocations` route. The previous form embedded them as `project_name`/`agent_name` query parameters on a single literal `/api/projects/agents/...` path.
+
+## 1.0.0-beta.5 (2026-07-09)
+
+### Features Added
+
+- [[#9043]](https://github.com/Azure/azure-dev/pull/9043) Add `--client-header` to `azd ai agent invoke` for sending custom `x-client-*` request headers in `"Name: Value"` format (repeatable). The responses and invocations protocols forward the `x-client-*` header family to the agent; other header names are rejected, and the flag is not supported with the `a2a` protocol (which does not propagate `x-client-*` headers). Managed headers (`Authorization`, `Content-Type`, user identity) always take precedence.
+- [[#8939]](https://github.com/Azure/azure-dev/pull/8939) Add native support for the Activity protocol to `azd ai agent`. `azd ai agent init` can now scaffold an Activity-protocol agent (defaulting to the service-recommended version `2.0.0`), `azd deploy` provisions a companion Azure Bot Service registration authenticated with `BotServiceRbac` and prints Microsoft Teams setup guidance, and `azd down` tears the bot down. Both init-from-code and init-from-manifest flows are supported.
+- [[#8983]](https://github.com/Azure/azure-dev/pull/8983) `azd ai agent run` now supports activity-protocol agents in a pure-local inner loop — no Foundry deploy, no Azure Bot, no Teams sideload required. An M365 Agents Playground integration is available for local testing. Thanks @v1212 for the contribution!
+- [[#8989]](https://github.com/Azure/azure-dev/pull/8989) Add `a2a` protocol support to `azd ai agent invoke`. A plain message is wrapped in a JSON-RPC 2.0 `message/send` request, `--input-file` sends a complete JSON-RPC request, and `--output raw` dumps the response verbatim. A2A is remote-only (not available with `--local`).
+- [[#9003]](https://github.com/Azure/azure-dev/pull/9003) Improve `azd ai agent optimize` with live-updating candidate rows, phase-aware progress indicators, azure.yaml inline/config agent detection, and `--output json` support for `optimize status`. Thanks @Zyysurely for the contribution!
+
+### Bugs Fixed
+
+- [[#9012]](https://github.com/Azure/azure-dev/pull/9012) Fix `azd ai agent run` failing with `Python 3.13+ is required` when a compatible Python is installed but not first on `PATH`. When falling back to `pip`, azd now probes multiple interpreters (including the Windows `py -3` launcher, which selects the newest installed Python 3) and checks each one's version, selecting the first that satisfies the runtime instead of hard-failing on whichever `python` appears first on `PATH`.
+- [[#9044]](https://github.com/Azure/azure-dev/pull/9044) Fix `azd ai agent invoke --local` failing with `could not connect to localhost:<port>` when run immediately after `azd ai agent run`, because the agent's listener binds a few seconds after `run` starts. `invoke --local` now retries connection-refused errors with backoff for up to 60s, and `azd ai agent run` waits up to 90s (covering slow interpreter startup and agent-stack imports before the server binds) for the port to accept connections before printing its "Agent ready" signal.
+- [[#9041]](https://github.com/Azure/azure-dev/pull/9041) Update RBAC callouts in developer role checks and `azd ai doctor` to use the renamed Foundry built-in role names (`Foundry User`, `Foundry Project Manager`, `Foundry Account Owner`; formerly `Azure AI User`/`Project Manager`/`Account Owner`). The suggested `az role assignment create` commands now reference the role by its GUID so they keep working regardless of the display-name rollout.
+- [[#9022]](https://github.com/Azure/azure-dev/pull/9022) Fix `azd down` on a Foundry (`microsoft.foundry`) project failing outright without `--force`. It now prompts for confirmation (naming the resource group to be deleted, defaulting to "no") like the built-in Bicep provider, and only falls back to requiring `--force` when there is no interactive terminal (for example under `--no-prompt` or in CI).
+- [[#8987]](https://github.com/Azure/azure-dev/pull/8987) Fix `azd ai agent init -m <manifest>` not prompting for the agent name. The prompt default and project folder are now derived from the manifest's `template.name` (falling back to the top-level `name`), matching the interactive and template flows.
+- [[#8981]](https://github.com/Azure/azure-dev/pull/8981) Fix `azd ai agent init -m <azure.yaml> --deploy-mode container` not resolving a container registry when adopting a unified Foundry `azure.yaml` on an existing Foundry project, which made `azd deploy` fail with `could not determine container registry endpoint`. The deploy mode is now resolved before Foundry project setup, so a container agent wires `AZURE_CONTAINER_REGISTRY_ENDPOINT` (or is signaled to create one on provision) while code deploy and `--image` still skip ACR.
+- [[#9051]](https://github.com/Azure/azure-dev/pull/9051) Fix `azd ai agent init` with "Use an existing Foundry project" not stamping the `endpoint:` field on the `azure.ai.project` service in `azure.yaml`, which caused `azd up` to provision a brand-new account/project instead of reusing the selected one.
+
+### Other Changes
+
+- [[#8866]](https://github.com/Azure/azure-dev/pull/8866) Remove `Foundry-Features: *=V1Preview` opt-in headers now that Foundry hosted-agents, code-agents, and toolbox APIs are GA.
+
+## 1.0.0-beta.4 (2026-07-03)
+
+### Bugs Fixed
+
+- [[#8947]](https://github.com/Azure/azure-dev/pull/8947) Fix brownfield Foundry provisioning failing with `InvalidTemplate` when a deploy reconciled model deployments without creating a container registry. `projectName` is now always passed to the brownfield template, so the existing project reference stays valid on the non-ACR path.
+
+## 1.0.0-beta.3 (2026-07-03)
+
+### Features Added
+
+- [[#8852]](https://github.com/Azure/azure-dev/pull/8852) Provision Foundry memory stores during `azd deploy`. Declare one or more memory stores under the agent service's `memoryStores` list in `azure.yaml` (with `chatModel`, `embeddingModel`, and optional extraction/retention `options`), and azd creates them in the Foundry project before deploying the agent. Provisioning is idempotent: existing stores are left unchanged, so deployments are safe to re-run. azd does not update an existing store; if a declared definition diverges from the live store, deploy warns which `azure.yaml` change(s) were not applied.
+- [[#8952]](https://github.com/Azure/azure-dev/pull/8952) `azd ai agent init` now routes unified `azure.yaml` templates selected from the template picker through the Foundry adoption flow, so choosing one downloads the `azure.yaml` and its sibling files and scaffolds the project instead of failing while trying to `git clone` a file URL.
+
+### Bugs Fixed
+
+- [[#8941]](https://github.com/Azure/azure-dev/pull/8941) Fix hosted agent deploys failing for users who lack `Microsoft.Authorization/roleAssignments/write`: the extension no longer assigns the redundant `Azure AI User` role to each per-agent managed identity after deploy, since Microsoft Foundry now grants that permission internally. Thanks @m5i-work for the contribution!
+- [[#8926]](https://github.com/Azure/azure-dev/pull/8926) Fix `--deploy-mode`, `--runtime`, and `--entry-point` being silently ignored when `azd ai agent init -m <azure.yaml>` adopts a unified Foundry `azure.yaml`; the flags now apply `code_configuration` to the agent service, and an explicit `--deploy-mode` overrides a sample's pre-configured deploy mode.
+- [[#8933]](https://github.com/Azure/azure-dev/pull/8933) Fix `azd ai agent init -m <azure.yaml>` returning early after scaffolding without running subscription selection, Foundry project setup, or model deployment verification, which left an environment that could not provision without manual configuration.
+
+## 1.0.0-beta.2 (2026-07-01)
+
+### Bugs Fixed
+
+- [[#8901]](https://github.com/Azure/azure-dev/pull/8901) Remove duplicate service-target provider claims from the `azure.ai.agents` extension manifest for hosts now owned by the split Foundry extensions (`azure.ai.projects`, `azure.ai.connections`, `azure.ai.toolboxes`). Thanks @huimiu for the contribution!
+- [[#8586]](https://github.com/Azure/azure-dev/issues/8586) `azd ai agent files upload` now accepts `[agent] [file]` positional arguments, mirroring `azd ai agent invoke [agent] [message]`. The first positional is the agent name and the second is the file to upload (with a single positional, it is the file, or the agent when `--file/-f` already supplies the file). This fixes the previous trap where passing the agent name as the positional left the agent unset and, in multi-service projects without `-n/--agent-name`, hung silently on the interactive agent picker in non-TTY contexts.
+
+## 1.0.0-beta.1 (2026-06-30)
+
+### Features Added
+
+- [[#8885]](https://github.com/Azure/azure-dev/pull/8885) `azd ai agent init -m <pointer>` now adopts a sample's unified `azure.yaml` as the project manifest when the pointer (local path or GitHub URL) resolves to one — that is, a manifest whose `services:` declare Foundry hosts (`azure.ai.project` / `azure.ai.agent` / `azure.ai.connection` / `azure.ai.toolbox`). The sample's `azure.yaml` and the files it references are placed at the project root via azd's native template adoption, and the services it already declares are not re-derived or duplicated under `src/<agent>/`. Pointing `-m` at an agent manifest (top-level `template:`) keeps the existing generate-from-manifest behavior, and adoption falls back to that path when a sample ships no `azure.yaml`. Adoption requires an empty target directory; adopting into a directory that already has a project `azure.yaml` is not yet supported.
+- [[#8818]](https://github.com/Azure/azure-dev/pull/8818) `azd ai agent init` now writes each Foundry resource as its own `azure.yaml` service entry instead of bundling everything into the agent service. Model deployments become a single `azure.ai.project` service, each connection becomes an `azure.ai.connection` service, and each toolbox becomes an `azure.ai.toolbox` service, all wired to the agent through `uses:`. The `azure.ai.project`, `azure.ai.connection`, and `azure.ai.toolbox` hosts are now owned by their sibling extensions (`azure.ai.projects`, `azure.ai.connections`, `azure.ai.toolboxes`) as real deploy-time service targets. The agents extension no longer registers them as no-op hosts, and toolboxes are reconciled at `azd deploy` by the `azure.ai.toolbox` target rather than created during `azd provision`.
+- [[#8780]](https://github.com/Azure/azure-dev/pull/8780) Add a `--call-id` flag to `azd ai agent invoke` that sends the `x-agent-foundry-call-id` header on `--local` invocations only. It is ignored for remote Foundry requests.
+- [[#8879]](https://github.com/Azure/azure-dev/pull/8879) `azd deploy`/`azd up` now warn when two or more `azure.ai.agent` services resolve to the same Foundry agent `name`. Foundry identifies an agent by its name, so such services deploy to the same agent and overwrite each other; the warning names the colliding services so each can be given a unique name in `azure.yaml`. Deploy still proceeds.
+- [[#8881]](https://github.com/Azure/azure-dev/pull/8881) Add `azd ai agent sessions stop <session-id>` to stop a running hosted agent session while preserving its persistent filesystem. Unlike `sessions delete`, the session is retained and can be resumed by a later invocation. Stopping an already-stopped session is idempotent and succeeds without error. Thanks @harsheet-shah for the contribution!
+- [[#8869]](https://github.com/Azure/azure-dev/pull/8869) Add option to select an existing deployment when choosing a different model during `azd ai agent init`.
+- [[#8874]](https://github.com/Azure/azure-dev/pull/8874) Increase default model deployment capacity from 10 to 50 for agents.
+- [[#8754]](https://github.com/Azure/azure-dev/pull/8754) Add PR gate tests for the `azd ai agent` extension. Thanks @v1212 for the contribution!
+- [[#8758]](https://github.com/Azure/azure-dev/pull/8758) Add live golden-path (Tier 2) pipeline for the `azd ai agent` extension. Thanks @v1212 for the contribution!
+- [[#8788]](https://github.com/Azure/azure-dev/pull/8788) Migrate predeploy/postdeploy to service-level event handlers in the agents extension.
+- [[#8890]](https://github.com/Azure/azure-dev/pull/8890) Bump `requiredAzdVersion` to `>=1.27.0` for all AI/Foundry extensions.
+
+### Breaking Changes
+
+- [[#8868]](https://github.com/Azure/azure-dev/pull/8868) `azd ai agent init` now defaults to **code deploy** (ZIP upload) instead of container deploy for Python and .NET projects. This affects `--no-prompt` runs without an explicit `--deploy-mode` flag. To preserve the previous behavior, pass `--deploy-mode container`. When code deploy is selected from a GitHub sample template, any Dockerfile and .dockerignore from the sample are removed from the scaffolded directory.
+- [[#8780]](https://github.com/Azure/azure-dev/pull/8780) Replace the per-command Foundry isolation-key flags (`--user-isolation-key`, `--chat-isolation-key`, and the session-ownership `--isolation-key`) with a single `--user-identity` flag with no backward-compatible flag retention.
+
+### Bugs Fixed
+
+- [[#8883]](https://github.com/Azure/azure-dev/pull/8883) `azd up` now prompts for an Azure subscription and location when `AZURE_SUBSCRIPTION_ID` or `AZURE_LOCATION` is not set, matching core `azd up`, instead of failing. Under `--no-prompt` it still returns an actionable `azd env set ...` error. Fixes [[#8859]](https://github.com/Azure/azure-dev/issues/8859).
+- [[#8880]](https://github.com/Azure/azure-dev/pull/8880) Fix ACR not created/linked for hosted container agents on existing Foundry projects. `azd provision` now connects to an existing Foundry project when the `azure.ai.project` service sets `endpoint:` (bring-your-own) instead of failing with a brownfield error, and `azd down` leaves a bring-your-own project in place because azd did not create it.
+- [[#8769]](https://github.com/Azure/azure-dev/pull/8769) Reprompt on invalid agent name instead of crashing.
+- [[#8770]](https://github.com/Azure/azure-dev/pull/8770) Avoid double agent service prompt in `azd ai agent invoke`.
+- [[#8771]](https://github.com/Azure/azure-dev/pull/8771) Allow `--local` with a named agent in `azd ai agent invoke`.
+- [[#8787]](https://github.com/Azure/azure-dev/pull/8787) Use venv for pip fallback in `azd ai agent run`.
+- [[#8829]](https://github.com/Azure/azure-dev/pull/8829) Update container deploy schema to use `protocol_versions` and `container_configuration`. Thanks @v1212 for the contribution!
+- [[#8867]](https://github.com/Azure/azure-dev/pull/8867) Fix placeholder warning to reference `azure.yaml` instead of `agent.yaml`.
+- [[#8876]](https://github.com/Azure/azure-dev/pull/8876) Fix `azd ai agent init --image` azure.yaml output. Thanks @m5i-work for the contribution!
+- [[#8789]](https://github.com/Azure/azure-dev/pull/8789) Update agent models to match TypeSpec definition.
+
+## 0.1.41-preview (2026-06-19)
+
+- [[#8731]](https://github.com/Azure/azure-dev/pull/8731) Improve the post-deploy `Next:` guidance with a stacked layout that puts each command on its own line above its description, adds a blank line between suggestions, and highlights `azd` commands. The new layout applies across deploy, `azd ai agent show`, `init`, and `doctor`. Thanks @therealjohn for the contribution!
+- [[#8645]](https://github.com/Azure/azure-dev/pull/8645) Detect VNET-injected Foundry accounts during `azd ai agent init` and skip remote builds up front so hosted container agents use local builds without a failing remote-build attempt first. Thanks @m5i-work for the contribution!
+- [[#8714]](https://github.com/Azure/azure-dev/pull/8714) Show a tracing disclaimer when `azd ai agent init` connects or adds an Application Insights connection. Thanks @therealjohn for the contribution!
+- [[#8685]](https://github.com/Azure/azure-dev/pull/8685) Default `azd ai agent run` local Python virtual environments to Python >= 3.13 so local runs match the minimum supported Foundry runtime. Thanks @therealjohn for the contribution!
+- [[#8732]](https://github.com/Azure/azure-dev/pull/8732) Update the Application Insights tracing disclaimer shown during `azd ai agent init` with revised wording and a `Learn more` link. Thanks @therealjohn for the contribution!
+
+## 0.1.40-preview (2026-06-15)
+
+- [[#8641]](https://github.com/Azure/azure-dev/pull/8641) Fix optimize/eval handling for array-valued mutations, resolve `dataset.local_uri` relative to the agent project, and align optimize test schema data with the current API format. Thanks @Zyysurely for the contribution!
+- [[#8625]](https://github.com/Azure/azure-dev/pull/8625) Show server response timing after successful `azd ai agent invoke` calls, including total latency and time to first byte, while keeping failure and `--output raw` flows unchanged. Thanks @VBhadauria for the contribution!
+- [[#8624]](https://github.com/Azure/azure-dev/pull/8624) Add Python bundled-mode guidance after `azd ai agent init` and block `azd deploy` with clear remediation when bundled dependencies were not installed into the source directory. Thanks @v1212 for the contribution!
+
+## 0.1.39-preview (2026-06-11)
+
+- [[#8602]](https://github.com/Azure/azure-dev/pull/8602) Support Foundry `${{...}}` server-side expressions during `azd ai agent` environment-variable expansion, so values that mix azd `${VAR}` references with Foundry `${{...}}` expressions (and `${VAR:-default}` forms) resolve correctly instead of being dropped. Thanks @huimiu for the contribution!
+- [[#8589]](https://github.com/Azure/azure-dev/pull/8589) Align `azd ai agent optimize` and `eval` with the V2Preview optimization API, including snake_case payloads, the new `agent_optimization_jobs` endpoints, a required `optimization_model`, and a Strategy column in the results table. Thanks @Zyysurely for the contribution!
+- [[#8576]](https://github.com/Azure/azure-dev/pull/8576) Add `azd ai agent code download` command to download (and optionally extract) the deployed source code of a code-based hosted agent, with SHA-256 verification. Thanks @v1212 for the contribution!
+- [[#8574]](https://github.com/Azure/azure-dev/pull/8574) Add `azd ai agent endpoint show` command to display the live endpoint configuration, and warn before `azd ai agent endpoint update` applies a breaking authorization isolation-key-source change. Thanks @v1212 for the contribution!
+- [[#8566]](https://github.com/Azure/azure-dev/pull/8566) Rename `azd ai agent eval init` to `eval generate` (keeping a hidden, deprecated `init`), honor the `-e`/`--environment` flag in optimize/eval flows, resolve relative `--dataset` paths against the current directory, and reconcile stale agent versions from the environment. Thanks @Zyysurely for the contribution!
+- [[#8519]](https://github.com/Azure/azure-dev/pull/8519) Add `azd ai agent delete` command to delete a hosted agent and all of its versions, with `--force` to terminate active sessions. Thanks @v1212 for the contribution!
+
+## 0.1.38-preview (2026-06-05)
+
+- [[#8532]](https://github.com/Azure/azure-dev/pull/8532) Fix Agent Inspector auto-launch for slow-starting local agents by waiting for the local agent port instead of timing out after 30 seconds. Thanks @anchenyi for the contribution!
+- [[#8529]](https://github.com/Azure/azure-dev/pull/8529) Update `azd ai agent init` to write a salted `AZURE_RESOURCE_GROUP` value to `.env`, reducing resource group collisions when recreating projects. Thanks @banrahan for the contribution!
+- [[#8521]](https://github.com/Azure/azure-dev/pull/8521) Add generic `policies` (`rai_policy`) support to the `agent.yaml` manifest for hosted agents so users can attach governance policies via `rai_policy_name`. Thanks @amitbhave10 for the contribution!
+- [[#8522]](https://github.com/Azure/azure-dev/pull/8522) Fix `azd ai agent init` from a manifest in the current directory when the target project is created in a subdirectory. Thanks @v1212 for the contribution!
+
 ## 0.1.37-preview (2026-06-01)
 
 - [[#8512]](https://github.com/Azure/azure-dev/pull/8512) Normalize connection auth `AgenticIdentity` values to the ARM-required `AgenticIdentityToken`.

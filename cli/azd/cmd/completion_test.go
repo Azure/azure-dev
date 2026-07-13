@@ -121,9 +121,12 @@ func TestCompletionFigFlags(t *testing.T) {
 
 	require.NotNil(t, flags)
 	require.False(t, flags.includeHidden)
+	require.False(t, flags.includeHelpSubcommands)
 
 	// Verify flag is registered
 	f := cmd.Flags().Lookup("include-hidden")
+	require.NotNil(t, f)
+	f = cmd.Flags().Lookup("include-help-subcommands")
 	require.NotNil(t, f)
 }
 
@@ -204,4 +207,71 @@ func TestCompletionFigAction_Run(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.True(t, strings.HasSuffix(stdout.String(), "\n"))
+}
+
+func Test_NewCompletionFigFlags(t *testing.T) {
+	t.Parallel()
+	cmd := &cobra.Command{Use: "test"}
+	flags := newCompletionFigFlags(cmd)
+	require.NotNil(t, flags)
+}
+
+func Test_NewCompletionBashAction(t *testing.T) {
+	t.Parallel()
+	cmd := &cobra.Command{Use: "root"}
+	a := newCompletionBashAction(cmd)
+	require.NotNil(t, a)
+}
+
+func Test_NewCompletionZshAction(t *testing.T) {
+	t.Parallel()
+	cmd := &cobra.Command{Use: "root"}
+	a := newCompletionZshAction(cmd)
+	require.NotNil(t, a)
+}
+
+func Test_NewCompletionFishAction(t *testing.T) {
+	t.Parallel()
+	cmd := &cobra.Command{Use: "root"}
+	a := newCompletionFishAction(cmd)
+	require.NotNil(t, a)
+}
+
+func Test_NewCompletionPowerShellAction(t *testing.T) {
+	t.Parallel()
+	cmd := &cobra.Command{Use: "root"}
+	a := newCompletionPowerShellAction(cmd)
+	require.NotNil(t, a)
+}
+
+func Test_CompletionBashAction_Run(t *testing.T) {
+	t.Parallel()
+	rootCmd := &cobra.Command{Use: "azd"}
+	a := newCompletionBashAction(rootCmd)
+	_, err := a.(*completionAction).Run(t.Context())
+	require.NoError(t, err)
+}
+
+func Test_CompletionZshAction_Run(t *testing.T) {
+	t.Parallel()
+	rootCmd := &cobra.Command{Use: "azd"}
+	a := newCompletionZshAction(rootCmd)
+	_, err := a.(*completionAction).Run(t.Context())
+	require.NoError(t, err)
+}
+
+func Test_CompletionFishAction_Run(t *testing.T) {
+	t.Parallel()
+	rootCmd := &cobra.Command{Use: "azd"}
+	a := newCompletionFishAction(rootCmd)
+	_, err := a.(*completionAction).Run(t.Context())
+	require.NoError(t, err)
+}
+
+func Test_CompletionPowerShellAction_Run(t *testing.T) {
+	t.Parallel()
+	rootCmd := &cobra.Command{Use: "azd"}
+	a := newCompletionPowerShellAction(rootCmd)
+	_, err := a.(*completionAction).Run(t.Context())
+	require.NoError(t, err)
 }

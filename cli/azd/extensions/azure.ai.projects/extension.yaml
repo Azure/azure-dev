@@ -1,14 +1,20 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
 capabilities:
     - custom-commands
+    - service-target-provider
     - metadata
-description: Manage Microsoft Foundry Project resources from your terminal. (Preview)
-displayName: Foundry Projects (Preview)
+description: Manage Microsoft Foundry Project resources from your terminal. (Beta)
+displayName: Foundry Projects (Beta)
 id: azure.ai.projects
 language: go
 namespace: ai.project
+providers:
+    - name: azure.ai.project
+      type: service-target
+      description: Owns the azure.ai.project host so azd can walk the Foundry project service in azure.yaml
 tags:
     - ai
     - project
 usage: azd ai project <command> [options]
-version: 0.1.0-preview
+version: 1.0.0-beta.2
+requiredAzdVersion: ">=1.27.0"

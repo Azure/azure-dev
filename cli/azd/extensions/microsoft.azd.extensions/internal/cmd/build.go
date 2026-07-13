@@ -239,11 +239,61 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 					)
 				}
 
+				// The binaries are installed, but `azd extension list` only surfaces
+				// extensions that are present in the local source registry. When the
+				// registry is missing (for example after a fresh clone or a rebuilt
+				// dev container) or does not yet contain this extension, surface a
+				// warning that points the user at `azd x publish`.
+				if warning := localRegistryWarning(azdConfigDir, schema.Id); warning != "" {
+					buildWarnings = append(buildWarnings, warning)
+					return ux.Warning, fmt.Errorf("not registered in the local registry; see details below")
+				}
+
 				return ux.Success, nil
 			},
 		})
 
 	return taskList.Run()
+}
+
+// localRegistryWarning returns a short warning when the local extension source
+// registry is missing or does not yet contain the given extension id. In those
+// cases `azd x build` installs the binaries but the extension will not show up in
+// `azd extension list`, so the message points the user at `azd x pack` followed by
+// `azd x publish`, which register it. An empty string is returned when the
+// extension is registered.
+func localRegistryWarning(azdConfigDir, extensionId string) string {
+	registryPath := filepath.Join(azdConfigDir, "registry.json")
+	registryDisplay := output.WithGrayFormat(registryPath)
+	listCmd := output.WithHighLightFormat("azd ext list")
+	registerCmds := output.WithHighLightFormat("azd x pack") + " then " + output.WithHighLightFormat("azd x publish")
+
+	if _, err := os.Stat(registryPath); errors.Is(err, os.ErrNotExist) {
+		return fmt.Sprintf(
+			"Local registry not found (%s) — extension won't appear in %s. Run %s to register it.",
+			registryDisplay, listCmd, registerCmds,
+		)
+	}
+
+	registry, err := models.LoadRegistry(registryPath)
+	if err != nil {
+		// Surface load/parse failures so the user knows the registry is unusable.
+		return fmt.Sprintf(
+			"Failed to read the local registry (%s): %v. Run %s to register the extension.",
+			registryDisplay, err, registerCmds,
+		)
+	}
+
+	for _, extension := range registry.Extensions {
+		if extension.Id == extensionId {
+			return ""
+		}
+	}
+
+	return fmt.Sprintf(
+		"%s isn't registered in the local registry (%s), so it won't appear in %s. Run %s to register it.",
+		output.WithHighLightFormat(extensionId), registryDisplay, listCmd, registerCmds,
+	)
 }
 
 func copyBinaryFiles(extensionId, sourcePath, destPath string) error {

@@ -52,7 +52,7 @@ func (m *Manifest) Warnings() string {
 			"to customize the Azure Container Environment and/or Azure Container Apps",
 			output.WithBackticks("azd infra gen")))
 		sb.WriteString(fmt.Sprintf("  See more: %s",
-			output.WithLinkFormat("https://learn.microsoft.com/dotnet/aspire/azure/configure-aca-environments")))
+			output.WithLinkFormat("https://aspire.dev/integrations/cloud/azure/configure-container-apps/")))
 	}
 
 	if m.publishMode == publishModeHybrid {
@@ -65,7 +65,7 @@ func (m *Manifest) Warnings() string {
 			fmt.Sprintf(
 				"  See more: %s",
 				output.WithLinkFormat(
-					"https://learn.microsoft.com/dotnet/aspire/whats-new/dotnet-aspire-9.4#-azure-container-apps-hybrid-mode-removal",
+					"https://aspire.dev/whats-new/aspire-9-4/#-azure-container-apps-hybrid-mode-removal",
 				),
 			),
 		)

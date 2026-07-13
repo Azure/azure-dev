@@ -196,6 +196,9 @@ func nonEmptyLines(screen string) []string {
 func activePrompt(screen string) string {
 	lines := nonEmptyLines(screen)
 	for i := len(lines) - 1; i >= 0; i-- {
+		if isGitHubAuthPrompt(lines[i]) {
+			return strings.ToLower(lines[i])
+		}
 		if strings.HasPrefix(lines[i], "?") {
 			after := lines[i+1:]
 			if hasInitProgressAfterPrompt(after) || isAnsweredTemplatePrompt(lines[i], after) {
@@ -317,5 +320,17 @@ func TestIsGitHubAuthPrompt(t *testing.T) {
 				t.Fatalf("isGitHubAuthPrompt(%q) = %v, want %v", tc.prompt, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestActivePromptDetectsGitHubDeviceLoginLine(t *testing.T) {
+	screen := strings.Join([]string{
+		"? how would you like to authenticate github cli? login with a web browser",
+		"Press Enter to open https://github.com/login/device",
+	}, "\n")
+
+	want := "press enter to open https://github.com/login/device"
+	if got := activePrompt(screen); got != want {
+		t.Fatalf("activePrompt() = %q, want %q", got, want)
 	}
 }

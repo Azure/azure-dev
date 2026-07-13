@@ -8,6 +8,7 @@ package e2elive
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -222,12 +223,7 @@ func isInitProgressLine(line string) bool {
 }
 
 func hasInitProgressAfterPrompt(lines []string) bool {
-	for _, line := range lines {
-		if isInitProgressLine(line) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(lines, isInitProgressLine)
 }
 
 // screenContains reports whether screen contains sub (case-insensitive).

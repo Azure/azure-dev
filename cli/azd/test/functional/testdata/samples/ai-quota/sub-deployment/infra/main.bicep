@@ -1,4 +1,4 @@
-// Subscription-scoped template for testing AI model quota preflight checks.
+// Subscription-scoped template for testing AI model quota validation checks.
 // Creates a resource group and deploys cognitive services with model deployments.
 targetScope = 'subscription'
 

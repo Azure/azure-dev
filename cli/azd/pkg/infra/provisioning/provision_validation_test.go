@@ -141,7 +141,7 @@ func TestManagerDeployRunsProvisionValidation_WarningDeclined(t *testing.T) {
 	err := mgr.RunProvisionValidation(*mockContext.Context, false)
 
 	// User declined → validation aborts (provisioning is skipped).
-	require.ErrorIs(t, err, provisioning.ErrProvisionValidationAborted)
+	require.ErrorIs(t, err, provisioning.ErrProvisionValidationCanceled)
 }
 
 func TestManagerDeployRunsProvisionValidation_Error(t *testing.T) {
@@ -163,7 +163,7 @@ func TestManagerDeployRunsProvisionValidation_Error(t *testing.T) {
 	err := mgr.RunProvisionValidation(*mockContext.Context, false)
 
 	// Error severity → validation aborts without prompting.
-	require.ErrorIs(t, err, provisioning.ErrProvisionValidationAborted)
+	require.ErrorIs(t, err, provisioning.ErrProvisionValidationCanceled)
 }
 
 func TestManagerPreviewRunsProvisionValidation_Error(t *testing.T) {
@@ -184,7 +184,7 @@ func TestManagerPreviewRunsProvisionValidation_Error(t *testing.T) {
 	// preview=true only affects prompt wording; an error still aborts.
 	err := mgr.RunProvisionValidation(*mockContext.Context, true)
 
-	require.ErrorIs(t, err, provisioning.ErrProvisionValidationAborted)
+	require.ErrorIs(t, err, provisioning.ErrProvisionValidationCanceled)
 }
 
 func TestManagerDeployProvisionValidation_NoResultsProceeds(t *testing.T) {

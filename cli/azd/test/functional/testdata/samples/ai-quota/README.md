@@ -1,7 +1,7 @@
-# AI Model Quota Preflight Test Samples
+# AI Model Quota Provision Validation Test Samples
 
-These samples exercise the `ai_model_quota` preflight validation check added to the
-Bicep provider. They are used by functional tests in `preflight_quota_test.go`.
+These samples exercise the `ai_model_quota` provision validation check added to the
+Bicep provider. They are used by functional tests in `provision_validation_quota_test.go`.
 
 ## Samples
 

@@ -23,27 +23,27 @@ import (
 
 // provisionValidationTimeout bounds how long the provider-agnostic provision
 // validation waits for extension checks before skipping them. It mirrors the
-// bound the Bicep provider applies to its "local-preflight" dispatch so a
+// bound the Bicep provider applies to its "arm-provision" dispatch so a
 // blocked or unresponsive extension check cannot hang provisioning.
 const provisionValidationTimeout = 60 * time.Second
 
 // Provider-agnostic provision validation outcomes recorded in telemetry. These
-// mirror the outcome values emitted by the Bicep "local-preflight" dispatch so
+// mirror the outcome values emitted by the Bicep "arm-provision" dispatch so
 // that both validation sites report a consistent vocabulary.
 const (
 	provisionValidationOutcomePassed           = "passed"
 	provisionValidationOutcomeWarningsAccepted = "warnings_accepted"
-	provisionValidationOutcomeAbortedByErrors  = "aborted_by_errors"
-	provisionValidationOutcomeAbortedByUser    = "aborted_by_user"
+	provisionValidationOutcomeCanceledByErrors = "canceled_by_errors"
+	provisionValidationOutcomeCanceledByUser   = "canceled_by_user"
 	provisionValidationOutcomeError            = "error"
 )
 
-// ErrProvisionValidationAborted signals that the provider-agnostic provision
-// validation aborted (an error-severity finding, or the user declining to
+// ErrProvisionValidationCanceled signals that the provider-agnostic provision
+// validation was canceled (an error-severity finding, or the user declining to
 // continue past warnings). The provision/up command layer passes it through
-// wrapProvisionError, which emits the "Provisioning was cancelled." message and
+// wrapProvisionError, which emits the "Provisioning was canceled." message and
 // translates it into the standard [internal.ErrAbortedByUser] outcome.
-var ErrProvisionValidationAborted = errors.New("provisioning aborted during validation")
+var ErrProvisionValidationCanceled = errors.New("provisioning canceled during validation")
 
 // RunProvisionValidation dispatches the provider-agnostic "provision"
 // validation checks registered by extensions. It is invoked once per
@@ -51,13 +51,13 @@ var ErrProvisionValidationAborted = errors.New("provisioning aborted during vali
 // [Manager.Deploy]/[Manager.Preview] — in multi-layer provisioning each layer
 // has its own Manager whose Deploy runs concurrently, so dispatching here keeps
 // the checks (and any warning confirmation prompt) firing exactly once with the
-// single, env-scoped context. Unlike the Bicep-only "local-preflight" dispatch,
+// single, env-scoped context. Unlike the Bicep-only "arm-provision" dispatch,
 // this runs for every provider (Bicep, Terraform, and extension-provided
 // providers such as microsoft.foundry and demo).
 //
-// Findings render through the uniform preflight report. The return value is a
+// Findings render through the uniform provision validation report. The return value is a
 // single error the command layer passes to wrapProvisionError:
-//   - [ErrProvisionValidationAborted]: an error-severity finding, or the user
+//   - [ErrProvisionValidationCanceled]: an error-severity finding, or the user
 //     declining to continue past warnings. wrapProvisionError translates this
 //     into the standard [internal.ErrAbortedByUser] outcome (exit code 0).
 //   - any other error: the confirmation prompt itself failed to run.
@@ -68,7 +68,7 @@ var ErrProvisionValidationAborted = errors.New("provisioning aborted during vali
 //
 // The preview flag only affects the confirmation prompt wording.
 func (m *Manager) RunProvisionValidation(ctx context.Context, preview bool) (err error) {
-	// Respect the same gate as the Bicep preflight so users can disable all
+	// Respect the same gate as the Bicep provision validation so users can disable all
 	// client-side validation with a single setting.
 	if m.provisionValidationDisabled() {
 		return nil
@@ -81,15 +81,15 @@ func (m *Manager) RunProvisionValidation(ctx context.Context, preview bool) (err
 		return nil
 	}
 
-	ctx, span := tracing.Start(ctx, events.PreflightValidationEvent)
+	ctx, span := tracing.Start(ctx, events.ProvisionValidationEvent)
 	defer func() {
 		span.EndWithStatus(err)
 	}()
 
 	// Tag the dispatch site so this event can be distinguished from the Bicep
-	// provider's "local-preflight" emission (both share PreflightValidationEvent
+	// provider's "arm-provision" emission (both share ProvisionValidationEvent
 	// and, for Bicep provisions, both fire in a single run).
-	span.SetAttributes(fields.PreflightCheckTypeKey.String(azdext.ValidationCheckTypeProvision))
+	span.SetAttributes(fields.ProvisionValidationCheckTypeKey.String(azdext.ValidationCheckTypeProvision))
 
 	checkContext := m.provisionValidationContext()
 
@@ -112,7 +112,7 @@ func (m *Manager) RunProvisionValidation(ctx context.Context, preview bool) (err
 	}
 
 	if len(invokedRuleIDs) > 0 {
-		span.SetAttributes(fields.PreflightExtensionRulesKey.StringSlice(invokedRuleIDs))
+		span.SetAttributes(fields.ProvisionValidationExtensionRulesKey.StringSlice(invokedRuleIDs))
 	}
 
 	if len(results) == 0 {
@@ -125,11 +125,11 @@ func (m *Manager) RunProvisionValidation(ctx context.Context, preview bool) (err
 		if dispatchErr != nil {
 			outcome = provisionValidationOutcomeError
 		}
-		span.SetAttributes(fields.PreflightOutcomeKey.String(outcome))
+		span.SetAttributes(fields.ProvisionValidationOutcomeKey.String(outcome))
 		return nil
 	}
 
-	report := &ux.PreflightReport{}
+	report := &ux.ProvisionValidationReport{}
 	var diagnosticIDs []string
 	var warningCount, errorCount int
 	for _, result := range results {
@@ -143,11 +143,11 @@ func (m *Manager) RunProvisionValidation(ctx context.Context, preview bool) (err
 		if result.DiagnosticId != "" {
 			diagnosticIDs = append(diagnosticIDs, result.DiagnosticId)
 		}
-		links := make([]ux.PreflightReportLink, len(result.Links))
+		links := make([]ux.ProvisionValidationReportLink, len(result.Links))
 		for i, l := range result.Links {
-			links[i] = ux.PreflightReportLink{Title: l.Text, URL: l.Url}
+			links[i] = ux.ProvisionValidationReportLink{Title: l.Text, URL: l.Url}
 		}
-		report.Items = append(report.Items, ux.PreflightReportItem{
+		report.Items = append(report.Items, ux.ProvisionValidationReportItem{
 			IsError:      isError,
 			DiagnosticID: result.DiagnosticId,
 			Message:      result.Message,
@@ -155,19 +155,19 @@ func (m *Manager) RunProvisionValidation(ctx context.Context, preview bool) (err
 			Links:        links,
 		})
 	}
-	span.SetAttributes(fields.PreflightDiagnosticsKey.StringSlice(diagnosticIDs))
-	span.SetAttributes(fields.PreflightWarningCountKey.Int(warningCount))
-	span.SetAttributes(fields.PreflightErrorCountKey.Int(errorCount))
+	span.SetAttributes(fields.ProvisionValidationDiagnosticsKey.StringSlice(diagnosticIDs))
+	span.SetAttributes(fields.ProvisionValidationWarningCountKey.Int(warningCount))
+	span.SetAttributes(fields.ProvisionValidationErrorCountKey.Int(errorCount))
 
 	m.console.MessageUxItem(ctx, report)
 
 	if report.HasErrors() {
 		// Errors were already displayed by the report above. Validation
 		// successfully detected problems and provisioning is intentionally
-		// aborted — this is not an internal failure (exit code 0).
-		m.console.Message(ctx, "Provision validation detected errors, provisioning aborted.")
-		span.SetAttributes(fields.PreflightOutcomeKey.String(provisionValidationOutcomeAbortedByErrors))
-		return ErrProvisionValidationAborted
+		// canceled — this is not an internal failure (exit code 0).
+		m.console.Message(ctx, "Provision validation detected errors, provisioning canceled.")
+		span.SetAttributes(fields.ProvisionValidationOutcomeKey.String(provisionValidationOutcomeCanceledByErrors))
+		return ErrProvisionValidationCanceled
 	}
 
 	if report.HasWarnings() {
@@ -181,22 +181,22 @@ func (m *Manager) RunProvisionValidation(ctx context.Context, preview bool) (err
 			DefaultValue: true,
 		})
 		if promptErr != nil {
-			span.SetAttributes(fields.PreflightOutcomeKey.String(provisionValidationOutcomeError))
+			span.SetAttributes(fields.ProvisionValidationOutcomeKey.String(provisionValidationOutcomeError))
 			return fmt.Errorf("prompting for provision validation confirmation: %w", promptErr)
 		}
 		if !continueProvision {
-			span.SetAttributes(fields.PreflightOutcomeKey.String(provisionValidationOutcomeAbortedByUser))
-			return ErrProvisionValidationAborted
+			span.SetAttributes(fields.ProvisionValidationOutcomeKey.String(provisionValidationOutcomeCanceledByUser))
+			return ErrProvisionValidationCanceled
 		}
-		span.SetAttributes(fields.PreflightOutcomeKey.String(provisionValidationOutcomeWarningsAccepted))
+		span.SetAttributes(fields.ProvisionValidationOutcomeKey.String(provisionValidationOutcomeWarningsAccepted))
 	}
 
 	return nil
 }
 
 // provisionValidationDisabled reports whether client-side provision validation
-// is turned off via the `provision.preflight` user config (value "off"). It
-// shares the gate with the Bicep preflight so a single setting disables both.
+// is turned off via the `validation.provision` user config (value "off"). It
+// shares the gate with the Bicep provision validation so a single setting disables both.
 func (m *Manager) provisionValidationDisabled() bool {
 	var userConfigManager config.UserConfigManager
 	if err := m.serviceLocator.Resolve(&userConfigManager); err != nil {
@@ -206,7 +206,7 @@ func (m *Manager) provisionValidationDisabled() bool {
 	if err != nil {
 		return false
 	}
-	val, exists := userConfig.GetString("provision.preflight")
+	val, exists := userConfig.GetString("validation.provision")
 	return exists && val == "off"
 }
 

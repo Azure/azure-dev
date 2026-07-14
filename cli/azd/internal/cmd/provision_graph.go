@@ -38,11 +38,11 @@ import (
 	"go.uber.org/multierr"
 )
 
-// errPreflightAbortedByUser is a sentinel returned from [provisionSingleLayer]
-// when the underlying provider reports [provisioning.PreflightAbortedSkipped].
+// errValidationCanceledByUser is a sentinel returned from [provisionSingleLayer]
+// when the underlying provider reports [provisioning.ProvisionValidationCanceledSkipped].
 // The caller translates it to [internal.ErrAbortedByUser] at the action
-// boundary so the user sees a friendly "Provisioning was cancelled." message.
-var errPreflightAbortedByUser = errors.New("provisioning aborted by user during preflight")
+// boundary so the user sees a friendly "Provisioning was canceled." message.
+var errValidationCanceledByUser = errors.New("provisioning canceled by user during provision validation")
 
 // provisionLayersGraph is the single execution entry point for
 // [ProvisionAction]. It dispatches to one of four disjoint paths:
@@ -166,11 +166,11 @@ func (p *ProvisionAction) provisionLayersGraph(
 					return hookErr
 				}
 
-				if deployResult.SkippedReason == provisioning.PreflightAbortedSkipped {
+				if deployResult.SkippedReason == provisioning.ProvisionValidationCanceledSkipped {
 					// Return the internal sentinel; wrapProvisionError at the
 					// outer boundary emits the "Provisioning was cancelled."
 					// UX message and translates to internal.ErrAbortedByUser.
-					return errPreflightAbortedByUser
+					return errValidationCanceledByUser
 				}
 
 				skipped := deployResult.SkippedReason == provisioning.DeploymentStateSkipped
@@ -301,7 +301,7 @@ func (p *ProvisionAction) provisionLayersGraph(
 	if result.Error != nil {
 		// Peel the scheduler's `step "X" failed:` prefix and run the
 		// underlying error through the same wrapping used by the sequential
-		// path (OpenAI / Responsible AI translation, preflight-abort →
+		// path (OpenAI / Responsible AI translation, provision-validation-cancel →
 		// ErrAbortedByUser, state dump on provider failure, etc.).
 		return nil, p.wrapProvisionError(ctx, unwrapStepErrors(result))
 	}
@@ -649,7 +649,7 @@ func (p *ProvisionAction) logProvisionGraphTimings(result *exegraph.RunResult) {
 
 // wrapProvisionError replicates the sequential path's error-wrapping logic
 // (provision.go:382-435): JSON state dump on failure, OpenAI access wrapper,
-// Responsible AI wrapper, and the preflight-aborted translation.
+// Responsible AI wrapper, and the provision-validation-canceled translation.
 func (p *ProvisionAction) wrapProvisionError(ctx context.Context, err error) error {
 	return wrapProvisionError(ctx, err, provisionErrorDeps{
 		console:          p.console,
@@ -677,9 +677,9 @@ type provisionErrorDeps struct {
 // provisionManager (the same one used for the primary layer) so that the
 // JSON state dump on failure has something to render.
 func wrapProvisionError(ctx context.Context, err error, deps provisionErrorDeps) error {
-	// Preflight-aborted → ErrAbortedByUser with success message.
-	if errors.Is(err, errPreflightAbortedByUser) ||
-		errors.Is(err, provisioning.ErrProvisionValidationAborted) {
+	// Validation-canceled → ErrAbortedByUser with success message.
+	if errors.Is(err, errValidationCanceledByUser) ||
+		errors.Is(err, provisioning.ErrProvisionValidationCanceled) {
 		deps.console.MessageUxItem(ctx, &ux.ActionResult{
 			SuccessMessage: "Provisioning was cancelled.",
 		})
@@ -865,8 +865,8 @@ func provisionSingleLayer(
 // parallel and B's clone may pre-date A's reload.
 //
 // Returns the raw [provisioning.DeployResult] so callers can record skip
-// semantics; on [provisioning.PreflightAbortedSkipped] it returns
-// [errPreflightAbortedByUser] so [ProvisionAction] can translate it to
+// semantics; on [provisioning.ProvisionValidationCanceledSkipped] it returns
+// [errValidationCanceledByUser] so [ProvisionAction] can translate it to
 // [internal.ErrAbortedByUser].
 func runProvisionSingleLayer(
 	ctx context.Context,
@@ -976,8 +976,8 @@ func runProvisionSingleLayer(
 		return nil, fmt.Errorf("deploying layer %s: %w", stepName, err)
 	}
 
-	if deployResult.SkippedReason == provisioning.PreflightAbortedSkipped {
-		return deployResult, errPreflightAbortedByUser
+	if deployResult.SkippedReason == provisioning.ProvisionValidationCanceledSkipped {
+		return deployResult, errValidationCanceledByUser
 	}
 
 	// ── Step 4: Env merge ──

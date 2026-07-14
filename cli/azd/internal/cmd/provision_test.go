@@ -113,12 +113,12 @@ func (p *mockProvider) PlannedOutputs(_ context.Context) ([]provisioning.Planned
 	return nil, nil
 }
 
-// TestProvisionAction_PreflightAborted verifies that when the user declines
-// preflight warnings, ProvisionAction.Run returns ErrAbortedByUser and does NOT
+// TestProvisionAction_ProvisionValidationCanceled verifies that when the user declines
+// provision validation warnings, ProvisionAction.Run returns ErrAbortedByUser and does NOT
 // attempt to read deployResult.Deployment.Outputs (which would nil-panic).
 //
 // Regression test for https://github.com/Azure/azure-dev/issues/7305
-func TestProvisionAction_PreflightAborted(t *testing.T) {
+func TestProvisionAction_ProvisionValidationCanceled(t *testing.T) {
 	t.Parallel()
 	// Set up a temp project with a minimal infra directory so ImportManager works.
 	projectDir := t.TempDir()
@@ -126,10 +126,10 @@ func TestProvisionAction_PreflightAborted(t *testing.T) {
 	require.NoError(t, os.MkdirAll(infraDir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(infraDir, "main.bicep"), []byte("targetScope = 'subscription'\n"), 0o600))
 
-	// Mock provider that simulates preflight abort (user said No).
+	// Mock provider that simulates provision validation cancel (user said No).
 	provider := &mockProvider{
 		deployResult: &provisioning.DeployResult{
-			SkippedReason: provisioning.PreflightAbortedSkipped,
+			SkippedReason: provisioning.ProvisionValidationCanceledSkipped,
 		},
 	}
 

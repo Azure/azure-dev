@@ -105,9 +105,10 @@ func Test_NewMsCorrelationPolicy(t *testing.T) {
 }
 
 // Test_NewMsCorrelationPolicy_FormatsTraceIdAsGuid verifies the emitted `x-ms-correlation-request-id` is the
-// ambient trace ID rendered in canonical hyphenated GUID form (8-4-4-4-12). The Azure ARM spec expects a GUID and
-// some services (e.g. AKS Deployment Safeguards) reject the undecorated 32-character trace ID. The reformat MUST
-// be lossless: stripping the hyphens must recover the original trace ID exactly. See azure-dev#5851.
+// ambient trace ID rendered in canonical hyphenated GUID form (8-4-4-4-12), which the Azure ARM spec expects.
+// azd historically emitted the undecorated 32-character trace ID, which AKS Deployment Safeguards rejected
+// (GetDeploymentSafeguardsFailed, azure-dev#5851). The reformat MUST be lossless: stripping the hyphens must
+// recover the original trace ID exactly.
 func Test_NewMsCorrelationPolicy_FormatsTraceIdAsGuid(t *testing.T) {
 	ctx := trace.ContextWithSpanContext(
 		t.Context(),
@@ -115,6 +116,19 @@ func Test_NewMsCorrelationPolicy_FormatsTraceIdAsGuid(t *testing.T) {
 	)
 
 	got := doRequest(t, NewMsCorrelationPolicy(), ctx).Header.Get(MsCorrelationIdHeader)
+
+	_, parseErr := uuid.Parse(got)
+	require.NoError(t, parseErr, "correlation id %q must be a valid GUID", got)
+	require.Len(t, got, 36, "correlation id must be in hyphenated 8-4-4-4-12 form")
+	require.Equal(t, traceId.String(), strings.ReplaceAll(got, "-", ""),
+		"reformat must be lossless: stripping hyphens must recover the original trace ID")
+}
+
+// Test_CorrelationIDFromTraceID verifies the shared helper renders a trace ID as a canonical hyphenated GUID and
+// that the conversion is lossless (stripping the hyphens recovers the original 32-character trace ID). Both the
+// ARM correlation policy and the Terraform `ARM_CORRELATION_REQUEST_ID` env var rely on this shared formatting.
+func Test_CorrelationIDFromTraceID(t *testing.T) {
+	got := CorrelationIDFromTraceID(traceId)
 
 	_, parseErr := uuid.Parse(got)
 	require.NoError(t, parseErr, "correlation id %q must be a valid GUID", got)

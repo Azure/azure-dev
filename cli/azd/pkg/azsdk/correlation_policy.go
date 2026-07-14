@@ -33,13 +33,21 @@ func (p *traceCorrelationPolicy) Do(req *policy.Request) (*http.Response, error)
 		return req.Next()
 	}
 
-	// A W3C trace ID and a UUID are both 128-bit values, so we reformat the trace ID into the canonical
-	// hyphenated GUID form (8-4-4-4-12) that the ARM spec expects. This keeps the exact trace ID value
-	// (the conversion is reversible by removing the hyphens) while matching the format other Azure tools send.
-	// Some services (e.g. AKS Deployment Safeguards) parse this header as a GUID and fail a string comparison
-	// against azd's previously undecorated 32-character value. See azure-dev#5851.
-	rawRequest.Header.Set(p.headerName, uuid.UUID(spanCtx.TraceID()).String())
+	rawRequest.Header.Set(p.headerName, CorrelationIDFromTraceID(spanCtx.TraceID()))
 	return req.Next()
+}
+
+// CorrelationIDFromTraceID formats an OpenTelemetry trace ID as the canonical hyphenated GUID (8-4-4-4-12) that
+// ARM expects for correlation values — both the `x-ms-correlation-request-id` header and the
+// `ARM_CORRELATION_REQUEST_ID` variable azd passes to the Terraform AzureRM provider. A W3C trace ID and a UUID
+// are both 128-bit values, so the conversion is lossless and reversible: removing the hyphens recovers the
+// original trace ID, preserving end-to-end OpenTelemetry correlation.
+//
+// azd historically emitted the undecorated 32-character trace ID here, which AKS Deployment Safeguards parsed as
+// a GUID and string-compared against the original, causing GetDeploymentSafeguardsFailed (azure-dev#5851).
+// Emitting the canonical GUID also matches the format other Azure tools send (Terraform AzureRM, Azure SDK for Go).
+func CorrelationIDFromTraceID(traceID trace.TraceID) string {
+	return uuid.UUID(traceID).String()
 }
 
 // perRequestUUIDPolicy sets a header to a freshly generated UUID on every outgoing HTTP request. It is used for

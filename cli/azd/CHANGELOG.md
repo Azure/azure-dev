@@ -14,7 +14,7 @@
 
 ### Other Changes
 
-- [[#9141]](https://github.com/Azure/azure-dev/pull/9141) Send the `x-ms-correlation-request-id` header as a canonical hyphenated GUID (derived losslessly from the OpenTelemetry trace ID) instead of an undecorated 32-character string, aligning azd with the ARM spec and other Azure tooling (Terraform AzureRM, Azure SDK for Go). This also resolves the historical AKS Deployment Safeguards `GetDeploymentSafeguardsFailed` correlation ID mismatch (#5851).
+- [[#9141]](https://github.com/Azure/azure-dev/pull/9141) Send ARM request correlation IDs as a canonical hyphenated GUID (derived losslessly from the OpenTelemetry trace ID) instead of an undecorated 32-character string — covering both the `x-ms-correlation-request-id` header on azd's direct ARM calls and the `ARM_CORRELATION_REQUEST_ID` value passed to the Terraform AzureRM provider. This aligns azd with the ARM spec and other Azure tooling (Terraform AzureRM, Azure SDK for Go) and resolves the historical AKS Deployment Safeguards `GetDeploymentSafeguardsFailed` correlation ID mismatch (#5851).
 
 ## 1.27.1 (2026-07-09)
 

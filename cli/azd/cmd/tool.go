@@ -756,7 +756,7 @@ func (a *toolInstallAction) resolveAgentOptions(
 	if len(present) > 1 {
 		// Interactive terminal: prompt the user to pick the agent(s),
 		// after surfacing the --agent hint so they learn the shortcut too.
-		if a.console.IsSpinnerInteractive() && !a.console.IsNoPromptMode() {
+		if promptAllowed(a.console, a.formatter) {
 			a.console.Message(ctx, "Multiple AI agents detected.\n"+
 				output.WithGrayFormat("Tip: Use `")+
 				output.WithHighLightFormat("--agent <agent>")+
@@ -805,7 +805,7 @@ func (a *toolInstallAction) resolveUnavailableAgentPrompt(
 	ctx context.Context,
 	skill *tool.ToolDefinition,
 ) (opts []tool.InstallOption, handled bool, err error) {
-	if !a.console.IsSpinnerInteractive() || a.console.IsNoPromptMode() {
+	if !promptAllowed(a.console, a.formatter) {
 		return nil, false, nil
 	}
 
@@ -916,6 +916,18 @@ func detectAllTools(
 		return nil, err
 	}
 	return statuses, nil
+}
+
+// promptAllowed reports whether azd may show an interactive prompt for a tool
+// operation. Prompting requires an interactive terminal, that --no-prompt is
+// not set, and that output is not JSON: a JSON-mode prompt writes control bytes
+// to the same stdout the result array is serialized to, so the output would no
+// longer be a single parseable document. When prompting is not allowed, callers
+// must require an explicit target (tool IDs / --agent / --all) instead.
+func promptAllowed(console input.Console, formatter output.Formatter) bool {
+	return console.IsSpinnerInteractive() &&
+		!console.IsNoPromptMode() &&
+		(formatter == nil || formatter.Kind() != output.JsonFormat)
 }
 
 // useStepSpinner reports whether a tool operation should render live
@@ -1104,10 +1116,10 @@ func (a *toolInstallAction) resolveToolIds(ctx context.Context) ([]string, error
 		return nil, nil
 	}
 
-	// Non-interactive (no TTY) or --no-prompt: the picker can't run, so require
-	// an explicit target (tool IDs or --all) rather than implicitly installing
-	// the recommended set.
-	if !a.console.IsSpinnerInteractive() || a.console.IsNoPromptMode() {
+	// Non-interactive (no TTY), --no-prompt, or JSON output: the picker can't
+	// run (or would corrupt JSON), so require an explicit target (tool IDs or
+	// --all) rather than implicitly installing the recommended set.
+	if !promptAllowed(a.console, a.formatter) {
 		return nil, noToolTargetError("install")
 	}
 
@@ -1255,14 +1267,14 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 				installed = append(installed, s)
 			}
 		}
-		// Non-interactive (no TTY) or --no-prompt: the picker can't run, so
-		// require an explicit target (tool IDs or --all) rather than implicitly
-		// upgrading every installed tool.
-		if len(installed) > 0 && (!a.console.IsSpinnerInteractive() || a.console.IsNoPromptMode()) {
+		// Non-interactive (no TTY), --no-prompt, or JSON output: the picker
+		// can't run (or would corrupt JSON), so require an explicit target
+		// (tool IDs or --all) rather than implicitly upgrading every tool.
+		if len(installed) > 0 && !promptAllowed(a.console, a.formatter) {
 			return nil, noToolTargetError("upgrade")
 		}
 		chosen := installed
-		if a.console.IsSpinnerInteractive() && !a.console.IsNoPromptMode() && len(installed) > 0 {
+		if promptAllowed(a.console, a.formatter) && len(installed) > 0 {
 			chosen, err = a.promptForUpgradeTools(ctx, installed)
 			if err != nil {
 				return nil, err
@@ -1775,10 +1787,10 @@ func (a *toolUninstallAction) resolveToolIds(ctx context.Context) ([]string, err
 
 	// Uninstall is destructive, so — unlike `azd tool install`/`upgrade`, which
 	// only add — it must never treat "no target" as "all". When prompting is
-	// unavailable (a non-interactive terminal or --no-prompt) and the user gave
-	// neither tool IDs nor --all, fail with explicit guidance instead of
-	// silently removing every installed tool.
-	if !a.console.IsSpinnerInteractive() || a.console.IsNoPromptMode() {
+	// unavailable (a non-interactive terminal, --no-prompt, or JSON output) and
+	// the user gave neither tool IDs nor --all, fail with explicit guidance
+	// instead of silently removing every installed tool.
+	if !promptAllowed(a.console, a.formatter) {
 		return nil, noToolTargetError("uninstall")
 	}
 

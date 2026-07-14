@@ -1444,8 +1444,42 @@ func TestToolUpgradeAction_NoPrompt_WithoutTarget_Errors(t *testing.T) {
 		"the guidance must tell the user to pass tool IDs or --all")
 }
 
-// TestToolUpgradeAction_AllFlag_NoPrompt upgrades every installed tool when
-// --all is given, without prompting.
+// TestToolUpgradeAction_JsonOnTTY_WithoutTarget_Errors verifies that
+// `azd tool upgrade --output json` on an interactive terminal (no --no-prompt)
+// requires an explicit target rather than opening the no-argument picker, whose
+// output would corrupt the JSON result written to the same stdout.
+func TestToolUpgradeAction_JsonOnTTY_WithoutTarget_Errors(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+
+	detector := &cmdMockDetector{
+		detectAll: func(_ context.Context, tools []*tool.ToolDefinition) ([]*tool.ToolStatus, error) {
+			statuses := make([]*tool.ToolStatus, len(tools))
+			for i, td := range tools {
+				statuses[i] = &tool.ToolStatus{Tool: td, Installed: i < 2}
+			}
+			return statuses, nil
+		},
+	}
+	installer := &cmdMockInstaller{
+		upgrade: func(_ context.Context, td *tool.ToolDefinition, _ ...tool.InstallOption) (*tool.InstallResult, error) {
+			t.Errorf("upgrade must not run without an explicit target; got %s", td.Id)
+			return &tool.InstallResult{Tool: td, Success: true}, nil
+		},
+	}
+	manager := tool.NewManager(detector, installer, nil)
+
+	console := mockinput.NewMockConsole()
+	console.SetTerminal(true) // interactive TTY, but NOT --no-prompt
+
+	action := newToolUpgradeAction(
+		nil, &toolUpgradeFlags{}, manager, console, &output.JsonFormatter{}, io.Discard,
+	)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err, "JSON mode must require an explicit target, not open a picker")
+	var ews *internal.ErrorWithSuggestion
+	require.ErrorAs(t, err, &ews)
+}
 func TestToolUpgradeAction_AllFlag_NoPrompt(t *testing.T) {
 	tracing.ResetUsageAttributesForTest()
 
@@ -1642,7 +1676,34 @@ func TestToolInstallAction_resolveToolIds_NoPromptWithoutTarget_Errors(t *testin
 		"the guidance must tell the user to pass tool IDs or --all")
 }
 
-// TestToolInstallAction_resolveToolIds_AllFlag installs the recommended,
+// TestToolInstallAction_resolveToolIds_JsonOnTTY_Errors verifies that
+// `--output json` on an interactive terminal (without --no-prompt) still
+// requires an explicit target rather than opening a multi-select, whose prompt
+// bytes would corrupt the JSON array written to the same stdout.
+func TestToolInstallAction_resolveToolIds_JsonOnTTY_Errors(t *testing.T) {
+	detector := &cmdMockDetector{
+		detectAll: func(_ context.Context, _ []*tool.ToolDefinition) ([]*tool.ToolStatus, error) {
+			return []*tool.ToolStatus{
+				{Tool: &tool.ToolDefinition{Id: "rec", Priority: tool.ToolPriorityRecommended}},
+			}, nil
+		},
+	}
+	manager := tool.NewManager(detector, &cmdMockInstaller{}, nil)
+
+	console := mockinput.NewMockConsole()
+	console.SetTerminal(true) // interactive TTY, but NOT --no-prompt
+
+	action := newToolInstallAction(
+		nil, &toolInstallFlags{}, manager, console, &output.JsonFormatter{}, io.Discard,
+	).(*toolInstallAction)
+
+	ids, err := action.resolveToolIds(t.Context())
+	require.Error(t, err, "JSON mode must require an explicit target, not open a picker")
+	assert.Nil(t, ids)
+	var ews *internal.ErrorWithSuggestion
+	require.ErrorAs(t, err, &ews)
+}
+
 // not-yet-installed tools when --all is given, without prompting.
 func TestToolInstallAction_resolveToolIds_AllFlag(t *testing.T) {
 	detector := &cmdMockDetector{
@@ -1717,6 +1778,34 @@ func TestToolUninstallAction_resolveToolIds_NoPromptWithoutTarget_Errors(t *test
 	require.ErrorAs(t, err, &ews)
 	assert.Contains(t, ews.Suggestion, "--all",
 		"the guidance must tell the user to pass tool IDs or --all")
+}
+
+// TestToolUninstallAction_resolveToolIds_JsonOnTTY_Errors verifies that
+// `--output json` on an interactive terminal still requires an explicit target
+// rather than opening the uninstall picker (whose output would corrupt JSON).
+func TestToolUninstallAction_resolveToolIds_JsonOnTTY_Errors(t *testing.T) {
+	detector := &cmdMockDetector{
+		detectAll: func(_ context.Context, _ []*tool.ToolDefinition) ([]*tool.ToolStatus, error) {
+			return []*tool.ToolStatus{
+				{Tool: &tool.ToolDefinition{Id: "a"}, Installed: true},
+				{Tool: &tool.ToolDefinition{Id: "b"}, Installed: true},
+			}, nil
+		},
+	}
+	manager := tool.NewManager(detector, &cmdMockInstaller{}, nil)
+
+	console := mockinput.NewMockConsole()
+	console.SetTerminal(true) // interactive TTY, but NOT --no-prompt
+
+	action := newToolUninstallAction(
+		nil, &toolUninstallFlags{}, manager, console, &output.JsonFormatter{}, io.Discard,
+	).(*toolUninstallAction)
+
+	ids, err := action.resolveToolIds(t.Context())
+	require.Error(t, err, "JSON mode must require an explicit target, not open a picker")
+	assert.Nil(t, ids)
+	var ews *internal.ErrorWithSuggestion
+	require.ErrorAs(t, err, &ews)
 }
 
 // TestToolUninstallAction_resolveToolIds_AllFlag_NoPrompt verifies the explicit

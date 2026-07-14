@@ -39,6 +39,13 @@ For each selected scenario:
 
 ## Driving conventions (fail-loud)
 
+- **The scenario goals are the contract.** A scenario PASSES only when the product's actual
+  behavior matches what the goals describe. If the goals say "expect error X" and the
+  product prints a different error (even a reasonable one), that is a FAIL. If the goals
+  reference a flag or subcommand that no longer exists, that is a FAIL. The driving agent's
+  job is to **verify** goals were met, not to **rationalize** why they weren't. Do not mark
+  a scenario as PASSED with an "observation" when the goals were not achieved — observations
+  are for incidental notes on scenarios that genuinely passed all their goals.
 - **Don't verify/retry after a `select`.** Reading back the echo and "correcting" a pick
   hides the very picker defect the test exists to catch. Send the action and let downstream
   prompts surface any failure.
@@ -49,6 +56,10 @@ For each selected scenario:
   non-zero exit), report the finding and move on. Do **not** re-run the scenario hoping for
   a different result — unless the scenario's `goals:` explicitly instruct a retry. Retrying
   masks flaky behavior and makes the test suite unreliable as a regression signal.
+- **Never adapt around broken goals.** If the goals instruct you to run a command or flag
+  that does not exist, or expect output that does not appear, fail the scenario. Do not
+  substitute an alternative command, skip the broken step, or invent a workaround. The
+  scenario must be updated by a human — the driving agent must not silently patch over it.
 - **Prefer `choice_text` over `choice_index`** (indices shift between releases).
 - **Clear a pre-filled text field before typing** (e.g. the agent-name prompt); otherwise
   your value *appends* to the default (`defaultyourvalue`).

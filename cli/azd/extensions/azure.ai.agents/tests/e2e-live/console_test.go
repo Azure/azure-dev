@@ -8,8 +8,10 @@ package e2elive
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	expect "github.com/Netflix/go-expect"
@@ -187,20 +189,148 @@ func nonEmptyLines(screen string) []string {
 	return out
 }
 
-// activePrompt returns the lowercased text of the last survey "?" prompt line on
-// screen, or "" if none is visible. The last "?" line is the one survey is
-// currently blocking on (earlier "?" lines are answered prompts it echoed).
+// activePrompt returns the lowercased text of the last active survey "?" prompt
+// line on screen, or "" if none is visible. Survey leaves answered prompts on
+// screen, so a prompt followed by init progress or an answered template selection
+// without choice rows is treated as stale.
 func activePrompt(screen string) string {
 	lines := nonEmptyLines(screen)
 	for i := len(lines) - 1; i >= 0; i-- {
+		if isGitHubAuthPrompt(lines[i]) {
+			return strings.ToLower(lines[i])
+		}
 		if strings.HasPrefix(lines[i], "?") {
+			after := lines[i+1:]
+			if hasInitProgressAfterPrompt(after) || isAnsweredTemplatePrompt(lines[i], after) {
+				return ""
+			}
 			return strings.ToLower(lines[i])
 		}
 	}
 	return ""
 }
 
+// isInitProgressLine reports whether line is progress emitted after a prompt was
+// already answered. Survey leaves answered prompts on screen while the extension
+// downloads/copies samples; those stale prompts should not be treated as active.
+func isInitProgressLine(line string) bool {
+	line = strings.ToLower(line)
+	return strings.Contains(line, "downloading sample from github") ||
+		strings.HasPrefix(line, "agents.md") ||
+		strings.HasPrefix(line, "claude.md") ||
+		strings.HasPrefix(line, "readme.md") ||
+		strings.HasPrefix(line, "azure.yaml") ||
+		strings.HasPrefix(line, "src/") ||
+		strings.Contains(line, "setting up github connection") ||
+		strings.Contains(line, "adopting the sample's azure.yaml") ||
+		strings.Contains(line, "initializing an app to run on azure") ||
+		strings.Contains(line, "copying template code from local path") ||
+		strings.Contains(line, "installing required extensions")
+}
+
+func hasInitProgressAfterPrompt(lines []string) bool {
+	return slices.ContainsFunc(lines, isInitProgressLine)
+}
+
+func isAnsweredTemplatePrompt(line string, after []string) bool {
+	line = strings.ToLower(line)
+	if !strings.Contains(line, "starter template") && !strings.Contains(line, "agent template") {
+		return false
+	}
+	if !strings.Contains(line, ":") {
+		return false
+	}
+	return !slices.ContainsFunc(after, isSurveyChoiceLine)
+}
+
+func isSurveyChoiceLine(line string) bool {
+	return strings.HasPrefix(strings.TrimSpace(line), ">")
+}
+
 // screenContains reports whether screen contains sub (case-insensitive).
 func screenContains(screen, sub string) bool {
 	return strings.Contains(strings.ToLower(screen), strings.ToLower(sub))
+}
+
+func TestActivePromptIgnoresAnsweredSelectWithoutChoices(t *testing.T) {
+	screen := strings.Join([]string{
+		"? Select a language: Python",
+		"? Select a starter template: Basic agent (Invocations, Agent Framework, Python)",
+	}, "\n")
+
+	if got := activePrompt(screen); got != "" {
+		t.Fatalf("activePrompt() = %q, want empty", got)
+	}
+}
+
+func TestActivePromptIgnoresPromptFollowedByInitProgress(t *testing.T) {
+	screen := strings.Join([]string{
+		"? Select a language: Python",
+		"Downloading sample from GitHub: Azure-Samples/azure-ai-agent-service-enterprise-demo",
+		"azure.yaml",
+	}, "\n")
+
+	if got := activePrompt(screen); got != "" {
+		t.Fatalf("activePrompt() = %q, want empty", got)
+	}
+}
+
+func TestActivePromptKeepsLaterRealPromptAfterProgress(t *testing.T) {
+	screen := strings.Join([]string{
+		"? Select a language: Python",
+		"Downloading sample from GitHub: Azure-Samples/azure-ai-agent-service-enterprise-demo",
+		"? Select an Azure subscription: Contoso Test Subscription",
+		"> Contoso Test Subscription",
+	}, "\n")
+
+	want := "? select an azure subscription: contoso test subscription"
+	if got := activePrompt(screen); got != want {
+		t.Fatalf("activePrompt() = %q, want %q", got, want)
+	}
+}
+
+func TestActivePromptKeepsActiveSelectWithChoices(t *testing.T) {
+	screen := strings.Join([]string{
+		"? Select a starter template: Basic agent (Invocations, Agent Framework, Python)",
+		"> Basic agent (Invocations, Agent Framework, Python)",
+	}, "\n")
+
+	want := "? select a starter template: basic agent (invocations, agent framework, python)"
+	if got := activePrompt(screen); got != want {
+		t.Fatalf("activePrompt() = %q, want %q", got, want)
+	}
+}
+
+func TestIsGitHubAuthPrompt(t *testing.T) {
+	cases := []struct {
+		name   string
+		prompt string
+		want   bool
+	}{
+		{"git protocol", "? what is your preferred protocol for git operations on this host?", true},
+		{"git credentials", "? authenticate git with your github credentials? (y/n)", true},
+		{"browser auth", "? how would you like to authenticate github cli? login with a web browser", true},
+		{"device login", "Press Enter to open https://github.com/login/device", true},
+		{"regular prompt", "? select a starter template: basic agent", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isGitHubAuthPrompt(tc.prompt); got != tc.want {
+				t.Fatalf("isGitHubAuthPrompt(%q) = %v, want %v", tc.prompt, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestActivePromptDetectsGitHubDeviceLoginLine(t *testing.T) {
+	screen := strings.Join([]string{
+		"? how would you like to authenticate github cli? login with a web browser",
+		"Press Enter to open https://github.com/login/device",
+	}, "\n")
+
+	want := "press enter to open https://github.com/login/device"
+	if got := activePrompt(screen); got != want {
+		t.Fatalf("activePrompt() = %q, want %q", got, want)
+	}
 }

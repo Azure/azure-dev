@@ -65,8 +65,8 @@ These commands emit attributes or events beyond the global middleware span.
 | **Show** | | | | | |
 | `show` | — | ✅ | ❌ | ❌ | Redundant — output format not analytically useful |
 | **Infrastructure** | | | | | |
-| `infra generate` | — | ✅ | ✅ | ❌ | `infra.provider` (bicep/terraform) |
-| `infra synth` | — | ✅ | ✅ | ❌ | `infra.provider` (bicep/terraform) |
+| `infra generate` | — | ✅ | ✅ | ❌ | `infra.provider` (configured `--provider`: `bicep`/`terraform`/`auto`, or a raw custom name — see cross-cutting row) |
+| `infra synth` | — | ✅ | ✅ | ❌ | `infra.provider` (configured `--provider`: `bicep`/`terraform`/`auto`, or a raw custom name — see cross-cutting row) |
 | `infra create` | — (hidden, deprecated) | ✅ | ❌ | ❌ | Wraps `provision`; inherits its telemetry |
 | `infra delete` | — (hidden, deprecated) | ✅ | ❌ | ❌ | Wraps `down`; inherits its telemetry |
 | **Core Lifecycle** | | | | | |

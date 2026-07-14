@@ -565,20 +565,33 @@ const (
 // present on success, failure, and preview spans alike. The value is computed deterministically
 // from configuration (rather than racing concurrent per-layer resolution).
 func RecordInfraProviderUsage(layers []Options, defaultProvider DefaultProviderResolver) {
+	// The default provider is resolved lazily and at most once per call: every unspecified layer
+	// resolves to the same default, so caching keeps the value deterministic and avoids repeating
+	// resolver work (which may do I/O) per layer.
+	var cachedDefault ProviderKind
+	defaultResolved := false
+	defaultFailed := false
+
 	seen := map[ProviderKind]struct{}{}
 	for _, layer := range layers {
 		kind := layer.Provider
 		if kind == NotSpecified {
-			if defaultProvider == nil {
+			if defaultProvider == nil || defaultFailed {
 				continue
 			}
 
-			resolved, err := defaultProvider()
-			if err != nil {
-				continue
+			if !defaultResolved {
+				resolved, err := defaultProvider()
+				if err != nil {
+					defaultFailed = true
+					continue
+				}
+
+				cachedDefault = resolved
+				defaultResolved = true
 			}
 
-			kind = resolved
+			kind = cachedDefault
 		}
 
 		if kind == NotSpecified {

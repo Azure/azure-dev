@@ -4,6 +4,10 @@ A Foundry project service can be provisioned as a **network-secured (VNet-bound)
 
 Do **not** place `network:` on `host: azure.ai.agent`. Agent services describe deployable agents and depend on the project through `uses:`; the project service owns account-level provisioning inputs such as `endpoint:`, `deployments:`, and `network:`.
 
+The `azure.ai.projects` extension owns the project service and the
+`microsoft.foundry` provider. `azd ai agent init` continues to author
+the block and eject its IaC during the staged ownership migration.
+
 When `network:` is present, azd always provisions an **account private endpoint** and disables public data-plane access. Dependent stores (Cosmos DB, AI Search, Storage) stay platform-managed.
 
 ```yaml

@@ -346,36 +346,23 @@ func reserveServiceName(used map[string]string, name, source string) error {
 	return nil
 }
 
-// collectProjectDeployments gathers the model deployments declared across all
-// azure.ai.project services so provisioning handlers can source them from the
-// sibling project service instead of the agent service config. Services are
-// visited in sorted name order so serialized env-var output stays stable.
-//
-// Falls back to the deployments bundled on the agent service when no project
-// service carries any, so an azure.yaml written before the per-resource split
-// still provisions without re-running init.
-func collectProjectDeployments(services map[string]*azdext.ServiceConfig) ([]project.Deployment, error) {
-	var out []project.Deployment
-	for _, svc := range sortedServices(services) {
-		props := project.ServiceConfigProps(svc)
-		if svc.Host != AiProjectHost || props == nil {
-			continue
-		}
-		var cfg *project.ServiceTargetAgentConfig
-		if err := project.UnmarshalStruct(props, &cfg); err != nil {
-			return nil, fmt.Errorf("parsing project service %q config: %w", svc.Name, err)
-		}
-		if cfg != nil {
-			out = append(out, cfg.Deployments...)
+// collectLegacyProjectDeployments reads only pre-split agent config.
+// A split project disables this compatibility path because projects
+// owns that service's runtime projection.
+func collectLegacyProjectDeployments(
+	services map[string]*azdext.ServiceConfig,
+) ([]project.Deployment, error) {
+	for _, svc := range services {
+		if svc.GetHost() == AiProjectHost {
+			return nil, nil
 		}
 	}
-	if len(out) > 0 {
-		return out, nil
-	}
+
 	legacy, err := collectLegacyAgentConfigs(services)
 	if err != nil {
 		return nil, err
 	}
+	var out []project.Deployment
 	for _, cfg := range legacy {
 		out = append(out, cfg.Deployments...)
 	}

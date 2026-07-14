@@ -462,7 +462,14 @@ func TestResolveAgentServiceFromProject_UsesInlineNameForBrownfieldProject(t *te
 		t, projectServer, &helpersPromptServer{}, envServer,
 	)
 
-	info, err := resolveAgentServiceFromProject(t.Context(), azdClient, "", true)
+	defaultInfo, err := resolveAgentServiceFromProject(t.Context(), azdClient, "", true)
+	require.NoError(t, err)
+	require.Empty(t, defaultInfo.AgentName,
+		"shared commands must not implicitly target a brownfield agent")
+
+	info, err := resolveAgentServiceFromProject(
+		t.Context(), azdClient, "", true, withBrownfieldInlineAgentName(),
+	)
 	require.NoError(t, err)
 	require.Equal(t, "service-key", info.ServiceName)
 	require.Equal(t, "inline-agent", info.AgentName,
@@ -510,7 +517,9 @@ func TestResolveAgentServiceFromProject_GreenfieldRequiresDeploy(t *testing.T) {
 		t, projectServer, &helpersPromptServer{}, envServer,
 	)
 
-	info, err := resolveAgentServiceFromProject(t.Context(), azdClient, "", true)
+	info, err := resolveAgentServiceFromProject(
+		t.Context(), azdClient, "", true, withBrownfieldInlineAgentName(),
+	)
 	require.NoError(t, err)
 	require.Empty(t, info.AgentName,
 		"greenfield service must require deploy output rather than using the inline name")
@@ -560,7 +569,9 @@ func TestResolveAgentServiceFromProject_EnvironmentNameWins(t *testing.T) {
 		t, projectServer, &helpersPromptServer{}, envServer,
 	)
 
-	info, err := resolveAgentServiceFromProject(t.Context(), azdClient, "", true)
+	info, err := resolveAgentServiceFromProject(
+		t.Context(), azdClient, "", true, withBrownfieldInlineAgentName(),
+	)
 	require.NoError(t, err)
 	require.Equal(t, "deployed-agent", info.AgentName,
 		"deployed environment output should override the inline definition")

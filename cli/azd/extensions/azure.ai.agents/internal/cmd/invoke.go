@@ -903,7 +903,9 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	// so post-success next-step suggestions emit the service name; show
 	// keys on s.Name in azure.yaml and would 404 on the deployed Foundry
 	// name in the divergent case.
-	if info, err := resolveAgentServiceFromProject(ctx, azdClient, rc.name, a.noPrompt); err == nil {
+	if info, err := resolveAgentServiceFromProject(
+		ctx, azdClient, rc.name, a.noPrompt, withBrownfieldInlineAgentName(),
+	); err == nil {
 		rc.serviceName = info.ServiceName
 		if info.AgentName != "" {
 			rc.name = info.AgentName

@@ -545,7 +545,7 @@ func fileExists(path string) bool {
 // AgentServiceInfo holds the resolved name and version for an agent service.
 type AgentServiceInfo struct {
 	ServiceName   string // azure.yaml service key
-	AgentName     string // deployed agent name from env, falling back for brownfield adoption
+	AgentName     string // deployed agent name from env; invoke may opt into brownfield fallback
 	Version       string // deployed agent version from env
 	AgentEndpoint string // full AGENT_{SVC}_ENDPOINT URL (includes name + version)
 }
@@ -706,19 +706,46 @@ func brownfieldInlineAgentName(
 	return strings.TrimSpace(definition.Name)
 }
 
+type agentServiceResolutionOptions struct {
+	allowBrownfieldInlineName bool
+}
+
+type agentServiceResolutionOption func(*agentServiceResolutionOptions)
+
+// withBrownfieldInlineAgentName allows remote invoke to use an inline agent
+// name when the service explicitly adopts an existing Foundry project. It is
+// opt-in because shared callers include destructive commands such as delete,
+// which must continue requiring deployment state or an explicit agent name.
+func withBrownfieldInlineAgentName() agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.allowBrownfieldInlineName = true
+	}
+}
+
 // resolveAgentServiceFromProject finds the azure.ai.agent service in azure.yaml
-// and resolves its agent name and deployed version. A brownfield project
-// dependency allows the inline name to identify an existing agent; the
-// deployed AGENT_<SERVICE>_NAME output overrides it when available.
-func resolveAgentServiceFromProject(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) (*AgentServiceInfo, error) {
+// and resolves its deployed agent name and version from the azd environment.
+// Callers may explicitly opt into the brownfield inline-name fallback; deployed
+// AGENT_<SERVICE>_NAME output always overrides it.
+func resolveAgentServiceFromProject(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	name string,
+	noPrompt bool,
+	options ...agentServiceResolutionOption,
+) (*AgentServiceInfo, error) {
 	svc, projectConfig, err := resolveAgentService(ctx, azdClient, name, noPrompt)
 	if err != nil {
 		return nil, err
 	}
 
-	info := &AgentServiceInfo{
-		ServiceName: svc.Name,
-		AgentName:   brownfieldInlineAgentName(svc, projectConfig),
+	resolutionOptions := agentServiceResolutionOptions{}
+	for _, option := range options {
+		option(&resolutionOptions)
+	}
+
+	info := &AgentServiceInfo{ServiceName: svc.Name}
+	if resolutionOptions.allowBrownfieldInlineName {
+		info.AgentName = brownfieldInlineAgentName(svc, projectConfig)
 	}
 
 	// Resolve deployed agent name and version from the azd environment. The

@@ -16,7 +16,20 @@ export async function execAsync(command: string, args: CommandLineArgs, options?
         stdErrPipe: stderrFinal,
     };
 
-    await spawnStreamAsync(command, args, spawnOptions);
+    try {
+        await spawnStreamAsync(command, args, spawnOptions);
+    } catch (error) {
+        // On a non-zero exit, spawnStreamAsync rejects with a generic message (e.g. "Process exited
+        // with code 1") from within a ChildProcess handler, before the caller ever reads stderr. Append
+        // the process's stderr to the error so callers can classify and report the real failure instead
+        // of an opaque exit code.
+        const stderr = (await stderrFinal.getString()).trim();
+        if (stderr && error instanceof Error) {
+            error.message = `${error.message}\n${stderr}`.trim();
+        }
+
+        throw error;
+    }
 
     return {
         stdout: await stdoutFinal.getString(),

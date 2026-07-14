@@ -1,10 +1,10 @@
 # Release History
 
-## Unreleased
+## 1.0.0-beta.2 (2026-07-09)
 
-### Features Added
+### Other Changes
 
-- The `azure.ai.toolbox` service now accepts an `endpoint` field to reuse an existing toolbox instead of creating a new version on `azd deploy`. When set, azd resolves `${VAR}` references and publishes the endpoint to the azd environment for agents to consume; `endpoint` is mutually exclusive with `tools` and `description`. This mirrors the `azure.ai.project` brownfield `endpoint` (omit to create, set to reuse).
+- [[#8866]](https://github.com/Azure/azure-dev/pull/8866) Remove `Foundry-Features: Toolboxes=V1Preview` opt-in header now that Foundry toolbox APIs are GA.
 
 ## 1.0.0-beta.1 (2026-06-30)
 

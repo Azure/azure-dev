@@ -1,0 +1,46 @@
+# Continuous deployment trigger
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - go.mod
+      - cli/azd/extensions/azure.ai.rle
+      - eng/pipelines/release-azd-extension.yml
+      - /eng/pipelines/templates/jobs/build-azd-extension.yml
+      - /eng/pipelines/templates/jobs/cross-build-azd-extension.yml
+      - /eng/pipelines/templates/variables/image.yml
+
+pr:
+  paths:
+    include:
+      - cli/azd/extensions/azure.ai.rle
+      - eng/pipelines/release-ext-azure-ai-rle.yml
+      - eng/pipelines/release-azd-extension.yml
+      - eng/pipelines/templates/steps/publish-cli.yml
+    exclude:
+      - cli/azd/docs/**
+
+parameters:
+  - name: PublishToRegistry
+    displayName: Publish to registry
+    type: string
+    # Scheduled (nightly) runs override this in the shared templates; the runtime
+    # parameter default must be a literal because it renders before variables exist.
+    default: stable
+    values:
+      - stable
+      - dev
+      - nightly
+
+extends:
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
+  parameters:
+    stages:
+      - template: /eng/pipelines/templates/stages/release-azd-extension.yml
+        parameters:
+          AzdExtensionId: azure.ai.rle
+          SanitizedExtensionId: azure-ai-rle
+          AzdExtensionDirectory: cli/azd/extensions/azure.ai.rle
+          PublishToRegistry: ${{ parameters.PublishToRegistry }}

@@ -6,6 +6,7 @@ package project
 import (
 	"archive/zip"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
@@ -525,6 +527,81 @@ func Test_ExternalFrameworkService_toProtoNil(t *testing.T) {
 	cfg, err := efs.toProtoServiceConfig(nil)
 	assert.Nil(t, cfg)
 	assert.NoError(t, err)
+}
+
+func Test_ExternalFrameworkService_toProtoServiceConfigExpandsEnvironment(t *testing.T) {
+	env := environment.NewWithValues("test", map[string]string{
+		"SERVICE_VALUE": "resolved",
+	})
+	efs := &ExternalFrameworkService{lazyEnv: lazy.From(env)}
+	serviceConfig := &ServiceConfig{
+		Name: "api",
+		Environment: osutil.ExpandableMap{
+			"FROM_ENV": osutil.NewExpandableString("${SERVICE_VALUE}"),
+			"STATIC":   osutil.NewExpandableString("static"),
+		},
+	}
+
+	cfg, err := efs.toProtoServiceConfig(serviceConfig)
+
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+	assert.Equal(t, map[string]string{
+		"FROM_ENV": "resolved",
+		"STATIC":   "static",
+	}, cfg.Environment)
+}
+
+func Test_ExternalFrameworkService_toProtoServiceConfigEnvLoadError(t *testing.T) {
+	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+		return nil, errors.New("no environment")
+	})
+	efs := &ExternalFrameworkService{lazyEnv: lazyEnv}
+	serviceConfig := &ServiceConfig{
+		Name: "api",
+		Environment: osutil.ExpandableMap{
+			"FROM_ENV": osutil.NewExpandableString("${SERVICE_VALUE}"),
+			"STATIC":   osutil.NewExpandableString("static"),
+		},
+	}
+
+	cfg, err := efs.toProtoServiceConfig(serviceConfig)
+
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+	assert.Equal(t, map[string]string{
+		"FROM_ENV": "",
+		"STATIC":   "static",
+	}, cfg.Environment)
+}
+
+func Test_ExternalFrameworkService_toProtoServiceConfigEnvResolvedPerCall(t *testing.T) {
+	// The environment is resolved from the lazy on every conversion, so an environment
+	// that becomes available after the service is constructed is still picked up.
+	var env *environment.Environment
+	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+		if env == nil {
+			return nil, errors.New("no environment yet")
+		}
+		return env, nil
+	})
+	efs := &ExternalFrameworkService{lazyEnv: lazyEnv}
+	serviceConfig := &ServiceConfig{
+		Name: "api",
+		Environment: osutil.ExpandableMap{
+			"FROM_ENV": osutil.NewExpandableString("${SERVICE_VALUE}"),
+		},
+	}
+
+	cfg, err := efs.toProtoServiceConfig(serviceConfig)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"FROM_ENV": ""}, cfg.Environment)
+
+	env = environment.NewWithValues("test", map[string]string{"SERVICE_VALUE": "resolved"})
+
+	cfg, err = efs.toProtoServiceConfig(serviceConfig)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"FROM_ENV": "resolved"}, cfg.Environment)
 }
 
 func Test_mergeDefaultEnvVars(t *testing.T) {

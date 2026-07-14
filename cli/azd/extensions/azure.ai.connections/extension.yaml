@@ -16,5 +16,5 @@ tags:
     - ai
     - connection
 usage: azd ai connection <command> [options]
-version: 1.0.0-beta.1
+version: 1.0.0-beta.2
 requiredAzdVersion: ">=1.27.0"

@@ -77,7 +77,7 @@ These commands emit attributes or events beyond the global middleware span.
 | `deploy` | — | ✅ | ✅ | ✅ | App Service zip-deploy emits `deploy.appservice.zip` (`deploy.appservice.linux`, `deploy.appservice.attempt`); container service targets emit `container.*` events |
 | `publish` | — | ✅ | ✅ | ✅ | Same as `deploy` (alias behavior) |
 | `up` | — | ✅ | ✅ | ✅ | Composes provision+deploy and inherits all their events; the up-graph runner emits `perf.provision_duration_ms`, `perf.deploy_duration_ms`, `perf.total_duration_ms` (`internal/cmd/up_graph.go`) |
-| `down` | — | ✅ | ❌ | ❌ | Teardown flow; pre/postdown lifecycle hooks emit `hooks.exec` via the hooks middleware; sets `infra.provider` (resolved IaC provider) as a usage attribute |
+| `down` | — | ✅ | ✅ | ❌ | Teardown flow; pre/postdown lifecycle hooks emit `hooks.exec` via the hooks middleware; sets `infra.provider` (resolved IaC provider) as a usage attribute |
 | **Add** | | | | | |
 | `add` | — | ✅ | ❌ | ❌ | Low priority |
 | **Completion** | | | | | |

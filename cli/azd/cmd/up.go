@@ -142,11 +142,6 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 	defer func() { _ = infra.Cleanup() }()
 
-	// Record the resolved IaC provider (single, or "mixed") on the cmd.up span up front — before
-	// provider init and the custom-workflow branch — so every up path (including custom workflows
-	// and early init failures) carries it.
-	u.provisioningManager.RecordInfraProviderUsage(infra.Options.GetLayers())
-
 	// TODO(weilim): remove this once we have decided if it's okay to not set AZURE_SUBSCRIPTION_ID and AZURE_LOCATION
 	// early in the up workflow in #3745
 	err = u.provisioningManager.Initialize(ctx, u.projectConfig.Path, infra.Options)
@@ -192,6 +187,15 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	layers := infra.Options.GetLayers()
+
+	// Record the resolved IaC provider(s) as a usage attribute on the cmd.up span. This is scoped
+	// to the unified-graph path rather than set before the custom-workflow branch on purpose:
+	// custom `workflows.up` runs `azd package`, `azd provision`, and `azd deploy` as in-process
+	// child commands that each attach the ambient usage attributes to their own spans, so recording
+	// it earlier would leak infra.provider onto the package/deploy spans and let a nested
+	// single-layer `provision` overwrite the aggregated value. Custom workflows instead carry
+	// infra.provider on their own child `azd provision` span.
+	u.provisioningManager.RecordInfraProviderUsage(layers)
 	return u.upGraph.Run(ctx, layers, &u.flags.DeployFlags, u.flags.flagSet, startTime)
 }
 

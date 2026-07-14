@@ -593,6 +593,18 @@ The `execution.environment` field identifies where azd is running. Format: `<env
 
 Important things to know when working with azd telemetry data. These are sourced from real investigations and issues.
 
+### `infra.provider` Is Multi-Valued and Type-Polymorphic (by design)
+
+`infra.provider` is intentionally emitted with different shapes depending on the command, so consumers must handle both:
+
+- **`provision` / `up` / `down`** emit a **string array** — the sorted, de-duplicated set of IaC providers the command's layers resolve to (e.g. `["bicep"]`, or `["bicep","terraform"]` for a multi-layer project that mixes providers). This deliberately replaces an earlier single `"mixed"` marker so the specific combination is preserved while staying low-cardinality (built-in provider names are a fixed enum).
+- **`infra generate` / `infra synth`** emit a **single string** — the value read from `azure.yaml`'s `infra.provider` (`auto` when unset).
+
+Two consequences to be aware of:
+
+- The same key is a scalar `string` on some commands and a `string[]` on others. Queries must accept both (e.g. treat a scalar as a one-element set).
+- Non-built-in (extension) providers are bucketed to `custom` **before** de-duplication, so a project that combines two *different* extension providers records a single `["custom"]` — the raw names are never emitted and the two are not distinguished.
+
 ### OperationId Reuse in Retry/Troubleshoot Flows
 
 When `cmd.up` triggers `agent.troubleshoot` after a failure, the troubleshoot agent may retry the failed operation (e.g., `cmd.deploy`). These retries share the **same OperationId** as the parent `cmd.up` span.

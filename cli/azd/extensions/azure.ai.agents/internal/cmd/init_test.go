@@ -316,7 +316,7 @@ func TestSynthesizeImageManifestFile(t *testing.T) {
 	const image = "myacr.azurecr.io/agents/my-agent@sha256:" +
 		"76a9463463acf11d4068e8468fb232a3de0709177b6b35de95de6a34b33fa686"
 
-	manifestPath, cleanup, err := synthesizeImageManifestFile(agentName, image)
+	manifestPath, cleanup, err := synthesizeImageManifestFile(agentName, image, nil)
 	require.NoError(t, err)
 	require.NotNil(t, cleanup)
 	require.FileExists(t, manifestPath)
@@ -341,6 +341,42 @@ func TestSynthesizeImageManifestFile(t *testing.T) {
 	// cleanup removes the temp directory.
 	cleanup()
 	require.NoFileExists(t, manifestPath)
+}
+
+func TestSynthesizeImageManifestFile_UsesFlagProtocols(t *testing.T) {
+	t.Parallel()
+
+	const agentName = "my-agent"
+	const image = "myacr.azurecr.io/agents/my-agent:v1"
+
+	manifestPath, cleanup, err := synthesizeImageManifestFile(agentName, image, []string{"invocations_ws"})
+	require.NoError(t, err)
+	defer cleanup()
+
+	content, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+	template, err := agent_yaml.ExtractAgentDefinition(content)
+	require.NoError(t, err)
+
+	containerAgent, ok := template.(agent_yaml.ContainerAgent)
+	require.True(t, ok, "synthesized template should be a ContainerAgent, got %T", template)
+	require.Len(t, containerAgent.Protocols, 1)
+	require.Equal(t, "invocations_ws", containerAgent.Protocols[0].Protocol)
+	require.Equal(t, "2.0.0", containerAgent.Protocols[0].Version)
+}
+
+func TestSynthesizeImageManifestFile_RejectsUnknownProtocol(t *testing.T) {
+	t.Parallel()
+
+	manifestPath, cleanup, err := synthesizeImageManifestFile(
+		"my-agent",
+		"myacr.azurecr.io/agents/my-agent:v1",
+		[]string{"unknown"},
+	)
+	require.Error(t, err)
+	require.Empty(t, manifestPath)
+	cleanup()
+	require.Contains(t, err.Error(), "unknown protocol")
 }
 
 func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {

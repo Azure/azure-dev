@@ -33,7 +33,12 @@ func (p *traceCorrelationPolicy) Do(req *policy.Request) (*http.Response, error)
 		return req.Next()
 	}
 
-	rawRequest.Header.Set(p.headerName, spanCtx.TraceID().String())
+	// A W3C trace ID and a UUID are both 128-bit values, so we reformat the trace ID into the canonical
+	// hyphenated GUID form (8-4-4-4-12) that the ARM spec expects. This keeps the exact trace ID value
+	// (the conversion is reversible by removing the hyphens) while matching the format other Azure tools send.
+	// Some services (e.g. AKS Deployment Safeguards) parse this header as a GUID and fail a string comparison
+	// against azd's previously undecorated 32-character value. See azure-dev#5851.
+	rawRequest.Header.Set(p.headerName, uuid.UUID(spanCtx.TraceID()).String())
 	return req.Next()
 }
 
@@ -50,10 +55,10 @@ func (p *perRequestUUIDPolicy) Do(req *policy.Request) (*http.Response, error) {
 	return req.Next()
 }
 
-// NewMsCorrelationPolicy creates a policy that sets the `x-ms-correlation-request-id` header on HTTP requests using
-// the ambient OpenTelemetry trace ID. Per the Azure ARM common-types spec this header is session-level and is
-// intended to correlate RELATED requests, so a single value shared across every call in an azd command is the
-// correct behavior.
+// NewMsCorrelationPolicy creates a policy that sets the `x-ms-correlation-request-id` header on HTTP requests from
+// the ambient OpenTelemetry trace ID, formatted as a canonical hyphenated GUID. Per the Azure ARM common-types spec
+// this header is session-level and is intended to correlate RELATED requests, so a single value shared across every
+// call in an azd command is the correct behavior.
 //
 // NOTE: One ARM data plane — ACR `GetBuildSourceUploadURL` — derives a blob path from this header and therefore
 // requires uniqueness per call. That collision is fixed at the call site (see `containerregistry.RemoteBuildManager`)

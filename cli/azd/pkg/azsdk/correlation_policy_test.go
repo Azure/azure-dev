@@ -6,6 +6,7 @@ package azsdk
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -60,8 +61,9 @@ func doRequest(t *testing.T, p policy.Policy, ctx context.Context) *http.Request
 }
 
 // Test_NewMsCorrelationPolicy verifies that the session-level `x-ms-correlation-request-id` header is set from
-// the ambient OpenTelemetry trace ID when present, and omitted otherwise. Using the trace ID is semantically
-// correct here: the ARM spec defines this header as session-level and meant to correlate RELATED requests.
+// the ambient OpenTelemetry trace ID (formatted as a canonical hyphenated GUID) when present, and omitted
+// otherwise. Using the trace ID is semantically correct here: the ARM spec defines this header as session-level
+// and meant to correlate RELATED requests.
 func Test_NewMsCorrelationPolicy(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -74,7 +76,7 @@ func Test_NewMsCorrelationPolicy(t *testing.T) {
 				t.Context(),
 				trace.SpanContext{}.WithTraceID(traceId),
 			),
-			expect: new(traceId.String()),
+			expect: new(uuid.UUID(traceId).String()),
 		},
 		{
 			name: "WithInvalidTraceId",
@@ -100,6 +102,25 @@ func Test_NewMsCorrelationPolicy(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Test_NewMsCorrelationPolicy_FormatsTraceIdAsGuid verifies the emitted `x-ms-correlation-request-id` is the
+// ambient trace ID rendered in canonical hyphenated GUID form (8-4-4-4-12). The Azure ARM spec expects a GUID and
+// some services (e.g. AKS Deployment Safeguards) reject the undecorated 32-character trace ID. The reformat MUST
+// be lossless: stripping the hyphens must recover the original trace ID exactly. See azure-dev#5851.
+func Test_NewMsCorrelationPolicy_FormatsTraceIdAsGuid(t *testing.T) {
+	ctx := trace.ContextWithSpanContext(
+		t.Context(),
+		trace.SpanContext{}.WithTraceID(traceId),
+	)
+
+	got := doRequest(t, NewMsCorrelationPolicy(), ctx).Header.Get(MsCorrelationIdHeader)
+
+	_, parseErr := uuid.Parse(got)
+	require.NoError(t, parseErr, "correlation id %q must be a valid GUID", got)
+	require.Len(t, got, 36, "correlation id must be in hyphenated 8-4-4-4-12 form")
+	require.Equal(t, traceId.String(), strings.ReplaceAll(got, "-", ""),
+		"reformat must be lossless: stripping hyphens must recover the original trace ID")
 }
 
 // Test_NewMsClientRequestIdPolicy_UniquePerRequest verifies `x-ms-client-request-id` is a valid UUID on every

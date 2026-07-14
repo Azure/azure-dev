@@ -5,7 +5,10 @@
 
 import { AccumulatorStream, CommandLineArgs, NoShell, spawnStreamAsync, StreamSpawnOptions } from '@microsoft/vscode-processutils';
 
-export async function execAsync(command: string, args: CommandLineArgs, options?: Partial<StreamSpawnOptions>): Promise<{ stdout: string, stderr: string }> {
+// Alias for the spawn implementation so it can be overridden in tests without spawning a real process.
+export type SpawnStreamAsync = typeof spawnStreamAsync;
+
+export async function execAsync(command: string, args: CommandLineArgs, options?: Partial<StreamSpawnOptions>, spawnStreamAsyncFunction: SpawnStreamAsync = spawnStreamAsync): Promise<{ stdout: string, stderr: string }> {
     const stdoutFinal = new AccumulatorStream();
     const stderrFinal = new AccumulatorStream();
 
@@ -17,7 +20,7 @@ export async function execAsync(command: string, args: CommandLineArgs, options?
     };
 
     try {
-        await spawnStreamAsync(command, args, spawnOptions);
+        await spawnStreamAsyncFunction(command, args, spawnOptions);
     } catch (error) {
         // On a non-zero exit, spawnStreamAsync rejects with a generic message (e.g. "Process exited
         // with code 1") from within a ChildProcess handler, before the caller ever reads stderr. Append

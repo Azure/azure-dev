@@ -9,53 +9,50 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
-func TestParseConnectionServiceConfig_ServiceLevel(t *testing.T) {
+// TestDeploy_IsNoOp verifies the connection service target does not create the
+// connection at deploy time. Connections declared as host: azure.ai.connection
+// services are provisioned by the microsoft.foundry provider (synthesis) at
+// provision time, so Deploy must return an empty result without any ARM call.
+func TestDeploy_IsNoOp(t *testing.T) {
 	t.Parallel()
 
-	props, err := structpb.NewStruct(map[string]any{
-		"category": "ApiKey",
-		"target":   "https://example.openai.azure.com",
-		"authType": "ApiKey",
-		"credentials": map[string]any{
-			"key": "${SEARCH_KEY}",
-		},
-		"metadata": map[string]any{"team": "search"},
-	})
-	require.NoError(t, err)
+	target := &connectionServiceTarget{}
+	svc := &azdext.ServiceConfig{Name: "search-conn", Host: aiConnectionHost}
 
-	cfg, err := parseConnectionServiceConfig(&azdext.ServiceConfig{
-		Name:                 "prod-search",
-		Host:                 aiConnectionHost,
-		AdditionalProperties: props,
-	})
+	var progressMsgs []string
+	progress := func(msg string) { progressMsgs = append(progressMsgs, msg) }
+
+	// A nil azdClient would panic if Deploy tried to reach the environment or
+	// ARM; the no-op must not touch either.
+	res, err := target.Deploy(t.Context(), svc, nil, nil, progress)
 	require.NoError(t, err)
-	assert.Equal(t, "ApiKey", cfg.Category)
-	assert.Equal(t, "https://example.openai.azure.com", cfg.Target)
-	assert.Equal(t, "ApiKey", cfg.AuthType)
-	assert.Equal(t, "${SEARCH_KEY}", cfg.Credentials["key"])
-	assert.Equal(t, "search", cfg.Metadata["team"])
+	require.NotNil(t, res)
+	require.Len(t, progressMsgs, 1)
+	assert.Contains(t, progressMsgs[0], "search-conn")
+	assert.Contains(t, progressMsgs[0], "provisioned by infrastructure")
 }
 
-// TestParseConnectionServiceConfig_ConfigFallback verifies connections written before the
-// per-resource service split (config-nested shape) still parse.
-func TestParseConnectionServiceConfig_ConfigFallback(t *testing.T) {
+// TestPackagePublish_AreNoOps verifies the remaining lifecycle methods a
+// connection has no build/publish artifact for return empty results.
+func TestPackagePublish_AreNoOps(t *testing.T) {
 	t.Parallel()
 
-	props, err := structpb.NewStruct(map[string]any{
-		"category": "CustomKeys",
-		"authType": "CustomKeys",
-	})
-	require.NoError(t, err)
+	target := &connectionServiceTarget{}
+	svc := &azdext.ServiceConfig{Name: "search-conn", Host: aiConnectionHost}
 
-	cfg, err := parseConnectionServiceConfig(&azdext.ServiceConfig{
-		Name:   "legacy",
-		Host:   aiConnectionHost,
-		Config: props,
-	})
+	pkg, err := target.Package(t.Context(), svc, nil, nil)
 	require.NoError(t, err)
+	assert.NotNil(t, pkg)
+
+	pub, err := target.Publish(t.Context(), svc, nil, nil, nil, nil)
+	require.NoError(t, err)
+	assert.NotNil(t, pub)
+
+	endpoints, err := target.Endpoints(t.Context(), svc, nil)
+	require.NoError(t, err)
+<<<<<<< HEAD
 	assert.Equal(t, "CustomKeys", cfg.Category)
 	assert.Equal(t, "CustomKeys", cfg.AuthType)
 }
@@ -121,4 +118,7 @@ func TestConnectionMetadataPairs(t *testing.T) {
 		func(s string) string { return s },
 	)
 	assert.Equal(t, []string{"team=search", "type=gateway"}, pairs)
+=======
+	assert.Nil(t, endpoints)
+>>>>>>> origin/main
 }

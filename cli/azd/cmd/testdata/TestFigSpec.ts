@@ -5471,6 +5471,52 @@ const completionSpec: Fig.Spec = {
 					description: 'Get the context of the azd project & environment.',
 				},
 				{
+					name: ['copilot'],
+					description: 'Interactive Copilot chat loop demonstrating the CopilotService gRPC API.',
+					options: [
+						{
+							name: ['--mode'],
+							description: 'Agent mode (autopilot, interactive, plan)',
+							args: [
+								{
+									name: 'mode',
+								},
+							],
+						},
+						{
+							name: ['--model'],
+							description: 'Model to use (empty = default)',
+							args: [
+								{
+									name: 'model',
+								},
+							],
+						},
+						{
+							name: ['--reasoning-effort'],
+							description: 'Reasoning effort level (low, medium, high)',
+							args: [
+								{
+									name: 'reasoning-effort',
+								},
+							],
+						},
+						{
+							name: ['--resume'],
+							description: 'Resume an existing session',
+						},
+						{
+							name: ['--system-message'],
+							description: 'Custom system message',
+							args: [
+								{
+									name: 'system-message',
+								},
+							],
+						},
+					],
+				},
+				{
 					name: ['gh-url-parse'],
 					description: 'Parse a GitHub URL and extract repository information.',
 				},

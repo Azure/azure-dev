@@ -2,10 +2,14 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.toolboxes/schemas/azure.ai.toolbox.json",
   "title": "Azure AI Foundry toolbox service",
-  "description": "Service-level configuration for a host: azure.ai.toolbox entry. The service key is the toolbox name. A toolbox is a named bundle of connection-backed tools that agents reference by name.",
+  "description": "Service-level configuration for a host: azure.ai.toolbox entry. The service key is the toolbox name. A toolbox is a named bundle of connection-backed tools that agents reference by name. When endpoint is omitted, azd creates a new toolbox version from tools; when set, azd reuses that existing toolbox instead of creating one.",
   "type": "object",
   "additionalProperties": true,
   "properties": {
+    "endpoint": {
+      "type": "string",
+      "description": "MCP endpoint URL of an existing Foundry toolbox version, as shown by 'azd ai toolbox show' (e.g. https://my-account.services.ai.azure.com/api/projects/my-project/toolboxes/research/versions/3/mcp?api-version=v1). When set, azd reuses this existing toolbox and publishes the endpoint for agents instead of creating a new version, so 'tools' and 'description' must be omitted. May contain ${VAR} (azd env, resolved client-side)."
+    },
     "description": {
       "type": "string",
       "description": "Description of the toolbox."
@@ -29,5 +33,19 @@
         }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "$comment": "Reuse mode: a toolbox version is immutable, so 'endpoint' cannot be combined with 'tools' or 'description'.",
+      "if": {
+        "required": ["endpoint"]
+      },
+      "then": {
+        "properties": {
+          "tools": false,
+          "description": false
+        }
+      }
+    }
+  ]
 }

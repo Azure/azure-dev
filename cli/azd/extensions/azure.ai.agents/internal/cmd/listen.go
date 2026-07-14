@@ -38,6 +38,17 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		WithProvisioningProvider(project.FoundryProviderName, func() azdext.ProvisioningProvider {
 			return project.NewFoundryProvisioningProvider(azdClient)
 		}).
+		WithValidationCheck(azdext.ValidationCheckRegistration{
+			// Provider-agnostic check: runs before provisioning regardless of the
+			// provisioning provider. This matters because the azure.ai.agents
+			// extension provisions through its own microsoft.foundry provider,
+			// which never triggers the Bicep-only "local-preflight" checks.
+			CheckType: azdext.ValidationCheckTypeProvision,
+			RuleID:    project.ResourceGroupLocationRuleID,
+			Factory: func() azdext.ValidationCheckProvider {
+				return project.NewResourceGroupLocationCheck(azdClient)
+			},
+		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return preprovisionHandler(ctx, azdClient, args)
 		}).

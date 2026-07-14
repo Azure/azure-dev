@@ -5,41 +5,21 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"sort"
-	"strings"
 
-	"azure.ai.connections/internal/exterrors"
-
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 )
 
-// aiConnectionHost is the azure.yaml service host kind owned by this extension. A
-// `host: azure.ai.connection` service entry carries one Foundry project connection,
-// keyed by the connection name, and is reconciled (upserted) at deploy time by
-// connectionServiceTarget instead of being layered into provisioning.
+// aiConnectionHost is the azure.yaml service host kind owned by this extension.
+// A `host: azure.ai.connection` service entry carries one Foundry project
+// connection, keyed by the connection name.
 const aiConnectionHost = "azure.ai.connection"
 
 var _ azdext.ServiceTargetProvider = (*connectionServiceTarget)(nil)
 
-// connectionServiceConfig is the service-level shape of a `host: azure.ai.connection`
-// entry (see schemas/azure.ai.connection.json). The connection name is the azure.yaml
-// service key, not a body field.
-type connectionServiceConfig struct {
-	Category    string            `json:"category,omitempty"`
-	Target      string            `json:"target,omitempty"`
-	AuthType    string            `json:"authType,omitempty"`
-	Credentials map[string]any    `json:"credentials,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-}
-
-// connectionServiceTarget upserts a Foundry connection declared as an
-// azure.ai.connection service. Deploy issues an idempotent ARM CreateOrUpdate on the
-// project's connection; the resource name is the service key. Package and Publish are
-// no-ops because a connection has no build artifact.
+// connectionServiceTarget owns the azure.ai.connection host so azd can walk a
+// connection entry in the deploy graph. All lifecycle methods are no-ops; see
+// Deploy for why.
 type connectionServiceTarget struct {
 	azdClient *azdext.AzdClient
 }
@@ -107,11 +87,24 @@ func (p *connectionServiceTarget) Publish(
 	return &azdext.ServicePublishResult{}, nil
 }
 
+<<<<<<< HEAD
 // Deploy upserts the connection on its project via an idempotent ARM CreateOrUpdate.
 // ${VAR} references resolve from the forwarded service environment.
 // Foundry server-side ${{...}} expressions pass through untouched.
 // Removing the service from azure.yaml stops azd managing the connection but does not
 // delete it (use `azd ai connection delete`).
+=======
+// Deploy is a no-op. Connections declared as host: azure.ai.connection
+// services are created at provision time by the microsoft.foundry provider
+// (for both greenfield and brownfield projects), so creating them again here
+// would be a redundant ARM write. This mirrors azure.ai.project's Deploy,
+// which is a no-op for the same reason.
+//
+// The target still exists so azd can order a connection's deploy step via
+// `uses:` (toolboxes/agents that depend on it). Removing a connection from
+// azure.yaml stops azd managing it but does not delete it (use
+// `azd ai connection delete`).
+>>>>>>> origin/main
 func (p *connectionServiceTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
@@ -119,6 +112,7 @@ func (p *connectionServiceTarget) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
+<<<<<<< HEAD
 	cfg, err := parseConnectionServiceConfig(serviceConfig)
 	if err != nil {
 		return nil, err
@@ -151,24 +145,15 @@ func (p *connectionServiceTarget) Deploy(
 		return nil, err
 	}
 
+=======
+>>>>>>> origin/main
 	if progress != nil {
-		progress(fmt.Sprintf("Upserting connection %q", name))
+		progress(fmt.Sprintf(
+			"Connection %q is provisioned by infrastructure; nothing to deploy", serviceConfig.GetName()))
 	}
-
-	connCtx, err := resolveConnectionContext(ctx, "")
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err := connCtx.armClient.Create(
-		ctx, connCtx.rg, connCtx.account, connCtx.project, name,
-		&armcognitiveservices.ProjectConnectionsClientCreateOptions{Connection: body},
-	); err != nil {
-		return nil, exterrors.ServiceFromAzure(err, "deploy connection")
-	}
-
 	return &azdext.ServiceDeployResult{}, nil
 }
+<<<<<<< HEAD
 
 // parseConnectionServiceConfig reads the service-level (inline) connection properties,
 // falling back to the deprecated config: shape for azure.yaml files written before the
@@ -305,3 +290,5 @@ func stringFromAny(v any) string {
 		return fmt.Sprintf("%v", typed)
 	}
 }
+=======
+>>>>>>> origin/main

@@ -272,6 +272,11 @@ func TestArmOutputsToProto_RepairsMangledKeyCase(t *testing.T) {
 			wantKey: "AZURE_FOUNDRY_MANAGED_ISOLATION_MODE",
 		},
 		{
+			name:    "ARM-mangled AZURE_AI_PROJECT_CONNECTION_NAMES -> canonical",
+			inKey:   "azurE_AI_PROJECT_CONNECTION_NAMES",
+			wantKey: "AZURE_AI_PROJECT_CONNECTION_NAMES",
+		},
+		{
 			name:    "already-canonical key passes through unchanged",
 			inKey:   "AZURE_AI_ACCOUNT_NAME",
 			wantKey: "AZURE_AI_ACCOUNT_NAME",

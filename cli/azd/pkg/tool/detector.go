@@ -511,10 +511,11 @@ func (d *detector) detectSkill(
 
 // DetectSkillAgents returns every configured SkillAgent the skill is
 // currently installed through (with the version installed via each), in
-// manifest order. Unlike detectSkill (which stops at the first match) it
-// probes all agents, so callers can act on every install — e.g.
-// `azd tool upgrade` refreshing the skill on each agent it was installed
-// to, or per-agent install verification.
+// manifest order. It probes every agent so callers can act on every
+// install — e.g. `azd tool upgrade` refreshing the skill on each agent it
+// was installed to, or per-agent install verification. detectSkill
+// delegates to it and reports the first matched agent as the aggregate
+// Installed/InstalledVersion.
 func (d *detector) DetectSkillAgents(
 	ctx context.Context,
 	tool *ToolDefinition,

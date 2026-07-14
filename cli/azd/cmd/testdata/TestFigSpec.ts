@@ -6420,7 +6420,7 @@ const completionSpec: Fig.Spec = {
 			subcommands: [
 				{
 					name: ['check'],
-					description: 'Check for tool updates.',
+					description: 'Check for tool upgrades.',
 				},
 				{
 					name: ['install'],

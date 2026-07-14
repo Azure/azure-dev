@@ -538,7 +538,45 @@ func TestToolInstallAction_AllFailureBatch_EmitsCorrectAggregates(t *testing.T) 
 		"failed_ids must be a sorted, comma-joined list matching the failed tools")
 }
 
-// TestToolInstallAction_Failure_ReturnsErrorNotSuccess is a regression test
+// TestToolInstallAction_JsonFormat_NoBannerLeak verifies finding #1: in JSON
+// mode the install command must not emit the MessageTitle banner (which the
+// format-aware console would serialize as a `{"type":"consoleMessage"}` object
+// ahead of the results array, breaking pure-JSON parsing). list/check already
+// avoid this; install/upgrade/uninstall must match.
+func TestToolInstallAction_JsonFormat_NoBannerLeak(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+
+	installer := &cmdMockInstaller{
+		install: func(_ context.Context, td *tool.ToolDefinition, _ ...tool.InstallOption) (*tool.InstallResult, error) {
+			return &tool.InstallResult{Tool: td, Success: true, InstalledVersion: "2.0.0"}, nil
+		},
+	}
+	manager := tool.NewManager(&cmdMockDetector{}, installer, nil)
+
+	console := mockinput.NewMockConsole()
+	var buf bytes.Buffer
+	action := newToolInstallAction(
+		[]string{"az-cli"},
+		&toolInstallFlags{},
+		manager,
+		console,
+		&output.JsonFormatter{},
+		&buf,
+	)
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+
+	for _, line := range console.Output() {
+		assert.NotContains(t, line, "Install Azure development tools",
+			"the title banner must be suppressed in JSON mode")
+	}
+
+	var items []toolInstallResultItem
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &items),
+		"JSON output must be a single parseable document with no banner leak")
+}
+
 // for a bug where a failed install still returned a success ActionResult,
 // causing the UX middleware to print "SUCCESS: Tool installation complete"
 // after the per-tool failures. On failure the action must return a non-nil

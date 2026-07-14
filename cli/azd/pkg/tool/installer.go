@@ -237,22 +237,24 @@ func stepError(result *InstallResult, err error) error {
 }
 
 // renderSkillStep frames one skill step (install, upgrade or uninstall) with
-// a live spinner that stays visible while the agent CLI talks to the user.
+// a live spinner that stays visible while the agent CLI runs.
 //
 // It shows a step spinner (like azd provision) with title and passes work an
 // output writer. Skill operations route the agent CLI's stdout/stderr through
 // that writer (see skillCommandRunArgs), with stdin still connected.
 //
-// streamOutput controls how that output is surfaced. When true, each line the
-// CLI emits — progress or an interactive prompt — is printed above the spinner
-// while the spinner stays pinned below it: the console tears the spinner down
-// and re-renders it around each printed line (see AskerConsole.println), so
-// the bar is kept, not lost, and the user can answer any prompt via the
-// connected stdin (used for interactive operations such as install, upgrade
-// and uninstall, whose agent CLIs may prompt for confirmation). When false, the
-// output is buffered and replayed only if the step fails, so a step that
-// completes without error stays quiet. When the CLI stays silent the
-// spinner simply runs to completion.
+// streamOutput controls how that output is surfaced. When true, the agent
+// CLI's output is line-buffered and each complete line is printed above the
+// spinner while the spinner stays pinned below it: the console tears the
+// spinner down and re-renders it around each printed line (see
+// AskerConsole.println), so the bar is kept, not lost. Because a step spinner
+// routes the agent CLI's stdout/stderr through a pipe rather than a TTY, the
+// supported agent CLIs (copilot, claude) run non-interactively on this path
+// and do not emit interactive prompts here; the fully interactive path is the
+// renderer==nil branch below, which runs the command directly against the
+// terminal. When false, the output is buffered and replayed only if the step
+// fails, so a step that completes without error stays quiet. When the CLI
+// stays silent the spinner simply runs to completion.
 //
 // work returns the message to show on the result line; when empty the spinner
 // title is reused. This lets a step whose outcome is only known after running
@@ -356,11 +358,12 @@ func (l *lineWriter) Flush() {
 // skillCommandRunArgs configures how a skill agent command (install, upgrade
 // or uninstall) connects to the terminal. When out is non-nil (a step
 // spinner is showing) the command's stdout/stderr are routed through it so
-// the CLI's output prints above the spinner, while stdin is connected to the
+// the CLI's output prints above the spinner, and stdin is connected to the
 // supplied reader (the console's input, threaded from the step-progress
-// caller) so the user can answer prompts. When out is nil (no spinner) the
-// command runs fully interactively against the runner's configured streams.
-// azd never pipes canned answers on the user's behalf.
+// caller). Because stdout/stderr are piped (not a TTY) on this path, the
+// supported agent CLIs run non-interactively and do not prompt. When out is
+// nil (no spinner) the command runs fully interactively against the runner's
+// configured streams. azd never pipes canned answers on the user's behalf.
 func skillCommandRunArgs(base exec.RunArgs, out io.Writer, stdin io.Reader) exec.RunArgs {
 	if out == nil {
 		return base.WithInteractive(true)
@@ -1367,7 +1370,7 @@ func (i *installer) runSkill(
 	// 3. Install / upgrade for each target agent, collecting outcomes.
 	//    renderSkillStep shows a step spinner per agent. For an install the
 	//    agent CLI's output streams above the spinner (so prompts are
-	//    answerable); for an upgrade the update command's output is captured
+	//    answerable); for an upgrade the upgrade command's output is captured
 	//    and parsed for the version and whether the skill was already at the
 	//    latest, which the result line reports.
 	verb := "Installing"
@@ -1531,7 +1534,7 @@ func (i *installer) resolveSkillTargets(
 		// For an upgrade with no explicit agent, refresh every agent the
 		// skill is currently installed through — not just the first —
 		// so a multi-agent install (e.g. copilot AND claude) is kept
-		// fully up to date. We also avoid running an update against a
+		// fully up to date. We also avoid running an upgrade against a
 		// agent that never installed it.
 		if upgrade {
 			installed, err := i.detector.DetectSkillAgents(ctx, tool)
@@ -1744,7 +1747,7 @@ func (i *installer) pickSkillAgent(
 // installSkillForAgent installs (or upgrades) the skill through a single agent
 // and verifies the result. It returns the version and, for an upgrade,
 // whether the agent reported the skill was already at the latest version. For
-// an upgrade the version comes from the update command's output (falling back
+// an upgrade the version comes from the upgrade command's output (falling back
 // to the detected version); for an install it comes from post-install
 // detection. out, when non-nil, receives an install's streamed agent output
 // for display above the step spinner.
@@ -1780,7 +1783,7 @@ func (i *installer) installSkillForAgent(
 	if err != nil {
 		return "", false, err
 	}
-	// Prefer the version the update command reported; fall back to the
+	// Prefer the version the upgrade command reported; fall back to the
 	// version detected via the plugin list.
 	if version == "" {
 		version = detectedVersion
@@ -1858,19 +1861,19 @@ func (i *installer) verifySkillInstalled(
 	return version, nil
 }
 
-// runSkillAgentCommand executes the agent's install or update command and
+// runSkillAgentCommand executes the agent's install or upgrade command and
 // returns the command's stdout (empty for a streamed install).
 //
-// Install and update connect to the terminal differently:
+// Install and upgrade connect to the terminal differently:
 //   - Install streams the agent CLI's output through out (when a spinner is
 //     showing) or runs fully interactively (out nil), with stdin connected so
 //     the user answers any prompt (marketplace trust, install confirmation).
 //     azd never pipes canned answers. Nothing is captured, so "" is returned.
 //     For a fresh install it first runs MarketplaceAddCommand when the agent
 //     declares one.
-//   - Update captures the output (no streaming) and returns it so the caller
+//   - Upgrade captures the output (no streaming) and returns it so the caller
 //     can parse the version and whether the skill was already at the latest.
-//     The plugin is already installed (marketplace trusted), so the update is
+//     The plugin is already installed (marketplace trusted), so the upgrade is
 //     non-interactive.
 //
 // A non-zero exit is returned to the caller as an error; the caller is
@@ -1887,7 +1890,7 @@ func (i *installer) runSkillAgentCommand(
 	verb := "install"
 	if upgrade {
 		cmd = agent.PluginUpdateCommand
-		verb = "update"
+		verb = "upgrade"
 	}
 	if len(cmd) == 0 {
 		return "", fmt.Errorf(
@@ -1895,7 +1898,7 @@ func (i *installer) runSkillAgentCommand(
 		)
 	}
 
-	// Update: capture the output so the caller can parse the version and the
+	// Upgrade: capture the output so the caller can parse the version and the
 	// "already at latest" state; do not stream it above the spinner.
 	if upgrade {
 		res, err := i.commandRunner.Run(ctx, exec.NewRunArgs(agent.Command, cmd...))

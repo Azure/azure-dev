@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -241,6 +242,12 @@ func (uc *UpdateChecker) Check(
 		latestVer := uc.resolveLatestVersion(
 			ctx, t, existing, cacheValid,
 		)
+		// Normalize a leading "v" (release tags often carry one, e.g. "v1.0.69")
+		// so the displayed latest version is consistent with the installed
+		// version, which is captured without a prefix. Version comparison is
+		// already prefix-agnostic (see isNewerVersion), so this only affects
+		// display.
+		latestVer = strings.TrimPrefix(latestVer, "v")
 
 		var currentVer string
 		var skillAgents []SkillAgentUpdate

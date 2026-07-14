@@ -155,7 +155,7 @@ func toolActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group.Add("check", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "check",
-			Short: "Check for tool updates.",
+			Short: "Check for tool upgrades.",
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
 		DefaultFormat:  output.TableFormat,
@@ -555,10 +555,12 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return a.dryRun(ctx, ids)
 	}
 
-	a.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title:     "Install Azure development tools (azd tool install)",
-		TitleNote: "Installs specified tools onto the local machine",
-	})
+	if a.formatter.Kind() != output.JsonFormat {
+		a.console.MessageUxItem(ctx, &ux.MessageTitle{
+			Title:     "Install Azure development tools (azd tool install)",
+			TitleNote: "Installs specified tools onto the local machine",
+		})
+	}
 
 	tools := make([]*tool.ToolDefinition, 0, len(ids))
 	resolvedIDs := make([]string, 0, len(ids))
@@ -1273,10 +1275,12 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return a.dryRun(ctx, toolsToUpgrade)
 	}
 
-	a.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title:     "Upgrade Azure development tools (azd tool upgrade)",
-		TitleNote: "Upgrades installed tools to their latest versions",
-	})
+	if a.formatter.Kind() != output.JsonFormat {
+		a.console.MessageUxItem(ctx, &ux.MessageTitle{
+			Title:     "Upgrade Azure development tools (azd tool upgrade)",
+			TitleNote: "Upgrades installed tools to their latest versions",
+		})
+	}
 
 	agentOpts, agentErr := a.resolveAgentOptions(toolsToUpgrade)
 	if agentErr != nil {
@@ -1595,10 +1599,12 @@ func (a *toolUninstallAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return a.dryRun(ctx, tools)
 	}
 
-	a.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title:     "Uninstall Azure development tools (azd tool uninstall)",
-		TitleNote: "Uninstalls specified tools from the local machine",
-	})
+	if a.formatter.Kind() != output.JsonFormat {
+		a.console.MessageUxItem(ctx, &ux.MessageTitle{
+			Title:     "Uninstall Azure development tools (azd tool uninstall)",
+			TitleNote: "Uninstalls specified tools from the local machine",
+		})
+	}
 
 	agentOpts, agentErr := a.resolveAgentOptions(tools)
 	if agentErr != nil {
@@ -1822,7 +1828,7 @@ type toolCheckItem struct {
 	InstalledVersion string `json:"installedVersion"`
 	LatestVersion    string `json:"latestVersion"`
 	UpdateAvailable  bool   `json:"updateAvailable"`
-	// Status is a human-readable installation/update status indicator.
+	// Status is a human-readable installation/upgrade status indicator.
 	// Populated only for pretty-table rendering; omitted from JSON.
 	Status string `json:"-"`
 	// DisplayName is the NAME cell shown in the table: a skill row is
@@ -1856,7 +1862,7 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 	var results []*tool.UpdateCheckResult
 	if a.formatter.Kind() != output.JsonFormat {
 		spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
-			Text:        "Checking for updates...",
+			Text:        "Checking for upgrades...",
 			ClearOnStop: true,
 		})
 		if err := spinner.Run(ctx, func(ctx context.Context) error {
@@ -1864,13 +1870,13 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 			results, detectErr = a.manager.CheckForUpdates(ctx)
 			return detectErr
 		}); err != nil {
-			return nil, fmt.Errorf("checking for updates: %w", err)
+			return nil, fmt.Errorf("checking for upgrades: %w", err)
 		}
 	} else {
 		var err error
 		results, err = a.manager.CheckForUpdates(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("checking for updates: %w", err)
+			return nil, fmt.Errorf("checking for upgrades: %w", err)
 		}
 	}
 
@@ -1882,7 +1888,7 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}
 		// A skill installed on one or more agents expands into one row per
 		// agent, each prefixed with the agent label and carrying that agent's
-		// installed version and update status.
+		// installed version and upgrade status.
 		if r.Tool.Category == tool.ToolCategorySkill && len(r.SkillAgents) > 0 {
 			for _, h := range r.SkillAgents {
 				rows = append(rows, toolCheckItem{
@@ -2503,15 +2509,13 @@ func toolStatusColor(s string) string {
 }
 
 // toolCheckStatus returns a human-readable status string for the tool check
-// table, reusing the extension status vocabulary for consistency.
+// table.
 func toolCheckStatus(installed, updateAvailable bool) string {
 	switch {
 	case !installed:
 		return statusNotInstall
 	case updateAvailable:
-		// Use "upgrade" to match the `azd tool upgrade` command and the
-		// check hints, rather than the shared extension "Update available".
-		return "Upgrade available"
+		return statusUpgrade
 	default:
 		return statusUpToDate
 	}

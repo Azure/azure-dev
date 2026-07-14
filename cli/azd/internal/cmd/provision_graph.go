@@ -93,7 +93,7 @@ func (p *ProvisionAction) provisionLayersGraph(
 	// warning confirmation prompt — once per layer with an identical,
 	// env-scoped context. On abort (or a prompt failure), translate through
 	// wrapProvisionError so preview and deploy share the same UX: an abort
-	// becomes the "Provisioning was cancelled." message.
+	// becomes the "Provisioning was canceled." message.
 	if err := p.provisionManager.RunProvisionValidation(ctx, previewMode); err != nil {
 		return nil, p.wrapProvisionError(ctx, err)
 	}
@@ -168,7 +168,7 @@ func (p *ProvisionAction) provisionLayersGraph(
 
 				if deployResult.SkippedReason == provisioning.ProvisionValidationCanceledSkipped {
 					// Return the internal sentinel; wrapProvisionError at the
-					// outer boundary emits the "Provisioning was cancelled."
+					// outer boundary emits the "Provisioning was canceled."
 					// UX message and translates to internal.ErrAbortedByUser.
 					return errValidationCanceledByUser
 				}
@@ -681,7 +681,7 @@ func wrapProvisionError(ctx context.Context, err error, deps provisionErrorDeps)
 	if errors.Is(err, errValidationCanceledByUser) ||
 		errors.Is(err, provisioning.ErrProvisionValidationCanceled) {
 		deps.console.MessageUxItem(ctx, &ux.ActionResult{
-			SuccessMessage: "Provisioning was cancelled.",
+			SuccessMessage: "Provisioning was canceled.",
 		})
 		return internal.ErrAbortedByUser
 	}

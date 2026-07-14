@@ -126,6 +126,13 @@ func (m *Manager) RunProvisionValidation(ctx context.Context, preview bool) (err
 			outcome = provisionValidationOutcomeError
 		}
 		span.SetAttributes(fields.ProvisionValidationOutcomeKey.String(outcome))
+		// Emit the same empty/zero attribute shape as the results path (and the
+		// Bicep "arm-provision" dispatch) so downstream telemetry queries see a
+		// consistent set of validation.provision.* fields even when no checks
+		// produced findings.
+		span.SetAttributes(fields.ProvisionValidationDiagnosticsKey.StringSlice([]string{}))
+		span.SetAttributes(fields.ProvisionValidationWarningCountKey.Int(0))
+		span.SetAttributes(fields.ProvisionValidationErrorCountKey.Int(0))
 		return nil
 	}
 

@@ -81,8 +81,9 @@ var (
 	ErrOperationCancelled = errors.New("operation canceled by user")
 
 	// ErrAbortedByUser indicates the user intentionally declined to proceed (e.g. provision validation warnings).
-	// This is not a failure — the CLI should exit with code 0.
-	ErrAbortedByUser = errors.New("operation canceled by user")
+	// This is not a failure — the CLI should exit with code 0. Its message is intentionally distinct from
+	// ErrOperationCancelled so the two remain distinguishable in logs and output.
+	ErrAbortedByUser = errors.New("operation declined by user")
 )
 
 // Config errors

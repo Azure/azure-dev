@@ -2115,12 +2115,12 @@ func TestSetProvisionValidationOutcome_AllOutcomeValues(t *testing.T) {
 			diagnosticIDs: []string{"role_assignment_missing"},
 		},
 		{
-			name:          "aborted by errors",
+			name:          "canceled by errors",
 			outcome:       provisionValidationOutcomeCanceledByErrors,
 			diagnosticIDs: []string{"role_assignment_missing"},
 		},
 		{
-			name:          "aborted by user",
+			name:          "canceled by user",
 			outcome:       provisionValidationOutcomeCanceledByUser,
 			diagnosticIDs: []string{"role_assignment_conditional"},
 		},

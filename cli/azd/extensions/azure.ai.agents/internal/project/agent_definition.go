@@ -126,7 +126,14 @@ func (d AgentDefinitionInline) toContainerAgent(
 ) agent_yaml.ContainerAgent {
 	environmentVariables := d.EnvironmentVariables
 	if len(environment) > 0 {
-		environmentVariables = environmentVariablesFromMap(environment)
+		legacyEnvironment := AgentEnvironment(agent_yaml.ContainerAgent{
+			EnvironmentVariables: d.EnvironmentVariables,
+		})
+		if legacyEnvironment == nil {
+			legacyEnvironment = map[string]string{}
+		}
+		maps.Copy(legacyEnvironment, environment)
+		environmentVariables = environmentVariablesFromMap(legacyEnvironment)
 	}
 
 	ca := agent_yaml.ContainerAgent{

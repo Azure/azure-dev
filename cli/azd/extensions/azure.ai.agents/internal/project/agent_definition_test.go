@@ -125,14 +125,22 @@ func TestAgentDefinitionFromService_LegacyEnvironment(t *testing.T) {
 			"name":  "LEGACY_KEY",
 			"value": "${LEGACY_KEY}",
 		},
+		map[string]any{
+			"name":  "SHARED_KEY",
+			"value": "legacy",
+		},
 	})
 	require.NoError(t, err)
 	props.Fields["environmentVariables"] = legacyEnvironment
 
 	svc := &azdext.ServiceConfig{
-		Name:   "basic-agent",
-		Host:   "azure.ai.agent",
+		Name: "basic-agent",
+		Host: "azure.ai.agent",
 		Config: props,
+		Environment: map[string]string{
+			"NEW_KEY":    "new",
+			"SHARED_KEY": "service",
+		},
 	}
 	got, _, found, source, err := AgentDefinitionFromService(svc)
 	require.NoError(t, err)
@@ -140,6 +148,8 @@ func TestAgentDefinitionFromService_LegacyEnvironment(t *testing.T) {
 	require.Equal(t, AgentDefinitionSourceLegacyConfig, source)
 	require.Equal(t, map[string]string{
 		"LEGACY_KEY": "${LEGACY_KEY}",
+		"NEW_KEY":    "new",
+		"SHARED_KEY": "service",
 	}, AgentEnvironment(got))
 }
 

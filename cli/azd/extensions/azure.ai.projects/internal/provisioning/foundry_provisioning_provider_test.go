@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package project
+package provisioning
 
 import (
 	"encoding/json"
@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/synthesis"
+	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"

@@ -1553,6 +1553,50 @@ func TestRunSkill_Upgrade_AlreadyUpToDate(t *testing.T) {
 	assert.Equal(t, []string{"Test Azure Skills in copilot is already up to date (v1.1.86)."}, r.stops)
 }
 
+// TestRunSkill_Upgrade_DetectionLag_NotUpToDate verifies that when the plugin
+// listing still reports the pre-upgrade version (detection lag) but the upgrade
+// command reports a new version, the operation is NOT misreported as "already
+// up to date": the command-reported version is authoritative over the (laggy)
+// detected version for the equality check.
+func TestRunSkill_Upgrade_DetectionLag_NotUpToDate(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "update")
+	}).Respond(exec.RunResult{
+		ExitCode: 0,
+		Stdout:   `Plugin "azure" updated from 1.0.0 to 2.0.0 for scope user.`,
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillAgentsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillAgent, error) {
+				// Detection lags: the plugin listing keeps reporting the
+				// pre-upgrade version even after the update command succeeds.
+				return []InstalledSkillAgent{{Agent: "copilot", Version: "1.0.0"}}, nil
+			},
+		},
+	)
+
+	var r fakeStepRenderer
+	result, err := inst.Upgrade(
+		t.Context(), newSkillTool(),
+		WithAgents("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "upgrade must succeed; err=%v", result.Error)
+	assert.False(t, result.AlreadyUpToDate,
+		"a reported upgrade must not be marked up-to-date even when detection lags")
+	assert.Equal(t, []string{"Upgrading Test Azure Skills in copilot (v2.0.0)"}, r.stops)
+}
+
 // TestRunSkill_OutputPrintedBelowStep verifies that when the agent CLI writes
 // to the terminal, each line is captured and surfaced via Message below the
 // resolved step line (indented gray sub-section), and the spinner is stopped
@@ -1601,6 +1645,53 @@ func TestRunSkill_OutputPrintedBelowStep(t *testing.T) {
 	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.starts)
 	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.stops)
 	assert.Contains(t, strings.Join(r.messages, "\n"), "Installing plugin...")
+}
+
+// TestRunSkill_Quiet_CapturesOutput verifies that WithQuiet (used for
+// `--output json`) runs the agent CLI command with captured streams instead of
+// connecting it interactively to the process stdout — so agent output cannot
+// leak onto stdout ahead of the JSON result.
+func TestRunSkill_Quiet_CapturesOutput(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+
+	var (
+		pluginInteractive bool
+		pluginHadStdOut   bool
+	)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "plugin")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		if slices.Contains(args.Args, "install") {
+			pluginInteractive = args.Interactive
+			pluginHadStdOut = args.StdOut != nil
+		}
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillAgentsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillAgent, error) {
+				return []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.70"}}, nil
+			},
+		},
+	)
+
+	// No renderer (as in JSON mode) + WithQuiet.
+	result, err := inst.Install(t.Context(), newSkillTool(), WithAgents("copilot"), WithQuiet())
+	require.NoError(t, err)
+	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
+
+	assert.False(t, pluginInteractive,
+		"quiet mode must not run the agent command interactively (would write to stdout)")
+	assert.True(t, pluginHadStdOut,
+		"quiet mode must route the agent command's stdout to a captured writer")
 }
 
 // TestSkillAgent_DisplayVsCommand verifies the split between the display Agent

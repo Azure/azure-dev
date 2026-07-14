@@ -545,6 +545,11 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 
 	if len(ids) == 0 {
+		if a.formatter.Kind() == output.JsonFormat {
+			// Keep a stable array schema for automation instead of a
+			// consoleMessage object.
+			return nil, a.formatter.Format([]*toolInstallResultItem{}, a.writer, nil)
+		}
 		a.console.Message(ctx, output.WithSuccessFormat("Nothing to install."))
 		return nil, nil
 	}
@@ -584,6 +589,12 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 	agentOpts, agentErr := a.resolveAgentOptions(ctx, tools)
 	if agentErr != nil {
 		return nil, agentErr
+	}
+
+	// In JSON mode, capture skill agent CLI output so it never leaks onto
+	// stdout ahead of the structured result.
+	if a.formatter.Kind() == output.JsonFormat {
+		agentOpts = append(agentOpts, tool.WithQuiet())
 	}
 
 	start := time.Now()
@@ -1266,6 +1277,11 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 
 	if len(toolsToUpgrade) == 0 {
+		if a.formatter.Kind() == output.JsonFormat {
+			// Keep a stable array schema for automation instead of a
+			// consoleMessage object.
+			return nil, a.formatter.Format([]*toolInstallResultItem{}, a.writer, nil)
+		}
 		a.console.Message(ctx, output.WithGrayFormat(
 			"No installed tools to upgrade.",
 		))
@@ -1296,6 +1312,12 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 	agentOpts, agentErr := a.resolveAgentOptions(toolsToUpgrade)
 	if agentErr != nil {
 		return nil, agentErr
+	}
+
+	// In JSON mode, capture skill agent CLI output so it never leaks onto
+	// stdout ahead of the structured result.
+	if a.formatter.Kind() == output.JsonFormat {
+		agentOpts = append(agentOpts, tool.WithQuiet())
 	}
 
 	start := time.Now()
@@ -1586,6 +1608,11 @@ func (a *toolUninstallAction) Run(ctx context.Context) (*actions.ActionResult, e
 	}
 
 	if len(ids) == 0 {
+		if a.formatter.Kind() == output.JsonFormat {
+			// Keep a stable array schema for automation instead of a
+			// consoleMessage object.
+			return nil, a.formatter.Format([]*toolInstallResultItem{}, a.writer, nil)
+		}
 		a.console.Message(ctx, output.WithGrayFormat("No installed tools to uninstall."))
 		return nil, nil
 	}
@@ -1620,6 +1647,12 @@ func (a *toolUninstallAction) Run(ctx context.Context) (*actions.ActionResult, e
 	agentOpts, agentErr := a.resolveAgentOptions(tools)
 	if agentErr != nil {
 		return nil, agentErr
+	}
+
+	// In JSON mode, capture skill agent CLI output so it never leaks onto
+	// stdout ahead of the structured result.
+	if a.formatter.Kind() == output.JsonFormat {
+		agentOpts = append(agentOpts, tool.WithQuiet())
 	}
 
 	start := time.Now()
@@ -2460,7 +2493,7 @@ func runToolOperation(
 	}
 
 	taskErr := taskList.Run()
-	if taskErr != nil {
+	if taskErr != nil && !quiet {
 		// Build the past participle: "install" -> "installed",
 		// "upgrade" -> "upgraded". Appending only "d" would be wrong,
 		// so append "ed" unless the verb already ends in "e".
@@ -2468,6 +2501,9 @@ func runToolOperation(
 		if strings.HasSuffix(action, "e") {
 			participle = action + "d"
 		}
+		// Skipped in quiet (JSON) mode: AskerConsole.Message would emit a
+		// standalone consoleMessage object ahead of the result array, breaking
+		// single-document JSON output.
 		console.Message(ctx, output.WithWarningFormat(
 			"\nSome tools could not be %s. Run 'azd tool list' for details.", participle,
 		))

@@ -74,6 +74,36 @@ func TestRunToolOperationUnsuccessfulResultReturnsError(t *testing.T) {
 	assert.Contains(t, console.Output()[0], "Some tools could not be")
 }
 
+// TestRunToolOperation_Quiet_SuppressesFailureWarning verifies that in quiet
+// (JSON) mode the failure warning is NOT emitted via console.Message — which
+// would otherwise inject a standalone consoleMessage object ahead of the JSON
+// result array and break single-document JSON output.
+func TestRunToolOperation_Quiet_SuppressesFailureWarning(t *testing.T) {
+	toolDef := &tool.ToolDefinition{
+		Id:   "az-cli",
+		Name: "Azure CLI",
+	}
+	console := mockinput.NewMockConsole()
+
+	outcome := runToolOperation(
+		t.Context(),
+		[]*tool.ToolDefinition{toolDef},
+		func(ctx context.Context, ids []string) ([]*tool.InstallResult, error) {
+			return []*tool.InstallResult{{Tool: toolDef, Success: false}}, nil
+		},
+		"Installing",
+		"install",
+		console,
+		true, // quiet (JSON)
+	)
+
+	require.Error(t, outcome.Err, "the operation still reports the failure via Err")
+	for _, line := range console.Output() {
+		assert.NotContains(t, line, "Some tools could not be",
+			"quiet mode must not emit the failure warning to the console")
+	}
+}
+
 func TestRunToolOperationSuccessfulResultReturnsNoError(t *testing.T) {
 	toolDef := &tool.ToolDefinition{
 		Id:   "az-cli",
@@ -1302,6 +1332,46 @@ func TestToolUpgradeAction_All_JsonFormat_EmitsCleanJson(t *testing.T) {
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &items),
 		"upgrade --all --output json must emit parseable JSON")
 	require.NotEmpty(t, items, "at least one installed tool must be reported")
+}
+
+// TestToolUpgradeAction_All_JsonFormat_EmptyEmitsArray verifies that when there
+// is nothing to upgrade, `azd tool upgrade --all --output json` still emits an
+// empty result array ([]) rather than a consoleMessage object, so automation
+// sees one stable shape.
+func TestToolUpgradeAction_All_JsonFormat_EmptyEmitsArray(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+
+	detector := &cmdMockDetector{
+		detectAll: func(_ context.Context, tools []*tool.ToolDefinition) ([]*tool.ToolStatus, error) {
+			// Nothing installed → nothing to upgrade.
+			statuses := make([]*tool.ToolStatus, len(tools))
+			for i, td := range tools {
+				statuses[i] = &tool.ToolStatus{Tool: td, Installed: false}
+			}
+			return statuses, nil
+		},
+	}
+	manager := tool.NewManager(detector, &cmdMockInstaller{}, nil)
+
+	var buf bytes.Buffer
+	action := newToolUpgradeAction(
+		nil,
+		&toolUpgradeFlags{all: true},
+		manager,
+		mockinput.NewMockConsole(),
+		&output.JsonFormatter{},
+		&buf,
+	)
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+
+	assert.Equal(t, "[]", strings.TrimSpace(buf.String()),
+		"empty upgrade must emit an empty JSON array, not a consoleMessage object")
+
+	var items []toolInstallResultItem
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &items))
+	assert.Empty(t, items)
 }
 
 // TestToolUpgradeAction_IDsWithAll_Errors verifies that `azd tool upgrade foo

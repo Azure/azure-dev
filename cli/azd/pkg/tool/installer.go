@@ -178,6 +178,12 @@ type installConfig struct {
 	// agent command falls back to the process terminal. Ignored when no
 	// spinner is active (the command then runs against the runner's streams).
 	stdin io.Reader
+	// quiet, when true, suppresses interactive/terminal execution of skill
+	// agent commands: their stdout/stderr are captured (discarded) instead of
+	// connected to the process terminal. Set for `--output json` so agent CLI
+	// output never leaks onto stdout ahead of the structured result. Ignored
+	// when a step spinner is active (that path already captures output).
+	quiet bool
 }
 
 // InstallOption customizes an install or upgrade operation.
@@ -196,6 +202,15 @@ func WithAgents(agents ...string) InstallOption {
 // is overridden by WithAgents.
 func WithAllAvailableAgents() InstallOption {
 	return func(c *installConfig) { c.allAvailableAgents = true }
+}
+
+// WithQuiet suppresses interactive/terminal execution of skill agent commands,
+// capturing (discarding) their stdout/stderr instead of connecting them to the
+// process terminal. Use it for `--output json`, where any agent CLI output on
+// stdout would corrupt the structured result. It is independent of
+// WithStepProgress (a step spinner already captures output).
+func WithQuiet() InstallOption {
+	return func(c *installConfig) { c.quiet = true }
 }
 
 // StepRenderer renders live per-step progress. It is the subset of
@@ -264,15 +279,26 @@ func stepError(result *InstallResult, err error) error {
 // result line that differs from the in-progress title. When renderer is nil
 // (e.g. the first-run middleware manages its own progress) it prints a stderr
 // header and runs work with a nil writer, so the command runs fully
-// interactively.
+// interactively — unless quiet is set (e.g. `--output json`), in which case the
+// child streams are captured so nothing leaks onto stdout.
 func renderSkillStep(
 	ctx context.Context,
 	renderer StepRenderer,
 	title string,
 	showOutput bool,
+	quiet bool,
 	work func(out io.Writer) (doneTitle string, err error),
 ) error {
 	if renderer == nil {
+		if quiet {
+			// JSON / non-interactive output: capture (discard) the agent CLI's
+			// streams so nothing leaks onto stdout ahead of the structured
+			// result. A non-nil writer makes skillCommandRunArgs route
+			// stdout/stderr through it instead of connecting the child to the
+			// terminal via WithInteractive.
+			_, err := work(io.Discard)
+			return err
+		}
 		fmt.Fprintf(os.Stderr, "\n%s\n", title)
 		_, err := work(nil)
 		return err
@@ -536,7 +562,7 @@ func (i *installer) Uninstall(
 		// the explicit agent names need to be threaded through; the
 		// empty-agents branch of resolveSkillUninstallTargets handles both
 		// the default and `--agent all`.
-		return i.runSkillUninstall(ctx, tool, cfg.agents, cfg.renderer, cfg.stdin)
+		return i.runSkillUninstall(ctx, tool, cfg.agents, cfg.renderer, cfg.stdin, cfg.quiet)
 	}
 
 	// Non-skill tools uninstall as a single step; render one spinner for
@@ -916,6 +942,7 @@ func (i *installer) runSkillUninstall(
 	agents []string,
 	renderer StepRenderer,
 	stdin io.Reader,
+	quiet bool,
 ) (*InstallResult, error) {
 	start := time.Now()
 	result := &InstallResult{Tool: tool}
@@ -939,7 +966,7 @@ func (i *installer) runSkillUninstall(
 	)
 	for _, agent := range targets {
 		title := fmt.Sprintf("Uninstalling %s from %s", tool.Name, agent.DisplayName)
-		agentErr := renderSkillStep(ctx, renderer, title, true, func(out io.Writer) (string, error) {
+		agentErr := renderSkillStep(ctx, renderer, title, true, quiet, func(out io.Writer) (string, error) {
 			return "", i.uninstallSkillForAgent(ctx, tool, agent, out, stdin)
 		})
 		if agentErr != nil {
@@ -1112,7 +1139,7 @@ func (i *installer) run(
 	// native plugin command rather than the platform's
 	// package manager, so we short-circuit before platform detection.
 	if tool.Category == ToolCategorySkill {
-		return i.runSkill(ctx, tool, upgrade, cfg.agents, cfg.allAvailableAgents, cfg.renderer, cfg.stdin)
+		return i.runSkill(ctx, tool, upgrade, cfg.agents, cfg.allAvailableAgents, cfg.renderer, cfg.stdin, cfg.quiet)
 	}
 
 	// Non-skill tools install as a single step through the platform
@@ -1336,6 +1363,7 @@ func (i *installer) runSkill(
 	allAvailable bool,
 	renderer StepRenderer,
 	stdin io.Reader,
+	quiet bool,
 ) (*InstallResult, error) {
 	start := time.Now()
 	result := &InstallResult{Tool: tool}
@@ -1390,7 +1418,7 @@ func (i *installer) runSkill(
 			agentVersion  string
 			agentUpToDate bool
 		)
-		agentErr := renderSkillStep(ctx, renderer, title, true, func(out io.Writer) (string, error) {
+		agentErr := renderSkillStep(ctx, renderer, title, true, quiet, func(out io.Writer) (string, error) {
 			v, upToDate, e := i.installSkillForAgent(ctx, tool, agent, upgrade, out, stdin)
 			agentVersion = v
 			agentUpToDate = upToDate
@@ -1775,9 +1803,12 @@ func (i *installer) installSkillForAgent(
 	if err != nil {
 		return "", false, err
 	}
-	var proseLatest bool
+	var (
+		reportedVersion string
+		proseLatest     bool
+	)
 	if upgrade {
-		version, proseLatest = parseUpgradeOutput(cmdOutput)
+		reportedVersion, proseLatest = parseUpgradeOutput(cmdOutput)
 	}
 
 	detectedVersion, err := i.verifySkillInstalled(ctx, tool, agent)
@@ -1786,18 +1817,25 @@ func (i *installer) installSkillForAgent(
 	}
 	// Prefer the version the upgrade command reported; fall back to the
 	// version detected via the plugin list.
+	version = reportedVersion
 	if version == "" {
 		version = detectedVersion
 	}
 
 	if upgrade {
-		// The authoritative "already up to date" signal is an unchanged
-		// version. Only when a version is unavailable on either side fall back
-		// to the agent CLI's prose, so azd neither claims up to date without
-		// evidence nor misreports an upgrade when the wording is unrecognized.
-		if beforeVersion != "" && detectedVersion != "" {
+		// "Already up to date" means the version did not change. Prefer the
+		// version the upgrade command reported: it is authoritative and immune
+		// to plugin-list detection lag (the listing can briefly still report the
+		// pre-upgrade version, which would otherwise equal beforeVersion and be
+		// misread as "already up to date"). Fall back to the detected version
+		// only when the command reported none, and to the agent CLI's prose only
+		// when no version is available on either side.
+		switch {
+		case beforeVersion != "" && reportedVersion != "":
+			alreadyLatest = beforeVersion == reportedVersion
+		case beforeVersion != "" && detectedVersion != "":
 			alreadyLatest = beforeVersion == detectedVersion
-		} else {
+		default:
 			alreadyLatest = proseLatest
 		}
 	}

@@ -138,9 +138,12 @@ func TestRenderArgs(t *testing.T) {
 		require.Contains(t, result, "generators: azdGenerators.listEnvironments")
 	})
 
-	t.Run("with_template", func(t *testing.T) {
-		result := renderArgs([]Arg{{Name: "path", Template: "filepaths"}}, 2)
-		require.Contains(t, result, "template: 'filepaths'")
+	t.Run("with_multiple_generators", func(t *testing.T) {
+		result := renderArgs([]Arg{{Name: "path", Generators: []string{
+			"azdGenerators.listExtensions",
+			"filepaths({ extensions: ['zip'] })",
+		}}}, 2)
+		require.Contains(t, result, "generators: [azdGenerators.listExtensions, filepaths({ extensions: ['zip'] })],")
 	})
 
 	t.Run("few_suggestions_inline", func(t *testing.T) {
@@ -217,5 +220,6 @@ func TestToTypeScript_Empty(t *testing.T) {
 	ts, err := spec.ToTypeScript()
 	require.NoError(t, err)
 	require.Contains(t, ts, "name: 'test'")
+	require.Contains(t, ts, filepathsHelperImport)
 	require.True(t, strings.HasSuffix(ts, "\n"))
 }

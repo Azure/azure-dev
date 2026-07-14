@@ -11,7 +11,9 @@ import (
 )
 
 const (
-	typescriptTemplate = `{{.Generators}}
+	typescriptTemplate = `{{.Import}}
+
+{{.Generators}}
 
 const completionSpec: Fig.Spec = {
 	name: '{{.Name}}',
@@ -50,6 +52,7 @@ func (s *Spec) ToTypeScript() (string, error) {
 	data := map[string]string{
 		"Name":        s.Name,
 		"Description": s.Description,
+		"Import":      filepathsHelperImport,
 		"Generators":  figGeneratorDefinitionsTS,
 		"Subcommands": renderSubcommands(s.Subcommands, 2),
 		"Options":     renderOptions(s.Options, 2, false),
@@ -238,12 +241,13 @@ func renderArgs(args []Arg, indentLevel int) string {
 			}
 		}
 
-		if arg.Generator != "" {
+		switch {
+		case len(arg.Generators) == 1:
+			lines = append(lines, fmt.Sprintf("%s\tgenerators: %s,", indent, arg.Generators[0]))
+		case len(arg.Generators) > 1:
+			lines = append(lines, fmt.Sprintf("%s\tgenerators: [%s],", indent, strings.Join(arg.Generators, ", ")))
+		case arg.Generator != "":
 			lines = append(lines, fmt.Sprintf("%s\tgenerators: %s,", indent, arg.Generator))
-		}
-
-		if arg.Template != "" {
-			lines = append(lines, fmt.Sprintf("%s\ttemplate: '%s',", indent, arg.Template))
 		}
 
 		lines = append(lines, indent+"},")

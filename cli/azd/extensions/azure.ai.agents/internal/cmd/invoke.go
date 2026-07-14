@@ -871,6 +871,18 @@ func remoteAgentNameFromService(
 	return currentName
 }
 
+// remoteAgentServiceResolutionError returns a resolver error in auto-protocol
+// mode because flags.name is only a cached azure.yaml service selector there;
+// continuing would treat that selector as a Foundry agent name. With an
+// explicit protocol, resolver failure is intentionally ignored so a
+// user-provided direct agent name can work without an azd project service.
+func remoteAgentServiceResolutionError(resolveErr error, protocolExplicit bool) error {
+	if resolveErr == nil || protocolExplicit {
+		return nil
+	}
+	return fmt.Errorf("failed to resolve agent service for remote invoke: %w", resolveErr)
+}
+
 func unresolvedRemoteAgentNameError(serviceName string) error {
 	if serviceName != "" {
 		return exterrors.Dependency(
@@ -923,14 +935,18 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	// so post-success next-step suggestions emit the service name; show
 	// keys on s.Name in azure.yaml and would 404 on the deployed Foundry
 	// name in the divergent case.
-	if info, err := resolveAgentServiceFromProject(
+	info, serviceErr := resolveAgentServiceFromProject(
 		ctx, azdClient, rc.name, a.noPrompt, withBrownfieldInlineAgentName(),
-	); err == nil {
+	)
+	if serviceErr == nil {
 		rc.serviceName = info.ServiceName
 		rc.name = remoteAgentNameFromService(rc.name, info, a.flags.protocol != "")
 		if info.AgentEndpoint != "" {
 			rc.agentKey = buildRemoteAgentKeyFromEndpoint(info.AgentEndpoint)
 		}
+	} else if err := remoteAgentServiceResolutionError(serviceErr, a.flags.protocol != ""); err != nil {
+		azdClient.Close()
+		return nil, err
 	}
 	if rc.name == "" {
 		azdClient.Close()

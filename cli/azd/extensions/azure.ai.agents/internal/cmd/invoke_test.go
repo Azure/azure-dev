@@ -538,6 +538,32 @@ func TestRemoteAgentNameFromService(t *testing.T) {
 	}
 }
 
+func TestRemoteAgentServiceResolutionError(t *testing.T) {
+	t.Parallel()
+
+	resolveErr := errors.New("project service unavailable")
+
+	t.Run("auto protocol surfaces resolver failure", func(t *testing.T) {
+		t.Parallel()
+
+		err := remoteAgentServiceResolutionError(resolveErr, false)
+		if err == nil {
+			t.Fatal("expected resolver error, got nil")
+		}
+		if !errors.Is(err, resolveErr) {
+			t.Errorf("error %q does not wrap resolver error", err)
+		}
+	})
+
+	t.Run("explicit protocol preserves direct-name fallback", func(t *testing.T) {
+		t.Parallel()
+
+		if err := remoteAgentServiceResolutionError(resolveErr, true); err != nil {
+			t.Errorf("explicit protocol should ignore project resolver failure, got %v", err)
+		}
+	})
+}
+
 func TestUserIdentityFlags_SessionRequestOptions(t *testing.T) {
 	t.Parallel()
 

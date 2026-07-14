@@ -1,5 +1,15 @@
 # Release History
 
+## 1.0.0-beta.3 (Unreleased)
+
+### Features Added
+
+- [[#9085]](https://github.com/Azure/azure-dev/issues/9085) The
+  `azure.ai.projects` extension now owns the `microsoft.foundry`
+  provisioning provider and its project validation checks. It reads
+  `azure.ai.project` model deployments before provisioning and deploys,
+  while retaining compatibility with pre-split Foundry manifests.
+
 ## 1.0.0-beta.2 (2026-07-09)
 
 ### Other Changes

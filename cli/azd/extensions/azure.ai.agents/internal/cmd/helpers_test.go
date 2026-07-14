@@ -19,6 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 	goyaml "go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestDetectStartupCommand(t *testing.T) {
@@ -372,6 +374,17 @@ type helpersPromptServer struct {
 	selectCalls atomic.Int32
 }
 
+type helpersFailingEnvironmentServer struct {
+	testEnvironmentServiceServer
+	getValueErr error
+}
+
+func (s *helpersFailingEnvironmentServer) GetValue(
+	context.Context, *azdext.GetEnvRequest,
+) (*azdext.KeyValueResponse, error) {
+	return nil, s.getValueErr
+}
+
 func (s *helpersPromptServer) Select(
 	_ context.Context, req *azdext.SelectRequest,
 ) (*azdext.SelectResponse, error) {
@@ -575,6 +588,58 @@ func TestResolveAgentServiceFromProject_EnvironmentNameWins(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "deployed-agent", info.AgentName,
 		"deployed environment output should override the inline definition")
+}
+
+// TestResolveAgentServiceFromProject_EnvLookupFailureDoesNotFallback verifies a
+// transient env read failure is not treated as proof that the deploy output is
+// absent. Falling back in that case could target a different existing agent.
+func TestResolveAgentServiceFromProject_EnvLookupFailureDoesNotFallback(t *testing.T) {
+	t.Parallel()
+
+	agentProps, err := projectpkg.AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindHosted,
+			Name: "inline-agent",
+		},
+	}, nil)
+	require.NoError(t, err)
+	projectProps, err := projectpkg.MarshalStruct(&projectpkg.ServiceTargetAgentConfig{
+		Endpoint: "https://account.services.ai.azure.com/api/projects/existing",
+	})
+	require.NoError(t, err)
+
+	projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+		Path: t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{
+			"ai-project": {
+				Name:                 "ai-project",
+				Host:                 AiProjectHost,
+				AdditionalProperties: projectProps,
+			},
+			"service-key": {
+				Name:                 "service-key",
+				Host:                 AiAgentHost,
+				AdditionalProperties: agentProps,
+				Uses:                 []string{"ai-project"},
+			},
+		},
+	}}
+	envServer := &helpersFailingEnvironmentServer{
+		testEnvironmentServiceServer: testEnvironmentServiceServer{
+			current: &azdext.Environment{Name: "test"},
+		},
+		getValueErr: status.Error(codes.Unavailable, "environment service unavailable"),
+	}
+	azdClient := newHelpersTestAzdClient(
+		t, projectServer, &helpersPromptServer{}, envServer,
+	)
+
+	info, err := resolveAgentServiceFromProject(
+		t.Context(), azdClient, "", true, withBrownfieldInlineAgentName(),
+	)
+	require.NoError(t, err)
+	require.Empty(t, info.AgentName,
+		"transient env lookup failure must not enable the inline fallback")
 }
 
 // TestResolveAgentProtocol_ReturnsServiceName verifies that resolveAgentProtocol

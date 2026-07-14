@@ -851,6 +851,26 @@ func (rc *remoteContext) nextStepName() string {
 	return rc.name
 }
 
+// remoteAgentNameFromService applies the project-service resolution result to
+// the invoke target name. An auto-detected protocol uses flags.name as a cached
+// service selector, not as an explicit Foundry agent name; clear it when no
+// deployed/brownfield name was resolved so invoke returns deploy-first guidance.
+// With an explicit protocol, a user-provided name remains an intentional direct
+// target even when it also happens to match an azure.yaml service key.
+func remoteAgentNameFromService(
+	currentName string,
+	info *AgentServiceInfo,
+	protocolExplicit bool,
+) string {
+	if info != nil && info.AgentName != "" {
+		return info.AgentName
+	}
+	if !protocolExplicit {
+		return ""
+	}
+	return currentName
+}
+
 func unresolvedRemoteAgentNameError(serviceName string) error {
 	if serviceName != "" {
 		return exterrors.Dependency(
@@ -907,9 +927,7 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		ctx, azdClient, rc.name, a.noPrompt, withBrownfieldInlineAgentName(),
 	); err == nil {
 		rc.serviceName = info.ServiceName
-		if info.AgentName != "" {
-			rc.name = info.AgentName
-		}
+		rc.name = remoteAgentNameFromService(rc.name, info, a.flags.protocol != "")
 		if info.AgentEndpoint != "" {
 			rc.agentKey = buildRemoteAgentKeyFromEndpoint(info.AgentEndpoint)
 		}

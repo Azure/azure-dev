@@ -27,6 +27,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/google/uuid"
 	"golang.org/x/term"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -744,8 +746,9 @@ func resolveAgentServiceFromProject(
 	}
 
 	info := &AgentServiceInfo{ServiceName: svc.Name}
+	brownfieldName := ""
 	if resolutionOptions.allowBrownfieldInlineName {
-		info.AgentName = brownfieldInlineAgentName(svc, projectConfig)
+		brownfieldName = brownfieldInlineAgentName(svc, projectConfig)
 	}
 
 	// Resolve deployed agent name and version from the azd environment. The
@@ -759,11 +762,22 @@ func resolveAgentServiceFromProject(
 	nameKey := fmt.Sprintf("AGENT_%s_NAME", serviceKey)
 	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 
-	if v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+	nameResponse, nameErr := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: envResponse.Environment.Name,
 		Key:     nameKey,
-	}); err == nil && v.Value != "" {
-		info.AgentName = v.Value
+	})
+	switch {
+	case nameErr == nil && nameResponse != nil && nameResponse.Value != "":
+		info.AgentName = nameResponse.Value
+	case nameErr == nil || status.Code(nameErr) == codes.NotFound:
+		// The active environment was read successfully and confirms the deploy
+		// output is absent, so the brownfield inline fallback is safe to use.
+		info.AgentName = brownfieldName
+	default:
+		// A transient/auth/daemon error is not evidence that the output is
+		// absent. Keep the name empty rather than silently targeting a possibly
+		// different existing agent.
+		log.Printf("resolve agent service %q: failed to read %s: %v", svc.Name, nameKey, nameErr)
 	}
 
 	if v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{

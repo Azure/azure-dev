@@ -492,6 +492,52 @@ func TestUnresolvedRemoteAgentNameError(t *testing.T) {
 	})
 }
 
+func TestRemoteAgentNameFromService(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		currentName      string
+		info             *AgentServiceInfo
+		protocolExplicit bool
+		want             string
+	}{
+		{
+			name:        "auto protocol clears cached service key without deploy output",
+			currentName: "service-key",
+			info:        &AgentServiceInfo{ServiceName: "service-key"},
+			want:        "",
+		},
+		{
+			name:             "explicit protocol preserves intentional direct name",
+			currentName:      "existing-agent",
+			info:             &AgentServiceInfo{ServiceName: "service-key"},
+			protocolExplicit: true,
+			want:             "existing-agent",
+		},
+		{
+			name:        "resolved deployed or brownfield name wins",
+			currentName: "service-key",
+			info: &AgentServiceInfo{
+				ServiceName: "service-key",
+				AgentName:   "resolved-agent",
+			},
+			want: "resolved-agent",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := remoteAgentNameFromService(tt.currentName, tt.info, tt.protocolExplicit)
+			if got != tt.want {
+				t.Errorf("remoteAgentNameFromService() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestUserIdentityFlags_SessionRequestOptions(t *testing.T) {
 	t.Parallel()
 

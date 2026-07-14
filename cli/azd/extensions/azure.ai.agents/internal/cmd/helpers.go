@@ -545,7 +545,7 @@ func fileExists(path string) bool {
 // AgentServiceInfo holds the resolved name and version for an agent service.
 type AgentServiceInfo struct {
 	ServiceName   string // azure.yaml service key
-	AgentName     string // deployed agent name from env, falling back to the inline definition
+	AgentName     string // deployed agent name from env, falling back for brownfield adoption
 	Version       string // deployed agent version from env
 	AgentEndpoint string // full AGENT_{SVC}_ENDPOINT URL (includes name + version)
 }
@@ -656,27 +656,69 @@ func resolveAgentService(
 	return svc, projectResponse.Project, nil
 }
 
+// brownfieldInlineAgentName returns the inline hosted-agent name only when the
+// agent explicitly depends on an azure.ai.project service whose endpoint points
+// at an existing Foundry project. This is the brownfield adoption signal: the
+// inline name may identify an agent that already exists in that project.
+//
+// A greenfield, undeployed service deliberately returns an empty name. Using
+// its inline name could silently invoke an older agent with matching name but
+// different code or protocols.
+func brownfieldInlineAgentName(
+	svc *azdext.ServiceConfig,
+	projectConfig *azdext.ProjectConfig,
+) string {
+	if svc == nil || projectConfig == nil {
+		return ""
+	}
+
+	var hasBrownfieldProject bool
+	for _, dependency := range svc.GetUses() {
+		projectService := projectConfig.GetServices()[dependency]
+		if projectService == nil || projectService.GetHost() != AiProjectHost {
+			continue
+		}
+		cfg, err := projectpkg.LoadServiceTargetAgentConfig(projectService)
+		if err != nil {
+			log.Printf(
+				"resolve agent service %q: failed to read project dependency %q: %v",
+				svc.Name, dependency, err,
+			)
+			continue
+		}
+		if cfg != nil && strings.TrimSpace(cfg.Endpoint) != "" {
+			hasBrownfieldProject = true
+			break
+		}
+	}
+	if !hasBrownfieldProject {
+		return ""
+	}
+
+	definition, isHosted, found, _, err := projectpkg.AgentDefinitionFromService(svc)
+	if err != nil {
+		log.Printf("resolve agent service %q: failed to read inline agent definition: %v", svc.Name, err)
+		return ""
+	}
+	if !found || !isHosted {
+		return ""
+	}
+	return strings.TrimSpace(definition.Name)
+}
+
 // resolveAgentServiceFromProject finds the azure.ai.agent service in azure.yaml
-// and resolves its agent name and deployed version. The inline service
-// definition supplies the name before the first deploy (for example, after
-// brownfield init against an existing Foundry project); AGENT_<SERVICE>_NAME
-// overrides it once deployment outputs are available.
+// and resolves its agent name and deployed version. A brownfield project
+// dependency allows the inline name to identify an existing agent; the
+// deployed AGENT_<SERVICE>_NAME output overrides it when available.
 func resolveAgentServiceFromProject(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) (*AgentServiceInfo, error) {
-	svc, _, err := resolveAgentService(ctx, azdClient, name, noPrompt)
+	svc, projectConfig, err := resolveAgentService(ctx, azdClient, name, noPrompt)
 	if err != nil {
 		return nil, err
 	}
 
-	info := &AgentServiceInfo{ServiceName: svc.Name}
-
-	// Seed the agent name from the inline/config-nested service definition so
-	// remote invoke works before a deploy has populated AGENT_<SERVICE>_NAME.
-	// This deliberately does not fall back to the service key: service and
-	// deployed agent names may differ.
-	if definition, isHosted, found, _, defErr := projectpkg.AgentDefinitionFromService(svc); defErr != nil {
-		log.Printf("resolve agent service %q: failed to read inline agent definition: %v", svc.Name, defErr)
-	} else if found && isHosted {
-		info.AgentName = strings.TrimSpace(definition.Name)
+	info := &AgentServiceInfo{
+		ServiceName: svc.Name,
+		AgentName:   brownfieldInlineAgentName(svc, projectConfig),
 	}
 
 	// Resolve deployed agent name and version from the azd environment. The

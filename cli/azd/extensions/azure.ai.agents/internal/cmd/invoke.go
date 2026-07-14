@@ -851,6 +851,21 @@ func (rc *remoteContext) nextStepName() string {
 	return rc.name
 }
 
+func unresolvedRemoteAgentNameError(serviceName string) error {
+	if serviceName != "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("agent service %q does not appear to have been deployed", serviceName),
+			"run `azd deploy` before invoking, or pass an existing Foundry agent name "+
+				"or --agent-endpoint explicitly",
+		)
+	}
+	return fmt.Errorf(
+		"agent name is required; provide as the first argument or " +
+			"define an azure.ai.agent service in azure.yaml",
+	)
+}
+
 // resolveRemoteContext returns the inputs required to invoke a remote agent.
 // In project mode it opens an azd client and reads the environment; in ephemeral
 // mode (--agent-endpoint) it skips both. Auth token acquisition is intentionally
@@ -899,10 +914,7 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	}
 	if rc.name == "" {
 		azdClient.Close()
-		return nil, fmt.Errorf(
-			"agent name is required; provide as the first argument or " +
-				"define an azure.ai.agent service in azure.yaml",
-		)
+		return nil, unresolvedRemoteAgentNameError(rc.serviceName)
 	}
 
 	ep, err := resolveAgentEndpoint(ctx, "", "")

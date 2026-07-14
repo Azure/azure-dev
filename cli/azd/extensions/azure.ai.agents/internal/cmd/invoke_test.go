@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -453,6 +454,35 @@ func TestInvokeLocalWithNamedAgent(t *testing.T) {
 	if strings.Contains(err.Error(), "cannot use --local with a named agent") {
 		t.Fatalf("unexpected validation rejection: %v", err)
 	}
+}
+
+func TestUnresolvedRemoteAgentNameError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("resolved service has not been deployed", func(t *testing.T) {
+		t.Parallel()
+
+		err := unresolvedRemoteAgentNameError("my-agent-service")
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		if !ok {
+			t.Fatalf("error type = %T, want *azdext.LocalError", err)
+		}
+		if !strings.Contains(localErr.Message, "does not appear to have been deployed") {
+			t.Errorf("message = %q, want deploy-state guidance", localErr.Message)
+		}
+		if !strings.Contains(localErr.Suggestion, "azd deploy") {
+			t.Errorf("suggestion = %q, want azd deploy guidance", localErr.Suggestion)
+		}
+	})
+
+	t.Run("no service resolved", func(t *testing.T) {
+		t.Parallel()
+
+		err := unresolvedRemoteAgentNameError("")
+		if !strings.Contains(err.Error(), "agent name is required") {
+			t.Errorf("error = %q, want missing-name guidance", err)
+		}
+	})
 }
 
 func TestUserIdentityFlags_SessionRequestOptions(t *testing.T) {

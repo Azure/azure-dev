@@ -414,15 +414,15 @@ func newHelpersTestAzdClient(
 	return azdClient
 }
 
-// TestResolveAgentServiceFromProject_UsesInlineNameBeforeDeploy is a regression
-// test for #9109. Brownfield init writes the hosted agent definition inline in
-// azure.yaml, but AGENT_<SERVICE>_NAME is not populated until deploy. Remote
-// invoke must use the inline name rather than reporting that no agent service
-// can be resolved.
-func TestResolveAgentServiceFromProject_UsesInlineNameBeforeDeploy(t *testing.T) {
+// TestResolveAgentServiceFromProject_UsesInlineNameForBrownfieldProject is a
+// regression test for #9109. Brownfield init writes the hosted agent definition
+// inline and points the used azure.ai.project service at an existing project,
+// but AGENT_<SERVICE>_NAME is not populated. Remote invoke may use the inline
+// name to target the existing agent in that explicitly adopted project.
+func TestResolveAgentServiceFromProject_UsesInlineNameForBrownfieldProject(t *testing.T) {
 	t.Parallel()
 
-	props, err := projectpkg.AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{
+	agentProps, err := projectpkg.AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{
 			Kind: agent_yaml.AgentKindHosted,
 			Name: "inline-agent",
@@ -433,14 +433,24 @@ func TestResolveAgentServiceFromProject_UsesInlineNameBeforeDeploy(t *testing.T)
 		}},
 	}, nil)
 	require.NoError(t, err)
+	projectProps, err := projectpkg.MarshalStruct(&projectpkg.ServiceTargetAgentConfig{
+		Endpoint: "https://account.services.ai.azure.com/api/projects/existing",
+	})
+	require.NoError(t, err)
 
 	projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
 		Path: t.TempDir(),
 		Services: map[string]*azdext.ServiceConfig{
+			"ai-project": {
+				Name:                 "ai-project",
+				Host:                 AiProjectHost,
+				AdditionalProperties: projectProps,
+			},
 			"service-key": {
 				Name:                 "service-key",
 				Host:                 AiAgentHost,
-				AdditionalProperties: props,
+				AdditionalProperties: agentProps,
+				Uses:                 []string{"ai-project"},
 			},
 		},
 	}}
@@ -456,7 +466,54 @@ func TestResolveAgentServiceFromProject_UsesInlineNameBeforeDeploy(t *testing.T)
 	require.NoError(t, err)
 	require.Equal(t, "service-key", info.ServiceName)
 	require.Equal(t, "inline-agent", info.AgentName,
-		"inline agent name should be available before deployment outputs exist")
+		"inline agent name should resolve for an explicitly adopted existing project")
+}
+
+// TestResolveAgentServiceFromProject_GreenfieldRequiresDeploy verifies that an
+// undeployed greenfield service does not auto-resolve its inline name. This
+// prevents invoke from silently targeting an older live agent whose name
+// happens to match the local definition.
+func TestResolveAgentServiceFromProject_GreenfieldRequiresDeploy(t *testing.T) {
+	t.Parallel()
+
+	agentProps, err := projectpkg.AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindHosted,
+			Name: "inline-agent",
+		},
+	}, nil)
+	require.NoError(t, err)
+	projectProps, err := projectpkg.MarshalStruct(&projectpkg.ServiceTargetAgentConfig{})
+	require.NoError(t, err)
+
+	projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+		Path: t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{
+			"ai-project": {
+				Name:                 "ai-project",
+				Host:                 AiProjectHost,
+				AdditionalProperties: projectProps,
+			},
+			"service-key": {
+				Name:                 "service-key",
+				Host:                 AiAgentHost,
+				AdditionalProperties: agentProps,
+				Uses:                 []string{"ai-project"},
+			},
+		},
+	}}
+	envServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "test"},
+		values:  map[string]map[string]string{"test": {}},
+	}
+	azdClient := newHelpersTestAzdClient(
+		t, projectServer, &helpersPromptServer{}, envServer,
+	)
+
+	info, err := resolveAgentServiceFromProject(t.Context(), azdClient, "", true)
+	require.NoError(t, err)
+	require.Empty(t, info.AgentName,
+		"greenfield service must require deploy output rather than using the inline name")
 }
 
 // TestResolveAgentServiceFromProject_EnvironmentNameWins verifies a deployed
@@ -465,21 +522,31 @@ func TestResolveAgentServiceFromProject_UsesInlineNameBeforeDeploy(t *testing.T)
 func TestResolveAgentServiceFromProject_EnvironmentNameWins(t *testing.T) {
 	t.Parallel()
 
-	props, err := projectpkg.AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{
+	agentProps, err := projectpkg.AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{
 			Kind: agent_yaml.AgentKindHosted,
 			Name: "inline-agent",
 		},
 	}, nil)
 	require.NoError(t, err)
+	projectProps, err := projectpkg.MarshalStruct(&projectpkg.ServiceTargetAgentConfig{
+		Endpoint: "https://account.services.ai.azure.com/api/projects/existing",
+	})
+	require.NoError(t, err)
 
 	projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
 		Path: t.TempDir(),
 		Services: map[string]*azdext.ServiceConfig{
+			"ai-project": {
+				Name:                 "ai-project",
+				Host:                 AiProjectHost,
+				AdditionalProperties: projectProps,
+			},
 			"service-key": {
 				Name:                 "service-key",
 				Host:                 AiAgentHost,
-				AdditionalProperties: props,
+				AdditionalProperties: agentProps,
+				Uses:                 []string{"ai-project"},
 			},
 		},
 	}}

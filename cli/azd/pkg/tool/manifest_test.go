@@ -19,7 +19,7 @@ func TestBuiltInTools(t *testing.T) {
 		t.Parallel()
 
 		tools := BuiltInTools()
-		require.Len(t, tools, 8, "expected 8 built-in tools")
+		require.Len(t, tools, 7, "expected 7 built-in tools")
 	})
 
 	t.Run("ContainsAllExpectedToolIDs", func(t *testing.T) {
@@ -30,7 +30,6 @@ func TestBuiltInTools(t *testing.T) {
 			"github-copilot-cli",
 			"vscode-azure-tools",
 			"vscode-bicep",
-			"GitHub.copilot-chat",
 			"azure-mcp-server",
 			"azure.ai.agents",
 			"azure-skills",

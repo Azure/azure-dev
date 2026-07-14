@@ -228,7 +228,6 @@ var builtInTools = []*ToolDefinition{
 	githubCopilotCLI(),
 	vscodeAzureTools(),
 	vscodeBicep(),
-	vscodeGitHubCopilot(),
 	azureMCPServer(),
 	azdAIExtensions(),
 	azureSkills(),
@@ -335,25 +334,6 @@ func vscodeBicep() *ToolDefinition {
 		InstallStrategies: allPlatforms(InstallStrategy{
 			PackageManager: "code",
 			PackageId:      "ms-azuretools.vscode-bicep",
-		}),
-	}
-}
-
-func vscodeGitHubCopilot() *ToolDefinition {
-	return &ToolDefinition{
-		Id:            "GitHub.copilot-chat",
-		Name:          "GitHub Copilot Chat VS Code Extension",
-		Description:   "VS Code extension for AI-powered code completions, chat, and agent mode.",
-		Category:      ToolCategoryVSCodeExtension,
-		Priority:      ToolPriorityOptional,
-		Website:       "https://marketplace.visualstudio.com/items?itemName=GitHub.copilot-chat",
-		DetectCommand: "code",
-		VersionArgs:   []string{"--list-extensions", "--show-versions"},
-		VersionRegex:  `(?i)github\.copilot-chat@(\d+\.\d+\.\d+)`,
-		InstallStrategies: allPlatforms(InstallStrategy{
-			PackageManager: "code",
-			PackageId:      "GitHub.copilot-chat",
-			FallbackUrl:    "https://marketplace.visualstudio.com/items?itemName=GitHub.copilot-chat",
 		}),
 	}
 }

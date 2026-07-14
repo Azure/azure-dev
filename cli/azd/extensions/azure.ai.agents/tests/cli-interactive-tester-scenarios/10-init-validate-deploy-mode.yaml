@@ -20,13 +20,12 @@ env:
   AZD_DISABLE_AGENT_DETECT: "1"
 
 # Seed a committed from-code fixture so init resolves the from-code method and
-# reaches validateCodeDeployInput. Override the fixture location with
-# AZD_AGENTS_FIXTURES if needed.
+# reaches validateCodeDeployInput.
 pre:
   - run: "rm -rf ~/working/azd-agents-validate-deploy-mode-{instance}"
     cwd: "~/working"
     name: "reset working dir"
-  - run: "mkdir -p ~/working/azd-agents-validate-deploy-mode-{instance} && cp -r \"${AZD_AGENTS_FIXTURES:?Set AZD_AGENTS_FIXTURES to the WSL path of your fixtures directory (e.g. /mnt/d/w1/azure-dev/.../tests/cli-interactive-tester-scenarios/fixtures)}/from-code/.\" ~/working/azd-agents-validate-deploy-mode-{instance}/"
+  - run: "mkdir -p ~/working/azd-agents-validate-deploy-mode-{instance} && cp -r \"{fixtures_dir}/from-code/.\" ~/working/azd-agents-validate-deploy-mode-{instance}/"
     cwd: "~/working"
     name: "seed from-code agent fixture (app.py + requirements.txt)"
 

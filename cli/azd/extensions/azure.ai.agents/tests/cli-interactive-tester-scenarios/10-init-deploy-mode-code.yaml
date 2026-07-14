@@ -14,12 +14,11 @@ env:
   AZD_DISABLE_AGENT_DETECT: "1"
 
 # Seed a committed Python fixture so code-deploy has real source to package.
-# Override the fixture location with AZD_AGENTS_FIXTURES if needed.
 pre:
   - run: "rm -rf ~/working/azd-agents-t1-code-deploy-{instance}"
     cwd: "~/working"
     name: "reset working dir"
-  - run: "mkdir -p ~/working/azd-agents-t1-code-deploy-{instance} && cp -r \"${AZD_AGENTS_FIXTURES:?Set AZD_AGENTS_FIXTURES to the WSL path of your fixtures directory (e.g. /mnt/d/w1/azure-dev/.../tests/cli-interactive-tester-scenarios/fixtures)}/from-code/.\" ~/working/azd-agents-t1-code-deploy-{instance}/"
+  - run: "mkdir -p ~/working/azd-agents-t1-code-deploy-{instance} && cp -r \"{fixtures_dir}/from-code/.\" ~/working/azd-agents-t1-code-deploy-{instance}/"
     cwd: "~/working"
     name: "seed from-code agent fixture (app.py + requirements.txt)"
 

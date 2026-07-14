@@ -44,6 +44,13 @@ The scenarios reference `{prefix}`, `{subscription}`, `{region}`, `{model}`, `{t
    a compact timestamp of the form `MMDDHHmm` (e.g. `07141038`). This isolates
    concurrent runs so two agents on the same machine don't collide on Azure resource
    names or working directories.
-3. Pass the merged map as `session_vars` on **every** `load_scenario`, `run_pre_hooks`,
-   `start_session`, and `run_post_hooks` call. Omitting it leaves placeholders unresolved
-   and the run executes against literal `{prefix}` strings.
+3. Derive `fixtures_dir` = the tester-side absolute path of the `fixtures/` subdirectory
+   inside the scenarios directory. On Windows (where the tester runs inside WSL) this is
+   the WSL-translated path (e.g. `/mnt/c/Repos/azure-dev/.../fixtures`); on native
+   Linux/macOS it is the regular absolute path. Apply the same path-style logic used for
+   scenario paths (see `running-scenarios.md` § Path style).
+   Scenario pre-hooks use `{fixtures_dir}` to locate test fixture files.
+4. Pass the merged map (including `shared_agent_name` and `fixtures_dir`) as `session_vars`
+   on **every** `load_scenario`, `run_pre_hooks`, `start_session`, and `run_post_hooks`
+   call. Omitting it leaves placeholders unresolved and the run executes against literal
+   `{prefix}` strings.

@@ -509,6 +509,7 @@ Variables exposed to scenarios via `session_vars`:
 | `{model}` | `profile.yaml` | `gpt-4.1-mini` | cheap/fast for tests |
 | `{shared_agent_suffix}` | `profile.yaml` | `basic-responses` | |
 | `{shared_agent_name}` | derived by orchestrator | `{prefix}-{shared_agent_suffix}-{ts}` | Tier 2 subdirectory name — orchestrator must compute (with `{ts}` = `MMDDHHmm` compact timestamp) and pass alongside the others. The timestamp isolates concurrent runs. |
+| `{fixtures_dir}` | derived by orchestrator | `<scenarios-dir>/fixtures` | Tester-side absolute path to the `fixtures/` subdirectory (WSL-translated on Windows, native on Linux/macOS); used by pre-hooks to seed test fixture files |
 
 **Bootstrap (one-time per checkout):**
 
@@ -519,7 +520,9 @@ cp profile.local.yaml.example profile.local.yaml
 
 The orchestrator must load both files, merge (local overrides shared), derive
 `shared_agent_name` (= `{prefix}-{shared_agent_suffix}-{ts}` where `{ts}` is a
-compact `MMDDHHmm` timestamp), and pass the merged map as `session_vars=` on every
+compact `MMDDHHmm` timestamp) and `fixtures_dir` (= the tester-side absolute path
+of the `fixtures/` subdirectory — WSL-translated on Windows, native on
+Linux/macOS), and pass the merged map as `session_vars=` on every
 `load_scenario` / `run_pre_hooks` / `start_session` / `run_post_hooks` call.
 Failing to thread `session_vars` leaves `{prefix}` etc. unresolved in goals and
 the run will execute against literal placeholder strings.
@@ -581,15 +584,17 @@ How they're used here:
 `app.py`). The existing-code scenarios copy it into the working dir via a `pre`
 hook, then select "Use the code in the current directory" at the init prompt.
 
-The hook references the fixture by absolute path with an overridable env var:
+The hook references the fixture via the `{fixtures_dir}` session variable, which
+the orchestrator auto-derives from the scenarios directory path:
 
 ```sh
-cp -r "${AZD_AGENTS_FIXTURES:-/mnt/c/Repos/azure-dev/cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/fixtures}/from-code/." "$cwd"
+cp -r "{fixtures_dir}/from-code/." "$cwd"
 ```
 
-If your clone lives somewhere other than `/mnt/c/Repos/azure-dev` (the WSL view
-of `C:\Repos\azure-dev`), export `AZD_AGENTS_FIXTURES` to the WSL path of this
-`fixtures/` directory before running the existing-code scenarios.
+The orchestrator computes `fixtures_dir` as the tester-side absolute path of the
+`fixtures/` subdirectory inside the scenarios directory (WSL-translated on Windows,
+native on Linux/macOS) and passes it as a `session_var` alongside the other profile
+variables.
 
 ## Re-running scenarios (idempotency)
 

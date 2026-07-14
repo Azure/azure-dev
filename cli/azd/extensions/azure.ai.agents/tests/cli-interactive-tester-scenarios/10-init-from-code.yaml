@@ -4,8 +4,7 @@
 # no cost incurred.
 # Precondition: the cwd should already contain agent source code (and ideally an
 # agent manifest). The pre hooks seed a committed Python fixture so this is
-# guaranteed and the run is idempotent. Override the fixture location with
-# AZD_AGENTS_FIXTURES if your repo is checked out elsewhere.
+# guaranteed and the run is idempotent.
 name: "init-from-code"
 command: "azd ai agent init"
 cwd: "~/working/azd-agents-t1-from-code-{instance}"
@@ -18,7 +17,7 @@ pre:
   - run: "rm -rf ~/working/azd-agents-t1-from-code-{instance}"
     cwd: "~/working"
     name: "reset working dir"
-  - run: "mkdir -p ~/working/azd-agents-t1-from-code-{instance} && cp -r \"${AZD_AGENTS_FIXTURES:?Set AZD_AGENTS_FIXTURES to the WSL path of your fixtures directory (e.g. /mnt/d/w1/azure-dev/.../tests/cli-interactive-tester-scenarios/fixtures)}/from-code/.\" ~/working/azd-agents-t1-from-code-{instance}/"
+  - run: "mkdir -p ~/working/azd-agents-t1-from-code-{instance} && cp -r \"{fixtures_dir}/from-code/.\" ~/working/azd-agents-t1-from-code-{instance}/"
     cwd: "~/working"
     name: "seed from-code agent fixture (app.py + requirements.txt)"
 

@@ -66,6 +66,10 @@ jobs:
           azd x publish
           azd extension install azure.ai.projects --source local --force --no-prompt
 
+      - name: Run projects unit tests
+        working-directory: cli/azd/extensions/azure.ai.projects
+        run: go test ./... -count=1
+
       - name: Build extension (ci-build.ps1)
         working-directory: cli/azd/extensions/azure.ai.agents
         run: |

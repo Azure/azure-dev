@@ -20,7 +20,7 @@ type manifestProviderDoc struct {
 }
 
 // manifestComparedProviderTypes is the set of provider types representable in a
-// manifest's providers: list. Framework service and validation providers are
+// manifest's `providers:` list. Framework service and validation providers are
 // registered in code only, so they are excluded.
 var manifestComparedProviderTypes = []extensions.ProviderType{
 	extensions.ServiceTargetProviderType,
@@ -33,7 +33,7 @@ var manifestComparedProviderTypes = []extensions.ProviderType{
 //
 // It runs configure against a bare [ExtensionHost] (no azd connection; provider
 // factories are never invoked) and compares the registered names against the
-// manifest's providers: list. Only service-target and provisioning-provider types
+// manifest's `providers:` list. Only service-target and provisioning-provider types
 // are compared; framework-service and validation registrations have no manifest
 // representation.
 //
@@ -50,6 +50,8 @@ func VerifyProvidersMatchManifest(configure func(host *ExtensionHost), manifestP
 	}
 
 	host := NewExtensionHost(nil)
+	// Verification depends on provider registration remaining lazy so configure
+	// can safely record names without invoking factories against a nil azd client.
 	configure(host)
 
 	registered := map[extensions.ProviderType][]string{}
@@ -66,6 +68,8 @@ func VerifyProvidersMatchManifest(configure func(host *ExtensionHost), manifestP
 	for _, providerType := range manifestComparedProviderTypes {
 		declaredNames := declared[providerType]
 		registeredNames := registered[providerType]
+		declaredDuplicateKeys := duplicateNameKeys(declaredNames)
+		registeredDuplicateKeys := duplicateNameKeys(registeredNames)
 
 		for _, name := range duplicatedNames(declaredNames) {
 			mismatches = append(mismatches, fmt.Sprintf(
@@ -79,18 +83,36 @@ func VerifyProvidersMatchManifest(configure func(host *ExtensionHost), manifestP
 		}
 
 		for _, name := range declaredNames {
-			if !slices.Contains(registeredNames, name) {
-				mismatches = append(mismatches, fmt.Sprintf(
-					"provider %q of type %q is declared in %s but not registered by the extension",
-					name, providerType, manifestPath))
+			key := strings.ToLower(name)
+			if declaredDuplicateKeys[key] || registeredDuplicateKeys[key] ||
+				slices.Contains(registeredNames, name) {
+				continue
 			}
+
+			if registeredName, ok := equalFoldName(registeredNames, name); ok {
+				mismatches = append(mismatches, fmt.Sprintf(
+					"provider %q of type %q is declared in %s but registered as %q; provider names are case-sensitive",
+					name, providerType, manifestPath, registeredName))
+				continue
+			}
+
+			mismatches = append(mismatches, fmt.Sprintf(
+				"provider %q of type %q is declared in %s but not registered by the extension",
+				name, providerType, manifestPath))
 		}
 		for _, name := range registeredNames {
-			if !slices.Contains(declaredNames, name) {
-				mismatches = append(mismatches, fmt.Sprintf(
-					"provider %q of type %q is registered by the extension but not declared in %s",
-					name, providerType, manifestPath))
+			key := strings.ToLower(name)
+			if declaredDuplicateKeys[key] || registeredDuplicateKeys[key] ||
+				slices.Contains(declaredNames, name) {
+				continue
 			}
+			if _, ok := equalFoldName(declaredNames, name); ok {
+				continue
+			}
+
+			mismatches = append(mismatches, fmt.Sprintf(
+				"provider %q of type %q is registered by the extension but not declared in %s",
+				name, providerType, manifestPath))
 		}
 	}
 
@@ -103,28 +125,51 @@ func VerifyProvidersMatchManifest(configure func(host *ExtensionHost), manifestP
 	return nil
 }
 
+func duplicateNameKeys(names []string) map[string]bool {
+	counts := make(map[string]int, len(names))
+	for _, name := range names {
+		counts[strings.ToLower(name)]++
+	}
+
+	duplicates := map[string]bool{}
+	for key, count := range counts {
+		if count > 1 {
+			duplicates[key] = true
+		}
+	}
+	return duplicates
+}
+
 // duplicatedNames returns, once each and sorted, the names that appear more than
 // once in names. Matching is case-insensitive because differently cased provider
 // names collide during registry discovery, but the first-seen spelling is reported.
 func duplicatedNames(names []string) []string {
-	counts := make(map[string]int, len(names))
+	duplicateKeys := duplicateNameKeys(names)
 	original := make(map[string]string, len(names))
 	for _, name := range names {
 		key := strings.ToLower(name)
-		counts[key]++
 		if _, ok := original[key]; !ok {
 			original[key] = name
 		}
 	}
 
-	var duplicated []string
-	for key, count := range counts {
-		if count > 1 {
-			duplicated = append(duplicated, original[key])
+	duplicated := make([]string, 0, len(duplicateKeys))
+	for key := range duplicateKeys {
+		if name, ok := original[key]; ok {
+			duplicated = append(duplicated, name)
 		}
 	}
 	slices.Sort(duplicated)
 	return duplicated
+}
+
+func equalFoldName(names []string, target string) (string, bool) {
+	for _, name := range names {
+		if strings.EqualFold(name, target) {
+			return name, true
+		}
+	}
+	return "", false
 }
 
 // loadManifestProviders reads and groups a manifest's declared providers by type,

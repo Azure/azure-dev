@@ -30,13 +30,21 @@ providers:
     description: d
 `)
 
+	factoryInvoked := false
 	configure := func(host *ExtensionHost) {
 		host.
-			WithServiceTarget("custom.host", func() ServiceTargetProvider { return nil }).
-			WithProvisioningProvider("custom.provider", func() ProvisioningProvider { return nil })
+			WithServiceTarget("custom.host", func() ServiceTargetProvider {
+				factoryInvoked = true
+				return nil
+			}).
+			WithProvisioningProvider("custom.provider", func() ProvisioningProvider {
+				factoryInvoked = true
+				return nil
+			})
 	}
 
 	require.NoError(t, VerifyProvidersMatchManifest(configure, manifest))
+	require.False(t, factoryInvoked, "provider factories must remain lazy during verification")
 }
 
 func TestVerifyProvidersMatchManifest_DeadClaim(t *testing.T) {
@@ -157,9 +165,11 @@ providers:
 
 	err := VerifyProvidersMatchManifest(configure, manifest)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "declared in")
-	require.Contains(t, err.Error(), "not registered")
-	require.Contains(t, err.Error(), "registered by the extension but not declared")
+	require.Contains(t, err.Error(), `provider "Custom.Host"`)
+	require.Contains(t, err.Error(), `registered as "custom.host"`)
+	require.Contains(t, err.Error(), "provider names are case-sensitive")
+	require.NotContains(t, err.Error(), "not registered")
+	require.NotContains(t, err.Error(), "not declared")
 }
 
 func TestVerifyProvidersMatchManifest_CaseInsensitiveDuplicate(t *testing.T) {
@@ -182,4 +192,5 @@ providers:
 	err := VerifyProvidersMatchManifest(configure, manifest)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "declared more than once")
+	require.NotContains(t, err.Error(), "not registered")
 }

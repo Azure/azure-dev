@@ -4,14 +4,7 @@
 
 ### Features Added
 
-- [[#9085]](https://github.com/Azure/azure-dev/issues/9085) The
-  `azure.ai.projects` extension now owns the `microsoft.foundry`
-  provisioning provider and its project validation checks. It reads
-  `azure.ai.project` model deployments before provisioning and deploys,
-  while retaining compatibility with pre-split Foundry manifests.
-  Upgrade with `azure.ai.agents` 1.0.0-beta.6 or later. The paired extensions
-  must be upgraded together to avoid duplicate `microsoft.foundry` provider
-  registration.
+- [[#9085]](https://github.com/Azure/azure-dev/issues/9085) The `azure.ai.projects` extension now owns the `microsoft.foundry` provisioning provider and its project validation checks. It reads `azure.ai.project` model deployments before provisioning and deploys, while retaining compatibility with pre-split Foundry manifests. Upgrade with `azure.ai.agents` 1.0.0-beta.6 or later. The paired extensions must be upgraded together to avoid duplicate `microsoft.foundry` provider registration.
 
 ## 1.0.0-beta.2 (2026-07-09)
 

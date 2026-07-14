@@ -4,10 +4,7 @@ Manage Microsoft Foundry Project resources from your terminal. (Preview)
 
 ## `azure.yaml` ownership
 
-This extension owns `host: azure.ai.project` services and the
-`microsoft.foundry` provisioning provider. A project service carries
-account-level settings such as an existing project endpoint, model
-deployments, and private networking.
+This extension owns `host: azure.ai.project` services and the `microsoft.foundry` provisioning provider. A project service carries account-level settings such as an existing project endpoint, model deployments, and private networking.
 
 ```yaml
 infra:
@@ -28,10 +25,6 @@ services:
           capacity: 50
 ```
 
-When `endpoint` is omitted, `azd provision` creates a Foundry account
-and project. When it is set, provisioning reuses that project and
-reconciles the declarations that can be applied to an existing account.
+When `endpoint` is omitted, `azd provision` creates a Foundry account and project. When it is set, provisioning reuses that project and reconciles the declarations that can be applied to an existing account.
 
-The `azd ai project set`, `show`, and `unset` commands manage the
-default Foundry project endpoint context. They do not currently author
-the project service in `azure.yaml`.
+The `azd ai project set`, `show`, and `unset` commands manage the default Foundry project endpoint context. They do not currently author the project service in `azure.yaml`.

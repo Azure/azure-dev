@@ -126,10 +126,7 @@ A new extension release ships in two PRs:
 
 ### Provider handoff release
 
-The release that removes `microsoft.foundry` from this extension must
-be coordinated with the provider-bearing `azure.ai.projects` release.
-Publish both artifacts before updating either registry entry, then
-update both entries and the `microsoft.foundry` meta-package together.
+The release that removes `microsoft.foundry` from this extension must be coordinated with the provider-bearing `azure.ai.projects` release. Publish both artifacts before updating either registry entry, then update both entries and the `microsoft.foundry` meta-package together.
 
 ### PR 1 — Version bump
 

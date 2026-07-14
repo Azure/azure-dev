@@ -604,7 +604,7 @@ func TestToolInstallAction_JsonFormat_NoBannerLeak(t *testing.T) {
 
 	var items []toolInstallResultItem
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &items),
-		"JSON output must be a single parseable document with no banner leak")
+		"JSON output must be a single valid JSON document with no banner leak")
 }
 
 // for a bug where a failed install still returned a success ActionResult,
@@ -1294,7 +1294,7 @@ func TestToolUpgradeAction_All_UpgradesInstalledTools(t *testing.T) {
 
 // TestToolUpgradeAction_All_JsonFormat_EmitsCleanJson exercises the reviewer's
 // exact trigger — `azd tool upgrade --all --output json` — and verifies the
-// writer receives parseable JSON. In JSON mode the detection spinner is
+// writer receives valid JSON. In JSON mode the detection spinner is
 // bypassed (detectAllTools) so no control bytes can corrupt the stream.
 func TestToolUpgradeAction_All_JsonFormat_EmitsCleanJson(t *testing.T) {
 	tracing.ResetUsageAttributesForTest()
@@ -1330,7 +1330,7 @@ func TestToolUpgradeAction_All_JsonFormat_EmitsCleanJson(t *testing.T) {
 
 	var items []toolInstallResultItem
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &items),
-		"upgrade --all --output json must emit parseable JSON")
+		"upgrade --all --output json must emit valid JSON")
 	require.NotEmpty(t, items, "at least one installed tool must be reported")
 }
 

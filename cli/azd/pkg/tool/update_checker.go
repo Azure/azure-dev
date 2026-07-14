@@ -71,12 +71,19 @@ type UpdateCheckResult struct {
 	// Tool is the registry definition that was checked.
 	Tool *ToolDefinition
 	// CurrentVersion is the version currently installed on the local
-	// machine (empty when the tool is not installed).
+	// machine (empty when the tool is not installed). For a skill installed
+	// on multiple agents this is only the first agent's version (an
+	// aggregate); see SkillAgents for the per-agent versions.
 	CurrentVersion string
 	// LatestVersion is the newest version known to the update checker.
 	LatestVersion string
-	// UpdateAvailable is true when LatestVersion is non-empty and
-	// differs from CurrentVersion.
+	// UpdateAvailable is true when LatestVersion is non-empty and differs from
+	// CurrentVersion — except for a skill installed on multiple agents, where
+	// CurrentVersion/LatestVersion are aggregates and UpdateAvailable can be
+	// true even when CurrentVersion == LatestVersion (it is set whenever ANY
+	// agent is behind the latest version). Callers must not infer a skill's
+	// update state from the two aggregate version fields alone; use SkillAgents
+	// for the authoritative per-agent state.
 	UpdateAvailable bool
 	// SkillAgents lists, for a skill tool, the per-agent installed version
 	// and whether an update is available for it (LatestVersion is the same

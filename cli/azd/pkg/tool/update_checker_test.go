@@ -565,6 +565,50 @@ func TestHasUpdatesAvailable(t *testing.T) {
 		assert.False(t, hasUpdates)
 		assert.Equal(t, 0, count)
 	})
+
+	t.Run("SkillWithStaleSecondaryAgentReportsUpdate", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		mgr := newMockUserConfigManager()
+
+		skill := &ToolDefinition{Id: "azure-skills", Name: "Azure Skills", Category: ToolCategorySkill}
+		det := &mockDetector{
+			detectAllFn: func(_ context.Context, tools []*ToolDefinition) ([]*ToolStatus, error) {
+				statuses := make([]*ToolStatus, len(tools))
+				for i, tl := range tools {
+					statuses[i] = &ToolStatus{
+						Tool:      tl,
+						Installed: true,
+						// Aggregate version == the first agent, which is current;
+						// only the second agent is stale.
+						InstalledVersion: "2.0.0",
+						SkillAgents: []InstalledSkillAgent{
+							{Agent: "copilot", Version: "2.0.0"}, // current
+							{Agent: "claude", Version: "1.0.0"},  // stale
+						},
+					}
+				}
+				return statuses, nil
+			},
+		}
+		uc := NewUpdateChecker(mgr, det, staticDir(tmpDir), nil)
+
+		cache := &UpdateCheckCache{
+			CheckedAt: time.Now().UTC(),
+			ExpiresAt: time.Now().UTC().Add(time.Hour),
+			Tools: map[string]CachedToolVersion{
+				"azure-skills": {LatestVersion: "2.0.0"},
+			},
+		}
+		require.NoError(t, uc.SaveCache(cache))
+
+		hasUpdates, count, err := uc.HasUpdatesAvailable(t.Context(), []*ToolDefinition{skill})
+		require.NoError(t, err)
+		assert.True(t, hasUpdates,
+			"a skill with a stale secondary agent must report an update even when the aggregate version is current")
+		assert.Equal(t, 1, count)
+	})
 }
 
 // ---------------------------------------------------------------------------

@@ -922,7 +922,7 @@ func detectAllTools(
 // operation. Prompting requires an interactive terminal, that --no-prompt is
 // not set, and that output is not JSON: a JSON-mode prompt writes control bytes
 // to the same stdout the result array is serialized to, so the output would no
-// longer be a single parseable document. When prompting is not allowed, callers
+// longer be a single valid JSON document. When prompting is not allowed, callers
 // must require an explicit target (tool IDs / --agent / --all) instead.
 func promptAllowed(console input.Console, formatter output.Formatter) bool {
 	return console.IsSpinnerInteractive() &&

@@ -234,3 +234,26 @@ func (cli *Cli) Destroy(ctx context.Context, modulePath string, additionalArgs .
 	}
 	return cmdRes.Stdout, nil
 }
+
+// PlanDestroy runs `terraform plan -destroy` to preview the resources that would be destroyed, without
+// deleting anything. Output is streamed to the console. -input=false ensures terraform never blocks on
+// stdin, which makes it safe to run in non-interactive/CI environments.
+func (cli *Cli) PlanDestroy(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
+	args := []string{
+		fmt.Sprintf("-chdir=%s", modulePath),
+		"plan",
+		"-destroy",
+		"-input=false",
+	}
+
+	args = append(args, additionalArgs...)
+	cmdRes, err := cli.runInteractive(ctx, args...)
+	if err != nil {
+		return "", fmt.Errorf(
+			"failed running terraform plan -destroy: %s (%w)",
+			cmdRes.Stderr,
+			err,
+		)
+	}
+	return cmdRes.Stdout, nil
+}

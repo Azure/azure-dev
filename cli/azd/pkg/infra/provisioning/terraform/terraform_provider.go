@@ -15,10 +15,12 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
@@ -252,6 +254,32 @@ func (t *TerraformProvider) Destroy(
 	}
 
 	modulePath := t.modulePath()
+
+	// terraform destroy asks for confirmation interactively unless --force is passed.
+	// In a CI/CD pipeline with --no-prompt, azd cannot answer that prompt, so terraform would block
+	// reading stdin and hang. In that case, preview the destroy plan (read-only) and stop without
+	// deleting, as if the confirmation were answered "no". Use --force to delete in CI. See issue #4317.
+	if resource.IsRunningOnCI() && !options.Force() && t.console.IsNoPromptMode() {
+		t.console.Message(ctx, "Previewing resources to delete...")
+		// terraform doesn't use `t.console`; stop any spinner before streaming its output.
+		t.console.StopSpinner(ctx, "", input.Step)
+
+		if initRes, err := t.init(ctx, isRemoteBackendConfig); err != nil {
+			return nil, fmt.Errorf("terraform init failed: %s, err: %w", initRes, err)
+		}
+
+		previewArgs := t.createPlanArgs(isRemoteBackendConfig)
+		if previewRes, err := t.cli.PlanDestroy(ctx, modulePath, previewArgs...); err != nil {
+			return nil, fmt.Errorf("previewing destroy failed: %s, err: %w", previewRes, err)
+		}
+
+		t.console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: "No resources were deleted because --no-prompt was set in a CI/CD environment.",
+			Hints:       []string{"Re-run with --force to delete resources without confirmation."},
+		})
+
+		return &provisioning.DestroyResult{SkippedDeletion: true}, nil
+	}
 
 	//load the deployment result
 	outputs, err := t.createOutputParameters(ctx, modulePath, isRemoteBackendConfig)

@@ -81,6 +81,94 @@ func TestTerraformDestroy(t *testing.T) {
 	require.Contains(t, destroyResult.InvalidatedEnvKeys, "RG_NAME")
 }
 
+// TestTerraformDestroyCIPreviewsWithoutDeleting verifies that `azd down --no-prompt` in a CI/CD
+// environment (without --force) previews the destroy plan and does NOT delete anything. terraform's
+// interactive destroy confirmation would otherwise block on stdin and hang. See issue #4317.
+func TestTerraformDestroyCIPreviewsWithoutDeleting(t *testing.T) {
+	skipIfTerraformNotInstalled(t)
+	t.Setenv("TF_BUILD", "True") // simulate an Azure Pipelines (CI) run
+
+	mockContext := mocks.NewMockContext(t.Context())
+	prepareGenericMocks(mockContext.CommandRunner)
+	preparePlanningMocks(mockContext.CommandRunner)
+
+	infraProvider := createTerraformProvider(t, mockContext)
+	mockContext.Console.SetNoPromptMode(true)
+
+	destroyOptions := provisioning.NewDestroyOptions(false, false)
+	destroyResult, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+	require.NoError(t, err)
+	require.NotNil(t, destroyResult)
+	require.True(t, destroyResult.SkippedDeletion)
+	require.Empty(t, destroyResult.InvalidatedEnvKeys)
+}
+
+// TestTerraformDestroyCIWithForceDeletes verifies that --force bypasses the CI preview so that
+// `azd down --no-prompt --force` still tears resources down (terraform gets -auto-approve).
+func TestTerraformDestroyCIWithForceDeletes(t *testing.T) {
+	skipIfTerraformNotInstalled(t)
+	t.Setenv("TF_BUILD", "True")
+
+	mockContext := mocks.NewMockContext(t.Context())
+	prepareGenericMocks(mockContext.CommandRunner)
+	preparePlanningMocks(mockContext.CommandRunner)
+	prepareDestroyMocks(mockContext.CommandRunner)
+
+	infraProvider := createTerraformProvider(t, mockContext)
+	mockContext.Console.SetNoPromptMode(true)
+
+	destroyOptions := provisioning.NewDestroyOptions(true, false)
+	destroyResult, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+	require.NoError(t, err)
+	require.NotNil(t, destroyResult)
+	require.False(t, destroyResult.SkippedDeletion)
+	require.Contains(t, destroyResult.InvalidatedEnvKeys, "AZURE_LOCATION")
+	require.Contains(t, destroyResult.InvalidatedEnvKeys, "RG_NAME")
+}
+
+// TestTerraformDestroyNoPromptNotCIDeletes verifies that --no-prompt alone (outside CI) does not trigger
+// the preview path — behavior is unchanged and terraform destroy is invoked.
+func TestTerraformDestroyNoPromptNotCIDeletes(t *testing.T) {
+	skipIfTerraformNotInstalled(t)
+	clearCIEnv(t)
+
+	mockContext := mocks.NewMockContext(t.Context())
+	prepareGenericMocks(mockContext.CommandRunner)
+	preparePlanningMocks(mockContext.CommandRunner)
+	prepareDestroyMocks(mockContext.CommandRunner)
+
+	infraProvider := createTerraformProvider(t, mockContext)
+	mockContext.Console.SetNoPromptMode(true)
+
+	destroyOptions := provisioning.NewDestroyOptions(false, false)
+	destroyResult, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+	require.NoError(t, err)
+	require.NotNil(t, destroyResult)
+	require.False(t, destroyResult.SkippedDeletion)
+	require.Contains(t, destroyResult.InvalidatedEnvKeys, "AZURE_LOCATION")
+}
+
+// clearCIEnv unsets CI-related environment variables so resource.IsRunningOnCI() returns false during the
+// test. Some vars are existence-based, so they must be unset rather than emptied.
+func clearCIEnv(t *testing.T) {
+	t.Helper()
+	ciVars := []string{
+		"CI", "BUILD_ID", "GITHUB_ACTIONS", "TF_BUILD",
+		"CODEBUILD_BUILD_ID", "JENKINS_URL", "TEAMCITY_VERSION",
+		"APPVEYOR", "TRAVIS", "CIRCLECI", "GITLAB_CI",
+		"JB_SPACE_API_URL", "bamboo.buildKey", "BITBUCKET_BUILD_NUMBER",
+	}
+	for _, key := range ciVars {
+		if val, ok := os.LookupEnv(key); ok {
+			os.Unsetenv(key)
+			t.Cleanup(func() { os.Setenv(key, val) })
+		}
+	}
+}
+
 func TestTerraformState(t *testing.T) {
 	skipIfTerraformNotInstalled(t)
 	mockContext := mocks.NewMockContext(t.Context())

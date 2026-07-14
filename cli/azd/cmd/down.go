@@ -133,6 +133,7 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 	slices.Reverse(layers)
 
+	skippedDeletion := false
 	for _, layer := range layers {
 		if downLayer != "" || len(layers) > 1 {
 			a.console.EnsureBlankLine(ctx)
@@ -146,12 +147,20 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
-		_, err := a.provisionManager.Destroy(ctx, destroyOptions)
+		destroyResult, err := a.provisionManager.Destroy(ctx, destroyOptions)
 		if errors.Is(err, inf.ErrDeploymentsNotFound) || errors.Is(err, inf.ErrDeploymentResourcesNotFound) {
 			a.console.MessageUxItem(ctx, &ux.DoneMessage{Message: "No Azure resources were found."})
 		} else if err != nil {
 			return nil, fmt.Errorf("deleting infrastructure: %w", err)
+		} else if destroyResult != nil && destroyResult.SkippedDeletion {
+			skippedDeletion = true
 		}
+	}
+
+	// When deletion was skipped (e.g. --no-prompt in CI without --force), nothing was deleted, so don't
+	// invalidate the state cache or report a successful teardown.
+	if skippedDeletion {
+		return &actions.ActionResult{}, nil
 	}
 
 	// Invalidate cache after successful down so azd show will refresh

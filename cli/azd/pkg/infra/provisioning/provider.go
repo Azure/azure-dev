@@ -236,6 +236,9 @@ type DeployPreviewResult struct {
 type DestroyResult struct {
 	// InvalidatedEnvKeys is a list of keys that should be removed from the environment after the destroy is complete.
 	InvalidatedEnvKeys []string
+	// SkippedDeletion is true when the provider intentionally did not delete any resources (for example, when
+	// running with --no-prompt in a CI/CD environment without --force, where only a destroy preview is shown).
+	SkippedDeletion bool
 }
 
 type StateResult struct {

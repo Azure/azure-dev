@@ -536,6 +536,119 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.7.0/microsoft-azd-demo-windows-arm64.zip"
             }
           }
+        },
+        {
+          "version": "0.7.1",
+          "capabilities": [
+            "custom-commands",
+            "lifecycle-events",
+            "mcp-server",
+            "service-target-provider",
+            "framework-service-provider",
+            "provisioning-provider",
+            "validation-provider",
+            "metadata"
+          ],
+          "providers": [
+            {
+              "name": "demo",
+              "type": "service-target",
+              "description": "Deploys application components to demo"
+            },
+            {
+              "name": "demo",
+              "type": "provisioning-provider",
+              "description": "Provisions infrastructure using the demo provider"
+            }
+          ],
+          "usage": "azd demo <command> [options]",
+          "examples": [
+            {
+              "name": "context",
+              "description": "Displays the current `azd` project & environment context.",
+              "usage": "azd demo context"
+            },
+            {
+              "name": "prompt",
+              "description": "Display prompt capabilities.",
+              "usage": "azd demo prompt"
+            },
+            {
+              "name": "ai models",
+              "description": "Browse available AI models interactively.",
+              "usage": "azd demo ai models"
+            },
+            {
+              "name": "ai deployment",
+              "description": "Select model/version/SKU/capacity and resolve a deployment configuration.",
+              "usage": "azd demo ai deployment"
+            },
+            {
+              "name": "ai quota",
+              "description": "View usage meters and limits for a selected location.",
+              "usage": "azd demo ai quota"
+            },
+            {
+              "name": "mcp",
+              "description": "Start MCP server with demo tools.",
+              "usage": "azd demo mcp start"
+            },
+            {
+              "name": "copilot",
+              "description": "Interactive Copilot chat loop demonstrating CopilotService gRPC API.",
+              "usage": "azd demo copilot [--model <model>] [--resume]"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "79ee739ef1e7ef1c57ca894e0970ba0c27f088d8b804d0c2fc0d47b1b014c910"
+              },
+              "entryPoint": "microsoft-azd-demo-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.7.1/microsoft-azd-demo-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "a9cc1d960260fe6f01bdcccdeed4f7f2509a84b3ae7a274a33562fbd0880f145"
+              },
+              "entryPoint": "microsoft-azd-demo-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.7.1/microsoft-azd-demo-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "2a501bd3123f5599c64853b65709161e77874b8a1c87dcced08e217474bb2383"
+              },
+              "entryPoint": "microsoft-azd-demo-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.7.1/microsoft-azd-demo-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "6fc0a310676dc575de2ed0c145decf39bc60b26b49118459f530207305637ade"
+              },
+              "entryPoint": "microsoft-azd-demo-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.7.1/microsoft-azd-demo-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "64f1c5461bc638bd0fd1092ee042dd99ca14d9fe083ac55ae642313b6e980e80"
+              },
+              "entryPoint": "microsoft-azd-demo-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.7.1/microsoft-azd-demo-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "97a3a1c2cc34877194f7d6888ca07904b5a4323542158540f21aa6c099ad990e"
+              },
+              "entryPoint": "microsoft-azd-demo-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.7.1/microsoft-azd-demo-windows-arm64.zip"
+            }
+          }
         }
       ]
     },

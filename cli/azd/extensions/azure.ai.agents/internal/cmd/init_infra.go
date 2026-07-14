@@ -609,11 +609,8 @@ func writeTfvarsFile(infraDir string, params map[string]any) (ejectArtifact, err
 	}
 
 	// deployments and connections are the only synthesizer-derived values
-	// written to tfvars. ${VAR} references nested inside connections'
-	// credentials/metadata (e.g. an API key) are resolved the same way as the
-	// top-level placeholders above: azd's Terraform provider substitutes
-	// ${...} over the whole file's raw text before parsing it, so nesting
-	// depth does not matter.
+	// written to tfvars. The Terraform provider resolves ${VAR} references
+	// across the generated file at provision time.
 	if v, ok := params["deployments"]; ok {
 		doc["deployments"] = v
 	}

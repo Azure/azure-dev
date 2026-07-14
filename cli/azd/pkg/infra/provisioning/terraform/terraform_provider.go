@@ -16,7 +16,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -731,14 +730,13 @@ func (t *TerraformProvider) createInputParametersFile(
 	if err != nil {
 		return fmt.Errorf("reading parameter file template: %w", err)
 	}
-	lookup := func(name string) string {
+	replaced, err := envsubst.Eval(string(parametersBytes), func(name string) string {
 		if name == environment.PrincipalIdEnvVarName {
 			return principalId
 		}
 
 		return t.env.Getenv(name)
-	}
-	replaced, err := substituteInputParameters(templateFilePath, parametersBytes, lookup)
+	})
 
 	if err != nil {
 		return fmt.Errorf("substituting parameter file: %w", err)
@@ -756,55 +754,6 @@ func (t *TerraformProvider) createInputParametersFile(
 		return fmt.Errorf("writing parameter file: %w", err)
 	}
 
-	return nil
-}
-
-// substituteInputParameters expands strings in JSON parameter files without corrupting JSON values or Foundry expressions.
-// Backend configuration files remain raw Terraform syntax and use envsubst directly.
-func substituteInputParameters(templateFilePath string, parameters []byte, lookup func(string) string) (string, error) {
-	if filepath.Ext(templateFilePath) != ".json" {
-		return envsubst.Eval(string(parameters), lookup)
-	}
-
-	var value any
-	if err := json.Unmarshal(parameters, &value); err != nil {
-		return "", fmt.Errorf("parsing JSON parameters: %w", err)
-	}
-	if err := expandJSONValue(&value, lookup); err != nil {
-		return "", err
-	}
-
-	data, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("marshaling JSON parameters: %w", err)
-	}
-	return string(append(data, '\n')), nil
-}
-
-// expandJSONValue recursively expands JSON string leaves while preserving Foundry ${{...}} expressions.
-func expandJSONValue(value *any, lookup func(string) string) error {
-	switch v := (*value).(type) {
-	case string:
-		expanded, err := foundry.ExpandEnv(v, lookup)
-		if err != nil {
-			return fmt.Errorf("expanding JSON parameter: %w", err)
-		}
-		*value = expanded
-	case []any:
-		for i := range v {
-			if err := expandJSONValue(&v[i], lookup); err != nil {
-				return err
-			}
-		}
-	case map[string]any:
-		for key := range v {
-			item := v[key]
-			if err := expandJSONValue(&item, lookup); err != nil {
-				return err
-			}
-			v[key] = item
-		}
-	}
 	return nil
 }
 

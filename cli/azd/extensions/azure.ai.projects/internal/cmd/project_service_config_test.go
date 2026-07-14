@@ -5,7 +5,13 @@ package cmd
 
 import (
 	"context"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net"
+	"os"
+	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -193,6 +199,99 @@ func TestProjectLifecycleHandlerClearsEmptyDeployments(t *testing.T) {
 	envServer.mu.Lock()
 	defer envServer.mu.Unlock()
 	assert.Equal(t, "[]", envServer.value)
+}
+
+func TestDeploymentEnvironmentContract(t *testing.T) {
+	t.Parallel()
+
+	value, err := encodeProjectDeployments([]synthesis.Deployment{
+		{
+			Name: `model"\name`,
+			Model: synthesis.DeploymentModel{
+				Name: `model"\name`,
+			},
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(
+		t,
+		`[{\"name\":\"model\\\"\\\\name\",\"model\":{\"name\":\"model\\\"\\\\name\",\"format\":\"\",\"version\":\"\"},\"sku\":{\"name\":\"\",\"capacity\":0}}]`,
+		value,
+	)
+
+	//nolint:gosec // repository-controlled parity path
+	source, err := os.ReadFile(filepath.Join(
+		"../../../azure.ai.agents/internal/cmd/listen.go",
+	))
+	require.NoError(t, err)
+
+	file, err := parser.ParseFile(
+		token.NewFileSet(),
+		"listen.go",
+		source,
+		0,
+	)
+	require.NoError(t, err)
+
+	var found bool
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Name.Name == "deploymentEnvUpdate" {
+			found = agentsDeploymentEnvWriterMatchesContract(
+				function,
+				projectDeploymentsEnvKey,
+			)
+			break
+		}
+	}
+	assert.True(
+		t,
+		found,
+		"agents deployment writer must keep the projects environment contract",
+	)
+}
+
+func agentsDeploymentEnvWriterMatchesContract(
+	function *ast.FuncDecl,
+	key string,
+) bool {
+	var escapesBackslashes, escapesQuotes, writesKey bool
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+
+		if selector, ok := call.Fun.(*ast.SelectorExpr); ok &&
+			selector.Sel.Name == "ReplaceAll" && len(call.Args) == 3 {
+			escapesBackslashes = escapesBackslashes ||
+				isStringReplaceAll(call, "\\", "\\\\")
+			escapesQuotes = escapesQuotes ||
+				isStringReplaceAll(call, "\"", "\\\"")
+			return true
+		}
+
+		if name, ok := call.Fun.(*ast.Ident); ok &&
+			name.Name == "setEnvVar" && len(call.Args) == 5 {
+			if literal, ok := call.Args[3].(*ast.BasicLit); ok {
+				writesKey = literal.Value == strconv.Quote(key)
+			}
+		}
+		return true
+	})
+	return escapesBackslashes && escapesQuotes && writesKey
+}
+
+func isStringReplaceAll(
+	call *ast.CallExpr,
+	old string,
+	new string,
+) bool {
+	oldLiteral, oldOK := call.Args[1].(*ast.BasicLit)
+	newLiteral, newOK := call.Args[2].(*ast.BasicLit)
+	return oldOK && newOK &&
+		oldLiteral.Value == strconv.Quote(old) &&
+		newLiteral.Value == strconv.Quote(new)
 }
 
 func mustProjectProperties(

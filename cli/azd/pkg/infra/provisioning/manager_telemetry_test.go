@@ -18,6 +18,9 @@ func TestRecordInfraProviderUsage(t *testing.T) {
 	failingResolver := func() (provisioning.ProviderKind, error) {
 		return provisioning.NotSpecified, errors.New("no default provider")
 	}
+	unspecifiedResolver := func() (provisioning.ProviderKind, error) {
+		return provisioning.NotSpecified, nil
+	}
 
 	tests := []struct {
 		name            string
@@ -107,6 +110,12 @@ func TestRecordInfraProviderUsage(t *testing.T) {
 			name:            "unspecified with failing resolver records nothing",
 			layers:          []provisioning.Options{{Provider: provisioning.NotSpecified}},
 			defaultProvider: failingResolver,
+			expected:        "",
+		},
+		{
+			name:            "unspecified resolving to NotSpecified records nothing",
+			layers:          []provisioning.Options{{Provider: provisioning.NotSpecified}},
+			defaultProvider: unspecifiedResolver,
 			expected:        "",
 		},
 	}

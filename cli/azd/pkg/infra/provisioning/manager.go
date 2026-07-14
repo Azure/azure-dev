@@ -581,12 +581,11 @@ func RecordInfraProviderUsage(layers []Options, defaultProvider DefaultProviderR
 			kind = resolved
 		}
 
-		parsed, err := ParseProvider(kind)
-		if err != nil {
+		if kind == NotSpecified {
 			continue
 		}
 
-		seen[parsed] = struct{}{}
+		seen[kind] = struct{}{}
 	}
 
 	// Distinct resolved kinds are collected first so that two different custom providers still

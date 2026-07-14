@@ -274,7 +274,7 @@ The following fields are defined in `fields.go`.
 | Hooks kind | `hooks.kind` | SystemMetadata | FeatureInsight | Executor used to run the hook. Values: `sh`, `pwsh`, `python`, `js`, `ts`, `dotnet` |
 | Pipeline provider | `pipeline.provider` | SystemMetadata | FeatureInsight | Resolved provider display name after auto-detection: `GitHub`, `Azure DevOps` |
 | Pipeline auth | `pipeline.auth` | SystemMetadata | FeatureInsight | Emitted only when `--auth-type` is set on `pipeline config`: `federated`, `client-credentials` |
-| Infra provider | `infra.provider` | SystemMetadata | FeatureInsight | provision/up/down: resolved `bicep`/`terraform`/`arm`/`pulumi`, `custom` for any other (extension) provider (raw name not emitted), or `mixed` when layers differ. `infra generate`/`synth`: the configured `--provider` value directly (`bicep`/`terraform`/`auto`, or a raw custom name) |
+| Infra provider | `infra.provider` | SystemMetadata | FeatureInsight | provision/up/down: sorted, de-duplicated string slice of resolved providers — `bicep`/`terraform`/`arm`/`pulumi` verbatim, `custom` for any other (extension) provider (raw name not emitted); multi-layer projects that combine providers record each distinct value (e.g. `["bicep","terraform"]`). `infra generate`/`synth`: the value read from azure.yaml's `infra.provider` directly as a single string (`bicep`/`terraform`, `auto` when unset, or a raw custom name) |
 
 ### App Service Deploy
 

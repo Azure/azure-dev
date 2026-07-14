@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -542,24 +544,23 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 }
 
 const (
-	// InfraProviderMixed is the infra.provider telemetry value recorded when a project's
-	// provisioning layers do not all resolve to the same IaC provider.
-	InfraProviderMixed = "mixed"
-
 	// InfraProviderCustom is the infra.provider telemetry value recorded for a provider that is
 	// not one of the built-in kinds (for example an extension-registered provider). The raw name
 	// is never emitted because it may embed user-chosen project or organization identifiers.
 	InfraProviderCustom = "custom"
 )
 
-// RecordInfraProviderUsage records the resolved IaC provider for a provisioning command
+// RecordInfraProviderUsage records the resolved IaC provider(s) for a provisioning command
 // (provision / up / down) as the infra.provider usage attribute on the ambient command span.
-// When every layer resolves to the same provider it records that provider (for example
-// "bicep", "terraform", "arm"); non-built-in (extension) providers are bucketed to
-// InfraProviderCustom ("custom") so raw user-chosen names are never emitted. When layers
-// resolve to different providers it records InfraProviderMixed ("mixed"). Layers that leave
-// the provider unspecified resolve through the manager's default provider. It is a no-op when
-// no provider can be resolved.
+// The attribute is a sorted, de-duplicated string slice of the distinct providers the command's
+// layers resolve to: built-in kinds are recorded verbatim (for example "bicep", "terraform",
+// "arm"), while non-built-in (extension) providers are bucketed to InfraProviderCustom ("custom")
+// so raw user-chosen names are never emitted. A single-provider project records a one-element
+// slice (for example ["bicep"]); a multi-layer project that mixes providers records each distinct
+// value (for example ["bicep", "terraform"]) rather than a lossy "mixed" marker, preserving which
+// providers were combined while staying low-cardinality. Layers that leave the provider
+// unspecified resolve through the manager's default provider. It is a no-op when no provider can
+// be resolved.
 //
 // Callers must invoke this once per command, before provider work begins, so the attribute is
 // present on success, failure, and preview spans alike. The value is computed deterministically
@@ -601,18 +602,20 @@ func (m *Manager) RecordInfraProviderUsage(layers []Options) {
 		seen[kind] = struct{}{}
 	}
 
-	// Distinct resolved kinds are collected first so that two different custom providers still
-	// record "mixed" (bucketing only the single-provider result, not before counting).
-	switch len(seen) {
-	case 0:
+	if len(seen) == 0 {
 		return
-	case 1:
-		for kind := range seen {
-			tracing.SetUsageAttributes(fields.InfraProviderKey.String(infraProviderTelemetryValue(kind)))
-		}
-	default:
-		tracing.SetUsageAttributes(fields.InfraProviderKey.String(InfraProviderMixed))
 	}
+
+	// Map the distinct resolved kinds to telemetry-safe values (built-ins verbatim, extensions
+	// bucketed to InfraProviderCustom), then de-duplicate and sort so the recorded slice is
+	// deterministic. De-duplicating after bucketing means two different extension providers both
+	// collapse to a single "custom" entry.
+	values := map[string]struct{}{}
+	for kind := range seen {
+		values[infraProviderTelemetryValue(kind)] = struct{}{}
+	}
+
+	tracing.SetUsageAttributes(fields.InfraProviderKey.StringSlice(slices.Sorted(maps.Keys(values))))
 }
 
 // infraProviderTelemetryValue maps a provider kind to a value that is safe to emit raw. Built-in

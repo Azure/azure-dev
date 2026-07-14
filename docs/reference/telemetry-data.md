@@ -345,7 +345,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `infra.provider` | string | provision/up/down: `bicep`/`terraform`/`arm`/`pulumi`, `custom` (extension providers; raw name not emitted), or `mixed`. generate/synth: configured `--provider` value directly (`bicep`/`terraform`/`auto`, or a raw custom name) |
+| `infra.provider` | string or string[] | provision/up/down: sorted, de-duplicated string slice of resolved providers — `bicep`/`terraform`/`arm`/`pulumi`, or `custom` (extension providers; raw name not emitted); multi-layer projects record each distinct value (e.g. `["bicep","terraform"]`). generate/synth: the value read from azure.yaml's `infra.provider` as a single string (`bicep`/`terraform`, `auto` when unset, or a raw custom name) |
 </details>
 
 <details>
@@ -678,7 +678,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Container Apps (Aspire)** | `cmd.deploy`, `cmd.provision` | `project.service.targets` = `containerapp-dotnet`, `platform.type` = `aca` | Aspire-specific adoption and success |
 | **Language Support** | `cmd.deploy`, `cmd.package`, `cmd.restore` | `project.service.languages`, `project.service.language` | Usage by language |
 | **Templates** | `cmd.init`, `cmd.up` | `project.template.id` (hashed — join with template lookup to resolve) | Template adoption, success by template |
-| **Provisioning (IaC)** | `cmd.provision`, `cmd.up`, `cmd.down`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`/`terraform`/`arm`/`pulumi`/custom, or `mixed`) | Provision success, ARM errors, duration |
+| **Provisioning (IaC)** | `cmd.provision`, `cmd.up`, `cmd.down`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`/`terraform`/`arm`/`pulumi`/custom; slice of each distinct provider for multi-layer projects) | Provision success, ARM errors, duration |
 | **Authentication** | `cmd.auth.login` | `auth.method` | Auth method usage, failure rates |
 | **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
 | **Extensions** | `ext.run`, `ext.install`, `ext.upgrade` | `extension.id`, `extension.version`, `extension.installed` | Extension adoption, errors |

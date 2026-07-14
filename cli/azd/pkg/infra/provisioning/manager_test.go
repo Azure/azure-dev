@@ -410,25 +410,25 @@ func TestRecordInfraProviderUsage(t *testing.T) {
 		name            string
 		layers          []provisioning.Options
 		defaultProvider provisioning.DefaultProviderResolver
-		expected        string // "" means no infra.provider attribute is recorded
+		expected        []string // nil means no infra.provider attribute is recorded
 	}{
 		{
 			name:            "single explicit bicep",
 			layers:          []provisioning.Options{{Provider: provisioning.Bicep}},
 			defaultProvider: defaultProvider,
-			expected:        "bicep",
+			expected:        []string{"bicep"},
 		},
 		{
 			name:            "single explicit terraform",
 			layers:          []provisioning.Options{{Provider: provisioning.Terraform}},
 			defaultProvider: defaultProvider,
-			expected:        "terraform",
+			expected:        []string{"terraform"},
 		},
 		{
 			name:            "unspecified resolves through default",
 			layers:          []provisioning.Options{{Provider: provisioning.NotSpecified}},
 			defaultProvider: defaultProvider,
-			expected:        "bicep",
+			expected:        []string{"bicep"},
 		},
 		{
 			name: "uniform provider across layers",
@@ -437,70 +437,70 @@ func TestRecordInfraProviderUsage(t *testing.T) {
 				{Provider: provisioning.Bicep},
 			},
 			defaultProvider: defaultProvider,
-			expected:        "bicep",
+			expected:        []string{"bicep"},
 		},
 		{
-			name: "different providers across layers records mixed",
+			name: "different providers across layers record each provider",
 			layers: []provisioning.Options{
 				{Provider: provisioning.Bicep},
 				{Provider: provisioning.Terraform},
 			},
 			defaultProvider: defaultProvider,
-			expected:        provisioning.InfraProviderMixed,
+			expected:        []string{"bicep", "terraform"},
 		},
 		{
 			name:            "single explicit arm",
 			layers:          []provisioning.Options{{Provider: provisioning.Arm}},
 			defaultProvider: defaultProvider,
-			expected:        "arm",
+			expected:        []string{"arm"},
 		},
 		{
 			name:            "custom provider is bucketed",
 			layers:          []provisioning.Options{{Provider: provisioning.ProviderKind("my-extension-provider")}},
 			defaultProvider: defaultProvider,
-			expected:        provisioning.InfraProviderCustom,
+			expected:        []string{provisioning.InfraProviderCustom},
 		},
 		{
-			name: "built-in plus custom records mixed",
+			name: "built-in plus custom records both",
 			layers: []provisioning.Options{
 				{Provider: provisioning.Bicep},
 				{Provider: provisioning.ProviderKind("my-extension-provider")},
 			},
 			defaultProvider: defaultProvider,
-			expected:        provisioning.InfraProviderMixed,
+			expected:        []string{"bicep", provisioning.InfraProviderCustom},
 		},
 		{
-			name: "two distinct custom providers record mixed",
+			name: "two distinct custom providers collapse to custom",
 			layers: []provisioning.Options{
 				{Provider: provisioning.ProviderKind("vendor.one")},
 				{Provider: provisioning.ProviderKind("vendor.two")},
 			},
 			defaultProvider: defaultProvider,
-			expected:        provisioning.InfraProviderMixed,
+			expected:        []string{provisioning.InfraProviderCustom},
 		},
 		{
 			name:            "no layers records nothing",
 			layers:          nil,
 			defaultProvider: defaultProvider,
-			expected:        "",
+			expected:        nil,
 		},
 		{
 			name:            "unspecified with nil resolver records nothing",
 			layers:          []provisioning.Options{{Provider: provisioning.NotSpecified}},
 			defaultProvider: nil,
-			expected:        "",
+			expected:        nil,
 		},
 		{
 			name:            "unspecified with failing resolver records nothing",
 			layers:          []provisioning.Options{{Provider: provisioning.NotSpecified}},
 			defaultProvider: failingResolver,
-			expected:        "",
+			expected:        nil,
 		},
 		{
 			name:            "unspecified resolving to NotSpecified records nothing",
 			layers:          []provisioning.Options{{Provider: provisioning.NotSpecified}},
 			defaultProvider: unspecifiedResolver,
-			expected:        "",
+			expected:        nil,
 		},
 	}
 
@@ -515,17 +515,17 @@ func TestRecordInfraProviderUsage(t *testing.T) {
 			mgr := provisioning.NewManager(nil, tt.defaultProvider, nil, nil, nil, nil, nil, nil)
 			mgr.RecordInfraProviderUsage(tt.layers)
 
-			var got string
+			var got []string
 			var found bool
 			for _, attr := range tracing.GetUsageAttributes() {
 				if attr.Key == fields.InfraProviderKey.Key {
-					got = attr.Value.AsString()
+					got = attr.Value.AsStringSlice()
 					found = true
 				}
 			}
 
-			if tt.expected == "" {
-				require.False(t, found, "expected no infra.provider attribute, got %q", got)
+			if tt.expected == nil {
+				require.False(t, found, "expected no infra.provider attribute, got %v", got)
 				return
 			}
 

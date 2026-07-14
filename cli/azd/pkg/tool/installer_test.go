@@ -1553,12 +1553,11 @@ func TestRunSkill_Upgrade_AlreadyUpToDate(t *testing.T) {
 	assert.Equal(t, []string{"Test Azure Skills in copilot is already up to date (v1.1.86)."}, r.stops)
 }
 
-// TestRunSkill_StreamedOutputPrintedAboveSpinner verifies that when the agent
-// CLI writes to the terminal (a progress line or an interactive prompt),
-// each line is surfaced via Message (which the console prints above the
-// spinner, keeping the spinner pinned below), and the spinner is stopped with
-// the step result at the end rather than torn down early.
-func TestRunSkill_StreamedOutputPrintedAboveSpinner(t *testing.T) {
+// TestRunSkill_OutputPrintedBelowStep verifies that when the agent CLI writes
+// to the terminal, each line is captured and surfaced via Message below the
+// resolved step line (indented gray sub-section), and the spinner is stopped
+// with the step result before that output is printed.
+func TestRunSkill_OutputPrintedBelowStep(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
@@ -1566,8 +1565,8 @@ func TestRunSkill_StreamedOutputPrintedAboveSpinner(t *testing.T) {
 	runner.MockToolInPath("node", nil)
 
 	// The plugin command writes to the terminal (StdOut), simulating the
-	// agent CLI surfacing progress or a prompt. Both marketplace-add and install
-	// stream their output through the step writer so prompts stay visible.
+	// agent CLI surfacing progress. Both marketplace-add and install route
+	// their output through the step writer.
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return args.Cmd == "copilot" && slices.Contains(args.Args, "plugin")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -1597,12 +1596,11 @@ func TestRunSkill_StreamedOutputPrintedAboveSpinner(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
 
-	// The spinner is shown, the agent CLI's line is surfaced via Message (the
-	// console prints it above the spinner), and the spinner is stopped with
-	// the step result at the end — it is kept, not torn down early.
+	// The spinner is shown and stopped with the step result, and the agent
+	// CLI's line is surfaced (indented) below the step line via Message.
 	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.starts)
 	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.stops)
-	assert.Contains(t, r.messages, "Installing plugin...")
+	assert.Contains(t, strings.Join(r.messages, "\n"), "Installing plugin...")
 }
 
 // TestSkillAgent_DisplayVsCommand verifies the split between the display Agent
@@ -4071,8 +4069,8 @@ func TestRunSkillUninstall_StepProgress_SuccessStreamsOutput(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.Success, "uninstall must succeed; err=%v", result.Error)
 
-	assert.Contains(t, r.messages, "Plugin \"azure@azure-skills\" uninstalled successfully.",
-		"agent CLI output must be streamed live so interactive prompts stay visible")
+	assert.Contains(t, strings.Join(r.messages, "\n"), "Plugin \"azure@azure-skills\" uninstalled successfully.",
+		"agent CLI output must be shown below the step result line")
 	assert.Equal(t, []string{"Uninstalling Test Azure Skills from copilot"}, r.stops)
 }
 
@@ -4111,7 +4109,7 @@ func TestRunSkillUninstall_StepProgress_FailureShowsOutput(t *testing.T) {
 	require.False(t, result.Success)
 	require.Error(t, result.Error)
 
-	assert.Contains(t, r.messages, "could not remove plugin",
+	assert.Contains(t, strings.Join(r.messages, "\n"), "could not remove plugin",
 		"agent CLI output must be shown when uninstall fails")
 }
 

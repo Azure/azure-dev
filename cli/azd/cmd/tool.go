@@ -636,9 +636,20 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 	if len(tools) > 1 {
 		header = "Your tools are installed."
 	}
+
+	// Surface any per-tool follow-up guidance (e.g. how to start using a skill)
+	// after the success header.
+	var notes []string
+	for _, t := range tools {
+		if t.SpinnerNote != "" {
+			notes = append(notes, t.SpinnerNote)
+		}
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: header,
+			Header:   header,
+			FollowUp: strings.Join(notes, "\n"),
 		},
 	}, nil
 }

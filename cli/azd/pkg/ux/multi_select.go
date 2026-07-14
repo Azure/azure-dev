@@ -349,7 +349,7 @@ func (p *MultiSelect) renderOptions(printer Printer, indent string) {
 		// Show checkbox
 		checkbox := " "
 		if option.Selected {
-			checkbox = output.WithSuccessFormat("✔")
+			checkbox = output.WithSuccessFormat("✓")
 		}
 
 		// Show item digit prefixes

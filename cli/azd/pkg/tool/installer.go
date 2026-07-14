@@ -236,25 +236,27 @@ func stepError(result *InstallResult, err error) error {
 	return nil
 }
 
-// renderSkillStep frames one skill step (install, upgrade or uninstall) with
-// a live spinner that stays visible while the agent CLI runs.
+// renderSkillStep frames one skill step (install, upgrade or uninstall) with a
+// live spinner, then reveals the agent CLI's output beneath the resolved step
+// line.
 //
 // It shows a step spinner (like azd provision) with title and passes work an
 // output writer. Skill operations route the agent CLI's stdout/stderr through
 // that writer (see skillCommandRunArgs), with stdin still connected.
 //
-// streamOutput controls how that output is surfaced. When true, the agent
-// CLI's output is line-buffered and each complete line is printed above the
-// spinner while the spinner stays pinned below it: the console tears the
-// spinner down and re-renders it around each printed line (see
-// AskerConsole.println), so the bar is kept, not lost. Because a step spinner
-// routes the agent CLI's stdout/stderr through a pipe rather than a TTY, the
-// supported agent CLIs (copilot, claude) run non-interactively on this path
-// and do not emit interactive prompts here; the fully interactive path is the
-// renderer==nil branch below, which runs the command directly against the
-// terminal. When false, the output is buffered and replayed only if the step
-// fails, so a step that completes without error stays quiet. When the CLI
-// stays silent the spinner simply runs to completion.
+// The output is captured line by line and, once the step resolves, printed as
+// an indented gray sub-section BELOW the "(✓) Done:" / "(x) Failed:" result
+// line — so it reads as a detail of the step rather than scrolling above the
+// spinner. showOutput controls this: when true (interactive operations such as
+// install, upgrade and uninstall) the captured output is always shown; when
+// false it is shown only if the step failed, so a successful step stays quiet.
+// When the CLI produced no output the step line stands alone.
+//
+// Because a step spinner routes the agent CLI's stdout/stderr through a pipe
+// rather than a TTY, the supported agent CLIs (copilot, claude) run
+// non-interactively on this path and do not emit interactive prompts here; the
+// fully interactive path is the renderer==nil branch below, which runs the
+// command directly against the terminal.
 //
 // work returns the message to show on the result line; when empty the spinner
 // title is reused. This lets a step whose outcome is only known after running
@@ -267,7 +269,7 @@ func renderSkillStep(
 	ctx context.Context,
 	renderer StepRenderer,
 	title string,
-	streamOutput bool,
+	showOutput bool,
 	work func(out io.Writer) (doneTitle string, err error),
 ) error {
 	if renderer == nil {
@@ -278,26 +280,25 @@ func renderSkillStep(
 
 	renderer.ShowSpinner(ctx, title, input.Step)
 
-	// Stream the agent CLI's output live (so interactive prompts are visible),
-	// or buffer it and replay only on failure so a successful step is quiet.
+	// Capture the agent CLI's output so it can be revealed as an indented gray
+	// section below the step result line rather than scrolling above the spinner.
 	var buffered []string
-	emit := func(line string) { renderer.Message(ctx, line) }
-	if !streamOutput {
-		emit = func(line string) { buffered = append(buffered, line) }
-	}
-	out := &lineWriter{emit: emit}
+	out := &lineWriter{emit: func(line string) { buffered = append(buffered, line) }}
 
 	doneTitle, err := work(out)
 	out.Flush()
 	if doneTitle == "" {
 		doneTitle = title
 	}
-	if !streamOutput && err != nil {
+
+	// Resolve the spinner to its result line first, then print the captured
+	// output beneath it, indented two spaces to align under the step line.
+	renderer.StopSpinner(ctx, doneTitle, input.GetStepResultFormat(err))
+	if showOutput || err != nil {
 		for _, line := range buffered {
-			renderer.Message(ctx, line)
+			renderer.Message(ctx, output.WithGrayFormat("  %s", line))
 		}
 	}
-	renderer.StopSpinner(ctx, doneTitle, input.GetStepResultFormat(err))
 	return err
 }
 

@@ -188,6 +188,9 @@ type ToolDefinition struct {
 	SkillAgents []SkillAgent
 	// Dependencies lists the IDs of tools that must be installed before this one.
 	Dependencies []string
+	// SpinnerNote is an optional follow-up message shown after a successful
+	// install. Empty for tools with no note.
+	SpinnerNote string
 }
 
 // BuiltInTools returns the full set of tools that ship with the azd tool registry.
@@ -400,6 +403,8 @@ func azureSkills() *ToolDefinition {
 		Category: ToolCategorySkill,
 		Priority: ToolPriorityRecommended,
 		Website:  "https://github.com/microsoft/azure-skills",
+		SpinnerNote: "Azure Skills are now available in your AI agents. " +
+			"Ask your agent to create and manage Azure resources.",
 		SkillAgents: []SkillAgent{
 			{
 				DisplayName:            "Copilot",

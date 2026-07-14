@@ -497,6 +497,17 @@ func TestAzureSkillsAgentVersionProbeRegex(t *testing.T) {
 	}
 }
 
+// TestAzureSkillsPostInstallNote locks the follow-up guidance shown after a
+// successful `azd tool install azure-skills`, which the install action surfaces
+// as the ActionResult FollowUp.
+func TestAzureSkillsPostInstallNote(t *testing.T) {
+	t.Parallel()
+
+	note := azureSkills().SpinnerNote
+	assert.NotEmpty(t, note, "azure-skills must set a post-install follow-up note")
+	assert.Contains(t, note, "Azure Skills are now available")
+}
+
 // TestBuiltInTools_SkillAgentsHaveCommand guarantees that every configured skill
 // agent sets a non-empty Command. Installer and detector paths run agent.Command
 // directly (no fallback), so a missing Command would try to exec an empty

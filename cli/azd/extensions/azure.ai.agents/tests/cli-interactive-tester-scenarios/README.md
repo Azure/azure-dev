@@ -19,7 +19,8 @@ cp profile.local.yaml.example profile.local.yaml
 
 Then ask Copilot CLI to load a scenario and accomplish its goals. The
 orchestrator must **load both profile files, merge them (local overrides
-shared), derive `shared_agent_name = {prefix}-{shared_agent_suffix}`, and pass
+shared), derive `shared_agent_name = {prefix}-{shared_agent_suffix}-{ts}`
+(where `{ts}` is a compact timestamp like `MMDDHHmm`, e.g. `07141038`), and pass
 the merged map as `session_vars` on every `load_scenario`, `run_pre_hooks`,
 `start_session`, and `run_post_hooks` call** — the scenario YAMLs reference
 those values via `{prefix}`, `{subscription}`, `{region}`, `{model}`,
@@ -42,7 +43,8 @@ a set of test scenarios for the cli-interactive-tester. I want you to use the cl
     and take screenshots at each step.
 
 First, read tests/cli-interactive-tester-scenarios/profile.yaml and profile.local.yaml and merge
-them (local overrides shared); also derive shared_agent_name = "{prefix}-{shared_agent_suffix}".
+them (local overrides shared); also derive shared_agent_name = "{prefix}-{shared_agent_suffix}-{ts}"
+where {ts} is a compact timestamp (MMDDHHmm, e.g. 07141038).
 Pass the merged map as session_vars on every load_scenario / run_pre_hooks / start_session /
 run_post_hooks call — the scenarios reference {prefix}, {subscription}, {region}, {model},
 {tenant} (optional), and {shared_agent_name} placeholders.
@@ -435,7 +437,8 @@ and tags=["cmd:init"] to enumerate the matching scenarios.
 
 Then read tests/cli-interactive-tester-scenarios/profile.yaml and
 profile.local.yaml and merge them (local overrides shared); also derive
-shared_agent_name = "{prefix}-{shared_agent_suffix}". Pass the merged map as
+shared_agent_name = "{prefix}-{shared_agent_suffix}-{ts}" where {ts} is a compact
+timestamp (MMDDHHmm, e.g. 07141038). Pass the merged map as
 session_vars on every load_scenario / run_pre_hooks / start_session /
 run_post_hooks call.
 
@@ -505,7 +508,7 @@ Variables exposed to scenarios via `session_vars`:
 | `{region}` | `profile.yaml` | `East US 2` | |
 | `{model}` | `profile.yaml` | `gpt-4.1-mini` | cheap/fast for tests |
 | `{shared_agent_suffix}` | `profile.yaml` | `basic-responses` | |
-| `{shared_agent_name}` | derived by orchestrator | `{prefix}-{shared_agent_suffix}` | Tier 2 subdirectory name — orchestrator must compute and pass alongside the others |
+| `{shared_agent_name}` | derived by orchestrator | `{prefix}-{shared_agent_suffix}-{ts}` | Tier 2 subdirectory name — orchestrator must compute (with `{ts}` = `MMDDHHmm` compact timestamp) and pass alongside the others. The timestamp isolates concurrent runs. |
 
 **Bootstrap (one-time per checkout):**
 
@@ -515,7 +518,8 @@ cp profile.local.yaml.example profile.local.yaml
 ```
 
 The orchestrator must load both files, merge (local overrides shared), derive
-`shared_agent_name`, and pass the merged map as `session_vars=` on every
+`shared_agent_name` (= `{prefix}-{shared_agent_suffix}-{ts}` where `{ts}` is a
+compact `MMDDHHmm` timestamp), and pass the merged map as `session_vars=` on every
 `load_scenario` / `run_pre_hooks` / `start_session` / `run_post_hooks` call.
 Failing to thread `session_vars` leaves `{prefix}` etc. unresolved in goals and
 the run will execute against literal placeholder strings.

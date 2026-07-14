@@ -3,12 +3,13 @@
 # ⚠️ Incurs Azure cost. Run this FIRST. `init` runs in ~/working/azd-agents-shared
 # and scaffolds the project into a subdirectory named after the agent, so the
 # deployed project lives in ~/working/azd-agents-shared/{shared_agent_name}
-# (where {shared_agent_name} = {prefix}-{shared_agent_suffix}, e.g.
-# "alice-basic-responses") and is reused by the targeted scenarios. The agent
-# name MUST be exactly that value so the subdirectory path is deterministic
-# and the reuse scenarios can find it. Run 2Z-teardown-down.yaml LAST to
-# clean up. All `{name}` placeholders come from the merged profile
-# (`profile.yaml` + `profile.local.yaml`).
+# (where {shared_agent_name} = {prefix}-{shared_agent_suffix}-{ts}, e.g.
+# "alice-basic-responses-07141038") and is reused by the targeted scenarios.
+# The agent name MUST be exactly that value so the subdirectory path is
+# deterministic and the reuse scenarios can find it. Run
+# 2Z-teardown-down.yaml LAST to clean up. All `{name}` placeholders come
+# from the merged profile (`profile.yaml` + `profile.local.yaml`) plus the
+# orchestrator-derived `shared_agent_name`.
 name: "setup-deploy-shared-agent"
 command: "azd ai agent init"
 cwd: "~/working/azd-agents-shared"

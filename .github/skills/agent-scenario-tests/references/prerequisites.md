@@ -40,7 +40,10 @@ The scenarios reference `{prefix}`, `{subscription}`, `{region}`, `{model}`, `{t
 
 1. Read both `profile.yaml` (checked-in defaults) and `profile.local.yaml` (developer
    overrides) and **merge them, local overriding shared**.
-2. Derive `shared_agent_name = "{prefix}-{shared_agent_suffix}"`.
+2. Derive `shared_agent_name = "{prefix}-{shared_agent_suffix}-{ts}"` where `{ts}` is
+   a compact timestamp of the form `MMDDHHmm` (e.g. `07141038`). This isolates
+   concurrent runs so two agents on the same machine don't collide on Azure resource
+   names or working directories.
 3. Pass the merged map as `session_vars` on **every** `load_scenario`, `run_pre_hooks`,
    `start_session`, and `run_post_hooks` call. Omitting it leaves placeholders unresolved
    and the run executes against literal `{prefix}` strings.

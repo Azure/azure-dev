@@ -6,6 +6,8 @@ package cmd
 import (
 	"context"
 	"net"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -89,6 +91,7 @@ func TestLoadProjectServiceConfig(t *testing.T) {
 				map[string]*azdext.ServiceConfig{
 					"service": test.service,
 				},
+				"",
 			)
 			require.NoError(t, err)
 			assert.Equal(t, test.wantSeen, found)
@@ -109,7 +112,7 @@ func TestLoadProjectServiceConfigRejectsDuplicates(t *testing.T) {
 		"alpha": {Host: aiProjectHost},
 	}
 
-	_, _, err := loadProjectServiceConfig(services)
+	_, _, err := loadProjectServiceConfig(services, "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "alpha, zeta")
 }
@@ -193,6 +196,43 @@ func TestProjectLifecycleHandlerClearsEmptyDeployments(t *testing.T) {
 	envServer.mu.Lock()
 	defer envServer.mu.Unlock()
 	assert.Equal(t, "[]", envServer.value)
+}
+
+func TestProjectLifecycleHandlerResolvesDeploymentRefs(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "deployment.yaml"),
+		[]byte("name: gpt-4o\nmodel: {name: gpt-4o, format: OpenAI, version: '2024-08-06'}\n"+
+			"sku: {name: Standard, capacity: 10}\n"),
+		0600,
+	))
+
+	envServer := &recordingProjectEnvironmentServer{envName: "dev"}
+	client := newProjectEnvironmentClient(t, envServer)
+	err := projectLifecycleHandler(
+		t.Context(),
+		client,
+		&azdext.ProjectEventArgs{
+			Project: &azdext.ProjectConfig{
+				Path: root,
+				Services: map[string]*azdext.ServiceConfig{
+					"project": {
+						Host: aiProjectHost,
+						AdditionalProperties: mustProjectProperties(t, map[string]any{
+							"deployments": []any{
+								map[string]any{"$ref": "./deployment.yaml"},
+							},
+						}),
+					},
+				},
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	envServer.mu.Lock()
+	defer envServer.mu.Unlock()
+	assert.Contains(t, envServer.value, `\"name\":\"gpt-4o\"`)
 }
 
 func mustProjectProperties(

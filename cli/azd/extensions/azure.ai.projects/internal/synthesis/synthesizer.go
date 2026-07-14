@@ -13,6 +13,7 @@
 package synthesis
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -225,24 +226,9 @@ func Synthesize(in Input) (*Result, error) {
 		return nil, fmt.Errorf("parse azure.yaml: %w", err)
 	}
 
-	node, ok := root.Services[in.ServiceName]
-	if !ok {
-		return nil, ErrServiceNotFound
-	}
-
-	// Resolve $ref file includes (service-entry-level and per-deployment) so the
-	// decoded service body carries the referenced content, not raw $ref objects.
-	if in.ProjectRoot != "" {
-		var err error
-		node, err = resolveServiceRefs(node, in.ProjectRoot, in.ServiceName)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	var svc projectService
-	if err := node.Decode(&svc); err != nil {
-		return nil, fmt.Errorf("decode service %q: %w", in.ServiceName, err)
+	svc, err := loadProjectService(root.Services, in.ServiceName, in.ProjectRoot)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(in.AcceptedHosts) > 0 && !slices.Contains(in.AcceptedHosts, svc.Host) {
@@ -252,14 +238,23 @@ func Synthesize(in Input) (*Result, error) {
 		return nil, ErrEndpointBrownfield
 	}
 
-	includeAcr := deriveIncludeAcr(root.Services, svc)
+	includeAcr := deriveIncludeAcr(root.Services, svc, in.ProjectRoot)
 
 	deployments := svc.Deployments
 	if deployments == nil {
 		deployments = []Deployment{}
 	}
 
-	connections, err := collectConnections(root.Services, in.Env, !in.PreserveVarRefs)
+	connections, err := collectConnections(
+		root.Services,
+		in.Env,
+		!in.PreserveVarRefs,
+		in.ProjectRoot,
+	)
+	if err != nil {
+		return nil, err
+	}
+	encodedConnections, err := EncodeConnections(connections)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +267,7 @@ func Synthesize(in Input) (*Result, error) {
 	params := map[string]any{
 		"deployments": deployments,
 		"includeAcr":  includeAcr,
-		"connections": connections,
+		"connections": encodedConnections,
 	}
 	maps.Copy(params, netParams)
 
@@ -282,12 +277,28 @@ func Synthesize(in Input) (*Result, error) {
 	}, nil
 }
 
+// EncodeConnections serializes connection definitions for a secure ARM parameter.
+func EncodeConnections(connections []Connection) (string, error) {
+	if connections == nil {
+		connections = []Connection{}
+	}
+	data, err := json.Marshal(connections)
+	if err != nil {
+		return "", fmt.Errorf("encode connections: %w", err)
+	}
+	return string(data), nil
+}
+
 // BrownfieldDeployments returns the model deployments declared on a brownfield
 // (endpoint:) Foundry project service. Synthesize short-circuits with
 // ErrEndpointBrownfield before reading deployments:, so the provider uses this
 // to learn which model deployments to create on the existing account. Returns
 // nil (not an error) when the service declares no deployments.
-func BrownfieldDeployments(raw []byte, serviceName string) ([]Deployment, error) {
+func BrownfieldDeployments(
+	raw []byte,
+	serviceName string,
+	projectRoot string,
+) ([]Deployment, error) {
 	if len(raw) == 0 {
 		return nil, errors.New("synthesis: raw azure.yaml is empty")
 	}
@@ -300,14 +311,9 @@ func BrownfieldDeployments(raw []byte, serviceName string) ([]Deployment, error)
 		return nil, fmt.Errorf("parse azure.yaml: %w", err)
 	}
 
-	node, ok := root.Services[serviceName]
-	if !ok {
-		return nil, ErrServiceNotFound
-	}
-
-	var svc projectService
-	if err := node.Decode(&svc); err != nil {
-		return nil, fmt.Errorf("decode service %q: %w", serviceName, err)
+	svc, err := loadProjectService(root.Services, serviceName, projectRoot)
+	if err != nil {
+		return nil, err
 	}
 
 	return svc.Deployments, nil
@@ -320,7 +326,11 @@ func BrownfieldDeployments(raw []byte, serviceName string) ([]Deployment, error)
 // resolved from env since brownfield provisions immediately; Foundry ${{...}}
 // expressions pass through. Returns an empty slice (not an error) when none
 // are declared.
-func BrownfieldConnections(raw []byte, env map[string]string) ([]Connection, error) {
+func BrownfieldConnections(
+	raw []byte,
+	env map[string]string,
+	projectRoot string,
+) ([]Connection, error) {
 	if len(raw) == 0 {
 		return nil, errors.New("synthesis: raw azure.yaml is empty")
 	}
@@ -330,7 +340,55 @@ func BrownfieldConnections(raw []byte, env map[string]string) ([]Connection, err
 		return nil, fmt.Errorf("parse azure.yaml: %w", err)
 	}
 
-	return collectConnections(root.Services, env, true)
+	return collectConnections(root.Services, env, true, projectRoot)
+}
+
+// ProjectEndpoint returns the endpoint configured on a Foundry project service.
+// It resolves $ref includes before decoding the service body.
+func ProjectEndpoint(
+	raw []byte,
+	serviceName string,
+	projectRoot string,
+) (string, error) {
+	if len(raw) == 0 {
+		return "", errors.New("synthesis: raw azure.yaml is empty")
+	}
+
+	var root projectFile
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return "", fmt.Errorf("parse azure.yaml: %w", err)
+	}
+
+	svc, err := loadProjectService(root.Services, serviceName, projectRoot)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(svc.Endpoint), nil
+}
+
+// loadProjectService decodes a service after resolving any local $ref includes.
+func loadProjectService(
+	services map[string]yaml.Node,
+	serviceName string,
+	projectRoot string,
+) (projectService, error) {
+	node, ok := services[serviceName]
+	if !ok {
+		return projectService{}, ErrServiceNotFound
+	}
+	if projectRoot != "" {
+		var err error
+		node, err = resolveServiceRefs(node, projectRoot, serviceName)
+		if err != nil {
+			return projectService{}, err
+		}
+	}
+
+	var svc projectService
+	if err := node.Decode(&svc); err != nil {
+		return projectService{}, fmt.Errorf("decode service %q: %w", serviceName, err)
+	}
+	return svc, nil
 }
 
 // resolveServiceRefs expands $ref file includes in one service entry. It decodes
@@ -367,12 +425,23 @@ func resolveServiceRefs(node yaml.Node, projectRoot, serviceName string) (yaml.N
 // Keying on image/codeConfiguration rather than the optional docker: block is
 // deliberate: docker: is not in the agent schema and is dropped by omitempty
 // when remoteBuild is false, so it is not a reliable build signal.
-func deriveIncludeAcr(services map[string]yaml.Node, svc projectService) bool {
+func deriveIncludeAcr(
+	services map[string]yaml.Node,
+	svc projectService,
+	projectRoot string,
+) bool {
 	if slices.ContainsFunc(svc.Agents, agentNeedsAcr) {
 		return true
 	}
 
-	for _, node := range services {
+	for name, node := range services {
+		if projectRoot != "" {
+			var err error
+			node, err = resolveServiceRefs(node, projectRoot, name)
+			if err != nil {
+				continue
+			}
+		}
 		var service serviceBlock
 		if err := node.Decode(&service); err != nil {
 			continue
@@ -417,10 +486,18 @@ func collectConnections(
 	services map[string]yaml.Node,
 	env map[string]string,
 	resolve bool,
+	projectRoot string,
 ) ([]Connection, error) {
 	connections := []Connection{}
 
 	for name, node := range services {
+		if projectRoot != "" {
+			var err error
+			node, err = resolveServiceRefs(node, projectRoot, name)
+			if err != nil {
+				return nil, err
+			}
+		}
 		var host struct {
 			Host string `yaml:"host"`
 		}

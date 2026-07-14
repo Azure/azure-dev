@@ -184,11 +184,12 @@ func TestBrownfieldParams(t *testing.T) {
 			brownfieldEndpoint:    "https://acct.services.ai.azure.com/api/projects/my-project",
 			brownfieldDeployments: deployments,
 		}
-		params := p.brownfieldParams(t.Context(), "acct", "rg", false)
+		params, err := p.brownfieldParams(t.Context(), "acct", "rg", false)
+		require.NoError(t, err)
 
 		assert.Equal(t, map[string]any{"value": "acct"}, params["accountName"])
 		assert.Equal(t, map[string]any{"value": deployments}, params["deployments"])
-		assert.Equal(t, map[string]any{"value": []synthesis.Connection(nil)}, params["connections"])
+		assert.Equal(t, map[string]any{"secureValue": "[]"}, params["connections"])
 		assert.Equal(t, map[string]any{"value": "my-project"}, params["projectName"])
 		assert.NotContains(t, params, "includeAcr")
 		assert.NotContains(t, params, "acrName")
@@ -202,9 +203,14 @@ func TestBrownfieldParams(t *testing.T) {
 			brownfieldEndpoint:    "https://acct.services.ai.azure.com/api/projects/my-project",
 			brownfieldConnections: conns,
 		}
-		params := p.brownfieldParams(t.Context(), "acct", "rg", false)
+		params, err := p.brownfieldParams(t.Context(), "acct", "rg", false)
+		require.NoError(t, err)
 
-		assert.Equal(t, map[string]any{"value": conns}, params["connections"])
+		assert.Equal(
+			t,
+			map[string]any{"secureValue": `[{"name":"search-conn","category":"CognitiveSearch","target":"","authType":""}]`},
+			params["connections"],
+		)
 		// Connections are project-scoped, so projectName must be supplied even
 		// without ACR.
 		assert.Equal(t, map[string]any{"value": "my-project"}, params["projectName"])
@@ -218,7 +224,8 @@ func TestBrownfieldParams(t *testing.T) {
 			brownfieldEndpoint: "https://acct.services.ai.azure.com/api/projects/my-project",
 			azdClient:          newKVEnvClient(t, map[string]string{"AZURE_LOCATION": "westus2"}),
 		}
-		params := p.brownfieldParams(t.Context(), "acct", "rg", true)
+		params, err := p.brownfieldParams(t.Context(), "acct", "rg", true)
+		require.NoError(t, err)
 
 		assert.Equal(t, map[string]any{"value": true}, params["includeAcr"])
 		assert.Equal(t, map[string]any{"value": "my-project"}, params["projectName"])
@@ -235,7 +242,8 @@ func TestBrownfieldParams(t *testing.T) {
 			brownfieldEndpoint: "https://acct.services.ai.azure.com/api/projects/my-project",
 			azdClient:          newKVEnvClient(t, map[string]string{}),
 		}
-		params := p.brownfieldParams(t.Context(), "acct", "rg", true)
+		params, err := p.brownfieldParams(t.Context(), "acct", "rg", true)
+		require.NoError(t, err)
 
 		assert.Contains(t, params, "includeAcr")
 		assert.NotContains(t, params, "location")

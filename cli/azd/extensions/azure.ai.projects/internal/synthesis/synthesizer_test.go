@@ -500,8 +500,7 @@ services:
 			require.True(t, ok, "includeAcr param should be bool")
 			assert.Equal(t, tt.wantIncludeAcr, includeAcr)
 
-			connections, ok := res.Parameters["connections"].([]Connection)
-			require.True(t, ok, "connections param should be []Connection, got %T", res.Parameters["connections"])
+			connections := resultConnections(t, res)
 			if tt.wantConnectionNames != nil {
 				gotNames := make([]string, len(connections))
 				for i, c := range connections {
@@ -540,8 +539,7 @@ services:
 
 	getConn := func(t *testing.T, res *Result) Connection {
 		t.Helper()
-		conns, ok := res.Parameters["connections"].([]Connection)
-		require.True(t, ok)
+		conns := resultConnections(t, res)
 		require.Len(t, conns, 1)
 		return conns[0]
 	}
@@ -655,7 +653,11 @@ services:
 `
 
 	t.Run("collects and resolves connections (sorted)", func(t *testing.T) {
-		conns, err := BrownfieldConnections([]byte(yaml), map[string]string{"SEARCH_API_KEY": "secret"})
+		conns, err := BrownfieldConnections(
+			[]byte(yaml),
+			map[string]string{"SEARCH_API_KEY": "secret"},
+			"",
+		)
 		require.NoError(t, err)
 		require.Len(t, conns, 2)
 		assert.Equal(t, "bing-conn", conns[0].Name)
@@ -671,13 +673,13 @@ services:
     host: azure.ai.project
     endpoint: https://existing.services.ai.azure.com/api/projects/p1
 `
-		conns, err := BrownfieldConnections([]byte(noConns), nil)
+		conns, err := BrownfieldConnections([]byte(noConns), nil, "")
 		require.NoError(t, err)
 		assert.Empty(t, conns)
 	})
 
 	t.Run("empty raw errors", func(t *testing.T) {
-		_, err := BrownfieldConnections(nil, nil)
+		_, err := BrownfieldConnections(nil, nil, "")
 		require.Error(t, err)
 	})
 }
@@ -761,7 +763,7 @@ services:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := BrownfieldDeployments([]byte(tt.yaml), tt.serviceName)
+			got, err := BrownfieldDeployments([]byte(tt.yaml), tt.serviceName, "")
 
 			if tt.serviceName == "" {
 				require.Error(t, err)
@@ -788,7 +790,7 @@ services:
 }
 
 func TestBrownfieldDeployments_EmptyRaw(t *testing.T) {
-	_, err := BrownfieldDeployments(nil, "my-project")
+	_, err := BrownfieldDeployments(nil, "my-project", "")
 	require.Error(t, err)
 }
 
@@ -868,6 +870,107 @@ services:
 	assert.Equal(t, "gpt-4o", deployments[0].Name)
 	assert.Equal(t, "gpt-4o", deployments[0].Model.Name)
 	assert.Equal(t, 10, deployments[0].Sku.Capacity)
+}
+
+func TestSynthesize_ResolvesSiblingServiceRefs(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "connection.yaml"),
+		[]byte("category: CognitiveSearch\ntarget: https://search.example\n"+
+			"authType: ApiKey\ncredentials:\n  key: ${SEARCH_KEY}\n"),
+		0600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "agent.yaml"),
+		[]byte("kind: hosted\nimage: example.azurecr.io/agent:latest\n"),
+		0600,
+	))
+
+	yaml := `
+services:
+  project:
+    host: azure.ai.project
+  connection:
+    host: azure.ai.connection
+    $ref: ./connection.yaml
+  agent:
+    host: azure.ai.agent
+    $ref: ./agent.yaml
+`
+	res, err := Synthesize(Input{
+		RawAzureYAML:  []byte(yaml),
+		ServiceName:   "project",
+		AcceptedHosts: []string{"azure.ai.project"},
+		Env:           map[string]string{"SEARCH_KEY": "secret"},
+		ProjectRoot:   root,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, false, res.Parameters["includeAcr"])
+
+	connections := resultConnections(t, res)
+	require.Len(t, connections, 1)
+	assert.Equal(t, "CognitiveSearch", connections[0].Category)
+	assert.Equal(t, "https://search.example", connections[0].Target)
+	assert.Equal(t, "secret", connections[0].Credentials["key"])
+}
+
+func resultConnections(t *testing.T, result *Result) []Connection {
+	t.Helper()
+
+	raw, ok := result.Parameters["connections"].(string)
+	require.True(t, ok, "connections param should be a JSON string")
+
+	var connections []Connection
+	require.NoError(t, json.Unmarshal([]byte(raw), &connections))
+	return connections
+}
+
+func TestBrownfieldServiceResolversResolveRefs(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "project.yaml"),
+		[]byte("endpoint: https://example.services.ai.azure.com/api/projects/existing\n"+
+			"deployments:\n  - $ref: ./deployment.yaml\n"),
+		0600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "deployment.yaml"),
+		[]byte("name: gpt-4o\nmodel: {name: gpt-4o, format: OpenAI, version: '2024-08-06'}\n"+
+			"sku: {name: Standard, capacity: 10}\n"),
+		0600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "connection.yaml"),
+		[]byte("category: CognitiveSearch\ntarget: https://search.example\nauthType: None\n"),
+		0600,
+	))
+
+	yaml := `
+services:
+  project:
+    host: azure.ai.project
+    $ref: ./project.yaml
+  connection:
+    host: azure.ai.connection
+    $ref: ./connection.yaml
+`
+	endpoint, err := ProjectEndpoint([]byte(yaml), "project", root)
+	require.NoError(t, err)
+	assert.Equal(
+		t,
+		"https://example.services.ai.azure.com/api/projects/existing",
+		endpoint,
+	)
+
+	deployments, err := BrownfieldDeployments([]byte(yaml), "project", root)
+	require.NoError(t, err)
+	require.Len(t, deployments, 1)
+	assert.Equal(t, "gpt-4o", deployments[0].Name)
+
+	connections, err := BrownfieldConnections([]byte(yaml), nil, root)
+	require.NoError(t, err)
+	require.Len(t, connections, 1)
+	assert.Equal(t, "CognitiveSearch", connections[0].Category)
 }
 
 func TestSynthesize_InputValidation(t *testing.T) {
@@ -1010,9 +1113,11 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	require.True(t, ok, "parameters must be an object")
 	assert.Contains(t, params, "resourceGroupName")
 
-	// connections carries the synthesized host: azure.ai.connection services so
-	// the connections module can create them at provision time.
+	// connections carries credentials and must be a secure ARM parameter.
 	assert.Contains(t, params, "connections", "connections param must be declared in the ARM template")
+	connections, ok := params["connections"].(map[string]any)
+	require.True(t, ok, "connections param must be an object")
+	assert.Equal(t, "securestring", connections["type"])
 
 	// Network isolation parameters must exist so the synthesizer's network
 	// param set is accepted by ARM (extra params would fail the deployment).
@@ -1058,6 +1163,19 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 		"managed isolationMode must provision a managedNetworks child resource")
 	assert.Contains(t, text, `"isolationMode": "[parameters('managedIsolationMode')]"`,
 		"managedNetworks isolationMode must come from the managedIsolationMode param")
+}
+
+func TestBrownfieldARMTemplate_UsesSecureConnections(t *testing.T) {
+	data, err := BrownfieldARMTemplate()
+	require.NoError(t, err)
+
+	var arm map[string]any
+	require.NoError(t, json.Unmarshal(data, &arm))
+	params, ok := arm["parameters"].(map[string]any)
+	require.True(t, ok, "parameters must be an object")
+	connections, ok := params["connections"].(map[string]any)
+	require.True(t, ok, "connections param must be an object")
+	assert.Equal(t, "securestring", connections["type"])
 }
 
 func TestSynthesize_Network(t *testing.T) {

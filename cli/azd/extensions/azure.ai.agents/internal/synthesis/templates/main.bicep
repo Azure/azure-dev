@@ -30,19 +30,6 @@ type deploymentType = {
   }
 }
 
-@description('Shape of a list of Foundry project connections.')
-type connectionsType = connectionType[]
-
-@description('Shape of one Foundry project connection (a host: azure.ai.connection service).')
-type connectionType = {
-  name: string
-  category: string
-  target: string
-  authType: string
-  credentials: object?
-  metadata: object?
-}
-
 // Parameters
 
 @description('Azure region for all resources.')
@@ -70,8 +57,9 @@ param deployments deploymentsType = []
 @description('Include an Azure Container Registry. Set true when any agent uses docker:.')
 param includeAcr bool = false
 
-@description('Foundry project connections to create (host: azure.ai.connection services).')
-param connections connectionsType = []
+@description('JSON-encoded Foundry project connections to create.')
+@secure()
+param connections string = ''
 
 @description('Object id of the developer running azd. When set, grants Cognitive Services User on the project. Empty disables the role assignment so headless / CI runs do not fail.')
 param principalId string = ''

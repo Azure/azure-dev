@@ -500,8 +500,7 @@ services:
 			require.True(t, ok, "includeAcr param should be bool")
 			assert.Equal(t, tt.wantIncludeAcr, includeAcr)
 
-			connections, ok := res.Parameters["connections"].([]Connection)
-			require.True(t, ok, "connections param should be []Connection, got %T", res.Parameters["connections"])
+			connections := resultConnections(t, res)
 			if tt.wantConnectionNames != nil {
 				gotNames := make([]string, len(connections))
 				for i, c := range connections {
@@ -540,8 +539,7 @@ services:
 
 	getConn := func(t *testing.T, res *Result) Connection {
 		t.Helper()
-		conns, ok := res.Parameters["connections"].([]Connection)
-		require.True(t, ok)
+		conns := resultConnections(t, res)
 		require.Len(t, conns, 1)
 		return conns[0]
 	}
@@ -629,6 +627,17 @@ services:
 	})
 }
 
+func resultConnections(t *testing.T, result *Result) []Connection {
+	t.Helper()
+
+	raw, ok := result.Parameters["connections"].(string)
+	require.True(t, ok, "connections param should be a JSON string")
+
+	var connections []Connection
+	require.NoError(t, json.Unmarshal([]byte(raw), &connections))
+	return connections
+}
+
 // TestBrownfieldConnections verifies connection services are collected for a
 // brownfield (endpoint:) project, with ${VAR} resolved (brownfield provisions
 // so references must be concrete) and Foundry ${{...}} preserved.
@@ -655,7 +664,11 @@ services:
 `
 
 	t.Run("collects and resolves connections (sorted)", func(t *testing.T) {
-		conns, err := BrownfieldConnections([]byte(yaml), map[string]string{"SEARCH_API_KEY": "secret"})
+		conns, err := BrownfieldConnections(
+			[]byte(yaml),
+			map[string]string{"SEARCH_API_KEY": "secret"},
+			"",
+		)
 		require.NoError(t, err)
 		require.Len(t, conns, 2)
 		assert.Equal(t, "bing-conn", conns[0].Name)
@@ -671,13 +684,13 @@ services:
     host: azure.ai.project
     endpoint: https://existing.services.ai.azure.com/api/projects/p1
 `
-		conns, err := BrownfieldConnections([]byte(noConns), nil)
+		conns, err := BrownfieldConnections([]byte(noConns), nil, "")
 		require.NoError(t, err)
 		assert.Empty(t, conns)
 	})
 
 	t.Run("empty raw errors", func(t *testing.T) {
-		_, err := BrownfieldConnections(nil, nil)
+		_, err := BrownfieldConnections(nil, nil, "")
 		require.Error(t, err)
 	})
 }
@@ -761,7 +774,7 @@ services:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := BrownfieldDeployments([]byte(tt.yaml), tt.serviceName)
+			got, err := BrownfieldDeployments([]byte(tt.yaml), tt.serviceName, "")
 
 			if tt.serviceName == "" {
 				require.Error(t, err)
@@ -788,7 +801,7 @@ services:
 }
 
 func TestBrownfieldDeployments_EmptyRaw(t *testing.T) {
-	_, err := BrownfieldDeployments(nil, "my-project")
+	_, err := BrownfieldDeployments(nil, "my-project", "")
 	require.Error(t, err)
 }
 

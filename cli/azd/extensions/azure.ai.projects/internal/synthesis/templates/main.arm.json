@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "11064647930674610643"
+      "templateHash": "17959860464748483608"
     }
   },
   "definitions": {
@@ -53,43 +53,6 @@
       },
       "metadata": {
         "description": "Shape of a single model deployment."
-      }
-    },
-    "connectionsType": {
-      "type": "array",
-      "items": {
-        "$ref": "#/definitions/connectionType"
-      },
-      "metadata": {
-        "description": "Shape of a list of Foundry project connections."
-      }
-    },
-    "connectionType": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "category": {
-          "type": "string"
-        },
-        "target": {
-          "type": "string"
-        },
-        "authType": {
-          "type": "string"
-        },
-        "credentials": {
-          "type": "object",
-          "nullable": true
-        },
-        "metadata": {
-          "type": "object",
-          "nullable": true
-        }
-      },
-      "metadata": {
-        "description": "Shape of one Foundry project connection (a host: azure.ai.connection service)."
       }
     }
   },
@@ -145,10 +108,10 @@
       }
     },
     "connections": {
-      "$ref": "#/definitions/connectionsType",
-      "defaultValue": [],
+      "type": "securestring",
+      "defaultValue": "",
       "metadata": {
-        "description": "Foundry project connections to create (host: azure.ai.connection services)."
+        "description": "JSON-encoded Foundry project connections to create."
       }
     },
     "principalId": {
@@ -341,7 +304,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "8482090354551809818"
+              "templateHash": "354603187727008413"
             }
           },
           "definitions": {
@@ -388,43 +351,6 @@
               },
               "metadata": {
                 "description": "Shape of a single model deployment."
-              }
-            },
-            "connectionsType": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/connectionType"
-              },
-              "metadata": {
-                "description": "Shape of a list of Foundry project connections."
-              }
-            },
-            "connectionType": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string"
-                },
-                "category": {
-                  "type": "string"
-                },
-                "target": {
-                  "type": "string"
-                },
-                "authType": {
-                  "type": "string"
-                },
-                "credentials": {
-                  "type": "object",
-                  "nullable": true
-                },
-                "metadata": {
-                  "type": "object",
-                  "nullable": true
-                }
-              },
-              "metadata": {
-                "description": "Shape of one Foundry project connection (a host: azure.ai.connection service)."
               }
             }
           },
@@ -473,10 +399,10 @@
               }
             },
             "connections": {
-              "$ref": "#/definitions/connectionsType",
-              "defaultValue": [],
+              "type": "securestring",
+              "defaultValue": "",
               "metadata": {
-                "description": "Foundry project connections to create (host: azure.ai.connection services)."
+                "description": "JSON-encoded Foundry project connections to create."
               }
             },
             "principalId": {
@@ -585,6 +511,7 @@
             },
             "resourceToken": "[if(empty(parameters('resourceTokenSalt')), uniqueString(subscription().id, resourceGroup().id, parameters('location')), uniqueString(subscription().id, resourceGroup().id, parameters('location'), parameters('resourceTokenSalt')))]",
             "abbrs": "[variables('$fxv#0')]",
+            "connectionList": "[json(if(empty(parameters('connections')), '[]', parameters('connections')))]",
             "foundryAccountName": "[format('{0}{1}', variables('abbrs').cognitiveServicesAccounts, variables('resourceToken'))]",
             "useByoNetwork": "[and(parameters('enableNetworkIsolation'), not(parameters('useManagedEgress')))]",
             "useManagedNetwork": "[and(parameters('enableNetworkIsolation'), parameters('useManagedEgress'))]",
@@ -1396,7 +1323,7 @@
               ]
             },
             "projectConnections": {
-              "condition": "[not(empty(parameters('connections')))]",
+              "condition": "[not(empty(variables('connectionList')))]",
               "type": "Microsoft.Resources/deployments",
               "apiVersion": "2025-04-01",
               "name": "foundry-connections",
@@ -1418,70 +1345,12 @@
                 },
                 "template": {
                   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-                  "languageVersion": "2.0",
                   "contentVersion": "1.0.0.0",
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
                       "version": "0.44.1.10279",
-                      "templateHash": "2215109488049914988"
-                    }
-                  },
-                  "definitions": {
-                    "connectionType": {
-                      "type": "object",
-                      "properties": {
-                        "name": {
-                          "type": "string",
-                          "metadata": {
-                            "description": "Connection name. The resource name and the key a toolbox tool references via connection: <name>."
-                          }
-                        },
-                        "category": {
-                          "type": "string",
-                          "metadata": {
-                            "description": "Connection category, e.g. RemoteTool (MCP), CognitiveSearch, AzureOpenAI, ApiKey, CustomKeys."
-                          }
-                        },
-                        "target": {
-                          "type": "string",
-                          "metadata": {
-                            "description": "Target endpoint URL or ARM resource id. For a RemoteTool/MCP connection this is the MCP server URL."
-                          }
-                        },
-                        "authType": {
-                          "type": "string",
-                          "metadata": {
-                            "description": "Auth type: None | ApiKey | CustomKeys | OAuth2 | UserEntraToken | ProjectManagedIdentity | AgenticIdentityToken | ManagedIdentity | ..."
-                          }
-                        },
-                        "credentials": {
-                          "type": "object",
-                          "nullable": true,
-                          "metadata": {
-                            "description": "Auth credentials. Structure depends on authType. Omit for None / identity types."
-                          }
-                        },
-                        "metadata": {
-                          "type": "object",
-                          "nullable": true,
-                          "metadata": {
-                            "description": "Optional metadata key-value pairs."
-                          }
-                        }
-                      },
-                      "metadata": {
-                        "description": "Shape of one Foundry project connection (a host: azure.ai.connection service)."
-                      }
-                    },
-                    "connectionsType": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/definitions/connectionType"
-                      },
-                      "metadata": {
-                        "description": "Shape of a list of connections."
-                      }
+                      "templateHash": "3592032988386574245"
                     }
                   },
                   "parameters": {
@@ -1498,44 +1367,35 @@
                       }
                     },
                     "connections": {
-                      "$ref": "#/definitions/connectionsType",
-                      "defaultValue": [],
+                      "type": "securestring",
+                      "defaultValue": "",
                       "metadata": {
-                        "description": "Connections to create on the Foundry project. Each entry maps to one host: azure.ai.connection service."
+                        "description": "JSON-encoded connections to create on the Foundry project."
                       }
                     }
                   },
-                  "resources": {
-                    "foundryAccount::project": {
-                      "existing": true,
-                      "type": "Microsoft.CognitiveServices/accounts/projects",
-                      "apiVersion": "2025-04-01-preview",
-                      "name": "[format('{0}/{1}', parameters('foundryAccountName'), parameters('foundryProjectName'))]"
-                    },
-                    "foundryAccount": {
-                      "existing": true,
-                      "type": "Microsoft.CognitiveServices/accounts",
-                      "apiVersion": "2025-04-01-preview",
-                      "name": "[parameters('foundryAccountName')]"
-                    },
-                    "projectConnections": {
+                  "variables": {
+                    "connectionList": "[json(if(empty(parameters('connections')), '[]', parameters('connections')))]"
+                  },
+                  "resources": [
+                    {
                       "copy": {
                         "name": "projectConnections",
-                        "count": "[length(parameters('connections'))]"
+                        "count": "[length(variables('connectionList'))]"
                       },
                       "type": "Microsoft.CognitiveServices/accounts/projects/connections",
                       "apiVersion": "2025-04-01-preview",
-                      "name": "[format('{0}/{1}/{2}', parameters('foundryAccountName'), parameters('foundryProjectName'), parameters('connections')[copyIndex()].name)]",
-                      "properties": "[union(createObject('category', parameters('connections')[copyIndex()].category, 'target', parameters('connections')[copyIndex()].target, 'authType', parameters('connections')[copyIndex()].authType), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'credentials'), null())), createObject('credentials', tryGet(parameters('connections')[copyIndex()], 'credentials')), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'metadata'), null())), createObject('metadata', tryGet(parameters('connections')[copyIndex()], 'metadata')), createObject()))]"
+                      "name": "[format('{0}/{1}/{2}', parameters('foundryAccountName'), parameters('foundryProjectName'), variables('connectionList')[copyIndex()].name)]",
+                      "properties": "[union(createObject('category', variables('connectionList')[copyIndex()].category, 'target', variables('connectionList')[copyIndex()].target, 'authType', variables('connectionList')[copyIndex()].authType), if(not(equals(tryGet(variables('connectionList')[copyIndex()], 'credentials'), null())), createObject('credentials', tryGet(variables('connectionList')[copyIndex()], 'credentials')), createObject()), if(not(equals(tryGet(variables('connectionList')[copyIndex()], 'metadata'), null())), createObject('metadata', tryGet(variables('connectionList')[copyIndex()], 'metadata')), createObject()))]"
                     }
-                  },
+                  ],
                   "outputs": {
                     "connectionNames": {
                       "type": "string",
                       "metadata": {
                         "description": "Comma-joined names of the connections created, in input order. Reference these from toolbox tools via connection: <name>. A string (not an array) so it round-trips through the azd .env without JSON double-encoding."
                       },
-                      "value": "[join(map(parameters('connections'), lambda('c', lambdaVariables('c').name)), ',')]"
+                      "value": "[join(map(variables('connectionList'), lambda('c', lambdaVariables('c').name)), ',')]"
                     }
                   }
                 }
@@ -1581,7 +1441,7 @@
             },
             "AZURE_AI_PROJECT_CONNECTION_NAMES": {
               "type": "string",
-              "value": "[if(empty(parameters('connections')), '', reference('projectConnections').outputs.connectionNames.value)]"
+              "value": "[if(empty(variables('connectionList')), '', reference('projectConnections').outputs.connectionNames.value)]"
             },
             "AZURE_FOUNDRY_NETWORK_MODE": {
               "type": "string",

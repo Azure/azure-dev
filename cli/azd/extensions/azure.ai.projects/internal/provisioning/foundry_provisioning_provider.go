@@ -150,7 +150,21 @@ func (p *FoundryProvisioningProvider) Initialize(
 			"skipping synthesizer", filepath.Join(projectPath, onDiskInfraDir))
 		// endpoint: (brownfield) reuse skips provisioning even on the on-disk
 		// path; connect to the existing project instead of compiling Bicep.
-		if endpoint := foundryServiceEndpoint(rawYAML, svcName); endpoint != "" {
+		if endpoint, err := synthesis.ProjectEndpoint(
+			rawYAML,
+			svcName,
+			projectPath,
+		); err != nil {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAzureYaml,
+				fmt.Sprintf(
+					"read endpoint for Foundry project service %q: %s",
+					svcName,
+					err,
+				),
+				"check the endpoint field under your azure.ai.project service",
+			)
+		} else if endpoint != "" {
 			warnNetworkIgnoredInBrownfield(rawYAML, svcName)
 			p.brownfieldEndpoint = endpoint
 			if err := p.captureBrownfieldDeployments(ctx, rawYAML, svcName); err != nil {
@@ -173,7 +187,23 @@ func (p *FoundryProvisioningProvider) Initialize(
 		// endpoint: reuse — connect to the existing project, skip provisioning.
 		// network: has no effect in brownfield mode; warn if both are present.
 		warnNetworkIgnoredInBrownfield(rawYAML, svcName)
-		p.brownfieldEndpoint = foundryServiceEndpoint(rawYAML, svcName)
+		endpoint, endpointErr := synthesis.ProjectEndpoint(
+			rawYAML,
+			svcName,
+			projectPath,
+		)
+		if endpointErr != nil {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAzureYaml,
+				fmt.Sprintf(
+					"read endpoint for Foundry project service %q: %s",
+					svcName,
+					endpointErr,
+				),
+				"check the endpoint field under your azure.ai.project service",
+			)
+		}
+		p.brownfieldEndpoint = endpoint
 		if err := p.captureBrownfieldDeployments(ctx, rawYAML, svcName); err != nil {
 			return err
 		}
@@ -702,7 +732,11 @@ func (p *FoundryProvisioningProvider) Deploy(
 func (p *FoundryProvisioningProvider) captureBrownfieldDeployments(
 	ctx context.Context, rawYAML []byte, svcName string,
 ) error {
-	deployments, err := synthesis.BrownfieldDeployments(rawYAML, svcName)
+	deployments, err := synthesis.BrownfieldDeployments(
+		rawYAML,
+		svcName,
+		p.projectPath,
+	)
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
@@ -712,7 +746,11 @@ func (p *FoundryProvisioningProvider) captureBrownfieldDeployments(
 	}
 	p.brownfieldDeployments = deployments
 
-	connections, err := synthesis.BrownfieldConnections(rawYAML, p.networkEnvMap(ctx))
+	connections, err := synthesis.BrownfieldConnections(
+		rawYAML,
+		p.networkEnvMap(ctx),
+		p.projectPath,
+	)
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
@@ -765,11 +803,15 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 	if err != nil {
 		return nil, err
 	}
+	params, err := p.brownfieldParams(ctx, account, rg, createACR)
+	if err != nil {
+		return nil, err
+	}
 
 	dep := armresources.Deployment{
 		Properties: &armresources.DeploymentProperties{
 			Template:   tmpl,
-			Parameters: p.brownfieldParams(ctx, account, rg, createACR),
+			Parameters: params,
 			Mode:       new(armresources.DeploymentModeIncremental),
 		},
 		Tags: map[string]*string{
@@ -836,11 +878,18 @@ func brownfieldReconcileMessage(hasDeployments, createACR, hasConnections bool) 
 // by the Deploy and Preview paths. ACR params are added only when createACR.
 func (p *FoundryProvisioningProvider) brownfieldParams(
 	ctx context.Context, account, rg string, createACR bool,
-) map[string]any {
+) (map[string]any, error) {
+	connections, err := synthesis.EncodeConnections(p.brownfieldConnections)
+	if err != nil {
+		return nil, exterrors.Internal(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("encode brownfield connections: %s", err),
+		)
+	}
 	params := map[string]any{
 		"accountName": map[string]any{"value": account},
 		"deployments": map[string]any{"value": p.brownfieldDeployments},
-		"connections": map[string]any{"value": p.brownfieldConnections},
+		"connections": map[string]any{"secureValue": connections},
 		// projectName feeds the unconditional existing `foundryAccountPreview::project`
 		// resource, so it must always be set -- even on the model-deployments-only
 		// reconcile path. Omitting it collapses the resource name to "<account>/"
@@ -857,7 +906,7 @@ func (p *FoundryProvisioningProvider) brownfieldParams(
 			params["location"] = map[string]any{"value": loc}
 		}
 	}
-	return params
+	return params, nil
 }
 
 // previewBrownfield runs a resource-group-scoped what-if on brownfield.arm.json
@@ -886,6 +935,10 @@ func (p *FoundryProvisioningProvider) previewBrownfield(
 	if err != nil {
 		return nil, err
 	}
+	params, err := p.brownfieldParams(ctx, account, rg, createACR)
+	if err != nil {
+		return nil, err
+	}
 
 	client, err := p.deploymentsClient(ctx)
 	if err != nil {
@@ -895,7 +948,7 @@ func (p *FoundryProvisioningProvider) previewBrownfield(
 	whatIf := armresources.DeploymentWhatIf{
 		Properties: &armresources.DeploymentWhatIfProperties{
 			Template:   tmpl,
-			Parameters: p.brownfieldParams(ctx, account, rg, createACR),
+			Parameters: params,
 			Mode:       new(armresources.DeploymentModeIncremental),
 		},
 	}
@@ -1697,7 +1750,11 @@ func (p *FoundryProvisioningProvider) armParameters() map[string]any {
 		return out
 	}
 	for k, v := range p.synthResult.Parameters {
-		out[k] = map[string]any{"value": v}
+		if k == "connections" {
+			out[k] = map[string]any{"secureValue": v}
+		} else {
+			out[k] = map[string]any{"value": v}
+		}
 	}
 	return out
 }

@@ -25,19 +25,6 @@ type deploymentType = {
   }
 }
 
-@description('Shape of a list of Foundry project connections.')
-type connectionsType = connectionType[]
-
-@description('Shape of one Foundry project connection (a host: azure.ai.connection service).')
-type connectionType = {
-  name: string
-  category: string
-  target: string
-  authType: string
-  credentials: object?
-  metadata: object?
-}
-
 // Parameters
 
 @description('Name of the existing Foundry (AIServices) account.')
@@ -63,8 +50,11 @@ param includeAcr bool = false
 @description('Container registry name. 5-50 alphanumeric chars. Required when includeAcr is true.')
 param acrName string = ''
 
-@description('Foundry project connections to create on the existing project (host: azure.ai.connection services).')
-param connections connectionsType = []
+@description('JSON-encoded Foundry project connections to create.')
+@secure()
+param connections string = ''
+
+var connectionList = json(empty(connections) ? '[]' : connections)
 
 // Resources
 
@@ -163,7 +153,7 @@ resource acrConnection 'Microsoft.CognitiveServices/accounts/projects/connection
 // provision time. Optional properties (credentials / metadata) are emitted only
 // when supplied so None / identity-token connections don't send empty objects.
 resource projectConnections 'Microsoft.CognitiveServices/accounts/projects/connections@2025-04-01-preview' = [
-  for c in connections: {
+  for c in connectionList: {
     parent: foundryAccountPreview::project
     name: c.name
     properties: union(
@@ -183,4 +173,4 @@ resource projectConnections 'Microsoft.CognitiveServices/accounts/projects/conne
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = includeAcr ? registry!.properties.loginServer : ''
 output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = includeAcr ? registry!.id : ''
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = includeAcr ? '${acrName}-conn' : ''
-output AZURE_AI_PROJECT_CONNECTION_NAMES string = join(map(connections, c => c.name), ',')
+output AZURE_AI_PROJECT_CONNECTION_NAMES string = join(map(connectionList, c => c.name), ',')

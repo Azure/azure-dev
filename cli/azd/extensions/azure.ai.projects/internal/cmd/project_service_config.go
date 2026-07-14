@@ -13,6 +13,7 @@ import (
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -32,7 +33,10 @@ func projectLifecycleHandler(
 		return fmt.Errorf("project lifecycle event has no project")
 	}
 
-	cfg, found, err := loadProjectServiceConfig(args.Project.Services)
+	cfg, found, err := loadProjectServiceConfig(
+		args.Project.Services,
+		args.Project.Path,
+	)
 	if err != nil {
 		return err
 	}
@@ -75,6 +79,7 @@ func projectLifecycleHandler(
 
 func loadProjectServiceConfig(
 	services map[string]*azdext.ServiceConfig,
+	projectRoot string,
 ) (*projectServiceConfig, bool, error) {
 	var names []string
 	for name, service := range services {
@@ -103,7 +108,19 @@ func loadProjectServiceConfig(
 		return cfg, true, nil
 	}
 
-	data, err := json.Marshal(props.AsMap())
+	values := props.AsMap()
+	if projectRoot != "" {
+		resolved, err := foundry.ResolveFileRefs(values, projectRoot)
+		if err != nil {
+			return nil, false, fmt.Errorf(
+				"resolve project service %q $ref includes: %w",
+				names[0],
+				err,
+			)
+		}
+		values = resolved
+	}
+	data, err := json.Marshal(values)
 	if err != nil {
 		return nil, false, fmt.Errorf(
 			"encoding project service %q config: %w",

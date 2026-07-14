@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -472,6 +473,12 @@ func TestUnresolvedRemoteAgentNameError(t *testing.T) {
 		}
 		if !strings.Contains(localErr.Suggestion, "azd deploy") {
 			t.Errorf("suggestion = %q, want azd deploy guidance", localErr.Suggestion)
+		}
+		if localErr.Code != exterrors.CodeMissingAgentEnvVars {
+			t.Errorf("code = %q, want %q", localErr.Code, exterrors.CodeMissingAgentEnvVars)
+		}
+		if localErr.Category != azdext.LocalErrorCategoryDependency {
+			t.Errorf("category = %q, want %q", localErr.Category, azdext.LocalErrorCategoryDependency)
 		}
 	})
 

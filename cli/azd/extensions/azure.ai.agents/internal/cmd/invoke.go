@@ -853,8 +853,8 @@ func (rc *remoteContext) nextStepName() string {
 
 func unresolvedRemoteAgentNameError(serviceName string) error {
 	if serviceName != "" {
-		return exterrors.Validation(
-			exterrors.CodeInvalidParameter,
+		return exterrors.Dependency(
+			exterrors.CodeMissingAgentEnvVars,
 			fmt.Sprintf("agent service %q does not appear to have been deployed", serviceName),
 			"run `azd deploy` before invoking, or pass an existing Foundry agent name "+
 				"or --agent-endpoint explicitly",

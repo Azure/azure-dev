@@ -502,7 +502,7 @@ Built-in tool IDs come from azd's curated tool manifest (run `azd tool list` to 
 | `tool.install.duration_ms` | measurement | Total install/upgrade/uninstall duration (ms) |
 | `tool.upgrade.from_version` | string | Previous version (single-target upgrade) |
 | `tool.upgrade.to_version` | string | New version after a successful upgrade (single-target) |
-| `tool.check.updates_available` | measurement | Installed tools with an available update (`azd tool check`) |
+| `tool.check.updates_available` | measurement | Installed tools with an available upgrade (`azd tool check`) |
 </details>
 
 <details>
@@ -690,7 +690,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Self-Update** | `cmd.update` | `update.installMethod`, `update.fromVersion` | Update adoption |
 | **Hooks** | `hooks.exec` | `hooks.name`, `hooks.type`, `hooks.kind` | Hook usage by type |
 | **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `pack.builder.image` | Build method usage, success rates |
-| **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.upgrade`, `cmd.tool.uninstall`, `cmd.tool.check` | `tool.id`, `tool.install.strategy`, `tool.firstrun.outcome` | First-run adoption, install/upgrade/uninstall success, update availability |
+| **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.upgrade`, `cmd.tool.uninstall`, `cmd.tool.check` | `tool.id`, `tool.install.strategy`, `tool.firstrun.outcome` | First-run adoption, install/upgrade/uninstall success, upgrade availability |
 
 ## See Also
 

@@ -321,7 +321,7 @@ no file paths, no user-identifiable data, no raw error text.
 | Install duration | `tool.install.duration_ms` | SystemMetadata | FeatureInsight | **Measurement** — total install/upgrade duration in ms |
 | Upgrade from version | `tool.upgrade.from_version` | SystemMetadata | FeatureInsight | Prior version (single-target upgrades) |
 | Upgrade to version | `tool.upgrade.to_version` | SystemMetadata | FeatureInsight | New version after a successful upgrade |
-| Updates available | `tool.check.updates_available` | SystemMetadata | FeatureInsight | **Measurement** — number of installed tools with an available update |
+| Updates available | `tool.check.updates_available` | SystemMetadata | FeatureInsight | **Measurement** — number of installed tools with an available upgrade |
 
 ### Preflight Validation
 

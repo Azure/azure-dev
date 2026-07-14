@@ -507,7 +507,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 // Status indicator constants for extension list display.
 const (
 	statusUpToDate   = "Up to date"
-	statusUpdate     = "Update available"
+	statusUpgrade    = "Upgrade available"
 	statusIncompat   = "Incompatible"
 	statusNotInstall = "Not installed"
 )
@@ -518,7 +518,7 @@ func extensionStatus(installed, updateAvailable, incompatible bool) string {
 	case incompatible:
 		return statusIncompat
 	case updateAvailable:
-		return statusUpdate
+		return statusUpgrade
 	case installed:
 		return statusUpToDate
 	default:
@@ -531,7 +531,7 @@ func extensionStatusColor(s string) string {
 	switch s {
 	case statusUpToDate:
 		return output.WithSuccessFormat(s)
-	case statusUpdate:
+	case statusUpgrade:
 		return output.WithWarningFormat(s)
 	case statusIncompat:
 		return output.WithErrorFormat(s)

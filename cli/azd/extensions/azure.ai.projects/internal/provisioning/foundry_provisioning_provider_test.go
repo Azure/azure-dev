@@ -597,6 +597,24 @@ func TestArmParameters_NilSafeOnMissingSynthResult(t *testing.T) {
 		"synthesizer-derived parameters should be absent when synthResult is nil")
 }
 
+func TestArmParameters_UseValueEnvelopeForSecureConnections(t *testing.T) {
+	p := &FoundryProvisioningProvider{
+		synthResult: &synthesis.Result{
+			Parameters: map[string]any{
+				"connections": `[{"name":"search-conn"}]`,
+			},
+		},
+	}
+
+	out := p.armParameters()
+
+	assert.Equal(
+		t,
+		map[string]any{"value": `[{"name":"search-conn"}]`},
+		out["connections"],
+	)
+}
+
 func TestDestroy_RefusesWithoutForceWhenNonInteractive(t *testing.T) {
 	// Destroy must NEVER silently delete (or, worse, silently leak)
 	// resources. Without --force the provider prompts for confirmation, but

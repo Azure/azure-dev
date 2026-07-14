@@ -189,7 +189,7 @@ func TestBrownfieldParams(t *testing.T) {
 
 		assert.Equal(t, map[string]any{"value": "acct"}, params["accountName"])
 		assert.Equal(t, map[string]any{"value": deployments}, params["deployments"])
-		assert.Equal(t, map[string]any{"secureValue": "[]"}, params["connections"])
+		assert.Equal(t, map[string]any{"value": "[]"}, params["connections"])
 		assert.Equal(t, map[string]any{"value": "my-project"}, params["projectName"])
 		assert.NotContains(t, params, "includeAcr")
 		assert.NotContains(t, params, "acrName")
@@ -208,7 +208,7 @@ func TestBrownfieldParams(t *testing.T) {
 
 		assert.Equal(
 			t,
-			map[string]any{"secureValue": `[{"name":"search-conn","category":"CognitiveSearch","target":"","authType":""}]`},
+			map[string]any{"value": `[{"name":"search-conn","category":"CognitiveSearch","target":"","authType":""}]`},
 			params["connections"],
 		)
 		// Connections are project-scoped, so projectName must be supplied even

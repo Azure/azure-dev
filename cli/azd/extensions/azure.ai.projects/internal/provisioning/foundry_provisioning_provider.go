@@ -889,7 +889,7 @@ func (p *FoundryProvisioningProvider) brownfieldParams(
 	params := map[string]any{
 		"accountName": map[string]any{"value": account},
 		"deployments": map[string]any{"value": p.brownfieldDeployments},
-		"connections": map[string]any{"secureValue": connections},
+		"connections": map[string]any{"value": connections},
 		// projectName feeds the unconditional existing `foundryAccountPreview::project`
 		// resource, so it must always be set -- even on the model-deployments-only
 		// reconcile path. Omitting it collapses the resource name to "<account>/"
@@ -1750,11 +1750,7 @@ func (p *FoundryProvisioningProvider) armParameters() map[string]any {
 		return out
 	}
 	for k, v := range p.synthResult.Parameters {
-		if k == "connections" {
-			out[k] = map[string]any{"secureValue": v}
-		} else {
-			out[k] = map[string]any{"value": v}
-		}
+		out[k] = map[string]any{"value": v}
 	}
 	return out
 }

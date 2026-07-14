@@ -56,15 +56,15 @@ sessions are bound to the version they were created on. By default, the first
 version, dropping the previous session (including any state on its persistent
 `/home/session` volume).
 
-Set the `resumeSessionOnDeploy` environment variable to a truthy value to opt in
-to **session carry-over**. When enabled, `azd deploy` captures the current
-session before deploying, stops it, and re-points the newly deployed version's
-session pointer at it, so the next `azd ai agent invoke` resumes the same session
-on the new code with its `/home/session` volume intact.
+Set the `AZD_AGENT_RESUME_SESSION_ON_DEPLOY` environment variable to a truthy
+value to opt in to **session carry-over**. When enabled, `azd deploy` captures
+the current session before deploying, stops it, and re-points the newly deployed
+version's session pointer at it, so the next `azd ai agent invoke` resumes the
+same session on the new code with its `/home/session` volume intact.
 
 ```bash
 # Enable session carry-over for this azd process
-export resumeSessionOnDeploy=true
+export AZD_AGENT_RESUME_SESSION_ON_DEPLOY=true
 azd deploy
 ```
 

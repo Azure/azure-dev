@@ -46,19 +46,19 @@ import (
 // pointer at it (postdeploy). The next `azd ai agent invoke` then resumes the
 // same session on the new code, preserving the /home/session volume.
 //
-// The behavior is OPT-IN via the `resumeSessionOnDeploy` environment variable
-// (set to a truthy value: 1/true/yes/on). It is always best-effort and never
-// fails a deploy.
+// The behavior is OPT-IN via the `AZD_AGENT_RESUME_SESSION_ON_DEPLOY`
+// environment variable (set to a truthy value: 1/true/yes/on). It is always
+// best-effort and never fails a deploy.
 
 // sessionCarryoverEnvVar opts an azd process into carrying a hosted agent's
 // session across deploys when set to a truthy value (1/true/yes/on). Unset or
 // any other value leaves carry-over disabled, so a redeploy starts a fresh
 // session.
-const sessionCarryoverEnvVar = "resumeSessionOnDeploy"
+const sessionCarryoverEnvVar = "AZD_AGENT_RESUME_SESSION_ON_DEPLOY"
 
 // sessionCarryoverEnabled reports whether automatic session carry-over is
-// active. It is OPT-IN: off unless the resumeSessionOnDeploy environment
-// variable is truthy.
+// active. It is OPT-IN: off unless the AZD_AGENT_RESUME_SESSION_ON_DEPLOY
+// environment variable is truthy.
 func sessionCarryoverEnabled() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(sessionCarryoverEnvVar))) {
 	case "1", "true", "yes", "on":

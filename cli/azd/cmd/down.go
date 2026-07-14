@@ -67,7 +67,6 @@ type downAction struct {
 	flags               *downFlags
 	args                []string
 	provisionManager    *provisioning.Manager
-	defaultProvider     provisioning.DefaultProviderResolver
 	importManager       *project.ImportManager
 	env                 *environment.Environment
 	envManager          environment.Manager
@@ -80,7 +79,6 @@ func newDownAction(
 	args []string,
 	flags *downFlags,
 	provisionManager *provisioning.Manager,
-	defaultProvider provisioning.DefaultProviderResolver,
 	env *environment.Environment,
 	envManager environment.Manager,
 	projectConfig *project.ProjectConfig,
@@ -91,7 +89,6 @@ func newDownAction(
 	return &downAction{
 		flags:               flags,
 		provisionManager:    provisionManager,
-		defaultProvider:     defaultProvider,
 		env:                 env,
 		envManager:          envManager,
 		console:             console,
@@ -138,7 +135,7 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	// Record the resolved IaC provider (single, or "mixed") on the command span up front, so it is
 	// present on success and failure alike (no-op when there are no layers).
-	provisioning.RecordInfraProviderUsage(layers, a.defaultProvider)
+	a.provisionManager.RecordInfraProviderUsage(layers)
 
 	for _, layer := range layers {
 		if downLayer != "" || len(layers) > 1 {

@@ -18,7 +18,7 @@ func Test_NewDownAction_Constructor(t *testing.T) {
 	t.Parallel()
 	flags := &downFlags{}
 	console := mockinput.NewMockConsole()
-	a := newDownAction(nil, flags, nil, nil, nil, nil, nil, console, nil, nil)
+	a := newDownAction(nil, flags, nil, nil, nil, nil, console, nil, nil)
 	da := a.(*downAction)
 	require.Same(t, flags, da.flags)
 }

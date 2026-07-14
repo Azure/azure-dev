@@ -558,13 +558,13 @@ const (
 // "bicep", "terraform", "arm"); non-built-in (extension) providers are bucketed to
 // InfraProviderCustom ("custom") so raw user-chosen names are never emitted. When layers
 // resolve to different providers it records InfraProviderMixed ("mixed"). Layers that leave
-// the provider unspecified resolve through defaultProvider. It is a no-op when no provider
-// can be resolved.
+// the provider unspecified resolve through the manager's default provider. It is a no-op when
+// no provider can be resolved.
 //
 // Callers must invoke this once per command, before provider work begins, so the attribute is
 // present on success, failure, and preview spans alike. The value is computed deterministically
 // from configuration (rather than racing concurrent per-layer resolution).
-func RecordInfraProviderUsage(layers []Options, defaultProvider DefaultProviderResolver) {
+func (m *Manager) RecordInfraProviderUsage(layers []Options) {
 	// The default provider is resolved lazily and at most once per call: every unspecified layer
 	// resolves to the same default, so caching keeps the value deterministic and avoids repeating
 	// resolver work (which may do I/O) per layer.
@@ -576,12 +576,12 @@ func RecordInfraProviderUsage(layers []Options, defaultProvider DefaultProviderR
 	for _, layer := range layers {
 		kind := layer.Provider
 		if kind == NotSpecified {
-			if defaultProvider == nil || defaultFailed {
+			if m.defaultProvider == nil || defaultFailed {
 				continue
 			}
 
 			if !defaultResolved {
-				resolved, err := defaultProvider()
+				resolved, err := m.defaultProvider()
 				if err != nil {
 					defaultFailed = true
 					continue

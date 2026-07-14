@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package provisioning_test
+package provisioning
 
 import (
 	"errors"
@@ -9,90 +9,89 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/stretchr/testify/require"
 )
 
 func TestRecordInfraProviderUsage(t *testing.T) {
-	bicepDefault := func() (provisioning.ProviderKind, error) { return provisioning.Bicep, nil }
-	failingResolver := func() (provisioning.ProviderKind, error) {
-		return provisioning.NotSpecified, errors.New("no default provider")
+	bicepDefault := func() (ProviderKind, error) { return Bicep, nil }
+	failingResolver := func() (ProviderKind, error) {
+		return NotSpecified, errors.New("no default provider")
 	}
-	unspecifiedResolver := func() (provisioning.ProviderKind, error) {
-		return provisioning.NotSpecified, nil
+	unspecifiedResolver := func() (ProviderKind, error) {
+		return NotSpecified, nil
 	}
 
 	tests := []struct {
 		name            string
-		layers          []provisioning.Options
-		defaultProvider provisioning.DefaultProviderResolver
+		layers          []Options
+		defaultProvider DefaultProviderResolver
 		expected        string // "" means no infra.provider attribute is recorded
 	}{
 		{
 			name:            "single explicit bicep",
-			layers:          []provisioning.Options{{Provider: provisioning.Bicep}},
+			layers:          []Options{{Provider: Bicep}},
 			defaultProvider: bicepDefault,
 			expected:        "bicep",
 		},
 		{
 			name:            "single explicit terraform",
-			layers:          []provisioning.Options{{Provider: provisioning.Terraform}},
+			layers:          []Options{{Provider: Terraform}},
 			defaultProvider: bicepDefault,
 			expected:        "terraform",
 		},
 		{
 			name:            "unspecified resolves through default",
-			layers:          []provisioning.Options{{Provider: provisioning.NotSpecified}},
+			layers:          []Options{{Provider: NotSpecified}},
 			defaultProvider: bicepDefault,
 			expected:        "bicep",
 		},
 		{
 			name: "uniform provider across layers",
-			layers: []provisioning.Options{
-				{Provider: provisioning.Bicep},
-				{Provider: provisioning.Bicep},
+			layers: []Options{
+				{Provider: Bicep},
+				{Provider: Bicep},
 			},
 			defaultProvider: bicepDefault,
 			expected:        "bicep",
 		},
 		{
 			name: "different providers across layers records mixed",
-			layers: []provisioning.Options{
-				{Provider: provisioning.Bicep},
-				{Provider: provisioning.Terraform},
+			layers: []Options{
+				{Provider: Bicep},
+				{Provider: Terraform},
 			},
 			defaultProvider: bicepDefault,
-			expected:        provisioning.InfraProviderMixed,
+			expected:        InfraProviderMixed,
 		},
 		{
 			name:            "single explicit arm",
-			layers:          []provisioning.Options{{Provider: provisioning.Arm}},
+			layers:          []Options{{Provider: Arm}},
 			defaultProvider: bicepDefault,
 			expected:        "arm",
 		},
 		{
 			name:            "custom provider is bucketed",
-			layers:          []provisioning.Options{{Provider: provisioning.ProviderKind("my-extension-provider")}},
+			layers:          []Options{{Provider: ProviderKind("my-extension-provider")}},
 			defaultProvider: bicepDefault,
-			expected:        provisioning.InfraProviderCustom,
+			expected:        InfraProviderCustom,
 		},
 		{
 			name: "built-in plus custom records mixed",
-			layers: []provisioning.Options{
-				{Provider: provisioning.Bicep},
-				{Provider: provisioning.ProviderKind("my-extension-provider")},
+			layers: []Options{
+				{Provider: Bicep},
+				{Provider: ProviderKind("my-extension-provider")},
 			},
 			defaultProvider: bicepDefault,
-			expected:        provisioning.InfraProviderMixed,
+			expected:        InfraProviderMixed,
 		},
 		{
 			name: "two distinct custom providers record mixed",
-			layers: []provisioning.Options{
-				{Provider: provisioning.ProviderKind("vendor.one")},
-				{Provider: provisioning.ProviderKind("vendor.two")},
+			layers: []Options{
+				{Provider: ProviderKind("vendor.one")},
+				{Provider: ProviderKind("vendor.two")},
 			},
 			defaultProvider: bicepDefault,
-			expected:        provisioning.InfraProviderMixed,
+			expected:        InfraProviderMixed,
 		},
 		{
 			name:            "no layers records nothing",
@@ -102,19 +101,19 @@ func TestRecordInfraProviderUsage(t *testing.T) {
 		},
 		{
 			name:            "unspecified with nil resolver records nothing",
-			layers:          []provisioning.Options{{Provider: provisioning.NotSpecified}},
+			layers:          []Options{{Provider: NotSpecified}},
 			defaultProvider: nil,
 			expected:        "",
 		},
 		{
 			name:            "unspecified with failing resolver records nothing",
-			layers:          []provisioning.Options{{Provider: provisioning.NotSpecified}},
+			layers:          []Options{{Provider: NotSpecified}},
 			defaultProvider: failingResolver,
 			expected:        "",
 		},
 		{
 			name:            "unspecified resolving to NotSpecified records nothing",
-			layers:          []provisioning.Options{{Provider: provisioning.NotSpecified}},
+			layers:          []Options{{Provider: NotSpecified}},
 			defaultProvider: unspecifiedResolver,
 			expected:        "",
 		},
@@ -126,7 +125,7 @@ func TestRecordInfraProviderUsage(t *testing.T) {
 			tracing.ResetUsageAttributesForTest()
 			t.Cleanup(tracing.ResetUsageAttributesForTest)
 
-			provisioning.RecordInfraProviderUsage(tt.layers, tt.defaultProvider)
+			(&Manager{defaultProvider: tt.defaultProvider}).RecordInfraProviderUsage(tt.layers)
 
 			var got string
 			var found bool

@@ -70,7 +70,6 @@ type upAction struct {
 	env                 *environment.Environment
 	projectConfig       *project.ProjectConfig
 	provisioningManager *provisioning.Manager
-	defaultProvider     provisioning.DefaultProviderResolver
 	envManager          environment.Manager
 	prompters           prompt.Prompter
 	importManager       *project.ImportManager
@@ -84,7 +83,6 @@ func newUpAction(
 	env *environment.Environment,
 	projectConfig *project.ProjectConfig,
 	provisioningManager *provisioning.Manager,
-	defaultProvider provisioning.DefaultProviderResolver,
 	envManager environment.Manager,
 	prompters prompt.Prompter,
 	importManager *project.ImportManager,
@@ -97,7 +95,6 @@ func newUpAction(
 		env:                 env,
 		projectConfig:       projectConfig,
 		provisioningManager: provisioningManager,
-		defaultProvider:     defaultProvider,
 		envManager:          envManager,
 		prompters:           prompters,
 		importManager:       importManager,
@@ -148,7 +145,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Record the resolved IaC provider (single, or "mixed") on the cmd.up span up front — before
 	// provider init and the custom-workflow branch — so every up path (including custom workflows
 	// and early init failures) carries it.
-	provisioning.RecordInfraProviderUsage(infra.Options.GetLayers(), u.defaultProvider)
+	u.provisioningManager.RecordInfraProviderUsage(infra.Options.GetLayers())
 
 	// TODO(weilim): remove this once we have decided if it's okay to not set AZURE_SUBSCRIPTION_ID and AZURE_LOCATION
 	// early in the up workflow in #3745

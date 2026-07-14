@@ -86,7 +86,7 @@ func (p *ProvisionAction) provisionLayersGraph(
 
 	// Record the resolved IaC provider (single, or "mixed") on the command span up front, so it is
 	// present on success, failure, and preview runs alike — scoped to the provisioning lifecycle.
-	provisioning.RecordInfraProviderUsage(layers, p.defaultProvider)
+	p.provisionManager.RecordInfraProviderUsage(layers)
 
 	// ── provider-agnostic provision validation (once per command) ─────────
 	// Dispatch extension-registered "provision" checks a single time, before

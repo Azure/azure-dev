@@ -6,6 +6,7 @@ package terraform
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"os"
 	osexec "os/exec"
@@ -27,9 +28,51 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSubstituteInputParameters_JSON(t *testing.T) {
+	t.Parallel()
+
+	input := []byte(`{
+  "connections": [{
+    "credentials": {
+      "key": "${API_KEY}",
+      "nested": { "x-api-key": "${API_KEY}" },
+      "foundry": "${{connections.other.credentials.key}}"
+    }
+  }]
+}`)
+	replaced, err := substituteInputParameters("main.tfvars.json", input, func(name string) string {
+		if name == "API_KEY" {
+			return "quote\" slash\\ newline\n"
+		}
+		return ""
+	})
+	require.NoError(t, err)
+
+	var value map[string]any
+	require.NoError(t, json.Unmarshal([]byte(replaced), &value))
+	credentials := value["connections"].([]any)[0].(map[string]any)["credentials"].(map[string]any)
+	assert.Equal(t, "quote\" slash\\ newline\n", credentials["key"])
+	assert.Equal(t, "quote\" slash\\ newline\n", credentials["nested"].(map[string]any)["x-api-key"])
+	assert.Equal(t, "${{connections.other.credentials.key}}", credentials["foundry"])
+}
+
+func TestSubstituteInputParameters_NonJSON(t *testing.T) {
+	t.Parallel()
+
+	replaced, err := substituteInputParameters("backend.tfvars", []byte("key=${VALUE}"), func(name string) string {
+		if name == "VALUE" {
+			return "value"
+		}
+		return ""
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "key=value", replaced)
+}
 
 func TestTerraformPlan(t *testing.T) {
 	skipIfTerraformNotInstalled(t)

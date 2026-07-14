@@ -22,8 +22,13 @@ resource "azapi_resource" "connection" {
         target   = each.value.target
         authType = each.value.authType
       },
-      each.value.credentials != null ? { credentials = each.value.credentials } : {},
       each.value.metadata != null ? { metadata = each.value.metadata } : {}
     )
   }
+
+  sensitive_body = each.value.credentials != null ? {
+    properties = {
+      credentials = each.value.credentials
+    }
+  } : null
 }

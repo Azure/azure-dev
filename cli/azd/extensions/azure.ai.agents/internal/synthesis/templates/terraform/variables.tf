@@ -65,7 +65,7 @@ variable "connections" {
     category    = string
     target      = string
     authType    = string
-    credentials = optional(map(any))
+    credentials = optional(any)
     metadata    = optional(map(string))
   }))
   default = []

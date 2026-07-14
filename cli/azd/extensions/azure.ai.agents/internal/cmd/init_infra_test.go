@@ -335,6 +335,15 @@ services:
     authType: ApiKey
     credentials:
       key: ${SEARCH_API_KEY}
+  mcp-conn:
+    host: azure.ai.connection
+    uses: [my-foundry]
+    category: RemoteTool
+    target: https://mcp.example.com
+    authType: CustomKeys
+    credentials:
+      keys:
+        x-api-key: ${MCP_KEY}
 `)
 
 	withCapturedStdout(t, func() {
@@ -357,9 +366,9 @@ services:
 	require.Contains(t, doc.Parameters, "connections")
 	conns, ok := doc.Parameters["connections"].Value.([]any)
 	require.True(t, ok, "connections should be an array, got %T", doc.Parameters["connections"].Value)
-	require.Len(t, conns, 1)
+	require.Len(t, conns, 2)
 
-	conn, ok := conns[0].(map[string]any)
+	conn, ok := conns[1].(map[string]any)
 	require.True(t, ok, "connection entry should be an object, got %T", conns[0])
 	assert.Equal(t, "search-conn", conn["name"])
 	assert.Equal(t, "CognitiveSearch", conn["category"])
@@ -369,6 +378,15 @@ services:
 	creds, ok := conn["credentials"].(map[string]any)
 	require.True(t, ok, "credentials should be an object, got %T", conn["credentials"])
 	assert.Equal(t, "${SEARCH_API_KEY}", creds["key"])
+
+	// Nested CustomKeys credentials must remain an object so Terraform's
+	// optional(any) value can preserve mixed connection credential shapes.
+	mcpConn, ok := conns[0].(map[string]any)
+	require.True(t, ok, "connection entry should be an object, got %T", conns[0])
+	assert.Equal(t, "mcp-conn", mcpConn["name"])
+	mcpCreds := mcpConn["credentials"].(map[string]any)
+	keys := mcpCreds["keys"].(map[string]any)
+	assert.Equal(t, "${MCP_KEY}", keys["x-api-key"])
 }
 
 func TestEjectInfra_PreservesNetworkVarRefs(t *testing.T) {

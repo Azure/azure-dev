@@ -165,7 +165,7 @@ func TestSupportedRegionsForInit_FetchesOnceAndCaches(t *testing.T) {
 	for range 3 {
 		got, err := supportedRegionsForInit(t.Context())
 		require.NoError(t, err)
-		require.Equal(t, []string{"eastus2"}, got)
+		require.Contains(t, got, "eastus2")
 	}
 	require.Equal(t, 1, hits)
 }
@@ -208,7 +208,7 @@ func TestSupportedRegionsForInit_ConcurrentCallersFetchOnce(t *testing.T) {
 			defer wg.Done()
 			got, err := supportedRegionsForInit(t.Context())
 			require.NoError(t, err)
-			require.Equal(t, []string{"eastus2"}, got)
+			require.Contains(t, got, "eastus2")
 		}()
 	}
 	wg.Wait()
@@ -235,6 +235,24 @@ func TestSupportedRegionsForInit_FallsBackToEmbeddedOnFetchError(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, want)
 	require.Equal(t, want, got)
+}
+
+func TestSupportedRegionsForInit_MergesFetchedAndEmbeddedRegions(t *testing.T) {
+	resetRegionsCache(t, nil)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"regions": ["eastus2"]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	prev := hostedAgentRegionsURL
+	hostedAgentRegionsURL = server.URL
+	t.Cleanup(func() { hostedAgentRegionsURL = prev })
+
+	got, err := supportedRegionsForInit(t.Context())
+	require.NoError(t, err)
+	require.Contains(t, got, "eastus2")
+	require.Contains(t, got, "westus2")
 }
 
 func TestParseEmbeddedHostedAgentRegions_NotEmpty(t *testing.T) {

@@ -145,8 +145,7 @@ function getCoreReviewers({ core }) {
     'hemarina',
     'JeffreyCA',
     'RickWinter',
-    // TODO: bring me back from the dead!
-    // 'richardpark-msft',
+    'richardpark-msft',
     'tg-msft',
     'vhvb1989',
   ];

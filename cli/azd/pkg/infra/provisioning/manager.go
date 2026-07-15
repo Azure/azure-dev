@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -566,56 +567,45 @@ const (
 // present on success, failure, and preview spans alike. The value is computed deterministically
 // from configuration (rather than racing concurrent per-layer resolution).
 func (m *Manager) RecordInfraProviderUsage(layers []Options) {
-	// The default provider is resolved lazily and at most once per call: every unspecified layer
-	// resolves to the same default, so caching keeps the value deterministic and avoids repeating
-	// resolver work (which may do I/O) per layer.
-	var cachedDefault ProviderKind
-	defaultResolved := false
-	defaultFailed := false
+	// Resolve the default provider at most once per call, memoized (and concurrency-safe) via
+	// sync.OnceValues: every unspecified layer resolves to the same default, so this keeps the
+	// value deterministic and avoids repeating resolver work (which may do I/O) per layer.
+	var resolveDefault func() (ProviderKind, error)
+	if m.defaultProvider != nil {
+		resolveDefault = sync.OnceValues(m.defaultProvider)
+	}
 
-	seen := map[ProviderKind]struct{}{}
+	// Collect the distinct telemetry-safe provider values in a single pass — built-in kinds
+	// verbatim, non-built-in (extension) providers bucketed to InfraProviderCustom. De-duplicating
+	// after bucketing means two different extension providers both collapse to a single "custom".
+	providers := map[string]struct{}{}
 	for _, layer := range layers {
 		kind := layer.Provider
 		if kind == NotSpecified {
-			if m.defaultProvider == nil || defaultFailed {
+			if resolveDefault == nil {
 				continue
 			}
 
-			if !defaultResolved {
-				resolved, err := m.defaultProvider()
-				if err != nil {
-					defaultFailed = true
-					continue
-				}
-
-				cachedDefault = resolved
-				defaultResolved = true
+			resolved, err := resolveDefault()
+			if err != nil {
+				continue
 			}
 
-			kind = cachedDefault
+			kind = resolved
 		}
 
 		if kind == NotSpecified {
 			continue
 		}
 
-		seen[kind] = struct{}{}
+		providers[infraProviderTelemetryValue(kind)] = struct{}{}
 	}
 
-	if len(seen) == 0 {
+	if len(providers) == 0 {
 		return
 	}
 
-	// Map the distinct resolved kinds to telemetry-safe values (built-ins verbatim, extensions
-	// bucketed to InfraProviderCustom), then de-duplicate and sort so the recorded slice is
-	// deterministic. De-duplicating after bucketing means two different extension providers both
-	// collapse to a single "custom" entry.
-	values := map[string]struct{}{}
-	for kind := range seen {
-		values[infraProviderTelemetryValue(kind)] = struct{}{}
-	}
-
-	tracing.SetUsageAttributes(fields.InfraProviderKey.StringSlice(slices.Sorted(maps.Keys(values))))
+	tracing.SetUsageAttributes(fields.InfraProviderKey.StringSlice(slices.Sorted(maps.Keys(providers))))
 }
 
 // infraProviderTelemetryValue maps a provider kind to a value that is safe to emit raw. Built-in

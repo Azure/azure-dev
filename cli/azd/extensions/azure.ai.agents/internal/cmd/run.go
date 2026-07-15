@@ -1076,11 +1076,17 @@ func appendFoundryEnvVars(env []string, azdEnv map[string]string, serviceName st
 	return env
 }
 
-// envSliceHasKey reports whether the env slice already contains an entry for the given key.
+// envSliceHasKey reports whether env contains an entry for key.
 func envSliceHasKey(env []string, key string) bool {
-	prefix := key + "="
 	return slices.ContainsFunc(env, func(entry string) bool {
-		return strings.HasPrefix(entry, prefix)
+		entryKey, _, found := strings.Cut(entry, "=")
+		if !found {
+			return false
+		}
+		if runtime.GOOS == "windows" {
+			return strings.EqualFold(entryKey, key)
+		}
+		return entryKey == key
 	})
 }
 

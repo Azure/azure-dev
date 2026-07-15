@@ -572,6 +572,21 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 	})
 }
 
+func TestEnvSliceHasKeyUsesPlatformCasing(t *testing.T) {
+	t.Parallel()
+
+	env := []string{"Path=process-value"}
+	if !envSliceHasKey(env, "Path") {
+		t.Fatal("expected exact-case environment key to match")
+	}
+
+	got := envSliceHasKey(env, "PATH")
+	want := runtime.GOOS == "windows"
+	if got != want {
+		t.Errorf("envSliceHasKey() = %t, want %t", got, want)
+	}
+}
+
 func TestAppendPortEnvVars(t *testing.T) {
 	t.Parallel()
 

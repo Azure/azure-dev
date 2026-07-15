@@ -364,7 +364,6 @@ services:
 	require.NoError(t, json.Unmarshal(raw, &doc))
 
 	require.Contains(t, doc.Parameters, "connections")
-<<<<<<< HEAD
 	connectionsJSON, ok := doc.Parameters["connections"].Value.(string)
 	require.True(
 		t,
@@ -374,12 +373,7 @@ services:
 	)
 	var conns []any
 	require.NoError(t, json.Unmarshal([]byte(connectionsJSON), &conns))
-	require.Len(t, conns, 1)
-=======
-	conns, ok := doc.Parameters["connections"].Value.([]any)
-	require.True(t, ok, "connections should be an array, got %T", doc.Parameters["connections"].Value)
 	require.Len(t, conns, 2)
->>>>>>> origin/main
 
 	conn, ok := conns[1].(map[string]any)
 	require.True(t, ok, "connection entry should be an object, got %T", conns[0])

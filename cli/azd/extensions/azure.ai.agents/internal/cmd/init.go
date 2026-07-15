@@ -51,6 +51,8 @@ import (
 
 type initFlags struct {
 	projectResourceId string
+	subscriptionId    string
+	location          string
 	modelDeployment   string
 	model             string
 	manifestPointer   string
@@ -947,6 +949,9 @@ func runInitFromManifest(
 	if err != nil {
 		return err
 	}
+	if err := applyAzureContextFlags(ctx, azdClient, azureContext, env.Name, flags); err != nil {
+		return err
+	}
 
 	// Create credential with whatever tenant is available (may be empty → default tenant)
 	credential, err := azidentity.NewAzureDeveloperCLICredential(
@@ -1488,6 +1493,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "",
 		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
+	cmd.Flags().StringVar(&flags.subscriptionId, "subscription", "",
+		"Azure subscription ID to use for initializing and provisioning the Foundry project")
+	cmd.Flags().StringVarP(&flags.location, "location", "l", "",
+		"Azure location to use for initializing and provisioning the Foundry project")
 
 	cmd.Flags().StringVarP(&flags.modelDeployment, "model-deployment", "d", "",
 		"Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project, either via --project-id or interactive prompts")

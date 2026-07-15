@@ -19,6 +19,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -109,8 +110,9 @@ type azureYamlServices struct {
 }
 
 type azureYamlService struct {
-	Host        string               `yaml:"host"`
-	Deployments []project.Deployment `yaml:"deployments"`
+	Host                 string                           `yaml:"host"`
+	Deployments          []project.Deployment             `yaml:"deployments"`
+	EnvironmentVariables []agent_yaml.EnvironmentVariable `yaml:"environmentVariables"`
 }
 
 // foundryDeployments parses the azure.yaml content and returns all model
@@ -134,6 +136,131 @@ func foundryDeployments(content []byte) []foundryDeploymentEntry {
 		}
 	}
 	return entries
+}
+
+func firstFoundryProjectServiceName(content []byte) string {
+	var doc azureYamlServices
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		return ""
+	}
+	serviceNames := make([]string, 0, len(doc.Services))
+	for svcName, svc := range doc.Services {
+		if svc.Host == "azure.ai.project" {
+			serviceNames = append(serviceNames, svcName)
+		}
+	}
+	slices.Sort(serviceNames)
+	if len(serviceNames) == 0 {
+		return ""
+	}
+	return serviceNames[0]
+}
+
+func agentServicesWithEnvVar(content []byte, envName string) map[string][]agent_yaml.EnvironmentVariable {
+	var doc azureYamlServices
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		return nil
+	}
+	services := map[string][]agent_yaml.EnvironmentVariable{}
+	for svcName, svc := range doc.Services {
+		if svc.Host != "azure.ai.agent" {
+			continue
+		}
+		for _, envVar := range svc.EnvironmentVariables {
+			if envVar.Name == envName {
+				services[svcName] = svc.EnvironmentVariables
+				break
+			}
+		}
+	}
+	return services
+}
+
+func agentServiceNames(content []byte) []string {
+	var doc azureYamlServices
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		return nil
+	}
+	var names []string
+	for svcName, svc := range doc.Services {
+		if svc.Host == "azure.ai.agent" {
+			names = append(names, svcName)
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
+func updateAzureYamlAgentName(ctx context.Context, azdClient *azdext.AzdClient, serviceName, agentName string) error {
+	val, err := structpb.NewValue(agentName)
+	if err != nil {
+		return fmt.Errorf("encoding agent name for service %q: %w", serviceName, err)
+	}
+	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        "name",
+		Value:       val,
+	}); err != nil {
+		return fmt.Errorf("updating agent name in azure.yaml for service %q: %w", serviceName, err)
+	}
+	return nil
+}
+
+func updateAzureYamlAgentEnvVar(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	envVars []agent_yaml.EnvironmentVariable,
+	envName string,
+	envValue string,
+) error {
+	updated := make([]any, 0, len(envVars))
+	for _, envVar := range envVars {
+		value := envVar.Value
+		if envVar.Name == envName {
+			value = envValue
+		}
+		updated = append(updated, map[string]any{"name": envVar.Name, "value": value})
+	}
+	val, err := structpb.NewValue(updated)
+	if err != nil {
+		return fmt.Errorf("encoding env var %q for service %q: %w", envName, serviceName, err)
+	}
+	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        "environmentVariables",
+		Value:       val,
+	}); err != nil {
+		return fmt.Errorf("updating env var %q in azure.yaml for service %q: %w", envName, serviceName, err)
+	}
+	return nil
+}
+
+func resolveDeploymentForModelFlag(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	modelName string,
+) (*project.Deployment, error) {
+	if modelName == "" {
+		return nil, nil
+	}
+	deployment, err := resolveModelDeployment(ctx, azdClient, azureContext, &azdext.AiModel{Name: modelName}, azureContext.Scope.Location)
+	if err != nil {
+		return nil, err
+	}
+	return &project.Deployment{
+		Name: deployment.ModelName,
+		Model: project.DeploymentModel{
+			Name:    deployment.ModelName,
+			Format:  deployment.Format,
+			Version: deployment.Version,
+		},
+		Sku: project.DeploymentSku{
+			Name:     deployment.Sku.Name,
+			Capacity: int(deployment.Capacity),
+		},
+	}, nil
 }
 
 // verifyAzureYamlDeployments checks each model deployment declared in the
@@ -768,6 +895,13 @@ func runInitFromAzureYaml(
 	if err := ensureFoundryProviderDeclared(ctx, azdClient); err != nil {
 		return err
 	}
+	if flags.agentName != "" {
+		for _, agentServiceName := range agentServiceNames(content) {
+			if err := updateAzureYamlAgentName(ctx, azdClient, agentServiceName, flags.agentName); err != nil {
+				return err
+			}
+		}
+	}
 
 	// --- Interactive Azure context setup (subscription, Foundry project) ---
 	// The scaffolding created an environment; load it and run the same Foundry
@@ -784,6 +918,9 @@ func runInitFromAzureYaml(
 
 	azureContext, err := loadAzureContext(ctx, azdClient, env.Name)
 	if err != nil {
+		return err
+	}
+	if err := applyAzureContextFlags(ctx, azdClient, azureContext, env.Name, flags); err != nil {
 		return err
 	}
 
@@ -820,6 +957,45 @@ func runInitFromAzureYaml(
 	// selected Foundry project. If the user opts to use existing deployments
 	// or skip, we update the on-disk azure.yaml accordingly.
 	deploymentEntries := foundryDeployments(content)
+	if len(deploymentEntries) == 0 && flags.modelDeployment != "" {
+		for agentServiceName, envVars := range agentServicesWithEnvVar(content, "AZURE_VOICELIVE_MODEL") {
+			if err := updateAzureYamlAgentEnvVar(
+				ctx, azdClient, agentServiceName, envVars, "AZURE_VOICELIVE_MODEL", flags.modelDeployment,
+			); err != nil {
+				return err
+			}
+		}
+		if err := setEnvValue(ctx, azdClient, env.Name, "AZURE_AI_MODEL_DEPLOYMENT_NAME", flags.modelDeployment); err != nil {
+			return fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
+		}
+	}
+	if len(deploymentEntries) == 0 && flags.model != "" && result != nil && result.Credential != nil {
+		serviceName := firstFoundryProjectServiceName(content)
+		if serviceName == "" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				"sample azure.yaml does not declare an azure.ai.project service for model deployment",
+				"add an azure.ai.project service or omit --model",
+			)
+		}
+		deployment, err := resolveDeploymentForModelFlag(ctx, azdClient, azureContext, flags.model)
+		if err != nil {
+			return fmt.Errorf("failed to resolve model deployment for %q: %w", flags.model, err)
+		}
+		if deployment != nil {
+			if err := updateAzureYamlDeployments(ctx, azdClient, serviceName, []project.Deployment{*deployment}); err != nil {
+				return err
+			}
+			for agentServiceName, envVars := range agentServicesWithEnvVar(content, "AZURE_VOICELIVE_MODEL") {
+				if err := updateAzureYamlAgentEnvVar(
+					ctx, azdClient, agentServiceName, envVars, "AZURE_VOICELIVE_MODEL", deployment.Name,
+				); err != nil {
+					return err
+				}
+			}
+			deploymentEntries = []foundryDeploymentEntry{{ServiceName: serviceName, Deployment: *deployment}}
+		}
+	}
 	if len(deploymentEntries) > 0 && result != nil && result.Credential != nil {
 		keptEntries, referencedDeployments, deploymentsModified, err := verifyAzureYamlDeployments(
 			ctx, azdClient, result.Credential, azureContext, env.Name,

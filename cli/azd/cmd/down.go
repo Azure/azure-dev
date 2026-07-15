@@ -157,15 +157,15 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	// When deletion was skipped (e.g. --no-prompt in CI without --force), nothing was deleted, so don't
-	// invalidate the state cache or report a successful teardown.
-	if skippedDeletion {
-		return &actions.ActionResult{}, nil
-	}
-
-	// Invalidate cache after successful down so azd show will refresh
+	// Invalidate cache after down so azd show will refresh. Always invalidate: with multiple layers, some
+	// may have deleted resources even if another layer was only previewed.
 	if err := a.envManager.InvalidateEnvCache(ctx, a.env.Name()); err != nil {
 		log.Printf("warning: failed to invalidate state cache: %v", err)
+	}
+
+	// When any layer was skipped (e.g. --no-prompt in CI without --force), don't report a full teardown.
+	if skippedDeletion {
+		return &actions.ActionResult{}, nil
 	}
 
 	return &actions.ActionResult{

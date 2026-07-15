@@ -344,6 +344,15 @@ func getCommandTestCases() []commandTestCase {
 			interactive:  true,
 			errContains:  "failed running terraform destroy",
 		},
+		{
+			name: "PlanDestroy",
+			invoke: func(cli *Cli, ctx context.Context) (string, error) {
+				return cli.PlanDestroy(ctx, "/module")
+			},
+			expectedArgs: []string{"-chdir=/module", "plan", "-destroy", "-input=false"},
+			interactive:  true,
+			errContains:  "failed running terraform plan -destroy",
+		},
 	}
 }
 

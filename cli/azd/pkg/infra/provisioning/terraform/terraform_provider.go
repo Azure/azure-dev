@@ -255,18 +255,25 @@ func (t *TerraformProvider) Destroy(
 
 	modulePath := t.modulePath()
 
-	// terraform destroy asks for confirmation interactively unless --force is passed.
-	// In a CI/CD pipeline with --no-prompt, azd cannot answer that prompt, so terraform would block
-	// reading stdin and hang. In that case, preview the destroy plan (read-only) and stop without
-	// deleting, as if the confirmation were answered "no". Use --force to delete in CI. See issue #4317.
-	if resource.IsRunningOnCI() && !options.Force() && t.console.IsNoPromptMode() {
+	// In a CI/CD pipeline with --no-prompt, azd cannot answer terraform's interactive prompts. Initialize
+	// the backend non-interactively (-input=false) up front so that both the destroy preview and a --force
+	// destroy work on a fresh agent; otherwise `terraform output`/`terraform destroy` fail with "backend
+	// initialization required" (a symptom reported in #4317). This only affects the automated CI path.
+	automatedCI := resource.IsRunningOnCI() && t.console.IsNoPromptMode()
+	if automatedCI {
+		if initRes, err := t.init(ctx, isRemoteBackendConfig, "-input=false"); err != nil {
+			return nil, fmt.Errorf("terraform init failed: %s, err: %w", initRes, err)
+		}
+	}
+
+	// terraform destroy asks for confirmation interactively unless --force is passed. In a CI/CD pipeline
+	// with --no-prompt, azd cannot answer that prompt, so terraform would block on stdin and hang. Instead,
+	// preview the destroy plan (read-only) and stop without deleting, as if the confirmation were answered
+	// "no". Use --force to delete in CI. See issue #4317.
+	if automatedCI && !options.Force() {
 		t.console.Message(ctx, "Previewing resources to delete...")
 		// terraform doesn't use `t.console`; stop any spinner before streaming its output.
 		t.console.StopSpinner(ctx, "", input.Step)
-
-		if initRes, err := t.init(ctx, isRemoteBackendConfig); err != nil {
-			return nil, fmt.Errorf("terraform init failed: %s, err: %w", initRes, err)
-		}
 
 		previewArgs := t.createPlanArgs(isRemoteBackendConfig)
 		if previewRes, err := t.cli.PlanDestroy(ctx, modulePath, previewArgs...); err != nil {
@@ -388,8 +395,11 @@ func (t *TerraformProvider) ensureParametersFile(ctx context.Context) error {
 }
 
 // initialize template terraform provider through terraform init
-func (t *TerraformProvider) init(ctx context.Context, isRemoteBackendConfig bool) (string, error) {
-
+func (t *TerraformProvider) init(
+	ctx context.Context,
+	isRemoteBackendConfig bool,
+	additionalArgs ...string,
+) (string, error) {
 	modulePath := t.modulePath()
 	cmd := []string{}
 
@@ -402,6 +412,8 @@ func (t *TerraformProvider) init(ctx context.Context, isRemoteBackendConfig bool
 		}
 		cmd = append(cmd, fmt.Sprintf("--backend-config=%s", t.backendConfigFilePath()))
 	}
+
+	cmd = append(cmd, additionalArgs...)
 
 	runResult, err := t.cli.Init(ctx, modulePath, cmd...)
 	if err != nil {

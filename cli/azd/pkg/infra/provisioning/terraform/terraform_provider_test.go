@@ -115,6 +115,17 @@ func TestTerraformDestroyCIWithForceDeletes(t *testing.T) {
 	preparePlanningMocks(mockContext.CommandRunner)
 	prepareDestroyMocks(mockContext.CommandRunner)
 
+	// Assert terraform init runs non-interactively for the --force CI path so that a fresh agent does not
+	// fail with "backend initialization required" before reaching destroy (#4317).
+	initCalled := false
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return args.Cmd == "terraform" && strings.Contains(command, "init")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		initCalled = true
+		require.Contains(t, args.Args, "-input=false")
+		return exec.RunResult{Stdout: "Terraform has been successfully initialized!"}, nil
+	})
+
 	infraProvider := createTerraformProvider(t, mockContext)
 	mockContext.Console.SetNoPromptMode(true)
 
@@ -124,6 +135,7 @@ func TestTerraformDestroyCIWithForceDeletes(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, destroyResult)
 	require.False(t, destroyResult.SkippedDeletion)
+	require.True(t, initCalled)
 	require.Contains(t, destroyResult.InvalidatedEnvKeys, "AZURE_LOCATION")
 	require.Contains(t, destroyResult.InvalidatedEnvKeys, "RG_NAME")
 }

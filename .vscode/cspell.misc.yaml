@@ -118,7 +118,10 @@ overrides:
       words:
           - appinit
           - appservice
+          - buildpack
           - Buildpacks
+          - centralus
+          - chinacloudapi
           - containerapp
           - dcount
           - dependson
@@ -128,11 +131,14 @@ overrides:
           - exegraph
           - firstrun
           - javac
+          - livediagnostics
+          - microsoftonline
           - oneauth
           - postprovision
           - preprovision
           - postdeploy
           - pseudonymized
+          - redirector
           - remotebuild
           - resourcegroup
           - springapp
@@ -141,5 +147,6 @@ overrides:
           - toreal
           - tostring
           - unhashed
+          - usgovcloudapi
           - vsrpc
           - whatif

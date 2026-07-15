@@ -26,8 +26,7 @@ import (
 type toolboxEnvLookupFn func(ctx context.Context, key string) (value string, err error)
 
 // newCheckToolboxes produces Check `local.toolboxes` (P5.1 C14).
-// For each `ToolboxResource` declared in any service's
-// `agent.manifest.yaml` (collected by the C2 manifest walker), the
+// For each toolbox declared in azure.yaml, the
 // check verifies that the canonical
 // `TOOLBOX_<NORMALIZED_NAME>_MCP_ENDPOINT` env var is set to a
 // non-empty value in the active azd environment.
@@ -69,7 +68,7 @@ type toolboxEnvLookupFn func(ctx context.Context, key string) (value string, err
 func newCheckToolboxes(deps Dependencies) Check {
 	return Check{
 		ID:     "local.toolboxes",
-		Name:   "Manifest toolboxes have endpoint env vars set",
+		Name:   "azure.yaml toolboxes have endpoint env vars set",
 		Remote: false,
 		Fn: func(ctx context.Context, _ Options, prior []Result) Result {
 			if deps.AzdClient == nil {
@@ -116,10 +115,28 @@ func newCheckToolboxes(deps Dependencies) Check {
 					Suggestion: "Re-run `azd ai agent doctor`; the state assembly returned nil unexpectedly.",
 				}
 			}
+			if len(state.ToolboxLoadErrors) > 0 {
+				return Result{
+					Status: StatusFail,
+					Message: fmt.Sprintf(
+						"could not load toolbox configuration: %s",
+						strings.Join(
+							state.ToolboxLoadErrors,
+							"; ",
+						),
+					),
+					Suggestion: "Fix the toolbox services in " +
+						"azure.yaml or the agent manifest, then retry.",
+					Details: map[string]any{
+						"loadErrors": state.ToolboxLoadErrors,
+					},
+				}
+			}
 			if !state.HasToolboxes {
 				return Result{
-					Status:  StatusSkip,
-					Message: "skipped: no toolbox resources declared in any service's agent.manifest.yaml.",
+					Status: StatusSkip,
+					Message: "skipped: no toolbox resources " +
+						"declared in azure.yaml.",
 				}
 			}
 
@@ -153,9 +170,10 @@ func classifyToolboxEndpoints(
 	lookup toolboxEnvLookupFn,
 ) Result {
 	type toolboxLookup struct {
-		Name        string `json:"name"`
-		ServiceName string `json:"service"`
-		EnvVar      string `json:"envVar"`
+		Name            string `json:"name"`
+		ServiceName     string `json:"service"`
+		EnvVar          string `json:"envVar"`
+		ManagedByDeploy bool   `json:"-"`
 	}
 
 	seen := make(map[string]struct{}, len(toolboxes))
@@ -182,7 +200,10 @@ func classifyToolboxEndpoints(
 		}
 		if strings.TrimSpace(value) == "" {
 			missing = append(missing, toolboxLookup{
-				Name: t.Name, ServiceName: t.ServiceName, EnvVar: key,
+				Name:            t.Name,
+				ServiceName:     t.ServiceName,
+				EnvVar:          key,
+				ManagedByDeploy: t.ManagedByDeploy,
 			})
 			continue
 		}
@@ -214,13 +235,31 @@ func classifyToolboxEndpoints(
 		sb.WriteString(fmt.Sprintf("%s (env %s, service %s)", m.Name, m.EnvVar, m.ServiceName))
 	}
 
+	needsDeploy := slices.ContainsFunc(missing, func(entry toolboxLookup) bool {
+		return entry.ManagedByDeploy
+	})
+	needsProvision := slices.ContainsFunc(missing, func(entry toolboxLookup) bool {
+		return !entry.ManagedByDeploy
+	})
+	suggestion := "Run `azd provision` to materialize legacy " +
+		"toolbox infrastructure."
+	switch {
+	case needsDeploy && needsProvision:
+		suggestion = "Run `azd deploy` for toolbox services and " +
+			"`azd provision` for legacy toolbox resources."
+	case needsDeploy:
+		suggestion = "Run `azd deploy` to deploy toolbox services."
+	}
+	suggestion += " Alternatively, use `azd env set <ENV_VAR> " +
+		"<endpoint>` to point at an existing toolbox."
+
 	return Result{
 		Status: StatusFail,
 		Message: fmt.Sprintf(
-			"%d toolbox(es) declared in agent.manifest.yaml have no MCP endpoint set in the azd environment: %s",
+			"%d toolbox(es) declared in azure.yaml have no MCP "+
+				"endpoint set in the azd environment: %s",
 			len(missing), sb.String()),
-		Suggestion: "Run `azd provision` to materialize toolbox infrastructure, or " +
-			"`azd env set <ENV_VAR> <endpoint>` to point at an existing toolbox.",
+		Suggestion: suggestion,
 		Details: map[string]any{
 			"missingToolboxes": missing,
 			"matchedCount":     matched,

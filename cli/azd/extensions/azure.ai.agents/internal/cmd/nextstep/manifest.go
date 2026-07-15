@@ -5,11 +5,14 @@ package nextstep
 
 import (
 	"cmp"
+	"fmt"
 	"os"
 	"slices"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 // manifestFileNames are the candidate manifest filenames the walker
@@ -25,15 +28,16 @@ var manifestFileNames = []string{
 	"agent.manifest.yml",
 }
 
-// populateManifestResources walks each service's agent.manifest.yaml
-// (when present) and aggregates the declared model/toolbox/connection
-// resources onto state. The walker is strictly best-effort: missing
-// files, unreadable bytes, malformed YAML, and unknown resource kinds
-// are all silently skipped so an in-flight `azd ai agent init` (which
-// rewrites the manifest mid-flight) or a template with no manifest
-// (e.g., a bare agent.yaml) never blocks the rest of state assembly.
+const (
+	aiProjectHost    = "azure.ai.project"
+	aiConnectionHost = "azure.ai.connection"
+	aiToolboxHost    = "azure.ai.toolbox"
+)
+
+// populateResources reads unified resources with legacy fallbacks.
 //
-// Aggregation rules:
+// Unified split services take precedence over bundled service config.
+// Bundled config takes precedence over legacy manifest files.
 //
 //   - Has* flags are true when at least one resource of the matching
 //     kind is found across all services.
@@ -52,74 +56,403 @@ var manifestFileNames = []string{
 // directly (rather than LoadAndValidateAgentManifest) so a manifest
 // with an absent / partial `template` block — common during init —
 // still surfaces its `resources:` declarations.
-func populateManifestResources(projectPath string, state *State) {
-	if state == nil || projectPath == "" || len(state.Services) == 0 {
+func populateResources(
+	projectConfig *azdext.ProjectConfig,
+	state *State,
+	errs *[]error,
+) {
+	if projectConfig == nil || state == nil {
 		return
 	}
 
-	models := map[resourceKey]ResourceRef{}
-	toolboxes := map[resourceKey]ResourceRef{}
-	connections := map[resourceKey]ResourceRef{}
+	resources := newResourceSets()
+	collectSplitResources(
+		projectConfig,
+		&resources,
+		errs,
+	)
+	collectBundledResources(
+		projectConfig,
+		&resources,
+		errs,
+	)
+	collectManifestResources(
+		projectConfig.Path,
+		state.Services,
+		&resources,
+		errs,
+	)
+	applyResourceSets(state, resources)
+}
 
-	for _, svc := range state.Services {
+type resourceSets struct {
+	models           map[resourceKey]ResourceRef
+	toolboxes        map[resourceKey]ResourceRef
+	connections      map[resourceKey]ResourceRef
+	modelErrors      []string
+	toolboxErrors    []string
+	connectionErrors []string
+}
+
+func newResourceSets() resourceSets {
+	return resourceSets{
+		models:      map[resourceKey]ResourceRef{},
+		toolboxes:   map[resourceKey]ResourceRef{},
+		connections: map[resourceKey]ResourceRef{},
+	}
+}
+
+func collectSplitResources(
+	projectConfig *azdext.ProjectConfig,
+	resources *resourceSets,
+	errs *[]error,
+) {
+	for _, svc := range sortedProjectServices(projectConfig.Services) {
+		switch svc.GetHost() {
+		case aiProjectHost:
+			props, err := resolveServiceConfigProps(
+				svc,
+				projectConfig.Path,
+			)
+			if err != nil {
+				appendResourceError(
+					errs,
+					&resources.modelErrors,
+					svc,
+					err,
+				)
+				continue
+			}
+			var cfg guidanceServiceConfig
+			if props != nil {
+				if err := unmarshalServiceProps(
+					props,
+					&cfg,
+				); err != nil {
+					appendResourceError(
+						errs,
+						&resources.modelErrors,
+						svc,
+						err,
+					)
+					continue
+				}
+			}
+			for _, deployment := range cfg.Deployments {
+				addResource(
+					resources.models,
+					ResourceRef{
+						Name:        deployment.Name,
+						ServiceName: svc.GetName(),
+						Detail:      deployment.Model.Name,
+					},
+				)
+			}
+		case aiConnectionHost:
+			props, err := resolveServiceConfigProps(
+				svc,
+				projectConfig.Path,
+			)
+			if err != nil {
+				appendResourceError(
+					errs,
+					&resources.connectionErrors,
+					svc,
+					err,
+				)
+				continue
+			}
+			var connection guidanceConnection
+			if props != nil {
+				if err := unmarshalServiceProps(
+					props,
+					&connection,
+				); err != nil {
+					appendResourceError(
+						errs,
+						&resources.connectionErrors,
+						svc,
+						err,
+					)
+					continue
+				}
+			}
+			connection.Name = svc.GetName()
+			addResource(
+				resources.connections,
+				ResourceRef{
+					Name:        connection.Name,
+					ServiceName: svc.GetName(),
+					Detail: connectionDetail(
+						connection.Category,
+						connection.Target,
+					),
+				},
+			)
+		case aiToolboxHost:
+			if _, err := resolveServiceConfigProps(
+				svc,
+				projectConfig.Path,
+			); err != nil {
+				appendResourceError(
+					errs,
+					&resources.toolboxErrors,
+					svc,
+					err,
+				)
+				continue
+			}
+			addResource(
+				resources.toolboxes,
+				ResourceRef{
+					Name:            svc.GetName(),
+					ServiceName:     svc.GetName(),
+					ManagedByDeploy: true,
+				},
+			)
+		}
+	}
+}
+
+func collectBundledResources(
+	projectConfig *azdext.ProjectConfig,
+	resources *resourceSets,
+	errs *[]error,
+) {
+	needsModels := len(resources.models) == 0
+	needsToolboxes := len(resources.toolboxes) == 0
+	needsConnections := len(resources.connections) == 0
+	if !needsModels && !needsToolboxes && !needsConnections {
+		return
+	}
+
+	for _, svc := range sortedProjectServices(projectConfig.Services) {
+		if svc.GetHost() != agentHost {
+			continue
+		}
+		_, cfg, _, err := loadGuidanceServiceConfig(
+			svc,
+			projectConfig.Path,
+		)
+		if err != nil {
+			appendResourceLoadError(
+				errs,
+				resources,
+				svc.GetName(),
+				err,
+				needsModels,
+				needsToolboxes,
+				needsConnections,
+			)
+			continue
+		}
+		if needsModels {
+			for _, deployment := range cfg.Deployments {
+				addResource(
+					resources.models,
+					ResourceRef{
+						Name:        deployment.Name,
+						ServiceName: svc.GetName(),
+						Detail:      deployment.Model.Name,
+					},
+				)
+			}
+		}
+		if needsToolboxes {
+			for _, toolbox := range cfg.Toolboxes {
+				addResource(
+					resources.toolboxes,
+					ResourceRef{
+						Name:        toolbox.Name,
+						ServiceName: svc.GetName(),
+					},
+				)
+			}
+		}
+		if needsConnections {
+			for _, connection := range cfg.Connections {
+				addResource(
+					resources.connections,
+					ResourceRef{
+						Name:        connection.Name,
+						ServiceName: svc.GetName(),
+						Detail: connectionDetail(
+							connection.Category,
+							connection.Target,
+						),
+					},
+				)
+			}
+		}
+	}
+}
+
+func collectManifestResources(
+	projectPath string,
+	services []ServiceState,
+	resources *resourceSets,
+	errs *[]error,
+) {
+	needsModels := len(resources.models) == 0
+	needsToolboxes := len(resources.toolboxes) == 0
+	needsConnections := len(resources.connections) == 0
+	if projectPath == "" ||
+		(!needsModels && !needsToolboxes && !needsConnections) {
+		return
+	}
+
+	for _, svc := range services {
 		data := readManifestBytes(projectPath, svc.RelativePath)
 		if data == nil {
 			continue
 		}
-		resources, err := agent_yaml.ExtractResourceDefinitions(data)
+		definitions, err := agent_yaml.ExtractResourceDefinitions(data)
 		if err != nil {
+			appendResourceLoadError(
+				errs,
+				resources,
+				svc.Name,
+				err,
+				needsModels,
+				needsToolboxes,
+				needsConnections,
+			)
 			continue
 		}
-		for _, resource := range resources {
-			switch r := resource.(type) {
+		for _, definition := range definitions {
+			switch r := definition.(type) {
 			case agent_yaml.ModelResource:
-				if r.Name == "" {
+				if !needsModels || r.Name == "" {
 					continue
 				}
-				k := resourceKey{service: svc.Name, name: r.Name}
-				if _, dup := models[k]; dup {
-					continue
-				}
-				models[k] = ResourceRef{
+				addResource(resources.models, ResourceRef{
 					Name:        r.Name,
 					ServiceName: svc.Name,
 					Detail:      r.Id,
-				}
+				})
 			case agent_yaml.ToolboxResource:
-				if r.Name == "" {
+				if !needsToolboxes || r.Name == "" {
 					continue
 				}
-				k := resourceKey{service: svc.Name, name: r.Name}
-				if _, dup := toolboxes[k]; dup {
-					continue
-				}
-				toolboxes[k] = ResourceRef{
+				addResource(resources.toolboxes, ResourceRef{
 					Name:        r.Name,
 					ServiceName: svc.Name,
-				}
+				})
 			case agent_yaml.ConnectionResource:
-				if r.Name == "" {
+				if !needsConnections || r.Name == "" {
 					continue
 				}
-				k := resourceKey{service: svc.Name, name: r.Name}
-				if _, dup := connections[k]; dup {
-					continue
-				}
-				connections[k] = ResourceRef{
+				addResource(resources.connections, ResourceRef{
 					Name:        r.Name,
 					ServiceName: svc.Name,
-					Detail:      connectionDetail(r),
-				}
+					Detail: connectionDetail(
+						string(r.Category),
+						r.Target,
+					),
+				})
 			}
 		}
 	}
+}
 
-	state.ModelRefs = sortedResourceRefs(models)
-	state.Toolboxes = sortedResourceRefs(toolboxes)
-	state.Connections = sortedResourceRefs(connections)
+func applyResourceSets(state *State, resources resourceSets) {
+	state.ModelRefs = sortedResourceRefs(resources.models)
+	state.Toolboxes = sortedResourceRefs(resources.toolboxes)
+	state.Connections = sortedResourceRefs(resources.connections)
 	state.HasModels = len(state.ModelRefs) > 0
 	state.HasToolboxes = len(state.Toolboxes) > 0
 	state.HasConnections = len(state.Connections) > 0
+	state.ModelLoadErrors = slices.Clone(resources.modelErrors)
+	state.ToolboxLoadErrors = slices.Clone(resources.toolboxErrors)
+	state.ConnectionLoadErrors = slices.Clone(
+		resources.connectionErrors,
+	)
+}
+
+func addResource(
+	resources map[resourceKey]ResourceRef,
+	resource ResourceRef,
+) {
+	if resource.Name == "" {
+		return
+	}
+	key := resourceKey{
+		service: resource.ServiceName,
+		name:    resource.Name,
+	}
+	if _, exists := resources[key]; exists {
+		return
+	}
+	resources[key] = resource
+}
+
+func appendResourceError(
+	errs *[]error,
+	loadErrors *[]string,
+	svc *azdext.ServiceConfig,
+	err error,
+) {
+	wrapped := fmt.Errorf(
+		"load resources for %s: %w",
+		svc.GetName(),
+		err,
+	)
+	*loadErrors = append(*loadErrors, wrapped.Error())
+	if errs != nil {
+		*errs = append(*errs, wrapped)
+	}
+}
+
+func appendResourceLoadError(
+	errs *[]error,
+	resources *resourceSets,
+	serviceName string,
+	err error,
+	models bool,
+	toolboxes bool,
+	connections bool,
+) {
+	wrapped := fmt.Errorf(
+		"load resources for %s: %w",
+		serviceName,
+		err,
+	)
+	if errs != nil {
+		*errs = append(*errs, wrapped)
+	}
+	if models {
+		resources.modelErrors = append(
+			resources.modelErrors,
+			wrapped.Error(),
+		)
+	}
+	if toolboxes {
+		resources.toolboxErrors = append(
+			resources.toolboxErrors,
+			wrapped.Error(),
+		)
+	}
+	if connections {
+		resources.connectionErrors = append(
+			resources.connectionErrors,
+			wrapped.Error(),
+		)
+	}
+}
+
+func sortedProjectServices(
+	services map[string]*azdext.ServiceConfig,
+) []*azdext.ServiceConfig {
+	out := make([]*azdext.ServiceConfig, 0, len(services))
+	for _, svc := range services {
+		if svc != nil {
+			out = append(out, svc)
+		}
+	}
+	slices.SortFunc(out, func(a, b *azdext.ServiceConfig) int {
+		return cmp.Compare(a.GetName(), b.GetName())
+	})
+	return out
 }
 
 // readManifestBytes returns the first manifest file's contents under
@@ -151,9 +484,7 @@ func readManifestBytes(projectPath, relativePath string) []byte {
 // misconfigured. Empty-category and empty-target manifests fall back
 // to whichever side is populated so we never emit a useless
 // " | " separator with both halves blank.
-func connectionDetail(r agent_yaml.ConnectionResource) string {
-	category := string(r.Category)
-	target := r.Target
+func connectionDetail(category, target string) string {
 	switch {
 	case category != "" && target != "":
 		return category + " | " + target

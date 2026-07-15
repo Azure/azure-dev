@@ -228,6 +228,53 @@ func TestCheckConnections_FailsWithMissing(t *testing.T) {
 	require.EqualValues(t, 1, res.Details["matchedCount"])
 }
 
+func TestCheckConnections_SplitResourceUsesProvision(t *testing.T) {
+	t.Parallel()
+	state := &nextstep.State{
+		HasConnections: true,
+		Connections: []nextstep.ResourceRef{
+			{
+				Name:        "search-conn",
+				ServiceName: "search-conn",
+			},
+		},
+	}
+	deps := Dependencies{
+		assembleState:           fixedAssembler(state),
+		readProjectResourceIDFn: fixedProjectIDReader(validProjectResourceID, nil),
+		probeFoundryConnections: fixedConnectionsProbe(nil, nil, nil),
+	}
+
+	res := runConnectionsCheck(
+		t,
+		deps,
+		healthyConnectionsPrior(),
+	)
+
+	require.Equal(t, StatusFail, res.Status)
+	require.Contains(t, res.Suggestion, "azd provision")
+	require.NotContains(t, res.Suggestion, "azd deploy")
+}
+
+func TestCheckConnections_FailsOnIncompleteState(t *testing.T) {
+	t.Parallel()
+	deps := Dependencies{
+		assembleState: fixedAssembler(&nextstep.State{
+			ConnectionLoadErrors: []string{"missing connection ref"},
+		}),
+	}
+
+	res := runConnectionsCheck(
+		t,
+		deps,
+		healthyConnectionsPrior(),
+	)
+
+	require.Equal(t, StatusFail, res.Status)
+	require.Contains(t, res.Message, "missing connection ref")
+	require.Contains(t, res.Suggestion, "azure.yaml")
+}
+
 func TestCheckConnections_FailsWhenAllMissing(t *testing.T) {
 	t.Parallel()
 	state := &nextstep.State{

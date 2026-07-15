@@ -10,9 +10,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // fakeSource is a hand-rolled Source for table-driven tests.
@@ -23,6 +27,16 @@ type fakeSource struct {
 	projectErr error
 	values     map[string]string
 	valueErr   error
+}
+
+func mustStruct(
+	t *testing.T,
+	values map[string]any,
+) *structpb.Struct {
+	t.Helper()
+	result, err := structpb.NewStruct(values)
+	require.NoError(t, err)
+	return result
 }
 
 func (f *fakeSource) CurrentEnvName(_ context.Context) (string, error) {
@@ -569,129 +583,57 @@ func TestAssembleState_WithLiveOpenAPIProbe_LiveFailureWithoutCacheLeavesUnset(t
 	assert.Empty(t, state.OpenAPIPayload)
 }
 
-func TestLoadServiceProtocol(t *testing.T) {
+func TestPreferredProtocol(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		manifest    string // raw agent.yaml content; empty string means "do not write the file"
-		manifestRel string // override relativePath in the call (for missing-dir cases)
-		want        string
+		name      string
+		protocols []agent_yaml.ProtocolVersionRecord
+		want      string
 	}{
 		{
 			name: "single responses protocol",
-			manifest: `kind: hostedAgent
-protocols:
-  - protocol: responses
-    version: "1.0.0"
-`,
+			protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: ProtocolResponses},
+			},
 			want: ProtocolResponses,
 		},
 		{
 			name: "single invocations protocol",
-			manifest: `kind: hostedAgent
-protocols:
-  - protocol: invocations
-    version: "1.0.0"
-`,
+			protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: ProtocolInvocations},
+			},
 			want: ProtocolInvocations,
 		},
 		{
 			name: "responses wins when both declared",
-			manifest: `kind: hostedAgent
-protocols:
-  - protocol: invocations
-    version: "1.0.0"
-  - protocol: responses
-    version: "1.0.0"
-`,
+			protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: ProtocolInvocations},
+				{Protocol: ProtocolResponses},
+			},
 			want: ProtocolResponses,
 		},
 		{
-			name: "empty protocols section",
-			manifest: `kind: hostedAgent
-protocols: []
-`,
-			want: "",
+			name:      "empty protocols section",
+			protocols: nil,
+			want:      "",
 		},
 		{
 			name: "unknown protocol value silently ignored",
-			manifest: `kind: hostedAgent
-protocols:
-  - protocol: pigeon-mail
-    version: "1.0.0"
-`,
+			protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "pigeon-mail"},
+			},
 			want: "",
-		},
-		{
-			name:     "malformed yaml returns empty",
-			manifest: "this: is: not: valid: yaml: at: all: [",
-			want:     "",
-		},
-		{
-			name:        "missing file returns empty",
-			manifestRel: "does-not-exist",
-			want:        "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			projectRoot := t.TempDir()
-			relPath := "echo"
-			if tt.manifestRel != "" {
-				relPath = tt.manifestRel
-			} else {
-				svcDir := filepath.Join(projectRoot, relPath)
-				require.NoError(t, os.MkdirAll(svcDir, 0o750))
-				require.NoError(t, os.WriteFile(
-					filepath.Join(svcDir, "agent.yaml"),
-					[]byte(tt.manifest),
-					0o600,
-				))
-			}
-			got := loadServiceProtocol(projectRoot, relPath)
+			got := preferredProtocol(tt.protocols)
 			assert.Equal(t, tt.want, got)
 		})
 	}
-}
-
-func TestLoadServiceProtocol_EmptyArgs(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, "", loadServiceProtocol("", "echo"))
-}
-
-func TestLoadServiceProtocol_RootRelativePath(t *testing.T) {
-	t.Parallel()
-
-	projectRoot := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "agent.yaml"),
-		[]byte("kind: hostedAgent\nprotocols:\n  - protocol: invocations\n    version: \"1.0.0\"\n"),
-		0o600,
-	))
-
-	assert.Equal(t, ProtocolInvocations, loadServiceProtocol(projectRoot, ""))
-	assert.Equal(t, ProtocolInvocations, loadServiceProtocol(projectRoot, "."))
-}
-
-func TestLoadServiceProtocol_RejectsTraversal(t *testing.T) {
-	t.Parallel()
-
-	parent := t.TempDir()
-	projectRoot := filepath.Join(parent, "project")
-	outside := filepath.Join(parent, "outside")
-	require.NoError(t, os.MkdirAll(projectRoot, 0o750))
-	require.NoError(t, os.MkdirAll(outside, 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(outside, "agent.yaml"),
-		[]byte("kind: hostedAgent\nprotocols:\n  - protocol: invocations\n    version: \"1.0.0\"\n"),
-		0o600,
-	))
-
-	assert.Equal(t, "", loadServiceProtocol(projectRoot, "../outside"))
 }
 
 func TestAssembleState_PopulatesProtocolFromAgentYaml(t *testing.T) {
@@ -719,6 +661,185 @@ func TestAssembleState_PopulatesProtocolFromAgentYaml(t *testing.T) {
 	require.Empty(t, errs)
 	require.Len(t, state.Services, 1)
 	assert.Equal(t, ProtocolInvocations, state.Services[0].Protocol)
+}
+
+func TestAssembleState_PopulatesInlineAgentConfig(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "azure.yaml"),
+		[]byte(`name: inline-project
+services:
+  echo:
+    host: azure.ai.agent
+    project: src/echo
+    kind: hosted
+    name: echo-agent
+    env:
+      API_KEY: ${API_KEY}
+      DEFAULT: ${OPTIONAL_KEY:-fallback}
+      PROJECT: ${{project.endpoint}}
+      COMPOSITE: prefix-${SECOND_KEY}
+      ENABLED: true
+      RETRIES: 3
+`),
+		0o600,
+	))
+	props := mustStruct(t, map[string]any{
+		"kind": "hosted",
+		"name": "echo-agent",
+		"protocols": []any{
+			map[string]any{
+				"protocol": "responses",
+				"version":  "1.0.0",
+			},
+		},
+	})
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {
+					Name:         "echo",
+					Host:         agentHost,
+					RelativePath: "src/echo",
+					Environment: map[string]string{
+						"API_KEY":   "",
+						"DEFAULT":   "fallback",
+						"PROJECT":   "https://example",
+						"COMPOSITE": "prefix-set",
+						"ENABLED":   "true",
+						"RETRIES":   "3",
+					},
+					AdditionalProperties: props,
+				},
+			},
+		},
+		values: map[string]string{
+			"dev/" + projectEndpointVar: "https://example",
+			"dev/SECOND_KEY":            "set",
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+
+	require.Empty(t, errs)
+	require.Len(t, state.Services, 1)
+	assert.Equal(t, ProtocolResponses, state.Services[0].Protocol)
+	assert.Equal(t, "src/echo", state.Services[0].RelativePath)
+	assert.Equal(t, []string{"API_KEY"}, state.MissingManualVars)
+	assert.Empty(t, state.UnresolvedPlaceholders)
+}
+
+func TestAssembleState_UnrelatedInlineFallsBackToConfig(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {
+					Name: "echo",
+					Host: agentHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"resumeSessionOnDeploy": true,
+					}),
+					Config: mustStruct(t, map[string]any{
+						"kind": "hosted",
+						"name": "echo-agent",
+						"protocols": []any{
+							map[string]any{
+								"protocol": "responses",
+							},
+						},
+						"deployments": []any{
+							map[string]any{
+								"name": "gpt-4o",
+								"model": map[string]any{
+									"name": "gpt-4o",
+								},
+							},
+						},
+						"connections": []any{
+							map[string]any{
+								"name": "legacy-connection",
+							},
+						},
+						"toolboxes": []any{
+							map[string]any{
+								"name": "legacy-toolbox",
+							},
+						},
+					}),
+				},
+			},
+		},
+		values: map[string]string{
+			"dev/" + projectEndpointVar: "https://example",
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+
+	require.Empty(t, errs)
+	require.Len(t, state.Services, 1)
+	assert.Equal(t, ProtocolResponses, state.Services[0].Protocol)
+	require.Len(t, state.ModelRefs, 1)
+	require.Len(t, state.Connections, 1)
+	require.Len(t, state.Toolboxes, 1)
+}
+
+func TestAssembleState_PopulatesReferencedAgentConfig(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	definitionsDir := filepath.Join(projectRoot, "definitions")
+	require.NoError(t, os.MkdirAll(definitionsDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(definitionsDir, "echo.yaml"),
+		[]byte(
+			"kind: hosted\n"+
+				"name: echo-agent\n"+
+				"project: ../src/echo\n"+
+				"protocols:\n"+
+				"  - protocol: invocations\n"+
+				"    version: \"1.0.0\"\n"+
+				"env:\n"+
+				"  API_KEY: ${API_KEY}\n",
+		),
+		0o600,
+	))
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {
+					Name: "echo",
+					Host: agentHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"$ref": "./definitions/echo.yaml",
+					}),
+				},
+			},
+		},
+		values: map[string]string{
+			"dev/" + projectEndpointVar: "https://example",
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+
+	require.Empty(t, errs)
+	require.Len(t, state.Services, 1)
+	assert.Equal(t, ProtocolInvocations, state.Services[0].Protocol)
+	assert.Equal(t, "src/echo", state.Services[0].RelativePath)
+	assert.Equal(t, []string{"API_KEY"}, state.MissingManualVars)
 }
 
 func TestExtractAgentYamlEnvRefs(t *testing.T) {
@@ -796,6 +917,18 @@ environment_variables:
     value: hardcoded
 `,
 			wantRefs: nil,
+		},
+		{
+			name: "Foundry expressions are not placeholders",
+			manifest: `kind: hostedAgent
+environment_variables:
+  - name: PROJECT
+    value: '${{project.endpoint}}'
+  - name: CONNECTION
+    value: '${{connections.search.credentials.key}}'
+`,
+			wantRefs:         nil,
+			wantPlaceholders: nil,
 		},
 		{
 			name:     "malformed yaml returns nil",
@@ -894,69 +1027,34 @@ environment_variables:
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			projectRoot := t.TempDir()
-			svcDir := filepath.Join(projectRoot, "echo")
-			require.NoError(t, os.MkdirAll(svcDir, 0o750))
-			require.NoError(t, os.WriteFile(
-				filepath.Join(svcDir, "agent.yaml"),
+			var agentDef agent_yaml.ContainerAgent
+			if err := yaml.Unmarshal(
 				[]byte(tt.manifest),
-				0o600,
-			))
-			gotRefs, gotPlaceholders := extractAgentYamlEnvRefs(projectRoot, "echo")
+				&agentDef,
+			); err != nil {
+				assert.Nil(t, tt.wantRefs)
+				assert.Nil(t, tt.wantPlaceholders)
+				return
+			}
+			var values []string
+			if agentDef.EnvironmentVariables != nil {
+				for _, envVar := range *agentDef.EnvironmentVariables {
+					values = append(values, envVar.Value)
+				}
+			}
+			gotRefs, gotPlaceholders := extractEnvironmentRefs(values)
 			assert.Equal(t, tt.wantRefs, gotRefs, "refs")
 			assert.Equal(t, tt.wantPlaceholders, gotPlaceholders, "placeholders")
 		})
 	}
 }
 
-func TestExtractAgentYamlEnvRefs_MissingFileOrArgs(t *testing.T) {
+func TestExtractEnvironmentRefs_Empty(t *testing.T) {
 	t.Parallel()
 
-	for _, args := range [][2]string{
-		{"", "echo"},
-		{t.TempDir(), ""},
-		{t.TempDir(), "missing"},
-	} {
-		refs, placeholders := extractAgentYamlEnvRefs(args[0], args[1])
+	for _, values := range [][]string{nil, {}} {
+		refs, placeholders := extractEnvironmentRefs(values)
 		assert.Nil(t, refs)
-		assert.Nil(t, placeholders)
-	}
-}
-
-func TestExtractAgentYamlEnvRefs_RejectsTraversal(t *testing.T) {
-	t.Parallel()
-
-	parent := t.TempDir()
-	projectRoot := filepath.Join(parent, "project")
-	outside := filepath.Join(parent, "outside")
-	require.NoError(t, os.MkdirAll(projectRoot, 0o750))
-	require.NoError(t, os.MkdirAll(outside, 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(outside, "agent.yaml"),
-		[]byte("kind: hostedAgent\nenvironment_variables:\n  - name: SECRET\n    value: ${OUTSIDE_SECRET}\n"),
-		0o600,
-	))
-
-	refs, placeholders := extractAgentYamlEnvRefs(projectRoot, "../outside")
-
-	assert.Nil(t, refs)
-	assert.Nil(t, placeholders)
-}
-
-func TestExtractAgentYamlEnvRefs_RootRelativePath(t *testing.T) {
-	t.Parallel()
-
-	projectRoot := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "agent.yaml"),
-		[]byte("kind: hostedAgent\nenvironment_variables:\n  - name: SECRET\n    value: ${ROOT_SECRET}\n"),
-		0o600,
-	))
-
-	for _, rel := range []string{"", "."} {
-		refs, placeholders := extractAgentYamlEnvRefs(projectRoot, rel)
-
-		assert.Equal(t, []string{"ROOT_SECRET"}, refs)
 		assert.Nil(t, placeholders)
 	}
 }
@@ -1523,4 +1621,21 @@ environment_variables:
 	require.Empty(t, errs)
 	assert.Empty(t, state.MissingInfraVars)
 	assert.Equal(t, []string{"MY_API_KEY"}, state.MissingManualVars)
+}
+
+func TestAgentEnvironmentValues_ConfigOverridesLegacyValue(t *testing.T) {
+	t.Parallel()
+
+	values := agentEnvironmentValues(
+		guidanceAgentDefinition{
+			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
+				{Name: "SHARED", Value: "${MISSING}"},
+			},
+		},
+		&guidanceServiceConfig{
+			Environment: map[string]string{"SHARED": "literal"},
+		},
+	)
+
+	assert.Equal(t, []string{"literal"}, values)
 }

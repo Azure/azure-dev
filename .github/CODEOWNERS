@@ -5,7 +5,7 @@
 # everything else not listed below -- no need for a separate /cli/ rule.
 
 # ── Default (core team) ──────────────────────────────────────────────────────
-/**                                         @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter
+/**                                         @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft
 
 # ── CLI installer ─────────────────────────────────────────────────────────────
 /cli/installer/                             @danieljurek @vhvb1989 @tg-msft @RickWinter

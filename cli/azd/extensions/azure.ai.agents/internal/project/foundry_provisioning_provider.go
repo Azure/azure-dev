@@ -87,6 +87,12 @@ type FoundryProvisioningProvider struct {
 	// account at Deploy time; the existing account itself is never re-created.
 	brownfieldDeployments []synthesis.Deployment
 
+	// brownfieldConnections are the host: azure.ai.connection services declared
+	// alongside a brownfield (endpoint:) project. They are created/upserted on
+	// the existing project at Deploy time, mirroring greenfield synthesis, so
+	// the deploy-time connection service target does not have to create them.
+	brownfieldConnections []synthesis.Connection
+
 	// Lazily constructed on first compile. nil until needed.
 	bicepCliInstance bicepCompiler
 }
@@ -147,7 +153,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 		if endpoint := foundryServiceEndpoint(rawYAML, svcName); endpoint != "" {
 			warnNetworkIgnoredInBrownfield(rawYAML, svcName)
 			p.brownfieldEndpoint = endpoint
-			if err := p.captureBrownfieldDeployments(rawYAML, svcName); err != nil {
+			if err := p.captureBrownfieldDeployments(ctx, rawYAML, svcName); err != nil {
 				return err
 			}
 			return p.resolveEnvName(ctx)
@@ -168,7 +174,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 		// network: has no effect in brownfield mode; warn if both are present.
 		warnNetworkIgnoredInBrownfield(rawYAML, svcName)
 		p.brownfieldEndpoint = foundryServiceEndpoint(rawYAML, svcName)
-		if err := p.captureBrownfieldDeployments(rawYAML, svcName); err != nil {
+		if err := p.captureBrownfieldDeployments(ctx, rawYAML, svcName); err != nil {
 			return err
 		}
 		return p.resolveEnvName(ctx)
@@ -693,7 +699,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 // captureBrownfieldDeployments records the model deployments declared on a
 // brownfield (endpoint:) project service so Deploy can create them on the
 // existing account. No-op (nil) when none are declared.
-func (p *FoundryProvisioningProvider) captureBrownfieldDeployments(rawYAML []byte, svcName string) error {
+func (p *FoundryProvisioningProvider) captureBrownfieldDeployments(
+	ctx context.Context, rawYAML []byte, svcName string,
+) error {
 	deployments, err := synthesis.BrownfieldDeployments(rawYAML, svcName)
 	if err != nil {
 		return exterrors.Validation(
@@ -703,6 +711,16 @@ func (p *FoundryProvisioningProvider) captureBrownfieldDeployments(rawYAML []byt
 		)
 	}
 	p.brownfieldDeployments = deployments
+
+	connections, err := synthesis.BrownfieldConnections(rawYAML, p.networkEnvMap(ctx))
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf("read connections for existing Foundry project service %q: %s", svcName, err),
+			"check the host: azure.ai.connection services in azure.yaml",
+		)
+	}
+	p.brownfieldConnections = connections
 	return nil
 }
 
@@ -718,7 +736,7 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 ) (*azdext.ProvisioningDeployResult, error) {
 	createACR := p.brownfieldACRRequested(ctx)
 
-	if len(p.brownfieldDeployments) == 0 && !createACR {
+	if len(p.brownfieldDeployments) == 0 && !createACR && len(p.brownfieldConnections) == 0 {
 		progress("Using existing Foundry project (endpoint set); skipping provisioning")
 		// Best-effort tenant lookup so AZURE_TENANT_ID is still surfaced for the
 		// existing-project path (no resources are provisioned here). Log on
@@ -734,14 +752,7 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 		}, nil
 	}
 
-	switch {
-	case len(p.brownfieldDeployments) > 0 && createACR:
-		progress("Using existing Foundry project; reconciling model deployments and container registry...")
-	case createACR:
-		progress("Using existing Foundry project; creating container registry...")
-	default:
-		progress("Using existing Foundry project; reconciling declared model deployments...")
-	}
+	progress(brownfieldReconcileMessage(len(p.brownfieldDeployments) > 0, createACR, len(p.brownfieldConnections) > 0))
 
 	// Locate the existing account (subscription, resource group, account name).
 	// resolveBrownfieldTarget sets p.subID, which the deployments client needs.
@@ -802,6 +813,25 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 	}, nil
 }
 
+// brownfieldReconcileMessage builds the progress line for what deployBrownfield
+// is about to reconcile. Callers reach it only when at least one argument is
+// true (the caller's guard skips provisioning otherwise), so the message never
+// claims work that isn't actually happening -- e.g. a brownfield project with
+// only a pending connection no longer says "reconciling model deployments".
+func brownfieldReconcileMessage(hasDeployments, createACR, hasConnections bool) string {
+	var parts []string
+	if hasDeployments {
+		parts = append(parts, "model deployments")
+	}
+	if createACR {
+		parts = append(parts, "container registry")
+	}
+	if hasConnections {
+		parts = append(parts, "connections")
+	}
+	return fmt.Sprintf("Using existing Foundry project; reconciling %s...", strings.Join(parts, ", "))
+}
+
 // brownfieldParams builds the ARM parameter set for brownfield.arm.json, shared
 // by the Deploy and Preview paths. ACR params are added only when createACR.
 func (p *FoundryProvisioningProvider) brownfieldParams(
@@ -810,6 +840,7 @@ func (p *FoundryProvisioningProvider) brownfieldParams(
 	params := map[string]any{
 		"accountName": map[string]any{"value": account},
 		"deployments": map[string]any{"value": p.brownfieldDeployments},
+		"connections": map[string]any{"value": p.brownfieldConnections},
 		// projectName feeds the unconditional existing `foundryAccountPreview::project`
 		// resource, so it must always be set -- even on the model-deployments-only
 		// reconcile path. Omitting it collapses the resource name to "<account>/"
@@ -838,7 +869,7 @@ func (p *FoundryProvisioningProvider) previewBrownfield(
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningPreviewResult, error) {
 	createACR := p.brownfieldACRRequested(ctx)
-	if len(p.brownfieldDeployments) == 0 && !createACR {
+	if len(p.brownfieldDeployments) == 0 && !createACR && len(p.brownfieldConnections) == 0 {
 		progress("Using existing Foundry project (endpoint set); nothing to provision")
 		return &azdext.ProvisioningPreviewResult{
 			Preview: &azdext.ProvisioningDeploymentPreview{},
@@ -909,8 +940,9 @@ func (p *FoundryProvisioningProvider) brownfieldACRRequested(ctx context.Context
 	return false
 }
 
-// brownfieldProjectName returns the existing project name for the ACR connection,
-// preferring the value parsed from the endpoint and falling back to p.foundryName.
+// brownfieldProjectName returns the existing project name for project-scoped
+// resources (the ACR connection and user connections), preferring the value
+// parsed from the endpoint and falling back to p.foundryName.
 func (p *FoundryProvisioningProvider) brownfieldProjectName() string {
 	if name := projectNameFromEndpoint(p.brownfieldEndpoint); name != "" {
 		return name
@@ -1206,8 +1238,10 @@ func (p *FoundryProvisioningProvider) Preview(
 
 // Destroy tears down the Foundry deployment.
 //
-//   - Force == false (default): refuse with a structured error. This provider
-//     does not prompt, so deletion must be an explicit --force choice.
+//   - Force == false (default): prompt the user for confirmation before
+//     deleting, mirroring the built-in bicep provider. Under --no-prompt (or
+//     with no azd host attached) there is nothing to prompt, so deletion falls
+//     back to requiring an explicit --force choice via a structured error.
 //   - Force == true: delete every model deployment under the resource group's
 //     Cognitive Services accounts, then delete the resource group (Foundry
 //     account, project, and any ACR). Deployments must go first: Azure refuses
@@ -1237,20 +1271,11 @@ func (p *FoundryProvisioningProvider) Destroy(
 		return &azdext.ProvisioningDestroyResult{}, nil
 	}
 
-	if !options.GetForce() {
-		return nil, exterrors.Validation(
-			exterrors.CodeDestroyRequiresForce,
-			fmt.Sprintf("microsoft.foundry destroy will delete resource group %q "+
-				"and all resources inside it; this provider does not prompt for "+
-				"confirmation, so --force is required", p.rgName),
-			"re-run with `azd down --force` (add `--purge` to also purge "+
-				"soft-deleted Cognitive Services accounts)",
-		)
-	}
-
 	// Fail closed when AZURE_RESOURCE_GROUP was never set: rgName is the rg-<env>
 	// default the provider made up, not a group it provisioned. Deleting it could
 	// wipe an unrelated group that happens to match a common env name like "dev".
+	// Check this before prompting so we never ask the user to confirm a deletion
+	// we are going to refuse anyway.
 	if !p.rgExplicit {
 		return nil, exterrors.Validation(
 			exterrors.CodeMissingResourceGroup,
@@ -1259,6 +1284,16 @@ func (p *FoundryProvisioningProvider) Destroy(
 			fmt.Sprintf("set the group to delete with `azd env set %s <name>` if it was provisioned here",
 				envKeyResourceGroup),
 		)
+	}
+
+	if !options.GetForce() {
+		confirmed, err := p.confirmDestroy(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !confirmed {
+			return nil, exterrors.Cancelled("destroy cancelled")
+		}
 	}
 
 	if err := p.ensureCredential(ctx); err != nil {
@@ -1327,7 +1362,54 @@ func (p *FoundryProvisioningProvider) Destroy(
 	return invalidatedEnvKeysResult(), nil
 }
 
-// purgeableAccount captures the minimum state required to purge a
+// confirmDestroy asks the user to confirm resource-group deletion when the
+// caller didn't pass --force. It mirrors the built-in bicep provider, which
+// prompts instead of hard-failing.
+//
+// Fails closed in the non-interactive cases so we never silently delete:
+//   - No azd host attached (azdClient == nil): return the actionable
+//     CodeDestroyRequiresForce error.
+//   - Under `--no-prompt` the host returns a "prompt required" error; that is
+//     surfaced as the same CodeDestroyRequiresForce error so CI/scripts stay
+//     deterministic and are told to pass --force.
+//
+// A user cancellation (Ctrl-C) or an explicit "no" both return (false, nil) so
+// the caller reports a clean cancellation rather than an error.
+func (p *FoundryProvisioningProvider) confirmDestroy(ctx context.Context) (bool, error) {
+	forceRequired := exterrors.Validation(
+		exterrors.CodeDestroyRequiresForce,
+		fmt.Sprintf("microsoft.foundry destroy will delete resource group %q "+
+			"and all resources inside it; no interactive prompt is available, "+
+			"so --force is required", p.rgName),
+		"re-run with `azd down --force` (add `--purge` to also purge "+
+			"soft-deleted Cognitive Services accounts)",
+	)
+
+	if p.azdClient == nil {
+		return false, forceRequired
+	}
+
+	resp, err := p.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+		Options: &azdext.ConfirmOptions{
+			Message: fmt.Sprintf(
+				"microsoft.foundry will delete resource group %q and all resources "+
+					"inside it. Are you sure you want to continue?", p.rgName),
+			DefaultValue: new(false),
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return false, nil
+		}
+		if exterrors.IsPromptRequired(err) {
+			return false, forceRequired
+		}
+		return false, fmt.Errorf("prompting for destroy confirmation: %w", err)
+	}
+
+	return resp.GetValue(), nil
+}
+
 // soft-deleted Cognitive Services account: its name and the location it
 // was created in (the soft-delete record is keyed by location, not by
 // resource group alone).
@@ -1550,6 +1632,7 @@ var canonicalOutputNames = []string{
 	"AZURE_CONTAINER_REGISTRY_ENDPOINT",
 	"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
 	"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+	"AZURE_AI_PROJECT_CONNECTION_NAMES",
 	"AZURE_FOUNDRY_NETWORK_MODE",
 	"AZURE_FOUNDRY_MANAGED_ISOLATION_MODE",
 }

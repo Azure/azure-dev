@@ -952,6 +952,15 @@ func runInitFromAzureYaml(
 		return err
 	}
 
+	// When an existing project was selected, stamp its endpoint onto the
+	// azure.ai.project service so the provisioning provider recognizes the
+	// brownfield signal and reuses the project instead of creating a new one.
+	if result.FoundryProject != nil {
+		if err := stampProjectEndpoint(ctx, azdClient, result.FoundryProject); err != nil {
+			return err
+		}
+	}
+
 	// --- Model deployment verification ---
 	// Parse deployments from the azure.yaml and verify them against the
 	// selected Foundry project. If the user opts to use existing deployments

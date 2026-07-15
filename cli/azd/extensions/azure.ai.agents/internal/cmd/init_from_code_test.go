@@ -627,6 +627,21 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 				{Protocol: "invocations", Version: "1.0.0"},
 			},
 		},
+		{
+			name:          "activity only",
+			flagProtocols: []string{"activity"},
+			wantProtocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "activity", Version: "2.0.0"},
+			},
+		},
+		{
+			name:          "activity coexists with other protocols",
+			flagProtocols: []string{"activity", "responses"},
+			wantProtocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "activity", Version: "2.0.0"},
+				{Protocol: "responses", Version: "2.0.0"},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -691,6 +706,9 @@ func TestKnownProtocolNames(t *testing.T) {
 	}
 	if !strings.Contains(result, "invocations_ws") {
 		t.Errorf("knownProtocolNames() = %q, want to contain 'invocations_ws'", result)
+	}
+	if !strings.Contains(result, "activity") {
+		t.Errorf("knownProtocolNames() = %q, want to contain 'activity'", result)
 	}
 }
 
@@ -839,7 +857,7 @@ func TestPromptProtocols_ChoicesIncludeInvocationsWsWithoutChangingDefault(t *te
 		_ ...grpc.CallOption,
 	) (*azdext.MultiSelectResponse, error) {
 		choices := in.Options.Choices
-		require.Len(t, choices, 3)
+		require.GreaterOrEqual(t, len(choices), 3)
 		require.Equal(t, "responses", choices[0].Value)
 		require.True(t, choices[0].Selected)
 		require.Equal(t, "invocations", choices[1].Value)

@@ -24,6 +24,7 @@ fatih
 fiscaletti
 gofrs
 haoozhang
+hemarina
 huimiu
 isatty
 joho
@@ -60,6 +61,7 @@ therealjohn
 tidwall
 tmeschter
 tonybaloney
+v1212
 vivazqu
 weilim
 Yionse

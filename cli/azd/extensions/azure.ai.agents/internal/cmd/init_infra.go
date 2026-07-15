@@ -341,9 +341,14 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 // templates/ root into infraDir, preserving the relative tree, and returns the
 // files written (with sizes). On any error it removes the partial infraDir.
 //
-// main.arm.json (the pre-compiled ARM JSON) is skipped: eject hands the user
-// the human-readable Bicep, and the embedded JSON would be stale once they
-// edit main.bicep.
+// Three files are skipped:
+//   - main.arm.json (the pre-compiled ARM JSON): would be stale once the user
+//     edits main.bicep.
+//   - brownfield.bicep and brownfield.arm.json: unreachable in a greenfield
+//     eject. ejectInfra already refuses to eject a brownfield (endpoint:)
+//     project, main.bicep never references brownfield.bicep, and the
+//     provider's brownfield path always loads the embedded
+//     synthesis.BrownfieldARMTemplate() instead of anything under infra/.
 func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
 	//nolint:gosec // G301: ejected infra/ directory must be readable/traversable by IDEs, Git, and CI
 	if err := os.MkdirAll(infraDir, 0o755); err != nil {
@@ -385,7 +390,8 @@ func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
 			return nil
 		}
 
-		if filepath.Base(p) == "main.arm.json" {
+		switch filepath.Base(p) {
+		case "main.arm.json", "brownfield.bicep", "brownfield.arm.json":
 			return nil
 		}
 
@@ -581,10 +587,10 @@ func writeOutputsFile(infraDir string, includeAcr bool) (ejectArtifact, error) {
 
 // writeTfvarsFile emits infra/main.tfvars.json. azd-core's Terraform provider
 // reads this file and substitutes the ${...} placeholders from the azd
-// environment at provision time. The synthesizer-known value `deployments` is
-// written literally; deploy-time inputs (location, resource_group_name,
-// foundry_project_name, principal_id, subscription_id, environment_name,
-// resource_token_salt) are left as ${AZURE_*} placeholders.
+// environment at provision time. The synthesizer-known values `deployments`
+// and `connections` are written literally; deploy-time inputs (location,
+// resource_group_name, foundry_project_name, principal_id, subscription_id,
+// environment_name, resource_token_salt) are left as ${AZURE_*} placeholders.
 //
 // include_acr is NOT written: whether ACR is provisioned is decided at eject
 // time by the presence of acr.tf, not by a Terraform variable.
@@ -602,9 +608,14 @@ func writeTfvarsFile(infraDir string, params map[string]any) (ejectArtifact, err
 		"resource_token_salt":  "${AZURE_RESOURCE_TOKEN_SALT}",
 	}
 
-	// deployments is the only synthesizer-derived value written to tfvars.
+	// deployments and connections are the only synthesizer-derived values
+	// written to tfvars. The Terraform provider resolves ${VAR} references
+	// across the generated file at provision time.
 	if v, ok := params["deployments"]; ok {
 		doc["deployments"] = v
+	}
+	if v, ok := params["connections"]; ok {
+		doc["connections"] = v
 	}
 
 	data, err := json.MarshalIndent(doc, "", "  ")

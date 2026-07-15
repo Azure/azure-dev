@@ -6,6 +6,7 @@ package grpcserver
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -25,7 +26,6 @@ type projectService struct {
 	azdext.UnimplementedProjectServiceServer
 
 	lazyAzdContext      *lazy.Lazy[*azdcontext.AzdContext]
-	lazyEnvManager      *lazy.Lazy[environment.Manager]
 	lazyResourceManager *lazy.Lazy[project.ResourceManager]
 	lazyEnv             *lazy.Lazy[*environment.Environment]
 	importManager       *project.ImportManager
@@ -39,7 +39,6 @@ type projectService struct {
 //
 // Parameters:
 //   - lazyAzdContext: Lazy-loaded Azure Developer CLI context for project directory operations
-//   - lazyEnvManager: Lazy-loaded environment manager for handling Azure environments
 //   - lazyResourceManager: Lazy-loaded resource manager for resolving target resources
 //   - lazyEnv: Lazy-loaded environment for accessing environment variables and subscription info
 //   - lazyProjectConfig: Lazy-loaded project configuration for accessing project settings
@@ -47,7 +46,6 @@ type projectService struct {
 // Returns an implementation of azdext.ProjectServiceServer.
 func NewProjectService(
 	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
-	lazyEnvManager *lazy.Lazy[environment.Manager],
 	lazyResourceManager *lazy.Lazy[project.ResourceManager],
 	lazyEnv *lazy.Lazy[*environment.Environment],
 	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
@@ -56,7 +54,6 @@ func NewProjectService(
 ) azdext.ProjectServiceServer {
 	return &projectService{
 		lazyAzdContext:      lazyAzdContext,
-		lazyEnvManager:      lazyEnvManager,
 		lazyResourceManager: lazyResourceManager,
 		lazyEnv:             lazyEnv,
 		lazyProjectConfig:   lazyProjectConfig,
@@ -117,8 +114,9 @@ func (s *projectService) validateServiceExists(ctx context.Context, serviceName 
 }
 
 // Get retrieves the complete project configuration including all services and metadata.
-// This method resolves environment variables in configuration values using the default environment
-// and converts the internal project configuration to the protobuf format for gRPC communication.
+// This method resolves environment variables in configuration values using the environment
+// for the current session and converts the internal project configuration to the protobuf
+// format for gRPC communication.
 //
 // The returned project includes:
 //   - Basic project metadata (name, resource group, path)
@@ -126,47 +124,38 @@ func (s *projectService) validateServiceExists(ctx context.Context, serviceName 
 //   - All configured services with their settings
 //   - Template metadata if available
 //
-// Environment variable substitution is performed using the default environment's variables.
+// Environment variable substitution is performed using the session environment's variables;
+// when no environment is available, values expand to empty strings.
 func (s *projectService) Get(ctx context.Context, req *azdext.EmptyRequest) (*azdext.GetProjectResponse, error) {
-	azdContext, err := s.lazyAzdContext.GetValue()
-	if err != nil {
-		return nil, err
-	}
-
 	projectConfig, err := s.lazyProjectConfig.GetValue()
 	if err != nil {
 		return nil, err
 	}
 
-	envKeyMapper := func(env string) string {
-		return ""
-	}
-
-	defaultEnvironment, err := azdContext.GetDefaultEnvironmentName()
-	if err != nil {
-		return nil, err
-	}
-
-	envManager, err := s.lazyEnvManager.GetValue()
-	if err != nil {
-		return nil, err
-	}
-
-	if defaultEnvironment != "" {
-		env, err := envManager.Get(ctx, defaultEnvironment)
-		if err == nil && env != nil {
-			envKeyMapper = env.Getenv
-		}
-	}
-
 	var project *azdext.ProjectConfig
-	if err := mapper.WithResolver(envKeyMapper).Convert(projectConfig, &project); err != nil {
+	if err := mapper.WithResolver(s.envResolver()).Convert(projectConfig, &project); err != nil {
 		return nil, fmt.Errorf("converting project config to proto: %w", err)
 	}
 
 	return &azdext.GetProjectResponse{
 		Project: project,
 	}, nil
+}
+
+// envResolver returns a resolver backed by the environment for the current session (honoring
+// the -e/--environment flag, like the framework, service target and event services), falling
+// back to empty values when no environment is available.
+func (s *projectService) envResolver() mapper.Resolver {
+	if s.lazyEnv != nil {
+		env, err := s.lazyEnv.GetValue()
+		if err != nil {
+			log.Printf("project service: environment unavailable, expanding with empty values: %v", err)
+		} else if env != nil {
+			return env.Getenv
+		}
+	}
+
+	return noEnvResolver
 }
 
 // AddService adds a new service to the project configuration and persists the changes.
@@ -219,6 +208,13 @@ func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceR
 		serviceConfig.EventDispatcher = ext.NewEventDispatcher[project.ServiceLifecycleEventArgs]()
 	}
 
+	// Incoming env values are expanded literals. For values the caller did not change,
+	// keep the original ${VAR} templates from azure.yaml so a read-modify-write round
+	// trip does not bake expanded values into the persisted file.
+	if existingService, exists := projectConfig.Services[req.Service.Name]; exists {
+		preserveUnchangedEnvTemplates(existingService, serviceConfig, s.envResolver())
+	}
+
 	// Set the Project reference and Name (required fields not set by mapper)
 	serviceConfig.Project = projectConfig
 	serviceConfig.Name = req.Service.Name
@@ -229,6 +225,32 @@ func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceR
 	}
 
 	return &azdext.EmptyResponse{}, nil
+}
+
+// preserveUnchangedEnvTemplates restores the original env value templates from existing for
+// every incoming env entry whose expanded value is unchanged, so unmodified entries keep
+// their ${VAR} references when the service config is persisted back to azure.yaml.
+func preserveUnchangedEnvTemplates(existing, incoming *project.ServiceConfig, resolver mapper.Resolver) {
+	for key, incomingValue := range incoming.Environment {
+		existingValue, has := existing.Environment[key]
+		if !has {
+			continue
+		}
+
+		existingExpanded, err := existingValue.Envsubst(resolver)
+		if err != nil {
+			continue
+		}
+
+		incomingExpanded, err := incomingValue.Envsubst(resolver)
+		if err != nil {
+			continue
+		}
+
+		if existingExpanded == incomingExpanded {
+			incoming.Environment[key] = existingValue
+		}
+	}
 }
 
 // GetConfigSection retrieves a configuration section from the project configuration.
@@ -801,26 +823,7 @@ func (s *projectService) GetResolvedServices(
 		return nil, err
 	}
 
-	envKeyMapper := func(env string) string {
-		return ""
-	}
-
-	defaultEnvironment, err := azdContext.GetDefaultEnvironmentName()
-	if err != nil {
-		return nil, err
-	}
-
-	envManager, err := s.lazyEnvManager.GetValue()
-	if err != nil {
-		return nil, err
-	}
-
-	if defaultEnvironment != "" {
-		env, err := envManager.Get(ctx, defaultEnvironment)
-		if err == nil && env != nil {
-			envKeyMapper = env.Getenv
-		}
-	}
+	envKeyMapper := s.envResolver()
 
 	// Get resolved services using ImportManager
 	servicesStable, err := s.importManager.ServiceStable(ctx, projectConfig)

@@ -4,13 +4,30 @@
 
 ### Features Added
 
+- [[#9019]](https://github.com/Azure/azure-dev/pull/9019) Add a provider-agnostic `provision` validation check type dispatched before provisioning for every provider. Extensions with the `validation-provider` capability can now contribute client-side checks that run regardless of the provisioning provider (Bicep, Terraform, or an extension-provided provider), not just during Bicep local preflight.
+
 ### Breaking Changes
+
+ - [[#9045]](https://github.com/Azure/azure-dev/pull/9045) The `--host` skill flag on `azd tool install`, `azd tool upgrade`, and `azd tool uninstall` has been renamed to `--agent`. Installed skills in `azd tool list --output json` and `azd tool check --output json` now expand into one row per agent and include the `agent` field. Update scripts and JSON consumers accordingly.
+
+### Bugs Fixed
+
+### Other Changes
+
+- [[#9141]](https://github.com/Azure/azure-dev/pull/9141) Send ARM request correlation IDs as a canonical hyphenated GUID (derived losslessly from the OpenTelemetry trace ID) instead of an undecorated 32-character string — covering both the `x-ms-correlation-request-id` header on azd's direct ARM calls and the `ARM_CORRELATION_REQUEST_ID` value passed to the Terraform AzureRM provider. This aligns azd with the ARM spec and other Azure tooling (Terraform AzureRM, Azure SDK for Go) and resolves the historical AKS Deployment Safeguards `GetDeploymentSafeguardsFailed` correlation ID mismatch (#5851).
+
+## 1.27.1 (2026-07-09)
+
+### Features Added
+
+- [[#8927]](https://github.com/Azure/azure-dev/pull/8927) Add `--no-dependencies` flag to `azd extension install` that installs only the named extension without resolving or installing its declared dependencies.
 
 ### Bugs Fixed
 
 - [[#8949]](https://github.com/Azure/azure-dev/pull/8949) Dynamic linker/loader control variables (such as `LD_PRELOAD`, `LD_LIBRARY_PATH`, `LD_AUDIT`, and `DYLD_INSERT_LIBRARIES`) defined in an environment's `.env` file are no longer forwarded into tool subprocesses (docker, npm, python, and others).
-
-### Other Changes
+- [[#8875]](https://github.com/Azure/azure-dev/pull/8875) Fix `azd tool uninstall` failing for VS Code extensions that have dependents (eg: vscode-azure-tools) and for the GitHub Copilot CLI when installed via Homebrew cask on macOS/Linux. Uninstall now detects which package manager owns the install and removes via the appropriate package manager, with guidance when a self-managed install requires manual removal.
+- [[#8842]](https://github.com/Azure/azure-dev/pull/8842) Deprecated models are now excluded by default from model catalog and quota prompts.
+- [[#8937]](https://github.com/Azure/azure-dev/pull/8937) Fix `azure.yaml` serialization writing empty `project` and `language` fields for services using code-less resource hosts such as `azure.ai.project`, `azure.ai.connection`, and `microsoft.foundry`; these fields are now omitted when empty.
 
 ## 1.27.0 (2026-06-30)
 

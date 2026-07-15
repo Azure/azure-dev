@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"text/tabwriter"
+	"time"
 
 	"azure.ai.routines/internal/exterrors"
 	"azure.ai.routines/internal/pkg/routines"
@@ -18,8 +20,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newRoutineClient resolves the project endpoint and creates an authenticated routine client.
+const (
+	routineHTTPTimeoutEnvVar = "AZURE_AI_ROUTINES_HTTP_TIMEOUT"
+	routineHTTPTimeoutFlag   = "timeout"
+)
+
+// newRoutineClient resolves an authenticated routine client.
 func newRoutineClient(ctx context.Context, cmd *cobra.Command) (*routines.Client, string, error) {
+	requestTimeout, err := routineHTTPTimeoutOverrideFromCommand(cmd)
+	if err != nil {
+		return nil, "", err
+	}
+
 	flagEndpoint, _ := cmd.Flags().GetString("project-endpoint")
 
 	resolved, err := resolveProjectEndpoint(ctx, flagEndpoint)
@@ -38,7 +50,51 @@ func newRoutineClient(ctx context.Context, cmd *cobra.Command) (*routines.Client
 		)
 	}
 
-	return routines.NewClient(resolved.Endpoint, cred), resolved.Endpoint, nil
+	return routines.NewClient(
+		resolved.Endpoint,
+		cred,
+		routineClientOptions(requestTimeout),
+	), resolved.Endpoint, nil
+}
+
+func routineClientOptions(timeoutOverride time.Duration) *routines.ClientOptions {
+	if timeoutOverride <= 0 {
+		return nil
+	}
+	return &routines.ClientOptions{RequestTimeout: timeoutOverride}
+}
+
+func routineHTTPTimeoutOverrideFromCommand(cmd *cobra.Command) (time.Duration, error) {
+	if cmd != nil {
+		if flag := cmd.Flag(routineHTTPTimeoutFlag); flag != nil && flag.Changed {
+			return parseRoutineHTTPTimeout(
+				flag.Value.String(),
+				"--"+routineHTTPTimeoutFlag,
+			)
+		}
+	}
+	return routineHTTPTimeoutOverrideFromEnv()
+}
+
+func routineHTTPTimeoutOverrideFromEnv() (time.Duration, error) {
+	raw, ok := os.LookupEnv(routineHTTPTimeoutEnvVar)
+	if !ok {
+		return 0, nil
+	}
+	return parseRoutineHTTPTimeout(raw, routineHTTPTimeoutEnvVar)
+}
+
+func parseRoutineHTTPTimeout(raw, source string) (time.Duration, error) {
+	value := strings.TrimSpace(raw)
+	timeout, err := time.ParseDuration(value)
+	if value == "" || err != nil || timeout <= 0 {
+		return 0, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("%s must be a positive duration: %q", source, raw),
+			"use a Go duration such as 2m, 90s, or 1m30s",
+		)
+	}
+	return timeout, nil
 }
 
 // printJSON marshals v to indented JSON and writes to stdout.

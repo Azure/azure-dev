@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -17,6 +18,55 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// --- Client options
+
+func TestResolveRequestTimeouts(t *testing.T) {
+	t.Parallel()
+
+	readTimeout, writeTimeout := resolveRequestTimeouts(nil)
+	assert.Equal(t, DefaultReadRequestTimeout, readTimeout)
+	assert.Equal(t, DefaultWriteRequestTimeout, writeTimeout)
+
+	readTimeout, writeTimeout = resolveRequestTimeouts(&ClientOptions{})
+	assert.Equal(t, DefaultReadRequestTimeout, readTimeout)
+	assert.Equal(t, DefaultWriteRequestTimeout, writeTimeout)
+
+	readTimeout, writeTimeout = resolveRequestTimeouts(&ClientOptions{
+		RequestTimeout: 90 * time.Second,
+	})
+	assert.Equal(t, 90*time.Second, readTimeout)
+	assert.Equal(t, 90*time.Second, writeTimeout)
+}
+
+func TestNewHTTPClient_UsesRequestTimeout(t *testing.T) {
+	t.Parallel()
+
+	client := newHTTPClient(90 * time.Second)
+	transport, ok := client.Transport.(*http.Transport)
+	require.True(t, ok)
+	assert.Equal(t, 90*time.Second, transport.ResponseHeaderTimeout)
+}
+
+type testPipelineHeaderPolicy string
+
+func (p testPipelineHeaderPolicy) Do(req *policy.Request) (*http.Response, error) {
+	req.Raw().Header.Set("X-Test-Pipeline", string(p))
+	return req.Next()
+}
+
+func newTestPipeline(name string) azruntime.Pipeline {
+	return azruntime.NewPipeline(
+		"test",
+		"v0",
+		azruntime.PipelineOptions{},
+		&policy.ClientOptions{
+			PerCallPolicies: []policy.Policy{
+				testPipelineHeaderPolicy(name),
+			},
+		},
+	)
+}
 
 // newTestClient creates a Client with a pipeline that skips auth (no TLS
 // requirement) pointing at a local httptest server.
@@ -26,10 +76,10 @@ func newTestClient(t *testing.T, handler http.Handler) (*Client, *httptest.Serve
 	t.Cleanup(srv.Close)
 
 	// Build a pipeline without bearer-token policy so plain HTTP works.
-	pipeline := azruntime.NewPipeline("test", "v0", azruntime.PipelineOptions{}, &policy.ClientOptions{})
 	client := &Client{
-		endpoint: srv.URL + "/api/projects/test-project",
-		pipeline: pipeline,
+		endpoint:      srv.URL + "/api/projects/test-project",
+		readPipeline:  newTestPipeline("read"),
+		writePipeline: newTestPipeline("write"),
 	}
 	return client, srv
 }
@@ -44,6 +94,7 @@ func TestGetRoutine_Success(t *testing.T) {
 		assert.Equal(t, http.MethodGet, r.Method)
 		assert.Contains(t, r.URL.Path, "/routines/my-routine")
 		assert.Equal(t, routinesPreviewValue, r.Header.Get(routinesPreviewHeader))
+		assert.Equal(t, "read", r.Header.Get("X-Test-Pipeline"))
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(routine)
@@ -160,6 +211,7 @@ func TestPutRoutine_Created(t *testing.T) {
 	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPut, r.Method)
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		assert.Equal(t, "write", r.Header.Get("X-Test-Pipeline"))
 
 		var body Routine
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -178,7 +230,7 @@ func TestPutRoutine_Created(t *testing.T) {
 	got, err := client.PutRoutine(t.Context(), "new-routine", input)
 	require.NoError(t, err)
 	assert.Equal(t, "new-routine", got.Name)
-	assert.Equal(t, "2025-01-01T00:00:00Z", got.CreatedAt)
+	assert.Equal(t, "2025-01-01T00:00:00Z", got.CreatedAt.String())
 }
 
 func TestPutRoutine_Updated(t *testing.T) {
@@ -191,7 +243,7 @@ func TestPutRoutine_Updated(t *testing.T) {
 
 	got, err := client.PutRoutine(t.Context(), "existing", &Routine{Name: "existing"})
 	require.NoError(t, err)
-	assert.Equal(t, "2025-06-01T00:00:00Z", got.UpdatedAt)
+	assert.Equal(t, "2025-06-01T00:00:00Z", got.UpdatedAt.String())
 }
 
 func TestPutRoutine_Conflict(t *testing.T) {
@@ -456,8 +508,7 @@ func TestListRoutineRuns_Pagination(t *testing.T) {
 
 func TestRoutineURL_EscapesName(t *testing.T) {
 	t.Parallel()
-	pipeline := azruntime.NewPipeline("test", "v0", azruntime.PipelineOptions{}, &policy.ClientOptions{})
-	c := &Client{endpoint: "https://example.com/api/projects/p", pipeline: pipeline}
+	c := &Client{endpoint: "https://example.com/api/projects/p"}
 
 	url := c.routineURL("has space")
 	assert.Contains(t, url, "/routines/has%20space")
@@ -466,8 +517,7 @@ func TestRoutineURL_EscapesName(t *testing.T) {
 
 func TestRoutineActionURL(t *testing.T) {
 	t.Parallel()
-	pipeline := azruntime.NewPipeline("test", "v0", azruntime.PipelineOptions{}, &policy.ClientOptions{})
-	c := &Client{endpoint: "https://example.com/api/projects/p", pipeline: pipeline}
+	c := &Client{endpoint: "https://example.com/api/projects/p"}
 
 	url := c.routineActionURL("my-routine", "enable")
 	assert.Contains(t, url, "/routines/my-routine:enable")
@@ -475,8 +525,7 @@ func TestRoutineActionURL(t *testing.T) {
 
 func TestRoutineRunsURL_WithQuery(t *testing.T) {
 	t.Parallel()
-	pipeline := azruntime.NewPipeline("test", "v0", azruntime.PipelineOptions{}, &policy.ClientOptions{})
-	c := &Client{endpoint: "https://example.com/api/projects/p", pipeline: pipeline}
+	c := &Client{endpoint: "https://example.com/api/projects/p"}
 
 	url := c.routineRunsURL("r1", "limit=5", "after=tok")
 	assert.Contains(t, url, "/routines/r1/runs")

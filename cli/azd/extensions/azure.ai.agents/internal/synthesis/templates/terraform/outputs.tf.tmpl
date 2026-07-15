@@ -24,6 +24,10 @@ output "AZURE_OPENAI_ENDPOINT" {
 output "FOUNDRY_PROJECT_ENDPOINT" {
   value = "https://${azapi_resource.foundry_account.name}.services.ai.azure.com/api/projects/${azapi_resource.project.name}"
 }
+
+output "AZURE_AI_PROJECT_CONNECTION_NAMES" {
+  value = join(",", [for c in azapi_resource.connection : c.name])
+}
 {{ if .IncludeAcr }}
 output "AZURE_CONTAINER_REGISTRY_ENDPOINT" {
   value = azurerm_container_registry.this.login_server

@@ -88,6 +88,27 @@ func Test_ServiceManager_Initialize(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// InitializeFrameworkService must succeed for a service whose host cannot be resolved (for
+// example an extension-provided host during `env refresh`): it never touches the service target.
+func Test_ServiceManager_InitializeFrameworkService_UnsupportedHost(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	setupMocksForServiceManager(mockContext)
+	env := environment.New("test")
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
+
+	// "missing-target" is not registered as a service target, but the framework language is.
+	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetKind("missing-target"), ServiceLanguageFake)
+
+	// Framework-only initialization succeeds despite the unsupported host...
+	err := sm.InitializeFrameworkService(*mockContext.Context, serviceConfig)
+	require.NoError(t, err)
+
+	// ...whereas full initialization (which resolves the service target) fails.
+	err = sm.Initialize(*mockContext.Context, serviceConfig)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "service host 'missing-target' for service 'api' is unsupported")
+}
+
 func Test_ServiceManager_Restore(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	setupMocksForServiceManager(mockContext)

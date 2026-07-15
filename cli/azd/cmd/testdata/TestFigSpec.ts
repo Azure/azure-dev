@@ -1,3 +1,5 @@
+import { filepaths } from '../helpers/filepaths';
+
 interface AzdEnvListItem {
 	Name: string;
 	DotEnvPath: string;
@@ -343,7 +345,7 @@ const completionSpec: Fig.Spec = {
 									options: [
 										{
 											name: ['--agent'],
-											description: 'Target agent name',
+											description: 'Agent service name from azure.yaml, or Foundry agent name outside a project',
 											args: [
 												{
 													name: 'agent',
@@ -986,6 +988,16 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--client-header'],
+									description: 'Custom x-client-* request header in "Name: Value" format (repeatable). The responses and invocations protocols forward the x-client-* header family to the agent; other header names are rejected and the flag is not supported with a2a.',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'client-header',
+										},
+									],
+								},
+								{
 									name: ['--conversation-id'],
 									description: 'Explicit conversation ID override',
 									args: [
@@ -1036,7 +1048,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--protocol', '-p'],
-									description: 'Protocol to use: responses (default) or invocations',
+									description: 'Protocol to use: responses (default), invocations, or a2a (a2a is remote-only)',
 									args: [
 										{
 											name: 'protocol',
@@ -1145,7 +1157,7 @@ const completionSpec: Fig.Spec = {
 									options: [
 										{
 											name: ['--agent'],
-											description: 'Agent service name (auto-detected from azure.yaml)',
+											description: 'Agent service name from azure.yaml (auto-detected if only one exists)',
 											args: [
 												{
 													name: 'agent',
@@ -1211,7 +1223,7 @@ const completionSpec: Fig.Spec = {
 									options: [
 										{
 											name: ['--agent'],
-											description: 'Agent name to deploy to (auto-detected from agent.yaml)',
+											description: 'Agent service name from azure.yaml, or Foundry agent name outside a project',
 											args: [
 												{
 													name: 'agent',
@@ -1303,6 +1315,16 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+										{
 											name: ['--poll-interval'],
 											description: 'Polling interval in seconds',
 											args: [
@@ -1330,7 +1352,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--agent', '-a'],
-									description: 'Agent name (auto-detected from azd project if omitted)',
+									description: 'Agent service name from azure.yaml, or Foundry agent name outside a project',
 									args: [
 										{
 											name: 'agent',
@@ -1430,8 +1452,17 @@ const completionSpec: Fig.Spec = {
 							description: 'Run your agent locally for development.',
 							options: [
 								{
-									name: ['--no-inspector'],
-									description: 'Do not open Agent Inspector',
+									name: ['--channel'],
+									description: 'Channel for the Microsoft 365 Agents Playground (activity-protocol agents only)',
+									args: [
+										{
+											name: 'channel',
+										},
+									],
+								},
+								{
+									name: ['--no-client'],
+									description: 'Do not open the local client (Agent Inspector or Playground)',
 								},
 								{
 									name: ['--port', '-p'],
@@ -3429,6 +3460,15 @@ const completionSpec: Fig.Spec = {
 										},
 									],
 								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
 							],
 						},
 						{
@@ -3617,6 +3657,15 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
+								{
 									name: ['--trigger'],
 									description: 'Trigger type: timer, recurring, github-issue, or custom (required unless --file is used)',
 									args: [
@@ -3655,6 +3704,15 @@ const completionSpec: Fig.Spec = {
 										},
 									],
 								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
 							],
 						},
 						{
@@ -3677,6 +3735,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
 										},
 									],
 								},
@@ -3718,6 +3785,15 @@ const completionSpec: Fig.Spec = {
 										},
 									],
 								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
 							],
 						},
 						{
@@ -3743,6 +3819,15 @@ const completionSpec: Fig.Spec = {
 										},
 									],
 								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
 							],
 						},
 						{
@@ -3765,6 +3850,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
 										},
 									],
 								},
@@ -3807,6 +3901,15 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--timeout'],
+											description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+											args: [
+												{
+													name: 'timeout',
+												},
+											],
+										},
+										{
 											name: ['--top'],
 											description: 'Maximum total number of runs to return (0 = no cap)',
 											args: [
@@ -3825,6 +3928,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
 										},
 									],
 								},
@@ -3850,6 +3962,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
 										},
 									],
 								},
@@ -4022,6 +4143,15 @@ const completionSpec: Fig.Spec = {
 										},
 									],
 								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
 							],
 						},
 						{
@@ -4044,6 +4174,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
 										},
 									],
 								},
@@ -5334,6 +5473,52 @@ const completionSpec: Fig.Spec = {
 					description: 'Get the context of the azd project & environment.',
 				},
 				{
+					name: ['copilot'],
+					description: 'Interactive Copilot chat loop demonstrating the CopilotService gRPC API.',
+					options: [
+						{
+							name: ['--mode'],
+							description: 'Agent mode (autopilot, interactive, plan)',
+							args: [
+								{
+									name: 'mode',
+								},
+							],
+						},
+						{
+							name: ['--model'],
+							description: 'Model to use (empty = default)',
+							args: [
+								{
+									name: 'model',
+								},
+							],
+						},
+						{
+							name: ['--reasoning-effort'],
+							description: 'Reasoning effort level (low, medium, high)',
+							args: [
+								{
+									name: 'reasoning-effort',
+								},
+							],
+						},
+						{
+							name: ['--resume'],
+							description: 'Resume an existing session',
+						},
+						{
+							name: ['--system-message'],
+							description: 'Custom system message',
+							args: [
+								{
+									name: 'system-message',
+								},
+							],
+						},
+					],
+				},
+				{
 					name: ['gh-url-parse'],
 					description: 'Parse a GitHub URL and extract repository information.',
 				},
@@ -5646,8 +5831,7 @@ const completionSpec: Fig.Spec = {
 					],
 					args: {
 						name: 'extension-id|extension-bundle.zip',
-						generators: azdGenerators.listExtensions,
-						template: 'filepaths',
+						generators: [azdGenerators.listExtensions, filepaths({ extensions: ['zip'] })],
 					},
 				},
 				{
@@ -6283,12 +6467,22 @@ const completionSpec: Fig.Spec = {
 			subcommands: [
 				{
 					name: ['check'],
-					description: 'Check for tool updates.',
+					description: 'Check for tool upgrades.',
 				},
 				{
 					name: ['install'],
 					description: 'Install specified tools.',
 					options: [
+						{
+							name: ['--agent'],
+							description: 'Install the skill for the specified agent(s): copilot, claude. Use --agent all for every detected agent (skill tools only)',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'agent',
+								},
+							],
+						},
 						{
 							name: ['--all'],
 							description: 'Install all recommended tools',
@@ -6296,16 +6490,6 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['--dry-run'],
 							description: 'Preview what would be installed without making changes',
-						},
-						{
-							name: ['--host'],
-							description: 'Install the skill for the specified agent host(s): copilot, claude. Use --host all for every detected host (skill tools only)',
-							isRepeatable: true,
-							args: [
-								{
-									name: 'host',
-								},
-							],
 						},
 					],
 					args: {
@@ -6329,22 +6513,22 @@ const completionSpec: Fig.Spec = {
 					description: 'Uninstall installed tools.',
 					options: [
 						{
+							name: ['--agent'],
+							description: 'Uninstall the skill from the specified agent(s): copilot, claude. Use --agent all (or omit --agent) to remove the skill from every agent it is installed through (skill tools only)',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'agent',
+								},
+							],
+						},
+						{
 							name: ['--all'],
 							description: 'Uninstall all installed tools',
 						},
 						{
 							name: ['--dry-run'],
 							description: 'Preview what would be uninstalled without making changes',
-						},
-						{
-							name: ['--host'],
-							description: 'Uninstall the skill from the specified agent host(s): copilot, claude. Use --host all (or omit --host) to remove the skill from every host it is installed through (skill tools only)',
-							isRepeatable: true,
-							args: [
-								{
-									name: 'host',
-								},
-							],
 						},
 					],
 					args: {
@@ -6357,18 +6541,22 @@ const completionSpec: Fig.Spec = {
 					description: 'Upgrade installed tools.',
 					options: [
 						{
-							name: ['--dry-run'],
-							description: 'Preview what would be upgraded without making changes',
-						},
-						{
-							name: ['--host'],
-							description: 'Upgrade the skill for the specified agent host(s): copilot, claude. Use --host all for every detected host (skill tools only)',
+							name: ['--agent'],
+							description: 'Upgrade the skill for the specified agent(s): copilot, claude. Use --agent all for every detected agent (skill tools only)',
 							isRepeatable: true,
 							args: [
 								{
-									name: 'host',
+									name: 'agent',
 								},
 							],
+						},
+						{
+							name: ['--all'],
+							description: 'Upgrade all installed tools',
+						},
+						{
+							name: ['--dry-run'],
+							description: 'Preview what would be upgraded without making changes',
 						},
 					],
 					args: {

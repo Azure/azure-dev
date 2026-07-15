@@ -445,14 +445,20 @@ func folderNameStrippingParenSuffix(title string) string {
 	return sanitizeAgentName(title)
 }
 
-// peekManifestName makes a best-effort attempt to read just the top-level
-// "name" field from an agent manifest at the given pointer. It is used by the
-// -m flow to derive a project folder name before the full manifest is loaded
-// inside InitAction.Run. Any failure (read error, parse error, missing name,
-// unsupported pointer type) returns an empty string, leaving the caller to
-// choose a conservative fallback. Errors are logged at debug level only — the
-// authoritative download/parse happens later in downloadAgentYaml and surfaces
-// the real diagnostic to the user.
+// peekManifestName makes a best-effort attempt to read the agent name from an
+// agent manifest at the given pointer. It is used by the -m flow to derive a
+// project folder name and seed the agent-name prompt before the full manifest
+// is loaded inside InitAction.Run. Any failure (read error, parse error,
+// missing name, unsupported pointer type) returns an empty string, leaving the
+// caller to choose a conservative fallback. Errors are logged at debug level
+// only — the authoritative download/parse happens later in downloadAgentYaml
+// and surfaces the real diagnostic to the user.
+//
+// The manifest format nests the agent identity under "template.name", while a
+// bare agent definition carries "name" at the top level. This prefers the
+// template name (the identity used downstream by ExtractAgentDefinition) and
+// falls back to the top-level name, so the -m flow reliably prompts with the
+// agent's own name — matching the interactive and template flows.
 //
 // Supported pointer types:
 //   - local file paths (read via os.ReadFile)
@@ -473,11 +479,20 @@ func peekManifestName(ctx context.Context, manifestPointer string, httpClient *h
 	}
 
 	var head struct {
-		Name string `yaml:"name"`
+		Name     string `yaml:"name"`
+		Template struct {
+			Name string `yaml:"name"`
+		} `yaml:"template"`
 	}
 	if err := yaml.Unmarshal(content, &head); err != nil {
 		log.Printf("peek manifest name: parse: %v", err)
 		return ""
+	}
+	// Prefer the manifest's template.name (the agent identity used downstream),
+	// falling back to the top-level name for bare agent definitions — mirroring
+	// ExtractAgentDefinition's precedence.
+	if name := strings.TrimSpace(head.Template.Name); name != "" {
+		return name
 	}
 	return strings.TrimSpace(head.Name)
 }

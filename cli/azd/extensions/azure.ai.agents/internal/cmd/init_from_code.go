@@ -548,6 +548,19 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		CodeConfiguration: codeConfig,
 	}
 
+	// An activity agent additionally advertises the friendly "activity" endpoint
+	// guarded by BotServiceRbac. We compose this into any existing agent_endpoint
+	// rather than overwriting it, so Activity can coexist with the other
+	// protocols the agent selected (responses/invocations). Injecting it here
+	// mirrors the manifest-based init so the generated azure.yaml is identical and
+	// `azd deploy` provisions the Azure Bot connector. Phase 1 covers the simple
+	// use case; digital-worker is a Phase 2 addition. No-op for non-activity agents.
+	if project.IsActivityProtocol(*definition) {
+		definition.AgentEndpoint = project.ComposeActivityAgentEndpoint(
+			definition.AgentEndpoint, definition.Protocols,
+		)
+	}
+
 	// Add model resource if a model was selected
 	if existingDeployment != nil {
 		// Existing deployment: reference it by name only. Per REFERENCE.md an
@@ -897,6 +910,14 @@ var knownProtocols = []protocolInfo{
 	{Name: "responses", Version: "2.0.0"},
 	{Name: "invocations", Version: "1.0.0"},
 	{Name: "invocations_ws", Version: "2.0.0"},
+	// "activity" is the canonical protocol name (legacy alias: "activity_protocol").
+	// The version selects the platform's internal container route ("v1"/"1.0.0" ->
+	// /api/messages, "2.0.0" -> /activity/messages), but that hop is Bot Service ->
+	// container inside the platform: the client, the Bot Service messaging endpoint,
+	// and the agent sample are all unaffected by the choice. "2.0.0" is the service's
+	// official/recommended version ("1.0.0" is accepted but deprecated going forward),
+	// so new agents default to it, matching the latest-version convention responses uses.
+	{Name: "activity", Version: "2.0.0"},
 }
 
 // promptProtocols asks the user which protocols their agent supports.

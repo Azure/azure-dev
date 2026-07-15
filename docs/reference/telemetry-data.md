@@ -366,6 +366,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 | `validation.preflight.diagnostics` | string[] | Diagnostic IDs emitted |
 | `validation.preflight.rules` | string[] | Rule IDs executed |
 | `validation.preflight.extension_rules` | string[] | Rule IDs executed from extension-provided validation checks |
+| `validation.preflight.check_type` | string | Dispatch site that emitted the event: `local-preflight` (Bicep provider) or `provision` (provider-agnostic). Distinguishes the two emissions so Bicep provisions are not double-counted |
 | `validation.preflight.warning.count` | measurement | Number of warnings |
 | `validation.preflight.error.count` | measurement | Number of errors |
 </details>
@@ -501,7 +502,7 @@ Built-in tool IDs come from azd's curated tool manifest (run `azd tool list` to 
 | `tool.install.duration_ms` | measurement | Total install/upgrade/uninstall duration (ms) |
 | `tool.upgrade.from_version` | string | Previous version (single-target upgrade) |
 | `tool.upgrade.to_version` | string | New version after a successful upgrade (single-target) |
-| `tool.check.updates_available` | measurement | Installed tools with an available update (`azd tool check`) |
+| `tool.check.updates_available` | measurement | Installed tools with an available upgrade (`azd tool check`) |
 </details>
 
 <details>
@@ -625,6 +626,25 @@ OperationId: 28ce1f2898a4fec84522107e36c22038
 | summarize arg_min(TimeGenerated, *) by OperationId
 ```
 
+### `validation.preflight` Emitted Twice Per Bicep Provision
+
+The `validation.preflight` event is emitted from **two** dispatch sites:
+
+- The provider-agnostic **`provision`** validation in `provisioning.Manager` (runs for every provider before provisioning), and
+- The Bicep provider's **`local-preflight`** validation (runs only for Bicep, using the ARM template snapshot).
+
+For a **Bicep** provision with a `validation-provider` extension loaded, **both** fire in a single run, producing two `validation.preflight` rows (each with its own `outcome`, warning/error counts, and rule lists). Use the `validation.preflight.check_type` field (`provision` vs `local-preflight`) to distinguish them.
+
+**Impact on queries:**
+```kql
+// ❌ WRONG — double-counts Bicep provisions
+| where Name == 'validation.preflight' | summarize count()
+
+// ✅ CORRECT — group/filter by the dispatch site
+| where Name == 'validation.preflight'
+| summarize count() by tostring(customDimensions['validation.preflight.check_type'])
+```
+
 ### The `internal.unclassified` / `internal.errors_errorString` Catch-All
 
 Many failed commands produce the catch-all result code `internal.errors_errorString` (being renamed to `internal.unclassified`). This happens because the error classifier inspects only the leaf error type, and `errors.New()` / `fmt.Errorf()` without `%w` produce `*errors.errorString`, which has no domain meaning.
@@ -670,7 +690,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Self-Update** | `cmd.update` | `update.installMethod`, `update.fromVersion` | Update adoption |
 | **Hooks** | `hooks.exec` | `hooks.name`, `hooks.type`, `hooks.kind` | Hook usage by type |
 | **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `pack.builder.image` | Build method usage, success rates |
-| **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.upgrade`, `cmd.tool.uninstall`, `cmd.tool.check` | `tool.id`, `tool.install.strategy`, `tool.firstrun.outcome` | First-run adoption, install/upgrade/uninstall success, update availability |
+| **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.upgrade`, `cmd.tool.uninstall`, `cmd.tool.check` | `tool.id`, `tool.install.strategy`, `tool.firstrun.outcome` | First-run adoption, install/upgrade/uninstall success, upgrade availability |
 
 ## See Also
 

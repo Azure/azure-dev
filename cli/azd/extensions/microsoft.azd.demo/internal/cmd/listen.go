@@ -28,63 +28,8 @@ func newListenCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
-			host := azdext.NewExtensionHost(azdClient).
-				WithServiceTarget("demo", func() azdext.ServiceTargetProvider {
-					return project.NewDemoServiceTargetProvider(azdClient)
-				}).
-				WithFrameworkService("rust", func() azdext.FrameworkServiceProvider {
-					return project.NewDemoFrameworkServiceProvider(azdClient)
-				}).
-				WithProvisioningProvider("demo", func() azdext.ProvisioningProvider {
-					return project.NewDemoProvisioningProvider(azdClient)
-				}).
-				WithValidationCheck(azdext.ValidationCheckRegistration{
-					CheckType: "local-preflight",
-					RuleID:    "demo_warning",
-					Factory: func() azdext.ValidationCheckProvider {
-						return project.NewDemoValidationCheck()
-					},
-				}).
-				WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-					for i := 1; i <= 20; i++ {
-						fmt.Printf("%d. Doing important work in extension...\n", i)
-						time.Sleep(250 * time.Millisecond)
-					}
-
-					return nil
-				}).
-				WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-					for i := 1; i <= 20; i++ {
-						fmt.Printf("%d. Doing important predeploy project work in extension...\n", i)
-						time.Sleep(250 * time.Millisecond)
-					}
-
-					return nil
-				}).
-				WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-					for i := 1; i <= 20; i++ {
-						fmt.Printf("%d. Doing important postdeploy project work in extension...\n", i)
-						time.Sleep(250 * time.Millisecond)
-					}
-
-					return nil
-				}).
-				WithServiceEventHandler("prepackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
-					for i := 1; i <= 20; i++ {
-						fmt.Printf("Service: %s, Artifacts: %d\n", args.Service.Name, len(args.ServiceContext.Package))
-						time.Sleep(250 * time.Millisecond)
-					}
-
-					return nil
-				}, nil).
-				WithServiceEventHandler("postpackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
-					for i := 1; i <= 20; i++ {
-						fmt.Printf("Service: %s, Artifacts: %d\n", args.Service.Name, len(args.ServiceContext.Package))
-						time.Sleep(250 * time.Millisecond)
-					}
-
-					return nil
-				}, nil)
+			host := azdext.NewExtensionHost(azdClient)
+			configureExtensionHost(host)
 
 			// Start listening for events
 			// This is a blocking call and will not return until the server connection is closed.
@@ -97,4 +42,82 @@ func newListenCommand() *cobra.Command {
 	}
 
 	return cmd
+}
+
+// configureExtensionHost wires the demo extension's providers and event handlers onto
+// the supplied host, so tests can verify the registrations against extension.yaml.
+func configureExtensionHost(host *azdext.ExtensionHost) {
+	azdClient := host.Client()
+
+	host.
+		WithServiceTarget("demo", func() azdext.ServiceTargetProvider {
+			return project.NewDemoServiceTargetProvider(azdClient)
+		}).
+		WithFrameworkService("rust", func() azdext.FrameworkServiceProvider {
+			return project.NewDemoFrameworkServiceProvider(azdClient)
+		}).
+		WithProvisioningProvider("demo", func() azdext.ProvisioningProvider {
+			return project.NewDemoProvisioningProvider(azdClient)
+		}).
+		WithValidationCheck(azdext.ValidationCheckRegistration{
+			// Bicep-only check: runs during BicepProvider preflight and
+			// receives the Bicep snapshot / ARM template context. It is
+			// skipped gracefully when no snapshot is available (e.g. a
+			// non-Bicep provider), but is not dead code for Bicep.
+			CheckType: azdext.ValidationCheckTypeLocalPreflight,
+			RuleID:    "demo_warning",
+			Factory: func() azdext.ValidationCheckProvider {
+				return project.NewDemoValidationCheck()
+			},
+		}).
+		WithValidationCheck(azdext.ValidationCheckRegistration{
+			// Provider-agnostic check: runs before provisioning for every
+			// provider (Bicep, Terraform, and extension providers such as
+			// this demo provider). Receives the lean provision context.
+			CheckType: azdext.ValidationCheckTypeProvision,
+			RuleID:    "demo_provision_warning",
+			Factory: func() azdext.ValidationCheckProvider {
+				return project.NewDemoProvisionValidationCheck()
+			},
+		}).
+		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			for i := 1; i <= 20; i++ {
+				fmt.Printf("%d. Doing important work in extension...\n", i)
+				time.Sleep(250 * time.Millisecond)
+			}
+
+			return nil
+		}).
+		WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			for i := 1; i <= 20; i++ {
+				fmt.Printf("%d. Doing important predeploy project work in extension...\n", i)
+				time.Sleep(250 * time.Millisecond)
+			}
+
+			return nil
+		}).
+		WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			for i := 1; i <= 20; i++ {
+				fmt.Printf("%d. Doing important postdeploy project work in extension...\n", i)
+				time.Sleep(250 * time.Millisecond)
+			}
+
+			return nil
+		}).
+		WithServiceEventHandler("prepackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+			for i := 1; i <= 20; i++ {
+				fmt.Printf("Service: %s, Artifacts: %d\n", args.Service.Name, len(args.ServiceContext.Package))
+				time.Sleep(250 * time.Millisecond)
+			}
+
+			return nil
+		}, nil).
+		WithServiceEventHandler("postpackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+			for i := 1; i <= 20; i++ {
+				fmt.Printf("Service: %s, Artifacts: %d\n", args.Service.Name, len(args.ServiceContext.Package))
+				time.Sleep(250 * time.Millisecond)
+			}
+
+			return nil
+		}, nil)
 }

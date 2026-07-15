@@ -117,6 +117,7 @@ var resourceToken = empty(resourceTokenSalt)
   : uniqueString(subscription().id, resourceGroup().id, location, resourceTokenSalt)
 
 var abbrs = loadJsonContent('../abbreviations.json')
+
 var foundryAccountName = '${abbrs.cognitiveServicesAccounts}${resourceToken}'
 
 // Egress: byo injects the agent into a customer subnet; managed uses the

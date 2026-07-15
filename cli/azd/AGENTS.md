@@ -229,6 +229,7 @@ When adding a method that mutates one of these types: take the documented lock, 
 - Public functions and types must have Go doc comments
 - Comments should start with the function/type name
 - Document non-obvious dependencies or assumptions
+- **Changelog entries**: Generally defer `CHANGELOG.md` updates for core and extensions to release/version-bump PRs. Exceptions are reasonable when a PR is intentionally also preparing a release, such as for a hotfix
 - **Help text consistency**: When changing command behavior, update **all** related help text — `Short`, `Long`, custom description functions used by help generators, and usage snapshot files. Stale help text that contradicts the actual behavior is a common review finding
 - **No dead references**: Don't reference files, scripts, directories, or workflows that don't exist in the PR. If a README lists `scripts/generate-report.ts`, it must exist. If a CI table lists `eval-human.yml`, it must be included
 - **PR description accuracy**: Keep the PR description in sync with the actual implementation. If the description says "server-side filtering" but the code does client-side filtering, update the description

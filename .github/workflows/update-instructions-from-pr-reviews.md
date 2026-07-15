@@ -115,6 +115,7 @@ safe-outputs:
       - .github/prompts/**
       - .github/agents/**
       - AGENTS.md
+      - cli/azd/AGENTS.md
     protected-files: allowed
 ---
 
@@ -239,8 +240,8 @@ Rules for the edits:
   always-on `copilot-instructions.md`.
 - If a theme contradicts an existing instruction, do **not** silently overwrite —
   describe the conflict in the PR body and leave the existing text in place.
-- Only modify files under `.github/` (and `AGENTS.md`). Do not touch source code,
-  manifests, or anything else.
+- Only modify files under `.github/` (and `AGENTS.md` or sub-folder `AGENTS.md` files
+  such as `cli/azd/AGENTS.md`). Do not touch source code, manifests, or anything else.
 
 If the repo has no `.github/` customization files at all, bootstrap a starter
 `.github/copilot-instructions.md` from the top themes.

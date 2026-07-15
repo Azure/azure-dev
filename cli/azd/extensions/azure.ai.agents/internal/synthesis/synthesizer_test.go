@@ -1250,6 +1250,28 @@ services:
 	}
 }
 
+func TestSynthesize_RejectsAutoCreatedAcrWithPrivateNetworking(t *testing.T) {
+	const validVNet = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/" +
+		"providers/Microsoft.Network/virtualNetworks/my-vnet"
+	const yaml = `
+services:
+  assistant:
+    host: azure.ai.agent
+    kind: hosted
+  my-project:
+    host: azure.ai.project
+    network:
+      peSubnet: {vnet: ` + validVNet + `, name: pe-subnet}
+`
+
+	_, err := Synthesize(Input{
+		RawAzureYAML:  []byte(yaml),
+		ServiceName:   "my-project",
+		AcceptedHosts: []string{"azure.ai.project"},
+	})
+	require.ErrorContains(t, err, "does not support an auto-created Azure Container Registry")
+}
+
 func TestSynthesize_NetworkValidationErrors(t *testing.T) {
 	const validVNet = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/" +
 		"providers/Microsoft.Network/virtualNetworks/my-vnet"

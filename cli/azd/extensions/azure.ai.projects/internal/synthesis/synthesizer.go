@@ -263,6 +263,11 @@ func Synthesize(in Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	if includeAcr && netMode != NetworkModeNone {
+		return nil, errors.New(
+			"synthesis: private networking does not support an auto-created Azure Container Registry; specify an image instead",
+		)
+	}
 
 	params := map[string]any{
 		"deployments": deployments,

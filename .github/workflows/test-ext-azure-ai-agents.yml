@@ -86,7 +86,7 @@ jobs:
         run: |
           azd x pack
           azd x publish
-          azd extension install azure.ai.agents --source local --force --no-prompt
+          azd extension install azure.ai.agents --source local --force --no-dependencies --no-prompt
 
       - name: Run Tier 0 tests (offline, production extension)
         working-directory: cli/azd

@@ -156,6 +156,7 @@ func Test_CLI_MyNewFeature(t *testing.T) {
 
     // Create a temporary directory for test files
     dir := tempDirWithDiagnostics(t)
+    configDir := tempDirWithDiagnostics(t)
     t.Logf("DIR: %s", dir)
 
     // Start the recording session
@@ -170,6 +171,8 @@ func Test_CLI_MyNewFeature(t *testing.T) {
     cli.WorkingDirectory = dir
     cli.Env = append(cli.Env, os.Environ()...)
     cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+    // Required when the test installs extensions or changes user-level azd state.
+    cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+configDir)
 
     // Setup cleanup (only runs in live mode, not playback)
     defer cleanupDeployments(ctx, t, cli, session, envName)
@@ -718,7 +721,17 @@ if session == nil {
 }
 ```
 
-### 7. Add Debug Logging
+### 7. Isolate State and Use Shared Cleanup
+
+Tests that install extensions or modify azd configuration, authentication, caches, or other user-level state must use
+a private `AZD_CONFIG_DIR`, as shown in the example above. Functional tests run in parallel; using the default
+`~/.azd` directory can contaminate unrelated tests or modify a developer's installation.
+
+Use `tempDirWithDiagnostics(t)` for generated or executed files. It retries transient Windows file locks and reports
+lock diagnostics if cleanup fails. Register other cleanup when state is created; don't duplicate retry loops or add
+fixed sleeps. Since `t.Context()` is canceled before cleanup runs, use a separate bounded context when needed.
+
+### 8. Add Debug Logging
 
 ```go
 t.Logf("Recording mode: playback=%v", session != nil && session.Playback)
@@ -726,7 +739,7 @@ t.Logf("Environment name: %s", envName)
 t.Logf("Subscription ID: %s", subscriptionId)
 ```
 
-### 8. Handle Skipped Tests Gracefully
+### 9. Handle Skipped Tests Gracefully
 
 **DO**:
 ```go
@@ -1022,10 +1035,12 @@ os.Setenv("AZD_TEST_FIXED_CLOCK_UNIX_TIME", "1744738873")
 - [ ] Start with `recording.Start(t)`
 - [ ] Use `randomOrStoredEnvName(session)`
 - [ ] Create CLI with `azdcli.WithSession(session)`
+- [ ] Set a private `AZD_CONFIG_DIR` when the test changes user-level state
 - [ ] Use `session.ProxyClient` for HTTP operations
 - [ ] Store dynamic values in `session.Variables`
-- [ ] Add cleanup with session checks
+- [ ] Use `tempDirWithDiagnostics(t)` and register other cleanup immediately
 - [ ] Use appropriate timeouts for recording/playback
+- [ ] Guard fixture type assertions so malformed data fails the test without panicking
 
 ### Recording a Test ✓
 - [ ] Set `AZURE_RECORD_MODE=record`
@@ -1056,8 +1071,3 @@ os.Setenv("AZD_TEST_FIXED_CLOCK_UNIX_TIME", "1744738873")
 - **Test Helpers**: `cli/azd/test/azdcli/`
 - **Example Tests**: `cli/azd/test/functional/up_test.go`
 - **go-vcr Documentation**: https://github.com/dnaeon/go-vcr
-
----
-
-**Last Updated**: December 2025  
-**Maintainers**: Azure Developer CLI Team

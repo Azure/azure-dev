@@ -1275,13 +1275,14 @@ func TestToolUpgradeAction_All_UpgradesInstalledTools(t *testing.T) {
 	}
 	manager := tool.NewManager(detector, installer, nil)
 
+	var writer bytes.Buffer
 	action := newToolUpgradeAction(
 		nil,
 		&toolUpgradeFlags{all: true},
 		manager,
 		mockinput.NewMockConsole(),
 		&output.NoneFormatter{},
-		io.Discard,
+		&writer,
 	)
 
 	_, err := action.Run(t.Context())
@@ -1290,6 +1291,8 @@ func TestToolUpgradeAction_All_UpgradesInstalledTools(t *testing.T) {
 	require.Len(t, installedIDs, 2)
 	assert.ElementsMatch(t, installedIDs, upgradedIDs,
 		"--all must upgrade exactly the installed tools")
+	assert.Contains(t, writer.String(), "\033[?25l")
+	assert.Contains(t, writer.String(), "\033[?25h")
 }
 
 // TestToolUpgradeAction_All_JsonFormat_EmitsCleanJson exercises the reviewer's

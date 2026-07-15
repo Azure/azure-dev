@@ -781,8 +781,8 @@ func (m *Manager) installInternal(
 	return selectedVersion, nil
 }
 
-// Uninstall an extension by name
-func (m *Manager) Uninstall(id string) error {
+// Uninstall uninstalls an extension by name.
+func (m *Manager) Uninstall(ctx context.Context, id string) error {
 	// Get the installed extension
 	extension, err := m.GetInstalled(FilterOptions{Id: id})
 	if err != nil {
@@ -795,16 +795,8 @@ func (m *Manager) Uninstall(id string) error {
 	}
 
 	extensionDir := filepath.Join(userConfigDir, "extensions", extension.Id)
-	if err := os.MkdirAll(extensionDir, os.ModePerm); err != nil {
-		return fmt.Errorf("failed to create target directory: %w", err)
-	}
-
-	// Remove the extension artifacts when it exists
-	_, err = os.Stat(extensionDir)
-	if err == nil {
-		if err := os.RemoveAll(extensionDir); err != nil {
-			return fmt.Errorf("failed to remove extension: %w", err)
-		}
+	if err := osutil.RemoveAll(ctx, extensionDir); err != nil {
+		return fmt.Errorf("failed to remove extension: %w", err)
 	}
 
 	// Update the user config
@@ -901,7 +893,7 @@ func (m *Manager) upgradeInternal(
 	opts UpgradeOptions,
 	visited map[string]struct{},
 ) (*ExtensionVersion, []UpgradeResult, error) {
-	if err := m.Uninstall(extension.Id); err != nil {
+	if err := m.Uninstall(ctx, extension.Id); err != nil {
 		return nil, nil, fmt.Errorf("failed to uninstall extension: %w", err)
 	}
 

@@ -1825,7 +1825,7 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 		stepMessage += fmt.Sprintf(" (%s)", installed.Version)
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
-		if err := a.extensionManager.Uninstall(extensionId); err != nil {
+		if err := a.extensionManager.Uninstall(ctx, extensionId); err != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, fmt.Errorf("failed to uninstall extension: %w", err)
 		}

@@ -897,6 +897,7 @@ func detectAllTools(
 	ctx context.Context,
 	manager *tool.Manager,
 	formatter output.Formatter,
+	writer io.Writer,
 	spinnerText string,
 ) ([]*tool.ToolStatus, error) {
 	if formatter != nil && formatter.Kind() == output.JsonFormat {
@@ -907,6 +908,7 @@ func detectAllTools(
 	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
 		Text:        spinnerText,
 		ClearOnStop: true,
+		Writer:      writer,
 	})
 	if err := spinner.Run(ctx, func(ctx context.Context) error {
 		var detectErr error
@@ -1080,7 +1082,7 @@ func (a *toolInstallAction) resolveToolIds(ctx context.Context) ([]string, error
 
 	// --all: install all recommended tools that are not already installed.
 	if a.flags.all {
-		statuses, err := detectAllTools(ctx, a.manager, a.formatter, "Detecting tool status...")
+		statuses, err := detectAllTools(ctx, a.manager, a.formatter, a.writer, "Detecting tool status...")
 		if err != nil {
 			return nil, fmt.Errorf("detecting tools: %w", err)
 		}
@@ -1100,7 +1102,7 @@ func (a *toolInstallAction) resolveToolIds(ctx context.Context) ([]string, error
 	}
 
 	// Interactive: let the user pick from uninstalled tools.
-	statuses, err := detectAllTools(ctx, a.manager, a.formatter, "Detecting tool status...")
+	statuses, err := detectAllTools(ctx, a.manager, a.formatter, a.writer, "Detecting tool status...")
 	if err != nil {
 		return nil, fmt.Errorf("detecting tools: %w", err)
 	}
@@ -1439,7 +1441,7 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 // detectInstalledTools runs DetectAll behind a spinner and returns the full
 // set of tool statuses. Used by the --all and interactive upgrade paths.
 func (a *toolUpgradeAction) detectInstalledTools(ctx context.Context) ([]*tool.ToolStatus, error) {
-	statuses, err := detectAllTools(ctx, a.manager, a.formatter, "Detecting installed tools...")
+	statuses, err := detectAllTools(ctx, a.manager, a.formatter, a.writer, "Detecting installed tools...")
 	if err != nil {
 		return nil, fmt.Errorf("detecting installed tools: %w", err)
 	}
@@ -1757,7 +1759,7 @@ func (a *toolUninstallAction) resolveToolIds(ctx context.Context) ([]string, err
 
 	// --all, --dry-run, and the interactive picker all need the current
 	// installed set.
-	statuses, err := detectAllTools(ctx, a.manager, a.formatter, "Detecting installed tools...")
+	statuses, err := detectAllTools(ctx, a.manager, a.formatter, a.writer, "Detecting installed tools...")
 	if err != nil {
 		return nil, fmt.Errorf("detecting installed tools: %w", err)
 	}

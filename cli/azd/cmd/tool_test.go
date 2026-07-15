@@ -330,6 +330,106 @@ func TestToolShowAction_InvalidArgDoesNotEmitToolId(t *testing.T) {
 		"tool.id must not be emitted when FindTool fails on an unknown tool")
 }
 
+func TestToolActionSpinnersUseInjectedWriter(t *testing.T) {
+	detectErr := errors.New("detect failed")
+
+	tests := []struct {
+		name string
+		run  func(context.Context, *bytes.Buffer) error
+	}{
+		{
+			name: "bare tool action",
+			run: func(ctx context.Context, writer *bytes.Buffer) error {
+				detector := &cmdMockDetector{
+					detectAll: func(context.Context, []*tool.ToolDefinition) ([]*tool.ToolStatus, error) {
+						return nil, detectErr
+					},
+				}
+				action := newToolAction(
+					tool.NewManager(detector, &cmdMockInstaller{}, nil),
+					mockinput.NewMockConsole(),
+					writer,
+				)
+				_, err := action.Run(ctx)
+				return err
+			},
+		},
+		{
+			name: "tool list",
+			run: func(ctx context.Context, writer *bytes.Buffer) error {
+				detector := &cmdMockDetector{
+					detectAll: func(context.Context, []*tool.ToolDefinition) ([]*tool.ToolStatus, error) {
+						return nil, detectErr
+					},
+				}
+				action := newToolListAction(
+					tool.NewManager(detector, &cmdMockInstaller{}, nil),
+					mockinput.NewMockConsole(),
+					&output.TableFormatter{},
+					writer,
+				)
+				_, err := action.Run(ctx)
+				return err
+			},
+		},
+		{
+			name: "tool check",
+			run: func(ctx context.Context, writer *bytes.Buffer) error {
+				detector := &cmdMockDetector{
+					detectAll: func(context.Context, []*tool.ToolDefinition) ([]*tool.ToolStatus, error) {
+						return nil, detectErr
+					},
+				}
+				updateChecker := tool.NewUpdateChecker(
+					&memUserConfigManager{},
+					detector,
+					func() (string, error) { return t.TempDir(), nil },
+					nil,
+				)
+				action := newToolCheckAction(
+					tool.NewManager(detector, &cmdMockInstaller{}, updateChecker),
+					mockinput.NewMockConsole(),
+					&output.TableFormatter{},
+					writer,
+				)
+				_, err := action.Run(ctx)
+				return err
+			},
+		},
+		{
+			name: "tool show",
+			run: func(ctx context.Context, writer *bytes.Buffer) error {
+				detector := &cmdMockDetector{
+					detectTool: func(context.Context, *tool.ToolDefinition) (*tool.ToolStatus, error) {
+						return nil, detectErr
+					},
+				}
+				manager := tool.NewManager(detector, &cmdMockInstaller{}, nil)
+				action := newToolShowAction(
+					[]string{manager.GetAllTools()[0].Id},
+					manager,
+					mockinput.NewMockConsole(),
+					&output.NoneFormatter{},
+					writer,
+				)
+				_, err := action.Run(ctx)
+				return err
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var writer bytes.Buffer
+			err := test.run(t.Context(), &writer)
+
+			require.ErrorIs(t, err, detectErr)
+			assert.Contains(t, writer.String(), "\033[?25l")
+			assert.Contains(t, writer.String(), "\033[?25h")
+		})
+	}
+}
+
 // lookupToolBoolUsage returns the most recent bool-valued usage attribute
 // for the given key (assumes the key was set via .Bool()).
 func lookupToolBoolUsage(key string) (bool, bool) {

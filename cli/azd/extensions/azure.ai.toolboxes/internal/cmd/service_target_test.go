@@ -5,6 +5,8 @@ package cmd
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -48,6 +50,39 @@ func TestParseToolboxServiceConfig_ServiceLevel(t *testing.T) {
 	require.Len(t, cfg.Tools, 2)
 	assert.Equal(t, "web_search", cfg.Tools[0]["type"])
 	assert.Equal(t, "github-mcp", cfg.Tools[1]["connection"])
+}
+
+func TestParseToolboxServiceConfig_FileRef(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "toolbox.yaml"),
+		[]byte(
+			"description: referenced tools\n"+
+				"tools:\n"+
+				"  - type: web_search\n",
+		),
+		0o600,
+	))
+	props, err := structpb.NewStruct(map[string]any{
+		"$ref": "./toolbox.yaml",
+	})
+	require.NoError(t, err)
+
+	cfg, err := parseToolboxServiceConfigAtRoot(
+		&azdext.ServiceConfig{
+			Name:                 "referenced",
+			Host:                 aiToolboxHost,
+			AdditionalProperties: props,
+		},
+		root,
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, "referenced tools", cfg.Description)
+	require.Len(t, cfg.Tools, 1)
+	assert.Equal(t, "web_search", cfg.Tools[0]["type"])
 }
 
 func TestParseToolboxServiceConfig_Endpoint(t *testing.T) {

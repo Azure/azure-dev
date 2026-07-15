@@ -22,4 +22,3 @@ Get the endpoint value from `azd ai toolbox show <name>` (the `Endpoint:` line).
 The value may contain `${VAR}` references, which resolve against the azd
 environment. Because a toolbox version is immutable, `endpoint` cannot be
 combined with `tools` or `description`.
-

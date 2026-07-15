@@ -39,7 +39,6 @@ type connectionType = {
   category: string
   target: string
   authType: string
-  credentials: object?
   metadata: object?
 }
 
@@ -72,6 +71,10 @@ param includeAcr bool = false
 
 @description('Foundry project connections to create (host: azure.ai.connection services).')
 param connections connectionsType = []
+
+@description('Credentials keyed by Foundry project connection name.')
+@secure()
+param connectionCredentials object = {}
 
 @description('Object id of the developer running azd. When set, grants Cognitive Services User on the project. Empty disables the role assignment so headless / CI runs do not fail.')
 param principalId string = ''
@@ -137,6 +140,7 @@ module resources 'modules/resources.bicep' = {
     deployments: deployments
     includeAcr: includeAcr
     connections: connections
+    connectionCredentials: connectionCredentials
     principalId: principalId
     principalType: principalType
     enableNetworkIsolation: enableNetworkIsolation

@@ -190,6 +190,11 @@ func TestBrownfieldParams(t *testing.T) {
 		assert.Equal(t, map[string]any{"value": "acct"}, params["accountName"])
 		assert.Equal(t, map[string]any{"value": deployments}, params["deployments"])
 		assert.Equal(t, map[string]any{"value": []synthesis.Connection{}}, params["connections"])
+		assert.Equal(
+			t,
+			map[string]any{"value": map[string]map[string]any{}},
+			params["connectionCredentials"],
+		)
 		assert.Equal(t, map[string]any{"value": "my-project"}, params["projectName"])
 		assert.NotContains(t, params, "includeAcr")
 		assert.NotContains(t, params, "acrName")
@@ -197,7 +202,11 @@ func TestBrownfieldParams(t *testing.T) {
 
 	t.Run("connections without ACR carry connections and set projectName", func(t *testing.T) {
 		t.Parallel()
-		conns := []synthesis.Connection{{Name: "search-conn", Category: "CognitiveSearch"}}
+		conns := []synthesis.Connection{{
+			Name:        "search-conn",
+			Category:    "CognitiveSearch",
+			Credentials: map[string]any{"key": "secret"},
+		}}
 		p := &FoundryProvisioningProvider{
 			envName:               "dev",
 			brownfieldEndpoint:    "https://acct.services.ai.azure.com/api/projects/my-project",
@@ -206,7 +215,21 @@ func TestBrownfieldParams(t *testing.T) {
 		params, err := p.brownfieldParams(t.Context(), "acct", "rg", false)
 		require.NoError(t, err)
 
-		assert.Equal(t, map[string]any{"value": conns}, params["connections"])
+		assert.Equal(
+			t,
+			map[string]any{"value": []synthesis.Connection{{
+				Name:     "search-conn",
+				Category: "CognitiveSearch",
+			}}},
+			params["connections"],
+		)
+		assert.Equal(
+			t,
+			map[string]any{"value": map[string]map[string]any{
+				"search-conn": {"key": "secret"},
+			}},
+			params["connectionCredentials"],
+		)
 		// Connections are project-scoped, so projectName must be supplied even
 		// without ACR.
 		assert.Equal(t, map[string]any{"value": "my-project"}, params["projectName"])

@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "13884339769371824597"
+      "templateHash": "5428399781259274778"
     }
   },
   "definitions": {
@@ -79,10 +79,6 @@
         "authType": {
           "type": "string"
         },
-        "credentials": {
-          "type": "object",
-          "nullable": true
-        },
         "metadata": {
           "type": "object",
           "nullable": true
@@ -150,6 +146,13 @@
       "metadata": {
         "description": "Foundry project connections to create on the existing project (host: azure.ai.connection services)."
       }
+    },
+    "connectionCredentials": {
+      "type": "secureObject",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Credentials keyed by Foundry project connection name."
+      }
     }
   },
   "variables": {
@@ -208,22 +211,6 @@
         "zoneRedundancy": "Disabled"
       }
     },
-    "foundryAcrPull": {
-      "condition": "[parameters('includeAcr')]",
-      "type": "Microsoft.Authorization/roleAssignments",
-      "apiVersion": "2022-04-01",
-      "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName'))]",
-      "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName')), resourceId('Microsoft.CognitiveServices/accounts/projects', parameters('accountName'), parameters('projectName')), variables('acrPullRoleId'))]",
-      "properties": {
-        "principalId": "[reference('foundryAccountPreview::project', '2025-04-01-preview', 'full').identity.principalId]",
-        "principalType": "ServicePrincipal",
-        "roleDefinitionId": "[variables('acrPullRoleId')]"
-      },
-      "dependsOn": [
-        "foundryAccountPreview::project",
-        "registry"
-      ]
-    },
     "acrConnection": {
       "condition": "[parameters('includeAcr')]",
       "type": "Microsoft.CognitiveServices/accounts/projects/connections",
@@ -256,7 +243,78 @@
       "type": "Microsoft.CognitiveServices/accounts/projects/connections",
       "apiVersion": "2025-04-01-preview",
       "name": "[format('{0}/{1}/{2}', parameters('accountName'), parameters('projectName'), parameters('connections')[copyIndex()].name)]",
-      "properties": "[union(createObject('category', parameters('connections')[copyIndex()].category, 'target', parameters('connections')[copyIndex()].target, 'authType', parameters('connections')[copyIndex()].authType), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'credentials'), null())), createObject('credentials', tryGet(parameters('connections')[copyIndex()], 'credentials')), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'metadata'), null())), createObject('metadata', tryGet(parameters('connections')[copyIndex()], 'metadata')), createObject()))]"
+      "properties": "[union(createObject('category', parameters('connections')[copyIndex()].category, 'target', parameters('connections')[copyIndex()].target, 'authType', parameters('connections')[copyIndex()].authType), if(contains(parameters('connectionCredentials'), parameters('connections')[copyIndex()].name), createObject('credentials', parameters('connectionCredentials')[parameters('connections')[copyIndex()].name]), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'metadata'), null())), createObject('metadata', tryGet(parameters('connections')[copyIndex()], 'metadata')), createObject()))]"
+    },
+    "foundryAcrPull": {
+      "condition": "[parameters('includeAcr')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "foundry-acr-pull",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "registryName": {
+            "value": "[parameters('acrName')]"
+          },
+          "principalId": {
+            "value": "[reference('foundryAccountPreview::project', '2025-04-01-preview', 'full').identity.principalId]"
+          },
+          "roleDefinitionId": {
+            "value": "[variables('acrPullRoleId')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "16037481882754055301"
+            }
+          },
+          "parameters": {
+            "registryName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Azure Container Registry."
+              }
+            },
+            "principalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Principal receiving AcrPull on the registry."
+              }
+            },
+            "roleDefinitionId": {
+              "type": "string",
+              "metadata": {
+                "description": "AcrPull role definition resource ID."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]",
+              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), parameters('principalId'), parameters('roleDefinitionId'))]",
+              "properties": {
+                "principalId": "[parameters('principalId')]",
+                "principalType": "ServicePrincipal",
+                "roleDefinitionId": "[parameters('roleDefinitionId')]"
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "foundryAccountPreview::project",
+        "registry"
+      ]
     }
   },
   "outputs": {

@@ -34,7 +34,6 @@ type connectionType = {
   category: string
   target: string
   authType: string
-  credentials: object?
   metadata: object?
 }
 
@@ -65,6 +64,10 @@ param acrName string = ''
 
 @description('Foundry project connections to create on the existing project (host: azure.ai.connection services).')
 param connections connectionsType = []
+
+@description('Credentials keyed by Foundry project connection name.')
+@secure()
+param connectionCredentials object = {}
 
 // Resources
 
@@ -124,14 +127,13 @@ var acrPullRoleId = subscriptionResourceId(
   '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 )
 
-// Grant the existing project's managed identity AcrPull on the new registry so
-// the hosted agent can pull images using the project identity.
-resource foundryAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (includeAcr) {
-  name: guid(registry.id, foundryAccountPreview::project.id, acrPullRoleId)
-  scope: registry
-  properties: {
+// The nested module makes the runtime project principal a deployment
+// parameter. The assignment name can then include that principal.
+module foundryAcrPull 'modules/acr-pull-role-assignment.bicep' = if (includeAcr) {
+  name: 'foundry-acr-pull'
+  params: {
+    registryName: registry.name
     principalId: foundryAccountPreview::project.identity.principalId
-    principalType: 'ServicePrincipal'
     roleDefinitionId: acrPullRoleId
   }
 }
@@ -172,7 +174,9 @@ resource projectConnections 'Microsoft.CognitiveServices/accounts/projects/conne
         target: c.target
         authType: c.authType
       },
-      c.?credentials != null ? { credentials: c.?credentials } : {},
+      contains(connectionCredentials, c.name)
+        ? { credentials: connectionCredentials[c.name] }
+        : {},
       c.?metadata != null ? { metadata: c.?metadata } : {}
     )
   }

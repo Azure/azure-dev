@@ -13,6 +13,9 @@ targetScope = 'resourceGroup'
 @description('Name of the Foundry (AIServices) account to bind the private endpoint to.')
 param aiAccountName string
 
+@description('Azure region of the customer VNet.')
+param location string
+
 @description('ARM resource id of the customer VNet.')
 param vnetId string
 
@@ -43,7 +46,7 @@ resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = 
 // Account private endpoint in the PE subnet, targeting the 'account' group.
 resource aiAccountPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = {
   name: '${aiAccountName}-private-endpoint'
-  location: resourceGroup().location
+  location: location
   properties: {
     subnet: {
       id: peSubnetId

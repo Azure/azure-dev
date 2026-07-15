@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "11064647930674610643"
+      "templateHash": "10316642581792918930"
     }
   },
   "definitions": {
@@ -79,10 +79,6 @@
         "authType": {
           "type": "string"
         },
-        "credentials": {
-          "type": "object",
-          "nullable": true
-        },
         "metadata": {
           "type": "object",
           "nullable": true
@@ -149,6 +145,13 @@
       "defaultValue": [],
       "metadata": {
         "description": "Foundry project connections to create (host: azure.ai.connection services)."
+      }
+    },
+    "connectionCredentials": {
+      "type": "secureObject",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Credentials keyed by Foundry project connection name."
       }
     },
     "principalId": {
@@ -290,6 +293,9 @@
           "connections": {
             "value": "[parameters('connections')]"
           },
+          "connectionCredentials": {
+            "value": "[parameters('connectionCredentials')]"
+          },
           "principalId": {
             "value": "[parameters('principalId')]"
           },
@@ -341,7 +347,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "8482090354551809818"
+              "templateHash": "9277725728848811858"
             }
           },
           "definitions": {
@@ -414,10 +420,6 @@
                 "authType": {
                   "type": "string"
                 },
-                "credentials": {
-                  "type": "object",
-                  "nullable": true
-                },
                 "metadata": {
                   "type": "object",
                   "nullable": true
@@ -477,6 +479,13 @@
               "defaultValue": [],
               "metadata": {
                 "description": "Foundry project connections to create (host: azure.ai.connection services)."
+              }
+            },
+            "connectionCredentials": {
+              "type": "secureObject",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Credentials keyed by Foundry project connection name."
               }
             },
             "principalId": {
@@ -728,7 +737,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.44.1.10279",
-                      "templateHash": "11653429655583605398"
+                      "templateHash": "9033097500563316958"
                     }
                   },
                   "parameters": {
@@ -974,6 +983,10 @@
                       "type": "string",
                       "value": "[variables('vnetName')]"
                     },
+                    "vnetLocation": {
+                      "type": "string",
+                      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('vnetSubscriptionId'), variables('vnetResourceGroupName')), 'Microsoft.Network/virtualNetworks', variables('vnetName')), '2024-05-01', 'full').location]"
+                    },
                     "vnetSubscriptionId": {
                       "type": "string",
                       "value": "[variables('vnetSubscriptionId')]"
@@ -1183,6 +1196,9 @@
                   "aiAccountName": {
                     "value": "[variables('foundryAccountName')]"
                   },
+                  "location": {
+                    "value": "[reference('network').outputs.vnetLocation.value]"
+                  },
                   "vnetId": {
                     "value": "[reference('network').outputs.vnetId.value]"
                   },
@@ -1206,7 +1222,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.44.1.10279",
-                      "templateHash": "17066190331540845310"
+                      "templateHash": "17191653749134434458"
                     }
                   },
                   "parameters": {
@@ -1214,6 +1230,12 @@
                       "type": "string",
                       "metadata": {
                         "description": "Name of the Foundry (AIServices) account to bind the private endpoint to."
+                      }
+                    },
+                    "location": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Azure region of the customer VNet."
                       }
                     },
                     "vnetId": {
@@ -1264,7 +1286,7 @@
                       "type": "Microsoft.Network/privateEndpoints",
                       "apiVersion": "2024-05-01",
                       "name": "[format('{0}-private-endpoint', parameters('aiAccountName'))]",
-                      "location": "[resourceGroup().location]",
+                      "location": "[parameters('location')]",
                       "properties": {
                         "subnet": {
                           "id": "[parameters('peSubnetId')]"
@@ -1414,6 +1436,9 @@
                   },
                   "connections": {
                     "value": "[parameters('connections')]"
+                  },
+                  "connectionCredentials": {
+                    "value": "[parameters('connectionCredentials')]"
                   }
                 },
                 "template": {
@@ -1424,7 +1449,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.44.1.10279",
-                      "templateHash": "2215109488049914988"
+                      "templateHash": "487447368010536336"
                     }
                   },
                   "definitions": {
@@ -1453,13 +1478,6 @@
                           "type": "string",
                           "metadata": {
                             "description": "Auth type: None | ApiKey | CustomKeys | OAuth2 | UserEntraToken | ProjectManagedIdentity | AgenticIdentityToken | ManagedIdentity | ..."
-                          }
-                        },
-                        "credentials": {
-                          "type": "object",
-                          "nullable": true,
-                          "metadata": {
-                            "description": "Auth credentials. Structure depends on authType. Omit for None / identity types."
                           }
                         },
                         "metadata": {
@@ -1503,6 +1521,13 @@
                       "metadata": {
                         "description": "Connections to create on the Foundry project. Each entry maps to one host: azure.ai.connection service."
                       }
+                    },
+                    "connectionCredentials": {
+                      "type": "secureObject",
+                      "defaultValue": {},
+                      "metadata": {
+                        "description": "Credentials keyed by Foundry project connection name."
+                      }
                     }
                   },
                   "resources": {
@@ -1526,7 +1551,7 @@
                       "type": "Microsoft.CognitiveServices/accounts/projects/connections",
                       "apiVersion": "2025-04-01-preview",
                       "name": "[format('{0}/{1}/{2}', parameters('foundryAccountName'), parameters('foundryProjectName'), parameters('connections')[copyIndex()].name)]",
-                      "properties": "[union(createObject('category', parameters('connections')[copyIndex()].category, 'target', parameters('connections')[copyIndex()].target, 'authType', parameters('connections')[copyIndex()].authType), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'credentials'), null())), createObject('credentials', tryGet(parameters('connections')[copyIndex()], 'credentials')), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'metadata'), null())), createObject('metadata', tryGet(parameters('connections')[copyIndex()], 'metadata')), createObject()))]"
+                      "properties": "[union(createObject('category', parameters('connections')[copyIndex()].category, 'target', parameters('connections')[copyIndex()].target, 'authType', parameters('connections')[copyIndex()].authType), if(contains(parameters('connectionCredentials'), parameters('connections')[copyIndex()].name), createObject('credentials', parameters('connectionCredentials')[parameters('connections')[copyIndex()].name]), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'metadata'), null())), createObject('metadata', tryGet(parameters('connections')[copyIndex()], 'metadata')), createObject()))]"
                     }
                   },
                   "outputs": {

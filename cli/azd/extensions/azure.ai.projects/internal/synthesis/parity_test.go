@@ -61,6 +61,7 @@ func readSynthesisFiles(t *testing.T, root string) map[string][]byte {
 			//nolint:gosec // repository-controlled parity path
 			data, err := os.ReadFile(path)
 			require.NoError(t, err)
+			data = bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
 			files[filepath.ToSlash(rel)] = data
 			return nil
 		},

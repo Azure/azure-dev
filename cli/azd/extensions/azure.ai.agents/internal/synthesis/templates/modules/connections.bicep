@@ -2,10 +2,9 @@
 // in azure.yaml. Creates one Microsoft.CognitiveServices/accounts/projects/connections
 // resource per entry.
 //
-// This is the provision-time equivalent of the deploy-time azure.ai.connection
-// service target, but it supports every auth type (the service target only
-// upserts none/api-key/custom-keys at deploy). credentials and metadata are
-// passed through untouched so any category/authType can be expressed.
+// Provision-time equivalent of the deploy-time connection target.
+// Supports every auth type. Metadata passes through.
+// Credentials arrive in a separate secure parameter.
 //
 // Pinned to 2025-04-01-preview via a separate existing account reference: GA
 // 2025-06-01 fails to resolve the projects/connections sub-resource
@@ -27,9 +26,6 @@ type connectionType = {
   @description('Auth type: None | ApiKey | CustomKeys | OAuth2 | UserEntraToken | ProjectManagedIdentity | AgenticIdentityToken | ManagedIdentity | ...')
   authType: string
 
-  @description('Auth credentials. Structure depends on authType. Omit for None / identity types.')
-  credentials: object?
-
   @description('Optional metadata key-value pairs.')
   metadata: object?
 }
@@ -48,6 +44,10 @@ param foundryProjectName string
 @description('Connections to create on the Foundry project. Each entry maps to one host: azure.ai.connection service.')
 param connections connectionsType = []
 
+@description('Credentials keyed by Foundry project connection name.')
+@secure()
+param connectionCredentials object = {}
+
 // Resources
 
 // Existing parent references so each connection nests under the project.
@@ -60,9 +60,7 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview
   }
 }
 
-// One connection per entry. Optional properties (credentials / metadata) are
-// only emitted when supplied so None / identity-token connections don't send an
-// empty credentials object.
+// Optional credentials and metadata are emitted only when supplied.
 resource projectConnections 'Microsoft.CognitiveServices/accounts/projects/connections@2025-04-01-preview' = [
   for c in connections: {
     parent: foundryAccount::project
@@ -73,7 +71,9 @@ resource projectConnections 'Microsoft.CognitiveServices/accounts/projects/conne
         target: c.target
         authType: c.authType
       },
-      c.?credentials != null ? { credentials: c.?credentials } : {},
+      contains(connectionCredentials, c.name)
+        ? { credentials: connectionCredentials[c.name] }
+        : {},
       c.?metadata != null ? { metadata: c.?metadata } : {}
     )
   }

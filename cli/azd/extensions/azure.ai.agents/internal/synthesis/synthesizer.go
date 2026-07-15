@@ -119,6 +119,42 @@ type Connection struct {
 	Metadata    map[string]string `yaml:"metadata,omitempty" json:"metadata,omitempty"`
 }
 
+// SplitConnectionCredentials separates credential values.
+// ARM carries them in a secure object parameter.
+func SplitConnectionCredentials(
+	connections []Connection,
+) ([]Connection, map[string]map[string]any) {
+	if connections == nil {
+		connections = []Connection{}
+	}
+
+	withoutCredentials := slices.Clone(connections)
+	credentials := map[string]map[string]any{}
+	for i := range withoutCredentials {
+		if len(withoutCredentials[i].Credentials) > 0 {
+			credentials[withoutCredentials[i].Name] = withoutCredentials[i].Credentials
+			withoutCredentials[i].Credentials = nil
+		}
+	}
+
+	return withoutCredentials, credentials
+}
+
+// JoinConnectionCredentials restores credentials for Terraform.
+// Terraform isolates them with sensitive_body.
+func JoinConnectionCredentials(
+	connections []Connection,
+	credentials map[string]map[string]any,
+) []Connection {
+	joined := slices.Clone(connections)
+	for i := range joined {
+		if value, ok := credentials[joined[i].Name]; ok {
+			joined[i].Credentials = value
+		}
+	}
+	return joined
+}
+
 // connectionService is the subset of a host: azure.ai.connection service body
 // the synthesizer reads. The service key (not a body field) is the connection
 // name; see collectConnections.
@@ -253,6 +289,7 @@ func Synthesize(in Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	connections, connectionCredentials := SplitConnectionCredentials(connections)
 	netParams, netMode, err := synthesizeNetwork(svc.Network, in.ServiceName, in.Env, !in.PreserveVarRefs)
 	if err != nil {
 		return nil, err
@@ -264,9 +301,10 @@ func Synthesize(in Input) (*Result, error) {
 	}
 
 	params := map[string]any{
-		"deployments": deployments,
-		"includeAcr":  includeAcr,
-		"connections": connections,
+		"deployments":           deployments,
+		"includeAcr":            includeAcr,
+		"connections":           connections,
+		"connectionCredentials": connectionCredentials,
 	}
 	maps.Copy(params, netParams)
 

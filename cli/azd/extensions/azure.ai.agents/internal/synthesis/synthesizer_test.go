@@ -559,6 +559,11 @@ services:
 		require.True(t, ok, "keys should be a nested map, got %T", c.Credentials["keys"])
 		assert.Equal(t, "secret-value", keys["x-api-key"])
 		assert.Equal(t, "team-ai", c.Metadata["owner"])
+
+		publicConnections := res.Parameters["connections"].([]Connection)
+		assert.Nil(t, publicConnections[0].Credentials)
+		secureCredentials := res.Parameters["connectionCredentials"].(map[string]map[string]any)
+		assert.Equal(t, "secret-value", secureCredentials["mcp-conn"]["keys"].(map[string]any)["x-api-key"])
 	})
 
 	t.Run("eject path preserves ${VAR} verbatim", func(t *testing.T) {
@@ -632,7 +637,9 @@ func resultConnections(t *testing.T, result *Result) []Connection {
 
 	connections, ok := result.Parameters["connections"].([]Connection)
 	require.True(t, ok, "connections param should be []Connection")
-	return connections
+	credentials, ok := result.Parameters["connectionCredentials"].(map[string]map[string]any)
+	require.True(t, ok, "connectionCredentials param should be a credential map")
+	return JoinConnectionCredentials(connections, credentials)
 }
 
 // TestBrownfieldConnections verifies connection services are collected for a
@@ -922,6 +929,7 @@ func TestTemplatesFS_Embedded(t *testing.T) {
 		"templates/main.arm.json",
 		"templates/abbreviations.json",
 		"templates/modules/acr.bicep",
+		"templates/modules/acr-pull-role-assignment.bicep",
 		"templates/modules/connections.bicep",
 		"templates/modules/network.bicep",
 		"templates/modules/subnet.bicep",

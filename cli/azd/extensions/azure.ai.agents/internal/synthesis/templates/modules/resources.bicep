@@ -36,7 +36,6 @@ type connectionType = {
   category: string
   target: string
   authType: string
-  credentials: object?
   metadata: object?
 }
 
@@ -64,6 +63,10 @@ param includeAcr bool = false
 
 @description('Foundry project connections to create (host: azure.ai.connection services).')
 param connections connectionsType = []
+
+@description('Credentials keyed by Foundry project connection name.')
+@secure()
+param connectionCredentials object = {}
 
 @description('Object id of the developer running azd. When set, grants Cognitive Services User on the project. Empty disables the role assignment so headless / CI runs do not fail.')
 param principalId string = ''
@@ -278,6 +281,7 @@ module privateEndpointDns 'private-endpoint-dns.bicep' = if (enableNetworkIsolat
   name: 'foundry-private-endpoint-dns'
   params: {
     aiAccountName: foundryAccount.name
+    location: network!.outputs.vnetLocation
     vnetId: network!.outputs.vnetId
     peSubnetId: network!.outputs.peSubnetId
     suffix: resourceToken
@@ -296,6 +300,7 @@ module projectConnections 'connections.bicep' = if (!empty(connections)) {
     foundryAccountName: foundryAccount.name
     foundryProjectName: foundryAccount::project.name
     connections: connections
+    connectionCredentials: connectionCredentials
   }
 }
 

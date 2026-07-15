@@ -559,6 +559,11 @@ services:
 		require.True(t, ok, "keys should be a nested map, got %T", c.Credentials["keys"])
 		assert.Equal(t, "secret-value", keys["x-api-key"])
 		assert.Equal(t, "team-ai", c.Metadata["owner"])
+
+		publicConnections := res.Parameters["connections"].([]Connection)
+		assert.Nil(t, publicConnections[0].Credentials)
+		secureCredentials := res.Parameters["connectionCredentials"].(map[string]map[string]any)
+		assert.Equal(t, "secret-value", secureCredentials["mcp-conn"]["keys"].(map[string]any)["x-api-key"])
 	})
 
 	t.Run("eject path preserves ${VAR} verbatim", func(t *testing.T) {
@@ -919,7 +924,9 @@ func resultConnections(t *testing.T, result *Result) []Connection {
 
 	connections, ok := result.Parameters["connections"].([]Connection)
 	require.True(t, ok, "connections param should be []Connection")
-	return connections
+	credentials, ok := result.Parameters["connectionCredentials"].(map[string]map[string]any)
+	require.True(t, ok, "connectionCredentials param should be a credential map")
+	return JoinConnectionCredentials(connections, credentials)
 }
 
 func TestBrownfieldServiceResolversResolveRefs(t *testing.T) {
@@ -1012,6 +1019,7 @@ func TestTemplatesFS_Embedded(t *testing.T) {
 		"templates/main.arm.json",
 		"templates/abbreviations.json",
 		"templates/modules/acr.bicep",
+		"templates/modules/acr-pull-role-assignment.bicep",
 		"templates/modules/connections.bicep",
 		"templates/modules/network.bicep",
 		"templates/modules/subnet.bicep",
@@ -1034,6 +1042,7 @@ func TestTerraformTemplatesFS_Embedded(t *testing.T) {
 		"templates/terraform/variables.tf",
 		"templates/terraform/main.tf",
 		"templates/terraform/acr.tf",
+		"templates/terraform/connections.tf",
 		"templates/terraform/outputs.tf.tmpl",
 	}
 	for _, p := range wantFiles {
@@ -1083,6 +1092,11 @@ func TestTerraformModule_DerivesNamesWhenEmpty(t *testing.T) {
 		"the resource group must use the derived local, not the raw variable")
 	assert.Contains(t, string(main), `"rg-${local.derived_rg_suffix}"`,
 		"main.tf must derive an rg-{env} name when resource_group_name is empty")
+
+	provider, err := fs.ReadFile("templates/terraform/provider.tf")
+	require.NoError(t, err)
+	assert.Contains(t, string(provider), `required_version = ">= 1.3.0`,
+		"provider.tf must require Terraform 1.3 for optional object attributes")
 }
 
 func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
@@ -1116,6 +1130,9 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	connections, ok := params["connections"].(map[string]any)
 	require.True(t, ok, "connections param must be an object")
 	assert.Equal(t, "#/definitions/connectionsType", connections["$ref"])
+	credentials, ok := params["connectionCredentials"].(map[string]any)
+	require.True(t, ok, "connectionCredentials param must be an object")
+	assert.Equal(t, "secureObject", credentials["type"])
 
 	// Network isolation parameters must exist so the synthesizer's network
 	// param set is accepted by ARM (extra params would fail the deployment).
@@ -1161,9 +1178,12 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 		"managed isolationMode must provision a managedNetworks child resource")
 	assert.Contains(t, text, `"isolationMode": "[parameters('managedIsolationMode')]"`,
 		"managedNetworks isolationMode must come from the managedIsolationMode param")
+	assert.Contains(t, text,
+		`"value": "[reference('network').outputs.vnetLocation.value]"`,
+		"private endpoint location must come from the customer VNet")
 }
 
-func TestBrownfieldARMTemplate_UsesConnectionArray(t *testing.T) {
+func TestBrownfieldARMTemplate_SecuresConnectionCredentials(t *testing.T) {
 	data, err := BrownfieldARMTemplate()
 	require.NoError(t, err)
 
@@ -1174,6 +1194,12 @@ func TestBrownfieldARMTemplate_UsesConnectionArray(t *testing.T) {
 	connections, ok := params["connections"].(map[string]any)
 	require.True(t, ok, "connections param must be an object")
 	assert.Equal(t, "#/definitions/connectionsType", connections["$ref"])
+	credentials, ok := params["connectionCredentials"].(map[string]any)
+	require.True(t, ok, "connectionCredentials param must be an object")
+	assert.Equal(t, "secureObject", credentials["type"])
+	assert.Contains(t, string(data),
+		"parameters('principalId'), parameters('roleDefinitionId')",
+		"ACR role assignment name must include the assigned principal")
 }
 
 func TestSynthesize_Network(t *testing.T) {

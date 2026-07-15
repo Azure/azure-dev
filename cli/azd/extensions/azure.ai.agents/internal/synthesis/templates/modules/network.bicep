@@ -87,6 +87,7 @@ module peSubnet 'subnet.bicep' = if (createPESubnet) {
 
 output vnetId string = vnet.id
 output vnetName string = vnetName
+output vnetLocation string = vnet.location
 output vnetSubscriptionId string = vnetSubscriptionId
 output vnetResourceGroupName string = vnetResourceGroupName
 output agentSubnetId string = '${vnet.id}/subnets/${agentSubnetName}'

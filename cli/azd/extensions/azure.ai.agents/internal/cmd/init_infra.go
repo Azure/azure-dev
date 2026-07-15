@@ -614,9 +614,27 @@ func writeTfvarsFile(infraDir string, params map[string]any) (ejectArtifact, err
 	if v, ok := params["deployments"]; ok {
 		doc["deployments"] = v
 	}
-	if v, ok := params["connections"]; ok {
-		doc["connections"] = v
+	connections, ok := params["connections"].([]synthesis.Connection)
+	if !ok {
+		return ejectArtifact{}, exterrors.Internal(
+			exterrors.CodeInfraEjectWriteFailed,
+			fmt.Sprintf("connections parameter has unexpected type %T", params["connections"]),
+		)
 	}
+	connectionCredentials, ok := params["connectionCredentials"].(map[string]map[string]any)
+	if !ok {
+		return ejectArtifact{}, exterrors.Internal(
+			exterrors.CodeInfraEjectWriteFailed,
+			fmt.Sprintf(
+				"connectionCredentials parameter has unexpected type %T",
+				params["connectionCredentials"],
+			),
+		)
+	}
+	doc["connections"] = synthesis.JoinConnectionCredentials(
+		connections,
+		connectionCredentials,
+	)
 
 	data, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {

@@ -879,14 +879,14 @@ func brownfieldReconcileMessage(hasDeployments, createACR, hasConnections bool) 
 func (p *FoundryProvisioningProvider) brownfieldParams(
 	ctx context.Context, account, rg string, createACR bool,
 ) (map[string]any, error) {
-	connections := p.brownfieldConnections
-	if connections == nil {
-		connections = []synthesis.Connection{}
-	}
+	connections, connectionCredentials := synthesis.SplitConnectionCredentials(
+		p.brownfieldConnections,
+	)
 	params := map[string]any{
-		"accountName": map[string]any{"value": account},
-		"deployments": map[string]any{"value": p.brownfieldDeployments},
-		"connections": map[string]any{"value": connections},
+		"accountName":           map[string]any{"value": account},
+		"deployments":           map[string]any{"value": p.brownfieldDeployments},
+		"connections":           map[string]any{"value": connections},
+		"connectionCredentials": map[string]any{"value": connectionCredentials},
 		// projectName feeds the unconditional existing `foundryAccountPreview::project`
 		// resource, so it must always be set -- even on the model-deployments-only
 		// reconcile path. Omitting it collapses the resource name to "<account>/"

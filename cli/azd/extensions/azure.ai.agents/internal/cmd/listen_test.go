@@ -212,6 +212,47 @@ func TestPrepareContainerSettings_PreservesNestedFileRef(t *testing.T) {
 	require.Equal(t, project.DefaultMemory, cfg.Container.Resources.Memory)
 }
 
+func TestPrepareContainerSettings_NormalizesInlineEnvironment(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "echo",
+		"env": map[string]any{
+			"ENABLED": true,
+		},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "echo",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}
+
+	persisted, err := prepareContainerSettings(svc, t.TempDir())
+
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		"true",
+		persisted.GetAdditionalProperties().
+			GetFields()["env"].GetStructValue().
+			GetFields()["ENABLED"].GetStringValue(),
+	)
+}
+
+func TestPrepareContainerSettings_WithoutProperties(t *testing.T) {
+	t.Parallel()
+
+	persisted, err := prepareContainerSettings(
+		&azdext.ServiceConfig{Name: "echo", Host: AiAgentHost},
+		t.TempDir(),
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, persisted)
+}
+
 func TestKindEnvUpdateRejectsTraversal(t *testing.T) {
 	t.Parallel()
 

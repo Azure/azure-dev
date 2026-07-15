@@ -173,7 +173,17 @@ func (p *FoundryProvisioningProvider) Initialize(
 			)
 		}
 		if endpoint != "" {
-			warnNetworkIgnoredInBrownfield(rawYAML, svcName)
+			if err := warnNetworkIgnoredInBrownfield(
+				rawYAML,
+				projectPath,
+				svcName,
+			); err != nil {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAzureYaml,
+					fmt.Sprintf("resolve Foundry service configuration: %s", err),
+					"fix the project service configuration in azure.yaml",
+				)
+			}
 			p.brownfieldEndpoint = endpoint
 			if err := p.captureBrownfieldDeployments(ctx, rawYAML, svcName); err != nil {
 				return err
@@ -194,7 +204,17 @@ func (p *FoundryProvisioningProvider) Initialize(
 	case errors.Is(err, synthesis.ErrEndpointBrownfield):
 		// endpoint: reuse — connect to the existing project, skip provisioning.
 		// network: has no effect in brownfield mode; warn if both are present.
-		warnNetworkIgnoredInBrownfield(rawYAML, svcName)
+		if err := warnNetworkIgnoredInBrownfield(
+			rawYAML,
+			projectPath,
+			svcName,
+		); err != nil {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAzureYaml,
+				fmt.Sprintf("resolve Foundry service configuration: %s", err),
+				"fix the project service configuration in azure.yaml",
+			)
+		}
 		endpoint, endpointErr := foundryServiceEndpointAtRoot(
 			rawYAML,
 			projectPath,
@@ -286,23 +306,46 @@ func (p *FoundryProvisioningProvider) networkEnvMap(ctx context.Context) map[str
 // warnNetworkIgnoredInBrownfield logs a warning when a service declares both
 // endpoint: (brownfield) and network:. The account's network posture is fixed
 // by whoever created it, so the network: block has no effect.
-func warnNetworkIgnoredInBrownfield(rawYAML []byte, svcName string) {
+func warnNetworkIgnoredInBrownfield(
+	rawYAML []byte,
+	projectRoot string,
+	svcName string,
+) error {
 	type svc struct {
 		Endpoint string    `yaml:"endpoint,omitempty"`
 		Network  yaml.Node `yaml:"network,omitempty"`
 	}
 	type root struct {
-		Services map[string]svc `yaml:"services"`
+		Services map[string]map[string]any `yaml:"services"`
 	}
 	var r root
 	if err := yaml.Unmarshal(rawYAML, &r); err != nil {
-		return
+		return err
 	}
-	s := r.Services[svcName]
-	if strings.TrimSpace(s.Endpoint) != "" && !s.Network.IsZero() {
+	values := r.Services[svcName]
+	if values == nil {
+		return nil
+	}
+	if projectRoot != "" {
+		resolved, err := foundry.ResolveFileRefs(values, projectRoot)
+		if err != nil {
+			return err
+		}
+		values = resolved
+	}
+	data, err := yaml.Marshal(values)
+	if err != nil {
+		return err
+	}
+	var service svc
+	if err := yaml.Unmarshal(data, &service); err != nil {
+		return err
+	}
+	if strings.TrimSpace(service.Endpoint) != "" && !service.Network.IsZero() {
 		log.Printf("[warn] foundry provider: service %q sets both endpoint: and network:; "+
 			"network: is ignored in brownfield mode (the account's network posture is fixed)", svcName)
 	}
+	return nil
 }
 
 // or infra/main.bicep exists under p.projectPath. Stat-only.

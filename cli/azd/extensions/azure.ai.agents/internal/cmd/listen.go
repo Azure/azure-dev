@@ -769,8 +769,9 @@ func prepareContainerSettings(
 ) (*azdext.ServiceConfig, error) {
 	rawAdditional := svc.GetAdditionalProperties()
 	rawConfig := svc.GetConfig()
-	hasRootFileRef := rawAdditional.GetFields()["$ref"] != nil ||
-		rawConfig.GetFields()["$ref"] != nil
+	hasRootFileRef := rawAdditional != nil &&
+		rawAdditional.GetFields()["$ref"] != nil ||
+		rawConfig != nil && rawConfig.GetFields()["$ref"] != nil
 	if hasRootFileRef {
 		if err := project.ResolveServiceConfigInPlace(
 			svc,
@@ -781,6 +782,11 @@ func prepareContainerSettings(
 				err,
 			)
 		}
+	} else if err := project.NormalizeServiceConfigInPlace(svc); err != nil {
+		return nil, fmt.Errorf(
+			"failed to normalize agent config: %w",
+			err,
+		)
 	}
 	foundryAgentConfig, err := project.LoadServiceTargetAgentConfig(svc)
 	if err != nil {

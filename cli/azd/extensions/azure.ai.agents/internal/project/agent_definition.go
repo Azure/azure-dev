@@ -399,6 +399,28 @@ func ResolveServiceConfigInPlace(
 	return nil
 }
 
+// NormalizeServiceConfigInPlace converts environment scalars without
+// resolving nested file references.
+func NormalizeServiceConfigInPlace(svc *azdext.ServiceConfig) error {
+	if props := svc.GetAdditionalProperties(); props != nil &&
+		len(props.GetFields()) > 0 {
+		normalized, err := normalizeServiceProps(props, svc.GetName())
+		if err != nil {
+			return err
+		}
+		svc.AdditionalProperties = normalized
+	}
+	if config := svc.GetConfig(); config != nil &&
+		len(config.GetFields()) > 0 {
+		normalized, err := normalizeServiceProps(config, svc.GetName())
+		if err != nil {
+			return err
+		}
+		svc.Config = normalized
+	}
+	return nil
+}
+
 func hydrateResolvedServiceFields(
 	svc *azdext.ServiceConfig,
 	props *structpb.Struct,
@@ -443,6 +465,29 @@ func resolveServiceProps(
 	if err != nil {
 		return nil, fmt.Errorf(
 			"encoding resolved service %q config: %w",
+			serviceName,
+			err,
+		)
+	}
+	return out, nil
+}
+
+func normalizeServiceProps(
+	props *structpb.Struct,
+	serviceName string,
+) (*structpb.Struct, error) {
+	values := props.AsMap()
+	if err := projectconfig.NormalizeEnvironment(values); err != nil {
+		return nil, fmt.Errorf(
+			"normalizing service %q environment: %w",
+			serviceName,
+			err,
+		)
+	}
+	out, err := structpb.NewStruct(values)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"encoding normalized service %q config: %w",
 			serviceName,
 			err,
 		)

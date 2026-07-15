@@ -5,6 +5,8 @@ package grpcserver
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -32,6 +34,7 @@ func TestContainerServiceConfigOverridesPathWithoutMutation(t *testing.T) {
 		RelativePath: "original",
 	}
 	projectConfig := &project.ProjectConfig{
+		Path:     t.TempDir(),
 		Services: map[string]*project.ServiceConfig{"web": source},
 	}
 
@@ -50,12 +53,36 @@ func TestContainerServiceConfigRejectsPathTraversal(t *testing.T) {
 	t.Parallel()
 
 	projectConfig := &project.ProjectConfig{
+		Path: t.TempDir(),
 		Services: map[string]*project.ServiceConfig{
 			"web": {Name: "web"},
 		},
 	}
 
 	_, err := containerServiceConfig(projectConfig, "web", "../outside")
+
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.InvalidArgument, st.Code())
+}
+
+func TestContainerServiceConfigRejectsSymlinkEscape(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	link := filepath.Join(projectRoot, "linked")
+	if err := os.Symlink(t.TempDir(), link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	projectConfig := &project.ProjectConfig{
+		Path: projectRoot,
+		Services: map[string]*project.ServiceConfig{
+			"web": {Name: "web"},
+		},
+	}
+
+	_, err := containerServiceConfig(projectConfig, "web", "linked")
 
 	require.Error(t, err)
 	st, ok := status.FromError(err)
@@ -76,6 +103,7 @@ func TestContainerServiceConfigDecodesForwardCompatiblePath(
 	require.NoError(t, proto.Unmarshal(data, request))
 
 	projectConfig := &project.ProjectConfig{
+		Path: t.TempDir(),
 		Services: map[string]*project.ServiceConfig{
 			"web": {Name: "web"},
 		},

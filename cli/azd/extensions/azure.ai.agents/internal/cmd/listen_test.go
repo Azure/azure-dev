@@ -172,6 +172,46 @@ func TestPopulateContainerSettings_DoesNotPersistResolvedFileRef(
 	require.Equal(t, "4Gi", cfg.Container.Resources.Memory)
 }
 
+func TestPrepareContainerSettings_PreservesNestedFileRef(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "echo",
+		"deployments": []any{
+			map[string]any{"$ref": "./missing-deployment.yaml"},
+		},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "echo",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}
+
+	persisted, err := prepareContainerSettings(svc, t.TempDir())
+
+	require.NoError(t, err)
+	require.Same(t, svc, persisted)
+	deployments, ok := persisted.GetAdditionalProperties().
+		AsMap()["deployments"].([]any)
+	require.True(t, ok)
+	require.Len(t, deployments, 1)
+	deployment, ok := deployments[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(
+		t,
+		"./missing-deployment.yaml",
+		deployment["$ref"],
+	)
+	cfg, err := project.LoadServiceTargetAgentConfig(persisted)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Container)
+	require.NotNil(t, cfg.Container.Resources)
+	require.Equal(t, project.DefaultCpu, cfg.Container.Resources.Cpu)
+	require.Equal(t, project.DefaultMemory, cfg.Container.Resources.Memory)
+}
+
 func TestKindEnvUpdateRejectsTraversal(t *testing.T) {
 	t.Parallel()
 

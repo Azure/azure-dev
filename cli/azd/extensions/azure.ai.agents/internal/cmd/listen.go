@@ -755,9 +755,9 @@ func prepareContainerSettings(
 ) (*azdext.ServiceConfig, error) {
 	rawAdditional := svc.GetAdditionalProperties()
 	rawConfig := svc.GetConfig()
-	hasFileRef := project.ConfigContainsFileRef(rawAdditional) ||
-		project.ConfigContainsFileRef(rawConfig)
-	if hasFileRef {
+	hasRootFileRef := rawAdditional.GetFields()["$ref"] != nil ||
+		rawConfig.GetFields()["$ref"] != nil
+	if hasRootFileRef {
 		if err := project.ResolveServiceConfigInPlace(
 			svc,
 			projectRoot,
@@ -801,7 +801,7 @@ func prepareContainerSettings(
 			err,
 		)
 	}
-	if hasFileRef {
+	if hasRootFileRef {
 		return nil, nil
 	}
 	return svc, nil

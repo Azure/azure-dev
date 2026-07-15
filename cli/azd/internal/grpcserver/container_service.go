@@ -5,8 +5,11 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -248,14 +251,76 @@ func containerServiceConfig(
 	if servicePath == "" {
 		return serviceConfig, nil
 	}
-	if !filepath.IsLocal(servicePath) {
+	if err := validateContainerServicePath(
+		projectConfig.Path,
+		servicePath,
+	); err != nil {
 		return nil, status.Errorf(
 			codes.InvalidArgument,
-			"service path %q must stay within the project",
+			"service path %q must stay within the project: %v",
 			servicePath,
+			err,
 		)
 	}
 	effective := *serviceConfig
 	effective.RelativePath = servicePath
 	return &effective, nil
+}
+
+func validateContainerServicePath(
+	projectRoot string,
+	servicePath string,
+) error {
+	if !filepath.IsLocal(servicePath) {
+		return errors.New("path must be project-relative")
+	}
+	if strings.TrimSpace(projectRoot) == "" {
+		return errors.New("project path is empty")
+	}
+	rootAbs, err := filepath.Abs(projectRoot)
+	if err != nil {
+		return fmt.Errorf("resolve project path: %w", err)
+	}
+	rootReal, err := filepath.EvalSymlinks(rootAbs)
+	if err != nil {
+		return fmt.Errorf("resolve project path symlinks: %w", err)
+	}
+
+	targetReal, err := resolvedExistingAncestor(
+		filepath.Join(rootAbs, servicePath),
+	)
+	if err != nil {
+		return fmt.Errorf("resolve service path symlinks: %w", err)
+	}
+	relative, err := filepath.Rel(rootReal, targetReal)
+	if err != nil {
+		return fmt.Errorf("compare service path to project: %w", err)
+	}
+	if relative == ".." ||
+		strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return errors.New("resolved path escapes project")
+	}
+	return nil
+}
+
+func resolvedExistingAncestor(path string) (string, error) {
+	current := filepath.Clean(path)
+	for {
+		if _, err := os.Lstat(current); err == nil {
+			resolved, err := filepath.EvalSymlinks(current)
+			if err != nil {
+				return "", err
+			}
+			return filepath.Clean(resolved), nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", errors.New(
+				"service path has no existing ancestor",
+			)
+		}
+		current = parent
+	}
 }

@@ -21,7 +21,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -650,33 +649,6 @@ func (p *AgentServiceTargetProvider) Package(
 	return &azdext.ServicePackageResult{
 		Artifacts: newArtifacts,
 	}, nil
-}
-
-// ConfigContainsFileRef reports whether config contains a local $ref.
-func ConfigContainsFileRef(config *structpb.Struct) bool {
-	if config == nil {
-		return false
-	}
-	var contains func(any) bool
-	contains = func(value any) bool {
-		switch typed := value.(type) {
-		case map[string]any:
-			if _, exists := typed["$ref"]; exists {
-				return true
-			}
-			for _, child := range typed {
-				if contains(child) {
-					return true
-				}
-			}
-		case []any:
-			if slices.ContainsFunc(typed, contains) {
-				return true
-			}
-		}
-		return false
-	}
-	return contains(config.AsMap())
 }
 
 const containerServicePathFieldNumber protowire.Number = 3

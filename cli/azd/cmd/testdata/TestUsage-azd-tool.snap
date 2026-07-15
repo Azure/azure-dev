@@ -5,7 +5,7 @@ Usage
   azd tool [command]
 
 Available Commands
-  check    	: Check for tool updates.
+  check    	: Check for tool upgrades.
   install  	: Install specified tools.
   list     	: List all tools with status.
   show     	: Show details for a specific tool.

@@ -1,3 +1,5 @@
+import { filepaths } from '../helpers/filepaths';
+
 interface AzdEnvListItem {
 	Name: string;
 	DotEnvPath: string;
@@ -5829,8 +5831,7 @@ const completionSpec: Fig.Spec = {
 					],
 					args: {
 						name: 'extension-id|extension-bundle.zip',
-						generators: azdGenerators.listExtensions,
-						template: 'filepaths',
+						generators: [azdGenerators.listExtensions, filepaths({ extensions: ['zip'] })],
 					},
 				},
 				{
@@ -6466,12 +6467,22 @@ const completionSpec: Fig.Spec = {
 			subcommands: [
 				{
 					name: ['check'],
-					description: 'Check for tool updates.',
+					description: 'Check for tool upgrades.',
 				},
 				{
 					name: ['install'],
 					description: 'Install specified tools.',
 					options: [
+						{
+							name: ['--agent'],
+							description: 'Install the skill for the specified agent(s): copilot, claude. Use --agent all for every detected agent (skill tools only)',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'agent',
+								},
+							],
+						},
 						{
 							name: ['--all'],
 							description: 'Install all recommended tools',
@@ -6479,16 +6490,6 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['--dry-run'],
 							description: 'Preview what would be installed without making changes',
-						},
-						{
-							name: ['--host'],
-							description: 'Install the skill for the specified agent host(s): copilot, claude. Use --host all for every detected host (skill tools only)',
-							isRepeatable: true,
-							args: [
-								{
-									name: 'host',
-								},
-							],
 						},
 					],
 					args: {
@@ -6512,22 +6513,22 @@ const completionSpec: Fig.Spec = {
 					description: 'Uninstall installed tools.',
 					options: [
 						{
+							name: ['--agent'],
+							description: 'Uninstall the skill from the specified agent(s): copilot, claude. Use --agent all (or omit --agent) to remove the skill from every agent it is installed through (skill tools only)',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'agent',
+								},
+							],
+						},
+						{
 							name: ['--all'],
 							description: 'Uninstall all installed tools',
 						},
 						{
 							name: ['--dry-run'],
 							description: 'Preview what would be uninstalled without making changes',
-						},
-						{
-							name: ['--host'],
-							description: 'Uninstall the skill from the specified agent host(s): copilot, claude. Use --host all (or omit --host) to remove the skill from every host it is installed through (skill tools only)',
-							isRepeatable: true,
-							args: [
-								{
-									name: 'host',
-								},
-							],
 						},
 					],
 					args: {
@@ -6540,18 +6541,22 @@ const completionSpec: Fig.Spec = {
 					description: 'Upgrade installed tools.',
 					options: [
 						{
-							name: ['--dry-run'],
-							description: 'Preview what would be upgraded without making changes',
-						},
-						{
-							name: ['--host'],
-							description: 'Upgrade the skill for the specified agent host(s): copilot, claude. Use --host all for every detected host (skill tools only)',
+							name: ['--agent'],
+							description: 'Upgrade the skill for the specified agent(s): copilot, claude. Use --agent all for every detected agent (skill tools only)',
 							isRepeatable: true,
 							args: [
 								{
-									name: 'host',
+									name: 'agent',
 								},
 							],
+						},
+						{
+							name: ['--all'],
+							description: 'Upgrade all installed tools',
+						},
+						{
+							name: ['--dry-run'],
+							description: 'Preview what would be upgraded without making changes',
 						},
 					],
 					args: {

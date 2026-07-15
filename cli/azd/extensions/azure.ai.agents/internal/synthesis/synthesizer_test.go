@@ -947,6 +947,7 @@ func TestTerraformTemplatesFS_Embedded(t *testing.T) {
 		"templates/terraform/variables.tf",
 		"templates/terraform/main.tf",
 		"templates/terraform/acr.tf",
+		"templates/terraform/connections.tf",
 		"templates/terraform/outputs.tf.tmpl",
 	}
 	for _, p := range wantFiles {

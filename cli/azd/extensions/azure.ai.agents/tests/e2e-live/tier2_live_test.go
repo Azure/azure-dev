@@ -127,7 +127,7 @@ func newRunner(t *testing.T, mode string) *runner {
 	configDir := filepath.Join(os.TempDir(), "e2e-azd-config-"+mode)
 	setupConfigDir(t, configDir)
 
-	env := os.Environ()
+	env := withoutGitHubTokenEnv(os.Environ())
 	env = append(env, "AZD_CONFIG_DIR="+configDir)
 	if tenant := os.Getenv("E2E_TENANT"); tenant != "" {
 		env = append(env, "AZURE_TENANT_ID="+tenant)
@@ -195,7 +195,7 @@ func setupConfigDir(t *testing.T, configDir string) {
 // this is the fast way to iterate on the provision/down path (issue #8839)
 // without paying for a full agent deploy.
 func (r *runner) run(ctx context.Context) {
-	if err := r.phaseInitWithRetry(ctx); err != nil {
+	if err := r.phaseInitWithTokenCheck(ctx); err != nil {
 		r.t.Errorf("init: %v", err)
 		return
 	}
@@ -221,24 +221,22 @@ func (r *runner) run(ctx context.Context) {
 	}
 }
 
-// phaseInitWithRetry retries once when a bad GitHub token from the pipeline
-// environment causes gh to fail before the public sample is downloaded. The
-// retry drops token override env vars so gh can use any ambient auth state.
-func (r *runner) phaseInitWithRetry(ctx context.Context) error {
+// phaseInitWithTokenCheck keeps the init failure mode explicit when a bad GitHub
+// token from the pipeline environment causes gh to fail before the public sample
+// is downloaded. Retrying without the token is unsafe in CI: gh can fall back to
+// an interactive browser/device-login flow that the PTY driver would otherwise
+// keep answering.
+func (r *runner) phaseInitWithTokenCheck(ctx context.Context) error {
 	err := r.phaseInit(ctx)
 	if err == nil || !isInvalidGitHubTokenError(err) {
 		return err
 	}
 
-	r.t.Log("init failed because GH_TOKEN/GITHUB_TOKEN is invalid; retrying without token override env vars")
-	r.env = withoutGitHubTokenEnv(r.env)
-	if err := os.RemoveAll(r.testDir); err != nil {
-		return fmt.Errorf("reset test dir after GitHub token failure: %w", err)
-	}
-	if err := os.MkdirAll(r.testDir, 0o700); err != nil {
-		return fmt.Errorf("recreate test dir after GitHub token failure: %w", err)
-	}
-	return r.phaseInit(ctx)
+	return fmt.Errorf(
+		"init failed because GH_TOKEN/GITHUB_TOKEN is invalid; refusing to retry without token "+
+			"because gh can prompt for interactive authentication in CI: %w",
+		err,
+	)
 }
 
 // phaseInit runs `azd ai agent init` attached to a pseudo-terminal and drives
@@ -375,7 +373,9 @@ func (r *runner) driveInit(ctx context.Context, exited <-chan struct{}) error {
 			}
 		}
 
-		r.dispatchPrompt(screen, prompt)
+		if err := r.dispatchPrompt(screen, prompt); err != nil {
+			return err
+		}
 	}
 }
 
@@ -422,10 +422,17 @@ func promptKey(prompt string) string {
 // model, deployment name, capacity/sku/version). The rest are kept as defensive
 // handlers because init auto-resolves them under userProvidedManifest=true (so
 // they normally do NOT prompt) or only surfaces them for specific runtime state.
-func (r *runner) dispatchPrompt(screen, prompt string) {
+func (r *runner) dispatchPrompt(screen, prompt string) error {
 	has := func(sub string) bool { return strings.Contains(prompt, sub) }
 
 	switch {
+	case isGitHubAuthPrompt(prompt):
+		return fmt.Errorf(
+			"init reached interactive GitHub CLI authentication prompt: %q; "+
+				"check GH_TOKEN/GITHUB_TOKEN for the live pipeline",
+			prompt,
+		)
+
 	// Yes/No confirms. "Continue with this existing agent name?"
 	// (resolveExistingAgentNameConflictWithChecker) only fires when the unique
 	// name already exists; decline it to reach the fresh-name input. Any other
@@ -541,6 +548,17 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 		r.t.Logf("unhandled prompt (default Enter): %s", truncate(prompt, 100))
 		r.enter()
 	}
+
+	return nil
+}
+
+func isGitHubAuthPrompt(prompt string) bool {
+	prompt = strings.ToLower(prompt)
+	return strings.Contains(prompt, "preferred protocol for git operations") ||
+		strings.Contains(prompt, "authenticate git with your github credentials") ||
+		strings.Contains(prompt, "authenticate github cli") ||
+		strings.Contains(prompt, "login with a web browser") ||
+		strings.Contains(prompt, "github.com/login/device")
 }
 
 // phaseProvision finds the scaffolded project and runs `azd provision`.
@@ -1133,21 +1151,38 @@ func exitCode(err error) int {
 	return -1
 }
 
-// ghToken resolves a GitHub token from the environment, falling back to `gh`.
+// ghToken resolves a usable GitHub token from the environment, falling back to `gh`.
 func ghToken() string {
 	for _, k := range []string{"GITHUB_TOKEN", "GH_TOKEN"} {
 		if v := os.Getenv(k); v != "" {
-			return v
+			if isUsableGitHubToken(v) {
+				return v
+			}
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	//nolint:gosec // gh is a trusted fixed binary; no user input in args.
-	out, err := exec.CommandContext(ctx, "gh", "auth", "token").Output()
+	cmd := exec.CommandContext(ctx, "gh", "auth", "token")
+	cmd.Env = withoutGitHubTokenEnv(os.Environ())
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(out))
+	token := strings.TrimSpace(string(out))
+	if token == "" || !isUsableGitHubToken(token) {
+		return ""
+	}
+	return token
+}
+
+func isUsableGitHubToken(token string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	//nolint:gosec // gh is a trusted fixed binary; no user input in args.
+	cmd := exec.CommandContext(ctx, "gh", "auth", "status", "--hostname", "github.com")
+	cmd.Env = append(withoutGitHubTokenEnv(os.Environ()), "GH_TOKEN="+token, "GITHUB_TOKEN="+token)
+	return cmd.Run() == nil
 }
 
 func isInvalidGitHubTokenError(err error) bool {
@@ -1157,7 +1192,7 @@ func isInvalidGitHubTokenError(err error) bool {
 }
 
 func withoutGitHubTokenEnv(env []string) []string {
-	out := env[:0]
+	out := make([]string, 0, len(env))
 	for _, kv := range env {
 		if strings.HasPrefix(kv, "GH_TOKEN=") || strings.HasPrefix(kv, "GITHUB_TOKEN=") {
 			continue

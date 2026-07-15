@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/project"
 
@@ -241,6 +242,13 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 	}
 
+	// Capture the current session so it can be resumed on the newly deployed
+	// version after deploy (see session_carryover.go). Best-effort; hosted
+	// agents only.
+	if isHostedAgentService(svc, args.Project) {
+		captureSessionForCarryover(ctx, azdClient, svc)
+	}
+
 	// Run developer RBAC pre-flight checks only for hosted agent deployments.
 	// Guarded by sync.Once since this handler fires per-service but the check
 	// is project-scoped.
@@ -429,6 +437,12 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 			},
 		)
 	}()
+
+	// Resume the pre-deploy session on the newly deployed version so the next
+	// invoke continues on the new code with the session's persisted volume
+	// intact (see session_carryover.go). Best-effort; never blocks deploy.
+	agentClient := agent_api.NewAgentClient(endpoint, cred)
+	carryOverSessionAfterDeploy(ctx, azdClient, agentClient, svc, envName)
 
 	return nil
 }

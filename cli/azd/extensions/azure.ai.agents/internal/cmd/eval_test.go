@@ -347,6 +347,17 @@ func TestEvalAgentContextError(t *testing.T) {
 		assert.Contains(t, localErr.Suggestion, "--agent")
 		assert.Contains(t, localErr.Suggestion, "--project-endpoint")
 	})
+
+	t.Run("preserves structured cause", func(t *testing.T) {
+		t.Parallel()
+		cause := &azdext.LocalError{
+			Code:       "test_code",
+			Category:   "validation",
+			Message:    "test message",
+			Suggestion: "test suggestion",
+		}
+		require.Same(t, cause, evalAgentContextError(cause))
+	})
 }
 
 // ---------------------------------------------------------------------------

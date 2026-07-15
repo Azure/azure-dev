@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/terminal"
 	"golang.org/x/term"
 )
 
@@ -206,6 +207,12 @@ func IsStdinTerminal() bool {
 // IsStdoutTerminal reports whether standard output is an interactive terminal.
 func IsStdoutTerminal() bool {
 	return IsInteractiveTerminal(os.Stdout)
+}
+
+// IsPromptSupported reports whether the azd host considers the current process
+// capable of interactive prompting.
+func IsPromptSupported() bool {
+	return terminal.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd())
 }
 
 // ExecCommand creates an [exec.Cmd] that runs a program directly without a

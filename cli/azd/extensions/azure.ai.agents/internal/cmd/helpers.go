@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -25,6 +26,7 @@ import (
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/google/uuid"
 	"golang.org/x/term"
 )
@@ -550,8 +552,24 @@ type AgentServiceInfo struct {
 	AgentEndpoint string // full AGENT_{SVC}_ENDPOINT URL (includes name + version)
 }
 
+// agentSelectionInteractive reports whether the current process can render the interactive
+// agent-service picker. The picker is drawn by the azd host and reads from stdin, so both
+// stdin and stdout must be terminals and the host must allow prompting. It is a variable so
+// tests can simulate a terminal.
+var agentSelectionInteractive = azdext.IsPromptSupported
+
+// serviceNames returns the names of the given services, in their current slice order.
+func serviceNames(services []*azdext.ServiceConfig) []string {
+	names := make([]string, len(services))
+	for i, s := range services {
+		names[i] = s.Name
+	}
+	return names
+}
+
 // promptForAgentService prompts the user to select one of multiple azure.ai.agent services.
-// In no-prompt mode it returns an error listing the available services.
+// In no-prompt mode, or when running without an interactive terminal, it returns an error
+// listing the available services instead of rendering a picker that would hang on stdin.
 func promptForAgentService(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -563,16 +581,34 @@ func promptForAgentService(
 	})
 
 	if noPrompt {
-		names := make([]string, len(services))
-		for i, s := range services {
-			names[i] = s.Name
-		}
 		return nil, fmt.Errorf(
 			"multiple azure.ai.agent services found in azure.yaml: %s\n\n"+
 				"Provide the service name as a positional argument to specify which one to use",
-			strings.Join(names, ", "),
+			strings.Join(serviceNames(services), ", "),
 		)
 	}
+
+	// Fail fast in a non-interactive context. The picker is rendered by the azd host and
+	// blocks on stdin; when stdout/stdin is not a TTY (CI, an agent harness, or output piped
+	// through tee/tail) the picker is invisible and the process would hang forever with no
+	// error, spinner, or banner. Surface an actionable error instead.
+	if !agentSelectionInteractive() {
+		return nil, exterrors.Validation(
+			exterrors.CodeNonInteractiveAgentSelection,
+			fmt.Sprintf(
+				"cannot prompt for agent service selection because interactive prompting is disabled; "+
+					"multiple azure.ai.agent services are defined in azure.yaml: %s",
+				strings.Join(serviceNames(services), ", "),
+			),
+			"pass the agent service name explicitly using the command's positional argument, "+
+				"--agent, or --agent-name (as supported by the command), or run with --no-prompt",
+		)
+	}
+
+	// Print a banner to stderr before the interactive picker. Reaching this point means both
+	// stdin and stdout are TTYs (the non-interactive case already returned above), so the picker
+	// is visible; the banner is a harmless hint explaining why azd is blocked on a selection.
+	fmt.Fprintln(os.Stderr, output.WithHintFormat("azd is waiting for your agent service selection below..."))
 
 	choices := make([]*azdext.SelectChoice, len(services))
 	for i, s := range services {
@@ -809,6 +845,9 @@ func resolveAgentProtocol(
 ) (agent_api.AgentProtocol, string, error) {
 	svc, proj, err := resolveAgentService(ctx, azdClient, name, noPrompt)
 	if err != nil {
+		if _, ok := errors.AsType[*azdext.LocalError](err); ok {
+			return "", "", err
+		}
 		return "", "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf(

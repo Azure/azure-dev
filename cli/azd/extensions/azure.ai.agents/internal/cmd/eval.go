@@ -424,6 +424,10 @@ func printEvalField(label, value, source string) {
 }
 
 func evalAgentContextError(cause error) error {
+	if _, ok := errors.AsType[*azdext.LocalError](cause); ok {
+		return cause
+	}
+
 	message := "agent context could not be resolved"
 	if cause != nil {
 		message = fmt.Sprintf("%s: %s", message, cause)

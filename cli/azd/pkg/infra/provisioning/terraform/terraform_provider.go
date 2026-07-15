@@ -16,6 +16,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -115,7 +116,12 @@ func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, 
 
 	spanCtx := trace.SpanContextFromContext(ctx)
 	if spanCtx.HasTraceID() {
-		envVars = append(envVars, fmt.Sprintf("ARM_CORRELATION_REQUEST_ID=%s", spanCtx.TraceID().String()))
+		// Match azd's ARM correlation header format so Terraform-driven ARM requests send the same canonical
+		// GUID (the AzureRM provider forwards ARM_CORRELATION_REQUEST_ID verbatim as x-ms-correlation-request-id).
+		envVars = append(
+			envVars,
+			fmt.Sprintf("ARM_CORRELATION_REQUEST_ID=%s", azsdk.CorrelationIDFromTraceID(spanCtx.TraceID())),
+		)
 	}
 
 	t.cli.SetEnv(envVars)

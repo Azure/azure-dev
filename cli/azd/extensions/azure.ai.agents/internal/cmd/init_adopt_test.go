@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"context"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -552,6 +555,243 @@ services:
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestAdoptedAgentNameConfig(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		svc      *azdext.ServiceConfig
+		wantName string
+		wantPath string
+	}{
+		{
+			name: "unified inline hosted agent",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("inline-agent"),
+				}},
+			},
+			wantName: "inline-agent",
+			wantPath: "name",
+		},
+		{
+			name: "unified inline workflow agent",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("workflow"),
+					"name": structpb.NewStringValue("workflow-agent"),
+				}},
+			},
+			wantName: "workflow-agent",
+			wantPath: "name",
+		},
+		{
+			name: "deprecated config-nested agent",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"docker": structpb.NewStructValue(&structpb.Struct{}),
+				}},
+				Config: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("legacy-agent"),
+				}},
+			},
+			wantName: "legacy-agent",
+			wantPath: "config.name",
+		},
+		{
+			name: "inline definition remains authoritative during partial migration",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+				}},
+				Config: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("legacy-agent"),
+				}},
+			},
+			wantPath: "name",
+		},
+		{
+			name: "service properties without agent definition",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"name": structpb.NewStringValue("not-an-agent-definition"),
+				}},
+			},
+		},
+		{name: "nil service"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			gotName, gotPath := adoptedAgentNameConfig(tt.svc)
+			require.Equal(t, tt.wantName, gotName)
+			require.Equal(t, tt.wantPath, gotPath)
+		})
+	}
+}
+
+func newAdoptedAgentNameTestClient(
+	t *testing.T,
+	projectServer azdext.ProjectServiceServer,
+	promptServer azdext.PromptServiceServer,
+) *azdext.AzdClient {
+	t.Helper()
+
+	grpcServer := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(grpcServer, projectServer)
+	azdext.RegisterPromptServiceServer(grpcServer, promptServer)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	go func() {
+		_ = grpcServer.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		client.Close()
+	})
+
+	return client
+}
+
+func TestUpdateAdoptedAgentNames_PersistsReplacement(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"agent-service": {
+				Name: "agent-service",
+				Host: AiAgentHost,
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("existing-agent"),
+				}},
+			},
+			"ai-project": {
+				Name: "ai-project",
+				Host: AiProjectHost,
+			},
+		},
+	}
+	prompts := &testPromptServiceServer{
+		confirmResponses: []bool{false},
+		promptResponses:  []string{"replacement-agent"},
+	}
+	client := newAdoptedAgentNameTestClient(t, server, prompts)
+	checker := &fakeConflictAgentChecker{
+		exists: map[string]bool{"existing-agent": true},
+	}
+
+	err := updateAdoptedAgentNames(
+		t.Context(),
+		client,
+		func(ctx context.Context, agentName string) (string, error) {
+			return resolveExistingAgentNameConflictWithChecker(
+				ctx,
+				client,
+				checker,
+				false,
+				agentName,
+			)
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{"existing-agent", "replacement-agent"}, checker.calls)
+	require.Len(t, prompts.confirmRequests, 1)
+	require.Len(t, prompts.promptRequests, 1)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Equal(t, "agent-service", server.configValues["name"].serviceName)
+	require.Equal(t, "replacement-agent", server.configValues["name"].value)
+}
+
+func TestUpdateAdoptedAgentNames_UsesLegacyConfigPath(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"agent-service": {
+				Name: "agent-service",
+				Host: AiAgentHost,
+				Config: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("existing-agent"),
+				}},
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	err := updateAdoptedAgentNames(
+		t.Context(),
+		client,
+		func(_ context.Context, _ string) (string, error) {
+			return "replacement-agent", nil
+		},
+	)
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Equal(t, "agent-service", server.configValues["config.name"].serviceName)
+	require.Equal(t, "replacement-agent", server.configValues["config.name"].value)
+}
+
+func TestUpdateAdoptedAgentNames_UnchangedNamesAreNotWritten(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"zeta-service": {
+				Name: "zeta-service",
+				Host: AiAgentHost,
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("zeta-agent"),
+				}},
+			},
+			"alpha-service": {
+				Name: "alpha-service",
+				Host: AiAgentHost,
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("alpha-agent"),
+				}},
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	var checkedNames []string
+	err := updateAdoptedAgentNames(
+		t.Context(),
+		client,
+		func(_ context.Context, agentName string) (string, error) {
+			checkedNames = append(checkedNames, agentName)
+			return agentName, nil
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{"alpha-agent", "zeta-agent"}, checkedNames)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Empty(t, server.configValues)
 }
 
 // TestStampProjectEndpoint_WritesEndpoint verifies that stampProjectEndpoint

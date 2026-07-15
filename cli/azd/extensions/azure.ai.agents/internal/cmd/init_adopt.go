@@ -652,6 +652,102 @@ func updateAzureYamlDeployments(
 	return nil
 }
 
+type adoptedAgentNameResolver func(context.Context, string) (string, error)
+
+// confirmAdoptedAgentNameConflicts checks every agent definition embedded in an
+// adopted azure.yaml against the selected existing Foundry project. The shared
+// resolver warns and asks for confirmation before reusing a name, or prompts
+// for a replacement name and returns it.
+func confirmAdoptedAgentNameConflicts(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	environment *azdext.Environment,
+	credential azcore.TokenCredential,
+	noPrompt bool,
+) error {
+	return updateAdoptedAgentNames(ctx, azdClient, func(ctx context.Context, agentName string) (string, error) {
+		return resolveExistingAgentNameConflict(
+			ctx,
+			azdClient,
+			environment,
+			credential,
+			noPrompt,
+			agentName,
+		)
+	})
+}
+
+// updateAdoptedAgentNames resolves name conflicts for adopted agent services
+// and persists any replacement names in azure.yaml.
+func updateAdoptedAgentNames(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	resolveName adoptedAgentNameResolver,
+) error {
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("reading adopted project for agent name conflicts: %w", err)
+	}
+
+	services := resp.GetProject().GetServices()
+	serviceNames := make([]string, 0, len(services))
+	for serviceName, svc := range services {
+		if svc.GetHost() == AiAgentHost {
+			serviceNames = append(serviceNames, serviceName)
+		}
+	}
+	slices.Sort(serviceNames)
+
+	for _, serviceName := range serviceNames {
+		agentName, configPath := adoptedAgentNameConfig(services[serviceName])
+		if agentName == "" {
+			continue
+		}
+
+		resolvedName, err := resolveName(ctx, agentName)
+		if err != nil {
+			return err
+		}
+		if resolvedName == agentName {
+			continue
+		}
+
+		value, err := structpb.NewValue(resolvedName)
+		if err != nil {
+			return fmt.Errorf("encoding replacement name for agent service %q: %w", serviceName, err)
+		}
+		if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+			ServiceName: serviceName,
+			Path:        configPath,
+			Value:       value,
+		}); err != nil {
+			return fmt.Errorf("updating agent name in azure.yaml for service %q: %w", serviceName, err)
+		}
+	}
+
+	return nil
+}
+
+// adoptedAgentNameConfig returns the Foundry agent name and its service-relative
+// config path for the unified inline shape or deprecated config-nested shape.
+func adoptedAgentNameConfig(svc *azdext.ServiceConfig) (string, string) {
+	if svc == nil {
+		return "", ""
+	}
+
+	inline := svc.GetAdditionalProperties()
+	if inline != nil && inline.GetFields()["kind"].GetStringValue() != "" {
+		return strings.TrimSpace(inline.GetFields()["name"].GetStringValue()), "name"
+	}
+
+	legacy := svc.GetConfig()
+	if legacy != nil && legacy.GetFields()["kind"].GetStringValue() != "" {
+		return strings.TrimSpace(legacy.GetFields()["name"].GetStringValue()), "config.name"
+	}
+
+	return "", ""
+}
+
 // readManifestContentForInitDetection returns the pointed-at YAML content for
 // init-mode routing. It first uses the cheap peek path; when that cannot read a
 // GitHub URL (for example, a private repository), it falls back to the
@@ -820,6 +916,15 @@ func runInitFromAzureYaml(
 	// brownfield signal and reuses the project instead of creating a new one.
 	if result.FoundryProject != nil {
 		if err := stampProjectEndpoint(ctx, azdClient, result.FoundryProject); err != nil {
+			return err
+		}
+		if err := confirmAdoptedAgentNameConflicts(
+			ctx,
+			azdClient,
+			env,
+			result.Credential,
+			flags.noPrompt,
+		); err != nil {
 			return err
 		}
 	}

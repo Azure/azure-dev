@@ -28,8 +28,10 @@ type ContainerBuildRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ServiceName    string                 `protobuf:"bytes,1,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"`
 	ServiceContext *ServiceContext        `protobuf:"bytes,2,opt,name=service_context,json=serviceContext,proto3" json:"service_context,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Project-relative path used only for this operation.
+	ServicePath   string `protobuf:"bytes,3,opt,name=service_path,json=servicePath,proto3" json:"service_path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ContainerBuildRequest) Reset() {
@@ -74,6 +76,13 @@ func (x *ContainerBuildRequest) GetServiceContext() *ServiceContext {
 		return x.ServiceContext
 	}
 	return nil
+}
+
+func (x *ContainerBuildRequest) GetServicePath() string {
+	if x != nil {
+		return x.ServicePath
+	}
+	return ""
 }
 
 // Response from the container build operation
@@ -127,8 +136,10 @@ type ContainerPackageRequest struct {
 	// Name of the service to package (required)
 	ServiceName    string          `protobuf:"bytes,1,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"`
 	ServiceContext *ServiceContext `protobuf:"bytes,2,opt,name=service_context,json=serviceContext,proto3" json:"service_context,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Project-relative path used only for this operation.
+	ServicePath   string `protobuf:"bytes,3,opt,name=service_path,json=servicePath,proto3" json:"service_path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ContainerPackageRequest) Reset() {
@@ -173,6 +184,13 @@ func (x *ContainerPackageRequest) GetServiceContext() *ServiceContext {
 		return x.ServiceContext
 	}
 	return nil
+}
+
+func (x *ContainerPackageRequest) GetServicePath() string {
+	if x != nil {
+		return x.ServicePath
+	}
+	return ""
 }
 
 // Response from container package operation
@@ -227,8 +245,10 @@ type ContainerPublishRequest struct {
 	ServiceName string `protobuf:"bytes,1,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"`
 	// Package result from previous package operation (optional - will re-package if not provided)
 	ServiceContext *ServiceContext `protobuf:"bytes,2,opt,name=service_context,json=serviceContext,proto3" json:"service_context,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Project-relative path used only for this operation.
+	ServicePath   string `protobuf:"bytes,3,opt,name=service_path,json=servicePath,proto3" json:"service_path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ContainerPublishRequest) Reset() {
@@ -273,6 +293,13 @@ func (x *ContainerPublishRequest) GetServiceContext() *ServiceContext {
 		return x.ServiceContext
 	}
 	return nil
+}
+
+func (x *ContainerPublishRequest) GetServicePath() string {
+	if x != nil {
+		return x.ServicePath
+	}
+	return ""
 }
 
 // Response from container publish operation
@@ -324,20 +351,23 @@ var File_container_proto protoreflect.FileDescriptor
 
 const file_container_proto_rawDesc = "" +
 	"\n" +
-	"\x0fcontainer.proto\x12\x06azdext\x1a\fmodels.proto\x1a\x14service_target.proto\x1a\x17framework_service.proto\"{\n" +
+	"\x0fcontainer.proto\x12\x06azdext\x1a\fmodels.proto\x1a\x14service_target.proto\x1a\x17framework_service.proto\"\x9e\x01\n" +
 	"\x15ContainerBuildRequest\x12!\n" +
 	"\fservice_name\x18\x01 \x01(\tR\vserviceName\x12?\n" +
-	"\x0fservice_context\x18\x02 \x01(\v2\x16.azdext.ServiceContextR\x0eserviceContext\"L\n" +
+	"\x0fservice_context\x18\x02 \x01(\v2\x16.azdext.ServiceContextR\x0eserviceContext\x12!\n" +
+	"\fservice_path\x18\x03 \x01(\tR\vservicePath\"L\n" +
 	"\x16ContainerBuildResponse\x122\n" +
-	"\x06result\x18\x01 \x01(\v2\x1a.azdext.ServiceBuildResultR\x06result\"}\n" +
+	"\x06result\x18\x01 \x01(\v2\x1a.azdext.ServiceBuildResultR\x06result\"\xa0\x01\n" +
 	"\x17ContainerPackageRequest\x12!\n" +
 	"\fservice_name\x18\x01 \x01(\tR\vserviceName\x12?\n" +
-	"\x0fservice_context\x18\x02 \x01(\v2\x16.azdext.ServiceContextR\x0eserviceContext\"P\n" +
+	"\x0fservice_context\x18\x02 \x01(\v2\x16.azdext.ServiceContextR\x0eserviceContext\x12!\n" +
+	"\fservice_path\x18\x03 \x01(\tR\vservicePath\"P\n" +
 	"\x18ContainerPackageResponse\x124\n" +
-	"\x06result\x18\x01 \x01(\v2\x1c.azdext.ServicePackageResultR\x06result\"}\n" +
+	"\x06result\x18\x01 \x01(\v2\x1c.azdext.ServicePackageResultR\x06result\"\xa0\x01\n" +
 	"\x17ContainerPublishRequest\x12!\n" +
 	"\fservice_name\x18\x01 \x01(\tR\vserviceName\x12?\n" +
-	"\x0fservice_context\x18\x02 \x01(\v2\x16.azdext.ServiceContextR\x0eserviceContext\"P\n" +
+	"\x0fservice_context\x18\x02 \x01(\v2\x16.azdext.ServiceContextR\x0eserviceContext\x12!\n" +
+	"\fservice_path\x18\x03 \x01(\tR\vservicePath\"P\n" +
 	"\x18ContainerPublishResponse\x124\n" +
 	"\x06result\x18\x01 \x01(\v2\x1c.azdext.ServicePublishResultR\x06result2\xf6\x01\n" +
 	"\x10ContainerService\x12F\n" +

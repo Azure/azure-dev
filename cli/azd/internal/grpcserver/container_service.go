@@ -6,6 +6,7 @@ package grpcserver
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -56,10 +57,13 @@ func (c *containerService) Build(
 		return nil, err
 	}
 
-	serviceConfig, has := projectConfig.Services[req.ServiceName]
-	if !has {
-		return nil, status.Errorf(codes.NotFound,
-			"service %q not found in project configuration", req.ServiceName)
+	serviceConfig, err := containerServiceConfig(
+		projectConfig,
+		req.ServiceName,
+		req.ServicePath,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	containerHelper, err := c.lazyContainerHelper.GetValue()
@@ -111,10 +115,13 @@ func (c *containerService) Package(
 		return nil, err
 	}
 
-	serviceConfig, has := projectConfig.Services[req.ServiceName]
-	if !has {
-		return nil, status.Errorf(codes.NotFound,
-			"service %q not found in project configuration", req.ServiceName)
+	serviceConfig, err := containerServiceConfig(
+		projectConfig,
+		req.ServiceName,
+		req.ServicePath,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	containerHelper, err := c.lazyContainerHelper.GetValue()
@@ -166,10 +173,13 @@ func (c *containerService) Publish(
 		return nil, err
 	}
 
-	serviceConfig, has := projectConfig.Services[req.ServiceName]
-	if !has {
-		return nil, status.Errorf(codes.NotFound,
-			"service %q not found in project configuration", req.ServiceName)
+	serviceConfig, err := containerServiceConfig(
+		projectConfig,
+		req.ServiceName,
+		req.ServicePath,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	containerHelper, err := c.lazyContainerHelper.GetValue()
@@ -220,4 +230,32 @@ func (c *containerService) Publish(
 	return &azdext.ContainerPublishResponse{
 		Result: protoResult,
 	}, nil
+}
+
+func containerServiceConfig(
+	projectConfig *project.ProjectConfig,
+	serviceName string,
+	servicePath string,
+) (*project.ServiceConfig, error) {
+	serviceConfig, has := projectConfig.Services[serviceName]
+	if !has {
+		return nil, status.Errorf(
+			codes.NotFound,
+			"service %q not found in project configuration",
+			serviceName,
+		)
+	}
+	if servicePath == "" {
+		return serviceConfig, nil
+	}
+	if !filepath.IsLocal(servicePath) {
+		return nil, status.Errorf(
+			codes.InvalidArgument,
+			"service path %q must stay within the project",
+			servicePath,
+		)
+	}
+	effective := *serviceConfig
+	effective.RelativePath = servicePath
+	return &effective, nil
 }

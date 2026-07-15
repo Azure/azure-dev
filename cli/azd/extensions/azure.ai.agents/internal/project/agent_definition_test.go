@@ -312,6 +312,10 @@ func TestLoadAgentDefinition_FileRef(t *testing.T) {
 	require.Equal(t, "responses", got.Protocols[0].Protocol)
 	require.Equal(t, "registry.example/agent:v1", got.Image)
 
+	usesFileRef, err := AgentDefinitionUsesFileRef(svc, dir)
+	require.NoError(t, err)
+	require.True(t, usesFileRef)
+
 	projectPath, err := ResolvedServiceProjectPath(svc, dir)
 	require.NoError(t, err)
 	require.Equal(t, "src/agent", projectPath)
@@ -323,6 +327,29 @@ func TestLoadAgentDefinition_FileRef(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "python main.py", cfg.StartupCommand)
 	require.Equal(t, "registry.example/agent:v1", svc.GetImage())
+}
+
+func TestAgentDefinitionUsesFileRefIgnoresNestedResourceRefs(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"deployments": []any{
+			map[string]any{"$ref": "./deployment.yaml"},
+		},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "legacy-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+
+	usesFileRef, err := AgentDefinitionUsesFileRef(svc, t.TempDir())
+
+	require.NoError(t, err)
+	require.False(t, usesFileRef)
 }
 
 // TestLoadAgentDefinition_InlineWorkflow verifies a valid inline

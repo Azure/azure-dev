@@ -635,7 +635,8 @@ func TestSynthesizeConnectionsAtRootResolvesFileRef(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(root, "connection.yaml"),
-		[]byte(`category: CognitiveSearch
+		[]byte(`host: azure.ai.connection
+category: CognitiveSearch
 target: https://search.example
 authType: ApiKey
 credentials:
@@ -647,7 +648,6 @@ credentials:
   project:
     host: azure.ai.project
   search:
-    host: azure.ai.connection
     uses: [project]
     $ref: ./connection.yaml
 `)
@@ -1017,6 +1017,39 @@ func TestSynthesize_ResolvesAgentRefForAcr(t *testing.T) {
 	includeAcr, ok := result.Parameters["includeAcr"].(bool)
 	require.True(t, ok)
 	assert.False(t, includeAcr)
+}
+
+func TestSynthesize_ResolvesAgentHostFromRefForAcr(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "agent.yaml"),
+		[]byte(
+			"host: azure.ai.agent\n"+
+				"kind: hosted\n"+
+				"name: referenced-agent\n",
+		),
+		0o600,
+	))
+	raw := []byte(`services:
+  my-project:
+    host: azure.ai.project
+  referenced-agent:
+    $ref: ./agent.yaml
+`)
+
+	result, err := Synthesize(Input{
+		RawAzureYAML:  raw,
+		ServiceName:   "my-project",
+		AcceptedHosts: []string{"azure.ai.project"},
+		ProjectRoot:   root,
+	})
+
+	require.NoError(t, err)
+	includeAcr, ok := result.Parameters["includeAcr"].(bool)
+	require.True(t, ok)
+	assert.True(t, includeAcr)
 }
 
 func TestSynthesize_InputValidation(t *testing.T) {

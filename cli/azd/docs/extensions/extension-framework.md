@@ -2484,6 +2484,7 @@ Builds a service's container image.
   - Contains:
     - `service_name` (string): Name of the service to build
     - `service_context` (ServiceContext): Current service context with artifacts
+    - `service_path` (string): Optional project-relative path used only for this operation
 - **Response:** _ContainerBuildResponse_
   - Contains:
     - `result` (ServiceBuildResult): Build result with artifacts
@@ -2517,6 +2518,7 @@ Packages a service's container for deployment.
   - Contains:
     - `service_name` (string): Name of the service to package
     - `service_context` (ServiceContext): Current service context with artifacts
+    - `service_path` (string): Optional project-relative path used only for this operation
 - **Response:** _ContainerPackageResponse_
   - Contains:
     - `result` (ServicePackageResult): Package result with artifacts
@@ -2529,6 +2531,7 @@ Publishes a container service to a registry.
   - Contains:
     - `service_name` (string): Name of the service to publish
     - `service_context` (ServiceContext): Current service context with artifacts
+    - `service_path` (string): Optional project-relative path used only for this operation
 - **Response:** _ContainerPublishResponse_
   - Contains:
     - `result` (ServicePublishResult): Publish result with artifacts

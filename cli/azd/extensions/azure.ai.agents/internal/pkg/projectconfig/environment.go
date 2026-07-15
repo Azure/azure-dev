@@ -22,7 +22,7 @@ func LoadServiceEnvironment(
 		return nil, nil
 	}
 
-	data, path, err := readProjectFile(projectRoot)
+	data, path, err := ReadProjectFile(projectRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,8 @@ func NormalizeEnvironment(properties map[string]any) error {
 	return nil
 }
 
-func readProjectFile(projectRoot string) ([]byte, string, error) {
+// ReadProjectFile loads the project's azure.yaml or azure.yml.
+func ReadProjectFile(projectRoot string) ([]byte, string, error) {
 	for _, name := range []string{"azure.yaml", "azure.yml"} {
 		path := filepath.Join(projectRoot, name)
 		data, err := os.ReadFile(path) //nolint:gosec

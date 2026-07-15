@@ -6,11 +6,10 @@ package project
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"azureaiagent/internal/pkg/azure"
+	"azureaiagent/internal/pkg/projectconfig"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -276,7 +275,7 @@ func (c *ResourceGroupLocationCheck) isBrownfieldFoundryProject(ctx context.Cont
 	}
 
 	projectPath := resp.GetProject().GetPath()
-	rawYAML, err := os.ReadFile(filepath.Join(projectPath, "azure.yaml"))
+	rawYAML, _, err := projectconfig.ReadProjectFile(projectPath)
 	if err != nil {
 		return false
 	}

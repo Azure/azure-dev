@@ -418,14 +418,8 @@ func deriveIncludeAcr(
 	}
 
 	for serviceName, node := range services {
-		var service serviceBlock
-		if err := node.Decode(&service); err != nil {
-			continue
-		}
-		if service.Host != "azure.ai.agent" {
-			continue
-		}
-		if projectRoot != "" {
+		resolvedRefs := projectRoot != ""
+		if resolvedRefs {
 			resolved, err := resolveServiceRefs(
 				node,
 				projectRoot,
@@ -435,13 +429,20 @@ func deriveIncludeAcr(
 				return false, err
 			}
 			node = resolved
-			if err := node.Decode(&service); err != nil {
+		}
+		var service serviceBlock
+		if err := node.Decode(&service); err != nil {
+			if resolvedRefs {
 				return false, fmt.Errorf(
 					"decode service %q: %w",
 					serviceName,
 					err,
 				)
 			}
+			continue
+		}
+		if service.Host != "azure.ai.agent" {
+			continue
 		}
 		if agentNeedsAcr(agentBlock{
 			Kind:              service.Kind,
@@ -485,12 +486,6 @@ func collectConnections(
 	connections := []Connection{}
 
 	for name, node := range services {
-		var host struct {
-			Host string `yaml:"host"`
-		}
-		if err := node.Decode(&host); err != nil || host.Host != aiConnectionHost {
-			continue
-		}
 		if projectRoot != "" {
 			resolved, err := resolveServiceRefs(
 				node,
@@ -501,6 +496,12 @@ func collectConnections(
 				return nil, err
 			}
 			node = resolved
+		}
+		var host struct {
+			Host string `yaml:"host"`
+		}
+		if err := node.Decode(&host); err != nil || host.Host != aiConnectionHost {
+			continue
 		}
 		var svc connectionService
 		if err := node.Decode(&svc); err != nil {

@@ -14,12 +14,80 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestNewContainerService(t *testing.T) {
 	t.Parallel()
 	svc := NewContainerService(nil, nil, nil, nil, nil)
 	require.NotNil(t, svc)
+}
+
+func TestContainerServiceConfigOverridesPathWithoutMutation(t *testing.T) {
+	t.Parallel()
+
+	source := &project.ServiceConfig{
+		Name:         "web",
+		RelativePath: "original",
+	}
+	projectConfig := &project.ProjectConfig{
+		Services: map[string]*project.ServiceConfig{"web": source},
+	}
+
+	effective, err := containerServiceConfig(
+		projectConfig,
+		"web",
+		"resolved/path",
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "resolved/path", effective.RelativePath)
+	require.Equal(t, "original", source.RelativePath)
+}
+
+func TestContainerServiceConfigRejectsPathTraversal(t *testing.T) {
+	t.Parallel()
+
+	projectConfig := &project.ProjectConfig{
+		Services: map[string]*project.ServiceConfig{
+			"web": {Name: "web"},
+		},
+	}
+
+	_, err := containerServiceConfig(projectConfig, "web", "../outside")
+
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.InvalidArgument, st.Code())
+}
+
+func TestContainerServiceConfigDecodesForwardCompatiblePath(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	data := protowire.AppendTag(nil, 1, protowire.BytesType)
+	data = protowire.AppendString(data, "web")
+	data = protowire.AppendTag(data, 3, protowire.BytesType)
+	data = protowire.AppendString(data, "resolved/path")
+	request := &azdext.ContainerBuildRequest{}
+	require.NoError(t, proto.Unmarshal(data, request))
+
+	projectConfig := &project.ProjectConfig{
+		Services: map[string]*project.ServiceConfig{
+			"web": {Name: "web"},
+		},
+	}
+	effective, err := containerServiceConfig(
+		projectConfig,
+		request.GetServiceName(),
+		request.GetServicePath(),
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "resolved/path", effective.RelativePath)
 }
 
 func TestContainerService_Build_EmptyServiceName(t *testing.T) {

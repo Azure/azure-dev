@@ -24,6 +24,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -141,14 +144,18 @@ type stubContainerServer struct {
 	buildCalls   atomic.Int32
 	packageCalls atomic.Int32
 	publishCalls atomic.Int32
+	buildRequest *azdext.ContainerBuildRequest
+	packRequest  *azdext.ContainerPackageRequest
+	pubRequest   *azdext.ContainerPublishRequest
 	publishErr   error
 }
 
 func (s *stubContainerServer) Build(
 	_ context.Context,
-	_ *azdext.ContainerBuildRequest,
+	request *azdext.ContainerBuildRequest,
 ) (*azdext.ContainerBuildResponse, error) {
 	s.buildCalls.Add(1)
+	s.buildRequest = request
 	return &azdext.ContainerBuildResponse{
 		Result: &azdext.ServiceBuildResult{
 			Artifacts: []*azdext.Artifact{{
@@ -161,9 +168,10 @@ func (s *stubContainerServer) Build(
 
 func (s *stubContainerServer) Package(
 	_ context.Context,
-	_ *azdext.ContainerPackageRequest,
+	request *azdext.ContainerPackageRequest,
 ) (*azdext.ContainerPackageResponse, error) {
 	s.packageCalls.Add(1)
+	s.packRequest = request
 	return &azdext.ContainerPackageResponse{
 		Result: &azdext.ServicePackageResult{
 			Artifacts: []*azdext.Artifact{{
@@ -176,9 +184,10 @@ func (s *stubContainerServer) Package(
 
 func (s *stubContainerServer) Publish(
 	_ context.Context,
-	_ *azdext.ContainerPublishRequest,
+	request *azdext.ContainerPublishRequest,
 ) (*azdext.ContainerPublishResponse, error) {
 	s.publishCalls.Add(1)
+	s.pubRequest = request
 	if s.publishErr != nil {
 		return nil, s.publishErr
 	}
@@ -199,6 +208,27 @@ func (s *stubContainerServer) Publish(
 func newContainerTestClient(t *testing.T, containerSrv azdext.ContainerServiceServer) *azdext.AzdClient {
 	t.Helper()
 	return newServiceTargetTestClient(t, containerSrv, nil)
+}
+
+func requestServicePath(t *testing.T, request proto.Message) string {
+	t.Helper()
+
+	message := request.ProtoReflect()
+	field := message.Descriptor().Fields().ByNumber(
+		protoreflect.FieldNumber(containerServicePathFieldNumber),
+	)
+	if field != nil {
+		return message.Get(field).String()
+	}
+
+	data := message.GetUnknown()
+	number, wireType, tagLength := protowire.ConsumeTag(data)
+	require.Positive(t, tagLength)
+	require.Equal(t, containerServicePathFieldNumber, number)
+	require.Equal(t, protowire.BytesType, wireType)
+	value, valueLength := protowire.ConsumeString(data[tagLength:])
+	require.Positive(t, valueLength)
+	return value
 }
 
 func newServiceTargetTestClient(
@@ -238,24 +268,13 @@ func newServiceTargetTestClient(
 
 type stubProjectServer struct {
 	azdext.UnimplementedProjectServiceServer
-	project       *azdext.ProjectConfig
-	addedService  *azdext.ServiceConfig
-	addedServices []*azdext.ServiceConfig
+	project *azdext.ProjectConfig
 }
 
 func (s *stubProjectServer) Get(
 	context.Context, *azdext.EmptyRequest,
 ) (*azdext.GetProjectResponse, error) {
 	return &azdext.GetProjectResponse{Project: s.project}, nil
-}
-
-func (s *stubProjectServer) AddService(
-	_ context.Context,
-	request *azdext.AddServiceRequest,
-) (*azdext.EmptyResponse, error) {
-	s.addedService = request.GetService()
-	s.addedServices = append(s.addedServices, request.GetService())
-	return &azdext.EmptyResponse{}, nil
 }
 
 type stubInitializeEnvServer struct {
@@ -307,29 +326,6 @@ func newInitializeTestClient(t *testing.T, projectRoot string) *azdext.AzdClient
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
 
-	return client
-}
-
-func newProjectTestClient(
-	t *testing.T,
-	projectServer azdext.ProjectServiceServer,
-) *azdext.AzdClient {
-	t.Helper()
-
-	srv := grpc.NewServer()
-	azdext.RegisterProjectServiceServer(srv, projectServer)
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	go func() { _ = srv.Serve(lis) }()
-	t.Cleanup(func() {
-		srv.Stop()
-		_ = lis.Close()
-	})
-	client, err := azdext.NewAzdClient(
-		azdext.WithAddress(lis.Addr().String()),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { client.Close() })
 	return client
 }
 
@@ -1095,111 +1091,25 @@ func TestLoadContainerAgentDefinition_FileRef(t *testing.T) {
 	require.Equal(t, "referenced-agent", got.Name)
 }
 
-func TestPersistBuildService_RestoresSourceFields(
-	t *testing.T,
-) {
-	t.Parallel()
-
-	source, err := structpb.NewStruct(map[string]any{
-		"$ref": "./agent.yaml",
-	})
-	require.NoError(t, err)
-	resolved, err := structpb.NewStruct(map[string]any{
-		"kind": "hosted",
-		"name": "referenced-agent",
-	})
-	require.NoError(t, err)
-	projectServer := &stubProjectServer{}
-	provider := &AgentServiceTargetProvider{
-		azdClient: newProjectTestClient(t, projectServer),
-		sourceServiceConfig: &azdext.ServiceConfig{
-			Name:                 "referenced-agent",
-			Host:                 "azure.ai.agent",
-			AdditionalProperties: source,
-		},
-		serviceConfig: &azdext.ServiceConfig{
-			Name:                 "referenced-agent",
-			Host:                 "azure.ai.agent",
-			RelativePath:         "src/agent",
-			Image:                "example.azurecr.io/agent:v1",
-			AdditionalProperties: resolved,
-		},
-	}
-
-	restore, err := provider.persistBuildService(t.Context())
-
-	require.NoError(t, err)
-	require.NotNil(t, restore)
-	require.NotNil(t, projectServer.addedService)
-	require.Equal(
-		t,
-		"src/agent",
-		projectServer.addedService.GetRelativePath(),
-	)
-	require.Contains(
-		t,
-		projectServer.addedService.
-			GetAdditionalProperties().
-			GetFields(),
-		"$ref",
-	)
-	require.Equal(
-		t,
-		"",
-		projectServer.addedService.GetImage(),
-	)
-
-	require.NoError(t, restore(t.Context()))
-	require.Empty(t, projectServer.addedService.GetRelativePath())
-	require.Empty(t, projectServer.addedService.GetImage())
-	require.Contains(
-		t,
-		projectServer.addedService.
-			GetAdditionalProperties().
-			GetFields(),
-		"$ref",
-	)
-}
-
-func TestPackage_RestoresReferencedService(t *testing.T) {
+func TestPackagePassesResolvedServicePath(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
 	agentPath := writeHostedAgentYAML(t, dir)
-	source, err := structpb.NewStruct(map[string]any{
-		"$ref": "./agent.yaml",
-	})
-	require.NoError(t, err)
-	resolved, err := structpb.NewStruct(map[string]any{
-		"kind": "hosted",
-		"name": "referenced-agent",
-	})
-	require.NoError(t, err)
-	projectServer := &stubProjectServer{}
-	client := newServiceTargetTestClient(
-		t,
-		&stubContainerServer{},
-		nil,
-		projectServer,
-	)
+	containerStub := &stubContainerServer{}
+	client := newContainerTestClient(t, containerStub)
 	provider := &AgentServiceTargetProvider{
 		azdClient:           client,
 		agentDefinitionPath: agentPath,
 		env:                 &azdext.Environment{Name: "test-env"},
-		sourceServiceConfig: &azdext.ServiceConfig{
-			Name:                 "referenced-agent",
-			Host:                 "azure.ai.agent",
-			AdditionalProperties: source,
-		},
 		serviceConfig: &azdext.ServiceConfig{
-			Name:                 "referenced-agent",
-			Host:                 "azure.ai.agent",
-			RelativePath:         "src/agent",
-			AdditionalProperties: resolved,
+			Name:         "referenced-agent",
+			Host:         "azure.ai.agent",
+			RelativePath: "src/agent",
 		},
 	}
 
-	_, err = provider.Package(
+	_, err := provider.Package(
 		t.Context(),
 		&azdext.ServiceConfig{Name: "referenced-agent"},
 		&azdext.ServiceContext{},
@@ -1207,22 +1117,15 @@ func TestPackage_RestoresReferencedService(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.Len(t, projectServer.addedServices, 2)
 	require.Equal(
 		t,
 		"src/agent",
-		projectServer.addedServices[0].GetRelativePath(),
+		requestServicePath(t, containerStub.buildRequest),
 	)
-	require.Empty(
+	require.Equal(
 		t,
-		projectServer.addedServices[1].GetRelativePath(),
-	)
-	require.Contains(
-		t,
-		projectServer.addedServices[1].
-			GetAdditionalProperties().
-			GetFields(),
-		"$ref",
+		"src/agent",
+		requestServicePath(t, containerStub.packRequest),
 	)
 }
 
@@ -1582,6 +1485,10 @@ func TestPublish_PublishesWhenPackageBuiltFromDockerfile(t *testing.T) {
 		azdClient:           client,
 		agentDefinitionPath: agentPath,
 		env:                 &azdext.Environment{Name: "test-env"},
+		serviceConfig: &azdext.ServiceConfig{
+			Name:         "test-svc",
+			RelativePath: "src/agent",
+		},
 	}
 
 	result, err := provider.Publish(
@@ -1601,6 +1508,11 @@ func TestPublish_PublishesWhenPackageBuiltFromDockerfile(t *testing.T) {
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.Artifacts, "expected published container artifacts")
 	require.Equal(t, int32(1), containerStub.publishCalls.Load())
+	require.Equal(
+		t,
+		"src/agent",
+		requestServicePath(t, containerStub.pubRequest),
+	)
 }
 
 func TestPublish_PrivateACRNetworkAccessGuidance(t *testing.T) {

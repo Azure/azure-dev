@@ -29,6 +29,8 @@ service ContainerService {
 message ContainerBuildRequest {
   string service_name = 1;
   ServiceContext service_context = 2;
+  // Project-relative path used only for this operation.
+  string service_path = 3;
 }
 
 // Response from the container build operation
@@ -41,6 +43,8 @@ message ContainerPackageRequest {
   // Name of the service to package (required)
   string service_name = 1;
   ServiceContext service_context = 2;
+  // Project-relative path used only for this operation.
+  string service_path = 3;
 }
 
 // Response from container package operation
@@ -56,6 +60,8 @@ message ContainerPublishRequest {
   string service_name = 1;
   // Package result from previous package operation (optional - will re-package if not provided)
   ServiceContext service_context = 2;
+  // Project-relative path used only for this operation.
+  string service_path = 3;
 }
 
 // Response from container publish operation

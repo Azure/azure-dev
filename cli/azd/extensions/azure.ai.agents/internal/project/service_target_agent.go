@@ -42,7 +42,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/fatih/color"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -148,7 +150,6 @@ var _ azdext.ServiceTargetProvider = &AgentServiceTargetProvider{}
 type AgentServiceTargetProvider struct {
 	azdClient           *azdext.AzdClient
 	serviceConfig       *azdext.ServiceConfig
-	sourceServiceConfig *azdext.ServiceConfig
 	agentDefinitionPath string
 	projectPath         string
 	servicePath         string
@@ -186,7 +187,6 @@ func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTa
 // only when a deploy-time entrypoint needs it.
 func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
 	p.serviceConfig = serviceConfig
-	p.sourceServiceConfig = proto.Clone(serviceConfig).(*azdext.ServiceConfig)
 	return nil
 }
 
@@ -545,7 +545,7 @@ func (p *AgentServiceTargetProvider) Package(
 	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
-) (result *azdext.ServicePackageResult, err error) {
+) (*azdext.ServicePackageResult, error) {
 	if err := p.ensureDeployContext(ctx); err != nil {
 		return nil, err
 	}
@@ -590,27 +590,6 @@ func (p *AgentServiceTargetProvider) Package(
 			Artifacts: []*azdext.Artifact{preBuiltImageArtifact(agentDef.Image)},
 		}, nil
 	}
-	restore, err := p.persistBuildService(ctx)
-	if err != nil {
-		return nil, exterrors.Internal(
-			exterrors.OpContainerBuild,
-			fmt.Sprintf("prepare referenced service: %s", err),
-		)
-	}
-	if restore != nil {
-		defer func() {
-			err = combineBuildServiceRestore(
-				ctx,
-				restore,
-				err,
-				exterrors.OpContainerBuild,
-			)
-			if err != nil {
-				result = nil
-			}
-		}()
-	}
-
 	var packageArtifact *azdext.Artifact
 	var newArtifacts []*azdext.Artifact
 
@@ -632,12 +611,17 @@ func (p *AgentServiceTargetProvider) Package(
 		}
 
 		if buildArtifact == nil {
+			buildRequest := &azdext.ContainerBuildRequest{
+				ServiceName:    serviceConfig.Name,
+				ServiceContext: serviceContext,
+			}
+			setContainerServicePath(
+				buildRequest,
+				p.serviceConfig.GetRelativePath(),
+			)
 			buildResponse, err := p.azdClient.
 				Container().
-				Build(ctx, &azdext.ContainerBuildRequest{
-					ServiceName:    serviceConfig.Name,
-					ServiceContext: serviceContext,
-				})
+				Build(ctx, buildRequest)
 			if err != nil {
 				return nil, exterrors.Internal(exterrors.OpContainerBuild, fmt.Sprintf("container build failed: %s", err))
 			}
@@ -645,12 +629,17 @@ func (p *AgentServiceTargetProvider) Package(
 			serviceContext.Build = append(serviceContext.Build, buildResponse.Result.Artifacts...)
 		}
 
+		packageRequest := &azdext.ContainerPackageRequest{
+			ServiceName:    serviceConfig.Name,
+			ServiceContext: serviceContext,
+		}
+		setContainerServicePath(
+			packageRequest,
+			p.serviceConfig.GetRelativePath(),
+		)
 		packageResponse, err := p.azdClient.
 			Container().
-			Package(ctx, &azdext.ContainerPackageRequest{
-				ServiceName:    serviceConfig.Name,
-				ServiceContext: serviceContext,
-			})
+			Package(ctx, packageRequest)
 		if err != nil {
 			return nil, exterrors.Internal(exterrors.OpContainerPackage, fmt.Sprintf("container package failed: %s", err))
 		}
@@ -661,61 +650,6 @@ func (p *AgentServiceTargetProvider) Package(
 	return &azdext.ServicePackageResult{
 		Artifacts: newArtifacts,
 	}, nil
-}
-
-func (p *AgentServiceTargetProvider) persistBuildService(
-	ctx context.Context,
-) (func(context.Context) error, error) {
-	source := p.sourceServiceConfig
-	if source == nil ||
-		(!ConfigContainsFileRef(source.GetAdditionalProperties()) &&
-			!ConfigContainsFileRef(source.GetConfig())) {
-		return nil, nil
-	}
-	resolvedPath := p.serviceConfig.GetRelativePath()
-	if resolvedPath == source.GetRelativePath() {
-		return nil, nil
-	}
-	persisted := proto.Clone(source).(*azdext.ServiceConfig)
-	persisted.RelativePath = resolvedPath
-	if err := AddServiceSerialized(
-		ctx,
-		p.azdClient,
-		persisted,
-	); err != nil {
-		return nil, fmt.Errorf("persist resolved service fields: %w", err)
-	}
-	return func(restoreCtx context.Context) error {
-		original := proto.Clone(source).(*azdext.ServiceConfig)
-		if err := AddServiceSerialized(
-			restoreCtx,
-			p.azdClient,
-			original,
-		); err != nil {
-			return fmt.Errorf("restore referenced service: %w", err)
-		}
-		return nil
-	}, nil
-}
-
-func combineBuildServiceRestore(
-	ctx context.Context,
-	restore func(context.Context) error,
-	operationErr error,
-	code string,
-) error {
-	if restore == nil {
-		return operationErr
-	}
-	restoreErr := restore(context.WithoutCancel(ctx))
-	if restoreErr == nil {
-		return operationErr
-	}
-	classified := exterrors.Internal(code, restoreErr.Error())
-	if operationErr == nil {
-		return classified
-	}
-	return errors.Join(operationErr, classified)
 }
 
 // ConfigContainsFileRef reports whether config contains a local $ref.
@@ -745,6 +679,32 @@ func ConfigContainsFileRef(config *structpb.Struct) bool {
 	return contains(config.AsMap())
 }
 
+const containerServicePathFieldNumber protowire.Number = 3
+
+func setContainerServicePath(request proto.Message, servicePath string) {
+	if servicePath == "" {
+		return
+	}
+	message := request.ProtoReflect()
+	field := message.Descriptor().Fields().ByNumber(
+		protoreflect.FieldNumber(containerServicePathFieldNumber),
+	)
+	if field != nil {
+		message.Set(field, protoreflect.ValueOfString(servicePath))
+		return
+	}
+
+	// The released SDK may not know this optional field yet.
+	// Unknown fields preserve wire compatibility.
+	unknown := protowire.AppendTag(
+		message.GetUnknown(),
+		containerServicePathFieldNumber,
+		protowire.BytesType,
+	)
+	unknown = protowire.AppendString(unknown, servicePath)
+	message.SetUnknown(unknown)
+}
+
 // Publish performs the publish operation for the agent service
 func (p *AgentServiceTargetProvider) Publish(
 	ctx context.Context,
@@ -753,7 +713,7 @@ func (p *AgentServiceTargetProvider) Publish(
 	targetResource *azdext.TargetResource,
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
-) (result *azdext.ServicePublishResult, err error) {
+) (*azdext.ServicePublishResult, error) {
 	// Pre-built image: nothing to package or push. Skip deploy-context
 	// resolution so this path stays cheap and doesn't require agent.yaml.
 	if preBuiltArtifact := findPreBuiltImageArtifact(serviceContext.Package); preBuiltArtifact != nil {
@@ -779,34 +739,18 @@ func (p *AgentServiceTargetProvider) Publish(
 		return &azdext.ServicePublishResult{}, nil
 	}
 
-	restore, err := p.persistBuildService(ctx)
-	if err != nil {
-		return nil, exterrors.Internal(
-			exterrors.OpContainerPublish,
-			fmt.Sprintf("prepare referenced service: %s", err),
-		)
-	}
-	if restore != nil {
-		defer func() {
-			err = combineBuildServiceRestore(
-				ctx,
-				restore,
-				err,
-				exterrors.OpContainerPublish,
-			)
-			if err != nil {
-				result = nil
-			}
-		}()
-	}
-
 	progress("Publishing container")
+	publishRequest := &azdext.ContainerPublishRequest{
+		ServiceName:    serviceConfig.Name,
+		ServiceContext: serviceContext,
+	}
+	setContainerServicePath(
+		publishRequest,
+		p.serviceConfig.GetRelativePath(),
+	)
 	publishResponse, err := p.azdClient.
 		Container().
-		Publish(ctx, &azdext.ContainerPublishRequest{
-			ServiceName:    serviceConfig.Name,
-			ServiceContext: serviceContext,
-		})
+		Publish(ctx, publishRequest)
 
 	if err != nil {
 		return nil, classifyContainerPublishError(err)

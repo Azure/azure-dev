@@ -239,6 +239,34 @@ func AgentDefinitionFromResolvedService(
 		nil
 }
 
+// AgentDefinitionUsesFileRef reports whether a root $ref supplies the
+// agent definition.
+func AgentDefinitionUsesFileRef(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (bool, error) {
+	for _, props := range []*structpb.Struct{
+		svc.GetAdditionalProperties(),
+		svc.GetConfig(),
+	} {
+		if props == nil || props.GetFields()["$ref"] == nil {
+			continue
+		}
+		resolved, err := resolveServiceProps(
+			props,
+			svc.GetName(),
+			projectRoot,
+		)
+		if err != nil {
+			return false, err
+		}
+		if structHasKind(resolved) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // AgentDefinitionFromService returns the agent definition carried inline on the
 // service entry — the unified service-level shape, or the deprecated
 // config-nested shape. found is false when the entry carries no inline

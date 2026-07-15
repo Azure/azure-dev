@@ -4,10 +4,6 @@
 
 ## 1.28.0 (2026-07-15)
 
-### Features Added
-
-- [[#9019]](https://github.com/Azure/azure-dev/pull/9019) Add a provider-agnostic `provision` validation check type dispatched before provisioning for every provider. Extensions with the `validation-provider` capability can now contribute client-side checks that run regardless of the provisioning provider (Bicep, Terraform, or an extension-provided provider), not just during Bicep local preflight.
-
 ### Breaking Changes
 
  - [[#9045]](https://github.com/Azure/azure-dev/pull/9045) The `--host` skill flag on `azd tool install`, `azd tool upgrade`, and `azd tool uninstall` has been renamed to `--agent`. Installed skills in `azd tool list --output json` and `azd tool check --output json` now expand into one row per agent and include the `agent` field. Update scripts and JSON consumers accordingly.
@@ -28,6 +24,8 @@
 ### Features Added
 
 - [[#8927]](https://github.com/Azure/azure-dev/pull/8927) Add `--no-dependencies` flag to `azd extension install` that installs only the named extension without resolving or installing its declared dependencies.
+- [[#9019]](https://github.com/Azure/azure-dev/pull/9019) Add a provider-agnostic `provision` validation check type dispatched before provisioning for every provider. Extensions with the `validation-provider` capability can now contribute client-side checks that run regardless of the provisioning provider (Bicep, Terraform, or an extension-provided provider), not just during Bicep local preflight.
+- [[#8936]](https://github.com/Azure/azure-dev/pull/8936) Add expanded service-level `env` values from `azure.yaml` to the extension service configuration.
 
 ### Bugs Fixed
 

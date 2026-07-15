@@ -6,6 +6,8 @@ package cmd
 import (
 	"context"
 	"net"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func mustMarshalConfig[T any](t *testing.T, in *T) *azdext.ServiceConfig {
@@ -141,6 +144,70 @@ func TestCollectToolboxes(t *testing.T) {
 	require.Len(t, toolboxes, 1)
 	assert.Equal(t, "tb", toolboxes[0].Name)
 	require.Len(t, toolboxes[0].Tools, 1)
+}
+
+func TestCollectResourceServices_ResolvesFileRefs(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "deployment.yaml"),
+		[]byte(
+			"name: gpt-4o\n"+
+				"model: {name: gpt-4o}\n",
+		),
+		0o600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "project.yaml"),
+		[]byte(
+			"deployments:\n"+
+				"  - $ref: ./deployment.yaml\n",
+		),
+		0o600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "connection.yaml"),
+		[]byte(
+			"category: ApiKey\n"+
+				"target: https://example.test\n",
+		),
+		0o600,
+	))
+	projectProps, err := structpb.NewStruct(map[string]any{
+		"$ref": "./project.yaml",
+	})
+	require.NoError(t, err)
+	connectionProps, err := structpb.NewStruct(map[string]any{
+		"$ref": "./connection.yaml",
+	})
+	require.NoError(t, err)
+	services := map[string]*azdext.ServiceConfig{
+		"ai-project": {
+			Name:                 "ai-project",
+			Host:                 AiProjectHost,
+			AdditionalProperties: projectProps,
+		},
+		"search": {
+			Name:                 "search",
+			Host:                 AiConnectionHost,
+			AdditionalProperties: connectionProps,
+		},
+	}
+
+	deployments, err := collectProjectDeploymentsAtRoot(
+		services,
+		root,
+	)
+	require.NoError(t, err)
+	require.Len(t, deployments, 1)
+	assert.Equal(t, "gpt-4o", deployments[0].Name)
+
+	connections, err := collectConnectionsAtRoot(services, root)
+	require.NoError(t, err)
+	require.Len(t, connections, 1)
+	assert.Equal(t, "search", connections[0].Name)
+	assert.Equal(t, "ApiKey", connections[0].Category)
 }
 
 // TestCollectAgentToolConnections verifies tool connections stay on the agent

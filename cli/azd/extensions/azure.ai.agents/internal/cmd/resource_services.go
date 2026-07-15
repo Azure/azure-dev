@@ -13,6 +13,8 @@ import (
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -355,10 +357,26 @@ func reserveServiceName(used map[string]string, name, source string) error {
 // service carries any, so an azure.yaml written before the per-resource split
 // still provisions without re-running init.
 func collectProjectDeployments(services map[string]*azdext.ServiceConfig) ([]project.Deployment, error) {
+	return collectProjectDeploymentsAtRoot(services, "")
+}
+
+func collectProjectDeploymentsAtRoot(
+	services map[string]*azdext.ServiceConfig,
+	projectRoot string,
+) ([]project.Deployment, error) {
 	var out []project.Deployment
 	for _, svc := range sortedServices(services) {
-		props := project.ServiceConfigProps(svc)
-		if svc.Host != AiProjectHost || props == nil {
+		if svc.Host != AiProjectHost {
+			continue
+		}
+		props, err := resolvedResourceServiceProps(
+			svc,
+			projectRoot,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if props == nil {
 			continue
 		}
 		var cfg *project.ServiceTargetAgentConfig
@@ -372,7 +390,10 @@ func collectProjectDeployments(services map[string]*azdext.ServiceConfig) ([]pro
 	if len(out) > 0 {
 		return out, nil
 	}
-	legacy, err := collectLegacyAgentConfigs(services)
+	legacy, err := collectLegacyAgentConfigsAtRoot(
+		services,
+		projectRoot,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -387,10 +408,26 @@ func collectProjectDeployments(services map[string]*azdext.ServiceConfig) ([]pro
 // agent service when no connection service carries any, so a pre-split
 // azure.yaml still provisions without re-running init.
 func collectConnections(services map[string]*azdext.ServiceConfig) ([]project.Connection, error) {
+	return collectConnectionsAtRoot(services, "")
+}
+
+func collectConnectionsAtRoot(
+	services map[string]*azdext.ServiceConfig,
+	projectRoot string,
+) ([]project.Connection, error) {
 	var out []project.Connection
 	for _, svc := range sortedServices(services) {
-		props := project.ServiceConfigProps(svc)
-		if svc.Host != AiConnectionHost || props == nil {
+		if svc.Host != AiConnectionHost {
+			continue
+		}
+		props, err := resolvedResourceServiceProps(
+			svc,
+			projectRoot,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if props == nil {
 			continue
 		}
 		var conn *project.Connection
@@ -398,13 +435,19 @@ func collectConnections(services map[string]*azdext.ServiceConfig) ([]project.Co
 			return nil, fmt.Errorf("parsing connection service %q config: %w", svc.Name, err)
 		}
 		if conn != nil {
+			if conn.Name == "" {
+				conn.Name = svc.Name
+			}
 			out = append(out, *conn)
 		}
 	}
 	if len(out) > 0 {
 		return out, nil
 	}
-	legacy, err := collectLegacyAgentConfigs(services)
+	legacy, err := collectLegacyAgentConfigsAtRoot(
+		services,
+		projectRoot,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -419,10 +462,26 @@ func collectConnections(services map[string]*azdext.ServiceConfig) ([]project.Co
 // toolbox service carries any, so a pre-split azure.yaml still provisions
 // without re-running init.
 func collectToolboxes(services map[string]*azdext.ServiceConfig) ([]project.Toolbox, error) {
+	return collectToolboxesAtRoot(services, "")
+}
+
+func collectToolboxesAtRoot(
+	services map[string]*azdext.ServiceConfig,
+	projectRoot string,
+) ([]project.Toolbox, error) {
 	var out []project.Toolbox
 	for _, svc := range sortedServices(services) {
-		props := project.ServiceConfigProps(svc)
-		if svc.Host != AiToolboxHost || props == nil {
+		if svc.Host != AiToolboxHost {
+			continue
+		}
+		props, err := resolvedResourceServiceProps(
+			svc,
+			projectRoot,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if props == nil {
 			continue
 		}
 		var toolbox *project.Toolbox
@@ -430,13 +489,19 @@ func collectToolboxes(services map[string]*azdext.ServiceConfig) ([]project.Tool
 			return nil, fmt.Errorf("parsing toolbox service %q config: %w", svc.Name, err)
 		}
 		if toolbox != nil {
+			if toolbox.Name == "" {
+				toolbox.Name = svc.Name
+			}
 			out = append(out, *toolbox)
 		}
 	}
 	if len(out) > 0 {
 		return out, nil
 	}
-	legacy, err := collectLegacyAgentConfigs(services)
+	legacy, err := collectLegacyAgentConfigsAtRoot(
+		services,
+		projectRoot,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -468,6 +533,13 @@ func collectAgentToolConnections(services map[string]*azdext.ServiceConfig) ([]p
 // connections, and toolboxes here rather than in sibling azure.ai.<kind>
 // services, so the collectors fall back to these when no sibling service exists.
 func collectLegacyAgentConfigs(services map[string]*azdext.ServiceConfig) ([]*project.ServiceTargetAgentConfig, error) {
+	return collectLegacyAgentConfigsAtRoot(services, "")
+}
+
+func collectLegacyAgentConfigsAtRoot(
+	services map[string]*azdext.ServiceConfig,
+	projectRoot string,
+) ([]*project.ServiceTargetAgentConfig, error) {
 	var out []*project.ServiceTargetAgentConfig
 	for _, svc := range sortedServices(services) {
 		if svc.Host != AiAgentHost {
@@ -476,13 +548,56 @@ func collectLegacyAgentConfigs(services map[string]*azdext.ServiceConfig) ([]*pr
 		if project.ServiceConfigProps(svc) == nil {
 			continue
 		}
-		cfg, err := project.LoadServiceTargetAgentConfig(svc)
+		effective := proto.Clone(svc).(*azdext.ServiceConfig)
+		if projectRoot != "" {
+			if err := project.ResolveServiceConfigInPlace(
+				effective,
+				projectRoot,
+			); err != nil {
+				return nil, fmt.Errorf(
+					"resolving agent service %q config: %w",
+					svc.Name,
+					err,
+				)
+			}
+		}
+		cfg, err := project.LoadServiceTargetAgentConfig(effective)
 		if err != nil {
 			return nil, fmt.Errorf("parsing agent service %q config: %w", svc.Name, err)
 		}
 		if cfg != nil {
 			out = append(out, cfg)
 		}
+	}
+	return out, nil
+}
+
+func resolvedResourceServiceProps(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (*structpb.Struct, error) {
+	props := project.ServiceConfigProps(svc)
+	if props == nil || projectRoot == "" {
+		return props, nil
+	}
+	resolved, err := foundry.ResolveFileRefs(
+		props.AsMap(),
+		projectRoot,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"resolving service %q config: %w",
+			svc.Name,
+			err,
+		)
+	}
+	out, err := structpb.NewStruct(resolved)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"encoding service %q config: %w",
+			svc.Name,
+			err,
+		)
 	}
 	return out, nil
 }

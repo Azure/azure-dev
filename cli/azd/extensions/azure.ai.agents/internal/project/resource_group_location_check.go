@@ -275,8 +275,8 @@ func (c *ResourceGroupLocationCheck) isBrownfieldFoundryProject(ctx context.Cont
 		return false
 	}
 
-	// ProjectConfig.Path is the project directory that contains azure.yaml.
-	rawYAML, err := os.ReadFile(filepath.Join(resp.GetProject().GetPath(), "azure.yaml"))
+	projectPath := resp.GetProject().GetPath()
+	rawYAML, err := os.ReadFile(filepath.Join(projectPath, "azure.yaml"))
 	if err != nil {
 		return false
 	}
@@ -286,7 +286,12 @@ func (c *ResourceGroupLocationCheck) isBrownfieldFoundryProject(ctx context.Cont
 		return false
 	}
 
-	return foundryServiceEndpoint(rawYAML, svcName) != ""
+	endpoint, err := foundryServiceEndpointAtRoot(
+		rawYAML,
+		projectPath,
+		svcName,
+	)
+	return err == nil && endpoint != ""
 }
 
 // envValueOrEmpty returns the trimmed value of key in the named azd environment,

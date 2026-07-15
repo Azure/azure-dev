@@ -207,6 +207,21 @@ func (a *OptimizeApplyAction) apply(
 			}
 		}
 	} else {
+		// A $ref-backed definition is not detected as inline above, but
+		// its definition lives in a referenced file this command cannot
+		// safely round-trip. Fail with guidance rather than writing the
+		// wrong on-disk agent.yaml.
+		if projectpkg.ConfigContainsFileRef(svc.GetAdditionalProperties()) ||
+			projectpkg.ConfigContainsFileRef(svc.GetConfig()) {
+			return fmt.Errorf(
+				"agent service %q defines its agent via $ref; "+
+					"'optimize apply' cannot update a referenced file. "+
+					"Add OPTIMIZATION_LOCAL_DIR and "+
+					"OPTIMIZATION_CANDIDATE_ID to the referenced agent "+
+					"file, or inline the definition in azure.yaml",
+				svc.Name,
+			)
+		}
 		agentYamlPath := filepath.Join(serviceDir, "agent.yaml")
 		fmt.Fprintf(out, "  Updating %s...\n", agentYamlPath)
 		if err := upsertAgentYamlEnvVar(agentYamlPath, "OPTIMIZATION_LOCAL_DIR", agentConfigsDir); err != nil {

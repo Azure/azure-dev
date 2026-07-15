@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestApplyAgentMetadata(t *testing.T) {
@@ -204,6 +205,7 @@ func newServiceTargetTestClient(
 	t *testing.T,
 	containerSrv azdext.ContainerServiceServer,
 	promptSrv azdext.PromptServiceServer,
+	projectSrvs ...azdext.ProjectServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
 
@@ -213,6 +215,9 @@ func newServiceTargetTestClient(
 	}
 	if promptSrv != nil {
 		azdext.RegisterPromptServiceServer(srv, promptSrv)
+	}
+	if len(projectSrvs) > 0 && projectSrvs[0] != nil {
+		azdext.RegisterProjectServiceServer(srv, projectSrvs[0])
 	}
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -233,13 +238,24 @@ func newServiceTargetTestClient(
 
 type stubProjectServer struct {
 	azdext.UnimplementedProjectServiceServer
-	project *azdext.ProjectConfig
+	project       *azdext.ProjectConfig
+	addedService  *azdext.ServiceConfig
+	addedServices []*azdext.ServiceConfig
 }
 
 func (s *stubProjectServer) Get(
 	context.Context, *azdext.EmptyRequest,
 ) (*azdext.GetProjectResponse, error) {
 	return &azdext.GetProjectResponse{Project: s.project}, nil
+}
+
+func (s *stubProjectServer) AddService(
+	_ context.Context,
+	request *azdext.AddServiceRequest,
+) (*azdext.EmptyResponse, error) {
+	s.addedService = request.GetService()
+	s.addedServices = append(s.addedServices, request.GetService())
+	return &azdext.EmptyResponse{}, nil
 }
 
 type stubInitializeEnvServer struct {
@@ -291,6 +307,29 @@ func newInitializeTestClient(t *testing.T, projectRoot string) *azdext.AzdClient
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
 
+	return client
+}
+
+func newProjectTestClient(
+	t *testing.T,
+	projectServer azdext.ProjectServiceServer,
+) *azdext.AzdClient {
+	t.Helper()
+
+	srv := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(srv, projectServer)
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(func() {
+		srv.Stop()
+		_ = lis.Close()
+	})
+	client, err := azdext.NewAzdClient(
+		azdext.WithAddress(lis.Addr().String()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
 	return client
 }
 
@@ -1019,6 +1058,329 @@ func TestLoadContainerAgentDefinition_EnvPathOverridesInlineDefinition(t *testin
 	require.NoError(t, err)
 	require.True(t, isHosted)
 	require.Equal(t, "override-agent", got.Name)
+}
+
+func TestLoadContainerAgentDefinition_FileRef(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "agent.yaml"),
+		[]byte(
+			"kind: hosted\n"+
+				"name: referenced-agent\n"+
+				"protocols:\n"+
+				"  - protocol: responses\n"+
+				"    version: \"1.0.0\"\n",
+		),
+		0o600,
+	))
+	props, err := structpb.NewStruct(map[string]any{
+		"$ref": "./agent.yaml",
+	})
+	require.NoError(t, err)
+	provider := &AgentServiceTargetProvider{
+		projectPath: dir,
+		serviceConfig: &azdext.ServiceConfig{
+			Name:                 "referenced-agent",
+			Host:                 "azure.ai.agent",
+			AdditionalProperties: props,
+		},
+	}
+
+	got, isHosted, err := provider.loadContainerAgentDefinition()
+
+	require.NoError(t, err)
+	require.True(t, isHosted)
+	require.Equal(t, "referenced-agent", got.Name)
+}
+
+func TestPersistBuildService_RestoresSourceFields(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	source, err := structpb.NewStruct(map[string]any{
+		"$ref": "./agent.yaml",
+	})
+	require.NoError(t, err)
+	resolved, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "referenced-agent",
+	})
+	require.NoError(t, err)
+	projectServer := &stubProjectServer{}
+	provider := &AgentServiceTargetProvider{
+		azdClient: newProjectTestClient(t, projectServer),
+		sourceServiceConfig: &azdext.ServiceConfig{
+			Name:                 "referenced-agent",
+			Host:                 "azure.ai.agent",
+			AdditionalProperties: source,
+		},
+		serviceConfig: &azdext.ServiceConfig{
+			Name:                 "referenced-agent",
+			Host:                 "azure.ai.agent",
+			RelativePath:         "src/agent",
+			Image:                "example.azurecr.io/agent:v1",
+			AdditionalProperties: resolved,
+		},
+	}
+
+	restore, err := provider.persistBuildService(t.Context())
+
+	require.NoError(t, err)
+	require.NotNil(t, restore)
+	require.NotNil(t, projectServer.addedService)
+	require.Equal(
+		t,
+		"src/agent",
+		projectServer.addedService.GetRelativePath(),
+	)
+	require.Contains(
+		t,
+		projectServer.addedService.
+			GetAdditionalProperties().
+			GetFields(),
+		"$ref",
+	)
+	require.Equal(
+		t,
+		"",
+		projectServer.addedService.GetImage(),
+	)
+
+	require.NoError(t, restore(t.Context()))
+	require.Empty(t, projectServer.addedService.GetRelativePath())
+	require.Empty(t, projectServer.addedService.GetImage())
+	require.Contains(
+		t,
+		projectServer.addedService.
+			GetAdditionalProperties().
+			GetFields(),
+		"$ref",
+	)
+}
+
+func TestPackage_RestoresReferencedService(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAML(t, dir)
+	source, err := structpb.NewStruct(map[string]any{
+		"$ref": "./agent.yaml",
+	})
+	require.NoError(t, err)
+	resolved, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "referenced-agent",
+	})
+	require.NoError(t, err)
+	projectServer := &stubProjectServer{}
+	client := newServiceTargetTestClient(
+		t,
+		&stubContainerServer{},
+		nil,
+		projectServer,
+	)
+	provider := &AgentServiceTargetProvider{
+		azdClient:           client,
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+		sourceServiceConfig: &azdext.ServiceConfig{
+			Name:                 "referenced-agent",
+			Host:                 "azure.ai.agent",
+			AdditionalProperties: source,
+		},
+		serviceConfig: &azdext.ServiceConfig{
+			Name:                 "referenced-agent",
+			Host:                 "azure.ai.agent",
+			RelativePath:         "src/agent",
+			AdditionalProperties: resolved,
+		},
+	}
+
+	_, err = provider.Package(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "referenced-agent"},
+		&azdext.ServiceContext{},
+		func(string) {},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, projectServer.addedServices, 2)
+	require.Equal(
+		t,
+		"src/agent",
+		projectServer.addedServices[0].GetRelativePath(),
+	)
+	require.Empty(
+		t,
+		projectServer.addedServices[1].GetRelativePath(),
+	)
+	require.Contains(
+		t,
+		projectServer.addedServices[1].
+			GetAdditionalProperties().
+			GetFields(),
+		"$ref",
+	)
+}
+
+func TestPrepareDeploy_MergesUnifiedEnvironment(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	agentDef.EnvironmentVariables = &[]agent_yaml.EnvironmentVariable{
+		{Name: "LEGACY_ONLY", Value: "${LEGACY_VALUE}"},
+		{Name: "SHARED", Value: "legacy"},
+	}
+	props, err := AgentDefinitionToServiceProperties(
+		agentDef,
+		&ServiceTargetAgentConfig{
+			Environment: map[string]string{
+				"REF_ONLY": "${REF_VALUE}",
+				"SHARED":   "ref",
+			},
+		},
+	)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		AdditionalProperties: props,
+		Environment: map[string]string{
+			"DIRECT_ONLY": "direct",
+			"SHARED":      "direct",
+		},
+	}
+	provider := &AgentServiceTargetProvider{}
+
+	prep, err := provider.prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://example",
+			"LEGACY_VALUE":             "legacy-value",
+			"REF_VALUE":                "ref-value",
+		},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	definition, ok := prep.request.Definition.(agent_api.HostedAgentDefinition)
+	require.True(t, ok)
+	require.Equal(
+		t,
+		"legacy-value",
+		definition.EnvironmentVariables["LEGACY_ONLY"],
+	)
+	require.Equal(
+		t,
+		"ref-value",
+		definition.EnvironmentVariables["REF_ONLY"],
+	)
+	require.Equal(
+		t,
+		"direct",
+		definition.EnvironmentVariables["DIRECT_ONLY"],
+	)
+	require.Equal(
+		t,
+		"direct",
+		definition.EnvironmentVariables["SHARED"],
+	)
+}
+
+func TestPrepareDeployUsesRawUnifiedEnvironment(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte(`services:
+  basic-agent:
+    host: azure.ai.agent
+    env:
+      PROJECT: ${{project.endpoint}}
+      ENABLED: true
+`),
+		0o600,
+	))
+	agentDef := sampleContainerAgent()
+	props, err := AgentDefinitionToServiceProperties(
+		agentDef,
+		&ServiceTargetAgentConfig{},
+	)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		AdditionalProperties: props,
+		Environment: map[string]string{
+			"PROJECT": "",
+			"ENABLED": "",
+		},
+	}
+	provider := &AgentServiceTargetProvider{projectPath: root}
+
+	prep, err := provider.prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://example",
+		},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	definition, ok := prep.request.Definition.(agent_api.HostedAgentDefinition)
+	require.True(t, ok)
+	require.Equal(
+		t,
+		"${{project.endpoint}}",
+		definition.EnvironmentVariables["PROJECT"],
+	)
+	require.Equal(
+		t,
+		"true",
+		definition.EnvironmentVariables["ENABLED"],
+	)
+}
+
+func TestPrepareDeployAppliesDefaultResources(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	agentDef.Resources = nil
+	props, err := AgentDefinitionToServiceProperties(
+		agentDef,
+		&ServiceTargetAgentConfig{},
+	)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		AdditionalProperties: props,
+	}
+	provider := &AgentServiceTargetProvider{}
+
+	prep, err := provider.prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://example",
+		},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	definition, ok := prep.request.Definition.(agent_api.HostedAgentDefinition)
+	require.True(t, ok)
+	require.Equal(t, DefaultCpu, definition.CPU)
+	require.Equal(t, DefaultMemory, definition.Memory)
 }
 
 func TestShouldUsePreBuiltImage_NoImageDefaultsToBuild(t *testing.T) {

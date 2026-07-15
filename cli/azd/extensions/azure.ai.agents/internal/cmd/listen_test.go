@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // TestPostdeployHandler_NonHostedAgent_NoOp verifies postdeployHandler returns nil
@@ -128,6 +129,47 @@ func TestIsHostedAgentServiceRejectsTraversal(t *testing.T) {
 	if isHostedAgentService(svc, proj) {
 		t.Fatal("expected traversal service path to be rejected")
 	}
+}
+
+func TestPopulateContainerSettings_DoesNotPersistResolvedFileRef(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "agent.yaml"),
+		[]byte(
+			"kind: hosted\n"+
+				"name: echo\n"+
+				"project: src/echo\n"+
+				"container:\n"+
+				"  resources:\n"+
+				"    cpu: \"2\"\n"+
+				"    memory: 4Gi\n",
+		),
+		0o600,
+	))
+	props, err := structpb.NewStruct(map[string]any{
+		"$ref": "./agent.yaml",
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "echo",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}
+
+	err = populateContainerSettings(t.Context(), nil, svc, root)
+
+	require.NoError(t, err)
+	require.Equal(t, "src/echo", svc.GetRelativePath())
+	cfg, err := project.LoadServiceTargetAgentConfig(svc)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Container)
+	require.NotNil(t, cfg.Container.Resources)
+	require.Equal(t, "2", cfg.Container.Resources.Cpu)
+	require.Equal(t, "4Gi", cfg.Container.Resources.Memory)
 }
 
 func TestKindEnvUpdateRejectsTraversal(t *testing.T) {

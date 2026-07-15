@@ -629,6 +629,47 @@ services:
 	})
 }
 
+func TestSynthesizeConnectionsAtRootResolvesFileRef(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "connection.yaml"),
+		[]byte(`category: CognitiveSearch
+target: https://search.example
+authType: ApiKey
+credentials:
+  key: ${SEARCH_KEY}
+`),
+		0o600,
+	))
+	raw := []byte(`services:
+  project:
+    host: azure.ai.project
+  search:
+    host: azure.ai.connection
+    uses: [project]
+    $ref: ./connection.yaml
+`)
+
+	result, err := Synthesize(Input{
+		RawAzureYAML:  raw,
+		ServiceName:   "project",
+		AcceptedHosts: []string{"azure.ai.project"},
+		ProjectRoot:   root,
+		Env:           map[string]string{"SEARCH_KEY": "secret"},
+	})
+
+	require.NoError(t, err)
+	connections, ok := result.Parameters["connections"].([]Connection)
+	require.True(t, ok)
+	require.Len(t, connections, 1)
+	assert.Equal(t, "search", connections[0].Name)
+	assert.Equal(t, "CognitiveSearch", connections[0].Category)
+	assert.Equal(t, "https://search.example", connections[0].Target)
+	assert.Equal(t, "secret", connections[0].Credentials["key"])
+}
+
 // TestBrownfieldConnections verifies connection services are collected for a
 // brownfield (endpoint:) project, with ${VAR} resolved (brownfield provisions
 // so references must be concrete) and Foundry ${{...}} preserved.
@@ -679,6 +720,41 @@ services:
 	t.Run("empty raw errors", func(t *testing.T) {
 		_, err := BrownfieldConnections(nil, nil)
 		require.Error(t, err)
+	})
+
+	t.Run("resolves connection file references", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		require.NoError(t, os.WriteFile(
+			filepath.Join(root, "connection.yaml"),
+			[]byte(`category: CognitiveSearch
+target: https://search.example
+authType: ApiKey
+credentials:
+  key: ${SEARCH_KEY}
+`),
+			0o600,
+		))
+		raw := []byte(`services:
+  project:
+    host: azure.ai.project
+    endpoint: https://existing.example/api/projects/p1
+  search:
+    host: azure.ai.connection
+    uses: [project]
+    $ref: ./connection.yaml
+`)
+
+		connections, err := BrownfieldConnectionsAtRoot(
+			raw,
+			root,
+			map[string]string{"SEARCH_KEY": "secret"},
+		)
+
+		require.NoError(t, err)
+		require.Len(t, connections, 1)
+		assert.Equal(t, "CognitiveSearch", connections[0].Category)
+		assert.Equal(t, "secret", connections[0].Credentials["key"])
 	})
 }
 
@@ -792,6 +868,45 @@ func TestBrownfieldDeployments_EmptyRaw(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestBrownfieldDeploymentsAtRoot_ResolvesFileRef(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "deployment.yaml"),
+		[]byte(
+			"name: gpt-4o\n"+
+				"model:\n"+
+				"  format: OpenAI\n"+
+				"  name: gpt-4o\n"+
+				"  version: \"2024-08-06\"\n"+
+				"sku:\n"+
+				"  capacity: 10\n"+
+				"  name: GlobalStandard\n",
+		),
+		0o600,
+	))
+	raw := []byte(`services:
+  my-project:
+    host: azure.ai.project
+    endpoint: https://example
+    deployments:
+      - $ref: ./deployment.yaml
+`)
+
+	deployments, err := BrownfieldDeploymentsAtRoot(
+		raw,
+		root,
+		"my-project",
+	)
+
+	require.NoError(t, err)
+	require.Len(t, deployments, 1)
+	assert.Equal(t, "gpt-4o", deployments[0].Name)
+}
+
 func TestSynthesize_NetworkPreserveVarRefs(t *testing.T) {
 	// Eject path: ${VAR} references must pass through verbatim (and skip the
 	// format checks that cannot run on an unexpanded placeholder), so the
@@ -868,6 +983,40 @@ services:
 	assert.Equal(t, "gpt-4o", deployments[0].Name)
 	assert.Equal(t, "gpt-4o", deployments[0].Model.Name)
 	assert.Equal(t, 10, deployments[0].Sku.Capacity)
+}
+
+func TestSynthesize_ResolvesAgentRefForAcr(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "agent.yaml"),
+		[]byte(
+			"kind: hosted\n"+
+				"name: referenced-agent\n"+
+				"image: registry.example/agent:v1\n",
+		),
+		0o600,
+	))
+	raw := []byte(`services:
+  my-project:
+    host: azure.ai.project
+  referenced-agent:
+    host: azure.ai.agent
+    $ref: ./agent.yaml
+`)
+
+	result, err := Synthesize(Input{
+		RawAzureYAML:  raw,
+		ServiceName:   "my-project",
+		AcceptedHosts: []string{"azure.ai.project"},
+		ProjectRoot:   root,
+	})
+
+	require.NoError(t, err)
+	includeAcr, ok := result.Parameters["includeAcr"].(bool)
+	require.True(t, ok)
+	assert.False(t, includeAcr)
 }
 
 func TestSynthesize_InputValidation(t *testing.T) {

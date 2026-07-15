@@ -13,8 +13,10 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
+	"azureaiagent/internal/pkg/projectconfig"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/braydonk/yaml"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -167,7 +169,8 @@ func LoadAgentDefinition(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (agent_yaml.ContainerAgent, bool, AgentDefinitionSource, error) {
-	ca, isHosted, found, source, err := AgentDefinitionFromService(svc)
+	ca, isHosted, found, source, err :=
+		AgentDefinitionFromResolvedService(svc, projectRoot)
 	if err != nil {
 		return agent_yaml.ContainerAgent{}, false, source, err
 	}
@@ -175,8 +178,65 @@ func LoadAgentDefinition(
 		return ca, isHosted, source, nil
 	}
 
-	// Fall back to a legacy agent.yaml/agent.yml on disk.
 	return agentDefinitionFromDisk(svc, projectRoot)
+}
+
+// AgentDefinitionFromResolvedService expands local file includes.
+func AgentDefinitionFromResolvedService(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (
+	agent_yaml.ContainerAgent,
+	bool,
+	bool,
+	AgentDefinitionSource,
+	error,
+) {
+	candidates := []struct {
+		props  *structpb.Struct
+		source AgentDefinitionSource
+	}{
+		{svc.GetAdditionalProperties(), AgentDefinitionSourceInline},
+		{svc.GetConfig(), AgentDefinitionSourceLegacyConfig},
+	}
+	for _, candidate := range candidates {
+		if candidate.props == nil ||
+			len(candidate.props.GetFields()) == 0 {
+			continue
+		}
+		resolved, err := resolveServiceProps(
+			candidate.props,
+			svc.GetName(),
+			projectRoot,
+		)
+		if err != nil {
+			return agent_yaml.ContainerAgent{},
+				false,
+				false,
+				candidate.source,
+				err
+		}
+		if !structHasKind(resolved) {
+			continue
+		}
+		image := svc.GetImage()
+		if image == "" {
+			if value := resolved.GetFields()["image"]; value != nil {
+				image = value.GetStringValue()
+			}
+		}
+		ca, isHosted, err := agentDefinitionFromStruct(
+			resolved,
+			image,
+		)
+		return ca, isHosted, true, candidate.source, err
+	}
+
+	return agent_yaml.ContainerAgent{},
+		false,
+		false,
+		AgentDefinitionSourceInline,
+		nil
 }
 
 // AgentDefinitionFromService returns the agent definition carried inline on the
@@ -223,9 +283,143 @@ func LoadServiceTargetAgentConfig(svc *azdext.ServiceConfig) (*ServiceTargetAgen
 // which shape a project uses.
 func ServiceConfigProps(svc *azdext.ServiceConfig) *structpb.Struct {
 	if s := svc.GetAdditionalProperties(); s != nil && len(s.GetFields()) > 0 {
+		if svc.GetHost() == "azure.ai.agent" &&
+			!structHasKind(s) &&
+			structHasKind(svc.GetConfig()) {
+			return svc.GetConfig()
+		}
 		return s
 	}
 	return svc.GetConfig()
+}
+
+// ResolveServiceConfigProps expands local $ref file includes.
+func ResolveServiceConfigProps(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (*structpb.Struct, error) {
+	props := ServiceConfigProps(svc)
+	if props == nil {
+		return nil, nil
+	}
+	return resolveServiceProps(props, svc.GetName(), projectRoot)
+}
+
+// ResolvedServiceProjectPath returns the service source path.
+func ResolvedServiceProjectPath(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (string, error) {
+	if svc.GetRelativePath() != "" {
+		return svc.GetRelativePath(), nil
+	}
+	for _, props := range []*structpb.Struct{
+		svc.GetAdditionalProperties(),
+		svc.GetConfig(),
+	} {
+		if props == nil || len(props.GetFields()) == 0 {
+			continue
+		}
+		resolved, err := resolveServiceProps(
+			props,
+			svc.GetName(),
+			projectRoot,
+		)
+		if err != nil {
+			return "", err
+		}
+		if value := resolved.GetFields()["project"]; value != nil {
+			if path := value.GetStringValue(); path != "" {
+				return path, nil
+			}
+		}
+	}
+	return "", nil
+}
+
+// ResolveServiceConfigInPlace expands service-level local includes.
+func ResolveServiceConfigInPlace(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) error {
+	if props := svc.GetAdditionalProperties(); props != nil &&
+		len(props.GetFields()) > 0 {
+		resolved, err := resolveServiceProps(
+			props,
+			svc.GetName(),
+			projectRoot,
+		)
+		if err != nil {
+			return err
+		}
+		svc.AdditionalProperties = resolved
+		hydrateResolvedServiceFields(svc, resolved)
+	}
+	if config := svc.GetConfig(); config != nil &&
+		len(config.GetFields()) > 0 {
+		resolved, err := resolveServiceProps(
+			config,
+			svc.GetName(),
+			projectRoot,
+		)
+		if err != nil {
+			return err
+		}
+		svc.Config = resolved
+		hydrateResolvedServiceFields(svc, resolved)
+	}
+	return nil
+}
+
+func hydrateResolvedServiceFields(
+	svc *azdext.ServiceConfig,
+	props *structpb.Struct,
+) {
+	if svc.GetRelativePath() == "" {
+		if value := props.GetFields()["project"]; value != nil {
+			svc.RelativePath = value.GetStringValue()
+		}
+	}
+	if svc.GetImage() == "" {
+		if value := props.GetFields()["image"]; value != nil {
+			svc.Image = value.GetStringValue()
+		}
+	}
+}
+
+func resolveServiceProps(
+	props *structpb.Struct,
+	serviceName string,
+	projectRoot string,
+) (*structpb.Struct, error) {
+	resolved, err := foundry.ResolveFileRefs(
+		props.AsMap(),
+		projectRoot,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"resolving service %q config: %w",
+			serviceName,
+			err,
+		)
+	}
+	if err := projectconfig.NormalizeEnvironment(resolved); err != nil {
+		return nil, fmt.Errorf(
+			"normalizing service %q environment: %w",
+			serviceName,
+			err,
+		)
+	}
+
+	out, err := structpb.NewStruct(resolved)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"encoding resolved service %q config: %w",
+			serviceName,
+			err,
+		)
+	}
+	return out, nil
 }
 
 // UpsertAgentEnvVars adds or updates environment variables on the agent
@@ -329,6 +523,23 @@ func agentDefinitionFromStruct(s *structpb.Struct, coreImage string) (agent_yaml
 	}
 
 	if inline.Kind != agent_yaml.AgentKindHosted {
+		// Validate non-hosted kinds (e.g. workflow) with the same
+		// generic rules the on-disk path uses, so an invalid kind or
+		// name is rejected instead of silently passing as "not a
+		// container agent".
+		if defBytes, marshalErr := yaml.Marshal(s.AsMap()); marshalErr != nil {
+			log.Printf(
+				"[debug] skipping non-hosted agent validation: %v",
+				marshalErr,
+			)
+		} else if err := agent_yaml.ValidateAgentDefinition(defBytes); err != nil {
+			return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("agent service definition is not valid: %s", err),
+				"fix the agent service entry in azure.yaml or "+
+					"re-run `azd ai agent init`",
+			)
+		}
 		return agent_yaml.ContainerAgent{}, false, nil
 	}
 

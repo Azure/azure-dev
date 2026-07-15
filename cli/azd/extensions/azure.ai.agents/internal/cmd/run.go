@@ -205,20 +205,36 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load azd environment values: %s\n", err)
 	}
 
-	// Resolve environment_variables from the agent definition (agent.yaml).
-	// This handles hardcoded values, ${VAR} references (resolved via azd env),
-	// and ${{connections.<name>.credentials.<key>}} references (resolved via
-	// the Foundry data plane). Agent definition env vars do not override
-	// values already present in the process environment.
 	endpoint, _ := resolveAgentEndpoint(ctx, "", "")
 	defEnv, defErr := resolveAgentDefinitionEnvVars(ctx, runCtx.Definition, azdEnvVars, endpoint)
 	if defErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: %s\n", defErr)
 	}
-	for _, entry := range defEnv {
-		key, _, _ := strings.Cut(entry, "=")
+	serviceEnv, serviceEnvErr := resolveServiceEnvironmentVars(
+		ctx,
+		runCtx.Environment,
+		azdEnvVars,
+		endpoint,
+	)
+	if serviceEnvErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: %s\n", serviceEnvErr)
+	}
+	configuredEnv := map[string]string{}
+	for _, entry := range append(defEnv, serviceEnv...) {
+		key, value, _ := strings.Cut(entry, "=")
+		configuredEnv[key] = value
+	}
+	keys := make([]string, 0, len(configuredEnv))
+	for key := range configuredEnv {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
 		if !envSliceHasKey(env, key) {
-			env = append(env, entry)
+			env = append(
+				env,
+				fmt.Sprintf("%s=%s", key, configuredEnv[key]),
+			)
 		}
 	}
 
@@ -559,6 +575,45 @@ func resolveAgentDefinitionEnvVars(
 	}
 
 	return result, nil
+}
+
+func resolveServiceEnvironmentVars(
+	ctx context.Context,
+	values map[string]string,
+	azdEnvVars map[string]string,
+	endpoint string,
+) ([]string, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	envVars := make([]agent_yaml.EnvironmentVariable, 0, len(keys))
+	for _, key := range keys {
+		value := values[key]
+		if endpoint != "" {
+			value = strings.ReplaceAll(
+				value,
+				"${{project.endpoint}}",
+				endpoint,
+			)
+		}
+		envVars = append(envVars, agent_yaml.EnvironmentVariable{
+			Name:  key,
+			Value: value,
+		})
+	}
+	return resolveAgentDefinitionEnvVars(
+		ctx,
+		&agent_yaml.ContainerAgent{
+			EnvironmentVariables: &envVars,
+		},
+		azdEnvVars,
+		endpoint,
+	)
 }
 
 // findAgentYaml locates the agent definition file in the given directory.

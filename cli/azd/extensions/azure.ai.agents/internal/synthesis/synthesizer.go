@@ -252,14 +252,26 @@ func Synthesize(in Input) (*Result, error) {
 		return nil, ErrEndpointBrownfield
 	}
 
-	includeAcr := deriveIncludeAcr(root.Services, svc)
+	includeAcr, err := deriveIncludeAcr(
+		root.Services,
+		svc,
+		in.ProjectRoot,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	deployments := svc.Deployments
 	if deployments == nil {
 		deployments = []Deployment{}
 	}
 
-	connections, err := collectConnections(root.Services, in.Env, !in.PreserveVarRefs)
+	connections, err := collectConnections(
+		root.Services,
+		in.ProjectRoot,
+		in.Env,
+		!in.PreserveVarRefs,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -288,6 +300,15 @@ func Synthesize(in Input) (*Result, error) {
 // to learn which model deployments to create on the existing account. Returns
 // nil (not an error) when the service declares no deployments.
 func BrownfieldDeployments(raw []byte, serviceName string) ([]Deployment, error) {
+	return BrownfieldDeploymentsAtRoot(raw, "", serviceName)
+}
+
+// BrownfieldDeploymentsAtRoot resolves local deployment includes.
+func BrownfieldDeploymentsAtRoot(
+	raw []byte,
+	projectRoot string,
+	serviceName string,
+) ([]Deployment, error) {
 	if len(raw) == 0 {
 		return nil, errors.New("synthesis: raw azure.yaml is empty")
 	}
@@ -303,6 +324,17 @@ func BrownfieldDeployments(raw []byte, serviceName string) ([]Deployment, error)
 	node, ok := root.Services[serviceName]
 	if !ok {
 		return nil, ErrServiceNotFound
+	}
+	if projectRoot != "" {
+		var err error
+		node, err = resolveServiceRefs(
+			node,
+			projectRoot,
+			serviceName,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var svc projectService
@@ -321,6 +353,15 @@ func BrownfieldDeployments(raw []byte, serviceName string) ([]Deployment, error)
 // expressions pass through. Returns an empty slice (not an error) when none
 // are declared.
 func BrownfieldConnections(raw []byte, env map[string]string) ([]Connection, error) {
+	return BrownfieldConnectionsAtRoot(raw, "", env)
+}
+
+// BrownfieldConnectionsAtRoot resolves local connection includes.
+func BrownfieldConnectionsAtRoot(
+	raw []byte,
+	projectRoot string,
+	env map[string]string,
+) ([]Connection, error) {
 	if len(raw) == 0 {
 		return nil, errors.New("synthesis: raw azure.yaml is empty")
 	}
@@ -330,7 +371,7 @@ func BrownfieldConnections(raw []byte, env map[string]string) ([]Connection, err
 		return nil, fmt.Errorf("parse azure.yaml: %w", err)
 	}
 
-	return collectConnections(root.Services, env, true)
+	return collectConnections(root.Services, projectRoot, env, true)
 }
 
 // resolveServiceRefs expands $ref file includes in one service entry. It decodes
@@ -367,12 +408,16 @@ func resolveServiceRefs(node yaml.Node, projectRoot, serviceName string) (yaml.N
 // Keying on image/codeConfiguration rather than the optional docker: block is
 // deliberate: docker: is not in the agent schema and is dropped by omitempty
 // when remoteBuild is false, so it is not a reliable build signal.
-func deriveIncludeAcr(services map[string]yaml.Node, svc projectService) bool {
+func deriveIncludeAcr(
+	services map[string]yaml.Node,
+	svc projectService,
+	projectRoot string,
+) (bool, error) {
 	if slices.ContainsFunc(svc.Agents, agentNeedsAcr) {
-		return true
+		return true, nil
 	}
 
-	for _, node := range services {
+	for serviceName, node := range services {
 		var service serviceBlock
 		if err := node.Decode(&service); err != nil {
 			continue
@@ -380,15 +425,33 @@ func deriveIncludeAcr(services map[string]yaml.Node, svc projectService) bool {
 		if service.Host != "azure.ai.agent" {
 			continue
 		}
+		if projectRoot != "" {
+			resolved, err := resolveServiceRefs(
+				node,
+				projectRoot,
+				serviceName,
+			)
+			if err != nil {
+				return false, err
+			}
+			node = resolved
+			if err := node.Decode(&service); err != nil {
+				return false, fmt.Errorf(
+					"decode service %q: %w",
+					serviceName,
+					err,
+				)
+			}
+		}
 		if agentNeedsAcr(agentBlock{
 			Kind:              service.Kind,
 			Image:             service.Image,
 			CodeConfiguration: service.CodeConfiguration,
 		}) {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 // agentNeedsAcr reports whether a single agent entry builds a container image
@@ -415,6 +478,7 @@ func agentNeedsAcr(a agentBlock) bool {
 // ${{...}} expressions are always preserved, mirroring synthesizeNetwork.
 func collectConnections(
 	services map[string]yaml.Node,
+	projectRoot string,
 	env map[string]string,
 	resolve bool,
 ) ([]Connection, error) {
@@ -426,6 +490,17 @@ func collectConnections(
 		}
 		if err := node.Decode(&host); err != nil || host.Host != aiConnectionHost {
 			continue
+		}
+		if projectRoot != "" {
+			resolved, err := resolveServiceRefs(
+				node,
+				projectRoot,
+				name,
+			)
+			if err != nil {
+				return nil, err
+			}
+			node = resolved
 		}
 		var svc connectionService
 		if err := node.Decode(&svc); err != nil {

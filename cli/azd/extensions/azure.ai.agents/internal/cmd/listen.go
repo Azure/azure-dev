@@ -15,7 +15,6 @@ import (
 	"sync"
 
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/project"
 
@@ -68,11 +67,17 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	deployments, err := collectProjectDeployments(args.Project.Services)
+	deployments, err := collectProjectDeploymentsAtRoot(
+		args.Project.Services,
+		args.Project.Path,
+	)
 	if err != nil {
 		return err
 	}
-	connections, err := collectConnections(args.Project.Services)
+	connections, err := collectConnectionsAtRoot(
+		args.Project.Services,
+		args.Project.Path,
+	)
 	if err != nil {
 		return err
 	}
@@ -80,7 +85,12 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 	for _, svc := range args.Project.Services {
 		switch svc.Host {
 		case AiAgentHost:
-			if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
+			if err := populateContainerSettings(
+				ctx,
+				azdClient,
+				svc,
+				args.Project.Path,
+			); err != nil {
 				return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
 			}
 			if err := envUpdate(ctx, azdClient, args.Project, svc, deployments, connections); err != nil {
@@ -194,27 +204,31 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		warnDuplicateAgentNames(args.Project)
 	})
 
-	deployments, err := collectProjectDeployments(args.Project.Services)
+	deployments, err := collectProjectDeploymentsAtRoot(
+		args.Project.Services,
+		args.Project.Path,
+	)
 	if err != nil {
 		return err
 	}
-	connections, err := collectConnections(args.Project.Services)
+	connections, err := collectConnectionsAtRoot(
+		args.Project.Services,
+		args.Project.Path,
+	)
 	if err != nil {
 		return err
 	}
 
-	if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
+	if err := populateContainerSettings(
+		ctx,
+		azdClient,
+		svc,
+		args.Project.Path,
+	); err != nil {
 		return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
 	}
 	if err := envUpdate(ctx, azdClient, args.Project, svc, deployments, connections); err != nil {
 		return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
-	}
-
-	// Capture the current session so it can be resumed on the newly deployed
-	// version after deploy (see session_carryover.go). Best-effort; hosted
-	// agents only.
-	if isHostedAgentService(svc, args.Project) {
-		captureSessionForCarryover(ctx, azdClient, svc)
 	}
 
 	// Run developer RBAC pre-flight checks only for hosted agent deployments.
@@ -405,12 +419,6 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 			},
 		)
 	}()
-
-	// Resume the pre-deploy session on the newly deployed version so the next
-	// invoke continues on the new code with the session's persisted volume
-	// intact (see session_carryover.go). Best-effort; never blocks deploy.
-	agentClient := agent_api.NewAgentClient(endpoint, cred)
-	carryOverSessionAfterDeploy(ctx, azdClient, agentClient, svc, envName)
 
 	return nil
 }
@@ -716,10 +724,56 @@ func setEnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string,
 	return nil
 }
 
-func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient, svc *azdext.ServiceConfig) error {
+func populateContainerSettings(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) error {
+	persisted, err := prepareContainerSettings(svc, projectRoot)
+	if err != nil {
+		return err
+	}
+	if persisted == nil {
+		return nil
+	}
+
+	if err := project.AddServiceSerialized(
+		ctx,
+		azdClient,
+		persisted,
+	); err != nil {
+		return fmt.Errorf("adding agent service to project: %w", err)
+	}
+
+	return nil
+}
+
+func prepareContainerSettings(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (*azdext.ServiceConfig, error) {
+	rawAdditional := svc.GetAdditionalProperties()
+	rawConfig := svc.GetConfig()
+	hasFileRef := project.ConfigContainsFileRef(rawAdditional) ||
+		project.ConfigContainsFileRef(rawConfig)
+	if hasFileRef {
+		if err := project.ResolveServiceConfigInPlace(
+			svc,
+			projectRoot,
+		); err != nil {
+			return nil, fmt.Errorf(
+				"failed to resolve agent config: %w",
+				err,
+			)
+		}
+	}
 	foundryAgentConfig, err := project.LoadServiceTargetAgentConfig(svc)
 	if err != nil {
-		return fmt.Errorf("failed to parse foundry agent config: %w", err)
+		return nil, fmt.Errorf(
+			"failed to parse foundry agent config: %w",
+			err,
+		)
 	}
 
 	// Resolve the container resources, applying defaults when unset.
@@ -738,20 +792,19 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 		result.Cpu = project.DefaultCpu
 	}
 
-	// Persist the resolved container settings back onto the service's inline
-	// properties, preserving the agent definition and other config keys.
-	if err := project.SetAgentContainerSettings(svc, &project.ContainerSettings{Resources: result}); err != nil {
-		return fmt.Errorf("failed to update agent container settings: %w", err)
+	if err := project.SetAgentContainerSettings(
+		svc,
+		&project.ContainerSettings{Resources: result},
+	); err != nil {
+		return nil, fmt.Errorf(
+			"failed to update agent container settings: %w",
+			err,
+		)
 	}
-
-	// Need to add the service config back to the project for use further down the pipeline
-	req := &azdext.AddServiceRequest{Service: svc}
-
-	if _, err := azdClient.Project().AddService(ctx, req); err != nil {
-		return fmt.Errorf("adding agent service to project: %w", err)
+	if hasFileRef {
+		return nil, nil
 	}
-
-	return nil
+	return svc, nil
 }
 
 // resolveToolboxEnvVars resolves ${VAR} references in toolbox name, description,

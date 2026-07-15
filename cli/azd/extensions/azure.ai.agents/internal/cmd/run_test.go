@@ -993,6 +993,35 @@ environment_variables:
 	})
 }
 
+func TestResolveServiceEnvironmentVars(t *testing.T) {
+	t.Parallel()
+
+	result, err := resolveServiceEnvironmentVars(
+		t.Context(),
+		map[string]string{
+			"ENDPOINT": "${FOUNDRY_PROJECT_ENDPOINT}/agents",
+			"PROJECT":  "${{project.endpoint}}",
+			"STATIC":   "value",
+		},
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://example",
+		},
+		"https://example/project",
+	)
+
+	if err != nil {
+		t.Fatalf("resolve service environment: %v", err)
+	}
+	want := []string{
+		"ENDPOINT=https://example/agents",
+		"PROJECT=https://example/project",
+		"STATIC=value",
+	}
+	if !slices.Equal(want, result) {
+		t.Fatalf("expected %v, got %v", want, result)
+	}
+}
+
 func TestVenvPip(t *testing.T) {
 	t.Parallel()
 

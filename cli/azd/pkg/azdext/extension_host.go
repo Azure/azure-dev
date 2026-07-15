@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"strconv"
 	"sync"
 
@@ -125,6 +126,18 @@ func NewExtensionHost(client *AzdClient) *ExtensionHost {
 //	})
 func (er *ExtensionHost) Client() *AzdClient {
 	return er.client
+}
+
+// ServiceTargets returns a copy of the service target providers registered so far,
+// letting tests and tooling introspect registrations without invoking Run.
+func (er *ExtensionHost) ServiceTargets() []ServiceTargetRegistration {
+	return slices.Clone(er.serviceTargets)
+}
+
+// ProvisioningProviders returns a copy of the provisioning providers registered so
+// far. See [ExtensionHost.ServiceTargets].
+func (er *ExtensionHost) ProvisioningProviders() []ProvisioningProviderRegistration {
+	return slices.Clone(er.provisioningProviders)
 }
 
 func (er *ExtensionHost) initManagers(extensionId string, brokerLogger *log.Logger) {

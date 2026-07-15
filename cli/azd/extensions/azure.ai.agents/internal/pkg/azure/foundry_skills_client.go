@@ -138,3 +138,48 @@ func (c *FoundrySkillsClient) CreateSkillVersion(
 	}
 	return &result, nil
 }
+
+// PromoteSkillVersion updates the skill's default_version, making it the
+// version resolved by references that omit an explicit version (including the
+// Foundry portal's skill view). Creating a skill version does NOT
+// automatically promote it — every version after the first must be promoted
+// explicitly for consumers to see it as the active content.
+//
+// POST {endpoint}/skills/{name}?api-version=v1
+func (c *FoundrySkillsClient) PromoteSkillVersion(
+	ctx context.Context,
+	skillName string,
+	version string,
+) error {
+	targetURL := fmt.Sprintf(
+		"%s/skills/%s?api-version=%s",
+		c.endpoint, url.PathEscape(skillName), skillsApiVersion,
+	)
+
+	payload, err := json.Marshal(map[string]string{"default_version": version})
+	if err != nil {
+		return fmt.Errorf("marshaling request: %w", err)
+	}
+
+	req, err := runtime.NewRequest(ctx, http.MethodPost, targetURL)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	req.Raw().Header.Set("Foundry-Features", skillsFeatureHeader)
+	if err := req.SetBody(
+		streaming.NopCloser(bytes.NewReader(payload)),
+		"application/json",
+	); err != nil {
+		return fmt.Errorf("setting request body: %w", err)
+	}
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return runtime.NewResponseError(resp)
+	}
+	return nil
+}

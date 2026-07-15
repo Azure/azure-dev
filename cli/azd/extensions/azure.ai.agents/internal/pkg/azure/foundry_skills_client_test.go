@@ -68,3 +68,42 @@ func TestCreateSkillVersion_ErrorStatus(t *testing.T) {
 	})
 	require.Error(t, err)
 }
+
+func TestPromoteSkillVersion_RequestShape(t *testing.T) {
+	var captured *http.Request
+	var body []byte
+
+	client := newTestSkillsClient("https://proj.example.com", func(req *http.Request) (*http.Response, error) {
+		captured = req
+		if req.Body != nil {
+			body, _ = io.ReadAll(req.Body)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"id":"s-1","name":"my-skill","default_version":"1.2.0"}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	err := client.PromoteSkillVersion(t.Context(), "my-skill", "1.2.0")
+	require.NoError(t, err)
+
+	require.NotNil(t, captured)
+	require.Equal(t, http.MethodPost, captured.Method)
+	require.Equal(t, "/skills/my-skill", captured.URL.EscapedPath())
+	require.Equal(t, "api-version="+skillsApiVersion, captured.URL.RawQuery)
+	require.Equal(t, skillsFeatureHeader, captured.Header.Get("Foundry-Features"))
+	require.Contains(t, string(body), `"default_version":"1.2.0"`)
+}
+
+func TestPromoteSkillVersion_ErrorStatus(t *testing.T) {
+	client := newTestSkillsClient("https://proj.example.com", func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Body:       io.NopCloser(strings.NewReader(`{"error":"bad"}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
+	err := client.PromoteSkillVersion(t.Context(), "s", "1.0.0")
+	require.Error(t, err)
+}

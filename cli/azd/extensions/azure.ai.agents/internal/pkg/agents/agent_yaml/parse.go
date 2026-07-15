@@ -117,10 +117,10 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 
 		agent.AgentDefinition = agentDef
 		return agent, nil
-	case AgentKindManaged:
-		var agent ManagedAgent
+	case AgentKindPrompt:
+		var agent PromptAgent
 		if err := yaml.Unmarshal(templateBytes, &agent); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal to ManagedAgent: %w", err)
+			return nil, fmt.Errorf("failed to unmarshal to PromptAgent: %w", err)
 		}
 
 		agent.AgentDefinition = agentDef
@@ -438,11 +438,11 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 				} else {
 					errors = append(errors, fmt.Sprintf("failed to unmarshal to Workflow: %v", err))
 				}
-			case AgentKindManaged:
-				var agent ManagedAgent
+			case AgentKindPrompt:
+				var agent PromptAgent
 				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
 					if strings.TrimSpace(agent.Model) == "" {
-						errors = append(errors, "template.model is required for managed agents")
+						errors = append(errors, "template.model is required for prompt agents")
 					}
 					// Instructions are intentionally NOT required inline here:
 					// prompt agents may supply them via a sibling instructions.md
@@ -469,7 +469,7 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 						}
 					}
 				} else {
-					errors = append(errors, fmt.Sprintf("failed to unmarshal to ManagedAgent: %v", err))
+					errors = append(errors, fmt.Sprintf("failed to unmarshal to PromptAgent: %v", err))
 				}
 			}
 		}

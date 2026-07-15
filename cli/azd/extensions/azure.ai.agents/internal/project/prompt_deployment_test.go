@@ -31,7 +31,7 @@ func (r *fakeDeploymentResolver) Create(context.Context, string) error {
 }
 
 func TestDeploymentNode_CreatesWhenMissing(t *testing.T) {
-	managed := &agent_yaml.ManagedAgent{Model: "gpt-4.1-mini", Instructions: "i"}
+	managed := &agent_yaml.PromptAgent{Model: "gpt-4.1-mini", Instructions: "i"}
 	managed.Name = "agent"
 	g := &promptGraph{managed: managed, bindings: map[string]any{}}
 	fake := &fakeDeploymentResolver{exists: false}
@@ -52,7 +52,7 @@ func TestDeploymentNode_CreatesWhenMissing(t *testing.T) {
 }
 
 func TestDeploymentNode_SkipsCreateWhenExists(t *testing.T) {
-	managed := &agent_yaml.ManagedAgent{Model: "gpt-4.1-mini", Instructions: "i"}
+	managed := &agent_yaml.PromptAgent{Model: "gpt-4.1-mini", Instructions: "i"}
 	managed.Name = "agent"
 	g := &promptGraph{managed: managed, bindings: map[string]any{}}
 	fake := &fakeDeploymentResolver{exists: true}
@@ -67,7 +67,7 @@ func TestDeploymentNode_SkipsCreateWhenExists(t *testing.T) {
 }
 
 func TestDeploymentNode_ValidateRejectsBadModelName(t *testing.T) {
-	managed := &agent_yaml.ManagedAgent{Model: "not a/valid name", Instructions: "i"}
+	managed := &agent_yaml.PromptAgent{Model: "not a/valid name", Instructions: "i"}
 	managed.Name = "agent"
 	g := &promptGraph{managed: managed, bindings: map[string]any{}}
 	node := deploymentNode(g, func() (deploymentResolver, error) {
@@ -84,7 +84,7 @@ func TestDeploymentNode_ValidateRejectsBadModelName(t *testing.T) {
 func TestGraphResolve_ValidatesAllBeforeAnyMutation(t *testing.T) {
 	resolved := 0
 	g := &promptGraph{
-		managed:  &agent_yaml.ManagedAgent{},
+		managed:  &agent_yaml.PromptAgent{},
 		bindings: map[string]any{},
 		nodes: []promptNode{
 			{
@@ -120,7 +120,7 @@ func TestGraphResolve_ValidatesAllBeforeAnyMutation(t *testing.T) {
 func TestGraphResolve_ResolvesInOrderWhenValid(t *testing.T) {
 	var order []promptNodeKind
 	g := &promptGraph{
-		managed:  &agent_yaml.ManagedAgent{},
+		managed:  &agent_yaml.PromptAgent{},
 		bindings: map[string]any{},
 		nodes: []promptNode{
 			{

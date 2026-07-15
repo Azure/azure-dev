@@ -103,7 +103,7 @@ func scanFilesDir(agentDir string) ([]fileEntry, error) {
 // wired to storeID. If a file_search tool already exists, storeID is merged
 // into its vector_store_ids (deduped) rather than adding a second tool. The
 // managed definition is mutated in place.
-func injectFileSearchTool(managed *agent_yaml.ManagedAgent, storeID string) {
+func injectFileSearchTool(managed *agent_yaml.PromptAgent, storeID string) {
 	if managed == nil || strings.TrimSpace(storeID) == "" {
 		return
 	}

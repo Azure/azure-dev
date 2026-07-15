@@ -219,3 +219,51 @@ func (c *FoundryToolboxClient) DeleteToolbox(
 
 	return nil
 }
+
+// PromoteToolboxVersion updates the toolbox's default_version, making it the
+// version the consumer MCP endpoint (/toolboxes/{name}/mcp) serves. Creating a
+// toolbox version does NOT automatically promote it — the Foundry API tracks
+// default_version separately, and the first version created for a brand-new
+// toolbox is the only one auto-promoted. Every subsequent version must be
+// promoted explicitly for consumers (including the Foundry portal skill/tool
+// view) to see it.
+//
+// PATCH {endpoint}/toolboxes/{name}?api-version=v1
+func (c *FoundryToolboxClient) PromoteToolboxVersion(
+	ctx context.Context,
+	toolboxName string,
+	version string,
+) error {
+	targetUrl := fmt.Sprintf(
+		"%s/toolboxes/%s?api-version=%s",
+		c.endpoint, url.PathEscape(toolboxName), toolboxesApiVersion,
+	)
+
+	payload, err := json.Marshal(map[string]string{"default_version": version})
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := runtime.NewRequest(ctx, http.MethodPatch, targetUrl)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Raw().Header.Set("Foundry-Features", toolboxesFeatureHeader)
+	if err := req.SetBody(
+		streaming.NopCloser(bytes.NewReader(payload)),
+		"application/json",
+	); err != nil {
+		return fmt.Errorf("failed to set request body: %w", err)
+	}
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return runtime.NewResponseError(resp)
+	}
+	return nil
+}

@@ -100,7 +100,7 @@ func TestScanFilesDir_SortedByName(t *testing.T) {
 }
 
 func TestInjectFileSearchTool_AddsWhenAbsent(t *testing.T) {
-	managed := &agent_yaml.ManagedAgent{}
+	managed := &agent_yaml.PromptAgent{}
 	injectFileSearchTool(managed, "vs-1")
 
 	if len(managed.Tools) != 1 {
@@ -117,7 +117,7 @@ func TestInjectFileSearchTool_AddsWhenAbsent(t *testing.T) {
 }
 
 func TestInjectFileSearchTool_MergesExisting(t *testing.T) {
-	managed := &agent_yaml.ManagedAgent{
+	managed := &agent_yaml.PromptAgent{
 		Tools: []any{
 			map[string]any{
 				"type":             "file_search",
@@ -138,7 +138,7 @@ func TestInjectFileSearchTool_MergesExisting(t *testing.T) {
 }
 
 func TestInjectFileSearchTool_NoDuplicateID(t *testing.T) {
-	managed := &agent_yaml.ManagedAgent{
+	managed := &agent_yaml.PromptAgent{
 		Tools: []any{
 			map[string]any{
 				"type":             "file_search",
@@ -156,7 +156,7 @@ func TestInjectFileSearchTool_NoDuplicateID(t *testing.T) {
 }
 
 func TestFileStoreNode_NoFilesNoNode(t *testing.T) {
-	g := &promptGraph{managed: &agent_yaml.ManagedAgent{}, bindings: map[string]any{}}
+	g := &promptGraph{managed: &agent_yaml.PromptAgent{}, bindings: map[string]any{}}
 	node := fileStoreNode(g, nil, func() (vectorStoreBuilder, error) { return nil, nil })
 	if node != nil {
 		t.Fatal("expected no node when there are no files")
@@ -164,7 +164,7 @@ func TestFileStoreNode_NoFilesNoNode(t *testing.T) {
 }
 
 func TestFileStoreNode_InjectsFileSearch(t *testing.T) {
-	managed := &agent_yaml.ManagedAgent{Model: "m", Instructions: "i"}
+	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i"}
 	managed.Name = "agent"
 	g := &promptGraph{managed: managed, bindings: map[string]any{}}
 	fake := &fakeVectorStoreBuilder{storeID: "vs-42"}
@@ -198,7 +198,7 @@ func TestFileStoreNode_InjectsFileSearch(t *testing.T) {
 }
 
 func TestFileStoreNode_ValidateRejectsEmptyFile(t *testing.T) {
-	g := &promptGraph{managed: &agent_yaml.ManagedAgent{}, bindings: map[string]any{}}
+	g := &promptGraph{managed: &agent_yaml.PromptAgent{}, bindings: map[string]any{}}
 	files := []fileEntry{{Name: "empty.md", Hash: "h", Content: []byte{}}}
 	node := fileStoreNode(g, files, func() (vectorStoreBuilder, error) { return nil, nil })
 	if node == nil {

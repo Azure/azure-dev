@@ -19,12 +19,12 @@ import (
 
 // promptServiceContext carries everything the prompt-agent commands
 // (show/invoke/list/delete) need to talk to the harness for a resolved
-// azure.ai.agent service of kind=managed.
+// azure.ai.agent service of kind=prompt.
 type promptServiceContext struct {
 	ServiceName string
 	ServiceDir  string
 	Settings    *project.PromptAgentSettings
-	Agent       agent_yaml.ManagedAgent
+	Agent       agent_yaml.PromptAgent
 }
 
 // promptSettingsFromService extracts the prompt-agent harness settings from a
@@ -45,7 +45,7 @@ func promptSettingsFromService(svc *azdext.ServiceConfig) (*project.PromptAgentS
 }
 
 // resolvePromptAgentService resolves the named (or sole) azure.ai.agent service
-// and, when it is a prompt (kind=managed) agent, returns its harness settings
+// and, when it is a prompt (kind=prompt) agent, returns its harness settings
 // and parsed agent.yaml. The bool is false when the resolved service is NOT a
 // prompt agent, so callers can fall back to the hosted code path.
 func resolvePromptAgentService(
@@ -97,9 +97,9 @@ func resolvePromptAgentService(
 	pctx.Agent.Name = svc.Name
 	if pctx.ServiceDir != "" {
 		if data, readErr := os.ReadFile(filepath.Join(pctx.ServiceDir, "agent.yaml")); readErr == nil {
-			var managed agent_yaml.ManagedAgent
-			if yaml.Unmarshal(data, &managed) == nil && managed.Name != "" {
-				pctx.Agent = managed
+			var promptDef agent_yaml.PromptAgent
+			if yaml.Unmarshal(data, &promptDef) == nil && promptDef.Name != "" {
+				pctx.Agent = promptDef
 			}
 		}
 	}

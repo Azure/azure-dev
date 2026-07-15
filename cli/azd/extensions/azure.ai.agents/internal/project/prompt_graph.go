@@ -53,7 +53,7 @@ type promptGraph struct {
 
 	// managed is the parsed agent definition. Nodes may enrich managed.Tools
 	// with resolved bindings (e.g. a file_search or mcp tool) before publish.
-	managed *agent_yaml.ManagedAgent
+	managed *agent_yaml.PromptAgent
 
 	// settings holds the resolved harness/connection target for the agent.
 	settings *PromptAgentSettings
@@ -73,7 +73,7 @@ type promptGraph struct {
 // registered today; file/skill/connection nodes are added by later stages.
 func newPromptGraph(
 	agentDir string,
-	managed *agent_yaml.ManagedAgent,
+	managed *agent_yaml.PromptAgent,
 	settings *PromptAgentSettings,
 	env map[string]string,
 ) (*promptGraph, error) {
@@ -164,6 +164,17 @@ func (g *promptGraph) agentNode() promptNode {
 // order. Validation runs to completion before any Resolve so a failure never
 // leaves a half-wired agent.
 func (g *promptGraph) resolve(ctx context.Context, progress azdext.ProgressReporter) error {
+	// Surface which convention nodes were discovered via the progress reporter
+	// (the extension's stderr is not forwarded to the azd console, so this is
+	// the only reliable way to report it during a deploy).
+	if progress != nil {
+		kinds := make([]string, 0, len(g.nodes))
+		for _, n := range g.nodes {
+			kinds = append(kinds, string(n.Kind))
+		}
+		progress(fmt.Sprintf("Prompt graph nodes: %s", strings.Join(kinds, ", ")))
+	}
+
 	for _, n := range g.nodes {
 		if n.Validate == nil {
 			continue
@@ -193,7 +204,7 @@ func (g *promptGraph) resolve(ctx context.Context, progress azdext.ProgressRepor
 // so any resolved bindings are reflected in the published agent definition.
 func (p *AgentServiceTargetProvider) resolvePromptAgentGraph(
 	ctx context.Context,
-	managed *agent_yaml.ManagedAgent,
+	managed *agent_yaml.PromptAgent,
 	settings *PromptAgentSettings,
 	env map[string]string,
 	progress azdext.ProgressReporter,

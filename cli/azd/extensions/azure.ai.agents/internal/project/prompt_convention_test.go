@@ -34,7 +34,7 @@ func writeAgentYAML(t *testing.T, agentYAML string, instructionsMD *string) *Age
 func TestLoadPromptDef_InstructionsFileFallback(t *testing.T) {
 	md := "You are a careful assistant.\nAnswer concisely."
 	p := writeAgentYAML(t, `
-kind: managed
+kind: prompt
 name: file-instr
 model: gpt-4.1-mini
 `, &md)
@@ -53,7 +53,7 @@ model: gpt-4.1-mini
 func TestLoadPromptDef_InlineWinsOverFile(t *testing.T) {
 	md := "FROM FILE"
 	p := writeAgentYAML(t, `
-kind: managed
+kind: prompt
 name: inline-wins
 model: gpt-4.1-mini
 instructions: FROM INLINE
@@ -72,7 +72,7 @@ instructions: FROM INLINE
 // instructions leaves the field empty (graph validation reports the error).
 func TestLoadPromptDef_NoInstructionsAnywhere(t *testing.T) {
 	p := writeAgentYAML(t, `
-kind: managed
+kind: prompt
 name: no-instr
 model: gpt-4.1-mini
 `, nil)
@@ -87,13 +87,13 @@ model: gpt-4.1-mini
 }
 
 // TestLoadPromptDef_RejectsContainerFields verifies container-only fields are
-// rejected for a prompt (kind: managed) agent.
+// rejected for a prompt (kind: prompt) agent.
 func TestLoadPromptDef_RejectsContainerFields(t *testing.T) {
 	cases := []string{"image", "protocols", "code_configuration", "agent_endpoint"}
 	for _, field := range cases {
 		t.Run(field, func(t *testing.T) {
 			p := writeAgentYAML(t, `
-kind: managed
+kind: prompt
 name: bad
 model: gpt-4.1-mini
 instructions: ok
@@ -118,21 +118,21 @@ func TestResolvePromptAgentGraph_ValidatesModelAndInstructions(t *testing.T) {
 	p := &AgentServiceTargetProvider{}
 
 	// Missing model → error.
-	missingModel := &agent_yaml.ManagedAgent{Instructions: "ok"}
+	missingModel := &agent_yaml.PromptAgent{Instructions: "ok"}
 	missingModel.Name = "x"
 	if err := p.resolvePromptAgentGraph(t.Context(), missingModel, nil, nil, nil); err == nil {
 		t.Error("expected error when model is empty")
 	}
 
 	// Missing instructions → error.
-	missingInstr := &agent_yaml.ManagedAgent{Model: "gpt-4.1-mini"}
+	missingInstr := &agent_yaml.PromptAgent{Model: "gpt-4.1-mini"}
 	missingInstr.Name = "x"
 	if err := p.resolvePromptAgentGraph(t.Context(), missingInstr, nil, nil, nil); err == nil {
 		t.Error("expected error when instructions are empty")
 	}
 
 	// Complete → no error.
-	complete := &agent_yaml.ManagedAgent{Model: "gpt-4.1-mini", Instructions: "ok"}
+	complete := &agent_yaml.PromptAgent{Model: "gpt-4.1-mini", Instructions: "ok"}
 	complete.Name = "x"
 	if err := p.resolvePromptAgentGraph(t.Context(), complete, nil, nil, nil); err != nil {
 		t.Errorf("unexpected error for complete definition: %v", err)

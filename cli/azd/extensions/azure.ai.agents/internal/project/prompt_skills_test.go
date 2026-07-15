@@ -157,7 +157,7 @@ func TestScanSkillsDir_Empty(t *testing.T) {
 }
 
 func TestInjectMcpTool_AddsWhenAbsent(t *testing.T) {
-	managed := &agent_yaml.ManagedAgent{}
+	managed := &agent_yaml.PromptAgent{}
 	injectMcpTool(managed, "toolbox-a", "https://proj/mcp")
 
 	if len(managed.Tools) != 1 {
@@ -170,7 +170,7 @@ func TestInjectMcpTool_AddsWhenAbsent(t *testing.T) {
 }
 
 func TestInjectMcpTool_NotDuplicated(t *testing.T) {
-	managed := &agent_yaml.ManagedAgent{
+	managed := &agent_yaml.PromptAgent{
 		Tools: []any{
 			map[string]any{"type": "mcp", "server_url": "https://proj/mcp"},
 		},
@@ -182,7 +182,7 @@ func TestInjectMcpTool_NotDuplicated(t *testing.T) {
 }
 
 func TestToolboxNode_PrimaryRegistersSkills(t *testing.T) {
-	managed := &agent_yaml.ManagedAgent{Model: "m", Instructions: "i"}
+	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i"}
 	managed.Name = "agent"
 	g := &promptGraph{managed: managed, bindings: map[string]any{}}
 	fake := &fakeToolboxBuilder{}
@@ -213,7 +213,7 @@ func TestToolboxNode_PrimaryRegistersSkills(t *testing.T) {
 }
 
 func TestToolboxNode_FallbackReferenceExisting(t *testing.T) {
-	managed := &agent_yaml.ManagedAgent{Model: "m", Instructions: "i"}
+	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i"}
 	managed.Name = "agent"
 	g := &promptGraph{managed: managed, bindings: map[string]any{}}
 	fake := &fakeToolboxBuilder{}
@@ -242,7 +242,7 @@ func TestToolboxNode_FallbackReferenceExisting(t *testing.T) {
 }
 
 func TestToolboxNode_NoneReturnsNil(t *testing.T) {
-	g := &promptGraph{managed: &agent_yaml.ManagedAgent{}, bindings: map[string]any{}}
+	g := &promptGraph{managed: &agent_yaml.PromptAgent{}, bindings: map[string]any{}}
 	node := toolboxNode(g, nil, nil, func() (toolboxBuilder, error) { return nil, nil })
 	if node != nil {
 		t.Fatal("expected nil node when no skills and no reference")

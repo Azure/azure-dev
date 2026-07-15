@@ -205,7 +205,7 @@ func extractFrontmatter(content string) (frontmatterResult, error) {
 // injectMcpTool ensures the agent's tools include an mcp tool for the given
 // toolbox label and MCP url. An existing mcp tool with the same server_url is
 // left in place (not duplicated). The managed definition is mutated in place.
-func injectMcpTool(managed *agent_yaml.ManagedAgent, serverLabel, mcpURL string) {
+func injectMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL string) {
 	if managed == nil || strings.TrimSpace(mcpURL) == "" {
 		return
 	}
@@ -333,6 +333,17 @@ func (b *foundryToolboxBuilder) EnsureToolbox(
 			return "", fmt.Errorf("registering skill %q: %w", s.Meta.Name, err)
 		}
 
+		// Creating a version does NOT make it the skill's default_version —
+		// the Foundry API only auto-promotes the very first version. Without
+		// this, redeploying with changed skill content registers a new
+		// version that the Foundry portal's skill view (and any unversioned
+		// reference) never surfaces, making the update look like it didn't
+		// happen. Promote every newly created version to default so the
+		// latest deploy is always what's active.
+		if err := b.skills.PromoteSkillVersion(ctx, version.Name, version.Version); err != nil {
+			return "", fmt.Errorf("promoting skill %q to version %s: %w", s.Meta.Name, version.Version, err)
+		}
+
 		ref := map[string]any{
 			"type": "skill_reference",
 			"name": version.Name,
@@ -352,6 +363,14 @@ func (b *foundryToolboxBuilder) EnsureToolbox(
 	if err != nil {
 		return "", fmt.Errorf("creating toolbox version: %w", err)
 	}
+
+	// Same reasoning as the skill promotion above: creating a toolbox version
+	// doesn't promote it, so the toolbox consumer endpoint (and the portal)
+	// would keep serving the previous version's tool/skill set otherwise.
+	if err := b.toolboxes.PromoteToolboxVersion(ctx, toolboxName, created.Version); err != nil {
+		return "", fmt.Errorf("promoting toolbox %q to version %s: %w", toolboxName, created.Version, err)
+	}
+
 	return b.mcpURL(created.Name, created.Version), nil
 }
 

@@ -138,10 +138,10 @@ func runInitManaged(
 		}
 	}
 
-	managedAgent := agent_yaml.ManagedAgent{
+	promptAgent := agent_yaml.PromptAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{
 			Name: agentName,
-			Kind: agent_yaml.AgentKindManaged,
+			Kind: agent_yaml.AgentKindPrompt,
 		},
 		Model: model,
 		// Instructions are written to a sibling instructions.md by the
@@ -150,9 +150,9 @@ func runInitManaged(
 	}
 	if strings.TrimSpace(description) != "" {
 		desc := strings.TrimSpace(description)
-		managedAgent.AgentDefinition.Description = &desc
+		promptAgent.AgentDefinition.Description = &desc
 	}
-	if err := writeManagedAgentYAML(serviceRelPath, &managedAgent); err != nil {
+	if err := writePromptAgentYAML(serviceRelPath, &promptAgent); err != nil {
 		return err
 	}
 
@@ -410,17 +410,17 @@ func promptManagedAgentInstructions(
 	return instructions, nil
 }
 
-// writeManagedAgentYAML serializes the ManagedAgent and writes it to
+// writePromptAgentYAML serializes the PromptAgent and writes it to
 // <targetDir>/agent.yaml. A schema annotation comment is prepended for editor
 // validation parity with the hosted agent flow.
-func writeManagedAgentYAML(targetDir string, managedAgent *agent_yaml.ManagedAgent) error {
-	content, err := yaml.Marshal(managedAgent)
+func writePromptAgentYAML(targetDir string, promptAgent *agent_yaml.PromptAgent) error {
+	content, err := yaml.Marshal(promptAgent)
 	if err != nil {
-		return fmt.Errorf("marshaling managed agent to YAML: %w", err)
+		return fmt.Errorf("marshaling prompt agent to YAML: %w", err)
 	}
 
 	annotation := "# yaml-language-server: " +
-		"$schema=https://raw.githubusercontent.com/microsoft/AgentSchema/refs/heads/main/schemas/v1.0/ManagedAgent.yaml"
+		"$schema=https://raw.githubusercontent.com/microsoft/AgentSchema/refs/heads/main/schemas/v1.0/PromptAgent.yaml"
 	buf := bytes.NewBufferString(annotation + "\n\n")
 	if _, err := buf.Write(content); err != nil {
 		return fmt.Errorf("preparing agent.yaml file contents: %w", err)
@@ -430,7 +430,7 @@ func writeManagedAgentYAML(targetDir string, managedAgent *agent_yaml.ManagedAge
 	if err := os.WriteFile(filePath, buf.Bytes(), osutil.PermissionFile); err != nil {
 		return fmt.Errorf("saving file to %s: %w", filePath, err)
 	}
-	log.Printf("Wrote managed agent.yaml at %s", filePath)
+	log.Printf("Wrote prompt agent.yaml at %s", filePath)
 	return nil
 }
 

@@ -225,7 +225,7 @@ func connectionsNode(
 func assignConnectionRoles(
 	ctx context.Context,
 	resolver connectionResolver,
-	managed *agent_yaml.ManagedAgent,
+	managed *agent_yaml.PromptAgent,
 ) error {
 	byName := map[string]agent_yaml.PromptConnection{}
 	for _, c := range managed.Connections {

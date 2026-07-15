@@ -98,9 +98,8 @@ const (
 	AgentKindChoiceHosted agentKindChoice = "hosted"
 	// AgentKindChoicePrompt is the "prompt" agent path — the customer declares
 	// model + instructions and the Foundry harness (GHCP) runs Brain+Hand on
-	// demand. Note: the on-the-wire agent kind for this path is still
-	// "managed" (see agent_yaml.AgentKindManaged); "prompt" is the
-	// user-facing choice value only.
+	// demand. The scaffolded agent.yaml uses kind: prompt (see
+	// agent_yaml.AgentKindPrompt), matching this choice value exactly.
 	AgentKindChoicePrompt agentKindChoice = "prompt"
 	// AgentKindChoiceManaged is a backward-compatible alias for
 	// AgentKindChoicePrompt accepted on the --kind flag. Prefer "prompt".

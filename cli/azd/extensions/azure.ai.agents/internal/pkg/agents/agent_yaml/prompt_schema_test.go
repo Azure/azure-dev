@@ -9,11 +9,11 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// TestManagedAgent_ConnectionsRoundTrip verifies the prompt-agent `connections:`
-// block parses into ManagedAgent.Connections and round-trips through YAML.
-func TestManagedAgent_ConnectionsRoundTrip(t *testing.T) {
+// TestPromptAgent_ConnectionsRoundTrip verifies the prompt-agent `connections:`
+// block parses into PromptAgent.Connections and round-trips through YAML.
+func TestPromptAgent_ConnectionsRoundTrip(t *testing.T) {
 	yamlContent := []byte(`
-kind: managed
+kind: prompt
 name: conn-agent
 model: gpt-4.1-mini
 instructions: You are helpful.
@@ -30,15 +30,15 @@ connections:
     provision: true
 `)
 
-	var managed ManagedAgent
-	if err := yaml.Unmarshal(yamlContent, &managed); err != nil {
+	var promptDef PromptAgent
+	if err := yaml.Unmarshal(yamlContent, &promptDef); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(managed.Connections) != 2 {
-		t.Fatalf("connections: got %d, want 2", len(managed.Connections))
+	if len(promptDef.Connections) != 2 {
+		t.Fatalf("connections: got %d, want 2", len(promptDef.Connections))
 	}
 
-	first := managed.Connections[0]
+	first := promptDef.Connections[0]
 	if first.Name != "aisearch-conn" || first.Category != "CognitiveSearch" {
 		t.Errorf("first connection: got %+v", first)
 	}
@@ -46,7 +46,7 @@ connections:
 		t.Errorf("first connection target/auth: got %+v", first)
 	}
 
-	second := managed.Connections[1]
+	second := promptDef.Connections[1]
 	if second.AuthType != "ApiKey" || !second.Provision {
 		t.Errorf("second connection: got %+v", second)
 	}
@@ -55,11 +55,11 @@ connections:
 	}
 
 	// Round-trip: marshal then unmarshal and confirm the count is preserved.
-	data, err := yaml.Marshal(managed)
+	data, err := yaml.Marshal(promptDef)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	var again ManagedAgent
+	var again PromptAgent
 	if err := yaml.Unmarshal(data, &again); err != nil {
 		t.Fatalf("re-unmarshal: %v", err)
 	}

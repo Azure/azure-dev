@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Prompt (kind: managed) agents now support a convention-over-configuration deploy pipeline. `azd up` resolves an internal dependency graph before publishing the agent and validates the whole graph first so a failure never leaves a half-wired agent:
+- Prompt (kind: prompt) agents now support a convention-over-configuration deploy pipeline. `azd up` resolves an internal dependency graph before publishing the agent and validates the whole graph first so a failure never leaves a half-wired agent:
   - A sibling `instructions.md` supplies the agent's instructions when none are declared inline (inline wins).
   - A non-empty `files/` folder is uploaded to a vector store and wired into an auto-added `file_search` tool (content-hash dedupe; existing `file_search` tools are merged, not duplicated).
   - A non-empty `skills/` folder registers each `SKILL.md` bundle into a Foundry toolbox version and attaches its MCP endpoint as an `mcp` tool; an explicit `toolbox:` reference attaches an existing toolbox instead.
@@ -10,6 +10,7 @@
   - The model deployment is create-if-missing, and container-only fields (`image`, `protocols`, `code_configuration`, …) are rejected for prompt agents.
   - The manifest parser recognizes `skill` and `file` resource kinds.
 - `azd ai agent init` now scaffolds the prompt-agent authoring layout: an `instructions.md` sidecar (instructions are written there instead of inline in `agent.yaml`) plus empty `files/` and `skills/` folders so the deploy conventions are discoverable from a fresh init.
+- **Breaking:** the `agent.yaml` discriminator for prompt agents is now `kind: prompt` (was `kind: managed`). Existing `agent.yaml` files must be updated; the scaffolded schema annotation now points at `PromptAgent.yaml`. The `--kind managed` init flag value is still accepted as a backward-compatible alias for `--kind prompt`.
 
 ## 0.1.41-preview (2026-06-19)
 

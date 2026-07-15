@@ -286,3 +286,42 @@ func TestToolboxClient_PathEscaping_Adversarial(t *testing.T) {
 		})
 	}
 }
+
+func TestPromoteToolboxVersion_RequestShape(t *testing.T) {
+	var captured *http.Request
+	var body []byte
+
+	client := newTestToolboxClient("https://example.com", func(req *http.Request) (*http.Response, error) {
+		captured = req
+		if req.Body != nil {
+			body, _ = io.ReadAll(req.Body)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"id":"1","name":"tb","default_version":"v2"}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	err := client.PromoteToolboxVersion(t.Context(), "tb", "v2")
+	require.NoError(t, err)
+
+	require.NotNil(t, captured)
+	require.Equal(t, http.MethodPatch, captured.Method)
+	require.Equal(t, "/toolboxes/tb", captured.URL.EscapedPath())
+	require.Equal(t, "api-version="+toolboxesApiVersion, captured.URL.RawQuery)
+	require.Equal(t, toolboxesFeatureHeader, captured.Header.Get("Foundry-Features"))
+	require.Contains(t, string(body), `"default_version":"v2"`)
+}
+
+func TestPromoteToolboxVersion_ErrorStatus(t *testing.T) {
+	client := newTestToolboxClient("https://example.com", func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Body:       io.NopCloser(strings.NewReader(`{"error":"bad"}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
+	err := client.PromoteToolboxVersion(t.Context(), "tb", "v2")
+	require.Error(t, err)
+}

@@ -132,7 +132,7 @@ func (r *fakeConnectionResolver) AssignRole(
 }
 
 func TestConnectionsNode_CreatesMissingAndAssignsRole(t *testing.T) {
-	managed := &agent_yaml.ManagedAgent{
+	managed := &agent_yaml.PromptAgent{
 		Model:        "m",
 		Instructions: "i",
 		Connections: []agent_yaml.PromptConnection{
@@ -166,7 +166,7 @@ func TestConnectionsNode_CreatesMissingAndAssignsRole(t *testing.T) {
 }
 
 func TestConnectionsNode_UsesExistingNoCreate(t *testing.T) {
-	managed := &agent_yaml.ManagedAgent{
+	managed := &agent_yaml.PromptAgent{
 		Model:        "m",
 		Instructions: "i",
 		Connections: []agent_yaml.PromptConnection{
@@ -187,7 +187,7 @@ func TestConnectionsNode_UsesExistingNoCreate(t *testing.T) {
 }
 
 func TestConnectionsNode_NoneReturnsNil(t *testing.T) {
-	g := &promptGraph{managed: &agent_yaml.ManagedAgent{}, bindings: map[string]any{}}
+	g := &promptGraph{managed: &agent_yaml.PromptAgent{}, bindings: map[string]any{}}
 	node := connectionsNode(g, func() (connectionResolver, error) { return nil, nil })
 	if node != nil {
 		t.Fatal("expected nil node when no connections declared")

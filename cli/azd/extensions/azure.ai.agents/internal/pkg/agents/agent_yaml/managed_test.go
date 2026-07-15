@@ -13,15 +13,15 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// TestExtractAgentDefinition_Managed_TemplateWrapper verifies the manifest
-// parser routes a "managed" kind to a ManagedAgent value with all declared
+// TestExtractAgentDefinition_Prompt_TemplateWrapper verifies the manifest
+// parser routes a "prompt" kind to a PromptAgent value with all declared
 // fields preserved.
-func TestExtractAgentDefinition_Managed_TemplateWrapper(t *testing.T) {
+func TestExtractAgentDefinition_Prompt_TemplateWrapper(t *testing.T) {
 	yamlContent := []byte(`
-name: my-managed-manifest
+name: my-prompt-manifest
 template:
-  kind: managed
-  name: my-managed
+  kind: prompt
+  name: my-prompt
   model: gpt-4.1-mini
   instructions: You are a careful assistant.
   skills:
@@ -32,36 +32,36 @@ template:
 	if err != nil {
 		t.Fatalf("ExtractAgentDefinition failed: %v", err)
 	}
-	managed, ok := agent.(ManagedAgent)
+	promptDef, ok := agent.(PromptAgent)
 	if !ok {
-		t.Fatalf("expected ManagedAgent from template wrapper, got %T", agent)
+		t.Fatalf("expected PromptAgent from template wrapper, got %T", agent)
 	}
-	if managed.Name != "my-managed" {
-		t.Errorf("name: got %q, want %q", managed.Name, "my-managed")
+	if promptDef.Name != "my-prompt" {
+		t.Errorf("name: got %q, want %q", promptDef.Name, "my-prompt")
 	}
-	if managed.Kind != AgentKindManaged {
-		t.Errorf("kind: got %q, want %q", managed.Kind, AgentKindManaged)
+	if promptDef.Kind != AgentKindPrompt {
+		t.Errorf("kind: got %q, want %q", promptDef.Kind, AgentKindPrompt)
 	}
-	if managed.Model != "gpt-4.1-mini" {
-		t.Errorf("model: got %q, want %q", managed.Model, "gpt-4.1-mini")
+	if promptDef.Model != "gpt-4.1-mini" {
+		t.Errorf("model: got %q, want %q", promptDef.Model, "gpt-4.1-mini")
 	}
-	if managed.Instructions != "You are a careful assistant." {
-		t.Errorf("instructions: got %q", managed.Instructions)
+	if promptDef.Instructions != "You are a careful assistant." {
+		t.Errorf("instructions: got %q", promptDef.Instructions)
 	}
-	if len(managed.Skills) != 2 {
-		t.Fatalf("skills: got %d entries, want 2", len(managed.Skills))
+	if len(promptDef.Skills) != 2 {
+		t.Fatalf("skills: got %d entries, want 2", len(promptDef.Skills))
 	}
 }
 
-// TestManagedAgent_YAMLRoundTrip verifies a ManagedAgent value round-trips
+// TestPromptAgent_YAMLRoundTrip verifies a PromptAgent value round-trips
 // through yaml.Marshal / yaml.Unmarshal cleanly. This is the path used when
 // writing agent.yaml from the init scaffolding and later reading it from disk
 // as a bare AgentDefinition (without the manifest `template:` wrapper).
-func TestManagedAgent_YAMLRoundTrip(t *testing.T) {
-	original := ManagedAgent{
+func TestPromptAgent_YAMLRoundTrip(t *testing.T) {
+	original := PromptAgent{
 		AgentDefinition: AgentDefinition{
-			Name: "my-managed",
-			Kind: AgentKindManaged,
+			Name: "my-prompt",
+			Kind: AgentKindPrompt,
 		},
 		Model:        "gpt-4.1-mini",
 		Instructions: "Be helpful.",
@@ -70,11 +70,11 @@ func TestManagedAgent_YAMLRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if !strings.Contains(string(data), "kind: managed") {
+	if !strings.Contains(string(data), "kind: prompt") {
 		t.Fatalf("marshaled YAML missing kind discriminator:\n%s", data)
 	}
 
-	var roundTripped ManagedAgent
+	var roundTripped PromptAgent
 	if err := yaml.Unmarshal(data, &roundTripped); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -89,11 +89,11 @@ func TestManagedAgent_YAMLRoundTrip(t *testing.T) {
 	}
 }
 
-// TestValidateAgentDefinition_Managed_RequiresModelAndInstructions ensures the
-// validator requires a model for managed agents. Instructions are intentionally
+// TestValidateAgentDefinition_Prompt_RequiresModelAndInstructions ensures the
+// validator requires a model for prompt agents. Instructions are intentionally
 // not required inline (they may come from a sibling instructions.md), so an
 // agent.yaml without inline instructions must still validate here.
-func TestValidateAgentDefinition_Managed_RequiresModelAndInstructions(t *testing.T) {
+func TestValidateAgentDefinition_Prompt_RequiresModelAndInstructions(t *testing.T) {
 	cases := []struct {
 		name        string
 		yamlContent string
@@ -104,7 +104,7 @@ func TestValidateAgentDefinition_Managed_RequiresModelAndInstructions(t *testing
 			name: "missing model",
 			yamlContent: `
 name: n
-kind: managed
+kind: prompt
 instructions: ok
 `,
 			wantSubstr:  "model",
@@ -114,7 +114,7 @@ instructions: ok
 			name: "missing inline instructions is allowed (may come from instructions.md)",
 			yamlContent: `
 name: n
-kind: managed
+kind: prompt
 model: gpt-4.1-mini
 `,
 			shouldError: false,
@@ -123,7 +123,7 @@ model: gpt-4.1-mini
 			name: "valid",
 			yamlContent: `
 name: n
-kind: managed
+kind: prompt
 model: gpt-4.1-mini
 instructions: Be helpful.
 `,
@@ -149,21 +149,21 @@ instructions: Be helpful.
 	}
 }
 
-// TestCreateManagedAgentAPIRequest_SetsHarness verifies the managed create
+// TestCreatePromptAgentAPIRequest_SetsHarness verifies the prompt create
 // request carries the GitHub Copilot harness identifier in the definition.
-func TestCreateManagedAgentAPIRequest_SetsHarness(t *testing.T) {
-	managed := ManagedAgent{
+func TestCreatePromptAgentAPIRequest_SetsHarness(t *testing.T) {
+	promptDef := PromptAgent{
 		AgentDefinition: AgentDefinition{
-			Kind: AgentKindManaged,
+			Kind: AgentKindPrompt,
 			Name: "my-agent",
 		},
 		Model:        "gpt-4.1-mini",
 		Instructions: "Be helpful.",
 	}
 
-	req, err := CreateManagedAgentAPIRequest(managed, nil)
+	req, err := CreatePromptAgentAPIRequest(promptDef, nil)
 	if err != nil {
-		t.Fatalf("CreateManagedAgentAPIRequest: %v", err)
+		t.Fatalf("CreatePromptAgentAPIRequest: %v", err)
 	}
 
 	def, ok := req.Definition.(agent_api.ManagedAgentDefinition)
@@ -184,13 +184,13 @@ func TestCreateManagedAgentAPIRequest_SetsHarness(t *testing.T) {
 	}
 }
 
-// TestCreateManagedAgentAPIRequest_ToolsPassthrough verifies that tools,
+// TestCreatePromptAgentAPIRequest_ToolsPassthrough verifies that tools,
 // tool_choice, and structured_inputs authored in agent.yaml flow through
 // verbatim into the create request definition and are serialized with the
 // API's snake_case shape.
-func TestCreateManagedAgentAPIRequest_ToolsPassthrough(t *testing.T) {
+func TestCreatePromptAgentAPIRequest_ToolsPassthrough(t *testing.T) {
 	yamlContent := []byte(`
-kind: managed
+kind: prompt
 name: kitchen-sink-agent
 model: gpt-4o
 instructions: You are a maximally capable assistant.
@@ -229,17 +229,17 @@ tools:
   - type: toolbox_search_preview
 `)
 
-	var managed ManagedAgent
-	if err := yaml.Unmarshal(yamlContent, &managed); err != nil {
-		t.Fatalf("unmarshal managed agent: %v", err)
+	var promptDef PromptAgent
+	if err := yaml.Unmarshal(yamlContent, &promptDef); err != nil {
+		t.Fatalf("unmarshal prompt agent: %v", err)
 	}
-	if len(managed.Tools) != 7 {
-		t.Fatalf("tools: got %d entries, want 7", len(managed.Tools))
+	if len(promptDef.Tools) != 7 {
+		t.Fatalf("tools: got %d entries, want 7", len(promptDef.Tools))
 	}
 
-	req, err := CreateManagedAgentAPIRequest(managed, nil)
+	req, err := CreatePromptAgentAPIRequest(promptDef, nil)
 	if err != nil {
-		t.Fatalf("CreateManagedAgentAPIRequest: %v", err)
+		t.Fatalf("CreatePromptAgentAPIRequest: %v", err)
 	}
 
 	def, ok := req.Definition.(agent_api.ManagedAgentDefinition)

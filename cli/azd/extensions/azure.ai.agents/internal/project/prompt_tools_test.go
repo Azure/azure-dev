@@ -24,7 +24,7 @@ import (
 // braydonk/yaml, which must produce JSON-marshalable maps/slices.
 func TestPromptAgentToolsPassthrough_BraydonkDecoder(t *testing.T) {
 	yamlContent := []byte(`
-kind: managed
+kind: prompt
 name: kitchen-sink-agent
 model: gpt-4o
 instructions: You are a maximally capable assistant.
@@ -56,17 +56,17 @@ tools:
 `)
 
 	// Decode with the SAME library the deploy path uses.
-	var managed agent_yaml.ManagedAgent
-	if err := yaml.Unmarshal(yamlContent, &managed); err != nil {
+	var promptDef agent_yaml.PromptAgent
+	if err := yaml.Unmarshal(yamlContent, &promptDef); err != nil {
 		t.Fatalf("braydonk unmarshal: %v", err)
 	}
-	if len(managed.Tools) != 4 {
-		t.Fatalf("tools: got %d, want 4", len(managed.Tools))
+	if len(promptDef.Tools) != 4 {
+		t.Fatalf("tools: got %d, want 4", len(promptDef.Tools))
 	}
 
-	req, err := agent_yaml.CreateManagedAgentAPIRequest(managed, nil)
+	req, err := agent_yaml.CreatePromptAgentAPIRequest(promptDef, nil)
 	if err != nil {
-		t.Fatalf("CreateManagedAgentAPIRequest: %v", err)
+		t.Fatalf("CreatePromptAgentAPIRequest: %v", err)
 	}
 
 	data, err := json.Marshal(req)

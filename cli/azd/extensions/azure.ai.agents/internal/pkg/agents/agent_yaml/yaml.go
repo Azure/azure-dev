@@ -16,11 +16,11 @@ type AgentKind string
 const (
 	AgentKindHosted   AgentKind = "hosted"
 	AgentKindWorkflow AgentKind = "workflow"
-	// AgentKindManaged is the Foundry "managed" agent kind backed by the
+	// AgentKindPrompt is the Foundry "prompt" agent kind backed by the
 	// Prompt Execution Service (PES) Brain+Hand sandbox architecture.
 	// Lifecycle and response APIs live behind the same data-plane routes
-	// as the other Foundry kinds, with a "kind": "managed" discriminator.
-	AgentKindManaged AgentKind = "managed"
+	// as the other Foundry kinds, with a "kind": "prompt" discriminator.
+	AgentKindPrompt AgentKind = "prompt"
 )
 
 // IsValidAgentKind checks if the provided AgentKind is valid
@@ -33,7 +33,7 @@ func ValidAgentKinds() []AgentKind {
 	return []AgentKind{
 		AgentKindHosted,
 		AgentKindWorkflow,
-		AgentKindManaged,
+		AgentKindPrompt,
 	}
 }
 
@@ -239,14 +239,14 @@ type ContainerAgent struct {
 	Policies             []Policy                `json:"policies,omitempty" yaml:"policies,omitempty"`
 }
 
-// ManagedAgent represents a Foundry "managed" agent — a PES (Prompt Execution
+// PromptAgent represents a Foundry "prompt" agent — a PES (Prompt Execution
 // Service) backed agent whose Brain+Hand sandbox is provisioned by the
 // platform on demand. The customer declares the model and instructions; the
 // platform manages the runtime, lifecycle, and orchestration.
 //
 // Unlike ContainerAgent, the customer does not provide a container image or
 // code; the only required fields are Model and Instructions.
-type ManagedAgent struct {
+type PromptAgent struct {
 	AgentDefinition `json:",inline" yaml:",inline"`
 
 	// Model is the model deployment name to use for this agent (e.g. "gpt-4.1-mini").
@@ -261,7 +261,7 @@ type ManagedAgent struct {
 	Skills []string `json:"skills,omitempty" yaml:"skills,omitempty"`
 
 	// Tools is an optional list of tool definitions attached to the agent.
-	// Entries are passed through verbatim to the Foundry managed-agent API, so
+	// Entries are passed through verbatim to the Foundry prompt-agent API, so
 	// author them using the API's snake_case tool schema. Supported types
 	// include (but are not limited to): function, code_interpreter, file_search,
 	// web_search, image_generation, mcp, azure_ai_search, azure_function,

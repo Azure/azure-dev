@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -72,49 +73,49 @@ func (p *AgentServiceTargetProvider) promptAgentSettings() (*PromptAgentSettings
 	return cfg.PromptAgent, nil
 }
 
-// loadPromptAgentDefinition reads the agent.yaml as a bare ManagedAgent.
+// loadPromptAgentDefinition reads the agent.yaml as a bare PromptAgent.
 //
 // Convention: when the YAML omits inline `instructions:`, a sibling
 // `instructions.md` (next to agent.yaml) is used as the agent's instructions.
 // Inline `instructions:` always takes precedence over the file.
-func (p *AgentServiceTargetProvider) loadPromptAgentDefinition() (agent_yaml.ManagedAgent, error) {
+func (p *AgentServiceTargetProvider) loadPromptAgentDefinition() (agent_yaml.PromptAgent, error) {
 	data, err := os.ReadFile(p.agentDefinitionPath)
 	if err != nil {
-		return agent_yaml.ManagedAgent{}, exterrors.Validation(
+		return agent_yaml.PromptAgent{}, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			fmt.Sprintf("failed to read agent manifest file: %s", err),
 			"verify the agent.yaml file exists and is readable",
 		)
 	}
 	if err := validatePromptAgentRawFields(data); err != nil {
-		return agent_yaml.ManagedAgent{}, err
+		return agent_yaml.PromptAgent{}, err
 	}
-	var managed agent_yaml.ManagedAgent
-	if err := yaml.Unmarshal(data, &managed); err != nil {
-		return agent_yaml.ManagedAgent{}, exterrors.Validation(
+	var promptDef agent_yaml.PromptAgent
+	if err := yaml.Unmarshal(data, &promptDef); err != nil {
+		return agent_yaml.PromptAgent{}, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			fmt.Sprintf("agent.yaml is not a valid prompt agent: %s", err),
-			"fix the agent.yaml to match the prompt (managed) agent schema",
+			"fix the agent.yaml to match the prompt agent schema",
 		)
 	}
-	if !strings.EqualFold(string(managed.Kind), string(agent_yaml.AgentKindManaged)) {
-		return agent_yaml.ManagedAgent{}, exterrors.Validation(
+	if !strings.EqualFold(string(promptDef.Kind), string(agent_yaml.AgentKindPrompt)) {
+		return agent_yaml.PromptAgent{}, exterrors.Validation(
 			exterrors.CodeUnsupportedAgentKind,
-			fmt.Sprintf("agent.yaml declares kind %q, expected managed", managed.Kind),
-			"use kind: managed for prompt agents",
+			fmt.Sprintf("agent.yaml declares kind %q, expected prompt", promptDef.Kind),
+			"use kind: prompt for prompt agents",
 		)
 	}
 
 	// Convention: fall back to a sibling instructions.md when instructions are
 	// not declared inline. Inline instructions win.
-	if strings.TrimSpace(managed.Instructions) == "" {
+	if strings.TrimSpace(promptDef.Instructions) == "" {
 		instructionsPath := filepath.Join(filepath.Dir(p.agentDefinitionPath), promptInstructionsFileName)
 		if content, readErr := os.ReadFile(instructionsPath); readErr == nil {
-			managed.Instructions = string(content)
+			promptDef.Instructions = string(content)
 		}
 	}
 
-	return managed, nil
+	return promptDef, nil
 }
 
 // promptInstructionsFileName is the conventional sidecar file whose contents
@@ -138,7 +139,7 @@ var containerOnlyPromptFields = []string{
 // validatePromptAgentRawFields rejects container-only fields on a prompt agent.
 //
 // The YAML decoder silently drops unknown fields, so a probe decode into a
-// generic map is used to detect container-only keys that the typed ManagedAgent
+// generic map is used to detect container-only keys that the typed PromptAgent
 // would otherwise ignore, surfacing a clear error instead of silently ignoring
 // misplaced configuration.
 func validatePromptAgentRawFields(data []byte) error {
@@ -152,7 +153,7 @@ func validatePromptAgentRawFields(data []byte) error {
 		if _, ok := probe[field]; ok {
 			return exterrors.Validation(
 				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("field %q is not valid for a prompt (kind: managed) agent", field),
+				fmt.Sprintf("field %q is not valid for a prompt (kind: prompt) agent", field),
 				"remove container-only fields (image, protocols, code_configuration, ...) "+
 					"or use kind: hosted for container agents",
 			)
@@ -248,7 +249,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 		return nil, err
 	}
 
-	request, err := agent_yaml.CreateManagedAgentAPIRequest(managed, nil)
+	request, err := agent_yaml.CreatePromptAgentAPIRequest(managed, nil)
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
@@ -268,14 +269,14 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	headers := map[string]string{
 		"x-model-endpoint": settings.EffectiveModelEndpoint(),
 	}
-	agent, err := client.CreateAgentWithHeaders(ctx, request, settings.EffectiveAPIVersion(), headers)
+	agent, err := p.createOrUpdatePromptAgent(ctx, client, request, settings, headers)
 	if err != nil && isWorkspaceNotFoundError(err) && !projectScopedTarget {
 		// Workspace provisioning may not have finished or may have raced; retry once.
 		if env2, envErr2 := p.azdEnvValues(ctx); envErr2 == nil {
 			if createErr := ensurePromptWorkspaceExists(ctx, settings, env2, progress); createErr == nil {
 				fmt.Fprintf(os.Stderr, "Retrying agent creation after workspace provisioning.\n")
 				if client2, clientErr := NewPromptAgentClient(settings); clientErr == nil {
-					agent, err = client2.CreateAgentWithHeaders(ctx, request, settings.EffectiveAPIVersion(), headers)
+					agent, err = p.createOrUpdatePromptAgent(ctx, client2, request, settings, headers)
 				}
 			}
 		}
@@ -648,4 +649,57 @@ func isWorkspaceNotFoundError(err error) bool {
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "workspacenotfound") ||
 		strings.Contains(msg, "workspace not found")
+}
+
+// isAgentConflictError reports whether err is a 409 Conflict from the managed
+// agent create endpoint, which the harness returns when an agent with the same
+// name already exists.
+func isAgentConflictError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
+		if respErr.StatusCode == http.StatusConflict {
+			return true
+		}
+		if strings.EqualFold(strings.TrimSpace(respErr.ErrorCode), "conflict") {
+			return true
+		}
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "already exists")
+}
+
+// createOrUpdatePromptAgent publishes the agent definition, creating the agent
+// on first deploy and publishing a new version on subsequent deploys.
+//
+// Managed (prompt) agents are versioned: the create endpoint (POST /agents)
+// only succeeds for a brand-new agent and returns 409 Conflict once the agent
+// exists. Re-deploys therefore fall back to the update endpoint
+// (POST /agents/{name}), which appends a new version. This makes `azd deploy`
+// idempotent: the first run creates the agent, and every later run bumps its
+// version.
+func (p *AgentServiceTargetProvider) createOrUpdatePromptAgent(
+	ctx context.Context,
+	client *agent_api.ManagedAgentClient,
+	request *agent_api.CreateAgentRequest,
+	settings *PromptAgentSettings,
+	headers map[string]string,
+) (*agent_api.AgentObject, error) {
+	apiVersion := settings.EffectiveAPIVersion()
+
+	agent, err := client.CreateAgentWithHeaders(ctx, request, apiVersion, headers)
+	if err == nil {
+		return agent, nil
+	}
+	if !isAgentConflictError(err) {
+		return nil, err
+	}
+
+	// The agent already exists — publish a new version instead.
+	fmt.Fprintf(os.Stderr, "Agent %q already exists; publishing a new version.\n", request.Name)
+	updateReq := &agent_api.UpdateAgentRequest{
+		CreateAgentVersionRequest: request.CreateAgentVersionRequest,
+	}
+	return client.UpdateAgentWithHeaders(ctx, request.Name, updateReq, apiVersion, headers)
 }

@@ -277,6 +277,23 @@ func (c *ManagedAgentClient) UpdateAgent(
 	request *UpdateAgentRequest,
 	apiVersion string,
 ) (*AgentObject, error) {
+	return c.UpdateAgentWithHeaders(ctx, agentName, request, apiVersion, nil)
+}
+
+// UpdateAgentWithHeaders replaces an existing managed agent's definition,
+// publishing a new version, and forwards any additional headers (such as the
+// x-model-endpoint routing hint) to the request. This is the prompt-agent
+// re-deploy path: managed agents are versioned, so posting a new definition to
+// an existing agent creates a new version rather than a conflict.
+//
+// POST {baseURL}{routePrefix}/agents/{name}?api-version=<apiVersion>
+func (c *ManagedAgentClient) UpdateAgentWithHeaders(
+	ctx context.Context,
+	agentName string,
+	request *UpdateAgentRequest,
+	apiVersion string,
+	headers map[string]string,
+) (*AgentObject, error) {
 	if strings.TrimSpace(agentName) == "" {
 		return nil, fmt.Errorf("agentName is required")
 	}
@@ -294,6 +311,9 @@ func (c *ManagedAgentClient) UpdateAgent(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+	for k, v := range headers {
+		req.Raw().Header.Set(k, v)
+	}
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
 		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
@@ -304,7 +324,7 @@ func (c *ManagedAgentClient) UpdateAgent(
 	}
 	defer resp.Body.Close()
 
-	if !runtime.HasStatusCode(resp, http.StatusOK) {
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated) {
 		return nil, runtime.NewResponseError(resp)
 	}
 

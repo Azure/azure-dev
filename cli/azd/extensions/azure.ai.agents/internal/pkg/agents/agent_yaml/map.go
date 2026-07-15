@@ -133,11 +133,11 @@ func CreateAgentAPIRequestFromDefinition(agentTemplate any, options ...AgentBuil
 	case AgentKindHosted:
 		hostedDef := agentTemplate.(ContainerAgent)
 		return CreateHostedAgentAPIRequest(hostedDef, buildConfig)
-	case AgentKindManaged:
-		managedDef := agentTemplate.(ManagedAgent)
-		return CreateManagedAgentAPIRequest(managedDef, buildConfig)
+	case AgentKindPrompt:
+		promptDef := agentTemplate.(PromptAgent)
+		return CreatePromptAgentAPIRequest(promptDef, buildConfig)
 	default:
-		return nil, fmt.Errorf("unsupported agent kind: %s. Supported kinds are: hosted, managed", agentDef.Kind)
+		return nil, fmt.Errorf("unsupported agent kind: %s. Supported kinds are: hosted, prompt", agentDef.Kind)
 	}
 }
 
@@ -450,63 +450,63 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 		hostedAgent.AgentEndpoint, hostedAgent.AgentCard)
 }
 
-// CreateManagedAgentAPIRequest converts a ManagedAgent YAML definition into the
-// API CreateAgentRequest expected by the Foundry managed-agent endpoint.
+// CreatePromptAgentAPIRequest converts a PromptAgent YAML definition into the
+// API CreateAgentRequest expected by the Foundry prompt-agent endpoint.
 //
-// Managed agents are simpler than hosted agents — the customer only declares
+// Prompt agents are simpler than hosted agents — the customer only declares
 // model + instructions (plus optional skills/policies). The platform manages
 // the Brain+Hand sandbox, so no image/cpu/memory fields are required from the
 // customer for the minimum case.
-func CreateManagedAgentAPIRequest(
-	managedAgent ManagedAgent,
+func CreatePromptAgentAPIRequest(
+	promptAgent PromptAgent,
 	buildConfig *AgentBuildConfig,
 ) (*agent_api.CreateAgentRequest, error) {
-	if strings.TrimSpace(managedAgent.Model) == "" {
-		return nil, fmt.Errorf("managed agent requires a non-empty model")
+	if strings.TrimSpace(promptAgent.Model) == "" {
+		return nil, fmt.Errorf("prompt agent requires a non-empty model")
 	}
-	if strings.TrimSpace(managedAgent.Instructions) == "" {
-		return nil, fmt.Errorf("managed agent requires non-empty instructions")
+	if strings.TrimSpace(promptAgent.Instructions) == "" {
+		return nil, fmt.Errorf("prompt agent requires non-empty instructions")
 	}
 
-	managedDef := agent_api.ManagedAgentDefinition{
+	promptDef := agent_api.ManagedAgentDefinition{
 		AgentDefinition: agent_api.AgentDefinition{
 			Kind:      agent_api.AgentKindManaged,
-			RaiConfig: mapRaiConfig(managedAgent.Policies),
+			RaiConfig: mapRaiConfig(promptAgent.Policies),
 		},
-		Model:        managedAgent.Model,
+		Model:        promptAgent.Model,
 		Harness:      agent_api.ManagedAgentHarnessGitHubCopilot,
-		Instructions: managedAgent.Instructions,
+		Instructions: promptAgent.Instructions,
 	}
 
-	if len(managedAgent.Skills) > 0 {
-		managedDef.Skills = append([]string(nil), managedAgent.Skills...)
+	if len(promptAgent.Skills) > 0 {
+		promptDef.Skills = append([]string(nil), promptAgent.Skills...)
 	}
 
 	// Tools, tool_choice, and structured_inputs are passed through verbatim so
-	// authors can express any tool type the managed-agent API accepts without
+	// authors can express any tool type the prompt-agent API accepts without
 	// this layer having to model each one. The YAML is decoded into
 	// JSON-compatible values (maps/slices/scalars) and re-serialized as-is.
-	if len(managedAgent.Tools) > 0 {
-		managedDef.Tools = managedAgent.Tools
+	if len(promptAgent.Tools) > 0 {
+		promptDef.Tools = promptAgent.Tools
 	}
-	if managedAgent.ToolChoice != nil {
-		managedDef.ToolChoice = managedAgent.ToolChoice
+	if promptAgent.ToolChoice != nil {
+		promptDef.ToolChoice = promptAgent.ToolChoice
 	}
-	if len(managedAgent.StructuredInputs) > 0 {
-		managedDef.StructuredInputs = managedAgent.StructuredInputs
+	if len(promptAgent.StructuredInputs) > 0 {
+		promptDef.StructuredInputs = promptAgent.StructuredInputs
 	}
 
 	// Build-time environment variables (if supplied) get carried into the
 	// managed environment block so the Hand sandbox can read them.
 	if buildConfig != nil && len(buildConfig.EnvironmentVariables) > 0 {
-		managedDef.Environment = &agent_api.ManagedEnvironment{
+		promptDef.Environment = &agent_api.ManagedEnvironment{
 			EnvironmentVariables: maps.Clone(buildConfig.EnvironmentVariables),
 		}
 	}
 
-	// Managed agents do not have endpoint or agent-card customization at the
+	// Prompt agents do not have endpoint or agent-card customization at the
 	// YAML layer today, so pass nil for both.
-	return createAgentAPIRequest(managedAgent.AgentDefinition, managedDef, nil, nil)
+	return createAgentAPIRequest(promptAgent.AgentDefinition, promptDef, nil, nil)
 }
 
 // createAgentAPIRequest is a helper function to create the final request with common fields.

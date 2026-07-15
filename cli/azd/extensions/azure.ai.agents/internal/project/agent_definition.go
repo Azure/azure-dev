@@ -484,21 +484,34 @@ func UpsertAgentEnvVars(svc *azdext.ServiceConfig, kv map[string]string) error {
 	}
 	ca.EnvironmentVariables = &envVars
 
-	cfg, err := LoadServiceTargetAgentConfig(svc)
-	if err != nil {
-		return err
-	}
-
-	props, err := AgentDefinitionToServiceProperties(ca, cfg)
-	if err != nil {
-		return err
-	}
-
+	var props *structpb.Struct
 	if source == AgentDefinitionSourceLegacyConfig {
-		svc.Config = props
+		props = svc.GetConfig()
 	} else {
-		svc.AdditionalProperties = props
+		props = svc.GetAdditionalProperties()
 	}
+	if props == nil {
+		return fmt.Errorf(
+			"service %q does not carry an inline agent definition",
+			svc.GetName(),
+		)
+	}
+	if props.Fields == nil {
+		props.Fields = map[string]*structpb.Value{}
+	}
+
+	envValues := make([]*structpb.Value, 0, len(envVars))
+	for _, envVar := range envVars {
+		envValues = append(envValues, structpb.NewStructValue(
+			&structpb.Struct{Fields: map[string]*structpb.Value{
+				"name":  structpb.NewStringValue(envVar.Name),
+				"value": structpb.NewStringValue(envVar.Value),
+			}},
+		))
+	}
+	props.Fields["environmentVariables"] = structpb.NewListValue(
+		&structpb.ListValue{Values: envValues},
+	)
 	return nil
 }
 

@@ -417,3 +417,32 @@ func TestUpsertAgentEnvVars(t *testing.T) {
 	require.Equal(t, "gpt-4o", values["FOUNDRY_MODEL_DEPLOYMENT_NAME"])
 	require.Equal(t, "cand-1", values["OPTIMIZATION_CANDIDATE_ID"])
 }
+
+func TestUpsertAgentEnvVarsPreservesNestedReferences(t *testing.T) {
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "basic-agent",
+		"deployments": []any{
+			map[string]any{"$ref": "./deployment.yaml"},
+		},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+
+	require.NoError(t, UpsertAgentEnvVars(svc, map[string]string{
+		"OPTIMIZATION_CANDIDATE_ID": "cand-1",
+	}))
+
+	deployments := svc.GetAdditionalProperties().GetFields()["deployments"]
+	require.NotNil(t, deployments)
+	require.Equal(
+		t,
+		"./deployment.yaml",
+		deployments.GetListValue().GetValues()[0].
+			GetStructValue().GetFields()["$ref"].GetStringValue(),
+	)
+}

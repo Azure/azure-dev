@@ -158,6 +158,7 @@ type serviceBlock struct {
 	Kind              string           `yaml:"kind,omitempty"`
 	Image             string           `yaml:"image,omitempty"`
 	CodeConfiguration *codeConfigBlock `yaml:"codeConfiguration,omitempty"`
+	Config            *agentBlock      `yaml:"config,omitempty"`
 	Agents            []agentBlock     `yaml:"agents,omitempty"`
 }
 
@@ -444,11 +445,23 @@ func deriveIncludeAcr(
 		if service.Host != "azure.ai.agent" {
 			continue
 		}
-		if agentNeedsAcr(agentBlock{
+		agent := agentBlock{
 			Kind:              service.Kind,
 			Image:             service.Image,
 			CodeConfiguration: service.CodeConfiguration,
-		}) {
+		}
+		if service.Config != nil {
+			if agent.Kind == "" {
+				agent.Kind = service.Config.Kind
+			}
+			if agent.Image == "" {
+				agent.Image = service.Config.Image
+			}
+			if agent.CodeConfiguration == nil {
+				agent.CodeConfiguration = service.Config.CodeConfiguration
+			}
+		}
+		if agentNeedsAcr(agent) {
 			return true, nil
 		}
 	}

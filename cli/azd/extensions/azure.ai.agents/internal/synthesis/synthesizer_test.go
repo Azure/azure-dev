@@ -245,6 +245,38 @@ services:
 			wantIncludeAcr: false,
 		},
 		{
+			name: "legacy configured agent with image => no ACR",
+			yaml: `
+services:
+  assistant:
+    host: azure.ai.agent
+    config:
+      kind: hosted
+      image: myprivacr.azurecr.io/agents/assistant:v1
+  ai-project:
+    host: azure.ai.project
+`,
+			serviceName:    "ai-project",
+			wantIncludeAcr: false,
+		},
+		{
+			name: "legacy configured agent with codeConfiguration => no ACR",
+			yaml: `
+services:
+  assistant:
+    host: azure.ai.agent
+    config:
+      kind: hosted
+      codeConfiguration:
+        runtime: python_3_13
+        entryPoint: app.py
+  ai-project:
+    host: azure.ai.project
+`,
+			serviceName:    "ai-project",
+			wantIncludeAcr: false,
+		},
+		{
 			name: "inline hosted agent with codeConfiguration => no ACR",
 			yaml: `
 services:

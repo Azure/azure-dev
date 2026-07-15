@@ -88,6 +88,24 @@ env:
 	}
 }
 
+func TestReadProjectFileUsesAzureYml(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	path := filepath.Join(root, "azure.yml")
+	require.NoError(t, os.WriteFile(
+		path,
+		[]byte("services: {}\n"),
+		0o600,
+	))
+
+	data, gotPath, err := ReadProjectFile(root)
+
+	require.NoError(t, err)
+	assert.Equal(t, []byte("services: {}\n"), data)
+	assert.Equal(t, path, gotPath)
+}
+
 func writeProjectFile(t *testing.T, root string, contents string) {
 	t.Helper()
 	require.NoError(t, os.WriteFile(

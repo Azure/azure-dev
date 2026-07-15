@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/projectconfig"
 	"azureaiagent/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -129,14 +130,19 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 	p.projectPath = projectPath
 
-	azureYamlPath := filepath.Join(projectPath, "azure.yaml")
-	//nolint:gosec // projectPath is supplied by azd-core over gRPC and is the user's project root
-	rawYAML, err := os.ReadFile(azureYamlPath)
+	rawYAML, azureYamlPath, err := projectconfig.ReadProjectFile(projectPath)
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
 			fmt.Sprintf("read %s: %s", azureYamlPath, err),
-			"verify azure.yaml exists at the project root",
+			"verify azure.yaml or azure.yml exists at the project root",
+		)
+	}
+	if azureYamlPath == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf("no azure.yaml or azure.yml found in %s", projectPath),
+			"verify azure.yaml or azure.yml exists at the project root",
 		)
 	}
 

@@ -630,11 +630,8 @@ services:
 func resultConnections(t *testing.T, result *Result) []Connection {
 	t.Helper()
 
-	raw, ok := result.Parameters["connections"].(string)
-	require.True(t, ok, "connections param should be a JSON string")
-
-	var connections []Connection
-	require.NoError(t, json.Unmarshal([]byte(raw), &connections))
+	connections, ok := result.Parameters["connections"].([]Connection)
+	require.True(t, ok, "connections param should be []Connection")
 	return connections
 }
 

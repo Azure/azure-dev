@@ -13,7 +13,6 @@
 package synthesis
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -254,11 +253,6 @@ func Synthesize(in Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	encodedConnections, err := EncodeConnections(connections)
-	if err != nil {
-		return nil, err
-	}
-
 	netParams, netMode, err := synthesizeNetwork(svc.Network, in.ServiceName, in.Env, !in.PreserveVarRefs)
 	if err != nil {
 		return nil, err
@@ -272,7 +266,7 @@ func Synthesize(in Input) (*Result, error) {
 	params := map[string]any{
 		"deployments": deployments,
 		"includeAcr":  includeAcr,
-		"connections": encodedConnections,
+		"connections": connections,
 	}
 	maps.Copy(params, netParams)
 
@@ -280,18 +274,6 @@ func Synthesize(in Input) (*Result, error) {
 		Parameters:  params,
 		NetworkMode: netMode,
 	}, nil
-}
-
-// EncodeConnections serializes connection definitions for a secure ARM parameter.
-func EncodeConnections(connections []Connection) (string, error) {
-	if connections == nil {
-		connections = []Connection{}
-	}
-	data, err := json.Marshal(connections)
-	if err != nil {
-		return "", fmt.Errorf("encode connections: %w", err)
-	}
-	return string(data), nil
 }
 
 // BrownfieldDeployments returns the model deployments declared on a brownfield

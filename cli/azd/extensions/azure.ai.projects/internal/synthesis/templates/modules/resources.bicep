@@ -27,6 +27,19 @@ type deploymentType = {
   }
 }
 
+@description('Shape of a list of Foundry project connections.')
+type connectionsType = connectionType[]
+
+@description('Shape of one Foundry project connection (a host: azure.ai.connection service).')
+type connectionType = {
+  name: string
+  category: string
+  target: string
+  authType: string
+  credentials: object?
+  metadata: object?
+}
+
 // Parameters
 
 @description('Azure region for all resources.')
@@ -49,9 +62,8 @@ param deployments deploymentsType = []
 @description('Include an Azure Container Registry. Set true when any agent uses docker:.')
 param includeAcr bool = false
 
-@description('JSON-encoded Foundry project connections to create.')
-@secure()
-param connections string = ''
+@description('Foundry project connections to create (host: azure.ai.connection services).')
+param connections connectionsType = []
 
 @description('Object id of the developer running azd. When set, grants Cognitive Services User on the project. Empty disables the role assignment so headless / CI runs do not fail.')
 param principalId string = ''
@@ -105,8 +117,6 @@ var resourceToken = empty(resourceTokenSalt)
   : uniqueString(subscription().id, resourceGroup().id, location, resourceTokenSalt)
 
 var abbrs = loadJsonContent('../abbreviations.json')
-var connectionList = json(empty(connections) ? '[]' : connections)
-
 var foundryAccountName = '${abbrs.cognitiveServicesAccounts}${resourceToken}'
 
 // Egress: byo injects the agent into a customer subnet; managed uses the
@@ -279,7 +289,7 @@ module privateEndpointDns 'private-endpoint-dns.bicep' = if (enableNetworkIsolat
 // host: azure.ai.connection services. Created at provision time so a toolbox
 // that references a connection by name resolves it at deploy. Depends on the
 // project via foundryAccount.name / project.name so ordering is correct.
-module projectConnections 'connections.bicep' = if (!empty(connectionList)) {
+module projectConnections 'connections.bicep' = if (!empty(connections)) {
   name: 'foundry-connections'
   params: {
     foundryAccountName: foundryAccount.name
@@ -310,6 +320,6 @@ output FOUNDRY_PROJECT_ENDPOINT string = 'https://${foundryAccount.name}.service
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = includeAcr ? acr!.outputs.loginServer : ''
 output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = includeAcr ? acr!.outputs.resourceId : ''
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = includeAcr ? acr!.outputs.connectionName : ''
-output AZURE_AI_PROJECT_CONNECTION_NAMES string = empty(connectionList) ? '' : projectConnections!.outputs.connectionNames
+output AZURE_AI_PROJECT_CONNECTION_NAMES string = empty(connections) ? '' : projectConnections!.outputs.connectionNames
 output AZURE_FOUNDRY_NETWORK_MODE string = !enableNetworkIsolation ? 'none' : (useManagedEgress ? 'managed' : 'byo')
 output AZURE_FOUNDRY_MANAGED_ISOLATION_MODE string = useManagedNetwork ? managedIsolationMode : ''

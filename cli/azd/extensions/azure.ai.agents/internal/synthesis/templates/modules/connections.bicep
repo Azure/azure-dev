@@ -11,8 +11,6 @@
 // 2025-06-01 fails to resolve the projects/connections sub-resource
 // (MissingApiVersionParameter), the same reason acr.bicep does this.
 
-// User-defined types
-
 // Parameters
 
 @description('Name of the existing Foundry CognitiveServices account that hosts the project.')
@@ -21,11 +19,32 @@ param foundryAccountName string
 @description('Name of the existing Foundry project the connections are created on.')
 param foundryProjectName string
 
-@description('JSON-encoded connections to create on the Foundry project.')
-@secure()
-param connections string = ''
+@description('Shape of one Foundry project connection (a host: azure.ai.connection service).')
+type connectionType = {
+  @description('Connection name. The resource name and the key a toolbox tool references via connection: <name>.')
+  name: string
 
-var connectionList = json(empty(connections) ? '[]' : connections)
+  @description('Connection category, e.g. RemoteTool (MCP), CognitiveSearch, AzureOpenAI, ApiKey, CustomKeys.')
+  category: string
+
+  @description('Target endpoint URL or ARM resource id. For a RemoteTool/MCP connection this is the MCP server URL.')
+  target: string
+
+  @description('Auth type: None | ApiKey | CustomKeys | OAuth2 | UserEntraToken | ProjectManagedIdentity | AgenticIdentityToken | ManagedIdentity | ...')
+  authType: string
+
+  @description('Auth credentials. Structure depends on authType. Omit for None / identity types.')
+  credentials: object?
+
+  @description('Optional metadata key-value pairs.')
+  metadata: object?
+}
+
+@description('Shape of a list of connections.')
+type connectionsType = connectionType[]
+
+@description('Connections to create on the Foundry project. Each entry maps to one host: azure.ai.connection service.')
+param connections connectionsType = []
 
 // Resources
 
@@ -43,7 +62,7 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview
 // only emitted when supplied so None / identity-token connections don't send an
 // empty credentials object.
 resource projectConnections 'Microsoft.CognitiveServices/accounts/projects/connections@2025-04-01-preview' = [
-  for c in connectionList: {
+  for c in connections: {
     parent: foundryAccount::project
     name: c.name
     properties: union(
@@ -61,4 +80,4 @@ resource projectConnections 'Microsoft.CognitiveServices/accounts/projects/conne
 // Outputs
 
 @description('Comma-joined names of the connections created, in input order. Reference these from toolbox tools via connection: <name>. A string (not an array) so it round-trips through the azd .env without JSON double-encoding.')
-output connectionNames string = join(map(connectionList, c => c.name), ',')
+output connectionNames string = join(map(connections, c => c.name), ',')

@@ -879,12 +879,9 @@ func brownfieldReconcileMessage(hasDeployments, createACR, hasConnections bool) 
 func (p *FoundryProvisioningProvider) brownfieldParams(
 	ctx context.Context, account, rg string, createACR bool,
 ) (map[string]any, error) {
-	connections, err := synthesis.EncodeConnections(p.brownfieldConnections)
-	if err != nil {
-		return nil, exterrors.Internal(
-			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("encode brownfield connections: %s", err),
-		)
+	connections := p.brownfieldConnections
+	if connections == nil {
+		connections = []synthesis.Connection{}
 	}
 	params := map[string]any{
 		"accountName": map[string]any{"value": account},

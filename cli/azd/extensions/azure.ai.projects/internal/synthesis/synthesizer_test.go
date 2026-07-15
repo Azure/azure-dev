@@ -917,11 +917,8 @@ services:
 func resultConnections(t *testing.T, result *Result) []Connection {
 	t.Helper()
 
-	raw, ok := result.Parameters["connections"].(string)
-	require.True(t, ok, "connections param should be a JSON string")
-
-	var connections []Connection
-	require.NoError(t, json.Unmarshal([]byte(raw), &connections))
+	connections, ok := result.Parameters["connections"].([]Connection)
+	require.True(t, ok, "connections param should be []Connection")
 	return connections
 }
 
@@ -1113,11 +1110,12 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	require.True(t, ok, "parameters must be an object")
 	assert.Contains(t, params, "resourceGroupName")
 
-	// connections carries credentials and must be a secure ARM parameter.
+	// connections must remain an array so ejected templates preserve the
+	// connection object shape.
 	assert.Contains(t, params, "connections", "connections param must be declared in the ARM template")
 	connections, ok := params["connections"].(map[string]any)
 	require.True(t, ok, "connections param must be an object")
-	assert.Equal(t, "securestring", connections["type"])
+	assert.Equal(t, "#/definitions/connectionsType", connections["$ref"])
 
 	// Network isolation parameters must exist so the synthesizer's network
 	// param set is accepted by ARM (extra params would fail the deployment).
@@ -1165,7 +1163,7 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 		"managedNetworks isolationMode must come from the managedIsolationMode param")
 }
 
-func TestBrownfieldARMTemplate_UsesSecureConnections(t *testing.T) {
+func TestBrownfieldARMTemplate_UsesConnectionArray(t *testing.T) {
 	data, err := BrownfieldARMTemplate()
 	require.NoError(t, err)
 
@@ -1175,7 +1173,7 @@ func TestBrownfieldARMTemplate_UsesSecureConnections(t *testing.T) {
 	require.True(t, ok, "parameters must be an object")
 	connections, ok := params["connections"].(map[string]any)
 	require.True(t, ok, "connections param must be an object")
-	assert.Equal(t, "securestring", connections["type"])
+	assert.Equal(t, "#/definitions/connectionsType", connections["$ref"])
 }
 
 func TestSynthesize_Network(t *testing.T) {

@@ -1,6 +1,8 @@
 # Release History
 
-## 1.28.0-beta.1 (Unreleased)
+## 1.29.0-beta.1 (Unreleased)
+
+## 1.28.0 (2026-07-15)
 
 ### Features Added
 
@@ -12,9 +14,14 @@
 
 ### Bugs Fixed
 
+- [[#9017]](https://github.com/Azure/azure-dev/pull/9017) Fix `azd env refresh` for projects using extension-provided service hosts or provisioning providers, and report successfully when no deployment exists yet.
+- [[#8887]](https://github.com/Azure/azure-dev/pull/8887) Fix generated `azd extension install` completions to offer extension IDs and `.zip` file paths.
+- [[#9083]](https://github.com/Azure/azure-dev/pull/9083) Fix the `azd update` follow-up command to use `azd version`. Thanks @rguptar for the contribution!
+
 ### Other Changes
 
 - [[#9141]](https://github.com/Azure/azure-dev/pull/9141) Send ARM request correlation IDs as a canonical hyphenated GUID (derived losslessly from the OpenTelemetry trace ID) instead of an undecorated 32-character string — covering both the `x-ms-correlation-request-id` header on azd's direct ARM calls and the `ARM_CORRELATION_REQUEST_ID` value passed to the Terraform AzureRM provider. This aligns azd with the ARM spec and other Azure tooling (Terraform AzureRM, Azure SDK for Go) and resolves the historical AKS Deployment Safeguards `GetDeploymentSafeguardsFailed` correlation ID mismatch (#5851).
+- [[#9033]](https://github.com/Azure/azure-dev/pull/9033) Add an extension SDK helper that validates provider declarations in `extension.yaml` against the providers registered by extension code.
 
 ## 1.27.1 (2026-07-09)
 

@@ -11,13 +11,7 @@
 // 2025-06-01 fails to resolve the projects/connections sub-resource
 // (MissingApiVersionParameter), the same reason acr.bicep does this.
 
-// Parameters
-
-@description('Name of the existing Foundry CognitiveServices account that hosts the project.')
-param foundryAccountName string
-
-@description('Name of the existing Foundry project the connections are created on.')
-param foundryProjectName string
+// User-defined types
 
 @description('Shape of one Foundry project connection (a host: azure.ai.connection service).')
 type connectionType = {
@@ -42,6 +36,14 @@ type connectionType = {
 
 @description('Shape of a list of connections.')
 type connectionsType = connectionType[]
+
+// Parameters
+
+@description('Name of the existing Foundry CognitiveServices account that hosts the project.')
+param foundryAccountName string
+
+@description('Name of the existing Foundry project the connections are created on.')
+param foundryProjectName string
 
 @description('Connections to create on the Foundry project. Each entry maps to one host: azure.ai.connection service.')
 param connections connectionsType = []

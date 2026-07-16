@@ -2024,6 +2024,11 @@ func (a *InitAction) configureModelChoice(
 
 	hasModelResources := manifestHasModelResources(agentManifest)
 	if a.flags.projectResourceId == "" && shouldDeferInitAzureContext(a.flags.noPrompt, a.azureContext) {
+		if err := persistValidatedAzureContextFlags(
+			ctx, a.azdClient, a.azureContext, a.environment.Name, a.flags,
+		); err != nil {
+			return nil, err
+		}
 		// In headless init, missing Azure values should not block local scaffold generation.
 		// Defer project/model setup and print the values required before provisioning.
 		if err := configureDeferredInitAzureContext(

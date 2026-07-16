@@ -165,7 +165,7 @@ func TestSupportedRegionsForInit_FetchesOnceAndCaches(t *testing.T) {
 	for range 3 {
 		got, err := supportedRegionsForInit(t.Context())
 		require.NoError(t, err)
-		require.Contains(t, got, "eastus2")
+		require.Equal(t, []string{"eastus2"}, got)
 	}
 	require.Equal(t, 1, hits)
 }
@@ -208,7 +208,7 @@ func TestSupportedRegionsForInit_ConcurrentCallersFetchOnce(t *testing.T) {
 			defer wg.Done()
 			got, err := supportedRegionsForInit(t.Context())
 			require.NoError(t, err)
-			require.Contains(t, got, "eastus2")
+			require.Equal(t, []string{"eastus2"}, got)
 		}()
 	}
 	wg.Wait()

@@ -1088,6 +1088,57 @@ func applyAzureContextFlags(azureContext *azdext.AzureContext, flags *initFlags)
 	}
 }
 
+func persistValidatedAzureContextFlags(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	envName string,
+	flags *initFlags,
+) error {
+	if flags == nil {
+		return nil
+	}
+	if flags.subscriptionId != "" {
+		tenantResponse, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+			SubscriptionId: flags.subscriptionId,
+		})
+		if err != nil {
+			return exterrors.Auth(
+				exterrors.CodeTenantLookupFailed,
+				fmt.Sprintf("failed to lookup tenant for subscription %s: %s", flags.subscriptionId, err),
+				"verify your Azure login with 'azd auth login'",
+			)
+		}
+		azureContext.Scope.TenantId = tenantResponse.TenantId
+		if err := setEnvValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID", flags.subscriptionId); err != nil {
+			return err
+		}
+		if err := setEnvValue(ctx, azdClient, envName, "AZURE_TENANT_ID", tenantResponse.TenantId); err != nil {
+			return err
+		}
+	}
+	if flags.location != "" {
+		allowedLocations, err := supportedRegionsForInit(ctx)
+		if err != nil {
+			return err
+		}
+		if !locationAllowed(flags.location, allowedLocations) {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("location %q is not supported for this agent setup", flags.location),
+				"choose a supported hosted-agent region",
+			)
+		}
+		if err := setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", flags.location); err != nil {
+			return err
+		}
+		if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", flags.location); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ensureSubscriptionAndLocation ensures both subscription and location are set.
 // Returns the (possibly refreshed) credential.
 func ensureSubscriptionAndLocation(

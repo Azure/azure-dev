@@ -2502,9 +2502,6 @@ buildResponse, err := azdClient.Container().Build(ctx, &azdext.ContainerBuildReq
         Restore: restoreArtifacts,
         Build:   buildArtifacts,
     },
-    Options: &azdext.ContainerOperationOptions{
-        ServicePath: "src/api",
-    },
 })
 if err != nil {
     return fmt.Errorf("failed to build container: %w", err)
@@ -2554,15 +2551,11 @@ defer azdClient.Close()
 
 serviceName := "web-api"
 serviceContext := &azdext.ServiceContext{}
-containerOptions := &azdext.ContainerOperationOptions{
-    ServicePath: "src/web-api",
-}
 
 // Build the container
 buildResp, err := azdClient.Container().Build(ctx, &azdext.ContainerBuildRequest{
     ServiceName:    serviceName,
     ServiceContext: serviceContext,
-    Options:        containerOptions,
 })
 if err != nil {
     return fmt.Errorf("container build failed: %w", err)
@@ -2575,7 +2568,6 @@ serviceContext.Build = buildResp.Result.Artifacts
 packageResp, err := azdClient.Container().Package(ctx, &azdext.ContainerPackageRequest{
     ServiceName:    serviceName,
     ServiceContext: serviceContext,
-    Options:        containerOptions,
 })
 if err != nil {
     return fmt.Errorf("container package failed: %w", err)
@@ -2588,7 +2580,6 @@ serviceContext.Package = packageResp.Result.Artifacts
 publishResp, err := azdClient.Container().Publish(ctx, &azdext.ContainerPublishRequest{
     ServiceName:    serviceName,
     ServiceContext: serviceContext,
-    Options:        containerOptions,
 })
 if err != nil {
     return fmt.Errorf("container publish failed: %w", err)

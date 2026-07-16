@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
@@ -544,10 +545,11 @@ func fileExists(path string) bool {
 
 // AgentServiceInfo holds the resolved name and version for an agent service.
 type AgentServiceInfo struct {
-	ServiceName   string // azure.yaml service key
-	AgentName     string // deployed agent name from env
-	Version       string // deployed agent version from env
-	AgentEndpoint string // full AGENT_{SVC}_ENDPOINT URL (includes name + version)
+	ServiceName     string // azure.yaml service key
+	AgentName       string // deployed agent name from env; invoke may opt into brownfield fallback
+	Version         string // deployed agent version from env
+	AgentEndpoint   string // full AGENT_{SVC}_ENDPOINT URL (includes name + version)
+	ProjectEndpoint string // adopted project endpoint used by a verified brownfield fallback
 }
 
 // promptForAgentService prompts the user to select one of multiple azure.ai.agent services.
@@ -656,19 +658,144 @@ func resolveAgentService(
 	return svc, projectResponse.Project, nil
 }
 
+type brownfieldAgentReference struct {
+	name            string
+	projectEndpoint string
+}
+
+// brownfieldInlineAgentReference returns the inline hosted-agent name and the
+// endpoint of the adopted Foundry project it belongs to. The endpoint is only a
+// candidate signal; callers must verify that the named agent exists there
+// before using the reference.
+func brownfieldInlineAgentReference(
+	svc *azdext.ServiceConfig,
+	projectConfig *azdext.ProjectConfig,
+) *brownfieldAgentReference {
+	if svc == nil || projectConfig == nil {
+		return nil
+	}
+
+	var projectEndpoint string
+	for _, dependency := range svc.GetUses() {
+		projectService := projectConfig.GetServices()[dependency]
+		if projectService == nil || projectService.GetHost() != AiProjectHost {
+			continue
+		}
+		cfg, err := projectpkg.LoadServiceTargetAgentConfig(projectService)
+		if err != nil {
+			log.Printf(
+				"resolve agent service %q: failed to read project dependency %q: %v",
+				svc.Name, dependency, err,
+			)
+			continue
+		}
+		if cfg != nil && strings.TrimSpace(cfg.Endpoint) != "" {
+			projectEndpoint = strings.TrimSpace(cfg.Endpoint)
+			break
+		}
+	}
+	if projectEndpoint == "" {
+		return nil
+	}
+
+	definition, isHosted, found, _, err := projectpkg.AgentDefinitionFromService(svc)
+	if err != nil {
+		log.Printf("resolve agent service %q: failed to read inline agent definition: %v", svc.Name, err)
+		return nil
+	}
+	if !found || !isHosted {
+		return nil
+	}
+
+	agentName := strings.TrimSpace(definition.Name)
+	if agentName == "" {
+		return nil
+	}
+	return &brownfieldAgentReference{
+		name:            agentName,
+		projectEndpoint: projectEndpoint,
+	}
+}
+
+type brownfieldAgentExistenceResolver func(context.Context, string, string) (bool, error)
+
+type agentServiceResolutionOptions struct {
+	allowBrownfieldInlineName bool
+	brownfieldAgentExists     brownfieldAgentExistenceResolver
+}
+
+type agentServiceResolutionOption func(*agentServiceResolutionOptions)
+
+func resolveBrownfieldAgentExists(
+	ctx context.Context,
+	projectEndpoint string,
+	agentName string,
+) (bool, error) {
+	credential, err := newAgentCredential()
+	if err != nil {
+		return false, err
+	}
+
+	client := agent_api.NewAgentClient(projectEndpoint, credential)
+	return agents.AgentExists(ctx, client, agentName, DefaultAgentAPIVersion)
+}
+
+// withBrownfieldInlineAgentName allows remote invoke to use an inline agent name
+// after verifying it exists in the adopted Foundry project. It is opt-in because
+// shared callers include destructive commands such as delete, which must
+// continue requiring deployment state or an explicit agent name.
+func withBrownfieldInlineAgentName() agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.allowBrownfieldInlineName = true
+		options.brownfieldAgentExists = resolveBrownfieldAgentExists
+	}
+}
+
+func withBrownfieldAgentExistenceResolver(
+	resolver brownfieldAgentExistenceResolver,
+) agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.allowBrownfieldInlineName = true
+		options.brownfieldAgentExists = resolver
+	}
+}
+
 // resolveAgentServiceFromProject finds the azure.ai.agent service in azure.yaml
 // and resolves its deployed agent name and version from the azd environment.
-func resolveAgentServiceFromProject(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) (*AgentServiceInfo, error) {
-	svc, _, err := resolveAgentService(ctx, azdClient, name, noPrompt)
+// Callers may explicitly opt into the brownfield inline-name fallback; deployed
+// AGENT_<SERVICE>_NAME output always overrides it.
+func resolveAgentServiceFromProject(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	name string,
+	noPrompt bool,
+	options ...agentServiceResolutionOption,
+) (*AgentServiceInfo, error) {
+	svc, projectConfig, err := resolveAgentService(ctx, azdClient, name, noPrompt)
 	if err != nil {
 		return nil, err
 	}
 
+	resolutionOptions := agentServiceResolutionOptions{}
+	for _, option := range options {
+		option(&resolutionOptions)
+	}
+
 	info := &AgentServiceInfo{ServiceName: svc.Name}
 
-	// Resolve agent name and version from azd environment
+	// Resolve deployed agent name and version from the azd environment. The
+	// deployed name wins because it reflects the resource actually created.
 	envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
+		if resolutionOptions.allowBrownfieldInlineName {
+			return info, fmt.Errorf("getting current environment for agent service %q: %w", svc.Name, err)
+		}
+		return info, nil
+	}
+	if envResponse == nil || envResponse.Environment == nil || envResponse.Environment.Name == "" {
+		if resolutionOptions.allowBrownfieldInlineName {
+			return info, fmt.Errorf("current environment is not available for agent service %q", svc.Name)
+		}
 		return info, nil
 	}
 
@@ -676,11 +803,49 @@ func resolveAgentServiceFromProject(ctx context.Context, azdClient *azdext.AzdCl
 	nameKey := fmt.Sprintf("AGENT_%s_NAME", serviceKey)
 	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 
-	if v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+	nameResponse, nameErr := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: envResponse.Environment.Name,
 		Key:     nameKey,
-	}); err == nil && v.Value != "" {
-		info.AgentName = v.Value
+	})
+	switch {
+	case nameErr != nil:
+		if resolutionOptions.allowBrownfieldInlineName {
+			return info, fmt.Errorf(
+				"reading %s from environment %q: %w",
+				nameKey,
+				envResponse.Environment.Name,
+				nameErr,
+			)
+		}
+		log.Printf("resolve agent service %q: failed to read %s: %v", svc.Name, nameKey, nameErr)
+	case nameResponse != nil && nameResponse.Value != "":
+		info.AgentName = nameResponse.Value
+	case resolutionOptions.allowBrownfieldInlineName:
+		reference := brownfieldInlineAgentReference(svc, projectConfig)
+		if reference == nil {
+			break
+		}
+		if resolutionOptions.brownfieldAgentExists == nil {
+			return info, fmt.Errorf("brownfield agent existence resolver is not configured")
+		}
+
+		exists, err := resolutionOptions.brownfieldAgentExists(
+			ctx,
+			reference.projectEndpoint,
+			reference.name,
+		)
+		if err != nil {
+			return info, fmt.Errorf(
+				"checking whether agent %q exists in the adopted Foundry project: %w",
+				reference.name,
+				err,
+			)
+		}
+		if exists {
+			info.AgentName = reference.name
+			info.ProjectEndpoint = reference.projectEndpoint
+			return info, nil
+		}
 	}
 
 	if v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{

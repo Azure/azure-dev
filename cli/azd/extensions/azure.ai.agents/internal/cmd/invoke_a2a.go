@@ -112,6 +112,11 @@ func applyA2ARequestHeaders(req *http.Request, bearerToken string, identity *use
 // message/send request. Memory is bound to the agent session, like the
 // invocations protocol.
 func (a *InvokeAction) a2aRemote(ctx context.Context) error {
+	body, bodyLabel, err := a.buildA2ARequestBody()
+	if err != nil {
+		return err
+	}
+
 	rc, err := a.resolveRemoteContext(ctx)
 	if err != nil {
 		return err
@@ -129,11 +134,6 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 		fmt.Fprintln(os.Stderr,
 			"note: --new-conversation has no effect for the a2a protocol "+
 				"(memory is bound to the session; use --new-session to reset).")
-	}
-
-	body, bodyLabel, err := a.buildA2ARequestBody()
-	if err != nil {
-		return err
 	}
 
 	// Acquire the bearer token after body validation so a local input error

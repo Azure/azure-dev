@@ -46,9 +46,9 @@ The process of creating or updating Azure infrastructure from IaC templates. Tri
 
 A hash-based mechanism that tracks whether the IaC template has changed since the last deployment. Provisioning is skipped when the template hash matches the previous deployment, unless `--no-state` is passed.
 
-### Preflight Checks
+### Provision Validation
 
-Client-side validation that runs after Bicep compilation but before deployment. Validates role assignment permissions, AI model quotas, and reserved resource names to surface issues early.
+Client-side (local) validation that runs after Bicep compilation but before deployment. Disabled with `azd config set validation.provision off`. Validates role assignment permissions, AI model quotas, and reserved resource names to surface issues early.
 
 ## Extensions
 

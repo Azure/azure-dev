@@ -10,6 +10,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -141,7 +142,7 @@ func TestManagerDeployRunsProvisionValidation_WarningDeclined(t *testing.T) {
 	err := mgr.RunProvisionValidation(*mockContext.Context, false)
 
 	// User declined → validation aborts (provisioning is skipped).
-	require.ErrorIs(t, err, provisioning.ErrProvisionValidationAborted)
+	require.ErrorIs(t, err, provisioning.ErrProvisionValidationCanceled)
 }
 
 func TestManagerDeployRunsProvisionValidation_Error(t *testing.T) {
@@ -163,7 +164,7 @@ func TestManagerDeployRunsProvisionValidation_Error(t *testing.T) {
 	err := mgr.RunProvisionValidation(*mockContext.Context, false)
 
 	// Error severity → validation aborts without prompting.
-	require.ErrorIs(t, err, provisioning.ErrProvisionValidationAborted)
+	require.ErrorIs(t, err, provisioning.ErrProvisionValidationCanceled)
 }
 
 func TestManagerPreviewRunsProvisionValidation_Error(t *testing.T) {
@@ -184,7 +185,7 @@ func TestManagerPreviewRunsProvisionValidation_Error(t *testing.T) {
 	// preview=true only affects prompt wording; an error still aborts.
 	err := mgr.RunProvisionValidation(*mockContext.Context, true)
 
-	require.ErrorIs(t, err, provisioning.ErrProvisionValidationAborted)
+	require.ErrorIs(t, err, provisioning.ErrProvisionValidationCanceled)
 }
 
 func TestManagerDeployProvisionValidation_NoResultsProceeds(t *testing.T) {
@@ -240,4 +241,49 @@ func TestManagerDeployProvisionValidation_SubscriptionScoped(t *testing.T) {
 	require.True(t, ok, "resource group key should always be present")
 	require.Empty(t, string(rg))
 	require.Equal(t, "subscription", string(dispatcher.gotContext[azdext.ValidationContextTargetScope]))
+}
+
+// TestManagerDeployProvisionValidation_DisabledByConfig verifies that the
+// `validation.provision=off` user config short-circuits RunProvisionValidation
+// before any extension checks are dispatched.
+func TestManagerDeployProvisionValidation_DisabledByConfig(t *testing.T) {
+	env := newProvisionValidationEnv()
+	mockContext := mocks.NewMockContext(t.Context())
+
+	cfg := config.NewEmptyConfig()
+	require.NoError(t, cfg.Set("validation.provision", "off"))
+	mockContext.ConfigManager.WithConfig(cfg)
+
+	dispatcher := &fakeValidationDispatcher{}
+
+	mgr := newProvisionValidationManager(t, mockContext, env, dispatcher)
+
+	err := mgr.RunProvisionValidation(*mockContext.Context, false)
+
+	require.NoError(t, err)
+	require.Equal(t, 0, dispatcher.invocations,
+		"validation.provision=off must short-circuit before dispatching any checks")
+}
+
+// TestManagerDeployProvisionValidation_ProvisionPreflightOffStillDispatches
+// verifies the config-gate split: `provision.preflight` gates only the
+// server-side ARM preflight call, so setting it to "off" must NOT disable the
+// provider-agnostic client-side validation.
+func TestManagerDeployProvisionValidation_ProvisionPreflightOffStillDispatches(t *testing.T) {
+	env := newProvisionValidationEnv()
+	mockContext := mocks.NewMockContext(t.Context())
+
+	cfg := config.NewEmptyConfig()
+	require.NoError(t, cfg.Set("provision.preflight", "off"))
+	mockContext.ConfigManager.WithConfig(cfg)
+
+	dispatcher := &fakeValidationDispatcher{}
+
+	mgr := newProvisionValidationManager(t, mockContext, env, dispatcher)
+
+	err := mgr.RunProvisionValidation(*mockContext.Context, false)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, dispatcher.invocations,
+		"provision.preflight only gates server-side ARM preflight; the agnostic client-side path must still run")
 }

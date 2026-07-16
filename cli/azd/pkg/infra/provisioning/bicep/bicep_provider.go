@@ -70,11 +70,11 @@ const (
 	apiVersionResourceGroupExistence = "2025-03-01"
 )
 
-// extensionValidationTimeout bounds how long core preflight waits for
+// extensionValidationTimeout bounds how long core validation waits for
 // extension-provided validation checks to complete. If an extension's check
 // blocks or never responds, dispatch is abandoned once this deadline elapses
-// and preflight continues with the core results. This preserves the guarantee
-// that extensions cannot hang core preflight.
+// and validation continues with the core results. This preserves the guarantee
+// that extensions cannot hang core validation.
 const extensionValidationTimeout = 60 * time.Second
 
 // Azure reserved resource name words.
@@ -903,20 +903,21 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		return nil, err
 	}
 
-	// Check if preflight validation is disabled via config
-	skipPreflight := false
+	// Provision validation runs two independent, config-gated steps:
+	//   - validation.provision=off  → skip azd's local (client-side) provision validation.
+	//   - provision.preflight=off   → skip the server-side ARM provision validation call.
+	skipValidation := false
+	skipArmPreflight := false
 	var userConfigManager config.UserConfigManager
 	if err := p.serviceLocator.Resolve(&userConfigManager); err == nil {
 		if userConfig, err := userConfigManager.Load(); err == nil {
-			if val, exists := userConfig.GetString("provision.preflight"); exists && val == "off" {
-				skipPreflight = true
-			}
+			skipValidation, skipArmPreflight = resolveProvisionValidationGates(userConfig)
 		}
 	}
 
-	if !skipPreflight {
+	if !skipValidation || !skipArmPreflight {
 		p.console.ShowSpinner(ctx, "Validating deployment", input.Step)
-		abort, preflightErr := p.validatePreflight(
+		canceled, validationErr := p.validateProvision(
 			ctx,
 			deployment,
 			p.path,
@@ -924,16 +925,18 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 			planned.Parameters,
 			deploymentTags,
 			optionsMap,
+			skipValidation,
+			skipArmPreflight,
 		)
-		if preflightErr != nil {
+		if validationErr != nil {
 			p.console.StopSpinner(ctx, "Validating deployment", input.StepFailed)
-			return nil, preflightErr
+			return nil, validationErr
 		}
-		if abort {
-			// Preflight detected issues and the deployment was intentionally aborted.
+		if canceled {
+			// Validation detected issues and provisioning was intentionally canceled.
 			// This is a successful operation (exit code 0), not an internal failure.
 			p.console.StopSpinner(ctx, "Validating deployment", input.StepSkipped)
-			return &provisioning.DeployResult{SkippedReason: provisioning.PreflightAbortedSkipped}, nil
+			return &provisioning.DeployResult{SkippedReason: provisioning.ProvisionValidationCanceledSkipped}, nil
 		}
 		p.console.StopSpinner(ctx, "", input.StepDone)
 	}
@@ -1008,7 +1011,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	// that we are actually about to start the ARM deployment. Doing this here (rather
 	// than immediately after generating the deployment object) avoids advertising a
 	// deployment ID that never exists in Azure when the run short-circuits via the
-	// deployment-state cache or is aborted by preflight validation.
+	// deployment-state cache or is canceled by provision validation.
 	writeDeploymentIdFile(deployment, p.layer)
 
 	deployCtx, interruptStarted, interruptCh, markDeployCompleted, interruptCleanup :=
@@ -2552,22 +2555,50 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate azure.ArmTemplate) pro
 	return result
 }
 
-// Preflight validation outcome constants for telemetry.
+// Provision validation outcome constants for telemetry.
 const (
-	preflightOutcomePassed           = "passed"
-	preflightOutcomeWarningsAccepted = "warnings_accepted"
-	preflightOutcomeAbortedByErrors  = "aborted_by_errors"
-	preflightOutcomeAbortedByUser    = "aborted_by_user"
-	preflightOutcomeSkipped          = "skipped"
-	preflightOutcomeError            = "error"
+	provisionValidationOutcomePassed           = "passed"
+	provisionValidationOutcomeWarningsAccepted = "warnings_accepted"
+	provisionValidationOutcomeCanceledByErrors = "canceled_by_errors"
+	provisionValidationOutcomeCanceledByUser   = "canceled_by_user"
+	provisionValidationOutcomeSkipped          = "skipped"
+	provisionValidationOutcomeError            = "error"
 )
 
-// validatePreflight runs client-side preflight validation on the ARM template.
-// It returns (abort, err) where:
-//   - abort=true, err=nil: checks detected issues and the deployment should be skipped (exit code 0).
-//   - abort=false, err!=nil: the validation itself failed to run (exit code 1).
-//   - abort=false, err=nil: validation passed, proceed with deployment.
-func (p *BicepProvider) validatePreflight(
+// resolveProvisionValidationGates maps user config to the two independent
+// provision-validation gates. The two keys are deliberately separate:
+//   - `validation.provision=off` disables only azd's local (client-side)
+//     provision validation.
+//   - `provision.preflight=off` disables only the server-side ARM provision
+//     validation call.
+//
+// Each key controls its own step; neither key affects the other.
+func resolveProvisionValidationGates(userConfig config.Config) (skipValidation bool, skipArmPreflight bool) {
+	if val, exists := userConfig.GetString("validation.provision"); exists && val == "off" {
+		skipValidation = true
+	}
+	if val, exists := userConfig.GetString("provision.preflight"); exists && val == "off" {
+		skipArmPreflight = true
+	}
+	return skipValidation, skipArmPreflight
+}
+
+// validateProvision runs azd's pre-deployment provision validation on the ARM template.
+//
+// It performs up to two independent steps, each individually skippable via config:
+//   - local (client-side) provision validation (skipped when skipLocalValidation is true)
+//   - server-side ARM provision validation (skipped when skipArmPreflight is true)
+//
+// Only the local step is traced under the `validation.provision` telemetry event; the
+// server-side ARM call runs outside that span so its failures/latency are not attributed
+// to azd's local validation event.
+//
+// It returns (canceled, err) where:
+//   - canceled=true, err=nil: validation detected issues and provisioning should be skipped
+//     (exit code 0).
+//   - canceled=false, err!=nil: the validation itself failed to run (exit code 1).
+//   - canceled=false, err=nil: validation passed, proceed with provisioning.
+func (p *BicepProvider) validateProvision(
 	ctx context.Context,
 	target infra.Deployment,
 	modulePath string,
@@ -2575,18 +2606,72 @@ func (p *BicepProvider) validatePreflight(
 	armParameters azure.ArmParameters,
 	tags map[string]*string,
 	options map[string]any,
-) (abort bool, err error) {
-	ctx, span := tracing.Start(ctx, events.PreflightValidationEvent)
+	skipLocalValidation bool,
+	skipArmPreflight bool,
+) (canceled bool, err error) {
+	// Local (client-side) provision validation, traced under the validation.provision event.
+	canceled, err = p.traceLocalProvisionValidation(
+		ctx, target, modulePath, armTemplate, armParameters, skipLocalValidation)
+	if err != nil || canceled {
+		return canceled, err
+	}
+
+	// Server-side ARM provision validation. Skipped independently via provision.preflight=off.
+	// This runs outside the validation.provision span on purpose so ARM preflight errors are
+	// not attributed to azd's local validation telemetry.
+	if skipArmPreflight {
+		return false, nil
+	}
+	return false, target.ValidatePreflight(ctx, armTemplate, armParameters, tags, options)
+}
+
+// traceLocalProvisionValidation runs (or skips) azd's local provision validation within the
+// `validation.provision` telemetry span and records the outcome attributes. It returns the
+// same (canceled, err) semantics as validateProvision for the local step.
+func (p *BicepProvider) traceLocalProvisionValidation(
+	ctx context.Context,
+	target infra.Deployment,
+	modulePath string,
+	armTemplate azure.RawArmTemplate,
+	armParameters azure.ArmParameters,
+	skipLocalValidation bool,
+) (canceled bool, err error) {
+	ctx, span := tracing.Start(ctx, events.ProvisionValidationEvent)
 	defer func() {
 		span.EndWithStatus(err)
 	}()
 
-	// Tag the dispatch site so this Bicep "local-preflight" emission can be
+	// Tag the dispatch site so this Bicep "arm-provision" emission can be
 	// distinguished from the provider-agnostic "provision" dispatch, which
-	// shares PreflightValidationEvent and also fires on Bicep provisions.
-	span.SetAttributes(fields.PreflightCheckTypeKey.String(azdext.ValidationCheckTypeLocalPreflight))
+	// shares ProvisionValidationEvent and also fires on Bicep provisions.
+	span.SetAttributes(fields.ProvisionValidationCheckTypeKey.String(azdext.ValidationCheckTypeArmProvision))
 
-	// Run local preflight validation before sending to Azure.
+	if skipLocalValidation {
+		p.setProvisionValidationOutcome(span, provisionValidationOutcomeSkipped, []string{})
+		// Emit the same empty/zero attribute shape as the other skipped paths so downstream
+		// telemetry queries see a consistent set of validation.provision.* fields.
+		span.SetAttributes(fields.ProvisionValidationRulesKey.StringSlice([]string{}))
+		span.SetAttributes(fields.ProvisionValidationDiagnosticsKey.StringSlice([]string{}))
+		span.SetAttributes(fields.ProvisionValidationWarningCountKey.Int(0))
+		span.SetAttributes(fields.ProvisionValidationErrorCountKey.Int(0))
+		return false, nil
+	}
+
+	return p.runLocalProvisionValidation(ctx, span, target, modulePath, armTemplate, armParameters)
+}
+
+// runLocalProvisionValidation executes azd's local (client-side) provision validation
+// pipeline and reports findings to the user. It returns (canceled, err) using the same
+// semantics as validateProvision (canceled=true means provisioning should be skipped with
+// exit code 0).
+func (p *BicepProvider) runLocalProvisionValidation(
+	ctx context.Context,
+	span tracing.Span,
+	target infra.Deployment,
+	modulePath string,
+	armTemplate azure.RawArmTemplate,
+	armParameters azure.ArmParameters,
+) (canceled bool, err error) {
 	// Local validation catches common issues without requiring a network round-trip.
 	// Resolve the environment location for RG-scoped deployments: prefer the actual
 	// resource group location (if the RG already exists), then fall back to AZURE_LOCATION.
@@ -2595,35 +2680,35 @@ func (p *BicepProvider) validatePreflight(
 	if envLocation == "" {
 		envLocation = strings.ToLower(p.env.GetLocation())
 	}
-	localPreflight := newLocalArmPreflight(
+	validator := newProvisionValidator(
 		modulePath, p.bicepCli, target, envLocation)
 
 	// Register the role assignment permission check so it runs as part of the
-	// local preflight pipeline. The check inspects whether the template contains
+	// validation pipeline. The check inspects whether the template contains
 	// Microsoft.Authorization/roleAssignments and, if so, verifies the current
 	// principal has the required write permission.
-	localPreflight.AddCheck(PreflightCheck{
+	validator.AddCheck(ProvisionValidationCheck{
 		RuleID: "role_assignment_permissions",
 		Fn:     p.checkRoleAssignmentPermissions,
 	})
 
-	localPreflight.AddCheck(PreflightCheck{
+	validator.AddCheck(ProvisionValidationCheck{
 		RuleID: "ai_model_quota",
 		Fn:     p.checkAiModelQuota,
 	})
 
-	localPreflight.AddCheck(PreflightCheck{
+	validator.AddCheck(ProvisionValidationCheck{
 		RuleID: "reserved_resource_names",
 		Fn:     p.checkReservedResourceNames,
 	})
 
-	valCtx, results, err := localPreflight.validate(ctx, p.console, armTemplate, armParameters)
+	valCtx, results, err := validator.validate(ctx, p.console, armTemplate, armParameters)
 	if err != nil {
-		p.setPreflightOutcome(span, preflightOutcomeError, nil)
-		return false, fmt.Errorf("local preflight validation failed: %w", err)
+		p.setProvisionValidationOutcome(span, provisionValidationOutcomeError, nil)
+		return false, fmt.Errorf("local provision validation failed: %w", err)
 	}
 
-	// Dispatch to extension-provided validation checks for "local-preflight".
+	// Dispatch to extension-provided validation checks for the "arm-provision" check type.
 	// Extensions register checks via the validation-provider capability.
 	// The dispatcher is optional — if no extensions are loaded, skip silently.
 	var extRuleIDs []string
@@ -2635,11 +2720,11 @@ func (p *BicepProvider) validatePreflight(
 		checkContext := valCtx.extensionContext(armTemplate, armParameters)
 
 		// Bound extension dispatch so a blocked or unresponsive extension check
-		// cannot hang core preflight. A timeout surfaces as extErr below and is
-		// treated as a non-fatal skip (logged; preflight continues).
+		// cannot hang core validation. A timeout surfaces as extErr below and is
+		// treated as a non-fatal skip (logged; validation continues).
 		dispatchCtx, cancelDispatch := context.WithTimeout(ctx, extensionValidationTimeout)
 		extResults, invokedRuleIDs, extErr := dispatcher.DispatchChecks(
-			dispatchCtx, azdext.ValidationCheckTypeLocalPreflight, checkContext,
+			dispatchCtx, azdext.ValidationCheckTypeArmProvision, checkContext,
 		)
 		cancelDispatch()
 		if extErr != nil {
@@ -2654,18 +2739,18 @@ func (p *BicepProvider) validatePreflight(
 		}
 		extRuleIDs = append(extRuleIDs, invokedRuleIDs...)
 		for _, extResult := range extResults {
-			severity := PreflightCheckWarning
+			severity := ProvisionValidationCheckWarning
 			if extResult.Severity ==
 				azdext.ValidationCheckSeverity_VALIDATION_CHECK_SEVERITY_ERROR {
-				severity = PreflightCheckError
+				severity = ProvisionValidationCheckError
 			}
-			links := make([]ux.PreflightReportLink, len(extResult.Links))
+			links := make([]ux.ProvisionValidationReportLink, len(extResult.Links))
 			for i, l := range extResult.Links {
-				links[i] = ux.PreflightReportLink{
+				links[i] = ux.ProvisionValidationReportLink{
 					Title: l.Text, URL: l.Url,
 				}
 			}
-			results = append(results, PreflightCheckResult{
+			results = append(results, ProvisionValidationCheckResult{
 				Severity:     severity,
 				DiagnosticID: extResult.DiagnosticId,
 				Message:      extResult.Message,
@@ -2679,20 +2764,20 @@ func (p *BicepProvider) validatePreflight(
 	// because validate() may skip checks entirely (e.g. when the bicep snapshot
 	// is unavailable). A nil result with nil error means checks were skipped.
 	if results == nil {
-		p.setPreflightOutcome(span, preflightOutcomeSkipped, nil)
+		p.setProvisionValidationOutcome(span, provisionValidationOutcomeSkipped, nil)
 		// No rules actually executed; record an empty slice for telemetry.
-		span.SetAttributes(fields.PreflightRulesKey.StringSlice([]string{}))
+		span.SetAttributes(fields.ProvisionValidationRulesKey.StringSlice([]string{}))
 	} else {
-		ruleIDs := make([]string, len(localPreflight.checks))
-		for i, check := range localPreflight.checks {
+		ruleIDs := make([]string, len(validator.checks))
+		for i, check := range validator.checks {
 			ruleIDs[i] = check.RuleID
 		}
-		span.SetAttributes(fields.PreflightRulesKey.StringSlice(ruleIDs))
+		span.SetAttributes(fields.ProvisionValidationRulesKey.StringSlice(ruleIDs))
 	}
 
 	// Record extension-provided rule IDs separately for telemetry attribution.
 	if len(extRuleIDs) > 0 {
-		span.SetAttributes(fields.PreflightExtensionRulesKey.StringSlice(extRuleIDs))
+		span.SetAttributes(fields.ProvisionValidationExtensionRulesKey.StringSlice(extRuleIDs))
 	}
 
 	// Compute telemetry metrics from the results.
@@ -2702,22 +2787,22 @@ func (p *BicepProvider) validatePreflight(
 		if result.DiagnosticID != "" {
 			diagnosticIDs = append(diagnosticIDs, result.DiagnosticID)
 		}
-		if result.Severity == PreflightCheckError {
+		if result.Severity == ProvisionValidationCheckError {
 			errorCount++
 		} else {
 			warningCount++
 		}
 	}
-	span.SetAttributes(fields.PreflightDiagnosticsKey.StringSlice(diagnosticIDs))
-	span.SetAttributes(fields.PreflightWarningCountKey.Int(warningCount))
-	span.SetAttributes(fields.PreflightErrorCountKey.Int(errorCount))
+	span.SetAttributes(fields.ProvisionValidationDiagnosticsKey.StringSlice(diagnosticIDs))
+	span.SetAttributes(fields.ProvisionValidationWarningCountKey.Int(warningCount))
+	span.SetAttributes(fields.ProvisionValidationErrorCountKey.Int(errorCount))
 
-	// Build a UX report from the preflight results and display it.
+	// Build a UX report from the validation results and display it.
 	if len(results) > 0 {
-		report := &ux.PreflightReport{}
+		report := &ux.ProvisionValidationReport{}
 		for _, result := range results {
-			report.Items = append(report.Items, ux.PreflightReportItem{
-				IsError:      result.Severity == PreflightCheckError,
+			report.Items = append(report.Items, ux.ProvisionValidationReportItem{
+				IsError:      result.Severity == ProvisionValidationCheckError,
 				DiagnosticID: result.DiagnosticID,
 				Message:      result.Message,
 				Suggestion:   result.Suggestion,
@@ -2728,61 +2813,61 @@ func (p *BicepProvider) validatePreflight(
 
 		if report.HasErrors() {
 			// Errors were already displayed by the UX report above. The validation
-			// successfully detected problems and the deployment is intentionally aborted.
+			// successfully detected problems and provisioning is intentionally canceled.
 			// This is not an internal failure, so no error is returned (exit code 0).
-			p.console.Message(ctx, "Preflight validation detected errors, deployment aborted.")
-			p.setPreflightOutcome(span, preflightOutcomeAbortedByErrors, diagnosticIDs)
+			p.console.Message(ctx, "Validation detected errors, provisioning canceled.")
+			p.setProvisionValidationOutcome(span, provisionValidationOutcomeCanceledByErrors, diagnosticIDs)
 			return true, nil
 		}
 
 		if report.HasWarnings() {
 			p.console.Message(ctx, "")
 			continueDeployment, promptErr := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      "Proceed with deployment despite the warnings above?",
+				Message:      "Proceed with provisioning despite the warnings above?",
 				DefaultValue: true,
 			})
 			if promptErr != nil {
-				p.setPreflightOutcome(
-					span, preflightOutcomeError, diagnosticIDs,
+				p.setProvisionValidationOutcome(
+					span, provisionValidationOutcomeError, diagnosticIDs,
 				)
 				return false, fmt.Errorf(
-					"prompting for preflight confirmation: %w", promptErr,
+					"prompting for validation confirmation: %w", promptErr,
 				)
 			}
 			if !continueDeployment {
-				// User chose not to continue — this is an intentional abort, not a failure.
-				p.setPreflightOutcome(span, preflightOutcomeAbortedByUser, diagnosticIDs)
+				// User chose not to continue — this is an intentional cancel, not a failure.
+				p.setProvisionValidationOutcome(span, provisionValidationOutcomeCanceledByUser, diagnosticIDs)
 				return true, nil
 			}
-			p.setPreflightOutcome(span, preflightOutcomeWarningsAccepted, diagnosticIDs)
+			p.setProvisionValidationOutcome(span, provisionValidationOutcomeWarningsAccepted, diagnosticIDs)
 		}
 	} else if results != nil {
-		p.setPreflightOutcome(span, preflightOutcomePassed, nil)
+		p.setProvisionValidationOutcome(span, provisionValidationOutcomePassed, nil)
 	}
 
-	return false, target.ValidatePreflight(ctx, armTemplate, armParameters, tags, options)
+	return false, nil
 }
 
-// setPreflightOutcome records the preflight outcome on both the span and as a usage-level
+// setProvisionValidationOutcome records the validation outcome on both the span and as a usage-level
 // attribute so it can be correlated with the overall deployment result.
-func (p *BicepProvider) setPreflightOutcome(
+func (p *BicepProvider) setProvisionValidationOutcome(
 	span tracing.Span,
 	outcome string,
 	diagnosticIDs []string,
 ) {
-	span.SetAttributes(fields.PreflightOutcomeKey.String(outcome))
+	span.SetAttributes(fields.ProvisionValidationOutcomeKey.String(outcome))
 
 	// Set usage-level attributes so the parent command span (cmd.provision / cmd.up) can
-	// correlate preflight outcome with the final deployment result. This enables tracking
+	// correlate validation outcome with the final deployment result. This enables tracking
 	// false positives (warnings_accepted + deploy succeeds) and true positives
 	// (warnings_accepted + deploy fails).
 	tracing.SetUsageAttributes(
-		fields.PreflightOutcomeKey.String(outcome),
-		fields.PreflightDiagnosticsKey.StringSlice(diagnosticIDs),
+		fields.ProvisionValidationOutcomeKey.String(outcome),
+		fields.ProvisionValidationDiagnosticsKey.StringSlice(diagnosticIDs),
 	)
 }
 
-// checkRoleAssignmentPermissions is a PreflightCheckFn that verifies the current principal
+// checkRoleAssignmentPermissions is a ProvisionValidationCheckFn that verifies the current principal
 // has Microsoft.Authorization/roleAssignments/write permission when the template contains
 // role assignments. The PermissionsService is resolved lazily via the service locator so it
 // is only instantiated when actually needed.
@@ -2793,7 +2878,7 @@ func (p *BicepProvider) setPreflightOutcome(
 // See https://github.com/Azure/azure-dev/issues/7173 for the broader fix.
 func (p *BicepProvider) checkRoleAssignmentPermissions(
 	ctx context.Context, valCtx *validationContext,
-) ([]PreflightCheckResult, error) {
+) ([]ProvisionValidationCheckResult, error) {
 	if !valCtx.Props.HasRoleAssignments {
 		return nil, nil
 	}
@@ -2832,8 +2917,8 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 	}
 
 	if !hasPermission.HasPermission {
-		return []PreflightCheckResult{{
-			Severity:     PreflightCheckWarning,
+		return []ProvisionValidationCheckResult{{
+			Severity:     ProvisionValidationCheckWarning,
 			DiagnosticID: "role_assignment_missing",
 			Message: fmt.Sprintf(
 				"Principal %s lacks role assignment"+
@@ -2859,8 +2944,8 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 	}
 
 	if hasPermission.Conditional {
-		return []PreflightCheckResult{{
-			Severity:     PreflightCheckWarning,
+		return []ProvisionValidationCheckResult{{
+			Severity:     ProvisionValidationCheckWarning,
 			DiagnosticID: "role_assignment_conditional",
 			Message: fmt.Sprintf(
 				"Principal %s has conditional role"+
@@ -2885,11 +2970,11 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 // checkReservedResourceNames inspects predicted resource names and warns when a
 // resource name segment matches Azure's published reserved-word restrictions.
 // All violations are reported so users can resolve them in a single pass
-// instead of rediscovering new violations on each preflight re-run.
+// instead of rediscovering new violations on each validation re-run.
 func (p *BicepProvider) checkReservedResourceNames(
 	_ context.Context, valCtx *validationContext,
-) ([]PreflightCheckResult, error) {
-	var results []PreflightCheckResult
+) ([]ProvisionValidationCheckResult, error) {
+	var results []ProvisionValidationCheckResult
 
 	const docsLink = "https://learn.microsoft.com/azure/azure-resource-manager/templates/error-reserved-resource-name"
 
@@ -2903,8 +2988,8 @@ func (p *BicepProvider) checkReservedResourceNames(
 			resourceType := output.WithGrayFormat(
 				"(%s)", resource.Type)
 
-			results = append(results, PreflightCheckResult{
-				Severity:     PreflightCheckWarning,
+			results = append(results, ProvisionValidationCheckResult{
+				Severity:     ProvisionValidationCheckWarning,
 				DiagnosticID: "reserved_resource_name",
 				Message: fmt.Sprintf(
 					"Resource %s %s %s the"+
@@ -2915,7 +3000,7 @@ func (p *BicepProvider) checkReservedResourceNames(
 					resourceName, resourceType,
 					v.matchType, v.reservedWord,
 				),
-				Links: []ux.PreflightReportLink{
+				Links: []ux.ProvisionValidationReportLink{
 					{
 						URL:   docsLink,
 						Title: "Reserved resource name errors",
@@ -2933,7 +3018,7 @@ func (p *BicepProvider) checkReservedResourceNames(
 // Returns a warning for each deployment that would exceed the available quota.
 func (p *BicepProvider) checkAiModelQuota(
 	ctx context.Context, valCtx *validationContext,
-) ([]PreflightCheckResult, error) {
+) ([]ProvisionValidationCheckResult, error) {
 	if len(valCtx.Props.CognitiveDeployments) == 0 {
 		return nil, nil
 	}
@@ -2950,7 +3035,7 @@ func (p *BicepProvider) checkAiModelQuota(
 	}
 
 	// Use the pre-resolved fallback location from the validation context.
-	// This was already resolved in validatePreflight from the actual RG
+	// This was already resolved in validateProvision from the actual RG
 	// location or AZURE_LOCATION, so we avoid a duplicate API call.
 	fallbackLocation := strings.ToLower(valCtx.EnvLocation)
 
@@ -2971,7 +3056,7 @@ func (p *BicepProvider) checkAiModelQuota(
 		byLocation[loc] = append(byLocation[loc], dep)
 	}
 
-	var results []PreflightCheckResult
+	var results []ProvisionValidationCheckResult
 
 	for _, loc := range slices.Sorted(maps.Keys(byLocation)) {
 		deps := byLocation[loc]
@@ -3025,8 +3110,8 @@ func (p *BicepProvider) checkAiModelQuota(
 					details = fmt.Sprintf(
 						" (%s)", strings.Join(detailParts, ", "))
 				}
-				results = append(results, PreflightCheckResult{
-					Severity:     PreflightCheckWarning,
+				results = append(results, ProvisionValidationCheckResult{
+					Severity:     ProvisionValidationCheckWarning,
 					DiagnosticID: "ai_model_not_found",
 					Message: fmt.Sprintf(
 						"Model %s%s not found in %s\n"+
@@ -3039,7 +3124,7 @@ func (p *BicepProvider) checkAiModelQuota(
 					),
 					Suggestion: "Verify the model name, SKU," +
 						" and version are correct.",
-					Links: []ux.PreflightReportLink{
+					Links: []ux.ProvisionValidationReportLink{
 						{
 							URL: "https://learn.microsoft.com/" +
 								"azure/ai-services/openai/" +
@@ -3119,8 +3204,8 @@ func (p *BicepProvider) checkAiModelQuota(
 					)
 				}
 
-				results = append(results, PreflightCheckResult{
-					Severity:     PreflightCheckWarning,
+				results = append(results, ProvisionValidationCheckResult{
+					Severity:     ProvisionValidationCheckWarning,
 					DiagnosticID: "ai_model_quota_exceeded",
 					Message: fmt.Sprintf(
 						"Insufficient quota for model %s %s"+
@@ -3135,7 +3220,7 @@ func (p *BicepProvider) checkAiModelQuota(
 						remaining,
 					),
 					Suggestion: suggestion,
-					Links: []ux.PreflightReportLink{
+					Links: []ux.ProvisionValidationReportLink{
 						{
 							URL:   "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal",
 							Title: "Increase Azure subscription quotas",
@@ -3189,7 +3274,7 @@ type reservedNameViolation struct {
 // found in resourceName. A single resource can produce multiple violations
 // (for example "LoginMicrosoftApp" triggers both the LOGIN prefix and the
 // MICROSOFT substring rule), so all matches are returned to avoid fix-rerun
-// cycles during preflight.
+// cycles during validation.
 //
 // Only the trailing `/`-delimited segment of the name is evaluated. For child
 // resources, ARM emits the name as `<parent>/<child>` (and `<grandparent>/...`

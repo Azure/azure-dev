@@ -24,8 +24,8 @@ func TestParseTemplate_ValidTemplate(t *testing.T) {
 	raw, err := json.Marshal(template)
 	require.NoError(t, err)
 
-	preflight := &localArmPreflight{}
-	parsed, err := preflight.parseTemplate(azure.RawArmTemplate(raw))
+	validator := &provisionValidator{}
+	parsed, err := validator.parseTemplate(azure.RawArmTemplate(raw))
 
 	require.NoError(t, err)
 	require.NotNil(t, parsed)
@@ -36,8 +36,8 @@ func TestParseTemplate_ValidTemplate(t *testing.T) {
 func TestParseTemplate_MissingSchema(t *testing.T) {
 	raw := []byte(`{"contentVersion": "1.0.0.0", "resources": [{"type": "Microsoft.Resources/resourceGroups"}]}`)
 
-	preflight := &localArmPreflight{}
-	_, err := preflight.parseTemplate(azure.RawArmTemplate(raw))
+	validator := &provisionValidator{}
+	_, err := validator.parseTemplate(azure.RawArmTemplate(raw))
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "missing required '$schema'")
@@ -50,8 +50,8 @@ func TestParseTemplate_MissingContentVersion(t *testing.T) {
 		schema,
 	)
 
-	preflight := &localArmPreflight{}
-	_, err := preflight.parseTemplate(azure.RawArmTemplate(raw))
+	validator := &provisionValidator{}
+	_, err := validator.parseTemplate(azure.RawArmTemplate(raw))
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "missing required 'contentVersion'")
@@ -64,16 +64,16 @@ func TestParseTemplate_NoResources(t *testing.T) {
 		schema,
 	)
 
-	preflight := &localArmPreflight{}
-	_, err := preflight.parseTemplate(azure.RawArmTemplate(raw))
+	validator := &provisionValidator{}
+	_, err := validator.parseTemplate(azure.RawArmTemplate(raw))
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no resources")
 }
 
 func TestParseTemplate_InvalidJSON(t *testing.T) {
-	preflight := &localArmPreflight{}
-	_, err := preflight.parseTemplate(azure.RawArmTemplate([]byte(`{}`)))
+	validator := &provisionValidator{}
+	_, err := validator.parseTemplate(azure.RawArmTemplate([]byte(`{}`)))
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "missing required")
@@ -84,17 +84,17 @@ func TestRegisteredChecks_RunInOrder(t *testing.T) {
 		Props: resourcesProperties{},
 	}
 
-	var checks []PreflightCheck
+	var checks []ProvisionValidationCheck
 
 	// Add a warning check
-	checks = append(checks, PreflightCheck{
+	checks = append(checks, ProvisionValidationCheck{
 		RuleID: "warning_rule",
 		Fn: func(
 			ctx context.Context,
 			valCtx *validationContext,
-		) ([]PreflightCheckResult, error) {
-			return []PreflightCheckResult{{
-				Severity:     PreflightCheckWarning,
+		) ([]ProvisionValidationCheckResult, error) {
+			return []ProvisionValidationCheckResult{{
+				Severity:     ProvisionValidationCheckWarning,
 				DiagnosticID: "warning_diag",
 				Message:      "this is a warning",
 			}}, nil
@@ -102,32 +102,32 @@ func TestRegisteredChecks_RunInOrder(t *testing.T) {
 	})
 
 	// Add a check that returns nil (no finding)
-	checks = append(checks, PreflightCheck{
+	checks = append(checks, ProvisionValidationCheck{
 		RuleID: "nil_rule",
 		Fn: func(
 			ctx context.Context,
 			valCtx *validationContext,
-		) ([]PreflightCheckResult, error) {
+		) ([]ProvisionValidationCheckResult, error) {
 			return nil, nil
 		},
 	})
 
 	// Add an error check
-	checks = append(checks, PreflightCheck{
+	checks = append(checks, ProvisionValidationCheck{
 		RuleID: "error_rule",
 		Fn: func(
 			ctx context.Context,
 			valCtx *validationContext,
-		) ([]PreflightCheckResult, error) {
-			return []PreflightCheckResult{{
-				Severity:     PreflightCheckError,
+		) ([]ProvisionValidationCheckResult, error) {
+			return []ProvisionValidationCheckResult{{
+				Severity:     ProvisionValidationCheckError,
 				DiagnosticID: "error_diag",
 				Message:      "this is an error",
 			}}, nil
 		},
 	})
 
-	var results []PreflightCheckResult
+	var results []ProvisionValidationCheckResult
 	for _, check := range checks {
 		checkResults, err := check.Fn(t.Context(), valCtx)
 		require.NoError(t, err)
@@ -135,24 +135,24 @@ func TestRegisteredChecks_RunInOrder(t *testing.T) {
 	}
 
 	require.Len(t, results, 2)
-	require.Equal(t, PreflightCheckWarning, results[0].Severity)
+	require.Equal(t, ProvisionValidationCheckWarning, results[0].Severity)
 	require.Equal(t, "warning_diag", results[0].DiagnosticID)
 	require.Equal(t, "this is a warning", results[0].Message)
-	require.Equal(t, PreflightCheckError, results[1].Severity)
+	require.Equal(t, ProvisionValidationCheckError, results[1].Severity)
 	require.Equal(t, "error_diag", results[1].DiagnosticID)
 	require.Equal(t, "this is an error", results[1].Message)
 }
 
-func TestPreflightCheck_DiagnosticIDPropagation(t *testing.T) {
+func TestProvisionValidationCheck_DiagnosticIDPropagation(t *testing.T) {
 	valCtx := &validationContext{
 		Props: resourcesProperties{},
 	}
 
-	check := PreflightCheck{
+	check := ProvisionValidationCheck{
 		RuleID: "test_rule",
-		Fn: func(ctx context.Context, valCtx *validationContext) ([]PreflightCheckResult, error) {
-			return []PreflightCheckResult{{
-				Severity:     PreflightCheckWarning,
+		Fn: func(ctx context.Context, valCtx *validationContext) ([]ProvisionValidationCheckResult, error) {
+			return []ProvisionValidationCheckResult{{
+				Severity:     ProvisionValidationCheckWarning,
 				DiagnosticID: "test_diagnostic_id",
 				Message:      "test message",
 			}}, nil
@@ -166,17 +166,17 @@ func TestPreflightCheck_DiagnosticIDPropagation(t *testing.T) {
 	require.Equal(t, "test_rule", check.RuleID)
 }
 
-func TestPreflightCheck_AddCheckStoresRuleID(t *testing.T) {
-	preflight := &localArmPreflight{}
-	preflight.AddCheck(PreflightCheck{
+func TestProvisionValidationCheck_AddCheckStoresRuleID(t *testing.T) {
+	validator := &provisionValidator{}
+	validator.AddCheck(ProvisionValidationCheck{
 		RuleID: "failing_rule",
-		Fn: func(ctx context.Context, valCtx *validationContext) ([]PreflightCheckResult, error) {
+		Fn: func(ctx context.Context, valCtx *validationContext) ([]ProvisionValidationCheckResult, error) {
 			return nil, fmt.Errorf("something went wrong")
 		},
 	})
 
-	require.Len(t, preflight.checks, 1)
-	require.Equal(t, "failing_rule", preflight.checks[0].RuleID)
+	require.Len(t, validator.checks, 1)
+	require.Equal(t, "failing_rule", validator.checks[0].RuleID)
 }
 
 func TestArmField_TypedValue(t *testing.T) {

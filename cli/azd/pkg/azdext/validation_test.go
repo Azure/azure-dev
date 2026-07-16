@@ -51,7 +51,7 @@ func TestValidationEnvelope_GetInnerMessage(t *testing.T) {
 			msg: &ValidationMessage{
 				MessageType: &ValidationMessage_RegisterValidationCheckRequest{
 					RegisterValidationCheckRequest: &RegisterValidationCheckRequest{
-						CheckType: "local-preflight",
+						CheckType: "provision",
 						RuleId:    "test_rule",
 					},
 				},
@@ -70,7 +70,7 @@ func TestValidationEnvelope_GetInnerMessage(t *testing.T) {
 			msg: &ValidationMessage{
 				MessageType: &ValidationMessage_ValidationCheckRequest{
 					ValidationCheckRequest: &ValidationCheckRequest{
-						CheckType: "local-preflight",
+						CheckType: "provision",
 						RuleId:    "test_rule",
 						ContextId: "ctx-123",
 					},
@@ -99,7 +99,7 @@ func TestValidationEnvelope_GetInnerMessage(t *testing.T) {
 				MessageType: &ValidationMessage_PrepareValidationContextChunk{
 					PrepareValidationContextChunk: &PrepareValidationContextChunk{
 						ContextId: "ctx-1",
-						CheckType: "local-preflight",
+						CheckType: "provision",
 						Key:       "arm_template",
 						Data:      []byte("data"),
 					},
@@ -144,7 +144,7 @@ func TestValidationEnvelope_ProgressNotSupported(t *testing.T) {
 func TestValidationContext_Helpers(t *testing.T) {
 	valCtx := &ValidationContext{
 		ContextID: "ctx-1",
-		CheckType: "local-preflight",
+		CheckType: "provision",
 		Data: map[string][]byte{
 			ValidationContextResourcesSnapshot: []byte(`{"predictedResources":[]}`),
 			ValidationContextARMTemplate:       []byte(`{"resources":[]}`),
@@ -325,7 +325,7 @@ func TestValidationManager_GetOrCreateProvider(t *testing.T) {
 		instances: make(map[validationCheckKey]ValidationCheckProvider),
 	}
 
-	key := validationCheckKey{CheckType: "local-preflight", RuleID: "test_rule"}
+	key := validationCheckKey{CheckType: "provision", RuleID: "test_rule"}
 
 	// No factory registered — should error
 	_, err := mgr.getOrCreateProvider(key)
@@ -362,7 +362,7 @@ func TestValidationManager_OnPrepareContextChunk(t *testing.T) {
 	// Send incomplete chunk
 	resp, err := mgr.onPrepareContextChunk(t.Context(), &PrepareValidationContextChunk{
 		ContextId:   "ctx-1",
-		CheckType:   "local-preflight",
+		CheckType:   "provision",
 		Key:         "arm_template",
 		Data:        []byte("hello"),
 		ChunkIndex:  0,
@@ -380,7 +380,7 @@ func TestValidationManager_OnPrepareContextChunk(t *testing.T) {
 	// Send final chunk
 	resp, err = mgr.onPrepareContextChunk(t.Context(), &PrepareValidationContextChunk{
 		ContextId:   "ctx-1",
-		CheckType:   "local-preflight",
+		CheckType:   "provision",
 		Key:         "env_location",
 		Data:        []byte("eastus"),
 		ChunkIndex:  0,
@@ -408,7 +408,7 @@ func TestValidationManager_OnValidationCheck(t *testing.T) {
 		assemblers:       make(map[string]*contextAssembler),
 	}
 
-	key := validationCheckKey{CheckType: "local-preflight", RuleID: "test_rule"}
+	key := validationCheckKey{CheckType: "provision", RuleID: "test_rule"}
 	mgr.factories[key] = func() ValidationCheckProvider {
 		return &mockProvider{
 			results: []*ValidationCheckResult{
@@ -424,13 +424,13 @@ func TestValidationManager_OnValidationCheck(t *testing.T) {
 	// Cache a context
 	mgr.cachedContexts["ctx-abc"] = &ValidationContext{
 		ContextID: "ctx-abc",
-		CheckType: "local-preflight",
+		CheckType: "provision",
 		Data:      map[string][]byte{"env_location": []byte("westus2")},
 	}
 	mgr.contextRefCounts["ctx-abc"] = 0
 
 	resp, err := mgr.onValidationCheck(t.Context(), &ValidationCheckRequest{
-		CheckType: "local-preflight",
+		CheckType: "provision",
 		RuleId:    "test_rule",
 		ContextId: "ctx-abc",
 	})
@@ -456,13 +456,13 @@ func TestValidationManager_OnValidationCheck_NilResponse(t *testing.T) {
 		assemblers:       make(map[string]*contextAssembler),
 	}
 
-	key := validationCheckKey{CheckType: "local-preflight", RuleID: "nil_rule"}
+	key := validationCheckKey{CheckType: "provision", RuleID: "nil_rule"}
 	mgr.factories[key] = func() ValidationCheckProvider {
 		return &mockProvider{results: nil}
 	}
 
 	resp, err := mgr.onValidationCheck(t.Context(), &ValidationCheckRequest{
-		CheckType: "local-preflight",
+		CheckType: "provision",
 		RuleId:    "nil_rule",
 		ContextId: "no-such-ctx",
 	})

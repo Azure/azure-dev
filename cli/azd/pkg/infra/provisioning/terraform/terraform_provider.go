@@ -287,8 +287,9 @@ func (t *TerraformProvider) Destroy(
 		}
 
 		t.console.MessageUxItem(ctx, &ux.WarningMessage{
-			Description: "No resources were deleted because --no-prompt was set in a CI/CD environment.",
-			Hints:       []string{"Re-run with --force to delete resources without confirmation."},
+			Description: "No resources were deleted for this Terraform configuration because --no-prompt " +
+				"was set in a CI/CD environment.",
+			Hints: []string{"Re-run with --force to delete resources without confirmation."},
 		})
 
 		return &provisioning.DestroyResult{SkippedDeletion: true}, nil

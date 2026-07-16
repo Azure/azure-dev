@@ -427,14 +427,15 @@ func newHelpersTestAzdClient(
 	return azdClient
 }
 
-// TestResolveAgentServiceFromProject_UsesInlineNameForBrownfieldProject is a
-// regression test for #9109. Brownfield init writes the hosted agent definition
-// inline and points the used azure.ai.project service at an existing project,
-// but AGENT_<SERVICE>_NAME is not populated. Remote invoke may use the inline
-// name to target the existing agent in that explicitly adopted project.
-func TestResolveAgentServiceFromProject_UsesInlineNameForBrownfieldProject(t *testing.T) {
+// TestResolveAgentServiceFromProject_UsesVerifiedInlineNameForBrownfieldProject
+// is a regression test for #9109. Brownfield init writes the hosted agent
+// definition inline and points the used azure.ai.project service at an existing
+// project, but AGENT_<SERVICE>_NAME is not populated. Remote invoke may use the
+// inline name only after confirming the agent exists in that adopted project.
+func TestResolveAgentServiceFromProject_UsesVerifiedInlineNameForBrownfieldProject(t *testing.T) {
 	t.Parallel()
 
+	projectEndpoint := "https://account.services.ai.azure.com/api/projects/existing"
 	agentProps, err := projectpkg.AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{
 			Kind: agent_yaml.AgentKindHosted,
@@ -447,7 +448,7 @@ func TestResolveAgentServiceFromProject_UsesInlineNameForBrownfieldProject(t *te
 	}, nil)
 	require.NoError(t, err)
 	projectProps, err := projectpkg.MarshalStruct(&projectpkg.ServiceTargetAgentConfig{
-		Endpoint: "https://account.services.ai.azure.com/api/projects/existing",
+		Endpoint: projectEndpoint,
 	})
 	require.NoError(t, err)
 
@@ -481,12 +482,58 @@ func TestResolveAgentServiceFromProject_UsesInlineNameForBrownfieldProject(t *te
 		"shared commands must not implicitly target a brownfield agent")
 
 	info, err := resolveAgentServiceFromProject(
-		t.Context(), azdClient, "", true, withBrownfieldInlineAgentName(),
+		t.Context(),
+		azdClient,
+		"",
+		true,
+		withBrownfieldAgentExistenceResolver(func(
+			_ context.Context,
+			endpoint string,
+			agentName string,
+		) (bool, error) {
+			require.Equal(t, projectEndpoint, endpoint)
+			require.Equal(t, "inline-agent", agentName)
+			return true, nil
+		}),
 	)
 	require.NoError(t, err)
 	require.Equal(t, "service-key", info.ServiceName)
 	require.Equal(t, "inline-agent", info.AgentName,
 		"inline agent name should resolve for an explicitly adopted existing project")
+	require.Equal(t, projectEndpoint, info.ProjectEndpoint,
+		"verified inline name must remain bound to its adopted project")
+
+	missingInfo, err := resolveAgentServiceFromProject(
+		t.Context(),
+		azdClient,
+		"",
+		true,
+		withBrownfieldAgentExistenceResolver(func(
+			context.Context,
+			string,
+			string,
+		) (bool, error) {
+			return false, nil
+		}),
+	)
+	require.NoError(t, err)
+	require.Empty(t, missingInfo.AgentName,
+		"inline name must not resolve when the agent does not exist in the adopted project")
+
+	_, err = resolveAgentServiceFromProject(
+		t.Context(),
+		azdClient,
+		"",
+		true,
+		withBrownfieldAgentExistenceResolver(func(
+			context.Context,
+			string,
+			string,
+		) (bool, error) {
+			return false, status.Error(codes.Unavailable, "agent lookup unavailable")
+		}),
+	)
+	require.ErrorContains(t, err, "checking whether agent")
 }
 
 // TestResolveAgentServiceFromProject_GreenfieldRequiresDeploy verifies that an
@@ -531,7 +578,18 @@ func TestResolveAgentServiceFromProject_GreenfieldRequiresDeploy(t *testing.T) {
 	)
 
 	info, err := resolveAgentServiceFromProject(
-		t.Context(), azdClient, "", true, withBrownfieldInlineAgentName(),
+		t.Context(),
+		azdClient,
+		"",
+		true,
+		withBrownfieldAgentExistenceResolver(func(
+			context.Context,
+			string,
+			string,
+		) (bool, error) {
+			t.Fatal("greenfield service must not check for an existing agent")
+			return false, nil
+		}),
 	)
 	require.NoError(t, err)
 	require.Empty(t, info.AgentName,
@@ -583,7 +641,18 @@ func TestResolveAgentServiceFromProject_EnvironmentNameWins(t *testing.T) {
 	)
 
 	info, err := resolveAgentServiceFromProject(
-		t.Context(), azdClient, "", true, withBrownfieldInlineAgentName(),
+		t.Context(),
+		azdClient,
+		"",
+		true,
+		withBrownfieldAgentExistenceResolver(func(
+			context.Context,
+			string,
+			string,
+		) (bool, error) {
+			t.Fatal("deployed environment name must bypass the inline agent check")
+			return false, nil
+		}),
 	)
 	require.NoError(t, err)
 	require.Equal(t, "deployed-agent", info.AgentName,
@@ -593,9 +662,7 @@ func TestResolveAgentServiceFromProject_EnvironmentNameWins(t *testing.T) {
 // TestResolveAgentServiceFromProject_EnvLookupFailureDoesNotFallback verifies a
 // transient env read failure is not treated as proof that the deploy output is
 // absent. Falling back in that case could target a different existing agent.
-func TestResolveAgentServiceFromProject_EnvLookupFailureDoesNotFallback(t *testing.T) {
-	t.Parallel()
-
+func TestResolveAgentServiceFromProject_EnvLookupFailureIsReturned(t *testing.T) {
 	agentProps, err := projectpkg.AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{
 			Kind: agent_yaml.AgentKindHosted,
@@ -624,22 +691,42 @@ func TestResolveAgentServiceFromProject_EnvLookupFailureDoesNotFallback(t *testi
 			},
 		},
 	}}
-	envServer := &helpersFailingEnvironmentServer{
-		testEnvironmentServiceServer: testEnvironmentServiceServer{
-			current: &azdext.Environment{Name: "test"},
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{
+			name: "environment unavailable",
+			err:  status.Error(codes.Unavailable, "environment service unavailable"),
 		},
-		getValueErr: status.Error(codes.Unavailable, "environment service unavailable"),
+		{
+			name: "environment not found",
+			err:  status.Error(codes.NotFound, "environment not found"),
+		},
 	}
-	azdClient := newHelpersTestAzdClient(
-		t, projectServer, &helpersPromptServer{}, envServer,
-	)
 
-	info, err := resolveAgentServiceFromProject(
-		t.Context(), azdClient, "", true, withBrownfieldInlineAgentName(),
-	)
-	require.NoError(t, err)
-	require.Empty(t, info.AgentName,
-		"transient env lookup failure must not enable the inline fallback")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			envServer := &helpersFailingEnvironmentServer{
+				testEnvironmentServiceServer: testEnvironmentServiceServer{
+					current: &azdext.Environment{Name: "test"},
+				},
+				getValueErr: tt.err,
+			}
+			azdClient := newHelpersTestAzdClient(
+				t, projectServer, &helpersPromptServer{}, envServer,
+			)
+
+			info, err := resolveAgentServiceFromProject(
+				t.Context(), azdClient, "", true, withBrownfieldInlineAgentName(),
+			)
+			require.Error(t, err)
+			require.Empty(t, info.AgentName)
+			require.ErrorContains(t, err, "reading AGENT_SERVICE_KEY_NAME")
+		})
+	}
 }
 
 // TestResolveAgentProtocol_ReturnsServiceName verifies that resolveAgentProtocol

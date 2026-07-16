@@ -496,24 +496,24 @@ func TestRemoteAgentNameFromService(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name             string
-		currentName      string
-		info             *AgentServiceInfo
-		protocolExplicit bool
-		want             string
+		name                    string
+		currentName             string
+		info                    *AgentServiceInfo
+		protocolServiceSelected bool
+		want                    string
 	}{
 		{
-			name:        "auto protocol clears cached service key without deploy output",
-			currentName: "service-key",
-			info:        &AgentServiceInfo{ServiceName: "service-key"},
-			want:        "",
+			name:                    "auto protocol clears cached service key without deploy output",
+			currentName:             "service-key",
+			info:                    &AgentServiceInfo{ServiceName: "service-key"},
+			protocolServiceSelected: true,
+			want:                    "",
 		},
 		{
-			name:             "explicit protocol preserves intentional direct name",
-			currentName:      "existing-agent",
-			info:             &AgentServiceInfo{ServiceName: "service-key"},
-			protocolExplicit: true,
-			want:             "existing-agent",
+			name:        "positional name survives auto-detected protocol",
+			currentName: "existing-agent",
+			info:        &AgentServiceInfo{ServiceName: "service-key"},
+			want:        "existing-agent",
 		},
 		{
 			name:        "resolved deployed or brownfield name wins",
@@ -530,7 +530,7 @@ func TestRemoteAgentNameFromService(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := remoteAgentNameFromService(tt.currentName, tt.info, tt.protocolExplicit)
+			got := remoteAgentNameFromService(tt.currentName, tt.info, tt.protocolServiceSelected)
 			if got != tt.want {
 				t.Errorf("remoteAgentNameFromService() = %q, want %q", got, tt.want)
 			}
@@ -543,7 +543,7 @@ func TestRemoteAgentServiceResolutionError(t *testing.T) {
 
 	resolveErr := errors.New("project service unavailable")
 
-	t.Run("auto protocol surfaces resolver failure", func(t *testing.T) {
+	t.Run("missing direct name surfaces resolver failure", func(t *testing.T) {
 		t.Parallel()
 
 		err := remoteAgentServiceResolutionError(resolveErr, false)
@@ -555,11 +555,40 @@ func TestRemoteAgentServiceResolutionError(t *testing.T) {
 		}
 	})
 
-	t.Run("explicit protocol preserves direct-name fallback", func(t *testing.T) {
+	t.Run("direct name preserves fallback", func(t *testing.T) {
 		t.Parallel()
 
 		if err := remoteAgentServiceResolutionError(resolveErr, true); err != nil {
-			t.Errorf("explicit protocol should ignore project resolver failure, got %v", err)
+			t.Errorf("direct name should ignore project resolver failure, got %v", err)
+		}
+	})
+}
+
+func TestInvokeActionServiceNameSelector(t *testing.T) {
+	t.Parallel()
+
+	t.Run("auto-selected protocol service is kept separate", func(t *testing.T) {
+		t.Parallel()
+
+		action := &InvokeAction{
+			flags:               &invokeFlags{},
+			protocolServiceName: "service-key",
+		}
+
+		if got := action.serviceNameSelector(); got != "service-key" {
+			t.Errorf("serviceNameSelector() = %q, want service-key", got)
+		}
+		if action.flags.name != "" {
+			t.Errorf("flags.name = %q, want empty", action.flags.name)
+		}
+	})
+
+	t.Run("positional name remains the selector without cached service", func(t *testing.T) {
+		t.Parallel()
+
+		action := &InvokeAction{flags: &invokeFlags{name: "existing-agent"}}
+		if got := action.serviceNameSelector(); got != "existing-agent" {
+			t.Errorf("serviceNameSelector() = %q, want existing-agent", got)
 		}
 	})
 }

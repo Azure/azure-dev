@@ -654,6 +654,10 @@ func updateAzureYamlDeployments(
 
 type adoptedAgentNameResolver func(context.Context, string) (string, error)
 
+func adoptedAgentNameConflictSuggestion() string {
+	return "To create a separate agent, update the agent service's `name` in the adopted azure.yaml before deploying.\n"
+}
+
 // confirmAdoptedAgentNameConflicts checks every agent definition embedded in an
 // adopted azure.yaml against the selected existing Foundry project. The shared
 // resolver warns and asks for confirmation before reusing a name, or prompts
@@ -673,6 +677,7 @@ func confirmAdoptedAgentNameConflicts(
 			credential,
 			noPrompt,
 			agentName,
+			withNoPromptAgentNameConflictSuggestion(adoptedAgentNameConflictSuggestion()),
 		)
 	})
 }

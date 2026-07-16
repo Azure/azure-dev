@@ -66,10 +66,11 @@ const maxInvokeVersionLength = 128
 var createInvokeVersionSession = createInvokeVersionSessionImpl
 
 type InvokeAction struct {
-	flags         *invokeFlags
-	noPrompt      bool
-	endpoint      *parsedAgentEndpoint
-	clientHeaders http.Header
+	flags               *invokeFlags
+	noPrompt            bool
+	endpoint            *parsedAgentEndpoint
+	clientHeaders       http.Header
+	protocolServiceName string
 }
 
 func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -528,10 +529,9 @@ func (a *InvokeAction) emitInvokeFailureNextStep(mode nextstep.InvokeMode, agent
 // resolveProtocol returns the protocol to use for this invocation.
 // The explicit --protocol flag takes priority; otherwise the protocol
 // is auto-detected from agent.yaml (local or remote).
-// When the protocol is auto-detected and the agent name was not already
-// set, the resolved service name is cached in a.flags.name so that
-// downstream calls (resolveRemoteContext, resolveLocalAgentKey) do an
-// exact lookup instead of prompting the user a second time.
+// When the protocol is auto-detected without an explicit agent name, the
+// resolved service name is cached separately so downstream calls do an exact
+// lookup without confusing the service selector for a Foundry agent name.
 func (a *InvokeAction) resolveProtocol(
 	ctx context.Context,
 ) (agent_api.AgentProtocol, error) {
@@ -554,10 +554,17 @@ func (a *InvokeAction) resolveProtocol(
 
 	// Cache the resolved service name so downstream calls avoid re-prompting.
 	if a.flags.name == "" && serviceName != "" {
-		a.flags.name = serviceName
+		a.protocolServiceName = serviceName
 	}
 
 	return protocol, nil
+}
+
+func (a *InvokeAction) serviceNameSelector() string {
+	if a.protocolServiceName != "" {
+		return a.protocolServiceName
+	}
+	return a.flags.name
 }
 
 func (a *InvokeAction) httpTimeout() time.Duration {
@@ -700,7 +707,7 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 		defer azdClient.Close()
 	}
 
-	agentKey := resolveLocalAgentKey(ctx, azdClient, a.flags.name, a.noPrompt)
+	agentKey := resolveLocalAgentKey(ctx, azdClient, a.serviceNameSelector(), a.noPrompt)
 
 	// Resolve local session and conversation IDs (always generated locally).
 	var sid, convID string
@@ -852,32 +859,29 @@ func (rc *remoteContext) nextStepName() string {
 }
 
 // remoteAgentNameFromService applies the project-service resolution result to
-// the invoke target name. An auto-detected protocol uses flags.name as a cached
-// service selector, not as an explicit Foundry agent name; clear it when no
-// deployed/brownfield name was resolved so invoke returns deploy-first guidance.
-// With an explicit protocol, a user-provided name remains an intentional direct
-// target even when it also happens to match an azure.yaml service key.
+// the invoke target name. A protocol-selected service is not a Foundry agent
+// name, so it must not survive when no deployed/brownfield name was resolved.
+// A positional name remains an intentional direct target whether the protocol
+// was explicit or auto-detected.
 func remoteAgentNameFromService(
 	currentName string,
 	info *AgentServiceInfo,
-	protocolExplicit bool,
+	protocolServiceSelected bool,
 ) string {
 	if info != nil && info.AgentName != "" {
 		return info.AgentName
 	}
-	if !protocolExplicit {
+	if protocolServiceSelected {
 		return ""
 	}
 	return currentName
 }
 
-// remoteAgentServiceResolutionError returns a resolver error in auto-protocol
-// mode because flags.name is only a cached azure.yaml service selector there;
-// continuing would treat that selector as a Foundry agent name. With an
-// explicit protocol, resolver failure is intentionally ignored so a
-// user-provided direct agent name can work without an azd project service.
-func remoteAgentServiceResolutionError(resolveErr error, protocolExplicit bool) error {
-	if resolveErr == nil || protocolExplicit {
+// remoteAgentServiceResolutionError returns resolver failures unless the user
+// supplied an intentional direct agent name. Protocol selection alone is not
+// enough to ignore a project lookup failure when no target name was provided.
+func remoteAgentServiceResolutionError(resolveErr error, directNameProvided bool) error {
+	if resolveErr == nil || directNameProvided {
 		return nil
 	}
 	return fmt.Errorf("failed to resolve agent service for remote invoke: %w", resolveErr)
@@ -900,10 +904,9 @@ func unresolvedRemoteAgentNameError(serviceName string) error {
 
 // resolveRemoteContext returns the inputs required to invoke a remote agent.
 // In project mode it opens an azd client and reads the environment; in ephemeral
-// mode (--agent-endpoint) it skips both. Auth token acquisition is intentionally
-// deferred to acquireBearerToken so callers can validate the request body first
-// and avoid unnecessary token round-trips on invalid input. Callers must close
-// rc.azdClient when non-nil.
+// mode (--agent-endpoint) it skips both. Brownfield resolution may authenticate
+// to verify that the inline agent exists, so remote callers validate the request
+// body before calling this method. Callers must close rc.azdClient when non-nil.
 func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext, error) {
 	rc := &remoteContext{apiVersion: DefaultAgentAPIVersion, version: a.flags.version}
 
@@ -936,15 +939,22 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	// keys on s.Name in azure.yaml and would 404 on the deployed Foundry
 	// name in the divergent case.
 	info, serviceErr := resolveAgentServiceFromProject(
-		ctx, azdClient, rc.name, a.noPrompt, withBrownfieldInlineAgentName(),
+		ctx,
+		azdClient,
+		a.serviceNameSelector(),
+		a.noPrompt,
+		withBrownfieldInlineAgentName(),
 	)
 	if serviceErr == nil {
 		rc.serviceName = info.ServiceName
-		rc.name = remoteAgentNameFromService(rc.name, info, a.flags.protocol != "")
+		rc.name = remoteAgentNameFromService(rc.name, info, a.protocolServiceName != "")
 		if info.AgentEndpoint != "" {
 			rc.agentKey = buildRemoteAgentKeyFromEndpoint(info.AgentEndpoint)
 		}
-	} else if err := remoteAgentServiceResolutionError(serviceErr, a.flags.protocol != ""); err != nil {
+		if info.ProjectEndpoint != "" {
+			rc.projectEndpoint = info.ProjectEndpoint
+		}
+	} else if err := remoteAgentServiceResolutionError(serviceErr, a.flags.name != ""); err != nil {
 		azdClient.Close()
 		return nil, err
 	}
@@ -953,13 +963,15 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		return nil, unresolvedRemoteAgentNameError(rc.serviceName)
 	}
 
-	ep, err := resolveAgentEndpoint(ctx, "", "")
-	if err != nil {
-		azdClient.Close()
-		return nil, err
+	if rc.projectEndpoint == "" {
+		ep, err := resolveAgentEndpoint(ctx, "", "")
+		if err != nil {
+			azdClient.Close()
+			return nil, err
+		}
+		rc.projectEndpoint = ep
 	}
-	rc.projectEndpoint = ep
-	if rc.version != "" {
+	if rc.agentKey == "" {
 		rc.agentKey = buildAgentKey(rc.projectEndpoint, rc.name, rc.version, false)
 	}
 	return rc, nil
@@ -1096,17 +1108,17 @@ func ephemeralAuthError(ephemeral bool, err error) error {
 }
 
 func (a *InvokeAction) responsesRemote(ctx context.Context) error {
+	body, bodyLabel, err := a.resolveBody()
+	if err != nil {
+		return err
+	}
+
 	rc, err := a.resolveRemoteContext(ctx)
 	if err != nil {
 		return err
 	}
 	if rc.azdClient != nil {
 		defer rc.azdClient.Close()
-	}
-
-	body, bodyLabel, err := a.resolveBody()
-	if err != nil {
-		return err
 	}
 
 	agentKey := rc.agentKey
@@ -1284,7 +1296,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 	// Resolving twice would re-prompt the user on multi-agent projects
 	// AND risk picking different services for the two values (silent
 	// state corruption: session under A, cache under B).
-	agentName := resolveLocalAgentName(ctx, azdClient, a.flags.name, a.noPrompt)
+	agentName := resolveLocalAgentName(ctx, azdClient, a.serviceNameSelector(), a.noPrompt)
 	agentKey := buildLocalAgentKey(DefaultPort, agentName, "", resolveProjectPath(ctx, azdClient))
 
 	// Resolve local session ID (generated locally, not server-assigned).
@@ -1376,6 +1388,11 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 // invocationsRemote sends the user's message to Foundry using
 // the invocations protocol (POST /agents/{name}/endpoint/protocols/invocations).
 func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
+	body, bodyLabel, err := a.resolveBody()
+	if err != nil {
+		return err
+	}
+
 	rc, err := a.resolveRemoteContext(ctx)
 	if err != nil {
 		return err
@@ -1393,11 +1410,6 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		fmt.Fprintln(os.Stderr,
 			"note: --new-conversation has no effect for the invocations protocol "+
 				"(memory is bound to the session; use --new-session to reset).")
-	}
-
-	body, bodyLabel, err := a.resolveBody()
-	if err != nil {
-		return err
 	}
 
 	// Acquire the bearer token after body validation so a local input error

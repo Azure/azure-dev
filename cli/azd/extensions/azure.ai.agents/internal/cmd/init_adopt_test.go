@@ -637,6 +637,14 @@ func TestAdoptedAgentNameConfig(t *testing.T) {
 	}
 }
 
+func TestAdoptedAgentNameConflictSuggestion(t *testing.T) {
+	t.Parallel()
+
+	suggestion := adoptedAgentNameConflictSuggestion()
+	require.Contains(t, suggestion, "adopted azure.yaml")
+	require.NotContains(t, suggestion, "--agent-name")
+}
+
 func newAdoptedAgentNameTestClient(
 	t *testing.T,
 	projectServer azdext.ProjectServiceServer,

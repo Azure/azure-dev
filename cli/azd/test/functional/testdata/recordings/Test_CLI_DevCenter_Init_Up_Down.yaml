@@ -1767,13 +1767,12 @@ interactions:
                       "readOnly": false,
                       "required": false,
                       "allowed": [
-                        "https://github.com/azure-samples/todo-java-mongo-aca",
                         "https://github.com/azure-samples/todo-nodejs-mongo-aca",
                         "https://github.com/azure-samples/todo-python-mongo-aca"
                       ]
                     }
                   ],
-                  "parametersSchema": "{\"type\":\"object\",\"properties\":{\"runtimeType\":{\"title\":\"Runtime Type\",\"description\":\"Runtime Type of the container App runtime,eg python, nodejs or java.\",\"enum\":[\"python\",\"nodejs\",\"java\"]},\"repoUrl\":{\"title\":\"Repository URL\",\"description\":\"Path the the application source code\",\"enum\":[\"https://github.com/azure-samples/todo-java-mongo-aca\",\"https://github.com/azure-samples/todo-nodejs-mongo-aca\",\"https://github.com/azure-samples/todo-python-mongo-aca\"]}},\"required\":[\"runtimeType\"]}",
+                  "parametersSchema": "{\"type\":\"object\",\"properties\":{\"runtimeType\":{\"title\":\"Runtime Type\",\"description\":\"Runtime Type of the container App runtime,eg python, nodejs or java.\",\"enum\":[\"python\",\"nodejs\",\"java\"]},\"repoUrl\":{\"title\":\"Repository URL\",\"description\":\"Path the the application source code\",\"enum\":[\"https://github.com/azure-samples/todo-nodejs-mongo-aca\",\"https://github.com/azure-samples/todo-python-mongo-aca\"]}},\"required\":[\"runtimeType\"]}",
                   "templatePath": "Environment-Definitions/ARMTemplates/Container-App-with-Cosmos_AZD-template/azuredeploy.json"
                 },
                 {
@@ -1834,13 +1833,12 @@ interactions:
                       "readOnly": false,
                       "required": false,
                       "allowed": [
-                        "https://github.com/azure-samples/todo-java-mongo-aca",
                         "https://github.com/azure-samples/todo-nodejs-mongo-aca",
                         "https://github.com/azure-samples/todo-python-mongo-aca"
                       ]
                     }
                   ],
-                  "parametersSchema": "{\"type\":\"object\",\"properties\":{\"runtimeType\":{\"title\":\"Runtime Type\",\"description\":\"Runtime Type of the container App runtime,eg python, nodejs or java.\",\"enum\":[\"python\",\"nodejs\",\"java\"]},\"repoUrl\":{\"title\":\"Repository URL\",\"description\":\"Path the the application source code\",\"enum\":[\"https://github.com/azure-samples/todo-java-mongo-aca\",\"https://github.com/azure-samples/todo-nodejs-mongo-aca\",\"https://github.com/azure-samples/todo-python-mongo-aca\"]}},\"required\":[\"runtimeType\"]}",
+                  "parametersSchema": "{\"type\":\"object\",\"properties\":{\"runtimeType\":{\"title\":\"Runtime Type\",\"description\":\"Runtime Type of the container App runtime,eg python, nodejs or java.\",\"enum\":[\"python\",\"nodejs\",\"java\"]},\"repoUrl\":{\"title\":\"Repository URL\",\"description\":\"Path the the application source code\",\"enum\":[\"https://github.com/azure-samples/todo-nodejs-mongo-aca\",\"https://github.com/azure-samples/todo-python-mongo-aca\"]}},\"required\":[\"runtimeType\"]}",
                   "templatePath": "Environment-Definitions/ARMTemplates/Container-App-with-Cosmos_AZD-template/azuredeploy.json"
                 }
               ]
@@ -2178,13 +2176,12 @@ interactions:
                       "readOnly": false,
                       "required": false,
                       "allowed": [
-                        "https://github.com/azure-samples/todo-java-mongo-aca",
                         "https://github.com/azure-samples/todo-nodejs-mongo-aca",
                         "https://github.com/azure-samples/todo-python-mongo-aca"
                       ]
                     }
                   ],
-                  "parametersSchema": "{\"type\":\"object\",\"properties\":{\"runtimeType\":{\"title\":\"Runtime Type\",\"description\":\"Runtime Type of the container App runtime,eg python, nodejs or java.\",\"enum\":[\"python\",\"nodejs\",\"java\"]},\"repoUrl\":{\"title\":\"Repository URL\",\"description\":\"Path the the application source code\",\"enum\":[\"https://github.com/azure-samples/todo-java-mongo-aca\",\"https://github.com/azure-samples/todo-nodejs-mongo-aca\",\"https://github.com/azure-samples/todo-python-mongo-aca\"]}},\"required\":[\"runtimeType\"]}",
+                  "parametersSchema": "{\"type\":\"object\",\"properties\":{\"runtimeType\":{\"title\":\"Runtime Type\",\"description\":\"Runtime Type of the container App runtime,eg python, nodejs or java.\",\"enum\":[\"python\",\"nodejs\",\"java\"]},\"repoUrl\":{\"title\":\"Repository URL\",\"description\":\"Path the the application source code\",\"enum\":[\"https://github.com/azure-samples/todo-nodejs-mongo-aca\",\"https://github.com/azure-samples/todo-python-mongo-aca\"]}},\"required\":[\"runtimeType\"]}",
                   "templatePath": "Environment-Definitions/ARMTemplates/Container-App-with-Cosmos_AZD-template/azuredeploy.json"
                 },
                 {
@@ -2245,13 +2242,12 @@ interactions:
                       "readOnly": false,
                       "required": false,
                       "allowed": [
-                        "https://github.com/azure-samples/todo-java-mongo-aca",
                         "https://github.com/azure-samples/todo-nodejs-mongo-aca",
                         "https://github.com/azure-samples/todo-python-mongo-aca"
                       ]
                     }
                   ],
-                  "parametersSchema": "{\"type\":\"object\",\"properties\":{\"runtimeType\":{\"title\":\"Runtime Type\",\"description\":\"Runtime Type of the container App runtime,eg python, nodejs or java.\",\"enum\":[\"python\",\"nodejs\",\"java\"]},\"repoUrl\":{\"title\":\"Repository URL\",\"description\":\"Path the the application source code\",\"enum\":[\"https://github.com/azure-samples/todo-java-mongo-aca\",\"https://github.com/azure-samples/todo-nodejs-mongo-aca\",\"https://github.com/azure-samples/todo-python-mongo-aca\"]}},\"required\":[\"runtimeType\"]}",
+                  "parametersSchema": "{\"type\":\"object\",\"properties\":{\"runtimeType\":{\"title\":\"Runtime Type\",\"description\":\"Runtime Type of the container App runtime,eg python, nodejs or java.\",\"enum\":[\"python\",\"nodejs\",\"java\"]},\"repoUrl\":{\"title\":\"Repository URL\",\"description\":\"Path the the application source code\",\"enum\":[\"https://github.com/azure-samples/todo-nodejs-mongo-aca\",\"https://github.com/azure-samples/todo-python-mongo-aca\"]}},\"required\":[\"runtimeType\"]}",
                   "templatePath": "Environment-Definitions/ARMTemplates/Container-App-with-Cosmos_AZD-template/azuredeploy.json"
                 }
               ]

@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // ---- Check `local.agent-service-detected` ----
@@ -387,7 +388,53 @@ protocols:
 	got := check.Fn(t.Context(), Options{}, nil)
 
 	require.Equal(t, StatusPass, got.Status)
-	require.Contains(t, got.Message, "agent.yaml valid for 1 service(s)")
+	require.Contains(
+		t,
+		got.Message,
+		"agent definitions valid for 1 service(s)",
+	)
+}
+
+func TestCheckAgentYAMLValid_InlineDefinitionPasses(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "inline-agent",
+		"protocols": []any{
+			map[string]any{
+				"protocol": "responses",
+				"version":  "1.0.0",
+			},
+		},
+	})
+	require.NoError(t, err)
+	client := newTestAzdClient(t,
+		&fakeProjectServer{resp: &azdext.GetProjectResponse{
+			Project: &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{
+					"inline-agent": {
+						Name:                 "inline-agent",
+						Host:                 agentHost,
+						AdditionalProperties: props,
+					},
+				},
+			},
+		}},
+		&fakeEnvironmentServer{})
+
+	got := newCheckAgentYAMLValid(
+		Dependencies{AzdClient: client},
+	).Fn(t.Context(), Options{}, nil)
+
+	require.Equal(t, StatusPass, got.Status)
+	require.Equal(
+		t,
+		[]string{"inline-agent"},
+		got.Details["validatedServices"],
+	)
+	require.Empty(t, got.Details["legacyServices"])
 }
 
 func TestCheckAgentYAMLValid_NonAgentServicesIgnored(t *testing.T) {
@@ -413,10 +460,9 @@ func TestCheckAgentYAMLValid_NonAgentServicesIgnored(t *testing.T) {
 	got := check.Fn(t.Context(), Options{}, nil)
 
 	require.Equal(t, StatusPass, got.Status, "api service has no agent.yaml — must be skipped, not failed")
-	paths, ok := got.Details["validatedPaths"].([]string)
+	services, ok := got.Details["validatedServices"].([]string)
 	require.True(t, ok)
-	require.Len(t, paths, 1)
-	require.Contains(t, paths[0], "src"+string(filepath.Separator)+"agent")
+	require.Equal(t, []string{"echo-agent"}, services)
 }
 
 func TestCheckAgentYAMLValid_MissingFile_Fails(t *testing.T) {
@@ -441,7 +487,7 @@ func TestCheckAgentYAMLValid_MissingFile_Fails(t *testing.T) {
 
 	require.Equal(t, StatusFail, got.Status)
 	require.Contains(t, got.Message, "echo-agent")
-	require.Contains(t, got.Suggestion, "Fix the YAML")
+	require.Contains(t, got.Suggestion, "azure.yaml")
 	failures, ok := got.Details["failures"].([]string)
 	require.True(t, ok)
 	require.Len(t, failures, 1)
@@ -509,9 +555,9 @@ func TestCheckAgentYAMLValid_MixedValidAndInvalid_Fails(t *testing.T) {
 	require.True(t, ok)
 	require.Len(t, failures, 1)
 
-	validated, ok := got.Details["validatedPaths"].([]string)
+	validated, ok := got.Details["validatedServices"].([]string)
 	require.True(t, ok)
-	require.Len(t, validated, 1)
+	require.Equal(t, []string{"ok-agent"}, validated)
 }
 
 // ---- helper: priorBlocked ----
@@ -641,6 +687,35 @@ func TestCheckAgentYAMLValid_InvalidName_Fails(t *testing.T) {
 	require.True(t, ok)
 	require.Len(t, failures, 1)
 	require.Contains(t, failures[0], "name")
+}
+
+func TestCheckAgentYAMLValid_Workflow_Passes(t *testing.T) {
+	// `kind: workflow` is a valid agent kind (ValidAgentKinds includes
+	// it) even though it is not a hosted/container agent. Doctor must
+	// accept it rather than rejecting every non-hosted definition.
+	t.Parallel()
+
+	projectPath := t.TempDir()
+	writeYAML(t, projectPath, "src/wf/agent.yaml", "kind: workflow\nname: my-workflow\n")
+
+	client := newTestAzdClient(t,
+		&fakeProjectServer{resp: &azdext.GetProjectResponse{
+			Project: &azdext.ProjectConfig{
+				Path: projectPath,
+				Services: map[string]*azdext.ServiceConfig{
+					"my-workflow": {Name: "my-workflow", Host: agentHost, RelativePath: "src/wf"},
+				},
+			},
+		}},
+		&fakeEnvironmentServer{})
+	check := newCheckAgentYAMLValid(Dependencies{AzdClient: client})
+
+	got := check.Fn(t.Context(), Options{}, nil)
+
+	require.Equal(t, StatusPass, got.Status)
+	validated, ok := got.Details["validatedServices"].([]string)
+	require.True(t, ok)
+	require.Equal(t, []string{"my-workflow"}, validated)
 }
 
 // writeYAML is a tiny test helper that writes the given content to

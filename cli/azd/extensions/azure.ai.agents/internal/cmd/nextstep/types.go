@@ -70,10 +70,8 @@ type State struct {
 	// reason-tag taxonomy.
 	PendingProvisionReasons []string
 
-	// MissingInfraVars names ${...} references in agent.yaml that map to
-	// Bicep outputs not yet present in the azd environment (i.e.,
-	// provision is needed or has been skipped). Named so the resolver can
-	// surface an actionable hint.
+	// MissingInfraVars lists unresolved agent configuration values
+	// that map to infrastructure outputs.
 	MissingInfraVars []string
 
 	// MissingAzureContextVars names Azure environment values that must be
@@ -85,38 +83,18 @@ type State struct {
 	// MissingManualVars names ${...} references that map to user-supplied
 	// variables which are not set in the azd environment.
 	//
-	// Toolbox-derived endpoint variables (`TOOLBOX_<NAME>_MCP_ENDPOINT`
-	// keys that correspond to a manifest-declared toolbox) are
-	// partitioned out into MissingToolboxEndpoints — they are
-	// azd-managed outputs of `azd provision`, not operator-supplied,
-	// and routing them to `azd env set` is misleading.
+	// Toolbox endpoint variables are moved to
+	// MissingToolboxEndpoints because azd manages them.
 	MissingManualVars []string
 
-	// MissingToolboxEndpoints lists manifest-declared toolboxes whose
-	// azd-injected TOOLBOX_<NAME>_MCP_ENDPOINT variable is unset in the
-	// active azd environment. AssembleState partitions these out of
-	// MissingManualVars because they are produced by
-	// `azd provision` (listen.go::registerToolboxEnvVars), not by the
-	// user — the right remediation is `azd provision` (which creates
-	// the toolbox in the Foundry project on first run and sets the
-	// derived env var), not `azd env set`.
+	// MissingToolboxEndpoints lists declared toolboxes whose endpoint
+	// variable is unset in the active azd environment.
 	//
-	// Each entry carries the manifest's resource Name and the owning
-	// ServiceName so the resolver and doctor checks can render
-	// per-service guidance. The Detail field is unused (toolbox
-	// endpoints have no kind-specific identifier beyond Name) but the
-	// shared ResourceRef shape keeps the renderer code uniform with
-	// state.Toolboxes / state.ModelRefs / state.Connections.
+	// ResourceRef records whether deploy or provision owns setup.
 	MissingToolboxEndpoints []ResourceRef
 
-	// UnresolvedPlaceholders names {{NAME}} Mustache-style placeholders
-	// still present (literally) inside agent.yaml's environment_variables
-	// values. These are left over from init's manifest processing when
-	// agent.manifest.yaml declares a placeholder without a matching
-	// parameter (or the user skipped the prompt). Unlike Missing*Vars,
-	// these cannot be supplied via `azd env set` — the literal `{{X}}`
-	// would still be in agent.yaml at deploy time. The resolver surfaces
-	// a distinct "edit agent.yaml" suggestion for each.
+	// UnresolvedPlaceholders lists literal {{NAME}} values in agent
+	// configuration. They require an azure.yaml edit.
 	UnresolvedPlaceholders []string
 
 	// Services is the per-service snapshot derived from azure.yaml plus
@@ -144,54 +122,29 @@ type State struct {
 	// prepend a `cd <folder>` suggestion to the Next: block.
 	CreatedFolderDisplay string
 
-	// HasModels, HasToolboxes, HasConnections are aggregate flags
-	// derived from each azure.ai.agent service's agent.manifest.yaml
-	// (when present). They are true when at least one resource of the
-	// matching kind is declared across all services. Doctor checks that
-	// only make sense in the presence of these resources gate-skip
-	// themselves on the matching Has* flag; resolvers can use them to
-	// tailor remediation suggestions.
-	//
-	// All three flags are false when the manifest file is missing,
-	// malformed, or declares no resources — the walker is deliberately
-	// silent on those failure modes so a missing/in-flight manifest
-	// never blocks the rest of state assembly.
+	// HasModels, HasToolboxes, and HasConnections are aggregate
+	// resource-presence flags across unified and legacy configuration.
 	HasModels      bool
 	HasToolboxes   bool
 	HasConnections bool
 
-	// ModelRefs, Toolboxes, Connections list every resource of the
-	// matching kind found across all services' agent.manifest.yaml
-	// files. Entries are sorted by Name (ties broken by ServiceName)
-	// and deduplicated on (ServiceName, Name) so callers can render
-	// them deterministically. The slices are nil when the matching
-	// Has* flag is false.
+	// Resource lists are sorted and deduplicated by service and name.
 	ModelRefs   []ResourceRef
 	Toolboxes   []ResourceRef
 	Connections []ResourceRef
+
+	// Resource load errors let doctor reject incomplete snapshots.
+	ModelLoadErrors      []string
+	ToolboxLoadErrors    []string
+	ConnectionLoadErrors []string
 }
 
-// ResourceRef is a slim summary of a manifest resource that the
-// nextstep package surfaces to doctor checks and resolvers. The
-// shape intentionally elides agent_yaml.ModelResource /
-// ToolboxResource / ConnectionResource details that doctor checks
-// don't consume today — keeping the surface small so future
-// manifest schema changes don't ripple through the resolver / doctor
-// boundary. Add fields here only when a doctor check or resolver
-// branch needs them.
+// ResourceRef is the resource summary used by guidance and doctor.
 type ResourceRef struct {
-	// Name is the resource's manifest-declared name (the `name:`
-	// field on the manifest's `resources[]` entry). Doctor checks
-	// match by this name when looking up Foundry deployments /
-	// connections / toolboxes.
+	// Name is the declared resource name.
 	Name string
 
-	// ServiceName is the azd service that declared the resource (the
-	// service entry under `services:` in azure.yaml whose
-	// agent.manifest.yaml contains this entry). When the same logical
-	// resource is declared by multiple services they appear as
-	// separate entries — doctor checks key on (ServiceName, Name) so
-	// per-service failures are surfaced individually.
+	// ServiceName is the azd service that owns the resource.
 	ServiceName string
 
 	// Detail carries a kind-specific identifier:
@@ -201,6 +154,9 @@ type ResourceRef struct {
 	// Doctor remediation messages render Detail verbatim, so changes
 	// here must match the doctor-message contract.
 	Detail string
+
+	// ManagedByDeploy is true for split deploy-time resource services.
+	ManagedByDeploy bool
 }
 
 // ServiceState mirrors one entry from the project's services map, plus a
@@ -210,9 +166,10 @@ type ResourceRef struct {
 // underscores — the convention used by the deploy-time env-var writer in
 // project/service_target_agent.go.
 type ServiceState struct {
-	Name         string
-	Host         string
-	Protocol     string
-	RelativePath string
-	IsDeployed   bool
+	Name              string
+	Host              string
+	Protocol          string
+	RelativePath      string
+	EnvironmentValues []string
+	IsDeployed        bool
 }

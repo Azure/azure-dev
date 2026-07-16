@@ -193,7 +193,7 @@ func renderRows(suggestions []Suggestion, limit int) string {
 // highlightCommand returns cmd wrapped in the highlight (blue) color when
 // it is a runnable azd command (prefix "azd "), and cmd unchanged
 // otherwise. Non-command suggestions — "see <path>/README.md" pointers and
-// "edit agent.yaml: ..." instructions — stay plain.
+// "edit azure.yaml: ..." instructions stay plain.
 //
 // output.WithHighLightFormat gates on color.NoColor. In this extension that
 // flag is driven by the FORCE_COLOR env var azd core sets when core itself

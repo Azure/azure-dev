@@ -412,7 +412,7 @@ func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 	rendered := buf.String()
 
 	assert.Contains(t, rendered,
-		"edit azure.yaml: replace {{TOOLBOX_ENDPOINT}} with the actual value",
+		"edit the agent configuration: replace {{TOOLBOX_ENDPOINT}} with the actual value",
 		"placeholder fix-up missing")
 	assert.Contains(t, rendered, "azd provision",
 		"toolbox-endpoint branch should route to azd provision")
@@ -476,6 +476,31 @@ func TestResolveAfterInit_ToolboxEndpointsEmitsRunAndInvokeLocal(t *testing.T) {
 		"azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT",
 		"toolbox endpoint var must not be routed through `azd env set`")
 	assert.Contains(t, rendered, "azd deploy", "trailing deploy reminder missing")
+}
+
+func TestResolveAfterInit_SplitToolboxUsesDeploy(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		HasProjectEndpoint: true,
+		MissingToolboxEndpoints: []ResourceRef{
+			{
+				Name:            "web-search-tools",
+				ServiceName:     "web-search-tools",
+				ManagedByDeploy: true,
+			},
+		},
+	}
+
+	suggestions := ResolveAfterInit(state, nil)
+	require.NotEmpty(t, suggestions)
+	assert.Equal(t, "azd deploy", suggestions[0].Command)
+	assert.Contains(t, suggestions[0].Description, "toolbox service")
+	assert.Contains(
+		t,
+		suggestions[2].Description,
+		"once deployment completes",
+	)
 }
 
 // TestResolveAfterInit_ToolboxAndManualVarsCoexist locks the bug both
@@ -552,7 +577,7 @@ func TestResolveAfterInit_ToolboxAndManualVarsCoexistWithPlaceholders(t *testing
 	rendered := buf.String()
 
 	assert.Contains(t, rendered,
-		"edit azure.yaml: replace {{AGENT_NAME}} with the actual value",
+		"edit the agent configuration: replace {{AGENT_NAME}} with the actual value",
 		"placeholder fix-up missing")
 	assert.Contains(t, rendered, "azd provision",
 		"coexistence+placeholders: toolbox sub-branch must still emit provision")
@@ -575,21 +600,26 @@ func TestRunFollowUpDescription(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name               string
-		hasToolboxEndpoint bool
-		hasManualVars      bool
-		want               string
+		name           string
+		toolboxCommand string
+		hasManualVars  bool
+		want           string
 	}{
 		{
-			name:               "both",
-			hasToolboxEndpoint: true,
-			hasManualVars:      true,
-			want:               "start the agent locally once the steps above are complete",
+			name:           "both",
+			toolboxCommand: "azd provision",
+			hasManualVars:  true,
+			want:           "start the agent locally once the steps above are complete",
 		},
 		{
-			name:               "toolbox only",
-			hasToolboxEndpoint: true,
-			want:               "start the agent locally once provision completes",
+			name:           "legacy toolbox only",
+			toolboxCommand: "azd provision",
+			want:           "start the agent locally once provision completes",
+		},
+		{
+			name:           "split toolbox only",
+			toolboxCommand: "azd deploy",
+			want:           "start the agent locally once deployment completes",
 		},
 		{
 			name:          "manual only",
@@ -607,7 +637,10 @@ func TestRunFollowUpDescription(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := runFollowUpDescription(tc.hasToolboxEndpoint, tc.hasManualVars)
+			got := runFollowUpDescription(
+				tc.toolboxCommand,
+				tc.hasManualVars,
+			)
 			assert.Equal(t, tc.want, got)
 		})
 	}
@@ -693,7 +726,7 @@ func TestResolveAfterInit_UnresolvedPlaceholders(t *testing.T) {
 			for i, name := range tt.wantPlaceholders {
 				require.Less(t, i, len(out))
 				assert.Equal(t,
-					"edit azure.yaml: replace {{"+name+"}} with the actual value",
+					"edit the agent configuration: replace {{"+name+"}} with the actual value",
 					out[i].Command,
 				)
 			}

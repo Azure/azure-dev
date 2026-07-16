@@ -189,6 +189,43 @@ func TestCheckToolboxes_FailsWhenSomeEndpointsMissing(t *testing.T) {
 	require.Equal(t, 1, res.Details["matchedCount"])
 }
 
+func TestCheckToolboxes_SplitResourceUsesDeploy(t *testing.T) {
+	t.Parallel()
+	deps := Dependencies{
+		AzdClient: &azdext.AzdClient{},
+		assembleState: fixedAssembler(stateWithToolboxes(
+			nextstep.ResourceRef{
+				Name:            "web-search-tools",
+				ServiceName:     "web-search-tools",
+				ManagedByDeploy: true,
+			},
+		)),
+		lookupToolboxEnv: fixedToolboxLookup(map[string]string{}),
+	}
+
+	res := runToolboxesCheck(t, deps, nil)
+
+	require.Equal(t, StatusFail, res.Status)
+	require.Contains(t, res.Suggestion, "azd deploy")
+	require.NotContains(t, res.Suggestion, "azd provision")
+}
+
+func TestCheckToolboxes_FailsOnIncompleteState(t *testing.T) {
+	t.Parallel()
+	deps := Dependencies{
+		AzdClient: &azdext.AzdClient{},
+		assembleState: fixedAssembler(&nextstep.State{
+			ToolboxLoadErrors: []string{"missing toolbox ref"},
+		}),
+	}
+
+	res := runToolboxesCheck(t, deps, nil)
+
+	require.Equal(t, StatusFail, res.Status)
+	require.Contains(t, res.Message, "missing toolbox ref")
+	require.Contains(t, res.Suggestion, "azure.yaml")
+}
+
 func TestCheckToolboxes_FailsWhenAllEndpointsMissing(t *testing.T) {
 	t.Parallel()
 	deps := Dependencies{

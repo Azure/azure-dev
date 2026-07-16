@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -16,10 +15,9 @@ import (
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/envkey"
-	"azureaiagent/internal/pkg/paths"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"go.yaml.in/yaml/v3"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 const (
@@ -64,7 +62,7 @@ const (
 
 // envVarRefPattern captures ${VAR} references inside YAML string values.
 // Group 1 is the variable name. Group 2 captures the optional default
-// tail `:-fallback`; when group 2 is non-empty the agent.yaml author
+// tail `:-fallback`; when group 2 is non-empty the configuration
 // explicitly opted into a fallback and the variable is therefore not
 // required at deploy time (the runtime expander `drone/envsubst` honors
 // `:-` semantics). `extractAgentYamlEnvRefs` skips refs with a non-empty
@@ -289,7 +287,7 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 	}
 
 	if project != nil && len(state.Services) > 0 {
-		populateManifestResources(project.Path, state)
+		populateResources(project, state, &errs)
 	}
 
 	// Partition toolbox-derived endpoint vars out of MissingManualVars
@@ -426,25 +424,47 @@ func collectServices(
 	ctx context.Context,
 	src Source,
 	envName string,
-	project *azdext.ProjectConfig,
+	projectConfig *azdext.ProjectConfig,
 	errs *[]error,
 ) []ServiceState {
-	if project == nil || len(project.Services) == 0 {
+	if projectConfig == nil || len(projectConfig.Services) == 0 {
 		return nil
 	}
 
-	services := make([]ServiceState, 0, len(project.Services))
-	for _, svc := range project.Services {
+	services := make([]ServiceState, 0, len(projectConfig.Services))
+	for _, svc := range projectConfig.Services {
 		if svc == nil || svc.Host != agentHost {
 			continue
 		}
-		services = append(services, ServiceState{
+
+		serviceState := ServiceState{
 			Name:         svc.Name,
 			Host:         svc.Host,
 			RelativePath: svc.RelativePath,
-			Protocol:     loadServiceProtocol(project.Path, svc.RelativePath),
 			IsDeployed:   isDeployed(ctx, src, envName, svc.Name, errs),
-		})
+		}
+
+		agentDef, cfg, resolved, err := loadGuidanceServiceConfig(
+			svc,
+			projectConfig.Path,
+		)
+		if err != nil {
+			*errs = append(
+				*errs,
+				fmt.Errorf("resolve service %s: %w", svc.Name, err),
+			)
+		} else {
+			if serviceState.RelativePath == "" && resolved != nil {
+				serviceState.RelativePath = resolvedProjectPath(resolved)
+			}
+			serviceState.Protocol = preferredProtocol(
+				agentDef.Protocols,
+			)
+			serviceState.EnvironmentValues =
+				agentEnvironmentValues(agentDef, &cfg)
+		}
+
+		services = append(services, serviceState)
 	}
 
 	slices.SortFunc(services, func(a, b ServiceState) int {
@@ -453,32 +473,11 @@ func collectServices(
 	return services
 }
 
-// loadServiceProtocol returns the protocol the service's agent.yaml declares
-// for next-step hint purposes. The lookup is best-effort: missing or
-// malformed manifests, empty protocols sections, or any I/O error all return
-// an empty string, and the resolver falls back to ProtocolResponses. When the
-// manifest declares multiple protocols, ProtocolResponses wins over
-// ProtocolInvocations so the suggested payload works on the broadest set of
-// agents.
-func loadServiceProtocol(projectPath, relativePath string) string {
-	if projectPath == "" {
-		return ""
-	}
-	manifestPath, err := paths.JoinAllowRoot(projectPath, relativePath, "agent.yaml")
-	if err != nil {
-		return ""
-	}
-	data, err := os.ReadFile(manifestPath) //nolint:gosec // path is validated under the project root
-	if err != nil {
-		return ""
-	}
-	var hosted agent_yaml.ContainerAgent
-	if err := yaml.Unmarshal(data, &hosted); err != nil {
-		return ""
-	}
-
+func preferredProtocol(
+	protocols []agent_yaml.ProtocolVersionRecord,
+) string {
 	sawInvocations := false
-	for _, p := range hosted.Protocols {
+	for _, p := range protocols {
 		switch strings.TrimSpace(p.Protocol) {
 		case ProtocolResponses:
 			return ProtocolResponses
@@ -492,20 +491,46 @@ func loadServiceProtocol(projectPath, relativePath string) string {
 	return ""
 }
 
-// detectMissingVars walks each service's agent.yaml environment_variables
-// section and partitions the trouble-spots into three lists:
+func agentEnvironmentValues(
+	agentDef guidanceAgentDefinition,
+	cfg *guidanceServiceConfig,
+) []string {
+	valuesByName := map[string]string{}
+	if agentDef.EnvironmentVariables != nil {
+		for _, envVar := range *agentDef.EnvironmentVariables {
+			valuesByName[envVar.Name] = envVar.Value
+		}
+	}
+	if cfg != nil {
+		maps.Copy(valuesByName, cfg.Environment)
+	}
+	values := make([]string, 0, len(valuesByName))
+	for _, key := range slices.Sorted(maps.Keys(valuesByName)) {
+		values = append(values, valuesByName[key])
+	}
+	return values
+}
+
+func resolvedProjectPath(props *structpb.Struct) string {
+	value, ok := props.GetFields()["project"]
+	if !ok {
+		return ""
+	}
+	return value.GetStringValue()
+}
+
+// detectMissingVars inspects each agent's environment values.
 //
 //  1. infra:        unset ${VAR} refs that name a top-level output of
 //     <projectPath>/infra/main.bicep (provision outputs)
 //  2. manual:       unset ${VAR} refs that do NOT name a Bicep output
 //     (user inputs the user must `azd env set`)
-//  3. placeholders: surviving {{NAME}} Mustache placeholders (init failed
-//     to substitute these from agent.manifest.yaml's parameters block)
+//  3. placeholders: surviving {{NAME}} Mustache placeholders
 //
 // Only bare-form ${VAR} refs participate in (1) and (2): when the
-// agent.yaml author supplies an explicit fallback via `${VAR:-default}`,
+// a value supplies an explicit fallback via `${VAR:-default}`,
 // the deploy-time resolver substitutes the fallback and the variable is
-// not required. `extractAgentYamlEnvRefs` filters defaulted refs out.
+// not required. `extractEnvironmentRefs` filters defaulted refs out.
 //
 // Classification rule for ${VAR}: a variable is an infra var iff its
 // name is declared as a top-level `output` in `<projectPath>/infra/
@@ -546,17 +571,22 @@ func detectMissingVars(
 	services []ServiceState,
 	errs *[]error,
 ) (infra, manual, placeholders []string) {
-	if envName == "" || projectPath == "" || len(services) == 0 {
+	if envName == "" || len(services) == 0 {
 		return nil, nil, nil
 	}
 
-	bicepOutputs := bicepOutputSet(projectPath)
+	bicepOutputs := map[string]struct{}{}
+	if projectPath != "" {
+		bicepOutputs = bicepOutputSet(projectPath)
+	}
 	seenInfra := make(map[string]struct{})
 	seenManual := make(map[string]struct{})
 	seenPlaceholder := make(map[string]struct{})
 
 	for _, svc := range services {
-		refs, phs := extractAgentYamlEnvRefs(projectPath, svc.RelativePath)
+		refs, phs := extractEnvironmentRefs(
+			svc.EnvironmentValues,
+		)
 		for _, name := range refs {
 			if _, ok := seenInfra[name]; ok {
 				continue
@@ -603,49 +633,23 @@ func bicepOutputSet(projectPath string) map[string]struct{} {
 	return set
 }
 
-// extractAgentYamlEnvRefs returns two lists from the service's
-// agent.yaml environment_variables block:
+// extractEnvironmentRefs returns refs and placeholders from values.
 //
 //  1. refs: unique bare-form ${VAR} names. Refs that supply a fallback
 //     via `${VAR:-default}` are skipped — the deploy-time expander
 //     honors the default, so the variable is not required and never
 //     warrants a missing-var hint.
-//  2. placeholders: unique {{NAME}} Mustache-style placeholders that
-//     init's manifest processing failed to substitute. These would land
-//     in the container literally as `{{NAME}}` at deploy time.
+//  2. placeholders: unique {{NAME}} Mustache-style placeholders.
 //
-// Order matches first appearance in the file. Missing or malformed
-// manifests return nil for both — consistent with loadServiceProtocol's
-// best-effort contract.
-func extractAgentYamlEnvRefs(projectPath, relativePath string) (refs, placeholders []string) {
-	if projectPath == "" {
-		return nil, nil
-	}
-	manifestPath, err := paths.JoinAllowRoot(projectPath, relativePath, "agent.yaml")
-	if err != nil {
-		return nil, nil
-	}
-	data, err := os.ReadFile(manifestPath) //nolint:gosec // path is validated under the project root
-	if err != nil {
-		return nil, nil
-	}
-	var hosted agent_yaml.ContainerAgent
-	if err := yaml.Unmarshal(data, &hosted); err != nil {
-		return nil, nil
-	}
-	if hosted.EnvironmentVariables == nil {
-		return nil, nil
-	}
-
+// Order matches first appearance in the configured values.
+func extractEnvironmentRefs(
+	values []string,
+) (refs, placeholders []string) {
 	seenRef := make(map[string]struct{})
 	seenPh := make(map[string]struct{})
-	for _, ev := range *hosted.EnvironmentVariables {
-		for _, m := range envVarRefPattern.FindAllStringSubmatch(ev.Value, -1) {
+	for _, value := range values {
+		for _, m := range envVarRefPattern.FindAllStringSubmatch(value, -1) {
 			if m[2] != "" {
-				// Variable carries an explicit `:-fallback` default; the
-				// deploy-time resolver honors it, so the user does not need
-				// to set the var. Skipping here keeps the next-step hint
-				// honest: only bare-form refs become missing-var prompts.
 				continue
 			}
 			name := m[1]
@@ -655,8 +659,14 @@ func extractAgentYamlEnvRefs(projectPath, relativePath string) (refs, placeholde
 			seenRef[name] = struct{}{}
 			refs = append(refs, name)
 		}
-		for _, m := range placeholderPattern.FindAllStringSubmatch(ev.Value, -1) {
-			name := m[1]
+		for _, match := range placeholderPattern.FindAllStringSubmatchIndex(
+			value,
+			-1,
+		) {
+			if match[0] > 0 && value[match[0]-1] == '$' {
+				continue
+			}
+			name := value[match[2]:match[3]]
 			if _, ok := seenPh[name]; ok {
 				continue
 			}

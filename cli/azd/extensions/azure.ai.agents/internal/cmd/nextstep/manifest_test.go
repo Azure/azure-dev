@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"azureaiagent/internal/pkg/agents/agent_yaml"
-
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -97,6 +95,137 @@ func TestAssembleState_ManifestWalker_AllThreeKinds(t *testing.T) {
 	assert.Equal(t, "BingLLMSearch | https://api.bing.microsoft.com/", state.Connections[0].Detail)
 }
 
+func TestAssembleState_UnifiedSplitResources(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"ai-project": {
+					Name: "ai-project",
+					Host: aiProjectHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"deployments": []any{
+							map[string]any{
+								"name": "gpt-4o",
+								"model": map[string]any{
+									"name": "gpt-4o",
+								},
+							},
+						},
+					}),
+				},
+				"search-conn": {
+					Name: "search-conn",
+					Host: aiConnectionHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"category": "CognitiveSearch",
+						"target":   "https://search.example",
+						"authType": "ApiKey",
+					}),
+				},
+				"research-tools": {
+					Name: "research-tools",
+					Host: aiToolboxHost,
+				},
+				"echo": {
+					Name: "echo",
+					Host: agentHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"kind":      "hosted",
+						"name":      "echo-agent",
+						"toolboxes": []any{"research-tools"},
+						"env": map[string]any{
+							"TOOLBOX_ENDPOINT": "${TOOLBOX_RESEARCH_TOOLS_MCP_ENDPOINT}",
+						},
+					}),
+				},
+			},
+		},
+		values: map[string]string{
+			"dev/" + projectEndpointVar: "https://example",
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+
+	require.Empty(t, errs)
+	require.Len(t, state.ModelRefs, 1)
+	assert.Equal(t, "gpt-4o", state.ModelRefs[0].Name)
+	assert.Equal(t, "ai-project", state.ModelRefs[0].ServiceName)
+
+	require.Len(t, state.Connections, 1)
+	assert.Equal(t, "search-conn", state.Connections[0].Name)
+	assert.False(t, state.Connections[0].ManagedByDeploy)
+	assert.Equal(
+		t,
+		"CognitiveSearch | https://search.example",
+		state.Connections[0].Detail,
+	)
+
+	require.Len(t, state.Toolboxes, 1)
+	assert.Equal(t, "research-tools", state.Toolboxes[0].Name)
+	assert.True(t, state.Toolboxes[0].ManagedByDeploy)
+
+	require.Len(t, state.MissingToolboxEndpoints, 1)
+	assert.Equal(
+		t,
+		"research-tools",
+		state.MissingToolboxEndpoints[0].Name,
+	)
+	assert.True(
+		t,
+		state.MissingToolboxEndpoints[0].ManagedByDeploy,
+	)
+	assert.Empty(t, state.MissingManualVars)
+}
+
+func TestAssembleState_RecordsSplitResourceErrors(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"broken-conn": {
+					Name: "broken-conn",
+					Host: aiConnectionHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"$ref": "./missing-connection.yaml",
+					}),
+				},
+				"echo": {
+					Name: "echo",
+					Host: agentHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"kind": "hosted",
+						"name": "echo-agent",
+					}),
+				},
+			},
+		},
+		values: map[string]string{
+			"dev/" + projectEndpointVar: "https://example",
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+
+	require.NotEmpty(t, errs)
+	require.Len(t, state.ConnectionLoadErrors, 1)
+	assert.Contains(
+		t,
+		state.ConnectionLoadErrors[0],
+		"missing-connection.yaml",
+	)
+	assert.False(t, state.HasConnections)
+}
+
 func TestAssembleState_ManifestWalker_RootRelativePath(t *testing.T) {
 	t.Parallel()
 
@@ -180,13 +309,16 @@ func TestAssembleState_ManifestWalker_RejectsTraversal(t *testing.T) {
 
 	state, errs := assembleState(context.Background(), src)
 
-	require.Empty(t, errs)
+	require.NotEmpty(t, errs)
+	assert.Contains(t, errs[0].Error(), "must not contain '..'")
 	assert.False(t, state.HasModels)
 	assert.False(t, state.HasToolboxes)
 	assert.False(t, state.HasConnections)
 }
 
-func TestAssembleState_ManifestWalker_MalformedManifestNoError(t *testing.T) {
+func TestAssembleState_ManifestWalker_ReportsMalformedManifest(
+	t *testing.T,
+) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
@@ -202,7 +334,13 @@ func TestAssembleState_ManifestWalker_MalformedManifestNoError(t *testing.T) {
 		},
 	}
 
-	state, _ := assembleState(context.Background(), src)
+	state, errs := assembleState(context.Background(), src)
+
+	require.NotEmpty(t, errs)
+	require.Len(t, state.ModelLoadErrors, 1)
+	require.Len(t, state.ToolboxLoadErrors, 1)
+	require.Len(t, state.ConnectionLoadErrors, 1)
+	assert.Contains(t, state.ModelLoadErrors[0], "load resources for echo")
 	assert.False(t, state.HasModels)
 	assert.False(t, state.HasToolboxes)
 	assert.False(t, state.HasConnections)
@@ -375,11 +513,11 @@ func TestConnectionDetail(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			r := agent_yaml.ConnectionResource{
-				Category: agent_yaml.CategoryKind(tc.category),
-				Target:   tc.target,
-			}
-			assert.Equal(t, tc.want, connectionDetail(r))
+			assert.Equal(
+				t,
+				tc.want,
+				connectionDetail(tc.category, tc.target),
+			)
 		})
 	}
 }

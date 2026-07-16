@@ -25,6 +25,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// ANSI cursor-visibility control sequences a spinner emits to the writer:
+// it hides the cursor while running and shows it again when it stops.
+const (
+	ansiHideCursor = "\033[?25l"
+	ansiShowCursor = "\033[?25h"
+)
+
 func TestToolCommandGating(t *testing.T) {
 	// The "tool" command group is always registered, regardless of any
 	// alpha feature gating.
@@ -424,8 +431,8 @@ func TestToolActionSpinnersUseInjectedWriter(t *testing.T) {
 			err := test.run(t.Context(), &writer)
 
 			require.ErrorIs(t, err, detectErr)
-			assert.Contains(t, writer.String(), "\033[?25l")
-			assert.Contains(t, writer.String(), "\033[?25h")
+			assert.Contains(t, writer.String(), ansiHideCursor)
+			assert.Contains(t, writer.String(), ansiShowCursor)
 		})
 	}
 }

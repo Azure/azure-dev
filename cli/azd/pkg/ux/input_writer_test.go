@@ -13,6 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// ansiShowCursor is the ANSI control sequence that makes the cursor visible;
+// components emit it to restore the cursor after prompting.
+const ansiShowCursor = "\033[?25h"
+
 func TestInputCursorUsesComponentWriter(t *testing.T) {
 	// Select and MultiSelect also restore their component cursor when Ask returns.
 	tests := []struct {
@@ -77,7 +81,7 @@ func TestInputCursorUsesComponentWriter(t *testing.T) {
 			err := test.ask(ctx, &writer)
 
 			require.Error(t, err)
-			assert.Equal(t, test.expectedShowCursorCount, strings.Count(writer.String(), "\033[?25h"))
+			assert.Equal(t, test.expectedShowCursorCount, strings.Count(writer.String(), ansiShowCursor))
 		})
 	}
 }

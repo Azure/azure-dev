@@ -720,11 +720,23 @@ if session == nil {
 
 ### 7. Isolate State and Use Shared Cleanup
 
-Use a private `AZD_CONFIG_DIR` when a test changes user-level state so parallel tests do not share `~/.azd`. A new config directory is logged out, so tests that need live Azure access must authenticate in it. Leave `AZD_CONFIG_DIR` unset when a test only uses the existing login.
+Use a private `AZD_CONFIG_DIR` when a test changes user-level state so parallel tests do not share `~/.azd`. Set it on the test CLI before the first `azd` invocation rather than using `t.Setenv`, which changes process-wide state:
 
-Use `tempDirWithDiagnostics(t)` for generated or executed files. It retries transient Windows file locks and reports
-lock diagnostics if cleanup fails. Register other cleanup when state is created; don't duplicate retry loops or add
-fixed sleeps. Since `t.Context()` is canceled before cleanup runs, use a separate bounded context when needed.
+```go
+configDir := tempDirWithDiagnostics(t)
+cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+configDir)
+```
+
+A new config directory is logged out, so tests that need live Azure access must authenticate in it. Leave `AZD_CONFIG_DIR` unset when a test only uses the existing login.
+
+Use `tempDirWithDiagnostics(t)` for generated or executed files. It retries transient Windows file locks and reports lock diagnostics if cleanup fails. Register other cleanup when state is created; don't duplicate retry loops or add fixed sleeps. Since `t.Context()` is canceled before cleanup runs, use a separate bounded context when needed.
+
+Guard type assertions when reading untyped fixture, JSON, environment, or recording data so malformed input fails the test instead of panicking:
+
+```go
+subscriptionID, ok := envValues["AZURE_SUBSCRIPTION_ID"].(string)
+require.True(t, ok, "AZURE_SUBSCRIPTION_ID should be a string")
+```
 
 ### 8. Add Debug Logging
 

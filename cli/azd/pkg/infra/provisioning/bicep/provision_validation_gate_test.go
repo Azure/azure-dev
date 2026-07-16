@@ -113,7 +113,7 @@ func TestValidateProvisionArmPreflightGate(t *testing.T) {
 			p := &BicepProvider{}
 
 			canceled, err := p.validateProvision(
-				context.Background(),
+				t.Context(),
 				target,
 				"",
 				azure.RawArmTemplate("{}"),

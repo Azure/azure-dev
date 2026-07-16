@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.3 (2026-07-16)
+
+### Other Changes
+
+- [[#9103]](https://github.com/Azure/azure-dev/pull/9103) Pin internal azd module dependency to released version.
+
 ## 1.0.0-beta.2 (2026-07-09)
 
 ### Bugs Fixed

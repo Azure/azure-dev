@@ -1,13 +1,23 @@
 # Release History
 
-## 1.0.0-beta.6 (Unreleased)
+## 1.0.0-beta.6 (2026-07-16)
+
+### Features Added
+
+- [[#9046]](https://github.com/Azure/azure-dev/pull/9046) `azd provision` now creates Foundry connections declared as `host: azure.ai.connection` services in `azure.yaml` at provision time via the `microsoft.foundry` synthesizer, for both greenfield and brownfield projects. Connection category, target, authentication type, credentials, and metadata are all supported. `azd deploy` for `host: azure.ai.connection` services is now a no-op; provision is the single source of truth.
+- [[#9107]](https://github.com/Azure/azure-dev/pull/9107) Add `centralus` region to the list of supported hosted agent regions.
+- [[#8942]](https://github.com/Azure/azure-dev/pull/8942) `azd deploy` can now carry over the current hosted-agent session across deploys. When `AZD_AGENT_RESUME_SESSION_ON_DEPLOY` is set to a truthy value, the session is stopped before deploy and re-pointed at the newly deployed version so the next invocation resumes with its `/home/session` volume intact instead of minting a fresh session.
+
+### Bugs Fixed
+
+- [[#9114]](https://github.com/Azure/azure-dev/pull/9114) Fix `azd ai agent invoke` failing with "agent name is required" on brownfield projects where the hosted agent name is written inline in the `azure.ai.agent` service config rather than emitted as a deployed environment output. The agent name is now seeded from the inline/config definition, with the deployed environment variable retaining precedence.
+- [[#9007]](https://github.com/Azure/azure-dev/pull/9007) Add a preflight validation check that detects an immutable resource-group region conflict before provisioning. When the target resource group already exists in a different region than `AZURE_LOCATION`, the check surfaces the mismatch during azd's validation phase with clear remediation guidance instead of a slow deploy-time ARM `InvalidResourceGroupLocation` error.
 
 ### Other Changes
 
-- [[#9112]](https://github.com/Azure/azure-dev/pull/9112) Terraform infrastructure eject now synthesizes
-  `azure.ai.connection` services into Foundry project connection resources, preserving their category, target,
-  authentication type, credentials, and metadata.
+- [[#9112]](https://github.com/Azure/azure-dev/pull/9112) Terraform infrastructure eject now synthesizes `azure.ai.connection` services into Foundry project connection resources, preserving their category, target, authentication type, credentials, and metadata.
 - [[#9049]](https://github.com/Azure/azure-dev/pull/9049) Switch the `invocations_ws` agent endpoint from the preview dispatcher form to the GA path-based route. `azd deploy` now registers `AGENT_{KEY}_INVOCATIONS_WS_ENDPOINT` (and `azd ai agent show` displays `Endpoint (invocations_ws)`) as `wss://<account>.services.ai.azure.com/api/projects/<project>/agents/<agent>/endpoint/protocols/invocations_ws?api-version=v1`, carrying the project and agent as path segments to mirror the HTTP `invocations` route. The previous form embedded them as `project_name`/`agent_name` query parameters on a single literal `/api/projects/agents/...` path.
+- [[#9103]](https://github.com/Azure/azure-dev/pull/9103) Pin internal azd module dependency to released version.
 
 ## 1.0.0-beta.5 (2026-07-09)
 

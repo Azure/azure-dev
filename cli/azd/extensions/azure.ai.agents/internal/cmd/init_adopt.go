@@ -19,7 +19,6 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -110,9 +109,8 @@ type azureYamlServices struct {
 }
 
 type azureYamlService struct {
-	Host                 string                           `yaml:"host"`
-	Deployments          []project.Deployment             `yaml:"deployments"`
-	EnvironmentVariables []agent_yaml.EnvironmentVariable `yaml:"environmentVariables"`
+	Host        string               `yaml:"host"`
+	Deployments []project.Deployment `yaml:"deployments"`
 }
 
 // foundryDeployments parses the azure.yaml content and returns all model
@@ -156,26 +154,6 @@ func firstFoundryProjectServiceName(content []byte) string {
 	return serviceNames[0]
 }
 
-func agentServicesWithEnvVar(content []byte, envName string) map[string][]agent_yaml.EnvironmentVariable {
-	var doc azureYamlServices
-	if err := yaml.Unmarshal(content, &doc); err != nil {
-		return nil
-	}
-	services := map[string][]agent_yaml.EnvironmentVariable{}
-	for svcName, svc := range doc.Services {
-		if svc.Host != "azure.ai.agent" {
-			continue
-		}
-		for _, envVar := range svc.EnvironmentVariables {
-			if envVar.Name == envName {
-				services[svcName] = svc.EnvironmentVariables
-				break
-			}
-		}
-	}
-	return services
-}
-
 func agentServiceNames(content []byte) []string {
 	var doc azureYamlServices
 	if err := yaml.Unmarshal(content, &doc); err != nil {
@@ -202,36 +180,6 @@ func updateAzureYamlAgentName(ctx context.Context, azdClient *azdext.AzdClient, 
 		Value:       val,
 	}); err != nil {
 		return fmt.Errorf("updating agent name in azure.yaml for service %q: %w", serviceName, err)
-	}
-	return nil
-}
-
-func updateAzureYamlAgentEnvVar(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	serviceName string,
-	envVars []agent_yaml.EnvironmentVariable,
-	envName string,
-	envValue string,
-) error {
-	updated := make([]any, 0, len(envVars))
-	for _, envVar := range envVars {
-		value := envVar.Value
-		if envVar.Name == envName {
-			value = envValue
-		}
-		updated = append(updated, map[string]any{"name": envVar.Name, "value": value})
-	}
-	val, err := structpb.NewValue(updated)
-	if err != nil {
-		return fmt.Errorf("encoding env var %q for service %q: %w", envName, serviceName, err)
-	}
-	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
-		ServiceName: serviceName,
-		Path:        "environmentVariables",
-		Value:       val,
-	}); err != nil {
-		return fmt.Errorf("updating env var %q in azure.yaml for service %q: %w", envName, serviceName, err)
 	}
 	return nil
 }
@@ -967,13 +915,6 @@ func runInitFromAzureYaml(
 	// or skip, we update the on-disk azure.yaml accordingly.
 	deploymentEntries := foundryDeployments(content)
 	if len(deploymentEntries) == 0 && flags.modelDeployment != "" {
-		for agentServiceName, envVars := range agentServicesWithEnvVar(content, "AZURE_VOICELIVE_MODEL") {
-			if err := updateAzureYamlAgentEnvVar(
-				ctx, azdClient, agentServiceName, envVars, "AZURE_VOICELIVE_MODEL", flags.modelDeployment,
-			); err != nil {
-				return err
-			}
-		}
 		if err := setEnvValue(ctx, azdClient, env.Name, "AZURE_AI_MODEL_DEPLOYMENT_NAME", flags.modelDeployment); err != nil {
 			return fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
 		}
@@ -994,13 +935,6 @@ func runInitFromAzureYaml(
 		if deployment != nil {
 			if err := updateAzureYamlDeployments(ctx, azdClient, serviceName, []project.Deployment{*deployment}); err != nil {
 				return err
-			}
-			for agentServiceName, envVars := range agentServicesWithEnvVar(content, "AZURE_VOICELIVE_MODEL") {
-				if err := updateAzureYamlAgentEnvVar(
-					ctx, azdClient, agentServiceName, envVars, "AZURE_VOICELIVE_MODEL", deployment.Name,
-				); err != nil {
-					return err
-				}
 			}
 			deploymentEntries = []foundryDeploymentEntry{{ServiceName: serviceName, Deployment: *deployment}}
 		}

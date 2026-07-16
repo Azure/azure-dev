@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "cli/azd/extensions/*/extension.yaml"
+      - "cli/azd/extensions/*/internal/cmd/providers_manifest_test.go"
       - "cli/azd/extensions/extension.schema.json"
       - "cli/azd/extensions/registry.schema.json"
       - "cli/azd/pkg/extensions/registry.go"

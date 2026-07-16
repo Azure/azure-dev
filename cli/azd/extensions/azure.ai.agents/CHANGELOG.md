@@ -6,7 +6,7 @@
 
 - [[#9046]](https://github.com/Azure/azure-dev/pull/9046) `azd provision` now creates Foundry connections declared as `host: azure.ai.connection` services in `azure.yaml` at provision time via the `microsoft.foundry` synthesizer, for both greenfield and brownfield projects. Connection category, target, authentication type, credentials, and metadata are all supported. `azd deploy` for `host: azure.ai.connection` services is now a no-op; provision is the single source of truth.
 - [[#9107]](https://github.com/Azure/azure-dev/pull/9107) Add `centralus` region to the list of supported hosted agent regions.
-- [[#8942]](https://github.com/Azure/azure-dev/pull/8942) `azd deploy` can now carry over the current hosted-agent session across deploys. When `resumeSessionOnDeploy` is set on the agent service in `azure.yaml`, the session is stopped before deploy and re-pointed at the newly deployed version so the next invocation resumes with its `/home/session` volume intact instead of minting a fresh session.
+- [[#8942]](https://github.com/Azure/azure-dev/pull/8942) `azd deploy` can now carry over the current hosted-agent session across deploys. When `AZD_AGENT_RESUME_SESSION_ON_DEPLOY` is set to a truthy value, the session is stopped before deploy and re-pointed at the newly deployed version so the next invocation resumes with its `/home/session` volume intact instead of minting a fresh session.
 
 ### Bugs Fixed
 

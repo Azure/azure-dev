@@ -116,6 +116,37 @@ func TestFoundryProjectName(t *testing.T) {
 	}
 }
 
+func TestAgentNameOverrideServices_MultipleAgentsReturnsAmbiguousError(t *testing.T) {
+	content := []byte(`name: multi-agent
+services:
+  first:
+    host: azure.ai.agent
+    name: first-agent
+  second:
+    host: azure.ai.agent
+    name: second-agent
+`)
+
+	services, err := agentNameOverrideServices(content, "shared-name")
+	require.Nil(t, services)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "--agent-name is ambiguous")
+	require.Contains(t, err.Error(), "first, second")
+}
+
+func TestAgentNameOverrideServices_SingleAgentReturnsServiceName(t *testing.T) {
+	content := []byte(`name: one-agent
+services:
+  first:
+    host: azure.ai.agent
+    name: first-agent
+`)
+
+	services, err := agentNameOverrideServices(content, "renamed")
+	require.NoError(t, err)
+	require.Equal(t, []string{"first"}, services)
+}
+
 func TestParentDirOf(t *testing.T) {
 	tests := []struct {
 		filePath string

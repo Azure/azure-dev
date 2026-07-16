@@ -99,6 +99,9 @@ func supportedRegionsForInit(ctx context.Context) ([]string, error) {
 func runRegionsFetch(ctx context.Context, fetch *regionsFetch) {
 	// The fetch applies its own timeout (hostedAgentRegionsFetchTimeout).
 	regions, err := fetchHostedAgentRegionsFromURL(ctx, http.DefaultClient, hostedAgentRegionsURL)
+	// Even on a successful fetch, union the build-time embedded regions so newly
+	// added regions (for example westus2 for invocations_ws) remain selectable
+	// while the live manifest rolls out. mergeRegions dedups and preserves order.
 	if err == nil {
 		if embedded, fbErr := parseEmbeddedHostedAgentRegions(); fbErr == nil && len(embedded) > 0 {
 			regions = mergeRegions(regions, embedded)

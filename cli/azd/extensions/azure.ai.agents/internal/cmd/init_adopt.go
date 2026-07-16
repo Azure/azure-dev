@@ -184,6 +184,22 @@ func updateAzureYamlAgentName(ctx context.Context, azdClient *azdext.AzdClient, 
 	return nil
 }
 
+func agentNameOverrideServices(content []byte, agentName string) ([]string, error) {
+	if agentName == "" {
+		return nil, nil
+	}
+	agentServices := agentServiceNames(content)
+	if len(agentServices) > 1 {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("--agent-name is ambiguous: sample declares %d agent services (%s)",
+				len(agentServices), strings.Join(agentServices, ", ")),
+			"remove --agent-name, or edit azure.yaml to rename each agent individually",
+		)
+	}
+	return agentServices, nil
+}
+
 func resolveDeploymentForModelFlag(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -844,7 +860,11 @@ func runInitFromAzureYaml(
 		return err
 	}
 	if flags.agentName != "" {
-		for _, agentServiceName := range agentServiceNames(content) {
+		agentServices, err := agentNameOverrideServices(content, flags.agentName)
+		if err != nil {
+			return err
+		}
+		for _, agentServiceName := range agentServices {
 			if err := updateAzureYamlAgentName(ctx, azdClient, agentServiceName, flags.agentName); err != nil {
 				return err
 			}

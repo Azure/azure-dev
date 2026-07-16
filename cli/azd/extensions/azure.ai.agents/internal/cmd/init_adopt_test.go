@@ -147,6 +147,22 @@ services:
 	require.Equal(t, []string{"first"}, services)
 }
 
+func TestAgentOverrideServices_MultipleAgentsReturnsAmbiguousError(t *testing.T) {
+	content := []byte(`name: multi-agent
+services:
+  first:
+    host: azure.ai.agent
+  second:
+    host: azure.ai.agent
+`)
+
+	services, err := agentOverrideServices(content, "--protocol")
+	require.Nil(t, services)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "--protocol is ambiguous")
+	require.Contains(t, err.Error(), "first, second")
+}
+
 func TestFoundryProjectServiceForModelOverride_MultipleProjectsReturnsAmbiguousError(t *testing.T) {
 	content := []byte(`name: multi-project
 services:

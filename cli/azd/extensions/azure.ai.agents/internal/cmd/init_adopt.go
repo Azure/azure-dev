@@ -204,6 +204,30 @@ func updateAzureYamlAgentName(ctx context.Context, azdClient *azdext.AzdClient, 
 	return nil
 }
 
+func updateAzureYamlAgentProtocols(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	protocols []protocolInfo,
+) error {
+	protocolDocs := make([]any, 0, len(protocols))
+	for _, p := range protocols {
+		protocolDocs = append(protocolDocs, map[string]any{"protocol": p.Name, "version": p.Version})
+	}
+	val, err := structpb.NewValue(protocolDocs)
+	if err != nil {
+		return fmt.Errorf("encoding protocols for service %q: %w", serviceName, err)
+	}
+	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        "protocols",
+		Value:       val,
+	}); err != nil {
+		return fmt.Errorf("updating protocols in azure.yaml for service %q: %w", serviceName, err)
+	}
+	return nil
+}
+
 func agentNameOverrideServices(content []byte, agentName string) ([]string, error) {
 	if agentName == "" {
 		return nil, nil
@@ -218,6 +242,19 @@ func agentNameOverrideServices(content []byte, agentName string) ([]string, erro
 			fmt.Sprintf("--agent-name is ambiguous: sample declares %d agent services (%s)",
 				len(agentServices), strings.Join(agentServices, ", ")),
 			"remove --agent-name, or edit azure.yaml to rename each agent individually",
+		)
+	}
+	return agentServices, nil
+}
+
+func agentOverrideServices(content []byte, flagName string) ([]string, error) {
+	agentServices := agentServiceNames(content)
+	if len(agentServices) > 1 {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("%s is ambiguous: sample declares %d agent services (%s)",
+				flagName, len(agentServices), strings.Join(agentServices, ", ")),
+			fmt.Sprintf("remove %s, or edit azure.yaml to update each agent individually", flagName),
 		)
 	}
 	return agentServices, nil
@@ -889,6 +926,21 @@ func runInitFromAzureYaml(
 		}
 		for _, agentServiceName := range agentServices {
 			if err := updateAzureYamlAgentName(ctx, azdClient, agentServiceName, flags.agentName); err != nil {
+				return err
+			}
+		}
+	}
+	if len(flags.protocols) > 0 {
+		agentServices, err := agentOverrideServices(content, "--protocol")
+		if err != nil {
+			return err
+		}
+		protocols, err := resolveKnownProtocols(flags.protocols)
+		if err != nil {
+			return err
+		}
+		for _, agentServiceName := range agentServices {
+			if err := updateAzureYamlAgentProtocols(ctx, azdClient, agentServiceName, protocols); err != nil {
 				return err
 			}
 		}

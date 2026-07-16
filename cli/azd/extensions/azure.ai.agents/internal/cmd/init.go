@@ -663,14 +663,25 @@ func protocolRecordsForImageManifest(flagProtocols []string) ([]agent_yaml.Proto
 	if len(flagProtocols) == 0 {
 		return []agent_yaml.ProtocolVersionRecord{{Protocol: "responses", Version: "2.0.0"}}, nil
 	}
+	protocols, err := resolveKnownProtocols(flagProtocols)
+	if err != nil {
+		return nil, err
+	}
+	records := make([]agent_yaml.ProtocolVersionRecord, 0, len(protocols))
+	for _, p := range protocols {
+		records = append(records, agent_yaml.ProtocolVersionRecord{Protocol: p.Name, Version: p.Version})
+	}
+	return records, nil
+}
 
+func resolveKnownProtocols(flagProtocols []string) ([]protocolInfo, error) {
 	versionOf := make(map[string]string, len(knownProtocols))
 	for _, p := range knownProtocols {
 		versionOf[p.Name] = p.Version
 	}
 
 	seen := make(map[string]bool, len(flagProtocols))
-	records := make([]agent_yaml.ProtocolVersionRecord, 0, len(flagProtocols))
+	protocols := make([]protocolInfo, 0, len(flagProtocols))
 	for _, name := range flagProtocols {
 		if seen[name] {
 			continue
@@ -685,10 +696,10 @@ func protocolRecordsForImageManifest(flagProtocols []string) ([]agent_yaml.Proto
 				"choose one of the supported protocols or omit --protocol to use the default",
 			)
 		}
-		records = append(records, agent_yaml.ProtocolVersionRecord{Protocol: name, Version: version})
+		protocols = append(protocols, protocolInfo{Name: name, Version: version})
 	}
 
-	return records, nil
+	return protocols, nil
 }
 
 // synthesizeImageManifestFile writes a minimal hosted container agent manifest to a

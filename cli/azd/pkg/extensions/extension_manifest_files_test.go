@@ -120,11 +120,17 @@ func isAssertedProviderVerificationCall(call *ast.CallExpr) bool {
 		return false
 	}
 	verificationFunction, ok := verificationCall.Fun.(*ast.SelectorExpr)
-	if !ok || verificationFunction.Sel.Name != "VerifyProvidersMatchManifest" {
+	if !ok || verificationFunction.Sel.Name != "VerifyProvidersMatchManifest" ||
+		len(verificationCall.Args) < 1 {
 		return false
 	}
 	azdextPackage, ok := verificationFunction.X.(*ast.Ident)
-	return ok && azdextPackage.Name == "azdext"
+	if !ok || azdextPackage.Name != "azdext" {
+		return false
+	}
+
+	configureCallback, ok := verificationCall.Args[0].(*ast.Ident)
+	return ok && configureCallback.Name == "configureExtensionHost"
 }
 
 func TestHasCanonicalProviderVerificationTestRequiresAssertedError(t *testing.T) {
@@ -155,6 +161,13 @@ func TestConfigureExtensionHostMatchesManifest(t *testing.T) {
 			source: `package cmd
 func TestConfigureExtensionHostMatchesManifest(t *testing.T) {
 	_ = azdext.VerifyProvidersMatchManifest(configureExtensionHost, "extension.yaml")
+}`,
+		},
+		{
+			name: "different configure callback",
+			source: `package cmd
+func TestConfigureExtensionHostMatchesManifest(t *testing.T) {
+	require.NoError(t, azdext.VerifyProvidersMatchManifest(configureTestHost, "extension.yaml"))
 }`,
 		},
 		{

@@ -42,7 +42,7 @@ jobs:
       - name: Verify provider contract coverage
         run: |
           go test ./pkg/extensions \
-            -run '^(TestExtensionManifestsHaveProviderVerificationTests|TestCapabilitySchemaTypesInSyncWithGo)$' -v
+            -run '^(TestExtensionManifestsHaveProviderVerificationTests|TestCapabilitySchemaTypesInSyncWithGo|TestHasCanonicalProviderVerificationTestRequiresAssertedError)$' -v
 
   verify-providers:
     if: github.event_name == 'workflow_call'

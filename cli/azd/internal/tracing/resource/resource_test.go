@@ -5,6 +5,7 @@ package resource
 
 import (
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -253,6 +254,48 @@ func TestExecEnvForHosts_no_host(t *testing.T) {
 	result := execEnvForHosts()
 	if result != "" {
 		t.Fatalf("execEnvForHosts() = %q, want empty string", result)
+	}
+}
+
+func TestExecEnvModifiers(t *testing.T) {
+	tests := []struct {
+		name      string
+		userAgent string
+		want      []string
+	}{
+		{
+			name:      "no modifiers",
+			userAgent: "custom-user-agent",
+			want:      []string{},
+		},
+		{
+			name:      "Azure App Spaces portal",
+			userAgent: "azure_app_space_portal:v1.0.0",
+			want:      []string{fields.EnvModifierAzureSpace},
+		},
+		{
+			name:      "Microsoft Foundry skill",
+			userAgent: "microsoft-foundry-skill",
+			want:      []string{fields.EnvModifierMicrosoftFoundrySkill},
+		},
+		{
+			name:      "multiple modifiers",
+			userAgent: "azure_app_space_portal microsoft-foundry-skill",
+			want: []string{
+				fields.EnvModifierAzureSpace,
+				fields.EnvModifierMicrosoftFoundrySkill,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZURE_DEV_USER_AGENT", tt.userAgent)
+
+			if got := execEnvModifiers(); !slices.Equal(got, tt.want) {
+				t.Fatalf("execEnvModifiers() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

@@ -964,9 +964,7 @@ func runInitFromManifest(
 	if err != nil {
 		return err
 	}
-	if err := applyAzureContextFlags(ctx, azdClient, azureContext, env.Name, flags); err != nil {
-		return err
-	}
+	applyAzureContextFlags(azureContext, flags)
 
 	// Create credential with whatever tenant is available (may be empty → default tenant)
 	credential, err := azidentity.NewAzureDeveloperCLICredential(

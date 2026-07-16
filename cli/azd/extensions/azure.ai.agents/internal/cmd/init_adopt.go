@@ -911,9 +911,7 @@ func runInitFromAzureYaml(
 	if err != nil {
 		return err
 	}
-	if err := applyAzureContextFlags(ctx, azdClient, azureContext, env.Name, flags); err != nil {
-		return err
-	}
+	applyAzureContextFlags(azureContext, flags)
 
 	// Apply deploy-mode configuration to the adopted agent
 	// service(s) before configuring the Foundry project. Whether an

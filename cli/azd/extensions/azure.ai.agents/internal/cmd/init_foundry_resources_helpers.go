@@ -1076,32 +1076,16 @@ func ensureLocation(
 	return setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", azureContext.Scope.Location)
 }
 
-func applyAzureContextFlags(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	azureContext *azdext.AzureContext,
-	envName string,
-	flags *initFlags,
-) error {
+func applyAzureContextFlags(azureContext *azdext.AzureContext, flags *initFlags) {
 	if flags == nil {
-		return nil
+		return
 	}
 	if flags.subscriptionId != "" {
 		azureContext.Scope.SubscriptionId = flags.subscriptionId
-		if err := setEnvValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID", flags.subscriptionId); err != nil {
-			return err
-		}
 	}
 	if flags.location != "" {
 		azureContext.Scope.Location = flags.location
-		if err := setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", flags.location); err != nil {
-			return err
-		}
-		if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", flags.location); err != nil {
-			return err
-		}
 	}
-	return nil
 }
 
 // ensureSubscriptionAndLocation ensures both subscription and location are set.

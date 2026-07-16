@@ -43,7 +43,6 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -614,10 +613,15 @@ func (p *AgentServiceTargetProvider) Package(
 				ServiceName:    serviceConfig.Name,
 				ServiceContext: serviceContext,
 			}
-			setContainerServicePath(
+			if err := setContainerOperationOptions(
 				buildRequest,
-				p.serviceConfig.GetRelativePath(),
-			)
+				p.serviceConfig,
+			); err != nil {
+				return nil, exterrors.Internal(
+					exterrors.OpContainerBuild,
+					fmt.Sprintf("preparing container build options failed: %s", err),
+				)
+			}
 			buildResponse, err := p.azdClient.
 				Container().
 				Build(ctx, buildRequest)
@@ -632,10 +636,15 @@ func (p *AgentServiceTargetProvider) Package(
 			ServiceName:    serviceConfig.Name,
 			ServiceContext: serviceContext,
 		}
-		setContainerServicePath(
+		if err := setContainerOperationOptions(
 			packageRequest,
-			p.serviceConfig.GetRelativePath(),
-		)
+			p.serviceConfig,
+		); err != nil {
+			return nil, exterrors.Internal(
+				exterrors.OpContainerPackage,
+				fmt.Sprintf("preparing container package options failed: %s", err),
+			)
+		}
 		packageResponse, err := p.azdClient.
 			Container().
 			Package(ctx, packageRequest)
@@ -651,30 +660,44 @@ func (p *AgentServiceTargetProvider) Package(
 	}, nil
 }
 
-const containerServicePathFieldNumber protowire.Number = 3
+const containerOperationOptionsFieldNumber protowire.Number = 3
 
-func setContainerServicePath(request proto.Message, servicePath string) {
-	if servicePath == "" {
-		return
+// setContainerOperationOptions supports SDKs predating the generated type.
+func setContainerOperationOptions(
+	request proto.Message,
+	serviceConfig *azdext.ServiceConfig,
+) error {
+	if serviceConfig == nil {
+		return nil
 	}
-	message := request.ProtoReflect()
-	field := message.Descriptor().Fields().ByNumber(
-		protoreflect.FieldNumber(containerServicePathFieldNumber),
-	)
-	if field != nil {
-		message.Set(field, protoreflect.ValueOfString(servicePath))
-		return
+	var options []byte
+	if servicePath := serviceConfig.GetRelativePath(); servicePath != "" {
+		options = protowire.AppendTag(options, 1, protowire.BytesType)
+		options = protowire.AppendString(options, servicePath)
 	}
-
-	// The released SDK may not know this optional field yet.
-	// Unknown fields preserve wire compatibility.
+	if image := serviceConfig.GetImage(); image != "" {
+		options = protowire.AppendTag(options, 2, protowire.BytesType)
+		options = protowire.AppendString(options, image)
+	}
+	if docker := serviceConfig.GetDocker(); docker != nil {
+		dockerBytes, err := proto.Marshal(docker)
+		if err != nil {
+			return fmt.Errorf("marshal docker options: %w", err)
+		}
+		options = protowire.AppendTag(options, 3, protowire.BytesType)
+		options = protowire.AppendBytes(options, dockerBytes)
+	}
+	if len(options) == 0 {
+		return nil
+	}
 	unknown := protowire.AppendTag(
-		message.GetUnknown(),
-		containerServicePathFieldNumber,
+		request.ProtoReflect().GetUnknown(),
+		containerOperationOptionsFieldNumber,
 		protowire.BytesType,
 	)
-	unknown = protowire.AppendString(unknown, servicePath)
-	message.SetUnknown(unknown)
+	unknown = protowire.AppendBytes(unknown, options)
+	request.ProtoReflect().SetUnknown(unknown)
+	return nil
 }
 
 // Publish performs the publish operation for the agent service
@@ -716,10 +739,15 @@ func (p *AgentServiceTargetProvider) Publish(
 		ServiceName:    serviceConfig.Name,
 		ServiceContext: serviceContext,
 	}
-	setContainerServicePath(
+	if err := setContainerOperationOptions(
 		publishRequest,
-		p.serviceConfig.GetRelativePath(),
-	)
+		p.serviceConfig,
+	); err != nil {
+		return nil, exterrors.Internal(
+			exterrors.OpContainerPublish,
+			fmt.Sprintf("preparing container publish options failed: %s", err),
+		)
+	}
 	publishResponse, err := p.azdClient.
 		Container().
 		Publish(ctx, publishRequest)

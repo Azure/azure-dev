@@ -12,12 +12,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/protowire"
-	"google.golang.org/protobuf/proto"
 )
 
 func TestNewContainerService(t *testing.T) {
@@ -41,7 +40,7 @@ func TestContainerServiceConfigOverridesPathWithoutMutation(t *testing.T) {
 	effective, err := containerServiceConfig(
 		projectConfig,
 		"web",
-		"resolved/path",
+		&azdext.ContainerOperationOptions{ServicePath: "resolved/path"},
 	)
 
 	require.NoError(t, err)
@@ -59,7 +58,11 @@ func TestContainerServiceConfigRejectsPathTraversal(t *testing.T) {
 		},
 	}
 
-	_, err := containerServiceConfig(projectConfig, "web", "../outside")
+	_, err := containerServiceConfig(
+		projectConfig,
+		"web",
+		&azdext.ContainerOperationOptions{ServicePath: "../outside"},
+	)
 
 	require.Error(t, err)
 	st, ok := status.FromError(err)
@@ -82,7 +85,11 @@ func TestContainerServiceConfigRejectsSymlinkEscape(t *testing.T) {
 		},
 	}
 
-	_, err := containerServiceConfig(projectConfig, "web", "linked")
+	_, err := containerServiceConfig(
+		projectConfig,
+		"web",
+		&azdext.ContainerOperationOptions{ServicePath: "linked"},
+	)
 
 	require.Error(t, err)
 	st, ok := status.FromError(err)
@@ -90,32 +97,41 @@ func TestContainerServiceConfigRejectsSymlinkEscape(t *testing.T) {
 	require.Equal(t, codes.InvalidArgument, st.Code())
 }
 
-func TestContainerServiceConfigDecodesForwardCompatiblePath(
+func TestContainerServiceConfigAppliesResolvedOptions(
 	t *testing.T,
 ) {
 	t.Parallel()
 
-	data := protowire.AppendTag(nil, 1, protowire.BytesType)
-	data = protowire.AppendString(data, "web")
-	data = protowire.AppendTag(data, 3, protowire.BytesType)
-	data = protowire.AppendString(data, "resolved/path")
-	request := &azdext.ContainerBuildRequest{}
-	require.NoError(t, proto.Unmarshal(data, request))
-
 	projectConfig := &project.ProjectConfig{
 		Path: t.TempDir(),
 		Services: map[string]*project.ServiceConfig{
-			"web": {Name: "web"},
+			"web": {
+				Name:  "web",
+				Image: osutil.NewExpandableString("cached-image"),
+				Docker: project.DockerProjectOptions{
+					Path: "cached.Dockerfile",
+				},
+			},
 		},
 	}
 	effective, err := containerServiceConfig(
 		projectConfig,
-		request.GetServiceName(),
-		request.GetServicePath(),
+		"web",
+		&azdext.ContainerOperationOptions{
+			ServicePath: "resolved/path",
+			Image:       "resolved-image",
+			Docker: &azdext.DockerProjectOptions{
+				Path:    "resolved.Dockerfile",
+				Context: "resolved-context",
+			},
+		},
 	)
 
 	require.NoError(t, err)
 	require.Equal(t, "resolved/path", effective.RelativePath)
+	require.Equal(t, osutil.NewExpandableString("resolved-image"), effective.Image)
+	require.Equal(t, "resolved.Dockerfile", effective.Docker.Path)
+	require.Equal(t, "resolved-context", effective.Docker.Context)
 }
 
 func TestContainerService_Build_EmptyServiceName(t *testing.T) {

@@ -26,7 +26,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -210,25 +209,46 @@ func newContainerTestClient(t *testing.T, containerSrv azdext.ContainerServiceSe
 	return newServiceTargetTestClient(t, containerSrv, nil)
 }
 
-func requestServicePath(t *testing.T, request proto.Message) string {
+type containerOperationOptions struct {
+	servicePath string
+	image       string
+	docker      *azdext.DockerProjectOptions
+}
+
+func requestContainerOperationOptions(
+	t *testing.T,
+	request proto.Message,
+) containerOperationOptions {
 	t.Helper()
 
-	message := request.ProtoReflect()
-	field := message.Descriptor().Fields().ByNumber(
-		protoreflect.FieldNumber(containerServicePathFieldNumber),
-	)
-	if field != nil {
-		return message.Get(field).String()
-	}
-
-	data := message.GetUnknown()
+	data := request.ProtoReflect().GetUnknown()
 	number, wireType, tagLength := protowire.ConsumeTag(data)
 	require.Positive(t, tagLength)
-	require.Equal(t, containerServicePathFieldNumber, number)
+	require.Equal(t, containerOperationOptionsFieldNumber, number)
 	require.Equal(t, protowire.BytesType, wireType)
-	value, valueLength := protowire.ConsumeString(data[tagLength:])
-	require.Positive(t, valueLength)
-	return value
+	optionsData, optionsLength := protowire.ConsumeBytes(data[tagLength:])
+	require.Positive(t, optionsLength)
+
+	var options containerOperationOptions
+	for len(optionsData) > 0 {
+		fieldNumber, fieldWireType, fieldTagLength := protowire.ConsumeTag(optionsData)
+		require.Positive(t, fieldTagLength)
+		require.Equal(t, protowire.BytesType, fieldWireType)
+		value, valueLength := protowire.ConsumeBytes(optionsData[fieldTagLength:])
+		require.Positive(t, valueLength)
+		switch fieldNumber {
+		case 1:
+			options.servicePath = string(value)
+		case 2:
+			options.image = string(value)
+		case 3:
+			options.docker = &azdext.DockerProjectOptions{}
+			require.NoError(t, proto.Unmarshal(value, options.docker))
+		}
+		optionsData = optionsData[fieldTagLength+valueLength:]
+	}
+
+	return options
 }
 
 func newServiceTargetTestClient(
@@ -1106,6 +1126,11 @@ func TestPackagePassesResolvedServicePath(t *testing.T) {
 			Name:         "referenced-agent",
 			Host:         "azure.ai.agent",
 			RelativePath: "src/agent",
+			Image:        "contoso.azurecr.io/referenced-agent:latest",
+			Docker: &azdext.DockerProjectOptions{
+				Path:    "docker/Dockerfile",
+				Context: "docker",
+			},
 		},
 	}
 
@@ -1117,16 +1142,14 @@ func TestPackagePassesResolvedServicePath(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.Equal(
-		t,
-		"src/agent",
-		requestServicePath(t, containerStub.buildRequest),
-	)
-	require.Equal(
-		t,
-		"src/agent",
-		requestServicePath(t, containerStub.packRequest),
-	)
+	buildOptions := requestContainerOperationOptions(t, containerStub.buildRequest)
+	require.Equal(t, "src/agent", buildOptions.servicePath)
+	require.Equal(t, "contoso.azurecr.io/referenced-agent:latest", buildOptions.image)
+	require.Equal(t, "docker/Dockerfile", buildOptions.docker.GetPath())
+	require.Equal(t, "docker", buildOptions.docker.GetContext())
+
+	packageOptions := requestContainerOperationOptions(t, containerStub.packRequest)
+	require.Equal(t, buildOptions, packageOptions)
 }
 
 func TestPrepareDeploy_MergesUnifiedEnvironment(t *testing.T) {
@@ -1508,11 +1531,8 @@ func TestPublish_PublishesWhenPackageBuiltFromDockerfile(t *testing.T) {
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.Artifacts, "expected published container artifacts")
 	require.Equal(t, int32(1), containerStub.publishCalls.Load())
-	require.Equal(
-		t,
-		"src/agent",
-		requestServicePath(t, containerStub.pubRequest),
-	)
+	publishOptions := requestContainerOperationOptions(t, containerStub.pubRequest)
+	require.Equal(t, "src/agent", publishOptions.servicePath)
 }
 
 func TestPublish_PrivateACRNetworkAccessGuidance(t *testing.T) {

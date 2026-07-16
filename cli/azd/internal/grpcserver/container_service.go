@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -63,7 +64,7 @@ func (c *containerService) Build(
 	serviceConfig, err := containerServiceConfig(
 		projectConfig,
 		req.ServiceName,
-		req.ServicePath,
+		req.Options,
 	)
 	if err != nil {
 		return nil, err
@@ -121,7 +122,7 @@ func (c *containerService) Package(
 	serviceConfig, err := containerServiceConfig(
 		projectConfig,
 		req.ServiceName,
-		req.ServicePath,
+		req.Options,
 	)
 	if err != nil {
 		return nil, err
@@ -179,7 +180,7 @@ func (c *containerService) Publish(
 	serviceConfig, err := containerServiceConfig(
 		projectConfig,
 		req.ServiceName,
-		req.ServicePath,
+		req.Options,
 	)
 	if err != nil {
 		return nil, err
@@ -238,7 +239,7 @@ func (c *containerService) Publish(
 func containerServiceConfig(
 	projectConfig *project.ProjectConfig,
 	serviceName string,
-	servicePath string,
+	options *azdext.ContainerOperationOptions,
 ) (*project.ServiceConfig, error) {
 	serviceConfig, has := projectConfig.Services[serviceName]
 	if !has {
@@ -248,22 +249,32 @@ func containerServiceConfig(
 			serviceName,
 		)
 	}
-	if servicePath == "" {
-		return serviceConfig, nil
-	}
-	if err := validateContainerServicePath(
-		projectConfig.Path,
-		servicePath,
-	); err != nil {
-		return nil, status.Errorf(
-			codes.InvalidArgument,
-			"service path %q must stay within the project: %v",
-			servicePath,
-			err,
-		)
-	}
 	effective := *serviceConfig
-	effective.RelativePath = servicePath
+	if options == nil {
+		return &effective, nil
+	}
+	if servicePath := options.GetServicePath(); servicePath != "" {
+		if err := validateContainerServicePath(
+			projectConfig.Path,
+			servicePath,
+		); err != nil {
+			return nil, status.Errorf(
+				codes.InvalidArgument,
+				"service path %q must stay within the project: %v",
+				servicePath,
+				err,
+			)
+		}
+		effective.RelativePath = servicePath
+	}
+	if image := options.GetImage(); image != "" {
+		effective.Image = osutil.NewExpandableString(image)
+	}
+	if docker := options.GetDocker(); docker != nil {
+		if err := mapper.Convert(docker, &effective.Docker); err != nil {
+			return nil, fmt.Errorf("converting container docker options: %w", err)
+		}
+	}
 	return &effective, nil
 }
 

@@ -844,6 +844,7 @@ func resolveAgentServiceFromProject(
 		if exists {
 			info.AgentName = reference.name
 			info.ProjectEndpoint = reference.projectEndpoint
+			return info, nil
 		}
 	}
 

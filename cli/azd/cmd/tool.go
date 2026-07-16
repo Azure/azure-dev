@@ -206,6 +206,7 @@ func (a *toolAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
 		Text:        "Detecting tools...",
 		ClearOnStop: true,
+		Writer:      a.console.Handles().Stdout,
 	})
 	if err := spinner.Run(ctx, func(ctx context.Context) error {
 		var detectErr error
@@ -374,6 +375,7 @@ func (a *toolListAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
 			Text:        "Checking tool status...",
 			ClearOnStop: true,
+			Writer:      a.console.Handles().Stdout,
 		})
 		if err := spinner.Run(ctx, func(ctx context.Context) error {
 			var detectErr error
@@ -893,11 +895,17 @@ func (a *toolInstallAction) promptForSkillAgents(
 // the output format is JSON: it writes control bytes to stdout and would
 // corrupt the machine-readable stream (matching tool list/check, which also
 // bypass the spinner in JSON mode).
+//
+// writer is the destination for the spinner (typically
+// console.Handles().Stdout). Passing it explicitly keeps the spinner off the
+// process's real os.Stdout under test, which would otherwise corrupt the
+// go test -json event stream and cause phantom failures (see #8385, #9181).
 func detectAllTools(
 	ctx context.Context,
 	manager *tool.Manager,
 	formatter output.Formatter,
 	spinnerText string,
+	writer io.Writer,
 ) ([]*tool.ToolStatus, error) {
 	if formatter != nil && formatter.Kind() == output.JsonFormat {
 		return manager.DetectAll(ctx)
@@ -907,6 +915,7 @@ func detectAllTools(
 	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
 		Text:        spinnerText,
 		ClearOnStop: true,
+		Writer:      writer,
 	})
 	if err := spinner.Run(ctx, func(ctx context.Context) error {
 		var detectErr error
@@ -1080,7 +1089,7 @@ func (a *toolInstallAction) resolveToolIds(ctx context.Context) ([]string, error
 
 	// --all: install all recommended tools that are not already installed.
 	if a.flags.all {
-		statuses, err := detectAllTools(ctx, a.manager, a.formatter, "Detecting tool status...")
+		statuses, err := detectAllTools(ctx, a.manager, a.formatter, "Detecting tool status...", a.console.Handles().Stdout)
 		if err != nil {
 			return nil, fmt.Errorf("detecting tools: %w", err)
 		}
@@ -1100,7 +1109,7 @@ func (a *toolInstallAction) resolveToolIds(ctx context.Context) ([]string, error
 	}
 
 	// Interactive: let the user pick from uninstalled tools.
-	statuses, err := detectAllTools(ctx, a.manager, a.formatter, "Detecting tool status...")
+	statuses, err := detectAllTools(ctx, a.manager, a.formatter, "Detecting tool status...", a.console.Handles().Stdout)
 	if err != nil {
 		return nil, fmt.Errorf("detecting tools: %w", err)
 	}
@@ -1439,7 +1448,8 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 // detectInstalledTools runs DetectAll behind a spinner and returns the full
 // set of tool statuses. Used by the --all and interactive upgrade paths.
 func (a *toolUpgradeAction) detectInstalledTools(ctx context.Context) ([]*tool.ToolStatus, error) {
-	statuses, err := detectAllTools(ctx, a.manager, a.formatter, "Detecting installed tools...")
+	statuses, err := detectAllTools(
+		ctx, a.manager, a.formatter, "Detecting installed tools...", a.console.Handles().Stdout)
 	if err != nil {
 		return nil, fmt.Errorf("detecting installed tools: %w", err)
 	}
@@ -1757,7 +1767,8 @@ func (a *toolUninstallAction) resolveToolIds(ctx context.Context) ([]string, err
 
 	// --all, --dry-run, and the interactive picker all need the current
 	// installed set.
-	statuses, err := detectAllTools(ctx, a.manager, a.formatter, "Detecting installed tools...")
+	statuses, err := detectAllTools(
+		ctx, a.manager, a.formatter, "Detecting installed tools...", a.console.Handles().Stdout)
 	if err != nil {
 		return nil, fmt.Errorf("detecting installed tools: %w", err)
 	}
@@ -1920,6 +1931,7 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 		spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
 			Text:        "Checking for upgrades...",
 			ClearOnStop: true,
+			Writer:      a.console.Handles().Stdout,
 		})
 		if err := spinner.Run(ctx, func(ctx context.Context) error {
 			var detectErr error
@@ -2118,6 +2130,7 @@ func (a *toolShowAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
 			Text:        fmt.Sprintf("Checking %s...", toolDef.Name),
 			ClearOnStop: true,
+			Writer:      a.console.Handles().Stdout,
 		})
 		if err := spinner.Run(ctx, func(ctx context.Context) error {
 			var detectErr error

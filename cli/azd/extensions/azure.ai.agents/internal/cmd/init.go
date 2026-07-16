@@ -1521,7 +1521,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Path or URI to an agent manifest, or to a sample's unified azure.yaml to adopt as the project manifest")
 
 	cmd.Flags().StringVar(&flags.agentName, "agent-name", "",
-		"Foundry agent name to write to agent.yaml. Reusing a name creates a new version of the existing agent.")
+		"Foundry agent name to write to agent.yaml or a single adopted azure.yaml agent service. Reusing a name creates a new version of the existing agent.")
 
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")

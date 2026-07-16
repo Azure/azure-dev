@@ -160,7 +160,7 @@ func foundryProjectServiceForModelOverride(content []byte, flagName string) (str
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			"sample azure.yaml does not declare an azure.ai.project service for model deployment",
-			"add an azure.ai.project service or omit --model",
+			fmt.Sprintf("add an azure.ai.project service or omit %s", flagName),
 		)
 	case 1:
 		return serviceNames[0], nil
@@ -912,6 +912,11 @@ func runInitFromAzureYaml(
 		return err
 	}
 	applyAzureContextFlags(azureContext, flags)
+	if shouldDeferInitAzureContext(flags.noPrompt, azureContext) {
+		if err := persistValidatedAzureContextFlags(ctx, azdClient, azureContext, env.Name, flags); err != nil {
+			return err
+		}
+	}
 
 	// Apply deploy-mode configuration to the adopted agent
 	// service(s) before configuring the Foundry project. Whether an

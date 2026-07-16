@@ -30,7 +30,7 @@ permissions:
 
 jobs:
   verify-coverage:
-    if: github.event_name == 'pull_request'
+    if: inputs.working-directory == ''
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -46,7 +46,7 @@ jobs:
             -run '^(TestExtensionManifestsHaveProviderVerificationTests|TestCapabilitySchemaTypesInSyncWithGo|TestHasCanonicalProviderVerificationTestRequiresAssertedError)$' -v
 
   verify-providers:
-    if: github.event_name == 'workflow_call'
+    if: inputs.working-directory != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

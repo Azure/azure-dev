@@ -275,12 +275,12 @@ func TestExecEnvModifiers(t *testing.T) {
 		},
 		{
 			name:      "Microsoft Foundry skill",
-			userAgent: "microsoft-foundry-skill",
+			userAgent: "microsoft_foundry_skill",
 			want:      []string{fields.EnvModifierMicrosoftFoundrySkill},
 		},
 		{
 			name:      "multiple modifiers",
-			userAgent: "azure_app_space_portal microsoft-foundry-skill",
+			userAgent: "azure_app_space_portal microsoft_foundry_skill",
 			want: []string{
 				fields.EnvModifierAzureSpace,
 				fields.EnvModifierMicrosoftFoundrySkill,

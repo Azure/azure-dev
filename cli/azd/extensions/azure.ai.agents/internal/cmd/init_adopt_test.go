@@ -158,7 +158,7 @@ services:
     host: azure.ai.agent
 `)
 
-	serviceName, err := foundryProjectServiceForModelOverride(content)
+	serviceName, err := foundryProjectServiceForModelOverride(content, "--model")
 	require.Empty(t, serviceName)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "--model is ambiguous")
@@ -174,7 +174,7 @@ services:
     host: azure.ai.agent
 `)
 
-	serviceName, err := foundryProjectServiceForModelOverride(content)
+	serviceName, err := foundryProjectServiceForModelOverride(content, "--model")
 	require.NoError(t, err)
 	require.Equal(t, "ai-project", serviceName)
 }

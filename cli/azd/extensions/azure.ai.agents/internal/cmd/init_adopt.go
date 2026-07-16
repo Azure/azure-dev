@@ -136,7 +136,10 @@ func foundryDeployments(content []byte) []foundryDeploymentEntry {
 	return entries
 }
 
-func foundryProjectServiceForModelOverride(content []byte) (string, error) {
+func foundryProjectServiceForModelOverride(content []byte, flagName string) (string, error) {
+	if flagName == "" {
+		flagName = "--model"
+	}
 	var doc azureYamlServices
 	if err := yaml.Unmarshal(content, &doc); err != nil {
 		return "", exterrors.Validation(
@@ -164,9 +167,9 @@ func foundryProjectServiceForModelOverride(content []byte) (string, error) {
 	default:
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("--model is ambiguous: sample declares %d project services (%s)",
-				len(serviceNames), strings.Join(serviceNames, ", ")),
-			"remove --model, or edit azure.yaml to add the deployment to the intended project service",
+			fmt.Sprintf("%s is ambiguous: sample declares %d project services (%s)",
+				flagName, len(serviceNames), strings.Join(serviceNames, ", ")),
+			fmt.Sprintf("remove %s, or edit azure.yaml to add the deployment to the intended project service", flagName),
 		)
 	}
 }
@@ -963,7 +966,7 @@ func runInitFromAzureYaml(
 			)
 		}
 		if len(deploymentEntries) == 0 {
-			serviceName, err := foundryProjectServiceForModelOverride(content)
+			serviceName, err := foundryProjectServiceForModelOverride(content, "--model-deployment")
 			if err != nil {
 				return err
 			}
@@ -973,7 +976,7 @@ func runInitFromAzureYaml(
 			}}
 		}
 	} else if flags.model != "" && result != nil && result.Credential != nil {
-		serviceName, err := foundryProjectServiceForModelOverride(content)
+		serviceName, err := foundryProjectServiceForModelOverride(content, "--model")
 		if err != nil {
 			return err
 		}

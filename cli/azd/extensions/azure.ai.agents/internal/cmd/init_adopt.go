@@ -897,6 +897,26 @@ func runInitFromAzureYaml(
 				"'azd ai agent init -m <agent.manifest.yaml>'",
 		)
 	}
+	if _, err := agentNameOverrideServices(content, flags.agentName); err != nil {
+		return err
+	}
+	if len(flags.protocols) > 0 {
+		if _, err := agentOverrideServices(content, "--protocol"); err != nil {
+			return err
+		}
+		if _, err := resolveKnownProtocols(flags.protocols); err != nil {
+			return err
+		}
+	}
+	if flags.modelDeployment != "" {
+		if _, err := foundryProjectServiceForModelOverride(content, "--model-deployment"); err != nil {
+			return err
+		}
+	} else if flags.model != "" {
+		if _, err := foundryProjectServiceForModelOverride(content, "--model"); err != nil {
+			return err
+		}
+	}
 
 	// Stage the sample as a local template directory (azure.yaml at its root
 	// alongside referenced files) that azd-core can adopt with `azd init -t`.
@@ -1037,7 +1057,7 @@ func runInitFromAzureYaml(
 		}
 		deployment, err := resolveDeploymentForModelFlag(ctx, azdClient, azureContext, flags.model)
 		if err != nil {
-			return fmt.Errorf("failed to resolve model deployment for %q: %w", flags.model, err)
+			return err
 		}
 		if deployment != nil {
 			if err := updateAzureYamlDeployments(ctx, azdClient, serviceName, []project.Deployment{*deployment}); err != nil {

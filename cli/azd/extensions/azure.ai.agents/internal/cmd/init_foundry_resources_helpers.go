@@ -1276,6 +1276,7 @@ func resolveModelDeployments(
 		ModelName:    model.Name,
 		Options: &azdext.AiModelDeploymentOptions{
 			Locations: []string{location},
+			Capacity:  new(defaultDeploymentCapacity),
 		},
 		Quota: &azdext.QuotaCheckOptions{
 			MinRemainingCapacity: 1,
@@ -1285,7 +1286,25 @@ func resolveModelDeployments(
 		return nil, err
 	}
 
-	return resolveResp.Deployments, nil
+	if len(resolveResp.Deployments) > 0 {
+		return resolveResp.Deployments, nil
+	}
+
+	fallbackResp, err := azdClient.Ai().ResolveModelDeployments(ctx, &azdext.ResolveModelDeploymentsRequest{
+		AzureContext: azureContext,
+		ModelName:    model.Name,
+		Options: &azdext.AiModelDeploymentOptions{
+			Locations: []string{location},
+		},
+		Quota: &azdext.QuotaCheckOptions{
+			MinRemainingCapacity: 1,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return fallbackResp.Deployments, nil
 }
 
 func selectBestModelDeploymentCandidate(

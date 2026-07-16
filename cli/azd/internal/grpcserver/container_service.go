@@ -5,7 +5,11 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -13,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -56,10 +61,13 @@ func (c *containerService) Build(
 		return nil, err
 	}
 
-	serviceConfig, has := projectConfig.Services[req.ServiceName]
-	if !has {
-		return nil, status.Errorf(codes.NotFound,
-			"service %q not found in project configuration", req.ServiceName)
+	serviceConfig, err := containerServiceConfig(
+		projectConfig,
+		req.ServiceName,
+		req.Options,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	containerHelper, err := c.lazyContainerHelper.GetValue()
@@ -111,10 +119,13 @@ func (c *containerService) Package(
 		return nil, err
 	}
 
-	serviceConfig, has := projectConfig.Services[req.ServiceName]
-	if !has {
-		return nil, status.Errorf(codes.NotFound,
-			"service %q not found in project configuration", req.ServiceName)
+	serviceConfig, err := containerServiceConfig(
+		projectConfig,
+		req.ServiceName,
+		req.Options,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	containerHelper, err := c.lazyContainerHelper.GetValue()
@@ -166,10 +177,13 @@ func (c *containerService) Publish(
 		return nil, err
 	}
 
-	serviceConfig, has := projectConfig.Services[req.ServiceName]
-	if !has {
-		return nil, status.Errorf(codes.NotFound,
-			"service %q not found in project configuration", req.ServiceName)
+	serviceConfig, err := containerServiceConfig(
+		projectConfig,
+		req.ServiceName,
+		req.Options,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	containerHelper, err := c.lazyContainerHelper.GetValue()
@@ -220,4 +234,104 @@ func (c *containerService) Publish(
 	return &azdext.ContainerPublishResponse{
 		Result: protoResult,
 	}, nil
+}
+
+func containerServiceConfig(
+	projectConfig *project.ProjectConfig,
+	serviceName string,
+	options *azdext.ContainerOperationOptions,
+) (*project.ServiceConfig, error) {
+	serviceConfig, has := projectConfig.Services[serviceName]
+	if !has {
+		return nil, status.Errorf(
+			codes.NotFound,
+			"service %q not found in project configuration",
+			serviceName,
+		)
+	}
+	effective := *serviceConfig
+	if options == nil {
+		return &effective, nil
+	}
+	if servicePath := options.GetServicePath(); servicePath != "" {
+		if err := validateContainerServicePath(
+			projectConfig.Path,
+			servicePath,
+		); err != nil {
+			return nil, status.Errorf(
+				codes.InvalidArgument,
+				"service path %q must stay within the project: %v",
+				servicePath,
+				err,
+			)
+		}
+		effective.RelativePath = servicePath
+	}
+	if image := options.GetImage(); image != "" {
+		effective.Image = osutil.NewExpandableString(image)
+	}
+	if docker := options.GetDocker(); docker != nil {
+		if err := mapper.Convert(docker, &effective.Docker); err != nil {
+			return nil, fmt.Errorf("converting container docker options: %w", err)
+		}
+	}
+	return &effective, nil
+}
+
+func validateContainerServicePath(
+	projectRoot string,
+	servicePath string,
+) error {
+	if !filepath.IsLocal(servicePath) {
+		return errors.New("path must be project-relative")
+	}
+	if strings.TrimSpace(projectRoot) == "" {
+		return errors.New("project path is empty")
+	}
+	rootAbs, err := filepath.Abs(projectRoot)
+	if err != nil {
+		return fmt.Errorf("resolve project path: %w", err)
+	}
+	rootReal, err := filepath.EvalSymlinks(rootAbs)
+	if err != nil {
+		return fmt.Errorf("resolve project path symlinks: %w", err)
+	}
+
+	targetReal, err := resolvedExistingAncestor(
+		filepath.Join(rootAbs, servicePath),
+	)
+	if err != nil {
+		return fmt.Errorf("resolve service path symlinks: %w", err)
+	}
+	relative, err := filepath.Rel(rootReal, targetReal)
+	if err != nil {
+		return fmt.Errorf("compare service path to project: %w", err)
+	}
+	if relative == ".." ||
+		strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return errors.New("resolved path escapes project")
+	}
+	return nil
+}
+
+func resolvedExistingAncestor(path string) (string, error) {
+	current := filepath.Clean(path)
+	for {
+		if _, err := os.Lstat(current); err == nil {
+			resolved, err := filepath.EvalSymlinks(current)
+			if err != nil {
+				return "", err
+			}
+			return filepath.Clean(resolved), nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", errors.New(
+				"service path has no existing ancestor",
+			)
+		}
+		current = parent
+	}
 }

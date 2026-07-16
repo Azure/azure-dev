@@ -29,6 +29,7 @@ service ContainerService {
 message ContainerBuildRequest {
   string service_name = 1;
   ServiceContext service_context = 2;
+  ContainerOperationOptions options = 3;
 }
 
 // Response from the container build operation
@@ -41,6 +42,7 @@ message ContainerPackageRequest {
   // Name of the service to package (required)
   string service_name = 1;
   ServiceContext service_context = 2;
+  ContainerOperationOptions options = 3;
 }
 
 // Response from container package operation
@@ -56,9 +58,19 @@ message ContainerPublishRequest {
   string service_name = 1;
   // Package result from previous package operation (optional - will re-package if not provided)
   ServiceContext service_context = 2;
+  ContainerOperationOptions options = 3;
 }
 
 // Response from container publish operation
 message ContainerPublishResponse {
   ServicePublishResult result = 1;
+}
+
+// ContainerOperationOptions are resolved service settings used only by a
+// container build, package, or publish operation. Empty fields fall back to
+// the service configuration loaded by azd core.
+message ContainerOperationOptions {
+  string service_path = 1;
+  string image = 2;
+  DockerProjectOptions docker = 3;
 }

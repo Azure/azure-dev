@@ -911,12 +911,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	var userConfigManager config.UserConfigManager
 	if err := p.serviceLocator.Resolve(&userConfigManager); err == nil {
 		if userConfig, err := userConfigManager.Load(); err == nil {
-			if val, exists := userConfig.GetString("validation.provision"); exists && val == "off" {
-				skipValidation = true
-			}
-			if val, exists := userConfig.GetString("provision.preflight"); exists && val == "off" {
-				skipArmPreflight = true
-			}
+			skipValidation, skipArmPreflight = resolveProvisionValidationGates(userConfig)
 		}
 	}
 
@@ -2569,6 +2564,24 @@ const (
 	provisionValidationOutcomeSkipped          = "skipped"
 	provisionValidationOutcomeError            = "error"
 )
+
+// resolveProvisionValidationGates maps user config to the two independent
+// provision-validation gates. The two keys are deliberately separate:
+//   - `validation.provision=off` disables only azd's local (client-side)
+//     provision validation.
+//   - `provision.preflight=off` disables only the server-side ARM provision
+//     validation call.
+//
+// Each key controls its own step; neither key affects the other.
+func resolveProvisionValidationGates(userConfig config.Config) (skipValidation bool, skipArmPreflight bool) {
+	if val, exists := userConfig.GetString("validation.provision"); exists && val == "off" {
+		skipValidation = true
+	}
+	if val, exists := userConfig.GetString("provision.preflight"); exists && val == "off" {
+		skipArmPreflight = true
+	}
+	return skipValidation, skipArmPreflight
+}
 
 // validateProvision runs azd's pre-deployment provision validation on the ARM template.
 //

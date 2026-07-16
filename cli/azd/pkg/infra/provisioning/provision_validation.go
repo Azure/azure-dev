@@ -131,6 +131,13 @@ func (m *Manager) RunProvisionValidation(ctx context.Context, preview bool) (err
 		// consistent set of validation.provision.* fields even when no checks
 		// produced findings.
 		span.SetAttributes(fields.ProvisionValidationDiagnosticsKey.StringSlice([]string{}))
+		// The provider-agnostic "provision" path has no built-in (core) rules —
+		// only extension-provided checks, reported separately via
+		// ProvisionValidationExtensionRulesKey. Emit an explicit empty rules
+		// slice so downstream telemetry queries see the same validation.provision.*
+		// field shape as the Bicep "arm-provision" path and don't special-case
+		// the agnostic dispatch.
+		span.SetAttributes(fields.ProvisionValidationRulesKey.StringSlice([]string{}))
 		span.SetAttributes(fields.ProvisionValidationWarningCountKey.Int(0))
 		span.SetAttributes(fields.ProvisionValidationErrorCountKey.Int(0))
 		return nil
@@ -163,6 +170,11 @@ func (m *Manager) RunProvisionValidation(ctx context.Context, preview bool) (err
 		})
 	}
 	span.SetAttributes(fields.ProvisionValidationDiagnosticsKey.StringSlice(diagnosticIDs))
+	// The agnostic "provision" path has no built-in (core) rules; extension
+	// checks are reported via ProvisionValidationExtensionRulesKey. Emit an
+	// explicit empty rules slice to keep the validation.provision.* field shape
+	// consistent with the Bicep "arm-provision" path.
+	span.SetAttributes(fields.ProvisionValidationRulesKey.StringSlice([]string{}))
 	span.SetAttributes(fields.ProvisionValidationWarningCountKey.Int(warningCount))
 	span.SetAttributes(fields.ProvisionValidationErrorCountKey.Int(errorCount))
 

@@ -156,7 +156,6 @@ func Test_CLI_MyNewFeature(t *testing.T) {
 
     // Create a temporary directory for test files
     dir := tempDirWithDiagnostics(t)
-    configDir := tempDirWithDiagnostics(t)
     t.Logf("DIR: %s", dir)
 
     // Start the recording session
@@ -171,8 +170,6 @@ func Test_CLI_MyNewFeature(t *testing.T) {
     cli.WorkingDirectory = dir
     cli.Env = append(cli.Env, os.Environ()...)
     cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
-    // Required when the test installs extensions or changes user-level azd state.
-    cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+configDir)
 
     // Setup cleanup (only runs in live mode, not playback)
     defer cleanupDeployments(ctx, t, cli, session, envName)
@@ -723,9 +720,7 @@ if session == nil {
 
 ### 7. Isolate State and Use Shared Cleanup
 
-Tests that install extensions or modify azd configuration, authentication, caches, or other user-level state must use
-a private `AZD_CONFIG_DIR`, as shown in the example above. Functional tests run in parallel; using the default
-`~/.azd` directory can contaminate unrelated tests or modify a developer's installation.
+Use a private `AZD_CONFIG_DIR` when a test changes user-level state so parallel tests do not share `~/.azd`. A new config directory is logged out, so tests that need live Azure access must authenticate in it. Leave `AZD_CONFIG_DIR` unset when a test only uses the existing login.
 
 Use `tempDirWithDiagnostics(t)` for generated or executed files. It retries transient Windows file locks and reports
 lock diagnostics if cleanup fails. Register other cleanup when state is created; don't duplicate retry loops or add
@@ -1035,7 +1030,7 @@ os.Setenv("AZD_TEST_FIXED_CLOCK_UNIX_TIME", "1744738873")
 - [ ] Start with `recording.Start(t)`
 - [ ] Use `randomOrStoredEnvName(session)`
 - [ ] Create CLI with `azdcli.WithSession(session)`
-- [ ] Set a private `AZD_CONFIG_DIR` when the test changes user-level state
+- [ ] Use a private `AZD_CONFIG_DIR` for user-level state changes; authenticate it if live Azure access is required
 - [ ] Use `session.ProxyClient` for HTTP operations
 - [ ] Store dynamic values in `session.Variables`
 - [ ] Use `tempDirWithDiagnostics(t)` and register other cleanup immediately

@@ -99,14 +99,6 @@ func supportedRegionsForInit(ctx context.Context) ([]string, error) {
 func runRegionsFetch(ctx context.Context, fetch *regionsFetch) {
 	// The fetch applies its own timeout (hostedAgentRegionsFetchTimeout).
 	regions, err := fetchHostedAgentRegionsFromURL(ctx, http.DefaultClient, hostedAgentRegionsURL)
-	// Even on a successful fetch, union the build-time embedded regions so newly
-	// added regions (for example westus2 for invocations_ws) remain selectable
-	// while the live manifest rolls out. mergeRegions dedups and preserves order.
-	if err == nil {
-		if embedded, fbErr := parseEmbeddedHostedAgentRegions(); fbErr == nil && len(embedded) > 0 {
-			regions = mergeRegions(regions, embedded)
-		}
-	}
 
 	if err != nil {
 		if fallback, fbErr := parseEmbeddedHostedAgentRegions(); fbErr == nil && len(fallback) > 0 {
@@ -125,19 +117,6 @@ func runRegionsFetch(ctx context.Context, fetch *regionsFetch) {
 	fetch.regions = regions
 	fetch.err = err
 	close(fetch.done)
-}
-
-func mergeRegions(primary []string, fallback []string) []string {
-	seen := make(map[string]bool, len(primary)+len(fallback))
-	merged := make([]string, 0, len(primary)+len(fallback))
-	for _, region := range append(primary, fallback...) {
-		if region == "" || seen[region] {
-			continue
-		}
-		seen[region] = true
-		merged = append(merged, region)
-	}
-	return merged
 }
 
 // parseEmbeddedHostedAgentRegions decodes the embedded build-time manifest used

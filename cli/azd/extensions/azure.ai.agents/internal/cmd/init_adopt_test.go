@@ -147,6 +147,38 @@ services:
 	require.Equal(t, []string{"first"}, services)
 }
 
+func TestFoundryProjectServiceForModelOverride_MultipleProjectsReturnsAmbiguousError(t *testing.T) {
+	content := []byte(`name: multi-project
+services:
+  first-project:
+    host: azure.ai.project
+  second-project:
+    host: azure.ai.project
+  agent:
+    host: azure.ai.agent
+`)
+
+	serviceName, err := foundryProjectServiceForModelOverride(content)
+	require.Empty(t, serviceName)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "--model is ambiguous")
+	require.Contains(t, err.Error(), "first-project, second-project")
+}
+
+func TestFoundryProjectServiceForModelOverride_SingleProjectReturnsServiceName(t *testing.T) {
+	content := []byte(`name: one-project
+services:
+  ai-project:
+    host: azure.ai.project
+  agent:
+    host: azure.ai.agent
+`)
+
+	serviceName, err := foundryProjectServiceForModelOverride(content)
+	require.NoError(t, err)
+	require.Equal(t, "ai-project", serviceName)
+}
+
 func TestParentDirOf(t *testing.T) {
 	tests := []struct {
 		filePath string

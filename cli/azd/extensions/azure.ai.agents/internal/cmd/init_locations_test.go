@@ -237,24 +237,6 @@ func TestSupportedRegionsForInit_FallsBackToEmbeddedOnFetchError(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
-func TestSupportedRegionsForInit_MergesFetchedAndEmbeddedRegions(t *testing.T) {
-	resetRegionsCache(t, nil)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"regions": ["eastus2"]}`))
-	}))
-	t.Cleanup(server.Close)
-
-	prev := hostedAgentRegionsURL
-	hostedAgentRegionsURL = server.URL
-	t.Cleanup(func() { hostedAgentRegionsURL = prev })
-
-	got, err := supportedRegionsForInit(t.Context())
-	require.NoError(t, err)
-	require.Contains(t, got, "eastus2")
-	require.Contains(t, got, "westus2")
-}
-
 func TestParseEmbeddedHostedAgentRegions_NotEmpty(t *testing.T) {
 	t.Parallel()
 

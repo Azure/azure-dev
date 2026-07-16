@@ -136,10 +136,14 @@ func foundryDeployments(content []byte) []foundryDeploymentEntry {
 	return entries
 }
 
-func firstFoundryProjectServiceName(content []byte) string {
+func foundryProjectServiceForModelOverride(content []byte) (string, error) {
 	var doc azureYamlServices
 	if err := yaml.Unmarshal(content, &doc); err != nil {
-		return ""
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"sample azure.yaml could not be parsed",
+			"fix the sample manifest and run init again",
+		)
 	}
 	serviceNames := make([]string, 0, len(doc.Services))
 	for svcName, svc := range doc.Services {
@@ -148,10 +152,23 @@ func firstFoundryProjectServiceName(content []byte) string {
 		}
 	}
 	slices.Sort(serviceNames)
-	if len(serviceNames) == 0 {
-		return ""
+	switch len(serviceNames) {
+	case 0:
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"sample azure.yaml does not declare an azure.ai.project service for model deployment",
+			"add an azure.ai.project service or omit --model",
+		)
+	case 1:
+		return serviceNames[0], nil
+	default:
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("--model is ambiguous: sample declares %d project services (%s)",
+				len(serviceNames), strings.Join(serviceNames, ", ")),
+			"remove --model, or edit azure.yaml to add the deployment to the intended project service",
+		)
 	}
-	return serviceNames[0]
 }
 
 func agentServiceNames(content []byte) []string {
@@ -187,6 +204,9 @@ func updateAzureYamlAgentName(ctx context.Context, azdClient *azdext.AzdClient, 
 func agentNameOverrideServices(content []byte, agentName string) ([]string, error) {
 	if agentName == "" {
 		return nil, nil
+	}
+	if _, err := validateInitAgentName(agentName); err != nil {
+		return nil, err
 	}
 	agentServices := agentServiceNames(content)
 	if len(agentServices) > 1 {
@@ -934,19 +954,28 @@ func runInitFromAzureYaml(
 	// selected Foundry project. If the user opts to use existing deployments
 	// or skip, we update the on-disk azure.yaml accordingly.
 	deploymentEntries := foundryDeployments(content)
-	if len(deploymentEntries) == 0 && flags.modelDeployment != "" {
-		if err := setEnvValue(ctx, azdClient, env.Name, "AZURE_AI_MODEL_DEPLOYMENT_NAME", flags.modelDeployment); err != nil {
-			return fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
-		}
-	}
-	if len(deploymentEntries) == 0 && flags.model != "" && result != nil && result.Credential != nil {
-		serviceName := firstFoundryProjectServiceName(content)
-		if serviceName == "" {
+	if flags.modelDeployment != "" {
+		if result.FoundryProject == nil {
 			return exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				"sample azure.yaml does not declare an azure.ai.project service for model deployment",
-				"add an azure.ai.project service or omit --model",
+				exterrors.CodeInvalidParameter,
+				"--model-deployment requires an existing Foundry project",
+				"provide --project-id with --model-deployment, or use --model to provision a new deployment",
 			)
+		}
+		if len(deploymentEntries) == 0 {
+			serviceName, err := foundryProjectServiceForModelOverride(content)
+			if err != nil {
+				return err
+			}
+			deploymentEntries = []foundryDeploymentEntry{{
+				ServiceName: serviceName,
+				Deployment:  project.Deployment{Name: flags.modelDeployment},
+			}}
+		}
+	} else if flags.model != "" && result != nil && result.Credential != nil {
+		serviceName, err := foundryProjectServiceForModelOverride(content)
+		if err != nil {
+			return err
 		}
 		deployment, err := resolveDeploymentForModelFlag(ctx, azdClient, azureContext, flags.model)
 		if err != nil {

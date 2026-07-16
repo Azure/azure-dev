@@ -269,7 +269,9 @@ func resolveDeploymentForModelFlag(
 	if modelName == "" {
 		return nil, nil
 	}
-	deployment, err := resolveModelDeployment(ctx, azdClient, azureContext, &azdext.AiModel{Name: modelName}, azureContext.Scope.Location)
+	deployment, err := resolveModelDeployment(
+		ctx, azdClient, azureContext, &azdext.AiModel{Name: modelName}, azureContext.Scope.Location,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1050,7 +1052,14 @@ func runInitFromAzureYaml(
 				Deployment:  project.Deployment{Name: flags.modelDeployment},
 			}}
 		}
-	} else if flags.model != "" && result != nil && result.Credential != nil {
+	} else if flags.model != "" {
+		if result == nil || result.Credential == nil {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--model requires Azure subscription and location values during sample adoption",
+				"pass both --subscription and --location, or run interactively to choose them",
+			)
+		}
 		serviceName, err := foundryProjectServiceForModelOverride(content, "--model")
 		if err != nil {
 			return err

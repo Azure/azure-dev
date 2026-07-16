@@ -395,7 +395,7 @@ Emitted on `azd provision` / `azd up` to measure adoption and safety of `infra.l
 <details>
 <summary><strong>Foundry Private Networking</strong></summary>
 
-Emitted at provision start by the `microsoft.foundry` provisioning provider in the `azure.ai.projects` extension to measure secured-agent adoption and the BYO-vs-managed split.
+Emitted at provision start by the `microsoft.foundry` provisioning provider (the `azure.ai.projects` extension) to measure secured-agent adoption and the BYO-vs-managed split.
 
 | Field Key | Type | Description |
 |-----------|------|-------------|

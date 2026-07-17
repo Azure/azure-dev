@@ -137,6 +137,7 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// present on success and failure alike (no-op when there are no layers).
 	a.provisionManager.RecordInfraProviderUsage(ctx, layers)
 
+	skippedDeletion := false
 	for _, layer := range layers {
 		if downLayer != "" || len(layers) > 1 {
 			a.console.EnsureBlankLine(ctx)
@@ -150,17 +151,25 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
-		_, err := a.provisionManager.Destroy(ctx, destroyOptions)
+		destroyResult, err := a.provisionManager.Destroy(ctx, destroyOptions)
 		if errors.Is(err, inf.ErrDeploymentsNotFound) || errors.Is(err, inf.ErrDeploymentResourcesNotFound) {
 			a.console.MessageUxItem(ctx, &ux.DoneMessage{Message: "No Azure resources were found."})
 		} else if err != nil {
 			return nil, fmt.Errorf("deleting infrastructure: %w", err)
+		} else if destroyResult != nil && destroyResult.SkippedDeletion {
+			skippedDeletion = true
 		}
 	}
 
-	// Invalidate cache after successful down so azd show will refresh
+	// Invalidate cache after down so azd show will refresh. Always invalidate: with multiple layers, some
+	// may have deleted resources even if another layer was only previewed.
 	if err := a.envManager.InvalidateEnvCache(ctx, a.env.Name()); err != nil {
 		log.Printf("warning: failed to invalidate state cache: %v", err)
+	}
+
+	// When any layer was skipped (e.g. --no-prompt in CI without --force), don't report a full teardown.
+	if skippedDeletion {
+		return &actions.ActionResult{}, nil
 	}
 
 	return &actions.ActionResult{
@@ -176,6 +185,9 @@ func getCmdDownHelpDescription(*cobra.Command) string {
 			" files on your local machine.", output.WithHighLightFormat("azd down")), []string{
 		"When <layer> is specified, only deletes resources for the given layer." +
 			" When omitted, deletes resources for all layers defined in the project.",
+		"For Terraform projects, running non-interactively (in a CI/CD pipeline or with --no-prompt)" +
+			" without --force previews the resources that would be deleted and exits without deleting" +
+			" anything. Re-run with --force to delete resources without confirmation.",
 	})
 }
 

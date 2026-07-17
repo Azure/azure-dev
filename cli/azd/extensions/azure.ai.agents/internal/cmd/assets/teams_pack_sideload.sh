@@ -164,7 +164,7 @@ set +e
 INSTALL_OUT="$(atk install --file-path "$ZIP_PATH" --scope Personal --interactive false 2>&1)"
 echo "$INSTALL_OUT"
 # If atk reports the user is not signed in, launch an interactive login and retry.
-if echo "$INSTALL_OUT" | grep -qiE 'not (logged|signed) in|auth.*required|please login|login first|no account'; then
+if echo "$INSTALL_OUT" | grep -qiE 'not (logged|signed) in|auth.*required|please login|login first|no account|cannot get token|log in the correct account'; then
     echo "Not signed in - launching 'atk auth login m365' (complete the sign-in prompt)..."
     atk auth login m365
     INSTALL_OUT="$(atk install --file-path "$ZIP_PATH" --scope Personal --interactive false 2>&1)"

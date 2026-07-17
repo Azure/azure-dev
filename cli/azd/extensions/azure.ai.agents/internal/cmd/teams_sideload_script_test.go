@@ -6,6 +6,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -77,6 +78,54 @@ func TestTeamsSideloadScriptContent(t *testing.T) {
 		// The opt-out must be honored.
 		if !strings.Contains(content, "SKIP_TEAMS_INSTALL") {
 			t.Errorf("[%s] script missing the SKIP_TEAMS_INSTALL opt-out", name)
+		}
+	}
+}
+
+// TestTeamsSideloadLoginDetection guards the "not signed in" auto-login path:
+// both generated scripts must recognize the actual error text the current ATK
+// CLI prints for an unauthenticated user, otherwise a fresh user silently falls
+// through to the install-failed guidance instead of being logged in and retried.
+func TestTeamsSideloadLoginDetection(t *testing.T) {
+	const (
+		agentName = "echo-agent"
+		botName   = "echo-agent-bot-uai"
+		msaAppID  = "11111111-2222-3333-4444-555555555555"
+	)
+
+	// The literal message emitted by `atk install` when no account is signed in.
+	const atkUnauthenticated = "Cannot get token. Use 'atk account login m365' to log in the correct account."
+	// A successful install line must NOT be mistaken for the login-required case.
+	const atkInstalled = "Successfully installed the app. TitleId: U_1234567890"
+
+	// The alternation both scripts embed to detect the login-required state. The
+	// bash (ERE) and pwsh (.NET) patterns use the same alternatives; RE2 accepts
+	// this subset, so we can assert the intended matching behavior here.
+	loginRequired := regexp.MustCompile(`(?i)not (logged|signed) in|auth.*required|` +
+		`please\s?login|login\s?first|no account|cannot get token|log in the correct account`)
+
+	if !loginRequired.MatchString(atkUnauthenticated) {
+		t.Fatalf("login-required pattern does not match the ATK unauthenticated error: %q", atkUnauthenticated)
+	}
+	if loginRequired.MatchString(atkInstalled) {
+		t.Errorf("login-required pattern wrongly matched a successful install line: %q", atkInstalled)
+	}
+
+	// Both scripts must carry the phrases that match the real ATK error so the
+	// embedded regexes stay in sync with the behavior asserted above.
+	for name, content := range map[string]string{
+		"pwsh": teamsSideloadScriptContent(teamsSideloadPwshTmpl, agentName, botName, msaAppID),
+		"bash": teamsSideloadScriptContent(teamsSideloadBashTmpl, agentName, botName, msaAppID),
+	} {
+		// Normalize the two whitespace forms the scripts use (bash ERE uses a
+		// literal space, pwsh .NET uses \s+) so the phrase check works for both.
+		norm := strings.ToLower(content)
+		norm = strings.ReplaceAll(norm, `\s+`, " ")
+		norm = strings.ReplaceAll(norm, `\s?`, " ")
+		norm = strings.Join(strings.Fields(norm), " ")
+		if !strings.Contains(norm, "cannot get token") ||
+			!strings.Contains(norm, "log in the correct account") {
+			t.Errorf("[%s] login-detection regex does not cover the ATK 'Cannot get token' error", name)
 		}
 	}
 }

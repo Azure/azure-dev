@@ -154,7 +154,7 @@ $installOut = Invoke-AtkInstallProbe -Zip $zipPath
 Write-Host $installOut
 
 # If atk reports the user is not signed in, launch an interactive login and retry.
-if ($installOut -match "(?i)(not\s+(logged|signed)\s+in|auth.*required|please\s+login|login\s+first|no\s+account)") {
+if ($installOut -match "(?i)(not\s+(logged|signed)\s+in|auth.*required|please\s+login|login\s+first|no\s+account|cannot\s+get\s+token|log\s+in\s+the\s+correct\s+account)") {
     Write-Host "Not signed in - launching 'atk auth login m365' (complete the sign-in prompt)..."
     atk auth login m365
     $installOut = Invoke-AtkInstallProbe -Zip $zipPath

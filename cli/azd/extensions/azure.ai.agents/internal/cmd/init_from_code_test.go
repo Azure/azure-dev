@@ -773,7 +773,11 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 		},
 		{
 			name: "websocket protocol selected",
-			multiSelectFn: func(_ context.Context, _ *azdext.MultiSelectRequest, _ ...grpc.CallOption) (*azdext.MultiSelectResponse, error) {
+			multiSelectFn: func(
+				_ context.Context,
+				_ *azdext.MultiSelectRequest,
+				_ ...grpc.CallOption,
+			) (*azdext.MultiSelectResponse, error) {
 				return &azdext.MultiSelectResponse{
 					Values: []*azdext.MultiSelectChoice{
 						{Value: "responses", Label: "responses", Selected: false},

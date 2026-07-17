@@ -99,13 +99,14 @@ func canWriteGeneratedFile(path, agentName string) (bool, string) {
 // it refreshes in place only when the file is a regular file this same agentName
 // generated -- replacing it atomically via a temp file + rename so a reader never
 // sees a partial file and a pre-existing symlink is replaced rather than followed.
-// isLegacy, when non-nil, lets the caller additionally adopt a pre-marker
-// generated file it recognizes (e.g. a guide from a released version). It returns
-// written=true only when the file now holds content; otherwise reason explains
-// why it was left untouched ("" means the caller should stay silent).
+// writeOwnedGeneratedFile returns (written, created, reason). written is true
+// when the file now holds content; created is true only when this call
+// exclusively created a brand-new file (false when it refreshed an existing one),
+// which lets the caller roll back a half-written pair. reason explains why an
+// untouched file was left ("" means the caller should stay silent).
 func writeOwnedGeneratedFile(
 	path, content string, mode os.FileMode, agentName string, isLegacy func(string) bool,
-) (bool, string) {
+) (written bool, created bool, reason string) {
 	// Fast path: atomically create a new file. O_EXCL guarantees exactly one
 	// concurrent writer wins the create; everyone else gets ErrExist below.
 	if f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode); err == nil {
@@ -116,16 +117,16 @@ func writeOwnedGeneratedFile(
 			// marker and be treated as user-owned on every later deploy, so
 			// remove the file we exclusively created before returning.
 			_ = os.Remove(path)
-			return false, fmt.Sprintf("could not be written: %v", joined)
+			return false, false, fmt.Sprintf("could not be written: %v", joined)
 		}
 		// os.OpenFile applies mode subject to umask, so re-assert it (the bash
 		// script must stay executable).
 		if err := os.Chmod(path, mode); err != nil {
-			return false, fmt.Sprintf("could not be made executable: %v", err)
+			return false, false, fmt.Sprintf("could not be made executable: %v", err)
 		}
-		return true, ""
+		return true, true, ""
 	} else if !errors.Is(err, os.ErrExist) {
-		return false, fmt.Sprintf("could not be created: %v", err)
+		return false, false, fmt.Sprintf("could not be created: %v", err)
 	}
 
 	// The path already exists: only replace it if we own it (same agent) or it is
@@ -133,13 +134,13 @@ func writeOwnedGeneratedFile(
 	// agent's file, or a non-regular file.
 	if ok, reason := canWriteGeneratedFile(path, agentName); !ok {
 		if isLegacy == nil || !isLegacy(path) {
-			return false, reason
+			return false, false, reason
 		}
 	}
 	if err := replaceGeneratedFile(path, content, mode); err != nil {
-		return false, fmt.Sprintf("could not be replaced: %v", err)
+		return false, false, fmt.Sprintf("could not be replaced: %v", err)
 	}
-	return true, ""
+	return true, false, ""
 }
 
 // replaceGeneratedFile stages content in a temp file in path's directory, then
@@ -278,6 +279,7 @@ func writeTeamsSideloadScripts(
 	}
 
 	var written []string
+	var created []string
 	for _, s := range scripts {
 		scriptPath, err := paths.JoinAllowRoot(proj.GetPath(), svc.GetRelativePath(), s.file)
 		if err != nil {
@@ -292,13 +294,31 @@ func writeTeamsSideloadScripts(
 		// user-owned file, a different agent's script sharing this source
 		// directory, or a non-regular file is left untouched, and concurrent
 		// service deploys cannot clobber each other.
-		if ok, reason := writeOwnedGeneratedFile(scriptPath, content, s.mode, agentName, nil); !ok {
+		ok, isNew, reason := writeOwnedGeneratedFile(scriptPath, content, s.mode, agentName, nil)
+		if !ok {
 			if reason != "" {
 				log.Printf("postdeploy: Teams sideload script %q %s", scriptPath, reason)
 			}
 			continue
 		}
 		written = append(written, scriptPath)
+		if isNew {
+			created = append(created, scriptPath)
+		}
+	}
+
+	// The .ps1 and .sh are claimed independently, so a rare race (e.g. a name
+	// collision, or two different agents deploying concurrently from the same
+	// source directory) can leave us with only one half of the pair -- and a lone
+	// script carries a bot id its partner does not. Rather than advertise or leave
+	// a split pair, roll back the file(s) THIS call freshly created (never a
+	// pre-existing/refreshed one) and report nothing written. A redeploy then
+	// regenerates the full pair once the collision is gone.
+	if len(written) != len(scripts) {
+		for _, p := range created {
+			_ = os.Remove(p)
+		}
+		return nil
 	}
 	return written
 }

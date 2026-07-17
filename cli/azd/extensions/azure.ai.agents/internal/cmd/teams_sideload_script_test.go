@@ -188,20 +188,16 @@ func TestWriteTeamsSideloadScriptsPreservesUserFiles(t *testing.T) {
 
 	paths := writeTeamsSideloadScripts(proj, svc, "echo-agent", "echo-agent-bot-uai", "app-id")
 
-	// The bash name collided with a user file, so only the pwsh script is written:
-	// a partial write must report fewer than teamsSideloadTargets so the caller
-	// does not advertise the fast path.
-	if len(paths) != 1 {
-		t.Fatalf("expected only the non-colliding script to be written, got %d: %v", len(paths), paths)
+	// The bash name collided with a user file, so the pair cannot be completed.
+	// Rather than leave a lone .ps1 (which carries a bot id its missing partner
+	// does not), the freshly-created .ps1 is rolled back and nothing is reported
+	// written, so the caller never advertises a split pair.
+	if len(paths) != 0 {
+		t.Fatalf("expected an incomplete pair to roll back to 0 written, got %d: %v", len(paths), paths)
 	}
-	if len(paths) == teamsSideloadTargets {
-		t.Errorf("a partial write must not equal teamsSideloadTargets (%d)", teamsSideloadTargets)
-	}
-
-	for _, p := range paths {
-		if p == userBash {
-			t.Errorf("clobbered user-owned file %q was reported as written", p)
-		}
+	// The rolled-back pwsh script must not be left behind on disk.
+	if _, err := os.Stat(filepath.Join(srcDir, teamsSideloadScriptPwsh)); !os.IsNotExist(err) {
+		t.Errorf("freshly-created pwsh script must be rolled back when its partner collides (stat err=%v)", err)
 	}
 	got, err := os.ReadFile(userBash)
 	if err != nil {
@@ -211,12 +207,16 @@ func TestWriteTeamsSideloadScriptsPreservesUserFiles(t *testing.T) {
 		t.Errorf("user-owned file was overwritten:\n got: %q\nwant: %q", string(got), userContent)
 	}
 
-	// A previously azd-generated script (carrying this agent's marker) is refreshed in place.
+	// A previously azd-generated script (carrying this agent's marker) is refreshed
+	// in place, and its missing partner is freshly created, completing the pair.
 	genContent := "# " + teamsGeneratedMarkerFor("echo-agent") + "\n# xyzzy-old-body-sentinel\n"
 	if err := os.WriteFile(userBash, []byte(genContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	paths = writeTeamsSideloadScripts(proj, svc, "echo-agent", "echo-agent-bot-uai", "app-id")
+	if len(paths) != teamsSideloadTargets {
+		t.Fatalf("expected the full pair to be written once the collision is gone, got %d: %v", len(paths), paths)
+	}
 	refreshed := false
 	for _, p := range paths {
 		if p == userBash {
@@ -239,7 +239,8 @@ func TestWriteTeamsSideloadScriptsPreservesUserFiles(t *testing.T) {
 // case: if a second activity service resolves to the same project:/src, its
 // postdeploy must not overwrite scripts a different agent already generated
 // there (only the last writer's bot id would install). The other agent's file
-// is left byte-for-byte intact and is not reported as written.
+// is left byte-for-byte intact, and because the pair cannot be completed the
+// freshly-created partner is rolled back so no split pair is left behind.
 func TestWriteTeamsSideloadScriptsRejectsOtherAgent(t *testing.T) {
 	root := t.TempDir()
 	proj := &azdext.ProjectConfig{Path: root}
@@ -256,14 +257,13 @@ func TestWriteTeamsSideloadScriptsRejectsOtherAgent(t *testing.T) {
 	}
 
 	paths := writeTeamsSideloadScripts(proj, svc, "echo-agent", "echo-agent-bot-uai", "this-bot-id")
-	for _, p := range paths {
-		if p == otherBash {
-			t.Errorf("overwrote another agent's script %q", otherBash)
-		}
+	// The bash slot is owned by another agent, so our pair cannot be completed:
+	// nothing is reported written and the freshly-created pwsh is rolled back.
+	if len(paths) != 0 {
+		t.Fatalf("expected an incomplete pair to roll back to 0 written, got %d: %v", len(paths), paths)
 	}
-	// A partial write (only the pwsh script) must not claim all targets succeeded.
-	if len(paths) == teamsSideloadTargets {
-		t.Errorf("a partial write must not equal teamsSideloadTargets (%d)", teamsSideloadTargets)
+	if _, err := os.Stat(filepath.Join(root, "src", teamsSideloadScriptPwsh)); !os.IsNotExist(err) {
+		t.Errorf("freshly-created pwsh script must be rolled back when its partner is another agent's (stat err=%v)", err)
 	}
 	got, err := os.ReadFile(otherBash)
 	if err != nil {

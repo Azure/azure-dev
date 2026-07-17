@@ -4,7 +4,8 @@
 `azd deploy` already did the Azure side for you:
 
 - Azure Bot: `{{.BotName}}` (Microsoft Teams channel enabled)
-- Bot ID (msaAppId): `{{.MsaAppID}}`  <- you will paste this as the bot id
+- Bot ID (msaAppId): `{{.MsaAppID}}`  <- you will paste this as the bot id{{if .TenantID}}
+- Microsoft 365 tenant: `{{.TenantID}}`  <- the bot is single-tenant; sign in / sideload here{{end}}
 
 Two manual steps remain: (A) create a Teams app package, then (B) upload it.
 They are the same for any activity-protocol agent.
@@ -18,12 +19,12 @@ commands below are relative to it (`azd deploy` itself runs from the project roo
 so `cd` there first):
 
 ```powershell
-cd '{{.ServiceRelPath}}'                 # the agent's source folder, from the project root
+cd {{.ServiceCdPwsh}}                 # the agent's source folder, from the project root
 powershell -NoProfile -ExecutionPolicy Bypass -File ./pack-and-sideload-teams-app.ps1   # Windows / PowerShell
 ```
 ```sh
-cd '{{.ServiceRelPath}}'                 # the agent's source folder, from the project root
-./pack-and-sideload-teams-app.sh         # macOS / Linux
+cd {{.ServiceCdPosix}}                # the agent's source folder, from the project root
+./pack-and-sideload-teams-app.sh      # macOS / Linux
 ```
 
 It builds the Teams app package and installs it **for you** (`atk install --scope
@@ -37,7 +38,8 @@ Prerequisites:
 - **Node.js** (for `npm`) — the script installs the Microsoft 365 Agents Toolkit
   CLI (`atk`) via npm if it is missing.
 - A one-time **`atk auth login m365`** with your M365 account — the script launches
-  this for you if you are not signed in.
+  this for you if you are not signed in.{{if .TenantID}} Sign in with an account in
+  tenant `{{.TenantID}}` (the bot is single-tenant), or the install will fail.{{end}}
 - `--scope Personal` installs only for you and needs **no org-catalog admin
   approval** (an org-wide catalog upload does; see step B below). Custom app
   upload still has to be enabled for your tenant — if it is off, a Teams admin
@@ -148,7 +150,7 @@ enabled for your tenant):
 
 ```sh
 npm install -g @microsoft/m365agentstoolkit-cli          # one-time; requires Node.js
-atk auth login m365                                      # sign in with your M365 account
+atk auth login m365                                      # sign in with your M365 account{{if .TenantID}} in tenant {{.TenantID}} (single-tenant bot){{end}}
 atk install --file-path {{.AgentName}}-teams-app.zip --scope Personal
 ```
 

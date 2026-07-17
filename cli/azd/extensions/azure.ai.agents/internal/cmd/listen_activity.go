@@ -141,7 +141,7 @@ func ensureActivityBot(
 	// written. A partial write (e.g. one script name collided with a user-owned
 	// file) must not advertise a filename azd did not generate.
 	scriptsGenerated := len(scriptPaths) == teamsSideloadTargets
-	guidePath := writeTeamsSetupGuide(proj, svc, agentName, botName, msaAppID, scriptsGenerated)
+	guidePath := writeTeamsSetupGuide(proj, svc, agentName, botName, msaAppID, tenantID, scriptsGenerated)
 	printTeamsNextSteps(botName, msaAppID, guidePath, preferredSideloadScript(scriptPaths), scriptsGenerated)
 	return nil
 }
@@ -155,21 +155,22 @@ const teamsSetupGuideFile = "TEAMS_APP_SETUP.md"
 // blocks or fails the deploy). The guide is deploy-agnostic and links to the
 // official Microsoft Learn docs rather than any sample-specific scripts.
 func writeTeamsSetupGuide(
-	proj *azdext.ProjectConfig, svc *azdext.ServiceConfig, agentName, botName, msaAppID string, scriptsGenerated bool,
+	proj *azdext.ProjectConfig, svc *azdext.ServiceConfig,
+	agentName, botName, msaAppID, tenantID string, scriptsGenerated bool,
 ) string {
 	guidePath, err := paths.JoinAllowRoot(proj.GetPath(), svc.GetRelativePath(), teamsSetupGuideFile)
 	if err != nil {
 		log.Printf("postdeploy: skipping Teams setup guide: %v", err)
 		return ""
 	}
-	content := teamsSetupGuideContent(agentName, botName, msaAppID, svc.GetRelativePath(), scriptsGenerated)
+	content := teamsSetupGuideContent(agentName, botName, msaAppID, tenantID, svc.GetRelativePath(), scriptsGenerated)
 	// Atomically claim/refresh the guide keyed on the agent (service) name, which
 	// is stable across redeploys AND azd environments. A guide a different
 	// activity service generated for another agent (shared source dir) and
 	// genuinely user-owned files are left untouched; a pre-marker guide from a
 	// released version is recognized (isLegacyGeneratedGuide) and refreshed so
 	// upgrading users still get the script cross-reference.
-	if ok, reason := writeOwnedGeneratedFile(guidePath, content, 0o600, agentName, isLegacyGeneratedGuide); !ok {
+	if ok, _, reason := writeOwnedGeneratedFile(guidePath, content, 0o600, agentName, isLegacyGeneratedGuide); !ok {
 		if reason != "" {
 			log.Printf("postdeploy: Teams setup guide %q %s", guidePath, reason)
 		}
@@ -215,7 +216,7 @@ var teamsSetupGuideTmpl = template.Must(
 // detail. The single value the user must not get wrong is the bot id: a Teams
 // app manifest's bots[].botId MUST equal this bot's msaAppId, which azd bound to
 // the agent instance identity.
-func teamsSetupGuideContent(agentName, botName, msaAppID, serviceRelPath string, scriptsGenerated bool) string {
+func teamsSetupGuideContent(agentName, botName, msaAppID, tenantID, serviceRelPath string, scriptsGenerated bool) string {
 	var buf bytes.Buffer
 	// The generated script lives in the agent's source folder; the guide's run
 	// commands are relative to it, so surface a 'cd' target the user can use from
@@ -225,22 +226,43 @@ func teamsSetupGuideContent(agentName, botName, msaAppID, serviceRelPath string,
 	if strings.TrimSpace(relPath) == "" {
 		relPath = "."
 	}
+	// Emit the 'cd' argument pre-quoted per shell so a path with spaces, an
+	// apostrophe, or (for POSIX) backslashes stays a single literal argument.
+	// POSIX shells treat backslash as an escape, so normalize separators there.
+	cdPwsh := shellSingleQuotePwsh(relPath)
+	cdPosix := shellSingleQuotePosix(strings.ReplaceAll(relPath, `\`, "/"))
 	// Inputs are azd-controlled resource names and the template is compile-time
 	// embedded, so execution cannot realistically fail.
 	_ = teamsSetupGuideTmpl.Execute(&buf, struct {
 		AgentName        string
 		BotName          string
 		MsaAppID         string
-		ServiceRelPath   string
+		TenantID         string
+		ServiceCdPwsh    string
+		ServiceCdPosix   string
 		ScriptsGenerated bool
 	}{
 		AgentName:        agentName,
 		BotName:          botName,
 		MsaAppID:         msaAppID,
-		ServiceRelPath:   relPath,
+		TenantID:         tenantID,
+		ServiceCdPwsh:    cdPwsh,
+		ServiceCdPosix:   cdPosix,
 		ScriptsGenerated: scriptsGenerated,
 	})
 	return buf.String()
+}
+
+// shellSingleQuotePwsh wraps s in a PowerShell single-quoted literal (no
+// $name/$()/backtick expansion), escaping an embedded single quote by doubling.
+func shellSingleQuotePwsh(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// shellSingleQuotePosix wraps s in a POSIX single-quoted literal, escaping an
+// embedded single quote via the close-quote/escaped-quote/reopen idiom.
+func shellSingleQuotePosix(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // printTeamsNextSteps prints a short pointer to the generated setup guide and

@@ -279,7 +279,6 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		}
 		a.azureContext = azureContext
 	}
-
 	// TODO: Prompt user for agent kind
 	agentKind := agent_yaml.AgentKindHosted
 
@@ -906,6 +905,7 @@ type protocolInfo struct {
 var knownProtocols = []protocolInfo{
 	{Name: "responses", Version: "2.0.0"},
 	{Name: "invocations", Version: "1.0.0"},
+	{Name: "invocations_ws", Version: "2.0.0"},
 	// "activity" is the canonical protocol name (legacy alias: "activity_protocol").
 	// The version selects the platform's internal container route ("v1"/"1.0.0" ->
 	// /api/messages, "2.0.0" -> /activity/messages), but that hop is Bot Service ->

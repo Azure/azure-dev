@@ -597,6 +597,37 @@ protocols:
 			want: ProtocolInvocations,
 		},
 		{
+			name: "single invocations_ws protocol",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: invocations_ws
+    version: "2.0.0"
+`,
+			want: ProtocolInvocationsWS,
+		},
+		{
+			name: "responses wins over invocations_ws regardless of order (ws first)",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: invocations_ws
+    version: "2.0.0"
+  - protocol: responses
+    version: "2.0.0"
+`,
+			want: ProtocolResponses,
+		},
+		{
+			name: "invocations wins over invocations_ws regardless of order (ws first)",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: invocations_ws
+    version: "2.0.0"
+  - protocol: invocations
+    version: "1.0.0"
+`,
+			want: ProtocolInvocations,
+		},
+		{
 			name: "responses wins when both declared",
 			manifest: `kind: hostedAgent
 protocols:

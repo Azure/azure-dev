@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/policy"
@@ -544,6 +545,49 @@ func TestRecordInfraProviderUsage(t *testing.T) {
 			require.Equal(t, tt.expected, got)
 		})
 	}
+}
+
+// TestRecordInfraProviderUsage_ResolvesDefaultOnce verifies the "default provider at most once per
+// call" contract: multiple unspecified layers must all resolve through the manager's default
+// provider while invoking that (potentially I/O-bound) resolver exactly once, and collapse to the
+// single resolved value.
+func TestRecordInfraProviderUsage_ResolvesDefaultOnce(t *testing.T) {
+	var calls atomic.Int32
+	countingResolver := func() (provisioning.ProviderKind, error) {
+		calls.Add(1)
+		return provisioning.Bicep, nil
+	}
+
+	sr := tracetest.NewSpanRecorder()
+	tp := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(sr))
+	ctx, span := tp.Tracer("test").Start(t.Context(), "cmd.test")
+
+	layers := []provisioning.Options{
+		{Provider: provisioning.NotSpecified},
+		{Provider: provisioning.NotSpecified},
+		{Provider: provisioning.NotSpecified},
+	}
+
+	mgr := provisioning.NewManager(nil, countingResolver, nil, nil, nil, nil, nil, nil)
+	mgr.RecordInfraProviderUsage(ctx, layers)
+	span.End()
+
+	require.Equal(t, int32(1), calls.Load(), "default provider resolver must be invoked at most once per call")
+
+	ended := sr.Ended()
+	require.Len(t, ended, 1)
+
+	var got []string
+	var found bool
+	for _, attr := range ended[0].Attributes() {
+		if attr.Key == fields.InfraProviderKey.Key {
+			got = attr.Value.AsStringSlice()
+			found = true
+		}
+	}
+
+	require.True(t, found, "expected infra.provider attribute to be recorded")
+	require.Equal(t, []string{"bicep"}, got)
 }
 
 // TestRecordInfraProviderUsage_DoesNotLeakToSiblingSpans is a regression test for the custom

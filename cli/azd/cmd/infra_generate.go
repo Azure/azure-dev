@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -87,16 +88,20 @@ func newInfraGenerateAction(
 }
 
 func (a *infraGenerateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	// Track infra provider from project configuration
-	// Emit "auto" when provider is empty, so we know auto-detection was used.
+	// Track infra provider from project configuration.
+	// Emit "auto" when the provider is unset, so we know auto-detection was used; bucket any
+	// non-built-in (extension) provider to "custom" so a user-chosen provider name — which may
+	// embed project or organization identifiers — is never emitted (mirrors the provision/up/down
+	// path, see provisioning.InfraProviderTelemetryValue).
 	// Set it directly on the command span (not the process-global usage bag) so it stays scoped to
-	// this cmd.generate/cmd.synth span and cannot leak onto — or overwrite — the span-scoped
-	// infra.provider recorded by a sibling in-process command (for example a custom `workflows.up`
-	// step running provision/up alongside generate/synth).
+	// this cmd.infra.generate span (both `infra generate` and its `synth` alias resolve to that
+	// canonical command name) and cannot leak onto — or overwrite — the span-scoped infra.provider
+	// recorded by a sibling in-process command (for example a custom `workflows.up` step running
+	// provision/up alongside generate/synth).
 	if a.projectConfig != nil {
-		provider := string(a.projectConfig.Infra.Provider)
-		if provider == "" {
-			provider = "auto"
+		provider := "auto"
+		if kind := a.projectConfig.Infra.Provider; kind != provisioning.NotSpecified {
+			provider = provisioning.InfraProviderTelemetryValue(kind)
 		}
 		tracing.SetAttributesInContext(ctx, fields.InfraProviderKey.String(provider))
 	}

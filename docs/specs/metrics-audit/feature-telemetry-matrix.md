@@ -65,8 +65,8 @@ These commands emit attributes or events beyond the global middleware span.
 | **Show** | | | | | |
 | `show` | — | ✅ | ❌ | ❌ | Redundant — output format not analytically useful |
 | **Infrastructure** | | | | | |
-| `infra generate` | — | ✅ | ✅ | ❌ | `infra.provider` (from azure.yaml's `infra.provider`: `bicep`/`terraform`, `auto` when unset, or a raw custom name — see cross-cutting row) |
-| `infra synth` | — | ✅ | ✅ | ❌ | `infra.provider` (from azure.yaml's `infra.provider`: `bicep`/`terraform`, `auto` when unset, or a raw custom name — see cross-cutting row) |
+| `infra generate` | — | ✅ | ✅ | ❌ | `infra.provider` (from azure.yaml's `infra.provider`: `bicep`/`terraform`/`arm`/`pulumi`, `auto` when unset, or `custom` for extension providers — raw name not emitted; see cross-cutting row) |
+| `infra synth` | — | ✅ | ✅ | ❌ | `infra.provider` (from azure.yaml's `infra.provider`: `bicep`/`terraform`/`arm`/`pulumi`, `auto` when unset, or `custom` for extension providers — raw name not emitted; see cross-cutting row) |
 | `infra create` | — (hidden, deprecated) | ✅ | ❌ | ❌ | Wraps `provision`; inherits its telemetry |
 | `infra delete` | — (hidden, deprecated) | ✅ | ❌ | ❌ | Wraps `down`; inherits its telemetry |
 | **Core Lifecycle** | | | | | |
@@ -122,7 +122,7 @@ command-specific telemetry fields provide analytical value beyond the command na
 | Hooks kind | `hooks.kind` | `hooks run` | Distinguishes the script runtime used to execute the hook (`sh`, `pwsh`, `js`, `ts`, `python`, `dotnet`) |
 | Pipeline provider | `pipeline.provider` | `pipeline config` | Distinguishes GitHub vs Azure DevOps |
 | Pipeline auth | `pipeline.auth` | `pipeline config` | Distinguishes federated vs client-credentials |
-| Infra provider | `infra.provider` | `infra generate`, `infra synth`, `provision`, `up`, `down` | provision/up/down: sorted, de-duplicated string slice of resolved providers — `bicep`/`terraform`/`arm`/`pulumi` verbatim, `custom` for extension providers (raw name not emitted); multi-layer projects that combine providers record each distinct value (e.g. `["bicep","terraform"]`). `infra generate`/`synth`: the value read from azure.yaml's `infra.provider` emitted directly as a single string (`bicep`/`terraform`, `auto` when unset, or a raw custom name) |
+| Infra provider | `infra.provider` | `infra generate`, `infra synth`, `provision`, `up`, `down` | provision/up/down: sorted, de-duplicated string slice of resolved providers — `bicep`/`terraform`/`arm`/`pulumi` verbatim, `custom` for extension providers (raw name not emitted); multi-layer projects that combine providers record each distinct value (e.g. `["bicep","terraform"]`). `infra generate`/`synth`: the value read from azure.yaml's `infra.provider` emitted directly as a single string (`bicep`/`terraform`/`arm`/`pulumi`, `auto` when unset, or `custom` for extension providers — raw name not emitted) |
 | Tool ID | `tool.id` / `tool.ids` | `tool *` | Identifies which managed tool (e.g., bicep, gh, kubectl) the command acted on |
 | Tool install metrics | `tool.install.*` | `tool install`, `tool upgrade`, `tool uninstall`, first-run middleware | Success count, failure count, duration, strategy — quantitative install health |
 | Tool upgrade versions | `tool.upgrade.from_version`, `tool.upgrade.to_version` | `tool upgrade` | Tracks adoption of new tool versions |

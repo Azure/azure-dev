@@ -614,7 +614,7 @@ func (m *Manager) resolveInfraProviders(layers []Options) []string {
 			continue
 		}
 
-		providers[infraProviderTelemetryValue(kind)] = struct{}{}
+		providers[InfraProviderTelemetryValue(kind)] = struct{}{}
 	}
 
 	if len(providers) == 0 {
@@ -624,10 +624,10 @@ func (m *Manager) resolveInfraProviders(layers []Options) []string {
 	return slices.Sorted(maps.Keys(providers))
 }
 
-// infraProviderTelemetryValue maps a provider kind to a value that is safe to emit raw. Built-in
+// InfraProviderTelemetryValue maps a provider kind to a value that is safe to emit raw. Built-in
 // kinds are returned verbatim; any other (custom / extension-registered) provider is bucketed to
 // InfraProviderCustom so a user-chosen provider name is never sent as telemetry.
-func infraProviderTelemetryValue(kind ProviderKind) string {
+func InfraProviderTelemetryValue(kind ProviderKind) string {
 	switch kind {
 	case Bicep, Terraform, Arm, Pulumi:
 		return string(kind)

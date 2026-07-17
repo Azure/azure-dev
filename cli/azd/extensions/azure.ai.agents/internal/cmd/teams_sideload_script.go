@@ -109,6 +109,10 @@ func writeOwnedGeneratedFile(
 		_, writeErr := f.WriteString(content)
 		closeErr := f.Close()
 		if joined := errors.Join(writeErr, closeErr); joined != nil {
+			// A partial/zero-length file left here would lack the ownership
+			// marker and be treated as user-owned on every later deploy, so
+			// remove the file we exclusively created before returning.
+			_ = os.Remove(path)
 			return false, fmt.Sprintf("could not be written: %v", joined)
 		}
 		// os.OpenFile applies mode subject to umask, so re-assert it (the bash
@@ -129,17 +133,20 @@ func writeOwnedGeneratedFile(
 			return false, reason
 		}
 	}
-	if err := replaceFileAtomic(path, content, mode); err != nil {
+	if err := replaceGeneratedFile(path, content, mode); err != nil {
 		return false, fmt.Sprintf("could not be replaced: %v", err)
 	}
 	return true, ""
 }
 
-// replaceFileAtomic writes content to a temp file in path's directory and renames
-// it over path. The rename is atomic and replaces the destination on both Unix
-// and Windows, so a reader never observes a partial file and a symlink at path is
-// replaced rather than having its target truncated.
-func replaceFileAtomic(path, content string, mode os.FileMode) error {
+// replaceGeneratedFile stages content in a temp file in path's directory, then
+// renames it over path. os.Rename replaces the destination in a single call
+// (rename(2) on Unix; a replace-existing move on Windows). Go
+// does not promise the replace is atomic on every platform, but because the full
+// content is written to the temp file first, the destination is never left
+// holding a partially written file, and a symlink at path is replaced rather
+// than having its target truncated.
+func replaceGeneratedFile(path, content string, mode os.FileMode) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".azd-teams-*.tmp")
 	if err != nil {
 		return err
@@ -307,19 +314,19 @@ func preferredSideloadScript(scriptPaths []string) string {
 	return ""
 }
 
-// sideloadRunCommand returns a shell-safe invocation of the generated script for
-// a user-facing hint. The path is single-quote quoted so a path containing
-// spaces or metacharacters ($, backticks, quotes) is neither expanded nor able
-// to break out of the argument when pasted into a shell that honors single
-// quotes (PowerShell, pwsh, and POSIX shells such as Git Bash). Both branches
-// invoke the interpreter explicitly (pwsh -File / bash) rather than relying on
-// the PowerShell-only call operator (&), so the command also runs when azd was
-// launched from a non-PowerShell shell (e.g. cmd.exe or Git Bash on Windows).
-// See cli/azd/AGENTS.md ("Shell-safe output" / "Path Safety").
+// sideloadRunCommand returns a runnable, path-safe invocation of the generated
+// script for a user-facing hint. The .ps1 branch uses `powershell -File "..."`:
+// powershell.exe ships with every Windows install (unlike PowerShell 7's pwsh),
+// and an explicit interpreter call (rather than the PowerShell-only `&` call
+// operator) also runs from cmd.exe or Git Bash. The path is wrapped in double
+// quotes -- which cmd.exe, powershell, and bash all treat as grouping -- so a
+// path with spaces stays a single argument; backslashes are left intact (unlike
+// %q) so the Windows path resolves. The .sh branch stays single-quoted for POSIX
+// shells. Windows filenames cannot contain a double quote, so no escaping of the
+// quote character is needed. See cli/azd/AGENTS.md ("Shell-safe output").
 func sideloadRunCommand(scriptPath string) string {
 	if strings.HasSuffix(scriptPath, ".ps1") {
-		// PowerShell single-quoted literal: an embedded ' is escaped by doubling.
-		return "pwsh -NoProfile -File '" + strings.ReplaceAll(scriptPath, "'", "''") + "'"
+		return `powershell -NoProfile -File "` + scriptPath + `"`
 	}
 	// POSIX single-quoted literal: close the quote, add an escaped ', reopen.
 	return "bash '" + strings.ReplaceAll(scriptPath, "'", `'\''`) + "'"

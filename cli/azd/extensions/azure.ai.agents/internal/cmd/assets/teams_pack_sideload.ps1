@@ -98,7 +98,12 @@ $manifest = [ordered]@{
     permissions     = @("identity")
     validDomains    = @()
 }
-($manifest | ConvertTo-Json -Depth 10) | Set-Content -Path (Join-Path $buildDir "manifest.json") -Encoding UTF8
+# Write manifest.json as UTF-8 WITHOUT a BOM. Windows PowerShell 5.1's
+# Set-Content -Encoding UTF8 prepends a BOM, which some Teams/atk JSON parsers
+# reject; WriteAllText with an explicit no-BOM encoding is correct on 5.1 and 7.
+$noBomUtf8 = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText(
+    (Join-Path $buildDir "manifest.json"), ($manifest | ConvertTo-Json -Depth 10), $noBomUtf8)
 
 # ---- Write the icons (embedded PNGs -- no image tooling needed) --------------
 # color.png is 192x192, outline.png is 32x32, per the Teams manifest icon rules.

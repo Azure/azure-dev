@@ -25,8 +25,8 @@ func TestScaffoldPromptConventionFolders_CreatesLayout(t *testing.T) {
 		t.Errorf("instructions.md content: got %q", string(content))
 	}
 
-	// files/ and skills/ exist with a .gitkeep placeholder.
-	for _, sub := range []string{"files", "skills"} {
+	// skills/ exists with a .gitkeep placeholder.
+	for _, sub := range []string{"skills"} {
 		info, statErr := os.Stat(filepath.Join(dir, sub))
 		if statErr != nil || !info.IsDir() {
 			t.Errorf("%s/ should be a directory: %v", sub, statErr)
@@ -34,6 +34,12 @@ func TestScaffoldPromptConventionFolders_CreatesLayout(t *testing.T) {
 		if _, keepErr := os.Stat(filepath.Join(dir, sub, ".gitkeep")); keepErr != nil {
 			t.Errorf("%s/.gitkeep should exist: %v", sub, keepErr)
 		}
+	}
+
+	// files/ is intentionally not scaffolded: file search is not supported for
+	// managed (prompt) agents.
+	if _, statErr := os.Stat(filepath.Join(dir, "files")); !os.IsNotExist(statErr) {
+		t.Errorf("files/ should not be created, got stat err: %v", statErr)
 	}
 }
 

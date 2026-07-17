@@ -156,8 +156,8 @@ func runInitManaged(
 		return err
 	}
 
-	// Scaffold the convention-based authoring layout (instructions.md + empty
-	// files/ and skills/ folders) so the deploy engine's folder conventions are
+	// Scaffold the convention-based authoring layout (instructions.md + an
+	// empty skills/ folder) so the deploy engine's folder conventions are
 	// discoverable from a fresh init.
 	if err := scaffoldPromptConventionFolders(serviceRelPath, instructions); err != nil {
 		return err
@@ -440,7 +440,6 @@ func writePromptAgentYAML(targetDir string, promptAgent *agent_yaml.PromptAgent)
 //
 //   - instructions.md — the agent's instructions (deploy uses this when the
 //     agent.yaml has no inline instructions).
-//   - files/          — drop documents here to get file_search automatically.
 //   - skills/         — add one subfolder per skill (each with a SKILL.md).
 //
 // The empty folders are kept with a .gitkeep placeholder. The deploy scanners
@@ -460,7 +459,7 @@ func scaffoldPromptConventionFolders(targetDir, instructions string) error {
 		log.Printf("Wrote instructions.md at %s", instructionsPath)
 	}
 
-	for _, sub := range []string{"files", "skills"} {
+	for _, sub := range []string{"skills"} {
 		dir := filepath.Join(targetDir, sub)
 		if err := os.MkdirAll(dir, osutil.PermissionDirectory); err != nil {
 			return fmt.Errorf("creating %s folder: %w", sub, err)
@@ -508,7 +507,6 @@ func printManagedInitSummary(
 	fmt.Println()
 	fmt.Println("Authoring layout (edit these to add capabilities):")
 	fmt.Printf("  %sinstructions.md  the agent's instructions\n", dirPrefix)
-	fmt.Printf("  %sfiles/           drop documents here for automatic file search\n", dirPrefix)
 	fmt.Printf("  %sskills/          add a subfolder per skill (each with a SKILL.md)\n", dirPrefix)
 
 	fmt.Println()

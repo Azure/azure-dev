@@ -78,6 +78,14 @@ type Deployment struct {
 
 	// The resource model definition representing SKU.
 	Sku DeploymentSku `json:"sku"`
+
+	// Existing marks a deployment that already lives in the target Foundry
+	// project and was selected for reuse during init. azd does not own such
+	// deployments: they are excluded from the AI_PROJECT_DEPLOYMENTS list that
+	// the infra template provisions, so `azd up` neither updates them nor
+	// treats their capacity as new in the quota preflight. Omitted (false) for
+	// deployments azd creates.
+	Existing bool `json:"existing,omitempty"`
 }
 
 // DeploymentModel represents the model configuration for a model deployment

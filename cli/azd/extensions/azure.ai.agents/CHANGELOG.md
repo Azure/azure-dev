@@ -9,7 +9,7 @@
   - A `connections:` block resolves through a precedence ladder (use existing, create-if-missing with Entra default, auto-fill target from provisioning outputs, or provision/fail-fast), and each tool's required role is surfaced for assignment.
   - The model deployment is create-if-missing, and container-only fields (`image`, `protocols`, `code_configuration`, …) are rejected for prompt agents.
   - The manifest parser recognizes `skill` and `file` resource kinds.
-- `azd ai agent init` now scaffolds the prompt-agent authoring layout: an `instructions.md` sidecar (instructions are written there instead of inline in `agent.yaml`) plus empty `files/` and `skills/` folders so the deploy conventions are discoverable from a fresh init.
+- `azd ai agent init` now scaffolds the prompt-agent authoring layout: an `instructions.md` sidecar (instructions are written there instead of inline in `agent.yaml`) plus an empty `skills/` folder so the deploy conventions are discoverable from a fresh init.
 - **Breaking:** the `agent.yaml` discriminator for prompt agents is now `kind: prompt` (was `kind: managed`). Existing `agent.yaml` files must be updated; the scaffolded schema annotation now points at `PromptAgent.yaml`. The `--kind managed` init flag value is still accepted as a backward-compatible alias for `--kind prompt`.
 - Fixed a bug where only `SKILL.md` was uploaded when registering a skill under `skills/<name>/` — any other files in the bundle (e.g. `references/`, `assets/`, `scripts/`, at any nesting depth) were silently dropped. Skill registration now uploads the entire bundle via multipart upload instead of sending just the parsed `SKILL.md` body inline.
 

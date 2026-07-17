@@ -20,6 +20,7 @@ import (
 	osExec "os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -661,14 +662,12 @@ func protocolRecordsForImageManifest(flagProtocols []string) ([]agent_yaml.Proto
 	if len(flagProtocols) == 0 {
 		return []agent_yaml.ProtocolVersionRecord{{Protocol: "responses", Version: "2.0.0"}}, nil
 	}
-	for _, protocol := range flagProtocols {
-		if protocol == "activity" {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				"--protocol activity is not supported with --image",
-				"use code init for activity agents, or choose a different protocol for --image",
-			)
-		}
+	if slices.Contains(flagProtocols, "activity") {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"--protocol activity is not supported with --image",
+			"use code init for activity agents, or choose a different protocol for --image",
+		)
 	}
 	protocols, err := resolveKnownProtocols(flagProtocols)
 	if err != nil {

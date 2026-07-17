@@ -455,20 +455,21 @@ func TestTeamsSideloadScriptTruncatesManifestFields(t *testing.T) {
 }
 
 func TestSideloadRunCommand(t *testing.T) {
-	// The emitted command must keep a path with spaces as one argument: the .ps1
-	// is run via `powershell -File "..."` (double quotes group in cmd.exe,
-	// powershell, and bash; backslashes stay intact so the Windows path
-	// resolves), the .sh via single-quoted bash. Struct field names avoid
-	// substrings (e.g. "pw") that gosec's G101 rule treats as credential
-	// indicators.
+	// The emitted command must keep a path with spaces as one argument and must
+	// not let the shell expand path characters. The .ps1 is run via
+	// `powershell -File '...'` (single-quoted so PowerShell does not expand
+	// $name/$()/backticks; backslashes stay intact so the Windows path resolves),
+	// the .sh via single-quoted bash. Struct field names avoid substrings (e.g.
+	// "pw") that gosec's G101 rule treats as credential indicators.
 	cases := []struct {
 		name string
 		in   string
 		want string
 	}{
-		{"ps1_simple", `C:\a b\x.ps1`, `powershell -NoProfile -File "C:\a b\x.ps1"`},
-		{"ps1_backslashes", `C:\Users\a\svc\x.ps1`, `powershell -NoProfile -File "C:\Users\a\svc\x.ps1"`},
-		{"ps1_single_quote", `C:\a'b\x.ps1`, `powershell -NoProfile -File "C:\a'b\x.ps1"`},
+		{"ps1_simple", `C:\a b\x.ps1`, `powershell -NoProfile -File 'C:\a b\x.ps1'`},
+		{"ps1_backslashes", `C:\Users\a\svc\x.ps1`, `powershell -NoProfile -File 'C:\Users\a\svc\x.ps1'`},
+		{"ps1_metachars", `C:\a$b` + "`c\\x.ps1", `powershell -NoProfile -File 'C:\a$b` + "`c\\x.ps1'"},
+		{"ps1_single_quote", `C:\a'b\x.ps1`, `powershell -NoProfile -File 'C:\a''b\x.ps1'`},
 		{"bash_simple", `a b/x.sh`, `bash 'a b/x.sh'`},
 		{"bash_metachars", "a $b`c/d.sh", "bash 'a $b`c/d.sh'"},
 		{"bash_quote", `a'b/x.sh`, `bash 'a'\''b/x.sh'`},

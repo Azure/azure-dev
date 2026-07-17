@@ -38,11 +38,16 @@ SHORT_DESC="$(printf '%.80s' "Chat with $SHORT_NAME in Microsoft Teams.")"
 # last + 1) and encode it into two bounded components (Teams caps each at 65535):
 # minor = N / 65536, patch = N % 65536. N ~ epoch keeps minor < 65535 until ~2106.
 STATE_FILE="$SCRIPT_DIR/.teams-app-version-$TEAMS_APP_ID"
-# Serialize the read-increment-write below so two concurrent runs cannot compute
-# the same version. mkdir is an atomic create-or-fail on every POSIX filesystem
-# (portable to macOS and Linux, unlike flock), so it doubles as a lock. The
-# critical section is a few milliseconds, so a lock held longer than the timeout
-# is almost certainly a crashed run -- reclaim it and proceed.
+# Serialize the read-increment-write of the counter so two concurrent runs cannot
+# compute the same version. mkdir is an atomic create-or-fail on every POSIX
+# filesystem (portable to macOS and Linux, unlike flock), so the lock directory
+# doubles as a mutex. We NEVER force-delete the lock to reclaim it: force-removal
+# could evict a live holder or race two waiters. Instead, if we cannot acquire it
+# within the timeout -- which only happens if a crashed run left it behind -- we
+# fall back to an epoch-only version (still monotonic second-over-second) and
+# leave the counter file untouched. The lock directory is created empty and only
+# ever removed by its own holder via rmdir (which fails on a non-empty directory,
+# so it cannot delete unrelated contents).
 LOCK_DIR="$STATE_FILE.lock"
 VERSION_LOCKED=0
 release_version_lock() {
@@ -52,35 +57,52 @@ release_version_lock() {
   fi
   return 0
 }
-trap release_version_lock EXIT INT TERM
+# On EXIT just release. On INT/TERM release, restore the default disposition, and
+# re-raise so the signal still terminates the script (a release-only handler would
+# otherwise swallow Ctrl+C and let execution fall through).
+on_version_signal() {
+  release_version_lock
+  trap - INT TERM
+  kill -"$1" "$$"
+}
+trap release_version_lock EXIT
+trap 'on_version_signal INT' INT
+trap 'on_version_signal TERM' TERM
 lock_wait=0
-while true; do
+while [ "$lock_wait" -lt 100 ]; do
   if mkdir "$LOCK_DIR" 2>/dev/null; then
     VERSION_LOCKED=1
     break
   fi
   lock_wait=$((lock_wait + 1))
-  if [ "$lock_wait" -ge 50 ]; then
-    # Held for ~5s -- treat as a stale lock from a crashed run and reclaim it.
-    rm -rf "$LOCK_DIR" 2>/dev/null || true
-    if mkdir "$LOCK_DIR" 2>/dev/null; then
-      VERSION_LOCKED=1
-    fi
-    break
-  fi
   sleep 0.1
 done
 
 NOW_EPOCH="$(date -u +%s)"
-LAST_N=0
-# Only read the counter from a plain regular file -- never follow a symlink.
-if [ -f "$STATE_FILE" ] && [ ! -L "$STATE_FILE" ]; then
-  LAST_N="$(tr -dc '0-9' < "$STATE_FILE" 2>/dev/null)"
-  [ -z "$LAST_N" ] && LAST_N=0
-fi
 VER_N="$NOW_EPOCH"
-if [ "$((LAST_N + 1))" -gt "$VER_N" ]; then
-  VER_N="$((LAST_N + 1))"
+# Only bump/persist the monotonic counter while we actually hold the lock. If we
+# fell through without it (stuck lock from a crashed run), use epoch alone.
+if [ "$VERSION_LOCKED" = "1" ]; then
+  LAST_N=0
+  # Only read the counter from a plain regular file -- never follow a symlink.
+  if [ -f "$STATE_FILE" ] && [ ! -L "$STATE_FILE" ]; then
+    LAST_N="$(tr -dc '0-9' < "$STATE_FILE" 2>/dev/null)"
+    [ -z "$LAST_N" ] && LAST_N=0
+  fi
+  if [ "$((LAST_N + 1))" -gt "$VER_N" ]; then
+    VER_N="$((LAST_N + 1))"
+  fi
+  # Persist the build number, but never follow a pre-existing symlink -- a planted
+  # link could otherwise redirect this write to truncate an arbitrary user-writable
+  # file. Write to a temp file in the same directory and atomically move it into
+  # place, which replaces the link itself rather than its target.
+  if [ ! -L "$STATE_FILE" ] && { [ ! -e "$STATE_FILE" ] || [ -f "$STATE_FILE" ]; }; then
+    STATE_TMP="$STATE_FILE.$$.tmp"
+    if printf '%s' "$VER_N" > "$STATE_TMP" 2>/dev/null; then
+      mv -f "$STATE_TMP" "$STATE_FILE" 2>/dev/null || rm -f "$STATE_TMP" 2>/dev/null
+    fi
+  fi
+  release_version_lock
 fi
 VER_MINOR="$(( VER_N / 65536 ))"
 VER_PATCH="$(( VER_N % 65536 ))"
@@ -89,17 +111,6 @@ if [ "$VER_MINOR" -gt 65535 ] || [ "$VER_PATCH" -gt 65535 ]; then
   echo "Error: computed manifest version $PKG_VERSION exceeds the Teams component limit (65535)." >&2
   exit 1
 fi
-# Persist the build number, but never follow a pre-existing symlink -- a planted
-# link could otherwise redirect this write to truncate an arbitrary user-writable
-# file. Write to a temp file in the same directory and atomically move it into
-# place, which replaces the link itself rather than its target.
-if [ ! -L "$STATE_FILE" ] && { [ ! -e "$STATE_FILE" ] || [ -f "$STATE_FILE" ]; }; then
-  STATE_TMP="$STATE_FILE.$$.tmp"
-  if printf '%s' "$VER_N" > "$STATE_TMP" 2>/dev/null; then
-    mv -f "$STATE_TMP" "$STATE_FILE" 2>/dev/null || rm -f "$STATE_TMP" 2>/dev/null
-  fi
-fi
-release_version_lock
 
 echo "Agent:        $AGENT_NAME"
 echo "Bot ID:       $BOT_ID"

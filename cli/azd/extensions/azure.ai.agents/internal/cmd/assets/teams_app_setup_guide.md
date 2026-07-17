@@ -12,13 +12,18 @@ They are the same for any activity-protocol agent.
 ## Fastest path — run the generated script
 
 `azd deploy` also wrote a runnable **pack-and-sideload script** next to this guide
-that does A and B for you in one command (the Bot ID is already baked in):
+that does A and B for you in one command (the Bot ID is already baked in). Run it
+from the folder that contains this guide — the agent's source folder — since the
+commands below are relative to it (`azd deploy` itself runs from the project root,
+so `cd` there first):
 
 ```powershell
-./pack-and-sideload-teams-app.ps1   # Windows / PowerShell
+cd {{.ServiceRelPath}}                 # the agent's source folder, from the project root
+./pack-and-sideload-teams-app.ps1      # Windows / PowerShell
 ```
 ```sh
-./pack-and-sideload-teams-app.sh    # macOS / Linux
+cd {{.ServiceRelPath}}                 # the agent's source folder, from the project root
+./pack-and-sideload-teams-app.sh       # macOS / Linux
 ```
 
 It builds the Teams app package and installs it **for you** (`atk install --scope

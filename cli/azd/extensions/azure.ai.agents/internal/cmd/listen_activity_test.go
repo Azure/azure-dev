@@ -14,7 +14,7 @@ import (
 
 func TestTeamsSetupGuideContent(t *testing.T) {
 	const msaAppID = "11111111-2222-3333-4444-555555555555"
-	content := teamsSetupGuideContent("echo-agent", "echo-agent-bot-uai", msaAppID, true)
+	content := teamsSetupGuideContent("echo-agent", "echo-agent-bot-uai", msaAppID, "src", true)
 
 	// The bot id is the one value the user must not get wrong: it has to be
 	// carried verbatim into the Teams manifest bots[].botId.
@@ -46,10 +46,15 @@ func TestTeamsSetupGuideContent(t *testing.T) {
 		!strings.Contains(content, "pack-and-sideload-teams-app.sh") {
 		t.Errorf("guide (scripts generated) must advertise the fast-path script")
 	}
+	// The run commands are relative to the agent source folder, so the guide must
+	// tell the user to cd there (azd deploy runs from the project root).
+	if !strings.Contains(content, "cd src") {
+		t.Errorf("guide (scripts generated) must include the 'cd <service>' hint; got:\n%s", content)
+	}
 
 	// When no script was generated (e.g. a name collision preserved a user file),
 	// the guide must NOT tell the user to run a script it did not write.
-	noScript := teamsSetupGuideContent("echo-agent", "echo-agent-bot-uai", msaAppID, false)
+	noScript := teamsSetupGuideContent("echo-agent", "echo-agent-bot-uai", msaAppID, "src", false)
 	if strings.Contains(noScript, "Fastest path") ||
 		strings.Contains(noScript, "./pack-and-sideload-teams-app.sh") {
 		t.Errorf("guide (no scripts) must not advertise a script azd did not generate")

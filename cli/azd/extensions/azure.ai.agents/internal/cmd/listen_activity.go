@@ -162,7 +162,7 @@ func writeTeamsSetupGuide(
 		log.Printf("postdeploy: skipping Teams setup guide: %v", err)
 		return ""
 	}
-	content := teamsSetupGuideContent(agentName, botName, msaAppID, scriptsGenerated)
+	content := teamsSetupGuideContent(agentName, botName, msaAppID, svc.GetRelativePath(), scriptsGenerated)
 	// Atomically claim/refresh the guide keyed on the agent (service) name, which
 	// is stable across redeploys AND azd environments. A guide a different
 	// activity service generated for another agent (shared source dir) and
@@ -215,16 +215,31 @@ var teamsSetupGuideTmpl = template.Must(
 // detail. The single value the user must not get wrong is the bot id: a Teams
 // app manifest's bots[].botId MUST equal this bot's msaAppId, which azd bound to
 // the agent instance identity.
-func teamsSetupGuideContent(agentName, botName, msaAppID string, scriptsGenerated bool) string {
+func teamsSetupGuideContent(agentName, botName, msaAppID, serviceRelPath string, scriptsGenerated bool) string {
 	var buf bytes.Buffer
+	// The generated script lives in the agent's source folder; the guide's run
+	// commands are relative to it, so surface a 'cd' target the user can use from
+	// the project root (where azd deploy runs). Fall back to "." when the service
+	// is at the project root so the hint stays a valid no-op.
+	relPath := serviceRelPath
+	if strings.TrimSpace(relPath) == "" {
+		relPath = "."
+	}
 	// Inputs are azd-controlled resource names and the template is compile-time
 	// embedded, so execution cannot realistically fail.
 	_ = teamsSetupGuideTmpl.Execute(&buf, struct {
 		AgentName        string
 		BotName          string
 		MsaAppID         string
+		ServiceRelPath   string
 		ScriptsGenerated bool
-	}{AgentName: agentName, BotName: botName, MsaAppID: msaAppID, ScriptsGenerated: scriptsGenerated})
+	}{
+		AgentName:        agentName,
+		BotName:          botName,
+		MsaAppID:         msaAppID,
+		ServiceRelPath:   relPath,
+		ScriptsGenerated: scriptsGenerated,
+	})
 	return buf.String()
 }
 

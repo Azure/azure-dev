@@ -319,19 +319,19 @@ func preferredSideloadScript(scriptPaths []string) string {
 	return ""
 }
 
-// sideloadRunCommand returns a runnable, path-safe invocation of the generated
-// script for a user-facing hint. The .ps1 branch uses `powershell -File "..."`:
-// powershell.exe ships with every Windows install (unlike PowerShell 7's pwsh),
-// and an explicit interpreter call (rather than the PowerShell-only `&` call
-// operator) also runs from cmd.exe or Git Bash. The path is wrapped in double
-// quotes -- which cmd.exe, powershell, and bash all treat as grouping -- so a
-// path with spaces stays a single argument; backslashes are left intact (unlike
-// %q) so the Windows path resolves. The .sh branch stays single-quoted for POSIX
-// shells. Windows filenames cannot contain a double quote, so no escaping of the
-// quote character is needed. See cli/azd/AGENTS.md ("Shell-safe output").
+// sideloadRunCommand returns a runnable, expansion-safe invocation of the
+// generated script for a user-facing hint. The .ps1 branch targets PowerShell
+// (where a .ps1 is run and where azd's own output is typically shown) and uses
+// powershell.exe, which ships with every Windows install (unlike PowerShell 7's
+// pwsh) and takes an explicit -File path (not the PowerShell-only `&` call
+// operator). The path is wrapped in SINGLE quotes so PowerShell treats it as a
+// literal -- no `$name`, `$()`, or backtick expansion -- while backslashes stay
+// intact so the Windows path resolves; an embedded single quote is escaped by
+// doubling it (PowerShell literal-string rule). The .sh branch uses a POSIX
+// single-quoted literal. See cli/azd/AGENTS.md ("Shell-safe output").
 func sideloadRunCommand(scriptPath string) string {
 	if strings.HasSuffix(scriptPath, ".ps1") {
-		return `powershell -NoProfile -File "` + scriptPath + `"`
+		return `powershell -NoProfile -File '` + strings.ReplaceAll(scriptPath, "'", "''") + `'`
 	}
 	// POSIX single-quoted literal: close the quote, add an escaped ', reopen.
 	return "bash '" + strings.ReplaceAll(scriptPath, "'", `'\''`) + "'"

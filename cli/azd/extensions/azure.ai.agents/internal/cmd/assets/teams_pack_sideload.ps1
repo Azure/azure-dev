@@ -37,69 +37,71 @@ if ($shortDesc.Length -gt 80) { $shortDesc = $shortDesc.Substring(0, 80) }
 # last + 1) and encode it into two bounded components (Teams caps each at 65535):
 # minor = N / 65536, patch = N % 65536. N ~ epoch keeps minor < 65535 until ~2106.
 $stateFile = Join-Path $PSScriptRoot ".teams-app-version-$TeamsAppId"
-# Serialize the read-increment-write below so two concurrent runs cannot compute
-# the same version. New-Item -ItemType Directory fails if the directory already
-# exists, giving an atomic create-or-fail lock. The critical section is a few
-# milliseconds, so a lock held past the timeout is almost certainly a crashed run
-# -- reclaim it and proceed. try/finally guarantees release (PowerShell runs
-# finally blocks even on 'exit').
+# Serialize the read-increment-write of the counter so two concurrent runs cannot
+# compute the same version. New-Item -ItemType Directory fails if the directory
+# already exists, giving an atomic create-or-fail lock. We NEVER force-delete the
+# lock to reclaim it: force-removal could evict a live holder or race two waiters.
+# Instead, if we cannot acquire it within the timeout -- which only happens if a
+# crashed run left it behind -- we fall back to an epoch-only version (still
+# monotonic second-over-second) and leave the counter file untouched. The lock
+# directory is created empty and only ever removed by its own holder via a
+# non-recursive delete (which fails on a non-empty directory, so it cannot delete
+# unrelated contents). try/finally guarantees release (PowerShell runs finally
+# blocks even on 'exit').
 $lockDir = "$stateFile.lock"
 $versionLocked = $false
+$nowEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+$verN = [int64]$nowEpoch
 try {
     $lockWait = 0
-    while ($true) {
+    while ($lockWait -lt 100) {
         try {
             New-Item -ItemType Directory -Path $lockDir -ErrorAction Stop | Out-Null
             $versionLocked = $true
             break
         } catch {
             $lockWait++
-            if ($lockWait -ge 50) {
-                # Held for ~5s -- treat as a stale lock from a crashed run.
-                Remove-Item -LiteralPath $lockDir -Recurse -Force -ErrorAction SilentlyContinue
-                try {
-                    New-Item -ItemType Directory -Path $lockDir -ErrorAction Stop | Out-Null
-                    $versionLocked = $true
-                } catch {
-                    $versionLocked = $false
-                }
-                break
-            }
             Start-Sleep -Milliseconds 100
         }
     }
 
-    $nowEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-    $lastN = [int64]0
-    # Only read the counter from a plain regular file -- never follow a symlink or
-    # reparse point, and ignore directories.
-    $stateItem = Get-Item -LiteralPath $stateFile -Force -ErrorAction SilentlyContinue
-    $stateIsLink = $stateItem -and ($stateItem.LinkType -or ($stateItem.Attributes -band [IO.FileAttributes]::ReparsePoint))
-    $stateIsDir = $stateItem -and $stateItem.PSIsContainer
-    if ($stateItem -and -not $stateIsLink -and -not $stateIsDir) {
-        $raw = (Get-Content -LiteralPath $stateFile -Raw -ErrorAction SilentlyContinue) -replace '[^0-9]', ''
-        if ($raw) { $lastN = [int64]$raw }
-    }
-    $verN = [int64][math]::Max($nowEpoch, $lastN + 1)
-    $verMinor = [int]([math]::Floor($verN / 65536))
-    $verPatch = [int]($verN % 65536)
-    $pkgVersion = "1.$verMinor.$verPatch"
-    if ($verMinor -gt 65535 -or $verPatch -gt 65535) {
-        Write-Error "Computed manifest version $pkgVersion exceeds the Teams component limit (65535)."
-        exit 1
-    }
-    # Persist the counter, but never overwrite a pre-existing symlink/reparse point
-    # or directory (a planted link could redirect the write to an arbitrary file).
-    # Write to a temp file and move it into place so the link itself is replaced.
-    if (-not $stateIsLink -and -not $stateIsDir) {
-        $stateTmp = "$stateFile.$PID.tmp"
-        Set-Content -LiteralPath $stateTmp -Value ([string]$verN) -NoNewline -ErrorAction SilentlyContinue
-        Move-Item -LiteralPath $stateTmp -Destination $stateFile -Force -ErrorAction SilentlyContinue
+    # Only bump/persist the monotonic counter while we actually hold the lock. If
+    # we fell through without it (stuck lock from a crashed run), use epoch alone.
+    if ($versionLocked) {
+        $lastN = [int64]0
+        # Only read the counter from a plain regular file -- never follow a symlink
+        # or reparse point, and ignore directories.
+        $stateItem = Get-Item -LiteralPath $stateFile -Force -ErrorAction SilentlyContinue
+        $stateIsLink = $stateItem -and ($stateItem.LinkType -or ($stateItem.Attributes -band [IO.FileAttributes]::ReparsePoint))
+        $stateIsDir = $stateItem -and $stateItem.PSIsContainer
+        if ($stateItem -and -not $stateIsLink -and -not $stateIsDir) {
+            $raw = (Get-Content -LiteralPath $stateFile -Raw -ErrorAction SilentlyContinue) -replace '[^0-9]', ''
+            if ($raw) { $lastN = [int64]$raw }
+        }
+        $verN = [int64][math]::Max($nowEpoch, $lastN + 1)
+        # Persist the counter, but never overwrite a pre-existing symlink/reparse
+        # point or directory (a planted link could redirect the write to an
+        # arbitrary file). Write to a temp file and move it into place so the link
+        # itself is replaced.
+        if (-not $stateIsLink -and -not $stateIsDir) {
+            $stateTmp = "$stateFile.$PID.tmp"
+            Set-Content -LiteralPath $stateTmp -Value ([string]$verN) -NoNewline -ErrorAction SilentlyContinue
+            Move-Item -LiteralPath $stateTmp -Destination $stateFile -Force -ErrorAction SilentlyContinue
+        }
     }
 } finally {
     if ($versionLocked) {
-        Remove-Item -LiteralPath $lockDir -Recurse -Force -ErrorAction SilentlyContinue
+        # Non-recursive delete: removes our own (empty) lock directory only and
+        # fails safely if anything unexpected is inside it.
+        try { [System.IO.Directory]::Delete($lockDir, $false) } catch { }
     }
+}
+$verMinor = [int]([math]::Floor($verN / 65536))
+$verPatch = [int]($verN % 65536)
+$pkgVersion = "1.$verMinor.$verPatch"
+if ($verMinor -gt 65535 -or $verPatch -gt 65535) {
+    Write-Error "Computed manifest version $pkgVersion exceeds the Teams component limit (65535)."
+    exit 1
 }
 
 Write-Host "Agent:        $AgentName"

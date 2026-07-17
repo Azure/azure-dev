@@ -2,11 +2,6 @@ module azureaiagent
 
 go 1.26.4
 
-// TEMPORARY: local validation against the in-tree azd core (proto change for
-// provisioning preview changes). Remove before merging — the core change must
-// land first, then bump the azd dependency.
-replace github.com/azure/azure-dev/cli/azd => ../../
-
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.0-beta.3
@@ -17,7 +12,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v1.3.0-beta.3
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0
-	github.com/azure/azure-dev/cli/azd v1.24.3
+	github.com/azure/azure-dev/cli/azd v1.27.1
 	github.com/braydonk/yaml v0.9.0
 	github.com/drone/envsubst v1.0.3
 	github.com/fatih/color v1.18.0

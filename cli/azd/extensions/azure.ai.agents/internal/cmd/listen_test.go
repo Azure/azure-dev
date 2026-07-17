@@ -70,7 +70,7 @@ func TestPostdeployHandler_MissingTelemetryEnv_ReturnsNil(t *testing.T) {
 	}{
 		{
 			name:   "FOUNDRY_PROJECT_ENDPOINT not set",
-			values: nil, // GetValue returns NotFound for every key
+			values: nil, // GetValue returns an empty value for every missing key
 		},
 		{
 			name:   "FOUNDRY_PROJECT_ENDPOINT empty",

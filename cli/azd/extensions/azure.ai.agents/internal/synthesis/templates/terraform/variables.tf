@@ -58,6 +58,19 @@ variable "deployments" {
   default = []
 }
 
+variable "connections" {
+  description = "Foundry project connections to create (host: azure.ai.connection services)."
+  type = list(object({
+    name        = string
+    category    = string
+    target      = string
+    authType    = string
+    credentials = optional(any)
+    metadata    = optional(map(string))
+  }))
+  default = []
+}
+
 variable "principal_id" {
   description = "Object id of the developer running azd. When empty, the developer role assignment is skipped."
   type        = string

@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/project"
 
@@ -37,6 +38,17 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		}).
 		WithProvisioningProvider(project.FoundryProviderName, func() azdext.ProvisioningProvider {
 			return project.NewFoundryProvisioningProvider(azdClient)
+		}).
+		WithValidationCheck(azdext.ValidationCheckRegistration{
+			// Provider-agnostic check: runs before provisioning regardless of the
+			// provisioning provider. This matters because the azure.ai.agents
+			// extension provisions through its own microsoft.foundry provider,
+			// which never triggers the Bicep-only "arm-provision" checks.
+			CheckType: azdext.ValidationCheckTypeProvision,
+			RuleID:    project.ResourceGroupLocationRuleID,
+			Factory: func() azdext.ValidationCheckProvider {
+				return project.NewResourceGroupLocationCheck(azdClient)
+			},
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return preprovisionHandler(ctx, azdClient, args)
@@ -196,6 +208,13 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	}
 	if err := envUpdate(ctx, azdClient, args.Project, svc, deployments, connections); err != nil {
 		return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
+	}
+
+	// Capture the current session so it can be resumed on the newly deployed
+	// version after deploy (see session_carryover.go). Best-effort; hosted
+	// agents only.
+	if isHostedAgentService(svc, args.Project) {
+		captureSessionForCarryover(ctx, azdClient, svc)
 	}
 
 	// Run developer RBAC pre-flight checks only for hosted agent deployments.
@@ -386,6 +405,12 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 			},
 		)
 	}()
+
+	// Resume the pre-deploy session on the newly deployed version so the next
+	// invoke continues on the new code with the session's persisted volume
+	// intact (see session_carryover.go). Best-effort; never blocks deploy.
+	agentClient := agent_api.NewAgentClient(endpoint, cred)
+	carryOverSessionAfterDeploy(ctx, azdClient, agentClient, svc, envName)
 
 	return nil
 }

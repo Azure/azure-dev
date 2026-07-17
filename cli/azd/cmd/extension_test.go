@@ -659,7 +659,7 @@ func TestExtensionStatus(t *testing.T) {
 	}{
 		{"not installed", false, false, false, statusNotInstall},
 		{"up to date", true, false, false, statusUpToDate},
-		{"update available", true, true, false, statusUpdate},
+		{"update available", true, true, false, statusUpgrade},
 		{"incompatible", true, false, true, statusIncompat},
 	}
 	for _, tt := range tests {
@@ -679,7 +679,7 @@ func TestExtensionStatusColor(t *testing.T) {
 
 	// Verify no panics and non-empty colored output for each status value.
 	for _, s := range []string{
-		statusUpToDate, statusUpdate, statusIncompat, statusNotInstall,
+		statusUpToDate, statusUpgrade, statusIncompat, statusNotInstall,
 	} {
 		result := extensionStatusColor(s)
 		assert.NotEmpty(t, result, "color function should return non-empty for %q", s)

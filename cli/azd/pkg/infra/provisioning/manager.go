@@ -110,8 +110,8 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 
 	skippedDueToDeploymentState := deployResult.SkippedReason == DeploymentStateSkipped
 
-	if deployResult.SkippedReason == PreflightAbortedSkipped {
-		// Preflight intentionally aborted the deployment. There is no Deployment to process.
+	if deployResult.SkippedReason == ProvisionValidationCanceledSkipped {
+		// Validation intentionally canceled provisioning. There is no Deployment to process.
 		return deployResult, nil
 	}
 

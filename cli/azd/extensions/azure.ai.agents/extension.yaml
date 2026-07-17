@@ -5,8 +5,8 @@ displayName: Foundry agents (Beta)
 description: Ship agents with Microsoft Foundry from your terminal. (Beta)
 usage: azd ai agent <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
-version: 1.0.0-beta.5
-requiredAzdVersion: ">=1.27.0"
+version: 1.0.0-beta.6
+requiredAzdVersion: ">=1.27.1"
 dependencies:
   - id: azure.ai.inspector
     version: "~1.0.0-beta.1"
@@ -17,6 +17,7 @@ capabilities:
   - mcp-server
   - service-target-provider
   - provisioning-provider
+  - validation-provider
   - metadata
 providers:
   - name: azure.ai.agent

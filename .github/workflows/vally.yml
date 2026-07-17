@@ -1,5 +1,5 @@
+# Evals for azd+LLM features, using vally
 name: "Evals: vally"
-description: Evals for azd+LLM features, using vally
 on:
   workflow_dispatch:
   pull_request:

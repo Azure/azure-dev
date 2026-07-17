@@ -7,3 +7,10 @@ paths:
   .github/workflows/agentics-maintenance.yml:
     ignore:
       - ".+"
+
+  # `copilot-requests` is a valid GitHub Actions permission scope (used to grant
+  # workflows access to Copilot-related requests), but this actionlint version
+  # doesn't know about it yet. Remove this once actionlint adds support.
+  .github/workflows/vally.yml:
+    ignore:
+      - 'unknown permission scope "copilot-requests"'

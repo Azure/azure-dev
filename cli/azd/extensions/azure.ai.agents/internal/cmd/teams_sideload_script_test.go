@@ -90,8 +90,8 @@ func TestWriteTeamsSideloadScripts(t *testing.T) {
 	}
 
 	paths := writeTeamsSideloadScripts(proj, svc, "echo-agent", "echo-agent-bot-uai", "app-id")
-	if len(paths) != 2 {
-		t.Fatalf("expected 2 scripts written, got %d: %v", len(paths), paths)
+	if len(paths) != teamsSideloadTargets {
+		t.Fatalf("expected %d scripts written, got %d: %v", teamsSideloadTargets, len(paths), paths)
 	}
 
 	wantFiles := map[string]bool{
@@ -136,6 +136,16 @@ func TestWriteTeamsSideloadScriptsPreservesUserFiles(t *testing.T) {
 	}
 
 	paths := writeTeamsSideloadScripts(proj, svc, "echo-agent", "echo-agent-bot-uai", "app-id")
+
+	// The bash name collided with a user file, so only the pwsh script is written:
+	// a partial write must report fewer than teamsSideloadTargets so the caller
+	// does not advertise the fast path.
+	if len(paths) != 1 {
+		t.Fatalf("expected only the non-colliding script to be written, got %d: %v", len(paths), paths)
+	}
+	if len(paths) == teamsSideloadTargets {
+		t.Errorf("a partial write must not equal teamsSideloadTargets (%d)", teamsSideloadTargets)
+	}
 
 	for _, p := range paths {
 		if p == userBash {

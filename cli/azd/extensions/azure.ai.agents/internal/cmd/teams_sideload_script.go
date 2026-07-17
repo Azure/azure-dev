@@ -25,6 +25,14 @@ const (
 	teamsSideloadScriptPwsh = "pack-and-sideload-teams-app.ps1"
 	teamsSideloadScriptBash = "pack-and-sideload-teams-app.sh"
 
+	// teamsSideloadTargets is the number of pack+sideload scripts
+	// writeTeamsSideloadScripts emits (one per supported shell). The guide and
+	// next-steps output advertise all of them by name, so the fast path is only
+	// offered when every target was written -- a partial write (e.g. one script
+	// collided with a user-owned file) must not advertise a file azd did not
+	// generate.
+	teamsSideloadTargets = 2
+
 	// teamsSideloadGeneratedMarker appears in the header of both generated
 	// scripts; writeTeamsSideloadScripts only overwrites a file that contains it,
 	// so a user-owned file sharing the script name is never clobbered.

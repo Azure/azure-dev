@@ -136,7 +136,10 @@ func ensureActivityBot(
 	// section only advertises a script azd actually wrote (a pre-existing
 	// user-owned file with that name is preserved, not overwritten).
 	scriptPaths := writeTeamsSideloadScripts(proj, svc, agentName, botName, msaAppID)
-	scriptsGenerated := len(scriptPaths) > 0
+	// Only advertise the fast path when every script azd promises was actually
+	// written. A partial write (e.g. one script name collided with a user-owned
+	// file) must not advertise a filename azd did not generate.
+	scriptsGenerated := len(scriptPaths) == teamsSideloadTargets
 	guidePath := writeTeamsSetupGuide(proj, svc, agentName, botName, msaAppID, scriptsGenerated)
 	printTeamsNextSteps(botName, msaAppID, guidePath, preferredSideloadScript(scriptPaths), scriptsGenerated)
 	return nil
@@ -202,7 +205,10 @@ func printTeamsNextSteps(botName, msaAppID, guidePath, scriptPath string, script
 	fmt.Println(output.WithHighLightFormat("\nTeams bot ready."))
 	fmt.Printf("  Azure Bot:  %s (Microsoft Teams channel enabled)\n", botName)
 	fmt.Printf("  Bot ID:     %s\n", msaAppID)
-	if scriptPath != "" {
+	// Only offer the fast path when every advertised script was generated and the
+	// current-OS one is among them; otherwise surface the collision so the user
+	// is not pointed at a script (or a same-named user file) azd did not write.
+	if scriptsGenerated && scriptPath != "" {
 		fmt.Println(output.WithGrayFormat(fmt.Sprintf(
 			"  Fast path (package + sideload the Teams app for you): run %s", sideloadRunCommand(scriptPath),
 		)))

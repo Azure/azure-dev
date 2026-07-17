@@ -457,9 +457,9 @@ func collectServices(
 // for next-step hint purposes. The lookup is best-effort: missing or
 // malformed manifests, empty protocols sections, or any I/O error all return
 // an empty string, and the resolver falls back to ProtocolResponses. When the
-// manifest declares multiple protocols, ProtocolResponses wins over
-// ProtocolInvocations so the suggested payload works on the broadest set of
-// agents.
+// manifest declares multiple protocols, the priority is ProtocolResponses >
+// ProtocolInvocations > ProtocolInvocationsWS so that azd-invocable protocols
+// are preferred and the selection is order-independent.
 func loadServiceProtocol(projectPath, relativePath string) string {
 	if projectPath == "" {
 		return ""
@@ -478,18 +478,22 @@ func loadServiceProtocol(projectPath, relativePath string) string {
 	}
 
 	sawInvocations := false
+	sawInvocationsWS := false
 	for _, p := range hosted.Protocols {
 		switch strings.TrimSpace(p.Protocol) {
 		case ProtocolResponses:
 			return ProtocolResponses
-		case ProtocolInvocationsWS:
-			return ProtocolInvocationsWS
 		case ProtocolInvocations:
 			sawInvocations = true
+		case ProtocolInvocationsWS:
+			sawInvocationsWS = true
 		}
 	}
 	if sawInvocations {
 		return ProtocolInvocations
+	}
+	if sawInvocationsWS {
+		return ProtocolInvocationsWS
 	}
 	return ""
 }

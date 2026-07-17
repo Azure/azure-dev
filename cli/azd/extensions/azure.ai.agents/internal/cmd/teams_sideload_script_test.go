@@ -118,6 +118,62 @@ func TestWriteTeamsSideloadScripts(t *testing.T) {
 	}
 }
 
+func TestWriteTeamsSideloadScriptsPreservesUserFiles(t *testing.T) {
+	root := t.TempDir()
+	proj := &azdext.ProjectConfig{Path: root}
+	svc := &azdext.ServiceConfig{Name: "echo-agent", RelativePath: "src"}
+	srcDir := filepath.Join(root, "src")
+	if err := os.MkdirAll(srcDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	// A pre-existing user-owned file that happens to share the bash script name
+	// (no azd-generated marker) must be left untouched and not reported as written.
+	userBash := filepath.Join(srcDir, teamsSideloadScriptBash)
+	userContent := "#!/usr/bin/env bash\necho \"my own script\"\n"
+	if err := os.WriteFile(userBash, []byte(userContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	paths := writeTeamsSideloadScripts(proj, svc, "echo-agent", "echo-agent-bot-uai", "app-id")
+
+	for _, p := range paths {
+		if p == userBash {
+			t.Errorf("clobbered user-owned file %q was reported as written", p)
+		}
+	}
+	got, err := os.ReadFile(userBash)
+	if err != nil {
+		t.Fatalf("user file was removed: %v", err)
+	}
+	if string(got) != userContent {
+		t.Errorf("user-owned file was overwritten:\n got: %q\nwant: %q", string(got), userContent)
+	}
+
+	// A previously azd-generated script (carrying the marker) is refreshed in place.
+	genContent := "# " + teamsSideloadGeneratedMarker + "\n# stale\n"
+	if err := os.WriteFile(userBash, []byte(genContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	paths = writeTeamsSideloadScripts(proj, svc, "echo-agent", "echo-agent-bot-uai", "app-id")
+	refreshed := false
+	for _, p := range paths {
+		if p == userBash {
+			refreshed = true
+		}
+	}
+	if !refreshed {
+		t.Errorf("expected the azd-generated script %q to be refreshed", userBash)
+	}
+	got, err = os.ReadFile(userBash)
+	if err != nil {
+		t.Fatalf("generated script missing after refresh: %v", err)
+	}
+	if !strings.Contains(string(got), "app-id") || strings.Contains(string(got), "stale") {
+		t.Errorf("azd-generated script was not refreshed in place: %q", string(got))
+	}
+}
+
 func TestPreferredSideloadScript(t *testing.T) {
 	pwsh := filepath.Join("x", teamsSideloadScriptPwsh)
 	bash := filepath.Join("x", teamsSideloadScriptBash)

@@ -7,15 +7,15 @@ on:
     paths:
       - "cli/azd/test/evals/**"
       - ".github/actions/vally-eval/**"
-      - ".github/workflows/evals-ci.yml"
+      - ".github/workflows/vally-ci.yml"
 
 permissions:
   contents: read
   copilot-requests: write
 
 concurrency:
-  group: evals-ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: vally-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true 
 
 jobs:
   evals:

@@ -597,7 +597,7 @@ Important things to know when working with azd telemetry data. These are sourced
 
 `infra.provider` is intentionally emitted with different shapes depending on the command, so consumers must handle both:
 
-- **`provision` / `up` / `down`** emit a **string array** — the sorted, de-duplicated set of IaC providers the command's layers resolve to (e.g. `["bicep"]`, or `["bicep","terraform"]` for a multi-layer project that mixes providers). This deliberately replaces an earlier single `"mixed"` marker so the specific combination is preserved while staying low-cardinality (built-in provider names are a fixed enum).
+- **`provision` / `up` / `down`** emit a **string array** — the sorted, de-duplicated set of IaC providers the command's layers resolve to (e.g. `["bicep"]`, or `["bicep","terraform"]` for a multi-layer project that mixes providers). This deliberately replaces an earlier single `"mixed"` marker so the specific combination is preserved while staying low-cardinality (built-in provider names are a fixed enum). The deprecated wrappers `infra create` (delegates to `provision`) and `infra delete` (delegates to `down`) emit the same array on their `cmd.infra.create` / `cmd.infra.delete` spans.
 - **`infra generate` / `infra synth`** emit a **single string** — the value read from `azure.yaml`'s `infra.provider` (`auto` when unset), with non-built-in (extension) providers bucketed to `custom` so a raw user-chosen name is never emitted.
 
 Two consequences to be aware of:
@@ -605,7 +605,7 @@ Two consequences to be aware of:
 - The same key is a scalar `string` on some commands and a `string[]` on others. Queries must accept both (e.g. treat a scalar as a one-element set).
 - Non-built-in (extension) providers are bucketed to `custom` **before** de-duplication, so a project that combines two *different* extension providers records a single `["custom"]` — the raw names are never emitted and the two are not distinguished.
 
-In all cases the value is attached **directly to that command's span** (not the process-global usage bag), so it is scoped to `cmd.provision` / `cmd.up` / `cmd.down` / `cmd.infra.generate` only (both `infra generate` and its `synth` alias resolve to the canonical `cmd.infra.generate` span). It is never copied onto sibling in-process child commands — for example, a custom `workflows.up` running `provision` then `deploy` does **not** tag `cmd.deploy` or `cmd.package` with `infra.provider`.
+In all cases the value is attached **directly to that command's span** (not the process-global usage bag), so it is scoped to `cmd.provision` / `cmd.up` / `cmd.down` / `cmd.infra.generate` (and the deprecated wrappers `cmd.infra.create` / `cmd.infra.delete`) only (both `infra generate` and its `synth` alias resolve to the canonical `cmd.infra.generate` span). It is never copied onto sibling in-process child commands — for example, a custom `workflows.up` running `provision` then `deploy` does **not** tag `cmd.deploy` or `cmd.package` with `infra.provider`.
 
 ### OperationId Reuse in Retry/Troubleshoot Flows
 

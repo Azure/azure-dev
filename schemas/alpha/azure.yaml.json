@@ -294,7 +294,7 @@
                         "title": "Environment variables for the service",
                         "description": "Optional. A map of environment variable names to values. Supports environment variable substitution.",
                         "additionalProperties": {
-                            "type": "string"
+                            "type": ["string", "boolean", "number", "null"]
                         }
                     },
                     "hooks": {

@@ -82,6 +82,8 @@ words:
   - protoimpl
   - protojson
   - protoreflect
+  - protowire
+  - projectconfig
   - SNAPPROCESS
   - structpb
   - subtest

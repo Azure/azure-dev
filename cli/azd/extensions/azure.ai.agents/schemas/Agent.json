@@ -18,7 +18,9 @@
         "env": {
           "type": "object",
           "description": "Environment variables for the agent runtime. Values may use ${VAR} (azd env) or ${{...}} (Foundry server-side resolution).",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": ["string", "boolean", "number", "null"]
+          }
         },
         "toolboxes": {
           "type": "array",

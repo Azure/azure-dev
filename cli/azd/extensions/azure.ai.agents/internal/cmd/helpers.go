@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
+	"azureaiagent/internal/pkg/projectconfig"
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -871,6 +873,7 @@ type ServiceRunContext struct {
 	ServiceName    string // the resolved service name (from azure.yaml)
 	ProjectDir     string // absolute path to the service source directory
 	StartupCommand string // startupCommand from AdditionalProperties (may be empty)
+	Environment    map[string]string
 	// Definition is the resolved agent definition (from the inline azure.yaml
 	// entry or a legacy agent.yaml). It is nil when no definition can be resolved.
 	Definition *agent_yaml.ContainerAgent
@@ -883,6 +886,20 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	if err != nil {
 		return nil, err
 	}
+	if err := projectpkg.ResolveServiceConfigInPlace(
+		svc,
+		project.Path,
+	); err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf(
+				"failed to resolve agent service %s: %s",
+				svc.Name,
+				err,
+			),
+			"fix the agent service configuration in azure.yaml",
+		)
+	}
 
 	projectDir, err := paths.JoinAllowRoot(project.Path, svc.RelativePath)
 	if err != nil {
@@ -894,8 +911,28 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	}
 
 	var startupCmd string
-	if agentConfig, cfgErr := projectpkg.LoadServiceTargetAgentConfig(svc); cfgErr == nil {
+	serviceEnv := map[string]string{}
+	if agentConfig, cfgErr := projectpkg.LoadServiceTargetAgentConfig(
+		svc,
+	); cfgErr == nil {
 		startupCmd = agentConfig.StartupCommand
+		maps.Copy(serviceEnv, agentConfig.Environment)
+	}
+	serviceEnv, err = loadServiceRunEnvironment(
+		project.Path,
+		svc,
+		serviceEnv,
+	)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf(
+				"failed to load environment for %s: %s",
+				svc.Name,
+				err,
+			),
+			"fix the service env configuration in azure.yaml",
+		)
 	}
 
 	var definition *agent_yaml.ContainerAgent
@@ -910,8 +947,33 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 		ServiceName:    svc.Name,
 		ProjectDir:     projectDir,
 		StartupCommand: startupCmd,
+		Environment:    serviceEnv,
 		Definition:     definition,
 	}, nil
+}
+
+func loadServiceRunEnvironment(
+	projectRoot string,
+	svc *azdext.ServiceConfig,
+	base map[string]string,
+) (map[string]string, error) {
+	env := maps.Clone(base)
+	if env == nil {
+		env = map[string]string{}
+	}
+	raw, err := projectconfig.LoadServiceEnvironment(
+		projectRoot,
+		svc.GetName(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if raw == nil {
+		maps.Copy(env, svc.GetEnvironment())
+	} else {
+		maps.Copy(env, raw)
+	}
+	return env, nil
 }
 
 // toServiceKey converts a service name into the env var key format (uppercase, underscores).

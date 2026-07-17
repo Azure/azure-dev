@@ -8,7 +8,7 @@
       "type": "object",
       "description": "Environment variables as key-value pairs",
       "additionalProperties": {
-        "type": ["string", "boolean", "number", "null"]
+        "type": "string"
       }
     },
     "container": {

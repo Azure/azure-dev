@@ -144,12 +144,13 @@ func writeTeamsSideloadScripts(
 
 		// Do not clobber a user-owned file that happens to share this name. Only
 		// overwrite a regular file that carries our generated marker; skip a
-		// symlink or any existing file we did not generate and report the
-		// collision so the user can rename or remove it.
+		// symlink, FIFO, device, directory, or any regular file we did not
+		// generate, and report the collision so the user can rename or remove it.
 		if info, statErr := os.Lstat(scriptPath); statErr == nil {
-			if info.Mode()&os.ModeSymlink != 0 {
+			if !info.Mode().IsRegular() {
 				log.Printf(
-					"postdeploy: %q is a symlink; leaving it untouched (rename it to get the Teams sideload script)",
+					"postdeploy: %q is not a regular file; leaving it untouched "+
+						"(rename it to get the Teams sideload script)",
 					scriptPath,
 				)
 				continue

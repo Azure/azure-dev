@@ -50,7 +50,10 @@ Write-Host "Bot ID:       $BotId"
 Write-Host "Teams app id: $TeamsAppId"
 
 # ---- Build the Teams app package in a temp dir ------------------------------
-$buildDir = Join-Path ([System.IO.Path]::GetTempPath()) "teams-app-$AgentName"
+# Use a unique per-invocation directory (like the Bash script's mktemp -d) so
+# concurrent runs -- including two different projects that share an agent name --
+# never share a manifest/zip or overwrite each other's package.
+$buildDir = Join-Path ([System.IO.Path]::GetTempPath()) ("teams-app-" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 
 $manifest = [ordered]@{

@@ -605,6 +605,8 @@ Two consequences to be aware of:
 - The same key is a scalar `string` on some commands and a `string[]` on others. Queries must accept both (e.g. treat a scalar as a one-element set).
 - Non-built-in (extension) providers are bucketed to `custom` **before** de-duplication, so a project that combines two *different* extension providers records a single `["custom"]` — the raw names are never emitted and the two are not distinguished.
 
+In all cases the value is attached **directly to that command's span** (not the process-global usage bag), so it is scoped to `cmd.provision` / `cmd.up` / `cmd.down` / `cmd.generate` / `cmd.synth` only. It is never copied onto sibling in-process child commands — for example, a custom `workflows.up` running `provision` then `deploy` does **not** tag `cmd.deploy` or `cmd.package` with `infra.provider`.
+
 ### OperationId Reuse in Retry/Troubleshoot Flows
 
 When `cmd.up` triggers `agent.troubleshoot` after a failure, the troubleshoot agent may retry the failed operation (e.g., `cmd.deploy`). These retries share the **same OperationId** as the parent `cmd.up` span.

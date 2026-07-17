@@ -72,12 +72,12 @@ These commands emit attributes or events beyond the global middleware span.
 | **Core Lifecycle** | | | | | |
 | `restore` | — | ✅ | ❌ | ❌ | Via hooks middleware |
 | `build` | — | ✅ | ❌ | ❌ | Via hooks middleware |
-| `provision` | — | ✅ | ✅ | ✅ | Emits `validation.provision`, 8 `arm.*` events, `aks.postprovision.skip`, and per-layer `provision.layer.*` counts (`count`, `max_parallel`, `safe_fallback_count`, `explicit_dependson_count`) for multi-layer infra |
+| `provision` | — | ✅ | ✅ | ✅ | Emits `validation.provision`, 8 `arm.*` events, `aks.postprovision.skip`, and per-layer `provision.layer.*` counts (`count`, `max_parallel`, `safe_fallback_count`, `explicit_dependson_count`) for multi-layer infra; sets `infra.provider` (resolved IaC provider slice) directly on the command span |
 | `package` | — | ✅ | ✅ | ✅ | Via hooks middleware; container service targets emit `container.credentials`, `container.publish`, `container.remotebuild` events |
 | `deploy` | — | ✅ | ✅ | ✅ | App Service zip-deploy emits `deploy.appservice.zip` (`deploy.appservice.linux`, `deploy.appservice.attempt`); container service targets emit `container.*` events |
 | `publish` | — | ✅ | ✅ | ✅ | Same as `deploy` (alias behavior) |
-| `up` | — | ✅ | ✅ | ✅ | Composes provision+deploy and inherits all their events; the up-graph runner emits `perf.provision_duration_ms`, `perf.deploy_duration_ms`, `perf.total_duration_ms` (`internal/cmd/up_graph.go`) |
-| `down` | — | ✅ | ✅ | ❌ | Teardown flow; pre/postdown lifecycle hooks emit `hooks.exec` via the hooks middleware; sets `infra.provider` (resolved IaC provider) as a usage attribute |
+| `up` | — | ✅ | ✅ | ✅ | Composes provision+deploy and inherits all their events; sets `infra.provider` (resolved IaC provider slice) directly on the `cmd.up` span; the up-graph runner emits `perf.provision_duration_ms`, `perf.deploy_duration_ms`, `perf.total_duration_ms` (`internal/cmd/up_graph.go`) |
+| `down` | — | ✅ | ✅ | ❌ | Teardown flow; pre/postdown lifecycle hooks emit `hooks.exec` via the hooks middleware; sets `infra.provider` (resolved IaC provider slice) directly on the command span |
 | **Add** | | | | | |
 | `add` | — | ✅ | ❌ | ❌ | Low priority |
 | **Completion** | | | | | |

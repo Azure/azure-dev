@@ -89,12 +89,16 @@ func newInfraGenerateAction(
 func (a *infraGenerateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Track infra provider from project configuration
 	// Emit "auto" when provider is empty, so we know auto-detection was used.
+	// Set it directly on the command span (not the process-global usage bag) so it stays scoped to
+	// this cmd.generate/cmd.synth span and cannot leak onto — or overwrite — the span-scoped
+	// infra.provider recorded by a sibling in-process command (for example a custom `workflows.up`
+	// step running provision/up alongside generate/synth).
 	if a.projectConfig != nil {
 		provider := string(a.projectConfig.Infra.Provider)
 		if provider == "" {
 			provider = "auto"
 		}
-		tracing.SetUsageAttributes(fields.InfraProviderKey.String(provider))
+		tracing.SetAttributesInContext(ctx, fields.InfraProviderKey.String(provider))
 	}
 
 	if a.calledAs == "synth" {

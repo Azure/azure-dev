@@ -232,7 +232,7 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 	commandsWithSpecificTelemetry := []string{
 		"auth login",        // auth.method
 		"build",             // (via hooks middleware)
-		"deploy",            // infra.provider, service attributes (via hooks middleware)
+		"deploy",            // service attributes (via hooks middleware)
 		"down",              // infra.provider (resolved provider, via provisioning manager)
 		"env list",          // env.count
 		"extension install", // extension.source.kind

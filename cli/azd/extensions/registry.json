@@ -5255,6 +5255,88 @@
               "version": "~0.0.1-preview"
             }
           ]
+        },
+        {
+          "version": "0.1.45-preview",
+          "requiredAzdVersion": "\u003e1.25.2",
+          "capabilities": [
+            "custom-commands",
+            "lifecycle-events",
+            "mcp-server",
+            "service-target-provider",
+            "metadata"
+          ],
+          "providers": [
+            {
+              "name": "azure.ai.agent",
+              "type": "service-target",
+              "description": "Deploys agents to the Foundry Agent Service"
+            }
+          ],
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AI agent project.",
+              "usage": "azd ai agent init"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "38e1e008a153296a40c956c77546039e3a551e4e8c211e1f43ec72058ee6c516"
+              },
+              "entryPoint": "azure-ai-agents-darwin-amd64",
+              "url": "https://github.com/kshitij-microsoft/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.45-preview/azure-ai-agents-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "c521116cfc39c6abbb8a078a3e9618f2ae47b9bd820467ddb0c7221e2fcc0e51"
+              },
+              "entryPoint": "azure-ai-agents-darwin-arm64",
+              "url": "https://github.com/kshitij-microsoft/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.45-preview/azure-ai-agents-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "fb5131b13ebda36aa78dd80a736988e1b6048630f2e095e1267db8941440b309"
+              },
+              "entryPoint": "azure-ai-agents-linux-amd64",
+              "url": "https://github.com/kshitij-microsoft/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.45-preview/azure-ai-agents-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "9c02102281e305d9bfea5b8ad749d5705d3b05702c858224afd3f2c1e0b07601"
+              },
+              "entryPoint": "azure-ai-agents-linux-arm64",
+              "url": "https://github.com/kshitij-microsoft/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.45-preview/azure-ai-agents-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "caec59ffc9fa356e36e69df19313e26b0ffaf96a2c085fb95978b59f8c4e327e"
+              },
+              "entryPoint": "azure-ai-agents-windows-amd64.exe",
+              "url": "https://github.com/kshitij-microsoft/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.45-preview/azure-ai-agents-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "bd8aae3b4dea8f6b51ebc8dfd1480c5ea6f948e5596c1a19d831926221832c4a"
+              },
+              "entryPoint": "azure-ai-agents-windows-arm64.exe",
+              "url": "https://github.com/kshitij-microsoft/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.45-preview/azure-ai-agents-windows-arm64.zip"
+            }
+          },
+          "dependencies": [
+            {
+              "id": "azure.ai.inspector",
+              "version": "~0.0.1-preview"
+            }
+          ]
         }
       ]
     },

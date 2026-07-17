@@ -28,7 +28,7 @@ func TestStreamManagedSSE_TextDeltas(t *testing.T) {
 	}, "\n")
 
 	var out strings.Builder
-	if err := streamManagedSSE(strings.NewReader(sse), &out); err != nil {
+	if _, err := streamManagedSSE(strings.NewReader(sse), &out); err != nil {
 		t.Fatalf("streamManagedSSE: %v", err)
 	}
 	got := out.String()
@@ -51,7 +51,7 @@ func TestStreamManagedSSE_NoText(t *testing.T) {
 	}, "\n")
 
 	var out strings.Builder
-	if err := streamManagedSSE(strings.NewReader(sse), &out); err != nil {
+	if _, err := streamManagedSSE(strings.NewReader(sse), &out); err != nil {
 		t.Fatalf("streamManagedSSE: %v", err)
 	}
 	if out.String() != "" {
@@ -72,10 +72,39 @@ func TestStreamManagedSSE_IgnoresMalformedData(t *testing.T) {
 	}, "\n")
 
 	var out strings.Builder
-	if err := streamManagedSSE(strings.NewReader(sse), &out); err != nil {
+	if _, err := streamManagedSSE(strings.NewReader(sse), &out); err != nil {
 		t.Fatalf("streamManagedSSE: %v", err)
 	}
 	if out.String() != "ok\n" {
 		t.Errorf("got %q, want %q", out.String(), "ok\n")
+	}
+}
+
+// TestStreamManagedSSE_CapturesResponseID asserts the response id is parsed
+// from lifecycle events so the caller can chain the next turn via
+// previous_response_id. The last id seen (from response.completed) wins.
+func TestStreamManagedSSE_CapturesResponseID(t *testing.T) {
+	sse := strings.Join([]string{
+		"event: response.created",
+		`data: {"type":"response.created","response":{"id":"resp_created"}}`,
+		"",
+		"event: response.output_text.delta",
+		`data: {"type":"response.output_text.delta","delta":"hi"}`,
+		"",
+		"event: response.completed",
+		`data: {"type":"response.completed","response":{"id":"resp_done"}}`,
+		"",
+	}, "\n")
+
+	var out strings.Builder
+	id, err := streamManagedSSE(strings.NewReader(sse), &out)
+	if err != nil {
+		t.Fatalf("streamManagedSSE: %v", err)
+	}
+	if id != "resp_done" {
+		t.Errorf("got response id %q, want %q", id, "resp_done")
+	}
+	if out.String() != "hi\n" {
+		t.Errorf("got %q, want %q", out.String(), "hi\n")
 	}
 }

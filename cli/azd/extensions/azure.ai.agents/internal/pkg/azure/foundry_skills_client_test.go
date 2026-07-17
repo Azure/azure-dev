@@ -69,6 +69,70 @@ func TestCreateSkillVersion_ErrorStatus(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestCreateSkillVersionFromFiles_UploadsEveryFile(t *testing.T) {
+	var captured *http.Request
+	var body []byte
+
+	client := newTestSkillsClient("https://proj.example.com", func(req *http.Request) (*http.Response, error) {
+		captured = req
+		if req.Body != nil {
+			body, _ = io.ReadAll(req.Body)
+		}
+		return &http.Response{
+			StatusCode: http.StatusCreated,
+			Body:       io.NopCloser(strings.NewReader(`{"id":"s-1","name":"my-skill","version":"1.0.0"}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	files := map[string][]byte{
+		"SKILL.md":            []byte("---\nname: my-skill\n---\nbody"),
+		"references/tone.md":  []byte("tone guidance"),
+		"assets/logo.svg":     []byte("<svg/>"),
+		"scripts/analysis.py": []byte("print('hi')"),
+	}
+
+	out, err := client.CreateSkillVersionFromFiles(t.Context(), "my-skill", files)
+	require.NoError(t, err)
+	require.Equal(t, "1.0.0", out.Version)
+
+	require.NotNil(t, captured)
+	require.Equal(t, http.MethodPost, captured.Method)
+	require.Equal(t, "/skills/my-skill/versions", captured.URL.EscapedPath())
+	require.Contains(t, captured.Header.Get("Content-Type"), "multipart/form-data")
+	require.Equal(t, skillsFeatureHeader, captured.Header.Get("Foundry-Features"))
+
+	// Every file in the bundle — not just SKILL.md — must be present in the
+	// multipart body. This is the regression this test guards: uploading only
+	// SKILL.md silently drops references/, assets/, and any other bundle files.
+	bodyStr := string(body)
+	for name, content := range files {
+		require.Contains(t, bodyStr, name, "multipart body missing file part for %q", name)
+		require.Contains(t, bodyStr, string(content), "multipart body missing content for %q", name)
+	}
+}
+
+func TestCreateSkillVersionFromFiles_EmptyFilesErrors(t *testing.T) {
+	client := newTestSkillsClient("https://proj.example.com", func(req *http.Request) (*http.Response, error) {
+		t.Fatal("no HTTP request should be made when files is empty")
+		return nil, nil
+	})
+	_, err := client.CreateSkillVersionFromFiles(t.Context(), "s", map[string][]byte{})
+	require.Error(t, err)
+}
+
+func TestCreateSkillVersionFromFiles_ErrorStatus(t *testing.T) {
+	client := newTestSkillsClient("https://proj.example.com", func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Body:       io.NopCloser(strings.NewReader(`{"error":"bad"}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
+	_, err := client.CreateSkillVersionFromFiles(t.Context(), "s", map[string][]byte{"SKILL.md": []byte("x")})
+	require.Error(t, err)
+}
+
 func TestPromoteSkillVersion_RequestShape(t *testing.T) {
 	var captured *http.Request
 	var body []byte

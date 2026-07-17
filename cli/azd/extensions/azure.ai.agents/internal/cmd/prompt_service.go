@@ -5,8 +5,10 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -113,6 +115,20 @@ func (p *promptServiceContext) AgentName() string {
 		return p.Agent.Name
 	}
 	return p.ServiceName
+}
+
+// agentKey returns the config-store key used to persist per-agent multi-turn
+// state (the last response id) for this prompt service. It mirrors the hosted
+// key scheme (buildAgentKey) so lookups and cleanup share one code path.
+func (p *promptServiceContext) agentKey(agentName string) string {
+	endpoint := strings.TrimSpace(p.Settings.ProjectEndpoint)
+	if endpoint == "" {
+		endpoint = fmt.Sprintf(
+			"%s/%s/%s",
+			p.Settings.SubscriptionID, p.Settings.ResourceGroup, p.Settings.Workspace,
+		)
+	}
+	return buildAgentKey(endpoint, agentName, "", false)
 }
 
 // newClient builds a harness client for the resolved prompt service.

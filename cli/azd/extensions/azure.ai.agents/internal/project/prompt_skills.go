@@ -312,23 +312,17 @@ func (b *foundryToolboxBuilder) EnsureToolbox(
 	// references (distinct from `tools`), per the Foundry Skills API.
 	skillRefs := make([]map[string]any, 0, len(skills))
 	for _, s := range skills {
-		instructions := s.Meta.Instructions
-		if strings.TrimSpace(instructions) == "" {
-			// Fall back to the raw file when the body was empty so the service
-			// still receives non-empty instructions.
-			content, err := os.ReadFile(filepath.Join(s.Path, skillFileName)) //nolint:gosec // path from skills/ folder
-			if err != nil {
-				return "", fmt.Errorf("reading %s for skill %q: %w", skillFileName, s.Meta.Name, err)
-			}
-			instructions = string(content)
+		// Upload every file in the bundle (SKILL.md plus any references/,
+		// assets/, or other supporting files), not just SKILL.md. The service
+		// parses SKILL.md itself from the uploaded bundle; using the JSON
+		// inline_content path here would silently drop everything except
+		// SKILL.md's body.
+		files, err := readSkillBundleFiles(s.Path)
+		if err != nil {
+			return "", err
 		}
 
-		version, err := b.skills.CreateSkillVersion(ctx, s.Meta.Name, &azure.CreateSkillVersionRequest{
-			InlineContent: azure.SkillInlineContent{
-				Description:  s.Meta.Description,
-				Instructions: instructions,
-			},
-		})
+		version, err := b.skills.CreateSkillVersionFromFiles(ctx, s.Meta.Name, files)
 		if err != nil {
 			return "", fmt.Errorf("registering skill %q: %w", s.Meta.Name, err)
 		}
@@ -402,6 +396,42 @@ func (b *foundryToolboxBuilder) mcpURL(name, version string) string {
 // toolboxMcpApiVersion is the api-version query parameter required on toolbox
 // MCP endpoint URLs.
 const toolboxMcpApiVersion = "v1"
+
+// readSkillBundleFiles reads every file under a skill bundle directory —
+// SKILL.md plus any references/, assets/, or other supporting files, at any
+// nesting depth — into a map of bundle-relative path (forward-slash
+// separated) to raw content, so the entire bundle can be uploaded together
+// via the multipart skill-version API. Without this, only SKILL.md would ever
+// reach the service and any files it references (scripts, docs, assets)
+// would be silently dropped.
+func readSkillBundleFiles(bundleDir string) (map[string][]byte, error) {
+	files := map[string][]byte{}
+	err := filepath.WalkDir(bundleDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		content, readErr := os.ReadFile(path) //nolint:gosec // path derived from the agent's skills/ folder
+		if readErr != nil {
+			return readErr
+		}
+		rel, relErr := filepath.Rel(bundleDir, path)
+		if relErr != nil {
+			return relErr
+		}
+		files[filepath.ToSlash(rel)] = content
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("reading skill bundle %q: %w", bundleDir, err)
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("skill bundle %q contains no files", bundleDir)
+	}
+	return files, nil
+}
 
 // newFoundryToolboxBuilder constructs the live builder from prompt settings.
 func newFoundryToolboxBuilder(settings *PromptAgentSettings) (toolboxBuilder, error) {

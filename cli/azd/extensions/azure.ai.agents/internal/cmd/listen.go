@@ -542,7 +542,20 @@ func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *az
 }
 
 func deploymentEnvUpdate(ctx context.Context, deployments []project.Deployment, azdClient *azdext.AzdClient, envName string) error {
-	deploymentsJson, err := json.Marshal(deployments)
+	// Only expose deployments azd owns. Reused deployments (Existing == true)
+	// already live in the Foundry project; including them here would make the
+	// infra template attempt to update them and would make the quota preflight
+	// treat their capacity as newly requested, producing false "not enough
+	// quota" failures on `azd up`.
+	toProvision := make([]project.Deployment, 0, len(deployments))
+	for _, d := range deployments {
+		if d.Existing {
+			continue
+		}
+		toProvision = append(toProvision, d)
+	}
+
+	deploymentsJson, err := json.Marshal(toProvision)
 	if err != nil {
 		return fmt.Errorf("failed to marshal deployment details to JSON: %w", err)
 	}

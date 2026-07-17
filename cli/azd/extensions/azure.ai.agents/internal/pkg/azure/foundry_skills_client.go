@@ -9,8 +9,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -134,6 +136,86 @@ func (c *FoundrySkillsClient) CreateSkillVersion(
 	}
 	var result SkillVersionObject
 	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+	return &result, nil
+}
+
+// CreateSkillVersionFromFiles registers a skill version by uploading every
+// file in a skill bundle — SKILL.md plus any references/, assets/, or other
+// supporting files — via multipart/form-data. Unlike CreateSkillVersion (the
+// JSON inline_content path, which only ever carries the SKILL.md body), this
+// uploads the bundle's exact files: the service parses SKILL.md itself and
+// stores every other file so the skill can reference them at runtime. Use
+// this whenever a skill bundle contains more than a bare SKILL.md.
+//
+// files maps a bundle-relative path (forward-slash separated, e.g.
+// "references/tone.md") to its raw content.
+//
+// POST {endpoint}/skills/{name}/versions?api-version=v1 (multipart/form-data)
+func (c *FoundrySkillsClient) CreateSkillVersionFromFiles(
+	ctx context.Context,
+	skillName string,
+	files map[string][]byte,
+) (*SkillVersionObject, error) {
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no files to upload for skill %q", skillName)
+	}
+
+	payload := &bytes.Buffer{}
+	writer := multipart.NewWriter(payload)
+
+	// Sort for a deterministic request body (easier to test/debug/replay).
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		part, err := writer.CreateFormFile("files", name)
+		if err != nil {
+			return nil, fmt.Errorf("creating form file %q: %w", name, err)
+		}
+		if _, err := part.Write(files[name]); err != nil {
+			return nil, fmt.Errorf("writing file %q: %w", name, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("closing multipart writer: %w", err)
+	}
+
+	targetURL := fmt.Sprintf(
+		"%s/skills/%s/versions?api-version=%s",
+		c.endpoint, url.PathEscape(skillName), skillsApiVersion,
+	)
+	req, err := runtime.NewRequest(ctx, http.MethodPost, targetURL)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Raw().Header.Set("Foundry-Features", skillsFeatureHeader)
+	if err := req.SetBody(
+		streaming.NopCloser(bytes.NewReader(payload.Bytes())),
+		writer.FormDataContentType(),
+	); err != nil {
+		return nil, fmt.Errorf("setting request body: %w", err)
+	}
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response body: %w", err)
+	}
+	var result SkillVersionObject
+	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, fmt.Errorf("parsing response: %w", err)
 	}
 	return &result, nil

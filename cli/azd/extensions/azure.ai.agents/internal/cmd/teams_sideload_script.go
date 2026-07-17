@@ -308,15 +308,18 @@ func preferredSideloadScript(scriptPaths []string) string {
 }
 
 // sideloadRunCommand returns a shell-safe invocation of the generated script for
-// a user-facing hint. The path is single-quote quoted for the target shell so a
-// path containing spaces or metacharacters ($, backticks, quotes) is neither
-// expanded nor able to break out of the argument when pasted. The pwsh call
-// operator (&) is required to run a quoted .ps1 path, while .sh is run via bash.
+// a user-facing hint. The path is single-quote quoted so a path containing
+// spaces or metacharacters ($, backticks, quotes) is neither expanded nor able
+// to break out of the argument when pasted into a shell that honors single
+// quotes (PowerShell, pwsh, and POSIX shells such as Git Bash). Both branches
+// invoke the interpreter explicitly (pwsh -File / bash) rather than relying on
+// the PowerShell-only call operator (&), so the command also runs when azd was
+// launched from a non-PowerShell shell (e.g. cmd.exe or Git Bash on Windows).
 // See cli/azd/AGENTS.md ("Shell-safe output" / "Path Safety").
 func sideloadRunCommand(scriptPath string) string {
 	if strings.HasSuffix(scriptPath, ".ps1") {
 		// PowerShell single-quoted literal: an embedded ' is escaped by doubling.
-		return "& '" + strings.ReplaceAll(scriptPath, "'", "''") + "'"
+		return "pwsh -NoProfile -File '" + strings.ReplaceAll(scriptPath, "'", "''") + "'"
 	}
 	// POSIX single-quoted literal: close the quote, add an escaped ', reopen.
 	return "bash '" + strings.ReplaceAll(scriptPath, "'", `'\''`) + "'"

@@ -185,6 +185,3 @@ Write-Host ""
 Write-Host "Installed for the current user (titleId: $titleId)."
 Write-Host "Chat with the agent in Teams:"
 Write-Host "    $chatLink"
-
-# Best-effort: pop the chat open so it is one click away.
-try { Start-Process $chatLink | Out-Null } catch { }

@@ -416,17 +416,18 @@ func TestTeamsSideloadScriptTruncatesManifestFields(t *testing.T) {
 func TestSideloadRunCommand(t *testing.T) {
 	// The emitted command must single-quote the path for the target shell so a
 	// path with spaces or metacharacters ($, backtick, quote) is neither
-	// expanded nor able to break out of the argument; a quoted .ps1 also needs
-	// the pwsh call operator. Variable names avoid substrings (e.g. "pw") that
-	// gosec's G101 rule treats as credential indicators.
+	// expanded nor able to break out of the argument; the .ps1 is run via an
+	// explicit "pwsh -File" so it also works outside PowerShell. Struct field
+	// names avoid substrings (e.g. "pw") that gosec's G101 rule treats as
+	// credential indicators.
 	cases := []struct {
 		name string
 		in   string
 		want string
 	}{
-		{"pwsh_simple", `a b\x.ps1`, `& 'a b\x.ps1'`},
-		{"pwsh_metachars", "a $b`c\\d.ps1", "& 'a $b`c\\d.ps1'"},
-		{"pwsh_quote", `a'b\x.ps1`, `& 'a''b\x.ps1'`},
+		{"pwsh_simple", `a b\x.ps1`, `pwsh -NoProfile -File 'a b\x.ps1'`},
+		{"pwsh_metachars", "a $b`c\\d.ps1", "pwsh -NoProfile -File 'a $b`c\\d.ps1'"},
+		{"pwsh_quote", `a'b\x.ps1`, `pwsh -NoProfile -File 'a''b\x.ps1'`},
 		{"bash_simple", `a b/x.sh`, `bash 'a b/x.sh'`},
 		{"bash_metachars", "a $b`c/d.sh", "bash 'a $b`c/d.sh'"},
 		{"bash_quote", `a'b/x.sh`, `bash 'a'\''b/x.sh'`},

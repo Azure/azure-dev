@@ -784,6 +784,7 @@ func appendInvokeLocalSecondary(
 		svc = &state.Services[0]
 	}
 	if svc != nil && svc.Protocol == ProtocolInvocationsWS {
+		// WebSocket agents are not invocable; skip the invoke hint.
 		return out, priority
 	}
 	invokeArg, readmeHint := resolveInvokeArg(svc, "", readmeExists, priority)

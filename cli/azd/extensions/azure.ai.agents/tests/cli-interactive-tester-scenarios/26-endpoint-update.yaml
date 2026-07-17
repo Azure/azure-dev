@@ -18,24 +18,12 @@ pre:
   # minimal agentCard into the azure.yaml service properties (idempotently) before
   # the run so there is something to patch.
   - run: |
-      f="~/working/azd-agents-shared/{shared_agent_name}/azure.yaml"
+      f="$HOME/working/azd-agents-shared/{shared_agent_name}/azure.yaml"
       if [ -f "$f" ] && ! grep -q 'agentCard:' "$f"; then
-        python3 -c "
-import sys, yaml
-with open(sys.argv[1]) as fh:
-    doc = yaml.safe_load(fh)
-for svc in doc.get('services', {}).values():
-    if svc.get('host') == 'azure.ai.agent':
-        props = svc.setdefault('config', {})
-        props['agentCard'] = {
-            'description': '{prefix} endpoint-update test card',
-            'skills': [{'id': '{prefix}-echo', 'name': 'Echo', 'description': 'Echoes input back'}]
-        }
-        break
-with open(sys.argv[1], 'w') as fh:
-    yaml.dump(doc, fh, default_flow_style=False, sort_keys=False)
-print('Injected agentCard into azure.yaml')
-" "$f"
+        # Append agentCard under the config key of the azure.ai.agent service.
+        # Find the "config:" line under the agent service and append after it.
+        sed -i '/^    config:/a\      agentCard:\n        description: "{prefix} endpoint-update test card"\n        skills:\n          - id: "{prefix}-echo"\n            name: "Echo"\n            description: "Echoes input back"' "$f"
+        echo "Injected agentCard into azure.yaml"
       else
         echo "agentCard already present or azure.yaml not found"
       fi

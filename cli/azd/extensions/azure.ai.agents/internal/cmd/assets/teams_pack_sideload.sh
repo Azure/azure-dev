@@ -83,8 +83,10 @@ while [ "$lock_wait" -lt 100 ]; do
     break
   fi
   # The lock is held. Break it only if its marker proves it is stale (holder
-  # crashed); otherwise keep waiting for the live holder to release.
-  lock_created="$(cat "$LOCK_MARKER" 2>/dev/null | tr -dc '0-9')"
+  # crashed); otherwise keep waiting for the live holder to release. A missing
+  # marker is expected in the tiny window between mkdir and the marker write (and
+  # persists if a run crashed there), so tolerate the read failure under pipefail.
+  lock_created="$( { cat "$LOCK_MARKER" 2>/dev/null || true; } | tr -dc '0-9' )"
   if [ -n "$lock_created" ] && [ "$(( $(date -u +%s) - lock_created ))" -ge "$LOCK_STALE_SECONDS" ]; then
     rm -f "$LOCK_MARKER" 2>/dev/null || true
     rmdir "$LOCK_DIR" 2>/dev/null || true

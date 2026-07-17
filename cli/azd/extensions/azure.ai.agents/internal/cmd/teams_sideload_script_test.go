@@ -209,8 +209,8 @@ func TestWriteTeamsSideloadScriptsPreservesUserFiles(t *testing.T) {
 		t.Errorf("user-owned file was overwritten:\n got: %q\nwant: %q", string(got), userContent)
 	}
 
-	// A previously azd-generated script (carrying the marker) is refreshed in place.
-	genContent := "# " + teamsSideloadGeneratedMarker + "\n# stale\n"
+	// A previously azd-generated script (carrying this agent's marker) is refreshed in place.
+	genContent := "# " + teamsGeneratedMarkerFor("app-id") + "\n# stale\n"
 	if err := os.WriteFile(userBash, []byte(genContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -230,6 +230,45 @@ func TestWriteTeamsSideloadScriptsPreservesUserFiles(t *testing.T) {
 	}
 	if !strings.Contains(string(got), "app-id") || strings.Contains(string(got), "stale") {
 		t.Errorf("azd-generated script was not refreshed in place: %q", string(got))
+	}
+}
+
+// TestWriteTeamsSideloadScriptsRejectsOtherAgent guards the shared-source-dir
+// case: if a second activity service resolves to the same project:/src, its
+// postdeploy must not overwrite scripts a different agent already generated
+// there (only the last writer's bot id would install). The other agent's file
+// is left byte-for-byte intact and is not reported as written.
+func TestWriteTeamsSideloadScriptsRejectsOtherAgent(t *testing.T) {
+	root := t.TempDir()
+	proj := &azdext.ProjectConfig{Path: root}
+	svc := &azdext.ServiceConfig{Name: "echo-agent", RelativePath: "src"}
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate a script another agent already generated in this shared directory.
+	otherBash := filepath.Join(root, "src", teamsSideloadScriptBash)
+	otherContent := "#!/usr/bin/env bash\n# " + teamsGeneratedMarkerFor("other-bot-id") + "\n# other agent\n"
+	if err := os.WriteFile(otherBash, []byte(otherContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	paths := writeTeamsSideloadScripts(proj, svc, "echo-agent", "echo-agent-bot-uai", "this-bot-id")
+	for _, p := range paths {
+		if p == otherBash {
+			t.Errorf("overwrote another agent's script %q", otherBash)
+		}
+	}
+	// A partial write (only the pwsh script) must not claim all targets succeeded.
+	if len(paths) == teamsSideloadTargets {
+		t.Errorf("a partial write must not equal teamsSideloadTargets (%d)", teamsSideloadTargets)
+	}
+	got, err := os.ReadFile(otherBash)
+	if err != nil {
+		t.Fatalf("other agent's file was removed: %v", err)
+	}
+	if string(got) != otherContent {
+		t.Errorf("other agent's file was overwritten:\n got: %q\nwant: %q", string(got), otherContent)
 	}
 }
 

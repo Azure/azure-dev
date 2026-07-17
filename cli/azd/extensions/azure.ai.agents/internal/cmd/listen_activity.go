@@ -162,6 +162,12 @@ func writeTeamsSetupGuide(
 		return ""
 	}
 	content := teamsSetupGuideContent(agentName, botName, msaAppID, scriptsGenerated)
+	// Do not clobber a user-owned guide or one another activity service generated
+	// for a different agent that shares this source directory.
+	if ok, reason := canWriteGeneratedFile(guidePath, msaAppID); !ok {
+		log.Printf("postdeploy: Teams setup guide %q %s", guidePath, reason)
+		return ""
+	}
 	if err := os.WriteFile(guidePath, []byte(content), 0o600); err != nil {
 		log.Printf("postdeploy: failed to write Teams setup guide %q: %v", guidePath, err)
 		return ""

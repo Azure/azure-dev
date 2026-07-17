@@ -65,6 +65,9 @@ func TestTerraformPlan(t *testing.T) {
 
 func TestTerraformDestroy(t *testing.T) {
 	skipIfTerraformNotInstalled(t)
+	// Clear CI variables so this interactive-destroy test does not inherit the runner's CI state and take
+	// the non-interactive preview branch (which would skip deletion and fail the assertions below).
+	clearCIEnv(t)
 	mockContext := mocks.NewMockContext(t.Context())
 	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext.CommandRunner)
@@ -102,6 +105,19 @@ func TestTerraformDestroyCIPreviewsWithoutDeleting(t *testing.T) {
 		return exec.RunResult{Stdout: "Terraform has been successfully initialized!"}, nil
 	})
 
+	// The core of #4317: the preview must actually run `terraform plan -destroy` (read-only) rather than
+	// silently returning SkippedDeletion. Registered after preparePlanningMocks so it wins (LIFO) for the
+	// destroy-plan call.
+	planDestroyCalled := false
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return args.Cmd == "terraform" &&
+			strings.Contains(command, "plan") && strings.Contains(command, "-destroy")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		planDestroyCalled = true
+		require.Contains(t, args.Args, "-destroy")
+		return exec.RunResult{Stdout: "Plan: 0 to add, 0 to change, 1 to destroy."}, nil
+	})
+
 	infraProvider := createTerraformProvider(t, mockContext)
 
 	destroyOptions := provisioning.NewDestroyOptions(false, false)
@@ -111,6 +127,7 @@ func TestTerraformDestroyCIPreviewsWithoutDeleting(t *testing.T) {
 	require.NotNil(t, destroyResult)
 	require.True(t, destroyResult.SkippedDeletion)
 	require.True(t, initCalled)
+	require.True(t, planDestroyCalled)
 	require.Empty(t, destroyResult.InvalidatedEnvKeys)
 }
 
@@ -128,12 +145,25 @@ func TestTerraformDestroyNoPromptPreviewsWithoutDeleting(t *testing.T) {
 	infraProvider := createTerraformProvider(t, mockContext)
 	mockContext.Console.SetNoPromptMode(true)
 
+	// Assert the preview actually runs `terraform plan -destroy`; without this the test would pass even if
+	// the provider returned SkippedDeletion without previewing anything.
+	planDestroyCalled := false
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return args.Cmd == "terraform" &&
+			strings.Contains(command, "plan") && strings.Contains(command, "-destroy")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		planDestroyCalled = true
+		require.Contains(t, args.Args, "-destroy")
+		return exec.RunResult{Stdout: "Plan: 0 to add, 0 to change, 1 to destroy."}, nil
+	})
+
 	destroyOptions := provisioning.NewDestroyOptions(false, false)
 	destroyResult, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 	require.NoError(t, err)
 	require.NotNil(t, destroyResult)
 	require.True(t, destroyResult.SkippedDeletion)
+	require.True(t, planDestroyCalled)
 	require.Empty(t, destroyResult.InvalidatedEnvKeys)
 }
 

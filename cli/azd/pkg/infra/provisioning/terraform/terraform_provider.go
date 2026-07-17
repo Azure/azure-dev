@@ -152,7 +152,8 @@ func (t *TerraformProvider) plan(ctx context.Context) (*provisioning.Deployment,
 
 	modulePath := t.modulePath()
 
-	initRes, err := t.init(ctx, isRemoteBackendConfig)
+	// -upgrade lets provisioning pick up newer providers/modules before planning.
+	initRes, err := t.init(ctx, isRemoteBackendConfig, "-upgrade")
 	if err != nil {
 		return nil, nil, fmt.Errorf("terraform init failed: %s , err: %w", initRes, err)
 	}
@@ -268,7 +269,8 @@ func (t *TerraformProvider) Destroy(
 	// Initialize the backend non-interactively (-input=false) for any automated destroy so that both the
 	// preview and a --force destroy work on a fresh agent; otherwise `terraform output`/`terraform destroy`
 	// fail with "backend initialization required" (a symptom reported in #4317). init is idempotent, so
-	// re-running it when the backend is already initialized is a safe no-op.
+	// re-running it when the backend is already initialized is a safe no-op. Note: no -upgrade here — a
+	// teardown must not select newer providers/modules or rewrite `.terraform.lock.hcl`.
 	automated := resource.IsRunningOnCI() || t.console.IsNoPromptMode()
 	if automated {
 		if initRes, err := t.init(ctx, isRemoteBackendConfig, "-input=false"); err != nil {

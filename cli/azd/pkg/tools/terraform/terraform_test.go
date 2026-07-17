@@ -293,7 +293,7 @@ func getCommandTestCases() []commandTestCase {
 		{
 			name: "Init",
 			invoke: func(cli *Cli, ctx context.Context) (string, error) {
-				return cli.Init(ctx, "/module")
+				return cli.Init(ctx, "/module", "-upgrade")
 			},
 			expectedArgs: []string{"-chdir=/module", "init", "-upgrade"},
 			interactive:  true,
@@ -421,7 +421,7 @@ func Test_Commands_AdditionalArgs(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Equal(t, []string{
-			"-chdir=/module", "init", "-upgrade", "-backend=false", "-input=false",
+			"-chdir=/module", "init", "-backend=false", "-input=false",
 		}, capturedArgs.Args)
 	})
 

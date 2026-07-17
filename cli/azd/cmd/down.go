@@ -181,6 +181,9 @@ func getCmdDownHelpDescription(*cobra.Command) string {
 			" files on your local machine.", output.WithHighLightFormat("azd down")), []string{
 		"When <layer> is specified, only deletes resources for the given layer." +
 			" When omitted, deletes resources for all layers defined in the project.",
+		"For Terraform projects, running non-interactively (in a CI/CD pipeline or with --no-prompt)" +
+			" without --force previews the resources that would be deleted and exits without deleting" +
+			" anything. Re-run with --force to delete resources without confirmation.",
 	})
 }
 

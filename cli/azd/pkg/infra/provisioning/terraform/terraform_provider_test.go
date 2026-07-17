@@ -102,6 +102,8 @@ func TestTerraformDestroyCIPreviewsWithoutDeleting(t *testing.T) {
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		initCalled = true
 		require.Contains(t, args.Args, "-input=false")
+		// A teardown must not upgrade providers/modules or rewrite the lock file (#4317).
+		require.NotContains(t, args.Args, "-upgrade")
 		return exec.RunResult{Stdout: "Terraform has been successfully initialized!"}, nil
 	})
 
@@ -187,6 +189,8 @@ func TestTerraformDestroyCIForceDeletes(t *testing.T) {
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		initCalled = true
 		require.Contains(t, args.Args, "-input=false")
+		// A teardown must not upgrade providers/modules or rewrite the lock file (#4317).
+		require.NotContains(t, args.Args, "-upgrade")
 		return exec.RunResult{Stdout: "Terraform has been successfully initialized!"}, nil
 	})
 

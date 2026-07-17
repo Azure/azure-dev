@@ -122,11 +122,13 @@ func (cli *Cli) Validate(ctx context.Context, modulePath string) (string, error)
 	return cmdRes.Stdout, nil
 }
 
+// Init runs `terraform init`. Callers control whether providers/modules are upgraded by passing
+// `-upgrade` (the provisioning path does); destroy paths omit it so teardown does not unexpectedly
+// select newer providers or rewrite `.terraform.lock.hcl`.
 func (cli *Cli) Init(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
 	args := []string{
 		fmt.Sprintf("-chdir=%s", modulePath),
 		"init",
-		"-upgrade",
 	}
 
 	args = append(args, additionalArgs...)

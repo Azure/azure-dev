@@ -444,10 +444,12 @@ func TestRecordInfraProviderUsage(t *testing.T) {
 			expected:        []string{"bicep"},
 		},
 		{
-			name: "different providers across layers record each provider",
+			name: "different providers across layers record each provider sorted",
+			// Input is intentionally in reverse-sorted order (terraform before bicep) so the case
+			// verifies the sorting contract, not just de-duplication.
 			layers: []provisioning.Options{
-				{Provider: provisioning.Bicep},
 				{Provider: provisioning.Terraform},
+				{Provider: provisioning.Bicep},
 			},
 			defaultProvider: defaultProvider,
 			expected:        []string{"bicep", "terraform"},
@@ -457,6 +459,12 @@ func TestRecordInfraProviderUsage(t *testing.T) {
 			layers:          []provisioning.Options{{Provider: provisioning.Arm}},
 			defaultProvider: defaultProvider,
 			expected:        []string{"arm"},
+		},
+		{
+			name:            "single explicit pulumi",
+			layers:          []provisioning.Options{{Provider: provisioning.Pulumi}},
+			defaultProvider: defaultProvider,
+			expected:        []string{"pulumi"},
 		},
 		{
 			name:            "custom provider is bucketed",

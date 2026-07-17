@@ -175,6 +175,7 @@ func Test_InfraGenerateAction_RecordsInfraProvider(t *testing.T) {
 		{name: "built-in bicep verbatim", provider: provisioning.Bicep, expected: "bicep"},
 		{name: "built-in terraform verbatim", provider: provisioning.Terraform, expected: "terraform"},
 		{name: "built-in arm verbatim", provider: provisioning.Arm, expected: "arm"},
+		{name: "built-in pulumi verbatim", provider: provisioning.Pulumi, expected: "pulumi"},
 		{
 			name:     "extension provider bucketed to custom",
 			provider: provisioning.ProviderKind("my-extension-provider"),

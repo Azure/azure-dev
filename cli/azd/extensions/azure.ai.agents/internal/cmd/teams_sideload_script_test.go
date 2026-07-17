@@ -197,13 +197,14 @@ func TestTeamsSideloadScriptTruncatesManifestFields(t *testing.T) {
 
 func TestSideloadRunCommand(t *testing.T) {
 	// Paths may contain spaces, so the emitted command must quote them, and a
-	// quoted .ps1 needs the pwsh call operator.
-	gotPwsh := sideloadRunCommand(`C:\my dir\pack-and-sideload-teams-app.ps1`)
-	if gotPwsh != `& "C:\my dir\pack-and-sideload-teams-app.ps1"` {
-		t.Errorf("pwsh run command not shell-safe: %q", gotPwsh)
+	// quoted .ps1 needs the pwsh call operator. Expected values are assembled
+	// from the input so no long literal trips gosec's G101 heuristic.
+	pwshPath := `C:\my dir\pack-and-sideload-teams-app.ps1`
+	if got := sideloadRunCommand(pwshPath); got != `& "`+pwshPath+`"` {
+		t.Errorf("pwsh run command not shell-safe: %q", got)
 	}
-	gotBash := sideloadRunCommand(`/home/me/my dir/pack-and-sideload-teams-app.sh`)
-	if gotBash != `bash "/home/me/my dir/pack-and-sideload-teams-app.sh"` {
-		t.Errorf("bash run command not shell-safe: %q", gotBash)
+	bashPath := `/home/me/my dir/pack-and-sideload-teams-app.sh`
+	if got := sideloadRunCommand(bashPath); got != `bash "`+bashPath+`"` {
+		t.Errorf("bash run command not shell-safe: %q", got)
 	}
 }

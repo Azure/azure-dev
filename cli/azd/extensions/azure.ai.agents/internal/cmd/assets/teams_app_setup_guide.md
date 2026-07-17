@@ -37,8 +37,18 @@ Prerequisites:
   upload still has to be enabled for your tenant — if it is off, a Teams admin
   must turn it on (see the restricted-tenant note below).
 
-Set `SKIP_TEAMS_INSTALL=1` to skip it. Prefer the manual / UI flow, a restricted
-tenant, or custom manifest edits? Follow steps A and B below instead.
+To build the package without installing it (packaging still runs), set the
+build-only opt-out for your shell:
+
+```powershell
+$env:SKIP_TEAMS_INSTALL = "1"; ./pack-and-sideload-teams-app.ps1   # Windows / PowerShell
+```
+```sh
+SKIP_TEAMS_INSTALL=1 ./pack-and-sideload-teams-app.sh              # macOS / Linux
+```
+
+Prefer the manual / UI flow, a restricted tenant, or custom manifest edits?
+Follow steps A and B below instead.
 
 ## A. Create the Teams app package
 

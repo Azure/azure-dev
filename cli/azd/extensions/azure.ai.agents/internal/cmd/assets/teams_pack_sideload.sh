@@ -9,7 +9,8 @@
 #   1. builds a Teams app package (manifest.json + icons) in a temp dir,
 #   2. ensures the Microsoft 365 Agents Toolkit CLI (atk) is installed,
 #   3. installs the app FOR THE CURRENT USER (atk install --scope Personal --
-#      no Teams admin approval needed), and
+#      no org-catalog admin approval needed; your tenant must still allow custom
+#      app upload/sideloading, which a Teams admin can enable if it is off), and
 #   4. prints an "Open in Teams" chat deep link.
 #
 # Prerequisites: Node.js (npm) for the atk CLI, and a one-time 'atk auth login'
@@ -113,7 +114,7 @@ echo "Teams app package: $ZIP_PATH"
 # Build-only mode: the package (with icons) is ready; skip the atk install.
 if [ "${SKIP_TEAMS_INSTALL:-}" = "1" ]; then
     echo "SKIP_TEAMS_INSTALL=1 - package built; skipping the per-user Teams install."
-    echo "Sideload it manually (no admin approval needed):"
+    echo "Sideload it manually (requires custom app upload to be enabled for your tenant):"
     echo "    $ZIP_PATH"
     echo "    Teams -> Apps -> Manage your apps -> Upload an app -> Upload a custom app"
     exit 0
@@ -133,7 +134,7 @@ if ! command -v atk >/dev/null 2>&1; then
     fi
 fi
 
-# ---- Install the app for the current user (Personal scope, no admin) --------
+# ---- Install the app for the current user (Personal scope) ------------------
 echo ""
 echo "Installing the Teams app for the current user (atk, scope Personal)..."
 set +e
@@ -160,7 +161,7 @@ if [ -z "$TITLE_ID" ]; then
     echo ""
     echo "Could not confirm the per-user install."
     echo "If you were prompted to sign in, run 'atk auth login' then re-run this script."
-    echo "Or sideload the package manually (no admin approval needed):"
+    echo "Or sideload the package manually (requires custom app upload to be enabled for your tenant):"
     echo "    $ZIP_PATH"
     echo "    Teams -> Apps -> Manage your apps -> Upload an app -> Upload a custom app"
     # The install did not complete, so report failure (build-only mode already

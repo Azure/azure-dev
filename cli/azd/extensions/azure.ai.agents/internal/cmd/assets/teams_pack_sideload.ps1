@@ -9,7 +9,8 @@
 #   1. builds a Teams app package (manifest.json + icons) in a temp dir,
 #   2. ensures the Microsoft 365 Agents Toolkit CLI (atk) is installed,
 #   3. installs the app FOR THE CURRENT USER (atk install --scope Personal --
-#      no Teams admin approval needed), and
+#      no org-catalog admin approval needed; your tenant must still allow custom
+#      app upload/sideloading, which a Teams admin can enable if it is off), and
 #   4. prints an "Open in Teams" chat deep link.
 #
 # Prerequisites: Node.js (npm) for the atk CLI, and a one-time 'atk auth login'
@@ -94,7 +95,7 @@ Write-Host "Teams app package: $zipPath"
 # Build-only mode: the package (with icons) is ready; skip the atk install.
 if ($env:SKIP_TEAMS_INSTALL -eq "1") {
     Write-Host "SKIP_TEAMS_INSTALL=1 - package built; skipping the per-user Teams install."
-    Write-Host "Sideload it manually (no admin approval needed):"
+    Write-Host "Sideload it manually (requires custom app upload to be enabled for your tenant):"
     Write-Host "    $zipPath"
     Write-Host "    Teams -> Apps -> Manage your apps -> Upload an app -> Upload a custom app"
     return
@@ -112,17 +113,28 @@ if (-not (Get-Command atk -ErrorAction SilentlyContinue)) {
     }
 }
 
-# ---- Install the app for the current user (Personal scope, no admin) --------
+# atk is a native command; on PowerShell 7.4+ a nonzero exit combined with
+# $ErrorActionPreference = "Stop" would terminate the script before we can inspect
+# the output (e.g. the "not signed in" case). Run the probe installs with
+# non-terminating error handling and return the combined output so the
+# login-and-retry logic below can run.
+function Invoke-AtkInstallProbe {
+    param([Parameter(Mandatory)][string]$Zip)
+    $ErrorActionPreference = "Continue"
+    atk install --file-path "$Zip" --scope Personal --interactive false 2>&1 | Out-String
+}
+
+# ---- Install the app for the current user (Personal scope) ------------------
 Write-Host ""
 Write-Host "Installing the Teams app for the current user (atk, scope Personal)..."
-$installOut = atk install --file-path "$zipPath" --scope Personal --interactive false 2>&1 | Out-String
+$installOut = Invoke-AtkInstallProbe -Zip $zipPath
 Write-Host $installOut
 
 # If atk reports the user is not signed in, launch an interactive login and retry.
 if ($installOut -match "(?i)(not\s+(logged|signed)\s+in|auth.*required|please\s+login|login\s+first|no\s+account)") {
     Write-Host "Not signed in - launching 'atk auth login' (complete the sign-in prompt)..."
     atk auth login m365
-    $installOut = atk install --file-path "$zipPath" --scope Personal --interactive false 2>&1 | Out-String
+    $installOut = Invoke-AtkInstallProbe -Zip $zipPath
     Write-Host $installOut
 }
 
@@ -138,7 +150,7 @@ if ([string]::IsNullOrWhiteSpace($titleId)) {
     Write-Host ""
     Write-Host "Could not confirm the per-user install."
     Write-Host "If you were prompted to sign in, run 'atk auth login' then re-run this script."
-    Write-Host "Or sideload the package manually (no admin approval needed):"
+    Write-Host "Or sideload the package manually (requires custom app upload to be enabled for your tenant):"
     Write-Host "    $zipPath"
     Write-Host "    Teams -> Apps -> Manage your apps -> Upload an app -> Upload a custom app"
     # The install did not complete, so report failure (build-only mode already

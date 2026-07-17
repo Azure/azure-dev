@@ -21,8 +21,10 @@ that does A and B for you in one command (the Bot ID is already baked in):
 ```
 
 It builds the Teams app package and installs it **for you** (`atk install --scope
-Personal` — no Teams admin needed), then prints an "Open in Teams" link. It is
-idempotent, so you can re-run it safely.
+Personal` — no org-catalog admin approval needed), then prints an "Open in Teams"
+link. It is idempotent, so you can re-run it safely. Custom app upload
+(sideloading) must be enabled for your tenant; if it is turned off, a Teams admin
+must enable it (see the restricted-tenant note below).
 
 Prerequisites:
 
@@ -30,8 +32,10 @@ Prerequisites:
   CLI (`atk`) via npm if it is missing.
 - A one-time **`atk auth login`** with your M365 account — the script launches
   this for you if you are not signed in.
-- `--scope Personal` installs only for you and needs **no Teams admin**; an
-  org-wide catalog upload does (see step B below).
+- `--scope Personal` installs only for you and needs **no org-catalog admin
+  approval** (an org-wide catalog upload does; see step B below). Custom app
+  upload still has to be enabled for your tenant — if it is off, a Teams admin
+  must turn it on (see the restricted-tenant note below).
 
 Set `SKIP_TEAMS_INSTALL=1` to skip it. Prefer the manual / UI flow, a restricted
 tenant, or custom manifest edits? Follow steps A and B below instead.
@@ -115,7 +119,8 @@ Compress-Archive manifest.json,color.png,outline.png {{.AgentName}}-teams-app.zi
 ```
 
 Sideload for yourself with the Microsoft 365 Agents Toolkit CLI (atk). `--scope Personal` is a
-per-user install and needs NO Teams admin:
+per-user install and needs no org-catalog admin approval (custom app upload must still be
+enabled for your tenant):
 
 ```sh
 npm install -g @microsoft/m365agentstoolkit-cli          # one-time; requires Node.js

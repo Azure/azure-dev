@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"text/template"
+	"unicode/utf16"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/google/uuid"
@@ -455,31 +457,60 @@ func TestTeamsSideloadScriptTruncatesManifestFields(t *testing.T) {
 }
 
 func TestSideloadRunCommand(t *testing.T) {
-	// The emitted command must keep a path with spaces as one argument and must
-	// not let the shell expand path characters. The .ps1 is run via
-	// `powershell -ExecutionPolicy Bypass -File '...'` (process-scoped bypass so a
-	// default Restricted client can still run it; single-quoted so PowerShell does
-	// not expand $name/$()/backticks; backslashes stay intact so the Windows path
-	// resolves), the .sh via single-quoted bash. Struct field names avoid
-	// substrings (e.g. "pw") that gosec's G101 rule treats as credential
+	// The .ps1 hint must run identically whether azd printed it to cmd.exe or
+	// PowerShell, so the path is carried inside a UTF-16LE base64 -EncodedCommand
+	// payload (no parent shell can re-split or expand it). The .sh hint is only
+	// shown on POSIX hosts, whose shells honor single quotes. Struct field names
+	// avoid substrings (e.g. "pw") that gosec's G101 rule treats as credential
 	// indicators.
-	cases := []struct {
+	decodePwsh := func(t *testing.T, got string) string {
+		t.Helper()
+		const prefix = "powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand "
+		if !strings.HasPrefix(got, prefix) {
+			t.Fatalf("ps1 command missing EncodedCommand prefix: %q", got)
+		}
+		raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(got, prefix))
+		if err != nil {
+			t.Fatalf("EncodedCommand payload is not valid base64: %v", err)
+		}
+		if len(raw)%2 != 0 {
+			t.Fatalf("EncodedCommand payload is not UTF-16LE (odd byte length %d)", len(raw))
+		}
+		units := make([]uint16, len(raw)/2)
+		for i := range units {
+			units[i] = uint16(raw[i*2]) | uint16(raw[i*2+1])<<8
+		}
+		return string(utf16.Decode(units))
+	}
+
+	// The decoded PowerShell command must invoke the script via the call operator
+	// with the path as a single-quoted literal (embedded ' doubled).
+	pwshCases := []struct {
 		name string
 		in   string
 		want string
 	}{
-		{"ps1_simple", `C:\a b\x.ps1`, `powershell -NoProfile -ExecutionPolicy Bypass -File 'C:\a b\x.ps1'`},
-		{"ps1_backslashes", `C:\Users\a\svc\x.ps1`,
-			`powershell -NoProfile -ExecutionPolicy Bypass -File 'C:\Users\a\svc\x.ps1'`},
-		{"ps1_metachars", `C:\a$b` + "`c\\x.ps1",
-			`powershell -NoProfile -ExecutionPolicy Bypass -File 'C:\a$b` + "`c\\x.ps1'"},
-		{"ps1_single_quote", `C:\a'b\x.ps1`,
-			`powershell -NoProfile -ExecutionPolicy Bypass -File 'C:\a''b\x.ps1'`},
+		{"ps1_simple", `C:\a b\x.ps1`, `& 'C:\a b\x.ps1'`},
+		{"ps1_backslashes", `C:\Users\a\svc\x.ps1`, `& 'C:\Users\a\svc\x.ps1'`},
+		{"ps1_metachars", `C:\a$b` + "`c\\x.ps1", `& 'C:\a$b` + "`c\\x.ps1'"},
+		{"ps1_single_quote", `C:\a'b\x.ps1`, `& 'C:\a''b\x.ps1'`},
+	}
+	for _, tc := range pwshCases {
+		if got := decodePwsh(t, sideloadRunCommand(tc.in)); got != tc.want {
+			t.Errorf("%s: decoded ps1 command = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+
+	shCases := []struct {
+		name string
+		in   string
+		want string
+	}{
 		{"bash_simple", `a b/x.sh`, `bash 'a b/x.sh'`},
 		{"bash_metachars", "a $b`c/d.sh", "bash 'a $b`c/d.sh'"},
 		{"bash_quote", `a'b/x.sh`, `bash 'a'\''b/x.sh'`},
 	}
-	for _, tc := range cases {
+	for _, tc := range shCases {
 		if got := sideloadRunCommand(tc.in); got != tc.want {
 			t.Errorf("%s: sideloadRunCommand(%q) = %q, want %q", tc.name, tc.in, got, tc.want)
 		}

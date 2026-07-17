@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	_ "embed"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"runtime"
 	"strings"
 	"text/template"
+	"unicode/utf16"
 
 	"azureaiagent/internal/pkg/paths"
 
@@ -340,22 +342,40 @@ func preferredSideloadScript(scriptPaths []string) string {
 }
 
 // sideloadRunCommand returns a runnable, expansion-safe invocation of the
-// generated script for a user-facing hint. The .ps1 branch targets PowerShell
-// (where a .ps1 is run and where azd's own output is typically shown) and uses
-// powershell.exe, which ships with every Windows install (unlike PowerShell 7's
-// pwsh) and takes an explicit -File path (not the PowerShell-only `&` call
-// operator). It passes -ExecutionPolicy Bypass so the child script still runs on
-// a default client whose policy is Restricted (the bypass is process-scoped and
-// does not change the machine/user policy). The path is wrapped in SINGLE quotes
-// so PowerShell treats it as a literal -- no `$name`, `$()`, or backtick
-// expansion -- while backslashes stay intact so the Windows path resolves; an
-// embedded single quote is escaped by doubling it (PowerShell literal-string
-// rule). The .sh branch uses a POSIX single-quoted literal. See cli/azd/AGENTS.md
-// ("Shell-safe output").
+// generated script for a user-facing hint. azd prints this hint to whatever shell
+// launched it, which on Windows may be cmd.exe OR PowerShell -- and the two
+// disagree on quoting (cmd.exe does not treat single quotes as quoting and still
+// expands %VAR%). So the .ps1 branch encodes a full PowerShell command
+// (`& '<path>'`, with any embedded single quote doubled per the PowerShell
+// literal-string rule) as UTF-16LE base64 and passes it via -EncodedCommand: the
+// path lives inside the base64 payload, so no parent shell can re-split or expand
+// it, and the command runs identically from cmd.exe, powershell.exe, and pwsh. It
+// uses powershell.exe (present on every Windows install, unlike PowerShell 7) with
+// -ExecutionPolicy Bypass so a default Restricted client still runs the child
+// script (the bypass is process-scoped and does not change machine/user policy).
+// The .sh branch is only shown on POSIX hosts, whose shells all honor single
+// quotes, so it uses a POSIX single-quoted literal (close the quote, add an
+// escaped ', reopen). See cli/azd/AGENTS.md ("Shell-safe output").
 func sideloadRunCommand(scriptPath string) string {
 	if strings.HasSuffix(scriptPath, ".ps1") {
-		return `powershell -NoProfile -ExecutionPolicy Bypass -File '` + strings.ReplaceAll(scriptPath, "'", "''") + `'`
+		inner := "& '" + strings.ReplaceAll(scriptPath, "'", "''") + "'"
+		return "powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand " + encodePowerShellCommand(inner)
 	}
 	// POSIX single-quoted literal: close the quote, add an escaped ', reopen.
 	return "bash '" + strings.ReplaceAll(scriptPath, "'", `'\''`) + "'"
+}
+
+// encodePowerShellCommand returns the base64 of the UTF-16LE bytes of cmd, the
+// wire format powershell.exe / pwsh expect for -EncodedCommand. Because the
+// payload is plain base64 ([A-Za-z0-9+/=]), it survives any parent shell verbatim.
+func encodePowerShellCommand(cmd string) string {
+	units := utf16.Encode([]rune(cmd))
+	buf := make([]byte, len(units)*2)
+	for i, u := range units {
+		// Split each UTF-16 code unit into little-endian bytes; the masks make the
+		// truncation explicit and intentional.
+		buf[i*2] = byte(u & 0xff)        //nolint:gosec // intentional low-byte truncation
+		buf[i*2+1] = byte(u >> 8 & 0xff) //nolint:gosec // intentional high-byte truncation
+	}
+	return base64.StdEncoding.EncodeToString(buf)
 }

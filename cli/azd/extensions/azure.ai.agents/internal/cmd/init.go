@@ -687,6 +687,13 @@ func resolveKnownProtocols(flagProtocols []string) ([]protocolInfo, error) {
 			continue
 		}
 		seen[name] = true
+		if name == "activity" {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				"--protocol activity is not supported with --image",
+				"use code init for activity agents, or choose a different protocol for --image",
+			)
+		}
 
 		version, ok := versionOf[name]
 		if !ok {

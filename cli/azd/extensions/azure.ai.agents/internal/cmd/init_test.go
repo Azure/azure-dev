@@ -379,6 +379,20 @@ func TestSynthesizeImageManifestFile_RejectsUnknownProtocol(t *testing.T) {
 	require.Contains(t, err.Error(), "unknown protocol")
 }
 
+func TestSynthesizeImageManifestFile_RejectsActivityProtocol(t *testing.T) {
+	t.Parallel()
+
+	manifestPath, cleanup, err := synthesizeImageManifestFile(
+		"my-agent",
+		"myacr.azurecr.io/agents/my-agent:v1",
+		[]string{"activity"},
+	)
+	require.Error(t, err)
+	require.Empty(t, manifestPath)
+	cleanup()
+	require.Contains(t, err.Error(), "--protocol activity is not supported with --image")
+}
+
 func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
 	const image = "myacr.azurecr.io/agents/my-agent:v1"
 	server := &recordingProjectServer{}

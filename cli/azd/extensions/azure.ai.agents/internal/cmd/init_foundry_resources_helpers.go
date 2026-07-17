@@ -1283,10 +1283,10 @@ func resolveModelDeployments(
 		},
 	})
 	if err != nil {
-		return nil, err
-	}
-
-	if len(resolveResp.Deployments) > 0 {
+		if !hasAiErrorReason(err, azdext.AiErrorReasonNoDeploymentMatch) {
+			return nil, err
+		}
+	} else if len(resolveResp.Deployments) > 0 {
 		return resolveResp.Deployments, nil
 	}
 

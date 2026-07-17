@@ -70,8 +70,7 @@ telemetry categories, error codes, or user-facing suggestions similar to the
 
 The embedded SPA in `internal/inspector/assets/` is a built artifact (Vite output).
 It is checked in as-is. When the SPA source is updated, replace the contents of
-`internal/inspector/assets/` and bump `version.txt` + `extension.yaml` + add a
-CHANGELOG entry.
+`internal/inspector/assets/`.
 
 ## Release preparation
 

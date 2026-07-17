@@ -17,7 +17,7 @@ docs/
 ## When to Update Documentation
 
 - **New command or flag:** Update `docs/guides/adding-a-new-command.md` if the pattern changes; update `docs/reference/feature-status.md` with the new feature's stage.
-- **User-visible behavior change:** Add or update a `CHANGELOG.md` entry when release-note-worthy, and update relevant command docs/help when behavior affects workflows, especially `--no-prompt` or CI/script semantics.
+- **User-visible behavior change:** Update relevant command docs/help when behavior affects workflows, especially `--no-prompt` or CI/script semantics.
  - **New environment variable:** Add it to `cli/azd/docs/environment-variables.md` (canonical), and keep `docs/reference/environment-variables.md` in sync when appropriate.
 - **New extension capability:** Update `docs/architecture/extension-framework.md` and `docs/guides/creating-an-extension.md`.
 - **Feature stage change:** Update `docs/reference/feature-status.md` when a feature graduates (alpha → beta → stable).

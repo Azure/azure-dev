@@ -660,7 +660,8 @@ func preBuiltImageForInit(agentManifest *agent_yaml.AgentManifest, flagImage str
 
 func protocolRecordsForImageManifest(flagProtocols []string) ([]agent_yaml.ProtocolVersionRecord, error) {
 	if len(flagProtocols) == 0 {
-		return []agent_yaml.ProtocolVersionRecord{{Protocol: "responses", Version: "2.0.0"}}, nil
+		p := knownProtocols[0] // default: responses
+		return []agent_yaml.ProtocolVersionRecord{{Protocol: p.Name, Version: p.Version}}, nil
 	}
 	if slices.Contains(flagProtocols, "activity") {
 		return nil, exterrors.Validation(
@@ -714,7 +715,9 @@ func resolveKnownProtocols(flagProtocols []string) ([]protocolInfo, error) {
 // scaffolding, since a pre-built image needs none of those. The returned cleanup removes
 // the temp directory; callers should defer it. The image is intentionally not embedded
 // in the temporary manifest; init writes --image to the generated azure.yaml service's
-// top-level image field.
+// top-level image field. flagProtocols specifies the protocol names to include in the
+// manifest (e.g., "responses", "invocations", "invocations_ws"); if empty, "responses"
+// is used as the default.
 func synthesizeImageManifestFile(agentName, image string, flagProtocols []string) (string, func(), error) {
 	noop := func() {}
 	protocols, err := protocolRecordsForImageManifest(flagProtocols)

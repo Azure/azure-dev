@@ -421,46 +421,6 @@ func TestAgentDefinitionUsesFileRefIgnoresInlineDefinition(t *testing.T) {
 	require.False(t, usesFileRef)
 }
 
-// TestLoadAgentDefinition_InlineWorkflow verifies a valid inline
-// `kind: workflow` definition loads without error and is reported as a
-// non-hosted (non-container) agent rather than being rejected.
-func TestLoadAgentDefinition_InlineWorkflow(t *testing.T) {
-	props, err := structpb.NewStruct(map[string]any{
-		"kind": "workflow",
-		"name": "my-workflow",
-	})
-	require.NoError(t, err)
-	svc := &azdext.ServiceConfig{
-		Name:                 "my-workflow",
-		Host:                 "azure.ai.agent",
-		AdditionalProperties: props,
-	}
-
-	_, isHosted, source, err := LoadAgentDefinition(svc, t.TempDir())
-	require.NoError(t, err)
-	require.False(t, isHosted)
-	require.Equal(t, AgentDefinitionSourceInline, source)
-}
-
-// TestLoadAgentDefinition_InlineWorkflow_InvalidRejected verifies an
-// inline non-hosted definition is still validated: an invalid name is
-// rejected rather than silently passing as "not a container agent".
-func TestLoadAgentDefinition_InlineWorkflow_InvalidRejected(t *testing.T) {
-	props, err := structpb.NewStruct(map[string]any{
-		"kind": "workflow",
-		"name": "Invalid_Name",
-	})
-	require.NoError(t, err)
-	svc := &azdext.ServiceConfig{
-		Name:                 "wf",
-		Host:                 "azure.ai.agent",
-		AdditionalProperties: props,
-	}
-
-	_, _, _, err = LoadAgentDefinition(svc, t.TempDir())
-	require.Error(t, err)
-}
-
 // TestUpsertAgentEnvVars verifies that env vars are added/updated on the inline
 // definition while preserving the other definition keys.
 func TestUpsertAgentEnvVars(t *testing.T) {

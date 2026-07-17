@@ -482,6 +482,8 @@ func loadServiceProtocol(projectPath, relativePath string) string {
 		switch strings.TrimSpace(p.Protocol) {
 		case ProtocolResponses:
 			return ProtocolResponses
+		case ProtocolInvocationsWS:
+			return ProtocolInvocationsWS
 		case ProtocolInvocations:
 			sawInvocations = true
 		}

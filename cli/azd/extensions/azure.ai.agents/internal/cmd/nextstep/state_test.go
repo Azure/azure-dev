@@ -617,6 +617,28 @@ protocols:
 			want: ProtocolResponses,
 		},
 		{
+			name: "responses wins over invocations_ws regardless of order",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: invocations_ws
+    version: "2.0.0"
+  - protocol: responses
+    version: "2.0.0"
+`,
+			want: ProtocolResponses,
+		},
+		{
+			name: "invocations wins over invocations_ws regardless of order",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: invocations_ws
+    version: "2.0.0"
+  - protocol: invocations
+    version: "1.0.0"
+`,
+			want: ProtocolInvocations,
+		},
+		{
 			name: "empty protocols section",
 			manifest: `kind: hostedAgent
 protocols: []

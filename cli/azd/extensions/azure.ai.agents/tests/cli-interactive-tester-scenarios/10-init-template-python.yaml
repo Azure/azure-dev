@@ -32,6 +32,6 @@ goals:
   - "Accept the defaults for model version, SKU, capacity. If prompted for a model deployment name, use a '{prefix}-'-prefixed name."
   - "If asked for container/resource size, select 'Small'."
   - "Wait for initialization to complete — look for 'Next:' or a success message."
-  - "Verify the scaffold: confirm azure.yaml exists and references an azure.ai.agent service, and that an agent.yaml was generated."
+  - "Verify the scaffold: confirm azure.yaml exists and references an azure.ai.agent service with the agent definition (name, model, instructions) embedded inline in the service entry properties."
   - "Take a screenshot of the completed init output."
   - "STOP here — do NOT run 'azd provision'. Report a finding for any confusing prompt, wrong default, or scaffold problem."

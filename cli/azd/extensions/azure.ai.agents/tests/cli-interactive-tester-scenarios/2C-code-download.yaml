@@ -1,25 +1,27 @@
-# Tier 2 (cloud E2E) — `code download` against a container-based agent (negative path).
+# Tier 2 (cloud E2E) — `code download` against a code-based agent (positive path).
 #
-# The shared agent uses Docker (container) deploy mode, not code_configuration.
-# `code download` is only supported for code-based agents. This scenario verifies
-# the CLI returns a clear, actionable error (AgentNotCodeBased / 409) rather than
-# a confusing or generic failure.
+# The shared agent uses code deploy mode (auto-selected for Python templates).
+# `code download` retrieves the deployed source. This scenario verifies the CLI
+# downloads the agent code and extracts it into the destination directory.
 #
 # Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
-name: "code-download-not-code-based"
+name: "code-download"
 command: "azd ai agent code download --dest ~/working/azd-agents-shared/code-download-test"
 cwd: "~/working/azd-agents-shared/{shared_agent_name}"
-tags: ["tier:2", "cmd:code", "serial-only", "negative-path"]
+tags: ["tier:2", "cmd:code", "serial-only"]
 
 pre:
   - run: "test -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
     cwd: "~/working/azd-agents-shared/{shared_agent_name}"
     name: "assert shared agent is deployed"
     continue_on_error: true
+  - run: "rm -rf ~/working/azd-agents-shared/code-download-test"
+    name: "clean destination directory"
+    continue_on_error: true
 
 goals:
-  - "Run code download against the shared agent (which is container-based, NOT code-based)."
-  - "Confirm the command returns a non-zero exit code and a clear error message indicating the agent is not code-based (e.g. 'AgentNotCodeBased' or 'not a code-based agent')."
-  - "Confirm the error message is user-friendly and actionable — not a raw stack trace or generic HTTP error."
-  - "Take a screenshot of the error output."
-  - "Report a finding if the command succeeds unexpectedly, hangs, panics, or gives a confusing/generic error message instead of a clear 'not code-based' explanation."
+  - "Run code download against the shared agent (which is code-based)."
+  - "Confirm the command exits successfully (zero exit code)."
+  - "Confirm that agent source files are downloaded into the destination directory (~/working/azd-agents-shared/code-download-test). Run 'ls ~/working/azd-agents-shared/code-download-test' to verify files exist (e.g. app.py, requirements.txt, or similar Python source files)."
+  - "Take a screenshot of the successful download output and the directory listing."
+  - "Report a finding if the command fails, hangs, returns an error about the agent not being code-based, or downloads an empty directory."

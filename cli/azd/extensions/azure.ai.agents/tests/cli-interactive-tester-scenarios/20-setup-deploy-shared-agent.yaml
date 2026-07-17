@@ -10,6 +10,10 @@
 # 2Z-teardown-down.yaml LAST to clean up. All `{name}` placeholders come
 # from the merged profile (`profile.yaml` + `profile.local.yaml`) plus the
 # orchestrator-derived `shared_agent_name`.
+#
+# NOTE: The Python "Basic Responses" template auto-selects CODE deploy mode
+# (no deploy-mode prompt appears). The resulting agent is code-based, which
+# means `code download` will succeed against it.
 name: "setup-deploy-shared-agent"
 command: "azd ai agent init"
 cwd: "~/working/azd-agents-shared"
@@ -39,13 +43,11 @@ goals:
   - "Select Python as the language."
   - "Select the 'Basic Responses' template from the list."
   - "When prompted for the AGENT NAME, set it to EXACTLY '{shared_agent_name}' (clear any pre-filled default first, then type it). This exact name is REQUIRED: init scaffolds the project into a subdirectory named after the agent, and the targeted reuse scenarios depend on that subdirectory being named '{shared_agent_name}'."
-  - "When asked how to deploy, select 'Container' (hosted agent)."
   - "If asked to select an Azure AI Foundry project, create a new one, naming it with the '{prefix}-' prefix, and follow the prompts."
   - "If asked to select a subscription, search for and select the '{subscription}' subscription."
   - "If asked for a location/region, select '{region}'."
   - "When asked to select a model, choose '{model}'."
   - "Accept the defaults for model version, SKU, capacity. If prompted for a model deployment name, use a '{prefix}-'-prefixed name."
-  - "If asked for container/resource size, select 'Small'."
   - "Wait for initialization to complete — look for 'Next:' or a success message."
   - "Change directory into the new '{shared_agent_name}' subdirectory (run 'cd {shared_agent_name}') — init scaffolds the project into a subdirectory named after the agent, so azure.yaml lives there, not in the current directory."
   - "Run 'azd provision' (from inside the '{shared_agent_name}' subdirectory) and wait for it to succeed. This provisions the Azure infrastructure (Foundry project/account, model deployment, etc.) but does NOT yet deploy the agent."

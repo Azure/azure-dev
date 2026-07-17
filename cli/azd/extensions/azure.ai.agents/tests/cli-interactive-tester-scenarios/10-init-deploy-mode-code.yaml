@@ -34,6 +34,6 @@ goals:
   - "If asked for a location/region, select '{region}'."
   - "If asked to select a model, choose '{model}' and accept the remaining model defaults."
   - "Wait for initialization to complete — look for 'Next:' or a success message."
-  - "Verify the scaffold: confirm azure.yaml/agent.yaml reflect code-deploy mode with the chosen entry point and runtime, and that a .agentignore file controls ZIP packaging."
+  - "Verify the scaffold: confirm azure.yaml reflects code-deploy mode — the azure.ai.agent service entry should have codeConfiguration with the chosen entry point and runtime embedded in its properties, and a .agentignore file should control ZIP packaging."
   - "Take a screenshot of the completed init output."
   - "STOP here — do NOT run 'azd provision'. Report a finding if the entry-point or runtime prompts are missing, confusing, or not persisted."

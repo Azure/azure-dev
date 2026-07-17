@@ -2,7 +2,7 @@
 #
 # Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
 # Optimization is an expensive iterative process, so this scenario caps it at a
-# single iteration, submits with --no-wait, then immediately cancels to avoid
+# single candidate, submits with --no-wait, then immediately cancels to avoid
 # incurring a full optimization run. The agent is auto-detected from azure.yaml.
 #
 # ⚠️ ADDITIONAL PREREQUISITE — Agent Optimizer enrollment: the optimize command
@@ -15,7 +15,7 @@
 # behavior is the clean gated error below (capture it and stop) — that is an
 # acceptable outcome for this scenario, not a product failure.
 name: "optimize-submit-and-cancel"
-command: "azd ai agent optimize --eval-model {model} --max-iterations 1 --no-wait"
+command: "azd ai agent optimize --eval-model {model} --max-candidates 1 --no-wait"
 cwd: "~/working/azd-agents-shared/{shared_agent_name}"
 tags: ["tier:2", "cmd:optimize", "serial-only"]
 
@@ -27,7 +27,7 @@ pre:
     continue_on_error: true
 
 goals:
-  - "Run 'optimize --eval-model {model} --max-iterations 1 --no-wait' to submit an optimization job without blocking; the agent is auto-detected from azure.yaml. Work through the prompts (use the project eval.yaml, accept the baseline instruction file, skip skills/tools, provide a dataset, accept the optimization model)."
+  - "Run 'optimize --eval-model {model} --max-candidates 1 --no-wait' to submit an optimization job without blocking; the agent is auto-detected from azure.yaml. Work through the prompts (use the project eval.yaml, accept the baseline instruction file, skip skills/tools, provide a dataset, accept the optimization model)."
   - "GATING CHECK: if the command (or 'optimize list') returns a clean HTTP 400 with error code 'SubscriptionNotRegistered' (subscription not registered for Agent Optimizer, signup at https://aka.ms/ao/quickstart), this subscription is not enrolled. Confirm the error is CLEAN (structured error body, code, signup link, non-zero exit — no crash/hang), capture a screenshot, report it as an enrollment-gap finding, and STOP — the remaining list/status/cancel steps cannot run without enrollment."
   - "If the job IS submitted successfully (subscription enrolled): confirm the command returns without blocking (because of --no-wait) and surfaces a job identifier."
   - "Run 'azd ai agent optimize list' and confirm the just-submitted job appears with a status."

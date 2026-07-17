@@ -15,7 +15,7 @@ pre:
 goals:
   - "Wait for the endpoint configuration table to render (auto-resolves agent from azure.yaml)."
   - "Confirm the output shows protocol(s) configured on the agent (e.g. 'responses')."
-  - "Confirm the endpoint URL or base path is displayed."
-  - "Run the command again with '--output json' and confirm valid JSON is returned with protocol and endpoint fields."
+  - "Confirm the version selector and authorization sections are displayed (may show defaults if not explicitly configured)."
+  - "Run the command again with '--output json' and confirm valid JSON is returned with 'name', 'agent_endpoint', and 'agent_card' fields."
   - "Take a screenshot of both the table and JSON outputs."
   - "Report a finding if the command errors, shows no endpoint config, or returns unexpected empty fields for a deployed agent."

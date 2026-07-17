@@ -1,18 +1,18 @@
-# Tier 1 (auth, scaffold only) — init from a remote azure.yaml with explicit --agent-name and --model.
+# Tier 1 (auth, scaffold only) — init from a remote azure.yaml URL.
 #
 # Requires Azure login (see README "Authentication"). Does NOT run `azd provision`;
 # no cost incurred.
-# Also requires GitHub login: `gh auth login` (azure.yaml download can fall back to
-# the gh CLI when the anonymous GitHub API is rate-limited). The pre hook fails
-# fast if gh is not authenticated.
-# Verifies that the override flags are honored in the generated files.
+# Also requires GitHub login: `gh auth login`. Downloading the azure.yaml (and its
+# sibling files) from GitHub falls back to the gh CLI when the anonymous GitHub
+# API is rate-limited, which would otherwise drop into an interactive gh login
+# mid-run. The pre hook fails fast if gh is not authenticated.
 #
-# NOTE: With `-m` pointing to a Python azure.yaml, code deploy is auto-selected
-# (no deploy-mode prompt). The --agent-name and --model flags should still override
-# defaults in the generated project.
-name: "init-flags-agent-name-model"
-command: "azd ai agent init -m https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/01-basic/azure.yaml --agent-name {prefix}-qa-named-agent-{instance} --model {model}"
-cwd: "~/working/azd-agents-t1-flags-{instance}"
+# NOTE: The `-m` flag now accepts an azure.yaml URL (unified project manifest)
+# in addition to legacy agent.manifest.yaml files. With a Python project URL and
+# userProvidedManifest=true, code deploy is auto-selected (no deploy-mode prompt).
+name: "init-from-azure-yaml-url"
+command: "azd ai agent init -m https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/01-basic/azure.yaml"
+cwd: "~/working/azd-agents-t1-from-url-{instance}"
 tags: ["tier:1", "cmd:init", "parallel-safe"]
 
 env:
@@ -24,18 +24,19 @@ pre:
   - run: "gh auth status || { echo 'ERROR: GitHub CLI not authenticated. Run: gh auth login'; exit 1; }"
     cwd: "~/working"
     name: "require gh auth login (azure.yaml download)"
-  - run: "rm -rf ~/working/azd-agents-t1-flags-{instance}"
+  - run: "rm -rf ~/working/azd-agents-t1-from-url-{instance}"
     cwd: "~/working"
     name: "reset working dir"
 
 goals:
   - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with '{prefix}-' and suffixed with this run's instance id '-{instance}' (e.g. '{prefix}-basic-responses-{instance}') so concurrent instances don't collide on resource names. Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected. If a name prompt comes pre-filled with a default value, CLEAR it first (select-all then delete, or backspaces) before typing so your name replaces the default instead of appending to it."
-  - "Wait for the azure.yaml to download and parse."
+  - "Wait for the tool to fetch and parse the azure.yaml from the provided URL."
   - "If asked to select an Azure AI Foundry project, choose to create a new one, naming it with the '{prefix}-' prefix, and follow the prompts."
   - "If asked to select a subscription, search for and select the '{subscription}' subscription."
   - "If asked for a location/region, select '{region}'."
-  - "Accept any remaining model defaults (version, SKU, capacity). If prompted for a model deployment name, use a '{prefix}-'-prefixed name."
+  - "When asked to select a model, choose '{model}' (or accept the sample's model if one is pinned)."
+  - "Accept the defaults for any remaining model prompts (version, SKU, capacity). If prompted for a model deployment name, use a '{prefix}-'-prefixed name."
   - "Wait for initialization to complete — look for 'Next:' or a success message."
-  - "Verify the overrides: confirm azure.yaml records the Foundry agent name as '{prefix}-qa-named-agent-{instance}' (the flag value passed via --agent-name) and the model '{model}' — the values passed via flags, not the sample defaults."
+  - "Verify the scaffold: confirm azure.yaml exists in the project directory and reflects the sample's agent definition."
   - "Take a screenshot of the completed init output."
-  - "STOP here — do NOT run 'azd provision'. Report a finding if --agent-name or --model is ignored, or if the wizard still prompts for these values despite the flags."
+  - "STOP here — do NOT run 'azd provision'. Report a finding if the URL fails to download/parse, or if any field is dropped during scaffold."

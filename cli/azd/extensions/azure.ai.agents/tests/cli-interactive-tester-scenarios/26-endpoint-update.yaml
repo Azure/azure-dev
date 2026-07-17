@@ -12,24 +12,39 @@ pre:
     cwd: "~/working/azd-agents-shared/{shared_agent_name}"
     name: "assert shared agent is deployed"
     continue_on_error: true
-  # `endpoint update` reads agent_endpoint/agent_card from agent.yaml and errors
-  # ("nothing to update") if neither is defined. The Basic Responses template
-  # defines neither, so inject a minimal agent_card (idempotently) before the run
-  # so there is something to patch.
+  # `endpoint update` reads agentEndpoint/agentCard from the azure.yaml service
+  # properties (via LoadAgentDefinition) and errors ("nothing to update") if
+  # neither is defined. The Basic Responses template defines neither, so inject a
+  # minimal agentCard into the azure.yaml service properties (idempotently) before
+  # the run so there is something to patch.
   - run: |
-      f="$(find ~/working/azd-agents-shared/{shared_agent_name} -name agent.yaml | head -1)"
-      if [ -n "$f" ] && ! grep -q '^agent_card:' "$f"; then
-        printf '\nagent_card:\n  description: "{prefix} endpoint-update test card"\n  skills:\n    - id: "{prefix}-echo"\n      name: "Echo"\n      description: "Echoes input back"\n' >> "$f"
-        echo "Injected agent_card into $f"
+      f="~/working/azd-agents-shared/{shared_agent_name}/azure.yaml"
+      if [ -f "$f" ] && ! grep -q 'agentCard:' "$f"; then
+        python3 -c "
+import sys, yaml
+with open(sys.argv[1]) as fh:
+    doc = yaml.safe_load(fh)
+for svc in doc.get('services', {}).values():
+    if svc.get('host') == 'azure.ai.agent':
+        props = svc.setdefault('config', {})
+        props['agentCard'] = {
+            'description': '{prefix} endpoint-update test card',
+            'skills': [{'id': '{prefix}-echo', 'name': 'Echo', 'description': 'Echoes input back'}]
+        }
+        break
+with open(sys.argv[1], 'w') as fh:
+    yaml.dump(doc, fh, default_flow_style=False, sort_keys=False)
+print('Injected agentCard into azure.yaml')
+" "$f"
       else
-        echo "agent_card already present or agent.yaml not found"
+        echo "agentCard already present or azure.yaml not found"
       fi
     cwd: "~/working/azd-agents-shared/{shared_agent_name}"
-    name: "inject agent_card so there is something to patch"
+    name: "inject agentCard into azure.yaml so there is something to patch"
     continue_on_error: true
 
 goals:
-  - "Run endpoint update for the default (auto-detected) agent service. NOTE: a minimal agent_card was injected into agent.yaml during setup so the patch has content."
+  - "Run endpoint update for the default (auto-detected) agent service. NOTE: a minimal agentCard was injected into azure.yaml service properties during setup so the patch has content."
   - "Confirm it patches the existing deployed agent's endpoint/card configuration and explicitly does NOT create a new agent version."
   - "After it completes, run 'azd ai agent show' and confirm the agent version is unchanged from before the update."
   - "Take a screenshot of the update result and the post-update 'show' output."

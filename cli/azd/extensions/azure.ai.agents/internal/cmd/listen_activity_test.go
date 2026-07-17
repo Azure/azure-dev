@@ -48,8 +48,8 @@ func TestTeamsSetupGuideContent(t *testing.T) {
 	}
 	// The run commands are relative to the agent source folder, so the guide must
 	// tell the user to cd there (azd deploy runs from the project root).
-	if !strings.Contains(content, "cd src") {
-		t.Errorf("guide (scripts generated) must include the 'cd <service>' hint; got:\n%s", content)
+	if !strings.Contains(content, "cd 'src'") {
+		t.Errorf("guide (scripts generated) must include the quoted 'cd <service>' hint; got:\n%s", content)
 	}
 
 	// When no script was generated (e.g. a name collision preserved a user file),

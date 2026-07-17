@@ -18,12 +18,12 @@ commands below are relative to it (`azd deploy` itself runs from the project roo
 so `cd` there first):
 
 ```powershell
-cd {{.ServiceRelPath}}                 # the agent's source folder, from the project root
-./pack-and-sideload-teams-app.ps1      # Windows / PowerShell
+cd '{{.ServiceRelPath}}'                 # the agent's source folder, from the project root
+powershell -NoProfile -ExecutionPolicy Bypass -File ./pack-and-sideload-teams-app.ps1   # Windows / PowerShell
 ```
 ```sh
-cd {{.ServiceRelPath}}                 # the agent's source folder, from the project root
-./pack-and-sideload-teams-app.sh       # macOS / Linux
+cd '{{.ServiceRelPath}}'                 # the agent's source folder, from the project root
+./pack-and-sideload-teams-app.sh         # macOS / Linux
 ```
 
 It builds the Teams app package and installs it **for you** (`atk install --scope
@@ -48,7 +48,7 @@ build-only opt-out for your shell:
 
 ```powershell
 # PowerShell: scope the flag to this one run so later runs are not stuck in build-only mode
-try { $env:SKIP_TEAMS_INSTALL = "1"; ./pack-and-sideload-teams-app.ps1 } finally { $env:SKIP_TEAMS_INSTALL = $null }
+try { $env:SKIP_TEAMS_INSTALL = "1"; powershell -NoProfile -ExecutionPolicy Bypass -File ./pack-and-sideload-teams-app.ps1 } finally { $env:SKIP_TEAMS_INSTALL = $null }
 ```
 ```sh
 SKIP_TEAMS_INSTALL=1 ./pack-and-sideload-teams-app.sh              # macOS / Linux (per-command)

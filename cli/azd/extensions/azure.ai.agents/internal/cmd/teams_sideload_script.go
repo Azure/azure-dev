@@ -324,14 +324,17 @@ func preferredSideloadScript(scriptPaths []string) string {
 // (where a .ps1 is run and where azd's own output is typically shown) and uses
 // powershell.exe, which ships with every Windows install (unlike PowerShell 7's
 // pwsh) and takes an explicit -File path (not the PowerShell-only `&` call
-// operator). The path is wrapped in SINGLE quotes so PowerShell treats it as a
-// literal -- no `$name`, `$()`, or backtick expansion -- while backslashes stay
-// intact so the Windows path resolves; an embedded single quote is escaped by
-// doubling it (PowerShell literal-string rule). The .sh branch uses a POSIX
-// single-quoted literal. See cli/azd/AGENTS.md ("Shell-safe output").
+// operator). It passes -ExecutionPolicy Bypass so the child script still runs on
+// a default client whose policy is Restricted (the bypass is process-scoped and
+// does not change the machine/user policy). The path is wrapped in SINGLE quotes
+// so PowerShell treats it as a literal -- no `$name`, `$()`, or backtick
+// expansion -- while backslashes stay intact so the Windows path resolves; an
+// embedded single quote is escaped by doubling it (PowerShell literal-string
+// rule). The .sh branch uses a POSIX single-quoted literal. See cli/azd/AGENTS.md
+// ("Shell-safe output").
 func sideloadRunCommand(scriptPath string) string {
 	if strings.HasSuffix(scriptPath, ".ps1") {
-		return `powershell -NoProfile -File '` + strings.ReplaceAll(scriptPath, "'", "''") + `'`
+		return `powershell -NoProfile -ExecutionPolicy Bypass -File '` + strings.ReplaceAll(scriptPath, "'", "''") + `'`
 	}
 	// POSIX single-quoted literal: close the quote, add an escaped ', reopen.
 	return "bash '" + strings.ReplaceAll(scriptPath, "'", `'\''`) + "'"

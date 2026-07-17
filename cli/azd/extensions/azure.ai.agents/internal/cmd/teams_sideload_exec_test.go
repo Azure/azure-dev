@@ -195,18 +195,18 @@ func assertValidTeamsPackage(t *testing.T, zipPath, botName, msaAppID string) {
 }
 
 // writeFakeAtkUnix installs a stub `atk` that reproduces the real
-// not-signed-in-then-login-then-succeed sequence: `install` fails with the token
-// error until `auth`/`account login` runs (recorded via the marker file), after
-// which `install` returns a TitleId.
+// not-signed-in-then-login-then-succeed sequence: `install` fails (nonzero exit)
+// with the token error until `auth`/`account login` runs (recorded via the
+// marker file), after which `install` returns a TitleId and exits 0.
 func writeFakeAtkUnix(t *testing.T, binDir, marker string) {
 	t.Helper()
 	body := "#!/usr/bin/env bash\n" +
 		"MARKER=\"" + marker + "\"\n" +
 		"case \"$1\" in\n" +
 		"  install)\n" +
-		"    if [ -f \"$MARKER\" ]; then echo \"Installed. TitleId: U_test123\";" +
-		" else echo \"Cannot get token. Use 'atk account login m365' to log in the correct account.\"; fi ;;\n" +
-		"  auth|account) : > \"$MARKER\"; echo \"Logged in.\" ;;\n" +
+		"    if [ -f \"$MARKER\" ]; then echo \"Installed. TitleId: U_test123\"; exit 0;" +
+		" else echo \"Cannot get token. Use 'atk account login m365' to log in the correct account.\"; exit 1; fi ;;\n" +
+		"  auth|account) : > \"$MARKER\"; echo \"Logged in.\"; exit 0 ;;\n" +
 		"esac\nexit 0\n"
 	p := filepath.Join(binDir, "atk")
 	writeExecFile(t, p, []byte(body))
@@ -218,9 +218,8 @@ func writeFakeAtkWindows(t *testing.T, binDir, marker string) {
 	t.Helper()
 	body := "@echo off\r\n" +
 		"if \"%1\"==\"install\" (\r\n" +
-		"  if exist \"" + marker + "\" ( echo Installed. TitleId: U_test123 )" +
-		" else ( echo Cannot get token. Use 'atk account login m365' to log in the correct account. )\r\n" +
-		"  exit /b 0\r\n" +
+		"  if exist \"" + marker + "\" ( echo Installed. TitleId: U_test123 & exit /b 0 )" +
+		" else ( echo Cannot get token. Use 'atk account login m365' to log in the correct account. & exit /b 1 )\r\n" +
 		")\r\n" +
 		"if \"%1\"==\"auth\" ( type nul > \"" + marker + "\" & echo Logged in. & exit /b 0 )\r\n" +
 		"if \"%1\"==\"account\" ( type nul > \"" + marker + "\" & echo Logged in. & exit /b 0 )\r\n" +

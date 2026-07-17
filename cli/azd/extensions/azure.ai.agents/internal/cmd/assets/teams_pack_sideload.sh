@@ -195,7 +195,10 @@ if ! command -v atk >/dev/null 2>&1; then
         exit 1
     fi
     echo "Installing the Microsoft 365 Agents Toolkit CLI (atk)..."
-    npm install -g @microsoft/m365agentstoolkit-cli >/dev/null
+    # Do not let a failed npm install abort under set -e -- fall through to the
+    # actionable manual-install message below (which also covers the case where
+    # npm "succeeds" but atk is still not on PATH).
+    npm install -g @microsoft/m365agentstoolkit-cli >/dev/null 2>&1 || true
     if ! command -v atk >/dev/null 2>&1; then
         echo "Failed to install atk. Install it manually: npm i -g @microsoft/m365agentstoolkit-cli" >&2
         exit 1

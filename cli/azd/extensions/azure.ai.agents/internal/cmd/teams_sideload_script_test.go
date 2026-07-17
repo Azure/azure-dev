@@ -6,6 +6,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"text/template"
@@ -129,6 +130,21 @@ func TestPreferredSideloadScript(t *testing.T) {
 	if got != pwsh && got != bash {
 		t.Errorf("preferred script %q is neither candidate", got)
 	}
+	// The current-OS script must be chosen so the emitted command matches the
+	// user's shell.
+	wantOSScript := bash
+	otherOSScript := pwsh
+	if runtime.GOOS == "windows" {
+		wantOSScript, otherOSScript = pwsh, bash
+	}
+	if got := preferredSideloadScript([]string{wantOSScript}); got != wantOSScript {
+		t.Errorf("expected the current-OS script %q, got %q", wantOSScript, got)
+	}
+	// If only the wrong-OS script was written, return "" (no cross-shell hint)
+	// so the guide/manual fallback is shown instead.
+	if got := preferredSideloadScript([]string{otherOSScript}); got != "" {
+		t.Errorf("wrong-OS-only input should yield empty result, got %q", got)
+	}
 }
 
 // TestTeamsSideloadScriptBuildOnly asserts the SKIP_TEAMS_INSTALL opt-out is a
@@ -196,15 +212,26 @@ func TestTeamsSideloadScriptTruncatesManifestFields(t *testing.T) {
 }
 
 func TestSideloadRunCommand(t *testing.T) {
-	// Paths may contain spaces, so the emitted command must quote them, and a
-	// quoted .ps1 needs the pwsh call operator. Variable names avoid substrings
-	// (e.g. "pw") that gosec's G101 rule treats as credential indicators.
-	ps1Path := `a b\x.ps1`
-	if got := sideloadRunCommand(ps1Path); got != `& "`+ps1Path+`"` {
-		t.Errorf("pwsh run command not shell-safe: %q", got)
+	// The emitted command must single-quote the path for the target shell so a
+	// path with spaces or metacharacters ($, backtick, quote) is neither
+	// expanded nor able to break out of the argument; a quoted .ps1 also needs
+	// the pwsh call operator. Variable names avoid substrings (e.g. "pw") that
+	// gosec's G101 rule treats as credential indicators.
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"pwsh_simple", `a b\x.ps1`, `& 'a b\x.ps1'`},
+		{"pwsh_metachars", "a $b`c\\d.ps1", "& 'a $b`c\\d.ps1'"},
+		{"pwsh_quote", `a'b\x.ps1`, `& 'a''b\x.ps1'`},
+		{"bash_simple", `a b/x.sh`, `bash 'a b/x.sh'`},
+		{"bash_metachars", "a $b`c/d.sh", "bash 'a $b`c/d.sh'"},
+		{"bash_quote", `a'b/x.sh`, `bash 'a'\''b/x.sh'`},
 	}
-	bashPath := `a b/x.sh`
-	if got := sideloadRunCommand(bashPath); got != `bash "`+bashPath+`"` {
-		t.Errorf("bash run command not shell-safe: %q", got)
+	for _, tc := range cases {
+		if got := sideloadRunCommand(tc.in); got != tc.want {
+			t.Errorf("%s: sideloadRunCommand(%q) = %q, want %q", tc.name, tc.in, got, tc.want)
+		}
 	}
 }

@@ -28,6 +28,11 @@ TEAMS_APP_ID="{{.TeamsAppId}}" # stable per agent, so re-runs update the same ap
 SHORT_NAME="$(printf '%.30s' "$AGENT_NAME")"
 SHORT_DESC="$(printf '%.80s' "Chat with $SHORT_NAME in Microsoft Teams.")"
 
+# Teams only treats a re-uploaded package (same app id) as an update when the
+# manifest version is higher, so derive a monotonically increasing version from
+# the current time. Each re-run therefore updates the same app in place.
+PKG_VERSION="1.0.$(date -u +%s)"
+
 echo "Agent:        $AGENT_NAME"
 echo "Bot ID:       $BOT_ID"
 echo "Teams app id: $TEAMS_APP_ID"
@@ -40,7 +45,7 @@ cat > "$BUILD_DIR/manifest.json" <<JSON
 {
   "\$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.19/MicrosoftTeams.schema.json",
   "manifestVersion": "1.19",
-  "version": "1.0.0",
+  "version": "$PKG_VERSION",
   "id": "$TEAMS_APP_ID",
   "developer": {
     "name": "Microsoft Foundry",
@@ -56,19 +61,21 @@ cat > "$BUILD_DIR/manifest.json" <<JSON
   },
   "accentColor": "#5B5FC7",
   "bots": [
-    { "botId": "$BOT_ID", "scopes": ["personal", "team", "groupChat"], "supportsFiles": false, "isNotificationOnly": false }
+    { "botId": "$BOT_ID", "scopes": ["personal"], "supportsFiles": false, "isNotificationOnly": false }
   ],
-  "permissions": ["identity", "messageTeamMembers"],
+  "permissions": ["identity"],
   "validDomains": []
 }
 JSON
 
 # ---- Write the icons (embedded PNGs -- no image tooling needed) --------------
 # color.png is 192x192, outline.png is 32x32, per the Teams manifest icon rules.
-base64 -d > "$BUILD_DIR/color.png" <<'COLOR_B64'
+# macOS ships BSD base64 (decode flag -D); GNU/Linux uses -d.
+if [ "$(uname)" = "Darwin" ]; then B64_DEC="-D"; else B64_DEC="-d"; fi
+base64 "$B64_DEC" > "$BUILD_DIR/color.png" <<'COLOR_B64'
 {{.ColorPngB64}}
 COLOR_B64
-base64 -d > "$BUILD_DIR/outline.png" <<'OUTLINE_B64'
+base64 "$B64_DEC" > "$BUILD_DIR/outline.png" <<'OUTLINE_B64'
 {{.OutlinePngB64}}
 OUTLINE_B64
 
@@ -146,7 +153,9 @@ if [ -z "$TITLE_ID" ]; then
     echo "Or sideload the package manually (no admin approval needed):"
     echo "    $ZIP_PATH"
     echo "    Teams -> Apps -> Manage your apps -> Upload an app -> Upload a custom app"
-    exit 0
+    # The install did not complete, so report failure (build-only mode already
+    # exited 0 earlier). The package + manual steps above remain available.
+    exit 1
 fi
 
 echo ""

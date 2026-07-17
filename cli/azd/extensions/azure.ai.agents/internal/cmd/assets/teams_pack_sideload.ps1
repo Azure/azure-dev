@@ -29,6 +29,11 @@ $shortName = if ($AgentName.Length -gt 30) { $AgentName.Substring(0, 30) } else 
 $shortDesc = "Chat with $shortName in Microsoft Teams."
 if ($shortDesc.Length -gt 80) { $shortDesc = $shortDesc.Substring(0, 80) }
 
+# Teams only treats a re-uploaded package (same app id) as an update when the
+# manifest version is higher, so derive a monotonically increasing version from
+# the current time. Each re-run therefore updates the same app in place.
+$pkgVersion = "1.0.$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+
 Write-Host "Agent:        $AgentName"
 Write-Host "Bot ID:       $BotId"
 Write-Host "Teams app id: $TeamsAppId"
@@ -40,7 +45,7 @@ New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 $manifest = [ordered]@{
     '$schema'       = "https://developer.microsoft.com/en-us/json-schemas/teams/v1.19/MicrosoftTeams.schema.json"
     manifestVersion = "1.19"
-    version         = "1.0.0"
+    version         = $pkgVersion
     id              = $TeamsAppId
     developer       = [ordered]@{
         name          = "Microsoft Foundry"
@@ -55,8 +60,8 @@ $manifest = [ordered]@{
         full  = "A Microsoft Foundry hosted agent on the Activity protocol. Send it a message in Teams."
     }
     accentColor     = "#5B5FC7"
-    bots            = @([ordered]@{ botId = $BotId; scopes = @("personal", "team", "groupChat"); supportsFiles = $false; isNotificationOnly = $false })
-    permissions     = @("identity", "messageTeamMembers")
+    bots            = @([ordered]@{ botId = $BotId; scopes = @("personal"); supportsFiles = $false; isNotificationOnly = $false })
+    permissions     = @("identity")
     validDomains    = @()
 }
 ($manifest | ConvertTo-Json -Depth 10) | Set-Content -Path (Join-Path $buildDir "manifest.json") -Encoding UTF8
@@ -126,7 +131,9 @@ if ([string]::IsNullOrWhiteSpace($titleId)) {
     Write-Host "Or sideload the package manually (no admin approval needed):"
     Write-Host "    $zipPath"
     Write-Host "    Teams -> Apps -> Manage your apps -> Upload an app -> Upload a custom app"
-    return
+    # The install did not complete, so report failure (build-only mode already
+    # returned earlier). The package + manual steps above remain available.
+    exit 1
 }
 
 Write-Host ""

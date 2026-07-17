@@ -138,31 +138,33 @@ func writeTeamsSideloadScripts(
 	return written
 }
 
-// preferredSideloadScript returns the generated script best suited to the current
-// OS (the .ps1 on Windows, the .sh elsewhere), or "" if none was written.
+// preferredSideloadScript returns the generated script that matches the current
+// OS (the .ps1 on Windows, the .sh elsewhere), or "" if no matching script was
+// written. It deliberately does not fall back to the other platform's script:
+// running a .ps1 on Linux/macOS or a .sh on Windows would emit the wrong shell
+// syntax, so the caller shows the guide/manual fallback instead.
 func preferredSideloadScript(scriptPaths []string) string {
 	wantPwsh := runtime.GOOS == "windows"
 	for _, p := range scriptPaths {
-		isPwsh := len(p) >= 4 && p[len(p)-4:] == ".ps1"
+		isPwsh := strings.HasSuffix(p, ".ps1")
 		if isPwsh == wantPwsh {
 			return p
 		}
-	}
-	if len(scriptPaths) > 0 {
-		return scriptPaths[0]
 	}
 	return ""
 }
 
 // sideloadRunCommand returns a shell-safe invocation of the generated script for
-// a user-facing hint. The path may contain spaces, so it is always quoted; the
-// pwsh call operator (&) is required to run a quoted .ps1 path, while .sh is run
-// via bash. See cli/azd/AGENTS.md ("Shell-safe output" / "Path Safety"). Plain
-// double quotes are used (not %q) so Windows backslashes are not doubled.
+// a user-facing hint. The path is single-quote quoted for the target shell so a
+// path containing spaces or metacharacters ($, backticks, quotes) is neither
+// expanded nor able to break out of the argument when pasted. The pwsh call
+// operator (&) is required to run a quoted .ps1 path, while .sh is run via bash.
+// See cli/azd/AGENTS.md ("Shell-safe output" / "Path Safety").
 func sideloadRunCommand(scriptPath string) string {
-	quoted := `"` + scriptPath + `"`
 	if strings.HasSuffix(scriptPath, ".ps1") {
-		return "& " + quoted
+		// PowerShell single-quoted literal: an embedded ' is escaped by doubling.
+		return "& '" + strings.ReplaceAll(scriptPath, "'", "''") + "'"
 	}
-	return "bash " + quoted
+	// POSIX single-quoted literal: close the quote, add an escaped ', reopen.
+	return "bash '" + strings.ReplaceAll(scriptPath, "'", `'\''`) + "'"
 }

@@ -58,6 +58,7 @@ func deterministicTeamsAppID(msaAppID string) string {
 // 32x32 transparent outline PNG, embedded as base64 so the generated scripts can
 // write valid Teams icons with no image tooling on any OS. Replace with your own
 // branding by editing the generated script or the produced color.png/outline.png.
+// cspell:disable
 const (
 	// teamsColorIconB64 and teamsOutlineIconB64 are split into fixed-width chunks
 	// only to satisfy the lll line-length linter; concatenation yields the exact
@@ -69,6 +70,8 @@ const (
 	teamsOutlineIconB64 = "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAaklEQVR42u1XQQ4AIAjq/5+2D7RlJoKbnBPJpdJag26wC2iJYULsE5DkWeefk1fEHgmyKhgKzHxDpbcP8yFayc2J6mU3L3KijYAR0E" +
 		"8ApQ3pg0hiFNOXkcQ6phsSCUsmYUolbLnMx2SAwgZ903yusz4vOQAAAABJRU5ErkJggg=="
 )
+
+// cspell:enable
 
 // teamsSideloadData is the template model shared by the pwsh and bash scripts.
 type teamsSideloadData struct {

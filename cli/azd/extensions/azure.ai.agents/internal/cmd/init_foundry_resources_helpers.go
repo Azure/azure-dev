@@ -1076,69 +1076,6 @@ func ensureLocation(
 	return setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", azureContext.Scope.Location)
 }
 
-func applyAzureContextFlags(azureContext *azdext.AzureContext, flags *initFlags) {
-	if flags == nil {
-		return
-	}
-	if flags.subscriptionId != "" {
-		azureContext.Scope.SubscriptionId = flags.subscriptionId
-	}
-	if flags.location != "" {
-		azureContext.Scope.Location = flags.location
-	}
-}
-
-func persistValidatedAzureContextFlags(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	azureContext *azdext.AzureContext,
-	envName string,
-	flags *initFlags,
-) error {
-	if flags == nil {
-		return nil
-	}
-	if flags.subscriptionId != "" {
-		tenantResponse, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
-			SubscriptionId: flags.subscriptionId,
-		})
-		if err != nil {
-			return exterrors.Auth(
-				exterrors.CodeTenantLookupFailed,
-				fmt.Sprintf("failed to lookup tenant for subscription %s: %s", flags.subscriptionId, err),
-				"verify your Azure login with 'azd auth login'",
-			)
-		}
-		azureContext.Scope.TenantId = tenantResponse.TenantId
-		if err := setEnvValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID", flags.subscriptionId); err != nil {
-			return err
-		}
-		if err := setEnvValue(ctx, azdClient, envName, "AZURE_TENANT_ID", tenantResponse.TenantId); err != nil {
-			return err
-		}
-	}
-	if flags.location != "" {
-		allowedLocations, err := supportedRegionsForInit(ctx)
-		if err != nil {
-			return err
-		}
-		if !locationAllowed(flags.location, allowedLocations) {
-			return exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				fmt.Sprintf("location %q is not supported for this agent setup", flags.location),
-				"choose a supported hosted-agent region",
-			)
-		}
-		if err := setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", flags.location); err != nil {
-			return err
-		}
-		if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", flags.location); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // ensureSubscriptionAndLocation ensures both subscription and location are set.
 // Returns the (possibly refreshed) credential.
 func ensureSubscriptionAndLocation(
@@ -1283,28 +1220,10 @@ func resolveModelDeployments(
 		},
 	})
 	if err != nil {
-		if !hasAiErrorReason(err, azdext.AiErrorReasonNoDeploymentMatch) {
-			return nil, err
-		}
-	} else if len(resolveResp.Deployments) > 0 {
-		return resolveResp.Deployments, nil
-	}
-
-	fallbackResp, err := azdClient.Ai().ResolveModelDeployments(ctx, &azdext.ResolveModelDeploymentsRequest{
-		AzureContext: azureContext,
-		ModelName:    model.Name,
-		Options: &azdext.AiModelDeploymentOptions{
-			Locations: []string{location},
-		},
-		Quota: &azdext.QuotaCheckOptions{
-			MinRemainingCapacity: 1,
-		},
-	})
-	if err != nil {
 		return nil, err
 	}
 
-	return fallbackResp.Deployments, nil
+	return resolveResp.Deployments, nil
 }
 
 func selectBestModelDeploymentCandidate(

@@ -51,8 +51,6 @@ import (
 
 type initFlags struct {
 	projectResourceId string
-	subscriptionId    string
-	location          string
 	modelDeployment   string
 	model             string
 	manifestPointer   string
@@ -663,6 +661,15 @@ func protocolRecordsForImageManifest(flagProtocols []string) ([]agent_yaml.Proto
 	if len(flagProtocols) == 0 {
 		return []agent_yaml.ProtocolVersionRecord{{Protocol: "responses", Version: "2.0.0"}}, nil
 	}
+	for _, protocol := range flagProtocols {
+		if protocol == "activity" {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				"--protocol activity is not supported with --image",
+				"use code init for activity agents, or choose a different protocol for --image",
+			)
+		}
+	}
 	protocols, err := resolveKnownProtocols(flagProtocols)
 	if err != nil {
 		return nil, err
@@ -687,13 +694,6 @@ func resolveKnownProtocols(flagProtocols []string) ([]protocolInfo, error) {
 			continue
 		}
 		seen[name] = true
-		if name == "activity" {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				"--protocol activity is not supported with --image",
-				"use code init for activity agents, or choose a different protocol for --image",
-			)
-		}
 
 		version, ok := versionOf[name]
 		if !ok {
@@ -982,13 +982,6 @@ func runInitFromManifest(
 	if err != nil {
 		return err
 	}
-	applyAzureContextFlags(azureContext, flags)
-	if flags.noPrompt {
-		if err := persistValidatedAzureContextFlags(ctx, azdClient, azureContext, env.Name, flags); err != nil {
-			return err
-		}
-	}
-
 	// Create credential with whatever tenant is available (may be empty → default tenant)
 	credential, err := azidentity.NewAzureDeveloperCLICredential(
 		&azidentity.AzureDeveloperCLICredentialOptions{
@@ -1529,10 +1522,6 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "",
 		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
-	cmd.Flags().StringVar(&flags.subscriptionId, "subscription", "",
-		"Azure subscription ID to use for initializing and provisioning the Foundry project")
-	cmd.Flags().StringVarP(&flags.location, "location", "l", "",
-		"Azure location to use for initializing and provisioning the Foundry project")
 
 	cmd.Flags().StringVarP(&flags.modelDeployment, "model-deployment", "d", "",
 		"Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project, either via --project-id or interactive prompts")
@@ -1544,8 +1533,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Path or URI to an agent manifest, or to a sample's unified azure.yaml to adopt as the project manifest")
 
 	cmd.Flags().StringVar(&flags.agentName, "agent-name", "",
-		"Foundry agent name to write to agent.yaml or a single adopted azure.yaml agent service. "+
-			"Reusing a name creates a new version of the existing agent.")
+		"Foundry agent name to write to agent.yaml. Reusing a name creates a new version of the existing agent.")
 
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")

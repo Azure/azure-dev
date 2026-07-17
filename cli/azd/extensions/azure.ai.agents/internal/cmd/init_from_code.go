@@ -279,13 +279,6 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		}
 		a.azureContext = azureContext
 	}
-	applyAzureContextFlags(a.azureContext, a.flags)
-	if a.flags.noPrompt {
-		if err := persistValidatedAzureContextFlags(ctx, a.azdClient, a.azureContext, a.environment.Name, a.flags); err != nil {
-			return nil, err
-		}
-	}
-
 	// TODO: Prompt user for agent kind
 	agentKind := agent_yaml.AgentKindHosted
 

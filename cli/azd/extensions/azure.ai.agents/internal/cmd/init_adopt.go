@@ -136,208 +136,6 @@ func foundryDeployments(content []byte) []foundryDeploymentEntry {
 	return entries
 }
 
-func foundryProjectServiceForModelOverride(content []byte, flagName string) (string, error) {
-	if flagName == "" {
-		flagName = "--model"
-	}
-	var doc azureYamlServices
-	if err := yaml.Unmarshal(content, &doc); err != nil {
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			"sample azure.yaml could not be parsed",
-			"fix the sample manifest and run init again",
-		)
-	}
-	serviceNames := make([]string, 0, len(doc.Services))
-	for svcName, svc := range doc.Services {
-		if svc.Host == "azure.ai.project" {
-			serviceNames = append(serviceNames, svcName)
-		}
-	}
-	slices.Sort(serviceNames)
-	switch len(serviceNames) {
-	case 0:
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			"sample azure.yaml does not declare an azure.ai.project service for model deployment",
-			fmt.Sprintf("add an azure.ai.project service or omit %s", flagName),
-		)
-	case 1:
-		return serviceNames[0], nil
-	default:
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("%s is ambiguous: sample declares %d project services (%s)",
-				flagName, len(serviceNames), strings.Join(serviceNames, ", ")),
-			fmt.Sprintf("remove %s, or edit azure.yaml to add the deployment to the intended project service", flagName),
-		)
-	}
-}
-
-func agentServiceNames(content []byte) []string {
-	var doc azureYamlServices
-	if err := yaml.Unmarshal(content, &doc); err != nil {
-		return nil
-	}
-	var names []string
-	for svcName, svc := range doc.Services {
-		if svc.Host == "azure.ai.agent" {
-			names = append(names, svcName)
-		}
-	}
-	slices.Sort(names)
-	return names
-}
-
-func agentServiceConfigValuePath(content []byte, serviceName string, field string) string {
-	var doc map[string]any
-	if err := yaml.Unmarshal(content, &doc); err != nil {
-		return field
-	}
-	services, ok := doc["services"].(map[string]any)
-	if !ok {
-		return field
-	}
-	service, ok := services[serviceName].(map[string]any)
-	if !ok {
-		return field
-	}
-	if kind, ok := service["kind"].(string); ok && strings.TrimSpace(kind) != "" {
-		return field
-	}
-	config, ok := service["config"].(map[string]any)
-	if !ok {
-		return field
-	}
-	if kind, ok := config["kind"].(string); !ok || strings.TrimSpace(kind) == "" {
-		return field
-	}
-	return "config." + field
-}
-
-func updateAzureYamlAgentName(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	serviceName string,
-	path string,
-	agentName string,
-) error {
-	val, err := structpb.NewValue(agentName)
-	if err != nil {
-		return fmt.Errorf("encoding agent name for service %q: %w", serviceName, err)
-	}
-	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
-		ServiceName: serviceName,
-		Path:        path,
-		Value:       val,
-	}); err != nil {
-		return fmt.Errorf("updating agent name in azure.yaml for service %q: %w", serviceName, err)
-	}
-	return nil
-}
-
-func updateAzureYamlAgentProtocols(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	serviceName string,
-	path string,
-	protocols []protocolInfo,
-) error {
-	protocolDocs := make([]any, 0, len(protocols))
-	for _, p := range protocols {
-		protocolDocs = append(protocolDocs, map[string]any{"protocol": p.Name, "version": p.Version})
-	}
-	val, err := structpb.NewValue(protocolDocs)
-	if err != nil {
-		return fmt.Errorf("encoding protocols for service %q: %w", serviceName, err)
-	}
-	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
-		ServiceName: serviceName,
-		Path:        path,
-		Value:       val,
-	}); err != nil {
-		return fmt.Errorf("updating protocols in azure.yaml for service %q: %w", serviceName, err)
-	}
-	return nil
-}
-
-func agentNameOverrideServices(content []byte, agentName string) ([]string, error) {
-	if agentName == "" {
-		return nil, nil
-	}
-	if _, err := validateInitAgentName(agentName); err != nil {
-		return nil, err
-	}
-	agentServices := agentServiceNames(content)
-	if len(agentServices) == 0 {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"--agent-name requires a sample with an azure.ai.agent service",
-			"remove --agent-name, or use a sample that declares an agent service",
-		)
-	}
-	if len(agentServices) > 1 {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("--agent-name is ambiguous: sample declares %d agent services (%s)",
-				len(agentServices), strings.Join(agentServices, ", ")),
-			"remove --agent-name, or edit azure.yaml to rename each agent individually",
-		)
-	}
-	return agentServices, nil
-}
-
-func agentOverrideServices(content []byte, flagName string) ([]string, error) {
-	agentServices := agentServiceNames(content)
-	if len(agentServices) == 0 {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("%s requires a sample with an azure.ai.agent service", flagName),
-			fmt.Sprintf("remove %s, or use a sample that declares an agent service", flagName),
-		)
-	}
-	if len(agentServices) > 1 {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("%s is ambiguous: sample declares %d agent services (%s)",
-				flagName, len(agentServices), strings.Join(agentServices, ", ")),
-			fmt.Sprintf("remove %s, or edit azure.yaml to update each agent individually", flagName),
-		)
-	}
-	return agentServices, nil
-}
-
-func resolveDeploymentForModelFlag(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	azureContext *azdext.AzureContext,
-	modelName string,
-) (*project.Deployment, error) {
-	if modelName == "" {
-		return nil, nil
-	}
-	model, err := selectNewModel(ctx, azdClient, azureContext, modelName)
-	if err != nil {
-		return nil, err
-	}
-	deployment, err := resolveModelDeployment(ctx, azdClient, azureContext, model, azureContext.Scope.Location)
-	if err != nil {
-		return nil, err
-	}
-	return &project.Deployment{
-		Name: deployment.ModelName,
-		Model: project.DeploymentModel{
-			Name:    deployment.ModelName,
-			Format:  deployment.Format,
-			Version: deployment.Version,
-		},
-		Sku: project.DeploymentSku{
-			Name:     deployment.Sku.Name,
-			Capacity: int(deployment.Capacity),
-		},
-	}, nil
-}
-
 // verifyAzureYamlDeployments checks each model deployment declared in the
 // unified azure.yaml against the selected Foundry project's existing
 // deployments. It prompts the user for each deployment and returns the filtered
@@ -948,26 +746,6 @@ func runInitFromAzureYaml(
 				"'azd ai agent init -m <agent.manifest.yaml>'",
 		)
 	}
-	if _, err := agentNameOverrideServices(content, flags.agentName); err != nil {
-		return err
-	}
-	if len(flags.protocols) > 0 {
-		if _, err := agentOverrideServices(content, "--protocol"); err != nil {
-			return err
-		}
-		if _, err := resolveKnownProtocols(flags.protocols); err != nil {
-			return err
-		}
-	}
-	if flags.modelDeployment != "" {
-		if _, err := foundryProjectServiceForModelOverride(content, "--model-deployment"); err != nil {
-			return err
-		}
-	} else if flags.model != "" {
-		if _, err := foundryProjectServiceForModelOverride(content, "--model"); err != nil {
-			return err
-		}
-	}
 
 	// Stage the sample as a local template directory (azure.yaml at its root
 	// alongside referenced files) that azd-core can adopt with `azd init -t`.
@@ -990,34 +768,6 @@ func runInitFromAzureYaml(
 	if err := ensureFoundryProviderDeclared(ctx, azdClient); err != nil {
 		return err
 	}
-	if flags.agentName != "" {
-		agentServices, err := agentNameOverrideServices(content, flags.agentName)
-		if err != nil {
-			return err
-		}
-		for _, agentServiceName := range agentServices {
-			path := agentServiceConfigValuePath(content, agentServiceName, "name")
-			if err := updateAzureYamlAgentName(ctx, azdClient, agentServiceName, path, flags.agentName); err != nil {
-				return err
-			}
-		}
-	}
-	if len(flags.protocols) > 0 {
-		agentServices, err := agentOverrideServices(content, "--protocol")
-		if err != nil {
-			return err
-		}
-		protocols, err := resolveKnownProtocols(flags.protocols)
-		if err != nil {
-			return err
-		}
-		for _, agentServiceName := range agentServices {
-			path := agentServiceConfigValuePath(content, agentServiceName, "protocols")
-			if err := updateAzureYamlAgentProtocols(ctx, azdClient, agentServiceName, path, protocols); err != nil {
-				return err
-			}
-		}
-	}
 
 	// --- Interactive Azure context setup (subscription, Foundry project) ---
 	// The scaffolding created an environment; load it and run the same Foundry
@@ -1035,12 +785,6 @@ func runInitFromAzureYaml(
 	azureContext, err := loadAzureContext(ctx, azdClient, env.Name)
 	if err != nil {
 		return err
-	}
-	applyAzureContextFlags(azureContext, flags)
-	if flags.noPrompt {
-		if err := persistValidatedAzureContextFlags(ctx, azdClient, azureContext, env.Name, flags); err != nil {
-			return err
-		}
 	}
 
 	// Apply deploy-mode configuration to the adopted agent
@@ -1085,47 +829,6 @@ func runInitFromAzureYaml(
 	// selected Foundry project. If the user opts to use existing deployments
 	// or skip, we update the on-disk azure.yaml accordingly.
 	deploymentEntries := foundryDeployments(content)
-	if flags.modelDeployment != "" {
-		if result.FoundryProject == nil {
-			return exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				"--model-deployment requires an existing Foundry project",
-				"provide --project-id with --model-deployment, or use --model to provision a new deployment",
-			)
-		}
-		if len(deploymentEntries) == 0 {
-			serviceName, err := foundryProjectServiceForModelOverride(content, "--model-deployment")
-			if err != nil {
-				return err
-			}
-			deploymentEntries = []foundryDeploymentEntry{{
-				ServiceName: serviceName,
-				Deployment:  project.Deployment{Name: flags.modelDeployment},
-			}}
-		}
-	} else if flags.model != "" {
-		if result == nil || result.Credential == nil {
-			return exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				"--model requires Azure subscription and location values during sample adoption",
-				"pass both --subscription and --location, or run interactively to choose them",
-			)
-		}
-		serviceName, err := foundryProjectServiceForModelOverride(content, "--model")
-		if err != nil {
-			return err
-		}
-		deployment, err := resolveDeploymentForModelFlag(ctx, azdClient, azureContext, flags.model)
-		if err != nil {
-			return err
-		}
-		if deployment != nil {
-			if err := updateAzureYamlDeployments(ctx, azdClient, serviceName, []project.Deployment{*deployment}); err != nil {
-				return err
-			}
-			deploymentEntries = []foundryDeploymentEntry{{ServiceName: serviceName, Deployment: *deployment}}
-		}
-	}
 	if len(deploymentEntries) > 0 && result != nil && result.Credential != nil {
 		keptEntries, referencedDeployments, deploymentsModified, err := verifyAzureYamlDeployments(
 			ctx, azdClient, result.Credential, azureContext, env.Name,

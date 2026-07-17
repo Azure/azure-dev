@@ -208,7 +208,8 @@ func printTeamsNextSteps(botName, msaAppID, guidePath, scriptPath string, script
 	// Only offer the fast path when every advertised script was generated and the
 	// current-OS one is among them; otherwise surface the collision so the user
 	// is not pointed at a script (or a same-named user file) azd did not write.
-	if scriptsGenerated && scriptPath != "" {
+	fastPathShown := scriptsGenerated && scriptPath != ""
+	if fastPathShown {
 		fmt.Println(output.WithGrayFormat(fmt.Sprintf(
 			"  Fast path (package + sideload the Teams app for you): run %s", sideloadRunCommand(scriptPath),
 		)))
@@ -222,7 +223,9 @@ func printTeamsNextSteps(botName, msaAppID, guidePath, scriptPath string, script
 		fmt.Println(output.WithGrayFormat(fmt.Sprintf(
 			"  Manual / UI steps and prerequisites: see %s", guidePath,
 		)))
-	} else if scriptPath == "" {
+	} else if !fastPathShown {
+		// No guide and no fast path: give the user the essential manual steps
+		// inline so they are never left without a next action.
 		fmt.Println(output.WithGrayFormat(
 			"  Next steps: package the Teams app (bots[].botId = the Bot ID above) and " +
 				"upload it in Teams -> Apps -> Manage your apps -> Upload a custom app.",

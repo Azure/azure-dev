@@ -41,10 +41,11 @@ To build the package without installing it (packaging still runs), set the
 build-only opt-out for your shell:
 
 ```powershell
-$env:SKIP_TEAMS_INSTALL = "1"; ./pack-and-sideload-teams-app.ps1   # Windows / PowerShell
+# PowerShell: scope the flag to this one run so later runs are not stuck in build-only mode
+try { $env:SKIP_TEAMS_INSTALL = "1"; ./pack-and-sideload-teams-app.ps1 } finally { $env:SKIP_TEAMS_INSTALL = $null }
 ```
 ```sh
-SKIP_TEAMS_INSTALL=1 ./pack-and-sideload-teams-app.sh              # macOS / Linux
+SKIP_TEAMS_INSTALL=1 ./pack-and-sideload-teams-app.sh              # macOS / Linux (per-command)
 ```
 
 Prefer the manual / UI flow, a restricted tenant, or custom manifest edits?

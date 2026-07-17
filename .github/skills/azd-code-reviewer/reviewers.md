@@ -199,7 +199,7 @@ Focus areas:
 - Test helpers: are setup/teardown patterns consistent? Are test utilities reused?
 - Integration vs unit: is the test level appropriate for what is being tested?
 - Flakiness risk: time-dependent tests, order-dependent tests, external service calls without mocks
-- State isolation: do functional tests that modify user-level state use a dedicated `AZD_CONFIG_DIR` rather than shared or process-wide state?
+- State isolation: do functional tests that modify user-level state use a dedicated `AZD_CONFIG_DIR`, preserve existing env entries (`cli.Env = append(os.Environ(), cli.Env...)`), and disable telemetry (`AZURE_DEV_COLLECT_TELEMETRY=no`)?
 - Fixture safety: are type assertions on values read from maps, JSON, environment files, or recordings guarded with `require` (presence + type) so malformed data fails the test instead of panicking and aborting the package?
 
 Review tests statically — do not attempt to run them.

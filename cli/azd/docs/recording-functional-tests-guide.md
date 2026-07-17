@@ -724,10 +724,14 @@ Use a private `AZD_CONFIG_DIR` when a test changes user-level state so parallel 
 
 ```go
 configDir := tempDirWithDiagnostics(t)
-cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+configDir)
+cli.Env = append(os.Environ(), cli.Env...)
+cli.Env = append(cli.Env,
+    "AZD_CONFIG_DIR="+configDir,
+    "AZURE_DEV_COLLECT_TELEMETRY=no",
+)
 ```
 
-A new config directory is logged out, so tests that need live Azure access must authenticate in it. Leave `AZD_CONFIG_DIR` unset when a test only uses the existing login.
+A private config dir is not the default for functional tests because live tests inherit the pipeline's one-time `azd auth login` from the shared config dir: a new config directory is logged out, and there is currently no supported way to authenticate one in CI - leave `AZD_CONFIG_DIR` unset when a test needs live Azure access. Playback tests are unaffected: recording sessions authenticate through the session's credential server, not the config dir.
 
 Use `tempDirWithDiagnostics(t)` for generated or executed files. It retries transient Windows file locks and reports lock diagnostics if cleanup fails. Register other cleanup when state is created; don't duplicate retry loops or add fixed sleeps. Since `t.Context()` is canceled before cleanup runs, use a separate bounded context when needed.
 
@@ -1042,7 +1046,7 @@ os.Setenv("AZD_TEST_FIXED_CLOCK_UNIX_TIME", "1744738873")
 - [ ] Start with `recording.Start(t)`
 - [ ] Use `randomOrStoredEnvName(session)`
 - [ ] Create CLI with `azdcli.WithSession(session)`
-- [ ] Use a private `AZD_CONFIG_DIR` for user-level state changes; authenticate it if live Azure access is required
+- [ ] Set a private `AZD_CONFIG_DIR` (plus `AZURE_DEV_COLLECT_TELEMETRY=no`) on `cli.Env` for user-level state changes; leave it unset when the test needs live Azure access
 - [ ] Use `session.ProxyClient` for HTTP operations
 - [ ] Store dynamic values in `session.Variables`
 - [ ] Use `tempDirWithDiagnostics(t)` and register other cleanup immediately

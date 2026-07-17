@@ -17,6 +17,9 @@ const (
 	// ProtocolResponses is the value of `agent.yaml#protocol` for plain
 	// text /responses agents.
 	ProtocolResponses = "responses"
+	// ProtocolInvocationsWS is the value of `agent.yaml#protocol` for
+	// bidirectional WebSocket /invocations_ws agents.
+	ProtocolInvocationsWS = "invocations_ws"
 
 	// placeholderPayload is the single-quoted literal the resolver
 	// emits as the body argument when no concrete payload is known —
@@ -331,6 +334,11 @@ func ResolveAfterRun(state *State, serviceName string, readmeExists func(relativ
 
 	svc := findService(state, serviceName)
 
+	// WebSocket agents are not invocable via azd ai agent invoke --local.
+	if svc != nil && svc.Protocol == ProtocolInvocationsWS {
+		return nil
+	}
+
 	cachedPayload := ""
 	if state.HasOpenAPI && state.OpenAPIPayload != "" {
 		cachedPayload = state.OpenAPIPayload
@@ -642,6 +650,11 @@ func ResolveAfterDeploy(
 	for i := range state.Services {
 		svc := &state.Services[i]
 
+		// WebSocket agents are not invocable; skip the invoke line.
+		if svc.Protocol == ProtocolInvocationsWS {
+			continue
+		}
+
 		cached := ""
 		if cachedPayload != nil {
 			cached = cachedPayload(svc.Name)
@@ -769,6 +782,9 @@ func appendInvokeLocalSecondary(
 	var svc *ServiceState
 	if len(state.Services) == 1 {
 		svc = &state.Services[0]
+	}
+	if svc != nil && svc.Protocol == ProtocolInvocationsWS {
+		return out, priority
 	}
 	invokeArg, readmeHint := resolveInvokeArg(svc, "", readmeExists, priority)
 	if readmeHint != nil {

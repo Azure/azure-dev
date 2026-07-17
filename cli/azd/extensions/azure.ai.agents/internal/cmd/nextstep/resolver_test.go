@@ -804,6 +804,14 @@ func TestResolveAfterRun(t *testing.T) {
 				`azd ai agent invoke --local '{"q":"don'\''t"}'`,
 			},
 		},
+		{
+			name: "invocations_ws protocol → no invoke suggestion (not invocable)",
+			state: &State{
+				Services: []ServiceState{{Name: "ws", Protocol: ProtocolInvocationsWS}},
+			},
+			serviceName: "ws",
+			want:        nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1173,6 +1181,42 @@ func TestResolveAfterDeploy(t *testing.T) {
 		)
 		require.Len(t, out, 2)
 		assert.Equal(t, "azd ai agent show echo", out[0].Command)
+	})
+
+	t.Run("single invocations_ws agent → show only, no invoke (not invocable)", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{
+			{Name: "ws", Protocol: ProtocolInvocationsWS},
+		}}
+		out := ResolveAfterDeploy(state, nil, nil)
+		require.Len(t, out, 1)
+		assert.Equal(t, "azd ai agent show ws", out[0].Command)
+	})
+
+	t.Run("all invocations_ws multi-service → shows only, no invokes", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{
+			{Name: "ws1", Protocol: ProtocolInvocationsWS},
+			{Name: "ws2", Protocol: ProtocolInvocationsWS},
+		}}
+		out := ResolveAfterDeploy(state, nil, nil)
+		require.Len(t, out, 2)
+		assert.Equal(t, "azd ai agent show ws1", out[0].Command)
+		assert.Equal(t, "azd ai agent show ws2", out[1].Command)
+	})
+
+	t.Run("mixed protocols → show all, invoke only non-WS", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{
+			{Name: "ws", Protocol: ProtocolInvocationsWS},
+			{Name: "regular", Protocol: ProtocolInvocations},
+		}}
+		out := ResolveAfterDeploy(state, nil, nil)
+		// 2 shows + 1 invoke (ws is skipped)
+		require.Len(t, out, 3)
+		assert.Equal(t, "azd ai agent show ws", out[0].Command)
+		assert.Equal(t, "azd ai agent show regular", out[1].Command)
+		assert.Equal(t, `azd ai agent invoke regular '<payload>'`, out[2].Command)
 	})
 }
 

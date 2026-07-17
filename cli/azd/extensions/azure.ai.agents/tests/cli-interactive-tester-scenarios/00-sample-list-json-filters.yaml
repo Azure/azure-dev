@@ -7,7 +7,7 @@ tags: ["tier:0", "cmd:sample", "parallel-safe"]
 goals:
   - "Run: azd ai agent sample list --output json. Confirm the output is valid JSON (an array/object of samples)."
   - "Run: azd ai agent sample list --language python --output json. Confirm results are filtered to python samples only."
-  - "Run: azd ai agent sample list --type agent --output json. Confirm results only include agent-type templates."
+  - "Run: azd ai agent sample list --type agent --output json. Confirm results only include agent-type templates and that the result set is non-empty (at least one agent-type sample should exist in the catalog)."
   - "Run: azd ai agent sample list --featured-only --output json. Confirm only featured samples are returned (a subset of the full list)."
   - "Take a screenshot after each command."
   - "Report a finding if any command produces invalid JSON, ignores its filter, or errors."

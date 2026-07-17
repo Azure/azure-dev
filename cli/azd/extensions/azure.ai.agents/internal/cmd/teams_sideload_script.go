@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"strings"
 	"text/template"
 
 	"azureaiagent/internal/pkg/paths"
@@ -151,4 +152,17 @@ func preferredSideloadScript(scriptPaths []string) string {
 		return scriptPaths[0]
 	}
 	return ""
+}
+
+// sideloadRunCommand returns a shell-safe invocation of the generated script for
+// a user-facing hint. The path may contain spaces, so it is always quoted; the
+// pwsh call operator (&) is required to run a quoted .ps1 path, while .sh is run
+// via bash. See cli/azd/AGENTS.md ("Shell-safe output" / "Path Safety"). Plain
+// double quotes are used (not %q) so Windows backslashes are not doubled.
+func sideloadRunCommand(scriptPath string) string {
+	quoted := `"` + scriptPath + `"`
+	if strings.HasSuffix(scriptPath, ".ps1") {
+		return "& " + quoted
+	}
+	return "bash " + quoted
 }

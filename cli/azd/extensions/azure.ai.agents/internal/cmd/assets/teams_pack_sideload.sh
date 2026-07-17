@@ -14,19 +14,19 @@
 #
 # Prerequisites: Node.js (npm) for the atk CLI, and a one-time 'atk auth login'
 # with your M365 account (this script launches it for you if you are not signed
-# in). Set SKIP_TEAMS_INSTALL=1 to skip.
+# in). Set SKIP_TEAMS_INSTALL=1 to build the package only and skip the install.
 
 set -euo pipefail
-
-if [ "${SKIP_TEAMS_INSTALL:-}" = "1" ]; then
-    echo "SKIP_TEAMS_INSTALL=1 - skipping per-user Teams install."
-    exit 0
-fi
 
 # ---- Ids baked in by azd deploy (do not edit) -------------------------------
 AGENT_NAME="{{.AgentName}}"
 BOT_ID="{{.MsaAppID}}"       # Teams manifest bots[].botId = the Azure Bot msaAppId
 TEAMS_APP_ID="{{.TeamsAppId}}" # stable per agent, so re-runs update the same app
+
+# Teams manifest v1.19 caps name.short at 30 and description.short at 80 chars,
+# but agent names may be longer, so bound the constrained fields.
+SHORT_NAME="$(printf '%.30s' "$AGENT_NAME")"
+SHORT_DESC="$(printf '%.80s' "Chat with $SHORT_NAME in Microsoft Teams.")"
 
 echo "Agent:        $AGENT_NAME"
 echo "Bot ID:       $BOT_ID"
@@ -49,9 +49,9 @@ cat > "$BUILD_DIR/manifest.json" <<JSON
     "termsOfUseUrl": "https://www.example.com/termsofuse"
   },
   "icons": { "color": "color.png", "outline": "outline.png" },
-  "name": { "short": "$AGENT_NAME", "full": "$AGENT_NAME (Activity, Teams)" },
+  "name": { "short": "$SHORT_NAME", "full": "$AGENT_NAME (Activity, Teams)" },
   "description": {
-    "short": "Chat with $AGENT_NAME in Microsoft Teams.",
+    "short": "$SHORT_DESC",
     "full": "A Microsoft Foundry hosted agent on the Activity protocol. Send it a message in Teams."
   },
   "accentColor": "#5B5FC7",
@@ -93,6 +93,15 @@ PYZIP
 )
 echo "Teams app package: $ZIP_PATH"
 
+# Build-only mode: the package (with icons) is ready; skip the atk install.
+if [ "${SKIP_TEAMS_INSTALL:-}" = "1" ]; then
+    echo "SKIP_TEAMS_INSTALL=1 - package built; skipping the per-user Teams install."
+    echo "Sideload it manually (no admin approval needed):"
+    echo "    $ZIP_PATH"
+    echo "    Teams -> Apps -> Manage your apps -> Upload an app -> Upload a custom app"
+    exit 0
+fi
+
 # ---- Ensure the atk CLI is available ----------------------------------------
 if ! command -v atk >/dev/null 2>&1; then
     if ! command -v npm >/dev/null 2>&1; then
@@ -122,7 +131,9 @@ if echo "$INSTALL_OUT" | grep -qiE 'not (logged|signed) in|auth.*required|please
 fi
 set -e
 
-TITLE_ID="$(printf '%s' "$INSTALL_OUT" | grep -oiE 'TitleId:[[:space:]]*[^[:space:]]+' | head -n1 | sed -E 's/.*TitleId:[[:space:]]*//I')"
+# set -e is active again, so tolerate no TitleId match (grep exits 1) and fall
+# through to the manual-sideload guidance below instead of aborting the script.
+TITLE_ID="$(printf '%s' "$INSTALL_OUT" | grep -oiE 'TitleId:[[:space:]]*[^[:space:]]+' | head -n1 | sed -E 's/.*TitleId:[[:space:]]*//I' || true)"
 
 # Teams addresses a bot 1:1 as "28:<botId>". Once the app is installed for the
 # user, this opens the conversation with the agent directly.

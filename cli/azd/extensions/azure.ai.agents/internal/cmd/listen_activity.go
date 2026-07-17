@@ -199,7 +199,7 @@ func printTeamsNextSteps(botName, msaAppID, guidePath, scriptPath string) {
 	fmt.Printf("  Bot ID:     %s\n", msaAppID)
 	if scriptPath != "" {
 		fmt.Println(output.WithGrayFormat(fmt.Sprintf(
-			"  Fast path (package + sideload the Teams app for you): run %s", scriptPath,
+			"  Fast path (package + sideload the Teams app for you): run %s", sideloadRunCommand(scriptPath),
 		)))
 	}
 	if guidePath != "" {

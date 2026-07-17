@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"text/template"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/google/uuid"
@@ -127,5 +128,82 @@ func TestPreferredSideloadScript(t *testing.T) {
 	got := preferredSideloadScript([]string{pwsh, bash})
 	if got != pwsh && got != bash {
 		t.Errorf("preferred script %q is neither candidate", got)
+	}
+}
+
+// TestTeamsSideloadScriptBuildOnly asserts the SKIP_TEAMS_INSTALL opt-out is a
+// build-only mode: the package (zip) is produced first and only the atk install
+// is skipped. It verifies this via source ordering rather than executing the
+// scripts (which would need a real atk/npm/pwsh|bash on both CI OSes).
+func TestTeamsSideloadScriptBuildOnly(t *testing.T) {
+	const (
+		agentName = "echo-agent"
+		botName   = "echo-agent-bot-uai"
+		msaAppID  = "11111111-2222-3333-4444-555555555555"
+	)
+	for name, tmpl := range map[string]*template.Template{
+		"pwsh": teamsSideloadPwshTmpl,
+		"bash": teamsSideloadBashTmpl,
+	} {
+		content := teamsSideloadScriptContent(tmpl, agentName, botName, msaAppID)
+
+		idxPkg := strings.Index(content, "Teams app package:")
+		idxSkip := strings.Index(content, "package built; skipping")
+		idxInstall := strings.Index(content, "atk install --file-path")
+		if idxPkg < 0 || idxSkip < 0 || idxInstall < 0 {
+			t.Fatalf("[%s] missing package/skip/install markers: pkg=%d skip=%d install=%d",
+				name, idxPkg, idxSkip, idxInstall)
+		}
+		// Build-only mode must run AFTER the package is written and BEFORE install.
+		if !(idxPkg < idxSkip && idxSkip < idxInstall) {
+			t.Errorf("[%s] SKIP guard is misordered: pkg=%d skip=%d install=%d (want pkg<skip<install)",
+				name, idxPkg, idxSkip, idxInstall)
+		}
+		// The manual-sideload fallback must remain reachable.
+		if !strings.Contains(content, "Upload a custom app") {
+			t.Errorf("[%s] script missing the manual-sideload fallback", name)
+		}
+	}
+
+	// The bash TitleId extraction must tolerate no match (grep exits 1 under
+	// `set -euo pipefail`) so the empty-id fallback branch stays reachable.
+	bash := teamsSideloadScriptContent(teamsSideloadBashTmpl, agentName, botName, msaAppID)
+	if !strings.Contains(bash, `//I' || true)`) {
+		t.Errorf("bash TitleId extraction must end with '|| true' to survive no match")
+	}
+}
+
+// TestTeamsSideloadScriptTruncatesManifestFields asserts the Teams manifest
+// short fields are bounded (name.short<=30, description.short<=80 per v1.19),
+// since valid agent names may be longer than those limits.
+func TestTeamsSideloadScriptTruncatesManifestFields(t *testing.T) {
+	longName := strings.Repeat("a", 63)
+	pwsh := teamsSideloadScriptContent(teamsSideloadPwshTmpl, longName, "bot", "app-id")
+	bash := teamsSideloadScriptContent(teamsSideloadBashTmpl, longName, "bot", "app-id")
+
+	if !strings.Contains(pwsh, "Substring(0, 30)") || !strings.Contains(pwsh, "$shortName") {
+		t.Errorf("pwsh script does not bound name.short to 30 chars")
+	}
+	if !strings.Contains(pwsh, "$shortDesc") || !strings.Contains(pwsh, "80") {
+		t.Errorf("pwsh script does not bound description.short to 80 chars")
+	}
+	if !strings.Contains(bash, `printf '%.30s'`) || !strings.Contains(bash, "$SHORT_NAME") {
+		t.Errorf("bash script does not bound name.short to 30 chars")
+	}
+	if !strings.Contains(bash, `printf '%.80s'`) || !strings.Contains(bash, "$SHORT_DESC") {
+		t.Errorf("bash script does not bound description.short to 80 chars")
+	}
+}
+
+func TestSideloadRunCommand(t *testing.T) {
+	// Paths may contain spaces, so the emitted command must quote them, and a
+	// quoted .ps1 needs the pwsh call operator.
+	gotPwsh := sideloadRunCommand(`C:\my dir\pack-and-sideload-teams-app.ps1`)
+	if gotPwsh != `& "C:\my dir\pack-and-sideload-teams-app.ps1"` {
+		t.Errorf("pwsh run command not shell-safe: %q", gotPwsh)
+	}
+	gotBash := sideloadRunCommand(`/home/me/my dir/pack-and-sideload-teams-app.sh`)
+	if gotBash != `bash "/home/me/my dir/pack-and-sideload-teams-app.sh"` {
+		t.Errorf("bash run command not shell-safe: %q", gotBash)
 	}
 }

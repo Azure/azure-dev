@@ -131,9 +131,11 @@ func ensureActivityBot(
 
 	// Write a persistent, generic setup guide next to the agent code (the azd
 	// progress UI swallows postdeploy stdout, so a file is the reliable way to
-	// hand the user the manual M365 steps) and print a short pointer to it.
+	// hand the user the manual M365 steps) and a runnable pack+sideload script,
+	// then print a short pointer to them.
 	guidePath := writeTeamsSetupGuide(proj, svc, agentName, botName, msaAppID)
-	printTeamsNextSteps(botName, msaAppID, guidePath)
+	scriptPaths := writeTeamsSideloadScripts(proj, svc, agentName, botName, msaAppID)
+	printTeamsNextSteps(botName, msaAppID, guidePath, preferredSideloadScript(scriptPaths))
 	return nil
 }
 
@@ -188,18 +190,23 @@ func teamsSetupGuideContent(agentName, botName, msaAppID string) string {
 	return buf.String()
 }
 
-// printTeamsNextSteps prints a short pointer to the generated setup guide. The
-// full instructions live in the guide file because the azd progress UI does not
-// reliably surface postdeploy stdout.
-func printTeamsNextSteps(botName, msaAppID, guidePath string) {
+// printTeamsNextSteps prints a short pointer to the generated setup guide and
+// the runnable pack+sideload script. The full instructions live in the guide
+// file because the azd progress UI does not reliably surface postdeploy stdout.
+func printTeamsNextSteps(botName, msaAppID, guidePath, scriptPath string) {
 	fmt.Println(output.WithHighLightFormat("\nTeams bot ready."))
 	fmt.Printf("  Azure Bot:  %s (Microsoft Teams channel enabled)\n", botName)
 	fmt.Printf("  Bot ID:     %s\n", msaAppID)
+	if scriptPath != "" {
+		fmt.Println(output.WithGrayFormat(fmt.Sprintf(
+			"  Fast path (package + sideload the Teams app for you): run %s", scriptPath,
+		)))
+	}
 	if guidePath != "" {
 		fmt.Println(output.WithGrayFormat(fmt.Sprintf(
-			"  Next steps (package + sideload the Teams app): see %s", guidePath,
+			"  Manual / UI steps and prerequisites: see %s", guidePath,
 		)))
-	} else {
+	} else if scriptPath == "" {
 		fmt.Println(output.WithGrayFormat(
 			"  Next steps: package the Teams app (bots[].botId = the Bot ID above) and " +
 				"upload it in Teams -> Apps -> Manage your apps -> Upload a custom app.",

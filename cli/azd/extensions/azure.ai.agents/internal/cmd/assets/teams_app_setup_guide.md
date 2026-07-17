@@ -8,6 +8,34 @@
 Two manual steps remain: (A) create a Teams app package, then (B) upload it.
 They are the same for any activity-protocol agent.
 
+## Fastest path — run the generated script
+
+`azd deploy` also wrote a runnable **pack-and-sideload script** next to this guide
+that does A and B for you in one command (the Bot ID is already baked in):
+
+```powershell
+./pack-and-sideload-teams-app.ps1   # Windows / PowerShell
+```
+```sh
+./pack-and-sideload-teams-app.sh    # macOS / Linux
+```
+
+It builds the Teams app package and installs it **for you** (`atk install --scope
+Personal` — no Teams admin needed), then prints an "Open in Teams" link. It is
+idempotent, so you can re-run it safely.
+
+Prerequisites:
+
+- **Node.js** (for `npm`) — the script installs the Microsoft 365 Agents Toolkit
+  CLI (`atk`) via npm if it is missing.
+- A one-time **`atk auth login`** with your M365 account — the script launches
+  this for you if you are not signed in.
+- `--scope Personal` installs only for you and needs **no Teams admin**; an
+  org-wide catalog upload does (see step B below).
+
+Set `SKIP_TEAMS_INSTALL=1` to skip it. Prefer the manual / UI flow, a restricted
+tenant, or custom manifest edits? Follow steps A and B below instead.
+
 ## A. Create the Teams app package
 
 Pick ONE of the two ways below.

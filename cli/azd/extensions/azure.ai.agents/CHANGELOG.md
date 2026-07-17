@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.7 (Unreleased)
+
+### Other Changes
+
+- [[#9172]](https://github.com/Azure/azure-dev/issues/9172) For activity-protocol agents, `azd deploy` now also writes a runnable **pack-and-sideload script** (`pack-and-sideload-teams-app.ps1` and `.sh`) next to the agent source alongside `TEAMS_APP_SETUP.md`. The script builds the Teams app package (bot id already baked in from the deploy) and installs it for the current user (`atk install --scope Personal` — no Teams admin needed) in one command; it checks for and installs the `atk` CLI, launches `atk auth login` if needed, embeds the required icons, is idempotent (a stable per-agent Teams app id means re-runs update the same app), and honors `SKIP_TEAMS_INSTALL=1`. The guide now points to the script as the fast path and lists its prerequisites. Purely additive — no change to the existing bot provisioning or guide behavior.
+
 ## 1.0.0-beta.6 (2026-07-16)
 
 ### Features Added

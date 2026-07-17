@@ -1,0 +1,131 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/google/uuid"
+)
+
+func TestDeterministicTeamsAppID(t *testing.T) {
+	const msaAppID = "11111111-2222-3333-4444-555555555555"
+
+	got := deterministicTeamsAppID(msaAppID)
+	if _, err := uuid.Parse(got); err != nil {
+		t.Fatalf("teams app id %q is not a valid UUID: %v", got, err)
+	}
+	// Stable across calls so re-runs/re-deploys update the same Teams app.
+	if again := deterministicTeamsAppID(msaAppID); again != got {
+		t.Errorf("teams app id not stable: %q vs %q", got, again)
+	}
+	// Distinct from the bot id it is derived from.
+	if got == msaAppID {
+		t.Errorf("teams app id must differ from the bot id")
+	}
+	// Different bots get different ids.
+	if other := deterministicTeamsAppID("99999999-8888-7777-6666-555555555555"); other == got {
+		t.Errorf("distinct bot ids must yield distinct teams app ids")
+	}
+}
+
+func TestTeamsSideloadScriptContent(t *testing.T) {
+	const (
+		agentName = "echo-agent"
+		botName   = "echo-agent-bot-uai"
+		msaAppID  = "11111111-2222-3333-4444-555555555555"
+	)
+	teamsAppID := deterministicTeamsAppID(msaAppID)
+
+	for name, tmpl := range map[string]struct {
+		content string
+	}{
+		"pwsh": {teamsSideloadScriptContent(teamsSideloadPwshTmpl, agentName, botName, msaAppID)},
+		"bash": {teamsSideloadScriptContent(teamsSideloadBashTmpl, agentName, botName, msaAppID)},
+	} {
+		content := tmpl.content
+
+		// No unresolved template placeholders may remain.
+		if strings.Contains(content, "{{") || strings.Contains(content, "}}") {
+			t.Errorf("[%s] script has unresolved template placeholders:\n%s", name, content)
+		}
+		if !strings.Contains(content, msaAppID) {
+			t.Errorf("[%s] script missing the bot id", name)
+		}
+		if !strings.Contains(content, "28:"+"$BotId") && !strings.Contains(content, "28:"+"$BOT_ID") {
+			t.Errorf("[%s] script missing the Teams 1:1 chat deep link", name)
+		}
+		// The stable Teams app id (distinct from the bot id) must be embedded.
+		if !strings.Contains(content, teamsAppID) {
+			t.Errorf("[%s] script missing the deterministic Teams app id", name)
+		}
+		// The per-user, no-admin install command must be present.
+		if !strings.Contains(content, "--scope Personal") {
+			t.Errorf("[%s] script missing 'atk install --scope Personal'", name)
+		}
+		// Icons must be embedded so the script needs no image tooling.
+		if !strings.Contains(content, teamsColorIconB64) || !strings.Contains(content, teamsOutlineIconB64) {
+			t.Errorf("[%s] script missing embedded icon data", name)
+		}
+		// The opt-out must be honored.
+		if !strings.Contains(content, "SKIP_TEAMS_INSTALL") {
+			t.Errorf("[%s] script missing the SKIP_TEAMS_INSTALL opt-out", name)
+		}
+	}
+}
+
+func TestWriteTeamsSideloadScripts(t *testing.T) {
+	root := t.TempDir()
+	proj := &azdext.ProjectConfig{Path: root}
+	svc := &azdext.ServiceConfig{Name: "echo-agent", RelativePath: "src"}
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	paths := writeTeamsSideloadScripts(proj, svc, "echo-agent", "echo-agent-bot-uai", "app-id")
+	if len(paths) != 2 {
+		t.Fatalf("expected 2 scripts written, got %d: %v", len(paths), paths)
+	}
+
+	wantFiles := map[string]bool{
+		filepath.Join(root, "src", teamsSideloadScriptPwsh): false,
+		filepath.Join(root, "src", teamsSideloadScriptBash): false,
+	}
+	for _, p := range paths {
+		if _, ok := wantFiles[p]; !ok {
+			t.Errorf("unexpected script path %q", p)
+		}
+		wantFiles[p] = true
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("script not written: %v", err)
+		}
+		if !strings.Contains(string(data), "app-id") {
+			t.Errorf("written script %q missing the bot id", p)
+		}
+	}
+	for p, seen := range wantFiles {
+		if !seen {
+			t.Errorf("expected script %q was not written", p)
+		}
+	}
+}
+
+func TestPreferredSideloadScript(t *testing.T) {
+	pwsh := filepath.Join("x", teamsSideloadScriptPwsh)
+	bash := filepath.Join("x", teamsSideloadScriptBash)
+
+	if got := preferredSideloadScript(nil); got != "" {
+		t.Errorf("empty input should yield empty result, got %q", got)
+	}
+	// Whatever the OS, the result must be one of the two written scripts.
+	got := preferredSideloadScript([]string{pwsh, bash})
+	if got != pwsh && got != bash {
+		t.Errorf("preferred script %q is neither candidate", got)
+	}
+}

@@ -34,7 +34,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/pflag"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 // UpGraphAction is the single implementation of `azd up`'s default path: it
@@ -162,16 +161,18 @@ func (u *UpGraphAction) Run(
 	packageFlags := append([]string{"all"}, parentChangedFlags...)
 	_, packageSpan := tracing.Start(ctx, "cmd.package")
 	packageSpan.SetAttributes(fields.CmdFlags.StringSlice(packageFlags))
-	_, provisionSpan := tracing.Start(ctx, "cmd.provision")
+	provisionSpanCtx, provisionSpan := tracing.Start(ctx, "cmd.provision")
 	provisionSpan.SetAttributes(fields.CmdFlags.StringSlice(parentChangedFlags))
+	// Attach infra.provider directly to the synthetic cmd.provision span (mirroring the stand-alone
+	// `azd provision` span). It is deliberately not copied onto cmd.package, and it is set on the
+	// span directly rather than via the process-global usage bag so it does not leak across spans.
+	u.provisionManager.RecordInfraProviderUsage(provisionSpanCtx, layers)
 	defer func() {
 		// Apply usage attributes (e.g. EnvNameKey) at end so they include
 		// any values set during Run. Globals (e.g. SubscriptionIdKey) are
 		// applied automatically by wrapperSpan.End().
 		usageAttrs := tracing.GetUsageAttributes()
-		// infra.provider is scoped to the provisioning lifecycle; keep it off the synthetic
-		// cmd.package span (it belongs on cmd.provision and the parent cmd.up span only).
-		packageSpan.SetAttributes(usageAttributesExcluding(usageAttrs, fields.InfraProviderKey.Key)...)
+		packageSpan.SetAttributes(usageAttrs...)
 		packageSpan.End()
 		provisionSpan.SetAttributes(usageAttrs...)
 		provisionSpan.End()
@@ -670,19 +671,6 @@ func phaseTimingBreakdown(steps []exegraph.StepTiming) string {
 		return ""
 	}
 	return strings.Join(lines, "\n")
-}
-
-// usageAttributesExcluding returns usageAttrs without the attribute matching exclude. It keeps
-// provisioning-scoped attributes (for example infra.provider) off the synthetic cmd.package span.
-func usageAttributesExcluding(usageAttrs []attribute.KeyValue, exclude attribute.Key) []attribute.KeyValue {
-	filtered := make([]attribute.KeyValue, 0, len(usageAttrs))
-	for _, attr := range usageAttrs {
-		if attr.Key != exclude {
-			filtered = append(filtered, attr)
-		}
-	}
-
-	return filtered
 }
 
 // phaseDurations computes the wall-clock duration for provisioning and deploying phases.

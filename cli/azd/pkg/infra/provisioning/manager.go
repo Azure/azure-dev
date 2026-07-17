@@ -552,21 +552,37 @@ const (
 )
 
 // RecordInfraProviderUsage records the resolved IaC provider(s) for a provisioning command
-// (provision / up / down) as the infra.provider usage attribute on the ambient command span.
-// The attribute is a sorted, de-duplicated string slice of the distinct providers the command's
-// layers resolve to: built-in kinds are recorded verbatim (for example "bicep", "terraform",
-// "arm"), while non-built-in (extension) providers are bucketed to InfraProviderCustom ("custom")
-// so raw user-chosen names are never emitted. A single-provider project records a one-element
-// slice (for example ["bicep"]); a multi-layer project that mixes providers records each distinct
-// value (for example ["bicep", "terraform"]) rather than a lossy "mixed" marker, preserving which
-// providers were combined while staying low-cardinality. Layers that leave the provider
-// unspecified resolve through the manager's default provider. It is a no-op when no provider can
-// be resolved.
+// (provision / up / down) as the infra.provider attribute directly on the current command span in
+// ctx. The attribute is a sorted, de-duplicated string slice of the distinct providers the
+// command's layers resolve to: built-in kinds are recorded verbatim (for example "bicep",
+// "terraform", "arm"), while non-built-in (extension) providers are bucketed to
+// InfraProviderCustom ("custom") so raw user-chosen names are never emitted. A single-provider
+// project records a one-element slice (for example ["bicep"]); a multi-layer project that mixes
+// providers records each distinct value (for example ["bicep", "terraform"]) rather than a lossy
+// "mixed" marker, preserving which providers were combined while staying low-cardinality. Layers
+// that leave the provider unspecified resolve through the manager's default provider. It is a
+// no-op when no provider can be resolved.
 //
-// Callers must invoke this once per command, before provider work begins, so the attribute is
-// present on success, failure, and preview spans alike. The value is computed deterministically
-// from configuration (rather than racing concurrent per-layer resolution).
-func (m *Manager) RecordInfraProviderUsage(layers []Options) {
+// The value is attached directly to the span in ctx (not the process-global usage bag) so it stays
+// scoped to that single command span and does not leak onto sibling in-process child commands (for
+// example a custom `workflows.up` running `provision` then `deploy`). Callers must invoke this once
+// per command, before provider work begins, so the attribute is present on success, failure, and
+// preview spans alike. The value is computed deterministically from configuration (rather than
+// racing concurrent per-layer resolution).
+func (m *Manager) RecordInfraProviderUsage(ctx context.Context, layers []Options) {
+	providers := m.resolveInfraProviders(layers)
+	if len(providers) == 0 {
+		return
+	}
+
+	tracing.SetAttributesInContext(ctx, fields.InfraProviderKey.StringSlice(providers))
+}
+
+// resolveInfraProviders returns the sorted, de-duplicated telemetry-safe provider values for the
+// given layers — built-in kinds verbatim, non-built-in (extension) providers bucketed to
+// InfraProviderCustom. Layers that leave the provider unspecified resolve through the manager's
+// default provider. Returns nil when no provider can be resolved.
+func (m *Manager) resolveInfraProviders(layers []Options) []string {
 	// Resolve the default provider at most once per call, memoized (and concurrency-safe) via
 	// sync.OnceValues: every unspecified layer resolves to the same default, so this keeps the
 	// value deterministic and avoids repeating resolver work (which may do I/O) per layer.
@@ -602,10 +618,10 @@ func (m *Manager) RecordInfraProviderUsage(layers []Options) {
 	}
 
 	if len(providers) == 0 {
-		return
+		return nil
 	}
 
-	tracing.SetUsageAttributes(fields.InfraProviderKey.StringSlice(slices.Sorted(maps.Keys(providers))))
+	return slices.Sorted(maps.Keys(providers))
 }
 
 // infraProviderTelemetryValue maps a provider kind to a value that is safe to emit raw. Built-in

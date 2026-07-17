@@ -133,9 +133,9 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 	slices.Reverse(layers)
 
-	// Record the resolved IaC provider(s) on the command span up front, so it is
+	// Record the resolved IaC provider(s) directly on the cmd.down span up front, so it is
 	// present on success and failure alike (no-op when there are no layers).
-	a.provisionManager.RecordInfraProviderUsage(layers)
+	a.provisionManager.RecordInfraProviderUsage(ctx, layers)
 
 	for _, layer := range layers {
 		if downLayer != "" || len(layers) > 1 {

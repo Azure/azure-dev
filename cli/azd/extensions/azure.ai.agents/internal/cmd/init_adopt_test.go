@@ -134,6 +134,19 @@ services:
 	require.Contains(t, err.Error(), "first, second")
 }
 
+func TestAgentNameOverrideServices_NoAgentReturnsError(t *testing.T) {
+	content := []byte(`name: no-agent
+services:
+  ai-project:
+    host: azure.ai.project
+`)
+
+	services, err := agentNameOverrideServices(content, "shared-name")
+	require.Nil(t, services)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "--agent-name requires")
+}
+
 func TestAgentNameOverrideServices_SingleAgentReturnsServiceName(t *testing.T) {
 	content := []byte(`name: one-agent
 services:
@@ -163,6 +176,19 @@ services:
 	require.Contains(t, err.Error(), "first, second")
 }
 
+func TestAgentOverrideServices_NoAgentReturnsError(t *testing.T) {
+	content := []byte(`name: no-agent
+services:
+  ai-project:
+    host: azure.ai.project
+`)
+
+	services, err := agentOverrideServices(content, "--protocol")
+	require.Nil(t, services)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "--protocol requires")
+}
+
 func TestAgentServiceConfigValuePath_ConfigNestedKindUsesConfigPath(t *testing.T) {
 	content := []byte(`name: config-nested
 services:
@@ -175,6 +201,35 @@ services:
 
 	require.Equal(t, "config.name", agentServiceConfigValuePath(content, "agent", "name"))
 	require.Equal(t, "config.protocols", agentServiceConfigValuePath(content, "agent", "protocols"))
+}
+
+func TestAgentServiceConfigValuePath_InlineKindWinsOverConfigKind(t *testing.T) {
+	content := []byte(`name: dual-shape
+services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: inline-agent
+    config:
+      kind: hosted
+      name: config-agent
+`)
+
+	require.Equal(t, "name", agentServiceConfigValuePath(content, "agent", "name"))
+	require.Equal(t, "protocols", agentServiceConfigValuePath(content, "agent", "protocols"))
+}
+
+func TestAgentServiceConfigValuePath_EmptyConfigKindUsesRootPath(t *testing.T) {
+	content := []byte(`name: empty-config-kind
+services:
+  agent:
+    host: azure.ai.agent
+    config:
+      kind: ""
+      name: config-agent
+`)
+
+	require.Equal(t, "name", agentServiceConfigValuePath(content, "agent", "name"))
 }
 
 func TestAgentServiceConfigValuePath_RootAgentUsesRootPath(t *testing.T) {

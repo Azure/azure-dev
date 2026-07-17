@@ -202,11 +202,14 @@ func agentServiceConfigValuePath(content []byte, serviceName string, field strin
 	if !ok {
 		return field
 	}
+	if kind, ok := service["kind"].(string); ok && strings.TrimSpace(kind) != "" {
+		return field
+	}
 	config, ok := service["config"].(map[string]any)
 	if !ok {
 		return field
 	}
-	if _, ok := config["kind"]; !ok {
+	if kind, ok := config["kind"].(string); !ok || strings.TrimSpace(kind) == "" {
 		return field
 	}
 	return "config." + field
@@ -266,6 +269,13 @@ func agentNameOverrideServices(content []byte, agentName string) ([]string, erro
 		return nil, err
 	}
 	agentServices := agentServiceNames(content)
+	if len(agentServices) == 0 {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--agent-name requires a sample with an azure.ai.agent service",
+			"remove --agent-name, or use a sample that declares an agent service",
+		)
+	}
 	if len(agentServices) > 1 {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
@@ -279,6 +289,13 @@ func agentNameOverrideServices(content []byte, agentName string) ([]string, erro
 
 func agentOverrideServices(content []byte, flagName string) ([]string, error) {
 	agentServices := agentServiceNames(content)
+	if len(agentServices) == 0 {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("%s requires a sample with an azure.ai.agent service", flagName),
+			fmt.Sprintf("remove %s, or use a sample that declares an agent service", flagName),
+		)
+	}
 	if len(agentServices) > 1 {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
@@ -299,9 +316,11 @@ func resolveDeploymentForModelFlag(
 	if modelName == "" {
 		return nil, nil
 	}
-	deployment, err := resolveModelDeployment(
-		ctx, azdClient, azureContext, &azdext.AiModel{Name: modelName}, azureContext.Scope.Location,
-	)
+	model, err := selectNewModel(ctx, azdClient, azureContext, modelName)
+	if err != nil {
+		return nil, err
+	}
+	deployment, err := resolveModelDeployment(ctx, azdClient, azureContext, model, azureContext.Scope.Location)
 	if err != nil {
 		return nil, err
 	}

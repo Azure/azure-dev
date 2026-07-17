@@ -61,7 +61,8 @@ func teamsGeneratedMarkerFor(msaAppID string) string {
 func canWriteGeneratedFile(path, msaAppID string) (bool, string) {
 	info, err := os.Lstat(path)
 	if err != nil {
-		// Absent (or unstat-able): attempt the write; WriteFile logs any failure.
+		// Absent, or the stat itself failed: attempt the write; WriteFile logs
+		// any failure.
 		return true, ""
 	}
 	if !info.Mode().IsRegular() {

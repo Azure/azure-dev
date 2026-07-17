@@ -8752,6 +8752,74 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-toolboxes_1.0.0-beta.2/azure-ai-toolboxes-windows-arm64.zip"
             }
           }
+        },
+        {
+          "version": "1.0.0-beta.3",
+          "requiredAzdVersion": ">=1.27.0",
+          "capabilities": [
+            "custom-commands",
+            "service-target-provider",
+            "metadata"
+          ],
+          "providers": [
+            {
+              "name": "azure.ai.toolbox",
+              "type": "service-target",
+              "description": "Upserts Foundry toolboxes declared as azure.ai.toolbox services in azure.yaml"
+            }
+          ],
+          "usage": "azd ai toolbox <command> [options]",
+          "examples": null,
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "c72f2364fc36f1302ed985b78646ae13f466ea79b2cfc3ec494c15a4cbc28ca6"
+              },
+              "entryPoint": "azure-ai-toolboxes-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-toolboxes_1.0.0-beta.3/azure-ai-toolboxes-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "89cdbaea7e44ee96c3f666a2c70f5b7f1918f9bb18899b9756bf35a584f42ec3"
+              },
+              "entryPoint": "azure-ai-toolboxes-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-toolboxes_1.0.0-beta.3/azure-ai-toolboxes-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "9bff025e857694e1017251577ee8aa73a35624dcfd0629d420cc7e7a067c7065"
+              },
+              "entryPoint": "azure-ai-toolboxes-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-toolboxes_1.0.0-beta.3/azure-ai-toolboxes-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "795ad144894142aa3625f462ee76e8a425ad80220a8c929efb6eaabc7f177887"
+              },
+              "entryPoint": "azure-ai-toolboxes-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-toolboxes_1.0.0-beta.3/azure-ai-toolboxes-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "53cecc106285c5a535846a2e29732ae5cd439e876e7e57546a5b76cf9f0346a3"
+              },
+              "entryPoint": "azure-ai-toolboxes-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-toolboxes_1.0.0-beta.3/azure-ai-toolboxes-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "96d4db3874e02c538e42ea83259dae51fead85cfe6b844f793245b53aab492fe"
+              },
+              "entryPoint": "azure-ai-toolboxes-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-toolboxes_1.0.0-beta.3/azure-ai-toolboxes-windows-arm64.zip"
+            }
+          }
         }
       ],
       "tags": [

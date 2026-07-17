@@ -7515,6 +7515,74 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-connections_1.0.0-beta.2/azure-ai-connections-windows-arm64.zip"
             }
           }
+        },
+        {
+          "version": "1.0.0-beta.3",
+          "requiredAzdVersion": ">=1.27.0",
+          "capabilities": [
+            "custom-commands",
+            "service-target-provider",
+            "metadata"
+          ],
+          "providers": [
+            {
+              "name": "azure.ai.connection",
+              "type": "service-target",
+              "description": "Upserts Foundry connections declared as azure.ai.connection services in azure.yaml"
+            }
+          ],
+          "usage": "azd ai connection <command> [options]",
+          "examples": null,
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "a42a54a58f746d7f4b9a12393afa18a5a08a3355fffd0e91180b139d9730c83f"
+              },
+              "entryPoint": "azure-ai-connections-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-connections_1.0.0-beta.3/azure-ai-connections-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "7ede8e6c8787d8a48f3a71193c3414ef3cd1f57315f2f9a4d3e72cd8210e9672"
+              },
+              "entryPoint": "azure-ai-connections-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-connections_1.0.0-beta.3/azure-ai-connections-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "e07ee36ccfb19660afad8c969db8e877a501e9dad93a8f3869ba0ab4a4cc4490"
+              },
+              "entryPoint": "azure-ai-connections-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-connections_1.0.0-beta.3/azure-ai-connections-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "3658e111caeaa77d7b9c42e8304c7f852e1abf5881db028d96e3911708abe4c8"
+              },
+              "entryPoint": "azure-ai-connections-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-connections_1.0.0-beta.3/azure-ai-connections-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "9056925a09677e354f13c0e02bb9bc0a8e43538da6926c005ba884fa2f931ab2"
+              },
+              "entryPoint": "azure-ai-connections-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-connections_1.0.0-beta.3/azure-ai-connections-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "0fd9f7f74975878c8db1d213d3e52bdd17843d76ce1dd89c9f6ae9b4597b99f8"
+              },
+              "entryPoint": "azure-ai-connections-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-connections_1.0.0-beta.3/azure-ai-connections-windows-arm64.zip"
+            }
+          }
         }
       ],
       "tags": [

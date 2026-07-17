@@ -31,7 +31,17 @@ SHORT_DESC="$(printf '%.80s' "Chat with $SHORT_NAME in Microsoft Teams.")"
 # Teams only treats a re-uploaded package (same app id) as an update when the
 # manifest version is higher, so derive a monotonically increasing version from
 # the current time. Each re-run therefore updates the same app in place.
-PKG_VERSION="1.0.$(date -u +%s)"
+# Teams caps each version component at 65535, so encode time across bounded
+# components: minor = days since the epoch, patch = half-seconds into the day.
+# (days fits < 65535 until ~year 2149; half-second-of-day maxes at 43199.)
+NOW_EPOCH="$(date -u +%s)"
+VER_MINOR="$(( NOW_EPOCH / 86400 ))"
+VER_PATCH="$(( (NOW_EPOCH % 86400) / 2 ))"
+PKG_VERSION="1.${VER_MINOR}.${VER_PATCH}"
+if [ "$VER_MINOR" -gt 65535 ] || [ "$VER_PATCH" -gt 65535 ]; then
+  echo "Error: computed manifest version $PKG_VERSION exceeds the Teams component limit (65535)." >&2
+  exit 1
+fi
 
 echo "Agent:        $AGENT_NAME"
 echo "Bot ID:       $BOT_ID"

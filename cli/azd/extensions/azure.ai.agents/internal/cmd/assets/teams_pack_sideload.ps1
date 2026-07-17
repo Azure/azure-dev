@@ -32,7 +32,17 @@ if ($shortDesc.Length -gt 80) { $shortDesc = $shortDesc.Substring(0, 80) }
 # Teams only treats a re-uploaded package (same app id) as an update when the
 # manifest version is higher, so derive a monotonically increasing version from
 # the current time. Each re-run therefore updates the same app in place.
-$pkgVersion = "1.0.$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+# Teams caps each version component at 65535, so encode time across bounded
+# components: minor = days since the epoch, patch = half-seconds into the day.
+# (days fits < 65535 until ~year 2149; half-second-of-day maxes at 43199.)
+$nowEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+$verMinor = [int]([math]::Floor($nowEpoch / 86400))
+$verPatch = [int]([math]::Floor(($nowEpoch % 86400) / 2))
+$pkgVersion = "1.$verMinor.$verPatch"
+if ($verMinor -gt 65535 -or $verPatch -gt 65535) {
+    Write-Error "Computed manifest version $pkgVersion exceeds the Teams component limit (65535)."
+    exit 1
+}
 
 Write-Host "Agent:        $AgentName"
 Write-Host "Bot ID:       $BotId"

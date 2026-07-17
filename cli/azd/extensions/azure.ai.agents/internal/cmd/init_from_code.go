@@ -906,6 +906,7 @@ type protocolInfo struct {
 var knownProtocols = []protocolInfo{
 	{Name: "responses", Version: "2.0.0"},
 	{Name: "invocations", Version: "1.0.0"},
+	{Name: "invocations_ws", Version: "2.0.0"},
 	// "activity" is the canonical protocol name (legacy alias: "activity_protocol").
 	// The version selects the platform's internal container route ("v1"/"1.0.0" ->
 	// /api/messages, "2.0.0" -> /activity/messages), but that hop is Bot Service ->
@@ -925,37 +926,9 @@ func promptProtocols(
 	noPrompt bool,
 	flagProtocols []string,
 ) ([]agent_yaml.ProtocolVersionRecord, error) {
-	// Build a lookup from protocol name → version for known protocols.
-	versionOf := make(map[string]string, len(knownProtocols))
-	for _, p := range knownProtocols {
-		versionOf[p.Name] = p.Version
-	}
-
-	// If explicit flag values were provided, use them directly (with dedup).
+	// If explicit flag values were provided, delegate to the shared resolver (with dedup).
 	if len(flagProtocols) > 0 {
-		seen := make(map[string]bool, len(flagProtocols))
-		records := make([]agent_yaml.ProtocolVersionRecord, 0, len(flagProtocols))
-		for _, name := range flagProtocols {
-			if seen[name] {
-				continue
-			}
-			seen[name] = true
-
-			version, ok := versionOf[name]
-			if !ok {
-				return nil, exterrors.Validation(
-					exterrors.CodeInvalidAgentManifest,
-					fmt.Sprintf("unknown protocol %q; supported values: %s",
-						name, knownProtocolNames()),
-					fmt.Sprintf("Use one of the supported protocol values: %s", knownProtocolNames()),
-				)
-			}
-			records = append(records, agent_yaml.ProtocolVersionRecord{
-				Protocol: name,
-				Version:  version,
-			})
-		}
-		return records, nil
+		return resolveKnownProtocols(flagProtocols)
 	}
 
 	// Non-interactive mode: default to responses.
@@ -963,6 +936,12 @@ func promptProtocols(
 		return []agent_yaml.ProtocolVersionRecord{
 			{Protocol: "responses", Version: "2.0.0"},
 		}, nil
+	}
+
+	// Build a lookup from protocol name → version for known protocols.
+	versionOf := make(map[string]string, len(knownProtocols))
+	for _, p := range knownProtocols {
+		versionOf[p.Name] = p.Version
 	}
 
 	// Build multi-select choices; "responses" is pre-selected.

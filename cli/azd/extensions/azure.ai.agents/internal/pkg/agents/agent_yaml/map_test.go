@@ -1604,6 +1604,43 @@ func TestCreateHostedAgentAPIRequest_WithRaiConfig(t *testing.T) {
 	}
 }
 
+func TestCreateAgentAPIRequest_CodeDeploy_InvocationsWsUsesProtocolVersions(t *testing.T) {
+	t.Parallel()
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "ws-agent",
+		},
+		Protocols: []ProtocolVersionRecord{
+			{Protocol: "invocations_ws", Version: "2.0.0"},
+		},
+		CodeConfiguration: &CodeConfiguration{
+			Runtime:    "python_3_12",
+			EntryPoint: "main.py",
+		},
+	}
+
+	req, err := CreateAgentAPIRequestFromDefinition(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	codeDef, ok := req.Definition.(agent_api.HostedAgentDefinition)
+	if !ok {
+		t.Fatalf("expected HostedAgentDefinition, got %T", req.Definition)
+	}
+
+	if len(codeDef.ProtocolVersions) != 1 {
+		t.Fatalf("expected 1 protocol version, got %d", len(codeDef.ProtocolVersions))
+	}
+	if string(codeDef.ProtocolVersions[0].Protocol) != "invocations_ws" {
+		t.Errorf("protocol = %q, want %q", codeDef.ProtocolVersions[0].Protocol, "invocations_ws")
+	}
+	if codeDef.ProtocolVersions[0].Version != "2.0.0" {
+		t.Errorf("version = %q, want %q", codeDef.ProtocolVersions[0].Version, "2.0.0")
+	}
+}
+
 func TestCreateAgentAPIRequest_CodeDeploy_WithRaiConfig(t *testing.T) {
 	t.Parallel()
 	const raiPolicyID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/" +

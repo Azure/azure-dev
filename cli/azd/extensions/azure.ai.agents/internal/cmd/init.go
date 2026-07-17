@@ -20,6 +20,7 @@ import (
 	osExec "os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -657,6 +658,51 @@ func preBuiltImageForInit(agentManifest *agent_yaml.AgentManifest, flagImage str
 	return strings.TrimSpace(ca.Image)
 }
 
+func protocolRecordsForImageManifest(flagProtocols []string) ([]agent_yaml.ProtocolVersionRecord, error) {
+	if len(flagProtocols) == 0 {
+		return []agent_yaml.ProtocolVersionRecord{{Protocol: "responses", Version: "2.0.0"}}, nil
+	}
+	if slices.Contains(flagProtocols, "activity") {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"--protocol activity is not supported with --image",
+			"use code init for activity agents, or choose a different protocol for --image",
+		)
+	}
+	return resolveKnownProtocols(flagProtocols)
+}
+
+// resolveKnownProtocols validates and resolves the given protocol names against the
+// known protocols list, returning the corresponding ProtocolVersionRecords. Duplicate
+// names are silently deduplicated; unknown names produce a validation error.
+func resolveKnownProtocols(flagProtocols []string) ([]agent_yaml.ProtocolVersionRecord, error) {
+	versionOf := make(map[string]string, len(knownProtocols))
+	for _, p := range knownProtocols {
+		versionOf[p.Name] = p.Version
+	}
+
+	seen := make(map[string]bool, len(flagProtocols))
+	records := make([]agent_yaml.ProtocolVersionRecord, 0, len(flagProtocols))
+	for _, name := range flagProtocols {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+
+		version, ok := versionOf[name]
+		if !ok {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("unknown protocol %q; supported values: %s", name, knownProtocolNames()),
+				"choose one of the supported protocols or omit --protocol to use the default",
+			)
+		}
+		records = append(records, agent_yaml.ProtocolVersionRecord{Protocol: name, Version: version})
+	}
+
+	return records, nil
+}
+
 // synthesizeImageManifestFile writes a minimal hosted container agent manifest to a
 // temporary file for the bring-your-own-image flow (--image without --manifest).
 // Routing through the manifest path lets init skip template/language selection and code
@@ -664,8 +710,12 @@ func preBuiltImageForInit(agentManifest *agent_yaml.AgentManifest, flagImage str
 // the temp directory; callers should defer it. The image is intentionally not embedded
 // in the temporary manifest; init writes --image to the generated azure.yaml service's
 // top-level image field.
-func synthesizeImageManifestFile(agentName, image string) (string, func(), error) {
+func synthesizeImageManifestFile(agentName, image string, flagProtocols []string) (string, func(), error) {
 	noop := func() {}
+	protocols, err := protocolRecordsForImageManifest(flagProtocols)
+	if err != nil {
+		return "", noop, err
+	}
 
 	tmpDir, err := os.MkdirTemp("", "azd-agent-image-")
 	if err != nil {
@@ -673,15 +723,18 @@ func synthesizeImageManifestFile(agentName, image string) (string, func(), error
 	}
 	cleanup := func() { _ = os.RemoveAll(tmpDir) }
 
+	protocolDocs := make([]map[string]any, 0, len(protocols))
+	for _, p := range protocols {
+		protocolDocs = append(protocolDocs, map[string]any{"protocol": p.Protocol, "version": p.Version})
+	}
+
 	doc := map[string]any{
 		"name": agentName,
 		"template": map[string]any{
 			"kind":        string(agent_yaml.AgentKindHosted),
 			"name":        agentName,
 			"description": fmt.Sprintf("Hosted container agent using pre-built image %s", image),
-			"protocols": []map[string]any{
-				{"protocol": "responses", "version": "2.0.0"},
-			},
+			"protocols":   protocolDocs,
 		},
 	}
 
@@ -1143,7 +1196,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						"pass --agent-name <name> (or provide --manifest with the agent definition)",
 					)
 				}
-				manifestPath, cleanup, err := synthesizeImageManifestFile(flags.agentName, flags.image)
+				manifestPath, cleanup, err := synthesizeImageManifestFile(flags.agentName, flags.image, flags.protocols)
 				if err != nil {
 					return err
 				}
@@ -1510,7 +1563,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")
 
 	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
-		"Protocols supported by the agent (e.g., 'responses', 'invocations'). Can be specified multiple times.")
+		"Protocols supported by the agent (e.g., 'responses', 'invocations', 'invocations_ws'). "+
+			"Can be specified multiple times.")
 
 	cmd.Flags().StringVar(&flags.deployMode, "deploy-mode", "",
 		"Deployment mode: 'container' (Docker image) or 'code' (ZIP upload). Defaults to 'code' for Python/.NET projects in --no-prompt.")

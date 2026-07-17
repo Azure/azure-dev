@@ -110,7 +110,7 @@
       "type": "object",
       "description": "A protocol the agent implements, with its version.",
       "properties": {
-        "protocol": { "type": "string", "description": "Protocol name (e.g., 'responses', 'invocations', 'a2a')." },
+        "protocol": { "type": "string", "description": "Protocol name (e.g., 'responses', 'invocations', 'invocations_ws', 'a2a')." },
         "version": { "type": "string", "description": "Protocol version." }
       },
       "required": ["protocol"],

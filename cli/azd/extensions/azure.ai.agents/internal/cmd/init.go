@@ -976,6 +976,11 @@ func runInitFromManifest(
 		return err
 	}
 	applyAzureContextFlags(azureContext, flags)
+	if flags.noPrompt {
+		if err := persistValidatedAzureContextFlags(ctx, azdClient, azureContext, env.Name, flags); err != nil {
+			return err
+		}
+	}
 
 	// Create credential with whatever tenant is available (may be empty → default tenant)
 	credential, err := azidentity.NewAzureDeveloperCLICredential(
@@ -2036,11 +2041,6 @@ func (a *InitAction) configureModelChoice(
 
 	hasModelResources := manifestHasModelResources(agentManifest)
 	if a.flags.projectResourceId == "" && shouldDeferInitAzureContext(a.flags.noPrompt, a.azureContext) {
-		if err := persistValidatedAzureContextFlags(
-			ctx, a.azdClient, a.azureContext, a.environment.Name, a.flags,
-		); err != nil {
-			return nil, err
-		}
 		// In headless init, missing Azure values should not block local scaffold generation.
 		// Defer project/model setup and print the values required before provisioning.
 		if err := configureDeferredInitAzureContext(

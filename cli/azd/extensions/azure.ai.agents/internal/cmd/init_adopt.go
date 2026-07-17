@@ -1037,7 +1037,7 @@ func runInitFromAzureYaml(
 		return err
 	}
 	applyAzureContextFlags(azureContext, flags)
-	if shouldDeferInitAzureContext(flags.noPrompt, azureContext) {
+	if flags.noPrompt {
 		if err := persistValidatedAzureContextFlags(ctx, azdClient, azureContext, env.Name, flags); err != nil {
 			return err
 		}

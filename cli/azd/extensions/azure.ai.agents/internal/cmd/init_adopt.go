@@ -189,14 +189,43 @@ func agentServiceNames(content []byte) []string {
 	return names
 }
 
-func updateAzureYamlAgentName(ctx context.Context, azdClient *azdext.AzdClient, serviceName, agentName string) error {
+func agentServiceConfigValuePath(content []byte, serviceName string, field string) string {
+	var doc map[string]any
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		return field
+	}
+	services, ok := doc["services"].(map[string]any)
+	if !ok {
+		return field
+	}
+	service, ok := services[serviceName].(map[string]any)
+	if !ok {
+		return field
+	}
+	config, ok := service["config"].(map[string]any)
+	if !ok {
+		return field
+	}
+	if _, ok := config["kind"]; !ok {
+		return field
+	}
+	return "config." + field
+}
+
+func updateAzureYamlAgentName(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	path string,
+	agentName string,
+) error {
 	val, err := structpb.NewValue(agentName)
 	if err != nil {
 		return fmt.Errorf("encoding agent name for service %q: %w", serviceName, err)
 	}
 	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
 		ServiceName: serviceName,
-		Path:        "name",
+		Path:        path,
 		Value:       val,
 	}); err != nil {
 		return fmt.Errorf("updating agent name in azure.yaml for service %q: %w", serviceName, err)
@@ -208,6 +237,7 @@ func updateAzureYamlAgentProtocols(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	serviceName string,
+	path string,
 	protocols []protocolInfo,
 ) error {
 	protocolDocs := make([]any, 0, len(protocols))
@@ -220,7 +250,7 @@ func updateAzureYamlAgentProtocols(
 	}
 	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
 		ServiceName: serviceName,
-		Path:        "protocols",
+		Path:        path,
 		Value:       val,
 	}); err != nil {
 		return fmt.Errorf("updating protocols in azure.yaml for service %q: %w", serviceName, err)
@@ -947,7 +977,8 @@ func runInitFromAzureYaml(
 			return err
 		}
 		for _, agentServiceName := range agentServices {
-			if err := updateAzureYamlAgentName(ctx, azdClient, agentServiceName, flags.agentName); err != nil {
+			path := agentServiceConfigValuePath(content, agentServiceName, "name")
+			if err := updateAzureYamlAgentName(ctx, azdClient, agentServiceName, path, flags.agentName); err != nil {
 				return err
 			}
 		}
@@ -962,7 +993,8 @@ func runInitFromAzureYaml(
 			return err
 		}
 		for _, agentServiceName := range agentServices {
-			if err := updateAzureYamlAgentProtocols(ctx, azdClient, agentServiceName, protocols); err != nil {
+			path := agentServiceConfigValuePath(content, agentServiceName, "protocols")
+			if err := updateAzureYamlAgentProtocols(ctx, azdClient, agentServiceName, path, protocols); err != nil {
 				return err
 			}
 		}

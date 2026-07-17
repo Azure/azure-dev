@@ -163,6 +163,31 @@ services:
 	require.Contains(t, err.Error(), "first, second")
 }
 
+func TestAgentServiceConfigValuePath_ConfigNestedKindUsesConfigPath(t *testing.T) {
+	content := []byte(`name: config-nested
+services:
+  agent:
+    host: azure.ai.agent
+    config:
+      kind: hosted
+      name: agent-name
+`)
+
+	require.Equal(t, "config.name", agentServiceConfigValuePath(content, "agent", "name"))
+	require.Equal(t, "config.protocols", agentServiceConfigValuePath(content, "agent", "protocols"))
+}
+
+func TestAgentServiceConfigValuePath_RootAgentUsesRootPath(t *testing.T) {
+	content := []byte(`name: root-agent
+services:
+  agent:
+    host: azure.ai.agent
+    name: agent-name
+`)
+
+	require.Equal(t, "name", agentServiceConfigValuePath(content, "agent", "name"))
+}
+
 func TestFoundryProjectServiceForModelOverride_MultipleProjectsReturnsAmbiguousError(t *testing.T) {
 	content := []byte(`name: multi-project
 services:

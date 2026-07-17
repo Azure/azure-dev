@@ -478,16 +478,22 @@ func loadServiceProtocol(projectPath, relativePath string) string {
 	}
 
 	sawInvocations := false
+	sawInvocationsWS := false
 	for _, p := range hosted.Protocols {
 		switch strings.TrimSpace(p.Protocol) {
 		case ProtocolResponses:
 			return ProtocolResponses
+		case ProtocolInvocationsWS:
+			sawInvocationsWS = true
 		case ProtocolInvocations:
 			sawInvocations = true
 		}
 	}
 	if sawInvocations {
 		return ProtocolInvocations
+	}
+	if sawInvocationsWS {
+		return ProtocolInvocationsWS
 	}
 	return ""
 }

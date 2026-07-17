@@ -17,6 +17,9 @@ const (
 	// ProtocolResponses is the value of `agent.yaml#protocol` for plain
 	// text /responses agents.
 	ProtocolResponses = "responses"
+	// ProtocolInvocationsWS is the value of `agent.yaml#protocol` for
+	// bidirectional WebSocket /invocations_ws agents.
+	ProtocolInvocationsWS = "invocations_ws"
 
 	// placeholderPayload is the single-quoted literal the resolver
 	// emits as the body argument when no concrete payload is known —

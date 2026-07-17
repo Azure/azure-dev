@@ -47,24 +47,27 @@ const (
 )
 
 // teamsGeneratedMarkerFor returns the agent-specific generated marker embedded in
-// the scripts and guide azd writes for the given agent. The key MUST be a stable,
-// scope-specific identity such as the bot name (service name + subscription/RG
-// salt): it stays constant across redeploys and managed-identity recreation,
-// unlike the version-scoped msaAppId/instance client id. Keying the marker on a
-// stable value lets postdeploy recognize its own prior output (safe to refresh)
-// and leave a different agent's output that shares the source directory untouched
-// (must not be clobbered -- only the last writer's package would install).
-func teamsGeneratedMarkerFor(stableKey string) string {
-	return teamsSideloadGeneratedMarker + " for bot " + stableKey
+// the scripts and guide azd writes for the given agent. The key is the agent
+// (service) name: it is stable across redeploys, managed-identity recreation, AND
+// azd environments -- unlike the version-scoped msaAppId/instance client id or the
+// subscription/resource-group-salted bot name -- yet is distinct per service.
+// Keying on it lets postdeploy recognize and refresh its own prior output,
+// including when the same service is later deployed to a second environment, while
+// leaving a different agent's output that shares the source directory untouched
+// (must not be clobbered -- only the last writer's package would install). The
+// trailing period delimits the name so one agent's marker is not a prefix of
+// another's (e.g. "svc" must not match a file generated for "svc-2").
+func teamsGeneratedMarkerFor(agentName string) string {
+	return teamsSideloadGeneratedMarker + " for agent " + agentName + "."
 }
 
 // canWriteGeneratedFile reports whether path may be (over)written with a file
-// azd generated for stableKey. It is true when the path is absent or is a regular
-// file already generated for the SAME stable key (an idempotent refresh). It is
+// azd generated for agentName. It is true when the path is absent or is a regular
+// file already generated for the SAME agent (an idempotent refresh). It is
 // false -- with a log-ready reason -- for a non-regular file (symlink, FIFO,
 // device, directory), a user-owned file, or a file generated for a DIFFERENT
 // agent, so none of those is silently clobbered.
-func canWriteGeneratedFile(path, stableKey string) (bool, string) {
+func canWriteGeneratedFile(path, agentName string) (bool, string) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		// Absent, or the stat itself failed: attempt the write; WriteFile logs
@@ -78,7 +81,7 @@ func canWriteGeneratedFile(path, stableKey string) (bool, string) {
 	if readErr != nil {
 		return false, "could not be read to verify its origin; leaving it untouched"
 	}
-	if strings.Contains(string(existing), teamsGeneratedMarkerFor(stableKey)) {
+	if strings.Contains(string(existing), teamsGeneratedMarkerFor(agentName)) {
 		return true, ""
 	}
 	if strings.Contains(string(existing), teamsSideloadGeneratedMarker) {
@@ -93,7 +96,7 @@ func canWriteGeneratedFile(path, stableKey string) (bool, string) {
 // own the path. It atomically claims a brand-new path (O_CREATE|O_EXCL, so under
 // a parallel service-deploy graph only one concurrent postdeploy wins the create
 // and the losers fall through to the ownership check), and for an existing path
-// it refreshes in place only when the file is a regular file this same stableKey
+// it refreshes in place only when the file is a regular file this same agentName
 // generated -- replacing it atomically via a temp file + rename so a reader never
 // sees a partial file and a pre-existing symlink is replaced rather than followed.
 // isLegacy, when non-nil, lets the caller additionally adopt a pre-marker
@@ -101,7 +104,7 @@ func canWriteGeneratedFile(path, stableKey string) (bool, string) {
 // written=true only when the file now holds content; otherwise reason explains
 // why it was left untouched ("" means the caller should stay silent).
 func writeOwnedGeneratedFile(
-	path, content string, mode os.FileMode, stableKey string, isLegacy func(string) bool,
+	path, content string, mode os.FileMode, agentName string, isLegacy func(string) bool,
 ) (bool, string) {
 	// Fast path: atomically create a new file. O_EXCL guarantees exactly one
 	// concurrent writer wins the create; everyone else gets ErrExist below.
@@ -125,10 +128,10 @@ func writeOwnedGeneratedFile(
 		return false, fmt.Sprintf("could not be created: %v", err)
 	}
 
-	// The path already exists: only replace it if we own it (same stable key) or
-	// it is a recognized legacy generated file. Never touch a user file, a
-	// different agent's file, or a non-regular file.
-	if ok, reason := canWriteGeneratedFile(path, stableKey); !ok {
+	// The path already exists: only replace it if we own it (same agent) or it is
+	// a recognized legacy generated file. Never touch a user file, a different
+	// agent's file, or a non-regular file.
+	if ok, reason := canWriteGeneratedFile(path, agentName); !ok {
 		if isLegacy == nil || !isLegacy(path) {
 			return false, reason
 		}
@@ -283,11 +286,13 @@ func writeTeamsSideloadScripts(
 		}
 		content := teamsSideloadScriptContent(s.tmpl, agentName, botName, msaAppID)
 
-		// Atomically claim/refresh the path keyed on the STABLE bot name (never
-		// the version-scoped msaAppId): a user-owned file, a different agent's
-		// script sharing this source directory, or a non-regular file is left
-		// untouched, and concurrent service deploys cannot clobber each other.
-		if ok, reason := writeOwnedGeneratedFile(scriptPath, content, s.mode, botName, nil); !ok {
+		// Atomically claim/refresh the path keyed on the agent (service) name,
+		// which is stable across redeploys AND azd environments (unlike the
+		// version-scoped msaAppId or the subscription/RG-salted bot name): a
+		// user-owned file, a different agent's script sharing this source
+		// directory, or a non-regular file is left untouched, and concurrent
+		// service deploys cannot clobber each other.
+		if ok, reason := writeOwnedGeneratedFile(scriptPath, content, s.mode, agentName, nil); !ok {
 			if reason != "" {
 				log.Printf("postdeploy: Teams sideload script %q %s", scriptPath, reason)
 			}

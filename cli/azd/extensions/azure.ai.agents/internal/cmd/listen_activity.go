@@ -163,12 +163,13 @@ func writeTeamsSetupGuide(
 		return ""
 	}
 	content := teamsSetupGuideContent(agentName, botName, msaAppID, scriptsGenerated)
-	// Atomically claim/refresh the guide keyed on the STABLE bot name. A guide a
-	// different activity service generated for another agent (shared source dir)
-	// and genuinely user-owned files are left untouched; a pre-marker guide from
-	// a released version is recognized (isLegacyGeneratedGuide) and refreshed so
+	// Atomically claim/refresh the guide keyed on the agent (service) name, which
+	// is stable across redeploys AND azd environments. A guide a different
+	// activity service generated for another agent (shared source dir) and
+	// genuinely user-owned files are left untouched; a pre-marker guide from a
+	// released version is recognized (isLegacyGeneratedGuide) and refreshed so
 	// upgrading users still get the script cross-reference.
-	if ok, reason := writeOwnedGeneratedFile(guidePath, content, 0o600, botName, isLegacyGeneratedGuide); !ok {
+	if ok, reason := writeOwnedGeneratedFile(guidePath, content, 0o600, agentName, isLegacyGeneratedGuide); !ok {
 		if reason != "" {
 			log.Printf("postdeploy: Teams setup guide %q %s", guidePath, reason)
 		}

@@ -13,7 +13,7 @@
 #      app upload/sideloading, which a Teams admin can enable if it is off), and
 #   4. prints an "Open in Teams" chat deep link.
 #
-# Prerequisites: Node.js (npm) for the atk CLI, and a one-time 'atk auth login'
+# Prerequisites: Node.js (npm) for the atk CLI, and a one-time 'atk auth login m365'
 # with your M365 account (this script launches it for you if you are not signed
 # in). Set SKIP_TEAMS_INSTALL=1 to build the package only and skip the install.
 
@@ -40,7 +40,8 @@ SHORT_DESC="$(printf '%.80s' "Chat with $SHORT_NAME in Microsoft Teams.")"
 STATE_FILE="$SCRIPT_DIR/.teams-app-version"
 NOW_EPOCH="$(date -u +%s)"
 LAST_N=0
-if [ -f "$STATE_FILE" ]; then
+# Only read the counter from a plain regular file -- never follow a symlink.
+if [ -f "$STATE_FILE" ] && [ ! -L "$STATE_FILE" ]; then
   LAST_N="$(tr -dc '0-9' < "$STATE_FILE" 2>/dev/null)"
   [ -z "$LAST_N" ] && LAST_N=0
 fi
@@ -55,7 +56,16 @@ if [ "$VER_MINOR" -gt 65535 ] || [ "$VER_PATCH" -gt 65535 ]; then
   echo "Error: computed manifest version $PKG_VERSION exceeds the Teams component limit (65535)." >&2
   exit 1
 fi
-printf '%s' "$VER_N" > "$STATE_FILE" 2>/dev/null || true
+# Persist the build number, but never follow a pre-existing symlink -- a planted
+# link could otherwise redirect this write to truncate an arbitrary user-writable
+# file. Write to a temp file in the same directory and atomically move it into
+# place, which replaces the link itself rather than its target.
+if [ ! -L "$STATE_FILE" ] && { [ ! -e "$STATE_FILE" ] || [ -f "$STATE_FILE" ]; }; then
+  STATE_TMP="$STATE_FILE.$$.tmp"
+  if printf '%s' "$VER_N" > "$STATE_TMP" 2>/dev/null; then
+    mv -f "$STATE_TMP" "$STATE_FILE" 2>/dev/null || rm -f "$STATE_TMP" 2>/dev/null
+  fi
+fi
 
 echo "Agent:        $AGENT_NAME"
 echo "Bot ID:       $BOT_ID"
@@ -155,7 +165,7 @@ INSTALL_OUT="$(atk install --file-path "$ZIP_PATH" --scope Personal --interactiv
 echo "$INSTALL_OUT"
 # If atk reports the user is not signed in, launch an interactive login and retry.
 if echo "$INSTALL_OUT" | grep -qiE 'not (logged|signed) in|auth.*required|please login|login first|no account'; then
-    echo "Not signed in - launching 'atk auth login' (complete the sign-in prompt)..."
+    echo "Not signed in - launching 'atk auth login m365' (complete the sign-in prompt)..."
     atk auth login m365
     INSTALL_OUT="$(atk install --file-path "$ZIP_PATH" --scope Personal --interactive false 2>&1)"
     echo "$INSTALL_OUT"
@@ -173,7 +183,7 @@ CHAT_LINK="https://teams.microsoft.com/l/chat/0/0?users=28:$BOT_ID"
 if [ -z "$TITLE_ID" ]; then
     echo ""
     echo "Could not confirm the per-user install."
-    echo "If you were prompted to sign in, run 'atk auth login' then re-run this script."
+    echo "If you were prompted to sign in, run 'atk auth login m365' then re-run this script."
     echo "Or sideload the package manually (requires custom app upload to be enabled for your tenant):"
     echo "    $ZIP_PATH"
     echo "    Teams -> Apps -> Manage your apps -> Upload an app -> Upload a custom app"

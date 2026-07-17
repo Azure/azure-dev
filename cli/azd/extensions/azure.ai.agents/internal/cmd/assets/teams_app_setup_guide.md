@@ -30,7 +30,7 @@ Prerequisites:
 
 - **Node.js** (for `npm`) — the script installs the Microsoft 365 Agents Toolkit
   CLI (`atk`) via npm if it is missing.
-- A one-time **`atk auth login`** with your M365 account — the script launches
+- A one-time **`atk auth login m365`** with your M365 account — the script launches
   this for you if you are not signed in.
 - `--scope Personal` installs only for you and needs **no org-catalog admin
   approval** (an org-wide catalog upload does; see step B below). Custom app
@@ -142,7 +142,7 @@ enabled for your tenant):
 
 ```sh
 npm install -g @microsoft/m365agentstoolkit-cli          # one-time; requires Node.js
-atk auth login                                           # sign in with your M365 account
+atk auth login m365                                      # sign in with your M365 account
 atk install --file-path {{.AgentName}}-teams-app.zip --scope Personal
 ```
 

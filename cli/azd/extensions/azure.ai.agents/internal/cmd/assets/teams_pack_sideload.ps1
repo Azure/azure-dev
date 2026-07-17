@@ -13,7 +13,7 @@
 #      app upload/sideloading, which a Teams admin can enable if it is off), and
 #   4. prints an "Open in Teams" chat deep link.
 #
-# Prerequisites: Node.js (npm) for the atk CLI, and a one-time 'atk auth login'
+# Prerequisites: Node.js (npm) for the atk CLI, and a one-time 'atk auth login m365'
 # with your M365 account (this script launches it for you if you are not signed
 # in). Set SKIP_TEAMS_INSTALL=1 to build the package only and skip the install.
 
@@ -39,7 +39,12 @@ if ($shortDesc.Length -gt 80) { $shortDesc = $shortDesc.Substring(0, 80) }
 $stateFile = Join-Path $PSScriptRoot ".teams-app-version"
 $nowEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 $lastN = [int64]0
-if (Test-Path -LiteralPath $stateFile) {
+# Only read the counter from a plain regular file -- never follow a symlink or
+# reparse point, and ignore directories.
+$stateItem = Get-Item -LiteralPath $stateFile -Force -ErrorAction SilentlyContinue
+$stateIsLink = $stateItem -and ($stateItem.LinkType -or ($stateItem.Attributes -band [IO.FileAttributes]::ReparsePoint))
+$stateIsDir = $stateItem -and $stateItem.PSIsContainer
+if ($stateItem -and -not $stateIsLink -and -not $stateIsDir) {
     $raw = (Get-Content -LiteralPath $stateFile -Raw -ErrorAction SilentlyContinue) -replace '[^0-9]', ''
     if ($raw) { $lastN = [int64]$raw }
 }
@@ -51,7 +56,14 @@ if ($verMinor -gt 65535 -or $verPatch -gt 65535) {
     Write-Error "Computed manifest version $pkgVersion exceeds the Teams component limit (65535)."
     exit 1
 }
-Set-Content -LiteralPath $stateFile -Value ([string]$verN) -NoNewline -ErrorAction SilentlyContinue
+# Persist the counter, but never overwrite a pre-existing symlink/reparse point
+# or directory (a planted link could redirect the write to an arbitrary file).
+# Write to a temp file and move it into place so the link itself is replaced.
+if (-not $stateIsLink -and -not $stateIsDir) {
+    $stateTmp = "$stateFile.$PID.tmp"
+    Set-Content -LiteralPath $stateTmp -Value ([string]$verN) -NoNewline -ErrorAction SilentlyContinue
+    Move-Item -LiteralPath $stateTmp -Destination $stateFile -Force -ErrorAction SilentlyContinue
+}
 
 Write-Host "Agent:        $AgentName"
 Write-Host "Bot ID:       $BotId"
@@ -143,7 +155,7 @@ Write-Host $installOut
 
 # If atk reports the user is not signed in, launch an interactive login and retry.
 if ($installOut -match "(?i)(not\s+(logged|signed)\s+in|auth.*required|please\s+login|login\s+first|no\s+account)") {
-    Write-Host "Not signed in - launching 'atk auth login' (complete the sign-in prompt)..."
+    Write-Host "Not signed in - launching 'atk auth login m365' (complete the sign-in prompt)..."
     atk auth login m365
     $installOut = Invoke-AtkInstallProbe -Zip $zipPath
     Write-Host $installOut
@@ -160,7 +172,7 @@ $chatLink = "https://teams.microsoft.com/l/chat/0/0?users=28:$BotId"
 if ([string]::IsNullOrWhiteSpace($titleId)) {
     Write-Host ""
     Write-Host "Could not confirm the per-user install."
-    Write-Host "If you were prompted to sign in, run 'atk auth login' then re-run this script."
+    Write-Host "If you were prompted to sign in, run 'atk auth login m365' then re-run this script."
     Write-Host "Or sideload the package manually (requires custom app upload to be enabled for your tenant):"
     Write-Host "    $zipPath"
     Write-Host "    Teams -> Apps -> Manage your apps -> Upload an app -> Upload a custom app"

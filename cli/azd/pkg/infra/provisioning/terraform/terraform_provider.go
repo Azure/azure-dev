@@ -261,22 +261,25 @@ func (t *TerraformProvider) Destroy(
 
 	modulePath := t.modulePath()
 
-	// In a CI/CD pipeline with --no-prompt, azd cannot answer terraform's interactive prompts. Initialize
-	// the backend non-interactively (-input=false) up front so that both the destroy preview and a --force
-	// destroy work on a fresh agent; otherwise `terraform output`/`terraform destroy` fail with "backend
-	// initialization required" (a symptom reported in #4317). This only affects the automated CI path.
-	automatedCI := resource.IsRunningOnCI() && t.console.IsNoPromptMode()
-	if automatedCI {
+	// terraform destroy asks for confirmation interactively unless --force (-auto-approve) is passed.
+	// When running non-interactively — a CI/CD pipeline, an AI agent, or an explicit --no-prompt — azd
+	// cannot answer that prompt, so terraform would block on stdin and hang. Detect these automated
+	// contexts up front.
+	// Initialize the backend non-interactively (-input=false) for any automated destroy so that both the
+	// preview and a --force destroy work on a fresh agent; otherwise `terraform output`/`terraform destroy`
+	// fail with "backend initialization required" (a symptom reported in #4317). init is idempotent, so
+	// re-running it when the backend is already initialized is a safe no-op.
+	automated := resource.IsRunningOnCI() || t.console.IsNoPromptMode()
+	if automated {
 		if initRes, err := t.init(ctx, isRemoteBackendConfig, "-input=false"); err != nil {
 			return nil, fmt.Errorf("terraform init failed: %s, err: %w", initRes, err)
 		}
 	}
 
-	// terraform destroy asks for confirmation interactively unless --force is passed. In a CI/CD pipeline
-	// with --no-prompt, azd cannot answer that prompt, so terraform would block on stdin and hang. Instead,
-	// preview the destroy plan (read-only) and stop without deleting, as if the confirmation were answered
-	// "no". Use --force to delete in CI. See issue #4317.
-	if automatedCI && !options.Force() {
+	// In an automated context without --force, azd cannot answer terraform's confirmation, so instead of
+	// hanging, preview the destroy plan (read-only) and stop without deleting — as if the confirmation were
+	// answered "no". Use --force to delete non-interactively. See issue #4317.
+	if automated && !options.Force() {
 		t.console.Message(ctx, "Previewing resources to delete...")
 		// terraform doesn't use `t.console`; stop any spinner before streaming its output.
 		t.console.StopSpinner(ctx, "", input.Step)
@@ -287,8 +290,8 @@ func (t *TerraformProvider) Destroy(
 		}
 
 		t.console.MessageUxItem(ctx, &ux.WarningMessage{
-			Description: "No resources were deleted for this Terraform configuration because --no-prompt " +
-				"was set in a CI/CD environment.",
+			Description: "No resources were deleted for this Terraform configuration because azd is running " +
+				"non-interactively.",
 			Hints: []string{"Re-run with --force to delete resources without confirmation."},
 		})
 

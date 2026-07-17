@@ -13,17 +13,16 @@ They are the same for any activity-protocol agent.
 ## Fastest path — run the generated script
 
 `azd deploy` also wrote a runnable **pack-and-sideload script** next to this guide
-that does A and B for you in one command (the Bot ID is already baked in). Run it
-from the folder that contains this guide — the agent's source folder — since the
-commands below are relative to it (`azd deploy` itself runs from the project root,
-so `cd` there first):
+that does A and B for you in one command (the Bot ID is already baked in). Starting
+from the **project root** (the folder where you ran `azd deploy`), `cd` into the
+agent's source folder — where the script lives — and run it:
 
 ```powershell
-cd {{.ServiceCdPwsh}}                 # the agent's source folder, from the project root
+cd {{.ServiceCdPwsh}}                 # from the project root, into the agent's source folder
 powershell -NoProfile -ExecutionPolicy Bypass -File ./pack-and-sideload-teams-app.ps1   # Windows / PowerShell
 ```
 ```sh
-cd {{.ServiceCdPosix}}                # the agent's source folder, from the project root
+cd {{.ServiceCdPosix}}                # from the project root, into the agent's source folder
 ./pack-and-sideload-teams-app.sh      # macOS / Linux
 ```
 

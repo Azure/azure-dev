@@ -196,7 +196,16 @@ if (-not (Get-Command atk -ErrorAction SilentlyContinue)) {
         throw "Node.js/npm is required for the atk CLI (per-user Teams install). Install Node.js, then re-run this script."
     }
     Write-Host "Installing the Microsoft 365 Agents Toolkit CLI (atk)..."
-    npm install -g '@microsoft/m365agentstoolkit-cli' | Out-Null
+    # Tolerate a failed install: with the top-level $ErrorActionPreference = "Stop"
+    # and $PSNativeCommandUseErrorActionPreference (default on PowerShell 7.4+), a
+    # nonzero npm exit becomes a terminating error that would stop the script
+    # before the Get-Command check below emits the actionable manual-install
+    # message. Catch it and fall through, mirroring the bash script's `|| true`.
+    try {
+        npm install -g '@microsoft/m365agentstoolkit-cli' | Out-Null
+    } catch {
+        Write-Host "atk install via npm did not complete: $_"
+    }
     if (-not (Get-Command atk -ErrorAction SilentlyContinue)) {
         throw "Failed to install atk. Install it manually: npm i -g @microsoft/m365agentstoolkit-cli"
     }

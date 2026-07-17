@@ -212,7 +212,7 @@ func TestWriteTeamsSideloadScriptsPreservesUserFiles(t *testing.T) {
 	}
 
 	// A previously azd-generated script (carrying this agent's marker) is refreshed in place.
-	genContent := "# " + teamsGeneratedMarkerFor("echo-agent") + "\n# stale\n"
+	genContent := "# " + teamsGeneratedMarkerFor("echo-agent") + "\n# xyzzy-old-body-sentinel\n"
 	if err := os.WriteFile(userBash, []byte(genContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestWriteTeamsSideloadScriptsPreservesUserFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generated script missing after refresh: %v", err)
 	}
-	if !strings.Contains(string(got), "app-id") || strings.Contains(string(got), "stale") {
+	if !strings.Contains(string(got), "app-id") || strings.Contains(string(got), "xyzzy-old-body-sentinel") {
 		t.Errorf("azd-generated script was not refreshed in place: %q", string(got))
 	}
 }

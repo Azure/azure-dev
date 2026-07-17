@@ -333,6 +333,9 @@ func ResolveAfterRun(state *State, serviceName string, readmeExists func(relativ
 	}
 
 	svc := findService(state, serviceName)
+	if !serviceSupportsAzdInvoke(svc) {
+		return nil
+	}
 
 	cachedPayload := ""
 	if state.HasOpenAPI && state.OpenAPIPayload != "" {
@@ -644,6 +647,9 @@ func ResolveAfterDeploy(
 	// after shows matches the spec example output (lines 238-241).
 	for i := range state.Services {
 		svc := &state.Services[i]
+		if !serviceSupportsAzdInvoke(svc) {
+			continue
+		}
 
 		cached := ""
 		if cachedPayload != nil {
@@ -676,6 +682,10 @@ func ResolveAfterDeploy(
 	}
 
 	return out
+}
+
+func serviceSupportsAzdInvoke(svc *ServiceState) bool {
+	return svc == nil || svc.Protocol != ProtocolInvocationsWS
 }
 
 func readmeCommand(relativePath string) string {
@@ -773,7 +783,7 @@ func appendInvokeLocalSecondary(
 	if len(state.Services) == 1 {
 		svc = &state.Services[0]
 	}
-	if svc != nil && svc.Protocol == ProtocolInvocationsWS {
+	if !serviceSupportsAzdInvoke(svc) {
 		return out, priority
 	}
 	invokeArg, readmeHint := resolveInvokeArg(svc, "", readmeExists, priority)

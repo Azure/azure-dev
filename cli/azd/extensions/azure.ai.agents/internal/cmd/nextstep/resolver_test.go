@@ -771,6 +771,14 @@ func TestResolveAfterRun(t *testing.T) {
 			},
 		},
 		{
+			name: "invocations_ws protocol suppresses invoke suggestions",
+			state: &State{
+				Services: []ServiceState{{Name: "echo", Protocol: ProtocolInvocationsWS}},
+			},
+			serviceName: "echo",
+			want:        nil,
+		},
+		{
 			name: "unknown protocol, no README → placeholder + tip",
 			state: &State{
 				Services: []ServiceState{{Name: "echo", Protocol: ""}},
@@ -998,6 +1006,14 @@ func TestResolveAfterDeploy(t *testing.T) {
 		assert.Equal(t, "test the deployment", out[1].Description)
 	})
 
+	t.Run("single websocket agent suppresses deploy invoke", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{{Name: "echo", Protocol: ProtocolInvocationsWS}}}
+		out := ResolveAfterDeploy(state, nil, nil)
+		require.Len(t, out, 1)
+		assert.Equal(t, "azd ai agent show echo", out[0].Command)
+	})
+
 	t.Run("single agent, no cached payload, README on disk → README then placeholder invoke", func(t *testing.T) {
 		t.Parallel()
 		state := &State{Services: []ServiceState{{Name: "echo", RelativePath: "./src/echo", Protocol: ProtocolResponses}}}
@@ -1059,6 +1075,19 @@ func TestResolveAfterDeploy(t *testing.T) {
 		assert.Equal(t, "test alpha", out[2].Description)
 		assert.Equal(t, `azd ai agent invoke beta '<payload>'`, out[3].Command)
 		assert.Equal(t, "test beta", out[3].Description)
+	})
+
+	t.Run("multi-agent skips websocket invoke but keeps invocable services", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{
+			{Name: "alpha", Protocol: ProtocolInvocationsWS},
+			{Name: "beta", Protocol: ProtocolResponses},
+		}}
+		out := ResolveAfterDeploy(state, nil, nil)
+		require.Len(t, out, 3)
+		assert.Equal(t, "azd ai agent show alpha", out[0].Command)
+		assert.Equal(t, "azd ai agent show beta", out[1].Command)
+		assert.Equal(t, `azd ai agent invoke beta '<payload>'`, out[2].Command)
 	})
 
 	t.Run("multi-agent README hint placement → before the corresponding placeholder invoke", func(t *testing.T) {

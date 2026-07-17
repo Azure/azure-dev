@@ -20,9 +20,9 @@ pre:
   - run: |
       f="$HOME/working/azd-agents-shared/{shared_agent_name}/azure.yaml"
       if [ -f "$f" ] && ! grep -q 'agentCard:' "$f"; then
-        # Append agentCard under the config key of the azure.ai.agent service.
-        # Find the "config:" line under the agent service and append after it.
-        sed -i '/^    config:/a\      agentCard:\n        description: "{prefix} endpoint-update test card"\n        skills:\n          - id: "{prefix}-echo"\n            name: "Echo"\n            description: "Echoes input back"' "$f"
+        # Insert agentCard block after the "config:" line using awk.
+        # awk is more reliable than sed for multi-line insertion.
+        awk '/^    config:/{print; print "      agentCard:"; print "        description: \"{prefix} endpoint-update test card\""; print "        skills:"; print "          - id: \"{prefix}-echo\""; print "            name: \"Echo\""; print "            description: \"Echoes input back\""; next}1' "$f" > "${f}.tmp" && mv "${f}.tmp" "$f"
         echo "Injected agentCard into azure.yaml"
       else
         echo "agentCard already present or azure.yaml not found"

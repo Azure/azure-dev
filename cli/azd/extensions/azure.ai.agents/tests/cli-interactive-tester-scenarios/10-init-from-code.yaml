@@ -28,7 +28,7 @@ goals:
   - "If an existing agent manifest is detected, confirm that you want to reuse it (answer yes / confirm)."
   - "If asked to select an Azure AI Foundry project, choose to create a new one, naming it with the '{prefix}-' prefix, and follow the prompts."
   - "If asked to select a subscription, search for and select the '{subscription}' subscription."
-  - "If asked for a location/region, select '{region}'."
+  - "If asked for a location/region, search for and select '{region}'."
   - "If asked to select a model, choose '{model}' and accept the remaining model defaults."
   - "Wait for initialization to complete — look for 'Next:' in the output."
   - "Verify the scaffold: confirm azure.yaml was created/updated to reference the local code as an azure.ai.agent service, and that a .agentignore file was generated."

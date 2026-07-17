@@ -190,7 +190,7 @@ func (u *UpGraphAction) Run(
 	// once rather than once per concurrently-provisioned layer. Skipped when
 	// there are no provision layers (nothing to provision). On abort (or a
 	// prompt failure), surface the shared UX via wrapProvisionError — an abort
-	// becomes the "Provisioning was cancelled." message.
+	// becomes the "Provisioning was canceled." message.
 	if len(layers) > 0 {
 		if err := u.provisionManager.RunProvisionValidation(ctx, false); err != nil {
 			return nil, wrapProvisionError(ctx, err, provisionErrorDeps{

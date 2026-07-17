@@ -17,16 +17,20 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// ResourceGroupLocationRuleID is the stable validation identifier.
-// It keeps its original prefix so existing consumers do not break.
+// ResourceGroupLocationRuleID is the stable identifier for the resource-group
+// location-mismatch provision validation check. It doubles as both the
+// registration RuleID and the result DiagnosticId.
+//
+// The identifier keeps its original azure.ai.agents prefix so existing
+// consumers do not break while ownership moves to azure.ai.projects.
 const ResourceGroupLocationRuleID = "azure.ai.agents.resource_group_location_mismatch"
 
 // ResourceGroupLocationCheck is a provider-agnostic "provision" validation check
 // (azdext.ValidationCheckTypeProvision) that detects an immutable resource-group
 // region conflict before provisioning starts. It is registered under the
-// provision check type — rather than the Bicep-only "local-preflight" type —
+// provision check type — rather than the Bicep-only "arm-provision" type —
 // because the azure.ai.projects extension provisions through its own
-// microsoft.foundry provider, which never triggers local-preflight checks.
+// microsoft.foundry provider, which never triggers arm-provision checks.
 //
 // The azure.ai.agents extension writes a stable, salted resource group name to
 // AZURE_RESOURCE_GROUP at init. If AZURE_LOCATION is later changed (for example by

@@ -755,6 +755,18 @@ func incrementDecimalString(value string) string {
 	return "1" + string(digits)
 }
 
+type existingAgentNameConflictOptions struct {
+	noPromptSuggestion string
+}
+
+type existingAgentNameConflictOption func(*existingAgentNameConflictOptions)
+
+func withNoPromptAgentNameConflictSuggestion(suggestion string) existingAgentNameConflictOption {
+	return func(options *existingAgentNameConflictOptions) {
+		options.noPromptSuggestion = suggestion
+	}
+}
+
 func resolveExistingAgentNameConflict(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -762,6 +774,7 @@ func resolveExistingAgentNameConflict(
 	credential azcore.TokenCredential,
 	noPrompt bool,
 	agentName string,
+	options ...existingAgentNameConflictOption,
 ) (string, error) {
 	if azdClient == nil || environment == nil || environment.Name == "" || credential == nil {
 		return agentName, nil
@@ -788,7 +801,14 @@ func resolveExistingAgentNameConflict(
 	}
 
 	agentClient := agent_api.NewAgentClient(endpointResp.Value, credential)
-	return resolveExistingAgentNameConflictWithChecker(ctx, azdClient, agentClient, noPrompt, agentName)
+	return resolveExistingAgentNameConflictWithChecker(
+		ctx,
+		azdClient,
+		agentClient,
+		noPrompt,
+		agentName,
+		options...,
+	)
 }
 
 func resolveExistingAgentNameConflictWithChecker(
@@ -797,7 +817,15 @@ func resolveExistingAgentNameConflictWithChecker(
 	agentChecker agents.AgentChecker,
 	noPrompt bool,
 	agentName string,
+	options ...existingAgentNameConflictOption,
 ) (string, error) {
+	resolutionOptions := existingAgentNameConflictOptions{
+		noPromptSuggestion: "To create a separate agent, re-run init with --agent-name <unique-name>.\n",
+	}
+	for _, option := range options {
+		option(&resolutionOptions)
+	}
+
 	for {
 		exists, err := agents.AgentExists(ctx, agentChecker, agentName, DefaultAgentAPIVersion)
 		if err != nil {
@@ -821,7 +849,8 @@ func resolveExistingAgentNameConflictWithChecker(
 		fmt.Fprintf(os.Stderr, "%s", agents.ExistingAgentWarning(agentName))
 		if noPrompt {
 			fmt.Fprintf(os.Stderr, "%s", output.WithGrayFormat(
-				"To create a separate agent, re-run init with --agent-name <unique-name>.\n",
+				"%s",
+				resolutionOptions.noPromptSuggestion,
 			))
 			return agentName, nil
 		}

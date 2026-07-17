@@ -60,11 +60,11 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 			return project.NewDemoProvisioningProvider(azdClient)
 		}).
 		WithValidationCheck(azdext.ValidationCheckRegistration{
-			// Bicep-only check: runs during BicepProvider preflight and
-			// receives the Bicep snapshot / ARM template context. It is
+			// Bicep-only check: runs during BicepProvider provision validation
+			// and receives the Bicep snapshot / ARM template context. It is
 			// skipped gracefully when no snapshot is available (e.g. a
 			// non-Bicep provider), but is not dead code for Bicep.
-			CheckType: azdext.ValidationCheckTypeLocalPreflight,
+			CheckType: azdext.ValidationCheckTypeArmProvision,
 			RuleID:    "demo_warning",
 			Factory: func() azdext.ValidationCheckProvider {
 				return project.NewDemoValidationCheck()

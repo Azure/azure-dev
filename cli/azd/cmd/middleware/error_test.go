@@ -509,7 +509,7 @@ func Test_ShouldSkipAgentHandling_ControlFlow(t *testing.T) {
 
 	t.Run("Wrapped ErrAbortedByUser is skipped", func(t *testing.T) {
 		t.Parallel()
-		wrapped := fmt.Errorf("preflight declined: %w", internal.ErrAbortedByUser)
+		wrapped := fmt.Errorf("validation declined: %w", internal.ErrAbortedByUser)
 		require.True(t, shouldSkipAgentHandling(wrapped))
 	})
 

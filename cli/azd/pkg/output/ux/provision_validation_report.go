@@ -11,8 +11,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
-// PreflightReportItem represents a single finding from preflight validation.
-type PreflightReportItem struct {
+// ProvisionValidationReportItem represents a single finding from provision validation.
+type ProvisionValidationReportItem struct {
 	// IsError is true for blocking errors, false for warnings.
 	IsError bool
 	// DiagnosticID is a unique, stable identifier for this finding type (e.g.
@@ -23,11 +23,11 @@ type PreflightReportItem struct {
 	// Suggestion is an optional actionable recommendation for resolving the issue.
 	Suggestion string
 	// Links is an optional list of reference links related to the finding.
-	Links []PreflightReportLink
+	Links []ProvisionValidationReportLink
 }
 
-// PreflightReportLink represents a reference link attached to a preflight report item.
-type PreflightReportLink struct {
+// ProvisionValidationReportLink represents a reference link attached to a validation report item.
+type ProvisionValidationReportLink struct {
 	// URL is the link target.
 	URL string
 	// Title is the display text for terminal hyperlinks (optional).
@@ -35,13 +35,13 @@ type PreflightReportLink struct {
 	Title string
 }
 
-// PreflightReport displays the results of local preflight validation.
+// ProvisionValidationReport displays the results of local provision validation.
 // Warnings are shown first, followed by errors. Each entry is separated by a blank line.
-type PreflightReport struct {
-	Items []PreflightReportItem
+type ProvisionValidationReport struct {
+	Items []ProvisionValidationReportItem
 }
 
-func (r *PreflightReport) ToString(currentIndentation string) string {
+func (r *ProvisionValidationReport) ToString(currentIndentation string) string {
 	warnings, errors := r.partition()
 	if len(warnings) == 0 && len(errors) == 0 {
 		return ""
@@ -74,7 +74,7 @@ func (r *PreflightReport) ToString(currentIndentation string) string {
 // The first line is prefixed with the status indicator (e.g. "(!) Warning:").
 // Continuation lines in the message are indented at the same level as the prefix.
 func writeItem(
-	sb *strings.Builder, indent string, prefix string, item PreflightReportItem,
+	sb *strings.Builder, indent string, prefix string, item ProvisionValidationReportItem,
 ) {
 	if item.Message == "" {
 		return
@@ -104,16 +104,16 @@ func writeItem(
 	}
 }
 
-func (r *PreflightReport) MarshalJSON() ([]byte, error) {
+func (r *ProvisionValidationReport) MarshalJSON() ([]byte, error) {
 	warnings, errors := r.partition()
 
 	return json.Marshal(output.EventForMessage(
-		fmt.Sprintf("preflight: %d warning(s), %d error(s)",
+		fmt.Sprintf("provision validation: %d warning(s), %d error(s)",
 			len(warnings), len(errors))))
 }
 
 // HasErrors returns true if the report contains at least one error-level item.
-func (r *PreflightReport) HasErrors() bool {
+func (r *ProvisionValidationReport) HasErrors() bool {
 	for _, item := range r.Items {
 		if item.IsError {
 			return true
@@ -123,7 +123,7 @@ func (r *PreflightReport) HasErrors() bool {
 }
 
 // HasWarnings returns true if the report contains at least one warning-level item.
-func (r *PreflightReport) HasWarnings() bool {
+func (r *ProvisionValidationReport) HasWarnings() bool {
 	for _, item := range r.Items {
 		if !item.IsError {
 			return true
@@ -133,7 +133,7 @@ func (r *PreflightReport) HasWarnings() bool {
 }
 
 // partition splits items into warnings and errors, preserving order within each group.
-func (r *PreflightReport) partition() (warnings, errors []PreflightReportItem) {
+func (r *ProvisionValidationReport) partition() (warnings, errors []ProvisionValidationReportItem) {
 	for _, item := range r.Items {
 		if item.IsError {
 			errors = append(errors, item)

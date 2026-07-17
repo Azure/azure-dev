@@ -107,7 +107,7 @@ Commands follow the pattern `cmd.<command.path>` where spaces become dots.
 | Event | Description |
 |-------|-------------|
 | `tools.pack.build` | Cloud Native Buildpacks build |
-| `validation.preflight` | Local preflight validation |
+| `validation.provision` | Local provision validation |
 | `hooks.exec` | Lifecycle hook execution |
 | `aks.postprovision.skip` | AKS postprovision hook skipped |
 | `deploy.appservice.zip` | App Service zip deployment |
@@ -358,17 +358,17 @@ Set **only when an external command-line tool invocation fails**, during error c
 </details>
 
 <details>
-<summary><strong>Preflight Validation</strong></summary>
+<summary><strong>Provision Validation</strong></summary>
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `validation.preflight.outcome` | string | `passed`, `warnings_accepted`, `aborted_by_errors`, `aborted_by_user`, `skipped`, `error` |
-| `validation.preflight.diagnostics` | string[] | Diagnostic IDs emitted |
-| `validation.preflight.rules` | string[] | Rule IDs executed |
-| `validation.preflight.extension_rules` | string[] | Rule IDs executed from extension-provided validation checks |
-| `validation.preflight.check_type` | string | Dispatch site that emitted the event: `local-preflight` (Bicep provider) or `provision` (provider-agnostic). Distinguishes the two emissions so Bicep provisions are not double-counted |
-| `validation.preflight.warning.count` | measurement | Number of warnings |
-| `validation.preflight.error.count` | measurement | Number of errors |
+| `validation.provision.outcome` | string | `passed`, `warnings_accepted`, `canceled_by_errors`, `canceled_by_user`, `skipped`, `error` |
+| `validation.provision.diagnostics` | string[] | Diagnostic IDs emitted |
+| `validation.provision.rules` | string[] | Rule IDs executed |
+| `validation.provision.extension_rules` | string[] | Rule IDs executed from extension-provided validation checks |
+| `validation.provision.check_type` | string | Dispatch site that emitted the event: `arm-provision` (Bicep provider) or `provision` (provider-agnostic). Distinguishes the two emissions so Bicep provisions are not double-counted |
+| `validation.provision.warning.count` | measurement | Number of warnings |
+| `validation.provision.error.count` | measurement | Number of errors |
 </details>
 
 <details>
@@ -587,7 +587,7 @@ The `execution.environment` field identifies where azd is running. Format: `<env
 | `GitHub Codespaces` | GitHub Codespaces |
 | Other CI systems | `AppVeyor`, `Bamboo`, `BitBucket Pipelines`, `Travis CI`, `Circle CI`, `GitLab CI`, `Jenkins`, `AWS CodeBuild`, `Google Cloud Build`, `TeamCity`, `JetBrains Space` |
 
-**Modifier:** `Azure App Spaces Portal` may be appended as a modifier (`;` separated).
+**Modifiers:** `Azure App Spaces Portal` and `Microsoft Foundry Skill` may be appended as modifiers (`;` separated).
 
 ## Data Nuances & Gotchas
 
@@ -626,23 +626,23 @@ OperationId: 28ce1f2898a4fec84522107e36c22038
 | summarize arg_min(TimeGenerated, *) by OperationId
 ```
 
-### `validation.preflight` Emitted Twice Per Bicep Provision
+### `validation.provision` Emitted Twice Per Bicep Provision
 
-The `validation.preflight` event is emitted from **two** dispatch sites:
+The `validation.provision` event is emitted from **two** dispatch sites:
 
 - The provider-agnostic **`provision`** validation in `provisioning.Manager` (runs for every provider before provisioning), and
-- The Bicep provider's **`local-preflight`** validation (runs only for Bicep, using the ARM template snapshot).
+- The Bicep provider's **`arm-provision`** validation (runs only for Bicep, using the ARM template snapshot).
 
-For a **Bicep** provision with a `validation-provider` extension loaded, **both** fire in a single run, producing two `validation.preflight` rows (each with its own `outcome`, warning/error counts, and rule lists). Use the `validation.preflight.check_type` field (`provision` vs `local-preflight`) to distinguish them.
+For a **Bicep** provision with a `validation-provider` extension loaded, **both** fire in a single run, producing two `validation.provision` rows (each with its own `outcome`, warning/error counts, and rule lists). Use the `validation.provision.check_type` field (`provision` vs `arm-provision`) to distinguish them.
 
 **Impact on queries:**
 ```kql
 // ❌ WRONG — double-counts Bicep provisions
-| where Name == 'validation.preflight' | summarize count()
+| where Name == 'validation.provision' | summarize count()
 
 // ✅ CORRECT — group/filter by the dispatch site
-| where Name == 'validation.preflight'
-| summarize count() by tostring(customDimensions['validation.preflight.check_type'])
+| where Name == 'validation.provision'
+| summarize count() by tostring(customDimensions['validation.provision.check_type'])
 ```
 
 ### The `internal.unclassified` / `internal.errors_errorString` Catch-All

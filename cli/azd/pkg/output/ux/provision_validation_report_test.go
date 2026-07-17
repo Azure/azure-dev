@@ -13,16 +13,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 )
 
-func TestPreflightReport_EmptyItems(t *testing.T) {
-	report := &PreflightReport{}
+func TestProvisionValidationReport_EmptyItems(t *testing.T) {
+	report := &ProvisionValidationReport{}
 	require.Empty(t, report.ToString(""))
 	require.False(t, report.HasErrors())
 	require.False(t, report.HasWarnings())
 }
 
-func TestPreflightReport_WarningsOnly(t *testing.T) {
-	report := &PreflightReport{
-		Items: []PreflightReportItem{
+func TestProvisionValidationReport_WarningsOnly(t *testing.T) {
+	report := &ProvisionValidationReport{
+		Items: []ProvisionValidationReportItem{
 			{IsError: false, Message: "first warning"},
 			{IsError: false, Message: "second warning"},
 		},
@@ -37,9 +37,9 @@ func TestPreflightReport_WarningsOnly(t *testing.T) {
 	require.True(t, report.HasWarnings())
 }
 
-func TestPreflightReport_ErrorsOnly(t *testing.T) {
-	report := &PreflightReport{
-		Items: []PreflightReportItem{
+func TestProvisionValidationReport_ErrorsOnly(t *testing.T) {
+	report := &ProvisionValidationReport{
+		Items: []ProvisionValidationReportItem{
 			{IsError: true, Message: "critical error"},
 		},
 	}
@@ -52,9 +52,9 @@ func TestPreflightReport_ErrorsOnly(t *testing.T) {
 	require.False(t, report.HasWarnings())
 }
 
-func TestPreflightReport_WarningsBeforeErrors(t *testing.T) {
-	report := &PreflightReport{
-		Items: []PreflightReportItem{
+func TestProvisionValidationReport_WarningsBeforeErrors(t *testing.T) {
+	report := &ProvisionValidationReport{
+		Items: []ProvisionValidationReportItem{
 			{IsError: true, Message: "an error"},
 			{IsError: false, Message: "a warning"},
 		},
@@ -70,9 +70,9 @@ func TestPreflightReport_WarningsBeforeErrors(t *testing.T) {
 	require.True(t, report.HasWarnings())
 }
 
-func TestPreflightReport_MarshalJSON(t *testing.T) {
-	report := &PreflightReport{
-		Items: []PreflightReportItem{
+func TestProvisionValidationReport_MarshalJSON(t *testing.T) {
+	report := &ProvisionValidationReport{
+		Items: []ProvisionValidationReportItem{
 			{IsError: false, Message: "w1"},
 			{IsError: true, Message: "e1"},
 		},
@@ -84,9 +84,9 @@ func TestPreflightReport_MarshalJSON(t *testing.T) {
 	require.Contains(t, string(data), "1 error(s)")
 }
 
-func TestPreflightReport_WarningWithSuggestion(t *testing.T) {
-	report := &PreflightReport{
-		Items: []PreflightReportItem{
+func TestProvisionValidationReport_WarningWithSuggestion(t *testing.T) {
+	report := &ProvisionValidationReport{
+		Items: []ProvisionValidationReportItem{
 			{
 				IsError:    false,
 				Message:    "insufficient quota for model gpt-4o",
@@ -106,14 +106,14 @@ func TestPreflightReport_WarningWithSuggestion(t *testing.T) {
 	require.Greater(t, suggIdx, warnIdx, "suggestion should appear after warning message")
 }
 
-func TestPreflightReport_WarningWithLinks(t *testing.T) {
-	report := &PreflightReport{
-		Items: []PreflightReportItem{
+func TestProvisionValidationReport_WarningWithLinks(t *testing.T) {
+	report := &ProvisionValidationReport{
+		Items: []ProvisionValidationReportItem{
 			{
 				IsError:    false,
 				Message:    "model not found",
 				Suggestion: "Verify the model name.",
-				Links: []PreflightReportLink{
+				Links: []ProvisionValidationReportLink{
 					{URL: "https://example.com/models", Title: "Supported models"},
 					{URL: "https://example.com/raw-link"},
 				},
@@ -130,9 +130,9 @@ func TestPreflightReport_WarningWithLinks(t *testing.T) {
 	require.Contains(t, result, "https://example.com/raw-link")
 }
 
-func TestPreflightReport_NoSuggestion(t *testing.T) {
-	report := &PreflightReport{
-		Items: []PreflightReportItem{
+func TestProvisionValidationReport_NoSuggestion(t *testing.T) {
+	report := &ProvisionValidationReport{
+		Items: []ProvisionValidationReportItem{
 			{IsError: false, Message: "simple warning"},
 		},
 	}
@@ -142,9 +142,9 @@ func TestPreflightReport_NoSuggestion(t *testing.T) {
 	require.NotContains(t, result, "Suggestion:")
 }
 
-func TestPreflightReport_MarshalJSON_Envelope(t *testing.T) {
-	report := &PreflightReport{
-		Items: []PreflightReportItem{
+func TestProvisionValidationReport_MarshalJSON_Envelope(t *testing.T) {
+	report := &ProvisionValidationReport{
+		Items: []ProvisionValidationReportItem{
 			{IsError: false, Message: "w1", Suggestion: "fix it"},
 			{IsError: true, Message: "e1"},
 		},
@@ -166,9 +166,9 @@ func TestPreflightReport_MarshalJSON_Envelope(t *testing.T) {
 	require.Contains(t, parsed.Data.Message, "1 error(s)")
 }
 
-func TestPreflightReport_Indentation(t *testing.T) {
-	report := &PreflightReport{
-		Items: []PreflightReportItem{
+func TestProvisionValidationReport_Indentation(t *testing.T) {
+	report := &ProvisionValidationReport{
+		Items: []ProvisionValidationReportItem{
 			{IsError: false, Message: "indented warning"},
 		},
 	}
@@ -178,9 +178,9 @@ func TestPreflightReport_Indentation(t *testing.T) {
 	require.Contains(t, result, "indented warning")
 }
 
-func TestPreflightReport_MultiLineMessageIndentation(t *testing.T) {
-	report := &PreflightReport{
-		Items: []PreflightReportItem{
+func TestProvisionValidationReport_MultiLineMessageIndentation(t *testing.T) {
+	report := &ProvisionValidationReport{
+		Items: []ProvisionValidationReportItem{
 			{
 				IsError: false,
 				Message: "Model \"gpt-4o\" not found in eastus2\n" +
@@ -201,9 +201,9 @@ func TestPreflightReport_MultiLineMessageIndentation(t *testing.T) {
 	require.Contains(t, lines[1], "Model not found in AI model catalog.")
 }
 
-func TestPreflightReport_MultiLineWithSuggestion(t *testing.T) {
-	report := &PreflightReport{
-		Items: []PreflightReportItem{
+func TestProvisionValidationReport_MultiLineWithSuggestion(t *testing.T) {
+	report := &ProvisionValidationReport{
+		Items: []ProvisionValidationReportItem{
 			{
 				IsError: false,
 				Message: "Insufficient quota for model \"gpt-4o\" in eastus2\n" +
@@ -234,35 +234,35 @@ func indexOf(s, substr string) int {
 	return -1
 }
 
-func TestPreflightReport_WriteItem_EdgeCases(t *testing.T) {
+func TestProvisionValidationReport_WriteItem_EdgeCases(t *testing.T) {
 	tests := []struct {
 		name     string
-		item     PreflightReportItem
+		item     ProvisionValidationReportItem
 		contains []string
 		excludes []string
 	}{
 		{
 			name:     "empty message",
-			item:     PreflightReportItem{Message: ""},
+			item:     ProvisionValidationReportItem{Message: ""},
 			excludes: []string{"Warning"},
 		},
 		{
 			name: "trailing newline in message",
-			item: PreflightReportItem{
+			item: ProvisionValidationReportItem{
 				Message: "title line\n",
 			},
 			contains: []string{"title line"},
 		},
 		{
 			name: "consecutive newlines in message",
-			item: PreflightReportItem{
+			item: ProvisionValidationReportItem{
 				Message: "first\n\nthird",
 			},
 			contains: []string{"first", "third"},
 		},
 		{
 			name: "nil links slice",
-			item: PreflightReportItem{
+			item: ProvisionValidationReportItem{
 				Message: "msg",
 				Links:   nil,
 			},
@@ -271,16 +271,16 @@ func TestPreflightReport_WriteItem_EdgeCases(t *testing.T) {
 		},
 		{
 			name: "empty links slice",
-			item: PreflightReportItem{
+			item: ProvisionValidationReportItem{
 				Message: "msg",
-				Links:   []PreflightReportLink{},
+				Links:   []ProvisionValidationReportLink{},
 			},
 			contains: []string{"msg"},
 			excludes: []string{"•"},
 		},
 		{
 			name: "empty suggestion string",
-			item: PreflightReportItem{
+			item: ProvisionValidationReportItem{
 				Message:    "msg",
 				Suggestion: "",
 			},
@@ -289,7 +289,7 @@ func TestPreflightReport_WriteItem_EdgeCases(t *testing.T) {
 		},
 		{
 			name: "message with leading newline",
-			item: PreflightReportItem{
+			item: ProvisionValidationReportItem{
 				Message: "\nleading newline",
 			},
 			contains: []string{"leading newline"},
@@ -298,8 +298,8 @@ func TestPreflightReport_WriteItem_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			report := &PreflightReport{
-				Items: []PreflightReportItem{tt.item},
+			report := &ProvisionValidationReport{
+				Items: []ProvisionValidationReportItem{tt.item},
 			}
 			result := report.ToString("  ")
 			for _, s := range tt.contains {
@@ -315,9 +315,9 @@ func TestPreflightReport_WriteItem_EdgeCases(t *testing.T) {
 // Snapshot tests — one per diagnostic type, plus one combined report.
 // Update snapshots with: UPDATE_SNAPSHOTS=true go test ./pkg/output/ux/...
 
-func TestPreflightReport_Snapshot_RoleAssignmentMissing(t *testing.T) {
-	report := &PreflightReport{
-		Items: []PreflightReportItem{
+func TestProvisionValidationReport_Snapshot_RoleAssignmentMissing(t *testing.T) {
+	report := &ProvisionValidationReport{
+		Items: []ProvisionValidationReportItem{
 			{
 				IsError:      false,
 				DiagnosticID: "role_assignment_missing",
@@ -340,9 +340,9 @@ func TestPreflightReport_Snapshot_RoleAssignmentMissing(t *testing.T) {
 	snapshot.SnapshotT(t, report.ToString("  "))
 }
 
-func TestPreflightReport_Snapshot_RoleAssignmentConditional(t *testing.T) {
-	report := &PreflightReport{
-		Items: []PreflightReportItem{
+func TestProvisionValidationReport_Snapshot_RoleAssignmentConditional(t *testing.T) {
+	report := &ProvisionValidationReport{
+		Items: []ProvisionValidationReportItem{
 			{
 				IsError:      false,
 				DiagnosticID: "role_assignment_conditional",
@@ -358,9 +358,9 @@ func TestPreflightReport_Snapshot_RoleAssignmentConditional(t *testing.T) {
 	snapshot.SnapshotT(t, report.ToString("  "))
 }
 
-func TestPreflightReport_Snapshot_ReservedResourceName(t *testing.T) {
-	report := &PreflightReport{
-		Items: []PreflightReportItem{
+func TestProvisionValidationReport_Snapshot_ReservedResourceName(t *testing.T) {
+	report := &ProvisionValidationReport{
+		Items: []ProvisionValidationReportItem{
 			{
 				IsError:      false,
 				DiagnosticID: "reserved_resource_name",
@@ -369,7 +369,7 @@ func TestPreflightReport_Snapshot_ReservedResourceName(t *testing.T) {
 					" contains the reserved word \"login\"\n" +
 					"Azure does not allow reserved words in" +
 					" resource names. The deployment will fail.",
-				Links: []PreflightReportLink{
+				Links: []ProvisionValidationReportLink{
 					{
 						URL: "https://learn.microsoft.com/azure/" +
 							"azure-resource-manager/templates/" +
@@ -383,9 +383,9 @@ func TestPreflightReport_Snapshot_ReservedResourceName(t *testing.T) {
 	snapshot.SnapshotT(t, report.ToString("  "))
 }
 
-func TestPreflightReport_Snapshot_AiModelNotFound(t *testing.T) {
-	report := &PreflightReport{
-		Items: []PreflightReportItem{
+func TestProvisionValidationReport_Snapshot_AiModelNotFound(t *testing.T) {
+	report := &ProvisionValidationReport{
+		Items: []ProvisionValidationReportItem{
 			{
 				IsError:      false,
 				DiagnosticID: "ai_model_not_found",
@@ -395,7 +395,7 @@ func TestPreflightReport_Snapshot_AiModelNotFound(t *testing.T) {
 					" Provisioning will likely fail.",
 				Suggestion: "Verify the model name, SKU," +
 					" and version are correct.",
-				Links: []PreflightReportLink{
+				Links: []ProvisionValidationReportLink{
 					{
 						URL:   "https://learn.microsoft.com/azure/ai-services/openai/concepts/models",
 						Title: "Azure OpenAI supported models and regions",
@@ -407,9 +407,9 @@ func TestPreflightReport_Snapshot_AiModelNotFound(t *testing.T) {
 	snapshot.SnapshotT(t, report.ToString("  "))
 }
 
-func TestPreflightReport_Snapshot_AiModelQuotaExceeded(t *testing.T) {
-	report := &PreflightReport{
-		Items: []PreflightReportItem{
+func TestProvisionValidationReport_Snapshot_AiModelQuotaExceeded(t *testing.T) {
+	report := &ProvisionValidationReport{
+		Items: []ProvisionValidationReportItem{
 			{
 				IsError:      false,
 				DiagnosticID: "ai_model_quota_exceeded",
@@ -421,7 +421,7 @@ func TestPreflightReport_Snapshot_AiModelQuotaExceeded(t *testing.T) {
 					" azd env set AZURE_LOCATION <location>." +
 					" You can also request a quota increase" +
 					" in the Azure portal.",
-				Links: []PreflightReportLink{
+				Links: []ProvisionValidationReportLink{
 					{
 						URL:   "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal",
 						Title: "Increase Azure subscription quotas",
@@ -433,9 +433,9 @@ func TestPreflightReport_Snapshot_AiModelQuotaExceeded(t *testing.T) {
 	snapshot.SnapshotT(t, report.ToString("  "))
 }
 
-func TestPreflightReport_Snapshot_AllWarningsCombined(t *testing.T) {
-	report := &PreflightReport{
-		Items: []PreflightReportItem{
+func TestProvisionValidationReport_Snapshot_AllWarningsCombined(t *testing.T) {
+	report := &ProvisionValidationReport{
+		Items: []ProvisionValidationReportItem{
 			{
 				IsError:      false,
 				DiagnosticID: "role_assignment_missing",
@@ -462,7 +462,7 @@ func TestPreflightReport_Snapshot_AllWarningsCombined(t *testing.T) {
 					" Provisioning will likely fail.",
 				Suggestion: "Verify the model name, SKU," +
 					" and version are correct.",
-				Links: []PreflightReportLink{
+				Links: []ProvisionValidationReportLink{
 					{
 						URL:   "https://learn.microsoft.com/azure/ai-services/openai/concepts/models",
 						Title: "Azure OpenAI supported models and regions",
@@ -480,7 +480,7 @@ func TestPreflightReport_Snapshot_AllWarningsCombined(t *testing.T) {
 					" azd env set AZURE_LOCATION <location>." +
 					" You can also request a quota increase" +
 					" in the Azure portal.",
-				Links: []PreflightReportLink{
+				Links: []ProvisionValidationReportLink{
 					{
 						URL:   "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal",
 						Title: "Increase Azure subscription quotas",

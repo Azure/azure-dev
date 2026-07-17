@@ -174,6 +174,40 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		require.Equal(t, "extension.source.kind", string(kv.Key))
 		require.Equal(t, "location", kv.Value.AsString())
 	})
+
+	// Provision validation telemetry fields (emitted by both the Bicep
+	// "arm-provision" dispatch and the provider-agnostic "provision" dispatch).
+	t.Run("ProvisionValidationFields", func(t *testing.T) {
+		t.Parallel()
+
+		kvOutcome := fields.ProvisionValidationOutcomeKey.String("passed")
+		require.Equal(t, "validation.provision.outcome", string(kvOutcome.Key))
+		require.Equal(t, "passed", kvOutcome.Value.AsString())
+
+		kvDiagnostics := fields.ProvisionValidationDiagnosticsKey.StringSlice([]string{"BCP081"})
+		require.Equal(t, "validation.provision.diagnostics", string(kvDiagnostics.Key))
+		require.Equal(t, []string{"BCP081"}, kvDiagnostics.Value.AsStringSlice())
+
+		kvRules := fields.ProvisionValidationRulesKey.StringSlice([]string{"rule-a"})
+		require.Equal(t, "validation.provision.rules", string(kvRules.Key))
+		require.Equal(t, []string{"rule-a"}, kvRules.Value.AsStringSlice())
+
+		kvExtensionRules := fields.ProvisionValidationExtensionRulesKey.StringSlice([]string{"ext-rule"})
+		require.Equal(t, "validation.provision.extension_rules", string(kvExtensionRules.Key))
+		require.Equal(t, []string{"ext-rule"}, kvExtensionRules.Value.AsStringSlice())
+
+		kvCheckType := fields.ProvisionValidationCheckTypeKey.String("provision")
+		require.Equal(t, "validation.provision.check_type", string(kvCheckType.Key))
+		require.Equal(t, "provision", kvCheckType.Value.AsString())
+
+		kvWarnings := fields.ProvisionValidationWarningCountKey.Int(2)
+		require.Equal(t, "validation.provision.warning.count", string(kvWarnings.Key))
+		require.Equal(t, int64(2), kvWarnings.Value.AsInt64())
+
+		kvErrors := fields.ProvisionValidationErrorCountKey.Int(1)
+		require.Equal(t, "validation.provision.error.count", string(kvErrors.Key))
+		require.Equal(t, int64(1), kvErrors.Value.AsInt64())
+	})
 }
 
 // TestCommandTelemetryCoverage ensures every user-facing command is explicitly categorized

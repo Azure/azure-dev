@@ -19,6 +19,8 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+
 # ---- Ids baked in by azd deploy (do not edit) -------------------------------
 AGENT_NAME="{{.AgentName}}"
 BOT_ID="{{.MsaAppID}}"       # Teams manifest bots[].botId = the Azure Bot msaAppId
@@ -30,19 +32,30 @@ SHORT_NAME="$(printf '%.30s' "$AGENT_NAME")"
 SHORT_DESC="$(printf '%.80s' "Chat with $SHORT_NAME in Microsoft Teams.")"
 
 # Teams only treats a re-uploaded package (same app id) as an update when the
-# manifest version is higher, so derive a monotonically increasing version from
-# the current time. Each re-run therefore updates the same app in place.
-# Teams caps each version component at 65535, so encode time across bounded
-# components: minor = days since the epoch, patch = half-seconds into the day.
-# (days fits < 65535 until ~year 2149; half-second-of-day maxes at 43199.)
+# manifest version is higher, so we need a strictly increasing version on every
+# run -- even two runs in the same second. Persist a monotonic build number next
+# to this script (seeded from wall-clock seconds, then always at least
+# last + 1) and encode it into two bounded components (Teams caps each at 65535):
+# minor = N / 65536, patch = N % 65536. N ~ epoch keeps minor < 65535 until ~2106.
+STATE_FILE="$SCRIPT_DIR/.teams-app-version"
 NOW_EPOCH="$(date -u +%s)"
-VER_MINOR="$(( NOW_EPOCH / 86400 ))"
-VER_PATCH="$(( (NOW_EPOCH % 86400) / 2 ))"
+LAST_N=0
+if [ -f "$STATE_FILE" ]; then
+  LAST_N="$(tr -dc '0-9' < "$STATE_FILE" 2>/dev/null)"
+  [ -z "$LAST_N" ] && LAST_N=0
+fi
+VER_N="$NOW_EPOCH"
+if [ "$((LAST_N + 1))" -gt "$VER_N" ]; then
+  VER_N="$((LAST_N + 1))"
+fi
+VER_MINOR="$(( VER_N / 65536 ))"
+VER_PATCH="$(( VER_N % 65536 ))"
 PKG_VERSION="1.${VER_MINOR}.${VER_PATCH}"
 if [ "$VER_MINOR" -gt 65535 ] || [ "$VER_PATCH" -gt 65535 ]; then
   echo "Error: computed manifest version $PKG_VERSION exceeds the Teams component limit (65535)." >&2
   exit 1
 fi
+printf '%s' "$VER_N" > "$STATE_FILE" 2>/dev/null || true
 
 echo "Agent:        $AGENT_NAME"
 echo "Bot ID:       $BOT_ID"

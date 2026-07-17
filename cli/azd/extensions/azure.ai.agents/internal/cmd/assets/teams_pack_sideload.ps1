@@ -31,19 +31,27 @@ $shortDesc = "Chat with $shortName in Microsoft Teams."
 if ($shortDesc.Length -gt 80) { $shortDesc = $shortDesc.Substring(0, 80) }
 
 # Teams only treats a re-uploaded package (same app id) as an update when the
-# manifest version is higher, so derive a monotonically increasing version from
-# the current time. Each re-run therefore updates the same app in place.
-# Teams caps each version component at 65535, so encode time across bounded
-# components: minor = days since the epoch, patch = half-seconds into the day.
-# (days fits < 65535 until ~year 2149; half-second-of-day maxes at 43199.)
+# manifest version is higher, so we need a strictly increasing version on every
+# run -- even two runs in the same second. Persist a monotonic build number next
+# to this script (seeded from wall-clock seconds, then always at least
+# last + 1) and encode it into two bounded components (Teams caps each at 65535):
+# minor = N / 65536, patch = N % 65536. N ~ epoch keeps minor < 65535 until ~2106.
+$stateFile = Join-Path $PSScriptRoot ".teams-app-version"
 $nowEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-$verMinor = [int]([math]::Floor($nowEpoch / 86400))
-$verPatch = [int]([math]::Floor(($nowEpoch % 86400) / 2))
+$lastN = [int64]0
+if (Test-Path -LiteralPath $stateFile) {
+    $raw = (Get-Content -LiteralPath $stateFile -Raw -ErrorAction SilentlyContinue) -replace '[^0-9]', ''
+    if ($raw) { $lastN = [int64]$raw }
+}
+$verN = [int64][math]::Max($nowEpoch, $lastN + 1)
+$verMinor = [int]([math]::Floor($verN / 65536))
+$verPatch = [int]($verN % 65536)
 $pkgVersion = "1.$verMinor.$verPatch"
 if ($verMinor -gt 65535 -or $verPatch -gt 65535) {
     Write-Error "Computed manifest version $pkgVersion exceeds the Teams component limit (65535)."
     exit 1
 }
+Set-Content -LiteralPath $stateFile -Value ([string]$verN) -NoNewline -ErrorAction SilentlyContinue
 
 Write-Host "Agent:        $AgentName"
 Write-Host "Bot ID:       $BotId"

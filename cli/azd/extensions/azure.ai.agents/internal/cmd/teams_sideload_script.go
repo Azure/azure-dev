@@ -181,9 +181,12 @@ func writeTeamsSideloadScripts(
 		// os.WriteFile only applies the mode when it creates the file; if the
 		// script already existed (e.g. a Windows checkout that dropped the
 		// executable bit), enforce the intended mode so './pack-and-sideload-...'
-		// stays runnable.
+		// stays runnable. If we cannot make it executable, do not advertise it as
+		// generated -- the manual fallback is shown instead of a script the user
+		// may be unable to run.
 		if err := os.Chmod(scriptPath, s.mode); err != nil {
 			log.Printf("postdeploy: failed to set mode on Teams sideload script %q: %v", scriptPath, err)
+			continue
 		}
 		written = append(written, scriptPath)
 	}

@@ -43,7 +43,9 @@ func TestTeamsSideloadScriptContent(t *testing.T) {
 		botName   = "echo-agent-bot-uai"
 		msaAppID  = "11111111-2222-3333-4444-555555555555"
 	)
-	teamsAppID := deterministicTeamsAppID(msaAppID)
+	// The Teams app id is derived from the STABLE bot name, not the version-scoped
+	// msaAppId, so a redeploy updates the same app instead of duplicating it.
+	teamsAppID := deterministicTeamsAppID(botName)
 
 	for name, tmpl := range map[string]struct {
 		content string
@@ -209,8 +211,8 @@ func TestWriteTeamsSideloadScriptsPreservesUserFiles(t *testing.T) {
 		t.Errorf("user-owned file was overwritten:\n got: %q\nwant: %q", string(got), userContent)
 	}
 
-	// A previously azd-generated script (carrying this agent's marker) is refreshed in place.
-	genContent := "# " + teamsGeneratedMarkerFor("app-id") + "\n# stale\n"
+	// A previously azd-generated script (carrying this bot's marker) is refreshed in place.
+	genContent := "# " + teamsGeneratedMarkerFor("echo-agent-bot-uai") + "\n# stale\n"
 	if err := os.WriteFile(userBash, []byte(genContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -269,6 +271,52 @@ func TestWriteTeamsSideloadScriptsRejectsOtherAgent(t *testing.T) {
 	}
 	if string(got) != otherContent {
 		t.Errorf("other agent's file was overwritten:\n got: %q\nwant: %q", string(got), otherContent)
+	}
+}
+
+// TestWriteTeamsSideloadScriptsStableAcrossVersionChange guards the redeploy
+// case: a new agent version has a fresh, version-scoped instance client id
+// (msaAppID), but the ownership marker and Teams app id are keyed on the STABLE
+// bot name. So azd must recognize its own previously generated scripts and
+// refresh them in place (with the new bot id), keeping the Teams app id constant
+// instead of duplicating the app or refusing to update.
+func TestWriteTeamsSideloadScriptsStableAcrossVersionChange(t *testing.T) {
+	root := t.TempDir()
+	proj := &azdext.ProjectConfig{Path: root}
+	svc := &azdext.ServiceConfig{Name: "echo-agent", RelativePath: "src"}
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	const botName = "echo-agent-bot-uai"
+
+	first := writeTeamsSideloadScripts(proj, svc, "echo-agent", botName, "client-id-v1")
+	if len(first) != teamsSideloadTargets {
+		t.Fatalf("initial deploy must write all %d scripts, got %d", teamsSideloadTargets, len(first))
+	}
+
+	// Redeploy: same bot name, but a brand-new version-scoped client id.
+	second := writeTeamsSideloadScripts(proj, svc, "echo-agent", botName, "client-id-v2")
+	if len(second) != teamsSideloadTargets {
+		t.Fatalf("redeploy with a new version client id must refresh all %d scripts, got %d: %v",
+			teamsSideloadTargets, len(second), second)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, "src", teamsSideloadScriptBash))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(data)
+	// The Teams app id stays stable (keyed on the bot name), so re-runs update
+	// the same installed app.
+	if !strings.Contains(body, deterministicTeamsAppID(botName)) {
+		t.Errorf("Teams app id must stay stable across a version change")
+	}
+	// The refreshed script carries the NEW bot id and drops the old one.
+	if !strings.Contains(body, "client-id-v2") {
+		t.Errorf("refreshed script must carry the new bot id")
+	}
+	if strings.Contains(body, "client-id-v1") {
+		t.Errorf("refreshed script must drop the previous bot id")
 	}
 }
 

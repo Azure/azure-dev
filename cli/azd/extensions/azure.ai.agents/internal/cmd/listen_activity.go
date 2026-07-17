@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"text/template"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -162,17 +163,39 @@ func writeTeamsSetupGuide(
 		return ""
 	}
 	content := teamsSetupGuideContent(agentName, botName, msaAppID, scriptsGenerated)
-	// Do not clobber a user-owned guide or one another activity service generated
-	// for a different agent that shares this source directory.
-	if ok, reason := canWriteGeneratedFile(guidePath, msaAppID); !ok {
-		log.Printf("postdeploy: Teams setup guide %q %s", guidePath, reason)
-		return ""
-	}
-	if err := os.WriteFile(guidePath, []byte(content), 0o600); err != nil {
-		log.Printf("postdeploy: failed to write Teams setup guide %q: %v", guidePath, err)
+	// Atomically claim/refresh the guide keyed on the STABLE bot name. A guide a
+	// different activity service generated for another agent (shared source dir)
+	// and genuinely user-owned files are left untouched; a pre-marker guide from
+	// a released version is recognized (isLegacyGeneratedGuide) and refreshed so
+	// upgrading users still get the script cross-reference.
+	if ok, reason := writeOwnedGeneratedFile(guidePath, content, 0o600, botName, isLegacyGeneratedGuide); !ok {
+		if reason != "" {
+			log.Printf("postdeploy: Teams setup guide %q %s", guidePath, reason)
+		}
 		return ""
 	}
 	return guidePath
+}
+
+// legacyGuideSignature is a stable line present in every setup guide azd released
+// before the origin marker was added. Recognizing it lets an upgrade refresh the
+// old generated guide in place while still preserving genuinely user-owned files.
+const legacyGuideSignature = "already did the Azure side for you"
+
+// isLegacyGeneratedGuide reports whether path is a regular file that looks like a
+// pre-marker azd-generated setup guide (so it may be safely refreshed). A file
+// already carrying the current marker is handled by the owner check, not here.
+func isLegacyGeneratedGuide(path string) bool {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	s := string(data)
+	return !strings.Contains(s, teamsSideloadGeneratedMarker) && strings.Contains(s, legacyGuideSignature)
 }
 
 //go:embed assets/teams_app_setup_guide.md

@@ -83,8 +83,9 @@ function main(): GraderResult {
     throw new Error("EVALUATE_WORKSPACE / EVALUATE_GRADER_INPUT were not set");
   }
 
-  // Program graders are just simple programs - GraderInput comes in on stdin, as JSON, and 
-  // GraderOutput (our results) goes on stdout.
+  // Program graders are just simple programs - GraderInput comes in as a JSON
+  // file (path in EVALUATE_GRADER_INPUT), and GraderOutput (our results)
+  // goes on stdout.
   const input = JSON.parse(readFileSync(graderInputPath, "utf-8")) as GraderInput;
   const details = [
     ...checkSummaryFile(workspace), 

@@ -10,9 +10,8 @@ inputs:
     required: false
     default: eval.yaml
   working-directory:
-    description: Directory containing package.json and the eval spec.
-    required: false
-    default: evals
+    description: Directory containing package.json and the eval spec (vally eval.yaml).
+    required: true
   node-version:
     description: Node.js version to set up
     required: false

@@ -81,8 +81,8 @@ defaults:
   judge_model: gpt-5.5
 
 # Default weighting means every grader must pass in order to consider this a success.
-# You can add in weights, if you want, per grader _type_, to allow for some things to
-# be deprioritzed, but simple "everything passing" is a great goal. :)
+# You can add in weights, if you want, per grader _type_, to allow for some grader types to
+# be weighted differently, but simple "everything passing" is a great goal. :)
 scoring:
   threshold: 1.0
 

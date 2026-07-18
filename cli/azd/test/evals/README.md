@@ -22,7 +22,6 @@ evals/
 ├── eval.yaml           # eval definition
 ├── fixtures/           # input files used by the eval
 ├── graders/            # custom grader logic
-├── testdata/           # additional sample data
 └── vally-results/      # output from local runs
 ```
 

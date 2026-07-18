@@ -161,8 +161,12 @@ func (u *UpGraphAction) Run(
 	packageFlags := append([]string{"all"}, parentChangedFlags...)
 	_, packageSpan := tracing.Start(ctx, "cmd.package")
 	packageSpan.SetAttributes(fields.CmdFlags.StringSlice(packageFlags))
-	_, provisionSpan := tracing.Start(ctx, "cmd.provision")
+	provisionSpanCtx, provisionSpan := tracing.Start(ctx, "cmd.provision")
 	provisionSpan.SetAttributes(fields.CmdFlags.StringSlice(parentChangedFlags))
+	// Attach infra.provider directly to the synthetic cmd.provision span (mirroring the stand-alone
+	// `azd provision` span). It is deliberately not copied onto cmd.package, and it is set on the
+	// span directly rather than via the process-global usage bag so it does not leak across spans.
+	u.provisionManager.RecordInfraProviderUsage(provisionSpanCtx, layers)
 	defer func() {
 		// Apply usage attributes (e.g. EnvNameKey) at end so they include
 		// any values set during Run. Globals (e.g. SubscriptionIdKey) are

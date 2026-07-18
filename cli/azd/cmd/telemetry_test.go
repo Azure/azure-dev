@@ -232,8 +232,8 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 	commandsWithSpecificTelemetry := []string{
 		"auth login",        // auth.method
 		"build",             // (via hooks middleware)
-		"deploy",            // infra.provider, service attributes (via hooks middleware)
-		"down",              // infra.provider (via hooks middleware)
+		"deploy",            // service attributes (via hooks middleware)
+		"down",              // infra.provider (resolved provider, via provisioning manager)
 		"env list",          // env.count
 		"extension install", // extension.source.kind
 		"extension list",    // extension.source.kind
@@ -244,14 +244,14 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 		"init",              // init.method, appinit.* fields
 		"package",           // (via hooks middleware)
 		"pipeline config",   // pipeline.provider, pipeline.auth
-		"provision",         // infra.provider (via hooks middleware)
+		"provision",         // infra.provider (resolved provider, via provisioning manager)
 		"restore",           // (via hooks middleware)
 		"tool check",        // tool.check.updates_available
 		"tool install",      // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
 		"tool show",         // tool.id
 		"tool uninstall",    // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
 		"tool upgrade",      // tool.id(s), tool.dry_run, tool.install.* aggregate + tool.upgrade.* versions
-		"up",                // infra.provider (via hooks middleware, composes provision+deploy)
+		"up",                // infra.provider (via provisioning manager; composes provision+deploy)
 		"update",            // update.* fields
 	}
 

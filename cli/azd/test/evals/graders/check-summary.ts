@@ -54,7 +54,7 @@ function checkSummaryFile(workspace: string): GraderResult[] {
 
   // The bullet count must actually match the reported total -- catches an
   // agent that reports the right number but lists the wrong count of notes.
-  const bulletCount = lines.slice(1).filter((line) => /^[-*]\s+\S/.test(line)).length;
+  const bulletCount = lines.slice(1).filter((line) => /^- \S/.test(line)).length;
   const reportedTotal = headerMatch ? Number(headerMatch[1]) : undefined;
   checks.push(
     subCheck(

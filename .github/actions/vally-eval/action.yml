@@ -19,9 +19,8 @@ inputs:
     default: "24"
   junit:
     description: >
-      Whether to pass `--junit` so vally writes eval-results.junit.xml. Required
-      for the failure gate to inspect per-eval results; when false, the action
-      gates on the `vally eval` exit code only.
+      Whether to pass `--junit` so vally writes eval-results.junit.xml alongside
+      the other output files.
     required: false
     default: "true"
   github-token:

@@ -3,7 +3,7 @@ name: "Evals: vally"
 on:
   workflow_dispatch:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, synchronize, reopened]
     paths:
       - "cli/azd/test/evals/**"
       - ".github/actions/vally-eval/**"

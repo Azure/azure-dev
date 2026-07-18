@@ -1,6 +1,6 @@
 # This is a small vally configuration file that you can copy/paste to start your 
-# own evaluations within this repo. This, combined with the GitHub action (.github/evals-ci.yml)
-# should give you all you need to run vally evals.
+# own evaluations within this repo. This, combined with the GitHub workflow
+# (.github/workflows/vally-ci.yml), should give you all you need to run vally evals.
 #
 # The basics:
 #

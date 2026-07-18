@@ -101,7 +101,7 @@ runs:
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Upload vally results
-      if: always()
+      if: always() && steps.run.outputs.vally-run-dir != ''
       uses: actions/upload-artifact@v7
       with:
         name: ${{ inputs.artifact-name }}

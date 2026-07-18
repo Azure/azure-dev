@@ -151,9 +151,8 @@ stimuli:
           pattern: '(?m)^`?Total notes: 3`?$'
 
       # 5. Fully custom check: a standalone `node` script (see
-      # graders/check-summary.ts for what it inspects and why). It lives in
-      # the worktree already, so we point `args` straight at its committed
-      # path -- no `files` copy needed. Needs Node 24+ for direct TypeScript.
+      # graders/check-summary.ts for what it inspects and why). 
+      # Needs Node 24+ for direct TypeScript.
       - type: program
         name: "workspace check: notes-summary.md is well-formed"
         config:

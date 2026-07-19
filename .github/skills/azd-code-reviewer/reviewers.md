@@ -143,7 +143,6 @@ Focus areas:
 - New features: does this add a command, flag, config option, or behavior that users need to know about?
 - Changed behavior: does this change how something works that is currently documented?
 - Documentation debt: does this change make existing docs inaccurate?
-- Changelog: does this warrant a changelog entry? What category (feature, fix, breaking change)?
 - README: does the README need updating?
 - API docs: are public Go packages properly documented with godoc comments?
 - Help text: do new commands/flags have complete help strings?

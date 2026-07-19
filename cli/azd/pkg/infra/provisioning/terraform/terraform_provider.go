@@ -15,11 +15,13 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
@@ -150,7 +152,8 @@ func (t *TerraformProvider) plan(ctx context.Context) (*provisioning.Deployment,
 
 	modulePath := t.modulePath()
 
-	initRes, err := t.init(ctx, isRemoteBackendConfig)
+	// -upgrade lets provisioning pick up newer providers/modules before planning.
+	initRes, err := t.init(ctx, isRemoteBackendConfig, "-upgrade")
 	if err != nil {
 		return nil, nil, fmt.Errorf("terraform init failed: %s , err: %w", initRes, err)
 	}
@@ -259,6 +262,44 @@ func (t *TerraformProvider) Destroy(
 
 	modulePath := t.modulePath()
 
+	// terraform destroy asks for confirmation interactively unless --force (-auto-approve) is passed.
+	// When running non-interactively — a CI/CD pipeline, an AI agent, or an explicit --no-prompt — azd
+	// cannot answer that prompt, so terraform would block on stdin and hang. Detect these automated
+	// contexts up front.
+	// Initialize the backend non-interactively (-input=false) for any automated destroy so that both the
+	// preview and a --force destroy work on a fresh agent; otherwise `terraform output`/`terraform destroy`
+	// fail with "backend initialization required" (a symptom reported in #4317). init is idempotent, so
+	// re-running it when the backend is already initialized is a safe no-op. Note: no -upgrade here — a
+	// teardown must not select newer providers/modules or rewrite `.terraform.lock.hcl`.
+	automated := resource.IsRunningOnCI() || t.console.IsNoPromptMode()
+	if automated {
+		if initRes, err := t.init(ctx, isRemoteBackendConfig, "-input=false"); err != nil {
+			return nil, fmt.Errorf("terraform init failed: %s, err: %w", initRes, err)
+		}
+	}
+
+	// In an automated context without --force, azd cannot answer terraform's confirmation, so instead of
+	// hanging, preview the destroy plan (read-only) and stop without deleting — as if the confirmation were
+	// answered "no". Use --force to delete non-interactively. See issue #4317.
+	if automated && !options.Force() {
+		t.console.Message(ctx, "Previewing resources to delete...")
+		// terraform doesn't use `t.console`; stop any spinner before streaming its output.
+		t.console.StopSpinner(ctx, "", input.Step)
+
+		previewArgs := t.createPlanArgs(isRemoteBackendConfig)
+		if previewRes, err := t.cli.PlanDestroy(ctx, modulePath, previewArgs...); err != nil {
+			return nil, fmt.Errorf("previewing destroy failed: %s, err: %w", previewRes, err)
+		}
+
+		t.console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: "No resources were deleted for this Terraform configuration because azd is running " +
+				"non-interactively.",
+			Hints: []string{"Re-run with --force to delete resources without confirmation."},
+		})
+
+		return &provisioning.DestroyResult{SkippedDeletion: true}, nil
+	}
+
 	//load the deployment result
 	outputs, err := t.createOutputParameters(ctx, modulePath, isRemoteBackendConfig)
 	if err != nil {
@@ -366,8 +407,11 @@ func (t *TerraformProvider) ensureParametersFile(ctx context.Context) error {
 }
 
 // initialize template terraform provider through terraform init
-func (t *TerraformProvider) init(ctx context.Context, isRemoteBackendConfig bool) (string, error) {
-
+func (t *TerraformProvider) init(
+	ctx context.Context,
+	isRemoteBackendConfig bool,
+	additionalArgs ...string,
+) (string, error) {
 	modulePath := t.modulePath()
 	cmd := []string{}
 
@@ -380,6 +424,8 @@ func (t *TerraformProvider) init(ctx context.Context, isRemoteBackendConfig bool
 		}
 		cmd = append(cmd, fmt.Sprintf("--backend-config=%s", t.backendConfigFilePath()))
 	}
+
+	cmd = append(cmd, additionalArgs...)
 
 	runResult, err := t.cli.Init(ctx, modulePath, cmd...)
 	if err != nil {

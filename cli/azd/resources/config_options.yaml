@@ -7,7 +7,12 @@
   type: string
   example: "eastus"
 - key: provision.preflight
-  description: "Controls whether ARM preflight validation runs before deployment. Set to 'off' to skip validation and reduce deployment time."
+  description: "Controls whether the server-side ARM preflight validation call runs before deployment. Set to 'off' to skip it and reduce deployment time."
+  type: string
+  allowedValues: ["on", "off"]
+  example: "on"
+- key: validation.provision
+  description: "Controls whether azd's local (client-side) provision validation runs before deployment. Set to 'off' to skip azd's pre-deployment checks (e.g. role assignment, AI model quota, reserved names)."
   type: string
   allowedValues: ["on", "off"]
   example: "on"

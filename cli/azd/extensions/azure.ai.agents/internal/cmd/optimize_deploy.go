@@ -67,7 +67,7 @@ Use 'optimize apply' instead if you want to localize the config into your azd pr
 	}
 
 	cmd.Flags().StringVar(&flags.candidate, "candidate", "", "Candidate ID from optimization results (required)")
-	cmd.Flags().StringVar(&flags.agent, "agent", "", "Agent name to deploy to (auto-detected from agent.yaml)")
+	cmd.Flags().StringVar(&flags.agent, "agent", "", "Agent service name from azure.yaml, or Foundry agent name outside a project")
 	_ = cmd.MarkFlagRequired("candidate")
 	flags.optimizeConnectionFlags.register(cmd)
 
@@ -94,7 +94,7 @@ func (a *OptimizeDeployAction) runDirect(
 	out io.Writer,
 	bold *color.Color,
 ) error {
-	// Resolve agent name from flag or agent.yaml in current directory.
+	// Resolve agent name from flag or azd project environment.
 	resolved, err := resolveOptimizeAgent(ctx, a.flags.agent, a.envName, false)
 	if err != nil {
 		return err
@@ -337,16 +337,24 @@ func buildDeployDefinition(currentDef map[string]any, envVars map[string]string)
 	}
 	newDef["environment_variables"] = envVars
 	normalizeProtocolVersions(newDef)
+	normalizeContainerImage(newDef)
 	return newDef
 }
 
-// normalizeProtocolVersions ensures container_protocol_versions use the
-// canonical "1.0.0" format instead of the legacy "v1" format that the
+// normalizeProtocolVersions ensures protocol_versions (or legacy container_protocol_versions)
+// use the canonical "1.0.0" format instead of the legacy "v1" format that the
 // platform no longer accepts for new versions.
 func normalizeProtocolVersions(def map[string]any) {
-	raw, ok := def["container_protocol_versions"]
+	// Try new field name first, fall back to legacy
+	raw, ok := def["protocol_versions"]
 	if !ok {
-		return
+		raw, ok = def["container_protocol_versions"]
+		if !ok {
+			return
+		}
+		// Migrate legacy field to new name
+		def["protocol_versions"] = raw
+		delete(def, "container_protocol_versions")
 	}
 	protocols, ok := raw.([]any)
 	if !ok {
@@ -361,6 +369,27 @@ func normalizeProtocolVersions(def map[string]any) {
 			pMap["version"] = "1.0.0"
 		}
 	}
+}
+
+// normalizeContainerImage migrates the legacy top-level "image" field to
+// "container_configuration.image" on raw definition maps. This is needed because
+// service responses stored as map[string]any bypass HostedAgentDefinition.UnmarshalJSON.
+func normalizeContainerImage(def map[string]any) {
+	// Already using new schema
+	if _, ok := def["container_configuration"]; ok {
+		return
+	}
+	// Migrate legacy top-level image
+	image, ok := def["image"]
+	if !ok {
+		return
+	}
+	imageStr, ok := image.(string)
+	if !ok || imageStr == "" {
+		return
+	}
+	def["container_configuration"] = map[string]any{"image": imageStr}
+	delete(def, "image")
 }
 
 // pollVersionActive polls the agent version until its status is "active" or a timeout occurs.

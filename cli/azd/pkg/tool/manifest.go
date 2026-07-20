@@ -25,6 +25,9 @@ const (
 	ToolCategoryServer ToolCategory = "server"
 	// ToolCategoryAzdExtension is an azd extension installed via `azd extension install`.
 	ToolCategoryAzdExtension ToolCategory = "azd-extension"
+	// ToolCategorySkill is a skill installed through an agent CLI's native
+	// plugin commands.
+	ToolCategorySkill ToolCategory = "skill"
 )
 
 // ToolPriority indicates how strongly a tool is recommended.
@@ -45,15 +48,95 @@ type Checksum struct {
 	Value string
 }
 
+// SkillAgent describes how a single agent CLI (e.g. GitHub Copilot CLI,
+// Claude Code) installs and updates a skill. Skill tools carry one or more
+// SkillAgent entries; by default the installer targets the preferred agent
+// (the first on PATH), but install/upgrade can target specific or all
+// detected agents when the caller selects them (e.g. via `--agent`).
+type SkillAgent struct {
+	// DisplayName is the agent's display name, shown to the user (e.g. "Copilot",
+	// "Claude"). Display-only: it is NOT the value
+	// --agent matches against — see Command.
+	DisplayName string
+	// Command is the agent CLI's executable name, used to run plugin
+	// commands and version probes (e.g. "copilot", "claude"), and the value
+	// --agent is matched against (case-insensitively, by findSkillAgent).
+	// Required and must be non-empty: it is the real, case-correct binary
+	// name run directly by the installer and detector paths, so exec works on
+	// case-sensitive filesystems (Linux). TestBuiltInTools_SkillAgentsHaveCommand
+	// enforces that every configured agent sets it.
+	Command string
+	// MarketplaceAddCommand is the optional one-time command that registers
+	// the plugin marketplace with the agent (e.g. ["plugin", "marketplace",
+	// "add", "microsoft/azure-skills"]). Empty when not required.
+	MarketplaceAddCommand []string
+	// PluginInstallCommand installs the plugin via the agent
+	// (e.g. ["plugin", "install", "azure@azure-skills"]).
+	PluginInstallCommand []string
+	// PluginUpdateCommand updates the plugin to its latest version.
+	PluginUpdateCommand []string
+	// PluginUninstallCommand removes the plugin from the agent
+	// (e.g. ["plugin", "uninstall", "azure@azure-skills"]).
+	PluginUninstallCommand []string
+	// PluginListCommand lists installed plugins on the agent
+	// (e.g. ["plugin", "list"]). The detector runs this command and
+	// searches the output for PluginName to decide whether the skill
+	// is installed.
+	PluginListCommand []string
+	// PluginName is the plugin's short name as reported by the agent's
+	// plugin listing (e.g. "azure"). Used by the detector.
+	PluginName string
+	// VersionRegex is a Go regular expression with a capture group for
+	// the semver portion of the version output of PluginListCommand.
+	// Required: the detector treats a VersionRegex match as the
+	// authoritative signal that the skill is installed (and uses the
+	// captured group as InstalledVersion). An agent with an empty
+	// VersionRegex is never reported as installed.
+	VersionRegex string
+	// BinaryVersionArgs are the CLI arguments that make the agent binary
+	// print its own version (e.g. ["--version"]). Together with
+	// BinaryVersionRegex these let the installer confirm the agent is a
+	// genuine, functional CLI before installing through it — not merely a
+	// file of the same name on PATH. Some environments place a launcher
+	// stub on PATH (e.g. the VS Code GitHub Copilot Chat extension drops a
+	// small `copilot` stub into its globalStorage and adds that folder to
+	// the integrated terminal's PATH) that exits 0 but only prompts to
+	// install the real CLI; such a stub passes a bare PATH existence check
+	// yet cannot install the skill. When empty, the installer falls back to
+	// an existence-only check.
+	BinaryVersionArgs []string
+	// BinaryVersionRegex is a Go regular expression whose first capture
+	// group matches the agent binary's own version. To avoid mistaking a
+	// launcher stub for a real CLI, anchor it to the agent's `--version`
+	// banner with `(?m)^` (e.g. `(?m)^GitHub Copilot CLI\s+v?(\d+\.\d+\.\d+)`)
+	// rather than matching a bare semver: a stub's output may contain an
+	// incidental version-shaped token (a bundled runtime version, a path
+	// build number, a URL) that must not count. The installer treats a match
+	// against the probe output as proof the agent CLI is genuinely installed.
+	// When empty, the functional probe is skipped.
+	BinaryVersionRegex string
+}
+
 // InstallStrategy describes how to install a tool on a specific platform.
 type InstallStrategy struct {
 	// PackageManager is the package manager name (e.g. "winget", "brew", "apt", "npm", "code").
 	PackageManager string
 	// PackageId is the identifier within the package manager (e.g. "Microsoft.AzureCLI").
 	PackageId string
+	// Cask indicates that PackageId is a Homebrew cask rather than a formula.
+	// When true, azd adds the `--cask` flag to brew install/upgrade/uninstall
+	// and reads the cask version from `brew info` output. Ignored for managers
+	// other than "brew".
+	Cask bool
 	// InstallCommand is the full shell command when a simple package-manager install
 	// does not apply (e.g. "curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash").
 	InstallCommand string
+	// UninstallCommand is the full command that reverses InstallCommand
+	// when no package-manager uninstall applies (e.g.
+	// "azd extension uninstall azure.ai.agents"). When empty and no
+	// package manager is configured, azd reports that it cannot uninstall
+	// the tool automatically.
+	UninstallCommand string
 	// DirectDownloadUrl is a URL to a binary or archive that azd downloads
 	// directly. When set, azd downloads the artifact, verifies its checksum
 	// (if provided), and makes it available locally. This path is used
@@ -87,11 +170,27 @@ type ToolDefinition struct {
 	// VersionRegex is a Go regular expression with a capture group for the semver portion
 	// of the version output (e.g. `azure-cli\s+(\d+\.\d+\.\d+)`).
 	VersionRegex string
-	// InstallStrategies maps a GOOS value ("windows", "darwin", "linux") to the
-	// platform-specific installation strategy.
-	InstallStrategies map[string]InstallStrategy
+	// InstallStrategies maps a GOOS value ("windows", "darwin", "linux") to an
+	// ordered list of platform-specific installation strategies. The list is in
+	// preference order: install/upgrade use the first strategy whose package
+	// manager is available (or that runs a self-contained command); uninstall
+	// detects which strategy actually installed the tool and removes it via
+	// that one. Most tools have a single strategy per platform; tools with
+	// several official install methods (e.g. the GitHub Copilot CLI) list them
+	// all.
+	InstallStrategies map[string][]InstallStrategy
+	// SkillAgents describes the agent CLIs that can install this tool when
+	// Category == ToolCategorySkill. Agents are listed in preference order: by
+	// default the first agent on PATH is used, but install/upgrade can target
+	// specific or all detected agents (e.g. `--agent all`). Platform-agnostic
+	// because the agent CLI's plugin command syntax does not vary between
+	// operating systems. Ignored for other categories.
+	SkillAgents []SkillAgent
 	// Dependencies lists the IDs of tools that must be installed before this one.
 	Dependencies []string
+	// SpinnerNote is an optional follow-up message shown after a successful
+	// install. Empty for tools with no note.
+	SpinnerNote string
 }
 
 // BuiltInTools returns the full set of tools that ship with the azd tool registry.
@@ -132,6 +231,7 @@ var builtInTools = []*ToolDefinition{
 	vscodeGitHubCopilot(),
 	azureMCPServer(),
 	azdAIExtensions(),
+	azureSkills(),
 }
 
 // ---------------------------------------------------------------------------
@@ -150,21 +250,21 @@ func azCLI() *ToolDefinition {
 		DetectCommand: "az",
 		VersionArgs:   []string{"--version"},
 		VersionRegex:  `azure-cli\s+(\d+\.\d+\.\d+)`,
-		InstallStrategies: map[string]InstallStrategy{
-			"windows": {
+		InstallStrategies: map[string][]InstallStrategy{
+			"windows": {{
 				PackageManager: "winget",
 				PackageId:      "Microsoft.AzureCLI",
-			},
-			"darwin": {
+			}},
+			"darwin": {{
 				PackageManager: "brew",
 				PackageId:      "azure-cli",
-			},
-			"linux": {
+			}},
+			"linux": {{
 				PackageManager: "apt",
 				PackageId:      "azure-cli",
 				InstallCommand: "curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash",
 				FallbackUrl:    "https://learn.microsoft.com/cli/azure/install-azure-cli",
-			},
+			}},
 		},
 	}
 }
@@ -180,19 +280,23 @@ func githubCopilotCLI() *ToolDefinition {
 		DetectCommand: "copilot",
 		VersionArgs:   []string{"--version"},
 		VersionRegex:  `(\d+\.\d+\.\d+)`,
-		InstallStrategies: map[string]InstallStrategy{
+		// The Copilot CLI can be installed several ways per platform (see the
+		// official docs). They are listed in preference order; install picks
+		// the first available, and uninstall detects which one was used.
+		InstallStrategies: map[string][]InstallStrategy{
 			"windows": {
-				PackageManager: "winget",
-				PackageId:      "GitHub.Copilot",
+				{PackageManager: "winget", PackageId: "GitHub.Copilot"},
+				{PackageManager: "npm", PackageId: "@github/copilot"},
 			},
 			"darwin": {
-				PackageManager: "brew",
-				PackageId:      "copilot-cli",
+				{PackageManager: "brew", PackageId: "copilot-cli", Cask: true},
+				{PackageManager: "npm", PackageId: "@github/copilot"},
+				{InstallCommand: "curl -fsSL https://gh.io/copilot-install | bash"},
 			},
 			"linux": {
-				PackageManager: "npm",
-				PackageId:      "@github/copilot",
-				InstallCommand: "npm install -g @github/copilot",
+				{PackageManager: "brew", PackageId: "copilot-cli", Cask: true},
+				{PackageManager: "npm", PackageId: "@github/copilot"},
+				{InstallCommand: "curl -fsSL https://gh.io/copilot-install | bash"},
 			},
 		},
 	}
@@ -261,7 +365,7 @@ func azureMCPServer() *ToolDefinition {
 		Description:   "Model Context Protocol server for Azure resource interaction.",
 		Category:      ToolCategoryServer,
 		Priority:      ToolPriorityOptional,
-		Website:       "https://github.com/Azure/azure-mcp",
+		Website:       "https://github.com/microsoft/mcp",
 		DetectCommand: "npm",
 		VersionArgs:   []string{"list", "-g", "@azure/mcp", "--json"},
 		VersionRegex:  `"@azure/mcp":\s*\{\s*"version":\s*"(\d+\.\d+\.\d+(?:-[^"]*)?)"`,
@@ -284,17 +388,84 @@ func azdAIExtensions() *ToolDefinition {
 		DetectCommand: "azd",
 		VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
 		InstallStrategies: allPlatforms(InstallStrategy{
-			InstallCommand: "azd extension install azure.ai.agents --source azd",
+			InstallCommand:   "azd extension install azure.ai.agents --source azd",
+			UninstallCommand: "azd extension uninstall azure.ai.agents",
 		}),
 	}
 }
 
-// allPlatforms returns an [InstallStrategies] map that uses the same strategy
-// for Windows, macOS and Linux.
-func allPlatforms(s InstallStrategy) map[string]InstallStrategy {
-	return map[string]InstallStrategy{
-		"windows": s,
-		"darwin":  s,
-		"linux":   s,
+func azureSkills() *ToolDefinition {
+	return &ToolDefinition{
+		Id:   "azure-skills",
+		Name: "Azure Skills",
+		Description: "Azure skills for AI coding assistants. " +
+			"Provides skills and MCP server configurations for Azure scenarios.",
+		Category: ToolCategorySkill,
+		Priority: ToolPriorityRecommended,
+		Website:  "https://github.com/microsoft/azure-skills",
+		SpinnerNote: "Azure Skills are now available in your AI agents. " +
+			"Ask your agent to create and manage Azure resources.",
+		SkillAgents: []SkillAgent{
+			{
+				DisplayName:            "Copilot",
+				Command:                "copilot",
+				MarketplaceAddCommand:  []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
+				PluginInstallCommand:   []string{"plugin", "install", "azure@azure-skills"},
+				PluginUpdateCommand:    []string{"plugin", "update", "azure@azure-skills"},
+				PluginUninstallCommand: []string{"plugin", "uninstall", "azure@azure-skills"},
+				PluginListCommand:      []string{"plugin", "list"},
+				PluginName:             "azure@azure-skills",
+				// Sample: "  • azure@azure-skills (v1.1.70)"
+				VersionRegex: `azure@azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
+				// Probe the agent binary itself so a launcher stub that only
+				// prompts to install the real CLI is not mistaken for an agent.
+				// Anchored to GitHub Copilot CLI's `--version` banner ("GitHub Copilot
+				// CLI 1.0.64-3") so an incidental semver cannot pass.
+				BinaryVersionArgs:  []string{"--version"},
+				BinaryVersionRegex: `(?m)^GitHub Copilot CLI\s+v?(\d+\.\d+\.\d+)`,
+			},
+			{
+				DisplayName: "Claude",
+				Command:     "claude",
+				MarketplaceAddCommand: []string{
+					"plugin", "marketplace", "add", "https://github.com/microsoft/azure-skills",
+				},
+				PluginInstallCommand:   []string{"plugin", "install", "azure@azure-skills"},
+				PluginUpdateCommand:    []string{"plugin", "update", "azure@azure-skills"},
+				PluginUninstallCommand: []string{"plugin", "uninstall", "azure@azure-skills"},
+				PluginListCommand:      []string{"plugin", "list", "--json"},
+				PluginName:             "azure@azure-skills",
+				// `claude plugin list` ignores a plugin-name argument, so
+				// list every plugin as JSON and anchor on the
+				// azure@azure-skills entry. Sample (--json):
+				//   [
+				//     {
+				//       "id": "azure@azure-skills",
+				//       "version": "1.1.73",
+				//       ...
+				//     }
+				//   ]
+				// "version" follows "id" within the same object, so [^}]
+				// keeps the capture scoped to the azure@azure-skills entry.
+				VersionRegex: `"id":\s*"azure@azure-skills"[^}]*?"version":\s*"v?(\d+\.\d+\.\d+)"`,
+				// Probe the agent binary itself so a launcher stub that only
+				// prompts to install the real CLI is not mistaken for an agent.
+				// Anchored to claude's `--version` banner ("2.1.178 (Claude
+				// Code)") so an incidental semver cannot pass.
+				BinaryVersionArgs:  []string{"--version"},
+				BinaryVersionRegex: `(?m)^v?(\d+\.\d+\.\d+)\s+\(Claude Code\)`,
+			},
+		},
+	}
+}
+
+// allPlatforms returns an [InstallStrategies] map that uses the same ordered
+// strategy list for Windows, macOS and Linux. A single strategy is the common
+// case; pass several for tools installable multiple ways on every platform.
+func allPlatforms(strategies ...InstallStrategy) map[string][]InstallStrategy {
+	return map[string][]InstallStrategy{
+		"windows": strategies,
+		"darwin":  strategies,
+		"linux":   strategies,
 	}
 }

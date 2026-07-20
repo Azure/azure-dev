@@ -42,15 +42,15 @@ func (s *aiModelService) ListModels(
 		filterOpts = protoToFilterOptions(req.Filter)
 	}
 
-	// Always fetch canonical model data across subscription locations.
-	// Location filters are applied only as inclusion filters below.
-	models, err := s.modelService.ListModels(ctx, subscriptionId, nil)
+	// Both paths fetch canonical model data across subscription locations.
+	var models []ai.AiModel
+	if filterOpts != nil {
+		models, err = s.modelService.ListFilteredModels(ctx, subscriptionId, filterOpts)
+	} else {
+		models, err = s.modelService.ListModels(ctx, subscriptionId, nil)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("listing models: %w", err)
-	}
-
-	if filterOpts != nil {
-		models = ai.FilterModels(models, filterOpts)
 	}
 
 	protoModels := make([]*azdext.AiModel, len(models))

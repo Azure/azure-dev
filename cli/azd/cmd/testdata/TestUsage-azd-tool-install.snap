@@ -5,8 +5,9 @@ Usage
   azd tool install [tool-name...] [flags]
 
 Flags
-        --all     	: Install all recommended tools
-        --dry-run 	: Preview what would be installed without making changes
+        --agent strings 	: Install the skill for the specified agent(s): copilot, claude. Use --agent all for every detected agent (skill tools only)
+        --all           	: Install all recommended tools
+        --dry-run       	: Preview what would be installed without making changes
 
 Global Flags
     -C, --cwd string         	: Sets the current working directory.

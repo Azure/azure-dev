@@ -71,11 +71,9 @@ func (s *environmentService) refreshEnvironmentAsync(
 
 	bicepProvider := c.bicep.(*bicep.BicepProvider)
 
-	if err := c.projectManager.Initialize(ctx, c.projectConfig); err != nil {
-		return nil, err
-	}
-
-	if err := c.projectManager.EnsureAllTools(ctx, c.projectConfig, nil); err != nil {
+	// Refresh is read-only: wire framework hooks best-effort without requiring service targets,
+	// which may be extension-provided. See envRefreshAction.Run for the CLI equivalent.
+	if _, _, err := c.projectManager.InitializeFrameworks(ctx, c.projectConfig); err != nil {
 		return nil, err
 	}
 

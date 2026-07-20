@@ -148,7 +148,7 @@ When `azd` resolves versions, it filters them into compatible and incompatible s
 Once a version is resolved, installation proceeds through these steps:
 
 1. **Resolve version** — Apply the version constraint against available versions, filter by `azd` compatibility, and select the highest match.
-2. **Resolve dependencies** — If the extension declares dependencies, resolve each one recursively from the **same source as the parent extension**. Cross-source dependency resolution is not performed. Dependencies use the declared version constraint (or `latest`) but do **not** go through `azd` version compatibility filtering — `requiredAzdVersion` checks are only applied to the top-level extension.
+2. **Resolve dependencies** — If the extension declares dependencies, resolve each one recursively from the **same source as the parent extension**. Cross-source dependency resolution is not performed. Dependencies use the declared version constraint (or `latest`) but do **not** go through `azd` version compatibility filtering — `requiredAzdVersion` checks are only applied to the top-level extension. Passing `--no-dependencies` skips this step entirely: only the named extension is installed, its declared dependencies are neither resolved nor installed, and the installed-dependency version constraints are not enforced. This is intended for callers that only need the extension's own binary (for example, generating command snapshots) and cannot guarantee the registry's dependency graph is internally consistent.
 3. **Match platform artifact** — Find the artifact for the current OS and architecture. `azd` first looks for `<os>/<arch>` (for example, `linux/amd64` or `windows/amd64`). If no exact match is found, it falls back to `<os>` only (for example, `linux` or `windows`).
 4. **Download** — Fetch the artifact from its URL (HTTP/HTTPS) or copy from a local file path.
 5. **Validate checksum** — Verify the downloaded file against the published checksum. Supported algorithms are `sha256` and `sha512`.
@@ -617,6 +617,54 @@ If the dev registry URL is unreachable (network issue, DNS failure), operations 
 ```bash
 azd extension source remove dev
 ```
+
+## Nightly Extension Registry
+
+The nightly registry contains **automatically built, always-latest** development snapshots of first-party extensions. Each scheduled pipeline run rebuilds an extension from `main`, signs the Windows and macOS binaries, uploads them to an always-latest storage folder, and updates a single entry in the nightly registry. Installing a nightly always gives you the most recent nightly build available at that time.
+
+| Property | Main Registry | Nightly Registry |
+|----------|---------------|------------------|
+| URL | `https://aka.ms/azd/extensions/registry` | `https://raw.githubusercontent.com/Azure/azure-dev/nightly/cli/azd/extensions/registry.nightly.json` |
+| Source file | `cli/azd/extensions/registry.json` (on `main`) | `cli/azd/extensions/registry.nightly.json` (on the `nightly` branch) |
+| Source name | `azd` (built-in default) | `nightly` (opt-in) |
+| Version shape | `1.2.3` | `1.2.3-nightly.<buildId>` (or `1.2.3-preview.nightly.<buildId>`) |
+| Signed binaries | Yes | Windows/macOS signed; Linux unsigned |
+| History retained | Yes | No — only the latest nightly per extension |
+| Support | Covered by Azure support | **Not covered** |
+
+> [!CAUTION]
+> Nightly extensions are built from `main` and come with **no stability guarantees**. Only the current nightly version is retained - older nightly versions are not installable.
+
+### Adding the Nightly Registry
+
+The nightly registry must be added, manually. To opt in:
+
+```bash
+# Add the nightly registry as a source named "nightly"
+azd extension source add -n nightly -t url -l "https://raw.githubusercontent.com/Azure/azure-dev/nightly/cli/azd/extensions/registry.nightly.json"
+```
+
+Then, to install a nightly-built extension:
+
+```bash
+azd extension install <extension-id> --source nightly
+```
+
+To remove the nightly registry later:
+
+```bash
+azd extension source remove nightly
+```
+
+### Upgrade and Nightly→Main Promotion
+
+Nightly versions use semver prerelease labels, so the standard `azd extension upgrade` flow works:
+
+- A newer nightly (higher build id, or a higher base version) supersedes an older one, so `azd extension upgrade` pulls the latest nightly.
+- When the extension ships a **stable** release whose base version matches your nightly (for example stable `1.2.3` versus `1.2.3-nightly.200`), the stable release outranks the nightly and you are **automatically promoted** to the `azd` registry on your next upgrade.
+
+> [!NOTE]
+> If your nightly was built from a **prerelease** base (for example `1.2.3-preview.nightly.60`), it sorts **above** the matching stable prerelease `1.2.3-preview`. In that case you are not promoted until the stable registry advances to a higher base version. This is expected semver precedence behavior.
 
 ## Related Documentation
 

@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -12,15 +13,31 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/stretchr/testify/require"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
 
 // setupInitAction creates an initAction wired with mocks that pass git-install checks.
@@ -687,4 +704,1116 @@ func TestInitCreatesProjectDirectory(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, filepath.Join(wd, "my-template"), result)
 	})
+}
+
+func Test_OutputFormatters(t *testing.T) {
+	t.Parallel()
+	buf := &bytes.Buffer{}
+
+	jsonFmt := &output.JsonFormatter{}
+	err := jsonFmt.Format(map[string]string{"k": "v"}, buf, nil)
+	require.NoError(t, err)
+	require.Contains(t, buf.String(), "k")
+
+	noneFmt := &output.NoneFormatter{}
+	err = noneFmt.Format("data", buf, nil)
+	require.Error(t, err)
+}
+
+func Test_NewInitAction(t *testing.T) {
+	t.Parallel()
+	action := newInitAction(
+		nil, // lazyAzdCtx
+		nil, // lazyEnvManager
+		nil, // cmdRun
+		mockinput.NewMockConsole(),
+		nil, // gitCli
+		&initFlags{},
+		nil, // args
+		nil, // repoInitializer
+		nil, // templateManager
+		nil, // featuresManager
+		nil, // extensionsManager
+		nil, // azd
+		nil, // agentFactory
+		nil, // consentManager
+		nil, // configManager
+	)
+	require.NotNil(t, action)
+}
+
+func Test_ConsentParsers(t *testing.T) {
+	t.Parallel()
+
+	t.Run("ParseActionType", func(t *testing.T) {
+		t.Parallel()
+		at, err := consent.ParseActionType("all")
+		require.NoError(t, err)
+		require.Equal(t, consent.ActionAny, at)
+
+		at, err = consent.ParseActionType("readonly")
+		require.NoError(t, err)
+		require.Equal(t, consent.ActionReadOnly, at)
+
+		_, err = consent.ParseActionType("invalid")
+		require.Error(t, err)
+	})
+
+	t.Run("ParseOperationType", func(t *testing.T) {
+		t.Parallel()
+		ot, err := consent.ParseOperationType("tool")
+		require.NoError(t, err)
+		require.Equal(t, consent.OperationTypeTool, ot)
+
+		_, err = consent.ParseOperationType("invalid")
+		require.Error(t, err)
+	})
+
+	t.Run("ParsePermission", func(t *testing.T) {
+		t.Parallel()
+		p, err := consent.ParsePermission("allow")
+		require.NoError(t, err)
+		require.Equal(t, consent.PermissionAllow, p)
+
+		_, err = consent.ParsePermission("invalid")
+		require.Error(t, err)
+	})
+
+	t.Run("ParseScope", func(t *testing.T) {
+		t.Parallel()
+		s, err := consent.ParseScope("global")
+		require.NoError(t, err)
+		require.Equal(t, consent.ScopeGlobal, s)
+
+		s, err = consent.ParseScope("project")
+		require.NoError(t, err)
+		require.Equal(t, consent.Scope("project"), s)
+
+		_, err = consent.ParseScope("invalid")
+		require.Error(t, err)
+	})
+}
+
+type mockKeyVaultService struct {
+	mock.Mock
+}
+
+func (m *mockKeyVaultService) GetKeyVault(
+	ctx context.Context, subscriptionId string, resourceGroupName string, vaultName string,
+) (*keyvault.KeyVault, error) {
+	args := m.Called(ctx, subscriptionId, resourceGroupName, vaultName)
+	return args.Get(0).(*keyvault.KeyVault), args.Error(1)
+}
+
+func (m *mockKeyVaultService) GetKeyVaultSecret(
+	ctx context.Context, subscriptionId string, vaultName string, secretName string,
+) (*keyvault.Secret, error) {
+	args := m.Called(ctx, subscriptionId, vaultName, secretName)
+	return args.Get(0).(*keyvault.Secret), args.Error(1)
+}
+
+func (m *mockKeyVaultService) PurgeKeyVault(
+	ctx context.Context, subscriptionId string, vaultName string, location string,
+) error {
+	args := m.Called(ctx, subscriptionId, vaultName, location)
+	return args.Error(0)
+}
+
+func (m *mockKeyVaultService) ListSubscriptionVaults(
+	ctx context.Context, subscriptionId string,
+) ([]keyvault.Vault, error) {
+	args := m.Called(ctx, subscriptionId)
+	return args.Get(0).([]keyvault.Vault), args.Error(1)
+}
+
+func (m *mockKeyVaultService) CreateVault(
+	ctx context.Context, tenantId string, subscriptionId string,
+	resourceGroupName string, location string, vaultName string,
+) (keyvault.Vault, error) {
+	args := m.Called(ctx, tenantId, subscriptionId, resourceGroupName, location, vaultName)
+	return args.Get(0).(keyvault.Vault), args.Error(1)
+}
+
+func (m *mockKeyVaultService) ListKeyVaultSecrets(
+	ctx context.Context, subscriptionId string, vaultName string,
+) ([]string, error) {
+	args := m.Called(ctx, subscriptionId, vaultName)
+	return args.Get(0).([]string), args.Error(1)
+}
+
+func (m *mockKeyVaultService) CreateKeyVaultSecret(
+	ctx context.Context, subscriptionId string, vaultName string, secretName string, value string,
+) error {
+	args := m.Called(ctx, subscriptionId, vaultName, secretName, value)
+	return args.Error(0)
+}
+
+func (m *mockKeyVaultService) SecretFromAkvs(
+	ctx context.Context, akvs string,
+) (string, error) {
+	args := m.Called(ctx, akvs)
+	return args.String(0), args.Error(1)
+}
+
+func (m *mockKeyVaultService) SecretFromKeyVaultReference(
+	ctx context.Context, kvRef string, defaultSubscriptionId string,
+) (string, error) {
+	args := m.Called(ctx, kvRef, defaultSubscriptionId)
+	return args.String(0), args.Error(1)
+}
+
+type mockPrompter struct {
+	mock.Mock
+}
+
+func (m *mockPrompter) PromptSubscription(ctx context.Context, msg string) (string, error) {
+	args := m.Called(ctx, msg)
+	return args.String(0), args.Error(1)
+}
+
+func (m *mockPrompter) PromptLocation(
+	ctx context.Context, subId string, msg string,
+	filter prompt.LocationFilterPredicate, defaultLocation *string,
+) (string, error) {
+	args := m.Called(ctx, subId, msg, filter, defaultLocation)
+	return args.String(0), args.Error(1)
+}
+
+func (m *mockPrompter) PromptResourceGroup(
+	ctx context.Context, options prompt.PromptResourceOptions,
+) (string, error) {
+	args := m.Called(ctx, options)
+	return args.String(0), args.Error(1)
+}
+
+func (m *mockPrompter) PromptResourceGroupFrom(
+	ctx context.Context, subscriptionId string, location string,
+	options prompt.PromptResourceGroupFromOptions,
+) (string, error) {
+	args := m.Called(ctx, subscriptionId, location, options)
+	return args.String(0), args.Error(1)
+}
+
+func (m *mockPrompter) IsNoPromptMode() bool {
+	return false
+}
+
+type mockEnvSetSecretSubscriptionResolver struct {
+	mock.Mock
+}
+
+func (m *mockEnvSetSecretSubscriptionResolver) GetSubscription(
+	ctx context.Context, subscriptionId string,
+) (*account.Subscription, error) {
+	args := m.Called(ctx, subscriptionId)
+
+	if subscription, ok := args.Get(0).(*account.Subscription); ok {
+		return subscription, args.Error(1)
+	}
+
+	if tenantId, ok := args.Get(0).(string); ok {
+		return &account.Subscription{
+			Id:                 subscriptionId,
+			TenantId:           tenantId,
+			UserAccessTenantId: tenantId,
+		}, args.Error(1)
+	}
+
+	return nil, args.Error(1)
+}
+
+type staticSubscriptionResolver struct {
+	subscription *account.Subscription
+}
+
+func (s *staticSubscriptionResolver) GetSubscription(
+	ctx context.Context, subscriptionId string,
+) (*account.Subscription, error) {
+	return s.subscription, nil
+}
+
+type mockEnvSetSecretEntraIdService struct {
+	entraid.EntraIdService
+	subscriptionId string
+	scope          string
+	roleId         string
+	principalId    string
+}
+
+func (m *mockEnvSetSecretEntraIdService) CreateRbac(
+	ctx context.Context, subscriptionId string, scope, roleId, principalId string,
+) error {
+	m.subscriptionId = subscriptionId
+	m.scope = scope
+	m.roleId = roleId
+	m.principalId = principalId
+	return nil
+}
+
+func Test_EnvSetSecretAction_SelectStrategyError(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select how you want to set mySecret"
+	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+		return 0, fmt.Errorf("select cancelled")
+	})
+
+	env := environment.NewWithValues("test", map[string]string{})
+	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, nil, nil, nil)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "selecting secret setting strategy")
+}
+
+func Test_EnvSetSecretAction_InvalidVaultId(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	// First Select: strategy (create new)
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select how you want to set mySecret"
+	}).Respond(0)
+
+	env := environment.NewWithValues("test", map[string]string{
+		"AZURE_RESOURCE_VAULT_ID": "not-a-valid-resource-id",
+	})
+	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, nil, nil, nil)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "parsing key vault resource id")
+}
+
+func Test_EnvSetSecretAction_ProjectKV_SelectError(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	// First Select: strategy
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select how you want to set mySecret"
+	}).Respond(0)
+	// Second Select: project KV prompt
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Key vault detected in this project. Use this key vault?"
+	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+		return 0, fmt.Errorf("cancelled")
+	})
+
+	kvId := "/subscriptions/sub123/resourceGroups/rg1/providers/Microsoft.KeyVault/vaults/myvault"
+	env := environment.NewWithValues("test", map[string]string{
+		"AZURE_RESOURCE_VAULT_ID": kvId,
+	})
+	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, nil, nil, nil)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "selecting key vault option")
+}
+
+func Test_EnvSetSecretAction_ProjectKV_UseExisting_PromptSubError(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	// First Select: strategy (create new = 0)
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select how you want to set mySecret"
+	}).Respond(0)
+	// Second Select: use different KV (No = 1)
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Key vault detected in this project. Use this key vault?"
+	}).Respond(1)
+
+	kvId := "/subscriptions/sub123/resourceGroups/rg1/providers/Microsoft.KeyVault/vaults/myvault"
+	env := environment.NewWithValues("test", map[string]string{
+		"AZURE_RESOURCE_VAULT_ID": kvId,
+	})
+
+	prompter := &mockPrompter{}
+	prompter.On("PromptSubscription", mock.Anything, mock.Anything).
+		Return("", fmt.Errorf("no subscriptions"))
+
+	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, nil, prompter, nil)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "prompting for subscription")
+}
+
+func Test_EnvSetSecretAction_VaultNotProvisioned_Cancel(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	// First Select: strategy
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select how you want to set mySecret"
+	}).Respond(0)
+	// Second Select: "Cancel" = index 1
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "How do you want to proceed?"
+	}).Respond(1)
+
+	env := environment.NewWithValues("test", map[string]string{})
+	projCfg := &project.ProjectConfig{
+		Resources: map[string]*project.ResourceConfig{
+			"vault": {},
+		},
+	}
+	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, projCfg, nil, nil, nil)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "operation canceled by user")
+}
+
+func Test_EnvSetSecretAction_VaultNotProvisioned_SelectError(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select how you want to set mySecret"
+	}).Respond(0)
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "How do you want to proceed?"
+	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+		return 0, fmt.Errorf("select error")
+	})
+
+	env := environment.NewWithValues("test", map[string]string{})
+	projCfg := &project.ProjectConfig{
+		Resources: map[string]*project.ResourceConfig{
+			"vault": {},
+		},
+	}
+	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, projCfg, nil, nil, nil)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "selecting key vault option")
+}
+
+func Test_EnvSetSecretAction_VaultNotProvisioned_UseDifferent_PromptSubError(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select how you want to set mySecret"
+	}).Respond(0)
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "How do you want to proceed?"
+	}).Respond(0) // Use a different key vault
+
+	env := environment.NewWithValues("test", map[string]string{})
+	projCfg := &project.ProjectConfig{
+		Resources: map[string]*project.ResourceConfig{
+			"vault": {},
+		},
+	}
+
+	prompter := &mockPrompter{}
+	prompter.On("PromptSubscription", mock.Anything, mock.Anything).
+		Return("", fmt.Errorf("no sub"))
+
+	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, projCfg, nil, prompter, nil)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "prompting for subscription")
+}
+
+func Test_EnvSetSecretAction_NoProject_PromptSubError(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	// First Select: strategy
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select how you want to set mySecret"
+	}).Respond(0)
+
+	env := environment.NewWithValues("test", map[string]string{})
+
+	prompter := &mockPrompter{}
+	prompter.On("PromptSubscription", mock.Anything, mock.Anything).
+		Return("", fmt.Errorf("cancelled"))
+
+	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, nil, prompter, nil)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "prompting for subscription")
+}
+
+func Test_EnvSetSecretAction_LookupTenantError(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select how you want to set mySecret"
+	}).Respond(0)
+
+	env := environment.NewWithValues("test", map[string]string{})
+
+	prompter := &mockPrompter{}
+	prompter.On("PromptSubscription", mock.Anything, mock.Anything).
+		Return("sub-123", nil)
+
+	resolver := &mockEnvSetSecretSubscriptionResolver{}
+	resolver.On("GetSubscription", mock.Anything, "sub-123").
+		Return("", fmt.Errorf("tenant not found"))
+
+	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, nil, prompter, resolver)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "getting subscription")
+}
+
+func Test_EnvSetSecretAction_ListVaultsError(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select how you want to set mySecret"
+	}).Respond(0)
+
+	env := environment.NewWithValues("test", map[string]string{})
+
+	prompter := &mockPrompter{}
+	prompter.On("PromptSubscription", mock.Anything, mock.Anything).
+		Return("sub-123", nil)
+
+	resolver := &mockEnvSetSecretSubscriptionResolver{}
+	resolver.On("GetSubscription", mock.Anything, "sub-123").
+		Return("tenant-123", nil)
+
+	kvSvc := &mockKeyVaultService{}
+	kvSvc.On("ListSubscriptionVaults", mock.Anything, "sub-123").
+		Return([]keyvault.Vault{}, fmt.Errorf("network error"))
+
+	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, kvSvc, prompter, resolver)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "getting the list of Key Vaults")
+}
+
+func Test_EnvSetSecretAction_SelectExisting_NoVaults(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	// Select existing strategy (index 1)
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select how you want to set mySecret"
+	}).Respond(1)
+	// After discovering no vaults, it switches to create new and prompts for KV selection
+	// The message keeps "where the Key Vault secret is" from the original !willCreateNewSecret path
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select the Key Vault where the Key Vault secret is"
+	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+		return 0, fmt.Errorf("cancelled")
+	})
+
+	env := environment.NewWithValues("test", map[string]string{})
+
+	prompter := &mockPrompter{}
+	prompter.On("PromptSubscription", mock.Anything, mock.Anything).
+		Return("sub-123", nil)
+
+	resolver := &mockEnvSetSecretSubscriptionResolver{}
+	resolver.On("GetSubscription", mock.Anything, "sub-123").
+		Return("tenant-123", nil)
+
+	kvSvc := &mockKeyVaultService{}
+	kvSvc.On("ListSubscriptionVaults", mock.Anything, "sub-123").
+		Return([]keyvault.Vault{}, nil) // Empty list
+
+	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, kvSvc, prompter, resolver)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	// The error could be from Select or from a subsequent step
+}
+
+func Test_EnvSetSecretAction_SelectKVError(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select how you want to set mySecret"
+	}).Respond(0)
+
+	// KV selection prompt error
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select the Key Vault where you want to create the Key Vault secret"
+	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+		return 0, fmt.Errorf("select kv error")
+	})
+
+	env := environment.NewWithValues("test", map[string]string{})
+
+	prompter := &mockPrompter{}
+	prompter.On("PromptSubscription", mock.Anything, mock.Anything).
+		Return("sub-123", nil)
+
+	resolver := &mockEnvSetSecretSubscriptionResolver{}
+	resolver.On("GetSubscription", mock.Anything, "sub-123").
+		Return("tenant-123", nil)
+
+	kvSvc := &mockKeyVaultService{}
+	kvSvc.On("ListSubscriptionVaults", mock.Anything, "sub-123").
+		Return([]keyvault.Vault{{Name: "vault1", Id: "id1"}}, nil)
+
+	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, kvSvc, prompter, resolver)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "selecting Key Vault")
+}
+
+func Test_EnvSetSecretAction_CreateNewKV_LocationError(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select how you want to set mySecret"
+	}).Respond(0) // Create new
+
+	// KV selection: pick "Create a new Key Vault" (index 0)
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select the Key Vault where you want to create the Key Vault secret"
+	}).Respond(0)
+
+	env := environment.NewWithValues("test", map[string]string{})
+
+	prompter := &mockPrompter{}
+	prompter.On("PromptSubscription", mock.Anything, mock.Anything).
+		Return("sub-123", nil)
+	prompter.On("PromptLocation", mock.Anything, "sub-123", mock.Anything, mock.Anything, mock.Anything).
+		Return("", fmt.Errorf("location error"))
+
+	resolver := &mockEnvSetSecretSubscriptionResolver{}
+	resolver.On("GetSubscription", mock.Anything, "sub-123").
+		Return("tenant-123", nil)
+
+	kvSvc := &mockKeyVaultService{}
+	kvSvc.On("ListSubscriptionVaults", mock.Anything, "sub-123").
+		Return([]keyvault.Vault{}, nil) // No existing vaults
+
+	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, kvSvc, prompter, resolver)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "prompting for Key Vault location")
+}
+
+func Test_EnvSetSecretAction_ProjectKV_UseExisting_CreateNewSecret(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	// Strategy: select existing (index 1)
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select how you want to set mySecret"
+	}).Respond(1)
+	// Project KV: Yes (index 0)
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Key vault detected in this project. Use this key vault?"
+	}).Respond(0)
+
+	// selectKeyVaultSecret needs ListKeyVaultSecrets + Select for secret
+	kvId := "/subscriptions/sub123/resourceGroups/rg1/providers/Microsoft.KeyVault/vaults/myvault"
+	env := environment.NewWithValues("test", map[string]string{
+		"AZURE_RESOURCE_VAULT_ID": kvId,
+	})
+
+	kvSvc := &mockKeyVaultService{}
+	kvSvc.On("ListKeyVaultSecrets", mock.Anything, "sub123", "myvault").
+		Return([]string{}, fmt.Errorf("list secrets error"))
+
+	envMgr := &mockenv.MockEnvManager{}
+
+	action := newTestEnvSetSecretAction(console, env, envMgr, []string{"mySecret"}, nil, kvSvc, nil, nil)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "list secrets error")
+}
+
+func Test_ConfigSetAction_SaveError(t *testing.T) {
+	t.Parallel()
+	cfgMgr := &testConfigManager{
+		loadCfg: config.NewEmptyConfig(),
+		saveErr: fmt.Errorf("save failed"),
+	}
+	action := &configSetAction{
+		configManager: cfgMgr,
+		args:          []string{"key1", "value1"},
+	}
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "save failed")
+}
+
+// testConfigManager implements config.UserConfigManager for testing
+type testConfigManager struct {
+	loadCfg config.Config
+	loadErr error
+	saveErr error
+}
+
+func (m *testConfigManager) Load() (config.Config, error) {
+	return m.loadCfg, m.loadErr
+}
+
+func (m *testConfigManager) Save(cfg config.Config) error {
+	return m.saveErr
+}
+
+// setDefaultEnvHelper sets the default environment in the AzdContext
+func setDefaultEnvHelper(t *testing.T, azdCtx *azdcontext.AzdContext, envName string) {
+	t.Helper()
+	require.NoError(t, azdCtx.SetProjectState(azdcontext.ProjectState{
+		DefaultEnvironment: envName,
+	}))
+}
+
+func Test_EnvSetSecretAction_SelectExisting_VaultListError(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	// Select existing (index 1)
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select how you want to set mySecret"
+	}).Respond(1)
+
+	env := environment.NewWithValues("test", map[string]string{})
+
+	prompter := &mockPrompter{}
+	prompter.On("PromptSubscription", mock.Anything, mock.Anything).
+		Return("sub-123", nil)
+
+	resolver := &mockEnvSetSecretSubscriptionResolver{}
+	resolver.On("GetSubscription", mock.Anything, "sub-123").
+		Return("tenant-123", nil)
+
+	kvSvc := &mockKeyVaultService{}
+	kvSvc.On("ListSubscriptionVaults", mock.Anything, "sub-123").
+		Return([]keyvault.Vault{}, fmt.Errorf("vault list error"))
+
+	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, kvSvc, prompter, resolver)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "getting the list of Key Vaults")
+}
+
+func Test_EnvSetSecretAction_CreateNew_ExistingVault_ListSecretsError(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	// Strategy: create new (index 0)
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select how you want to set mySecret"
+	}).Respond(0)
+	// KV selection: pick existing vault (index 1, after "Create new" option)
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Select the Key Vault where you want to create the Key Vault secret"
+	}).Respond(1)
+
+	env := environment.NewWithValues("test", map[string]string{})
+
+	prompter := &mockPrompter{}
+	prompter.On("PromptSubscription", mock.Anything, mock.Anything).
+		Return("sub-123", nil)
+
+	resolver := &mockEnvSetSecretSubscriptionResolver{}
+	resolver.On("GetSubscription", mock.Anything, "sub-123").
+		Return("tenant-123", nil)
+
+	kvSvc := &mockKeyVaultService{}
+	kvSvc.On("ListSubscriptionVaults", mock.Anything, "sub-123").
+		Return([]keyvault.Vault{{Name: "vault1", Id: "id1"}}, nil)
+	kvSvc.On("CreateKeyVaultSecret", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(fmt.Errorf("create secret error"))
+
+	// The createNewKeyVaultSecret method prompts for secret name and value
+	console.WhenPrompt(func(options input.ConsoleOptions) bool {
+		return true // accept any prompt
+	}).Respond("my-secret-value")
+
+	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, kvSvc, prompter, resolver)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+}
+
+func Test_ErrorWithSuggestion_Type(t *testing.T) {
+	t.Parallel()
+	err := &internal.ErrorWithSuggestion{
+		Err:        internal.ErrNoArgsProvided,
+		Suggestion: "test suggestion",
+	}
+	assert.True(t, errors.Is(err, internal.ErrNoArgsProvided))
+	assert.Contains(t, err.Error(), "required arguments not provided")
+}
+
+func Test_NewEnvRemoveCmd_ArgsConflict(t *testing.T) {
+	cmd := newEnvRemoveCmd()
+	cmd.Flags().String(internal.EnvironmentNameFlagName, "", "")
+	_ = cmd.Flags().Set(internal.EnvironmentNameFlagName, "other-env")
+
+	err := cmd.Args(cmd, []string{"my-env"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "may not be used together")
+}
+
+func Test_GetTargetServiceName_AllAndService_Conflict(t *testing.T) {
+	t.Parallel()
+	_, err := getTargetServiceName(t.Context(), nil, nil, nil, "build", "myservice", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot specify both --all and <service>")
+}
+
+func Test_ErrorWithSuggestion_Error(t *testing.T) {
+	t.Parallel()
+	err := &internal.ErrorWithSuggestion{
+		Err:        fmt.Errorf("test error"),
+		Suggestion: "try again",
+	}
+	assert.Contains(t, err.Error(), "test error")
+}
+
+func Test_UpdateAction_Run_SaveConfigError(t *testing.T) {
+	// Tests the config save failure path when auto-enabling alpha
+	setProdVersion(t)
+	clearCIEnv(t)
+
+	cfgMgr := &failSaveConfigMgr{}
+	console := mockinput.NewMockConsole()
+	var buf bytes.Buffer
+
+	flags := &updateFlags{
+		channel:            "",
+		checkIntervalHours: 12,
+	}
+
+	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{})
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "save failed")
+}
+
+func Test_UpdateAction_Run_CI_Blocked(t *testing.T) {
+	// Tests the CI block path
+	setProdVersion(t)
+
+	// Set CI=true so IsRunningOnCI returns true
+	t.Setenv("CI", "true")
+
+	cfg := config.NewEmptyConfig()
+	_ = cfg.Set("alpha.update", "on")
+	cfgMgr := &simpleConfigMgr{cfg: cfg}
+	console := mockinput.NewMockConsole()
+	var buf bytes.Buffer
+
+	flags := &updateFlags{}
+
+	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{})
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "CI/CD")
+}
+
+func Test_NewEnvRefreshCmd_Args_ConflictingFlag(t *testing.T) {
+	t.Parallel()
+	cmd := newEnvRefreshCmd()
+	cmd.Flags().String(internal.EnvironmentNameFlagName, "", "")
+	// Set the flag to a different value than the arg
+	require.NoError(t, cmd.Flags().Set(internal.EnvironmentNameFlagName, "flagenv"))
+	err := cmd.Args(cmd, []string{"argenv"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "may not be used together")
+}
+
+// Test the "not provisioned yet" path
+func Test_EnvSetSecretAction_VaultDefinedButNotProvisioned(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+
+	selectCount := 0
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return true
+	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+		selectCount++
+		switch selectCount {
+		case 1:
+			// Strategy: Create new
+			return 0, nil
+		case 2:
+			// "Cancel" (index 1)
+			return 1, nil
+		default:
+			return 0, errors.New("unexpected select")
+		}
+	})
+
+	env := environment.NewWithValues("myenv", nil)
+	// projectConfig has vault resource but no AZURE_RESOURCE_VAULT_ID in env
+	pc := &project.ProjectConfig{
+		Resources: map[string]*project.ResourceConfig{
+			"vault": {},
+		},
+	}
+
+	action := &envSetSecretAction{
+		args:          []string{"MY_SECRET"},
+		console:       console,
+		env:           env,
+		projectConfig: pc,
+	}
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "canceled")
+}
+
+func Test_SelectDistinctExtension_ZeroMatches(t *testing.T) {
+	t.Parallel()
+	_, err := selectDistinctExtension(
+		t.Context(), mockinput.NewMockConsole(),
+		"test-ext", []*extensions.ExtensionMetadata{},
+		&internal.GlobalCommandOptions{},
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no extensions found")
+}
+
+func Test_SelectDistinctExtension_MultiMatch_NoPrompt(t *testing.T) {
+	t.Parallel()
+	exts := []*extensions.ExtensionMetadata{
+		{Source: "source1"},
+		{Source: "source2"},
+	}
+	_, err := selectDistinctExtension(
+		t.Context(), mockinput.NewMockConsole(),
+		"test-ext", exts,
+		&internal.GlobalCommandOptions{NoPrompt: true},
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "multiple sources")
+}
+
+func Test_ConfigOptions_JsonFormatError(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewEmptyConfig()
+	mgr := &finishConfigMgr{cfg: cfg}
+	console := mockinput.NewMockConsole()
+	w := &errWriter{}
+	formatter := &output.JsonFormatter{}
+	action := newConfigOptionsAction(console, formatter, w, mgr, nil)
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed formatting config options")
+}
+
+// configSetAction.Run — Set error
+// When a.b is attempted but a is a string, config.Set returns error.
+func Test_ConfigSetAction_SetError(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig(map[string]any{"a": "scalar"})
+	mgr := &finishConfigMgr{cfg: cfg}
+	action := newConfigSetAction(mgr, []string{"a.b", "value"})
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed setting configuration")
+}
+
+// configUnsetAction.Run — Unset error
+func Test_ConfigUnsetAction_UnsetError(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig(map[string]any{"a": "scalar"})
+	mgr := &finishConfigMgr{cfg: cfg}
+	action := newConfigUnsetAction(mgr, []string{"a.b"})
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed removing configuration")
+}
+
+// envSelectAction — console.Select error
+func Test_EnvSelectAction_SelectError(t *testing.T) {
+	t.Parallel()
+	azdCtx := newTestAzdContext(t)
+	mgr := newTestEnvManager()
+	mgr.On("List", mock.Anything).Return(
+		[]*environment.Description{{Name: "env1"}, {Name: "env2"}},
+		nil,
+	)
+
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return true
+	}).RespondFn(func(_ input.ConsoleOptions) (any, error) {
+		return 0, errors.New("select cancelled")
+	})
+
+	action := newEnvSelectAction(azdCtx, mgr, console, nil) // nil args → prompts
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "selecting environment")
+}
+
+// envSelectAction — SetProjectState error
+func Test_EnvSelectAction_SetProjectStateError(t *testing.T) {
+	t.Parallel()
+	// Use a directory where .azure is a FILE instead of a directory,
+	// so writing .azure/config.json fails.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, azdcontext.ProjectFileName), []byte("name: test\n"), 0600))
+	// Create .azure as a regular file — SetProjectState will fail trying to write .azure/config.json
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".azure"), []byte("blocker"), 0600))
+	azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
+
+	env := environment.NewWithValues("env1", nil)
+	mgr := newTestEnvManager()
+	mgr.On("Get", mock.Anything, mock.Anything).Return(env, nil)
+
+	console := mockinput.NewMockConsole()
+	action := newEnvSelectAction(azdCtx, mgr, console, []string{"env1"})
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "setting default environment")
+}
+
+func Test_NewInitFlags(t *testing.T) {
+	t.Parallel()
+	cmd := &cobra.Command{Use: "test"}
+	global := &internal.GlobalCommandOptions{}
+	flags := newInitFlags(cmd, global)
+	require.NotNil(t, flags)
+}
+
+func Test_NewInitCmd(t *testing.T) {
+	t.Parallel()
+	cmd := newInitCmd()
+	require.NotNil(t, cmd)
+	assert.Contains(t, cmd.Use, "init")
+}
+
+func Test_ConfigSetAction_LoadError(t *testing.T) {
+	t.Parallel()
+
+	ucm := &pushFailLoadConfigMgr{}
+	action := newConfigSetAction(ucm, []string{"key", "value"})
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "load error")
+}
+
+func Test_ConfigUnsetAction_SaveError(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewEmptyConfig()
+	_ = cfg.Set("mykey", "val")
+	ucm := &pushConfigMgr{cfg: cfg, saveErr: errors.New("save error")}
+
+	action := newConfigUnsetAction(ucm, []string{"mykey"})
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "save error")
+}
+
+func Test_ConfigUnsetAction_LoadError(t *testing.T) {
+	t.Parallel()
+
+	ucm := &pushFailLoadConfigMgr{}
+	action := newConfigUnsetAction(ucm, []string{"mykey"})
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "load error")
+}
+
+func Test_ConfigGetAction_NotFound(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewEmptyConfig()
+	ucm := &pushConfigMgr{cfg: cfg}
+
+	action := newConfigGetAction(ucm, &output.NoneFormatter{}, &bytes.Buffer{}, []string{"missing"})
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no value at path")
+}
+
+func Test_PromptForExtensionChoice_Empty(t *testing.T) {
+	t.Parallel()
+	_, err := promptForExtensionChoice(t.Context(), mockinput.NewMockConsole(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no extensions")
+}
+
+func Test_EnvSetSecretAction_WithArgs_SelectError(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).
+		RespondFn(func(_ input.ConsoleOptions) (any, error) { return 0, fmt.Errorf("cancelled") })
+	action := &envSetSecretAction{
+		args:    []string{"MY_SECRET"},
+		console: console,
+	}
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "selecting secret setting strategy")
+}
+
+func (m *mockUserConfigManager) Load() (config.Config, error) {
+	args := m.Called()
+	return args.Get(0).(config.Config), args.Error(1)
+}
+
+func (m *mockUserConfigManager) Save(c config.Config) error {
+	args := m.Called(c)
+	return args.Error(0)
+}
+
+func Test_ExtensionSourceListAction_LoadError(t *testing.T) {
+	t.Parallel()
+	sm, cfgMgr := newTestSourceManager(t)
+	cfgMgr.On("Load").Return(config.NewEmptyConfig(), fmt.Errorf("config broken"))
+
+	action := &extensionSourceListAction{
+		sourceManager: sm,
+		formatter:     &output.JsonFormatter{},
+		writer:        &bytes.Buffer{},
+	}
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "config broken")
+}
+
+func Test_PromptInitType_FromApp(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).Respond(0)
+
+	result, err := promptInitType(console, t.Context(), nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, initType(initFromApp), result)
+}
+
+func Test_PromptInitType_Template(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).Respond(1)
+
+	result, err := promptInitType(console, t.Context(), nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, initType(initAppTemplate), result)
+}
+
+func Test_PromptInitType_SelectError(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).
+		RespondFn(func(_ input.ConsoleOptions) (any, error) { return 0, fmt.Errorf("cancelled") })
+
+	_, err := promptInitType(console, t.Context(), nil, nil)
+	require.Error(t, err)
+}
+
+func Test_SelectDistinctExtension_NoPrompt(t *testing.T) {
+	t.Parallel()
+	exts := []*extensions.ExtensionMetadata{
+		{Id: "a", DisplayName: "A", Source: "s1"},
+		{Id: "b", DisplayName: "B", Source: "s2"},
+	}
+	console := mockinput.NewMockConsole()
+	globalOpts := &internal.GlobalCommandOptions{NoPrompt: true}
+	_, err := selectDistinctExtension(t.Context(), console, "test.ext", exts, globalOpts)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "found in multiple sources")
 }

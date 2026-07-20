@@ -1202,18 +1202,20 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 		"ErrRemoteHostIsNotGitHub":             "caught in pkg/pipeline and pkg/github before reaching telemetry",
 		"ErrSSHNotSupported":                   "only defined, referenced via ErrRemoteHostIsNotAzDo flow",
 		"ErrDeploymentNotFound":                "caught in provisioning/deployment callers before reaching telemetry",
-		"ErrDeploymentsNotFound":               "caught in infra callers before reaching telemetry",
-		"ErrDeploymentResourcesNotFound":       "caught in infra callers before reaching telemetry",
-		"ErrContainerNotFound":                 "caught in storage blob callers before reaching telemetry",
-		"ErrPlatformNotSupported":              "caught in platform config resolver before reaching telemetry",
-		"ErrPlatformConfigNotFound":            "caught in platform config resolver before reaching telemetry",
-		"ErrNoDefaultService":                  "caught in project manager callers before reaching telemetry",
-		"ErrSourceNotFound":                    "caught in template source manager before reaching telemetry",
-		"ErrSourceExists":                      "caught in template source manager before reaching telemetry",
-		"ErrSourceTypeInvalid":                 "caught in template source manager before reaching telemetry",
-		"ErrRepositoryNameInUse":               "caught in pipeline config flow before reaching telemetry",
-		"ErrResourceNotFound":                  "caught in kubectl callers before reaching telemetry",
-		"ErrResourceNotReady":                  "caught in kubectl callers before reaching telemetry",
+		"ErrProvisionValidationCanceled": "translated to internal.ErrAbortedByUser by wrapProvisionError " +
+			"before reaching telemetry",
+		"ErrDeploymentsNotFound":         "caught in infra callers before reaching telemetry",
+		"ErrDeploymentResourcesNotFound": "caught in infra callers before reaching telemetry",
+		"ErrContainerNotFound":           "caught in storage blob callers before reaching telemetry",
+		"ErrPlatformNotSupported":        "caught in platform config resolver before reaching telemetry",
+		"ErrPlatformConfigNotFound":      "caught in platform config resolver before reaching telemetry",
+		"ErrNoDefaultService":            "caught in project manager callers before reaching telemetry",
+		"ErrSourceNotFound":              "caught in template source manager before reaching telemetry",
+		"ErrSourceExists":                "caught in template source manager before reaching telemetry",
+		"ErrSourceTypeInvalid":           "caught in template source manager before reaching telemetry",
+		"ErrRepositoryNameInUse":         "caught in pipeline config flow before reaching telemetry",
+		"ErrResourceNotFound":            "caught in kubectl callers before reaching telemetry",
+		"ErrResourceNotReady":            "caught in kubectl callers before reaching telemetry",
 
 		// Duplicate definitions (same error variable defined in multiple packages)
 		"ErrDebuggerAborted": "defined in both cmd/middleware and pkg/azdext, handled at debug middleware level",
@@ -1271,6 +1273,9 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 
 		// Extension SDK errors used by extensions, never reach host MapError
 		"ErrProjectNotFound": "pkg/azdext: extension SDK helper, used by extensions not the host",
+
+		// gRPC broker errors caught at broker/stream level
+		"ErrResourceExhausted": "pkg/grpcbroker: gRPC message size error, caught in broker send/recv handlers",
 	}
 
 	// Find the azd root directory (two levels up from internal/cmd)

@@ -81,6 +81,7 @@
                             "service-target-provider",
                             "framework-service-provider",
                             "provisioning-provider",
+                            "validation-provider",
                             "metadata"
                         ]
                     }

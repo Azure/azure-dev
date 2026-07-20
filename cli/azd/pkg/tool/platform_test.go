@@ -212,11 +212,11 @@ func TestSelectStrategy(t *testing.T) {
 
 		tool := &ToolDefinition{
 			Name: "az",
-			InstallStrategies: map[string]InstallStrategy{
-				"windows": {
+			InstallStrategies: map[string][]InstallStrategy{
+				"windows": {{
 					PackageManager: "winget",
 					PackageId:      "Microsoft.AzureCLI",
-				},
+				}},
 			},
 		}
 		platform := &Platform{
@@ -231,11 +231,11 @@ func TestSelectStrategy(t *testing.T) {
 
 		tool := &ToolDefinition{
 			Name: "az",
-			InstallStrategies: map[string]InstallStrategy{
-				"darwin": {
+			InstallStrategies: map[string][]InstallStrategy{
+				"darwin": {{
 					PackageManager: "brew",
 					PackageId:      "azure-cli",
-				},
+				}},
 			},
 		}
 		platform := &Platform{
@@ -254,11 +254,11 @@ func TestSelectStrategy(t *testing.T) {
 
 		tool := &ToolDefinition{
 			Name: "az",
-			InstallStrategies: map[string]InstallStrategy{
-				"windows": {
+			InstallStrategies: map[string][]InstallStrategy{
+				"windows": {{
 					PackageManager: "winget",
 					PackageId:      "Microsoft.AzureCLI",
-				},
+				}},
 			},
 		}
 		// Platform has no managers at all.
@@ -277,11 +277,11 @@ func TestSelectStrategy(t *testing.T) {
 
 		tool := &ToolDefinition{
 			Name: "az",
-			InstallStrategies: map[string]InstallStrategy{
-				"linux": {
+			InstallStrategies: map[string][]InstallStrategy{
+				"linux": {{
 					InstallCommand: "curl -sL https://example.com | bash",
 					FallbackUrl:    "https://example.com/install",
-				},
+				}},
 			},
 		}
 		platform := &Platform{
@@ -372,6 +372,7 @@ func TestPlatformManagersTable(t *testing.T) {
 		managers := platformManagers["linux"]
 		require.Contains(t, managers, "apt")
 		require.Contains(t, managers, "snap")
+		require.Contains(t, managers, "brew")
 		require.Contains(t, managers, "npm")
 		require.Contains(t, managers, "code")
 	})

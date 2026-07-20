@@ -9,12 +9,12 @@
       "versions": [
         {
           "version": "0.0.1-preview",
-          "requiredAzdVersion": "\u003e=1.25.1",
+          "requiredAzdVersion": ">=1.25.1",
           "capabilities": [
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd ai training \u003ccommand\u003e [options]",
+          "usage": "azd ai training <command> [options]",
           "examples": [
             {
               "name": "init",
@@ -80,6 +80,82 @@
               },
               "entryPoint": "azure-ai-training-windows-arm64.exe",
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-training_0.0.1-preview/azure-ai-training-windows-arm64.zip"
+            }
+          }
+        },
+        {
+          "version": "0.0.2-preview",
+          "requiredAzdVersion": ">=1.25.1",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "azd ai training <command> [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize project configuration for training.",
+              "usage": "azd ai training init"
+            },
+            {
+              "name": "job submit",
+              "description": "Submit a command job from YAML definition.",
+              "usage": "azd ai training job submit --file job.yaml"
+            },
+            {
+              "name": "job list",
+              "description": "List all training jobs.",
+              "usage": "azd ai training job list"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "117fc9ff23d66c46fe73dd8832d4402f08b4dcf1c323058814429dc8858934dc"
+              },
+              "entryPoint": "azure-ai-training-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-training_0.0.2-preview/azure-ai-training-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "254bb61f36ced7e9e65d96e2272b6a1355a07a10abd5a49fb5c4de7679e936df"
+              },
+              "entryPoint": "azure-ai-training-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-training_0.0.2-preview/azure-ai-training-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "fb16978fac43ea88319096f38e21e9961432616bf24ef32ae91c084cde82a8eb"
+              },
+              "entryPoint": "azure-ai-training-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-training_0.0.2-preview/azure-ai-training-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "d2843fea55e7344ed285b37f89411f95b854ae17ec3b33355006a85ed371aa83"
+              },
+              "entryPoint": "azure-ai-training-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-training_0.0.2-preview/azure-ai-training-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "e5988fa84a3b7f96f8f9756cad96e0c110fce6ffa898666ab9736286dcf0f86b"
+              },
+              "entryPoint": "azure-ai-training-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-training_0.0.2-preview/azure-ai-training-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "18e269a6800cf9813016b833d5f726ae6da43acff304654b58b831f30b2a95fa"
+              },
+              "entryPoint": "azure-ai-training-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-training_0.0.2-preview/azure-ai-training-windows-arm64.zip"
             }
           }
         }

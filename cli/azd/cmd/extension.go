@@ -13,8 +13,10 @@ import (
 	"log"
 	"maps"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -54,6 +56,11 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		Command: &cobra.Command{
 			Use:   "list [--installed]",
 			Short: "List available extensions.",
+			Long: `List available extensions from registered extension sources.
+
+The --source flag accepts a registered source name or registry location (URL or
+file path). Locations are queried read-only and are not registered. Extensions
+from an unregistered location show the location itself in the SOURCE column.`,
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
 		DefaultFormat:  output.TableFormat,
@@ -66,6 +73,10 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		Command: &cobra.Command{
 			Use:   "show <extension-id>",
 			Short: "Show details for a specific extension.",
+			Long: `Show details for a specific extension from a registered extension source.
+
+The --source flag accepts a registered source name or registry location (URL or
+file path). Locations are queried read-only and are not registered.`,
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
@@ -79,6 +90,11 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 			Use:   "install <extension-id|extension-bundle.zip>",
 			Short: "Installs specified extensions.",
 			Long: `Installs one or more extensions by id from a registered extension source.
+
+The --source flag also accepts a registry location (URL or file path). When a
+location is given, azd registers it as a source (prompting for a name, and
+confirming first for a URL) and then installs from it. If the location is already
+registered, azd reuses that source.
 
 You can also pass the path to a self-contained extension bundle (.zip): azd
 extracts it and installs the bundled extension. Bundled extensions aren't
@@ -110,9 +126,12 @@ source is unavailable, falls back to the main (azd) registry. Extensions that
 were installed from a non-main registry (e.g., dev) are automatically promoted
 to the main registry when a newer version is available there.
 
-Use --source to explicitly override the registry source for the upgrade. Use
---all to upgrade all installed extensions in a single batch; failures in one
-extension do not prevent the remaining extensions from being upgraded.
+Use --source to override the registry source for the upgrade. It accepts a
+registered source name or registry location (URL or file path); locations are
+registered first and the upgraded extension's stored source is updated. Because
+registration is interactive, locations are rejected under --no-prompt. Use --all
+to upgrade all installed extensions in a single batch; failures in one extension
+do not prevent the remaining extensions from being upgraded.
 
 When upgrading an extension that has dependencies, any installed
 dependencies are automatically upgraded too, to the highest version
@@ -149,6 +168,9 @@ Use --output json for a structured report of all upgrade results.`,
 		Command: &cobra.Command{
 			Use:   "add",
 			Short: "Add an extension source with the specified name",
+			Long: "Add an extension source with the specified name.\n\n" +
+				"`azd extension install --source` and `azd extension upgrade --source` also accept " +
+				"a registry URL or file path directly.",
 		},
 		ActionResolver: newExtensionSourceAddAction,
 		FlagsResolver:  newExtensionSourceAddFlags,
@@ -194,7 +216,8 @@ type extensionListFlags struct {
 func newExtensionListFlags(cmd *cobra.Command) *extensionListFlags {
 	flags := &extensionListFlags{}
 	cmd.Flags().BoolVar(&flags.installed, "installed", false, "List installed extensions")
-	cmd.Flags().StringVar(&flags.source, "source", "", "Filter extensions by source")
+	cmd.Flags().StringVarP(&flags.source, "source", "s", "",
+		"Filter extensions by registered source name or registry location (URL or file path).")
 	cmd.Flags().StringSliceVar(&flags.tags, "tags", nil, "Filter extensions by tags")
 
 	return flags
@@ -237,25 +260,28 @@ type extensionListItem struct {
 	UpdateAvailable  bool   `json:"updateAvailable"`
 	Incompatible     bool   `json:"-"`
 	Source           string `json:"source"`
-	// DisplayVersion is installed version or "Not installed" for table rendering.
-	DisplayVersion string `json:"-"`
 	// Status is a human-readable installation/update status indicator.
 	// Populated only for pretty-table rendering; omitted from JSON.
 	Status string `json:"-"`
-	// StatusSymbol is the symbol-only status (✓, ↑, ⚠, -) for medium/narrow widths.
-	StatusSymbol string `json:"-"`
 }
 
 func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.ExtensionSourceKind.String(sourceArgKind(a.flags.source)))
 	options := &extensions.FilterOptions{
 		Source: a.flags.source,
 		Tags:   a.flags.tags,
 	}
 
-	if options.Source != "" {
-		if _, err := a.sourceManager.Get(ctx, options.Source); err != nil {
-			return nil, fmt.Errorf("extension source '%s' not found: %w", options.Source, err)
-		}
+	sourceFilter, err := resolveSourceFilter(ctx, a.sourceManager, a.flags.source)
+	if err != nil {
+		return nil, err
+	}
+	options.Source = sourceFilter.source
+	if sourceFilter.config != nil {
+		options.SourceConfig = sourceFilter.config
+		options.Source = ""
+	} else if options.Source != "" && !sourceFilter.registered {
+		return nil, fmt.Errorf("extension source '%s' not found: %w", a.flags.source, extensions.ErrSourceNotFound)
 	}
 
 	registryExtensions, err := a.extensionManager.FindExtensions(ctx, options)
@@ -319,10 +345,6 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		}
 
 		status := extensionStatus(installed, updateAvailable && !updateIncompatible, updateIncompatible)
-		displayVersion := installedVersion
-		if displayVersion == "" {
-			displayVersion = "Not installed"
-		}
 
 		extensionRows = append(extensionRows, extensionListItem{
 			Id:               extension.Id,
@@ -333,9 +355,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			UpdateAvailable:  updateAvailable && !updateIncompatible,
 			Incompatible:     updateIncompatible,
 			Source:           extension.Source,
-			DisplayVersion:   displayVersion,
 			Status:           status,
-			StatusSymbol:     extensionStatusSymbol(status),
 		})
 	}
 
@@ -364,9 +384,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			Version:          ext.Version,
 			InstalledVersion: ext.Version,
 			Source:           ext.Source,
-			DisplayVersion:   ext.Version,
 			Status:           statusUpToDate,
-			StatusSymbol:     extensionStatusSymbol(statusUpToDate),
 		})
 	}
 
@@ -407,23 +425,35 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 					Heading:       "NAME",
 					ValueTemplate: "{{.Name}}",
 				},
-				Priority: 3,
-			},
-			{
-				Column: output.Column{
-					Heading:       "VERSION",
-					ValueTemplate: "{{.DisplayVersion}}",
-				},
-				Priority: 1,
+				Priority:    3,
+				CardTitle:   true,
+				Truncatable: true,
 			},
 			{
 				Column: output.Column{
 					Heading:       "STATUS",
 					ValueTemplate: "{{.Status}}",
 				},
-				Priority:           1,
-				ShortValueTemplate: "{{.StatusSymbol}}",
-				ColorFunc:          extensionStatusColor,
+				Priority:    1,
+				Truncatable: true,
+				ColorFunc:   extensionStatusColor,
+			},
+			{
+				Column: output.Column{
+					Heading:       "INSTALLED",
+					ValueTemplate: `{{if .InstalledVersion}}{{.InstalledVersion}}{{else}}-{{end}}`,
+				},
+				CardValueTemplate: `{{if .InstalledVersion}}{{.InstalledVersion}}{{end}}`,
+				Priority:          1,
+			},
+			{
+				Column: output.Column{
+					Heading:       "LATEST",
+					ValueTemplate: "{{.Version}}",
+				},
+				CardValueTemplate: `{{if or .UpdateAvailable (not .InstalledVersion)}}{{.Version}}{{end}}`,
+				Priority:          3,
+				Truncatable:       true,
 			},
 			{
 				Column: output.Column{
@@ -435,8 +465,9 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		}
 
 		formatErr = prettyFormatter.Format(extensionRows, a.writer, output.PrettyTableFormatterOptions{
-			Columns:         columns,
-			CardGroupColumn: "SOURCE",
+			Columns:              columns,
+			CardGroupColumn:      "SOURCE",
+			ResponsiveColumnHint: true,
 		})
 
 		if formatErr == nil {
@@ -475,10 +506,10 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 
 // Status indicator constants for extension list display.
 const (
-	statusUpToDate   = "✓ Up to date"
-	statusUpdate     = "↑ Update available"
-	statusIncompat   = "⚠ Incompatible"
-	statusNotInstall = "-"
+	statusUpToDate   = "Up to date"
+	statusUpgrade    = "Upgrade available"
+	statusIncompat   = "Incompatible"
+	statusNotInstall = "Not installed"
 )
 
 // extensionStatus returns a human-readable status string for the extension list table.
@@ -487,7 +518,7 @@ func extensionStatus(installed, updateAvailable, incompatible bool) string {
 	case incompatible:
 		return statusIncompat
 	case updateAvailable:
-		return statusUpdate
+		return statusUpgrade
 	case installed:
 		return statusUpToDate
 	default:
@@ -495,36 +526,14 @@ func extensionStatus(installed, updateAvailable, incompatible bool) string {
 	}
 }
 
-// Status symbol constants for medium/narrow display.
-const (
-	symbolUpToDate   = "✓"
-	symbolUpdate     = "↑"
-	symbolIncompat   = "⚠"
-	symbolNotInstall = "-"
-)
-
-// extensionStatusSymbol returns the symbol-only version of a status string.
-func extensionStatusSymbol(status string) string {
-	switch status {
-	case statusUpToDate:
-		return symbolUpToDate
-	case statusUpdate:
-		return symbolUpdate
-	case statusIncompat:
-		return symbolIncompat
-	default:
-		return symbolNotInstall
-	}
-}
-
 // extensionStatusColor applies color formatting based on the status indicator text.
 func extensionStatusColor(s string) string {
 	switch s {
-	case statusUpToDate, symbolUpToDate:
+	case statusUpToDate:
 		return output.WithSuccessFormat(s)
-	case statusUpdate, symbolUpdate:
+	case statusUpgrade:
 		return output.WithWarningFormat(s)
-	case statusIncompat, symbolIncompat:
+	case statusIncompat:
 		return output.WithErrorFormat(s)
 	default:
 		return output.WithGrayFormat(s)
@@ -541,7 +550,8 @@ func newExtensionShowFlags(cmd *cobra.Command, global *internal.GlobalCommandOpt
 	flags := &extensionShowFlags{
 		global: global,
 	}
-	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "The extension source to use.")
+	cmd.Flags().StringVarP(&flags.source, "source", "s", "",
+		"The registered source name or registry location (URL or file path) to use.")
 	return flags
 }
 
@@ -551,6 +561,7 @@ type extensionShowAction struct {
 	console          input.Console
 	formatter        output.Formatter
 	writer           io.Writer
+	sourceManager    *extensions.SourceManager
 	extensionManager *extensions.Manager
 }
 
@@ -560,6 +571,7 @@ func newExtensionShowAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	sourceManager *extensions.SourceManager,
 	extensionManager *extensions.Manager,
 ) actions.Action {
 	return &extensionShowAction{
@@ -568,6 +580,7 @@ func newExtensionShowAction(
 		console:          console,
 		formatter:        formatter,
 		writer:           writer,
+		sourceManager:    sourceManager,
 		extensionManager: extensionManager,
 	}
 }
@@ -705,6 +718,7 @@ func (t *extensionShowItem) Display(writer io.Writer) error {
 }
 
 func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.ExtensionSourceKind.String(sourceArgKind(a.flags.source)))
 	if len(a.args) == 0 {
 		return nil, &internal.ErrorWithSuggestion{
 			Err:        internal.ErrNoArgsProvided,
@@ -721,6 +735,19 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 	filterOptions := &extensions.FilterOptions{
 		Source: a.flags.source,
 		Id:     extensionId,
+	}
+
+	sourceFilter, err := resolveSourceFilter(ctx, a.sourceManager, a.flags.source)
+	if err != nil {
+		return nil, err
+	}
+	filterOptions.Source = sourceFilter.source
+	if sourceFilter.config != nil {
+		filterOptions.SourceConfig = sourceFilter.config
+		filterOptions.Source = ""
+	} else if filterOptions.Source != "" && !sourceFilter.registered {
+		return nil, fmt.Errorf(
+			"extension source '%s' not found: %w", a.flags.source, extensions.ErrSourceNotFound)
 	}
 
 	extensionMatches, err := a.extensionManager.FindExtensions(ctx, filterOptions)
@@ -778,10 +805,11 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 }
 
 type extensionInstallFlags struct {
-	version string
-	source  string
-	force   bool
-	global  *internal.GlobalCommandOptions
+	version        string
+	source         string
+	force          bool
+	noDependencies bool
+	global         *internal.GlobalCommandOptions
 }
 
 func newExtensionInstallFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *extensionInstallFlags {
@@ -789,10 +817,14 @@ func newExtensionInstallFlags(cmd *cobra.Command, global *internal.GlobalCommand
 		global: global,
 	}
 
-	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "The extension source to use for installs")
+	cmd.Flags().StringVarP(&flags.source, "source", "s", "",
+		"The extension source to use for installs. Accepts a registered source name "+
+			"or a registry location (URL or file path) to register and install from.")
 	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to install")
 	cmd.Flags().
 		BoolVarP(&flags.force, "force", "f", false, "Force installation, including downgrades and reinstalls")
+	cmd.Flags().BoolVar(&flags.noDependencies, "no-dependencies", false,
+		"Install only the specified extension(s) without installing their declared dependencies")
 
 	return flags
 }
@@ -830,6 +862,7 @@ func newExtensionInstallAction(
 }
 
 func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	sourceKind := sourceArgKind(a.flags.source)
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title:     "Install an azd extension (azd extension install)",
 		TitleNote: "Installs the specified extension onto the local machine",
@@ -846,6 +879,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		}
 		defer a.cleanupBundleInstall(ctx)
 	}
+	tracing.SetUsageAttributes(fields.ExtensionSourceKind.String(sourceKind))
 
 	extensionIds := a.args
 	if len(extensionIds) == 0 {
@@ -869,6 +903,13 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			Suggestion: "Use an exact extension version with --version. " +
 				"Dependency constraints belong in extension manifests.",
 		}
+	}
+
+	// If -s/--source points directly at a registry location (URL or file path)
+	// rather than an already-registered source name, register the source first so
+	// the install loop below can resolve extensions from it.
+	if err := a.resolveSourceLocation(ctx); err != nil {
+		return nil, err
 	}
 
 	azdVersion := currentAzdSemver()
@@ -1009,7 +1050,8 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			extensionVersion, _, err = a.extensionManager.Upgrade(
 				ctx, compatibleExtension, extensions.UpgradeOptions{
 					VersionPreference:   a.flags.version,
-					UpgradeDependencies: true,
+					UpgradeDependencies: !a.flags.noDependencies,
+					SkipDependencies:    a.flags.noDependencies,
 					AzdVersion:          azdVersion,
 				},
 			)
@@ -1030,6 +1072,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 				extensions.InstallOptions{
 					VersionPreference: a.flags.version,
 					AzdVersion:        azdVersion,
+					SkipDependencies:  a.flags.noDependencies,
 				},
 			)
 			if err != nil {
@@ -1041,7 +1084,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			a.console.StopSpinner(ctx, stepMessage, input.StepDone)
 		}
 
-		if len(extensionVersion.Dependencies) > 0 {
+		if !a.flags.noDependencies && len(extensionVersion.Dependencies) > 0 {
 			// Render dependencies flat with the parent step.
 			displayInstalledDependencies(
 				ctx, a.console, a.extensionManager,
@@ -1385,6 +1428,312 @@ func normalizeBundleSourceName(name string) string {
 	return strings.Trim(sb.String(), "-")
 }
 
+// resolveSourceLocation registers a direct --source location and rewrites it to
+// the registered source name.
+func (a *extensionInstallAction) resolveSourceLocation(ctx context.Context) error {
+	resolved, err := registerSourceFromLocation(
+		ctx, a.console, a.sourceManager, a.extensionManager, a.flags.source, a.flags.global.NoPrompt)
+	if err != nil {
+		return err
+	}
+	a.flags.source = resolved
+	return nil
+}
+
+// registerSourceFromLocation persists a direct --source location for mutating
+// commands, reusing an existing source with the same location when possible.
+// Registered names and non-location values are returned unchanged.
+func registerSourceFromLocation(
+	ctx context.Context,
+	console input.Console,
+	sourceManager *extensions.SourceManager,
+	extensionManager *extensions.Manager,
+	source string,
+	noPrompt bool,
+) (string, error) {
+	if source == "" {
+		return source, nil
+	}
+
+	sourceFilter, err := resolveSourceFilter(ctx, sourceManager, source)
+	if err != nil {
+		return "", err
+	}
+	if sourceFilter.config == nil {
+		return sourceFilter.source, nil
+	}
+
+	location := sourceFilter.config.Location
+	kind := sourceFilter.config.Type
+
+	existing, err := findSourceByLocation(ctx, sourceManager, kind, location)
+	if err != nil {
+		return "", err
+	}
+	if existing != nil {
+		return existing.Name, nil
+	}
+
+	if noPrompt {
+		return "", &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"cannot register a new extension source from %q while --no-prompt is set", location),
+			Suggestion: fmt.Sprintf(
+				"Add the source first with %s, then re-run with %s.",
+				output.WithHighLightFormat(
+					"azd extension source add -n <name> -t %s -l %q", kind, location),
+				output.WithHighLightFormat("-s <name>"),
+			),
+		}
+	}
+
+	if kind == extensions.SourceKindUrl {
+		confirm, err := console.Confirm(ctx, input.ConsoleOptions{
+			Message: fmt.Sprintf(
+				"Register and use the extension source at %s?",
+				output.WithHighLightFormat(location)),
+			DefaultValue: false,
+		})
+		if err != nil {
+			return "", err
+		}
+		if !confirm {
+			return "", &internal.ErrorWithSuggestion{
+				Err: errors.New("extension source registration declined"),
+				Suggestion: fmt.Sprintf(
+					"Re-run and confirm to register the source, or add it explicitly with %s.",
+					output.WithHighLightFormat("azd extension source add"),
+				),
+			}
+		}
+	}
+
+	var sourceName string
+	for {
+		sourceNameInput, err := console.Prompt(ctx, input.ConsoleOptions{
+			Message: "Enter a name for this extension source",
+		})
+		if err != nil {
+			return "", err
+		}
+		sourceName = strings.TrimSpace(sourceNameInput)
+		if sourceName == "" {
+			console.Message(ctx, output.WithErrorFormat("Extension source name cannot be empty"))
+			continue
+		}
+		if err := validateSourceName(sourceName); err != nil {
+			console.Message(ctx, output.WithErrorFormat(err.Error()))
+			continue
+		}
+		if _, err := sourceManager.Get(ctx, extensions.NormalizeSourceKey(sourceName)); err == nil {
+			console.Message(ctx, output.WithErrorFormat("Extension source '%s' already exists", sourceName))
+			continue
+		} else if !errors.Is(err, extensions.ErrSourceNotFound) {
+			return "", fmt.Errorf("failed to resolve extension source %q: %w", sourceName, err)
+		}
+		break
+	}
+
+	sourceConfig := &extensions.SourceConfig{
+		Name:     sourceName,
+		Type:     kind,
+		Location: location,
+	}
+
+	console.Message(ctx, "")
+	spinnerMessage := fmt.Sprintf("Registering extension source %s", output.WithHighLightFormat(sourceName))
+	console.ShowSpinner(ctx, spinnerMessage, input.Step)
+
+	if _, err := sourceManager.CreateSource(ctx, sourceConfig); err != nil {
+		console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+		if schemaErr, ok := errors.AsType[*extensions.ErrUnsupportedRegistrySchema](err); ok {
+			return "", extensions.NewUnsupportedRegistrySchemaError(schemaErr)
+		}
+		return "", fmt.Errorf("failed to validate extension source: %w", err)
+	}
+
+	if err := sourceManager.Add(ctx, sourceName, sourceConfig); err != nil {
+		console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+		return "", fmt.Errorf("failed to add extension source: %w", err)
+	}
+	console.StopSpinner(ctx, spinnerMessage, input.StepDone)
+
+	extensionManager.InvalidateSourceCache()
+	if err := extensionManager.ReloadUserConfig(); err != nil {
+		return "", err
+	}
+
+	return sourceConfig.Name, nil
+}
+
+func resolveRegisteredSourceName(
+	ctx context.Context,
+	sourceManager *extensions.SourceManager,
+	source string,
+) (string, bool, error) {
+	_, err := sourceManager.Get(ctx, source)
+	if err == nil {
+		return source, true, nil
+	}
+	if !errors.Is(err, extensions.ErrSourceNotFound) {
+		return "", false, fmt.Errorf("failed to resolve extension source %q: %w", source, err)
+	}
+
+	normalizedSource := extensions.NormalizeSourceKey(source)
+	if normalizedSource == source {
+		return "", false, nil
+	}
+
+	_, err = sourceManager.Get(ctx, normalizedSource)
+	if err == nil {
+		return normalizedSource, true, nil
+	}
+	if !errors.Is(err, extensions.ErrSourceNotFound) {
+		return "", false, fmt.Errorf("failed to resolve extension source %q: %w", source, err)
+	}
+
+	return "", false, nil
+}
+
+// findSourceByLocation returns the registered source for location, if any.
+func findSourceByLocation(
+	ctx context.Context,
+	sourceManager *extensions.SourceManager,
+	kind extensions.SourceKind,
+	location string,
+) (*extensions.SourceConfig, error) {
+	sources, err := sourceManager.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list extension sources: %w", err)
+	}
+
+	for _, source := range sources {
+		if source.Type == kind && locationsEqual(kind, source.Location, location) {
+			return source, nil
+		}
+	}
+	return nil, nil
+}
+
+// locationsEqual reports whether two locations refer to the same source.
+func locationsEqual(kind extensions.SourceKind, a, b string) bool {
+	switch kind {
+	case extensions.SourceKindUrl:
+		return strings.EqualFold(normalizeUrlLocation(a), normalizeUrlLocation(b))
+	case extensions.SourceKindFile:
+		a = filepath.Clean(absPath(a))
+		b = filepath.Clean(absPath(b))
+		if runtime.GOOS == "windows" {
+			return strings.EqualFold(a, b)
+		}
+		return a == b
+	default:
+		return a == b
+	}
+}
+
+// absPath returns path as an absolute path when possible.
+func absPath(path string) string {
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return path
+}
+
+func normalizeUrlLocation(location string) string {
+	parsed, err := url.Parse(location)
+	if err != nil {
+		return location
+	}
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Host = strings.ToLower(parsed.Host)
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	return parsed.String()
+}
+
+func validateSourceName(name string) error {
+	if strings.Contains(name, ".") {
+		return errors.New("Extension source name cannot contain '.'")
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return errors.New("Extension source name cannot contain path separators")
+	}
+	if strings.EqualFold(extensions.NormalizeSourceKey(name), extensions.BundleSourceName) {
+		return fmt.Errorf("Extension source name '%s' is reserved", extensions.BundleSourceName)
+	}
+	return nil
+}
+
+func sourceArgKind(source string) string {
+	if source == "" {
+		return "none"
+	}
+	if _, ok := inferSourceKind(source); ok {
+		return "location"
+	}
+	return "registered"
+}
+
+type sourceFilterResolution struct {
+	source     string
+	config     *extensions.SourceConfig
+	registered bool
+}
+
+func resolveSourceFilter(
+	ctx context.Context,
+	sourceManager *extensions.SourceManager,
+	source string,
+) (sourceFilterResolution, error) {
+	if source == "" {
+		return sourceFilterResolution{}, nil
+	}
+
+	resolvedSource, ok, err := resolveRegisteredSourceName(ctx, sourceManager, source)
+	if err != nil {
+		return sourceFilterResolution{}, err
+	}
+	if ok {
+		return sourceFilterResolution{source: resolvedSource, registered: true}, nil
+	}
+
+	kind, ok := inferSourceKind(source)
+	if !ok {
+		return sourceFilterResolution{source: source}, nil
+	}
+
+	location := source
+	if kind == extensions.SourceKindFile {
+		location = absPath(location)
+	}
+
+	return sourceFilterResolution{
+		config: &extensions.SourceConfig{
+			Name:     location,
+			Type:     kind,
+			Location: location,
+		},
+	}, nil
+}
+
+// inferSourceKind infers the extension source kind from a registry location,
+// matching the URL-vs-file heuristics used by 'azd extension source validate'.
+// It reports false when the value does not look like a location and is more
+// likely the name of a source.
+func inferSourceKind(location string) (extensions.SourceKind, bool) {
+	lower := strings.ToLower(location)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		return extensions.SourceKindUrl, true
+	}
+	if info, err := os.Stat(location); err == nil && !info.IsDir() {
+		return extensions.SourceKindFile, true
+	}
+	if strings.ContainsAny(location, `/\`) {
+		return extensions.SourceKindFile, true
+	}
+	return "", false
+}
+
 // azd extension uninstall
 type extensionUninstallFlags struct {
 	all bool
@@ -1504,7 +1853,8 @@ func newExtensionUpgradeFlags(cmd *cobra.Command, global *internal.GlobalCommand
 		global: global,
 	}
 	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to upgrade to")
-	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "The extension source to use for upgrades")
+	cmd.Flags().StringVarP(&flags.source, "source", "s", "",
+		"The registered source name or registry location (URL or file path) to use for upgrades.")
 	cmd.Flags().BoolVar(&flags.all, "all", false, "Upgrade all installed extensions")
 	cmd.Flags().BoolVar(&flags.noDependencyUpgrades, "no-dependency-upgrades", false,
 		"Do not upgrade dependencies when upgrading an extension that has dependencies")
@@ -1519,6 +1869,7 @@ type extensionUpgradeAction struct {
 	formatter        output.Formatter
 	writer           io.Writer
 	console          input.Console
+	sourceManager    *extensions.SourceManager
 	extensionManager *extensions.Manager
 }
 
@@ -1528,6 +1879,7 @@ func newExtensionUpgradeAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	console input.Console,
+	sourceManager *extensions.SourceManager,
 	extensionManager *extensions.Manager,
 ) actions.Action {
 	return &extensionUpgradeAction{
@@ -1536,6 +1888,7 @@ func newExtensionUpgradeAction(
 		formatter:        formatter,
 		writer:           writer,
 		console:          console,
+		sourceManager:    sourceManager,
 		extensionManager: extensionManager,
 	}
 }
@@ -1543,6 +1896,7 @@ func newExtensionUpgradeAction(
 func (a *extensionUpgradeAction) Run(
 	ctx context.Context,
 ) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.ExtensionSourceKind.String(sourceArgKind(a.flags.source)))
 	if len(a.args) > 0 && a.flags.all {
 		return nil, &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf(
@@ -1588,6 +1942,13 @@ func (a *extensionUpgradeAction) Run(
 				"on the local machine",
 		})
 	}
+
+	resolvedSource, err := registerSourceFromLocation(
+		ctx, a.console, a.sourceManager, a.extensionManager, a.flags.source, a.flags.global.NoPrompt)
+	if err != nil {
+		return nil, err
+	}
+	a.flags.source = resolvedSource
 
 	azdVersion := currentAzdSemver()
 
@@ -2319,14 +2680,24 @@ func (a *extensionSourceListAction) Run(ctx context.Context) (*actions.ActionRes
 				Priority: 1,
 			},
 			{
-				Column:   output.Column{Heading: "LOCATION", ValueTemplate: "{{.Location}}"},
+				Column: output.Column{
+					Heading:       "LOCATION",
+					ValueTemplate: "{{.Location}}",
+					Transformer: func(s string) string {
+						if s == "" {
+							return s
+						}
+						return output.WithLinkFormat("%s", s)
+					},
+				},
 				Priority: 2,
 			},
 		}
 
 		err = prettyFormatter.Format(sourceConfigs, a.writer, output.PrettyTableFormatterOptions{
-			Columns:         columns,
-			CardGroupColumn: "TYPE",
+			Columns:              columns,
+			CardGroupColumn:      "TYPE",
+			ResponsiveColumnHint: true,
 		})
 	} else {
 		err = a.formatter.Format(sourceConfigs, a.writer, nil)

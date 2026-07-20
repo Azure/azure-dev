@@ -33,6 +33,10 @@ func (s *stubServiceManager) GetRequiredTools(
 func (s *stubServiceManager) Initialize(_ context.Context, _ *project.ServiceConfig) error {
 	return nil
 }
+
+func (s *stubServiceManager) InitializeFrameworkService(_ context.Context, _ *project.ServiceConfig) error {
+	return nil
+}
 func (s *stubServiceManager) Restore(
 	_ context.Context, _ *project.ServiceConfig, _ *project.ServiceContext,
 	_ *async.Progress[project.ServiceProgress],

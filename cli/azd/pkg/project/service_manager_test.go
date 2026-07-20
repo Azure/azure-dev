@@ -11,6 +11,9 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -20,12 +23,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
-	"github.com/stretchr/testify/require"
 )
 
 type contextKey string
@@ -83,6 +86,27 @@ func Test_ServiceManager_Initialize(t *testing.T) {
 
 	err := sm.Initialize(*mockContext.Context, serviceConfig)
 	require.NoError(t, err)
+}
+
+// InitializeFrameworkService must succeed for a service whose host cannot be resolved (for
+// example an extension-provided host during `env refresh`): it never touches the service target.
+func Test_ServiceManager_InitializeFrameworkService_UnsupportedHost(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	setupMocksForServiceManager(mockContext)
+	env := environment.New("test")
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
+
+	// "missing-target" is not registered as a service target, but the framework language is.
+	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetKind("missing-target"), ServiceLanguageFake)
+
+	// Framework-only initialization succeeds despite the unsupported host...
+	err := sm.InitializeFrameworkService(*mockContext.Context, serviceConfig)
+	require.NoError(t, err)
+
+	// ...whereas full initialization (which resolves the service target) fails.
+	err = sm.Initialize(*mockContext.Context, serviceConfig)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "service host 'missing-target' for service 'api' is unsupported")
 }
 
 func Test_ServiceManager_Restore(t *testing.T) {
@@ -812,4 +836,332 @@ func (t *fakeTool) InstallUrl() string {
 }
 func (t *fakeTool) Name() string {
 	return "fake tool"
+}
+
+func Test_NewServiceManager(t *testing.T) {
+	env := environment.NewWithValues("test", map[string]string{})
+	container := ioc.NewNestedContainer(nil)
+	cache := ServiceOperationCache{}
+	afm := alpha.NewFeaturesManagerWithConfig(nil)
+
+	sm := NewServiceManager(env, nil, container, cache, afm)
+	require.NotNil(t, sm)
+}
+
+// helper to build a serviceManager for round 10 tests.
+func makeServiceManager(
+	env *environment.Environment,
+	locator ioc.ServiceLocator,
+	resMgr ResourceManager,
+) *serviceManager {
+	return &serviceManager{
+		env:                 env,
+		serviceLocator:      locator,
+		resourceManager:     resMgr,
+		operationCache:      ServiceOperationCache{},
+		alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(nil),
+	}
+}
+
+func Test_ServiceManager_Package_CacheHit(t *testing.T) {
+	env := environment.NewWithValues("test", map[string]string{})
+
+	target := &fakeServiceTargetStub{packageResult: &ServicePackageResult{}}
+	framework := NewNoOpProject(env)
+	locator := &fakeServiceLocator{framework: framework, target: target}
+	resMgr := &fakeResourceManager{
+		targetResource: environment.NewTargetResource("sub", "rg", "res", "type"),
+	}
+
+	sm := makeServiceManager(env, locator, resMgr)
+	svcConfig := makeSvcConfigWithDispatcher("web", ServiceLanguageJavaScript, AppServiceTarget, t.TempDir())
+
+	// Pre-populate cache
+	cached := &ServicePackageResult{}
+	sm.setOperationResult(svcConfig, ServiceEventPackage, cached)
+
+	progress := newDrainedProgress()
+	defer progress.Done()
+
+	result, err := sm.Package(t.Context(), svcConfig, nil, progress, nil)
+	require.NoError(t, err)
+	require.Same(t, cached, result) // should return cached instance
+}
+
+func Test_ServiceManager_Deploy_CacheHit(t *testing.T) {
+	env := environment.NewWithValues("test", map[string]string{})
+
+	target := &fakeServiceTargetStub{deployResult: &ServiceDeployResult{}}
+	framework := NewNoOpProject(env)
+	locator := &fakeServiceLocator{framework: framework, target: target}
+	resMgr := &fakeResourceManager{
+		targetResource: environment.NewTargetResource("sub", "rg", "res", "type"),
+	}
+
+	sm := makeServiceManager(env, locator, resMgr)
+	svcConfig := makeSvcConfigWithDispatcher("web", ServiceLanguageJavaScript, AppServiceTarget, t.TempDir())
+
+	// Pre-populate deploy cache
+	cached := &ServiceDeployResult{}
+	sm.setOperationResult(svcConfig, ServiceEventDeploy, cached)
+
+	progress := newDrainedProgress()
+	defer progress.Done()
+
+	result, err := sm.Deploy(t.Context(), svcConfig, nil, progress)
+	require.NoError(t, err)
+	require.Same(t, cached, result)
+}
+
+func Test_ServiceManager_Publish_CacheHit(t *testing.T) {
+	env := environment.NewWithValues("test", map[string]string{})
+
+	target := &fakeServiceTargetStub{publishResult: &ServicePublishResult{}}
+	framework := NewNoOpProject(env)
+	locator := &fakeServiceLocator{framework: framework, target: target}
+	resMgr := &fakeResourceManager{
+		targetResource: environment.NewTargetResource("sub", "rg", "res", "type"),
+	}
+
+	sm := makeServiceManager(env, locator, resMgr)
+	svcConfig := makeSvcConfigWithDispatcher("web", ServiceLanguageJavaScript, AppServiceTarget, t.TempDir())
+
+	cached := &ServicePublishResult{}
+	sm.setOperationResult(svcConfig, ServiceEventPublish, cached)
+
+	progress := newDrainedProgress()
+	defer progress.Done()
+
+	result, err := sm.Publish(t.Context(), svcConfig, nil, progress, nil)
+	require.NoError(t, err)
+	require.Same(t, cached, result)
+}
+
+func Test_ServiceManager_Build_CacheHit(t *testing.T) {
+	env := environment.NewWithValues("test", map[string]string{})
+
+	framework := NewNoOpProject(env)
+	locator := &fakeServiceLocator{framework: framework}
+	resMgr := &fakeResourceManager{}
+
+	sm := makeServiceManager(env, locator, resMgr)
+	svcConfig := makeSvcConfigWithDispatcher("web", ServiceLanguageJavaScript, AppServiceTarget, t.TempDir())
+
+	cached := &ServiceBuildResult{}
+	sm.setOperationResult(svcConfig, ServiceEventBuild, cached)
+
+	progress := newDrainedProgress()
+	defer progress.Done()
+
+	result, err := sm.Build(t.Context(), svcConfig, nil, progress)
+	require.NoError(t, err)
+	require.Same(t, cached, result)
+}
+
+func Test_ServiceManager_GetServiceTarget_IoC_Error(t *testing.T) {
+	// When target resolution fails with ioc.ErrResolveInstance → ErrorWithSuggestion
+	env := environment.NewWithValues("test", map[string]string{})
+	locator := &fakeServiceLocator{} // target is nil → returns ioc.ErrResolveInstance
+	sm := makeServiceManager(env, locator, &fakeResourceManager{})
+
+	svcConfig := makeSvcConfigWithDispatcher("web", ServiceLanguageJavaScript, AppServiceTarget, t.TempDir())
+
+	_, err := sm.GetServiceTarget(t.Context(), svcConfig)
+	require.Error(t, err)
+	// Should contain suggestion about supported hosts
+	assert.Contains(t, err.Error(), "appservice")
+}
+
+func Test_ServiceManager_GetServiceTarget_HappyPath(t *testing.T) {
+	env := environment.NewWithValues("test", map[string]string{})
+	target := &fakeServiceTargetStub{}
+	locator := &fakeServiceLocator{target: target}
+	sm := makeServiceManager(env, locator, &fakeResourceManager{})
+
+	svcConfig := makeSvcConfigWithDispatcher("web", ServiceLanguageJavaScript, AppServiceTarget, t.TempDir())
+
+	result, err := sm.GetServiceTarget(t.Context(), svcConfig)
+	require.NoError(t, err)
+	assert.Same(t, target, result)
+}
+
+// Test_ServiceManager_GetRequiredTools_NoTools verifies the empty-tools branch
+// where the framework and service target require no external tools.
+func Test_ServiceManager_GetRequiredTools_NoTools(t *testing.T) {
+	env := environment.NewWithValues("test", map[string]string{})
+	framework := NewNoOpProject(env)
+	target := &fakeServiceTargetStub{}
+	locator := &fakeServiceLocator{framework: framework, target: target}
+	sm := makeServiceManager(env, locator, &fakeResourceManager{})
+
+	svcConfig := makeSvcConfigWithDispatcher("web", ServiceLanguageJavaScript, AppServiceTarget, t.TempDir())
+
+	tools, err := sm.GetRequiredTools(t.Context(), svcConfig)
+	require.NoError(t, err)
+	assert.Empty(t, tools)
+}
+
+// ---------- appendOperationArtifacts: invalid event type ----------
+func Test_appendOperationArtifacts_InvalidEvent(t *testing.T) {
+	sc := NewServiceContext()
+	err := appendOperationArtifacts(sc, ext.Event("invalid"), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid operation phase")
+}
+
+func Test_appendOperationArtifacts_NilContext(t *testing.T) {
+	err := appendOperationArtifacts(nil, ServiceEventPackage, nil)
+	require.NoError(t, err)
+}
+
+func Test_appendOperationArtifacts_AllEvents(t *testing.T) {
+	events := []ext.Event{
+		ServiceEventRestore,
+		ServiceEventBuild,
+		ServiceEventPackage,
+		ServiceEventPublish,
+		ServiceEventDeploy,
+	}
+	for _, ev := range events {
+		t.Run(string(ev), func(t *testing.T) {
+			sc := NewServiceContext()
+			err := appendOperationArtifacts(sc, ev, nil)
+			require.NoError(t, err)
+		})
+	}
+}
+
+// ---------- isComponentInitialized: already-initialized path ----------
+func Test_isComponentInitialized(t *testing.T) {
+	env := environment.NewWithValues("test-env", map[string]string{})
+	sm := &serviceManager{
+		env:            env,
+		operationCache: make(ServiceOperationCache),
+		initialized:    make(map[*ServiceConfig]map[any]bool),
+	}
+
+	sc := &ServiceConfig{Name: "api"}
+	fakeComponent := "framework-service"
+
+	// First call: not initialized, creates empty map
+	ok := sm.isComponentInitialized(sc, fakeComponent)
+	assert.False(t, ok)
+
+	// Mark as initialized
+	sm.initialized[sc][fakeComponent] = true
+
+	// Second call: is initialized
+	ok = sm.isComponentInitialized(sc, fakeComponent)
+	assert.True(t, ok)
+
+	// Third call with different component: not initialized
+	ok = sm.isComponentInitialized(sc, "other-component")
+	assert.False(t, ok)
+}
+
+// ---------- serviceManager Initialize: framework init error, target init error, already initialized ----------
+func Test_serviceManager_Initialize(t *testing.T) {
+	t.Run("FrameworkInit_Error", func(t *testing.T) {
+		env := environment.NewWithValues("test-env", map[string]string{})
+		sm := &serviceManager{
+			env:            env,
+			operationCache: make(ServiceOperationCache),
+			initialized:    make(map[*ServiceConfig]map[any]bool),
+			serviceLocator: newFakeLocator(nil, nil),
+		}
+
+		sc := makeSvcConfig("api", "api", ContainerAppTarget, ServiceLanguagePython, t.TempDir())
+		sc.Project.EventDispatcher = ext.NewEventDispatcher[ProjectLifecycleEventArgs]()
+
+		err := sm.Initialize(t.Context(), sc)
+		// Should get "getting framework service" error since Python is not registered
+		require.Error(t, err)
+	})
+
+	t.Run("AlreadyInitialized_Skips", func(t *testing.T) {
+		env := environment.NewWithValues("test-env", map[string]string{})
+		fakeFramework := &noOpProject{}
+		fakeTarget := &fakeConfigurableServiceTarget{}
+
+		sm := &serviceManager{
+			env:            env,
+			operationCache: make(ServiceOperationCache),
+			initialized:    make(map[*ServiceConfig]map[any]bool),
+			serviceLocator: newFakeLocator(fakeFramework, fakeTarget),
+		}
+
+		sc := makeSvcConfig("api", "api", ContainerAppTarget, ServiceLanguageDocker, t.TempDir())
+		sc.Project.EventDispatcher = ext.NewEventDispatcher[ProjectLifecycleEventArgs]()
+
+		// First initialization
+		err := sm.Initialize(t.Context(), sc)
+		require.NoError(t, err)
+
+		// Second initialization - should skip (already initialized)
+		err = sm.Initialize(t.Context(), sc)
+		require.NoError(t, err)
+	})
+}
+
+// ---------- serviceManager.Restore: cache hit ----------
+func Test_serviceManager_Restore_CacheHit(t *testing.T) {
+	env := environment.NewWithValues("test-env", map[string]string{})
+	fakeFramework := &noOpProject{}
+	fakeTarget := &fakeConfigurableServiceTarget{}
+
+	sm := &serviceManager{
+		env:            env,
+		operationCache: make(ServiceOperationCache),
+		initialized:    make(map[*ServiceConfig]map[any]bool),
+		serviceLocator: newFakeLocator(fakeFramework, fakeTarget),
+	}
+
+	sc := makeSvcConfig("api", "api", ContainerAppTarget, ServiceLanguageDocker, t.TempDir())
+	sc.Project.EventDispatcher = ext.NewEventDispatcher[ProjectLifecycleEventArgs]()
+
+	// Seed cache with a restore result
+	cachedResult := &ServiceRestoreResult{}
+	sm.setOperationResult(sc, ServiceEventRestore, cachedResult)
+
+	result, err := sm.Restore(t.Context(), sc, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, cachedResult, result)
+}
+
+// ---------- UnsupportedServiceHostError ----------
+func Test_UnsupportedServiceHostError(t *testing.T) {
+	err := &UnsupportedServiceHostError{
+		Host:        "unknown-host",
+		ServiceName: "api",
+	}
+	assert.Contains(t, err.Error(), "unknown-host")
+	assert.Contains(t, err.Error(), "api")
+}
+
+func (f *fakeSimpleServiceLocator) ResolveNamed(name string, o any) error {
+	switch ptr := o.(type) {
+	case *FrameworkService:
+		if f.framework != nil {
+			*ptr = f.framework
+			return nil
+		}
+		return &UnsupportedServiceHostError{Host: name}
+	case *ServiceTarget:
+		if f.target != nil {
+			*ptr = f.target
+			return nil
+		}
+		return &UnsupportedServiceHostError{Host: name}
+	case *CompositeFrameworkService:
+		return &UnsupportedServiceHostError{Host: name}
+	}
+	return nil
+}
+
+func (f *fakeSimpleServiceLocator) Resolve(_ any) error {
+	return nil
+}
+
+func (f *fakeSimpleServiceLocator) Invoke(_ any) error {
+	return nil
 }

@@ -1,6 +1,31 @@
 # Release History
 
-## Unreleased
+## 1.0.0-beta.3 (2026-07-16)
+
+### Features Added
+
+- [[#9024]](https://github.com/Azure/azure-dev/pull/9024) `azd deploy` for `host: azure.ai.toolbox` services now supports an `endpoint:` field in `azure.yaml` to reference an existing toolbox by its MCP endpoint URL, skipping version creation. This enables reusing a toolbox managed outside the current project.
+
+### Bugs Fixed
+
+- [[#9013]](https://github.com/Azure/azure-dev/pull/9013) Fix `azd ai toolbox skill add/remove` and `connection add/remove` branching from the toolbox's default version instead of its latest, causing sequential mutations to silently drop earlier changes. Add a `--from-version` flag to override the branch source.
+
+### Other Changes
+
+- [[#9103]](https://github.com/Azure/azure-dev/pull/9103) Pin internal azd module dependency to released version.
+
+## 1.0.0-beta.2 (2026-07-09)
+
+### Other Changes
+
+- [[#8866]](https://github.com/Azure/azure-dev/pull/8866) Remove `Foundry-Features: Toolboxes=V1Preview` opt-in header now that Foundry toolbox APIs are GA.
+
+## 1.0.0-beta.1 (2026-06-30)
+
+### Features Added
+
+- [[#8818]](https://github.com/Azure/azure-dev/pull/8818) The `azure.ai.toolboxes` extension now registers an `azure.ai.toolbox` service-target host. `azd deploy`/`azd up` upsert each `host: azure.ai.toolbox` service in `azure.yaml` as a new toolbox version, resolving named `connection` references to their project connection IDs, expanding `${VAR}` references, and publishing the toolbox MCP endpoint to the azd environment.
+- [[#8890]](https://github.com/Azure/azure-dev/pull/8890) Bump `requiredAzdVersion` to `>=1.27.0`.
 
 ## 0.1.1-preview (2026-06-19)
 

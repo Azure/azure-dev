@@ -17,6 +17,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -52,6 +53,343 @@ func TestInitCommand_ForceFlag(t *testing.T) {
 	if flag.DefValue != "false" {
 		t.Fatalf("expected --force default false, got %q", flag.DefValue)
 	}
+}
+
+// TestHasFoundryProviderDeclared covers the predicate ensureProject
+// uses to suppress the "missing infra/" warning.
+func TestHasFoundryProviderDeclared(t *testing.T) {
+	cases := []struct {
+		name string
+		proj *azdext.ProjectConfig
+		want bool
+	}{
+		{name: "nil project", proj: nil, want: false},
+		{name: "missing infra block", proj: &azdext.ProjectConfig{}, want: false},
+		{
+			name: "different provider",
+			proj: &azdext.ProjectConfig{Infra: &azdext.InfraOptions{Provider: "bicep"}},
+			want: false,
+		},
+		{
+			name: "empty provider",
+			proj: &azdext.ProjectConfig{Infra: &azdext.InfraOptions{}},
+			want: false,
+		},
+		{
+			name: "matches",
+			proj: &azdext.ProjectConfig{Infra: &azdext.InfraOptions{Provider: project.FoundryProviderName}},
+			want: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hasFoundryProviderDeclared(tc.proj); got != tc.want {
+				t.Fatalf("hasFoundryProviderDeclared = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestInitCommand_ImageFlag(t *testing.T) {
+	t.Parallel()
+
+	cmd := newInitCommand(nil)
+
+	flag := cmd.Flags().Lookup("image")
+	require.NotNil(t, flag, "--image flag should be registered")
+	require.Empty(t, flag.DefValue, "expected --image to have empty default")
+}
+
+func TestValidateImageFlag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		image      string
+		deployMode string
+		wantErr    bool
+		errContain string
+	}{
+		{
+			name:  "empty image is valid",
+			image: "",
+		},
+		{
+			name:  "valid ACR image",
+			image: "myacr.azurecr.io/agent:v1",
+		},
+		{
+			name:  "valid Docker Hub image",
+			image: "docker.io/myorg/agent:latest",
+		},
+		{
+			name:  "valid image without tag",
+			image: "myacr.azurecr.io/agent",
+		},
+		{
+			name: "valid image with digest",
+			image: "myacr.azurecr.io/agent@sha256:" +
+				"76a9463463acf11d4068e8468fb232a3de0709177b6b35de95de6a34b33fa686",
+		},
+		{
+			name:  "valid local registry with port",
+			image: "localhost:5000/myorg/agent:v1",
+		},
+		{
+			name:  "valid registry host with port",
+			image: "registry:5000/myorg/agent:v1",
+		},
+		{
+			name:       "image without registry fails",
+			image:      "agent:v1",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "namespace image without registry fails",
+			image:      "myorg/agent:v1",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "image with URL scheme fails",
+			image:      "https://myacr.azurecr.io/agent:v1",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "image missing repository fails",
+			image:      "myacr.azurecr.io/",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "image with short digest fails",
+			image:      "myacr.azurecr.io/agent@sha256:abc123",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "uppercase repository fails",
+			image:      "myacr.azurecr.io/MyAgent:v1",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "simple name fails",
+			image:      "agent",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "image with code deploy fails",
+			image:      "myacr.azurecr.io/agent:v1",
+			deployMode: "code",
+			wantErr:    true,
+			errContain: "cannot be used with --deploy-mode code",
+		},
+		{
+			name:       "container deploy mode with image is valid",
+			image:      "myacr.azurecr.io/agent:v1",
+			deployMode: "container",
+		},
+		{
+			name:       "empty deploy mode with image is valid",
+			image:      "myacr.azurecr.io/agent:v1",
+			deployMode: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateImageFlag(tt.image, tt.deployMode)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errContain)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestPreBuiltImageForInit(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		manifest *agent_yaml.AgentManifest
+		flag     string
+		want     string
+	}{
+		{name: "empty", manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{}}, want: ""},
+		{name: "nil manifest", manifest: nil, want: ""},
+		{name: "non-container agent", manifest: &agent_yaml.AgentManifest{Template: agent_yaml.Workflow{}}, want: ""},
+		{
+			name:     "manifest image",
+			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{Image: "myacr.azurecr.io/agent:v1"}},
+			want:     "myacr.azurecr.io/agent:v1",
+		},
+		{
+			name:     "flag image wins",
+			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{Image: "myacr.azurecr.io/agent:v1"}},
+			flag:     "override.azurecr.io/agent:v2",
+			want:     "override.azurecr.io/agent:v2",
+		},
+		{
+			name:     "trims flag image",
+			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{}},
+			flag:     "  myacr.azurecr.io/agent:v1  ",
+			want:     "myacr.azurecr.io/agent:v1",
+		},
+		{
+			name:     "trims manifest image",
+			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{Image: "  myacr.azurecr.io/agent:v1  "}},
+			want:     "myacr.azurecr.io/agent:v1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, preBuiltImageForInit(tt.manifest, tt.flag))
+		})
+	}
+}
+
+func TestSkipACR(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		isCodeDeploy bool
+		image        string
+		want         bool
+	}{
+		{
+			name:         "code deploy skips ACR",
+			isCodeDeploy: true,
+			image:        "",
+			want:         true,
+		},
+		{
+			name:         "image flag skips ACR",
+			isCodeDeploy: false,
+			image:        "myacr.azurecr.io/agent:v1",
+			want:         true,
+		},
+		{
+			name:         "both set skips ACR",
+			isCodeDeploy: true,
+			image:        "myacr.azurecr.io/agent:v1",
+			want:         true,
+		},
+		{
+			name:         "neither set does not skip ACR",
+			isCodeDeploy: false,
+			image:        "",
+			want:         false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			action := &InitAction{
+				isCodeDeploy: tt.isCodeDeploy,
+				flags:        &initFlags{image: tt.image},
+			}
+
+			require.Equal(t, tt.want, action.skipACR())
+		})
+	}
+}
+
+func TestSynthesizeImageManifestFile(t *testing.T) {
+	t.Parallel()
+
+	const agentName = "my-agent"
+	const image = "myacr.azurecr.io/agents/my-agent@sha256:" +
+		"76a9463463acf11d4068e8468fb232a3de0709177b6b35de95de6a34b33fa686"
+
+	manifestPath, cleanup, err := synthesizeImageManifestFile(agentName, image)
+	require.NoError(t, err)
+	require.NotNil(t, cleanup)
+	require.FileExists(t, manifestPath)
+	require.Equal(t, "agent.yaml", filepath.Base(manifestPath))
+
+	content, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+
+	// The synthesized file must parse through the same path the manifest flow uses.
+	template, err := agent_yaml.ExtractAgentDefinition(content)
+	require.NoError(t, err)
+
+	containerAgent, ok := template.(agent_yaml.ContainerAgent)
+	require.True(t, ok, "synthesized template should be a ContainerAgent, got %T", template)
+	require.Equal(t, agent_yaml.AgentKindHosted, containerAgent.Kind)
+	require.Equal(t, agentName, containerAgent.Name)
+	require.Empty(t, containerAgent.Image)
+	require.Len(t, containerAgent.Protocols, 1)
+	require.Equal(t, "responses", containerAgent.Protocols[0].Protocol)
+	require.Equal(t, "2.0.0", containerAgent.Protocols[0].Version)
+
+	// cleanup removes the temp directory.
+	cleanup()
+	require.NoFileExists(t, manifestPath)
+}
+
+func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
+	const image = "myacr.azurecr.io/agents/my-agent:v1"
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	action := &InitAction{
+		azdClient:           client,
+		environment:         &azdext.Environment{Name: "test-env"},
+		flags:               &initFlags{image: image, noPrompt: true},
+		serviceNameOverride: "my-agent",
+	}
+	description := "Hosted container agent using a pre-built image"
+	manifest := &agent_yaml.AgentManifest{
+		Template: agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind:        agent_yaml.AgentKindHosted,
+				Name:        "my-agent",
+				Description: &description,
+			},
+			Protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "2.0.0"},
+			},
+		},
+	}
+
+	_, err := captureStdout(t, func() error {
+		return action.addToProject(t.Context(), "src/my-agent", manifest)
+	})
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+
+	var agentService *azdext.ServiceConfig
+	for _, service := range server.added {
+		if service.GetName() == "my-agent" {
+			agentService = service
+			break
+		}
+	}
+	require.NotNil(t, agentService)
+	require.Equal(t, image, agentService.GetImage())
+	require.Equal(t, "docker", agentService.GetLanguage())
+	require.NotNil(t, agentService.GetDocker())
+	require.NotNil(t, agentService.GetAdditionalProperties())
+
+	_, hasInlineImage := agentService.GetAdditionalProperties().GetFields()["image"]
+	require.False(t, hasInlineImage, "pre-built image must ride on the top-level service image field")
 }
 
 func TestValidateInitAgentName(t *testing.T) {
@@ -120,6 +458,27 @@ func TestResolveInitAgentName_NoPromptUsesDefault(t *testing.T) {
 	}
 	if name != "default-agent" {
 		t.Fatalf("name = %q, want default-agent", name)
+	}
+}
+
+func TestResolveInitAgentName_InvalidNameRepromptsUntilValid(t *testing.T) {
+	t.Parallel()
+
+	tooLong := strings.Repeat("a", 64) // 64 chars > 63 char limit
+	prompts := &testPromptServiceServer{
+		promptResponses: []string{tooLong, "valid-agent"},
+	}
+	azdClient := newTestAzdClient(t, &testEnvironmentServiceServer{}, &testWorkflowServiceServer{}, prompts)
+
+	name, err := resolveInitAgentName(t.Context(), azdClient, &initFlags{}, "default-agent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "valid-agent" {
+		t.Fatalf("name = %q, want valid-agent", name)
+	}
+	if len(prompts.promptRequests) != 2 {
+		t.Fatalf("text prompts = %d, want 2 (first invalid, second valid)", len(prompts.promptRequests))
 	}
 }
 
@@ -2770,6 +3129,52 @@ func TestPeekManifestName_LocalFile_NestedFieldsIgnored(t *testing.T) {
 	}
 }
 
+// Regression for #8945: a manifest carries the agent identity under
+// template.name, so the -m flow must peek that (not the top-level manifest
+// name) to prompt with — and default the folder to — the agent's own name,
+// matching the interactive flow.
+func TestPeekManifestName_LocalFile_PrefersTemplateName(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.manifest.yaml")
+	manifest := "" +
+		"name: my-manifest\n" +
+		"displayName: My Agent\n" +
+		"template:\n" +
+		"  name: my-agent\n" +
+		"  kind: hosted\n"
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(path, []byte(manifest), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got := peekManifestName(t.Context(), path, &http.Client{})
+	if got != "my-agent" {
+		t.Errorf("peekManifestName = %q, want %q (template.name)", got, "my-agent")
+	}
+}
+
+// When a manifest declares template: but the template omits name, the peek
+// falls back to the top-level manifest name, mirroring ExtractAgentDefinition.
+func TestPeekManifestName_LocalFile_TemplateWithoutNameFallsBack(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.manifest.yaml")
+	manifest := "" +
+		"name: fallback-agent\n" +
+		"template:\n" +
+		"  kind: hosted\n"
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(path, []byte(manifest), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got := peekManifestName(t.Context(), path, &http.Client{})
+	if got != "fallback-agent" {
+		t.Errorf("peekManifestName = %q, want %q (top-level fallback)", got, "fallback-agent")
+	}
+}
+
 func TestPeekManifestName_EmptyPointer(t *testing.T) {
 	t.Parallel()
 	got := peekManifestName(t.Context(), "", &http.Client{})
@@ -3171,4 +3576,49 @@ func TestEnsureResourceGroupNameSkipsWhenSaltEmpty(t *testing.T) {
 
 	_, ok := envServer.values["myapp-dev"][resourceGroupEnvKey]
 	require.False(t, ok, "no AZURE_RESOURCE_GROUP should be written when salt is empty")
+}
+
+func TestRemoveContainerFiles(t *testing.T) {
+	t.Parallel()
+
+	t.Run("removes Dockerfile and .dockerignore when present", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM python:3.13"), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".dockerignore"), []byte("__pycache__"), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "app.py"), []byte("print('hi')"), 0600))
+
+		removeContainerFiles(dir)
+
+		_, err := os.Stat(filepath.Join(dir, "Dockerfile"))
+		require.True(t, os.IsNotExist(err), "Dockerfile should be removed")
+		_, err = os.Stat(filepath.Join(dir, ".dockerignore"))
+		require.True(t, os.IsNotExist(err), ".dockerignore should be removed")
+		// Other files are untouched
+		_, err = os.Stat(filepath.Join(dir, "app.py"))
+		require.NoError(t, err, "app.py should still exist")
+	})
+
+	t.Run("no error when files do not exist", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		// Should not panic or error when directory has no Dockerfile
+		removeContainerFiles(dir)
+	})
+
+	t.Run("leaves other files untouched", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		files := []string{"requirements.txt", "app.py", "README.md"}
+		for _, f := range files {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, f), []byte("content"), 0600))
+		}
+
+		removeContainerFiles(dir)
+
+		for _, f := range files {
+			_, err := os.Stat(filepath.Join(dir, f))
+			require.NoError(t, err, "%s should still exist", f)
+		}
+	})
 }

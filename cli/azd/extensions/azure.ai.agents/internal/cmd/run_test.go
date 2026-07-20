@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -20,7 +21,10 @@ import (
 	"testing"
 	"time"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	goyaml "go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -872,20 +876,25 @@ func TestFindAgentYaml(t *testing.T) {
 func TestResolveAgentDefinitionEnvVars(t *testing.T) {
 	t.Parallel()
 
+	parse := func(t *testing.T, y string) *agent_yaml.ContainerAgent {
+		t.Helper()
+		var def agent_yaml.ContainerAgent
+		if err := goyaml.Unmarshal([]byte(y), &def); err != nil {
+			t.Fatalf("failed to parse agent definition: %v", err)
+		}
+		return &def
+	}
+
 	t.Run("hardcoded values", func(t *testing.T) {
-		dir := t.TempDir()
-		yaml := `name: test-agent
+		def := parse(t, `name: test-agent
 environment_variables:
   - name: TOOLBOX_NAME
     value: my-toolbox
   - name: LOG_LEVEL
     value: debug
-`
-		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(yaml), 0600); err != nil {
-			t.Fatal(err)
-		}
+`)
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), dir, nil, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -898,22 +907,18 @@ environment_variables:
 	})
 
 	t.Run("resolves ${VAR} references", func(t *testing.T) {
-		dir := t.TempDir()
-		yaml := `name: test-agent
+		def := parse(t, `name: test-agent
 environment_variables:
   - name: MY_ENDPOINT
     value: ${FOUNDRY_PROJECT_ENDPOINT}/agents
   - name: PLAIN
     value: hardcoded
-`
-		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(yaml), 0600); err != nil {
-			t.Fatal(err)
-		}
+`)
 
 		azdEnv := map[string]string{
 			"FOUNDRY_PROJECT_ENDPOINT": "https://example.azure.com",
 		}
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), dir, azdEnv, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, azdEnv, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -926,19 +931,15 @@ environment_variables:
 	})
 
 	t.Run("skips connection refs without endpoint", func(t *testing.T) {
-		dir := t.TempDir()
-		yaml := `name: test-agent
+		def := parse(t, `name: test-agent
 environment_variables:
   - name: API_KEY
     value: "${{connections.my-conn.credentials.key}}"
   - name: STATIC
     value: hello
-`
-		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(yaml), 0600); err != nil {
-			t.Fatal(err)
-		}
+`)
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), dir, nil, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -953,9 +954,8 @@ environment_variables:
 		}
 	})
 
-	t.Run("returns nil for missing agent.yaml", func(t *testing.T) {
-		dir := t.TempDir()
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), dir, nil, "")
+	t.Run("returns nil for nil definition", func(t *testing.T) {
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), nil, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -965,14 +965,9 @@ environment_variables:
 	})
 
 	t.Run("returns nil for empty environment_variables", func(t *testing.T) {
-		dir := t.TempDir()
-		yaml := `name: test-agent
-`
-		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(yaml), 0600); err != nil {
-			t.Fatal(err)
-		}
+		def := parse(t, "name: test-agent\n")
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), dir, nil, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -982,17 +977,13 @@ environment_variables:
 	})
 
 	t.Run("unresolved ${VAR} becomes empty", func(t *testing.T) {
-		dir := t.TempDir()
-		yaml := `name: test-agent
+		def := parse(t, `name: test-agent
 environment_variables:
   - name: MISSING_REF
     value: ${DOES_NOT_EXIST}
-`
-		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(yaml), 0600); err != nil {
-			t.Fatal(err)
-		}
+`)
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), dir, map[string]string{}, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, map[string]string{}, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1000,23 +991,319 @@ environment_variables:
 			t.Errorf("expected MISSING_REF= (empty), got %v", result)
 		}
 	})
+}
 
-	t.Run("returns error for invalid YAML", func(t *testing.T) {
-		dir := t.TempDir()
-		invalid := `name: [unclosed bracket`
-		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(invalid), 0600); err != nil {
-			t.Fatal(err)
-		}
+func TestVenvPip(t *testing.T) {
+	t.Parallel()
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), dir, nil, "")
-		if err == nil {
-			t.Fatal("expected error for invalid YAML, got nil")
+	venvDir := "/project/.venv"
+	result := venvPip(venvDir)
+
+	if runtime.GOOS == "windows" {
+		expected := filepath.Join(venvDir, "Scripts", "pip.exe")
+		if result != expected {
+			t.Errorf("expected %q, got %q", expected, result)
 		}
-		if !strings.Contains(err.Error(), "could not parse agent definition") {
-			t.Errorf("unexpected error message: %v", err)
+	} else {
+		expected := filepath.Join(venvDir, "bin", "pip")
+		if result != expected {
+			t.Errorf("expected %q, got %q", expected, result)
 		}
-		if result != nil {
-			t.Errorf("expected nil result, got %v", result)
+	}
+}
+
+func TestMinPythonUvSpec(t *testing.T) {
+	// The uv `--python` specifier must derive from the shared constants so the
+	// uv and pip paths cannot drift apart.
+	want := fmt.Sprintf(">=%d.%d", minPythonMajor, minPythonMinor)
+	if got := minPythonUvSpec(); got != want {
+		t.Errorf("minPythonUvSpec() = %q, want %q", got, want)
+	}
+}
+
+func TestPythonVersionOK(t *testing.T) {
+	tests := []struct {
+		major, minor int
+		want         bool
+	}{
+		{3, 13, true},
+		{3, 14, true},
+		{4, 0, true},
+		{3, 12, false},
+		{3, 11, false},
+		{2, 7, false},
+	}
+	for _, tc := range tests {
+		if got := pythonVersionOK(tc.major, tc.minor); got != tc.want {
+			t.Errorf("pythonVersionOK(%d, %d) = %v, want %v", tc.major, tc.minor, got, tc.want)
+		}
+	}
+}
+
+func TestFirstCompatiblePython(t *testing.T) {
+	// versionMap maps interpreter path -> version parts returned by the fake
+	// version function. A missing entry simulates a candidate that fails to
+	// report its version (e.g. a Windows Store stub) and should be skipped.
+	newVersionFn := func(versions map[string][3]any) func(pythonInterpreter) (int, int, string, error) {
+		return func(p pythonInterpreter) (int, int, string, error) {
+			v, ok := versions[p.path]
+			if !ok {
+				return 0, 0, "", errors.New("cannot run")
+			}
+			return v[0].(int), v[1].(int), v[2].(string), nil
+		}
+	}
+
+	t.Run("prefers first compatible candidate", func(t *testing.T) {
+		// Mirrors the Windows repro: `python` (first on PATH) is 3.11 but the
+		// `py -3` launcher (probed first) selects 3.13.
+		candidates := []pythonInterpreter{
+			{path: "py", args: []string{"-3"}},
+			{path: "python", args: nil},
+		}
+		versionFn := newVersionFn(map[string][3]any{
+			"py":     {3, 13, "3.13.2"},
+			"python": {3, 11, "3.11.9"},
+		})
+
+		got, err := firstCompatiblePython(candidates, versionFn)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.path != "py" || !slices.Equal(got.args, []string{"-3"}) {
+			t.Errorf("got %+v, want py -3", got)
 		}
 	})
+
+	t.Run("skips too-old candidate for a later compatible one", func(t *testing.T) {
+		candidates := []pythonInterpreter{
+			{path: "python3"},
+			{path: "python"},
+		}
+		versionFn := newVersionFn(map[string][3]any{
+			"python3": {3, 11, "3.11.9"},
+			"python":  {3, 13, "3.13.0"},
+		})
+
+		got, err := firstCompatiblePython(candidates, versionFn)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.path != "python" {
+			t.Errorf("got %q, want python", got.path)
+		}
+	})
+
+	t.Run("errors naming newest incompatible version", func(t *testing.T) {
+		candidates := []pythonInterpreter{
+			{path: "python3"},
+			{path: "python"},
+		}
+		versionFn := newVersionFn(map[string][3]any{
+			"python3": {3, 11, "3.11.9"},
+			"python":  {3, 12, "3.12.4"},
+		})
+
+		_, err := firstCompatiblePython(candidates, versionFn)
+		if err == nil {
+			t.Fatal("expected an error when all candidates are too old")
+		}
+		if !strings.Contains(err.Error(), "3.13+ is required") ||
+			!strings.Contains(err.Error(), "3.12.4") {
+			t.Errorf("error should name the required and newest-found versions, got: %v", err)
+		}
+	})
+
+	t.Run("skips candidates whose version cannot be determined", func(t *testing.T) {
+		candidates := []pythonInterpreter{
+			{path: "broken"},
+			{path: "python"},
+		}
+		versionFn := newVersionFn(map[string][3]any{
+			// "broken" intentionally absent -> versionFn returns an error.
+			"python": {3, 13, "3.13.1"},
+		})
+
+		got, err := firstCompatiblePython(candidates, versionFn)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.path != "python" {
+			t.Errorf("got %q, want python", got.path)
+		}
+	})
+
+	t.Run("errors when no candidates resolve a version", func(t *testing.T) {
+		_, err := firstCompatiblePython(nil, newVersionFn(nil))
+		if err == nil {
+			t.Fatal("expected an error when there are no candidates")
+		}
+		if !strings.Contains(err.Error(), "no compatible Python") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+}
+
+func TestFindSystemPython_NoPython(t *testing.T) {
+	dir := t.TempDir() // empty directory, no python on PATH
+	t.Setenv("PATH", dir)
+	if _, err := findSystemPython(); err == nil {
+		t.Fatal("expected error when no python on PATH")
+	}
+}
+
+func TestPythonVersion(t *testing.T) {
+	// Requires a real python on PATH to run --version.
+	candidates := pythonCandidates()
+	if len(candidates) == 0 {
+		t.Skip("python not available on PATH")
+	}
+
+	major, minor, raw, err := pythonVersion(candidates[0])
+	if err != nil {
+		// A Windows Store stub can be found by LookPath but fail to execute.
+		if strings.Contains(err.Error(), "failed to check Python version") {
+			t.Skip("python present but not executable")
+		}
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if major <= 0 {
+		t.Errorf("expected a positive major version, got %d", major)
+	}
+	if raw == "" {
+		t.Error("expected a non-empty raw version string")
+	}
+	_ = minor
+}
+
+func TestPlaygroundMessagesURLUsesIPv4Loopback(t *testing.T) {
+	t.Parallel()
+
+	got := playgroundMessagesURL(8088)
+	want := "http://127.0.0.1:8088/api/messages"
+	if got != want {
+		t.Fatalf("playgroundMessagesURL = %q, want %q", got, want)
+	}
+	if strings.Contains(got, "localhost") {
+		t.Fatalf("playground URL must use 127.0.0.1, not localhost: %q", got)
+	}
+}
+
+func TestPlaygroundCommandArgs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("explicit channel", func(t *testing.T) {
+		t.Parallel()
+
+		got := playgroundCommandArgs(9090, "emulator")
+		want := []string{"agentsplayground", "-e", "http://127.0.0.1:9090/api/messages", "-c", "emulator"}
+		if !slices.Equal(got, want) {
+			t.Fatalf("playgroundCommandArgs = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("empty channel falls back to default", func(t *testing.T) {
+		t.Parallel()
+
+		got := playgroundCommandArgs(8088, "")
+		want := []string{"agentsplayground", "-e", "http://127.0.0.1:8088/api/messages", "-c", "emulator"}
+		if !slices.Equal(got, want) {
+			t.Fatalf("playgroundCommandArgs = %v, want %v", got, want)
+		}
+	})
+}
+
+func TestResolveActivityRunProfile(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil definition is not activity", func(t *testing.T) {
+		t.Parallel()
+
+		if resolveActivityRunProfile(nil).IsActivity {
+			t.Fatal("nil definition should not resolve as activity")
+		}
+	})
+
+	t.Run("activity endpoint resolves as activity", func(t *testing.T) {
+		t.Parallel()
+
+		def := &agent_yaml.ContainerAgent{
+			AgentEndpoint: &agent_yaml.AgentEndpoint{Protocols: []string{"activity"}},
+		}
+		if !resolveActivityRunProfile(def).IsActivity {
+			t.Fatal("activity endpoint should resolve as activity")
+		}
+	})
+
+	t.Run("container-level activity protocol resolves as activity", func(t *testing.T) {
+		t.Parallel()
+
+		for _, name := range []string{"activity", "activity_protocol"} {
+			def := &agent_yaml.ContainerAgent{
+				Protocols: []agent_yaml.ProtocolVersionRecord{{Protocol: name}},
+			}
+			if !resolveActivityRunProfile(def).IsActivity {
+				t.Fatalf("protocol %q should resolve as activity", name)
+			}
+		}
+	})
+
+	t.Run("non-activity definition is not activity", func(t *testing.T) {
+		t.Parallel()
+
+		if resolveActivityRunProfile(&agent_yaml.ContainerAgent{}).IsActivity {
+			t.Fatal("empty definition should not resolve as activity")
+		}
+	})
+}
+
+func TestRunCommandActivityFlags(t *testing.T) {
+	t.Parallel()
+
+	cmd := newRunCommand(nil)
+	if cmd.Flags().Lookup("no-client") == nil {
+		t.Fatal("run command should expose --no-client")
+	}
+	channel := cmd.Flags().Lookup("channel")
+	if channel == nil {
+		t.Fatal("run command should expose --channel")
+	}
+	if channel.DefValue != defaultPlaygroundChannel {
+		t.Fatalf("--channel default = %q, want %q", channel.DefValue, defaultPlaygroundChannel)
+	}
+	// --no-inspector is kept for back-compat but deprecated in favor of
+	// --no-client: it must still resolve (so existing scripts work) yet carry
+	// a deprecation message (so cobra hides it from help and warns on use).
+	noInspector := cmd.Flags().Lookup("no-inspector")
+	if noInspector == nil {
+		t.Fatal("run command should still expose --no-inspector for back-compat")
+	}
+	if noInspector.Deprecated == "" {
+		t.Fatal("--no-inspector should be marked deprecated in favor of --no-client")
+	}
+}
+
+func TestHandlePlaygroundAutoLaunchSuppressed(t *testing.T) {
+	t.Parallel()
+
+	var buf lockedBuffer
+	// Suppressed: must not warn or attempt anything even if the CLI is missing.
+	handlePlaygroundAutoLaunch(t.Context(), 8088, "emulator", true, &buf)
+	if buf.String() != "" {
+		t.Fatalf("suppressed auto-launch should be silent, got: %q", buf.String())
+	}
+}
+
+func TestMissingPlaygroundWarning(t *testing.T) {
+	t.Parallel()
+
+	warning := missingPlaygroundWarning(9090, "emulator")
+	for _, want := range []string{
+		"winget install agentsplayground",
+		"agentsplayground -e http://127.0.0.1:9090/api/messages -c emulator",
+	} {
+		if !strings.Contains(warning, want) {
+			t.Fatalf("warning missing %q:\n%s", want, warning)
+		}
+	}
 }

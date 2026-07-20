@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
@@ -26,7 +27,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/google/uuid"
-	"go.yaml.in/yaml/v3"
 	"golang.org/x/term"
 )
 
@@ -472,22 +472,25 @@ func resolveConversationID(
 	return newConvID, nil
 }
 
-// setACREnvVar sets the AZD_AGENT_SKIP_ACR environment variable based on whether the
-// deployment is code-based (no container registry needed) or container-based.
+// setACREnvVar sets the AZD_AGENT_SKIP_ACR environment variable based on whether ACR
+// should be skipped. ACR is skipped when:
+// - Code deploy mode (no container registry needed)
+// - Pre-built image provided via --image flag (user manages their own registry)
+//
 // This env var is consumed by the Bicep template in Azure-Samples/azd-ai-starter-basic
 // (infra/main.bicep) as `param skipAcr bool` to conditionally skip ACR resource creation.
 //
 // Cross-repo dependency: changes to this variable name must be coordinated with
 // the template parameter mapping in main.parameters.json of the starter template.
-func setACREnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string, isCodeDeploy bool) error {
+func setACREnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string, skipACR bool) error {
 	value := "false"
-	if isCodeDeploy {
+	if skipACR {
 		value = "true"
 	}
 
 	if err := setEnvValue(ctx, azdClient, envName, "AZD_AGENT_SKIP_ACR", value); err != nil {
-		if isCodeDeploy {
-			return fmt.Errorf("configuring ACR skip for code deploy: %w", err)
+		if skipACR {
+			return fmt.Errorf("configuring ACR skip: %w", err)
 		}
 		return fmt.Errorf("configuring ACR for container deploy: %w", err)
 	}
@@ -542,10 +545,11 @@ func fileExists(path string) bool {
 
 // AgentServiceInfo holds the resolved name and version for an agent service.
 type AgentServiceInfo struct {
-	ServiceName   string // azure.yaml service key
-	AgentName     string // deployed agent name from env
-	Version       string // deployed agent version from env
-	AgentEndpoint string // full AGENT_{SVC}_ENDPOINT URL (includes name + version)
+	ServiceName     string // azure.yaml service key
+	AgentName       string // deployed agent name from env; invoke may opt into brownfield fallback
+	Version         string // deployed agent version from env
+	AgentEndpoint   string // full AGENT_{SVC}_ENDPOINT URL (includes name + version)
+	ProjectEndpoint string // adopted project endpoint used by a verified brownfield fallback
 }
 
 // promptForAgentService prompts the user to select one of multiple azure.ai.agent services.
@@ -654,19 +658,144 @@ func resolveAgentService(
 	return svc, projectResponse.Project, nil
 }
 
+type brownfieldAgentReference struct {
+	name            string
+	projectEndpoint string
+}
+
+// brownfieldInlineAgentReference returns the inline hosted-agent name and the
+// endpoint of the adopted Foundry project it belongs to. The endpoint is only a
+// candidate signal; callers must verify that the named agent exists there
+// before using the reference.
+func brownfieldInlineAgentReference(
+	svc *azdext.ServiceConfig,
+	projectConfig *azdext.ProjectConfig,
+) *brownfieldAgentReference {
+	if svc == nil || projectConfig == nil {
+		return nil
+	}
+
+	var projectEndpoint string
+	for _, dependency := range svc.GetUses() {
+		projectService := projectConfig.GetServices()[dependency]
+		if projectService == nil || projectService.GetHost() != AiProjectHost {
+			continue
+		}
+		cfg, err := projectpkg.LoadServiceTargetAgentConfig(projectService)
+		if err != nil {
+			log.Printf(
+				"resolve agent service %q: failed to read project dependency %q: %v",
+				svc.Name, dependency, err,
+			)
+			continue
+		}
+		if cfg != nil && strings.TrimSpace(cfg.Endpoint) != "" {
+			projectEndpoint = strings.TrimSpace(cfg.Endpoint)
+			break
+		}
+	}
+	if projectEndpoint == "" {
+		return nil
+	}
+
+	definition, isHosted, found, _, err := projectpkg.AgentDefinitionFromService(svc)
+	if err != nil {
+		log.Printf("resolve agent service %q: failed to read inline agent definition: %v", svc.Name, err)
+		return nil
+	}
+	if !found || !isHosted {
+		return nil
+	}
+
+	agentName := strings.TrimSpace(definition.Name)
+	if agentName == "" {
+		return nil
+	}
+	return &brownfieldAgentReference{
+		name:            agentName,
+		projectEndpoint: projectEndpoint,
+	}
+}
+
+type brownfieldAgentExistenceResolver func(context.Context, string, string) (bool, error)
+
+type agentServiceResolutionOptions struct {
+	allowBrownfieldInlineName bool
+	brownfieldAgentExists     brownfieldAgentExistenceResolver
+}
+
+type agentServiceResolutionOption func(*agentServiceResolutionOptions)
+
+func resolveBrownfieldAgentExists(
+	ctx context.Context,
+	projectEndpoint string,
+	agentName string,
+) (bool, error) {
+	credential, err := newAgentCredential()
+	if err != nil {
+		return false, err
+	}
+
+	client := agent_api.NewAgentClient(projectEndpoint, credential)
+	return agents.AgentExists(ctx, client, agentName, DefaultAgentAPIVersion)
+}
+
+// withBrownfieldInlineAgentName allows remote invoke to use an inline agent name
+// after verifying it exists in the adopted Foundry project. It is opt-in because
+// shared callers include destructive commands such as delete, which must
+// continue requiring deployment state or an explicit agent name.
+func withBrownfieldInlineAgentName() agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.allowBrownfieldInlineName = true
+		options.brownfieldAgentExists = resolveBrownfieldAgentExists
+	}
+}
+
+func withBrownfieldAgentExistenceResolver(
+	resolver brownfieldAgentExistenceResolver,
+) agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.allowBrownfieldInlineName = true
+		options.brownfieldAgentExists = resolver
+	}
+}
+
 // resolveAgentServiceFromProject finds the azure.ai.agent service in azure.yaml
 // and resolves its deployed agent name and version from the azd environment.
-func resolveAgentServiceFromProject(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) (*AgentServiceInfo, error) {
-	svc, _, err := resolveAgentService(ctx, azdClient, name, noPrompt)
+// Callers may explicitly opt into the brownfield inline-name fallback; deployed
+// AGENT_<SERVICE>_NAME output always overrides it.
+func resolveAgentServiceFromProject(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	name string,
+	noPrompt bool,
+	options ...agentServiceResolutionOption,
+) (*AgentServiceInfo, error) {
+	svc, projectConfig, err := resolveAgentService(ctx, azdClient, name, noPrompt)
 	if err != nil {
 		return nil, err
 	}
 
+	resolutionOptions := agentServiceResolutionOptions{}
+	for _, option := range options {
+		option(&resolutionOptions)
+	}
+
 	info := &AgentServiceInfo{ServiceName: svc.Name}
 
-	// Resolve agent name and version from azd environment
+	// Resolve deployed agent name and version from the azd environment. The
+	// deployed name wins because it reflects the resource actually created.
 	envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
+		if resolutionOptions.allowBrownfieldInlineName {
+			return info, fmt.Errorf("getting current environment for agent service %q: %w", svc.Name, err)
+		}
+		return info, nil
+	}
+	if envResponse == nil || envResponse.Environment == nil || envResponse.Environment.Name == "" {
+		if resolutionOptions.allowBrownfieldInlineName {
+			return info, fmt.Errorf("current environment is not available for agent service %q", svc.Name)
+		}
 		return info, nil
 	}
 
@@ -674,11 +803,49 @@ func resolveAgentServiceFromProject(ctx context.Context, azdClient *azdext.AzdCl
 	nameKey := fmt.Sprintf("AGENT_%s_NAME", serviceKey)
 	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 
-	if v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+	nameResponse, nameErr := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: envResponse.Environment.Name,
 		Key:     nameKey,
-	}); err == nil && v.Value != "" {
-		info.AgentName = v.Value
+	})
+	switch {
+	case nameErr != nil:
+		if resolutionOptions.allowBrownfieldInlineName {
+			return info, fmt.Errorf(
+				"reading %s from environment %q: %w",
+				nameKey,
+				envResponse.Environment.Name,
+				nameErr,
+			)
+		}
+		log.Printf("resolve agent service %q: failed to read %s: %v", svc.Name, nameKey, nameErr)
+	case nameResponse != nil && nameResponse.Value != "":
+		info.AgentName = nameResponse.Value
+	case resolutionOptions.allowBrownfieldInlineName:
+		reference := brownfieldInlineAgentReference(svc, projectConfig)
+		if reference == nil {
+			break
+		}
+		if resolutionOptions.brownfieldAgentExists == nil {
+			return info, fmt.Errorf("brownfield agent existence resolver is not configured")
+		}
+
+		exists, err := resolutionOptions.brownfieldAgentExists(
+			ctx,
+			reference.projectEndpoint,
+			reference.name,
+		)
+		if err != nil {
+			return info, fmt.Errorf(
+				"checking whether agent %q exists in the adopted Foundry project: %w",
+				reference.name,
+				err,
+			)
+		}
+		if exists {
+			info.AgentName = reference.name
+			info.ProjectEndpoint = reference.projectEndpoint
+			return info, nil
+		}
 	}
 
 	if v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
@@ -704,6 +871,9 @@ type ServiceRunContext struct {
 	ServiceName    string // the resolved service name (from azure.yaml)
 	ProjectDir     string // absolute path to the service source directory
 	StartupCommand string // startupCommand from AdditionalProperties (may be empty)
+	// Definition is the resolved agent definition (from the inline azure.yaml
+	// entry or a legacy agent.yaml). It is nil when no definition can be resolved.
+	Definition *agent_yaml.ContainerAgent
 }
 
 // resolveServiceRunContext queries the azd project to find the matching azure.ai.agent
@@ -724,10 +894,15 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	}
 
 	var startupCmd string
-	if svc.Config != nil {
-		var agentConfig projectpkg.ServiceTargetAgentConfig
-		if err := projectpkg.UnmarshalStruct(svc.Config, &agentConfig); err == nil {
-			startupCmd = agentConfig.StartupCommand
+	if agentConfig, cfgErr := projectpkg.LoadServiceTargetAgentConfig(svc); cfgErr == nil {
+		startupCmd = agentConfig.StartupCommand
+	}
+
+	var definition *agent_yaml.ContainerAgent
+	if def, _, source, defErr := projectpkg.LoadAgentDefinition(svc, project.Path); defErr == nil {
+		definition = &def
+		if source.IsLegacy() {
+			projectpkg.WarnLegacyAgentShape(source)
 		}
 	}
 
@@ -735,6 +910,7 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 		ServiceName:    svc.Name,
 		ProjectDir:     projectDir,
 		StartupCommand: startupCmd,
+		Definition:     definition,
 	}, nil
 }
 
@@ -785,7 +961,9 @@ func resolveStartupCommandForInit(
 }
 
 // resolveAgentProtocol loads the agent.yaml manifest for the service and returns the
-// protocol that the agent implements (e.g. "responses", "invocations").
+// protocol that the agent implements (e.g. "responses", "invocations") along with
+// the resolved service name. The service name is useful for callers that need to
+// avoid a redundant resolveAgentService call (and its interactive prompt) later.
 // Returns an error when the protocol cannot be determined, with a contextual
 // suggestion guiding the user to fix the underlying issue.
 func resolveAgentProtocol(
@@ -793,10 +971,10 @@ func resolveAgentProtocol(
 	azdClient *azdext.AzdClient,
 	name string,
 	noPrompt bool,
-) (agent_api.AgentProtocol, error) {
-	svc, project, err := resolveAgentService(ctx, azdClient, name, noPrompt)
+) (agent_api.AgentProtocol, string, error) {
+	svc, proj, err := resolveAgentService(ctx, azdClient, name, noPrompt)
 	if err != nil {
-		return "", exterrors.Validation(
+		return "", "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf(
 				"could not resolve agent service in azd project: %s", err,
@@ -806,56 +984,46 @@ func resolveAgentProtocol(
 		)
 	}
 
-	agentYamlPath, err := paths.JoinAllowRoot(project.Path, svc.RelativePath, "agent.yaml")
+	hosted, isHosted, source, err := projectpkg.LoadAgentDefinition(svc, proj.Path)
 	if err != nil {
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("invalid service path for %s: %s", svc.Name, err),
-			"update azure.yaml so the agent service path stays within the project directory",
+		return "", "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("could not resolve the agent definition for %s: %s", svc.Name, err),
+			"ensure the agent definition is present in azure.yaml or run `azd ai agent init`",
 		)
 	}
-	return protocolFromAgentYaml(agentYamlPath)
+	if source.IsLegacy() {
+		projectpkg.WarnLegacyAgentShape(source)
+	}
+	if !isHosted {
+		return "", "", exterrors.Validation(
+			exterrors.CodeUnsupportedAgentKind,
+			fmt.Sprintf("agent service %s is not a hosted agent", svc.Name),
+			"only hosted agents can be invoked",
+		)
+	}
+
+	protocol, err := protocolFromContainerAgent(hosted)
+	if err != nil {
+		return "", "", err
+	}
+	return protocol, svc.Name, nil
 }
 
-// protocolFromAgentYaml reads and parses the agent.yaml file at the given path
-// and extracts the protocol to use for invocation. Returns an error with a
-// contextual suggestion when the file cannot be read, parsed, or does not
-// declare exactly one invocable protocol.
+// protocolFromContainerAgent extracts the protocol to use for invocation from a
+// resolved agent definition. Returns an error with a contextual suggestion when
+// the definition does not declare exactly one invocable protocol.
 //
 // When multiple protocols are declared (e.g. "responses" + "a2a"), the caller
 // must use --protocol to disambiguate.
-func protocolFromAgentYaml(
-	agentYamlPath string,
+func protocolFromContainerAgent(
+	hosted agent_yaml.ContainerAgent,
 ) (agent_api.AgentProtocol, error) {
-	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // G304: path constructed from azd project root
-	if err != nil {
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf(
-				"could not read agent.yaml at %s: %s",
-				agentYamlPath, err,
-			),
-			"ensure agent.yaml exists in the azd service directory",
-		)
-	}
-
-	var hosted agent_yaml.ContainerAgent
-	if err := yaml.Unmarshal(data, &hosted); err != nil {
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf(
-				"could not parse agent.yaml at %s: %s",
-				agentYamlPath, err,
-			),
-			"fix the agent.yaml syntax",
-		)
-	}
-
 	if len(hosted.Protocols) == 0 {
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			"agent.yaml does not declare any protocols",
-			"add a protocols section to agent.yaml",
+			"the agent definition does not declare any protocols",
+			"add a protocols section to the agent definition",
 		)
 	}
 
@@ -888,7 +1056,7 @@ func protocolFromAgentYaml(
 				"agent.yaml declares only non-invocable protocols: %s",
 				strings.Join(names, ", "),
 			),
-			"azd can only invoke agents using the responses or invocations protocols",
+			"azd can only invoke agents using the responses, invocations, or a2a protocols",
 		)
 	case 1:
 		// Exactly one invocable protocol — but if the agent declares

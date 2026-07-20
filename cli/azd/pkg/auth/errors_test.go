@@ -12,10 +12,14 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	msal "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/stretchr/testify/require"
 )
 
 func TestAuthFailedError_NonMsalCallError(t *testing.T) {
@@ -286,4 +290,198 @@ func TestUsesGraphScope(t *testing.T) {
 			require.Equal(t, tt.want, usesGraphScope(tt.scopes))
 		})
 	}
+}
+
+func TestAzdCredential_GetToken_GenericError(t *testing.T) {
+	pc := &silentErrorClient{
+		err: errors.New("network failure"),
+	}
+
+	account := public.Account{HomeAccountID: "h1"}
+	cred := newAzdCredential(
+		pc, &account, cloud.AzurePublic(), "", nil,
+	)
+
+	_, err := cred.GetToken(t.Context(), policy.TokenRequestOptions{
+		Scopes: []string{"scope1"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "network failure")
+}
+
+func TestAzdCredential_GetToken_AuthFailedNotReLogin(t *testing.T) {
+	// AuthFailedError that doesn't trigger re-login
+	pc := &silentErrorClient{
+		err: &AuthFailedError{
+			innerErr: errors.New("some auth err"),
+		},
+	}
+
+	account := public.Account{HomeAccountID: "h1"}
+	cred := newAzdCredential(
+		pc, &account, cloud.AzurePublic(), "", nil,
+	)
+
+	_, err := cred.GetToken(t.Context(), policy.TokenRequestOptions{
+		Scopes: []string{"scope1"},
+	})
+	require.Error(t, err)
+
+	var authFailed *AuthFailedError
+	require.True(t, errors.As(err, &authFailed))
+}
+
+func TestReLoginRequiredError_NonRetriableMarker(t *testing.T) {
+	e := &ReLoginRequiredError{errText: "re-login"}
+	e.NonRetriable() // just exercise the method
+}
+
+func TestAuthFailedError_NonRetriableMarker(t *testing.T) {
+	e := &AuthFailedError{innerErr: errors.New("inner")}
+	e.NonRetriable() // just exercise the method
+}
+
+type errCache struct{}
+
+var errCacheFail = errors.New("cache-write-fail")
+
+func (c *errCache) Set(_ string, _ []byte) error {
+	return errCacheFail
+}
+
+func TestCredentialForCurrentUser_LoadUserConfigError(t *testing.T) {
+	m := &Manager{
+		configManager: newMemoryConfigManager(),
+		userConfigManager: &failingUserConfigManager{
+			err: errors.New("load-fail"),
+		},
+		cloud: cloud.AzurePublic(),
+		credentialCache: &memoryCache{
+			cache: map[string][]byte{},
+		},
+	}
+
+	_, err := m.CredentialForCurrentUser(t.Context(), nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "fetching current user")
+}
+
+func TestGetLoggedInSPTenantID_LoadUserConfigError(t *testing.T) {
+	m := &Manager{
+		configManager: newMemoryConfigManager(),
+		userConfigManager: &failingUserConfigManager{
+			err: errors.New("load-fail"),
+		},
+		cloud: cloud.AzurePublic(),
+		credentialCache: &memoryCache{
+			cache: map[string][]byte{},
+		},
+	}
+
+	_, err := m.GetLoggedInServicePrincipalTenantID(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "fetching current user")
+}
+
+func TestMode_LoadUserConfigError(t *testing.T) {
+	m := &Manager{
+		userConfigManager: &failingUserConfigManager{
+			err: errors.New("load-fail"),
+		},
+	}
+	_, err := m.Mode()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "fetching current user")
+}
+
+func TestSetBuiltInAuthMode_ModeError(t *testing.T) {
+	m := &Manager{
+		userConfigManager: &failingUserConfigManager{
+			err: errors.New("load-fail"),
+		},
+	}
+	err := m.SetBuiltInAuthMode()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "fetching current auth mode")
+}
+
+func TestAzdCredentialGetToken_ClaimsReLoginPath(t *testing.T) {
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	c := cloud.AzurePublic()
+
+	// Build a minimal HTTP response with a Request attached so
+	// httpErrorDetails() doesn't panic.
+	fakeReq, _ := http.NewRequest(
+		http.MethodPost,
+		"https://login.microsoftonline.com/common/oauth2/v2.0/token",
+		nil)
+	resp := &http.Response{
+		StatusCode: 401,
+		Status:     "401 Unauthorized",
+		Request:    fakeReq,
+		Body:       http.NoBody,
+	}
+
+	// A client that returns an AuthFailedError whose AAD response
+	// triggers re-login (interaction_required).
+	client := &silentErrorClient{
+		err: &AuthFailedError{
+			RawResp:  resp,
+			innerErr: errors.New("tenant requires MFA"),
+			Parsed: &AadErrorResponse{
+				Error:            "interaction_required",
+				ErrorDescription: "AADSTS50076: need MFA",
+			},
+		},
+	}
+
+	acct := public.Account{HomeAccountID: "home-a"}
+	cred := newAzdCredential(client, &acct, c, "", nil)
+
+	opts := tokenRequestOpts(c, "my-claims")
+	_, err := cred.GetToken(t.Context(), opts)
+	require.Error(t, err)
+	// Should be a ReLoginRequiredError.
+	var rle *ReLoginRequiredError
+	require.True(t, errors.As(err, &rle))
+}
+
+type readErrorCache struct{}
+
+var errReadFail = errors.New("read-fail")
+
+func (c *readErrorCache) Read(string) ([]byte, error) {
+	return nil, errReadFail
+}
+
+func (c *readErrorCache) Set(string, []byte) error { return nil }
+
+type fakeUnmarshaler struct{}
+
+type failingMarshaler struct{}
+
+func TestLoginWithSPCertificate_BadCert(t *testing.T) {
+	m := &Manager{
+		configManager:     newMemoryConfigManager(),
+		userConfigManager: newMemoryUserConfigManager(),
+		cloud:             cloud.AzurePublic(),
+		credentialCache:   &memoryCache{cache: map[string][]byte{}},
+	}
+
+	_, err := m.LoginWithServicePrincipalCertificate(
+		t.Context(), "tid", "cid", []byte("not-a-cert"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "parsing certificate")
+}
+
+func TestNonRetriable_AuthFailed(t *testing.T) {
+	t.Parallel()
+	e := &AuthFailedError{innerErr: errWave3Test}
+	e.NonRetriable() // should not panic
+}
+
+func TestNonRetriable_ReLoginRequired(t *testing.T) {
+	t.Parallel()
+	e := &ReLoginRequiredError{}
+	e.NonRetriable() // should not panic
 }

@@ -142,6 +142,15 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 	defer func() { _ = infra.Cleanup() }()
 
+	// Record the resolved IaC provider(s) directly on the cmd.up span, before provider
+	// initialization and the custom-workflow branch, so every up path carries it — including
+	// initialization failures and custom `workflows.up`. Attaching it to the cmd.up span directly
+	// (rather than the process-global usage bag) keeps it off the in-process child-command spans a
+	// custom workflow spawns (`azd package` / `provision` / `deploy`): those children carry their
+	// own provider attribution on their own spans instead of inheriting a leaked value.
+	layers := infra.Options.GetLayers()
+	u.provisioningManager.RecordInfraProviderUsage(ctx, layers)
+
 	// TODO(weilim): remove this once we have decided if it's okay to not set AZURE_SUBSCRIPTION_ID and AZURE_LOCATION
 	// early in the up workflow in #3745
 	err = u.provisioningManager.Initialize(ctx, u.projectConfig.Path, infra.Options)
@@ -186,7 +195,6 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}, nil
 	}
 
-	layers := infra.Options.GetLayers()
 	return u.upGraph.Run(ctx, layers, &u.flags.DeployFlags, u.flags.flagSet, startTime)
 }
 

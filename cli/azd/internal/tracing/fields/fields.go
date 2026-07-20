@@ -321,7 +321,8 @@ const (
 	// Environment modifiers. These are not environments themselves, but rather modifiers to the environment
 	// that signal specific types of usages.
 
-	EnvModifierAzureSpace = "Azure App Spaces Portal"
+	EnvModifierAzureSpace            = "Azure App Spaces Portal"
+	EnvModifierMicrosoftFoundrySkill = "Microsoft Foundry Skill"
 )
 
 // All possible enumerations of AccountTypeKey
@@ -397,9 +398,15 @@ var (
 
 // Infrastructure command related fields
 var (
-	// The IaC provider used for infrastructure generation.
+	// The IaC provider. Emitted by `infra generate` / `synth` as a single string (the value read
+	// from azure.yaml's `infra.provider`, for example "bicep", "terraform", "auto" when unset, or
+	// "custom" for a non-built-in extension provider — the raw name is never emitted) and by
+	// provision / up / down as a sorted, de-duplicated string slice of the resolved provider(s) —
+	// built-in kinds verbatim, or "custom" for a non-built-in extension provider. Multi-layer
+	// projects that combine providers record each distinct value (for example
+	// ["bicep", "terraform"]).
 	//
-	// Example: "bicep", "terraform"
+	// Example: "bicep", "terraform", "arm", "pulumi", "custom", ["bicep", "terraform"]
 	InfraProviderKey = AttributeKey{
 		Key:            attribute.Key("infra.provider"),
 		Classification: SystemMetadata,
@@ -645,50 +652,77 @@ var (
 	}
 )
 
-// Preflight validation related fields
+// Provision validation related fields
 var (
-	// PreflightOutcomeKey records the outcome of preflight validation.
+	// ProvisionValidationOutcomeKey records the outcome of provision validation.
 	//
-	// Example: "passed", "warnings_accepted", "aborted_by_errors",
-	//          "aborted_by_user", "skipped", "error"
-	PreflightOutcomeKey = AttributeKey{
-		Key:            attribute.Key("validation.preflight.outcome"),
+	// Example: "passed", "warnings_accepted", "canceled_by_errors",
+	//          "canceled_by_user", "skipped", "error"
+	ProvisionValidationOutcomeKey = AttributeKey{
+		Key:            attribute.Key("validation.provision.outcome"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
 
-	// PreflightDiagnosticsKey records the list of diagnostic IDs emitted by preflight checks.
+	// ProvisionValidationDiagnosticsKey records the list of diagnostic IDs emitted by provision
+	// validation checks.
 	//
 	// Example: ["role_assignment_missing", "role_assignment_conditional"]
-	PreflightDiagnosticsKey = AttributeKey{
-		Key:            attribute.Key("validation.preflight.diagnostics"),
+	ProvisionValidationDiagnosticsKey = AttributeKey{
+		Key:            attribute.Key("validation.provision.diagnostics"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
 
-	// PreflightRulesKey records the list of rule IDs that were executed.
+	// ProvisionValidationRulesKey records the list of rule IDs that were executed.
 	//
 	// Example: ["role_assignment_permissions"]
-	PreflightRulesKey = AttributeKey{
-		Key:            attribute.Key("validation.preflight.rules"),
+	ProvisionValidationRulesKey = AttributeKey{
+		Key:            attribute.Key("validation.provision.rules"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
 
-	// PreflightWarningCountKey records the number of warnings produced by preflight validation.
-	PreflightWarningCountKey = AttributeKey{
-		Key:            attribute.Key("validation.preflight.warning.count"),
+	// ProvisionValidationWarningCountKey records the number of warnings produced by provision
+	// validation.
+	ProvisionValidationWarningCountKey = AttributeKey{
+		Key:            attribute.Key("validation.provision.warning.count"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 		IsMeasurement:  true,
 	}
 
-	// PreflightErrorCountKey records the number of errors produced by preflight validation.
-	PreflightErrorCountKey = AttributeKey{
-		Key:            attribute.Key("validation.preflight.error.count"),
+	// ProvisionValidationErrorCountKey records the number of errors produced by provision validation.
+	ProvisionValidationErrorCountKey = AttributeKey{
+		Key:            attribute.Key("validation.provision.error.count"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 		IsMeasurement:  true,
+	}
+
+	// ProvisionValidationExtensionRulesKey records the list of rule IDs from extension-provided
+	// validation checks that were executed. Separate from ProvisionValidationRulesKey (core rules)
+	// to distinguish the source of checks in telemetry.
+	//
+	// Example: ["todo_resource_name", "naming_convention"]
+	ProvisionValidationExtensionRulesKey = AttributeKey{
+		Key:            attribute.Key("validation.provision.extension_rules"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// ProvisionValidationCheckTypeKey records which validation dispatch site emitted the
+	// event, since the same ProvisionValidationEvent is emitted from both the
+	// Bicep-only "arm-provision" dispatch and the provider-agnostic
+	// "provision" dispatch. Without it, downstream consumers would double-count
+	// the event for Bicep provisions (where both sites fire). Values are the
+	// fixed, code-defined check-type identifiers.
+	//
+	// Example: "arm-provision", "provision"
+	ProvisionValidationCheckTypeKey = AttributeKey{
+		Key:            attribute.Key("validation.provision.check_type"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
 	}
 )
 
@@ -1140,6 +1174,12 @@ var (
 	// ExtensionSource is the registry source used for the upgrade.
 	ExtensionSource = AttributeKey{
 		Key:            attribute.Key("extension.source"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// ExtensionSourceKind is the kind of --source argument: none, registered, or location.
+	ExtensionSourceKind = AttributeKey{
+		Key:            attribute.Key("extension.source.kind"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}

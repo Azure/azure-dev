@@ -4,6 +4,8 @@
 package tool
 
 import (
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -17,7 +19,7 @@ func TestBuiltInTools(t *testing.T) {
 		t.Parallel()
 
 		tools := BuiltInTools()
-		require.Len(t, tools, 7, "expected 7 built-in tools")
+		require.Len(t, tools, 8, "expected 8 built-in tools")
 	})
 
 	t.Run("ContainsAllExpectedToolIDs", func(t *testing.T) {
@@ -31,6 +33,7 @@ func TestBuiltInTools(t *testing.T) {
 			"GitHub.copilot-chat",
 			"azure-mcp-server",
 			"azure.ai.agents",
+			"azure-skills",
 		}
 
 		tools := BuiltInTools()
@@ -70,8 +73,10 @@ func TestBuiltInTools(t *testing.T) {
 				"tool %q must have a Description", tool.Id)
 			assert.NotEmpty(t, tool.Category,
 				"tool %q must have a Category", tool.Id)
-			assert.NotEmpty(t, tool.DetectCommand,
-				"tool %q must have a DetectCommand", tool.Id)
+			if tool.Category != ToolCategorySkill {
+				assert.NotEmpty(t, tool.DetectCommand,
+					"tool %q must have a DetectCommand", tool.Id)
+			}
 		}
 	})
 
@@ -83,6 +88,7 @@ func TestBuiltInTools(t *testing.T) {
 			ToolCategoryVSCodeExtension: true,
 			ToolCategoryServer:          true,
 			ToolCategoryAzdExtension:    true,
+			ToolCategorySkill:           true,
 		}
 
 		tools := BuiltInTools()
@@ -114,6 +120,13 @@ func TestBuiltInTools(t *testing.T) {
 
 		tools := BuiltInTools()
 		for _, tool := range tools {
+			if tool.Category == ToolCategorySkill {
+				// Skill tools install via SkillAgents, not InstallStrategies.
+				assert.NotEmpty(t, tool.SkillAgents,
+					"skill tool %q must have SkillAgents",
+					tool.Id)
+				continue
+			}
 			assert.NotEmpty(t, tool.InstallStrategies,
 				"tool %q must have InstallStrategies",
 				tool.Id)
@@ -266,8 +279,9 @@ func TestFindToolsByCategory(t *testing.T) {
 		ext := FindToolsByCategory(ToolCategoryVSCodeExtension)
 		srv := FindToolsByCategory(ToolCategoryServer)
 		lib := FindToolsByCategory(ToolCategoryAzdExtension)
+		skills := FindToolsByCategory(ToolCategorySkill)
 
-		total := len(cli) + len(ext) + len(srv) + len(lib)
+		total := len(cli) + len(ext) + len(srv) + len(lib) + len(skills)
 		assert.Equal(t, len(allTools), total,
 			"sum of categorised tools must equal total")
 	})
@@ -320,11 +334,12 @@ func TestSpecificToolDefinitions(t *testing.T) {
 			"azd extensions are self-contained; must not depend on az-cli")
 
 		for _, platform := range []string{"windows", "darwin", "linux"} {
-			strategy, ok := tool.InstallStrategies[platform]
+			strategies, ok := tool.InstallStrategies[platform]
 			require.True(t, ok, "missing install strategy for %s", platform)
-			assert.Contains(t, strategy.InstallCommand, "azure.ai.agents",
+			require.Len(t, strategies, 1)
+			assert.Contains(t, strategies[0].InstallCommand, "azure.ai.agents",
 				"%s install command must target azure.ai.agents", platform)
-			assert.Contains(t, strategy.InstallCommand, "--source azd",
+			assert.Contains(t, strategies[0].InstallCommand, "--source azd",
 				"%s install command must pin the azd source", platform)
 		}
 	})
@@ -358,6 +373,152 @@ func TestAllPlatforms(t *testing.T) {
 	for _, os := range []string{"windows", "darwin", "linux"} {
 		got, exists := result[os]
 		require.True(t, exists, "missing %s", os)
-		assert.Equal(t, strategy, got)
+		assert.Equal(t, []InstallStrategy{strategy}, got)
+	}
+
+	// Variadic form preserves order across all platforms.
+	a := InstallStrategy{PackageManager: "winget", PackageId: "A"}
+	b := InstallStrategy{PackageManager: "npm", PackageId: "B"}
+	multi := allPlatforms(a, b)
+	for _, os := range []string{"windows", "darwin", "linux"} {
+		assert.Equal(t, []InstallStrategy{a, b}, multi[os])
+	}
+}
+
+// TestGithubCopilotCLI_InstallStrategies guards that the per-platform install
+// strategies and the derived uninstall commands for the GitHub Copilot CLI
+// match the official docs (issue #8831): npm on all platforms, winget on
+// Windows, a Homebrew cask on macOS+Linux, and the install script (binary
+// removal on uninstall) on macOS+Linux.
+func TestGithubCopilotCLI_InstallStrategies(t *testing.T) {
+	t.Parallel()
+
+	tool := FindTool("github-copilot-cli")
+	require.NotNil(t, tool)
+
+	// helper: does the platform list contain a strategy matching pred?
+	has := func(platform string, pred func(InstallStrategy) bool) bool {
+		return slices.ContainsFunc(tool.InstallStrategies[platform], pred)
+	}
+	isWinget := func(s InstallStrategy) bool {
+		return s.PackageManager == "winget" && s.PackageId == "GitHub.Copilot"
+	}
+	isNpm := func(s InstallStrategy) bool {
+		return s.PackageManager == "npm" && s.PackageId == "@github/copilot"
+	}
+	isBrewCask := func(s InstallStrategy) bool {
+		return s.PackageManager == "brew" && s.PackageId == "copilot-cli" && s.Cask
+	}
+	isScript := func(s InstallStrategy) bool {
+		return s.PackageManager == "" &&
+			strings.Contains(s.InstallCommand, "copilot-install")
+	}
+
+	// Windows: winget (preferred) + npm.
+	assert.True(t, has("windows", isWinget), "windows winget")
+	assert.True(t, has("windows", isNpm), "windows npm")
+
+	// macOS: brew cask + npm + install script.
+	assert.True(t, has("darwin", isBrewCask), "darwin brew cask")
+	assert.True(t, has("darwin", isNpm), "darwin npm")
+	assert.True(t, has("darwin", isScript), "darwin install script")
+
+	// Linux: brew cask (preferred) + npm + install script.
+	assert.True(t, has("linux", isBrewCask), "linux brew cask")
+	assert.True(t, has("linux", isNpm), "linux npm")
+	assert.True(t, has("linux", isScript), "linux install script")
+
+	// The derived uninstall commands match the official documentation.
+	_, args := buildUninstallCommand("brew", "copilot-cli", true)
+	assert.Equal(t, []string{"uninstall", "--cask", "copilot-cli"}, args)
+	_, args = buildUninstallCommand("npm", "@github/copilot", false)
+	assert.Equal(t, []string{"uninstall", "-g", "@github/copilot"}, args)
+}
+
+// TestAzureSkillsAgentVersionProbeRegex locks the per-agent BinaryVersionRegex
+// against real `--version` banners: each agent's regex must capture the version
+// from that agent's genuine output and reject non-version output (a launcher
+// stub prompt, the banner prefix without a version, or an incidental semver
+// elsewhere in the stream).
+func TestAzureSkillsAgentVersionProbeRegex(t *testing.T) {
+	t.Parallel()
+
+	rx := map[string]string{}
+	for _, h := range azureSkills().SkillAgents {
+		// Key by the exec binary (Command, e.g. "copilot"/"claude") so the
+		// cases below are independent of the manifest's display Agent (e.g.
+		// "GitHub Copilot CLI").
+		rx[h.Command] = h.BinaryVersionRegex
+	}
+
+	cases := []struct {
+		name    string
+		agent   string
+		output  string
+		wantVer string // "" => must not match (agent treated as unusable)
+	}{
+		{
+			name:    "copilot real banner",
+			agent:   "copilot",
+			output:  "GitHub Copilot CLI 1.0.64-3.\nRun 'copilot update' to check for updates.",
+			wantVer: "1.0.64",
+		},
+		{
+			name:    "claude real banner",
+			agent:   "claude",
+			output:  "2.1.178 (Claude Code)",
+			wantVer: "2.1.178",
+		},
+		{
+			name:    "copilot stub prompt",
+			agent:   "copilot",
+			output:  "Cannot find GitHub Copilot CLI (https://docs.github.com/copilot)\nInstall GitHub Copilot CLI? ['y/N']",
+			wantVer: "",
+		},
+		{
+			name:    "copilot banner prefix without version",
+			agent:   "copilot",
+			output:  "GitHub Copilot CLI is not installed\nnode v20.11.1",
+			wantVer: "",
+		},
+		{
+			name:    "claude version not at line start",
+			agent:   "claude",
+			output:  "see https://example.com/1.2.3 (Claude Code plugin)",
+			wantVer: "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.wantVer, matchVersion(tc.output, rx[tc.agent]))
+		})
+	}
+}
+
+// TestAzureSkillsPostInstallNote locks the follow-up guidance shown after a
+// successful `azd tool install azure-skills`, which the install action surfaces
+// as the ActionResult FollowUp.
+func TestAzureSkillsPostInstallNote(t *testing.T) {
+	t.Parallel()
+
+	note := azureSkills().SpinnerNote
+	assert.NotEmpty(t, note, "azure-skills must set a post-install follow-up note")
+	assert.Contains(t, note, "Azure Skills are now available")
+}
+
+// TestBuiltInTools_SkillAgentsHaveCommand guarantees that every configured skill
+// agent sets a non-empty Command. Installer and detector paths run agent.Command
+// directly (no fallback), so a missing Command would try to exec an empty
+// string — this test fails fast if a new manifest entry omits it.
+func TestBuiltInTools_SkillAgentsHaveCommand(t *testing.T) {
+	t.Parallel()
+
+	for _, td := range BuiltInTools() {
+		for _, agent := range td.SkillAgents {
+			assert.NotEmpty(t, agent.Command,
+				"tool %q agent %q must set a non-empty Command", td.Id, agent.DisplayName)
+		}
 	}
 }

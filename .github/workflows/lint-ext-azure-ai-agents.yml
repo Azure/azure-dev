@@ -1,10 +1,11 @@
-name: ext-azure-ai-agents-ci
+name: ext-azure-ai-agents-lint
 
 on:
   pull_request:
     paths:
       - "cli/azd/extensions/azure.ai.agents/**"
       - ".github/workflows/lint-ext-azure-ai-agents.yml"
+      - ".github/workflows/verify-ext-providers.yml"
     branches: [main]
 
 concurrency:
@@ -13,10 +14,15 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: write
+  pull-requests: write  # required by reusable workflow lint-go.yml
 
 jobs:
   lint:
     uses: ./.github/workflows/lint-go.yml
+    with:
+      working-directory: cli/azd/extensions/azure.ai.agents
+
+  verify-providers:
+    uses: ./.github/workflows/verify-ext-providers.yml
     with:
       working-directory: cli/azd/extensions/azure.ai.agents

@@ -702,5 +702,8 @@
         "dotenv": "~17",
         "semver": "~7",
         "yaml": "~2"
+    },
+    "overrides": {
+        "serialize-javascript@<7.0.5": "^7.0.5"
     }
 }

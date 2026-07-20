@@ -107,7 +107,17 @@ func createDeployableZip(svc *ServiceConfig, root string) (string, error) {
 		return true, nil
 	}
 
-	if err := rzip.CreateFromDirectory(root, zipFile, onZip); err != nil {
+	// For Go function deploys the compiled worker binary must remain executable when
+	// the zip is extracted on Linux. On Windows the filesystem doesn't track Unix
+	// execute bits, so flag the binary explicitly rather than relying on file modes.
+	var createOpts []rzip.CreateOption
+	if svc.Language == ServiceLanguageGo {
+		createOpts = append(createOpts, rzip.WithExecutableMatcher(func(src string, info os.FileInfo) bool {
+			return !info.IsDir() && info.Name() == goBinaryName
+		}))
+	}
+
+	if err := rzip.CreateFromDirectory(root, zipFile, onZip, createOpts...); err != nil {
 		// if we fail here just do our best to close things out and cleanup
 		zipFile.Close()
 		os.Remove(zipFile.Name()) //nolint:gosec // G703: temp file cleanup

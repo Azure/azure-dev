@@ -44,6 +44,7 @@ overrides:
           - dependson
           - exegraph
           - pseudonymizing
+          - pulumi
     - filename: ./README.md
       words:
           - VSIX
@@ -133,6 +134,7 @@ overrides:
           - preprovision
           - postdeploy
           - pseudonymized
+          - pulumi
           - remotebuild
           - resourcegroup
           - springapp

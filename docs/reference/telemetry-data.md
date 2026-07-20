@@ -107,7 +107,7 @@ Commands follow the pattern `cmd.<command.path>` where spaces become dots.
 | Event | Description |
 |-------|-------------|
 | `tools.pack.build` | Cloud Native Buildpacks build |
-| `validation.preflight` | Local preflight validation |
+| `validation.provision` | Local provision validation |
 | `hooks.exec` | Lifecycle hook execution |
 | `aks.postprovision.skip` | AKS postprovision hook skipped |
 | `deploy.appservice.zip` | App Service zip deployment |
@@ -345,7 +345,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `infra.provider` | string | `bicep`, `terraform`, `auto` |
+| `infra.provider` | string or string[] | provision/up/down: sorted, de-duplicated string slice of resolved providers — `bicep`/`terraform`/`arm`/`pulumi`, or `custom` (extension providers; raw name not emitted); multi-layer projects record each distinct value (e.g. `["bicep","terraform"]`). generate/synth: the value read from azure.yaml's `infra.provider` as a single string (`bicep`/`terraform`/`arm`/`pulumi`, `auto` when unset, or `custom` for extension providers; raw name not emitted) |
 </details>
 
 <details>
@@ -358,15 +358,17 @@ Set **only when an external command-line tool invocation fails**, during error c
 </details>
 
 <details>
-<summary><strong>Preflight Validation</strong></summary>
+<summary><strong>Provision Validation</strong></summary>
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `validation.preflight.outcome` | string | `passed`, `warnings_accepted`, `aborted_by_errors`, `aborted_by_user`, `skipped`, `error` |
-| `validation.preflight.diagnostics` | string[] | Diagnostic IDs emitted |
-| `validation.preflight.rules` | string[] | Rule IDs executed |
-| `validation.preflight.warning.count` | measurement | Number of warnings |
-| `validation.preflight.error.count` | measurement | Number of errors |
+| `validation.provision.outcome` | string | `passed`, `warnings_accepted`, `canceled_by_errors`, `canceled_by_user`, `skipped`, `error` |
+| `validation.provision.diagnostics` | string[] | Diagnostic IDs emitted |
+| `validation.provision.rules` | string[] | Rule IDs executed |
+| `validation.provision.extension_rules` | string[] | Rule IDs executed from extension-provided validation checks |
+| `validation.provision.check_type` | string | Dispatch site that emitted the event: `arm-provision` (Bicep provider) or `provision` (provider-agnostic). Distinguishes the two emissions so Bicep provisions are not double-counted |
+| `validation.provision.warning.count` | measurement | Number of warnings |
+| `validation.provision.error.count` | measurement | Number of errors |
 </details>
 
 <details>
@@ -388,6 +390,16 @@ Emitted on `azd provision` / `azd up` to measure adoption and safety of `infra.l
 | `provision.layer.max_parallel` | measurement | Largest number of layers scheduled in one dependency level (max achievable parallelism) |
 | `provision.layer.safe_fallback_count` | measurement | Layers forced to depend on all earlier layers by the safe-by-default detector |
 | `provision.layer.explicit_dependson_count` | measurement | Layers using the explicit `infra.layers[].dependsOn` override |
+</details>
+
+<details>
+<summary><strong>Foundry Private Networking</strong></summary>
+
+Emitted at provision start by the `microsoft.foundry` provisioning provider (the `azure.ai.projects` extension) to measure secured-agent adoption and the BYO-vs-managed split.
+
+| Field Key | Type | Description |
+|-----------|------|-------------|
+| `provision.network_mode` | string | `none` (public account, no `network:` block), `byo` (customer VNet), or `managed` (Foundry-managed VNet) |
 </details>
 
 <details>
@@ -440,6 +452,7 @@ Emitted on `azd provision` / `azd up` to measure adoption and safety of `infra.l
 | `extension.version.from` | string | Version before an upgrade or promotion (`ext.upgrade`, `ext.promote`) |
 | `extension.version.to` | string | Version after an upgrade or promotion (`ext.upgrade`, `ext.promote`) |
 | `extension.source` | string | Registry source used for an upgrade (`ext.upgrade`) |
+| `extension.source.kind` | string | Kind of `--source` argument: `none`, `registered`, or `location` (`azd extension list`, `show`, `install`, `upgrade`) |
 | `extension.source.from` | string | Registry source before a promotion (`ext.promote`) |
 | `extension.source.to` | string | Registry source after a promotion (`ext.promote`) |
 | `extension.upgrade.duration_ms` | measurement | Duration (ms) of a single upgrade (`ext.upgrade`) |
@@ -474,7 +487,7 @@ Built-in tool IDs come from azd's curated tool manifest (run `azd tool list` to 
 | `tool.firstrun.install_failed_ids` | string | Comma-separated tool IDs that failed during first-run |
 | `tool.firstrun.install_duration_ms` | measurement | Total first-run install duration (ms) |
 
-**Install / upgrade / check operations:**
+**Install / upgrade / uninstall / check operations:**
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
@@ -482,14 +495,14 @@ Built-in tool IDs come from azd's curated tool manifest (run `azd tool list` to 
 | `tool.ids` | string | Comma-separated tool IDs for a batch operation |
 | `tool.dry_run` | string | Whether `--dry-run` was specified |
 | `tool.install.strategy` | string | Install strategy used. Package-manager values come from the tool manifest (`winget`, `brew`, `apt`, `npm`, `code`); the installer may also report `direct-download`, `command`, or `manual` (no available manager) |
-| `tool.install.success` | string | Whether a single-target install/upgrade succeeded |
-| `tool.install.success_count` | measurement | Tools that succeeded in a batch install/upgrade |
-| `tool.install.failure_count` | measurement | Tools that failed in a batch install/upgrade |
-| `tool.install.failed_ids` | string | Comma-separated tool IDs whose install/upgrade failed |
-| `tool.install.duration_ms` | measurement | Total install/upgrade duration (ms) |
+| `tool.install.success` | string | Whether a single-target install, upgrade, or uninstall succeeded |
+| `tool.install.success_count` | measurement | Tools that succeeded in a batch install/upgrade/uninstall |
+| `tool.install.failure_count` | measurement | Tools that failed in a batch install/upgrade/uninstall |
+| `tool.install.failed_ids` | string | Comma-separated tool IDs whose install/upgrade/uninstall failed |
+| `tool.install.duration_ms` | measurement | Total install/upgrade/uninstall duration (ms) |
 | `tool.upgrade.from_version` | string | Previous version (single-target upgrade) |
 | `tool.upgrade.to_version` | string | New version after a successful upgrade (single-target) |
-| `tool.check.updates_available` | measurement | Installed tools with an available update (`azd tool check`) |
+| `tool.check.updates_available` | measurement | Installed tools with an available upgrade (`azd tool check`) |
 </details>
 
 <details>
@@ -574,11 +587,25 @@ The `execution.environment` field identifies where azd is running. Format: `<env
 | `GitHub Codespaces` | GitHub Codespaces |
 | Other CI systems | `AppVeyor`, `Bamboo`, `BitBucket Pipelines`, `Travis CI`, `Circle CI`, `GitLab CI`, `Jenkins`, `AWS CodeBuild`, `Google Cloud Build`, `TeamCity`, `JetBrains Space` |
 
-**Modifier:** `Azure App Spaces Portal` may be appended as a modifier (`;` separated).
+**Modifiers:** `Azure App Spaces Portal` and `Microsoft Foundry Skill` may be appended as modifiers (`;` separated).
 
 ## Data Nuances & Gotchas
 
 Important things to know when working with azd telemetry data. These are sourced from real investigations and issues.
+
+### `infra.provider` Is Multi-Valued and Type-Polymorphic (by design)
+
+`infra.provider` is intentionally emitted with different shapes depending on the command, so consumers must handle both:
+
+- **`provision` / `up` / `down`** emit a **string array** — the sorted, de-duplicated set of IaC providers the command's layers resolve to (e.g. `["bicep"]`, or `["bicep","terraform"]` for a multi-layer project that mixes providers). This deliberately replaces an earlier single `"mixed"` marker so the specific combination is preserved while staying low-cardinality (built-in provider names are a fixed enum). The deprecated wrappers `infra create` (delegates to `provision`) and `infra delete` (delegates to `down`) emit the same array on their `cmd.infra.create` / `cmd.infra.delete` spans.
+- **`infra generate` / `infra synth`** emit a **single string** — the value read from `azure.yaml`'s `infra.provider` (`auto` when unset), with non-built-in (extension) providers bucketed to `custom` so a raw user-chosen name is never emitted.
+
+Two consequences to be aware of:
+
+- The same key is a scalar `string` on some commands and a `string[]` on others. Queries must accept both (e.g. treat a scalar as a one-element set).
+- Non-built-in (extension) providers are bucketed to `custom` **before** de-duplication, so a project that combines two *different* extension providers records a single `["custom"]` — the raw names are never emitted and the two are not distinguished.
+
+In all cases the value is attached **directly to that command's span** (not the process-global usage bag), so it is scoped to `cmd.provision` / `cmd.up` / `cmd.down` / `cmd.infra.generate` (and the deprecated wrappers `cmd.infra.create` / `cmd.infra.delete`) only (both `infra generate` and its `synth` alias resolve to the canonical `cmd.infra.generate` span). It is never copied onto sibling in-process child commands — for example, a custom `workflows.up` running `provision` then `deploy` does **not** tag `cmd.deploy` or `cmd.package` with `infra.provider`.
 
 ### OperationId Reuse in Retry/Troubleshoot Flows
 
@@ -611,6 +638,25 @@ OperationId: 28ce1f2898a4fec84522107e36c22038
 // ✅ Or be explicit about only first attempts
 | where Name == 'cmd.deploy'
 | summarize arg_min(TimeGenerated, *) by OperationId
+```
+
+### `validation.provision` Emitted Twice Per Bicep Provision
+
+The `validation.provision` event is emitted from **two** dispatch sites:
+
+- The provider-agnostic **`provision`** validation in `provisioning.Manager` (runs for every provider before provisioning), and
+- The Bicep provider's **`arm-provision`** validation (runs only for Bicep, using the ARM template snapshot).
+
+For a **Bicep** provision with a `validation-provider` extension loaded, **both** fire in a single run, producing two `validation.provision` rows (each with its own `outcome`, warning/error counts, and rule lists). Use the `validation.provision.check_type` field (`provision` vs `arm-provision`) to distinguish them.
+
+**Impact on queries:**
+```kql
+// ❌ WRONG — double-counts Bicep provisions
+| where Name == 'validation.provision' | summarize count()
+
+// ✅ CORRECT — group/filter by the dispatch site
+| where Name == 'validation.provision'
+| summarize count() by tostring(customDimensions['validation.provision.check_type'])
 ```
 
 ### The `internal.unclassified` / `internal.errors_errorString` Catch-All
@@ -646,7 +692,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Container Apps (Aspire)** | `cmd.deploy`, `cmd.provision` | `project.service.targets` = `containerapp-dotnet`, `platform.type` = `aca` | Aspire-specific adoption and success |
 | **Language Support** | `cmd.deploy`, `cmd.package`, `cmd.restore` | `project.service.languages`, `project.service.language` | Usage by language |
 | **Templates** | `cmd.init`, `cmd.up` | `project.template.id` (hashed — join with template lookup to resolve) | Template adoption, success by template |
-| **Provisioning (IaC)** | `cmd.provision`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`, `terraform`) | Provision success, ARM errors, duration |
+| **Provisioning (IaC)** | `cmd.provision`, `cmd.up`, `cmd.down`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`/`terraform`/`arm`/`pulumi`/custom; slice of each distinct provider for multi-layer projects) | Provision success, ARM errors, duration |
 | **Authentication** | `cmd.auth.login` | `auth.method` | Auth method usage, failure rates |
 | **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
 | **Extensions** | `ext.run`, `ext.install`, `ext.upgrade` | `extension.id`, `extension.version`, `extension.installed` | Extension adoption, errors |
@@ -658,7 +704,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Self-Update** | `cmd.update` | `update.installMethod`, `update.fromVersion` | Update adoption |
 | **Hooks** | `hooks.exec` | `hooks.name`, `hooks.type`, `hooks.kind` | Hook usage by type |
 | **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `pack.builder.image` | Build method usage, success rates |
-| **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.upgrade`, `cmd.tool.check` | `tool.id`, `tool.install.strategy`, `tool.firstrun.outcome` | First-run adoption, install/upgrade success, update availability |
+| **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.upgrade`, `cmd.tool.uninstall`, `cmd.tool.check` | `tool.id`, `tool.install.strategy`, `tool.firstrun.outcome` | First-run adoption, install/upgrade/uninstall success, upgrade availability |
 
 ## See Also
 

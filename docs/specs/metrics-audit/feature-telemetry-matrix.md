@@ -30,11 +30,11 @@ These commands emit attributes or events beyond the global middleware span.
 |---------|---------------------|-------|
 | `init` | `init.method` (template / app / project / environment / copilot), `appinit.detected.databases`, `appinit.detected.services`, `appinit.confirmed.databases`, `appinit.confirmed.services`, `appinit.modify_add.count`, `appinit.modify_remove.count`, `appinit.lastStep` | Comprehensive coverage via `SetUsageAttributes` and `repository/app_init.go` |
 | `update` | `update.installMethod`, `update.channel`, `update.fromVersion`, `update.toVersion`, `update.result` | Result codes cover success, failure, and skip reasons |
-| Extensions (dynamic) | `extension.id`, `extension.version`, `extension.version.from`, `extension.version.to`, `extension.source`, `extension.source.from`, `extension.source.to`, `extension.dependency_of`, `extension.dependency_upgrade_count`, `extension.upgrade.outcome`, `extension.upgrade.duration_ms` + trace-context propagation to child process | Covers `ext.run`, `ext.install`, `ext.upgrade`, `ext.promote` events; upgrade/promote spans set source and dependency attributes |
+| Extensions (dynamic) | `extension.id`, `extension.version`, `extension.version.from`, `extension.version.to`, `extension.source`, `extension.source.kind`, `extension.source.from`, `extension.source.to`, `extension.dependency_of`, `extension.dependency_upgrade_count`, `extension.upgrade.outcome`, `extension.upgrade.duration_ms` + trace-context propagation to child process | Covers `ext.run`, `ext.install`, `ext.upgrade`, `ext.promote` events; `extension.source.kind` distinguishes no source, registered source, and direct location usage for extension list/show/install/upgrade |
 | `mcp start` | Per-tool spans via `tracing.Start` with `mcp.client.name`, `mcp.client.version` | MCP event prefix `mcp.*` |
-| `tool install` / `tool upgrade` / `tool check` / `tool list` / `tool show` | `tool.id`, `tool.ids`, `tool.dry_run`, `tool.install.strategy`, `tool.install.success`, `tool.install.success_count`, `tool.install.failure_count`, `tool.install.failed_ids`, `tool.install.duration_ms`, `tool.upgrade.from_version`, `tool.upgrade.to_version`, `tool.check.updates_available` | Comprehensive coverage in `cli/azd/cmd/tool.go`; install/upgrade emit `tools.pack.build` spans for pack-based tools |
+| `tool install` / `tool upgrade` / `tool uninstall` / `tool check` / `tool list` / `tool show` | `tool.id`, `tool.ids`, `tool.dry_run`, `tool.install.strategy`, `tool.install.success`, `tool.install.success_count`, `tool.install.failure_count`, `tool.install.failed_ids`, `tool.install.duration_ms`, `tool.upgrade.from_version`, `tool.upgrade.to_version`, `tool.check.updates_available` | Comprehensive coverage in `cli/azd/cmd/tool.go`; install/upgrade emit `tools.pack.build` spans for pack-based tools |
 | `copilot` (agent) | `copilot.initialize` event (model + reasoning config), `copilot.session` event (session create/resume) | Emitted from `internal/agent/copilot_agent.go`; covers the experimental copilot agent surface |
-| `provision` | `validation.preflight` event (preflight outcome + 5 fields), 8 `arm.*` events (subscription / resource-group deploy / stack-deploy / what-if / validate), `aks.postprovision.skip`, per-layer `provision.layer.*` counts (`count`, `max_parallel`, `safe_fallback_count`, `explicit_dependson_count`) when multi-layer infra is used | Telemetry added across `internal/cmd/provision_*.go` and the ARM deployment client |
+| `provision` | `validation.provision` event (provision validation outcome + 6 fields), 8 `arm.*` events (subscription / resource-group deploy / stack-deploy / what-if / validate), `aks.postprovision.skip`, per-layer `provision.layer.*` counts (`count`, `max_parallel`, `safe_fallback_count`, `explicit_dependson_count`) when multi-layer infra is used | Telemetry added across `internal/cmd/provision_*.go` and the ARM deployment client |
 | `deploy` / `publish` / `package` | `deploy.appservice.zip` event (zip-deploy outcome), `container.credentials` / `container.publish` / `container.remotebuild` events for container-based services | Per-service-target instrumentation; container events emitted from container-app and ACR push paths |
 | `hooks run` (and all hook-running commands) | `hooks.exec` event with `hooks.name` (hashed unless built-in lifecycle name), `hooks.type` (project / service / **layer**), `hooks.kind` (script runtime — `sh` / `pwsh` / `js` / `ts` / `python` / `dotnet`) | `hooks.type=layer` was added with multi-layer provision; pre/post is encoded in `hooks.name` (e.g., `prebuild` / `postbuild`); emitted from the hooks runner on every lifecycle command |
 
@@ -65,19 +65,19 @@ These commands emit attributes or events beyond the global middleware span.
 | **Show** | | | | | |
 | `show` | — | ✅ | ❌ | ❌ | Redundant — output format not analytically useful |
 | **Infrastructure** | | | | | |
-| `infra generate` | — | ✅ | ✅ | ❌ | `infra.provider` (bicep/terraform) |
-| `infra synth` | — | ✅ | ✅ | ❌ | `infra.provider` (bicep/terraform) |
+| `infra generate` | — | ✅ | ✅ | ❌ | `infra.provider` (from azure.yaml's `infra.provider`: `bicep`/`terraform`/`arm`/`pulumi`, `auto` when unset, or `custom` for extension providers — raw name not emitted; see cross-cutting row) |
+| `infra synth` | — | ✅ | ✅ | ❌ | `infra.provider` (from azure.yaml's `infra.provider`: `bicep`/`terraform`/`arm`/`pulumi`, `auto` when unset, or `custom` for extension providers — raw name not emitted; see cross-cutting row) |
 | `infra create` | — (hidden, deprecated) | ✅ | ❌ | ❌ | Wraps `provision`; inherits its telemetry |
 | `infra delete` | — (hidden, deprecated) | ✅ | ❌ | ❌ | Wraps `down`; inherits its telemetry |
 | **Core Lifecycle** | | | | | |
 | `restore` | — | ✅ | ❌ | ❌ | Via hooks middleware |
 | `build` | — | ✅ | ❌ | ❌ | Via hooks middleware |
-| `provision` | — | ✅ | ✅ | ✅ | Emits `validation.preflight`, 8 `arm.*` events, `aks.postprovision.skip`, and per-layer `provision.layer.*` counts (`count`, `max_parallel`, `safe_fallback_count`, `explicit_dependson_count`) for multi-layer infra |
+| `provision` | — | ✅ | ✅ | ✅ | Emits `validation.provision`, 8 `arm.*` events, `aks.postprovision.skip`, and per-layer `provision.layer.*` counts (`count`, `max_parallel`, `safe_fallback_count`, `explicit_dependson_count`) for multi-layer infra; sets `infra.provider` (resolved IaC provider slice) directly on the command span |
 | `package` | — | ✅ | ✅ | ✅ | Via hooks middleware; container service targets emit `container.credentials`, `container.publish`, `container.remotebuild` events |
 | `deploy` | — | ✅ | ✅ | ✅ | App Service zip-deploy emits `deploy.appservice.zip` (`deploy.appservice.linux`, `deploy.appservice.attempt`); container service targets emit `container.*` events |
 | `publish` | — | ✅ | ✅ | ✅ | Same as `deploy` (alias behavior) |
-| `up` | — | ✅ | ✅ | ✅ | Composes provision+deploy and inherits all their events; the up-graph runner emits `perf.provision_duration_ms`, `perf.deploy_duration_ms`, `perf.total_duration_ms` (`internal/cmd/up_graph.go`) |
-| `down` | — | ✅ | ❌ | ❌ | Teardown flow; pre/postdown lifecycle hooks emit `hooks.exec` via the hooks middleware |
+| `up` | — | ✅ | ✅ | ✅ | Composes provision+deploy and inherits all their events; sets `infra.provider` (resolved IaC provider slice) directly on the `cmd.up` span; the up-graph runner emits `perf.provision_duration_ms`, `perf.deploy_duration_ms`, `perf.total_duration_ms` (`internal/cmd/up_graph.go`) |
+| `down` | — | ✅ | ✅ | ❌ | Teardown flow; pre/postdown lifecycle hooks emit `hooks.exec` via the hooks middleware; sets `infra.provider` (resolved IaC provider slice) directly on the command span |
 | **Add** | | | | | |
 | `add` | — | ✅ | ❌ | ❌ | Low priority |
 | **Completion** | | | | | |
@@ -87,7 +87,7 @@ These commands emit attributes or events beyond the global middleware span.
 | **Copilot Consent** | | | | | |
 | `copilot consent` | `list`, `revoke`, `grant` | ✅ | ❌ | ❌ | Low priority |
 | **Extension Management** | | | | | |
-| `extension` | `list`, `show`, `install`, `uninstall`, `upgrade` | ✅ | ✅ | ✅ | Covered by `extension.*` fields and `ext.install`, `ext.upgrade`, `ext.promote` events |
+| `extension` | `list`, `show`, `install`, `uninstall`, `upgrade` | ✅ | ✅ | ✅ | Covered by `extension.*` fields and `ext.install`, `ext.upgrade`, `ext.promote` events; `extension.source.kind` tracks `--source` argument kind for list/show/install/upgrade |
 | `extension source` | `list`, `add`, `remove`, `validate` | ✅ | ❌ | ❌ | Subcommand name in the global span captures the operation; `extension.source*` attributes are recorded by `extension upgrade` / `extension promote`, not by this subcommand |
 | **Init** | | | | | |
 | `init` | — | ✅ | ✅ | ✅ | Comprehensive coverage via `appinit.*` fields |
@@ -99,6 +99,7 @@ These commands emit attributes or events beyond the global middleware span.
 | `tool list` | — | ✅ | ✅ | ❌ | `tool.ids` listed for visibility into per-row outputs |
 | `tool install` | — | ✅ | ✅ | ✅ | `tool.id`, `tool.install.strategy`, `tool.install.success`, `tool.install.success_count`, `tool.install.failure_count`, `tool.install.failed_ids`, `tool.install.duration_ms`, `tool.dry_run`; `tools.pack.build` for pack-based tools |
 | `tool upgrade` | — | ✅ | ✅ | ✅ | All `tool.install.*` plus `tool.upgrade.from_version`, `tool.upgrade.to_version` |
+| `tool uninstall` | — | ✅ | ✅ | ✅ | `tool.id`/`tool.ids`, `tool.dry_run`, and the `tool.install.*` aggregate/per-tool fields (no version fields) |
 | `tool check` | — | ✅ | ✅ | ❌ | `tool.check.updates_available` (count) |
 | `tool show` | — | ✅ | ✅ | ❌ | `tool.id` |
 | **Copilot (Agent)** | | | | | |
@@ -121,11 +122,11 @@ command-specific telemetry fields provide analytical value beyond the command na
 | Hooks kind | `hooks.kind` | `hooks run` | Distinguishes the script runtime used to execute the hook (`sh`, `pwsh`, `js`, `ts`, `python`, `dotnet`) |
 | Pipeline provider | `pipeline.provider` | `pipeline config` | Distinguishes GitHub vs Azure DevOps |
 | Pipeline auth | `pipeline.auth` | `pipeline config` | Distinguishes federated vs client-credentials |
-| Infra provider | `infra.provider` | `infra generate`, `infra synth` | Distinguishes Bicep vs Terraform |
+| Infra provider | `infra.provider` | `infra generate`, `infra synth`, `provision`, `up`, `down` | provision/up/down: sorted, de-duplicated string slice of resolved providers — `bicep`/`terraform`/`arm`/`pulumi` verbatim, `custom` for extension providers (raw name not emitted); multi-layer projects that combine providers record each distinct value (e.g. `["bicep","terraform"]`). `infra generate`/`synth`: the value read from azure.yaml's `infra.provider` emitted directly as a single string (`bicep`/`terraform`/`arm`/`pulumi`, `auto` when unset, or `custom` for extension providers — raw name not emitted) |
 | Tool ID | `tool.id` / `tool.ids` | `tool *` | Identifies which managed tool (e.g., bicep, gh, kubectl) the command acted on |
-| Tool install metrics | `tool.install.*` | `tool install`, `tool upgrade`, first-run middleware | Success count, failure count, duration, strategy — quantitative install health |
+| Tool install metrics | `tool.install.*` | `tool install`, `tool upgrade`, `tool uninstall`, first-run middleware | Success count, failure count, duration, strategy — quantitative install health |
 | Tool upgrade versions | `tool.upgrade.from_version`, `tool.upgrade.to_version` | `tool upgrade` | Tracks adoption of new tool versions |
-| Preflight outcome | `validation.preflight.outcome` (+ peer fields) | `provision` | Distinguishes passed / warnings-accepted / aborted local validation |
+| Provision validation outcome | `validation.provision.outcome` (+ peer fields incl. `validation.provision.check_type`) | `provision` | Distinguishes passed / warnings-accepted / canceled local validation; `check_type` separates the provider-agnostic `provision` dispatch from the Bicep `arm-provision` dispatch (both share the event) |
 | ARM deployment events | `arm.deploy.*`, `arm.stack.deploy.*`, `arm.whatif.*`, `arm.validate.*` | `provision` | Distinguishes deployment scope (subscription vs resource-group) and operation kind (deploy / stack / what-if / validate) |
 | Container events | `container.credentials`, `container.publish`, `container.remotebuild` | `package`, `deploy` | Per-stage container lifecycle for container-based services |
 | Multi-layer provision | `provision.layer.*` | `provision` | Layer-graph shape counts for multi-layer infra: `count`, `max_parallel`, `safe_fallback_count`, `explicit_dependson_count` (integer measurements; no duration or outcome) |
@@ -155,7 +156,7 @@ privacy review covers every emission point.
 |-----------|---------|--------|----------------|-------|
 | **Tool first-run middleware** | Wraps every interactive command | (none — enriches the active span) | `tool.firstrun.outcome`, `tool.firstrun.skip_reason`, `tool.firstrun.opt_in`, `tool.firstrun.tools_detected`, `tool.firstrun.tools_offered`, `tool.firstrun.tools_selected`, `tool.firstrun.tools_selected_names`, `tool.firstrun.tools_deselected_names`, `tool.firstrun.install_success_count`, `tool.firstrun.install_failure_count`, `tool.firstrun.install_failed_ids`, `tool.firstrun.install_duration_ms` | Records the first-run consent + tool-install flow; outcome key replaces deprecated boolean `tool.firstrun.completed` |
 | **Hooks execution middleware** | Every lifecycle command (provision/deploy/up/down/restore/build/package/publish) | `hooks.exec` | `hooks.name` (hashed unless built-in lifecycle name), `hooks.type` (project / service / layer), `hooks.kind` (script runtime — `sh` / `pwsh` / `js` / `ts` / `python` / `dotnet`) | Layer-scope hooks added with multi-layer provision; pre/post is encoded in `hooks.name` (e.g., `prebuild` / `postbuild`), not in `hooks.kind` |
-| **Preflight validation** | `provision` (prior to ARM deploy) | `validation.preflight` | `validation.preflight.outcome`, plus 4 peer fields covering warnings/errors counts and abort reason | Local-only validation; outcome captures passed / warnings-accepted / aborted |
+| **Provision validation** | `provision` (all providers, plus Bicep `arm-provision` prior to ARM deploy) | `validation.provision` | `validation.provision.outcome`, plus peer fields covering warnings/errors counts, cancel reason, and `check_type` (dispatch site) | Local-only validation; runs for every provider via the provider-agnostic `provision` dispatch and additionally as Bicep `arm-provision`. `check_type` distinguishes the two emissions so Bicep provisions are not double-counted |
 | **ARM deployment client** | `provision` (any Bicep flow) | `arm.deploy.subscription`, `arm.deploy.resourcegroup`, `arm.stack.deploy.subscription`, `arm.stack.deploy.resourcegroup`, `arm.whatif.subscription`, `arm.whatif.resourcegroup`, `arm.validate.subscription`, `arm.validate.resourcegroup` | ARM operation status + duration | Per-call instrumentation in the ARM client; covers regular + stack deployments at both scopes |
 | **Multi-layer provision** | `provision` (when `infra.layers[]` is configured in `azure.yaml`) | (none — enriches the `provision` span) | `provision.layer.count`, `provision.layer.max_parallel`, `provision.layer.safe_fallback_count`, `provision.layer.explicit_dependson_count` | All four are integer measurements emitted from `internal/cmd/provision_graph.go`; no per-layer duration or outcome attribute is emitted |
 | **Execution graph (scheduler)** | `up`, `provision`, `deploy`, `package`, `publish`, `down` | `exegraph.run`, `exegraph.step` | `exegraph.step.count`, `exegraph.max_concurrency`, `exegraph.error_policy`, `exegraph.step.name` (hashed), `exegraph.step.deps` (hashed slice), `exegraph.step.tags` (raw — hardcoded literals only), `exegraph.step.timeout_s` | Step names embed user-defined service / layer names from `azure.yaml`; both `name` and `deps` use `fields.StringHashed` / `fields.StringSliceHashed` |

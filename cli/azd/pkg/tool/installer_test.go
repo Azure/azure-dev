@@ -4,24 +4,52 @@
 package tool
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// fakeStepRenderer records the step spinner calls the installer makes, so
+// tests can assert the per-step titles and any skill-count sub-line.
+type fakeStepRenderer struct {
+	starts   []string
+	stops    []string
+	messages []string
+}
+
+func (f *fakeStepRenderer) ShowSpinner(_ context.Context, title string, _ input.SpinnerUxType) {
+	f.starts = append(f.starts, title)
+}
+
+func (f *fakeStepRenderer) StopSpinner(_ context.Context, lastMessage string, _ input.SpinnerUxType) {
+	f.stops = append(f.stops, lastMessage)
+}
+
+func (f *fakeStepRenderer) Message(_ context.Context, message string) {
+	f.messages = append(f.messages, message)
+}
 
 // ---------------------------------------------------------------------------
 // mockDetector — simple in-package mock for the Detector interface
@@ -36,6 +64,10 @@ type mockDetector struct {
 		ctx context.Context,
 		tools []*ToolDefinition,
 	) ([]*ToolStatus, error)
+	detectSkillAgentsFn func(
+		ctx context.Context,
+		tool *ToolDefinition,
+	) ([]InstalledSkillAgent, error)
 }
 
 func (m *mockDetector) DetectTool(
@@ -60,6 +92,37 @@ func (m *mockDetector) DetectAll(
 		results[i] = &ToolStatus{Tool: t}
 	}
 	return results, nil
+}
+
+func (m *mockDetector) DetectSkillAgents(
+	ctx context.Context,
+	tool *ToolDefinition,
+) ([]InstalledSkillAgent, error) {
+	if m.detectSkillAgentsFn != nil {
+		return m.detectSkillAgentsFn(ctx, tool)
+	}
+	// Default (agent-agnostic): when detectToolFn reports the skill
+	// installed, treat every configured agent as having that version. This
+	// keeps agent-selection tests passing without per-agent wiring;
+	// agent-scoped verification is covered by tests that set
+	// detectSkillAgentsFn explicitly.
+	if m.detectToolFn != nil && tool != nil {
+		status, err := m.detectToolFn(ctx, tool)
+		if err != nil {
+			return nil, err
+		}
+		if status != nil && status.Installed {
+			agents := make([]InstalledSkillAgent, 0, len(tool.SkillAgents))
+			for _, h := range tool.SkillAgents {
+				agents = append(agents, InstalledSkillAgent{
+					Agent:   h.Command,
+					Version: status.InstalledVersion,
+				})
+			}
+			return agents, nil
+		}
+	}
+	return nil, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +197,104 @@ func TestInstall_WithPackageManager(t *testing.T) {
 	assert.Contains(t, capturedArgs, "@test/tool")
 }
 
+// TestRunToolInstall_StepProgress verifies that a non-skill tool install
+// renders a single step spinner for the tool (no per-agent title) and no
+// skill-count sub-line.
+func TestRunToolInstall_StepProgress(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "install")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: true, InstalledVersion: "2.64.0"}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	nonSkill := &ToolDefinition{
+		Id:       "test-tool",
+		Name:     "Test Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/tool",
+		}),
+	}
+
+	r := &fakeStepRenderer{}
+	result, err := inst.Install(t.Context(), nonSkill, WithStepProgress(r))
+	require.NoError(t, err)
+	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
+
+	assert.Equal(t, []string{"Installing Test Tool"}, r.starts)
+	assert.Equal(t, []string{"Installing Test Tool"}, r.stops)
+	assert.Empty(t, r.messages, "non-skill install reports no skill count")
+}
+
+// TestRunToolUpgrade_StepProgress_ShowsVersion verifies that a non-skill
+// upgrade appends the resulting version to the step result line — the same
+// treatment skills get — e.g. "Upgrading Test Tool (v2.64.0)".
+func TestRunToolUpgrade_StepProgress_ShowsVersion(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "update")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: true, InstalledVersion: "2.64.0"}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	nonSkill := &ToolDefinition{
+		Id:       "test-tool",
+		Name:     "Test Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/tool",
+		}),
+	}
+
+	r := &fakeStepRenderer{}
+	result, err := inst.Upgrade(t.Context(), nonSkill, WithStepProgress(r))
+	require.NoError(t, err)
+	require.True(t, result.Success, "upgrade must succeed; err=%v", result.Error)
+
+	assert.Equal(t, []string{"Upgrading Test Tool"}, r.starts)
+	assert.Equal(t, []string{"Upgrading Test Tool (v2.64.0)"}, r.stops,
+		"a non-skill upgrade must report the resulting version, like skills")
+}
+
 func TestInstall_WithInstallCommand(t *testing.T) {
 	t.Parallel()
 
@@ -174,16 +335,16 @@ func TestInstall_WithInstallCommand(t *testing.T) {
 		Id:       "custom-tool",
 		Name:     "Custom Tool",
 		Category: ToolCategoryCLI,
-		InstallStrategies: map[string]InstallStrategy{
-			"windows": {
+		InstallStrategies: map[string][]InstallStrategy{
+			"windows": {{
 				InstallCommand: "curl -sL https://example.com/install.sh",
-			},
-			"darwin": {
+			}},
+			"darwin": {{
 				InstallCommand: "curl -sL https://example.com/install.sh",
-			},
-			"linux": {
+			}},
+			"linux": {{
 				InstallCommand: "curl -sL https://example.com/install.sh",
-			},
+			}},
 		},
 	}
 
@@ -259,7 +420,7 @@ func TestInstall_NoStrategyForPlatform(t *testing.T) {
 		Id:                "no-strategy",
 		Name:              "No Strategy",
 		Category:          ToolCategoryCLI,
-		InstallStrategies: map[string]InstallStrategy{},
+		InstallStrategies: map[string][]InstallStrategy{},
 	}
 
 	result, err := inst.Install(t.Context(), tool)
@@ -428,6 +589,7 @@ func TestInstall_NonCLI_ExhaustsRetries(t *testing.T) {
 
 	pd := NewPlatformDetector(runner)
 	inst := NewInstaller(runner, pd, det)
+	inst.(*installer).retryBackoff = time.Millisecond // keep the test fast
 
 	tool := &ToolDefinition{
 		Id:       "ext-tool",
@@ -646,6 +808,7 @@ func TestBuildManagerCommand(t *testing.T) {
 		manager   string
 		packageID string
 		upgrade   bool
+		cask      bool
 		expectCmd string
 		expectArg string // action keyword to find in args
 	}{
@@ -680,6 +843,24 @@ func TestBuildManagerCommand(t *testing.T) {
 			upgrade:   true,
 			expectCmd: "brew",
 			expectArg: "upgrade",
+		},
+		{
+			name:      "BrewCaskInstall",
+			manager:   "brew",
+			packageID: "copilot-cli",
+			upgrade:   false,
+			cask:      true,
+			expectCmd: "brew",
+			expectArg: "--cask",
+		},
+		{
+			name:      "BrewCaskUpgrade",
+			manager:   "brew",
+			packageID: "copilot-cli",
+			upgrade:   true,
+			cask:      true,
+			expectCmd: "brew",
+			expectArg: "--cask",
 		},
 		{
 			name:      "AptInstall",
@@ -743,7 +924,7 @@ func TestBuildManagerCommand(t *testing.T) {
 			t.Parallel()
 
 			cmd, args := buildManagerCommand(
-				tt.manager, tt.packageID, tt.upgrade,
+				tt.manager, tt.packageID, tt.upgrade, tt.cask,
 			)
 
 			assert.Equal(t, tt.expectCmd, cmd)
@@ -1080,4 +1261,3512 @@ func TestAggregateInstallResults_EmptyInputs(t *testing.T) {
 	assert.Equal(t, 0, successCount)
 	assert.Equal(t, 0, failureCount)
 	assert.Empty(t, failedIDs)
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+// allSkillAgentNames lists the agent binary names checked by the prereq
+// logic; tests must explicitly mock every entry so ToolInPath does not
+// fall back to the real PATH on the developer's machine.
+var allSkillAgentNames = []string{"copilot", "claude"}
+
+// TestRunSkill_Install_UsesConfiguredStdin verifies that when a step spinner is
+// showing, the skill agent command reads stdin from the reader supplied via
+// WithInput (the console's input) rather than the process-global os.Stdin — so
+// an agent prompt is answered on the stream azd owns (e.g. Cobra's redirected
+// input), not the wrong one.
+func TestRunSkill_Install_UsesConfiguredStdin(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+
+	myInput := strings.NewReader("y\n")
+	var pluginStdin io.Reader
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "marketplace")
+	}).Respond(exec.RunResult{ExitCode: 0})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "install")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		pluginStdin = args.StdIn
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillAgentsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillAgent, error) {
+				return []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.70"}}, nil
+			},
+		},
+	)
+
+	var r fakeStepRenderer
+	result, err := inst.Install(
+		t.Context(), newSkillTool(),
+		WithAgents("copilot"),
+		WithStepProgress(&r),
+		WithInput(myInput),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
+
+	assert.Same(t, myInput, pluginStdin,
+		"the plugin install command must read stdin from the WithInput reader, not os.Stdin")
+}
+
+// newSkillTool returns a minimal ToolDefinition exercising the
+// codepaths covered by these tests. The agent commands are simplified
+// but preserve the structural distinctions (copilot/claude each with a
+// MarketplaceAddCommand).
+func newSkillTool() *ToolDefinition {
+	return &ToolDefinition{
+		Id:       "test-azure-skills",
+		Name:     "Test Azure Skills",
+		Category: ToolCategorySkill,
+		Priority: ToolPriorityRecommended,
+		SkillAgents: []SkillAgent{
+			{
+				DisplayName:            "copilot",
+				Command:                "copilot",
+				MarketplaceAddCommand:  []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
+				PluginInstallCommand:   []string{"plugin", "install", "azure@azure-skills"},
+				PluginUpdateCommand:    []string{"plugin", "update", "azure@azure-skills"},
+				PluginUninstallCommand: []string{"plugin", "uninstall", "azure@azure-skills"},
+				PluginListCommand:      []string{"plugin", "list"},
+				PluginName:             "azure@azure-skills",
+				BinaryVersionArgs:      []string{"--version"},
+				BinaryVersionRegex:     `(?m)^GitHub Copilot CLI\s+v?(\d+\.\d+\.\d+)`,
+			},
+			{
+				DisplayName: "claude",
+				Command:     "claude",
+				MarketplaceAddCommand: []string{
+					"plugin", "marketplace", "add", "https://github.com/microsoft/azure-skills",
+				},
+				PluginInstallCommand:   []string{"plugin", "install", "azure@azure-skills"},
+				PluginUpdateCommand:    []string{"plugin", "update", "azure@azure-skills"},
+				PluginUninstallCommand: []string{"plugin", "uninstall", "azure@azure-skills"},
+				PluginListCommand:      []string{"plugin", "list", "--json"},
+				PluginName:             "azure@azure-skills",
+				BinaryVersionArgs:      []string{"--version"},
+				BinaryVersionRegex:     `(?m)^v?(\d+\.\d+\.\d+)\s+\(Claude Code\)`,
+			},
+		},
+	}
+}
+
+// TestRunSkill_StepProgress verifies that a silent skill install (the agent
+// CLI writes nothing to the terminal) shows the step spinner for the whole
+// step and stops it with the result, using the display-cased agent name. No
+// skill count is emitted.
+func TestRunSkill_StepProgress(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+
+	// The version-probe ("--version") is handled by mockAgentPresence; the
+	// marketplace-add and plugin-install commands succeed.
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "plugin")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillAgentsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillAgent, error) {
+				return []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.70"}}, nil
+			},
+		},
+	)
+
+	var r fakeStepRenderer
+	result, err := inst.Install(
+		t.Context(), newSkillTool(),
+		WithAgents("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
+
+	// A silent install (the mock agent CLI writes nothing) keeps the spinner
+	// for the whole step, then stops it with the result — no early teardown,
+	// no streamed-output result line, and no skill count.
+	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.starts)
+	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.stops)
+	assert.Empty(t, r.messages)
+}
+
+// TestParseUpgradeOutput covers extracting the version and the "already at
+// latest" state from each agent CLI's plugin-update output.
+func TestParseUpgradeOutput(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name            string
+		in              string
+		wantVersion     string
+		wantAlreadyLast bool
+	}{
+		{
+			name:            "CopilotAlreadyLatest",
+			in:              `updated successfully (v1.1.86, already at latest). 27 skills.`,
+			wantVersion:     "1.1.86",
+			wantAlreadyLast: true,
+		},
+		{
+			name:            "ClaudeUpdatedFromTo",
+			in:              `✔ Plugin "azure" updated from 1.1.73 to 1.1.86 for scope user. Restart to apply changes.`,
+			wantVersion:     "1.1.86",
+			wantAlreadyLast: false,
+		},
+		{
+			name:            "ClaudeAlreadyLatest",
+			in:              `✔ azure is already at the latest version (1.1.86).`,
+			wantVersion:     "1.1.86",
+			wantAlreadyLast: true,
+		},
+		{
+			name:            "NoVersion",
+			in:              "Plugin updated.",
+			wantVersion:     "",
+			wantAlreadyLast: false,
+		},
+		{
+			name:            "Empty",
+			in:              "",
+			wantVersion:     "",
+			wantAlreadyLast: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			gotVersion, gotAlreadyLast := parseUpgradeOutput(tc.in)
+			assert.Equal(t, tc.wantVersion, gotVersion)
+			assert.Equal(t, tc.wantAlreadyLast, gotAlreadyLast)
+		})
+	}
+}
+
+// TestRunSkill_Upgrade_StepResultShowsVersion verifies that an upgrade shows a
+// plain in-progress spinner title and reports the version — parsed from the
+// update command's output — on the result line only.
+func TestRunSkill_Upgrade_StepResultShowsVersion(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+	// The update command reports the new version (claude-style "from A to B").
+	var upgraded bool
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "update")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		upgraded = true
+		return exec.RunResult{
+			ExitCode: 0,
+			Stdout:   `Plugin "azure" updated from 1.1.73 to 1.1.86 for scope user.`,
+		}, nil
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillAgentsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillAgent, error) {
+				// An actual upgrade: the old version before the update runs,
+				// the new version afterwards.
+				version := "1.1.73"
+				if upgraded {
+					version = "1.1.86"
+				}
+				return []InstalledSkillAgent{{Agent: "copilot", Version: version}}, nil
+			},
+		},
+	)
+
+	var r fakeStepRenderer
+	result, err := inst.Upgrade(
+		t.Context(), newSkillTool(),
+		WithAgents("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "upgrade must succeed; err=%v", result.Error)
+	assert.False(t, result.AlreadyUpToDate, "an actual upgrade is not up-to-date")
+
+	// Spinner title has no version; the result line appends the new version.
+	assert.Equal(t, []string{"Upgrading Test Azure Skills in copilot"}, r.starts)
+	assert.Equal(t, []string{"Upgrading Test Azure Skills in copilot (v1.1.86)"}, r.stops)
+}
+
+// TestRunSkill_Upgrade_AlreadyUpToDate verifies that when the agent reports the
+// skill is already at the latest version, the result line says so (with the
+// version) and the result is flagged AlreadyUpToDate.
+func TestRunSkill_Upgrade_AlreadyUpToDate(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "update")
+	}).Respond(exec.RunResult{
+		ExitCode: 0,
+		Stdout:   `updated successfully (v1.1.86, already at latest). 27 skills.`,
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillAgentsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillAgent, error) {
+				return []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.86"}}, nil
+			},
+		},
+	)
+
+	var r fakeStepRenderer
+	result, err := inst.Upgrade(
+		t.Context(), newSkillTool(),
+		WithAgents("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "upgrade must succeed; err=%v", result.Error)
+	assert.True(t, result.AlreadyUpToDate, "nothing changed, so already up to date")
+
+	assert.Equal(t, []string{"Upgrading Test Azure Skills in copilot"}, r.starts)
+	assert.Equal(t, []string{"Test Azure Skills in copilot is already up to date (v1.1.86)."}, r.stops)
+}
+
+// TestRunSkill_Upgrade_DetectionLag_NotUpToDate verifies that when the plugin
+// listing still reports the pre-upgrade version (detection lag) but the upgrade
+// command reports a new version, the operation is NOT misreported as "already
+// up to date": the command-reported version is authoritative over the (laggy)
+// detected version for the equality check.
+func TestRunSkill_Upgrade_DetectionLag_NotUpToDate(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "update")
+	}).Respond(exec.RunResult{
+		ExitCode: 0,
+		Stdout:   `Plugin "azure" updated from 1.0.0 to 2.0.0 for scope user.`,
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillAgentsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillAgent, error) {
+				// Detection lags: the plugin listing keeps reporting the
+				// pre-upgrade version even after the update command succeeds.
+				return []InstalledSkillAgent{{Agent: "copilot", Version: "1.0.0"}}, nil
+			},
+		},
+	)
+
+	var r fakeStepRenderer
+	result, err := inst.Upgrade(
+		t.Context(), newSkillTool(),
+		WithAgents("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "upgrade must succeed; err=%v", result.Error)
+	assert.False(t, result.AlreadyUpToDate,
+		"a reported upgrade must not be marked up-to-date even when detection lags")
+	assert.Equal(t, []string{"Upgrading Test Azure Skills in copilot (v2.0.0)"}, r.stops)
+}
+
+// TestRunSkill_OutputPrintedBelowStep verifies that when the agent CLI writes
+// to the terminal, each line is captured and surfaced via Message below the
+// resolved step line (indented gray sub-section), and the spinner is stopped
+// with the step result before that output is printed.
+func TestRunSkill_OutputPrintedBelowStep(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+
+	// The plugin command writes to the terminal (StdOut), simulating the
+	// agent CLI surfacing progress. Both marketplace-add and install route
+	// their output through the step writer.
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "plugin")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		if args.StdOut != nil {
+			_, _ = args.StdOut.Write([]byte("Installing plugin...\n"))
+		}
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillAgentsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillAgent, error) {
+				return []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.70"}}, nil
+			},
+		},
+	)
+
+	var r fakeStepRenderer
+	result, err := inst.Install(
+		t.Context(), newSkillTool(),
+		WithAgents("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
+
+	// The spinner is shown and stopped with the step result, and the agent
+	// CLI's line is surfaced (indented) below the step line via Message.
+	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.starts)
+	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.stops)
+	assert.Contains(t, strings.Join(r.messages, "\n"), "Installing plugin...")
+}
+
+// TestRunSkill_Quiet_CapturesOutput verifies that WithQuiet (used for
+// `--output json`) runs the agent CLI command with captured streams instead of
+// connecting it interactively to the process stdout — so agent output cannot
+// leak onto stdout ahead of the JSON result.
+func TestRunSkill_Quiet_CapturesOutput(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+
+	var (
+		pluginInteractive bool
+		pluginHadStdOut   bool
+	)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "plugin")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		if slices.Contains(args.Args, "install") {
+			pluginInteractive = args.Interactive
+			pluginHadStdOut = args.StdOut != nil
+		}
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillAgentsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillAgent, error) {
+				return []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.70"}}, nil
+			},
+		},
+	)
+
+	// No renderer (as in JSON mode) + WithQuiet.
+	result, err := inst.Install(t.Context(), newSkillTool(), WithAgents("copilot"), WithQuiet())
+	require.NoError(t, err)
+	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
+
+	assert.False(t, pluginInteractive,
+		"quiet mode must not run the agent command interactively (would write to stdout)")
+	assert.True(t, pluginHadStdOut,
+		"quiet mode must route the agent command's stdout to a captured writer")
+}
+
+// TestSkillAgent_DisplayVsCommand verifies the split between the display Agent
+// and the lowercase Command: the CLI is exec'd by Command, the step spinner
+// uses the display Agent, and --agent resolves via Command even when it
+// differs from the Agent.
+func TestSkillAgent_DisplayVsCommand(t *testing.T) {
+	t.Parallel()
+
+	skill := &ToolDefinition{
+		Id:       "test-azure-skills",
+		Name:     "Test Azure Skills",
+		Category: ToolCategorySkill,
+		SkillAgents: []SkillAgent{{
+			DisplayName:           "GitHub Copilot CLI", // display name (differs from Command)
+			Command:               "copilot",            // exec binary
+			MarketplaceAddCommand: []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
+			PluginInstallCommand:  []string{"plugin", "install", "azure@azure-skills"},
+			PluginListCommand:     []string{"plugin", "list"},
+			PluginName:            "azure@azure-skills",
+			BinaryVersionArgs:     []string{"--version"},
+			BinaryVersionRegex:    `(?m)^GitHub Copilot CLI\s+v?(\d+\.\d+\.\d+)`,
+		}},
+	}
+
+	runner := mockexec.NewMockCommandRunner()
+	runner.MockToolInPath("copilot", nil) // looked up by the lowercase Command
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "GitHub Copilot CLI 1.1.70"})
+	var execCmds []string
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "plugin")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		execCmds = append(execCmds, args.Cmd)
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	det := &mockDetector{
+		detectSkillAgentsFn: func(_ context.Context, _ *ToolDefinition) ([]InstalledSkillAgent, error) {
+			// DetectSkillAgents reports the command identity (see
+			// InstalledSkillAgent.Agent), so verification matches by command.
+			return []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.70"}}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	// --agent "copilot" (the Command) must resolve even though the Agent is the
+	// full display name "GitHub Copilot CLI".
+	var r fakeStepRenderer
+	result, err := inst.Install(t.Context(), skill, WithAgents("copilot"), WithStepProgress(&r))
+	require.NoError(t, err)
+	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
+
+	require.NotEmpty(t, execCmds, "the agent CLI must be exec'd")
+	for _, c := range execCmds {
+		assert.Equal(t, "copilot", c, "exec must use the lowercase Command, not display Agent")
+	}
+	require.NotEmpty(t, r.starts, "the step spinner must be shown")
+	assert.Equal(t, []string{"Installing Test Azure Skills in GitHub Copilot CLI"}, r.starts,
+		"the step spinner must use the display-cased Agent")
+}
+
+// mockAgentPresence wires ToolInPath responses so only the named agents
+// resolve successfully. Pass an empty slice to mock every agent as
+// missing. Present agents also get a version-probe response whose banner
+// matches the agent's anchored BinaryVersionRegex (see newSkillTool), so
+// installer.agentUsable treats them as genuine, functional CLIs rather than
+// launcher stubs. Tests that want to simulate a stub register their own
+// later "--version" expectation, which wins (last match).
+func mockAgentPresence(
+	runner *mockexec.MockCommandRunner,
+	present ...string,
+) {
+	// Per-agent `--version` banner that satisfies the agent's anchored
+	// BinaryVersionRegex.
+	versionBanner := map[string]string{
+		"copilot": "GitHub Copilot CLI 1.1.70",
+		"claude":  "1.1.70 (Claude Code)",
+	}
+	for _, h := range allSkillAgentNames {
+		if slices.Contains(present, h) {
+			runner.MockToolInPath(h, nil)
+			agent := h
+			banner := versionBanner[h]
+			runner.When(func(args exec.RunArgs, _ string) bool {
+				return args.Cmd == agent && slices.Contains(args.Args, "--version")
+			}).Respond(exec.RunResult{Stdout: banner, ExitCode: 0})
+		} else {
+			runner.MockToolInPath(h, errors.New("not found"))
+		}
+	}
+}
+
+// captureLog redirects log output for the duration of fn and returns
+// what was written. Used to assert that the SOFT node prereq warning
+// was emitted via log.Printf.
+func captureLog(t *testing.T, fn func()) string {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := log.Default().Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	fn()
+	return buf.String()
+}
+
+// captureStderr redirects os.Stderr to a temp file for the duration of
+// fn and returns everything written to it. NOT parallel-safe: it mutates
+// the global os.Stderr, so callers must not use t.Parallel().
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), "stderr-*.txt")
+	require.NoError(t, err)
+	prev := os.Stderr
+	os.Stderr = f
+	t.Cleanup(func() { os.Stderr = prev })
+	fn()
+	os.Stderr = prev
+	require.NoError(t, f.Close())
+	data, err := os.ReadFile(f.Name())
+	require.NoError(t, err)
+	return string(data)
+}
+
+// installedDetector is a mockDetector that always reports the tool as
+// installed with the given version.
+func installedDetector(version string) *mockDetector {
+	return &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{
+				Tool:             tool,
+				Installed:        true,
+				InstalledVersion: version,
+			}, nil
+		},
+	}
+}
+
+// ---------------------------------------------------------------------------
+// runSkill — agent selection
+// ---------------------------------------------------------------------------
+
+func TestRunSkill_PicksFirstAvailableAgent(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		present    []string
+		wantAgent  string
+		wantCmd    string
+		wantPlugin string
+	}{
+		{
+			name:       "CopilotOnly",
+			present:    []string{"copilot"},
+			wantAgent:  "copilot",
+			wantCmd:    "copilot",
+			wantPlugin: "azure@azure-skills",
+		},
+		{
+			name:       "ClaudeOnly",
+			present:    []string{"claude"},
+			wantAgent:  "claude",
+			wantCmd:    "claude",
+			wantPlugin: "azure@azure-skills",
+		},
+		{
+			name:       "AllPresent_PrefersCopilot",
+			present:    allSkillAgentNames,
+			wantAgent:  "copilot",
+			wantCmd:    "copilot",
+			wantPlugin: "azure@azure-skills",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			runner := mockexec.NewMockCommandRunner()
+			mockAgentPresence(runner, tc.present...)
+			runner.MockToolInPath("node", nil)
+
+			var ranInstall bool
+			var capturedArgs []string
+			runner.When(func(args exec.RunArgs, _ string) bool {
+				return args.Cmd == tc.wantCmd &&
+					(slices.Contains(args.Args, "install") ||
+						slices.Contains(args.Args, "add"))
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				// Marketplace add and plugin install both pattern-match on
+				// "install"/"add"; capture only the plugin-install call,
+				// which is the one that includes the plugin reference.
+				if slices.Contains(args.Args, tc.wantPlugin) {
+					ranInstall = true
+					capturedArgs = append([]string{}, args.Args...)
+				}
+				return exec.RunResult{ExitCode: 0}, nil
+			})
+			// Marketplace-add fallback for agents that have one.
+			runner.When(func(args exec.RunArgs, _ string) bool {
+				return slices.Contains(args.Args, "marketplace")
+			}).Respond(exec.RunResult{ExitCode: 0})
+
+			// Detector reflects reality: the skill becomes "installed"
+			// only after the agent's install command runs, so on a fresh
+			// install the pre-verify detect reports not-installed and the
+			// install command still runs.
+			det := &mockDetector{
+				detectToolFn: func(
+					_ context.Context, tool *ToolDefinition,
+				) (*ToolStatus, error) {
+					version := ""
+					if ranInstall {
+						version = "1.1.70"
+					}
+					return &ToolStatus{
+						Tool:             tool,
+						Installed:        ranInstall,
+						InstalledVersion: version,
+					}, nil
+				},
+			}
+
+			inst := NewInstaller(
+				runner, NewPlatformDetector(runner), det,
+			)
+
+			result, err := inst.Install(t.Context(), newSkillTool())
+			require.NoError(t, err)
+			require.True(t,
+				result.Success,
+				"expected success; result.Error=%v", result.Error,
+			)
+			assert.Equal(t, tc.wantAgent, result.Strategy)
+			assert.Equal(t, "1.1.70", result.InstalledVersion)
+			assert.True(t, ranInstall,
+				"expected plugin install command to run; args=%v",
+				capturedArgs,
+			)
+		})
+	}
+}
+
+func TestRunSkill_NoAgent_FailsWithSuggestion(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner /* none present */)
+	runner.MockToolInPath("node", nil)
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner), installedDetector("1.1.70"),
+	)
+
+	result, err := inst.Install(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+
+	ews, ok := errors.AsType[*errorhandler.ErrorWithSuggestion](result.Error)
+	require.True(t, ok,
+		"expected *errorhandler.ErrorWithSuggestion, got %T: %v",
+		result.Error, result.Error,
+	)
+
+	// All four fields must be populated so the YAML error pipeline
+	// does not strip user guidance (AGENTS.md completeness rule).
+	assert.NotEmpty(t, ews.Err)
+	assert.NotEmpty(t, ews.Message)
+	assert.NotEmpty(t, ews.Suggestion)
+	assert.NotEmpty(t, ews.Links)
+
+	// Suggestion must point users at the single recommended fix.
+	assert.Contains(t, ews.Suggestion, "azd tool install github-copilot-cli")
+
+	// One link — GitHub Copilot CLI install docs.
+	require.Len(t, ews.Links, 1)
+	assert.Contains(t, ews.Links[0].Title, "GitHub Copilot CLI")
+}
+
+// TestRunSkill_Install_LauncherStubAgent_ReturnsInstallGuidance verifies
+// that an agent binary present on PATH but non-functional — e.g. the VS Code
+// Copilot Chat extension's `copilot` launcher stub, which only prompts to
+// install the real CLI and exits 0 — is not mistaken for a usable agent.
+// The install must fail with the same clean "install GitHub Copilot CLI"
+// guidance as an agent that is entirely absent (matching Windows), never the
+// misleading "was installed via copilot but verification failed", and must
+// not attempt any plugin command through the stub.
+func TestRunSkill_Install_LauncherStubAgent_ReturnsInstallGuidance(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	// copilot is on PATH (the launcher stub); claude is not.
+	runner.MockToolInPath("copilot", nil)
+	runner.MockToolInPath("claude", errors.New("not found"))
+	runner.MockToolInPath("node", nil)
+
+	// The launcher stub answers `copilot --version` with its install
+	// prompt instead of a version, and exits 0. Record that the probe
+	// actually ran and returned the stub's response, so this test fails
+	// loudly if mock precedence ever changed and the probe silently observed
+	// a different (e.g. version-shaped) response instead.
+	var stubVersionProbed bool
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "--version")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		stubVersionProbed = true
+		return exec.RunResult{
+			Stdout:   "Install GitHub Copilot CLI? ['y/N']",
+			Stderr:   "Cannot find GitHub Copilot CLI (https://docs.github.com/copilot)",
+			ExitCode: 0,
+		}, nil
+	})
+
+	// Fail the assertion if any plugin command is attempted via the stub.
+	var attemptedInstall bool
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" &&
+			(slices.Contains(args.Args, "install") ||
+				slices.Contains(args.Args, "marketplace") ||
+				slices.Contains(args.Args, "list"))
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		attemptedInstall = true
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner), installedDetector("1.1.70"),
+	)
+
+	result, err := inst.Install(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+
+	// Clean, actionable guidance — not "verification failed".
+	ews, ok := errors.AsType[*errorhandler.ErrorWithSuggestion](result.Error)
+	require.True(t, ok,
+		"expected *errorhandler.ErrorWithSuggestion, got %T: %v",
+		result.Error, result.Error,
+	)
+	assert.Contains(t, ews.Suggestion, "azd tool install github-copilot-cli")
+	assert.NotContains(t, result.Error.Error(), "verification failed")
+
+	// The stub must never be driven through an install/marketplace flow.
+	assert.False(t, attemptedInstall,
+		"must not attempt to install through a non-functional launcher stub")
+
+	// Self-defending: the probe must have actually executed and observed the
+	// stub's response (guards against a silent mock-precedence flip that would
+	// otherwise let a stub be treated as usable without failing this test).
+	assert.True(t, stubVersionProbed,
+		"agentUsable must probe `copilot --version` and observe the stub response")
+}
+
+// TestRunSkill_Install_StubWithIncidentalVersion_Rejected verifies that a
+// launcher stub is still rejected when its output contains a version-shaped
+// token that is not a genuine version report — e.g. a bundled node version, a
+// path build number, or even a line that starts with the real CLI's banner
+// prefix but carries no version. BinaryVersionRegex is anchored to the agent's
+// `--version` banner, so only a real version line counts.
+func TestRunSkill_Install_StubWithIncidentalVersion_Rejected(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	runner.MockToolInPath("copilot", nil)
+	runner.MockToolInPath("claude", errors.New("not found"))
+	runner.MockToolInPath("node", nil)
+
+	// None of these lines is a genuine "GitHub Copilot CLI <version>"
+	// report: one borrows the banner prefix without a version, others carry
+	// incidental semvers (a node runtime version, a URL build number).
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{
+		Stdout: "GitHub Copilot CLI is not installed\n" +
+			"Install GitHub Copilot CLI? ['y/N']\n" +
+			"Downloading node v20.11.1 runtime\n" +
+			"See https://example.com/releases/1.2.3 for details",
+		ExitCode: 0,
+	})
+
+	// Fail loudly if any plugin command is attempted through the stub.
+	var attemptedInstall bool
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" &&
+			(slices.Contains(args.Args, "install") ||
+				slices.Contains(args.Args, "marketplace") ||
+				slices.Contains(args.Args, "list"))
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		attemptedInstall = true
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner), installedDetector("1.1.70"),
+	)
+
+	result, err := inst.Install(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.False(t, result.Success,
+		"incidental version text must not make a stub usable")
+	require.NotNil(t, result.Error)
+
+	_, ok := errors.AsType[*errorhandler.ErrorWithSuggestion](result.Error)
+	require.True(t, ok,
+		"expected install guidance, got %T: %v", result.Error, result.Error)
+	assert.NotContains(t, result.Error.Error(), "verification failed")
+	assert.False(t, attemptedInstall,
+		"must not install through a stub that only prints incidental version text")
+}
+
+// ---------------------------------------------------------------------------
+// runSkill — node soft prereq
+// ---------------------------------------------------------------------------
+
+func TestRunSkill_NodeMissing_WarnsButProceeds(t *testing.T) {
+	// NOT parallel: captureLog mutates the global logger via
+	// log.SetOutput, which would race/interfere with other t.Parallel()
+	// tests in this package.
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	// node intentionally NOT on PATH — must produce only a warning.
+	runner.MockToolInPath("node", errors.New("not found"))
+
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" &&
+			!slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner), installedDetector("1.1.70"),
+	)
+
+	var result *InstallResult
+	logged := captureLog(t, func() {
+		var err error
+		result, err = inst.Install(t.Context(), newSkillTool())
+		require.NoError(t, err)
+	})
+
+	require.True(t,
+		result.Success,
+		"node missing must NOT block install; result.Error=%v",
+		result.Error,
+	)
+	// The runSkill flow surfaces a stdout warning via output.WithWarningFormat
+	// (not captured here); we assert on the log-side diagnostic to confirm
+	// the SOFT prereq path executed.
+	assert.Contains(t, strings.ToLower(logged), "node not found")
+}
+
+// ---------------------------------------------------------------------------
+// runSkill — upgrade
+// ---------------------------------------------------------------------------
+
+func TestRunSkill_Upgrade_RunsUpdateCommand_NotMarketplaceAdd(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+
+	var sawMarketplaceAdd bool
+	var sawPluginUpdate bool
+	var sawPluginInstall bool
+
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot"
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		joined := strings.Join(args.Args, " ")
+		switch {
+		case strings.Contains(joined, "marketplace add"):
+			sawMarketplaceAdd = true
+		case strings.HasPrefix(joined, "plugin update"):
+			sawPluginUpdate = true
+		case strings.HasPrefix(joined, "plugin install"):
+			sawPluginInstall = true
+		}
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillAgentsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillAgent, error) {
+				return []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.71"}}, nil
+			},
+		},
+	)
+
+	result, err := inst.Upgrade(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.True(t, result.Success, "upgrade must succeed; err=%v", result.Error)
+
+	assert.True(t, sawPluginUpdate, "expected `plugin update` to run on upgrade")
+	assert.False(t, sawMarketplaceAdd,
+		"marketplace add must NOT run on upgrade (install-only step)")
+	assert.False(t, sawPluginInstall,
+		"copilot upgrade must not also run plugin install")
+}
+
+// TestRunSkill_Upgrade_PrefersInstalledAgent verifies that, with no
+// explicit --agent, an upgrade targets the agent the detector reports the
+// skill is installed through — not simply the first agent on PATH.
+func TestRunSkill_Upgrade_PrefersInstalledAgent(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot", "claude") // both on PATH
+	runner.MockToolInPath("node", nil)
+
+	var updatedAgent string
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return (args.Cmd == "copilot" || args.Cmd == "claude") &&
+			slices.Contains(args.Args, "update")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		updatedAgent = args.Cmd
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	// The detector reports the skill is installed via claude, even though
+	// copilot is listed first; the upgrade must run against claude.
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{{Agent: "claude", Version: "1.1.71"}}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Upgrade(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.True(t, result.Success, "result.Error=%v", result.Error)
+	assert.Equal(t, "claude", result.Strategy)
+	assert.Equal(t, "claude", updatedAgent,
+		"upgrade must target the agent that has the skill (claude), "+
+			"not the first on PATH (copilot)",
+	)
+}
+
+// TestRunSkill_Upgrade_AllInstalledAgents verifies that, with no explicit
+// --agent, an upgrade refreshes EVERY agent the skill is installed through
+// (not just the first), so a multi-agent install is kept fully current.
+func TestRunSkill_Upgrade_AllInstalledAgents(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot", "claude")
+	runner.MockToolInPath("node", nil)
+
+	var updatedAgents []string
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return (args.Cmd == "copilot" || args.Cmd == "claude") &&
+			slices.Contains(args.Args, "update")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		updatedAgents = append(updatedAgents, args.Cmd)
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	// The skill is installed through BOTH copilot and claude.
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{
+				{Agent: "copilot", Version: "1.1.71"},
+				{Agent: "claude", Version: "1.1.71"},
+			}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Upgrade(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.True(t, result.Success, "result.Error=%v", result.Error)
+	assert.ElementsMatch(t, []string{"copilot", "claude"}, updatedAgents,
+		"upgrade with no --agent must refresh every installed agent")
+	assert.Contains(t, result.Strategy, "copilot")
+	assert.Contains(t, result.Strategy, "claude")
+}
+
+// TestRunSkill_Upgrade_PrintsPerAgentHeader verifies a header line is
+// printed before each agent's (interactive) command output so the user
+// can tell which agent the streamed output belongs to.
+func TestRunSkill_Upgrade_PrintsPerAgentHeader(t *testing.T) {
+	// NOT parallel: captureStderr mutates the global os.Stderr.
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot", "claude")
+	runner.MockToolInPath("node", nil)
+
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return (args.Cmd == "copilot" || args.Cmd == "claude") &&
+			slices.Contains(args.Args, "update")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{
+				{Agent: "copilot", Version: "1.1.71"},
+				{Agent: "claude", Version: "1.1.71"},
+			}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	var result *InstallResult
+	stderr := captureStderr(t, func() {
+		var err error
+		result, err = inst.Upgrade(t.Context(), newSkillTool())
+		require.NoError(t, err)
+	})
+
+	require.True(t, result.Success, "result.Error=%v", result.Error)
+	assert.Contains(t, stderr, "Upgrading Test Azure Skills in copilot")
+	assert.Contains(t, stderr, "Upgrading Test Azure Skills in claude")
+}
+
+// TestRunSkill_Upgrade_NoAgent_NotInstalled_ReturnsInstallGuidance
+// verifies that `azd tool upgrade <skill>` with no --agent, when the
+// skill is installed on no available agent, returns a clear "install
+// first" guidance error instead of falling through to an agent and
+// attempting to update a plugin that was never installed (which used to
+// produce a confusing "verification failed" error).
+func TestRunSkill_Upgrade_NoAgent_NotInstalled_ReturnsInstallGuidance(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot", "claude") // both on PATH
+	runner.MockToolInPath("node", nil)
+
+	updateRan := false
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return (args.Cmd == "copilot" || args.Cmd == "claude") &&
+			slices.Contains(args.Args, "update")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		updateRan = true
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	// The skill is installed on no agent.
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return nil, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Upgrade(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	assert.False(t, updateRan,
+		"must not attempt to update a skill that is not installed")
+
+	ews, ok := errors.AsType[*errorhandler.ErrorWithSuggestion](result.Error)
+	require.True(t, ok,
+		"expected *errorhandler.ErrorWithSuggestion, got %T: %v",
+		result.Error, result.Error,
+	)
+	assert.NotEmpty(t, ews.Err)
+	assert.NotEmpty(t, ews.Message)
+	assert.NotEmpty(t, ews.Suggestion)
+	assert.Contains(t, result.Error.Error(), "not installed on any available agent")
+	assert.Contains(t, ews.Suggestion, "azd tool install test-azure-skills")
+}
+
+// TestRunSkill_Upgrade_AllAvailable_SkipsNotInstalled verifies that
+// `upgrade --agent all` upgrades only the agents that actually have the
+// skill installed and skips on-PATH-but-not-installed agents (with a
+// warning to stderr) rather than erroring — an agent CLI cannot upgrade a
+// plugin it never installed.
+func TestRunSkill_Upgrade_AllAvailable_SkipsNotInstalled(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot", "claude") // both on PATH
+	runner.MockToolInPath("node", nil)
+
+	var updatedAgents []string
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return (args.Cmd == "copilot" || args.Cmd == "claude") &&
+			slices.Contains(args.Args, "update")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		updatedAgents = append(updatedAgents, args.Cmd)
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	// Only copilot has the skill installed.
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.71"}}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Upgrade(t.Context(), newSkillTool(), WithAllAvailableAgents())
+	require.NoError(t, err)
+	require.True(t, result.Success,
+		"upgrade must succeed by skipping the not-installed agent; err=%v",
+		result.Error)
+	assert.Equal(t, []string{"copilot"}, updatedAgents,
+		"only the installed agent (copilot) must be upgraded; claude skipped")
+}
+
+// TestRunSkill_Upgrade_AllAvailable_NoneInstalled verifies that
+// `upgrade --agent all` errors with a clear "not installed on any agent"
+// message when the skill is present on no agent (and runs no update).
+func TestRunSkill_Upgrade_AllAvailable_NoneInstalled(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot", "claude")
+	runner.MockToolInPath("node", nil)
+
+	var updateRan bool
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "update")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		updateRan = true
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return nil, nil // not installed anywhere
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Upgrade(t.Context(), newSkillTool(), WithAllAvailableAgents())
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "not installed on any available agent")
+	assert.False(t, updateRan, "no agent update must run when nothing is installed")
+}
+
+// TestRunSkill_Install_AllAvailable_TargetsEveryAgentOnPath verifies that
+// `install --agent all` installs through every agent on PATH regardless of
+// prior install state (unlike upgrade, install does not skip).
+func TestRunSkill_Install_AllAvailable_TargetsEveryAgentOnPath(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot", "claude")
+	runner.MockToolInPath("node", nil)
+
+	var installedAgents []string
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return (args.Cmd == "copilot" || args.Cmd == "claude") &&
+			(slices.Contains(args.Args, "install") || slices.Contains(args.Args, "marketplace"))
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		if slices.Contains(args.Args, "install") {
+			installedAgents = append(installedAgents, args.Cmd)
+		}
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			// Reflects post-install state for verification.
+			return []InstalledSkillAgent{
+				{Agent: "copilot", Version: "1.1.71"},
+				{Agent: "claude", Version: "1.1.71"},
+			}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Install(t.Context(), newSkillTool(), WithAllAvailableAgents())
+	require.NoError(t, err)
+	require.True(t, result.Success, "result.Error=%v", result.Error)
+	assert.ElementsMatch(t, []string{"copilot", "claude"}, installedAgents,
+		"install --agent all must install through every agent on PATH")
+}
+
+// TestRunSkill_Install_AgentScopedVerification verifies that install
+// verification is scoped to the agent just installed: if claude's install
+// silently no-ops while copilot already has the skill, verification must
+// FAIL — it must not falsely succeed on copilot's presence (the prior
+// DetectTool-based check did, reporting the wrong agent's version).
+func TestRunSkill_Install_AgentScopedVerification(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot", "claude")
+	runner.MockToolInPath("node", nil)
+	// Both agents' commands exit 0 (claude's install silently no-ops).
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" || args.Cmd == "claude"
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	// Detector reports the skill installed ONLY via copilot — never claude.
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.71"}}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+	inst.(*installer).retryBackoff = time.Millisecond // keep the test fast
+
+	// Install via claude: claude is not actually registered, so
+	// verification must fail rather than pass on copilot's presence.
+	result, err := inst.Install(t.Context(), newSkillTool(), WithAgents("claude"))
+	require.NoError(t, err)
+	require.False(t, result.Success,
+		"claude install must NOT be verified by copilot's presence")
+	require.NotNil(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "claude")
+}
+
+func TestRunSkill_MarketplaceAlreadyRegistered_StillInstalls(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+
+	var installRan bool
+
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "marketplace")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		// Mirror real copilot behaviour: exit non-zero with the
+		// "already registered" message.
+		return exec.RunResult{
+				ExitCode: 1,
+				Stderr:   "Failed to add marketplace: Error: Marketplace \"azure-skills\" already registered",
+			},
+			errors.New("exit status 1")
+	})
+
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" &&
+			!slices.Contains(args.Args, "marketplace") &&
+			slices.Contains(args.Args, "install")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		installRan = true
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner), installedDetector("1.1.70"),
+	)
+
+	result, err := inst.Install(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.True(t, result.Success,
+		"\"already registered\" must be treated as success; err=%v",
+		result.Error,
+	)
+	assert.True(t, installRan,
+		"install step must run even when marketplace add reports already-registered",
+	)
+}
+
+func TestRunSkill_MarketplaceRealError_FailsBeforeInstall(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+
+	var installRan bool
+
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "marketplace")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{
+				ExitCode: 1,
+				Stderr:   "Error: failed to fetch https://github.com/...: 404 not found",
+			},
+			errors.New("exit status 1")
+	})
+
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" &&
+			!slices.Contains(args.Args, "marketplace") &&
+			!slices.Contains(args.Args, "--version")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		installRan = true
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	// Detector reports NOT installed so the runtime cannot rescue a
+	// real marketplace-add failure via post-install verification.
+	det := &mockDetector{
+		detectToolFn: func(_ context.Context, tool *ToolDefinition) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: false}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Install(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "marketplace")
+	assert.False(t, installRan,
+		"plugin install must NOT run when marketplace add fails for real",
+	)
+}
+
+// ---------------------------------------------------------------------------
+// Install error surfacing — install command exit code is authoritative.
+// ---------------------------------------------------------------------------
+
+func TestRunSkill_InstallCommandFails_SurfacesError(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "claude")
+	runner.MockToolInPath("node", nil)
+
+	wantErr := errors.New("exit status 2")
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "claude" &&
+			!slices.Contains(args.Args, "--version")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 2, Stderr: "Network unreachable"}, wantErr
+	})
+
+	// Detector reports NOT installed; the non-zero install exit must
+	// surface as the operation's error rather than being swallowed.
+	det := &mockDetector{
+		detectToolFn: func(_ context.Context, tool *ToolDefinition) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: false}, nil
+		},
+	}
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner), det,
+	)
+
+	result, err := inst.Install(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+	assert.ErrorIs(t, result.Error, wantErr)
+}
+
+// ---------------------------------------------------------------------------
+// runSkill — no SkillAgents configured
+// ---------------------------------------------------------------------------
+
+func TestRunSkill_NoSkillAgents_Errors(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
+
+	tool := &ToolDefinition{
+		Id:       "empty-skill",
+		Name:     "Empty Skill",
+		Category: ToolCategorySkill,
+		// No SkillAgents configured.
+	}
+
+	result, err := inst.Install(t.Context(), tool)
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "no SkillAgents configured")
+}
+
+// ---------------------------------------------------------------------------
+// runSkill — verification detector error is surfaced
+// ---------------------------------------------------------------------------
+
+func TestRunSkill_VerifyDetectorError_Surfaces(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" &&
+			!slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	wantErr := errors.New("plugin list failed")
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) (*ToolStatus, error) {
+			return nil, wantErr
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Install(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+	assert.ErrorIs(t, result.Error, wantErr)
+	assert.Contains(t, result.Error.Error(), "verifying installation")
+}
+
+// ---------------------------------------------------------------------------
+// runSkill — install succeeds but verification never confirms
+// ---------------------------------------------------------------------------
+
+func TestRunSkill_VerificationFails_AfterRetries(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" &&
+			!slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	// Detection never reports the skill installed, so verification
+	// exhausts all attempts (1 initial + 3 retries) and fails.
+	var callCount atomic.Int32
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			callCount.Add(1)
+			return &ToolStatus{Tool: tool, Installed: false}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+	inst.(*installer).retryBackoff = time.Millisecond // keep the test fast
+
+	result, err := inst.Install(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "verification failed")
+	assert.Equal(t, int32(4), callCount.Load(),
+		"expected 4 detect calls (1 initial + 3 retries)",
+	)
+}
+
+// ---------------------------------------------------------------------------
+// runSkill — context cancellation during verification backoff
+// ---------------------------------------------------------------------------
+
+func TestRunSkill_ContextCanceledDuringVerify(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" &&
+			!slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	var callCount atomic.Int32
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			callCount.Add(1)
+			return &ToolStatus{Tool: tool, Installed: false}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // cancel before the first retry sleep
+
+	result, err := inst.Install(ctx, newSkillTool())
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+	assert.Equal(t, int32(1), callCount.Load(),
+		"expected only 1 detect call before context cancellation",
+	)
+	assert.Contains(t, result.Error.Error(), "context canceled")
+}
+
+// ---------------------------------------------------------------------------
+// runSkill — explicit agent selection (WithAgents)
+// ---------------------------------------------------------------------------
+
+func TestRunSkill_ExplicitAgents_InstallsEachAgent(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot", "claude")
+	runner.MockToolInPath("node", nil)
+
+	installed := map[string]bool{}
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return (args.Cmd == "copilot" || args.Cmd == "claude") &&
+			slices.Contains(args.Args, "install") &&
+			!slices.Contains(args.Args, "marketplace")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		installed[args.Cmd] = true
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+	// Marketplace-add fallback for agents that have one.
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "marketplace")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner), installedDetector("1.1.70"),
+	)
+
+	result, err := inst.Install(
+		t.Context(), newSkillTool(), WithAgents("copilot", "claude"),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "result.Error=%v", result.Error)
+	assert.Equal(t, "copilot, claude", result.Strategy)
+	assert.Equal(t, "1.1.70", result.InstalledVersion)
+	assert.True(t, installed["copilot"], "copilot install must run")
+	assert.True(t, installed["claude"], "claude install must run")
+}
+
+func TestRunSkill_ExplicitUnknownAgent_Errors(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner), installedDetector("1.1.70"),
+	)
+
+	result, err := inst.Install(
+		t.Context(), newSkillTool(), WithAgents("bogus"),
+	)
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "not available")
+	// The error names the requested agent so a typo is obvious.
+	assert.Contains(t, result.Error.Error(), "bogus")
+}
+
+func TestRunSkill_ExplicitAgentNotPresent_Errors(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot") // claude deliberately NOT on PATH
+	runner.MockToolInPath("node", nil)
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner), installedDetector("1.1.70"),
+	)
+
+	result, err := inst.Install(
+		t.Context(), newSkillTool(), WithAgents("claude"),
+	)
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "not available")
+	// The error names the requested agent so the user knows which one failed.
+	assert.Contains(t, result.Error.Error(), "claude")
+}
+
+// TestRunSkill_Install_ExplicitStubAgent_Rejected is a regression guard for
+// the explicit `--agent` path: an agent requested by name that is present on
+// PATH only as a launcher stub (not a functional CLI) must be rejected the
+// same way the default / `--agent all` path rejects it. explicitSkillAgentTargets
+// uses [installer.agentUsable] (a version probe), not a bare PATH-existence
+// check, so the stub fails with "not available" instead of being driven
+// through an install flow that would later surface "verification failed".
+func TestRunSkill_Install_ExplicitStubAgent_Rejected(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	// copilot is on PATH but is a launcher stub; claude is not on PATH.
+	runner.MockToolInPath("copilot", nil)
+	runner.MockToolInPath("claude", errors.New("not found"))
+	runner.MockToolInPath("node", nil)
+
+	// The stub answers `copilot --version` with its install prompt instead
+	// of a version banner, and exits 0. Record that the probe ran so the
+	// test fails loudly if mock precedence ever let a version-shaped
+	// response through instead.
+	var stubVersionProbed bool
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "--version")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		stubVersionProbed = true
+		return exec.RunResult{
+			Stdout:   "Install GitHub Copilot CLI? ['y/N']",
+			Stderr:   "Cannot find GitHub Copilot CLI (https://docs.github.com/copilot)",
+			ExitCode: 0,
+		}, nil
+	})
+
+	// Fail if any plugin command is attempted through the stub.
+	var attemptedInstall bool
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" &&
+			(slices.Contains(args.Args, "install") ||
+				slices.Contains(args.Args, "marketplace") ||
+				slices.Contains(args.Args, "list"))
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		attemptedInstall = true
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner), installedDetector("1.1.70"),
+	)
+
+	result, err := inst.Install(
+		t.Context(), newSkillTool(), WithAgents("copilot"),
+	)
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+
+	// The explicit agent is rejected up front, naming the requested agent —
+	// not driven through an install that fails verification.
+	assert.Contains(t, result.Error.Error(), "not available")
+	assert.Contains(t, result.Error.Error(), "copilot")
+	assert.NotContains(t, result.Error.Error(), "verification failed")
+	assert.False(t, attemptedInstall,
+		"must not attempt to install through a non-functional launcher stub")
+	assert.True(t, stubVersionProbed,
+		"explicitSkillAgentTargets must probe `copilot --version` vian agentUsable")
+}
+
+// TestRunSkill_Upgrade_DetectError_Propagated verifies that a context
+// cancellation/timeout from DetectSkillAgents on the default upgrade path
+// is treated as fatal rather than silently falling back to an agent.
+func TestRunSkill_Upgrade_DetectError_Propagated(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return nil, context.Canceled
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Upgrade(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.ErrorIs(t, result.Error, context.Canceled)
+}
+
+// TestRunSkill_UpgradeAllAgents_DetectError_Propagated verifies the same
+// for the --agent all upgrade path.
+func TestRunSkill_UpgradeAllAgents_DetectError_Propagated(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot", "claude")
+	runner.MockToolInPath("node", nil)
+
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return nil, context.Canceled
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Upgrade(
+		t.Context(), newSkillTool(), WithAllAvailableAgents(),
+	)
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.ErrorIs(t, result.Error, context.Canceled)
+}
+
+// ---------------------------------------------------------------------------
+// AvailableSkillAgents
+// ---------------------------------------------------------------------------
+
+func TestAvailableSkillAgents_ReturnsPresentInManifestOrder(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	// Present out of manifest order; result must follow manifest order
+	// (copilot, claude).
+	mockAgentPresence(runner, "claude", "copilot")
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
+
+	commands, names := inst.AvailableSkillAgents(t.Context(), newSkillTool())
+	// newSkillTool uses Agent == Command, so both slices match.
+	assert.Equal(t, []string{"copilot", "claude"}, commands)
+	assert.Equal(t, []string{"copilot", "claude"}, names)
+}
+
+func TestAvailableSkillAgents_NonSkillToolReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
+
+	commands, names := inst.AvailableSkillAgents(t.Context(), &ToolDefinition{
+		Id:       "not-a-skill",
+		Category: ToolCategoryServer,
+	})
+	assert.Nil(t, commands)
+	assert.Nil(t, names)
+}
+
+// ---------------------------------------------------------------------------
+// Uninstall — non-skill (package manager) path
+// ---------------------------------------------------------------------------
+
+// TestUninstall_NonSkill_UsesPackageManagerUninstall verifies the
+// package-manager removal path (npm), distinct from the explicit
+// UninstallCommand path covered by TestUninstall_UsesUninstallCommand.
+func TestUninstall_NonSkill_UsesPackageManagerUninstall(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+
+	// Platform detection: npm available on all platforms.
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+
+	// Capture the uninstall command.
+	var capturedCmd string
+	var capturedArgs []string
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		capturedCmd = args.Cmd
+		capturedArgs = args.Args
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	// Detector reports the tool gone, so removal verification succeeds.
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: false}, nil
+		},
+	}
+
+	pd := NewPlatformDetector(runner)
+	inst := NewInstaller(runner, pd, det)
+
+	tool := &ToolDefinition{
+		Id:       "test-npm-tool",
+		Name:     "Test NPM Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/tool",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success)
+	assert.Equal(t, "npm", capturedCmd)
+	assert.Contains(t, capturedArgs, "uninstall")
+	assert.Contains(t, capturedArgs, "@test/tool")
+}
+
+// copilotMultiMethodTool returns a github-copilot-cli-like tool with the
+// multi-method matrix on every platform (npm, brew cask, install script).
+func copilotMultiMethodTool() *ToolDefinition {
+	return &ToolDefinition{
+		Id:            "github-copilot-cli",
+		Name:          "GitHub Copilot CLI",
+		DetectCommand: "copilot",
+		Category:      ToolCategoryCLI,
+		InstallStrategies: allPlatforms(
+			InstallStrategy{PackageManager: "npm", PackageId: "@github/copilot"},
+			InstallStrategy{PackageManager: "brew", PackageId: "copilot-cli", Cask: true},
+			InstallStrategy{InstallCommand: "curl -fsSL https://gh.io/copilot-install | bash"},
+		),
+	}
+}
+
+// TestUninstall_MultiMethod_NpmOwns_UninstallsViaNpm verifies detect-then-remove
+// picks the package manager that actually has the tool: npm reports it
+// installed, so azd uninstalls via npm even though npm is not the first
+// strategy on every platform.
+func TestUninstall_MultiMethod_NpmOwns_UninstallsViaNpm(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+	// Detection: npm has a record of the package.
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "ls")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "@github/copilot@1.0.0"})
+
+	var capturedArgs []string
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		capturedArgs = args.Args
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	det := &mockDetector{detectToolFn: func(
+		_ context.Context, tool *ToolDefinition,
+	) (*ToolStatus, error) {
+		return &ToolStatus{Tool: tool, Installed: false}, nil
+	}}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Uninstall(t.Context(), copilotMultiMethodTool())
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success, "result.Error=%v", result.Error)
+	assert.Contains(t, capturedArgs, "uninstall")
+	assert.Contains(t, capturedArgs, "@github/copilot")
+}
+
+// TestUninstall_MultiMethod_NoManagerOwns_GuidesBinaryRemoval verifies the
+// detect-then-remove fallback: no package manager has a record of the tool but
+// it is still detected on PATH (a script/direct install), so azd names the
+// actual binary to remove.
+func TestUninstall_MultiMethod_NoManagerOwns_GuidesBinaryRemoval(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+	// Detection: npm does NOT have the package (exit non-zero).
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "ls")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 1, Stdout: "(empty)"}, errors.New("exit status 1")
+	})
+
+	// The tool is still detected on PATH (installed via the script).
+	det := installedDetector("1.2.3")
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+	inst.(*installer).lookPath = func(string) (string, error) {
+		return "/home/dev/.local/bin/copilot", nil
+	}
+
+	result, err := inst.Uninstall(t.Context(), copilotMultiMethodTool())
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+
+	var ews *errorhandler.ErrorWithSuggestion
+	require.ErrorAs(t, result.Error, &ews)
+	assert.Contains(t, ews.Suggestion, "install script")
+	assert.Contains(t, ews.Suggestion, "/home/dev/.local/bin/copilot")
+}
+
+// TestManagerHasPackage verifies the per-manager "is installed" probes.
+func TestManagerHasPackage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		strategy InstallStrategy
+		respond  func(*mockexec.MockCommandRunner)
+		want     bool
+	}{
+		{
+			name:     "NpmInstalled",
+			strategy: InstallStrategy{PackageManager: "npm", PackageId: "@github/copilot"},
+			respond: func(r *mockexec.MockCommandRunner) {
+				r.When(func(a exec.RunArgs, _ string) bool { return a.Cmd == "npm" }).
+					Respond(exec.RunResult{ExitCode: 0, Stdout: "@github/copilot@1.0.0"})
+			},
+			want: true,
+		},
+		{
+			name:     "NpmNotInstalled",
+			strategy: InstallStrategy{PackageManager: "npm", PackageId: "@github/copilot"},
+			respond: func(r *mockexec.MockCommandRunner) {
+				r.When(func(a exec.RunArgs, _ string) bool { return a.Cmd == "npm" }).
+					RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+						return exec.RunResult{ExitCode: 1, Stdout: "(empty)"}, errors.New("exit 1")
+					})
+			},
+			want: false,
+		},
+		{
+			name:     "BrewCaskInstalled",
+			strategy: InstallStrategy{PackageManager: "brew", PackageId: "copilot-cli", Cask: true},
+			respond: func(r *mockexec.MockCommandRunner) {
+				r.When(func(a exec.RunArgs, _ string) bool { return a.Cmd == "brew" }).
+					Respond(exec.RunResult{ExitCode: 0, Stdout: "/opt/homebrew/.../copilot"})
+			},
+			want: true,
+		},
+		{
+			name:     "BrewCaskNotInstalled",
+			strategy: InstallStrategy{PackageManager: "brew", PackageId: "copilot-cli", Cask: true},
+			respond: func(r *mockexec.MockCommandRunner) {
+				r.When(func(a exec.RunArgs, _ string) bool { return a.Cmd == "brew" }).
+					RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+						return exec.RunResult{ExitCode: 1}, errors.New("not installed")
+					})
+			},
+			want: false,
+		},
+		{
+			name:     "WingetInstalled",
+			strategy: InstallStrategy{PackageManager: "winget", PackageId: "GitHub.Copilot"},
+			respond: func(r *mockexec.MockCommandRunner) {
+				r.When(func(a exec.RunArgs, _ string) bool { return a.Cmd == "winget" }).
+					Respond(exec.RunResult{ExitCode: 0, Stdout: "GitHub Copilot  GitHub.Copilot  1.0"})
+			},
+			want: true,
+		},
+		{
+			name:     "WingetNotInstalled",
+			strategy: InstallStrategy{PackageManager: "winget", PackageId: "GitHub.Copilot"},
+			respond: func(r *mockexec.MockCommandRunner) {
+				r.When(func(a exec.RunArgs, _ string) bool { return a.Cmd == "winget" }).
+					Respond(exec.RunResult{ExitCode: 0, Stdout: "No installed package found matching input criteria."})
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			runner := mockexec.NewMockCommandRunner()
+			tt.respond(runner)
+			inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
+			got := inst.(*installer).managerHasPackage(t.Context(), &tt.strategy)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestSelfManagedRemovalSuggestion verifies the manual-removal guidance both
+// when the binary path is resolvable and when it is not.
+func TestSelfManagedRemovalSuggestion(t *testing.T) {
+	t.Parallel()
+
+	tool := &ToolDefinition{Name: "GitHub Copilot CLI", DetectCommand: "copilot"}
+
+	withPath := selfManagedRemovalSuggestion(tool, "/home/dev/.local/bin/copilot")
+	assert.Contains(t, withPath, "install script")
+	assert.Contains(t, withPath, "/home/dev/.local/bin/copilot")
+	assert.Contains(t, withPath, "Remove it manually")
+
+	noPath := selfManagedRemovalSuggestion(tool, "")
+	assert.Contains(t, noPath, `"copilot"`)
+	assert.Contains(t, noPath, "from your PATH manually")
+}
+
+// TestIsSystemBinaryPath verifies detection of system-owned binary locations.
+func TestIsSystemBinaryPath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"/usr/local/bin/copilot", true},
+		{"/usr/bin/copilot", true},
+		{"/opt/tools/bin/copilot", true},
+		{"/bin/sh", true},
+		{"/Library/Foo/copilot", true},
+		{"/home/dev/.local/bin/copilot", false},
+		{`C:\Users\dev\copilot.exe`, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, isSystemBinaryPath(tt.path))
+		})
+	}
+}
+
+func TestUninstall_NonSkill_StillDetectedReportsFailure(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "uninstall")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	// Tool remains detected after the uninstall command runs.
+	det := installedDetector("1.0.0")
+
+	pd := NewPlatformDetector(runner)
+	inst := NewInstaller(runner, pd, det)
+
+	tool := &ToolDefinition{
+		Id:       "test-npm-tool",
+		Name:     "Test NPM Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/tool",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "still detected")
+}
+
+// TestUninstall_NonSkill_PackageManagerNoRecord_GuidesManualRemoval covers
+// the case where the package manager fails to remove the tool because it no
+// longer has a record of the package (a self-updating CLI replaced the
+// manager-installed copy) yet azd still detects the tool. The user must get
+// actionable manual-removal guidance. This is winget-specific (see
+// packageManagerLostRecord), so it runs on Windows.
+func TestUninstall_NonSkill_PackageManagerNoRecord_GuidesManualRemoval(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS != "windows" {
+		t.Skip("winget (the lost-record case) is only available on Windows")
+	}
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("winget", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "winget" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "v1.8.0"})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "winget" && slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		// winget lost its record of the package after a self-update; it
+		// reports the no-package error on stdout.
+		return exec.RunResult{
+			ExitCode: int(wingetNoPackageFoundExitCode),
+			Stdout: "Found Self Updating CLI [GitHub.Copilot]\n" +
+				"No installed package found matching input criteria.",
+		}, errors.New("exit status 0x8a150014")
+	})
+
+	// The tool is still detected after the failed uninstall.
+	det := installedDetector("1.0.0")
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	tool := &ToolDefinition{
+		Id:   "self-updating-cli",
+		Name: "Self Updating CLI",
+		// A DetectCommand that does not resolve on PATH keeps the
+		// suggestion text deterministic (no machine-specific path).
+		DetectCommand: "azd-nonexistent-cli-xyz",
+		Category:      ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "winget",
+			PackageId:      "GitHub.Copilot",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+
+	var ews *errorhandler.ErrorWithSuggestion
+	require.ErrorAs(t, result.Error, &ews)
+	assert.Contains(t, ews.Suggestion, "no longer has a record")
+	assert.Contains(t, ews.Suggestion, "remove Self Updating CLI manually")
+}
+
+// TestUninstall_NonSkill_PackageManagerNoRecord_EmptyOutput_FallsBackToError
+// covers the lost-record case where winget signals the failure via its exit
+// code alone, with no stdout/stderr text. The surfaced error must fall back to
+// the command error instead of being blank.
+func TestUninstall_NonSkill_PackageManagerNoRecord_EmptyOutput_FallsBackToError(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS != "windows" {
+		t.Skip("winget (the lost-record case) is only available on Windows")
+	}
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("winget", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "winget" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "v1.8.0"})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "winget" && slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		// Lost record signalled by exit code only — no output text.
+		return exec.RunResult{ExitCode: int(wingetNoPackageFoundExitCode)},
+			errors.New("exit status 0x8a150014")
+	})
+
+	det := installedDetector("1.0.0")
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	tool := &ToolDefinition{
+		Id:            "self-updating-cli",
+		Name:          "Self Updating CLI",
+		DetectCommand: "azd-nonexistent-cli-xyz",
+		Category:      ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "winget",
+			PackageId:      "GitHub.Copilot",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+
+	var ews *errorhandler.ErrorWithSuggestion
+	require.ErrorAs(t, result.Error, &ews)
+	// The surfaced error must not be blank; it falls back to the command error.
+	assert.Contains(t, ews.Error(), "exit status 0x8a150014")
+	assert.Contains(t, ews.Suggestion, "no longer has a record")
+}
+
+// TestUninstall_NonSkill_PackageManagerGenericFailure_ReturnsErrorDirectly
+// covers a package-manager uninstall that fails for a reason OTHER than a
+// lost record (here, a permissions error) while azd still detects the tool.
+// The user must get the actual package-manager error returned directly, not
+// the misleading "no longer has a record / updated outside the package
+// manager" guidance, which only applies to self-updating CLIs.
+func TestUninstall_NonSkill_PackageManagerGenericFailure_ReturnsErrorDirectly(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		// A failure with no "not installed" signal — the manager still has a
+		// record, it simply could not complete the removal.
+		return exec.RunResult{
+			ExitCode: 1,
+			Stderr:   "npm error code EACCES\nnpm error syscall unlink\nnpm error errno -13",
+		}, errors.New("exit status 1")
+	})
+
+	// The tool is still detected after the failed uninstall.
+	det := installedDetector("1.0.0")
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	tool := &ToolDefinition{
+		Id:            "locked-cli",
+		Name:          "Locked CLI",
+		DetectCommand: "azd-nonexistent-cli-xyz",
+		Category:      ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/locked",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+
+	// The error is returned directly: no "lost record" suggestion is attached.
+	_, isSuggestion := errors.AsType[*errorhandler.ErrorWithSuggestion](result.Error)
+	assert.False(t, isSuggestion,
+		"generic failures should return the error directly, not a suggestion")
+	assert.NotContains(t, result.Error.Error(), "no longer has a record")
+	assert.NotContains(t, result.Error.Error(), "updated outside the")
+	// The actual package-manager message is surfaced.
+	assert.Contains(t, result.Error.Error(), "uninstalling Locked CLI with npm failed")
+	assert.Contains(t, result.Error.Error(), "npm error errno -13")
+}
+
+// TestPackageManagerLostRecord verifies the per-manager detection of the
+// "manager no longer has a record of the package" signature, which gates the
+// self-updating-CLI uninstall guidance. winget is matched by its
+// locale-independent exit code as well as its message.
+// TestPackageManagerLostRecord verifies the lost-record detection, which is
+// winget-specific. brew, npm and apt are intentionally NOT special-cased
+// (their "nothing to remove" uninstalls typically exit 0 and their installs
+// are unaffected by self-updates), so they must report false even when their
+// output resembles a "not installed" message.
+func TestPackageManagerLostRecord(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		packageManager string
+		res            exec.RunResult
+		want           bool
+	}{
+		{
+			name:           "WingetNoPackageMessage",
+			packageManager: "winget",
+			res:            exec.RunResult{ExitCode: 1, Stdout: "No installed package found matching input criteria."},
+			want:           true,
+		},
+		{
+			name:           "WingetNoPackageExitCodeGoValue",
+			packageManager: "winget",
+			// Go's os/exec surfaces winget's 0x8A150014 as this int on Windows.
+			res:  exec.RunResult{ExitCode: int(wingetNoPackageFoundExitCode)},
+			want: true,
+		},
+		{
+			name:           "WingetNoPackageExitCodeSigned",
+			packageManager: "winget",
+			// The same code as a shell-style signed int32 must also match.
+			res:  exec.RunResult{ExitCode: -1978335212},
+			want: true,
+		},
+		{
+			name:           "WingetGenericFailureNotLostRecord",
+			packageManager: "winget",
+			res:            exec.RunResult{ExitCode: 1, Stderr: "Access is denied."},
+			want:           false,
+		},
+		{
+			// brew exits 1 with this, but brew installs survive self-updates,
+			// so it is not treated as a lost-record case.
+			name:           "BrewNotSpecialCased",
+			packageManager: "brew",
+			res:            exec.RunResult{ExitCode: 1, Stderr: "Error: No such keg: /usr/local/Cellar/foo"},
+			want:           false,
+		},
+		{
+			name:           "AptNotSpecialCased",
+			packageManager: "apt",
+			res:            exec.RunResult{ExitCode: 100, Stderr: "E: Unable to locate package foo"},
+			want:           false,
+		},
+		{
+			// npm uninstall of a missing package actually exits 0 ("up to
+			// date"); even a "not installed" string must not match.
+			name:           "NpmNotSpecialCased",
+			packageManager: "npm",
+			res:            exec.RunResult{ExitCode: 1, Stdout: "not installed"},
+			want:           false,
+		},
+		{
+			name:           "UnknownManager",
+			packageManager: "code",
+			res:            exec.RunResult{ExitCode: 1, Stderr: "no installed package found"},
+			want:           false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, packageManagerLostRecord(tt.packageManager, tt.res))
+		})
+	}
+}
+
+// TestUninstall_NonSkill_VSCodeDependencyConflict_GuidesDependentRemoval covers
+// the case where VS Code refuses to remove an extension because other
+// installed extensions depend on it (exit code 1 with a "depends on this"
+// message, which `--force` does not override). The user must get accurate
+// guidance to remove the dependent extensions first, not the generic
+// "no record" message used for self-updating CLIs.
+func TestUninstall_NonSkill_VSCodeDependencyConflict_GuidesDependentRemoval(t *testing.T) {
+	t.Parallel()
+
+	const dependencyMsg = "Cannot uninstall 'Azure Resources' extension. " +
+		"'Azure App Service' extension depends on this."
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("code", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "code" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "1.95.0"})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "code" &&
+			slices.Contains(args.Args, "--uninstall-extension")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{
+			ExitCode: 1,
+			Stdout:   "Uninstalling ms-azuretools.vscode-azureresourcegroups...",
+			Stderr:   dependencyMsg,
+		}, errors.New("exit status 1")
+	})
+
+	// The extension is still detected after the blocked uninstall.
+	det := installedDetector("0.12.7")
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	tool := &ToolDefinition{
+		Id:       "vscode-azure-tools",
+		Name:     "Azure Tools VS Code Extension",
+		Category: ToolCategoryVSCodeExtension,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "code",
+			PackageId:      "ms-azuretools.vscode-azureresourcegroups",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+
+	var ews *errorhandler.ErrorWithSuggestion
+	require.ErrorAs(t, result.Error, &ews)
+	assert.Contains(t, ews.Suggestion, "other installed VS Code extensions")
+	assert.Contains(t, ews.Suggestion, "Uninstall the dependent extension(s) first")
+	// The specific dependent extensions reported by VS Code are surfaced in
+	// the underlying error.
+	assert.Contains(t, ews.Err.Error(), dependencyMsg)
+	// The misleading "no record" guidance must not be used here.
+	assert.NotContains(t, ews.Suggestion, "no longer has a record")
+}
+
+// TestVscodeDependencyConflict verifies detection of VS Code's dependency
+// rejection across phrasings, including the exact multi-dependent message
+// from issue #8830 ("...and other extension depend on this."), which uses
+// the plural "depend on this" rather than the single-dependent "depends on
+// this".
+func TestVscodeDependencyConflict(t *testing.T) {
+	t.Parallel()
+
+	// Verbatim stderr from the azd tool uninstall --debug log in issue #8830.
+	const issue8830Stderr = "Cannot uninstall 'Azure Resources' extension. " +
+		"'GitHub Copilot for Azure', 'Azure App Service' and other extension depend on this."
+
+	tests := []struct {
+		name           string
+		packageManager string
+		stderr         string
+		wantDetail     string
+		wantOK         bool
+	}{
+		{
+			name:           "MultiDependentPluralFromIssue8830",
+			packageManager: "code",
+			stderr:         issue8830Stderr,
+			wantDetail:     issue8830Stderr,
+			wantOK:         true,
+		},
+		{
+			name:           "SingleDependent",
+			packageManager: "code",
+			stderr:         "Cannot uninstall 'Azure Resources' extension. 'Azure App Service' extension depends on this.",
+			wantDetail:     "Cannot uninstall 'Azure Resources' extension. 'Azure App Service' extension depends on this.",
+			wantOK:         true,
+		},
+		{
+			name:           "TrimsSurroundingWhitespace",
+			packageManager: "code",
+			stderr:         "\n  'Foo' extension depends on this.  \n",
+			wantDetail:     "'Foo' extension depends on this.",
+			wantOK:         true,
+		},
+		{
+			name:           "NonCodeManagerIgnored",
+			packageManager: "winget",
+			stderr:         "something depends on this",
+			wantDetail:     "",
+			wantOK:         false,
+		},
+		{
+			name:           "UnrelatedCodeErrorIgnored",
+			packageManager: "code",
+			stderr:         "Extension 'ms-azuretools.vscode-azureresourcegroups' is not installed.",
+			wantDetail:     "",
+			wantOK:         false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			detail, ok := vscodeDependencyConflict(tt.packageManager, tt.stderr)
+			assert.Equal(t, tt.wantOK, ok)
+			assert.Equal(t, tt.wantDetail, detail)
+		})
+	}
+}
+
+// TestUninstall_NonSkill_PackageManagerNoRecord_AlreadyGone_Succeeds covers
+// the idempotent case: the package manager reports a failure but the tool is
+// no longer detected, so the uninstall is already effectively complete.
+func TestUninstall_NonSkill_PackageManagerNoRecord_AlreadyGone_Succeeds(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{
+			ExitCode: 1,
+			Stdout:   "not installed",
+		}, errors.New("exit status 1")
+	})
+
+	// The tool is already gone — detection reports not installed.
+	det := &mockDetector{
+		detectToolFn: func(_ context.Context, tool *ToolDefinition) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: false}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	tool := &ToolDefinition{
+		Id:            "already-gone-cli",
+		Name:          "Already Gone CLI",
+		DetectCommand: "azd-nonexistent-cli-xyz",
+		Category:      ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/already-gone",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success,
+		"uninstall must be idempotent when the tool is already gone")
+	assert.NoError(t, result.Error)
+}
+
+func TestUninstall_NonSkill_NoPackageManagerIsUnsupported(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+
+	pd := NewPlatformDetector(runner)
+	inst := NewInstaller(runner, pd, &mockDetector{})
+
+	// Strategy installs via a custom shell command, which has no
+	// automated uninstall path.
+	tool := &ToolDefinition{
+		Id:       "custom-tool",
+		Name:     "Custom Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			InstallCommand: "curl -sL https://example.com/install.sh | bash",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.Equal(t, "manual", result.Strategy)
+}
+
+func TestUninstall_UsesUninstallCommand(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+
+	// Capture the explicit uninstall command (e.g. azd extension uninstall).
+	var capturedCmd string
+	var capturedArgs []string
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "azd" && slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		capturedCmd = args.Cmd
+		capturedArgs = args.Args
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	// Tool reported gone after the uninstall command runs.
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: false}, nil
+		},
+	}
+
+	pd := NewPlatformDetector(runner)
+	inst := NewInstaller(runner, pd, det)
+
+	// An azd-extension-style tool: install/uninstall via explicit azd
+	// commands, with no package manager.
+	tool := &ToolDefinition{
+		Id:       "azure.ai.agents",
+		Name:     "azd AI Agent Extensions",
+		Category: ToolCategoryAzdExtension,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			InstallCommand:   "azd extension install azure.ai.agents --source azd",
+			UninstallCommand: "azd extension uninstall azure.ai.agents",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success)
+	assert.Equal(t, "command", result.Strategy)
+	assert.Equal(t, "azd", capturedCmd)
+	assert.Contains(t, capturedArgs, "extension")
+	assert.Contains(t, capturedArgs, "uninstall")
+	assert.Contains(t, capturedArgs, "azure.ai.agents")
+}
+
+// TestUninstall_UninstallCommandFails_AlreadyGone_Succeeds covers the
+// idempotent case for the explicit UninstallCommand path: the command exits
+// non-zero but the tool is no longer detected, so the uninstall is treated as
+// already complete (mirrors the package-manager path).
+func TestUninstall_UninstallCommandFails_AlreadyGone_Succeeds(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "azd" && slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 1}, errors.New("extension not installed")
+	})
+
+	// Tool already not installed.
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: false}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	tool := &ToolDefinition{
+		Id:       "azure.ai.agents",
+		Name:     "azd AI Agent Extensions",
+		Category: ToolCategoryAzdExtension,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			UninstallCommand: "azd extension uninstall azure.ai.agents",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success)
+}
+
+// TestUninstall_UninstallCommandFails_StillPresent_Errors covers the
+// non-idempotent case: the command fails and the tool is still detected, so
+// the failure is surfaced.
+func TestUninstall_UninstallCommandFails_StillPresent_Errors(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "azd" && slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 1}, errors.New("azd boom")
+	})
+
+	// Tool still detected after the failed command.
+	det := installedDetector("1.0.0")
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	tool := &ToolDefinition{
+		Id:       "azure.ai.agents",
+		Name:     "azd AI Agent Extensions",
+		Category: ToolCategoryAzdExtension,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			UninstallCommand: "azd extension uninstall azure.ai.agents",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "running uninstall command")
+}
+
+func TestBuildUninstallCommand(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		manager   string
+		packageID string
+		cask      bool
+		expectCmd string
+		expectArg string // action keyword to find in args
+	}{
+		{"Winget", "winget", "Microsoft.AzureCLI", false, "winget", "uninstall"},
+		{"Brew", "brew", "azure-cli", false, "brew", "uninstall"},
+		{"BrewCask", "brew", "copilot-cli", true, "brew", "--cask"},
+		{"Apt", "apt", "azure-cli", false, "sudo", "remove"},
+		{"Npm", "npm", "@azure/mcp", false, "npm", "uninstall"},
+		{"Code", "code", "ms-azuretools.vscode-bicep", false, "code", "--uninstall-extension"},
+		{"UnknownManagerReturnsEmpty", "unknown-mgr", "pkg", false, "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd, args := buildUninstallCommand(tt.manager, tt.packageID, tt.cask)
+
+			assert.Equal(t, tt.expectCmd, cmd)
+			if tt.expectArg != "" {
+				assert.Contains(t, args, tt.expectArg)
+				assert.Contains(t, args, tt.packageID)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Uninstall — skill (per-agent) path
+// ---------------------------------------------------------------------------
+
+func TestUninstallSkill_RemovesFromInstalledAgents(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot", "claude")
+
+	// Capture which agents ran an uninstall command.
+	var uninstalledAgents []string
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		uninstalledAgents = append(uninstalledAgents, args.Cmd)
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	// Installed on both agents before uninstall; gone after.
+	var uninstallStarted bool
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			if uninstallStarted {
+				return nil, nil
+			}
+			uninstallStarted = true
+			return []InstalledSkillAgent{
+				{Agent: "copilot", Version: "1.0.0"},
+				{Agent: "claude", Version: "1.0.0"},
+			}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Uninstall(t.Context(), newSkillTool())
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success)
+	assert.ElementsMatch(t, []string{"copilot", "claude"}, uninstalledAgents)
+}
+
+// TestRunSkillUninstall_StepProgress verifies the step spinner is rendered
+// per agent (shown then stopped, capitalized) for a skill uninstall, with no
+// skill-count sub-line.
+func TestRunSkillUninstall_StepProgress(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "uninstall")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	// After uninstall, copilot no longer reports the skill so verification
+	// passes.
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return nil, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	var r fakeStepRenderer
+	result, err := inst.Uninstall(
+		t.Context(), newSkillTool(),
+		WithAgents("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "uninstall must succeed; err=%v", result.Error)
+
+	// A silent uninstall keeps the spinner for the whole step, then stops it
+	// with the result.
+	assert.Equal(t, []string{"Uninstalling Test Azure Skills from copilot"}, r.starts)
+	assert.Equal(t, []string{"Uninstalling Test Azure Skills from copilot"}, r.stops)
+	assert.Empty(t, r.messages)
+}
+
+// TestRunSkillUninstall_StepProgress_SuccessStreamsOutput verifies that the
+// agent CLI's output is surfaced above the spinner as it arrives — even when the
+// uninstall completes without error — so an interactive uninstall confirmation
+// prompt stays visible and answerable rather than being buffered until failure.
+func TestRunSkillUninstall_StepProgress_SuccessStreamsOutput(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		if args.StdOut != nil {
+			_, _ = args.StdOut.Write([]byte("Plugin \"azure@azure-skills\" uninstalled successfully.\n"))
+		}
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	// After uninstall the skill is gone, so verification passes.
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return nil, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	var r fakeStepRenderer
+	result, err := inst.Uninstall(
+		t.Context(), newSkillTool(),
+		WithAgents("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "uninstall must succeed; err=%v", result.Error)
+
+	assert.Contains(t, strings.Join(r.messages, "\n"), "Plugin \"azure@azure-skills\" uninstalled successfully.",
+		"agent CLI output must be shown below the step result line")
+	assert.Equal(t, []string{"Uninstalling Test Azure Skills from copilot"}, r.stops)
+}
+
+// TestRunSkillUninstall_StepProgress_FailureShowsOutput verifies the converse:
+// when the uninstall fails, the buffered agent CLI output is replayed so the
+// user can see what went wrong.
+func TestRunSkillUninstall_StepProgress_FailureShowsOutput(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		if args.StdOut != nil {
+			_, _ = args.StdOut.Write([]byte("could not remove plugin\n"))
+		}
+		return exec.RunResult{ExitCode: 1}, errors.New("exit code 1")
+	})
+
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{{Agent: "copilot", Version: "1.0.0"}}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	var r fakeStepRenderer
+	result, _ := inst.Uninstall(
+		t.Context(), newSkillTool(),
+		WithAgents("copilot"),
+		WithStepProgress(&r),
+	)
+	require.False(t, result.Success)
+	require.Error(t, result.Error)
+
+	assert.Contains(t, strings.Join(r.messages, "\n"), "could not remove plugin",
+		"agent CLI output must be shown when uninstall fails")
+}
+
+func TestUninstallSkill_ExplicitAgent_RemovesOnlyThatAgent(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot", "claude")
+
+	var uninstalledAgents []string
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		uninstalledAgents = append(uninstalledAgents, args.Cmd)
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	// After uninstall, the skill is gone from copilot (the explicit agent).
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{{Agent: "claude", Version: "1.0.0"}}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Uninstall(t.Context(), newSkillTool(), WithAgents("copilot"))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success)
+	assert.Equal(t, []string{"copilot"}, uninstalledAgents)
+}
+
+func TestUninstallSkill_NotInstalledAnywhere_Errors(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot", "claude")
+
+	// Skill is not installed on any agent.
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return nil, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Uninstall(t.Context(), newSkillTool())
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+
+	var suggestion *errorhandler.ErrorWithSuggestion
+	require.ErrorAs(t, result.Error, &suggestion)
+	assert.Contains(t, suggestion.Suggestion, "nothing to uninstall")
+}
+
+func TestUninstallSkill_ExplicitUnknownAgent_Errors(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot", "claude")
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
+
+	result, err := inst.Uninstall(t.Context(), newSkillTool(), WithAgents("bogus"))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "not available")
+}
+
+// ---------------------------------------------------------------------------
+// Uninstall — additional non-skill branch coverage
+// ---------------------------------------------------------------------------
+
+// allManagersMissing mocks every known package manager as absent from PATH.
+func allManagersMissing(runner *mockexec.MockCommandRunner) {
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+}
+
+func TestUninstall_DirectDownload_RemovesArtifact(t *testing.T) {
+	// Not parallel: mutates AZD_CONFIG_DIR via t.Setenv.
+	cfgDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", cfgDir)
+
+	// Place the artifact where executeDirectDownload would have put it.
+	toolsDir := filepath.Join(cfgDir, "tools")
+	require.NoError(t, os.MkdirAll(toolsDir, 0o755))
+	artifact := filepath.Join(toolsDir, "tool.bin")
+	require.NoError(t, os.WriteFile(artifact, []byte("binary"), 0o600))
+
+	runner := mockexec.NewMockCommandRunner()
+	allManagersMissing(runner)
+
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: false}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	toolDef := &ToolDefinition{
+		Id:       "direct-dl",
+		Name:     "Direct Download Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			DirectDownloadUrl: "https://example.com/tool.bin",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), toolDef)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success)
+	assert.Equal(t, "direct-download", result.Strategy)
+	assert.NoFileExists(t, artifact)
+}
+
+func TestUninstall_DirectDownload_MissingFileIsIdempotent(t *testing.T) {
+	// Not parallel: mutates AZD_CONFIG_DIR via t.Setenv.
+	cfgDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", cfgDir)
+	// No artifact file is created — uninstall must still succeed.
+
+	runner := mockexec.NewMockCommandRunner()
+	allManagersMissing(runner)
+
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: false}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	toolDef := &ToolDefinition{
+		Id:       "direct-dl",
+		Name:     "Direct Download Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			DirectDownloadUrl: "https://example.com/tool.bin",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), toolDef)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success)
+}
+
+func TestUninstall_NonSkill_ManagerUnavailable(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	allManagersMissing(runner) // npm not on PATH either
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
+
+	tool := &ToolDefinition{
+		Id:       "test-npm-tool",
+		Name:     "Test NPM Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/tool",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	assert.Equal(t, "manual", result.Strategy)
+
+	var suggestion *errorhandler.ErrorWithSuggestion
+	require.ErrorAs(t, result.Error, &suggestion)
+	assert.Contains(t, suggestion.Message, "Cannot uninstall")
+}
+
+func TestUninstall_NoStrategyForPlatform(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	allManagersMissing(runner)
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
+
+	// A strategy that does not cover the current OS.
+	tool := &ToolDefinition{
+		Id:       "no-strategy",
+		Name:     "No Strategy Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: map[string][]InstallStrategy{
+			"plan9": {{PackageManager: "npm", PackageId: "x"}},
+		},
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "no install strategy")
+}
+
+func TestUninstall_NonSkill_CommandFails(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	allManagersMissing(runner)
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 1}, errors.New("npm boom")
+	})
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), installedDetector("1.0.0"))
+
+	tool := &ToolDefinition{
+		Id:       "test-npm-tool",
+		Name:     "Test NPM Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/tool",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "running uninstall command")
+}
+
+func TestUninstall_NonSkill_VerifyDetectError(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	allManagersMissing(runner)
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "uninstall")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	wantErr := errors.New("detect boom")
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) (*ToolStatus, error) {
+			return nil, wantErr
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	tool := &ToolDefinition{
+		Id:       "test-npm-tool",
+		Name:     "Test NPM Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/tool",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.ErrorIs(t, result.Error, wantErr)
+	assert.Contains(t, result.Error.Error(), "verifying removal")
+}
+
+// ---------------------------------------------------------------------------
+// Uninstall — additional skill branch coverage
+// ---------------------------------------------------------------------------
+
+func TestUninstallSkill_NoSkillAgents_Errors(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
+
+	tool := &ToolDefinition{
+		Id:       "skill-no-agents",
+		Name:     "Skill No Agents",
+		Category: ToolCategorySkill,
+		// No SkillAgents configured.
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "no SkillAgents configured")
+}
+
+func TestUninstallSkill_MultipleAgentFailures_Summarized(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot", "claude")
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 1}, errors.New("remove failed")
+	})
+
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{
+				{Agent: "copilot", Version: "1.0.0"},
+				{Agent: "claude", Version: "1.0.0"},
+			}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Uninstall(t.Context(), newSkillTool())
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "could not be uninstalled for 2 agent(s)")
+}
+
+func TestUninstallSkill_VerificationFails(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "uninstall")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	// The skill remains installed on copilot after the command runs, so
+	// agent-scoped verification never confirms removal.
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{{Agent: "copilot", Version: "1.0.0"}}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+	inst.(*installer).retryBackoff = time.Millisecond // keep the test fast
+
+	result, err := inst.Uninstall(t.Context(), newSkillTool(), WithAgents("copilot"))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "verification failed")
+}
+
+func TestUninstallSkill_VerifyDetectError(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "uninstall")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	// Explicit --agent copilot skips DetectSkillAgents during target
+	// resolution, so the only call is from verification, which errors.
+	wantErr := errors.New("plugin list failed")
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return nil, wantErr
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Uninstall(t.Context(), newSkillTool(), WithAgents("copilot"))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.ErrorIs(t, result.Error, wantErr)
+}
+
+func TestUninstallSkill_NoUninstallCommandConfigured(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	runner.MockToolInPath("copilot", nil)
+
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{{Agent: "copilot", Version: "1.0.0"}}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	// A skill agent with no PluginUninstallCommand configured.
+	tool := &ToolDefinition{
+		Id:       "skill-no-uninstall-cmd",
+		Name:     "Skill No Uninstall Cmd",
+		Category: ToolCategorySkill,
+		SkillAgents: []SkillAgent{
+			{
+				DisplayName:       "copilot",
+				Command:           "copilot",
+				PluginListCommand: []string{"plugin", "list"},
+				PluginName:        "azure@azure-skills",
+				VersionRegex:      `(\d+\.\d+\.\d+)`,
+				// No PluginUninstallCommand.
+			},
+		},
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool, WithAgents("copilot"))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "no uninstall command configured")
+}
+
+// TestAgentUsable_OnPathProbeMemoizedAcrossPasses verifies that an on-PATH
+// agent's `--version` is spawned at most once per command even though agent
+// resolution probes it from several call sites: the result is memoized on the
+// installer for its lifetime (one process == one command).
+func TestAgentUsable_OnPathProbeMemoizedAcrossPasses(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	runner.MockToolInPath("copilot", nil)
+	runner.MockToolInPath("claude", errors.New("not found"))
+
+	var copilotVersionCalls int
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "--version")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		copilotVersionCalls++
+		return exec.RunResult{Stdout: "GitHub Copilot CLI 1.1.70", ExitCode: 0}, nil
+	})
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
+
+	// Two separate agent-resolution passes on the same installer.
+	commands1, _ := inst.AvailableSkillAgents(t.Context(), newSkillTool())
+	require.Equal(t, []string{"copilot"}, commands1)
+	commands2, _ := inst.AvailableSkillAgents(t.Context(), newSkillTool())
+	require.Equal(t, []string{"copilot"}, commands2)
+
+	assert.Equal(t, 1, copilotVersionCalls,
+		"on-PATH agent `--version` must be probed at most once per command")
+}
+
+// TestAgentUsable_NotOnPathResultNotMemoized verifies that a not-on-PATH result
+// is never cached, so an agent installed earlier in the same command (e.g.
+// `azd tool install github-copilot-cli azure-skills`) is still picked up by a
+// later resolution pass.
+func TestAgentUsable_NotOnPathResultNotMemoized(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	runner.MockToolInPath("copilot", errors.New("not found"))
+	runner.MockToolInPath("claude", errors.New("not found"))
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
+
+	// First pass: copilot absent.
+	commandsAbsent, _ := inst.AvailableSkillAgents(t.Context(), newSkillTool())
+	require.Empty(t, commandsAbsent)
+
+	// copilot becomes available and functional mid-command.
+	runner.MockToolInPath("copilot", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{Stdout: "GitHub Copilot CLI 1.1.70", ExitCode: 0})
+
+	// Second pass picks it up: the earlier "not on PATH" result was not cached.
+	commandsPresent, _ := inst.AvailableSkillAgents(t.Context(), newSkillTool())
+	assert.Equal(t, []string{"copilot"}, commandsPresent)
+}
+
+// TestLineWriter_Write_SerializesEmit drives lineWriter.Write from many
+// goroutines at once — as os/exec does when a command's stdout and stderr are
+// written concurrently — with an unsynchronized emit (mirroring the buffered
+// slice in renderSkillStep). The mutex must serialize emit so no line is lost
+// or corrupted. Run under -race to catch a regression.
+func TestLineWriter_Write_SerializesEmit(t *testing.T) {
+	var got []string // deliberately unsynchronized, like renderSkillStep's buffer
+	lw := &lineWriter{emit: func(s string) { got = append(got, s) }}
+
+	const writers = 100
+	var wg sync.WaitGroup
+	for range writers {
+		wg.Go(func() {
+			_, _ = lw.Write([]byte("a\nb\nc\n")) // 3 lines per write
+		})
+	}
+	wg.Wait()
+
+	assert.Len(t, got, writers*3,
+		"every emitted line must be recorded without loss under concurrent writes")
+}
+
+// TestLineWriter_BuffersAcrossWritesAndPreservesEmptyLines verifies the
+// line-splitting contract: a logical line split across multiple Write calls is
+// emitted once (os/exec chunks arbitrarily), empty lines are preserved, and a
+// trailing line with no newline is held until Flush rather than dropped.
+func TestLineWriter_BuffersAcrossWritesAndPreservesEmptyLines(t *testing.T) {
+	var got []string
+	lw := &lineWriter{emit: func(s string) { got = append(got, s) }}
+
+	// A single logical line split across two writes must emit once, joined.
+	_, _ = lw.Write([]byte("hel"))
+	_, _ = lw.Write([]byte("lo\n"))
+	// Consecutive newlines yield preserved empty lines.
+	_, _ = lw.Write([]byte("a\n\nb\n"))
+	// Trailing content with no newline is buffered, not emitted yet.
+	_, _ = lw.Write([]byte("no newline"))
+
+	assert.Equal(t, []string{"hello", "a", "", "b"}, got,
+		"complete lines emit once, empty lines preserved, partial line held")
+
+	lw.Flush()
+	assert.Equal(t, []string{"hello", "a", "", "b", "no newline"}, got,
+		"Flush emits the trailing line that had no terminating newline")
 }

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -16,6 +17,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"azureaiagent/internal/cmd/nextstep"
@@ -29,7 +31,7 @@ import (
 )
 
 type invokeFlags struct {
-	isolationHeaderFlags
+	userIdentityFlags
 	message         string
 	inputFile       string
 	local           bool
@@ -44,6 +46,8 @@ type invokeFlags struct {
 	agentEndpoint   string
 	version         string
 	outputFmt       string
+	callID          string
+	clientHeaders   []string
 }
 
 // outputRaw is the sentinel value of the inherited --output flag that selects
@@ -62,9 +66,11 @@ const maxInvokeVersionLength = 128
 var createInvokeVersionSession = createInvokeVersionSessionImpl
 
 type InvokeAction struct {
-	flags    *invokeFlags
-	noPrompt bool
-	endpoint *parsedAgentEndpoint
+	flags               *invokeFlags
+	noPrompt            bool
+	endpoint            *parsedAgentEndpoint
+	clientHeaders       http.Header
+	protocolServiceName string
 }
 
 func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -83,10 +89,12 @@ agent name and the second is the message.
 
 Use --input-file/-f to send the contents of a file as the request body
 instead of a positional message argument. This is useful for structured
-or large payloads with the invocations protocol.
+or large payloads with the invocations protocol, or for sending a complete
+JSON-RPC request with the a2a protocol.
 
 Use --local to target a locally running agent (started via 'azd ai agent run')
-instead of Foundry.
+instead of Foundry. The a2a protocol is remote-only and cannot be used with
+--local.
 
 Sessions are persisted per-agent — consecutive invokes reuse the same
 session automatically. Pass --new-session to force a reset.
@@ -94,8 +102,19 @@ session automatically. Pass --new-session to force a reset.
 Use --version to invoke a specific deployed agent version. When provided,
 azd creates or reuses a hosted agent session backed by that version.
 
-For agents configured with header-based isolation, pass --user-isolation-key
-and --chat-isolation-key on each remote invoke.
+For agents configured with header-based isolation, pass --user-identity
+on each invoke. Locally it is sent as the x-agent-user-id header; for
+remote invokes it is sent as the x-ms-user-identity header.
+
+Use --call-id to send a call ID with a local invoke. It is sent as the
+x-agent-foundry-call-id header and applies only to local invocations; it is
+ignored for remote requests.
+
+Use --client-header to send custom x-client-* request headers in "Name: Value"
+format (repeatable). The responses and invocations protocols forward the
+x-client-* header family to the agent; other header names are rejected, and
+the flag is not supported with the a2a protocol (which does not propagate
+x-client-* headers). For identity headers use --user-identity or --call-id.
 
 Use --output raw (or -o raw) to dump the unmodified server response (status
 line, headers, and body verbatim) to stdout. Useful for debugging server
@@ -111,6 +130,12 @@ suppressed in raw mode.`,
   # Invoke using a specific protocol
   azd ai agent invoke --protocol invocations "Hello!"
 
+  # Invoke a deployed agent over the a2a protocol
+  azd ai agent invoke --protocol a2a "Hello!"
+
+  # Invoke the a2a protocol with a complete JSON-RPC request from a file
+  azd ai agent invoke --protocol a2a -f a2a-request.json
+
   # Invoke with a file as the request body
   azd ai agent invoke -f request.json
 
@@ -120,6 +145,9 @@ suppressed in raw mode.`,
   # Invoke locally (agent must be running via 'azd ai agent run')
   azd ai agent invoke --local "Hello!"
 
+  # Invoke a specific agent locally (useful in multi-agent projects)
+  azd ai agent invoke my-agent --local "Hello!"
+
   # Start a new session (discard conversation history)
   azd ai agent invoke --new-session "Hello!"
 
@@ -128,6 +156,9 @@ suppressed in raw mode.`,
 
   # Dump the raw server response (status line, headers, body) for debugging
   azd ai agent invoke --output raw "Hello!"
+
+  # Send custom x-client-* headers (repeatable)
+  azd ai agent invoke --client-header "x-client-request-id: abc123" --client-header "x-client-tenant: contoso" "Hello!"
 
   # Invoke a deployed agent from any directory using the endpoint URL shown by 'azd ai agent show'
   azd ai agent invoke \
@@ -194,24 +225,41 @@ suppressed in raw mode.`,
 				return err
 			}
 
-			if flags.name != "" && flags.local {
-				return exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					"cannot use --local with a named agent; named agents are always invoked remotely on Foundry",
-					"omit the agent name for local invocation, or remove --local for remote",
-				)
-			}
-
 			if flags.protocol != "" {
 				p := agent_api.AgentProtocol(flags.protocol)
 				if !p.IsInvocable() {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
 						fmt.Sprintf("unsupported protocol %q for invocation", flags.protocol),
-						"supported protocols are: responses, invocations",
+						"supported protocols are: responses, invocations, a2a",
+					)
+				}
+				if flags.local && !p.IsLocalInvocable() {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						fmt.Sprintf("the %s protocol cannot be invoked against a local agent", flags.protocol),
+						"omit --local to invoke the deployed agent, "+
+							"or use --protocol responses/invocations for local invocation",
 					)
 				}
 			}
+
+			clientHeaders, err := parseCustomHeaders(flags.clientHeaders)
+			if err != nil {
+				return err
+			}
+			// A2A routes through a translating proxy with its own fixed header
+			// set and does not propagate x-client-* to the agent, so accepting
+			// the flag there would silently drop the headers.
+			if len(clientHeaders) > 0 && agent_api.AgentProtocol(flags.protocol) == agent_api.AgentProtocolA2A {
+				return exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					"--client-header is not supported with the a2a protocol",
+					"the a2a protocol does not forward x-client-* headers to the agent; "+
+						"use --protocol responses or invocations to send client headers",
+				)
+			}
+			action.clientHeaders = clientHeaders
 
 			return action.Run(ctx)
 		},
@@ -219,7 +267,8 @@ suppressed in raw mode.`,
 
 	cmd.Flags().BoolVarP(&flags.local, "local", "l", false, "Invoke on localhost instead of Foundry")
 	cmd.Flags().StringVarP(&flags.inputFile, "input-file", "f", "", "Path to a file whose contents are sent as the request body")
-	cmd.Flags().StringVarP(&flags.protocol, "protocol", "p", "", "Protocol to use: responses (default) or invocations")
+	cmd.Flags().StringVarP(&flags.protocol, "protocol", "p", "",
+		"Protocol to use: responses (default), invocations, or a2a (a2a is remote-only)")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(
 		&flags.timeout,
@@ -232,7 +281,22 @@ suppressed in raw mode.`,
 	cmd.Flags().BoolVar(&flags.newSession, "new-session", false, "Force a new session (discard saved one)")
 	cmd.Flags().StringVar(&flags.conversation, "conversation-id", "", "Explicit conversation ID override")
 	cmd.Flags().BoolVar(&flags.newConversation, "new-conversation", false, "Force a new conversation (discard saved one)")
-	addIsolationHeaderFlags(cmd, &flags.isolationHeaderFlags)
+	addUserIdentityFlag(cmd, &flags.userIdentityFlags)
+	cmd.Flags().StringVar(
+		&flags.callID,
+		"call-id",
+		"",
+		"Call ID header value (sent as "+agent_api.AgentFoundryCallIDHeader+" for local invocations only; "+
+			"ignored for remote requests)",
+	)
+	cmd.Flags().StringArrayVar(
+		&flags.clientHeaders,
+		"client-header",
+		nil,
+		`Custom x-client-* request header in "Name: Value" format (repeatable). `+
+			"The responses and invocations protocols forward the x-client-* header family to the agent; "+
+			"other header names are rejected and the flag is not supported with a2a.",
+	)
 	cmd.Flags().StringVar(
 		&flags.agentEndpoint,
 		"agent-endpoint",
@@ -361,20 +425,41 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		return err
 	}
 
+	// Re-validate after protocol resolution: when --protocol was omitted the
+	// protocol may have been auto-detected as a2a (e.g. from agent.yaml). In
+	// that case the flag-parse guard above was skipped and clientHeaders was
+	// populated, but a2aRemote never calls applyCustomHeaders — the headers
+	// would be silently dropped, which is the exact silent no-op the guard
+	// intends to prevent.
+	if len(a.clientHeaders) > 0 && protocol == agent_api.AgentProtocolA2A {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--client-header is not supported with the a2a protocol",
+			"the a2a protocol does not forward x-client-* headers to the agent; "+
+				"use --protocol responses or invocations to send client headers",
+		)
+	}
+
 	if a.flags.local {
 		switch protocol {
 		case agent_api.AgentProtocolInvocations:
 			return a.invocationsLocal(ctx)
+		case agent_api.AgentProtocolA2A:
+			return a.a2aLocal(ctx)
 		default:
 			return a.responsesLocal(ctx)
 		}
 	}
 
 	// Remote: route by protocol.
-	if protocol == agent_api.AgentProtocolInvocations {
+	switch protocol {
+	case agent_api.AgentProtocolInvocations:
 		return a.invocationsRemote(ctx)
+	case agent_api.AgentProtocolA2A:
+		return a.a2aRemote(ctx)
+	default:
+		return a.responsesRemote(ctx)
 	}
-	return a.responsesRemote(ctx)
 }
 
 // emitInvokeSuccessNextStep prints the resolver-driven Next: block after a
@@ -444,6 +529,9 @@ func (a *InvokeAction) emitInvokeFailureNextStep(mode nextstep.InvokeMode, agent
 // resolveProtocol returns the protocol to use for this invocation.
 // The explicit --protocol flag takes priority; otherwise the protocol
 // is auto-detected from agent.yaml (local or remote).
+// When the protocol is auto-detected without an explicit agent name, the
+// resolved service name is cached separately so downstream calls do an exact
+// lookup without confusing the service selector for a Foundry agent name.
 func (a *InvokeAction) resolveProtocol(
 	ctx context.Context,
 ) (agent_api.AgentProtocol, error) {
@@ -457,14 +545,26 @@ func (a *InvokeAction) resolveProtocol(
 	}
 	defer azdClient.Close()
 
-	if a.flags.local {
-		return resolveAgentProtocol(
-			ctx, azdClient, "", a.noPrompt,
-		)
-	}
-	return resolveAgentProtocol(
+	protocol, serviceName, err := resolveAgentProtocol(
 		ctx, azdClient, a.flags.name, a.noPrompt,
 	)
+	if err != nil {
+		return "", err
+	}
+
+	// Cache the resolved service name so downstream calls avoid re-prompting.
+	if a.flags.name == "" && serviceName != "" {
+		a.protocolServiceName = serviceName
+	}
+
+	return protocol, nil
+}
+
+func (a *InvokeAction) serviceNameSelector() string {
+	if a.protocolServiceName != "" {
+		return a.protocolServiceName
+	}
+	return a.flags.name
 }
 
 func (a *InvokeAction) httpTimeout() time.Duration {
@@ -515,6 +615,81 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%.3fs", d.Seconds())
 }
 
+// localConnectRetryBudget bounds how long a `--local` invoke waits for the
+// agent's listener to start accepting connections before giving up. The first
+// `azd ai agent run` in a fresh project can take 30–60 s to bind (Python venv
+// + pip install + Foundry handshake), and the listener binds a few seconds
+// after `run` reports ready, so a single connect attempt frequently races
+// startup. Retrying connection-refused errors within this budget makes the
+// quickstart's immediate `invoke --local` deterministic. See issue #8411.
+const localConnectRetryBudget = 60 * time.Second
+
+// localConnectRetryInitialBackoff and localConnectRetryMaxBackoff bound the
+// exponential backoff between connect attempts.
+const (
+	localConnectRetryInitialBackoff = 500 * time.Millisecond
+	localConnectRetryMaxBackoff     = 2 * time.Second
+)
+
+// isConnectionRefused reports whether err is a TCP connection-refused error.
+// A refused connection guarantees the request bytes were never delivered to
+// the server, so this is the only failure class that is safe to retry for a
+// non-idempotent local invoke (retrying can't produce a duplicate side effect).
+func isConnectionRefused(err error) bool {
+	if errors.Is(err, syscall.ECONNREFUSED) {
+		return true
+	}
+	// On Windows a refused dial surfaces as WSAECONNREFUSED rather than the
+	// POSIX syscall.ECONNREFUSED, so the check above misses it.
+	return isPlatformConnRefused(err)
+}
+
+// doLocalRequestWithRetry sends the request built by newReq, retrying only on
+// connection-refused errors within localConnectRetryBudget. This covers the
+// window where the local agent process is running but its listener hasn't
+// bound yet. Any other error (timeout, mid-flight failure, non-2xx status) is
+// returned to the caller unchanged so genuine failures surface immediately.
+// The request is rebuilt on each attempt because client.Do consumes the body.
+func doLocalRequestWithRetry(
+	ctx context.Context,
+	client *http.Client,
+	newReq func() (*http.Request, error),
+) (*http.Response, error) {
+	deadline := time.Now().Add(localConnectRetryBudget)
+	backoff := localConnectRetryInitialBackoff
+	notified := false
+	for {
+		req, err := newReq()
+		if err != nil {
+			return nil, err
+		}
+		resp, err := client.Do(req) //nolint:gosec // G704: URL targets localhost with user-configured port
+		if err == nil {
+			return resp, nil
+		}
+		if !isConnectionRefused(err) || time.Now().After(deadline) {
+			return nil, err
+		}
+		if !notified {
+			// Progress note on stderr keeps raw-mode stdout clean while
+			// reassuring the user we're waiting rather than hung.
+			fmt.Fprintln(os.Stderr, "Waiting for the local agent to accept connections...")
+			notified = true
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(backoff):
+		}
+		if backoff < localConnectRetryMaxBackoff {
+			backoff *= 2
+			if backoff > localConnectRetryMaxBackoff {
+				backoff = localConnectRetryMaxBackoff
+			}
+		}
+	}
+}
+
 func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	port := a.flags.port
 
@@ -532,7 +707,7 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 		defer azdClient.Close()
 	}
 
-	agentKey := resolveLocalAgentKey(ctx, azdClient, a.flags.name, a.noPrompt)
+	agentKey := resolveLocalAgentKey(ctx, azdClient, a.serviceNameSelector(), a.noPrompt)
 
 	// Resolve local session and conversation IDs (always generated locally).
 	var sid, convID string
@@ -575,20 +750,26 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	}
 
 	reqURL := fmt.Sprintf("http://localhost:%d/responses", port)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(payload))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if raw {
-		// Disable Go's transparent gzip handling so the dumped headers and
-		// body match what the server actually sent on the wire.
-		req.Header.Set("Accept-Encoding", "identity")
+	newReq := func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(payload))
+		if err != nil {
+			return nil, err
+		}
+		applyCustomHeaders(req, a.clientHeaders)
+		req.Header.Set("Content-Type", "application/json")
+		applyLocalUserIdentityHeader(req, &a.flags.userIdentityFlags)
+		applyLocalCallIDHeader(req, a.flags.callID)
+		if raw {
+			// Disable Go's transparent gzip handling so the dumped headers and
+			// body match what the server actually sent on the wire.
+			req.Header.Set("Accept-Encoding", "identity")
+		}
+		return req, nil
 	}
 
 	client := &http.Client{Timeout: a.httpTimeout()}
 	invokeStart := time.Now()
-	resp, err := client.Do(req) //nolint:gosec // G704: URL targets localhost with user-configured port
+	resp, err := doLocalRequestWithRetry(ctx, client, newReq)
 	if err != nil {
 		return fmt.Errorf(
 			"could not connect to localhost:%d -- is the agent running? Start it with: azd ai agent run",
@@ -677,12 +858,55 @@ func (rc *remoteContext) nextStepName() string {
 	return rc.name
 }
 
+// remoteAgentNameFromService applies the project-service resolution result to
+// the invoke target name. A protocol-selected service is not a Foundry agent
+// name, so it must not survive when no deployed/brownfield name was resolved.
+// A positional name remains an intentional direct target whether the protocol
+// was explicit or auto-detected.
+func remoteAgentNameFromService(
+	currentName string,
+	info *AgentServiceInfo,
+	protocolServiceSelected bool,
+) string {
+	if info != nil && info.AgentName != "" {
+		return info.AgentName
+	}
+	if protocolServiceSelected {
+		return ""
+	}
+	return currentName
+}
+
+// remoteAgentServiceResolutionError returns resolver failures unless the user
+// supplied an intentional direct agent name. Protocol selection alone is not
+// enough to ignore a project lookup failure when no target name was provided.
+func remoteAgentServiceResolutionError(resolveErr error, directNameProvided bool) error {
+	if resolveErr == nil || directNameProvided {
+		return nil
+	}
+	return fmt.Errorf("failed to resolve agent service for remote invoke: %w", resolveErr)
+}
+
+func unresolvedRemoteAgentNameError(serviceName string) error {
+	if serviceName != "" {
+		return exterrors.Dependency(
+			exterrors.CodeMissingAgentEnvVars,
+			fmt.Sprintf("agent service %q does not appear to have been deployed", serviceName),
+			"run `azd deploy` before invoking, or pass an existing Foundry agent name "+
+				"or --agent-endpoint explicitly",
+		)
+	}
+	return fmt.Errorf(
+		"agent name is required; provide as the first argument or " +
+			"define an azure.ai.agent service in azure.yaml",
+	)
+}
+
 // resolveRemoteContext returns the inputs required to invoke a remote agent.
 // In project mode it opens an azd client and reads the environment; in ephemeral
-// mode (--agent-endpoint) it skips both. Auth token acquisition is intentionally
-// deferred to acquireBearerToken so callers can validate the request body first
-// and avoid unnecessary token round-trips on invalid input. Callers must close
-// rc.azdClient when non-nil.
+// mode (--agent-endpoint) it skips both. Brownfield resolution may authenticate
+// to verify that the inline agent exists, so remote callers validate the request
+// body before calling this method. Callers must close rc.azdClient when non-nil.
 func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext, error) {
 	rc := &remoteContext{apiVersion: DefaultAgentAPIVersion, version: a.flags.version}
 
@@ -714,30 +938,40 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	// so post-success next-step suggestions emit the service name; show
 	// keys on s.Name in azure.yaml and would 404 on the deployed Foundry
 	// name in the divergent case.
-	if info, err := resolveAgentServiceFromProject(ctx, azdClient, rc.name, a.noPrompt); err == nil {
+	info, serviceErr := resolveAgentServiceFromProject(
+		ctx,
+		azdClient,
+		a.serviceNameSelector(),
+		a.noPrompt,
+		withBrownfieldInlineAgentName(),
+	)
+	if serviceErr == nil {
 		rc.serviceName = info.ServiceName
-		if info.AgentName != "" {
-			rc.name = info.AgentName
-		}
+		rc.name = remoteAgentNameFromService(rc.name, info, a.protocolServiceName != "")
 		if info.AgentEndpoint != "" {
 			rc.agentKey = buildRemoteAgentKeyFromEndpoint(info.AgentEndpoint)
 		}
-	}
-	if rc.name == "" {
-		azdClient.Close()
-		return nil, fmt.Errorf(
-			"agent name is required; provide as the first argument or " +
-				"define an azure.ai.agent service in azure.yaml",
-		)
-	}
-
-	ep, err := resolveAgentEndpoint(ctx, "", "")
-	if err != nil {
+		if info.ProjectEndpoint != "" {
+			rc.projectEndpoint = info.ProjectEndpoint
+		}
+	} else if err := remoteAgentServiceResolutionError(serviceErr, a.flags.name != ""); err != nil {
 		azdClient.Close()
 		return nil, err
 	}
-	rc.projectEndpoint = ep
-	if rc.version != "" {
+	if rc.name == "" {
+		azdClient.Close()
+		return nil, unresolvedRemoteAgentNameError(rc.serviceName)
+	}
+
+	if rc.projectEndpoint == "" {
+		ep, err := resolveAgentEndpoint(ctx, "", "")
+		if err != nil {
+			azdClient.Close()
+			return nil, err
+		}
+		rc.projectEndpoint = ep
+	}
+	if rc.agentKey == "" {
 		rc.agentKey = buildAgentKey(rc.projectEndpoint, rc.name, rc.version, false)
 	}
 	return rc, nil
@@ -874,17 +1108,17 @@ func ephemeralAuthError(ephemeral bool, err error) error {
 }
 
 func (a *InvokeAction) responsesRemote(ctx context.Context) error {
+	body, bodyLabel, err := a.resolveBody()
+	if err != nil {
+		return err
+	}
+
 	rc, err := a.resolveRemoteContext(ctx)
 	if err != nil {
 		return err
 	}
 	if rc.azdClient != nil {
 		defer rc.azdClient.Close()
-	}
-
-	body, bodyLabel, err := a.resolveBody()
-	if err != nil {
-		return err
 	}
 
 	agentKey := rc.agentKey
@@ -976,10 +1210,10 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
+	applyCustomHeaders(req, a.clientHeaders)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
-	req.Header.Set("Foundry-Features", "HostedAgents=V1Preview")
-	applyIsolationHeaders(req, &a.flags.isolationHeaderFlags)
+	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 	if raw {
 		// Disable Go's transparent gzip handling so the dumped headers and
 		// body match what the server actually sent on the wire.
@@ -1062,7 +1296,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 	// Resolving twice would re-prompt the user on multi-agent projects
 	// AND risk picking different services for the two values (silent
 	// state corruption: session under A, cache under B).
-	agentName := resolveLocalAgentName(ctx, azdClient, a.flags.name, a.noPrompt)
+	agentName := resolveLocalAgentName(ctx, azdClient, a.serviceNameSelector(), a.noPrompt)
 	agentKey := buildLocalAgentKey(DefaultPort, agentName, "", resolveProjectPath(ctx, azdClient))
 
 	// Resolve local session ID (generated locally, not server-assigned).
@@ -1100,20 +1334,26 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		invURL += "?agent_session_id=" + url.QueryEscape(sid)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, invURL, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", contentTypeForBody(body))
-	if raw {
-		// Disable Go's transparent gzip handling so the dumped headers and
-		// body match what the server actually sent on the wire.
-		req.Header.Set("Accept-Encoding", "identity")
+	newReq := func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, invURL, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		applyCustomHeaders(req, a.clientHeaders)
+		req.Header.Set("Content-Type", contentTypeForBody(body))
+		applyLocalUserIdentityHeader(req, &a.flags.userIdentityFlags)
+		applyLocalCallIDHeader(req, a.flags.callID)
+		if raw {
+			// Disable Go's transparent gzip handling so the dumped headers and
+			// body match what the server actually sent on the wire.
+			req.Header.Set("Accept-Encoding", "identity")
+		}
+		return req, nil
 	}
 
 	client := &http.Client{Timeout: a.httpTimeout()}
 	invokeStart := time.Now()
-	resp, err := client.Do(req) //nolint:gosec // G704: URL targets localhost with user-configured port
+	resp, err := doLocalRequestWithRetry(ctx, client, newReq)
 	if err != nil {
 		return fmt.Errorf(
 			"could not connect to localhost:%d -- is the agent running? Start it with: azd ai agent run",
@@ -1148,6 +1388,11 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 // invocationsRemote sends the user's message to Foundry using
 // the invocations protocol (POST /agents/{name}/endpoint/protocols/invocations).
 func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
+	body, bodyLabel, err := a.resolveBody()
+	if err != nil {
+		return err
+	}
+
 	rc, err := a.resolveRemoteContext(ctx)
 	if err != nil {
 		return err
@@ -1165,11 +1410,6 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		fmt.Fprintln(os.Stderr,
 			"note: --new-conversation has no effect for the invocations protocol "+
 				"(memory is bound to the session; use --new-session to reset).")
-	}
-
-	body, bodyLabel, err := a.resolveBody()
-	if err != nil {
-		return err
 	}
 
 	// Acquire the bearer token after body validation so a local input error
@@ -1212,10 +1452,10 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
+	applyCustomHeaders(req, a.clientHeaders)
 	req.Header.Set("Content-Type", contentTypeForBody(body))
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
-	req.Header.Set("Foundry-Features", "HostedAgents=V1Preview")
-	applyIsolationHeaders(req, &a.flags.isolationHeaderFlags)
+	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 	if raw {
 		// Disable Go's transparent gzip handling so the dumped headers and
 		// body match what the server actually sent on the wire.
@@ -1563,7 +1803,6 @@ func handleInvocationLRO(
 		if bearerToken != "" {
 			req.Header.Set("Authorization", "Bearer "+bearerToken)
 		}
-		req.Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 		options.ApplyHeaders(req.Header)
 		if raw {
 			// Disable Go's transparent gzip handling so the dumped headers
@@ -1684,7 +1923,6 @@ func createConversation(
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+bearerToken)
-	req.Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	options.ApplyHeaders(req.Header)
 
 	client := &http.Client{Timeout: 30 * time.Second}

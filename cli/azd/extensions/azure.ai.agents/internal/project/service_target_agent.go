@@ -19,7 +19,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -39,7 +38,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/braydonk/yaml"
 	"github.com/fatih/color"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -95,16 +93,17 @@ func buildInvocationsProtocolURL(projectEndpoint, agentName string) string {
 	)
 }
 
-// buildInvocationsWSProtocolURL builds the Foundry dispatcher-form WebSocket URL for the
-// "invocations_ws" protocol. Unlike the per-agent HTTP protocols, invocations_ws uses a
-// fixed data-plane route under /api/projects/agents/endpoint/protocols/invocations_ws and
-// selects the agent via the project_name and agent_name query parameters. Callers must add
-// their own agent_session_id query parameter when establishing a session.
+// buildInvocationsWSProtocolURL builds the Foundry data-plane WebSocket URL for the
+// "invocations_ws" protocol. The route is path-based and mirrors the HTTP "invocations" shape:
+// the project and agent are carried as path segments under
+// /api/projects/<project>/agents/<agent>/endpoint/protocols/invocations_ws, differing only in the
+// wss:// scheme and the trailing invocations_ws segment. The only WebSocket query parameters are
+// the required api-version and an optional agent_session_id; callers must add their own
+// agent_session_id when establishing a session.
 //
-// Returns "" if projectEndpoint cannot be parsed into a URL with a host: the dispatcher route
-// requires both a host (for the wss:// authority) and a project name (derived from the URL
-// path) to be callable, so emitting a partial URL would only register a non-callable endpoint.
-// Callers (agentInvocationEndpoints) filter out empty results.
+// Returns "" if projectEndpoint cannot be parsed into a URL with a host: the route requires a host
+// (for the wss:// authority) to be callable, so emitting a partial URL would only register a
+// non-callable endpoint. Callers (agentInvocationEndpoints) filter out empty results.
 func buildInvocationsWSProtocolURL(projectEndpoint, agentName string) string {
 	projectEndpoint = strings.TrimSpace(projectEndpoint)
 	u, err := url.Parse(projectEndpoint)
@@ -112,14 +111,9 @@ func buildInvocationsWSProtocolURL(projectEndpoint, agentName string) string {
 		return ""
 	}
 
-	projectName := path.Base(u.Path)
-	q := url.Values{}
-	q.Set("api-version", agent_api.AgentEndpointAPIVersion)
-	q.Set("project_name", projectName)
-	q.Set("agent_name", agentName)
 	return fmt.Sprintf(
-		"wss://%s/api/projects/agents/endpoint/protocols/invocations_ws?%s",
-		u.Host, q.Encode(),
+		"wss://%s%s/agents/%s/endpoint/protocols/invocations_ws?api-version=%s",
+		u.Host, strings.TrimRight(u.Path, "/"), agentName, agent_api.AgentEndpointAPIVersion,
 	)
 }
 
@@ -152,10 +146,16 @@ type AgentServiceTargetProvider struct {
 	azdClient           *azdext.AzdClient
 	serviceConfig       *azdext.ServiceConfig
 	agentDefinitionPath string
-	credential          *azidentity.AzureDeveloperCLICredential
-	tenantId            string
-	env                 *azdext.Environment
-	foundryProject      *arm.ResourceID
+	projectPath         string
+	servicePath         string
+	// deployContextReady is set by every successful ensureDeployContext path;
+	// agentDefinitionPath is only set for the file-based and env-override paths
+	// (not the inline unified shape), so both are checked as the idempotency guard.
+	deployContextReady bool
+	credential         *azidentity.AzureDeveloperCLICredential
+	tenantId           string
+	env                *azdext.Environment
+	foundryProject     *arm.ResourceID
 }
 
 const (
@@ -176,14 +176,28 @@ func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTa
 	}
 }
 
-// Initialize initializes the service target by looking for the agent definition file
+// Initialize stores the service config. It is intentionally cheap: azd core
+// calls it on every service-target for every action. Heavy work (resolving
+// agent.yaml, tenant lookup, credential) lives in ensureDeployContext and runs
+// only when a deploy-time entrypoint needs it.
 func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
-	if p.agentDefinitionPath != "" {
-		// Already initialized
+	p.serviceConfig = serviceConfig
+	return nil
+}
+
+// ensureDeployContext lazily resolves the agent definition file, the azd
+// environment, the tenant, and the credential. Idempotent via the
+// agentDefinitionPath short-circuit.
+func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) error {
+	if p.deployContextReady || p.agentDefinitionPath != "" {
 		return nil
 	}
-
-	p.serviceConfig = serviceConfig
+	if p.serviceConfig == nil {
+		return exterrors.Internal(
+			exterrors.CodeInvalidServiceConfig,
+			"service-target Initialize was not called before ensureDeployContext",
+		)
+	}
 
 	proj, err := p.azdClient.Project().Get(ctx, nil)
 	if err != nil {
@@ -193,29 +207,22 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 			"run 'azd init' to initialize your project",
 		)
 	}
-	servicePath := serviceConfig.RelativePath
+	servicePath := p.serviceConfig.RelativePath
 	fullPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath)
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("invalid service path for %s: %s", serviceConfig.Name, err),
+			fmt.Sprintf("invalid service path for %s: %s", p.serviceConfig.Name, err),
 			"update azure.yaml so the agent service path stays within the project directory",
 		)
 	}
 
-	// Get and store environment
-	azdEnvClient := p.azdClient.Environment()
-	currEnv, err := azdEnvClient.GetCurrent(ctx, nil)
-	if err != nil {
-		return exterrors.Dependency(
-			exterrors.CodeEnvironmentNotFound,
-			fmt.Sprintf("failed to get current environment: %s", err),
-			"run 'azd env new' to create an environment",
-		)
+	if err := p.ensureEnv(ctx); err != nil {
+		return err
 	}
-	p.env = currEnv.Environment
 
 	// Get subscription ID from environment
+	azdEnvClient := p.azdClient.Environment()
 	resp, err := azdEnvClient.GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: p.env.Name,
 		Key:     "AZURE_SUBSCRIPTION_ID",
@@ -261,7 +268,8 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 	}
 	p.credential = cred
 
-	fmt.Fprintf(os.Stderr, "Project path: %s, Service path: %s\n", proj.Project.Path, fullPath)
+	p.projectPath = proj.Project.Path
+	p.servicePath = fullPath
 
 	// Check if user has specified agent definition path via environment variable
 	if envPath := os.Getenv("AGENT_DEFINITION_PATH"); envPath != "" {
@@ -286,15 +294,25 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 
 		p.agentDefinitionPath = envPath
 		fmt.Printf("Using agent definition from environment variable: %s\n", color.New(color.FgHiGreen).Sprint(envPath))
+		p.deployContextReady = true
 		return nil
 	}
 
-	// Look for agent.yaml or agent.yml in the service directory root
+	// Unified shape: the agent definition is carried inline on the service entry,
+	// so no on-disk agent.yaml is required.
+	if _, _, found, _, defErr := AgentDefinitionFromService(p.serviceConfig); defErr != nil {
+		return defErr
+	} else if found {
+		p.deployContextReady = true
+		return nil
+	}
+
+	// Legacy shape: look for agent.yaml or agent.yml in the service directory root
 	agentYamlPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath, "agent.yaml")
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("invalid agent definition path for %s: %s", serviceConfig.Name, err),
+			fmt.Sprintf("invalid agent definition path for %s: %s", p.serviceConfig.Name, err),
 			"update azure.yaml so the agent definition stays within the project directory",
 		)
 	}
@@ -302,7 +320,7 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("invalid agent definition path for %s: %s", serviceConfig.Name, err),
+			fmt.Sprintf("invalid agent definition path for %s: %s", p.serviceConfig.Name, err),
 			"update azure.yaml so the agent definition stays within the project directory",
 		)
 	}
@@ -310,12 +328,14 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 	if _, err := os.Stat(agentYamlPath); err == nil {
 		p.agentDefinitionPath = agentYamlPath
 		fmt.Printf("Using agent definition: %s\n", color.New(color.FgHiGreen).Sprint(agentYamlPath))
+		p.deployContextReady = true
 		return nil
 	}
 
 	if _, err := os.Stat(agentYmlPath); err == nil {
 		p.agentDefinitionPath = agentYmlPath
 		fmt.Printf("Using agent definition: %s\n", color.New(color.FgHiGreen).Sprint(agentYmlPath))
+		p.deployContextReady = true
 		return nil
 	}
 
@@ -324,6 +344,24 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 		fmt.Sprintf("agent definition file not found: no agent.yaml or agent.yml found in %s", fullPath),
 		"add an agent.yaml/agent.yml file to the service directory or set AGENT_DEFINITION_PATH",
 	)
+}
+
+// ensureEnv lazily populates p.env from the azd host. Idempotent and cheap
+// enough for non-deploy entrypoints (Endpoints, registerAgentEnvironmentVariables).
+func (p *AgentServiceTargetProvider) ensureEnv(ctx context.Context) error {
+	if p.env != nil {
+		return nil
+	}
+	currEnv, err := p.azdClient.Environment().GetCurrent(ctx, nil)
+	if err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeEnvironmentNotFound,
+			fmt.Sprintf("failed to get current environment: %s", err),
+			"run 'azd env new' to create an environment",
+		)
+	}
+	p.env = currEnv.Environment
+	return nil
 }
 
 // getServiceKey converts a service name into a standardized environment variable key format
@@ -339,6 +377,10 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	serviceConfig *azdext.ServiceConfig,
 	targetResource *azdext.TargetResource,
 ) ([]string, error) {
+	if err := p.ensureEnv(ctx); err != nil {
+		return nil, err
+	}
+
 	// Get all environment values
 	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
 		Name: p.env.Name,
@@ -404,6 +446,9 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	serviceConfig *azdext.ServiceConfig,
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
+	if err := p.ensureDeployContext(ctx); err != nil {
+		return nil, err
+	}
 	// Ensure Foundry project is loaded
 	if err := p.ensureFoundryProject(ctx); err != nil {
 		return nil, err
@@ -463,6 +508,9 @@ func (p *AgentServiceTargetProvider) Package(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
+	if err := p.ensureDeployContext(ctx); err != nil {
+		return nil, err
+	}
 	// Code deploy: ZIP the source directory
 	if p.isCodeDeployAgent() {
 		progress("Packaging code")
@@ -566,16 +614,21 @@ func (p *AgentServiceTargetProvider) Publish(
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
-	// Code deploy skips Publish (no ACR needed)
-	if p.isCodeDeployAgent() {
-		return &azdext.ServicePublishResult{}, nil
-	}
-
+	// Pre-built image: nothing to package or push. Skip deploy-context
+	// resolution so this path stays cheap and doesn't require agent.yaml.
 	if preBuiltArtifact := findPreBuiltImageArtifact(serviceContext.Package); preBuiltArtifact != nil {
 		progress("Using pre-built container image, skipping publish")
 		return &azdext.ServicePublishResult{
 			Artifacts: []*azdext.Artifact{preBuiltArtifact},
 		}, nil
+	}
+
+	if err := p.ensureDeployContext(ctx); err != nil {
+		return nil, err
+	}
+	// Code deploy skips Publish (no ACR needed)
+	if p.isCodeDeployAgent() {
+		return &azdext.ServicePublishResult{}, nil
 	}
 
 	_, isContainerAgent, err := p.loadContainerAgentDefinition()
@@ -904,63 +957,36 @@ func hasContainerArtifact(artifacts []*azdext.Artifact) bool {
 }
 
 func (p *AgentServiceTargetProvider) loadContainerAgentDefinition() (agent_yaml.ContainerAgent, bool, error) {
-	data, err := os.ReadFile(p.agentDefinitionPath)
-	if err != nil {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("failed to read agent manifest file: %s", err),
-			"verify the agent.yaml file exists and is readable",
-		)
+	// An explicit AGENT_DEFINITION_PATH override is represented by
+	// agentDefinitionPath and must win over the service entry.
+	if p.agentDefinitionPath != "" {
+		data, err := os.ReadFile(p.agentDefinitionPath)
+		if err != nil {
+			return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("failed to read agent manifest file: %s", err),
+				"verify the agent.yaml file exists and is readable",
+			)
+		}
+
+		WarnLegacyAgentShape(AgentDefinitionSourceDisk)
+		return parseContainerAgentYAML(data)
 	}
 
-	if err := agent_yaml.ValidateAgentDefinition(data); err != nil {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("agent.yaml is not valid: %s", err),
-			"fix the agent.yaml file according to the schema",
-		)
+	// Prefer the agent definition carried inline on the service entry (the
+	// unified service-level shape, or the deprecated config-nested shape).
+	if ca, isHosted, found, source, err := AgentDefinitionFromService(p.serviceConfig); found || err != nil {
+		if found && source.IsLegacy() {
+			WarnLegacyAgentShape(source)
+		}
+		return ca, isHosted, err
 	}
 
-	var genericTemplate map[string]any
-	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("YAML content is not valid: %s", err),
-			"verify the agent.yaml has valid YAML syntax",
-		)
-	}
-
-	kind, ok := genericTemplate["kind"].(string)
-	if !ok {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeMissingAgentKind,
-			"kind field is missing or not a valid string in agent.yaml",
-			"add a valid 'kind' field (e.g., 'hosted') to agent.yaml",
-		)
-	}
-
-	if kind != string(agent_yaml.AgentKindHosted) {
-		return agent_yaml.ContainerAgent{}, false, nil
-	}
-
-	var agentDef agent_yaml.ContainerAgent
-	if err := yaml.Unmarshal(data, &agentDef); err != nil {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("YAML content is not valid for hosted agent: %s", err),
-			"fix the agent.yaml to match the hosted agent schema",
-		)
-	}
-
-	if agentDef.Image != "" && !containerImageRefRe.MatchString(agentDef.Image) {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("invalid container image reference in agent.yaml: %q", agentDef.Image),
-			"use a valid image reference, e.g. 'myregistry.azurecr.io/image:v1'",
-		)
-	}
-
-	return agentDef, true, nil
+	return agent_yaml.ContainerAgent{}, false, exterrors.Dependency(
+		exterrors.CodeAgentDefinitionNotFound,
+		fmt.Sprintf("agent definition not found for service %q", p.serviceConfig.GetName()),
+		"re-run `azd ai agent init` to write the agent definition into azure.yaml",
+	)
 }
 
 // Deploy performs the deployment operation for the agent service
@@ -971,6 +997,9 @@ func (p *AgentServiceTargetProvider) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
+	if err := p.ensureDeployContext(ctx); err != nil {
+		return nil, err
+	}
 	// Ensure Foundry project is loaded
 	if err := p.ensureFoundryProject(ctx); err != nil {
 		return nil, err
@@ -993,8 +1022,8 @@ func (p *AgentServiceTargetProvider) Deploy(
 		azdEnv[kval.Key] = kval.Value
 	}
 
-	var serviceTargetConfig *ServiceTargetAgentConfig
-	if err := UnmarshalStruct(serviceConfig.Config, &serviceTargetConfig); err != nil {
+	serviceTargetConfig, err := LoadServiceTargetAgentConfig(serviceConfig)
+	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			fmt.Sprintf("failed to parse service target config: %s", err),
@@ -1006,7 +1035,15 @@ func (p *AgentServiceTargetProvider) Deploy(
 		fmt.Println("Loaded custom service target configuration")
 	}
 
-	warnDeprecatedScaleSettings(serviceConfig.Config)
+	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
+
+	// Provision any declared Foundry memory stores before deploying the agent, since
+	// the agent's memory_search tool depends on the store existing at runtime.
+	if err := p.provisionMemoryStores(
+		ctx, serviceTargetConfig, azdEnv["FOUNDRY_PROJECT_ENDPOINT"], progress,
+	); err != nil {
+		return nil, err
+	}
 
 	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
 	if err != nil {
@@ -1058,14 +1095,209 @@ func (p *AgentServiceTargetProvider) Deploy(
 	return p.finalizeDeploy(ctx, progress, serviceConfig, azdEnv, result.agentVersion, result.protocols)
 }
 
+// provisionMemoryStores creates any Foundry memory stores declared in the service target
+// configuration. Provisioning is idempotent: a store that already exists is left unchanged,
+// so deployments are safe to re-run. Because azd never updates an existing store, a warning
+// is emitted when a declared definition diverges from the live store so a changed azure.yaml
+// value is not silently ignored. ChatModel and EmbeddingModel reference model deployment names
+// that must already exist in the Foundry project.
+func (p *AgentServiceTargetProvider) provisionMemoryStores(
+	ctx context.Context,
+	config *ServiceTargetAgentConfig,
+	projectEndpoint string,
+	progress azdext.ProgressReporter,
+) error {
+	if config == nil || len(config.MemoryStores) == 0 {
+		return nil
+	}
+
+	// Validate every declared store up front, before talking to the service, so a bad
+	// entry fails fast without half-provisioning the stores that precede it.
+	if err := validateMemoryStores(config.MemoryStores); err != nil {
+		return err
+	}
+
+	if projectEndpoint == "" {
+		return exterrors.Dependency(
+			exterrors.CodeMissingAiProjectEndpoint,
+			"cannot provision memory stores: the Foundry project endpoint is not set",
+			"run 'azd provision' or connect to an existing project via "+
+				"'azd ai agent init --project-id <resource-id>'",
+		)
+	}
+
+	client := azure.NewFoundryMemoryStoreClient(projectEndpoint, p.credential)
+
+	for _, store := range config.MemoryStores {
+		if progress != nil {
+			progress(fmt.Sprintf("Provisioning memory store %q", store.Name))
+		}
+
+		request := &azure.CreateMemoryStoreRequest{
+			Name:        store.Name,
+			Description: store.Description,
+			Definition: azure.MemoryStoreDefinition{
+				Kind:           azure.MemoryStoreKindDefault,
+				ChatModel:      store.ChatModel,
+				EmbeddingModel: store.EmbeddingModel,
+				Options:        mapMemoryStoreOptions(store.Options),
+			},
+		}
+
+		existing, created, err := client.EnsureMemoryStore(ctx, request)
+		if err != nil {
+			return exterrors.ServiceFromAzure(err, exterrors.OpProvisionMemoryStore)
+		}
+
+		if created {
+			if progress != nil {
+				progress(fmt.Sprintf("Created memory store %q", store.Name))
+			}
+			continue
+		}
+
+		// The store already exists. azd does not update existing stores, so surface any
+		// azure.yaml changes that were not applied instead of silently ignoring them.
+		if drift := memoryStoreDefinitionDrift(request.Definition, existing.Definition); len(drift) > 0 {
+			writeMemoryStoreDriftWarning(store.Name, drift)
+		} else if progress != nil {
+			progress(fmt.Sprintf("Memory store %q already exists; leaving as-is", store.Name))
+		}
+	}
+
+	return nil
+}
+
+// validateMemoryStores checks that every declared memory store has the required fields.
+func validateMemoryStores(stores []MemoryStore) error {
+	for _, store := range stores {
+		if store.Name == "" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidMemoryStore,
+				"a memory store in azure.yaml is missing the required 'name' field",
+				"add a 'name' to each entry under the agent service 'memoryStores' list",
+			)
+		}
+		if store.ChatModel == "" || store.EmbeddingModel == "" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidMemoryStore,
+				fmt.Sprintf(
+					"memory store '%s' must specify both 'chatModel' and 'embeddingModel'",
+					store.Name,
+				),
+				"set 'chatModel' and 'embeddingModel' to model deployment names "+
+					"available in your Foundry project",
+			)
+		}
+	}
+
+	return nil
+}
+
+// memoryStoreDefinitionDrift returns a human-readable list of the fields where the declared
+// definition diverges from the live store. Only fields the user explicitly declared are
+// compared, so unset options (which fall back to service defaults) never report false drift.
+func memoryStoreDefinitionDrift(declared, live azure.MemoryStoreDefinition) []string {
+	var drift []string
+
+	if declared.ChatModel != live.ChatModel {
+		drift = append(drift, fmt.Sprintf("chatModel (declared %q, current %q)",
+			declared.ChatModel, live.ChatModel))
+	}
+	if declared.EmbeddingModel != live.EmbeddingModel {
+		drift = append(drift, fmt.Sprintf("embeddingModel (declared %q, current %q)",
+			declared.EmbeddingModel, live.EmbeddingModel))
+	}
+
+	if declared.Options == nil {
+		return drift
+	}
+
+	var liveOpts azure.MemoryStoreOptions
+	if live.Options != nil {
+		liveOpts = *live.Options
+	}
+
+	if boolPtrDiffers(declared.Options.ChatSummaryEnabled, liveOpts.ChatSummaryEnabled) {
+		drift = append(drift, fmt.Sprintf("options.chatSummaryEnabled (declared %v)",
+			*declared.Options.ChatSummaryEnabled))
+	}
+	if boolPtrDiffers(declared.Options.UserProfileEnabled, liveOpts.UserProfileEnabled) {
+		drift = append(drift, fmt.Sprintf("options.userProfileEnabled (declared %v)",
+			*declared.Options.UserProfileEnabled))
+	}
+	if boolPtrDiffers(declared.Options.ProceduralMemoryEnabled, liveOpts.ProceduralMemoryEnabled) {
+		drift = append(drift, fmt.Sprintf("options.proceduralMemoryEnabled (declared %v)",
+			*declared.Options.ProceduralMemoryEnabled))
+	}
+	if declared.Options.DefaultTTLSeconds != nil &&
+		(liveOpts.DefaultTTLSeconds == nil || *declared.Options.DefaultTTLSeconds != *liveOpts.DefaultTTLSeconds) {
+		drift = append(drift, fmt.Sprintf("options.defaultTtlSeconds (declared %d)",
+			*declared.Options.DefaultTTLSeconds))
+	}
+	if declared.Options.UserProfileDetails != "" &&
+		declared.Options.UserProfileDetails != liveOpts.UserProfileDetails {
+		drift = append(drift, "options.userProfileDetails")
+	}
+
+	return drift
+}
+
+// boolPtrDiffers reports whether a declared bool pointer is set and differs from the live value.
+func boolPtrDiffers(declared, live *bool) bool {
+	if declared == nil {
+		return false
+	}
+	return live == nil || *declared != *live
+}
+
+// writeMemoryStoreDriftWarning warns that azure.yaml changes were not applied to an existing store.
+func writeMemoryStoreDriftWarning(name string, drift []string) {
+	fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
+		"Memory store %q already exists; azd does not update existing memory stores, so the "+
+			"following azure.yaml change(s) were NOT applied: %s. To apply them, delete the store "+
+			"in the Foundry portal (or give it a new name) and redeploy.\n",
+		name, strings.Join(drift, ", "),
+	))
+}
+
+// mapMemoryStoreOptions converts the azure.yaml memory store options into the API request shape.
+// It returns nil when no options are configured (or all fields are unset) so the service applies
+// its own defaults, rather than sending an empty options object that the service might treat
+// differently from an omitted one.
+func mapMemoryStoreOptions(options *MemoryStoreOptions) *azure.MemoryStoreOptions {
+	if options == nil || memoryStoreOptionsEmpty(options) {
+		return nil
+	}
+
+	return &azure.MemoryStoreOptions{
+		ChatSummaryEnabled:      options.ChatSummaryEnabled,
+		UserProfileEnabled:      options.UserProfileEnabled,
+		ProceduralMemoryEnabled: options.ProceduralMemoryEnabled,
+		DefaultTTLSeconds:       options.DefaultTtlSeconds,
+		UserProfileDetails:      options.UserProfileDetails,
+	}
+}
+
+// memoryStoreOptionsEmpty reports whether every memory store option field is unset.
+func memoryStoreOptionsEmpty(options *MemoryStoreOptions) bool {
+	return options.ChatSummaryEnabled == nil &&
+		options.UserProfileEnabled == nil &&
+		options.ProceduralMemoryEnabled == nil &&
+		options.DefaultTtlSeconds == nil &&
+		options.UserProfileDetails == ""
+}
+
 // shouldUsePreBuiltImage determines whether to use a pre-built image.
 //
 // Behavior:
-//   - If no image is configured in agent.yaml, always build from Dockerfile.
+//   - If no image is configured in the loaded agent definition, always build from Dockerfile.
+//     The image usually comes from the azure.yaml service image field, but can come from
+//     a legacy agent.yaml fallback.
 //   - In non-interactive mode (--no-prompt), the prompt returns the default
 //     selection (index 0 = build from Dockerfile) automatically.
 //   - In interactive mode, prompt the user. The default is to build, so users
-//     who happen to have an image in agent.yaml are not silently switched onto
+//     who happen to have an image configured are not silently switched onto
 //     the pre-built path.
 func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 	ctx context.Context,
@@ -1076,9 +1308,15 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 		return false, nil
 	}
 
+	if p.shouldSkipACRForEnvironment(ctx) {
+		log.Printf("AZD_AGENT_SKIP_ACR=true: using pre-built image from agent definition")
+		return true, nil
+	}
+
 	// Default to build so the pre-built path requires an explicit choice.
 	// In non-interactive mode (--no-prompt), the framework returns the default
-	// selection (index 0 = build) automatically.
+	// selection (index 0 = build) automatically unless AZD_AGENT_SKIP_ACR=true
+	// was set by init --image.
 	choices := []*azdext.SelectChoice{
 		{Value: "build", Label: "Build a new image for me"},
 		{Value: "prebuilt", Label: fmt.Sprintf("Create hosted agent from %s", imageURL)},
@@ -1098,29 +1336,30 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 	return resp.Value != nil && choices[*resp.Value].Value == "prebuilt", nil
 }
 
-// isCodeDeployAgent returns true if the agent.yaml has code_configuration (code deploy mode)
+func (p *AgentServiceTargetProvider) shouldSkipACRForEnvironment(ctx context.Context) bool {
+	if p.env == nil || p.env.Name == "" {
+		return false
+	}
+
+	resp, err := p.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: p.env.Name,
+		Key:     "AZD_AGENT_SKIP_ACR",
+	})
+	if err != nil || resp == nil {
+		return false
+	}
+
+	return strings.EqualFold(strings.TrimSpace(resp.Value), "true")
+}
+
+// isCodeDeployAgent returns true if the agent definition has code_configuration (code deploy mode)
 func (p *AgentServiceTargetProvider) isCodeDeployAgent() bool {
-	data, err := os.ReadFile(p.agentDefinitionPath)
-	if err != nil {
+	agentDef, isHosted, err := p.loadContainerAgentDefinition()
+	if err != nil || !isHosted {
 		return false
 	}
 
-	var genericTemplate map[string]any
-	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
-		return false
-	}
-
-	kind, ok := genericTemplate["kind"].(string)
-	if !ok {
-		return false
-	}
-
-	if kind != string(agent_yaml.AgentKindHosted) {
-		return false
-	}
-
-	_, hasCodeConfig := genericTemplate["code_configuration"]
-	return hasCodeConfig
+	return agentDef.CodeConfiguration != nil
 }
 
 // deployPrepResult holds the common outputs from prepareDeploy, used by both
@@ -1171,7 +1410,9 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		)
 	}
 
-	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
+	if p.agentDefinitionPath != "" {
+		fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
+	}
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["FOUNDRY_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
@@ -1184,8 +1425,8 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	}
 
 	// Parse service config for container resource overrides
-	var foundryAgentConfig *ServiceTargetAgentConfig
-	if err := UnmarshalStruct(serviceConfig.Config, &foundryAgentConfig); err != nil {
+	foundryAgentConfig, err := LoadServiceTargetAgentConfig(serviceConfig)
+	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			fmt.Sprintf("failed to parse foundry agent config: %s", err),
@@ -1193,7 +1434,7 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		)
 	}
 
-	warnDeprecatedScaleSettings(serviceConfig.Config)
+	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
 
 	var cpu, memory string
 	if foundryAgentConfig != nil && foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
@@ -1228,7 +1469,7 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	protocols := agentDef.Protocols
 	if len(protocols) == 0 {
 		protocols = []agent_yaml.ProtocolVersionRecord{
-			{Protocol: string(agent_api.AgentProtocolResponses), Version: "1.0.0"},
+			{Protocol: string(agent_api.AgentProtocolResponses), Version: "2.0.0"},
 		}
 	}
 
@@ -1371,7 +1612,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 				exterrors.CodeMissingPublishedContainer,
 				"published container artifact not found: no remote container artifact was found in service "+
 					"publish artifacts and no pre-built image was specified",
-				"either set 'image' in agent.yaml, "+
+				"either set 'image' on the azure.yaml agent service, "+
 					"or run 'azd package' and 'azd publish' to build from a Dockerfile",
 			)
 		}
@@ -1405,32 +1646,45 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 // packageCodeDeploy creates a ZIP archive of the agent source code, writes it to a temp file,
 // and computes its SHA-256. Returns the temp file path and SHA-256 hex string.
 func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serviceConfig *azdext.ServiceConfig) (string, string, error) {
-	// Source directory is the service's relative path
-	srcDir := filepath.Dir(p.agentDefinitionPath)
+	// Source directory is the service's directory. When AGENT_DEFINITION_PATH
+	// overrides the definition, its file may live outside the service path, so
+	// zip the override's directory to capture the right source tree. Fall back to
+	// the definition directory when the service path was not resolved.
+	srcDir := p.servicePath
+	if os.Getenv("AGENT_DEFINITION_PATH") != "" && p.agentDefinitionPath != "" {
+		srcDir = filepath.Dir(p.agentDefinitionPath)
+	} else if srcDir == "" {
+		srcDir = filepath.Dir(p.agentDefinitionPath)
+	}
 
-	// Load agent.yaml to check runtime and dependency resolution for dotnet bundled mode
-	if data, err := os.ReadFile(p.agentDefinitionPath); err == nil { //nolint:gosec // path from internal state
-		var agentDef agent_yaml.ContainerAgent
-		if err := yaml.Unmarshal(data, &agentDef); err == nil && agentDef.CodeConfiguration != nil {
-			isDotnet := strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "dotnet_")
-			isBundled := false // default is remote_build (matches promptCodeConfig and deployHostedCodeAgent defaults)
-			if agentDef.CodeConfiguration.DependencyResolution != nil {
-				isBundled = *agentDef.CodeConfiguration.DependencyResolution == "bundled"
-			}
-			if isDotnet && isBundled {
-				return p.packageDotnetBundled(srcDir)
-			}
+	// Check runtime and dependency resolution for dotnet bundled mode
+	if agentDef, isHosted, err := p.loadContainerAgentDefinition(); err == nil && isHosted &&
+		agentDef.CodeConfiguration != nil {
+		isDotnet := strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "dotnet_")
+		isBundled := false // default is remote_build (matches promptCodeConfig and deployHostedCodeAgent defaults)
+		if agentDef.CodeConfiguration.DependencyResolution != nil {
+			isBundled = *agentDef.CodeConfiguration.DependencyResolution == "bundled"
+		}
+		if isDotnet && isBundled {
+			return p.packageDotnetBundled(srcDir)
+		}
 
-			// Python bundled: validate that dependencies are installed in srcDir
-			isPython := strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "python_")
-			if isPython && isBundled {
-				if err := validatePythonBundledDeps(srcDir); err != nil {
-					return "", "", err
-				}
+		// Python bundled: validate that dependencies are installed in srcDir
+		isPython := strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "python_")
+		if isPython && isBundled {
+			if err := validatePythonBundledDeps(srcDir); err != nil {
+				return "", "", err
 			}
 		}
 	}
 
+	return zipSourceDir(ctx, srcDir)
+}
+
+// zipSourceDir creates a ZIP archive of srcDir honoring .agentignore, writes it to a
+// temp file, and computes its SHA-256. It returns the temp file path and SHA-256 hex
+// string.
+func zipSourceDir(ctx context.Context, srcDir string) (string, string, error) {
 	// Load .agentignore (or use defaults if no file exists)
 	ignoreMatcher, err := newAgentIgnoreMatcher(ctx, srcDir)
 	if err != nil {
@@ -2294,8 +2548,8 @@ func (p *AgentServiceTargetProvider) displayAgentInfo(request *agent_api.CreateA
 
 	// Display agent-specific information
 	if hostedDef, ok := request.Definition.(agent_api.HostedAgentDefinition); ok {
-		if hostedDef.Image != "" {
-			fmt.Fprintf(os.Stderr, "Image: %s\n", hostedDef.Image)
+		if hostedDef.ContainerConfiguration != nil && hostedDef.ContainerConfiguration.Image != "" {
+			fmt.Fprintf(os.Stderr, "Image: %s\n", hostedDef.ContainerConfiguration.Image)
 		}
 		fmt.Fprintf(os.Stderr, "CPU: %s\n", hostedDef.CPU)
 		fmt.Fprintf(os.Stderr, "Memory: %s\n", hostedDef.Memory)
@@ -2378,6 +2632,9 @@ func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(value string, a
 func (p *AgentServiceTargetProvider) ensureFoundryProject(ctx context.Context) error {
 	if p.foundryProject != nil {
 		return nil
+	}
+	if err := p.ensureEnv(ctx); err != nil {
+		return err
 	}
 
 	// Get all environment values

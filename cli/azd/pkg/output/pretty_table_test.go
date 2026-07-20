@@ -5,19 +5,24 @@ package output
 
 import (
 	"bytes"
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/fatih/color"
 	"github.com/stretchr/testify/require"
 )
 
 type prettyInput struct {
-	Name         string
-	Version      string
-	Status       string
-	StatusSymbol string
-	Source       string
-	Id           string
+	Name    string
+	Version string
+	Status  string
+	Source  string
+	Id      string
+}
+
+func sgrPrefixPattern(text string) *regexp.Regexp {
+	return regexp.MustCompile(`\x1b\[[0-9;]*m` + regexp.QuoteMeta(text))
 }
 
 func TestPrettyTableFormatterBasic(t *testing.T) {
@@ -209,7 +214,7 @@ func TestPrettyHeaderUnderline(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	lines := strings.Split(buf.String(), "\n")
+	lines := strings.Split(stripTerminalEscapes(buf.String()), "\n")
 	require.GreaterOrEqual(t, len(lines), 2)
 	// Second line should be all ─ characters
 	underline := strings.TrimSpace(lines[1])
@@ -224,7 +229,7 @@ func TestPrettyHeaderUnderline(t *testing.T) {
 func TestPrettyFullBreakpoint(t *testing.T) {
 	rows := []prettyInput{
 		{Id: "azure.ai.agents", Name: "Foundry agents (Preview)", Version: "0.1.18-preview",
-			Status: "✓ Up to date", StatusSymbol: "✓", Source: "azd"},
+			Status: "✓ Up to date", Source: "azd"},
 	}
 
 	formatter := &PrettyTableFormatter{
@@ -252,7 +257,7 @@ func TestPrettyFullBreakpoint(t *testing.T) {
 func TestPrettyCompactBreakpoint(t *testing.T) {
 	rows := []prettyInput{
 		{Id: "azure.ai.agents", Name: "Foundry agents (Preview)", Version: "0.1.18-preview",
-			Status: "✓ Up to date", StatusSymbol: "✓", Source: "azd"},
+			Status: "✓ Up to date", Source: "azd"},
 	}
 
 	formatter := &PrettyTableFormatter{
@@ -267,23 +272,23 @@ func TestPrettyCompactBreakpoint(t *testing.T) {
 	require.NoError(t, err)
 	output := buf.String()
 
-	// Compact: Priority ≤ 2 columns, status uses ShortValueTemplate (symbol only)
+	// Compact: Priority ≤ 2 columns shown with their full values.
 	require.Contains(t, output, "ID")
 	require.Contains(t, output, "VERSION")
 	require.Contains(t, output, "STATUS")
 	require.Contains(t, output, "SOURCE")
 	// NAME (priority 3) dropped
 	require.NotContains(t, output, "NAME")
-	// Should use short status template (symbol only)
-	require.NotContains(t, output, "Up to date")
+	// Full status text is shown (no symbol substitution).
+	require.Contains(t, output, "Up to date")
 }
 
 func TestPrettyCardBreakpoint(t *testing.T) {
 	rows := []prettyInput{
 		{Id: "azure.ai.agents", Name: "Foundry agents (Preview)", Version: "0.1.18-preview",
-			Status: "✓ Up to date", StatusSymbol: "✓", Source: "azd"},
+			Status: "✓ Up to date", Source: "azd"},
 		{Id: "azure.coding-agent", Name: "Coding agent config", Version: "0.6.1",
-			Status: "⚠ Incompatible", StatusSymbol: "⚠", Source: "local"},
+			Status: "⚠ Incompatible", Source: "local"},
 	}
 
 	formatter := &PrettyTableFormatter{
@@ -299,16 +304,22 @@ func TestPrettyCardBreakpoint(t *testing.T) {
 	require.NoError(t, err)
 	output := buf.String()
 
-	// Cards grouped by source
-	require.Contains(t, output, "── azd ")
-	require.Contains(t, output, "── local ")
+	stripped := stripTerminalEscapes(output)
+
+	// Cards grouped by labeled source
+	require.Contains(t, stripped, "── SOURCE: azd ")
+	require.Contains(t, stripped, "── SOURCE: local ")
 	// Card body has key-value pairs (using column headings as keys)
 	require.Contains(t, output, "NAME:")
 	require.Contains(t, output, "ID:")
 	require.Contains(t, output, "VERSION:")
 	require.Contains(t, output, "STATUS:")
-	// SOURCE should NOT appear in card body (it's the group header)
-	require.NotContains(t, output, "SOURCE:")
+	// SOURCE should only appear in group headers, not card-body fields.
+	for line := range strings.SplitSeq(stripped, "\n") {
+		if strings.Contains(line, "SOURCE:") {
+			require.True(t, strings.HasPrefix(line, "── SOURCE:"), "SOURCE appeared outside a group header: %q", line)
+		}
+	}
 }
 
 func TestPrettyCardGroupingOrder(t *testing.T) {
@@ -335,8 +346,9 @@ func TestPrettyCardGroupingOrder(t *testing.T) {
 	output := buf.String()
 
 	// azd appears first (first row's source)
-	azdIdx := strings.Index(output, "── azd ")
-	localIdx := strings.Index(output, "── local ")
+	stripped := stripTerminalEscapes(output)
+	azdIdx := strings.Index(stripped, "── SOURCE: azd ")
+	localIdx := strings.Index(stripped, "── SOURCE: local ")
 	require.Greater(t, localIdx, azdIdx, "azd group should appear before local group")
 
 	// Both extensions with source=azd should be in the azd group
@@ -344,70 +356,13 @@ func TestPrettyCardGroupingOrder(t *testing.T) {
 	require.Contains(t, output, "Third")
 }
 
-func TestPrettyShortValueTemplate(t *testing.T) {
+func TestPrettyColorFuncAtCompactWidth(t *testing.T) {
 	rows := []prettyInput{
-		{Id: "ext-a", Status: "✓ Up to date", StatusSymbol: "✓"},
-	}
-
-	// Width 70 is in compact range (60-99), should use short template
-	formatter := &PrettyTableFormatter{
-		ConsoleWidthFn: func() int { return 70 },
-	}
-
-	buf := &bytes.Buffer{}
-	err := formatter.Format(rows, buf, PrettyTableFormatterOptions{
-		Columns: []PrettyColumn{
-			{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
-			{
-				Column:             Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
-				Priority:           1,
-				ShortValueTemplate: "{{.StatusSymbol}}",
-			},
-		},
-	})
-
-	require.NoError(t, err)
-	output := buf.String()
-
-	// At compact width, should use short template (symbol only)
-	require.NotContains(t, output, "Up to date")
-}
-
-func TestPrettyShortValueTemplateNotUsedAtFullWidth(t *testing.T) {
-	rows := []prettyInput{
-		{Id: "ext-a", Status: "✓ Up to date", StatusSymbol: "✓"},
-	}
-
-	formatter := &PrettyTableFormatter{
-		ConsoleWidthFn: func() int { return 120 },
-	}
-
-	buf := &bytes.Buffer{}
-	err := formatter.Format(rows, buf, PrettyTableFormatterOptions{
-		Columns: []PrettyColumn{
-			{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
-			{
-				Column:             Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
-				Priority:           1,
-				ShortValueTemplate: "{{.StatusSymbol}}",
-			},
-		},
-	})
-
-	require.NoError(t, err)
-	output := buf.String()
-
-	// At full width, should use full template
-	require.Contains(t, output, "✓ Up to date")
-}
-
-func TestPrettyColorFuncWithShortValueTemplate(t *testing.T) {
-	rows := []prettyInput{
-		{Id: "ext-a", Status: "✓ Up to date", StatusSymbol: "✓"},
+		{Id: "ext-a", Status: "✓ Up to date"},
 	}
 
 	colorApplied := false
-	// Width 70 is compact range
+	// Width 70 is in the compact range (60-99).
 	formatter := &PrettyTableFormatter{
 		ConsoleWidthFn: func() int { return 70 },
 	}
@@ -417,9 +372,8 @@ func TestPrettyColorFuncWithShortValueTemplate(t *testing.T) {
 		Columns: []PrettyColumn{
 			{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
 			{
-				Column:             Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
-				Priority:           1,
-				ShortValueTemplate: "{{.StatusSymbol}}",
+				Column:   Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
+				Priority: 1,
 				ColorFunc: func(s string) string {
 					colorApplied = true
 					return "[" + s + "]"
@@ -429,11 +383,10 @@ func TestPrettyColorFuncWithShortValueTemplate(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.True(t, colorApplied, "ColorFunc should be applied to short value")
+	require.True(t, colorApplied, "ColorFunc should be applied at compact width")
 	output := buf.String()
-	// At compact width, should use short template AND apply color
-	require.NotContains(t, output, "Up to date")
-	require.Contains(t, output, "[✓]")
+	// Full status text is shown and colored (no symbol substitution).
+	require.Contains(t, output, "[✓ Up to date]")
 }
 
 // Breakpoint boundary transition tests
@@ -441,7 +394,7 @@ func TestPrettyColorFuncWithShortValueTemplate(t *testing.T) {
 func TestPrettyBreakpointTransitions(t *testing.T) {
 	rows := []prettyInput{
 		{Id: "azure.ai.agents", Name: "Foundry agents (Preview)", Version: "0.1.18-preview",
-			Status: "✓ Up to date", StatusSymbol: "✓", Source: "azd"},
+			Status: "✓ Up to date", Source: "azd"},
 	}
 
 	columns := extListTestColumns()
@@ -475,7 +428,8 @@ func TestPrettyBreakpointTransitions(t *testing.T) {
 			output := buf.String()
 
 			if tt.wantCard {
-				require.Contains(t, output, "── azd ", "expected card layout for width %d", tt.width)
+				stripped := stripTerminalEscapes(output)
+				require.Contains(t, stripped, "── SOURCE: azd ", "expected card layout for width %d", tt.width)
 			} else {
 				require.Contains(t, output, "─", "expected header underline for width %d", tt.width)
 			}
@@ -597,8 +551,10 @@ func TestPrettySingleGroupCards(t *testing.T) {
 	require.NoError(t, err)
 	output := buf.String()
 
+	stripped := stripTerminalEscapes(output)
+
 	// Only one group header should appear
-	require.Equal(t, 1, strings.Count(output, "── azd "), "expected exactly one group header")
+	require.Equal(t, 1, strings.Count(stripped, "── SOURCE: azd "), "expected exactly one group header")
 
 	// All items should be present
 	require.Contains(t, output, "First")
@@ -607,12 +563,140 @@ func TestPrettySingleGroupCards(t *testing.T) {
 
 	// No extra group separators (only one "──" line at the top)
 	headerLines := 0
-	for line := range strings.SplitSeq(output, "\n") {
+	for line := range strings.SplitSeq(stripped, "\n") {
 		if strings.HasPrefix(line, "── ") {
 			headerLines++
 		}
 	}
 	require.Equal(t, 1, headerLines, "expected exactly one group header line")
+}
+
+func TestPrettyCardGroupHeaderIncludesLabelAndUsesGrayDivider(t *testing.T) {
+	previousNoColor := color.NoColor
+	color.NoColor = false
+	t.Cleanup(func() {
+		color.NoColor = previousNoColor
+	})
+
+	rows := []prettyInput{
+		{Id: "ext-a", Name: "Extension A", Source: "azd"},
+	}
+
+	formatter := &PrettyTableFormatter{
+		ConsoleWidthFn: func() int { return 40 },
+	}
+
+	buf := &bytes.Buffer{}
+	err := formatter.Format(rows, buf, PrettyTableFormatterOptions{
+		Columns: []PrettyColumn{
+			{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
+			{Column: Column{Heading: "NAME", ValueTemplate: "{{.Name}}"}, Priority: 1},
+			{Column: Column{Heading: "SOURCE", ValueTemplate: "{{.Source}}"}, Priority: 4},
+		},
+		CardGroupColumn: "SOURCE",
+	})
+
+	require.NoError(t, err)
+	output := buf.String()
+
+	require.Contains(t, stripTerminalEscapes(output), "── SOURCE: azd ")
+	require.Regexp(t, sgrPrefixPattern("── SOURCE: azd "), output)
+}
+
+func TestPrettyCardGroupHeaderPreservesPercentLiterals(t *testing.T) {
+	rows := []prettyInput{
+		{Id: "ext-a", Name: "Extension A", Source: "azd%20source"},
+	}
+
+	formatter := &PrettyTableFormatter{
+		ConsoleWidthFn: func() int { return 40 },
+	}
+
+	buf := &bytes.Buffer{}
+	err := formatter.Format(rows, buf, PrettyTableFormatterOptions{
+		Columns: []PrettyColumn{
+			{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
+			{Column: Column{Heading: "NAME", ValueTemplate: "{{.Name}}"}, Priority: 1},
+			{Column: Column{Heading: "SOURCE", ValueTemplate: "{{.Source}}"}, Priority: 4},
+		},
+		CardGroupColumn: "SOURCE",
+	})
+
+	require.NoError(t, err)
+	output := buf.String()
+
+	require.Contains(t, stripTerminalEscapes(output), "── SOURCE: azd%20source ")
+	require.NotContains(t, output, "%!")
+}
+
+func TestPrettyCardGroupHeaderStripsHyperlinkEscapes(t *testing.T) {
+	rows := []prettyInput{
+		{Id: "ext-a", Name: "Extension A", Source: "azd"},
+	}
+
+	formatter := &PrettyTableFormatter{
+		ConsoleWidthFn: func() int { return 40 },
+	}
+
+	buf := &bytes.Buffer{}
+	err := formatter.Format(rows, buf, PrettyTableFormatterOptions{
+		Columns: []PrettyColumn{
+			{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
+			{Column: Column{Heading: "NAME", ValueTemplate: "{{.Name}}"}, Priority: 1},
+			{Column: Column{
+				Heading:       "SOURCE",
+				ValueTemplate: "{{.Source}}",
+				Transformer: func(s string) string {
+					return "\033]8;;https://example.com\007" + s + "\033]8;;\007"
+				},
+			}, Priority: 4},
+		},
+		CardGroupColumn: "SOURCE",
+	})
+
+	require.NoError(t, err)
+	output := buf.String()
+
+	require.NotContains(t, output, "\033]8;;")
+	require.Contains(t, stripTerminalEscapes(output), "── SOURCE: azd ")
+}
+
+func TestPrettyColumnTransformerCanUseLinkFormat(t *testing.T) {
+	previousNoColor := color.NoColor
+	color.NoColor = false
+	t.Cleanup(func() {
+		color.NoColor = previousNoColor
+	})
+
+	rows := []struct {
+		Location string
+	}{
+		{Location: "https://example.com/a%20b"},
+	}
+
+	formatter := &PrettyTableFormatter{
+		ConsoleWidthFn: func() int { return 120 },
+	}
+
+	buf := &bytes.Buffer{}
+	err := formatter.Format(rows, buf, PrettyTableFormatterOptions{
+		Columns: []PrettyColumn{
+			{
+				Column: Column{
+					Heading:       "LOCATION",
+					ValueTemplate: "{{.Location}}",
+					Transformer: func(s string) string {
+						return WithLinkFormat("%s", s)
+					},
+				},
+				Priority: 1,
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Regexp(t, sgrPrefixPattern("https://example.com/a%20b"), buf.String())
+	require.NotContains(t, buf.String(), "%!")
 }
 
 func TestPrettyTableANSIAlignment(t *testing.T) {
@@ -657,7 +741,7 @@ func TestPrettyTableANSIAlignment(t *testing.T) {
 
 	// Strip ANSI codes to find the visual position of SOURCE column
 	strip := func(s string) string {
-		return ansiRegex.ReplaceAllString(s, "")
+		return stripTerminalEscapes(s)
 	}
 
 	// displayIndex returns the display-column position of substr within s,
@@ -728,9 +812,8 @@ func extListTestColumns() []PrettyColumn {
 			Priority: 1,
 		},
 		{
-			Column:             Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
-			Priority:           2,
-			ShortValueTemplate: "{{.StatusSymbol}}",
+			Column:   Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
+			Priority: 2,
 		},
 		{
 			Column:   Column{Heading: "SOURCE", ValueTemplate: "{{.Source}}"},

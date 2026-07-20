@@ -8,13 +8,14 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
+
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // compareValues recursively compares expected and actual values, accounting for protobuf type conversions
@@ -51,6 +52,7 @@ func TestServiceConfigMapping(t *testing.T) {
 		Host:         ContainerAppTarget,
 		Language:     ServiceLanguageDotNet,
 		RelativePath: "./src/api",
+		Uses:         []string{"db", "cache"},
 		AdditionalProperties: map[string]any{
 			"customField": "customValue",
 		},
@@ -64,6 +66,7 @@ func TestServiceConfigMapping(t *testing.T) {
 	require.Equal(t, string(ContainerAppTarget), protoConfig.Host)
 	require.Equal(t, string(ServiceLanguageDotNet), protoConfig.Language)
 	require.Equal(t, "./src/api", protoConfig.RelativePath)
+	require.Equal(t, []string{"db", "cache"}, protoConfig.Uses)
 	require.NotNil(t, protoConfig.AdditionalProperties)
 	additionalPropsMap := protoConfig.AdditionalProperties.AsMap()
 	require.Equal(t, "customValue", additionalPropsMap["customField"])
@@ -77,6 +80,8 @@ func TestServiceConfigMappingWithResolver(t *testing.T) {
 			return "resolved-service"
 		case "REGISTRY":
 			return "myregistry.azurecr.io"
+		case "API_ENDPOINT":
+			return "https://api.contoso.test"
 		default:
 			return ""
 		}
@@ -87,6 +92,10 @@ func TestServiceConfigMappingWithResolver(t *testing.T) {
 		Host:         ContainerAppTarget,
 		Language:     ServiceLanguageDotNet,
 		RelativePath: "./src/api",
+		Environment: osutil.ExpandableMap{
+			"API_ENDPOINT": osutil.NewExpandableString("${API_ENDPOINT}"),
+			"STATIC_ENV":   osutil.NewExpandableString("static-value"),
+		},
 	}
 
 	var protoConfig *azdext.ServiceConfig
@@ -95,6 +104,10 @@ func TestServiceConfigMappingWithResolver(t *testing.T) {
 	require.NotNil(t, protoConfig)
 	require.Equal(t, "test-service", protoConfig.Name)
 	require.Equal(t, string(ContainerAppTarget), protoConfig.Host)
+	require.Equal(t, map[string]string{
+		"API_ENDPOINT": "https://api.contoso.test",
+		"STATIC_ENV":   "static-value",
+	}, protoConfig.Environment)
 }
 
 func TestServiceConfigMappingWithConfig(t *testing.T) {
@@ -215,6 +228,12 @@ func TestServiceConfigReverseMapping(t *testing.T) {
 					Language:     string(ServiceLanguageDotNet),
 					RelativePath: "./src/api",
 					Config:       nil,
+					Environment: map[string]string{
+						"FROM_EXTENSION": "extension-value",
+						// Values are literals: '$' must survive later expansions unchanged.
+						"WITH_DOLLARS":  "pa$$word",
+						"WITH_TEMPLATE": "${NOT_A_TEMPLATE}",
+					},
 				}
 			},
 			validateFn: func(t *testing.T, result *ServiceConfig) {
@@ -224,6 +243,13 @@ func TestServiceConfigReverseMapping(t *testing.T) {
 				require.Equal(t, "./src/api", result.RelativePath)
 				require.Nil(t, result.Config)
 				require.Nil(t, result.AdditionalProperties)
+				expanded, err := result.Environment.Expand(func(string) string { return "unexpected" })
+				require.NoError(t, err)
+				require.Equal(t, map[string]string{
+					"FROM_EXTENSION": "extension-value",
+					"WITH_DOLLARS":   "pa$$word",
+					"WITH_TEMPLATE":  "${NOT_A_TEMPLATE}",
+				}, expanded)
 			},
 		},
 		{
@@ -347,15 +373,30 @@ func TestServiceConfigRoundTripMapping(t *testing.T) {
 		Language:     ServiceLanguageDotNet,
 		RelativePath: "./src/api",
 		Config:       originalConfig,
+		Uses:         []string{"db", "cache"},
+		Environment: osutil.ExpandableMap{
+			"FROM_ENV": osutil.NewExpandableString("${SERVICE_VALUE}"),
+			"STATIC":   osutil.NewExpandableString("static"),
+		},
 		AdditionalProperties: map[string]any{
 			"roundTripField": "roundTripValue",
 			"nestedData":     map[string]any{"key": "value"},
 		},
 	} // Convert to proto
 	var protoConfig *azdext.ServiceConfig
-	err := mapper.Convert(originalServiceConfig, &protoConfig)
+	err := mapper.WithResolver(func(key string) string {
+		if key == "SERVICE_VALUE" {
+			// Expanded values containing '$' must survive the reverse mapping intact.
+			return "re$olved$$value"
+		}
+		return ""
+	}).Convert(originalServiceConfig, &protoConfig)
 	require.NoError(t, err)
 	require.NotNil(t, protoConfig)
+	require.Equal(t, map[string]string{
+		"FROM_ENV": "re$olved$$value",
+		"STATIC":   "static",
+	}, protoConfig.Environment)
 
 	// Convert back to ServiceConfig
 	var roundTripServiceConfig *ServiceConfig
@@ -368,6 +409,13 @@ func TestServiceConfigRoundTripMapping(t *testing.T) {
 	require.Equal(t, originalServiceConfig.Host, roundTripServiceConfig.Host)
 	require.Equal(t, originalServiceConfig.Language, roundTripServiceConfig.Language)
 	require.Equal(t, originalServiceConfig.RelativePath, roundTripServiceConfig.RelativePath)
+	require.Equal(t, originalServiceConfig.Uses, roundTripServiceConfig.Uses)
+	roundTripEnv, err := roundTripServiceConfig.Environment.Expand(func(string) string { return "unexpected" })
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"FROM_ENV": "re$olved$$value",
+		"STATIC":   "static",
+	}, roundTripEnv)
 
 	// Verify config data (note: some type conversions are expected due to JSON/protobuf handling)
 	require.NotNil(t, roundTripServiceConfig.Config)
@@ -623,6 +671,10 @@ func TestFromProtoServiceConfigMapping(t *testing.T) {
 		Language:          "csharp",
 		OutputPath:        "./dist",
 		Image:             "nginx:latest",
+		Environment: map[string]string{
+			"APP_SETTING":  "setting-value",
+			"WITH_DOLLARS": "pa$$word",
+		},
 		Docker: &azdext.DockerProjectOptions{
 			Path:        "./Dockerfile",
 			Context:     ".",
@@ -649,6 +701,12 @@ func TestFromProtoServiceConfigMapping(t *testing.T) {
 	require.Equal(t, ServiceLanguageCsharp, serviceConfig.Language)
 	require.Equal(t, "./dist", serviceConfig.OutputPath)
 	require.Equal(t, "nginx:latest", serviceConfig.Image.MustEnvsubst(func(string) string { return "" }))
+	envValues, err := serviceConfig.Environment.Expand(func(string) string { return "unexpected" })
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"APP_SETTING":  "setting-value",
+		"WITH_DOLLARS": "pa$$word",
+	}, envValues)
 
 	// Verify docker options conversion
 	require.Equal(t, "./Dockerfile", serviceConfig.Docker.Path)
@@ -981,6 +1039,10 @@ func TestProjectConfigMapping(t *testing.T) {
 					Host:         ContainerAppTarget,
 					Language:     ServiceLanguagePython,
 					RelativePath: "./src",
+					Environment: osutil.ExpandableMap{
+						"ENV_NAME": osutil.NewExpandableString("${ENVIRONMENT_NAME}"),
+						"STATIC":   osutil.NewExpandableString("static-value"),
+					},
 				},
 				"api": {
 					Name:         "api",
@@ -1016,6 +1078,12 @@ func TestProjectConfigMapping(t *testing.T) {
 		require.Contains(t, protoConfig.Services, "api")
 		require.Equal(t, "containerapp", protoConfig.Services["web"].Host)
 		require.Equal(t, "appservice", protoConfig.Services["api"].Host)
+		// The resolver must propagate into nested service conversions so service-level
+		// env values resolve the same way as in direct ServiceConfig conversions.
+		require.Equal(t, map[string]string{
+			"ENV_NAME": "dev",
+			"STATIC":   "static-value",
+		}, protoConfig.Services["web"].Environment)
 	})
 
 	t.Run("proto ProjectConfig -> ProjectConfig", func(t *testing.T) {
@@ -1280,4 +1348,133 @@ func TestArtifactListMapping(t *testing.T) {
 		assert.Equal(t, "test:latest", collection[0].Location)
 		assert.Equal(t, ArtifactKindContainer, collection[0].Kind)
 	})
+}
+
+// ---- createTypedResourceProps ----
+
+func Test_createTypedResourceProps(t *testing.T) {
+	tests := []struct {
+		name         string
+		resourceType ResourceType
+		config       []byte
+		expectNil    bool // when default case returns (nil, nil)
+		expectType   string
+	}{
+		{"AppService_empty", ResourceTypeHostAppService, nil, false, "AppServiceProps"},
+		{"AppService_json", ResourceTypeHostAppService,
+			mustJSON(t, AppServiceProps{Port: 8080}), false, "AppServiceProps"},
+		{"ContainerApp_empty", ResourceTypeHostContainerApp, nil, false, "ContainerAppProps"},
+		{"ContainerApp_json", ResourceTypeHostContainerApp,
+			mustJSON(t, ContainerAppProps{Port: 3000}), false, "ContainerAppProps"},
+		{"Cosmos_empty", ResourceTypeDbCosmos, nil, false, "CosmosDBProps"},
+		{"Cosmos_json", ResourceTypeDbCosmos,
+			mustJSON(t, CosmosDBProps{Containers: []CosmosDBContainerProps{{Name: "c1"}}}), false, "CosmosDBProps"},
+		{"Storage_empty", ResourceTypeStorage, nil, false, "StorageProps"},
+		{"Storage_json", ResourceTypeStorage,
+			mustJSON(t, StorageProps{Containers: []string{"blob1"}}), false, "StorageProps"},
+		{"AiProject_empty", ResourceTypeAiProject, nil, false, "AiFoundryModelProps"},
+		{"AiProject_json", ResourceTypeAiProject,
+			mustJSON(t, AiFoundryModelProps{}), false, "AiFoundryModelProps"},
+		{"Mongo_empty", ResourceTypeDbMongo, nil, false, "CosmosDBProps"},
+		{"Mongo_json", ResourceTypeDbMongo,
+			mustJSON(t, CosmosDBProps{}), false, "CosmosDBProps"},
+		{"EventHubs_empty", ResourceTypeMessagingEventHubs, nil, false, "EventHubsProps"},
+		{"EventHubs_json", ResourceTypeMessagingEventHubs,
+			mustJSON(t, EventHubsProps{Hubs: []string{"hub1"}}), false, "EventHubsProps"},
+		{"ServiceBus_empty", ResourceTypeMessagingServiceBus, nil, false, "ServiceBusProps"},
+		{"ServiceBus_json", ResourceTypeMessagingServiceBus,
+			mustJSON(t, ServiceBusProps{Queues: []string{"q1"}}), false, "ServiceBusProps"},
+		{"Unknown_returns_nil", ResourceType("unknown"), nil, true, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := createTypedResourceProps(tt.resourceType, tt.config)
+			require.NoError(t, err)
+			if tt.expectNil {
+				assert.Nil(t, result)
+			} else {
+				assert.NotNil(t, result)
+			}
+		})
+	}
+}
+
+func Test_createTypedResourceProps_InvalidJSON(t *testing.T) {
+	badJSON := []byte(`{invalid}`)
+
+	types := []ResourceType{
+		ResourceTypeHostAppService,
+		ResourceTypeHostContainerApp,
+		ResourceTypeDbCosmos,
+		ResourceTypeStorage,
+		ResourceTypeAiProject,
+		ResourceTypeDbMongo,
+		ResourceTypeMessagingEventHubs,
+		ResourceTypeMessagingServiceBus,
+	}
+
+	for _, rt := range types {
+		t.Run(string(rt), func(t *testing.T) {
+			_, err := createTypedResourceProps(rt, badJSON)
+			require.Error(t, err)
+		})
+	}
+}
+
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	require.NoError(t, err)
+	return b
+}
+
+// ---- getResourceTypeKinds ----
+
+func Test_getResourceTypeKinds(t *testing.T) {
+	tests := []struct {
+		name     string
+		rt       ResourceType
+		expected []string
+	}{
+		{"Cosmos", ResourceTypeDbCosmos, []string{"GlobalDocumentDB"}},
+		{"Mongo", ResourceTypeDbMongo, []string{"MongoDB"}},
+		{"AppService", ResourceTypeHostAppService, []string{"app", "app,linux"}},
+		{"Unknown", ResourceType("unknown"), []string{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getResourceTypeKinds(tt.rt)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// ---- protoToLocationKind ----
+
+func Test_protoToLocationKind(t *testing.T) {
+	tests := []struct {
+		name      string
+		kind      azdext.LocationKind
+		expected  LocationKind
+		expectErr bool
+	}{
+		{"Local", azdext.LocationKind_LOCATION_KIND_LOCAL, LocationKindLocal, false},
+		{"Remote", azdext.LocationKind_LOCATION_KIND_REMOTE, LocationKindRemote, false},
+		{"Unspecified", azdext.LocationKind_LOCATION_KIND_UNSPECIFIED, "", true},
+		{"Unknown_value", azdext.LocationKind(999), "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := protoToLocationKind(tt.kind)
+			if tt.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.expected, result)
+			}
+		})
+	}
 }

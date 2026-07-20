@@ -8,14 +8,17 @@ import (
 	"os"
 	"testing"
 
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/spf13/cobra"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_Lazy_Project_Config_Resolution(t *testing.T) {
@@ -557,4 +560,96 @@ func Test_NewRootCmd_ReregistrationReplacesProjectConfig(t *testing.T) {
 	require.Same(t, pc3, pc4,
 		"FIX PROOF: newRootCmdWithoutRegistration preserves the cached ProjectConfig singleton, "+
 			"keeping event handlers intact")
+}
+
+// --- lazyEnvironmentResolver.Getenv Tests ---
+
+func Test_LazyEnvironmentResolver_Getenv_Success(t *testing.T) {
+	t.Parallel()
+
+	env := environment.NewWithValues("test", map[string]string{
+		"MY_VAR":  "my_value",
+		"ANOTHER": "another_value",
+	})
+
+	resolver := &lazyEnvironmentResolver{
+		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+			return env, nil
+		}),
+	}
+
+	assert.Equal(t, "my_value", resolver.Getenv("MY_VAR"))
+	assert.Equal(t, "another_value", resolver.Getenv("ANOTHER"))
+	assert.Equal(t, "", resolver.Getenv("MISSING"))
+}
+
+func Test_LazyEnvironmentResolver_Getenv_Error(t *testing.T) {
+	t.Parallel()
+
+	resolver := &lazyEnvironmentResolver{
+		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+			return nil, assert.AnError
+		}),
+	}
+
+	// When the lazy env fails, Getenv returns ""
+	assert.Equal(t, "", resolver.Getenv("ANY_KEY"))
+}
+
+// --- resolveAction Tests ---
+
+func Test_ResolveAction_NotRegistered(t *testing.T) {
+	t.Parallel()
+
+	// Create a real empty nested container
+	c := ioc.NewNestedContainer(nil)
+
+	// Attempt to resolve a non-existent action
+	_, resolveErr := resolveAction[*buildAction](c, "nonexistent-action")
+	// Should error because the action isn't registered
+	require.Error(t, resolveErr)
+}
+
+// --- registerAction Tests ---
+
+func Test_RegisterAction_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	// Create a real empty nested container
+	c := ioc.NewNestedContainer(nil)
+
+	// This should not panic - it just registers a resolver
+	require.NotPanics(t, func() {
+		registerAction[*buildAction](c, "test-action")
+	})
+}
+
+func Test_EnvironmentNewWithValues(t *testing.T) {
+	t.Parallel()
+	env := environment.NewWithValues("testenv", map[string]string{"K": "V"})
+	require.NotNil(t, env)
+	require.Equal(t, "V", env.Getenv("K"))
+}
+
+func Test_ResolveAction_WithNilMiddleware(t *testing.T) {
+	t.Parallel()
+	container := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(container, &internal.GlobalCommandOptions{})
+	_, err := resolveAction[*coverageTestAction](container, "test-action")
+	require.Error(t, err) // not registered
+}
+
+// Verifies the ExtensionActivator used by env refresh resolves from the IoC container.
+func Test_Resolve_ExtensionActivator(t *testing.T) {
+	t.Parallel()
+	container := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(container, t.Context())
+	ioc.RegisterInstance(container, &internal.GlobalCommandOptions{})
+	ioc.RegisterInstance(container, &cobra.Command{})
+	registerCommonDependencies(container)
+
+	var activator *middleware.ExtensionActivator
+	err := container.Resolve(&activator)
+	require.NoError(t, err)
+	require.NotNil(t, activator)
 }

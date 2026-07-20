@@ -4,11 +4,14 @@
 package cmd
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -16,26 +19,90 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestPostdeployHandler_NoAgentService_NoOp verifies postdeployHandler returns nil
-// without any RPC calls when the project has no hosted agent services. Regression
-// guard for #7373.
-func TestPostdeployHandler_NoAgentService_NoOp(t *testing.T) {
+// TestPostdeployHandler_NonHostedAgent_NoOp verifies postdeployHandler returns nil
+// without any RPC calls when the service is an agent but not a hosted agent (no agent.yaml
+// with kind: hostedAgent). With service-level event handlers, the core filters by host type,
+// so this handler is only invoked for azure.ai.agent services.
+func TestPostdeployHandler_NonHostedAgent_NoOp(t *testing.T) {
 	t.Parallel()
 
 	// Use a temp dir + explicit RelativePath so isHostedAgentService deterministically
 	// returns false (no agent.yaml present) regardless of the test working directory.
-	args := &azdext.ProjectEventArgs{
+	args := &azdext.ServiceEventArgs{
 		Project: &azdext.ProjectConfig{
 			Path: t.TempDir(),
-			Services: map[string]*azdext.ServiceConfig{
-				"teams-bot": {Name: "teams-bot", Host: "containerapp", RelativePath: "."},
-			},
 		},
+		Service: &azdext.ServiceConfig{Name: "my-agent", Host: AiAgentHost, RelativePath: "."},
 	}
 
 	// nil azdClient — the early return must fire before any RPC call.
 	if err := postdeployHandler(t.Context(), nil, args); err != nil {
-		t.Fatalf("expected no error for project without agent services, got: %v", err)
+		t.Fatalf("expected no error for non-hosted agent service, got: %v", err)
+	}
+}
+
+// TestPostdeployHandler_MissingTelemetryEnv_ReturnsNil verifies that a hosted
+// agent whose environment is missing the optional telemetry inputs
+// (FOUNDRY_PROJECT_ENDPOINT / AZURE_TENANT_ID) does NOT fail the post-deploy
+// hook. Since the client-side agent-identity RBAC assignment was removed, this
+// endpoint/tenant/credential setup now feeds only best-effort optimization
+// reporting, so a missing value is logged and skipped rather than propagated as
+// an error that would fail an otherwise-successful deploy (PR #8941 follow-up).
+func TestPostdeployHandler_MissingTelemetryEnv_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	// Lay down a minimal hosted agent.yaml so isHostedAgentService returns true
+	// and the handler proceeds past the non-hosted early return.
+	projectRoot := t.TempDir()
+	serviceDir := filepath.Join(projectRoot, "echo")
+	if err := os.MkdirAll(serviceDir, 0o750); err != nil {
+		t.Fatalf("failed to create service dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(serviceDir, "agent.yaml"),
+		[]byte("kind: hostedAgent\nname: echo\n"), 0o600); err != nil {
+		t.Fatalf("failed to write agent.yaml: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		values map[string]map[string]string
+	}{
+		{
+			name:   "FOUNDRY_PROJECT_ENDPOINT not set",
+			values: nil, // GetValue returns an empty value for every missing key
+		},
+		{
+			name:   "FOUNDRY_PROJECT_ENDPOINT empty",
+			values: map[string]map[string]string{"dev": {"FOUNDRY_PROJECT_ENDPOINT": ""}},
+		},
+		{
+			name: "AZURE_TENANT_ID not set",
+			values: map[string]map[string]string{
+				"dev": {"FOUNDRY_PROJECT_ENDPOINT": "https://example.services.ai.azure.com/api/projects/p"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			envServer := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "dev"},
+				values:  tt.values,
+			}
+			azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+			args := &azdext.ServiceEventArgs{
+				Project: &azdext.ProjectConfig{Path: projectRoot},
+				Service: &azdext.ServiceConfig{Name: "echo", Host: AiAgentHost, RelativePath: "echo"},
+			}
+
+			if err := postdeployHandler(t.Context(), azdClient, args); err != nil {
+				t.Fatalf("expected nil (best-effort telemetry setup must not fail deploy), got: %v", err)
+			}
+		})
 	}
 }
 
@@ -87,6 +154,61 @@ func TestKindEnvUpdateRejectsTraversal(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "invalid service path") {
 		t.Fatalf("expected invalid service path error, got: %v", err)
 	}
+}
+
+// TestKindEnvUpdate_NoAgentYaml_IsNoOp covers the bicepless inline-agents
+// path: agents declared inline in azure.yaml under
+// `services.<name>.agents[]` don't require an on-disk agent.yaml.
+// preprovision's kindEnvUpdate must short-circuit cleanly when the
+// file is missing, NOT return "failed to read YAML file" (the bug
+// described in test-results-bicepless.md Finding #3).
+//
+// Verified by passing a nil azdClient: if kindEnvUpdate progressed to
+// the only meaningful side effect (setEnvVar for kind=hosted), it
+// would nil-panic. Returning nil before that point is the contract
+// we're locking in.
+func TestKindEnvUpdate_NoAgentYaml_IsNoOp(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	// RelativePath points into projectRoot but we deliberately do NOT
+	// write an agent.yaml there -- this is the inline-agents shape.
+	svc := &azdext.ServiceConfig{Name: "inline-agent", Host: AiAgentHost, RelativePath: "."}
+	proj := &azdext.ProjectConfig{Path: projectRoot}
+
+	err := kindEnvUpdate(t.Context(), nil, proj, svc, "dev")
+	require.NoError(t, err,
+		"missing agent.yaml on the bicepless inline-agents path must NOT error; "+
+			"see test-results-bicepless.md Finding #3 for the bug this guards against")
+}
+
+// TestKindEnvUpdate_PresentInvalidYaml_StillErrors locks in the
+// behavior that a *present* agent.yaml is still validated. The
+// missing-file tolerance from the previous test must not weaken
+// the validator: a malformed on-disk agent.yaml is still a hard
+// error from preprovision because downstream service-target code
+// will choke on it.
+func TestKindEnvUpdate_PresentInvalidYaml_StillErrors(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	// Write a syntactically-fine but semantically-invalid agent.yaml
+	// (kind not in the allowed set). ValidateAgentDefinition should
+	// reject it.
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "agent.yaml"),
+		[]byte("name: x\nkind: not-a-real-kind\n"),
+		0o600,
+	))
+
+	svc := &azdext.ServiceConfig{Name: "agent", Host: AiAgentHost, RelativePath: "."}
+	proj := &azdext.ProjectConfig{Path: projectRoot}
+
+	err := kindEnvUpdate(t.Context(), nil, proj, svc, "dev")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "agent.yaml is not valid",
+		"a present-but-invalid agent.yaml is still a hard error -- "+
+			"the missing-file tolerance must not bypass validation")
 }
 
 func TestParseConnectionIDs(t *testing.T) {
@@ -554,40 +676,6 @@ func TestToolboxConnectionsByName_MergesBothTypes(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// postdeployHandler — skips non-agent-host services
-// ---------------------------------------------------------------------------
-
-func TestPostdeployHandler_SkipsNonAgentHostServices(t *testing.T) {
-	t.Parallel()
-
-	// Project has one service with a different host type — handler should
-	// return nil without making any RPC calls (azdClient is nil).
-	args := &azdext.ProjectEventArgs{
-		Project: &azdext.ProjectConfig{
-			Path: t.TempDir(),
-			Services: map[string]*azdext.ServiceConfig{
-				"api": {Name: "api", Host: "containerapp", RelativePath: "."},
-			},
-		},
-	}
-
-	assert.NoError(t, postdeployHandler(t.Context(), nil, args))
-}
-
-func TestPostdeployHandler_SkipsWhenNoServices(t *testing.T) {
-	t.Parallel()
-
-	args := &azdext.ProjectEventArgs{
-		Project: &azdext.ProjectConfig{
-			Path:     t.TempDir(),
-			Services: map[string]*azdext.ServiceConfig{},
-		},
-	}
-
-	assert.NoError(t, postdeployHandler(t.Context(), nil, args))
-}
-
-// ---------------------------------------------------------------------------
 // enrichToolboxFromConnections — server_url already set
 // ---------------------------------------------------------------------------
 
@@ -638,4 +726,152 @@ func TestEnrichToolboxFromConnections_EmptyTarget(t *testing.T) {
 	assert.False(t, hasURL)
 	// server_label should still be set.
 	assert.Equal(t, "no-target", tb.Tools[0]["server_label"])
+}
+
+// ---------------------------------------------------------------------------
+// findDuplicateAgentNames
+// ---------------------------------------------------------------------------
+
+// inlineAgentService builds an azure.ai.agent service whose inline definition
+// resolves to a hosted agent with the given Foundry agent name. serviceName is
+// the azure.yaml service key; agentName is the unique Foundry identifier.
+func inlineAgentService(t *testing.T, serviceName, agentName string) *azdext.ServiceConfig {
+	t.Helper()
+	ca := agent_yaml.ContainerAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind:        agent_yaml.AgentKindHosted,
+			Name:        agentName,
+			Description: new("test agent"),
+		},
+		Protocols: []agent_yaml.ProtocolVersionRecord{
+			{Protocol: "responses", Version: "1.0.0"},
+		},
+	}
+	props, err := project.AgentDefinitionToServiceProperties(ca, nil)
+	require.NoError(t, err)
+	return &azdext.ServiceConfig{Name: serviceName, Host: AiAgentHost, AdditionalProperties: props}
+}
+
+func TestFindDuplicateAgentNames(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		services map[string]*azdext.ServiceConfig
+		want     []duplicateAgentNameGroup
+	}{
+		{
+			name:     "no services",
+			services: nil,
+			want:     nil,
+		},
+		{
+			name: "unique agent names",
+			services: map[string]*azdext.ServiceConfig{
+				"svc-a": inlineAgentService(t, "svc-a", "agent-a"),
+				"svc-b": inlineAgentService(t, "svc-b", "agent-b"),
+			},
+			want: nil,
+		},
+		{
+			name: "two services share one name",
+			services: map[string]*azdext.ServiceConfig{
+				// Mirrors the issue: two service keys, same agent name.
+				"toolbox-agent-4": inlineAgentService(t, "toolbox-agent-4", "toolbox-agent-2"),
+				"toolbox-agent-2": inlineAgentService(t, "toolbox-agent-2", "toolbox-agent-2"),
+				"other":           inlineAgentService(t, "other", "other-agent"),
+			},
+			want: []duplicateAgentNameGroup{
+				{agentName: "toolbox-agent-2", serviceNames: []string{"toolbox-agent-2", "toolbox-agent-4"}},
+			},
+		},
+		{
+			name: "three services share one name",
+			services: map[string]*azdext.ServiceConfig{
+				"svc-c": inlineAgentService(t, "svc-c", "shared"),
+				"svc-a": inlineAgentService(t, "svc-a", "shared"),
+				"svc-b": inlineAgentService(t, "svc-b", "shared"),
+			},
+			want: []duplicateAgentNameGroup{
+				{agentName: "shared", serviceNames: []string{"svc-a", "svc-b", "svc-c"}},
+			},
+		},
+		{
+			name: "multiple duplicate groups sorted by agent name",
+			services: map[string]*azdext.ServiceConfig{
+				"z1": inlineAgentService(t, "z1", "zebra"),
+				"z2": inlineAgentService(t, "z2", "zebra"),
+				"a1": inlineAgentService(t, "a1", "alpha"),
+				"a2": inlineAgentService(t, "a2", "alpha"),
+			},
+			want: []duplicateAgentNameGroup{
+				{agentName: "alpha", serviceNames: []string{"a1", "a2"}},
+				{agentName: "zebra", serviceNames: []string{"z1", "z2"}},
+			},
+		},
+		{
+			name: "non-agent host and unresolvable services are skipped",
+			services: map[string]*azdext.ServiceConfig{
+				// Same name as the agent but a different host — not a collision.
+				"web":   {Name: "web", Host: "containerapp", RelativePath: "."},
+				"agent": inlineAgentService(t, "agent", "shared-name"),
+				// azure.ai.agent host but no resolvable definition — skipped.
+				"empty": {Name: "empty", Host: AiAgentHost, RelativePath: "."},
+			},
+			want: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			proj := &azdext.ProjectConfig{Path: t.TempDir(), Services: tt.services}
+			require.Equal(t, tt.want, findDuplicateAgentNames(proj))
+		})
+	}
+}
+
+func TestFindDuplicateAgentNames_NilProject(t *testing.T) {
+	t.Parallel()
+	require.Nil(t, findDuplicateAgentNames(nil))
+}
+
+func TestWarnDuplicateAgentNames_WritesWarningOnce(t *testing.T) {
+	// Do not run in parallel: this test temporarily redirects process stderr.
+	proj := &azdext.ProjectConfig{
+		Path: t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{
+			"toolbox-agent-4": inlineAgentService(t, "toolbox-agent-4", "toolbox-agent-2"),
+			"toolbox-agent-2": inlineAgentService(t, "toolbox-agent-2", "toolbox-agent-2"),
+			"other":           inlineAgentService(t, "other", "other-agent"),
+		},
+	}
+
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stderr = w
+	t.Cleanup(func() {
+		os.Stderr = oldStderr
+		_ = r.Close()
+		_ = w.Close()
+	})
+
+	var once sync.Once
+	once.Do(func() { warnDuplicateAgentNames(proj) })
+	once.Do(func() { warnDuplicateAgentNames(proj) })
+
+	require.NoError(t, w.Close())
+	os.Stderr = oldStderr
+
+	var buf bytes.Buffer
+	_, err = buf.ReadFrom(r)
+	require.NoError(t, err)
+
+	warning := buf.String()
+	assert.Equal(t, 1, strings.Count(warning, "WARNING: agent name"))
+	assert.Contains(t, warning, `agent name "toolbox-agent-2"`)
+	assert.Contains(t, warning, "toolbox-agent-2, toolbox-agent-4")
+	assert.Contains(t, warning, "azure.yaml")
+	assert.NotContains(t, warning, "other-agent")
 }

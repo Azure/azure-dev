@@ -1,0 +1,108 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
+
+import "errors.proto";
+
+service ValidationService {
+  // Bidirectional stream for validation check registration and execution
+  rpc Stream(stream ValidationMessage) returns (stream ValidationMessage);
+}
+
+// Envelope for all possible validation messages (requests and responses)
+message ValidationMessage {
+  string request_id = 1;
+  ExtensionError error = 99;
+  oneof message_type {
+    RegisterValidationCheckRequest register_validation_check_request = 2;
+    RegisterValidationCheckResponse register_validation_check_response = 3;
+    ValidationCheckRequest validation_check_request = 4;
+    ValidationCheckResponse validation_check_response = 5;
+    PrepareValidationContextChunk prepare_validation_context_chunk = 6;
+    PrepareValidationContextResponse prepare_validation_context_response = 7;
+  }
+}
+
+// --- Registration ---
+
+// RegisterValidationCheckRequest is sent by extensions to register a validation check.
+message RegisterValidationCheckRequest {
+  // check_type identifies the validation context this check targets
+  // (e.g. "provision", "arm-provision", "project-config"). Future check
+  // types can be added without changing the protocol.
+  string check_type = 1;
+  // rule_id is a stable, unique identifier for this check rule,
+  // used in telemetry and diagnostics.
+  string rule_id = 2;
+}
+
+message RegisterValidationCheckResponse {}
+
+// --- Context delivery ---
+
+// PrepareValidationContextChunk delivers context data in chunks to avoid
+// exceeding gRPC message size limits. The core sends one or more chunks
+// per context key (e.g. "arm_template"). The extension reassembles chunks
+// by (context_id, key, chunk_index) and acks when is_last_key is true.
+message PrepareValidationContextChunk {
+  // context_id groups all chunks for a single dispatch.
+  string context_id = 1;
+  // check_type identifies which validation context this data targets.
+  string check_type = 2;
+  // key identifies which context entry this chunk belongs to
+  // (e.g. "arm_template", "arm_parameters", "env_location").
+  string key = 3;
+  // data is the chunk payload (recommended max 2 MB per chunk).
+  bytes data = 4;
+  // chunk_index is the 0-based sequence number within this key.
+  int32 chunk_index = 5;
+  // is_last_chunk is true on the final chunk for this key.
+  bool is_last_chunk = 6;
+  // is_last_key is true when this is the final chunk of the final key,
+  // signaling that all context data has been delivered.
+  bool is_last_key = 7;
+  // total_keys is the total number of distinct keys being delivered.
+  // The assembler uses this to know when all keys have arrived.
+  int32 total_keys = 8;
+}
+
+// PrepareValidationContextResponse is sent by the extension after all
+// chunks have been received and reassembled.
+message PrepareValidationContextResponse {}
+
+// --- Check execution ---
+
+// ValidationCheckRequest is sent by the core to invoke a registered check.
+message ValidationCheckRequest {
+  string check_type = 1;
+  string rule_id = 2;
+  // context_id references a previously prepared context via
+  // PrepareValidationContextChunk messages.
+  string context_id = 3;
+}
+
+message ValidationCheckResponse {
+  repeated ValidationCheckResult results = 1;
+}
+
+message ValidationCheckResult {
+  ValidationCheckSeverity severity = 1;
+  string diagnostic_id = 2;
+  string message = 3;
+  string suggestion = 4;
+  repeated ValidationReportLink links = 5;
+}
+
+enum ValidationCheckSeverity {
+  VALIDATION_CHECK_SEVERITY_WARNING = 0;
+  VALIDATION_CHECK_SEVERITY_ERROR = 1;
+}
+
+message ValidationReportLink {
+  string text = 1;
+  string url = 2;
+}

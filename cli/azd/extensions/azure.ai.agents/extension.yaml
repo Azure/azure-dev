@@ -1,15 +1,17 @@
 # yaml-language-server: $schema=../extension.schema.json
 id: azure.ai.agents
 namespace: ai.agent
-displayName: Foundry agents (Preview)
-description: Ship agents with Microsoft Foundry from your terminal. (Preview)
+displayName: Foundry agents (Beta)
+description: Ship agents with Microsoft Foundry from your terminal. (Beta)
 usage: azd ai agent <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
-version: 0.1.41-preview
-requiredAzdVersion: ">1.25.2"
+version: 1.0.0-beta.6
+requiredAzdVersion: ">=1.27.1"
 dependencies:
   - id: azure.ai.inspector
-    version: "~0.0.1-preview"
+    version: "~1.0.0-beta.1"
+  - id: azure.ai.projects
+    version: "~1.0.0-beta.3"
 language: go
 capabilities:
   - custom-commands

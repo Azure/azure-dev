@@ -4,7 +4,7 @@ namespace: demo
 displayName: Demo Extension
 description: This extension provides examples of the azd extension framework.
 usage: azd demo <command> [options]
-version: 0.6.0
+version: 0.7.1
 language: go
 capabilities:
   - custom-commands
@@ -13,6 +13,7 @@ capabilities:
   - service-target-provider
   - framework-service-provider
   - provisioning-provider
+  - validation-provider
   - metadata
 providers:
   - name: demo

@@ -5,6 +5,7 @@ package output
 
 import (
 	"bytes"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -24,4 +25,11 @@ func TestEnvVarsFormatterStringMap(t *testing.T) {
 
 	expected := "Alpha=1\nBravo=2\nCharlie=3\n"
 	require.Equal(t, expected, buffer.String())
+}
+
+func TestEnvVarsFormatter_RejectsWrongType(t *testing.T) {
+	t.Parallel()
+	f := &EnvVarsFormatter{}
+	err := f.Format(123, io.Discard, nil)
+	require.Error(t, err)
 }

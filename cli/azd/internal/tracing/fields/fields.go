@@ -322,6 +322,7 @@ const (
 	// that signal specific types of usages.
 
 	EnvModifierAzureSpace            = "Azure App Spaces Portal"
+	EnvModifierFoundryAgentCanvas    = "Foundry Agent Canvas"
 	EnvModifierMicrosoftFoundrySkill = "Microsoft Foundry Skill"
 )
 

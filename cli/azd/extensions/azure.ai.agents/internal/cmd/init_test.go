@@ -379,7 +379,7 @@ func TestSynthesizeImageManifestFile_RejectsUnknownProtocol(t *testing.T) {
 	require.Contains(t, err.Error(), "unknown protocol")
 }
 
-func TestSynthesizeImageManifestFile_RejectsActivityProtocol(t *testing.T) {
+func TestSynthesizeImageManifestFile_AcceptsActivityProtocol(t *testing.T) {
 	t.Parallel()
 
 	manifestPath, cleanup, err := synthesizeImageManifestFile(
@@ -387,10 +387,19 @@ func TestSynthesizeImageManifestFile_RejectsActivityProtocol(t *testing.T) {
 		"myacr.azurecr.io/agents/my-agent:v1",
 		[]string{"activity"},
 	)
-	require.Error(t, err)
-	require.Empty(t, manifestPath)
+	require.NoError(t, err)
 	cleanup()
-	require.Contains(t, err.Error(), "--protocol activity is not supported with --image")
+
+	content, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+	template, err := agent_yaml.ExtractAgentDefinition(content)
+	require.NoError(t, err)
+
+	containerAgent, ok := template.(agent_yaml.ContainerAgent)
+	require.True(t, ok, "synthesized template should be a ContainerAgent, got %T", template)
+	require.Equal(t, []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "activity", Version: "2.0.0"},
+	}, containerAgent.Protocols)
 }
 
 func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {

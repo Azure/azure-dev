@@ -606,6 +606,15 @@ protocols:
 			want: ProtocolInvocationsWS,
 		},
 		{
+			name: "single activity protocol",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: activity
+    version: "2.0.0"
+`,
+			want: ProtocolActivity,
+		},
+		{
 			name: "responses wins when both declared",
 			manifest: `kind: hostedAgent
 protocols:
@@ -632,6 +641,17 @@ protocols:
 			manifest: `kind: hostedAgent
 protocols:
   - protocol: invocations_ws
+    version: "2.0.0"
+  - protocol: invocations
+    version: "1.0.0"
+`,
+			want: ProtocolInvocations,
+		},
+		{
+			name: "invocations wins over activity regardless of order",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: activity
     version: "2.0.0"
   - protocol: invocations
     version: "1.0.0"

@@ -345,6 +345,26 @@ func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T
 		assert.Equal(t, `azd ai agent invoke --local '<payload>'`, out[1].Command)
 	})
 
+	for _, tt := range []struct {
+		name     string
+		protocol string
+	}{
+		{name: "invocations_ws", protocol: ProtocolInvocationsWS},
+		{name: "activity", protocol: ProtocolActivity},
+	} {
+		t.Run("single-agent "+tt.name+" protocol suppresses invoke hint", func(t *testing.T) {
+			t.Parallel()
+			state := &State{
+				HasProjectEndpoint: true,
+				Services:           []ServiceState{{Name: "echo", Protocol: tt.protocol}},
+			}
+			out := ResolveAfterInit(state, nil)
+			require.Len(t, out, 2)
+			assert.Equal(t, "azd ai agent run", out[0].Command)
+			assert.Equal(t, "azd deploy", out[1].Command)
+		})
+	}
+
 	t.Run("multi-agent → invoke stays unqualified, uses placeholder payload", func(t *testing.T) {
 		t.Parallel()
 		state := &State{
@@ -779,6 +799,14 @@ func TestResolveAfterRun(t *testing.T) {
 			want:        nil,
 		},
 		{
+			name: "activity protocol suppresses invoke suggestions",
+			state: &State{
+				Services: []ServiceState{{Name: "echo", Protocol: ProtocolActivity}},
+			},
+			serviceName: "echo",
+			want:        nil,
+		},
+		{
 			name: "unknown protocol, no README → placeholder + tip",
 			state: &State{
 				Services: []ServiceState{{Name: "echo", Protocol: ""}},
@@ -1009,6 +1037,14 @@ func TestResolveAfterDeploy(t *testing.T) {
 	t.Run("single websocket agent suppresses deploy invoke", func(t *testing.T) {
 		t.Parallel()
 		state := &State{Services: []ServiceState{{Name: "echo", Protocol: ProtocolInvocationsWS}}}
+		out := ResolveAfterDeploy(state, nil, nil)
+		require.Len(t, out, 1)
+		assert.Equal(t, "azd ai agent show echo", out[0].Command)
+	})
+
+	t.Run("single activity agent suppresses deploy invoke", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{{Name: "echo", Protocol: ProtocolActivity}}}
 		out := ResolveAfterDeploy(state, nil, nil)
 		require.Len(t, out, 1)
 		assert.Equal(t, "azd ai agent show echo", out[0].Command)

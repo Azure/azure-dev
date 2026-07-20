@@ -478,6 +478,7 @@ func loadServiceProtocol(projectPath, relativePath string) string {
 	}
 
 	sawInvocations := false
+	sawActivity := false
 	sawInvocationsWS := false
 	for _, p := range hosted.Protocols {
 		switch strings.TrimSpace(p.Protocol) {
@@ -487,10 +488,15 @@ func loadServiceProtocol(projectPath, relativePath string) string {
 			sawInvocationsWS = true
 		case ProtocolInvocations:
 			sawInvocations = true
+		case ProtocolActivity:
+			sawActivity = true
 		}
 	}
 	if sawInvocations {
 		return ProtocolInvocations
+	}
+	if sawActivity {
+		return ProtocolActivity
 	}
 	if sawInvocationsWS {
 		return ProtocolInvocationsWS

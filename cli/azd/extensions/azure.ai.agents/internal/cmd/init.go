@@ -20,7 +20,6 @@ import (
 	osExec "os/exec"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -661,13 +660,6 @@ func preBuiltImageForInit(agentManifest *agent_yaml.AgentManifest, flagImage str
 func protocolRecordsForImageManifest(flagProtocols []string) ([]agent_yaml.ProtocolVersionRecord, error) {
 	if len(flagProtocols) == 0 {
 		return []agent_yaml.ProtocolVersionRecord{{Protocol: "responses", Version: "2.0.0"}}, nil
-	}
-	if slices.Contains(flagProtocols, "activity") {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			"--protocol activity is not supported with --image",
-			"use code init for activity agents, or choose a different protocol for --image",
-		)
 	}
 	protocols, err := resolveKnownProtocols(flagProtocols)
 	if err != nil {
@@ -1538,8 +1530,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")
 
 	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
-		"Protocols supported by the agent (e.g., 'responses', 'invocations', 'invocations_ws'). "+
-			"Can be specified multiple times.")
+		fmt.Sprintf("Protocols supported by the agent (%s). Can be specified multiple times.", knownProtocolNames()))
 
 	cmd.Flags().StringVar(&flags.deployMode, "deploy-mode", "",
 		"Deployment mode: 'container' (Docker image) or 'code' (ZIP upload). Defaults to 'code' for Python/.NET projects in --no-prompt.")

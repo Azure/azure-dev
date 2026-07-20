@@ -226,7 +226,7 @@ func collectAzureYamlEnvironmentReferences(
 			}
 
 			name := value[match[2]:match[3]]
-			secret := isSecretAzureYamlEnvironmentReference(path, name)
+			secret := isSecretAzureYamlEnvironmentReference(path)
 			if index, ok := indexByName[name]; ok {
 				if secret {
 					(*references)[index].Secret = true
@@ -251,19 +251,12 @@ func isEscapedAzureYamlEnvironmentReference(value string, start int) bool {
 	return precedingDollars%2 == 1
 }
 
-func isSecretAzureYamlEnvironmentReference(path []string, name string) bool {
+// Secret masking is based on explicit configuration structure. Environment
+// variable names are user-defined and are not a reliable sensitivity signal.
+func isSecretAzureYamlEnvironmentReference(path []string) bool {
 	for _, segment := range path {
-		normalized := strings.ToLower(segment)
-		if strings.Contains(normalized, "credential") || strings.Contains(normalized, "secret") {
-			return true
-		}
-	}
-
-	for token := range strings.FieldsFuncSeq(strings.ToUpper(name), func(r rune) bool {
-		return r == '_' || r == '-'
-	}) {
-		switch token {
-		case "CREDENTIAL", "CREDENTIALS", "KEY", "PASSWORD", "PASSPHRASE", "SECRET", "TOKEN":
+		switch strings.ToLower(segment) {
+		case "credential", "credentials", "secret", "secrets":
 			return true
 		}
 	}

@@ -28,10 +28,12 @@ services:
     host: azure.ai.connection
     credentials:
       key: '${PLAYWRIGHT_SERVICE_ACCESS_TOKEN}'
+      connectionString: '${DATABASE_CONNECTION_STRING}'
     metadata:
       resourceId: '${PLAYWRIGHT_SERVICE_RESOURCE_ID}'
 `,
 			want: []azureYamlEnvironmentReference{
+				{Name: "DATABASE_CONNECTION_STRING", Secret: true},
 				{Name: "PLAYWRIGHT_SERVICE_ACCESS_TOKEN", Secret: true},
 				{Name: "PLAYWRIGHT_SERVICE_RESOURCE_ID"},
 			},
@@ -78,7 +80,7 @@ services:
 			},
 		},
 		{
-			name: "uses variable name to identify secrets outside credential paths",
+			name: "does not infer secrets from variable names outside credential paths",
 			content: `name: sample
 services:
   agent:
@@ -86,11 +88,14 @@ services:
     environmentVariables:
       - name: API_TOKEN
         value: ${SERVICE_API_TOKEN}
+      - name: DATABASE_CONNECTION_STRING
+        value: ${DATABASE_CONNECTION_STRING}
       - name: ENDPOINT
         value: ${SERVICE_ENDPOINT}
 `,
 			want: []azureYamlEnvironmentReference{
-				{Name: "SERVICE_API_TOKEN", Secret: true},
+				{Name: "SERVICE_API_TOKEN"},
+				{Name: "DATABASE_CONNECTION_STRING"},
 				{Name: "SERVICE_ENDPOINT"},
 			},
 		},

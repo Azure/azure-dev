@@ -12,6 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // sampleContainerAgent returns a hosted ContainerAgent with the fields that the
@@ -117,6 +118,58 @@ func TestAgentDefinitionFromService_NoDefinition(t *testing.T) {
 	_, _, found, _, err := AgentDefinitionFromService(svc)
 	require.NoError(t, err)
 	require.False(t, found)
+}
+
+func TestSetAgentContainerSettings_ReturnsPersistenceTarget(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		legacy   bool
+		wantPath string
+	}{
+		{
+			name:     "inline service properties",
+			wantPath: "container",
+		},
+		{
+			name:     "legacy config properties",
+			legacy:   true,
+			wantPath: "config.container",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			props, err := structpb.NewStruct(map[string]any{"customField": "preserved"})
+			require.NoError(t, err)
+
+			svc := &azdext.ServiceConfig{}
+			if tt.legacy {
+				svc.Config = props
+			} else {
+				svc.AdditionalProperties = props
+			}
+
+			path, value, err := SetAgentContainerSettings(svc, &ContainerSettings{
+				Resources: &ResourceSettings{Cpu: "1", Memory: "2Gi"},
+			})
+			require.NoError(t, err)
+			require.Equal(t, tt.wantPath, path)
+			require.Equal(t, map[string]any{
+				"resources": map[string]any{
+					"cpu":    "1",
+					"memory": "2Gi",
+				},
+			}, value.AsInterface())
+
+			storedProps := ServiceConfigProps(svc)
+			require.Equal(t, "preserved", storedProps.GetFields()["customField"].GetStringValue())
+			require.Same(t, value, storedProps.GetFields()["container"])
+		})
+	}
 }
 
 // TestAgentDefinition_ImageRidesOnCoreServiceField verifies the prebuilt image

@@ -284,14 +284,20 @@ func UpsertAgentEnvVars(svc *azdext.ServiceConfig, kv map[string]string) error {
 // agent service's inline properties, preserving every other key (the agent
 // definition and the rest of the deploy/provision config). It mutates whichever
 // shape the service uses (the unified AdditionalProperties, or — for older
-// projects — the config-nested struct).
-func SetAgentContainerSettings(svc *azdext.ServiceConfig, container *ContainerSettings) error {
+// projects — the config-nested struct). The returned path and value identify
+// the exact mutation for callers that need to persist it through the azd host.
+func SetAgentContainerSettings(
+	svc *azdext.ServiceConfig,
+	container *ContainerSettings,
+) (string, *structpb.Value, error) {
 	legacy := false
+	containerPath := "container"
 	props := svc.GetAdditionalProperties()
 	if props == nil || len(props.GetFields()) == 0 {
 		if cfg := svc.GetConfig(); cfg != nil && len(cfg.GetFields()) > 0 {
 			props = cfg
 			legacy = true
+			containerPath = "config.container"
 		} else {
 			props = &structpb.Struct{}
 		}
@@ -302,16 +308,17 @@ func SetAgentContainerSettings(svc *azdext.ServiceConfig, container *ContainerSe
 
 	containerStruct, err := MarshalStruct(container)
 	if err != nil {
-		return fmt.Errorf("marshaling container settings: %w", err)
+		return "", nil, fmt.Errorf("marshaling container settings: %w", err)
 	}
-	props.Fields["container"] = structpb.NewStructValue(containerStruct)
+	containerValue := structpb.NewStructValue(containerStruct)
+	props.Fields["container"] = containerValue
 
 	if legacy {
 		svc.Config = props
 	} else {
 		svc.AdditionalProperties = props
 	}
-	return nil
+	return containerPath, containerValue, nil
 }
 
 // agentDefinitionFromStruct builds the ContainerAgent from an inline/config

@@ -760,22 +760,14 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 		result.Cpu = project.DefaultCpu
 	}
 
-	containerPath := "container"
-	if props := svc.GetAdditionalProperties(); props == nil || len(props.GetFields()) == 0 {
-		if cfg := svc.GetConfig(); cfg != nil && len(cfg.GetFields()) > 0 {
-			containerPath = "config.container"
-		}
-	}
-
 	// Persist the resolved container settings back onto the service's inline
 	// properties, preserving the agent definition and other config keys.
-	if err := project.SetAgentContainerSettings(svc, &project.ContainerSettings{Resources: result}); err != nil {
+	containerPath, containerValue, err := project.SetAgentContainerSettings(
+		svc,
+		&project.ContainerSettings{Resources: result},
+	)
+	if err != nil {
 		return fmt.Errorf("failed to update agent container settings: %w", err)
-	}
-
-	containerValue := project.ServiceConfigProps(svc).GetFields()["container"]
-	if containerValue == nil {
-		return errors.New("failed to read updated agent container settings")
 	}
 
 	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{

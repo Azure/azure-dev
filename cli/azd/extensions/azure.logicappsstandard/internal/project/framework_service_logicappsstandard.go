@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // Ensure LogicAppsStandardFrameworkServiceProvider implements FrameworkServiceProvider interface
@@ -34,7 +35,11 @@ func (p *LogicAppsStandardFrameworkServiceProvider) Initialize(
 		return fmt.Errorf("Logic Apps Standard requires the host to be 'function', but found '%s'", serviceConfig.Host)
 	}
 
-	if hasCustomCodeProjectConfigured(serviceConfig) {
+	hasCustomCode, err := hasCustomCodeProjectConfigured(serviceConfig)
+	if err != nil {
+		return err
+	}
+	if hasCustomCode {
 		csProjPath, err := p.resolveCustomCodeProjectPath(serviceConfig)
 		if err != nil {
 			return err
@@ -56,7 +61,8 @@ func (p *LogicAppsStandardFrameworkServiceProvider) RequiredExternalTools(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 ) ([]*azdext.ExternalTool, error) {
-	if hasCustomCodeProjectConfigured(serviceConfig) {
+	hasCustomCode, _ := hasCustomCodeProjectConfigured(serviceConfig)
+	if hasCustomCode {
 		return []*azdext.ExternalTool{
 			{
 				Name:       "dotnet",
@@ -86,7 +92,8 @@ func (p *LogicAppsStandardFrameworkServiceProvider) Restore(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceRestoreResult, error) {
-	if hasCustomCodeProjectConfigured(serviceConfig) {
+	hasCustomCode, _ := hasCustomCodeProjectConfigured(serviceConfig)
+	if hasCustomCode {
 		progress("Restoring .NET project dependencies")
 		csProjPath, err := p.resolveCustomCodeProjectPath(serviceConfig)
 		if err != nil {
@@ -106,7 +113,8 @@ func (p *LogicAppsStandardFrameworkServiceProvider) Build(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceBuildResult, error) {
-	if hasCustomCodeProjectConfigured(serviceConfig) {
+	hasCustomCode, _ := hasCustomCodeProjectConfigured(serviceConfig)
+	if hasCustomCode {
 		progress("Building .NET project")
 		csProjPath, err := p.resolveCustomCodeProjectPath(serviceConfig)
 		if err != nil {
@@ -168,10 +176,15 @@ func (p *LogicAppsStandardFrameworkServiceProvider) resolveCustomCodeProjectPath
 		return "", fmt.Errorf("getting project directory: %w", err)
 	}
 
+	customCodeProject, err := getAdditionalProperty(serviceConfig, "customCodeProject")
+	if err != nil {
+		return "", fmt.Errorf("getting custom code project path: %w", err)
+	}
+
 	customCodeProjectPath, err := resolvePathWithinBase(
 		projectDir,
 		serviceConfig.RelativePath,
-		getAdditionalProperty(serviceConfig, "customCodeProject"),
+		customCodeProject,
 	)
 	if err != nil {
 		return "", fmt.Errorf("resolving custom code project path: %w", err)
@@ -206,23 +219,30 @@ func resolvePathWithinBase(baseDir string, pathParts ...string) (string, error) 
 }
 
 // getAdditionalProperty retrieves a custom property from the service configuration's additional properties.
-func getAdditionalProperty(serviceConfig *azdext.ServiceConfig, key string) string {
+func getAdditionalProperty(serviceConfig *azdext.ServiceConfig, key string) (string, error) {
 	if serviceConfig == nil {
-		return ""
+		return "", nil
 	}
 
 	props := serviceConfig.GetAdditionalProperties()
 	if props == nil {
-		return ""
+		return "", nil
 	}
 	if v, ok := props.Fields[key]; ok && v != nil {
-		return v.GetStringValue()
+		if _, ok := v.Kind.(*structpb.Value_StringValue); !ok {
+			return "", fmt.Errorf("additional property %q must be a string, got %T", key, v.Kind)
+		}
+		return v.GetStringValue(), nil
 	}
-	return ""
+	return "", nil
 }
 
-func hasCustomCodeProjectConfigured(serviceConfig *azdext.ServiceConfig) bool {
-	return getAdditionalProperty(serviceConfig, "customCodeProject") != ""
+func hasCustomCodeProjectConfigured(serviceConfig *azdext.ServiceConfig) (bool, error) {
+	customCodeProject, err := getAdditionalProperty(serviceConfig, "customCodeProject")
+	if err != nil {
+		return false, err
+	}
+	return customCodeProject != "", nil
 }
 
 // runDotNet executes the dotnet CLI with the given arguments, forwarding output to stdout/stderr.

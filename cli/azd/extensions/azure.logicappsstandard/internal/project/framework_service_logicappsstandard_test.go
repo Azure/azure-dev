@@ -18,12 +18,16 @@ import (
 
 func TestGetAdditionalProperty(t *testing.T) {
 	t.Run("returns empty for nil service config", func(t *testing.T) {
-		assert.Equal(t, "", getAdditionalProperty(nil, "customCodeProject"))
+		value, err := getAdditionalProperty(nil, "customCodeProject")
+		require.NoError(t, err)
+		assert.Equal(t, "", value)
 	})
 
 	t.Run("returns empty for nil additional properties", func(t *testing.T) {
 		svc := &azdext.ServiceConfig{}
-		assert.Equal(t, "", getAdditionalProperty(svc, "customCodeProject"))
+		value, err := getAdditionalProperty(svc, "customCodeProject")
+		require.NoError(t, err)
+		assert.Equal(t, "", value)
 	})
 
 	t.Run("returns property value when present", func(t *testing.T) {
@@ -31,23 +35,51 @@ func TestGetAdditionalProperty(t *testing.T) {
 			"customCodeProject": "Functions/Functions.csproj",
 		})
 
-		assert.Equal(t, "Functions/Functions.csproj", getAdditionalProperty(svc, "customCodeProject"))
+		value, err := getAdditionalProperty(svc, "customCodeProject")
+		require.NoError(t, err)
+		assert.Equal(t, "Functions/Functions.csproj", value)
+	})
+
+	t.Run("returns error for non-string values", func(t *testing.T) {
+		svc := newServiceConfig("logicApp", "src/logicApp", map[string]any{
+			"customCodeProject": 42,
+		})
+
+		value, err := getAdditionalProperty(svc, "customCodeProject")
+		require.Error(t, err)
+		assert.Empty(t, value)
+		assert.Contains(t, err.Error(), "must be a string")
 	})
 }
 
 func TestHasCustomCodeProjectConfigured(t *testing.T) {
 	t.Run("returns false for nil service config", func(t *testing.T) {
-		assert.False(t, hasCustomCodeProjectConfigured(nil))
+		hasCustomCode, err := hasCustomCodeProjectConfigured(nil)
+		require.NoError(t, err)
+		assert.False(t, hasCustomCode)
 	})
 
 	t.Run("returns false when customCodeProject is absent", func(t *testing.T) {
-		assert.False(t, hasCustomCodeProjectConfigured(newServiceConfig("logicApp", "src/logicApp", nil)))
+		hasCustomCode, err := hasCustomCodeProjectConfigured(newServiceConfig("logicApp", "src/logicApp", nil))
+		require.NoError(t, err)
+		assert.False(t, hasCustomCode)
 	})
 
 	t.Run("returns true when customCodeProject is present", func(t *testing.T) {
-		assert.True(t, hasCustomCodeProjectConfigured(newServiceConfig("logicApp", "src/logicApp", map[string]any{
+		hasCustomCode, err := hasCustomCodeProjectConfigured(newServiceConfig("logicApp", "src/logicApp", map[string]any{
 			"customCodeProject": "Functions/Functions.csproj",
-		})))
+		}))
+		require.NoError(t, err)
+		assert.True(t, hasCustomCode)
+	})
+
+	t.Run("returns error when customCodeProject is not a string", func(t *testing.T) {
+		hasCustomCode, err := hasCustomCodeProjectConfigured(newServiceConfig("logicApp", "src/logicApp", map[string]any{
+			"customCodeProject": 42,
+		}))
+		require.Error(t, err)
+		assert.False(t, hasCustomCode)
+		assert.Contains(t, err.Error(), "must be a string")
 	})
 }
 
@@ -171,7 +203,7 @@ func TestInitializeValidatesCustomCodeProjectPath(t *testing.T) {
 		})
 	})
 
-	t.Run("fails when custom code project path is invalid", func(t *testing.T) {
+	t.Run("fails when custom code project path contains invalid characters", func(t *testing.T) {
 		provider := &LogicAppsStandardFrameworkServiceProvider{}
 		svc := newServiceConfig("logicApp", "src/logicApp", map[string]any{
 			"customCodeProject": "Functions/Bad\x00Name.csproj",
@@ -181,6 +213,19 @@ func TestInitializeValidatesCustomCodeProjectPath(t *testing.T) {
 			err := provider.Initialize(t.Context(), svc)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "custom code project")
+		})
+	})
+
+	t.Run("fails when custom code project is not a string", func(t *testing.T) {
+		provider := &LogicAppsStandardFrameworkServiceProvider{}
+		svc := newServiceConfig("logicApp", "src/logicApp", map[string]any{
+			"customCodeProject": 42,
+		})
+
+		withEnv(t, "AZD_EXEC_PROJECT_DIR", projectDir, func() {
+			err := provider.Initialize(t.Context(), svc)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "must be a string")
 		})
 	})
 }

@@ -45,6 +45,11 @@ const (
 
 	// AI-specific roles that grant agent management access.
 	roleAzureAIDeveloper = "64702f94-c441-49e6-a78b-ef80e0188fee"
+
+	// Cognitive Services User: backward-compat alias for Foundry User.
+	// Assigned by older Bicep provisions (AZURE_PRINCIPAL_ID flow); has the same
+	// Microsoft.CognitiveServices/* dataActions as Foundry User and is accepted as equivalent.
+	roleCognitiveServicesUser = "a97b65f3-24c7-4388-baec-2e87135dc908"
 )
 
 // sufficientACRRoles lists every role that grants enough ACR access to build
@@ -66,13 +71,17 @@ var sufficientACRAbacRoles = []string{
 	roleContainerRegistryRepositoryContributor, // superset of RepositoryWriter
 }
 
-// sufficientAIUserRoles lists every role that grants enough Foundry Project
-// access to create and run agents.
+// sufficientAIUserRoles lists roles whose dataActions cover Microsoft.CognitiveServices/*,
+// specifically the AIServices namespace required for Foundry agents (agents/write).
+//
+// Excluded intentionally:
+//   - roleOwner / roleContributor: management-plane only, zero dataActions
+//   - roleAzureAIDeveloper: dataActions cover only OpenAI/Speech/ContentSafety/MaaS,
+//     NOT the AIServices.* namespace used by Foundry agents; Azure docs state
+//     "For Foundry project access, use the Foundry User or Foundry Owner roles instead"
 var sufficientAIUserRoles = []string{
-	roleOwner,
-	roleContributor,
-	roleAzureAIUser,
-	roleAzureAIDeveloper,
+	roleAzureAIUser,           // 53ca6127-... Foundry User: dataActions Microsoft.CognitiveServices/*
+	roleCognitiveServicesUser, // a97b65f3-... backward compat: same dataActions, assigned by older Bicep
 }
 
 // sufficientRoleAssignWriteRoles lists every role that grants

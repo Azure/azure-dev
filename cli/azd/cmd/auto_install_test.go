@@ -38,12 +38,16 @@ func (m *fakeExtensionAutoInstallManager) FindExtensions(
 		if options.Id != "" && extension.Id != options.Id {
 			continue
 		}
-		if options.Capability != "" && !slices.ContainsFunc(extension.Versions, func(version extensions.ExtensionVersion) bool {
-			return slices.Contains(version.Capabilities, options.Capability) &&
-				slices.ContainsFunc(version.Providers, func(provider extensions.Provider) bool {
-					return provider.Name == options.Provider
-				})
-		}) {
+		hasCapabilityAndProvider := slices.ContainsFunc(
+			extension.Versions,
+			func(version extensions.ExtensionVersion) bool {
+				return slices.Contains(version.Capabilities, options.Capability) &&
+					slices.ContainsFunc(version.Providers, func(provider extensions.Provider) bool {
+						return provider.Name == options.Provider
+					})
+			},
+		)
+		if options.Capability != "" && !hasCapabilityAndProvider {
 			continue
 		}
 		matches = append(matches, extension)
@@ -83,14 +87,17 @@ func TestMissingProjectExtensions(t *testing.T) {
 		available: []*extensions.ExtensionMetadata{
 			{
 				Id: "azure.ai.projects",
-				Versions: []extensions.ExtensionVersion{{
-					Version:      "1.0.0",
-					Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
-					Providers: []extensions.Provider{{
-						Name: "azure.ai.project",
-						Type: extensions.ServiceTargetProviderType,
-					}},
-				}},
+				Versions: []extensions.ExtensionVersion{
+					{Version: "2.0.0"},
+					{
+						Version:      "1.0.0",
+						Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
+						Providers: []extensions.Provider{{
+							Name: "azure.ai.project",
+							Type: extensions.ServiceTargetProviderType,
+						}},
+					},
+				},
 			},
 			{
 				Id: "azure.ai.agents",
@@ -146,6 +153,8 @@ func TestMissingProjectExtensions(t *testing.T) {
 	assert.Equal(t, versionConstraint, requirements[0].versionPreference)
 	assert.Equal(t, "azure.ai.agents", requirements[1].extension.Id)
 	assert.Equal(t, "azure.ai.projects", requirements[2].extension.Id)
+	require.Len(t, requirements[2].extension.Versions, 1)
+	assert.Equal(t, "1.0.0", requirements[2].extension.Versions[0].Version)
 }
 
 func TestProjectCommandSupportsExtensionAutoInstall(t *testing.T) {
@@ -154,11 +163,15 @@ func TestProjectCommandSupportsExtensionAutoInstall(t *testing.T) {
 	extension := &cobra.Command{Use: "agent", Annotations: map[string]string{"extension.id": "azure.ai.agents"}}
 	env := &cobra.Command{Use: "env"}
 	refresh := &cobra.Command{Use: "refresh"}
+	infra := &cobra.Command{Use: "infra"}
+	generate := &cobra.Command{Use: "generate", Aliases: []string{"gen", "synth"}}
 	env.AddCommand(refresh)
-	root.AddCommand(up, extension, env)
+	infra.AddCommand(generate)
+	root.AddCommand(up, extension, env, infra)
 
 	assert.True(t, projectCommandSupportsExtensionAutoInstall(up))
 	assert.True(t, projectCommandSupportsExtensionAutoInstall(refresh))
+	assert.True(t, projectCommandSupportsExtensionAutoInstall(generate))
 	assert.False(t, projectCommandSupportsExtensionAutoInstall(extension))
 	assert.False(t, projectCommandSupportsExtensionAutoInstall(env))
 }

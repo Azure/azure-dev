@@ -431,6 +431,8 @@ func projectCommandSupportsExtensionAutoInstall(cmd *cobra.Command) bool {
 	switch path[0] {
 	case "up", "provision", "deploy", "package", "restore", "down", "show", "monitor":
 		return true
+	case "infra":
+		return len(path) > 1 && path[1] == "generate"
 	case "env":
 		return len(path) > 1 && path[1] == "refresh"
 	default:
@@ -458,6 +460,21 @@ func findExtensionForProvider(
 	}
 
 	return promptForExtensionChoice(ctx, console, matches)
+}
+
+func extensionForProvider(
+	extension *extensions.ExtensionMetadata,
+	capability extensions.CapabilityType,
+	providerName string,
+) *extensions.ExtensionMetadata {
+	filtered := *extension
+	filtered.Versions = slices.DeleteFunc(slices.Clone(extension.Versions), func(version extensions.ExtensionVersion) bool {
+		return !slices.Contains(version.Capabilities, capability) ||
+			!slices.ContainsFunc(version.Providers, func(provider extensions.Provider) bool {
+				return strings.EqualFold(provider.Name, providerName)
+			})
+	})
+	return &filtered
 }
 
 func missingProjectExtensions(
@@ -518,8 +535,21 @@ func missingProjectExtensions(
 		if _, isInstalled := installed[extension.Id]; isInstalled {
 			return nil
 		}
-		if _, alreadyRequired := requirements[extension.Id]; !alreadyRequired {
-			requirements[extension.Id] = projectExtensionRequirement{extension: extension}
+		if requirement, alreadyRequired := requirements[extension.Id]; alreadyRequired {
+			requirement.extension = extensionForProvider(requirement.extension, capability, provider)
+			if len(requirement.extension.Versions) == 0 {
+				return fmt.Errorf(
+					"required extension %s does not provide %s %q",
+					extension.Id,
+					capability,
+					provider,
+				)
+			}
+			requirements[extension.Id] = requirement
+		} else {
+			requirements[extension.Id] = projectExtensionRequirement{
+				extension: extensionForProvider(extension, capability, provider),
+			}
 		}
 		return nil
 	}

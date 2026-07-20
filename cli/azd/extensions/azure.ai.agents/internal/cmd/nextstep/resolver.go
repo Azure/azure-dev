@@ -22,6 +22,8 @@ const (
 	ProtocolInvocationsWS = "invocations_ws"
 	// ProtocolActivity is the value of `agent.yaml#protocol` for Activity Protocol agents.
 	ProtocolActivity = "activity"
+	// ProtocolActivityLegacy is the legacy value accepted for Activity Protocol agents.
+	ProtocolActivityLegacy = "activity_protocol"
 
 	// placeholderPayload is the single-quoted literal the resolver
 	// emits as the body argument when no concrete payload is known —
@@ -687,7 +689,9 @@ func ResolveAfterDeploy(
 }
 
 func serviceSupportsAzdInvoke(svc *ServiceState) bool {
-	return svc == nil || (svc.Protocol != ProtocolInvocationsWS && svc.Protocol != ProtocolActivity)
+	return svc == nil || (svc.Protocol != ProtocolInvocationsWS &&
+		svc.Protocol != ProtocolActivity &&
+		svc.Protocol != ProtocolActivityLegacy)
 }
 
 func readmeCommand(relativePath string) string {

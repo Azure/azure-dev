@@ -351,6 +351,7 @@ func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T
 	}{
 		{name: "invocations_ws", protocol: ProtocolInvocationsWS},
 		{name: "activity", protocol: ProtocolActivity},
+		{name: "activity_protocol", protocol: ProtocolActivityLegacy},
 	} {
 		t.Run("single-agent "+tt.name+" protocol suppresses invoke hint", func(t *testing.T) {
 			t.Parallel()
@@ -807,6 +808,14 @@ func TestResolveAfterRun(t *testing.T) {
 			want:        nil,
 		},
 		{
+			name: "legacy activity protocol suppresses invoke suggestions",
+			state: &State{
+				Services: []ServiceState{{Name: "echo", Protocol: ProtocolActivityLegacy}},
+			},
+			serviceName: "echo",
+			want:        nil,
+		},
+		{
 			name: "unknown protocol, no README → placeholder + tip",
 			state: &State{
 				Services: []ServiceState{{Name: "echo", Protocol: ""}},
@@ -1045,6 +1054,14 @@ func TestResolveAfterDeploy(t *testing.T) {
 	t.Run("single activity agent suppresses deploy invoke", func(t *testing.T) {
 		t.Parallel()
 		state := &State{Services: []ServiceState{{Name: "echo", Protocol: ProtocolActivity}}}
+		out := ResolveAfterDeploy(state, nil, nil)
+		require.Len(t, out, 1)
+		assert.Equal(t, "azd ai agent show echo", out[0].Command)
+	})
+
+	t.Run("single legacy activity agent suppresses deploy invoke", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{{Name: "echo", Protocol: ProtocolActivityLegacy}}}
 		out := ResolveAfterDeploy(state, nil, nil)
 		require.Len(t, out, 1)
 		assert.Equal(t, "azd ai agent show echo", out[0].Command)

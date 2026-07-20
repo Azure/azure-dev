@@ -488,7 +488,7 @@ func loadServiceProtocol(projectPath, relativePath string) string {
 			sawInvocationsWS = true
 		case ProtocolInvocations:
 			sawInvocations = true
-		case ProtocolActivity:
+		case ProtocolActivity, ProtocolActivityLegacy:
 			sawActivity = true
 		}
 	}

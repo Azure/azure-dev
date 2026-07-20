@@ -615,6 +615,15 @@ protocols:
 			want: ProtocolActivity,
 		},
 		{
+			name: "single legacy activity protocol",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: activity_protocol
+    version: "1.0.0"
+`,
+			want: ProtocolActivity,
+		},
+		{
 			name: "responses wins when both declared",
 			manifest: `kind: hostedAgent
 protocols:

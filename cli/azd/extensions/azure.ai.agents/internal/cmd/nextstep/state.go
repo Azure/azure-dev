@@ -442,7 +442,7 @@ func collectServices(
 			Name:         svc.Name,
 			Host:         svc.Host,
 			RelativePath: svc.RelativePath,
-			Protocol:     loadServiceProtocol(project.Path, svc.RelativePath),
+			Protocol:     loadServiceProtocol(project.Path, svc),
 			IsDeployed:   isDeployed(ctx, src, envName, svc.Name, errs),
 		})
 	}
@@ -460,7 +460,28 @@ func collectServices(
 // manifest declares multiple protocols, ProtocolResponses wins over
 // ProtocolInvocations so the suggested payload works on the broadest set of
 // agents.
-func loadServiceProtocol(projectPath, relativePath string) string {
+func loadServiceProtocol(projectPath string, svc *azdext.ServiceConfig) string {
+	if protocol := loadServiceProtocolFromConfig(svc); protocol != "" {
+		return protocol
+	}
+	if svc == nil {
+		return ""
+	}
+	return loadServiceProtocolFromFile(projectPath, svc.RelativePath)
+}
+
+func loadServiceProtocolFromConfig(svc *azdext.ServiceConfig) string {
+	if svc == nil || svc.Config == nil {
+		return ""
+	}
+	data, err := yaml.Marshal(svc.Config.AsMap())
+	if err != nil {
+		return ""
+	}
+	return loadServiceProtocolFromBytes(data)
+}
+
+func loadServiceProtocolFromFile(projectPath, relativePath string) string {
 	if projectPath == "" {
 		return ""
 	}
@@ -472,6 +493,10 @@ func loadServiceProtocol(projectPath, relativePath string) string {
 	if err != nil {
 		return ""
 	}
+	return loadServiceProtocolFromBytes(data)
+}
+
+func loadServiceProtocolFromBytes(data []byte) string {
 	var hosted agent_yaml.ContainerAgent
 	if err := yaml.Unmarshal(data, &hosted); err != nil {
 		return ""

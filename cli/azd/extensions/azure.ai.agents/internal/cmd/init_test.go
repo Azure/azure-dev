@@ -388,7 +388,7 @@ func TestSynthesizeImageManifestFile_AcceptsActivityProtocol(t *testing.T) {
 		[]string{"activity"},
 	)
 	require.NoError(t, err)
-	cleanup()
+	defer cleanup()
 
 	content, err := os.ReadFile(manifestPath)
 	require.NoError(t, err)

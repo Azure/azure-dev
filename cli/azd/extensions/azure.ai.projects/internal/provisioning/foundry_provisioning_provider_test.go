@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package project
+package provisioning
 
 import (
 	"encoding/json"
@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/synthesis"
+	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -595,6 +595,24 @@ func TestArmParameters_NilSafeOnMissingSynthResult(t *testing.T) {
 	assert.Equal(t, "rg-dev", rg["value"])
 	require.NotContains(t, out, "includeAcr",
 		"synthesizer-derived parameters should be absent when synthResult is nil")
+}
+
+func TestArmParameters_UseValueEnvelopeForSecureConnections(t *testing.T) {
+	p := &FoundryProvisioningProvider{
+		synthResult: &synthesis.Result{
+			Parameters: map[string]any{
+				"connections": `[{"name":"search-conn"}]`,
+			},
+		},
+	}
+
+	out := p.armParameters()
+
+	assert.Equal(
+		t,
+		map[string]any{"value": `[{"name":"search-conn"}]`},
+		out["connections"],
+	)
 }
 
 func TestDestroy_RefusesWithoutForceWhenNonInteractive(t *testing.T) {

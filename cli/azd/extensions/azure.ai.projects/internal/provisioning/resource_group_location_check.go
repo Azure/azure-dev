@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package project
+package provisioning
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"azureaiagent/internal/pkg/azure"
+	"azure.ai.projects/internal/azure"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -21,18 +21,15 @@ import (
 // location-mismatch provision validation check. It doubles as both the
 // registration RuleID and the result DiagnosticId.
 //
-// The identifier is prefixed with the owning extension id (azure.ai.agents)
-// because the provision validation rule namespace is global — core enforces
-// uniqueness on check_type + rule_id across every installed extension. Namespacing
-// keeps the rule unambiguously mappable back to this extension for future
-// features such as suppressions and rule sets.
+// The identifier keeps its original azure.ai.agents prefix so existing
+// consumers do not break while ownership moves to azure.ai.projects.
 const ResourceGroupLocationRuleID = "azure.ai.agents.resource_group_location_mismatch"
 
 // ResourceGroupLocationCheck is a provider-agnostic "provision" validation check
 // (azdext.ValidationCheckTypeProvision) that detects an immutable resource-group
 // region conflict before provisioning starts. It is registered under the
 // provision check type — rather than the Bicep-only "arm-provision" type —
-// because the azure.ai.agents extension provisions through its own
+// because the azure.ai.projects extension provisions through its own
 // microsoft.foundry provider, which never triggers arm-provision checks.
 //
 // The azure.ai.agents extension writes a stable, salted resource group name to

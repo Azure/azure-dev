@@ -755,7 +755,7 @@ func TestLoadServiceProtocol_RejectsTraversal(t *testing.T) {
 	assert.Equal(t, "", loadServiceProtocol(projectRoot, &azdext.ServiceConfig{RelativePath: "../outside"}))
 }
 
-func TestLoadServiceProtocol_InlineConfigWinsOverAgentYaml(t *testing.T) {
+func TestLoadServiceProtocol_InlineAdditionalPropertiesWinOverAgentYaml(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
@@ -776,7 +776,25 @@ func TestLoadServiceProtocol_InlineConfigWinsOverAgentYaml(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	got := loadServiceProtocol(projectRoot, &azdext.ServiceConfig{RelativePath: relPath, Config: config})
+	got := loadServiceProtocol(projectRoot, &azdext.ServiceConfig{
+		RelativePath:         relPath,
+		AdditionalProperties: config,
+	})
+	assert.Equal(t, ProtocolInvocationsWS, got)
+}
+
+func TestLoadServiceProtocol_LegacyConfigFallback(t *testing.T) {
+	t.Parallel()
+
+	config, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"protocols": []any{
+			map[string]any{"protocol": "invocations_ws", "version": "2.0.0"},
+		},
+	})
+	require.NoError(t, err)
+
+	got := loadServiceProtocol(t.TempDir(), &azdext.ServiceConfig{Config: config})
 	assert.Equal(t, ProtocolInvocationsWS, got)
 }
 
@@ -807,7 +825,7 @@ func TestAssembleState_PopulatesProtocolFromAgentYaml(t *testing.T) {
 	assert.Equal(t, ProtocolInvocations, state.Services[0].Protocol)
 }
 
-func TestAssembleState_PopulatesProtocolFromInlineServiceConfig(t *testing.T) {
+func TestAssembleState_PopulatesProtocolFromInlineAdditionalProperties(t *testing.T) {
 	t.Parallel()
 
 	config, err := structpb.NewStruct(map[string]any{
@@ -823,7 +841,7 @@ func TestAssembleState_PopulatesProtocolFromInlineServiceConfig(t *testing.T) {
 		project: &azdext.ProjectConfig{
 			Path: t.TempDir(),
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, Config: config},
+				"echo": {Name: "echo", Host: agentHost, AdditionalProperties: config},
 			},
 		},
 	}

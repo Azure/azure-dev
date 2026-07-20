@@ -20,6 +20,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"go.yaml.in/yaml/v3"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 const (
@@ -471,14 +472,38 @@ func loadServiceProtocol(projectPath string, svc *azdext.ServiceConfig) string {
 }
 
 func loadServiceProtocolFromConfig(svc *azdext.ServiceConfig) string {
-	if svc == nil || svc.Config == nil {
+	props := nextStepServiceConfigProps(svc)
+	if len(props) == 0 {
 		return ""
 	}
-	data, err := yaml.Marshal(svc.Config.AsMap())
+	data, err := yaml.Marshal(props)
 	if err != nil {
 		return ""
 	}
 	return loadServiceProtocolFromBytes(data)
+}
+
+func nextStepServiceConfigProps(svc *azdext.ServiceConfig) map[string]any {
+	if svc == nil {
+		return nil
+	}
+	inline := svc.GetAdditionalProperties()
+	if structHasKind(inline) {
+		return inline.AsMap()
+	}
+	cfg := svc.GetConfig()
+	if structHasKind(cfg) {
+		return cfg.AsMap()
+	}
+	return nil
+}
+
+func structHasKind(s *structpb.Struct) bool {
+	if s == nil {
+		return false
+	}
+	v, ok := s.GetFields()["kind"]
+	return ok && strings.TrimSpace(v.GetStringValue()) != ""
 }
 
 func loadServiceProtocolFromFile(projectPath, relativePath string) string {

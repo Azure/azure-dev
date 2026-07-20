@@ -102,6 +102,7 @@ var sufficientRoleAssignWriteRoles = []string{
 	roleRBACAdministrator,
 	roleAzureAIProjectManager,
 	roleAzureAIAccountOwner,
+	roleFoundryOwner, // c883944f-...: includes Microsoft.Authorization/roleAssignments/write
 }
 
 // CheckDeveloperRBAC verifies that the currently authenticated developer has the required

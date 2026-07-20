@@ -81,6 +81,7 @@ func TestSufficientRoleLists(t *testing.T) {
 	assert.Contains(t, sufficientRoleAssignWriteRoles, roleRBACAdministrator)
 	assert.Contains(t, sufficientRoleAssignWriteRoles, roleAzureAIProjectManager)
 	assert.Contains(t, sufficientRoleAssignWriteRoles, roleAzureAIAccountOwner)
+	assert.Contains(t, sufficientRoleAssignWriteRoles, roleFoundryOwner) // Foundry Owner has roleAssignments/write
 	assert.NotContains(t, sufficientRoleAssignWriteRoles, roleContributor)
 
 	// ABAC ACR roles: Owner, RepositoryWriter, RepositoryContributor; AcrPush must NOT be included.

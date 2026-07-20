@@ -4,11 +4,13 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"os"
 	"slices"
 	"strconv"
@@ -338,9 +340,29 @@ func tryAutoInstallForPartialNamespace(
 func tryAutoInstallExtension(
 	ctx context.Context,
 	console input.Console,
-	extensionManager *extensions.Manager,
+	extensionManager extensionAutoInstallManager,
 	extension extensions.ExtensionMetadata) (bool, error) {
+	return tryAutoInstallExtensionVersion(ctx, console, extensionManager, extension, "")
+}
 
+type extensionAutoInstallManager interface {
+	FindExtensions(ctx context.Context, options *extensions.FilterOptions) ([]*extensions.ExtensionMetadata, error)
+	GetInstalled(options extensions.FilterOptions) (*extensions.Extension, error)
+	Install(
+		ctx context.Context,
+		extension *extensions.ExtensionMetadata,
+		versionPreference string,
+	) (*extensions.ExtensionVersion, error)
+	ListInstalled() (map[string]*extensions.Extension, error)
+}
+
+func tryAutoInstallExtensionVersion(
+	ctx context.Context,
+	console input.Console,
+	extensionManager extensionAutoInstallManager,
+	extension extensions.ExtensionMetadata,
+	versionPreference string,
+) (bool, error) {
 	// Check if the extension is already installed
 	_, err := extensionManager.GetInstalled(extensions.FilterOptions{
 		Id: extension.Id,
@@ -372,7 +394,7 @@ func tryAutoInstallExtension(
 		Message:      "Confirm installation",
 	})
 	if err != nil {
-		return false, nil
+		return false, err
 	}
 
 	if !shouldInstall {
@@ -381,13 +403,201 @@ func tryAutoInstallExtension(
 
 	// Install the extension
 	console.Message(ctx, fmt.Sprintf("Installing extension '%s'...\n", extension.Id))
-	_, err = extensionManager.Install(ctx, &extension, "")
+	_, err = extensionManager.Install(ctx, &extension, versionPreference)
 	if err != nil {
 		return false, fmt.Errorf("failed to install extension: %w", err)
 	}
 
 	console.Message(ctx, fmt.Sprintf("Extension '%s' installed successfully!\n", extension.Id))
 	return true, nil
+}
+
+type projectExtensionRequirement struct {
+	extension         *extensions.ExtensionMetadata
+	versionPreference string
+	explicit          bool
+}
+
+func projectCommandSupportsExtensionAutoInstall(cmd *cobra.Command) bool {
+	if _, isExtensionCommand := cmd.Annotations["extension.id"]; isExtensionCommand {
+		return false
+	}
+
+	path := getCommandPath(cmd)
+	if len(path) == 0 {
+		return false
+	}
+
+	switch path[0] {
+	case "up", "provision", "deploy", "package", "restore", "down", "show", "monitor":
+		return true
+	case "env":
+		return len(path) > 1 && path[1] == "refresh"
+	default:
+		return false
+	}
+}
+
+func findExtensionForProvider(
+	ctx context.Context,
+	console input.Console,
+	extensionManager extensionAutoInstallManager,
+	capability extensions.CapabilityType,
+	provider string,
+) (*extensions.ExtensionMetadata, error) {
+	matches, err := extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
+		Capability: capability,
+		Provider:   provider,
+	})
+	if err != nil {
+		log.Printf("failed to find an extension for provider %q: %v", provider, err)
+		return nil, nil
+	}
+	if len(matches) == 0 {
+		return nil, nil
+	}
+
+	return promptForExtensionChoice(ctx, console, matches)
+}
+
+func missingProjectExtensions(
+	ctx context.Context,
+	console input.Console,
+	extensionManager extensionAutoInstallManager,
+	projectConfig *project.ProjectConfig,
+) ([]projectExtensionRequirement, error) {
+	installed, err := extensionManager.ListInstalled()
+	if err != nil {
+		return nil, fmt.Errorf("listing installed extensions: %w", err)
+	}
+
+	requirements := map[string]projectExtensionRequirement{}
+	if projectConfig.RequiredVersions != nil {
+		for _, extensionId := range slices.Sorted(maps.Keys(projectConfig.RequiredVersions.Extensions)) {
+			if _, isInstalled := installed[extensionId]; isInstalled {
+				continue
+			}
+
+			versionPreference := ""
+			if constraint := projectConfig.RequiredVersions.Extensions[extensionId]; constraint != nil {
+				versionPreference = *constraint
+			}
+			matches, err := extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
+				Id:      extensionId,
+				Version: versionPreference,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("finding required extension %s: %w", extensionId, err)
+			}
+			if len(matches) == 0 {
+				return nil, fmt.Errorf("required extension %s not found", extensionId)
+			}
+
+			extension, err := promptForExtensionChoice(ctx, console, matches)
+			if err != nil {
+				return nil, fmt.Errorf("selecting required extension %s: %w", extensionId, err)
+			}
+
+			requirements[extension.Id] = projectExtensionRequirement{
+				extension:         extension,
+				versionPreference: versionPreference,
+				explicit:          true,
+			}
+		}
+	}
+
+	addProvider := func(capability extensions.CapabilityType, provider string) error {
+		if provider == "" {
+			return nil
+		}
+
+		extension, err := findExtensionForProvider(ctx, console, extensionManager, capability, provider)
+		if err != nil || extension == nil {
+			return err
+		}
+		if _, isInstalled := installed[extension.Id]; isInstalled {
+			return nil
+		}
+		if _, alreadyRequired := requirements[extension.Id]; !alreadyRequired {
+			requirements[extension.Id] = projectExtensionRequirement{extension: extension}
+		}
+		return nil
+	}
+
+	for _, serviceName := range slices.Sorted(maps.Keys(projectConfig.Services)) {
+		if err := addProvider(
+			extensions.ServiceTargetProviderCapability,
+			string(projectConfig.Services[serviceName].Host),
+		); err != nil {
+			return nil, err
+		}
+	}
+
+	for _, infra := range projectConfig.Infra.GetLayers() {
+		if err := addProvider(extensions.ProvisioningProviderCapability, string(infra.Provider)); err != nil {
+			return nil, err
+		}
+	}
+
+	result := slices.Collect(maps.Values(requirements))
+	slices.SortFunc(result, func(a, b projectExtensionRequirement) int {
+		if a.explicit != b.explicit {
+			if a.explicit {
+				return -1
+			}
+			return 1
+		}
+		return cmp.Compare(a.extension.Id, b.extension.Id)
+	})
+
+	return result, nil
+}
+
+func tryAutoInstallProjectExtensions(
+	ctx context.Context,
+	rootContainer *ioc.NestedContainer,
+	foundCmd *cobra.Command,
+) (bool, error) {
+	if !projectCommandSupportsExtensionAutoInstall(foundCmd) {
+		return false, nil
+	}
+
+	var projectConfig *project.ProjectConfig
+	if err := rootContainer.Resolve(&projectConfig); err != nil {
+		log.Printf("skipping project extension auto-install: %v", err)
+		return false, nil
+	}
+
+	var extensionManager *extensions.Manager
+	if err := rootContainer.Resolve(&extensionManager); err != nil {
+		return false, fmt.Errorf("resolving extension manager: %w", err)
+	}
+	var console input.Console
+	if err := rootContainer.Resolve(&console); err != nil {
+		return false, fmt.Errorf("resolving console: %w", err)
+	}
+
+	requirements, err := missingProjectExtensions(ctx, console, extensionManager, projectConfig)
+	if err != nil {
+		return false, err
+	}
+
+	installedAny := false
+	for _, requirement := range requirements {
+		installed, err := tryAutoInstallExtensionVersion(
+			ctx,
+			console,
+			extensionManager,
+			*requirement.extension,
+			requirement.versionPreference,
+		)
+		if err != nil {
+			return installedAny, err
+		}
+		installedAny = installedAny || installed
+	}
+
+	return installedAny, nil
 }
 
 // startUpdateCheck launches a background goroutine that checks for a newer
@@ -493,6 +703,18 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		// hit when the update check is slow (laptop wake, DNS stalls, etc.).
 		if !result.IsLightspeed {
 			result.LatestVersion = startUpdateCheck(ctx)
+		}
+
+		if installed, err := tryAutoInstallProjectExtensions(ctx, rootContainer, foundCmd); err != nil {
+			result.Err = err
+			return result
+		} else if installed {
+			rootCmd = NewRootCmd(false, nil, rootContainer)
+			foundCmd, originalArgs, err = rootCmd.Find(os.Args[1:])
+			if err != nil {
+				result.Err = err
+				return result
+			}
 		}
 
 		// Check for partial namespace match (e.g., "ai" found but "ai.agent" not installed)

@@ -4,7 +4,9 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -15,10 +17,151 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
+
+type fakeExtensionAutoInstallManager struct {
+	available []*extensions.ExtensionMetadata
+	installed map[string]*extensions.Extension
+}
+
+func (m *fakeExtensionAutoInstallManager) FindExtensions(
+	_ context.Context,
+	options *extensions.FilterOptions,
+) ([]*extensions.ExtensionMetadata, error) {
+	var matches []*extensions.ExtensionMetadata
+	for _, extension := range m.available {
+		if options.Id != "" && extension.Id != options.Id {
+			continue
+		}
+		if options.Capability != "" && !slices.ContainsFunc(extension.Versions, func(version extensions.ExtensionVersion) bool {
+			return slices.Contains(version.Capabilities, options.Capability) &&
+				slices.ContainsFunc(version.Providers, func(provider extensions.Provider) bool {
+					return provider.Name == options.Provider
+				})
+		}) {
+			continue
+		}
+		matches = append(matches, extension)
+	}
+	return matches, nil
+}
+
+func (m *fakeExtensionAutoInstallManager) GetInstalled(
+	options extensions.FilterOptions,
+) (*extensions.Extension, error) {
+	if extension, ok := m.installed[options.Id]; ok {
+		return extension, nil
+	}
+	return nil, fmt.Errorf("extension not installed")
+}
+
+func (m *fakeExtensionAutoInstallManager) Install(
+	_ context.Context,
+	extension *extensions.ExtensionMetadata,
+	_ string,
+) (*extensions.ExtensionVersion, error) {
+	version := &extension.Versions[0]
+	m.installed[extension.Id] = &extensions.Extension{
+		Id:      extension.Id,
+		Version: version.Version,
+	}
+	return version, nil
+}
+
+func (m *fakeExtensionAutoInstallManager) ListInstalled() (map[string]*extensions.Extension, error) {
+	return m.installed, nil
+}
+
+func TestMissingProjectExtensions(t *testing.T) {
+	versionConstraint := ">=1.0.0-beta.4"
+	manager := &fakeExtensionAutoInstallManager{
+		available: []*extensions.ExtensionMetadata{
+			{
+				Id: "azure.ai.projects",
+				Versions: []extensions.ExtensionVersion{{
+					Version:      "1.0.0",
+					Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
+					Providers: []extensions.Provider{{
+						Name: "azure.ai.project",
+						Type: extensions.ServiceTargetProviderType,
+					}},
+				}},
+			},
+			{
+				Id: "azure.ai.agents",
+				Versions: []extensions.ExtensionVersion{{
+					Version:      "1.0.0",
+					Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
+					Providers: []extensions.Provider{{
+						Name: "azure.ai.agent",
+						Type: extensions.ServiceTargetProviderType,
+					}},
+				}},
+			},
+			{
+				Id: "microsoft.foundry",
+				Versions: []extensions.ExtensionVersion{{
+					Version:      "1.0.0",
+					Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
+					Providers: []extensions.Provider{{
+						Name: "microsoft.foundry",
+						Type: extensions.ProvisioningProviderType,
+					}},
+					Dependencies: []extensions.ExtensionDependency{
+						{Id: "azure.ai.projects"},
+						{Id: "azure.ai.agents"},
+					},
+				}},
+			},
+		},
+		installed: map[string]*extensions.Extension{},
+	}
+	projectConfig := &project.ProjectConfig{
+		RequiredVersions: &project.RequiredVersions{
+			Extensions: map[string]*string{
+				"microsoft.foundry": new(versionConstraint),
+			},
+		},
+		Services: map[string]*project.ServiceConfig{
+			"project": {Host: "azure.ai.project"},
+			"agent":   {Host: "azure.ai.agent"},
+		},
+		Infra: provisioning.Options{Provider: "microsoft.foundry"},
+	}
+
+	requirements, err := missingProjectExtensions(
+		t.Context(),
+		mockinput.NewMockConsole(),
+		manager,
+		projectConfig,
+	)
+	require.NoError(t, err)
+	require.Len(t, requirements, 3)
+	assert.Equal(t, "microsoft.foundry", requirements[0].extension.Id)
+	assert.Equal(t, versionConstraint, requirements[0].versionPreference)
+	assert.Equal(t, "azure.ai.agents", requirements[1].extension.Id)
+	assert.Equal(t, "azure.ai.projects", requirements[2].extension.Id)
+}
+
+func TestProjectCommandSupportsExtensionAutoInstall(t *testing.T) {
+	root := &cobra.Command{Use: "azd"}
+	up := &cobra.Command{Use: "up"}
+	extension := &cobra.Command{Use: "agent", Annotations: map[string]string{"extension.id": "azure.ai.agents"}}
+	env := &cobra.Command{Use: "env"}
+	refresh := &cobra.Command{Use: "refresh"}
+	env.AddCommand(refresh)
+	root.AddCommand(up, extension, env)
+
+	assert.True(t, projectCommandSupportsExtensionAutoInstall(up))
+	assert.True(t, projectCommandSupportsExtensionAutoInstall(refresh))
+	assert.False(t, projectCommandSupportsExtensionAutoInstall(extension))
+	assert.False(t, projectCommandSupportsExtensionAutoInstall(env))
+}
 
 func TestFindFirstNonFlagArg(t *testing.T) {
 	t.Parallel()

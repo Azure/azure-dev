@@ -15,12 +15,25 @@ trigger:
 pr:
   paths:
     include:
+      - go.mod
       - cli/azd/extensions/azure.logicappsstandard
       - eng/pipelines/release-ext-azure-logicappsstandard.yml
       - eng/pipelines/release-azd-extension.yml
       - eng/pipelines/templates/steps/publish-cli.yml
     exclude:
       - cli/azd/docs/**
+
+parameters:
+  - name: PublishToRegistry
+    displayName: Publish to registry
+    type: string
+    # Scheduled (nightly) runs override this in the shared templates; the runtime
+    # parameter default must be a literal because it renders before variables exist.
+    default: stable
+    values:
+      - stable
+      - dev
+      - nightly
 
 extends:
   template: /eng/pipelines/templates/stages/1es-redirect.yml
@@ -31,3 +44,4 @@ extends:
           AzdExtensionId: azure.logicappsstandard
           SanitizedExtensionId: azure-logicappsstandard
           AzdExtensionDirectory: cli/azd/extensions/azure.logicappsstandard
+          PublishToRegistry: ${{ parameters.PublishToRegistry }}

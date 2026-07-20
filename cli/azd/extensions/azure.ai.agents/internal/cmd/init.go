@@ -1601,7 +1601,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 		// Prompt for deploy mode (code vs container) for hosted agents.
 		// Code deploy is supported for Python and .NET projects.
 		if _, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
-			showCodeDeploy := isPythonProject(targetDir) || isDotnetProject(targetDir)
+			showCodeDeploy := supportsCodeDeploy(targetDir)
 			deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy, a.flags.deployMode, a.userProvidedManifest)
 			if err != nil {
 				return fmt.Errorf("prompting for deploy mode: %w", err)

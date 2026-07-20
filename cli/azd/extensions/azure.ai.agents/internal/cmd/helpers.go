@@ -26,6 +26,7 @@ import (
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/google/uuid"
 	"golang.org/x/term"
 )
@@ -503,29 +504,99 @@ type ProjectType struct {
 	StartCmd string // suggested start command
 }
 
+type projectLanguages struct {
+	python         bool
+	pythonMetadata bool
+	pythonMain     bool
+	dotnet         bool
+	node           bool
+}
+
+func detectProjectLanguages(projectDir string) projectLanguages {
+	if projectDir == "" {
+		projectDir = "."
+	}
+
+	entries, err := os.ReadDir(projectDir)
+	if err != nil {
+		warnProjectInspectionFailure(os.Stderr, projectDir, err)
+		return projectLanguages{}
+	}
+
+	var languages projectLanguages
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		switch {
+		case name == "pyproject.toml",
+			name == "requirements.txt":
+			languages.python = true
+			languages.pythonMetadata = true
+		case strings.HasSuffix(name, ".py"):
+			languages.python = true
+			if name == "main.py" {
+				languages.pythonMain = true
+			}
+		case strings.HasSuffix(name, ".csproj"):
+			languages.dotnet = true
+		case name == "package.json":
+			languages.node = true
+		}
+	}
+
+	return languages
+}
+
+func warnProjectInspectionFailure(writer io.Writer, projectDir string, err error) {
+	fmt.Fprintf(writer, "%s", output.WithWarningFormat(
+		"WARNING: cannot read project directory %q: %v. "+
+			"Treating the project as unknown, so code deploy will not be offered "+
+			"and no local start command can be detected. "+
+			"Check the service path in azure.yaml and directory permissions.\n",
+		projectDir,
+		err,
+	))
+}
+
+func isPythonProject(projectDir string) bool {
+	return detectProjectLanguages(projectDir).python
+}
+
+func isDotnetProject(projectDir string) bool {
+	return detectProjectLanguages(projectDir).dotnet
+}
+
+func supportsCodeDeploy(projectDir string) bool {
+	languages := detectProjectLanguages(projectDir)
+	// Python metadata is authoritative. A lone .py file is only a
+	// fallback when package.json does not identify a Node project.
+	supportsPython := languages.pythonMetadata ||
+		(languages.python && !languages.node)
+	return languages.dotnet || supportsPython
+}
+
 func detectProjectType(projectDir string) ProjectType {
-	// Python: pyproject.toml or requirements.txt
-	if fileExists(filepath.Join(projectDir, "pyproject.toml")) ||
-		fileExists(filepath.Join(projectDir, "requirements.txt")) {
+	languages := detectProjectLanguages(projectDir)
+
+	if languages.pythonMetadata {
 		if fileExists(filepath.Join(projectDir, "main.py")) {
 			return ProjectType{Language: "python", StartCmd: "python main.py"}
 		}
 		return ProjectType{Language: "python", StartCmd: ""}
 	}
 
-	// .NET: any .csproj file
-	matches, _ := filepath.Glob(filepath.Join(projectDir, "*.csproj"))
-	if len(matches) > 0 {
+	if languages.dotnet {
 		return ProjectType{Language: "dotnet", StartCmd: "dotnet run"}
 	}
 
-	// Node.js: package.json
-	if fileExists(filepath.Join(projectDir, "package.json")) {
+	if languages.node {
 		return ProjectType{Language: "node", StartCmd: "npm start"}
 	}
 
-	// Check for standalone main.py as fallback
-	if fileExists(filepath.Join(projectDir, "main.py")) {
+	if languages.pythonMain {
 		return ProjectType{Language: "python", StartCmd: "python main.py"}
 	}
 

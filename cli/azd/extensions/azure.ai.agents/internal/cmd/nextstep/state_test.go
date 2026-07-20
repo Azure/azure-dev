@@ -846,7 +846,7 @@ func TestAssembleState_PopulatesProtocolFromInlineAdditionalProperties(t *testin
 		},
 	}
 
-	state, errs := assembleState(context.Background(), src)
+	state, errs := assembleState(t.Context(), src)
 	require.Empty(t, errs)
 	require.Len(t, state.Services, 1)
 	assert.Equal(t, ProtocolInvocationsWS, state.Services[0].Protocol)
@@ -874,7 +874,7 @@ func TestAssembleState_MarksInlineMultiProtocolService(t *testing.T) {
 		},
 	}
 
-	state, errs := assembleState(context.Background(), src)
+	state, errs := assembleState(t.Context(), src)
 	require.Empty(t, errs)
 	require.Len(t, state.Services, 1)
 	assert.Equal(t, ProtocolResponses, state.Services[0].Protocol)

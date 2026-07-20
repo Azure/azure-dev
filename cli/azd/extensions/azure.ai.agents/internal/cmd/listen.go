@@ -54,19 +54,12 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-<<<<<<< HEAD
-	deployments, err := collectProjectDeployments(
-		args.Project.Services,
-		args.Project.Path,
-	)
-	if err != nil {
-=======
 	if err := updateLegacyProjectDeployments(
 		ctx,
 		azdClient,
 		args.Project.Services,
+		args.Project.Path,
 	); err != nil {
->>>>>>> origin/main
 		return err
 	}
 	connections, err := collectConnections(
@@ -181,8 +174,12 @@ func updateLegacyProjectDeployments(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	services map[string]*azdext.ServiceConfig,
+	projectRoot string,
 ) error {
-	deployments, err := collectLegacyProjectDeployments(services)
+	deployments, err := collectLegacyProjectDeployments(
+		services,
+		projectRoot,
+	)
 	if err != nil {
 		return err
 	}
@@ -231,19 +228,12 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		warnDuplicateAgentNames(args.Project)
 	})
 
-<<<<<<< HEAD
-	deployments, err := collectProjectDeployments(
-		args.Project.Services,
-		args.Project.Path,
-	)
-	if err != nil {
-=======
 	if err := updateLegacyProjectDeployments(
 		ctx,
 		azdClient,
 		args.Project.Services,
+		args.Project.Path,
 	); err != nil {
->>>>>>> origin/main
 		return err
 	}
 	connections, err := collectConnections(

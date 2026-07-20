@@ -103,11 +103,7 @@ func TestCollectLegacyProjectDeploymentsIgnoresSplitProject(
 		"conn":       connectionService(t, "conn", project.Connection{Name: "conn"}),
 	}
 
-<<<<<<< HEAD
-	deployments, err := collectProjectDeployments(services, "")
-=======
-	deployments, err := collectLegacyProjectDeployments(services)
->>>>>>> origin/main
+	deployments, err := collectLegacyProjectDeployments(services, "")
 	require.NoError(t, err)
 	assert.Empty(t, deployments)
 }
@@ -198,13 +194,12 @@ func TestCollectResourceServices_ResolvesFileRefs(t *testing.T) {
 		},
 	}
 
-	deployments, err := collectProjectDeployments(
+	deployments, err := collectLegacyProjectDeployments(
 		services,
 		root,
 	)
 	require.NoError(t, err)
-	require.Len(t, deployments, 1)
-	assert.Equal(t, "gpt-4o", deployments[0].Name)
+	assert.Empty(t, deployments)
 
 	connections, err := collectConnections(services, root)
 	require.NoError(t, err)
@@ -240,11 +235,7 @@ func TestCollectHelpers_EmptyAndNilConfigs(t *testing.T) {
 		"nilcfg": {Name: "nilcfg", Host: AiProjectHost},
 	}
 
-<<<<<<< HEAD
-	deployments, err := collectProjectDeployments(services, "")
-=======
-	deployments, err := collectLegacyProjectDeployments(services)
->>>>>>> origin/main
+	deployments, err := collectLegacyProjectDeployments(services, "")
 	require.NoError(t, err)
 	assert.Empty(t, deployments)
 
@@ -274,11 +265,7 @@ func TestCollect_FallbackToBundledAgentConfig(t *testing.T) {
 	svc.Host = AiAgentHost
 	services := map[string]*azdext.ServiceConfig{"my-agent": svc}
 
-<<<<<<< HEAD
-	deployments, err := collectProjectDeployments(services, "")
-=======
-	deployments, err := collectLegacyProjectDeployments(services)
->>>>>>> origin/main
+	deployments, err := collectLegacyProjectDeployments(services, "")
 	require.NoError(t, err)
 	require.Len(t, deployments, 1)
 	assert.Equal(t, "gpt-4o", deployments[0].Name)
@@ -313,11 +300,7 @@ func TestCollectLegacyProjectDeploymentsSplitDisablesFallback(
 		),
 	}
 
-<<<<<<< HEAD
-	deployments, err := collectProjectDeployments(services, "")
-=======
-	deployments, err := collectLegacyProjectDeployments(services)
->>>>>>> origin/main
+	deployments, err := collectLegacyProjectDeployments(services, "")
 	require.NoError(t, err)
 	assert.Empty(t, deployments)
 }
@@ -509,17 +492,12 @@ func TestEmitResourceServices_WritesServiceLevelProps(t *testing.T) {
 		services[svc.Name] = svc
 	}
 
-<<<<<<< HEAD
-	// The collectors read the service-level shape back through ServiceConfigProps.
-	gotDeployments, err := collectProjectDeployments(services, "")
-=======
 	// Init must write a project shape the owning extension can parse.
 	var projectCfg project.ServiceTargetAgentConfig
 	err := project.UnmarshalStruct(
 		project.ServiceConfigProps(services["ai-project"]),
 		&projectCfg,
 	)
->>>>>>> origin/main
 	require.NoError(t, err)
 	require.Len(t, projectCfg.Deployments, 1)
 	assert.Equal(t, "gpt-4.1-mini", projectCfg.Deployments[0].Name)

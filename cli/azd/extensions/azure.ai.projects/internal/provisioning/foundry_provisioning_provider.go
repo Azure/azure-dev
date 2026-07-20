@@ -17,14 +17,8 @@ import (
 	"strings"
 	"time"
 
-<<<<<<< HEAD:cli/azd/extensions/azure.ai.agents/internal/project/foundry_provisioning_provider.go
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/projectconfig"
-	"azureaiagent/internal/synthesis"
-=======
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/synthesis"
->>>>>>> origin/main:cli/azd/extensions/azure.ai.projects/internal/provisioning/foundry_provisioning_provider.go
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -33,6 +27,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
@@ -104,6 +99,21 @@ type FoundryProvisioningProvider struct {
 	bicepCliInstance bicepCompiler
 }
 
+func readProjectFile(projectRoot string) ([]byte, string, error) {
+	for _, name := range azdcontext.ProjectFileNames {
+		path := filepath.Join(projectRoot, name)
+		// projectRoot is supplied by azd as the user's project root.
+		data, err := os.ReadFile(path) //nolint:gosec
+		if err == nil {
+			return data, path, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, path, fmt.Errorf("read %s: %w", path, err)
+		}
+	}
+	return nil, "", nil
+}
+
 // NewFoundryProvisioningProvider constructs the provider with a live
 // AzdClient. The host calls Initialize before any other method.
 func NewFoundryProvisioningProvider(azdClient *azdext.AzdClient) azdext.ProvisioningProvider {
@@ -135,7 +145,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 	p.projectPath = projectPath
 
-	rawYAML, azureYamlPath, err := projectconfig.ReadProjectFile(projectPath)
+	rawYAML, azureYamlPath, err := readProjectFile(projectPath)
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
@@ -162,7 +172,6 @@ func (p *FoundryProvisioningProvider) Initialize(
 			"skipping synthesizer", filepath.Join(projectPath, onDiskInfraDir))
 		// endpoint: (brownfield) reuse skips provisioning even on the on-disk
 		// path; connect to the existing project instead of compiling Bicep.
-<<<<<<< HEAD:cli/azd/extensions/azure.ai.agents/internal/project/foundry_provisioning_provider.go
 		endpoint, endpointErr := foundryServiceEndpointAtRoot(
 			rawYAML,
 			projectPath,
@@ -190,24 +199,6 @@ func (p *FoundryProvisioningProvider) Initialize(
 					"fix the project service configuration in azure.yaml",
 				)
 			}
-=======
-		if endpoint, err := synthesis.ProjectEndpoint(
-			rawYAML,
-			svcName,
-			projectPath,
-		); err != nil {
-			return exterrors.Validation(
-				exterrors.CodeInvalidAzureYaml,
-				fmt.Sprintf(
-					"read endpoint for Foundry project service %q: %s",
-					svcName,
-					err,
-				),
-				"check the endpoint field under your azure.ai.project service",
-			)
-		} else if endpoint != "" {
-			warnNetworkIgnoredInBrownfield(rawYAML, svcName)
->>>>>>> origin/main:cli/azd/extensions/azure.ai.projects/internal/provisioning/foundry_provisioning_provider.go
 			p.brownfieldEndpoint = endpoint
 			if err := p.captureBrownfieldDeployments(ctx, rawYAML, svcName); err != nil {
 				return err
@@ -228,7 +219,6 @@ func (p *FoundryProvisioningProvider) Initialize(
 	case errors.Is(err, synthesis.ErrEndpointBrownfield):
 		// endpoint: reuse — connect to the existing project, skip provisioning.
 		// network: has no effect in brownfield mode; warn if both are present.
-<<<<<<< HEAD:cli/azd/extensions/azure.ai.agents/internal/project/foundry_provisioning_provider.go
 		if err := warnNetworkIgnoredInBrownfield(
 			rawYAML,
 			projectPath,
@@ -244,30 +234,15 @@ func (p *FoundryProvisioningProvider) Initialize(
 			rawYAML,
 			projectPath,
 			svcName,
-=======
-		warnNetworkIgnoredInBrownfield(rawYAML, svcName)
-		endpoint, endpointErr := synthesis.ProjectEndpoint(
-			rawYAML,
-			svcName,
-			projectPath,
->>>>>>> origin/main:cli/azd/extensions/azure.ai.projects/internal/provisioning/foundry_provisioning_provider.go
 		)
 		if endpointErr != nil {
 			return exterrors.Validation(
 				exterrors.CodeInvalidAzureYaml,
 				fmt.Sprintf(
-<<<<<<< HEAD:cli/azd/extensions/azure.ai.agents/internal/project/foundry_provisioning_provider.go
 					"resolve existing Foundry project endpoint: %s",
 					endpointErr,
 				),
 				"fix the project service configuration in azure.yaml",
-=======
-					"read endpoint for Foundry project service %q: %s",
-					svcName,
-					endpointErr,
-				),
-				"check the endpoint field under your azure.ai.project service",
->>>>>>> origin/main:cli/azd/extensions/azure.ai.projects/internal/provisioning/foundry_provisioning_provider.go
 			)
 		}
 		p.brownfieldEndpoint = endpoint
@@ -845,13 +820,8 @@ func (p *FoundryProvisioningProvider) captureBrownfieldDeployments(
 ) error {
 	deployments, err := synthesis.BrownfieldDeployments(
 		rawYAML,
-<<<<<<< HEAD:cli/azd/extensions/azure.ai.agents/internal/project/foundry_provisioning_provider.go
-		p.projectPath,
-		svcName,
-=======
 		svcName,
 		p.projectPath,
->>>>>>> origin/main:cli/azd/extensions/azure.ai.projects/internal/provisioning/foundry_provisioning_provider.go
 	)
 	if err != nil {
 		return exterrors.Validation(
@@ -864,13 +834,8 @@ func (p *FoundryProvisioningProvider) captureBrownfieldDeployments(
 
 	connections, err := synthesis.BrownfieldConnections(
 		rawYAML,
-<<<<<<< HEAD:cli/azd/extensions/azure.ai.agents/internal/project/foundry_provisioning_provider.go
-		p.projectPath,
-		p.networkEnvMap(ctx),
-=======
 		p.networkEnvMap(ctx),
 		p.projectPath,
->>>>>>> origin/main:cli/azd/extensions/azure.ai.projects/internal/provisioning/foundry_provisioning_provider.go
 	)
 	if err != nil {
 		return exterrors.Validation(

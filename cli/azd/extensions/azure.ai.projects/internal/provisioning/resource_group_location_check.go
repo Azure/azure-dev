@@ -8,12 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-<<<<<<< HEAD:cli/azd/extensions/azure.ai.agents/internal/project/resource_group_location_check.go
-	"azureaiagent/internal/pkg/azure"
-	"azureaiagent/internal/pkg/projectconfig"
-=======
 	"azure.ai.projects/internal/azure"
->>>>>>> origin/main:cli/azd/extensions/azure.ai.projects/internal/provisioning/resource_group_location_check.go
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -276,7 +271,7 @@ func (c *ResourceGroupLocationCheck) isBrownfieldFoundryProject(ctx context.Cont
 	}
 
 	projectPath := resp.GetProject().GetPath()
-	rawYAML, _, err := projectconfig.ReadProjectFile(projectPath)
+	rawYAML, _, err := readProjectFile(projectPath)
 	if err != nil {
 		return false
 	}

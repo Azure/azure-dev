@@ -274,7 +274,6 @@ func Synthesize(in Input) (*Result, error) {
 		return nil, ErrEndpointBrownfield
 	}
 
-<<<<<<< HEAD
 	includeAcr, err := deriveIncludeAcr(
 		root.Services,
 		svc,
@@ -283,9 +282,6 @@ func Synthesize(in Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-=======
-	includeAcr := deriveIncludeAcr(root.Services, svc, in.ProjectRoot)
->>>>>>> origin/main
 
 	deployments := svc.Deployments
 	if deployments == nil {
@@ -294,15 +290,9 @@ func Synthesize(in Input) (*Result, error) {
 
 	connections, err := collectConnections(
 		root.Services,
-<<<<<<< HEAD
-		in.ProjectRoot,
-		in.Env,
-		!in.PreserveVarRefs,
-=======
 		in.Env,
 		!in.PreserveVarRefs,
 		in.ProjectRoot,
->>>>>>> origin/main
 	)
 	if err != nil {
 		return nil, err
@@ -339,13 +329,8 @@ func Synthesize(in Input) (*Result, error) {
 // nil (not an error) when the service declares no deployments.
 func BrownfieldDeployments(
 	raw []byte,
-<<<<<<< HEAD
-	projectRoot string,
-	serviceName string,
-=======
 	serviceName string,
 	projectRoot string,
->>>>>>> origin/main
 ) ([]Deployment, error) {
 	if len(raw) == 0 {
 		return nil, errors.New("synthesis: raw azure.yaml is empty")
@@ -359,31 +344,9 @@ func BrownfieldDeployments(
 		return nil, fmt.Errorf("parse azure.yaml: %w", err)
 	}
 
-<<<<<<< HEAD
-	node, ok := root.Services[serviceName]
-	if !ok {
-		return nil, ErrServiceNotFound
-	}
-	if projectRoot != "" {
-		var err error
-		node, err = resolveServiceRefs(
-			node,
-			projectRoot,
-			serviceName,
-		)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	var svc projectService
-	if err := node.Decode(&svc); err != nil {
-		return nil, fmt.Errorf("decode service %q: %w", serviceName, err)
-=======
 	svc, err := loadProjectService(root.Services, serviceName, projectRoot)
 	if err != nil {
 		return nil, err
->>>>>>> origin/main
 	}
 
 	return svc.Deployments, nil
@@ -398,13 +361,8 @@ func BrownfieldDeployments(
 // are declared.
 func BrownfieldConnections(
 	raw []byte,
-<<<<<<< HEAD
-	projectRoot string,
-	env map[string]string,
-=======
 	env map[string]string,
 	projectRoot string,
->>>>>>> origin/main
 ) ([]Connection, error) {
 	if len(raw) == 0 {
 		return nil, errors.New("synthesis: raw azure.yaml is empty")
@@ -415,9 +373,6 @@ func BrownfieldConnections(
 		return nil, fmt.Errorf("parse azure.yaml: %w", err)
 	}
 
-<<<<<<< HEAD
-	return collectConnections(root.Services, projectRoot, env, true)
-=======
 	return collectConnections(root.Services, env, true, projectRoot)
 }
 
@@ -467,7 +422,6 @@ func loadProjectService(
 		return projectService{}, fmt.Errorf("decode service %q: %w", serviceName, err)
 	}
 	return svc, nil
->>>>>>> origin/main
 }
 
 // resolveServiceRefs expands $ref file includes in one service entry. It decodes
@@ -605,16 +559,11 @@ func deriveIncludeAcr(
 	services map[string]yaml.Node,
 	svc projectService,
 	projectRoot string,
-<<<<<<< HEAD
 ) (bool, error) {
-=======
-) bool {
->>>>>>> origin/main
 	if slices.ContainsFunc(svc.Agents, agentNeedsAcr) {
 		return true, nil
 	}
 
-<<<<<<< HEAD
 	for serviceName, node := range services {
 		var matches bool
 		var err error
@@ -629,15 +578,6 @@ func deriveIncludeAcr(
 		}
 		if !matches {
 			continue
-=======
-	for name, node := range services {
-		if projectRoot != "" {
-			var err error
-			node, err = resolveServiceRefs(node, projectRoot, name)
-			if err != nil {
-				continue
-			}
->>>>>>> origin/main
 		}
 		var service serviceBlock
 		if err := node.Decode(&service); err != nil {
@@ -694,7 +634,6 @@ func agentNeedsAcr(a agentBlock) bool {
 // ${{...}} expressions are always preserved, mirroring synthesizeNetwork.
 func collectConnections(
 	services map[string]yaml.Node,
-	projectRoot string,
 	env map[string]string,
 	resolve bool,
 	projectRoot string,
@@ -702,7 +641,6 @@ func collectConnections(
 	connections := []Connection{}
 
 	for name, node := range services {
-<<<<<<< HEAD
 		var matches bool
 		var err error
 		node, matches, err = serviceForHost(
@@ -713,17 +651,6 @@ func collectConnections(
 		)
 		if err != nil {
 			return nil, err
-=======
-		if projectRoot != "" {
-			var err error
-			node, err = resolveServiceRefs(node, projectRoot, name)
-			if err != nil {
-				return nil, err
-			}
-		}
-		var host struct {
-			Host string `yaml:"host"`
->>>>>>> origin/main
 		}
 		if !matches {
 			continue

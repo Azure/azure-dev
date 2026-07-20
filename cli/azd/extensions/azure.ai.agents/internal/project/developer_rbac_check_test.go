@@ -52,6 +52,7 @@ func TestDeveloperRBACRoleConstants(t *testing.T) {
 	// AI roles
 	assert.Equal(t, "64702f94-c441-49e6-a78b-ef80e0188fee", roleAzureAIDeveloper)
 	assert.Equal(t, "a97b65f3-24c7-4388-baec-2e87135dc908", roleCognitiveServicesUser)
+	assert.Equal(t, "c883944f-8b7b-4483-af10-35834be79c4a", roleFoundryOwner)
 }
 
 func TestSufficientRoleLists(t *testing.T) {
@@ -65,6 +66,8 @@ func TestSufficientRoleLists(t *testing.T) {
 	// sufficientAIUserRoles must contain only roles whose dataActions cover AIServices.*
 	assert.Contains(t, sufficientAIUserRoles, roleAzureAIUser)           // Foundry User: CogSvc.*
 	assert.Contains(t, sufficientAIUserRoles, roleCognitiveServicesUser) // backward compat: CogSvc.*
+	assert.Contains(t, sufficientAIUserRoles, roleAzureAIProjectManager) // Foundry Project Manager: CogSvc.*
+	assert.Contains(t, sufficientAIUserRoles, roleFoundryOwner)          // Foundry Owner: CogSvc.*
 	// Owner/Contributor have no dataActions and must NOT be treated as sufficient
 	assert.NotContains(t, sufficientAIUserRoles, roleOwner)
 	assert.NotContains(t, sufficientAIUserRoles, roleContributor)

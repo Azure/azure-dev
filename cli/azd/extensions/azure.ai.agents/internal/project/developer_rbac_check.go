@@ -50,6 +50,11 @@ const (
 	// Assigned by older Bicep provisions (AZURE_PRINCIPAL_ID flow); has the same
 	// Microsoft.CognitiveServices/* dataActions as Foundry User and is accepted as equivalent.
 	roleCognitiveServicesUser = "a97b65f3-24c7-4388-baec-2e87135dc908"
+
+	// Foundry Owner: full Foundry project management + Microsoft.CognitiveServices/* dataActions.
+	// The code comment on sufficientAIUserRoles already recommends this role; include it so users
+	// with Foundry Owner are not falsely flagged as missing the data-plane role.
+	roleFoundryOwner = "c883944f-8b7b-4483-af10-35834be79c4a"
 )
 
 // sufficientACRRoles lists every role that grants enough ACR access to build
@@ -82,6 +87,8 @@ var sufficientACRAbacRoles = []string{
 var sufficientAIUserRoles = []string{
 	roleAzureAIUser,           // 53ca6127-... Foundry User: dataActions Microsoft.CognitiveServices/*
 	roleCognitiveServicesUser, // a97b65f3-... backward compat: same dataActions, assigned by older Bicep
+	roleAzureAIProjectManager, // eadc314b-... Foundry Project Manager: dataActions Microsoft.CognitiveServices/*
+	roleFoundryOwner,          // c883944f-... Foundry Owner: dataActions Microsoft.CognitiveServices/*
 }
 
 // sufficientRoleAssignWriteRoles lists every role that grants

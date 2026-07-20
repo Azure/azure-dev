@@ -19,6 +19,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -1343,7 +1344,14 @@ func applyDeployModeToAdoptedProject(
 	// resolves to a container deploy so the caller can wire an ACR.
 	usesContainer := false
 	for _, agent := range agentServices {
-		container, err := applyDeployModeToService(ctx, flags, azdClient, agent.name, agent.svc)
+		container, err := applyDeployModeToService(
+			ctx,
+			flags,
+			azdClient,
+			resp.GetProject().GetPath(),
+			agent.name,
+			agent.svc,
+		)
 		if err != nil {
 			return false, err
 		}
@@ -1364,6 +1372,7 @@ func applyDeployModeToService(
 	ctx context.Context,
 	flags *initFlags,
 	azdClient *azdext.AzdClient,
+	projectPath string,
 	serviceName string,
 	svc *azdext.ServiceConfig,
 ) (bool, error) {
@@ -1405,15 +1414,27 @@ func applyDeployModeToService(
 	if targetDir == "" {
 		targetDir = "."
 	}
-	showCodeDeploy := isPythonProject(targetDir) || isDotnetProject(targetDir)
+	serviceDir, err := paths.JoinAllowRoot(projectPath, targetDir)
+	if err != nil {
+		return false, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid service path for %s: %s", serviceName, err),
+			"update azure.yaml so the agent service path stays within the project directory",
+		)
+	}
+	showCodeDeploy := supportsCodeDeploy(serviceDir)
 	// userProvidedManifest is true: -m was explicitly provided.
-	deployMode, err := promptDeployMode(ctx, azdClient, flags.noPrompt, showCodeDeploy, flags.deployMode, true)
+	deployMode, err := promptDeployMode(
+		ctx, azdClient, flags.noPrompt, showCodeDeploy, flags.deployMode, true,
+	)
 	if err != nil {
 		return false, fmt.Errorf("resolving deploy mode for adopted project: %w", err)
 	}
 
 	if deployMode == "code" {
-		return false, applyCodeDeployToService(ctx, flags, azdClient, serviceName, targetDir, svc)
+		return false, applyCodeDeployToService(
+			ctx, flags, azdClient, serviceName, serviceDir, svc,
+		)
 	}
 	if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc); err != nil {
 		return false, err

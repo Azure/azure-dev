@@ -289,7 +289,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	if srcDir == "" {
 		srcDir, _ = os.Getwd()
 	}
-	showCodeDeploy := isPythonProject(srcDir) || isDotnetProject(srcDir)
+	showCodeDeploy := supportsCodeDeploy(srcDir)
 	deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy, a.flags.deployMode, false)
 	if err != nil {
 		return nil, err
@@ -1270,45 +1270,4 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 		EntryPoint:           entryPoint,
 		DependencyResolution: &depResolution,
 	}, nil
-}
-
-// isPythonProject returns true if the directory appears to be a Python project,
-// determined by the presence of requirements.txt or any .py file.
-func isPythonProject(dir string) bool {
-	if dir == "" {
-		dir = "."
-	}
-	// Check for requirements.txt
-	if _, err := os.Stat(filepath.Join(dir, "requirements.txt")); err == nil {
-		return true
-	}
-	// Check for any .py file (shallow scan)
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false
-	}
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".py") {
-			return true
-		}
-	}
-	return false
-}
-
-// isDotnetProject returns true if the directory contains a .csproj file.
-// NOTE: .fsproj (F#) is not yet supported by the packaging path (packageDotnetBundled/detectDefaultEntryPoint).
-func isDotnetProject(dir string) bool {
-	if dir == "" {
-		dir = "."
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false
-	}
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".csproj") {
-			return true
-		}
-	}
-	return false
 }

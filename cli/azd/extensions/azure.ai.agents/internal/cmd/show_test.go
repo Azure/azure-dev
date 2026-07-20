@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	projectpkg "azureaiagent/internal/project"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -397,4 +399,55 @@ func TestResolveNextStepFromStatus_NonActiveBranches(t *testing.T) {
 			assert.Equal(t, tt.want, out[0].Command)
 		})
 	}
+}
+
+func TestDisplayHarness(t *testing.T) {
+	assert.Equal(t, "GitHub Copilot (ghcp)", displayHarness("ghcp"))
+	assert.Equal(t, "custom-harness", displayHarness("custom-harness"))
+}
+
+func TestPromptDefinitionMap(t *testing.T) {
+	version := agent_api.AgentVersionObject{
+		Definition: map[string]any{"harness": "ghcp"},
+	}
+	assert.Equal(t, "ghcp", stringFromMap(promptDefinitionMap(version), "harness"))
+
+	// Non-map definition yields nil, and stringFromMap tolerates nil.
+	assert.Nil(t, promptDefinitionMap(agent_api.AgentVersionObject{Definition: "not-a-map"}))
+	assert.Equal(t, "", stringFromMap(nil, "harness"))
+}
+
+func TestPrintPromptToolboxTools(t *testing.T) {
+	def := map[string]any{
+		"tools": []any{
+			map[string]any{"type": "function", "name": "calc"}, // skipped
+			map[string]any{
+				"type":                  "mcp",
+				"server_label":          "agent-toolbox-01",
+				"server_url":            "https://proj/toolboxes/agent-toolbox-01/mcp?api-version=v1",
+				"project_connection_id": "agent-toolbox-01-toolbox",
+			},
+		},
+	}
+
+	var sb strings.Builder
+	printPromptToolboxTools(&sb, def)
+	out := sb.String()
+
+	assert.Contains(t, out, "Toolbox (agent-toolbox-01):")
+	assert.Contains(t, out, "https://proj/toolboxes/agent-toolbox-01/mcp?api-version=v1")
+	assert.Contains(t, out, "Connection:")
+	assert.Contains(t, out, "agent-toolbox-01-toolbox")
+	assert.NotContains(t, out, "calc")
+}
+
+func TestPromptAgentEndpoint(t *testing.T) {
+	assert.Equal(t, "https://proj/api/projects/p", promptAgentEndpoint(
+		&projectpkg.PromptAgentSettings{ProjectEndpoint: "https://proj/api/projects/p"},
+	))
+	// Falls back to BaseURL when ProjectEndpoint is unset.
+	assert.Equal(t, "https://ai.azure.com/api", promptAgentEndpoint(
+		&projectpkg.PromptAgentSettings{BaseURL: "https://ai.azure.com/api"},
+	))
+	assert.Equal(t, "", promptAgentEndpoint(nil))
 }

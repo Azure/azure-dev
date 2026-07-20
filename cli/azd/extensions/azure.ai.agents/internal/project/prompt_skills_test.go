@@ -16,6 +16,7 @@ import (
 // fakeToolboxBuilder records calls and returns a fixed MCP url.
 type fakeToolboxBuilder struct {
 	mcpURL       string
+	connName     string
 	ensureCalls  int
 	resolveCalls int
 	lastSkills   []skillBundle
@@ -24,22 +25,22 @@ type fakeToolboxBuilder struct {
 
 func (b *fakeToolboxBuilder) EnsureToolbox(
 	_ context.Context, _ string, skills []skillBundle,
-) (string, error) {
+) (toolboxAttachment, error) {
 	b.ensureCalls++
 	b.lastSkills = skills
 	if b.mcpURL == "" {
 		b.mcpURL = "https://proj/toolboxes/agent/versions/1/mcp"
 	}
-	return b.mcpURL, nil
+	return toolboxAttachment{McpURL: b.mcpURL, ConnectionName: b.connName}, nil
 }
 
-func (b *fakeToolboxBuilder) ResolveToolbox(_ context.Context, ref toolboxRef) (string, error) {
+func (b *fakeToolboxBuilder) ResolveToolbox(_ context.Context, ref toolboxRef) (toolboxAttachment, error) {
 	b.resolveCalls++
 	b.lastRef = ref
 	if b.mcpURL == "" {
 		b.mcpURL = "https://proj/toolboxes/existing/versions/2/mcp"
 	}
-	return b.mcpURL, nil
+	return toolboxAttachment{McpURL: b.mcpURL, ConnectionName: b.connName}, nil
 }
 
 func writeSkillsDir(t *testing.T, skills map[string]string) string {
@@ -158,7 +159,7 @@ func TestScanSkillsDir_Empty(t *testing.T) {
 
 func TestInjectMcpTool_AddsWhenAbsent(t *testing.T) {
 	managed := &agent_yaml.PromptAgent{}
-	injectMcpTool(managed, "toolbox-a", "https://proj/mcp")
+	injectMcpTool(managed, "toolbox-a", "https://proj/mcp", "toolbox-a-toolbox")
 
 	if len(managed.Tools) != 1 {
 		t.Fatalf("tools: got %d, want 1", len(managed.Tools))
@@ -166,6 +167,9 @@ func TestInjectMcpTool_AddsWhenAbsent(t *testing.T) {
 	tool := managed.Tools[0].(map[string]any)
 	if tool["type"] != "mcp" || tool["server_url"] != "https://proj/mcp" {
 		t.Errorf("tool: got %+v", tool)
+	}
+	if tool["project_connection_id"] != "toolbox-a-toolbox" {
+		t.Errorf("project_connection_id: got %v, want toolbox-a-toolbox", tool["project_connection_id"])
 	}
 }
 
@@ -175,9 +179,13 @@ func TestInjectMcpTool_NotDuplicated(t *testing.T) {
 			map[string]any{"type": "mcp", "server_url": "https://proj/mcp"},
 		},
 	}
-	injectMcpTool(managed, "toolbox-a", "https://proj/mcp")
+	injectMcpTool(managed, "toolbox-a", "https://proj/mcp", "toolbox-a-toolbox")
 	if len(managed.Tools) != 1 {
 		t.Errorf("expected no duplicate mcp tool, got %d", len(managed.Tools))
+	}
+	tool := managed.Tools[0].(map[string]any)
+	if tool["project_connection_id"] != "toolbox-a-toolbox" {
+		t.Errorf("expected connection id backfilled, got %v", tool["project_connection_id"])
 	}
 }
 
@@ -209,6 +217,29 @@ func TestToolboxNode_PrimaryRegistersSkills(t *testing.T) {
 	}
 	if len(managed.Tools) != 1 || managed.Tools[0].(map[string]any)["type"] != "mcp" {
 		t.Errorf("expected mcp tool, got %+v", managed.Tools)
+	}
+}
+
+func TestToolboxNode_InjectsConnectionID(t *testing.T) {
+	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i"}
+	managed.Name = "agent"
+	g := &promptGraph{managed: managed, bindings: map[string]any{}}
+	fake := &fakeToolboxBuilder{connName: "agent-toolbox"}
+
+	skills := []skillBundle{{Dir: "s", Meta: skillMeta{
+		Name: "s", Description: "d", Instructions: "do the thing",
+	}}}
+	node := toolboxNode(g, skills, nil, func() (toolboxBuilder, error) { return fake, nil })
+	if err := node.Resolve(context.Background()); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+
+	if len(managed.Tools) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(managed.Tools))
+	}
+	tool := managed.Tools[0].(map[string]any)
+	if tool["project_connection_id"] != "agent-toolbox" {
+		t.Errorf("project_connection_id: got %v, want agent-toolbox", tool["project_connection_id"])
 	}
 }
 

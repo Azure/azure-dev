@@ -94,6 +94,14 @@ func resolvePromptHarnessTarget(
 		if err := setEnvValue(ctx, azdClient, env.Name, "AZURE_AI_DEPLOYMENTS_LOCATION", proj.Location); err != nil {
 			return nil, err
 		}
+		// Also seed AZURE_LOCATION from the selected project's region. The
+		// infra main.parameters.json resolves `location` from ${AZURE_LOCATION};
+		// without this, `azd up` re-prompts for a region even though the project
+		// (and thus the target region) is already known. Deploy the model using
+		// the project's region.
+		if err := setEnvValue(ctx, azdClient, env.Name, "AZURE_LOCATION", proj.Location); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := setPromptFoundryProjectEnv(ctx, azdClient, env.Name, proj); err != nil {

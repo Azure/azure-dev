@@ -56,15 +56,27 @@ type toolboxRef struct {
 	Version string
 }
 
+// toolboxAttachment is the result of registering or resolving a toolbox: the
+// MCP url the agent connects to plus the name of the project connection that
+// authenticates the agent to that endpoint. The connection name is what the
+// injected mcp tool carries as its project_connection_id — without it the agent
+// has no credential to reach the toolbox and its skills are never invoked.
+type toolboxAttachment struct {
+	McpURL         string
+	ConnectionName string
+}
+
 // toolboxBuilder registers skills into a toolbox version (primary path) or
-// resolves an existing toolbox (reference path), returning the toolbox MCP url.
-// The seam keeps the graph node unit-testable without a live endpoint.
+// resolves an existing toolbox (reference path), returning the toolbox MCP url
+// and the project connection that fronts it. The seam keeps the graph node
+// unit-testable without a live endpoint.
 type toolboxBuilder interface {
 	// EnsureToolbox registers the skills into a toolbox named toolboxName and
-	// returns its MCP url.
-	EnsureToolbox(ctx context.Context, toolboxName string, skills []skillBundle) (mcpURL string, err error)
-	// ResolveToolbox returns the MCP url of an existing toolbox version.
-	ResolveToolbox(ctx context.Context, ref toolboxRef) (mcpURL string, err error)
+	// returns its MCP url and backing project connection.
+	EnsureToolbox(ctx context.Context, toolboxName string, skills []skillBundle) (toolboxAttachment, error)
+	// ResolveToolbox returns the MCP url and backing project connection of an
+	// existing toolbox version.
+	ResolveToolbox(ctx context.Context, ref toolboxRef) (toolboxAttachment, error)
 }
 
 // scanSkillsDir returns the skill bundles under <agentDir>/skills, one per
@@ -204,8 +216,11 @@ func extractFrontmatter(content string) (frontmatterResult, error) {
 
 // injectMcpTool ensures the agent's tools include an mcp tool for the given
 // toolbox label and MCP url. An existing mcp tool with the same server_url is
-// left in place (not duplicated). The managed definition is mutated in place.
-func injectMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL string) {
+// left in place (not duplicated). When connectionName is non-empty it is set as
+// the tool's project_connection_id so the agent can authenticate to the toolbox
+// MCP endpoint; without it the toolbox skills are never invoked. The managed
+// definition is mutated in place.
+func injectMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL, connectionName string) {
 	if managed == nil || strings.TrimSpace(mcpURL) == "" {
 		return
 	}
@@ -218,15 +233,26 @@ func injectMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL string) 
 			continue
 		}
 		if fmt.Sprintf("%v", tool["server_url"]) == mcpURL {
-			return // already present
+			// Already present — backfill the connection id if it was missing so
+			// a previously connection-less mcp tool starts authenticating.
+			if strings.TrimSpace(connectionName) != "" {
+				if _, has := tool["project_connection_id"]; !has {
+					tool["project_connection_id"] = connectionName
+				}
+			}
+			return
 		}
 	}
-	managed.Tools = append(managed.Tools, map[string]any{
+	mcpTool := map[string]any{
 		"type":             "mcp",
 		"server_label":     serverLabel,
 		"server_url":       mcpURL,
 		"require_approval": "always",
-	})
+	}
+	if strings.TrimSpace(connectionName) != "" {
+		mcpTool["project_connection_id"] = connectionName
+	}
+	managed.Tools = append(managed.Tools, mcpTool)
 }
 
 // toolboxNode builds the skill/toolbox graph node. When ref is non-nil the
@@ -274,22 +300,22 @@ func toolboxNode(
 			}
 
 			var (
-				mcpURL string
-				label  string
+				attachment toolboxAttachment
+				label      string
 			)
 			if ref != nil {
 				label = ref.Name
-				mcpURL, err = builder.ResolveToolbox(ctx, toolboxRef{Name: ref.Name, Version: ref.Version})
+				attachment, err = builder.ResolveToolbox(ctx, toolboxRef{Name: ref.Name, Version: ref.Version})
 			} else {
 				label = g.managed.Name
-				mcpURL, err = builder.EnsureToolbox(ctx, g.managed.Name, skills)
+				attachment, err = builder.EnsureToolbox(ctx, g.managed.Name, skills)
 			}
 			if err != nil {
 				return err
 			}
 
-			g.bindings[toolboxMcpURLBindingKey] = mcpURL
-			injectMcpTool(g.managed, label, mcpURL)
+			g.bindings[toolboxMcpURLBindingKey] = attachment.McpURL
+			injectMcpTool(g.managed, label, attachment.McpURL, attachment.ConnectionName)
 			return nil
 		},
 	}
@@ -300,14 +326,19 @@ func toolboxNode(
 type foundryToolboxBuilder struct {
 	skills          *azure.FoundrySkillsClient
 	toolboxes       *azure.FoundryToolboxClient
+	connections     *azure.FoundryConnectionsARMClient
+	resourceGroup   string
+	accountName     string
+	projectName     string
 	projectEndpoint string
 }
 
 // EnsureToolbox registers each skill bundle at its pinned version, creates a
-// toolbox version referencing them, and returns the toolbox MCP url.
+// toolbox version referencing them, and returns the toolbox MCP url plus the
+// project connection that fronts it.
 func (b *foundryToolboxBuilder) EnsureToolbox(
 	ctx context.Context, toolboxName string, skills []skillBundle,
-) (string, error) {
+) (toolboxAttachment, error) {
 	// Skills are attached to a toolbox via a separate `skills` array of skill
 	// references (distinct from `tools`), per the Foundry Skills API.
 	skillRefs := make([]map[string]any, 0, len(skills))
@@ -319,12 +350,12 @@ func (b *foundryToolboxBuilder) EnsureToolbox(
 		// SKILL.md's body.
 		files, err := readSkillBundleFiles(s.Path)
 		if err != nil {
-			return "", err
+			return toolboxAttachment{}, err
 		}
 
 		version, err := b.skills.CreateSkillVersionFromFiles(ctx, s.Meta.Name, files)
 		if err != nil {
-			return "", fmt.Errorf("registering skill %q: %w", s.Meta.Name, err)
+			return toolboxAttachment{}, fmt.Errorf("registering skill %q: %w", s.Meta.Name, err)
 		}
 
 		// Creating a version does NOT make it the skill's default_version —
@@ -335,7 +366,7 @@ func (b *foundryToolboxBuilder) EnsureToolbox(
 		// happen. Promote every newly created version to default so the
 		// latest deploy is always what's active.
 		if err := b.skills.PromoteSkillVersion(ctx, version.Name, version.Version); err != nil {
-			return "", fmt.Errorf("promoting skill %q to version %s: %w", s.Meta.Name, version.Version, err)
+			return toolboxAttachment{}, fmt.Errorf("promoting skill %q to version %s: %w", s.Meta.Name, version.Version, err)
 		}
 
 		ref := map[string]any{
@@ -355,27 +386,83 @@ func (b *foundryToolboxBuilder) EnsureToolbox(
 		Skills: skillRefs,
 	})
 	if err != nil {
-		return "", fmt.Errorf("creating toolbox version: %w", err)
+		return toolboxAttachment{}, fmt.Errorf("creating toolbox version: %w", err)
 	}
 
 	// Same reasoning as the skill promotion above: creating a toolbox version
 	// doesn't promote it, so the toolbox consumer endpoint (and the portal)
 	// would keep serving the previous version's tool/skill set otherwise.
 	if err := b.toolboxes.PromoteToolboxVersion(ctx, toolboxName, created.Version); err != nil {
-		return "", fmt.Errorf("promoting toolbox %q to version %s: %w", toolboxName, created.Version, err)
+		return toolboxAttachment{}, fmt.Errorf("promoting toolbox %q to version %s: %w", toolboxName, created.Version, err)
 	}
 
-	return b.mcpURL(created.Name, created.Version), nil
+	mcpURL := b.mcpURL(created.Name, created.Version)
+	connName, err := b.ensureToolboxConnection(ctx, created.Name, mcpURL)
+	if err != nil {
+		return toolboxAttachment{}, err
+	}
+	return toolboxAttachment{McpURL: mcpURL, ConnectionName: connName}, nil
 }
 
-// ResolveToolbox confirms an existing toolbox and returns its MCP url. When the
-// reference pins a version, the version-specific (developer) endpoint is used;
-// otherwise the consumer endpoint that always serves the default_version.
-func (b *foundryToolboxBuilder) ResolveToolbox(ctx context.Context, ref toolboxRef) (string, error) {
+// ResolveToolbox confirms an existing toolbox and returns its MCP url plus the
+// backing project connection. When the reference pins a version, the
+// version-specific (developer) endpoint is used; otherwise the consumer
+// endpoint that always serves the default_version.
+func (b *foundryToolboxBuilder) ResolveToolbox(ctx context.Context, ref toolboxRef) (toolboxAttachment, error) {
 	if _, err := b.toolboxes.GetToolbox(ctx, ref.Name); err != nil {
-		return "", fmt.Errorf("resolving toolbox %q: %w", ref.Name, err)
+		return toolboxAttachment{}, fmt.Errorf("resolving toolbox %q: %w", ref.Name, err)
 	}
-	return b.mcpURL(ref.Name, ref.Version), nil
+	mcpURL := b.mcpURL(ref.Name, ref.Version)
+	connName, err := b.ensureToolboxConnection(ctx, ref.Name, mcpURL)
+	if err != nil {
+		return toolboxAttachment{}, err
+	}
+	return toolboxAttachment{McpURL: mcpURL, ConnectionName: connName}, nil
+}
+
+// toolboxConnectionCategory is the Foundry connection category for a toolbox's
+// MCP endpoint, consistent with the RemoteTool category used for MCP tools.
+const toolboxConnectionCategory = "RemoteTool"
+
+// toolboxConnectionAuthType authenticates the agent to a toolbox hosted in the
+// same Foundry project via the project's managed identity.
+const toolboxConnectionAuthType = "ProjectManagedIdentity"
+
+// ensureToolboxConnection creates (or updates) a project connection that fronts
+// the toolbox MCP endpoint and returns its name for use as the agent tool's
+// project_connection_id. Without this connection the agent has no credential to
+// reach the toolbox and its skills are never invoked. When no connections client
+// is configured (e.g. missing ARM identifiers), it returns an empty name so
+// callers degrade to a connection-less mcp tool rather than failing the deploy.
+func (b *foundryToolboxBuilder) ensureToolboxConnection(
+	ctx context.Context, toolboxName, mcpURL string,
+) (string, error) {
+	if b.connections == nil {
+		return "", nil
+	}
+	connName := toolboxConnectionName(toolboxName)
+	// Use the MCP endpoint without its query string as the connection target;
+	// the api-version belongs on the tool's server_url, not the connection.
+	target := mcpURL
+	if i := strings.IndexByte(target, '?'); i >= 0 {
+		target = target[:i]
+	}
+	if err := b.connections.UpsertProjectConnection(
+		ctx, b.resourceGroup, b.accountName, b.projectName, connName,
+		azure.ProjectConnectionProperties{
+			Category: toolboxConnectionCategory,
+			Target:   target,
+			AuthType: toolboxConnectionAuthType,
+		},
+	); err != nil {
+		return "", fmt.Errorf("creating toolbox connection %q: %w", connName, err)
+	}
+	return connName, nil
+}
+
+// toolboxConnectionName derives a stable connection name for a toolbox.
+func toolboxConnectionName(toolboxName string) string {
+	return toolboxName + "-toolbox"
 }
 
 // mcpURL builds the toolbox MCP endpoint. With a version it returns the
@@ -443,9 +530,29 @@ func newFoundryToolboxBuilder(settings *PromptAgentSettings) (toolboxBuilder, er
 		)
 	}
 	cred := promptCredential()
+	// A control-plane connections client creates the connection that fronts the
+	// toolbox MCP endpoint (the data plane is read-only for connections). Parse
+	// the account/project from the endpoint; when the ARM identifiers are
+	// available the builder wires the connection, otherwise it degrades to a
+	// connection-less mcp tool (ensureToolboxConnection no-ops on a nil client).
+	var (
+		connections *azure.FoundryConnectionsARMClient
+		accountName string
+		projectName string
+	)
+	if account, project, err := parseAccountProject(settings.ProjectEndpoint); err == nil {
+		accountName, projectName = account, project
+		if strings.TrimSpace(settings.SubscriptionID) != "" && strings.TrimSpace(settings.ResourceGroup) != "" {
+			connections, _ = azure.NewFoundryConnectionsARMClient(settings.SubscriptionID, cred)
+		}
+	}
 	return &foundryToolboxBuilder{
 		skills:          azure.NewFoundrySkillsClient(settings.ProjectEndpoint, cred),
 		toolboxes:       azure.NewFoundryToolboxClient(settings.ProjectEndpoint, cred),
+		connections:     connections,
+		resourceGroup:   settings.ResourceGroup,
+		accountName:     accountName,
+		projectName:     projectName,
 		projectEndpoint: settings.ProjectEndpoint,
 	}, nil
 }

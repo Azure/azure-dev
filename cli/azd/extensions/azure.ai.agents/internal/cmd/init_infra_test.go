@@ -318,9 +318,8 @@ services:
 
 func TestEjectInfra_EjectsConnectionServices(t *testing.T) {
 	// See TestEjectInfra_HappyPath_WritesExpectedFiles for why this is not parallel.
-	// A host: azure.ai.connection service must be synthesized into the
-	// connections param, its module copied into the ejected tree, and any
-	// ${VAR} in credentials kept verbatim (environment-portable).
+	// Connection metadata and credentials are ejected separately.
+	// Bicep keeps credential values in a secure object parameter.
 	dir := t.TempDir()
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
 services:
@@ -374,17 +373,20 @@ services:
 	assert.Equal(t, "CognitiveSearch", conn["category"])
 	assert.Equal(t, "ApiKey", conn["authType"])
 
-	// ${VAR} in credentials must be preserved verbatim on the eject path.
-	creds, ok := conn["credentials"].(map[string]any)
-	require.True(t, ok, "credentials should be an object, got %T", conn["credentials"])
-	assert.Equal(t, "${SEARCH_API_KEY}", creds["key"])
+	assert.NotContains(t, conn, "credentials")
 
 	// Nested CustomKeys credentials must remain an object so Terraform's
 	// optional(any) value can preserve mixed connection credential shapes.
 	mcpConn, ok := conns[0].(map[string]any)
 	require.True(t, ok, "connection entry should be an object, got %T", conns[0])
 	assert.Equal(t, "mcp-conn", mcpConn["name"])
-	mcpCreds := mcpConn["credentials"].(map[string]any)
+	assert.NotContains(t, mcpConn, "credentials")
+
+	secureCreds, ok := doc.Parameters["connectionCredentials"].Value.(map[string]any)
+	require.True(t, ok, "connectionCredentials should be an object")
+	searchCreds := secureCreds["search-conn"].(map[string]any)
+	assert.Equal(t, "${SEARCH_API_KEY}", searchCreds["key"])
+	mcpCreds := secureCreds["mcp-conn"].(map[string]any)
 	keys := mcpCreds["keys"].(map[string]any)
 	assert.Equal(t, "${MCP_KEY}", keys["x-api-key"])
 }
@@ -742,6 +744,7 @@ func TestEjectInfra_Terraform_TfvarsShape(t *testing.T) {
 	conns, ok := doc["connections"].([]any)
 	require.True(t, ok, "connections should be an array, got %T", doc["connections"])
 	assert.Empty(t, conns)
+	assert.NotContains(t, doc, "connectionCredentials")
 }
 
 func TestEjectInfra_Terraform_EjectsConnectionServices(t *testing.T) {
@@ -793,6 +796,7 @@ services:
 	creds, ok := conn["credentials"].(map[string]any)
 	require.True(t, ok, "credentials should be an object, got %T", conn["credentials"])
 	assert.Equal(t, "${SEARCH_API_KEY}", creds["key"])
+	assert.NotContains(t, doc, "connectionCredentials")
 
 	// outputs.tf always carries the connection-names output, unconditional on
 	// includeAcr (unlike the ACR outputs).

@@ -119,6 +119,42 @@ type Connection struct {
 	Metadata    map[string]string `yaml:"metadata,omitempty" json:"metadata,omitempty"`
 }
 
+// SplitConnectionCredentials separates credential values.
+// ARM carries them in a secure object parameter.
+func SplitConnectionCredentials(
+	connections []Connection,
+) ([]Connection, map[string]map[string]any) {
+	if connections == nil {
+		connections = []Connection{}
+	}
+
+	withoutCredentials := slices.Clone(connections)
+	credentials := map[string]map[string]any{}
+	for i := range withoutCredentials {
+		if len(withoutCredentials[i].Credentials) > 0 {
+			credentials[withoutCredentials[i].Name] = withoutCredentials[i].Credentials
+			withoutCredentials[i].Credentials = nil
+		}
+	}
+
+	return withoutCredentials, credentials
+}
+
+// JoinConnectionCredentials restores credentials for Terraform.
+// Terraform isolates them with sensitive_body.
+func JoinConnectionCredentials(
+	connections []Connection,
+	credentials map[string]map[string]any,
+) []Connection {
+	joined := slices.Clone(connections)
+	for i := range joined {
+		if value, ok := credentials[joined[i].Name]; ok {
+			joined[i].Credentials = value
+		}
+	}
+	return joined
+}
+
 // connectionService is the subset of a host: azure.ai.connection service body
 // the synthesizer reads. The service key (not a body field) is the connection
 // name; see collectConnections.
@@ -226,24 +262,9 @@ func Synthesize(in Input) (*Result, error) {
 		return nil, fmt.Errorf("parse azure.yaml: %w", err)
 	}
 
-	node, ok := root.Services[in.ServiceName]
-	if !ok {
-		return nil, ErrServiceNotFound
-	}
-
-	// Resolve $ref file includes (service-entry-level and per-deployment) so the
-	// decoded service body carries the referenced content, not raw $ref objects.
-	if in.ProjectRoot != "" {
-		var err error
-		node, err = resolveServiceRefs(node, in.ProjectRoot, in.ServiceName)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	var svc projectService
-	if err := node.Decode(&svc); err != nil {
-		return nil, fmt.Errorf("decode service %q: %w", in.ServiceName, err)
+	svc, err := loadProjectService(root.Services, in.ServiceName, in.ProjectRoot)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(in.AcceptedHosts) > 0 && !slices.Contains(in.AcceptedHosts, svc.Host) {
@@ -253,6 +274,7 @@ func Synthesize(in Input) (*Result, error) {
 		return nil, ErrEndpointBrownfield
 	}
 
+<<<<<<< HEAD
 	includeAcr, err := deriveIncludeAcr(
 		root.Services,
 		svc,
@@ -261,6 +283,9 @@ func Synthesize(in Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+=======
+	includeAcr := deriveIncludeAcr(root.Services, svc, in.ProjectRoot)
+>>>>>>> origin/main
 
 	deployments := svc.Deployments
 	if deployments == nil {
@@ -269,23 +294,35 @@ func Synthesize(in Input) (*Result, error) {
 
 	connections, err := collectConnections(
 		root.Services,
+<<<<<<< HEAD
 		in.ProjectRoot,
 		in.Env,
 		!in.PreserveVarRefs,
+=======
+		in.Env,
+		!in.PreserveVarRefs,
+		in.ProjectRoot,
+>>>>>>> origin/main
 	)
 	if err != nil {
 		return nil, err
 	}
-
+	connections, connectionCredentials := SplitConnectionCredentials(connections)
 	netParams, netMode, err := synthesizeNetwork(svc.Network, in.ServiceName, in.Env, !in.PreserveVarRefs)
 	if err != nil {
 		return nil, err
 	}
+	if includeAcr && netMode != NetworkModeNone {
+		return nil, errors.New(
+			"synthesis: private networking does not support an auto-created Azure Container Registry; specify an image instead",
+		)
+	}
 
 	params := map[string]any{
-		"deployments": deployments,
-		"includeAcr":  includeAcr,
-		"connections": connections,
+		"deployments":           deployments,
+		"includeAcr":            includeAcr,
+		"connections":           connections,
+		"connectionCredentials": connectionCredentials,
 	}
 	maps.Copy(params, netParams)
 
@@ -302,8 +339,13 @@ func Synthesize(in Input) (*Result, error) {
 // nil (not an error) when the service declares no deployments.
 func BrownfieldDeployments(
 	raw []byte,
+<<<<<<< HEAD
 	projectRoot string,
 	serviceName string,
+=======
+	serviceName string,
+	projectRoot string,
+>>>>>>> origin/main
 ) ([]Deployment, error) {
 	if len(raw) == 0 {
 		return nil, errors.New("synthesis: raw azure.yaml is empty")
@@ -317,6 +359,7 @@ func BrownfieldDeployments(
 		return nil, fmt.Errorf("parse azure.yaml: %w", err)
 	}
 
+<<<<<<< HEAD
 	node, ok := root.Services[serviceName]
 	if !ok {
 		return nil, ErrServiceNotFound
@@ -336,6 +379,11 @@ func BrownfieldDeployments(
 	var svc projectService
 	if err := node.Decode(&svc); err != nil {
 		return nil, fmt.Errorf("decode service %q: %w", serviceName, err)
+=======
+	svc, err := loadProjectService(root.Services, serviceName, projectRoot)
+	if err != nil {
+		return nil, err
+>>>>>>> origin/main
 	}
 
 	return svc.Deployments, nil
@@ -350,8 +398,13 @@ func BrownfieldDeployments(
 // are declared.
 func BrownfieldConnections(
 	raw []byte,
+<<<<<<< HEAD
 	projectRoot string,
 	env map[string]string,
+=======
+	env map[string]string,
+	projectRoot string,
+>>>>>>> origin/main
 ) ([]Connection, error) {
 	if len(raw) == 0 {
 		return nil, errors.New("synthesis: raw azure.yaml is empty")
@@ -362,7 +415,59 @@ func BrownfieldConnections(
 		return nil, fmt.Errorf("parse azure.yaml: %w", err)
 	}
 
+<<<<<<< HEAD
 	return collectConnections(root.Services, projectRoot, env, true)
+=======
+	return collectConnections(root.Services, env, true, projectRoot)
+}
+
+// ProjectEndpoint returns the endpoint configured on a Foundry project service.
+// It resolves $ref includes before decoding the service body.
+func ProjectEndpoint(
+	raw []byte,
+	serviceName string,
+	projectRoot string,
+) (string, error) {
+	if len(raw) == 0 {
+		return "", errors.New("synthesis: raw azure.yaml is empty")
+	}
+
+	var root projectFile
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return "", fmt.Errorf("parse azure.yaml: %w", err)
+	}
+
+	svc, err := loadProjectService(root.Services, serviceName, projectRoot)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(svc.Endpoint), nil
+}
+
+// loadProjectService decodes a service after resolving any local $ref includes.
+func loadProjectService(
+	services map[string]yaml.Node,
+	serviceName string,
+	projectRoot string,
+) (projectService, error) {
+	node, ok := services[serviceName]
+	if !ok {
+		return projectService{}, ErrServiceNotFound
+	}
+	if projectRoot != "" {
+		var err error
+		node, err = resolveServiceRefs(node, projectRoot, serviceName)
+		if err != nil {
+			return projectService{}, err
+		}
+	}
+
+	var svc projectService
+	if err := node.Decode(&svc); err != nil {
+		return projectService{}, fmt.Errorf("decode service %q: %w", serviceName, err)
+	}
+	return svc, nil
+>>>>>>> origin/main
 }
 
 // resolveServiceRefs expands $ref file includes in one service entry. It decodes
@@ -500,11 +605,16 @@ func deriveIncludeAcr(
 	services map[string]yaml.Node,
 	svc projectService,
 	projectRoot string,
+<<<<<<< HEAD
 ) (bool, error) {
+=======
+) bool {
+>>>>>>> origin/main
 	if slices.ContainsFunc(svc.Agents, agentNeedsAcr) {
 		return true, nil
 	}
 
+<<<<<<< HEAD
 	for serviceName, node := range services {
 		var matches bool
 		var err error
@@ -519,6 +629,15 @@ func deriveIncludeAcr(
 		}
 		if !matches {
 			continue
+=======
+	for name, node := range services {
+		if projectRoot != "" {
+			var err error
+			node, err = resolveServiceRefs(node, projectRoot, name)
+			if err != nil {
+				continue
+			}
+>>>>>>> origin/main
 		}
 		var service serviceBlock
 		if err := node.Decode(&service); err != nil {
@@ -578,10 +697,12 @@ func collectConnections(
 	projectRoot string,
 	env map[string]string,
 	resolve bool,
+	projectRoot string,
 ) ([]Connection, error) {
 	connections := []Connection{}
 
 	for name, node := range services {
+<<<<<<< HEAD
 		var matches bool
 		var err error
 		node, matches, err = serviceForHost(
@@ -592,6 +713,17 @@ func collectConnections(
 		)
 		if err != nil {
 			return nil, err
+=======
+		if projectRoot != "" {
+			var err error
+			node, err = resolveServiceRefs(node, projectRoot, name)
+			if err != nil {
+				return nil, err
+			}
+		}
+		var host struct {
+			Host string `yaml:"host"`
+>>>>>>> origin/main
 		}
 		if !matches {
 			continue

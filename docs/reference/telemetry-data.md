@@ -345,7 +345,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `infra.provider` | string | `bicep`, `terraform`, `auto` |
+| `infra.provider` | string or string[] | provision/up/down: sorted, de-duplicated string slice of resolved providers — `bicep`/`terraform`/`arm`/`pulumi`, or `custom` (extension providers; raw name not emitted); multi-layer projects record each distinct value (e.g. `["bicep","terraform"]`). generate/synth: the value read from azure.yaml's `infra.provider` as a single string (`bicep`/`terraform`/`arm`/`pulumi`, `auto` when unset, or `custom` for extension providers; raw name not emitted) |
 </details>
 
 <details>
@@ -395,7 +395,7 @@ Emitted on `azd provision` / `azd up` to measure adoption and safety of `infra.l
 <details>
 <summary><strong>Foundry Private Networking</strong></summary>
 
-Emitted at provision start by the `microsoft.foundry` provisioning provider (the `azure.ai.agents` extension) to measure secured-agent adoption and the BYO-vs-managed split.
+Emitted at provision start by the `microsoft.foundry` provisioning provider (the `azure.ai.projects` extension) to measure secured-agent adoption and the BYO-vs-managed split.
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
@@ -593,6 +593,20 @@ The `execution.environment` field identifies where azd is running. Format: `<env
 
 Important things to know when working with azd telemetry data. These are sourced from real investigations and issues.
 
+### `infra.provider` Is Multi-Valued and Type-Polymorphic (by design)
+
+`infra.provider` is intentionally emitted with different shapes depending on the command, so consumers must handle both:
+
+- **`provision` / `up` / `down`** emit a **string array** — the sorted, de-duplicated set of IaC providers the command's layers resolve to (e.g. `["bicep"]`, or `["bicep","terraform"]` for a multi-layer project that mixes providers). This deliberately replaces an earlier single `"mixed"` marker so the specific combination is preserved while staying low-cardinality (built-in provider names are a fixed enum). The deprecated wrappers `infra create` (delegates to `provision`) and `infra delete` (delegates to `down`) emit the same array on their `cmd.infra.create` / `cmd.infra.delete` spans.
+- **`infra generate` / `infra synth`** emit a **single string** — the value read from `azure.yaml`'s `infra.provider` (`auto` when unset), with non-built-in (extension) providers bucketed to `custom` so a raw user-chosen name is never emitted.
+
+Two consequences to be aware of:
+
+- The same key is a scalar `string` on some commands and a `string[]` on others. Queries must accept both (e.g. treat a scalar as a one-element set).
+- Non-built-in (extension) providers are bucketed to `custom` **before** de-duplication, so a project that combines two *different* extension providers records a single `["custom"]` — the raw names are never emitted and the two are not distinguished.
+
+In all cases the value is attached **directly to that command's span** (not the process-global usage bag), so it is scoped to `cmd.provision` / `cmd.up` / `cmd.down` / `cmd.infra.generate` (and the deprecated wrappers `cmd.infra.create` / `cmd.infra.delete`) only (both `infra generate` and its `synth` alias resolve to the canonical `cmd.infra.generate` span). It is never copied onto sibling in-process child commands — for example, a custom `workflows.up` running `provision` then `deploy` does **not** tag `cmd.deploy` or `cmd.package` with `infra.provider`.
+
 ### OperationId Reuse in Retry/Troubleshoot Flows
 
 When `cmd.up` triggers `agent.troubleshoot` after a failure, the troubleshoot agent may retry the failed operation (e.g., `cmd.deploy`). These retries share the **same OperationId** as the parent `cmd.up` span.
@@ -678,7 +692,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Container Apps (Aspire)** | `cmd.deploy`, `cmd.provision` | `project.service.targets` = `containerapp-dotnet`, `platform.type` = `aca` | Aspire-specific adoption and success |
 | **Language Support** | `cmd.deploy`, `cmd.package`, `cmd.restore` | `project.service.languages`, `project.service.language` | Usage by language |
 | **Templates** | `cmd.init`, `cmd.up` | `project.template.id` (hashed — join with template lookup to resolve) | Template adoption, success by template |
-| **Provisioning (IaC)** | `cmd.provision`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`, `terraform`) | Provision success, ARM errors, duration |
+| **Provisioning (IaC)** | `cmd.provision`, `cmd.up`, `cmd.down`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`/`terraform`/`arm`/`pulumi`/custom; slice of each distinct provider for multi-layer projects) | Provision success, ARM errors, duration |
 | **Authentication** | `cmd.auth.login` | `auth.method` | Auth method usage, failure rates |
 | **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
 | **Extensions** | `ext.run`, `ext.install`, `ext.upgrade` | `extension.id`, `extension.version`, `extension.installed` | Extension adoption, errors |

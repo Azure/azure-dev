@@ -348,6 +348,7 @@ func reserveServiceName(used map[string]string, name, source string) error {
 	return nil
 }
 
+<<<<<<< HEAD
 // collectProjectDeployments gathers the model deployments declared across all
 // azure.ai.project services so provisioning handlers can source them from the
 // sibling project service instead of the agent service config. Services are
@@ -390,9 +391,25 @@ func collectProjectDeployments(
 		services,
 		projectRoot,
 	)
+=======
+// collectLegacyProjectDeployments reads only pre-split agent config.
+// A split project disables this compatibility path because projects
+// owns that service's runtime projection.
+func collectLegacyProjectDeployments(
+	services map[string]*azdext.ServiceConfig,
+) ([]project.Deployment, error) {
+	for _, svc := range services {
+		if svc.GetHost() == AiProjectHost {
+			return nil, nil
+		}
+	}
+
+	legacy, err := collectLegacyAgentConfigs(services)
+>>>>>>> origin/main
 	if err != nil {
 		return nil, err
 	}
+	var out []project.Deployment
 	for _, cfg := range legacy {
 		out = append(out, cfg.Deployments...)
 	}

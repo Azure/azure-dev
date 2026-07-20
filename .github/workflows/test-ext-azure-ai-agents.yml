@@ -5,6 +5,7 @@ on:
     paths:
       - "cli/azd/extensions/azure.ai.agents/**"
       - "cli/azd/extensions/azure.ai.inspector/**"
+      - "cli/azd/extensions/azure.ai.projects/**"
       - "cli/azd/test/functional/ai_agents/**"
       - ".github/workflows/test-ext-azure-ai-agents.yml"
     branches: [main]
@@ -121,6 +122,20 @@ jobs:
           azd x publish
           azd extension install azure.ai.inspector --source local --force --no-prompt
 
+      - name: Build & install projects dependency from source
+        working-directory: cli/azd/extensions/azure.ai.projects
+        run: |
+          pwsh -File ci-build.ps1 -OutputFileName azure-ai-projects-linux-amd64 -Version "$(cat version.txt | tr -d '\r\n')"
+          mkdir -p bin
+          mv azure-ai-projects-linux-amd64 bin/
+          azd x pack
+          azd x publish
+          azd extension install azure.ai.projects --source local --force --no-prompt
+
+      - name: Run projects unit tests
+        working-directory: cli/azd/extensions/azure.ai.projects
+        run: go test ./... -count=1
+
       - name: Build extension (ci-build.ps1)
         working-directory: cli/azd/extensions/azure.ai.agents
         run: |
@@ -137,7 +152,7 @@ jobs:
         run: |
           azd x pack
           azd x publish
-          azd extension install azure.ai.agents --source local --force --no-prompt
+          azd extension install azure.ai.agents --source local --force --no-dependencies --no-prompt
 
       - name: Run Tier 0 tests (offline, production extension)
         working-directory: cli/azd

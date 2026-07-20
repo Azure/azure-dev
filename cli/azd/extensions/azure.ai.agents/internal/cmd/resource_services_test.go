@@ -91,9 +91,9 @@ func TestReserveServiceName(t *testing.T) {
 	assert.Contains(t, err.Error(), "agent service")
 }
 
-// TestCollectProjectDeployments verifies deployments are sourced only from
-// azure.ai.project services and ignore sibling hosts.
-func TestCollectProjectDeployments(t *testing.T) {
+func TestCollectLegacyProjectDeploymentsIgnoresSplitProject(
+	t *testing.T,
+) {
 	t.Parallel()
 
 	dep := project.Deployment{Name: "gpt-4o", Model: project.DeploymentModel{Name: "gpt-4o"}}
@@ -103,10 +103,13 @@ func TestCollectProjectDeployments(t *testing.T) {
 		"conn":       connectionService(t, "conn", project.Connection{Name: "conn"}),
 	}
 
+<<<<<<< HEAD
 	deployments, err := collectProjectDeployments(services, "")
+=======
+	deployments, err := collectLegacyProjectDeployments(services)
+>>>>>>> origin/main
 	require.NoError(t, err)
-	require.Len(t, deployments, 1)
-	assert.Equal(t, "gpt-4o", deployments[0].Name)
+	assert.Empty(t, deployments)
 }
 
 // TestCollectConnections verifies connections are sourced from
@@ -237,7 +240,11 @@ func TestCollectHelpers_EmptyAndNilConfigs(t *testing.T) {
 		"nilcfg": {Name: "nilcfg", Host: AiProjectHost},
 	}
 
+<<<<<<< HEAD
 	deployments, err := collectProjectDeployments(services, "")
+=======
+	deployments, err := collectLegacyProjectDeployments(services)
+>>>>>>> origin/main
 	require.NoError(t, err)
 	assert.Empty(t, deployments)
 
@@ -267,7 +274,11 @@ func TestCollect_FallbackToBundledAgentConfig(t *testing.T) {
 	svc.Host = AiAgentHost
 	services := map[string]*azdext.ServiceConfig{"my-agent": svc}
 
+<<<<<<< HEAD
 	deployments, err := collectProjectDeployments(services, "")
+=======
+	deployments, err := collectLegacyProjectDeployments(services)
+>>>>>>> origin/main
 	require.NoError(t, err)
 	require.Len(t, deployments, 1)
 	assert.Equal(t, "gpt-4o", deployments[0].Name)
@@ -283,10 +294,9 @@ func TestCollect_FallbackToBundledAgentConfig(t *testing.T) {
 	assert.Equal(t, "tb", toolboxes[0].Name)
 }
 
-// TestCollectProjectDeployments_SiblingWinsOverBundled verifies the sibling
-// azure.ai.project service takes precedence: the fallback to bundled agent
-// deployments only applies when no project service carries any.
-func TestCollectProjectDeployments_SiblingWinsOverBundled(t *testing.T) {
+func TestCollectLegacyProjectDeploymentsSplitDisablesFallback(
+	t *testing.T,
+) {
 	t.Parallel()
 
 	bundled := &project.ServiceTargetAgentConfig{
@@ -303,10 +313,13 @@ func TestCollectProjectDeployments_SiblingWinsOverBundled(t *testing.T) {
 		),
 	}
 
+<<<<<<< HEAD
 	deployments, err := collectProjectDeployments(services, "")
+=======
+	deployments, err := collectLegacyProjectDeployments(services)
+>>>>>>> origin/main
 	require.NoError(t, err)
-	require.Len(t, deployments, 1)
-	assert.Equal(t, "gpt-4o", deployments[0].Name)
+	assert.Empty(t, deployments)
 }
 
 // recordingProjectServer captures the AddService and SetServiceConfigValue
@@ -496,11 +509,20 @@ func TestEmitResourceServices_WritesServiceLevelProps(t *testing.T) {
 		services[svc.Name] = svc
 	}
 
+<<<<<<< HEAD
 	// The collectors read the service-level shape back through ServiceConfigProps.
 	gotDeployments, err := collectProjectDeployments(services, "")
+=======
+	// Init must write a project shape the owning extension can parse.
+	var projectCfg project.ServiceTargetAgentConfig
+	err := project.UnmarshalStruct(
+		project.ServiceConfigProps(services["ai-project"]),
+		&projectCfg,
+	)
+>>>>>>> origin/main
 	require.NoError(t, err)
-	require.Len(t, gotDeployments, 1)
-	assert.Equal(t, "gpt-4.1-mini", gotDeployments[0].Name)
+	require.Len(t, projectCfg.Deployments, 1)
+	assert.Equal(t, "gpt-4.1-mini", projectCfg.Deployments[0].Name)
 
 	gotConns, err := collectConnections(services, "")
 	require.NoError(t, err)

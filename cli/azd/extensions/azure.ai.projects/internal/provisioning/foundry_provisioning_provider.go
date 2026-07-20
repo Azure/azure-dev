@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package project
+package provisioning
 
 import (
 	"context"
@@ -17,9 +17,14 @@ import (
 	"strings"
 	"time"
 
+<<<<<<< HEAD:cli/azd/extensions/azure.ai.agents/internal/project/foundry_provisioning_provider.go
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/projectconfig"
 	"azureaiagent/internal/synthesis"
+=======
+	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/synthesis"
+>>>>>>> origin/main:cli/azd/extensions/azure.ai.projects/internal/provisioning/foundry_provisioning_provider.go
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -157,6 +162,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 			"skipping synthesizer", filepath.Join(projectPath, onDiskInfraDir))
 		// endpoint: (brownfield) reuse skips provisioning even on the on-disk
 		// path; connect to the existing project instead of compiling Bicep.
+<<<<<<< HEAD:cli/azd/extensions/azure.ai.agents/internal/project/foundry_provisioning_provider.go
 		endpoint, endpointErr := foundryServiceEndpointAtRoot(
 			rawYAML,
 			projectPath,
@@ -184,6 +190,24 @@ func (p *FoundryProvisioningProvider) Initialize(
 					"fix the project service configuration in azure.yaml",
 				)
 			}
+=======
+		if endpoint, err := synthesis.ProjectEndpoint(
+			rawYAML,
+			svcName,
+			projectPath,
+		); err != nil {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAzureYaml,
+				fmt.Sprintf(
+					"read endpoint for Foundry project service %q: %s",
+					svcName,
+					err,
+				),
+				"check the endpoint field under your azure.ai.project service",
+			)
+		} else if endpoint != "" {
+			warnNetworkIgnoredInBrownfield(rawYAML, svcName)
+>>>>>>> origin/main:cli/azd/extensions/azure.ai.projects/internal/provisioning/foundry_provisioning_provider.go
 			p.brownfieldEndpoint = endpoint
 			if err := p.captureBrownfieldDeployments(ctx, rawYAML, svcName); err != nil {
 				return err
@@ -204,6 +228,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 	case errors.Is(err, synthesis.ErrEndpointBrownfield):
 		// endpoint: reuse — connect to the existing project, skip provisioning.
 		// network: has no effect in brownfield mode; warn if both are present.
+<<<<<<< HEAD:cli/azd/extensions/azure.ai.agents/internal/project/foundry_provisioning_provider.go
 		if err := warnNetworkIgnoredInBrownfield(
 			rawYAML,
 			projectPath,
@@ -219,15 +244,30 @@ func (p *FoundryProvisioningProvider) Initialize(
 			rawYAML,
 			projectPath,
 			svcName,
+=======
+		warnNetworkIgnoredInBrownfield(rawYAML, svcName)
+		endpoint, endpointErr := synthesis.ProjectEndpoint(
+			rawYAML,
+			svcName,
+			projectPath,
+>>>>>>> origin/main:cli/azd/extensions/azure.ai.projects/internal/provisioning/foundry_provisioning_provider.go
 		)
 		if endpointErr != nil {
 			return exterrors.Validation(
 				exterrors.CodeInvalidAzureYaml,
 				fmt.Sprintf(
+<<<<<<< HEAD:cli/azd/extensions/azure.ai.agents/internal/project/foundry_provisioning_provider.go
 					"resolve existing Foundry project endpoint: %s",
 					endpointErr,
 				),
 				"fix the project service configuration in azure.yaml",
+=======
+					"read endpoint for Foundry project service %q: %s",
+					svcName,
+					endpointErr,
+				),
+				"check the endpoint field under your azure.ai.project service",
+>>>>>>> origin/main:cli/azd/extensions/azure.ai.projects/internal/provisioning/foundry_provisioning_provider.go
 			)
 		}
 		p.brownfieldEndpoint = endpoint
@@ -805,8 +845,13 @@ func (p *FoundryProvisioningProvider) captureBrownfieldDeployments(
 ) error {
 	deployments, err := synthesis.BrownfieldDeployments(
 		rawYAML,
+<<<<<<< HEAD:cli/azd/extensions/azure.ai.agents/internal/project/foundry_provisioning_provider.go
 		p.projectPath,
 		svcName,
+=======
+		svcName,
+		p.projectPath,
+>>>>>>> origin/main:cli/azd/extensions/azure.ai.projects/internal/provisioning/foundry_provisioning_provider.go
 	)
 	if err != nil {
 		return exterrors.Validation(
@@ -819,8 +864,13 @@ func (p *FoundryProvisioningProvider) captureBrownfieldDeployments(
 
 	connections, err := synthesis.BrownfieldConnections(
 		rawYAML,
+<<<<<<< HEAD:cli/azd/extensions/azure.ai.agents/internal/project/foundry_provisioning_provider.go
 		p.projectPath,
 		p.networkEnvMap(ctx),
+=======
+		p.networkEnvMap(ctx),
+		p.projectPath,
+>>>>>>> origin/main:cli/azd/extensions/azure.ai.projects/internal/provisioning/foundry_provisioning_provider.go
 	)
 	if err != nil {
 		return exterrors.Validation(
@@ -874,11 +924,15 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 	if err != nil {
 		return nil, err
 	}
+	params, err := p.brownfieldParams(ctx, account, rg, createACR)
+	if err != nil {
+		return nil, err
+	}
 
 	dep := armresources.Deployment{
 		Properties: &armresources.DeploymentProperties{
 			Template:   tmpl,
-			Parameters: p.brownfieldParams(ctx, account, rg, createACR),
+			Parameters: params,
 			Mode:       new(armresources.DeploymentModeIncremental),
 		},
 		Tags: map[string]*string{
@@ -945,11 +999,15 @@ func brownfieldReconcileMessage(hasDeployments, createACR, hasConnections bool) 
 // by the Deploy and Preview paths. ACR params are added only when createACR.
 func (p *FoundryProvisioningProvider) brownfieldParams(
 	ctx context.Context, account, rg string, createACR bool,
-) map[string]any {
+) (map[string]any, error) {
+	connections, connectionCredentials := synthesis.SplitConnectionCredentials(
+		p.brownfieldConnections,
+	)
 	params := map[string]any{
-		"accountName": map[string]any{"value": account},
-		"deployments": map[string]any{"value": p.brownfieldDeployments},
-		"connections": map[string]any{"value": p.brownfieldConnections},
+		"accountName":           map[string]any{"value": account},
+		"deployments":           map[string]any{"value": p.brownfieldDeployments},
+		"connections":           map[string]any{"value": connections},
+		"connectionCredentials": map[string]any{"value": connectionCredentials},
 		// projectName feeds the unconditional existing `foundryAccountPreview::project`
 		// resource, so it must always be set -- even on the model-deployments-only
 		// reconcile path. Omitting it collapses the resource name to "<account>/"
@@ -966,7 +1024,7 @@ func (p *FoundryProvisioningProvider) brownfieldParams(
 			params["location"] = map[string]any{"value": loc}
 		}
 	}
-	return params
+	return params, nil
 }
 
 // previewBrownfield runs a resource-group-scoped what-if on brownfield.arm.json
@@ -995,6 +1053,10 @@ func (p *FoundryProvisioningProvider) previewBrownfield(
 	if err != nil {
 		return nil, err
 	}
+	params, err := p.brownfieldParams(ctx, account, rg, createACR)
+	if err != nil {
+		return nil, err
+	}
 
 	client, err := p.deploymentsClient(ctx)
 	if err != nil {
@@ -1004,7 +1066,7 @@ func (p *FoundryProvisioningProvider) previewBrownfield(
 	whatIf := armresources.DeploymentWhatIf{
 		Properties: &armresources.DeploymentWhatIfProperties{
 			Template:   tmpl,
-			Parameters: p.brownfieldParams(ctx, account, rg, createACR),
+			Parameters: params,
 			Mode:       new(armresources.DeploymentModeIncremental),
 		},
 	}

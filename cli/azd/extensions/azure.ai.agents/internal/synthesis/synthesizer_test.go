@@ -532,8 +532,7 @@ services:
 			require.True(t, ok, "includeAcr param should be bool")
 			assert.Equal(t, tt.wantIncludeAcr, includeAcr)
 
-			connections, ok := res.Parameters["connections"].([]Connection)
-			require.True(t, ok, "connections param should be []Connection, got %T", res.Parameters["connections"])
+			connections := resultConnections(t, res)
 			if tt.wantConnectionNames != nil {
 				gotNames := make([]string, len(connections))
 				for i, c := range connections {
@@ -572,8 +571,7 @@ services:
 
 	getConn := func(t *testing.T, res *Result) Connection {
 		t.Helper()
-		conns, ok := res.Parameters["connections"].([]Connection)
-		require.True(t, ok)
+		conns := resultConnections(t, res)
 		require.Len(t, conns, 1)
 		return conns[0]
 	}
@@ -593,6 +591,11 @@ services:
 		require.True(t, ok, "keys should be a nested map, got %T", c.Credentials["keys"])
 		assert.Equal(t, "secret-value", keys["x-api-key"])
 		assert.Equal(t, "team-ai", c.Metadata["owner"])
+
+		publicConnections := res.Parameters["connections"].([]Connection)
+		assert.Nil(t, publicConnections[0].Credentials)
+		secureCredentials := res.Parameters["connectionCredentials"].(map[string]map[string]any)
+		assert.Equal(t, "secret-value", secureCredentials["mcp-conn"]["keys"].(map[string]any)["x-api-key"])
 	})
 
 	t.Run("eject path preserves ${VAR} verbatim", func(t *testing.T) {
@@ -661,6 +664,7 @@ services:
 	})
 }
 
+<<<<<<< HEAD
 func TestSynthesizeConnectionsAtRootResolvesFileRef(t *testing.T) {
 	t.Parallel()
 
@@ -700,6 +704,16 @@ credentials:
 	assert.Equal(t, "CognitiveSearch", connections[0].Category)
 	assert.Equal(t, "https://search.example", connections[0].Target)
 	assert.Equal(t, "secret", connections[0].Credentials["key"])
+=======
+func resultConnections(t *testing.T, result *Result) []Connection {
+	t.Helper()
+
+	connections, ok := result.Parameters["connections"].([]Connection)
+	require.True(t, ok, "connections param should be []Connection")
+	credentials, ok := result.Parameters["connectionCredentials"].(map[string]map[string]any)
+	require.True(t, ok, "connectionCredentials param should be a credential map")
+	return JoinConnectionCredentials(connections, credentials)
+>>>>>>> origin/main
 }
 
 // TestBrownfieldConnections verifies connection services are collected for a
@@ -730,8 +744,13 @@ services:
 	t.Run("collects and resolves connections (sorted)", func(t *testing.T) {
 		conns, err := BrownfieldConnections(
 			[]byte(yaml),
+<<<<<<< HEAD
 			"",
 			map[string]string{"SEARCH_API_KEY": "secret"},
+=======
+			map[string]string{"SEARCH_API_KEY": "secret"},
+			"",
+>>>>>>> origin/main
 		)
 		require.NoError(t, err)
 		require.Len(t, conns, 2)
@@ -748,13 +767,21 @@ services:
     host: azure.ai.project
     endpoint: https://existing.services.ai.azure.com/api/projects/p1
 `
+<<<<<<< HEAD
 		conns, err := BrownfieldConnections([]byte(noConns), "", nil)
+=======
+		conns, err := BrownfieldConnections([]byte(noConns), nil, "")
+>>>>>>> origin/main
 		require.NoError(t, err)
 		assert.Empty(t, conns)
 	})
 
 	t.Run("empty raw errors", func(t *testing.T) {
+<<<<<<< HEAD
 		_, err := BrownfieldConnections(nil, "", nil)
+=======
+		_, err := BrownfieldConnections(nil, nil, "")
+>>>>>>> origin/main
 		require.Error(t, err)
 	})
 
@@ -873,11 +900,15 @@ services:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+<<<<<<< HEAD
 			got, err := BrownfieldDeployments(
 				[]byte(tt.yaml),
 				"",
 				tt.serviceName,
 			)
+=======
+			got, err := BrownfieldDeployments([]byte(tt.yaml), tt.serviceName, "")
+>>>>>>> origin/main
 
 			if tt.serviceName == "" {
 				require.Error(t, err)
@@ -904,7 +935,11 @@ services:
 }
 
 func TestBrownfieldDeployments_EmptyRaw(t *testing.T) {
+<<<<<<< HEAD
 	_, err := BrownfieldDeployments(nil, "", "my-project")
+=======
+	_, err := BrownfieldDeployments(nil, "my-project", "")
+>>>>>>> origin/main
 	require.Error(t, err)
 }
 
@@ -1190,6 +1225,7 @@ func TestTemplatesFS_Embedded(t *testing.T) {
 		"templates/main.arm.json",
 		"templates/abbreviations.json",
 		"templates/modules/acr.bicep",
+		"templates/modules/acr-pull-role-assignment.bicep",
 		"templates/modules/connections.bicep",
 		"templates/modules/network.bicep",
 		"templates/modules/subnet.bicep",
@@ -1514,6 +1550,28 @@ services:
 			}
 		})
 	}
+}
+
+func TestSynthesize_RejectsAutoCreatedAcrWithPrivateNetworking(t *testing.T) {
+	const validVNet = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/" +
+		"providers/Microsoft.Network/virtualNetworks/my-vnet"
+	const yaml = `
+services:
+  assistant:
+    host: azure.ai.agent
+    kind: hosted
+  my-project:
+    host: azure.ai.project
+    network:
+      peSubnet: {vnet: ` + validVNet + `, name: pe-subnet}
+`
+
+	_, err := Synthesize(Input{
+		RawAzureYAML:  []byte(yaml),
+		ServiceName:   "my-project",
+		AcceptedHosts: []string{"azure.ai.project"},
+	})
+	require.ErrorContains(t, err, "does not support an auto-created Azure Container Registry")
 }
 
 func TestSynthesize_NetworkValidationErrors(t *testing.T) {

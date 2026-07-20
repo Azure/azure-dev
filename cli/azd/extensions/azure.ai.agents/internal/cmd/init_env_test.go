@@ -63,6 +63,11 @@ services:
         value: ${DEFAULTED:-fallback}
       - name: FOUNDRY
         value: ${{connections.search.credentials.key}}
+      - name: MULTILINE_FOUNDRY
+        value: |
+         ${{ event.body
+           ?? '${FOUNDRY_INNER_VALUE}'
+         }}
       - name: ESCAPED
         value: $${ESCAPED}
       - name: EXPANDED_AFTER_LITERAL_DOLLAR
@@ -126,7 +131,7 @@ services:
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := findAzureYamlEnvironmentReferences([]byte(tt.content))
+			got, err := findAzureYamlEnvironmentReferences([]byte(tt.content), ".")
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -136,6 +141,54 @@ services:
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestConfigureAzureYamlEnvironmentVariables_ResolvesServiceRefs(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(projectDir, "services"), 0700))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectDir, "services", "connection.yaml"),
+		[]byte(`credentials:
+  key: ${REFERENCED_API_TOKEN}
+metadata:
+  resourceId: ${OVERRIDDEN_RESOURCE_ID}
+`),
+		0600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectDir, "azure.yaml"),
+		[]byte(`name: sample
+services:
+  connection:
+    host: azure.ai.connection
+    $ref: ./services/connection.yaml
+    metadata:
+      resourceId: ${ROOT_RESOURCE_ID}
+`),
+		0600,
+	))
+
+	envServer := &testEnvironmentServiceServer{}
+	promptServer := &testPromptServiceServer{
+		promptResponses: []string{"api-token", "resource-id"},
+	}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{}, promptServer)
+
+	err := configureAzureYamlEnvironmentVariables(
+		t.Context(),
+		azdClient,
+		"dev",
+		projectDir,
+		false,
+	)
+	require.NoError(t, err)
+	require.Equal(t, "api-token", envServer.values["dev"]["REFERENCED_API_TOKEN"])
+	require.Equal(t, "resource-id", envServer.values["dev"]["ROOT_RESOURCE_ID"])
+	require.NotContains(t, envServer.values["dev"], "OVERRIDDEN_RESOURCE_ID")
+	require.Len(t, promptServer.promptRequests, 2)
+	require.True(t, promptServer.promptRequests[0].Options.Secret)
 }
 
 func TestConfigureAzureYamlEnvironmentVariables_PromptsAndPersistsMissingValues(t *testing.T) {

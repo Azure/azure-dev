@@ -15,6 +15,7 @@ import (
 	"azureaiagent/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"gopkg.in/yaml.v3"
 )
 
@@ -22,6 +23,8 @@ import (
 // fallback. Group 2 is non-empty for ${VAR:-default}, which does not require an
 // environment value because the runtime expander supplies the fallback.
 var azureYamlEnvRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-[^}]*)?\}`)
+
+var foundryTemplateSpanPattern = regexp.MustCompile(`(?s)\$\{\{.*?\}\}`)
 
 type azureYamlEnvironmentReference struct {
 	Name   string
@@ -49,7 +52,7 @@ func configureAzureYamlEnvironmentVariables(
 		return fmt.Errorf("reading adopted azure.yaml: %w", err)
 	}
 
-	references, err := findAzureYamlEnvironmentReferences(content)
+	references, err := findAzureYamlEnvironmentReferences(content, projectDir)
 	if err != nil {
 		return fmt.Errorf("finding environment variable references in azure.yaml: %w", err)
 	}
@@ -113,7 +116,7 @@ func configureAzureYamlEnvironmentVariables(
 	return nil
 }
 
-func findAzureYamlEnvironmentReferences(content []byte) ([]azureYamlEnvironmentReference, error) {
+func findAzureYamlEnvironmentReferences(content []byte, projectDir string) ([]azureYamlEnvironmentReference, error) {
 	var document yaml.Node
 	if err := yaml.Unmarshal(content, &document); err != nil {
 		return nil, fmt.Errorf("parsing azure.yaml: %w", err)
@@ -137,8 +140,21 @@ func findAzureYamlEnvironmentReferences(content []byte) ([]azureYamlEnvironmentR
 			continue
 		}
 
+		var raw map[string]any
+		if err := service.Decode(&raw); err != nil {
+			return nil, fmt.Errorf("decoding service %q: %w", serviceName, err)
+		}
+		resolved, err := foundry.ResolveFileRefs(raw, projectDir)
+		if err != nil {
+			return nil, fmt.Errorf("resolving $ref includes for service %q: %w", serviceName, err)
+		}
+		var resolvedService yaml.Node
+		if err := resolvedService.Encode(resolved); err != nil {
+			return nil, fmt.Errorf("encoding resolved service %q: %w", serviceName, err)
+		}
+
 		collectAzureYamlEnvironmentReferences(
-			service,
+			&resolvedService,
 			[]string{"services", serviceName},
 			&references,
 			indexByName,
@@ -198,15 +214,18 @@ func collectAzureYamlEnvironmentReferences(
 	case yaml.AliasNode:
 		collectAzureYamlEnvironmentReferences(node.Alias, path, references, indexByName)
 	case yaml.ScalarNode:
-		for _, match := range azureYamlEnvRefPattern.FindAllStringSubmatchIndex(node.Value, -1) {
-			if isEscapedAzureYamlEnvironmentReference(node.Value, match[0]) {
+		value := foundryTemplateSpanPattern.ReplaceAllStringFunc(node.Value, func(span string) string {
+			return strings.Repeat(" ", len(span))
+		})
+		for _, match := range azureYamlEnvRefPattern.FindAllStringSubmatchIndex(value, -1) {
+			if isEscapedAzureYamlEnvironmentReference(value, match[0]) {
 				continue
 			}
 			if match[4] != -1 {
 				continue
 			}
 
-			name := node.Value[match[2]:match[3]]
+			name := value[match[2]:match[3]]
 			secret := isSecretAzureYamlEnvironmentReference(path, name)
 			if index, ok := indexByName[name]; ok {
 				if secret {

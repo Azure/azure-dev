@@ -981,6 +981,17 @@ func runInitFromAzureYaml(
 		}
 	}
 
+	// scaffoldProject changes the extension process into the adopted project root.
+	if err := configureAzureYamlEnvironmentVariables(
+		ctx,
+		azdClient,
+		env.Name,
+		".",
+		flags.noPrompt,
+	); err != nil {
+		return err
+	}
+
 	fmt.Printf(
 		"\nAdopted the sample's azure.yaml as the project manifest at %s.\n",
 		output.WithHighLightFormat("azure.yaml"),

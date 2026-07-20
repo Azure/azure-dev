@@ -852,6 +852,35 @@ func TestAssembleState_PopulatesProtocolFromInlineAdditionalProperties(t *testin
 	assert.Equal(t, ProtocolInvocationsWS, state.Services[0].Protocol)
 }
 
+func TestAssembleState_MarksInlineMultiProtocolService(t *testing.T) {
+	t.Parallel()
+
+	config, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"protocols": []any{
+			map[string]any{"protocol": "invocations_ws", "version": "2.0.0"},
+			map[string]any{"protocol": "responses", "version": "2.0.0"},
+		},
+	})
+	require.NoError(t, err)
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, AdditionalProperties: config},
+			},
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+	require.Empty(t, errs)
+	require.Len(t, state.Services, 1)
+	assert.Equal(t, ProtocolResponses, state.Services[0].Protocol)
+	assert.True(t, state.Services[0].MultiProtocol)
+}
+
 func TestExtractAgentYamlEnvRefs(t *testing.T) {
 	t.Parallel()
 

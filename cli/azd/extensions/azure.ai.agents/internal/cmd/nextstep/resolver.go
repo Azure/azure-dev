@@ -353,7 +353,7 @@ func ResolveAfterRun(state *State, serviceName string, readmeExists func(relativ
 		out = append(out, *readmeHint)
 	}
 	out = append(out, Suggestion{
-		Command:     fmt.Sprintf("azd ai agent invoke --local %s", invokeArg),
+		Command:     fmt.Sprintf("azd ai agent invoke --local %s%s", invokeProtocolFlag(svc), invokeArg),
 		Description: "send a sample request to the running agent",
 		Priority:    10,
 	})
@@ -678,7 +678,7 @@ func ResolveAfterDeploy(
 		}
 
 		out = append(out, Suggestion{
-			Command:     fmt.Sprintf("azd ai agent invoke %s %s", svc.Name, invokeArg),
+			Command:     fmt.Sprintf("azd ai agent invoke %s %s%s", svc.Name, invokeProtocolFlag(svc), invokeArg),
 			Description: desc,
 			Priority:    priority,
 		})
@@ -692,6 +692,13 @@ func serviceSupportsAzdInvoke(svc *ServiceState) bool {
 	return svc == nil || (svc.Protocol != ProtocolInvocationsWS &&
 		svc.Protocol != ProtocolActivity &&
 		svc.Protocol != ProtocolActivityLegacy)
+}
+
+func invokeProtocolFlag(svc *ServiceState) string {
+	if svc == nil || !svc.MultiProtocol || svc.Protocol == "" {
+		return ""
+	}
+	return fmt.Sprintf("--protocol %s ", svc.Protocol)
 }
 
 func readmeCommand(relativePath string) string {

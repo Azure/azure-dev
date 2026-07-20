@@ -792,6 +792,17 @@ func TestResolveAfterRun(t *testing.T) {
 			},
 		},
 		{
+			name: "multi-protocol responses service adds explicit protocol flag",
+			state: &State{
+				Services: []ServiceState{{Name: "echo", Protocol: ProtocolResponses, MultiProtocol: true}},
+			},
+			serviceName: "echo",
+			want: []string{
+				`azd ai agent invoke --local --protocol responses '<payload>'`,
+				`curl http://localhost:<port>/invocations/docs/openapi.json`,
+			},
+		},
+		{
 			name: "invocations_ws protocol suppresses invoke suggestions",
 			state: &State{
 				Services: []ServiceState{{Name: "echo", Protocol: ProtocolInvocationsWS}},
@@ -1049,6 +1060,17 @@ func TestResolveAfterDeploy(t *testing.T) {
 		out := ResolveAfterDeploy(state, nil, nil)
 		require.Len(t, out, 1)
 		assert.Equal(t, "azd ai agent show echo", out[0].Command)
+	})
+
+	t.Run("multi-protocol responses service adds deploy protocol flag", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{{
+			Name: "echo", Protocol: ProtocolResponses, MultiProtocol: true,
+		}}}
+		out := ResolveAfterDeploy(state, nil, nil)
+		require.Len(t, out, 2)
+		assert.Equal(t, "azd ai agent show echo", out[0].Command)
+		assert.Equal(t, `azd ai agent invoke echo --protocol responses '<payload>'`, out[1].Command)
 	})
 
 	t.Run("single activity agent suppresses deploy invoke", func(t *testing.T) {

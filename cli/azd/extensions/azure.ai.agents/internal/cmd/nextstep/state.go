@@ -439,12 +439,14 @@ func collectServices(
 		if svc == nil || svc.Host != agentHost {
 			continue
 		}
+		protocol, multiProtocol := loadServiceProtocolInfo(project.Path, svc)
 		services = append(services, ServiceState{
-			Name:         svc.Name,
-			Host:         svc.Host,
-			RelativePath: svc.RelativePath,
-			Protocol:     loadServiceProtocol(project.Path, svc),
-			IsDeployed:   isDeployed(ctx, src, envName, svc.Name, errs),
+			Name:          svc.Name,
+			Host:          svc.Host,
+			RelativePath:  svc.RelativePath,
+			Protocol:      protocol,
+			MultiProtocol: multiProtocol,
+			IsDeployed:    isDeployed(ctx, src, envName, svc.Name, errs),
 		})
 	}
 
@@ -462,23 +464,28 @@ func collectServices(
 // ProtocolInvocations so the suggested payload works on the broadest set of
 // agents.
 func loadServiceProtocol(projectPath string, svc *azdext.ServiceConfig) string {
-	if protocol := loadServiceProtocolFromConfig(svc); protocol != "" {
-		return protocol
+	protocol, _ := loadServiceProtocolInfo(projectPath, svc)
+	return protocol
+}
+
+func loadServiceProtocolInfo(projectPath string, svc *azdext.ServiceConfig) (string, bool) {
+	if protocol, multiProtocol := loadServiceProtocolFromConfig(svc); protocol != "" {
+		return protocol, multiProtocol
 	}
 	if svc == nil {
-		return ""
+		return "", false
 	}
 	return loadServiceProtocolFromFile(projectPath, svc.RelativePath)
 }
 
-func loadServiceProtocolFromConfig(svc *azdext.ServiceConfig) string {
+func loadServiceProtocolFromConfig(svc *azdext.ServiceConfig) (string, bool) {
 	props := nextStepServiceConfigProps(svc)
 	if len(props) == 0 {
-		return ""
+		return "", false
 	}
 	data, err := yaml.Marshal(props)
 	if err != nil {
-		return ""
+		return "", false
 	}
 	return loadServiceProtocolFromBytes(data)
 }
@@ -506,26 +513,27 @@ func structHasKind(s *structpb.Struct) bool {
 	return ok && strings.TrimSpace(v.GetStringValue()) != ""
 }
 
-func loadServiceProtocolFromFile(projectPath, relativePath string) string {
+func loadServiceProtocolFromFile(projectPath, relativePath string) (string, bool) {
 	if projectPath == "" {
-		return ""
+		return "", false
 	}
 	manifestPath, err := paths.JoinAllowRoot(projectPath, relativePath, "agent.yaml")
 	if err != nil {
-		return ""
+		return "", false
 	}
 	data, err := os.ReadFile(manifestPath) //nolint:gosec // path is validated under the project root
 	if err != nil {
-		return ""
+		return "", false
 	}
 	return loadServiceProtocolFromBytes(data)
 }
 
-func loadServiceProtocolFromBytes(data []byte) string {
+func loadServiceProtocolFromBytes(data []byte) (string, bool) {
 	var hosted agent_yaml.ContainerAgent
 	if err := yaml.Unmarshal(data, &hosted); err != nil {
-		return ""
+		return "", false
 	}
+	multiProtocol := len(hosted.Protocols) > 1
 
 	sawInvocations := false
 	sawActivity := false
@@ -533,7 +541,7 @@ func loadServiceProtocolFromBytes(data []byte) string {
 	for _, p := range hosted.Protocols {
 		switch strings.TrimSpace(p.Protocol) {
 		case ProtocolResponses:
-			return ProtocolResponses
+			return ProtocolResponses, multiProtocol
 		case ProtocolInvocationsWS:
 			sawInvocationsWS = true
 		case ProtocolInvocations:
@@ -543,15 +551,15 @@ func loadServiceProtocolFromBytes(data []byte) string {
 		}
 	}
 	if sawInvocations {
-		return ProtocolInvocations
+		return ProtocolInvocations, multiProtocol
 	}
 	if sawActivity {
-		return ProtocolActivity
+		return ProtocolActivity, multiProtocol
 	}
 	if sawInvocationsWS {
-		return ProtocolInvocationsWS
+		return ProtocolInvocationsWS, multiProtocol
 	}
-	return ""
+	return "", multiProtocol
 }
 
 // detectMissingVars walks each service's agent.yaml environment_variables

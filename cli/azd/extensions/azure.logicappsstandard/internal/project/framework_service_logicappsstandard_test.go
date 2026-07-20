@@ -74,30 +74,8 @@ func TestRequiredExternalTools(t *testing.T) {
 }
 
 func TestRequirements(t *testing.T) {
-	t.Run("disables restore and build when service config is not initialized", func(t *testing.T) {
+	t.Run("enables restore and build", func(t *testing.T) {
 		provider := &LogicAppsStandardFrameworkServiceProvider{}
-		reqs, err := provider.Requirements()
-		require.NoError(t, err)
-		require.NotNil(t, reqs.Package)
-		assert.False(t, reqs.Package.RequireRestore)
-		assert.False(t, reqs.Package.RequireBuild)
-	})
-
-	t.Run("disables restore and build when initialized without customCodeProject", func(t *testing.T) {
-		provider := &LogicAppsStandardFrameworkServiceProvider{}
-		provider.serviceConfig = newServiceConfig("logicApp", "src/logicApp", nil)
-		reqs, err := provider.Requirements()
-		require.NoError(t, err)
-		require.NotNil(t, reqs.Package)
-		assert.False(t, reqs.Package.RequireRestore)
-		assert.False(t, reqs.Package.RequireBuild)
-	})
-
-	t.Run("enables restore and build when customCodeProject is configured", func(t *testing.T) {
-		provider := &LogicAppsStandardFrameworkServiceProvider{}
-		provider.serviceConfig = newServiceConfig("logicApp", "src/logicApp", map[string]any{
-			"customCodeProject": "Functions/Functions.csproj",
-		})
 		reqs, err := provider.Requirements()
 		require.NoError(t, err)
 		require.NotNil(t, reqs.Package)
@@ -110,6 +88,15 @@ func TestInitializeValidatesCustomCodeProjectPath(t *testing.T) {
 	projectDir := t.TempDir()
 	createFile(t, filepath.Join(projectDir, "azure.yaml"), "name: test-project\n")
 
+	t.Run("succeeds when host is function", func(t *testing.T) {
+		provider := &LogicAppsStandardFrameworkServiceProvider{}
+		svc := newServiceConfig("logicApp", "src/logicApp", nil)
+		svc.Host = "function"
+
+		err := provider.Initialize(t.Context(), svc)
+		require.NoError(t, err)
+	})
+
 	t.Run("fails when host is not function", func(t *testing.T) {
 		provider := &LogicAppsStandardFrameworkServiceProvider{}
 		svc := newServiceConfig("logicApp", "src/logicApp", nil)
@@ -118,15 +105,6 @@ func TestInitializeValidatesCustomCodeProjectPath(t *testing.T) {
 		err := provider.Initialize(t.Context(), svc)
 		require.Error(t, err)
 		assert.Equal(t, "Logic Apps Standard requires the host to be 'function', but found 'appservice'", err.Error())
-	})
-
-	t.Run("succeeds without customCodeProject and sets serviceConfig", func(t *testing.T) {
-		provider := &LogicAppsStandardFrameworkServiceProvider{}
-		svc := newServiceConfig("logicApp", "src/logicApp", nil)
-
-		err := provider.Initialize(t.Context(), svc)
-		require.NoError(t, err)
-		assert.Equal(t, svc, provider.serviceConfig)
 	})
 
 	t.Run("succeeds when custom code project file exists", func(t *testing.T) {

@@ -18,9 +18,7 @@ var _ azdext.FrameworkServiceProvider = &LogicAppsStandardFrameworkServiceProvid
 
 // LogicAppsStandardFrameworkServiceProvider introduces the custom language 'logicappsstandard',
 // which makes it possible to package Logic Apps Standard projects, including those with custom code components.
-type LogicAppsStandardFrameworkServiceProvider struct {
-	serviceConfig *azdext.ServiceConfig
-}
+type LogicAppsStandardFrameworkServiceProvider struct{}
 
 // NewLogicAppsStandardFrameworkServiceProvider creates a Logic Apps Standard framework service provider.
 func NewLogicAppsStandardFrameworkServiceProvider() azdext.FrameworkServiceProvider {
@@ -32,8 +30,6 @@ func (p *LogicAppsStandardFrameworkServiceProvider) Initialize(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 ) error {
-	p.serviceConfig = serviceConfig
-
 	if serviceConfig.Host != "function" {
 		return fmt.Errorf("Logic Apps Standard requires the host to be 'function', but found '%s'", serviceConfig.Host)
 	}
@@ -73,11 +69,12 @@ func (p *LogicAppsStandardFrameworkServiceProvider) RequiredExternalTools(
 
 // Requirements returns the framework requirements (whether restore/build are needed)
 func (p *LogicAppsStandardFrameworkServiceProvider) Requirements() (*azdext.FrameworkRequirements, error) {
-	hasCustomCodeProject := p.serviceConfig != nil && hasCustomCodeProjectConfigured(p.serviceConfig)
+	// We always return true for restore & build because Requirements is not evaluated per service.
+	// The actual restore/build steps will be skipped if no custom code project is configured.
 	return &azdext.FrameworkRequirements{
 		Package: &azdext.FrameworkPackageRequirements{
-			RequireRestore: hasCustomCodeProject,
-			RequireBuild:   hasCustomCodeProject,
+			RequireRestore: true,
+			RequireBuild:   true,
 		},
 	}, nil
 }

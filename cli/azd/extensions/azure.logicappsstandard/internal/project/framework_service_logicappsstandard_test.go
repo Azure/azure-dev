@@ -107,6 +107,14 @@ func TestInitializeValidatesCustomCodeProjectPath(t *testing.T) {
 		assert.Equal(t, "Logic Apps Standard requires the host to be 'function', but found 'appservice'", err.Error())
 	})
 
+	t.Run("succeeds without customCodeProject", func(t *testing.T) {
+		provider := &LogicAppsStandardFrameworkServiceProvider{}
+		svc := newServiceConfig("logicApp", "src/logicApp", nil)
+
+		err := provider.Initialize(t.Context(), svc)
+		require.NoError(t, err)
+	})
+
 	t.Run("succeeds when custom code project file exists", func(t *testing.T) {
 		provider := &LogicAppsStandardFrameworkServiceProvider{}
 		svc := newServiceConfig("logicApp", "src/logicApp", map[string]any{

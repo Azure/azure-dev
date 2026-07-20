@@ -760,17 +760,30 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 		result.Cpu = project.DefaultCpu
 	}
 
+	containerPath := "container"
+	if props := svc.GetAdditionalProperties(); props == nil || len(props.GetFields()) == 0 {
+		if cfg := svc.GetConfig(); cfg != nil && len(cfg.GetFields()) > 0 {
+			containerPath = "config.container"
+		}
+	}
+
 	// Persist the resolved container settings back onto the service's inline
 	// properties, preserving the agent definition and other config keys.
 	if err := project.SetAgentContainerSettings(svc, &project.ContainerSettings{Resources: result}); err != nil {
 		return fmt.Errorf("failed to update agent container settings: %w", err)
 	}
 
-	// Need to add the service config back to the project for use further down the pipeline
-	req := &azdext.AddServiceRequest{Service: svc}
+	containerValue := project.ServiceConfigProps(svc).GetFields()["container"]
+	if containerValue == nil {
+		return errors.New("failed to read updated agent container settings")
+	}
 
-	if _, err := azdClient.Project().AddService(ctx, req); err != nil {
-		return fmt.Errorf("adding agent service to project: %w", err)
+	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+		ServiceName: svc.GetName(),
+		Path:        containerPath,
+		Value:       containerValue,
+	}); err != nil {
+		return fmt.Errorf("persisting agent container settings: %w", err)
 	}
 
 	return nil

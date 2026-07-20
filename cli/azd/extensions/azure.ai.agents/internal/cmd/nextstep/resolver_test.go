@@ -333,6 +333,20 @@ func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T
 		assert.Equal(t, `azd ai agent invoke --local '<payload>'`, out[1].Command)
 	})
 
+	t.Run("single-agent multi-protocol responses adds explicit protocol flag", func(t *testing.T) {
+		t.Parallel()
+		state := &State{
+			HasProjectEndpoint: true,
+			Services: []ServiceState{{
+				Name: "echo", Protocol: ProtocolResponses, MultiProtocol: true,
+			}},
+		}
+		out := ResolveAfterInit(state, nil)
+		require.Len(t, out, 3)
+		assert.Equal(t, "azd ai agent run", out[0].Command)
+		assert.Equal(t, `azd ai agent invoke --local --protocol responses '<payload>'`, out[1].Command)
+	})
+
 	t.Run("single-agent invocations protocol → invoke uses placeholder", func(t *testing.T) {
 		t.Parallel()
 		state := &State{

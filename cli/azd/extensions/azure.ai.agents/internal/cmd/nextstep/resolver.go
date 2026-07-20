@@ -805,7 +805,7 @@ func appendInvokeLocalSecondary(
 		priority++
 	}
 	out = append(out, Suggestion{
-		Command:     fmt.Sprintf("azd ai agent invoke --local %s", invokeArg),
+		Command:     fmt.Sprintf("azd ai agent invoke --local %s%s", invokeProtocolFlag(svc), invokeArg),
 		Description: "test it in another terminal",
 		Priority:    priority,
 	})

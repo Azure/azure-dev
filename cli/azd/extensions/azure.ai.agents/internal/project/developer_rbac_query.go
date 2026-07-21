@@ -64,8 +64,8 @@ type DeveloperRBACResult struct {
 	PrincipalDisplay string
 
 	// HasSufficientAIRole is true when the principal has at least
-	// one of `sufficientAIUserRoles` (Owner, Contributor, Foundry
-	// User, Azure AI Developer) on the project scope.
+	// one of `sufficientAIUserRoles` (Foundry User, Cognitive Services User,
+	// Foundry Project Manager, or Foundry Owner) on the project scope.
 	HasSufficientAIRole bool
 
 	// ProjectScope is the full ARM resource ID of the Foundry

@@ -726,7 +726,9 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 		"no-prompt",
 		false,
 		"Runs without prompts. Uses existing values; "+
-			"fails if any required value or decision cannot be resolved automatically.")
+			"fails if any required value or decision cannot be resolved automatically. "+
+			"Automatically enabled when azd detects a CI/CD or AI-agent environment; "+
+			"set AZD_NON_INTERACTIVE=false to opt out of that automatic enablement.")
 	globalFlags.Bool(
 		"non-interactive",
 		false,
@@ -751,8 +753,11 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 // This function is designed to be called BEFORE Cobra command tree construction to enable
 // early access to global flag values for auto-install and other pre-execution logic.
 //
-// Agent Detection: If --no-prompt is not explicitly set and an AI coding agent (like Claude Code,
-// GitHub Copilot CLI, Cursor, etc.) is detected as the caller, NoPrompt is automatically enabled.
+// Auto no-prompt detection: If --no-prompt is not explicitly set (via flag or the
+// AZD_NON_INTERACTIVE env var) and azd is running in a non-interactive context — an AI coding
+// agent (like Claude Code, GitHub Copilot CLI, Cursor, etc.) or a CI/CD environment — NoPrompt is
+// automatically enabled. Explicit --no-prompt/--non-interactive flags and AZD_NON_INTERACTIVE take
+// precedence; set AZD_NON_INTERACTIVE=false to opt out of this automatic enablement.
 func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error {
 	globalFlagSet := CreateGlobalFlagSet()
 
@@ -840,9 +845,15 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 		}
 	}
 
-	// Agent Detection: If no explicit flag or env var was set and we detect an AI coding
-	// agent as the caller, automatically enable no-prompt mode for non-interactive execution.
-	if !flagExplicitlySet && !envVarPresent && agentdetect.IsRunningInAgent() {
+	// Auto no-prompt detection: If no explicit flag or env var was set, automatically enable
+	// no-prompt mode when azd runs in a non-interactive context where prompting is not possible —
+	// either an AI coding agent or a CI/CD environment. This makes CI behavior deterministic:
+	// prompts resolve to their defaults (or fail fast with an actionable error) instead of
+	// silently aborting on an EOF stdin. Explicit flags and AZD_NON_INTERACTIVE take precedence;
+	// set AZD_NON_INTERACTIVE=false to opt out of this automatic enablement (NoPrompt stays false).
+	// Note: some commands still avoid interactive prompts in CI/CD by design, independent of this.
+	if !flagExplicitlySet && !envVarPresent &&
+		(agentdetect.IsRunningInAgent() || resource.IsRunningOnCI()) {
 		opts.NoPrompt = true
 	}
 

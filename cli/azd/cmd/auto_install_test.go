@@ -440,6 +440,88 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 	}
 }
 
+// TestParseGlobalFlags_CIDetection verifies that azd auto-enables no-prompt mode when running in a
+// CI/CD environment, while still honoring explicit flag/env-var opt-outs.
+func TestParseGlobalFlags_CIDetection(t *testing.T) {
+	tests := []struct {
+		name             string
+		args             []string
+		envVars          map[string]string
+		expectedNoPrompt bool
+	}{
+		{
+			name:             "no CI, no flag -> interactive",
+			args:             []string{"up"},
+			envVars:          map[string]string{},
+			expectedNoPrompt: false,
+		},
+		{
+			name:             "Azure Pipelines (TF_BUILD) auto no-prompt",
+			args:             []string{"up"},
+			envVars:          map[string]string{"TF_BUILD": "true"},
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "GitHub Actions auto no-prompt",
+			args:             []string{"provision"},
+			envVars:          map[string]string{"GITHUB_ACTIONS": "true"},
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "generic CI var auto no-prompt",
+			args:             []string{"deploy"},
+			envVars:          map[string]string{"CI": "1"},
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "CI but --no-prompt=false forces interactive",
+			args:             []string{"--no-prompt=false", "up"},
+			envVars:          map[string]string{"GITHUB_ACTIONS": "true"},
+			expectedNoPrompt: false,
+		},
+		{
+			name:             "CI but AZD_NON_INTERACTIVE=false forces interactive",
+			args:             []string{"up"},
+			envVars:          map[string]string{"GITHUB_ACTIONS": "true", "AZD_NON_INTERACTIVE": "false"},
+			expectedNoPrompt: false,
+		},
+		{
+			name:             "CI and --no-prompt keeps no-prompt",
+			args:             []string{"--no-prompt", "up"},
+			envVars:          map[string]string{"GITHUB_ACTIONS": "true"},
+			expectedNoPrompt: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Establish a deterministic baseline: no agent and no CI env vars.
+			clearAgentEnvVarsForTest(t)
+			agentdetect.ResetDetection()
+
+			if !tt.expectedNoPrompt && len(tt.envVars) == 0 {
+				if agentdetect.GetCallingAgent().Detected {
+					t.Skip("skipping: parent process detection found an agent")
+				}
+				agentdetect.ResetDetection()
+			}
+
+			for k, v := range tt.envVars {
+				t.Setenv(k, v)
+			}
+
+			opts := &internal.GlobalCommandOptions{}
+			err := ParseGlobalFlags(tt.args, opts)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.expectedNoPrompt, opts.NoPrompt,
+				"NoPrompt should be %v for test case: %s", tt.expectedNoPrompt, tt.name)
+
+			agentdetect.ResetDetection()
+		})
+	}
+}
+
 func TestParseGlobalFlags_NonInteractiveAliasAndEnvVar(t *testing.T) {
 	tests := []struct {
 		name         string

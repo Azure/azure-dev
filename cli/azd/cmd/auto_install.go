@@ -809,15 +809,20 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 	// Environment variable: AZD_NON_INTERACTIVE enables no-prompt mode when set to a
 	// truthy value (parsed via strconv.ParseBool: "true", "1", "TRUE", etc.).
 	// Explicit flags take precedence over this env var.
-	// When this env var is present (regardless of value), it also suppresses
-	// agent auto-detection since the user has made an explicit choice.
+	// A successfully parsed boolean (true or false) counts as an explicit user choice and
+	// suppresses agent/CI auto-detection below. A value that is not a valid boolean (e.g.
+	// a typo like "yes") is ignored entirely: it does NOT set opts.NoPrompt and does NOT suppress
+	// auto-detection, so a typo in CI still resolves to deterministic no-prompt behavior
+	// rather than silently keeping azd interactive.
 	envVarPresent := false
 	if !flagExplicitlySet {
 		if envVal, ok := os.LookupEnv("AZD_NON_INTERACTIVE"); ok {
-			envVarPresent = true
-			if parsed, err := strconv.ParseBool(envVal); err == nil && parsed {
-				opts.NoPrompt = true
-			} else if err != nil {
+			if parsed, err := strconv.ParseBool(envVal); err == nil {
+				envVarPresent = true
+				if parsed {
+					opts.NoPrompt = true
+				}
+			} else {
 				log.Printf(
 					"warning: AZD_NON_INTERACTIVE=%q is not a valid boolean"+
 						" (expected true/false/1/0), ignoring",

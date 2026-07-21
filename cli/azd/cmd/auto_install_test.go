@@ -486,6 +486,15 @@ func TestParseGlobalFlags_CIDetection(t *testing.T) {
 			expectedNoPrompt: false,
 		},
 		{
+			// A typo/invalid value must NOT suppress CI auto-detection: it is ignored, so
+			// auto no-prompt still applies and CI stays deterministic (regression for the
+			// envVarPresent-before-ParseBool bug).
+			name:             "CI with invalid AZD_NON_INTERACTIVE still auto no-prompt",
+			args:             []string{"up"},
+			envVars:          map[string]string{"GITHUB_ACTIONS": "true", "AZD_NON_INTERACTIVE": "yes"},
+			expectedNoPrompt: true,
+		},
+		{
 			name:             "CI and --no-prompt keeps no-prompt",
 			args:             []string{"--no-prompt", "up"},
 			envVars:          map[string]string{"GITHUB_ACTIONS": "true"},

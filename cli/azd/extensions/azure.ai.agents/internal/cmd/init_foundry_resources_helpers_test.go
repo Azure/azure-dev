@@ -5,9 +5,14 @@ package cmd
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"testing"
 
+	"azureaiagent/internal/pkg/azure"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	armcognitiveservices "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -758,5 +763,130 @@ func TestConfigureFoundryProjectEnv_BicepLessShortCircuits(t *testing.T) {
 		"APPLICATIONINSIGHTS_CONNECTION_NAME",
 	} {
 		require.Empty(t, written[key], "must not write %q when bicepless+skipACR", key)
+	}
+}
+
+func TestConfigureAcrConnection_ValidatesDiscoveredConnections(t *testing.T) {
+	const (
+		envName    = "test-env"
+		resourceId = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/valid"
+	)
+
+	tests := []struct {
+		name        string
+		connections []azure.Connection
+		lookup      acrResourceIdLookup
+		prompts     []string
+		initial     map[string]string
+		wantErr     string
+		wantValues  map[string]string
+	}{
+		{
+			name: "valid sole connection is selected with resource id",
+			connections: []azure.Connection{{
+				Name: "valid-conn", Target: "https://valid.azurecr.io/",
+			}},
+			lookup: func(context.Context, azcore.TokenCredential, string, string) (string, error) {
+				return resourceId, nil
+			},
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "valid-conn",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "valid.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId,
+			},
+		},
+		{
+			name: "stale sole connection falls back to create on provision and clears stale values",
+			connections: []azure.Connection{{
+				Name: "stale-conn", Target: "stale.azurecr.io",
+			}},
+			lookup: func(context.Context, azcore.TokenCredential, string, string) (string, error) {
+				return "", fmt.Errorf("%w: stale", errAcrNotFound)
+			},
+			prompts: []string{""},
+			initial: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "old-conn",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "old.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "old-id",
+			},
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "",
+				"AI_AGENT_PENDING_PROVISION":           "acr",
+			},
+		},
+		{
+			name: "mixed connections skip stale and select valid",
+			connections: []azure.Connection{
+				{Name: "stale-conn", Target: "stale.azurecr.io"},
+				{Name: "valid-conn", Target: "valid.azurecr.io"},
+			},
+			lookup: func(_ context.Context, _ azcore.TokenCredential, _, loginServer string) (string, error) {
+				if loginServer == "stale.azurecr.io" {
+					return "", fmt.Errorf("%w: stale", errAcrNotFound)
+				}
+				return resourceId, nil
+			},
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "valid-conn",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "valid.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId,
+			},
+		},
+		{
+			name: "lookup service error stops init",
+			connections: []azure.Connection{{
+				Name: "unknown-conn", Target: "unknown.azurecr.io",
+			}},
+			lookup: func(context.Context, azcore.TokenCredential, string, string) (string, error) {
+				return "", errors.New("authorization failed")
+			},
+			wantErr: "validating container registry connection \"unknown-conn\": authorization failed",
+		},
+		{
+			name: "manual fallback writes resource id and clears connection name",
+			connections: []azure.Connection{{
+				Name: "stale-conn", Target: "stale.azurecr.io",
+			}},
+			lookup: func(_ context.Context, _ azcore.TokenCredential, _, loginServer string) (string, error) {
+				if loginServer == "stale.azurecr.io" {
+					return "", fmt.Errorf("%w: stale", errAcrNotFound)
+				}
+				return resourceId, nil
+			},
+			prompts: []string{"valid.azurecr.io"},
+			initial: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "stale-conn",
+			},
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "valid.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			envServer := &testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{envName: {Name: envName}},
+				values:       map[string]map[string]string{envName: tt.initial},
+			}
+			prompts := &testPromptServiceServer{promptResponses: tt.prompts}
+			azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{}, prompts)
+
+			err := configureAcrConnectionWithLookup(
+				t.Context(), azdClient, nil, envName, "sub", tt.connections, tt.lookup,
+			)
+			if tt.wantErr != "" {
+				require.EqualError(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			for key, want := range tt.wantValues {
+				require.Equal(t, want, envServer.values[envName][key], "environment value %s", key)
+			}
+		})
 	}
 }

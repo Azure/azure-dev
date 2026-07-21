@@ -69,6 +69,7 @@ words:
   - ondisk
   - openapitool
   - posixpath
+  - projectconfig
   - projectpkg
   - protocolversionrecord
   - Qdrant

@@ -113,6 +113,22 @@ type Toolbox struct {
 	Tools       []map[string]any `json:"tools"`
 }
 
+// UnmarshalJSON accepts split-service names and legacy objects.
+func (t *Toolbox) UnmarshalJSON(data []byte) error {
+	var name string
+	if err := json.Unmarshal(data, &name); err == nil {
+		t.Name = name
+		return nil
+	}
+	type toolbox Toolbox
+	var value toolbox
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	*t = Toolbox(value)
+	return nil
+}
+
 // MemoryStore represents a Foundry memory store provisioned (create-if-not-exists)
 // during deployment. It backs the agent's memory_search tool, letting the agent retain
 // context across sessions. ChatModel and EmbeddingModel reference model deployment names

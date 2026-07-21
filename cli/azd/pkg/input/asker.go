@@ -234,10 +234,7 @@ func askOnePrompt(p survey.Prompt, response any, isTerminal bool, stdout io.Writ
 			strings.Join(v.Options, ","))
 	case *survey.Confirm:
 		var pResponse = response.(*bool)
-		// Base the indicator and the blank-line (Enter) result on the prompt's Default rather
-		// than the incoming *pResponse. Callers such as AskerConsole.Confirm pass a
-		// zero-initialized *bool while setting survey.Confirm.Default, so relying on *pResponse
-		// would ignore DefaultValue: true and always render "(y/N)" and return false on Enter.
+		// Use the prompt's Default (callers pass a zero-initialized *pResponse with survey.Confirm.Default).
 		defaultValue := v.Default
 
 		for {

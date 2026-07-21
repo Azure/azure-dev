@@ -572,6 +572,41 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 	})
 }
 
+func TestEnvSliceHasKeyUsesPlatformCasing(t *testing.T) {
+	t.Parallel()
+
+	env := []string{"Path=process-value"}
+	if !envSliceHasKey(env, "Path") {
+		t.Fatal("expected exact-case environment key to match")
+	}
+
+	got := envSliceHasKey(env, "PATH")
+	want := runtime.GOOS == "windows"
+	if got != want {
+		t.Errorf("envSliceHasKey() = %t, want %t", got, want)
+	}
+}
+
+func TestMergeConfiguredEnvironmentEntriesUsesServicePrecedence(t *testing.T) {
+	t.Parallel()
+
+	entries := mergeConfiguredEnvironmentEntries(
+		[]string{"PATH=definition-value"},
+		[]string{"Path=service-value"},
+		true,
+	)
+
+	if len(entries) != 1 {
+		t.Fatalf("expected one entry, got %v", entries)
+	}
+	if entries["PATH"].key != "Path" {
+		t.Errorf("key = %q, want %q", entries["PATH"].key, "Path")
+	}
+	if entries["PATH"].value != "service-value" {
+		t.Errorf("value = %q, want %q", entries["PATH"].value, "service-value")
+	}
+}
+
 func TestAppendPortEnvVars(t *testing.T) {
 	t.Parallel()
 
@@ -991,6 +1026,35 @@ environment_variables:
 			t.Errorf("expected MISSING_REF= (empty), got %v", result)
 		}
 	})
+}
+
+func TestResolveServiceEnvironmentVars(t *testing.T) {
+	t.Parallel()
+
+	result, err := resolveServiceEnvironmentVars(
+		t.Context(),
+		map[string]string{
+			"ENDPOINT": "${FOUNDRY_PROJECT_ENDPOINT}/agents",
+			"PROJECT":  "${{project.endpoint}}",
+			"STATIC":   "value",
+		},
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://example",
+		},
+		"https://example/project",
+	)
+
+	if err != nil {
+		t.Fatalf("resolve service environment: %v", err)
+	}
+	want := []string{
+		"ENDPOINT=https://example/agents",
+		"PROJECT=https://example/project",
+		"STATIC=value",
+	}
+	if !slices.Equal(want, result) {
+		t.Fatalf("expected %v, got %v", want, result)
+	}
 }
 
 func TestVenvPip(t *testing.T) {

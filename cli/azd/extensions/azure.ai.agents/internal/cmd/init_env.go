@@ -74,9 +74,22 @@ func configureAzureYamlEnvironmentVariables(
 
 	missing := make([]azureYamlEnvironmentReference, 0, len(references))
 	for _, reference := range references {
-		if !hasAzureYamlEnvironmentValue(existing, reference.Name) {
-			missing = append(missing, reference)
+		if value, ok := existing[reference.Name]; ok {
+			if value == "" {
+				missing = append(missing, reference)
+			}
+			continue
 		}
+
+		if value, ok := os.LookupEnv(reference.Name); ok {
+			if err := setEnvValue(ctx, azdClient, envName, reference.Name, value); err != nil {
+				return err
+			}
+			existing[reference.Name] = value
+			continue
+		}
+
+		missing = append(missing, reference)
 	}
 	if len(missing) == 0 {
 		return nil
@@ -114,18 +127,6 @@ func configureAzureYamlEnvironmentVariables(
 	}
 
 	return nil
-}
-
-// hasAzureYamlEnvironmentValue mirrors Foundry expansion precedence: the azd
-// environment wins when the key exists, otherwise the process environment is
-// used. An explicitly empty azd value remains missing instead of falling back.
-func hasAzureYamlEnvironmentValue(azdEnv map[string]string, name string) bool {
-	if value, ok := azdEnv[name]; ok {
-		return value != ""
-	}
-
-	_, ok := os.LookupEnv(name)
-	return ok
 }
 
 func findAzureYamlEnvironmentReferences(content []byte, projectDir string) ([]azureYamlEnvironmentReference, error) {

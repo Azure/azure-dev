@@ -324,17 +324,19 @@ services:
 	require.Equal(t, "configured", envServer.values["dev"]["API_TOKEN"])
 }
 
-func TestConfigureAzureYamlEnvironmentVariables_UsesProcessEnvironmentFallback(t *testing.T) {
+func TestConfigureAzureYamlEnvironmentVariables_PersistsProcessEnvironmentFallback(t *testing.T) {
 	const envVarName = "AZD_TEST_INIT_PROCESS_ONLY_VALUE"
 	t.Setenv(envVarName, "from-process")
 
 	projectDir := t.TempDir()
 	content := `name: sample
 services:
-  connection:
-    host: azure.ai.connection
-    metadata:
-      processValue: ${AZD_TEST_INIT_PROCESS_ONLY_VALUE}
+  toolbox:
+    host: azure.ai.toolbox
+    tools:
+      - name: process-value
+        configuration:
+          value: ${AZD_TEST_INIT_PROCESS_ONLY_VALUE}
 `
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "azure.yaml"), []byte(content), 0600))
 
@@ -351,7 +353,7 @@ services:
 	)
 	require.NoError(t, err)
 	require.Empty(t, promptServer.promptRequests)
-	require.Empty(t, envServer.values)
+	require.Equal(t, "from-process", envServer.values["dev"][envVarName])
 }
 
 func TestConfigureAzureYamlEnvironmentVariables_EmptyAzdValueBlocksProcessFallback(t *testing.T) {

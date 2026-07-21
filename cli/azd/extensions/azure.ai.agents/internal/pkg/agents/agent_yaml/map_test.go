@@ -4,6 +4,7 @@
 package agent_yaml
 
 import (
+	"encoding/json"
 	"math"
 	"strings"
 	"testing"
@@ -1601,6 +1602,55 @@ func TestCreateHostedAgentAPIRequest_WithRaiConfig(t *testing.T) {
 	}
 	if imgDef.RaiConfig.RaiPolicyName != raiPolicyID {
 		t.Errorf("RaiPolicyName = %q, want %q", imgDef.RaiConfig.RaiPolicyName, raiPolicyID)
+	}
+}
+
+func TestCreateAgentAPIRequest_CodeDeploy_InvocationsWsUsesProtocolVersions(t *testing.T) {
+	depRes := "remote_build"
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Name: "voice-agent",
+			Kind: AgentKindHosted,
+		},
+		Protocols: []ProtocolVersionRecord{
+			{Protocol: "invocations_ws", Version: "2.0.0"},
+		},
+		CodeConfiguration: &CodeConfiguration{
+			Runtime:              "python_3_13",
+			EntryPoint:           "main.py",
+			DependencyResolution: &depRes,
+		},
+	}
+
+	req, err := CreateAgentAPIRequestFromDefinition(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	codeDef, ok := req.Definition.(agent_api.HostedAgentDefinition)
+	if !ok {
+		t.Fatalf("expected HostedAgentDefinition, got %T", req.Definition)
+	}
+	if len(codeDef.ProtocolVersions) != 1 {
+		t.Fatalf("got %d protocols, want 1", len(codeDef.ProtocolVersions))
+	}
+	if codeDef.ProtocolVersions[0].Protocol != agent_api.AgentProtocolInvocationsWS {
+		t.Errorf("protocol = %q, want %q", codeDef.ProtocolVersions[0].Protocol, agent_api.AgentProtocolInvocationsWS)
+	}
+	if codeDef.ProtocolVersions[0].Version != "2.0.0" {
+		t.Errorf("version = %q, want %q", codeDef.ProtocolVersions[0].Version, "2.0.0")
+	}
+
+	data, err := json.Marshal(codeDef)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	jsonText := string(data)
+	if !strings.Contains(jsonText, `"protocol_versions"`) {
+		t.Fatalf("serialized definition = %s, want protocol_versions", jsonText)
+	}
+	if strings.Contains(jsonText, `"container_protocol_versions"`) {
+		t.Fatalf("serialized definition = %s, did not expect container_protocol_versions", jsonText)
 	}
 }
 

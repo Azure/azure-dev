@@ -323,3 +323,71 @@ services:
 	require.Empty(t, promptServer.promptRequests)
 	require.Equal(t, "configured", envServer.values["dev"]["API_TOKEN"])
 }
+
+func TestConfigureAzureYamlEnvironmentVariables_UsesProcessEnvironmentFallback(t *testing.T) {
+	const envVarName = "AZD_TEST_INIT_PROCESS_ONLY_VALUE"
+	t.Setenv(envVarName, "from-process")
+
+	projectDir := t.TempDir()
+	content := `name: sample
+services:
+  connection:
+    host: azure.ai.connection
+    metadata:
+      processValue: ${AZD_TEST_INIT_PROCESS_ONLY_VALUE}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "azure.yaml"), []byte(content), 0600))
+
+	envServer := &testEnvironmentServiceServer{}
+	promptServer := &testPromptServiceServer{}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{}, promptServer)
+
+	err := configureAzureYamlEnvironmentVariables(
+		t.Context(),
+		azdClient,
+		"dev",
+		projectDir,
+		false,
+	)
+	require.NoError(t, err)
+	require.Empty(t, promptServer.promptRequests)
+	require.Empty(t, envServer.values)
+}
+
+func TestConfigureAzureYamlEnvironmentVariables_EmptyAzdValueBlocksProcessFallback(t *testing.T) {
+	const envVarName = "AZD_TEST_INIT_EXPLICIT_EMPTY_VALUE"
+	t.Setenv(envVarName, "from-process")
+
+	projectDir := t.TempDir()
+	content := `name: sample
+services:
+  connection:
+    host: azure.ai.connection
+    metadata:
+      explicitEmpty: ${AZD_TEST_INIT_EXPLICIT_EMPTY_VALUE}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "azure.yaml"), []byte(content), 0600))
+
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{
+			"dev": {
+				envVarName: "",
+			},
+		},
+	}
+	promptServer := &testPromptServiceServer{
+		promptResponses: []string{"prompted-value"},
+	}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{}, promptServer)
+
+	err := configureAzureYamlEnvironmentVariables(
+		t.Context(),
+		azdClient,
+		"dev",
+		projectDir,
+		false,
+	)
+	require.NoError(t, err)
+	require.Len(t, promptServer.promptRequests, 1)
+	require.Equal(t, "prompted-value", envServer.values["dev"][envVarName])
+}

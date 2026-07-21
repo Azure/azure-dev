@@ -153,7 +153,8 @@ func TestResolveDeploymentStacksMap_EnvFallback(t *testing.T) {
 	stacks, err := provider.resolveDeploymentStacksMap(true)
 	require.NoError(t, err)
 
-	denySettings := stacks["denySettings"].(map[string]any)
+	denySettings, ok := stacks["denySettings"].(map[string]any)
+	require.True(t, ok)
 	require.Equal(t, []string{"33333333-3333-3333-3333-333333333333"}, denySettings["excludedPrincipals"])
 }
 
@@ -177,7 +178,8 @@ func TestDeploymentOptionsMap_IncludesResolvedStacks(t *testing.T) {
 
 	stacks, ok := optionsMap["DeploymentStacks"].(map[string]any)
 	require.True(t, ok)
-	denySettings := stacks["denySettings"].(map[string]any)
+	denySettings, ok := stacks["denySettings"].(map[string]any)
+	require.True(t, ok)
 	require.Equal(t, []string{"44444444-4444-4444-4444-444444444444"}, denySettings["excludedPrincipals"])
 }
 
@@ -234,4 +236,26 @@ func TestHasActiveDeploymentStacksConfig(t *testing.T) {
 		}
 		require.True(t, provider.hasActiveDeploymentStacksConfig())
 	})
+}
+
+// TestResolveDeploymentStacksMap_DefaultExpression verifies that shell-style default expressions
+// (${VAR:-fallback}) are honored: an unset variable with a usable default resolves to the default
+// and is accepted, rather than being rejected as an unset reference.
+func TestResolveDeploymentStacksMap_DefaultExpression(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
+
+	provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
+		DenySettings: &provisioning.DenySettingsConfig{
+			Mode:               "denyDelete",
+			ExcludedPrincipals: expandableStrings("${UNSET_PRINCIPAL:-55555555-5555-5555-5555-555555555555}"),
+		},
+	}
+
+	stacks, err := provider.resolveDeploymentStacksMap(true)
+	require.NoError(t, err)
+
+	denySettings, ok := stacks["denySettings"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, []string{"55555555-5555-5555-5555-555555555555"}, denySettings["excludedPrincipals"])
 }

@@ -102,9 +102,11 @@ func (p *BicepProvider) resolveDeploymentStacksMap(includeDenySettings bool) (ma
 }
 
 // resolveDeploymentStacksValues evaluates ${VAR} references in each value, resolving from the
-// plan-time layer outputs (VirtualEnv) first and then the azd environment. It returns an error
-// if any referenced environment variable is unset, since a blank value in deny settings (for
-// example, an empty excluded principal) is almost always a misconfiguration.
+// plan-time layer outputs (VirtualEnv) first and then the azd environment. A value that resolves
+// to an empty string is treated as a misconfiguration (a blank deny-list entry, for example an
+// empty excluded principal, is almost always a mistake) and returns an error. Shell-style default
+// expressions such as ${VAR:-fallback} are honored: Envsubst applies the default before this check,
+// so a reference with a usable default yields a non-blank value and is accepted.
 func (p *BicepProvider) resolveDeploymentStacksValues(values []osutil.ExpandableString) ([]string, error) {
 	if len(values) == 0 {
 		return nil, nil
@@ -112,7 +114,7 @@ func (p *BicepProvider) resolveDeploymentStacksValues(values []osutil.Expandable
 
 	resolved := make([]string, 0, len(values))
 	for _, value := range values {
-		var unset []string
+		var lookedUpEmpty []string
 		substituted, err := value.Envsubst(func(name string) string {
 			if p.options.VirtualEnv != nil {
 				if v, has := p.options.VirtualEnv[name]; has {
@@ -121,8 +123,8 @@ func (p *BicepProvider) resolveDeploymentStacksValues(values []osutil.Expandable
 			}
 
 			v, ok := p.env.LookupEnv(name)
-			if !ok {
-				unset = append(unset, name)
+			if !ok || v == "" {
+				lookedUpEmpty = append(lookedUpEmpty, name)
 			}
 			return v
 		})
@@ -130,9 +132,13 @@ func (p *BicepProvider) resolveDeploymentStacksValues(values []osutil.Expandable
 			return nil, fmt.Errorf("resolving deploymentStacks value: %w", err)
 		}
 
-		if len(unset) > 0 {
-			return nil, fmt.Errorf(
-				"deploymentStacks references unset environment variable(s): %s", strings.Join(unset, ", "))
+		if strings.TrimSpace(substituted) == "" {
+			if len(lookedUpEmpty) > 0 {
+				return nil, fmt.Errorf(
+					"deploymentStacks references unset environment variable(s): %s",
+					strings.Join(lookedUpEmpty, ", "))
+			}
+			return nil, fmt.Errorf("deploymentStacks value resolved to an empty string")
 		}
 
 		resolved = append(resolved, substituted)

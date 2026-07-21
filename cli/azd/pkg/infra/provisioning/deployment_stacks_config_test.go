@@ -6,8 +6,8 @@ package provisioning
 import (
 	"testing"
 
+	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 )
 
 func TestDeploymentStacksConfigUnmarshalYAML(t *testing.T) {

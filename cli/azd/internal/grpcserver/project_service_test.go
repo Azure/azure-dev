@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -2647,6 +2648,86 @@ func TestProjectService_SetServiceConfigValue_HappyPath(t *testing.T) {
 		Value:       val,
 	})
 	require.NoError(t, err)
+}
+
+func TestProjectService_SetServiceConfigValue_DottedServiceName(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, `name: test-project
+services:
+  my.agent:
+    host: appservice
+`)
+
+	_, err := svc.SetServiceConfigValue(t.Context(), &azdext.SetServiceConfigValueRequest{
+		ServiceName: "my.agent",
+		Path:        "container.resources.cpu",
+		Value:       structpb.NewStringValue("2"),
+	})
+	require.NoError(t, err)
+
+	projectService := svc.(*projectService)
+	azdContext, err := projectService.lazyAzdContext.GetValue()
+	require.NoError(t, err)
+	cfg, err := project.LoadConfig(t.Context(), azdContext.ProjectPath())
+	require.NoError(t, err)
+	services, found := cfg.GetMap("services")
+	require.True(t, found)
+	serviceConfig, ok := services["my.agent"].(map[string]any)
+	require.True(t, ok)
+	value, found := config.NewConfig(serviceConfig).Get("container.resources.cpu")
+	require.True(t, found)
+	require.Equal(t, "2", value)
+	require.NotContains(t, services, "my")
+}
+
+func TestProjectService_SetServiceConfigValue_Concurrent(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, yamlWithService)
+	paths := []string{
+		"custom.one",
+		"custom.two",
+		"custom.three",
+		"custom.four",
+		"custom.five",
+		"custom.six",
+		"custom.seven",
+		"custom.eight",
+		"custom.nine",
+		"custom.ten",
+	}
+	start := make(chan struct{})
+	errs := make(chan error, len(paths))
+	var wg sync.WaitGroup
+
+	for _, path := range paths {
+		wg.Go(func() {
+			<-start
+			_, err := svc.SetServiceConfigValue(t.Context(), &azdext.SetServiceConfigValueRequest{
+				ServiceName: "api",
+				Path:        path,
+				Value:       structpb.NewStringValue(path),
+			})
+			errs <- err
+		})
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	projectService := svc.(*projectService)
+	azdContext, err := projectService.lazyAzdContext.GetValue()
+	require.NoError(t, err)
+	cfg, err := project.LoadConfig(t.Context(), azdContext.ProjectPath())
+	require.NoError(t, err)
+	for _, path := range paths {
+		value, found := cfg.Get("services.api." + path)
+		require.True(t, found)
+		require.Equal(t, path, value)
+	}
 }
 
 func TestProjectService_UnsetServiceConfig_HappyPath(t *testing.T) {

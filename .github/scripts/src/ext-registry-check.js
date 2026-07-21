@@ -296,22 +296,41 @@ async function getChangedFiles({ octokit, context }) {
 }
 
 /**
+ * Flags file-level changes that disqualify a PR from the registry-only fast path.
+ * Only in-place edits to the known registry files may skip core review; touching any
+ * other file, or renaming a registry file, requires a core reviewer.
+ *
  * @param {PullRequestFile[]} changedFiles
- * @returns {string[]}
+ * @returns {string[]} the reasons core review is needed; empty means every change is registry-only
  */
 function diffChangedFiles(changedFiles) {
-  const unexpectedFiles = changedFiles
-    .filter((file) => !REGISTRY_JSON_PATHS.has(file.filename) || file.previous_filename != null)
+  const registryPaths = [...REGISTRY_JSON_PATHS].join(', ');
+
+  const nonRegistryFiles = changedFiles
+    .filter((file) => !REGISTRY_JSON_PATHS.has(file.filename))
     .map((file) => file.filename);
 
-  if (unexpectedFiles.length === 0) {
-    return [];
+  const renamedRegistryFiles = changedFiles
+    .filter((file) => REGISTRY_JSON_PATHS.has(file.filename) && file.previous_filename != null)
+    .map((file) => `${file.previous_filename} -> ${file.filename}`);
+
+  const reasons = [];
+
+  if (nonRegistryFiles.length > 0) {
+    reasons.push(
+      `PR changes files outside the extension registries (${registryPaths}), ` +
+      `which requires core review: ${nonRegistryFiles.join(', ')}`,
+    );
   }
 
-  return [
-    `PR changes files outside ${[...REGISTRY_JSON_PATHS].join(', ')}; ` +
-    `core review required for registry-only PRs: ${unexpectedFiles.join(', ')}`,
-  ];
+  if (renamedRegistryFiles.length > 0) {
+    reasons.push(
+      `PR renames extension registry files, which requires core review: ` +
+      `${renamedRegistryFiles.join(', ')}`,
+    );
+  }
+
+  return reasons;
 }
 
 /**

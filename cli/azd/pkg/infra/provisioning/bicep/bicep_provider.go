@@ -833,7 +833,13 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		logDS("%s", parametersHashErr.Error())
 	}
 
-	if !p.ignoreDeploymentState && parametersHashErr == nil {
+	useDeploymentState := !p.ignoreDeploymentState && parametersHashErr == nil
+	if useDeploymentState && p.hasActiveDeploymentStacksConfig() {
+		logDS("deployment stacks configuration present; bypassing deployment-state shortcut")
+		useDeploymentState = false
+	}
+
+	if useDeploymentState {
 		deploymentState, stateErr := p.deploymentState(ctx, planned, deployment, currentParamsHash)
 		if stateErr == nil {
 			// As a heuristic, we also check the existence of all resource groups

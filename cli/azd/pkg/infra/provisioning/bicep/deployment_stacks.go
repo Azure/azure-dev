@@ -25,6 +25,16 @@ func (p *BicepProvider) deploymentStacksEnabled() bool {
 	return featureManager.IsEnabled(azapi.FeatureDeploymentStacks)
 }
 
+// hasActiveDeploymentStacksConfig reports whether an effective deployment-stacks configuration is
+// present (config supplied AND the alpha feature enabled). When true, the deployment-state shortcut
+// must be bypassed: the stacks deny/unmanage settings — including ${VAR}-resolved deny lists — can
+// change independently of the ARM template and parameters that the state hash covers. Skipping the
+// deployment would otherwise leave stale deny settings on the stack and would also bypass the
+// ${VAR} resolution/validation performed while building the options map.
+func (p *BicepProvider) hasActiveDeploymentStacksConfig() bool {
+	return p.options.DeploymentStacks != nil && p.deploymentStacksEnabled()
+}
+
 // resolveDeploymentStacksMap resolves the typed deployment-stacks configuration into a
 // camelCase map[string]any consumable by the deployment-stacks API layer
 // (azapi.parseDeploymentStackOptions). It performs ${VAR} environment-variable substitution

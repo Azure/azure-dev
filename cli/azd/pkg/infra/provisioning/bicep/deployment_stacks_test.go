@@ -201,3 +201,37 @@ func TestDeploymentOptionsMap_SkipsResolutionWhenStacksDisabled(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, optionsMap, "DeploymentStacks")
 }
+
+// TestHasActiveDeploymentStacksConfig guards the deployment-state bypass: when an effective
+// deployment-stacks configuration is present, Deploy must skip the state shortcut so a changed
+// ${VAR}-resolved deny principal/action is re-applied (rather than silently ignored because the
+// ARM template and parameters are unchanged) and the ${VAR} validation always runs.
+func TestHasActiveDeploymentStacksConfig(t *testing.T) {
+	t.Run("no config", func(t *testing.T) {
+		enableDeploymentStacks(t)
+		mockContext := mocks.NewMockContext(t.Context())
+		provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
+		provider.options.DeploymentStacks = nil
+		require.False(t, provider.hasActiveDeploymentStacksConfig())
+	})
+
+	t.Run("config present but feature disabled", func(t *testing.T) {
+		// deployment.stacks alpha feature is NOT enabled.
+		mockContext := mocks.NewMockContext(t.Context())
+		provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
+		provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
+			DenySettings: &provisioning.DenySettingsConfig{Mode: "denyDelete"},
+		}
+		require.False(t, provider.hasActiveDeploymentStacksConfig())
+	})
+
+	t.Run("config present and feature enabled", func(t *testing.T) {
+		enableDeploymentStacks(t)
+		mockContext := mocks.NewMockContext(t.Context())
+		provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
+		provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
+			DenySettings: &provisioning.DenySettingsConfig{Mode: "denyDelete"},
+		}
+		require.True(t, provider.hasActiveDeploymentStacksConfig())
+	})
+}

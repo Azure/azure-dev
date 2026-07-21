@@ -894,7 +894,7 @@ environment_variables:
     value: debug
 `)
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -918,7 +918,7 @@ environment_variables:
 		azdEnv := map[string]string{
 			"FOUNDRY_PROJECT_ENDPOINT": "https://example.azure.com",
 		}
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, azdEnv, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, azdEnv, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -939,7 +939,7 @@ environment_variables:
     value: hello
 `)
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -955,7 +955,7 @@ environment_variables:
 	})
 
 	t.Run("returns nil for nil definition", func(t *testing.T) {
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), nil, nil, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), nil, nil, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -967,7 +967,7 @@ environment_variables:
 	t.Run("returns nil for empty environment_variables", func(t *testing.T) {
 		def := parse(t, "name: test-agent\n")
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -983,12 +983,34 @@ environment_variables:
     value: ${DOES_NOT_EXIST}
 `)
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, map[string]string{}, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, map[string]string{}, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if !slices.Contains(result, "MISSING_REF=") {
 			t.Errorf("expected MISSING_REF= (empty), got %v", result)
+		}
+	})
+
+	t.Run("keeps forwarded core values literal", func(t *testing.T) {
+		def := parse(t, `name: test-agent
+environment_variables:
+  - name: FORWARDED_VALUE
+    value: ${FORWARDED_VALUE}
+`)
+
+		result, err := resolveAgentDefinitionEnvVars(
+			t.Context(),
+			def,
+			map[string]string{"FORWARDED_VALUE": "literal ${NOT_A_TEMPLATE}"},
+			map[string]string{"NOT_A_TEMPLATE": "expanded"},
+			"",
+		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !slices.Contains(result, "FORWARDED_VALUE=literal ${NOT_A_TEMPLATE}") {
+			t.Errorf("expected literal forwarded value, got %v", result)
 		}
 	})
 }

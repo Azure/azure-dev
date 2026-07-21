@@ -11,13 +11,16 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
+	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // ---- newOptimizeApplyCommand — command shape ----
@@ -45,6 +48,54 @@ func TestNewOptimizeApplyCommand_CandidateIsRequired(t *testing.T) {
 	err := cmd.Execute()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "candidate")
+}
+
+func TestPersistInlineAgentEnvironmentMigratesLegacyTemplates(t *testing.T) {
+	props, err := projectpkg.AgentDefinitionToServiceProperties(
+		agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindHosted,
+				Name: "basic-agent",
+			},
+			Protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "2.0.0"},
+			},
+		},
+		nil,
+	)
+	require.NoError(t, err)
+	legacyEnvironment, err := structpb.NewValue([]any{
+		map[string]any{
+			"name":  "LEGACY_KEY",
+			"value": "${LEGACY_KEY}",
+		},
+	})
+	require.NoError(t, err)
+	props.Fields["environmentVariables"] = legacyEnvironment
+	svc := &azdext.ServiceConfig{
+		Name:   "basic-agent",
+		Host:   AiAgentHost,
+		Config: props,
+	}
+
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	require.NoError(t, persistInlineAgentEnvironment(
+		t.Context(),
+		client,
+		svc,
+		projectpkg.AgentDefinitionSourceLegacyConfig,
+		map[string]string{"OPTIMIZATION_CANDIDATE_ID": "candidate-1"},
+	))
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Len(t, server.added, 1)
+	require.Empty(t, server.added[0].GetEnvironment())
+	require.Equal(t, map[string]any{
+		"LEGACY_KEY":                "${LEGACY_KEY}",
+		"OPTIMIZATION_CANDIDATE_ID": "candidate-1",
+	}, server.env["basic-agent"])
 }
 
 // ---- printPreviewLines ----

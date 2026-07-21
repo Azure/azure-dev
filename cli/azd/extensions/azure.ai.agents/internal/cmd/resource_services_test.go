@@ -96,16 +96,20 @@ func TestServiceEnvironmentTemplates(t *testing.T) {
 			"key": "${SEARCH_KEY}",
 		},
 		Metadata: map[string]string{
-			"server":  "${SERVER_NAME}",
-			"token":   "${{connections.search.credentials.key}}",
-			"literal": "$${LITERAL}",
+			"server":          "${SERVER_NAME}",
+			"default":         "${DEFAULT_NAME:-fallback}",
+			"foundry_default": "${EVENT_BODY:-${{event.body}}}",
+			"token":           "${{connections.search.credentials.key}}",
+			"literal":         "$${LITERAL}",
 		},
 	})
 	require.NoError(t, err)
 
 	assert.Equal(t, map[string]string{
-		"SEARCH_KEY":  "${SEARCH_KEY}",
-		"SERVER_NAME": "${SERVER_NAME}",
+		"SEARCH_KEY":   "${SEARCH_KEY}",
+		"SERVER_NAME":  "${SERVER_NAME}",
+		"DEFAULT_NAME": "${DEFAULT_NAME:-fallback}",
+		"EVENT_BODY":   "${EVENT_BODY:-${{event.body}}}",
 	}, serviceEnvironmentTemplates(cfg))
 }
 
@@ -326,6 +330,12 @@ func (s *recordingProjectServer) AddService(
 	defer s.mu.Unlock()
 	s.added = append(s.added, req.Service)
 	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *recordingProjectServer) GetServiceConfigValue(
+	_ context.Context, _ *azdext.GetServiceConfigValueRequest,
+) (*azdext.GetServiceConfigValueResponse, error) {
+	return &azdext.GetServiceConfigValueResponse{}, nil
 }
 
 func (s *recordingProjectServer) SetServiceConfigValue(

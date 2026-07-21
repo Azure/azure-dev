@@ -1420,7 +1420,12 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	resolvedEnvVars := make(map[string]string)
 	if agentDef.EnvironmentVariables != nil {
 		for _, envVar := range *agentDef.EnvironmentVariables {
-			resolvedEnvVars[envVar.Name] = p.resolveEnvironmentVariables(envVar.Value, azdEnv)
+			resolvedEnvVars[envVar.Name] = p.resolveEnvironmentVariables(
+				envVar.Name,
+				envVar.Value,
+				serviceConfig.GetEnvironment(),
+				azdEnv,
+			)
 		}
 	}
 
@@ -2614,12 +2619,21 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	return nil
 }
 
-// resolveEnvironmentVariables resolves ${ENV_VAR} style references in value using azd environment variables.
-// Supports default values (e.g., "${VAR:-default}") and multiple expressions (e.g., "${VAR1}-${VAR2}").
-func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(value string, azdEnv map[string]string) string {
-	resolved, err := ExpandEnv(value, func(varName string) string {
-		return azdEnv[varName]
-	})
+// resolveEnvironmentVariables expands legacy inline templates.
+func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(
+	name string,
+	value string,
+	serviceEnvironment map[string]string,
+	azdEnv map[string]string,
+) string {
+	resolved, err := ResolveAgentEnvironmentVariable(
+		name,
+		value,
+		serviceEnvironment,
+		func(varName string) string {
+			return azdEnv[varName]
+		},
+	)
 	if err != nil {
 		// If resolution fails, return original value
 		return value

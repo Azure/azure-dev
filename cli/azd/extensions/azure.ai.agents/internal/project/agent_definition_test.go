@@ -134,8 +134,8 @@ func TestAgentDefinitionFromService_LegacyEnvironment(t *testing.T) {
 	props.Fields["environmentVariables"] = legacyEnvironment
 
 	svc := &azdext.ServiceConfig{
-		Name: "basic-agent",
-		Host: "azure.ai.agent",
+		Name:   "basic-agent",
+		Host:   "azure.ai.agent",
 		Config: props,
 		Environment: map[string]string{
 			"NEW_KEY":    "new",
@@ -151,6 +151,23 @@ func TestAgentDefinitionFromService_LegacyEnvironment(t *testing.T) {
 		"NEW_KEY":    "new",
 		"SHARED_KEY": "service",
 	}, AgentEnvironment(got))
+}
+
+func TestResolveAgentEnvironmentVariable(t *testing.T) {
+	t.Parallel()
+
+	value, err := ResolveAgentEnvironmentVariable(
+		"FORWARDED_VALUE",
+		"${FORWARDED_VALUE}",
+		map[string]string{
+			"FORWARDED_VALUE": "literal ${NOT_A_TEMPLATE}",
+		},
+		func(string) string {
+			return "expanded"
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "literal ${NOT_A_TEMPLATE}", value)
 }
 
 // TestAgentDefinitionFromService_NoDefinition verifies that a service without an

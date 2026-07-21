@@ -1,15 +1,5 @@
 # Release History
 
-## 1.0.0-beta.7 (Unreleased)
-
-### Bugs Fixed
-
-- [[#9079]](https://github.com/Azure/azure-dev/pull/9079) Store
-  hosted-agent runtime variables in the standard service-level `env` object and
-  read the expanded values forwarded by azd core. `azd ai agent init` no longer
-  writes the unsupported inline `environmentVariables` shape; legacy inline and
-  on-disk agent definitions remain readable.
-
 ## 1.0.0-beta.6 (2026-07-16)
 
 ### Features Added

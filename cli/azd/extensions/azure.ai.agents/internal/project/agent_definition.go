@@ -170,6 +170,19 @@ func AgentEnvironment(ca agent_yaml.ContainerAgent) map[string]string {
 	return environment
 }
 
+// ResolveAgentEnvironmentVariable preserves values forwarded by core.
+func ResolveAgentEnvironmentVariable(
+	name string,
+	value string,
+	serviceEnvironment map[string]string,
+	mapping func(string) string,
+) (string, error) {
+	if environmentValue, found := serviceEnvironment[name]; found {
+		return environmentValue, nil
+	}
+	return ExpandEnv(value, mapping)
+}
+
 func environmentVariablesFromMap(
 	environment map[string]string,
 ) *[]agent_yaml.EnvironmentVariable {

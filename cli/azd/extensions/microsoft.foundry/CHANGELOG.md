@@ -1,11 +1,5 @@
 # Release History
 
-## 1.0.0-beta.2 (Unreleased)
-
-### Other Changes
-
-- [[#9079]](https://github.com/Azure/azure-dev/pull/9079) Require azd 1.27.1 so bundled Foundry service targets receive service-level environment values.
-
 ## 1.0.0-beta.1 (2026-06-30)
 
 ### Features Added

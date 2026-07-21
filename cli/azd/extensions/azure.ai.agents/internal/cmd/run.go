@@ -211,7 +211,13 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	// the Foundry data plane). Agent definition env vars do not override
 	// values already present in the process environment.
 	endpoint, _ := resolveAgentEndpoint(ctx, "", "")
-	defEnv, defErr := resolveAgentDefinitionEnvVars(ctx, runCtx.Definition, azdEnvVars, endpoint)
+	defEnv, defErr := resolveAgentDefinitionEnvVars(
+		ctx,
+		runCtx.Definition,
+		runCtx.ServiceEnvironment,
+		azdEnvVars,
+		endpoint,
+	)
 	if defErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: %s\n", defErr)
 	}
@@ -514,6 +520,7 @@ func shouldWarnLoadAzdEnvironmentFailure(err error) bool {
 func resolveAgentDefinitionEnvVars(
 	ctx context.Context,
 	agentDef *agent_yaml.ContainerAgent,
+	serviceEnvironment map[string]string,
 	azdEnvVars map[string]string,
 	endpoint string,
 ) ([]string, error) {
@@ -544,8 +551,15 @@ func resolveAgentDefinitionEnvVars(
 		if _, isConn := connRefEnvNames[ev.Name]; isConn {
 			continue
 		}
-		// ExpandEnv returns the original value on error, so a failed expansion is a no-op.
-		resolved, _ := project.ExpandEnv(ev.Value, lookup)
+		resolved, err := project.ResolveAgentEnvironmentVariable(
+			ev.Name,
+			ev.Value,
+			serviceEnvironment,
+			lookup,
+		)
+		if err != nil {
+			resolved = ev.Value
+		}
 		result = append(result, fmt.Sprintf("%s=%s", ev.Name, resolved))
 	}
 

@@ -939,9 +939,10 @@ func resolveAgentServiceFromProject(
 
 // ServiceRunContext holds the resolved context needed for local development.
 type ServiceRunContext struct {
-	ServiceName    string // the resolved service name (from azure.yaml)
-	ProjectDir     string // absolute path to the service source directory
-	StartupCommand string // startupCommand from AdditionalProperties (may be empty)
+	ServiceName        string            // the resolved service name (from azure.yaml)
+	ProjectDir         string            // absolute path to the service source directory
+	StartupCommand     string            // startupCommand from AdditionalProperties (may be empty)
+	ServiceEnvironment map[string]string // values already expanded by azd core
 	// Definition is the resolved agent definition (from the inline azure.yaml
 	// entry or a legacy agent.yaml). It is nil when no definition can be resolved.
 	Definition *agent_yaml.ContainerAgent
@@ -978,10 +979,11 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	}
 
 	return &ServiceRunContext{
-		ServiceName:    svc.Name,
-		ProjectDir:     projectDir,
-		StartupCommand: startupCmd,
-		Definition:     definition,
+		ServiceName:        svc.Name,
+		ProjectDir:         projectDir,
+		StartupCommand:     startupCmd,
+		ServiceEnvironment: svc.GetEnvironment(),
+		Definition:         definition,
 	}, nil
 }
 

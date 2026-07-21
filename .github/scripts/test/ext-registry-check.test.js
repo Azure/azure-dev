@@ -37,6 +37,10 @@ const {
   isAllowedRegistryJsonUpdate,
 } = run.forTests;
 
+const PROD_REGISTRY_PATH = 'cli/azd/extensions/registry.json';
+const DEV_REGISTRY_PATH = 'cli/azd/extensions/registry.dev.json';
+const REGISTRY_PATH_LIST = `${PROD_REGISTRY_PATH}, ${DEV_REGISTRY_PATH}`;
+
 /**
  * @param {object} [opts]
  * @param {string[]} [opts.capabilities]
@@ -515,7 +519,12 @@ describe('isAllowedRegistryJsonUpdate', () => {
     const octokit = createRegistryOctokit({ base, pr });
     const context = createRegistryContext();
 
-    await expect(isAllowedRegistryJsonUpdate({ octokit, context })).resolves.toContainEqual(expect.stringContaining('changes metadata that requires core review'));
+    await expect(isAllowedRegistryJsonUpdate({
+      octokit,
+      context,
+      registryPath: PROD_REGISTRY_PATH,
+      registryBaseRef: 'main',
+    })).resolves.toContainEqual(expect.stringContaining('changes metadata that requires core review'));
     expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
       owner: 'Azure',
       repo: 'azure-dev',
@@ -537,6 +546,7 @@ describe('isAllowedRegistryJsonUpdate', () => {
     await expect(isAllowedRegistryJsonUpdate({
       octokit,
       context,
+      registryPath: PROD_REGISTRY_PATH,
       registryBaseRef: 'base-before-pr',
     })).resolves.toContainEqual(expect.stringContaining('changes metadata that requires core review'));
     expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
@@ -554,7 +564,8 @@ describe('isAllowedRegistryJsonUpdate', () => {
     await expect(isAllowedRegistryJsonUpdate({
       octokit,
       context: createRegistryContext(),
-      registryPath: 'cli/azd/extensions/registry.dev.json',
+      registryPath: DEV_REGISTRY_PATH,
+      registryBaseRef: 'main',
     })).resolves.toContainEqual(expect.stringContaining('changes metadata that requires core review'));
     expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
       path: 'cli/azd/extensions/registry.dev.json',
@@ -569,6 +580,8 @@ describe('isAllowedRegistryJsonUpdate', () => {
     const reasons = await isAllowedRegistryJsonUpdate({
       octokit,
       context: createRegistryContext(),
+      registryPath: PROD_REGISTRY_PATH,
+      registryBaseRef: 'main',
     });
 
     expect(reasons).toContainEqual(expect.stringContaining('changes capabilities'));
@@ -750,7 +763,7 @@ describe('run', () => {
       coreTeam: new Set(['core-member']),
     });
 
-    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('files outside the extension registries'));
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining(`files outside ${REGISTRY_PATH_LIST}`));
     expect(octokit.paginate).toHaveBeenCalledWith(octokit.rest.pulls.listFiles, expect.objectContaining({
       pull_number: 1,
     }));
@@ -808,7 +821,7 @@ describe('run', () => {
       coreTeam: new Set(['core-member']),
     });
 
-    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('files outside the extension registries'));
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining(`files outside ${REGISTRY_PATH_LIST}`));
     expect(octokit.paginate).toHaveBeenCalledWith(octokit.rest.pulls.listFiles, expect.objectContaining({
       pull_number: 1,
     }));
@@ -862,7 +875,7 @@ describe('run', () => {
     }));
   });
 
-  it('requires review when the PR changes files outside registry.json', async () => {
+  it('requires review when the PR changes files outside the extension registries', async () => {
     const core = createNoopCore();
     const octokit = createRegistryOctokit({
       base: registry([extension()]),
@@ -880,7 +893,7 @@ describe('run', () => {
       coreTeam: new Set(['core-member']),
     });
 
-    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('files outside the extension registries'));
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining(`files outside ${REGISTRY_PATH_LIST}`));
     expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('cli/azd/extensions/README.md'));
   });
 });

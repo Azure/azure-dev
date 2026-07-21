@@ -20,7 +20,6 @@ const REGISTRY_JSON_PATHS = new Set([
   'cli/azd/extensions/registry.json',
   'cli/azd/extensions/registry.dev.json',
 ]);
-const DEFAULT_REGISTRY_JSON_PATH = 'cli/azd/extensions/registry.json';
 
 // We only allow URLs that point to our GitHub releases page.
 const ALLOWED_ARTIFACT_URL_ORIGIN = 'https://github.com';
@@ -244,14 +243,14 @@ function isCreatedByCoreTeam({ context, core, coreTeam }) {
 /**
  * Checks whether the registry update is simple enough to proceed without core-team review.
  *
- * @param {{ octokit: Octokit, context: Context, registryBaseRef?: string, registryPath?: string }} args
+ * @param {{ octokit: Octokit, context: Context, registryPath: string, registryBaseRef: string }} args
  * @returns {Promise<string[]>} the reasons core review is needed; empty means the change is approved
  */
 async function isAllowedRegistryJsonUpdate({
   octokit,
   context,
-  registryBaseRef = 'main',
-  registryPath = DEFAULT_REGISTRY_JSON_PATH,
+  registryPath,
+  registryBaseRef,
 }) {
   assertHasPullRequest(context);
   const pr = context.payload.pull_request;
@@ -310,17 +309,18 @@ function diffChangedFiles(changedFiles) {
   }
 
   return [
-    `PR changes files outside the extension registries; core review required for registry-only PRs: ${unexpectedFiles.join(', ')}`,
+    `PR changes files outside ${[...REGISTRY_JSON_PATHS].join(', ')}; ` +
+    `core review required for registry-only PRs: ${unexpectedFiles.join(', ')}`,
   ];
 }
 
 /**
  * Fetches and parses an extension registry at a given ref.
  *
- * @param {{ octokit: Octokit, owner: string, repo: string, ref: string, registryPath?: string }} args
+ * @param {{ octokit: Octokit, owner: string, repo: string, ref: string, registryPath: string }} args
  * @returns {Promise<RegistryJson>}
  */
-async function getRegistryJson({ octokit, owner, repo, ref, registryPath = DEFAULT_REGISTRY_JSON_PATH }) {
+async function getRegistryJson({ octokit, owner, repo, ref, registryPath }) {
   const { data } = await octokit.rest.repos.getContent({
     owner,
     repo,

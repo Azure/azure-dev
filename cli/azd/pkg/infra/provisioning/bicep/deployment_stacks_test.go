@@ -4,6 +4,7 @@
 package bicep
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -258,4 +259,87 @@ func TestResolveDeploymentStacksMap_DefaultExpression(t *testing.T) {
 	denySettings, ok := stacks["denySettings"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, []string{"55555555-5555-5555-5555-555555555555"}, denySettings["excludedPrincipals"])
+}
+
+// TestUseDeploymentStateShortcut exercises every branch of the shortcut decision: it is disabled
+// when deployment-state tracking is off, when the parameters hash failed, and when an active
+// deployment-stacks configuration is present; otherwise it is enabled.
+func TestUseDeploymentStateShortcut(t *testing.T) {
+	t.Run("enabled by default", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
+		require.True(t, provider.useDeploymentStateShortcut(nil))
+	})
+
+	t.Run("disabled when deployment state ignored", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
+		provider.ignoreDeploymentState = true
+		require.False(t, provider.useDeploymentStateShortcut(nil))
+	})
+
+	t.Run("disabled when parameters hash failed", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
+		require.False(t, provider.useDeploymentStateShortcut(errors.New("hash failed")))
+	})
+
+	t.Run("disabled when active deployment stacks config present", func(t *testing.T) {
+		enableDeploymentStacks(t)
+		mockContext := mocks.NewMockContext(t.Context())
+		provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
+		provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
+			DenySettings: &provisioning.DenySettingsConfig{Mode: "denyDelete"},
+		}
+		require.False(t, provider.useDeploymentStateShortcut(nil))
+	})
+
+	t.Run("enabled when stacks config present but feature disabled", func(t *testing.T) {
+		// deployment.stacks alpha feature is NOT enabled, so the config is inert.
+		mockContext := mocks.NewMockContext(t.Context())
+		provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
+		provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
+			DenySettings: &provisioning.DenySettingsConfig{Mode: "denyDelete"},
+		}
+		require.True(t, provider.useDeploymentStateShortcut(nil))
+	})
+}
+
+// TestResolveDeploymentStacksMap_ActionOnUnmanageManagementGroups covers the management-groups
+// branch of actionOnUnmanage and confirms an empty ActionOnUnmanage still produces the (empty) map.
+func TestResolveDeploymentStacksMap_ActionOnUnmanageManagementGroups(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
+
+	provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
+		ActionOnUnmanage: &provisioning.ActionOnUnmanageConfig{
+			ManagementGroups: "detach",
+		},
+	}
+
+	stacks, err := provider.resolveDeploymentStacksMap(true)
+	require.NoError(t, err)
+
+	actionOnUnmanage, ok := stacks["actionOnUnmanage"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "detach", actionOnUnmanage["managementGroups"])
+	require.NotContains(t, stacks, "denySettings")
+}
+
+// TestResolveDeploymentStacksValues_BlankLiteralErrors verifies that a literal blank deny-list
+// entry (no ${VAR} reference at all) is rejected as a misconfiguration.
+func TestResolveDeploymentStacksValues_BlankLiteralErrors(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
+
+	provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
+		DenySettings: &provisioning.DenySettingsConfig{
+			Mode:            "denyDelete",
+			ExcludedActions: expandableStrings("   "),
+		},
+	}
+
+	_, err := provider.resolveDeploymentStacksMap(true)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "empty string")
 }

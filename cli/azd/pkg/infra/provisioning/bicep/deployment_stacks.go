@@ -35,6 +35,21 @@ func (p *BicepProvider) hasActiveDeploymentStacksConfig() bool {
 	return p.options.DeploymentStacks != nil && p.deploymentStacksEnabled()
 }
 
+// useDeploymentStateShortcut reports whether the deployment-state shortcut (which skips a
+// redeploy when the template and parameters are unchanged) may be used. It returns false when
+// deployment-state tracking is disabled (--no-state), when the parameters hash could not be
+// computed, or when an active deployment-stacks configuration is present. In the stacks case the
+// deny/unmanage settings — including ${VAR}-resolved deny lists — can change independently of the
+// template+parameters the state hash covers, so the shortcut must be bypassed to avoid leaving
+// stale settings on the stack and to preserve ${VAR} resolution/validation.
+func (p *BicepProvider) useDeploymentStateShortcut(parametersHashErr error) bool {
+	if p.ignoreDeploymentState || parametersHashErr != nil {
+		return false
+	}
+
+	return !p.hasActiveDeploymentStacksConfig()
+}
+
 // resolveDeploymentStacksMap resolves the typed deployment-stacks configuration into a
 // camelCase map[string]any consumable by the deployment-stacks API layer
 // (azapi.parseDeploymentStackOptions). It performs ${VAR} environment-variable substitution

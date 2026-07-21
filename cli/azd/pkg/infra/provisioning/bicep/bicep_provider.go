@@ -833,10 +833,11 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		logDS("%s", parametersHashErr.Error())
 	}
 
-	useDeploymentState := !p.ignoreDeploymentState && parametersHashErr == nil
-	if useDeploymentState && p.hasActiveDeploymentStacksConfig() {
+	useDeploymentState := p.useDeploymentStateShortcut(parametersHashErr)
+	if !useDeploymentState && !p.ignoreDeploymentState && parametersHashErr == nil {
+		// The only remaining reason the shortcut is disabled here is an active deployment-stacks
+		// configuration; surface it in the deployment-stacks debug log.
 		logDS("deployment stacks configuration present; bypassing deployment-state shortcut")
-		useDeploymentState = false
 	}
 
 	if useDeploymentState {

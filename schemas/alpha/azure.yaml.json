@@ -1682,11 +1682,19 @@
                         },
                         "excludedActions": {
                             "type": "array",
-                            "title": "List of role-based management operations that are excluded from the denySettings."
+                            "title": "List of role-based management operations that are excluded from the denySettings.",
+                            "description": "Each entry supports ${VAR} environment variable substitution, resolved at deployment time.",
+                            "items": {
+                                "type": "string"
+                            }
                         },
                         "excludedPrincipals": {
                             "type": "array",
-                            "title": "List of Entra ID principal IDs excluded from the lock. Up to 5 principals are permitted."
+                            "title": "List of Entra ID principal IDs excluded from the lock. Up to 5 principals are permitted.",
+                            "description": "Each entry supports ${VAR} environment variable substitution, resolved at deployment time.",
+                            "items": {
+                                "type": "string"
+                            }
                         }
                     }
                 }

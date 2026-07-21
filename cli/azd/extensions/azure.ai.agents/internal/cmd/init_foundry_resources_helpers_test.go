@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"testing"
 
@@ -775,7 +774,8 @@ func TestConfigureAcrConnection_ValidatesDiscoveredConnections(t *testing.T) {
 	tests := []struct {
 		name        string
 		connections []azure.Connection
-		lookup      acrResourceIdLookup
+		registries  map[string]string
+		loadErr     error
 		prompts     []string
 		initial     map[string]string
 		wantErr     string
@@ -786,9 +786,7 @@ func TestConfigureAcrConnection_ValidatesDiscoveredConnections(t *testing.T) {
 			connections: []azure.Connection{{
 				Name: "valid-conn", Target: "https://valid.azurecr.io/",
 			}},
-			lookup: func(context.Context, azcore.TokenCredential, string, string) (string, error) {
-				return resourceId, nil
-			},
+			registries: map[string]string{"valid.azurecr.io": resourceId},
 			wantValues: map[string]string{
 				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "valid-conn",
 				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "valid.azurecr.io",
@@ -800,9 +798,6 @@ func TestConfigureAcrConnection_ValidatesDiscoveredConnections(t *testing.T) {
 			connections: []azure.Connection{{
 				Name: "stale-conn", Target: "stale.azurecr.io",
 			}},
-			lookup: func(context.Context, azcore.TokenCredential, string, string) (string, error) {
-				return "", fmt.Errorf("%w: stale", errAcrNotFound)
-			},
 			prompts: []string{""},
 			initial: map[string]string{
 				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "old-conn",
@@ -822,12 +817,7 @@ func TestConfigureAcrConnection_ValidatesDiscoveredConnections(t *testing.T) {
 				{Name: "stale-conn", Target: "stale.azurecr.io"},
 				{Name: "valid-conn", Target: "valid.azurecr.io"},
 			},
-			lookup: func(_ context.Context, _ azcore.TokenCredential, _, loginServer string) (string, error) {
-				if loginServer == "stale.azurecr.io" {
-					return "", fmt.Errorf("%w: stale", errAcrNotFound)
-				}
-				return resourceId, nil
-			},
+			registries: map[string]string{"valid.azurecr.io": resourceId},
 			wantValues: map[string]string{
 				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "valid-conn",
 				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "valid.azurecr.io",
@@ -839,23 +829,29 @@ func TestConfigureAcrConnection_ValidatesDiscoveredConnections(t *testing.T) {
 			connections: []azure.Connection{{
 				Name: "unknown-conn", Target: "unknown.azurecr.io",
 			}},
-			lookup: func(context.Context, azcore.TokenCredential, string, string) (string, error) {
-				return "", errors.New("authorization failed")
+			loadErr: errors.New("authorization failed"),
+			wantErr: "listing container registries for connection validation: authorization failed",
+		},
+		{
+			name: "mismatched host suffix is stale",
+			connections: []azure.Connection{{
+				Name: "invalid-host-conn", Target: "valid.azurecr.io.invalid.example",
+			}},
+			registries: map[string]string{"valid.azurecr.io": resourceId},
+			prompts:    []string{""},
+			wantValues: map[string]string{
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "",
+				"AI_AGENT_PENDING_PROVISION":           "acr",
 			},
-			wantErr: "validating container registry connection \"unknown-conn\": authorization failed",
 		},
 		{
 			name: "manual fallback writes resource id and clears connection name",
 			connections: []azure.Connection{{
 				Name: "stale-conn", Target: "stale.azurecr.io",
 			}},
-			lookup: func(_ context.Context, _ azcore.TokenCredential, _, loginServer string) (string, error) {
-				if loginServer == "stale.azurecr.io" {
-					return "", fmt.Errorf("%w: stale", errAcrNotFound)
-				}
-				return resourceId, nil
-			},
-			prompts: []string{"valid.azurecr.io"},
+			registries: map[string]string{"valid.azurecr.io": resourceId},
+			prompts:    []string{"valid.azurecr.io"},
 			initial: map[string]string{
 				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "stale-conn",
 			},
@@ -876,9 +872,15 @@ func TestConfigureAcrConnection_ValidatesDiscoveredConnections(t *testing.T) {
 			prompts := &testPromptServiceServer{promptResponses: tt.prompts}
 			azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{}, prompts)
 
-			err := configureAcrConnectionWithLookup(
-				t.Context(), azdClient, nil, envName, "sub", tt.connections, tt.lookup,
+			loadCalls := 0
+			loader := func(context.Context, azcore.TokenCredential, string) (map[string]string, error) {
+				loadCalls++
+				return tt.registries, tt.loadErr
+			}
+			err := configureAcrConnectionWithRegistryLoader(
+				t.Context(), azdClient, nil, envName, "sub", tt.connections, loader,
 			)
+			require.Equal(t, 1, loadCalls)
 			if tt.wantErr != "" {
 				require.EqualError(t, err, tt.wantErr)
 				return

@@ -7,7 +7,6 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/azure"
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"regexp"
@@ -62,8 +61,6 @@ type FoundryDeploymentInfo struct {
 }
 
 const foundryProjectResourceType = "Microsoft.CognitiveServices/accounts/projects"
-
-var errAcrNotFound = errors.New("container registry not found")
 
 // setEnvValue sets a single environment variable in the azd environment.
 func setEnvValue(ctx context.Context, azdClient *azdext.AzdClient, envName, key, value string) error {
@@ -345,41 +342,33 @@ func normalizeLoginServer(endpoint string) string {
 	return endpoint
 }
 
-// lookupAcrResourceId finds the ARM resource ID for an ACR given its login server endpoint.
-func lookupAcrResourceId(
+// listAcrResourceIds returns ARM resource IDs keyed by normalized ACR login server.
+func listAcrResourceIds(
 	ctx context.Context,
 	credential azcore.TokenCredential,
 	subscriptionId string,
-	loginServer string,
-) (string, error) {
-	loginServer = normalizeLoginServer(loginServer)
-	parts := strings.Split(loginServer, ".")
-	if len(parts) < 2 || parts[0] == "" {
-		return "", fmt.Errorf("invalid login server format: %q, expected e.g. %q", loginServer, "registry.azurecr.io")
-	}
-	registryName := parts[0]
-
+) (map[string]string, error) {
 	client, err := armcontainerregistry.NewRegistriesClient(subscriptionId, credential, azure.NewArmClientOptions())
 	if err != nil {
-		return "", fmt.Errorf("failed to create container registry client: %w", err)
+		return nil, fmt.Errorf("failed to create container registry client: %w", err)
 	}
 
+	resourceIds := map[string]string{}
 	pager := client.NewListPager(nil)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return "", fmt.Errorf("failed to list registries: %w", err)
+			return nil, fmt.Errorf("failed to list registries: %w", err)
 		}
 		for _, registry := range page.Value {
-			if registry.Name != nil && strings.EqualFold(*registry.Name, registryName) {
-				if registry.ID != nil {
-					return *registry.ID, nil
-				}
+			if registry.Properties != nil && registry.Properties.LoginServer != nil && registry.ID != nil {
+				loginServer := strings.ToLower(normalizeLoginServer(*registry.Properties.LoginServer))
+				resourceIds[loginServer] = *registry.ID
 			}
 		}
 	}
 
-	return "", fmt.Errorf("%w: '%s' in subscription", errAcrNotFound, registryName)
+	return resourceIds, nil
 }
 
 // configureFoundryProjectEnv sets all Foundry project environment variables and discovers
@@ -527,41 +516,43 @@ func configureAcrConnection(
 	subscriptionId string,
 	acrConnections []azure.Connection,
 ) error {
-	return configureAcrConnectionWithLookup(
-		ctx, azdClient, credential, envName, subscriptionId, acrConnections, lookupAcrResourceId,
+	return configureAcrConnectionWithRegistryLoader(
+		ctx, azdClient, credential, envName, subscriptionId, acrConnections, listAcrResourceIds,
 	)
 }
 
-type acrResourceIdLookup func(context.Context, azcore.TokenCredential, string, string) (string, error)
+type acrRegistryLoader func(context.Context, azcore.TokenCredential, string) (map[string]string, error)
 
 type validatedAcrConnection struct {
 	connection azure.Connection
 	resourceId string
 }
 
-func configureAcrConnectionWithLookup(
+func configureAcrConnectionWithRegistryLoader(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	credential azcore.TokenCredential,
 	envName string,
 	subscriptionId string,
 	acrConnections []azure.Connection,
-	lookup acrResourceIdLookup,
+	loadRegistries acrRegistryLoader,
 ) error {
+	resourceIds, err := loadRegistries(ctx, credential, subscriptionId)
+	if err != nil {
+		return fmt.Errorf("listing container registries for connection validation: %w", err)
+	}
+
 	validatedConnections := make([]validatedAcrConnection, 0, len(acrConnections))
 	for _, connection := range acrConnections {
 		loginServer := normalizeLoginServer(connection.Target)
-		resourceId, err := lookup(ctx, credential, subscriptionId, loginServer)
-		if err != nil {
-			if errors.Is(err, errAcrNotFound) || !strings.Contains(loginServer, ".") {
-				fmt.Printf(
-					"Skipping container registry connection %s because %s does not reference an existing registry "+
-						"in the selected subscription.\n",
-					connection.Name, connection.Target,
-				)
-				continue
-			}
-			return fmt.Errorf("validating container registry connection %q: %w", connection.Name, err)
+		resourceId, found := resourceIds[strings.ToLower(loginServer)]
+		if !found {
+			fmt.Printf(
+				"Skipping container registry connection %s because %s does not reference an existing registry "+
+					"in the selected subscription.\n",
+				connection.Name, connection.Target,
+			)
+			continue
 		}
 		validatedConnections = append(validatedConnections, validatedAcrConnection{
 			connection: connection,
@@ -590,9 +581,9 @@ func configureAcrConnectionWithLookup(
 
 		if resp.Value != "" {
 			loginServer := normalizeLoginServer(resp.Value)
-			resourceId, err := lookup(ctx, credential, subscriptionId, loginServer)
-			if err != nil {
-				return fmt.Errorf("failed to lookup ACR resource ID: %w", err)
+			resourceId, found := resourceIds[strings.ToLower(loginServer)]
+			if !found {
+				return fmt.Errorf("container registry with login server %q not found in subscription", loginServer)
 			}
 
 			if err := setEnvValue(ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_ENDPOINT", loginServer); err != nil {

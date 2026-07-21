@@ -174,9 +174,9 @@ func (a *myAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 ### CLI UX & Style
 
-When working on CLI output, terminal UX, spinners, progress states, colors, or prompts for **core azd flows**, you **MUST read** the style guide before making any changes or recommendations:
+When working on CLI output, terminal UX, spinners, progress states, colors, or prompts, you **MUST read** the relevant style guide before making any changes or recommendations. Reference the right file for the flow you're working on:
 
-📄 **`cli/azd/docs/style-guidelines/azd-style-guide.md`** (full path from repo root)
+📄 **`cli/azd/docs/style-guidelines/azd-style-guide.md`** — **core azd design patterns** (full path from repo root)
 
 This file is the authoritative reference for core azd terminal UX patterns including:
 - Progress report states (`(✓) Done`, `(x) Failed`, `(!) Warning`, `(-) Skipped`)
@@ -185,7 +185,11 @@ This file is the authoritative reference for core azd terminal UX patterns inclu
 - User input patterns (text input, list select, yes/no confirm)
 - Prompt styling (`?` marker in bold blue, `[Type ? for hint]`, post-submit states)
 
-> **Note**: This style guide covers **core azd flows only**. Separate guidelines for agentic flows and extension-specific UX will be provided in dedicated files in the future. Do not apply core azd patterns to agentic or extension flows without a dedicated style reference.
+📄 **`cli/azd/docs/style-guidelines/agentic-ux-style-guide.md`** — **agentic (AI / GitHub Copilot) UX patterns**
+
+Read this file instead when working on the AI-driven / agentic experience (the "Set up with GitHub Copilot (Preview)" flow, `azd agent`, the copilot session runtime, and the `AgentDisplay` renderer). It documents the distinct magenta + glyph visual language for agent identity, tool activity, subagents, and thinking states.
+
+> **Note**: These are two distinct visual systems. The core guide's patterns are **not enforced on extensions**, but extension developers are encouraged to follow them where applicable for consistency. Do **not** apply core azd status patterns to agentic flows (or vice versa) — pick the guide that matches the flow. Extension-specific UX is documented in `cli/azd/docs/extensions/extensions-style-guide.md`.
 
 ### Code Organization
 
@@ -405,7 +409,8 @@ go build
 
 Feature-specific docs are in `docs/` — refer to them as needed. Some key docs include:
 
-- `docs/style-guidelines/azd-style-guide.md` - CLI style guide (colors, spinners, progress states, terminal UX)
+- `docs/style-guidelines/azd-style-guide.md` - Core azd CLI style guide (colors, spinners, progress states, terminal UX)
+- `docs/style-guidelines/agentic-ux-style-guide.md` - Agentic (AI / GitHub Copilot) UX patterns (magenta + glyph vocabulary)
 - `docs/style-guidelines/new-azd-command.md` - Adding new commands
 - `docs/extensions/extension-framework.md` - Extension development using gRPC extension framework
 - `docs/style-guidelines/guiding-principles.md` - Design principles

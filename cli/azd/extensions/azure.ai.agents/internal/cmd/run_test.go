@@ -439,14 +439,15 @@ func createVenv(t *testing.T, projectDir string) string {
 func TestAppendFoundryEnvVars(t *testing.T) {
 	t.Parallel()
 
-	t.Run("does not map FOUNDRY_PROJECT_ENDPOINT to itself", func(t *testing.T) {
+	t.Run("forwards FOUNDRY_PROJECT_ENDPOINT", func(t *testing.T) {
 		t.Parallel()
 		azdEnv := map[string]string{
 			"FOUNDRY_PROJECT_ENDPOINT": "https://myaccount.services.ai.azure.com/api/projects/myproject",
 		}
 		env := appendFoundryEnvVars(nil, azdEnv, "")
-		if len(env) != 0 {
-			t.Errorf("expected no translated env vars, got %v", env)
+		expected := "FOUNDRY_PROJECT_ENDPOINT=https://myaccount.services.ai.azure.com/api/projects/myproject"
+		if !slices.Contains(env, expected) {
+			t.Errorf("expected %q in env, got %v", expected, env)
 		}
 	})
 
@@ -495,12 +496,12 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 			"AGENT_AGENT1_VERSION":     "v1",
 		}
 		env := appendFoundryEnvVars(nil, azdEnv, "agent1")
-		if len(env) != 3 {
-			t.Errorf("expected 3 env vars, got %d: %v", len(env), env)
+		if len(env) != 4 {
+			t.Errorf("expected 4 env vars, got %d: %v", len(env), env)
 		}
 	})
 
-	t.Run("skips foundry key when already set in azd env", func(t *testing.T) {
+	t.Run("prefers service-specific agent metadata", func(t *testing.T) {
 		t.Parallel()
 		azdEnv := map[string]string{
 			"FOUNDRY_PROJECT_ENDPOINT": "https://explicit.services.ai.azure.com",
@@ -509,20 +510,26 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 		}
 		env := appendFoundryEnvVars(nil, azdEnv, "my-svc")
 
-		// Neither FOUNDRY_PROJECT_ENDPOINT nor FOUNDRY_AGENT_NAME should be
-		// appended because they already exist in azdEnv (and were thus already
-		// added to the env slice by the caller's loop over azdEnv).
-		for _, entry := range env {
-			if strings.HasPrefix(entry, "FOUNDRY_PROJECT_ENDPOINT=") ||
-				strings.HasPrefix(entry, "FOUNDRY_AGENT_NAME=") {
-				t.Errorf("should not translate when foundry key already in azdEnv, got %q", entry)
-			}
+		if !slices.Contains(
+			env,
+			"FOUNDRY_PROJECT_ENDPOINT=https://explicit.services.ai.azure.com",
+		) {
+			t.Errorf("expected project endpoint in env, got %v", env)
 		}
+		if !slices.Contains(env, "FOUNDRY_AGENT_NAME=my-agent") {
+			t.Errorf("expected service agent name in env, got %v", env)
+		}
+	})
 
-		// AZURE_AI_PROJECT_ID has no explicit FOUNDRY_PROJECT_ARM_ID, so it should still be skipped
-		// (it's not in azdEnv either, so appendFoundryEnvVars skips it because the source key is empty)
-		if len(env) != 0 {
-			t.Errorf("expected no translated env vars, got %v", env)
+	t.Run("forwards application insights", func(t *testing.T) {
+		t.Parallel()
+		azdEnv := map[string]string{
+			"APPLICATIONINSIGHTS_CONNECTION_STRING": "InstrumentationKey=test",
+		}
+		env := appendFoundryEnvVars(nil, azdEnv, "")
+		expected := "APPLICATIONINSIGHTS_CONNECTION_STRING=InstrumentationKey=test"
+		if !slices.Contains(env, expected) {
+			t.Errorf("expected %q in env, got %v", expected, env)
 		}
 	})
 
@@ -568,6 +575,94 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 		}
 		if !slices.Contains(env, "FOUNDRY_AGENT_VERSION=v2") {
 			t.Errorf("expected FOUNDRY_AGENT_VERSION to be translated, got %v", env)
+		}
+	})
+}
+
+func TestMergeAgentRunEnvironment(t *testing.T) {
+	t.Parallel()
+
+	value := func(environment []string, key string) (string, bool) {
+		t.Helper()
+		for i := len(environment) - 1; i >= 0; i-- {
+			name, entryValue, found := strings.Cut(environment[i], "=")
+			if found && name == key {
+				return entryValue, true
+			}
+		}
+		return "", false
+	}
+
+	t.Run("service env wins without leaking azd values", func(t *testing.T) {
+		t.Parallel()
+		environment := mergeAgentRunEnvironment(
+			[]string{"FOO=process", "PORT=8088"},
+			map[string]string{
+				"FOO":                      "global",
+				"BAR":                      "global",
+				"UNDECLARED_SECRET":        "hidden",
+				"FOUNDRY_PROJECT_ENDPOINT": "https://project.example",
+			},
+			map[string]string{
+				"FOO":  "service",
+				"BAR":  "service",
+				"PORT": "9000",
+			},
+			[]string{
+				"FOO=service",
+				"BAR=service",
+				"PORT=9000",
+				"LEGACY=declared",
+			},
+			"agent",
+		)
+
+		if got, _ := value(environment, "FOO"); got != "process" {
+			t.Errorf("expected process FOO, got %q", got)
+		}
+		if got, _ := value(environment, "BAR"); got != "service" {
+			t.Errorf("expected service BAR, got %q", got)
+		}
+		if got, _ := value(environment, "PORT"); got != "8088" {
+			t.Errorf("expected command PORT, got %q", got)
+		}
+		if _, found := value(environment, "UNDECLARED_SECRET"); found {
+			t.Errorf("did not expect undeclared azd value in %v", environment)
+		}
+		if got, _ := value(environment, "FOUNDRY_PROJECT_ENDPOINT"); got !=
+			"https://project.example" {
+			t.Errorf("expected Foundry endpoint, got %q", got)
+		}
+		if got, _ := value(environment, "LEGACY"); got != "declared" {
+			t.Errorf("expected declared legacy value, got %q", got)
+		}
+	})
+
+	t.Run("legacy service keeps azd fallback", func(t *testing.T) {
+		t.Parallel()
+		environment := mergeAgentRunEnvironment(
+			[]string{"FOO=process"},
+			map[string]string{
+				"FOO":        "global",
+				"BAR":        "global",
+				"PROJECT_ID": "project",
+			},
+			nil,
+			[]string{"BAR=inline", "BAZ=inline"},
+			"agent",
+		)
+
+		if got, _ := value(environment, "FOO"); got != "process" {
+			t.Errorf("expected process FOO, got %q", got)
+		}
+		if got, _ := value(environment, "BAR"); got != "global" {
+			t.Errorf("expected global BAR, got %q", got)
+		}
+		if got, _ := value(environment, "PROJECT_ID"); got != "project" {
+			t.Errorf("expected legacy azd value, got %q", got)
+		}
+		if got, _ := value(environment, "BAZ"); got != "inline" {
+			t.Errorf("expected inline BAZ, got %q", got)
 		}
 	})
 }

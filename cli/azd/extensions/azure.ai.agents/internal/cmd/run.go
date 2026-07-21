@@ -186,21 +186,12 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 
 	cmdParts = resolveVenvCommand(projectDir, cmdParts)
 
-	env := os.Environ()
-	env = appendPortEnvVars(env, pt, flags.port)
+	env := appendPortEnvVars(os.Environ(), pt, flags.port)
 
-	// Load azd environment variables (e.g., FOUNDRY_PROJECT_ENDPOINT)
-	// so the agent can reach Azure services during local development.
-	// Also translate azd env keys to FOUNDRY_* env vars so the agent code
-	// works identically whether running locally or in a hosted container
-	// (where the platform automatically injects FOUNDRY_* env vars).
+	// Load azd values as template inputs and legacy fallback values.
 	var azdEnvVars map[string]string
 	if loaded, err := loadAzdEnvironment(ctx, azdClient); err == nil {
 		azdEnvVars = loaded
-		for k, v := range azdEnvVars {
-			env = append(env, fmt.Sprintf("%s=%s", k, v))
-		}
-		env = appendFoundryEnvVars(env, azdEnvVars, runCtx.ServiceName)
 	} else if shouldWarnLoadAzdEnvironmentFailure(err) {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load azd environment values: %s\n", err)
 	}
@@ -221,12 +212,13 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	if defErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: %s\n", defErr)
 	}
-	for _, entry := range defEnv {
-		key, _, _ := strings.Cut(entry, "=")
-		if !envSliceHasKey(env, key) {
-			env = append(env, entry)
-		}
-	}
+	env = mergeAgentRunEnvironment(
+		env,
+		azdEnvVars,
+		runCtx.ServiceEnvironment,
+		defEnv,
+		runCtx.ServiceName,
+	)
 
 	// Activity agents bind IPv4 and are reached at 127.0.0.1 everywhere else
 	// (the port-readiness check and the Playground URL), because `localhost`
@@ -984,55 +976,103 @@ func findSystemPython() (pythonInterpreter, error) {
 	return firstCompatiblePython(pythonCandidates(), pythonVersion)
 }
 
-// appendFoundryEnvVars translates azd environment keys to FOUNDRY_* env vars that hosted
-// agent containers receive automatically from the platform. This ensures the agent code
-// works identically whether running locally (via azd ai agent run) or in a hosted container.
+// mergeAgentRunEnvironment builds the local agent environment.
+func mergeAgentRunEnvironment(
+	baseEnvironment []string,
+	azdEnvironment map[string]string,
+	serviceEnvironment map[string]string,
+	definitionEnvironment []string,
+	serviceName string,
+) []string {
+	environment := slices.Clone(baseEnvironment)
+
+	// The full azd environment is a compatibility fallback only.
+	if len(serviceEnvironment) == 0 {
+		for key, value := range azdEnvironment {
+			if !envSliceHasKey(baseEnvironment, key) {
+				environment = append(
+					environment,
+					fmt.Sprintf("%s=%s", key, value),
+				)
+			}
+		}
+	}
+
+	environment = appendFoundryEnvVars(
+		environment,
+		azdEnvironment,
+		serviceName,
+	)
+
+	for _, entry := range definitionEnvironment {
+		key, _, _ := strings.Cut(entry, "=")
+		_, serviceScoped := serviceEnvironment[key]
+		if serviceScoped {
+			if !envSliceHasKey(baseEnvironment, key) {
+				environment = append(environment, entry)
+			}
+			continue
+		}
+		if !envSliceHasKey(environment, key) {
+			environment = append(environment, entry)
+		}
+	}
+
+	return environment
+}
+
+// appendFoundryEnvVars adds values injected by hosted agents.
 //
 // The mapping is:
 //
-//	AZURE_AI_PROJECT_ID                → FOUNDRY_PROJECT_ARM_ID
-//	AGENT_{SVC}_NAME                   → FOUNDRY_AGENT_NAME
-//	AGENT_{SVC}_VERSION                → FOUNDRY_AGENT_VERSION
-//	APPLICATIONINSIGHTS_CONNECTION_STRING (unchanged — already matches platform name)
+//	FOUNDRY_PROJECT_ENDPOINT           -> unchanged
+//	AZURE_AI_PROJECT_ID                -> FOUNDRY_PROJECT_ARM_ID
+//	AGENT_{SVC}_NAME                   -> FOUNDRY_AGENT_NAME
+//	AGENT_{SVC}_VERSION                -> FOUNDRY_AGENT_VERSION
+//	APPLICATIONINSIGHTS_CONNECTION_STRING -> unchanged
 func appendFoundryEnvVars(env []string, azdEnv map[string]string, serviceName string) []string {
-	// Static mappings from azd env key names to FOUNDRY_* env var names
-	staticMappings := []struct {
-		azdKey     string
-		foundryKey string
-	}{
-		{"AZURE_AI_PROJECT_ID", "FOUNDRY_PROJECT_ARM_ID"},
-	}
+	env = appendEnvValue(
+		env,
+		"FOUNDRY_PROJECT_ENDPOINT",
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
+	)
 
-	for _, m := range staticMappings {
-		if v := azdEnv[m.azdKey]; v != "" {
-			if _, exists := azdEnv[m.foundryKey]; !exists && !envSliceHasKey(env, m.foundryKey) {
-				env = append(env, fmt.Sprintf("%s=%s", m.foundryKey, v))
-			}
-		}
+	projectArmID := azdEnv["FOUNDRY_PROJECT_ARM_ID"]
+	if projectArmID == "" {
+		projectArmID = azdEnv["AZURE_AI_PROJECT_ID"]
 	}
+	env = appendEnvValue(env, "FOUNDRY_PROJECT_ARM_ID", projectArmID)
 
-	// Service-specific mappings (AGENT_{SVC}_NAME → FOUNDRY_AGENT_NAME, etc.)
+	agentName := ""
+	agentVersion := ""
 	if serviceName != "" {
 		serviceKey := toServiceKey(serviceName)
-		agentMappings := []struct {
-			azdKeyFmt  string
-			foundryKey string
-		}{
-			{"AGENT_%s_NAME", "FOUNDRY_AGENT_NAME"},
-			{"AGENT_%s_VERSION", "FOUNDRY_AGENT_VERSION"},
-		}
-
-		for _, m := range agentMappings {
-			azdKey := fmt.Sprintf(m.azdKeyFmt, serviceKey)
-			if v := azdEnv[azdKey]; v != "" {
-				if _, exists := azdEnv[m.foundryKey]; !exists && !envSliceHasKey(env, m.foundryKey) {
-					env = append(env, fmt.Sprintf("%s=%s", m.foundryKey, v))
-				}
-			}
-		}
+		agentName = azdEnv[fmt.Sprintf("AGENT_%s_NAME", serviceKey)]
+		agentVersion = azdEnv[fmt.Sprintf("AGENT_%s_VERSION", serviceKey)]
 	}
+	if agentName == "" {
+		agentName = azdEnv["FOUNDRY_AGENT_NAME"]
+	}
+	if agentVersion == "" {
+		agentVersion = azdEnv["FOUNDRY_AGENT_VERSION"]
+	}
+	env = appendEnvValue(env, "FOUNDRY_AGENT_NAME", agentName)
+	env = appendEnvValue(env, "FOUNDRY_AGENT_VERSION", agentVersion)
+
+	env = appendEnvValue(
+		env,
+		"APPLICATIONINSIGHTS_CONNECTION_STRING",
+		azdEnv["APPLICATIONINSIGHTS_CONNECTION_STRING"],
+	)
 
 	return env
+}
+
+func appendEnvValue(env []string, key string, value string) []string {
+	if value == "" || envSliceHasKey(env, key) {
+		return env
+	}
+	return append(env, fmt.Sprintf("%s=%s", key, value))
 }
 
 // envSliceHasKey reports whether the env slice already contains an entry for the given key.

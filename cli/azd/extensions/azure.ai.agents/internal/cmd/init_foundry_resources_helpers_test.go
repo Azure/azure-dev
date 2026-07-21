@@ -549,6 +549,7 @@ func TestNormalizeLoginServer(t *testing.T) {
 		{"https://myregistry.azurecr.io", "myregistry.azurecr.io"},
 		{"http://myregistry.azurecr.io", "myregistry.azurecr.io"},
 		{"https://myregistry.azurecr.io/", "myregistry.azurecr.io"},
+		{"HTTPS://MYREGISTRY.AZURECR.IO/", "myregistry.azurecr.io"},
 		{"https://crdyt765he4tmsy.azurecr.io", "crdyt765he4tmsy.azurecr.io"},
 		{"", ""},
 	}

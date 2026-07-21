@@ -332,14 +332,16 @@ func listProjectDeployments(
 	return results, nil
 }
 
-// normalizeLoginServer strips any scheme (https://, http://) and trailing slash
-// from a container registry endpoint so it becomes a plain login server
-// (e.g., "myregistry.azurecr.io").
+// normalizeLoginServer strips any scheme (https://, http://) and trailing slash,
+// then lowercases a container registry endpoint for consistent comparison.
 func normalizeLoginServer(endpoint string) string {
-	endpoint = strings.TrimPrefix(endpoint, "https://")
-	endpoint = strings.TrimPrefix(endpoint, "http://")
-	endpoint = strings.TrimRight(endpoint, "/")
-	return endpoint
+	for _, prefix := range []string{"https://", "http://"} {
+		if len(endpoint) >= len(prefix) && strings.EqualFold(endpoint[:len(prefix)], prefix) {
+			endpoint = endpoint[len(prefix):]
+			break
+		}
+	}
+	return strings.ToLower(strings.TrimRight(endpoint, "/"))
 }
 
 // listAcrResourceIds returns ARM resource IDs keyed by normalized ACR login server.

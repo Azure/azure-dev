@@ -7,9 +7,23 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
+
+// deploymentStacksEnabled reports whether the Deployment Stacks alpha feature is active. This
+// mirrors the deployment-service selection in cmd/container.go: only when the feature is enabled
+// is the stacks deployment service used (and the deployment-stacks options actually consumed).
+func (p *BicepProvider) deploymentStacksEnabled() bool {
+	var featureManager *alpha.FeatureManager
+	if err := p.serviceLocator.Resolve(&featureManager); err != nil {
+		return false
+	}
+
+	return featureManager.IsEnabled(azapi.FeatureDeploymentStacks)
+}
 
 // resolveDeploymentStacksMap resolves the typed deployment-stacks configuration into a
 // camelCase map[string]any consumable by the deployment-stacks API layer
@@ -17,9 +31,14 @@ import (
 // on denySettings.excludedPrincipals and denySettings.excludedActions, resolving values from
 // plan-time layer outputs (VirtualEnv) first and then the azd environment.
 //
+// When includeDenySettings is false the denySettings block is omitted entirely (and therefore
+// not resolved). The stack delete APIs only consume actionOnUnmanage and the bypass flag, so the
+// destroy path passes false to avoid failing `azd down` when a ${VAR} referenced only by the deny
+// lists is no longer available.
+//
 // It returns nil when no deployment-stacks configuration is present, in which case the caller
 // should omit the DeploymentStacks key entirely so the API layer applies its defaults.
-func (p *BicepProvider) resolveDeploymentStacksMap() (map[string]any, error) {
+func (p *BicepProvider) resolveDeploymentStacksMap(includeDenySettings bool) (map[string]any, error) {
 	cfg := p.options.DeploymentStacks
 	if cfg == nil {
 		return nil, nil
@@ -41,7 +60,7 @@ func (p *BicepProvider) resolveDeploymentStacksMap() (map[string]any, error) {
 		result["actionOnUnmanage"] = actionOnUnmanage
 	}
 
-	if cfg.DenySettings != nil {
+	if includeDenySettings && cfg.DenySettings != nil {
 		denySettings := map[string]any{}
 		if cfg.DenySettings.Mode != "" {
 			denySettings["mode"] = cfg.DenySettings.Mode
@@ -115,23 +134,32 @@ func (p *BicepProvider) resolveDeploymentStacksValues(values []osutil.Expandable
 // deploymentOptionsMap builds the generic options map handed to the deployment API layer,
 // with the deployment-stacks configuration resolved (including ${VAR} substitution). Standard
 // (non-stack) deployments ignore this map; stack deployments read only the DeploymentStacks key.
-func (p *BicepProvider) deploymentOptionsMap() (map[string]any, error) {
+//
+// Resolution is skipped entirely when the Deployment Stacks alpha feature is inactive, so an
+// otherwise-valid standard provision can't be failed by an unavailable ${VAR} in an inactive
+// deploymentStacks block. includeDenySettings is false on the destroy path, where the deny lists
+// are not consumed by the stack delete APIs.
+func (p *BicepProvider) deploymentOptionsMap(includeDenySettings bool) (map[string]any, error) {
 	optionsMap, err := convert.ToMap(p.options)
 	if err != nil {
 		return nil, err
 	}
 
-	stacks, err := p.resolveDeploymentStacksMap()
+	// The typed DeploymentStacksConfig is not JSON-serializable in a form the API layer can
+	// consume (ExpandableString has no exported fields), so always drop whatever convert.ToMap
+	// produced for it and only re-add a resolved map when stacks are actually in play.
+	delete(optionsMap, "DeploymentStacks")
+
+	if !p.deploymentStacksEnabled() {
+		return optionsMap, nil
+	}
+
+	stacks, err := p.resolveDeploymentStacksMap(includeDenySettings)
 	if err != nil {
 		return nil, err
 	}
 
-	if stacks == nil {
-		// The typed DeploymentStacksConfig is not JSON-serializable in a form the API layer can
-		// consume (ExpandableString has no exported fields), so drop whatever convertOptionsToMap
-		// produced for it and let the API layer apply its defaults.
-		delete(optionsMap, "DeploymentStacks")
-	} else {
+	if stacks != nil {
 		optionsMap["DeploymentStacks"] = stacks
 	}
 

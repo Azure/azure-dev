@@ -30,18 +30,25 @@ func minimalArmTemplate() azure.ArmTemplate {
 	}
 }
 
+// enableDeploymentStacks turns on the deployment.stacks alpha feature for the duration of the test
+// so deploymentOptionsMap resolves the stacks configuration.
+func enableDeploymentStacks(t *testing.T) {
+	t.Setenv("AZD_ALPHA_ENABLE_DEPLOYMENT_STACKS", "true")
+}
+
 func TestResolveDeploymentStacksMap_Nil(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
 	provider.options.DeploymentStacks = nil
 
-	stacks, err := provider.resolveDeploymentStacksMap()
+	stacks, err := provider.resolveDeploymentStacksMap(true)
 	require.NoError(t, err)
 	require.Nil(t, stacks)
 
 	// deploymentOptionsMap must omit the DeploymentStacks key entirely so the API layer
 	// applies its own defaults.
-	optionsMap, err := provider.deploymentOptionsMap()
+	enableDeploymentStacks(t)
+	optionsMap, err := provider.deploymentOptionsMap(true)
 	require.NoError(t, err)
 	require.NotContains(t, optionsMap, "DeploymentStacks")
 }
@@ -70,7 +77,7 @@ func TestResolveDeploymentStacksMap_ResolvesEnvSubstitution(t *testing.T) {
 		},
 	}
 
-	stacks, err := provider.resolveDeploymentStacksMap()
+	stacks, err := provider.resolveDeploymentStacksMap(true)
 	require.NoError(t, err)
 
 	actionOnUnmanage, ok := stacks["actionOnUnmanage"].(map[string]any)
@@ -100,9 +107,34 @@ func TestResolveDeploymentStacksMap_UnsetVarErrors(t *testing.T) {
 		},
 	}
 
-	_, err := provider.resolveDeploymentStacksMap()
+	_, err := provider.resolveDeploymentStacksMap(true)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "DOES_NOT_EXIST")
+}
+
+// TestResolveDeploymentStacksMap_OmitsDenySettingsOnDestroy verifies that the destroy path
+// (includeDenySettings=false) never resolves the deny lists, so an unavailable ${VAR} referenced
+// only by denySettings can't fail `azd down`. The stack delete APIs consume only actionOnUnmanage.
+func TestResolveDeploymentStacksMap_OmitsDenySettingsOnDestroy(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
+
+	provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
+		ActionOnUnmanage: &provisioning.ActionOnUnmanageConfig{
+			Resources:      "delete",
+			ResourceGroups: "delete",
+		},
+		DenySettings: &provisioning.DenySettingsConfig{
+			Mode: "denyDelete",
+			// This variable is intentionally unset; it must not be resolved on the destroy path.
+			ExcludedPrincipals: expandableStrings("${DOES_NOT_EXIST}"),
+		},
+	}
+
+	stacks, err := provider.resolveDeploymentStacksMap(false)
+	require.NoError(t, err)
+	require.Contains(t, stacks, "actionOnUnmanage")
+	require.NotContains(t, stacks, "denySettings")
 }
 
 func TestResolveDeploymentStacksMap_EnvFallback(t *testing.T) {
@@ -118,7 +150,7 @@ func TestResolveDeploymentStacksMap_EnvFallback(t *testing.T) {
 		},
 	}
 
-	stacks, err := provider.resolveDeploymentStacksMap()
+	stacks, err := provider.resolveDeploymentStacksMap(true)
 	require.NoError(t, err)
 
 	denySettings := stacks["denySettings"].(map[string]any)
@@ -126,6 +158,8 @@ func TestResolveDeploymentStacksMap_EnvFallback(t *testing.T) {
 }
 
 func TestDeploymentOptionsMap_IncludesResolvedStacks(t *testing.T) {
+	enableDeploymentStacks(t)
+
 	mockContext := mocks.NewMockContext(t.Context())
 	provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), map[string]string{
 		"OPERATOR_OBJECT_ID": "44444444-4444-4444-4444-444444444444",
@@ -138,11 +172,32 @@ func TestDeploymentOptionsMap_IncludesResolvedStacks(t *testing.T) {
 		},
 	}
 
-	optionsMap, err := provider.deploymentOptionsMap()
+	optionsMap, err := provider.deploymentOptionsMap(true)
 	require.NoError(t, err)
 
 	stacks, ok := optionsMap["DeploymentStacks"].(map[string]any)
 	require.True(t, ok)
 	denySettings := stacks["denySettings"].(map[string]any)
 	require.Equal(t, []string{"44444444-4444-4444-4444-444444444444"}, denySettings["excludedPrincipals"])
+}
+
+// TestDeploymentOptionsMap_SkipsResolutionWhenStacksDisabled verifies that when the deployment
+// stacks alpha feature is inactive, the DeploymentStacks key is omitted and no ${VAR} resolution
+// happens, so an unavailable variable in an inactive deploymentStacks block can't fail an
+// otherwise-valid standard provision.
+func TestDeploymentOptionsMap_SkipsResolutionWhenStacksDisabled(t *testing.T) {
+	// Deployment stacks alpha feature is NOT enabled here.
+	mockContext := mocks.NewMockContext(t.Context())
+	provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
+
+	provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
+		DenySettings: &provisioning.DenySettingsConfig{
+			Mode:               "denyDelete",
+			ExcludedPrincipals: expandableStrings("${DOES_NOT_EXIST}"),
+		},
+	}
+
+	optionsMap, err := provider.deploymentOptionsMap(true)
+	require.NoError(t, err)
+	require.NotContains(t, optionsMap, "DeploymentStacks")
 }

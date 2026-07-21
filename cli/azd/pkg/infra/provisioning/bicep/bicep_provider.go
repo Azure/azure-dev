@@ -898,7 +898,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = new(currentParamsHash)
 	}
 
-	optionsMap, err := p.deploymentOptionsMap()
+	optionsMap, err := p.deploymentOptionsMap(true)
 	if err != nil {
 		return nil, err
 	}
@@ -1660,7 +1660,7 @@ func (p *BicepProvider) destroyDeployment(
 			p.console.StopSpinner(ctx, progressMessage.Message, input.StepFailed)
 		}
 	}, func(progress *async.Progress[azapi.DeleteDeploymentProgress]) error {
-		optionsMap, err := p.deploymentOptionsMap()
+		optionsMap, err := p.deploymentOptionsMap(false)
 		if err != nil {
 			return err
 		}

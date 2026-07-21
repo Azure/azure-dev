@@ -141,7 +141,7 @@ func (p *toolboxServiceTarget) Deploy(
 	// Reuse (bring-your-own): endpoint set means azd resolves ${VAR}
 	// and publishes it for agents instead of creating a version.
 	if strings.TrimSpace(cfg.Endpoint) != "" {
-		return p.deployReuse(ctx, name, cfg, progress)
+		return p.deployReuse(ctx, name, cfg, serviceConfig, progress)
 	}
 
 	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{})
@@ -199,9 +199,10 @@ func (p *toolboxServiceTarget) deployReuse(
 	ctx context.Context,
 	name string,
 	cfg *toolboxServiceConfig,
+	serviceConfig *azdext.ServiceConfig,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
-	env, err := p.currentEnvValues(ctx)
+	env, err := p.environmentValues(ctx, serviceConfig)
 	if err != nil {
 		return nil, err
 	}

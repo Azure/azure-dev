@@ -1,0 +1,122 @@
+name: "Run vally eval"
+description: >
+  Sets up Node.js, installs eval dependencies, and runs `vally eval` against the
+  given eval spec. The caller must check out the repository first. Shared by CI
+  workflows that gate on vally eval results.
+
+inputs:
+  eval-file:
+    description: Path to the eval spec (e.g. eval.yaml), relative to working-directory.
+    required: false
+    default: eval.yaml
+  working-directory:
+    description: Directory containing package.json and the eval spec (vally eval.yaml).
+    required: true
+  node-version:
+    description: Node.js version to set up
+    required: false
+    default: "24"
+  junit:
+    description: >
+      Whether to pass `--junit` so vally writes eval-results.junit.xml alongside
+      the other output files.
+    required: false
+    default: "true"
+  github-token:
+    description: >
+      Token used to authenticate the Copilot CLI process vally spawns.
+      Callers typically pass github.token (requires the
+      `copilot-requests: write` permission).
+    required: true
+  artifact-name:
+    description: >
+      Name of the uploaded artifact containing vally-results/. Required and
+      used as the artifact name and job summary heading. Callers can derive it
+      from the job name, for example "<job>-vally-results".
+    required: true
+
+outputs:
+  vally-exit-code:
+    description: Exit code of the `vally eval` invocation.
+    value: ${{ steps.run.outputs.vally-exit-code }}
+  vally-run-dir:
+    description: Path to the timestamped run directory produced by the eval, relative to the repo root.
+    value: ${{ steps.run.outputs.vally-run-dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Install eval dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: npm ci
+
+    - name: Run vally eval
+      id: run
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        JUNIT: ${{ inputs.junit }}
+        EVAL_FILE: ${{ inputs.eval-file }}
+        WORKING_DIRECTORY: ${{ inputs.working-directory }}
+      run: |
+        junit_flag=""
+        [[ "$JUNIT" == "true" ]] && junit_flag="--junit"
+        set +e
+        npx vally eval -e "$EVAL_FILE" $junit_flag
+        exit_code=$?
+        set -e
+        echo "vally-exit-code=$exit_code" >> "$GITHUB_OUTPUT"
+
+        # vally always writes results into a single timestamped subdirectory of
+        # vally-results/. There's only a single run here, so we'll resolve it once
+        # and export that value as 'vally-run-dir'.
+        #
+        run_dir=$(find vally-results -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | tail -n1)
+        echo "vally-run-dir=$WORKING_DIRECTORY/${run_dir:-vally-results}" >> "$GITHUB_OUTPUT"
+
+    - name: Write job summary
+      if: always()
+      shell: bash
+      env:
+        VALLY_RUN_DIR: ${{ steps.run.outputs.vally-run-dir }}
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+      run: |
+        {
+          echo "### Vally eval results -- $ARTIFACT_NAME"
+          echo
+          md_file="$VALLY_RUN_DIR/eval-results.md"
+          if [[ -f "$md_file" ]]; then
+            cat "$md_file"
+          else
+            echo "_No eval-results.md found -- see the vally-results artifact and raw output above._"
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload vally results
+      if: always() && steps.run.outputs.vally-run-dir != ''
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ steps.run.outputs.vally-run-dir }}/**
+        if-no-files-found: warn
+
+    - name: Fail on eval failures
+      if: always()
+      shell: bash
+      env:
+        VALLY_EXIT_CODE: ${{ steps.run.outputs.vally-exit-code }}
+        VALLY_RUN_DIR: ${{ steps.run.outputs.vally-run-dir }}
+      run: |
+        if [[ "${VALLY_EXIT_CODE:-1}" -ne 0 ]]; then
+          echo "npx vally eval itself failed (exit code ${VALLY_EXIT_CODE:-unknown}) -- see the 'Run vally eval' log above."
+          exit 1
+        fi
+
+        echo "All vally evals passed."

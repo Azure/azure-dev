@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/project"
 
@@ -35,20 +36,6 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		WithServiceTarget(AiAgentHost, func() azdext.ServiceTargetProvider {
 			return project.NewAgentServiceTargetProvider(azdClient)
 		}).
-		WithProvisioningProvider(project.FoundryProviderName, func() azdext.ProvisioningProvider {
-			return project.NewFoundryProvisioningProvider(azdClient)
-		}).
-		WithValidationCheck(azdext.ValidationCheckRegistration{
-			// Provider-agnostic check: runs before provisioning regardless of the
-			// provisioning provider. This matters because the azure.ai.agents
-			// extension provisions through its own microsoft.foundry provider,
-			// which never triggers the Bicep-only "local-preflight" checks.
-			CheckType: azdext.ValidationCheckTypeProvision,
-			RuleID:    project.ResourceGroupLocationRuleID,
-			Factory: func() azdext.ValidationCheckProvider {
-				return project.NewResourceGroupLocationCheck(azdClient)
-			},
-		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return preprovisionHandler(ctx, azdClient, args)
 		}).
@@ -67,8 +54,11 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	deployments, err := collectProjectDeployments(args.Project.Services)
-	if err != nil {
+	if err := updateLegacyProjectDeployments(
+		ctx,
+		azdClient,
+		args.Project.Services,
+	); err != nil {
 		return err
 	}
 	connections, err := collectConnections(args.Project.Services)
@@ -82,7 +72,13 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 			if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
 				return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
 			}
-			if err := envUpdate(ctx, azdClient, args.Project, svc, deployments, connections); err != nil {
+			if err := envUpdate(
+				ctx,
+				azdClient,
+				args.Project,
+				svc,
+				connections,
+			); err != nil {
 				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 			}
 		}
@@ -167,6 +163,34 @@ func currentEnvName(ctx context.Context, azdClient *azdext.AzdClient) (string, e
 	return resp.Environment.Name, nil
 }
 
+func updateLegacyProjectDeployments(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	services map[string]*azdext.ServiceConfig,
+) error {
+	deployments, err := collectLegacyProjectDeployments(services)
+	if err != nil {
+		return err
+	}
+	if len(deployments) == 0 {
+		return nil
+	}
+
+	envName, err := currentEnvName(ctx, azdClient)
+	if err != nil {
+		return fmt.Errorf(
+			"resolving environment for legacy deployments: %w",
+			err,
+		)
+	}
+	return deploymentEnvUpdate(
+		ctx,
+		deployments,
+		azdClient,
+		envName,
+	)
+}
+
 // developerRBACOnce ensures CheckDeveloperRBAC runs at most once per extension
 // process lifetime. Service-level predeploy handlers fire per-service, but the
 // RBAC pre-flight check is project-scoped and idempotent — running it once is
@@ -193,8 +217,11 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		warnDuplicateAgentNames(args.Project)
 	})
 
-	deployments, err := collectProjectDeployments(args.Project.Services)
-	if err != nil {
+	if err := updateLegacyProjectDeployments(
+		ctx,
+		azdClient,
+		args.Project.Services,
+	); err != nil {
 		return err
 	}
 	connections, err := collectConnections(args.Project.Services)
@@ -205,8 +232,21 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
 		return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
 	}
-	if err := envUpdate(ctx, azdClient, args.Project, svc, deployments, connections); err != nil {
+	if err := envUpdate(
+		ctx,
+		azdClient,
+		args.Project,
+		svc,
+		connections,
+	); err != nil {
 		return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
+	}
+
+	// Capture the current session so it can be resumed on the newly deployed
+	// version after deploy (see session_carryover.go). Best-effort; hosted
+	// agents only.
+	if isHostedAgentService(svc, args.Project) {
+		captureSessionForCarryover(ctx, azdClient, svc)
 	}
 
 	// Run developer RBAC pre-flight checks only for hosted agent deployments.
@@ -398,6 +438,12 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		)
 	}()
 
+	// Resume the pre-deploy session on the newly deployed version so the next
+	// invoke continues on the new code with the session's persisted volume
+	// intact (see session_carryover.go). Best-effort; never blocks deploy.
+	agentClient := agent_api.NewAgentClient(endpoint, cred)
+	carryOverSessionAfterDeploy(ctx, azdClient, agentClient, svc, envName)
+
 	return nil
 }
 
@@ -463,7 +509,6 @@ func envUpdate(
 	azdClient *azdext.AzdClient,
 	azdProject *azdext.ProjectConfig,
 	svc *azdext.ServiceConfig,
-	deployments []project.Deployment,
 	connections []project.Connection,
 ) error {
 
@@ -479,15 +524,6 @@ func envUpdate(
 
 	if err := kindEnvUpdate(ctx, azdClient, azdProject, svc, currentEnvResponse.Environment.Name); err != nil {
 		return err
-	}
-
-	// Deployments and connections are sourced from the sibling
-	// azure.ai.project and azure.ai.connection services. Resources and tool
-	// connections stay on the agent service.
-	if len(deployments) > 0 {
-		if err := deploymentEnvUpdate(ctx, deployments, azdClient, currentEnvResponse.Environment.Name); err != nil {
-			return err
-		}
 	}
 
 	if foundryAgentConfig != nil && len(foundryAgentConfig.Resources) > 0 {

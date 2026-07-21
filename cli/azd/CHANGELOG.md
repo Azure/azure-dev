@@ -1,22 +1,31 @@
 # Release History
 
-## 1.28.0-beta.1 (Unreleased)
+## 1.29.0-beta.1 (Unreleased)
 
-### Features Added
-
-- [[#9019]](https://github.com/Azure/azure-dev/pull/9019) Add a provider-agnostic `provision` validation check type dispatched before provisioning for every provider. Extensions with the `validation-provider` capability can now contribute client-side checks that run regardless of the provisioning provider (Bicep, Terraform, or an extension-provided provider), not just during Bicep local preflight.
+## 1.28.0 (2026-07-15)
 
 ### Breaking Changes
 
+ - [[#9045]](https://github.com/Azure/azure-dev/pull/9045) The `--host` skill flag on `azd tool install`, `azd tool upgrade`, and `azd tool uninstall` has been renamed to `--agent`. Installed skills in `azd tool list --output json` and `azd tool check --output json` now expand into one row per agent and include the `agent` field. Update scripts and JSON consumers accordingly.
+
 ### Bugs Fixed
 
+- [[#9017]](https://github.com/Azure/azure-dev/pull/9017) Fix `azd env refresh` for projects using extension-provided service hosts or provisioning providers, and report successfully when no deployment exists yet.
+- [[#8887]](https://github.com/Azure/azure-dev/pull/8887) Fix generated `azd extension install` completions to offer extension IDs and `.zip` file paths.
+- [[#9083]](https://github.com/Azure/azure-dev/pull/9083) Fix the `azd update` follow-up command to use `azd version`. Thanks @rguptar for the contribution!
+
 ### Other Changes
+
+- [[#9141]](https://github.com/Azure/azure-dev/pull/9141) Send ARM request correlation IDs as a canonical hyphenated GUID (derived losslessly from the OpenTelemetry trace ID) instead of an undecorated 32-character string — covering both the `x-ms-correlation-request-id` header on azd's direct ARM calls and the `ARM_CORRELATION_REQUEST_ID` value passed to the Terraform AzureRM provider. This aligns azd with the ARM spec and other Azure tooling (Terraform AzureRM, Azure SDK for Go) and resolves the historical AKS Deployment Safeguards `GetDeploymentSafeguardsFailed` correlation ID mismatch (#5851).
+- [[#9033]](https://github.com/Azure/azure-dev/pull/9033) Add an extension SDK helper that validates provider declarations in `extension.yaml` against the providers registered by extension code.
 
 ## 1.27.1 (2026-07-09)
 
 ### Features Added
 
 - [[#8927]](https://github.com/Azure/azure-dev/pull/8927) Add `--no-dependencies` flag to `azd extension install` that installs only the named extension without resolving or installing its declared dependencies.
+- [[#9019]](https://github.com/Azure/azure-dev/pull/9019) Add a provider-agnostic `provision` validation check type dispatched before provisioning for every provider. Extensions with the `validation-provider` capability can now contribute client-side checks that run regardless of the provisioning provider (Bicep, Terraform, or an extension-provided provider), not just during Bicep local preflight.
+- [[#8936]](https://github.com/Azure/azure-dev/pull/8936) Add expanded service-level `env` values from `azure.yaml` to the extension service configuration.
 
 ### Bugs Fixed
 

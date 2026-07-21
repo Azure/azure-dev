@@ -145,6 +145,30 @@ func TestPublishReuseEndpoint_WritesExpandedEndpoint(t *testing.T) {
 	assert.Equal(t, wantURL, (*calls)[0].value)
 }
 
+func TestDeployReuseUsesServiceEnvironment(t *testing.T) {
+	// No t.Parallel: stubToolboxEndpointEnv swaps a package-level seam.
+	calls := stubToolboxEndpointEnv(t)
+	const wantURL = "https://mcp.example.com/toolboxes/research"
+	serviceConfig := &azdext.ServiceConfig{
+		Environment: map[string]string{
+			"RESEARCH_TOOLBOX_ENDPOINT": wantURL,
+		},
+	}
+
+	result, err := (&toolboxServiceTarget{}).deployReuse(
+		t.Context(),
+		"research",
+		&toolboxServiceConfig{Endpoint: "${RESEARCH_TOOLBOX_ENDPOINT}"},
+		serviceConfig,
+		nil,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, *calls, 1)
+	assert.Equal(t, wantURL, (*calls)[0].value)
+}
+
 func TestBuildToolEntries_ResolvesConnectionRef(t *testing.T) {
 	t.Parallel()
 

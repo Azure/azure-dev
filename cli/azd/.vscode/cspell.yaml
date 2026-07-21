@@ -159,6 +159,7 @@ words:
   - DYLD
   - dyld
   - LDLIBS
+  - vally
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -407,7 +408,7 @@ overrides:
   - filename: extensions/azure.ai.models/internal/cmd/custom_create.go
     words:
       - Qwen
-  - filename: pkg/infra/provisioning/bicep/local_preflight.go
+  - filename: pkg/infra/provisioning/bicep/provision_validation.go
     words:
       - actioned
   - filename: pkg/project/project.go

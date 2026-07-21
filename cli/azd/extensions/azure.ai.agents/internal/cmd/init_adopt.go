@@ -19,6 +19,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -652,6 +653,107 @@ func updateAzureYamlDeployments(
 	return nil
 }
 
+type adoptedAgentNameResolver func(context.Context, string) (string, error)
+
+func adoptedAgentNameConflictSuggestion() string {
+	return "To create a separate agent, update the agent service's `name` in the adopted azure.yaml before deploying.\n"
+}
+
+// confirmAdoptedAgentNameConflicts checks every agent definition embedded in an
+// adopted azure.yaml against the selected existing Foundry project. The shared
+// resolver warns and asks for confirmation before reusing a name, or prompts
+// for a replacement name and returns it.
+func confirmAdoptedAgentNameConflicts(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	environment *azdext.Environment,
+	credential azcore.TokenCredential,
+	noPrompt bool,
+) error {
+	return updateAdoptedAgentNames(ctx, azdClient, func(ctx context.Context, agentName string) (string, error) {
+		return resolveExistingAgentNameConflict(
+			ctx,
+			azdClient,
+			environment,
+			credential,
+			noPrompt,
+			agentName,
+			withNoPromptAgentNameConflictSuggestion(adoptedAgentNameConflictSuggestion()),
+		)
+	})
+}
+
+// updateAdoptedAgentNames resolves name conflicts for adopted agent services
+// and persists any replacement names in azure.yaml.
+func updateAdoptedAgentNames(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	resolveName adoptedAgentNameResolver,
+) error {
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("reading adopted project for agent name conflicts: %w", err)
+	}
+
+	services := resp.GetProject().GetServices()
+	serviceNames := make([]string, 0, len(services))
+	for serviceName, svc := range services {
+		if svc.GetHost() == AiAgentHost {
+			serviceNames = append(serviceNames, serviceName)
+		}
+	}
+	slices.Sort(serviceNames)
+
+	for _, serviceName := range serviceNames {
+		agentName, configPath := adoptedAgentNameConfig(services[serviceName])
+		if agentName == "" {
+			continue
+		}
+
+		resolvedName, err := resolveName(ctx, agentName)
+		if err != nil {
+			return err
+		}
+		if resolvedName == agentName {
+			continue
+		}
+
+		value, err := structpb.NewValue(resolvedName)
+		if err != nil {
+			return fmt.Errorf("encoding replacement name for agent service %q: %w", serviceName, err)
+		}
+		if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+			ServiceName: serviceName,
+			Path:        configPath,
+			Value:       value,
+		}); err != nil {
+			return fmt.Errorf("updating agent name in azure.yaml for service %q: %w", serviceName, err)
+		}
+	}
+
+	return nil
+}
+
+// adoptedAgentNameConfig returns the Foundry agent name and its service-relative
+// config path for the unified inline shape or deprecated config-nested shape.
+func adoptedAgentNameConfig(svc *azdext.ServiceConfig) (string, string) {
+	if svc == nil {
+		return "", ""
+	}
+
+	inline := svc.GetAdditionalProperties()
+	if inline != nil && inline.GetFields()["kind"].GetStringValue() != "" {
+		return strings.TrimSpace(inline.GetFields()["name"].GetStringValue()), "name"
+	}
+
+	legacy := svc.GetConfig()
+	if legacy != nil && legacy.GetFields()["kind"].GetStringValue() != "" {
+		return strings.TrimSpace(legacy.GetFields()["name"].GetStringValue()), "config.name"
+	}
+
+	return "", ""
+}
+
 // readManifestContentForInitDetection returns the pointed-at YAML content for
 // init-mode routing. It first uses the cheap peek path; when that cannot read a
 // GitHub URL (for example, a private repository), it falls back to the
@@ -820,6 +922,15 @@ func runInitFromAzureYaml(
 	// brownfield signal and reuses the project instead of creating a new one.
 	if result.FoundryProject != nil {
 		if err := stampProjectEndpoint(ctx, azdClient, result.FoundryProject); err != nil {
+			return err
+		}
+		if err := confirmAdoptedAgentNameConflicts(
+			ctx,
+			azdClient,
+			env,
+			result.Credential,
+			flags.noPrompt,
+		); err != nil {
 			return err
 		}
 	}
@@ -1233,7 +1344,14 @@ func applyDeployModeToAdoptedProject(
 	// resolves to a container deploy so the caller can wire an ACR.
 	usesContainer := false
 	for _, agent := range agentServices {
-		container, err := applyDeployModeToService(ctx, flags, azdClient, agent.name, agent.svc)
+		container, err := applyDeployModeToService(
+			ctx,
+			flags,
+			azdClient,
+			resp.GetProject().GetPath(),
+			agent.name,
+			agent.svc,
+		)
 		if err != nil {
 			return false, err
 		}
@@ -1254,6 +1372,7 @@ func applyDeployModeToService(
 	ctx context.Context,
 	flags *initFlags,
 	azdClient *azdext.AzdClient,
+	projectPath string,
 	serviceName string,
 	svc *azdext.ServiceConfig,
 ) (bool, error) {
@@ -1295,15 +1414,27 @@ func applyDeployModeToService(
 	if targetDir == "" {
 		targetDir = "."
 	}
-	showCodeDeploy := isPythonProject(targetDir) || isDotnetProject(targetDir)
+	serviceDir, err := paths.JoinAllowRoot(projectPath, targetDir)
+	if err != nil {
+		return false, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid service path for %s: %s", serviceName, err),
+			"update azure.yaml so the agent service path stays within the project directory",
+		)
+	}
+	showCodeDeploy := supportsCodeDeploy(serviceDir)
 	// userProvidedManifest is true: -m was explicitly provided.
-	deployMode, err := promptDeployMode(ctx, azdClient, flags.noPrompt, showCodeDeploy, flags.deployMode, true)
+	deployMode, err := promptDeployMode(
+		ctx, azdClient, flags.noPrompt, showCodeDeploy, flags.deployMode, true,
+	)
 	if err != nil {
 		return false, fmt.Errorf("resolving deploy mode for adopted project: %w", err)
 	}
 
 	if deployMode == "code" {
-		return false, applyCodeDeployToService(ctx, flags, azdClient, serviceName, targetDir, svc)
+		return false, applyCodeDeployToService(
+			ctx, flags, azdClient, serviceName, serviceDir, svc,
+		)
 	}
 	if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc); err != nil {
 		return false, err

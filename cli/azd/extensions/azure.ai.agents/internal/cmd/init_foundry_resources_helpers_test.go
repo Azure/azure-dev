@@ -231,7 +231,7 @@ func (s *testEnvironmentServiceServer) GetValue(
 			}
 		}
 	}
-	return nil, status.Error(codes.NotFound, "key not found")
+	return &azdext.KeyValueResponse{}, nil
 }
 
 func (s *testEnvironmentServiceServer) GetValues(

@@ -293,7 +293,7 @@ func getCommandTestCases() []commandTestCase {
 		{
 			name: "Init",
 			invoke: func(cli *Cli, ctx context.Context) (string, error) {
-				return cli.Init(ctx, "/module")
+				return cli.Init(ctx, "/module", "-upgrade")
 			},
 			expectedArgs: []string{"-chdir=/module", "init", "-upgrade"},
 			interactive:  true,
@@ -343,6 +343,15 @@ func getCommandTestCases() []commandTestCase {
 			expectedArgs: []string{"-chdir=/module", "destroy"},
 			interactive:  true,
 			errContains:  "failed running terraform destroy",
+		},
+		{
+			name: "PlanDestroy",
+			invoke: func(cli *Cli, ctx context.Context) (string, error) {
+				return cli.PlanDestroy(ctx, "/module")
+			},
+			expectedArgs: []string{"-chdir=/module", "plan", "-destroy", "-input=false"},
+			interactive:  true,
+			errContains:  "failed running terraform plan -destroy",
 		},
 	}
 }
@@ -412,7 +421,7 @@ func Test_Commands_AdditionalArgs(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Equal(t, []string{
-			"-chdir=/module", "init", "-upgrade", "-backend=false", "-input=false",
+			"-chdir=/module", "init", "-backend=false", "-input=false",
 		}, capturedArgs.Args)
 	})
 
@@ -513,6 +522,26 @@ func Test_Commands_AdditionalArgs(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []string{
 			"-chdir=/module", "destroy", "-auto-approve",
+		}, capturedArgs.Args)
+	})
+
+	t.Run("PlanDestroy_WithVarFile", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		var capturedArgs exec.RunArgs
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return args.Cmd == "terraform"
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			capturedArgs = args
+			return exec.NewRunResult(0, "", ""), nil
+		})
+
+		cli := NewCli(mockContext.CommandRunner)
+		_, err := cli.PlanDestroy(*mockContext.Context, "/module", "-var-file=/params.tfvars.json")
+
+		require.NoError(t, err)
+		require.Equal(t, []string{
+			"-chdir=/module", "plan", "-destroy", "-input=false", "-var-file=/params.tfvars.json",
 		}, capturedArgs.Args)
 	})
 }

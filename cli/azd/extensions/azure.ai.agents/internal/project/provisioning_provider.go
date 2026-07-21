@@ -7,7 +7,7 @@ import "slices"
 
 // FoundryProviderName is the value written to `infra.provider` in
 // azure.yaml by `azd ai agent init` and looked up by azd's provider
-// resolver to dispatch provisioning to this extension.
+// resolver to dispatch provisioning to azure.ai.projects.
 const FoundryProviderName = "microsoft.foundry"
 
 // BicepProviderName and TerraformProviderName are azd-core's built-in

@@ -323,6 +323,27 @@ func UpsertAgentEnvVars(svc *azdext.ServiceConfig, kv map[string]string) error {
 	return nil
 }
 
+// InlineAgentEnvironmentVariables returns the deprecated inline
+// environmentVariables carried on the agent definition as a raw
+// template map, without merging the core-forwarded (already expanded)
+// service environment. Values are the templates as authored, suitable
+// for migrating into the env section without losing them.
+func InlineAgentEnvironmentVariables(
+	svc *azdext.ServiceConfig,
+) (map[string]string, error) {
+	props := ServiceConfigProps(svc)
+	if props == nil || len(props.GetFields()) == 0 {
+		return nil, nil
+	}
+	var inline AgentDefinitionInline
+	if err := UnmarshalStruct(props, &inline); err != nil {
+		return nil, err
+	}
+	return AgentEnvironment(agent_yaml.ContainerAgent{
+		EnvironmentVariables: inline.EnvironmentVariables,
+	}), nil
+}
+
 // SetAgentContainerSettings writes the resolved container settings onto the
 // agent service's inline properties, preserving every other key (the agent
 // definition and the rest of the deploy/provision config). It mutates whichever

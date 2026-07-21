@@ -84,7 +84,6 @@ func TestPersistInlineAgentEnvironmentMigratesLegacyTemplates(t *testing.T) {
 		t.Context(),
 		client,
 		svc,
-		projectpkg.AgentDefinitionSourceLegacyConfig,
 		map[string]string{"OPTIMIZATION_CANDIDATE_ID": "candidate-1"},
 	))
 
@@ -94,6 +93,110 @@ func TestPersistInlineAgentEnvironmentMigratesLegacyTemplates(t *testing.T) {
 	require.Empty(t, server.added[0].GetEnvironment())
 	require.Equal(t, map[string]any{
 		"LEGACY_KEY":                "${LEGACY_KEY}",
+		"OPTIMIZATION_CANDIDATE_ID": "candidate-1",
+	}, server.env["basic-agent"])
+}
+
+// TestPersistInlineAgentEnvironmentPreservesTopLevelEnv verifies a
+// modern agent's top-level env templates survive the OPTIMIZATION_*
+// update: they are read raw and rewritten via the env section, not
+// snapshotted to expanded literals through AddService.
+func TestPersistInlineAgentEnvironmentPreservesTopLevelEnv(t *testing.T) {
+	props, err := projectpkg.AgentDefinitionToServiceProperties(
+		agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindHosted,
+				Name: "basic-agent",
+			},
+			Protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "2.0.0"},
+			},
+		},
+		nil,
+	)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+		// Core forwards expanded values; the raw templates live on disk.
+		Environment: map[string]string{
+			"LOG_LEVEL":      "debug",
+			"MODEL_ENDPOINT": "https://resolved.example",
+		},
+	}
+
+	server := &recordingProjectServer{
+		rawEnv: map[string]map[string]any{
+			"basic-agent": {
+				"LOG_LEVEL":      "${AZURE_LOG_LEVEL}",
+				"MODEL_ENDPOINT": "$${{project.endpoint}}",
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+	require.NoError(t, persistInlineAgentEnvironment(
+		t.Context(),
+		client,
+		svc,
+		map[string]string{"OPTIMIZATION_CANDIDATE_ID": "candidate-1"},
+	))
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Len(t, server.added, 1)
+	require.Empty(t, server.added[0].GetEnvironment())
+	require.Equal(t, map[string]any{
+		"LOG_LEVEL":                 "${AZURE_LOG_LEVEL}",
+		"MODEL_ENDPOINT":            "$${{project.endpoint}}",
+		"OPTIMIZATION_CANDIDATE_ID": "candidate-1",
+	}, server.env["basic-agent"])
+}
+
+// TestPersistInlineAgentEnvironmentEscapesLegacyFoundrySpan verifies
+// a legacy environmentVariables value carrying a raw Foundry ${{...}}
+// span is escaped to $${{...}} when migrated into the env section.
+func TestPersistInlineAgentEnvironmentEscapesLegacyFoundrySpan(t *testing.T) {
+	props, err := projectpkg.AgentDefinitionToServiceProperties(
+		agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindHosted,
+				Name: "basic-agent",
+			},
+			Protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "2.0.0"},
+			},
+		},
+		nil,
+	)
+	require.NoError(t, err)
+	legacyEnvironment, err := structpb.NewValue([]any{
+		map[string]any{
+			"name":  "SEARCH_KEY",
+			"value": "${{connections.search.credentials.key}}",
+		},
+	})
+	require.NoError(t, err)
+	props.Fields["environmentVariables"] = legacyEnvironment
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}
+
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	require.NoError(t, persistInlineAgentEnvironment(
+		t.Context(),
+		client,
+		svc,
+		map[string]string{"OPTIMIZATION_CANDIDATE_ID": "candidate-1"},
+	))
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Equal(t, map[string]any{
+		"SEARCH_KEY":                "$${{connections.search.credentials.key}}",
 		"OPTIMIZATION_CANDIDATE_ID": "candidate-1",
 	}, server.env["basic-agent"])
 }

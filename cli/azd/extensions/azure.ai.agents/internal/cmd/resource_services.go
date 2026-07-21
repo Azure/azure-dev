@@ -353,7 +353,13 @@ func collectStringEnvironmentTemplates(value string, environment map[string]stri
 			offset = start + 2
 			continue
 		}
-		environment[name] = value[start:end]
+		// Forward the canonical bare ${NAME}, not the full matched span.
+		// A ${NAME:-default} default is re-applied by the owning
+		// extension against the raw config at deploy, so the env section
+		// only needs NAME's resolved base value. Collapsing every form of
+		// a var to one value also keeps collection deterministic when the
+		// same var appears with and without a default.
+		environment[name] = "${" + name + "}"
 		offset = end
 	}
 }
@@ -427,6 +433,26 @@ func isEnvironmentNameCharacter(value byte) bool {
 	return isEnvironmentNameStart(value) || value >= '0' && value <= '9'
 }
 
+// escapeFoundryTemplates escapes Foundry ${{...}} spans as $${{...}}
+// so azd core's envsubst emits a literal ${{...}} for the owning
+// extension to resolve. Already-escaped $${{...}} and bare ${VAR}
+// are left unchanged, so it is safe on values read back from disk.
+func escapeFoundryTemplates(value string) string {
+	if !strings.Contains(value, "${{") {
+		return value
+	}
+	var b strings.Builder
+	b.Grow(len(value) + 2)
+	for i := 0; i < len(value); i++ {
+		if value[i] == '$' && strings.HasPrefix(value[i:], "${{") &&
+			(i == 0 || value[i-1] != '$') {
+			b.WriteByte('$')
+		}
+		b.WriteByte(value[i])
+	}
+	return b.String()
+}
+
 func setServiceEnvironment(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -439,7 +465,7 @@ func setServiceEnvironment(
 
 	sectionValues := make(map[string]any, len(environment))
 	for key, value := range environment {
-		sectionValues[key] = value
+		sectionValues[key] = escapeFoundryTemplates(value)
 	}
 	section, err := structpb.NewStruct(sectionValues)
 	if err != nil {

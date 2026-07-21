@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -174,7 +175,7 @@ func (a *OptimizeApplyAction) apply(
 		"OPTIMIZATION_LOCAL_DIR":    agentConfigsDir,
 		"OPTIMIZATION_CANDIDATE_ID": a.flags.candidate,
 	}
-	if _, _, found, source, err := projectpkg.AgentDefinitionFromService(svc); err != nil {
+	if _, _, found, _, err := projectpkg.AgentDefinitionFromService(svc); err != nil {
 		return fmt.Errorf("failed to read agent definition: %w", err)
 	} else if found {
 		fmt.Fprintf(out, "  Updating agent definition in azure.yaml...\n")
@@ -182,7 +183,6 @@ func (a *OptimizeApplyAction) apply(
 			ctx,
 			azdClient,
 			svc,
-			source,
 			envUpdates,
 		); err != nil {
 			return err
@@ -239,19 +239,35 @@ func persistInlineAgentEnvironment(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	svc *azdext.ServiceConfig,
-	source projectpkg.AgentDefinitionSource,
 	envUpdates map[string]string,
 ) error {
-	migrateLegacyEnvironment := source == projectpkg.AgentDefinitionSourceLegacyConfig &&
-		len(svc.GetEnvironment()) == 0
+	// Build the env to persist from raw templates only, never from the
+	// core-expanded svc.Environment. AddService escapes env values to
+	// literals, so routing templates through it would freeze a ${VAR}
+	// template (or snapshot an already-expanded value) into azure.yaml.
+	legacyEnv, err := projectpkg.InlineAgentEnvironmentVariables(svc)
+	if err != nil {
+		return fmt.Errorf("failed to read agent environment: %w", err)
+	}
+	existingEnv, err := getRawServiceEnv(ctx, azdClient, svc.Name)
+	if err != nil {
+		return err
+	}
+	// Merge order mirrors deploy-time precedence in toContainerAgent:
+	// the top-level env overlays legacy environmentVariables, then the
+	// new updates win.
+	mergedEnv := map[string]string{}
+	maps.Copy(mergedEnv, legacyEnv)
+	maps.Copy(mergedEnv, existingEnv)
+	maps.Copy(mergedEnv, envUpdates)
+
+	// UpsertAgentEnvVars drops the deprecated environmentVariables and
+	// sets svc.Environment; clear it so AddService leaves env alone. The
+	// merged raw templates are written below via setServiceEnvironment.
 	if err := projectpkg.UpsertAgentEnvVars(svc, envUpdates); err != nil {
 		return fmt.Errorf("failed to update agent definition: %w", err)
 	}
-
-	migratedEnvironment := svc.GetEnvironment()
-	if migrateLegacyEnvironment {
-		svc.Environment = nil
-	}
+	svc.Environment = nil
 
 	// Preserve core-only uses dependency edges.
 	prevUses, err := azdClient.Project().GetServiceConfigValue(ctx, &azdext.GetServiceConfigValueRequest{
@@ -264,10 +280,8 @@ func persistInlineAgentEnvironment(
 	if _, err := azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{Service: svc}); err != nil {
 		return fmt.Errorf("failed to persist agent definition: %w", err)
 	}
-	if migrateLegacyEnvironment {
-		if err := setServiceEnvironment(ctx, azdClient, svc.Name, migratedEnvironment); err != nil {
-			return err
-		}
+	if err := setServiceEnvironment(ctx, azdClient, svc.Name, mergedEnv); err != nil {
+		return err
 	}
 	// Restore `uses:` if it was set before the replacement.
 	if prevUses.GetFound() && prevUses.GetValue() != nil {
@@ -280,6 +294,42 @@ func persistInlineAgentEnvironment(
 		}
 	}
 	return nil
+}
+
+// getRawServiceEnv reads the service's existing env section as raw,
+// unexpanded templates. GetServiceConfigValue returns the on-disk
+// config, so callers can rewrite env without losing ${VAR}/$${{...}}
+// templates.
+func getRawServiceEnv(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+) (map[string]string, error) {
+	resp, err := azdClient.Project().GetServiceConfigValue(
+		ctx,
+		&azdext.GetServiceConfigValueRequest{
+			ServiceName: serviceName,
+			Path:        "env",
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to read env for service %q: %w", serviceName, err)
+	}
+	if !resp.GetFound() || resp.GetValue() == nil {
+		return nil, nil
+	}
+	raw, ok := resp.GetValue().AsInterface().(map[string]any)
+	if !ok {
+		return nil, nil
+	}
+	env := make(map[string]string, len(raw))
+	for key, value := range raw {
+		if str, ok := value.(string); ok {
+			env[key] = str
+		}
+	}
+	return env, nil
 }
 
 // agentConfigMetadata is the YAML structure written as metadata.yaml in each

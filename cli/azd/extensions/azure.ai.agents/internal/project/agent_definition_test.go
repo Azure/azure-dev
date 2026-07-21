@@ -153,6 +153,45 @@ func TestAgentDefinitionFromService_LegacyEnvironment(t *testing.T) {
 	}, AgentEnvironment(got))
 }
 
+// TestInlineAgentEnvironmentVariables verifies the raw inline
+// environmentVariables are returned as authored, without merging the
+// core-forwarded (already expanded) service environment.
+func TestInlineAgentEnvironmentVariables(t *testing.T) {
+	props, err := AgentDefinitionToServiceProperties(
+		sampleContainerAgent(),
+		nil,
+	)
+	require.NoError(t, err)
+	legacyEnvironment, err := structpb.NewValue([]any{
+		map[string]any{
+			"name":  "LEGACY_KEY",
+			"value": "${LEGACY_KEY}",
+		},
+		map[string]any{
+			"name":  "SHARED_KEY",
+			"value": "legacy",
+		},
+	})
+	require.NoError(t, err)
+	props.Fields["environmentVariables"] = legacyEnvironment
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+		// Core-forwarded env must NOT leak into the raw result.
+		Environment: map[string]string{
+			"NEW_KEY":    "new",
+			"SHARED_KEY": "service",
+		},
+	}
+	got, err := InlineAgentEnvironmentVariables(svc)
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"LEGACY_KEY": "${LEGACY_KEY}",
+		"SHARED_KEY": "legacy",
+	}, got)
+}
 func TestResolveAgentEnvironmentVariable(t *testing.T) {
 	t.Parallel()
 

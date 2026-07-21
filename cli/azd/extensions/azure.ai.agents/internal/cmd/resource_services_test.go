@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func mustMarshalConfig[T any](t *testing.T, in *T) *azdext.ServiceConfig {
@@ -108,9 +109,60 @@ func TestServiceEnvironmentTemplates(t *testing.T) {
 	assert.Equal(t, map[string]string{
 		"SEARCH_KEY":   "${SEARCH_KEY}",
 		"SERVER_NAME":  "${SERVER_NAME}",
-		"DEFAULT_NAME": "${DEFAULT_NAME:-fallback}",
-		"EVENT_BODY":   "${EVENT_BODY:-${{event.body}}}",
+		"DEFAULT_NAME": "${DEFAULT_NAME}",
+		"EVENT_BODY":   "${EVENT_BODY}",
 	}, serviceEnvironmentTemplates(cfg))
+}
+
+// TestServiceEnvironmentTemplatesDeterministic verifies a var
+// referenced both bare and with a default collapses to the same
+// canonical ${VAR}, so field order cannot change the result.
+func TestServiceEnvironmentTemplatesDeterministic(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := project.MarshalStruct(&project.Connection{
+		Metadata: map[string]string{
+			"bare":     "${TOPIC}",
+			"default":  "${TOPIC:-general}",
+			"default2": "${TOPIC:-other}",
+		},
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, map[string]string{
+		"TOPIC": "${TOPIC}",
+	}, serviceEnvironmentTemplates(cfg))
+}
+
+func TestEscapeFoundryTemplates(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{"foundry span", "${{event.body}}", "$${{event.body}}"},
+		{"already escaped", "$${{event.body}}", "$${{event.body}}"},
+		{"single brace untouched", "${VAR}", "${VAR}"},
+		{"literal untouched", "info", "info"},
+		{
+			"embedded span",
+			"prefix-${{connections.x.key}}-suffix",
+			"prefix-$${{connections.x.key}}-suffix",
+		},
+		{
+			"span in default",
+			"${MISSING:-${{event.body}}}",
+			"${MISSING:-$${{event.body}}}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, escapeFoundryTemplates(tt.value))
+		})
+	}
 }
 
 func TestAddResourceServiceWritesEnvironment(t *testing.T) {
@@ -305,6 +357,10 @@ type recordingProjectServer struct {
 	// existing is returned by Get to simulate services already present in the
 	// project (e.g. a prior init's azure.ai.project service).
 	existing map[string]*azdext.ServiceConfig
+	// rawEnv is returned by GetServiceConfigValue for path "env" to
+	// simulate a service that already carries an env section (raw,
+	// on-disk templates).
+	rawEnv map[string]map[string]any
 }
 
 // configValueRecord captures a single SetServiceConfigValue call.
@@ -333,8 +389,22 @@ func (s *recordingProjectServer) AddService(
 }
 
 func (s *recordingProjectServer) GetServiceConfigValue(
-	_ context.Context, _ *azdext.GetServiceConfigValueRequest,
+	_ context.Context, req *azdext.GetServiceConfigValueRequest,
 ) (*azdext.GetServiceConfigValueResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if req.Path == "env" {
+		if raw, ok := s.rawEnv[req.ServiceName]; ok {
+			value, err := structpb.NewValue(raw)
+			if err != nil {
+				return nil, err
+			}
+			return &azdext.GetServiceConfigValueResponse{
+				Found: true,
+				Value: value,
+			}, nil
+		}
+	}
 	return &azdext.GetServiceConfigValueResponse{}, nil
 }
 

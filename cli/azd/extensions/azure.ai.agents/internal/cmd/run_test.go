@@ -604,9 +604,11 @@ func TestMergeAgentRunEnvironment(t *testing.T) {
 				"FOUNDRY_PROJECT_ENDPOINT": "https://project.example",
 			},
 			map[string]string{
-				"FOO":  "service",
-				"BAR":  "service",
-				"PORT": "9000",
+				"FOO":          "service",
+				"BAR":          "service",
+				"EMPTY":        "",
+				"PORT":         "9000",
+				"SERVICE_ONLY": "service-only",
 			},
 			[]string{
 				"FOO=service",
@@ -635,6 +637,12 @@ func TestMergeAgentRunEnvironment(t *testing.T) {
 		}
 		if got, _ := value(environment, "LEGACY"); got != "declared" {
 			t.Errorf("expected declared legacy value, got %q", got)
+		}
+		if got, _ := value(environment, "SERVICE_ONLY"); got != "service-only" {
+			t.Errorf("expected service-only value, got %q", got)
+		}
+		if got, found := value(environment, "EMPTY"); !found || got != "" {
+			t.Errorf("expected empty service value, got %q, found %v", got, found)
 		}
 	})
 

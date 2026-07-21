@@ -15,6 +15,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -1416,10 +1417,16 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["FOUNDRY_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
-	// Resolve environment variables from YAML using azd environment values
-	resolvedEnvVars := make(map[string]string)
+	// Seed core-expanded values before resolving legacy variables.
+	resolvedEnvVars := maps.Clone(serviceConfig.GetEnvironment())
+	if resolvedEnvVars == nil {
+		resolvedEnvVars = make(map[string]string)
+	}
 	if agentDef.EnvironmentVariables != nil {
 		for _, envVar := range *agentDef.EnvironmentVariables {
+			if _, found := resolvedEnvVars[envVar.Name]; found {
+				continue
+			}
 			resolvedEnvVars[envVar.Name] = p.resolveEnvironmentVariables(
 				envVar.Name,
 				envVar.Value,

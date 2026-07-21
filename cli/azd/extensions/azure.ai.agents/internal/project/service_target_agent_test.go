@@ -993,6 +993,51 @@ func TestLoadContainerAgentDefinition_MalformedYAMLReturnsError(t *testing.T) {
 	require.Contains(t, err.Error(), "agent.yaml is not valid")
 }
 
+func TestPrepareDeployIncludesServiceEnvironment(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	*agentDef.EnvironmentVariables = append(
+		*agentDef.EnvironmentVariables,
+		agent_yaml.EnvironmentVariable{
+			Name:  "LEGACY_ONLY",
+			Value: "${GLOBAL_VALUE}",
+		},
+		agent_yaml.EnvironmentVariable{
+			Name:  "SHARED",
+			Value: "${SHARED}",
+		},
+	)
+	serviceConfig := &azdext.ServiceConfig{
+		Name: "basic-agent",
+		Environment: map[string]string{
+			"SERVICE_ONLY": "literal ${NOT_A_TEMPLATE}",
+			"SHARED":       "service",
+		},
+	}
+
+	prep, err := (&AgentServiceTargetProvider{}).prepareDeploy(
+		serviceConfig,
+		agentDef,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://project.example",
+			"GLOBAL_VALUE":             "legacy",
+			"SHARED":                   "global",
+		},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:latest"),
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		"literal ${NOT_A_TEMPLATE}",
+		prep.resolvedEnvVars["SERVICE_ONLY"],
+	)
+	require.Equal(t, "service", prep.resolvedEnvVars["SHARED"])
+	require.Equal(t, "legacy", prep.resolvedEnvVars["LEGACY_ONLY"])
+}
+
 func TestLoadContainerAgentDefinition_EnvPathOverridesInlineDefinition(t *testing.T) {
 	t.Parallel()
 

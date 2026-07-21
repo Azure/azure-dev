@@ -996,6 +996,15 @@ func mergeAgentRunEnvironment(
 				)
 			}
 		}
+	} else {
+		for key, value := range serviceEnvironment {
+			if !envSliceHasKey(baseEnvironment, key) {
+				environment = append(
+					environment,
+					fmt.Sprintf("%s=%s", key, value),
+				)
+			}
+		}
 	}
 
 	environment = appendFoundryEnvVars(
@@ -1008,9 +1017,6 @@ func mergeAgentRunEnvironment(
 		key, _, _ := strings.Cut(entry, "=")
 		_, serviceScoped := serviceEnvironment[key]
 		if serviceScoped {
-			if !envSliceHasKey(baseEnvironment, key) {
-				environment = append(environment, entry)
-			}
 			continue
 		}
 		if !envSliceHasKey(environment, key) {

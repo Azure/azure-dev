@@ -546,6 +546,21 @@ describe('isAllowedRegistryJsonUpdate', () => {
     }));
   });
 
+  it('loads and validates registry.dev.json when requested', async () => {
+    const base = registry([extension({ id: 'ext.one' })]);
+    const pr = registry([{ ...extension({ id: 'ext.one' }), namespace: 'other' }]);
+    const octokit = createRegistryOctokit({ base, pr });
+
+    await expect(isAllowedRegistryJsonUpdate({
+      octokit,
+      context: createRegistryContext(),
+      registryPath: 'cli/azd/extensions/registry.dev.json',
+    })).resolves.toContainEqual(expect.stringContaining('changes metadata that requires core review'));
+    expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
+      path: 'cli/azd/extensions/registry.dev.json',
+    }));
+  });
+
   it('requires review when an existing release changes capabilities', async () => {
     const base = registry([extension({ id: 'ext.one', versions: [version({ capabilities: ['custom-commands'] })] })]);
     const pr = registry([extension({ id: 'ext.one', versions: [version({ capabilities: ['lifecycle-events'] })] })]);
@@ -613,6 +628,54 @@ describe('run', () => {
     expect(core.setFailed).not.toHaveBeenCalled();
     expect(octokit.paginate).toHaveBeenCalledWith(octokit.rest.pulls.listFiles, expect.objectContaining({
       pull_number: 1,
+    }));
+  });
+
+  it('allows a simple registry.dev.json-only PR without core review', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension({ versions: [version({ version: '1.0.0' })] })]),
+      pr: registry([extension({ versions: [version({ version: '1.0.0' }), version({ version: '1.1.0' })] })]),
+      files: [{ filename: 'cli/azd/extensions/registry.dev.json' }],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).not.toHaveBeenCalled();
+    expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
+      path: 'cli/azd/extensions/registry.dev.json',
+    }));
+  });
+
+  it('allows simple updates to both registries without core review', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension({ versions: [version({ version: '1.0.0' })] })]),
+      pr: registry([extension({ versions: [version({ version: '1.0.0' }), version({ version: '1.1.0' })] })]),
+      files: [
+        { filename: 'cli/azd/extensions/registry.json' },
+        { filename: 'cli/azd/extensions/registry.dev.json' },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).not.toHaveBeenCalled();
+    expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
+      path: 'cli/azd/extensions/registry.json',
+    }));
+    expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
+      path: 'cli/azd/extensions/registry.dev.json',
     }));
   });
 
@@ -687,7 +750,7 @@ describe('run', () => {
       coreTeam: new Set(['core-member']),
     });
 
-    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('files outside cli/azd/extensions/registry.json'));
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('files outside the extension registries'));
     expect(octokit.paginate).toHaveBeenCalledWith(octokit.rest.pulls.listFiles, expect.objectContaining({
       pull_number: 1,
     }));
@@ -745,7 +808,7 @@ describe('run', () => {
       coreTeam: new Set(['core-member']),
     });
 
-    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('files outside cli/azd/extensions/registry.json'));
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('files outside the extension registries'));
     expect(octokit.paginate).toHaveBeenCalledWith(octokit.rest.pulls.listFiles, expect.objectContaining({
       pull_number: 1,
     }));
@@ -817,7 +880,7 @@ describe('run', () => {
       coreTeam: new Set(['core-member']),
     });
 
-    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('files outside cli/azd/extensions/registry.json'));
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('files outside the extension registries'));
     expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('cli/azd/extensions/README.md'));
   });
 });

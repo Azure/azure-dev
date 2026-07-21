@@ -12,6 +12,7 @@
 
 # ── CLI extensions registry - anyone added to this can approve extension publishing, provided they pass the `ext-registry-check` workflow.
 /cli/azd/extensions/registry.json           @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @trrwilson
+/cli/azd/extensions/registry.dev.json       @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @trrwilson
 
 # ── CLI extensions (AI) ──────────────────────────────────────────────────────
 /cli/azd/extensions/azure.ai.agents/        @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030

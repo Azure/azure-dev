@@ -4,7 +4,13 @@
 
 This style guide establishes standards for code, user experience, testing, and documentation across the Azure Developer CLI project. Following these guidelines ensures consistency, maintainability, and a high-quality user experience.
 
-> **Scope**: This guide covers **core azd flows** only. Separate guidelines for agentic flows and extension-specific UX will be provided in dedicated files in the future.
+> **This guide covers core azd design patterns**, including core azd flows and the responsive list/table layouts shared across list commands (`azd tool list`, `azd tool check`, `azd extension list`, etc.). These core patterns are **not enforced on extensions**, but extension developers are encouraged to follow them where applicable for consistent, familiar UX.
+>
+> **Related guides — reference the right file:**
+> - **Agentic (AI / GitHub Copilot) UX** → [agentic-ux-style-guide.md](./agentic-ux-style-guide.md). The AI-driven / agentic experience uses a **deliberately distinct** magenta + glyph visual language. Do not apply core azd patterns to agentic flows, or vice versa. (Note: agentic **prompts deliberately reuse the core prompt conventions** — the blue `?` marker; only the agent's own status/output uses the agentic vocabulary.)
+> - **Extension-specific UX** → [extensions-style-guide.md](../extensions/extensions-style-guide.md).
+>
+> Core azd and agentic styling are distinct visual systems — do not mix their conventions (for example, don't use the agentic magenta *agent-identity* styling in core flows, and don't restyle core progress reports with the agentic glyphs).
 
 ## Code Style Guidelines
 
@@ -296,6 +302,124 @@ Once the user makes their selection:
 ```
 
 > Colors: `?` → `WithHighLightFormat` + `WithBold`. `(US) East US 2 (eastus2)` (selected value) → `WithHighLightFormat`.
+
+### Responsive List & Table Layouts
+
+Commands that print a list of items — `azd tool list`, `azd tool check`, `azd extension list` (and its alias `azd ext list`), `azd extension source list`, `azd template list`, `azd template source list`, `azd copilot consent list` — render through the shared responsive formatter rather than hand-rolling their own `tabwriter` output. This keeps column names, colors, and layout behavior consistent, and gives every list command a layout that adapts to the terminal width.
+
+**Any new or migrated list command MUST use this formatter.** A few legacy commands (e.g. `azd env list`, which still uses the plain `TableFormatter`) predate it — migrate them when touched rather than adding another bespoke table.
+
+The shared component is `output.PrettyTableFormatter`, configured via `output.PrettyTableFormatterOptions`.
+
+- Formatter & breakpoint logic: [`pkg/output/pretty_table.go`](../../pkg/output/pretty_table.go)
+- Column & option types: [`pkg/output/pretty_table_types.go`](../../pkg/output/pretty_table_types.go)
+- Table rendering: [`pkg/output/pretty_table_table.go`](../../pkg/output/pretty_table_table.go)
+- Card rendering: [`pkg/output/pretty_table_cards.go`](../../pkg/output/pretty_table_cards.go)
+- Width/layout math: [`pkg/output/pretty_table_layout.go`](../../pkg/output/pretty_table_layout.go)
+
+> Reference implementations: `azd tool list` in [`cmd/tool.go`](../../cmd/tool.go), `azd extension list` in [`cmd/extension.go`](../../cmd/extension.go). Model new list commands on these.
+
+#### Responsive Breakpoints
+
+The formatter selects one of three layouts from the current terminal width (`resolveBreakpoint`). Defaults live in `pretty_table_types.go` and can be overridden per command via `FullThreshold` / `CompactThreshold`.
+
+| Layout      | Width condition                        | What renders                                                              |
+| ----------- | -------------------------------------- | ------------------------------------------------------------------------ |
+| **Full**    | `width >= 100` (`DefaultFullThreshold`) | All columns; long values may still wrap/truncate to fit             |
+| **Compact** | `width >= 60` (`DefaultCompactThreshold`) | Only columns with `Priority <= 2`; the dropped columns collapse into a single header-only `···` marker |
+| **Card**    | `width < 60`                            | One card per row, optionally grouped into sections                        |
+
+- Do **not** invent new width thresholds per command. Use the shared defaults unless there is a strong, documented reason to override them.
+- Set `ForceCards: true` only when a command should always render cards regardless of width.
+
+#### Defining Columns
+
+Each column is a `PrettyColumn` (a `Column` plus responsive metadata). Conventions:
+
+- **Headings are UPPERCASE** and short (`ID`, `NAME`, `STATUS`, `INSTALLED`, `LATEST`, `SOURCE`, `CATEGORY`, `TYPE`, `LOCATION`). Reuse these standard names across commands — don't introduce a synonym like `VERSION` when `INSTALLED`/`LATEST` already express the concept.
+- **`Priority`** controls compact visibility: `1` and `2` survive the compact breakpoint; `3+` are full-table only; `0` is treated as `1`. Keep the identifying columns (`ID`, `STATUS`, `INSTALLED`) at priority `1`.
+- **`ColorFunc`** applies semantic color to a cell (see status colors below). Use the standard `output.With*Format` helpers, never raw ANSI.
+- **`Truncatable`** shortens a value with an ellipsis (`…`), keeping at least `minVisibleChars` (5) characters.
+- **`Wrappable`** lets a value wrap onto at most `maxWrapLines` (2) lines before truncating — preferred for identifier columns like `NAME`.
+- **`CardTitle`** promotes the column's value to the highlighted (blue, `WithHighLightFormat`) title line of each card (no label), and excludes it from the labeled card fields. Typically set on `NAME`.
+- **`CardValueTemplate`** provides an alternate template for the card layout, e.g. to omit a `LATEST` value in cards when it equals `INSTALLED`. (Cards omit empty fields entirely; they do not print a `-` placeholder.)
+- **`CardGroupColumn`** (an option, not a column) groups cards under section headers by that column's value (e.g. group by `SOURCE` or `CATEGORY`). Grouping preserves the input order of rows — it does **not** sort; sort your rows before formatting.
+- **`ResponsiveColumnHint: true`** enables two related behaviors: the header-only `···` placeholder column (shown only at the compact breakpoint when columns are dropped) **and** the "Showing N of M columns…" hint line (shown whenever columns are hidden *or* a value is truncated, including in the full layout). Enable it for user-facing lists.
+
+```go
+columns := []output.PrettyColumn{
+    {Column: output.Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
+    {
+        Column:      output.Column{Heading: "NAME", ValueTemplate: "{{.DisplayName}}"},
+        Priority:    2,
+        CardTitle:   true,
+        Wrappable:   true,
+        Truncatable: true,
+    },
+    {
+        Column:      output.Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
+        Priority:    1,
+        ColorFunc:   extensionStatusColor, // semantic status color
+    },
+}
+formatter.Format(rows, writer, output.PrettyTableFormatterOptions{
+    Columns:              columns,
+    CardGroupColumn:      "SOURCE",
+    ResponsiveColumnHint: true,
+})
+```
+
+#### Header, Spacing & Status Styling
+
+- **Header row**: bold high-white (`color.New(color.Bold, color.FgHiWhite)`, equivalent to `WithBold`), followed by a **gray** underline rule (`WithGrayFormat`).
+- **Column spacing**: a fixed `columnPadding` (3 spaces). **No box-drawing separators** and **no `tabwriter`** in list tables — `tabwriter` is reserved for the `show`/detail screens.
+- **Empty values**: in the **table** layouts, render a literal `-` for a missing value (e.g. `INSTALLED` with no installed version). This is done in the column's `ValueTemplate` (e.g. `{{if .Version}}{{.Version}}{{else}}-{{end}}`), not automatically by the formatter. In the **card** layout, empty fields are omitted rather than shown as `-`.
+- **Status colors** are centralized in per-command helpers (`toolStatusColor`, `extensionStatusColor`) that map a status string to a color helper. Keep these mappings consistent:
+
+| Status text         | Meaning                       | Color helper        |
+| ------------------- | ----------------------------- | ------------------- |
+| `Installed` / `Up to date` | Present and current      | `WithSuccessFormat` |
+| `Upgrade available` | Installed but outdated        | `WithWarningFormat` |
+| `Incompatible`      | Cannot be used                | `WithErrorFormat`   |
+| `Not installed`     | Absent (not an error)         | `WithGrayFormat`    |
+
+#### Layout Examples
+
+**Full table** (`width >= 100`) — every column, gray underline rule:
+
+```
+ID                  NAME                           STATUS             INSTALLED   LATEST   SOURCE
+────────────────────────────────────────────────────────────────────────────────────────────────────
+az-cli              Azure CLI                      Up to date         1.0.0       1.0.0    azd
+```
+
+**Compact table** (`60 <= width < 100`) — only `Priority <= 2` columns; the dropped columns collapse into a single header-only `···` column (data rows leave it blank), with a hint line:
+
+```
+ID                  NAME                           STATUS             INSTALLED   ···
+────────────────────────────────────────────────────────────────────────────────────────
+az-cli              Azure CLI                      Up to date         1.0.0
+
+Showing 4 of 5 columns. Resize the terminal or run with -o json for full details.
+```
+
+**Card layout** (`width < 60`) — one card per row, grouped by `CardGroupColumn`, `CardTitle` value as the heading:
+
+```
+── SOURCE: azd ─────────────────────
+
+Azure CLI
+ID:         az-cli
+STATUS:     Up to date
+INSTALLED:  1.0.0
+```
+
+#### List Command Guidelines
+
+- **Always support `-o json`.** The responsive layouts are for humans; scripts and full detail should use `--output json`. The compact hint explicitly points users there.
+- **Empty state**: print a clear, single-line message instead of an empty table (e.g. `No tools found in the registry.`, `No tools found.`). Extension list adds guidance on how to add a source.
+- **Stable ordering**: the formatter does not sort — it renders (and groups cards) in the order rows are passed in. **Sort your rows before formatting** and group by a stable key (`tool list` by `CATEGORY`, `extension list` by `SOURCE`) so output is deterministic.
+- **Don't hand-roll a new table.** If you find yourself writing `tabwriter` for a list of items, use `PrettyTableFormatter` instead so the command inherits responsive behavior for free.
 
 ### CLI Color Standards
 

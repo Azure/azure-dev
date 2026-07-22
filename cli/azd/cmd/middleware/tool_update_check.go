@@ -147,6 +147,9 @@ func (m *ToolUpdateCheckMiddleware) isToolCommand() bool {
 // crashing the CLI.
 func (m *ToolUpdateCheckMiddleware) triggerBackgroundCheckIfNeeded(ctx context.Context) {
 	// Honour the same opt-out signal used by the first-run experience.
+	// Note: unlike the first-run experience — which is off unless the variable
+	// is explicitly "false" — background update checks keep the ordinary
+	// default: unset means run, "true" means skip. See envKeySkipFirstRun.
 	if skip, _ := strconv.ParseBool(os.Getenv(envKeySkipFirstRun)); skip {
 		return
 	}

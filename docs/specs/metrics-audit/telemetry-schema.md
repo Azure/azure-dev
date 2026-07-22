@@ -88,6 +88,7 @@ These are set once at process startup via `resource.New()` and attached to every
 | Service languages | `project.service.languages` | SystemMetadata | FeatureInsight | List of languages |
 | Service language | `project.service.language` | SystemMetadata | PerformanceAndHealth | Single service language |
 | Platform type | `platform.type` | SystemMetadata | FeatureInsight | e.g. `aca`, `aks` |
+| Agent deployment mode | `agent.deploy.mode` | SystemMetadata | FeatureInsight | `string[]`; per-command set of `code`/`container`/`byo_image` contributed by an authenticated extension through the telemetry service; fixed enum, not hashed; App Insights stores JSON text |
 
 ### Config and Environment
 

@@ -26,6 +26,38 @@ var azureYamlEnvRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-
 
 var foundryTemplateSpanPattern = regexp.MustCompile(`(?s)\$\{\{.*?\}\}`)
 
+var azureYamlEnvironmentReferencePaths = map[string][][]string{
+	"azure.ai.agent": {
+		{"environmentVariables", "*", "value"},
+		{"config", "environmentVariables", "*", "value"},
+	},
+	"azure.ai.connection": {
+		{"target"},
+		{"credentials"},
+		{"metadata"},
+	},
+	"azure.ai.project": {
+		{"network", "agentSubnet", "vnet"},
+		{"network", "peSubnet", "vnet"},
+		{"network", "dns", "subscription"},
+	},
+	"azure.ai.routine": {
+		{"action", "input"},
+		{"config", "action", "input"},
+	},
+	"azure.ai.toolbox": {
+		{"endpoint"},
+		{"tools"},
+		{"config", "endpoint"},
+		{"config", "tools"},
+	},
+	"microsoft.foundry": {
+		{"network", "agentSubnet", "vnet"},
+		{"network", "peSubnet", "vnet"},
+		{"network", "dns", "subscription"},
+	},
+}
+
 type azureYamlEnvironmentReference struct {
 	Name   string
 	Secret bool
@@ -81,7 +113,7 @@ func configureAzureYamlEnvironmentVariables(
 			continue
 		}
 
-		if value, ok := os.LookupEnv(reference.Name); ok {
+		if value, ok := os.LookupEnv(reference.Name); ok && value != "" {
 			if err := setEnvValue(ctx, azdClient, envName, reference.Name, value); err != nil {
 				return err
 			}
@@ -149,7 +181,12 @@ func findAzureYamlEnvironmentReferences(content []byte, projectDir string) ([]az
 	for i := 0; i+1 < len(services.Content); i += 2 {
 		serviceName := services.Content[i].Value
 		service := services.Content[i+1]
-		if !isFoundryAzureYamlService(service) {
+		host, ok := foundryAzureYamlServiceHost(service)
+		if !ok {
+			continue
+		}
+		referencePaths, ok := azureYamlEnvironmentReferencePaths[host]
+		if !ok {
 			continue
 		}
 
@@ -166,12 +203,15 @@ func findAzureYamlEnvironmentReferences(content []byte, projectDir string) ([]az
 			return nil, fmt.Errorf("encoding resolved service %q: %w", serviceName, err)
 		}
 
-		collectAzureYamlEnvironmentReferences(
-			&resolvedService,
-			[]string{"services", serviceName},
-			&references,
-			indexByName,
-		)
+		for _, referencePath := range referencePaths {
+			collectAzureYamlEnvironmentReferencesAtPath(
+				&resolvedService,
+				referencePath,
+				[]string{"services", serviceName},
+				&references,
+				indexByName,
+			)
+		}
 	}
 	return references, nil
 }
@@ -189,14 +229,65 @@ func yamlMappingValue(node *yaml.Node, key string) *yaml.Node {
 	return nil
 }
 
-func isFoundryAzureYamlService(service *yaml.Node) bool {
+func foundryAzureYamlServiceHost(service *yaml.Node) (string, bool) {
 	host := yamlMappingValue(service, "host")
 	if host == nil || host.Kind != yaml.ScalarNode {
-		return false
+		return "", false
 	}
 
 	_, knownHost := foundryServiceHosts[host.Value]
-	return knownHost || strings.HasPrefix(host.Value, "azure.ai.")
+	if !knownHost && !strings.HasPrefix(host.Value, "azure.ai.") {
+		return "", false
+	}
+	return host.Value, true
+}
+
+func collectAzureYamlEnvironmentReferencesAtPath(
+	node *yaml.Node,
+	referencePath []string,
+	path []string,
+	references *[]azureYamlEnvironmentReference,
+	indexByName map[string]int,
+) {
+	if node == nil {
+		return
+	}
+	if node.Kind == yaml.AliasNode {
+		node = node.Alias
+	}
+	if len(referencePath) == 0 {
+		collectAzureYamlEnvironmentReferences(node, path, references, indexByName)
+		return
+	}
+
+	segment := referencePath[0]
+	if segment == "*" {
+		if node.Kind != yaml.SequenceNode {
+			return
+		}
+		for _, child := range node.Content {
+			collectAzureYamlEnvironmentReferencesAtPath(
+				child,
+				referencePath[1:],
+				append(slices.Clone(path), segment),
+				references,
+				indexByName,
+			)
+		}
+		return
+	}
+
+	child := yamlMappingValue(node, segment)
+	if child == nil {
+		return
+	}
+	collectAzureYamlEnvironmentReferencesAtPath(
+		child,
+		referencePath[1:],
+		append(slices.Clone(path), segment),
+		references,
+		indexByName,
+	)
 }
 
 func collectAzureYamlEnvironmentReferences(
@@ -217,9 +308,6 @@ func collectAzureYamlEnvironmentReferences(
 	case yaml.MappingNode:
 		for i := 0; i+1 < len(node.Content); i += 2 {
 			key := node.Content[i]
-			if key.Value == "hooks" {
-				continue
-			}
 			value := node.Content[i+1]
 			childPath := append(slices.Clone(path), key.Value)
 			collectAzureYamlEnvironmentReferences(value, childPath, references, indexByName)

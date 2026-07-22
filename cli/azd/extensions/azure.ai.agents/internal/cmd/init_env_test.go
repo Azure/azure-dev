@@ -126,6 +126,124 @@ services:
 			},
 		},
 		{
+			name: "project scans only expanded network fields",
+			content: `name: sample
+services:
+  project:
+    host: azure.ai.project
+    endpoint: ${RAW_PROJECT_ENDPOINT}
+    deployments:
+      - name: ${RAW_DEPLOYMENT_NAME}
+        model:
+          name: ${RAW_MODEL_NAME}
+        sku:
+          name: ${RAW_SKU_NAME}
+    network:
+      agentSubnet:
+        vnet: ${AGENT_VNET_ID}
+      peSubnet:
+        vnet: ${PE_VNET_ID}
+      dns:
+        subscription: ${DNS_SUBSCRIPTION_ID}
+`,
+			want: []azureYamlEnvironmentReference{
+				{Name: "AGENT_VNET_ID"},
+				{Name: "PE_VNET_ID"},
+				{Name: "DNS_SUBSCRIPTION_ID"},
+			},
+		},
+		{
+			name: "connection scans only target credentials and metadata",
+			content: `name: sample
+services:
+  connection:
+    host: azure.ai.connection
+    category: ${RAW_CATEGORY}
+    authType: ${RAW_AUTH_TYPE}
+    target: ${CONNECTION_TARGET}
+    credentials:
+      key: ${CONNECTION_KEY}
+    metadata:
+      resourceId: ${CONNECTION_RESOURCE_ID}
+`,
+			want: []azureYamlEnvironmentReference{
+				{Name: "CONNECTION_TARGET"},
+				{Name: "CONNECTION_KEY", Secret: true},
+				{Name: "CONNECTION_RESOURCE_ID"},
+			},
+		},
+		{
+			name: "toolbox scans endpoint and tools but not description",
+			content: `name: sample
+services:
+  toolbox:
+    host: azure.ai.toolbox
+    description: ${RAW_TOOLBOX_DESCRIPTION}
+    endpoint: ${TOOLBOX_ENDPOINT}
+    tools:
+      - name: search
+        configuration:
+          key: ${TOOLBOX_KEY}
+`,
+			want: []azureYamlEnvironmentReference{
+				{Name: "TOOLBOX_ENDPOINT"},
+				{Name: "TOOLBOX_KEY"},
+			},
+		},
+		{
+			name: "routine scans action input but not triggers or description",
+			content: `name: sample
+services:
+  routine:
+    host: azure.ai.routine
+    description: ${RAW_ROUTINE_DESCRIPTION}
+    triggers:
+      - type: ${RAW_TRIGGER_TYPE}
+    action:
+      input:
+        value: ${ROUTINE_INPUT}
+`,
+			want: []azureYamlEnvironmentReference{
+				{Name: "ROUTINE_INPUT"},
+			},
+		},
+		{
+			name: "skill fields are not expanded",
+			content: `name: sample
+services:
+  skill:
+    host: azure.ai.skill
+    description: ${RAW_SKILL_DESCRIPTION}
+    instructions: ${RAW_SKILL_INSTRUCTIONS}
+`,
+			want: nil,
+		},
+		{
+			name: "deprecated toolbox and routine config fields are scanned",
+			content: `name: sample
+services:
+  routine:
+    host: azure.ai.routine
+    config:
+      action:
+        input:
+          value: ${LEGACY_ROUTINE_INPUT}
+  toolbox:
+    host: azure.ai.toolbox
+    config:
+      endpoint: ${LEGACY_TOOLBOX_ENDPOINT}
+      tools:
+        - name: legacy
+          configuration:
+            key: ${LEGACY_TOOLBOX_KEY}
+`,
+			want: []azureYamlEnvironmentReference{
+				{Name: "LEGACY_ROUTINE_INPUT"},
+				{Name: "LEGACY_TOOLBOX_ENDPOINT"},
+				{Name: "LEGACY_TOOLBOX_KEY"},
+			},
+		},
+		{
 			name:    "malformed yaml",
 			content: "name: [unterminated",
 			wantErr: true,
@@ -377,6 +495,38 @@ services:
 			},
 		},
 	}
+	promptServer := &testPromptServiceServer{
+		promptResponses: []string{"prompted-value"},
+	}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{}, promptServer)
+
+	err := configureAzureYamlEnvironmentVariables(
+		t.Context(),
+		azdClient,
+		"dev",
+		projectDir,
+		false,
+	)
+	require.NoError(t, err)
+	require.Len(t, promptServer.promptRequests, 1)
+	require.Equal(t, "prompted-value", envServer.values["dev"][envVarName])
+}
+
+func TestConfigureAzureYamlEnvironmentVariables_EmptyProcessValuePrompts(t *testing.T) {
+	const envVarName = "AZD_TEST_INIT_EMPTY_PROCESS_VALUE"
+	t.Setenv(envVarName, "")
+
+	projectDir := t.TempDir()
+	content := `name: sample
+services:
+  connection:
+    host: azure.ai.connection
+    metadata:
+      emptyProcess: ${AZD_TEST_INIT_EMPTY_PROCESS_VALUE}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "azure.yaml"), []byte(content), 0600))
+
+	envServer := &testEnvironmentServiceServer{}
 	promptServer := &testPromptServiceServer{
 		promptResponses: []string{"prompted-value"},
 	}

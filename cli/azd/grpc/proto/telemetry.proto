@@ -1,0 +1,33 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
+
+// TelemetryService accepts reviewed, host-owned command usage attribute values
+// from authenticated extensions. The host validates the key and value against
+// an allowlist and attaches accepted values to the current command telemetry
+// event. Extensions cannot choose classification, purpose, hashing, or
+// aggregation.
+service TelemetryService {
+  // AddCommandUsageAttribute adds one bounded value to a host-owned command
+  // usage attribute. Duplicate values are collapsed by the host.
+  rpc AddCommandUsageAttribute(AddCommandUsageAttributeRequest)
+      returns (AddCommandUsageAttributeResponse);
+}
+
+message AddCommandUsageAttributeRequest {
+  // Key must be registered and owned by the host.
+  string key = 1;
+
+  // Value must be in the host-owned allowed set for key.
+  string value = 2;
+}
+
+message AddCommandUsageAttributeResponse {
+  // Accepted is false when the value was rejected because no eligible command
+  // scope is currently active. A false response is not an error.
+  bool accepted = 1;
+}

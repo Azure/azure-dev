@@ -8,6 +8,8 @@ import (
 	"github.com/microsoft/ApplicationInsights-Go/appinsights/contracts"
 	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext/telemetry"
 )
 
 // AttributeKey represents an attribute key with additional metadata.
@@ -261,6 +263,17 @@ var (
 
 // Deployment attributes
 var (
+	// AgentDeploymentModeKey records the de-duplicated set of hosted agent
+	// deployment modes selected during a command. Values are a fixed enum
+	// (code, container, byo_image) contributed by an authenticated extension
+	// through the host-validated telemetry service, so the field never carries
+	// user content, resource names, image references, paths, or identifiers.
+	AgentDeploymentModeKey = AttributeKey{
+		Key:            attribute.Key(telemetry.AgentDeploymentModeAttribute),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
 	// DeployAttemptKey tracks the retry attempt number for App Service zip deployments.
 	DeployAttemptKey = AttributeKey{
 		Key:            attribute.Key("deploy.appservice.attempt"),

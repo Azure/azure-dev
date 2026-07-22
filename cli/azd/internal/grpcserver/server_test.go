@@ -23,10 +23,12 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
@@ -53,6 +55,7 @@ func Test_Server_Start(t *testing.T) {
 		azdext.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
+		NewTelemetryService(),
 	)
 
 	serverInfo, err := server.Start()
@@ -119,6 +122,74 @@ func Test_Server_Start(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, codes.Unauthenticated, st.Code())
 	})
+
+	t.Run("TelemetryAccepted", func(t *testing.T) {
+		tracing.ResetCommandUsageForTest()
+		t.Cleanup(tracing.ResetCommandUsageForTest)
+
+		stExtension := &extensions.Extension{
+			Id: "azd.internal.telemetry",
+			Capabilities: []extensions.CapabilityType{
+				extensions.ServiceTargetProviderCapability,
+			},
+			Namespace: "test",
+		}
+		accessToken, err := GenerateExtensionToken(stExtension, serverInfo)
+		require.NoError(t, err)
+
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
+		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
+		require.NoError(t, err)
+
+		// The server runs in-process, so the handler writes to this scope.
+		scope := tracing.BeginCommandUsageScope("cmd.deploy")
+
+		resp, err := client.Telemetry().AddCommandUsageAttribute(ctx, &azdext.AddCommandUsageAttributeRequest{
+			Key:   telemetry.AgentDeploymentModeAttribute,
+			Value: string(telemetry.AgentDeploymentModeCode),
+		})
+		require.NoError(t, err)
+		require.True(t, resp.Accepted)
+
+		attrs, err := tracing.CloseCommandUsageScope(scope)
+		require.NoError(t, err)
+		require.Len(t, attrs, 1)
+		require.Equal(t, []string{"code"}, attrs[0].Value.AsStringSlice())
+	})
+
+	t.Run("TelemetryMissingCapability", func(t *testing.T) {
+		// The base extension only declares CustomCommandCapability.
+		accessToken, err := GenerateExtensionToken(extension, serverInfo)
+		require.NoError(t, err)
+
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
+		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
+		require.NoError(t, err)
+
+		_, err = client.Telemetry().AddCommandUsageAttribute(ctx, &azdext.AddCommandUsageAttributeRequest{
+			Key:   telemetry.AgentDeploymentModeAttribute,
+			Value: string(telemetry.AgentDeploymentModeCode),
+		})
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.PermissionDenied, st.Code())
+	})
+
+	t.Run("TelemetryMissingToken", func(t *testing.T) {
+		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
+		require.NoError(t, err)
+
+		_, err = client.Telemetry().AddCommandUsageAttribute(
+			t.Context(),
+			&azdext.AddCommandUsageAttributeRequest{
+				Key:   telemetry.AgentDeploymentModeAttribute,
+				Value: string(telemetry.AgentDeploymentModeCode),
+			},
+		)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.Unauthenticated, st.Code())
+	})
 }
 
 // Test_Server_StreamInterceptor validates that the streaming RPC interceptor
@@ -142,6 +213,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 		azdext.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
+		azdext.UnimplementedTelemetryServiceServer{},
 	)
 
 	serverInfo, err := server.Start()
@@ -618,7 +690,7 @@ func TestValidateAuthToken_InvalidToken(t *testing.T) {
 
 func TestNewServer(t *testing.T) {
 	t.Parallel()
-	s := NewServer(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NotNil(t, s)
 	assert.Nil(t, s.grpcServer, "grpcServer should be nil before Start")
 }

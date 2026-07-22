@@ -83,6 +83,19 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		}
 	})
 
+	// Agent deployment mode telemetry field (contributed by extensions through
+	// the host-validated telemetry service).
+	t.Run("AgentDeploymentModeField", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t, "agent.deploy.mode", string(fields.AgentDeploymentModeKey.Key))
+		require.Equal(t, fields.SystemMetadata, fields.AgentDeploymentModeKey.Classification)
+		require.Equal(t, fields.FeatureInsight, fields.AgentDeploymentModeKey.Purpose)
+		require.False(t, fields.AgentDeploymentModeKey.IsMeasurement)
+
+		kv := fields.AgentDeploymentModeKey.StringSlice([]string{"code", "container", "byo_image"})
+		require.Equal(t, []string{"code", "container", "byo_image"}, kv.Value.AsStringSlice())
+	})
+
 	// Tool command telemetry fields
 	t.Run("ToolFields", func(t *testing.T) {
 		t.Parallel()

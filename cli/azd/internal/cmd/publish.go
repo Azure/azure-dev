@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -286,11 +285,16 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			serviceContext := &project.ServiceContext{}
 
 			if pa.flags.FromPackage != "" {
-				// --from-package set, skip packaging and create package artifact
+				// --from-package set, skip packaging and create package artifact.
+				// Mark it with generic provenance so a service target can tell a
+				// caller-supplied payload from one azd produced.
 				err = serviceContext.Package.Add(&project.Artifact{
 					Kind:         determineArtifactKind(pa.flags.FromPackage),
 					Location:     pa.flags.FromPackage,
 					LocationKind: project.LocationKindLocal,
+					Metadata: map[string]string{
+						project.MetadataKeyFromPackage: "true",
+					},
 				})
 
 				if err != nil {
@@ -411,13 +415,23 @@ func (pa *PublishAction) supportsPublish(ctx context.Context, serviceConfig *pro
 // 1. Archive (zip file) - checks if it exists and matches popular archive extensions
 // 2. Directory - checks if it is an existing directory (absolute or relative)
 // 3. Container - otherwise, it's likely a local container reference
+// archiveSuffixes are the file suffixes treated as a code archive for
+// --from-package classification. Compound suffixes such as ".tar.gz" are
+// matched with strings.HasSuffix because filepath.Ext only returns the final
+// segment (".gz") and would misclassify them as a container reference.
+var archiveSuffixes = []string{
+	".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz",
+}
+
 func determineArtifactKind(fromPackage string) project.ArtifactKind {
-	// Check if it's an existing file with archive extension
+	lower := strings.ToLower(fromPackage)
+
+	// Check if it's an existing file with an archive suffix.
 	if info, err := os.Stat(fromPackage); err == nil && !info.IsDir() {
-		ext := strings.ToLower(filepath.Ext(fromPackage))
-		switch ext {
-		case ".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz":
-			return project.ArtifactKindArchive
+		for _, suffix := range archiveSuffixes {
+			if strings.HasSuffix(lower, suffix) {
+				return project.ArtifactKindArchive
+			}
 		}
 	}
 

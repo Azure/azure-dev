@@ -4,10 +4,6 @@
 
 ## 1.28.1 (2026-07-22)
 
-### Breaking Changes
-
-- [[#8844]](https://github.com/Azure/azure-dev/pull/8844) Rename azd's client-side "preflight" provisioning check to "provision validation" to avoid confusion with the Azure ARM Preflight API. The single `provision.preflight` config gate is split in two: `provision.preflight off` now disables **only** the server-side ARM preflight call, and a new `validation.provision off` key disables azd's local client-side validation. Users who previously set `provision.preflight off` to silence local checks must now **also** set `validation.provision off`. The related telemetry event and fields are renamed from `validation.preflight.*` to `validation.provision.*`.
-
 ### Bugs Fixed
 
 - [[#9143]](https://github.com/Azure/azure-dev/pull/9143) Fix `azd down --no-prompt` hanging in CI/CD for Terraform-based projects by auto-approving the destroy when running non-interactively, and fix `azd down --force` failing with a backend initialization error on a fresh agent.

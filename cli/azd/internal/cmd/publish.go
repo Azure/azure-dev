@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -415,23 +416,13 @@ func (pa *PublishAction) supportsPublish(ctx context.Context, serviceConfig *pro
 // 1. Archive (zip file) - checks if it exists and matches popular archive extensions
 // 2. Directory - checks if it is an existing directory (absolute or relative)
 // 3. Container - otherwise, it's likely a local container reference
-// archiveSuffixes are the file suffixes treated as a code archive for
-// --from-package classification. Compound suffixes such as ".tar.gz" are
-// matched with strings.HasSuffix because filepath.Ext only returns the final
-// segment (".gz") and would misclassify them as a container reference.
-var archiveSuffixes = []string{
-	".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz",
-}
-
 func determineArtifactKind(fromPackage string) project.ArtifactKind {
-	lower := strings.ToLower(fromPackage)
-
-	// Check if it's an existing file with an archive suffix.
+	// Check if it's an existing file with archive extension
 	if info, err := os.Stat(fromPackage); err == nil && !info.IsDir() {
-		for _, suffix := range archiveSuffixes {
-			if strings.HasSuffix(lower, suffix) {
-				return project.ArtifactKindArchive
-			}
+		ext := strings.ToLower(filepath.Ext(fromPackage))
+		switch ext {
+		case ".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz":
+			return project.ArtifactKindArchive
 		}
 	}
 

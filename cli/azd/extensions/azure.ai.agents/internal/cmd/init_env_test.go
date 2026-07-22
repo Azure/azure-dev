@@ -60,6 +60,7 @@ services:
 services:
   agent:
     host: azure.ai.agent
+    kind: hosted
     environmentVariables:
       - name: DEFAULTED
         value: ${DEFAULTED:-fallback}
@@ -85,6 +86,7 @@ services:
 services:
   agent:
     host: azure.ai.agent
+    kind: hosted
     environmentVariables:
       - name: API_TOKEN
         value: ${SERVICE_API_TOKEN}
@@ -113,6 +115,7 @@ services:
       WEB_VALUE: ${WEB_VALUE}
   agent:
     host: azure.ai.agent
+    kind: hosted
     hooks:
       predeploy:
         shell: sh
@@ -222,6 +225,13 @@ services:
 			name: "deprecated toolbox and routine config fields are scanned",
 			content: `name: sample
 services:
+  agent:
+    host: azure.ai.agent
+    config:
+      kind: hosted
+      environmentVariables:
+        - name: LEGACY_AGENT_VALUE
+          value: ${LEGACY_AGENT_VALUE}
   routine:
     host: azure.ai.routine
     config:
@@ -238,9 +248,52 @@ services:
             key: ${LEGACY_TOOLBOX_KEY}
 `,
 			want: []azureYamlEnvironmentReference{
+				{Name: "LEGACY_AGENT_VALUE"},
 				{Name: "LEGACY_ROUTINE_INPUT"},
 				{Name: "LEGACY_TOOLBOX_ENDPOINT"},
 				{Name: "LEGACY_TOOLBOX_KEY"},
+			},
+		},
+		{
+			name: "inline properties take precedence over stale config fields",
+			content: `name: sample
+services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    environmentVariables:
+      - name: INLINE_AGENT_VALUE
+        value: ${INLINE_AGENT_VALUE}
+    config:
+      kind: hosted
+      environmentVariables:
+        - name: STALE_AGENT_VALUE
+          value: ${STALE_AGENT_VALUE}
+  routine:
+    host: azure.ai.routine
+    description: inline routine
+    action:
+      input:
+        value: ${INLINE_ROUTINE_INPUT}
+    config:
+      action:
+        input:
+          value: ${STALE_ROUTINE_INPUT}
+  toolbox:
+    host: azure.ai.toolbox
+    description: inline toolbox
+    endpoint: ${INLINE_TOOLBOX_ENDPOINT}
+    config:
+      endpoint: ${STALE_TOOLBOX_ENDPOINT}
+      tools:
+        - name: stale
+          configuration:
+            key: ${STALE_TOOLBOX_KEY}
+`,
+			want: []azureYamlEnvironmentReference{
+				{Name: "INLINE_AGENT_VALUE"},
+				{Name: "INLINE_ROUTINE_INPUT"},
+				{Name: "INLINE_TOOLBOX_ENDPOINT"},
 			},
 		},
 		{

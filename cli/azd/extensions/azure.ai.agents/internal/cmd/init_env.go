@@ -29,7 +29,6 @@ var foundryTemplateSpanPattern = regexp.MustCompile(`(?s)\$\{\{.*?\}\}`)
 var azureYamlEnvironmentReferencePaths = map[string][][]string{
 	"azure.ai.agent": {
 		{"environmentVariables", "*", "value"},
-		{"config", "environmentVariables", "*", "value"},
 	},
 	"azure.ai.connection": {
 		{"target"},
@@ -43,19 +42,37 @@ var azureYamlEnvironmentReferencePaths = map[string][][]string{
 	},
 	"azure.ai.routine": {
 		{"action", "input"},
-		{"config", "action", "input"},
 	},
 	"azure.ai.toolbox": {
 		{"endpoint"},
 		{"tools"},
-		{"config", "endpoint"},
-		{"config", "tools"},
 	},
 	"microsoft.foundry": {
 		{"network", "agentSubnet", "vnet"},
 		{"network", "peSubnet", "vnet"},
 		{"network", "dns", "subscription"},
 	},
+}
+
+var azureYamlCoreServiceFields = map[string]struct{}{
+	"apiVersion":    {},
+	"condition":     {},
+	"config":        {},
+	"dist":          {},
+	"docker":        {},
+	"env":           {},
+	"hooks":         {},
+	"host":          {},
+	"image":         {},
+	"infra":         {},
+	"k8s":           {},
+	"language":      {},
+	"module":        {},
+	"project":       {},
+	"remoteBuild":   {},
+	"resourceGroup": {},
+	"resourceName":  {},
+	"uses":          {},
 }
 
 type azureYamlEnvironmentReference struct {
@@ -185,7 +202,7 @@ func findAzureYamlEnvironmentReferences(content []byte, projectDir string) ([]az
 		if !ok {
 			continue
 		}
-		referencePaths, ok := azureYamlEnvironmentReferencePaths[host]
+		_, ok = azureYamlEnvironmentReferencePaths[host]
 		if !ok {
 			continue
 		}
@@ -203,6 +220,7 @@ func findAzureYamlEnvironmentReferences(content []byte, projectDir string) ([]az
 			return nil, fmt.Errorf("encoding resolved service %q: %w", serviceName, err)
 		}
 
+		referencePaths := activeAzureYamlEnvironmentReferencePaths(host, &resolvedService)
 		for _, referencePath := range referencePaths {
 			collectAzureYamlEnvironmentReferencesAtPath(
 				&resolvedService,
@@ -240,6 +258,58 @@ func foundryAzureYamlServiceHost(service *yaml.Node) (string, bool) {
 		return "", false
 	}
 	return host.Value, true
+}
+
+func activeAzureYamlEnvironmentReferencePaths(host string, service *yaml.Node) [][]string {
+	referencePaths := azureYamlEnvironmentReferencePaths[host]
+
+	switch host {
+	case "azure.ai.agent":
+		if hasNonEmptyAzureYamlString(service, "kind") {
+			return referencePaths
+		}
+		config := yamlMappingValue(service, "config")
+		if hasNonEmptyAzureYamlString(config, "kind") {
+			return prefixAzureYamlEnvironmentReferencePaths("config", referencePaths)
+		}
+		return nil
+	case "azure.ai.routine", "azure.ai.toolbox":
+		if hasAzureYamlInlineProperties(service) {
+			return referencePaths
+		}
+		if yamlMappingValue(service, "config") != nil {
+			return prefixAzureYamlEnvironmentReferencePaths("config", referencePaths)
+		}
+		return nil
+	default:
+		return referencePaths
+	}
+}
+
+func hasNonEmptyAzureYamlString(node *yaml.Node, key string) bool {
+	value := yamlMappingValue(node, key)
+	return value != nil && value.Kind == yaml.ScalarNode && value.Value != ""
+}
+
+func hasAzureYamlInlineProperties(service *yaml.Node) bool {
+	if service == nil || service.Kind != yaml.MappingNode {
+		return false
+	}
+
+	for i := 0; i+1 < len(service.Content); i += 2 {
+		if _, isCoreField := azureYamlCoreServiceFields[service.Content[i].Value]; !isCoreField {
+			return true
+		}
+	}
+	return false
+}
+
+func prefixAzureYamlEnvironmentReferencePaths(prefix string, paths [][]string) [][]string {
+	prefixed := make([][]string, len(paths))
+	for i, path := range paths {
+		prefixed[i] = append([]string{prefix}, path...)
+	}
+	return prefixed
 }
 
 func collectAzureYamlEnvironmentReferencesAtPath(

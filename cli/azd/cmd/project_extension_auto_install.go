@@ -64,6 +64,7 @@ func findExtensionForProvider(
 	extensionManager extensionAutoInstallManager,
 	installed map[string]*extensions.Extension,
 	resolvedDependencies map[string]resolvedExtensionDependency,
+	requirementConflicts map[string]error,
 	capability extensions.CapabilityType,
 	provider string,
 ) (*extensions.ExtensionMetadata, error) {
@@ -72,10 +73,17 @@ func findExtensionForProvider(
 		Provider:   provider,
 	})
 	if err != nil {
-		log.Printf("failed to find an extension for provider %q: %v", provider, err)
-		return nil, nil
+		return nil, fmt.Errorf("finding extension for provider %q: %w", provider, err)
 	}
 	matches = filterExtensionsForProvider(matches, capability, provider)
+	matchedRequirementConflicts := map[string]error{}
+	matches = slices.DeleteFunc(matches, func(extension *extensions.ExtensionMetadata) bool {
+		conflict, hasConflict := requirementConflicts[strings.ToLower(extension.Id)]
+		if hasConflict {
+			matchedRequirementConflicts[extension.Id] = conflict
+		}
+		return hasConflict
+	})
 	dependencyConflicts := map[string]resolvedExtensionDependency{}
 	matches = slices.DeleteFunc(matches, func(extension *extensions.ExtensionMetadata) bool {
 		dependency, isDependency := resolvedDependencies[strings.ToLower(extension.Id)]
@@ -86,6 +94,10 @@ func findExtensionForProvider(
 	})
 	matches = uninstalledExtensionMatches(matches, installed)
 	if len(matches) == 0 {
+		if len(matchedRequirementConflicts) > 0 {
+			extensionId := slices.Sorted(maps.Keys(matchedRequirementConflicts))[0]
+			return nil, matchedRequirementConflicts[extensionId]
+		}
 		if len(dependencyConflicts) > 0 {
 			extensionId := slices.Sorted(maps.Keys(dependencyConflicts))[0]
 			dependency := dependencyConflicts[extensionId]
@@ -124,6 +136,31 @@ func installedExtensionById(
 		}
 	}
 	return nil, false
+}
+
+func validateInstalledExtensionVersion(
+	installed *extensions.Extension,
+	versionPreference string,
+) error {
+	if versionPreference == "" {
+		return nil
+	}
+
+	installedMetadata := &extensions.ExtensionMetadata{
+		Id: installed.Id,
+		Versions: []extensions.ExtensionVersion{{
+			Version: installed.Version,
+		}},
+	}
+	if _, err := extensions.ResolveExtensionVersion(installedMetadata, versionPreference, nil); err != nil {
+		return fmt.Errorf(
+			"installed extension %s version %s does not satisfy constraint %q",
+			installed.Id,
+			installed.Version,
+			versionPreference,
+		)
+	}
+	return nil
 }
 
 func resolveExtensionRequirementDependencies(
@@ -357,14 +394,17 @@ func missingProjectExtensions(
 	requirements := map[string]projectExtensionRequirement{}
 	if projectConfig.RequiredVersions != nil {
 		for _, extensionId := range slices.Sorted(maps.Keys(projectConfig.RequiredVersions.Extensions)) {
-			if _, isInstalled := installedExtensionById(installed, extensionId); isInstalled {
-				continue
-			}
-
 			versionPreference := ""
 			if constraint := projectConfig.RequiredVersions.Extensions[extensionId]; constraint != nil {
 				versionPreference = *constraint
 			}
+			if installedExtension, isInstalled := installedExtensionById(installed, extensionId); isInstalled {
+				if err := validateInstalledExtensionVersion(installedExtension, versionPreference); err != nil {
+					return nil, err
+				}
+				continue
+			}
+
 			matches, err := extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
 				Id:      extensionId,
 				Version: versionPreference,
@@ -394,16 +434,31 @@ func missingProjectExtensions(
 			return nil
 		}
 
+		requirementConflicts := map[string]error{}
 		for _, extensionId := range slices.Sorted(maps.Keys(requirements)) {
 			requirement := requirements[extensionId]
-			extension := extensionForProvider(requirement.extension, capability, provider)
-			if len(extension.Versions) == 0 {
-				continue
+			selectedVersion, err := extensions.ResolveExtensionVersion(
+				requirement.extension,
+				requirement.versionPreference,
+				nil,
+			)
+			if err != nil {
+				return fmt.Errorf("resolving required extension %s: %w", extensionId, err)
+			}
+			if extensionVersionProvidesProvider(selectedVersion, capability, provider) {
+				return nil
 			}
 
-			requirement.extension = extension
-			requirements[extensionId] = requirement
-			return nil
+			if len(extensionForProvider(requirement.extension, capability, provider).Versions) == 0 {
+				continue
+			}
+			requirementConflicts[strings.ToLower(extensionId)] = fmt.Errorf(
+				"required extension %s version %s does not provide %s %q",
+				extensionId,
+				selectedVersion.Version,
+				capability,
+				provider,
+			)
 		}
 
 		resolvedDependencies, err := resolveExtensionRequirementDependencies(ctx, extensionManager, requirements)
@@ -422,6 +477,7 @@ func missingProjectExtensions(
 			extensionManager,
 			installed,
 			resolvedDependencies,
+			requirementConflicts,
 			capability,
 			provider,
 		)
@@ -486,29 +542,32 @@ func tryAutoInstallProjectExtensions(
 	ctx context.Context,
 	rootContainer *ioc.NestedContainer,
 	foundCmd *cobra.Command,
-) (bool, error) {
+) (handled bool, installed bool, err error) {
 	if !projectCommandSupportsExtensionAutoInstall(foundCmd) {
-		return false, nil
+		return false, false, nil
 	}
 
 	var projectConfig *project.ProjectConfig
 	if err := rootContainer.Resolve(&projectConfig); err != nil {
 		log.Printf("skipping project extension auto-install: %v", err)
-		return false, nil
+		return false, false, nil
 	}
 
 	var extensionManager *extensions.Manager
 	if err := rootContainer.Resolve(&extensionManager); err != nil {
-		return false, fmt.Errorf("resolving extension manager: %w", err)
+		return false, false, fmt.Errorf("resolving extension manager: %w", err)
 	}
 	var console input.Console
 	if err := rootContainer.Resolve(&console); err != nil {
-		return false, fmt.Errorf("resolving console: %w", err)
+		return false, false, fmt.Errorf("resolving console: %w", err)
 	}
 
 	requirements, err := missingProjectExtensions(ctx, console, extensionManager, projectConfig)
 	if err != nil {
-		return false, err
+		return false, false, err
+	}
+	if len(requirements) == 0 {
+		return false, false, nil
 	}
 
 	installedAny := false
@@ -521,12 +580,12 @@ func tryAutoInstallProjectExtensions(
 			requirement.versionPreference,
 		)
 		if err != nil {
-			return installedAny, err
+			return true, installedAny, err
 		}
 		installedAny = installedAny || installed
 	}
 
-	return installedAny, nil
+	return true, installedAny, nil
 }
 
 func displayAutoInstallError(ctx context.Context, console input.Console, err error) {

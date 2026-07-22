@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -362,10 +363,13 @@ func tryAutoInstallExtensionVersion(
 	versionPreference string,
 ) (bool, error) {
 	// Check if the extension is already installed
-	_, err := extensionManager.GetInstalled(extensions.FilterOptions{
+	installedExtension, err := extensionManager.GetInstalled(extensions.FilterOptions{
 		Id: extension.Id,
 	})
 	if err == nil {
+		if err := validateInstalledExtensionVersion(installedExtension, versionPreference); err != nil {
+			return false, err
+		}
 		return false, nil
 	}
 
@@ -472,6 +476,42 @@ type ExecuteResult struct {
 	LatestVersion <-chan *update.VersionInfo
 }
 
+func newRootCmdForExecution(
+	rootContainer *ioc.NestedContainer,
+	globalOpts *internal.GlobalCommandOptions,
+) (*cobra.Command, error) {
+	if globalOpts.Cwd == "" {
+		return NewRootCmd(false, nil, rootContainer), nil
+	}
+
+	absoluteCwd, err := filepath.Abs(globalOpts.Cwd)
+	if err != nil {
+		return nil, fmt.Errorf("resolving cwd: %w", err)
+	}
+	globalOpts.Cwd = absoluteCwd
+
+	if _, err := os.Stat(absoluteCwd); os.IsNotExist(err) {
+		// PersistentPreRunE owns prompting for and creating a missing --cwd directory.
+		return NewRootCmd(false, nil, rootContainer), nil
+	} else if err != nil {
+		return nil, fmt.Errorf("checking cwd: %w", err)
+	}
+
+	previousCwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("getting current directory: %w", err)
+	}
+	if err := os.Chdir(absoluteCwd); err != nil {
+		return nil, fmt.Errorf("changing directory to %s: %w", absoluteCwd, err)
+	}
+
+	rootCmd := NewRootCmd(false, nil, rootContainer)
+	if err := os.Chdir(previousCwd); err != nil {
+		return nil, fmt.Errorf("restoring current directory: %w", err)
+	}
+	return rootCmd, nil
+}
+
 // ExecuteWithAutoInstall executes the command and handles auto-installation of extensions for unknown commands.
 func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContainer) *ExecuteResult {
 	result := &ExecuteResult{}
@@ -493,7 +533,12 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 
 	// Creating the RootCmd takes care of registering common dependencies in rootContainer.
 	// The command tree will retrieve globalOpts from the container via its FlagsResolver.
-	rootCmd := NewRootCmd(false, nil, rootContainer)
+	rootCmd, err := newRootCmdForExecution(rootContainer, globalOpts)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, output.WithErrorFormat("ERROR: %s", err.Error()))
+		result.Err = err
+		return result
+	}
 
 	var extensionManager *extensions.Manager
 	var console input.Console
@@ -503,6 +548,8 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	// This allows us to determine if a subcommand was provided or not or if the command is unknown.
 	foundCmd, originalArgs, err := rootCmd.Find(os.Args[1:])
 	if err == nil {
+		projectExtensionsHandled := false
+
 		// Detect lightspeed commands from the cobra annotation set by CobraBuilder.
 		result.IsLightspeed = foundCmd.Annotations[actions.AnnotationLightspeed] == "true"
 
@@ -515,7 +562,9 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			result.LatestVersion = startUpdateCheck(ctx)
 		}
 
-		if installed, err := tryAutoInstallProjectExtensions(ctx, rootContainer, foundCmd); err != nil {
+		handled, installed, err := tryAutoInstallProjectExtensions(ctx, rootContainer, foundCmd)
+		projectExtensionsHandled = handled
+		if err != nil {
 			if resolveErr := rootContainer.Resolve(&console); resolveErr != nil {
 				fmt.Fprintln(os.Stderr, output.WithErrorFormat("ERROR: %s", err.Error()))
 			} else {
@@ -543,12 +592,21 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		}
 
 		// Known command, proceed with normal execution
-		err := rootCmd.ExecuteContext(ctx)
+		err = rootCmd.ExecuteContext(ctx)
 
 		// Only attempt service-host auto-install when the command failed with that specific error.
 		// Other command errors (for example, unsupported output formats) should be returned directly.
 		unsupportedErr, ok := errors.AsType[*project.UnsupportedServiceHostError](err)
 		if !ok {
+			result.Err = err
+			return result
+		}
+		if projectExtensionsHandled {
+			if resolveErr := rootContainer.Resolve(&console); resolveErr != nil {
+				fmt.Fprintln(os.Stderr, unsupportedErr.ErrorMessage)
+			} else {
+				console.Message(ctx, unsupportedErr.ErrorMessage)
+			}
 			result.Err = err
 			return result
 		}

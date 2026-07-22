@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -27,12 +28,17 @@ import (
 type fakeExtensionAutoInstallManager struct {
 	available []*extensions.ExtensionMetadata
 	installed map[string]*extensions.Extension
+	findErr   error
 }
 
 func (m *fakeExtensionAutoInstallManager) FindExtensions(
 	_ context.Context,
 	options *extensions.FilterOptions,
 ) ([]*extensions.ExtensionMetadata, error) {
+	if m.findErr != nil {
+		return nil, m.findErr
+	}
+
 	var matches []*extensions.ExtensionMetadata
 	for _, extension := range m.available {
 		if options.Id != "" && extension.Id != options.Id {
@@ -541,6 +547,131 @@ func TestMissingProjectExtensionsInstalledIdIsCaseInsensitive(t *testing.T) {
 	require.Empty(t, requirements)
 }
 
+func TestMissingProjectExtensionsRejectsInstalledVersionConstraint(t *testing.T) {
+	manager := &fakeExtensionAutoInstallManager{
+		installed: map[string]*extensions.Extension{
+			"test.extension": {
+				Id:      "test.extension",
+				Version: "1.0.0",
+			},
+		},
+	}
+	projectConfig := &project.ProjectConfig{
+		RequiredVersions: &project.RequiredVersions{
+			Extensions: map[string]*string{
+				"test.extension": new(">=2.0.0"),
+			},
+		},
+	}
+
+	_, err := missingProjectExtensions(
+		t.Context(),
+		mockinput.NewMockConsole(),
+		manager,
+		projectConfig,
+	)
+
+	require.EqualError(
+		t,
+		err,
+		`installed extension test.extension version 1.0.0 does not satisfy constraint ">=2.0.0"`,
+	)
+}
+
+func TestMissingProjectExtensionsRejectsExplicitVersionWithoutProvider(t *testing.T) {
+	manager := &fakeExtensionAutoInstallManager{
+		available: []*extensions.ExtensionMetadata{
+			{
+				Id:     "test.extension",
+				Source: "azd",
+				Versions: []extensions.ExtensionVersion{
+					{Version: "1.0.0"},
+					{
+						Version:      "2.0.0",
+						Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
+						Providers: []extensions.Provider{{
+							Name: "demo",
+							Type: extensions.ServiceTargetProviderType,
+						}},
+					},
+				},
+			},
+		},
+		installed: map[string]*extensions.Extension{},
+	}
+	projectConfig := &project.ProjectConfig{
+		RequiredVersions: &project.RequiredVersions{
+			Extensions: map[string]*string{
+				"test.extension": new("1.0.0"),
+			},
+		},
+		Services: map[string]*project.ServiceConfig{
+			"demo": {Host: "demo"},
+		},
+	}
+
+	_, err := missingProjectExtensions(
+		t.Context(),
+		mockinput.NewMockConsole(),
+		manager,
+		projectConfig,
+	)
+
+	require.EqualError(
+		t,
+		err,
+		`required extension test.extension version 1.0.0 does not provide service-target-provider "demo"`,
+	)
+}
+
+func TestMissingProjectExtensionsPropagatesProviderLookupError(t *testing.T) {
+	manager := &fakeExtensionAutoInstallManager{
+		installed: map[string]*extensions.Extension{},
+		findErr:   fmt.Errorf("registry unavailable"),
+	}
+	projectConfig := &project.ProjectConfig{
+		Services: map[string]*project.ServiceConfig{
+			"demo": {Host: "demo"},
+		},
+	}
+
+	_, err := missingProjectExtensions(
+		t.Context(),
+		mockinput.NewMockConsole(),
+		manager,
+		projectConfig,
+	)
+
+	require.ErrorContains(t, err, `finding extension for provider "demo": registry unavailable`)
+}
+
+func TestNewRootCmdForExecutionUsesCwd(t *testing.T) {
+	currentDir := t.TempDir()
+	targetDir := t.TempDir()
+	require.NoError(t, project.Save(
+		t.Context(),
+		&project.ProjectConfig{Name: "current-project"},
+		filepath.Join(currentDir, "azure.yaml"),
+	))
+	require.NoError(t, project.Save(
+		t.Context(),
+		&project.ProjectConfig{Name: "target-project"},
+		filepath.Join(targetDir, "azure.yaml"),
+	))
+	t.Chdir(currentDir)
+
+	container := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(container, context.WithoutCancel(t.Context()))
+	globalOpts := &internal.GlobalCommandOptions{Cwd: targetDir}
+	ioc.RegisterInstance(container, globalOpts)
+	_, err := newRootCmdForExecution(container, globalOpts)
+	require.NoError(t, err)
+
+	var projectConfig *project.ProjectConfig
+	require.NoError(t, container.Resolve(&projectConfig))
+	require.Equal(t, "target-project", projectConfig.Name)
+}
+
 func TestExtensionVersionProvidesProviderMatchesType(t *testing.T) {
 	version := &extensions.ExtensionVersion{
 		Capabilities: []extensions.CapabilityType{
@@ -573,6 +704,32 @@ func TestExtensionVersionProvidesProviderMatchesType(t *testing.T) {
 		extensions.ProvisioningProviderCapability,
 		"service",
 	))
+}
+
+func TestTryAutoInstallExtensionVersionRejectsInstalledVersionConstraint(t *testing.T) {
+	manager := &fakeExtensionAutoInstallManager{
+		installed: map[string]*extensions.Extension{
+			"test.extension": {
+				Id:      "test.extension",
+				Version: "1.0.0",
+			},
+		},
+	}
+
+	installed, err := tryAutoInstallExtensionVersion(
+		t.Context(),
+		mockinput.NewMockConsole(),
+		manager,
+		extensions.ExtensionMetadata{Id: "test.extension"},
+		">=2.0.0",
+	)
+
+	require.False(t, installed)
+	require.EqualError(
+		t,
+		err,
+		`installed extension test.extension version 1.0.0 does not satisfy constraint ">=2.0.0"`,
+	)
 }
 
 func TestDisplayAutoInstallError(t *testing.T) {

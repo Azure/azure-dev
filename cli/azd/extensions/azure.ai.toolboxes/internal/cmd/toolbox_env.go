@@ -57,11 +57,10 @@ func setToolboxEndpointEnv(ctx context.Context, toolboxName, value string) error
 }
 
 // isNoAzdEnvironment reports whether err from GetCurrent means there is no azd
-// environment to write to: either the daemon is unreachable (codes.Unavailable)
-// or no default environment is selected. The host returns the latter as a
-// status-less sentinel that grpc surfaces as codes.Unknown with the message
-// "default environment not found", so we match on the message text (as
-// azure.ai.agents does).
+// environment to write to: the daemon is unreachable (codes.Unavailable), no
+// default environment is selected, or no azd project exists. The host returns
+// the latter two as status-less sentinels that gRPC surfaces as codes.Unknown,
+// so we match on the message text (as azure.ai.agents does).
 func isNoAzdEnvironment(err error) bool {
 	st, ok := status.FromError(err)
 	if !ok {
@@ -70,5 +69,7 @@ func isNoAzdEnvironment(err error) bool {
 	if st.Code() == codes.Unavailable {
 		return true
 	}
-	return strings.Contains(strings.ToLower(st.Message()), "default environment not found")
+	msg := strings.ToLower(st.Message())
+	return strings.Contains(msg, "default environment not found") ||
+		strings.Contains(msg, "no project exists")
 }

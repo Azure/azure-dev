@@ -49,7 +49,7 @@ func (s *containerSettingsProjectServer) SetServiceConfigValue(
 	return &azdext.EmptyResponse{}, nil
 }
 
-func TestPopulateContainerSettings_UsesTargetedConfigUpdate(t *testing.T) {
+func TestPrepareContainerSettings_UsesTargetedConfigUpdate(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -98,7 +98,7 @@ func TestPopulateContainerSettings_UsesTargetedConfigUpdate(t *testing.T) {
 			server := &containerSettingsProjectServer{}
 			client := newProjectRecorderClient(t, server)
 
-			require.NoError(t, populateContainerSettings(t.Context(), client, svc))
+			require.NoError(t, prepareContainerSettings(t.Context(), client, svc, t.TempDir()))
 
 			server.mu.Lock()
 			defer server.mu.Unlock()
@@ -233,6 +233,132 @@ func TestIsHostedAgentServiceRejectsTraversal(t *testing.T) {
 	if isHostedAgentService(svc, proj) {
 		t.Fatal("expected traversal service path to be rejected")
 	}
+}
+
+func TestPrepareContainerSettings_DoesNotPersistResolvedFileRef(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "agent.yaml"),
+		[]byte(
+			"kind: hosted\n"+
+				"name: echo\n"+
+				"container:\n"+
+				"  resources:\n"+
+				"    cpu: \"2\"\n"+
+				"    memory: 4Gi\n",
+		),
+		0o600,
+	))
+	props, err := structpb.NewStruct(map[string]any{
+		"$ref": "./agent.yaml",
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "echo",
+		Host:                 AiAgentHost,
+		RelativePath:         "src/echo",
+		AdditionalProperties: props,
+	}
+	client := newProjectRecorderClient(t, &containerSettingsProjectServer{})
+
+	err = prepareContainerSettings(t.Context(), client, svc, root)
+
+	require.NoError(t, err)
+	require.Equal(t, "src/echo", svc.GetRelativePath())
+	cfg, err := project.LoadServiceTargetAgentConfig(svc)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Container)
+	require.NotNil(t, cfg.Container.Resources)
+	require.Equal(t, "2", cfg.Container.Resources.Cpu)
+	require.Equal(t, "4Gi", cfg.Container.Resources.Memory)
+}
+
+func TestPrepareContainerSettings_PreservesNestedFileRef(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "echo",
+		"deployments": []any{
+			map[string]any{"$ref": "./missing-deployment.yaml"},
+		},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "echo",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}
+	client := newProjectRecorderClient(t, &containerSettingsProjectServer{})
+
+	err = prepareContainerSettings(t.Context(), client, svc, t.TempDir())
+
+	require.NoError(t, err)
+	deployments, ok := svc.GetAdditionalProperties().
+		AsMap()["deployments"].([]any)
+	require.True(t, ok)
+	require.Len(t, deployments, 1)
+	deployment, ok := deployments[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(
+		t,
+		"./missing-deployment.yaml",
+		deployment["$ref"],
+	)
+	cfg, err := project.LoadServiceTargetAgentConfig(svc)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Container)
+	require.NotNil(t, cfg.Container.Resources)
+	require.Equal(t, project.DefaultCpu, cfg.Container.Resources.Cpu)
+	require.Equal(t, project.DefaultMemory, cfg.Container.Resources.Memory)
+}
+
+func TestPrepareContainerSettings_NormalizesInlineEnvironment(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "echo",
+		"env": map[string]any{
+			"ENABLED": true,
+		},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "echo",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}
+	client := newProjectRecorderClient(t, &containerSettingsProjectServer{})
+
+	err = prepareContainerSettings(t.Context(), client, svc, t.TempDir())
+
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		"true",
+		svc.GetAdditionalProperties().
+			GetFields()["env"].GetStructValue().
+			GetFields()["ENABLED"].GetStringValue(),
+	)
+}
+
+func TestPrepareContainerSettings_WithoutProperties(t *testing.T) {
+	t.Parallel()
+
+	client := newProjectRecorderClient(t, &containerSettingsProjectServer{})
+	err := prepareContainerSettings(
+		t.Context(),
+		client,
+		&azdext.ServiceConfig{Name: "echo", Host: AiAgentHost},
+		t.TempDir(),
+	)
+
+	require.NoError(t, err)
 }
 
 func TestKindEnvUpdateRejectsTraversal(t *testing.T) {

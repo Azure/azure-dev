@@ -32,8 +32,19 @@ import (
 // the timestamp of a completed first-run experience.
 const configKeyFirstRunCompleted = "tool.firstRunCompleted"
 
-// envKeySkipFirstRun is the environment variable that, when set to
-// "true", suppresses the first-run tool check entirely.
+// envKeySkipFirstRun is the environment variable that controls the
+// first-run tool check.
+//
+// The first-run experience is OFF by default: absent an explicit
+// AZD_SKIP_FIRST_RUN=false, it is skipped, so we never interrupt a user's
+// command with an unsolicited prompt. Setting it to "true" is still honoured
+// (and still reported distinctly in telemetry) for users who had already
+// opted out.
+//
+// Note the asymmetry: tool_update_check.go reads this same variable with the
+// ordinary default-false semantics ("true" means skip, unset means run),
+// because background update checks are not disabled by default. Don't
+// "fix" that inconsistency — it's deliberate.
 const envKeySkipFirstRun = "AZD_SKIP_FIRST_RUN"
 
 // Skip reason constants emitted via fields.ToolFirstRunSkipReasonKey so
@@ -54,7 +65,15 @@ const envKeySkipFirstRun = "AZD_SKIP_FIRST_RUN"
 // A skip reason is *not* emitted for the child-action path: child actions
 // (e.g. workflow steps) inherit the parent's first-run state and do not
 // contribute useful signal to first-run adoption analysis.
+//
+// `default_disabled` and `env_var` are likewise distinct:
+//   - `default_disabled` is the ordinary path — the first-run experience is
+//     off unless AZD_SKIP_FIRST_RUN is explicitly "false", so an unset (or
+//     unparsable) value lands here. This is the overwhelmingly common case.
+//   - `env_var` is a deliberate AZD_SKIP_FIRST_RUN=true opt-out, which is
+//     what that reason has always meant.
 const (
+	skipReasonDefaultDisabled  = "default_disabled"
 	skipReasonEnvVar           = "env_var"
 	skipReasonNoPrompt         = "no_prompt"
 	skipReasonCICD             = "ci_cd"
@@ -129,8 +148,12 @@ func (m *ToolFirstRunMiddleware) Run(ctx context.Context, nextFn NextFn) (*actio
 // should be bypassed.  The reasons are checked in order of cost (cheapest
 // first).
 func (m *ToolFirstRunMiddleware) shouldSkip(ctx context.Context) (string, bool) {
-	// 1. Env-var opt-out.
-	if skip, _ := strconv.ParseBool(os.Getenv(envKeySkipFirstRun)); skip {
+	// 1. Env-var gate. Opt-in: only an explicit AZD_SKIP_FIRST_RUN=false runs
+	// the experience; unset or unparsable means skip.
+	switch v, err := strconv.ParseBool(os.Getenv(envKeySkipFirstRun)); {
+	case err != nil:
+		return skipReasonDefaultDisabled, true
+	case v:
 		return skipReasonEnvVar, true
 	}
 
@@ -182,8 +205,7 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 		"Discover and install Azure development tools such as Azure CLI, GitHub Copilot CLI, and Azure AI extensions.",
 	)
 	m.console.Message(ctx, output.WithGrayFormat(
-		"To skip this check, set %s or run %s.",
-		output.WithHighLightFormat("AZD_SKIP_FIRST_RUN=true"),
+		"To skip this check, run %s.",
 		output.WithHighLightFormat("azd config set tool.firstRunCompleted true"),
 	))
 	m.console.Message(ctx, "")

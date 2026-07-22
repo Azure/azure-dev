@@ -290,7 +290,7 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 		"template source add",    // Global telemetry sufficient — command name captures operation
 		"template source list",   // Global telemetry sufficient — command name captures operation
 		"template source remove", // Global telemetry sufficient — command name captures operation
-		"tool",                   // Parent group — first-run middleware telemetry attaches to invoked subcommand
+		"tool",                   // Parent group — no operation-specific telemetry
 		"tool list",              // Listing tool registry — global telemetry sufficient
 		"version",                // Telemetry explicitly disabled (DisableTelemetry: true)
 		"vs-server",              // JSON-RPC server — telemetry handled by rpc.* fields per call

@@ -81,6 +81,15 @@ func TestToolFirstRunMiddleware_SkipConditions(t *testing.T) {
 		wantSkip bool
 	}{
 		{
+			// The default for everyone who hasn't opted in.
+			name: "SkipWhenEnvVarUnset",
+			setup: func(t *testing.T, _ *mockinput.MockConsole, _ config.Config, _ *internal.GlobalCommandOptions) {
+				t.Setenv(envKeySkipFirstRun, "")
+				os.Unsetenv(envKeySkipFirstRun)
+			},
+			wantSkip: true,
+		},
+		{
 			name: "SkipWhenEnvVarSet",
 			setup: func(t *testing.T, _ *mockinput.MockConsole, _ config.Config, _ *internal.GlobalCommandOptions) {
 				t.Setenv(envKeySkipFirstRun, "true")
@@ -144,8 +153,8 @@ func TestToolFirstRunMiddleware_SkipConditions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			clearCIVars(t)
-			t.Setenv(envKeySkipFirstRun, "")
-			os.Unsetenv(envKeySkipFirstRun)
+			// The experience is off unless explicitly opted in.
+			t.Setenv(envKeySkipFirstRun, "false")
 
 			console := mockinput.NewMockConsole()
 			cfg := config.NewEmptyConfig()
@@ -190,8 +199,8 @@ func TestToolFirstRunMiddleware_SkipConditions(t *testing.T) {
 func TestToolFirstRunMiddleware_TriggersWhenNoSkip(t *testing.T) {
 	// Ensure no CI env vars interfere.
 	clearCIVars(t)
-	t.Setenv(envKeySkipFirstRun, "")
-	os.Unsetenv(envKeySkipFirstRun)
+	// The experience is off unless explicitly opted in.
+	t.Setenv(envKeySkipFirstRun, "false")
 
 	console := mockinput.NewMockConsole()
 	cfg := config.NewEmptyConfig()
@@ -230,6 +239,14 @@ func TestToolFirstRunMiddleware_EmitsSkipReason(t *testing.T) {
 		setup      func(t *testing.T, console *mockinput.MockConsole, cfg config.Config, opts *internal.GlobalCommandOptions)
 		wantReason string
 	}{
+		{
+			name: "default_disabled",
+			setup: func(t *testing.T, _ *mockinput.MockConsole, _ config.Config, _ *internal.GlobalCommandOptions) {
+				t.Setenv(envKeySkipFirstRun, "")
+				os.Unsetenv(envKeySkipFirstRun)
+			},
+			wantReason: skipReasonDefaultDisabled,
+		},
 		{
 			name: "env_var",
 			setup: func(t *testing.T, _ *mockinput.MockConsole, _ config.Config, _ *internal.GlobalCommandOptions) {
@@ -270,8 +287,8 @@ func TestToolFirstRunMiddleware_EmitsSkipReason(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			clearCIVars(t)
-			t.Setenv(envKeySkipFirstRun, "")
-			os.Unsetenv(envKeySkipFirstRun)
+			// The experience is off unless explicitly opted in.
+			t.Setenv(envKeySkipFirstRun, "false")
 
 			// Reset usage attributes so we can verify the middleware
 			// affirmatively writes tool.firstrun.skip_reason in this path.
@@ -308,8 +325,8 @@ func TestToolFirstRunMiddleware_EmitsSkipReason(t *testing.T) {
 // to first-run adoption analysis.
 func TestToolFirstRunMiddleware_NoSkipReasonForChildAction(t *testing.T) {
 	clearCIVars(t)
-	t.Setenv(envKeySkipFirstRun, "")
-	os.Unsetenv(envKeySkipFirstRun)
+	// The experience is off unless explicitly opted in.
+	t.Setenv(envKeySkipFirstRun, "false")
 
 	tracing.ResetUsageAttributesForTest()
 
@@ -364,8 +381,8 @@ func TestToolFirstRunMiddleware_ShouldSkip_FirstRunCompletedValue(t *testing.T) 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			clearCIVars(t)
-			t.Setenv(envKeySkipFirstRun, "")
-			os.Unsetenv(envKeySkipFirstRun)
+			// The experience is off unless explicitly opted in.
+			t.Setenv(envKeySkipFirstRun, "false")
 
 			cfg := config.NewEmptyConfig()
 			require.NoError(t, cfg.Set(configKeyFirstRunCompleted, tt.value))

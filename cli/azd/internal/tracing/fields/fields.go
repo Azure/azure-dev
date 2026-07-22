@@ -422,8 +422,8 @@ var (
 var (
 	// ToolFirstRunSkipReasonKey records why the first-run experience was
 	// bypassed for this invocation.
-	// Example: "env_var", "no_prompt", "ci_cd", "non_interactive",
-	//          "already_completed", "config_error"
+	// Example: "default_disabled", "env_var", "no_prompt", "ci_cd",
+	//          "non_interactive", "already_completed", "config_error"
 	ToolFirstRunSkipReasonKey = AttributeKey{
 		Key:            attribute.Key("tool.firstrun.skip_reason"),
 		Classification: SystemMetadata,

@@ -2,6 +2,23 @@
 
 ## 1.29.0-beta.1 (Unreleased)
 
+## 1.28.1 (2026-07-22)
+
+### Breaking Changes
+
+- [[#8844]](https://github.com/Azure/azure-dev/pull/8844) Rename azd's client-side "preflight" provisioning check to "provision validation" to avoid confusion with the Azure ARM Preflight API. The single `provision.preflight` config gate is split in two: `provision.preflight off` now disables **only** the server-side ARM preflight call, and a new `validation.provision off` key disables azd's local client-side validation. Users who previously set `provision.preflight off` to silence local checks must now **also** set `validation.provision off`. The related telemetry event and fields are renamed from `validation.preflight.*` to `validation.provision.*`.
+
+### Bugs Fixed
+
+- [[#9143]](https://github.com/Azure/azure-dev/pull/9143) Fix `azd down --no-prompt` hanging in CI/CD for Terraform-based projects by auto-approving the destroy when running non-interactively, and fix `azd down --force` failing with a backend initialization error on a fresh agent.
+- [[#9161]](https://github.com/Azure/azure-dev/pull/9161) Fix `azd extension install` intermittently failing on Windows with an "Access is denied" error when replacing an extension executable held by a transient file lock.
+
+### Other Changes
+
+- [[#9245]](https://github.com/Azure/azure-dev/pull/9245) Update the bundled GitHub CLI to v2.96.0.
+- [[#9091]](https://github.com/Azure/azure-dev/pull/9091) Emit the `infra.provider` telemetry attribute on `provision`, `up`, and `down` so provisioning runs can be segmented by infrastructure provider.
+- [[#9167]](https://github.com/Azure/azure-dev/pull/9167) Recognize azd invocations from Microsoft Foundry Skill in the `execution.environment` telemetry field.
+
 ## 1.28.0 (2026-07-15)
 
 ### Breaking Changes

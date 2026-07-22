@@ -55,7 +55,7 @@ const (
 	// Provision provider enables extensions to provide a custom provisioning experience
 	ProvisioningProviderCapability CapabilityType = "provisioning-provider"
 	// Validation provider enables extensions to contribute validation checks
-	// to azd's validation pipeline (e.g. local-preflight checks during provisioning)
+	// to azd's validation pipeline (e.g. provision checks during provisioning)
 	ValidationProviderCapability CapabilityType = "validation-provider"
 )
 
@@ -64,6 +64,8 @@ type ProviderType string
 const (
 	// Service target provider type for custom deployment targets
 	ServiceTargetProviderType ProviderType = "service-target"
+	// Provisioning provider type for custom infrastructure provisioning experiences
+	ProvisioningProviderType ProviderType = "provisioning-provider"
 )
 
 // Extension represents an extension in the registry

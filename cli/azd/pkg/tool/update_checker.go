@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -70,13 +71,50 @@ type UpdateCheckResult struct {
 	// Tool is the registry definition that was checked.
 	Tool *ToolDefinition
 	// CurrentVersion is the version currently installed on the local
-	// machine (empty when the tool is not installed).
+	// machine (empty when the tool is not installed). For a skill installed
+	// on multiple agents this is only the first agent's version (an
+	// aggregate); see SkillAgents for the per-agent versions.
 	CurrentVersion string
 	// LatestVersion is the newest version known to the update checker.
 	LatestVersion string
-	// UpdateAvailable is true when LatestVersion is non-empty and
-	// differs from CurrentVersion.
+	// UpdateAvailable is true when LatestVersion is non-empty and differs from
+	// CurrentVersion — except for a skill installed on multiple agents, where
+	// CurrentVersion/LatestVersion are aggregates and UpdateAvailable can be
+	// true even when CurrentVersion == LatestVersion (it is set whenever ANY
+	// agent is behind the latest version). Callers must not infer a skill's
+	// update state from the two aggregate version fields alone; use SkillAgents
+	// for the authoritative per-agent state.
 	UpdateAvailable bool
+	// SkillAgents lists, for a skill tool, the per-agent installed version
+	// and whether an update is available for it (LatestVersion is the same
+	// for every agent). Populated only for skills; nil otherwise.
+	SkillAgents []SkillAgentUpdate
+}
+
+// SkillAgentUpdate pairs an agent CLI with the skill version installed
+// through it and whether a newer version is available.
+type SkillAgentUpdate struct {
+	// Agent is the agent CLI binary name (e.g. "copilot").
+	Agent string
+	// CurrentVersion is the skill version installed through this agent.
+	CurrentVersion string
+	// UpdateAvailable is true when a newer version than CurrentVersion is
+	// available for this agent.
+	UpdateAvailable bool
+}
+
+// anyAgentUpdatable reports whether any of a skill's installed agents is behind
+// the latest version. A skill installed on multiple agents exposes only the
+// first agent's version as the tool's aggregate InstalledVersion, so tool-level
+// update checks must consider every agent — otherwise a stale agent is missed
+// when the first is current. Returns false for non-skills (no SkillAgents).
+func anyAgentUpdatable(latest string, agents []InstalledSkillAgent) bool {
+	for _, h := range agents {
+		if isNewerVersion(latest, h.Version) {
+			return true
+		}
+	}
+	return false
 }
 
 // UpdateChecker performs periodic update checks for registered tools,
@@ -208,24 +246,47 @@ func (uc *UpdateChecker) Check(
 	for _, t := range tools {
 		status := statusByID[t.Id]
 
-		var currentVer string
-		if status != nil {
-			currentVer = status.InstalledVersion
-		}
-
 		latestVer := uc.resolveLatestVersion(
 			ctx, t, existing, cacheValid,
 		)
+		// Normalize a leading "v" (release tags often carry one, e.g. "v1.0.69")
+		// so the displayed latest version is consistent with the installed
+		// version, which is captured without a prefix. Version comparison is
+		// already prefix-agnostic (see isNewerVersion), so this only affects
+		// display.
+		latestVer = strings.TrimPrefix(latestVer, "v")
+
+		var currentVer string
+		var skillAgents []SkillAgentUpdate
+		if status != nil {
+			currentVer = status.InstalledVersion
+			for _, h := range status.SkillAgents {
+				skillAgents = append(skillAgents, SkillAgentUpdate{
+					Agent:           h.Agent,
+					CurrentVersion:  h.Version,
+					UpdateAvailable: isNewerVersion(latestVer, h.Version),
+				})
+			}
+		}
 
 		cache.Tools[t.Id] = CachedToolVersion{
 			LatestVersion: latestVer,
+		}
+
+		// For a skill installed on multiple agents, currentVer reflects only
+		// the first agent, so treat the tool as updatable when ANY agent is
+		// behind the latest version.
+		updateAvailable := isNewerVersion(latestVer, currentVer)
+		if status != nil && anyAgentUpdatable(latestVer, status.SkillAgents) {
+			updateAvailable = true
 		}
 
 		results = append(results, &UpdateCheckResult{
 			Tool:            t,
 			CurrentVersion:  currentVer,
 			LatestVersion:   latestVer,
-			UpdateAvailable: isNewerVersion(latestVer, currentVer),
+			UpdateAvailable: updateAvailable,
+			SkillAgents:     skillAgents,
 		})
 	}
 
@@ -430,7 +491,13 @@ func (uc *UpdateChecker) HasUpdatesAvailable(
 	count := 0
 	for _, s := range statuses {
 		latest, ok := candidates[s.Tool.Id]
-		if ok && s.Installed && isNewerVersion(latest, s.InstalledVersion) {
+		if !ok || !s.Installed {
+			continue
+		}
+		// Count a skill whose first agent is current but another agent is stale
+		// (anyAgentUpdatable), as well as the plain single-version case.
+		if isNewerVersion(latest, s.InstalledVersion) ||
+			anyAgentUpdatable(latest, s.SkillAgents) {
 			count++
 		}
 	}

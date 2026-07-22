@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"strconv"
 	"sync"
 
@@ -127,6 +128,18 @@ func (er *ExtensionHost) Client() *AzdClient {
 	return er.client
 }
 
+// ServiceTargets returns a copy of the service target providers registered so far,
+// letting tests and tooling introspect registrations without invoking Run.
+func (er *ExtensionHost) ServiceTargets() []ServiceTargetRegistration {
+	return slices.Clone(er.serviceTargets)
+}
+
+// ProvisioningProviders returns a copy of the provisioning providers registered so
+// far. See [ExtensionHost.ServiceTargets].
+func (er *ExtensionHost) ProvisioningProviders() []ProvisioningProviderRegistration {
+	return slices.Clone(er.provisioningProviders)
+}
+
 func (er *ExtensionHost) initManagers(extensionId string, brokerLogger *log.Logger) {
 	if er.serviceTargetManager == nil {
 		er.serviceTargetManager = NewServiceTargetManager(extensionId, er.client, brokerLogger)
@@ -190,7 +203,7 @@ func (er *ExtensionHost) WithProvisioningProvider(
 }
 
 // WithValidationCheck registers a validation check to be wired when Run is invoked.
-// The checkType identifies the validation context (e.g. "local-preflight"),
+// The checkType identifies the validation context (e.g. "provision"),
 // and the ruleID is a stable identifier for this check.
 func (er *ExtensionHost) WithValidationCheck(
 	reg ValidationCheckRegistration,

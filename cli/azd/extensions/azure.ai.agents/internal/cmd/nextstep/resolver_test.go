@@ -333,6 +333,20 @@ func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T
 		assert.Equal(t, `azd ai agent invoke --local '<payload>'`, out[1].Command)
 	})
 
+	t.Run("single-agent multi-protocol responses adds explicit protocol flag", func(t *testing.T) {
+		t.Parallel()
+		state := &State{
+			HasProjectEndpoint: true,
+			Services: []ServiceState{{
+				Name: "echo", Protocol: ProtocolResponses, MultiProtocol: true,
+			}},
+		}
+		out := ResolveAfterInit(state, nil)
+		require.Len(t, out, 3)
+		assert.Equal(t, "azd ai agent run", out[0].Command)
+		assert.Equal(t, `azd ai agent invoke --local --protocol responses '<payload>'`, out[1].Command)
+	})
+
 	t.Run("single-agent invocations protocol → invoke uses placeholder", func(t *testing.T) {
 		t.Parallel()
 		state := &State{
@@ -344,6 +358,27 @@ func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T
 		assert.Equal(t, "azd ai agent run", out[0].Command)
 		assert.Equal(t, `azd ai agent invoke --local '<payload>'`, out[1].Command)
 	})
+
+	for _, tt := range []struct {
+		name     string
+		protocol string
+	}{
+		{name: "invocations_ws", protocol: ProtocolInvocationsWS},
+		{name: "activity", protocol: ProtocolActivity},
+		{name: "activity_protocol", protocol: ProtocolActivityLegacy},
+	} {
+		t.Run("single-agent "+tt.name+" protocol suppresses invoke hint", func(t *testing.T) {
+			t.Parallel()
+			state := &State{
+				HasProjectEndpoint: true,
+				Services:           []ServiceState{{Name: "echo", Protocol: tt.protocol}},
+			}
+			out := ResolveAfterInit(state, nil)
+			require.Len(t, out, 2)
+			assert.Equal(t, "azd ai agent run", out[0].Command)
+			assert.Equal(t, "azd deploy", out[1].Command)
+		})
+	}
 
 	t.Run("multi-agent → invoke stays unqualified, uses placeholder payload", func(t *testing.T) {
 		t.Parallel()
@@ -771,6 +806,41 @@ func TestResolveAfterRun(t *testing.T) {
 			},
 		},
 		{
+			name: "multi-protocol responses service adds explicit protocol flag",
+			state: &State{
+				Services: []ServiceState{{Name: "echo", Protocol: ProtocolResponses, MultiProtocol: true}},
+			},
+			serviceName: "echo",
+			want: []string{
+				`azd ai agent invoke --local --protocol responses '<payload>'`,
+				`curl http://localhost:<port>/invocations/docs/openapi.json`,
+			},
+		},
+		{
+			name: "invocations_ws protocol suppresses invoke suggestions",
+			state: &State{
+				Services: []ServiceState{{Name: "echo", Protocol: ProtocolInvocationsWS}},
+			},
+			serviceName: "echo",
+			want:        nil,
+		},
+		{
+			name: "activity protocol suppresses invoke suggestions",
+			state: &State{
+				Services: []ServiceState{{Name: "echo", Protocol: ProtocolActivity}},
+			},
+			serviceName: "echo",
+			want:        nil,
+		},
+		{
+			name: "legacy activity protocol suppresses invoke suggestions",
+			state: &State{
+				Services: []ServiceState{{Name: "echo", Protocol: ProtocolActivityLegacy}},
+			},
+			serviceName: "echo",
+			want:        nil,
+		},
+		{
 			name: "unknown protocol, no README → placeholder + tip",
 			state: &State{
 				Services: []ServiceState{{Name: "echo", Protocol: ""}},
@@ -998,6 +1068,41 @@ func TestResolveAfterDeploy(t *testing.T) {
 		assert.Equal(t, "test the deployment", out[1].Description)
 	})
 
+	t.Run("single websocket agent suppresses deploy invoke", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{{Name: "echo", Protocol: ProtocolInvocationsWS}}}
+		out := ResolveAfterDeploy(state, nil, nil)
+		require.Len(t, out, 1)
+		assert.Equal(t, "azd ai agent show echo", out[0].Command)
+	})
+
+	t.Run("multi-protocol responses service adds deploy protocol flag", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{{
+			Name: "echo", Protocol: ProtocolResponses, MultiProtocol: true,
+		}}}
+		out := ResolveAfterDeploy(state, nil, nil)
+		require.Len(t, out, 2)
+		assert.Equal(t, "azd ai agent show echo", out[0].Command)
+		assert.Equal(t, `azd ai agent invoke echo --protocol responses '<payload>'`, out[1].Command)
+	})
+
+	t.Run("single activity agent suppresses deploy invoke", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{{Name: "echo", Protocol: ProtocolActivity}}}
+		out := ResolveAfterDeploy(state, nil, nil)
+		require.Len(t, out, 1)
+		assert.Equal(t, "azd ai agent show echo", out[0].Command)
+	})
+
+	t.Run("single legacy activity agent suppresses deploy invoke", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{{Name: "echo", Protocol: ProtocolActivityLegacy}}}
+		out := ResolveAfterDeploy(state, nil, nil)
+		require.Len(t, out, 1)
+		assert.Equal(t, "azd ai agent show echo", out[0].Command)
+	})
+
 	t.Run("single agent, no cached payload, README on disk → README then placeholder invoke", func(t *testing.T) {
 		t.Parallel()
 		state := &State{Services: []ServiceState{{Name: "echo", RelativePath: "./src/echo", Protocol: ProtocolResponses}}}
@@ -1059,6 +1164,19 @@ func TestResolveAfterDeploy(t *testing.T) {
 		assert.Equal(t, "test alpha", out[2].Description)
 		assert.Equal(t, `azd ai agent invoke beta '<payload>'`, out[3].Command)
 		assert.Equal(t, "test beta", out[3].Description)
+	})
+
+	t.Run("multi-agent skips websocket invoke but keeps invocable services", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{
+			{Name: "alpha", Protocol: ProtocolInvocationsWS},
+			{Name: "beta", Protocol: ProtocolResponses},
+		}}
+		out := ResolveAfterDeploy(state, nil, nil)
+		require.Len(t, out, 3)
+		assert.Equal(t, "azd ai agent show alpha", out[0].Command)
+		assert.Equal(t, "azd ai agent show beta", out[1].Command)
+		assert.Equal(t, `azd ai agent invoke beta '<payload>'`, out[2].Command)
 	})
 
 	t.Run("multi-agent README hint placement → before the corresponding placeholder invoke", func(t *testing.T) {

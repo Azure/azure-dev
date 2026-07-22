@@ -69,6 +69,7 @@ words:
   - ondisk
   - openapitool
   - posixpath
+  - projectconfig
   - projectpkg
   - protocolversionrecord
   - Qdrant
@@ -77,6 +78,7 @@ words:
   - underscoped
   - unparseable
   - Vnext
+  - VOICELIVE
   - webp
   # Doctor / next-step terms
   - nextstep

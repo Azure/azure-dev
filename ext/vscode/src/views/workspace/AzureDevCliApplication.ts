@@ -70,6 +70,12 @@ export class AzureDevCliApplication implements AzureDevCliModel {
         return callWithTelemetryAndErrorHandling(
             TelemetryId.WorkspaceViewApplicationResolve,
             async actionContext => {
+                // This runs automatically whenever the workspace tree resolves. A non-zero `azd show`
+                // exit here is almost always an expected/environmental state (not logged in, no
+                // environment yet, invalid azure.yaml) rather than an extension bug, so don't surface a
+                // modal error with a "Report Issue" button. The failure is still captured in telemetry,
+                // and azure.yaml problems are reported independently via the Problems panel.
+                actionContext.errorHandling.suppressDisplay = true;
                 return await this.showProvider.getShowResults(actionContext, this.context.configurationFile);
             }
         ) as Promise<AzDevShowResults>;

@@ -2,16 +2,11 @@ module azure.ai.connections
 
 go 1.26.4
 
-// TEMPORARY: local validation against the in-tree azd core for the shared
-// pkg/foundry helpers (the $ref resolver and ${VAR}/${{...}} expander). Remove
-// before merging — the core change must land first, then bump the azd dependency.
-replace github.com/azure/azure-dev/cli/azd => ../../
-
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.20.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2 v2.0.0
-	github.com/azure/azure-dev/cli/azd v1.25.0
+	github.com/azure/azure-dev/cli/azd v1.28.0
 	github.com/fatih/color v1.18.0
 	github.com/spf13/cobra v1.10.1
 	github.com/stretchr/testify v1.11.1
@@ -97,7 +92,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/exp v0.0.0-20250911091902-df9299821621 // indirect
 	golang.org/x/net v0.56.0 // indirect

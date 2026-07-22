@@ -45,8 +45,8 @@ gh pr view --json number,url,headRefName,baseRefName,title
 2. Map those files to scenario tags using `impact-mapping.md`. The result is:
    - a set of `cmd:*` tags (which commands changed),
    - the **highest tier** you should offer (cost gating), and
-   - any **coverage gaps** (changed commands that have *no* scenario yet — e.g. `eval`,
-     `optimize`, `mcp`). Surface gaps to the user; do not silently skip them.
+   - any **coverage gaps** (changed commands that have *no* scenario yet — e.g. `mcp`).
+     Surface gaps to the user; do not silently skip them.
 
 3. Enumerate matching scenarios via the tester:
 
@@ -77,7 +77,7 @@ Drive each selected scenario per `running-scenarios.md`. Honor ordering:
 - **Tier 0 / Tier 1** are `parallel-safe` — they may be run concurrently (small waves), each
   with its own `cwd` (no `instance_id` needed for distinct scenarios).
 - **Tier 2** is `serial-only` and order-dependent: `20-setup-deploy-shared-agent` **first**,
-  then the targeted `21-…2A-` scenarios **serially**, then `2Z-teardown-down` **last**.
+  then the targeted `21-…2D-` scenarios **serially**, then `2Z-teardown-down` **last**.
 
 Record per scenario: PASS/FAIL, wall-clock duration (`Hh Mm Ss`), and any `report_finding`
 entries.

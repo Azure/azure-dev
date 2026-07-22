@@ -24,6 +24,8 @@ Files under `internal/cmd/` map to the command they implement:
 | `internal/cmd/eval*.go` | `cmd:eval` | `eval.go`, `eval_init.go`, `eval_run.go`, `eval_list.go`, `eval_show.go`, etc. Tier 2 (needs a deployed agent + Foundry endpoint). |
 | `internal/cmd/optimize*.go` | `cmd:optimize` | `optimize.go`, `optimize_apply.go`, `optimize_status.go`, etc. Tier 2 (submits a cloud optimization job). |
 | `internal/cmd/sample*.go` | `cmd:sample` | `sample.go`, `sample_list.go`. |
+| `internal/cmd/code*.go` | `cmd:code` | `code.go` (code download). |
+| `internal/cmd/delete*.go` | `cmd:delete` | `delete.go` (agent deletion). |
 | `internal/cmd/version.go` | `cmd:version` | |
 | `internal/cmd/root.go` | `cmd:help` + broad | Touches the whole command tree — treat as broad (see §3). |
 | `internal/cmd/listen.go` | — | gRPC host entrypoint; not scenario-testable. |
@@ -45,7 +47,7 @@ these, broaden the impacted set (and ask the user how wide to go):
 
 | Changed file (glob) | Broaden to |
 | --- | --- |
-| `internal/cmd/helpers.go`, `internal/cmd/agent_context.go`, `internal/cmd/*_context.go` | All `cmd:*` for commands that resolve project/agent context — at minimum `cmd:init`, `cmd:invoke`, `cmd:show`, `cmd:doctor`. |
+| `internal/cmd/helpers.go`, `internal/cmd/agent_context.go`, `internal/cmd/agent_endpoint.go`, `internal/cmd/*_context.go` | All `cmd:*` for commands that resolve project/agent context — at minimum `cmd:init`, `cmd:invoke`, `cmd:show`, `cmd:doctor`. |
 | `internal/cmd/root.go`, `internal/cmd/banner.go`, `internal/cmd/nextstep_output.go` | Run a Tier 0 smoke set (`tier:0`) across all commands. |
 | `internal/pkg/**`, `internal/project/**`, `internal/exterrors/**` | Map by what the package feeds: parsers/manifests → `cmd:init`; deployment/project target → `cmd:provision` + `cmd:deploy` (Tier 2). When unclear, propose a Tier 0/1 sweep and ask before any Tier 2. |
 | `go.mod` / `go.sum` / dependency bumps | Tier 0 smoke + ask whether a fuller sweep is warranted. |

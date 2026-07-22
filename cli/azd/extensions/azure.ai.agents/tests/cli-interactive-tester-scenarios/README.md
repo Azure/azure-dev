@@ -332,7 +332,8 @@ command(s) under test — see [Tags](#tags) for the full taxonomy and how to
 filter via `list_scenarios`.
 
 ### Tier 0 — Offline (prefix `00-`)
-No Azure auth, no network resource creation. Fast and deterministic. Safe to run
+No Azure auth, no network resource creation (except `sample list`, which fetches
+the public template catalog). Fast and mostly deterministic. Safe to run
 in any order, any time.
 
 | File | Targets |
@@ -371,7 +372,7 @@ and verifies the generated files, then stops before `azd provision`.
 Provisions real resources. **Run order matters:**
 
 1. `20-setup-deploy-shared-agent.yaml` **first** — deploys the shared agent.
-2. Any `21-`…`2A-` targeted scenario (reuse the deployed agent).
+2. Any `21-`…`2D-` targeted scenario (reuse the deployed agent).
 3. `2Z-teardown-down.yaml` **last** — `azd down --force --purge`.
 
 All Tier 2 scenarios share one working tree under `~/working/azd-agents-shared`
@@ -395,9 +396,12 @@ as their `cwd`.
 | `25-monitor-system.yaml` | `monitor --type system` |
 | `26-endpoint-update.yaml` | `endpoint update` |
 | `27-run-local-and-invoke-local.yaml` | `run` + `invoke --local` (two sessions) |
-| `28-eval-lifecycle.yaml` | `eval init/run/list/show` against the shared agent (small sample budget, `--no-wait`) |
+| `28-eval-lifecycle.yaml` | `eval generate/list/show` against the shared agent (small sample budget, `--no-wait`) |
 | `29-optimize-submit-and-cancel.yaml` | `optimize` submit + `list`/`status`/`cancel` (capped at 1 iteration, `--no-wait`) |
 | `2A-doctor-provisioned-all-pass.yaml` | `doctor` (all checks pass) |
+| `2B-endpoint-show.yaml` | `endpoint show` (agent endpoint details) |
+| `2C-code-download.yaml` | `code download` (positive-path: downloads agent source code) |
+| `2D-delete.yaml` | `delete` (destroys the shared agent — run before teardown) |
 | `2Z-teardown-down.yaml` | `azd down --force --purge` (TEARDOWN) |
 
 ## Tags
@@ -413,7 +417,7 @@ grouping — colons are treated as ordinary characters by the filter):
 | Namespace | Values | Meaning |
 |---|---|---|
 | `tier:N` | `tier:0`, `tier:1`, `tier:2` | The tier the scenario belongs to (same axis as the directory's three sections above). Use this to express cost / auth profile in one tag. |
-| `cmd:*` | `cmd:init`, `cmd:show`, `cmd:invoke`, `cmd:sessions`, `cmd:files`, `cmd:monitor`, `cmd:endpoint`, `cmd:run`, `cmd:doctor`, `cmd:eval`, `cmd:optimize`, `cmd:sample`, `cmd:down`, `cmd:provision`, `cmd:deploy`, `cmd:version`, `cmd:help` | The top-level `azd ai agent` (or `azd`) command(s) the scenario exercises. Multi-command scenarios (e.g. `27-run-local-and-invoke-local` runs both `run` and `invoke --local`; `20-setup` runs `init` + `provision` + `deploy`) carry multiple `cmd:*` tags. |
+| `cmd:*` | `cmd:init`, `cmd:show`, `cmd:invoke`, `cmd:sessions`, `cmd:files`, `cmd:monitor`, `cmd:endpoint`, `cmd:run`, `cmd:doctor`, `cmd:eval`, `cmd:optimize`, `cmd:sample`, `cmd:down`, `cmd:provision`, `cmd:deploy`, `cmd:version`, `cmd:help`, `cmd:code`, `cmd:delete` | The top-level `azd ai agent` (or `azd`) command(s) the scenario exercises. Multi-command scenarios (e.g. `27-run-local-and-invoke-local` runs both `run` and `invoke --local`; `20-setup` runs `init` + `provision` + `deploy`) carry multiple `cmd:*` tags. |
 | traits | `parallel-safe`, `serial-only`, `negative-path`, `picker` | `parallel-safe` ↔ `serial-only` are mutually exclusive: all Tier 0 / Tier 1 scenarios are `parallel-safe`, all Tier 2 are `serial-only`. `negative-path` flags arg-/CLI-validation scenarios that assert errors or non-zero exit codes rather than happy-path success. `picker` flags scenarios whose primary purpose is exercising interactive picker UX. |
 
 **Examples** (the tool's `tags:` parameter is OR across the list):
@@ -506,7 +510,7 @@ Variables exposed to scenarios via `session_vars`:
 | `{subscription}` | `profile.local.yaml` | **required** | subscription display name |
 | `{tenant}` | `profile.local.yaml` | optional, no default | only consumed by the `az login` guidance above; when unset, drop `--tenant` and rely on the user's default tenant |
 | `{region}` | `profile.yaml` | `East US 2` | |
-| `{model}` | `profile.yaml` | `gpt-4.1-mini` | cheap/fast for tests |
+| `{model}` | `profile.yaml` | `gpt-5.4-mini` | cheap/fast for tests |
 | `{shared_agent_suffix}` | `profile.yaml` | `basic-responses` | |
 | `{shared_agent_name}` | derived by orchestrator | `{prefix}-{shared_agent_suffix}-{ts}` | Tier 2 subdirectory name — orchestrator must compute (with `{ts}` = `MMDDHHmm` compact timestamp) and pass alongside the others. The timestamp isolates concurrent runs. |
 | `{fixtures_dir}` | derived by orchestrator | `<scenarios-dir>/fixtures` | Tester-side absolute path to the `fixtures/` subdirectory (WSL-translated on Windows, native on Linux/macOS); used by pre-hooks to seed test fixture files |

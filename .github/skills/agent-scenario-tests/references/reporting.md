@@ -35,7 +35,7 @@ formatting). Keep it scannable — full detail lives in the artifact. Suggested 
 - `22-invoke-new-session`: `--new-conversation` still recalled the prior name — memory
   was not reset. (screenshot: …)
 
-**Coverage gaps:** this PR also touches `eval*.go`, which has no scenario — consider adding one.
+**Coverage gaps:** this PR also touches `mcp.go`, which has no scenario — consider adding one.
 
 <sub>Run locally via the `agent-scenario-tests` skill. Not run in CI.</sub>
 ```

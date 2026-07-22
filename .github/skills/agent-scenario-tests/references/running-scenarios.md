@@ -77,7 +77,7 @@ For each selected scenario:
 - **Same scenario N times** in parallel: pass `instance_id="1"`, `"2"`, … See the README's
   parallel-readiness section for which scenarios support it.
 - **Tier 2** (`serial-only`): never parallelize. Run `20-setup-deploy-shared-agent` first,
-  then `21-…2A-` serially (they share one deployed agent and mutate shared session/file/
+  then `21-…2D-` serially (they share one deployed agent and mutate shared session/file/
   endpoint state), then `2Z-teardown-down` last.
 - **Validate the recipe with one scenario before fanning out** — confirm `load_scenario` →
   `start_session` → one `send_action` round-trips for a single Tier 0 scenario first.

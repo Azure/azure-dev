@@ -15,7 +15,7 @@
 region: "East US 2"
 
 # Default model deployment chosen during init / referenced by --model flags.
-# gpt-4.1-mini is cheap and fast — appropriate for tests.
+# gpt-5.4-mini is cheap and fast — appropriate for tests.
 model: "gpt-5.4-mini"
 
 # Suffix appended to {prefix} to form the Tier 2 shared agent's name (and

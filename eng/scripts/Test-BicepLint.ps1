@@ -30,6 +30,20 @@ function parseErrorLine($line) {
 $bicepFiles = Get-ChildItem "$Path/*.bicep" -Recurse -Force | 
     Where-Object { $_.FullName -notlike "*cli/azd/test/functional/testdata/snaps*" }
 
+# Restore modules before parallel builds to prevent BCP190.
+foreach ($file in $bicepFiles) {
+    Write-Verbose "Restoring modules for $file..." -Verbose:$Verbose
+    $restoreErrors = $( bicep restore $file ) 2>&1
+    $restoreExitCode = $LASTEXITCODE
+    if ($restoreExitCode -eq 0) {
+        continue
+    }
+
+    Write-Host "Failed to restore modules for $file"
+    $restoreErrors | ForEach-Object { Write-Host $_ }
+    exit $restoreExitCode
+}
+
 # Running bicep in parallel reduce run time from ~52 seconds to ~11 seconds on a
 # machine with 4 cores with hyper threading. No significant improvements seen
 # when increasing `-ThrottleLimit`.

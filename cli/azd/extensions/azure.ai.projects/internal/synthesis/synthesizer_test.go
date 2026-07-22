@@ -952,7 +952,7 @@ func TestSynthesize_ResolvesSiblingServiceRefs(t *testing.T) {
 	))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(root, "agent.yaml"),
-		[]byte("kind: hosted\nimage: example.azurecr.io/agent:latest\n"),
+		[]byte("kind: hosted\nname: referenced-agent\n"),
 		0600,
 	))
 
@@ -965,6 +965,7 @@ services:
     $ref: ./connection.yaml
   agent:
     host: azure.ai.agent
+    image: example.azurecr.io/agent:latest
     $ref: ./agent.yaml
 `
 	res, err := Synthesize(Input{

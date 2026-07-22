@@ -955,6 +955,20 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	if err != nil {
 		return nil, err
 	}
+	if err := projectpkg.ResolveServiceConfigInPlace(
+		svc,
+		project.Path,
+	); err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf(
+				"failed to resolve agent service %s: %s",
+				svc.Name,
+				err,
+			),
+			"fix the agent service configuration in azure.yaml",
+		)
+	}
 
 	projectDir, err := paths.JoinAllowRoot(project.Path, svc.RelativePath)
 	if err != nil {
@@ -966,7 +980,9 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	}
 
 	var startupCmd string
-	if agentConfig, cfgErr := projectpkg.LoadServiceTargetAgentConfig(svc); cfgErr == nil {
+	if agentConfig, cfgErr := projectpkg.LoadServiceTargetAgentConfig(
+		svc,
+	); cfgErr == nil {
 		startupCmd = agentConfig.StartupCommand
 	}
 

@@ -198,6 +198,7 @@ type serviceBlock struct {
 	Kind              string           `yaml:"kind,omitempty"`
 	Image             string           `yaml:"image,omitempty"`
 	CodeConfiguration *codeConfigBlock `yaml:"codeConfiguration,omitempty"`
+	Config            *agentBlock      `yaml:"config,omitempty"`
 	Agents            []agentBlock     `yaml:"agents,omitempty"`
 }
 
@@ -277,7 +278,14 @@ func Synthesize(in Input) (*Result, error) {
 		return nil, ErrEndpointBrownfield
 	}
 
-	includeAcr := deriveIncludeAcr(root.Services, svc, in.ProjectRoot)
+	includeAcr, err := deriveIncludeAcr(
+		root.Services,
+		svc,
+		in.ProjectRoot,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	deployments := svc.Deployments
 	if deployments == nil {
@@ -449,6 +457,103 @@ func resolveServiceRefs(node yaml.Node, projectRoot, serviceName string) (yaml.N
 	return out, nil
 }
 
+func serviceForHost(
+	node yaml.Node,
+	projectRoot string,
+	serviceName string,
+	expectedHost string,
+) (yaml.Node, bool, error) {
+	var selector struct {
+		Host string `yaml:"host"`
+		Ref  string `yaml:"$ref"`
+	}
+	if err := node.Decode(&selector); err != nil {
+		return node, false, nil
+	}
+	if selector.Host != "" && selector.Host != expectedHost {
+		return node, false, nil
+	}
+	if selector.Host == "" && selector.Ref == "" {
+		return node, false, nil
+	}
+	if expectedHost == "azure.ai.agent" && projectRoot != "" {
+		if err := validateAgentRootRefCoreFields(
+			node,
+			projectRoot,
+			serviceName,
+		); err != nil {
+			return node, false, err
+		}
+	}
+	if projectRoot != "" {
+		resolved, err := resolveServiceRefs(
+			node,
+			projectRoot,
+			serviceName,
+		)
+		if err != nil {
+			return node, false, err
+		}
+		node = resolved
+	}
+	if err := node.Decode(&selector); err != nil {
+		return node, false, fmt.Errorf(
+			"decode service %q selector: %w",
+			serviceName,
+			err,
+		)
+	}
+	return node, selector.Host == expectedHost, nil
+}
+
+func validateAgentRootRefCoreFields(
+	node yaml.Node,
+	projectRoot string,
+	serviceName string,
+) error {
+	var raw map[string]any
+	if err := node.Decode(&raw); err != nil {
+		return nil
+	}
+	ref, _ := raw["$ref"].(string)
+	if ref == "" {
+		return nil
+	}
+	referenced, err := foundry.ResolveFileRefs(
+		map[string]any{"$ref": ref},
+		projectRoot,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"resolve $ref includes for service %q: %w",
+			serviceName,
+			err,
+		)
+	}
+	host, _ := raw["host"].(string)
+	if host == "" {
+		host, _ = referenced["host"].(string)
+	}
+	if host != "azure.ai.agent" {
+		return nil
+	}
+	for _, field := range []string{
+		"project",
+		"language",
+		"image",
+		"docker",
+	} {
+		if _, found := referenced[field]; found {
+			return fmt.Errorf(
+				"service %q root $ref must not provide core field %q; declare it in azure.yaml",
+				serviceName,
+				field,
+			)
+		}
+	}
+	return nil
+}
+
 // deriveIncludeAcr reports whether provisioning should create an ACR. An ACR is
 // needed when any agent is a hosted, build-from-source agent: azd builds its
 // image and pushes it to the registry. Agents live on sibling azure.ai.agent
@@ -466,35 +571,55 @@ func deriveIncludeAcr(
 	services map[string]yaml.Node,
 	svc projectService,
 	projectRoot string,
-) bool {
+) (bool, error) {
 	if slices.ContainsFunc(svc.Agents, agentNeedsAcr) {
-		return true
+		return true, nil
 	}
 
-	for name, node := range services {
-		if projectRoot != "" {
-			var err error
-			node, err = resolveServiceRefs(node, projectRoot, name)
-			if err != nil {
-				continue
-			}
+	for serviceName, node := range services {
+		var matches bool
+		var err error
+		node, matches, err = serviceForHost(
+			node,
+			projectRoot,
+			serviceName,
+			"azure.ai.agent",
+		)
+		if err != nil {
+			return false, err
+		}
+		if !matches {
+			continue
 		}
 		var service serviceBlock
 		if err := node.Decode(&service); err != nil {
-			continue
+			return false, fmt.Errorf(
+				"decode service %q: %w",
+				serviceName,
+				err,
+			)
 		}
-		if service.Host != "azure.ai.agent" {
-			continue
-		}
-		if agentNeedsAcr(agentBlock{
+		agent := agentBlock{
 			Kind:              service.Kind,
 			Image:             service.Image,
 			CodeConfiguration: service.CodeConfiguration,
-		}) {
-			return true
+		}
+		if service.Config != nil {
+			if agent.Kind == "" {
+				agent.Kind = service.Config.Kind
+			}
+			if agent.Image == "" {
+				agent.Image = service.Config.Image
+			}
+			if agent.CodeConfiguration == nil {
+				agent.CodeConfiguration = service.Config.CodeConfiguration
+			}
+		}
+		if agentNeedsAcr(agent) {
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 // agentNeedsAcr reports whether a single agent entry builds a container image
@@ -529,17 +654,18 @@ func collectConnections(
 	connections := []Connection{}
 
 	for name, node := range services {
-		if projectRoot != "" {
-			var err error
-			node, err = resolveServiceRefs(node, projectRoot, name)
-			if err != nil {
-				return nil, err
-			}
+		var matches bool
+		var err error
+		node, matches, err = serviceForHost(
+			node,
+			projectRoot,
+			name,
+			aiConnectionHost,
+		)
+		if err != nil {
+			return nil, err
 		}
-		var host struct {
-			Host string `yaml:"host"`
-		}
-		if err := node.Decode(&host); err != nil || host.Host != aiConnectionHost {
+		if !matches {
 			continue
 		}
 		var svc connectionService

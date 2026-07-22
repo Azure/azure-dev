@@ -88,16 +88,16 @@ func extractConnectionTools(tools []map[string]any) []map[string]string {
 	for _, t := range tools {
 		toolType, _ := t["type"].(string)
 		toolName, _ := t["name"].(string)
+		if id, ok := t["project_connection_id"].(string); ok && id != "" {
+			rows = append(rows, map[string]string{
+				"name":          toolName,
+				"connection":    shortConnectionName(id),
+				"connection_id": id,
+				"type":          toolType,
+			})
+			continue
+		}
 		switch toolType {
-		case "mcp", "a2a_preview":
-			if id, ok := t["project_connection_id"].(string); ok && id != "" {
-				rows = append(rows, map[string]string{
-					"name":          toolName,
-					"connection":    shortConnectionName(id),
-					"connection_id": id,
-					"type":          toolType,
-				})
-			}
 		case "azure_ai_search":
 			if search, ok := t["azure_ai_search"].(map[string]any); ok {
 				if indexes, ok := search["indexes"].([]any); ok {

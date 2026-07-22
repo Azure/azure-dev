@@ -6,6 +6,8 @@ package cmd
 import (
 	"context"
 	"net"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -203,7 +205,7 @@ func TestCollectLegacyProjectDeploymentsIgnoresSplitProject(
 		"conn":       connectionService(t, "conn", project.Connection{Name: "conn"}),
 	}
 
-	deployments, err := collectLegacyProjectDeployments(services)
+	deployments, err := collectLegacyProjectDeployments(services, "")
 	require.NoError(t, err)
 	assert.Empty(t, deployments)
 }
@@ -220,7 +222,7 @@ func TestCollectConnections(t *testing.T) {
 		"agent":      agentService(t, "agent"),
 	}
 
-	connections, err := collectConnections(services)
+	connections, err := collectConnections(services, "")
 	require.NoError(t, err)
 	require.Len(t, connections, 2)
 	// Sorted by service key (alpha before zeta) for stable env-var output.
@@ -238,11 +240,74 @@ func TestCollectToolboxes(t *testing.T) {
 		"agent": agentService(t, "agent"),
 	}
 
-	toolboxes, err := collectToolboxes(services)
+	toolboxes, err := collectToolboxes(services, "")
 	require.NoError(t, err)
 	require.Len(t, toolboxes, 1)
 	assert.Equal(t, "tb", toolboxes[0].Name)
 	require.Len(t, toolboxes[0].Tools, 1)
+}
+
+func TestCollectResourceServices_ResolvesFileRefs(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "deployment.yaml"),
+		[]byte(
+			"name: gpt-4o\n"+
+				"model: {name: gpt-4o}\n",
+		),
+		0o600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "project.yaml"),
+		[]byte(
+			"deployments:\n"+
+				"  - $ref: ./deployment.yaml\n",
+		),
+		0o600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "connection.yaml"),
+		[]byte(
+			"category: ApiKey\n"+
+				"target: https://example.test\n",
+		),
+		0o600,
+	))
+	projectProps, err := structpb.NewStruct(map[string]any{
+		"$ref": "./project.yaml",
+	})
+	require.NoError(t, err)
+	connectionProps, err := structpb.NewStruct(map[string]any{
+		"$ref": "./connection.yaml",
+	})
+	require.NoError(t, err)
+	services := map[string]*azdext.ServiceConfig{
+		"ai-project": {
+			Name:                 "ai-project",
+			Host:                 AiProjectHost,
+			AdditionalProperties: projectProps,
+		},
+		"search": {
+			Name:                 "search",
+			Host:                 AiConnectionHost,
+			AdditionalProperties: connectionProps,
+		},
+	}
+
+	deployments, err := collectLegacyProjectDeployments(
+		services,
+		root,
+	)
+	require.NoError(t, err)
+	assert.Empty(t, deployments)
+
+	connections, err := collectConnections(services, root)
+	require.NoError(t, err)
+	require.Len(t, connections, 1)
+	assert.Equal(t, "search", connections[0].Name)
+	assert.Equal(t, "ApiKey", connections[0].Category)
 }
 
 // TestCollectAgentToolConnections verifies tool connections stay on the agent
@@ -256,7 +321,7 @@ func TestCollectAgentToolConnections(t *testing.T) {
 		"ai-project": projectService(t, "ai-project"),
 	}
 
-	toolConnections, err := collectAgentToolConnections(services)
+	toolConnections, err := collectAgentToolConnections(services, "")
 	require.NoError(t, err)
 	require.Len(t, toolConnections, 1)
 	assert.Equal(t, "mcp-conn", toolConnections[0].Name)
@@ -272,15 +337,15 @@ func TestCollectHelpers_EmptyAndNilConfigs(t *testing.T) {
 		"nilcfg": {Name: "nilcfg", Host: AiProjectHost},
 	}
 
-	deployments, err := collectLegacyProjectDeployments(services)
+	deployments, err := collectLegacyProjectDeployments(services, "")
 	require.NoError(t, err)
 	assert.Empty(t, deployments)
 
-	connections, err := collectConnections(services)
+	connections, err := collectConnections(services, "")
 	require.NoError(t, err)
 	assert.Empty(t, connections)
 
-	toolboxes, err := collectToolboxes(services)
+	toolboxes, err := collectToolboxes(services, "")
 	require.NoError(t, err)
 	assert.Empty(t, toolboxes)
 }
@@ -302,17 +367,17 @@ func TestCollect_FallbackToBundledAgentConfig(t *testing.T) {
 	svc.Host = AiAgentHost
 	services := map[string]*azdext.ServiceConfig{"my-agent": svc}
 
-	deployments, err := collectLegacyProjectDeployments(services)
+	deployments, err := collectLegacyProjectDeployments(services, "")
 	require.NoError(t, err)
 	require.Len(t, deployments, 1)
 	assert.Equal(t, "gpt-4o", deployments[0].Name)
 
-	connections, err := collectConnections(services)
+	connections, err := collectConnections(services, "")
 	require.NoError(t, err)
 	require.Len(t, connections, 1)
 	assert.Equal(t, "conn", connections[0].Name)
 
-	toolboxes, err := collectToolboxes(services)
+	toolboxes, err := collectToolboxes(services, "")
 	require.NoError(t, err)
 	require.Len(t, toolboxes, 1)
 	assert.Equal(t, "tb", toolboxes[0].Name)
@@ -337,7 +402,7 @@ func TestCollectLegacyProjectDeploymentsSplitDisablesFallback(
 		),
 	}
 
-	deployments, err := collectLegacyProjectDeployments(services)
+	deployments, err := collectLegacyProjectDeployments(services, "")
 	require.NoError(t, err)
 	assert.Empty(t, deployments)
 }
@@ -579,7 +644,7 @@ func TestEmitResourceServices_WritesServiceLevelProps(t *testing.T) {
 	require.Len(t, projectCfg.Deployments, 1)
 	assert.Equal(t, "gpt-4.1-mini", projectCfg.Deployments[0].Name)
 
-	gotConns, err := collectConnections(services)
+	gotConns, err := collectConnections(services, "")
 	require.NoError(t, err)
 	require.Len(t, gotConns, 1)
 	assert.Equal(t, "myconn", gotConns[0].Name)

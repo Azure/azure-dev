@@ -208,7 +208,21 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 			"run 'azd init' to initialize your project",
 		)
 	}
-	servicePath := p.serviceConfig.RelativePath
+	if err := ResolveServiceConfigInPlace(
+		p.serviceConfig,
+		proj.Project.Path,
+	); err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf(
+				"failed to resolve service config for %s: %s",
+				p.serviceConfig.Name,
+				err,
+			),
+			"fix the agent service configuration in azure.yaml",
+		)
+	}
+	servicePath := p.serviceConfig.GetRelativePath()
 	fullPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath)
 	if err != nil {
 		return exterrors.Validation(
@@ -301,7 +315,10 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 
 	// Unified shape: the agent definition is carried inline on the service entry,
 	// so no on-disk agent.yaml is required.
-	if _, _, found, _, defErr := AgentDefinitionFromService(p.serviceConfig); defErr != nil {
+	if _, _, found, _, defErr := AgentDefinitionFromResolvedService(
+		p.serviceConfig,
+		proj.Project.Path,
+	); defErr != nil {
 		return defErr
 	} else if found {
 		p.deployContextReady = true
@@ -450,6 +467,7 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	if err := p.ensureDeployContext(ctx); err != nil {
 		return nil, err
 	}
+	serviceConfig = p.serviceConfig
 	// Ensure Foundry project is loaded
 	if err := p.ensureFoundryProject(ctx); err != nil {
 		return nil, err
@@ -553,7 +571,6 @@ func (p *AgentServiceTargetProvider) Package(
 			Artifacts: []*azdext.Artifact{preBuiltImageArtifact(agentDef.Image)},
 		}, nil
 	}
-
 	var packageArtifact *azdext.Artifact
 	var newArtifacts []*azdext.Artifact
 
@@ -575,12 +592,13 @@ func (p *AgentServiceTargetProvider) Package(
 		}
 
 		if buildArtifact == nil {
+			buildRequest := &azdext.ContainerBuildRequest{
+				ServiceName:    serviceConfig.Name,
+				ServiceContext: serviceContext,
+			}
 			buildResponse, err := p.azdClient.
 				Container().
-				Build(ctx, &azdext.ContainerBuildRequest{
-					ServiceName:    serviceConfig.Name,
-					ServiceContext: serviceContext,
-				})
+				Build(ctx, buildRequest)
 			if err != nil {
 				return nil, exterrors.Internal(exterrors.OpContainerBuild, fmt.Sprintf("container build failed: %s", err))
 			}
@@ -588,12 +606,13 @@ func (p *AgentServiceTargetProvider) Package(
 			serviceContext.Build = append(serviceContext.Build, buildResponse.Result.Artifacts...)
 		}
 
+		packageRequest := &azdext.ContainerPackageRequest{
+			ServiceName:    serviceConfig.Name,
+			ServiceContext: serviceContext,
+		}
 		packageResponse, err := p.azdClient.
 			Container().
-			Package(ctx, &azdext.ContainerPackageRequest{
-				ServiceName:    serviceConfig.Name,
-				ServiceContext: serviceContext,
-			})
+			Package(ctx, packageRequest)
 		if err != nil {
 			return nil, exterrors.Internal(exterrors.OpContainerPackage, fmt.Sprintf("container package failed: %s", err))
 		}
@@ -641,12 +660,13 @@ func (p *AgentServiceTargetProvider) Publish(
 	}
 
 	progress("Publishing container")
+	publishRequest := &azdext.ContainerPublishRequest{
+		ServiceName:    serviceConfig.Name,
+		ServiceContext: serviceContext,
+	}
 	publishResponse, err := p.azdClient.
 		Container().
-		Publish(ctx, &azdext.ContainerPublishRequest{
-			ServiceName:    serviceConfig.Name,
-			ServiceContext: serviceContext,
-		})
+		Publish(ctx, publishRequest)
 
 	if err != nil {
 		return nil, classifyContainerPublishError(err)
@@ -976,7 +996,11 @@ func (p *AgentServiceTargetProvider) loadContainerAgentDefinition() (agent_yaml.
 
 	// Prefer the agent definition carried inline on the service entry (the
 	// unified service-level shape, or the deprecated config-nested shape).
-	if ca, isHosted, found, source, err := AgentDefinitionFromService(p.serviceConfig); found || err != nil {
+	if ca, isHosted, found, source, err :=
+		AgentDefinitionFromResolvedService(
+			p.serviceConfig,
+			p.projectPath,
+		); found || err != nil {
 		if found && source.IsLegacy() {
 			WarnLegacyAgentShape(source)
 		}
@@ -1001,6 +1025,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if err := p.ensureDeployContext(ctx); err != nil {
 		return nil, err
 	}
+	serviceConfig = p.serviceConfig
 	// Ensure Foundry project is loaded
 	if err := p.ensureFoundryProject(ctx); err != nil {
 		return nil, err
@@ -1445,13 +1470,21 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 			"check the service configuration in azure.yaml",
 		)
 	}
-
 	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
 
 	var cpu, memory string
 	if foundryAgentConfig != nil && foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
 		cpu = foundryAgentConfig.Container.Resources.Cpu
 		memory = foundryAgentConfig.Container.Resources.Memory
+	}
+	// $ref services never persist resolved defaults to azure.yaml,
+	// so deploy applies the extension defaults here to keep $ref
+	// and inline services consistent.
+	if cpu == "" {
+		cpu = DefaultCpu
+	}
+	if memory == "" {
+		memory = DefaultMemory
 	}
 
 	// Build options: env vars + cpu/memory (if set) + caller-provided extras

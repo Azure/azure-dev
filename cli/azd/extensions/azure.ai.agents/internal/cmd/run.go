@@ -196,11 +196,6 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load azd environment values: %s\n", err)
 	}
 
-	// Resolve environment_variables from the agent definition (agent.yaml).
-	// This handles hardcoded values, ${VAR} references (resolved via azd env),
-	// and ${{connections.<name>.credentials.<key>}} references (resolved via
-	// the Foundry data plane). Agent definition env vars do not override
-	// values already present in the process environment.
 	endpoint, _ := resolveAgentEndpoint(ctx, "", "")
 	defEnv, defErr := resolveAgentDefinitionEnvVars(
 		ctx,
@@ -1081,11 +1076,17 @@ func appendEnvValue(env []string, key string, value string) []string {
 	return append(env, fmt.Sprintf("%s=%s", key, value))
 }
 
-// envSliceHasKey reports whether the env slice already contains an entry for the given key.
+// envSliceHasKey reports whether env contains an entry for key.
 func envSliceHasKey(env []string, key string) bool {
-	prefix := key + "="
 	return slices.ContainsFunc(env, func(entry string) bool {
-		return strings.HasPrefix(entry, prefix)
+		entryKey, _, found := strings.Cut(entry, "=")
+		if !found {
+			return false
+		}
+		if runtime.GOOS == "windows" {
+			return strings.EqualFold(entryKey, key)
+		}
+		return entryKey == key
 	})
 }
 

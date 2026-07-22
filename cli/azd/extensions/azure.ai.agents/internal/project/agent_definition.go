@@ -14,8 +14,10 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
+	"azureaiagent/internal/pkg/projectconfig"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/braydonk/yaml"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -231,7 +233,8 @@ func LoadAgentDefinition(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (agent_yaml.ContainerAgent, bool, AgentDefinitionSource, error) {
-	ca, isHosted, found, source, err := AgentDefinitionFromService(svc)
+	ca, isHosted, found, source, err :=
+		AgentDefinitionFromResolvedService(svc, projectRoot)
 	if err != nil {
 		return agent_yaml.ContainerAgent{}, false, source, err
 	}
@@ -239,8 +242,97 @@ func LoadAgentDefinition(
 		return ca, isHosted, source, nil
 	}
 
-	// Fall back to a legacy agent.yaml/agent.yml on disk.
 	return agentDefinitionFromDisk(svc, projectRoot)
+}
+
+// AgentDefinitionFromResolvedService expands local file includes.
+func AgentDefinitionFromResolvedService(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (
+	agent_yaml.ContainerAgent,
+	bool,
+	bool,
+	AgentDefinitionSource,
+	error,
+) {
+	candidates := []struct {
+		props  *structpb.Struct
+		source AgentDefinitionSource
+	}{
+		{svc.GetAdditionalProperties(), AgentDefinitionSourceInline},
+		{svc.GetConfig(), AgentDefinitionSourceLegacyConfig},
+	}
+	for _, candidate := range candidates {
+		if candidate.props == nil ||
+			len(candidate.props.GetFields()) == 0 {
+			continue
+		}
+		resolved, err := resolveServiceProps(
+			candidate.props,
+			svc.GetName(),
+			projectRoot,
+		)
+		if err != nil {
+			return agent_yaml.ContainerAgent{},
+				false,
+				false,
+				candidate.source,
+				err
+		}
+		if !structHasKind(resolved) {
+			continue
+		}
+		image := svc.GetImage()
+		if image == "" {
+			if value := resolved.GetFields()["image"]; value != nil {
+				image = value.GetStringValue()
+			}
+		}
+		ca, isHosted, err := agentDefinitionFromStruct(
+			resolved,
+			image,
+			svc.GetEnvironment(),
+		)
+		return ca, isHosted, true, candidate.source, err
+	}
+
+	return agent_yaml.ContainerAgent{},
+		false,
+		false,
+		AgentDefinitionSourceInline,
+		nil
+}
+
+// AgentDefinitionUsesFileRef reports whether a root $ref supplies the
+// agent definition.
+func AgentDefinitionUsesFileRef(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (bool, error) {
+	for _, props := range []*structpb.Struct{
+		svc.GetAdditionalProperties(),
+		svc.GetConfig(),
+	} {
+		if props == nil || props.GetFields()["$ref"] == nil {
+			continue
+		}
+		refOnly := &structpb.Struct{Fields: map[string]*structpb.Value{
+			"$ref": props.GetFields()["$ref"],
+		}}
+		resolved, err := resolveServiceProps(
+			refOnly,
+			svc.GetName(),
+			projectRoot,
+		)
+		if err != nil {
+			return false, err
+		}
+		if structHasKind(resolved) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // AgentDefinitionFromService returns the agent definition carried inline on the
@@ -291,9 +383,170 @@ func LoadServiceTargetAgentConfig(svc *azdext.ServiceConfig) (*ServiceTargetAgen
 // which shape a project uses.
 func ServiceConfigProps(svc *azdext.ServiceConfig) *structpb.Struct {
 	if s := svc.GetAdditionalProperties(); s != nil && len(s.GetFields()) > 0 {
+		if svc.GetHost() == "azure.ai.agent" &&
+			!structHasKind(s) &&
+			structHasKind(svc.GetConfig()) {
+			return svc.GetConfig()
+		}
 		return s
 	}
 	return svc.GetConfig()
+}
+
+// ResolveServiceConfigProps expands local $ref file includes.
+func ResolveServiceConfigProps(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (*structpb.Struct, error) {
+	props := ServiceConfigProps(svc)
+	if props == nil {
+		return nil, nil
+	}
+	return resolveServiceProps(props, svc.GetName(), projectRoot)
+}
+
+// ResolveServiceConfigInPlace expands local file references in both
+// service-level properties and legacy config. It also normalizes
+// environment scalars so consumers receive an effective config.
+func ResolveServiceConfigInPlace(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) error {
+	if props := svc.GetAdditionalProperties(); props != nil &&
+		len(props.GetFields()) > 0 {
+		resolved, err := resolveServiceProps(
+			props,
+			svc.GetName(),
+			projectRoot,
+		)
+		if err != nil {
+			return err
+		}
+		svc.AdditionalProperties = resolved
+	}
+	if config := svc.GetConfig(); config != nil &&
+		len(config.GetFields()) > 0 {
+		resolved, err := resolveServiceProps(
+			config,
+			svc.GetName(),
+			projectRoot,
+		)
+		if err != nil {
+			return err
+		}
+		svc.Config = resolved
+	}
+	return nil
+}
+
+// NormalizeServiceConfigInPlace converts environment scalars in both
+// service-level properties and legacy config.
+// File references remain intact for persistence.
+func NormalizeServiceConfigInPlace(svc *azdext.ServiceConfig) error {
+	if props := svc.GetAdditionalProperties(); props != nil &&
+		len(props.GetFields()) > 0 {
+		normalized, err := normalizeServiceProps(props, svc.GetName())
+		if err != nil {
+			return err
+		}
+		svc.AdditionalProperties = normalized
+	}
+	if config := svc.GetConfig(); config != nil &&
+		len(config.GetFields()) > 0 {
+		normalized, err := normalizeServiceProps(config, svc.GetName())
+		if err != nil {
+			return err
+		}
+		svc.Config = normalized
+	}
+	return nil
+}
+
+func resolveServiceProps(
+	props *structpb.Struct,
+	serviceName string,
+	projectRoot string,
+) (*structpb.Struct, error) {
+	if err := validateRootRefCoreFields(props, projectRoot); err != nil {
+		return nil, fmt.Errorf(
+			"validating service %q config: %w",
+			serviceName,
+			err,
+		)
+	}
+	resolved, err := foundry.ResolveFileRefs(
+		props.AsMap(),
+		projectRoot,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"resolving service %q config: %w",
+			serviceName,
+			err,
+		)
+	}
+	return normalizedServiceProps(resolved, serviceName)
+}
+
+func normalizeServiceProps(
+	props *structpb.Struct,
+	serviceName string,
+) (*structpb.Struct, error) {
+	return normalizedServiceProps(props.AsMap(), serviceName)
+}
+
+func normalizedServiceProps(
+	values map[string]any,
+	serviceName string,
+) (*structpb.Struct, error) {
+	if err := projectconfig.NormalizeEnvironment(values); err != nil {
+		return nil, fmt.Errorf(
+			"normalizing service %q environment: %w",
+			serviceName,
+			err,
+		)
+	}
+
+	out, err := structpb.NewStruct(values)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"encoding normalized service %q config: %w",
+			serviceName,
+			err,
+		)
+	}
+	return out, nil
+}
+
+func validateRootRefCoreFields(
+	props *structpb.Struct,
+	projectRoot string,
+) error {
+	ref := props.GetFields()["$ref"]
+	if ref == nil || ref.GetStringValue() == "" {
+		return nil
+	}
+	referenced, err := foundry.ResolveFileRefs(
+		map[string]any{"$ref": ref.GetStringValue()},
+		projectRoot,
+	)
+	if err != nil {
+		return err
+	}
+	for _, field := range []string{
+		"project",
+		"language",
+		"image",
+		"docker",
+	} {
+		if _, found := referenced[field]; found {
+			return fmt.Errorf(
+				"root $ref must not provide core field %q; declare it in azure.yaml",
+				field,
+			)
+		}
+	}
+	return nil
 }
 
 // UpsertAgentEnvVars updates the service-level environment map.

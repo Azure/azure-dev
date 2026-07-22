@@ -916,13 +916,14 @@ func TestResolveTemplate_OnDiskFallsBackWhenSourceLoaderReturnsNil(t *testing.T)
 	assert.Equal(t, templateModeEmbedded, got.mode)
 }
 
-func TestFoundryServiceEndpoint(t *testing.T) {
+func TestFoundryServiceEndpointAtRoot(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name         string
 		yaml         string
 		svcName      string
 		wantEndpoint string
+		wantErr      bool
 	}{
 		{
 			name: "greenfield (no endpoint:) -> empty",
@@ -963,18 +964,62 @@ services:
 			wantEndpoint: "",
 		},
 		{
-			name:         "malformed yaml -> empty (upstream surfaces parse error)",
-			yaml:         "not: : valid: yaml",
-			svcName:      "foundry",
-			wantEndpoint: "",
+			name:    "malformed yaml returns parse error",
+			yaml:    "not: : valid: yaml",
+			svcName: "foundry",
+			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tt.wantEndpoint, foundryServiceEndpoint([]byte(tt.yaml), tt.svcName))
+			endpoint, err := foundryServiceEndpointAtRoot(
+				[]byte(tt.yaml),
+				"",
+				tt.svcName,
+			)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantEndpoint, endpoint)
 		})
 	}
+}
+
+func TestFoundryServiceEndpointAtRoot_ResolvesFileRef(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "project.yaml"),
+		[]byte(
+			"endpoint: https://acct.services.ai.azure.com/"+
+				"api/projects/existing\n",
+		),
+		0o600,
+	))
+	raw := []byte(`services:
+  foundry:
+    host: azure.ai.project
+    $ref: ./project.yaml
+`)
+
+	endpoint, err := foundryServiceEndpointAtRoot(
+		raw,
+		root,
+		"foundry",
+	)
+
+	require.NoError(t, err)
+	assert.Equal(
+		t,
+		"https://acct.services.ai.azure.com/api/projects/existing",
+		endpoint,
+	)
 }
 
 func TestProjectNameFromEndpoint(t *testing.T) {

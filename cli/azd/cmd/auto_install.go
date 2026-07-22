@@ -419,8 +419,10 @@ type projectExtensionRequirement struct {
 }
 
 type resolvedExtensionDependency struct {
-	parentId string
-	version  *extensions.ExtensionVersion
+	parentId     string
+	version      string
+	capabilities []extensions.CapabilityType
+	providers    []extensions.Provider
 }
 
 func projectCommandSupportsExtensionAutoInstall(cmd *cobra.Command) bool {
@@ -462,15 +464,16 @@ func findExtensionForProvider(
 		log.Printf("failed to find an extension for provider %q: %v", provider, err)
 		return nil, nil
 	}
-	matches = uninstalledExtensionMatches(matches, installed)
+	matches = filterExtensionsForProvider(matches, capability, provider)
 	dependencyConflicts := map[string]resolvedExtensionDependency{}
 	matches = slices.DeleteFunc(matches, func(extension *extensions.ExtensionMetadata) bool {
-		dependency, isDependency := resolvedDependencies[extension.Id]
+		dependency, isDependency := resolvedDependencies[strings.ToLower(extension.Id)]
 		if isDependency {
 			dependencyConflicts[extension.Id] = dependency
 		}
 		return isDependency
 	})
+	matches = uninstalledExtensionMatches(matches, installed)
 	if len(matches) == 0 {
 		if len(dependencyConflicts) > 0 {
 			extensionId := slices.Sorted(maps.Keys(dependencyConflicts))[0]
@@ -479,7 +482,7 @@ func findExtensionForProvider(
 				"extension %s requires dependency %s version %s, which does not provide %s %q",
 				dependency.parentId,
 				extensionId,
-				dependency.version.Version,
+				dependency.version,
 				capability,
 				provider,
 			)
@@ -495,9 +498,21 @@ func uninstalledExtensionMatches(
 	installed map[string]*extensions.Extension,
 ) []*extensions.ExtensionMetadata {
 	return slices.DeleteFunc(slices.Clone(matches), func(extension *extensions.ExtensionMetadata) bool {
-		_, isInstalled := installed[extension.Id]
+		_, isInstalled := installedExtensionById(installed, extension.Id)
 		return isInstalled
 	})
+}
+
+func installedExtensionById(
+	installed map[string]*extensions.Extension,
+	extensionId string,
+) (*extensions.Extension, bool) {
+	for installedId, extension := range installed {
+		if strings.EqualFold(installedId, extensionId) {
+			return extension, true
+		}
+	}
+	return nil, false
 }
 
 func resolveExtensionRequirementDependencies(
@@ -550,7 +565,37 @@ func resolveExtensionDependencies(
 		if _, isResolving := resolving[key]; isResolving {
 			return fmt.Errorf("dependency cycle detected involving extension %s", dependency.Id)
 		}
-		if _, isResolved := resolved[dependency.Id]; isResolved {
+		dependencyId := strings.ToLower(dependency.Id)
+		if _, isResolved := resolved[dependencyId]; isResolved {
+			continue
+		}
+
+		// Installation reuses a compatible installed dependency instead of replacing it with the registry selection.
+		installedDependency, err := extensionManager.GetInstalled(extensions.FilterOptions{Id: dependency.Id})
+		if err == nil && installedDependency != nil {
+			if dependency.Version != "" {
+				installedMetadata := &extensions.ExtensionMetadata{
+					Id: dependency.Id,
+					Versions: []extensions.ExtensionVersion{{
+						Version: installedDependency.Version,
+					}},
+				}
+				if _, err := extensions.ResolveExtensionVersion(installedMetadata, dependency.Version, nil); err != nil {
+					return fmt.Errorf(
+						"installed dependency %s version %s does not satisfy constraint %q",
+						dependency.Id,
+						installedDependency.Version,
+						dependency.Version,
+					)
+				}
+			}
+
+			resolved[dependencyId] = resolvedExtensionDependency{
+				parentId:     parent.Id,
+				version:      installedDependency.Version,
+				capabilities: installedDependency.Capabilities,
+				providers:    installedDependency.Providers,
+			}
 			continue
 		}
 
@@ -587,9 +632,11 @@ func resolveExtensionDependencies(
 		if err != nil {
 			return fmt.Errorf("resolving dependency %s: %w", dependency.Id, err)
 		}
-		resolved[dependency.Id] = resolvedExtensionDependency{
-			parentId: parent.Id,
-			version:  version,
+		resolved[dependencyId] = resolvedExtensionDependency{
+			parentId:     parent.Id,
+			version:      version.Version,
+			capabilities: version.Capabilities,
+			providers:    version.Providers,
 		}
 
 		resolving[key] = struct{}{}
@@ -610,15 +657,67 @@ func resolveExtensionDependencies(
 	return nil
 }
 
+func extensionProvidesProvider(
+	capabilities []extensions.CapabilityType,
+	providers []extensions.Provider,
+	capability extensions.CapabilityType,
+	providerName string,
+) bool {
+	expectedType, hasProviderType := providerTypeForCapability(capability)
+	if !hasProviderType || !slices.Contains(capabilities, capability) {
+		return false
+	}
+
+	return slices.ContainsFunc(providers, func(provider extensions.Provider) bool {
+		return provider.Type == expectedType && strings.EqualFold(provider.Name, providerName)
+	})
+}
+
+func providerTypeForCapability(capability extensions.CapabilityType) (extensions.ProviderType, bool) {
+	switch capability {
+	case extensions.ServiceTargetProviderCapability:
+		return extensions.ServiceTargetProviderType, true
+	case extensions.ProvisioningProviderCapability:
+		return extensions.ProvisioningProviderType, true
+	default:
+		return "", false
+	}
+}
+
+func filterExtensionsForProvider(
+	matches []*extensions.ExtensionMetadata,
+	capability extensions.CapabilityType,
+	providerName string,
+) []*extensions.ExtensionMetadata {
+	filtered := make([]*extensions.ExtensionMetadata, 0, len(matches))
+	for _, extension := range matches {
+		providerExtension := extensionForProvider(extension, capability, providerName)
+		if len(providerExtension.Versions) > 0 {
+			filtered = append(filtered, providerExtension)
+		}
+	}
+	return filtered
+}
+
 func extensionVersionProvidesProvider(
 	version *extensions.ExtensionVersion,
 	capability extensions.CapabilityType,
 	providerName string,
 ) bool {
-	return slices.Contains(version.Capabilities, capability) &&
-		slices.ContainsFunc(version.Providers, func(provider extensions.Provider) bool {
-			return strings.EqualFold(provider.Name, providerName)
-		})
+	return extensionProvidesProvider(version.Capabilities, version.Providers, capability, providerName)
+}
+
+func resolvedDependencyProvidesProvider(
+	dependency resolvedExtensionDependency,
+	capability extensions.CapabilityType,
+	providerName string,
+) bool {
+	return extensionProvidesProvider(
+		dependency.capabilities,
+		dependency.providers,
+		capability,
+		providerName,
+	)
 }
 
 func extensionForProvider(
@@ -628,10 +727,7 @@ func extensionForProvider(
 ) *extensions.ExtensionMetadata {
 	filtered := *extension
 	filtered.Versions = slices.DeleteFunc(slices.Clone(extension.Versions), func(version extensions.ExtensionVersion) bool {
-		return !slices.Contains(version.Capabilities, capability) ||
-			!slices.ContainsFunc(version.Providers, func(provider extensions.Provider) bool {
-				return strings.EqualFold(provider.Name, providerName)
-			})
+		return !extensionVersionProvidesProvider(&version, capability, providerName)
 	})
 	return &filtered
 }
@@ -650,7 +746,7 @@ func missingProjectExtensions(
 	requirements := map[string]projectExtensionRequirement{}
 	if projectConfig.RequiredVersions != nil {
 		for _, extensionId := range slices.Sorted(maps.Keys(projectConfig.RequiredVersions.Extensions)) {
-			if _, isInstalled := installed[extensionId]; isInstalled {
+			if _, isInstalled := installedExtensionById(installed, extensionId); isInstalled {
 				continue
 			}
 
@@ -704,7 +800,7 @@ func missingProjectExtensions(
 			return err
 		}
 		for dependency := range maps.Values(resolvedDependencies) {
-			if extensionVersionProvidesProvider(dependency.version, capability, provider) {
+			if resolvedDependencyProvidesProvider(dependency, capability, provider) {
 				return nil
 			}
 		}
@@ -734,7 +830,7 @@ func missingProjectExtensions(
 			requirements[extension.Id] = requirement
 		} else {
 			requirements[extension.Id] = projectExtensionRequirement{
-				extension: extensionForProvider(extension, capability, provider),
+				extension: extension,
 			}
 		}
 		return nil
@@ -951,7 +1047,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			result.Err = err
 			return result
 		} else if installed {
-			rootCmd = NewRootCmd(false, nil, rootContainer)
+			rootCmd = newRootCmdWithoutRegistration(rootContainer)
 			foundCmd, originalArgs, err = rootCmd.Find(os.Args[1:])
 			if err != nil {
 				result.Err = err
@@ -964,7 +1060,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			ctx, rootContainer, foundCmd, originalArgs,
 		); installed {
 			// Extension was installed, rebuild command tree and execute
-			rootCmd = NewRootCmd(false, nil, rootContainer)
+			rootCmd = newRootCmdWithoutRegistration(rootContainer)
 			result.Err = rootCmd.ExecuteContext(ctx)
 			return result
 		}
@@ -1004,6 +1100,11 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			console.Message(ctx, unsupportedErr.ErrorMessage)
 			return result
 		}
+		availableExtensionsForHost = filterExtensionsForProvider(
+			availableExtensionsForHost,
+			extensions.ServiceTargetProviderCapability,
+			requiredHost,
+		)
 		availableExtensionsForHost = uninstalledExtensionMatches(availableExtensionsForHost, installedExtensions)
 		if len(availableExtensionsForHost) == 0 {
 			// did not find an extension with the capability, just print the original error message
@@ -1040,7 +1141,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 
 		if installed {
 			// Extension was installed, build command tree and execute
-			rootCmd := NewRootCmd(false, nil, rootContainer)
+			rootCmd := newRootCmdWithoutRegistration(rootContainer)
 			result.Err = rootCmd.ExecuteContext(ctx)
 			return result
 		}
@@ -1167,7 +1268,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 
 			if installed {
 				// Extension was installed, build command tree and execute
-				rootCmd := NewRootCmd(false, nil, rootContainer)
+				rootCmd := newRootCmdWithoutRegistration(rootContainer)
 				result.Err = rootCmd.ExecuteContext(ctx)
 				return result
 			}

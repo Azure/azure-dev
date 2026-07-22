@@ -46,16 +46,18 @@ func (m *fakeExtensionAutoInstallManager) FindExtensions(
 				continue
 			}
 		}
-		hasCapabilityAndProvider := slices.ContainsFunc(
-			extension.Versions,
-			func(version extensions.ExtensionVersion) bool {
-				return slices.Contains(version.Capabilities, options.Capability) &&
-					slices.ContainsFunc(version.Providers, func(provider extensions.Provider) bool {
-						return provider.Name == options.Provider
-					})
-			},
-		)
-		if options.Capability != "" && !hasCapabilityAndProvider {
+		hasCapability := slices.ContainsFunc(extension.Versions, func(version extensions.ExtensionVersion) bool {
+			return slices.Contains(version.Capabilities, options.Capability)
+		})
+		if options.Capability != "" && !hasCapability {
+			continue
+		}
+		hasProvider := slices.ContainsFunc(extension.Versions, func(version extensions.ExtensionVersion) bool {
+			return slices.ContainsFunc(version.Providers, func(provider extensions.Provider) bool {
+				return provider.Name == options.Provider
+			})
+		})
+		if options.Provider != "" && !hasProvider {
 			continue
 		}
 		matches = append(matches, extension)
@@ -170,7 +172,10 @@ func TestMissingProjectExtensionsSkipsInstalledProviderAcrossSources(t *testing.
 				Versions: []extensions.ExtensionVersion{{
 					Version:      "0.7.0",
 					Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
-					Providers:    []extensions.Provider{{Name: "demo"}},
+					Providers: []extensions.Provider{{
+						Name: "demo",
+						Type: extensions.ServiceTargetProviderType,
+					}},
 				}},
 			},
 			{
@@ -179,7 +184,10 @@ func TestMissingProjectExtensionsSkipsInstalledProviderAcrossSources(t *testing.
 				Versions: []extensions.ExtensionVersion{{
 					Version:      "0.7.0",
 					Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
-					Providers:    []extensions.Provider{{Name: "demo"}},
+					Providers: []extensions.Provider{{
+						Name: "demo",
+						Type: extensions.ServiceTargetProviderType,
+					}},
 				}},
 			},
 		},
@@ -317,7 +325,10 @@ func TestMissingProjectExtensionsSkipsExtensionPackDependencies(t *testing.T) {
 				Versions: []extensions.ExtensionVersion{{
 					Version:      "1.0.0",
 					Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
-					Providers:    []extensions.Provider{{Name: "azure.ai.project"}},
+					Providers: []extensions.Provider{{
+						Name: "azure.ai.project",
+						Type: extensions.ServiceTargetProviderType,
+					}},
 				}},
 			},
 		},
@@ -370,7 +381,10 @@ func TestMissingProjectExtensionsRejectsDependencyVersionWithoutProvider(t *test
 					{
 						Version:      "2.0.0",
 						Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
-						Providers:    []extensions.Provider{{Name: "demo"}},
+						Providers: []extensions.Provider{{
+							Name: "demo",
+							Type: extensions.ServiceTargetProviderType,
+						}},
 					},
 				},
 			},
@@ -398,6 +412,167 @@ func TestMissingProjectExtensionsRejectsDependencyVersionWithoutProvider(t *test
 
 	require.ErrorContains(t, err, "test.pack requires dependency test.provider version 1.0.0")
 	require.ErrorContains(t, err, `does not provide service-target-provider "demo"`)
+}
+
+func TestMissingProjectExtensionsRejectsInstalledDependencyWithoutProvider(t *testing.T) {
+	manager := &fakeExtensionAutoInstallManager{
+		available: []*extensions.ExtensionMetadata{
+			{
+				Id:     "test.pack",
+				Source: "azd",
+				Versions: []extensions.ExtensionVersion{{
+					Version: "1.0.0",
+					Dependencies: []extensions.ExtensionDependency{
+						{Id: "test.provider"},
+					},
+				}},
+			},
+			{
+				Id:     "test.provider",
+				Source: "azd",
+				Versions: []extensions.ExtensionVersion{
+					{Version: "1.0.0"},
+					{
+						Version:      "2.0.0",
+						Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
+						Providers: []extensions.Provider{{
+							Name: "demo",
+							Type: extensions.ServiceTargetProviderType,
+						}},
+					},
+				},
+			},
+		},
+		installed: map[string]*extensions.Extension{
+			"test.provider": {
+				Id:      "test.provider",
+				Version: "1.0.0",
+			},
+		},
+	}
+	projectConfig := &project.ProjectConfig{
+		RequiredVersions: &project.RequiredVersions{
+			Extensions: map[string]*string{
+				"test.pack": new("1.0.0"),
+			},
+		},
+		Services: map[string]*project.ServiceConfig{
+			"demo": {Host: "demo"},
+		},
+	}
+
+	_, err := missingProjectExtensions(
+		t.Context(),
+		mockinput.NewMockConsole(),
+		manager,
+		projectConfig,
+	)
+
+	require.ErrorContains(t, err, "test.pack requires dependency test.provider version 1.0.0")
+	require.ErrorContains(t, err, `does not provide service-target-provider "demo"`)
+}
+
+func TestMissingProjectExtensionsIgnoresSplitProviderMetadata(t *testing.T) {
+	manager := &fakeExtensionAutoInstallManager{
+		available: []*extensions.ExtensionMetadata{
+			{
+				Id:     "test.provider",
+				Source: "azd",
+				Versions: []extensions.ExtensionVersion{
+					{
+						Version:      "1.0.0",
+						Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
+					},
+					{
+						Version: "2.0.0",
+						Providers: []extensions.Provider{{
+							Name: "demo",
+							Type: extensions.ServiceTargetProviderType,
+						}},
+					},
+				},
+			},
+		},
+		installed: map[string]*extensions.Extension{},
+	}
+	projectConfig := &project.ProjectConfig{
+		Services: map[string]*project.ServiceConfig{
+			"demo": {Host: "demo"},
+		},
+	}
+
+	// The mock has no Select response. No single version provides both the capability and provider.
+	requirements, err := missingProjectExtensions(
+		t.Context(),
+		mockinput.NewMockConsole(),
+		manager,
+		projectConfig,
+	)
+
+	require.NoError(t, err)
+	require.Empty(t, requirements)
+}
+
+func TestMissingProjectExtensionsInstalledIdIsCaseInsensitive(t *testing.T) {
+	manager := &fakeExtensionAutoInstallManager{
+		installed: map[string]*extensions.Extension{
+			"microsoft.foundry": {
+				Id:      "microsoft.foundry",
+				Version: "1.0.0",
+			},
+		},
+	}
+	projectConfig := &project.ProjectConfig{
+		RequiredVersions: &project.RequiredVersions{
+			Extensions: map[string]*string{
+				"Microsoft.Foundry": new("1.0.0"),
+			},
+		},
+	}
+
+	requirements, err := missingProjectExtensions(
+		t.Context(),
+		mockinput.NewMockConsole(),
+		manager,
+		projectConfig,
+	)
+
+	require.NoError(t, err)
+	require.Empty(t, requirements)
+}
+
+func TestExtensionVersionProvidesProviderMatchesType(t *testing.T) {
+	version := &extensions.ExtensionVersion{
+		Capabilities: []extensions.CapabilityType{
+			extensions.ServiceTargetProviderCapability,
+			extensions.ProvisioningProviderCapability,
+		},
+		Providers: []extensions.Provider{
+			{Name: "service", Type: extensions.ServiceTargetProviderType},
+			{Name: "infra", Type: extensions.ProvisioningProviderType},
+		},
+	}
+
+	require.True(t, extensionVersionProvidesProvider(
+		version,
+		extensions.ServiceTargetProviderCapability,
+		"service",
+	))
+	require.True(t, extensionVersionProvidesProvider(
+		version,
+		extensions.ProvisioningProviderCapability,
+		"infra",
+	))
+	require.False(t, extensionVersionProvidesProvider(
+		version,
+		extensions.ServiceTargetProviderCapability,
+		"infra",
+	))
+	require.False(t, extensionVersionProvidesProvider(
+		version,
+		extensions.ProvisioningProviderCapability,
+		"service",
+	))
 }
 
 func TestDisplayAutoInstallError(t *testing.T) {

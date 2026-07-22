@@ -38,6 +38,14 @@ func (m *fakeExtensionAutoInstallManager) FindExtensions(
 		if options.Id != "" && extension.Id != options.Id {
 			continue
 		}
+		if options.Source != "" && !strings.EqualFold(extension.Source, options.Source) {
+			continue
+		}
+		if options.Version != "" {
+			if _, err := extensions.ResolveExtensionVersion(extension, options.Version, nil); err != nil {
+				continue
+			}
+		}
 		hasCapabilityAndProvider := slices.ContainsFunc(
 			extension.Versions,
 			func(version extensions.ExtensionVersion) bool {
@@ -119,10 +127,6 @@ func TestMissingProjectExtensions(t *testing.T) {
 						Name: "microsoft.foundry",
 						Type: extensions.ProvisioningProviderType,
 					}},
-					Dependencies: []extensions.ExtensionDependency{
-						{Id: "azure.ai.projects"},
-						{Id: "azure.ai.agents"},
-					},
 				}},
 			},
 		},
@@ -155,6 +159,269 @@ func TestMissingProjectExtensions(t *testing.T) {
 	assert.Equal(t, "azure.ai.projects", requirements[2].extension.Id)
 	require.Len(t, requirements[2].extension.Versions, 1)
 	assert.Equal(t, "1.0.0", requirements[2].extension.Versions[0].Version)
+}
+
+func TestMissingProjectExtensionsSkipsInstalledProviderAcrossSources(t *testing.T) {
+	manager := &fakeExtensionAutoInstallManager{
+		available: []*extensions.ExtensionMetadata{
+			{
+				Id:     "microsoft.azd.demo",
+				Source: "azd",
+				Versions: []extensions.ExtensionVersion{{
+					Version:      "0.7.0",
+					Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
+					Providers:    []extensions.Provider{{Name: "demo"}},
+				}},
+			},
+			{
+				Id:     "microsoft.azd.demo",
+				Source: "local",
+				Versions: []extensions.ExtensionVersion{{
+					Version:      "0.7.0",
+					Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
+					Providers:    []extensions.Provider{{Name: "demo"}},
+				}},
+			},
+		},
+		installed: map[string]*extensions.Extension{
+			"microsoft.azd.demo": {
+				Id:      "microsoft.azd.demo",
+				Version: "0.3.0",
+				Source:  "azd",
+			},
+		},
+	}
+	projectConfig := &project.ProjectConfig{
+		Services: map[string]*project.ServiceConfig{
+			"demo": {Host: "demo"},
+		},
+	}
+
+	// The mock has no Select response. The test panics if source selection is prompted.
+	requirements, err := missingProjectExtensions(
+		t.Context(),
+		mockinput.NewMockConsole(),
+		manager,
+		projectConfig,
+	)
+
+	require.NoError(t, err)
+	require.Empty(t, requirements)
+}
+
+func TestMissingProjectExtensionsReusesSourceChoiceAcrossProviders(t *testing.T) {
+	providerVersion := extensions.ExtensionVersion{
+		Version: "0.7.0",
+		Capabilities: []extensions.CapabilityType{
+			extensions.ServiceTargetProviderCapability,
+			extensions.ProvisioningProviderCapability,
+		},
+		Providers: []extensions.Provider{
+			{Name: "demo", Type: extensions.ServiceTargetProviderType},
+			{Name: "demo", Type: extensions.ProvisioningProviderType},
+		},
+	}
+	manager := &fakeExtensionAutoInstallManager{
+		available: []*extensions.ExtensionMetadata{
+			{
+				Id:       "microsoft.azd.demo",
+				Source:   "azd",
+				Versions: []extensions.ExtensionVersion{providerVersion},
+			},
+			{
+				Id:       "microsoft.azd.demo",
+				Source:   "local",
+				Versions: []extensions.ExtensionVersion{providerVersion},
+			},
+		},
+		installed: map[string]*extensions.Extension{},
+	}
+	projectConfig := &project.ProjectConfig{
+		Services: map[string]*project.ServiceConfig{
+			"demo": {Host: "demo"},
+		},
+		Infra: provisioning.Options{Provider: "demo"},
+	}
+	selectCount := 0
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		selectCount++
+		return true
+	}).Respond(0)
+
+	requirements, err := missingProjectExtensions(t.Context(), console, manager, projectConfig)
+
+	require.NoError(t, err)
+	require.Len(t, requirements, 1)
+	require.Equal(t, "azd", requirements[0].extension.Source)
+	require.Equal(t, 1, selectCount)
+}
+
+func TestMissingProjectExtensionsSkipsExtensionPackDependencies(t *testing.T) {
+	manager := &fakeExtensionAutoInstallManager{
+		available: []*extensions.ExtensionMetadata{
+			{
+				Id:     "microsoft.foundry",
+				Source: "azd",
+				Versions: []extensions.ExtensionVersion{{
+					Version: "1.0.0",
+					Dependencies: []extensions.ExtensionDependency{
+						{Id: "microsoft.foundry.bundle"},
+					},
+				}},
+			},
+			{
+				Id:     "microsoft.foundry.bundle",
+				Source: "azd",
+				Versions: []extensions.ExtensionVersion{{
+					Version: "1.0.0",
+					Dependencies: []extensions.ExtensionDependency{
+						{Id: "azure.ai.agents"},
+						{Id: "azure.ai.projects"},
+					},
+				}},
+			},
+			{
+				Id:     "azure.ai.agents",
+				Source: "azd",
+				Versions: []extensions.ExtensionVersion{{
+					Version: "1.0.0",
+					Capabilities: []extensions.CapabilityType{
+						extensions.ServiceTargetProviderCapability,
+						extensions.ProvisioningProviderCapability,
+					},
+					Providers: []extensions.Provider{
+						{Name: "azure.ai.agent", Type: extensions.ServiceTargetProviderType},
+						{Name: "microsoft.foundry", Type: extensions.ProvisioningProviderType},
+					},
+				}},
+			},
+			{
+				Id:     "azure.ai.agents",
+				Source: "local",
+				Versions: []extensions.ExtensionVersion{{
+					Version: "1.0.0",
+					Capabilities: []extensions.CapabilityType{
+						extensions.ServiceTargetProviderCapability,
+						extensions.ProvisioningProviderCapability,
+					},
+					Providers: []extensions.Provider{
+						{Name: "azure.ai.agent", Type: extensions.ServiceTargetProviderType},
+						{Name: "microsoft.foundry", Type: extensions.ProvisioningProviderType},
+					},
+				}},
+			},
+			{
+				Id:     "azure.ai.projects",
+				Source: "azd",
+				Versions: []extensions.ExtensionVersion{{
+					Version:      "1.0.0",
+					Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
+					Providers:    []extensions.Provider{{Name: "azure.ai.project"}},
+				}},
+			},
+		},
+		installed: map[string]*extensions.Extension{},
+	}
+	projectConfig := &project.ProjectConfig{
+		RequiredVersions: &project.RequiredVersions{
+			Extensions: map[string]*string{
+				"microsoft.foundry": new("1.0.0"),
+			},
+		},
+		Services: map[string]*project.ServiceConfig{
+			"agent":   {Host: "azure.ai.agent"},
+			"project": {Host: "azure.ai.project"},
+		},
+		Infra: provisioning.Options{Provider: "microsoft.foundry"},
+	}
+
+	// The mock has no Select response. The test panics if a pack dependency prompts for a source.
+	requirements, err := missingProjectExtensions(
+		t.Context(),
+		mockinput.NewMockConsole(),
+		manager,
+		projectConfig,
+	)
+
+	require.NoError(t, err)
+	require.Len(t, requirements, 1)
+	require.Equal(t, "microsoft.foundry", requirements[0].extension.Id)
+}
+
+func TestMissingProjectExtensionsRejectsDependencyVersionWithoutProvider(t *testing.T) {
+	manager := &fakeExtensionAutoInstallManager{
+		available: []*extensions.ExtensionMetadata{
+			{
+				Id:     "test.pack",
+				Source: "azd",
+				Versions: []extensions.ExtensionVersion{{
+					Version: "1.0.0",
+					Dependencies: []extensions.ExtensionDependency{
+						{Id: "test.provider", Version: "1.0.0"},
+					},
+				}},
+			},
+			{
+				Id:     "test.provider",
+				Source: "azd",
+				Versions: []extensions.ExtensionVersion{
+					{Version: "1.0.0"},
+					{
+						Version:      "2.0.0",
+						Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
+						Providers:    []extensions.Provider{{Name: "demo"}},
+					},
+				},
+			},
+		},
+		installed: map[string]*extensions.Extension{},
+	}
+	projectConfig := &project.ProjectConfig{
+		RequiredVersions: &project.RequiredVersions{
+			Extensions: map[string]*string{
+				"test.pack": new("1.0.0"),
+			},
+		},
+		Services: map[string]*project.ServiceConfig{
+			"demo": {Host: "demo"},
+		},
+	}
+
+	// The mock has no Select response. The dependency conflict must fail before prompting.
+	_, err := missingProjectExtensions(
+		t.Context(),
+		mockinput.NewMockConsole(),
+		manager,
+		projectConfig,
+	)
+
+	require.ErrorContains(t, err, "test.pack requires dependency test.provider version 1.0.0")
+	require.ErrorContains(t, err, `does not provide service-target-provider "demo"`)
+}
+
+func TestDisplayAutoInstallError(t *testing.T) {
+	t.Run("RegularError", func(t *testing.T) {
+		console := mockinput.NewMockConsole()
+
+		displayAutoInstallError(t.Context(), console, fmt.Errorf("install failed"))
+
+		require.Contains(t, strings.Join(console.Output(), "\n"), "ERROR: install failed")
+	})
+
+	t.Run("ErrorWithSuggestion", func(t *testing.T) {
+		console := mockinput.NewMockConsole()
+
+		displayAutoInstallError(t.Context(), console, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("install failed"),
+			Message:    "The required extension could not be installed.",
+			Suggestion: "Check the extension version and retry.",
+		})
+
+		output := strings.Join(console.Output(), "\n")
+		require.Contains(t, output, "ERROR: The required extension could not be installed.")
+		require.Contains(t, output, "Suggestion: Check the extension version and retry.")
+	})
 }
 
 func TestProjectCommandSupportsExtensionAutoInstall(t *testing.T) {

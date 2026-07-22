@@ -381,6 +381,13 @@ func Test_MatchesVersionConstraint(t *testing.T) {
 	}
 }
 
+func TestResolveExtensionVersionNil(t *testing.T) {
+	version, err := ResolveExtensionVersion(nil, "", nil)
+
+	require.Nil(t, version)
+	require.EqualError(t, err, "extension metadata cannot be nil")
+}
+
 func Test_CreateExtensionFilter_VersionConstraints(t *testing.T) {
 	ext := &ExtensionMetadata{
 		Id: "test.constraints",

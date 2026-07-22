@@ -84,6 +84,7 @@ func TestToolFirstRunMiddleware_SkipConditions(t *testing.T) {
 			// The default for everyone who hasn't opted in.
 			name: "SkipWhenEnvVarUnset",
 			setup: func(t *testing.T, _ *mockinput.MockConsole, _ config.Config, _ *internal.GlobalCommandOptions) {
+				t.Setenv(envKeySkipFirstRun, "")
 				os.Unsetenv(envKeySkipFirstRun)
 			},
 			wantSkip: true,
@@ -241,6 +242,7 @@ func TestToolFirstRunMiddleware_EmitsSkipReason(t *testing.T) {
 		{
 			name: "default_disabled",
 			setup: func(t *testing.T, _ *mockinput.MockConsole, _ config.Config, _ *internal.GlobalCommandOptions) {
+				t.Setenv(envKeySkipFirstRun, "")
 				os.Unsetenv(envKeySkipFirstRun)
 			},
 			wantReason: skipReasonDefaultDisabled,

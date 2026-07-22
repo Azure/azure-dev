@@ -35,6 +35,9 @@ jobs:
     timeoutInMinutes: 180
     steps:
       - checkout: self
+
+      - template: /eng/common/pipelines/templates/steps/maven-authenticate.yml
+
       - template: /eng/pipelines/templates/steps/setup-go.yml
 
       - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml

@@ -158,6 +158,8 @@ stages:
         steps:
           - checkout: self
 
+          - template: /eng/common/pipelines/templates/steps/pypi-auth-dev-feed.yml
+
           - template: /eng/pipelines/templates/steps/setup-go.yml
 
           - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml

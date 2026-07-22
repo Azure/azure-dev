@@ -182,7 +182,7 @@ func TestTelemetryService_DuplicateCollapses(t *testing.T) {
 	svc := NewTelemetryService()
 	ctx := serviceTargetClaims()
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		resp, err := svc.AddCommandUsageAttribute(ctx, validRequest("code"))
 		require.NoError(t, err)
 		require.True(t, resp.Accepted)
@@ -204,14 +204,12 @@ func TestTelemetryService_ConcurrentReports(t *testing.T) {
 
 	modes := []string{"code", "container", "byo_image"}
 	var wg sync.WaitGroup
-	for i := 0; i < 60; i++ {
+	for i := range 60 {
 		value := modes[i%len(modes)]
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, err := svc.AddCommandUsageAttribute(ctx, validRequest(value))
 			require.NoError(t, err)
-		}()
+		})
 	}
 	wg.Wait()
 

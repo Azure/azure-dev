@@ -92,13 +92,11 @@ func TestCommandUsage_ConcurrentValues(t *testing.T) {
 
 	modes := []string{"code", "container", "byo_image"}
 	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		mode := modes[i%len(modes)]
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			TryAppendCommandUsageUnique(testEligibleEvents(), testUsageKey, mode)
-		}()
+		})
 	}
 	wg.Wait()
 

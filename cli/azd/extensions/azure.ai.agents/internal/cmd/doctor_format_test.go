@@ -403,10 +403,10 @@ func TestCapitalize(t *testing.T) {
 		"1 of 1 agents":            "1 of 1 agents",
 		"`azure.ai.agent`":         "`azure.ai.agent`",
 		// Brand-name leads stay lowercase.
-		"skipped: upstream blocked":    "skipped: upstream blocked",
-		"azd extension reachable":      "azd extension reachable",
-		"azure.yaml parsed":            "azure.yaml parsed",
-		"agent.yaml valid for service": "agent.yaml valid for service",
+		"skipped: upstream blocked":          "skipped: upstream blocked",
+		"azd extension reachable":            "azd extension reachable",
+		"azure.yaml parsed":                  "azure.yaml parsed",
+		"agent definition valid for service": "Agent definition valid for service",
 		// Generic lowercase leads do get capitalized.
 		"cancelled by user":              "Cancelled by user",
 		"no manual env vars are missing": "No manual env vars are missing",

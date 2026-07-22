@@ -47,7 +47,7 @@ integration.
 | `AZD_FORCE_TTY` | If true, forces `azd` to write terminal-style output. |
 | `AZD_IN_CLOUDSHELL` | If true, `azd` runs with Azure Cloud Shell specific behavior. |
 | `AZD_SKIP_UPDATE_CHECK` | If true, skips the out-of-date update check output that is typically printed at the end of the command. |
-| `AZD_SKIP_FIRST_RUN` | If true, skips the first-run tool setup experience and background tool update checks. Useful for CI/CD pipelines and automated environments. |
+| `AZD_SKIP_FIRST_RUN` | Controls the first-run tool setup experience, which is **off by default**: set to `false` to opt in to it. If true, also skips background tool update checks, which are otherwise on by default. Useful for CI/CD pipelines and automated environments. |
 | `AZD_CONTAINER_RUNTIME` | The container runtime to use (e.g., `docker`, `podman`). |
 | `AZD_ALLOW_NON_EMPTY_FOLDER` | If set, allows `azd init` to run in a non-empty directory without prompting. |
 | `AZD_BUILDER_IMAGE` | The builder docker image used to perform Dockerfile-less builds. |

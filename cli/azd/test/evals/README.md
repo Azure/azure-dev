@@ -10,7 +10,7 @@ From this folder, install dependencies and run the eval:
 # assuming node v24+
 npm ci
 
-# see below for various run scripts you can use to try out different evals, or try them all 
+# see below for various run scripts you can use to try out different evals, or try them all
 # at once!
 ```
 
@@ -30,15 +30,24 @@ Each eval definition targets a different azd scenario. Run them via npm:
 
 ## Main folders
 
-Vally evaluations are controlled by the `eval.yaml`. The structure for everything
-else is up to us:
+Each Vally evaluation is controlled by its own `eval-*.yaml`. The structure for
+everything else is up to us:
 
 ```text
 evals/
-├── eval.yaml           # eval definition
-├── fixtures/           # input files used by the eval
-├── graders/            # custom grader logic
-└── vally-results/      # output from local runs
+├── eval.yaml                     # starter example (npm run eval:simple)
+├── eval-azd-qna.yaml             # Q&A / error scenarios
+├── eval-azd-deploy.yaml          # deploy + environment scenarios
+├── eval-azd.experiments.yaml     # skills on/off experiment
+├── fixtures/                     # input files mounted into eval worktrees
+├── graders/                      # custom grader logic
+├── skills/azd/                   # the azd skill injected during evals
+├── make-vally-report.go          # report generator (npm run report)
+|  # these are output folders from vally itself. They're just JSON/JSONL files, so you can parse
+|  # them yourself, or just use make-vally-report.go as a starting point.
+|  #
+├── vally-results/                # output from local eval runs
+└── vally-experiment-results/     # output from local experiment runs
 ```
 
 ## Useful links

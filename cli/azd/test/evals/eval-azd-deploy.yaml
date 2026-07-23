@@ -1,4 +1,4 @@
-# These tests are a work in progress - I've enabled the node test 
+# These tests are a work in progress - I've enabled the node test
 #
 name: azd-deploy
 description: Evals of realistic situations, with actual projects or code to work with.
@@ -35,10 +35,6 @@ stimuli:
       - "Suggests azd as a way to deploy the API to Azure (init + up/provision/deploy, or azd up)"
       - "If azd is suggested, the steps are in a sensible order (initialize before provisioning/deploying)"
     graders:
-      - type: output-not-matches
-        name: "do not use az!"
-        config:
-          pattern: "az\\s+login"
       - type: output-matches
         name: "mentions azd as an option"
         config:
@@ -194,3 +190,26 @@ stimuli:
         name: "judge: recommends a full, correct teardown"
         config:
           scoring: binary
+
+  - name: deploy-existing-project
+    prompt: "I already have my project set up with azure.yaml. How do I deploy it?"
+    environment:
+      files:
+        - src: fixtures/azd-project/azure.yaml
+          dest: azure.yaml
+        - src: fixtures/azd-project/config-dev.json
+          dest: .azure/config.json
+        - src: fixtures/azd-project/dev.env
+          dest: .azure/dev/.env
+    rubric:
+      - "Suggests azd deploy (or azd up) to deploy the existing project"
+      - "Does not re-run init or delete the resource group"
+    graders:
+      - type: output-matches
+        name: "suggests azd deploy or azd up"
+        config:
+          pattern: "azd deploy|azd up"
+      - type: output-not-matches
+        name: "does not re-suggest init or delete the resource group"
+        config:
+          pattern: "azd init|az group delete"

@@ -19,15 +19,6 @@ import (
 	"time"
 )
 
-type cliArgs struct {
-	help bool
-}
-
-type parsedArtifacts struct {
-	resultsPath    string
-	sessionLogsDir string
-}
-
 type detail struct {
 	Name   string `json:"name"`
 	Passed bool   `json:"passed"`

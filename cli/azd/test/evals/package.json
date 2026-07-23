@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "eval:simple": "npx vally eval -e ./eval.yaml",
-    "eval:troubleshoot": "npx vally eval -e ./eval-azd-troubleshooting.yaml",
+    "eval:qna": "npx vally eval -e ./eval-azd-qna.yaml",
     "eval:deploy": "npx vally eval -e ./eval-azd-deploy.yaml",
     "eval:experiment": "npx vally experiment run ./eval-azd.experiments.yaml",
     "report": "go run ./make-vally-report.go"

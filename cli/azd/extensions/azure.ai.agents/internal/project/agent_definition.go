@@ -5,7 +5,6 @@ package project
 
 import (
 	"fmt"
-	"log"
 	"maps"
 	"os"
 	"sync"
@@ -594,6 +593,9 @@ func agentDefinitionFromStruct(s *structpb.Struct, coreImage string) (agent_yaml
 	}
 
 	if inline.Kind != agent_yaml.AgentKindHosted {
+		if err := validateAgentServiceDefinition(s.AsMap()); err != nil {
+			return agent_yaml.ContainerAgent{}, false, err
+		}
 		return agent_yaml.ContainerAgent{}, false, nil
 	}
 
@@ -608,21 +610,8 @@ func agentDefinitionFromStruct(s *structpb.Struct, coreImage string) (agent_yaml
 
 	ca := inline.toContainerAgent(cfg.Container, coreImage)
 
-	// Validate the inline definition with the same rules the on-disk agent.yaml
-	// path uses (kind, name format, policies), so an inline definition cannot
-	// silently bypass validation. Marshal back to YAML so ValidateAgentDefinition
-	// sees the same shape it expects from disk.
-	if defBytes, marshalErr := yaml.Marshal(ca); marshalErr != nil {
-		// A ContainerAgent should always marshal; log at debug so a regression
-		// here is visible during troubleshooting rather than silently skipping
-		// validation.
-		log.Printf("[debug] skipping inline agent definition validation: marshal to YAML failed: %v", marshalErr)
-	} else if err := agent_yaml.ValidateAgentDefinition(defBytes); err != nil {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("agent service definition is not valid: %s", err),
-			"fix the agent service entry in azure.yaml or re-run `azd ai agent init`",
-		)
+	if err := validateAgentServiceDefinition(ca); err != nil {
+		return agent_yaml.ContainerAgent{}, false, err
 	}
 
 	if ca.Image != "" && !containerImageRefRe.MatchString(ca.Image) {
@@ -634,6 +623,28 @@ func agentDefinitionFromStruct(s *structpb.Struct, coreImage string) (agent_yaml
 	}
 
 	return ca, true, nil
+}
+
+func validateAgentServiceDefinition(definition any) error {
+	defBytes, err := yaml.Marshal(definition)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf(
+				"agent service definition is not valid: failed to marshal: %s",
+				err,
+			),
+			"fix the agent service entry in azure.yaml or re-run `azd ai agent init`",
+		)
+	}
+	if err := agent_yaml.ValidateAgentDefinition(defBytes); err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("agent service definition is not valid: %s", err),
+			"fix the agent service entry in azure.yaml or re-run `azd ai agent init`",
+		)
+	}
+	return nil
 }
 
 // agentDefinitionFromDisk reads a legacy agent.yaml/agent.yml from the service

@@ -230,6 +230,81 @@ func TestAgentDefinitionFromService_InvalidDefinition(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestLoadAgentDefinition_ResolvedKindValidation(t *testing.T) {
+	tests := []struct {
+		name       string
+		kind       agent_yaml.AgentKind
+		useFileRef bool
+		wantError  bool
+	}{
+		{
+			name:      "inline invalid kind",
+			kind:      "nonsense",
+			wantError: true,
+		},
+		{
+			name: "valid workflow",
+			kind: agent_yaml.AgentKindWorkflow,
+		},
+		{
+			name:       "referenced invalid kind",
+			kind:       "nonsense",
+			useFileRef: true,
+			wantError:  true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			projectRoot := t.TempDir()
+			propsValues := map[string]any{
+				"kind": string(test.kind),
+				"name": "kind-test-agent",
+			}
+			if test.useFileRef {
+				require.NoError(t, os.WriteFile(
+					filepath.Join(projectRoot, "definition.yaml"),
+					[]byte(
+						"kind: "+string(test.kind)+"\n"+
+							"name: kind-test-agent\n",
+					),
+					0o600,
+				))
+				propsValues = map[string]any{
+					"$ref": "./definition.yaml",
+				}
+			}
+
+			props, err := structpb.NewStruct(propsValues)
+			require.NoError(t, err)
+			svc := &azdext.ServiceConfig{
+				Name:                 "kind-test-agent",
+				Host:                 "azure.ai.agent",
+				AdditionalProperties: props,
+			}
+
+			_, isHosted, source, err := LoadAgentDefinition(
+				svc,
+				projectRoot,
+			)
+
+			if test.wantError {
+				require.ErrorContains(
+					t,
+					err,
+					"template.kind must be one of",
+				)
+			} else {
+				require.NoError(t, err)
+			}
+			require.False(t, isHosted)
+			require.Equal(t, AgentDefinitionSourceInline, source)
+		})
+	}
+}
+
 func TestLoadAgentDefinition_ToolboxServiceReference(t *testing.T) {
 	t.Parallel()
 

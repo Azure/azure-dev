@@ -7,12 +7,14 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // ---- Check `local.agent-service-detected` ----
@@ -287,20 +289,20 @@ func TestCheckProjectEndpointSet_ValidValue_Passes(t *testing.T) {
 
 // ---- Check `local.agent-yaml-valid` ----
 
-func TestCheckAgentYAMLValid_NoClient_Skips(t *testing.T) {
+func TestCheckAgentDefinitionValid_NoClient_Skips(t *testing.T) {
 	t.Parallel()
 
-	check := newCheckAgentYAMLValid(Dependencies{AzdClient: nil})
+	check := newCheckAgentDefinitionValid(Dependencies{AzdClient: nil})
 	got := check.Fn(t.Context(), Options{}, nil)
 
 	require.Equal(t, StatusSkip, got.Status)
 }
 
-func TestCheckAgentYAMLValid_PriorAgentDetectionFailed_Skips(t *testing.T) {
+func TestCheckAgentDefinitionValid_PriorAgentDetectionFailed_Skips(t *testing.T) {
 	t.Parallel()
 
 	client := newTestAzdClient(t, &fakeProjectServer{}, &fakeEnvironmentServer{})
-	check := newCheckAgentYAMLValid(Dependencies{AzdClient: client})
+	check := newCheckAgentDefinitionValid(Dependencies{AzdClient: client})
 
 	prior := []Result{{ID: "local.agent-service-detected", Status: StatusFail}}
 	got := check.Fn(t.Context(), Options{}, prior)
@@ -309,7 +311,7 @@ func TestCheckAgentYAMLValid_PriorAgentDetectionFailed_Skips(t *testing.T) {
 	require.Contains(t, got.Message, "no agent services detected")
 }
 
-func TestCheckAgentYAMLValid_PriorAgentDetectionSkipped_AlsoSkips(t *testing.T) {
+func TestCheckAgentDefinitionValid_PriorAgentDetectionSkipped_AlsoSkips(t *testing.T) {
 	// Covers the cascade: azure-yaml fails -> agent-service-detected skips ->
 	// agent-yaml-valid must also skip. Without this propagation, check 6
 	// would re-fetch the project (failing identically to check 2) and
@@ -320,7 +322,7 @@ func TestCheckAgentYAMLValid_PriorAgentDetectionSkipped_AlsoSkips(t *testing.T) 
 		// Server set up to fail if reached, to ensure the guard short-circuits.
 		&fakeProjectServer{err: errors.New("should not be called")},
 		&fakeEnvironmentServer{})
-	check := newCheckAgentYAMLValid(Dependencies{AzdClient: client})
+	check := newCheckAgentDefinitionValid(Dependencies{AzdClient: client})
 
 	prior := []Result{{ID: "local.agent-service-detected", Status: StatusSkip}}
 	got := check.Fn(t.Context(), Options{}, prior)
@@ -329,13 +331,13 @@ func TestCheckAgentYAMLValid_PriorAgentDetectionSkipped_AlsoSkips(t *testing.T) 
 	require.Contains(t, got.Message, "no agent services detected or upstream check blocked")
 }
 
-func TestCheckAgentYAMLValid_GRPCError_Fails(t *testing.T) {
+func TestCheckAgentDefinitionValid_GRPCError_Fails(t *testing.T) {
 	t.Parallel()
 
 	client := newTestAzdClient(t,
 		&fakeProjectServer{err: errors.New("rpc boom")},
 		&fakeEnvironmentServer{})
-	check := newCheckAgentYAMLValid(Dependencies{AzdClient: client})
+	check := newCheckAgentDefinitionValid(Dependencies{AzdClient: client})
 
 	got := check.Fn(t.Context(), Options{}, nil)
 
@@ -343,13 +345,13 @@ func TestCheckAgentYAMLValid_GRPCError_Fails(t *testing.T) {
 	require.Contains(t, got.Message, "failed to get project config")
 }
 
-func TestCheckAgentYAMLValid_TransportError_SwapsSuggestion(t *testing.T) {
+func TestCheckAgentDefinitionValid_TransportError_SwapsSuggestion(t *testing.T) {
 	t.Parallel()
 
 	client := newTestAzdClient(t,
 		&fakeProjectServer{err: status.Error(codes.Unavailable, "transport boom")},
 		&fakeEnvironmentServer{})
-	check := newCheckAgentYAMLValid(Dependencies{AzdClient: client})
+	check := newCheckAgentDefinitionValid(Dependencies{AzdClient: client})
 
 	got := check.Fn(t.Context(), Options{}, nil)
 
@@ -357,7 +359,7 @@ func TestCheckAgentYAMLValid_TransportError_SwapsSuggestion(t *testing.T) {
 	require.Contains(t, got.Suggestion, "gRPC channel")
 }
 
-func TestCheckAgentYAMLValid_OneServiceValid_Passes(t *testing.T) {
+func TestCheckAgentDefinitionValid_OneServiceValid_Passes(t *testing.T) {
 	t.Parallel()
 
 	projectPath := t.TempDir()
@@ -382,15 +384,96 @@ protocols:
 			},
 		}},
 		&fakeEnvironmentServer{})
-	check := newCheckAgentYAMLValid(Dependencies{AzdClient: client})
+	check := newCheckAgentDefinitionValid(Dependencies{AzdClient: client})
 
 	got := check.Fn(t.Context(), Options{}, nil)
 
 	require.Equal(t, StatusPass, got.Status)
-	require.Contains(t, got.Message, "agent.yaml valid for 1 service(s)")
+	require.Contains(t, got.Message, "agent definition valid for 1 service(s)")
+	validated, ok := got.Details["validatedServices"].([]string)
+	require.True(t, ok)
+	require.Equal(t, []string{"echo-agent"}, validated)
 }
 
-func TestCheckAgentYAMLValid_NonAgentServicesIgnored(t *testing.T) {
+func TestCheckAgentDefinitionValid_InlineWithoutFile_Passes(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "echo-agent",
+	})
+	require.NoError(t, err)
+
+	client := newTestAzdClient(t,
+		&fakeProjectServer{resp: &azdext.GetProjectResponse{
+			Project: &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{
+					"echo-agent": {
+						Name:                 "echo-agent",
+						Host:                 agentHost,
+						RelativePath:         "src/agent",
+						AdditionalProperties: props,
+					},
+				},
+			},
+		}},
+		&fakeEnvironmentServer{})
+	check := newCheckAgentDefinitionValid(
+		Dependencies{AzdClient: client},
+	)
+
+	got := check.Fn(t.Context(), Options{}, nil)
+
+	require.Equal(t, StatusPass, got.Status)
+	require.Contains(t, got.Message, "agent definition valid")
+}
+
+func TestCheckAgentDefinitionValid_InlineWinsOverStaleFile(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	projectPath := t.TempDir()
+	writeYAML(
+		t,
+		projectPath,
+		"src/agent/agent.yaml",
+		"name: broken\n  bad-indent: oops\n",
+	)
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "echo-agent",
+	})
+	require.NoError(t, err)
+
+	client := newTestAzdClient(t,
+		&fakeProjectServer{resp: &azdext.GetProjectResponse{
+			Project: &azdext.ProjectConfig{
+				Path: projectPath,
+				Services: map[string]*azdext.ServiceConfig{
+					"echo-agent": {
+						Name:                 "echo-agent",
+						Host:                 agentHost,
+						RelativePath:         "src/agent",
+						AdditionalProperties: props,
+					},
+				},
+			},
+		}},
+		&fakeEnvironmentServer{})
+	check := newCheckAgentDefinitionValid(
+		Dependencies{AzdClient: client},
+	)
+
+	got := check.Fn(t.Context(), Options{}, nil)
+
+	require.Equal(t, StatusPass, got.Status)
+}
+
+func TestCheckAgentDefinitionValid_NonAgentServicesIgnored(t *testing.T) {
 	t.Parallel()
 
 	projectPath := t.TempDir()
@@ -408,18 +491,17 @@ func TestCheckAgentYAMLValid_NonAgentServicesIgnored(t *testing.T) {
 			},
 		}},
 		&fakeEnvironmentServer{})
-	check := newCheckAgentYAMLValid(Dependencies{AzdClient: client})
+	check := newCheckAgentDefinitionValid(Dependencies{AzdClient: client})
 
 	got := check.Fn(t.Context(), Options{}, nil)
 
-	require.Equal(t, StatusPass, got.Status, "api service has no agent.yaml — must be skipped, not failed")
-	paths, ok := got.Details["validatedPaths"].([]string)
+	require.Equal(t, StatusPass, got.Status)
+	validated, ok := got.Details["validatedServices"].([]string)
 	require.True(t, ok)
-	require.Len(t, paths, 1)
-	require.Contains(t, paths[0], "src"+string(filepath.Separator)+"agent")
+	require.Equal(t, []string{"echo-agent"}, validated)
 }
 
-func TestCheckAgentYAMLValid_MissingFile_Fails(t *testing.T) {
+func TestCheckAgentDefinitionValid_MissingDefinition_Fails(t *testing.T) {
 	t.Parallel()
 
 	projectPath := t.TempDir()
@@ -435,19 +517,19 @@ func TestCheckAgentYAMLValid_MissingFile_Fails(t *testing.T) {
 			},
 		}},
 		&fakeEnvironmentServer{})
-	check := newCheckAgentYAMLValid(Dependencies{AzdClient: client})
+	check := newCheckAgentDefinitionValid(Dependencies{AzdClient: client})
 
 	got := check.Fn(t.Context(), Options{}, nil)
 
 	require.Equal(t, StatusFail, got.Status)
 	require.Contains(t, got.Message, "echo-agent")
-	require.Contains(t, got.Suggestion, "Fix the YAML")
+	require.Contains(t, got.Suggestion, "azure.yaml")
 	failures, ok := got.Details["failures"].([]string)
 	require.True(t, ok)
 	require.Len(t, failures, 1)
 }
 
-func TestCheckAgentYAMLValid_MalformedYAML_Fails(t *testing.T) {
+func TestCheckAgentDefinitionValid_MalformedLegacyYAML_Fails(t *testing.T) {
 	t.Parallel()
 
 	projectPath := t.TempDir()
@@ -464,7 +546,7 @@ func TestCheckAgentYAMLValid_MalformedYAML_Fails(t *testing.T) {
 			},
 		}},
 		&fakeEnvironmentServer{})
-	check := newCheckAgentYAMLValid(Dependencies{AzdClient: client})
+	check := newCheckAgentDefinitionValid(Dependencies{AzdClient: client})
 
 	got := check.Fn(t.Context(), Options{}, nil)
 
@@ -475,7 +557,7 @@ func TestCheckAgentYAMLValid_MalformedYAML_Fails(t *testing.T) {
 	require.Len(t, failures, 1)
 }
 
-func TestCheckAgentYAMLValid_MixedValidAndInvalid_Fails(t *testing.T) {
+func TestCheckAgentDefinitionValid_MixedValidAndInvalid_Fails(t *testing.T) {
 	t.Parallel()
 
 	projectPath := t.TempDir()
@@ -496,7 +578,7 @@ func TestCheckAgentYAMLValid_MixedValidAndInvalid_Fails(t *testing.T) {
 			},
 		}},
 		&fakeEnvironmentServer{})
-	check := newCheckAgentYAMLValid(Dependencies{AzdClient: client})
+	check := newCheckAgentDefinitionValid(Dependencies{AzdClient: client})
 
 	got := check.Fn(t.Context(), Options{}, nil)
 
@@ -509,9 +591,64 @@ func TestCheckAgentYAMLValid_MixedValidAndInvalid_Fails(t *testing.T) {
 	require.True(t, ok)
 	require.Len(t, failures, 1)
 
-	validated, ok := got.Details["validatedPaths"].([]string)
+	validated, ok := got.Details["validatedServices"].([]string)
 	require.True(t, ok)
-	require.Len(t, validated, 1)
+	require.Equal(t, []string{"ok-agent"}, validated)
+}
+
+func TestCheckAgentDefinitionValid_MultipleFailures_Aggregates(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	client := newTestAzdClient(t,
+		&fakeProjectServer{resp: &azdext.GetProjectResponse{
+			Project: &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{
+					"agent-b": {
+						Name:         "agent-b",
+						Host:         agentHost,
+						RelativePath: "src/b",
+					},
+					"agent-a": {
+						Name:         "agent-a",
+						Host:         agentHost,
+						RelativePath: "src/a",
+					},
+				},
+			},
+		}},
+		&fakeEnvironmentServer{})
+	check := newCheckAgentDefinitionValid(
+		Dependencies{AzdClient: client},
+	)
+
+	got := check.Fn(t.Context(), Options{}, nil)
+
+	require.Equal(t, StatusFail, got.Status)
+	failures, ok := got.Details["failures"].([]string)
+	require.True(t, ok)
+	require.Len(t, failures, 2)
+	require.Contains(t, strings.Join(failures, "\n"), "agent-a:")
+	require.Contains(t, strings.Join(failures, "\n"), "agent-b:")
+}
+
+func TestSortAgentServices(t *testing.T) {
+	t.Parallel()
+
+	services := []*azdext.ServiceConfig{
+		{Name: "agent-b", Host: agentHost},
+		{Name: "agent-a", Host: agentHost},
+	}
+
+	sortAgentServices(services)
+
+	require.Equal(
+		t,
+		[]string{"agent-a", "agent-b"},
+		[]string{services[0].Name, services[1].Name},
+	)
 }
 
 // ---- helper: priorBlocked ----
@@ -552,7 +689,7 @@ func TestPriorBlocked(t *testing.T) {
 	}
 }
 
-func TestCheckAgentYAMLValid_MissingKind_Fails(t *testing.T) {
+func TestCheckAgentDefinitionValid_MissingKind_Fails(t *testing.T) {
 	// Without explicit `kind:`, ValidateAgentDefinition rejects the manifest
 	// because kind is required. Doctor must catch this pre-flight rather
 	// than letting deploy be the first place that surfaces it.
@@ -571,7 +708,7 @@ func TestCheckAgentYAMLValid_MissingKind_Fails(t *testing.T) {
 			},
 		}},
 		&fakeEnvironmentServer{})
-	check := newCheckAgentYAMLValid(Dependencies{AzdClient: client})
+	check := newCheckAgentDefinitionValid(Dependencies{AzdClient: client})
 
 	got := check.Fn(t.Context(), Options{}, nil)
 
@@ -583,7 +720,7 @@ func TestCheckAgentYAMLValid_MissingKind_Fails(t *testing.T) {
 	require.Contains(t, failures[0], "kind")
 }
 
-func TestCheckAgentYAMLValid_InvalidKind_Fails(t *testing.T) {
+func TestCheckAgentDefinitionValid_InvalidKind_Fails(t *testing.T) {
 	// A `kind` that isn't in ValidAgentKinds() (hosted/workflow) must be
 	// rejected. Bare yaml.Unmarshal would silently accept this; the
 	// production deploy path rejects it via ValidateAgentDefinition.
@@ -602,7 +739,7 @@ func TestCheckAgentYAMLValid_InvalidKind_Fails(t *testing.T) {
 			},
 		}},
 		&fakeEnvironmentServer{})
-	check := newCheckAgentYAMLValid(Dependencies{AzdClient: client})
+	check := newCheckAgentDefinitionValid(Dependencies{AzdClient: client})
 
 	got := check.Fn(t.Context(), Options{}, nil)
 
@@ -613,7 +750,7 @@ func TestCheckAgentYAMLValid_InvalidKind_Fails(t *testing.T) {
 	require.Contains(t, failures[0], "kind")
 }
 
-func TestCheckAgentYAMLValid_InvalidName_Fails(t *testing.T) {
+func TestCheckAgentDefinitionValid_InvalidName_Fails(t *testing.T) {
 	// Agent name must match `^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`
 	// (DNS-style). An underscore is invalid for deployable agent names.
 	// Doctor must surface this before deploy, not after.
@@ -632,7 +769,7 @@ func TestCheckAgentYAMLValid_InvalidName_Fails(t *testing.T) {
 			},
 		}},
 		&fakeEnvironmentServer{})
-	check := newCheckAgentYAMLValid(Dependencies{AzdClient: client})
+	check := newCheckAgentDefinitionValid(Dependencies{AzdClient: client})
 
 	got := check.Fn(t.Context(), Options{}, nil)
 

@@ -19,6 +19,7 @@ import (
 	"azureaiagent/internal/project"
 	"azureaiagent/internal/synthesis"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"go.yaml.in/yaml/v3"
 )
@@ -65,6 +66,33 @@ func parseInfraProvider(value string) (string, error) {
 			"pass --infra=bicep or --infra=terraform (a bare --infra ejects Bicep)",
 		)
 	}
+}
+
+// ejectInfraAfterInit ejects from the azd project containing the current
+// directory. Init may create or discover a project above cwd, so use the same
+// upward project resolution as the rest of azd.
+func ejectInfraAfterInit(provider string) error {
+	if provider == "" {
+		return nil
+	}
+
+	projectRoot, err := azdext.GetProjectDir()
+	if errors.Is(err, azdext.ErrProjectNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("resolve azd project directory after init: %w", err)
+	}
+
+	rawYAML, err := os.ReadFile(filepath.Join(projectRoot, "azure.yaml")) //nolint:gosec // resolved azd project file
+	if err != nil {
+		return fmt.Errorf("read azure.yaml after init: %w", err)
+	}
+	if _, err := findFoundryServiceForEject(rawYAML); err != nil {
+		return nil
+	}
+
+	return ejectInfra(projectRoot, provider)
 }
 
 // ejectInfra synthesizes the embedded Bicep templates from azure.yaml and

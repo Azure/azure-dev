@@ -2650,6 +2650,63 @@ func TestProjectService_SetServiceConfigValue_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestProjectService_SetServiceConfigValue_PreservesServiceHooksAndTemplatedImage(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, `name: my-app
+services:
+  agent:
+    project: src/my-agent
+    host: azure.ai.agent
+    language: python
+    image: myregistry.azurecr.io/my-agent:${MY_TAG}
+    kind: hosted
+    name: my-chat-agent
+    protocols:
+      - protocol: responses
+        version: 2.0.0
+    startupCommand: python init.py
+    hooks:
+      predeploy:
+        shell: sh
+        run: ./hooks/agent-predeploy.sh
+        interactive: true
+      postdeploy:
+        shell: sh
+        run: ./hooks/agent-postdeploy.sh
+        interactive: true
+`)
+
+	_, err := svc.SetServiceConfigValue(t.Context(), &azdext.SetServiceConfigValueRequest{
+		ServiceName: "agent",
+		Path:        "container.resources.cpu",
+		Value:       structpb.NewStringValue("2"),
+	})
+	require.NoError(t, err)
+
+	projectService := svc.(*projectService)
+	azdContext, err := projectService.lazyAzdContext.GetValue()
+	require.NoError(t, err)
+	saved, err := project.LoadConfig(t.Context(), azdContext.ProjectPath())
+	require.NoError(t, err)
+	services, found := saved.GetMap("services")
+	require.True(t, found)
+	serviceConfig, ok := services["agent"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "myregistry.azurecr.io/my-agent:${MY_TAG}", serviceConfig["image"])
+	require.Equal(t, map[string]any{
+		"predeploy": map[string]any{
+			"shell":       "sh",
+			"run":         "./hooks/agent-predeploy.sh",
+			"interactive": true,
+		},
+		"postdeploy": map[string]any{
+			"shell":       "sh",
+			"run":         "./hooks/agent-postdeploy.sh",
+			"interactive": true,
+		},
+	}, serviceConfig["hooks"])
+}
+
 func TestProjectService_SetServiceConfigValue_DottedServiceName(t *testing.T) {
 	t.Parallel()
 	svc := newProjectServiceWithYaml(t, `name: test-project

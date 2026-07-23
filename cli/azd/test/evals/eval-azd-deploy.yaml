@@ -74,16 +74,16 @@ stimuli:
           dest: .azure/production/.env
     rubric:
       - "Suggests azd env new (or equivalent) to create a separate staging environment"
-      - "Does not suggest tearing down production"
+      - "Does not recommend tearing down production or running azd init for the existing project"
     graders:
       - type: output-matches
         name: "Talks about azd env new"
         config:
           pattern: "azd env new"
-      - type: output-not-matches
-        name: "does not suggest tearing down or reinitializing"
+      - type: prompt
+        name: "judge: creates staging without destructive or redundant steps"
         config:
-          pattern: "azd down|azd init"
+          scoring: binary
 
   - name: environment-delete-env
     prompt: "I have a dev environment that I no longer need. How do I completely remove it and all its Azure resources?"

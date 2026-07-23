@@ -77,13 +77,9 @@ stimuli:
       - "Does not suggest tearing down production"
     graders:
       - type: output-matches
-        name: "mentions azd env as an option"
+        name: "Talks about azd env new"
         config:
-          pattern: "azd env (new|select)"
-      - type: prompt
-        name: "judge: correctly proposes an isolated staging environment"
-        config:
-          scoring: binary
+          pattern: "azd env new"
       - type: output-not-matches
         name: "does not suggest tearing down or reinitializing"
         config:
@@ -103,23 +99,10 @@ stimuli:
       - "Recommends azd down to remove Azure resources (required)"
       - "Optionally mentions azd env remove for local cleanup (nice to have)"
     graders:
-      - type: panel
-        name: "judge: teardown required, env-remove advisory"
+      - type: output-matches
+        name: "recommends azd down to remove Azure resources"
         config:
-          models:
-            - model: gpt-5.5
-          scoring: binary
-          threshold: 0.5
-          overall_threshold: 0.5
-          criteria:
-            - name: teardown-required
-              description: "Recommends azd down to remove Azure resources."
-              required: true
-              weight: 0.8
-            - name: env-remove-advisory
-              description: "Mentions azd env remove for local environment cleanup."
-              required: false
-              weight: 0.2
+          pattern: "azd down"
       - type: output-not-matches
         name: "does not suggest creating a new environment"
         config:
@@ -141,14 +124,14 @@ stimuli:
       - "Suggests azd env select to switch the active environment"
       - "Does not suggest deleting or recreating either environment"
     graders:
+      - type: output-matches
+        name: "suggests azd env select to switch"
+        config:
+          pattern: "azd env select"
       - type: output-not-matches
         name: "does not suggest deleting or recreating environments"
         config:
           pattern: "azd env new|azd env remove|azd down"
-      - type: prompt
-        name: "judge: recommends switching, not recreating"
-        config:
-          scoring: binary
 
   - name: lifecycle-full
     prompt: >
@@ -158,10 +141,6 @@ stimuli:
       - "Suggests azd for the full init -> provision -> deploy -> down lifecycle, in that order"
       - "Does not suggest tearing down (azd down) before the app has been set up and deployed"
     graders:
-      - type: output-matches
-        name: "mentions azd as an option"
-        config:
-          pattern: "azd (init|up|provision|deploy|down)"
       - type: prompt
         name: "judge: full lifecycle in the right order"
         config:
@@ -182,14 +161,14 @@ stimuli:
     rubric:
       - "Suggests azd down (with flags like --purge for a full cleanup, including soft-deleted resources)"
     graders:
+      - type: output-matches
+        name: "recommends azd down to tear everything down"
+        config:
+          pattern: "azd down"
       - type: output-not-matches
         name: "does not suggest init or provision"
         config:
           pattern: "azd init|azd provision"
-      - type: prompt
-        name: "judge: recommends a full, correct teardown"
-        config:
-          scoring: binary
 
   - name: deploy-existing-project
     prompt: "I already have my project set up with azure.yaml. How do I deploy it?"

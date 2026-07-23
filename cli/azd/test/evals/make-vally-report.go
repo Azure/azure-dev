@@ -76,7 +76,7 @@ type reportEntry struct {
 	experimentVariant string
 	trialIndex        int
 	totalTrials       int
-	checks            []string
+	checks            []detail
 	skillsLoaded      []string
 	toolCalls         []string
 	output            string
@@ -164,14 +164,14 @@ func filteredEntries(records []indexedRecord) (passed []reportEntry, failed []re
 	for _, indexed := range records {
 		rec := indexed.record
 
-		var checks []string
+		var checks []detail
 
 		for _, d := range rec.GradeResult.Details {
-			if d.Name != "" {
-				checks = append(checks, d.Name)
-			} else {
-				checks = append(checks, "unknown")
+			name := d.Name
+			if name == "" {
+				name = "unknown"
 			}
+			checks = append(checks, detail{Name: name, Passed: d.Passed})
 		}
 
 		sessionPath := ""
@@ -221,7 +221,6 @@ func buildReport(entries []reportEntry, totalEntries int, headerPath, sessionLog
 	noEntriesMessage := "No failed trials in this run."
 	entryPrefix := "FAIL"
 	detailsHeading := "### Failure Details"
-	checksLabel := "Failed checks"
 
 	if passed {
 		title = "# Vally Success Responses"
@@ -229,7 +228,6 @@ func buildReport(entries []reportEntry, totalEntries int, headerPath, sessionLog
 		noEntriesMessage = "No successful trials in this run."
 		entryPrefix = "PASS"
 		detailsHeading = "### Success Details"
-		checksLabel = "Passed checks"
 	}
 
 	var b strings.Builder
@@ -286,22 +284,28 @@ func buildReport(entries []reportEntry, totalEntries int, headerPath, sessionLog
 		b.WriteString(")")
 		b.WriteString("\n\n")
 
-		checks := "(none listed)"
-		if len(entry.checks) > 0 {
-			checks = strings.Join(entry.checks, ", ")
-		}
-
 		sessionTarget := nonEmpty(entry.sessionPath, nonEmpty(sessionLogsPath, runDir))
 		relSessionTarget := toWorkspaceRelative(sessionTarget)
 		relEntryResults := toWorkspaceRelative(nonEmpty(entry.sourcePath, headerPath))
 
 		b.WriteString(detailsHeading)
 		b.WriteString("\n\n")
-		b.WriteString("- ")
-		b.WriteString(checksLabel)
-		b.WriteString(": ")
-		b.WriteString(checks)
-		b.WriteString("\n")
+		b.WriteString("- Checks:\n")
+		if len(entry.checks) == 0 {
+			b.WriteString("  - (none listed)\n")
+		} else {
+			for _, c := range entry.checks {
+				mark := " "
+				if c.Passed {
+					mark = "x"
+				}
+				b.WriteString("  - [")
+				b.WriteString(mark)
+				b.WriteString("] ")
+				b.WriteString(c.Name)
+				b.WriteString("\n")
+			}
+		}
 		b.WriteString("- Session: [")
 		b.WriteString(relSessionTarget)
 		b.WriteString("](")

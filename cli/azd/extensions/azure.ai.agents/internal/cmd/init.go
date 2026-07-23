@@ -1311,7 +1311,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 						return err
 					}
-					return nil
+					// Honor --infra for the adopt path too: the sample's
+					// azure.yaml was scaffolded into the project dir (now the
+					// working dir), so eject IaC from it before returning.
+					return maybeEjectInfraAfterInit(infraProvider)
 				}
 
 				// Resolve the agent name BEFORE creating the project folder
@@ -1510,30 +1513,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			}
 
-			// New-project eject: when --infra is set on a fresh init that just
-			// wrote azure.yaml, chain the eject step. Skip silently when init
-			// didn't produce a foundry-bearing azure.yaml (cancelled or
-			// non-foundry flow) to avoid a confusing "nothing to eject" error.
-			if infraProvider != "" {
-				cwd, err := os.Getwd()
-				if err != nil {
-					return fmt.Errorf("resolve current directory: %w", err)
-				}
-				//nolint:gosec // G304: azure.yaml in the current azd project directory
-				rawYAML, readErr := os.ReadFile(filepath.Join(cwd, "azure.yaml"))
-				switch {
-				case errors.Is(readErr, fs.ErrNotExist):
-					// Init didn't write azure.yaml; nothing to eject.
-				case readErr != nil:
-					return fmt.Errorf("read azure.yaml after init: %w", readErr)
-				default:
-					// Skip silently when no foundry service is present.
-					if _, svcErr := findFoundryServiceForEject(rawYAML); svcErr == nil {
-						if err := ejectInfra(cwd, infraProvider); err != nil {
-							return err
-						}
-					}
-				}
+			// New-project eject: honor --infra after a fresh init.
+			if err := maybeEjectInfraAfterInit(infraProvider); err != nil {
+				return err
 			}
 
 			return nil
@@ -1593,6 +1575,37 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().Lookup("infra").NoOptDefVal = project.BicepProviderName
 
 	return cmd
+}
+
+// maybeEjectInfraAfterInit ejects IaC after a fresh init when
+// --infra was passed. It reads the azure.yaml init wrote into the
+// working dir (init chdir's into the project dir) and ejects only
+// when a foundry service is present. A missing or non-foundry
+// azure.yaml is a silent no-op so non-foundry and cancelled flows
+// don't surface a confusing error.
+func maybeEjectInfraAfterInit(infraProvider string) error {
+	if infraProvider == "" {
+		return nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("resolve current directory: %w", err)
+	}
+	//nolint:gosec // G304: azure.yaml in the current azd project directory
+	rawYAML, readErr := os.ReadFile(filepath.Join(cwd, "azure.yaml"))
+	switch {
+	case errors.Is(readErr, fs.ErrNotExist):
+		// Init didn't write azure.yaml; nothing to eject.
+		return nil
+	case readErr != nil:
+		return fmt.Errorf("read azure.yaml after init: %w", readErr)
+	default:
+		// Skip silently when no foundry service is present.
+		if _, svcErr := findFoundryServiceForEject(rawYAML); svcErr != nil {
+			return nil
+		}
+		return ejectInfra(cwd, infraProvider)
+	}
 }
 
 func (a *InitAction) Run(ctx context.Context) error {

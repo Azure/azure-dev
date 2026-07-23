@@ -15,6 +15,7 @@
 - [[#9225]](https://github.com/Azure/azure-dev/pull/9225) Fix `azd ai agent init` accepting stale Azure Container Registry connections from an existing Foundry project; init now validates discovered registries against ARM and clears missing ones instead of deferring the failure until publish.
 - [[#9254]](https://github.com/Azure/azure-dev/pull/9254) Fix `azd ai agent doctor` failing valid projects whose agent definition is declared inline in `azure.yaml`; the definition check now uses the same resolver as run and deploy.
 - [[#9264]](https://github.com/Azure/azure-dev/pull/9264) Fix `azd ai agent doctor` reporting a false pass for an inline or `$ref` agent definition with an unsupported kind; resolved non-hosted definitions are now validated, while valid `workflow` definitions still pass.
+- [[#9275]](https://github.com/Azure/azure-dev/pull/9275) Fix `azd ai agent init -m <azure.yaml> --infra` silently skipping infrastructure ejection when the manifest pointer resolved to a unified Foundry `azure.yaml` adopted as the project manifest; the adopt path now generates the `./infra/` directory like the other init flows.
 
 ### Other Changes
 

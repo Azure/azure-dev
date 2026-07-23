@@ -12,6 +12,7 @@ words:
   - signup
   # Terms
   - Reprompt
+  - MMDDH
   # Azure region names
   - australiaeast
   - brazilsouth

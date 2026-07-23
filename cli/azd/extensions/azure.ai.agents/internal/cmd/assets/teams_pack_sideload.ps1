@@ -30,101 +30,17 @@ $shortName = if ($AgentName.Length -gt 30) { $AgentName.Substring(0, 30) } else 
 $shortDesc = "Chat with $shortName in Microsoft Teams."
 if ($shortDesc.Length -gt 80) { $shortDesc = $shortDesc.Substring(0, 80) }
 
-# Teams only treats a re-uploaded package (same app id) as an update when the
-# manifest version is higher, so we need a strictly increasing version on every
-# run -- even two runs in the same second. Persist a monotonic build number next
-# to this script (seeded from wall-clock seconds, then always at least
-# last + 1) and encode it into two bounded components (Teams caps each at 65535):
-# minor = N / 65536, patch = N % 65536. N ~ epoch keeps minor < 65535 until ~2106.
-# Serialize the read-increment-write of the counter so two concurrent runs cannot
-# compute the same version. New-Item -ItemType Directory fails if the directory
-# already exists, giving an atomic create-or-fail lock. We reclaim a lock ONLY
-# when it is verifiably stale -- a live holder finishes the counter update in
-# milliseconds and always leaves a fresh timestamp marker, so a marker older than
-# $lockStaleSeconds means the holder crashed and the lock is safe to break; a fresh
-# lock (a live holder) is never touched. If we still cannot acquire it within the
-# timeout we FAIL with cleanup guidance rather than proceeding without
-# serialization (which would let two runs pick the same version and have Teams
-# reject the later update as not newer). The lock's own timestamp marker is the
-# only file we ever write into it, and release removes just that marker and then
-# the (now empty) directory. try/finally guarantees release (PowerShell runs
-# finally blocks even on 'exit').
-$stateFile = Join-Path $PSScriptRoot ".teams-app-version-$TeamsAppId"
-$lockDir = "$stateFile.lock"
-$lockMarker = Join-Path $lockDir "created"
-$lockStaleSeconds = 120
-$versionLocked = $false
-try {
-    $lockWait = 0
-    while ($lockWait -lt 100) {
-        try {
-            New-Item -ItemType Directory -Path $lockDir -ErrorAction Stop | Out-Null
-            # Stamp the acquisition time so a later run can tell a crashed holder
-            # from a live one. Best-effort: a missing marker is treated as unknown
-            # age (not stale) below.
-            $nowStamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-            Set-Content -LiteralPath $lockMarker -Value ([string]$nowStamp) -NoNewline -ErrorAction SilentlyContinue
-            $versionLocked = $true
-            break
-        } catch {
-            # The lock is held. Break it only if its marker proves it is stale
-            # (holder crashed); otherwise keep waiting for the live holder.
-            $lockCreated = $null
-            $rawMarker = (Get-Content -LiteralPath $lockMarker -Raw -ErrorAction SilentlyContinue) -replace '[^0-9]', ''
-            if ($rawMarker) { $lockCreated = [int64]$rawMarker }
-            $nowCheck = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-            if ($null -ne $lockCreated -and ($nowCheck - $lockCreated) -ge $lockStaleSeconds) {
-                Remove-Item -LiteralPath $lockMarker -Force -ErrorAction SilentlyContinue
-                try { [System.IO.Directory]::Delete($lockDir, $false) } catch { }
-                continue
-            }
-            $lockWait++
-            Start-Sleep -Milliseconds 100
-        }
-    }
-    if (-not $versionLocked) {
-        Write-Error ("Could not acquire the manifest version lock:`n  $lockDir`n" +
-            "Another pack run may be in progress. If none is, delete that directory and re-run.")
-        exit 1
-    }
-
-    # We hold the lock, so read-increment-persist the monotonic counter under it.
-    $nowEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-    $lastN = [int64]0
-    # Only read the counter from a plain regular file -- never follow a symlink
-    # or reparse point, and ignore directories.
-    $stateItem = Get-Item -LiteralPath $stateFile -Force -ErrorAction SilentlyContinue
-    $stateIsLink = $stateItem -and ($stateItem.LinkType -or ($stateItem.Attributes -band [IO.FileAttributes]::ReparsePoint))
-    $stateIsDir = $stateItem -and $stateItem.PSIsContainer
-    if ($stateItem -and -not $stateIsLink -and -not $stateIsDir) {
-        $raw = (Get-Content -LiteralPath $stateFile -Raw -ErrorAction SilentlyContinue) -replace '[^0-9]', ''
-        if ($raw) { $lastN = [int64]$raw }
-    }
-    $verN = [int64][math]::Max($nowEpoch, $lastN + 1)
-    # Persist the counter, but never overwrite a pre-existing symlink/reparse
-    # point or directory (a planted link could redirect the write to an
-    # arbitrary file). Write to a temp file and move it into place so the link
-    # itself is replaced.
-    if (-not $stateIsLink -and -not $stateIsDir) {
-        $stateTmp = "$stateFile.$PID.tmp"
-        Set-Content -LiteralPath $stateTmp -Value ([string]$verN) -NoNewline -ErrorAction SilentlyContinue
-        Move-Item -LiteralPath $stateTmp -Destination $stateFile -Force -ErrorAction SilentlyContinue
-    }
-} finally {
-    if ($versionLocked) {
-        # Remove our own marker, then the (now empty) lock directory with a
-        # non-recursive delete that fails safely if anything else is inside.
-        Remove-Item -LiteralPath $lockMarker -Force -ErrorAction SilentlyContinue
-        try { [System.IO.Directory]::Delete($lockDir, $false) } catch { }
-    }
-}
-$verMinor = [int]([math]::Floor($verN / 65536))
-$verPatch = [int]($verN % 65536)
+# Teams treats a re-uploaded package (same app id) as an update only when the
+# manifest version is higher, so derive a strictly increasing version from the
+# current time -- no state file, lock, or counter to leave behind. Encode epoch
+# seconds into two Teams-bounded components (each capped at 65535): minor = N /
+# 65536, patch = N % 65536 (minor stays < 65535 until ~2106). Two runs in the same
+# second get the same version; if that ever rejects the second upload as "not
+# newer", just re-run a moment later.
+$nowEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+$verMinor = [int]([math]::Floor($nowEpoch / 65536))
+$verPatch = [int]($nowEpoch % 65536)
 $pkgVersion = "1.$verMinor.$verPatch"
-if ($verMinor -gt 65535 -or $verPatch -gt 65535) {
-    Write-Error "Computed manifest version $pkgVersion exceeds the Teams component limit (65535)."
-    exit 1
-}
 
 Write-Host "Agent:        $AgentName"
 Write-Host "Bot ID:       $BotId"

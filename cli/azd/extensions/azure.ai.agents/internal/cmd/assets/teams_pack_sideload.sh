@@ -19,8 +19,6 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-
 # ---- Ids baked in by azd deploy (do not edit) -------------------------------
 AGENT_NAME="{{.AgentName}}"
 BOT_ID="{{.MsaAppID}}"       # Teams manifest bots[].botId = the Azure Bot msaAppId
@@ -31,108 +29,17 @@ TEAMS_APP_ID="{{.TeamsAppId}}" # stable per agent, so re-runs update the same ap
 SHORT_NAME="$(printf '%.30s' "$AGENT_NAME")"
 SHORT_DESC="$(printf '%.80s' "Chat with $SHORT_NAME in Microsoft Teams.")"
 
-# Teams only treats a re-uploaded package (same app id) as an update when the
-# manifest version is higher, so we need a strictly increasing version on every
-# run -- even two runs in the same second. Persist a monotonic build number next
-# to this script (seeded from wall-clock seconds, then always at least
-# last + 1) and encode it into two bounded components (Teams caps each at 65535):
-# minor = N / 65536, patch = N % 65536. N ~ epoch keeps minor < 65535 until ~2106.
-STATE_FILE="$SCRIPT_DIR/.teams-app-version-$TEAMS_APP_ID"
-# Serialize the read-increment-write of the counter so two concurrent runs cannot
-# compute the same version. mkdir is an atomic create-or-fail on every POSIX
-# filesystem (portable to macOS and Linux, unlike flock), so the lock directory
-# doubles as a mutex. We reclaim a lock ONLY when it is verifiably stale -- a live
-# holder finishes the counter update in milliseconds and always leaves a fresh
-# timestamp marker, so a marker older than LOCK_STALE_SECONDS means the holder
-# crashed and the lock is safe to break; a fresh lock (a live holder) is never
-# touched. If we still cannot acquire it within the timeout we FAIL with cleanup
-# guidance rather than proceeding without serialization (which would let two runs
-# pick the same version and have Teams reject the later update as not newer). The
-# lock's own timestamp marker is the only file we ever write into it, and release
-# removes just that marker and then the (now empty) directory.
-LOCK_DIR="$STATE_FILE.lock"
-LOCK_MARKER="$LOCK_DIR/created"
-LOCK_STALE_SECONDS=120
-VERSION_LOCKED=0
-release_version_lock() {
-  if [ "$VERSION_LOCKED" = "1" ]; then
-    rm -f "$LOCK_MARKER" 2>/dev/null || true
-    rmdir "$LOCK_DIR" 2>/dev/null || true
-    VERSION_LOCKED=0
-  fi
-  return 0
-}
-# On EXIT just release. On INT/TERM release, restore the default disposition, and
-# re-raise so the signal still terminates the script (a release-only handler would
-# otherwise swallow Ctrl+C and let execution fall through).
-on_version_signal() {
-  release_version_lock
-  trap - INT TERM
-  kill -"$1" "$$"
-}
-trap release_version_lock EXIT
-trap 'on_version_signal INT' INT
-trap 'on_version_signal TERM' TERM
-lock_wait=0
-while [ "$lock_wait" -lt 100 ]; do
-  if mkdir "$LOCK_DIR" 2>/dev/null; then
-    # Stamp the acquisition time so a later run can tell a crashed holder from a
-    # live one. Best-effort: a missing marker just means "unknown age" below.
-    date -u +%s > "$LOCK_MARKER" 2>/dev/null || true
-    VERSION_LOCKED=1
-    break
-  fi
-  # The lock is held. Break it only if its marker proves it is stale (holder
-  # crashed); otherwise keep waiting for the live holder to release. A missing
-  # marker is expected in the tiny window between mkdir and the marker write (and
-  # persists if a run crashed there), so tolerate the read failure under pipefail.
-  lock_created="$( { cat "$LOCK_MARKER" 2>/dev/null || true; } | tr -dc '0-9' )"
-  if [ -n "$lock_created" ] && [ "$(( $(date -u +%s) - lock_created ))" -ge "$LOCK_STALE_SECONDS" ]; then
-    rm -f "$LOCK_MARKER" 2>/dev/null || true
-    rmdir "$LOCK_DIR" 2>/dev/null || true
-    continue
-  fi
-  lock_wait=$((lock_wait + 1))
-  sleep 0.1
-done
-if [ "$VERSION_LOCKED" != "1" ]; then
-  echo "Error: could not acquire the manifest version lock:" >&2
-  echo "  $LOCK_DIR" >&2
-  echo "Another pack run may be in progress. If none is, delete that directory and re-run." >&2
-  exit 1
-fi
-
+# Teams treats a re-uploaded package (same app id) as an update only when the
+# manifest version is higher, so derive a strictly increasing version from the
+# current time -- no state file, lock, or counter to leave behind. Encode epoch
+# seconds into two Teams-bounded components (each capped at 65535): minor = N /
+# 65536, patch = N % 65536 (minor stays < 65535 until ~2106). Two runs in the same
+# second get the same version; if that ever rejects the second upload as "not
+# newer", just re-run a moment later.
 NOW_EPOCH="$(date -u +%s)"
-VER_N="$NOW_EPOCH"
-# We hold the lock (the script exited above otherwise), so read-increment-persist
-# the monotonic counter under it.
-LAST_N=0
-# Only read the counter from a plain regular file -- never follow a symlink.
-if [ -f "$STATE_FILE" ] && [ ! -L "$STATE_FILE" ]; then
-  LAST_N="$(tr -dc '0-9' < "$STATE_FILE" 2>/dev/null)"
-  [ -z "$LAST_N" ] && LAST_N=0
-fi
-if [ "$((LAST_N + 1))" -gt "$VER_N" ]; then
-  VER_N="$((LAST_N + 1))"
-fi
-# Persist the build number, but never follow a pre-existing symlink -- a planted
-# link could otherwise redirect this write to truncate an arbitrary user-writable
-# file. Write to a temp file in the same directory and atomically move it into
-# place, which replaces the link itself rather than its target.
-if [ ! -L "$STATE_FILE" ] && { [ ! -e "$STATE_FILE" ] || [ -f "$STATE_FILE" ]; }; then
-  STATE_TMP="$STATE_FILE.$$.tmp"
-  if printf '%s' "$VER_N" > "$STATE_TMP" 2>/dev/null; then
-    mv -f "$STATE_TMP" "$STATE_FILE" 2>/dev/null || rm -f "$STATE_TMP" 2>/dev/null
-  fi
-fi
-release_version_lock
-VER_MINOR="$(( VER_N / 65536 ))"
-VER_PATCH="$(( VER_N % 65536 ))"
+VER_MINOR="$(( NOW_EPOCH / 65536 ))"
+VER_PATCH="$(( NOW_EPOCH % 65536 ))"
 PKG_VERSION="1.${VER_MINOR}.${VER_PATCH}"
-if [ "$VER_MINOR" -gt 65535 ] || [ "$VER_PATCH" -gt 65535 ]; then
-  echo "Error: computed manifest version $PKG_VERSION exceeds the Teams component limit (65535)." >&2
-  exit 1
-fi
 
 echo "Agent:        $AGENT_NAME"
 echo "Bot ID:       $BOT_ID"

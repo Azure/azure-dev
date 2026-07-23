@@ -171,117 +171,11 @@ func TestWriteTeamsSideloadScripts(t *testing.T) {
 	}
 }
 
-func TestWriteTeamsSideloadScriptsPreservesUserFiles(t *testing.T) {
-	root := t.TempDir()
-	proj := &azdext.ProjectConfig{Path: root}
-	svc := &azdext.ServiceConfig{Name: "echo-agent", RelativePath: "src"}
-	srcDir := filepath.Join(root, "src")
-	if err := os.MkdirAll(srcDir, 0o750); err != nil {
-		t.Fatal(err)
-	}
-
-	// A pre-existing user-owned file that happens to share the bash script name
-	// (no azd-generated marker) must be left untouched and not reported as written.
-	userBash := filepath.Join(srcDir, teamsSideloadScriptBash)
-	userContent := "#!/usr/bin/env bash\necho \"my own script\"\n"
-	if err := os.WriteFile(userBash, []byte(userContent), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	paths := writeTeamsSideloadScripts(proj, svc, "echo-agent", "echo-agent-bot-uai", "app-id")
-
-	// The bash name collided with a user file, so the pair cannot be completed.
-	// Rather than leave a lone .ps1 (which carries a bot id its missing partner
-	// does not), the freshly-created .ps1 is rolled back and nothing is reported
-	// written, so the caller never advertises a split pair.
-	if len(paths) != 0 {
-		t.Fatalf("expected an incomplete pair to roll back to 0 written, got %d: %v", len(paths), paths)
-	}
-	// The rolled-back pwsh script must not be left behind on disk.
-	if _, err := os.Stat(filepath.Join(srcDir, teamsSideloadScriptPwsh)); !os.IsNotExist(err) {
-		t.Errorf("freshly-created pwsh script must be rolled back when its partner collides (stat err=%v)", err)
-	}
-	got, err := os.ReadFile(userBash)
-	if err != nil {
-		t.Fatalf("user file was removed: %v", err)
-	}
-	if string(got) != userContent {
-		t.Errorf("user-owned file was overwritten:\n got: %q\nwant: %q", string(got), userContent)
-	}
-
-	// A previously azd-generated script (carrying this agent's marker) is refreshed
-	// in place, and its missing partner is freshly created, completing the pair.
-	genContent := "# " + teamsGeneratedMarkerFor("echo-agent") + "\n# xyzzy-old-body-sentinel\n"
-	if err := os.WriteFile(userBash, []byte(genContent), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	paths = writeTeamsSideloadScripts(proj, svc, "echo-agent", "echo-agent-bot-uai", "app-id")
-	if len(paths) != teamsSideloadTargets {
-		t.Fatalf("expected the full pair to be written once the collision is gone, got %d: %v", len(paths), paths)
-	}
-	refreshed := false
-	for _, p := range paths {
-		if p == userBash {
-			refreshed = true
-		}
-	}
-	if !refreshed {
-		t.Errorf("expected the azd-generated script %q to be refreshed", userBash)
-	}
-	got, err = os.ReadFile(userBash)
-	if err != nil {
-		t.Fatalf("generated script missing after refresh: %v", err)
-	}
-	if !strings.Contains(string(got), "app-id") || strings.Contains(string(got), "xyzzy-old-body-sentinel") {
-		t.Errorf("azd-generated script was not refreshed in place: %q", string(got))
-	}
-}
-
-// TestWriteTeamsSideloadScriptsRejectsOtherAgent guards the shared-source-dir
-// case: if a second activity service resolves to the same project:/src, its
-// postdeploy must not overwrite scripts a different agent already generated
-// there (only the last writer's bot id would install). The other agent's file
-// is left byte-for-byte intact, and because the pair cannot be completed the
-// freshly-created partner is rolled back so no split pair is left behind.
-func TestWriteTeamsSideloadScriptsRejectsOtherAgent(t *testing.T) {
-	root := t.TempDir()
-	proj := &azdext.ProjectConfig{Path: root}
-	svc := &azdext.ServiceConfig{Name: "echo-agent", RelativePath: "src"}
-	if err := os.MkdirAll(filepath.Join(root, "src"), 0o750); err != nil {
-		t.Fatal(err)
-	}
-
-	// Simulate a script another agent already generated in this shared directory.
-	otherBash := filepath.Join(root, "src", teamsSideloadScriptBash)
-	otherContent := "#!/usr/bin/env bash\n# " + teamsGeneratedMarkerFor("other-agent") + "\n# other agent\n"
-	if err := os.WriteFile(otherBash, []byte(otherContent), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	paths := writeTeamsSideloadScripts(proj, svc, "echo-agent", "echo-agent-bot-uai", "this-bot-id")
-	// The bash slot is owned by another agent, so our pair cannot be completed:
-	// nothing is reported written and the freshly-created pwsh is rolled back.
-	if len(paths) != 0 {
-		t.Fatalf("expected an incomplete pair to roll back to 0 written, got %d: %v", len(paths), paths)
-	}
-	if _, err := os.Stat(filepath.Join(root, "src", teamsSideloadScriptPwsh)); !os.IsNotExist(err) {
-		t.Errorf("freshly-created pwsh script must be rolled back when its partner is another agent's (stat err=%v)", err)
-	}
-	got, err := os.ReadFile(otherBash)
-	if err != nil {
-		t.Fatalf("other agent's file was removed: %v", err)
-	}
-	if string(got) != otherContent {
-		t.Errorf("other agent's file was overwritten:\n got: %q\nwant: %q", string(got), otherContent)
-	}
-}
-
 // TestWriteTeamsSideloadScriptsStableAcrossVersionChange guards the redeploy
 // case: a new agent version has a fresh, version-scoped instance client id
-// (msaAppID), but the ownership marker is keyed on the stable agent name and the
-// Teams app id on the stable bot name. So azd must recognize its own previously
-// generated scripts and refresh them in place (with the new bot id), keeping the
-// Teams app id constant instead of duplicating the app or refusing to update.
+// (msaAppID), but the Teams app id is keyed on the stable bot name. So a redeploy
+// rewrites the scripts with the new bot id while keeping the Teams app id constant
+// instead of duplicating the app.
 func TestWriteTeamsSideloadScriptsStableAcrossVersionChange(t *testing.T) {
 	root := t.TempDir()
 	proj := &azdext.ProjectConfig{Path: root}
@@ -319,47 +213,6 @@ func TestWriteTeamsSideloadScriptsStableAcrossVersionChange(t *testing.T) {
 	}
 	if strings.Contains(body, "client-id-v1") {
 		t.Errorf("refreshed script must drop the previous bot id")
-	}
-}
-
-// TestWriteTeamsSideloadScriptsRefreshesAcrossEnvironments guards the multi-env
-// case: deploying the same service to a second azd environment yields a
-// different bot name and bot id (the bot name is salted by subscription/RG), but
-// the generated files live at the same project/service path. Because ownership
-// is keyed on the stable agent name, azd must refresh its own files with the new
-// environment's ids rather than refuse them as "another agent's".
-func TestWriteTeamsSideloadScriptsRefreshesAcrossEnvironments(t *testing.T) {
-	root := t.TempDir()
-	proj := &azdext.ProjectConfig{Path: root}
-	svc := &azdext.ServiceConfig{Name: "echo-agent", RelativePath: "src"}
-	if err := os.MkdirAll(filepath.Join(root, "src"), 0o750); err != nil {
-		t.Fatal(err)
-	}
-
-	// Environment A.
-	if got := writeTeamsSideloadScripts(proj, svc, "echo-agent", "echo-agent-bot-dev", "bot-id-dev"); len(got) !=
-		teamsSideloadTargets {
-		t.Fatalf("env A must write all %d scripts, got %d", teamsSideloadTargets, len(got))
-	}
-
-	// Environment B: same service/source dir, different bot name + bot id.
-	got := writeTeamsSideloadScripts(proj, svc, "echo-agent", "echo-agent-bot-prod", "bot-id-prod")
-	if len(got) != teamsSideloadTargets {
-		t.Fatalf("deploying the same service to a second environment must refresh all %d scripts, got %d: %v",
-			teamsSideloadTargets, len(got), got)
-	}
-
-	body, err := os.ReadFile(filepath.Join(root, "src", teamsSideloadScriptBash))
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(body)
-	// The refreshed script carries env B's ids and drops env A's.
-	if !strings.Contains(s, "bot-id-prod") || strings.Contains(s, "bot-id-dev") {
-		t.Errorf("cross-environment refresh must swap in the new bot id and drop the old one")
-	}
-	if !strings.Contains(s, deterministicTeamsAppID("echo-agent-bot-prod")) {
-		t.Errorf("cross-environment refresh must use the new environment's Teams app id")
 	}
 }
 

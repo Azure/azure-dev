@@ -164,53 +164,11 @@ func writeTeamsSetupGuide(
 		return ""
 	}
 	content := teamsSetupGuideContent(agentName, botName, msaAppID, tenantID, svc.GetRelativePath(), scriptsGenerated)
-	// Atomically claim/refresh the guide keyed on the agent (service) name, which
-	// is stable across redeploys AND azd environments. A guide a different
-	// activity service generated for another agent (shared source dir) and
-	// genuinely user-owned files are left untouched; a pre-marker guide from a
-	// released version that is verifiably THIS agent's (isLegacyGeneratedGuide
-	// checks the agent-specific heading) is recognized and refreshed so upgrading
-	// users still get the script cross-reference.
-	isLegacy := func(p string) bool { return isLegacyGeneratedGuide(p, agentName) }
-	if ok, reason := writeOwnedGeneratedFile(guidePath, content, 0o600, agentName, isLegacy); !ok {
-		if reason != "" {
-			log.Printf("postdeploy: Teams setup guide %q %s", guidePath, reason)
-		}
+	if err := os.WriteFile(guidePath, []byte(content), 0o600); err != nil {
+		log.Printf("postdeploy: failed to write Teams setup guide %q: %v", guidePath, err)
 		return ""
 	}
 	return guidePath
-}
-
-// legacyGuideSignature is a stable line present in every setup guide azd released
-// before the origin marker was added. Recognizing it lets an upgrade refresh the
-// old generated guide in place while still preserving genuinely user-owned files.
-const legacyGuideSignature = "already did the Azure side for you"
-
-// legacyGuideHeadingFor is the agent-specific H1 every generated guide carries.
-// Requiring it (in addition to legacyGuideSignature) scopes legacy adoption to
-// THIS agent, so two activity services sharing a source directory cannot treat
-// each other's pre-marker guide as their own on upgrade.
-func legacyGuideHeadingFor(agentName string) string {
-	return "# Connect " + agentName + " to Microsoft Teams"
-}
-
-// isLegacyGeneratedGuide reports whether path is a regular file that looks like a
-// pre-marker azd-generated setup guide for agentName (so it may be safely
-// refreshed). A file already carrying the current marker is handled by the owner
-// check, not here; a guide generated for a DIFFERENT agent is not adopted.
-func isLegacyGeneratedGuide(path, agentName string) bool {
-	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() {
-		return false
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	s := string(data)
-	return !strings.Contains(s, teamsSideloadGeneratedMarker) &&
-		strings.Contains(s, legacyGuideSignature) &&
-		strings.Contains(s, legacyGuideHeadingFor(agentName))
 }
 
 //go:embed assets/teams_app_setup_guide.md

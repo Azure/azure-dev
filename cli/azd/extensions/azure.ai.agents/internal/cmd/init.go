@@ -1311,6 +1311,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 						return err
 					}
+					if infraProvider != "" {
+						cwd, err := os.Getwd()
+						if err != nil {
+							return fmt.Errorf("resolve current directory: %w", err)
+						}
+						return ejectInfra(cwd, infraProvider)
+					}
 					return nil
 				}
 

@@ -147,7 +147,19 @@ Write-Host $installOut
 # If atk reports the user is not signed in, launch an interactive login and retry.
 if ($installOut -match "(?i)(not\s+(logged|signed)\s+in|auth.*required|please\s+login|login\s+first|no\s+account|cannot\s+get\s+token|log\s+in\s+the\s+correct\s+account)") {
     Write-Host "Not signed in - launching 'atk auth login m365' (complete the sign-in prompt)..."
-    atk auth login m365
+    # atk is a native command; on PowerShell 7.4+ a nonzero exit (e.g. the user
+    # cancels the sign-in) combined with $ErrorActionPreference = "Stop" would
+    # terminate the script here, before the retry and the graceful fallback below.
+    # Run it with non-terminating error handling so a cancelled/failed sign-in
+    # falls through, mirroring the bash script's tolerant set +e block.
+    try {
+        $ErrorActionPreference = "Continue"
+        atk auth login m365
+    } catch {
+        Write-Host "atk auth login did not complete: $_"
+    } finally {
+        $ErrorActionPreference = "Stop"
+    }
     $installOut = Invoke-AtkInstallProbe -Zip $zipPath
     Write-Host $installOut
 }

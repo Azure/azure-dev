@@ -58,8 +58,8 @@ func TestTeamsSetupGuideContent(t *testing.T) {
 		t.Errorf("guide must surface the single-tenant id %q; got:\n%s", tenantID, content)
 	}
 
-	// When no script was generated (e.g. a name collision preserved a user file),
-	// the guide must NOT tell the user to run a script it did not write.
+	// When no script was generated (e.g. a write failure), the guide must NOT tell
+	// the user to run a script it did not write.
 	noScript := teamsSetupGuideContent("echo-agent", "echo-agent-bot-uai", msaAppID, tenantID, "src", false)
 	if strings.Contains(noScript, "Fastest path") ||
 		strings.Contains(noScript, "./pack-and-sideload-teams-app.sh") {

@@ -96,7 +96,6 @@ const (
 // teamsSideloadData is the template model shared by the pwsh and bash scripts.
 type teamsSideloadData struct {
 	AgentName     string
-	BotName       string
 	MsaAppID      string
 	TeamsAppId    string
 	ColorPngB64   string
@@ -113,7 +112,6 @@ func teamsSideloadScriptContent(
 	// compile-time embedded, so execution cannot realistically fail.
 	_ = tmpl.Execute(&buf, teamsSideloadData{
 		AgentName:     agentName,
-		BotName:       botName,
 		MsaAppID:      msaAppID,
 		TeamsAppId:    deterministicTeamsAppID(botName),
 		ColorPngB64:   teamsColorIconB64,

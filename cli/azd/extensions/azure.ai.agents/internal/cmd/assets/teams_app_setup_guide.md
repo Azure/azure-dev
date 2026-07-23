@@ -58,11 +58,9 @@ SKIP_TEAMS_INSTALL=1 ./pack-and-sideload-teams-app.sh              # macOS / Lin
 Prefer the manual / UI flow, a restricted tenant, or custom manifest edits?
 Follow steps A and B below instead.
 {{else}}
-> **Note:** azd did not generate the pack-and-sideload script this time — a file
-> named `pack-and-sideload-teams-app.ps1` / `pack-and-sideload-teams-app.sh`
-> already exists in this folder (or writing it was skipped), so it was left
-> untouched to avoid overwriting your file. Follow the manual steps A and B below,
-> or rename/remove the existing file and re-run `azd deploy` to get the script.
+> **Note:** azd did not generate the pack-and-sideload script this time (writing
+> it was skipped or failed), so follow the manual steps A and B below. Re-running
+> `azd deploy` will try to write the script again.
 {{end}}
 
 ## A. Create the Teams app package

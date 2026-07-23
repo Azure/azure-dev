@@ -130,16 +130,16 @@ func ensureActivityBot(
 		return err
 	}
 
-	// Write a runnable pack+sideload script and a persistent, generic setup guide
+	// Write runnable pack+sideload scripts and a persistent, generic setup guide
 	// next to the agent code (the azd progress UI swallows postdeploy stdout, so a
 	// file is the reliable way to hand the user the manual M365 steps), then print
-	// a short pointer to them. Generate the scripts first so the guide's fast-path
-	// section only advertises a script azd actually wrote (a pre-existing
-	// user-owned file with that name is preserved, not overwritten).
+	// a short pointer to them. Both are best-effort and (re)written on every deploy
+	// with the current ids, the same way this extension already writes
+	// TEAMS_APP_SETUP.md. Generate the scripts first so the guide's fast-path
+	// section only advertises a script that was actually written.
 	scriptPaths := writeTeamsSideloadScripts(proj, svc, agentName, botName, msaAppID)
-	// Only advertise the fast path when every script azd promises was actually
-	// written. A partial write (e.g. one script name collided with a user-owned
-	// file) must not advertise a filename azd did not generate.
+	// Advertise the fast path only when both scripts were written; a write that
+	// failed (e.g. a bad path) must not point the user at a file that is not there.
 	scriptsGenerated := len(scriptPaths) == teamsSideloadTargets
 	guidePath := writeTeamsSetupGuide(proj, svc, agentName, botName, msaAppID, tenantID, scriptsGenerated)
 	printTeamsNextSteps(botName, msaAppID, guidePath, preferredSideloadScript(scriptPaths), scriptsGenerated)
@@ -243,9 +243,9 @@ func printTeamsNextSteps(botName, msaAppID, guidePath, scriptPath string, script
 	fmt.Println(output.WithHighLightFormat("\nTeams bot ready."))
 	fmt.Printf("  Azure Bot:  %s (Microsoft Teams channel enabled)\n", botName)
 	fmt.Printf("  Bot ID:     %s\n", msaAppID)
-	// Only offer the fast path when every advertised script was generated and the
-	// current-OS one is among them; otherwise surface the collision so the user
-	// is not pointed at a script (or a same-named user file) azd did not write.
+	// Offer the fast path only when both scripts were written and the current-OS
+	// one is among them; otherwise fall back to the guide so the user is never
+	// pointed at a script that is not there.
 	fastPathShown := scriptsGenerated && scriptPath != ""
 	if fastPathShown {
 		fmt.Println(output.WithGrayFormat(fmt.Sprintf(
@@ -253,8 +253,7 @@ func printTeamsNextSteps(botName, msaAppID, guidePath, scriptPath string, script
 		)))
 	} else if !scriptsGenerated {
 		fmt.Println(output.WithGrayFormat(
-			"  Note: the pack-and-sideload script was not generated (a file with that name may " +
-				"already exist in the service folder); see the guide for the manual steps.",
+			"  Note: the pack-and-sideload script could not be written; see the guide for the manual steps.",
 		))
 	}
 	if guidePath != "" {

@@ -7,7 +7,7 @@ interactions:
         - --username
         - 00000000-0000-0000-0000-000000000000
         - --password-stdin
-        - acriklbpsoys3hk2.azurecr.io
+        - acrbvnknbzijn5tg.azurecr.io
       exitCode: 0
       stdout: |
         Login Succeeded
@@ -15,10 +15,10 @@ interactions:
     - id: 1
       args:
         - push
-        - acriklbpsoys3hk2.azurecr.io/container-function/func-azdtest-w545786:azd-deploy-1784842603
+        - acrbvnknbzijn5tg.azurecr.io/container-function/func-azdtest-w1cb2b8:azd-deploy-1784845206
       exitCode: 0
       stdout: |
-        The push refers to repository [acriklbpsoys3hk2.azurecr.io/container-function/func-azdtest-w545786]
+        The push refers to repository [acrbvnknbzijn5tg.azurecr.io/container-function/func-azdtest-w1cb2b8]
         dc0923ec81e1: Preparing
         760082944bda: Preparing
         a02f99b33679: Preparing
@@ -41,42 +41,42 @@ interactions:
         c2ce5139d8fc: Preparing
         1f88eb931b94: Preparing
         b05a96227958: Preparing
-        8e0965299d5f: Waiting
-        b5dac8c00299: Waiting
-        709f4e02b3ab: Waiting
-        763fbc416962: Waiting
-        96dbaf1de84d: Waiting
-        a240266af777: Waiting
-        c2ce5139d8fc: Waiting
-        52ac6a498a03: Waiting
-        87968fffff27: Waiting
-        f7aae33d3499: Waiting
-        1f88eb931b94: Waiting
         be5529f9aa77: Waiting
         d01f68be7f85: Waiting
         053439d6860e: Waiting
         db48528e2b54: Waiting
+        8e0965299d5f: Waiting
+        b5dac8c00299: Waiting
+        709f4e02b3ab: Waiting
+        96dbaf1de84d: Waiting
+        763fbc416962: Waiting
+        a240266af777: Waiting
+        c2ce5139d8fc: Waiting
+        1f88eb931b94: Waiting
         b05a96227958: Waiting
+        52ac6a498a03: Waiting
+        87968fffff27: Waiting
+        f7aae33d3499: Waiting
         a02f99b33679: Pushed
-        dc0923ec81e1: Pushed
         5f70bf18a086: Pushed
-        52ac6a498a03: Pushed
+        dc0923ec81e1: Pushed
         760082944bda: Pushed
         be5529f9aa77: Pushed
+        52ac6a498a03: Pushed
         d01f68be7f85: Pushed
         053439d6860e: Pushed
+        f7aae33d3499: Pushed
         db48528e2b54: Pushed
         8e0965299d5f: Pushed
-        f7aae33d3499: Pushed
         96dbaf1de84d: Pushed
         763fbc416962: Pushed
         87968fffff27: Pushed
         c2ce5139d8fc: Pushed
         709f4e02b3ab: Pushed
-        a240266af777: Pushed
         1f88eb931b94: Pushed
-        b05a96227958: Pushed
+        a240266af777: Pushed
         1912a67eea21: Pushed
+        b05a96227958: Pushed
         b5dac8c00299: Pushed
-        azd-deploy-1784842603: digest: sha256:b2a7da478725e8bbdd91dc00552d4260908da8b449d4fc88f28e93890e5685b5 size: 4927
+        azd-deploy-1784845206: digest: sha256:b2a7da478725e8bbdd91dc00552d4260908da8b449d4fc88f28e93890e5685b5 size: 4927
       stderr: ""

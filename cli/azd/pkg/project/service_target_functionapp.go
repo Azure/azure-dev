@@ -241,7 +241,8 @@ func (f *functionAppTarget) Deploy(
 	if props.ContainerConfiguration != nil && props.ContainerConfiguration.IsContainer {
 		return nil, &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf(
-				"function app '%s' is configured for container deployment, but service '%s' is configured for zip deployment",
+				"function app '%s' is configured for container deployment, "+
+					"but service '%s' is configured for zip deployment",
 				targetResource.ResourceName(),
 				serviceConfig.Name,
 			),

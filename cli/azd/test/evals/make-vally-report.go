@@ -436,11 +436,8 @@ func truncateSingleLine(value string, maxLen int) string {
 		return oneLine
 	}
 
-	if maxLen <= 3 {
-		return oneLine[:maxLen]
-	}
-
-	return oneLine[:maxLen-3] + "..."
+	asRunes := []rune(oneLine)
+	return string(asRunes[:maxLen-3]) + "..."
 }
 
 func normalizeSkills(skills []string) []string {

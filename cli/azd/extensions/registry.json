@@ -7279,6 +7279,42 @@
               "version": "~1.0.0-beta.1"
             }
           ]
+        },
+        {
+          "version": "1.0.0-beta.2",
+          "requiredAzdVersion": ">=1.27.1",
+          "usage": "",
+          "examples": null,
+          "dependencies": [
+            {
+              "id": "azure.ai.agents",
+              "version": "~1.0.0-beta.7"
+            },
+            {
+              "id": "azure.ai.connections",
+              "version": "~1.0.0-beta.1"
+            },
+            {
+              "id": "azure.ai.inspector",
+              "version": "~1.0.0-beta.1"
+            },
+            {
+              "id": "azure.ai.projects",
+              "version": "~1.0.0-beta.3"
+            },
+            {
+              "id": "azure.ai.routines",
+              "version": "~1.0.0-beta.1"
+            },
+            {
+              "id": "azure.ai.skills",
+              "version": "~1.0.0-beta.1"
+            },
+            {
+              "id": "azure.ai.toolboxes",
+              "version": "~1.0.0-beta.1"
+            }
+          ]
         }
       ],
       "tags": [

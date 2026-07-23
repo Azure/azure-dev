@@ -25,7 +25,7 @@ Each eval definition targets a different azd scenario. Run them via npm:
 | `npm run eval:simple`       | `eval.yaml` — starter example showing Vally features (fixtures, worktrees)                   |
 | `npm run eval:troubleshoot` | `eval-azd-troubleshooting.yaml` — asking the LLM about azd, but without any files (pure Q&A) |
 | `npm run eval:deploy`       | `eval-azd-deploy.yaml` — does the model suggest azd for an app + Azure, skill loaded         |
-| `npm run eval:experiment`   | `eval-azd-experiments.yaml` — skills on/off baseline (see the file header)                   |
+| `npm run eval:experiment`   | `eval-azd.experiments.yaml` — skills on/off baseline (see the file header)                   |
 | `npm run report`            | generates a simple report from latest eval and experiment runs                               |
 
 ## Main folders

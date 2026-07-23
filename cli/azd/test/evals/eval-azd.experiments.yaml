@@ -2,11 +2,7 @@
 # the same evals with skills loaded and without.
 #
 #   npm run eval:experiment
-#   npx vally experiment run ./eval-azd-experiments.yaml --dry-run   # preview plan
 #
-# A file holds exactly one experiment (one controlled comparison). To run a
-# different comparison -- e.g. a multi-model sweep -- add a separate experiment
-# YAML file and a matching npm script.
 name: azd-skills-baseline
 
 evals:

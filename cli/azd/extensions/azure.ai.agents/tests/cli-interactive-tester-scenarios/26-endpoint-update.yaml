@@ -29,9 +29,9 @@ pre:
       fi
     cwd: "~/working/azd-agents-shared/{shared_agent_name}"
     name: "inject agentCard into azure.yaml so there is something to patch"
-    continue_on_error: true
 
 goals:
+  - "BEFORE running endpoint update, run 'azd ai agent show' first and note the current agent version number — you will need it to verify the update did not create a new version."
   - "Run endpoint update for the default (auto-detected) agent service. NOTE: a minimal agentCard was injected into azure.yaml service properties during setup so the patch has content."
   - "Confirm it patches the existing deployed agent's endpoint/card configuration and explicitly does NOT create a new agent version."
   - "After it completes, run 'azd ai agent show' and confirm the agent version is unchanged from before the update."

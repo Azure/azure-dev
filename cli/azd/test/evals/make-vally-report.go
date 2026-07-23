@@ -432,11 +432,15 @@ func extractToolCalls(events []event) []string {
 
 func truncateSingleLine(value string, maxLen int) string {
 	oneLine := strings.Join(strings.Fields(value), " ")
-	if len(oneLine) <= maxLen {
+	asRunes := []rune(oneLine)
+	if len(asRunes) <= maxLen {
 		return oneLine
 	}
 
-	asRunes := []rune(oneLine)
+	if maxLen <= 3 {
+		return string(asRunes[:maxLen])
+	}
+
 	return string(asRunes[:maxLen-3]) + "..."
 }
 

@@ -6,7 +6,7 @@
 name: azd-skills-baseline
 
 evals:
-  - eval-azd-troubleshooting.yaml
+  - eval-azd-qna.yaml
   - eval-azd-deploy.yaml
 
 # Two axes:

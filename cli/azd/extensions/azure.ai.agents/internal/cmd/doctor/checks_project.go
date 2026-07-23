@@ -6,12 +6,11 @@ package doctor
 import (
 	"context"
 	"fmt"
-	"os"
+	"slices"
 	"sort"
 	"strings"
 
-	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/paths"
+	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -154,20 +153,16 @@ func newCheckProjectEndpointSet(deps Dependencies) Check {
 	}
 }
 
-// newCheckAgentYAMLValid produces Check `local.agent-yaml-valid`. For
-// each agent service in azure.yaml, it reads `<projectPath>/<svc.RelativePath>/agent.yaml`
-// and parses it as `agent_yaml.ContainerAgent`. Fails when any service's
-// file is missing, unreadable, or fails to parse — collecting all errors
-// rather than short-circuiting so multi-service projects get a single
-// actionable report.
+// newCheckAgentDefinitionValid produces Check
+// `local.agent-yaml-valid`. It resolves each agent definition through
+// the same path used by run and deploy.
 //
 // Skips when the gRPC client is unavailable or when
-// `local.agent-service-detected` failed (no services to validate). The
-// suggestion mirrors the spec's "fix YAML" guidance.
-func newCheckAgentYAMLValid(deps Dependencies) Check {
+// `local.agent-service-detected` failed (no services to validate).
+func newCheckAgentDefinitionValid(deps Dependencies) Check {
 	return Check{
 		ID:   "local.agent-yaml-valid",
-		Name: "agent.yaml valid (per service)",
+		Name: "agent definition valid (per service)",
 		Fn: func(ctx context.Context, _ Options, prior []Result) Result {
 			if deps.AzdClient == nil {
 				return Result{Status: StatusSkip, Message: "skipped: azd extension not reachable"}
@@ -196,80 +191,74 @@ func newCheckAgentYAMLValid(deps Dependencies) Check {
 				}
 			}
 
-			projectPath := resp.Project.Path
-			// Collect agent service entries in a stable order. protobuf
-			// `Services` is a map, so iteration order is non-deterministic
-			// — sorting by service name keeps the failure list (and the
-			// validatedPaths Detail) reproducible.
-			type agentSvc struct {
-				name string
-				rel  string
-			}
-			var agents []agentSvc
-			for _, s := range resp.Project.Services {
-				if s == nil || s.Host != agentHost {
-					continue
-				}
-				agents = append(agents, agentSvc{name: s.Name, rel: s.RelativePath})
-			}
-			sort.Slice(agents, func(i, j int) bool { return agents[i].name < agents[j].name })
-
-			var validatedPaths []string
+			agents := collectSortedAgentServices(resp.Project.Services)
+			validatedServices := make([]string, 0, len(agents))
 			var failures []string
-			for _, a := range agents {
-				yamlPath, err := paths.JoinAllowRoot(projectPath, a.rel, "agent.yaml")
+			for _, svc := range agents {
+				_, _, _, err := project.LoadAgentDefinition(
+					svc,
+					resp.Project.Path,
+				)
 				if err != nil {
-					failures = append(failures, fmt.Sprintf("%s: %v", a.name, err))
+					failures = append(
+						failures,
+						fmt.Sprintf("%s: %v", svc.Name, err),
+					)
 					continue
 				}
-				if pathErr := validateAgentYAML(yamlPath); pathErr != nil {
-					failures = append(failures, fmt.Sprintf("%s: %v", a.name, pathErr))
-					continue
-				}
-				validatedPaths = append(validatedPaths, yamlPath)
+
+				validatedServices = append(validatedServices, svc.Name)
 			}
 
 			if len(failures) > 0 {
 				return Result{
 					Status: StatusFail,
 					Message: fmt.Sprintf(
-						"agent.yaml validation failed for %d service(s): %s",
+						"agent definition validation failed for %d service(s): %s",
 						len(failures), strings.Join(failures, "; ")),
-					Suggestion: "Fix the YAML syntax or ensure agent.yaml exists in each service directory.",
+					Suggestion: "Fix the agent definition at its source " +
+						"(azure.yaml, a referenced file, or a legacy " +
+						"agent.yaml/agent.yml), or re-run " +
+						"`azd ai agent init`.",
 					Details: map[string]any{
-						"failures":       failures,
-						"validatedPaths": validatedPaths,
+						"failures":          failures,
+						"validatedServices": validatedServices,
 					},
 				}
 			}
 
 			return Result{
-				Status:  StatusPass,
-				Message: fmt.Sprintf("agent.yaml valid for %d service(s)", len(validatedPaths)),
+				Status: StatusPass,
+				Message: fmt.Sprintf(
+					"agent definition valid for %d service(s)",
+					len(validatedServices),
+				),
 				Details: map[string]any{
-					"validatedPaths": validatedPaths,
+					"validatedServices": validatedServices,
 				},
 			}
 		},
 	}
 }
 
-// validateAgentYAML reads the file at path and runs the same validation
-// (`agent_yaml.ValidateAgentDefinition`) that the deploy path uses, so a
-// PASS here implies the manifest will not be rejected by deploy for any
-// of: missing/invalid `kind`, missing/invalid `name`, or kind-specific
-// structural problems. Returns the underlying read/validate error
-// verbatim so the caller can attribute it to the offending service.
-func validateAgentYAML(path string) error {
-	//nolint:gosec // path is validated under the project root before this helper is called.
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", path, err)
+func collectSortedAgentServices(
+	services map[string]*azdext.ServiceConfig,
+) []*azdext.ServiceConfig {
+	var agents []*azdext.ServiceConfig
+	for _, svc := range services {
+		if svc == nil || svc.Host != agentHost {
+			continue
+		}
+		agents = append(agents, svc)
 	}
-	if err := agent_yaml.ValidateAgentDefinition(data); err != nil {
-		return fmt.Errorf("validate %s: %w", path, err)
-	}
-	return nil
+	sortAgentServices(agents)
+	return agents
+}
+
+func sortAgentServices(services []*azdext.ServiceConfig) {
+	slices.SortFunc(services, func(a, b *azdext.ServiceConfig) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 }
 
 // priorBlocked reports whether the prior results contain a Fail or Skip

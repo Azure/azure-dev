@@ -62,7 +62,7 @@ func TestCheckManualEnvVars_PriorAgentYAMLFailed_Skips(t *testing.T) {
 	got := check.Fn(t.Context(), Options{}, prior)
 
 	require.Equal(t, StatusSkip, got.Status)
-	require.Contains(t, got.Message, "agent.yaml check failed")
+	require.Contains(t, got.Message, "agent definition check failed")
 }
 
 func TestCheckManualEnvVars_PriorAgentYAMLSkipped_AlsoSkips(t *testing.T) {

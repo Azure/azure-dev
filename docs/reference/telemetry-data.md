@@ -464,13 +464,15 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 <details>
 <summary><strong>Tool Management (<code>azd tool</code>)</strong><a id="tool-management"></a></summary>
 
-Fields for the `azd tool` feature — the first-run experience and `install`/`upgrade`/`check` operations for azd-managed developer tools. These are **distinct** from the [Tool Invocation Attributes](#tool-invocation-attributes-external-cli-tools) above (which describe external processes azd shells out to).
+Fields for the `azd tool` feature, including active `install`/`upgrade`/`check` operations and the reserved first-run contract for azd-managed developer tools. These are **distinct** from the [Tool Invocation Attributes](#tool-invocation-attributes-external-cli-tools) above (which describe external processes azd shells out to).
 
 > **Privacy:** only built-in tool IDs (e.g. `az-cli`, `vscode-bicep`) and version strings are captured. No file paths, no user-identifiable data, and no raw per-tool error text — failed tool IDs are recorded, but error detail stays with the global error middleware.
 
 Built-in tool IDs come from azd's curated tool manifest (run `azd tool list` to see the current set), e.g. `az-cli`, `github-copilot-cli`, `vscode-azure-tools`, `vscode-bicep`, `azure-mcp-server`.
 
-**First-run experience:**
+**Dormant first-run experience (reserved):**
+
+The first-run middleware is not currently registered, so these fields are not emitted. They remain reserved for a possible future redesign.
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
@@ -704,7 +706,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Self-Update** | `cmd.update` | `update.installMethod`, `update.fromVersion` | Update adoption |
 | **Hooks** | `hooks.exec` | `hooks.name`, `hooks.type`, `hooks.kind` | Hook usage by type |
 | **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `pack.builder.image` | Build method usage, success rates |
-| **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.upgrade`, `cmd.tool.uninstall`, `cmd.tool.check` | `tool.id`, `tool.install.strategy`, `tool.firstrun.outcome` | First-run adoption, install/upgrade/uninstall success, upgrade availability |
+| **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.upgrade`, `cmd.tool.uninstall`, `cmd.tool.check` | `tool.id`, `tool.install.strategy` | Install/upgrade/uninstall success, upgrade availability |
 
 ## See Also
 

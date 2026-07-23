@@ -17,6 +17,7 @@ words:
   - germanywestcentral
   - italynorth
   - japaneast
+  - japanwest
   - koreacentral
   - northcentralus
   - norwayeast
@@ -27,9 +28,12 @@ words:
   - southindia
   - spaincentral
   - switzerlandnorth
+  - switzerlandwest
   - uaenorth
   - uksouth
+  - ukwest
   - westeurope
+  - westcentralus
   # Project terms
   - ABAC
   - abbrs

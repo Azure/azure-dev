@@ -127,11 +127,16 @@ bash setup-wsl.sh
 
 This script:
 1. Cross-compiles `azd` core (`linux/amd64`) → `/usr/local/bin/azd`
-2. Cross-compiles the extension (`linux/amd64`) → `~/.azd/extensions/azure.ai.agents/`
-3. Prints version confirmation
+2. Ensures the extensions dev kit (`microsoft.azd.extensions`) is installed
+3. Builds, packages, and installs the `azure.ai.agents` extension from source
+   using `azd x build` → `azd x pack --bundle` → `azd extension install`
+4. Verifies both azd and the extension report expected dev versions
+
+The script properly registers the extension in azd's config, so it will always
+use your dev build — never the published registry version.
 
 **Re-run `setup-wsl.sh` after every local code change** you want to test.
-Requires the Go toolchain installed in WSL.
+Requires the Go toolchain and sudo access in WSL.
 
 ## Authentication
 

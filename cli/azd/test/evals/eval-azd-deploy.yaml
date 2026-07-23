@@ -188,7 +188,7 @@ stimuli:
         name: "suggests azd deploy or azd up"
         config:
           pattern: "azd deploy|azd up"
-      - type: output-not-matches
-        name: "does not re-suggest init or delete the resource group"
+      - type: prompt
+        name: "judge: does not re-suggest init or delete the resource group"
         config:
-          pattern: "azd init|az group delete"
+          scoring: binary

@@ -190,11 +190,38 @@ func newRoutineServiceClient(ctx context.Context) (*routines.Client, error) {
 	), nil
 }
 
+var serviceEnvDeclared = func(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+) (bool, error) {
+	resp, err := azdClient.Project().GetServiceConfigValue(ctx, &azdext.GetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        "env",
+	})
+	if err != nil {
+		return false, fmt.Errorf("reading env for service %q: %w", serviceName, err)
+	}
+	return resp.GetFound(), nil
+}
+
 func (p *routineServiceTarget) environmentValues(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 ) (map[string]string, error) {
-	if environment := serviceConfig.GetEnvironment(); len(environment) > 0 {
+	environment := serviceConfig.GetEnvironment()
+	if len(environment) > 0 {
+		return environment, nil
+	}
+	// An explicit empty env: {} declares an isolated scope.
+	// Core forwards it as an empty map, indistinguishable from
+	// an omitted env, so consult the raw config before falling
+	// back to the full azd environment.
+	declared, err := serviceEnvDeclared(ctx, p.azdClient, serviceConfig.GetName())
+	if err != nil {
+		return nil, err
+	}
+	if declared {
 		return environment, nil
 	}
 

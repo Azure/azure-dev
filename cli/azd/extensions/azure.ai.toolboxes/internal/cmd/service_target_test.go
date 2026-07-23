@@ -223,3 +223,18 @@ func TestExpandToolboxValue(t *testing.T) {
 	// Foundry ${{...}} passes through untouched.
 	assert.Equal(t, []any{"x-secret: ${{secrets.token}}"}, out["headers"])
 }
+
+func TestToolboxEnvironmentValuesEmptyDeclaredIsolates(t *testing.T) {
+	orig := serviceEnvDeclared
+	t.Cleanup(func() { serviceEnvDeclared = orig })
+	serviceEnvDeclared = func(context.Context, *azdext.AzdClient, string) (bool, error) {
+		return true, nil
+	}
+
+	env, err := (&toolboxServiceTarget{}).environmentValues(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "research-tools"},
+	)
+	require.NoError(t, err)
+	require.Empty(t, env)
+}

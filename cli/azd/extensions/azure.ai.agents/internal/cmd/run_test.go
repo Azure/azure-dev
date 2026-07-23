@@ -617,6 +617,7 @@ func TestMergeAgentRunEnvironment(t *testing.T) {
 				"LEGACY=declared",
 			},
 			"agent",
+			true,
 		)
 
 		if got, _ := value(environment, "FOO"); got != "process" {
@@ -646,6 +647,24 @@ func TestMergeAgentRunEnvironment(t *testing.T) {
 		}
 	})
 
+	t.Run("explicit empty env stays isolated", func(t *testing.T) {
+		t.Parallel()
+		environment := mergeAgentRunEnvironment(
+			[]string{"FOO=process"},
+			map[string]string{"SECRET": "leaked", "OTHER": "leaked"},
+			map[string]string{},
+			nil,
+			"agent",
+			true,
+		)
+		if _, found := value(environment, "SECRET"); found {
+			t.Errorf("did not expect azd value in isolated env %v", environment)
+		}
+		if got, _ := value(environment, "FOO"); got != "process" {
+			t.Errorf("expected process FOO, got %q", got)
+		}
+	})
+
 	t.Run("legacy service keeps azd fallback", func(t *testing.T) {
 		t.Parallel()
 		environment := mergeAgentRunEnvironment(
@@ -658,6 +677,7 @@ func TestMergeAgentRunEnvironment(t *testing.T) {
 			nil,
 			[]string{"BAR=inline", "BAZ=inline"},
 			"agent",
+			false,
 		)
 
 		if got, _ := value(environment, "FOO"); got != "process" {

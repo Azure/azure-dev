@@ -223,6 +223,7 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 		serviceEnvironment,
 		defEnv,
 		runCtx.ServiceName,
+		runCtx.HasServiceEnvironment,
 	)
 
 	// Activity agents bind IPv4 and are reached at 127.0.0.1 everywhere else
@@ -1022,17 +1023,20 @@ func findSystemPython() (pythonInterpreter, error) {
 // azdEnvironment is the full active environment for legacy fallback.
 // serviceEnvironment is core-expanded services.<name>.env.
 // definitionEnvironment comes from legacy agent definitions.
+// hasServiceEnvironment reports whether the service declares an
+// env: block (even an empty one).
 func mergeAgentRunEnvironment(
 	baseEnvironment []string,
 	azdEnvironment map[string]string,
 	serviceEnvironment map[string]string,
 	definitionEnvironment []string,
 	serviceName string,
+	hasServiceEnvironment bool,
 ) []string {
 	environment := slices.Clone(baseEnvironment)
 
 	// The full azd environment is a compatibility fallback only.
-	if len(serviceEnvironment) == 0 {
+	if !hasServiceEnvironment {
 		for key, value := range azdEnvironment {
 			if !envSliceHasKey(baseEnvironment, key) {
 				environment = append(

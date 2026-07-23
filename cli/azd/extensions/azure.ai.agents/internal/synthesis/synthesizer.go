@@ -673,9 +673,11 @@ func collectConnections(
 			return nil, fmt.Errorf("services.%s: decode connection: %w", name, err)
 		}
 
+		declared := len(serviceEnvironments[name]) > 0 || connectionEnvDeclared(node)
 		mapping := connectionEnvironmentMapping(
 			env,
 			serviceEnvironments[name],
+			declared,
 		)
 		target, err := maybeExpand(svc.Target, mapping, resolve)
 		if err != nil {
@@ -712,13 +714,28 @@ func collectConnections(
 	return connections, nil
 }
 
+// connectionEnvDeclared reports whether the service node
+// declares an env: key, including an empty env: {}. Core
+// collapses an empty env to an omitted one, so the raw node
+// is the only signal that a service opted into an isolated
+// (possibly empty) scope.
+func connectionEnvDeclared(node yaml.Node) bool {
+	var fields map[string]yaml.Node
+	if err := node.Decode(&fields); err != nil {
+		return false
+	}
+	_, ok := fields["env"]
+	return ok
+}
+
 // Use scoped values when the service declares env.
 // Legacy services use the project and process environments.
 func connectionEnvironmentMapping(
 	env map[string]string,
 	serviceEnvironment map[string]string,
+	declared bool,
 ) func(string) string {
-	if len(serviceEnvironment) > 0 {
+	if declared {
 		return func(name string) string {
 			return serviceEnvironment[name]
 		}

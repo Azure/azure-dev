@@ -631,6 +631,39 @@ services:
 		assert.Equal(t, "service-default", c.Metadata["owner"])
 	})
 
+	t.Run("explicit empty env isolates the connection", func(t *testing.T) {
+		const emptyEnvYAML = `
+services:
+  my-project:
+    host: azure.ai.project
+  mcp-conn:
+    host: azure.ai.connection
+    uses: [my-project]
+    env: {}
+    category: RemoteTool
+    target: ${MCP_URL}
+    authType: CustomKeys
+    credentials:
+      keys:
+        x-api-key: ${MCP_KEY}
+`
+		res, err := Synthesize(Input{
+			RawAzureYAML:  []byte(emptyEnvYAML),
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+			Env: map[string]string{
+				"MCP_URL": "https://leak.example/mcp",
+				"MCP_KEY": "leaked-secret",
+			},
+		})
+		require.NoError(t, err)
+
+		c := getConn(t, res)
+		assert.Equal(t, "", c.Target)
+		keys := getKeys(t, c)
+		assert.Equal(t, "", keys["x-api-key"])
+	})
+
 	t.Run("eject path preserves ${VAR} verbatim", func(t *testing.T) {
 		res, err := Synthesize(Input{
 			RawAzureYAML:    []byte(yaml),

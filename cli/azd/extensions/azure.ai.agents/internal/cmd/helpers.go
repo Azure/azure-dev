@@ -939,10 +939,11 @@ func resolveAgentServiceFromProject(
 
 // ServiceRunContext holds the resolved context needed for local development.
 type ServiceRunContext struct {
-	ServiceName        string            // the resolved service name (from azure.yaml)
-	ProjectDir         string            // absolute path to the service source directory
-	StartupCommand     string            // startupCommand from AdditionalProperties (may be empty)
-	ServiceEnvironment map[string]string // values already expanded by azd core
+	ServiceName           string            // the resolved service name (from azure.yaml)
+	ProjectDir            string            // absolute path to the service source directory
+	StartupCommand        string            // startupCommand from AdditionalProperties (may be empty)
+	ServiceEnvironment    map[string]string // values already expanded by azd core
+	HasServiceEnvironment bool              // service declares env: even when empty
 	// Definition is the resolved agent definition (from the inline azure.yaml
 	// entry or a legacy agent.yaml). It is nil when no definition can be resolved.
 	Definition *agent_yaml.ContainerAgent
@@ -994,12 +995,21 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 		}
 	}
 
+	hasServiceEnvironment := false
+	if resp, envErr := azdClient.Project().GetServiceConfigValue(
+		ctx,
+		&azdext.GetServiceConfigValueRequest{ServiceName: svc.Name, Path: "env"},
+	); envErr == nil {
+		hasServiceEnvironment = resp.GetFound()
+	}
+
 	return &ServiceRunContext{
-		ServiceName:        svc.Name,
-		ProjectDir:         projectDir,
-		StartupCommand:     startupCmd,
-		ServiceEnvironment: svc.GetEnvironment(),
-		Definition:         definition,
+		ServiceName:           svc.Name,
+		ProjectDir:            projectDir,
+		StartupCommand:        startupCmd,
+		ServiceEnvironment:    svc.GetEnvironment(),
+		HasServiceEnvironment: hasServiceEnvironment,
+		Definition:            definition,
 	}, nil
 }
 

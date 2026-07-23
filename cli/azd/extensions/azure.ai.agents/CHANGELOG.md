@@ -1,5 +1,25 @@
 # Release History
 
+## 1.0.0-beta.7 (2026-07-23)
+
+### Features Added
+
+- [[#9009]](https://github.com/Azure/azure-dev/pull/9009) `azd ai agent init` now offers `invocations_ws` as a selectable agent protocol (including for bring-your-own-image `--image` init), while `responses` remains the default.
+- [[#9204]](https://github.com/Azure/azure-dev/pull/9204) Add `eastus`, `italynorth`, `uaenorth`, `southcentralus`, `switzerlandwest`, `ukwest`, `westeurope`, `westcentralus`, and `japanwest` to the list of supported hosted agent regions.
+
+### Bugs Fixed
+
+- [[#9149]](https://github.com/Azure/azure-dev/pull/9149) Fix `azd ai agent run` and `azd deploy` not consistently resolving agent definitions declared inline in `azure.yaml`, via the deprecated `config:` block, or through local `$ref` files.
+- [[#9171]](https://github.com/Azure/azure-dev/pull/9171) Fix modern Python agent projects (using `pyproject.toml`) being incorrectly routed to container deployment and prompted for an unnecessary Azure Container Registry during code deploy.
+- [[#9205]](https://github.com/Azure/azure-dev/pull/9205) Fix `azd deploy` failing with HTTP 403 when the signed-in user's role (for example a subscription-inherited Owner or Azure AI Developer) lacked Cognitive Services data-plane access; the deploy-time RBAC check now recognizes only roles that grant it and auto-assigns the Foundry User role when needed.
+- [[#9225]](https://github.com/Azure/azure-dev/pull/9225) Fix `azd ai agent init` accepting stale Azure Container Registry connections from an existing Foundry project; init now validates discovered registries against ARM and clears missing ones instead of deferring the failure until publish.
+- [[#9254]](https://github.com/Azure/azure-dev/pull/9254) Fix `azd ai agent doctor` failing valid projects whose agent definition is declared inline in `azure.yaml`; the definition check now uses the same resolver as run and deploy.
+- [[#9264]](https://github.com/Azure/azure-dev/pull/9264) Fix `azd ai agent doctor` reporting a false pass for an inline or `$ref` agent definition with an unsupported kind; resolved non-hosted definitions are now validated, while valid `workflow` definitions still pass.
+
+### Other Changes
+
+- [[#9133]](https://github.com/Azure/azure-dev/pull/9133) Foundry project provisioning has moved to the `azure.ai.projects` extension. Update `azure.ai.agents` and `azure.ai.projects` together, since mixing versions can cause both extensions to register the same `microsoft.foundry` provider.
+
 ## 1.0.0-beta.6 (2026-07-16)
 
 ### Features Added

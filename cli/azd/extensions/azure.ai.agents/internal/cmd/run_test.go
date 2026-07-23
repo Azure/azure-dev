@@ -1076,6 +1076,107 @@ func TestVenvPip(t *testing.T) {
 	}
 }
 
+func TestUvPythonInstallSteps(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		files     []string
+		wantSteps []dependencyInstallStep
+	}{
+		{
+			name:  "uv lock is authoritative",
+			files: []string{"pyproject.toml", "uv.lock", "requirements.txt"},
+			wantSteps: []dependencyInstallStep{{
+				startMessage:   "Synchronizing dependencies (uv.lock)...",
+				successMessage: "  ✓ Dependencies synchronized (uv.lock)",
+				errorMessage:   "uv sync failed",
+				args: []string{
+					"sync",
+					"--locked",
+					"--python", "python-path",
+					"--quiet",
+				},
+			}},
+		},
+		{
+			name:  "pyproject without lock uses editable install",
+			files: []string{"pyproject.toml"},
+			wantSteps: []dependencyInstallStep{{
+				startMessage:   "Installing dependencies (pyproject.toml)...",
+				successMessage: "  ✓ Dependencies installed (pyproject.toml)",
+				errorMessage:   "uv pip install failed",
+				args: []string{
+					"pip", "install", "-e", ".",
+					"--python", "python-path",
+					"--prerelease", "allow",
+					"--quiet",
+				},
+			}},
+		},
+		{
+			name:  "requirements without lock keeps requirements install",
+			files: []string{"requirements.txt"},
+			wantSteps: []dependencyInstallStep{{
+				startMessage:   "Installing dependencies (requirements.txt)...",
+				successMessage: "  ✓ Dependencies installed (requirements.txt)",
+				errorMessage:   "uv pip install failed",
+				args: []string{
+					"pip", "install", "-r", "requirements.txt",
+					"--python", "python-path",
+					"--prerelease", "allow",
+					"--quiet",
+				},
+			}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			projectDir := t.TempDir()
+			for _, name := range tt.files {
+				if err := os.WriteFile(filepath.Join(projectDir, name), nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			got := uvPythonInstallSteps(projectDir, "python-path")
+			if len(got) != len(tt.wantSteps) {
+				t.Fatalf("got %d steps, want %d: %#v", len(got), len(tt.wantSteps), got)
+			}
+			for i := range got {
+				if got[i].startMessage != tt.wantSteps[i].startMessage ||
+					got[i].successMessage != tt.wantSteps[i].successMessage ||
+					got[i].errorMessage != tt.wantSteps[i].errorMessage ||
+					!slices.Equal(got[i].args, tt.wantSteps[i].args) {
+					t.Errorf("step %d = %#v, want %#v", i, got[i], tt.wantSteps[i])
+				}
+			}
+		})
+	}
+}
+
+func TestInstallPythonDepsRequiresUvForLock(t *testing.T) {
+	projectDir := t.TempDir()
+	for _, name := range []string{"pyproject.toml", "uv.lock"} {
+		if err := os.WriteFile(filepath.Join(projectDir, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Setenv("PATH", t.TempDir())
+
+	err := installPythonDeps(projectDir)
+	if err == nil {
+		t.Fatal("expected locked project without uv to fail")
+	}
+	if !strings.Contains(err.Error(), "uv is required to synchronize dependencies from uv.lock") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestMinPythonUvSpec(t *testing.T) {
 	// The uv `--python` specifier must derive from the shared constants so the
 	// uv and pip paths cannot drift apart.

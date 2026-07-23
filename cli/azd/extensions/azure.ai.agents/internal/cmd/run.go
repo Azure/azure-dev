@@ -666,8 +666,25 @@ func installDependencies(projectDir string) error {
 	return nil
 }
 
+type dependencyInstallStep struct {
+	startMessage   string
+	successMessage string
+	errorMessage   string
+	args           []string
+}
+
 func installPythonDeps(projectDir string) error {
-	if _, err := exec.LookPath("uv"); err != nil {
+	lockedProject := uvLockedProject(projectDir)
+	uvPath, err := exec.LookPath("uv")
+	if err != nil {
+		if lockedProject {
+			return fmt.Errorf(
+				"uv is required to synchronize dependencies from uv.lock; "+
+					"install it from https://docs.astral.sh/uv/: %w",
+				err,
+			)
+		}
+
 		fmt.Println("Warning: uv is not installed. Install it from https://docs.astral.sh/uv/")
 		fmt.Println("Falling back to pip...")
 		return installPythonDepsPip(projectDir)
@@ -676,7 +693,8 @@ func installPythonDeps(projectDir string) error {
 	venvDir := filepath.Join(projectDir, ".venv")
 	if _, err := os.Stat(venvDir); os.IsNotExist(err) {
 		fmt.Println("Setting up Python environment...")
-		cmd := exec.Command("uv", "venv", venvDir, "--python", minPythonUvSpec()) //nolint:gosec // G204: venvDir is derived from the project directory path
+		//nolint:gosec // G204: uvPath is from LookPath; venvDir is derived from the project directory path
+		cmd := exec.Command(uvPath, "venv", venvDir, "--python", minPythonUvSpec())
 		cmd.Dir = projectDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -687,31 +705,72 @@ func installPythonDeps(projectDir string) error {
 
 	pythonPath := venvPython(venvDir)
 
-	if fileExists(filepath.Join(projectDir, "pyproject.toml")) {
-		fmt.Println("Installing dependencies (pyproject.toml)...")
-		cmd := exec.Command("uv", "pip", "install", "-e", ".", "--python", pythonPath, "--prerelease", "allow", "--quiet") //nolint:gosec // G204: pythonPath is derived from the project venv directory
+	for _, step := range uvPythonInstallSteps(projectDir, pythonPath) {
+		fmt.Println(step.startMessage)
+		//nolint:gosec // G204: uvPath is from LookPath; command arguments are static or derived from the project venv
+		cmd := exec.Command(uvPath, step.args...)
 		cmd.Dir = projectDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("uv pip install failed: %w", err)
+			return fmt.Errorf("%s: %w", step.errorMessage, err)
 		}
-		fmt.Println("  ✓ Dependencies installed (pyproject.toml)")
-	}
-
-	if fileExists(filepath.Join(projectDir, "requirements.txt")) {
-		fmt.Println("Installing dependencies (requirements.txt)...")
-		cmd := exec.Command("uv", "pip", "install", "-r", "requirements.txt", "--python", pythonPath, "--prerelease", "allow", "--quiet") //nolint:gosec // G204: pythonPath is derived from the project venv directory
-		cmd.Dir = projectDir
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("uv pip install failed: %w", err)
-		}
-		fmt.Println("  ✓ Dependencies installed (requirements.txt)")
+		fmt.Println(step.successMessage)
 	}
 
 	return nil
+}
+
+func uvLockedProject(projectDir string) bool {
+	return fileExists(filepath.Join(projectDir, "pyproject.toml")) &&
+		fileExists(filepath.Join(projectDir, "uv.lock"))
+}
+
+func uvPythonInstallSteps(projectDir string, pythonPath string) []dependencyInstallStep {
+	if uvLockedProject(projectDir) {
+		return []dependencyInstallStep{{
+			startMessage:   "Synchronizing dependencies (uv.lock)...",
+			successMessage: "  ✓ Dependencies synchronized (uv.lock)",
+			errorMessage:   "uv sync failed",
+			args: []string{
+				"sync",
+				"--locked",
+				"--python", pythonPath,
+				"--quiet",
+			},
+		}}
+	}
+
+	steps := []dependencyInstallStep{}
+	if fileExists(filepath.Join(projectDir, "pyproject.toml")) {
+		steps = append(steps, dependencyInstallStep{
+			startMessage:   "Installing dependencies (pyproject.toml)...",
+			successMessage: "  ✓ Dependencies installed (pyproject.toml)",
+			errorMessage:   "uv pip install failed",
+			args: []string{
+				"pip", "install", "-e", ".",
+				"--python", pythonPath,
+				"--prerelease", "allow",
+				"--quiet",
+			},
+		})
+	}
+
+	if fileExists(filepath.Join(projectDir, "requirements.txt")) {
+		steps = append(steps, dependencyInstallStep{
+			startMessage:   "Installing dependencies (requirements.txt)...",
+			successMessage: "  ✓ Dependencies installed (requirements.txt)",
+			errorMessage:   "uv pip install failed",
+			args: []string{
+				"pip", "install", "-r", "requirements.txt",
+				"--python", pythonPath,
+				"--prerelease", "allow",
+				"--quiet",
+			},
+		})
+	}
+
+	return steps
 }
 
 func installPythonDepsPip(projectDir string) error {

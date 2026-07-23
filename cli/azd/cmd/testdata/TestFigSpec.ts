@@ -3440,6 +3440,18 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['version'],
 							description: 'Display the extension version',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json'],
+										},
+									],
+								},
+							],
 						},
 					],
 				},

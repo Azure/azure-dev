@@ -1,0 +1,81 @@
+name: azd-troubleshooting
+description: >-
+  These are some simple 'ask copilot about azd' questions or errors, but don't involve using real azd projects, MCPs, or the CLI.
+
+defaults:
+  runs: 1
+  timeout: 5m
+  executor: copilot-sdk
+  model: claude-sonnet-4.6
+  # model: mai-code-1-flash-picker
+  judge_model: gpt-5.5
+
+# Every grader must pass for a stimulus to count as a success.
+scoring:
+  threshold: 1.0
+
+stimuli:
+  - name: troubleshoot-auth-error
+    prompt: |
+      I ran azd provision and got this error:
+      ERROR: failed deploying: deploying to subscription: AADSTS70011: The provided
+      request must include a 'scope' input parameter. The provided value for the
+      input parameter 'scope' is not valid.
+      InteractiveBrowserCredential authentication failed.
+      How do I fix this?
+    graders:
+      - type: output-matches
+        name: "identifies this as an auth problem"
+        config:
+          pattern: "(auth|authenticat|credential|login|token)"
+      - type: output-matches
+        name: "suggests a concrete auth fix"
+        config:
+          pattern: "azd auth login|az login|azd auth logout|clear (token|cache|credential)"
+
+  - name: troubleshoot-config-error
+    prompt: |
+      I ran azd provision and got this error:
+      ERROR: reading project: unable to parse azure.yaml:
+      yaml: line 12: did not find expected key
+      My azure.yaml was working before, but I recently edited it. What's wrong?
+    graders:
+      - type: output-matches
+        name: "identifies azure.yaml as the source of the problem"
+        config:
+          pattern: "azure\\.yaml"
+      - type: output-matches
+        name: "references the YAML syntax issue"
+        config:
+          pattern: "(syntax|format|indentation|parse|YAML)"
+      - type: output-matches
+        name: "gives actionable guidance"
+        config:
+          pattern: "line 12|indent|azd init|validate|YAML (lint|valid)|check (the |your )?azure.yaml"
+      - type: output-not-matches
+        name: "does not suggest destructive cleanup"
+        config:
+          pattern: "azd down|az group delete|rm -rf|delete (the |your )?(project|repo)"
+      - type: token-budget
+        config:
+          max: 100000
+ 
+  - name: deploy-existing-project
+    prompt: "I already have my project set up with azure.yaml. How do I deploy it?"
+    environment:
+      files:
+        - src: fixtures/azd-project/azure.yaml
+          dest: azure.yaml
+        - src: fixtures/azd-project/config-dev.json
+          dest: .azure/config.json
+        - src: fixtures/azd-project/dev.env
+          dest: .azure/dev/.env
+    graders:
+      - type: output-matches
+        name: "does not re-suggest init or delete the resource group"
+        config:
+          pattern: "azd deploy|azd up"
+      - type: output-not-matches
+        name: "does not re-suggest init or delete the resource group"
+        config:
+          pattern: "azd init|az group delete"

@@ -1,0 +1,37 @@
+# Experiment: measure the impact of the azd skill across two models by running
+# the same evals with skills loaded and without.
+#
+#   npm run eval:experiment
+#   npx vally experiment run ./eval-azd-experiments.yaml --dry-run   # preview plan
+#
+# A file holds exactly one experiment (one controlled comparison). To run a
+# different comparison -- e.g. a multi-model sweep -- add a separate experiment
+# YAML file and a matching npm script.
+name: azd-skills-baseline
+
+evals:
+  - eval-azd-troubleshooting.yaml
+  - eval-azd-deploy.yaml
+
+# Two axes:
+# - skills: azd skill off vs on
+# - model: claude-sonnet-4.6 vs gpt-5.5
+#
+# An empty skills list replaces the eval's skills entirely (no skills); the
+# other value injects the azd skill.
+matrix:
+  skills:
+    path: /environment/skills
+    values:
+      - without-skills: []
+      - with-skills: ["./skills/azd"]
+  model:
+    path: /defaults/model
+    values:
+      - claude-sonnet-4.6: claude-sonnet-4.6
+      - gpt-5.5: gpt-5.5
+
+# Control variant that deltas are measured against.
+baseline:
+  skills: without-skills
+  model: claude-sonnet-4.6

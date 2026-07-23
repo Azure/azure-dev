@@ -4,7 +4,7 @@
 # BOTH a positional manifest argument AND -m/--manifest, which the command
 # rejects up front (CodeConflictingArguments) before any wizard or network call.
 name: "init-validate-mutually-exclusive"
-command: "azd ai agent init agent.manifest.yaml -m https://example.com/agent.manifest.yaml"
+command: "azd ai agent init azure.yaml -m https://example.com/azure.yaml"
 cwd: "~/working/azd-agents-validate-{instance}"
 tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
 

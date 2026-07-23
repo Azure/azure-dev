@@ -7,8 +7,7 @@
 # API is rate-limited, which would otherwise drop into an interactive gh login
 # mid-run. The pre hook fails fast if gh is not authenticated.
 #
-# NOTE: The `-m` flag now accepts an azure.yaml URL (unified project manifest)
-# in addition to legacy agent.manifest.yaml files. With a Python project URL and
+# NOTE: The `-m` flag accepts an azure.yaml URL (unified project manifest). With a Python project URL and
 # userProvidedManifest=true, code deploy is auto-selected (no deploy-mode prompt).
 name: "init-from-azure-yaml-url"
 command: "azd ai agent init -m https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/01-basic/azure.yaml"

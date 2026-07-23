@@ -431,6 +431,45 @@ func TestCheckAgentDefinitionValid_InlineWithoutFile_Passes(
 	require.Contains(t, got.Message, "agent definition valid")
 }
 
+func TestCheckAgentDefinitionValid_InlineInvalidKind_Fails(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "nonsense",
+		"name": "echo-agent",
+	})
+	require.NoError(t, err)
+
+	client := newTestAzdClient(t,
+		&fakeProjectServer{resp: &azdext.GetProjectResponse{
+			Project: &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{
+					"echo-agent": {
+						Name:                 "echo-agent",
+						Host:                 agentHost,
+						RelativePath:         "src/agent",
+						AdditionalProperties: props,
+					},
+				},
+			},
+		}},
+		&fakeEnvironmentServer{})
+	check := newCheckAgentDefinitionValid(
+		Dependencies{AzdClient: client},
+	)
+
+	got := check.Fn(t.Context(), Options{}, nil)
+
+	require.Equal(t, StatusFail, got.Status)
+	failures, ok := got.Details["failures"].([]string)
+	require.True(t, ok)
+	require.Len(t, failures, 1)
+	require.Contains(t, failures[0], "template.kind must be one of")
+}
+
 func TestCheckAgentDefinitionValid_InlineWinsOverStaleFile(
 	t *testing.T,
 ) {

@@ -937,7 +937,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--protocol'],
-									description: 'Protocols supported by the agent (e.g., \'responses\', \'invocations\'). Can be specified multiple times.',
+									description: 'Protocols supported by the agent (responses, invocations, invocations_ws, activity). Can be specified multiple times.',
 									isRepeatable: true,
 									args: [
 										{

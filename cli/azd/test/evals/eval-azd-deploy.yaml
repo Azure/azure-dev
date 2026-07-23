@@ -1,5 +1,5 @@
-# These tests are a work in progress - I've enabled the node test
-#
+# These tests are a work in progress. All stimuli below are intentionally active and run in CI
+# (runs: 3 each) so we can track how azd deploy/env/lifecycle guidance evolves over time.
 name: azd-deploy
 description: Evals of realistic situations, with actual projects or code to work with.
 

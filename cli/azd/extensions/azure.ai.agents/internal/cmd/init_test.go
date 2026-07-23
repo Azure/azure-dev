@@ -933,10 +933,6 @@ func TestWriteDownloadedFilePermissions(t *testing.T) {
 				t.Fatalf("downloadedFilePermissions() = %04o, want %04o", got, tt.wantPermissions)
 			}
 
-			if err := os.WriteFile(path, []byte("old"), osutil.PermissionFile); err != nil {
-				t.Fatal(err)
-			}
-
 			if err := writeDownloadedFile(path, []byte("new")); err != nil {
 				t.Fatal(err)
 			}
@@ -961,6 +957,28 @@ func TestWriteDownloadedFilePermissions(t *testing.T) {
 				t.Errorf("permissions = %04o, want %04o", got, tt.wantPermissions)
 			}
 		})
+	}
+}
+
+func TestWriteDownloadedFileRefusesToOverwrite(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "postprovision.sh")
+	if err := os.WriteFile(path, []byte("old"), osutil.PermissionFile); err != nil {
+		t.Fatal(err)
+	}
+
+	err := writeDownloadedFile(path, []byte("new"))
+	if !errors.Is(err, fs.ErrExist) {
+		t.Fatalf("writeDownloadedFile() error = %v, want fs.ErrExist", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "old" {
+		t.Fatalf("content = %q, want %q", content, "old")
 	}
 }
 

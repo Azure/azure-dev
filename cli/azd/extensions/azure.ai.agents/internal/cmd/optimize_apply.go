@@ -25,6 +25,7 @@ import (
 	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/pkg/paths"
+	"azureaiagent/internal/pkg/projectconfig"
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -259,6 +260,17 @@ func persistInlineAgentEnvironment(
 	svc *azdext.ServiceConfig,
 	envUpdates map[string]string,
 ) error {
+	_, _, found, source, err := projectpkg.AgentDefinitionFromService(svc)
+	if err != nil {
+		return fmt.Errorf("failed to read agent definition: %w", err)
+	}
+	if !found {
+		return fmt.Errorf(
+			"service %q does not carry an inline agent definition",
+			svc.GetName(),
+		)
+	}
+
 	// Build the env to persist from raw templates only, never from the
 	// core-expanded svc.Environment. AddService escapes env values to
 	// literals, so routing templates through it would freeze a ${VAR}
@@ -267,7 +279,7 @@ func persistInlineAgentEnvironment(
 	if err != nil {
 		return fmt.Errorf("failed to read agent environment: %w", err)
 	}
-	existingEnv, err := getRawServiceEnv(ctx, azdClient, svc.Name)
+	existingEnv, err := getRawServiceEnv(ctx, azdClient, svc)
 	if err != nil {
 		return err
 	}
@@ -279,37 +291,26 @@ func persistInlineAgentEnvironment(
 	maps.Copy(mergedEnv, existingEnv)
 	maps.Copy(mergedEnv, envUpdates)
 
-	// UpsertAgentEnvVars drops the deprecated environmentVariables and
-	// sets svc.Environment; clear it so AddService leaves env alone. The
-	// merged raw templates are written below via setServiceEnvironment.
-	if err := projectpkg.UpsertAgentEnvVars(svc, envUpdates); err != nil {
-		return fmt.Errorf("failed to update agent definition: %w", err)
-	}
-	svc.Environment = nil
-
-	// Preserve core-only uses dependency edges.
-	prevUses, err := azdClient.Project().GetServiceConfigValue(ctx, &azdext.GetServiceConfigValueRequest{
-		ServiceName: svc.Name,
-		Path:        "uses",
-	})
-	if err != nil {
-		return fmt.Errorf("failed to read uses for service %q: %w", svc.Name, err)
-	}
-	if _, err := azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{Service: svc}); err != nil {
-		return fmt.Errorf("failed to persist agent definition: %w", err)
-	}
 	if err := setServiceEnvironment(ctx, azdClient, svc.Name, mergedEnv); err != nil {
 		return err
 	}
-	// Restore `uses:` if it was set before the replacement.
-	if prevUses.GetFound() && prevUses.GetValue() != nil {
-		if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+
+	environmentPath := "environmentVariables"
+	if source == projectpkg.AgentDefinitionSourceLegacyConfig {
+		environmentPath = "config.environmentVariables"
+	}
+	if _, err := azdClient.Project().UnsetServiceConfig(
+		ctx,
+		&azdext.UnsetServiceConfigRequest{
 			ServiceName: svc.Name,
-			Path:        "uses",
-			Value:       prevUses.GetValue(),
-		}); err != nil {
-			return fmt.Errorf("failed to restore uses for service %q: %w", svc.Name, err)
-		}
+			Path:        environmentPath,
+		},
+	); err != nil {
+		return fmt.Errorf(
+			"removing deprecated environmentVariables from service %q: %w",
+			svc.Name,
+			err,
+		)
 	}
 	return nil
 }
@@ -321,8 +322,9 @@ func persistInlineAgentEnvironment(
 func getRawServiceEnv(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
-	serviceName string,
+	svc *azdext.ServiceConfig,
 ) (map[string]string, error) {
+	serviceName := svc.GetName()
 	resp, err := azdClient.Project().GetServiceConfigValue(
 		ctx,
 		&azdext.GetServiceConfigValueRequest{
@@ -341,11 +343,36 @@ func getRawServiceEnv(
 	if !ok {
 		return nil, nil
 	}
+	originalRaw := maps.Clone(raw)
+	properties := map[string]any{"env": raw}
+	if err := projectconfig.NormalizeEnvironment(properties); err != nil {
+		return nil, fmt.Errorf(
+			"normalizing env for service %q: %w",
+			serviceName,
+			err,
+		)
+	}
 	env := make(map[string]string, len(raw))
 	for key, value := range raw {
-		if str, ok := value.(string); ok {
-			env[key] = str
+		if original, wasString := originalRaw[key].(string); wasString {
+			env[key] = original
+			continue
 		}
+		if forwarded, found := svc.GetEnvironment()[key]; found {
+			env[key] = forwarded
+			continue
+		}
+		str, ok := value.(string)
+		if ok {
+			env[key] = str
+			continue
+		}
+		return nil, fmt.Errorf(
+			"normalizing env %q for service %q produced %T",
+			key,
+			serviceName,
+			value,
+		)
 	}
 	return env, nil
 }

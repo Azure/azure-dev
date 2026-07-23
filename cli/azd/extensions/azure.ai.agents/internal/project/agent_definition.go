@@ -181,7 +181,15 @@ func ResolveAgentEnvironmentVariable(
 	if environmentValue, found := serviceEnvironment[name]; found {
 		return environmentValue, nil
 	}
-	return ExpandEnv(value, mapping)
+	return ExpandEnv(value, func(variableName string) string {
+		if environmentValue, found := serviceEnvironment[variableName]; found {
+			return environmentValue
+		}
+		if mapping == nil {
+			return ""
+		}
+		return mapping(variableName)
+	})
 }
 
 func environmentVariablesFromMap(
@@ -533,6 +541,7 @@ func validateRootRefCoreFields(
 		return err
 	}
 	for _, field := range []string{
+		"env",
 		"project",
 		"language",
 		"image",

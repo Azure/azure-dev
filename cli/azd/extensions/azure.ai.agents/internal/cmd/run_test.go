@@ -675,6 +675,49 @@ func TestMergeAgentRunEnvironment(t *testing.T) {
 	})
 }
 
+func TestResolveLocalServiceEnvironment(t *testing.T) {
+	t.Parallel()
+
+	original := map[string]string{
+		"MODEL_ENDPOINT": "${{project.endpoint}}/models",
+		"LITERAL":        "literal ${NOT_A_TEMPLATE}",
+	}
+	endpoint := localProjectEndpoint(
+		[]string{"FOUNDRY_PROJECT_ENDPOINT=https://process.example"},
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://service.example",
+		},
+		"https://azd.example",
+	)
+	resolved := resolveLocalServiceEnvironment(
+		original,
+		endpoint,
+	)
+
+	if got := resolved["MODEL_ENDPOINT"]; got !=
+		"https://process.example/models" {
+		t.Errorf("expected resolved endpoint, got %q", got)
+	}
+	if got := resolved["LITERAL"]; got != "literal ${NOT_A_TEMPLATE}" {
+		t.Errorf("expected literal value, got %q", got)
+	}
+	if got := original["MODEL_ENDPOINT"]; got !=
+		"${{project.endpoint}}/models" {
+		t.Errorf("expected original map to stay unchanged, got %q", got)
+	}
+
+	serviceEndpoint := localProjectEndpoint(
+		nil,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://service.example",
+		},
+		"https://azd.example",
+	)
+	if serviceEndpoint != "https://service.example" {
+		t.Errorf("expected service endpoint, got %q", serviceEndpoint)
+	}
+}
+
 func TestEnvSliceHasKeyUsesPlatformCasing(t *testing.T) {
 	t.Parallel()
 

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -197,10 +198,19 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	}
 
 	endpoint, _ := resolveAgentEndpoint(ctx, "", "")
+	endpoint = localProjectEndpoint(
+		env,
+		runCtx.ServiceEnvironment,
+		endpoint,
+	)
+	serviceEnvironment := resolveLocalServiceEnvironment(
+		runCtx.ServiceEnvironment,
+		endpoint,
+	)
 	defEnv, defErr := resolveAgentDefinitionEnvVars(
 		ctx,
 		runCtx.Definition,
-		runCtx.ServiceEnvironment,
+		serviceEnvironment,
 		azdEnvVars,
 		endpoint,
 	)
@@ -210,7 +220,7 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	env = mergeAgentRunEnvironment(
 		env,
 		azdEnvVars,
-		runCtx.ServiceEnvironment,
+		serviceEnvironment,
 		defEnv,
 		runCtx.ServiceName,
 	)
@@ -560,6 +570,41 @@ func resolveAgentDefinitionEnvVars(
 	}
 
 	return result, nil
+}
+
+func resolveLocalServiceEnvironment(
+	environment map[string]string,
+	endpoint string,
+) map[string]string {
+	resolved := maps.Clone(environment)
+	if endpoint == "" {
+		return resolved
+	}
+	for key, value := range resolved {
+		resolved[key] = strings.ReplaceAll(
+			value,
+			"${{project.endpoint}}",
+			endpoint,
+		)
+	}
+	return resolved
+}
+
+func localProjectEndpoint(
+	baseEnvironment []string,
+	serviceEnvironment map[string]string,
+	fallback string,
+) string {
+	if value, found := envSliceValue(
+		baseEnvironment,
+		"FOUNDRY_PROJECT_ENDPOINT",
+	); found {
+		return value
+	}
+	if value, found := serviceEnvironment["FOUNDRY_PROJECT_ENDPOINT"]; found {
+		return value
+	}
+	return fallback
 }
 
 // findAgentYaml locates the agent definition file in the given directory.
@@ -972,6 +1017,11 @@ func findSystemPython() (pythonInterpreter, error) {
 }
 
 // mergeAgentRunEnvironment builds the local agent environment.
+//
+// baseEnvironment contains process and command-owned values.
+// azdEnvironment is the full active environment for legacy fallback.
+// serviceEnvironment is core-expanded services.<name>.env.
+// definitionEnvironment comes from legacy agent definitions.
 func mergeAgentRunEnvironment(
 	baseEnvironment []string,
 	azdEnvironment map[string]string,
@@ -1078,16 +1128,27 @@ func appendEnvValue(env []string, key string, value string) []string {
 
 // envSliceHasKey reports whether env contains an entry for key.
 func envSliceHasKey(env []string, key string) bool {
-	return slices.ContainsFunc(env, func(entry string) bool {
-		entryKey, _, found := strings.Cut(entry, "=")
+	_, found := envSliceValue(env, key)
+	return found
+}
+
+func envSliceValue(env []string, key string) (string, bool) {
+	for _, entry := range env {
+		entryKey, value, found := strings.Cut(entry, "=")
 		if !found {
-			return false
+			continue
 		}
 		if runtime.GOOS == "windows" {
-			return strings.EqualFold(entryKey, key)
+			if strings.EqualFold(entryKey, key) {
+				return value, true
+			}
+			continue
 		}
-		return entryKey == key
-	})
+		if entryKey == key {
+			return value, true
+		}
+	}
+	return "", false
 }
 
 // loadAzdEnvironment reads all key-value pairs from the current azd environment.

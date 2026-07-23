@@ -38,7 +38,7 @@
     },
     "credentials": {
       "type": "object",
-      "description": "Credentials. Values may contain ${VAR} declared in the service-level env object or ${{...}} for Foundry server-side resolution.",
+      "description": "Credentials. Use ${VAR} for azd service env substitution or ${{...}} for Foundry server-side resolution. In a service env value, use $${{...}} so azd forwards the Foundry expression unchanged.",
       "additionalProperties": true
     },
     "metadata": {

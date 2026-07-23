@@ -195,18 +195,35 @@ func TestInlineAgentEnvironmentVariables(t *testing.T) {
 func TestResolveAgentEnvironmentVariable(t *testing.T) {
 	t.Parallel()
 
-	value, err := ResolveAgentEnvironmentVariable(
-		"FORWARDED_VALUE",
-		"${FORWARDED_VALUE}",
-		map[string]string{
-			"FORWARDED_VALUE": "literal ${NOT_A_TEMPLATE}",
-		},
-		func(string) string {
-			return "expanded"
-		},
-	)
-	require.NoError(t, err)
-	require.Equal(t, "literal ${NOT_A_TEMPLATE}", value)
+	t.Run("preserves same-name core value", func(t *testing.T) {
+		value, err := ResolveAgentEnvironmentVariable(
+			"FORWARDED_VALUE",
+			"${FORWARDED_VALUE}",
+			map[string]string{
+				"FORWARDED_VALUE": "literal ${NOT_A_TEMPLATE}",
+			},
+			func(string) string {
+				return "expanded"
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(t, "literal ${NOT_A_TEMPLATE}", value)
+	})
+
+	t.Run("resolves aliases from service env first", func(t *testing.T) {
+		value, err := ResolveAgentEnvironmentVariable(
+			"TARGET",
+			"${SERVICE_ENDPOINT}",
+			map[string]string{
+				"SERVICE_ENDPOINT": "https://service.example",
+			},
+			func(string) string {
+				return "https://project.example"
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(t, "https://service.example", value)
+	})
 }
 
 func TestLoadAgentDefinition_UnrelatedInlineFallsBackToConfig(
@@ -513,6 +530,7 @@ func TestResolveServiceConfigInPlaceRejectsCoreFieldsFromRootRef(t *testing.T) {
 		name  string
 		value string
 	}{
+		{name: "env", value: "env:\n  LOG_LEVEL: info\n"},
 		{name: "project", value: "project: src/agent\n"},
 		{name: "language", value: "language: docker\n"},
 		{name: "image", value: "image: registry.example/agent:v1\n"},

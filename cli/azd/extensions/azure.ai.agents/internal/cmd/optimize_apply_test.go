@@ -89,8 +89,12 @@ func TestPersistInlineAgentEnvironmentMigratesLegacyTemplates(t *testing.T) {
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
-	require.Len(t, server.added, 1)
-	require.Empty(t, server.added[0].GetEnvironment())
+	require.Empty(t, server.added)
+	require.Equal(
+		t,
+		[]string{"config.environmentVariables"},
+		server.unsetPaths,
+	)
 	require.Equal(t, map[string]any{
 		"LEGACY_KEY":                "${LEGACY_KEY}",
 		"OPTIMIZATION_CANDIDATE_ID": "candidate-1",
@@ -144,8 +148,12 @@ func TestPersistInlineAgentEnvironmentPreservesTopLevelEnv(t *testing.T) {
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
-	require.Len(t, server.added, 1)
-	require.Empty(t, server.added[0].GetEnvironment())
+	require.Empty(t, server.added)
+	require.Equal(
+		t,
+		[]string{"environmentVariables"},
+		server.unsetPaths,
+	)
 	require.Equal(t, map[string]any{
 		"LOG_LEVEL":                 "${AZURE_LOG_LEVEL}",
 		"MODEL_ENDPOINT":            "$${{project.endpoint}}",
@@ -195,10 +203,115 @@ func TestPersistInlineAgentEnvironmentEscapesLegacyFoundrySpan(t *testing.T) {
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
+	require.Equal(
+		t,
+		[]string{"environmentVariables"},
+		server.unsetPaths,
+	)
 	require.Equal(t, map[string]any{
 		"SEARCH_KEY":                "$${{connections.search.credentials.key}}",
 		"OPTIMIZATION_CANDIDATE_ID": "candidate-1",
 	}, server.env["basic-agent"])
+}
+
+func TestPersistInlineAgentEnvironmentNormalizesScalars(t *testing.T) {
+	props, err := projectpkg.AgentDefinitionToServiceProperties(
+		agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindHosted,
+				Name: "basic-agent",
+			},
+			Protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "2.0.0"},
+			},
+		},
+		nil,
+	)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+		Environment: map[string]string{
+			"LARGE": "9007199254740993",
+		},
+	}
+	server := &recordingProjectServer{
+		rawEnv: map[string]map[string]any{
+			"basic-agent": {
+				"ENABLED": true,
+				"RETRIES": float64(3),
+				"EMPTY":   nil,
+				"LARGE":   float64(9007199254740992),
+			},
+		},
+	}
+
+	client := newProjectRecorderClient(t, server)
+	require.NoError(t, persistInlineAgentEnvironment(
+		t.Context(),
+		client,
+		svc,
+		map[string]string{"OPTIMIZATION_CANDIDATE_ID": "candidate-1"},
+	))
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Equal(t, map[string]any{
+		"ENABLED":                   "true",
+		"RETRIES":                   "3",
+		"EMPTY":                     "",
+		"LARGE":                     "9007199254740993",
+		"OPTIMIZATION_CANDIDATE_ID": "candidate-1",
+	}, server.env["basic-agent"])
+}
+
+func TestPersistInlineAgentEnvironmentKeepsLegacyOnEnvFailure(
+	t *testing.T,
+) {
+	props, err := projectpkg.AgentDefinitionToServiceProperties(
+		agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindHosted,
+				Name: "basic-agent",
+			},
+			Protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "2.0.0"},
+			},
+		},
+		nil,
+	)
+	require.NoError(t, err)
+	legacyEnvironment, err := structpb.NewValue([]any{
+		map[string]any{
+			"name":  "LEGACY_KEY",
+			"value": "${LEGACY_KEY}",
+		},
+	})
+	require.NoError(t, err)
+	props.Fields["environmentVariables"] = legacyEnvironment
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}
+	server := &recordingProjectServer{
+		setEnvironmentErr: fmt.Errorf("write failed"),
+	}
+
+	client := newProjectRecorderClient(t, server)
+	err = persistInlineAgentEnvironment(
+		t.Context(),
+		client,
+		svc,
+		map[string]string{"OPTIMIZATION_CANDIDATE_ID": "candidate-1"},
+	)
+
+	require.ErrorContains(t, err, "write failed")
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Empty(t, server.unsetPaths)
+	require.Empty(t, server.added)
 }
 
 // ---- printPreviewLines ----

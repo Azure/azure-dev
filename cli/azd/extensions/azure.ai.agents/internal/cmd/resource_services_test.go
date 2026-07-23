@@ -425,7 +425,10 @@ type recordingProjectServer struct {
 	// rawEnv is returned by GetServiceConfigValue for path "env" to
 	// simulate a service that already carries an env section (raw,
 	// on-disk templates).
-	rawEnv map[string]map[string]any
+	rawEnv                map[string]map[string]any
+	unsetPaths            []string
+	setEnvironmentErr     error
+	unsetServiceConfigErr error
 }
 
 // configValueRecord captures a single SetServiceConfigValue call.
@@ -511,11 +514,27 @@ func (s *recordingProjectServer) SetServiceConfigSection(
 ) (*azdext.EmptyResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.setEnvironmentErr != nil {
+		return nil, s.setEnvironmentErr
+	}
 	if s.env == nil {
 		s.env = map[string]map[string]any{}
 	}
 	if req.Path == "env" && req.Section != nil {
 		s.env[req.ServiceName] = req.Section.AsMap()
+	}
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *recordingProjectServer) UnsetServiceConfig(
+	_ context.Context,
+	req *azdext.UnsetServiceConfigRequest,
+) (*azdext.EmptyResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.unsetPaths = append(s.unsetPaths, req.Path)
+	if s.unsetServiceConfigErr != nil {
+		return nil, s.unsetServiceConfigErr
 	}
 	return &azdext.EmptyResponse{}, nil
 }

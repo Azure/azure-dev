@@ -306,6 +306,8 @@ func addResourceService(
 	return nil
 }
 
+// serviceEnvironmentTemplates discovers client-side templates in the
+// generic nested resource config emitted to azure.yaml.
 func serviceEnvironmentTemplates(cfg *structpb.Struct) map[string]string {
 	if cfg == nil {
 		return nil
@@ -355,7 +357,7 @@ func collectStringEnvironmentTemplates(value string, environment map[string]stri
 			offset = start + 2
 			continue
 		}
-		// Forward the canonical bare ${NAME}, not the full matched span.
+		// env is keyed by name, so store one canonical ${NAME}.
 		// A ${NAME:-default} default is re-applied by the owning
 		// extension against the raw config at deploy, so the env section
 		// only needs NAME's resolved base value. Collapsing every form of
@@ -455,6 +457,8 @@ func escapeFoundryTemplates(value string) string {
 	return b.String()
 }
 
+// setServiceEnvironment writes raw templates through the config RPC.
+// AddService treats ServiceConfig.Environment as expanded literals.
 func setServiceEnvironment(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,

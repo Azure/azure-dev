@@ -110,6 +110,7 @@ services:
       - research-tools
     env:
       LOG_LEVEL: info
+      # The extra $ preserves this Foundry expression through azd.
       MODEL_ENDPOINT: $${{project.endpoint}}
     protocols:
       - protocol: a2a

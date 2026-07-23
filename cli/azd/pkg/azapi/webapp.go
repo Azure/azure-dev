@@ -422,8 +422,8 @@ func (cli *AzureClient) GetAppServiceSlots(
 }
 
 // UpdateAppServiceContainerImage updates the container image for a Linux Web App for Containers.
-// It only sets linuxFxVersion to "DOCKER|<imageName>"; infrastructure configuration (ACR auth,
-// managed identity) must be set via IaC (bicep/terraform), not at deploy time.
+// It patches linuxFxVersion through the dedicated configuration endpoint so unrelated site
+// configuration remains owned by infrastructure.
 func (cli *AzureClient) UpdateAppServiceContainerImage(
 	ctx context.Context,
 	subscriptionId string,
@@ -437,11 +437,9 @@ func (cli *AzureClient) UpdateAppServiceContainerImage(
 	}
 
 	linuxFxVersion := fmt.Sprintf("DOCKER|%s", imageName)
-	_, err = client.Update(ctx, resourceGroup, appName, armappservice.SitePatchResource{
-		Properties: &armappservice.SitePatchResourceProperties{
-			SiteConfig: &armappservice.SiteConfig{
-				LinuxFxVersion: &linuxFxVersion,
-			},
+	_, err = client.UpdateConfiguration(ctx, resourceGroup, appName, armappservice.SiteConfigResource{
+		Properties: &armappservice.SiteConfig{
+			LinuxFxVersion: &linuxFxVersion,
 		},
 	}, nil)
 	if err != nil {
@@ -452,7 +450,7 @@ func (cli *AzureClient) UpdateAppServiceContainerImage(
 }
 
 // UpdateAppServiceSlotContainerImage updates the container image for a deployment slot.
-// It only sets linuxFxVersion; infrastructure configuration must be set via IaC.
+// It patches linuxFxVersion through the dedicated slot configuration endpoint.
 func (cli *AzureClient) UpdateAppServiceSlotContainerImage(
 	ctx context.Context,
 	subscriptionId string,
@@ -467,11 +465,9 @@ func (cli *AzureClient) UpdateAppServiceSlotContainerImage(
 	}
 
 	linuxFxVersion := fmt.Sprintf("DOCKER|%s", imageName)
-	_, err = client.UpdateSlot(ctx, resourceGroup, appName, slotName, armappservice.SitePatchResource{
-		Properties: &armappservice.SitePatchResourceProperties{
-			SiteConfig: &armappservice.SiteConfig{
-				LinuxFxVersion: &linuxFxVersion,
-			},
+	_, err = client.UpdateConfigurationSlot(ctx, resourceGroup, appName, slotName, armappservice.SiteConfigResource{
+		Properties: &armappservice.SiteConfig{
+			LinuxFxVersion: &linuxFxVersion,
 		},
 	}, nil)
 	if err != nil {

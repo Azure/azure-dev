@@ -27,6 +27,7 @@ func Test_PythonProject_Restore(t *testing.T) {
 	var pipArgs exec.RunArgs
 
 	mockContext := mocks.NewMockContext(t.Context())
+	mockContext.CommandRunner.MockToolInPath(pythonExe(), nil)
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "-m venv")
@@ -84,6 +85,7 @@ func Test_PythonProject_Restore_PyprojectToml(t *testing.T) {
 	var pipArgs exec.RunArgs
 
 	mockContext := mocks.NewMockContext(t.Context())
+	mockContext.CommandRunner.MockToolInPath(pythonExe(), nil)
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "-m venv")
@@ -142,6 +144,7 @@ func Test_PythonProject_Restore_PyprojectTomlPriority(t *testing.T) {
 	var pipArgs exec.RunArgs
 
 	mockContext := mocks.NewMockContext(t.Context())
+	mockContext.CommandRunner.MockToolInPath(pythonExe(), nil)
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "-m venv")

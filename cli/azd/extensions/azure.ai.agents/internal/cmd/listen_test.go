@@ -263,7 +263,8 @@ func TestPrepareContainerSettings_DoesNotPersistResolvedFileRef(
 		RelativePath:         "src/echo",
 		AdditionalProperties: props,
 	}
-	client := newProjectRecorderClient(t, &containerSettingsProjectServer{})
+	server := &containerSettingsProjectServer{}
+	client := newProjectRecorderClient(t, server)
 
 	err = prepareContainerSettings(t.Context(), client, svc, root)
 
@@ -275,6 +276,7 @@ func TestPrepareContainerSettings_DoesNotPersistResolvedFileRef(
 	require.NotNil(t, cfg.Container.Resources)
 	require.Equal(t, "2", cfg.Container.Resources.Cpu)
 	require.Equal(t, "4Gi", cfg.Container.Resources.Memory)
+	require.Empty(t, server.setServiceRequests)
 }
 
 func TestPrepareContainerSettings_PreservesNestedFileRef(t *testing.T) {

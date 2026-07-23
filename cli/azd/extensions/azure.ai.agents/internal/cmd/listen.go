@@ -821,12 +821,14 @@ func prepareContainerSettings(
 		return fmt.Errorf("failed to update agent container settings: %w", err)
 	}
 
-	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
-		ServiceName: svc.GetName(),
-		Path:        containerPath,
-		Value:       containerValue,
-	}); err != nil {
-		return fmt.Errorf("persisting agent container settings: %w", err)
+	if !hasRootFileRef {
+		if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+			ServiceName: svc.GetName(),
+			Path:        containerPath,
+			Value:       containerValue,
+		}); err != nil {
+			return fmt.Errorf("persisting agent container settings: %w", err)
+		}
 	}
 
 	return nil

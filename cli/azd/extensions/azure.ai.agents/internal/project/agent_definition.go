@@ -555,17 +555,14 @@ func SetAgentContainerSettings(
 	svc *azdext.ServiceConfig,
 	container *ContainerSettings,
 ) (string, *structpb.Value, error) {
-	legacy := false
+	props := ServiceConfigProps(svc)
+	legacy := props != nil && props == svc.GetConfig()
 	containerPath := "container"
-	props := svc.GetAdditionalProperties()
-	if props == nil || len(props.GetFields()) == 0 {
-		if cfg := svc.GetConfig(); cfg != nil && len(cfg.GetFields()) > 0 {
-			props = cfg
-			legacy = true
-			containerPath = "config.container"
-		} else {
-			props = &structpb.Struct{}
-		}
+	if legacy {
+		containerPath = "config.container"
+	}
+	if props == nil {
+		props = &structpb.Struct{}
 	}
 	if props.Fields == nil {
 		props.Fields = map[string]*structpb.Value{}

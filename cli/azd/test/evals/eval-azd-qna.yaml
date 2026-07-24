@@ -53,10 +53,10 @@ stimuli:
         name: "gives actionable guidance"
         config:
           pattern: "line 12|indent|azd init|validate|YAML (lint|valid)|check (the |your )?azure.yaml"
-      - type: output-not-matches
-        name: "does not suggest destructive cleanup"
+      - type: prompt
+        name: "judge: does not recommend destructive cleanup"
         config:
-          pattern: "azd down|az group delete|rm -rf|delete (the |your )?(project|repo)"
+          scoring: binary
       - type: token-budget
         config:
           max: 100000

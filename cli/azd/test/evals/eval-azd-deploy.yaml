@@ -103,10 +103,10 @@ stimuli:
         name: "recommends azd down to remove Azure resources"
         config:
           pattern: "azd down"
-      - type: output-not-matches
-        name: "does not suggest creating a new environment"
+      - type: prompt
+        name: "judge: does not suggest creating a new environment"
         config:
-          pattern: "azd env new"
+          scoring: binary
 
   - name: environment-switch-env
     prompt: "I have separate production and staging setups for my app. How do I switch which one I'm working against?"
@@ -128,10 +128,10 @@ stimuli:
         name: "suggests azd env select to switch"
         config:
           pattern: "azd env select"
-      - type: output-not-matches
-        name: "does not suggest deleting or recreating environments"
+      - type: prompt
+        name: "judge: does not suggest deleting or recreating environments"
         config:
-          pattern: "azd env new|azd env remove|azd down"
+          scoring: binary
 
   - name: lifecycle-full
     prompt: >
@@ -165,10 +165,10 @@ stimuli:
         name: "recommends azd down to tear everything down"
         config:
           pattern: "azd down"
-      - type: output-not-matches
-        name: "does not suggest init or provision"
+      - type: prompt
+        name: "judge: does not suggest init or provision"
         config:
-          pattern: "azd init|azd provision"
+          scoring: binary
 
   - name: deploy-existing-project
     prompt: "I already have my project set up with azure.yaml. How do I deploy it?"

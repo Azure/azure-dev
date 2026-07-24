@@ -3488,8 +3488,7 @@ func downloadDirectoryContents(
 				return fmt.Errorf("failed to download file %s: %w", itemPath, err)
 			}
 
-			//nolint:gosec // downloaded project files are intended to be readable by project tooling
-			if err := os.WriteFile(itemLocalPath, []byte(fileContent), 0644); err != nil {
+			if err := writeDownloadedFile(itemLocalPath, []byte(fileContent)); err != nil {
 				return fmt.Errorf("failed to write file %s: %w", itemLocalPath, err)
 			}
 		} else if itemType == "dir" {
@@ -3600,8 +3599,7 @@ func downloadDirectoryContentsWithoutGhCli(
 				return fmt.Errorf("failed to read file content %s: %w", itemPath, err)
 			}
 
-			//nolint:gosec // downloaded project files are intended to be readable by project tooling
-			if err := os.WriteFile(itemLocalPath, fileContent, 0644); err != nil {
+			if err := writeDownloadedFile(itemLocalPath, fileContent); err != nil {
 				return fmt.Errorf("failed to write file %s: %w", itemLocalPath, err)
 			}
 		} else if itemType == "dir" {
@@ -3620,6 +3618,30 @@ func downloadDirectoryContentsWithoutGhCli(
 	}
 
 	return nil
+}
+
+func writeDownloadedFile(path string, content []byte) error {
+	permissions := downloadedFilePermissions(path)
+
+	//nolint:gosec // downloaded project files intentionally use project-friendly permissions
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, permissions)
+	if err != nil {
+		return err
+	}
+
+	if _, err := file.Write(content); err != nil {
+		_ = file.Close()
+		return err
+	}
+
+	return file.Close()
+}
+
+func downloadedFilePermissions(path string) os.FileMode {
+	if strings.EqualFold(filepath.Ext(path), ".sh") {
+		return osutil.PermissionExecutableFile
+	}
+	return osutil.PermissionFile
 }
 
 // extractToolboxAndConnectionConfigs extracts toolbox resource definitions from the agent manifest

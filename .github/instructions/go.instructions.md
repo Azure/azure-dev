@@ -31,3 +31,9 @@ all existing imports or declarations.
 
 - When reviewing command input resolution, explicit CLI args and flags should win over defaults. Do not prompt the user toward a different default when they provided a valid new value; reserve prompts for ambiguous choices and preserve deterministic `--no-prompt` behavior for CI/scripts.
 - When filtering AI models or quota data by location, keep location-specific usage data associated with only the models available in that location. Empty or unknown usage data from an unrelated location must not make a model eligible elsewhere; add regression coverage for cross-location quota cases.
+
+## Dead code
+
+- Remove unused functions, variables, and types before merging. Code that is defined but never called — even if planned for a follow-up — adds cognitive overhead and can mislead reviewers into thinking it is tested or reachable. If a function is genuinely coming soon, add a `// TODO:` comment or open a tracking issue instead of leaving an unreachable definition in the diff.
+
+_Source: [#8782](https://github.com/Azure/azure-dev/pull/8782)_

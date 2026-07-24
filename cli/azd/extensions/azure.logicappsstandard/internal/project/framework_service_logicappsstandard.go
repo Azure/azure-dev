@@ -248,7 +248,9 @@ func hasCustomCodeProjectConfigured(serviceConfig *azdext.ServiceConfig) (bool, 
 // runDotNet executes the dotnet CLI with the given arguments, forwarding output to stdout/stderr.
 func runDotNet(ctx context.Context, args ...string) error {
 	cmd := azdext.ExecCommand(ctx, "dotnet", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	output, err := cmd.CombinedOutput()
+	if err != nil && len(output) > 0 {
+		return fmt.Errorf("%w, output: %s", err, output)
+	}
+	return err
 }

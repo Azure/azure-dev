@@ -477,6 +477,46 @@ func (cli *AzureClient) UpdateAppServiceSlotContainerImage(
 	return nil
 }
 
+// AppServiceContainerConfiguration describes whether an App Service site can host a container image.
+type AppServiceContainerConfiguration struct {
+	IsLinux     bool
+	IsContainer bool
+}
+
+// GetAppServiceContainerConfiguration returns the container-related configuration for an App Service site.
+func (cli *AzureClient) GetAppServiceContainerConfiguration(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+) (*AppServiceContainerConfiguration, error) {
+	response, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
+	if err != nil {
+		return nil, err
+	}
+
+	return appServiceContainerConfiguration(response), nil
+}
+
+func appServiceContainerConfiguration(
+	response *armappservice.WebAppsClientGetResponse,
+) *AppServiceContainerConfiguration {
+	configuration := &AppServiceContainerConfiguration{}
+	if response.Kind != nil {
+		configuration.IsLinux = strings.Contains(strings.ToLower(*response.Kind), "linux")
+	}
+	if response.Properties != nil &&
+		response.Properties.SiteConfig != nil &&
+		response.Properties.SiteConfig.LinuxFxVersion != nil {
+		configuration.IsContainer = strings.HasPrefix(
+			strings.ToUpper(*response.Properties.SiteConfig.LinuxFxVersion),
+			"DOCKER|",
+		)
+	}
+
+	return configuration
+}
+
 // ValidateAppServiceForContainerDeploy checks that the App Service is configured for container
 // deployment (Linux kind with an existing DOCKER| linuxFxVersion). Returns an error with
 // actionable suggestions if the site is not ready for container deployment.
@@ -486,12 +526,12 @@ func (cli *AzureClient) ValidateAppServiceForContainerDeploy(
 	resourceGroup string,
 	appName string,
 ) error {
-	response, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
+	configuration, err := cli.GetAppServiceContainerConfiguration(ctx, subscriptionId, resourceGroup, appName)
 	if err != nil {
 		return err
 	}
 
-	if response.Kind == nil || !strings.Contains(*response.Kind, "linux") {
+	if !configuration.IsLinux {
 		return fmt.Errorf(
 			"app service '%s' is not configured as a Linux app. "+
 				"Container deployment requires a Linux App Service Plan. "+
@@ -499,9 +539,7 @@ func (cli *AzureClient) ValidateAppServiceForContainerDeploy(
 			appName)
 	}
 
-	if response.Properties == nil || response.Properties.SiteConfig == nil ||
-		response.Properties.SiteConfig.LinuxFxVersion == nil ||
-		!strings.HasPrefix(strings.ToUpper(*response.Properties.SiteConfig.LinuxFxVersion), "DOCKER|") {
+	if !configuration.IsContainer {
 		return fmt.Errorf(
 			"app service '%s' is not configured for container deployment. "+
 				"Ensure your infrastructure sets linuxFxVersion to a DOCKER| image "+

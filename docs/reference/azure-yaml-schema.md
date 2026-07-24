@@ -56,7 +56,7 @@ services:
 | `apiVersion` | string | API version for the hosting target |
 | `env` | map | Environment variables passed to the service |
 | `uses` | list | Service dependencies |
-| `remoteBuild` | boolean | Enable remote build (e.g., for Azure Functions) |
+| `remoteBuild` | boolean | Enable remote build for code-based Azure Functions |
 
 ## Hooks
 
@@ -102,6 +102,27 @@ services:
     project: ./src/web
     language: docker
     host: appservice
+    docker:
+      path: ./Dockerfile
+```
+
+### Function App (`host: function`)
+
+Function Apps support code and container deployment:
+
+- **Zip deploy** (default): When no container configuration is present, azd builds the Function project, creates a zip archive, and deploys it through the Function App deployment API. The top-level `remoteBuild` property applies only to this mode.
+- **Container deploy**: Configure `language: docker`, set `docker.path` for a non-Docker language, or provide a pre-built `image`. azd builds or resolves the image, publishes it to ACR when needed, and updates the Function App's `linuxFxVersion`.
+
+Container-based Function infrastructure must configure a Linux Function App, an initial `DOCKER|` image reference, and registry pull access before deployment. These settings remain the responsibility of Bicep or Terraform. If the provisioned Function App uses a container but the service has no container configuration, azd fails before attempting an incompatible zip upload and identifies the configuration mismatch.
+
+Example TypeScript container deployment:
+
+```yaml
+services:
+  function:
+    project: ./src/function
+    language: ts
+    host: function
     docker:
       path: ./Dockerfile
 ```

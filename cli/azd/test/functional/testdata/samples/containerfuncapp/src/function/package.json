@@ -1,0 +1,9 @@
+{
+  "name": "container-function",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/functions/*.js",
+  "dependencies": {
+    "@azure/functions": "^4.7.2"
+  }
+}

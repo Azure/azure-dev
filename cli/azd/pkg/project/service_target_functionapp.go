@@ -100,14 +100,17 @@ func resolveFunctionAppRemoteBuild(serviceConfig *ServiceConfig) (remoteBuild bo
 // functionAppTarget specifies an Azure Function to deploy to.
 // Implements `project.ServiceTarget`
 type functionAppTarget struct {
-	env     *environment.Environment
-	cli     *azapi.AzureClient
-	console input.Console
+	env             *environment.Environment
+	cli             *azapi.AzureClient
+	console         input.Console
+	containerTarget *appServiceTarget
 }
 
 // NewFunctionAppTarget creates a new instance of the Function App target
 func NewFunctionAppTarget(
 	env *environment.Environment,
+	envManager environment.Manager,
+	containerHelper *ContainerHelper,
 	azCli *azapi.AzureClient,
 	console input.Console,
 ) ServiceTarget {
@@ -115,16 +118,29 @@ func NewFunctionAppTarget(
 		env:     env,
 		cli:     azCli,
 		console: console,
+		containerTarget: &appServiceTarget{
+			env:             env,
+			envManager:      envManager,
+			containerHelper: containerHelper,
+			cli:             azCli,
+			console:         console,
+		},
 	}
 }
 
 // Gets the required external tools for the Function app
 func (f *functionAppTarget) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
+	if isContainerDeploy(serviceConfig, nil) {
+		return f.containerTarget.RequiredExternalTools(ctx, serviceConfig)
+	}
 	return []tools.ExternalTool{}
 }
 
 // Initializes the function app target
 func (f *functionAppTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+	if isContainerDeploy(serviceConfig, nil) {
+		return f.containerTarget.Initialize(ctx, serviceConfig)
+	}
 	return nil
 }
 
@@ -135,6 +151,10 @@ func (f *functionAppTarget) Package(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
+	if isContainerDeploy(serviceConfig, serviceContext) {
+		return f.containerTarget.Package(ctx, serviceConfig, serviceContext, progress)
+	}
+
 	// Extract build artifact from service context
 	var buildPath string
 	if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindDirectory)); found {
@@ -176,6 +196,17 @@ func (f *functionAppTarget) Publish(
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
 ) (*ServicePublishResult, error) {
+	if isContainerDeploy(serviceConfig, serviceContext) {
+		return f.containerTarget.Publish(
+			ctx,
+			serviceConfig,
+			serviceContext,
+			targetResource,
+			progress,
+			publishOptions,
+		)
+	}
+
 	return &ServicePublishResult{}, nil
 }
 
@@ -189,6 +220,35 @@ func (f *functionAppTarget) Deploy(
 ) (*ServiceDeployResult, error) {
 	if err := f.validateTargetResource(targetResource); err != nil {
 		return nil, fmt.Errorf("validating target resource: %w", err)
+	}
+
+	if _, found := serviceContext.Publish.FindFirst(WithKind(ArtifactKindContainer)); found {
+		return f.containerTarget.Deploy(ctx, serviceConfig, serviceContext, targetResource, progress)
+	}
+	if isContainerDeploy(serviceConfig, serviceContext) {
+		return nil, fmt.Errorf("no container image found in publish artifacts for service: %s", serviceConfig.Name)
+	}
+
+	props, err := f.cli.GetFunctionAppProperties(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("fetching function app properties: %w", err)
+	}
+	if props.ContainerConfiguration != nil && props.ContainerConfiguration.IsContainer {
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"function app '%s' is configured for container deployment, "+
+					"but service '%s' is configured for zip deployment",
+				targetResource.ResourceName(),
+				serviceConfig.Name,
+			),
+			Suggestion: "Configure the service for container deployment using 'language: docker', " +
+				"'docker.path', or 'image'.",
+		}
 	}
 
 	// Extract zip package from service context
@@ -206,16 +266,6 @@ func (f *functionAppTarget) Deploy(
 	}
 
 	defer zipFile.Close()
-
-	props, err := f.cli.GetFunctionAppProperties(
-		ctx,
-		targetResource.SubscriptionId(),
-		targetResource.ResourceGroupName(),
-		targetResource.ResourceName(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("fetching function app properties: %w", err)
-	}
 
 	plan, err := f.cli.GetFunctionAppPlan(ctx, props)
 	if err != nil {

@@ -641,11 +641,21 @@ func (st *appServiceTarget) validateTargetResource(
 // For App Service, container deployment is triggered by language=docker, docker.path set
 // (polyglot containerization), or a pre-built image.
 func (st *appServiceTarget) isContainerDeploy(serviceConfig *ServiceConfig, serviceContext *ServiceContext) bool {
-	if serviceConfig.Language == ServiceLanguageDocker || serviceConfig.Docker.Path != "" {
+	return isContainerDeploy(serviceConfig, serviceContext)
+}
+
+func isContainerDeploy(serviceConfig *ServiceConfig, serviceContext *ServiceContext) bool {
+	if serviceConfig == nil {
+		return false
+	}
+	if serviceConfig.Language == ServiceLanguageDocker ||
+		serviceConfig.Docker.Path != "" ||
+		!serviceConfig.Image.Empty() {
 		return true
 	}
-	if _, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer)); found {
-		return true
+	if serviceContext != nil {
+		_, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer))
+		return found
 	}
 	return false
 }

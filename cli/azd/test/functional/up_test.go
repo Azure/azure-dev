@@ -232,6 +232,84 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	t.Logf("Done\n")
 }
 
+func Test_CLI_Up_Down_ContainerFuncApp(t *testing.T) {
+	t.Parallel()
+
+	if ciOS := os.Getenv("AZURE_DEV_CI_OS"); ciOS != "" && ciOS != "lin" {
+		t.Skip("Skipping due to docker limitations for non-linux systems on CI")
+	}
+
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	dockerConfigDir := filepath.Join(dir, ".docker")
+	require.NoError(t, os.MkdirAll(dockerConfigDir, 0o700))
+	cli.Env = append(cli.Env,
+		"AZURE_LOCATION=eastus2",
+		"DOCKER_CONFIG="+dockerConfigDir,
+	)
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+	cleanupResourceGroup := true
+	defer func() {
+		if cleanupResourceGroup {
+			cleanupRg(ctx, t, cli, session, "rg-"+envName)
+		}
+	}()
+
+	err := copySample(dir, "containerfuncapp")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	t.Logf("Starting infra create\n")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--cwd", dir)
+	require.NoError(t, err)
+
+	t.Logf("Starting container Function deploy\n")
+	_, err = cli.RunCommand(ctx, "deploy", "--cwd", dir)
+	require.NoError(t, err)
+
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	funcURI, has := env["AZURE_FUNCTION_URI"]
+	require.True(t, has, "AZURE_FUNCTION_URI should be in environment after deploy")
+	url := fmt.Sprintf("%s/api/hello", funcURI)
+
+	if session == nil {
+		err = probeServiceHealth(
+			t, ctx, http.DefaultClient, retry.NewConstant(5*time.Second), url, expectedTestAppResponse)
+	} else {
+		subscriptionID, has := env[environment.SubscriptionIdEnvVarName]
+		require.True(t, has, "AZURE_SUBSCRIPTION_ID should be in environment after deploy")
+		session.Variables[recording.SubscriptionIdKey] = subscriptionID
+
+		err = probeServiceHealth(
+			t, ctx, session.ProxyClient, retry.NewConstant(1*time.Millisecond), url, expectedTestAppResponse)
+	}
+	require.NoError(t, err)
+
+	t.Logf("Starting infra delete\n")
+	_, err = cli.RunCommand(ctx, "down", "--cwd", dir, "--force", "--purge")
+	if err == nil {
+		cleanupResourceGroup = false
+	}
+	require.NoError(t, err)
+}
+
 func Test_CLI_Up_Down_GoFuncApp(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := newTestContext(t)

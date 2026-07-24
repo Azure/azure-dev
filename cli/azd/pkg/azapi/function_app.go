@@ -15,9 +15,10 @@ import (
 
 // AzCliFunctionAppProperties contains properties for a Function App.
 type AzCliFunctionAppProperties struct {
-	HostNames         []string
-	ServerFarmID      string
-	HostNameSslStates []*armappservice.HostNameSSLState
+	HostNames              []string
+	ServerFarmID           string
+	HostNameSslStates      []*armappservice.HostNameSSLState
+	ContainerConfiguration *AppServiceContainerConfiguration
 }
 
 // GetFunctionAppProperties retrieves properties for a function app.
@@ -33,9 +34,10 @@ func (cli *AzureClient) GetFunctionAppProperties(
 	}
 
 	return &AzCliFunctionAppProperties{
-		HostNames:         []string{*webApp.Properties.DefaultHostName},
-		ServerFarmID:      *webApp.Properties.ServerFarmID,
-		HostNameSslStates: webApp.Properties.HostNameSSLStates,
+		HostNames:              []string{*webApp.Properties.DefaultHostName},
+		ServerFarmID:           *webApp.Properties.ServerFarmID,
+		HostNameSslStates:      webApp.Properties.HostNameSSLStates,
+		ContainerConfiguration: appServiceContainerConfiguration(webApp),
 	}, nil
 }
 

@@ -480,6 +480,7 @@ func (u *UpGraphAction) Run(
 		DependsOn: []string{postDeployEventStep},
 		Tags:      []string{"cmdhook"},
 		Action: func(ctx context.Context) error {
+			u.console.Message(ctx, "Running postdeploy hook...")
 			return runProjectCommandHook(
 				ctx, hookDeps, ext.HookTypePost, string(project.ProjectEventDeploy),
 			)
@@ -499,11 +500,22 @@ func (u *UpGraphAction) Run(
 	// in parallel with provisioning). This avoids conflicting with
 	// the provisioning progress display.
 	var (
-		tickerOnce sync.Once
-		stopTicker func()
+		tickerOnce              sync.Once
+		stopTicker              func()
+		deployProgressFinalized bool
 	)
 	if deployTracker != nil {
 		stopTicker = func() {} // no-op until started
+	}
+	finalizeDeployProgress := func() {
+		if stopTicker != nil {
+			stopTicker()
+			stopTicker = nil
+		}
+		if deployTracker != nil && deployTracker.HasActivity() && !deployProgressFinalized {
+			deployTracker.RenderFinal()
+			deployProgressFinalized = true
+		}
 	}
 
 	// startDeployTicker is called once (via tickerOnce) when the first publish or deploy
@@ -537,6 +549,11 @@ func (u *UpGraphAction) Run(
 	opts.OnStepStart = func(stepName string) {
 		if baseOnStepStart != nil {
 			baseOnStepStart(stepName)
+		}
+		// Finalize deploy progress before postdeploy hooks execute so that
+		// hook output renders normally and does not look like a hang.
+		if shouldFinalizeDeployProgressBeforeStep(stepName) {
+			finalizeDeployProgress()
 		}
 		// Update deploy progress tracker for service steps.
 		// Packaging runs in parallel with provisioning, so only update the
@@ -583,13 +600,9 @@ func (u *UpGraphAction) Run(
 
 	result := exegraph.RunWithResult(ctx, g, opts)
 
-	// Stop the progress ticker and render a final summary table.
-	if stopTicker != nil {
-		stopTicker()
-	}
-	if deployTracker != nil && deployTracker.HasActivity() {
-		deployTracker.RenderFinal()
-	}
+	// Stop the progress ticker and render a final summary table if it has
+	// not already been finalized before the postdeploy hook.
+	finalizeDeployProgress()
 
 	// Clean up temporary package artifacts regardless of success/failure.
 	state.CleanupTempArtifacts()
@@ -712,6 +725,10 @@ func phaseDurations(steps []exegraph.StepTiming) (provision, deploy time.Duratio
 		deploy = deployEnd.Sub(deployStart)
 	}
 	return provision, deploy
+}
+
+func shouldFinalizeDeployProgressBeforeStep(stepName string) bool {
+	return stepName == "cmdhook-postdeploy"
 }
 
 // changedFlagNames returns the names of flags that were explicitly set on

@@ -83,3 +83,26 @@ func TestPhaseTimingBreakdown(t *testing.T) {
 		})
 	}
 }
+
+func TestShouldFinalizeDeployProgressBeforeStep(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		stepName string
+		want     bool
+	}{
+		{name: "postdeploy hook", stepName: "cmdhook-postdeploy", want: true},
+		{name: "predeploy hook", stepName: "cmdhook-predeploy", want: false},
+		{name: "deploy step", stepName: "deploy-web", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := shouldFinalizeDeployProgressBeforeStep(tt.stepName); got != tt.want {
+				t.Fatalf("shouldFinalizeDeployProgressBeforeStep(%q)=%t, want %t", tt.stepName, got, tt.want)
+			}
+		})
+	}
+}

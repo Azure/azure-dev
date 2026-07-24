@@ -493,7 +493,7 @@ func promptAlternativeDeployment(
 	if useCatalog {
 		// Use the full model + deployment prompt which handles version,
 		// SKU, and capacity selection (same as manifest path).
-		defaultModel := "gpt-5.4-mini"
+		defaultModel := defaultAgentModel
 		if modelFlag != "" {
 			defaultModel = modelFlag
 		}

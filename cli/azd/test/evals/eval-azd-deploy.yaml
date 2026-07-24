@@ -1,0 +1,194 @@
+# These tests are a work in progress. All stimuli below are intentionally active and run in CI
+# (runs: 3 each) so we can track how azd deploy/env/lifecycle guidance evolves over time.
+name: azd-deploy
+description: Evals of realistic situations, with actual projects or code to work with.
+
+environment:
+  skills:
+    # This isn't an official skill, but it's a way for us to test how much (or how little) we need to inject
+    # into the conversation to ensure we get good answers about how to use azd.
+    - ./skills/azd
+
+defaults:
+  runs: 3
+  timeout: 5m
+  executor: copilot-sdk
+  model: claude-sonnet-4.6
+  judge_model: gpt-5.5
+
+# lower the bar a bit so we can get an idea of when this gets worse, while still being okay
+# with some degree of failure as these tests need actual azd knowledge and we're still working
+# on that.
+scoring:
+  threshold: 0.6
+
+stimuli:
+  - name: deploy-node-api
+    prompt: "I have a Node.js Express API and I want to deploy it to Azure. What's the best way to do that?"
+    environment:
+      files:
+        - src: fixtures/existing-node-api/package.json
+          dest: package.json
+        - src: fixtures/existing-node-api/index.js
+          dest: index.js
+    rubric:
+      - "Suggests azd as a way to deploy the API to Azure (init + up/provision/deploy, or azd up)"
+      - "If azd is suggested, the steps are in a sensible order (initialize before provisioning/deploying)"
+    graders:
+      - type: output-matches
+        name: "mentions azd as an option"
+        config:
+          pattern: "azd (init|up|provision|deploy)"
+      - type: prompt
+        name: "judge: reasonable, correctly-sequenced guidance"
+        config:
+          scoring: binary
+
+  - name: deploy-python-webapp
+    prompt: "I want to deploy a Python web app to Azure. What's the best way to do that?"
+    rubric:
+      - "Suggests azd as a way to stand up and deploy the app (init + provision/deploy, or azd up)"
+      - "If azd is suggested, the steps are in a sensible order (initialize before provisioning/deploying)"
+    graders:
+      - type: output-matches
+        name: "mentions azd as an option"
+        config:
+          pattern: "azd (init|up|provision|deploy)"
+      - type: prompt
+        name: "judge: reasonable, correctly-sequenced guidance"
+        config:
+          scoring: binary
+
+  - name: environment-create-staging
+    prompt: |
+      I have my app deployed in production, but I want to test changes in a
+      separate setup called staging before they go live. What's the best way
+      to set that up?
+    environment:
+      files:
+        - src: fixtures/azd-project/azure.yaml
+          dest: azure.yaml
+        - src: fixtures/azd-project/config-production.json
+          dest: .azure/config.json
+        - src: fixtures/azd-project/production.env
+          dest: .azure/production/.env
+    rubric:
+      - "Suggests azd env new (or equivalent) to create a separate staging environment"
+      - "Does not recommend tearing down production or running azd init for the existing project"
+    graders:
+      - type: output-matches
+        name: "Talks about azd env new"
+        config:
+          pattern: "azd env new"
+      - type: prompt
+        name: "judge: creates staging without destructive or redundant steps"
+        config:
+          scoring: binary
+
+  - name: environment-delete-env
+    prompt: "I have a dev environment that I no longer need. How do I completely remove it and all its Azure resources?"
+    environment:
+      files:
+        - src: fixtures/azd-project/azure.yaml
+          dest: azure.yaml
+        - src: fixtures/azd-project/config-dev.json
+          dest: .azure/config.json
+        - src: fixtures/azd-project/dev.env
+          dest: .azure/dev/.env
+    rubric:
+      - "Recommends azd down to remove Azure resources (required)"
+      - "Optionally mentions azd env remove for local cleanup (nice to have)"
+    graders:
+      - type: output-matches
+        name: "recommends azd down to remove Azure resources"
+        config:
+          pattern: "azd down"
+      - type: output-not-matches
+        name: "does not suggest creating a new environment"
+        config:
+          pattern: "azd env new"
+
+  - name: environment-switch-env
+    prompt: "I have separate production and staging setups for my app. How do I switch which one I'm working against?"
+    environment:
+      files:
+        - src: fixtures/azd-project/azure.yaml
+          dest: azure.yaml
+        - src: fixtures/azd-project/config-production.json
+          dest: .azure/config.json
+        - src: fixtures/azd-project/production.env
+          dest: .azure/production/.env
+        - src: fixtures/azd-project/staging.env
+          dest: .azure/staging/.env
+    rubric:
+      - "Suggests azd env select to switch the active environment"
+      - "Does not suggest deleting or recreating either environment"
+    graders:
+      - type: output-matches
+        name: "suggests azd env select to switch"
+        config:
+          pattern: "azd env select"
+      - type: output-not-matches
+        name: "does not suggest deleting or recreating environments"
+        config:
+          pattern: "azd env new|azd env remove|azd down"
+
+  - name: lifecycle-full
+    prompt: >
+      Walk me through setting up a new app in Azure from scratch, deploying
+      it, and then cleaning everything up when I'm done.
+    rubric:
+      - "Suggests azd for the full init -> provision -> deploy -> down lifecycle, in that order"
+      - "Does not suggest tearing down (azd down) before the app has been set up and deployed"
+    graders:
+      - type: prompt
+        name: "judge: full lifecycle in the right order"
+        config:
+          scoring: binary
+
+  - name: lifecycle-teardown
+    prompt: >
+      I have an app deployed in Azure and I'm done with it. How do I
+      completely tear everything down and clean up all resources?
+    environment:
+      files:
+        - src: fixtures/azd-project/azure.yaml
+          dest: azure.yaml
+        - src: fixtures/azd-project/config-dev.json
+          dest: .azure/config.json
+        - src: fixtures/azd-project/dev.env
+          dest: .azure/dev/.env
+    rubric:
+      - "Suggests azd down (with flags like --purge for a full cleanup, including soft-deleted resources)"
+    graders:
+      - type: output-matches
+        name: "recommends azd down to tear everything down"
+        config:
+          pattern: "azd down"
+      - type: output-not-matches
+        name: "does not suggest init or provision"
+        config:
+          pattern: "azd init|azd provision"
+
+  - name: deploy-existing-project
+    prompt: "I already have my project set up with azure.yaml. How do I deploy it?"
+    environment:
+      files:
+        - src: fixtures/azd-project/azure.yaml
+          dest: azure.yaml
+        - src: fixtures/azd-project/config-dev.json
+          dest: .azure/config.json
+        - src: fixtures/azd-project/dev.env
+          dest: .azure/dev/.env
+    rubric:
+      - "Suggests azd deploy (or azd up) to deploy the existing project"
+      - "Does not re-run init or delete the resource group"
+    graders:
+      - type: output-matches
+        name: "suggests azd deploy or azd up"
+        config:
+          pattern: "azd deploy|azd up"
+      - type: prompt
+        name: "judge: does not re-suggest init or delete the resource group"
+        config:
+          scoring: binary

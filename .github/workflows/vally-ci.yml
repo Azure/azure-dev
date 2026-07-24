@@ -18,8 +18,8 @@ concurrency:
   cancel-in-progress: true 
 
 jobs:
-  evals:
-    name: Run vally evals
+  qna:
+    name: Run vally evals (Q&A)
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -33,6 +33,25 @@ jobs:
         uses: ./.github/actions/vally-eval
         with:
           working-directory: cli/azd/test/evals
-          eval-file: eval.yaml
+          eval-file: eval-azd-qna.yaml
+          artifact-name: ${{ github.job }}-vally-results
+          github-token: ${{ github.token }}
+
+  deploy:
+    name: Run vally evals (deploy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Run vally eval
+        id: vally
+        uses: ./.github/actions/vally-eval
+        with:
+          working-directory: cli/azd/test/evals
+          eval-file: eval-azd-deploy.yaml
           artifact-name: ${{ github.job }}-vally-results
           github-token: ${{ github.token }}

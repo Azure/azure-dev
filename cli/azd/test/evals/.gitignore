@@ -1,1 +1,6 @@
 vally-results/
+vally-experiment-results/
+
+# output from make-failed-report.go
+eval-experiments-*.md
+eval-results-*.md

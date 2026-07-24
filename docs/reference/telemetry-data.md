@@ -582,6 +582,7 @@ The `execution.environment` field identifies where azd is running. Format: `<env
 | `Azure CloudShell` | Azure Cloud Shell |
 | `Claude Code` | Claude Code AI agent |
 | `GitHub Copilot CLI` | GitHub Copilot CLI |
+| `GitHub Copilot App` | GitHub Copilot App |
 | `Gemini` | Gemini AI agent |
 | `OpenCode` | OpenCode AI agent |
 | `GitHub Actions` | GitHub Actions CI |

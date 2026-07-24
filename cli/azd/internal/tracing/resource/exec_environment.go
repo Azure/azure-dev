@@ -75,6 +75,8 @@ func execEnvFromAgent() string {
 		return fields.EnvClaudeCode
 	case agentdetect.AgentTypeGitHubCopilotCLI:
 		return fields.EnvGitHubCopilotCLI
+	case agentdetect.AgentTypeGitHubCopilotApp:
+		return fields.EnvGitHubCopilotApp
 	case agentdetect.AgentTypeVSCodeCopilot:
 		return fields.EnvVSCodeAzureCopilot
 	case agentdetect.AgentTypeGemini:

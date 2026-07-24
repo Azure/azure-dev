@@ -14,7 +14,8 @@ import (
 
 func TestTeamsSetupGuideContent(t *testing.T) {
 	const msaAppID = "11111111-2222-3333-4444-555555555555"
-	content := teamsSetupGuideContent("echo-agent", "echo-agent-bot-uai", msaAppID)
+	const tenantID = "99999999-8888-7777-6666-555555555555"
+	content := teamsSetupGuideContent("echo-agent", "echo-agent-bot-uai", msaAppID, tenantID, "src", true)
 
 	// The bot id is the one value the user must not get wrong: it has to be
 	// carried verbatim into the Teams manifest bots[].botId.
@@ -40,6 +41,37 @@ func TestTeamsSetupGuideContent(t *testing.T) {
 	if strings.Contains(content, "package-teams-app.ps1") {
 		t.Errorf("guide must not reference sample-specific scripts")
 	}
+
+	// When scripts were generated, the guide advertises the fast-path script.
+	if !strings.Contains(content, "Fastest path") ||
+		!strings.Contains(content, "pack-and-sideload-teams-app.sh") {
+		t.Errorf("guide (scripts generated) must advertise the fast-path script")
+	}
+	// The run commands are relative to the agent source folder, so the guide must
+	// tell the user to cd there (azd deploy runs from the project root). The path
+	// is emitted pre-quoted per shell (single-quoted literal for both here).
+	if !strings.Contains(content, "cd 'src'") {
+		t.Errorf("guide (scripts generated) must include the quoted 'cd <service>' hint; got:\n%s", content)
+	}
+	// The bot is single-tenant, so the guide must surface the tenant to sign into.
+	if !strings.Contains(content, tenantID) {
+		t.Errorf("guide must surface the single-tenant id %q; got:\n%s", tenantID, content)
+	}
+
+	// When no script was generated (e.g. a write failure), the guide must NOT tell
+	// the user to run a script it did not write.
+	noScript := teamsSetupGuideContent("echo-agent", "echo-agent-bot-uai", msaAppID, tenantID, "src", false)
+	if strings.Contains(noScript, "Fastest path") ||
+		strings.Contains(noScript, "./pack-and-sideload-teams-app.sh") {
+		t.Errorf("guide (no scripts) must not advertise a script azd did not generate")
+	}
+	if !strings.Contains(noScript, "azd did not generate the pack-and-sideload script") {
+		t.Errorf("guide (no scripts) must explain why the fast-path is unavailable")
+	}
+	// The manual steps must remain available in both variants.
+	if !strings.Contains(noScript, "Upload a custom app") {
+		t.Errorf("guide (no scripts) must still contain the manual sideload step")
+	}
 }
 
 func TestWriteTeamsSetupGuide(t *testing.T) {
@@ -50,7 +82,7 @@ func TestWriteTeamsSetupGuide(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	path := writeTeamsSetupGuide(proj, svc, "echo-agent", "echo-agent-bot-uai", "app-id")
+	path := writeTeamsSetupGuide(proj, svc, "echo-agent", "echo-agent-bot-uai", "app-id", "tenant-id", true)
 	want := filepath.Join(root, "src", teamsSetupGuideFile)
 	if path != want {
 		t.Fatalf("guide path = %q, want %q", path, want)

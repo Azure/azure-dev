@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"text/template"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -31,8 +32,9 @@ import (
 // the agent instance identity, enable the bot's Microsoft Teams *channel*, and
 // point the bot's messaging endpoint at the agent. That "Teams channel" is an
 // Azure Bot Service resource toggle — NOT a Teams app. Packaging and sideloading
-// the Teams *app* live on the M365/Graph plane, stay out of azd, and are left to
-// the user; postdeploy writes TEAMS_APP_SETUP.md with those manual steps.
+// the Teams *app* run on the M365/Graph plane when the developer runs the
+// generated pack-and-sideload script; postdeploy emits those scripts alongside
+// TEAMS_APP_SETUP.md. azd itself never calls Graph.
 func ensureActivityBot(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -129,11 +131,19 @@ func ensureActivityBot(
 		return err
 	}
 
-	// Write a persistent, generic setup guide next to the agent code (the azd
-	// progress UI swallows postdeploy stdout, so a file is the reliable way to
-	// hand the user the manual M365 steps) and print a short pointer to it.
-	guidePath := writeTeamsSetupGuide(proj, svc, agentName, botName, msaAppID)
-	printTeamsNextSteps(botName, msaAppID, guidePath)
+	// Write runnable pack+sideload scripts and a persistent, generic setup guide
+	// next to the agent code (the azd progress UI swallows postdeploy stdout, so a
+	// file is the reliable way to hand the user the manual M365 steps), then print
+	// a short pointer to them. Both are best-effort and (re)written on every deploy
+	// with the current ids, the same way this extension already writes
+	// TEAMS_APP_SETUP.md. Generate the scripts first so the guide's fast-path
+	// section only advertises a script that was actually written.
+	scriptPaths := writeTeamsSideloadScripts(proj, svc, agentName, botName, msaAppID)
+	// Advertise the fast path only when both scripts were written; a write that
+	// failed (e.g. a bad path) must not point the user at a file that is not there.
+	scriptsGenerated := len(scriptPaths) == teamsSideloadTargets
+	guidePath := writeTeamsSetupGuide(proj, svc, agentName, botName, msaAppID, tenantID, scriptsGenerated)
+	printTeamsNextSteps(botName, msaAppID, guidePath, preferredSideloadScript(scriptPaths), scriptsGenerated)
 	return nil
 }
 
@@ -146,14 +156,16 @@ const teamsSetupGuideFile = "TEAMS_APP_SETUP.md"
 // blocks or fails the deploy). The guide is deploy-agnostic and links to the
 // official Microsoft Learn docs rather than any sample-specific scripts.
 func writeTeamsSetupGuide(
-	proj *azdext.ProjectConfig, svc *azdext.ServiceConfig, agentName, botName, msaAppID string,
+	proj *azdext.ProjectConfig, svc *azdext.ServiceConfig,
+	agentName, botName, msaAppID, tenantID string, scriptsGenerated bool,
 ) string {
 	guidePath, err := paths.JoinAllowRoot(proj.GetPath(), svc.GetRelativePath(), teamsSetupGuideFile)
 	if err != nil {
 		log.Printf("postdeploy: skipping Teams setup guide: %v", err)
 		return ""
 	}
-	if err := os.WriteFile(guidePath, []byte(teamsSetupGuideContent(agentName, botName, msaAppID)), 0o600); err != nil {
+	content := teamsSetupGuideContent(agentName, botName, msaAppID, tenantID, svc.GetRelativePath(), scriptsGenerated)
+	if err := os.WriteFile(guidePath, []byte(content), 0o600); err != nil {
 		log.Printf("postdeploy: failed to write Teams setup guide %q: %v", guidePath, err)
 		return ""
 	}
@@ -176,30 +188,82 @@ var teamsSetupGuideTmpl = template.Must(
 // detail. The single value the user must not get wrong is the bot id: a Teams
 // app manifest's bots[].botId MUST equal this bot's msaAppId, which azd bound to
 // the agent instance identity.
-func teamsSetupGuideContent(agentName, botName, msaAppID string) string {
+func teamsSetupGuideContent(agentName, botName, msaAppID, tenantID, serviceRelPath string, scriptsGenerated bool) string {
 	var buf bytes.Buffer
+	// The generated script lives in the agent's source folder; the guide's run
+	// commands are relative to it, so surface a 'cd' target the user can use from
+	// the project root (where azd deploy runs). Fall back to "." when the service
+	// is at the project root so the hint stays a valid no-op.
+	relPath := serviceRelPath
+	if strings.TrimSpace(relPath) == "" {
+		relPath = "."
+	}
+	// Emit the 'cd' argument pre-quoted per shell so a path with spaces, an
+	// apostrophe, or (for POSIX) backslashes stays a single literal argument.
+	// POSIX shells treat backslash as an escape, so normalize separators there.
+	cdPwsh := shellSingleQuotePwsh(relPath)
+	cdPosix := shellSingleQuotePosix(strings.ReplaceAll(relPath, `\`, "/"))
 	// Inputs are azd-controlled resource names and the template is compile-time
 	// embedded, so execution cannot realistically fail.
 	_ = teamsSetupGuideTmpl.Execute(&buf, struct {
-		AgentName string
-		BotName   string
-		MsaAppID  string
-	}{AgentName: agentName, BotName: botName, MsaAppID: msaAppID})
+		AgentName        string
+		BotName          string
+		MsaAppID         string
+		TenantID         string
+		ServiceCdPwsh    string
+		ServiceCdPosix   string
+		ScriptsGenerated bool
+	}{
+		AgentName:        agentName,
+		BotName:          botName,
+		MsaAppID:         msaAppID,
+		TenantID:         tenantID,
+		ServiceCdPwsh:    cdPwsh,
+		ServiceCdPosix:   cdPosix,
+		ScriptsGenerated: scriptsGenerated,
+	})
 	return buf.String()
 }
 
-// printTeamsNextSteps prints a short pointer to the generated setup guide. The
-// full instructions live in the guide file because the azd progress UI does not
-// reliably surface postdeploy stdout.
-func printTeamsNextSteps(botName, msaAppID, guidePath string) {
+// shellSingleQuotePwsh wraps s in a PowerShell single-quoted literal (no
+// $name/$()/backtick expansion), escaping an embedded single quote by doubling.
+func shellSingleQuotePwsh(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// shellSingleQuotePosix wraps s in a POSIX single-quoted literal, escaping an
+// embedded single quote via the close-quote/escaped-quote/reopen idiom.
+func shellSingleQuotePosix(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// printTeamsNextSteps prints a short pointer to the generated setup guide and
+// the runnable pack+sideload script. The full instructions live in the guide
+// file because the azd progress UI does not reliably surface postdeploy stdout.
+func printTeamsNextSteps(botName, msaAppID, guidePath, scriptPath string, scriptsGenerated bool) {
 	fmt.Println(output.WithHighLightFormat("\nTeams bot ready."))
 	fmt.Printf("  Azure Bot:  %s (Microsoft Teams channel enabled)\n", botName)
 	fmt.Printf("  Bot ID:     %s\n", msaAppID)
+	// Offer the fast path only when both scripts were written and the current-OS
+	// one is among them; otherwise fall back to the guide so the user is never
+	// pointed at a script that is not there.
+	fastPathShown := scriptsGenerated && scriptPath != ""
+	if fastPathShown {
+		fmt.Println(output.WithGrayFormat(fmt.Sprintf(
+			"  Fast path (package + sideload the Teams app for you): run %s", sideloadRunCommand(scriptPath),
+		)))
+	} else if !scriptsGenerated {
+		fmt.Println(output.WithGrayFormat(
+			"  Note: the pack-and-sideload script could not be written; see the guide for the manual steps.",
+		))
+	}
 	if guidePath != "" {
 		fmt.Println(output.WithGrayFormat(fmt.Sprintf(
-			"  Next steps (package + sideload the Teams app): see %s", guidePath,
+			"  Manual / UI steps and prerequisites: see %s", guidePath,
 		)))
-	} else {
+	} else if !fastPathShown {
+		// No guide and no fast path: give the user the essential manual steps
+		// inline so they are never left without a next action.
 		fmt.Println(output.WithGrayFormat(
 			"  Next steps: package the Teams app (bots[].botId = the Bot ID above) and " +
 				"upload it in Teams -> Apps -> Manage your apps -> Upload a custom app.",

@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -338,14 +339,37 @@ func tryAutoInstallForPartialNamespace(
 func tryAutoInstallExtension(
 	ctx context.Context,
 	console input.Console,
-	extensionManager *extensions.Manager,
+	extensionManager extensionAutoInstallManager,
 	extension extensions.ExtensionMetadata) (bool, error) {
+	return tryAutoInstallExtensionVersion(ctx, console, extensionManager, extension, "")
+}
 
+type extensionAutoInstallManager interface {
+	FindExtensions(ctx context.Context, options *extensions.FilterOptions) ([]*extensions.ExtensionMetadata, error)
+	GetInstalled(options extensions.FilterOptions) (*extensions.Extension, error)
+	Install(
+		ctx context.Context,
+		extension *extensions.ExtensionMetadata,
+		versionPreference string,
+	) (*extensions.ExtensionVersion, error)
+	ListInstalled() (map[string]*extensions.Extension, error)
+}
+
+func tryAutoInstallExtensionVersion(
+	ctx context.Context,
+	console input.Console,
+	extensionManager extensionAutoInstallManager,
+	extension extensions.ExtensionMetadata,
+	versionPreference string,
+) (bool, error) {
 	// Check if the extension is already installed
-	_, err := extensionManager.GetInstalled(extensions.FilterOptions{
+	installedExtension, err := extensionManager.GetInstalled(extensions.FilterOptions{
 		Id: extension.Id,
 	})
 	if err == nil {
+		if err := validateInstalledExtensionVersion(installedExtension, versionPreference); err != nil {
+			return false, err
+		}
 		return false, nil
 	}
 
@@ -372,7 +396,7 @@ func tryAutoInstallExtension(
 		Message:      "Confirm installation",
 	})
 	if err != nil {
-		return false, nil
+		return false, err
 	}
 
 	if !shouldInstall {
@@ -381,7 +405,7 @@ func tryAutoInstallExtension(
 
 	// Install the extension
 	console.Message(ctx, fmt.Sprintf("Installing extension '%s'...\n", extension.Id))
-	_, err = extensionManager.Install(ctx, &extension, "")
+	_, err = extensionManager.Install(ctx, &extension, versionPreference)
 	if err != nil {
 		return false, fmt.Errorf("failed to install extension: %w", err)
 	}
@@ -452,6 +476,42 @@ type ExecuteResult struct {
 	LatestVersion <-chan *update.VersionInfo
 }
 
+func newRootCmdForExecution(
+	rootContainer *ioc.NestedContainer,
+	globalOpts *internal.GlobalCommandOptions,
+) (*cobra.Command, error) {
+	if globalOpts.Cwd == "" {
+		return NewRootCmd(false, nil, rootContainer), nil
+	}
+
+	absoluteCwd, err := filepath.Abs(globalOpts.Cwd)
+	if err != nil {
+		return nil, fmt.Errorf("resolving cwd: %w", err)
+	}
+	globalOpts.Cwd = absoluteCwd
+
+	if _, err := os.Stat(absoluteCwd); os.IsNotExist(err) {
+		// PersistentPreRunE owns prompting for and creating a missing --cwd directory.
+		return NewRootCmd(false, nil, rootContainer), nil
+	} else if err != nil {
+		return nil, fmt.Errorf("checking cwd: %w", err)
+	}
+
+	previousCwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("getting current directory: %w", err)
+	}
+	if err := os.Chdir(absoluteCwd); err != nil {
+		return nil, fmt.Errorf("changing directory to %s: %w", absoluteCwd, err)
+	}
+
+	rootCmd := NewRootCmd(false, nil, rootContainer)
+	if err := os.Chdir(previousCwd); err != nil {
+		return nil, fmt.Errorf("restoring current directory: %w", err)
+	}
+	return rootCmd, nil
+}
+
 // ExecuteWithAutoInstall executes the command and handles auto-installation of extensions for unknown commands.
 func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContainer) *ExecuteResult {
 	result := &ExecuteResult{}
@@ -473,7 +533,12 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 
 	// Creating the RootCmd takes care of registering common dependencies in rootContainer.
 	// The command tree will retrieve globalOpts from the container via its FlagsResolver.
-	rootCmd := NewRootCmd(false, nil, rootContainer)
+	rootCmd, err := newRootCmdForExecution(rootContainer, globalOpts)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, output.WithErrorFormat("ERROR: %s", err.Error()))
+		result.Err = err
+		return result
+	}
 
 	var extensionManager *extensions.Manager
 	var console input.Console
@@ -483,6 +548,8 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	// This allows us to determine if a subcommand was provided or not or if the command is unknown.
 	foundCmd, originalArgs, err := rootCmd.Find(os.Args[1:])
 	if err == nil {
+		projectExtensionsHandled := false
+
 		// Detect lightspeed commands from the cobra annotation set by CobraBuilder.
 		result.IsLightspeed = foundCmd.Annotations[actions.AnnotationLightspeed] == "true"
 
@@ -495,23 +562,51 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			result.LatestVersion = startUpdateCheck(ctx)
 		}
 
+		handled, installed, err := tryAutoInstallProjectExtensions(ctx, rootContainer, foundCmd)
+		projectExtensionsHandled = handled
+		if err != nil {
+			if resolveErr := rootContainer.Resolve(&console); resolveErr != nil {
+				fmt.Fprintln(os.Stderr, output.WithErrorFormat("ERROR: %s", err.Error()))
+			} else {
+				displayAutoInstallError(ctx, console, err)
+			}
+			result.Err = err
+			return result
+		} else if installed {
+			rootCmd = newRootCmdWithoutRegistration(rootContainer)
+			foundCmd, originalArgs, err = rootCmd.Find(os.Args[1:])
+			if err != nil {
+				result.Err = err
+				return result
+			}
+		}
+
 		// Check for partial namespace match (e.g., "ai" found but "ai.agent" not installed)
 		if installed := tryAutoInstallForPartialNamespace(
 			ctx, rootContainer, foundCmd, originalArgs,
 		); installed {
 			// Extension was installed, rebuild command tree and execute
-			rootCmd = NewRootCmd(false, nil, rootContainer)
+			rootCmd = newRootCmdWithoutRegistration(rootContainer)
 			result.Err = rootCmd.ExecuteContext(ctx)
 			return result
 		}
 
 		// Known command, proceed with normal execution
-		err := rootCmd.ExecuteContext(ctx)
+		err = rootCmd.ExecuteContext(ctx)
 
 		// Only attempt service-host auto-install when the command failed with that specific error.
 		// Other command errors (for example, unsupported output formats) should be returned directly.
 		unsupportedErr, ok := errors.AsType[*project.UnsupportedServiceHostError](err)
 		if !ok {
+			result.Err = err
+			return result
+		}
+		if projectExtensionsHandled {
+			if resolveErr := rootContainer.Resolve(&console); resolveErr != nil {
+				fmt.Fprintln(os.Stderr, unsupportedErr.ErrorMessage)
+			} else {
+				console.Message(ctx, unsupportedErr.ErrorMessage)
+			}
 			result.Err = err
 			return result
 		}
@@ -534,9 +629,18 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			console.Message(ctx, unsupportedErr.ErrorMessage)
 			return result
 		}
-		// Note: We don't need to filter or check which extensions are installed.
-		// If any of these extensions would be installed, the auto-install wouldn't have been triggered because
-		// there would be at least one extensions providing the capability and provider.
+		installedExtensions, err := extensionManager.ListInstalled()
+		if err != nil {
+			log.Println("Error: list installed extensions. Skipping auto-install:", err)
+			console.Message(ctx, unsupportedErr.ErrorMessage)
+			return result
+		}
+		availableExtensionsForHost = filterExtensionsForProvider(
+			availableExtensionsForHost,
+			extensions.ServiceTargetProviderCapability,
+			requiredHost,
+		)
+		availableExtensionsForHost = uninstalledExtensionMatches(availableExtensionsForHost, installedExtensions)
 		if len(availableExtensionsForHost) == 0 {
 			// did not find an extension with the capability, just print the original error message
 			console.Message(ctx, unsupportedErr.ErrorMessage)
@@ -572,7 +676,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 
 		if installed {
 			// Extension was installed, build command tree and execute
-			rootCmd := NewRootCmd(false, nil, rootContainer)
+			rootCmd := newRootCmdWithoutRegistration(rootContainer)
 			result.Err = rootCmd.ExecuteContext(ctx)
 			return result
 		}
@@ -699,7 +803,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 
 			if installed {
 				// Extension was installed, build command tree and execute
-				rootCmd := NewRootCmd(false, nil, rootContainer)
+				rootCmd := newRootCmdWithoutRegistration(rootContainer)
 				result.Err = rootCmd.ExecuteContext(ctx)
 				return result
 			}

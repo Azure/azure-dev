@@ -220,13 +220,17 @@ func bestSatisfyingVersionForAzd(
 	return bestSatisfyingVersion(expr, compatible)
 }
 
-// resolveExtensionVersion selects the best published version of extension that satisfies
+// ResolveExtensionVersion selects the best published version of extension that satisfies
 // versionPreference and is compatible with azdVersion, or returns a descriptive error.
-func resolveExtensionVersion(
+func ResolveExtensionVersion(
 	extension *ExtensionMetadata,
 	versionPreference string,
 	azdVersion *semver.Version,
 ) (*ExtensionVersion, error) {
+	if extension == nil {
+		return nil, fmt.Errorf("extension metadata cannot be nil")
+	}
+
 	selected := bestSatisfyingVersionForAzd(versionPreference, extension.Versions, azdVersion)
 	if selected != nil {
 		return selected, nil
@@ -575,7 +579,7 @@ func (m *Manager) installInternal(
 	}
 
 	// Resolve to the latest published version that satisfies the preference.
-	selectedVersion, err := resolveExtensionVersion(extension, opts.VersionPreference, opts.AzdVersion)
+	selectedVersion, err := ResolveExtensionVersion(extension, opts.VersionPreference, opts.AzdVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -871,7 +875,7 @@ func (m *Manager) ReconcileDependencies(
 		return nil, nil, fmt.Errorf("extension metadata cannot be nil")
 	}
 
-	selectedVersion, err := resolveExtensionVersion(extension, opts.VersionPreference, opts.AzdVersion)
+	selectedVersion, err := ResolveExtensionVersion(extension, opts.VersionPreference, opts.AzdVersion)
 	if err != nil {
 		return nil, nil, err
 	}

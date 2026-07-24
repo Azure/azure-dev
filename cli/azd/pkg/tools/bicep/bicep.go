@@ -96,6 +96,7 @@ func (cli *Cli) ensureInstalled(ctx context.Context) error {
 	if _, err = os.Stat(bicepPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("finding bicep: %w", err)
 	}
+	justDownloaded := false
 	if errors.Is(err, os.ErrNotExist) {
 		if err := os.MkdirAll(filepath.Dir(bicepPath), osutil.PermissionDirectory); err != nil {
 			return fmt.Errorf("downloading bicep: %w", err)
@@ -108,13 +109,31 @@ func (cli *Cli) ensureInstalled(ctx context.Context) error {
 		); err != nil {
 			return fmt.Errorf("downloading bicep: %w", err)
 		}
+		justDownloaded = true
 	}
 
 	cli.path = bicepPath
 
 	ver, err := cli.version(ctx)
 	if err != nil {
-		return fmt.Errorf("checking bicep version: %w", err)
+		if justDownloaded {
+			// We just downloaded this binary and it still fails; give up.
+			return fmt.Errorf("checking bicep version: %w", err)
+		}
+		// The pre-existing binary is non-runnable (wrong arch, corrupt, partial download, etc.).
+		// Re-download once and retry rather than hard-failing.
+		log.Printf("existing bicep binary failed version check (%v); re-downloading", err)
+		if rerr := runStep(
+			ctx, cli.console, "Downloading Bicep", func() error {
+				return downloadBicep(ctx, cli.transporter, Version, bicepPath)
+			},
+		); rerr != nil {
+			return fmt.Errorf("downloading bicep: %w", rerr)
+		}
+		ver, err = cli.version(ctx)
+		if err != nil {
+			return fmt.Errorf("checking bicep version: %w", err)
+		}
 	}
 
 	log.Printf("bicep version: %s", ver)

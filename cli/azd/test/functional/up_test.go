@@ -261,6 +261,12 @@ func Test_CLI_Up_Down_ContainerFuncApp(t *testing.T) {
 	)
 
 	defer cleanupDeployments(ctx, t, cli, session, envName)
+	cleanupResourceGroup := true
+	defer func() {
+		if cleanupResourceGroup {
+			cleanupRg(ctx, t, cli, session, "rg-"+envName)
+		}
+	}()
 
 	err := copySample(dir, "containerfuncapp")
 	require.NoError(t, err, "failed expanding sample")
@@ -298,6 +304,9 @@ func Test_CLI_Up_Down_ContainerFuncApp(t *testing.T) {
 
 	t.Logf("Starting infra delete\n")
 	_, err = cli.RunCommand(ctx, "down", "--cwd", dir, "--force", "--purge")
+	if err == nil {
+		cleanupResourceGroup = false
+	}
 	require.NoError(t, err)
 }
 

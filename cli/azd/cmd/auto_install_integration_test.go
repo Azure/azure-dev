@@ -301,6 +301,8 @@ func containsNoPromptFalse(args []string) bool {
 // This ensures tests are isolated from the ambient environment.
 func clearAgentEnvVarsForTest(t *testing.T) {
 	envVarsToUnset := []string{
+		// GitHub Copilot App
+		"AI_AGENT",
 		// Claude Code
 		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",
 		// GitHub Copilot CLI

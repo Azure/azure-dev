@@ -43,4 +43,4 @@
 /schemas/                                   @vhvb1989 @tg-msft @RickWinter
 
 # ── This file (most specific -- must be last for /.github/) ───────────────────
-/.github/CODEOWNERS                         @tg-msft @RickWinter @Azure/azure-sdk-eng
+/.github/CODEOWNERS                         @tg-msft @RickWinter @richardpark-msft @Azure/azure-sdk-eng

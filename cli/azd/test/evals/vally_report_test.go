@@ -94,7 +94,7 @@ func TestBuildReportIncludesDiagnostics(t *testing.T) {
 	}
 
 	_, failed := filteredEntries(records)
-	report := buildReport(failed, 4, "testdata/results.jsonl", "testdata", false)
+	report := buildReport(failed, 4, "testdata/results.jsonl", "testdata", ".", false)
 
 	for _, want := range []string{
 		"- Status: error",
@@ -135,7 +135,7 @@ func TestExperimentResultsIncludeVariantInReport(t *testing.T) {
 		t.Errorf("experiment variant = %q, want %q", passed[0].experimentVariant, variant)
 	}
 
-	renderedReport := buildReport(passed, 1, runDir, runDir, true)
+	renderedReport := buildReport(passed, 1, runDir, runDir, ".", true)
 	if !strings.Contains(renderedReport, ", "+variant+")") {
 		t.Errorf("report does not contain experiment variant %q", variant)
 	}
@@ -326,6 +326,30 @@ func TestReportCreatesMissingOutputDirectory(t *testing.T) {
 	}
 }
 
+func TestReportLinksAreRelativeToGeneratedReport(t *testing.T) {
+	runDir := t.TempDir()
+	results, err := os.ReadFile(filepath.Join("testdata", "results.jsonl"))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "results.jsonl"), results, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	prefix := filepath.Join(runDir, "vally_report", "eval-results")
+	if _, err := report(runDir, prefix); err != nil {
+		t.Fatalf("report() error = %v", err)
+	}
+
+	contents, err := os.ReadFile(prefix + "-failed.md")
+	if err != nil {
+		t.Fatalf("ReadFile(failed report) error = %v", err)
+	}
+	if !strings.Contains(string(contents), "](../results.jsonl#L2)") {
+		t.Errorf("report links must be relative to the report directory: %s", contents)
+	}
+}
+
 func TestReportLatestRunsReportsBothAvailableRuns(t *testing.T) {
 	baseDir := t.TempDir()
 	evalResultsDir := filepath.Join(baseDir, "vally-results")
@@ -391,13 +415,16 @@ func TestReportLatestRunsReportsAvailableRunsAndSkipsMissingRuns(t *testing.T) {
 		"eval-results",
 		"eval-experiments",
 	)
-	if len(messages) != 1 {
-		t.Fatalf("messages = %d, want 1", len(messages))
+	if len(messages) != 2 {
+		t.Fatalf("messages = %d, want 2", len(messages))
 	}
 	if !strings.Contains(messages[0], "0 failed, 0 passed") {
 		t.Errorf("message = %q, want empty run counts", messages[0])
 	}
-	if err == nil || !strings.Contains(err.Error(), "skipping "+experimentResultsDir) {
-		t.Errorf("error = %v, want skipped experiment results", err)
+	if err != nil {
+		t.Errorf("reportLatestRuns() error = %v, want nil", err)
+	}
+	if len(messages) != 2 || !strings.Contains(messages[1], "Skipping "+experimentResultsDir) {
+		t.Errorf("messages = %v, want skipped experiment results", messages)
 	}
 }

@@ -91,6 +91,29 @@ type reportEntry struct {
 	sessionPath       string
 }
 
+func relativeReportLink(reportDir, target string) string {
+	if target == "" {
+		return target
+	}
+
+	absReportDir, err := filepath.Abs(reportDir)
+	if err != nil {
+		return filepath.ToSlash(target)
+	}
+
+	absTarget, err := filepath.Abs(target)
+	if err != nil {
+		return filepath.ToSlash(target)
+	}
+
+	rel, err := filepath.Rel(absReportDir, absTarget)
+	if err != nil {
+		return filepath.ToSlash(target)
+	}
+
+	return filepath.ToSlash(rel)
+}
+
 func toWorkspaceRelative(p string) string {
 	if p == "" {
 		return p
@@ -235,7 +258,7 @@ func filteredEntries(records []indexedRecord) (passed []reportEntry, failed []re
 	return
 }
 
-func buildReport(entries []reportEntry, totalEntries int, headerPath, sessionLogsPath string, passed bool) string {
+func buildReport(entries []reportEntry, totalEntries int, headerPath, sessionLogsPath, reportDir string, passed bool) string {
 	runDir := headerPath
 	resultsLabel := "Results file"
 	if strings.HasSuffix(headerPath, ".jsonl") {
@@ -243,8 +266,8 @@ func buildReport(entries []reportEntry, totalEntries int, headerPath, sessionLog
 	} else {
 		resultsLabel = "Results folder"
 	}
-	relResults := toWorkspaceRelative(headerPath)
-	relRunDir := toWorkspaceRelative(nonEmpty(sessionLogsPath, runDir))
+	relResults := relativeReportLink(reportDir, headerPath)
+	relRunDir := relativeReportLink(reportDir, nonEmpty(sessionLogsPath, runDir))
 	title := "# Vally Failed Responses"
 	countLabel := "Failed trials"
 	noEntriesMessage := "No failed trials in this run."
@@ -316,8 +339,8 @@ func buildReport(entries []reportEntry, totalEntries int, headerPath, sessionLog
 		b.WriteString("\n\n")
 
 		sessionTarget := nonEmpty(entry.sessionPath, nonEmpty(sessionLogsPath, runDir))
-		relSessionTarget := toWorkspaceRelative(sessionTarget)
-		relEntryResults := toWorkspaceRelative(nonEmpty(entry.sourcePath, headerPath))
+		relSessionTarget := relativeReportLink(reportDir, sessionTarget)
+		relEntryResults := relativeReportLink(reportDir, nonEmpty(entry.sourcePath, headerPath))
 
 		b.WriteString(detailsHeading)
 		b.WriteString("\n\n")
@@ -630,12 +653,13 @@ func report(runDir, prefix string) (string, error) {
 		return "", fmt.Errorf("create report directory: %w", err)
 	}
 
-	failedReport := buildReport(failedEntries, totalTrials, runDir, runDir, false)
+	reportDir := filepath.Dir(failedMarkdownPath)
+	failedReport := buildReport(failedEntries, totalTrials, runDir, runDir, reportDir, false)
 	if err := os.WriteFile(failedMarkdownPath, []byte(failedReport), 0o600); err != nil {
 		return "", fmt.Errorf("write failed report: %w", err)
 	}
 
-	successReport := buildReport(successEntries, totalTrials, runDir, runDir, true)
+	successReport := buildReport(successEntries, totalTrials, runDir, runDir, reportDir, true)
 	if err := os.WriteFile(passedMarkdownPath, []byte(successReport), 0o600); err != nil {
 		return "", fmt.Errorf("write success report: %w", err)
 	}
@@ -658,7 +682,7 @@ func reportLatestRuns(
 			messages = append(messages, message)
 		}
 	} else {
-		reportErrors = append(reportErrors, fmt.Errorf("skipping %s: %w", evalResultsDir, err))
+		messages = append(messages, fmt.Sprintf("Skipping %s: %v", evalResultsDir, err))
 	}
 
 	if runDir, err := latestExperimentRun(experimentResultsDir); err == nil {
@@ -669,7 +693,7 @@ func reportLatestRuns(
 			messages = append(messages, message)
 		}
 	} else {
-		reportErrors = append(reportErrors, fmt.Errorf("skipping %s: %w", experimentResultsDir, err))
+		messages = append(messages, fmt.Sprintf("Skipping %s: %v", experimentResultsDir, err))
 	}
 
 	return messages, errors.Join(reportErrors...)
@@ -691,5 +715,6 @@ func main() {
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }

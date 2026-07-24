@@ -42,9 +42,9 @@ evals/
 ├── fixtures/                     # input files mounted into eval worktrees
 ├── graders/                      # custom grader logic
 ├── skills/azd/                   # the azd skill injected during evals
-├── make_vally_report.go          # report generator (npm run report)
+├── vally_report.go               # report generator (npm run report)
 |  # these are output folders from vally itself. They're just JSON/JSONL files, so you can parse
-|  # them yourself, or just use make_vally_report.go as a starting point.
+|  # them yourself, or just use vally_report.go as a starting point.
 |  #
 ├── vally-results/                # output from local eval runs
 └── vally-experiment-results/     # output from local experiment runs

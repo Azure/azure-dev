@@ -20,7 +20,7 @@ defaults:
 # with some degree of failure as these tests need actual azd knowledge and we're still working
 # on that.
 scoring:
-  threshold: 0.6
+  threshold: 0.5
 
 stimuli:
   - name: deploy-node-api

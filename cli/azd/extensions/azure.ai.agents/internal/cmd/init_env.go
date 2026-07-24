@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -26,32 +25,60 @@ var azureYamlEnvRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-
 
 var foundryTemplateSpanPattern = regexp.MustCompile(`(?s)\$\{\{.*?\}\}`)
 
-var azureYamlEnvironmentReferencePaths = map[string][][]string{
-	"azure.ai.agent": {
-		{"environmentVariables", "*", "value"},
-	},
-	"azure.ai.connection": {
-		{"target"},
-		{"credentials"},
-		{"metadata"},
-	},
-	"azure.ai.project": {
-		{"network", "agentSubnet", "vnet"},
-		{"network", "peSubnet", "vnet"},
-		{"network", "dns", "subscription"},
-	},
-	"azure.ai.routine": {
-		{"action", "input"},
-	},
-	"azure.ai.toolbox": {
-		{"endpoint"},
-		{"tools"},
-	},
-	"microsoft.foundry": {
-		{"network", "agentSubnet", "vnet"},
-		{"network", "peSubnet", "vnet"},
-		{"network", "dns", "subscription"},
-	},
+// These types mirror only the fields each Foundry provider expands from the
+// azd environment. The owning provider types are unexported or live in sibling
+// extension modules, so init keeps small typed views instead of string paths.
+//
+// Keep these views aligned with:
+//   - agent environmentVariables values
+//   - connection target, credentials, and metadata
+//   - project network VNet IDs and DNS subscription
+//   - routine action input
+//   - toolbox endpoint and tools
+type azureYamlAgentEnvironmentConfig struct {
+	Kind                 string                         `yaml:"kind,omitempty"`
+	EnvironmentVariables []azureYamlEnvironmentVariable `yaml:"environmentVariables,omitempty"`
+}
+
+type azureYamlEnvironmentVariable struct {
+	Value string `yaml:"value,omitempty"`
+}
+
+type azureYamlConnectionEnvironmentConfig struct {
+	Target      string            `yaml:"target,omitempty"`
+	Credentials map[string]any    `yaml:"credentials,omitempty"`
+	Metadata    map[string]string `yaml:"metadata,omitempty"`
+}
+
+type azureYamlProjectEnvironmentConfig struct {
+	Network *azureYamlNetworkEnvironmentConfig `yaml:"network,omitempty"`
+}
+
+type azureYamlNetworkEnvironmentConfig struct {
+	AgentSubnet *azureYamlSubnetEnvironmentConfig `yaml:"agentSubnet,omitempty"`
+	PESubnet    *azureYamlSubnetEnvironmentConfig `yaml:"peSubnet,omitempty"`
+	DNS         *azureYamlDNSEnvironmentConfig    `yaml:"dns,omitempty"`
+}
+
+type azureYamlSubnetEnvironmentConfig struct {
+	VNet string `yaml:"vnet,omitempty"`
+}
+
+type azureYamlDNSEnvironmentConfig struct {
+	Subscription string `yaml:"subscription,omitempty"`
+}
+
+type azureYamlRoutineEnvironmentConfig struct {
+	Action *azureYamlRoutineActionEnvironmentConfig `yaml:"action,omitempty"`
+}
+
+type azureYamlRoutineActionEnvironmentConfig struct {
+	Input any `yaml:"input,omitempty"`
+}
+
+type azureYamlToolboxEnvironmentConfig struct {
+	Endpoint string           `yaml:"endpoint,omitempty"`
+	Tools    []map[string]any `yaml:"tools,omitempty"`
 }
 
 var azureYamlCoreServiceFields = map[string]struct{}{
@@ -202,8 +229,7 @@ func findAzureYamlEnvironmentReferences(content []byte, projectDir string) ([]az
 		if !ok {
 			continue
 		}
-		_, ok = azureYamlEnvironmentReferencePaths[host]
-		if !ok {
+		if !supportsAzureYamlEnvironmentReferences(host) {
 			continue
 		}
 
@@ -220,15 +246,14 @@ func findAzureYamlEnvironmentReferences(content []byte, projectDir string) ([]az
 			return nil, fmt.Errorf("encoding resolved service %q: %w", serviceName, err)
 		}
 
-		referencePaths := activeAzureYamlEnvironmentReferencePaths(host, &resolvedService)
-		for _, referencePath := range referencePaths {
-			collectAzureYamlEnvironmentReferencesAtPath(
-				&resolvedService,
-				referencePath,
-				[]string{"services", serviceName},
-				&references,
-				indexByName,
-			)
+		if err := collectAzureYamlServiceEnvironmentReferences(
+			host,
+			serviceName,
+			&resolvedService,
+			&references,
+			indexByName,
+		); err != nil {
+			return nil, err
 		}
 	}
 	return references, nil
@@ -260,29 +285,38 @@ func foundryAzureYamlServiceHost(service *yaml.Node) (string, bool) {
 	return host.Value, true
 }
 
-func activeAzureYamlEnvironmentReferencePaths(host string, service *yaml.Node) [][]string {
-	referencePaths := azureYamlEnvironmentReferencePaths[host]
+func supportsAzureYamlEnvironmentReferences(host string) bool {
+	switch host {
+	case "azure.ai.agent",
+		"azure.ai.connection",
+		"azure.ai.project",
+		"azure.ai.routine",
+		"azure.ai.toolbox",
+		"microsoft.foundry":
+		return true
+	default:
+		return false
+	}
+}
 
+func activeAzureYamlServiceConfiguration(host string, service *yaml.Node) *yaml.Node {
 	switch host {
 	case "azure.ai.agent":
 		if hasNonEmptyAzureYamlString(service, "kind") {
-			return referencePaths
+			return service
 		}
 		config := yamlMappingValue(service, "config")
 		if hasNonEmptyAzureYamlString(config, "kind") {
-			return prefixAzureYamlEnvironmentReferencePaths("config", referencePaths)
+			return config
 		}
 		return nil
 	case "azure.ai.routine", "azure.ai.toolbox":
 		if hasAzureYamlInlineProperties(service) {
-			return referencePaths
+			return service
 		}
-		if yamlMappingValue(service, "config") != nil {
-			return prefixAzureYamlEnvironmentReferencePaths("config", referencePaths)
-		}
-		return nil
+		return yamlMappingValue(service, "config")
 	default:
-		return referencePaths
+		return service
 	}
 }
 
@@ -304,65 +338,135 @@ func hasAzureYamlInlineProperties(service *yaml.Node) bool {
 	return false
 }
 
-func prefixAzureYamlEnvironmentReferencePaths(prefix string, paths [][]string) [][]string {
-	prefixed := make([][]string, len(paths))
-	for i, path := range paths {
-		prefixed[i] = append([]string{prefix}, path...)
-	}
-	return prefixed
-}
-
-func collectAzureYamlEnvironmentReferencesAtPath(
-	node *yaml.Node,
-	referencePath []string,
-	path []string,
+func collectAzureYamlServiceEnvironmentReferences(
+	host string,
+	serviceName string,
+	service *yaml.Node,
 	references *[]azureYamlEnvironmentReference,
 	indexByName map[string]int,
-) {
-	if node == nil {
-		return
-	}
-	if node.Kind == yaml.AliasNode {
-		node = node.Alias
-	}
-	if len(referencePath) == 0 {
-		collectAzureYamlEnvironmentReferences(node, path, references, indexByName)
-		return
+) error {
+	active := activeAzureYamlServiceConfiguration(host, service)
+	if active == nil {
+		return nil
 	}
 
-	segment := referencePath[0]
-	if segment == "*" {
-		if node.Kind != yaml.SequenceNode {
-			return
+	switch host {
+	case "azure.ai.agent":
+		var config azureYamlAgentEnvironmentConfig
+		if err := active.Decode(&config); err != nil {
+			return fmt.Errorf("decoding agent service %q: %w", serviceName, err)
 		}
-		for _, child := range node.Content {
-			collectAzureYamlEnvironmentReferencesAtPath(
-				child,
-				referencePath[1:],
-				append(slices.Clone(path), segment),
+		for _, variable := range config.EnvironmentVariables {
+			collectAzureYamlEnvironmentReferences(variable.Value, false, references, indexByName)
+		}
+	case "azure.ai.connection":
+		var config azureYamlConnectionEnvironmentConfig
+		if err := active.Decode(&config); err != nil {
+			return fmt.Errorf("decoding connection service %q: %w", serviceName, err)
+		}
+		collectAzureYamlEnvironmentReferences(config.Target, false, references, indexByName)
+		if err := collectAzureYamlEnvironmentReferencesFromValue(
+			config.Credentials,
+			true,
+			references,
+			indexByName,
+		); err != nil {
+			return fmt.Errorf("scanning connection service %q credentials: %w", serviceName, err)
+		}
+		if err := collectAzureYamlEnvironmentReferencesFromValue(
+			config.Metadata,
+			false,
+			references,
+			indexByName,
+		); err != nil {
+			return fmt.Errorf("scanning connection service %q metadata: %w", serviceName, err)
+		}
+	case "azure.ai.project", "microsoft.foundry":
+		var config azureYamlProjectEnvironmentConfig
+		if err := active.Decode(&config); err != nil {
+			return fmt.Errorf("decoding project service %q: %w", serviceName, err)
+		}
+		if config.Network != nil {
+			if config.Network.AgentSubnet != nil {
+				collectAzureYamlEnvironmentReferences(
+					config.Network.AgentSubnet.VNet,
+					false,
+					references,
+					indexByName,
+				)
+			}
+			if config.Network.PESubnet != nil {
+				collectAzureYamlEnvironmentReferences(
+					config.Network.PESubnet.VNet,
+					false,
+					references,
+					indexByName,
+				)
+			}
+			if config.Network.DNS != nil {
+				collectAzureYamlEnvironmentReferences(
+					config.Network.DNS.Subscription,
+					false,
+					references,
+					indexByName,
+				)
+			}
+		}
+	case "azure.ai.routine":
+		var config azureYamlRoutineEnvironmentConfig
+		if err := active.Decode(&config); err != nil {
+			return fmt.Errorf("decoding routine service %q: %w", serviceName, err)
+		}
+		if config.Action != nil {
+			if err := collectAzureYamlEnvironmentReferencesFromValue(
+				config.Action.Input,
+				false,
 				references,
 				indexByName,
-			)
+			); err != nil {
+				return fmt.Errorf("scanning routine service %q action input: %w", serviceName, err)
+			}
 		}
-		return
+	case "azure.ai.toolbox":
+		var config azureYamlToolboxEnvironmentConfig
+		if err := active.Decode(&config); err != nil {
+			return fmt.Errorf("decoding toolbox service %q: %w", serviceName, err)
+		}
+		collectAzureYamlEnvironmentReferences(config.Endpoint, false, references, indexByName)
+		if err := collectAzureYamlEnvironmentReferencesFromValue(
+			config.Tools,
+			false,
+			references,
+			indexByName,
+		); err != nil {
+			return fmt.Errorf("scanning toolbox service %q tools: %w", serviceName, err)
+		}
 	}
 
-	child := yamlMappingValue(node, segment)
-	if child == nil {
-		return
-	}
-	collectAzureYamlEnvironmentReferencesAtPath(
-		child,
-		referencePath[1:],
-		append(slices.Clone(path), segment),
-		references,
-		indexByName,
-	)
+	return nil
 }
 
-func collectAzureYamlEnvironmentReferences(
+func collectAzureYamlEnvironmentReferencesFromValue(
+	value any,
+	secret bool,
+	references *[]azureYamlEnvironmentReference,
+	indexByName map[string]int,
+) error {
+	if value == nil {
+		return nil
+	}
+
+	var node yaml.Node
+	if err := node.Encode(value); err != nil {
+		return fmt.Errorf("encoding value: %w", err)
+	}
+	collectAzureYamlEnvironmentReferencesFromNode(&node, secret, references, indexByName)
+	return nil
+}
+
+func collectAzureYamlEnvironmentReferencesFromNode(
 	node *yaml.Node,
-	path []string,
+	secret bool,
 	references *[]azureYamlEnvironmentReference,
 	indexByName map[string]int,
 ) {
@@ -373,44 +477,52 @@ func collectAzureYamlEnvironmentReferences(
 	switch node.Kind {
 	case yaml.DocumentNode, yaml.SequenceNode:
 		for _, child := range node.Content {
-			collectAzureYamlEnvironmentReferences(child, path, references, indexByName)
+			collectAzureYamlEnvironmentReferencesFromNode(child, secret, references, indexByName)
 		}
 	case yaml.MappingNode:
 		for i := 0; i+1 < len(node.Content); i += 2 {
 			key := node.Content[i]
 			value := node.Content[i+1]
-			childPath := append(slices.Clone(path), key.Value)
-			collectAzureYamlEnvironmentReferences(value, childPath, references, indexByName)
+			childSecret := secret || isSecretAzureYamlEnvironmentKey(key.Value)
+			collectAzureYamlEnvironmentReferencesFromNode(value, childSecret, references, indexByName)
 		}
 	case yaml.AliasNode:
-		collectAzureYamlEnvironmentReferences(node.Alias, path, references, indexByName)
+		collectAzureYamlEnvironmentReferencesFromNode(node.Alias, secret, references, indexByName)
 	case yaml.ScalarNode:
-		value := foundryTemplateSpanPattern.ReplaceAllStringFunc(node.Value, func(span string) string {
-			return strings.Repeat(" ", len(span))
-		})
-		for _, match := range azureYamlEnvRefPattern.FindAllStringSubmatchIndex(value, -1) {
-			if isEscapedAzureYamlEnvironmentReference(value, match[0]) {
-				continue
-			}
-			if match[4] != -1 {
-				continue
-			}
+		collectAzureYamlEnvironmentReferences(node.Value, secret, references, indexByName)
+	}
+}
 
-			name := value[match[2]:match[3]]
-			secret := isSecretAzureYamlEnvironmentReference(path)
-			if index, ok := indexByName[name]; ok {
-				if secret {
-					(*references)[index].Secret = true
-				}
-				continue
-			}
-
-			indexByName[name] = len(*references)
-			*references = append(*references, azureYamlEnvironmentReference{
-				Name:   name,
-				Secret: secret,
-			})
+func collectAzureYamlEnvironmentReferences(
+	value string,
+	secret bool,
+	references *[]azureYamlEnvironmentReference,
+	indexByName map[string]int,
+) {
+	value = foundryTemplateSpanPattern.ReplaceAllStringFunc(value, func(span string) string {
+		return strings.Repeat(" ", len(span))
+	})
+	for _, match := range azureYamlEnvRefPattern.FindAllStringSubmatchIndex(value, -1) {
+		if isEscapedAzureYamlEnvironmentReference(value, match[0]) {
+			continue
 		}
+		if match[4] != -1 {
+			continue
+		}
+
+		name := value[match[2]:match[3]]
+		if index, ok := indexByName[name]; ok {
+			if secret {
+				(*references)[index].Secret = true
+			}
+			continue
+		}
+
+		indexByName[name] = len(*references)
+		*references = append(*references, azureYamlEnvironmentReference{
+			Name:   name,
+			Secret: secret,
+		})
 	}
 }
 
@@ -422,15 +534,10 @@ func isEscapedAzureYamlEnvironmentReference(value string, start int) bool {
 	return precedingDollars%2 == 1
 }
 
-// Secret masking is based on explicit configuration structure. Environment
-// variable names are user-defined and are not a reliable sensitivity signal.
-func isSecretAzureYamlEnvironmentReference(path []string) bool {
-	for _, segment := range path {
-		switch strings.ToLower(segment) {
-		case "credential", "credentials", "secret", "secrets":
-			return true
-		}
+func isSecretAzureYamlEnvironmentKey(key string) bool {
+	switch strings.ToLower(key) {
+	case "credential", "credentials", "secret", "secrets":
+		return true
 	}
-
 	return false
 }

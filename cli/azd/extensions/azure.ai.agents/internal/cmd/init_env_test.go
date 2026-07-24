@@ -222,6 +222,16 @@ services:
 			want: nil,
 		},
 		{
+			name: "unsupported host refs are ignored before resolution",
+			content: `name: sample
+services:
+  skill:
+    host: azure.ai.skill
+    $ref: ./missing-skill.yaml
+`,
+			want: nil,
+		},
+		{
 			name: "deprecated toolbox and routine config fields are scanned",
 			content: `name: sample
 services:

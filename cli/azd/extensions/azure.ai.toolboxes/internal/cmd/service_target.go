@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"azure.ai.toolboxes/internal/exterrors"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // aiToolboxHost is the azure.yaml service host kind owned by this extension. A
@@ -126,7 +128,10 @@ func (p *toolboxServiceTarget) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
-	cfg, err := parseToolboxServiceConfig(serviceConfig)
+	cfg, err := p.parseToolboxServiceConfig(
+		ctx,
+		serviceConfig,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -305,15 +310,62 @@ func (p *toolboxServiceTarget) buildToolEntries(
 // back to the deprecated config: shape for azure.yaml files written before the
 // per-resource service split.
 func parseToolboxServiceConfig(svc *azdext.ServiceConfig) (*toolboxServiceConfig, error) {
-	props := svc.GetAdditionalProperties()
-	if props == nil || len(props.GetFields()) == 0 {
-		props = svc.GetConfig()
+	return parseToolboxServiceConfigAtRoot(svc, "")
+}
+
+func (p *toolboxServiceTarget) parseToolboxServiceConfig(
+	ctx context.Context,
+	svc *azdext.ServiceConfig,
+) (*toolboxServiceConfig, error) {
+	props := toolboxServiceProps(svc)
+	if props == nil || !containsToolboxFileRef(props.AsMap()) {
+		return parseToolboxServiceConfig(svc)
 	}
+	project, err := p.azdClient.Project().Get(
+		ctx,
+		&azdext.EmptyRequest{},
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"resolving project root for toolbox %q: %w",
+			svc.GetName(),
+			err,
+		)
+	}
+	if project.GetProject() == nil {
+		return nil, fmt.Errorf(
+			"resolving project root for toolbox %q: empty project",
+			svc.GetName(),
+		)
+	}
+	return parseToolboxServiceConfigAtRoot(
+		svc,
+		project.GetProject().GetPath(),
+	)
+}
+
+func parseToolboxServiceConfigAtRoot(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (*toolboxServiceConfig, error) {
+	props := toolboxServiceProps(svc)
 	cfg := &toolboxServiceConfig{}
 	if props == nil {
 		return cfg, nil
 	}
-	b, err := json.Marshal(props.AsMap())
+	values := props.AsMap()
+	if projectRoot != "" {
+		resolved, err := foundry.ResolveFileRefs(values, projectRoot)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"resolving toolbox service %q config: %w",
+				svc.GetName(),
+				err,
+			)
+		}
+		values = resolved
+	}
+	b, err := json.Marshal(values)
 	if err != nil {
 		return nil, fmt.Errorf("encoding toolbox service %q config: %w", svc.GetName(), err)
 	}
@@ -321,6 +373,35 @@ func parseToolboxServiceConfig(svc *azdext.ServiceConfig) (*toolboxServiceConfig
 		return nil, fmt.Errorf("parsing toolbox service %q config: %w", svc.GetName(), err)
 	}
 	return cfg, nil
+}
+
+func toolboxServiceProps(
+	svc *azdext.ServiceConfig,
+) *structpb.Struct {
+	props := svc.GetAdditionalProperties()
+	if props == nil || len(props.GetFields()) == 0 {
+		return svc.GetConfig()
+	}
+	return props
+}
+
+func containsToolboxFileRef(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		if _, exists := typed["$ref"]; exists {
+			return true
+		}
+		for _, child := range typed {
+			if containsToolboxFileRef(child) {
+				return true
+			}
+		}
+	case []any:
+		if slices.ContainsFunc(typed, containsToolboxFileRef) {
+			return true
+		}
+	}
+	return false
 }
 
 // currentEnvValues loads all key-value pairs from the active azd environment, used to

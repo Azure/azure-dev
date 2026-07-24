@@ -258,7 +258,9 @@ func filteredEntries(records []indexedRecord) (passed []reportEntry, failed []re
 	return
 }
 
-func buildReport(entries []reportEntry, totalEntries int, headerPath, sessionLogsPath, reportDir string, passed bool) string {
+func buildReport(
+	entries []reportEntry, totalEntries int, headerPath, sessionLogsPath, reportDir string, passed bool,
+) string {
 	runDir := headerPath
 	resultsLabel := "Results file"
 	if strings.HasSuffix(headerPath, ".jsonl") {

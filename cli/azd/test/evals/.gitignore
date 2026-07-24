@@ -1,6 +1,6 @@
 vally-results/
 vally-experiment-results/
 
-# output from make-failed-report.go
+# output from vally_report.go
 eval-experiments-*.md
 eval-results-*.md

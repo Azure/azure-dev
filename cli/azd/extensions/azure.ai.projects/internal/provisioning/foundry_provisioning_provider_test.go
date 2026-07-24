@@ -183,6 +183,101 @@ func TestFoundryProvider_ImplementsContract(t *testing.T) {
 	assert.NotNil(t, p)
 }
 
+func TestProjectServiceEnvironments(t *testing.T) {
+	t.Parallel()
+
+	projectServer := &validateStubProjectServer{
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"connection": {
+					Environment: map[string]string{
+						"ENDPOINT": "https://service.example",
+					},
+				},
+				"legacy": {},
+			},
+		},
+	}
+	client := newValidateTestClient(
+		t,
+		projectServer,
+		&validateStubEnvServer{},
+	)
+	provider := &FoundryProvisioningProvider{azdClient: client}
+
+	environments, err := provider.projectServiceEnvironments(t.Context())
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		map[string]map[string]string{
+			"connection": {
+				"ENDPOINT": "https://service.example",
+			},
+		},
+		environments,
+	)
+}
+
+func TestInitializeUsesConnectionServiceEnvironment(t *testing.T) {
+	t.Parallel()
+
+	projectPath := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectPath, "azure.yaml"),
+		[]byte(`
+services:
+  project:
+    host: azure.ai.project
+  connection:
+    host: azure.ai.connection
+    uses: [project]
+    env:
+      ENDPOINT: ${SEARCH_ENDPOINT}
+    category: CognitiveSearch
+    target: ${ENDPOINT}
+    authType: None
+`),
+		0o600,
+	))
+
+	projectServer := &validateStubProjectServer{
+		project: &azdext.ProjectConfig{
+			Path: projectPath,
+			Services: map[string]*azdext.ServiceConfig{
+				"connection": {
+					Environment: map[string]string{
+						"ENDPOINT": "https://service.example",
+					},
+				},
+			},
+		},
+	}
+	client := newValidateTestClient(
+		t,
+		projectServer,
+		&validateStubEnvServer{
+			envName: "test",
+			get: map[string]string{
+				envKeySubscriptionID: "00000000-0000-0000-0000-000000000000",
+				envKeyLocation:       "eastus",
+			},
+		},
+	)
+	provider := &FoundryProvisioningProvider{azdClient: client}
+
+	err := provider.Initialize(
+		t.Context(),
+		projectPath,
+		&azdext.ProvisioningOptions{Provider: FoundryProviderName},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, provider.synthResult)
+	connections, ok := provider.synthResult.Parameters["connections"].([]synthesis.Connection)
+	require.True(t, ok)
+	require.Len(t, connections, 1)
+	require.Equal(t, "https://service.example", connections[0].Target)
+}
+
 func TestArmOutputsToProto(t *testing.T) {
 	tests := []struct {
 		name    string

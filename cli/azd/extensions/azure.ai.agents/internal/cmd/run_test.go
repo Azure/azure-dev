@@ -439,14 +439,15 @@ func createVenv(t *testing.T, projectDir string) string {
 func TestAppendFoundryEnvVars(t *testing.T) {
 	t.Parallel()
 
-	t.Run("does not map FOUNDRY_PROJECT_ENDPOINT to itself", func(t *testing.T) {
+	t.Run("forwards FOUNDRY_PROJECT_ENDPOINT", func(t *testing.T) {
 		t.Parallel()
 		azdEnv := map[string]string{
 			"FOUNDRY_PROJECT_ENDPOINT": "https://myaccount.services.ai.azure.com/api/projects/myproject",
 		}
 		env := appendFoundryEnvVars(nil, azdEnv, "")
-		if len(env) != 0 {
-			t.Errorf("expected no translated env vars, got %v", env)
+		expected := "FOUNDRY_PROJECT_ENDPOINT=https://myaccount.services.ai.azure.com/api/projects/myproject"
+		if !slices.Contains(env, expected) {
+			t.Errorf("expected %q in env, got %v", expected, env)
 		}
 	})
 
@@ -495,12 +496,12 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 			"AGENT_AGENT1_VERSION":     "v1",
 		}
 		env := appendFoundryEnvVars(nil, azdEnv, "agent1")
-		if len(env) != 3 {
-			t.Errorf("expected 3 env vars, got %d: %v", len(env), env)
+		if len(env) != 4 {
+			t.Errorf("expected 4 env vars, got %d: %v", len(env), env)
 		}
 	})
 
-	t.Run("skips foundry key when already set in azd env", func(t *testing.T) {
+	t.Run("prefers service-specific agent metadata", func(t *testing.T) {
 		t.Parallel()
 		azdEnv := map[string]string{
 			"FOUNDRY_PROJECT_ENDPOINT": "https://explicit.services.ai.azure.com",
@@ -509,20 +510,26 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 		}
 		env := appendFoundryEnvVars(nil, azdEnv, "my-svc")
 
-		// Neither FOUNDRY_PROJECT_ENDPOINT nor FOUNDRY_AGENT_NAME should be
-		// appended because they already exist in azdEnv (and were thus already
-		// added to the env slice by the caller's loop over azdEnv).
-		for _, entry := range env {
-			if strings.HasPrefix(entry, "FOUNDRY_PROJECT_ENDPOINT=") ||
-				strings.HasPrefix(entry, "FOUNDRY_AGENT_NAME=") {
-				t.Errorf("should not translate when foundry key already in azdEnv, got %q", entry)
-			}
+		if !slices.Contains(
+			env,
+			"FOUNDRY_PROJECT_ENDPOINT=https://explicit.services.ai.azure.com",
+		) {
+			t.Errorf("expected project endpoint in env, got %v", env)
 		}
+		if !slices.Contains(env, "FOUNDRY_AGENT_NAME=my-agent") {
+			t.Errorf("expected service agent name in env, got %v", env)
+		}
+	})
 
-		// AZURE_AI_PROJECT_ID has no explicit FOUNDRY_PROJECT_ARM_ID, so it should still be skipped
-		// (it's not in azdEnv either, so appendFoundryEnvVars skips it because the source key is empty)
-		if len(env) != 0 {
-			t.Errorf("expected no translated env vars, got %v", env)
+	t.Run("forwards application insights", func(t *testing.T) {
+		t.Parallel()
+		azdEnv := map[string]string{
+			"APPLICATIONINSIGHTS_CONNECTION_STRING": "InstrumentationKey=test",
+		}
+		env := appendFoundryEnvVars(nil, azdEnv, "")
+		expected := "APPLICATIONINSIGHTS_CONNECTION_STRING=InstrumentationKey=test"
+		if !slices.Contains(env, expected) {
+			t.Errorf("expected %q in env, got %v", expected, env)
 		}
 	})
 
@@ -572,6 +579,165 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 	})
 }
 
+func TestMergeAgentRunEnvironment(t *testing.T) {
+	t.Parallel()
+
+	value := func(environment []string, key string) (string, bool) {
+		t.Helper()
+		for i := len(environment) - 1; i >= 0; i-- {
+			name, entryValue, found := strings.Cut(environment[i], "=")
+			if found && name == key {
+				return entryValue, true
+			}
+		}
+		return "", false
+	}
+
+	t.Run("service env wins without leaking azd values", func(t *testing.T) {
+		t.Parallel()
+		environment := mergeAgentRunEnvironment(
+			[]string{"FOO=process", "PORT=8088"},
+			map[string]string{
+				"FOO":                      "global",
+				"BAR":                      "global",
+				"UNDECLARED_SECRET":        "hidden",
+				"FOUNDRY_PROJECT_ENDPOINT": "https://project.example",
+			},
+			map[string]string{
+				"FOO":          "service",
+				"BAR":          "service",
+				"EMPTY":        "",
+				"PORT":         "9000",
+				"SERVICE_ONLY": "service-only",
+			},
+			[]string{
+				"FOO=service",
+				"BAR=service",
+				"PORT=9000",
+				"LEGACY=declared",
+			},
+			"agent",
+			true,
+		)
+
+		if got, _ := value(environment, "FOO"); got != "process" {
+			t.Errorf("expected process FOO, got %q", got)
+		}
+		if got, _ := value(environment, "BAR"); got != "service" {
+			t.Errorf("expected service BAR, got %q", got)
+		}
+		if got, _ := value(environment, "PORT"); got != "8088" {
+			t.Errorf("expected command PORT, got %q", got)
+		}
+		if _, found := value(environment, "UNDECLARED_SECRET"); found {
+			t.Errorf("did not expect undeclared azd value in %v", environment)
+		}
+		if got, _ := value(environment, "FOUNDRY_PROJECT_ENDPOINT"); got !=
+			"https://project.example" {
+			t.Errorf("expected Foundry endpoint, got %q", got)
+		}
+		if got, _ := value(environment, "LEGACY"); got != "declared" {
+			t.Errorf("expected declared legacy value, got %q", got)
+		}
+		if got, _ := value(environment, "SERVICE_ONLY"); got != "service-only" {
+			t.Errorf("expected service-only value, got %q", got)
+		}
+		if got, found := value(environment, "EMPTY"); !found || got != "" {
+			t.Errorf("expected empty service value, got %q, found %v", got, found)
+		}
+	})
+
+	t.Run("explicit empty env stays isolated", func(t *testing.T) {
+		t.Parallel()
+		environment := mergeAgentRunEnvironment(
+			[]string{"FOO=process"},
+			map[string]string{"SECRET": "leaked", "OTHER": "leaked"},
+			map[string]string{},
+			nil,
+			"agent",
+			true,
+		)
+		if _, found := value(environment, "SECRET"); found {
+			t.Errorf("did not expect azd value in isolated env %v", environment)
+		}
+		if got, _ := value(environment, "FOO"); got != "process" {
+			t.Errorf("expected process FOO, got %q", got)
+		}
+	})
+
+	t.Run("legacy service keeps azd fallback", func(t *testing.T) {
+		t.Parallel()
+		environment := mergeAgentRunEnvironment(
+			[]string{"FOO=process"},
+			map[string]string{
+				"FOO":        "global",
+				"BAR":        "global",
+				"PROJECT_ID": "project",
+			},
+			nil,
+			[]string{"BAR=inline", "BAZ=inline"},
+			"agent",
+			false,
+		)
+
+		if got, _ := value(environment, "FOO"); got != "process" {
+			t.Errorf("expected process FOO, got %q", got)
+		}
+		if got, _ := value(environment, "BAR"); got != "global" {
+			t.Errorf("expected global BAR, got %q", got)
+		}
+		if got, _ := value(environment, "PROJECT_ID"); got != "project" {
+			t.Errorf("expected legacy azd value, got %q", got)
+		}
+		if got, _ := value(environment, "BAZ"); got != "inline" {
+			t.Errorf("expected inline BAZ, got %q", got)
+		}
+	})
+}
+
+func TestResolveLocalServiceEnvironment(t *testing.T) {
+	t.Parallel()
+
+	original := map[string]string{
+		"MODEL_ENDPOINT": "${{project.endpoint}}/models",
+		"LITERAL":        "literal ${NOT_A_TEMPLATE}",
+	}
+	endpoint := localProjectEndpoint(
+		[]string{"FOUNDRY_PROJECT_ENDPOINT=https://process.example"},
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://service.example",
+		},
+		"https://azd.example",
+	)
+	resolved := resolveLocalServiceEnvironment(
+		original,
+		endpoint,
+	)
+
+	if got := resolved["MODEL_ENDPOINT"]; got !=
+		"https://process.example/models" {
+		t.Errorf("expected resolved endpoint, got %q", got)
+	}
+	if got := resolved["LITERAL"]; got != "literal ${NOT_A_TEMPLATE}" {
+		t.Errorf("expected literal value, got %q", got)
+	}
+	if got := original["MODEL_ENDPOINT"]; got !=
+		"${{project.endpoint}}/models" {
+		t.Errorf("expected original map to stay unchanged, got %q", got)
+	}
+
+	serviceEndpoint := localProjectEndpoint(
+		nil,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://service.example",
+		},
+		"https://azd.example",
+	)
+	if serviceEndpoint != "https://service.example" {
+		t.Errorf("expected service endpoint, got %q", serviceEndpoint)
+	}
+}
+
 func TestEnvSliceHasKeyUsesPlatformCasing(t *testing.T) {
 	t.Parallel()
 
@@ -584,26 +750,6 @@ func TestEnvSliceHasKeyUsesPlatformCasing(t *testing.T) {
 	want := runtime.GOOS == "windows"
 	if got != want {
 		t.Errorf("envSliceHasKey() = %t, want %t", got, want)
-	}
-}
-
-func TestMergeConfiguredEnvironmentEntriesUsesServicePrecedence(t *testing.T) {
-	t.Parallel()
-
-	entries := mergeConfiguredEnvironmentEntries(
-		[]string{"PATH=definition-value"},
-		[]string{"Path=service-value"},
-		true,
-	)
-
-	if len(entries) != 1 {
-		t.Fatalf("expected one entry, got %v", entries)
-	}
-	if entries["PATH"].key != "Path" {
-		t.Errorf("key = %q, want %q", entries["PATH"].key, "Path")
-	}
-	if entries["PATH"].value != "service-value" {
-		t.Errorf("value = %q, want %q", entries["PATH"].value, "service-value")
 	}
 }
 
@@ -929,7 +1075,7 @@ environment_variables:
     value: debug
 `)
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -953,7 +1099,7 @@ environment_variables:
 		azdEnv := map[string]string{
 			"FOUNDRY_PROJECT_ENDPOINT": "https://example.azure.com",
 		}
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, azdEnv, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, azdEnv, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -974,7 +1120,7 @@ environment_variables:
     value: hello
 `)
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -990,7 +1136,7 @@ environment_variables:
 	})
 
 	t.Run("returns nil for nil definition", func(t *testing.T) {
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), nil, nil, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), nil, nil, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1002,7 +1148,7 @@ environment_variables:
 	t.Run("returns nil for empty environment_variables", func(t *testing.T) {
 		def := parse(t, "name: test-agent\n")
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1018,7 +1164,7 @@ environment_variables:
     value: ${DOES_NOT_EXIST}
 `)
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, map[string]string{}, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, map[string]string{}, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1026,35 +1172,28 @@ environment_variables:
 			t.Errorf("expected MISSING_REF= (empty), got %v", result)
 		}
 	})
-}
 
-func TestResolveServiceEnvironmentVars(t *testing.T) {
-	t.Parallel()
+	t.Run("keeps forwarded core values literal", func(t *testing.T) {
+		def := parse(t, `name: test-agent
+environment_variables:
+  - name: FORWARDED_VALUE
+    value: ${FORWARDED_VALUE}
+`)
 
-	result, err := resolveServiceEnvironmentVars(
-		t.Context(),
-		map[string]string{
-			"ENDPOINT": "${FOUNDRY_PROJECT_ENDPOINT}/agents",
-			"PROJECT":  "${{project.endpoint}}",
-			"STATIC":   "value",
-		},
-		map[string]string{
-			"FOUNDRY_PROJECT_ENDPOINT": "https://example",
-		},
-		"https://example/project",
-	)
-
-	if err != nil {
-		t.Fatalf("resolve service environment: %v", err)
-	}
-	want := []string{
-		"ENDPOINT=https://example/agents",
-		"PROJECT=https://example/project",
-		"STATIC=value",
-	}
-	if !slices.Equal(want, result) {
-		t.Fatalf("expected %v, got %v", want, result)
-	}
+		result, err := resolveAgentDefinitionEnvVars(
+			t.Context(),
+			def,
+			map[string]string{"FORWARDED_VALUE": "literal ${NOT_A_TEMPLATE}"},
+			map[string]string{"NOT_A_TEMPLATE": "expanded"},
+			"",
+		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !slices.Contains(result, "FORWARDED_VALUE=literal ${NOT_A_TEMPLATE}") {
+			t.Errorf("expected literal forwarded value, got %v", result)
+		}
+	})
 }
 
 func TestVenvPip(t *testing.T) {

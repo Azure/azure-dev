@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -56,4 +57,41 @@ func TestParseRoutineServiceConfig_ConfigFallback(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "legacy", body.Description)
+}
+
+func TestExpandRoutineValue(t *testing.T) {
+	t.Parallel()
+
+	serviceConfig := &azdext.ServiceConfig{
+		Environment: map[string]string{"DIGEST_TOPIC": "weekly changes"},
+	}
+	environment, err := (&routineServiceTarget{}).environmentValues(
+		t.Context(),
+		serviceConfig,
+	)
+	require.NoError(t, err)
+	input := map[string]any{
+		"topic":  "${DIGEST_TOPIC}",
+		"secret": "${{connections.search.credentials.key}}",
+	}
+
+	assert.Equal(t, map[string]any{
+		"topic":  "weekly changes",
+		"secret": "${{connections.search.credentials.key}}",
+	}, expandRoutineValue(input, environment))
+}
+
+func TestRoutineEnvironmentValuesEmptyDeclaredIsolates(t *testing.T) {
+	orig := serviceEnvDeclared
+	t.Cleanup(func() { serviceEnvDeclared = orig })
+	serviceEnvDeclared = func(context.Context, *azdext.AzdClient, string) (bool, error) {
+		return true, nil
+	}
+
+	env, err := (&routineServiceTarget{}).environmentValues(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "nightly-digest"},
+	)
+	require.NoError(t, err)
+	require.Empty(t, env)
 }

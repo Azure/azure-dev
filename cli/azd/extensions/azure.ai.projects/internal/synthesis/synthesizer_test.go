@@ -543,6 +543,14 @@ services:
 		require.Len(t, conns, 1)
 		return conns[0]
 	}
+	getKeys := func(t *testing.T, c Connection) map[string]any {
+		t.Helper()
+		value, found := c.Credentials["keys"]
+		require.True(t, found, "credentials should contain keys")
+		keys, ok := value.(map[string]any)
+		require.True(t, ok, "keys should be a map, got %T", value)
+		return keys
+	}
 
 	t.Run("provision path resolves ${VAR}", func(t *testing.T) {
 		res, err := Synthesize(Input{
@@ -555,15 +563,105 @@ services:
 
 		c := getConn(t, res)
 		assert.Equal(t, "https://mcp.example.com/mcp", c.Target)
-		keys, ok := c.Credentials["keys"].(map[string]any)
-		require.True(t, ok, "keys should be a nested map, got %T", c.Credentials["keys"])
+		keys := getKeys(t, c)
 		assert.Equal(t, "secret-value", keys["x-api-key"])
 		assert.Equal(t, "team-ai", c.Metadata["owner"])
 
-		publicConnections := res.Parameters["connections"].([]Connection)
+		publicValue, found := res.Parameters["connections"]
+		require.True(t, found)
+		publicConnections, ok := publicValue.([]Connection)
+		require.True(t, ok, "connections should be []Connection")
+		require.Len(t, publicConnections, 1)
 		assert.Nil(t, publicConnections[0].Credentials)
-		secureCredentials := res.Parameters["connectionCredentials"].(map[string]map[string]any)
-		assert.Equal(t, "secret-value", secureCredentials["mcp-conn"]["keys"].(map[string]any)["x-api-key"])
+		secureValue, found := res.Parameters["connectionCredentials"]
+		require.True(t, found)
+		secureCredentials, ok := secureValue.(map[string]map[string]any)
+		require.True(t, ok, "connectionCredentials should be a map")
+		connectionCredentials, found := secureCredentials["mcp-conn"]
+		require.True(t, found)
+		keyValue, found := connectionCredentials["keys"]
+		require.True(t, found)
+		secureKeys, ok := keyValue.(map[string]any)
+		require.True(t, ok, "secure keys should be a map")
+		assert.Equal(t, "secret-value", secureKeys["x-api-key"])
+	})
+
+	t.Run("service env takes precedence and isolates lookup", func(t *testing.T) {
+		const serviceEnvYAML = `
+services:
+  my-project:
+    host: azure.ai.project
+  mcp-conn:
+    host: azure.ai.connection
+    uses: [my-project]
+    env:
+      ENDPOINT: ${MCP_URL}
+      KEY: ${MCP_KEY}
+    category: RemoteTool
+    target: ${ENDPOINT}
+    authType: CustomKeys
+    credentials:
+      keys:
+        x-api-key: ${KEY}
+    metadata:
+      owner: ${OWNER:-service-default}
+`
+		res, err := Synthesize(Input{
+			RawAzureYAML:  []byte(serviceEnvYAML),
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+			Env: map[string]string{
+				"ENDPOINT": "https://wrong.example/mcp",
+				"KEY":      "wrong-secret",
+				"OWNER":    "wrong-owner",
+			},
+			ServiceEnvironments: map[string]map[string]string{
+				"mcp-conn": {
+					"ENDPOINT": "https://service.example/mcp",
+					"KEY":      "service-secret",
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		c := getConn(t, res)
+		assert.Equal(t, "https://service.example/mcp", c.Target)
+		keys := getKeys(t, c)
+		assert.Equal(t, "service-secret", keys["x-api-key"])
+		assert.Equal(t, "service-default", c.Metadata["owner"])
+	})
+
+	t.Run("explicit empty env isolates the connection", func(t *testing.T) {
+		const emptyEnvYAML = `
+services:
+  my-project:
+    host: azure.ai.project
+  mcp-conn:
+    host: azure.ai.connection
+    uses: [my-project]
+    env: {}
+    category: RemoteTool
+    target: ${MCP_URL}
+    authType: CustomKeys
+    credentials:
+      keys:
+        x-api-key: ${MCP_KEY}
+`
+		res, err := Synthesize(Input{
+			RawAzureYAML:  []byte(emptyEnvYAML),
+			ServiceName:   "my-project",
+			AcceptedHosts: []string{"azure.ai.project"},
+			Env: map[string]string{
+				"MCP_URL": "https://leak.example/mcp",
+				"MCP_KEY": "leaked-secret",
+			},
+		})
+		require.NoError(t, err)
+
+		c := getConn(t, res)
+		assert.Equal(t, "", c.Target)
+		keys := getKeys(t, c)
+		assert.Equal(t, "", keys["x-api-key"])
 	})
 
 	t.Run("eject path preserves ${VAR} verbatim", func(t *testing.T) {
@@ -578,8 +676,7 @@ services:
 
 		c := getConn(t, res)
 		assert.Equal(t, "${MCP_URL}", c.Target)
-		keys, ok := c.Credentials["keys"].(map[string]any)
-		require.True(t, ok)
+		keys := getKeys(t, c)
 		assert.Equal(t, "${MCP_KEY}", keys["x-api-key"])
 		assert.Equal(t, "${MCP_OWNER}", c.Metadata["owner"])
 	})
@@ -608,7 +705,7 @@ services:
 		require.NoError(t, err)
 
 		c := getConn(t, res)
-		keys := c.Credentials["keys"].(map[string]any)
+		keys := getKeys(t, c)
 		assert.Equal(t, "${{connections.other.credentials.key}}", keys["x-api-key"])
 	})
 
@@ -627,7 +724,7 @@ services:
 
 		c := getConn(t, res)
 		assert.Equal(t, "", c.Target)
-		keys := c.Credentials["keys"].(map[string]any)
+		keys := getKeys(t, c)
 		assert.Equal(t, "", keys["x-api-key"])
 	})
 }
@@ -661,6 +758,7 @@ services:
 		conns, err := BrownfieldConnections(
 			[]byte(yaml),
 			map[string]string{"SEARCH_API_KEY": "secret"},
+			nil,
 			"",
 		)
 		require.NoError(t, err)
@@ -671,6 +769,20 @@ services:
 		assert.Equal(t, "secret", conns[1].Credentials["key"])
 	})
 
+	t.Run("service environment takes precedence", func(t *testing.T) {
+		conns, err := BrownfieldConnections(
+			[]byte(yaml),
+			map[string]string{"SEARCH_API_KEY": "global"},
+			map[string]map[string]string{
+				"search-conn": {"SEARCH_API_KEY": "service"},
+			},
+			"",
+		)
+		require.NoError(t, err)
+		require.Len(t, conns, 2)
+		assert.Equal(t, "service", conns[1].Credentials["key"])
+	})
+
 	t.Run("no connection services yields empty slice", func(t *testing.T) {
 		const noConns = `
 services:
@@ -678,13 +790,18 @@ services:
     host: azure.ai.project
     endpoint: https://existing.services.ai.azure.com/api/projects/p1
 `
-		conns, err := BrownfieldConnections([]byte(noConns), nil, "")
+		conns, err := BrownfieldConnections(
+			[]byte(noConns),
+			nil,
+			nil,
+			"",
+		)
 		require.NoError(t, err)
 		assert.Empty(t, conns)
 	})
 
 	t.Run("empty raw errors", func(t *testing.T) {
-		_, err := BrownfieldConnections(nil, nil, "")
+		_, err := BrownfieldConnections(nil, nil, nil, "")
 		require.Error(t, err)
 	})
 }
@@ -972,7 +1089,12 @@ services:
 	require.Len(t, deployments, 1)
 	assert.Equal(t, "gpt-4o", deployments[0].Name)
 
-	connections, err := BrownfieldConnections([]byte(yaml), nil, root)
+	connections, err := BrownfieldConnections(
+		[]byte(yaml),
+		nil,
+		nil,
+		root,
+	)
 	require.NoError(t, err)
 	require.Len(t, connections, 1)
 	assert.Equal(t, "CognitiveSearch", connections[0].Category)

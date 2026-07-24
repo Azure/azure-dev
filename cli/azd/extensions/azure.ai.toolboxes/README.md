@@ -16,10 +16,13 @@ services:
   research-tools:
     host: azure.ai.toolbox
     endpoint: ${RESEARCH_TOOLBOX_ENDPOINT}
+    env:
+      RESEARCH_TOOLBOX_ENDPOINT: ${RESEARCH_TOOLBOX_ENDPOINT}
 ```
 
 Get the endpoint value from `azd ai toolbox show <name>` (the `Endpoint:` line).
-The value may contain `${VAR}` references, which resolve against the azd
-environment. Because a toolbox version is immutable, `endpoint` cannot be
+The value may contain `${VAR}` references. Declare each referenced variable
+in the service-level `env` object; azd falls back to the active environment
+only when the service declares no `env`. Because a toolbox version is immutable, `endpoint` cannot be
 combined with `tools` or `description`.
 

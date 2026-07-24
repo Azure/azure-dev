@@ -52,11 +52,15 @@ type Input struct {
 	// value is not checked (only existence and endpoint: are).
 	AcceptedHosts []string
 
-	// Env maps azd environment variable names to values. Used to resolve
-	// ${VAR} references in network fields (subnet vnet ids, dns.subscription).
-	// When a referenced variable is absent here, the synthesizer falls back
-	// to the process environment before failing. May be nil.
+	// Env maps project-wide azd values.
+	// Network fields always use it.
+	// Legacy connection services use it when service env is absent.
+	// Missing values may fall back to the process environment.
 	Env map[string]string
+
+	// ServiceEnvironments contains core-expanded values by service.
+	// Connection fields prefer these values over the legacy Env map.
+	ServiceEnvironments map[string]map[string]string
 
 	// PreserveVarRefs keeps ${VAR} references verbatim instead of resolving
 	// them. Used by the eject path, where the synthesized main.parameters.json
@@ -291,6 +295,7 @@ func Synthesize(in Input) (*Result, error) {
 	connections, err := collectConnections(
 		root.Services,
 		in.Env,
+		in.ServiceEnvironments,
 		!in.PreserveVarRefs,
 		in.ProjectRoot,
 	)
@@ -362,6 +367,7 @@ func BrownfieldDeployments(
 func BrownfieldConnections(
 	raw []byte,
 	env map[string]string,
+	serviceEnvironments map[string]map[string]string,
 	projectRoot string,
 ) ([]Connection, error) {
 	if len(raw) == 0 {
@@ -373,7 +379,13 @@ func BrownfieldConnections(
 		return nil, fmt.Errorf("parse azure.yaml: %w", err)
 	}
 
-	return collectConnections(root.Services, env, true, projectRoot)
+	return collectConnections(
+		root.Services,
+		env,
+		serviceEnvironments,
+		true,
+		projectRoot,
+	)
 }
 
 // ProjectEndpoint returns the endpoint configured on a Foundry project service.
@@ -629,12 +641,13 @@ func agentNeedsAcr(a agentBlock) bool {
 // (the service key is the connection name) and returns them sorted by name so
 // the synthesized parameter is deterministic regardless of YAML map order.
 //
-// ${VAR} in target/credentials/metadata is expanded from env when resolve is
-// true (provision path) and kept verbatim when false (eject path); Foundry
-// ${{...}} expressions are always preserved, mirroring synthesizeNetwork.
+// Provisioning resolves ${VAR} from service env when present.
+// Legacy services use project and process values.
+// Eject keeps references, and Foundry ${{...}} remains unchanged.
 func collectConnections(
 	services map[string]yaml.Node,
 	env map[string]string,
+	serviceEnvironments map[string]map[string]string,
 	resolve bool,
 	projectRoot string,
 ) ([]Connection, error) {
@@ -660,17 +673,27 @@ func collectConnections(
 			return nil, fmt.Errorf("services.%s: decode connection: %w", name, err)
 		}
 
-		target, err := maybeExpand(svc.Target, env, resolve)
+		declared := len(serviceEnvironments[name]) > 0 || connectionEnvDeclared(node)
+		mapping := connectionEnvironmentMapping(
+			env,
+			serviceEnvironments[name],
+			declared,
+		)
+		target, err := maybeExpand(svc.Target, mapping, resolve)
 		if err != nil {
 			return nil, fmt.Errorf("services.%s.target: %w", name, err)
 		}
 
-		credentials, err := expandCredentials(svc.Credentials, env, resolve)
+		credentials, err := expandCredentials(
+			svc.Credentials,
+			mapping,
+			resolve,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("services.%s.credentials: %w", name, err)
 		}
 
-		metadata, err := expandMetadata(svc.Metadata, env, resolve)
+		metadata, err := expandMetadata(svc.Metadata, mapping, resolve)
 		if err != nil {
 			return nil, fmt.Errorf("services.%s.metadata: %w", name, err)
 		}
@@ -691,20 +714,54 @@ func collectConnections(
 	return connections, nil
 }
 
+// connectionEnvDeclared reports whether the service node
+// declares an env: key, including an empty env: {}. Core
+// collapses an empty env to an omitted one, so the raw node
+// is the only signal that a service opted into an isolated
+// (possibly empty) scope.
+func connectionEnvDeclared(node yaml.Node) bool {
+	var fields map[string]yaml.Node
+	if err := node.Decode(&fields); err != nil {
+		return false
+	}
+	_, ok := fields["env"]
+	return ok
+}
+
+// Use scoped values when the service declares env.
+// Legacy services use the project and process environments.
+func connectionEnvironmentMapping(
+	env map[string]string,
+	serviceEnvironment map[string]string,
+	declared bool,
+) func(string) string {
+	if declared {
+		return func(name string) string {
+			return serviceEnvironment[name]
+		}
+	}
+
+	return func(name string) string {
+		if value, found := env[name]; found {
+			return value
+		}
+		value, _ := os.LookupEnv(name)
+		return value
+	}
+}
+
 // maybeExpand expands ${VAR} references in s when resolve is true, preserving
 // Foundry ${{...}} expressions; when resolve is false it returns s unchanged so
 // the eject path keeps references verbatim.
-func maybeExpand(s string, env map[string]string, resolve bool) (string, error) {
+func maybeExpand(
+	s string,
+	mapping func(string) string,
+	resolve bool,
+) (string, error) {
 	if !resolve || s == "" {
 		return s, nil
 	}
-	return foundry.ExpandEnv(s, func(name string) string {
-		if v, ok := env[name]; ok {
-			return v
-		}
-		v, _ := os.LookupEnv(name)
-		return v
-	})
+	return foundry.ExpandEnv(s, mapping)
 }
 
 // expandCredentials deep-copies a credentials map, expanding ${VAR} in every
@@ -713,7 +770,7 @@ func maybeExpand(s string, env map[string]string, resolve bool) (string, error) 
 // credentials entirely (e.g. None / identity auth).
 func expandCredentials(
 	creds map[string]any,
-	env map[string]string,
+	mapping func(string) string,
 	resolve bool,
 ) (map[string]any, error) {
 	if creds == nil {
@@ -721,7 +778,7 @@ func expandCredentials(
 	}
 	out := make(map[string]any, len(creds))
 	for k, v := range creds {
-		expanded, err := expandValue(v, env, resolve)
+		expanded, err := expandValue(v, mapping, resolve)
 		if err != nil {
 			return nil, err
 		}
@@ -732,14 +789,18 @@ func expandCredentials(
 
 // expandValue recursively expands ${VAR} in string values, map values, and
 // slice elements, leaving other types untouched.
-func expandValue(v any, env map[string]string, resolve bool) (any, error) {
+func expandValue(
+	v any,
+	mapping func(string) string,
+	resolve bool,
+) (any, error) {
 	switch val := v.(type) {
 	case string:
-		return maybeExpand(val, env, resolve)
+		return maybeExpand(val, mapping, resolve)
 	case map[string]any:
 		out := make(map[string]any, len(val))
 		for k, inner := range val {
-			expanded, err := expandValue(inner, env, resolve)
+			expanded, err := expandValue(inner, mapping, resolve)
 			if err != nil {
 				return nil, err
 			}
@@ -749,7 +810,7 @@ func expandValue(v any, env map[string]string, resolve bool) (any, error) {
 	case []any:
 		out := make([]any, len(val))
 		for i, inner := range val {
-			expanded, err := expandValue(inner, env, resolve)
+			expanded, err := expandValue(inner, mapping, resolve)
 			if err != nil {
 				return nil, err
 			}
@@ -765,7 +826,7 @@ func expandValue(v any, env map[string]string, resolve bool) (any, error) {
 // A nil map returns nil so the connection omits metadata entirely.
 func expandMetadata(
 	metadata map[string]string,
-	env map[string]string,
+	mapping func(string) string,
 	resolve bool,
 ) (map[string]string, error) {
 	if metadata == nil {
@@ -773,7 +834,7 @@ func expandMetadata(
 	}
 	out := make(map[string]string, len(metadata))
 	for k, v := range metadata {
-		expanded, err := maybeExpand(v, env, resolve)
+		expanded, err := maybeExpand(v, mapping, resolve)
 		if err != nil {
 			return nil, err
 		}

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -45,11 +46,6 @@ type runFlags struct {
 	noInspector  bool
 	noClient     bool
 	channel      string
-}
-
-type environmentEntry struct {
-	key   string
-	value string
 }
 
 func newRunCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -191,59 +187,44 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 
 	cmdParts = resolveVenvCommand(projectDir, cmdParts)
 
-	env := os.Environ()
-	env = appendPortEnvVars(env, pt, flags.port)
+	env := appendPortEnvVars(os.Environ(), pt, flags.port)
 
-	// Load azd environment variables (e.g., FOUNDRY_PROJECT_ENDPOINT)
-	// so the agent can reach Azure services during local development.
-	// Also translate azd env keys to FOUNDRY_* env vars so the agent code
-	// works identically whether running locally or in a hosted container
-	// (where the platform automatically injects FOUNDRY_* env vars).
+	// Load azd values as template inputs and legacy fallback values.
 	var azdEnvVars map[string]string
 	if loaded, err := loadAzdEnvironment(ctx, azdClient); err == nil {
 		azdEnvVars = loaded
-		for k, v := range azdEnvVars {
-			env = append(env, fmt.Sprintf("%s=%s", k, v))
-		}
-		env = appendFoundryEnvVars(env, azdEnvVars, runCtx.ServiceName)
 	} else if shouldWarnLoadAzdEnvironmentFailure(err) {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load azd environment values: %s\n", err)
 	}
 
 	endpoint, _ := resolveAgentEndpoint(ctx, "", "")
-	defEnv, defErr := resolveAgentDefinitionEnvVars(ctx, runCtx.Definition, azdEnvVars, endpoint)
-	if defErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: %s\n", defErr)
-	}
-	serviceEnv, serviceEnvErr := resolveServiceEnvironmentVars(
+	endpoint = localProjectEndpoint(
+		env,
+		runCtx.ServiceEnvironment,
+		endpoint,
+	)
+	serviceEnvironment := resolveLocalServiceEnvironment(
+		runCtx.ServiceEnvironment,
+		endpoint,
+	)
+	defEnv, defErr := resolveAgentDefinitionEnvVars(
 		ctx,
-		runCtx.Environment,
+		runCtx.Definition,
+		serviceEnvironment,
 		azdEnvVars,
 		endpoint,
 	)
-	if serviceEnvErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: %s\n", serviceEnvErr)
+	if defErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: %s\n", defErr)
 	}
-	configuredEnv := mergeConfiguredEnvironmentEntries(
+	env = mergeAgentRunEnvironment(
+		env,
+		azdEnvVars,
+		serviceEnvironment,
 		defEnv,
-		serviceEnv,
-		runtime.GOOS == "windows",
+		runCtx.ServiceName,
+		runCtx.HasServiceEnvironment,
 	)
-	keys := make([]string, 0, len(configuredEnv))
-	for key := range configuredEnv {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-	for _, key := range keys {
-		entry := configuredEnv[key]
-		if !envSliceHasKey(env, entry.key) {
-			env = append(
-				env,
-				fmt.Sprintf("%s=%s", entry.key, entry.value),
-			)
-		}
-
-	}
 
 	// Activity agents bind IPv4 and are reached at 127.0.0.1 everywhere else
 	// (the port-readiness check and the Playground URL), because `localhost`
@@ -537,6 +518,7 @@ func shouldWarnLoadAzdEnvironmentFailure(err error) bool {
 func resolveAgentDefinitionEnvVars(
 	ctx context.Context,
 	agentDef *agent_yaml.ContainerAgent,
+	serviceEnvironment map[string]string,
 	azdEnvVars map[string]string,
 	endpoint string,
 ) ([]string, error) {
@@ -567,8 +549,15 @@ func resolveAgentDefinitionEnvVars(
 		if _, isConn := connRefEnvNames[ev.Name]; isConn {
 			continue
 		}
-		// ExpandEnv returns the original value on error, so a failed expansion is a no-op.
-		resolved, _ := project.ExpandEnv(ev.Value, lookup)
+		resolved, err := project.ResolveAgentEnvironmentVariable(
+			ev.Name,
+			ev.Value,
+			serviceEnvironment,
+			lookup,
+		)
+		if err != nil {
+			resolved = ev.Value
+		}
 		result = append(result, fmt.Sprintf("%s=%s", ev.Name, resolved))
 	}
 
@@ -584,43 +573,39 @@ func resolveAgentDefinitionEnvVars(
 	return result, nil
 }
 
-func resolveServiceEnvironmentVars(
-	ctx context.Context,
-	values map[string]string,
-	azdEnvVars map[string]string,
+func resolveLocalServiceEnvironment(
+	environment map[string]string,
 	endpoint string,
-) ([]string, error) {
-	if len(values) == 0 {
-		return nil, nil
+) map[string]string {
+	resolved := maps.Clone(environment)
+	if endpoint == "" {
+		return resolved
 	}
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
+	for key, value := range resolved {
+		resolved[key] = strings.ReplaceAll(
+			value,
+			"${{project.endpoint}}",
+			endpoint,
+		)
 	}
-	slices.Sort(keys)
-	envVars := make([]agent_yaml.EnvironmentVariable, 0, len(keys))
-	for _, key := range keys {
-		value := values[key]
-		if endpoint != "" {
-			value = strings.ReplaceAll(
-				value,
-				"${{project.endpoint}}",
-				endpoint,
-			)
-		}
-		envVars = append(envVars, agent_yaml.EnvironmentVariable{
-			Name:  key,
-			Value: value,
-		})
+	return resolved
+}
+
+func localProjectEndpoint(
+	baseEnvironment []string,
+	serviceEnvironment map[string]string,
+	fallback string,
+) string {
+	if value, found := envSliceValue(
+		baseEnvironment,
+		"FOUNDRY_PROJECT_ENDPOINT",
+	); found {
+		return value
 	}
-	return resolveAgentDefinitionEnvVars(
-		ctx,
-		&agent_yaml.ContainerAgent{
-			EnvironmentVariables: &envVars,
-		},
-		azdEnvVars,
-		endpoint,
-	)
+	if value, found := serviceEnvironment["FOUNDRY_PROJECT_ENDPOINT"]; found {
+		return value
+	}
+	return fallback
 }
 
 // findAgentYaml locates the agent definition file in the given directory.
@@ -1091,89 +1076,142 @@ func findSystemPython() (pythonInterpreter, error) {
 	return firstCompatiblePython(pythonCandidates(), pythonVersion)
 }
 
-// appendFoundryEnvVars translates azd environment keys to FOUNDRY_* env vars that hosted
-// agent containers receive automatically from the platform. This ensures the agent code
-// works identically whether running locally (via azd ai agent run) or in a hosted container.
+// mergeAgentRunEnvironment builds the local agent environment.
+//
+// baseEnvironment contains process and command-owned values.
+// azdEnvironment is the full active environment for legacy fallback.
+// serviceEnvironment is core-expanded services.<name>.env.
+// definitionEnvironment comes from legacy agent definitions.
+// hasServiceEnvironment reports whether the service declares an
+// env: block (even an empty one).
+func mergeAgentRunEnvironment(
+	baseEnvironment []string,
+	azdEnvironment map[string]string,
+	serviceEnvironment map[string]string,
+	definitionEnvironment []string,
+	serviceName string,
+	hasServiceEnvironment bool,
+) []string {
+	environment := slices.Clone(baseEnvironment)
+
+	// The full azd environment is a compatibility fallback only.
+	if !hasServiceEnvironment {
+		for key, value := range azdEnvironment {
+			if !envSliceHasKey(baseEnvironment, key) {
+				environment = append(
+					environment,
+					fmt.Sprintf("%s=%s", key, value),
+				)
+			}
+		}
+	} else {
+		for key, value := range serviceEnvironment {
+			if !envSliceHasKey(baseEnvironment, key) {
+				environment = append(
+					environment,
+					fmt.Sprintf("%s=%s", key, value),
+				)
+			}
+		}
+	}
+
+	environment = appendFoundryEnvVars(
+		environment,
+		azdEnvironment,
+		serviceName,
+	)
+
+	for _, entry := range definitionEnvironment {
+		key, _, _ := strings.Cut(entry, "=")
+		_, serviceScoped := serviceEnvironment[key]
+		if serviceScoped {
+			continue
+		}
+		if !envSliceHasKey(environment, key) {
+			environment = append(environment, entry)
+		}
+	}
+
+	return environment
+}
+
+// appendFoundryEnvVars adds values injected by hosted agents.
 //
 // The mapping is:
 //
-//	AZURE_AI_PROJECT_ID                → FOUNDRY_PROJECT_ARM_ID
-//	AGENT_{SVC}_NAME                   → FOUNDRY_AGENT_NAME
-//	AGENT_{SVC}_VERSION                → FOUNDRY_AGENT_VERSION
-//	APPLICATIONINSIGHTS_CONNECTION_STRING (unchanged — already matches platform name)
+//	FOUNDRY_PROJECT_ENDPOINT           -> unchanged
+//	AZURE_AI_PROJECT_ID                -> FOUNDRY_PROJECT_ARM_ID
+//	AGENT_{SVC}_NAME                   -> FOUNDRY_AGENT_NAME
+//	AGENT_{SVC}_VERSION                -> FOUNDRY_AGENT_VERSION
+//	APPLICATIONINSIGHTS_CONNECTION_STRING -> unchanged
 func appendFoundryEnvVars(env []string, azdEnv map[string]string, serviceName string) []string {
-	// Static mappings from azd env key names to FOUNDRY_* env var names
-	staticMappings := []struct {
-		azdKey     string
-		foundryKey string
-	}{
-		{"AZURE_AI_PROJECT_ID", "FOUNDRY_PROJECT_ARM_ID"},
-	}
+	env = appendEnvValue(
+		env,
+		"FOUNDRY_PROJECT_ENDPOINT",
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
+	)
 
-	for _, m := range staticMappings {
-		if v := azdEnv[m.azdKey]; v != "" {
-			if _, exists := azdEnv[m.foundryKey]; !exists && !envSliceHasKey(env, m.foundryKey) {
-				env = append(env, fmt.Sprintf("%s=%s", m.foundryKey, v))
-			}
-		}
+	projectArmID := azdEnv["FOUNDRY_PROJECT_ARM_ID"]
+	if projectArmID == "" {
+		projectArmID = azdEnv["AZURE_AI_PROJECT_ID"]
 	}
+	env = appendEnvValue(env, "FOUNDRY_PROJECT_ARM_ID", projectArmID)
 
-	// Service-specific mappings (AGENT_{SVC}_NAME → FOUNDRY_AGENT_NAME, etc.)
+	agentName := ""
+	agentVersion := ""
 	if serviceName != "" {
 		serviceKey := toServiceKey(serviceName)
-		agentMappings := []struct {
-			azdKeyFmt  string
-			foundryKey string
-		}{
-			{"AGENT_%s_NAME", "FOUNDRY_AGENT_NAME"},
-			{"AGENT_%s_VERSION", "FOUNDRY_AGENT_VERSION"},
-		}
-
-		for _, m := range agentMappings {
-			azdKey := fmt.Sprintf(m.azdKeyFmt, serviceKey)
-			if v := azdEnv[azdKey]; v != "" {
-				if _, exists := azdEnv[m.foundryKey]; !exists && !envSliceHasKey(env, m.foundryKey) {
-					env = append(env, fmt.Sprintf("%s=%s", m.foundryKey, v))
-				}
-			}
-		}
+		agentName = azdEnv[fmt.Sprintf("AGENT_%s_NAME", serviceKey)]
+		agentVersion = azdEnv[fmt.Sprintf("AGENT_%s_VERSION", serviceKey)]
 	}
+	if agentName == "" {
+		agentName = azdEnv["FOUNDRY_AGENT_NAME"]
+	}
+	if agentVersion == "" {
+		agentVersion = azdEnv["FOUNDRY_AGENT_VERSION"]
+	}
+	env = appendEnvValue(env, "FOUNDRY_AGENT_NAME", agentName)
+	env = appendEnvValue(env, "FOUNDRY_AGENT_VERSION", agentVersion)
+
+	env = appendEnvValue(
+		env,
+		"APPLICATIONINSIGHTS_CONNECTION_STRING",
+		azdEnv["APPLICATIONINSIGHTS_CONNECTION_STRING"],
+	)
 
 	return env
 }
 
-func mergeConfiguredEnvironmentEntries(
-	definitionEnv []string,
-	serviceEnv []string,
-	caseInsensitive bool,
-) map[string]environmentEntry {
-	configuredEnv := map[string]environmentEntry{}
-	for _, entry := range append(definitionEnv, serviceEnv...) {
-		key, value, _ := strings.Cut(entry, "=")
-		lookupKey := key
-		if caseInsensitive {
-			lookupKey = strings.ToUpper(key)
-		}
-		configuredEnv[lookupKey] = environmentEntry{
-			key:   key,
-			value: value,
-		}
+func appendEnvValue(env []string, key string, value string) []string {
+	if value == "" || envSliceHasKey(env, key) {
+		return env
 	}
-	return configuredEnv
+	return append(env, fmt.Sprintf("%s=%s", key, value))
 }
 
 // envSliceHasKey reports whether env contains an entry for key.
 func envSliceHasKey(env []string, key string) bool {
-	return slices.ContainsFunc(env, func(entry string) bool {
-		entryKey, _, found := strings.Cut(entry, "=")
+	_, found := envSliceValue(env, key)
+	return found
+}
+
+func envSliceValue(env []string, key string) (string, bool) {
+	for _, entry := range env {
+		entryKey, value, found := strings.Cut(entry, "=")
 		if !found {
-			return false
+			continue
 		}
 		if runtime.GOOS == "windows" {
-			return strings.EqualFold(entryKey, key)
+			if strings.EqualFold(entryKey, key) {
+				return value, true
+			}
+			continue
 		}
-		return entryKey == key
-	})
+		if entryKey == key {
+			return value, true
+		}
+	}
+	return "", false
 }
 
 // loadAzdEnvironment reads all key-value pairs from the current azd environment.

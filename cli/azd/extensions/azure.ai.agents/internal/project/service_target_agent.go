@@ -15,6 +15,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -31,7 +32,6 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/pkg/paths"
-	"azureaiagent/internal/pkg/projectconfig"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -1442,6 +1442,25 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["FOUNDRY_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
+	// Seed core-expanded values before resolving legacy variables.
+	resolvedEnvVars := maps.Clone(serviceConfig.GetEnvironment())
+	if resolvedEnvVars == nil {
+		resolvedEnvVars = make(map[string]string)
+	}
+	if agentDef.EnvironmentVariables != nil {
+		for _, envVar := range *agentDef.EnvironmentVariables {
+			if _, found := resolvedEnvVars[envVar.Name]; found {
+				continue
+			}
+			resolvedEnvVars[envVar.Name] = p.resolveEnvironmentVariables(
+				envVar.Name,
+				envVar.Value,
+				serviceConfig.GetEnvironment(),
+				azdEnv,
+			)
+		}
+	}
+
 	// Parse service config for container resource overrides
 	foundryAgentConfig, err := LoadServiceTargetAgentConfig(serviceConfig)
 	if err != nil {
@@ -1451,34 +1470,6 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 			"check the service configuration in azure.yaml",
 		)
 	}
-	serviceEnv, err := p.serviceEnvironment(serviceConfig)
-	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf(
-				"failed to load service environment: %s",
-				err,
-			),
-			"fix the service env configuration in azure.yaml",
-		)
-	}
-
-	resolvedEnvVars := make(map[string]string)
-	if agentDef.EnvironmentVariables != nil {
-		for _, envVar := range *agentDef.EnvironmentVariables {
-			resolvedEnvVars[envVar.Name] =
-				p.resolveEnvironmentVariables(envVar.Value, azdEnv)
-		}
-	}
-	for name, value := range foundryAgentConfig.Environment {
-		resolvedEnvVars[name] =
-			p.resolveEnvironmentVariables(value, azdEnv)
-	}
-	for name, value := range serviceEnv {
-		resolvedEnvVars[name] =
-			p.resolveEnvironmentVariables(value, azdEnv)
-	}
-
 	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
 
 	var cpu, memory string
@@ -1532,22 +1523,6 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		request:         request,
 		protocols:       protocols,
 	}, nil
-}
-
-func (p *AgentServiceTargetProvider) serviceEnvironment(
-	serviceConfig *azdext.ServiceConfig,
-) (map[string]string, error) {
-	raw, err := projectconfig.LoadServiceEnvironment(
-		p.projectPath,
-		serviceConfig.GetName(),
-	)
-	if err != nil {
-		return nil, err
-	}
-	if raw != nil {
-		return raw, nil
-	}
-	return serviceConfig.GetEnvironment(), nil
 }
 
 // deployResult holds the intermediate results from a deploy method (code or container)
@@ -2684,12 +2659,21 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	return nil
 }
 
-// resolveEnvironmentVariables resolves ${ENV_VAR} style references in value using azd environment variables.
-// Supports default values (e.g., "${VAR:-default}") and multiple expressions (e.g., "${VAR1}-${VAR2}").
-func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(value string, azdEnv map[string]string) string {
-	resolved, err := ExpandEnv(value, func(varName string) string {
-		return azdEnv[varName]
-	})
+// resolveEnvironmentVariables expands legacy inline templates.
+func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(
+	name string,
+	value string,
+	serviceEnvironment map[string]string,
+	azdEnv map[string]string,
+) string {
+	resolved, err := ResolveAgentEnvironmentVariable(
+		name,
+		value,
+		serviceEnvironment,
+		func(varName string) string {
+			return azdEnv[varName]
+		},
+	)
 	if err != nil {
 		// If resolution fails, return original value
 		return value

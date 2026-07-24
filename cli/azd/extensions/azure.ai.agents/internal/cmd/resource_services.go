@@ -277,6 +277,7 @@ func addResourceService(
 	cfg *structpb.Struct,
 	uses []string,
 ) error {
+	environment := serviceEnvironmentTemplates(cfg)
 	svc := &azdext.ServiceConfig{
 		Name:                 name,
 		Host:                 host,
@@ -287,12 +288,217 @@ func addResourceService(
 		return fmt.Errorf("adding %s service %q: %w", host, name, err)
 	}
 
+	if err := setServiceEnvironment(
+		ctx,
+		azdClient,
+		name,
+		environment,
+	); err != nil {
+		return err
+	}
+
 	if len(uses) > 0 {
 		if err := setServiceUses(ctx, azdClient, name, uses); err != nil {
 			return err
 		}
 	}
 
+	return nil
+}
+
+// serviceEnvironmentTemplates discovers client-side templates in the
+// generic nested resource config emitted to azure.yaml.
+func serviceEnvironmentTemplates(cfg *structpb.Struct) map[string]string {
+	if cfg == nil {
+		return nil
+	}
+
+	environment := map[string]string{}
+	collectEnvironmentTemplates(cfg.AsMap(), environment)
+	if len(environment) == 0 {
+		return nil
+	}
+	return environment
+}
+
+func collectEnvironmentTemplates(value any, environment map[string]string) {
+	switch typed := value.(type) {
+	case string:
+		collectStringEnvironmentTemplates(typed, environment)
+	case map[string]any:
+		for _, nested := range typed {
+			collectEnvironmentTemplates(nested, environment)
+		}
+	case []any:
+		for _, nested := range typed {
+			collectEnvironmentTemplates(nested, environment)
+		}
+	}
+}
+
+func collectStringEnvironmentTemplates(value string, environment map[string]string) {
+	for offset := 0; offset < len(value); {
+		startOffset := strings.Index(value[offset:], "${")
+		if startOffset < 0 {
+			return
+		}
+		start := offset + startOffset
+		if strings.HasPrefix(value[start:], "${{") {
+			end := strings.Index(value[start+3:], "}}")
+			if end < 0 {
+				return
+			}
+			offset = start + end + 5
+			continue
+		}
+
+		name, end, found := environmentTemplateAt(value, start)
+		if !found {
+			offset = start + 2
+			continue
+		}
+		// env is keyed by name, so store one canonical ${NAME}.
+		// A ${NAME:-default} default is re-applied by the owning
+		// extension against the raw config at deploy, so the env section
+		// only needs NAME's resolved base value. Collapsing every form of
+		// a var to one value also keeps collection deterministic when the
+		// same var appears with and without a default.
+		environment[name] = "${" + name + "}"
+		offset = end
+	}
+}
+
+func environmentTemplateAt(value string, start int) (string, int, bool) {
+	if start > 0 && value[start-1] == '$' {
+		return "", 0, false
+	}
+
+	index := start + 2
+	if index >= len(value) || !isEnvironmentNameStart(value[index]) {
+		return "", 0, false
+	}
+	nameStart := index
+	index++
+	for index < len(value) && isEnvironmentNameCharacter(value[index]) {
+		index++
+	}
+	name := value[nameStart:index]
+
+	if index < len(value) && value[index] == '}' {
+		return name, index + 1, true
+	}
+	if !strings.HasPrefix(value[index:], ":-") {
+		return "", 0, false
+	}
+
+	end, found := environmentTemplateEnd(value, index+2)
+	if !found {
+		return "", 0, false
+	}
+	return name, end, true
+}
+
+// environmentTemplateEnd skips nested Foundry expressions.
+func environmentTemplateEnd(value string, index int) (int, bool) {
+	depth := 1
+	for index < len(value) {
+		if strings.HasPrefix(value[index:], "${{") {
+			end := strings.Index(value[index+3:], "}}")
+			if end < 0 {
+				return 0, false
+			}
+			index += end + 5
+			continue
+		}
+		if strings.HasPrefix(value[index:], "${") {
+			depth++
+			index += 2
+			continue
+		}
+		if value[index] == '}' {
+			depth--
+			index++
+			if depth == 0 {
+				return index, true
+			}
+			continue
+		}
+		index++
+	}
+	return 0, false
+}
+
+func isEnvironmentNameStart(value byte) bool {
+	return value == '_' || value >= 'A' && value <= 'Z' ||
+		value >= 'a' && value <= 'z'
+}
+
+func isEnvironmentNameCharacter(value byte) bool {
+	return isEnvironmentNameStart(value) || value >= '0' && value <= '9'
+}
+
+// escapeFoundryTemplates escapes Foundry ${{...}} spans as $${{...}}
+// so azd core's envsubst emits a literal ${{...}} for the owning
+// extension to resolve. Already-escaped $${{...}} and bare ${VAR}
+// are left unchanged, so it is safe on values read back from disk.
+func escapeFoundryTemplates(value string) string {
+	if !strings.Contains(value, "${{") {
+		return value
+	}
+	var b strings.Builder
+	b.Grow(len(value) + 2)
+	for i := 0; i < len(value); i++ {
+		if value[i] == '$' && strings.HasPrefix(value[i:], "${{") &&
+			(i == 0 || value[i-1] != '$') {
+			b.WriteByte('$')
+		}
+		b.WriteByte(value[i])
+	}
+	return b.String()
+}
+
+// setServiceEnvironment writes raw templates through the config RPC.
+// AddService treats ServiceConfig.Environment as expanded literals.
+func setServiceEnvironment(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	environment map[string]string,
+) error {
+	if len(environment) == 0 {
+		return nil
+	}
+
+	sectionValues := make(map[string]any, len(environment))
+	for key, value := range environment {
+		sectionValues[key] = escapeFoundryTemplates(value)
+	}
+	section, err := structpb.NewStruct(sectionValues)
+	if err != nil {
+		return fmt.Errorf(
+			"encoding env for service %q: %w",
+			serviceName,
+			err,
+		)
+	}
+
+	// ServiceConfig.Environment only carries expanded values.
+	// The config RPC preserves raw ${VAR} templates.
+	_, err = azdClient.Project().SetServiceConfigSection(
+		ctx,
+		&azdext.SetServiceConfigSectionRequest{
+			ServiceName: serviceName,
+			Path:        "env",
+			Section:     section,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"setting env for service %q: %w",
+			serviceName,
+			err,
+		)
+	}
 	return nil
 }
 

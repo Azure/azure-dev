@@ -91,6 +91,108 @@ func TestReserveServiceName(t *testing.T) {
 	assert.Contains(t, err.Error(), "agent service")
 }
 
+func TestServiceEnvironmentTemplates(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := project.MarshalStruct(&project.Connection{
+		Credentials: map[string]any{
+			"key": "${SEARCH_KEY}",
+		},
+		Metadata: map[string]string{
+			"server":          "${SERVER_NAME}",
+			"default":         "${DEFAULT_NAME:-fallback}",
+			"foundry_default": "${EVENT_BODY:-${{event.body}}}",
+			"token":           "${{connections.search.credentials.key}}",
+			"literal":         "$${LITERAL}",
+		},
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, map[string]string{
+		"SEARCH_KEY":   "${SEARCH_KEY}",
+		"SERVER_NAME":  "${SERVER_NAME}",
+		"DEFAULT_NAME": "${DEFAULT_NAME}",
+		"EVENT_BODY":   "${EVENT_BODY}",
+	}, serviceEnvironmentTemplates(cfg))
+}
+
+// TestServiceEnvironmentTemplatesDeterministic verifies a var
+// referenced both bare and with a default collapses to the same
+// canonical ${VAR}, so field order cannot change the result.
+func TestServiceEnvironmentTemplatesDeterministic(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := project.MarshalStruct(&project.Connection{
+		Metadata: map[string]string{
+			"bare":     "${TOPIC}",
+			"default":  "${TOPIC:-general}",
+			"default2": "${TOPIC:-other}",
+		},
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, map[string]string{
+		"TOPIC": "${TOPIC}",
+	}, serviceEnvironmentTemplates(cfg))
+}
+
+func TestEscapeFoundryTemplates(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{"foundry span", "${{event.body}}", "$${{event.body}}"},
+		{"already escaped", "$${{event.body}}", "$${{event.body}}"},
+		{"single brace untouched", "${VAR}", "${VAR}"},
+		{"literal untouched", "info", "info"},
+		{
+			"embedded span",
+			"prefix-${{connections.x.key}}-suffix",
+			"prefix-$${{connections.x.key}}-suffix",
+		},
+		{
+			"span in default",
+			"${MISSING:-${{event.body}}}",
+			"${MISSING:-$${{event.body}}}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, escapeFoundryTemplates(tt.value))
+		})
+	}
+}
+
+func TestAddResourceServiceWritesEnvironment(t *testing.T) {
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	cfg, err := project.MarshalStruct(&project.Connection{
+		Credentials: map[string]any{"key": "${SEARCH_KEY}"},
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, addResourceService(
+		t.Context(),
+		client,
+		"search",
+		AiConnectionHost,
+		cfg,
+		nil,
+	))
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Len(t, server.added, 1)
+	assert.Empty(t, server.added[0].GetEnvironment())
+	assert.Equal(t, map[string]any{
+		"SEARCH_KEY": "${SEARCH_KEY}",
+	}, server.env["search"])
+}
+
 func TestCollectLegacyProjectDeploymentsIgnoresSplitProject(
 	t *testing.T,
 ) {
@@ -314,11 +416,19 @@ type recordingProjectServer struct {
 	mu    sync.Mutex
 	added []*azdext.ServiceConfig
 	uses  map[string][]string
+	env   map[string]map[string]any
 	// configValues records non-"uses" SetServiceConfigValue calls keyed by path.
 	configValues map[string]configValueRecord
 	// existing is returned by Get to simulate services already present in the
 	// project (e.g. a prior init's azure.ai.project service).
 	existing map[string]*azdext.ServiceConfig
+	// rawEnv is returned by GetServiceConfigValue for path "env" to
+	// simulate a service that already carries an env section (raw,
+	// on-disk templates).
+	rawEnv                map[string]map[string]any
+	unsetPaths            []string
+	setEnvironmentErr     error
+	unsetServiceConfigErr error
 }
 
 // configValueRecord captures a single SetServiceConfigValue call.
@@ -344,6 +454,26 @@ func (s *recordingProjectServer) AddService(
 	defer s.mu.Unlock()
 	s.added = append(s.added, req.Service)
 	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *recordingProjectServer) GetServiceConfigValue(
+	_ context.Context, req *azdext.GetServiceConfigValueRequest,
+) (*azdext.GetServiceConfigValueResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if req.Path == "env" {
+		if raw, ok := s.rawEnv[req.ServiceName]; ok {
+			value, err := structpb.NewValue(raw)
+			if err != nil {
+				return nil, err
+			}
+			return &azdext.GetServiceConfigValueResponse{
+				Found: true,
+				Value: value,
+			}, nil
+		}
+	}
+	return &azdext.GetServiceConfigValueResponse{}, nil
 }
 
 func (s *recordingProjectServer) SetServiceConfigValue(
@@ -374,6 +504,37 @@ func (s *recordingProjectServer) SetServiceConfigValue(
 				value:       str,
 			}
 		}
+	}
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *recordingProjectServer) SetServiceConfigSection(
+	_ context.Context,
+	req *azdext.SetServiceConfigSectionRequest,
+) (*azdext.EmptyResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.setEnvironmentErr != nil {
+		return nil, s.setEnvironmentErr
+	}
+	if s.env == nil {
+		s.env = map[string]map[string]any{}
+	}
+	if req.Path == "env" && req.Section != nil {
+		s.env[req.ServiceName] = req.Section.AsMap()
+	}
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *recordingProjectServer) UnsetServiceConfig(
+	_ context.Context,
+	req *azdext.UnsetServiceConfigRequest,
+) (*azdext.EmptyResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.unsetPaths = append(s.unsetPaths, req.Path)
+	if s.unsetServiceConfigErr != nil {
+		return nil, s.unsetServiceConfigErr
 	}
 	return &azdext.EmptyResponse{}, nil
 }

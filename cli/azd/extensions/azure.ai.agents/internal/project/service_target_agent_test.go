@@ -1004,6 +1004,51 @@ func TestLoadContainerAgentDefinition_MalformedYAMLReturnsError(t *testing.T) {
 	require.Contains(t, err.Error(), "agent.yaml is not valid")
 }
 
+func TestPrepareDeployIncludesServiceEnvironment(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	*agentDef.EnvironmentVariables = append(
+		*agentDef.EnvironmentVariables,
+		agent_yaml.EnvironmentVariable{
+			Name:  "LEGACY_ONLY",
+			Value: "${GLOBAL_VALUE}",
+		},
+		agent_yaml.EnvironmentVariable{
+			Name:  "SHARED",
+			Value: "${SHARED}",
+		},
+	)
+	serviceConfig := &azdext.ServiceConfig{
+		Name: "basic-agent",
+		Environment: map[string]string{
+			"SERVICE_ONLY": "literal ${NOT_A_TEMPLATE}",
+			"SHARED":       "service",
+		},
+	}
+
+	prep, err := (&AgentServiceTargetProvider{}).prepareDeploy(
+		serviceConfig,
+		agentDef,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://project.example",
+			"GLOBAL_VALUE":             "legacy",
+			"SHARED":                   "global",
+		},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:latest"),
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		"literal ${NOT_A_TEMPLATE}",
+		prep.resolvedEnvVars["SERVICE_ONLY"],
+	)
+	require.Equal(t, "service", prep.resolvedEnvVars["SHARED"])
+	require.Equal(t, "legacy", prep.resolvedEnvVars["LEGACY_ONLY"])
+}
+
 func TestLoadContainerAgentDefinition_EnvPathOverridesInlineDefinition(t *testing.T) {
 	t.Parallel()
 
@@ -1095,129 +1140,6 @@ func TestPackageBuildsContainerAgent(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int32(1), containerStub.buildCalls.Load())
 	require.Equal(t, int32(1), containerStub.packageCalls.Load())
-}
-
-func TestPrepareDeploy_MergesUnifiedEnvironment(t *testing.T) {
-	t.Parallel()
-
-	agentDef := sampleContainerAgent()
-	agentDef.EnvironmentVariables = &[]agent_yaml.EnvironmentVariable{
-		{Name: "LEGACY_ONLY", Value: "${LEGACY_VALUE}"},
-		{Name: "SHARED", Value: "legacy"},
-	}
-	props, err := AgentDefinitionToServiceProperties(
-		agentDef,
-		&ServiceTargetAgentConfig{
-			Environment: map[string]string{
-				"REF_ONLY": "${REF_VALUE}",
-				"SHARED":   "ref",
-			},
-		},
-	)
-	require.NoError(t, err)
-	svc := &azdext.ServiceConfig{
-		Name:                 "basic-agent",
-		AdditionalProperties: props,
-		Environment: map[string]string{
-			"DIRECT_ONLY": "direct",
-			"SHARED":      "direct",
-		},
-	}
-	provider := &AgentServiceTargetProvider{}
-
-	prep, err := provider.prepareDeploy(
-		svc,
-		agentDef,
-		map[string]string{
-			"FOUNDRY_PROJECT_ENDPOINT": "https://example",
-			"LEGACY_VALUE":             "legacy-value",
-			"REF_VALUE":                "ref-value",
-		},
-		[]agent_yaml.AgentBuildOption{
-			agent_yaml.WithImageURL("registry.example/agent:v1"),
-		},
-	)
-
-	require.NoError(t, err)
-	definition, ok := prep.request.Definition.(agent_api.HostedAgentDefinition)
-	require.True(t, ok)
-	require.Equal(
-		t,
-		"legacy-value",
-		definition.EnvironmentVariables["LEGACY_ONLY"],
-	)
-	require.Equal(
-		t,
-		"ref-value",
-		definition.EnvironmentVariables["REF_ONLY"],
-	)
-	require.Equal(
-		t,
-		"direct",
-		definition.EnvironmentVariables["DIRECT_ONLY"],
-	)
-	require.Equal(
-		t,
-		"direct",
-		definition.EnvironmentVariables["SHARED"],
-	)
-}
-
-func TestPrepareDeployUsesRawUnifiedEnvironment(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(root, "azure.yaml"),
-		[]byte(`services:
-  basic-agent:
-    host: azure.ai.agent
-    env:
-      PROJECT: ${{project.endpoint}}
-      ENABLED: true
-`),
-		0o600,
-	))
-	agentDef := sampleContainerAgent()
-	props, err := AgentDefinitionToServiceProperties(
-		agentDef,
-		&ServiceTargetAgentConfig{},
-	)
-	require.NoError(t, err)
-	svc := &azdext.ServiceConfig{
-		Name:                 "basic-agent",
-		AdditionalProperties: props,
-		Environment: map[string]string{
-			"PROJECT": "",
-			"ENABLED": "",
-		},
-	}
-	provider := &AgentServiceTargetProvider{projectPath: root}
-
-	prep, err := provider.prepareDeploy(
-		svc,
-		agentDef,
-		map[string]string{
-			"FOUNDRY_PROJECT_ENDPOINT": "https://example",
-		},
-		[]agent_yaml.AgentBuildOption{
-			agent_yaml.WithImageURL("registry.example/agent:v1"),
-		},
-	)
-
-	require.NoError(t, err)
-	definition, ok := prep.request.Definition.(agent_api.HostedAgentDefinition)
-	require.True(t, ok)
-	require.Equal(
-		t,
-		"${{project.endpoint}}",
-		definition.EnvironmentVariables["PROJECT"],
-	)
-	require.Equal(
-		t,
-		"true",
-		definition.EnvironmentVariables["ENABLED"],
-	)
 }
 
 func TestPrepareDeployAppliesDefaultResources(t *testing.T) {

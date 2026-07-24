@@ -52,11 +52,14 @@ func TestAgentDefinitionRoundTrip(t *testing.T) {
 
 	props, err := AgentDefinitionToServiceProperties(ca, extra)
 	require.NoError(t, err)
+	_, hasInlineEnvironment := props.GetFields()["environmentVariables"]
+	require.False(t, hasInlineEnvironment)
 
 	svc := &azdext.ServiceConfig{
 		Name:                 "basic-agent",
 		Host:                 "azure.ai.agent",
 		AdditionalProperties: props,
+		Environment:          AgentEnvironment(ca),
 	}
 
 	got, isHosted, found, source, err := AgentDefinitionFromService(svc)
@@ -109,6 +112,118 @@ func TestAgentDefinitionFromService_LegacyConfigShape(t *testing.T) {
 	require.Equal(t, AgentDefinitionSourceLegacyConfig, source)
 	require.True(t, source.IsLegacy())
 	require.Equal(t, "basic-agent", got.Name)
+}
+
+func TestAgentDefinitionFromService_LegacyEnvironment(t *testing.T) {
+	props, err := AgentDefinitionToServiceProperties(
+		sampleContainerAgent(),
+		nil,
+	)
+	require.NoError(t, err)
+	legacyEnvironment, err := structpb.NewValue([]any{
+		map[string]any{
+			"name":  "LEGACY_KEY",
+			"value": "${LEGACY_KEY}",
+		},
+		map[string]any{
+			"name":  "SHARED_KEY",
+			"value": "legacy",
+		},
+	})
+	require.NoError(t, err)
+	props.Fields["environmentVariables"] = legacyEnvironment
+
+	svc := &azdext.ServiceConfig{
+		Name:   "basic-agent",
+		Host:   "azure.ai.agent",
+		Config: props,
+		Environment: map[string]string{
+			"NEW_KEY":    "new",
+			"SHARED_KEY": "service",
+		},
+	}
+	got, _, found, source, err := AgentDefinitionFromService(svc)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, AgentDefinitionSourceLegacyConfig, source)
+	require.Equal(t, map[string]string{
+		"LEGACY_KEY": "${LEGACY_KEY}",
+		"NEW_KEY":    "new",
+		"SHARED_KEY": "service",
+	}, AgentEnvironment(got))
+}
+
+// TestInlineAgentEnvironmentVariables verifies the raw inline
+// environmentVariables are returned as authored, without merging the
+// core-forwarded (already expanded) service environment.
+func TestInlineAgentEnvironmentVariables(t *testing.T) {
+	props, err := AgentDefinitionToServiceProperties(
+		sampleContainerAgent(),
+		nil,
+	)
+	require.NoError(t, err)
+	legacyEnvironment, err := structpb.NewValue([]any{
+		map[string]any{
+			"name":  "LEGACY_KEY",
+			"value": "${LEGACY_KEY}",
+		},
+		map[string]any{
+			"name":  "SHARED_KEY",
+			"value": "legacy",
+		},
+	})
+	require.NoError(t, err)
+	props.Fields["environmentVariables"] = legacyEnvironment
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+		// Core-forwarded env must NOT leak into the raw result.
+		Environment: map[string]string{
+			"NEW_KEY":    "new",
+			"SHARED_KEY": "service",
+		},
+	}
+	got, err := InlineAgentEnvironmentVariables(svc)
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"LEGACY_KEY": "${LEGACY_KEY}",
+		"SHARED_KEY": "legacy",
+	}, got)
+}
+func TestResolveAgentEnvironmentVariable(t *testing.T) {
+	t.Parallel()
+
+	t.Run("preserves same-name core value", func(t *testing.T) {
+		value, err := ResolveAgentEnvironmentVariable(
+			"FORWARDED_VALUE",
+			"${FORWARDED_VALUE}",
+			map[string]string{
+				"FORWARDED_VALUE": "literal ${NOT_A_TEMPLATE}",
+			},
+			func(string) string {
+				return "expanded"
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(t, "literal ${NOT_A_TEMPLATE}", value)
+	})
+
+	t.Run("resolves aliases from service env first", func(t *testing.T) {
+		value, err := ResolveAgentEnvironmentVariable(
+			"TARGET",
+			"${SERVICE_ENDPOINT}",
+			map[string]string{
+				"SERVICE_ENDPOINT": "https://service.example",
+			},
+			func(string) string {
+				return "https://project.example"
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(t, "https://service.example", value)
+	})
 }
 
 func TestLoadAgentDefinition_UnrelatedInlineFallsBackToConfig(
@@ -483,6 +598,7 @@ func TestResolveServiceConfigInPlaceRejectsCoreFieldsFromRootRef(t *testing.T) {
 		name  string
 		value string
 	}{
+		{name: "env", value: "env:\n  LOG_LEVEL: info\n"},
 		{name: "project", value: "project: src/agent\n"},
 		{name: "language", value: "language: docker\n"},
 		{name: "image", value: "image: registry.example/agent:v1\n"},
@@ -567,9 +683,15 @@ func TestAgentDefinitionUsesFileRefIgnoresInlineDefinition(t *testing.T) {
 // TestUpsertAgentEnvVars verifies that env vars are added/updated on the inline
 // definition while preserving the other definition keys.
 func TestUpsertAgentEnvVars(t *testing.T) {
-	props, err := AgentDefinitionToServiceProperties(sampleContainerAgent(), nil)
+	ca := sampleContainerAgent()
+	props, err := AgentDefinitionToServiceProperties(ca, nil)
 	require.NoError(t, err)
-	svc := &azdext.ServiceConfig{Name: "basic-agent", Host: "azure.ai.agent", AdditionalProperties: props}
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+		Environment:          AgentEnvironment(ca),
+	}
 
 	require.NoError(t, UpsertAgentEnvVars(svc, map[string]string{
 		"FOUNDRY_MODEL_DEPLOYMENT_NAME": "gpt-4o", // update existing
@@ -581,11 +703,10 @@ func TestUpsertAgentEnvVars(t *testing.T) {
 	require.True(t, found)
 	require.Equal(t, "basic-agent", got.Name) // other keys preserved
 	require.NotNil(t, got.EnvironmentVariables)
+	_, hasInlineEnvironment := props.GetFields()["environmentVariables"]
+	require.False(t, hasInlineEnvironment)
 
-	values := map[string]string{}
-	for _, ev := range *got.EnvironmentVariables {
-		values[ev.Name] = ev.Value
-	}
+	values := AgentEnvironment(got)
 	require.Equal(t, "gpt-4o", values["FOUNDRY_MODEL_DEPLOYMENT_NAME"])
 	require.Equal(t, "cand-1", values["OPTIMIZATION_CANDIDATE_ID"])
 }

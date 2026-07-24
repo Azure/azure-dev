@@ -23,8 +23,6 @@ import (
 // environment value because the runtime expander supplies the fallback.
 var azureYamlEnvRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-[^}]*)?\}`)
 
-var foundryTemplateSpanPattern = regexp.MustCompile(`(?s)\$\{\{.*?\}\}`)
-
 // Escape handling must match the expander that owns each field.
 // foundry.ExpandEnv treats an odd leading '$' as an escape, while the project
 // synthesizers' resolveVars helper expands every ${VAR} match regardless of
@@ -126,10 +124,6 @@ func configureAzureYamlEnvironmentVariables(
 	projectDir string,
 	noPrompt bool,
 ) error {
-	if noPrompt {
-		return nil
-	}
-
 	manifestPath := filepath.Join(projectDir, "azure.yaml")
 	//nolint:gosec // projectDir is the user-selected project root created by init
 	content, err := os.ReadFile(manifestPath)
@@ -176,7 +170,7 @@ func configureAzureYamlEnvironmentVariables(
 
 		missing = append(missing, reference)
 	}
-	if len(missing) == 0 {
+	if len(missing) == 0 || noPrompt {
 		return nil
 	}
 
@@ -536,11 +530,13 @@ func collectAzureYamlEnvironmentReferences(
 	references *[]azureYamlEnvironmentReference,
 	indexByName map[string]int,
 ) {
-	value = foundryTemplateSpanPattern.ReplaceAllStringFunc(value, func(span string) string {
-		return strings.Repeat(" ", len(span))
-	})
-	for _, match := range azureYamlEnvRefPattern.FindAllStringSubmatchIndex(value, -1) {
+	matches := azureYamlEnvRefPattern.FindAllStringSubmatchIndex(value, -1)
+	protected := protectedAzureYamlEnvironmentReferenceOccurrences(value, matches, honorEscaping)
+	for i, match := range matches {
 		if honorEscaping && isEscapedAzureYamlEnvironmentReference(value, match[0]) {
+			continue
+		}
+		if protected[i] {
 			continue
 		}
 		if match[4] != -1 {
@@ -561,6 +557,49 @@ func collectAzureYamlEnvironmentReferences(
 			Secret: secret,
 		})
 	}
+}
+
+// protectedAzureYamlEnvironmentReferenceOccurrences reports which candidate
+// references are inside server-side ${{...}} spans. Each candidate is replaced
+// with a unique probe before running [foundry.ExpandEnv]; probes left verbatim
+// are protected by the shared expander. This keeps discovery linked to the
+// owning implementation without ambiguous name-based occurrence counting.
+func protectedAzureYamlEnvironmentReferenceOccurrences(
+	value string,
+	matches [][]int,
+	honorEscaping bool,
+) []bool {
+	protected := make([]bool, len(matches))
+	if !honorEscaping || len(matches) == 0 {
+		return protected
+	}
+
+	probePrefix := "AZD_ENV_REFERENCE_PROBE_"
+	for strings.Contains(value, probePrefix) {
+		probePrefix += "_"
+	}
+
+	probeRefs := make([]string, len(matches))
+	var probed strings.Builder
+	last := 0
+	for i, match := range matches {
+		probed.WriteString(value[last:match[0]])
+		probeRefs[i] = fmt.Sprintf("${%s%d}", probePrefix, i)
+		probed.WriteString(probeRefs[i])
+		last = match[1]
+	}
+	probed.WriteString(value[last:])
+
+	expanded, err := foundry.ExpandEnv(probed.String(), func(name string) string {
+		return "expanded_" + name
+	})
+	if err != nil {
+		return protected
+	}
+	for i, probeRef := range probeRefs {
+		protected[i] = strings.Contains(expanded, probeRef)
+	}
+	return protected
 }
 
 func isEscapedAzureYamlEnvironmentReference(value string, start int) bool {

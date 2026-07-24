@@ -75,9 +75,15 @@ services:
         value: $${ESCAPED}
       - name: EXPANDED_AFTER_LITERAL_DOLLAR
         value: $$${EXPANDED_AFTER_LITERAL_DOLLAR}
+      - name: MIXED_ESCAPE
+        value: ${MIXED_REF} literal-$${MIXED_REF}
+      - name: MIXED_SERVER
+        value: ${SERVER_SHARED} ${{ event.body ?? '${SERVER_SHARED}' }}
 `,
 			want: []azureYamlEnvironmentReference{
 				{Name: "EXPANDED_AFTER_LITERAL_DOLLAR"},
+				{Name: "MIXED_REF"},
+				{Name: "SERVER_SHARED"},
 			},
 		},
 		{
@@ -446,7 +452,7 @@ services:
 }
 
 func TestConfigureAzureYamlEnvironmentVariables_NoPromptSkipsPrompts(t *testing.T) {
-	t.Parallel()
+	t.Setenv("API_TOKEN", "")
 
 	projectDir := t.TempDir()
 	content := `name: sample
@@ -472,6 +478,38 @@ services:
 	require.NoError(t, err)
 	require.Empty(t, promptServer.promptRequests)
 	require.Empty(t, envServer.values)
+}
+
+func TestConfigureAzureYamlEnvironmentVariables_NoPromptPersistsProcessEnvironmentFallback(t *testing.T) {
+	const envVarName = "AZD_TEST_INIT_NO_PROMPT_PROCESS_VALUE"
+	t.Setenv(envVarName, "from-process")
+
+	projectDir := t.TempDir()
+	content := `name: sample
+services:
+  toolbox:
+    host: azure.ai.toolbox
+    tools:
+      - name: process-value
+        configuration:
+          value: ${AZD_TEST_INIT_NO_PROMPT_PROCESS_VALUE}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "azure.yaml"), []byte(content), 0600))
+
+	envServer := &testEnvironmentServiceServer{}
+	promptServer := &testPromptServiceServer{}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{}, promptServer)
+
+	err := configureAzureYamlEnvironmentVariables(
+		t.Context(),
+		azdClient,
+		"dev",
+		projectDir,
+		true,
+	)
+	require.NoError(t, err)
+	require.Empty(t, promptServer.promptRequests)
+	require.Equal(t, "from-process", envServer.values["dev"][envVarName])
 }
 
 func TestConfigureAzureYamlEnvironmentVariables_SkipsConfiguredValues(t *testing.T) {

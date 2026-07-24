@@ -6964,7 +6964,7 @@ const completionSpec: Fig.Spec = {
 		},
 		{
 			name: ['--no-prompt'],
-			description: 'Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.',
+			description: 'Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically. Automatically enabled when azd detects a CI/CD or AI-agent environment; set AZD_NON_INTERACTIVE=false to opt out of that automatic enablement.',
 			isPersistent: true,
 		},
 		{

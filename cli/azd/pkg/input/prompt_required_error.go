@@ -43,7 +43,10 @@ type RequiredInput struct {
 	Sources     []InputSource `json:"sources,omitempty"`
 }
 
-// PromptRequiredError is returned when --no-prompt mode prevents collecting required inputs interactively.
+// PromptRequiredError is returned when azd needs interactive input but cannot collect it.
+// This happens in no-prompt mode (whether set explicitly via --no-prompt/--non-interactive or
+// AZD_NON_INTERACTIVE, or auto-enabled for CI/CD or agent environments), where a prompt that has
+// no usable default cannot be satisfied.
 //
 // Either Inputs or PromptMessage is set, but not both.
 type PromptRequiredError struct {
@@ -52,7 +55,7 @@ type PromptRequiredError struct {
 	// Message is the headline used for structured missing-input output.
 	Message string
 
-	// PromptMessage is the prompt text that would have been displayed to the user if interactive prompts were allowed.
+	// PromptMessage is the text of the prompt that could not be answered non-interactively.
 	PromptMessage string
 }
 
@@ -149,11 +152,11 @@ func (e *PromptRequiredError) MarshalJSON() ([]byte, error) {
 }
 
 func (e *PromptRequiredError) message() string {
-	if e.Message == "" {
-		return DefaultPromptRequiredMessage
+	if e.Message != "" {
+		return e.Message
 	}
 
-	return e.Message
+	return DefaultPromptRequiredMessage
 }
 
 func (e *PromptRequiredError) promptMessageToString() string {
@@ -161,6 +164,7 @@ func (e *PromptRequiredError) promptMessageToString() string {
 
 	buf.WriteString("The following prompt requires user input:\n\n")
 	buf.WriteString(fmt.Sprintf("  ? %s\n\n", e.PromptMessage))
+
 	buf.WriteString("This prompt cannot be answered non-interactively. ")
 	buf.WriteString("To proceed, run this command in interactive mode.\n")
 

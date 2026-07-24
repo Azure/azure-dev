@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check if registry.json changed
+      - name: Check if an extension registry changed
         id: changed
         uses: actions/github-script@v9
         with:
@@ -45,18 +45,25 @@ jobs:
               repo: context.repo.repo,
               pull_number: context.payload.pull_request.number,
             });
-            const changed = files.some((f) => f.filename === 'cli/azd/extensions/registry.json');
-            core.info(`registry.json changed: ${changed}`);
-            core.setOutput('registry_json_changed', changed);
+            const registryPaths = new Set([
+              'cli/azd/extensions/registry.json',
+              'cli/azd/extensions/registry.dev.json',
+            ]);
+            const changed = files.some(
+              (f) => registryPaths.has(f.filename) ||
+                  registryPaths.has(f.previous_filename), // Also fire if someone tries to delete a registry
+            );
+            core.info(`extension registry changed: ${changed}`);
+            core.setOutput('registry_changed', changed);
 
       - name: Checkout
-        if: steps.changed.outputs.registry_json_changed == 'true'
+        if: steps.changed.outputs.registry_changed == 'true'
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.base.sha }}
 
       - name: Check extension registry update
-        if: steps.changed.outputs.registry_json_changed == 'true'
+        if: steps.changed.outputs.registry_changed == 'true'
         uses: actions/github-script@v9
         with:
           script: |

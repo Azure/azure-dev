@@ -16,6 +16,8 @@ const (
 	AgentTypeClaudeCode AgentType = "claude-code"
 	// AgentTypeGitHubCopilotCLI is GitHub's Copilot CLI agent.
 	AgentTypeGitHubCopilotCLI AgentType = "github-copilot-cli"
+	// AgentTypeGitHubCopilotApp is GitHub's Copilot App agent.
+	AgentTypeGitHubCopilotApp AgentType = "github-copilot-app"
 	// AgentTypeVSCodeCopilot is VS Code GitHub Copilot extension.
 	AgentTypeVSCodeCopilot AgentType = "vscode-copilot"
 	// AgentTypeGemini is Google's Gemini CLI.
@@ -36,6 +38,8 @@ func (a AgentType) DisplayName() string {
 		return "Claude Code"
 	case AgentTypeGitHubCopilotCLI:
 		return "GitHub Copilot CLI"
+	case AgentTypeGitHubCopilotApp:
+		return "GitHub Copilot App"
 	case AgentTypeVSCodeCopilot:
 		return "VS Code GitHub Copilot"
 	case AgentTypeGemini:

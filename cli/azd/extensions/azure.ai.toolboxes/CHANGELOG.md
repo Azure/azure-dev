@@ -1,5 +1,15 @@
 # Release History
 
+## 1.0.0-beta.4 (2026-07-23)
+
+### Features Added
+
+- [[#9229]](https://github.com/Azure/azure-dev/pull/9229) `azd ai toolbox` now supports the WorkIQ (`work_iq_preview`), FabricIQ (`fabric_iq_preview`), and toolbox-search (`toolbox_search_preview`) preview tools, and `azd ai toolbox connection list` now surfaces any tool that exposes a project connection.
+
+### Bugs Fixed
+
+- [[#9220]](https://github.com/Azure/azure-dev/pull/9220) Fix `azd ai toolbox create --project-endpoint --from-file` failing when run outside an azd project; the best-effort environment sync now skips silently when no `azure.yaml` is present instead of failing the command.
+
 ## 1.0.0-beta.3 (2026-07-16)
 
 ### Features Added

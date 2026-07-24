@@ -45,9 +45,10 @@ integration.
 | `AZD_CONFIG_DIR` | The file path of the user-level configuration directory. |
 | `AZD_DEMO_MODE` | If true, enables demo mode. This hides personal output, such as subscription IDs, from being displayed in output. |
 | `AZD_FORCE_TTY` | If true, forces `azd` to write terminal-style output. |
+| `AZD_NON_INTERACTIVE` | Controls no-prompt mode. Accepts a boolean (`true`, `false`, `1`, `0`); other values are ignored with a warning. Set to `true` (or `1`) to run without interactive prompts (equivalent to `--no-prompt`). `azd` also auto-enables no-prompt mode when it detects a CI/CD or AI-agent environment; set `AZD_NON_INTERACTIVE=false` to opt out of that automatic enablement (the global no-prompt setting stays off in those environments). Note that some commands still avoid interactive prompts in CI/CD by design, independent of this variable. Explicit `--no-prompt`/`--non-interactive` flags take precedence over this variable. |
 | `AZD_IN_CLOUDSHELL` | If true, `azd` runs with Azure Cloud Shell specific behavior. |
 | `AZD_SKIP_UPDATE_CHECK` | If true, skips the out-of-date update check output that is typically printed at the end of the command. |
-| `AZD_SKIP_FIRST_RUN` | If true, skips the first-run tool setup experience and background tool update checks. Useful for CI/CD pipelines and automated environments. |
+| `AZD_SKIP_FIRST_RUN` | Reserved for the dormant first-run tool setup and background update experience. This variable has no effect while those middleware components are not registered. |
 | `AZD_CONTAINER_RUNTIME` | The container runtime to use (e.g., `docker`, `podman`). |
 | `AZD_ALLOW_NON_EMPTY_FOLDER` | If set, allows `azd init` to run in a non-empty directory without prompting. |
 | `AZD_BUILDER_IMAGE` | The builder docker image used to perform Dockerfile-less builds. |

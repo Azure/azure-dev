@@ -157,8 +157,9 @@ type Dependencies struct {
 
 // NewLocalChecks returns the canonical sequence of local doctor checks
 // in execution order. Phase 4.2 covered checks 1-3; Phase 4.3 added
-// checks 4-6 (agent service detected, project endpoint set, agent.yaml
-// valid). Phase 5 C9 appends check 7 (manual env vars set). Phase 5
+// checks 4-6 (agent service detected, project endpoint set, agent
+// definition valid). Phase 5 C9 appends the manual env check.
+// Phase 5
 // C14 appends check 8 (`local.toolboxes`) which reads per-toolbox MCP
 // endpoint env vars; it is local because it does not call ARM /
 // Foundry (only the active azd environment).
@@ -169,7 +170,7 @@ func NewLocalChecks(deps Dependencies) []Check {
 		newCheckEnvironmentSelected(deps),
 		newCheckAgentServiceDetected(deps),
 		newCheckProjectEndpointSet(deps),
-		newCheckAgentYAMLValid(deps),
+		newCheckAgentDefinitionValid(deps),
 		newCheckManualEnvVars(deps),
 		newCheckToolboxes(deps),
 	}

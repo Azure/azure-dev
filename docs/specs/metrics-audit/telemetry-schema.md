@@ -285,11 +285,14 @@ The following fields are defined in `fields.go`.
 
 ### Tool Management
 
-Telemetry for the `azd tool` feature (first-run experience and tool install / upgrade /
-check operations). Only built-in tool IDs (e.g. `az-cli`) and version strings are captured —
-no file paths, no user-identifiable data, no raw error text.
+Telemetry for active `azd tool` install / upgrade / check operations and the dormant
+first-run field contract. Only built-in tool IDs (e.g. `az-cli`) and version strings are
+captured — no file paths, no user-identifiable data, no raw error text.
 
-#### Tool first-run
+#### Dormant tool first-run (reserved)
+
+The first-run middleware is not currently registered, so these fields are not emitted. They
+remain defined to support a possible future redesign without changing the telemetry contract.
 
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|

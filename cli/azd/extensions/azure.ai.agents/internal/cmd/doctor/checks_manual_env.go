@@ -74,7 +74,10 @@ func newCheckManualEnvVars(deps Dependencies) Check {
 				return Result{Status: StatusSkip, Message: "skipped: azd extension not reachable"}
 			}
 			if priorBlocked(prior, "local.agent-yaml-valid") {
-				return Result{Status: StatusSkip, Message: "skipped: agent.yaml check failed or skipped"}
+				return Result{
+					Status:  StatusSkip,
+					Message: "skipped: agent definition check failed or skipped",
+				}
 			}
 			if priorBlocked(prior, "local.environment-selected") {
 				// Without an azd env, AssembleState's detectMissingVars

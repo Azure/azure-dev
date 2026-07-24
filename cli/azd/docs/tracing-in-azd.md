@@ -207,11 +207,11 @@ These example PRs include adding both new spans and events and can be used as re
 
 ## Tool Command Telemetry
 
-The `azd tool` command group emits telemetry that captures both the **first-run experience adoption funnel** and **per-operation outcomes** for install, upgrade, check, and show.  All attributes are attached as **usage attributes** via `tracing.SetUsageAttributes`, which means they appear on the user's actual command span (e.g. `cmd.tool.install`) rather than on a separate child span.
+The `azd tool` command group emits telemetry that captures **per-operation outcomes** for install, upgrade, check, and show. The first-run telemetry contract remains defined for a possible future experience but is not currently emitted. All active attributes are attached as **usage attributes** via `tracing.SetUsageAttributes`, which means they appear on the user's actual command span (e.g. `cmd.tool.install`) rather than on a separate child span.
 
-### First-Run Experience
+### Dormant First-Run Experience
 
-The first-run middleware (`cmd/middleware/tool_first_run.go`) emits attributes once per `azd` invocation when the `tool` alpha feature is enabled and the command is not a child action.
+The first-run middleware (`cmd/middleware/tool_first_run.go`) is not registered in the command middleware chain, so the following reserved attributes are not currently emitted. The definitions remain documented to support a future redesign without changing the telemetry contract.
 
 | Attribute | Type | Emitted when | Notes |
 | --- | --- | --- | --- |

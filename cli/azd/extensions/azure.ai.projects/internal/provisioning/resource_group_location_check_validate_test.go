@@ -159,6 +159,100 @@ func TestValidate_Gates(t *testing.T) {
 		assert.False(t, called, "resource group lookup must not run for a brownfield project")
 	})
 
+	t.Run("skips brownfield project from azure.yml", func(t *testing.T) {
+		root := t.TempDir()
+		require.NoError(t, os.WriteFile(
+			filepath.Join(root, "azure.yml"),
+			[]byte(`name: rgloc-test
+services:
+  ai-project:
+    host: azure.ai.project
+    endpoint: https://acct.services.ai.azure.com/api/projects/p
+`),
+			0o600,
+		))
+		proj := &validateStubProjectServer{project: &azdext.ProjectConfig{
+			Path:  root,
+			Infra: &azdext.InfraOptions{Provider: FoundryProviderName},
+		}}
+		env := &validateStubEnvServer{
+			envName: "rgloc-test",
+			get:     map[string]string{},
+		}
+		client := newValidateTestClient(t, proj, env)
+
+		var called bool
+		c := &ResourceGroupLocationCheck{azdClient: client}
+		c.resourceGroupLocation = func(
+			context.Context,
+			string,
+			string,
+		) (string, bool, error) {
+			called = true
+			return "eastus", true, nil
+		}
+
+		resp, err := c.Validate(
+			t.Context(),
+			provisionContext(sub, "westus2", "rg-x"),
+			&azdext.ValidationCheckRequest{},
+		)
+		require.NoError(t, err)
+		assert.Empty(t, resp.Results)
+		assert.False(t, called)
+	})
+
+	t.Run("skips brownfield project with referenced endpoint", func(t *testing.T) {
+		root := t.TempDir()
+		require.NoError(t, os.WriteFile(
+			filepath.Join(root, "project.yaml"),
+			[]byte(
+				"endpoint: https://acct.services.ai.azure.com/"+
+					"api/projects/p\n",
+			),
+			0o600,
+		))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(root, "azure.yaml"),
+			[]byte(`name: rgloc-test
+services:
+  ai-project:
+    host: azure.ai.project
+    $ref: ./project.yaml
+`),
+			0o600,
+		))
+		proj := &validateStubProjectServer{project: &azdext.ProjectConfig{
+			Path:  root,
+			Infra: &azdext.InfraOptions{Provider: FoundryProviderName},
+		}}
+		env := &validateStubEnvServer{
+			envName: "rgloc-test",
+			get:     map[string]string{},
+		}
+		client := newValidateTestClient(t, proj, env)
+
+		var called bool
+		c := &ResourceGroupLocationCheck{azdClient: client}
+		c.resourceGroupLocation = func(
+			context.Context,
+			string,
+			string,
+		) (string, bool, error) {
+			called = true
+			return "eastus", true, nil
+		}
+
+		resp, err := c.Validate(
+			t.Context(),
+			provisionContext(sub, "westus2", "rg-x"),
+			&azdext.ValidationCheckRequest{},
+		)
+		require.NoError(t, err)
+		assert.Empty(t, resp.Results)
+		assert.False(t, called)
+	})
+
 	t.Run("skips when required values are missing", func(t *testing.T) {
 		proj := &validateStubProjectServer{project: &azdext.ProjectConfig{
 			Path:  writeAzureYAML(t, ""),

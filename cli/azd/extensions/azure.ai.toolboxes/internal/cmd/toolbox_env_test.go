@@ -103,6 +103,7 @@ func TestIsNoAzdEnvironment(t *testing.T) {
 		{"unavailable", status.Error(codes.Unavailable, "connection refused"), true},
 		// The host returns a status-less sentinel that grpc maps to Unknown.
 		{"no default env", status.Error(codes.Unknown, "default environment not found"), true},
+		{"no project", status.Error(codes.Unknown, "no project exists; to create a new project, run `azd init`"), true},
 		{"other unknown", status.Error(codes.Unknown, "something else broke"), false},
 		{"plain error", errors.New("not a grpc status"), false},
 		{"nil", nil, false},

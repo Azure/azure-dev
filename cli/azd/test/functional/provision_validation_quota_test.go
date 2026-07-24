@@ -242,28 +242,29 @@ func Test_CLI_ProvisionValidationQuota_Sub_DifferentLocation(t *testing.T) {
 		"expected quota check against the override location")
 }
 
-// stdinForProvisionWithValidationNo provides stdin for subscription-scoped provision that:
-// 1. Accepts default subscription
-// 2. Accepts default location
-// 3. Answers "No" to the validation warning prompt
+// stdinForProvisionWithValidationNo provides stdin for subscription-scoped provision.
+//
+// Subscription and location are resolved from the environment (AZURE_SUBSCRIPTION_ID /
+// AZURE_LOCATION), so no interactive subscription/location prompt fires. The only prompt
+// is the validation warning confirm ("Proceed with deployment despite the warnings above?"),
+// which we answer "No" to. A blank line would now be interpreted as the confirm's default
+// (Yes) since azd honors the prompt default at EOF/blank input, so we must answer explicitly.
 func stdinForProvisionWithValidationNo() string {
-	return strings.Join([]string{
-		"",  // choose subscription (default)
-		"",  // choose location (default)
-		"n", // decline validation warning
-	}, "\n")
+	return "n" // decline the validation warning
 }
 
-// stdinForRGProvisionWithValidationNo provides stdin for resource-group-scoped provision:
-// 1. Accepts default subscription
-// 2. Accepts default resource group (create new)
-// 3. Accepts default resource group name
-// 4. Answers "No" to the validation warning prompt
+// stdinForRGProvisionWithValidationNo provides stdin for resource-group-scoped provision.
+//
+// For RG-scoped provision, azd prompts to pick a resource group and to name a new one
+// before validating the deployment; both are answered with a blank line to accept the
+// defaults ("Create a new resource group" and the default name). The final prompt is the
+// validation warning confirm ("Proceed with deployment despite the warnings above?"), which
+// we answer "No" to. The answer must be explicit ("n") rather than a blank line, because
+// azd now honors the confirm's default (Yes) at EOF/blank input.
 func stdinForRGProvisionWithValidationNo() string {
 	return strings.Join([]string{
-		"",  // choose subscription (default)
-		"",  // choose resource group (default = create new)
-		"",  // accept default resource group name
-		"n", // decline validation warning
+		"",  // pick resource group (default = create new)
+		"",  // accept default new resource group name
+		"n", // decline the validation warning
 	}, "\n")
 }

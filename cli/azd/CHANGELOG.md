@@ -2,6 +2,20 @@
 
 ## 1.29.0-beta.1 (Unreleased)
 
+## 1.28.1 (2026-07-22)
+
+### Bugs Fixed
+
+- [[#9143]](https://github.com/Azure/azure-dev/pull/9143) Fix `azd down --no-prompt` hanging in CI/CD for Terraform-based projects by auto-approving the destroy when running non-interactively, and fix `azd down --force` failing with a backend initialization error on a fresh agent.
+- [[#9161]](https://github.com/Azure/azure-dev/pull/9161) Fix `azd extension install` intermittently failing on Windows with an "Access is denied" error when replacing an extension executable held by a transient file lock.
+
+### Other Changes
+
+- [[#9261]](https://github.com/Azure/azure-dev/pull/9261) Stop showing the automatic `azd tool` first-run install prompt and periodic update notifications. Explicit `azd tool` commands are unchanged.
+- [[#9245]](https://github.com/Azure/azure-dev/pull/9245) Update the bundled GitHub CLI to v2.96.0.
+- [[#9091]](https://github.com/Azure/azure-dev/pull/9091) Emit the `infra.provider` telemetry attribute on `provision`, `up`, and `down` so provisioning runs can be segmented by infrastructure provider.
+- [[#9167]](https://github.com/Azure/azure-dev/pull/9167) Recognize azd invocations from Microsoft Foundry Skill in the `execution.environment` telemetry field.
+
 ## 1.28.0 (2026-07-15)
 
 ### Breaking Changes

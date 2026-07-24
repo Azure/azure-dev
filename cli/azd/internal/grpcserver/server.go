@@ -44,6 +44,7 @@ type Server struct {
 	copilotService       azdext.CopilotServiceServer
 	provisioningService  azdext.ProvisioningServiceServer
 	validationService    azdext.ValidationServiceServer
+	telemetryService     azdext.TelemetryServiceServer
 }
 
 func NewServer(
@@ -64,6 +65,7 @@ func NewServer(
 	copilotService azdext.CopilotServiceServer,
 	provisioningService azdext.ProvisioningServiceServer,
 	validationService azdext.ValidationServiceServer,
+	telemetryService azdext.TelemetryServiceServer,
 ) *Server {
 	return &Server{
 		projectService:       projectService,
@@ -83,6 +85,7 @@ func NewServer(
 		copilotService:       copilotService,
 		provisioningService:  provisioningService,
 		validationService:    validationService,
+		telemetryService:     telemetryService,
 	}
 }
 
@@ -132,6 +135,7 @@ func (s *Server) Start() (*ServerInfo, error) {
 	azdext.RegisterCopilotServiceServer(s.grpcServer, s.copilotService)
 	azdext.RegisterProvisioningServiceServer(s.grpcServer, s.provisioningService)
 	azdext.RegisterValidationServiceServer(s.grpcServer, s.validationService)
+	azdext.RegisterTelemetryServiceServer(s.grpcServer, s.telemetryService)
 
 	serverInfo.Address = fmt.Sprintf("127.0.0.1:%d", randomPort)
 	serverInfo.Port = randomPort

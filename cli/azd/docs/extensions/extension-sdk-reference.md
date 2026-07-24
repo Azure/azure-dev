@@ -519,8 +519,24 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Extension()` | `ExtensionServiceClient` |
 | `Account()` | `AccountServiceClient` |
 | `Ai()` | `AiModelServiceClient` |
+| `Telemetry()` | `TelemetryServiceClient` |
 
 Always call `defer client.Close()` after creation.
+
+#### TelemetryService
+
+`Telemetry().AddCommandUsageAttribute(ctx, &azdext.AddCommandUsageAttributeRequest{Key, Value})`
+lets an authenticated extension contribute a host-validated command usage
+attribute. The host owns the allowlist: it validates the key and value, checks
+the extension's declared capabilities, and, when accepted, attaches the value
+to the current command telemetry event (for example `cmd.deploy` or `cmd.up`)
+as a de-duplicated string slice. Extensions cannot choose classification,
+purpose, hashing, or aggregation, and unknown keys or values are rejected.
+
+The call is best-effort. It returns `Accepted=false` (not an error) when no
+eligible command is active, and an older azd host returns `Unimplemented`.
+Treat any failure as a no-op and never let it change command behavior. Report
+a value as soon as it is known so a later failure still retains it.
 
 ### ConfigHelper
 

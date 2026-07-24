@@ -65,6 +65,13 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 
 	spanCtx, span := tracing.Start(ctx, eventName)
 
+	// Begin a command usage scope keyed by this exact event name. Extensions
+	// contribute host-validated usage attributes through the telemetry gRPC
+	// service, which routes them to the current scope. Closing the scope below
+	// attaches those values to this command span only, so they never leak onto
+	// synthetic child spans or sibling commands.
+	usageScope := tracing.BeginCommandUsageScope(eventName)
+
 	log.Printf("TraceID: %s", span.SpanContext().TraceID())
 
 	if !IsChildAction(ctx) {
@@ -103,6 +110,15 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 	m.setInstalledExtensionsAttributes(span)
 
 	defer func() {
+		// Attach any command-scoped usage attributes reported by extensions,
+		// then close the scope. A close error is unexpected and only logged;
+		// it never changes the command result.
+		if commandAttrs, closeErr := tracing.CloseCommandUsageScope(usageScope); closeErr != nil {
+			log.Printf("closing command usage scope: %v", closeErr)
+		} else {
+			span.SetAttributes(commandAttrs...)
+		}
+
 		// Include any usage attributes set
 		span.SetAttributes(tracing.GetUsageAttributes()...)
 		span.SetAttributes(fields.PerfInteractTime.Int64(tracing.InteractTimeMs.Load()))

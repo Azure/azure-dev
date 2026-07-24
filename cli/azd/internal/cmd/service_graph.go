@@ -373,11 +373,16 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 
 				if opts.fromPackage != "" {
 					// --from-package bypasses the packager and wraps the
-					// user-supplied artifact directly.
+					// user-supplied artifact directly. Mark it with generic
+					// provenance so a service target can distinguish a
+					// caller-supplied payload from one azd produced.
 					if pkgErr := sc.Package.Add(&project.Artifact{
 						Kind:         determineArtifactKind(opts.fromPackage),
 						Location:     opts.fromPackage,
 						LocationKind: project.LocationKindLocal,
+						Metadata: map[string]string{
+							project.MetadataKeyFromPackage: "true",
+						},
 					}); pkgErr != nil {
 						return fmt.Errorf("packaging service %s: %w", pkgSvc.Name, pkgErr)
 					}

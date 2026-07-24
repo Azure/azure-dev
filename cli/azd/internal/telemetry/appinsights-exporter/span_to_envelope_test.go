@@ -169,6 +169,25 @@ func assertAttributeInPropertiesOrMeasurement(
 	}
 }
 
+// TestSpanToEnvelope_AgentDeployMode locks the App Insights representation of
+// the agent.deploy.mode field. The logical OTel value is a string slice; the
+// exporter stores it as JSON-encoded text in the Properties bag, so downstream
+// Kusto must parse it as a dynamic array.
+func TestSpanToEnvelope_AgentDeployMode(t *testing.T) {
+	t.Parallel()
+
+	stub := getDefaultSpanStub()
+	stub.Attributes = []attribute.KeyValue{
+		attribute.StringSlice("agent.deploy.mode", []string{"code", "container"}),
+	}
+	span := stub.Snapshot()
+
+	envelope := SpanToEnvelope(span)
+	data := envelope.Data.(*contracts.Data).BaseData.(*contracts.RequestData)
+
+	assert.Equal(t, `["code","container"]`, data.Properties["agent.deploy.mode"])
+}
+
 func getDefaultSpanStub() tracetest.SpanStub {
 	traceId, _ := trace.TraceIDFromHex("68f1c4f4ef5346e69d7f196761d10c68")
 	spanId, _ := trace.SpanIDFromHex("7fbdc197a52f4825877ddd46e4ec7f6c")

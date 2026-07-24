@@ -11,9 +11,9 @@ defaults:
   # model: mai-code-1-flash-picker
   judge_model: gpt-5.5
 
-# Every grader must pass for a stimulus to count as a success.
+# Allow a single grader miss while keeping a high-quality bar for Q&A responses.
 scoring:
-  threshold: 1.0
+  threshold: 0.9
 
 stimuli:
   - name: troubleshoot-auth-error

@@ -104,9 +104,12 @@ async function run({ github: octokit, context, core, coreTeam, registryBaseRef }
     // Non-registry file changes require core review.
     const changedFileReviewReasons = diffChangedFiles(changedFiles);
 
-    // Simple release-only registry changes can proceed without core review.
+    // Simple release-only registry changes can proceed without core review. Deleted registries
+    // are reported by diffChangedFiles above and skipped here, since there's nothing to fetch
+    // at the PR head.
     const changedRegistryPaths = [...REGISTRY_JSON_PATHS]
-      .filter((registryPath) => changedFiles.some((file) => file.filename === registryPath));
+      .filter((registryPath) => changedFiles.some(
+        (file) => file.filename === registryPath && file.status !== 'removed'));
     const registryReviewReasons = [];
     for (const registryPath of changedRegistryPaths) {
       const reasons = await isAllowedRegistryJsonUpdate({
@@ -296,9 +299,22 @@ async function getChangedFiles({ octokit, context }) {
 }
 
 /**
+ * Whether a changed file refers to one of the known registries, on either side of a rename.
+ * Checking `previous_filename` catches a registry that was renamed away, where the new
+ * filename is no longer one of the registry paths.
+ *
+ * @param {PullRequestFile} file
+ * @returns {boolean}
+ */
+function isRegistryFile(file) {
+  return REGISTRY_JSON_PATHS.has(file.filename) ||
+    (file.previous_filename != null && REGISTRY_JSON_PATHS.has(file.previous_filename));
+}
+
+/**
  * Flags file-level changes that disqualify a PR from the registry-only fast path.
  * Only in-place edits to the known registry files may skip core review; touching any
- * other file, or renaming a registry file, requires a core reviewer.
+ * other file, or renaming/deleting a registry file, requires a core reviewer.
  *
  * @param {PullRequestFile[]} changedFiles
  * @returns {string[]} the reasons core review is needed; empty means every change is registry-only
@@ -307,12 +323,16 @@ function diffChangedFiles(changedFiles) {
   const registryPaths = [...REGISTRY_JSON_PATHS].join(', ');
 
   const nonRegistryFiles = changedFiles
-    .filter((file) => !REGISTRY_JSON_PATHS.has(file.filename))
+    .filter((file) => !isRegistryFile(file))
     .map((file) => file.filename);
 
   const renamedRegistryFiles = changedFiles
-    .filter((file) => REGISTRY_JSON_PATHS.has(file.filename) && file.previous_filename != null)
+    .filter((file) => isRegistryFile(file) && file.previous_filename != null)
     .map((file) => `${file.previous_filename} -> ${file.filename}`);
+
+  const deletedRegistryFiles = changedFiles
+    .filter((file) => isRegistryFile(file) && file.status === 'removed')
+    .map((file) => file.filename);
 
   const reasons = [];
 
@@ -327,6 +347,13 @@ function diffChangedFiles(changedFiles) {
     reasons.push(
       `PR renames extension registry files, which requires core review: ` +
       `${renamedRegistryFiles.join(', ')}`,
+    );
+  }
+
+  if (deletedRegistryFiles.length > 0) {
+    reasons.push(
+      `PR deletes extension registry files, which requires core review: ` +
+      `${deletedRegistryFiles.join(', ')}`,
     );
   }
 

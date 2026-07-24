@@ -900,13 +900,13 @@ describe('run', () => {
     expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('cli/azd/extensions/README.md'));
   });
 
-  it('requires review when a registry file is renamed', async () => {
+  it('requires review when a file is renamed into a registry path', async () => {
     const core = createNoopCore();
     const octokit = createRegistryOctokit({
       base: registry([extension()]),
       pr: registry([extension()]),
       files: [
-        { filename: PROD_REGISTRY_PATH, previous_filename: 'cli/azd/extensions/registry.old.json' },
+        { filename: PROD_REGISTRY_PATH, previous_filename: 'cli/azd/extensions/registry.old.json', status: 'renamed' },
       ],
     });
 
@@ -920,6 +920,55 @@ describe('run', () => {
     expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('renames extension registry files'));
     expect(core.setFailed).toHaveBeenCalledWith(
       expect.stringContaining(`cli/azd/extensions/registry.old.json -> ${PROD_REGISTRY_PATH}`));
+  });
+
+  it('requires review when a registry file is renamed away', async () => {
+    const core = createNoopCore();
+    // A registry renamed away no longer exists at either registry path, so no fixture is
+    // configured - the mock throws if the policy tries to load one anyway.
+    const octokit = createRegistryOctokit({
+      registries: {},
+      files: [
+        { filename: 'cli/azd/extensions/registry.old.json', previous_filename: DEV_REGISTRY_PATH, status: 'renamed' },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('renames extension registry files'));
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(`${DEV_REGISTRY_PATH} -> cli/azd/extensions/registry.old.json`));
+    // The renamed registry must be reported as a rename, not as an unrelated outside file.
+    expect(core.setFailed).not.toHaveBeenCalledWith(
+      expect.stringContaining('files outside the extension registries'));
+  });
+
+  it('requires review with a policy message when a registry file is deleted', async () => {
+    const core = createNoopCore();
+    // A deleted registry has nothing to fetch at the PR head, so no fixture is configured -
+    // the mock throws if the policy tries to load it anyway.
+    const octokit = createRegistryOctokit({
+      registries: {},
+      files: [{ filename: DEV_REGISTRY_PATH, status: 'removed' }],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('deletes extension registry files'));
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining(DEV_REGISTRY_PATH));
+    // A deletion must surface as policy guidance, not as an unhandled 404 from the registry fetch.
+    expect(core.setFailed).not.toHaveBeenCalledWith(expect.stringContaining('Internal failure in script'));
+    expect(octokit.rest.repos.getContent).not.toHaveBeenCalled();
   });
 
   it('evaluates each registry independently and names only the one that requires review', async () => {
@@ -980,7 +1029,7 @@ describe('getCoreReviewers', () => {
  *   base?: RegistryJson,
  *   pr?: RegistryJson,
  *   registries?: Object<string, { base: RegistryJson, pr: RegistryJson }>,
- *   files?: { filename: string, previous_filename?: string }[],
+ *   files?: { filename: string, previous_filename?: string, status?: string }[],
  *   reviews?: { user: { login: string }, state: string, commit_id: string }[],
  * }} args
  * @returns {Octokit}

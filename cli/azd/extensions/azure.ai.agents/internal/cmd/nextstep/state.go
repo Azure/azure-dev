@@ -20,6 +20,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"go.yaml.in/yaml/v3"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 const (
@@ -438,12 +439,14 @@ func collectServices(
 		if svc == nil || svc.Host != agentHost {
 			continue
 		}
+		protocol, multiProtocol := loadServiceProtocolInfo(project.Path, svc)
 		services = append(services, ServiceState{
-			Name:         svc.Name,
-			Host:         svc.Host,
-			RelativePath: svc.RelativePath,
-			Protocol:     loadServiceProtocol(project.Path, svc.RelativePath),
-			IsDeployed:   isDeployed(ctx, src, envName, svc.Name, errs),
+			Name:          svc.Name,
+			Host:          svc.Host,
+			RelativePath:  svc.RelativePath,
+			Protocol:      protocol,
+			MultiProtocol: multiProtocol,
+			IsDeployed:    isDeployed(ctx, src, envName, svc.Name, errs),
 		})
 	}
 
@@ -460,36 +463,103 @@ func collectServices(
 // manifest declares multiple protocols, ProtocolResponses wins over
 // ProtocolInvocations so the suggested payload works on the broadest set of
 // agents.
-func loadServiceProtocol(projectPath, relativePath string) string {
+func loadServiceProtocol(projectPath string, svc *azdext.ServiceConfig) string {
+	protocol, _ := loadServiceProtocolInfo(projectPath, svc)
+	return protocol
+}
+
+func loadServiceProtocolInfo(projectPath string, svc *azdext.ServiceConfig) (string, bool) {
+	if protocol, multiProtocol := loadServiceProtocolFromConfig(svc); protocol != "" {
+		return protocol, multiProtocol
+	}
+	if svc == nil {
+		return "", false
+	}
+	return loadServiceProtocolFromFile(projectPath, svc.RelativePath)
+}
+
+func loadServiceProtocolFromConfig(svc *azdext.ServiceConfig) (string, bool) {
+	props := nextStepServiceConfigProps(svc)
+	if len(props) == 0 {
+		return "", false
+	}
+	data, err := yaml.Marshal(props)
+	if err != nil {
+		return "", false
+	}
+	return loadServiceProtocolFromBytes(data)
+}
+
+func nextStepServiceConfigProps(svc *azdext.ServiceConfig) map[string]any {
+	if svc == nil {
+		return nil
+	}
+	inline := svc.GetAdditionalProperties()
+	if structHasKind(inline) {
+		return inline.AsMap()
+	}
+	cfg := svc.GetConfig()
+	if structHasKind(cfg) {
+		return cfg.AsMap()
+	}
+	return nil
+}
+
+func structHasKind(s *structpb.Struct) bool {
+	if s == nil {
+		return false
+	}
+	v, ok := s.GetFields()["kind"]
+	return ok && strings.TrimSpace(v.GetStringValue()) != ""
+}
+
+func loadServiceProtocolFromFile(projectPath, relativePath string) (string, bool) {
 	if projectPath == "" {
-		return ""
+		return "", false
 	}
 	manifestPath, err := paths.JoinAllowRoot(projectPath, relativePath, "agent.yaml")
 	if err != nil {
-		return ""
+		return "", false
 	}
 	data, err := os.ReadFile(manifestPath) //nolint:gosec // path is validated under the project root
 	if err != nil {
-		return ""
+		return "", false
 	}
+	return loadServiceProtocolFromBytes(data)
+}
+
+func loadServiceProtocolFromBytes(data []byte) (string, bool) {
 	var hosted agent_yaml.ContainerAgent
 	if err := yaml.Unmarshal(data, &hosted); err != nil {
-		return ""
+		return "", false
 	}
+	multiProtocol := len(hosted.Protocols) > 1
 
 	sawInvocations := false
+	sawActivity := false
+	sawInvocationsWS := false
 	for _, p := range hosted.Protocols {
 		switch strings.TrimSpace(p.Protocol) {
 		case ProtocolResponses:
-			return ProtocolResponses
+			return ProtocolResponses, multiProtocol
+		case ProtocolInvocationsWS:
+			sawInvocationsWS = true
 		case ProtocolInvocations:
 			sawInvocations = true
+		case ProtocolActivity, ProtocolActivityLegacy:
+			sawActivity = true
 		}
 	}
 	if sawInvocations {
-		return ProtocolInvocations
+		return ProtocolInvocations, multiProtocol
 	}
-	return ""
+	if sawActivity {
+		return ProtocolActivity, multiProtocol
+	}
+	if sawInvocationsWS {
+		return ProtocolInvocationsWS, multiProtocol
+	}
+	return "", multiProtocol
 }
 
 // detectMissingVars walks each service's agent.yaml environment_variables

@@ -398,9 +398,15 @@ var (
 
 // Infrastructure command related fields
 var (
-	// The IaC provider used for infrastructure generation.
+	// The IaC provider. Emitted by `infra generate` / `synth` as a single string (the value read
+	// from azure.yaml's `infra.provider`, for example "bicep", "terraform", "auto" when unset, or
+	// "custom" for a non-built-in extension provider — the raw name is never emitted) and by
+	// provision / up / down as a sorted, de-duplicated string slice of the resolved provider(s) —
+	// built-in kinds verbatim, or "custom" for a non-built-in extension provider. Multi-layer
+	// projects that combine providers record each distinct value (for example
+	// ["bicep", "terraform"]).
 	//
-	// Example: "bicep", "terraform"
+	// Example: "bicep", "terraform", "arm", "pulumi", "custom", ["bicep", "terraform"]
 	InfraProviderKey = AttributeKey{
 		Key:            attribute.Key("infra.provider"),
 		Classification: SystemMetadata,

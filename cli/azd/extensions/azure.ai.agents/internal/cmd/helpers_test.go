@@ -4,7 +4,9 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -57,6 +59,16 @@ func TestDetectStartupCommand(t *testing.T) {
 			expected: "python main.py",
 		},
 		{
+			name:     "python with main.py and helper file",
+			files:    []string{"main.py", "tools.py"},
+			expected: "python main.py",
+		},
+		{
+			name:     "case-sensitive Python entry point",
+			files:    []string{"Main.py"},
+			expected: "",
+		},
+		{
 			name:     "dotnet with csproj",
 			files:    []string{"MyAgent.csproj"},
 			expected: "dotnet run",
@@ -64,6 +76,11 @@ func TestDetectStartupCommand(t *testing.T) {
 		{
 			name:     "node with package.json",
 			files:    []string{"package.json"},
+			expected: "npm start",
+		},
+		{
+			name:     "node with Python helper file",
+			files:    []string{"package.json", "tools.py"},
 			expected: "npm start",
 		},
 		{
@@ -136,6 +153,12 @@ func TestDetectProjectType(t *testing.T) {
 			wantStartCmd: "npm start",
 		},
 		{
+			name:         "node takes precedence over Python helper file",
+			files:        []string{"package.json", "tools.py"},
+			wantLanguage: "node",
+			wantStartCmd: "npm start",
+		},
+		{
 			name:         "unknown when no markers",
 			files:        []string{"Dockerfile"},
 			wantLanguage: "unknown",
@@ -160,6 +183,101 @@ func TestDetectProjectType(t *testing.T) {
 			}
 			if pt.StartCmd != tt.wantStartCmd {
 				t.Errorf("StartCmd = %q, want %q", pt.StartCmd, tt.wantStartCmd)
+			}
+		})
+	}
+}
+
+func TestWarnProjectInspectionFailure(t *testing.T) {
+	var stderr bytes.Buffer
+	warnProjectInspectionFailure(&stderr, "missing-service", errors.New("access denied"))
+
+	warning := stderr.String()
+	require.Contains(t, warning, `cannot read project directory "missing-service": access denied`)
+	require.Contains(t, warning, "code deploy will not be offered")
+	require.Contains(t, warning, "no local start command can be detected")
+	require.Contains(t, warning, "Check the service path in azure.yaml and directory permissions")
+}
+
+func TestCodeDeployProjectDetection(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		files      []string
+		wantPython bool
+		wantDotnet bool
+		wantCode   bool
+	}{
+		{
+			name:       "modern Python project",
+			files:      []string{"pyproject.toml"},
+			wantPython: true,
+			wantCode:   true,
+		},
+		{
+			name:       "requirements Python project",
+			files:      []string{"requirements.txt"},
+			wantPython: true,
+			wantCode:   true,
+		},
+		{
+			name:       "standalone Python file",
+			files:      []string{"agent.py"},
+			wantPython: true,
+			wantCode:   true,
+		},
+		{
+			name:       "Node project with Python helper",
+			files:      []string{"package.json", "tools.py"},
+			wantPython: true,
+		},
+		{
+			name:  "case-sensitive Python marker",
+			files: []string{"PYPROJECT.TOML"},
+		},
+		{
+			name:       "dotnet project",
+			files:      []string{"Agent.csproj"},
+			wantDotnet: true,
+			wantCode:   true,
+		},
+		{
+			name:       "mixed supported project",
+			files:      []string{"pyproject.toml", "Agent.csproj"},
+			wantPython: true,
+			wantDotnet: true,
+			wantCode:   true,
+		},
+		{
+			name:  "unsupported Node project",
+			files: []string{"package.json"},
+		},
+		{
+			name:  "unknown project",
+			files: []string{"README.md"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			for _, file := range tt.files {
+				if err := os.WriteFile(filepath.Join(dir, file), nil, 0600); err != nil {
+					t.Fatalf("failed to create test file %s: %v", file, err)
+				}
+			}
+
+			if got := isPythonProject(dir); got != tt.wantPython {
+				t.Errorf("isPythonProject() = %t, want %t", got, tt.wantPython)
+			}
+			if got := isDotnetProject(dir); got != tt.wantDotnet {
+				t.Errorf("isDotnetProject() = %t, want %t", got, tt.wantDotnet)
+			}
+			if got := supportsCodeDeploy(dir); got != tt.wantCode {
+				t.Errorf("supportsCodeDeploy() = %t, want %t", got, tt.wantCode)
 			}
 		})
 	}
@@ -837,4 +955,42 @@ func TestResolveAgentProtocol_MultipleServicesPromptsOnce(t *testing.T) {
 	require.Equal(t, "svc-a", serviceName)
 	require.Equal(t, int32(1), promptServer.selectCalls.Load(),
 		"resolveAgentProtocol should trigger exactly one prompt")
+}
+
+func TestLoadServiceRunEnvironmentUsesRawValues(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte(`services:
+  agent:
+    host: azure.ai.agent
+    env:
+      PROJECT: ${{project.endpoint}}
+      ENABLED: true
+      SHARED: direct
+`),
+		0o600,
+	))
+	svc := &azdext.ServiceConfig{
+		Name: "agent",
+		Environment: map[string]string{
+			"PROJECT": "",
+			"ENABLED": "",
+			"SHARED":  "expanded",
+		},
+	}
+
+	env, err := loadServiceRunEnvironment(
+		root,
+		svc,
+		map[string]string{"CONFIG_ONLY": "config", "SHARED": "config"},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "${{project.endpoint}}", env["PROJECT"])
+	require.Equal(t, "true", env["ENABLED"])
+	require.Equal(t, "direct", env["SHARED"])
+	require.Equal(t, "config", env["CONFIG_ONLY"])
 }

@@ -159,6 +159,7 @@ words:
   - DYLD
   - dyld
   - LDLIBS
+  - vally
 languageSettings:
   - languageId: go
     ignoreRegExpList:

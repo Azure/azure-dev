@@ -160,6 +160,98 @@
           }
         }
       ]
+    },
+    {
+      "id": "azure.ai.rle",
+      "namespace": "ai.rle",
+      "displayName": "RLE (Preview)",
+      "description": "Manage RLE resources from your terminal. (Preview)",
+      "versions": [
+        {
+          "version": "0.1.0-preview",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "$env:AZD_AI_RLE_ENABLE = \"true\"; azd ai rle <command> [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Copy the OpenEnv echo sample into a local RLE environment.",
+              "usage": "$env:AZD_AI_RLE_ENABLE = \"true\"; azd ai rle init"
+            },
+            {
+              "name": "deploy",
+              "description": "Build, push, and create or update the RLE environment.",
+              "usage": "$env:AZD_AI_RLE_ENABLE = \"true\"; $env:FOUNDRY_PROJECT_ENDPOINT = \"https://<account>.services.ai.azure.com/api/projects/<project>\"; $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = \"<registry>.azurecr.io\"; azd ai rle deploy"
+            },
+            {
+              "name": "run",
+              "description": "Build and run the local RLE environment container.",
+              "usage": "$env:AZD_AI_RLE_ENABLE = \"true\"; azd ai rle run"
+            },
+            {
+              "name": "invoke",
+              "description": "Lease a deployed RLE sandbox and open an OpenEnv runtime shell.",
+              "usage": "$env:AZD_AI_RLE_ENABLE = \"true\"; azd ai rle invoke"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "03dfbdb4d0c9daf704d00291facada414eca2a781ffb07e67b0d65e0d69327ee"
+              },
+              "entryPoint": "azure-ai-rle-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-rle_0.1.0-preview/azure-ai-rle-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "777f9c1b5990d1066b6a15cf18a3639dffed524cca725da630bde62bf9e0c879"
+              },
+              "entryPoint": "azure-ai-rle-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-rle_0.1.0-preview/azure-ai-rle-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "d623e059f4b56412e66401c70fe4f39e5ea64d837f4973578c7c49a4bbcc13df"
+              },
+              "entryPoint": "azure-ai-rle-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-rle_0.1.0-preview/azure-ai-rle-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "14fb67415a3f30469d709bb4d778273d8726d8c881c27130b06ccd74d59f8f92"
+              },
+              "entryPoint": "azure-ai-rle-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-rle_0.1.0-preview/azure-ai-rle-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "babdd938e3c476fac0b9f6d783fa6d56c521bce8c4422febacc7fe2437bb364e"
+              },
+              "entryPoint": "azure-ai-rle-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-rle_0.1.0-preview/azure-ai-rle-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "a98ba6ea7239ec193fb72d0c3a54c49802186c3755b23fe7b44d4cc1586bc9a9"
+              },
+              "entryPoint": "azure-ai-rle-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-rle_0.1.0-preview/azure-ai-rle-windows-arm64.zip"
+            }
+          }
+        }
+      ],
+      "tags": [
+        "ai",
+        "rle"
+      ]
     }
   ]
 }

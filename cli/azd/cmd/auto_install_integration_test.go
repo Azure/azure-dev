@@ -297,8 +297,10 @@ func containsNoPromptFalse(args []string) bool {
 	return slices.Contains(args, "--no-prompt=false")
 }
 
-// clearAgentEnvVarsForTest clears all environment variables that could trigger agent detection.
-// This ensures tests are isolated from the ambient environment.
+// clearAgentEnvVarsForTest clears all environment variables that could trigger agent detection
+// or CI detection. This ensures ParseGlobalFlags tests get a deterministic interactive baseline
+// (NoPrompt=false) regardless of the ambient environment, including when the test suite itself
+// runs inside a CI/CD provider.
 func clearAgentEnvVarsForTest(t *testing.T) {
 	envVarsToUnset := []string{
 		// Claude Code
@@ -313,6 +315,11 @@ func clearAgentEnvVarsForTest(t *testing.T) {
 		"AZD_NON_INTERACTIVE",
 		// User agent
 		internal.AzdUserAgentEnvVar,
+		// CI/CD providers (see internal/tracing/resource/ci.go). Cleared so that a suite running
+		// inside CI does not ambiently flip NoPrompt to true via auto-detection.
+		"TF_BUILD", "GITHUB_ACTIONS", "APPVEYOR", "TRAVIS", "CIRCLECI", "GITLAB_CI",
+		"CODEBUILD_BUILD_ID", "JENKINS_URL", "TEAMCITY_VERSION", "JB_SPACE_API_URL",
+		"bamboo.buildKey", "BITBUCKET_BUILD_NUMBER", "CI", "BUILD_ID",
 	}
 
 	for _, envVar := range envVarsToUnset {

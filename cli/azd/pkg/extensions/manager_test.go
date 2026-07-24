@@ -188,7 +188,7 @@ func Test_List_Install_Uninstall_Flow(t *testing.T) {
 	require.Greater(t, len(installed), 0)
 
 	// Uninstall the first extension
-	err = manager.Uninstall(extensions[0].Id)
+	err = manager.Uninstall(t.Context(), extensions[0].Id)
 	require.NoError(t, err)
 
 	// List installed extensions (expect 0)
@@ -320,7 +320,7 @@ func Test_Install_With_SemverConstraints(t *testing.T) {
 				require.NotNil(t, extensionVersion)
 				require.Equal(t, tc.Expected, extensionVersion.Version)
 
-				err = manager.Uninstall("test.extension")
+				err = manager.Uninstall(t.Context(), "test.extension")
 				require.NoError(t, err)
 			}
 		})
@@ -2334,7 +2334,7 @@ func Test_Upgrade_DependencyUpgrade_RefusesToDowngradeOutsideConstraint(t *testi
 	require.NoError(t, err)
 
 	// Simulate the user upgrading the dependency standalone to a version outside the constraint.
-	require.NoError(t, manager.Uninstall("test.child"))
+	require.NoError(t, manager.Uninstall(t.Context(), "test.child"))
 	children, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.child"})
 	require.NoError(t, err)
 	_, err = manager.Install(*mockContext.Context, children[0], "2.0.0")
@@ -2560,7 +2560,7 @@ func Test_Upgrade_DependencyUpgrade_EmptyConstraint(t *testing.T) {
 
 	// Force the child to an older version to confirm dependency upgrade does NOT
 	// run when the parent's dependency constraint is empty.
-	_ = manager.Uninstall("test.child")
+	_ = manager.Uninstall(t.Context(), "test.child")
 	childMeta, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.child"})
 	require.NoError(t, err)
 	_, err = manager.Install(*mockContext.Context, childMeta[0], "1.0.0")

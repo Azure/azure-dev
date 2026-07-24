@@ -334,6 +334,20 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 	upAttrs := attributesMap(cmdSpans["cmd.up"].Attributes)
 	require.Contains(t, upAttrs, fields.CmdArgsCount.Key)
 	require.Equal(t, float64(0), upAttrs[fields.CmdArgsCount.Key])
+
+	// infra.provider is scoped to the provisioning lifecycle. The minimal project has no explicit
+	// provider, so it resolves to the default ("bicep"). It is recorded as a slice of the resolved
+	// providers and must be present with that value on cmd.provision and the parent cmd.up span,
+	// and absent from the synthetic cmd.package span (packaging is unrelated to the IaC provider).
+	// Recorded up front on the common `up` path, so it is present even though provisioning
+	// subsequently fails.
+	require.NotContains(t, attributesMap(cmdSpans["cmd.package"].Attributes), fields.InfraProviderKey.Key,
+		"infra.provider must not be recorded on the synthetic cmd.package span")
+	provisionAttrs := attributesMap(cmdSpans["cmd.provision"].Attributes)
+	require.ElementsMatch(t, []string{"bicep"}, provisionAttrs[fields.InfraProviderKey.Key],
+		"cmd.provision should carry the resolved infra.provider")
+	require.ElementsMatch(t, []string{"bicep"}, upAttrs[fields.InfraProviderKey.Key],
+		"cmd.up should carry the resolved infra.provider")
 }
 
 func Test_Telemetry_AlphaFeatures_Enabled(t *testing.T) {

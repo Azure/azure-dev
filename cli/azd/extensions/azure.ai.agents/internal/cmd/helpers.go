@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,9 +24,11 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
+	"azureaiagent/internal/pkg/projectconfig"
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/google/uuid"
 	"golang.org/x/term"
 )
@@ -503,29 +506,99 @@ type ProjectType struct {
 	StartCmd string // suggested start command
 }
 
+type projectLanguages struct {
+	python         bool
+	pythonMetadata bool
+	pythonMain     bool
+	dotnet         bool
+	node           bool
+}
+
+func detectProjectLanguages(projectDir string) projectLanguages {
+	if projectDir == "" {
+		projectDir = "."
+	}
+
+	entries, err := os.ReadDir(projectDir)
+	if err != nil {
+		warnProjectInspectionFailure(os.Stderr, projectDir, err)
+		return projectLanguages{}
+	}
+
+	var languages projectLanguages
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		switch {
+		case name == "pyproject.toml",
+			name == "requirements.txt":
+			languages.python = true
+			languages.pythonMetadata = true
+		case strings.HasSuffix(name, ".py"):
+			languages.python = true
+			if name == "main.py" {
+				languages.pythonMain = true
+			}
+		case strings.HasSuffix(name, ".csproj"):
+			languages.dotnet = true
+		case name == "package.json":
+			languages.node = true
+		}
+	}
+
+	return languages
+}
+
+func warnProjectInspectionFailure(writer io.Writer, projectDir string, err error) {
+	fmt.Fprintf(writer, "%s", output.WithWarningFormat(
+		"WARNING: cannot read project directory %q: %v. "+
+			"Treating the project as unknown, so code deploy will not be offered "+
+			"and no local start command can be detected. "+
+			"Check the service path in azure.yaml and directory permissions.\n",
+		projectDir,
+		err,
+	))
+}
+
+func isPythonProject(projectDir string) bool {
+	return detectProjectLanguages(projectDir).python
+}
+
+func isDotnetProject(projectDir string) bool {
+	return detectProjectLanguages(projectDir).dotnet
+}
+
+func supportsCodeDeploy(projectDir string) bool {
+	languages := detectProjectLanguages(projectDir)
+	// Python metadata is authoritative. A lone .py file is only a
+	// fallback when package.json does not identify a Node project.
+	supportsPython := languages.pythonMetadata ||
+		(languages.python && !languages.node)
+	return languages.dotnet || supportsPython
+}
+
 func detectProjectType(projectDir string) ProjectType {
-	// Python: pyproject.toml or requirements.txt
-	if fileExists(filepath.Join(projectDir, "pyproject.toml")) ||
-		fileExists(filepath.Join(projectDir, "requirements.txt")) {
+	languages := detectProjectLanguages(projectDir)
+
+	if languages.pythonMetadata {
 		if fileExists(filepath.Join(projectDir, "main.py")) {
 			return ProjectType{Language: "python", StartCmd: "python main.py"}
 		}
 		return ProjectType{Language: "python", StartCmd: ""}
 	}
 
-	// .NET: any .csproj file
-	matches, _ := filepath.Glob(filepath.Join(projectDir, "*.csproj"))
-	if len(matches) > 0 {
+	if languages.dotnet {
 		return ProjectType{Language: "dotnet", StartCmd: "dotnet run"}
 	}
 
-	// Node.js: package.json
-	if fileExists(filepath.Join(projectDir, "package.json")) {
+	if languages.node {
 		return ProjectType{Language: "node", StartCmd: "npm start"}
 	}
 
-	// Check for standalone main.py as fallback
-	if fileExists(filepath.Join(projectDir, "main.py")) {
+	if languages.pythonMain {
 		return ProjectType{Language: "python", StartCmd: "python main.py"}
 	}
 
@@ -871,6 +944,7 @@ type ServiceRunContext struct {
 	ServiceName    string // the resolved service name (from azure.yaml)
 	ProjectDir     string // absolute path to the service source directory
 	StartupCommand string // startupCommand from AdditionalProperties (may be empty)
+	Environment    map[string]string
 	// Definition is the resolved agent definition (from the inline azure.yaml
 	// entry or a legacy agent.yaml). It is nil when no definition can be resolved.
 	Definition *agent_yaml.ContainerAgent
@@ -883,6 +957,20 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	if err != nil {
 		return nil, err
 	}
+	if err := projectpkg.ResolveServiceConfigInPlace(
+		svc,
+		project.Path,
+	); err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf(
+				"failed to resolve agent service %s: %s",
+				svc.Name,
+				err,
+			),
+			"fix the agent service configuration in azure.yaml",
+		)
+	}
 
 	projectDir, err := paths.JoinAllowRoot(project.Path, svc.RelativePath)
 	if err != nil {
@@ -894,8 +982,28 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	}
 
 	var startupCmd string
-	if agentConfig, cfgErr := projectpkg.LoadServiceTargetAgentConfig(svc); cfgErr == nil {
+	serviceEnv := map[string]string{}
+	if agentConfig, cfgErr := projectpkg.LoadServiceTargetAgentConfig(
+		svc,
+	); cfgErr == nil {
 		startupCmd = agentConfig.StartupCommand
+		maps.Copy(serviceEnv, agentConfig.Environment)
+	}
+	serviceEnv, err = loadServiceRunEnvironment(
+		project.Path,
+		svc,
+		serviceEnv,
+	)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf(
+				"failed to load environment for %s: %s",
+				svc.Name,
+				err,
+			),
+			"fix the service env configuration in azure.yaml",
+		)
 	}
 
 	var definition *agent_yaml.ContainerAgent
@@ -910,8 +1018,33 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 		ServiceName:    svc.Name,
 		ProjectDir:     projectDir,
 		StartupCommand: startupCmd,
+		Environment:    serviceEnv,
 		Definition:     definition,
 	}, nil
+}
+
+func loadServiceRunEnvironment(
+	projectRoot string,
+	svc *azdext.ServiceConfig,
+	base map[string]string,
+) (map[string]string, error) {
+	env := maps.Clone(base)
+	if env == nil {
+		env = map[string]string{}
+	}
+	raw, err := projectconfig.LoadServiceEnvironment(
+		projectRoot,
+		svc.GetName(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if raw == nil {
+		maps.Copy(env, svc.GetEnvironment())
+	} else {
+		maps.Copy(env, raw)
+	}
+	return env, nil
 }
 
 // toServiceKey converts a service name into the env var key format (uppercase, underscores).

@@ -1,0 +1,43 @@
+# Outputs consumed by azd. Each value is written into the azd environment, so
+# the names must stay stable.
+
+output "AZURE_RESOURCE_GROUP" {
+  value = azurerm_resource_group.this.name
+}
+
+output "AZURE_AI_PROJECT_ID" {
+  value = azapi_resource.project.id
+}
+
+output "AZURE_AI_ACCOUNT_NAME" {
+  value = azapi_resource.foundry_account.name
+}
+
+output "AZURE_AI_PROJECT_NAME" {
+  value = azapi_resource.project.name
+}
+
+output "AZURE_OPENAI_ENDPOINT" {
+  value = "https://${azapi_resource.foundry_account.name}.openai.azure.com/"
+}
+
+output "FOUNDRY_PROJECT_ENDPOINT" {
+  value = "https://${azapi_resource.foundry_account.name}.services.ai.azure.com/api/projects/${azapi_resource.project.name}"
+}
+
+output "AZURE_AI_PROJECT_CONNECTION_NAMES" {
+  value = join(",", [for c in azapi_resource.connection : c.name])
+}
+{{ if .IncludeAcr }}
+output "AZURE_CONTAINER_REGISTRY_ENDPOINT" {
+  value = azurerm_container_registry.this.login_server
+}
+
+output "AZURE_CONTAINER_REGISTRY_RESOURCE_ID" {
+  value = azurerm_container_registry.this.id
+}
+
+output "AZURE_AI_PROJECT_ACR_CONNECTION_NAME" {
+  value = azapi_resource.acr_connection.name
+}
+{{- end }}

@@ -172,22 +172,25 @@ func askOnePrompt(p survey.Prompt, response any, isTerminal bool, stdout io.Writ
 		return nil
 	case *survey.MultiSelect:
 		// For multi-selection, azd will do a Select for each item, using the default to control the Y or N
-		defValue, err := v.Default.([]string)
-		if !err {
+		defValue, ok := v.Default.([]string)
+		if !ok {
 			return fmt.Errorf("default response type is not a string list '%s'", v.Message)
 		}
 		fmt.Fprintf(stdout, "%s:", v.Message)
 		selection := make([]string, 0, len(v.Options))
 		for _, item := range v.Options {
-			response := slices.Contains(defValue, item)
+			itemResponse := slices.Contains(defValue, item)
+			// Pass the per-item default so that, when stdin is exhausted, each item falls back to
+			// its default selection state (consistent with how Input/Select fall back to defaults).
 			err := askOnePrompt(&survey.Confirm{
 				Message: fmt.Sprintf("\n  select %s?", item),
-			}, &response, isTerminal, stdout, stdin)
+				Default: itemResponse,
+			}, &itemResponse, isTerminal, stdout, stdin)
 			if err != nil {
 				return err
 			}
 			confirmation := "N"
-			if response {
+			if itemResponse {
 				confirmation = "Y"
 				selection = append(selection, item)
 			}
@@ -231,10 +234,12 @@ func askOnePrompt(p survey.Prompt, response any, isTerminal bool, stdout io.Writ
 			strings.Join(v.Options, ","))
 	case *survey.Confirm:
 		var pResponse = response.(*bool)
+		// Use the prompt's Default (callers pass a zero-initialized *pResponse with survey.Confirm.Default).
+		defaultValue := v.Default
 
 		for {
 			fmt.Fprint(stdout, v.Message)
-			if *pResponse {
+			if defaultValue {
 				fmt.Fprint(stdout, " (Y/n)")
 			} else {
 				fmt.Fprintf(stdout, " (y/N)")
@@ -251,6 +256,18 @@ func askOnePrompt(p survey.Prompt, response any, isTerminal bool, stdout io.Writ
 				*pResponse = false
 				return nil
 			case "":
+				// An empty line (the user pressed Enter) or EOF (piped stdin exhausted) accepts
+				// the prompt's default value, consistent with how Input and Select fall back to
+				// their defaults. Real CI/agent runs auto-enable no-prompt mode (askOneNoPrompt),
+				// so this interactive path is only reached when input is piped in.
+				*pResponse = defaultValue
+				return nil
+			}
+
+			// A final invalid token immediately followed by EOF has no further input to reprocess;
+			// fall back to the default rather than looping forever.
+			if errors.Is(err, io.EOF) {
+				*pResponse = defaultValue
 				return nil
 			}
 		}

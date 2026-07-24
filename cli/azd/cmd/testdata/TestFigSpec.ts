@@ -937,7 +937,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--protocol'],
-									description: 'Protocols supported by the agent (e.g., \'responses\', \'invocations\'). Can be specified multiple times.',
+									description: 'Protocols supported by the agent (responses, invocations, invocations_ws, activity). Can be specified multiple times.',
 									isRepeatable: true,
 									args: [
 										{
@@ -3440,6 +3440,18 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['version'],
 							description: 'Display the extension version',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json'],
+										},
+									],
+								},
+							],
 						},
 					],
 				},
@@ -4498,6 +4510,15 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--from-version'],
+											description: 'Version to branch the new version from (defaults to the latest version).',
+											args: [
+												{
+													name: 'from-version',
+												},
+											],
+										},
+										{
 											name: ['--index'],
 											description: 'Search index name. Only valid for CognitiveSearch (Azure AI Search) connections; required there.',
 											args: [
@@ -4569,6 +4590,15 @@ const completionSpec: Fig.Spec = {
 											name: ['--force'],
 											description: 'Skip confirmation prompts and apply the removal immediately.',
 											isDangerous: true,
+										},
+										{
+											name: ['--from-version'],
+											description: 'Version to branch the new version from (defaults to the latest version).',
+											args: [
+												{
+													name: 'from-version',
+												},
+											],
 										},
 										{
 											name: ['--output', '-o'],
@@ -4779,6 +4809,15 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--from-version'],
+											description: 'Version to branch the new version from (defaults to the latest version).',
+											args: [
+												{
+													name: 'from-version',
+												},
+											],
+										},
+										{
 											name: ['--output', '-o'],
 											description: 'The output format',
 											args: [
@@ -4832,6 +4871,15 @@ const completionSpec: Fig.Spec = {
 											name: ['--force'],
 											description: 'Skip confirmation prompts and apply the removal immediately.',
 											isDangerous: true,
+										},
+										{
+											name: ['--from-version'],
+											description: 'Version to branch the new version from (defaults to the latest version).',
+											args: [
+												{
+													name: 'from-version',
+												},
+											],
 										},
 										{
 											name: ['--output', '-o'],
@@ -6916,7 +6964,7 @@ const completionSpec: Fig.Spec = {
 		},
 		{
 			name: ['--no-prompt'],
-			description: 'Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.',
+			description: 'Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically. Automatically enabled when azd detects a CI/CD or AI-agent environment; set AZD_NON_INTERACTIVE=false to opt out of that automatic enablement.',
 			isPersistent: true,
 		},
 		{

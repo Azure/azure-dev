@@ -120,7 +120,25 @@ func (a *OptimizeApplyAction) apply(
 		return err
 	}
 
-	serviceDir, err := paths.JoinAllowRoot(project.Path, svc.RelativePath)
+	usesFileRef, err := projectpkg.AgentDefinitionUsesFileRef(
+		svc,
+		project.Path,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to resolve agent definition: %w", err)
+	}
+	if usesFileRef {
+		return fmt.Errorf(
+			"agent service %q defines its agent via $ref; "+
+				"'optimize apply' cannot update a referenced file. "+
+				"Add OPTIMIZATION_LOCAL_DIR and "+
+				"OPTIMIZATION_CANDIDATE_ID to the referenced agent "+
+				"file, or inline the definition in azure.yaml",
+			svc.Name,
+		)
+	}
+	servicePath := svc.GetRelativePath()
+	serviceDir, err := paths.JoinAllowRoot(project.Path, servicePath)
 	if err != nil {
 		return fmt.Errorf("invalid service path for %s: %w", svc.Name, err)
 	}

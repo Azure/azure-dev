@@ -35,8 +35,8 @@
 /ext/vscode/                                @vhvb1989 @tg-msft @RickWinter @bwateratmsft
 
 # ── Infra / CI / Engineering ─────────────────────────────────────────────────
-/.github/                                   @danieljurek @vhvb1989 @tg-msft @RickWinter
-/eng/                                       @danieljurek @vhvb1989 @tg-msft @RickWinter
+/.github/                                   @danieljurek @vhvb1989 @tg-msft @RickWinter @richardpark-msft
+/eng/                                       @danieljurek @vhvb1989 @tg-msft @RickWinter @richardpark-msft
 /.config/1espt/                             @Azure/azure-sdk-eng
 
 # ── Schemas ───────────────────────────────────────────────────────────────────

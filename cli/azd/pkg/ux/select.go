@@ -112,7 +112,7 @@ func NewSelect(options *SelectOptions) *Select {
 	}
 
 	return &Select{
-		input:           internal.NewInput(),
+		input:           internal.NewInput(mergedOptions.Writer),
 		cursor:          internal.NewCursor(mergedOptions.Writer),
 		options:         &mergedOptions,
 		filteredChoices: selectOptions,

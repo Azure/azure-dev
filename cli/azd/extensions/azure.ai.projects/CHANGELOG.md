@@ -1,5 +1,15 @@
 # Release History
 
+## 1.0.0-beta.3 (2026-07-23)
+
+### Features Added
+
+- [[#9133]](https://github.com/Azure/azure-dev/pull/9133) The `azure.ai.projects` extension now owns Foundry project provisioning through the `microsoft.foundry` provider, including updating deployments and connections on existing projects (set `AZURE_AI_PROJECT_ID` to the project ARM resource ID), using the customer VNet region for private endpoints, and blocking automatic Azure Container Registry creation for private-network projects. Release it together with `azure.ai.agents`, since mixing versions can cause both extensions to register the same provider.
+
+### Bugs Fixed
+
+- [[#9149]](https://github.com/Azure/azure-dev/pull/9149) Fix Foundry project synthesis and provisioning not consistently resolving configuration declared inline in `azure.yaml`, via the deprecated `config:` block, or through local `$ref` files.
+
 ## 1.0.0-beta.2 (2026-07-09)
 
 ### Other Changes

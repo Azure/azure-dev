@@ -191,10 +191,14 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	require.NoError(t, err)
 
 	if session != nil {
-		session.Variables[recording.SubscriptionIdKey] = envValues[environment.SubscriptionIdEnvVarName].(string)
+		subID, ok := envValues[environment.SubscriptionIdEnvVarName].(string)
+		require.True(t, ok, "AZURE_SUBSCRIPTION_ID should be a string in env values")
+		session.Variables[recording.SubscriptionIdKey] = subID
 	}
 
-	url := fmt.Sprintf("%s/api/httptrigger", envValues["AZURE_FUNCTION_URI"])
+	funcURI, ok := envValues["AZURE_FUNCTION_URI"].(string)
+	require.True(t, ok, "AZURE_FUNCTION_URI should be a string in env values")
+	url := fmt.Sprintf("%s/api/httptrigger", funcURI)
 	t.Logf("Issuing GET request to function\n")
 
 	// We've seen some cases in CI where issuing a get right after a deploy ends up with us getting a 404, so retry the

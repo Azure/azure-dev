@@ -119,7 +119,7 @@ func NewMultiSelect(options *MultiSelectOptions) *MultiSelect {
 	}
 
 	return &MultiSelect{
-		input:           internal.NewInput(),
+		input:           internal.NewInput(mergedOptions.Writer),
 		cursor:          internal.NewCursor(mergedOptions.Writer),
 		options:         &mergedOptions,
 		filteredChoices: selectOptions,

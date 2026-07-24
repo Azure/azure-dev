@@ -33,6 +33,7 @@ Schemas, flags, environment variables, and configuration details.
 - [azure.yaml Schema](reference/azure-yaml-schema.md) — Project configuration file reference
 - [Feature Status](reference/feature-status.md) — Current maturity status of all features
 - [Telemetry Data Reference](reference/telemetry-data.md) — Complete schema of all telemetry events and fields
+- [Network Endpoints](reference/network-endpoints.md) — External hosts `azd` contacts at runtime (for firewall allowlisting)
 
 ## Architecture
 

@@ -122,24 +122,25 @@ func TestOptions_GetWithDefaults(t *testing.T) {
 			name: "merges deployment stacks",
 			baseOptions: Options{
 				Provider: Bicep,
-				DeploymentStacks: map[string]any{
-					"stack1": "value1",
+				DeploymentStacks: &DeploymentStacksConfig{
+					ActionOnUnmanage: &ActionOnUnmanageConfig{Resources: "delete"},
+					DenySettings:     &DenySettingsConfig{Mode: "denyDelete"},
 				},
 			},
 			otherOptions: []Options{
 				{
-					DeploymentStacks: map[string]any{
-						"stack2": "value2",
-					},
+					Module: "custom-module",
+					Name:   "custom-name",
 				},
 			},
 			expectedResult: Options{
 				Provider: Bicep,
-				Module:   "main",
+				Module:   "custom-module",
 				Path:     "infra",
-				DeploymentStacks: map[string]any{
-					"stack1": "value1",
-					"stack2": "value2",
+				Name:     "custom-name",
+				DeploymentStacks: &DeploymentStacksConfig{
+					ActionOnUnmanage: &ActionOnUnmanageConfig{Resources: "delete"},
+					DenySettings:     &DenySettingsConfig{Mode: "denyDelete"},
 				},
 			},
 			expectError: false,
@@ -202,8 +203,8 @@ func TestOptions_GetWithDefaults(t *testing.T) {
 				Path:     "custom-path",
 				Module:   "custom-module",
 				Name:     "custom-name",
-				DeploymentStacks: map[string]any{
-					"key": "value",
+				DeploymentStacks: &DeploymentStacksConfig{
+					DenySettings: &DenySettingsConfig{Mode: "none"},
 				},
 				IgnoreDeploymentState: true,
 			},
@@ -213,8 +214,8 @@ func TestOptions_GetWithDefaults(t *testing.T) {
 				Path:     "custom-path",
 				Module:   "custom-module",
 				Name:     "custom-name",
-				DeploymentStacks: map[string]any{
-					"key": "value",
+				DeploymentStacks: &DeploymentStacksConfig{
+					DenySettings: &DenySettingsConfig{Mode: "none"},
 				},
 				IgnoreDeploymentState: true,
 			},

@@ -833,7 +833,14 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		logDS("%s", parametersHashErr.Error())
 	}
 
-	if !p.ignoreDeploymentState && parametersHashErr == nil {
+	useDeploymentState := p.useDeploymentStateShortcut(parametersHashErr)
+	if !useDeploymentState && !p.ignoreDeploymentState && parametersHashErr == nil {
+		// The only remaining reason the shortcut is disabled here is an active deployment-stacks
+		// configuration; surface it in the deployment-stacks debug log.
+		logDS("deployment stacks configuration present; bypassing deployment-state shortcut")
+	}
+
+	if useDeploymentState {
 		deploymentState, stateErr := p.deploymentState(ctx, planned, deployment, currentParamsHash)
 		if stateErr == nil {
 			// As a heuristic, we also check the existence of all resource groups
@@ -898,7 +905,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = new(currentParamsHash)
 	}
 
-	optionsMap, err := convert.ToMap(p.options)
+	optionsMap, err := p.deploymentOptionsMap(true)
 	if err != nil {
 		return nil, err
 	}
@@ -1660,7 +1667,7 @@ func (p *BicepProvider) destroyDeployment(
 			p.console.StopSpinner(ctx, progressMessage.Message, input.StepFailed)
 		}
 	}, func(progress *async.Progress[azapi.DeleteDeploymentProgress]) error {
-		optionsMap, err := convert.ToMap(p.options)
+		optionsMap, err := p.deploymentOptionsMap(false)
 		if err != nil {
 			return err
 		}

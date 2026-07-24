@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
 
 func Test_convertToProtoOptions(t *testing.T) {
@@ -35,10 +36,8 @@ func Test_convertToProtoOptions(t *testing.T) {
 				Path:     "/infra",
 				Module:   "main",
 				Name:     "layer1",
-				DeploymentStacks: map[string]any{
-					"stackName": "my-stack",
-					"intVal":    42,
-					"boolVal":   true,
+				DeploymentStacks: &provisioning.DeploymentStacksConfig{
+					DenySettings: &provisioning.DenySettingsConfig{Mode: "denyDelete"},
 				},
 				IgnoreDeploymentState: true,
 				Config: map[string]any{
@@ -56,9 +55,8 @@ func Test_convertToProtoOptions(t *testing.T) {
 				assert.Equal(t, "main", result.Module)
 				assert.Equal(t, "layer1", result.Name)
 				assert.True(t, result.IgnoreDeploymentState)
-				assert.Equal(t, "my-stack", result.DeploymentStacks["stackName"])
-				assert.Equal(t, "42", result.DeploymentStacks["intVal"])
-				assert.Equal(t, "true", result.DeploymentStacks["boolVal"])
+				// deploymentStacks is bicep-only and intentionally not forwarded to extensions.
+				assert.Empty(t, result.DeploymentStacks)
 				require.NotNil(t, result.Config)
 				assert.Equal(t, "value1", result.Config.Fields["key1"].GetStringValue())
 				nested := result.Config.Fields["nested"].GetStructValue()
@@ -122,6 +120,35 @@ func Test_convertToProtoOptions(t *testing.T) {
 			tt.verify(t, result, err)
 		})
 	}
+}
+
+// Test_ExternalProvisioningProvider_NameAndProgress covers the broker-independent surface of the
+// provider: the DI factory, Name(), and the reportProgress/stopProgress spinner helpers (including
+// their nil-console fallbacks). The broker-backed forwarders (Deploy/Preview/Destroy/etc.) require
+// a live gRPC broker and are tracked separately in issue #7480.
+func Test_ExternalProvisioningProvider_NameAndProgress(t *testing.T) {
+	factory := NewExternalProvisioningProviderFactory("my-provider", nil, nil)
+
+	t.Run("Name returns provider name", func(t *testing.T) {
+		provider := factory(mockinput.NewMockConsole())
+		assert.Equal(t, "my-provider", provider.Name())
+	})
+
+	t.Run("progress with console", func(t *testing.T) {
+		provider := factory(mockinput.NewMockConsole()).(*ExternalProvisioningProvider)
+		// Should not panic and should route through the console spinner.
+		provider.reportProgress(context.Background(), "deploying")
+		provider.stopProgress(context.Background(), nil)
+		provider.stopProgress(context.Background(), assert.AnError)
+	})
+
+	t.Run("progress with nil console", func(t *testing.T) {
+		provider := &ExternalProvisioningProvider{providerName: "no-console"}
+		// Falls back to a debug log / no-op without a console.
+		provider.reportProgress(context.Background(), "deploying")
+		provider.stopProgress(context.Background(), nil)
+		assert.Equal(t, "no-console", provider.Name())
+	})
 }
 
 func Test_convertFromProtoStateResult(t *testing.T) {

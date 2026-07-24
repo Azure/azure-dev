@@ -6,7 +6,7 @@ description: Extension for packaging Logic Apps Standard projects, including sup
 usage: Use logicappsstandard as language in your service configuration. If your Logic App has a custom code project, configure that path to the .csproj file using the customCodeProject property.
 # NOTE: Make sure version.txt is in sync with this version.
 version: 0.1.0
-requiredAzdVersion: ">= 1.28.0"
+requiredAzdVersion: ">= 1.28.1"
 language: go
 capabilities:
     - framework-service-provider

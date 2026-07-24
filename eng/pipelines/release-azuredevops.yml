@@ -8,6 +8,8 @@ trigger:
       - ext/azuredevops
       - eng/pipelines/release-azuredevops.yml
       - eng/pipelines/templates/stages/azuredevops-build-and-test.yml
+      - eng/pipelines/templates/stages/azuredevops-sign.yml
+      - eng/pipelines/templates/stages/azuredevops-publish-manual.yml
       - eng/pipelines/templates/jobs/azuredevops-build.yml
 
 pr:
@@ -16,6 +18,8 @@ pr:
       - ext/azuredevops
       - eng/pipelines/release-azuredevops.yml
       - eng/pipelines/templates/stages/azuredevops-build-and-test.yml
+      - eng/pipelines/templates/stages/azuredevops-sign.yml
+      - eng/pipelines/templates/stages/azuredevops-publish-manual.yml
       - eng/pipelines/templates/jobs/azuredevops-build.yml
 
 extends: 

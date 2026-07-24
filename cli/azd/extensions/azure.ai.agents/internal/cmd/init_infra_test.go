@@ -633,7 +633,7 @@ services:
     host: azure.ai.project
 `), 0600))
 	nestedDir := filepath.Join(projectRoot, "src", "agent")
-	require.NoError(t, os.MkdirAll(nestedDir, 0755))
+	require.NoError(t, os.MkdirAll(nestedDir, 0750))
 	t.Chdir(nestedDir)
 
 	require.NoError(t, ejectInfraAfterInit("bicep"))

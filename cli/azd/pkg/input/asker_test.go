@@ -295,6 +295,110 @@ func Test_NewAsker_NonTerminal_InputWithDefault(t *testing.T) {
 	require.Equal(t, "Bob", result)
 }
 
+func Test_NewAsker_NonTerminal_Confirm_EOFReturnsDefault(t *testing.T) {
+	// When piped stdin is exhausted (EOF) without an answer, the non-terminal Confirm falls back
+	// to the prompt's Default, consistent with how Input and Select behave on EOF. Real CI/agent
+	// runs auto-enable no-prompt mode (askOneNoPrompt); this interactive path is only reached when
+	// input is piped in and underfed.
+	tests := []struct {
+		name   string
+		defVal bool
+	}{
+		{"DefaultTrue", true},
+		{"DefaultFalse", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := strings.NewReader("") // immediate EOF
+			w := &bytes.Buffer{}
+
+			asker := NewAsker(false, false, w, r)
+			prompt := &survey.Confirm{
+				Message: "Continue?",
+				Default: tt.defVal,
+			}
+			// Zero-initialized response, mirroring AskerConsole.Confirm.
+			var result bool
+			err := asker(prompt, &result)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.defVal, result)
+		})
+	}
+}
+
+func Test_NewAsker_NonTerminal_MultiSelect_EOFReturnsDefaults(t *testing.T) {
+	// When piped stdin is exhausted (EOF) partway through a multi-select, each unanswered item
+	// falls back to its per-item default selection state rather than erroring. With input "n\n",
+	// the first item is explicitly declined and the second falls back to its default (selected).
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{"ImmediateEOF", "", []string{"a", "b"}},
+		{"PartialThenEOF", "n\n", []string{"b"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := strings.NewReader(tt.input)
+			w := &bytes.Buffer{}
+
+			asker := NewAsker(false, false, w, r)
+			prompt := &survey.MultiSelect{
+				Message: "Pick items:",
+				Options: []string{"a", "b"},
+				Default: []string{"a", "b"},
+			}
+			var result []string
+			err := asker(prompt, &result)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, result)
+		})
+	}
+}
+
+func Test_NewAsker_NonTerminal_Confirm_BlankHonorsDefaultWithZeroInit(t *testing.T) {
+	// Regression: AskerConsole.Confirm passes a zero-initialized *bool while setting
+	// survey.Confirm.Default. The non-terminal reader must key the indicator and the
+	// blank-line (Enter) result off v.Default, not the incoming *pResponse — otherwise
+	// DefaultValue: true would render "(y/N)" and return false on Enter.
+	tests := []struct {
+		name       string
+		defVal     bool
+		input      string
+		want       bool
+		wantIndica string
+	}{
+		{"DefaultTrueBlank", true, "\n", true, " (Y/n)"},
+		{"DefaultFalseBlank", false, "\n", false, " (y/N)"},
+		{"DefaultTrueExplicitNo", true, "n\n", false, " (Y/n)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := strings.NewReader(tt.input)
+			w := &bytes.Buffer{}
+
+			asker := NewAsker(false, false, w, r)
+			prompt := &survey.Confirm{
+				Message: "Continue?",
+				Default: tt.defVal,
+			}
+			// Zero-initialized response, mirroring AskerConsole.Confirm.
+			var result bool
+			err := asker(prompt, &result)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, result)
+			require.Contains(t, w.String(), tt.wantIndica)
+		})
+	}
+}
+
 func Test_NewAsker_NonTerminal_Confirm(t *testing.T) {
 	tests := []struct {
 		name   string

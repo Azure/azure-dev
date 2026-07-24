@@ -332,51 +332,45 @@ func listProjectDeployments(
 	return results, nil
 }
 
-// normalizeLoginServer strips any scheme (https://, http://) and trailing slash
-// from a container registry endpoint so it becomes a plain login server
-// (e.g., "myregistry.azurecr.io").
+// normalizeLoginServer strips any scheme (https://, http://) and trailing slash,
+// then lowercases a container registry endpoint for consistent comparison.
 func normalizeLoginServer(endpoint string) string {
-	endpoint = strings.TrimPrefix(endpoint, "https://")
-	endpoint = strings.TrimPrefix(endpoint, "http://")
-	endpoint = strings.TrimRight(endpoint, "/")
-	return endpoint
+	for _, prefix := range []string{"https://", "http://"} {
+		if len(endpoint) >= len(prefix) && strings.EqualFold(endpoint[:len(prefix)], prefix) {
+			endpoint = endpoint[len(prefix):]
+			break
+		}
+	}
+	return strings.ToLower(strings.TrimRight(endpoint, "/"))
 }
 
-// lookupAcrResourceId finds the ARM resource ID for an ACR given its login server endpoint.
-func lookupAcrResourceId(
+// listAcrResourceIds returns ARM resource IDs keyed by normalized ACR login server.
+func listAcrResourceIds(
 	ctx context.Context,
 	credential azcore.TokenCredential,
 	subscriptionId string,
-	loginServer string,
-) (string, error) {
-	loginServer = normalizeLoginServer(loginServer)
-	parts := strings.Split(loginServer, ".")
-	if len(parts) < 2 || parts[0] == "" {
-		return "", fmt.Errorf("invalid login server format: %q, expected e.g. %q", loginServer, "registry.azurecr.io")
-	}
-	registryName := parts[0]
-
+) (map[string]string, error) {
 	client, err := armcontainerregistry.NewRegistriesClient(subscriptionId, credential, azure.NewArmClientOptions())
 	if err != nil {
-		return "", fmt.Errorf("failed to create container registry client: %w", err)
+		return nil, fmt.Errorf("failed to create container registry client: %w", err)
 	}
 
+	resourceIds := map[string]string{}
 	pager := client.NewListPager(nil)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return "", fmt.Errorf("failed to list registries: %w", err)
+			return nil, fmt.Errorf("failed to list registries: %w", err)
 		}
 		for _, registry := range page.Value {
-			if registry.Name != nil && strings.EqualFold(*registry.Name, registryName) {
-				if registry.ID != nil {
-					return *registry.ID, nil
-				}
+			if registry.Properties != nil && registry.Properties.LoginServer != nil && registry.ID != nil {
+				loginServer := strings.ToLower(normalizeLoginServer(*registry.Properties.LoginServer))
+				resourceIds[loginServer] = *registry.ID
 			}
 		}
 	}
 
-	return "", fmt.Errorf("container registry '%s' not found in subscription", registryName)
+	return resourceIds, nil
 }
 
 // configureFoundryProjectEnv sets all Foundry project environment variables and discovers
@@ -524,7 +518,51 @@ func configureAcrConnection(
 	subscriptionId string,
 	acrConnections []azure.Connection,
 ) error {
-	if len(acrConnections) == 0 {
+	return configureAcrConnectionWithRegistryLoader(
+		ctx, azdClient, credential, envName, subscriptionId, acrConnections, listAcrResourceIds,
+	)
+}
+
+type acrRegistryLoader func(context.Context, azcore.TokenCredential, string) (map[string]string, error)
+
+type validatedAcrConnection struct {
+	connection azure.Connection
+	resourceId string
+}
+
+func configureAcrConnectionWithRegistryLoader(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	credential azcore.TokenCredential,
+	envName string,
+	subscriptionId string,
+	acrConnections []azure.Connection,
+	loadRegistries acrRegistryLoader,
+) error {
+	resourceIds, err := loadRegistries(ctx, credential, subscriptionId)
+	if err != nil {
+		return fmt.Errorf("listing container registries for connection validation: %w", err)
+	}
+
+	validatedConnections := make([]validatedAcrConnection, 0, len(acrConnections))
+	for _, connection := range acrConnections {
+		loginServer := normalizeLoginServer(connection.Target)
+		resourceId, found := resourceIds[strings.ToLower(loginServer)]
+		if !found {
+			fmt.Printf(
+				"Skipping container registry connection %s because %s does not reference an existing registry "+
+					"in the selected subscription.\n",
+				connection.Name, connection.Target,
+			)
+			continue
+		}
+		validatedConnections = append(validatedConnections, validatedAcrConnection{
+			connection: connection,
+			resourceId: resourceId,
+		})
+	}
+
+	if len(validatedConnections) == 0 {
 		fmt.Println("\n" +
 			"An Azure Container Registry (ACR) is required\n\n" +
 			"Foundry Hosted Agents need an Azure Container Registry to store container images before deployment.\n\n" +
@@ -545,9 +583,9 @@ func configureAcrConnection(
 
 		if resp.Value != "" {
 			loginServer := normalizeLoginServer(resp.Value)
-			resourceId, err := lookupAcrResourceId(ctx, credential, subscriptionId, loginServer)
-			if err != nil {
-				return fmt.Errorf("failed to lookup ACR resource ID: %w", err)
+			resourceId, found := resourceIds[strings.ToLower(loginServer)]
+			if !found {
+				return fmt.Errorf("container registry with login server %q not found in subscription", loginServer)
 			}
 
 			if err := setEnvValue(ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_ENDPOINT", loginServer); err != nil {
@@ -556,10 +594,22 @@ func configureAcrConnection(
 			if err := setEnvValue(ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID", resourceId); err != nil {
 				return err
 			}
+			if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_PROJECT_ACR_CONNECTION_NAME", ""); err != nil {
+				return err
+			}
 			if err := updatePendingACRSignal(ctx, azdClient, envName, true); err != nil {
 				log.Printf("warning: failed to update acr provision signal: %v", err)
 			}
 		} else {
+			for _, key := range []string{
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+			} {
+				if err := setEnvValue(ctx, azdClient, envName, key, ""); err != nil {
+					return err
+				}
+			}
 			if err := updatePendingACRSignal(ctx, azdClient, envName, false); err != nil {
 				log.Printf("warning: failed to update acr provision signal: %v", err)
 			}
@@ -567,18 +617,22 @@ func configureAcrConnection(
 		return nil
 	}
 
-	var selectedConnection *azure.Connection
+	var selectedConnection *validatedAcrConnection
 
-	if len(acrConnections) == 1 {
-		selectedConnection = &acrConnections[0]
-		fmt.Printf("Using container registry connection: %s (%s)\n", selectedConnection.Name, selectedConnection.Target)
+	if len(validatedConnections) == 1 {
+		selectedConnection = &validatedConnections[0]
+		fmt.Printf(
+			"Using container registry connection: %s (%s)\n",
+			selectedConnection.connection.Name,
+			selectedConnection.connection.Target,
+		)
 	} else {
-		fmt.Printf("Found %d container registry connections:\n", len(acrConnections))
+		fmt.Printf("Found %d container registry connections:\n", len(validatedConnections))
 
-		choices := make([]*azdext.SelectChoice, len(acrConnections))
-		for i, conn := range acrConnections {
+		choices := make([]*azdext.SelectChoice, len(validatedConnections))
+		for i, validated := range validatedConnections {
 			choices[i] = &azdext.SelectChoice{
-				Label: conn.Name,
+				Label: validated.connection.Name,
 				Value: fmt.Sprintf("%d", i),
 			}
 		}
@@ -594,13 +648,34 @@ func configureAcrConnection(
 		if err != nil {
 			return fmt.Errorf("failed to prompt for connection selection: %w", err)
 		}
-		selectedConnection = &acrConnections[int(*selectResp.Value)]
+		selectedConnection = &validatedConnections[int(*selectResp.Value)]
 	}
 
-	if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_PROJECT_ACR_CONNECTION_NAME", selectedConnection.Name); err != nil {
+	if err := setEnvValue(
+		ctx,
+		azdClient,
+		envName,
+		"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+		selectedConnection.connection.Name,
+	); err != nil {
 		return err
 	}
-	if err := setEnvValue(ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_ENDPOINT", normalizeLoginServer(selectedConnection.Target)); err != nil {
+	if err := setEnvValue(
+		ctx,
+		azdClient,
+		envName,
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT",
+		normalizeLoginServer(selectedConnection.connection.Target),
+	); err != nil {
+		return err
+	}
+	if err := setEnvValue(
+		ctx,
+		azdClient,
+		envName,
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
+		selectedConnection.resourceId,
+	); err != nil {
 		return err
 	}
 	if err := updatePendingACRSignal(ctx, azdClient, envName, true); err != nil {

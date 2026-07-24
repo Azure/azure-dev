@@ -23,7 +23,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -44,7 +43,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/benbjohnson/clock"
 	"github.com/joho/godotenv"
-	"github.com/sethvargo/go-retry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
@@ -1018,7 +1016,7 @@ func tempDirWithDiagnostics(t *testing.T) string {
 	if runtime.GOOS == "windows" {
 		// Enable our additional custom remove logic for Windows where we see locked files.
 		t.Cleanup(func() {
-			err := removeAllWithDiagnostics(t, temp)
+			err := osutil.RemoveAll(context.Background(), temp)
 			if err != nil {
 				logHandles(t, temp)
 				t.Fatalf("TempDirWithDiagnostics: %s", err)
@@ -1059,29 +1057,6 @@ func logHandles(t *testing.T, path string) {
 	span.SetAttributes(attribute.String("handle.stdout", rr.Stdout))
 	span.SetAttributes(attribute.String("ci.build.number", os.Getenv("BUILD_BUILDNUMBER")))
 	span.End()
-}
-
-func removeAllWithDiagnostics(t *testing.T, path string) error {
-	retryCount := 0
-	loggedOnce := false
-	return retry.Do(context.Background(), retry.WithMaxRetries(10, retry.NewConstant(1*time.Second)),
-		func(_ context.Context) error {
-			removeErr := os.RemoveAll(path)
-			if removeErr == nil {
-				return nil
-			}
-			t.Logf("failed to clean up %s with error: %v", path, removeErr)
-
-			if retryCount >= 2 && !loggedOnce {
-				// Only log once after 2 seconds - logHandles is pretty expensive and slow
-				logHandles(t, path)
-				loggedOnce = true
-			}
-
-			retryCount++
-			return retry.RetryableError(removeErr)
-		},
-	)
 }
 
 // Assert that all supported types from the infrastructure provider is marshalled and stored correctly in the environment.

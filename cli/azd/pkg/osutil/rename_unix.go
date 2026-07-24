@@ -14,3 +14,9 @@ import (
 func Rename(ctx context.Context, old, new string) error {
 	return os.Rename(old, new)
 }
+
+// RemoveAll removes path and any children it contains. The context is retained
+// for API parity with Windows, where it cancels retry backoff.
+func RemoveAll(_ context.Context, path string) error {
+	return os.RemoveAll(path)
+}

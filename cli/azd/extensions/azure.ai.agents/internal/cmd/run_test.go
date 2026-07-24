@@ -572,6 +572,41 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 	})
 }
 
+func TestEnvSliceHasKeyUsesPlatformCasing(t *testing.T) {
+	t.Parallel()
+
+	env := []string{"Path=process-value"}
+	if !envSliceHasKey(env, "Path") {
+		t.Fatal("expected exact-case environment key to match")
+	}
+
+	got := envSliceHasKey(env, "PATH")
+	want := runtime.GOOS == "windows"
+	if got != want {
+		t.Errorf("envSliceHasKey() = %t, want %t", got, want)
+	}
+}
+
+func TestMergeConfiguredEnvironmentEntriesUsesServicePrecedence(t *testing.T) {
+	t.Parallel()
+
+	entries := mergeConfiguredEnvironmentEntries(
+		[]string{"PATH=definition-value"},
+		[]string{"Path=service-value"},
+		true,
+	)
+
+	if len(entries) != 1 {
+		t.Fatalf("expected one entry, got %v", entries)
+	}
+	if entries["PATH"].key != "Path" {
+		t.Errorf("key = %q, want %q", entries["PATH"].key, "Path")
+	}
+	if entries["PATH"].value != "service-value" {
+		t.Errorf("value = %q, want %q", entries["PATH"].value, "service-value")
+	}
+}
+
 func TestAppendPortEnvVars(t *testing.T) {
 	t.Parallel()
 
@@ -993,6 +1028,35 @@ environment_variables:
 	})
 }
 
+func TestResolveServiceEnvironmentVars(t *testing.T) {
+	t.Parallel()
+
+	result, err := resolveServiceEnvironmentVars(
+		t.Context(),
+		map[string]string{
+			"ENDPOINT": "${FOUNDRY_PROJECT_ENDPOINT}/agents",
+			"PROJECT":  "${{project.endpoint}}",
+			"STATIC":   "value",
+		},
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://example",
+		},
+		"https://example/project",
+	)
+
+	if err != nil {
+		t.Fatalf("resolve service environment: %v", err)
+	}
+	want := []string{
+		"ENDPOINT=https://example/agents",
+		"PROJECT=https://example/project",
+		"STATIC=value",
+	}
+	if !slices.Equal(want, result) {
+		t.Fatalf("expected %v, got %v", want, result)
+	}
+}
+
 func TestVenvPip(t *testing.T) {
 	t.Parallel()
 
@@ -1009,6 +1073,107 @@ func TestVenvPip(t *testing.T) {
 		if result != expected {
 			t.Errorf("expected %q, got %q", expected, result)
 		}
+	}
+}
+
+func TestUvPythonInstallSteps(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		files     []string
+		wantSteps []dependencyInstallStep
+	}{
+		{
+			name:  "uv lock is authoritative",
+			files: []string{"pyproject.toml", "uv.lock", "requirements.txt"},
+			wantSteps: []dependencyInstallStep{{
+				startMessage:   "Synchronizing dependencies (uv.lock)...",
+				successMessage: "  ✓ Dependencies synchronized (uv.lock)",
+				errorMessage:   "uv sync failed",
+				args: []string{
+					"sync",
+					"--locked",
+					"--python", "python-path",
+					"--quiet",
+				},
+			}},
+		},
+		{
+			name:  "pyproject without lock uses editable install",
+			files: []string{"pyproject.toml"},
+			wantSteps: []dependencyInstallStep{{
+				startMessage:   "Installing dependencies (pyproject.toml)...",
+				successMessage: "  ✓ Dependencies installed (pyproject.toml)",
+				errorMessage:   "uv pip install failed",
+				args: []string{
+					"pip", "install", "-e", ".",
+					"--python", "python-path",
+					"--prerelease", "allow",
+					"--quiet",
+				},
+			}},
+		},
+		{
+			name:  "requirements without lock keeps requirements install",
+			files: []string{"requirements.txt"},
+			wantSteps: []dependencyInstallStep{{
+				startMessage:   "Installing dependencies (requirements.txt)...",
+				successMessage: "  ✓ Dependencies installed (requirements.txt)",
+				errorMessage:   "uv pip install failed",
+				args: []string{
+					"pip", "install", "-r", "requirements.txt",
+					"--python", "python-path",
+					"--prerelease", "allow",
+					"--quiet",
+				},
+			}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			projectDir := t.TempDir()
+			for _, name := range tt.files {
+				if err := os.WriteFile(filepath.Join(projectDir, name), nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			got := uvPythonInstallSteps(projectDir, "python-path")
+			if len(got) != len(tt.wantSteps) {
+				t.Fatalf("got %d steps, want %d: %#v", len(got), len(tt.wantSteps), got)
+			}
+			for i := range got {
+				if got[i].startMessage != tt.wantSteps[i].startMessage ||
+					got[i].successMessage != tt.wantSteps[i].successMessage ||
+					got[i].errorMessage != tt.wantSteps[i].errorMessage ||
+					!slices.Equal(got[i].args, tt.wantSteps[i].args) {
+					t.Errorf("step %d = %#v, want %#v", i, got[i], tt.wantSteps[i])
+				}
+			}
+		})
+	}
+}
+
+func TestInstallPythonDepsRequiresUvForLock(t *testing.T) {
+	projectDir := t.TempDir()
+	for _, name := range []string{"pyproject.toml", "uv.lock"} {
+		if err := os.WriteFile(filepath.Join(projectDir, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Setenv("PATH", t.TempDir())
+
+	err := installPythonDeps(projectDir)
+	if err == nil {
+		t.Fatal("expected locked project without uv to fail")
+	}
+	if !strings.Contains(err.Error(), "uv is required to synchronize dependencies from uv.lock") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

@@ -5,6 +5,8 @@ package cmd
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -21,6 +23,7 @@ type deployModeProjectServer struct {
 	azdext.UnimplementedProjectServiceServer
 
 	mu       sync.Mutex
+	path     string
 	services map[string]*azdext.ServiceConfig
 	sets     map[string]map[string]any // serviceName -> path -> value
 	unsets   map[string][]string       // serviceName -> unset paths
@@ -31,7 +34,9 @@ func (s *deployModeProjectServer) Get(
 ) (*azdext.GetProjectResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return &azdext.GetProjectResponse{Project: &azdext.ProjectConfig{Services: s.services}}, nil
+	return &azdext.GetProjectResponse{
+		Project: &azdext.ProjectConfig{Path: s.path, Services: s.services},
+	}, nil
 }
 
 func (s *deployModeProjectServer) SetServiceConfigValue(
@@ -143,6 +148,7 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			server := &deployModeProjectServer{
+				path:     t.TempDir(),
 				services: map[string]*azdext.ServiceConfig{svcName: tc.service},
 			}
 			client := newProjectRecorderClient(t, server)
@@ -174,6 +180,7 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 // deploy (so ACR is skipped) rather than erroring.
 func TestApplyDeployModeToAdoptedProject_NoAgentServices(t *testing.T) {
 	server := &deployModeProjectServer{
+		path: t.TempDir(),
 		services: map[string]*azdext.ServiceConfig{
 			"web": {Name: "web", Host: "containerapp"},
 		},
@@ -183,4 +190,33 @@ func TestApplyDeployModeToAdoptedProject_NoAgentServices(t *testing.T) {
 	usesContainer, err := applyDeployModeToAdoptedProject(t.Context(), &initFlags{}, client)
 	require.NoError(t, err)
 	assert.False(t, usesContainer)
+}
+
+func TestApplyDeployModeToAdoptedProject_ResolvesServicePath(t *testing.T) {
+	projectDir := t.TempDir()
+	serviceDir := filepath.Join(projectDir, "src", "agent")
+	require.NoError(t, os.MkdirAll(serviceDir, 0750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(serviceDir, "pyproject.toml"),
+		nil,
+		0600,
+	))
+
+	service := agentServiceConfig(t, "agent", nil)
+	service.RelativePath = filepath.Join("src", "agent")
+	server := &deployModeProjectServer{
+		path:     projectDir,
+		services: map[string]*azdext.ServiceConfig{"agent": service},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	usesContainer, err := applyDeployModeToAdoptedProject(
+		t.Context(),
+		&initFlags{noPrompt: true},
+		client,
+	)
+	require.NoError(t, err)
+	assert.False(t, usesContainer)
+	assert.Equal(t, "python", server.sets["agent"]["language"])
+	assert.Contains(t, server.sets["agent"], "codeConfiguration")
 }

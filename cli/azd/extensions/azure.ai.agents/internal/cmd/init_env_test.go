@@ -145,7 +145,7 @@ services:
       agentSubnet:
         vnet: $${AGENT_VNET_ID}
       peSubnet:
-        vnet: ${PE_VNET_ID}
+        vnet: $${PE_VNET_ID}
       dns:
         subscription: ${DNS_SUBSCRIPTION_ID}
 `,

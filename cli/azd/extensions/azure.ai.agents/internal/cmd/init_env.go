@@ -25,6 +25,15 @@ var azureYamlEnvRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-
 
 var foundryTemplateSpanPattern = regexp.MustCompile(`(?s)\$\{\{.*?\}\}`)
 
+// Escape handling must match the expander that owns each field.
+// foundry.ExpandEnv treats an odd leading '$' as an escape, while the project
+// synthesizers' resolveVars helper expands every ${VAR} match regardless of
+// a preceding '$'.
+const (
+	honorAzureYamlEnvironmentEscaping  = true
+	ignoreAzureYamlEnvironmentEscaping = false
+)
+
 // These types mirror only the fields each Foundry provider expands from the
 // azd environment. The owning provider types are unexported or live in sibling
 // extension modules, so init keeps small typed views instead of string paths.
@@ -357,14 +366,26 @@ func collectAzureYamlServiceEnvironmentReferences(
 			return fmt.Errorf("decoding agent service %q: %w", serviceName, err)
 		}
 		for _, variable := range config.EnvironmentVariables {
-			collectAzureYamlEnvironmentReferences(variable.Value, false, true, references, indexByName)
+			collectAzureYamlEnvironmentReferences(
+				variable.Value,
+				false,
+				honorAzureYamlEnvironmentEscaping,
+				references,
+				indexByName,
+			)
 		}
 	case "azure.ai.connection":
 		var config azureYamlConnectionEnvironmentConfig
 		if err := active.Decode(&config); err != nil {
 			return fmt.Errorf("decoding connection service %q: %w", serviceName, err)
 		}
-		collectAzureYamlEnvironmentReferences(config.Target, false, true, references, indexByName)
+		collectAzureYamlEnvironmentReferences(
+			config.Target,
+			false,
+			honorAzureYamlEnvironmentEscaping,
+			references,
+			indexByName,
+		)
 		if err := collectAzureYamlEnvironmentReferencesFromValue(
 			config.Credentials,
 			true,
@@ -391,7 +412,7 @@ func collectAzureYamlServiceEnvironmentReferences(
 				collectAzureYamlEnvironmentReferences(
 					config.Network.AgentSubnet.VNet,
 					false,
-					false,
+					ignoreAzureYamlEnvironmentEscaping,
 					references,
 					indexByName,
 				)
@@ -400,7 +421,7 @@ func collectAzureYamlServiceEnvironmentReferences(
 				collectAzureYamlEnvironmentReferences(
 					config.Network.PESubnet.VNet,
 					false,
-					false,
+					ignoreAzureYamlEnvironmentEscaping,
 					references,
 					indexByName,
 				)
@@ -409,7 +430,7 @@ func collectAzureYamlServiceEnvironmentReferences(
 				collectAzureYamlEnvironmentReferences(
 					config.Network.DNS.Subscription,
 					false,
-					false,
+					ignoreAzureYamlEnvironmentEscaping,
 					references,
 					indexByName,
 				)
@@ -435,7 +456,13 @@ func collectAzureYamlServiceEnvironmentReferences(
 		if err := active.Decode(&config); err != nil {
 			return fmt.Errorf("decoding toolbox service %q: %w", serviceName, err)
 		}
-		collectAzureYamlEnvironmentReferences(config.Endpoint, false, true, references, indexByName)
+		collectAzureYamlEnvironmentReferences(
+			config.Endpoint,
+			false,
+			honorAzureYamlEnvironmentEscaping,
+			references,
+			indexByName,
+		)
 		if err := collectAzureYamlEnvironmentReferencesFromValue(
 			config.Tools,
 			false,
@@ -492,7 +519,13 @@ func collectAzureYamlEnvironmentReferencesFromNode(
 	case yaml.AliasNode:
 		collectAzureYamlEnvironmentReferencesFromNode(node.Alias, secret, references, indexByName)
 	case yaml.ScalarNode:
-		collectAzureYamlEnvironmentReferences(node.Value, secret, true, references, indexByName)
+		collectAzureYamlEnvironmentReferences(
+			node.Value,
+			secret,
+			honorAzureYamlEnvironmentEscaping,
+			references,
+			indexByName,
+		)
 	}
 }
 

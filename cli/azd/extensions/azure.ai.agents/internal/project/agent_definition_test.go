@@ -157,6 +157,74 @@ func TestAgentDefinitionFromService_NoDefinition(t *testing.T) {
 	require.False(t, found)
 }
 
+func TestSetAgentContainerSettings_ReturnsPersistenceTarget(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		legacy          bool
+		unrelatedInline bool
+		wantPath        string
+	}{
+		{
+			name:     "inline service properties",
+			wantPath: "container",
+		},
+		{
+			name:     "legacy config properties",
+			legacy:   true,
+			wantPath: "config.container",
+		},
+		{
+			name:            "legacy config properties with unrelated inline properties",
+			legacy:          true,
+			unrelatedInline: true,
+			wantPath:        "config.container",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			props, err := structpb.NewStruct(map[string]any{
+				"kind":        "hosted",
+				"customField": "preserved",
+			})
+			require.NoError(t, err)
+
+			svc := &azdext.ServiceConfig{Host: "azure.ai.agent"}
+			if tt.legacy {
+				svc.Config = props
+			} else {
+				svc.AdditionalProperties = props
+			}
+			if tt.unrelatedInline {
+				svc.AdditionalProperties, err = structpb.NewStruct(map[string]any{
+					"resumeSessionOnDeploy": true,
+				})
+				require.NoError(t, err)
+			}
+
+			path, value, err := SetAgentContainerSettings(svc, &ContainerSettings{
+				Resources: &ResourceSettings{Cpu: "1", Memory: "2Gi"},
+			})
+			require.NoError(t, err)
+			require.Equal(t, tt.wantPath, path)
+			require.Equal(t, map[string]any{
+				"resources": map[string]any{
+					"cpu":    "1",
+					"memory": "2Gi",
+				},
+			}, value.AsInterface())
+
+			storedProps := ServiceConfigProps(svc)
+			require.Equal(t, "preserved", storedProps.GetFields()["customField"].GetStringValue())
+			require.Same(t, value, storedProps.GetFields()["container"])
+		})
+	}
+}
+
 // TestAgentDefinition_ImageRidesOnCoreServiceField verifies the prebuilt image
 // maps onto the core ServiceConfig.Image field (which core binds and round-trips)
 // rather than the inline property bag, where core would strip it on reload.

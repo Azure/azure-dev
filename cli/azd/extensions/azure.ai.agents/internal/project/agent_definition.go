@@ -548,17 +548,20 @@ func UpsertAgentEnvVars(svc *azdext.ServiceConfig, kv map[string]string) error {
 // agent service's inline properties, preserving every other key (the agent
 // definition and the rest of the deploy/provision config). It mutates whichever
 // shape the service uses (the unified AdditionalProperties, or — for older
-// projects — the config-nested struct).
-func SetAgentContainerSettings(svc *azdext.ServiceConfig, container *ContainerSettings) error {
-	legacy := false
-	props := svc.GetAdditionalProperties()
-	if props == nil || len(props.GetFields()) == 0 {
-		if cfg := svc.GetConfig(); cfg != nil && len(cfg.GetFields()) > 0 {
-			props = cfg
-			legacy = true
-		} else {
-			props = &structpb.Struct{}
-		}
+// projects — the config-nested struct). The returned path and value identify
+// the exact mutation for callers that need to persist it through the azd host.
+func SetAgentContainerSettings(
+	svc *azdext.ServiceConfig,
+	container *ContainerSettings,
+) (string, *structpb.Value, error) {
+	props := ServiceConfigProps(svc)
+	legacy := props != nil && props == svc.GetConfig()
+	containerPath := "container"
+	if legacy {
+		containerPath = "config.container"
+	}
+	if props == nil {
+		props = &structpb.Struct{}
 	}
 	if props.Fields == nil {
 		props.Fields = map[string]*structpb.Value{}
@@ -566,16 +569,17 @@ func SetAgentContainerSettings(svc *azdext.ServiceConfig, container *ContainerSe
 
 	containerStruct, err := MarshalStruct(container)
 	if err != nil {
-		return fmt.Errorf("marshaling container settings: %w", err)
+		return "", nil, fmt.Errorf("marshaling container settings: %w", err)
 	}
-	props.Fields["container"] = structpb.NewStructValue(containerStruct)
+	containerValue := structpb.NewStructValue(containerStruct)
+	props.Fields["container"] = containerValue
 
 	if legacy {
 		svc.Config = props
 	} else {
 		svc.AdditionalProperties = props
 	}
-	return nil
+	return containerPath, containerValue, nil
 }
 
 // agentDefinitionFromStruct builds the ContainerAgent from an inline/config

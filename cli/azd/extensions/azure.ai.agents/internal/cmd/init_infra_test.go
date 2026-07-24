@@ -649,6 +649,26 @@ func TestEjectInfraAfterInit_NoProject(t *testing.T) {
 	assert.NoError(t, ejectInfraAfterInit("bicep"))
 }
 
+func TestEjectInfraAfterInit_PropagatesInvalidFoundryConfiguration(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	projectRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectRoot, "azure.yaml"), []byte(`name: test
+services:
+  first-project:
+    host: azure.ai.project
+  second-project:
+    host: azure.ai.project
+`), 0600))
+	t.Chdir(projectRoot)
+
+	err := ejectInfraAfterInit("bicep")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+	assert.Equal(t, exterrors.CodeInfraEjectMultipleFoundryServices, localErr.Code)
+	assert.NoDirExists(t, filepath.Join(projectRoot, "infra"))
+}
+
 func TestEjectInfra_Terraform_HappyPath_WritesExpectedFiles(t *testing.T) {
 	// Not parallel: captures os.Stdout (see TestEjectInfra_HappyPath_WritesExpectedFiles).
 	dir := t.TempDir()

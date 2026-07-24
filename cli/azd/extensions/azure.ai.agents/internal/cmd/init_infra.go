@@ -89,7 +89,11 @@ func ejectInfraAfterInit(provider string) error {
 		return fmt.Errorf("read azure.yaml after init: %w", err)
 	}
 	if _, err := findFoundryServiceForEject(rawYAML); err != nil {
-		return nil
+		if localErr, ok := errors.AsType[*azdext.LocalError](err); ok &&
+			localErr.Code == exterrors.CodeInfraEjectNoFoundryService {
+			return nil
+		}
+		return err
 	}
 
 	return ejectInfra(projectRoot, provider)

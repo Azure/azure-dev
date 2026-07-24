@@ -109,6 +109,9 @@ func execEnvModifiers() []string {
 	if strings.Contains(userAgent, "azure_app_space_portal") {
 		modifiers = append(modifiers, fields.EnvModifierAzureSpace)
 	}
+	if strings.Contains(userAgent, "microsoft_foundry_canvas") {
+		modifiers = append(modifiers, fields.EnvModifierMicrosoftFoundryCanvas)
+	}
 	if strings.Contains(userAgent, "microsoft_foundry_skill") {
 		modifiers = append(modifiers, fields.EnvModifierMicrosoftFoundrySkill)
 	}

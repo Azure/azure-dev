@@ -322,8 +322,9 @@ const (
 	// Environment modifiers. These are not environments themselves, but rather modifiers to the environment
 	// that signal specific types of usages.
 
-	EnvModifierAzureSpace            = "Azure App Spaces Portal"
-	EnvModifierMicrosoftFoundrySkill = "Microsoft Foundry Skill"
+	EnvModifierAzureSpace             = "Azure App Spaces Portal"
+	EnvModifierMicrosoftFoundryCanvas = "Microsoft Foundry Canvas"
+	EnvModifierMicrosoftFoundrySkill  = "Microsoft Foundry Skill"
 )
 
 // All possible enumerations of AccountTypeKey

@@ -58,7 +58,7 @@ These are set once at process startup via `resource.New()` and attached to every
 | Runtime version | `process.runtime.version` | SystemMetadata | PerformanceAndHealth | Go version |
 | Machine ID | `machine.id` | EndUserPseudonymizedInformation | BusinessInsight | MAC address hash |
 | Dev Device ID | `machine.devdeviceid` | EndUserPseudonymizedInformation | BusinessInsight | SQM User ID |
-| Execution environment | `execution.environment` | SystemMetadata | BusinessInsight | CI system detection |
+| Execution environment | `execution.environment` | SystemMetadata | BusinessInsight | Format: `<environment>[;<modifier>...]`. Base values: `Desktop`, `Visual Studio`, `Visual Studio Code`, `VS Code Azure GitHub Copilot`, `Azure CloudShell`, `Claude Code`, `GitHub Copilot CLI`, `Gemini`, `OpenCode`, `UnknownCI`, `Azure Pipelines`, `GitHub Actions`, `AppVeyor`, `Bamboo`, `BitBucket Pipelines`, `Travis CI`, `Circle CI`, `GitLab CI`, `Jenkins`, `AWS CodeBuild`, `Google Cloud Build`, `TeamCity`, `JetBrains Space`, `GitHub Codespaces`. Modifiers: `Azure App Spaces Portal`, `Microsoft Foundry Canvas`, `Microsoft Foundry Skill` |
 | Installer | `service.installer` | SystemMetadata | FeatureInsight | How azd was installed |
 
 ### Experimentation

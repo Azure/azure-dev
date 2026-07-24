@@ -590,7 +590,8 @@ The `execution.environment` field identifies where azd is running. Format: `<env
 | `GitHub Codespaces` | GitHub Codespaces |
 | Other CI systems | `AppVeyor`, `Bamboo`, `BitBucket Pipelines`, `Travis CI`, `Circle CI`, `GitLab CI`, `Jenkins`, `AWS CodeBuild`, `Google Cloud Build`, `TeamCity`, `JetBrains Space` |
 
-**Modifiers:** `Azure App Spaces Portal` and `Microsoft Foundry Skill` may be appended as modifiers (`;` separated).
+**Modifiers:** `Azure App Spaces Portal`, `Microsoft Foundry Canvas`, and `Microsoft Foundry Skill` may be appended as
+modifiers (`;` separated).
 
 ## Data Nuances & Gotchas
 

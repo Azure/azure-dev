@@ -330,7 +330,8 @@ services:
 }
 
 func TestConfigureAzureYamlEnvironmentVariables_ResolvesServiceRefs(t *testing.T) {
-	t.Parallel()
+	t.Setenv("REFERENCED_API_TOKEN", "")
+	t.Setenv("ROOT_RESOURCE_ID", "")
 
 	projectDir := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(projectDir, "services"), 0700))
@@ -378,6 +379,9 @@ services:
 }
 
 func TestConfigureAzureYamlEnvironmentVariables_PromptsAndPersistsMissingValues(t *testing.T) {
+	t.Setenv("PLAYWRIGHT_SERVICE_ACCESS_TOKEN", "")
+	t.Setenv("PLAYWRIGHT_SERVICE_RESOURCE_ID", "")
+
 	projectDir := t.TempDir()
 	content := `name: playwright-agent
 services:

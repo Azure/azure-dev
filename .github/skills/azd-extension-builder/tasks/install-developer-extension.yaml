@@ -1,0 +1,31 @@
+id: install-developer-extension-001
+name: Install the developer extension when azd x is missing
+description: >
+  `azd x` is not recognized. The agent should install the developer extension from the
+  pre-configured official registry — and must NOT claim the dev source is required.
+tags:
+  - prerequisites
+  - happy-path
+inputs:
+  prompt: >
+    When I run `azd x build` azd says 'x' is not a known command. How do I fix this? I have azd
+    installed but have never used azd extensions before.
+expected:
+  should_trigger: true
+  output_contains:
+    - "azd extension install microsoft.azd.extensions"
+graders:
+  - name: recommends-official-install
+    type: text
+    weight: 0.6
+    config:
+      contains:
+        - "azd extension install microsoft.azd.extensions"
+  - name: does-not-require-dev-source
+    type: text
+    weight: 0.4
+    config:
+      not_contains:
+        - "source add -n dev"
+        - "must add the dev"
+        - "requires the dev registry"

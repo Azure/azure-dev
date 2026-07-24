@@ -1,0 +1,30 @@
+id: build-test-local-001
+name: Local build/test dev loop
+description: >
+  User wants a local dev loop. The agent should recommend `azd x build` (which installs) and
+  mention `azd x watch` for auto-rebuild.
+tags:
+  - build-test
+  - happy-path
+inputs:
+  prompt: "How do I build my azd extension and try it locally while I'm developing, without a full release?"
+expected:
+  should_trigger: true
+  output_contains:
+    - "azd x build"
+graders:
+  - name: recommends-build-not-release
+    type: text
+    weight: 0.6
+    config:
+      contains:
+        - "azd x build"
+      not_contains:
+        - "azd x release"
+        - "azd x publish"
+  - name: mentions-watch-or-local-run
+    type: text
+    weight: 0.4
+    config:
+      regex_match:
+        - "(azd x watch|--skip-install|azd extension list|azd <namespace>)"

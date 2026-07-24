@@ -1,0 +1,34 @@
+name: azd-extension-builder-eval
+description: >
+  Evaluates whether the azd-extension-builder skill leads the agent to give correct, current
+  guidance for building azd extensions: scaffolding, auto-installing the developer extension,
+  distinguishing first-party vs external flows, wiring capabilities, building/testing, and
+  releasing/publishing. Uses the microsoft/waza v1.0 skill-eval schema.
+skill: azd-extension-builder
+schemaVersion: "1.0"
+version: "1.0"
+config:
+  trials_per_task: 1
+  timeout_seconds: 300
+  parallel: false
+  executor: copilot-sdk
+  model: claude-sonnet-4.6
+metrics:
+  - name: guidance_accuracy
+    weight: 0.5
+    threshold: 0.8
+    description: Does the agent recommend the correct azd x / azd extension commands and capabilities?
+  - name: sequencing_accuracy
+    weight: 0.2
+    threshold: 0.8
+    description: Are multi-step flows (pack -> release -> publish) in the right order?
+  - name: correctness_guardrails
+    weight: 0.2
+    threshold: 0.85
+    description: Does the agent avoid stale/incorrect guidance (e.g., not requiring the dev source)?
+  - name: negative_accuracy
+    weight: 0.1
+    threshold: 0.9
+    description: Does the agent NOT over-trigger extension guidance for unrelated questions?
+tasks:
+  - "tasks/*.yaml"

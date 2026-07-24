@@ -414,6 +414,28 @@ func Test_AzureClient_GetAppServiceContainerConfiguration(t *testing.T) {
 	}
 }
 
+func Test_AzureClient_GetAppServiceContainerConfiguration_Error(t *testing.T) {
+	mockCtx := mocks.NewMockContext(t.Context())
+	client := newAzureClientFromMockContext(mockCtx)
+
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodGet &&
+			strings.Contains(req.URL.Path, "/Microsoft.Web/sites/my-function")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		return mocks.CreateEmptyHttpResponse(req, http.StatusNotFound)
+	})
+
+	configuration, err := client.GetAppServiceContainerConfiguration(
+		*mockCtx.Context,
+		"SUB",
+		"RG",
+		"my-function",
+	)
+
+	require.Nil(t, configuration)
+	require.Error(t, err)
+}
+
 func Test_AzureClient_UpdateAppServiceAppSettings(t *testing.T) {
 	t.Run("MergesWithExisting", func(t *testing.T) {
 		mockCtx := mocks.NewMockContext(t.Context())

@@ -143,7 +143,7 @@ services:
           name: ${RAW_SKU_NAME}
     network:
       agentSubnet:
-        vnet: ${AGENT_VNET_ID}
+        vnet: $${AGENT_VNET_ID}
       peSubnet:
         vnet: ${PE_VNET_ID}
       dns:

@@ -357,14 +357,14 @@ func collectAzureYamlServiceEnvironmentReferences(
 			return fmt.Errorf("decoding agent service %q: %w", serviceName, err)
 		}
 		for _, variable := range config.EnvironmentVariables {
-			collectAzureYamlEnvironmentReferences(variable.Value, false, references, indexByName)
+			collectAzureYamlEnvironmentReferences(variable.Value, false, true, references, indexByName)
 		}
 	case "azure.ai.connection":
 		var config azureYamlConnectionEnvironmentConfig
 		if err := active.Decode(&config); err != nil {
 			return fmt.Errorf("decoding connection service %q: %w", serviceName, err)
 		}
-		collectAzureYamlEnvironmentReferences(config.Target, false, references, indexByName)
+		collectAzureYamlEnvironmentReferences(config.Target, false, true, references, indexByName)
 		if err := collectAzureYamlEnvironmentReferencesFromValue(
 			config.Credentials,
 			true,
@@ -391,6 +391,7 @@ func collectAzureYamlServiceEnvironmentReferences(
 				collectAzureYamlEnvironmentReferences(
 					config.Network.AgentSubnet.VNet,
 					false,
+					false,
 					references,
 					indexByName,
 				)
@@ -399,6 +400,7 @@ func collectAzureYamlServiceEnvironmentReferences(
 				collectAzureYamlEnvironmentReferences(
 					config.Network.PESubnet.VNet,
 					false,
+					false,
 					references,
 					indexByName,
 				)
@@ -406,6 +408,7 @@ func collectAzureYamlServiceEnvironmentReferences(
 			if config.Network.DNS != nil {
 				collectAzureYamlEnvironmentReferences(
 					config.Network.DNS.Subscription,
+					false,
 					false,
 					references,
 					indexByName,
@@ -432,7 +435,7 @@ func collectAzureYamlServiceEnvironmentReferences(
 		if err := active.Decode(&config); err != nil {
 			return fmt.Errorf("decoding toolbox service %q: %w", serviceName, err)
 		}
-		collectAzureYamlEnvironmentReferences(config.Endpoint, false, references, indexByName)
+		collectAzureYamlEnvironmentReferences(config.Endpoint, false, true, references, indexByName)
 		if err := collectAzureYamlEnvironmentReferencesFromValue(
 			config.Tools,
 			false,
@@ -489,13 +492,14 @@ func collectAzureYamlEnvironmentReferencesFromNode(
 	case yaml.AliasNode:
 		collectAzureYamlEnvironmentReferencesFromNode(node.Alias, secret, references, indexByName)
 	case yaml.ScalarNode:
-		collectAzureYamlEnvironmentReferences(node.Value, secret, references, indexByName)
+		collectAzureYamlEnvironmentReferences(node.Value, secret, true, references, indexByName)
 	}
 }
 
 func collectAzureYamlEnvironmentReferences(
 	value string,
 	secret bool,
+	honorEscaping bool,
 	references *[]azureYamlEnvironmentReference,
 	indexByName map[string]int,
 ) {
@@ -503,7 +507,7 @@ func collectAzureYamlEnvironmentReferences(
 		return strings.Repeat(" ", len(span))
 	})
 	for _, match := range azureYamlEnvRefPattern.FindAllStringSubmatchIndex(value, -1) {
-		if isEscapedAzureYamlEnvironmentReference(value, match[0]) {
+		if honorEscaping && isEscapedAzureYamlEnvironmentReference(value, match[0]) {
 			continue
 		}
 		if match[4] != -1 {

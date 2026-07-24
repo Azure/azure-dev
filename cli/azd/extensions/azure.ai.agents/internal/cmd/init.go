@@ -1547,7 +1547,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project, either via --project-id or interactive prompts")
 
 	cmd.Flags().StringVar(&flags.model, "model", "",
-		"Name of the AI model to use (e.g., 'gpt-4o'). If not specified, defaults to 'gpt-4.1-mini'. Mutually exclusive with --model-deployment, with --model-deployment being used if both are provided")
+		"Name of the AI model to use (e.g., 'gpt-4o'). If not specified, defaults to 'gpt-5.4-mini'. Mutually exclusive with --model-deployment, with --model-deployment being used if both are provided")
 
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
 		"Path or URI to an agent manifest, or to a sample's unified azure.yaml to adopt as the project manifest")

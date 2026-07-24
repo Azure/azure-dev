@@ -1241,7 +1241,7 @@ func selectNewModel(
 	azureContext *azdext.AzureContext,
 	modelFlag string,
 ) (*azdext.AiModel, error) {
-	defaultModel := "gpt-4.1-mini"
+	defaultModel := "gpt-5.4-mini"
 	if modelFlag != "" {
 		defaultModel = modelFlag
 	}
@@ -1266,7 +1266,7 @@ func selectNewModel(
 		return nil, exterrors.Dependency(
 			exterrors.CodeModelResolutionFailed,
 			fmt.Sprintf("failed to select an AI model: %s", err),
-			"pass --model <name> (e.g. --model gpt-4.1-mini) or --project-id "+
+			"pass --model <name> (e.g. --model gpt-5.4-mini) or --project-id "+
 				"<id> with --model-deployment <name> to skip interactive model selection",
 		)
 	}

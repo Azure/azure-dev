@@ -50,7 +50,8 @@ jobs:
               'cli/azd/extensions/registry.dev.json',
             ]);
             const changed = files.some(
-              (f) => registryPaths.has(f.filename) || registryPaths.has(f.previous_filename),
+              (f) => registryPaths.has(f.filename) ||
+                  registryPaths.has(f.previous_filename), // Also fire if someone tries to delete a registry
             );
             core.info(`extension registry changed: ${changed}`);
             core.setOutput('registry_changed', changed);

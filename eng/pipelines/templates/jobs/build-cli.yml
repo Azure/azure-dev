@@ -35,6 +35,11 @@ jobs:
     timeoutInMinutes: 180
     steps:
       - checkout: self
+
+      - template: /eng/common/pipelines/templates/steps/create-authenticated-npmrc.yml
+
+      - template: /eng/common/pipelines/templates/steps/maven-authenticate.yml
+
       - template: /eng/pipelines/templates/steps/setup-go.yml
 
       - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
@@ -101,8 +106,20 @@ jobs:
           version: '9.x'
         displayName: Set up .NET 9
 
+      - bash: dotnet nuget add source --name azure-sdk-for-net https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-net/nuget/v3/index.json
+        displayName: Add Azure SDK dev nuget feed
+
       - bash: dotnet nuget add source --name dotnet9 https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet9/nuget/v3/index.json
         displayName: Add internal dotnet nuget feed
+
+      - template: /eng/common/pipelines/templates/steps/pypi-auth-dev-feed.yml
+        parameters:
+          EnableTwineAuth: false
+          EnablePipAuth: true
+          EnableUvAuth: false
+
+      - task: NuGetAuthenticate@1
+        displayName: Authenticate NuGet feeds
 
       - template: /eng/pipelines/templates/steps/configure-oidc-auth.yml
 
@@ -154,6 +171,8 @@ jobs:
           # Code Coverage: Generate junit report to publish results
           GOTESTSUM_JUNITFILE: junitTestReport.xml
           SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+          PIP_INDEX_URL: $(PIP_INDEX_URL)
+          PIP_EXTRA_INDEX_URL: $(PIP_EXTRA_INDEX_URL)
           # Disable MSBuild node reuse for Aspire-related tests.
           # MSBuild node reuse is a pure performance optimization that is generally recommended to be disabled on CI environments
           # that deal with short-lived processes.

@@ -32,6 +32,9 @@ func TestUpdateAction_RejectsInvalidName(t *testing.T) {
 }
 
 func TestUpdateAction_ValidInputFailsAtEndpoint(t *testing.T) {
+	isolateFromAzdDaemon(t)
+	t.Setenv(foundryEnvKey, "")
+
 	// A fully valid inline update with no endpoint configured must fail at
 	// endpoint resolution (not at flag validation or name validation).
 	a := &updateAction{flags: &updateFlags{
@@ -41,7 +44,7 @@ func TestUpdateAction_ValidInputFailsAtEndpoint(t *testing.T) {
 		instructionsSet: true,
 		instructions:    "new instructions",
 	}}
-	err := a.Run(context.Background())
+	err := a.Run(t.Context())
 	require.Error(t, err)
 	var le *azdext.LocalError
 	require.True(t, errors.As(err, &le))
@@ -102,6 +105,23 @@ func TestSelectUpdateMode_SetDefaultConflictsWithContent(t *testing.T) {
 		require.True(t, errors.As(err, &le))
 		require.Equal(t, exterrors.CodeConflictingArguments, le.Code)
 	}
+}
+
+func TestSelectUpdateMode_SetDefaultConflictsWithSaveToAzureYaml(t *testing.T) {
+	mode, err := selectUpdateMode(&updateFlags{
+		setDefault:      "2",
+		saveToAzureYaml: true,
+	})
+	require.Error(t, err)
+	require.Equal(t, updateModeNone, mode)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+}
+
+func TestUpdateCommand_HasSaveToAzureYamlFlag(t *testing.T) {
+	cmd := newUpdateCommand(&azdext.ExtensionContext{})
+	require.NotNil(t, cmd.Flags().Lookup("save-to-azure-yaml"))
 }
 
 func TestSelectUpdateMode_InlineAndFileConflict(t *testing.T) {

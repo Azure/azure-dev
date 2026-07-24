@@ -42,6 +42,7 @@ var foundryServiceHosts = map[string]struct{}{
 	"azure.ai.project":    {},
 	"azure.ai.connection": {},
 	"azure.ai.toolbox":    {},
+	"azure.ai.skill":      {},
 	"microsoft.foundry":   {},
 }
 

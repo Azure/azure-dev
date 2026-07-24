@@ -46,6 +46,16 @@ services:
 			want: true,
 		},
 		{
+			name: "skill-only composed manifest",
+			content: `name: foundry-skills
+services:
+  triage-rules:
+    host: azure.ai.skill
+    instructions: Triage incoming issues.
+`,
+			want: true,
+		},
+		{
 			name: "agent manifest with top-level template",
 			content: `name: my-agent
 template:

@@ -28,6 +28,7 @@ type updateFlags struct {
 	instructions    string
 	file            string
 	setDefault      string
+	saveToAzureYaml bool
 	output          string
 	projectEndpoint string
 
@@ -36,6 +37,21 @@ type updateFlags struct {
 }
 
 type updateAction struct{ flags *updateFlags }
+
+func (a *updateAction) prepareService(
+	ctx context.Context,
+	cfg skillServiceConfig,
+	archiveSource string,
+) (*preparedSkillService, error) {
+	if !a.flags.saveToAzureYaml {
+		return &preparedSkillService{}, nil
+	}
+	return prepareSkillServiceToProject(ctx, skillServiceDeclaration{
+		Name:          a.flags.name,
+		Config:        cfg,
+		ArchiveSource: archiveSource,
+	})
+}
 
 // updateMode is the dispatch tag selectUpdateMode returns. It mirrors
 // createMode so the two commands route the same shapes through the same
@@ -106,12 +122,25 @@ func (a *updateAction) runInline(ctx context.Context, client *skill_api.Client) 
 		return err
 	}
 
+	service, err := a.prepareService(ctx, skillServiceConfig{
+		Description:  content.Description,
+		Instructions: content.Instructions,
+		Tools:        content.AllowedTools,
+	}, "")
+	if err != nil {
+		return err
+	}
+	defer service.Close()
+
 	version, err := client.CreateVersionInline(ctx, a.flags.name, skill_api.CreateVersionRequest{
 		InlineContent: content,
 		Default:       true,
 	})
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpUpdateSkill)
+	}
+	if err := service.Save(ctx); err != nil {
+		return err
 	}
 	return a.printUpdateResult(ctx, client, version)
 }
@@ -146,9 +175,18 @@ func (a *updateAction) runFilePackage(ctx context.Context, client *skill_api.Cli
 	}
 	defer f.Close()
 
+	service, err := a.prepareService(ctx, skillServiceConfig{}, a.flags.file)
+	if err != nil {
+		return err
+	}
+	defer service.Close()
+
 	version, err := client.CreateVersionFromZip(ctx, a.flags.name, filepath.Base(a.flags.file), f, true)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpUpdateSkill)
+	}
+	if err := service.Save(ctx); err != nil {
+		return err
 	}
 	return a.printUpdateResult(ctx, client, version)
 }
@@ -180,9 +218,18 @@ func (a *updateAction) runFileDirectory(ctx context.Context, client *skill_api.C
 	}
 
 	archiveName := filepath.Base(filepath.Clean(a.flags.file)) + ".zip"
+	service, err := a.prepareService(ctx, skillServiceConfig{}, a.flags.file)
+	if err != nil {
+		return err
+	}
+	defer service.Close()
+
 	version, err := client.CreateVersionFromZip(ctx, a.flags.name, archiveName, bytes.NewReader(data), true)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpUpdateSkill)
+	}
+	if err := service.Save(ctx); err != nil {
+		return err
 	}
 	return a.printUpdateResult(ctx, client, version)
 }
@@ -271,6 +318,14 @@ func selectUpdateMode(f *updateFlags) (updateMode, error) {
 	inlineProvided := f.descriptionSet || f.instructionsSet
 	fileProvided := f.file != ""
 	setDefaultProvided := f.setDefault != ""
+
+	if setDefaultProvided && f.saveToAzureYaml {
+		return updateModeNone, exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--save-to-azure-yaml cannot be combined with --set-default-version",
+			"omit --save-to-azure-yaml, or provide new inline/file content that azure.yaml can reconcile",
+		)
+	}
 
 	// --set-default-version is a metadata-only update; it cannot be combined
 	// with content flags. Hand it back as its own mode so Run can dispatch
@@ -361,9 +416,15 @@ Directory mode requires SKILL.md at the root of the directory — the same
 layout that ` + "`azd ai skill download`" + ` writes by default.
 
 To repoint default_version at an existing version without uploading new
-content, pass --set-default-version <version>.`,
+content, pass --set-default-version <version>.
+
+Pass --save-to-azure-yaml to add or update a host: azure.ai.skill service in
+the current azd project's azure.yaml. Inline and SKILL.md inputs are saved as
+inline service properties; ZIP and directory inputs are saved as portable
+archive references for azd deploy/up to reconcile.`,
 		Example: `  azd ai skill update my-skill --description "Updated summary" --instructions "..."
   azd ai skill update my-skill --file ./SKILL.md
+  azd ai skill update my-skill --file ./SKILL.md --save-to-azure-yaml
   azd ai skill update my-skill --file ./skill.zip
   azd ai skill update my-skill --file ./skill-src/
   azd ai skill update my-skill --set-default-version 1`,
@@ -384,6 +445,12 @@ content, pass --set-default-version <version>.`,
 		"Path to a SKILL.md file, a .zip archive, or a directory whose contents become the next version. "+
 			"Archives and directories must contain a SKILL.md at the root.")
 	cmd.Flags().StringVar(&flags.setDefault, "set-default-version", "", "Set the skill's default_version to an existing version without uploading new content")
+	cmd.Flags().BoolVar(
+		&flags.saveToAzureYaml,
+		"save-to-azure-yaml",
+		false,
+		"Add or update this skill as a host: azure.ai.skill service in the current azure.yaml",
+	)
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name: "output", AllowedValues: []string{outputJSON, outputTable}, Default: outputJSON,
 	})

@@ -18,12 +18,10 @@ import (
 	"text/template"
 )
 
-// TestTeamsSideloadScriptExecutes actually RUNS the generated pack-and-sideload
-// script end to end (not just string-asserts its content), so a regression that
-// makes the script emit an invalid Teams package or skip the login-and-retry is
-// caught. It is OS-gated: bash on non-Windows, pwsh on Windows. It never touches
-// the network -- a fake `atk` on PATH stands in for the real CLI, and the first
-// phase runs in SKIP_TEAMS_INSTALL=1 build-only mode.
+// TestTeamsSideloadScriptExecutes RUNS the generated pack-and-sideload script
+// against a fake `atk` on PATH (no network, no real Teams publish), so it
+// validates the script's packaging flow and the login-and-retry code path -- not
+// the actual M365 publish. It is OS-gated: bash on non-Windows, pwsh on Windows.
 func TestTeamsSideloadScriptExecutes(t *testing.T) {
 	const (
 		agentName = "echo-agent"

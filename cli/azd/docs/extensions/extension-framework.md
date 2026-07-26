@@ -147,6 +147,7 @@ Installs one or more extensions from any configured extension source.
 Uninstalls one or more previously installed extensions.
 
 - `--all` Removes all installed extensions when specified.
+- `-f, --force` Stops any process running from the extension's install directory before removing it.
 
 #### `azd extension upgrade <extension-ids>`
 
@@ -156,6 +157,24 @@ Upgrades one or more extensions to the latest versions.
 - `-v, --version` Upgrades a specified extension to an exact version, if provided.
 - `-s, --source` Specifies the source used for the upgrade. In addition to registered source names, this accepts a registry location (URL or file path). `azd` registers the location as a source before resolving the extension, updates the extension's stored source after a successful upgrade, and rejects locations under `--no-prompt`; add the source first with `azd extension source add`.
 - `--no-dependency-upgrades` Skips upgrading dependencies declared by extension packs.
+- `-f, --force` Stops any process running from the extension's install directory before replacing it. Also propagates to dependency upgrades.
+
+#### Upgrading or uninstalling a running extension
+
+On Windows an executable that is currently running cannot be deleted, which previously
+made `azd extension upgrade` and `azd extension uninstall` fail outright whenever the
+extension had a live process, such as a long-running MCP server.
+
+`azd` now handles this in two layers:
+
+1. **By default**, files that cannot be deleted are renamed into a `.trash` directory
+   inside the extension folder instead. The upgrade or uninstall succeeds, and the leftover
+   files are swept away on the next `azd` extension command once the process exits. The
+   running process keeps using the old binary until it restarts.
+2. **With `-f, --force`**, `azd` first stops processes running from that extension's install
+   directory, then removes the files normally, so the new version takes effect immediately.
+   `azd` prints each process it stopped. Only processes whose executable lives inside that
+   one extension's directory are eligible; nothing else on the machine is touched.
 
 ## Developing Extensions
 

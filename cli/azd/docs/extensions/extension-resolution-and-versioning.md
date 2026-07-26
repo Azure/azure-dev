@@ -161,7 +161,7 @@ Once a version is resolved, installation proceeds through these steps:
 
 ### Re-installing over an existing extension
 
-`azd extension install <id>` keys off the extension **id**, so installing an id that is already present is handled based on whether the **source** is changing and on the version relationship. `--force` bypasses all of these guards.
+`azd extension install <id>` keys off the extension **id**, so installing an id that is already present is handled based on whether the **source** is changing and on the version relationship. `--force` bypasses all of these guards, and additionally stops any process running from that extension's install directory so the replacement can take effect immediately.
 
 When the source is **not** changing (same source as the installed extension):
 

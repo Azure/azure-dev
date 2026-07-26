@@ -5,7 +5,7 @@ Usage
   azd extension install <extension-id|extension-bundle.zip> [flags]
 
 Flags
-    -f, --force           	: Force installation, including downgrades and reinstalls
+    -f, --force           	: Force installation, including downgrades, reinstalls, and stopping running extension processes that block replacement
         --no-dependencies 	: Install only the specified extension(s) without installing their declared dependencies
     -s, --source string   	: The extension source to use for installs. Accepts a registered source name or a registry location (URL or file path) to register and install from.
     -v, --version string  	: The version of the extension to install

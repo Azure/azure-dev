@@ -33,11 +33,21 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/processutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 )
 
 const (
 	extensionRegistryUrl = "https://aka.ms/azd/extensions/registry"
+
+	// extensionsDirName is the directory under the user config directory that holds every
+	// installed extension.
+	extensionsDirName = "extensions"
+
+	// trashDirName holds files that had to be moved aside because a running process kept
+	// them open. It is a sibling of the extension directories rather than a child, so
+	// relocating into it actually empties the directory being removed.
+	trashDirName = ".trash"
 )
 
 var (
@@ -45,6 +55,7 @@ var (
 	ErrInstalledExtensionNotFound = errors.New("extension not found")
 	ErrRegistryExtensionNotFound  = errors.New("extension not found in registry")
 	ErrExtensionInstalled         = errors.New("extension already installed")
+	ErrInvalidExtensionId         = errors.New("invalid extension id")
 )
 
 // DependencyNotFoundError indicates that a required dependency of an extension
@@ -678,10 +689,18 @@ func (m *Manager) installInternal(
 			return nil, fmt.Errorf("failed to get user config directory: %w", err)
 		}
 
-		targetDir := filepath.Join(userConfigDir, "extensions", extension.Id)
-		if err := os.MkdirAll(targetDir, os.ModePerm); err != nil {
+		targetDir, trashDir, err := extensionPaths(userConfigDir, extension.Id)
+		if err != nil {
+			return nil, err
+		}
+
+		if err := os.MkdirAll(targetDir, osutil.PermissionDirectory); err != nil {
 			return nil, fmt.Errorf("failed to create target directory: %w", err)
 		}
+
+		// Clear anything a previous removal had to leave behind while its process was
+		// still running. Best effort: whatever is still locked stays for a later run.
+		osutil.SweepTrash(ctx, trashDir)
 
 		// Step 6: Copy the artifact to the target directory
 		// Check if artifact is a zip file, if so extract it to the target directory
@@ -781,44 +800,6 @@ func (m *Manager) installInternal(
 	return selectedVersion, nil
 }
 
-// Uninstall uninstalls an extension by name.
-func (m *Manager) Uninstall(ctx context.Context, id string) error {
-	// Get the installed extension
-	extension, err := m.GetInstalled(FilterOptions{Id: id})
-	if err != nil {
-		return fmt.Errorf("failed to get installed extension: %w", err)
-	}
-
-	userConfigDir, err := config.GetUserConfigDir()
-	if err != nil {
-		return fmt.Errorf("failed to get user config directory: %w", err)
-	}
-
-	extensionDir := filepath.Join(userConfigDir, "extensions", extension.Id)
-	if err := osutil.RemoveAll(ctx, extensionDir); err != nil {
-		return fmt.Errorf("failed to remove extension: %w", err)
-	}
-
-	// Update the user config
-	extensions, err := m.ListInstalled()
-	if err != nil {
-		return fmt.Errorf("failed to list installed extensions: %w", err)
-	}
-
-	delete(extensions, id)
-
-	if err := m.userConfig.Set(installedConfigKey, extensions); err != nil {
-		return fmt.Errorf("failed to set extensions section: %w", err)
-	}
-
-	if err := m.configManager.Save(m.userConfig); err != nil {
-		return fmt.Errorf("failed to save user config: %w", err)
-	}
-
-	log.Printf("Extension '%s' uninstalled successfully\n", id)
-	return nil
-}
-
 // UpgradeOptions controls how Manager.Upgrade behaves.
 type UpgradeOptions struct {
 	// VersionPreference is the version constraint or exact tag to install.
@@ -835,6 +816,12 @@ type UpgradeOptions struct {
 	// upgrade performs, so `--no-dependencies` behaves the same whether the
 	// extension is being installed fresh or over an existing install.
 	SkipDependencies bool
+	// Force stops processes running out of the extension's install directory so the
+	// upgraded version takes effect immediately instead of after the next restart.
+	Force bool
+	// OnProcessStopped, when set, is called once for each process stopped because of
+	// Force.
+	OnProcessStopped func(processutil.ProcessInfo)
 }
 
 // DefaultUpgradeOptions returns UpgradeOptions with dependency upgrades enabled.
@@ -893,7 +880,10 @@ func (m *Manager) upgradeInternal(
 	opts UpgradeOptions,
 	visited map[string]struct{},
 ) (*ExtensionVersion, []UpgradeResult, error) {
-	if err := m.Uninstall(ctx, extension.Id); err != nil {
+	if err := m.uninstallInternal(ctx, extension.Id, UninstallOptions{
+		Force:            opts.Force,
+		OnProcessStopped: opts.OnProcessStopped,
+	}); err != nil {
 		return nil, nil, fmt.Errorf("failed to uninstall extension: %w", err)
 	}
 
@@ -1066,10 +1056,15 @@ func (m *Manager) evaluateDependencyChanges(
 			fields.ExtensionDependencyOf.String(parentExtension.Id),
 		)
 
+		// Force and the stop callback must ride along. A dependency's process holds a
+		// file lock exactly like a top level extension's does, so dropping them here
+		// would make --force silently cover only part of what the user asked for.
 		childOpts := UpgradeOptions{
 			VersionPreference:   dep.Version,
 			UpgradeDependencies: opts.UpgradeDependencies,
 			AzdVersion:          opts.AzdVersion,
+			Force:               opts.Force,
+			OnProcessStopped:    opts.OnProcessStopped,
 		}
 
 		childVersion, nested, upErr := m.upgradeInternal(childCtx, childMetadata, childOpts, visited)
@@ -1399,7 +1394,11 @@ func (m *Manager) fetchAndCacheMetadata(
 		return fmt.Errorf("failed to get user config directory: %w", err)
 	}
 
-	extensionDir := filepath.Join(userConfigDir, "extensions", extension.Id)
+	extensionDir, _, err := extensionPaths(userConfigDir, extension.Id)
+	if err != nil {
+		return err
+	}
+
 	metadataPath := filepath.Join(extensionDir, metadataFileName)
 
 	// Check if metadata.json already exists (pre-packaged)
@@ -1466,7 +1465,11 @@ func (m *Manager) LoadMetadata(extensionId string) (*ExtensionCommandMetadata, e
 		return nil, fmt.Errorf("failed to get user config directory: %w", err)
 	}
 
-	extensionDir := filepath.Join(userConfigDir, "extensions", extensionId)
+	extensionDir, _, err := extensionPaths(userConfigDir, extensionId)
+	if err != nil {
+		return nil, err
+	}
+
 	metadataPath := filepath.Join(extensionDir, metadataFileName)
 
 	data, err := os.ReadFile(metadataPath)
@@ -1492,7 +1495,11 @@ func (m *Manager) DeleteMetadata(extensionId string) error {
 		return fmt.Errorf("failed to get user config directory: %w", err)
 	}
 
-	extensionDir := filepath.Join(userConfigDir, "extensions", extensionId)
+	extensionDir, _, err := extensionPaths(userConfigDir, extensionId)
+	if err != nil {
+		return err
+	}
+
 	metadataPath := filepath.Join(extensionDir, metadataFileName)
 
 	if err := os.Remove(metadataPath); err != nil {
@@ -1512,7 +1519,11 @@ func (m *Manager) MetadataExists(extensionId string) bool {
 		return false
 	}
 
-	extensionDir := filepath.Join(userConfigDir, "extensions", extensionId)
+	extensionDir, _, err := extensionPaths(userConfigDir, extensionId)
+	if err != nil {
+		return false
+	}
+
 	metadataPath := filepath.Join(extensionDir, metadataFileName)
 
 	_, err = os.Stat(metadataPath)

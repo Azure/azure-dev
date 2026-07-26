@@ -73,6 +73,21 @@ overrides:
           - stdlib
           - dependson
           - appsettings
+    - filename: ./docs/specs/extension-upgrade-force/**
+      words:
+          - axww
+          - azdcli
+          - azdext
+          - EPERM
+          - figspec
+          - NTFS
+          - ostest
+          - Pids
+          - processutil
+          - proctest
+          - osutil
+          - testdata
+          - Toolhelp
     - filename: schemas/**/azure.yaml.json
       words:
           - prodapi
@@ -117,6 +132,7 @@ overrides:
           - vsrpc
     - filename: docs/reference/**/*.md
       words:
+          - Agentic
           - appinit
           - appservice
           - buildpack

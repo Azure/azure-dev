@@ -1274,6 +1274,20 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 		// Extension SDK errors used by extensions, never reach host MapError
 		"ErrProjectNotFound": "pkg/azdext: extension SDK helper, used by extensions not the host",
 
+		// Process discovery and termination preconditions. Each one reports that a caller
+		// passed an argument the package refuses to act on, such as an empty or root
+		// directory, a non-positive pid, or a process outside the requested scope. Reaching
+		// any of them means azd has a bug, not that the user did something recoverable.
+		"ErrEmptyDirectory":    "pkg/processutil: argument precondition, programming error not a runtime user error",
+		"ErrRootDirectory":     "pkg/processutil: argument precondition, programming error not a runtime user error",
+		"ErrInvalidPID":        "pkg/processutil: argument precondition, programming error not a runtime user error",
+		"ErrProcessOutOfScope": "pkg/processutil: containment precondition, programming error not a runtime user error",
+
+		// osutil refuses to operate on a directory azd owns when a symlink or junction
+		// has been planted there. That is a tampering signal rather than a mistake the
+		// user can correct, and the surrounding operation reports its own error.
+		"ErrLinkedDirectory": "pkg/osutil: tampering guard, surfaced by the calling operation's own error",
+
 		// gRPC broker errors caught at broker/stream level
 		"ErrResourceExhausted": "pkg/grpcbroker: gRPC message size error, caught in broker send/recv handlers",
 	}

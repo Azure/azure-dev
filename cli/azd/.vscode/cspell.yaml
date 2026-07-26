@@ -15,12 +15,15 @@ words:
   - golangci
   - golangtools
   - lightspeed
+  - proctest
+  - processutil
   - runewidth
   - toplevel
   - truncatable
   - wrappable
   - myacr
   - myconn
+  - myext
   - myorg
   - myprivacr
   - privatelink
@@ -483,6 +486,9 @@ overrides:
   - filename: pkg/tool/manifest.go
     words:
       - azureresourcegroups
+  - filename: pkg/processutil/processutil_darwin.go
+    words:
+      - axww
   - filename: pkg/tool/installer.go
     words:
       - filesystems

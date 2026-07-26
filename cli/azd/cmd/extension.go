@@ -32,6 +32,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/processutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
@@ -109,6 +110,13 @@ tracked for updates; reinstall from a newer bundle to update.`,
 		Command: &cobra.Command{
 			Use:   "uninstall [extension-id]",
 			Short: "Uninstall specified extensions.",
+			Long: `Uninstall one or more installed extensions.
+
+If the extension is currently running, its files may be locked. azd moves the
+locked files aside so the uninstall still succeeds, and cleans them up on a
+later extension command once the process exits. Use --force to stop processes
+running from the extension's install directory first and remove everything
+immediately.`,
 		},
 		ActionResolver: newExtensionUninstallAction,
 		FlagsResolver:  newExtensionUninstallFlags,
@@ -138,6 +146,12 @@ dependencies are automatically upgraded too, to the highest version
 satisfying the extension's declared constraints. Use
 --no-dependency-upgrades to opt out and upgrade only the named
 extension.
+
+If the extension is currently running, its files may be locked and the old
+binary stays in use until that process restarts. Use --force to stop processes
+running from the extension's install directory first, so the new version takes
+effect right away. Only processes started from that extension's own directory
+are stopped. --force also applies to any dependencies being upgraded.
 
 Use --output json for a structured report of all upgrade results.`,
 		},
@@ -822,7 +836,9 @@ func newExtensionInstallFlags(cmd *cobra.Command, global *internal.GlobalCommand
 			"or a registry location (URL or file path) to register and install from.")
 	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to install")
 	cmd.Flags().
-		BoolVarP(&flags.force, "force", "f", false, "Force installation, including downgrades and reinstalls")
+		BoolVarP(&flags.force, "force", "f", false,
+			"Force installation, including downgrades, reinstalls, "+
+				"and stopping running extension processes that block replacement")
 	cmd.Flags().BoolVar(&flags.noDependencies, "no-dependencies", false,
 		"Install only the specified extension(s) without installing their declared dependencies")
 
@@ -1047,21 +1063,30 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 
 			// Use upgrade logic for existing installations
 			a.console.ShowSpinner(ctx, stepMessage, input.Step)
+			var stopped []processutil.ProcessInfo
 			extensionVersion, _, err = a.extensionManager.Upgrade(
 				ctx, compatibleExtension, extensions.UpgradeOptions{
 					VersionPreference:   a.flags.version,
 					UpgradeDependencies: !a.flags.noDependencies,
 					SkipDependencies:    a.flags.noDependencies,
 					AzdVersion:          azdVersion,
+					// --force already means "override what is blocking me" for installs,
+					// so it also covers a running extension holding its own files open.
+					Force: a.flags.force,
+					OnProcessStopped: func(process processutil.ProcessInfo) {
+						stopped = append(stopped, process)
+					},
 				},
 			)
 			if err != nil {
 				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				reportStoppedProcesses(ctx, a.console, stopped)
 				return nil, wrapDependencyError(fmt.Errorf("failed to upgrade extension: %w", err))
 			}
 
 			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
 			a.console.StopSpinner(ctx, stepMessage, input.StepDone)
+			reportStoppedProcesses(ctx, a.console, stopped)
 
 		} else {
 			// Extension not installed - proceed with fresh install
@@ -1736,12 +1761,15 @@ func inferSourceKind(location string) (extensions.SourceKind, bool) {
 
 // azd extension uninstall
 type extensionUninstallFlags struct {
-	all bool
+	all   bool
+	force bool
 }
 
 func newExtensionUninstallFlags(cmd *cobra.Command) *extensionUninstallFlags {
 	flags := &extensionUninstallFlags{}
 	cmd.Flags().BoolVar(&flags.all, "all", false, "Uninstall all installed extensions")
+	cmd.Flags().BoolVarP(&flags.force, "force", "f", false,
+		"Stop running extension processes that are blocking removal")
 
 	return flags
 }
@@ -1825,12 +1853,21 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 		stepMessage += fmt.Sprintf(" (%s)", installed.Version)
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
-		if err := a.extensionManager.Uninstall(ctx, extensionId); err != nil {
+		var stopped []processutil.ProcessInfo
+		err = a.extensionManager.UninstallWithOptions(ctx, extensionId, extensions.UninstallOptions{
+			Force: a.flags.force,
+			OnProcessStopped: func(process processutil.ProcessInfo) {
+				stopped = append(stopped, process)
+			},
+		})
+		if err != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			reportStoppedProcesses(ctx, a.console, stopped)
 			return nil, fmt.Errorf("failed to uninstall extension: %w", err)
 		}
 
 		a.console.StopSpinner(ctx, stepMessage, input.StepDone)
+		reportStoppedProcesses(ctx, a.console, stopped)
 	}
 
 	return &actions.ActionResult{
@@ -1845,6 +1882,7 @@ type extensionUpgradeFlags struct {
 	source               string
 	all                  bool
 	noDependencyUpgrades bool
+	force                bool
 	global               *internal.GlobalCommandOptions
 }
 
@@ -1858,8 +1896,18 @@ func newExtensionUpgradeFlags(cmd *cobra.Command, global *internal.GlobalCommand
 	cmd.Flags().BoolVar(&flags.all, "all", false, "Upgrade all installed extensions")
 	cmd.Flags().BoolVar(&flags.noDependencyUpgrades, "no-dependency-upgrades", false,
 		"Do not upgrade dependencies when upgrading an extension that has dependencies")
+	cmd.Flags().BoolVarP(&flags.force, "force", "f", false,
+		"Stop running extension processes so the upgraded version takes effect immediately")
 
 	return flags
+}
+
+// reportStoppedProcesses tells the user which processes azd stopped on their behalf.
+// Silent when nothing was stopped, so the common case stays quiet.
+func reportStoppedProcesses(ctx context.Context, console input.Console, stopped []processutil.ProcessInfo) {
+	for _, process := range stopped {
+		console.Message(ctx, fmt.Sprintf("  %s", output.WithGrayFormat("Stopped %s", process.String())))
+	}
 }
 
 // azd extension upgrade
@@ -2083,6 +2131,10 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		a.console.ShowSpinner(ctx, stepMsg, input.Step)
 	}
 
+	// Processes stopped by --force, recorded before the failure helper below so every
+	// exit path can tell the user what azd terminated on their behalf.
+	var stopped []processutil.ProcessInfo
+
 	// Helper to record a failure and stop the spinner.
 	fail := func(err error) extensions.UpgradeResult {
 		baseResult.Status = extensions.UpgradeStatusFailed
@@ -2091,6 +2143,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			a.console.StopSpinner(
 				ctx, stepMsg, input.StepFailed,
 			)
+			reportStoppedProcesses(ctx, a.console, stopped)
 			a.console.Message(ctx, fmt.Sprintf(
 				"  %s",
 				output.WithGrayFormat("%s", err.Error()),
@@ -2324,6 +2377,10 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			VersionPreference:   a.flags.version,
 			UpgradeDependencies: !a.flags.noDependencyUpgrades,
 			AzdVersion:          azdVersion,
+			Force:               a.flags.force,
+			OnProcessStopped: func(process processutil.ProcessInfo) {
+				stopped = append(stopped, process)
+			},
 		},
 	)
 	if err != nil {
@@ -2370,6 +2427,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			),
 		)
 		a.console.StopSpinner(ctx, doneMsg, input.StepDone)
+		reportStoppedProcesses(ctx, a.console, stopped)
 		displayDependencyUpgradeResults(ctx, a.console, baseResult.DependencyUpgrades, "  ")
 		displayExtensionUsageAndExamples(
 			ctx, a.console, extVersion,

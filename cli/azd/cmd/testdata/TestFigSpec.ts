@@ -5851,7 +5851,7 @@ const completionSpec: Fig.Spec = {
 					options: [
 						{
 							name: ['--force', '-f'],
-							description: 'Force installation, including downgrades and reinstalls',
+							description: 'Force installation, including downgrades, reinstalls, and stopping running extension processes that block replacement',
 							isDangerous: true,
 						},
 						{
@@ -6001,6 +6001,11 @@ const completionSpec: Fig.Spec = {
 							name: ['--all'],
 							description: 'Uninstall all installed extensions',
 						},
+						{
+							name: ['--force', '-f'],
+							description: 'Stop running extension processes that are blocking removal',
+							isDangerous: true,
+						},
 					],
 					args: {
 						name: 'extension-id',
@@ -6015,6 +6020,11 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['--all'],
 							description: 'Upgrade all installed extensions',
+						},
+						{
+							name: ['--force', '-f'],
+							description: 'Stop running extension processes so the upgraded version takes effect immediately',
+							isDangerous: true,
 						},
 						{
 							name: ['--no-dependency-upgrades'],

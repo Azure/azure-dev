@@ -6,6 +6,7 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -640,6 +641,33 @@ services:
 		require.NoError(t, ejectInfraAfterInit("bicep"))
 	})
 
+	assert.FileExists(t, filepath.Join(projectRoot, "infra", "main.bicep"))
+	assert.NoDirExists(t, filepath.Join(nestedDir, "infra"))
+}
+
+func TestInitInfra_StandaloneEjectResolvesParentProject(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	projectRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectRoot, "azure.yaml"), []byte(`name: test
+services:
+  ai-project:
+    host: azure.ai.project
+`), 0600))
+	nestedDir := filepath.Join(projectRoot, "src", "agent")
+	require.NoError(t, os.MkdirAll(nestedDir, 0750))
+	t.Chdir(nestedDir)
+
+	cmd := newInitCommand(&azdext.ExtensionContext{})
+	cmd.SetArgs([]string{"--infra"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	var execErr error
+	withCapturedStdout(t, func() {
+		execErr = cmd.Execute()
+	})
+
+	require.NoError(t, execErr)
 	assert.FileExists(t, filepath.Join(projectRoot, "infra", "main.bicep"))
 	assert.NoDirExists(t, filepath.Join(nestedDir, "infra"))
 }

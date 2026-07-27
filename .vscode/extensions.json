@@ -1,6 +1,10 @@
 {
-  "recommendations": [
-    "ms-azuretools.vscode-azurefunctions",
-    "ms-python.python"
-  ]
+    // See http://go.microsoft.com/fwlink/?LinkId=827846
+    // for the documentation about the extensions.json format
+    "recommendations": [
+        "streetsidesoftware.code-spell-checker",
+        "redhat.vscode-yaml",
+        "ms-azuretools.vscode-azurefunctions",
+        "golang.go"
+    ]
 }

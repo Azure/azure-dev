@@ -26,13 +26,11 @@
             "console": "integratedTerminal"
         },
         {
-            "name": "Attach to Python Functions",
-            "type": "debugpy",
+            "name": "Attach to Go Functions",
+            "type": "go",
             "request": "attach",
-            "connect": {
-                "host": "localhost",
-                "port": 9091
-            },
+            "mode": "local",
+            "processId": "${command:pickGoProcess}",
             "preLaunchTask": "func: host start"
         }
     ],

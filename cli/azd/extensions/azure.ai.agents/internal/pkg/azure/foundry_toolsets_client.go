@@ -241,7 +241,6 @@ func (c *FoundryToolboxClient) PromoteToolboxVersion(
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-	req.Raw().Header.Set("Foundry-Features", toolboxesFeatureHeader)
 	if err := req.SetBody(
 		streaming.NopCloser(bytes.NewReader(payload)),
 		"application/json",

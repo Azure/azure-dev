@@ -88,13 +88,14 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 			_, isPrompt := promptSettingsFromService(svc)
 			if !isPrompt {
 				if err := prepareContainerSettings(
-				ctx,
-				azdClient,
-				svc,
-				args.Project.Path,
-			); err != nil {
-				return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
-			}	
+					ctx,
+					azdClient,
+					svc,
+					args.Project.Path,
+				); err != nil {
+					return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
+				}
+			}
 			if err := envUpdate(
 				ctx,
 				azdClient,
@@ -144,22 +145,6 @@ func postprovisionHandler(
 		if svc.Host == AiAgentHost {
 			hasAgent = true
 			break
-		}
-
-		// Prompt (kind=managed) agents have no toolboxes to provision on a
-		// Foundry project — the harness owns those. Skip toolbox provisioning
-		// but still treat the project as having an agent (for the
-		// pending-provision signal clear below).
-		if _, isPrompt := promptSettingsFromService(svc); isPrompt {
-			continue
-		}
-
-		if err := provisionToolboxes(ctx, azdClient, svc); err != nil {
-			return fmt.Errorf(
-				"failed to provision toolboxes for service %q: %w",
-				svc.Name, err,
-			)
-		
 		}
 	}
 
@@ -238,18 +223,6 @@ func updateLegacyProjectDeployments(
 		return nil
 	}
 
-		// Prompt (kind=managed) agents have no container settings and no
-		// developer-RBAC pre-flight — the harness owns the runtime.
-		if _, isPrompt := promptSettingsFromService(svc); isPrompt {
-			continue
-		}
-
-		if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
-			return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
-		}
-		if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
-			return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
-		}
 	envName, err := currentEnvName(ctx, azdClient)
 	if err != nil {
 		return fmt.Errorf(

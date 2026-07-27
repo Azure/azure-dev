@@ -240,7 +240,7 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	// Foundry project. They self-authenticate via the harness client and carry
 	// their entire deploy target in the service config, so skip the
 	// subscription/tenant/credential resolution the hosted path needs.
-	if serviceIsPromptAgent(serviceConfig) {
+	if serviceIsPromptAgent(p.serviceConfig) {
 		fmt.Fprintf(os.Stderr, "Project path: %s, Service path: %s\n", proj.Project.Path, fullPath)
 		return p.resolveAgentDefinitionPath(proj.Project.Path, servicePath, fullPath)
 	}
@@ -335,7 +335,7 @@ func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
 	// so no on-disk agent.yaml is required.
 	if _, _, found, _, defErr := AgentDefinitionFromResolvedService(
 		p.serviceConfig,
-		proj.Project.Path,
+		projectPath,
 	); defErr != nil {
 		return defErr
 	} else if found {
@@ -344,7 +344,7 @@ func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
 	}
 
 	// Legacy shape: look for agent.yaml or agent.yml in the service directory root
-	agentYamlPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath, "agent.yaml")
+	agentYamlPath, err := paths.JoinAllowRoot(projectPath, servicePath, "agent.yaml")
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,

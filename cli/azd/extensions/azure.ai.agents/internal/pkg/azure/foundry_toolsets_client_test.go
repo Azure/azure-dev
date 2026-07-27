@@ -308,7 +308,6 @@ func TestPromoteToolboxVersion_RequestShape(t *testing.T) {
 	require.Equal(t, http.MethodPatch, captured.Method)
 	require.Equal(t, "/toolboxes/tb", captured.URL.EscapedPath())
 	require.Equal(t, "api-version="+toolboxesApiVersion, captured.URL.RawQuery)
-	require.Equal(t, toolboxesFeatureHeader, captured.Header.Get("Foundry-Features"))
 	require.Contains(t, string(body), `"default_version":"v2"`)
 }
 

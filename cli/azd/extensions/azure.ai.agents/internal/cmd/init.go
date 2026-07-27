@@ -1549,8 +1549,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringVar(&flags.model, "model", "",
 		fmt.Sprintf(
 			"Name of the AI model to deploy. Defaults to '%s' during interactive model selection; "+
-				"required to deploy a new model with --no-prompt. Mutually exclusive with --model-deployment, "+
-				"with --model-deployment being used if both are provided",
+				"required to deploy a new model with --no-prompt. If --model-deployment is also provided, "+
+				"--model-deployment takes precedence",
 			defaultAgentModel,
 		))
 

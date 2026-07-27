@@ -1267,8 +1267,9 @@ func selectNewModel(
 			exterrors.CodeModelResolutionFailed,
 			fmt.Sprintf("failed to select an AI model: %s", err),
 			fmt.Sprintf(
-				"pass --model <name> (e.g. --model %s) or --project-id "+
-					"<id> with --model-deployment <name> to skip interactive model selection",
+				"to run non-interactively, pass --no-prompt with --model <name> "+
+					"(e.g. --model %s), or --no-prompt with --project-id <id> "+
+					"and --model-deployment <name>",
 				defaultAgentModel,
 			),
 		)

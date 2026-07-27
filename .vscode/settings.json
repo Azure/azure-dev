@@ -6,8 +6,6 @@
   ],
   "aspire.enableSettingsFileCreationPromptOnStartup": false,
   "azureFunctions.projectSubpath": "cli/azd/test/functional/testdata/samples/gofuncapp",
-  "azureFunctions.deploySubpath": "cli/azd/test/functional/testdata/samples/gofuncapp",
-  "azureFunctions.scmDoBuildDuringDeployment": true,
   "azureFunctions.projectLanguage": "Go",
   "azureFunctions.projectRuntime": "~4",
   "debug.internalConsoleOptions": "neverOpen"

@@ -32,7 +32,8 @@
             "mode": "remote",
             "host": "127.0.0.1",
             "port": 2345,
-            "preLaunchTask": "func: host start"
+            "preLaunchTask": "func: host start",
+            "postDebugTask": "cleanup gofuncapp debug"
         }
     ],
     "inputs": [

@@ -28,6 +28,23 @@
 			"options": {
 				"cwd": "${workspaceFolder}/cli/azd/test/functional/testdata/samples/gofuncapp"
 			}
+		},
+		{
+			"label": "cleanup gofuncapp debug",
+			"type": "shell",
+			"windows": {
+				"command": "cmd.exe /c \"if exist go.mod del go.mod & if exist go.sum del go.sum\""
+			},
+			"osx": {
+				"command": "rm -f go.mod go.sum"
+			},
+			"linux": {
+				"command": "rm -f go.mod go.sum"
+			},
+			"problemMatcher": [],
+			"options": {
+				"cwd": "${workspaceFolder}/cli/azd/test/functional/testdata/samples/gofuncapp"
+			}
 		}
 	]
 }

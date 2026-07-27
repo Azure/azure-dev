@@ -29,8 +29,9 @@
             "name": "Attach to Go Functions",
             "type": "go",
             "request": "attach",
-            "mode": "local",
-            "processId": "${command:pickGoProcess}",
+            "mode": "remote",
+            "host": "127.0.0.1",
+            "port": 2345,
             "preLaunchTask": "func: host start"
         }
     ],

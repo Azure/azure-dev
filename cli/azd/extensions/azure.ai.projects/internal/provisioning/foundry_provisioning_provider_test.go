@@ -410,6 +410,7 @@ func TestArmInputsToProto(t *testing.T) {
 func TestDeploymentName_StableForEnv(t *testing.T) {
 	p := &FoundryProvisioningProvider{envName: "dev", projectPath: "/proj/a"}
 	first := p.deploymentName()
+	assert.Equal(t, "azd-foundry-dev-accd5375", first, "names that already fit must not change")
 	assert.Equal(t, first, p.deploymentName(), "same env+path is stable")
 	assert.True(t, strings.HasPrefix(first, "azd-foundry-dev-"), "carries env and discriminator")
 
@@ -419,6 +420,25 @@ func TestDeploymentName_StableForEnv(t *testing.T) {
 	// Different project paths sharing an env name must not collide.
 	other := &FoundryProvisioningProvider{envName: "dev", projectPath: "/proj/b"}
 	assert.NotEqual(t, first, other.deploymentName())
+}
+
+func TestDeploymentName_LongEnvironmentName(t *testing.T) {
+	projectPath := `C:\Users\zhihuan\source\repos\agent-framework-egress-control-responses`
+	p := &FoundryProvisioningProvider{
+		envName:     "agent-framework-egress-control-responses-dev",
+		projectPath: projectPath,
+	}
+
+	name := p.deploymentName()
+	assert.Len(t, name, maxDeploymentNameLength)
+	assert.Equal(t, "azd-foundry-agent-framework-egress-control-res-269fe92a-aa9d4054", name)
+
+	// Environment names that differ only beyond the retained prefix must not collide.
+	other := &FoundryProvisioningProvider{
+		envName:     "agent-framework-egress-control-responses-test",
+		projectPath: projectPath,
+	}
+	assert.NotEqual(t, name, other.deploymentName())
 }
 
 func TestDeploymentOutputsResources_NilSafe(t *testing.T) {

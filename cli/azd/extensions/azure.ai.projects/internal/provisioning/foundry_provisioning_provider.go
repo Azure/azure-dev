@@ -51,9 +51,12 @@ const (
 	envKeyPrincipalID    = "AZURE_PRINCIPAL_ID"
 )
 
-// deploymentNamePrefix is prepended to the azd environment name to form
-// the ARM deployment name so re-runs update the same deployment record.
-const deploymentNamePrefix = "azd-foundry-"
+const (
+	// deploymentNamePrefix is prepended to the azd environment name so re-runs
+	// update the same ARM deployment record.
+	deploymentNamePrefix    = "azd-foundry-"
+	maxDeploymentNameLength = 64
+)
 
 // FoundryProvisioningProvider implements azdext.ProvisioningProvider for
 // the service whose host is FoundryProjectHost. By default it deploys
@@ -1791,28 +1794,35 @@ func (p *FoundryProvisioningProvider) deploymentsClient(ctx context.Context) (*a
 	return factory.NewDeploymentsClient(), nil
 }
 
-// deploymentName is stable per azd env so re-runs update one record, plus a
-// short hash of the project path so two projects sharing an env name (e.g.
-// "dev") in the same subscription don't write the same deployment and read each
-// other's outputs.
+// deploymentName is stable per azd env and capped at ARM's 64-character limit.
+// The project-path hash separates projects sharing an env name; an env-name hash
+// preserves that identity when the readable env-name segment must be truncated.
 func (p *FoundryProvisioningProvider) deploymentName() string {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(p.projectPath))
-	return fmt.Sprintf("%s%s-%08x", deploymentNamePrefix, p.envName, h.Sum32())
+	pathHash := fnv.New32a()
+	_, _ = pathHash.Write([]byte(p.projectPath))
+	name := fmt.Sprintf("%s%s-%08x", deploymentNamePrefix, p.envName, pathHash.Sum32())
+	if len(name) <= maxDeploymentNameLength {
+		return name
+	}
+
+	envHash := fnv.New32a()
+	_, _ = envHash.Write([]byte(p.envName))
+	hashTail := fmt.Sprintf("-%08x-%08x", envHash.Sum32(), pathHash.Sum32())
+	keep := maxDeploymentNameLength - len(deploymentNamePrefix) - len(hashTail)
+	return deploymentNamePrefix + p.envName[:keep] + hashTail
 }
 
 // brownfieldDeploymentName is deploymentName plus a "-brownfield" suffix, capped
 // at ARM's 64-character deployment-name limit. The trailing path hash and suffix
 // are preserved (uniqueness and intent); only the env-name portion is truncated.
 func (p *FoundryProvisioningProvider) brownfieldDeploymentName() string {
-	const maxLen = 64
 	name := p.deploymentName() + "-brownfield"
-	if len(name) <= maxLen {
+	if len(name) <= maxDeploymentNameLength {
 		return name
 	}
 	const suffix = "-brownfield"
 	hashTail := name[len(name)-len(suffix)-9 : len(name)-len(suffix)] // "-<8 hex>"
-	keep := maxLen - len(hashTail) - len(suffix)
+	keep := maxDeploymentNameLength - len(hashTail) - len(suffix)
 	return name[:keep] + hashTail + suffix
 }
 

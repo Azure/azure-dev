@@ -2139,6 +2139,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	fail := func(err error) extensions.UpgradeResult {
 		baseResult.Status = extensions.UpgradeStatusFailed
 		baseResult.Error = err
+		baseResult.StoppedProcesses = stopped
 		if !isJsonOutput {
 			a.console.StopSpinner(
 				ctx, stepMsg, input.StepFailed,
@@ -2345,6 +2346,14 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 				VersionPreference:   a.flags.version,
 				UpgradeDependencies: !a.flags.noDependencyUpgrades,
 				AzdVersion:          azdVersion,
+				// The parent is already current, but a stale dependency still gets
+				// reinstalled here, and its own process holds its binary open exactly
+				// like the parent's would. Dropping these would make --force a no-op
+				// for the one extension this branch actually replaces.
+				Force: a.flags.force,
+				OnProcessStopped: func(process processutil.ProcessInfo) {
+					stopped = append(stopped, process)
+				},
 			},
 		)
 		if err != nil {
@@ -2357,6 +2366,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			baseResult.ToSource = newSource
 		}
 
+		baseResult.StoppedProcesses = stopped
 		baseResult.Status = extensions.UpgradeStatusSkipped
 		baseResult.SkipReason = "already up to date"
 		if !isJsonOutput {
@@ -2366,6 +2376,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			a.console.StopSpinner(
 				ctx, skipMsg, input.StepSkipped,
 			)
+			reportStoppedProcesses(ctx, a.console, stopped)
 			displayDependencyUpgradeResults(ctx, a.console, baseResult.DependencyUpgrades, "  ")
 		}
 		return baseResult
@@ -2397,6 +2408,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	}
 	baseResult.ToVersion = extVersion.Version
 	baseResult.DependencyUpgrades = depUpgrades
+	baseResult.StoppedProcesses = stopped
 
 	// Handle promotion display and distinct telemetry
 	if isPromotion {

@@ -62,6 +62,12 @@ func (m *Manager) uninstallInternal(ctx context.Context, id string, opts Uninsta
 		return err
 	}
 
+	// Checked before anything reads, deletes, or terminates against these paths, so a
+	// link planted at either directory cannot redirect the removal or the kill scope.
+	if err := requireRealExtensionDirs(extensionDir); err != nil {
+		return err
+	}
+
 	// Clear anything an earlier run had to leave behind before potentially adding to it.
 	osutil.SweepTrash(ctx, trashDir)
 
@@ -126,6 +132,27 @@ func extensionPaths(userConfigDir string, id string) (extensionDir string, trash
 	}
 
 	return extensionDir, filepath.Join(extensionsRoot, trashDirName), nil
+}
+
+// requireRealExtensionDirs refuses to operate when either directory azd owns under the
+// user config directory has been replaced by a symlink or junction.
+//
+// osutil.RequireRealDir deliberately inspects only a path's final component, so checking
+// the extension directory alone is not enough: when the extensions root itself is a link,
+// the operating system resolves it while walking to the final component and the check
+// passes against the link target. Everything downstream then follows: the termination
+// scope widens to whatever the link points at, the trash sweep deletes children there,
+// and an install writes there. Both components azd creates therefore have to be checked.
+//
+// Only those two are checked. Symlinked ancestors above the config directory stay legal,
+// which macOS requires: its configuration directory sits under /var while processes
+// report their executables under /private/var.
+func requireRealExtensionDirs(extensionDir string) error {
+	if err := osutil.RequireRealDir(filepath.Dir(extensionDir)); err != nil {
+		return err
+	}
+
+	return osutil.RequireRealDir(extensionDir)
 }
 
 // validateExtensionId rejects ids that cannot safely become a directory name, before the

@@ -82,6 +82,7 @@ overrides:
           - figspec
           - NTFS
           - ostest
+          - pidfd
           - Pids
           - processutil
           - proctest

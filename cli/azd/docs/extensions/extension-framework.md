@@ -167,14 +167,18 @@ extension had a live process, such as a long-running MCP server.
 
 `azd` now handles this in two layers:
 
-1. **By default**, files that cannot be deleted are renamed into a `.trash` directory
-   inside the extension folder instead. The upgrade or uninstall succeeds, and the leftover
-   files are swept away on the next `azd` extension command once the process exits. The
-   running process keeps using the old binary until it restarts.
+1. **By default**, files that cannot be deleted are renamed into a shared `.trash` directory
+   that sits alongside the extension folders, at `<azd config dir>/extensions/.trash`, rather
+   than inside the extension folder itself. The upgrade or uninstall succeeds, and the leftover
+   files are swept away by the next extension install, upgrade, or uninstall once the process
+   exits. The running process keeps using the old binary until it restarts.
 2. **With `-f, --force`**, `azd` first stops processes running from that extension's install
    directory, then removes the files normally, so the new version takes effect immediately.
    `azd` prints each process it stopped. Only processes whose executable lives inside that
-   one extension's directory are eligible; nothing else on the machine is touched.
+   one extension's directory are eligible; nothing else on the machine is touched. Under
+   `--output json` nothing is printed, so `azd extension upgrade` reports the same
+   information in a `stoppedProcesses` array on each result, with the `name`, `pid`, and
+   `executable` of every process it terminated.
 
 ## Developing Extensions
 

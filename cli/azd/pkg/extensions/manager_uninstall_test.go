@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -352,6 +353,97 @@ func TestExtensionPaths_AliasedIdWouldResolveOntoAnotherExtension(t *testing.T) 
 	// The rejected id would have resolved onto exactly the victim's directory, because
 	// Windows discards the trailing dot when it creates or opens the path.
 	require.Equal(t, victim, filepath.Join(root, extensionsDirName, "test.demo"))
+}
+
+// linkDirectory creates a directory link at linkPath pointing at target, skipping when
+// the machine will not allow it.
+//
+// Windows needs Developer Mode or elevation for a symlink but allows a junction with
+// neither, and a junction is the more dangerous of the two: filepath.EvalSymlinks refuses
+// to resolve it while the operating system resolves it while walking a longer path.
+func linkDirectory(t *testing.T, linkPath string, target string) {
+	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		//nolint:gosec // Fixed executable, arguments are test-controlled temp paths.
+		if out, err := exec.Command("cmd", "/c", "mklink", "/J", linkPath, target).CombinedOutput(); err != nil {
+			t.Skipf("cannot create a directory junction on this machine: %v: %s", err, out)
+		}
+
+		return
+	}
+
+	if err := os.Symlink(target, linkPath); err != nil {
+		t.Skipf("cannot create a symlink on this machine: %v", err)
+	}
+}
+
+// Both directories azd creates have to be checked, not just the extension directory.
+// osutil.RequireRealDir inspects only a path's final component, so when the extensions
+// root itself is a link the operating system resolves it on the way to the final
+// component and a check on the extension directory alone passes against the link target.
+// Everything downstream then follows the link: the removal, the trash sweep, and the
+// process termination scope.
+func TestRequireRealExtensionDirs_RefusesLinkAtEitherComponent(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+
+	target := filepath.Join(base, "elsewhere")
+	require.NoError(t, os.MkdirAll(filepath.Join(target, "test.demo"), osutil.PermissionDirectory))
+
+	realRoot := filepath.Join(base, "real", extensionsDirName)
+	require.NoError(t, os.MkdirAll(filepath.Join(realRoot, "test.demo"), osutil.PermissionDirectory))
+	require.NoError(t, requireRealExtensionDirs(filepath.Join(realRoot, "test.demo")),
+		"two real directories must be accepted")
+
+	// Nothing created yet is still fine: there is no link there to redirect anything.
+	require.NoError(t, requireRealExtensionDirs(filepath.Join(realRoot, "not-installed-yet")))
+
+	linkedExtension := filepath.Join(realRoot, "test.linked")
+	linkDirectory(t, linkedExtension, target)
+	require.ErrorIs(t, requireRealExtensionDirs(linkedExtension), osutil.ErrLinkedDirectory,
+		"a link at the extension directory must be refused")
+
+	linkedRoot := filepath.Join(base, "linked", extensionsDirName)
+	require.NoError(t, os.MkdirAll(filepath.Dir(linkedRoot), osutil.PermissionDirectory))
+	linkDirectory(t, linkedRoot, target)
+
+	throughLink := filepath.Join(linkedRoot, "test.demo")
+	require.NoError(t, osutil.RequireRealDir(throughLink),
+		"a final component check alone cannot see the linked root, which is why it is not enough")
+	require.ErrorIs(t, requireRealExtensionDirs(throughLink), osutil.ErrLinkedDirectory,
+		"a link at the extensions root must be refused")
+}
+
+// A link planted at the extensions root has to stop an uninstall before it sweeps,
+// terminates, or deletes anything, because each of those would act on the link's target.
+func TestUninstall_RefusesLinkedExtensionsRoot(t *testing.T) {
+	configDir := isolatedConfigDir(t)
+
+	const id = "test.linked-root"
+
+	target := filepath.Join(t.TempDir(), "elsewhere")
+	require.NoError(t, os.MkdirAll(filepath.Join(target, id), osutil.PermissionDirectory))
+
+	keep := filepath.Join(target, id, "keep.txt")
+	require.NoError(t, os.WriteFile(keep, []byte("x"), 0600))
+
+	linkDirectory(t, filepath.Join(configDir, extensionsDirName), target)
+
+	manager := newTestManager(t)
+	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+		id: {
+			Id:      id,
+			Version: "1.0.0",
+			Path:    filepath.Join(extensionsDirName, id, "tool"),
+		},
+	}))
+
+	err := manager.Uninstall(t.Context(), id)
+
+	require.ErrorIs(t, err, osutil.ErrLinkedDirectory)
+	require.FileExists(t, keep, "nothing under the link target may be removed")
 }
 
 // T27: Force has to survive the trip from UpgradeOptions through upgradeInternal into the

@@ -4,10 +4,13 @@
 package osutil
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -67,7 +70,8 @@ func TestRelocateLocked_MovesFileOutOfDir(t *testing.T) {
 	entries, err := os.ReadDir(trashDir)
 	require.NoError(t, err)
 	require.Len(t, entries, 1, "the locked file should have been moved into the trash directory")
-	require.Equal(t, filepath.Base(locked), entries[0].Name())
+	require.True(t, strings.HasPrefix(entries[0].Name(), filepath.Base(locked)),
+		"the relocated entry should stay recognizable, got %q", entries[0].Name())
 }
 
 // T20: the whole point of the fallback. Removing a directory that holds a running
@@ -319,33 +323,80 @@ func TestRelocateLocked_RefusesLinkedTrash(t *testing.T) {
 }
 
 // Relocated names must not collide, or a file trashed today would silently overwrite one
-// left behind by an earlier run that is still in use.
+// left behind by an earlier run that is still in use. They must also not collide across
+// processes, because destination selection and the rename that follows it are separate
+// operations that two azd processes can interleave.
 func TestUniqueTrashPath(t *testing.T) {
 	t.Parallel()
 
 	trashDir := t.TempDir()
 
-	first := uniqueTrashPath(trashDir, "tool.exe")
-	require.Equal(t, filepath.Join(trashDir, "tool.exe"), first)
+	seen := map[string]struct{}{}
 
-	require.NoError(t, os.WriteFile(first, []byte("x"), 0600))
+	for range 100 {
+		candidate := uniqueTrashPath(trashDir, "tool.exe")
 
-	second := uniqueTrashPath(trashDir, "tool.exe")
-	require.Equal(t, filepath.Join(trashDir, "tool.exe.1"), second)
-	require.NotEqual(t, first, second)
+		require.Equal(t, trashDir, filepath.Dir(candidate), "candidates must stay inside the trash directory")
+		require.True(t, strings.HasPrefix(filepath.Base(candidate), "tool.exe."),
+			"the original name should remain recognizable, got %q", candidate)
+		require.Contains(t, filepath.Base(candidate), fmt.Sprintf(".%d.", os.Getpid()),
+			"the name should carry this process's id so another process cannot pick it")
 
-	require.NoError(t, os.WriteFile(second, []byte("x"), 0600))
-	require.Equal(t, filepath.Join(trashDir, "tool.exe.2"), uniqueTrashPath(trashDir, "tool.exe"))
+		_, duplicate := seen[candidate]
+		require.False(t, duplicate, "uniqueTrashPath returned %q twice", candidate)
+		seen[candidate] = struct{}{}
+	}
 }
 
-func TestPathExists(t *testing.T) {
+// Two azd processes relocating the same base name at the same time must both succeed,
+// and neither may overwrite the other's file.
+func TestRelocateInto_ConcurrentRelocationsDoNotCollide(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	file := filepath.Join(dir, "a.txt")
+	base := t.TempDir()
+	trashDir := filepath.Join(base, ".trash")
+	require.NoError(t, os.MkdirAll(trashDir, PermissionDirectory))
 
-	require.False(t, pathExists(file))
-	require.NoError(t, os.WriteFile(file, []byte("x"), 0600))
-	require.True(t, pathExists(file))
-	require.True(t, pathExists(dir))
+	const concurrent = 8
+
+	roots := make([]string, 0, concurrent)
+
+	for i := range concurrent {
+		root := filepath.Join(base, fmt.Sprintf("extension-%d", i))
+		require.NoError(t, os.MkdirAll(root, PermissionDirectory))
+		// Every root uses the same base name, which is what made the old
+		// check-then-rename scheme hand two callers the same destination.
+		require.NoError(t, os.WriteFile(filepath.Join(root, "tool.exe"), fmt.Appendf(nil, "payload-%d", i), 0600))
+		roots = append(roots, root)
+	}
+
+	var wg sync.WaitGroup
+
+	errs := make([]error, concurrent)
+
+	for i, root := range roots {
+		wg.Go(func() {
+			errs[i] = relocateInto(filepath.Join(root, "tool.exe"), trashDir, "tool.exe")
+		})
+	}
+
+	wg.Wait()
+
+	for i, err := range errs {
+		require.NoErrorf(t, err, "relocation %d should have succeeded", i)
+	}
+
+	entries, err := os.ReadDir(trashDir)
+	require.NoError(t, err)
+	require.Len(t, entries, concurrent, "every concurrent relocation needs its own destination")
+
+	payloads := map[string]struct{}{}
+
+	for _, entry := range entries {
+		content, err := os.ReadFile(filepath.Join(trashDir, entry.Name()))
+		require.NoError(t, err)
+		payloads[string(content)] = struct{}{}
+	}
+
+	require.Len(t, payloads, concurrent, "no relocation may have overwritten another's file")
 }

@@ -29,14 +29,31 @@ func signalGraceful(pid int) error {
 	return fmt.Errorf("graceful stop is not supported on windows for process %d", pid)
 }
 
-// forceKill stops a process immediately using TerminateProcess.
-func forceKill(pid int) error {
+// forceKill stops a process immediately using TerminateProcess, refusing to act when the
+// process behind pid is no longer the one inside scope.
+//
+// The open handle is what makes the scope check binding rather than merely probable.
+// Windows keeps a process id reserved for as long as any handle to that process object is
+// open, so the identity established by the image path query below cannot be swapped for
+// an unrelated process before TerminateProcess runs. Validating a bare pid and then
+// reopening it to kill could not offer that: the process may exit and the operating
+// system hand the same number to something else in between.
+func forceKill(pid int, scope string) error {
 	//nolint:gosec // G115: pid is validated as positive by Terminate.
-	handle, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(pid))
+	handle, err := windows.OpenProcess(
+		windows.PROCESS_TERMINATE|windows.PROCESS_QUERY_LIMITED_INFORMATION,
+		false,
+		uint32(pid),
+	)
 	if err != nil {
 		return err
 	}
 	defer windows.CloseHandle(handle)
+
+	executable := imagePathForHandle(handle)
+	if executable == "" || !executableInScope(scope, executable) {
+		return fmt.Errorf("%w: process %d is not inside %s", ErrProcessOutOfScope, pid, scope)
+	}
 
 	return windows.TerminateProcess(handle, 1)
 }
@@ -108,6 +125,15 @@ func processImagePath(pid uint32) string {
 	}
 	defer windows.CloseHandle(handle)
 
+	return imagePathForHandle(handle)
+}
+
+// imagePathForHandle returns the full path of the executable image behind an already open
+// process handle, or an empty string when it cannot be read.
+//
+// Taking a handle rather than a pid is what lets forceKill decide scope and terminate
+// against one pinned process object instead of two separate lookups by number.
+func imagePathForHandle(handle windows.Handle) string {
 	size := uint32(windows.MAX_PATH)
 	buf := make([]uint16, size)
 

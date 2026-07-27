@@ -4,7 +4,7 @@
 ## Spec: docs/specs/extension-upgrade-force/spec.md
 ## Issue: https://github.com/Azure/azure-dev/issues/9307
 ## Created: 2026-07-25
-## Updated: 2026-07-25
+## Updated: 2026-07-26
 
 ---
 
@@ -92,8 +92,8 @@ Written because implementation exposed behavior the plan did not anticipate.
 | T42 | Removing a path that does not exist succeeds rather than erroring | AC-2 | unit | `pkg/osutil/relocate_test.go` -> `TestRemoveAllWithRelocation_MissingPath` | automated |
 | T43 | A trash directory nested inside the directory being removed is rejected | AC-11 | unit | `pkg/osutil/relocate_test.go` -> `TestRemoveAllWithRelocation_RejectsTrashInsidePath` | automated |
 | T44 | Both path arguments are required | AC-11 | unit | `pkg/osutil/relocate_test.go` -> `TestRemoveAllWithRelocation_RequiresPaths` | automated |
-| T45 | Trash destinations never collide across repeated relocations | AC-11 | unit | `pkg/osutil/relocate_test.go` -> `TestUniqueTrashPath` | automated |
-| T46 | Existence probing distinguishes missing from present without masking errors | AC-11 | unit | `pkg/osutil/relocate_test.go` -> `TestPathExists` | automated |
+| T45 | Trash destinations never collide, across repeated relocations or across processes | AC-11 | unit | `pkg/osutil/relocate_test.go` -> `TestUniqueTrashPath` | automated |
+| T46 | Concurrent relocations of the same base name all succeed and none overwrites another | AC-11 | unit | `pkg/osutil/relocate_test.go` -> `TestRelocateInto_ConcurrentRelocationsDoNotCollide` | automated |
 | T47 | A blocked removal with no discoverable processes still explains itself | AC-7 | integration | `pkg/extensions/manager_uninstall_test.go` -> `TestUninstall_BlockedErrorWithoutProcesses` | automated |
 | T48 | Process stopping refuses an unscoped or root directory at the manager boundary | AC-5 | unit | `pkg/extensions/manager_uninstall_test.go` -> `TestStopExtensionProcesses_RejectsUnscopedDirectory` | automated |
 | T49 | Stopping processes in a directory with none running is a no-op, not an error | AC-4 | unit | `pkg/extensions/manager_uninstall_test.go` -> `TestStopExtensionProcesses_NoProcesses` | automated |
@@ -118,6 +118,12 @@ Written because implementation exposed behavior the plan did not anticipate.
 | T68 | A scope whose own final component is a link is refused by both normalization and discovery | AC-2, AC-5 | unit | `pkg/processutil/processutil_test.go` -> `TestFindByExecutableDir_RejectsLinkedScope` | automated |
 | T69 | Ids that Windows aliases away (trailing dot or space), device names, and ids carrying `:` or control characters are rejected | AC-5 | unit | `pkg/extensions/manager_uninstall_test.go` -> `TestExtensionPaths_RejectsUnsafeIds` | automated |
 | T70 | An aliased id resolves onto the directory a different extension owns, and is refused | AC-5 | unit | `pkg/extensions/manager_uninstall_test.go` -> `TestExtensionPaths_AliasedIdWouldResolveOntoAnotherExtension` | automated |
+| T71 | Trash destinations carry the original base name so a leftover entry stays recognizable | AC-11 | unit | `pkg/osutil/relocate_test.go` -> `TestUniqueTrashPath` | automated |
+| T72 | A link at either azd-owned directory component is refused, including a link at the extensions root that a final-component check cannot see | AC-5 | unit | `pkg/extensions/manager_uninstall_test.go` -> `TestRequireRealExtensionDirs_RefusesLinkAtEitherComponent` | automated |
+| T73 | An uninstall under a linked extensions root is refused before it sweeps, terminates, or removes | AC-5, AC-11 | integration | `pkg/extensions/manager_uninstall_test.go` -> `TestUninstall_RefusesLinkedExtensionsRoot` | automated |
+| T74 | Windows `forceKill` refuses a process outside the scope of its own pinned handle, and still stops one inside it | AC-5 | integration | `pkg/processutil/processutil_windows_test.go` -> `TestForceKill_RefusesProcessOutsideScope` | automated |
+| T75 | `upgrade --force` reaches a stale dependency when the parent is already current, and reports it in `--output json` | AC-3, AC-6 | integration | `cmd/extension_force_test.go` -> `TestExtensionUpgradeAction_ForceReachesStaleDependencyOfCurrentParent` | automated |
+| T76 | `stoppedProcesses` is present in the JSON contract when `--force` stopped something and omitted otherwise | AC-6 | unit | `pkg/extensions/upgrade_result_test.go` -> `TestUpgradeResult_MarshalJSON` | automated |
 
 ## Functionality Inventory (Phase 3 reconciliation)
 
@@ -140,7 +146,7 @@ files, then walking each back to an assertion.
 | 11 | `ErrEmptyDirectory` and `ErrRootDirectory` sentinels | `pkg/processutil/processutil.go` | T1, T2, T3, T4, T48 | COVERED |
 | 12 | Windows `enumerateProcesses` via `CreateToolhelp32Snapshot` | `pkg/processutil/processutil_windows.go` | T11, T12, T14 | COVERED |
 | 13 | Windows `processImagePath` resolves a PID to its image | `pkg/processutil/processutil_windows.go` | T11 | COVERED |
-| 14 | Windows `forceKill` and `processRunning` | `pkg/processutil/processutil_windows.go` | T15, T16, T17 | COVERED |
+| 14 | Windows `forceKill` validates scope against its own pinned handle before terminating, and `processRunning` probes exit state | `pkg/processutil/processutil_windows.go` | T15, T16, T17, T74 | COVERED |
 | 15 | Windows `signalGraceful` is a deliberate no-op that reports failure | `pkg/processutil/processutil_windows.go` | T57 | COVERED |
 | 16 | Unix `signalGraceful` sends SIGTERM | `pkg/processutil/processutil_unix.go` | T15, T18 | COVERED |
 | 17 | Unix `forceKill` escalates to SIGKILL after the grace period | `pkg/processutil/processutil_unix.go` | T16 | COVERED |
@@ -153,8 +159,8 @@ files, then walking each back to an assertion.
 | 24 | `RemoveAllWithRelocation` validates its arguments and trash placement | `pkg/osutil/relocate.go` | T43, T44 | COVERED |
 | 25 | `SweepTrash` best-effort deletes what is no longer locked | `pkg/osutil/relocate.go` | T22, T23, T24 | COVERED |
 | 26 | `relocateLockedFiles` renames rather than deletes | `pkg/osutil/relocate.go` | T19, T20 | COVERED |
-| 27 | `uniqueTrashPath` never collides | `pkg/osutil/relocate.go` | T45 | COVERED |
-| 28 | `pathExists` distinguishes missing from present | `pkg/osutil/relocate.go` | T46 | COVERED |
+| 27 | `uniqueTrashPath` never collides, within a process or across them | `pkg/osutil/relocate.go` | T45, T46, T71 | COVERED |
+| 28 | `relocateInto` renames onto a destination no other process can have chosen | `pkg/osutil/relocate.go` | T46 | COVERED |
 | 29 | `UninstallOptions` carries `Force` and the stop callback | `pkg/extensions/manager_uninstall.go` | T25, T26, T29 | COVERED |
 | 30 | `Uninstall` succeeds against a running extension by default | `pkg/extensions/manager_uninstall.go` | T25 | COVERED |
 | 31 | `Uninstall` with `Force` stops processes first | `pkg/extensions/manager_uninstall.go` | T26, T29 | COVERED |
@@ -178,6 +184,9 @@ files, then walking each back to an assertion.
 | 49 | `RequireRealDir` refuses a symlink or junction while accepting a real or missing directory | `pkg/osutil/relocate.go` | T64 | COVERED |
 | 50 | Trash sweeping and relocation refuse a linked trash directory | `pkg/osutil/relocate.go` | T65, T66 | COVERED |
 | 51 | A termination scope refuses a linked directory while still resolving linked ancestors | `pkg/processutil/processutil.go` | T67, T68 | COVERED |
+| 52 | `requireRealExtensionDirs` checks both azd-owned components, so a linked extensions root cannot redirect a removal, a sweep, or a kill scope | `pkg/extensions/manager_uninstall.go`, `pkg/extensions/manager.go` | T72, T73 | COVERED |
+| 53 | `UpgradeResult.StoppedProcesses` carries what `--force` stopped into the `--output json` contract | `pkg/extensions/upgrade_result.go`, `cmd/extension.go` | T75, T76 | COVERED |
+| 54 | `upgrade --force` reaches the dependency reconciliation branch taken when the parent is already current | `cmd/extension.go` | T75 | COVERED |
 
 `test/proctest` is test infrastructure rather than shipped functionality. It has no tests
 of its own by design; it is exercised by every test in rows 4, 5, 22, 30, 31, and 40 to 42,
@@ -185,15 +194,17 @@ and a defect in it fails those directly.
 
 ## Gaps & Additions
 
-Reconciliation found five gaps, and a later adversarial review found three more. The first two
+Reconciliation found five gaps, and a later adversarial review found three more. A
+follow-up review round found five further defects and one inaccurate claim. The first two
 gaps are at the command layer and share a shape: a field
 was threaded into `UninstallOptions` but the parallel command surfaces were not proven to
 pass it. Flag-binding tests (T31, T33) would have stayed green even if the action had
 never read the flag. The next three came from auditing the inventory itself, and one
-of them (G-5) was a real product defect rather than a missing test. The last three (G-7 to
-G-9) are security defects found by attacking the finished implementation rather than
-reading it, and all three were real.
-
+of them (G-5) was a real product defect rather than a missing test. G-7 to
+G-9 are security defects found by attacking the finished implementation rather than
+reading it, and all three were real. G-10 to G-14 are the review round that followed, four
+of them real defects and one an unmet acceptance criterion; G-15 corrected a spec claim
+that measurement disproved.
 | Gap | Detail | Resolution |
 |-----|--------|------------|
 | G-1 | Upgrade action wiring of `Force` and `OnProcessStopped` into `UpgradeOptions` was unverified | Added T54 and T55 |
@@ -205,5 +216,11 @@ reading it, and all three were real.
 | G-7 | A junction planted at `.trash` redirected sweeping and relocation, and the sweep runs on every install and upgrade even without `--force` | Added `RequireRealDir` and guarded both paths; T64 to T66 |
 | G-8 | `normalizeScope` resolved a symlinked scope, so a link at the install directory widened the set of processes `--force` would terminate | Guarded the final component while still resolving ancestors; T67 and T68 |
 | G-9 | Windows strips trailing dots and spaces, so `.trash.` bypassed the reserved-name check and `foo.` resolved onto another extension's directory | Added `validateExtensionId` ahead of every join; T69 and T70 |
+| G-10 | `RequireRealDir` inspects only a final component, so a junction at the `extensions` root passed the check on the extension directory and redirected the kill scope, the sweep, and installs | Added `requireRealExtensionDirs` covering both azd-owned components; T72 and T73 |
+| G-11 | Trash destinations were chosen by scanning for a free name, so two azd processes relocating the same base name picked the same path and one clobbered or blocked the other | Per-process random names, which prevent the collision rather than detecting it, because `os.Rename` on Windows replaces the destination instead of reporting it; T45, T46, and T71 |
+| G-12 | `Terminate` re-checked scope by PID and then signalled by PID, so the containment guarantee rested on a window it could not close | Windows `forceKill` now validates through an open handle, which reserves the PID; T74. Unix keeps a documented residual |
+| G-13 | `upgrade --force` dropped `Force` and the stop callback on the branch taken when the parent is already at the target version, so a stale dependency's process was left running and unreported | Propagated both into `ReconcileDependencies`; T75 |
+| G-14 | `--force` printed what it stopped only on the console, so `--output json` silently omitted it and AC-6 was unmet for scripted callers | Added `stoppedProcesses` to the upgrade JSON contract; T75 and T76 |
+| G-15 | The spec claimed `os.RemoveAll` follows a Windows junction, which is false and would have justified defenses against a threat that does not exist | Corrected the spec against a Windows 11 measurement |
 
 Zero `GAP` rows remain.

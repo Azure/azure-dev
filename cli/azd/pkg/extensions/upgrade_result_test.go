@@ -8,6 +8,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/processutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -65,6 +66,51 @@ func TestUpgradeResult_MarshalJSON(t *testing.T) {
 		assert.False(t, hasError)
 		_, hasSkip := parsed["skipReason"]
 		assert.False(t, hasSkip)
+	})
+
+	t.Run("stopped_processes_are_reported", func(t *testing.T) {
+		t.Parallel()
+
+		// --force prints nothing under --output json, so the structured result is the
+		// only place a scripted caller can learn what azd terminated on its behalf.
+		r := UpgradeResult{
+			ExtensionId: "ai",
+			FromVersion: "0.1.0",
+			ToVersion:   "0.2.0",
+			Status:      UpgradeStatusUpgraded,
+			StoppedProcesses: []processutil.ProcessInfo{
+				{PID: 4321, Name: "ai.exe", Executable: `C:\ext\ai\ai.exe`},
+			},
+		}
+
+		data, err := json.Marshal(r)
+		require.NoError(t, err)
+
+		var parsed map[string]any
+		require.NoError(t, json.Unmarshal(data, &parsed))
+
+		stopped, ok := parsed["stoppedProcesses"].([]any)
+		require.True(t, ok, "stoppedProcesses must be present when --force stopped something")
+		require.Len(t, stopped, 1)
+
+		entry, ok := stopped[0].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "ai.exe", entry["name"])
+		assert.Equal(t, float64(4321), entry["pid"])
+		assert.Equal(t, `C:\ext\ai\ai.exe`, entry["executable"])
+	})
+
+	t.Run("stopped_processes_omitted_when_nothing_stopped", func(t *testing.T) {
+		t.Parallel()
+
+		data, err := json.Marshal(UpgradeResult{ExtensionId: "ai", Status: UpgradeStatusSkipped})
+		require.NoError(t, err)
+
+		var parsed map[string]any
+		require.NoError(t, json.Unmarshal(data, &parsed))
+
+		_, hasStopped := parsed["stoppedProcesses"]
+		assert.False(t, hasStopped, "the common case must not grow an empty array")
 	})
 
 	t.Run("failed_result_includes_error", func(t *testing.T) {

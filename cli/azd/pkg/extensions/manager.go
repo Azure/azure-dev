@@ -694,8 +694,19 @@ func (m *Manager) installInternal(
 			return nil, err
 		}
 
+		if err := requireRealExtensionDirs(targetDir); err != nil {
+			return nil, err
+		}
+
 		if err := os.MkdirAll(targetDir, osutil.PermissionDirectory); err != nil {
 			return nil, fmt.Errorf("failed to create target directory: %w", err)
+		}
+
+		// Checked again after the create: MkdirAll follows an existing link and
+		// succeeds, so the pre-check above is what catches a link that was already
+		// there, and this one catches a link swapped in during the create.
+		if err := requireRealExtensionDirs(targetDir); err != nil {
+			return nil, err
 		}
 
 		// Clear anything a previous removal had to leave behind while its process was

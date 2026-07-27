@@ -144,17 +144,23 @@ func FindByExecutableDir(ctx context.Context, dir string) ([]ProcessInfo, error)
 // has no safe general purpose graceful signal for a process azd does not own, so that
 // step is skipped there and the process is stopped directly.
 //
-// Scope is checked twice, for two different reasons.
+// Scope is checked three times, for three different reasons.
 //
 // The supplied process is checked against scope up front. A caller that asks to stop
 // something it cannot show is inside the scope is refused, which keeps a malformed or
 // attacker-influenced ProcessInfo from reaching a kill.
 //
-// Scope is then re-checked against live operating system state immediately before each
-// signal. Discovery and termination are separate moments, and a PID is only a number: the
-// process can exit in between and the operating system can hand the same number to
-// something unrelated. Without the re-check a reused PID would be signalled on the
-// strength of a stale match.
+// Scope is then re-checked against live operating system state before signalling.
+// Discovery and termination are separate moments, and a PID is only a number: the process
+// can exit in between and the operating system can hand the same number to something
+// unrelated. Without the re-check a reused PID would be signalled on the strength of a
+// stale match.
+//
+// That re-check narrows the window but cannot close it, because the check and the signal
+// remain two lookups by number. The forceful stop therefore validates scope a third time
+// against a pinned process identity: on Windows forceKill holds an open process handle,
+// which reserves the PID, so the scope it verifies is the process it kills. Unix has no
+// portable equivalent, so a residual window remains for the SIGTERM and SIGKILL paths.
 func Terminate(ctx context.Context, process ProcessInfo, scope string, grace time.Duration) (bool, error) {
 	if process.PID <= 0 {
 		return false, fmt.Errorf("%w: %d", ErrInvalidPID, process.PID)
@@ -203,7 +209,7 @@ func Terminate(ctx context.Context, process ProcessInfo, scope string, grace tim
 		return signalled, nil
 	}
 
-	if err := forceKill(process.PID); err != nil {
+	if err := forceKill(process.PID, normalized); err != nil {
 		// Losing the race against a process that exited on its own is a success, not a
 		// failure, so re-check before reporting the error.
 		if !processRunning(process.PID) {

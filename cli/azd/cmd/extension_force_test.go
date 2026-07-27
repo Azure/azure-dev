@@ -5,6 +5,8 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -378,6 +380,77 @@ func TestReportStoppedProcesses_NamesEachStoppedProcess(t *testing.T) {
 	require.Contains(t, reported, "azd-ext-demo")
 	require.Contains(t, reported, "8765")
 	require.Contains(t, reported, "azd-ext-other")
+}
+
+// --force must also reach the branch that runs when the parent is already at the target
+// version. That branch only reconciles stale dependencies, and a dependency's process
+// holds its binary open exactly like the parent's would, so omitting Force there made
+// `upgrade --force` silently leave a running dependency in place and unreported.
+func TestExtensionUpgradeAction_ForceReachesStaleDependencyOfCurrentParent(t *testing.T) {
+	const parentId = "test.current-parent"
+	const childId = "test.stale-child"
+
+	configDir := isolatedConfigDir(t)
+	_, parentProcess := runningExtensionIn(t, configDir, parentId, "azd-ext-current-parent")
+	_, childProcess := runningExtensionIn(t, configDir, childId, "azd-ext-stale-child")
+
+	mockContext := mocks.NewMockContext(t.Context())
+	console := refuseToPrompt(t, mockContext.Console)
+
+	// The parent's only version matches what is installed, so the upgrade takes the
+	// "already up to date" path. Its dependency constraint is not satisfied by the
+	// installed child, which is what makes that path do real work.
+	registry := testRegistry(
+		&extensions.ExtensionMetadata{
+			Id:     parentId,
+			Source: "test",
+			Versions: []extensions.ExtensionVersion{
+				{
+					Version:      "1.0.0",
+					Dependencies: []extensions.ExtensionDependency{{Id: childId, Version: ">=2.0.0"}},
+				},
+			},
+		},
+		testExtMeta(childId, "2.0.0", "test"),
+	)
+
+	manager, sourceManager := createUpgradeTestManager(t, mockContext, map[string]*extensions.Extension{
+		parentId: installedAt(parentId, parentProcess.Path),
+		childId:  installedAt(childId, childProcess.Path),
+	}, "https://test.example.com/registry.json", registry)
+
+	action := &extensionUpgradeAction{
+		args: []string{parentId},
+		flags: &extensionUpgradeFlags{
+			force:  true,
+			global: &internal.GlobalCommandOptions{NoPrompt: true},
+		},
+		formatter:        &output.JsonFormatter{},
+		writer:           &bytes.Buffer{},
+		console:          console,
+		sourceManager:    sourceManager,
+		extensionManager: manager,
+	}
+
+	result := action.upgradeOneExtension(t.Context(), parentId, 0, nil, true)
+
+	require.Equal(t, extensions.UpgradeStatusSkipped, result.Status, "the parent itself is already current")
+
+	// Fetching the child's new version cannot succeed against the mock registry, so its
+	// upgrade fails. The stop still has to have happened, because the uninstall runs
+	// first and that is where --force applies.
+	childProcess.RequireStopped(t)
+	require.False(t, parentProcess.HasExited(), "only the stale dependency's process may be stopped")
+
+	require.Len(t, result.StoppedProcesses, 1, "the reported result must name what --force stopped")
+	require.Equal(t, childProcess.PID, result.StoppedProcesses[0].PID)
+
+	// --force prints nothing under --output json, so the structured result is the only
+	// place a scripted caller can learn what azd terminated on its behalf.
+	encoded, err := json.Marshal(result)
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), `"stoppedProcesses"`)
+	require.Contains(t, string(encoded), fmt.Sprintf(`"pid":%d`, childProcess.PID))
 }
 
 // installedRunningExtension redirects azd configuration at a temporary directory and puts

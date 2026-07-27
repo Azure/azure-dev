@@ -23,7 +23,13 @@ func signalGraceful(pid int) error {
 }
 
 // forceKill stops the process immediately with SIGKILL.
-func forceKill(pid int) error {
+//
+// scope is accepted for parity with the Windows implementation, which pins the process
+// identity with an open handle so its containment check cannot be invalidated before the
+// kill. Unix has no portable equivalent: Linux could use a pidfd, macOS offers nothing of
+// the sort, so here the caller's re-check immediately before this call narrows the window
+// rather than closing it.
+func forceKill(pid int, _ string) error {
 	process, err := os.FindProcess(pid)
 	if err != nil {
 		return err

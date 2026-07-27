@@ -489,6 +489,9 @@ overrides:
   - filename: pkg/processutil/processutil_darwin.go
     words:
       - axww
+  - filename: pkg/processutil/processutil_unix.go
+    words:
+      - pidfd
   - filename: pkg/tool/installer.go
     words:
       - filesystems

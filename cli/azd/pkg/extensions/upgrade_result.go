@@ -3,7 +3,11 @@
 
 package extensions
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/processutil"
+)
 
 // UpgradeStatus represents the outcome of a single extension upgrade attempt.
 // The String() values ("upgraded", "skipped", "promoted", "failed") are
@@ -64,21 +68,34 @@ type UpgradeResult struct {
 	// that were upgraded as a side effect of upgrading this extension. Empty
 	// for leaf extensions or when --no-dependency-upgrades is set.
 	DependencyUpgrades []UpgradeResult
+	// StoppedProcesses lists the processes --force stopped to release the files this
+	// upgrade had to replace, including any stopped while upgrading a dependency.
+	// Empty unless --force was passed and something was actually running.
+	StoppedProcesses []processutil.ProcessInfo
+}
+
+// stoppedProcessJSON is the JSON serialization format for a process stopped by --force.
+// Field names are part of the public --output json contract.
+type stoppedProcessJSON struct {
+	Name       string `json:"name"`
+	Pid        int    `json:"pid"`
+	Executable string `json:"executable,omitempty"`
 }
 
 // upgradeResultJSON is the JSON serialization format for UpgradeResult.
 // Field names are part of the public --output json contract.
 // Changes to field names or removal of fields is a breaking change.
 type upgradeResultJSON struct {
-	Name               string          `json:"name"`
-	Status             string          `json:"status"`
-	FromVersion        string          `json:"fromVersion,omitempty"`
-	ToVersion          string          `json:"toVersion,omitempty"`
-	FromSource         string          `json:"fromSource,omitempty"`
-	ToSource           string          `json:"toSource,omitempty"`
-	SkipReason         string          `json:"skipReason,omitempty"`
-	Error              string          `json:"error,omitempty"`
-	DependencyUpgrades []UpgradeResult `json:"dependencyUpgrades,omitempty"`
+	Name               string               `json:"name"`
+	Status             string               `json:"status"`
+	FromVersion        string               `json:"fromVersion,omitempty"`
+	ToVersion          string               `json:"toVersion,omitempty"`
+	FromSource         string               `json:"fromSource,omitempty"`
+	ToSource           string               `json:"toSource,omitempty"`
+	SkipReason         string               `json:"skipReason,omitempty"`
+	Error              string               `json:"error,omitempty"`
+	DependencyUpgrades []UpgradeResult      `json:"dependencyUpgrades,omitempty"`
+	StoppedProcesses   []stoppedProcessJSON `json:"stoppedProcesses,omitempty"`
 }
 
 // MarshalJSON serializes UpgradeResult to JSON for --output json.
@@ -94,6 +111,15 @@ func (r UpgradeResult) MarshalJSON() ([]byte, error) {
 		ToSource:           r.ToSource,
 		SkipReason:         r.SkipReason,
 		DependencyUpgrades: r.DependencyUpgrades,
+	}
+	// --force is silent on the console under --output json, so the machine readable
+	// result is the only place a caller can learn what azd terminated on its behalf.
+	for _, process := range r.StoppedProcesses {
+		j.StoppedProcesses = append(j.StoppedProcesses, stoppedProcessJSON{
+			Name:       process.Name,
+			Pid:        process.PID,
+			Executable: process.Executable,
+		})
 	}
 	if r.Error != nil {
 		j.Error = r.Error.Error()

@@ -98,6 +98,18 @@ running the old code until it is restarted, which matches the existing
 macOS and Linux behavior and is the honest outcome for a non-destructive
 operation.
 
+Trash destinations are named `<original>.<pid>.<random>` rather than picked by
+scanning for a free name. Choosing a destination and renaming onto it cannot be
+made one operation, so a name derived from what is currently on disk is
+inherently racy: two azd processes relocating the same base name both observe the
+same free path and both rename onto it. On Windows `os.Rename` replaces the
+destination, so the collision is not even reported: one of them either clobbers a
+file the other still needs or fails against a destination that is itself a locked
+executable, and the uninstall it belonged to fails after its retries. Detecting
+the conflict after the fact is therefore not available, and the name itself has
+to prevent it. The sweep deletes every child of the trash directory, so the
+naming scheme costs nothing at cleanup time.
+
 ### Layer 2: `--force` (opt-in, destructive)
 
 `--force` on `azd extension upgrade` and `azd extension uninstall` discovers
@@ -137,12 +149,36 @@ bare PID. It first re-checks the declared executable against the scope, which is
 a caller-contract check that makes it impossible to reach the signal path with a
 PID sourced from anywhere other than a scoped discovery. It then re-reads live
 operating system state immediately before each signal and confirms the PID still
-resolves to an executable inside the scope. That second check closes the
+resolves to an executable inside the scope. That second check narrows the
 time-of-check to time-of-use window: between discovery and termination the
 original process can exit and the operating system can reissue its PID to an
 unrelated program. When the live check finds the process gone, `Terminate`
 returns `(false, nil)` so the caller reports nothing rather than claiming a stop
 that never happened.
+
+Narrowing is not closing, because a check by PID followed by a signal by PID is
+still two lookups by number. The forceful stop therefore validates scope a third
+time against a pinned process identity. On Windows `forceKill` opens the process
+once with `PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION`, reads the
+image path through that handle, and calls `TerminateProcess` on the same handle.
+Windows keeps a process id reserved for as long as any handle to that process
+object is open, so the identity the scope check accepted cannot be swapped for
+another process before the kill lands. A process that fails the check there is
+refused with `ErrProcessOutOfScope` rather than terminated.
+
+Unix has no portable equivalent. Linux could use a pidfd and macOS offers
+nothing of the sort, so the SIGTERM and SIGKILL paths keep a residual window
+bounded by the re-check immediately preceding them. That is an accepted risk
+rather than an oversight: the platform this feature exists for is the one where
+the window is closed, and a Unix `--force` that stopped the wrong process would
+require the target to exit and its PID to be reissued inside a window measured in
+microseconds.
+
+Stopped processes are reported by name and PID on the console, and carried in
+`UpgradeResult.StoppedProcesses`, which serializes as `stoppedProcesses` under
+`--output json`. Console reporting is suppressed under `--output json`, so
+without the structured field a scripted caller would have no way to learn that
+`--force` terminated anything.
 
 ### Extension id is a path component, not a path
 
@@ -197,14 +233,34 @@ Both reparse forms have to be tested, because on Windows they present
 differently. Verified on Windows 11 through Go: a directory symlink sets
 `ModeSymlink` and is resolved by `filepath.EvalSymlinks`, while a junction sets
 `ModeIrregular`, reports `IsDir` false, and is not resolved by `EvalSymlinks` at
-all, yet `os.ReadDir`, `os.Rename` and `os.RemoveAll` still follow it. Checking
-only `ModeSymlink` would therefore miss the case that needs no elevation to
-create.
+all, yet `os.ReadDir` and `os.Rename` still follow it. Checking only `ModeSymlink`
+would therefore miss the case that needs no elevation to create.
+
+`os.RemoveAll` is the exception and does not follow either form. It calls
+`os.Remove` first, which succeeds against a reparse point because
+`RemoveDirectory` detaches the link without touching its target, and its
+recursive branch is gated on `os.Lstat(...).IsDir()`, which is false for both a
+junction and a directory symlink. Verified on Windows 11 through Go: after
+`os.RemoveAll` against a junction, the link is gone and every file under its
+target survives. A planted link is therefore deleted as a link rather than
+recursed into, which is why the sweep can hand each trash entry straight to
+`os.RemoveAll`.
 
 The check deliberately inspects only the final component. Resolving symlinked
 ancestors is still required for correctness on macOS, where the temporary and
 configuration directories sit under `/var` and the operating system reports
 process executables under `/private/var`.
+
+That is also why one call is not enough. A final-component check on
+`<configDir>/extensions/<id>` passes when `<configDir>/extensions` is itself a
+link, because the operating system resolves the link while walking to the final
+component, and everything downstream then acts on the link's target: the
+termination scope widens to it, the sweep deletes children there, and an install
+writes there. `requireRealExtensionDirs` therefore checks both components azd
+creates, the extensions root and the extension directory, and is called before an
+uninstall sweeps, terminates, or removes, and immediately after install creates
+the target directory. Only those two are checked, so symlinked ancestors above
+the config directory stay legal and macOS keeps working.
 
 ### Scoping to the extension binary only
 
@@ -351,7 +407,7 @@ than it started.
 
 Three residual concerns were raised during review and deliberately not coded
 against, because in each case the mitigation already exists or the failure is
-fail-safe.
+fail-safe. A later round added a fourth.
 
 - **No explicit same-user check before terminating.** The operating system
   already enforces this. A non-elevated azd cannot obtain `PROCESS_TERMINATE` on
@@ -371,3 +427,11 @@ fail-safe.
   `filepath.EvalSymlinks` does not introduce one for ordinary paths. If a
   prefixed path ever did appear, containment would fail closed and the process
   would simply not be stopped.
+- **A residual PID-reuse window remains on Unix.** Windows closes it by pinning
+  the process with an open handle before it validates and terminates. Linux could
+  do the same with a pidfd and macOS has no equivalent, so on those platforms a
+  target that exits between the live scope re-check and the signal, whose PID is
+  then reissued inside that window, could be signalled. Exploiting it requires
+  winning a race measured in microseconds against a PID the attacker does not
+  choose, and the platform this feature exists for is the one where the window is
+  closed.

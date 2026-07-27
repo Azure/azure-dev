@@ -5,12 +5,15 @@ package osutil
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // ErrLinkedDirectory indicates a path azd was about to operate on is a symlink, junction,
@@ -173,9 +176,8 @@ func relocateLockedFiles(root string, trashDir string) (int, error) {
 			return filepath.SkipAll
 		}
 
-		destination := uniqueTrashPath(trashDir, entry.Name())
-		if renameErr := os.Rename(path, destination); renameErr != nil {
-			failures = append(failures, fmt.Errorf("failed to relocate %s: %w", path, renameErr))
+		if relocateErr := relocateInto(path, trashDir, entry.Name()); relocateErr != nil {
+			failures = append(failures, relocateErr)
 			return nil
 		}
 
@@ -191,27 +193,39 @@ func relocateLockedFiles(root string, trashDir string) (int, error) {
 	return relocated, errors.Join(failures...)
 }
 
-// uniqueTrashPath returns a path inside trashDir that no entry currently occupies, so a
-// file relocated today does not collide with one left behind by an earlier run.
-func uniqueTrashPath(trashDir string, name string) string {
-	candidate := filepath.Join(trashDir, name)
-	if !pathExists(candidate) {
-		return candidate
+// relocateInto moves a single locked file into trashDir under a name no concurrent azd
+// process can also have chosen.
+//
+// Picking a destination and renaming onto it cannot be made one operation, so a name
+// derived only from what is currently on disk is inherently racy: two azd processes
+// relocating the same base name both see the same free path and both rename onto it. On
+// Windows os.Rename replaces the destination, so the collision is not even reported: one
+// of them either clobbers a file the other still needs or fails because that destination
+// is itself a locked executable, and the uninstall it belonged to fails after its
+// retries. Detecting the conflict afterwards is therefore not an option, and the name
+// itself has to make it impossible.
+func relocateInto(path string, trashDir string, name string) error {
+	if err := os.Rename(path, uniqueTrashPath(trashDir, name)); err != nil {
+		return fmt.Errorf("failed to relocate %s: %w", path, err)
 	}
 
-	for suffix := 1; suffix < 1000; suffix++ {
-		candidate = filepath.Join(trashDir, fmt.Sprintf("%s.%d", name, suffix))
-		if !pathExists(candidate) {
-			return candidate
-		}
-	}
-
-	return filepath.Join(trashDir, fmt.Sprintf("%s.%d", name, os.Getpid()))
+	return nil
 }
 
-// pathExists reports whether anything exists at path, without following symlinks.
-func pathExists(path string) bool {
-	_, err := os.Lstat(path)
+// uniqueTrashPath returns a destination inside trashDir that is unique to this process
+// and this call, so a relocated file collides neither with one left behind by an earlier
+// run nor with one another azd process is relocating at the same moment.
+//
+// The original base name is kept as a prefix so a leftover entry stays recognizable while
+// it waits for a sweep.
+func uniqueTrashPath(trashDir string, name string) string {
+	var suffix [8]byte
 
-	return !errors.Is(err, fs.ErrNotExist)
+	if _, err := rand.Read(suffix[:]); err != nil {
+		// crypto/rand does not fail in practice. The process id and the clock still
+		// separate this candidate from every other process's.
+		return filepath.Join(trashDir, fmt.Sprintf("%s.%d.%d", name, os.Getpid(), time.Now().UnixNano()))
+	}
+
+	return filepath.Join(trashDir, fmt.Sprintf("%s.%d.%s", name, os.Getpid(), hex.EncodeToString(suffix[:])))
 }

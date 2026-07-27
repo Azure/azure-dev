@@ -92,6 +92,7 @@ func clearTestEnvVars(t *testing.T) {
 	envVarsToUnset := []string{
 		"AZD_FORCE_TTY",
 		// Agent env vars
+		"AI_AGENT",
 		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",
 		"GITHUB_COPILOT_CLI", "GH_COPILOT", "COPILOT_CLI",
 		"GEMINI_CLI", "GEMINI_CLI_NO_RELAUNCH",

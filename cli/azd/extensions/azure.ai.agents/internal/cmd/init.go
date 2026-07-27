@@ -1123,22 +1123,24 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				infraProvider = p
 			}
 
-			// `--infra` on a directory that already has an azd agent project
-			// is a standalone eject: synthesize infra (Bicep or Terraform) from
+			// `--infra` within an existing azd agent project is a standalone
+			// eject: synthesize infra (Bicep or Terraform) from
 			// the existing azure.yaml, write ./infra/, and return without
 			// prompting.
-			if infraProvider != "" && fileExists("azure.yaml") {
-				// Reject inputs the eject path would silently ignore (a
-				// positional arg, -m, or --src) instead of pretending they
-				// were honored.
-				if err := validateStandaloneEjectArgs(args, flags); err != nil {
-					return err
+			if infraProvider != "" {
+				projectRoot, projectRootErr := azdext.GetProjectDir()
+				if projectRootErr != nil && !errors.Is(projectRootErr, azdext.ErrProjectNotFound) {
+					return fmt.Errorf("resolve azd project directory: %w", projectRootErr)
 				}
-				cwd, err := os.Getwd()
-				if err != nil {
-					return fmt.Errorf("resolve current directory: %w", err)
+				if projectRootErr == nil {
+					// Reject inputs the eject path would silently ignore (a
+					// positional arg, -m, or --src) instead of pretending they
+					// were honored.
+					if err := validateStandaloneEjectArgs(args, flags); err != nil {
+						return err
+					}
+					return ejectInfra(projectRoot, infraProvider)
 				}
-				return ejectInfra(cwd, infraProvider)
 			}
 
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -1285,7 +1287,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						if flags.src == "" {
 							flags.src = checkDir
 						}
-						return runReuseDefinition(ctx, flags, azdClient, httpClient, checkDir, existing)
+						if err := runReuseDefinition(ctx, flags, azdClient, httpClient, checkDir, existing); err != nil {
+							return err
+						}
+						return ejectInfraAfterInit(infraProvider)
 					}
 				}
 			}
@@ -1311,7 +1316,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 						return err
 					}
-					return nil
+					return ejectInfraAfterInit(infraProvider)
 				}
 
 				// Resolve the agent name BEFORE creating the project folder
@@ -1514,29 +1519,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// wrote azure.yaml, chain the eject step. Skip silently when init
 			// didn't produce a foundry-bearing azure.yaml (cancelled or
 			// non-foundry flow) to avoid a confusing "nothing to eject" error.
-			if infraProvider != "" {
-				cwd, err := os.Getwd()
-				if err != nil {
-					return fmt.Errorf("resolve current directory: %w", err)
-				}
-				//nolint:gosec // G304: azure.yaml in the current azd project directory
-				rawYAML, readErr := os.ReadFile(filepath.Join(cwd, "azure.yaml"))
-				switch {
-				case errors.Is(readErr, fs.ErrNotExist):
-					// Init didn't write azure.yaml; nothing to eject.
-				case readErr != nil:
-					return fmt.Errorf("read azure.yaml after init: %w", readErr)
-				default:
-					// Skip silently when no foundry service is present.
-					if _, svcErr := findFoundryServiceForEject(rawYAML); svcErr == nil {
-						if err := ejectInfra(cwd, infraProvider); err != nil {
-							return err
-						}
-					}
-				}
-			}
-
-			return nil
+			return ejectInfraAfterInit(infraProvider)
 		},
 	}
 
@@ -1547,7 +1530,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project, either via --project-id or interactive prompts")
 
 	cmd.Flags().StringVar(&flags.model, "model", "",
-		"Name of the AI model to use (e.g., 'gpt-4o'). If not specified, defaults to 'gpt-4.1-mini'. Mutually exclusive with --model-deployment, with --model-deployment being used if both are provided")
+		fmt.Sprintf(
+			"Name of the AI model to deploy. Defaults to '%s' during interactive model selection; "+
+				"required to deploy a new model with --no-prompt. If --model-deployment is also provided, "+
+				"--model-deployment takes precedence",
+			defaultAgentModel,
+		))
 
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
 		"Path or URI to an agent manifest, or to a sample's unified azure.yaml to adopt as the project manifest")
@@ -3488,8 +3476,7 @@ func downloadDirectoryContents(
 				return fmt.Errorf("failed to download file %s: %w", itemPath, err)
 			}
 
-			//nolint:gosec // downloaded project files are intended to be readable by project tooling
-			if err := os.WriteFile(itemLocalPath, []byte(fileContent), 0644); err != nil {
+			if err := writeDownloadedFile(itemLocalPath, []byte(fileContent)); err != nil {
 				return fmt.Errorf("failed to write file %s: %w", itemLocalPath, err)
 			}
 		} else if itemType == "dir" {
@@ -3600,8 +3587,7 @@ func downloadDirectoryContentsWithoutGhCli(
 				return fmt.Errorf("failed to read file content %s: %w", itemPath, err)
 			}
 
-			//nolint:gosec // downloaded project files are intended to be readable by project tooling
-			if err := os.WriteFile(itemLocalPath, fileContent, 0644); err != nil {
+			if err := writeDownloadedFile(itemLocalPath, fileContent); err != nil {
 				return fmt.Errorf("failed to write file %s: %w", itemLocalPath, err)
 			}
 		} else if itemType == "dir" {
@@ -3620,6 +3606,30 @@ func downloadDirectoryContentsWithoutGhCli(
 	}
 
 	return nil
+}
+
+func writeDownloadedFile(path string, content []byte) error {
+	permissions := downloadedFilePermissions(path)
+
+	//nolint:gosec // downloaded project files intentionally use project-friendly permissions
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, permissions)
+	if err != nil {
+		return err
+	}
+
+	if _, err := file.Write(content); err != nil {
+		_ = file.Close()
+		return err
+	}
+
+	return file.Close()
+}
+
+func downloadedFilePermissions(path string) os.FileMode {
+	if strings.EqualFold(filepath.Ext(path), ".sh") {
+		return osutil.PermissionExecutableFile
+	}
+	return osutil.PermissionFile
 }
 
 // extractToolboxAndConnectionConfigs extracts toolbox resource definitions from the agent manifest

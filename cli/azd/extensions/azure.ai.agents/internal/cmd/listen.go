@@ -74,6 +74,8 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 		switch svc.Host {
 		case AiAgentHost:
 			if err := prepareContainerSettings(
+				ctx,
+				azdClient,
 				svc,
 				args.Project.Path,
 			); err != nil {
@@ -245,6 +247,8 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	}
 
 	if err := prepareContainerSettings(
+		ctx,
+		azdClient,
 		svc,
 		args.Project.Path,
 	); err != nil {
@@ -757,6 +761,8 @@ func setEnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string,
 }
 
 func prepareContainerSettings(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) error {
@@ -805,15 +811,26 @@ func prepareContainerSettings(
 		result.Cpu = project.DefaultCpu
 	}
 
-	if err := project.SetAgentContainerSettings(
+	// Persist the resolved container settings back onto the service's inline
+	// properties, preserving the agent definition and other config keys.
+	containerPath, containerValue, err := project.SetAgentContainerSettings(
 		svc,
 		&project.ContainerSettings{Resources: result},
-	); err != nil {
-		return fmt.Errorf(
-			"failed to update agent container settings: %w",
-			err,
-		)
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update agent container settings: %w", err)
 	}
+
+	if !hasRootFileRef {
+		if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+			ServiceName: svc.GetName(),
+			Path:        containerPath,
+			Value:       containerValue,
+		}); err != nil {
+			return fmt.Errorf("persisting agent container settings: %w", err)
+		}
+	}
+
 	return nil
 }
 

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,109 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+type containerSettingsProjectServer struct {
+	azdext.UnimplementedProjectServiceServer
+
+	mu                 sync.Mutex
+	addServiceCalls    int
+	setServiceRequests []*azdext.SetServiceConfigValueRequest
+}
+
+func (s *containerSettingsProjectServer) AddService(
+	_ context.Context,
+	_ *azdext.AddServiceRequest,
+) (*azdext.EmptyResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.addServiceCalls++
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *containerSettingsProjectServer) SetServiceConfigValue(
+	_ context.Context,
+	req *azdext.SetServiceConfigValueRequest,
+) (*azdext.EmptyResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setServiceRequests = append(s.setServiceRequests, req)
+	return &azdext.EmptyResponse{}, nil
+}
+
+func TestPrepareContainerSettings_UsesTargetedConfigUpdate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		legacy   bool
+		wantPath string
+	}{
+		{
+			name:     "inline service properties",
+			wantPath: "container",
+		},
+		{
+			name:     "legacy config properties",
+			legacy:   true,
+			wantPath: "config.container",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			props, err := structpb.NewStruct(map[string]any{
+				"kind":        "hosted",
+				"name":        "my-chat-agent",
+				"customField": "preserved",
+				"container": map[string]any{
+					"resources": map[string]any{
+						"cpu": "1",
+					},
+				},
+			})
+			require.NoError(t, err)
+
+			svc := &azdext.ServiceConfig{
+				Name:  "agent",
+				Host:  AiAgentHost,
+				Image: "myregistry.azurecr.io/my-agent:${MY_TAG}",
+			}
+			if tt.legacy {
+				svc.Config = props
+			} else {
+				svc.AdditionalProperties = props
+			}
+
+			server := &containerSettingsProjectServer{}
+			client := newProjectRecorderClient(t, server)
+
+			require.NoError(t, prepareContainerSettings(t.Context(), client, svc, t.TempDir()))
+
+			server.mu.Lock()
+			defer server.mu.Unlock()
+
+			require.Zero(t, server.addServiceCalls,
+				"full service replacement would drop fields that are not modeled by the extension")
+			require.Len(t, server.setServiceRequests, 1)
+
+			req := server.setServiceRequests[0]
+			require.Equal(t, "agent", req.ServiceName)
+			require.Equal(t, tt.wantPath, req.Path)
+			require.Equal(t, map[string]any{
+				"resources": map[string]any{
+					"cpu":    "1",
+					"memory": project.DefaultMemory,
+				},
+			}, req.Value.AsInterface())
+
+			require.Equal(t, "myregistry.azurecr.io/my-agent:${MY_TAG}", svc.Image)
+			require.Equal(t, "preserved",
+				project.ServiceConfigProps(svc).GetFields()["customField"].GetStringValue())
+		})
+	}
+}
 
 // TestPostdeployHandler_NonHostedAgent_NoOp verifies postdeployHandler returns nil
 // without any RPC calls when the service is an agent but not a hosted agent (no agent.yaml
@@ -159,8 +263,10 @@ func TestPrepareContainerSettings_DoesNotPersistResolvedFileRef(
 		RelativePath:         "src/echo",
 		AdditionalProperties: props,
 	}
+	server := &containerSettingsProjectServer{}
+	client := newProjectRecorderClient(t, server)
 
-	err = prepareContainerSettings(svc, root)
+	err = prepareContainerSettings(t.Context(), client, svc, root)
 
 	require.NoError(t, err)
 	require.Equal(t, "src/echo", svc.GetRelativePath())
@@ -170,6 +276,7 @@ func TestPrepareContainerSettings_DoesNotPersistResolvedFileRef(
 	require.NotNil(t, cfg.Container.Resources)
 	require.Equal(t, "2", cfg.Container.Resources.Cpu)
 	require.Equal(t, "4Gi", cfg.Container.Resources.Memory)
+	require.Empty(t, server.setServiceRequests)
 }
 
 func TestPrepareContainerSettings_PreservesNestedFileRef(t *testing.T) {
@@ -188,8 +295,9 @@ func TestPrepareContainerSettings_PreservesNestedFileRef(t *testing.T) {
 		Host:                 AiAgentHost,
 		AdditionalProperties: props,
 	}
+	client := newProjectRecorderClient(t, &containerSettingsProjectServer{})
 
-	err = prepareContainerSettings(svc, t.TempDir())
+	err = prepareContainerSettings(t.Context(), client, svc, t.TempDir())
 
 	require.NoError(t, err)
 	deployments, ok := svc.GetAdditionalProperties().
@@ -227,8 +335,9 @@ func TestPrepareContainerSettings_NormalizesInlineEnvironment(t *testing.T) {
 		Host:                 AiAgentHost,
 		AdditionalProperties: props,
 	}
+	client := newProjectRecorderClient(t, &containerSettingsProjectServer{})
 
-	err = prepareContainerSettings(svc, t.TempDir())
+	err = prepareContainerSettings(t.Context(), client, svc, t.TempDir())
 
 	require.NoError(t, err)
 	require.Equal(
@@ -243,7 +352,10 @@ func TestPrepareContainerSettings_NormalizesInlineEnvironment(t *testing.T) {
 func TestPrepareContainerSettings_WithoutProperties(t *testing.T) {
 	t.Parallel()
 
+	client := newProjectRecorderClient(t, &containerSettingsProjectServer{})
 	err := prepareContainerSettings(
+		t.Context(),
+		client,
 		&azdext.ServiceConfig{Name: "echo", Host: AiAgentHost},
 		t.TempDir(),
 	)

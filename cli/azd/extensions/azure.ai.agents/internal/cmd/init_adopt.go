@@ -493,7 +493,7 @@ func promptAlternativeDeployment(
 	if useCatalog {
 		// Use the full model + deployment prompt which handles version,
 		// SKU, and capacity selection (same as manifest path).
-		defaultModel := "gpt-4.1-mini"
+		defaultModel := defaultAgentModel
 		if modelFlag != "" {
 			defaultModel = modelFlag
 		}
@@ -980,6 +980,17 @@ func runInitFromAzureYaml(
 		if err := persistFirstDeploymentName(ctx, setEnv, referencedDeployments); err != nil {
 			return fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
 		}
+	}
+
+	// scaffoldProject changes the extension process into the adopted project root.
+	if err := configureAzureYamlEnvironmentVariables(
+		ctx,
+		azdClient,
+		env.Name,
+		".",
+		flags.noPrompt,
+	); err != nil {
+		return err
 	}
 
 	fmt.Printf(

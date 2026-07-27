@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -21,6 +22,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -894,6 +896,89 @@ func TestCopyDirectory_NoOpWhenSamePath(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(dir, "file.txt")); err != nil {
 		t.Fatalf("expected file to still exist: %v", err)
+	}
+}
+
+func TestWriteDownloadedFilePermissions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		fileName        string
+		wantPermissions os.FileMode
+	}{
+		{
+			name:            "shell scripts are executable",
+			fileName:        "postprovision.sh",
+			wantPermissions: osutil.PermissionExecutableFile,
+		},
+		{
+			name:            "shell script extension is case insensitive",
+			fileName:        "predeploy.SH",
+			wantPermissions: osutil.PermissionExecutableFile,
+		},
+		{
+			name:            "other files remain non-executable",
+			fileName:        "azure.yaml",
+			wantPermissions: osutil.PermissionFile,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), tt.fileName)
+			if got := downloadedFilePermissions(path); got != tt.wantPermissions {
+				t.Fatalf("downloadedFilePermissions() = %04o, want %04o", got, tt.wantPermissions)
+			}
+
+			if err := writeDownloadedFile(path, []byte("new")); err != nil {
+				t.Fatal(err)
+			}
+
+			content, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(content) != "new" {
+				t.Fatalf("content = %q, want %q", content, "new")
+			}
+
+			if runtime.GOOS == "windows" {
+				return
+			}
+
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := info.Mode().Perm(); got != tt.wantPermissions {
+				t.Errorf("permissions = %04o, want %04o", got, tt.wantPermissions)
+			}
+		})
+	}
+}
+
+func TestWriteDownloadedFileRefusesToOverwrite(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "postprovision.sh")
+	if err := os.WriteFile(path, []byte("old"), osutil.PermissionFile); err != nil {
+		t.Fatal(err)
+	}
+
+	err := writeDownloadedFile(path, []byte("new"))
+	if !errors.Is(err, fs.ErrExist) {
+		t.Fatalf("writeDownloadedFile() error = %v, want fs.ErrExist", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "old" {
+		t.Fatalf("content = %q, want %q", content, "old")
 	}
 }
 

@@ -303,6 +303,8 @@ func containsNoPromptFalse(args []string) bool {
 // runs inside a CI/CD provider.
 func clearAgentEnvVarsForTest(t *testing.T) {
 	envVarsToUnset := []string{
+		// GitHub Copilot App
+		"AI_AGENT",
 		// Claude Code
 		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",
 		// GitHub Copilot CLI

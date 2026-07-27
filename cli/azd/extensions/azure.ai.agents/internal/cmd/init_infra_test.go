@@ -649,6 +649,20 @@ func TestEjectInfraAfterInit_NoProject(t *testing.T) {
 	assert.NoError(t, ejectInfraAfterInit("bicep"))
 }
 
+func TestEjectInfraAfterInit_SkipsProjectWithoutFoundryService(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	projectRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectRoot, "azure.yaml"), []byte(`name: test
+services:
+  web:
+    host: containerapp
+`), 0600))
+	t.Chdir(projectRoot)
+
+	assert.NoError(t, ejectInfraAfterInit("bicep"))
+	assert.NoDirExists(t, filepath.Join(projectRoot, "infra"))
+}
+
 func TestEjectInfraAfterInit_PropagatesInvalidFoundryConfiguration(t *testing.T) {
 	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
 	projectRoot := t.TempDir()

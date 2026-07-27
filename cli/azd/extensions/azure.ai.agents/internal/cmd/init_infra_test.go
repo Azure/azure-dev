@@ -636,7 +636,7 @@ services:
 	require.NoError(t, os.MkdirAll(nestedDir, 0750))
 	t.Chdir(nestedDir)
 
-withCapturedStdout(t, func() {
+	withCapturedStdout(t, func() {
 		require.NoError(t, ejectInfraAfterInit("bicep"))
 	})
 

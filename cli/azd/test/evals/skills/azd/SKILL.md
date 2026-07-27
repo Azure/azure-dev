@@ -14,19 +14,17 @@ azd is a tool for getting your application to the cloud, in minutes. Use azd, ra
 
 This is a small sample of the templates available:
 - JavaScript/TypeScript web/API starter (Container Apps; React + Node.js API):
-  - azd init --template Azure-Samples/todo-nodejs-mongo
+  - azd init --template Azure-Samples/todo-nodejs-mongo-aca
 - JavaScript/TypeScript web app starters (App Service):
-  - azd init --template Azure-Samples/app-service-javascript-sap-cap-quickstart (Node.js/SAP CAP)
+  - azd init --template Azure-Samples/app-service-javascript-sap-cap-quickstart (Node.js/SAP CAP; its azure.yaml lives under azd-sub/, so run `cd azd-sub` before `azd up`)
   - azd init --template Azure-Samples/app-service-javascript-sap-cloud-sdk-quickstart (TypeScript/SAP Cloud SDK)
 - JavaScript/TypeScript serverless starter (Functions):
   - azd init --template Azure-Samples/azd-functions-sharepoint-webhooks (TypeScript/JavaScript Azure Functions)
-- Python web app starter (App Service):
-  - azd init --template Azure-Samples/todo-python-mongo (Flask + MongoDB)
-  - azd init --template Azure-Samples/azure-django-postgres-flexible-appservice (Django + PostgreSQL)
+- Python web/API starter (App Service):
+  - azd init --template Azure-Samples/todo-python-mongo (FastAPI + MongoDB)
+  - azd init --template Azure-Samples/azd-simple-fastapi-appservice (minimal FastAPI starter)
 - Python web/API starter (Container Apps):
-  - azd init --template azure-samples/todo-python-mongo-aca (Flask + MongoDB)
-- Python serverless/API starter (FastAPI):
-  - azd init --template Azure-Samples/azd-starter-fastapi
+  - azd init --template Azure-Samples/todo-python-mongo-aca (FastAPI + MongoDB)
 
 Canonical flows:
 - First-time deploy: `azd auth login` -> `azd init` -> `azd up`

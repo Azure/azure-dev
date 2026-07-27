@@ -412,7 +412,7 @@ func createFakeDotnetStub(t *testing.T, fakeBinDir string) {
 	stubMode := os.FileMode(0o755)
 	if runtime.GOOS == "windows" {
 		stubName = "dotnet.cmd"
-		stubContent = "@echo off\r\n>>%DOTNET_ARGS_LOG% echo %*\r\n"
+		stubContent = "@echo off\r\n>>\"%DOTNET_ARGS_LOG%\" echo %*\r\n"
 		stubMode = 0o644
 	}
 	stubPath := filepath.Join(fakeBinDir, stubName)

@@ -117,32 +117,6 @@ func relativeReportLink(reportDir, target string) string {
 	return filepath.ToSlash(rel)
 }
 
-func toWorkspaceRelative(p string) string {
-	if p == "" {
-		return p
-	}
-
-	if !filepath.IsAbs(p) {
-		return filepath.ToSlash(p)
-	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return filepath.ToSlash(p)
-	}
-
-	rel, err := filepath.Rel(cwd, p)
-	if err != nil {
-		return filepath.ToSlash(p)
-	}
-
-	if rel != "" && !strings.HasPrefix(rel, "..") {
-		return filepath.ToSlash(rel)
-	}
-
-	return filepath.ToSlash(p)
-}
-
 func loadRecords(resultsPath string) ([]indexedRecord, error) {
 	file, err := os.Open(resultsPath)
 	if err != nil {

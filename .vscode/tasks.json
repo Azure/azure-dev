@@ -5,7 +5,7 @@
 			"label": "prepare gofuncapp debug",
 			"type": "shell",
 			"windows": {
-				"command": "if not exist go.mod copy /Y go.mod.txt go.mod >nul & if not exist go.sum copy /Y go.sum.txt go.sum >nul"
+				"command": "cmd.exe /c \"if not exist go.mod copy /Y go.mod.txt go.mod >nul && if not exist go.sum copy /Y go.sum.txt go.sum >nul\""
 			},
 			"osx": {
 				"command": "[ -f go.mod ] || cp go.mod.txt go.mod; [ -f go.sum ] || cp go.sum.txt go.sum"

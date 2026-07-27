@@ -406,6 +406,93 @@ func TestInitializeRejectsAgentYamlSymlinkEscapingRoot(t *testing.T) {
 	require.Empty(t, provider.agentDefinitionPath)
 }
 
+func TestDeployTimeServiceConfigReplacesInitializeSnapshot(t *testing.T) {
+	// azd core re-expands ${VAR} against the environment on every
+	// call, so a deploy-time config can carry a value that was still
+	// unset (and therefore expanded to "") when Initialize ran.
+	// `azd up` initializes service targets before provisioning
+	// prompts for a missing subscription or location, so keeping the
+	// Initialize snapshot would deploy those empty strings.
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+
+	projectRoot := t.TempDir()
+	serviceDir := filepath.Join(projectRoot, "svc")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(serviceDir, "agent.yaml"),
+		[]byte("kind: hostedAgent\n"),
+		0o600,
+	))
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+
+	// AGENT_REGION references an unset variable at Initialize time.
+	stale := &azdext.ServiceConfig{
+		Name:         "echo",
+		RelativePath: "svc",
+		Environment:  map[string]string{"AGENT_REGION": ""},
+	}
+	require.NoError(t, provider.Initialize(t.Context(), stale))
+	require.NoError(t, provider.ensureDeployContext(t.Context()))
+
+	// The user is prompted during provision, so core hands the
+	// deploy-time call a config with the persisted value.
+	fresh := &azdext.ServiceConfig{
+		Name:         "echo",
+		RelativePath: "svc",
+		Environment:  map[string]string{"AGENT_REGION": "westus2"},
+	}
+
+	// Deploy must adopt the config it was handed rather than reuse the
+	// snapshot. It still fails further along (this stub has no Foundry
+	// project), which is after the config has been adopted.
+	_, err := provider.Deploy(
+		t.Context(),
+		fresh,
+		&azdext.ServiceContext{},
+		nil,
+		func(string) {},
+	)
+	require.Error(t, err)
+	require.Same(t, fresh, provider.serviceConfig)
+
+	prep, err := provider.prepareDeploy(
+		provider.serviceConfig,
+		sampleContainerAgent(),
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://project.example"},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:latest"),
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "westus2", prep.resolvedEnvVars["AGENT_REGION"])
+}
+
+func TestAdoptServiceConfigIgnoresNilAndKeepsResolvedState(t *testing.T) {
+	t.Parallel()
+
+	existing := &azdext.ServiceConfig{Name: "echo"}
+	provider := &AgentServiceTargetProvider{
+		serviceConfig:         existing,
+		serviceConfigResolved: true,
+	}
+
+	// A nil config (or the same instance) must not drop the resolved
+	// state, otherwise every repeat call would re-expand $ref
+	// includes.
+	provider.adoptServiceConfig(nil)
+	require.Same(t, existing, provider.serviceConfig)
+	require.True(t, provider.serviceConfigResolved)
+
+	provider.adoptServiceConfig(existing)
+	require.True(t, provider.serviceConfigResolved)
+
+	provider.adoptServiceConfig(&azdext.ServiceConfig{Name: "echo"})
+	require.False(t, provider.serviceConfigResolved)
+}
+
 func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
 	t.Helper()
 

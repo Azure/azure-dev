@@ -636,7 +636,9 @@ services:
 	require.NoError(t, os.MkdirAll(nestedDir, 0750))
 	t.Chdir(nestedDir)
 
-	require.NoError(t, ejectInfraAfterInit("bicep"))
+withCapturedStdout(t, func() {
+		require.NoError(t, ejectInfraAfterInit("bicep"))
+	})
 
 	assert.FileExists(t, filepath.Join(projectRoot, "infra", "main.bicep"))
 	assert.NoDirExists(t, filepath.Join(nestedDir, "infra"))

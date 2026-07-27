@@ -11,9 +11,7 @@ defaults:
   # model: mai-code-1-flash-picker
   judge_model: gpt-5.5
 
-# Allow a single grader miss (3 of 4 graders passing) while keeping a high-quality
-# bar for Q&A responses. Every stimulus below has exactly 4 graders so this
-# threshold has the same meaning ("at most one miss") across all of them.
+# Allow some grader misses as we tune this more.
 scoring:
   threshold: 0.50
 

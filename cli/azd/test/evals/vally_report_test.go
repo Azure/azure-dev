@@ -10,19 +10,26 @@ import (
 	"testing"
 )
 
+// various fields from vally's trajectory
+const (
+	toolName      = "toolName"
+	toolArguments = "arguments"
+	toolCall      = "tool_call"
+)
+
 func TestExtractToolCallsIncludesRelevantArgumentDetails(t *testing.T) {
 	events := []event{
-		{Type: "tool_call", Data: map[string]any{
-			"toolName":  "run_in_terminal",
-			"arguments": map[string]any{"command": "azd up"},
+		{Type: toolCall, Data: map[string]any{
+			toolName:      "run_in_terminal",
+			toolArguments: map[string]any{"command": "azd up"},
 		}},
-		{Type: "tool_call", Data: map[string]any{
-			"toolName":  "skill",
-			"arguments": map[string]any{"skill": "azd"},
+		{Type: toolCall, Data: map[string]any{
+			toolName:      "skill",
+			toolArguments: map[string]any{"skill": "azd"},
 		}},
-		{Type: "tool_call", Data: map[string]any{
-			"toolName":  "create_file",
-			"arguments": map[string]any{"description": "Create a project file"},
+		{Type: toolCall, Data: map[string]any{
+			toolName:      "create_file",
+			toolArguments: map[string]any{"description": "Create a project file"},
 		}},
 	}
 
@@ -57,7 +64,7 @@ func TestFilteredEntriesHandlesVallyTrialOutcomes(t *testing.T) {
 		t.Fatalf("failed entries = %d, want 3", len(failed))
 	}
 
-	if got := passed[0]; got.stimulus != "successful-trial" || got.status != "success" || !got.passed {
+	if got := passed[0]; got.stimulus != "successful-trial" || got.status != statusSuccess || !got.passed {
 		t.Errorf("passed entry = %+v, want successful trial", got)
 	}
 
@@ -71,7 +78,7 @@ func TestFilteredEntriesHandlesVallyTrialOutcomes(t *testing.T) {
 		status     string
 		diagnostic string
 	}{
-		{stimulus: "failed-grade", status: "success"},
+		{stimulus: "failed-grade", status: statusSuccess},
 		{stimulus: "executor-error", status: "error", diagnostic: "The test executor could not start."},
 		{stimulus: "skipped-trial", status: "skipped", diagnostic: "The executor is unsupported."},
 	} {
@@ -259,6 +266,7 @@ func TestReportWritesPassedAndFailedReports(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
+	// #nosec G703 -- runDir is t.TempDir(); test-only file write, not user input.
 	if err := os.WriteFile(filepath.Join(runDir, "results.jsonl"), results, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
@@ -272,7 +280,12 @@ func TestReportWritesPassedAndFailedReports(t *testing.T) {
 		t.Errorf("report() message = %q, want counts", message)
 	}
 
-	for _, suffix := range []string{"-failed.md", "-passed.md"} {
+	const (
+		reportFailedSuffix = "-failed.md"
+		reportPassedSuffix = "-passed.md"
+	)
+
+	for _, suffix := range []string{reportFailedSuffix, reportPassedSuffix} {
 		path := prefix + suffix
 		contents, err := os.ReadFile(path)
 		if err != nil {
@@ -287,7 +300,7 @@ func TestReportWritesPassedAndFailedReports(t *testing.T) {
 		}
 	}
 
-	failedReport, err := os.ReadFile(prefix + "-failed.md")
+	failedReport, err := os.ReadFile(prefix + reportFailedSuffix)
 	if err != nil {
 		t.Fatalf("ReadFile(failed report) error = %v", err)
 	}
@@ -295,7 +308,7 @@ func TestReportWritesPassedAndFailedReports(t *testing.T) {
 		t.Errorf("failed report does not contain the expected trial count")
 	}
 
-	passedReport, err := os.ReadFile(prefix + "-passed.md")
+	passedReport, err := os.ReadFile(prefix + reportPassedSuffix)
 	if err != nil {
 		t.Fatalf("ReadFile(passed report) error = %v", err)
 	}
@@ -310,6 +323,7 @@ func TestReportCreatesMissingOutputDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
+	// #nosec G703 -- runDir is t.TempDir(); test-only file write, not user input.
 	if err := os.WriteFile(filepath.Join(runDir, "results.jsonl"), results, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
@@ -332,6 +346,7 @@ func TestReportLinksAreRelativeToGeneratedReport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
+	// #nosec G703 -- runDir is t.TempDir(); test-only file write, not user input.
 	if err := os.WriteFile(filepath.Join(runDir, "results.jsonl"), results, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}

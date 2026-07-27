@@ -21,6 +21,11 @@ import (
 	"time"
 )
 
+// statusSuccess is the trial status vally reports when the executor ran to
+// completion without an execution error. Grading may still have failed --
+// see gradeResult.Passed for the actual pass/fail verdict.
+const statusSuccess = "success"
+
 type detail struct {
 	Name   string `json:"name"`
 	Passed bool   `json:"passed"`
@@ -32,10 +37,9 @@ type gradeResult struct {
 }
 
 type trajectory struct {
-	Output      string   `json:"output"`
-	SessionPath *string  `json:"sessionPath"`
-	Metadata    metadata `json:"metadata"`
-	Events      []event  `json:"events"`
+	Output   string   `json:"output"`
+	Metadata metadata `json:"metadata"`
+	Events   []event  `json:"events"`
 }
 
 type metadata struct {
@@ -88,7 +92,6 @@ type reportEntry struct {
 	skillsLoaded      []string
 	toolCalls         []string
 	output            string
-	sessionPath       string
 }
 
 func relativeReportLink(reportDir, target string) string {
@@ -211,14 +214,10 @@ func filteredEntries(records []indexedRecord) (passed []reportEntry, failed []re
 			}
 		}
 
-		sessionPath := ""
 		var skillsLoaded []string
 		var toolCalls []string
 		output := ""
 		if rec.Trajectory != nil {
-			if rec.Trajectory.SessionPath != nil {
-				sessionPath = *rec.Trajectory.SessionPath
-			}
 			skillsLoaded = normalizeSkills(rec.Trajectory.Metadata.SkillsLoaded)
 			toolCalls = extractToolCalls(rec.Trajectory.Events)
 			output = rec.Trajectory.Output
@@ -228,7 +227,7 @@ func filteredEntries(records []indexedRecord) (passed []reportEntry, failed []re
 		if diagnostic == "" && rec.GradeResult == nil {
 			diagnostic = "Grading did not run for this trial."
 		}
-		trialPassed := rec.Status == "success" && rec.GradeResult != nil && rec.GradeResult.Passed
+		trialPassed := rec.Status == statusSuccess && rec.GradeResult != nil && rec.GradeResult.Passed
 
 		re := reportEntry{
 			lineNumber:        indexed.lineNumber,
@@ -245,7 +244,6 @@ func filteredEntries(records []indexedRecord) (passed []reportEntry, failed []re
 			skillsLoaded:      skillsLoaded,
 			toolCalls:         toolCalls,
 			output:            output,
-			sessionPath:       sessionPath,
 		}
 
 		if trialPassed {
@@ -269,7 +267,10 @@ func buildReport(
 		resultsLabel = "Results folder"
 	}
 	relResults := relativeReportLink(reportDir, headerPath)
-	relRunDir := relativeReportLink(reportDir, nonEmpty(sessionLogsPath, runDir))
+	// vally doesn't currently expose a per-trial session/workspace path in trial-result
+	// records, so every entry links to the same run-level session logs folder.
+	relSessionTarget := relativeReportLink(reportDir, nonEmpty(sessionLogsPath, runDir))
+	relRunDir := relSessionTarget
 	title := "# Vally Failed Responses"
 	countLabel := "Failed trials"
 	noEntriesMessage := "No failed trials in this run."
@@ -340,8 +341,6 @@ func buildReport(
 		b.WriteString(")")
 		b.WriteString("\n\n")
 
-		sessionTarget := nonEmpty(entry.sessionPath, nonEmpty(sessionLogsPath, runDir))
-		relSessionTarget := relativeReportLink(reportDir, sessionTarget)
 		relEntryResults := relativeReportLink(reportDir, nonEmpty(entry.sourcePath, headerPath))
 
 		b.WriteString(detailsHeading)
@@ -489,9 +488,7 @@ func extractToolCalls(events []event) []string {
 	}
 
 	result := []string{fmt.Sprintf("Summary: %s", strings.Join(summary, ", "))}
-	for _, call := range toolCalls {
-		result = append(result, call)
-	}
+	result = append(result, toolCalls...)
 
 	return result
 }

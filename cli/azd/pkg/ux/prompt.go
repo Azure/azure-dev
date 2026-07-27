@@ -106,7 +106,7 @@ func NewPrompt(options *PromptOptions) *Prompt {
 	}
 
 	return &Prompt{
-		input:   internal.NewInput(),
+		input:   internal.NewInput(mergedOptions.Writer),
 		options: &mergedOptions,
 		value:   mergedOptions.DefaultValue,
 	}

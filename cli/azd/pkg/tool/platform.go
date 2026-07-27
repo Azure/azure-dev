@@ -16,7 +16,7 @@ import (
 var platformManagers = map[string][]string{
 	"windows": {"winget", "npm", "code"},
 	"darwin":  {"brew", "npm", "code"},
-	"linux":   {"apt", "snap", "npm", "code"},
+	"linux":   {"apt", "snap", "brew", "npm", "code"},
 }
 
 // Platform describes the detected operating system and the package managers
@@ -92,23 +92,40 @@ func (pd *PlatformDetector) IsManagerAvailable(
 	return err == nil
 }
 
-// SelectStrategy returns the best install strategy for the given tool on the
-// detected platform. It returns nil when no strategy is defined for the
-// platform's OS. When the strategy names a PackageManager that is not present
-// in platform.AvailableManagers the strategy is still returned — the caller
-// (installer) is responsible for handling the fallback.
+// SelectStrategies returns the ordered list of install strategies for the
+// given tool on the detected platform, or nil when none are defined.
+func (pd *PlatformDetector) SelectStrategies(
+	tool *ToolDefinition,
+	platform *Platform,
+) []InstallStrategy {
+	if tool == nil || tool.InstallStrategies == nil || platform == nil {
+		return nil
+	}
+	return tool.InstallStrategies[platform.OS]
+}
+
+// SelectStrategy returns the preferred install strategy for the given tool on
+// the detected platform: the first strategy in the platform's list that is
+// usable here. A strategy with no PackageManager (an explicit InstallCommand
+// or direct download) is always usable; a package-manager strategy requires
+// that manager to be available. When no strategy is usable, the first is
+// returned so the caller can surface a "manager unavailable" error. Returns
+// nil when no strategy is defined for the platform's OS.
 func (pd *PlatformDetector) SelectStrategy(
 	tool *ToolDefinition,
 	platform *Platform,
 ) *InstallStrategy {
-	if tool == nil || tool.InstallStrategies == nil {
+	strategies := pd.SelectStrategies(tool, platform)
+	if len(strategies) == 0 {
 		return nil
 	}
 
-	strategy, exists := tool.InstallStrategies[platform.OS]
-	if !exists {
-		return nil
+	for i := range strategies {
+		s := &strategies[i]
+		if s.PackageManager == "" || platform.HasManager(s.PackageManager) {
+			return s
+		}
 	}
 
-	return &strategy
+	return &strategies[0]
 }

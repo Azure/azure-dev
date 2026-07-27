@@ -32,8 +32,8 @@ message ValidationMessage {
 // RegisterValidationCheckRequest is sent by extensions to register a validation check.
 message RegisterValidationCheckRequest {
   // check_type identifies the validation context this check targets
-  // (e.g. "local-preflight", "project-config"). Future check types can be
-  // added without changing the protocol.
+  // (e.g. "provision", "arm-provision", "project-config"). Future check
+  // types can be added without changing the protocol.
   string check_type = 1;
   // rule_id is a stable, unique identifier for this check rule,
   // used in telemetry and diagnostics.

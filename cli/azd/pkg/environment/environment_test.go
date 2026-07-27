@@ -346,6 +346,78 @@ func TestEnvironment_ConcurrentDotenvSet(t *testing.T) {
 	}
 }
 
+// TestEnviron_ExcludesLoaderControlKeys verifies that dynamic linker/loader control variables
+// (names in the reserved LD_/DYLD_ namespace) are not carried from the dotenv into the environment
+// passed to tool subprocesses, while ordinary values - including similarly named keys such as
+// LDFLAGS/LDLIBS that are not in that namespace - are preserved.
+func TestEnviron_ExcludesLoaderControlKeys(t *testing.T) {
+	env := NewWithValues("test-env", map[string]string{
+		"AZURE_ENV_NAME": "test-env",
+		"SAFE_VALUE":     "keep-me",
+		// Reserved LD_/DYLD_ loader namespace - must be excluded.
+		"LD_PRELOAD":                  "/tmp/a.so",
+		"LD_LIBRARY_PATH":             "/tmp/a",
+		"LD_AUDIT":                    "/tmp/audit.so",
+		"DYLD_INSERT_LIBRARIES":       "/tmp/a.dylib",
+		"DYLD_LIBRARY_PATH":           "/tmp/a",
+		"DYLD_FRAMEWORK_PATH":         "/tmp/a",
+		"DYLD_FALLBACK_LIBRARY_PATH":  "/tmp/a",
+		"DYLD_VERSIONED_LIBRARY_PATH": "/tmp/a",
+		// Casing must not matter - keys are matched case-insensitively.
+		"ld_preload": "/tmp/a-lower.so",
+		// Not in the reserved namespace (no trailing underscore) - must be kept.
+		"LDFLAGS": "-L/opt/lib",
+		"LDLIBS":  "-lfoo",
+	})
+
+	environ := env.Environ()
+
+	// Reserved LD_/DYLD_ namespace entries must be dropped (asserted with literal values so the
+	// test does not depend on the production filter's own logic).
+	require.NotContains(t, environ, "LD_PRELOAD=/tmp/a.so")
+	require.NotContains(t, environ, "LD_LIBRARY_PATH=/tmp/a")
+	require.NotContains(t, environ, "LD_AUDIT=/tmp/audit.so")
+	require.NotContains(t, environ, "DYLD_INSERT_LIBRARIES=/tmp/a.dylib")
+	require.NotContains(t, environ, "DYLD_LIBRARY_PATH=/tmp/a")
+	require.NotContains(t, environ, "DYLD_FRAMEWORK_PATH=/tmp/a")
+	require.NotContains(t, environ, "DYLD_FALLBACK_LIBRARY_PATH=/tmp/a")
+	require.NotContains(t, environ, "DYLD_VERSIONED_LIBRARY_PATH=/tmp/a")
+	require.NotContains(t, environ, "ld_preload=/tmp/a-lower.so")
+
+	// Ordinary values, and similarly named keys outside the reserved namespace, are preserved.
+	require.Contains(t, environ, "SAFE_VALUE=keep-me")
+	require.Contains(t, environ, "AZURE_ENV_NAME=test-env")
+	require.Contains(t, environ, "LDFLAGS=-L/opt/lib")
+	require.Contains(t, environ, "LDLIBS=-lfoo")
+}
+
+// TestDotenv_ExcludesLoaderControlKeys verifies that Dotenv - the copy of the environment's values
+// handed to callers, including the subprocess-env paths (azd exec, kubectl, container app bicep
+// context) and the gRPC bridge extensions read - excludes the reserved LD_/DYLD_ namespace while
+// preserving everything else.
+func TestDotenv_ExcludesLoaderControlKeys(t *testing.T) {
+	env := NewWithValues("test-env", map[string]string{
+		"AZURE_ENV_NAME":             "test-env",
+		"SAFE_VALUE":                 "keep-me",
+		"LD_PRELOAD":                 "/tmp/a.so",
+		"LD_LIBRARY_PATH":            "/tmp/a",
+		"DYLD_INSERT_LIBRARIES":      "/tmp/a.dylib",
+		"DYLD_FALLBACK_LIBRARY_PATH": "/tmp/a",
+		// Case-insensitive match.
+		"dyld_library_path": "/tmp/a",
+		// Outside the reserved namespace - preserved.
+		"LDFLAGS": "-L/opt/lib",
+		"LDLIBS":  "-lfoo",
+	})
+
+	require.Equal(t, map[string]string{
+		"AZURE_ENV_NAME": "test-env",
+		"SAFE_VALUE":     "keep-me",
+		"LDFLAGS":        "-L/opt/lib",
+		"LDLIBS":         "-lfoo",
+	}, env.Dotenv())
+}
+
 // --- Test 10: Dotenv special characters round-trip ---
 
 func TestDotenvSpecialCharacters_RoundTrip(t *testing.T) {

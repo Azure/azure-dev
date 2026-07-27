@@ -33,8 +33,17 @@ func TestSessionCommand_HasSubcommands(t *testing.T) {
 
 	assert.Contains(t, names, "create")
 	assert.Contains(t, names, "show")
+	assert.Contains(t, names, "stop")
 	assert.Contains(t, names, "delete")
 	assert.Contains(t, names, "list")
+}
+
+func TestSessionStopCommand_RequiresOneArg(t *testing.T) {
+	cmd := newSessionStopCommand(nil)
+
+	assert.NoError(t, cmd.Args(cmd, []string{"my-session"}))
+	assert.Error(t, cmd.Args(cmd, []string{}))
+	assert.Error(t, cmd.Args(cmd, []string{"a", "b"}))
 }
 
 func TestSessionShowCommand_RequiresOneArg(t *testing.T) {
@@ -64,14 +73,8 @@ func TestSessionCreateCommand_DefaultFlags(t *testing.T) {
 	version, _ := cmd.Flags().GetString("version")
 	assert.Equal(t, "", version)
 
-	isolationKey, _ := cmd.Flags().GetString("isolation-key")
-	assert.Equal(t, "", isolationKey)
-
-	userIsolationKey, _ := cmd.Flags().GetString("user-isolation-key")
-	assert.Equal(t, "", userIsolationKey)
-
-	chatIsolationKey, _ := cmd.Flags().GetString("chat-isolation-key")
-	assert.Equal(t, "", chatIsolationKey)
+	userIdentity, _ := cmd.Flags().GetString("user-identity")
+	assert.Equal(t, "", userIdentity)
 }
 
 func TestSessionCreateCommand_AcceptsPositionalArgs(t *testing.T) {
@@ -80,8 +83,7 @@ func TestSessionCreateCommand_AcceptsPositionalArgs(t *testing.T) {
 	assert.NoError(t, cmd.Args(cmd, []string{}))
 	assert.NoError(t, cmd.Args(cmd, []string{"my-agent"}))
 	assert.NoError(t, cmd.Args(cmd, []string{"my-agent", "3"}))
-	assert.NoError(t, cmd.Args(cmd, []string{"my-agent", "3", "sk-key"}))
-	assert.Error(t, cmd.Args(cmd, []string{"a", "b", "c", "d"}))
+	assert.Error(t, cmd.Args(cmd, []string{"a", "b", "c"}))
 }
 
 func TestSessionListCommand_DefaultFlags(t *testing.T) {
@@ -95,27 +97,34 @@ func TestSessionListCommand_DefaultFlags(t *testing.T) {
 	token, _ := cmd.Flags().GetString("pagination-token")
 	assert.Equal(t, "", token)
 
-	userIsolationKey, _ := cmd.Flags().GetString("user-isolation-key")
-	assert.Equal(t, "", userIsolationKey)
-
-	chatIsolationKey, _ := cmd.Flags().GetString("chat-isolation-key")
-	assert.Equal(t, "", chatIsolationKey)
+	userIdentity, _ := cmd.Flags().GetString("user-identity")
+	assert.Equal(t, "", userIdentity)
 }
 
-func TestSessionShowCommand_HasIsolationFlags(t *testing.T) {
+func TestSessionShowCommand_HasUserIdentityFlag(t *testing.T) {
 	cmd := newSessionShowCommand(nil)
 
-	for _, name := range []string{"user-isolation-key", "chat-isolation-key"} {
+	for _, name := range []string{"user-identity"} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
 		assert.Equal(t, "", f.DefValue)
 	}
 }
 
-func TestSessionDeleteCommand_HasIsolationFlags(t *testing.T) {
+func TestSessionDeleteCommand_HasUserIdentityFlag(t *testing.T) {
 	cmd := newSessionDeleteCommand(nil)
 
-	for _, name := range []string{"user-isolation-key", "chat-isolation-key"} {
+	for _, name := range []string{"user-identity"} {
+		f := cmd.Flags().Lookup(name)
+		require.NotNil(t, f, "expected flag %q", name)
+		assert.Equal(t, "", f.DefValue)
+	}
+}
+
+func TestSessionStopCommand_HasUserIdentityFlag(t *testing.T) {
+	cmd := newSessionStopCommand(nil)
+
+	for _, name := range []string{"user-identity"} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
 		assert.Equal(t, "", f.DefValue)
@@ -520,6 +529,99 @@ func TestDeleteSession_500_ProducesServiceError(t *testing.T) {
 	require.Error(t, result)
 
 	// Non-404 errors remain as ServiceError.
+	var svcErr *azdext.ServiceError
+	require.True(
+		t, errors.As(result, &svcErr),
+		"500 should produce a ServiceError, got: %T", result,
+	)
+}
+
+// classifyStopSessionError reproduces the error handling from
+// newSessionStopCommand so we can test the classification without an
+// end-to-end context. It returns nil for errors that 'stop' treats as
+// an idempotent success (an already-stopped session).
+func classifyStopSessionError(err error, sessionID string) error {
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
+		if respErr.StatusCode == http.StatusConflict &&
+			respErr.ErrorCode == "session_already_stopped" {
+			return nil
+		}
+
+		if respErr.StatusCode == http.StatusNotFound {
+			return exterrors.Validation(
+				exterrors.CodeSessionNotFound,
+				fmt.Sprintf(
+					"session %q not found or has been deleted",
+					sessionID,
+				),
+				"use 'azd ai agent sessions list' to see "+
+					"available sessions",
+			)
+		}
+	}
+	return exterrors.ServiceFromAzure(err, exterrors.OpStopSession)
+}
+
+func TestStopSession_409AlreadyStopped_IsSuccess(t *testing.T) {
+	azErr := &azcore.ResponseError{
+		StatusCode: http.StatusConflict,
+		ErrorCode:  "session_already_stopped",
+	}
+
+	result := classifyStopSessionError(azErr, "my-session-id")
+	require.NoError(
+		t, result,
+		"an already-stopped session should be treated as success",
+	)
+}
+
+func TestStopSession_409Other_ProducesServiceError(t *testing.T) {
+	azErr := &azcore.ResponseError{
+		StatusCode: http.StatusConflict,
+		ErrorCode:  "session_conflict",
+	}
+
+	result := classifyStopSessionError(azErr, "my-session-id")
+	require.Error(
+		t, result,
+		"an unrelated 409 should still surface as an error",
+	)
+
+	var svcErr *azdext.ServiceError
+	require.True(
+		t, errors.As(result, &svcErr),
+		"unrelated 409 should produce a ServiceError, got: %T", result,
+	)
+}
+
+func TestStopSession_404_ProducesValidationError(t *testing.T) {
+	azErr := &azcore.ResponseError{
+		StatusCode: http.StatusNotFound,
+		ErrorCode:  "session_not_found",
+	}
+
+	result := classifyStopSessionError(azErr, "my-session-id")
+	require.Error(t, result)
+
+	var localErr *azdext.LocalError
+	require.True(
+		t, errors.As(result, &localErr),
+		"404 should produce a LocalError, got: %T", result,
+	)
+	assert.Equal(t, exterrors.CodeSessionNotFound, localErr.Code)
+	assert.Contains(t, localErr.Message, "my-session-id")
+	assert.Contains(t, localErr.Message, "not found")
+}
+
+func TestStopSession_500_ProducesServiceError(t *testing.T) {
+	azErr := &azcore.ResponseError{
+		StatusCode: http.StatusInternalServerError,
+		ErrorCode:  "internal_error",
+	}
+
+	result := classifyStopSessionError(azErr, "sess-1")
+	require.Error(t, result)
+
 	var svcErr *azdext.ServiceError
 	require.True(
 		t, errors.As(result, &svcErr),

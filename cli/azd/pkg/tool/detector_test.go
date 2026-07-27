@@ -435,11 +435,11 @@ func TestDetectTool_Extension(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// DetectTool — Skills (host plugin listing)
+// DetectTool — Skills (agent plugin listing)
 // ---------------------------------------------------------------------------
 
 // TestDetectTool_Skill_Copilot exercises detectSkill for the copilot
-// host, whose `plugin list` output is a bullet list. The skill is
+// agent, whose `plugin list` output is a bullet list. The skill is
 // reported installed only when PluginName appears AND the VersionRegex
 // captures a version.
 func TestDetectTool_Skill_Copilot(t *testing.T) {
@@ -450,9 +450,10 @@ func TestDetectTool_Skill_Copilot(t *testing.T) {
 			Id:       "azure-skills",
 			Name:     "Azure Skills",
 			Category: ToolCategorySkill,
-			SkillHosts: []SkillHost{
+			SkillAgents: []SkillAgent{
 				{
-					Host:              "copilot",
+					DisplayName:       "GitHub Copilot CLI",
+					Command:           "copilot",
 					PluginListCommand: []string{"plugin", "list"},
 					PluginName:        "azure@azure-skills",
 					VersionRegex:      `azure@azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
@@ -504,10 +505,10 @@ func TestDetectTool_Skill_Copilot(t *testing.T) {
 	}
 }
 
-// TestDetectTool_Skill_Claude exercises detectSkill for the claude host.
-// claude's target-filtered `plugin list azure@azure-skills` echoes the
-// queried name even when the plugin is NOT installed, so the VersionRegex
-// match on the "Version:" line is the authoritative existence signal.
+// TestDetectTool_Skill_Claude exercises detectSkill for the claude agent.
+// `claude plugin list` ignores a plugin-name argument, so detection lists
+// every plugin via `--json` and anchors the VersionRegex on the
+// azure@azure-skills entry; a listing without that entry is NOT installed.
 func TestDetectTool_Skill_Claude(t *testing.T) {
 	t.Parallel()
 
@@ -516,12 +517,13 @@ func TestDetectTool_Skill_Claude(t *testing.T) {
 			Id:       "azure-skills",
 			Name:     "Azure Skills",
 			Category: ToolCategorySkill,
-			SkillHosts: []SkillHost{
+			SkillAgents: []SkillAgent{
 				{
-					Host:              "claude",
-					PluginListCommand: []string{"plugin", "list", "azure@azure-skills"},
+					DisplayName:       "Claude Code CLI",
+					Command:           "claude",
+					PluginListCommand: []string{"plugin", "list", "--json"},
 					PluginName:        "azure@azure-skills",
-					VersionRegex:      `Version:\s*v?(\d+\.\d+\.\d+)`,
+					VersionRegex:      `"id":\s*"azure@azure-skills"[^}]*?"version":\s*"v?(\d+\.\d+\.\d+)"`,
 				},
 			},
 		}
@@ -534,18 +536,25 @@ func TestDetectTool_Skill_Claude(t *testing.T) {
 		expectVersion   string
 	}{
 		{
-			name: "Installed",
-			stdout: "❯ azure@azure-skills\n" +
-				"    Version: 1.1.70\n" +
-				"    Scope: user\n",
+			name:            "Installed",
+			stdout:          `[{"id":"azure@azure-skills","version":"1.1.70","scope":"user"}]`,
 			expectInstalled: true,
 			expectVersion:   "1.1.70",
 		},
 		{
-			// claude echoes the queried name even when not installed; the
-			// absence of a Version line means NOT installed.
-			name:            "EchoesNameButNotInstalled",
-			stdout:          "azure@azure-skills not found\n",
+			// The regex anchors on the azure@azure-skills id, so another
+			// plugin's version is never picked up.
+			name: "InstalledAmongOtherPlugins",
+			stdout: `[{"id":"other-skill@store","version":"2.0.0"},` +
+				`{"id":"azure@azure-skills","version":"1.1.70"}]`,
+			expectInstalled: true,
+			expectVersion:   "1.1.70",
+		},
+		{
+			// Not installed: the JSON lists other plugins but no
+			// azure@azure-skills entry.
+			name:            "NotInstalled",
+			stdout:          `[{"id":"other-skill@store","version":"2.0.0"}]`,
 			expectInstalled: false,
 			expectVersion:   "",
 		},
@@ -574,70 +583,72 @@ func TestDetectTool_Skill_Claude(t *testing.T) {
 	}
 }
 
-// TestDetectSkillHosts verifies that DetectSkillHosts returns EVERY host
+// TestDetectSkillAgents verifies that DetectSkillAgents returns EVERY agent
 // the skill is installed through (not just the first), in manifest order.
-func TestDetectSkillHosts(t *testing.T) {
+func TestDetectSkillAgents(t *testing.T) {
 	t.Parallel()
 
-	twoHostSkill := func() *ToolDefinition {
+	twoAgentSkill := func() *ToolDefinition {
 		return &ToolDefinition{
 			Id:       "azure-skills",
 			Name:     "Azure Skills",
 			Category: ToolCategorySkill,
-			SkillHosts: []SkillHost{
+			SkillAgents: []SkillAgent{
 				{
-					Host:              "copilot",
+					DisplayName:       "GitHub Copilot CLI",
+					Command:           "copilot",
 					PluginListCommand: []string{"plugin", "list"},
 					PluginName:        "azure@azure-skills",
 					VersionRegex:      `azure@azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
 				},
 				{
-					Host:              "claude",
-					PluginListCommand: []string{"plugin", "list", "azure@azure-skills"},
+					DisplayName:       "Claude Code CLI",
+					Command:           "claude",
+					PluginListCommand: []string{"plugin", "list", "--json"},
 					PluginName:        "azure@azure-skills",
-					VersionRegex:      `Version:\s*v?(\d+\.\d+\.\d+)`,
+					VersionRegex:      `"id":\s*"azure@azure-skills"[^}]*?"version":\s*"v?(\d+\.\d+\.\d+)"`,
 				},
 			},
 		}
 	}
 
-	// installedOutput renders host stdout that reports the skill present.
+	// installedOutput renders agent stdout that reports the skill present.
 	copilotInstalled := "  • azure@azure-skills (v1.1.71)\n"
-	claudeInstalled := "❯ azure@azure-skills\n    Version: 1.1.71\n"
+	claudeInstalled := `[{"id":"azure@azure-skills","version":"1.1.71"}]`
 	notInstalled := "" // empty stdout => not installed
 
 	tests := []struct {
-		name      string
-		copilot   string
-		claude    string
-		wantHosts []InstalledSkillHost
+		name       string
+		copilot    string
+		claude     string
+		wantAgents []InstalledSkillAgent
 	}{
 		{
 			name:    "BothInstalled",
 			copilot: copilotInstalled,
 			claude:  claudeInstalled,
-			wantHosts: []InstalledSkillHost{
-				{Host: "copilot", Version: "1.1.71"},
-				{Host: "claude", Version: "1.1.71"},
+			wantAgents: []InstalledSkillAgent{
+				{Agent: "copilot", Version: "1.1.71"},
+				{Agent: "claude", Version: "1.1.71"},
 			},
 		},
 		{
-			name:      "OnlyClaude",
-			copilot:   notInstalled,
-			claude:    claudeInstalled,
-			wantHosts: []InstalledSkillHost{{Host: "claude", Version: "1.1.71"}},
+			name:       "OnlyClaude",
+			copilot:    notInstalled,
+			claude:     claudeInstalled,
+			wantAgents: []InstalledSkillAgent{{Agent: "claude", Version: "1.1.71"}},
 		},
 		{
-			name:      "OnlyCopilot",
-			copilot:   copilotInstalled,
-			claude:    notInstalled,
-			wantHosts: []InstalledSkillHost{{Host: "copilot", Version: "1.1.71"}},
+			name:       "OnlyCopilot",
+			copilot:    copilotInstalled,
+			claude:     notInstalled,
+			wantAgents: []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.71"}},
 		},
 		{
-			name:      "NoneInstalled",
-			copilot:   notInstalled,
-			claude:    notInstalled,
-			wantHosts: nil,
+			name:       "NoneInstalled",
+			copilot:    notInstalled,
+			claude:     notInstalled,
+			wantAgents: nil,
 		},
 	}
 
@@ -656,23 +667,84 @@ func TestDetectSkillHosts(t *testing.T) {
 			}).Respond(exec.RunResult{ExitCode: 0, Stdout: tt.claude})
 
 			d := NewDetector(runner)
-			hosts, err := d.DetectSkillHosts(t.Context(), twoHostSkill())
+			agents, err := d.DetectSkillAgents(t.Context(), twoAgentSkill())
 
 			require.NoError(t, err)
-			assert.Equal(t, tt.wantHosts, hosts)
+			assert.Equal(t, tt.wantAgents, agents)
 		})
 	}
 
 	t.Run("NonSkillReturnsNil", func(t *testing.T) {
 		t.Parallel()
 		d := NewDetector(mockexec.NewMockCommandRunner())
-		hosts, err := d.DetectSkillHosts(t.Context(), &ToolDefinition{
+		agents, err := d.DetectSkillAgents(t.Context(), &ToolDefinition{
 			Id:       "az-cli",
 			Category: ToolCategoryCLI,
 		})
 		require.NoError(t, err)
-		assert.Nil(t, hosts)
+		assert.Nil(t, agents)
 	})
+}
+
+// TestDetectSkill_EarlierAgentFound_LaterAgentContextError verifies that when a
+// skill is installed on an earlier agent but a later agent's probe hits a context
+// error (e.g. cancellation/timeout mid-detection), the skill is still reported
+// as installed from the agent already found — the context error must not discard
+// an earlier positive match. The error is still recorded on the status
+// (detection was incomplete). Regression test: multi-agent detection previously
+// returned "not installed" with the error, dropping the skill from tool and
+// update-check results.
+func TestDetectSkill_EarlierAgentFound_LaterAgentContextError(t *testing.T) {
+	t.Parallel()
+
+	skill := &ToolDefinition{
+		Id:       "azure-skills",
+		Name:     "Azure Skills",
+		Category: ToolCategorySkill,
+		SkillAgents: []SkillAgent{
+			{
+				DisplayName:       "GitHub Copilot CLI",
+				Command:           "copilot",
+				PluginListCommand: []string{"plugin", "list"},
+				PluginName:        "azure@azure-skills",
+				VersionRegex:      `azure@azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
+			},
+			{
+				DisplayName:       "Claude Code CLI",
+				Command:           "claude",
+				PluginListCommand: []string{"plugin", "list", "--json"},
+				PluginName:        "azure@azure-skills",
+				VersionRegex:      `"id":\s*"azure@azure-skills"[^}]*?"version":\s*"v?(\d+\.\d+\.\d+)"`,
+			},
+		},
+	}
+
+	runner := mockexec.NewMockCommandRunner()
+	runner.MockToolInPath("copilot", nil)
+	runner.MockToolInPath("claude", nil)
+	// copilot (first agent) has the skill installed ...
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot"
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "  • azure@azure-skills (v1.1.71)\n"})
+	// ... but claude (later agent) is probed with a cancelled/expired context.
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "claude"
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{}, context.DeadlineExceeded
+	})
+
+	d := NewDetector(runner)
+	status, err := d.DetectTool(t.Context(), skill)
+	require.NoError(t, err)
+	require.NotNil(t, status)
+
+	assert.True(t, status.Installed,
+		"a skill found on an earlier agent must stay installed when a later agent's probe is cancelled")
+	assert.Equal(t, "1.1.71", status.InstalledVersion)
+	assert.Equal(t, []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.71"}}, status.SkillAgents)
+	// The later agent's context error is still recorded — detection was
+	// incomplete, so SkillAgents may be missing an agent.
+	require.ErrorIs(t, status.Error, context.DeadlineExceeded)
 }
 
 // ---------------------------------------------------------------------------

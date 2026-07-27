@@ -467,3 +467,92 @@ func TestGetExistingEnvironment_NotFound_ReturnsNil(t *testing.T) {
 	env := getExistingEnvironment(t.Context(), "nonexistent", azdClient)
 	assert.Nil(t, env)
 }
+
+// ---------------------------------------------------------------------------
+// candidateDisplayName
+// ---------------------------------------------------------------------------
+
+func TestCandidateDisplayName(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "baseline", candidateDisplayName("baseline", false))
+	assert.Equal(t, "candidate_1 ★", candidateDisplayName("candidate_1", true))
+}
+
+// ---------------------------------------------------------------------------
+// candidateTableHeader
+// ---------------------------------------------------------------------------
+
+func TestCandidateTableHeader(t *testing.T) {
+	t.Parallel()
+
+	t.Run("both columns", func(t *testing.T) {
+		t.Parallel()
+		header, sep := candidateTableHeader(true, true)
+		assert.Contains(t, header, "Candidate")
+		assert.Contains(t, header, "Score")
+		assert.Contains(t, header, "Eval")
+		assert.Contains(t, header, "Strategy")
+		assert.Contains(t, sep, "─")
+	})
+
+	t.Run("no eval no strategy", func(t *testing.T) {
+		t.Parallel()
+		header, _ := candidateTableHeader(false, false)
+		assert.NotContains(t, header, "Eval")
+		assert.NotContains(t, header, "Strategy")
+	})
+}
+
+// ---------------------------------------------------------------------------
+// formatCandidateRow — dash placeholders for empty cells
+// ---------------------------------------------------------------------------
+
+func TestFormatCandidateRow_EmptyEvalShowsDash(t *testing.T) {
+	t.Parallel()
+	row := formatCandidateRow("candidate_1", 0.95, "", nil, true, false)
+	assert.Contains(t, row, "-")
+	assert.Contains(t, row, "0.950")
+}
+
+func TestFormatCandidateRow_NonEmptyEvalPreserved(t *testing.T) {
+	t.Parallel()
+	row := formatCandidateRow("candidate_1", 0.95, "View", nil, true, false)
+	assert.Contains(t, row, "View")
+}
+
+func TestFormatCandidateRow_EmptyStrategyShowsDash(t *testing.T) {
+	t.Parallel()
+	row := formatCandidateRow("candidate_1", 0.90, "", nil, false, true)
+	assert.Contains(t, row, "-")
+}
+
+func TestFormatCandidateRow_NonEmptyStrategyPreserved(t *testing.T) {
+	t.Parallel()
+	row := formatCandidateRow("candidate_1", 0.90, "", []string{"skills", "system_prompt"}, false, true)
+	assert.Contains(t, row, "skills")
+	assert.Contains(t, row, "system_prompt")
+}
+
+func TestFormatCandidateRow_BothColumnsEmpty(t *testing.T) {
+	t.Parallel()
+	row := formatCandidateRow("baseline", 0.80, "", nil, true, true)
+	// Both eval and strategy should show dashes.
+	assert.Contains(t, row, "baseline")
+	assert.Contains(t, row, "0.800")
+	// There should be at least two "-" characters (one for each empty column).
+	count := 0
+	for _, c := range row {
+		if c == '-' {
+			count++
+		}
+	}
+	assert.GreaterOrEqual(t, count, 2, "both empty columns should show dash placeholders")
+}
+
+func TestFormatCandidateRow_HiddenColumnsOmitted(t *testing.T) {
+	t.Parallel()
+	row := formatCandidateRow("candidate_1", 0.95, "View", []string{"skills"}, false, false)
+	// Neither eval nor strategy should appear when both are hidden.
+	assert.NotContains(t, row, "View")
+	assert.NotContains(t, row, "skills")
+}

@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -16,44 +17,65 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
 type appServiceTarget struct {
-	env     *environment.Environment
-	cli     *azapi.AzureClient
-	console input.Console
+	env             *environment.Environment
+	envManager      environment.Manager
+	containerHelper *ContainerHelper
+	cli             *azapi.AzureClient
+	console         input.Console
 }
 
 // NewAppServiceTarget creates a new instance of the AppServiceTarget
 func NewAppServiceTarget(
 	env *environment.Environment,
+	envManager environment.Manager,
+	containerHelper *ContainerHelper,
 	azCli *azapi.AzureClient,
 	console input.Console,
 ) ServiceTarget {
 	return &appServiceTarget{
-		env:     env,
-		cli:     azCli,
-		console: console,
+		env:             env,
+		envManager:      envManager,
+		containerHelper: containerHelper,
+		cli:             azCli,
+		console:         console,
 	}
 }
 
 // Gets the required external tools
 func (st *appServiceTarget) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
+	if serviceConfig.Language == ServiceLanguageDocker || serviceConfig.Docker.Path != "" {
+		return st.containerHelper.RequiredExternalTools(ctx, serviceConfig)
+	}
 	return []tools.ExternalTool{}
 }
 
 // Initializes the AppService target
 func (st *appServiceTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	return nil
+	return st.validateContainerConfig(serviceConfig)
 }
 
-// Prepares a zip archive from the specified build output
+// Package prepares deployment artifacts. For container deployments (language=docker, docker.path set,
+// or a container artifact already present), no packaging is needed since the Publish phase handles
+// image build and push. For non-container deployments, a zip archive is created.
 func (st *appServiceTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
+	// Container deployment: no packaging needed. The Publish phase handles image build/push.
+	// This covers three scenarios:
+	// 1. Local docker build: container artifact already present from framework service
+	// 2. Remote build (docker.RemoteBuild): no artifacts from Package phase by design
+	// 3. Dotnet-publish docker: no artifacts from Package phase by design
+	if st.isContainerDeploy(serviceConfig, serviceContext) {
+		return &ServicePackageResult{}, nil
+	}
+
 	progress.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
 
 	// Get package path from the service context
@@ -90,6 +112,7 @@ func (st *appServiceTarget) Package(
 	}, nil
 }
 
+// Publish pushes container images to ACR for container deployments. No-op for zip deployments.
 func (st *appServiceTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -98,10 +121,65 @@ func (st *appServiceTarget) Publish(
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
 ) (*ServicePublishResult, error) {
-	return &ServicePublishResult{}, nil
+	// Gate on service configuration, not just artifact presence.
+	// Remote build and dotnet-publish docker flows produce no package artifacts by design;
+	// ContainerHelper.Publish handles everything (build + push) in those modes.
+	if !st.isContainerDeploy(serviceConfig, serviceContext) {
+		return &ServicePublishResult{}, nil
+	}
+
+	if err := st.validateTargetResource(targetResource); err != nil {
+		return nil, fmt.Errorf("validating target resource: %w", err)
+	}
+
+	var publishResult *ServicePublishResult
+	var err error
+
+	// Check if the package artifact is already a remote image reference
+	if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer)); found {
+		if parsedImage, parseErr := docker.ParseContainerImage(artifact.Location); parseErr == nil {
+			if parsedImage.Registry != "" {
+				publishResult = &ServicePublishResult{
+					Artifacts: ArtifactCollection{
+						{
+							Kind:         ArtifactKindContainer,
+							Location:     artifact.Location,
+							LocationKind: LocationKindRemote,
+							Metadata: map[string]string{
+								"registry": parsedImage.Registry,
+								"image":    artifact.Location,
+							},
+						},
+					},
+				}
+			}
+		}
+	}
+
+	if publishResult == nil {
+		// Login, tag, and push container image to ACR
+		publishResult, err = st.containerHelper.Publish(
+			ctx, serviceConfig, serviceContext, targetResource, st.env, progress, publishOptions)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Save the image name to the environment
+	log.Printf("writing image name to environment")
+	if remoteContainer, ok := publishResult.Artifacts.FindFirst(WithKind(ArtifactKindContainer)); ok {
+		st.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteContainer.Location)
+	}
+
+	if err := st.envManager.Save(ctx, st.env); err != nil {
+		return nil, fmt.Errorf("saving image name to environment: %w", err)
+	}
+
+	return publishResult, nil
 }
 
-// Deploys the prepared zip archive using Zip deploy to the Azure App Service resource
+// Deploy deploys to the Azure App Service resource. For container deployments, it updates the
+// site's container configuration (linuxFxVersion). For zip deployments, it uses zip deploy.
 func (st *appServiceTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -113,7 +191,135 @@ func (st *appServiceTarget) Deploy(
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
 
-	// Get zip file path from package artifacts
+	// Check if this is a container deployment by looking for a container artifact in the publish results
+	if artifact, found := serviceContext.Publish.FindFirst(WithKind(ArtifactKindContainer)); found {
+		imageName := artifact.Location
+		if imageName == "" {
+			return nil, fmt.Errorf(
+				"no container image found in publish artifacts for service: %s", serviceConfig.Name)
+		}
+		return st.containerDeploy(ctx, serviceConfig, targetResource, imageName, progress)
+	}
+
+	return st.zipDeploy(ctx, serviceConfig, serviceContext, targetResource, progress)
+}
+
+// containerDeploy updates the App Service container configuration with the published image.
+// It respects slot selection via AZD_DEPLOY_{SERVICE}_SLOT_NAME, matching the zip deploy behavior.
+func (st *appServiceTarget) containerDeploy(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+	imageName string,
+	progress *async.Progress[ServiceProgress],
+) (*ServiceDeployResult, error) {
+	// Validate the App Service is configured for container deployment (Linux + DOCKER| linuxFxVersion).
+	// Infrastructure configuration (ACR auth, managed identity) must be set via IaC, not at deploy time.
+	progress.SetProgress(NewServiceProgress("Validating container configuration"))
+	if err := st.cli.ValidateAppServiceForContainerDeploy(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+	); err != nil {
+		return nil, err
+	}
+
+	// Determine deployment targets (main app or slots) using the same logic as zip deploy
+	deployTargets, err := st.determineDeploymentTargets(ctx, serviceConfig, targetResource, progress)
+	if err != nil {
+		return nil, fmt.Errorf("determining deployment targets: %w", err)
+	}
+
+	for _, target := range deployTargets {
+		var progressMsg string
+		if target.SlotName == "" {
+			progressMsg = "Updating container image"
+		} else {
+			progressMsg = fmt.Sprintf("Updating container image for slot '%s'", target.SlotName)
+		}
+		progress.SetProgress(NewServiceProgress(progressMsg))
+
+		if target.SlotName == "" {
+			err = st.cli.UpdateAppServiceContainerImage(
+				ctx,
+				targetResource.SubscriptionId(),
+				targetResource.ResourceGroupName(),
+				targetResource.ResourceName(),
+				imageName,
+			)
+		} else {
+			err = st.cli.UpdateAppServiceSlotContainerImage(
+				ctx,
+				targetResource.SubscriptionId(),
+				targetResource.ResourceGroupName(),
+				targetResource.ResourceName(),
+				target.SlotName,
+				imageName,
+			)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("deploying container to app service %s: %w", serviceConfig.Name, err)
+		}
+	}
+
+	// Apply environment variables as App Settings if configured
+	if len(serviceConfig.Environment) > 0 {
+		progress.SetProgress(NewServiceProgress("Updating application settings"))
+		envVars, err := serviceConfig.Environment.Expand(st.env.Getenv)
+		if err != nil {
+			return nil, fmt.Errorf("expanding environment variables: %w", err)
+		}
+
+		if err := st.cli.UpdateAppServiceAppSettings(
+			ctx,
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+			envVars,
+		); err != nil {
+			return nil, fmt.Errorf("updating app settings for service %s: %w", serviceConfig.Name, err)
+		}
+	}
+
+	progress.SetProgress(NewServiceProgress("Fetching endpoints for app service"))
+	endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
+	if err != nil {
+		return nil, err
+	}
+
+	artifacts := ArtifactCollection{}
+
+	for _, endpoint := range endpoints {
+		if err := artifacts.Add(&Artifact{
+			Kind:         ArtifactKindEndpoint,
+			Location:     endpoint,
+			LocationKind: LocationKindRemote,
+		}); err != nil {
+			return nil, fmt.Errorf("failed to add endpoint artifact: %w", err)
+		}
+	}
+
+	var resourceArtifact *Artifact
+	if err := mapper.Convert(targetResource, &resourceArtifact); err == nil {
+		if err := artifacts.Add(resourceArtifact); err != nil {
+			return nil, fmt.Errorf("failed to add resource artifact: %w", err)
+		}
+	}
+
+	return &ServiceDeployResult{
+		Artifacts: artifacts,
+	}, nil
+}
+
+// zipDeploy deploys a zip archive to the App Service using zip deploy.
+func (st *appServiceTarget) zipDeploy(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+) (*ServiceDeployResult, error) {
 	var zipFilePath string
 	if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindArchive)); found && artifact.Location != "" {
 		zipFilePath = artifact.Location
@@ -428,5 +634,24 @@ func (st *appServiceTarget) validateTargetResource(
 		)
 	}
 
+	return nil
+}
+
+// isContainerDeploy returns true when the service is configured for container deployment.
+// For App Service, container deployment is triggered by language=docker, docker.path set
+// (polyglot containerization), or a pre-built image.
+func (st *appServiceTarget) isContainerDeploy(serviceConfig *ServiceConfig, serviceContext *ServiceContext) bool {
+	if serviceConfig.Language == ServiceLanguageDocker || serviceConfig.Docker.Path != "" {
+		return true
+	}
+	if _, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer)); found {
+		return true
+	}
+	return false
+}
+
+// validateContainerConfig is a no-op; polyglot containerization is now supported via the
+// composite docker framework in service_manager.go.
+func (st *appServiceTarget) validateContainerConfig(_ *ServiceConfig) error {
 	return nil
 }

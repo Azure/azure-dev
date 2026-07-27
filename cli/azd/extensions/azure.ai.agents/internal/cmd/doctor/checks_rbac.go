@@ -17,7 +17,7 @@ import (
 
 // rbacLearnLink is the canonical learn.microsoft.com link surfaced
 // alongside the templated `az role assignment create` suggestion when
-// the developer is missing the Azure AI User role on the Foundry
+// the developer is missing the Foundry User role on the Foundry
 // project. Same target as `rbacLink` in checks_foundry_endpoint.go,
 // but pinned separately here so the two checks can drift to different
 // resources later (e.g., if Foundry publishes a dedicated "developer
@@ -84,10 +84,10 @@ var guidRedactRE = regexp.MustCompile(
 // developer's role assignments on the Foundry project's ARM scope
 // and surfaces:
 //
-//   - Pass: "<display> has Azure AI access on project '<account>/<project>'"
+//   - Pass: "<display> has Foundry access on project '<account>/<project>'"
 //     (Details: matched role family, scope, principal ID)
-//   - Fail: "<display> lacks Azure AI access" with a templated
-//     `az role assignment create --role "Azure AI User" --assignee
+//   - Fail: "<display> lacks Foundry access" with a templated
+//     `az role assignment create --role 53ca6127-db72-4b80-b1b0-d745d6d5456d --assignee
 //     <oid> --scope <scope>` command and a learn.microsoft.com link.
 //     The Suggestion text redacts the principal ID and scope ARN
 //     when Options.Unredacted is false (the default), so doctor's
@@ -367,12 +367,13 @@ func classifyRBACResult(res *project.DeveloperRBACResult, unredacted bool) Resul
 		Status: StatusFail,
 		Message: fmt.Sprintf(
 			"%s does not have the required role on project '%s' "+
-				"(Azure AI User / Azure AI Developer / Contributor / Owner).",
+				"(Foundry User / Azure AI Developer / Contributor / Owner).",
 			displayName, scopeShort),
 		Suggestion: fmt.Sprintf(
-			"Assign the Azure AI User role to the developer with:\n"+
+			"Assign the Foundry User role to the developer with:\n"+
+				"  # 53ca6127-db72-4b80-b1b0-d745d6d5456d is the Foundry User (formerly Azure AI User) role\n"+
 				"  az role assignment create \\\n"+
-				"    --role \"Azure AI User\" \\\n"+
+				"    --role 53ca6127-db72-4b80-b1b0-d745d6d5456d \\\n"+
 				"    --assignee %s \\\n"+
 				"    --scope %q",
 			principalArg, scopeArg),

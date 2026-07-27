@@ -13,7 +13,7 @@ parameters:
     default:  '<!-- #not-specified -->'
   - name: GitHubToken
     type: string
-    default:  $(azuresdk-github-pat)
+    default:  $(GH_TOKEN)
 
 steps:
   - pwsh: |

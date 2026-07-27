@@ -240,7 +240,7 @@ func buildTrigger(flags *routineCreateFlags) (routines.RoutineTrigger, error) {
 				"provide an ISO 8601 datetime, e.g. '2026-04-24T15:00:00Z'",
 			)
 		}
-		t.At = flags.at
+		t.At = routines.FlexibleTimestamp(flags.at)
 		// timer no longer carries time_zone in the v1 spec; silently ignore the
 		// flag's default ("UTC") and only error if the user passed a non-UTC.
 		if flags.timeZone != "" && flags.timeZone != "UTC" {

@@ -1,0 +1,65 @@
+name: ext-registry-check
+
+# NOTE: We're using pull_request_target here, because the PR is untrusted and the entire point of this workflow is to judge 
+# if "untrusted registry.json update is safe", so we need to make sure the workflow is coming from our 'protected' 
+# main branch, not from the user's PR branch.
+#   
+# Currently, check-enforcer doesn't have the same support for `pull_request_target` as `pull_request` so we need to have a 
+# discussion about what's going on there. I filed an issue, so potentially we can revisit this:
+# - https://github.com/Azure/azure-sdk-tools/issues/16366
+#
+# This means we, instead, need to be set in GitHub as a "required to pass" workflow check. That means our workflow 
+# needs to run on _every_ PR because required workflows still need to report a status on each PR. We no-op quickly, 
+# but we still need to run and report a status, regardless.
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, edited, synchronize, labeled, unlabeled, reopened, ready_for_review]
+
+# If two events are triggered within a short time in the same PR, cancel the run of the oldest event
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  pull-requests: read
+  contents: read
+
+jobs:
+  # NOTE: this is running with pull_request_target, which means that any check or code
+  # that runs in here should be strictly controlled to come from stable/verified places
+  # (for instance, our script below uses the .github folder from 'main', and not from the
+  #  users' branch, we don't npm install any packages, etc..)
+  extension-registry-check:
+    name: Extension registry "core team approval required" check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check if registry.json changed
+        id: changed
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+            const changed = files.some((f) => f.filename === 'cli/azd/extensions/registry.json');
+            core.info(`registry.json changed: ${changed}`);
+            core.setOutput('registry_json_changed', changed);
+
+      - name: Checkout
+        if: steps.changed.outputs.registry_json_changed == 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Check extension registry update
+        if: steps.changed.outputs.registry_json_changed == 'true'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const script = require('./.github/scripts/src/ext-registry-check.js');
+            await script({ github, context, core });
+  

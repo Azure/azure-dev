@@ -8,19 +8,25 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktools"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 )
 
 // registerHookExecutors delegates to the shared test helper in test/mocks/mocktools.
@@ -283,4 +289,243 @@ func Test_HooksRunAction_ValidatesLayerHooksRelativeToLayerPath(t *testing.T) {
 	require.False(t, layerHook.IsUsingDefaultShell())
 	// validate() infers language from the .sh file extension
 	require.Equal(t, language.HookKindBash, layerHook.Kind)
+}
+
+func Test_NewHooksRunAction_Constructor(t *testing.T) {
+	t.Parallel()
+	flags := &hooksRunFlags{}
+	console := mockinput.NewMockConsole()
+	args := []string{"pre-build"}
+	a := newHooksRunAction(nil, nil, nil, nil, nil, console, flags, args, nil)
+	ha := a.(*hooksRunAction)
+	require.Same(t, flags, ha.flags)
+	require.Equal(t, args, ha.args)
+}
+
+func Test_NewHooksRunAction(t *testing.T) {
+	t.Parallel()
+	action := newHooksRunAction(
+		&project.ProjectConfig{},
+		nil, // importManager
+		environment.NewWithValues("test", nil),
+		nil, // envManager
+		nil, // commandRunner
+		mockinput.NewMockConsole(),
+		&hooksRunFlags{},
+		[]string{"pre-provision"},
+		ioc.NewNestedContainer(nil),
+	)
+	require.NotNil(t, action)
+}
+
+func Test_ProcessHooks_SkipTrue(t *testing.T) {
+	t.Parallel()
+	mockCtx := mocks.NewMockContext(t.Context())
+	hooks := []*ext.HookConfig{
+		{Run: "echo hello"},
+	}
+	action := &hooksRunAction{
+		console: mockCtx.Console,
+		flags:   &hooksRunFlags{},
+	}
+	// skip=true should skip actual execution
+	err := action.processHooks(*mockCtx.Context, "", "prehook", hooks, hookContextProject, true)
+	require.NoError(t, err)
+}
+
+func Test_ProcessHooks_NilHooks(t *testing.T) {
+	t.Parallel()
+	mockCtx := mocks.NewMockContext(t.Context())
+	action := &hooksRunAction{
+		console: mockCtx.Console,
+		flags:   &hooksRunFlags{},
+	}
+	err := action.processHooks(*mockCtx.Context, "", "prehook", nil, hookContextProject, false)
+	require.NoError(t, err)
+}
+
+func Test_ProcessHooks_SkipWithHooks(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+
+	hra := &hooksRunAction{
+		console: console,
+	}
+
+	hooks := []*ext.HookConfig{
+		{Run: "echo hello"},
+		{Run: "echo world"},
+	}
+
+	err := hra.processHooks(t.Context(), "/tmp", "prebuild", hooks, hookContextService, true)
+	require.NoError(t, err)
+}
+
+func Test_ProcessHooks_EmptyHooks(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+
+	hra := &hooksRunAction{
+		console: console,
+	}
+
+	err := hra.processHooks(t.Context(), "/tmp", "prebuild", nil, hookContextProject, false)
+	require.NoError(t, err)
+}
+
+func Test_PrepareHook_WindowsPlatform(t *testing.T) {
+	t.Parallel()
+	hra := &hooksRunAction{
+		flags: &hooksRunFlags{platform: "windows"},
+	}
+	winHook := &ext.HookConfig{Run: "echo win"}
+	hook := &ext.HookConfig{Run: "echo default", Windows: winHook}
+	err := hra.prepareHook("prehook", hook)
+	require.NoError(t, err)
+	require.Equal(t, "echo win", hook.Run)
+}
+
+func Test_PrepareHook_PosixPlatform(t *testing.T) {
+	t.Parallel()
+	hra := &hooksRunAction{
+		flags: &hooksRunFlags{platform: "posix"},
+	}
+	posixHook := &ext.HookConfig{Run: "echo posix"}
+	hook := &ext.HookConfig{Run: "echo default", Posix: posixHook}
+	err := hra.prepareHook("prehook", hook)
+	require.NoError(t, err)
+	require.Equal(t, "echo posix", hook.Run)
+}
+
+func Test_PrepareHook_WindowsMissing(t *testing.T) {
+	t.Parallel()
+	hra := &hooksRunAction{
+		flags: &hooksRunFlags{platform: "windows"},
+	}
+	hook := &ext.HookConfig{Run: "echo default"}
+	err := hra.prepareHook("prehook", hook)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Windows")
+}
+
+func Test_PrepareHook_PosixMissing(t *testing.T) {
+	t.Parallel()
+	hra := &hooksRunAction{
+		flags: &hooksRunFlags{platform: "posix"},
+	}
+	hook := &ext.HookConfig{Run: "echo default"}
+	err := hra.prepareHook("prehook", hook)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Posix")
+}
+
+func Test_NewHooksRunFlags(t *testing.T) {
+	t.Parallel()
+	cmd := &cobra.Command{Use: "test"}
+	global := &internal.GlobalCommandOptions{}
+	flags := newHooksRunFlags(cmd, global)
+	require.NotNil(t, flags)
+}
+
+func Test_NewHooksRunCmd(t *testing.T) {
+	t.Parallel()
+	cmd := newHooksRunCmd()
+	require.NotNil(t, cmd)
+	assert.Contains(t, cmd.Use, "run")
+}
+
+func Test_PrepareHook_NoPlatform(t *testing.T) {
+	t.Parallel()
+	action := &hooksRunAction{flags: &hooksRunFlags{}}
+	hook := &ext.HookConfig{Run: "echo hello"}
+	err := action.prepareHook("test-hook", hook)
+	require.NoError(t, err)
+	assert.Equal(t, "test-hook", hook.Name)
+}
+
+func Test_PrepareHook_Windows(t *testing.T) {
+	t.Parallel()
+	action := &hooksRunAction{flags: &hooksRunFlags{platform: "windows"}}
+	hook := &ext.HookConfig{
+		Windows: &ext.HookConfig{Run: "echo win"},
+	}
+	err := action.prepareHook("h1", hook)
+	require.NoError(t, err)
+	assert.Equal(t, "echo win", hook.Run)
+}
+
+func Test_PrepareHook_Windows_NotConfigured(t *testing.T) {
+	t.Parallel()
+	action := &hooksRunAction{flags: &hooksRunFlags{platform: "windows"}}
+	hook := &ext.HookConfig{Run: "echo default"}
+	err := action.prepareHook("h1", hook)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not configured for Windows")
+}
+
+func Test_PrepareHook_Posix(t *testing.T) {
+	t.Parallel()
+	action := &hooksRunAction{flags: &hooksRunFlags{platform: "posix"}}
+	hook := &ext.HookConfig{
+		Posix: &ext.HookConfig{Run: "echo posix"},
+	}
+	err := action.prepareHook("h2", hook)
+	require.NoError(t, err)
+	assert.Equal(t, "echo posix", hook.Run)
+}
+
+func Test_PrepareHook_Posix_NotConfigured(t *testing.T) {
+	t.Parallel()
+	action := &hooksRunAction{flags: &hooksRunFlags{platform: "posix"}}
+	hook := &ext.HookConfig{Run: "echo default"}
+	err := action.prepareHook("h2", hook)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not configured for Posix")
+}
+
+func Test_PrepareHook_InvalidPlatform(t *testing.T) {
+	t.Parallel()
+	action := &hooksRunAction{flags: &hooksRunFlags{platform: "badplatform"}}
+	hook := &ext.HookConfig{Run: "echo"}
+	err := action.prepareHook("h3", hook)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "badplatform")
+	assert.Contains(t, err.Error(), "not valid")
+}
+
+func Test_ProcessHooks_Empty(t *testing.T) {
+	t.Parallel()
+	mockCtx := mocks.NewMockContext(t.Context())
+	action := &hooksRunAction{
+		console: mockCtx.Console,
+		flags:   &hooksRunFlags{},
+	}
+	err := action.processHooks(*mockCtx.Context, "", "prehook", nil, hookContextProject, false)
+	require.NoError(t, err)
+}
+
+func Test_ProcessHooks_EmptySlice(t *testing.T) {
+	t.Parallel()
+	mockCtx := mocks.NewMockContext(t.Context())
+	action := &hooksRunAction{
+		console: mockCtx.Console,
+		flags:   &hooksRunFlags{},
+	}
+	err := action.processHooks(*mockCtx.Context, "", "prehook", []*ext.HookConfig{}, hookContextProject, false)
+	require.NoError(t, err)
+}
+
+func Test_ProcessHooks_PrepareError(t *testing.T) {
+	t.Parallel()
+	mockCtx := mocks.NewMockContext(t.Context())
+	hooks := []*ext.HookConfig{
+		{Run: "echo hello"},
+	}
+	action := &hooksRunAction{
+		console: mockCtx.Console,
+		flags:   &hooksRunFlags{platform: "invalid"},
+	}
+	err := action.processHooks(*mockCtx.Context, "", "prehook", hooks, hookContextProject, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid")
 }

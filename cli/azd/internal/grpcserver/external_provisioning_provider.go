@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -21,21 +22,48 @@ type ExternalProvisioningProvider struct {
 	providerName string
 	extension    *extensions.Extension
 	broker       *grpcbroker.MessageBroker[azdext.ProvisioningMessage]
+	console      input.Console
 }
 
 // NewExternalProvisioningProviderFactory returns a DI-compatible factory function.
+// The console is injected by the IoC container when the provider is resolved.
 func NewExternalProvisioningProviderFactory(
 	providerName string,
 	extension *extensions.Extension,
 	broker *grpcbroker.MessageBroker[azdext.ProvisioningMessage],
-) func() provisioning.Provider {
-	return func() provisioning.Provider {
+) func(input.Console) provisioning.Provider {
+	return func(console input.Console) provisioning.Provider {
 		return &ExternalProvisioningProvider{
 			providerName: providerName,
 			extension:    extension,
 			broker:       broker,
+			console:      console,
 		}
 	}
+}
+
+// reportProgress surfaces an extension progress message on the CLI spinner so
+// long-running Deploy/Preview/Destroy operations show live status, matching
+// built-in providers. Falls back to a debug log when no console is available.
+func (p *ExternalProvisioningProvider) reportProgress(ctx context.Context, msg string) {
+	if p.console != nil {
+		p.console.ShowSpinner(ctx, msg, input.Step)
+		return
+	}
+	log.Printf("provisioning progress: %s", msg)
+}
+
+// stopProgress clears the spinner started by reportProgress once the operation
+// completes, marking it done or failed. No-op without a console.
+func (p *ExternalProvisioningProvider) stopProgress(ctx context.Context, err error) {
+	if p.console == nil {
+		return
+	}
+	format := input.StepDone
+	if err != nil {
+		format = input.StepFailed
+	}
+	p.console.StopSpinner(ctx, "", format)
 }
 
 // Name returns the provisioning provider name.
@@ -130,11 +158,10 @@ func (p *ExternalProvisioningProvider) Deploy(
 		},
 	}
 
-	// TODO: Route extension progress to the CLI interactive progress display.
-	// Currently progress is only logged; built-in providers surface through console formatter.
 	resp, err := p.broker.SendAndWaitWithProgress(ctx, req, func(msg string) {
-		log.Printf("provisioning progress: %s", msg)
+		p.reportProgress(ctx, msg)
 	})
+	p.stopProgress(ctx, err)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"provisioning deploy failed: %w", err,
@@ -162,10 +189,10 @@ func (p *ExternalProvisioningProvider) Preview(
 		},
 	}
 
-	// TODO: Route to console progress display
 	resp, err := p.broker.SendAndWaitWithProgress(ctx, req, func(msg string) {
-		log.Printf("provisioning preview progress: %s", msg)
+		p.reportProgress(ctx, msg)
 	})
+	p.stopProgress(ctx, err)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"provisioning preview failed: %w", err,
@@ -198,10 +225,10 @@ func (p *ExternalProvisioningProvider) Destroy(
 		},
 	}
 
-	// TODO: Route to console progress display
 	resp, err := p.broker.SendAndWaitWithProgress(ctx, req, func(msg string) {
-		log.Printf("provisioning destroy progress: %s", msg)
+		p.reportProgress(ctx, msg)
 	})
+	p.stopProgress(ctx, err)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"provisioning destroy failed: %w", err,
@@ -434,13 +461,23 @@ func convertFromProtoPreviewResult(
 		return &provisioning.DeployPreviewResult{}
 	}
 
-	// Resource-level change details (created/modified/deleted) are not yet supported
-	// for extension providers. The proto can be extended with a repeated changes field
-	// when this capability is needed.
+	changes := make([]*provisioning.DeploymentPreviewChange, 0, len(result.Preview.Changes))
+	for _, c := range result.Preview.Changes {
+		if c == nil {
+			continue
+		}
+		changes = append(changes, &provisioning.DeploymentPreviewChange{
+			ChangeType:   provisioning.ChangeType(c.ChangeType),
+			ResourceId:   provisioning.Resource{Id: c.ResourceId},
+			ResourceType: c.ResourceType,
+			Name:         c.Name,
+		})
+	}
+
 	preview := &provisioning.DeploymentPreview{
 		Status: result.Preview.Summary,
 		Properties: &provisioning.DeploymentPreviewProperties{
-			Changes: []*provisioning.DeploymentPreviewChange{},
+			Changes: changes,
 		},
 	}
 

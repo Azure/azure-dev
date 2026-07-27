@@ -8,7 +8,7 @@
 
 ### Bugs Fixed
 
-### Other Changes
+- [[#9136]](https://github.com/Azure/azure-dev/pull/9136) Fixed the workspace resource view surfacing an opaque "Process exited with code 1" error (with a Report Issue prompt) when `azd show` fails for expected reasons such as not being logged in or having no environment. The underlying `azd` error is now included for diagnosis and these background failures no longer prompt users to file a bug.
 
 ## 0.10.0 (2025-09-22)
 

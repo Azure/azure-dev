@@ -8,9 +8,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
+	"sync"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
@@ -105,8 +110,8 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 
 	skippedDueToDeploymentState := deployResult.SkippedReason == DeploymentStateSkipped
 
-	if deployResult.SkippedReason == PreflightAbortedSkipped {
-		// Preflight intentionally aborted the deployment. There is no Deployment to process.
+	if deployResult.SkippedReason == ProvisionValidationCanceledSkipped {
+		// Validation intentionally canceled provisioning. There is no Deployment to process.
 		return deployResult, nil
 	}
 
@@ -537,4 +542,96 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 	}
 
 	return provider, nil
+}
+
+const (
+	// InfraProviderCustom is the infra.provider telemetry value recorded for a provider that is
+	// not one of the built-in kinds (for example an extension-registered provider). The raw name
+	// is never emitted because it may embed user-chosen project or organization identifiers.
+	InfraProviderCustom = "custom"
+)
+
+// RecordInfraProviderUsage records the resolved IaC provider(s) for a provisioning command
+// (provision / up / down) as the infra.provider attribute directly on the current command span in
+// ctx. The attribute is a sorted, de-duplicated string slice of the distinct providers the
+// command's layers resolve to: built-in kinds are recorded verbatim (for example "bicep",
+// "terraform", "arm"), while non-built-in (extension) providers are bucketed to
+// InfraProviderCustom ("custom") so raw user-chosen names are never emitted. A single-provider
+// project records a one-element slice (for example ["bicep"]); a multi-layer project that mixes
+// providers records each distinct value (for example ["bicep", "terraform"]) rather than a lossy
+// "mixed" marker, preserving which providers were combined while staying low-cardinality. Layers
+// that leave the provider unspecified resolve through the manager's default provider. It is a
+// no-op when no provider can be resolved.
+//
+// The value is attached directly to the span in ctx (not the process-global usage bag) so it stays
+// scoped to that single command span and does not leak onto sibling in-process child commands (for
+// example a custom `workflows.up` running `provision` then `deploy`). Callers must invoke this once
+// per command, before provider work begins, so the attribute is present on success, failure, and
+// preview spans alike. The value is computed deterministically from configuration (rather than
+// racing concurrent per-layer resolution).
+func (m *Manager) RecordInfraProviderUsage(ctx context.Context, layers []Options) {
+	providers := m.resolveInfraProviders(layers)
+	if len(providers) == 0 {
+		return
+	}
+
+	tracing.SetAttributesInContext(ctx, fields.InfraProviderKey.StringSlice(providers))
+}
+
+// resolveInfraProviders returns the sorted, de-duplicated telemetry-safe provider values for the
+// given layers — built-in kinds verbatim, non-built-in (extension) providers bucketed to
+// InfraProviderCustom. Layers that leave the provider unspecified resolve through the manager's
+// default provider. Returns nil when no provider can be resolved.
+func (m *Manager) resolveInfraProviders(layers []Options) []string {
+	// Resolve the default provider at most once per call, memoized (and concurrency-safe) via
+	// sync.OnceValues: every unspecified layer resolves to the same default, so this keeps the
+	// value deterministic and avoids repeating resolver work (which may do I/O) per layer.
+	var resolveDefault func() (ProviderKind, error)
+	if m.defaultProvider != nil {
+		resolveDefault = sync.OnceValues(m.defaultProvider)
+	}
+
+	// Collect the distinct telemetry-safe provider values in a single pass — built-in kinds
+	// verbatim, non-built-in (extension) providers bucketed to InfraProviderCustom. De-duplicating
+	// after bucketing means two different extension providers both collapse to a single "custom".
+	providers := map[string]struct{}{}
+	for _, layer := range layers {
+		kind := layer.Provider
+		if kind == NotSpecified {
+			if resolveDefault == nil {
+				continue
+			}
+
+			resolved, err := resolveDefault()
+			if err != nil {
+				continue
+			}
+
+			kind = resolved
+		}
+
+		if kind == NotSpecified {
+			continue
+		}
+
+		providers[InfraProviderTelemetryValue(kind)] = struct{}{}
+	}
+
+	if len(providers) == 0 {
+		return nil
+	}
+
+	return slices.Sorted(maps.Keys(providers))
+}
+
+// InfraProviderTelemetryValue maps a provider kind to a value that is safe to emit raw. Built-in
+// kinds are returned verbatim; any other (custom / extension-registered) provider is bucketed to
+// InfraProviderCustom so a user-chosen provider name is never sent as telemetry.
+func InfraProviderTelemetryValue(kind ProviderKind) string {
+	switch kind {
+	case Bicep, Terraform, Arm, Pulumi:
+		return string(kind)
+	default:
+		return InfraProviderCustom
+	}
 }

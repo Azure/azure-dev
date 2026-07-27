@@ -9,10 +9,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_azdContext(t *testing.T) {
@@ -199,4 +200,88 @@ func createAppHost(path string) error {
 		return err
 	}
 	return f.Close()
+}
+
+func Test_servicesFromProjectConfig(t *testing.T) {
+	t.Run("nil services map", func(t *testing.T) {
+		pc := &project.ProjectConfig{
+			Name:     "empty-project",
+			Path:     t.TempDir(),
+			Services: nil,
+		}
+		result := servicesFromProjectConfig(t.Context(), pc)
+		require.Empty(t, result)
+	})
+
+	t.Run("empty services map", func(t *testing.T) {
+		pc := &project.ProjectConfig{
+			Name:     "empty-project",
+			Path:     t.TempDir(),
+			Services: map[string]*project.ServiceConfig{},
+		}
+		result := servicesFromProjectConfig(t.Context(), pc)
+		require.Empty(t, result)
+	})
+
+	t.Run("single service with absolute path", func(t *testing.T) {
+		absPath := filepath.Join(t.TempDir(), "api")
+		pc := &project.ProjectConfig{
+			Name: "my-project",
+			Path: t.TempDir(),
+			Services: map[string]*project.ServiceConfig{
+				"api": {
+					Name:         "api",
+					RelativePath: absPath,
+				},
+			},
+		}
+		for _, svc := range pc.Services {
+			svc.Project = pc
+		}
+
+		result := servicesFromProjectConfig(t.Context(), pc)
+		require.Len(t, result, 1)
+		require.Equal(t, "api", result[0].Name)
+		// Path() returns the absolute path directly since RelativePath is absolute
+		require.Equal(t, pc.Services["api"].Path(), result[0].Path)
+	})
+
+	t.Run("multiple services with relative paths", func(t *testing.T) {
+		root := t.TempDir()
+		pc := &project.ProjectConfig{
+			Name: "multi-project",
+			Path: root,
+			Services: map[string]*project.ServiceConfig{
+				"web": {
+					Name:         "web",
+					RelativePath: filepath.Join("src", "web"),
+				},
+				"api": {
+					Name:         "api",
+					RelativePath: filepath.Join("src", "api"),
+				},
+				"worker": {
+					Name:         "worker",
+					RelativePath: filepath.Join("src", "worker"),
+				},
+			},
+		}
+		for _, svc := range pc.Services {
+			svc.Project = pc
+		}
+
+		result := servicesFromProjectConfig(t.Context(), pc)
+		require.Len(t, result, 3)
+
+		// Build maps for order-independent comparison
+		resultMap := make(map[string]string)
+		for _, svc := range result {
+			resultMap[svc.Name] = svc.Path
+		}
+
+		// Each service path should match ServiceConfig.Path()
+		for name, svcConfig := range pc.Services {
+			require.Equal(t, svcConfig.Path(), resultMap[name], "path mismatch for service %s", name)
+		}
+	})
 }

@@ -4,19 +4,21 @@
 package project
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/stretchr/testify/require"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
-	"github.com/stretchr/testify/require"
 )
 
 type testInitFunc func(*mocks.MockContext)
@@ -321,4 +323,22 @@ func Test_isHostResource(t *testing.T) {
 			require.Equal(t, tt.expected, result, "isHostResource(%s) should be %v", tt.resourceType, tt.expected)
 		})
 	}
+}
+
+func (f *fakeResourceManager) GetResourceGroupName(
+	_ context.Context, _ string, _ osutil.ExpandableString,
+) (string, error) {
+	return f.resourceGroupName, f.err
+}
+
+func (f *fakeResourceManager) GetServiceResources(
+	_ context.Context, _ string, _ string, _ *ServiceConfig,
+) ([]*azapi.ResourceExtended, error) {
+	return nil, f.err
+}
+
+func (f *fakeResourceManager) GetServiceResource(
+	_ context.Context, _ string, _ string, _ *ServiceConfig, _ string,
+) (*azapi.ResourceExtended, error) {
+	return nil, f.err
 }

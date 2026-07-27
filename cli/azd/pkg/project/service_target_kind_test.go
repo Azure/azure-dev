@@ -298,6 +298,8 @@ func Test_checkResourceType(t *testing.T) {
 			err := checkResourceType(resource, tt.expectedType)
 			if tt.expectErr {
 				require.Error(t, err)
+				// The error message should reference the resource name.
+				require.Contains(t, err.Error(), "res-name")
 			} else {
 				require.NoError(t, err)
 			}

@@ -42,11 +42,11 @@ func TestPackageManagerVersionProvider_Npm(t *testing.T) {
 		provider := NewPackageManagerVersionProvider(runner)
 		tool := &ToolDefinition{
 			Id: "@azure/mcp",
-			InstallStrategies: map[string]InstallStrategy{
-				runtime.GOOS: {
+			InstallStrategies: map[string][]InstallStrategy{
+				runtime.GOOS: {{
 					PackageManager: "npm",
 					PackageId:      "@azure/mcp",
-				},
+				}},
 			},
 		}
 
@@ -68,11 +68,11 @@ func TestPackageManagerVersionProvider_Npm(t *testing.T) {
 		provider := NewPackageManagerVersionProvider(runner)
 		tool := &ToolDefinition{
 			Id: "test-pkg",
-			InstallStrategies: map[string]InstallStrategy{
-				runtime.GOOS: {
+			InstallStrategies: map[string][]InstallStrategy{
+				runtime.GOOS: {{
 					PackageManager: "npm",
 					PackageId:      "test-pkg",
-				},
+				}},
 			},
 		}
 
@@ -92,11 +92,11 @@ func TestPackageManagerVersionProvider_Npm(t *testing.T) {
 		provider := NewPackageManagerVersionProvider(runner)
 		tool := &ToolDefinition{
 			Id: "test-pkg",
-			InstallStrategies: map[string]InstallStrategy{
-				runtime.GOOS: {
+			InstallStrategies: map[string][]InstallStrategy{
+				runtime.GOOS: {{
 					PackageManager: "npm",
 					PackageId:      "test-pkg",
-				},
+				}},
 			},
 		}
 
@@ -130,11 +130,11 @@ func TestPackageManagerVersionProvider_Winget(t *testing.T) {
 		provider := NewPackageManagerVersionProvider(runner)
 		tool := &ToolDefinition{
 			Id: "az",
-			InstallStrategies: map[string]InstallStrategy{
-				runtime.GOOS: {
+			InstallStrategies: map[string][]InstallStrategy{
+				runtime.GOOS: {{
 					PackageManager: "winget",
 					PackageId:      "Microsoft.AzureCLI",
-				},
+				}},
 			},
 		}
 
@@ -159,11 +159,11 @@ func TestPackageManagerVersionProvider_Winget(t *testing.T) {
 		provider := NewPackageManagerVersionProvider(runner)
 		tool := &ToolDefinition{
 			Id: "az",
-			InstallStrategies: map[string]InstallStrategy{
-				runtime.GOOS: {
+			InstallStrategies: map[string][]InstallStrategy{
+				runtime.GOOS: {{
 					PackageManager: "winget",
 					PackageId:      "Microsoft.AzureCLI",
-				},
+				}},
 			},
 		}
 
@@ -206,11 +206,11 @@ func TestPackageManagerVersionProvider_Brew(t *testing.T) {
 		provider := NewPackageManagerVersionProvider(runner)
 		tool := &ToolDefinition{
 			Id: "az",
-			InstallStrategies: map[string]InstallStrategy{
-				runtime.GOOS: {
+			InstallStrategies: map[string][]InstallStrategy{
+				runtime.GOOS: {{
 					PackageManager: "brew",
 					PackageId:      "azure-cli",
-				},
+				}},
 			},
 		}
 
@@ -219,6 +219,46 @@ func TestPackageManagerVersionProvider_Brew(t *testing.T) {
 		)
 		require.NoError(t, err)
 		assert.Equal(t, "2.65.0", version)
+	})
+
+	t.Run("Cask", func(t *testing.T) {
+		t.Parallel()
+
+		// The Copilot CLI is distributed as a Homebrew cask, so its version
+		// is reported under "casks", not "formulae".
+		brewJSON := brewInfoJSON{
+			Casks: []struct {
+				Version string `json:"version"`
+			}{
+				{Version: "0.0.350"},
+			},
+		}
+		data, _ := json.Marshal(brewJSON)
+
+		runner := mockexec.NewMockCommandRunner()
+		runner.When(func(args exec.RunArgs, _ string) bool {
+			return args.Cmd == "brew" &&
+				len(args.Args) >= 3 &&
+				args.Args[0] == "info"
+		}).Respond(exec.RunResult{Stdout: string(data)})
+
+		provider := NewPackageManagerVersionProvider(runner)
+		tool := &ToolDefinition{
+			Id: "github-copilot-cli",
+			InstallStrategies: map[string][]InstallStrategy{
+				runtime.GOOS: {{
+					PackageManager: "brew",
+					PackageId:      "copilot-cli",
+					Cask:           true,
+				}},
+			},
+		}
+
+		version, err := provider.GetLatestVersion(
+			t.Context(), tool,
+		)
+		require.NoError(t, err)
+		assert.Equal(t, "0.0.350", version)
 	})
 
 	t.Run("InvalidJSON", func(t *testing.T) {
@@ -232,11 +272,11 @@ func TestPackageManagerVersionProvider_Brew(t *testing.T) {
 		provider := NewPackageManagerVersionProvider(runner)
 		tool := &ToolDefinition{
 			Id: "az",
-			InstallStrategies: map[string]InstallStrategy{
-				runtime.GOOS: {
+			InstallStrategies: map[string][]InstallStrategy{
+				runtime.GOOS: {{
 					PackageManager: "brew",
 					PackageId:      "azure-cli",
-				},
+				}},
 			},
 		}
 
@@ -244,6 +284,49 @@ func TestPackageManagerVersionProvider_Brew(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "parsing brew info")
 	})
+}
+
+// ---------------------------------------------------------------------------
+// PackageManagerVersionProvider — multi-method selection
+// ---------------------------------------------------------------------------
+
+// TestPackageManagerVersionProvider_FallsBackToNextManager verifies that for a
+// multi-method tool (the Copilot CLI lists brew before npm) the latest-version
+// lookup tries the next manager when the first one's query fails — e.g. on a
+// system without Homebrew the brew query errors and npm answers instead.
+func TestPackageManagerVersionProvider_FallsBackToNextManager(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	// brew is not installed: its query fails with a command error.
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "brew"
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 1}, errors.New("brew: command not found")
+	})
+	// npm answers with the version.
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" &&
+			len(args.Args) >= 3 &&
+			args.Args[0] == "view" &&
+			args.Args[1] == "@github/copilot" &&
+			args.Args[2] == "version"
+	}).Respond(exec.RunResult{Stdout: "1.0.65\n"})
+
+	provider := NewPackageManagerVersionProvider(runner)
+	tool := &ToolDefinition{
+		Id: "github-copilot-cli",
+		InstallStrategies: map[string][]InstallStrategy{
+			runtime.GOOS: {
+				{PackageManager: "brew", PackageId: "copilot-cli", Cask: true},
+				{PackageManager: "npm", PackageId: "@github/copilot"},
+			},
+		},
+	}
+
+	version, err := provider.GetLatestVersion(t.Context(), tool)
+	require.NoError(t, err)
+	assert.Equal(t, "1.0.65", version)
 }
 
 // ---------------------------------------------------------------------------
@@ -258,12 +341,12 @@ func TestPackageManagerVersionProvider_NoStrategy(t *testing.T) {
 
 	tool := &ToolDefinition{
 		Id:                "test",
-		InstallStrategies: map[string]InstallStrategy{},
+		InstallStrategies: map[string][]InstallStrategy{},
 	}
 
 	_, err := provider.GetLatestVersion(t.Context(), tool)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no install strategy")
+	assert.Contains(t, err.Error(), "no package manager configured")
 }
 
 func TestPackageManagerVersionProvider_UnsupportedManager(
@@ -276,11 +359,11 @@ func TestPackageManagerVersionProvider_UnsupportedManager(
 
 	tool := &ToolDefinition{
 		Id: "test",
-		InstallStrategies: map[string]InstallStrategy{
-			runtime.GOOS: {
+		InstallStrategies: map[string][]InstallStrategy{
+			runtime.GOOS: {{
 				PackageManager: "snap",
 				PackageId:      "some-pkg",
-			},
+			}},
 		},
 	}
 
@@ -314,11 +397,11 @@ func TestPackageManagerVersionProvider_Apt(t *testing.T) {
 		provider := NewPackageManagerVersionProvider(runner)
 		tool := &ToolDefinition{
 			Id: "az",
-			InstallStrategies: map[string]InstallStrategy{
-				runtime.GOOS: {
+			InstallStrategies: map[string][]InstallStrategy{
+				runtime.GOOS: {{
 					PackageManager: "apt",
 					PackageId:      "azure-cli",
-				},
+				}},
 			},
 		}
 
@@ -344,11 +427,11 @@ func TestPackageManagerVersionProvider_Apt(t *testing.T) {
 		provider := NewPackageManagerVersionProvider(runner)
 		tool := &ToolDefinition{
 			Id: "unknown",
-			InstallStrategies: map[string]InstallStrategy{
-				runtime.GOOS: {
+			InstallStrategies: map[string][]InstallStrategy{
+				runtime.GOOS: {{
 					PackageManager: "apt",
 					PackageId:      "unknown-pkg",
-				},
+				}},
 			},
 		}
 
@@ -368,11 +451,11 @@ func TestPackageManagerVersionProvider_Apt(t *testing.T) {
 		provider := NewPackageManagerVersionProvider(runner)
 		tool := &ToolDefinition{
 			Id: "az",
-			InstallStrategies: map[string]InstallStrategy{
-				runtime.GOOS: {
+			InstallStrategies: map[string][]InstallStrategy{
+				runtime.GOOS: {{
 					PackageManager: "apt",
 					PackageId:      "azure-cli",
-				},
+				}},
 			},
 		}
 
@@ -555,11 +638,11 @@ func TestSelectVersionProvider(t *testing.T) {
 		tool := &ToolDefinition{
 			Id:       "az",
 			Category: ToolCategoryCLI,
-			InstallStrategies: map[string]InstallStrategy{
-				runtime.GOOS: {
+			InstallStrategies: map[string][]InstallStrategy{
+				runtime.GOOS: {{
 					PackageManager: "npm",
 					PackageId:      "azure-cli",
-				},
+				}},
 			},
 		}
 
@@ -578,7 +661,7 @@ func TestSelectVersionProvider(t *testing.T) {
 		tool := &ToolDefinition{
 			Id:                "custom",
 			Category:          ToolCategoryCLI,
-			InstallStrategies: map[string]InstallStrategy{},
+			InstallStrategies: map[string][]InstallStrategy{},
 		}
 
 		provider := SelectVersionProvider(
@@ -594,11 +677,11 @@ func TestSelectVersionProvider(t *testing.T) {
 			tool := &ToolDefinition{
 				Id:       "custom",
 				Category: ToolCategoryCLI,
-				InstallStrategies: map[string]InstallStrategy{
-					runtime.GOOS: {
+				InstallStrategies: map[string][]InstallStrategy{
+					runtime.GOOS: {{
 						PackageManager: "code",
 						PackageId:      "some-ext",
-					},
+					}},
 				},
 			}
 

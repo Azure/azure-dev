@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/schemas/microsoft.foundry.json",
+  "title": "Microsoft Foundry project (services entry with host: microsoft.foundry)",
+  "description": "Schema for a Foundry project as a service in azure.yaml. Composes per-resource sub-schemas via $ref, modeled on microsoft/AgentSchema's split-file pattern.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "endpoint": {
+      "type": "string",
+      "description": "URL of an existing Foundry project. When present, azd connects to the existing project instead of provisioning a new one. Absence of this field is the signal to provision a new project."
+    },
+    "deployments": {
+      "type": "array",
+      "description": "Model deployments to create on the Foundry project.",
+      "items": { "$ref": "Deployment.json" }
+    },
+    "connections": {
+      "type": "array",
+      "description": "Project connections.",
+      "items": { "$ref": "Connection.json" }
+    },
+    "toolboxes": {
+      "type": "array",
+      "description": "Named toolboxes that agents can reference by name.",
+      "items": { "$ref": "Toolbox.json" }
+    },
+    "skills": {
+      "type": "array",
+      "description": "Named skills that agents can reference by name.",
+      "items": { "$ref": "Skill.json" }
+    },
+    "routines": {
+      "type": "array",
+      "description": "Scheduled or event-driven agent invocations.",
+      "items": { "$ref": "Routine.json" }
+    },
+    "agents": {
+      "type": "array",
+      "description": "All agent definitions (hosted and prompt).",
+      "items": { "$ref": "Agent.json" }
+    }
+  }
+}

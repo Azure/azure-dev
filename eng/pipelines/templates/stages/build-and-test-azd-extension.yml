@@ -8,6 +8,9 @@ parameters:
   - name: SkipTests
     type: boolean
     default: false
+  - name: PublishToRegistry
+    type: string
+    default: stable
   - name: CrossBuildMatrix
     type: object
     default:
@@ -85,6 +88,7 @@ stages:
               Variables: ${{ build.value.Variables }}
               AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
               SkipTests: ${{ parameters.SkipTests }}
+              PublishToRegistry: ${{ parameters.PublishToRegistry }}
 
       - ${{ each build in parameters.CrossBuildMatrix }}:
         - template: /eng/pipelines/templates/jobs/cross-build-azd-extension.yml
@@ -100,6 +104,7 @@ stages:
             ValidationTask: ${{ build.value.ValidationTask }}
             ValidationScript: ${{ build.value.ValidationScript }}
             AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
+            PublishToRegistry: ${{ parameters.PublishToRegistry }}
 
       - job: GenerateReleaseArtifacts
         pool:
@@ -118,6 +123,7 @@ stages:
               filePath: eng/scripts/Set-ExtensionVersionVariable.ps1
               arguments: >-
                 -ExtensionDirectory ${{ parameters.AzdExtensionDirectory }}
+                -PublishToRegistry ${{ parameters.PublishToRegistry }}
 
           # Create changelog
           - pwsh: New-Item -ItemType Directory -Path changelog

@@ -34,6 +34,9 @@ const (
 	// TemplateTypeAzd is a full azd template repository.
 	TemplateTypeAzd = "azd"
 
+	// TemplateTypeAzureYaml is a unified azure.yaml template adopted via the Foundry flow.
+	TemplateTypeAzureYaml = "azure.yaml"
+
 	// templateTypeExtensionAIAgent is the discriminator value in the unified
 	// awesome-azd templates.json manifest that identifies an agent-init
 	// template. Entries with any other (or empty) templateType belong to the
@@ -66,8 +69,11 @@ type AgentTemplate struct {
 	TemplateType       string   `json:"templateType"`
 }
 
-// EffectiveType determines the template type by inspecting the source URL.
+// EffectiveType determines the template type by inspecting the source URL
+// and the template's declared templateType.
 // If it ends with agent.yaml or agent.manifest.yaml, it's an agent manifest.
+// If it ends with azure.yaml or azure.yml AND templateType is "extension.ai.agent",
+// it's a unified azure.yaml template.
 // Otherwise, it's treated as a full azd template repo.
 func (t *AgentTemplate) EffectiveType() string {
 	lower := strings.ToLower(t.Source)
@@ -76,6 +82,13 @@ func (t *AgentTemplate) EffectiveType() string {
 		lower == "agent.yaml" ||
 		lower == "agent.manifest.yaml" {
 		return TemplateTypeAgent
+	}
+	if t.TemplateType == templateTypeExtensionAIAgent &&
+		(strings.HasSuffix(lower, "/azure.yaml") ||
+			strings.HasSuffix(lower, "/azure.yml") ||
+			lower == "azure.yaml" ||
+			lower == "azure.yml") {
+		return TemplateTypeAzureYaml
 	}
 	return TemplateTypeAzd
 }

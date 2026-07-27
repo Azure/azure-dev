@@ -362,8 +362,11 @@ func TestRunConnectionRemoveWith_FilteredAndPromoted(t *testing.T) {
 func TestRunConnectionRemoveWith_ConnectionNotInToolbox(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
 	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{Name: "tb", DefaultVersion: "1"}}
-	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
-		Name: "tb", Version: "1", Tools: []map[string]any{
+	client.listVersionsResults["tb"] = []azure.ToolboxVersionObject{
+		{Name: "tb", Version: "1"}, {Name: "tb", Version: "2"},
+	}
+	client.versionResults["tb/2"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "2", Tools: []map[string]any{
 			{"type": "mcp", "name": "other", "project_connection_id": "/c/other"},
 		},
 	}}
@@ -378,7 +381,8 @@ func TestRunConnectionRemoveWith_ConnectionNotInToolbox(t *testing.T) {
 		connectionRemoveFlags{force: true},
 		toolboxFlags{output: "table"},
 	)
-	requireLocalError(t, err, exterrors.CodeConnectionNotInToolbox)
+	localErr := requireLocalError(t, err, exterrors.CodeConnectionNotInToolbox)
+	assert.Contains(t, localErr.Suggestion, `azd ai toolbox show "tb" --version "2"`)
 }
 
 func TestRunConnectionListWith_EmitsAllShapes(t *testing.T) {
@@ -627,6 +631,51 @@ tools:
 	require.Len(t, tools, 2)
 	assert.Equal(t, "web_search", tools[0]["type"])
 	assert.Equal(t, "file_search", tools[1]["type"])
+}
+
+// Preview toolbox tools are forwarded in the exact shape defined by the
+// Foundry toolbox API. Type-specific validation remains service-owned.
+func TestRunToolboxCreateWith_NewPreviewTools(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+tools:
+  - type: work_iq_preview
+    name: work-iq
+    project_connection_id: /connections/work-iq
+  - type: fabric_iq_preview
+    name: fabric-iq
+    project_connection_id: /connections/fabric-iq
+    server_label: fabric
+    server_url: https://fabric.example.com/mcp
+    require_approval: never
+  - type: toolbox_search_preview
+    name: toolbox-search
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, newStubConnectionResolver(), "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	assert.Equal(t, []map[string]any{
+		{
+			"type":                  "work_iq_preview",
+			"name":                  "work-iq",
+			"project_connection_id": "/connections/work-iq",
+		},
+		{
+			"type":                  "fabric_iq_preview",
+			"name":                  "fabric-iq",
+			"project_connection_id": "/connections/fabric-iq",
+			"server_label":          "fabric",
+			"server_url":            "https://fabric.example.com/mcp",
+			"require_approval":      "never",
+		},
+		{"type": "toolbox_search_preview", "name": "toolbox-search"},
+	}, client.createVersionCalls[0].req.Tools)
 }
 
 // Connection-backed entries come first, raw tools[] entries after.

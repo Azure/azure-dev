@@ -61,6 +61,7 @@ To change the trigger or action type, delete and recreate the routine.`,
 		"Not allowed on update: trigger types are immutable. Delete and recreate to change.")
 	cmd.Flags().StringVar(&flags.action, "action", "",
 		"Not allowed on update: action types are immutable. Delete and recreate to change.")
+	// Safe to ignore: flags are registered immediately above, so MarkHidden cannot fail.
 	_ = cmd.Flags().MarkHidden("trigger")
 	_ = cmd.Flags().MarkHidden("action")
 

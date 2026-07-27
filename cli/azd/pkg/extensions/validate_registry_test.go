@@ -549,6 +549,7 @@ func TestValidateExtension_AllValidCapabilities(t *testing.T) {
 					FrameworkServiceProviderCapability,
 					MetadataCapability,
 					ProvisioningProviderCapability,
+					ValidationProviderCapability,
 				},
 				Artifacts: validArtifacts(),
 			},
@@ -583,7 +584,102 @@ func TestValidateExtension_AllValidPlatforms(t *testing.T) {
 	require.Empty(t, errorsOnly(result.Issues))
 }
 
+// depExt is a small helper to build an extension with a single version that
+// declares the given dependencies.
+func depExt(id string, deps ...ExtensionDependency) *ExtensionMetadata {
+	return &ExtensionMetadata{
+		Id:          id,
+		DisplayName: id,
+		Description: id,
+		Versions: []ExtensionVersion{
+			{Version: "1.0.0", Artifacts: validArtifacts(), Dependencies: deps},
+		},
+	}
+}
+
+func TestValidateExtensions_Dependencies_Satisfied(t *testing.T) {
+	child := &ExtensionMetadata{
+		Id:          "publisher.child",
+		DisplayName: "Child",
+		Description: "Child",
+		Versions: []ExtensionVersion{
+			{Version: "1.0.0-beta.1", Artifacts: validArtifacts()},
+			{Version: "1.0.0-beta.2", Artifacts: validArtifacts()},
+		},
+	}
+	parent := depExt("publisher.parent", ExtensionDependency{Id: "publisher.child", Version: "~1.0.0-beta.1"})
+
+	result := ValidateExtensions([]*ExtensionMetadata{parent, child}, false)
+	require.True(t, result.Valid)
+	require.Empty(t, errorsOnly(result.Extensions[0].Issues))
+}
+
+func TestValidateExtensions_Dependencies_UnsatisfiableConstraintIsError(t *testing.T) {
+	// The child only publishes an old version; the parent pins a newer range that
+	// no published version satisfies. This mirrors the failure that breaks a
+	// coordinated multi-extension bump.
+	child := &ExtensionMetadata{
+		Id:          "publisher.child",
+		DisplayName: "Child",
+		Description: "Child",
+		Versions: []ExtensionVersion{
+			{Version: "0.0.1-preview", Artifacts: validArtifacts()},
+		},
+	}
+	parent := depExt("publisher.parent", ExtensionDependency{Id: "publisher.child", Version: "~1.0.0-beta.1"})
+
+	result := ValidateExtensions([]*ExtensionMetadata{parent, child}, false)
+	require.False(t, result.Valid)
+
+	errs := errorsOnly(result.Extensions[0].Issues)
+	require.NotEmpty(t, errs)
+	require.Contains(t, errs[0].Message, "publisher.child")
+	require.Contains(t, errs[0].Message, "~1.0.0-beta.1")
+	require.Contains(t, errs[0].Message, "no published version satisfies it")
+}
+
+func TestValidateExtensions_Dependencies_AbsentDependencyIsWarning(t *testing.T) {
+	// The dependency id is not present in the registry at all. This is a warning
+	// rather than an error because the registry may be partial or the dependency
+	// may already be installed at resolution time.
+	parent := depExt("publisher.parent", ExtensionDependency{Id: "publisher.missing", Version: ">=1.0.0"})
+
+	result := ValidateExtensions([]*ExtensionMetadata{parent}, false)
+	require.True(t, result.Valid)
+
+	warnings := warningsOnly(result.Extensions[0].Issues)
+	require.NotEmpty(t, warnings)
+	require.Contains(t, warnings[0].Message, "publisher.missing")
+	require.Contains(t, warnings[0].Message, "not in this registry")
+}
+
+func TestValidateExtensions_Dependencies_EmptyConstraintSatisfiedByAnyVersion(t *testing.T) {
+	child := &ExtensionMetadata{
+		Id:          "publisher.child",
+		DisplayName: "Child",
+		Description: "Child",
+		Versions: []ExtensionVersion{
+			{Version: "0.0.1-preview", Artifacts: validArtifacts()},
+		},
+	}
+	parent := depExt("publisher.parent", ExtensionDependency{Id: "publisher.child"})
+
+	result := ValidateExtensions([]*ExtensionMetadata{parent, child}, false)
+	require.True(t, result.Valid)
+	require.Empty(t, result.Extensions[0].Issues)
+}
+
 // Helper functions
+
+func warningsOnly(issues []ValidationIssue) []ValidationIssue {
+	var result []ValidationIssue
+	for _, issue := range issues {
+		if issue.Severity == ValidationWarning {
+			result = append(result, issue)
+		}
+	}
+	return result
+}
 
 func errorsOnly(issues []ValidationIssue) []ValidationIssue {
 	var result []ValidationIssue

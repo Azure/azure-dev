@@ -39,7 +39,7 @@ var PlaceholderPattern = regexp.MustCompile(`\{\{\s*([^\s{}][^{}]*?)\s*\}\}`)
 // Used by both injectParameterValues (to surface a specific warning
 // naming the unresolved placeholders) and by nextstep's fix-up
 // generator (to surface the same names in the `Next:` block as a
-// concrete "edit agent.yaml" hint). The two call sites must agree
+// concrete "edit azure.yaml" hint). The two call sites must agree
 // on what counts as a placeholder, hence the shared helper.
 func ExtractUnresolvedPlaceholders(template string) []string {
 	matches := PlaceholderPattern.FindAllStringSubmatch(template, -1)

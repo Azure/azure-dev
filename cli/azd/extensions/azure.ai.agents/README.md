@@ -13,6 +13,75 @@ Use `--no-inspector` to run only the local agent process:
 azd ai agent run --no-inspector
 ```
 
+## Migrating Legacy Agent Configuration
+
+New Foundry agent projects keep the agent definition directly on the
+`azure.ai.agent` service entry in `azure.yaml`. Older projects may still have the
+definition in an `agent.yaml` file or under the service's `config:` block. Those
+legacy shapes continue to work during the migration window, but azd prints a
+deprecation warning when it loads them.
+
+To migrate, re-run `azd ai agent init` from the project root and keep the
+generated `azure.yaml` service entry. After confirming `azd deploy` still works,
+remove the old `agent.yaml` or nested `config:` definition.
+
+Before:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    config:
+      kind: hosted
+      description: My hosted agent
+```
+
+After:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    kind: hosted
+    description: My hosted agent
+```
+
+## Session carry-over across deploys
+
+When a hosted agent is redeployed, Foundry assigns the agent a **new version** and
+sessions are bound to the version they were created on. By default, the first
+`azd ai agent invoke` after a deploy starts a brand-new session on the new
+version, dropping the previous session (including any state on its persistent
+`/home/session` volume).
+
+Set the `AZD_AGENT_RESUME_SESSION_ON_DEPLOY` environment variable to a truthy
+value to opt in to **session carry-over**. When enabled, `azd deploy` captures
+the current session before deploying, stops it, and re-points the newly deployed
+version's session pointer at it, so the next `azd ai agent invoke` resumes the
+same session on the new code with its `/home/session` volume intact.
+
+```bash
+# Enable session carry-over for this azd process
+export AZD_AGENT_RESUME_SESSION_ON_DEPLOY=true
+azd deploy
+```
+
+Details:
+
+- **Accepted truthy values** (case-insensitive, surrounding whitespace ignored):
+  `1`, `true`, `yes`, `on`. Any other value (or unset) leaves carry-over
+  **disabled**, which is the default.
+- Carry-over is always **best-effort** and never fails a deploy. If any step
+  fails (for example, the previous session was already deleted), azd silently
+  falls back to the default behavior and the next invoke starts a fresh session
+  on the new version.
+
+## Private networking for `host: azure.ai.project`
+
+Foundry project services can be provisioned as network-secured, VNet-bound accounts by adding a `network:` block to the `host: azure.ai.project` service in `azure.yaml`. The `azure.ai.projects` extension owns that service and the `microsoft.foundry` provider; this extension still authors the block during agent init. See [Private networking for `host: azure.ai.project`](docs/private-networking.md) for the schema reference, BYO-image requirements, and VNet deployment cheatsheet.
+
 ## Local Development
 
 ### Prerequisites

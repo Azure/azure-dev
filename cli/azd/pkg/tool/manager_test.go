@@ -28,7 +28,12 @@ type mockInstaller struct {
 		tool *ToolDefinition,
 		opts ...InstallOption,
 	) (*InstallResult, error)
-	availableSkillHostsFn func(tool *ToolDefinition) []string
+	uninstallFn func(
+		ctx context.Context,
+		tool *ToolDefinition,
+		opts ...InstallOption,
+	) (*InstallResult, error)
+	availableSkillAgentsFn func(ctx context.Context, tool *ToolDefinition) (commands []string, names []string)
 }
 
 func (m *mockInstaller) Install(
@@ -59,11 +64,28 @@ func (m *mockInstaller) Upgrade(
 	}, nil
 }
 
-func (m *mockInstaller) AvailableSkillHosts(tool *ToolDefinition) []string {
-	if m.availableSkillHostsFn != nil {
-		return m.availableSkillHostsFn(tool)
+func (m *mockInstaller) AvailableSkillAgents(
+	ctx context.Context,
+	tool *ToolDefinition,
+) (commands []string, names []string) {
+	if m.availableSkillAgentsFn != nil {
+		return m.availableSkillAgentsFn(ctx, tool)
 	}
-	return nil
+	return nil, nil
+}
+
+func (m *mockInstaller) Uninstall(
+	ctx context.Context,
+	tool *ToolDefinition,
+	opts ...InstallOption,
+) (*InstallResult, error) {
+	if m.uninstallFn != nil {
+		return m.uninstallFn(ctx, tool, opts...)
+	}
+	return &InstallResult{
+		Tool:    tool,
+		Success: true,
+	}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -410,13 +432,13 @@ func TestManager_InstallToolsDependencyResolution(t *testing.T) {
 	})
 }
 
-// TestManifest_SkillsListedAfterHostCLIs verifies the ordering invariant
+// TestManifest_SkillsListedAfterAgentCLIs verifies the ordering invariant
 // the install flow relies on: every skill tool appears AFTER any agent
-// host CLI it could install through (e.g. github-copilot-cli) in the
+// agent CLI it could install through (e.g. github-copilot-cli) in the
 // built-in manifest. Batch installs (--all, interactive picker) derive
 // their order from the manifest, so this ordering is what guarantees the
-// host CLI is installed before the skill — no runtime re-sorting needed.
-func TestManifest_SkillsListedAfterHostCLIs(t *testing.T) {
+// agent CLI is installed before the skill — no runtime re-sorting needed.
+func TestManifest_SkillsListedAfterAgentCLIs(t *testing.T) {
 	t.Parallel()
 
 	tools := BuiltInTools()
@@ -426,8 +448,9 @@ func TestManifest_SkillsListedAfterHostCLIs(t *testing.T) {
 		})
 	}
 
-	// Maps a host binary name to the manifest tool id that provides it.
-	hostToolID := map[string]string{
+	// Maps an agent binary name (SkillAgent.Command) to the manifest tool id
+	// that provides it.
+	agentToolID := map[string]string{
 		"copilot": "github-copilot-cli",
 	}
 
@@ -436,18 +459,18 @@ func TestManifest_SkillsListedAfterHostCLIs(t *testing.T) {
 			continue
 		}
 		skillIdx := indexOf(td.Id)
-		for _, host := range td.SkillHosts {
-			cliID, ok := hostToolID[host.Host]
+		for _, agent := range td.SkillAgents {
+			cliID, ok := agentToolID[agent.Command]
 			if !ok {
-				continue // host has no installable CLI in the manifest
+				continue // agent has no installable CLI in the manifest
 			}
 			cliIdx := indexOf(cliID)
 			if cliIdx < 0 {
 				continue
 			}
 			assert.Greater(t, skillIdx, cliIdx,
-				"skill %q must be listed after its host CLI %q in the "+
-					"manifest so batch installs install the host CLI first",
+				"skill %q must be listed after its agent CLI %q in the "+
+					"manifest so batch installs install the agent CLI first",
 				td.Id, cliID)
 		}
 	}
@@ -501,6 +524,149 @@ func TestManager_UpgradeTools(t *testing.T) {
 		)
 
 		results, err := mgr.UpgradeTools(
+			t.Context(),
+			[]string{"nonexistent"},
+		)
+
+		require.Error(t, err)
+		assert.Nil(t, results)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// UninstallTools
+// ---------------------------------------------------------------------------
+
+func TestManager_UninstallTools(t *testing.T) {
+	t.Parallel()
+
+	t.Run("DelegatesToInstaller", func(t *testing.T) {
+		t.Parallel()
+
+		var uninstalledIDs []string
+		inst := &mockInstaller{
+			uninstallFn: func(
+				_ context.Context,
+				tool *ToolDefinition,
+				_ ...InstallOption,
+			) (*InstallResult, error) {
+				uninstalledIDs = append(uninstalledIDs, tool.Id)
+				return &InstallResult{
+					Tool:    tool,
+					Success: true,
+				}, nil
+			},
+		}
+
+		mgr := NewManager(
+			&mockDetector{}, inst, nil,
+		)
+
+		results, err := mgr.UninstallTools(
+			t.Context(),
+			[]string{"az-cli", "github-copilot-cli"},
+		)
+
+		require.NoError(t, err)
+		require.Len(t, results, 2)
+		assert.Contains(t, uninstalledIDs, "az-cli")
+		assert.Contains(t, uninstalledIDs, "github-copilot-cli")
+	})
+
+	t.Run("ForwardsInstallOptions", func(t *testing.T) {
+		t.Parallel()
+
+		var gotOpts int
+		inst := &mockInstaller{
+			uninstallFn: func(
+				_ context.Context,
+				tool *ToolDefinition,
+				opts ...InstallOption,
+			) (*InstallResult, error) {
+				gotOpts = len(opts)
+				return &InstallResult{Tool: tool, Success: true}, nil
+			},
+		}
+
+		mgr := NewManager(&mockDetector{}, inst, nil)
+
+		_, err := mgr.UninstallTools(
+			t.Context(),
+			[]string{"az-cli"},
+			WithAgents("copilot"),
+		)
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, gotOpts, "install options must be forwarded to the installer")
+	})
+
+	t.Run("RecordsFailureWithoutAbortingBatch", func(t *testing.T) {
+		t.Parallel()
+
+		inst := &mockInstaller{
+			uninstallFn: func(
+				_ context.Context,
+				tool *ToolDefinition,
+				_ ...InstallOption,
+			) (*InstallResult, error) {
+				if tool.Id == "az-cli" {
+					return nil, errors.New("boom")
+				}
+				return &InstallResult{Tool: tool, Success: true}, nil
+			},
+		}
+
+		mgr := NewManager(&mockDetector{}, inst, nil)
+
+		results, err := mgr.UninstallTools(
+			t.Context(),
+			[]string{"az-cli", "github-copilot-cli"},
+		)
+
+		require.NoError(t, err)
+		require.Len(t, results, 2)
+		assert.Error(t, results[0].Error)
+		assert.True(t, results[1].Success)
+	})
+
+	t.Run("UninstallsSkillsBeforeAgentCLIs", func(t *testing.T) {
+		t.Parallel()
+
+		var order []string
+		inst := &mockInstaller{
+			uninstallFn: func(
+				_ context.Context,
+				tool *ToolDefinition,
+				_ ...InstallOption,
+			) (*InstallResult, error) {
+				order = append(order, tool.Id)
+				return &InstallResult{Tool: tool, Success: true}, nil
+			},
+		}
+
+		mgr := NewManager(&mockDetector{}, inst, nil)
+
+		// IDs supplied in manifest order (agent CLI before skill), which is
+		// what `--all` and the interactive picker produce. The skill must
+		// still be uninstalled first so its agent CLI is on PATH to remove
+		// it; otherwise removing the agent first would orphan the skill.
+		_, err := mgr.UninstallTools(
+			t.Context(),
+			[]string{"github-copilot-cli", "azure-skills"},
+		)
+
+		require.NoError(t, err)
+		require.Equal(t, []string{"azure-skills", "github-copilot-cli"}, order)
+	})
+
+	t.Run("UnknownIDReturnsError", func(t *testing.T) {
+		t.Parallel()
+
+		mgr := NewManager(
+			&mockDetector{}, &mockInstaller{}, nil,
+		)
+
+		results, err := mgr.UninstallTools(
 			t.Context(),
 			[]string{"nonexistent"},
 		)
@@ -637,20 +803,21 @@ func TestManager_UpgradeAll(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// AvailableSkillHosts
+// AvailableSkillAgents
 // ---------------------------------------------------------------------------
 
-func TestManager_AvailableSkillHosts(t *testing.T) {
+func TestManager_AvailableSkillAgents(t *testing.T) {
 	installer := &mockInstaller{
-		availableSkillHostsFn: func(_ *ToolDefinition) []string {
-			return []string{"copilot", "claude"}
+		availableSkillAgentsFn: func(_ context.Context, _ *ToolDefinition) (commands []string, names []string) {
+			return []string{"copilot", "claude"}, []string{"GitHub Copilot CLI", "Claude Code CLI"}
 		},
 	}
 	m := NewManager(&mockDetector{}, installer, nil)
 
-	got := m.AvailableSkillHosts(&ToolDefinition{
+	commands, names := m.AvailableSkillAgents(t.Context(), &ToolDefinition{
 		Id:       "azure-skills",
 		Category: ToolCategorySkill,
 	})
-	assert.Equal(t, []string{"copilot", "claude"}, got)
+	assert.Equal(t, []string{"copilot", "claude"}, commands)
+	assert.Equal(t, []string{"GitHub Copilot CLI", "Claude Code CLI"}, names)
 }

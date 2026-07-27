@@ -27,12 +27,28 @@ import (
 
 var defaultSkuPriority = []string{"GlobalStandard", "DataZoneStandard", "Standard"}
 
+// defaultDeploymentCapacity is the preferred deployment capacity for agent model deployments.
+// This overrides the lower SKU default (typically 10) which is insufficient for agents.
+const defaultDeploymentCapacity int32 = 50
+
 // errModelSkipped is a sentinel error returned by getModelDetails when the
 // user explicitly chooses "Skip this model" from the model-selection prompt.
 // Callers MUST use errors.Is to detect this case and drop the model from the
 // manifest rather than treating it as a failure. The resource is removed
 // from manifest.Resources in ProcessModels so no deployment is provisioned.
 var errModelSkipped = errors.New("user skipped model")
+
+// existingDeploymentError wraps a project.Deployment selected by the user
+// from the project's existing deployments inside getModelDetails. The caller
+// (getModelDeploymentDetails) detects this via errors.As and returns the
+// deployment with isNew=false.
+type existingDeploymentError struct {
+	Deployment *project.Deployment
+}
+
+func (e *existingDeploymentError) Error() string {
+	return "user selected existing deployment"
+}
 
 func (a *modelSelector) loadAiCatalog(ctx context.Context) error {
 	if a.modelCatalog != nil {
@@ -182,6 +198,7 @@ func (a *InitAction) getModelDeploymentDetails(
 	}
 
 	foundryProjectId := resp.Value
+	var allDeployments []FoundryDeploymentInfo
 	if foundryProjectId != "" {
 		parts := strings.Split(foundryProjectId, "/")
 		if len(parts) < 9 {
@@ -193,9 +210,10 @@ func (a *InitAction) getModelDeploymentDetails(
 		resourceGroup := parts[4]
 		accountName := parts[8]
 
-		allDeployments, err := listProjectDeployments(ctx, a.credential, subscription, resourceGroup, accountName)
-		if err != nil {
-			return nil, false, fmt.Errorf("failed to list deployments: %w", err)
+		var listErr error
+		allDeployments, listErr = listProjectDeployments(ctx, a.credential, subscription, resourceGroup, accountName)
+		if listErr != nil {
+			return nil, false, fmt.Errorf("failed to list deployments: %w", listErr)
 		}
 
 		matchingDeployments := make(map[string]*FoundryDeploymentInfo)
@@ -383,13 +401,27 @@ func (a *InitAction) getModelDeploymentDetails(
 		}
 	}
 
-	modelDetails, err := a.getModelSelector().getModelDetails(ctx, model.Id, true)
+	// Share existing deployments with the model selector so it can offer
+	// "Use an existing deployment" when the user picks "Choose a different model".
+	selector := a.getModelSelector()
+	if foundryProjectId != "" {
+		selector.allDeployments = allDeployments
+	}
+
+	modelDetails, err := selector.getModelDetails(ctx, model.Id, true)
 	if err != nil {
 		if errors.Is(err, errModelSkipped) {
 			// Propagate the sentinel unwrapped so ProcessModels can detect
 			// the skip and drop the resource from manifest.Resources.
 			return nil, false, err
 		}
+
+		// User selected an existing deployment from the project via
+		// the "Use an existing deployment" option in the model selector.
+		if existing, ok := errors.AsType[*existingDeploymentError](err); ok {
+			return existing.Deployment, false, nil
+		}
+
 		return nil, false, fmt.Errorf("failed to get model details: %w", err)
 	}
 
@@ -448,7 +480,13 @@ func (a *modelSelector) getModelDetails(
 		// selector for both interactively-detected manifests and the -m flow.
 		choices := []*azdext.SelectChoice{
 			{Label: fmt.Sprintf("Use '%s' (from manifest)", model.Name), Value: "keep"},
-			{Label: "Choose a different model", Value: "change"},
+			{Label: "Choose a different model to deploy", Value: "change"},
+		}
+		if len(a.allDeployments) > 0 {
+			choices = append(choices, &azdext.SelectChoice{
+				Label: "Use an existing deployment from this project",
+				Value: "use_existing",
+			})
 		}
 		if allowSkip {
 			choices = append(choices, &azdext.SelectChoice{
@@ -482,6 +520,15 @@ func (a *modelSelector) getModelDetails(
 				return nil, fmt.Errorf("no model selected, exiting")
 			}
 			model = selectedModel
+		case "use_existing":
+			deployment, err := a.promptExistingDeployment(ctx)
+			if err != nil {
+				if exterrors.IsCancellation(err) {
+					return nil, err
+				}
+				return nil, fmt.Errorf("failed to select existing deployment: %w", err)
+			}
+			return nil, &existingDeploymentError{Deployment: deployment}
 		case "skip":
 			fmt.Println(output.WithWarningFormat(
 				"Skipped model '%s'. The agent will not have a model deployed.", model.Name))
@@ -521,6 +568,7 @@ func (a *modelSelector) getModelDetails(
 			ModelName:    model.Name,
 			Options: &azdext.AiModelDeploymentOptions{
 				Locations: []string{currentLocation},
+				Capacity:  new(defaultDeploymentCapacity),
 			},
 			Quota: &azdext.QuotaCheckOptions{
 				MinRemainingCapacity: 1,
@@ -559,8 +607,9 @@ func (a *modelSelector) getModelDetails(
 
 func resolveNoPromptCapacity(candidate *azdext.AiModelDeployment) (int32, bool) {
 	capacity := candidate.Capacity
-	if capacity <= 0 {
-		capacity = max(candidate.Sku.MinCapacity, int32(1))
+	defaulted := capacity <= 0
+	if defaulted {
+		capacity = defaultDeploymentCapacity
 	}
 
 	if candidate.Sku.CapacityStep > 0 && capacity%candidate.Sku.CapacityStep != 0 {
@@ -572,7 +621,17 @@ func resolveNoPromptCapacity(candidate *azdext.AiModelDeployment) (int32, bool) 
 		capacity = candidate.Sku.MinCapacity
 	}
 	if candidate.Sku.MaxCapacity > 0 && capacity > candidate.Sku.MaxCapacity {
-		return 0, false
+		if !defaulted {
+			return 0, false
+		}
+		// Clamp down to the highest step-aligned capacity within max.
+		capacity = candidate.Sku.MaxCapacity
+		if step := candidate.Sku.CapacityStep; step > 0 && capacity%step != 0 {
+			capacity = (capacity / step) * step
+		}
+		if capacity < candidate.Sku.MinCapacity || capacity <= 0 {
+			return 0, false
+		}
 	}
 
 	if candidate.RemainingQuota != nil && float64(capacity) > *candidate.RemainingQuota {
@@ -734,6 +793,71 @@ func (a *modelSelector) promptModelFromCatalog(ctx context.Context) (*azdext.AiM
 	}
 
 	return modelResp.Model, nil
+}
+
+// promptExistingDeployment shows the list of existing deployments in the
+// Foundry project and lets the user pick one.
+func (a *modelSelector) promptExistingDeployment(ctx context.Context) (*project.Deployment, error) {
+	if len(a.allDeployments) == 0 {
+		return nil, fmt.Errorf("no existing deployments available")
+	}
+
+	type labeledDeployment struct {
+		label string
+		info  *FoundryDeploymentInfo
+	}
+
+	items := make([]labeledDeployment, 0, len(a.allDeployments))
+	for i := range a.allDeployments {
+		d := &a.allDeployments[i]
+		items = append(items, labeledDeployment{
+			label: fmt.Sprintf("%s (%s v%s)", d.Name, d.ModelName, d.Version),
+			info:  d,
+		})
+	}
+
+	slices.SortFunc(items, func(a, b labeledDeployment) int {
+		return strings.Compare(a.label, b.label)
+	})
+
+	choices := make([]*azdext.SelectChoice, len(items))
+	for i, item := range items {
+		choices[i] = &azdext.SelectChoice{
+			Label: item.label,
+			Value: item.label,
+		}
+	}
+
+	defaultIdx := int32(0)
+	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       "Select an existing deployment",
+			Choices:       choices,
+			SelectedIndex: &defaultIdx,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return nil, exterrors.Cancelled("deployment selection was cancelled")
+		}
+		return nil, fmt.Errorf("failed to prompt for deployment selection: %w", err)
+	}
+
+	d := items[*resp.Value].info
+	fmt.Printf("Using existing deployment: %s\n", d.Name)
+
+	return &project.Deployment{
+		Name: d.Name,
+		Model: project.DeploymentModel{
+			Name:    d.ModelName,
+			Format:  d.ModelFormat,
+			Version: d.Version,
+		},
+		Sku: project.DeploymentSku{
+			Name:     d.SkuName,
+			Capacity: d.SkuCapacity,
+		},
+	}, nil
 }
 
 func (a *modelSelector) promptForModelLocationMismatch(
@@ -945,6 +1069,11 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 	}
 
 	deploymentDetails := []project.Deployment{}
+	// referencedDeployments holds every selected deployment (new AND existing).
+	// It drives the env-var reference (AZURE_AI_MODEL_DEPLOYMENT_NAME) so an
+	// existing-only selection still records the model name, while only NEW
+	// deployments land in deploymentDetails (azure.yaml declarations).
+	referencedDeployments := []project.Deployment{}
 	paramValues := agent_yaml.ParameterValues{}
 	// anyModelProcessed tracks whether we encountered at least one
 	// model resource (so we know whether to call remove on the
@@ -975,7 +1104,7 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 			if resourceDef.Kind == agent_yaml.ResourceKindModel {
 				resource := resource.(agent_yaml.ModelResource)
 				model := agent_yaml.Model{Id: resource.Id}
-				modelDeployment, isNew, err := a.getModelDeploymentDetails(ctx, model)
+				deployment, isNew, err := a.getModelDeploymentDetails(ctx, model)
 				if err != nil {
 					if errors.Is(err, errModelSkipped) {
 						// User chose "Skip this model" in the selector. Drop
@@ -987,10 +1116,17 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 					}
 					return nil, nil, fmt.Errorf("failed to get model deployment details: %w", err)
 				}
-				deploymentDetails = append(deploymentDetails, *modelDeployment)
-				paramValues[resource.Name] = modelDeployment.Name
+				// Reference every selected deployment by name (manifest injection
+				// + env var) regardless of new/existing. Only declare NEW
+				// deployments under azure.ai.project.deployments: so azd
+				// creates/upserts them; an existing deployment is referenced, not
+				// managed (REFERENCE.md: anything not declared but referenced by
+				// name is treated as existing).
+				referencedDeployments = append(referencedDeployments, *deployment)
+				paramValues[resource.Name] = deployment.Name
 				anyModelProcessed = true
 				if isNew {
+					deploymentDetails = append(deploymentDetails, *deployment)
 					anyNewDeployment = true
 				}
 			}
@@ -1019,7 +1155,7 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 	setEnv := func(ctx context.Context, key, value string) error {
 		return setEnvValue(ctx, a.azdClient, a.environment.Name, key, value)
 	}
-	if err := persistFirstDeploymentName(ctx, setEnv, deploymentDetails); err != nil {
+	if err := persistFirstDeploymentName(ctx, setEnv, referencedDeployments); err != nil {
 		return nil, nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
 	}
 

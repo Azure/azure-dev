@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
+capabilities:
+  - custom-commands
+  - metadata
+description: Manage RLE resources from your terminal. (Preview)
+displayName: RLE (Preview)
+id: azure.ai.rle
+language: go
+namespace: ai.rle
+tags:
+  - ai
+  - rle
+usage: $env:AZD_AI_RLE_ENABLE = "true"; azd ai rle <command> [options]
+version: 0.1.0-preview
+examples:
+  - name: init
+    description: Copy the OpenEnv echo sample into a local RLE environment.
+    usage: $env:AZD_AI_RLE_ENABLE = "true"; azd ai rle init
+  - name: deploy
+    description: Build, push, and create or update the RLE environment.
+    usage: $env:AZD_AI_RLE_ENABLE = "true"; $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"; $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = "<registry>.azurecr.io"; azd ai rle deploy
+  - name: run
+    description: Build and run the local RLE environment container.
+    usage: $env:AZD_AI_RLE_ENABLE = "true"; azd ai rle run
+  - name: invoke
+    description: Lease a deployed RLE sandbox and open an OpenEnv runtime shell.
+    usage: $env:AZD_AI_RLE_ENABLE = "true"; azd ai rle invoke

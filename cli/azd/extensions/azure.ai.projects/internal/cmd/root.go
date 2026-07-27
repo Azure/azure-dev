@@ -4,6 +4,10 @@
 package cmd
 
 import (
+	"context"
+
+	"azure.ai.projects/internal/provisioning"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -29,6 +33,54 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newProjectSetCommand(extCtx))
 	rootCmd.AddCommand(newProjectUnsetCommand(extCtx))
 	rootCmd.AddCommand(newProjectShowCommand(extCtx))
+	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
 
 	return rootCmd
+}
+
+// configureExtensionHost registers project lifecycle providers.
+func configureExtensionHost(host *azdext.ExtensionHost) {
+	azdClient := host.Client()
+	host.
+		WithServiceTarget(
+			aiProjectHost,
+			func() azdext.ServiceTargetProvider {
+				return newProjectServiceTarget(azdClient)
+			},
+		).
+		WithProvisioningProvider(
+			provisioning.FoundryProviderName,
+			func() azdext.ProvisioningProvider {
+				return provisioning.NewFoundryProvisioningProvider(
+					azdClient,
+				)
+			},
+		).
+		WithValidationCheck(azdext.ValidationCheckRegistration{
+			CheckType: azdext.ValidationCheckTypeProvision,
+			RuleID:    provisioning.ResourceGroupLocationRuleID,
+			Factory: func() azdext.ValidationCheckProvider {
+				return provisioning.NewResourceGroupLocationCheck(
+					azdClient,
+				)
+			},
+		}).
+		WithProjectEventHandler(
+			"preprovision",
+			func(
+				ctx context.Context,
+				args *azdext.ProjectEventArgs,
+			) error {
+				return projectLifecycleHandler(ctx, azdClient, args)
+			},
+		).
+		WithProjectEventHandler(
+			"predeploy",
+			func(
+				ctx context.Context,
+				args *azdext.ProjectEventArgs,
+			) error {
+				return projectLifecycleHandler(ctx, azdClient, args)
+			},
+		)
 }

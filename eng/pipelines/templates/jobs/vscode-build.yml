@@ -35,7 +35,7 @@ jobs:
 
       - pwsh: |
           npm i -g npm @vscode/vsce
-          npm ci --no-optional
+          npm ci
         workingDirectory: ext/vscode
         displayName: Install dependencies
 

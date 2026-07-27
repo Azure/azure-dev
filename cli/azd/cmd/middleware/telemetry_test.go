@@ -7,6 +7,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -14,8 +17,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
-	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 func Test_Telemetry_Run(t *testing.T) {
@@ -250,4 +251,62 @@ func findAttribute(attrs []attribute.KeyValue, key attribute.Key) *attribute.Key
 		}
 	}
 	return nil
+}
+
+func TestTelemetryMiddleware_extensionCmdInfo_WithMetadataCapability(t *testing.T) {
+	t.Parallel()
+	// Extension has MetadataCapability but LoadMetadata will fail (no real
+	// extension binary). Verify the error branch in extensionCmdInfo.
+	installed := map[string]*extensions.Extension{
+		"test.ext": {
+			Id:          "test.ext",
+			DisplayName: "Test Extension",
+			Version:     "1.0.0",
+			Namespace:   "test.ext",
+			Capabilities: []extensions.CapabilityType{
+				extensions.MetadataCapability,
+			},
+		},
+	}
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	manager := createExtensionsManager(t, mockCtx, installed)
+
+	m := &TelemetryMiddleware{
+		options:          &Options{Args: []string{"build"}},
+		extensionManager: manager,
+	}
+
+	// LoadMetadata will fail (no binary), so both return values should be empty
+	eventName, flags := m.extensionCmdInfo("test.ext")
+	require.Empty(t, eventName)
+	require.Nil(t, flags)
+}
+
+func TestTelemetryMiddleware_setInstalledExtensionsAttributes_Sorted(t *testing.T) {
+	t.Parallel()
+	installed := map[string]*extensions.Extension{
+		"zzz.last":  {Id: "zzz.last", Version: "3.0.0"},
+		"aaa.first": {Id: "aaa.first", Version: "1.0.0"},
+		"mmm.mid":   {Id: "mmm.mid", Version: "2.0.0"},
+	}
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	manager := createExtensionsManager(t, mockCtx, installed)
+
+	m := &TelemetryMiddleware{
+		options:          &Options{},
+		extensionManager: manager,
+	}
+
+	span := &mocktracing.Span{}
+	m.setInstalledExtensionsAttributes(span)
+
+	attr := findAttribute(span.Attributes, "extension.installed")
+	require.NotNil(t, attr)
+	// Entries should be sorted alphabetically by ID
+	require.Equal(t,
+		[]string{"aaa.first@1.0.0", "mmm.mid@2.0.0", "zzz.last@3.0.0"},
+		attr.Value.AsStringSlice(),
+	)
 }

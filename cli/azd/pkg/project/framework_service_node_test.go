@@ -9,6 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -16,7 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/node"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_NpmProject_Restore(t *testing.T) {
@@ -226,4 +228,25 @@ func Test_NpmProject_ConfigOverride_BeatsDetection(t *testing.T) {
 	require.NotNil(t, result)
 	require.Equal(t, "yarn", runArgs.Cmd)
 	require.Equal(t, []string{"install"}, runArgs.Args)
+}
+
+func Test_nodeProject_Requirements(t *testing.T) {
+	p := NewNodeProject(
+		node.NewCli(exec.NewCommandRunner(nil)),
+		environment.NewWithValues("test", nil),
+		exec.NewCommandRunner(nil),
+	)
+	reqs := p.Requirements()
+	assert.True(t, reqs.Package.RequireRestore)
+	assert.False(t, reqs.Package.RequireBuild)
+}
+
+func Test_nodeProject_Initialize(t *testing.T) {
+	p := NewNodeProject(
+		node.NewCli(exec.NewCommandRunner(nil)),
+		environment.NewWithValues("test", nil),
+		exec.NewCommandRunner(nil),
+	)
+	err := p.Initialize(t.Context(), &ServiceConfig{})
+	require.NoError(t, err)
 }

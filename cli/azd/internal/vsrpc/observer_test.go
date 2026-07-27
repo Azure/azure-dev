@@ -83,3 +83,45 @@ func TestUnmarshalObserver(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+func TestObserver_UnmarshalJSON_ValidPayload(t *testing.T) {
+	o := &Observer[string]{}
+	err := o.UnmarshalJSON([]byte(`{"__jsonrpc_marshaled":1,"handle":42}`))
+	require.NoError(t, err)
+	require.Equal(t, 42, o.handle)
+}
+
+func TestObserver_UnmarshalJSON_MissingMarshaledTag(t *testing.T) {
+	o := &Observer[string]{}
+	err := o.UnmarshalJSON([]byte(`{"handle":42}`))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "__jsonrpc_marshaled")
+}
+
+func TestObserver_UnmarshalJSON_WrongMarshaledValue(t *testing.T) {
+	o := &Observer[string]{}
+	err := o.UnmarshalJSON([]byte(`{"__jsonrpc_marshaled":0,"handle":42}`))
+	require.Error(t, err)
+}
+
+func TestObserver_UnmarshalJSON_MissingHandle(t *testing.T) {
+	o := &Observer[string]{}
+	err := o.UnmarshalJSON([]byte(`{"__jsonrpc_marshaled":1}`))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "handle")
+}
+
+func TestObserver_UnmarshalJSON_InvalidJSON(t *testing.T) {
+	o := &Observer[string]{}
+	err := o.UnmarshalJSON([]byte(`not json`))
+	require.Error(t, err)
+}
+
+func TestObserver_AttachConnection(t *testing.T) {
+	o := &Observer[int]{}
+	require.Nil(t, o.c)
+
+	// attachConnection sets the connection
+	o.attachConnection(nil) // nil is valid in test
+	require.Nil(t, o.c)
+}

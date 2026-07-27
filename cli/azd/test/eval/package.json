@@ -23,5 +23,9 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "overrides": {
+    "js-yaml": "^3.15.0",
+    "@babel/core": "^7.29.6"
   }
 }

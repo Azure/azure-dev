@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RLE Remote Console</title>
+  <style>
+    body { margin: 0; background: #070b10; color: #d7dee8; font: 13px/1.45 system-ui, sans-serif; }
+    header { display: flex; justify-content: space-between; padding: 14px 18px; background: #0b1118; border-bottom: 1px solid #1c2633; font-weight: 700; }
+    main { display: grid; grid-template-columns: 1fr 1fr; min-height: calc(100vh - 49px); }
+    section { padding: 22px; border-right: 1px solid #1c2633; }
+    h2, label { color: #7f8da3; text-transform: uppercase; font-size: 12px; letter-spacing: .06em; }
+    textarea, pre, input { width: 100%; border: 1px solid #1c2633; border-radius: 8px; background: #060a0f; color: #d7dee8; font: 12px/1.45 monospace; }
+    textarea { min-height: 150px; padding: 12px; }
+    pre { min-height: 260px; padding: 14px; white-space: pre-wrap; overflow: auto; }
+    input { width: 120px; padding: 8px; }
+    button { margin: 8px 8px 8px 0; border: 1px solid #1c2633; border-radius: 8px; background: #0f1620; color: #d7dee8; padding: 8px 16px; font-weight: 700; cursor: pointer; }
+    button.primary { background: #2f81f7; color: white; }
+  </style>
+</head>
+<body>
+  <header><span>RLE Remote Console</span><span>local UI proxy</span></header>
+  <main>
+    <section>
+      <h2>Action</h2>
+      <label>seed</label>
+      <input id="seedInput" type="number" placeholder="optional" />
+      <button id="resetButton">Reset</button>
+      <button id="stateButton">State</button>
+      <button id="schemaButton">Schema</button>
+      <label>Action JSON</label>
+      <textarea id="actionBody">{}</textarea>
+      <p><button id="stepButton" class="primary">Step</button></p>
+      <h2>Schema</h2>
+      <pre id="schema">Not loaded.</pre>
+    </section>
+    <section>
+      <h2>Output</h2>
+      <pre id="output">Ready.</pre>
+    </section>
+  </main>
+  <script>
+    document.getElementById("resetButton").addEventListener("click", resetEnv);
+    document.getElementById("stateButton").addEventListener("click", () => call("GET", "/state"));
+    document.getElementById("schemaButton").addEventListener("click", () => call("GET", "/schema", undefined, "schema"));
+    document.getElementById("stepButton").addEventListener("click", stepEnv);
+    call("GET", "/state");
+    call("GET", "/schema", undefined, "schema").then((schema) => {
+      if (schema && schema.properties && document.getElementById("actionBody").value.trim() === "{}") {
+        const sample = {};
+        for (const [name, prop] of Object.entries(schema.properties)) {
+          if (prop.default !== undefined) sample[name] = prop.default;
+        }
+        document.getElementById("actionBody").value = JSON.stringify(sample, null, 2);
+      }
+    });
+    function resetEnv() {
+      const seed = document.getElementById("seedInput").value;
+      call("POST", "/reset", seed === "" ? {} : { seed: Number(seed) });
+    }
+    function stepEnv() {
+      try { call("POST", "/step", { action: JSON.parse(document.getElementById("actionBody").value || "{}") }); }
+      catch (err) { document.getElementById("output").textContent = "Action is not valid JSON: " + err.message; }
+    }
+    async function call(method, path, body, targetId) {
+      const target = document.getElementById(targetId || "output");
+      target.textContent = "Calling " + method + " " + path + " ...";
+      const options = { method, headers: { "Accept": "application/json" } };
+      if (body !== undefined) { options.headers["Content-Type"] = "application/json"; options.body = JSON.stringify(body); }
+      const response = await fetch(path, options);
+      const text = await response.text();
+      try { const json = JSON.parse(text); target.textContent = JSON.stringify(json, null, 2); return json; }
+      catch { target.textContent = response.status + " " + response.statusText + "\n" + text; }
+    }
+  </script>
+</body>
+</html>

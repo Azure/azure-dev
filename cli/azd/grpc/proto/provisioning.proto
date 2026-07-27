@@ -169,6 +169,16 @@ message ProvisioningDeploymentPreview {
   // Reserved for future use — not currently consumed by the core adapter.
   map<string, ProvisioningInputParameter> parameters = 2;
   map<string, ProvisioningOutputParameter> outputs = 3;
+  // Resource-level changes rendered by the core preview UX (colored per type).
+  repeated ProvisioningDeploymentPreviewChange changes = 4;
+}
+
+message ProvisioningDeploymentPreviewChange {
+  // Create | Delete | Deploy | Ignore | Modify | NoChange | Unsupported
+  string change_type = 1;
+  string resource_id = 2;
+  string resource_type = 3;
+  string name = 4;
 }
 
 message ProvisioningPreviewResult {

@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/url"
 	"strings"
 )
@@ -44,6 +45,39 @@ type armContext struct {
 	ResourceGroup  string
 	AccountName    string
 	ProjectName    string
+}
+
+// resolveARMContext resolves the ARM subscription + resource group for the
+// project.
+//
+// It prefers projectID - the Foundry project's ARM resource ID, read from the
+// azd environment's AZURE_AI_PROJECT_ID - when it is present and matches the
+// resolved endpoint's account/project. That path works even when the project
+// has no connections yet, which is required to create the first connection via
+// `azd up` or `azd ai connection create`. When projectID is missing, malformed,
+// or points at a different project, it falls back to discovering the context
+// from an existing connection's ARM resource ID.
+func resolveARMContext(
+	ctx context.Context,
+	projectID, account, project string,
+	dpClient *dataClient,
+) (*armContext, error) {
+	if projectID != "" {
+		armCtx, err := parseARMResourceID(projectID)
+		switch {
+		case err != nil:
+			log.Printf("connections: could not parse AZURE_AI_PROJECT_ID %q; "+
+				"falling back to connection discovery: %v", projectID, err)
+		case !strings.EqualFold(armCtx.AccountName, account) ||
+			!strings.EqualFold(armCtx.ProjectName, project):
+			log.Printf("connections: AZURE_AI_PROJECT_ID %q does not match resolved "+
+				"endpoint %s/%s; falling back to connection discovery", projectID, account, project)
+		default:
+			return armCtx, nil
+		}
+	}
+
+	return discoverARMContext(ctx, dpClient)
 }
 
 // discoverARMContext makes a data-plane list call to discover subscription and

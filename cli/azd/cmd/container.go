@@ -957,6 +957,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(extensions.NewManager)
 	container.MustRegisterSingleton(extensions.NewSourceManager)
 	container.MustRegisterSingleton(extensions.NewRunner)
+	container.MustRegisterScoped(middleware.NewExtensionActivator)
 	container.MustRegisterSingleton(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*extensions.Runner] {
 		return lazy.NewLazy(func() (*extensions.Runner, error) {
 			var runner *extensions.Runner

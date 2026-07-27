@@ -302,3 +302,64 @@ func TestServiceTargetAgentConfig_EmptyToolConnections(t *testing.T) {
 		t.Errorf("Expected 0 tool connections, got %d", len(roundTripped.ToolConnections))
 	}
 }
+
+// TestServiceTargetAgentConfig_WithMemoryStores tests MarshalStruct/UnmarshalStruct
+// round-trip with the MemoryStores field populated, including options.
+func TestServiceTargetAgentConfig_WithMemoryStores(t *testing.T) {
+	original := ServiceTargetAgentConfig{
+		MemoryStores: []MemoryStore{
+			{
+				Name:           "support_memory",
+				Description:    "Memory for the support agent",
+				ChatModel:      "gpt-5.2",
+				EmbeddingModel: "text-embedding-3-small",
+				Options: &MemoryStoreOptions{
+					ChatSummaryEnabled: new(false),
+					UserProfileEnabled: new(true),
+					DefaultTtlSeconds:  new(2592000),
+					UserProfileDetails: "avoid sensitive data",
+				},
+			},
+		},
+	}
+
+	s, err := MarshalStruct(&original)
+	if err != nil {
+		t.Fatalf("MarshalStruct failed: %v", err)
+	}
+
+	var roundTripped ServiceTargetAgentConfig
+	if err := UnmarshalStruct(s, &roundTripped); err != nil {
+		t.Fatalf("UnmarshalStruct failed: %v", err)
+	}
+
+	if len(roundTripped.MemoryStores) != 1 {
+		t.Fatalf("Expected 1 memory store, got %d", len(roundTripped.MemoryStores))
+	}
+
+	ms := roundTripped.MemoryStores[0]
+	if ms.Name != "support_memory" {
+		t.Errorf("Expected name 'support_memory', got '%s'", ms.Name)
+	}
+	if ms.ChatModel != "gpt-5.2" {
+		t.Errorf("Expected chatModel 'gpt-5.2', got '%s'", ms.ChatModel)
+	}
+	if ms.EmbeddingModel != "text-embedding-3-small" {
+		t.Errorf("Expected embeddingModel 'text-embedding-3-small', got '%s'", ms.EmbeddingModel)
+	}
+	if ms.Options == nil {
+		t.Fatalf("Expected options to be preserved, got nil")
+	}
+	if ms.Options.UserProfileEnabled == nil || !*ms.Options.UserProfileEnabled {
+		t.Errorf("Expected userProfileEnabled true")
+	}
+	if ms.Options.ChatSummaryEnabled == nil || *ms.Options.ChatSummaryEnabled {
+		t.Errorf("Expected chatSummaryEnabled false")
+	}
+	if ms.Options.DefaultTtlSeconds == nil || *ms.Options.DefaultTtlSeconds != 2592000 {
+		t.Errorf("Expected defaultTtlSeconds 2592000")
+	}
+	if ms.Options.UserProfileDetails != "avoid sensitive data" {
+		t.Errorf("Expected userProfileDetails preserved, got '%s'", ms.Options.UserProfileDetails)
+	}
+}

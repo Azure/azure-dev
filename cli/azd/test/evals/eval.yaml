@@ -1,0 +1,161 @@
+# This is a small vally configuration file that you can copy/paste to start your 
+# own evaluations within this repo. This, combined with the GitHub workflow
+# (.github/workflows/vally-ci.yml), should give you all you need to run vally evals.
+#
+# The basics:
+#
+#   1. How to pull in fixture data (environment.files below) -- add files
+#      under evals/fixtures/ and copy them into the agent's workspace.
+#   2. How to base the workspace on THIS repo via a git worktree
+#      (environment.git) instead of an empty directory or a fresh clone.
+#   3. Common graders and their usage: an LLM judge (prompt-based), file existence
+#      (file-exists), string matching on output (output-contains), a regex match
+#      on output (output-matches), and a fully custom check written as a standalone
+#      program (program) (see graders/check-summary.ts).
+#
+# To run it (same as CI):
+#   <using node v24+>
+#   npm ci
+#   npx vally eval -e eval.yaml
+#
+# Docs for vally are at https://aka.ms/vally
+
+name: fixture-and-worktree-demo
+description: >-
+  Demonstration of vally features:
+  - Copies fixture data into a workspace
+  - Uses a worktree of this repo as the workspace base
+  - Shows the most common grader types:
+    - a prompt-based LLM judge
+    - a file-exists check
+    - an output-contains literal match
+    - an output-matches regex match
+    - a custom program grader
+
+# Shared setup for every stimulus in this file.
+environment:
+  # vally wants to setup a clean workspace, per test. This configures it so the clean
+  # workspace uses our repo, and creates a git worktree that matches HEAD. 
+  # NOTE: if you have unstaged changes you'll want to add a `files` directive so you 
+  # always get your local copy!
+  git:
+    type: worktree
+    ref: HEAD
+    source: "."
+
+  #
+  # You can also add in other custom setup, like adding in additional text fixtures, via
+  # `files`) below, add in skills to be loaded using `skills` below, or adding in mcpServers
+  #
+
+  # copy out fixture file into a predictable location in the workspace
+  files:
+    - src: fixtures/team-notes.txt
+      dest: team-notes.txt
+    - src: graders/check-summary.ts
+      dest: check-summary.ts
+
+  # skills:
+  #   - ./skills/my-skill
+
+  # mcpServers:
+  #   # local server launched as a child process
+  #   db:
+  #     type: stdio
+  #     command: db-serve
+  #     args: ["--port", "5432"]
+  #     env:
+  #       DB_HOST: localhost
+
+defaults:
+  # in general, more runs gets you better data overall, but we'll keep it simple.
+  runs: 1
+  timeout: 10m
+  executor: copilot-sdk
+  # This is the model that'll get used by the underlying copilot-sdk when the test runs
+  # NOTE: this is separate from the model used for prompts (where we often want to use a 
+  # separate family or different model, to avoid possible collusion)
+  model: claude-sonnet-4.6
+  # Judge model for LLM-judge graders (prompt or panel, but we're just using prompt grading).
+  # Deliberately different than the `model` above, to avoid collusion.
+  judge_model: gpt-5.5
+
+# Default weighting means every grader must pass in order to consider this a success.
+# You can add in weights, if you want, per grader _type_, to allow for some grader types to
+# be weighted differently, but simple "everything passing" is a great goal. :)
+scoring:
+  threshold: 1.0
+
+stimuli:
+  - name: fixture-notes-summary
+    # This is the prompt that'll get sent to start the session for your test
+    prompt: |
+      A fixture file named `team-notes.txt` exists at the root of your
+      workspace. It contains one team note per line.
+
+      1. Read `team-notes.txt`.
+      2. Count the number of items, starting with * at the beginning of their line.
+      3. Create a new file named `notes-summary.md` at the workspace root
+         containing:
+         - A first line that reads exactly: `Total notes: <N>` (where `<N>`
+           is the count you computed)
+         - One bullet per note below that, each starting with `- `
+      4. In your final chat response, repeat the exact line
+         `Total notes: <N>` verbatim (so it can be checked automatically),
+         followed by a one-sentence summary.
+
+      Do not modify any other files in the workspace.
+
+    # `rubric` prompts are used, with the prompt grader in our `graders` list, to judge the
+    # final output. They're optional - you can specify information in the prompt grader if
+    # you like, but it can be a nice compact way to represent multiple criteria.
+    #
+    # In general, for efficiency, you should favor graders that don't depend on an
+    # LLM, like program graders, or the simple file-exist, output-contain style checks.
+    rubric:
+      - "notes-summary.md exists and its first line is exactly 'Total notes: 3'"
+      - "The summary lists all three notes from team-notes.txt, without inventing extra notes or dropping any"
+      - "The final chat response also states the total notes count"
+
+    graders:
+      # 1. LLM judge -- rubric-based, uses `judge_model` above.
+      - type: prompt
+        name: "judge: summary reflects the fixture notes"
+        config:
+          prompt: |
+            Evaluate whether notes-summary.md (and the agent's final
+            response) accurately reflects team-notes.txt: the reported
+            total must match the actual number of notes, and every note
+            must be represented in the summary without alteration.
+          scoring: binary
+
+      # 2. Simple workspace artifact check -- cheap and deterministic.
+      - type: file-exists
+        name: "notes-summary.md was created"
+        config:
+          path: "notes-summary.md"
+
+      # 3. Literal substring match against the agent's final chat output --
+      # no LLM call, free, deterministic.
+      - type: output-contains
+        name: "final response states the note count"
+        config:
+          substring: "Total notes: 3"
+          case_sensitive: true
+
+      # 4. Regex match against the agent's final chat output -- also free,
+      # deterministic, and useful when the text shape matters.
+      - type: output-matches
+        name: "final response matches the note count line"
+        config:
+          pattern: '(?m)^`?Total notes: 3`?$'
+
+      # 5. Fully custom check: a standalone `node` script (see
+      # graders/check-summary.ts for what it inspects and why). 
+      # Needs Node 24+ for direct TypeScript.
+      - type: program
+        name: "workspace check: notes-summary.md is well-formed"
+        config:
+          program: node
+          args: ["check-summary.ts"]
+          timeout: 30s

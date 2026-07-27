@@ -5,6 +5,7 @@ package ux
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"testing"
 
@@ -441,4 +442,137 @@ func TestMultiSelect_WithCanvas(t *testing.T) {
 
 	result := ms.WithCanvas(c)
 	assert.Equal(t, ms, result)
+}
+
+// buildMultiSelectChoices returns n placeholder choices for exercising the
+// length-based behavior of MultiSelect (the filter/footer thresholds).
+func buildMultiSelectChoices(n int) []*MultiSelectChoice {
+	choices := make([]*MultiSelectChoice, n)
+	for i := range choices {
+		choices[i] = &MultiSelectChoice{
+			Value: fmt.Sprintf("v%d", i),
+			Label: fmt.Sprintf("Option %d", i),
+		}
+	}
+	return choices
+}
+
+func TestMultiSelect_filteringEnabled(t *testing.T) {
+	// Requested by the caller but the list is shorter than the threshold.
+	short := NewMultiSelect(&MultiSelectOptions{
+		Writer:          io.Discard,
+		Choices:         buildMultiSelectChoices(multiSelectFilterThreshold - 1),
+		EnableFiltering: new(true),
+	})
+	assert.False(t, short.filteringEnabled(),
+		"filtering should be off below the threshold")
+
+	// Requested and the list is long enough.
+	long := NewMultiSelect(&MultiSelectOptions{
+		Writer:          io.Discard,
+		Choices:         buildMultiSelectChoices(multiSelectFilterThreshold),
+		EnableFiltering: new(true),
+	})
+	assert.True(t, long.filteringEnabled(),
+		"filtering should be on at or above the threshold")
+
+	// Explicitly disabled: off regardless of length.
+	disabled := NewMultiSelect(&MultiSelectOptions{
+		Writer:          io.Discard,
+		Choices:         buildMultiSelectChoices(multiSelectFilterThreshold + 2),
+		EnableFiltering: new(false),
+	})
+	assert.False(t, disabled.filteringEnabled(),
+		"filtering should be off when the caller disables it")
+}
+
+func TestMultiSelect_renderFooter_shortList_hidesNoneAll(t *testing.T) {
+	var buf bytes.Buffer
+	ms := NewMultiSelect(&MultiSelectOptions{
+		Writer:  io.Discard,
+		Message: "Pick",
+		Choices: buildMultiSelectChoices(multiSelectFilterThreshold - 1),
+	})
+
+	ms.renderFooter(NewPrinter(&buf))
+
+	out := buf.String()
+	assert.Contains(t, out, "Move")
+	assert.Contains(t, out, "Select")
+	assert.Contains(t, out, "Confirm")
+	// The None/All shortcut is hidden for short, easy-to-scan lists.
+	assert.NotContains(t, out, "None/All")
+}
+
+func TestMultiSelect_renderFooter_longList_showsNoneAll(t *testing.T) {
+	var buf bytes.Buffer
+	ms := NewMultiSelect(&MultiSelectOptions{
+		Writer:  io.Discard,
+		Message: "Pick",
+		Choices: buildMultiSelectChoices(multiSelectFilterThreshold),
+	})
+
+	ms.renderFooter(NewPrinter(&buf))
+
+	out := buf.String()
+	assert.Contains(t, out, "None/All")
+	assert.Contains(t, out, "Move")
+}
+
+func TestMultiSelect_renderFooter_help(t *testing.T) {
+	// A help message adds a "? Help" shortcut to the footer.
+	var withHelp bytes.Buffer
+	NewMultiSelect(&MultiSelectOptions{
+		Writer:      io.Discard,
+		Message:     "Pick",
+		Choices:     buildMultiSelectChoices(2),
+		HelpMessage: "some help",
+	}).renderFooter(NewPrinter(&withHelp))
+	assert.Contains(t, withHelp.String(), "Help")
+
+	// Without a help message the shortcut is omitted.
+	var noHelp bytes.Buffer
+	NewMultiSelect(&MultiSelectOptions{
+		Writer:  io.Discard,
+		Message: "Pick",
+		Choices: buildMultiSelectChoices(2),
+	}).renderFooter(NewPrinter(&noHelp))
+	assert.NotContains(t, noHelp.String(), "Help")
+}
+
+func TestMultiSelect_renderFooter_skippedWhenComplete(t *testing.T) {
+	var buf bytes.Buffer
+	ms := NewMultiSelect(&MultiSelectOptions{
+		Writer:  io.Discard,
+		Message: "Pick",
+		Choices: buildMultiSelectChoices(multiSelectFilterThreshold),
+	})
+	ms.complete = true
+
+	ms.renderFooter(NewPrinter(&buf))
+
+	assert.Empty(t, buf.String(), "footer must not render once complete")
+}
+
+func TestMultiSelect_renderMessage_filter(t *testing.T) {
+	// Long list with filtering enabled shows the filter prompt.
+	var long bytes.Buffer
+	NewMultiSelect(&MultiSelectOptions{
+		Writer:          io.Discard,
+		Message:         "Pick",
+		Choices:         buildMultiSelectChoices(multiSelectFilterThreshold),
+		EnableFiltering: new(true),
+	}).renderMessage(NewPrinter(&long))
+	assert.Contains(t, long.String(), "Filter:")
+	assert.Contains(t, long.String(), "Type to filter list")
+
+	// Short list hides the filter prompt even when filtering is requested.
+	var short bytes.Buffer
+	NewMultiSelect(&MultiSelectOptions{
+		Writer:          io.Discard,
+		Message:         "Pick",
+		Choices:         buildMultiSelectChoices(multiSelectFilterThreshold - 1),
+		EnableFiltering: new(true),
+	}).renderMessage(NewPrinter(&short))
+	assert.NotContains(t, short.String(), "Filter:")
 }

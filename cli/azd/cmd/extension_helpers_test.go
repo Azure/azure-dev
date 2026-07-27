@@ -40,7 +40,14 @@ func installAllExtensions(ctx context.Context, t *testing.T, cli *azdcli.CLI, so
 	}
 
 	for _, ext := range extensions {
-		args := []string{"extension", "install", ext.ID, "--source", sourceName}
+		// Install each extension in isolation with --no-dependencies. Snapshots only
+		// require each extension's own binary so its commands register; installing the
+		// full dependency graph would fail whenever the registry is transiently
+		// inconsistent (e.g. during a coordinated multi-extension version bump), which
+		// is exactly when these snapshots need to be regenerated. Every dependency that
+		// ships a binary is also a top-level registry entry, so it is still installed by
+		// its own iteration and nothing is dropped from the snapshot.
+		args := []string{"extension", "install", ext.ID, "--source", sourceName, "--no-dependencies"}
 		if ext.Version != "" {
 			args = append(args, "--version", ext.Version)
 		}

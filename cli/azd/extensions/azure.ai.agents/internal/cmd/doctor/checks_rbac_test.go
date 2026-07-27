@@ -217,7 +217,8 @@ func TestClassifyRBACResult_FailsWithTemplatedAzCommand(t *testing.T) {
 	// (NOT `<redacted>`, because bash/zsh treat `<word>` as input
 	// redirection — a literal copy-paste must fail safely or work).
 	require.Contains(t, got.Suggestion, "az role assignment create")
-	require.Contains(t, got.Suggestion, "Azure AI User")
+	require.Contains(t, got.Suggestion, "53ca6127-db72-4b80-b1b0-d745d6d5456d")
+	require.Contains(t, got.Suggestion, "Foundry User")
 	require.Contains(t, got.Suggestion, shellSafePlaceholderID,
 		"redacted mode must substitute the shell-safe placeholder for the principal id")
 	require.Contains(t, got.Suggestion, shellSafePlaceholderScope,

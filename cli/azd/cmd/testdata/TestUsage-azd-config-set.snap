@@ -10,7 +10,7 @@ Global Flags
         --docs               	: Opens the documentation for azd config set in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for set.
-        --no-prompt          	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+        --no-prompt          	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically. Automatically enabled when azd detects a CI/CD or AI-agent environment; set AZD_NON_INTERACTIVE=false to opt out of that automatic enablement.
 
 Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
 

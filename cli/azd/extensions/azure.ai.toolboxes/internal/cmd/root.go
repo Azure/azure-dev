@@ -53,6 +53,17 @@ to promote a version.`,
 
 	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
+	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
 
 	return rootCmd
+}
+
+// configureExtensionHost is the listen callback. It registers the
+// azure.ai.toolbox service target so `azd up`/`azd deploy` upsert toolboxes
+// declared as services in azure.yaml.
+func configureExtensionHost(host *azdext.ExtensionHost) {
+	azdClient := host.Client()
+	host.WithServiceTarget(aiToolboxHost, func() azdext.ServiceTargetProvider {
+		return newToolboxServiceTarget(azdClient)
+	})
 }

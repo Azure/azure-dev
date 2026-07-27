@@ -45,7 +45,7 @@ func TestBuildTrigger_Timer(t *testing.T) {
 	got, err := buildTrigger(flags)
 	require.NoError(t, err)
 	assert.Equal(t, "timer", got.Type)
-	assert.Equal(t, "2026-04-24T15:00:00Z", got.At)
+	assert.Equal(t, "2026-04-24T15:00:00Z", got.At.String())
 }
 
 func TestBuildTrigger_TimerMissingAt(t *testing.T) {

@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"sync"
@@ -220,4 +222,115 @@ func TestCheckLocalhostOrigin(t *testing.T) {
 			require.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestServe_WithDebugEndpoints(t *testing.T) {
+	t.Setenv("AZD_DEBUG_SERVER_DEBUG_ENDPOINTS", "true")
+
+	s := newTestServer()
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = s.Serve(l)
+	}()
+
+	require.NoError(t, l.Close())
+	<-done
+
+	require.NotNil(t, s.cancelTelemetryUpload)
+	s.cancelTelemetryUpload()
+}
+
+func newTestServer() *Server {
+	return NewServer(nil)
+}
+
+func TestNewServer(t *testing.T) {
+	s := NewServer(nil)
+	require.NotNil(t, s)
+	require.NotNil(t, s.sessions)
+	require.Empty(t, s.sessions)
+}
+
+func TestServeRpc_MethodNotFound(t *testing.T) {
+	// Create a minimal handler set and call a non-existent method
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serveRpc(w, r, map[string]Handler{
+			"ExistingMethod": NewHandler(func(ctx context.Context) error {
+				return nil
+			}),
+		})
+	})
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	serverURL.Scheme = "ws"
+
+	wsConn, _, err := websocket.DefaultDialer.Dial(serverURL.String(), nil)
+	require.NoError(t, err)
+
+	rpcConn := jsonrpc2.NewConn(newWebSocketStream(wsConn))
+	rpcConn.Go(t.Context(), nil)
+
+	_, err = rpcConn.Call(t.Context(), "NonExistentMethod", nil, nil)
+	require.Error(t, err)
+
+	var rpcErr *jsonrpc2.Error
+	require.True(t, errors.As(err, &rpcErr))
+	require.Equal(t, jsonrpc2.MethodNotFound, rpcErr.Code)
+}
+
+func TestServeRpc_CancelUnknownId(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serveRpc(w, r, map[string]Handler{})
+	})
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	serverURL.Scheme = "ws"
+
+	wsConn, _, err := websocket.DefaultDialer.Dial(serverURL.String(), nil)
+	require.NoError(t, err)
+
+	rpcConn := jsonrpc2.NewConn(newWebSocketStream(wsConn))
+	rpcConn.Go(t.Context(), nil)
+
+	// Send a cancel for a non-existent ID — should not panic
+	err = rpcConn.Notify(t.Context(), "$/cancelRequest", struct {
+		Id int `json:"id"`
+	}{Id: 999})
+	require.NoError(t, err)
+}
+
+func TestServeRpc_CancelNilId(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serveRpc(w, r, map[string]Handler{})
+	})
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	serverURL.Scheme = "ws"
+
+	wsConn, _, err := websocket.DefaultDialer.Dial(serverURL.String(), nil)
+	require.NoError(t, err)
+
+	rpcConn := jsonrpc2.NewConn(newWebSocketStream(wsConn))
+	rpcConn.Go(t.Context(), nil)
+
+	// Send cancel request without an id field — should get InvalidParams
+	err = rpcConn.Notify(t.Context(), "$/cancelRequest", struct{}{})
+	require.NoError(t, err) // notification itself doesn't return an error
 }

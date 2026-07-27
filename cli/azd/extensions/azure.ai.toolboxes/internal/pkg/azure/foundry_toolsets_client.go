@@ -25,8 +25,7 @@ import (
 )
 
 const (
-	toolboxesApiVersion    = "v1"
-	toolboxesFeatureHeader = "Toolboxes=V1Preview"
+	toolboxesApiVersion = "v1"
 )
 
 // FoundryToolboxClient provides methods for interacting with the Foundry Toolboxes API.
@@ -75,8 +74,7 @@ func (c *FoundryToolboxClient) Endpoint() string {
 
 // doJSON sends `method url` with an optional JSON body and decodes the response
 // body into `out` (pass nil to discard). `okCodes` selects which HTTP status
-// codes count as success; defaults to {200} when empty. The Foundry-Features
-// header is set on every request.
+// codes count as success; defaults to {200} when empty.
 func (c *FoundryToolboxClient) doJSON(
 	ctx context.Context, method, target string, body any, out any, okCodes ...int,
 ) error {
@@ -88,7 +86,6 @@ func (c *FoundryToolboxClient) doJSON(
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-	req.Raw().Header.Set("Foundry-Features", toolboxesFeatureHeader)
 
 	if body != nil {
 		payload, err := json.Marshal(body)

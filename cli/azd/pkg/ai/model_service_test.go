@@ -213,17 +213,17 @@ func TestConvertToAiModels_FiltersDeprecatedVersionsAndSkus(t *testing.T) {
 	}
 
 	models := svc.convertToAiModelsAt(rawModels, now, nil)
-	require.Len(t, models, 2)
+	require.Len(t, models, 1)
 
+	// gpt-35-turbo (ARM "Deprecated"/Retired with past inference), gpt-4o
+	// (ARM "Deprecating"/customer-facing Deprecated), and all-expired (no surviving
+	// SKUs) are all excluded from the default new-deployment view. Only gpt-4.1-mini
+	// (GenerallyAvailable with a future SKU deprecation date) remains.
 	require.Equal(t, "gpt-4.1-mini", models[0].Name)
-	require.Equal(t, "gpt-4o", models[1].Name)
-
-	require.Len(t, models[1].Versions, 1)
-	require.Equal(t, "2024-08-06", models[1].Versions[0].Version)
-	require.Equal(t, "Deprecating", models[1].Versions[0].LifecycleStatus)
-	require.Len(t, models[1].Versions[0].Skus, 1)
-	require.Equal(t, "GlobalStandard", models[1].Versions[0].Skus[0].Name)
-	require.Equal(t, "OpenAI.GlobalStandard.gpt-4o", models[1].Versions[0].Skus[0].UsageName)
+	require.Len(t, models[0].Versions, 1)
+	require.Equal(t, "2025-04-14", models[0].Versions[0].Version)
+	require.Len(t, models[0].Versions[0].Skus, 1)
+	require.Equal(t, "GlobalStandard", models[0].Versions[0].Skus[0].Name)
 }
 
 func TestConvertToAiModels_PreservesVersionLifecycleStatus(t *testing.T) {
@@ -238,7 +238,7 @@ func TestConvertToAiModels_PreservesVersionLifecycleStatus(t *testing.T) {
 				Model: &armcognitiveservices.AccountModel{
 					Name:            new("gpt-4o"),
 					Version:         new("2024-08-06"),
-					LifecycleStatus: new(armcognitiveservices.ModelLifecycleStatus("Deprecating")),
+					LifecycleStatus: new(armcognitiveservices.ModelLifecycleStatus("Preview")),
 					SKUs: []*armcognitiveservices.ModelSKU{
 						{
 							Name:            new("GlobalStandard"),
@@ -278,7 +278,7 @@ func TestConvertToAiModels_PreservesVersionLifecycleStatus(t *testing.T) {
 	}
 
 	require.Equal(t, map[string]string{
-		"2024-08-06": "Deprecating",
+		"2024-08-06": "Preview",
 		"2024-11-20": "GenerallyAvailable",
 	}, versionStatuses)
 }
@@ -333,6 +333,70 @@ func TestConvertToAiModels_FiltersStatusesBeforeAggregation(t *testing.T) {
 	require.Len(t, models[0].Versions, 1)
 	require.Equal(t, "2024-11-20", models[0].Versions[0].Version)
 	require.Equal(t, "GenerallyAvailable", models[0].Versions[0].LifecycleStatus)
+}
+
+func TestConvertToAiModels_ExcludesDeprecatingByDefaultButAllowsOptIn(t *testing.T) {
+	t.Parallel()
+
+	svc := NewAiModelService(nil, nil)
+	now := time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC)
+
+	// gpt-4.1-mini mirrors the ARM Models API response: lifecycleStatus "Deprecating"
+	// (customer-facing Deprecated) with a future deprecation.inference date. It still
+	// serves inference, so the old SKU-only filter kept it, but it must not be offered
+	// for new deployments by default.
+	rawModels := map[string][]*armcognitiveservices.Model{
+		"eastus": {
+			{
+				Model: &armcognitiveservices.AccountModel{
+					Name:            new("gpt-4.1-mini"),
+					Version:         new("2025-04-14"),
+					LifecycleStatus: new(armcognitiveservices.ModelLifecycleStatus("Deprecating")),
+					Deprecation: &armcognitiveservices.ModelDeprecationInfo{
+						FineTune:  new("2026-10-14T00:00:00Z"),
+						Inference: new("2026-10-14T00:00:00Z"),
+					},
+					SKUs: []*armcognitiveservices.ModelSKU{
+						{
+							Name:            new("GlobalStandard"),
+							UsageName:       new("OpenAI.GlobalStandard.gpt-4.1-mini"),
+							DeprecationDate: new(time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC)),
+						},
+					},
+				},
+			},
+			{
+				Model: &armcognitiveservices.AccountModel{
+					Name:             new("gpt-4o"),
+					Version:          new("2024-11-20"),
+					IsDefaultVersion: new(true),
+					LifecycleStatus:  new(armcognitiveservices.ModelLifecycleStatus("GenerallyAvailable")),
+					SKUs: []*armcognitiveservices.ModelSKU{
+						{
+							Name:            new("GlobalStandard"),
+							UsageName:       new("OpenAI.GlobalStandard.gpt-4o"),
+							DeprecationDate: new(time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Default view: gpt-4.1-mini ("Deprecating") is excluded even though its inference
+	// endpoint is still active.
+	defaultModels := svc.convertToAiModelsAt(rawModels, now, nil)
+	require.Len(t, defaultModels, 1)
+	require.Equal(t, "gpt-4o", defaultModels[0].Name)
+
+	// Opt-in: callers can request "Deprecating" models explicitly for existing-customer
+	// management scenarios.
+	optIn := svc.convertToAiModelsAt(rawModels, now, []string{"Deprecating"})
+	require.Len(t, optIn, 1)
+	require.Equal(t, "gpt-4.1-mini", optIn[0].Name)
+	require.Len(t, optIn[0].Versions, 1)
+	require.Equal(t, "2025-04-14", optIn[0].Versions[0].Version)
+	require.Equal(t, "Deprecating", optIn[0].Versions[0].LifecycleStatus)
 }
 
 func TestConvertToAiModels_ExcludesLocationsWithOnlyDeprecatedEntries(t *testing.T) {

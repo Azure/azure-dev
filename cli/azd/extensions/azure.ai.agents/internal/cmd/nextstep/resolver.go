@@ -17,6 +17,13 @@ const (
 	// ProtocolResponses is the value of `agent.yaml#protocol` for plain
 	// text /responses agents.
 	ProtocolResponses = "responses"
+	// ProtocolInvocationsWS is the value of `agent.yaml#protocol` for
+	// bidirectional WebSocket /invocations_ws agents.
+	ProtocolInvocationsWS = "invocations_ws"
+	// ProtocolActivity is the value of `agent.yaml#protocol` for Activity Protocol agents.
+	ProtocolActivity = "activity"
+	// ProtocolActivityLegacy is the legacy value accepted for Activity Protocol agents.
+	ProtocolActivityLegacy = "activity_protocol"
 
 	// placeholderPayload is the single-quoted literal the resolver
 	// emits as the body argument when no concrete payload is known —
@@ -151,8 +158,8 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 	}
 
 	// Placeholder fix-ups always come first when present: they are broken
-	// state in agent.yaml itself and block both `run` and `deploy`. The
-	// user has to edit agent.yaml (or define a matching parameter in
+	// state in azure.yaml itself and block both `run` and `deploy`. The
+	// user has to edit azure.yaml (or define a matching parameter in
 	// agent.manifest.yaml) — `azd env set` cannot reach them.
 	hasPlaceholders := len(state.UnresolvedPlaceholders) > 0
 	if hasPlaceholders {
@@ -161,8 +168,8 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		limit := min(len(placeholders), maxFixupLines)
 		for _, name := range placeholders[:limit] {
 			out = append(out, Suggestion{
-				Command:     fmt.Sprintf("edit agent.yaml: replace {{%s}} with the actual value", name),
-				Description: "agent.yaml has unresolved manifest placeholders",
+				Command:     fmt.Sprintf("edit azure.yaml: replace {{%s}} with the actual value", name),
+				Description: "azure.yaml has unresolved manifest placeholders",
 				Priority:    priority,
 			})
 			priority++
@@ -239,7 +246,7 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 			for _, key := range manual[:limit] {
 				out = append(out, Suggestion{
 					Command:     fmt.Sprintf("azd env set %s <value>", key),
-					Description: "referenced by agent.yaml but not set in azd env",
+					Description: "referenced by azure.yaml but not set in azd env",
 					Priority:    priority,
 				})
 				priority++
@@ -330,6 +337,9 @@ func ResolveAfterRun(state *State, serviceName string, readmeExists func(relativ
 	}
 
 	svc := findService(state, serviceName)
+	if !serviceSupportsAzdInvoke(svc) {
+		return nil
+	}
 
 	cachedPayload := ""
 	if state.HasOpenAPI && state.OpenAPIPayload != "" {
@@ -343,7 +353,7 @@ func ResolveAfterRun(state *State, serviceName string, readmeExists func(relativ
 		out = append(out, *readmeHint)
 	}
 	out = append(out, Suggestion{
-		Command:     fmt.Sprintf("azd ai agent invoke --local %s", invokeArg),
+		Command:     fmt.Sprintf("azd ai agent invoke --local %s%s", invokeProtocolFlag(svc), invokeArg),
 		Description: "send a sample request to the running agent",
 		Priority:    10,
 	})
@@ -641,6 +651,9 @@ func ResolveAfterDeploy(
 	// after shows matches the spec example output (lines 238-241).
 	for i := range state.Services {
 		svc := &state.Services[i]
+		if !serviceSupportsAzdInvoke(svc) {
+			continue
+		}
 
 		cached := ""
 		if cachedPayload != nil {
@@ -665,7 +678,7 @@ func ResolveAfterDeploy(
 		}
 
 		out = append(out, Suggestion{
-			Command:     fmt.Sprintf("azd ai agent invoke %s %s", svc.Name, invokeArg),
+			Command:     fmt.Sprintf("azd ai agent invoke %s %s%s", svc.Name, invokeProtocolFlag(svc), invokeArg),
 			Description: desc,
 			Priority:    priority,
 		})
@@ -673,6 +686,19 @@ func ResolveAfterDeploy(
 	}
 
 	return out
+}
+
+func serviceSupportsAzdInvoke(svc *ServiceState) bool {
+	return svc == nil || (svc.Protocol != ProtocolInvocationsWS &&
+		svc.Protocol != ProtocolActivity &&
+		svc.Protocol != ProtocolActivityLegacy)
+}
+
+func invokeProtocolFlag(svc *ServiceState) string {
+	if svc == nil || !svc.MultiProtocol || svc.Protocol == "" {
+		return ""
+	}
+	return fmt.Sprintf("--protocol %s ", svc.Protocol)
 }
 
 func readmeCommand(relativePath string) string {
@@ -770,13 +796,16 @@ func appendInvokeLocalSecondary(
 	if len(state.Services) == 1 {
 		svc = &state.Services[0]
 	}
+	if !serviceSupportsAzdInvoke(svc) {
+		return out, priority
+	}
 	invokeArg, readmeHint := resolveInvokeArg(svc, "", readmeExists, priority)
 	if readmeHint != nil {
 		out = append(out, *readmeHint)
 		priority++
 	}
 	out = append(out, Suggestion{
-		Command:     fmt.Sprintf("azd ai agent invoke --local %s", invokeArg),
+		Command:     fmt.Sprintf("azd ai agent invoke --local %s%s", invokeProtocolFlag(svc), invokeArg),
 		Description: "test it in another terminal",
 		Priority:    priority,
 	})

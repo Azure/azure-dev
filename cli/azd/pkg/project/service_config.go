@@ -35,11 +35,11 @@ type ServiceConfig struct {
 	// The ARM api version to use for the service. If not specified, the latest version is used.
 	ApiVersion string `yaml:"apiVersion,omitempty"`
 	// The relative path to the project folder from the project root
-	RelativePath string `yaml:"project"`
+	RelativePath string `yaml:"project,omitempty"`
 	// The azure hosting model to use, ex) appservice, function, containerapp
 	Host ServiceTargetKind `yaml:"host"`
 	// The programming language of the project
-	Language ServiceLanguageKind `yaml:"language"`
+	Language ServiceLanguageKind `yaml:"language,omitempty"`
 	// The output path for build artifacts
 	OutputPath string `yaml:"dist,omitempty"`
 	// The source image to use for container based applications

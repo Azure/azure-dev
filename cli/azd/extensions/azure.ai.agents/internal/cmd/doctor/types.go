@@ -47,9 +47,9 @@ const (
 	// StatusInfo — the check completed cleanly but the result is
 	// primarily informational (no action required, no problem detected).
 	// Used by checks whose value is the listing they produce rather than
-	// a pass/fail verdict — e.g., `remote.agent-identity-roles` renders
-	// the agent's role assignments so the user can confirm they match
-	// their mental model. Does NOT contribute to a non-zero exit code.
+	// a pass/fail verdict — e.g., a check that renders discovered
+	// resources so the user can confirm they match their mental model.
+	// Does NOT contribute to a non-zero exit code.
 	StatusInfo Status = "info"
 )
 

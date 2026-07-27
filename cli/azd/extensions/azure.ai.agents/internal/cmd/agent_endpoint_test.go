@@ -60,6 +60,21 @@ func TestParseAgentEndpoint(t *testing.T) {
 			wantProto: agent_api.AgentProtocolInvocations,
 		},
 		{
+			name:       "a2a with api-version",
+			raw:        "https://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/a2a?api-version=v1",
+			wantProj:   "https://acct.services.ai.azure.com/api/projects/proj",
+			wantAgent:  "hello",
+			wantProto:  agent_api.AgentProtocolA2A,
+			wantAPIVer: "v1",
+		},
+		{
+			name:      "a2a without api-version",
+			raw:       "https://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/a2a",
+			wantProj:  "https://acct.services.ai.azure.com/api/projects/proj",
+			wantAgent: "hello",
+			wantProto: agent_api.AgentProtocolA2A,
+		},
+		{
 			name:        "empty url",
 			raw:         "",
 			wantErr:     true,
@@ -242,6 +257,36 @@ func TestBuildInvocationsURL(t *testing.T) {
 		got := buildInvocationsURL("https://acct.services.ai.azure.com/api/projects/proj", "hello", "weird value&x=1", "")
 		if !strings.Contains(got, "api-version=weird+value%26x%3D1") {
 			t.Errorf("buildInvocationsURL did not escape api-version: %q", got)
+		}
+	})
+}
+
+// TestBuildA2AInvokeURL verifies the a2a URL builder targets the .../protocols/a2a
+// tail, applies the default api-version, and URL-encodes both the api-version
+// and any session id.
+func TestBuildA2AInvokeURL(t *testing.T) {
+	t.Parallel()
+	const projectEndpoint = "https://acct.services.ai.azure.com/api/projects/proj"
+
+	t.Run("no session id, default api-version", func(t *testing.T) {
+		got := buildA2AInvokeURL(projectEndpoint, "hello", "", "")
+		want := projectEndpoint + "/agents/hello/endpoint/protocols/a2a?api-version=" + DefaultAgentAPIVersion
+		if got != want {
+			t.Errorf("buildA2AInvokeURL = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("session id is escaped", func(t *testing.T) {
+		got := buildA2AInvokeURL(projectEndpoint, "hello", "v1", "a b/c?d&e")
+		if !strings.Contains(got, "agent_session_id=a+b%2Fc%3Fd%26e") {
+			t.Errorf("buildA2AInvokeURL did not escape session id: %q", got)
+		}
+	})
+
+	t.Run("api-version is escaped", func(t *testing.T) {
+		got := buildA2AInvokeURL(projectEndpoint, "hello", "weird value&x=1", "")
+		if !strings.Contains(got, "api-version=weird+value%26x%3D1") {
+			t.Errorf("buildA2AInvokeURL did not escape api-version: %q", got)
 		}
 	})
 }

@@ -173,3 +173,23 @@ func TestExtensionCommand_CwdEnvVarFallback(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, tmpDir, extCtx.Cwd)
 }
+
+func TestFrameworkServiceEnvelope_GetSetRequestId(t *testing.T) {
+	env := NewFrameworkServiceEnvelope()
+	msg := &FrameworkServiceMessage{RequestId: "req-123"}
+
+	require.Equal(t, "req-123", env.GetRequestId(t.Context(), msg))
+
+	env.SetRequestId(t.Context(), msg, "req-456")
+	require.Equal(t, "req-456", msg.RequestId)
+}
+
+func TestServiceTargetEnvelope_GetSetRequestId(t *testing.T) {
+	env := NewServiceTargetEnvelope()
+	msg := &ServiceTargetMessage{RequestId: "st-123"}
+
+	require.Equal(t, "st-123", env.GetRequestId(t.Context(), msg))
+
+	env.SetRequestId(t.Context(), msg, "st-456")
+	require.Equal(t, "st-456", msg.RequestId)
+}

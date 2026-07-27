@@ -60,9 +60,6 @@ func NewRemoteChecks(deps Dependencies) []Check {
 	//     (`remote.rbac`)
 	//   - C17 (landed): per-service agent version status
 	//     (`remote.agent-status`)
-	//   - C12 (landed): per-agent managed-identity role
-	//     listing across project/account/RG scopes
-	//     (`remote.agent-identity-roles`)
 	//   - C15 (landed): manifest connections exist on the
 	//     Foundry project (`remote.connections`)
 	//
@@ -75,6 +72,12 @@ func NewRemoteChecks(deps Dependencies) []Check {
 	// (or the azd env) instead. See manifest.go's walker for the
 	// populated `state.ModelRefs` slice that the new check can reuse.
 	//
+	// Note: a `remote.agent-identity-roles` check (C12) was removed
+	// because the Foundry service now grants the per-agent identity
+	// its permissions internally, with no explicit ARM role
+	// assignment. Enumerating ARM role assignments therefore folded
+	// every agent into a false aggregate FAIL.
+	//
 	// Ordering matters for skip-cascade: each entry reads `prior
 	// []Result` produced by every check earlier in the combined
 	// local-then-remote sequence. Append checks in the order their
@@ -85,7 +88,6 @@ func NewRemoteChecks(deps Dependencies) []Check {
 		newCheckFoundryEndpoint(deps),
 		newCheckRBAC(deps),
 		newCheckAgentStatus(deps),
-		newCheckAgentIdentityRoles(deps),
 		newCheckConnections(deps),
 	}
 }

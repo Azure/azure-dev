@@ -5,10 +5,13 @@ package apphost
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 )
 
 func TestBuildAcaIngress(t *testing.T) {
@@ -206,5 +209,107 @@ func TestBuildAcaIngress(t *testing.T) {
 		assert.EqualError(t, err, `binding "a" has scheme "tcp" but no container port`)
 		assert.Nil(t, ingress)
 		assert.Equal(t, []string(nil), ingressBinding)
+	})
+}
+
+// Additional aca_ingress test cases — targeting branches not covered in existing tests.
+func TestBuildAcaIngress_MoreCases(t *testing.T) {
+	t.Run("http_non_default_port_rejected", func(t *testing.T) {
+		// Scheme http with port != 80 and no target port => main ingress only supports port 80 for http.
+		bindingsManifest := `{
+			"http": {
+				"scheme": "http",
+				"port": 8081
+			}}`
+		var bindings custommaps.WithOrder[Binding]
+		require.NoError(t, json.Unmarshal([]byte(bindingsManifest), &bindings))
+		_, _, err := buildAcaIngress(bindings, 8080)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "main ingress only supports port 80")
+	})
+
+	t.Run("https_non_default_port_rejected", func(t *testing.T) {
+		bindingsManifest := `{
+			"https": {
+				"scheme": "https",
+				"port": 8443
+			}}`
+		var bindings custommaps.WithOrder[Binding]
+		require.NoError(t, json.Unmarshal([]byte(bindingsManifest), &bindings))
+		_, _, err := buildAcaIngress(bindings, 8080)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "main ingress only supports port 443")
+	})
+
+	t.Run("external_http_pinning", func(t *testing.T) {
+		// Two http groups with different target ports; only one external -> external wins.
+		bindingsManifest := `{
+			"internal": {
+				"scheme":     "http",
+				"targetPort": 9000
+			},
+			"public": {
+				"scheme":     "http",
+				"targetPort": 9001,
+				"external":   true
+			}}`
+		var bindings custommaps.WithOrder[Binding]
+		require.NoError(t, json.Unmarshal([]byte(bindingsManifest), &bindings))
+		ingress, names, err := buildAcaIngress(bindings, 8080)
+		require.NoError(t, err)
+		require.NotNil(t, ingress)
+		require.True(t, ingress.External)
+		require.Equal(t, 9001, ingress.TargetPort)
+		require.Equal(t, []string{"public"}, names)
+		require.Len(t, ingress.AdditionalPortMappings, 1)
+		require.Equal(t, 9000, ingress.AdditionalPortMappings[0].TargetPort)
+	})
+
+	t.Run("tcp_only_with_exposed_port", func(t *testing.T) {
+		// Single tcp binding, not http -> transport tcp with exposed port preserved.
+		bindingsManifest := `{
+			"db": {
+				"scheme":     "tcp",
+				"targetPort": 5432,
+				"port":       5433
+			}}`
+		var bindings custommaps.WithOrder[Binding]
+		require.NoError(t, json.Unmarshal([]byte(bindingsManifest), &bindings))
+		ingress, names, err := buildAcaIngress(bindings, 8080)
+		require.NoError(t, err)
+		require.NotNil(t, ingress)
+		require.Equal(t, acaIngressSchemaTcp, ingress.Transport)
+		require.Equal(t, 5432, ingress.TargetPort)
+		require.Equal(t, 5433, ingress.ExposedPort)
+		require.Equal(t, []string{"db"}, names)
+	})
+
+	t.Run("many_additional_ports_warning", func(t *testing.T) {
+		// More than 5 additional ports: the code logs a warning but still succeeds.
+		bindings := custommaps.WithOrder[Binding]{}
+		manifest := `{
+			"main":  {"scheme": "http"},
+			"extra1":{"scheme":"tcp","targetPort":1001},
+			"extra2":{"scheme":"tcp","targetPort":1002},
+			"extra3":{"scheme":"tcp","targetPort":1003},
+			"extra4":{"scheme":"tcp","targetPort":1004},
+			"extra5":{"scheme":"tcp","targetPort":1005},
+			"extra6":{"scheme":"tcp","targetPort":1006},
+			"extra7":{"scheme":"tcp","targetPort":1007}
+		}`
+		require.NoError(t, json.Unmarshal([]byte(manifest), &bindings))
+		ingress, _, err := buildAcaIngress(bindings, 8080)
+		require.NoError(t, err)
+		require.NotNil(t, ingress)
+		require.GreaterOrEqual(t, len(ingress.AdditionalPortMappings), 6)
+	})
+
+	t.Run("empty_binding_error", func(t *testing.T) {
+		// A nil binding in the ordered map triggers validateBindings error path.
+		bindings := custommaps.WithOrder[Binding]{}
+		require.NoError(t, json.Unmarshal([]byte(`{"a": null}`), &bindings))
+		_, _, err := buildAcaIngress(bindings, 8080)
+		require.Error(t, err)
+		require.Contains(t, strings.ToLower(err.Error()), "empty")
 	})
 }

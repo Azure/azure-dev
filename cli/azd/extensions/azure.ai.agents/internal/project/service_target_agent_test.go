@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestApplyAgentMetadata(t *testing.T) {
@@ -140,14 +141,18 @@ type stubContainerServer struct {
 	buildCalls   atomic.Int32
 	packageCalls atomic.Int32
 	publishCalls atomic.Int32
+	buildRequest *azdext.ContainerBuildRequest
+	packRequest  *azdext.ContainerPackageRequest
+	pubRequest   *azdext.ContainerPublishRequest
 	publishErr   error
 }
 
 func (s *stubContainerServer) Build(
 	_ context.Context,
-	_ *azdext.ContainerBuildRequest,
+	request *azdext.ContainerBuildRequest,
 ) (*azdext.ContainerBuildResponse, error) {
 	s.buildCalls.Add(1)
+	s.buildRequest = request
 	return &azdext.ContainerBuildResponse{
 		Result: &azdext.ServiceBuildResult{
 			Artifacts: []*azdext.Artifact{{
@@ -160,9 +165,10 @@ func (s *stubContainerServer) Build(
 
 func (s *stubContainerServer) Package(
 	_ context.Context,
-	_ *azdext.ContainerPackageRequest,
+	request *azdext.ContainerPackageRequest,
 ) (*azdext.ContainerPackageResponse, error) {
 	s.packageCalls.Add(1)
+	s.packRequest = request
 	return &azdext.ContainerPackageResponse{
 		Result: &azdext.ServicePackageResult{
 			Artifacts: []*azdext.Artifact{{
@@ -175,9 +181,10 @@ func (s *stubContainerServer) Package(
 
 func (s *stubContainerServer) Publish(
 	_ context.Context,
-	_ *azdext.ContainerPublishRequest,
+	request *azdext.ContainerPublishRequest,
 ) (*azdext.ContainerPublishResponse, error) {
 	s.publishCalls.Add(1)
+	s.pubRequest = request
 	if s.publishErr != nil {
 		return nil, s.publishErr
 	}
@@ -204,6 +211,7 @@ func newServiceTargetTestClient(
 	t *testing.T,
 	containerSrv azdext.ContainerServiceServer,
 	promptSrv azdext.PromptServiceServer,
+	projectSrvs ...azdext.ProjectServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
 
@@ -213,6 +221,9 @@ func newServiceTargetTestClient(
 	}
 	if promptSrv != nil {
 		azdext.RegisterPromptServiceServer(srv, promptSrv)
+	}
+	if len(projectSrvs) > 0 && projectSrvs[0] != nil {
+		azdext.RegisterProjectServiceServer(srv, projectSrvs[0])
 	}
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -319,6 +330,31 @@ func newPromptTestClient(t *testing.T, promptSrv azdext.PromptServiceServer) *az
 	return newServiceTargetTestClient(t, nil, promptSrv)
 }
 
+func TestInitializeIsCheapAndSideEffectFree(t *testing.T) {
+	// azd-core calls ServiceTargetProvider.Initialize for every service on
+	// every action (provision, deploy, env refresh, show, ...). Initialize
+	// must not touch disk, prompt for credentials, or call Azure. The
+	// agent.yaml lookup lives in ensureDeployContext and runs only when
+	// a deploy-time entrypoint needs it.
+
+	// Project root with NO agent.yaml/agent.yml anywhere.
+	projectRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "svc"), 0o750))
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+
+	// Initialize must succeed and leave heavy state untouched.
+	require.NoError(t, provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"}))
+	require.Empty(t, provider.agentDefinitionPath)
+	require.Nil(t, provider.credential)
+	require.Empty(t, provider.tenantId)
+
+	// Same provider, called again with the same service config: still no-op.
+	require.NoError(t, provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"}))
+}
+
 func TestInitializeAcceptsProjectLocalAgentYaml(t *testing.T) {
 	t.Setenv("AGENT_DEFINITION_PATH", "")
 
@@ -331,7 +367,13 @@ func TestInitializeAcceptsProjectLocalAgentYaml(t *testing.T) {
 		azdClient: newInitializeTestClient(t, projectRoot),
 	}
 
-	err := provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"})
+	// Initialize is now cheap: it only stores the service config and does
+	// not resolve the agent.yaml on disk. agentDefinitionPath remains
+	// empty until a deploy-time entrypoint triggers ensureDeployContext.
+	require.NoError(t, provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"}))
+	require.Empty(t, provider.agentDefinitionPath, "Initialize must not touch disk")
+
+	err := provider.ensureDeployContext(t.Context())
 
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(serviceDir, "agent.yaml"), provider.agentDefinitionPath)
@@ -355,7 +397,9 @@ func TestInitializeRejectsAgentYamlSymlinkEscapingRoot(t *testing.T) {
 		azdClient: newInitializeTestClient(t, projectRoot),
 	}
 
-	err := provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"})
+	require.NoError(t, provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"}))
+
+	err := provider.ensureDeployContext(t.Context())
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "escapes project root")
@@ -556,14 +600,13 @@ func TestDisplayableProtocolFor(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name             string
-		protocol         string
-		wantNil          bool
-		wantProtocol     agent_api.AgentProtocol
-		wantEnvSuffix    string
-		wantURLContains  string
-		wantURLScheme    string // "https" or "wss"
-		wantURLOmitAgent bool   // true when the protocol does not embed the agent name in the path
+		name            string
+		protocol        string
+		wantNil         bool
+		wantProtocol    agent_api.AgentProtocol
+		wantEnvSuffix   string
+		wantURLContains string
+		wantURLScheme   string // "https" or "wss"
 	}{
 		{
 			name:            "responses",
@@ -582,15 +625,15 @@ func TestDisplayableProtocolFor(t *testing.T) {
 			wantURLScheme:   "https",
 		},
 		{
-			name:             "invocations_ws",
-			protocol:         "invocations_ws",
-			wantProtocol:     agent_api.AgentProtocolInvocationsWS,
-			wantEnvSuffix:    "INVOCATIONS_WS",
-			wantURLContains:  "/api/projects/agents/endpoint/protocols/invocations_ws",
-			wantURLScheme:    "wss",
-			wantURLOmitAgent: true,
+			name:            "invocations_ws",
+			protocol:        "invocations_ws",
+			wantProtocol:    agent_api.AgentProtocolInvocationsWS,
+			wantEnvSuffix:   "INVOCATIONS_WS",
+			wantURLContains: "/api/projects/proj/agents/my-agent/endpoint/protocols/invocations_ws",
+			wantURLScheme:   "wss",
 		},
-		{name: "activity_protocol excluded", protocol: "activity_protocol", wantNil: true},
+		{name: "activity excluded", protocol: "activity", wantNil: true},
+		{name: "legacy activity_protocol excluded", protocol: "activity_protocol", wantNil: true},
 		{name: "unknown excluded", protocol: "unknown_proto", wantNil: true},
 	}
 
@@ -616,11 +659,6 @@ func TestDisplayableProtocolFor(t *testing.T) {
 			require.True(t, strings.HasPrefix(url, tt.wantURLScheme+"://"),
 				"url %q should use %s scheme", url, tt.wantURLScheme)
 			require.Contains(t, url, tt.wantURLContains)
-			if tt.wantURLOmitAgent {
-				require.NotContains(t, url, "/agents/"+agentName+"/")
-				require.Contains(t, url, "agent_name="+agentName)
-				require.Contains(t, url, "project_name=proj")
-			}
 		})
 	}
 }
@@ -632,11 +670,9 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 	const agentName = "my-agent"
 	baseURL := endpoint + "/agents/" + agentName + "/endpoint/protocols/"
 
-	const wsBase = "wss://myproject.services.ai.azure.com" +
-		"/api/projects/agents/endpoint/protocols/invocations_ws"
-	const wsQuery = "agent_name=" + agentName +
-		"&api-version=" + agent_api.AgentEndpointAPIVersion +
-		"&project_name=proj"
+	const wsURL = "wss://myproject.services.ai.azure.com" +
+		"/api/projects/proj/agents/" + agentName +
+		"/endpoint/protocols/invocations_ws?api-version=" + agent_api.AgentEndpointAPIVersion
 
 	tests := []struct {
 		name      string
@@ -668,14 +704,14 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 			},
 		},
 		{
-			name: "single invocations_ws protocol uses dispatcher form",
+			name: "single invocations_ws protocol uses path-based form",
 			protocols: []agent_yaml.ProtocolVersionRecord{
 				{Protocol: "invocations_ws", Version: "1.0.0"},
 			},
 			expected: []protocolEndpointInfo{
 				{
 					Protocol: "invocations_ws",
-					URL:      wsBase + "?" + wsQuery,
+					URL:      wsURL,
 				},
 			},
 		},
@@ -698,7 +734,7 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 				},
 				{
 					Protocol: "invocations_ws",
-					URL:      wsBase + "?" + wsQuery,
+					URL:      wsURL,
 				},
 			},
 		},
@@ -754,8 +790,22 @@ func TestBuildInvocationsWSProtocolURL_TrimsWhitespace(t *testing.T) {
 	)
 	require.NotEmpty(t, got)
 	require.Contains(t, got, "wss://myproject.services.ai.azure.com")
-	require.Contains(t, got, "project_name=proj")
-	require.Contains(t, got, "agent_name=my-agent")
+	require.Contains(t, got, "/api/projects/proj/agents/my-agent/endpoint/protocols/invocations_ws")
+	require.Contains(t, got, "api-version="+agent_api.AgentEndpointAPIVersion)
+}
+
+func TestBuildInvocationsWSProtocolURL_TrimsTrailingSlash(t *testing.T) {
+	t.Parallel()
+
+	got := buildInvocationsWSProtocolURL(
+		"https://myproject.services.ai.azure.com/api/projects/proj/",
+		"my-agent",
+	)
+	require.Equal(t,
+		"wss://myproject.services.ai.azure.com/api/projects/proj/agents/my-agent/"+
+			"endpoint/protocols/invocations_ws?api-version="+agent_api.AgentEndpointAPIVersion,
+		got,
+	)
 }
 
 func TestAgentInvocationEndpoints_SkipsInvocationsWSWithMalformedEndpoint(t *testing.T) {
@@ -952,6 +1002,256 @@ func TestLoadContainerAgentDefinition_MalformedYAMLReturnsError(t *testing.T) {
 	_, _, err := provider.loadContainerAgentDefinition()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agent.yaml is not valid")
+}
+
+func TestLoadContainerAgentDefinition_EnvPathOverridesInlineDefinition(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agentPath := filepath.Join(dir, "agent.yaml")
+	require.NoError(t, os.WriteFile(
+		agentPath,
+		[]byte("kind: hosted\nname: override-agent\nprotocols:\n  - protocol: responses\n    version: \"1.0.0\"\n"),
+		0o600,
+	))
+
+	props, err := AgentDefinitionToServiceProperties(sampleContainerAgent(), nil)
+	require.NoError(t, err)
+	provider := &AgentServiceTargetProvider{
+		agentDefinitionPath: agentPath,
+		serviceConfig: &azdext.ServiceConfig{
+			Name:                 "basic-agent",
+			Host:                 "azure.ai.agent",
+			AdditionalProperties: props,
+		},
+	}
+
+	got, isHosted, err := provider.loadContainerAgentDefinition()
+	require.NoError(t, err)
+	require.True(t, isHosted)
+	require.Equal(t, "override-agent", got.Name)
+}
+
+func TestLoadContainerAgentDefinition_FileRef(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "agent.yaml"),
+		[]byte(
+			"kind: hosted\n"+
+				"name: referenced-agent\n"+
+				"protocols:\n"+
+				"  - protocol: responses\n"+
+				"    version: \"1.0.0\"\n",
+		),
+		0o600,
+	))
+	props, err := structpb.NewStruct(map[string]any{
+		"$ref": "./agent.yaml",
+	})
+	require.NoError(t, err)
+	provider := &AgentServiceTargetProvider{
+		projectPath: dir,
+		serviceConfig: &azdext.ServiceConfig{
+			Name:                 "referenced-agent",
+			Host:                 "azure.ai.agent",
+			AdditionalProperties: props,
+		},
+	}
+
+	got, isHosted, err := provider.loadContainerAgentDefinition()
+
+	require.NoError(t, err)
+	require.True(t, isHosted)
+	require.Equal(t, "referenced-agent", got.Name)
+}
+
+func TestPackageBuildsContainerAgent(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAML(t, dir)
+	containerStub := &stubContainerServer{}
+	client := newContainerTestClient(t, containerStub)
+	provider := &AgentServiceTargetProvider{
+		azdClient:           client,
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+		serviceConfig: &azdext.ServiceConfig{
+			Name:         "referenced-agent",
+			Host:         "azure.ai.agent",
+			RelativePath: "src/agent",
+		},
+	}
+
+	_, err := provider.Package(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "referenced-agent"},
+		&azdext.ServiceContext{},
+		func(string) {},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, int32(1), containerStub.buildCalls.Load())
+	require.Equal(t, int32(1), containerStub.packageCalls.Load())
+}
+
+func TestPrepareDeploy_MergesUnifiedEnvironment(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	agentDef.EnvironmentVariables = &[]agent_yaml.EnvironmentVariable{
+		{Name: "LEGACY_ONLY", Value: "${LEGACY_VALUE}"},
+		{Name: "SHARED", Value: "legacy"},
+	}
+	props, err := AgentDefinitionToServiceProperties(
+		agentDef,
+		&ServiceTargetAgentConfig{
+			Environment: map[string]string{
+				"REF_ONLY": "${REF_VALUE}",
+				"SHARED":   "ref",
+			},
+		},
+	)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		AdditionalProperties: props,
+		Environment: map[string]string{
+			"DIRECT_ONLY": "direct",
+			"SHARED":      "direct",
+		},
+	}
+	provider := &AgentServiceTargetProvider{}
+
+	prep, err := provider.prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://example",
+			"LEGACY_VALUE":             "legacy-value",
+			"REF_VALUE":                "ref-value",
+		},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	definition, ok := prep.request.Definition.(agent_api.HostedAgentDefinition)
+	require.True(t, ok)
+	require.Equal(
+		t,
+		"legacy-value",
+		definition.EnvironmentVariables["LEGACY_ONLY"],
+	)
+	require.Equal(
+		t,
+		"ref-value",
+		definition.EnvironmentVariables["REF_ONLY"],
+	)
+	require.Equal(
+		t,
+		"direct",
+		definition.EnvironmentVariables["DIRECT_ONLY"],
+	)
+	require.Equal(
+		t,
+		"direct",
+		definition.EnvironmentVariables["SHARED"],
+	)
+}
+
+func TestPrepareDeployUsesRawUnifiedEnvironment(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte(`services:
+  basic-agent:
+    host: azure.ai.agent
+    env:
+      PROJECT: ${{project.endpoint}}
+      ENABLED: true
+`),
+		0o600,
+	))
+	agentDef := sampleContainerAgent()
+	props, err := AgentDefinitionToServiceProperties(
+		agentDef,
+		&ServiceTargetAgentConfig{},
+	)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		AdditionalProperties: props,
+		Environment: map[string]string{
+			"PROJECT": "",
+			"ENABLED": "",
+		},
+	}
+	provider := &AgentServiceTargetProvider{projectPath: root}
+
+	prep, err := provider.prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://example",
+		},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	definition, ok := prep.request.Definition.(agent_api.HostedAgentDefinition)
+	require.True(t, ok)
+	require.Equal(
+		t,
+		"${{project.endpoint}}",
+		definition.EnvironmentVariables["PROJECT"],
+	)
+	require.Equal(
+		t,
+		"true",
+		definition.EnvironmentVariables["ENABLED"],
+	)
+}
+
+func TestPrepareDeployAppliesDefaultResources(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	agentDef.Resources = nil
+	props, err := AgentDefinitionToServiceProperties(
+		agentDef,
+		&ServiceTargetAgentConfig{},
+	)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		AdditionalProperties: props,
+	}
+	provider := &AgentServiceTargetProvider{}
+
+	prep, err := provider.prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://example",
+		},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	definition, ok := prep.request.Definition.(agent_api.HostedAgentDefinition)
+	require.True(t, ok)
+	require.Equal(t, DefaultCpu, definition.CPU)
+	require.Equal(t, DefaultMemory, definition.Memory)
 }
 
 func TestShouldUsePreBuiltImage_NoImageDefaultsToBuild(t *testing.T) {
@@ -1153,6 +1453,10 @@ func TestPublish_PublishesWhenPackageBuiltFromDockerfile(t *testing.T) {
 		azdClient:           client,
 		agentDefinitionPath: agentPath,
 		env:                 &azdext.Environment{Name: "test-env"},
+		serviceConfig: &azdext.ServiceConfig{
+			Name:         "test-svc",
+			RelativePath: "src/agent",
+		},
 	}
 
 	result, err := provider.Publish(

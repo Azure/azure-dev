@@ -7,9 +7,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/stretchr/testify/require"
 )
 
 func TestNewStaticWebAppTargetTypeValidation(t *testing.T) {
@@ -99,4 +101,31 @@ func TestStaticWebAppDeploy_EnvironmentSelection(t *testing.T) {
 			require.Equal(t, tc.expectedEnv, swaEnv)
 		})
 	}
+}
+
+func Test_NewStaticWebAppTarget(t *testing.T) {
+	env := environment.NewWithValues("test-env", nil)
+	target := NewStaticWebAppTarget(env, nil, nil)
+	require.NotNil(t, target)
+}
+
+func Test_staticWebAppTarget_RequiredExternalTools(t *testing.T) {
+	target := NewStaticWebAppTarget(nil, nil, nil)
+	result := target.RequiredExternalTools(t.Context(), nil)
+	require.Len(t, result, 1)
+	// Contains the swa CLI (nil since we passed nil)
+	assert.Nil(t, result[0])
+}
+
+func Test_staticWebAppTarget_Initialize(t *testing.T) {
+	target := NewStaticWebAppTarget(nil, nil, nil)
+	err := target.Initialize(t.Context(), nil)
+	require.NoError(t, err)
+}
+
+func Test_staticWebAppTarget_Publish(t *testing.T) {
+	target := NewStaticWebAppTarget(nil, nil, nil)
+	result, err := target.Publish(t.Context(), nil, nil, nil, nil, nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
 }

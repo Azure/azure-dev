@@ -1,0 +1,130 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.projects/schemas/azure.ai.project.json",
+  "title": "Azure AI Foundry project service",
+  "description": "Service-level configuration for a host: azure.ai.project entry. The project owns its model deployments and an optional endpoint to an existing project. When endpoint is omitted, azd provisions a new project; when set, azd connects to that existing project instead of creating one.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "endpoint": {
+      "type": "string",
+      "description": "Endpoint URL of an existing Foundry project (e.g. https://my-account.services.ai.azure.com/api/projects/my-project). When set, azd connects to this project instead of provisioning a new one. May contain ${VAR} (azd env, resolved client-side)."
+    },
+    "deployments": {
+      "type": "array",
+      "description": "Model deployments to upsert on the project.",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/Deployment" },
+          { "$ref": "#/definitions/FileRef" }
+        ]
+      }
+    },
+    "network": {
+      "type": "object",
+      "description": "Private networking for the Foundry account that backs this project. When omitted, the account uses public networking. When present, azd provisions an account private endpoint and disables public data-plane access.",
+      "additionalProperties": false,
+      "required": ["peSubnet"],
+      "allOf": [
+        {
+          "not": {
+            "required": ["agentSubnet", "isolationMode"]
+          }
+        }
+      ],
+      "properties": {
+        "agentSubnet": {
+          "description": "Egress: when set, the agent runtime is injected into this customer subnet (BYO VNet). When omitted, the agent uses the Microsoft-managed network.",
+          "$ref": "#/definitions/Subnet"
+        },
+        "isolationMode": {
+          "type": "string",
+          "description": "Outbound posture of the Microsoft-managed network. Valid only when 'agentSubnet' is omitted (managed egress).",
+          "enum": ["AllowInternetOutbound", "AllowOnlyApprovedOutbound"]
+        },
+        "peSubnet": {
+          "description": "Ingress: subnet for the account private endpoint. Required. Establishes the private data plane (public network access disabled).",
+          "$ref": "#/definitions/Subnet"
+        },
+        "dns": {
+          "type": "object",
+          "description": "Private DNS zones for the account private endpoint. When omitted (or resourceGroup omitted), azd creates and links the required AI private DNS zones. When resourceGroup is set, azd references existing zones in that resource group.",
+          "additionalProperties": false,
+          "properties": {
+            "resourceGroup": {
+              "type": "string",
+              "description": "Resource group that holds existing private DNS zones to reference."
+            },
+            "subscription": {
+              "type": "string",
+              "description": "Subscription that holds the existing private DNS zones. Defaults to the deployment subscription. Accepts a bare GUID or ${VAR}."
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "Deployment": {
+      "type": "object",
+      "required": ["name", "model", "sku"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the model deployment."
+        },
+        "model": {
+          "type": "object",
+          "required": ["format", "name", "version"],
+          "additionalProperties": false,
+          "properties": {
+            "format": { "type": "string", "description": "Model format (e.g., 'OpenAI')." },
+            "name": { "type": "string", "description": "Model name (e.g., 'gpt-4.1-mini')." },
+            "version": { "type": "string", "description": "Model version (e.g., '2025-04-14')." }
+          }
+        },
+        "sku": {
+          "type": "object",
+          "required": ["capacity", "name"],
+          "additionalProperties": false,
+          "properties": {
+            "capacity": { "type": "integer", "description": "SKU capacity (TPM units)." },
+            "name": { "type": "string", "description": "SKU name (e.g., 'Standard', 'GlobalStandard', 'GlobalBatch')." }
+          }
+        }
+      }
+    },
+    "FileRef": {
+      "type": "object",
+      "required": ["$ref"],
+      "additionalProperties": true,
+      "properties": {
+        "$ref": {
+          "type": "string",
+          "description": "Path to a YAML or JSON file containing the definition. Relative paths resolve from the file containing this $ref. Absolute paths are also accepted; remote URLs are not supported."
+        }
+      }
+    },
+    "Subnet": {
+      "type": "object",
+      "description": "Subnet descriptor. vnet and name are required. Omit prefix to reference an existing subnet; set prefix to create the subnet with that CIDR.",
+      "additionalProperties": false,
+      "required": ["vnet", "name"],
+      "properties": {
+        "vnet": {
+          "type": "string",
+          "description": "ARM resource id of the virtual network that holds (or will hold) the subnet. Supports ${VAR} resolved from the azd environment."
+        },
+        "name": {
+          "type": "string",
+          "description": "Subnet name."
+        },
+        "prefix": {
+          "type": "string",
+          "description": "Subnet CIDR. When set, azd creates the subnet; when omitted, azd references the existing subnet."
+        }
+      }
+    }
+  }
+}

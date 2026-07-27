@@ -39,6 +39,17 @@ type FoundryProjectInfo struct {
 	NetworkInjected bool
 }
 
+// Endpoint returns the Foundry project data-plane endpoint derived from the
+// account and project names, or "" when the project is nil or either name is
+// missing. The endpoint is the brownfield signal written onto the
+// azure.ai.project service so provision connects to the existing project.
+func (p *FoundryProjectInfo) Endpoint() string {
+	if p == nil || p.AccountName == "" || p.ProjectName == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", p.AccountName, p.ProjectName)
+}
+
 // FoundryDeploymentInfo holds information about an existing model deployment in a Foundry project.
 type FoundryDeploymentInfo struct {
 	Name        string
@@ -321,56 +332,53 @@ func listProjectDeployments(
 	return results, nil
 }
 
-// normalizeLoginServer strips any scheme (https://, http://) and trailing slash
-// from a container registry endpoint so it becomes a plain login server
-// (e.g., "myregistry.azurecr.io").
+// normalizeLoginServer strips any scheme (https://, http://) and trailing slash,
+// then lowercases a container registry endpoint for consistent comparison.
 func normalizeLoginServer(endpoint string) string {
-	endpoint = strings.TrimPrefix(endpoint, "https://")
-	endpoint = strings.TrimPrefix(endpoint, "http://")
-	endpoint = strings.TrimRight(endpoint, "/")
-	return endpoint
+	for _, prefix := range []string{"https://", "http://"} {
+		if len(endpoint) >= len(prefix) && strings.EqualFold(endpoint[:len(prefix)], prefix) {
+			endpoint = endpoint[len(prefix):]
+			break
+		}
+	}
+	return strings.ToLower(strings.TrimRight(endpoint, "/"))
 }
 
-// lookupAcrResourceId finds the ARM resource ID for an ACR given its login server endpoint.
-func lookupAcrResourceId(
+// listAcrResourceIds returns ARM resource IDs keyed by normalized ACR login server.
+func listAcrResourceIds(
 	ctx context.Context,
 	credential azcore.TokenCredential,
 	subscriptionId string,
-	loginServer string,
-) (string, error) {
-	loginServer = normalizeLoginServer(loginServer)
-	parts := strings.Split(loginServer, ".")
-	if len(parts) < 2 || parts[0] == "" {
-		return "", fmt.Errorf("invalid login server format: %q, expected e.g. %q", loginServer, "registry.azurecr.io")
-	}
-	registryName := parts[0]
-
+) (map[string]string, error) {
 	client, err := armcontainerregistry.NewRegistriesClient(subscriptionId, credential, azure.NewArmClientOptions())
 	if err != nil {
-		return "", fmt.Errorf("failed to create container registry client: %w", err)
+		return nil, fmt.Errorf("failed to create container registry client: %w", err)
 	}
 
+	resourceIds := map[string]string{}
 	pager := client.NewListPager(nil)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return "", fmt.Errorf("failed to list registries: %w", err)
+			return nil, fmt.Errorf("failed to list registries: %w", err)
 		}
 		for _, registry := range page.Value {
-			if registry.Name != nil && strings.EqualFold(*registry.Name, registryName) {
-				if registry.ID != nil {
-					return *registry.ID, nil
-				}
+			if registry.Properties != nil && registry.Properties.LoginServer != nil && registry.ID != nil {
+				loginServer := strings.ToLower(normalizeLoginServer(*registry.Properties.LoginServer))
+				resourceIds[loginServer] = *registry.ID
 			}
 		}
 	}
 
-	return "", fmt.Errorf("container registry '%s' not found in subscription", registryName)
+	return resourceIds, nil
 }
 
 // configureFoundryProjectEnv sets all Foundry project environment variables and discovers
 // ACR and AppInsights connections. This is the shared implementation used by both init flows.
 // When skipACR is true, ACR connection discovery and configuration is skipped (used for code deploy).
+// When bicepless is true, AppInsights is left to the provisioning provider; ACR is still configured
+// for a container agent (skipACR false) so its endpoint is wired here when the project already has a
+// registry connection, or the provider is signaled to create one on provision (the create-new path).
 func configureFoundryProjectEnv(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -379,6 +387,7 @@ func configureFoundryProjectEnv(
 	project FoundryProjectInfo,
 	subscriptionId string,
 	skipACR bool,
+	bicepless bool,
 ) error {
 	resourceId := project.ResourceId
 	if resourceId == "" {
@@ -403,7 +412,7 @@ func configureFoundryProjectEnv(
 		return err
 	}
 
-	aiFoundryEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", project.AccountName, project.ProjectName)
+	aiFoundryEndpoint := project.Endpoint()
 	if err := setEnvValue(ctx, azdClient, envName, "FOUNDRY_PROJECT_ENDPOINT", aiFoundryEndpoint); err != nil {
 		return err
 	}
@@ -411,6 +420,15 @@ func configureFoundryProjectEnv(
 	aoaiEndpoint := fmt.Sprintf("https://%s.openai.azure.com/", project.AccountName)
 	if err := setEnvValue(ctx, azdClient, envName, "AZURE_OPENAI_ENDPOINT", aoaiEndpoint); err != nil {
 		return err
+	}
+
+	if bicepless {
+		// The provisioning provider owns ACR/AppInsights for a new project, but a
+		// container agent on an existing project needs a registry it won't create.
+		if skipACR {
+			return nil
+		}
+		return configureExistingProjectAcr(ctx, azdClient, credential, envName, project, subscriptionId)
 	}
 
 	// Discover and configure connections (ACR, AppInsights)
@@ -458,6 +476,39 @@ func configureFoundryProjectEnv(
 	return nil
 }
 
+// configureExistingProjectAcr discovers the ACR connections on an existing
+// Foundry project and runs the ACR selection/question for a container agent in
+// the bicepless flow. A failure to list connections is non-fatal: configureAcrConnection
+// then prompts for a login server (or to create one during provision).
+func configureExistingProjectAcr(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	credential azcore.TokenCredential,
+	envName string,
+	project FoundryProjectInfo,
+	subscriptionId string,
+) error {
+	var acrConnections []azure.Connection
+	foundryClient, err := azure.NewFoundryProjectsClient(project.AccountName, project.ProjectName, credential)
+	if err != nil {
+		return fmt.Errorf("creating Foundry client: %w", err)
+	}
+	connections, err := foundryClient.GetAllConnections(ctx)
+	if err != nil {
+		fmt.Printf(
+			"Could not get Microsoft Foundry project connections: %v. "+
+				"You will be asked to provide a container registry.\n", err)
+	} else {
+		for _, conn := range connections {
+			if conn.Type == azure.ConnectionTypeContainerRegistry {
+				acrConnections = append(acrConnections, conn)
+			}
+		}
+	}
+
+	return configureAcrConnection(ctx, azdClient, credential, envName, subscriptionId, acrConnections)
+}
+
 // configureAcrConnection handles ACR connection selection and env var setting.
 func configureAcrConnection(
 	ctx context.Context,
@@ -467,7 +518,51 @@ func configureAcrConnection(
 	subscriptionId string,
 	acrConnections []azure.Connection,
 ) error {
-	if len(acrConnections) == 0 {
+	return configureAcrConnectionWithRegistryLoader(
+		ctx, azdClient, credential, envName, subscriptionId, acrConnections, listAcrResourceIds,
+	)
+}
+
+type acrRegistryLoader func(context.Context, azcore.TokenCredential, string) (map[string]string, error)
+
+type validatedAcrConnection struct {
+	connection azure.Connection
+	resourceId string
+}
+
+func configureAcrConnectionWithRegistryLoader(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	credential azcore.TokenCredential,
+	envName string,
+	subscriptionId string,
+	acrConnections []azure.Connection,
+	loadRegistries acrRegistryLoader,
+) error {
+	resourceIds, err := loadRegistries(ctx, credential, subscriptionId)
+	if err != nil {
+		return fmt.Errorf("listing container registries for connection validation: %w", err)
+	}
+
+	validatedConnections := make([]validatedAcrConnection, 0, len(acrConnections))
+	for _, connection := range acrConnections {
+		loginServer := normalizeLoginServer(connection.Target)
+		resourceId, found := resourceIds[strings.ToLower(loginServer)]
+		if !found {
+			fmt.Printf(
+				"Skipping container registry connection %s because %s does not reference an existing registry "+
+					"in the selected subscription.\n",
+				connection.Name, connection.Target,
+			)
+			continue
+		}
+		validatedConnections = append(validatedConnections, validatedAcrConnection{
+			connection: connection,
+			resourceId: resourceId,
+		})
+	}
+
+	if len(validatedConnections) == 0 {
 		fmt.Println("\n" +
 			"An Azure Container Registry (ACR) is required\n\n" +
 			"Foundry Hosted Agents need an Azure Container Registry to store container images before deployment.\n\n" +
@@ -488,9 +583,9 @@ func configureAcrConnection(
 
 		if resp.Value != "" {
 			loginServer := normalizeLoginServer(resp.Value)
-			resourceId, err := lookupAcrResourceId(ctx, credential, subscriptionId, loginServer)
-			if err != nil {
-				return fmt.Errorf("failed to lookup ACR resource ID: %w", err)
+			resourceId, found := resourceIds[strings.ToLower(loginServer)]
+			if !found {
+				return fmt.Errorf("container registry with login server %q not found in subscription", loginServer)
 			}
 
 			if err := setEnvValue(ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_ENDPOINT", loginServer); err != nil {
@@ -499,10 +594,22 @@ func configureAcrConnection(
 			if err := setEnvValue(ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID", resourceId); err != nil {
 				return err
 			}
+			if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_PROJECT_ACR_CONNECTION_NAME", ""); err != nil {
+				return err
+			}
 			if err := updatePendingACRSignal(ctx, azdClient, envName, true); err != nil {
 				log.Printf("warning: failed to update acr provision signal: %v", err)
 			}
 		} else {
+			for _, key := range []string{
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+			} {
+				if err := setEnvValue(ctx, azdClient, envName, key, ""); err != nil {
+					return err
+				}
+			}
 			if err := updatePendingACRSignal(ctx, azdClient, envName, false); err != nil {
 				log.Printf("warning: failed to update acr provision signal: %v", err)
 			}
@@ -510,18 +617,22 @@ func configureAcrConnection(
 		return nil
 	}
 
-	var selectedConnection *azure.Connection
+	var selectedConnection *validatedAcrConnection
 
-	if len(acrConnections) == 1 {
-		selectedConnection = &acrConnections[0]
-		fmt.Printf("Using container registry connection: %s (%s)\n", selectedConnection.Name, selectedConnection.Target)
+	if len(validatedConnections) == 1 {
+		selectedConnection = &validatedConnections[0]
+		fmt.Printf(
+			"Using container registry connection: %s (%s)\n",
+			selectedConnection.connection.Name,
+			selectedConnection.connection.Target,
+		)
 	} else {
-		fmt.Printf("Found %d container registry connections:\n", len(acrConnections))
+		fmt.Printf("Found %d container registry connections:\n", len(validatedConnections))
 
-		choices := make([]*azdext.SelectChoice, len(acrConnections))
-		for i, conn := range acrConnections {
+		choices := make([]*azdext.SelectChoice, len(validatedConnections))
+		for i, validated := range validatedConnections {
 			choices[i] = &azdext.SelectChoice{
-				Label: conn.Name,
+				Label: validated.connection.Name,
 				Value: fmt.Sprintf("%d", i),
 			}
 		}
@@ -537,13 +648,34 @@ func configureAcrConnection(
 		if err != nil {
 			return fmt.Errorf("failed to prompt for connection selection: %w", err)
 		}
-		selectedConnection = &acrConnections[int(*selectResp.Value)]
+		selectedConnection = &validatedConnections[int(*selectResp.Value)]
 	}
 
-	if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_PROJECT_ACR_CONNECTION_NAME", selectedConnection.Name); err != nil {
+	if err := setEnvValue(
+		ctx,
+		azdClient,
+		envName,
+		"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+		selectedConnection.connection.Name,
+	); err != nil {
 		return err
 	}
-	if err := setEnvValue(ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_ENDPOINT", normalizeLoginServer(selectedConnection.Target)); err != nil {
+	if err := setEnvValue(
+		ctx,
+		azdClient,
+		envName,
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT",
+		normalizeLoginServer(selectedConnection.connection.Target),
+	); err != nil {
+		return err
+	}
+	if err := setEnvValue(
+		ctx,
+		azdClient,
+		envName,
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
+		selectedConnection.resourceId,
+	); err != nil {
 		return err
 	}
 	if err := updatePendingACRSignal(ctx, azdClient, envName, true); err != nil {
@@ -1156,6 +1288,7 @@ func resolveModelDeployments(
 		ModelName:    model.Name,
 		Options: &azdext.AiModelDeploymentOptions{
 			Locations: []string{location},
+			Capacity:  new(defaultDeploymentCapacity),
 		},
 		Quota: &azdext.QuotaCheckOptions{
 			MinRemainingCapacity: 1,
@@ -1263,6 +1396,9 @@ func sortModelDeploymentCandidates(candidates []*azdext.AiModelDeployment, defau
 // finds the matching project without prompting. Returns nil if user chose
 // "Create a new Foundry project" or no projects exist.
 // When a project is selected, configures all project-related environment variables.
+// skipACR skips ACR connection discovery (used for code deploy);
+// bicepless skips both ACR and AppInsights prompts (see
+// configureFoundryProjectEnv).
 func selectFoundryProject(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -1272,6 +1408,7 @@ func selectFoundryProject(
 	subscriptionId string,
 	projectResourceId string,
 	skipACR bool,
+	bicepless bool,
 ) (*FoundryProjectInfo, error) {
 	spinnerText := "Searching for Foundry projects in your subscription..."
 	if projectResourceId != "" {
@@ -1309,8 +1446,8 @@ func selectFoundryProject(
 		return nil, fmt.Errorf("failed to list Foundry projects: %w", err)
 	}
 
-	// When code deploy is selected, restrict to regions that support hosted agents.
-	// Code deploy is available in all hosted-agent regions (no separate allowlist).
+	// When ACR is skipped (code deploy, or a pre-built --image), the agent runs as a
+	// hosted agent, so restrict to regions that support hosted agents.
 	if skipACR {
 		supportedRegions, regErr := supportedRegionsForInit(ctx)
 		if regErr != nil {
@@ -1404,7 +1541,9 @@ func selectFoundryProject(
 	}
 
 	// Configure all Foundry project environment variables
-	if err := configureFoundryProjectEnv(ctx, azdClient, credential, envName, selectedProject, subscriptionId, skipACR); err != nil {
+	if err := configureFoundryProjectEnv(
+		ctx, azdClient, credential, envName, selectedProject, subscriptionId, skipACR, bicepless,
+	); err != nil {
 		return nil, fmt.Errorf("failed to configure Foundry project environment: %w", err)
 	}
 

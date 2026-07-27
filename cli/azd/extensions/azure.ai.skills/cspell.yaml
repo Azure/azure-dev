@@ -3,6 +3,8 @@ words:
   # Skill commands
   - agentskills
   - azureaiskills
+  # Contributors
+  - hemarina
   - exterrors
   - foundry
   - foundrysdk

@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 )
 
 func Test_springAppTarget_Initialize_ReturnsDeprecated(
@@ -78,4 +80,10 @@ func Test_springAppTarget_RequiredExternalTools_Empty(
 
 	require.NotNil(t, tools)
 	require.Empty(t, tools)
+}
+
+func Test_NewSpringAppTarget(t *testing.T) {
+	env := environment.NewWithValues("test", nil)
+	target := NewSpringAppTarget(env, nil)
+	require.NotNil(t, target)
 }

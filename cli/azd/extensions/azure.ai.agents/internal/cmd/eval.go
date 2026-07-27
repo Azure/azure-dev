@@ -25,12 +25,12 @@ import (
 	"azureaiagent/internal/pkg/agents/dataset_api"
 	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opt_eval"
+	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v3"
 )
 
 // Default values for eval configuration.
@@ -239,9 +239,21 @@ func resolveEvalContext(ctx context.Context, options evalContextOptions) (*evalR
 			agentVersion = info.Version
 			agentVersionSource = fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 		}
-		if detectedKind, manifestPath := detectEvalAgentKind(agentProject); detectedKind != "" {
-			agentKind = detectedKind
-			agentKindSource = relPathForYaml(project.Path, manifestPath)
+		if ca, _, source, loadErr := projectpkg.LoadAgentDefinition(svc, project.Path); loadErr == nil {
+			if agent_yaml.IsValidAgentKind(ca.Kind) {
+				agentKind = ca.Kind
+				switch source {
+				case projectpkg.AgentDefinitionSourceInline:
+					agentKindSource = "azure.yaml (inline)"
+				case projectpkg.AgentDefinitionSourceLegacyConfig:
+					agentKindSource = "azure.yaml (config)"
+				case projectpkg.AgentDefinitionSourceDisk:
+					agentKindSource = "agent.yaml"
+				}
+			}
+			if source.IsLegacy() {
+				projectpkg.WarnLegacyAgentShape(source)
+			}
 		}
 	}
 	if agentKind == "" {
@@ -411,28 +423,6 @@ func printEvalField(label, value, source string) {
 	}
 }
 
-func detectEvalAgentKind(agentProject string) (agent_yaml.AgentKind, string) {
-	for _, fileName := range []string{"agent.yaml", "agent.yml"} {
-		path := filepath.Join(agentProject, fileName)
-		data, err := os.ReadFile(path) //nolint:gosec // local agent manifest path is derived from azure.yaml service project
-		if err != nil {
-			continue
-		}
-
-		var manifest struct {
-			Kind agent_yaml.AgentKind `yaml:"kind"`
-		}
-		if err := yaml.Unmarshal(data, &manifest); err != nil {
-			continue
-		}
-		if agent_yaml.IsValidAgentKind(manifest.Kind) {
-			return manifest.Kind, path
-		}
-	}
-
-	return "", ""
-}
-
 func evalAgentContextError(cause error) error {
 	message := "agent context could not be resolved"
 	if cause != nil {
@@ -492,11 +482,4 @@ func pollEvalOperationWithSpinner(
 
 	progress.setDone(label)
 	return job, nil
-}
-
-func relPathForYaml(baseDir string, target string) string {
-	if rel, err := filepath.Rel(baseDir, target); err == nil {
-		return filepath.ToSlash(rel)
-	}
-	return filepath.ToSlash(target)
 }

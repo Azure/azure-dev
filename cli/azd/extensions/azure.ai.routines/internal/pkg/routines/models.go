@@ -7,6 +7,64 @@
 // (azure-rest-api-specs PR #43498, src/routines/{models,routes}.tsp).
 package routines
 
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"time"
+)
+
+// FlexibleTimestamp is a timestamp that decodes from either a JSON string or a
+// JSON number. The Foundry Routines service returns some timestamp fields (for
+// example schedule `created_at` and timer `triggers.<name>.at`) as numeric Unix
+// epoch values, which a plain `string` field cannot unmarshal ("json: cannot
+// unmarshal number into Go struct field ... of type string"). A JSON number is
+// interpreted as Unix epoch seconds (or milliseconds when the seconds
+// interpretation lands implausibly far in the future) and normalized to an
+// RFC 3339 string; a JSON string is preserved verbatim. It always marshals back
+// to a JSON string, preserving the request wire shape.
+type FlexibleTimestamp string
+
+// UnmarshalJSON decodes a FlexibleTimestamp from a JSON string or number.
+func (ft *FlexibleTimestamp) UnmarshalJSON(data []byte) error {
+	// Try string first (the common/expected case).
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*ft = FlexibleTimestamp(s)
+		return nil
+	}
+
+	// Try number (Unix epoch seconds or milliseconds).
+	var n float64
+	if err := json.Unmarshal(data, &n); err == nil {
+		// Interpret as seconds first.
+		sec, frac := math.Modf(n)
+		t := time.Unix(int64(sec), int64(frac*1e9)).UTC()
+
+		// If the result lands implausibly far in the future, the value is
+		// likely in milliseconds.
+		if t.Year() > 3000 {
+			ms := int64(n)
+			t = time.Unix(ms/1000, (ms%1000)*int64(time.Millisecond)).UTC()
+		}
+
+		*ft = FlexibleTimestamp(t.Format(time.RFC3339Nano))
+		return nil
+	}
+
+	return fmt.Errorf("expected string or number timestamp, got %s", string(data))
+}
+
+// MarshalJSON marshals FlexibleTimestamp as a JSON string.
+func (ft FlexibleTimestamp) MarshalJSON() ([]byte, error) {
+	return json.Marshal(string(ft))
+}
+
+// String returns the string representation of FlexibleTimestamp.
+func (ft FlexibleTimestamp) String() string {
+	return string(ft)
+}
+
 // Routine represents a Foundry routine resource.
 type Routine struct {
 	Name        string                    `json:"name,omitempty"        yaml:"name,omitempty"`
@@ -14,8 +72,8 @@ type Routine struct {
 	Enabled     *bool                     `json:"enabled,omitempty"     yaml:"enabled,omitempty"`
 	Triggers    map[string]RoutineTrigger `json:"triggers,omitempty"    yaml:"triggers,omitempty"`
 	Action      *RoutineAction            `json:"action,omitempty"      yaml:"action,omitempty"`
-	CreatedAt   string                    `json:"created_at,omitempty"  yaml:"created_at,omitempty"`
-	UpdatedAt   string                    `json:"updated_at,omitempty"  yaml:"updated_at,omitempty"`
+	CreatedAt   FlexibleTimestamp         `json:"created_at,omitempty"  yaml:"created_at,omitempty"`
+	UpdatedAt   FlexibleTimestamp         `json:"updated_at,omitempty"  yaml:"updated_at,omitempty"`
 }
 
 // RoutineTrigger is the discriminated union for routine triggers.
@@ -31,7 +89,7 @@ type RoutineTrigger struct {
 	TimeZone string `json:"time_zone,omitempty"           yaml:"time_zone,omitempty"`
 
 	// timer-only fields
-	At string `json:"at,omitempty"                  yaml:"at,omitempty"`
+	At FlexibleTimestamp `json:"at,omitempty"                  yaml:"at,omitempty"`
 
 	// github_issue fields
 	ConnectionID string `json:"connection_id,omitempty"       yaml:"connection_id,omitempty"`
@@ -74,28 +132,28 @@ type PagedRoutine struct {
 
 // RoutineRun represents a single routine execution record.
 type RoutineRun struct {
-	ID                  string `json:"id,omitempty"`
-	Status              string `json:"status,omitempty"`
-	Phase               string `json:"phase,omitempty"`
-	TriggerType         string `json:"trigger_type,omitempty"`
-	TriggerName         string `json:"trigger_name,omitempty"`
-	AttemptSource       string `json:"attempt_source,omitempty"`
-	ActionType          string `json:"action_type,omitempty"`
-	AgentID             string `json:"agent_id,omitempty"`
-	AgentEndpointID     string `json:"agent_endpoint_id,omitempty"`
-	ConversationID      string `json:"conversation_id,omitempty"`
-	SessionID           string `json:"session_id,omitempty"`
-	TriggeredAt         string `json:"triggered_at,omitempty"`
-	ScheduledFireAt     string `json:"scheduled_fire_at,omitempty"`
-	StartedAt           string `json:"started_at,omitempty"`
-	EndedAt             string `json:"ended_at,omitempty"`
-	DispatchID          string `json:"dispatch_id,omitempty"`
-	ActionCorrelationID string `json:"action_correlation_id,omitempty"`
-	ResponseID          string `json:"response_id,omitempty"`
-	TaskID              string `json:"task_id,omitempty"`
-	ErrorStatusCode     *int32 `json:"error_status_code,omitempty"`
-	ErrorType           string `json:"error_type,omitempty"`
-	ErrorMessage        string `json:"error_message,omitempty"`
+	ID                  string            `json:"id,omitempty"`
+	Status              string            `json:"status,omitempty"`
+	Phase               string            `json:"phase,omitempty"`
+	TriggerType         string            `json:"trigger_type,omitempty"`
+	TriggerName         string            `json:"trigger_name,omitempty"`
+	AttemptSource       string            `json:"attempt_source,omitempty"`
+	ActionType          string            `json:"action_type,omitempty"`
+	AgentID             string            `json:"agent_id,omitempty"`
+	AgentEndpointID     string            `json:"agent_endpoint_id,omitempty"`
+	ConversationID      string            `json:"conversation_id,omitempty"`
+	SessionID           string            `json:"session_id,omitempty"`
+	TriggeredAt         FlexibleTimestamp `json:"triggered_at,omitempty"`
+	ScheduledFireAt     FlexibleTimestamp `json:"scheduled_fire_at,omitempty"`
+	StartedAt           FlexibleTimestamp `json:"started_at,omitempty"`
+	EndedAt             FlexibleTimestamp `json:"ended_at,omitempty"`
+	DispatchID          string            `json:"dispatch_id,omitempty"`
+	ActionCorrelationID string            `json:"action_correlation_id,omitempty"`
+	ResponseID          string            `json:"response_id,omitempty"`
+	TaskID              string            `json:"task_id,omitempty"`
+	ErrorStatusCode     *int32            `json:"error_status_code,omitempty"`
+	ErrorType           string            `json:"error_type,omitempty"`
+	ErrorMessage        string            `json:"error_message,omitempty"`
 }
 
 // PagedRoutineRun represents a page of routine run records.

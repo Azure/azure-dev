@@ -4,15 +4,20 @@
 package cmd
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
-	"github.com/spf13/cobra"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
 
 func TestFindFirstNonFlagArg(t *testing.T) {
@@ -435,6 +440,97 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 	}
 }
 
+// TestParseGlobalFlags_CIDetection verifies that azd auto-enables no-prompt mode when running in a
+// CI/CD environment, while still honoring explicit flag/env-var opt-outs.
+func TestParseGlobalFlags_CIDetection(t *testing.T) {
+	tests := []struct {
+		name             string
+		args             []string
+		envVars          map[string]string
+		expectedNoPrompt bool
+	}{
+		{
+			name:             "no CI, no flag -> interactive",
+			args:             []string{"up"},
+			envVars:          map[string]string{},
+			expectedNoPrompt: false,
+		},
+		{
+			name:             "Azure Pipelines (TF_BUILD) auto no-prompt",
+			args:             []string{"up"},
+			envVars:          map[string]string{"TF_BUILD": "true"},
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "GitHub Actions auto no-prompt",
+			args:             []string{"provision"},
+			envVars:          map[string]string{"GITHUB_ACTIONS": "true"},
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "generic CI var auto no-prompt",
+			args:             []string{"deploy"},
+			envVars:          map[string]string{"CI": "1"},
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "CI but --no-prompt=false forces interactive",
+			args:             []string{"--no-prompt=false", "up"},
+			envVars:          map[string]string{"GITHUB_ACTIONS": "true"},
+			expectedNoPrompt: false,
+		},
+		{
+			name:             "CI but AZD_NON_INTERACTIVE=false forces interactive",
+			args:             []string{"up"},
+			envVars:          map[string]string{"GITHUB_ACTIONS": "true", "AZD_NON_INTERACTIVE": "false"},
+			expectedNoPrompt: false,
+		},
+		{
+			// A typo/invalid value must NOT suppress CI auto-detection: it is ignored, so
+			// auto no-prompt still applies and CI stays deterministic (regression for the
+			// envVarPresent-before-ParseBool bug).
+			name:             "CI with invalid AZD_NON_INTERACTIVE still auto no-prompt",
+			args:             []string{"up"},
+			envVars:          map[string]string{"GITHUB_ACTIONS": "true", "AZD_NON_INTERACTIVE": "yes"},
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "CI and --no-prompt keeps no-prompt",
+			args:             []string{"--no-prompt", "up"},
+			envVars:          map[string]string{"GITHUB_ACTIONS": "true"},
+			expectedNoPrompt: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Establish a deterministic baseline: no agent and no CI env vars.
+			clearAgentEnvVarsForTest(t)
+			agentdetect.ResetDetection()
+
+			if !tt.expectedNoPrompt && len(tt.envVars) == 0 {
+				if agentdetect.GetCallingAgent().Detected {
+					t.Skip("skipping: parent process detection found an agent")
+				}
+				agentdetect.ResetDetection()
+			}
+
+			for k, v := range tt.envVars {
+				t.Setenv(k, v)
+			}
+
+			opts := &internal.GlobalCommandOptions{}
+			err := ParseGlobalFlags(tt.args, opts)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.expectedNoPrompt, opts.NoPrompt,
+				"NoPrompt should be %v for test case: %s", tt.expectedNoPrompt, tt.name)
+
+			agentdetect.ResetDetection()
+		})
+	}
+}
+
 func TestParseGlobalFlags_NonInteractiveAliasAndEnvVar(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -792,4 +888,73 @@ func TestParseGlobalFlags_OutputAttachedShortForm(t *testing.T) {
 			require.NoError(t, err, "ParseGlobalFlags must not error for args: %v", tc.args)
 		})
 	}
+}
+
+func Test_PromptForExtensionChoice_Single(t *testing.T) {
+	t.Parallel()
+	ext := &extensions.ExtensionMetadata{Id: "my.ext", DisplayName: "My Ext"}
+	result, err := promptForExtensionChoice(
+		t.Context(), mockinput.NewMockConsole(),
+		[]*extensions.ExtensionMetadata{ext},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "my.ext", result.Id)
+}
+
+func Test_PromptForExtensionChoice_Multiple_SelectFirst(t *testing.T) {
+	t.Parallel()
+	exts := []*extensions.ExtensionMetadata{
+		{Id: "ext.a", DisplayName: "Ext A", Source: "s", Description: "A"},
+		{Id: "ext.b", DisplayName: "Ext B", Source: "s", Description: "B"},
+	}
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).Respond(0)
+	result, err := promptForExtensionChoice(t.Context(), console, exts)
+	require.NoError(t, err)
+	assert.Equal(t, "ext.a", result.Id)
+}
+
+func Test_PromptForExtensionChoice_Multiple_SelectSecond(t *testing.T) {
+	t.Parallel()
+	exts := []*extensions.ExtensionMetadata{
+		{Id: "ext.a", DisplayName: "Ext A", Source: "s", Description: "A"},
+		{Id: "ext.b", DisplayName: "Ext B", Source: "s", Description: "B"},
+	}
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).Respond(1)
+	result, err := promptForExtensionChoice(t.Context(), console, exts)
+	require.NoError(t, err)
+	assert.Equal(t, "ext.b", result.Id)
+}
+
+func Test_PromptForExtensionChoice_Multiple_Error(t *testing.T) {
+	t.Parallel()
+	exts := []*extensions.ExtensionMetadata{
+		{Id: "ext.a", DisplayName: "Ext A", Source: "s", Description: "A"},
+		{Id: "ext.b", DisplayName: "Ext B", Source: "s", Description: "B"},
+	}
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).
+		RespondFn(func(_ input.ConsoleOptions) (any, error) { return 0, fmt.Errorf("cancelled") })
+	_, err := promptForExtensionChoice(t.Context(), console, exts)
+	require.Error(t, err)
+}
+
+func Test_TryAutoInstall_NoAnnotation(t *testing.T) {
+	t.Parallel()
+	cmd := &cobra.Command{Use: "root"}
+	container := ioc.NewNestedContainer(nil)
+	result := tryAutoInstallForPartialNamespace(t.Context(), container, cmd, nil)
+	assert.False(t, result)
+}
+
+func Test_TryAutoInstall_HasSubcommand(t *testing.T) {
+	t.Parallel()
+	root := &cobra.Command{Use: "azd"}
+	child := &cobra.Command{Use: "deploy"}
+	root.AddCommand(child)
+	container := ioc.NewNestedContainer(nil)
+	// The "deploy" command already exists as sub-command, so partial namespace shouldn't trigger
+	result := tryAutoInstallForPartialNamespace(t.Context(), container, root, []string{"deploy"})
+	assert.False(t, result)
 }

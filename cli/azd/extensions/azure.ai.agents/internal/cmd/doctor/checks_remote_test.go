@@ -12,38 +12,35 @@ import (
 
 // ---- NewRemoteChecks contract ----
 
-// TestNewRemoteChecks_HasAuthFoundryEndpointRBACAgentStatusIdentityRolesConnections
-// pins the current shape of the remote chain: exactly six checks,
+// TestNewRemoteChecks_HasAuthFoundryEndpointRBACAgentStatusConnections
+// pins the current shape of the remote chain: exactly five checks,
 // in the order `remote.auth` → `remote.foundry-endpoint` →
-// `remote.rbac` → `remote.agent-status` → `remote.agent-identity-roles`
-// → `remote.connections`, all with Remote=true. The ordering matters
-// because `remote.foundry-endpoint` skip-cascades against
-// `remote.auth`'s prior Result, `remote.rbac` skip-cascades against
-// `remote.auth` (but NOT `remote.foundry-endpoint`, per the design's
-// dependency matrix — RBAC reads ARM, not the data plane),
+// `remote.rbac` → `remote.agent-status` → `remote.connections`, all
+// with Remote=true. The ordering matters because
+// `remote.foundry-endpoint` skip-cascades against `remote.auth`'s
+// prior Result, `remote.rbac` skip-cascades against `remote.auth`
+// (but NOT `remote.foundry-endpoint`, per the design's dependency
+// matrix — RBAC reads ARM, not the data plane),
 // `remote.agent-status` skip-cascades against `remote.auth` +
 // `remote.foundry-endpoint` (Reader-level Foundry call, deliberately
-// bypasses RBAC), `remote.agent-identity-roles` cascades against
-// `remote.agent-status` Pass so the per-agent role enumeration only
-// runs against agents the previous check confirmed active, and
-// `remote.connections` cascades against `remote.auth` +
-// `remote.foundry-endpoint` plus `state.HasConnections` because it
-// lists Foundry connections via the data plane. Any future
+// bypasses RBAC), and `remote.connections` cascades against
+// `remote.auth` + `remote.foundry-endpoint` plus `state.HasConnections`
+// because it lists Foundry connections via the data plane. Any future
 // re-ordering or insertion has to come through this assertion.
 //
-// Note: a `remote.model-deployments` check used to sit between
-// agent-identity-roles and connections; it was removed pending a
-// redesign because its comparison was incorrect — the manifest's
-// `resources[].name` is a logical alias, not a Foundry deployment
-// name.
-func TestNewRemoteChecks_HasAuthFoundryEndpointRBACAgentStatusIdentityRolesConnections(t *testing.T) {
+// Note: a `remote.agent-identity-roles` check used to sit between
+// agent-status and connections; it was removed because the Foundry
+// service now grants the per-agent identity its permissions internally
+// (no explicit ARM role assignment), so enumerating ARM role
+// assignments produced false failures.
+func TestNewRemoteChecks_HasAuthFoundryEndpointRBACAgentStatusConnections(t *testing.T) {
 	t.Parallel()
 
 	got := NewRemoteChecks(Dependencies{})
 
-	require.Len(t, got, 6,
+	require.Len(t, got, 5,
 		"NewRemoteChecks should contain auth, foundry-endpoint, rbac, agent-status, "+
-			"agent-identity-roles, and connections today")
+			"and connections today")
 	require.Equal(t, "remote.auth", got[0].ID)
 	require.Equal(t, "authentication", got[0].Name)
 	require.True(t, got[0].Remote, "remote.auth must declare Remote=true")
@@ -60,14 +57,10 @@ func TestNewRemoteChecks_HasAuthFoundryEndpointRBACAgentStatusIdentityRolesConne
 	require.Equal(t, "Hosted agents are active", got[3].Name)
 	require.True(t, got[3].Remote, "remote.agent-status must declare Remote=true")
 	require.NotNil(t, got[3].Fn, "remote.agent-status must have a non-nil Fn")
-	require.Equal(t, "remote.agent-identity-roles", got[4].ID)
-	require.Equal(t, "Agent identity role assignments", got[4].Name)
-	require.True(t, got[4].Remote, "remote.agent-identity-roles must declare Remote=true")
-	require.NotNil(t, got[4].Fn, "remote.agent-identity-roles must have a non-nil Fn")
-	require.Equal(t, "remote.connections", got[5].ID)
-	require.Equal(t, "Manifest connections exist on Foundry project", got[5].Name)
-	require.True(t, got[5].Remote, "remote.connections must declare Remote=true")
-	require.NotNil(t, got[5].Fn, "remote.connections must have a non-nil Fn")
+	require.Equal(t, "remote.connections", got[4].ID)
+	require.Equal(t, "Manifest connections exist on Foundry project", got[4].Name)
+	require.True(t, got[4].Remote, "remote.connections must declare Remote=true")
+	require.NotNil(t, got[4].Fn, "remote.connections must have a non-nil Fn")
 }
 
 // TestNewLocalAndRemoteChecks_ProductionCompositionLocalsFirst pins the

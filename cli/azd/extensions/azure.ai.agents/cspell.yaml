@@ -4,6 +4,10 @@ words:
   - tavily
   - tvly
   - conncmd
+  # Contributors
+  - harsheet
+  # Terms
+  - Reprompt
   # Azure region names
   - australiaeast
   - brazilsouth
@@ -13,6 +17,7 @@ words:
   - germanywestcentral
   - italynorth
   - japaneast
+  - japanwest
   - koreacentral
   - northcentralus
   - norwayeast
@@ -23,12 +28,18 @@ words:
   - southindia
   - spaincentral
   - switzerlandnorth
+  - switzerlandwest
   - uaenorth
   - uksouth
+  - ukwest
   - westeurope
+  - westcentralus
   # Project terms
   - ABAC
+  - abbrs
   - acrpush
+  - alnum
+  - foundryproject
   - agentignore
   - ADLS
   - agentserver
@@ -38,6 +49,8 @@ words:
   - aoai
   - authorizationfailed
   - azdaiagent
+  - azuresdk
+  - bicepless
   - CLIENTSECRET
   - curr
   - dataagent
@@ -53,18 +66,23 @@ words:
   - mcpservertoolalwaysrequireapprovalmode
   - mcpservertoolneverrequireapprovalmode
   - mcpservertoolspecifyapprovalmode
+  - purgeable
   - mypy
   - myregistry
   - normalises
+  - ondisk
   - openapitool
   - posixpath
+  - projectconfig
   - projectpkg
   - protocolversionrecord
   - Qdrant
   - schedulerun
   - Toolsets
   - underscoped
+  - unparseable
   - Vnext
+  - VOICELIVE
   - webp
   # Doctor / next-step terms
   - nextstep
@@ -81,8 +99,30 @@ words:
   - deepseek
   - ttfb
   - Bhadauria
+  - ensurepip
+  # Live E2E (Tier 2) Go driver
+  - creack
+  - elive
+  - testdir
   # Test infrastructure
   - recordproxy
+  # Activity protocol local run (Playground)
+  - agentsplayground
+  - winget
+  - ECONNREFUSED
+  - wsae
+  - WSAECONNREFUSED
+  # Activity protocol / Teams bot terms
+  - armbotservice
+  - botservice
+  - Azurebot
+  - idempotently
+  - sideload
+  - sideloading
+  - microsoftteams
+  - upsert
+  - m365agentstoolkit
+  - atk
   # Managed agent (Foundry PES / vienna harness) terms
   - vienna
   - azureml

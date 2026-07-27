@@ -194,7 +194,7 @@ func applyUpdateFlags(existing *routines.Routine, c routineUpdateChanges) (int, 
 		if triggerType != "timer" {
 			return 0, wrongTrigger("--at", "timer")
 		}
-		trigger.At = c.at
+		trigger.At = routines.FlexibleTimestamp(c.at)
 		changed++
 	}
 	if c.cronChanged {

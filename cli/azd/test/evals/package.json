@@ -1,0 +1,22 @@
+{
+  "name": "evals",
+  "version": "1.0.0",
+  "private": true,
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "vally eval -e ./eval.yaml"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@microsoft/vally-cli": "^0.10.0"
+  },
+  "devDependencies": {
+    "@microsoft/vally": "^0.10.0",
+    "@types/node": "^24.13.3",
+    "typescript": "^7.0.2"
+  }
+}

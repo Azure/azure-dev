@@ -385,7 +385,7 @@ This guide provides a comprehensive list of all extension features and how to te
 **How to test**:
 - Command Palette → "Azure Developer CLI: Install CLI"
 - Follow installation prompts for your OS
-- Verify installation with `azd --version` in terminal
+- Verify installation with `azd version` in terminal
 - Should show version number
 
 ### 34. Login

@@ -30,6 +30,7 @@ const (
 // Error codes for toolbox operations.
 const (
 	CodeToolboxNotFound               = "toolbox_not_found"
+	CodeToolboxVersionNotFound        = "toolbox_version_not_found"
 	CodeInvalidToolboxName            = "invalid_toolbox_name"
 	CodeMissingUpdateField            = "missing_update_field"
 	CodeDefaultVersionDelete          = "default_version_delete"

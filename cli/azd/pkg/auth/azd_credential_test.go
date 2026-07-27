@@ -14,8 +14,10 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
-	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 )
 
 type sequentialSilentClient struct {
@@ -211,4 +213,49 @@ func TestAzdCredential_GetToken_LogsSuccessSnapshotAfterFailure(t *testing.T) {
 		output,
 		"msal-cache[after-first-acquire-token-silent]: refresh_tokens=1 access_tokens=1 accounts=1",
 	))
+}
+
+func TestAzdCredential_GetToken_Success(t *testing.T) {
+	// This tests the happy path — AcquireTokenSilent succeeds
+	expires := time.Now().Add(time.Hour).UTC()
+	pc := &silentSuccessClient{
+		result: public.AuthResult{
+			AccessToken: "test-token-123",
+			ExpiresOn:   expires,
+		},
+	}
+
+	account := public.Account{HomeAccountID: "h1"}
+	cred := newAzdCredential(
+		pc, &account, cloud.AzurePublic(), "", nil,
+	)
+
+	tok, err := cred.GetToken(t.Context(), policy.TokenRequestOptions{
+		Scopes: []string{"scope1"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "test-token-123", tok.Token)
+	assert.Equal(t, expires, tok.ExpiresOn)
+}
+
+func TestAzdCredential_GetToken_WithTenantID(t *testing.T) {
+	pc := &silentSuccessClient{
+		result: public.AuthResult{
+			AccessToken: "tenant-tok",
+			ExpiresOn:   time.Now().Add(time.Hour).UTC(),
+		},
+	}
+
+	account := public.Account{HomeAccountID: "h1"}
+	cred := newAzdCredential(
+		pc, &account, cloud.AzurePublic(), "default-t", nil,
+	)
+
+	// Override with request-level tenant
+	tok, err := cred.GetToken(t.Context(), policy.TokenRequestOptions{
+		Scopes:   []string{"scope1"},
+		TenantID: "override-t",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "tenant-tok", tok.Token)
 }

@@ -9,12 +9,17 @@
 package grpcserver
 
 import (
+	"context"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 )
 
 func Test_convertToProtoOptions(t *testing.T) {
@@ -385,4 +390,200 @@ func Test_convertFromProtoParameters(t *testing.T) {
 			tt.verify(t, result)
 		})
 	}
+}
+
+func Test_convertFromProtoPreviewResultWithChanges(t *testing.T) {
+	result := convertFromProtoPreviewResult(&azdext.ProvisioningPreviewResult{
+		Preview: &azdext.ProvisioningDeploymentPreview{
+			Summary: "2 changes",
+			Changes: []*azdext.ProvisioningDeploymentPreviewChange{
+				{
+					ChangeType:   "Create",
+					ResourceId:   "/subscriptions/s/resourceGroups/rg",
+					ResourceType: "Microsoft.Resources/resourceGroups",
+					Name:         "rg",
+				},
+				nil, // nil entries are skipped
+				{
+					ChangeType:   "Delete",
+					ResourceType: "Microsoft.ContainerRegistry/registries",
+					Name:         "cr",
+				},
+			},
+		},
+	})
+
+	require.NotNil(t, result.Preview)
+	assert.Equal(t, "2 changes", result.Preview.Status)
+	require.Len(t, result.Preview.Properties.Changes, 2, "nil change entries must be skipped")
+
+	first := result.Preview.Properties.Changes[0]
+	assert.Equal(t, provisioning.ChangeTypeCreate, first.ChangeType)
+	assert.Equal(t, "Microsoft.Resources/resourceGroups", first.ResourceType)
+	assert.Equal(t, "rg", first.Name)
+	assert.Equal(t, "/subscriptions/s/resourceGroups/rg", first.ResourceId.Id)
+
+	assert.Equal(t, provisioning.ChangeTypeDelete, result.Preview.Properties.Changes[1].ChangeType)
+}
+
+func TestPromptService_PromptSubscription_Success(t *testing.T) {
+	t.Parallel()
+	mock := &mockPromptService{
+		promptSubscriptionFn: func(ctx context.Context, opts *prompt.SelectOptions) (*account.Subscription, error) {
+			return &account.Subscription{
+				Id:                 "sub-123",
+				Name:               "My Sub",
+				TenantId:           "tenant-1",
+				UserAccessTenantId: "user-tenant-1",
+				IsDefault:          true,
+			}, nil
+		},
+	}
+	svc := newTestPromptService(mock, false)
+	resp, err := svc.PromptSubscription(t.Context(), &azdext.PromptSubscriptionRequest{
+		Message: "select subscription",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "sub-123", resp.Subscription.Id)
+	require.Equal(t, "My Sub", resp.Subscription.Name)
+	require.True(t, resp.Subscription.IsDefault)
+}
+
+func TestPromptService_PromptLocation_Success(t *testing.T) {
+	t.Parallel()
+	mock := &mockPromptService{
+		promptLocationFn: func(
+			ctx context.Context, ac *prompt.AzureContext, opts *prompt.SelectOptions,
+		) (*account.Location, error) {
+			return &account.Location{
+				Name:                "westus2",
+				DisplayName:         "West US 2",
+				RegionalDisplayName: "(US) West US 2",
+			}, nil
+		},
+	}
+	svc := newTestPromptService(mock, false)
+	resp, err := svc.PromptLocation(t.Context(), &azdext.PromptLocationRequest{
+		AzureContext: &azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				SubscriptionId: "sub-123",
+				TenantId:       "t-1",
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "westus2", resp.Location.Name)
+	require.Equal(t, "West US 2", resp.Location.DisplayName)
+}
+
+func TestPromptService_PromptLocation_WithAllowedLocations(t *testing.T) {
+	t.Parallel()
+	mock := &mockPromptService{
+		promptLocationFn: func(
+			ctx context.Context, ac *prompt.AzureContext, opts *prompt.SelectOptions,
+		) (*account.Location, error) {
+			return &account.Location{Name: "eastus"}, nil
+		},
+	}
+	svc := newTestPromptService(mock, false)
+	resp, err := svc.PromptLocation(t.Context(), &azdext.PromptLocationRequest{
+		AzureContext: &azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				SubscriptionId: "sub-123",
+				TenantId:       "t-1",
+			},
+		},
+		AllowedLocations: []string{"eastus", "westus"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "eastus", resp.Location.Name)
+}
+
+func TestPromptService_PromptResourceGroup_Success(t *testing.T) {
+	t.Parallel()
+	mock := &mockPromptService{
+		promptResourceGroupFn: func(
+			ctx context.Context, ac *prompt.AzureContext, opts *prompt.ResourceGroupOptions,
+		) (*azapi.ResourceGroup, error) {
+			return &azapi.ResourceGroup{
+				Id:       "/subscriptions/sub/resourceGroups/rg-1",
+				Name:     "rg-1",
+				Location: "westus2",
+			}, nil
+		},
+	}
+	svc := newTestPromptService(mock, false)
+	resp, err := svc.PromptResourceGroup(t.Context(), &azdext.PromptResourceGroupRequest{
+		AzureContext: &azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				SubscriptionId: "sub-123",
+				TenantId:       "t-1",
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "rg-1", resp.ResourceGroup.Name)
+}
+
+func TestPromptService_PromptSubscriptionResource_Success(t *testing.T) {
+	t.Parallel()
+	mock := &mockPromptService{
+		promptSubscriptionResourceFn: func(
+			ctx context.Context, ac *prompt.AzureContext, opts prompt.ResourceOptions,
+		) (*azapi.ResourceExtended, error) {
+			return &azapi.ResourceExtended{
+				Resource: azapi.Resource{
+					Id: "/sub/res-1", Name: "res-1",
+					Type: "Microsoft.Web/sites", Location: "eastus",
+				},
+				Kind: "app",
+			}, nil
+		},
+	}
+	svc := newTestPromptService(mock, false)
+	resp, err := svc.PromptSubscriptionResource(t.Context(), &azdext.PromptSubscriptionResourceRequest{
+		AzureContext: &azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				SubscriptionId: "sub-123",
+				TenantId:       "t-1",
+			},
+		},
+		Options: &azdext.PromptResourceOptions{
+			ResourceType: "Microsoft.Web/sites",
+			SelectOptions: &azdext.PromptResourceSelectOptions{
+				AllowNewResource: new(false),
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "res-1", resp.Resource.Name)
+	require.Equal(t, "app", resp.Resource.Kind)
+}
+
+func TestPromptService_PromptResourceGroupResource_Success(t *testing.T) {
+	t.Parallel()
+	mock := &mockPromptService{
+		promptResourceGroupResourceFn: func(
+			ctx context.Context, ac *prompt.AzureContext, opts prompt.ResourceOptions,
+		) (*azapi.ResourceExtended, error) {
+			return &azapi.ResourceExtended{
+				Resource: azapi.Resource{
+					Id: "/sub/rg/res-2", Name: "res-2",
+					Type: "Microsoft.Storage/storageAccounts", Location: "westus",
+				},
+				Kind: "StorageV2",
+			}, nil
+		},
+	}
+	svc := newTestPromptService(mock, false)
+	resp, err := svc.PromptResourceGroupResource(t.Context(), &azdext.PromptResourceGroupResourceRequest{
+		AzureContext: &azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				SubscriptionId: "sub-123",
+				TenantId:       "t-1",
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "res-2", resp.Resource.Name)
 }

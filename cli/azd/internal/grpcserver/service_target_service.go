@@ -122,7 +122,6 @@ func (s *ServiceTargetService) onRegisterRequest(
 		console input.Console,
 		prompter prompt.Prompter,
 	) project.ServiceTarget {
-		env, _ := s.lazyEnv.GetValue()
 		return project.NewExternalServiceTarget(
 			hostType,
 			project.ServiceTargetKind(hostType),
@@ -130,7 +129,7 @@ func (s *ServiceTargetService) onRegisterRequest(
 			broker,
 			console,
 			prompter,
-			env,
+			s.lazyEnv,
 		)
 	})
 

@@ -5,11 +5,12 @@ Usage
   azd tool [command]
 
 Available Commands
-  check  	: Check for tool updates.
-  install	: Install specified tools.
-  list   	: List all tools with status.
-  show   	: Show details for a specific tool.
-  upgrade	: Upgrade installed tools.
+  check    	: Check for tool upgrades.
+  install  	: Install specified tools.
+  list     	: List all tools with status.
+  show     	: Show details for a specific tool.
+  uninstall	: Uninstall installed tools.
+  upgrade  	: Upgrade installed tools.
 
 Global Flags
     -C, --cwd string         	: Sets the current working directory.
@@ -17,7 +18,7 @@ Global Flags
         --docs               	: Opens the documentation for azd tool in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for tool.
-        --no-prompt          	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+        --no-prompt          	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically. Automatically enabled when azd detects a CI/CD or AI-agent environment; set AZD_NON_INTERACTIVE=false to opt out of that automatic enablement.
 
 Use azd tool [command] --help to view examples and more information about a specific command.
 

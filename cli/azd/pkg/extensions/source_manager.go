@@ -88,7 +88,7 @@ func (sm *SourceManager) Get(ctx context.Context, name string) (*SourceConfig, e
 
 // Add adds a new extension source.
 func (sm *SourceManager) Add(ctx context.Context, name string, source *SourceConfig) error {
-	newKey := normalizeKey(name)
+	newKey := NormalizeSourceKey(name)
 
 	if strings.EqualFold(newKey, BundleSourceName) {
 		return fmt.Errorf(
@@ -113,7 +113,7 @@ func (sm *SourceManager) Add(ctx context.Context, name string, source *SourceCon
 
 // Remove removes an extension source.
 func (sm *SourceManager) Remove(ctx context.Context, name string) error {
-	name = normalizeKey(name)
+	name = NormalizeSourceKey(name)
 
 	_, err := sm.Get(ctx, name)
 	if err != nil && errors.Is(err, ErrSourceNotFound) {
@@ -247,8 +247,8 @@ func (sm *SourceManager) addInternal(source *SourceConfig) error {
 	return nil
 }
 
-// normalizeKey normalizes a key for use in the configuration.
-func normalizeKey(key string) string {
+// NormalizeSourceKey normalizes an extension source name for use in configuration keys.
+func NormalizeSourceKey(key string) string {
 	key = strings.ToLower(key)
 	key = strings.ReplaceAll(key, " ", "-")
 

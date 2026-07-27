@@ -202,13 +202,13 @@ func TestPrintAllNext(t *testing.T) {
 			// deploying. PrintAllNext must surface all three.
 			suggestions: []Suggestion{
 				{
-					Command:     "edit agent.yaml: replace {{TOOLBOX_ENDPOINT}} with the actual value",
-					Description: "agent.yaml has unresolved manifest placeholders",
+					Command:     "edit azure.yaml: replace {{TOOLBOX_ENDPOINT}} with the actual value",
+					Description: "azure.yaml has unresolved manifest placeholders",
 					Priority:    5,
 				},
 				{
 					Command:     "azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT <value>",
-					Description: "supply the agent.yaml variable",
+					Description: "supply the azure.yaml variable",
 					Priority:    6,
 				},
 				{
@@ -220,11 +220,11 @@ func TestPrintAllNext(t *testing.T) {
 			},
 			want: "\n" +
 				"Next:\n" +
-				"  edit agent.yaml: replace {{TOOLBOX_ENDPOINT}} with the actual value\n" +
-				"  agent.yaml has unresolved manifest placeholders\n" +
+				"  edit azure.yaml: replace {{TOOLBOX_ENDPOINT}} with the actual value\n" +
+				"  azure.yaml has unresolved manifest placeholders\n" +
 				"\n" +
 				"  azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT <value>\n" +
-				"  supply the agent.yaml variable\n" +
+				"  supply the azure.yaml variable\n" +
 				"\n" +
 				"  azd deploy\n" +
 				"  when ready to deploy to Azure\n",
@@ -234,9 +234,9 @@ func TestPrintAllNext(t *testing.T) {
 			// Worst-case shape from ResolveAfterInit when both
 			// maxFixupLines caps are saturated.
 			suggestions: []Suggestion{
-				{Command: "edit agent.yaml: replace {{A}} with the actual value", Description: "p1", Priority: 5},
-				{Command: "edit agent.yaml: replace {{B}} with the actual value", Description: "p1", Priority: 6},
-				{Command: "edit agent.yaml: replace {{C}} with the actual value", Description: "p1", Priority: 7},
+				{Command: "edit azure.yaml: replace {{A}} with the actual value", Description: "p1", Priority: 5},
+				{Command: "edit azure.yaml: replace {{B}} with the actual value", Description: "p1", Priority: 6},
+				{Command: "edit azure.yaml: replace {{C}} with the actual value", Description: "p1", Priority: 7},
 				{Command: "azd env set FOO <value>", Description: "p2", Priority: 8},
 				{Command: "azd env set BAR <value>", Description: "p2", Priority: 9},
 				{Command: "azd env set BAZ <value>", Description: "p2", Priority: 10},
@@ -244,13 +244,13 @@ func TestPrintAllNext(t *testing.T) {
 			},
 			want: "\n" +
 				"Next:\n" +
-				"  edit agent.yaml: replace {{A}} with the actual value\n" +
+				"  edit azure.yaml: replace {{A}} with the actual value\n" +
 				"  p1\n" +
 				"\n" +
-				"  edit agent.yaml: replace {{B}} with the actual value\n" +
+				"  edit azure.yaml: replace {{B}} with the actual value\n" +
 				"  p1\n" +
 				"\n" +
-				"  edit agent.yaml: replace {{C}} with the actual value\n" +
+				"  edit azure.yaml: replace {{C}} with the actual value\n" +
 				"  p1\n" +
 				"\n" +
 				"  azd env set FOO <value>\n" +
@@ -425,7 +425,7 @@ func TestFormatNextForNote_HostArtifactAlignment(t *testing.T) {
 
 // TestFormatNext_HighlightsOnlyAzdCommands verifies that runnable azd
 // commands are rendered in the highlight color while non-command pointers
-// ("see ..." / "edit agent.yaml: ...") and descriptions stay plain.
+// ("see ..." / "edit azure.yaml: ...") and descriptions stay plain.
 func TestFormatNext_HighlightsOnlyAzdCommands(t *testing.T) {
 	// Not parallel: toggles the process-global color.NoColor. Go runs
 	// non-parallel tests to completion before parallel tests resume, so

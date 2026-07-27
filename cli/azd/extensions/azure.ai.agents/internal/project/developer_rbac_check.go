@@ -45,6 +45,16 @@ const (
 
 	// AI-specific roles that grant agent management access.
 	roleAzureAIDeveloper = "64702f94-c441-49e6-a78b-ef80e0188fee"
+
+	// Cognitive Services User: backward-compat alias for Foundry User.
+	// Assigned by older Bicep provisions (AZURE_PRINCIPAL_ID flow); has the same
+	// Microsoft.CognitiveServices/* dataActions as Foundry User and is accepted as equivalent.
+	roleCognitiveServicesUser = "a97b65f3-24c7-4388-baec-2e87135dc908"
+
+	// Foundry Owner: full Foundry project management + Microsoft.CognitiveServices/* dataActions.
+	// The code comment on sufficientAIUserRoles already recommends this role; include it so users
+	// with Foundry Owner are not falsely flagged as missing the data-plane role.
+	roleFoundryOwner = "c883944f-8b7b-4483-af10-35834be79c4a"
 )
 
 // sufficientACRRoles lists every role that grants enough ACR access to build
@@ -66,18 +76,24 @@ var sufficientACRAbacRoles = []string{
 	roleContainerRegistryRepositoryContributor, // superset of RepositoryWriter
 }
 
-// sufficientAIUserRoles lists every role that grants enough Foundry Project
-// access to create and run agents.
+// sufficientAIUserRoles lists roles whose dataActions cover Microsoft.CognitiveServices/*,
+// specifically the AIServices namespace required for Foundry agents (agents/write).
+//
+// Excluded intentionally:
+//   - roleOwner / roleContributor: management-plane only, zero dataActions
+//   - roleAzureAIDeveloper: dataActions cover only OpenAI/Speech/ContentSafety/MaaS,
+//     NOT the AIServices.* namespace used by Foundry agents; Azure docs state
+//     "For Foundry project access, use the Foundry User or Foundry Owner roles instead"
 var sufficientAIUserRoles = []string{
-	roleOwner,
-	roleContributor,
-	roleAzureAIUser,
-	roleAzureAIDeveloper,
+	roleAzureAIUser,           // 53ca6127-... Foundry User: dataActions Microsoft.CognitiveServices/*
+	roleCognitiveServicesUser, // a97b65f3-... backward compat: same dataActions, assigned by older Bicep
+	roleAzureAIProjectManager, // eadc314b-... Foundry Project Manager: dataActions Microsoft.CognitiveServices/*
+	roleFoundryOwner,          // c883944f-... Foundry Owner: dataActions Microsoft.CognitiveServices/*
 }
 
 // sufficientRoleAssignWriteRoles lists every role that grants
 // Microsoft.Authorization/roleAssignments/write on Azure Resource Manager.
-// Required for the postdeploy hook to assign Azure AI User to agent service principals.
+// Required for the postdeploy hook to assign Foundry User to agent service principals.
 // Note: roleContributor is intentionally excluded — Contributor's notActions explicitly
 // block Microsoft.Authorization/*/Write.
 var sufficientRoleAssignWriteRoles = []string{
@@ -86,11 +102,12 @@ var sufficientRoleAssignWriteRoles = []string{
 	roleRBACAdministrator,
 	roleAzureAIProjectManager,
 	roleAzureAIAccountOwner,
+	roleFoundryOwner, // c883944f-...: includes Microsoft.Authorization/roleAssignments/write
 }
 
 // CheckDeveloperRBAC verifies that the currently authenticated developer has the required
 // RBAC roles for deploying hosted agents:
-//   - Azure AI User on the Foundry Project (to create and run agents)
+//   - Foundry User on the Foundry Project (to create and run agents)
 //   - Container Registry Tasks Contributor OR Container Registry Repository Contributor
 //     on the ACR (to build images via remote build and push container images)
 //
@@ -168,17 +185,17 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 	principalID := userProfile.Id
 	fmt.Printf("  Developer: %s (%s)\n", userProfile.DisplayName, principalID)
 
-	// Check 1: Azure AI User (or superset role) on Foundry Project scope.
+	// Check 1: Foundry User (or superset role) on Foundry Project scope.
 	hasAIAccess, err := hasAnyRoleAssignment(ctx, cred, principalID, sufficientAIUserRoles, info.ProjectScope)
 	if err != nil {
 		fmt.Printf("  ⚠ Could not check AI User role: %s\n", err)
 	} else if !hasAIAccess {
-		// Attempt to auto-assign Azure AI User to the developer. This succeeds when the
+		// Attempt to auto-assign Foundry User to the developer. This succeeds when the
 		// developer has Owner, User Access Administrator, or RBAC Administrator.
-		fmt.Println("  Azure AI User role not found — attempting to auto-assign...")
+		fmt.Println("  Foundry User role not found — attempting to auto-assign...")
 		if _, assignErr := assignRoleToIdentity(
 			ctx, cred, principalID, roleAzureAIUser,
-			"Azure AI User → Foundry Project", info.ProjectScope,
+			"Foundry User → Foundry Project", info.ProjectScope,
 			armauthorization.PrincipalTypeUser,
 		); assignErr != nil {
 			// Warn rather than fail hard on 403 — deployment can proceed, but the developer
@@ -186,42 +203,43 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 			if respErr, ok := errors.AsType[*azcore.ResponseError](assignErr); ok &&
 				respErr.StatusCode == http.StatusForbidden {
 				fmt.Printf("%s\n", output.WithWarningFormat(
-					"Your identity (%s) does not have the 'Azure AI User' role on the Foundry Project %s/%s "+
+					"Your identity (%s) does not have the 'Foundry User' role on the Foundry Project %s/%s "+
 						"and auto-assign was denied.\n"+
 						"    Ask a subscription Owner or User Access Administrator to assign the role:\n"+
-						"      az role assignment create --assignee %s --role \"Azure AI User\" --scope %q",
+						"      az role assignment create --assignee %s --role "+roleAzureAIUser+
+						" --scope %q  # Foundry User (formerly Azure AI User)",
 					userProfile.DisplayName, info.AccountName, info.ProjectName,
 					principalID, info.ProjectScope,
 				))
 			} else {
-				fmt.Printf("  ⚠ Azure AI User auto-assign failed (non-auth error): %s — continuing\n", assignErr)
+				fmt.Printf("  ⚠ Foundry User auto-assign failed (non-auth error): %s — continuing\n", assignErr)
 			}
 		} else {
-			fmt.Println("  ✓ Azure AI User auto-assigned to developer identity")
+			fmt.Println("  ✓ Foundry User auto-assigned to developer identity")
 		}
 	} else {
-		fmt.Println("  ✓ Azure AI User on Foundry Project")
+		fmt.Println("  ✓ Foundry User on Foundry Project")
 	}
 
 	// Check 2: roleAssignments/write capability on Foundry Project scope.
-	// Required for the postdeploy hook to assign Azure AI User to agent service principals.
+	// Required for the postdeploy hook to assign Foundry User to agent service principals.
 	// Note: Contributor cannot write role assignments (it is excluded from sufficientRoleAssignWriteRoles).
 	hasRoleWrite, err := hasAnyRoleAssignment(ctx, cred, principalID, sufficientRoleAssignWriteRoles, info.ProjectScope)
 	if err != nil {
 		fmt.Printf("  ⚠ Could not check role-assignment-write capability: %s\n", err)
 	} else if !hasRoleWrite {
 		// Warn rather than fail hard: deployment can still proceed, but the postdeploy
-		// step that assigns 'Azure AI User' to agent service principals may return 403.
+		// step that assigns 'Foundry User' to agent service principals may return 403.
 		// Write with warning color so it appears as a yellow warning, not a red error.
 		fmt.Printf("%s\n", output.WithWarningFormat(
 			"Role assignment write not available on Foundry Project %s/%s.\n"+
-				"    The postdeploy step will attempt to assign 'Azure AI User' to agent service principals,\n"+
+				"    The postdeploy step will attempt to assign 'Foundry User' to agent service principals,\n"+
 				"    but may fail with a 403. To grant this permission, assign one of these roles:\n"+
 				"      • Owner\n"+
 				"      • User Access Administrator\n"+
 				"      • Role Based Access Control Administrator\n"+
-				"      • Azure AI Project Manager\n"+
-				"      • Azure AI Account Owner\n"+
+				"      • Foundry Project Manager\n"+
+				"      • Foundry Account Owner\n"+
 				"      az role assignment create --assignee %s "+
 				"--role \"Role Based Access Control Administrator\" --scope %q\n"+
 				"    Or, if roles are managed externally: AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true",

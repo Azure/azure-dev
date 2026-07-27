@@ -16,9 +16,11 @@ func newToolboxSkillCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Manage skill references attached to a toolbox.",
 		Long: `Manage skill references attached to a toolbox.
 
-Each add/remove creates a new immutable version; the toolbox's default
-version is unchanged. Use 'azd ai toolbox publish <toolbox> <version>'
-to promote a version.`,
+Each add/remove creates a new immutable version branched from the toolbox's
+latest version, so sequential operations accumulate. Use --from-version to
+branch from a specific version instead. The toolbox's default version is
+unchanged; use 'azd ai toolbox publish <toolbox> <version>' to promote a
+version.`,
 	}
 	cmd.AddCommand(newToolboxSkillAddCommand(extCtx))
 	cmd.AddCommand(newToolboxSkillRemoveCommand(extCtx))

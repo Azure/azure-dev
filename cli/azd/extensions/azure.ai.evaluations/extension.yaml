@@ -13,7 +13,6 @@ dependencies:
 language: go
 capabilities:
   - custom-commands
-  - lifecycle-events
   - service-target-provider
   - metadata
 providers:

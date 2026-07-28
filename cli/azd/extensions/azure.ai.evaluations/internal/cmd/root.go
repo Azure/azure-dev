@@ -54,5 +54,12 @@ func NewRootCommand() *cobra.Command {
 		newListenCommand(),
 	)
 
+	// The manifest declares the `metadata` capability, which azd uses to
+	// discover this extension's command tree. Without the command registered,
+	// that discovery fails with "unknown command".
+	rootCmd.AddCommand(azdext.NewMetadataCommand("1.0", "azure.ai.evaluations", func() *cobra.Command {
+		return rootCmd
+	}))
+
 	return rootCmd
 }

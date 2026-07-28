@@ -24,6 +24,7 @@ import (
 	osexec "os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -178,6 +179,20 @@ func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...s
 		cmd.Env = os.Environ()
 	}
 	cmd.Env = append(cmd.Env, agentdetect.DisableAgentDetectEnvVar+"=1")
+
+	// Also opt out of CI-based auto no-prompt detection. The functional test suite itself often
+	// runs inside a CI environment (GITHUB_ACTIONS/TF_BUILD/CI/...), which would otherwise make
+	// the child azd process auto-enable --no-prompt mode and stop reading the stdin answers that
+	// stdin-driven tests provide. AZD_NON_INTERACTIVE=false keeps the global no-prompt setting off
+	// so the asker keeps reading piped stdin. (It does not override command-specific
+	// resource.IsRunningOnCI() gates, but those don't affect the stdin-driven prompts under test.)
+	// We only set it when the test hasn't already chosen a value, so tests can still opt into
+	// no-prompt.
+	if !slices.ContainsFunc(cmd.Env, func(e string) bool {
+		return strings.HasPrefix(e, "AZD_NON_INTERACTIVE=")
+	}) {
+		cmd.Env = append(cmd.Env, "AZD_NON_INTERACTIVE=false")
+	}
 
 	// Collect all PATH variables, appending in the order it was added, to form a single PATH variable
 	pathString := ostest.CombinedPaths(cmd.Env)

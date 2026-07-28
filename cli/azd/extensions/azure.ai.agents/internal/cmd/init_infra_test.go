@@ -6,6 +6,7 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -622,6 +623,94 @@ func TestParseInfraProvider(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestEjectInfraAfterInit_ResolvesParentProject(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	projectRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectRoot, "azure.yaml"), []byte(`name: test
+services:
+  ai-project:
+    host: azure.ai.project
+`), 0600))
+	nestedDir := filepath.Join(projectRoot, "src", "agent")
+	require.NoError(t, os.MkdirAll(nestedDir, 0750))
+	t.Chdir(nestedDir)
+
+	withCapturedStdout(t, func() {
+		require.NoError(t, ejectInfraAfterInit("bicep"))
+	})
+
+	assert.FileExists(t, filepath.Join(projectRoot, "infra", "main.bicep"))
+	assert.NoDirExists(t, filepath.Join(nestedDir, "infra"))
+}
+
+func TestInitInfra_StandaloneEjectResolvesParentProject(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	projectRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectRoot, "azure.yaml"), []byte(`name: test
+services:
+  ai-project:
+    host: azure.ai.project
+`), 0600))
+	nestedDir := filepath.Join(projectRoot, "src", "agent")
+	require.NoError(t, os.MkdirAll(nestedDir, 0750))
+	t.Chdir(nestedDir)
+
+	cmd := newInitCommand(&azdext.ExtensionContext{})
+	cmd.SetArgs([]string{"--infra"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	var execErr error
+	withCapturedStdout(t, func() {
+		execErr = cmd.Execute()
+	})
+
+	require.NoError(t, execErr)
+	assert.FileExists(t, filepath.Join(projectRoot, "infra", "main.bicep"))
+	assert.NoDirExists(t, filepath.Join(nestedDir, "infra"))
+}
+
+func TestEjectInfraAfterInit_NoProject(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	t.Chdir(t.TempDir())
+
+	assert.NoError(t, ejectInfraAfterInit("bicep"))
+}
+
+func TestEjectInfraAfterInit_SkipsProjectWithoutFoundryService(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	projectRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectRoot, "azure.yaml"), []byte(`name: test
+services:
+  web:
+    host: containerapp
+`), 0600))
+	t.Chdir(projectRoot)
+
+	assert.NoError(t, ejectInfraAfterInit("bicep"))
+	assert.NoDirExists(t, filepath.Join(projectRoot, "infra"))
+}
+
+func TestEjectInfraAfterInit_PropagatesInvalidFoundryConfiguration(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	projectRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectRoot, "azure.yaml"), []byte(`name: test
+services:
+  first-project:
+    host: azure.ai.project
+  second-project:
+    host: azure.ai.project
+`), 0600))
+	t.Chdir(projectRoot)
+
+	err := ejectInfraAfterInit("bicep")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+	assert.Equal(t, exterrors.CodeInfraEjectMultipleFoundryServices, localErr.Code)
+	assert.NoDirExists(t, filepath.Join(projectRoot, "infra"))
 }
 
 func TestEjectInfra_Terraform_HappyPath_WritesExpectedFiles(t *testing.T) {

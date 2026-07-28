@@ -421,6 +421,79 @@ func TestAgentModelFilter(t *testing.T) {
 	}
 }
 
+type recordingPromptAiModelServer struct {
+	azdext.UnimplementedPromptServiceServer
+	requests []*azdext.PromptAiModelRequest
+}
+
+func (s *recordingPromptAiModelServer) PromptAiModel(
+	_ context.Context,
+	req *azdext.PromptAiModelRequest,
+) (*azdext.PromptAiModelResponse, error) {
+	s.requests = append(s.requests, req)
+	return &azdext.PromptAiModelResponse{
+		Model: &azdext.AiModel{Name: "selected-model"},
+	}, nil
+}
+
+func TestSelectNewModel(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		modelFlag   string
+		wantDefault string
+	}{
+		{
+			name:        "uses default agent model",
+			wantDefault: defaultAgentModel,
+		},
+		{
+			name:        "explicit model wins",
+			modelFlag:   "gpt-5",
+			wantDefault: "gpt-5",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			promptServer := &recordingPromptAiModelServer{}
+			azdClient := newTestAzdClient(
+				t,
+				&testEnvironmentServiceServer{},
+				&testWorkflowServiceServer{},
+				promptServer,
+			)
+			azureContext := &azdext.AzureContext{
+				Scope: &azdext.AzureScope{Location: "eastus"},
+			}
+
+			model, err := selectNewModel(
+				t.Context(),
+				azdClient,
+				azureContext,
+				tt.modelFlag,
+			)
+
+			require.NoError(t, err)
+			require.Equal(t, "selected-model", model.Name)
+			require.Len(t, promptServer.requests, 1)
+
+			req := promptServer.requests[0]
+			require.Equal(t, tt.wantDefault, req.DefaultValue)
+			require.NotNil(t, req.Filter)
+			require.Equal(t, []string{"eastus"}, req.Filter.Locations)
+			require.Equal(
+				t,
+				[]string{agentsV2ModelCapability},
+				req.Filter.Capabilities,
+			)
+		})
+	}
+}
+
 func TestLocationAllowed(t *testing.T) {
 	t.Parallel()
 

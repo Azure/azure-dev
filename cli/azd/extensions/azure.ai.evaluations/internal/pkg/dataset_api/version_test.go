@@ -39,3 +39,30 @@ func TestVersionGreaterIgnoresUnorderable(t *testing.T) {
 	require.False(t, VersionGreater("", "1.0"))
 	require.False(t, VersionGreater("1.0", ""))
 }
+
+// The two upload entry points read their version argument differently, and the
+// difference is the whole point: UploadNewVersion counts from it, UploadVersion
+// writes it. Passing "1.0" to the counting one publishes 2.0, which is not what
+// an author who wrote version: "1.0" asked for.
+func TestNextVersionCountsFromTheArgument(t *testing.T) {
+	if got := NextVersion("1.0"); got != "2.0" {
+		t.Fatalf("NextVersion(1.0) = %q, want 2.0", got)
+	}
+	if got := NextVersion("1"); got != "2.0" {
+		t.Fatalf("NextVersion(1) = %q, want 2.0", got)
+	}
+	// An unknown current version starts the sequence rather than guessing.
+	if got := NextVersion(""); got != "1.0" {
+		t.Fatalf("NextVersion(empty) = %q, want 1.0", got)
+	}
+}
+
+func TestLatestVersionOrdersNumerically(t *testing.T) {
+	got := LatestVersion([]Dataset{{Version: "1.0"}, {Version: "10.0"}, {Version: "2.0"}})
+	if got != "10.0" {
+		t.Fatalf("LatestVersion = %q, want 10.0 (numeric, not lexical)", got)
+	}
+	if LatestVersion(nil) != "" {
+		t.Fatal("LatestVersion(nil) should be empty")
+	}
+}

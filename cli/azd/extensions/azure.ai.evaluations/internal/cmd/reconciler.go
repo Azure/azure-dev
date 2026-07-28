@@ -94,6 +94,28 @@ func (r *evalReconciler) EnsureDataset(
 		dir = filepath.Dir(localPath)
 	}
 
+	// A declared version is the version to publish, not one to count from.
+	// Reaching here means the content differs from what that version holds, so
+	// republishing over it would change a version the author pinned.
+	if decl.Version != "" {
+		ds, err := r.ec.datasetClient.UploadVersion(
+			ctx, decl.Name, decl.Version, dir, ProjectEndpointAPIVersion,
+		)
+		if err != nil {
+			if dataset_api.IsVersionConflict(err) {
+				return "", false, fmt.Errorf(
+					"dataset %q version %s already exists and the local file differs from it. "+
+						"Raise `version:` to publish the change, or drop it to let each "+
+						"deploy take the next version",
+					decl.Name, decl.Version)
+			}
+			return "", false, err
+		}
+		_ = r.ec.setEnvValue(ctx, key, digest)
+		_ = r.ec.setEnvValue(ctx, versionKey("dataset", decl.Name), ds.Version)
+		return ds.Version, true, nil
+	}
+
 	// UploadNextVersion discovers the currently registered version when none is
 	// declared, so the upload does not restart at 1.0 and collide.
 	ds, err := r.ec.datasetClient.UploadNextVersion(

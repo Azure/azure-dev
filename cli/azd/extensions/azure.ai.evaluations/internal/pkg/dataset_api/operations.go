@@ -107,9 +107,8 @@ func (c *DatasetClient) UploadNextVersion(
 	if currentVersion == "" {
 		currentVersion = c.latestRegisteredVersion(ctx, name, apiVersion)
 	}
-
 	ds, err := c.UploadNewVersion(ctx, name, currentVersion, localDir, apiVersion)
-	if err == nil || !isVersionConflict(err) {
+	if err == nil || !IsVersionConflict(err) {
 		return ds, err
 	}
 
@@ -136,7 +135,7 @@ func (c *DatasetClient) latestRegisteredVersion(
 
 // isVersionConflict reports whether the service refused the upload because the
 // target version already exists.
-func isVersionConflict(err error) bool {
+func IsVersionConflict(err error) bool {
 	var respErr *azcore.ResponseError
 	if !errors.As(err, &respErr) {
 		return false
@@ -157,12 +156,27 @@ func (c *DatasetClient) UploadNewVersion(
 	localDir string,
 	apiVersion string,
 ) (*Dataset, error) {
+	return c.UploadVersion(ctx, name, NextVersion(currentVersion), localDir, apiVersion)
+}
+
+// UploadVersion publishes the dataset at exactly this version.
+//
+// Separate from UploadNewVersion because its parameter is the version to
+// count from, not the one to write: passing "1.0" there publishes 2.0. An
+// author who declares a version means that version.
+func (c *DatasetClient) UploadVersion(
+	ctx context.Context,
+	name string,
+	version string,
+	localDir string,
+	apiVersion string,
+) (*Dataset, error) {
 	content, err := ReadFirstJSONLFile(localDir)
 	if err != nil {
 		return nil, fmt.Errorf("reading dataset from %s: %w", localDir, err)
 	}
 
-	newVersion := NextVersion(currentVersion)
+	newVersion := version
 
 	// Step 1: Start pending upload to get a SAS URI.
 	pending, err := c.StartPendingUpload(ctx, name, newVersion, apiVersion)

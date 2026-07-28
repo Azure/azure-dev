@@ -21,7 +21,7 @@ func newResultsCommand() *cobra.Command {
 		Use:   "results",
 		Short: "Inspect evaluation results.",
 	}
-	cmd.AddCommand(newResultsShowCommand(), newResultsExportCommand())
+	cmd.AddCommand(newResultsShowCommand(), newResultsExportCommand(), newResultsCompareCommand())
 	return cmd
 }
 

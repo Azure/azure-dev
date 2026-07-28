@@ -256,6 +256,35 @@ func TestBuildResolvesConversationTurnExclusivity(t *testing.T) {
 	require.NotContains(t, req.TestingCriteria[0].DataMapping, "messages")
 }
 
+// Evaluators disagree on what the judge model is called. Built-ins declare
+// deployment_name; a custom rubric declares model, and rejects the group with
+// "requires model" if only deployment_name is sent.
+func TestBuildBindsJudgeModelUnderTheDeclaredName(t *testing.T) {
+	schemas := map[string]*eval_api.EvaluatorSummary{
+		"builtin.similarity": schema("builtin.similarity",
+			nil, []string{"query", "response"},
+			[]string{"deployment_name"}, []string{"deployment_name"}, "turn"),
+		"my-rubric": schema("my-rubric",
+			nil, []string{"query", "response"},
+			[]string{"model"}, []string{"model"}, "turn"),
+	}
+	group := groupWith([]evalcore.EvaluatorRef{
+		{Name: "builtin.similarity"},
+		{Name: "my-rubric"},
+	}, &project.Options{EvalModel: "gpt-4.1-nano"})
+
+	req, err := buildEvalGroupRequest(group, schemas, map[string]bool{"query": true})
+	require.NoError(t, err)
+
+	builtin := req.TestingCriteria[0].InitializationParameters
+	require.Equal(t, "gpt-4.1-nano", builtin["deployment_name"])
+	require.NotContains(t, builtin, "model")
+
+	custom := req.TestingCriteria[1].InitializationParameters
+	require.Equal(t, "gpt-4.1-nano", custom["model"])
+	require.NotContains(t, custom, "deployment_name")
+}
+
 // Without an agent target the sample bindings are unavailable, so every field
 // has to come from the dataset and the sample schema is not requested.
 func TestBuildWithoutTargetSourcesEverythingFromDataset(t *testing.T) {

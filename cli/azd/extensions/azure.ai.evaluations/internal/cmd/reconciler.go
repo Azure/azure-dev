@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 
 	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/project"
@@ -201,31 +202,56 @@ func (r *evalReconciler) EnsureEvalGroup(
 	return created.ID, nil
 }
 
-// sameDefinition compares only the definition body, ignoring server-assigned
-// fields such as version and timestamps.
+// sameDefinition reports whether the locally authored definition already
+// matches what the service holds.
+//
+// Only the keys the candidate declares are compared. The service enriches a
+// definition when it is created — a rubric of nothing but `type` and
+// `dimensions` comes back carrying data_schema, init_parameters and metrics it
+// was never given — so comparing whole documents never matches and every
+// deploy publishes a redundant version.
 func sameDefinition(existing, candidate []byte) bool {
-	extract := func(raw []byte) string {
+	extract := func(raw []byte) map[string]json.RawMessage {
 		var doc map[string]json.RawMessage
 		if err := json.Unmarshal(raw, &doc); err != nil {
-			return ""
+			return nil
 		}
 		def, ok := doc["definition"]
 		if !ok {
-			return ""
+			return nil
 		}
-		var normalized any
-		if err := json.Unmarshal(def, &normalized); err != nil {
-			return ""
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(def, &fields); err != nil {
+			return nil
 		}
-		out, err := json.Marshal(normalized)
-		if err != nil {
-			return ""
-		}
-		return string(out)
+		return fields
 	}
 
-	a, b := extract(existing), extract(candidate)
-	return a != "" && a == b
+	onService, authored := extract(existing), extract(candidate)
+	if onService == nil || authored == nil {
+		return false
+	}
+
+	for key, want := range authored {
+		got, ok := onService[key]
+		if !ok || !equalJSON(got, want) {
+			return false
+		}
+	}
+	return true
+}
+
+// equalJSON compares two JSON values structurally, so key order and
+// whitespace do not register as a change.
+func equalJSON(a, b json.RawMessage) bool {
+	var left, right any
+	if err := json.Unmarshal(a, &left); err != nil {
+		return false
+	}
+	if err := json.Unmarshal(b, &right); err != nil {
+		return false
+	}
+	return reflect.DeepEqual(left, right)
 }
 
 func versionFromRaw(raw []byte, fallback string) string {

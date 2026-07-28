@@ -183,8 +183,15 @@ func planCriterion(
 		return initSchema.Accepts(name)
 	}
 
-	if evalModel != "" && accepts("deployment_name") {
-		plan.initParams["deployment_name"] = evalModel
+	// Evaluators disagree on what the judge model is called: built-ins declare
+	// deployment_name, custom rubrics declare model. Bind whichever the
+	// evaluator actually accepts rather than guessing one spelling.
+	if evalModel != "" {
+		for _, alias := range []string{"deployment_name", "model"} {
+			if accepts(alias) {
+				plan.initParams[alias] = evalModel
+			}
+		}
 	}
 	if ref.Threshold != nil && accepts("threshold") {
 		plan.initParams["threshold"] = *ref.Threshold

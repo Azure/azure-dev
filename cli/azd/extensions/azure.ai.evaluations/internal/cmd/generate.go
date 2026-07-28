@@ -65,6 +65,11 @@ func newGenerateCommand() *cobra.Command {
 			if err := cfg.Validate(); err != nil {
 				return err
 			}
+			// Written to stdout because azd does not surface an extension's
+			// stderr, and guarded so `-o json` stays parseable.
+			if !isJSON(cmd) {
+				warnIgnoredTraceFields(cfg, out)
+			}
 
 			ec, err := newEvalContext(ctx, endpointFlg)
 			if err != nil {
@@ -147,6 +152,45 @@ func newGenerateCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&noWait, "no-wait", false, "Submit the jobs and return without polling.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
+}
+
+// warnIgnoredTraceFields reports trace settings that are accepted but have no
+// effect yet.
+//
+// The generation API takes a day window and nothing else, so `source` and
+// `sample` are parsed and dropped. Silently discarding them is worse than not
+// accepting them: the author believes they narrowed the trace selection when
+// nothing changed.
+func warnIgnoredTraceFields(cfg *project.GenerateConfig, out io.Writer) {
+	traces := cfg.Agent.Context.Traces
+	if traces == nil {
+		return
+	}
+
+	var ignored []string
+	if traces.Source != "" {
+		ignored = append(ignored, "source")
+	}
+	if traces.Sample > 0 {
+		ignored = append(ignored, "sample")
+	}
+	if len(ignored) == 0 {
+		return
+	}
+
+	fields := make([]string, 0, len(ignored))
+	for _, name := range ignored {
+		fields = append(fields, "agent.context.traces."+name)
+	}
+
+	verb := "has"
+	if len(fields) > 1 {
+		verb = "have"
+	}
+	fmt.Fprintf(out,
+		"warning: %s %s no effect yet; trace seeding uses only `window`. "+
+			"Trace selection lands with the trace scenarios.\n",
+		strings.Join(fields, " and "), verb)
 }
 
 // resolveInstruction returns the generation instruction, reading it from a

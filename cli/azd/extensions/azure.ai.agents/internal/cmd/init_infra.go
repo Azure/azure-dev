@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"text/template"
@@ -147,16 +149,6 @@ func ejectInfra(projectRoot, provider string) error {
 			"fix the project service configuration in azure.yaml",
 		)
 	}
-	if endpoint != "" {
-		return exterrors.Validation(
-			exterrors.CodeInfraEjectBrownfieldUnsupported,
-			"`azd ai agent init --infra` is not supported for a project that reuses an existing "+
-				"Foundry resource (the azure.ai.project service sets endpoint:)",
-			"remove --infra: the extension provisions the existing project (and any required "+
-				"container registry) directly with `azd provision`",
-		)
-	}
-
 	infraDir := filepath.Join(projectRoot, "infra")
 	if _, err := os.Stat(infraDir); err == nil {
 		return exterrors.Validation(
@@ -166,6 +158,14 @@ func ejectInfra(projectRoot, provider string) error {
 		)
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("stat infra directory: %w", err)
+	}
+	if endpoint != "" && provider == project.TerraformProviderName {
+		return exterrors.Validation(
+			exterrors.CodeInfraEjectBrownfieldUnsupported,
+			"Terraform infrastructure ejection is not supported for a project that reuses an existing "+
+				"Foundry resource (the azure.ai.project service sets endpoint:)",
+			"eject Bicep instead with `azd ai agent init --infra` or `--infra=bicep`",
+		)
 	}
 
 	res, err := synthesis.Synthesize(synthesis.Input{
@@ -211,12 +211,60 @@ func ejectInfra(projectRoot, provider string) error {
 	if provider == project.TerraformProviderName {
 		ejectErr = ejectTerraform(projectRoot, infraDir, res.Parameters())
 	} else {
-		ejectErr = ejectBicep(infraDir, res.Parameters())
+		params := res.Parameters()
+		if res.Mode == synthesis.ModeBrownfield {
+			if res.NetworkConfigured {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAzureYaml,
+					fmt.Sprintf("service %q cannot configure network: while reusing an existing Foundry project", svcName),
+					"remove network: or remove endpoint: to provision a new network-isolated project",
+				)
+			}
+			for connectionName, credentials := range res.ConnectionCredentials {
+				if path, _, ok := firstLiteralCredential(credentials, ""); ok {
+					return exterrors.Validation(
+						exterrors.CodeInvalidAzureYaml,
+						fmt.Sprintf("connection %q contains a literal credential at credentials%s", connectionName, path),
+						"move the credential into an azd environment variable and reference it as ${VAR}",
+					)
+				}
+			}
+			params["foundryAccountName"] = "${AZURE_AI_ACCOUNT_NAME}"
+			params["foundryProjectName"] = "${AZURE_AI_PROJECT_NAME}"
+		}
+		ejectErr = ejectBicep(infraDir, params)
 	}
 	if ejectErr != nil {
 		_ = os.RemoveAll(infraDir)
 	}
 	return ejectErr
+}
+
+var credentialVarRefPattern = regexp.MustCompile(`^\$\{[A-Za-z_][A-Za-z0-9_]*\}$`)
+
+func firstLiteralCredential(value any, path string) (string, string, bool) {
+	switch value := value.(type) {
+	case string:
+		if credentialVarRefPattern.MatchString(value) {
+			return "", "", false
+		}
+		return path, value, true
+	case map[string]any:
+		for _, key := range slices.Sorted(maps.Keys(value)) {
+			if foundPath, foundValue, ok := firstLiteralCredential(value[key], path+"."+key); ok {
+				return foundPath, foundValue, true
+			}
+		}
+	case []any:
+		for i, item := range value {
+			if foundPath, foundValue, ok := firstLiteralCredential(item, fmt.Sprintf("%s[%d]", path, i)); ok {
+				return foundPath, foundValue, true
+			}
+		}
+	default:
+		return path, fmt.Sprintf("%v", value), true
+	}
+	return "", "", false
 }
 
 // ejectBicep writes the embedded Bicep tree plus the synthesized
@@ -376,14 +424,8 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 // templates/ root into infraDir, preserving the relative tree, and returns the
 // files written (with sizes). On any error it removes the partial infraDir.
 //
-// Three files are skipped:
-//   - main.arm.json (the pre-compiled ARM JSON): would be stale once the user
-//     edits main.bicep.
-//   - brownfield.bicep and brownfield.arm.json: unreachable in a greenfield
-//     eject. ejectInfra already refuses to eject a brownfield (endpoint:)
-//     project, main.bicep never references brownfield.bicep, and the
-//     provider's brownfield path always loads the embedded
-//     synthesis.BrownfieldARMTemplate() instead of anything under infra/.
+// The pre-compiled main.arm.json is skipped because it would be stale once the
+// user edits main.bicep.
 func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
 	//nolint:gosec // G301: ejected infra/ directory must be readable/traversable by IDEs, Git, and CI
 	if err := os.MkdirAll(infraDir, 0o755); err != nil {
@@ -399,68 +441,36 @@ func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
 		}
 	}()
 
-	const templatesRoot = "templates"
 	tfs := synthesis.TemplatesFS()
-
+	files := []string{
+		"abbreviations.json", "main.bicep", "modules/acr-pull-role-assignment.bicep", "modules/acr.bicep",
+		"modules/connections.bicep", "modules/network.bicep", "modules/private-endpoint-dns.bicep",
+		"modules/resources.bicep", "modules/subnet.bicep", "modules/validate-project-name.bicep",
+	}
 	var artifacts []ejectArtifact
-	err := fs.WalkDir(tfs, templatesRoot, func(p string, d fs.DirEntry, err error) error {
+	for _, rel := range files {
+		data, err := fs.ReadFile(tfs, "templates/"+rel)
 		if err != nil {
-			return err
+			return nil, exterrors.Internal(exterrors.CodeInfraEjectWriteFailed,
+				fmt.Sprintf("read infra template %s: %s", rel, err))
 		}
-		if p == templatesRoot {
-			return nil
-		}
-		rel, err := filepath.Rel(templatesRoot, p)
-		if err != nil {
-			return err
-		}
-		// embed.FS always returns forward slashes; normalize for the OS.
 		dst := filepath.Join(infraDir, filepath.FromSlash(rel))
-
-		if d.IsDir() {
-			//nolint:gosec // G301: ejected infra/ subdirectories must remain readable/traversable
-			if err := os.MkdirAll(dst, 0o755); err != nil {
-				return err
-			}
-			return nil
-		}
-
-		switch filepath.Base(p) {
-		case "main.arm.json", "brownfield.bicep", "brownfield.arm.json":
-			return nil
-		}
-
-		data, err := fs.ReadFile(tfs, p)
-		if err != nil {
-			return err
+		//nolint:gosec // G301: ejected infra/ subdirectories must remain readable/traversable
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return nil, exterrors.Internal(exterrors.CodeInfraEjectWriteFailed, fmt.Sprintf("create template directory: %s", err))
 		}
 		//nolint:gosec // G306: ejected Bicep sources are intended to be human-readable
 		if err := os.WriteFile(dst, data, 0o644); err != nil {
-			return err
+			return nil, exterrors.Internal(exterrors.CodeInfraEjectWriteFailed, fmt.Sprintf("write %s: %s", rel, err))
 		}
-		artifacts = append(artifacts, ejectArtifact{
-			relPath: filepath.ToSlash(filepath.Join("infra", rel)),
-			bytes:   len(data),
-		})
-		return nil
-	})
-	if err != nil {
-		return nil, exterrors.Internal(
-			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf("write infra templates: %s", err),
-		)
+		artifacts = append(artifacts, ejectArtifact{relPath: filepath.ToSlash(filepath.Join("infra", rel)), bytes: len(data)})
 	}
-
 	return artifacts, nil
 }
 
 // writeParametersFile emits infra/main.parameters.json in the standard ARM
-// parameter file shape. Only synthesizer-known values (`deployments`,
-// `includeAcr`) are written; deploy-time parameters (foundryProjectName,
-// location, resourceGroupName, principalId, resourceTokenSalt, tags) are
-// supplied by the provider at `azd provision`. The result is a partial
-// parameters file -- enough for `bicep build` to validate, not for a
-// standalone `az deployment sub create`.
+// parameter file shape. Callers pass only synthesizer-owned values; targeting,
+// location, identity, and tags remain provider-owned at provision time.
 func writeParametersFile(infraDir string, params map[string]any) (ejectArtifact, error) {
 	type paramValue struct {
 		Value any `json:"value"`

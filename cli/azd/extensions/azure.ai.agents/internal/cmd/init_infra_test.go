@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
@@ -18,6 +20,24 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 )
+
+type parametersDocument struct {
+	Schema         string `json:"$schema"`
+	ContentVersion string `json:"contentVersion"`
+	Parameters     map[string]struct {
+		Value any `json:"value"`
+	} `json:"parameters"`
+}
+
+func readParametersDocument(t *testing.T, path string) parametersDocument {
+	t.Helper()
+	//nolint:gosec // test path is rooted under t.TempDir
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var doc parametersDocument
+	require.NoError(t, json.Unmarshal(raw, &doc))
+	return doc
+}
 
 // validFoundryAzureYAML returns an azure.yaml payload exercising the
 // synthesizer's two derived parameters: deployments and includeAcr.
@@ -150,27 +170,67 @@ services:
 	assert.Contains(t, localErr.Message, "[agent-a agent-b]")
 }
 
-func TestEjectInfra_RefusesWhenBrownfieldEndpoint(t *testing.T) {
-	t.Parallel()
+func TestEjectInfra_BrownfieldWritesUnifiedBicepTree(t *testing.T) {
 	dir := t.TempDir()
-	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+	const azureYAML = `name: my-project
 services:
   ai-project:
     host: azure.ai.project
     endpoint: https://acct.services.ai.azure.com/api/projects/p1
-`)
+    deployments:
+      - name: gpt-4o-mini-e2e
+        model: {name: gpt-4o-mini, format: OpenAI, version: "2024-07-18"}
+        sku: {name: GlobalStandard, capacity: 1}
+  test-connection:
+    host: azure.ai.connection
+    category: RemoteTool
+    target: ${MCP_ENDPOINT}
+    authType: CustomKeys
+    credentials:
+      key: ${MCP_KEY}
+`
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), azureYAML)
 
-	err := ejectInfra(dir, "bicep")
-	require.Error(t, err)
+	withCapturedStdout(t, func() {
+		require.NoError(t, ejectInfra(dir, "bicep"))
+	})
 
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok)
-	assert.Equal(t, exterrors.CodeInfraEjectBrownfieldUnsupported, localErr.Code)
-	assert.Contains(t, localErr.Message, "endpoint:")
+	expected := []string{
+		filepath.Join("infra", "main.bicep"),
+		filepath.Join("infra", "main.parameters.json"),
+		filepath.Join("infra", "abbreviations.json"),
+		filepath.Join("infra", "modules", "resources.bicep"),
+		filepath.Join("infra", "modules", "acr.bicep"),
+		filepath.Join("infra", "modules", "acr-pull-role-assignment.bicep"),
+		filepath.Join("infra", "modules", "connections.bicep"),
+		filepath.Join("infra", "modules", "network.bicep"),
+		filepath.Join("infra", "modules", "subnet.bicep"),
+		filepath.Join("infra", "modules", "private-endpoint-dns.bicep"),
+		filepath.Join("infra", "modules", "validate-project-name.bicep"),
+	}
+	for _, rel := range expected {
+		_, err := os.Stat(filepath.Join(dir, rel))
+		require.NoError(t, err, "expected %s", rel)
+	}
+
+	mainBicep, err := os.ReadFile(filepath.Join(dir, "infra", "main.bicep")) //nolint:gosec
+	require.NoError(t, err)
+	assert.Contains(t, string(mainBicep), "module resources 'modules/resources.bicep'")
+
+	params := readParametersDocument(t, filepath.Join(dir, "infra", "main.parameters.json"))
+	assert.NotContains(t, slices.Collect(maps.Keys(params.Parameters)), "provisioningMode")
+	assert.Equal(t, "${AZURE_AI_ACCOUNT_NAME}", params.Parameters["foundryAccountName"].Value)
+	assert.Equal(t, "${AZURE_AI_PROJECT_NAME}", params.Parameters["foundryProjectName"].Value)
+	assert.Equal(t, "${MCP_ENDPOINT}", params.Parameters["connections"].Value.([]any)[0].(map[string]any)["target"])
+	credentials := params.Parameters["connectionCredentials"].Value.(map[string]any)
+	assert.Equal(t, "${MCP_KEY}", credentials["test-connection"].(map[string]any)["key"])
+
+	gotYAML, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec
+	require.NoError(t, err)
+	assert.Equal(t, azureYAML, string(gotYAML))
 }
 
-func TestEjectInfra_BrownfieldRefusalPrecedesSiblingRefValidation(t *testing.T) {
-	t.Parallel()
+func TestEjectInfra_BrownfieldSkipsAgentRefValidation(t *testing.T) {
 	dir := t.TempDir()
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
 services:
@@ -180,16 +240,119 @@ services:
   agent:
     host: azure.ai.agent
     $ref: ./missing-agent.yaml
+`)
+
+	withCapturedStdout(t, func() {
+		require.NoError(t, ejectInfra(dir, "bicep"))
+	})
+}
+
+func TestEjectInfra_BrownfieldTerraformUnsupported(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+services:
+  ai-project:
+    host: azure.ai.project
+    endpoint: https://acct.services.ai.azure.com/api/projects/p1
+`)
+
+	err := ejectInfra(dir, "terraform")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInfraEjectBrownfieldUnsupported, localErr.Code)
+	assert.Contains(t, localErr.Message, "Terraform")
+}
+
+func TestEjectInfra_BrownfieldRejectsLiteralCredentials(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+services:
+  ai-project:
+    host: azure.ai.project
+    endpoint: https://acct.services.ai.azure.com/api/projects/p1
   connection:
     host: azure.ai.connection
-    $ref: ./missing-connection.yaml
+    category: CognitiveSearch
+    target: https://search.example
+    authType: ApiKey
+    credentials:
+      key: literal-secret-value
 `)
 
 	err := ejectInfra(dir, "bicep")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
-	assert.Equal(t, exterrors.CodeInfraEjectBrownfieldUnsupported, localErr.Code)
+	assert.Equal(t, exterrors.CodeInvalidAzureYaml, localErr.Code)
+	assert.Contains(t, localErr.Message, "credentials.key")
+	assert.NotContains(t, localErr.Message, "literal-secret-value")
+	_, statErr := os.Stat(filepath.Join(dir, "infra"))
+	assert.True(t, os.IsNotExist(statErr))
+}
+
+func TestEjectInfra_BrownfieldRejectsNetwork(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+services:
+  ai-project:
+    host: azure.ai.project
+    endpoint: https://acct.services.ai.azure.com/api/projects/p1
+    network:
+      managed: {}
+`)
+
+	err := ejectInfra(dir, "bicep")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidAzureYaml, localErr.Code)
+	assert.Contains(t, localErr.Message, "cannot configure network")
+	_, statErr := os.Stat(filepath.Join(dir, "infra"))
+	assert.True(t, os.IsNotExist(statErr))
+}
+
+func TestFirstLiteralCredentialRequiresExactVariableReference(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		value   string
+		literal bool
+	}{
+		{value: "${KEY}"},
+		{value: "${_KEY_1}"},
+		{value: "${KEY}literal}", literal: true},
+		{value: "prefix${KEY}", literal: true},
+		{value: "${KEY:-default}", literal: true},
+		{value: "${1KEY}", literal: true},
+		{value: "literal", literal: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.value, func(t *testing.T) {
+			_, _, got := firstLiteralCredential(tt.value, ".key")
+			assert.Equal(t, tt.literal, got)
+		})
+	}
+}
+
+func TestFirstLiteralCredentialRejectsNonStringLeaves(t *testing.T) {
+	t.Parallel()
+
+	for name, value := range map[string]any{
+		"integer": 42,
+		"boolean": true,
+		"null":    nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			path, _, literal := firstLiteralCredential(value, ".key")
+			assert.True(t, literal)
+			assert.Equal(t, ".key", path)
+		})
+	}
 }
 
 func TestEjectInfra_HappyPath_WritesExpectedFiles(t *testing.T) {
@@ -204,17 +367,13 @@ func TestEjectInfra_HappyPath_WritesExpectedFiles(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	// Every embedded template under templates/ (except main.arm.json and the
-	// dead-in-a-greenfield-eject brownfield.bicep/brownfield.arm.json) should
-	// be on disk under ./infra/, plus the synthesized main.parameters.json.
+	// This fixture needs ACR but has no connections or network configuration.
 	expected := []string{
 		filepath.Join("infra", "main.bicep"),
 		filepath.Join("infra", "abbreviations.json"),
 		filepath.Join("infra", "modules", "acr.bicep"),
-		filepath.Join("infra", "modules", "connections.bicep"),
-		filepath.Join("infra", "modules", "network.bicep"),
-		filepath.Join("infra", "modules", "subnet.bicep"),
-		filepath.Join("infra", "modules", "private-endpoint-dns.bicep"),
+		filepath.Join("infra", "modules", "acr-pull-role-assignment.bicep"),
+		filepath.Join("infra", "modules", "resources.bicep"),
 		filepath.Join("infra", "main.parameters.json"),
 	}
 	for _, rel := range expected {
@@ -230,8 +389,7 @@ func TestEjectInfra_HappyPath_WritesExpectedFiles(t *testing.T) {
 		"main.arm.json should be excluded from the ejected tree (it would be stale "+
 			"the moment the user edits main.bicep)")
 
-	// brownfield.bicep/brownfield.arm.json are excluded too: unreachable in a
-	// greenfield eject (see TestEjectInfra_RefusesWhenBrownfieldEndpoint).
+	// Brownfield templates are excluded from a greenfield eject.
 	for _, rel := range []string{
 		filepath.Join("infra", "brownfield.bicep"),
 		filepath.Join("infra", "brownfield.arm.json"),
@@ -308,9 +466,7 @@ func TestEjectInfra_HappyPath_ParametersFileShape(t *testing.T) {
 func TestEjectInfra_HappyPath_NoDockerOmitsAcrParam(t *testing.T) {
 	// See TestEjectInfra_HappyPath_WritesExpectedFiles for why this is not parallel.
 	dir := t.TempDir()
-	// No docker: block -> includeAcr should be false in the params file
-	// but the acr.bicep module is still written (the template files are a
-	// static set; whether ACR is provisioned is a parameter decision).
+	// No docker: block -> includeAcr is false; the static ACR module remains available for user edits.
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
 services:
   my-foundry:
@@ -325,9 +481,8 @@ services:
 		require.NoError(t, ejectInfra(dir, "bicep"))
 	})
 
-	// acr.bicep is still in the ejected tree -- the template is static.
 	_, err := os.Stat(filepath.Join(dir, "infra", "modules", "acr.bicep"))
-	assert.NoError(t, err, "acr.bicep module is part of the static template set")
+	assert.NoError(t, err, "acr.bicep is part of the static ejected tree")
 
 	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec // G304: test file path from t.TempDir()
 	require.NoError(t, err)

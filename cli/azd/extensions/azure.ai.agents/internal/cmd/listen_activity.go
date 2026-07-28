@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -195,14 +196,35 @@ func writeTeamsAppPackage(
 			"postdeploy: Teams app packaging via service failed (falling back to manual guide): %v",
 			err,
 		)
+		removeStaleTeamsAppPackage(packagePath)
 		return ""
 	}
 
-	if err := os.WriteFile(packagePath, zipBytes, 0o600); err != nil {
+	// Write atomically (temp file + rename) so an interrupted or failed write can
+	// never leave a partial/corrupt zip that the guide would point users at.
+	tmpPath := packagePath + ".tmp"
+	if err := os.WriteFile(tmpPath, zipBytes, 0o600); err != nil {
 		log.Printf("postdeploy: failed to write Teams app package %q: %v", packagePath, err)
+		_ = os.Remove(tmpPath)
+		removeStaleTeamsAppPackage(packagePath)
+		return ""
+	}
+	if err := os.Rename(tmpPath, packagePath); err != nil {
+		log.Printf("postdeploy: failed to finalize Teams app package %q: %v", packagePath, err)
+		_ = os.Remove(tmpPath)
+		removeStaleTeamsAppPackage(packagePath)
 		return ""
 	}
 	return packagePath
+}
+
+// removeStaleTeamsAppPackage deletes a leftover package from a previous deploy so
+// a failed or skipped packaging run cannot leave a stale zip whose manifest and
+// bot binding no longer match the current deployment. A missing file is fine.
+func removeStaleTeamsAppPackage(packagePath string) {
+	if err := os.Remove(packagePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Printf("postdeploy: could not remove stale Teams app package %q: %v", packagePath, err)
+	}
 }
 
 // teamsSetupGuideFile is the name of the generated Teams onboarding guide.
@@ -284,6 +306,11 @@ func printTeamsNextSteps(botName, msaAppID, guidePath, packagePath string) {
 				"  Next steps (package + sideload the Teams app): see %s", guidePath,
 			)))
 		}
+	} else if packagePath != "" {
+		fmt.Println(output.WithGrayFormat(fmt.Sprintf(
+			"  Next steps: sideload %s in Teams -> Apps -> Manage your apps -> Upload a custom app.",
+			packagePath,
+		)))
 	} else {
 		fmt.Println(output.WithGrayFormat(
 			"  Next steps: package the Teams app (bots[].botId = the Bot ID above) and " +

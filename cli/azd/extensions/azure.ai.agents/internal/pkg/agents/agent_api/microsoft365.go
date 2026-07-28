@@ -4,18 +4,13 @@
 package agent_api
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"time"
 
-	"azureaiagent/internal/version"
-
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 )
 
 // Microsoft365APIVersion is the API version for the Microsoft 365 packaging
@@ -56,59 +51,41 @@ type TeamsAppPackageRequest struct {
 // It is best-effort at the call site: the endpoint requires an APIM-routed user
 // token, so the returned error is surfaced to the caller to decide whether to
 // fall back to the manual packaging guide.
+//
+// The request goes through the shared client pipeline (c.pipeline) so it inherits
+// the same bearer-token, retry, and correlation policies as every other agent
+// data-plane call; a transient 429/5xx is retried rather than immediately falling
+// back to the manual guide. A per-call timeout bounds the total wait so a hung
+// service can never block deploy.
 func (c *AgentClient) DownloadTeamsAppPackage(
 	ctx context.Context,
 	agentName string,
 	request TeamsAppPackageRequest,
 	apiVersion string,
 ) ([]byte, error) {
-	u, err := url.Parse(c.endpoint)
-	if err != nil {
-		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
-	}
-	u.Path += fmt.Sprintf("/agents/%s/microsoft365/zip", agentName)
-
-	query := u.Query()
-	query.Set("api-version", apiVersion)
-	u.RawQuery = query.Encode()
-
-	body, err := json.Marshal(request)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal Teams app package request: %w", err)
-	}
-
-	token, err := c.credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{"https://ai.azure.com/.default"},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get auth token: %w", err)
-	}
-
-	requestCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	//nolint:gosec // request URL is built from trusted SDK endpoint + path components
-	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, u.String(), bytes.NewReader(body))
+	url := fmt.Sprintf("%s/agents/%s/microsoft365/zip?api-version=%s", c.endpoint, agentName, apiVersion)
+
+	req, err := runtime.NewRequest(ctx, http.MethodPost, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+	if err := runtime.MarshalAsJSON(req, request); err != nil {
+		return nil, fmt.Errorf("failed to marshal Teams app package request: %w", err)
+	}
+	req.Raw().Header.Set("Accept", "application/zip")
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview,AgentEndpoints=V1Preview")
 
-	req.Header.Set("Authorization", "Bearer "+token.Token)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/zip")
-	req.Header.Set("Foundry-Features", "HostedAgents=V1Preview,AgentEndpoints=V1Preview")
-	req.Header.Set("User-Agent", fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version))
-
-	httpClient := &http.Client{}
-	resp, err := httpClient.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("unexpected status code: %d — %s", resp.StatusCode, string(errBody))
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
 	}
 
 	zipBytes, err := io.ReadAll(resp.Body)

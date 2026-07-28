@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -15,25 +14,7 @@ import (
 
 func TestDownloadTeamsAppPackage_Success(t *testing.T) {
 	const zipContent = "PK\x03\x04fake-zip-bytes"
-	reqCh := make(chan *http.Request, 1)
-	bodyCh := make(chan []byte, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b, _ := io.ReadAll(r.Body)
-		select {
-		case reqCh <- r:
-			bodyCh <- b
-		default:
-		}
-		w.Header().Set("Content-Type", "application/zip")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(zipContent))
-	}))
-	defer server.Close()
-
-	client := &AgentClient{
-		endpoint:   server.URL,
-		credential: fakeCredential{},
-	}
+	client, transport := newCaptureClient(http.StatusOK, zipContent)
 
 	request := TeamsAppPackageRequest{
 		BotServiceArmID:          "/subscriptions/s/resourceGroups/rg/providers/Microsoft.BotService/botServices/b",
@@ -47,32 +28,26 @@ func TestDownloadTeamsAppPackage_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, zipContent, string(zipBytes))
 
-	got := <-reqCh
+	require.Len(t, transport.requests, 1)
+	got := transport.requests[0]
 	require.Equal(t, http.MethodPost, got.Method)
-	require.Equal(t, "/agents/my-agent/microsoft365/zip", got.URL.Path)
+	require.Equal(t, "/api/projects/proj/agents/my-agent/microsoft365/zip", got.URL.Path)
 	require.Equal(t, Microsoft365APIVersion, got.URL.Query().Get("api-version"))
 	require.Equal(t, "application/zip", got.Header.Get("Accept"))
 	require.Equal(t, "application/json", got.Header.Get("Content-Type"))
-	require.Equal(t, "Bearer test-token", got.Header.Get("Authorization"))
+	require.Equal(t, "HostedAgents=V1Preview,AgentEndpoints=V1Preview", got.Header.Get("Foundry-Features"))
 
+	bodyBytes, err := io.ReadAll(got.Body)
+	require.NoError(t, err)
 	var sent TeamsAppPackageRequest
-	require.NoError(t, json.Unmarshal(<-bodyCh, &sent))
+	require.NoError(t, json.Unmarshal(bodyBytes, &sent))
 	require.Equal(t, request, sent)
 	require.False(t, sent.PublishAsAutopilot)
 	require.False(t, sent.UseAgenticUserTemplate)
 }
 
 func TestDownloadTeamsAppPackage_ErrorStatus(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte(`{"error":{"code":"Forbidden","message":"nope"}}`))
-	}))
-	defer server.Close()
-
-	client := &AgentClient{
-		endpoint:   server.URL,
-		credential: fakeCredential{},
-	}
+	client, _ := newCaptureClient(http.StatusForbidden, `{"error":{"code":"Forbidden","message":"nope"}}`)
 
 	_, err := client.DownloadTeamsAppPackage(
 		t.Context(), "my-agent", TeamsAppPackageRequest{}, Microsoft365APIVersion,

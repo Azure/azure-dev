@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -89,6 +90,12 @@ func (c *DatasetClient) CreateDataset(
 // TemporaryDataReferencesForExistingAsset as soon as 1.0 exists. Callers
 // almost always mean "the version after whatever is registered", which is what
 // this does.
+//
+// The version listing is eventually consistent — it returns nothing for a
+// second or two after a version is created — so an empty listing cannot be
+// trusted to mean the dataset is new. A conflict is therefore treated as a
+// stale read and retried once against a re-read listing, rather than adding a
+// delay to every first upload.
 func (c *DatasetClient) UploadNextVersion(
 	ctx context.Context,
 	name string,
@@ -97,12 +104,43 @@ func (c *DatasetClient) UploadNextVersion(
 	apiVersion string,
 ) (*Dataset, error) {
 	if currentVersion == "" {
-		list, err := c.ListDatasetVersions(ctx, name, apiVersion)
-		if err == nil && list != nil && len(list.Value) > 0 {
-			currentVersion = LatestVersion(list.Value)
-		}
+		currentVersion = c.latestRegisteredVersion(ctx, name, apiVersion)
 	}
-	return c.UploadNewVersion(ctx, name, currentVersion, localDir, apiVersion)
+
+	ds, err := c.UploadNewVersion(ctx, name, currentVersion, localDir, apiVersion)
+	if err == nil || !isVersionConflict(err) {
+		return ds, err
+	}
+
+	latest := c.latestRegisteredVersion(ctx, name, apiVersion)
+	if latest == "" || latest == currentVersion {
+		return nil, err
+	}
+	return c.UploadNewVersion(ctx, name, latest, localDir, apiVersion)
+}
+
+// latestRegisteredVersion returns the newest registered version, or empty when
+// the dataset is unknown or the listing has not caught up yet.
+func (c *DatasetClient) latestRegisteredVersion(
+	ctx context.Context,
+	name string,
+	apiVersion string,
+) string {
+	list, err := c.ListDatasetVersions(ctx, name, apiVersion)
+	if err != nil || list == nil || len(list.Value) == 0 {
+		return ""
+	}
+	return LatestVersion(list.Value)
+}
+
+// isVersionConflict reports whether the service refused the upload because the
+// target version already exists.
+func isVersionConflict(err error) bool {
+	var respErr *azcore.ResponseError
+	if !errors.As(err, &respErr) {
+		return false
+	}
+	return respErr.StatusCode == http.StatusConflict
 }
 
 // UploadNewVersion reads the first JSONL file from localDir, computes the next

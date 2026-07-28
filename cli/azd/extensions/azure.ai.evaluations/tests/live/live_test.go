@@ -168,9 +168,15 @@ func TestLiveDatasetLifecycle(t *testing.T) {
 	require.NoError(t, err, "reading the dataset back")
 	t.Logf("dataset uri: %q (empty means a credential call is required)", fetched.ResolvedBlobURI())
 
-	versions, err := env.datasetClient.ListDatasetVersions(ctx, name, projectAPIVersion)
-	require.NoError(t, err, "listing dataset versions")
-	require.NotEmpty(t, versions.Value)
+	// The version listing is eventually consistent: it returns nothing for a
+	// second or two after a version is created, even though the version itself
+	// reads back fine. Poll rather than asserting on the first response.
+	var versions *dataset_api.DatasetList
+	require.Eventually(t, func() bool {
+		var err error
+		versions, err = env.datasetClient.ListDatasetVersions(ctx, name, projectAPIVersion)
+		return err == nil && versions != nil && len(versions.Value) > 0
+	}, 30*time.Second, 2*time.Second, "the version listing never caught up")
 	require.Equal(t, first.Version, dataset_api.LatestVersion(versions.Value))
 
 	// A second upload must advance the version, not conflict.

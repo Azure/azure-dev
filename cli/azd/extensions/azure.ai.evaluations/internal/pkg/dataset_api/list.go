@@ -74,6 +74,18 @@ func VersionOrder(version string) float64 {
 	return -1
 }
 
+// VersionGreater reports whether a is a strictly newer version than b.
+//
+// Both must be orderable; when either is not, the answer is false so an
+// unparseable version never triggers a drift failure on its own.
+func VersionGreater(a, b string) bool {
+	orderA, orderB := VersionOrder(a), VersionOrder(b)
+	if orderA < 0 || orderB < 0 {
+		return false
+	}
+	return orderA > orderB
+}
+
 // LatestVersion returns the highest version in the list, falling back to the
 // last entry when none of the versions can be ordered.
 func LatestVersion(datasets []Dataset) string {

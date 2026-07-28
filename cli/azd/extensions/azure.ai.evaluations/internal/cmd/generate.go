@@ -30,17 +30,18 @@ var generatePollBudget = eval_api.PollerOptions{
 
 func newGenerateCommand() *cobra.Command {
 	var (
-		configPath  string
-		deployPath  string
-		target      string
-		instruction string
-		datasetFlag string
-		evaluators  []string
-		maxSamples  int
-		traceDays   int
-		evalModel   string
-		noWait      bool
-		endpointFlg string
+		configPath      string
+		deployPath      string
+		target          string
+		instruction     string
+		instructionFile string
+		datasetFlag     string
+		evaluators      []string
+		maxSamples      int
+		traceDays       int
+		evalModel       string
+		noWait          bool
+		endpointFlg     string
 	)
 
 	cmd := &cobra.Command{
@@ -49,6 +50,11 @@ func newGenerateCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			out := cmd.OutOrStdout()
+
+			instruction, err := resolveInstruction(instruction, instructionFile)
+			if err != nil {
+				return err
+			}
 
 			cfg, err := resolveGenerateConfig(
 				configPath, target, evalModel, datasetFlag, maxSamples, traceDays,
@@ -126,6 +132,9 @@ func newGenerateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&target, "target", "", "Agent whose context seeds generation.")
 	cmd.Flags().StringVar(&instruction, "gen-instruction", "",
 		"What the agent does and what to test.")
+	cmd.Flags().StringVar(&instructionFile, "gen-instruction-file", "",
+		"Read the generation instruction from this file. Mutually exclusive with --gen-instruction.")
+	cmd.MarkFlagsMutuallyExclusive("gen-instruction", "gen-instruction-file")
 	cmd.Flags().StringVar(&datasetFlag, "dataset", "",
 		"Use this dataset instead of generating one.")
 	cmd.Flags().StringArrayVar(&evaluators, "evaluator", nil,
@@ -138,6 +147,27 @@ func newGenerateCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&noWait, "no-wait", false, "Submit the jobs and return without polling.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
+}
+
+// resolveInstruction returns the generation instruction, reading it from a
+// file when one is named.
+//
+// A useful instruction describes the agent and what to test, which is often
+// more than fits comfortably on a command line, so it can live in a file that
+// is reviewable alongside the rest of the config.
+func resolveInstruction(inline, path string) (string, error) {
+	if path == "" {
+		return inline, nil
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("reading --gen-instruction-file %q: %w", path, err)
+	}
+	text := strings.TrimSpace(string(raw))
+	if text == "" {
+		return "", fmt.Errorf("--gen-instruction-file %q is empty", path)
+	}
+	return text, nil
 }
 
 // resolveGenerateConfig loads the spec when present, then layers flags on top.

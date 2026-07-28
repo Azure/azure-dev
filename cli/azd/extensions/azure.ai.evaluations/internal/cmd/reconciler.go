@@ -73,8 +73,17 @@ func (r *evalReconciler) EnsureDataset(
 
 	key := project.FingerprintKey("dataset", decl.Name)
 	if prior := r.ec.getEnvValue(ctx, key); prior == digest {
-		// Unchanged since the last deploy; reuse the recorded version.
+		// Unchanged since the last deploy; reuse the recorded version, but only
+		// after confirming nobody published a newer one outside the repo. An
+		// explicit `version:` is the author saying which version they want, so
+		// it settles the question and the check does not apply.
 		if version := r.ec.getEnvValue(ctx, versionKey("dataset", decl.Name)); version != "" {
+			if decl.Version != "" {
+				return decl.Version, false, nil
+			}
+			if err := r.checkDatasetDrift(ctx, decl.Name, version); err != nil {
+				return "", false, err
+			}
 			return version, false, nil
 		}
 	}
@@ -99,6 +108,43 @@ func (r *evalReconciler) EnsureDataset(
 	_ = r.ec.setEnvValue(ctx, envKeyDatasetVersion, ds.Version)
 
 	return ds.Version, true, nil
+}
+
+// checkDatasetDrift fails when the service holds a newer version than the one
+// recorded at the last deploy.
+//
+// Local content being unchanged is not enough to reuse the recorded version:
+// someone may have published a newer one outside the repo, and silently
+// pinning the eval group to the older version would quietly evaluate against
+// stale data. Publishing is not destructive — versions are immutable — so the
+// remedy is to sync, not to overwrite.
+func (r *evalReconciler) checkDatasetDrift(
+	ctx context.Context,
+	name, recorded string,
+) error {
+	latest := r.latestDatasetVersion(ctx, name)
+	if latest == "" || latest == recorded {
+		return nil
+	}
+	if !dataset_api.VersionGreater(latest, recorded) {
+		return nil
+	}
+	return fmt.Errorf(
+		"dataset %q is at version %s on the project but %s was recorded at the last deploy; "+
+			"someone published a version outside this repo. "+
+			"Pin it with `version: %s` on the dataset, or pull the newer content locally, "+
+			"then deploy again",
+		name, latest, recorded, latest)
+}
+
+// latestDatasetVersion reports the newest registered version, or empty when the
+// dataset is unknown or the listing has not caught up.
+func (r *evalReconciler) latestDatasetVersion(ctx context.Context, name string) string {
+	list, err := r.ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
+	if err != nil || list == nil || len(list.Value) == 0 {
+		return ""
+	}
+	return dataset_api.LatestVersion(list.Value)
 }
 
 // EnsureEvaluator publishes a new version when the local definition differs

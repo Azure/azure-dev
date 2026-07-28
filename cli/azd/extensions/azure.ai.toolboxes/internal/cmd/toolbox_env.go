@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 
 	"azure.ai.toolboxes/internal/exterrors"
@@ -27,13 +28,13 @@ var setToolboxEndpointEnvFunc = setToolboxEndpointEnv
 // default environment selected) the write is skipped rather than failing the
 // toolbox operation.
 func setToolboxEndpointEnv(ctx context.Context, toolboxName, value string) error {
-	key := envkey.ToolboxMCPEndpoint(toolboxName)
+	commitKey := envkey.ToolboxMCPEndpoint(toolboxName)
 
 	return withAzdClient(func(c *azdext.AzdClient) error {
 		envResp, err := c.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 		if err != nil {
 			if isNoAzdEnvironment(err) {
-				log.Printf("toolbox env sync: no azd environment, skipping %s", key)
+				log.Printf("toolbox env sync: no azd environment, skipping %s", commitKey)
 				return nil
 			}
 			return exterrors.Internal(
@@ -42,18 +43,54 @@ func setToolboxEndpointEnv(ctx context.Context, toolboxName, value string) error
 			)
 		}
 
-		if _, err := c.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-			EnvName: envResp.Environment.Name,
-			Key:     key,
-			Value:   value,
-		}); err != nil {
-			return exterrors.Internal(
-				exterrors.CodeAzdClientFailed,
-				fmt.Sprintf("failed to set %s in the azd environment: %s", key, err),
-			)
+		envName := envResp.Environment.Name
+		setValue := func(key, envValue string) error {
+			if _, err := c.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+				EnvName: envName, Key: key, Value: envValue,
+			}); err != nil {
+				return exterrors.Internal(exterrors.CodeAzdClientFailed,
+					fmt.Sprintf("failed to set %s in the azd environment: %s", key, err))
+			}
+			return nil
 		}
-		return nil
+		if value == "" {
+			return setValue(commitKey, "")
+		}
+		if err := setValue(commitKey, ""); err != nil {
+			return err
+		}
+		projectEndpoint := toolboxProjectEndpoint(value)
+		if projectEndpoint == "" {
+			projectResp, err := c.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+				EnvName: envName, Key: "FOUNDRY_PROJECT_ENDPOINT",
+			})
+			if err != nil {
+				return exterrors.Internal(exterrors.CodeAzdClientFailed,
+					fmt.Sprintf("failed to read FOUNDRY_PROJECT_ENDPOINT: %s", err))
+			}
+			projectEndpoint = projectResp.Value
+		}
+		if err := setValue(envkey.ToolboxProjectEndpoint(toolboxName), projectEndpoint); err != nil {
+			return err
+		}
+		return setValue(commitKey, value)
 	})
+}
+
+func toolboxProjectEndpoint(endpoint string) string {
+	parsed, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil {
+		return ""
+	}
+	const segment = "/toolboxes/"
+	index := strings.Index(parsed.Path, segment)
+	if index < 0 {
+		return ""
+	}
+	parsed.Path = parsed.Path[:index]
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return strings.TrimRight(parsed.String(), "/")
 }
 
 // isNoAzdEnvironment reports whether err from GetCurrent means there is no azd

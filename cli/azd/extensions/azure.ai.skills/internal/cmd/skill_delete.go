@@ -6,8 +6,10 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"azureaiskills/internal/exterrors"
+	"azureaiskills/internal/foundry/envkey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -22,6 +24,8 @@ type deleteFlags struct {
 }
 
 type deleteAction struct{ flags *deleteFlags }
+
+var clearSkillMarkersFunc = clearSkillMarkers
 
 // deleteResult is the JSON shape printed when --output=json.
 type deleteResult struct {
@@ -59,7 +63,32 @@ func (a *deleteAction) Run(ctx context.Context) error {
 	if _, err := skillCtx.client.DeleteSkill(ctx, a.flags.name); err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpDeleteSkill)
 	}
+	if err := clearSkillMarkersFunc(ctx, a.flags.name); err != nil {
+		return err
+	}
 	return a.printResult(deleteResult{Name: a.flags.name, Deleted: true})
+}
+
+func clearSkillMarkers(ctx context.Context, skillName string) error {
+	client, err := azdext.NewAzdClient()
+	if err != nil {
+		log.Printf("skill marker cleanup skipped: azd client unavailable: %v", err)
+		return nil
+	}
+	defer client.Close()
+	env, err := client.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		log.Printf("skill marker cleanup skipped: no active azd environment: %v", err)
+		return nil
+	}
+	for _, key := range []string{envkey.SkillVersion(skillName), envkey.SkillProjectEndpoint(skillName)} {
+		if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: env.Environment.GetName(), Key: key, Value: "",
+		}); err != nil {
+			return fmt.Errorf("clearing skill readiness marker %s: %w", key, err)
+		}
+	}
+	return nil
 }
 
 func (a *deleteAction) confirmDelete(ctx context.Context) (bool, error) {

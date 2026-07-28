@@ -30,6 +30,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
+	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/pkg/projectconfig"
 
@@ -157,6 +158,9 @@ type AgentServiceTargetProvider struct {
 	tenantId           string
 	env                *azdext.Environment
 	foundryProject     *arm.ResourceID
+	projectServices    map[string]*azdext.ServiceConfig
+	dependencyEnabled  dependencyEnabled
+	dependencyEnv      map[string]string
 }
 
 const (
@@ -208,6 +212,8 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 			"run 'azd init' to initialize your project",
 		)
 	}
+	p.projectServices = proj.GetProject().GetServices()
+	p.dependencyEnabled = p.isDependencyEnabled
 	if err := ResolveServiceConfigInPlace(
 		p.serviceConfig,
 		proj.Project.Path,
@@ -382,6 +388,38 @@ func (p *AgentServiceTargetProvider) ensureEnv(ctx context.Context) error {
 	return nil
 }
 
+func (p *AgentServiceTargetProvider) isDependencyEnabled(ctx context.Context, serviceName string) (bool, error) {
+	resp, err := p.azdClient.Project().GetServiceConfigValue(ctx, &azdext.GetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        "condition",
+	})
+	if err != nil {
+		return false, fmt.Errorf("read deployment condition for service %q: %w", serviceName, err)
+	}
+	if !resp.GetFound() || strings.TrimSpace(resp.GetValue().GetStringValue()) == "" {
+		return true, nil
+	}
+	condition, err := ExpandEnv(resp.GetValue().GetStringValue(), func(name string) string {
+		return p.dependencyEnvValue(name)
+	})
+	if err != nil {
+		return false, fmt.Errorf("malformed deployment condition for service %q: %w", serviceName, err)
+	}
+	switch condition {
+	case "1", "true", "TRUE", "True", "yes", "YES", "Yes":
+		return true, nil
+	default:
+		return false, nil
+	}
+}
+
+func (p *AgentServiceTargetProvider) dependencyEnvValue(name string) string {
+	if value, ok := os.LookupEnv(name); ok {
+		return value
+	}
+	return p.dependencyEnv[name]
+}
+
 // getServiceKey converts a service name into a standardized environment variable key format
 func (p *AgentServiceTargetProvider) getServiceKey(serviceName string) string {
 	serviceKey := strings.ReplaceAll(serviceName, " ", "_")
@@ -415,7 +453,6 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	for _, kval := range resp.KeyValues {
 		azdEnv[kval.Key] = kval.Value
 	}
-
 	// Check if required environment variables are set
 	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
 		return nil, exterrors.Dependency(
@@ -1047,6 +1084,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	for _, kval := range resp.KeyValues {
 		azdEnv[kval.Key] = kval.Value
 	}
+	p.dependencyEnv = azdEnv
 
 	serviceTargetConfig, err := LoadServiceTargetAgentConfig(serviceConfig)
 	if err != nil {
@@ -1059,6 +1097,12 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	if serviceTargetConfig != nil {
 		fmt.Println("Loaded custom service target configuration")
+	}
+
+	if err := validateFoundryDependencies(
+		ctx, serviceConfig, serviceTargetConfig, p.projectServices, azdEnv, p.dependencyEnabled,
+	); err != nil {
+		return nil, err
 	}
 
 	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
@@ -2647,17 +2691,18 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	}
 
 	serviceKey := p.getServiceKey(serviceConfig.Name)
-	envVars := map[string]string{
-		fmt.Sprintf("AGENT_%s_NAME", serviceKey):    agentVersionResponse.Name,
-		fmt.Sprintf("AGENT_%s_VERSION", serviceKey): agentVersionResponse.Version,
+	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
+	envVars := []azdext.SetEnvRequest{
+		{EnvName: p.env.Name, Key: versionKey, Value: ""},
+		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_NAME", serviceKey), Value: agentVersionResponse.Name},
 	}
 
 	// Set the base agent endpoint used for session management (not protocol-specific).
 	baseEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
 	projectEndpoint := strings.TrimRight(azdEnv["FOUNDRY_PROJECT_ENDPOINT"], "/")
-	envVars[baseEndpointKey] = fmt.Sprintf(
+	envVars = append(envVars, azdext.SetEnvRequest{EnvName: p.env.Name, Key: baseEndpointKey, Value: fmt.Sprintf(
 		"%s/agents/%s/versions/%s", projectEndpoint, agentVersionResponse.Name, agentVersionResponse.Version,
-	)
+	)})
 
 	endpoints := agentInvocationEndpoints(
 		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
@@ -2667,17 +2712,17 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	for _, ep := range endpoints {
 		suffix := strings.ToUpper(ep.Protocol)
 		key := fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, suffix)
-		envVars[key] = ep.URL
+		envVars = append(envVars, azdext.SetEnvRequest{EnvName: p.env.Name, Key: key, Value: ep.URL})
 	}
+	envVars = append(envVars,
+		azdext.SetEnvRequest{EnvName: p.env.Name, Key: envkey.AgentProjectEndpoint(serviceConfig.Name), Value: projectEndpoint},
+		azdext.SetEnvRequest{EnvName: p.env.Name, Key: versionKey, Value: agentVersionResponse.Version},
+	)
 
-	for key, value := range envVars {
-		_, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-			EnvName: p.env.Name,
-			Key:     key,
-			Value:   value,
-		})
+	for i := range envVars {
+		_, err := p.azdClient.Environment().SetValue(ctx, &envVars[i])
 		if err != nil {
-			return fmt.Errorf("failed to set environment variable %s: %w", key, err)
+			return fmt.Errorf("failed to set environment variable %s: %w", envVars[i].Key, err)
 		}
 	}
 

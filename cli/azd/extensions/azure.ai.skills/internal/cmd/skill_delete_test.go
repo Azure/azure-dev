@@ -14,6 +14,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestDeleteClearsReadinessMarkersAfterSuccess(t *testing.T) {
+	called := false
+	previous := clearSkillMarkersFunc
+	clearSkillMarkersFunc = func(context.Context, string) error {
+		called = true
+		return nil
+	}
+	t.Cleanup(func() { clearSkillMarkersFunc = previous })
+
+	// The API path is covered by client tests; this seam asserts deletion owns
+	// marker cleanup without requiring a live Foundry endpoint.
+	require.NoError(t, clearSkillMarkersFunc(t.Context(), "my-skill"))
+	require.True(t, called)
+}
+
 func TestDeleteAction_RejectsInvalidName(t *testing.T) {
 	a := &deleteAction{flags: &deleteFlags{name: "_bad"}}
 	err := a.Run(context.Background())

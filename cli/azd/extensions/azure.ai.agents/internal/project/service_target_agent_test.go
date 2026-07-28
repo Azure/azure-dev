@@ -124,9 +124,11 @@ func TestGetServiceKey_NormalizesToolboxNames(t *testing.T) {
 	}
 }
 
-func TestDependencyConditionLookupPrefersProcessEnvironment(t *testing.T) {
+func TestDependencyConditionLookupPrefersAzdEnvironment(t *testing.T) {
 	t.Setenv("DEPLOY_TOOLS", "true")
 	provider := &AgentServiceTargetProvider{dependencyEnv: map[string]string{"DEPLOY_TOOLS": "false"}}
+	require.Equal(t, "false", provider.dependencyEnvValue("DEPLOY_TOOLS"))
+	provider.dependencyEnv = nil
 	require.Equal(t, "true", provider.dependencyEnvValue("DEPLOY_TOOLS"))
 }
 

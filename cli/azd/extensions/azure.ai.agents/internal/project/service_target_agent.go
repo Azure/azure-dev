@@ -414,10 +414,10 @@ func (p *AgentServiceTargetProvider) isDependencyEnabled(ctx context.Context, se
 }
 
 func (p *AgentServiceTargetProvider) dependencyEnvValue(name string) string {
-	if value, ok := os.LookupEnv(name); ok {
+	if value, ok := p.dependencyEnv[name]; ok {
 		return value
 	}
-	return p.dependencyEnv[name]
+	return os.Getenv(name)
 }
 
 // getServiceKey converts a service name into a standardized environment variable key format

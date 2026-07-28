@@ -10,6 +10,7 @@ import (
 
 	"azureaiskills/internal/exterrors"
 	"azureaiskills/internal/foundry/envkey"
+	"azureaiskills/internal/pkg/skill_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -26,6 +27,10 @@ type deleteFlags struct {
 type deleteAction struct{ flags *deleteFlags }
 
 var clearSkillMarkersFunc = clearSkillMarkers
+
+type skillDeleteClient interface {
+	DeleteSkill(context.Context, string) (*skill_api.DeleteSkillResponse, error)
+}
 
 // deleteResult is the JSON shape printed when --output=json.
 type deleteResult struct {
@@ -60,13 +65,20 @@ func (a *deleteAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if _, err := skillCtx.client.DeleteSkill(ctx, a.flags.name); err != nil {
-		return exterrors.ServiceFromAzure(err, exterrors.OpDeleteSkill)
-	}
-	if err := clearSkillMarkersFunc(ctx, a.flags.name); err != nil {
+	if err := deleteSkillAndClearMarkers(ctx, skillCtx.client, a.flags.name); err != nil {
 		return err
 	}
 	return a.printResult(deleteResult{Name: a.flags.name, Deleted: true})
+}
+
+func deleteSkillAndClearMarkers(ctx context.Context, client skillDeleteClient, skillName string) error {
+	if _, err := client.DeleteSkill(ctx, skillName); err != nil {
+		return exterrors.ServiceFromAzure(err, exterrors.OpDeleteSkill)
+	}
+	if err := clearSkillMarkersFunc(ctx, skillName); err != nil {
+		return err
+	}
+	return nil
 }
 
 func clearSkillMarkers(ctx context.Context, skillName string) error {

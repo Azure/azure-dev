@@ -190,6 +190,9 @@ func runDeleteToolboxVersion(
 	}
 
 	if cascaded {
+		if err := setToolboxEndpointEnvFunc(ctx, name, ""); err != nil {
+			return err
+		}
 		if parent.output == "json" {
 			return emitDeleteResult(name, verb.version, "toolbox_cascaded", parent.output)
 		}

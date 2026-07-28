@@ -54,7 +54,7 @@ func setToolboxEndpointEnv(ctx context.Context, toolboxName, value string) error
 			return nil
 		}
 		if value == "" {
-			return setValue(commitKey, "")
+			return clearToolboxMarkers(toolboxName, setValue)
 		}
 		if err := setValue(commitKey, ""); err != nil {
 			return err
@@ -75,6 +75,13 @@ func setToolboxEndpointEnv(ctx context.Context, toolboxName, value string) error
 		}
 		return setValue(commitKey, value)
 	})
+}
+
+func clearToolboxMarkers(toolboxName string, setValue func(string, string) error) error {
+	if err := setValue(envkey.ToolboxMCPEndpoint(toolboxName), ""); err != nil {
+		return err
+	}
+	return setValue(envkey.ToolboxProjectEndpoint(toolboxName), "")
 }
 
 func toolboxProjectEndpoint(endpoint string) string {

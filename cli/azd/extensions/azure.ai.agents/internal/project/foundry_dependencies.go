@@ -32,6 +32,7 @@ type foundryDependencyFailure struct {
 	name              string
 	host              string
 	detail            string
+	configurationFix  string
 	requiresProvision bool
 	requiresDeploy    bool
 	requiresMigration bool
@@ -104,7 +105,9 @@ func validateFoundryDependencies(
 			if _, isDisabled := disabled[toolbox.Name]; isDisabled {
 				failures = append(failures, foundryDependencyFailure{
 					name: toolbox.Name, host: foundryToolboxHost,
-					detail: "toolbox dependency is disabled by its deployment condition",
+					detail:           "toolbox dependency is disabled by its deployment condition",
+					configurationFix: "enable the toolbox dependency or remove it from the agent definition",
+					requiresDeploy:   true,
 				})
 				continue
 			}
@@ -116,7 +119,11 @@ func validateFoundryDependencies(
 			if service, ok := services[toolbox.Name]; ok && service.GetHost() == foundryToolboxHost && !isDeclared {
 				failures = append(failures, foundryDependencyFailure{
 					name: toolbox.Name, host: foundryToolboxHost,
-					detail:         fmt.Sprintf("toolbox service is not declared in %s uses", agent.GetName()),
+					detail: fmt.Sprintf("toolbox service is not declared in %s uses", agent.GetName()),
+					configurationFix: fmt.Sprintf(
+						"add %s to the %s service uses list",
+						strconv.Quote(toolbox.Name), strconv.Quote(agent.GetName()),
+					),
 					requiresDeploy: true,
 				})
 				continue
@@ -165,26 +172,39 @@ func validateFoundryDependencies(
 	requiresProvision := false
 	requiresDeploy := false
 	requiresMigration := false
+	configurationFixes := make([]string, 0)
 	for _, failure := range failures {
 		requiresProvision = requiresProvision || failure.requiresProvision
 		requiresDeploy = requiresDeploy || failure.requiresDeploy
 		requiresMigration = requiresMigration || failure.requiresMigration
+		if failure.configurationFix != "" && !slices.Contains(configurationFixes, failure.configurationFix) {
+			configurationFixes = append(configurationFixes, failure.configurationFix)
+		}
 	}
 
-	suggestion := "run 'azd deploy --all', then retry the agent deployment"
+	actions := slices.Clone(configurationFixes)
 	if requiresMigration {
-		suggestion = "migrate bundled toolboxes to azure.ai.toolbox services, run 'azd deploy --all', " +
-			"then retry the agent deployment"
-	} else if requiresProvision && !requiresDeploy {
-		suggestion = "run 'azd provision', then retry the agent deployment"
-	} else if requiresProvision && requiresDeploy {
-		suggestion = "run 'azd provision' and 'azd deploy --all', then retry the agent deployment"
-	} else if len(failures) == 1 && serviceExists(services, failures[0].name) {
-		suggestion = fmt.Sprintf(
+		actions = append(actions, "migrate bundled toolboxes to azure.ai.toolbox services")
+	}
+	if requiresProvision {
+		actions = append(actions, "run 'azd provision'")
+	}
+	if requiresDeploy && len(configurationFixes) == 0 && !requiresMigration &&
+		len(failures) == 1 && serviceExists(services, failures[0].name) {
+		actions = append(actions, fmt.Sprintf(
 			"run 'azd deploy %s' or 'azd deploy --all', then retry 'azd deploy %s'",
 			strconv.Quote(failures[0].name),
 			strconv.Quote(agent.GetName()),
-		)
+		))
+	} else if requiresDeploy || requiresMigration {
+		actions = append(actions, "run 'azd deploy --all'")
+	}
+	if len(actions) == 0 {
+		actions = append(actions, "run 'azd deploy --all'")
+	}
+	suggestion := strings.Join(actions, ", then ")
+	if !strings.Contains(suggestion, "retry 'azd deploy") {
+		suggestion += ", then retry the agent deployment"
 	}
 
 	return exterrors.Dependency(
@@ -220,8 +240,7 @@ func validateFoundrySkillDependency(service *azdext.ServiceConfig, env map[strin
 		return fmt.Sprintf("%s is not set", versionKey)
 	}
 	projectKey := envkey.SkillProjectEndpoint(service.GetName())
-	if strings.TrimRight(strings.TrimSpace(env[projectKey]), "/") !=
-		strings.TrimRight(strings.TrimSpace(env["FOUNDRY_PROJECT_ENDPOINT"]), "/") {
+	if !sameProjectEndpoint(env[projectKey], env["FOUNDRY_PROJECT_ENDPOINT"]) {
 		return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", projectKey)
 	}
 	return ""

@@ -111,6 +111,18 @@ func TestValidateFoundryDependencies(t *testing.T) {
 			},
 		},
 		{
+			name: "skill project endpoint comparison ignores case",
+			uses: []string{"summarize"},
+			services: map[string]*azdext.ServiceConfig{
+				"summarize": {Name: "summarize", Host: foundrySkillHost},
+			},
+			env: map[string]string{
+				"FOUNDRY_PROJECT_ENDPOINT":               "https://account.test/projects/current",
+				envkey.SkillVersion("summarize"):         "1",
+				envkey.SkillProjectEndpoint("summarize"): "HTTPS://ACCOUNT.TEST/projects/current/",
+			},
+		},
+		{
 			name: "skill without version marker fails",
 			uses: []string{"summarize"},
 			services: map[string]*azdext.ServiceConfig{
@@ -240,6 +252,7 @@ func TestValidateFoundryDependenciesUnwiredSplitToolbox(t *testing.T) {
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
 	require.Contains(t, localErr.Message, "toolbox service is not declared in agent uses")
+	require.Contains(t, localErr.Suggestion, `add "tools" to the "agent" service uses list`)
 }
 
 func TestValidateFoundryDependenciesSkipsDisabledDependency(t *testing.T) {
@@ -269,6 +282,24 @@ func TestValidateFoundryDependenciesReportsDisabledRuntimeToolbox(t *testing.T) 
 		func(context.Context, string) (bool, error) { return false, nil },
 	)
 	require.ErrorContains(t, err, "toolbox dependency is disabled")
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Contains(t, localErr.Suggestion, "enable the toolbox dependency or remove it from the agent definition")
+}
+
+func TestValidateFoundryDependenciesCombinesMigrationAndProvisionRemediation(t *testing.T) {
+	t.Parallel()
+	agent := &azdext.ServiceConfig{Name: "agent", Host: foundryAgentHost, Uses: []string{"project"}}
+	config := &ServiceTargetAgentConfig{Toolboxes: []Toolbox{{Name: "legacy-tools"}}}
+	services := map[string]*azdext.ServiceConfig{
+		"agent": agent, "project": {Name: "project", Host: foundryProjectHost},
+	}
+	err := validateFoundryDependencies(t.Context(), agent, config, services, nil, nil)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Contains(t, localErr.Suggestion, "migrate bundled toolboxes")
+	require.Contains(t, localErr.Suggestion, "azd provision")
+	require.Contains(t, localErr.Suggestion, "azd deploy --all")
 }
 
 func TestValidateFoundryDependenciesIgnoresResourceUses(t *testing.T) {

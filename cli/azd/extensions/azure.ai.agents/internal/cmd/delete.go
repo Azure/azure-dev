@@ -13,6 +13,7 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/envkey"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -168,6 +169,7 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 		if err != nil {
 			return classifyDeleteError(err, agentName)
 		}
+		a.clearDeletedVersionMarker(ctx, azdClient, info.ServiceName, a.flags.version)
 		switch a.flags.output {
 		case "json":
 			data, jsonErr := json.MarshalIndent(result, "", "  ")
@@ -192,7 +194,7 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 		cleanupAgentSessionState(ctx, azdClient, envResp.Environment.Name, info.ServiceName)
 	}
 
-	// Best-effort: clear AGENT_{KEY}_NAME, AGENT_{KEY}_VERSION, AGENT_{KEY}_ENDPOINT env vars
+	// Best-effort: clear readiness and endpoint state after a successful delete.
 	a.cleanupEnvVars(ctx, azdClient, info.ServiceName)
 
 	switch a.flags.output {
@@ -209,26 +211,56 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 	return nil
 }
 
-// cleanupEnvVars removes AGENT_{KEY}_NAME, AGENT_{KEY}_VERSION, and
-// AGENT_{KEY}_ENDPOINT from the azd environment after a successful delete.
+// cleanupEnvVars removes agent readiness and endpoint values after a successful delete.
 // The SDK has no DeleteValue API, so we set values to empty string as a workaround.
 func (a *DeleteAction) cleanupEnvVars(ctx context.Context, azdClient *azdext.AzdClient, serviceName string) {
+	serviceKey := toServiceKey(serviceName)
+	a.clearEnvVars(ctx, azdClient, serviceName, []string{
+		fmt.Sprintf("AGENT_%s_NAME", serviceKey),
+		fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
+		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
+		envkey.AgentProjectEndpoint(serviceName),
+	})
+}
+
+func (a *DeleteAction) clearDeletedVersionMarker(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	deletedVersion string,
+) {
 	if serviceName == "" {
 		return
 	}
+	versionKey := fmt.Sprintf("AGENT_%s_VERSION", toServiceKey(serviceName))
+	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return
+	}
+	resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envResp.Environment.Name,
+		Key:     versionKey,
+	})
+	if err != nil || resp.Value != deletedVersion {
+		return
+	}
+	a.clearEnvVars(ctx, azdClient, serviceName, []string{versionKey})
+}
 
+func (a *DeleteAction) clearEnvVars(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	keys []string,
+) {
+	if serviceName == "" {
+		return
+	}
 	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return
 	}
 	envName := envResp.Environment.Name
-
-	serviceKey := toServiceKey(serviceName)
-	keys := []string{
-		fmt.Sprintf("AGENT_%s_NAME", serviceKey),
-		fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
-		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
-	}
 
 	for _, key := range keys {
 		if _, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{

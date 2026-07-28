@@ -16,6 +16,36 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestDeleteMarkerCleanup(t *testing.T) {
+	t.Parallel()
+
+	t.Run("whole agent clears project marker", func(t *testing.T) {
+		envServer := &testEnvironmentServiceServer{
+			current: &azdext.Environment{Name: "dev"},
+			values:  map[string]map[string]string{"dev": {}},
+		}
+		client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+		action := &DeleteAction{}
+		action.cleanupEnvVars(t.Context(), client, "my-agent")
+		require.Equal(t, "", envServer.values["dev"]["AGENT_MY_AGENT_PROJECT_ENDPOINT"])
+	})
+
+	t.Run("version marker clears only when matching", func(t *testing.T) {
+		envServer := &testEnvironmentServiceServer{
+			current: &azdext.Environment{Name: "dev"},
+			values: map[string]map[string]string{
+				"dev": {"AGENT_MY_AGENT_VERSION": "2"},
+			},
+		}
+		client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+		action := &DeleteAction{}
+		action.clearDeletedVersionMarker(t.Context(), client, "my-agent", "1")
+		require.Equal(t, "2", envServer.values["dev"]["AGENT_MY_AGENT_VERSION"])
+		action.clearDeletedVersionMarker(t.Context(), client, "my-agent", "2")
+		require.Equal(t, "", envServer.values["dev"]["AGENT_MY_AGENT_VERSION"])
+	})
+}
+
 func TestDeleteCommand_AcceptsPositionalArg(t *testing.T) {
 	cmd := newDeleteCommand(nil)
 	err := cmd.Args(cmd, []string{"my-agent"})

@@ -70,4 +70,4 @@ confirmation**.
 - Every selected scenario was driven to completion with a recorded PASS/FAIL, duration, and
   any findings, and a `FINAL-REPORT.md` was written under `.reports/<run-timestamp>/`.
 - A results comment was posted on the PR (unless the user opted out), and any Tier 2 run was
-  followed by `2Z-teardown-down` so no Azure resources are left running.
+  followed by `2.99-teardown-down` so no Azure resources are left running.

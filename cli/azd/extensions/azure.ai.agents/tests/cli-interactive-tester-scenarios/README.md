@@ -85,7 +85,7 @@ Implications:
   isolation (the `{instance}` suffix keeps concurrent runs of the same scenario
   apart — see [Parallel-readiness](#parallel-readiness--port-allocation)); and a
   single shared `~/working/azd-agents-shared` dir for all Tier 2 scenarios so they
-  operate on the same deployed agent. `20-setup` runs `init` in that shared dir,
+  operate on the same deployed agent. `2.00-setup` runs `init` in that shared dir,
   which scaffolds the project into a subdirectory named after the agent, so the
   deployed project actually lives in `~/working/azd-agents-shared/{shared_agent_name}`
   (where `{shared_agent_name} = {prefix}-{shared_agent_suffix}` from your
@@ -104,7 +104,7 @@ WSL side, **not** on the orchestrator side. On Windows hosts, pass a POSIX path:
 
 | Orchestrator OS | Pass to MCP tools | Don't pass |
 | --- | --- | --- |
-| Windows | `/mnt/c/Repos/azure-dev/cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/00-version.yaml` | `C:\Repos\azure-dev\...\00-version.yaml` |
+| Windows | `/mnt/c/Repos/azure-dev/cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/tier0/0.01-version.yaml` | `C:\Repos\azure-dev\...\tier0\0.01-version.yaml` |
 | macOS / Linux | native absolute path | — |
 
 **Failure-mode hint:** if `load_scenario` returns `Scenario file not found`, the
@@ -163,14 +163,14 @@ This opens the interactive sign-in flow and then:
 2. **Subscription selection** — back in the terminal, select the
    `{subscription}` subscription.
 
-Tier 0 (`00-`) scenarios need no auth. Run this `az login` step once per WSL
+Tier 0 (`tier0/`) scenarios need no auth. Run this `az login` step once per WSL
 session **before** asking the agent to drive any Tier 1/Tier 2 scenario; all of
 them reuse that session credential.
 
 ### GitHub login (manifest scenarios)
 
-The manifest scenarios (`10-init-from-manifest-url`,
-`10-init-flags-agent-name-model`) download an agent manifest — and its sibling
+The manifest scenarios (`1.03-init-from-azure-yaml-url`,
+`1.05-init-flags-agent-name-model`) download an agent manifest — and its sibling
 files — from a public GitHub repo. The CLI first tries the anonymous GitHub API,
 but when that's rate-limited (60 req/hr) it falls back to the `gh` CLI, which
 would otherwise drop into an **interactive GitHub login** mid-run. Like
@@ -202,15 +202,15 @@ advantage of both where it's safe.
   - **Tier 1 resource names** are suffixed with `-{instance}` too (via the
     RESOURCE NAMING goal and the `--agent-name` flag), so parallel instances
     don't collide on Azure resource names.
-  - **`27-run-local-and-invoke-local`** declares `allocate_ports: [agent]` and
+  - **`2.12-run-local-and-invoke-local`** declares `allocate_ports: [agent]` and
     binds `azd ai agent run`/`invoke --local` to `--port {agent}`. A port pool is
     shared across every `start_session` with the same `scenario_path`, so the
     `run` and `invoke` sessions find each other; parallel local runs each get a
     distinct port instead of colliding on the default `8088`.
-- **Single-instance by design:** the **Tier 2 reuse scenarios** (`21-`…`2A-`),
-  plus `20-setup` and `2Z-teardown`, all share the one deployed agent under
+- **Single-instance by design:** the **Tier 2 reuse scenarios** (`2.01-`…`2.18-`),
+  plus `2.00-setup` and `2.99-teardown`, all share the one deployed agent under
   `~/working/azd-agents-shared` (the project itself lives in the
-  `{shared_agent_name}` subdirectory created by `20-setup`). They are
+  `{shared_agent_name}` subdirectory created by `2.00-setup`). They are
   **not** parameterized with `{instance}` (doing so would break the shared-agent
   assumption) and should be run serially.
 
@@ -225,18 +225,18 @@ fan-out primitive for the shape of the run:
 
 - **Different scenarios in parallel** (the common case for a full Tier 0/1
   sweep): give each sub-agent a distinct, descriptive `session_id` — e.g.
-  `fleet-00-version`, `fleet-10-init-from-code` — and call `start_session` with
+  `fleet-0.01-version`, `fleet-1.04-init-from-code` — and call `start_session` with
   the scenario's own `cwd`. **No `instance_id` is needed**: each scenario's `cwd`
   already isolates itself via the `{instance}` substitution, which defaults to
   `"main"` when `instance_id` is omitted.
 - **Same scenario N times in parallel:** use `instance_id="1"`, `"2"`, … per
   call. See [Parallel-readiness](#parallel-readiness--port-allocation) for which
   scenarios are authored to support this.
-- **Tier 2 ordering is fixed**, not parallel-friendly. Run `20-setup` first,
-  then the targeted `21-…2A-` scenarios **serially** (they share one deployed
+- **Tier 2 ordering is fixed**, not parallel-friendly. Run `2.00-setup` first,
+  then the targeted `2.01-`…`2.18-` scenarios **serially** (they share one deployed
   agent and mutate shared state — sessions, files, endpoint configuration —
-  so parallel runs interfere), then `2Z-teardown` last. See the
-  [Tier 2](#tier-2--cloud-end-to-end-prefix-2x---%EF%B8%8F-incurs-azure-cost)
+  so parallel runs interfere), then `2.99-teardown` last. See the
+  [Tier 2](#tier-2--cloud-end-to-end-tier2---%EF%B8%8F-incurs-azure-cost)
   section.
 
 ### Operational guardrails for the orchestrator
@@ -299,13 +299,13 @@ its bugs:
   irreversible-ish; confirm with the user before entering an `init`/`provision`
   flow that creates real resources (especially when running in parallel).
 - **Pass `run_name=<scenario-stem>` to every `start_session` call.** The
-  scenario stem is the YAML filename without `.yaml` (e.g. `00-version`,
-  `21-show-json`, `27-run-local-and-invoke-local`). Without `run_name` the
+  scenario stem is the YAML filename without `.yaml` (e.g. `0.01-version`,
+  `2.02-show-json`, `2.12-run-local-and-invoke-local`). Without `run_name` the
   tester auto-names the run folder `agent_YYYYMMDD_HHMMSS`, which makes
   archived runs in `.reports/<run>/tester-reports/` hard to cross-reference
   with the scenario list. For scenarios that start two sessions
-  (e.g. `27-run-local-and-invoke-local`), suffix the run_name with a role tag
-  (`27-run-local-and-invoke-local-run`, `27-run-local-and-invoke-local-invoke`)
+  (e.g. `2.12-run-local-and-invoke-local`), suffix the run_name with a role tag
+  (`2.12-run-local-and-invoke-local-run`, `2.12-run-local-and-invoke-local-invoke`)
   so each session gets its own clearly named folder.
 - **Pass `output_dir` to every `start_session` call** so the tester writes
   screenshots and HTML reports directly into this repo's archive layout
@@ -336,78 +336,81 @@ scenario also carries a `tags:` list that exposes the same axes plus the
 command(s) under test — see [Tags](#tags) for the full taxonomy and how to
 filter via `list_scenarios`.
 
-### Tier 0 — Offline (prefix `00-`)
+### Tier 0 — Offline (`tier0/`)
 No Azure auth, no network resource creation (except `sample list`, which fetches
 the public template catalog). Fast and mostly deterministic. Safe to run
 in any order, any time.
 
 | File | Targets |
 |------|---------|
-| `00-version.yaml` | `version` |
-| `00-help-root.yaml` | root help / command discovery |
-| `00-sample-list-text.yaml` | `sample list` (text) |
-| `00-sample-list-json-filters.yaml` | `sample list` `--output json`, `--language`, `--type`, `--featured-only` |
-| `00-doctor-empty-dir.yaml` | `doctor` in an empty dir (graceful skips) |
-| `00-doctor-local-only.yaml` | `doctor --local-only` |
-| `00-init-validate-mutually-exclusive.yaml` | `init` arg validation (positional manifest + `-m`) |
-| `00-init-validate-no-prompt-missing.yaml` | `init --no-prompt` missing-input error |
-| `00-init-picker-navigation.yaml` | `init` interactive picker UX (abort before Azure) |
-| `00-invoke-validate-protocol.yaml` | `invoke --protocol` unsupported-value error |
-| `00-eval-context-required.yaml` | `eval list` outside a project requires a Foundry endpoint |
-| `00-optimize-apply-requires-candidate.yaml` | `optimize apply` missing required `--candidate` |
-| `00-doctor-partial-failure.yaml` | `doctor` mixed PASS+FAIL (exit 1) on a name-only `azure.yaml` |
+| `tier0/0.01-version.yaml` | `version` |
+| `tier0/0.02-help-root.yaml` | root help / command discovery |
+| `tier0/0.03-sample-list-text.yaml` | `sample list` (text) |
+| `tier0/0.04-sample-list-json-filters.yaml` | `sample list` `--output json`, `--language`, `--type`, `--featured-only` |
+| `tier0/0.05-doctor-empty-dir.yaml` | `doctor` in an empty dir (graceful skips) |
+| `tier0/0.06-doctor-local-only.yaml` | `doctor --local-only` |
+| `tier0/0.07-doctor-partial-failure.yaml` | `doctor` mixed PASS+FAIL (exit 1) on a name-only `azure.yaml` |
+| `tier0/0.08-init-validate-mutually-exclusive.yaml` | `init` arg validation (positional manifest + `-m`) |
+| `tier0/0.09-init-validate-no-prompt-missing.yaml` | `init --no-prompt` missing-input error |
+| `tier0/0.10-init-picker-navigation.yaml` | `init` interactive picker UX (abort before Azure) |
+| `tier0/0.11-invoke-validate-protocol.yaml` | `invoke --protocol` unsupported-value error |
+| `tier0/0.12-eval-context-required.yaml` | `eval list` outside a project requires a Foundry endpoint |
+| `tier0/0.13-optimize-apply-requires-candidate.yaml` | `optimize apply` missing required `--candidate` |
+| `tier0/0.14-endpoint-show-help.yaml` | `endpoint show --help` |
+| `tier0/0.15-code-download-help.yaml` | `code download --help` |
+| `tier0/0.16-delete-help.yaml` | `delete --help` |
 
-### Tier 1 — Auth, scaffold only (prefix `10-`)
+### Tier 1 — Auth, scaffold only (`tier1/`)
 Requires Azure login (reads subscriptions/Foundry projects) but **does not
 provision** any resources and incurs no cost. Each completes a project scaffold
 and verifies the generated files, then stops before `azd provision`.
 
 | File | Targets |
 |------|---------|
-| `10-init-template-python.yaml` | `init` new-from-template, Python |
-| `10-init-template-dotnet.yaml` | `init` new-from-template, C#/.NET |
-| `10-init-from-manifest-url.yaml` | `init -m <manifest url>` (needs `gh auth login`) |
-| `10-init-from-code.yaml` | `init` → pick "Use the code in the current directory" |
-| `10-init-flags-agent-name-model.yaml` | `init -m … --agent-name --model` (needs `gh auth login`) |
-| `10-init-deploy-mode-code.yaml` | `init --deploy-mode code` (entry-point/runtime) |
-| `10-init-validate-deploy-mode.yaml` | `init --deploy-mode` value validation (invalid value; code-mode required flags) — seeds from-code so the deploy-mode check is reached |
-| `10-init-deploy-mode-container.yaml` | `init --deploy-mode container` (container build config) |
+| `tier1/1.01-init-template-python.yaml` | `init` new-from-template, Python |
+| `tier1/1.02-init-template-dotnet.yaml` | `init` new-from-template, C#/.NET |
+| `tier1/1.03-init-from-azure-yaml-url.yaml` | `init -m <manifest url>` (needs `gh auth login`) |
+| `tier1/1.04-init-from-code.yaml` | `init` → pick "Use the code in the current directory" |
+| `tier1/1.05-init-flags-agent-name-model.yaml` | `init -m … --agent-name --model` (needs `gh auth login`) |
+| `tier1/1.06-init-deploy-mode-code.yaml` | `init --deploy-mode code` (entry-point/runtime) |
+| `tier1/1.07-init-deploy-mode-container.yaml` | `init --deploy-mode container` (container build config) |
+| `tier1/1.08-init-validate-deploy-mode.yaml` | `init --deploy-mode` value validation (invalid value; code-mode required flags) — seeds from-code so the deploy-mode check is reached |
 
-### Tier 2 — Cloud end-to-end (prefix `2x-`) — ⚠️ incurs Azure cost
+### Tier 2 — Cloud end-to-end (`tier2/`) — ⚠️ incurs Azure cost
 Provisions real resources. **Run order matters:**
 
-1. `20-setup-deploy-shared-agent.yaml` **first** — deploys the shared agent.
-2. Any `21-`…`2D-` targeted scenario (reuse the deployed agent).
-3. `2Z-teardown-down.yaml` **last** — `azd down --force --purge`.
+1. `tier2/2.00-setup-deploy-shared-agent.yaml` **first** — deploys the shared agent.
+2. Any `2.01-`…`2.18-` targeted scenario (reuse the deployed agent).
+3. `tier2/2.99-teardown-down.yaml` **last** — `azd down --force --purge`.
 
 All Tier 2 scenarios share one working tree under `~/working/azd-agents-shared`
-so they operate on the same deployed agent. `20-setup` runs `init` there, which
+so they operate on the same deployed agent. `2.00-setup` runs `init` there, which
 scaffolds the project into the `{shared_agent_name}` subdirectory; the
 reuse and teardown scenarios run with `~/working/azd-agents-shared/{shared_agent_name}`
 as their `cwd`.
 
 | File | Targets |
 |------|---------|
-| `20-setup-deploy-shared-agent.yaml` | `init` + `azd provision` + `azd deploy` (SETUP) |
-| `21-show.yaml` | `show` (table) |
-| `21-show-json.yaml` | `show --output json` |
-| `22-invoke-remote.yaml` | `invoke` (remote) |
-| `22-invoke-new-session.yaml` | `invoke --new-session` / `--new-conversation` (session vs conversation memory) |
-| `22-invoke-input-file.yaml` | `invoke -f <file>` |
-| `23-invoke-protocol-invocations.yaml` | `invoke --protocol invocations` (session-bound memory; `--new-session` resets, `--new-conversation` no-op) |
-| `23-sessions-lifecycle.yaml` | `sessions create/list/show/delete` |
-| `24-files-lifecycle.yaml` | `files upload/list/stat/mkdir/download/delete` |
-| `25-monitor-console.yaml` | `monitor` (console) |
-| `25-monitor-system.yaml` | `monitor --type system` |
-| `26-endpoint-update.yaml` | `endpoint update` |
-| `27-run-local-and-invoke-local.yaml` | `run` + `invoke --local` (two sessions) |
-| `28-eval-lifecycle.yaml` | `eval generate/list/show` against the shared agent (small sample budget, `--no-wait`) |
-| `29-optimize-submit-and-cancel.yaml` | `optimize` submit + `list`/`status`/`cancel` (capped at 1 iteration, `--no-wait`) |
-| `2A-doctor-provisioned-all-pass.yaml` | `doctor` (all checks pass) |
-| `2B-endpoint-show.yaml` | `endpoint show` (agent endpoint details) |
-| `2C-code-download.yaml` | `code download` (positive-path: downloads agent source code) |
-| `2D-delete.yaml` | `delete` (destroys the shared agent — run before teardown) |
-| `2Z-teardown-down.yaml` | `azd down --force --purge` (TEARDOWN) |
+| `tier2/2.00-setup-deploy-shared-agent.yaml` | `init` + `azd provision` + `azd deploy` (SETUP) |
+| `tier2/2.01-show.yaml` | `show` (table) |
+| `tier2/2.02-show-json.yaml` | `show --output json` |
+| `tier2/2.03-invoke-remote.yaml` | `invoke` (remote) |
+| `tier2/2.04-invoke-new-session.yaml` | `invoke --new-session` / `--new-conversation` (session vs conversation memory) |
+| `tier2/2.05-invoke-input-file.yaml` | `invoke -f <file>` |
+| `tier2/2.06-invoke-protocol-invocations.yaml` | `invoke --protocol invocations` (session-bound memory; `--new-session` resets, `--new-conversation` no-op) |
+| `tier2/2.07-sessions-lifecycle.yaml` | `sessions create/list/show/delete` |
+| `tier2/2.08-files-lifecycle.yaml` | `files upload/list/stat/mkdir/download/delete` |
+| `tier2/2.09-monitor-console.yaml` | `monitor` (console) |
+| `tier2/2.10-monitor-system.yaml` | `monitor --type system` |
+| `tier2/2.11-endpoint-update.yaml` | `endpoint update` |
+| `tier2/2.12-run-local-and-invoke-local.yaml` | `run` + `invoke --local` (two sessions) |
+| `tier2/2.13-eval-lifecycle.yaml` | `eval generate/list/show` against the shared agent (small sample budget, `--no-wait`) |
+| `tier2/2.14-optimize-submit-and-cancel.yaml` | `optimize` submit + `list`/`status`/`cancel` (capped at 1 iteration, `--no-wait`) |
+| `tier2/2.15-doctor-provisioned-all-pass.yaml` | `doctor` (all checks pass) |
+| `tier2/2.16-endpoint-show.yaml` | `endpoint show` (agent endpoint details) |
+| `tier2/2.17-code-download.yaml` | `code download` (positive-path: downloads agent source code) |
+| `tier2/2.18-delete.yaml` | `delete` (destroys the shared agent — run before teardown) |
+| `tier2/2.99-teardown-down.yaml` | `azd down --force --purge` (TEARDOWN) |
 
 ## Tags
 
@@ -422,7 +425,7 @@ grouping — colons are treated as ordinary characters by the filter):
 | Namespace | Values | Meaning |
 |---|---|---|
 | `tier:N` | `tier:0`, `tier:1`, `tier:2` | The tier the scenario belongs to (same axis as the directory's three sections above). Use this to express cost / auth profile in one tag. |
-| `cmd:*` | `cmd:init`, `cmd:show`, `cmd:invoke`, `cmd:sessions`, `cmd:files`, `cmd:monitor`, `cmd:endpoint`, `cmd:run`, `cmd:doctor`, `cmd:eval`, `cmd:optimize`, `cmd:sample`, `cmd:down`, `cmd:provision`, `cmd:deploy`, `cmd:version`, `cmd:help`, `cmd:code`, `cmd:delete` | The top-level `azd ai agent` (or `azd`) command(s) the scenario exercises. Multi-command scenarios (e.g. `27-run-local-and-invoke-local` runs both `run` and `invoke --local`; `20-setup` runs `init` + `provision` + `deploy`) carry multiple `cmd:*` tags. |
+| `cmd:*` | `cmd:init`, `cmd:show`, `cmd:invoke`, `cmd:sessions`, `cmd:files`, `cmd:monitor`, `cmd:endpoint`, `cmd:run`, `cmd:doctor`, `cmd:eval`, `cmd:optimize`, `cmd:sample`, `cmd:down`, `cmd:provision`, `cmd:deploy`, `cmd:version`, `cmd:help`, `cmd:code`, `cmd:delete` | The top-level `azd ai agent` (or `azd`) command(s) the scenario exercises. Multi-command scenarios (e.g. `2.12-run-local-and-invoke-local` runs both `run` and `invoke --local`; `2.00-setup` runs `init` + `provision` + `deploy`) carry multiple `cmd:*` tags. |
 | traits | `parallel-safe`, `serial-only`, `negative-path`, `picker` | `parallel-safe` ↔ `serial-only` are mutually exclusive: all Tier 0 / Tier 1 scenarios are `parallel-safe`, all Tier 2 are `serial-only`. `negative-path` flags arg-/CLI-validation scenarios that assert errors or non-zero exit codes rather than happy-path success. `picker` flags scenarios whose primary purpose is exercising interactive picker UX. |
 
 **Examples** (the tool's `tags:` parameter is OR across the list):
@@ -455,7 +458,7 @@ For each scenario returned by list_scenarios: load it, run any pre hooks,
 start the session and accomplish the goals (take screenshots at each step),
 finish the session, run any post hooks. The Tier 0/1 `init` scenarios are
 parallel-safe (also tagged `parallel-safe`); fan them out via fleet mode.
-The Tier 2 `init` scenario (`20-setup-deploy-shared-agent`) is `serial-only`
+The Tier 2 `init` scenario (`2.00-setup-deploy-shared-agent`) is `serial-only`
 — run it on its own and only if I confirm I want to spend on Azure resources.
 ```
 
@@ -568,21 +571,21 @@ How they're used here:
   re-runs start clean. (`start_session` recreates the dir, so removing it is
   enough; the doctor/init scenarios just need an empty dir.)
 - **`pre` fixture seed** — the existing-code scenarios
-  (`10-init-from-code`, `10-init-deploy-mode-code`) also copy a committed Python
+  (`1.04-init-from-code`, `1.06-init-deploy-mode-code`) also copy a committed Python
   fixture into the dir so the source exists before the wizard's "Use the code in
   the current directory" flow inspects it (see [Fixtures](#fixtures)).
-- **`pre` gh-auth guard** — the manifest scenarios (`10-init-from-manifest-url`,
-  `10-init-flags-agent-name-model`) run `gh auth status` and fail fast if GitHub
+- **`pre` gh-auth guard** — the manifest scenarios (`1.03-init-from-azure-yaml-url`,
+  `1.05-init-flags-agent-name-model`) run `gh auth status` and fail fast if GitHub
   CLI isn't authenticated, because downloading the manifest can fall back to the
   `gh` CLI (and an interactive login) when the anonymous GitHub API is
   rate-limited. Run `gh auth login` first (see [Authentication](#authentication)).
-- **`pre` idempotent setup (Tier 2)** — `20-setup-deploy-shared-agent` first runs
+- **`pre` idempotent setup (Tier 2)** — `2.00-setup-deploy-shared-agent` first runs
   `azd down --force --purge` if a leftover project exists in the shared dir (so it
   never orphans live Azure resources), then clears the dir. The down hook uses
   `timeout: 900` and `continue_on_error: true`.
-- **`pre` precondition guard (Tier 2 reuse)** — `21-…2A` print a clear "run
-  20-setup first" warning if the shared agent isn't deployed (non-fatal).
-- **`post` cleanup** — `2Z-teardown-down` clears the shared working dir after the
+- **`pre` precondition guard (Tier 2 reuse)** — `2.01-`…`2.18` print a clear "run
+  2.00-setup first" warning if the shared agent isn't deployed (non-fatal).
+- **`post` cleanup** — `2.99-teardown-down` clears the shared working dir after the
   in-session `azd down` completes.
 
 ## Fixtures
@@ -614,16 +617,16 @@ be run back to back in any order within a tier:
 - Tier 0/1 stateful scenarios **pre-wipe** their own `cwd`. Cleanup is pre-wipe
   **only** (no `post` delete), so the generated scaffold stays on disk for
   inspection after a run while the next run still starts clean.
-- The shared Tier 2 dir is reset by `20-setup`'s `pre` hook, which **downs any
+- The shared Tier 2 dir is reset by `2.00-setup`'s `pre` hook, which **downs any
   leftover deployed project first** to avoid orphaning live Azure resources (this
   also sidesteps the resource-name hash collision behind
-  [#8360](https://github.com/Azure/azure-dev/issues/8360)). `2Z-teardown-down`
+  [#8360](https://github.com/Azure/azure-dev/issues/8360)). `2.99-teardown-down`
   additionally clears the dir in a `post` hook.
 - Read-only scenarios (`version`, `--help`, `sample list`) run in `/tmp`, hold no
   state, and declare no hooks.
 
-> If a Tier 2 run is interrupted before `2Z-teardown`, just re-run
-> `20-setup-deploy-shared-agent` — its `pre` hook downs any live project in the
+> If a Tier 2 run is interrupted before `2.99-teardown`, just re-run
+> `2.00-setup-deploy-shared-agent` — its `pre` hook downs any live project in the
 > shared dir before redeploying, so resources won't be orphaned.
 
 ## Notes
@@ -631,7 +634,7 @@ be run back to back in any order within a tier:
 - `files` and `sessions` are exercised as one lifecycle scenario per command
   group (rather than one file per subcommand) to avoid cross-scenario ordering
   dependencies — still one command at a time.
-- `azd ai agent run` blocks the terminal; `27-run-local-and-invoke-local.yaml`
+- `azd ai agent run` blocks the terminal; `2.12-run-local-and-invoke-local.yaml`
   uses two sessions (one to run, one to invoke `--local`) that share an
   allocated `{agent}` port (see
   [Parallel-readiness](#parallel-readiness--port-allocation)).

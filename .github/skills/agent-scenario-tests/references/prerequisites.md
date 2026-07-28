@@ -10,8 +10,8 @@ the user exactly what to fix — do **not** try to work around it.
    Resolve its absolute path; everything else is relative to it.
 2. Note the **WSL path** of that directory for MCP tool arguments. On Windows hosts the
    tester runs inside WSL, so a Windows path like
-   `C:\Repos\azure-dev\...\scenarios\00-version.yaml` must be passed as
-   `/mnt/c/Repos/azure-dev/.../scenarios/00-version.yaml`. On macOS/Linux use the native
+   `C:\Repos\azure-dev\...\scenarios\tier0\0.01-version.yaml` must be passed as
+   `/mnt/c/Repos/azure-dev/.../scenarios/tier0/0.01-version.yaml`. On macOS/Linux use the native
    absolute path. See `running-scenarios.md` § Path style.
 
 ### Tooling
@@ -29,7 +29,7 @@ the user exactly what to fix — do **not** try to work around it.
 - **Tier 1 / Tier 2** read from / write to Azure. A human must `az login` inside WSL
   **before** the run (the agent cannot complete the browser sign-in). If the selected set
   includes Tier 1/2, remind the user to `az login` first.
-- **Manifest scenarios** (`10-init-from-manifest-url`, `10-init-flags-agent-name-model`)
+- **Manifest scenarios** (`1.03-init-from-azure-yaml-url`, `1.05-init-flags-agent-name-model`)
   download from GitHub and can fall back to the `gh` CLI; they need `gh auth login` inside
   WSL. Their `pre` hook fails fast if it isn't set up.
 

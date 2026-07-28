@@ -73,4 +73,4 @@ From the impacted `cmd:*` set, decide the **highest tier to offer**:
 Combine the derived `cmd:*` tags with the chosen tier tags and call
 `list_scenarios(tags=[...])`. Example: an `invoke.go` change approved for Tier 2 →
 `list_scenarios(tags=["cmd:invoke"])`, then keep the Tier 0/1 results plus the Tier 2
-`22-*` scenarios, prefixed by `20-setup` and suffixed by `2Z-teardown`.
+`2.*-invoke-*` scenarios, prefixed by `2.00-setup` and suffixed by `2.99-teardown`.

@@ -11,7 +11,7 @@ path-shaped MCP argument on the WSL side. Pass POSIX paths:
 
 | Orchestrator OS | Pass to MCP tools |
 | --- | --- |
-| Windows | `/mnt/c/Repos/azure-dev/.../scenarios/00-version.yaml` |
+| Windows | `/mnt/c/Repos/azure-dev/.../scenarios/tier0/0.01-version.yaml` |
 | macOS / Linux | native absolute path |
 
 This applies to `path:` on `load_scenario` / `run_pre_hooks` / `run_post_hooks` and to
@@ -28,8 +28,8 @@ For each selected scenario:
 2. If it has `pre` hooks: `run_pre_hooks(path=…, session_vars=…)`. Hooks run host-side,
    sequentially, fail-fast (unless `continue_on_error: true`).
 3. `start_session(scenario_path=…, session_vars=…, run_name=<scenario-stem>, output_dir=<wsl .reports path>)`.
-   - `run_name` = the YAML filename without `.yaml` (e.g. `00-version`, `21-show-json`).
-   - For scenarios that start two sessions (`27-run-local-and-invoke-local`), suffix the
+   - `run_name` = the YAML filename without `.yaml` (e.g. `0.01-version`, `2.02-show-json`).
+   - For scenarios that start two sessions (`2.12-run-local-and-invoke-local`), suffix the
      `run_name` with a role tag (`…-run`, `…-invoke`).
    - `output_dir` = WSL path of `<scenarios-dir>/.reports/<run-timestamp>/tester-reports`.
      Reuse the **same** `<run-timestamp>` across every scenario in the run.
@@ -70,15 +70,15 @@ For each selected scenario:
 
 - **Tier 0 / Tier 1** (`parallel-safe`): fan out in small waves (4–6 at a time), one
   sub-agent per scenario, each with a distinct descriptive `session_id` **postfixed with a
-  timestamp** (e.g. `fleet-10-init-from-code-1752434100`). The timestamp (Unix epoch
+  timestamp** (e.g. `fleet-1.04-init-from-code-1752434100`). The timestamp (Unix epoch
   seconds) prevents collisions when multiple agent sessions drive the tester concurrently.
   No `instance_id` is needed — each scenario's `cwd` already isolates itself (defaults to
   the `-main` suffix).
 - **Same scenario N times** in parallel: pass `instance_id="1"`, `"2"`, … See the README's
   parallel-readiness section for which scenarios support it.
-- **Tier 2** (`serial-only`): never parallelize. Run `20-setup-deploy-shared-agent` first,
-  then `21-…2D-` serially (they share one deployed agent and mutate shared session/file/
-  endpoint state), then `2Z-teardown-down` last.
+- **Tier 2** (`serial-only`): never parallelize. Run `2.00-setup-deploy-shared-agent` first,
+  then `2.01-`…`2.18-` serially (they share one deployed agent and mutate shared session/file/
+  endpoint state), then `2.99-teardown-down` last.
 - **Validate the recipe with one scenario before fanning out** — confirm `load_scenario` →
   `start_session` → one `send_action` round-trips for a single Tier 0 scenario first.
 

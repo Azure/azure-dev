@@ -76,8 +76,8 @@ Drive each selected scenario per `running-scenarios.md`. Honor ordering:
 
 - **Tier 0 / Tier 1** are `parallel-safe` — they may be run concurrently (small waves), each
   with its own `cwd` (no `instance_id` needed for distinct scenarios).
-- **Tier 2** is `serial-only` and order-dependent: `20-setup-deploy-shared-agent` **first**,
-  then the targeted `21-…2D-` scenarios **serially**, then `2Z-teardown-down` **last**.
+- **Tier 2** is `serial-only` and order-dependent: `2.00-setup-deploy-shared-agent` **first**,
+  then the targeted `2.01-`…`2.18-` scenarios **serially**, then `2.99-teardown-down` **last**.
 
 Record per scenario: PASS/FAIL, wall-clock duration (`Hh Mm Ss`), and any `report_finding`
 entries.
@@ -85,8 +85,8 @@ entries.
 ### Step 6 — Report
 
 Aggregate results into `.reports/<run-timestamp>/FINAL-REPORT.md` and post a PR comment per
-`reporting.md`. If a Tier 2 run started but was interrupted before `2Z-teardown`, run
-`2Z-teardown-down` (or `20-setup`'s down hook) so no resources are orphaned, then report.
+`reporting.md`. If a Tier 2 run started but was interrupted before `2.99-teardown`, run
+`2.99-teardown-down` (or `2.00-setup`'s down hook) so no resources are orphaned, then report.
 
 ### Step 7 — Stop conditions
 

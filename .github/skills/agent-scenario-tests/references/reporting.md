@@ -27,12 +27,12 @@ formatting). Keep it scannable — full detail lives in the artifact. Suggested 
 
 | Scenario | Tier | Result | Duration |
 | --- | --- | --- | --- |
-| 00-version | 0 | ✅ PASS | 4s |
-| 22-invoke-remote | 2 | ✅ PASS | 1m 12s |
-| 22-invoke-new-session | 2 | ❌ FAIL | 1m 40s |
+| 0.01-version | 0 | ✅ PASS | 4s |
+| 2.03-invoke-remote | 2 | ✅ PASS | 1m 12s |
+| 2.04-invoke-new-session | 2 | ❌ FAIL | 1m 40s |
 
 **Findings**
-- `22-invoke-new-session`: `--new-conversation` still recalled the prior name — memory
+- `2.04-invoke-new-session`: `--new-conversation` still recalled the prior name — memory
   was not reset. (screenshot: …)
 
 **Coverage gaps:** this PR also touches `mcp.go`, which has no scenario — consider adding one.
@@ -47,5 +47,5 @@ Rules:
   of the PR's change is a FAIL — report it and recommend fixing the code, not the scenario.
 - If the user opted out of posting (or there's no PR), write only the artifact and print the
   summary to the user instead.
-- Mention any Tier 2 teardown status explicitly (e.g. "`2Z-teardown-down` ran — no resources
+- Mention any Tier 2 teardown status explicitly (e.g. "`2.99-teardown-down` ran — no resources
   left provisioned") so the reader knows nothing is still costing money.

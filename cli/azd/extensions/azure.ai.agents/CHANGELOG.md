@@ -4,7 +4,7 @@
 
 ### Features Added
 
-- [[#XXXX]](https://github.com/Azure/azure-dev/pull/XXXX) For activity-protocol agents, `azd deploy` now generates a ready-to-sideload Teams app package (`appPackage.zip`) next to the agent source by calling the Foundry Microsoft 365 packaging API, so you no longer have to assemble a Teams manifest and icons by hand. `TEAMS_APP_SETUP.md` now leads with sideloading that package (Teams UI or the `atk` CLI, `--scope Personal`, no Teams admin needed) and only falls back to manual packaging steps if package generation fails. Non-activity agents are unaffected.
+- [[#9332]](https://github.com/Azure/azure-dev/pull/9332) For activity-protocol agents, `azd deploy` now generates a ready-to-sideload Teams app package (`appPackage.zip`) next to the agent source by calling the Foundry Microsoft 365 packaging API, so you no longer have to assemble a Teams manifest and icons by hand. `TEAMS_APP_SETUP.md` now leads with sideloading that package (Teams UI or the `atk` CLI, `--scope Personal`, no Teams admin needed) and only falls back to manual packaging steps if package generation fails. Non-activity agents are unaffected.
 
 ## 1.0.0-beta.7 (2026-07-23)
 

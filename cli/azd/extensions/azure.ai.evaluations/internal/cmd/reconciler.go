@@ -84,8 +84,17 @@ func (r *evalReconciler) EnsureDataset(
 		dir = filepath.Dir(localPath)
 	}
 
+	// UploadNewVersion derives the next version from the one passed in, so it
+	// has to be told what is already registered. Passing an empty version
+	// restarts at 1.0 and the service rejects the pending upload with
+	// TemporaryDataReferencesForExistingAsset once that version exists.
+	currentVersion := decl.Version
+	if currentVersion == "" {
+		currentVersion = r.latestDatasetVersion(ctx, decl.Name)
+	}
+
 	ds, err := r.ec.datasetClient.UploadNewVersion(
-		ctx, decl.Name, decl.Version, dir, ProjectEndpointAPIVersion,
+		ctx, decl.Name, currentVersion, dir, ProjectEndpointAPIVersion,
 	)
 	if err != nil {
 		return "", false, err
@@ -96,6 +105,16 @@ func (r *evalReconciler) EnsureDataset(
 	_ = r.ec.setEnvValue(ctx, envKeyDatasetVersion, ds.Version)
 
 	return ds.Version, true, nil
+}
+
+// latestDatasetVersion reports the newest registered version, or empty when the
+// dataset does not exist yet so the first upload starts at 1.0.
+func (r *evalReconciler) latestDatasetVersion(ctx context.Context, name string) string {
+	list, err := r.ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
+	if err != nil || list == nil || len(list.Value) == 0 {
+		return ""
+	}
+	return dataset_api.LatestVersion(list.Value)
 }
 
 // EnsureEvaluator publishes a new version when the local definition differs

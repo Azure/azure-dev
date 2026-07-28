@@ -4,6 +4,8 @@
 package evalcore
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -86,4 +88,59 @@ func (el EvaluatorList) MarshalYAML() (any, error) {
 		out = append(out, ref)
 	}
 	return out, nil
+}
+
+// UnmarshalJSON accepts the same mixed string-or-mapping form as the YAML
+// decoder.
+//
+// This matters for the service-target provider: azd hands the service entry to
+// the extension as JSON, so a config written as `- builtin.task_adherence`
+// arrives as a bare string and would otherwise fail to decode.
+func (el *EvaluatorList) UnmarshalJSON(data []byte) error {
+	var entries []json.RawMessage
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return fmt.Errorf("evaluators must be a list: %w", err)
+	}
+
+	result := make([]EvaluatorRef, 0, len(entries))
+	for _, entry := range entries {
+		trimmed := bytes.TrimSpace(entry)
+		if len(trimmed) > 0 && trimmed[0] == '"' {
+			var name string
+			if err := json.Unmarshal(trimmed, &name); err != nil {
+				return fmt.Errorf("decoding evaluator name: %w", err)
+			}
+			result = append(result, EvaluatorRef{Name: name})
+			continue
+		}
+
+		var ref EvaluatorRef
+		if err := json.Unmarshal(trimmed, &ref); err != nil {
+			return fmt.Errorf("decoding evaluator: %w", err)
+		}
+		if ref.Name == "" {
+			return fmt.Errorf("evaluator entry is missing 'name'")
+		}
+		result = append(result, ref)
+	}
+
+	*el = result
+	return nil
+}
+
+// MarshalJSON mirrors MarshalYAML's compact form.
+func (el EvaluatorList) MarshalJSON() ([]byte, error) {
+	out := make([]any, 0, len(el))
+	for _, ref := range el {
+		if ref.Threshold == nil && ref.Version == "" {
+			out = append(out, ref.Name)
+			continue
+		}
+		out = append(out, struct {
+			Name      string   `json:"name"`
+			Version   string   `json:"version,omitempty"`
+			Threshold *float64 `json:"threshold,omitempty"`
+		}{ref.Name, ref.Version, ref.Threshold})
+	}
+	return json.Marshal(out)
 }

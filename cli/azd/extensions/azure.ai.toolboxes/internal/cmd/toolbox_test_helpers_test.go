@@ -238,16 +238,3 @@ func stubToolboxEndpointEnv(t *testing.T) *[]toolboxEnvCall {
 	t.Cleanup(func() { setToolboxEndpointEnvFunc = prev })
 	return calls
 }
-
-// stubToolboxEndpointEnvErr records env-sync calls and returns err.
-func stubToolboxEndpointEnvErr(t *testing.T, err error) *[]toolboxEnvCall {
-	t.Helper()
-	calls := &[]toolboxEnvCall{}
-	prev := setToolboxEndpointEnvFunc
-	setToolboxEndpointEnvFunc = func(_ context.Context, name, value string) error {
-		*calls = append(*calls, toolboxEnvCall{name: name, value: value})
-		return err
-	}
-	t.Cleanup(func() { setToolboxEndpointEnvFunc = prev })
-	return calls
-}

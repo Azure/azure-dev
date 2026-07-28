@@ -16,10 +16,12 @@ module.exports.forTests = {
   diffRegistry,
 }
 
-const REGISTRY_JSON_PATH = 'cli/azd/extensions/registry.json';
+const REGISTRY_JSON_PATHS = new Set([
+  'cli/azd/extensions/registry.json',
+  'cli/azd/extensions/registry.dev.json',
+]);
 
 // We only allow URLs that point to our GitHub releases page.
-// NOTE: this script is only for production registry.json - nightlies go to a non-releases spot, etc...
 const ALLOWED_ARTIFACT_URL_ORIGIN = 'https://github.com';
 const ALLOWED_ARTIFACT_URL_PATH_PREFIX = '/Azure/azure-dev/releases/download/';
 const ALLOWED_ARTIFACT_URL_PREFIX = `${ALLOWED_ARTIFACT_URL_ORIGIN}${ALLOWED_ARTIFACT_URL_PATH_PREFIX}`;
@@ -97,18 +99,27 @@ async function run({ github: octokit, context, core, coreTeam, registryBaseRef }
       return;
     }
 
-    // Non-registry file changes require core review.
-    const changedFileReviewReasons = await getChangedFileReviewReasons({
-      octokit,
-      context,
-    });
+    const changedFiles = await getChangedFiles({ octokit, context });
 
-    // Simple release-only registry changes can proceed without core review.
-    const registryReviewReasons = await isAllowedRegistryJsonUpdate({
-      octokit,
-      context,
-      registryBaseRef: baseRef,
-    });
+    // Non-registry file changes require core review.
+    const changedFileReviewReasons = diffChangedFiles(changedFiles);
+
+    // Simple release-only registry changes can proceed without core review. Deleted registries
+    // are reported by diffChangedFiles above and skipped here, since there's nothing to fetch
+    // at the PR head.
+    const changedRegistryPaths = [...REGISTRY_JSON_PATHS]
+      .filter((registryPath) => changedFiles.some(
+        (file) => file.filename === registryPath && file.status !== 'removed'));
+    const registryReviewReasons = [];
+    for (const registryPath of changedRegistryPaths) {
+      const reasons = await isAllowedRegistryJsonUpdate({
+        octokit,
+        context,
+        registryBaseRef: baseRef,
+        registryPath,
+      });
+      registryReviewReasons.push(...reasons.map((reason) => `${registryPath}: ${reason}`));
+    }
 
     const reviewReasons = changedFileReviewReasons.concat(registryReviewReasons);
 
@@ -235,10 +246,15 @@ function isCreatedByCoreTeam({ context, core, coreTeam }) {
 /**
  * Checks whether the registry update is simple enough to proceed without core-team review.
  *
- * @param {{ octokit: Octokit, context: Context, registryBaseRef?: string }} args
+ * @param {{ octokit: Octokit, context: Context, registryPath: string, registryBaseRef: string }} args
  * @returns {Promise<string[]>} the reasons core review is needed; empty means the change is approved
  */
-async function isAllowedRegistryJsonUpdate({ octokit, context, registryBaseRef = 'main' }) {
+async function isAllowedRegistryJsonUpdate({
+  octokit,
+  context,
+  registryPath,
+  registryBaseRef,
+}) {
   assertHasPullRequest(context);
   const pr = context.payload.pull_request;
 
@@ -247,6 +263,7 @@ async function isAllowedRegistryJsonUpdate({ octokit, context, registryBaseRef =
     owner: context.repo.owner,
     repo: context.repo.repo,
     ref: registryBaseRef,
+    registryPath,
   });
 
   const head = pr['head'];
@@ -260,20 +277,10 @@ async function isAllowedRegistryJsonUpdate({ octokit, context, registryBaseRef =
     owner: head?.repo?.owner?.login ?? context.repo.owner,
     repo: head?.repo?.name ?? context.repo.repo,
     ref,
+    registryPath,
   });
 
   return diffRegistry(mainRegistry, prRegistry);
-}
-
-/**
- * Checks whether the PR changed only registry.json.
- *
- * @param {{ octokit: Octokit, context: Context }} args
- * @returns {Promise<string[]>}
- */
-async function getChangedFileReviewReasons({ octokit, context }) {
-  const changedFiles = await getChangedFiles({ octokit, context });
-  return diffChangedFiles(changedFiles);
 }
 
 /**
@@ -292,34 +299,78 @@ async function getChangedFiles({ octokit, context }) {
 }
 
 /**
- * @param {PullRequestFile[]} changedFiles
- * @returns {string[]}
+ * Whether a changed file refers to one of the known registries, on either side of a rename.
+ * Checking `previous_filename` catches a registry that was renamed away, where the new
+ * filename is no longer one of the registry paths.
+ *
+ * @param {PullRequestFile} file
+ * @returns {boolean}
  */
-function diffChangedFiles(changedFiles) {
-  const unexpectedFiles = changedFiles
-    .filter((file) => file.filename !== REGISTRY_JSON_PATH || file.previous_filename != null)
-    .map((file) => file.filename);
-
-  if (unexpectedFiles.length === 0) {
-    return [];
-  }
-
-  return [
-    `PR changes files outside ${REGISTRY_JSON_PATH}; core review required for non-registry-only PRs: ${unexpectedFiles.join(', ')}`,
-  ];
+function isRegistryFile(file) {
+  return REGISTRY_JSON_PATHS.has(file.filename) ||
+    (file.previous_filename != null && REGISTRY_JSON_PATHS.has(file.previous_filename));
 }
 
 /**
- * Fetches and parses cli/azd/extensions/registry.json at a given ref.
+ * Flags file-level changes that disqualify a PR from the registry-only fast path.
+ * Only in-place edits to the known registry files may skip core review; touching any
+ * other file, or renaming/deleting a registry file, requires a core reviewer.
  *
- * @param {{ octokit: Octokit, owner: string, repo: string, ref: string }} args
+ * @param {PullRequestFile[]} changedFiles
+ * @returns {string[]} the reasons core review is needed; empty means every change is registry-only
+ */
+function diffChangedFiles(changedFiles) {
+  const registryPaths = [...REGISTRY_JSON_PATHS].join(', ');
+
+  const nonRegistryFiles = changedFiles
+    .filter((file) => !isRegistryFile(file))
+    .map((file) => file.filename);
+
+  const renamedRegistryFiles = changedFiles
+    .filter((file) => isRegistryFile(file) && file.previous_filename != null)
+    .map((file) => `${file.previous_filename} -> ${file.filename}`);
+
+  const deletedRegistryFiles = changedFiles
+    .filter((file) => isRegistryFile(file) && file.status === 'removed')
+    .map((file) => file.filename);
+
+  const reasons = [];
+
+  if (nonRegistryFiles.length > 0) {
+    reasons.push(
+      `PR changes files outside the extension registries (${registryPaths}), ` +
+      `which requires core review: ${nonRegistryFiles.join(', ')}`,
+    );
+  }
+
+  if (renamedRegistryFiles.length > 0) {
+    reasons.push(
+      `PR renames extension registry files, which requires core review: ` +
+      `${renamedRegistryFiles.join(', ')}`,
+    );
+  }
+
+  if (deletedRegistryFiles.length > 0) {
+    reasons.push(
+      `PR deletes extension registry files, which requires core review: ` +
+      `${deletedRegistryFiles.join(', ')}`,
+    );
+  }
+
+  return reasons;
+}
+
+/**
+ * Fetches and parses an extension registry at a given ref.
+ *
+ * @param {{ octokit: Octokit, owner: string, repo: string, ref: string, registryPath: string }} args
  * @returns {Promise<RegistryJson>}
  */
-async function getRegistryJson({ octokit, owner, repo, ref }) {
+async function getRegistryJson({ octokit, owner, repo, ref, registryPath }) {
   const { data } = await octokit.rest.repos.getContent({
     owner,
     repo,
-    path: REGISTRY_JSON_PATH,
+    path: registryPath,
     ref,
     mediaType: {
       format: 'raw',
@@ -327,7 +378,7 @@ async function getRegistryJson({ octokit, owner, repo, ref }) {
   });
 
   if (typeof data !== 'string') {
-    throw new Error(`Unable to load ${REGISTRY_JSON_PATH} from ${owner}/${repo}@${ref}`);
+    throw new Error(`Unable to load ${registryPath} from ${owner}/${repo}@${ref}`);
   }
 
   return JSON.parse(data);
@@ -803,5 +854,3 @@ function assertHasPullRequest(context) {
     throw new Error('No pull_request found in event payload. Workflow targeting should only target pull requests.');
   }
 }
-
-

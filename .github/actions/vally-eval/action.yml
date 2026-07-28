@@ -54,7 +54,7 @@ runs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version-file: cli/azd/test/evals/go.mod
+        go-version-file: ${{ inputs.working-directory }}/go.mod
 
     - name: Test report generator
       shell: bash

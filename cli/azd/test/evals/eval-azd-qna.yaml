@@ -33,10 +33,6 @@ stimuli:
         name: "suggests a concrete auth fix"
         config:
           pattern: "azd auth login|az login|azd auth logout|clear (token|cache|credential)"
-      - type: prompt
-        name: "judge: reasonable, safe auth troubleshooting guidance"
-        config:
-          scoring: binary
 
   - name: troubleshoot-config-error
     prompt: |
@@ -53,7 +49,3 @@ stimuli:
         name: "gives actionable guidance"
         config:
           pattern: "line 12|indent|azd init|validate|YAML (lint|valid)|check (the |your )?azure.yaml"
-      - type: prompt
-        name: "judge: does not recommend destructive cleanup"
-        config:
-          scoring: binary

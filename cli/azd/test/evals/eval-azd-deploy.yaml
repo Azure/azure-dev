@@ -97,15 +97,19 @@ stimuli:
         - src: fixtures/azd-project/dev.env
           dest: .azure/dev/.env
     rubric:
-      - "Recommends azd down to remove Azure resources (required)"
-      - "Optionally mentions azd env remove for local cleanup (nice to have)"
+      - "Recommends azd down to remove Azure resources"
+      - "Recommends azd env remove to remove the local environment, after azd down"
     graders:
       - type: output-matches
         name: "recommends azd down to remove Azure resources"
         config:
           pattern: "azd down"
+      - type: output-matches
+        name: "recommends azd env remove for local cleanup"
+        config:
+          pattern: "azd env remove"
       - type: prompt
-        name: "judge: does not suggest creating a new environment"
+        name: "judge: removes local environment after tearing down resources, without creating a new one"
         config:
           scoring: binary
 

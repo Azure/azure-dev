@@ -1,6 +1,6 @@
 # Azure AI RLE extension for azd
 
-Quickstart for the `azd ai rle` preview extension. The extension manages an OpenEnv-style RLE environment lifecycle: init, build and run the environment container, test it through a playground UI or shell, and deploy the environment image to the RLE control plane.
+Quickstart for the `azd ai rle` preview extension. The extension manages an OpenEnv-style RLE environment lifecycle: init, build and run the environment container, test it through a playground UI or shell, and deploy the environment image to the RLE control plane through your Foundry project endpoint.
 
 ## Prerequisites
 
@@ -16,18 +16,21 @@ Verify:
 ```powershell
 azd version
 docker version
+az account show
 ```
 
-## Install the extension from this checkout
-
-From `cli\azd\extensions\azure.ai.rle`:
+Sign in with Azure CLI before calling the Foundry project APIs:
 
 ```powershell
-azd extension install microsoft.azd.extensions
-azd x build
-azd x pack
-azd x publish
-azd extension install azure.ai.rle --source local --force
+az login
+```
+
+The extension also supports credentials from `azd auth login` and the other development credentials in Azure's default credential chain.
+
+## Install the extension from the nightly registry
+
+```powershell
+azd ext install azure.ai.rle -s https://aka.ms/azd/extensions/registry/nightly
 ```
 
 Verify:
@@ -37,37 +40,41 @@ azd ai rle --help
 azd ai rle version
 ```
 
-After code changes, rerun:
-
-```powershell
-azd x build
-azd x pack
-azd x publish
-azd extension install azure.ai.rle --source local --force
-```
-
-## Configure the RLE control plane
-
-The extension defaults to the local RLE control plane at `http://localhost:5000`. To target another control plane:
-
-```powershell
-$env:RLE_ENDPOINT = "https://<rle-control-plane>"
-```
-
-Deploy uses a Foundry project endpoint and an ACR image for the registered RLE environment. Set them once:
-
-```powershell
-$env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
-$env:AZURE_CONTAINER_REGISTRY_ENDPOINT = "<registry>.azurecr.io"
-```
-
-## Quickstart
-
-Discovery for all commands is currently disabled using `AZD_AI_RLE_ENABLE`. To enable:
+`version` is always available. The lifecycle commands are preview-gated; if commands such as `init`, `run`, `deploy`, or `invoke` are hidden, enable the preview flag in your terminal:
 
 ```powershell
 $env:AZD_AI_RLE_ENABLE = "true"
 ```
+
+## Configure the Foundry project endpoint
+
+RLE control-plane APIs are called relative to the Foundry project endpoint. APIM maps the project endpoint request to the workspace-scoped RLE service internally, so the extension does not require a separate control-plane endpoint.
+
+Set the Foundry project endpoint once in the terminal where you run `deploy`:
+
+```powershell
+$env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
+```
+
+For example, RLE environment registration is sent to:
+
+```text
+<FOUNDRY_PROJECT_ENDPOINT>/fine_tuning/environments?api-version=2025-11-15-preview
+```
+
+Deploy also needs an ACR registry endpoint:
+
+```powershell
+$env:AZURE_CONTAINER_REGISTRY_ENDPOINT = "<registry>.azurecr.io"
+```
+
+Authenticate Docker to ACR before deploying:
+
+```powershell
+az acr login --name <registry>
+```
+
+## Quickstart
 
 ### 1. Initialize an environment session
 
@@ -78,8 +85,7 @@ azd ai rle init
 cd .\echo_env
 ```
 
-The default echo session downloads the Hugging Face `OpenEnv` repo, copies `envs/echo_env` into the session folder,
-and writes `.azd-rle.json` with the local environment name.
+The default echo session downloads the Hugging Face `OpenEnv` repo, copies `envs/echo_env` into the session folder, and writes `.azd-rle.json` with the local environment name.
 
 The copied session does not keep `.git` metadata from the upstream repository.
 
@@ -97,12 +103,9 @@ For an existing source folder, skip `init` and run commands directly from that f
 azd ai rle run
 ```
 
-`run` builds a local Docker image from the current source folder, removes any stale local container for the
-same environment name, starts a fresh container, waits for `/health`, opens the playground UI at `/web`, and
-keeps an OpenEnv shell attached. When the shell exits or Ctrl+C is received, `run` removes the local container.
+`run` builds a local Docker image from the current source folder, removes any stale local container for the same environment name, starts a fresh container, waits for `/health`, opens the playground UI at `/web`, and keeps an OpenEnv shell attached. When the shell exits or Ctrl+C is received, `run` removes the local container.
 
-If `.azd-rle.json`
-does not exist, `run` creates it with only the inferred local environment name.
+If `.azd-rle.json` does not exist, `run` creates it with only the inferred local environment name.
 
 Use a custom host port:
 
@@ -110,8 +113,7 @@ Use a custom host port:
 azd ai rle run --port 9000
 ```
 
-`run` looks for `Dockerfile` at the source root, then `server\Dockerfile`. If the Dockerfile is elsewhere,
-pass it explicitly:
+`run` looks for `Dockerfile` at the source root, then `server\Dockerfile`. If the Dockerfile is elsewhere, pass it explicitly:
 
 ```powershell
 azd ai rle run --dockerfile server\Dockerfile
@@ -153,8 +155,9 @@ $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = "<registry>.azurecr.io"
 azd ai rle deploy
 ```
 
-Deploy reads the Foundry project endpoint from `FOUNDRY_PROJECT_ENDPOINT` and the ACR registry from `AZURE_CONTAINER_REGISTRY_ENDPOINT` in the terminal environment. It derives the project route segment from `/api/projects/<project>`, builds the Docker image as `<registry>.azurecr.io/<project>-<environment>:latest`, pushes it to ACR, registers that image with the RLE control plane, and saves the project/environment details in `.azd-rle.json`.
-The deploy command prints a CLI-friendly summary using `environmentId`, `acrImage`, `version`, `createdAt`, and `updatedAt`.
+Deploy reads the Foundry project endpoint from `FOUNDRY_PROJECT_ENDPOINT` and the ACR registry from `AZURE_CONTAINER_REGISTRY_ENDPOINT`. It derives the project route segment from `/api/projects/<project>`, builds the Docker image as `<registry>.azurecr.io/<project>-<environment>:latest`, pushes it to ACR, registers that image by calling `<FOUNDRY_PROJECT_ENDPOINT>/fine_tuning/environments`, and saves the project/environment details in `.azd-rle.json`.
+
+The deploy command prints a CLI-friendly summary using `environmentId`, `foundryProjectEndpoint`, `acrImage`, `environmentVersion`, `createdAt`, and `updatedAt`.
 
 If needed, override the Dockerfile path the same way as local run:
 
@@ -164,9 +167,29 @@ azd ai rle deploy --dockerfile server\Dockerfile
 
 ### 4. Invoke remotely
 
-Remote invoke uses the deployed environment, leases a sandbox, opens the sandbox `/web` UI when available
-(or a local proxy UI otherwise), keeps the shell attached, and releases the sandbox when the shell exits:
+Remote invoke uses the deployed environment, leases a sandbox from `<FOUNDRY_PROJECT_ENDPOINT>/fine_tuning/environments/<environmentId>/sandboxes/lease`, opens the sandbox `/web` UI when available (or a local proxy UI otherwise), keeps the shell attached, and releases the sandbox when the shell exits:
 
 ```powershell
 azd ai rle invoke --timeout 60
+```
+
+## Build and install from source
+
+Use this path only when you are developing the extension itself. From `cli\azd\extensions\azure.ai.rle`:
+
+```powershell
+azd extension install microsoft.azd.extensions
+azd x build
+azd x pack
+azd x publish
+azd extension install azure.ai.rle --source local --force
+```
+
+After code changes, rerun:
+
+```powershell
+azd x build
+azd x pack
+azd x publish
+azd extension install azure.ai.rle --source local --force
 ```

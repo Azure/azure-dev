@@ -84,12 +84,10 @@ func (a *deployAction) Run() error {
 	if err := project.PushImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image); err != nil {
 		return err
 	}
-	projectName, err := projectRouteSegment(state)
+	client, err := createRleClient(state.ProjectEndpoint)
 	if err != nil {
 		return err
 	}
-	environmentId := firstNonEmpty(state.EnvironmentId, project.Slug(state.Name))
-	client := newRleClient(resolveControlPlaneEndpoint())
 	request := v1EnvironmentRequest{
 		Name:         state.Name,
 		AcrImagePath: image,
@@ -112,23 +110,9 @@ func (a *deployAction) Run() error {
 		return err
 	}
 	if state.EnvironmentId == "" {
-		environment, err = client.createV1Environment(a.cmd.Context(), projectName, request)
+		environment, err = client.createV1Environment(a.cmd.Context(), request)
 	} else {
-		environment, err = client.updateV1Environment(a.cmd.Context(), projectName, environmentId, request)
-		if isNotFoundError(err) {
-			// The recorded environment no longer exists in the target project
-			// (e.g. the project changed or the control plane was reset). Recreate it.
-			if _, msgErr := fmt.Fprintf(
-				a.cmd.OutOrStdout(),
-				"Environment '%s' not found in project '%s'; creating a new one.\n",
-				environmentId,
-				projectName,
-			); msgErr != nil {
-				return msgErr
-			}
-			created = true
-			environment, err = client.createV1Environment(a.cmd.Context(), projectName, request)
-		}
+		environment, err = client.createV1Environment(a.cmd.Context(), request)
 	}
 	if err != nil {
 		return serviceError(err)
@@ -187,7 +171,9 @@ func resolveDeployState(flags *rleDeployFlags) (rleState, bool, error) {
 	if err != nil {
 		return rleState{}, false, err
 	}
-	state.ProjectEndpoint = projectEndpoint
+	if projectEndpoint != "" {
+		state.ProjectEndpoint = projectEndpoint
+	}
 
 	return state, initialized, nil
 }

@@ -11,7 +11,7 @@ tags:
   - ai
   - rle
 usage: $env:AZD_AI_RLE_ENABLE = "true"; azd ai rle <command> [options]
-version: 0.1.0-preview
+version: 0.2.0-preview
 examples:
   - name: init
     description: Copy the OpenEnv echo sample into a local RLE environment.

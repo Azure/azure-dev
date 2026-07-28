@@ -4,16 +4,86 @@
 package cmd
 
 import (
+	"context"
 	"errors"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-func TestServiceErrorSuggestionShowsCurrentEndpoint(t *testing.T) {
-	t.Setenv("RLE_ENDPOINT", "https://rle.example.test")
+type testTokenCredential struct {
+	scopes []string
+}
 
+func (c *testTokenCredential) GetToken(
+	_ context.Context,
+	options policy.TokenRequestOptions,
+) (azcore.AccessToken, error) {
+	c.scopes = options.Scopes
+	return azcore.AccessToken{Token: "test-token", ExpiresOn: time.Now().Add(time.Hour)}, nil
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+func TestFoundryAPIVersionValue(t *testing.T) {
+	t.Parallel()
+
+	if foundryAPIVersion != "2025-11-15-preview" {
+		t.Fatalf("expected Foundry API version %q, got %q", "2025-11-15-preview", foundryAPIVersion)
+	}
+}
+
+func TestRleClientAuthenticatesFoundryRequests(t *testing.T) {
+	credential := &testTokenCredential{}
+	client := newRleClientWithCredential(
+		"https://account.services.ai.azure.com/api/projects/project",
+		credential,
+	)
+	client.httpClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if got := request.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Fatalf("expected bearer token, got %q", got)
+		}
+		if got := request.URL.Query().Get("api-version"); got != foundryAPIVersion {
+			t.Fatalf("expected API version %q, got %q", foundryAPIVersion, got)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("{}")),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	if err := client.do(context.Background(), http.MethodGet, environmentCollectionPath, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(credential.scopes) != 1 || credential.scopes[0] != foundryTokenScope {
+		t.Fatalf("expected Foundry token scope %q, got %v", foundryTokenScope, credential.scopes)
+	}
+}
+
+func TestRleClientRefusesAuthenticationOverHTTP(t *testing.T) {
+	client := newRleClientWithCredential(
+		"http://localhost:5000",
+		&testTokenCredential{},
+	)
+
+	err := client.do(context.Background(), http.MethodGet, environmentCollectionPath, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "requires an HTTPS") {
+		t.Fatalf("expected HTTPS authentication error, got %v", err)
+	}
+}
+
+func TestServiceErrorSuggestionShowsFoundryProjectEndpoint(t *testing.T) {
 	err := serviceError(errors.New("dial tcp failed"))
 	var serviceErr *azdext.ServiceError
 	if !errors.As(err, &serviceErr) {
@@ -21,9 +91,9 @@ func TestServiceErrorSuggestionShowsCurrentEndpoint(t *testing.T) {
 	}
 
 	for _, expected := range []string{
-		"Ensure the RLE control plane is running and reachable.",
-		"Trying at https://rle.example.test;",
-		"RLE_ENDPOINT=<endpoint>",
+		"Ensure the Foundry project endpoint",
+		foundryProjectEndpointEnvVar,
+		"enabled for RLE",
 	} {
 		if !strings.Contains(serviceErr.Suggestion, expected) {
 			t.Fatalf("expected suggestion to contain %q, got %q", expected, serviceErr.Suggestion)
@@ -48,7 +118,7 @@ func TestResolveDeployStateUsesFoundryProjectEndpointEnvironment(t *testing.T) {
 	}
 }
 
-func TestResolveDeployStateIgnoresSavedProjectEndpointFallback(t *testing.T) {
+func TestResolveDeployStateUsesSavedProjectEndpointFallback(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	if err := saveRleState(rleState{
@@ -65,8 +135,8 @@ func TestResolveDeployStateIgnoresSavedProjectEndpointFallback(t *testing.T) {
 	if !initialized {
 		t.Fatal("expected saved state")
 	}
-	if state.ProjectEndpoint != "" {
-		t.Fatalf("expected saved project endpoint fallback to be ignored, got %q", state.ProjectEndpoint)
+	if state.ProjectEndpoint != "https://account.services.ai.azure.com/api/projects/saved-project" {
+		t.Fatalf("expected saved project endpoint fallback, got %q", state.ProjectEndpoint)
 	}
 }
 

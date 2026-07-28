@@ -66,7 +66,10 @@ func (a *remoteInvokeAction) Run() error {
 	ctx, stopSignals := signal.NotifyContext(a.cmd.Context(), os.Interrupt)
 	defer stopSignals()
 
-	client := newRleClient(resolveControlPlaneEndpoint())
+	client, err := createRleClient(state.ProjectEndpoint)
+	if err != nil {
+		return err
+	}
 	if _, err := fmt.Fprintf(
 		a.cmd.OutOrStdout(),
 		"Creating sandbox for environment %s ...\n",
@@ -88,12 +91,11 @@ func (a *remoteInvokeAction) Run() error {
 		}
 	}()
 
-	sandboxUrl := strings.TrimRight(firstNonEmpty(sandbox.Url, sandbox.Endpoint), "/")
+	sandboxUrl := strings.TrimRight(sandbox.BaseUrl, "/")
 	if _, err := fmt.Fprintf(
 		a.cmd.OutOrStdout(),
-		"Sandbox %s ready at %s\n",
+		"Sandbox %s ready\n",
 		sandbox.Id,
-		sandboxUrl,
 	); err != nil {
 		return err
 	}
@@ -105,9 +107,6 @@ func (a *remoteInvokeAction) Run() error {
 		return err
 	}
 	defer stopPlayground()
-	if _, err := fmt.Fprintf(a.cmd.OutOrStdout(), "Playground UI: %s\n", playgroundUrl); err != nil {
-		return err
-	}
 	if err := ui.OpenBrowser(playgroundUrl); err != nil {
 		_, _ = fmt.Fprintf(a.cmd.ErrOrStderr(), "Warning: failed to open playground UI: %v\n", err)
 	}
@@ -115,16 +114,17 @@ func (a *remoteInvokeAction) Run() error {
 }
 
 const (
-	sandboxStatusRunning = "Running"
-	sandboxStatusFailed  = "Failed"
-
-	remoteSandboxLeaseMaxRetries = 10
+	sandboxStatusRunning            = "Running"
+	sandboxStatusFailed             = "Failed"
+	diskImageConversionStatusReady  = "Ready"
+	diskImageConversionStatusFailed = "Failed"
 )
 
 var (
-	remoteSandboxCreateTimeout = 300 * time.Second
-	remoteSandboxPollInterval  = 2 * time.Second
-	remoteImagePollInterval    = 5 * time.Second
+	remoteSandboxCreateTimeout   = 300 * time.Second
+	remoteSandboxPollInterval    = 2 * time.Second
+	remoteImageConversionTimeout = 15 * time.Minute
+	remoteImagePollInterval      = 5 * time.Second
 )
 
 func leaseRemoteSandbox(
@@ -133,7 +133,13 @@ func leaseRemoteSandbox(
 	client *rleClient,
 	state rleState,
 ) (*sandboxResource, error) {
-	sandbox, err := createSandboxWhenImageReady(ctx, output, client, state)
+	if err := waitForEnvironmentImage(ctx, output, client, state); err != nil {
+		return nil, err
+	}
+
+	sandbox, err := client.createSandbox(ctx, state.EnvironmentId, sandboxCreateRequest{
+		Version: state.EnvironmentVersion,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -145,11 +151,7 @@ func leaseRemoteSandbox(
 			Suggestion: "Check the RLE control plane sandbox response, then retry.",
 		}
 	}
-	project, err := projectRouteSegment(state)
-	if err != nil {
-		return nil, err
-	}
-	readySandbox, err := waitForRemoteSandbox(ctx, client, project, state.EnvironmentId, sandbox)
+	readySandbox, err := waitForRemoteSandbox(ctx, client, state.EnvironmentId, sandbox)
 	if err != nil {
 		if releaseErr := releaseRemoteSandbox(client, state, sandbox.Id); releaseErr != nil {
 			return nil, fmt.Errorf("%w; additionally failed to release sandbox %s: %w", err, sandbox.Id, releaseErr)
@@ -159,79 +161,73 @@ func leaseRemoteSandbox(
 	return readySandbox, nil
 }
 
-func createSandboxWhenImageReady(
+func waitForEnvironmentImage(
 	ctx context.Context,
 	output io.Writer,
 	client *rleClient,
 	state rleState,
-) (*sandboxResource, error) {
-	deadline := time.Now().Add(remoteSandboxCreateTimeout)
-	attempt := 0
+) error {
+	if strings.TrimSpace(state.Name) == "" || strings.TrimSpace(state.EnvironmentVersion) == "" {
+		return nil
+	}
+
+	deadline := time.Now().Add(remoteImageConversionTimeout)
 	for {
-		project, err := projectRouteSegment(state)
+		environment, err := client.getEnvironmentVersion(ctx, state.Name, state.EnvironmentVersion)
 		if err != nil {
-			return nil, err
-		}
-		sandbox, err := client.createSandbox(ctx, project, state.EnvironmentId, sandboxCreateRequest{
-			Version: state.EnvironmentVersion,
-		})
-		if err == nil {
-			return sandbox, nil
+			return err
 		}
 
-		status, pending := sandboxLeasePendingStatus(err)
-		if !pending {
-			return nil, err
-		}
-		if attempt >= remoteSandboxLeaseMaxRetries || time.Now().After(deadline) {
-			return nil, &azdext.LocalError{
+		switch environment.DiskImageConversionStatus {
+		case diskImageConversionStatusReady:
+			return nil
+		case diskImageConversionStatusFailed:
+			return &azdext.LocalError{
 				Message: fmt.Sprintf(
-					"Sandbox was not ready for testing after %d retries (last status: %s).",
-					attempt,
-					firstNonEmpty(status, "unknown"),
+					"Environment '%s' version '%s' disk image conversion failed: %s",
+					state.Name,
+					state.EnvironmentVersion,
+					firstNonEmpty(environment.DiskImageConversionError, "unknown error"),
 				),
-				Code:       "rle_sandbox_lease_pending_timeout",
-				Category:   azdext.LocalErrorCategoryUser,
-				Suggestion: "Wait for the RLE control plane to finish preparing the sandbox, then retry invoke.",
+				Code:     "rle_disk_image_conversion_failed",
+				Category: azdext.LocalErrorCategoryUser,
 			}
 		}
 
-		attempt++
+		if time.Now().After(deadline) {
+			return &azdext.LocalError{
+				Message: fmt.Sprintf(
+					"Environment '%s' version '%s' disk image was not ready after %.0f minutes (last status: %s).",
+					state.Name,
+					state.EnvironmentVersion,
+					remoteImageConversionTimeout.Minutes(),
+					firstNonEmpty(environment.DiskImageConversionStatus, "unknown"),
+				),
+				Code:       "rle_disk_image_conversion_timeout",
+				Category:   azdext.LocalErrorCategoryUser,
+				Suggestion: "Check the environment disk image conversion status, then retry invoke.",
+			}
+		}
+
 		if _, msgErr := fmt.Fprintf(
 			output,
-			"Getting sandbox ready for testing (status: %s); waiting %.0f seconds before retrying (attempt %d of %d) ...\n",
-			firstNonEmpty(status, "not ready"),
+			"Preparing environment disk image (status: %s); waiting %.0f seconds ...\n",
+			firstNonEmpty(environment.DiskImageConversionStatus, "unknown"),
 			remoteImagePollInterval.Seconds(),
-			attempt,
-			remoteSandboxLeaseMaxRetries,
 		); msgErr != nil {
-			return nil, msgErr
+			return msgErr
 		}
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return ctx.Err()
 		case <-time.After(remoteImagePollInterval):
 		}
 	}
 }
 
-func sandboxLeasePendingStatus(err error) (string, bool) {
-	httpErr, ok := errors.AsType[*rleHTTPError](err)
-	if !ok || httpErr.statusCode != http.StatusConflict {
-		return "", false
-	}
-	status := strings.TrimSpace(httpErr.body)
-	if before, after, found := strings.Cut(httpErr.body, "conversion status:"); found {
-		_ = before
-		status = strings.TrimSpace(strings.Trim(strings.Split(after, ")")[0], `."}`))
-	}
-	return status, true
-}
-
 func waitForRemoteSandbox(
 	ctx context.Context,
 	client *rleClient,
-	project string,
 	environmentId string,
 	sandbox *sandboxResource,
 ) (*sandboxResource, error) {
@@ -249,7 +245,7 @@ func waitForRemoteSandbox(
 			}
 		}
 		if sandbox.Status == sandboxStatusRunning {
-			if strings.TrimSpace(firstNonEmpty(sandbox.Url, sandbox.Endpoint)) == "" {
+			if strings.TrimSpace(sandbox.BaseUrl) == "" {
 				return nil, &azdext.LocalError{
 					Message:    fmt.Sprintf("Sandbox %s is Running but did not report a data-plane URL.", sandbox.Id),
 					Code:       "rle_sandbox_url_missing",
@@ -279,7 +275,7 @@ func waitForRemoteSandbox(
 		case <-time.After(remoteSandboxPollInterval):
 		}
 
-		updated, err := client.getSandbox(ctx, project, environmentId, sandbox.Id)
+		updated, err := client.getSandbox(ctx, environmentId, sandbox.Id)
 		if err != nil {
 			return nil, err
 		}
@@ -290,11 +286,7 @@ func waitForRemoteSandbox(
 func releaseRemoteSandbox(client *rleClient, state rleState, sandboxId string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	project, err := projectRouteSegment(state)
-	if err != nil {
-		return err
-	}
-	return client.deleteSandbox(ctx, project, state.EnvironmentId, sandboxId)
+	return client.deleteSandbox(ctx, state.EnvironmentId, sandboxId)
 }
 
 func remotePlaygroundUrl(ctx context.Context, sandboxUrl string) (string, func(), error) {

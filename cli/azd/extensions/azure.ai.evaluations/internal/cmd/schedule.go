@@ -358,6 +358,15 @@ func newScheduleDeleteCommand() *cobra.Command {
 			defer ec.Close()
 
 			if err := ec.deleteScheduleWhenSettled(ctx, name); err != nil {
+				// A name that was never there is the common typo, and the
+				// service answers it with a full error document wrapping an
+				// inner 404 from the trigger service. Saying so in one line is
+				// more use than reproducing that.
+				if eval_api.IsNotFound(err) {
+					return fmt.Errorf(
+						"no schedule named %q in this project; "+
+							"`azd ai eval schedule list` shows the ones that exist", name)
+				}
 				return fmt.Errorf("deleting schedule %q: %w", name, err)
 			}
 			fmt.Fprintf(out, "Deleted schedule %s\n", name)
@@ -583,6 +592,19 @@ func explainScheduleFailure(
 	name string,
 	cause error,
 ) error {
+	// A schedule repeats the group's most recent run, so scheduling a group
+	// whose last run came from --from-traces creates a trace evaluation, and
+	// the service allows only an hourly trigger for those. The message it
+	// returns says so without saying why it thinks the schedule is one, which
+	// is bewildering when the trigger was the only thing asked for.
+	if isTracesHourlyOnly(cause) {
+		return fmt.Errorf(
+			"saving schedule %q: this group's most recent run read from traces, and a schedule "+
+				"repeats that run, so the service treats it as a scheduled trace evaluation "+
+				"and allows only `--every hourly`. Use `--every hourly`, or run the group "+
+				"once against its dataset first so the schedule repeats that instead", name)
+	}
+
 	list, listErr := ec.evalClient.ListSchedules(ctx, ProjectEndpointAPIVersion)
 	if listErr != nil || list == nil {
 		return fmt.Errorf("saving schedule %q: %w", name, cause)
@@ -597,4 +619,11 @@ func explainScheduleFailure(
 		}
 	}
 	return fmt.Errorf("saving schedule %q: %w", name, cause)
+}
+
+// isTracesHourlyOnly matches the service's refusal of a non-hourly trigger on a
+// schedule it considers a trace evaluation.
+func isTracesHourlyOnly(err error) bool {
+	return err != nil &&
+		strings.Contains(err.Error(), "trace evaluations only support hourly")
 }

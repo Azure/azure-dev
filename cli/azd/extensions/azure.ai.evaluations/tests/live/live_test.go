@@ -320,6 +320,20 @@ func TestLiveRun(t *testing.T) {
 			}
 			body, _ := json.MarshalIndent(current.PerTestingCriteria, "", "  ")
 			t.Logf("per-criteria results: %s", string(body))
+
+			// Reaching a terminal state is not the same as having evaluated
+			// anything. A run whose every sample errors still reports
+			// "completed", so asserting only on the status would let the target
+			// or the evaluator break without the test noticing.
+			require.Equal(t, "completed", strings.ToLower(current.Status),
+				"the run must complete rather than fail or cancel")
+			require.NotNil(t, current.ResultCounts, "a completed run must report counts")
+			require.Zero(t, current.ResultCounts.Errored,
+				"an errored sample means the target or the evaluator did not run")
+			require.Positive(t,
+				current.ResultCounts.Passed+current.ResultCounts.Failed,
+				"the run must score at least one sample; a pass or a fail are both fine, "+
+					"but scoring nothing means the data never reached the evaluator")
 			return
 		}
 		if time.Now().After(deadline) {

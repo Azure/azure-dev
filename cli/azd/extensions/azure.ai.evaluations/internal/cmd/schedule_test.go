@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"errors"
 	"testing"
 
 	"azureaieval/internal/pkg/eval_api"
@@ -18,6 +19,18 @@ func TestBuildTrigger_Cron(t *testing.T) {
 	assert.Equal(t, eval_api.TriggerCron, got.Type)
 	assert.Equal(t, "0 9 * * *", got.Expression)
 	assert.Equal(t, "UTC", got.Timezone, "UTC unless the caller says otherwise")
+}
+
+// A schedule repeats the group's most recent run. Scheduling a group whose last
+// run came from --from-traces therefore creates a trace evaluation, and the
+// service allows only an hourly trigger for those. Confirmed live: a daily
+// trigger was accepted after an agent run, refused after a traces run on the
+// same group, and hourly was accepted for that same traces run.
+func TestIsTracesHourlyOnly(t *testing.T) {
+	assert.True(t, isTracesHourlyOnly(
+		errors.New(`{"message": "Scheduled trace evaluations only support hourly recurrence triggers. is invalid"}`)))
+	assert.False(t, isTracesHourlyOnly(errors.New("some other 400")))
+	assert.False(t, isTracesHourlyOnly(nil))
 }
 
 func TestBuildTrigger_OneTime(t *testing.T) {

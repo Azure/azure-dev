@@ -173,3 +173,12 @@ func IsConflict(err error) bool {
 	}
 	return respErr.StatusCode == http.StatusConflict
 }
+
+// IsNotFound reports whether the service answered 404.
+func IsNotFound(err error) bool {
+	var respErr *azcore.ResponseError
+	if !errors.As(err, &respErr) {
+		return false
+	}
+	return respErr.StatusCode == http.StatusNotFound
+}

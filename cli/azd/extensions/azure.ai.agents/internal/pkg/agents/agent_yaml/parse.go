@@ -388,11 +388,6 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 						switch policy.Type {
 						case PolicyTypeRai:
 							if policy.RaiPolicyName == "" {
-								// This validator runs for both the unified
-								// azure.yaml shape and the deprecated on-disk
-								// agent.yaml, which spell the key differently.
-								// Name both so the message matches whichever
-								// file the author is editing.
 								errors = append(errors, fmt.Sprintf(
 									"policies[%d] of type '%s' requires a policy name "+
 										"('raiPolicyName' in azure.yaml, 'rai_policy_name' in agent.yaml)",

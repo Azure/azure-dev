@@ -266,7 +266,7 @@ func (ec *evalContext) generateDataset(
 	completed, err := ec.pollGeneration(ctx, job.ID, DataGenerationAPIVersion,
 		ec.evalClient.GetDataGenerationJob)
 	if err != nil {
-		return nil, fmt.Errorf("data generation: %w", err)
+		return nil, fmt.Errorf("data generation: %w", explainDataGenerationFailure(err, cfg.Agent.Name))
 	}
 
 	name, version := completed.ResolvedNameVersion()
@@ -293,6 +293,33 @@ func (ec *evalContext) generateDataset(
 	fmt.Fprintf(out, "  wrote %s\n", path)
 
 	return &project.ArtifactRef{Name: spec.Name, Source: relativeSource(baseDir, path)}, nil
+}
+
+// explainDataGenerationFailure adds context to the service's opaque system
+// error.
+//
+// Seeding generation from an agent currently fails server-side with
+// DataGenerationJobSystemError for every agent, within seconds, while the same
+// request without the agent source runs normally. The raw message says only
+// that something went wrong and to try again, which sends users into a retry
+// loop against a deterministic failure.
+func explainDataGenerationFailure(err error, agentName string) error {
+	if err == nil || agentName == "" {
+		return err
+	}
+	// The poller surfaces the service's message; the code is not always in it.
+	text := err.Error()
+	if !strings.Contains(text, "DataGenerationJobSystemError") &&
+		!strings.Contains(text, "Something went wrong during data generation") {
+		return err
+	}
+	return fmt.Errorf(
+		"%w\n\n"+
+			"This job seeded generation from agent %q. Agent-seeded data generation is "+
+			"currently failing in the service for every agent, so retrying will not help.\n"+
+			"Workarounds: supply your own dataset with --dataset, or run without --target "+
+			"to generate from the instruction alone.",
+		err, agentName)
 }
 
 // pollGeneration waits for a generation job using the raised budget.

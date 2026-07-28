@@ -268,37 +268,70 @@ func parseDailyBuildNumber(version string) (int, error) {
 	return buildNumber, nil
 }
 
-// Update performs the update based on the install method.
-func (m *Manager) Update(ctx context.Context, cfg *UpdateConfig, writer io.Writer) error {
+// Update installs target, which must be the result of [Manager.CheckForUpdate], using the
+// method azd was installed with.
+//
+// Taking the resolved [VersionInfo] rather than a channel keeps the version azd reports and
+// the version azd installs from drifting apart: see [VersionInfo.installVersion].
+//
+// Package manager installs (brew, winget, choco) cannot be pinned — the package manager
+// decides which version it makes available.
+func (m *Manager) Update(ctx context.Context, target *VersionInfo, writer io.Writer) error {
+	if target == nil {
+		return fmt.Errorf("no resolved version to install")
+	}
+
 	installedBy := installer.InstalledBy()
 
 	switch installedBy {
 	case installer.InstallTypeBrew:
-		return m.updateViaBrew(ctx, cfg, writer)
+		return m.updateViaBrew(ctx, target, writer)
 	case installer.InstallTypeWinget:
 		return m.updateViaPackageManager(ctx, "winget", []string{"upgrade", "Microsoft.Azd"}, writer)
 	case installer.InstallTypeChoco:
 		return m.updateViaPackageManager(ctx, "choco", []string{"upgrade", "azd"}, writer)
 	case installer.InstallTypeSh:
 		if runtime.GOOS == "windows" {
-			return m.updateViaMSI(ctx, cfg, writer)
+			return m.updateViaMSI(ctx, target, writer)
 		}
-		return m.updateViaInstallScript(ctx, cfg, writer)
+		return m.updateViaInstallScript(ctx, target, writer)
 	case installer.InstallTypePs, installer.InstallTypeDeb,
 		installer.InstallTypeRpm, installer.InstallTypeUnknown:
 		if runtime.GOOS == "windows" {
-			return m.updateViaMSI(ctx, cfg, writer)
+			return m.updateViaMSI(ctx, target, writer)
 		}
-		return m.updateViaBinaryDownload(ctx, cfg, writer)
+		return m.updateViaBinaryDownload(ctx, target, writer)
 	default:
 		if runtime.GOOS == "windows" {
-			return m.updateViaMSI(ctx, cfg, writer)
+			return m.updateViaMSI(ctx, target, writer)
 		}
-		return m.updateViaBinaryDownload(ctx, cfg, writer)
+		return m.updateViaBinaryDownload(ctx, target, writer)
 	}
 }
 
-func (m *Manager) updateViaBrew(ctx context.Context, cfg *UpdateConfig, writer io.Writer) error {
+// installVersion returns the release folder to install from: either an exact version or the
+// channel's rolling folder. Channels are validated by [ParseChannel] and [CheckForUpdate],
+// so the channel is always `stable` or `daily` here.
+//
+// Stable installs are pinned to the exact version the check resolved. The rolling `stable`
+// folder is updated when a release publishes, while the version marker azd reads is
+// published separately, so installing "whatever is in the stable folder" can silently
+// deliver a version other than the one reported to the user (Azure/azure-dev#9145).
+// Per-version release folders are immutable, so pinning cannot drift.
+//
+// Daily installs keep using the rolling `daily` folder: daily builds publish their version
+// marker and their archives in a single operation, so the folder never advertises a version
+// it cannot serve, and per-version daily archives live outside the release folder the
+// install scripts download from.
+func (v *VersionInfo) installVersion() string {
+	if v.Channel == ChannelStable && v.Version != "" {
+		return v.Version
+	}
+
+	return string(v.Channel)
+}
+
+func (m *Manager) updateViaBrew(ctx context.Context, target *VersionInfo, writer io.Writer) error {
 	fmt.Fprintf(writer, "Checking Homebrew cask installation...\n")
 
 	// Determine which cask is currently installed by checking `brew list --cask`.
@@ -324,7 +357,7 @@ func (m *Manager) updateViaBrew(ctx context.Context, cfg *UpdateConfig, writer i
 		}
 	}
 
-	targetChannel := cfg.Channel
+	targetChannel := target.Channel
 
 	// `azure/azd` is azd's own Homebrew source (the `azure/azd` tap for
 	// github.com/Azure/homebrew-azd, which publishes the `azd` and `azd@daily`
@@ -390,7 +423,7 @@ func (m *Manager) updateViaBrew(ctx context.Context, cfg *UpdateConfig, writer i
 	}
 }
 
-func (m *Manager) updateViaInstallScript(ctx context.Context, cfg *UpdateConfig, writer io.Writer) error {
+func (m *Manager) updateViaInstallScript(ctx context.Context, target *VersionInfo, writer io.Writer) error {
 	fmt.Fprintf(writer, "Updating azd via install script...\n")
 
 	currentPath, err := currentExePath()
@@ -422,7 +455,7 @@ func (m *Manager) updateViaInstallScript(ctx context.Context, cfg *UpdateConfig,
 		return newUpdateError(CodeReplaceFailed, fmt.Errorf("failed to set script permissions: %w", err))
 	}
 
-	versionArg := string(cfg.Channel)
+	versionArg := target.installVersion()
 	runArgs := exec.NewRunArgs("bash", scriptPath,
 		"--version", versionArg,
 		"--install-folder", installFolder,
@@ -432,7 +465,7 @@ func (m *Manager) updateViaInstallScript(ctx context.Context, cfg *UpdateConfig,
 
 	log.Printf("Running install script: bash %s --version %s --install-folder %s --symlink-folder \"\"",
 		scriptPath, versionArg, installFolder)
-	fmt.Fprintf(writer, "Installing azd %s channel to %s...\n", cfg.Channel, installFolder)
+	fmt.Fprintf(writer, "Installing azd %s channel to %s...\n", target.Channel, installFolder)
 
 	result, err := m.commandRunner.Run(ctx, runArgs)
 	if err != nil {
@@ -472,7 +505,7 @@ func (m *Manager) updateViaPackageManager(
 	return nil
 }
 
-func (m *Manager) updateViaMSI(ctx context.Context, cfg *UpdateConfig, writer io.Writer) error {
+func (m *Manager) updateViaMSI(ctx context.Context, target *VersionInfo, writer io.Writer) error {
 	// Verify the install is the standard per-user MSI configuration.
 	// install-azd.ps1 installs with ALLUSERS=2 to %LOCALAPPDATA%\Programs\Azure Dev CLI.
 	// If the current install is non-standard, abort and advise the user.
@@ -509,7 +542,7 @@ func (m *Manager) updateViaMSI(ctx context.Context, cfg *UpdateConfig, writer io
 
 	// Run the install script synchronously. The MSI overwrites the unlocked
 	// safety copy at the original path with the new version.
-	psArgs := buildInstallScriptArgs(cfg.Channel)
+	psArgs := buildInstallScriptArgs(target)
 
 	// Hash the safety copy before install so we can detect whether the MSI
 	// actually replaced the file.
@@ -520,7 +553,7 @@ func (m *Manager) updateViaMSI(ctx context.Context, cfg *UpdateConfig, writer io
 	}
 
 	log.Printf("Running install script: powershell %s", strings.Join(psArgs, " "))
-	fmt.Fprintf(writer, "Installing azd %s channel...\n", cfg.Channel)
+	fmt.Fprintf(writer, "Installing azd %s channel...\n", target.Channel)
 
 	runArgs := exec.NewRunArgs("powershell", psArgs...).
 		WithStdOut(writer).
@@ -550,8 +583,8 @@ func (m *Manager) updateViaMSI(ctx context.Context, cfg *UpdateConfig, writer io
 	return nil
 }
 
-func (m *Manager) updateViaBinaryDownload(ctx context.Context, cfg *UpdateConfig, writer io.Writer) error {
-	downloadURL, err := m.buildDownloadURL(cfg.Channel)
+func (m *Manager) updateViaBinaryDownload(ctx context.Context, target *VersionInfo, writer io.Writer) error {
+	downloadURL, err := m.buildDownloadURL(target)
 	if err != nil {
 		return err
 	}
@@ -607,22 +640,21 @@ func (m *Manager) updateViaBinaryDownload(ctx context.Context, cfg *UpdateConfig
 	return nil
 }
 
-func (m *Manager) buildDownloadURL(channel Channel) (string, error) {
+// buildDownloadURL returns the archive URL to download target from.
+// See [VersionInfo.installVersion] for how the folder is chosen.
+func (m *Manager) buildDownloadURL(target *VersionInfo) (string, error) {
 	platform := runtime.GOOS
 	arch := runtime.GOARCH
 	ext := archiveExtension()
 
-	var folder string
-	switch channel {
-	case ChannelStable:
-		folder = "stable"
-	case ChannelDaily:
-		folder = "daily"
+	switch target.Channel {
+	case ChannelStable, ChannelDaily:
 	default:
-		return "", fmt.Errorf("unsupported channel: %s", channel)
+		return "", fmt.Errorf("unsupported channel: %s", target.Channel)
 	}
 
-	return fmt.Sprintf("%s/%s/azd-%s-%s%s", blobBaseURL, folder, platform, arch, ext), nil
+	return fmt.Sprintf(
+		"%s/%s/azd-%s-%s%s", blobBaseURL, target.installVersion(), platform, arch, ext), nil
 }
 
 func archiveExtension() string {
@@ -1031,9 +1063,13 @@ func HasStagedUpdate() bool {
 	return err == nil && !info.IsDir() && info.Size() > 0
 }
 
-// StageUpdate downloads the latest binary to ~/.azd/staging/ for later apply.
+// StageUpdate downloads target to ~/.azd/staging/ for later apply.
 // This is intended to run in the background without user interaction.
-func (m *Manager) StageUpdate(ctx context.Context, cfg *UpdateConfig) error {
+func (m *Manager) StageUpdate(ctx context.Context, target *VersionInfo) error {
+	if target == nil {
+		return fmt.Errorf("no resolved version to stage")
+	}
+
 	// Only stage for direct binary installs, not package managers
 	if IsPackageManagerInstall() {
 		log.Printf("auto-update: package manager install, skipping staging")
@@ -1047,7 +1083,7 @@ func (m *Manager) StageUpdate(ctx context.Context, cfg *UpdateConfig) error {
 		return nil
 	}
 
-	downloadURL, err := m.buildDownloadURL(cfg.Channel)
+	downloadURL, err := m.buildDownloadURL(target)
 	if err != nil {
 		return err
 	}

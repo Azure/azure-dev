@@ -155,20 +155,26 @@ func escapeForPSSingleQuote(s string) string {
 	return strings.ReplaceAll(s, "'", "''")
 }
 
-// buildInstallScriptArgs constructs the PowerShell arguments to run install-azd.ps1.
+// buildInstallScriptArgs constructs the PowerShell arguments to run install-azd.ps1
+// to install target.
 // For all channels, the script is downloaded to a temp directory.
+// The version passed to the script is chosen by [VersionInfo.installVersion].
 // For daily channel, an additional parameter (-InstallFolder) is passed
-// to the script. The install folder is escaped for PowerShell single-quoted strings
-// to handle paths containing apostrophes (e.g. O'Connor).
+// to the script. The install folder and version are escaped for PowerShell single-quoted
+// strings to handle values containing apostrophes (e.g. O'Connor).
 // Returns the arguments to pass to the "powershell" command.
-func buildInstallScriptArgs(channel Channel) []string {
+func buildInstallScriptArgs(target *VersionInfo) []string {
 	var scriptArgs string
-	switch channel {
+	switch target.Channel {
 	case ChannelDaily:
 		scriptArgs = fmt.Sprintf(" -Version 'daily' -InstallFolder '%s'",
 			escapeForPSSingleQuote(expectedPerUserInstallDir()))
 	default:
-		scriptArgs = " -Version 'stable'"
+		// Pin stable to the resolved version so the MSI comes from the immutable
+		// release/<version>/ folder rather than the rolling release/stable/ folder,
+		// which can already hold a newer build (Azure/azure-dev#9145).
+		scriptArgs = fmt.Sprintf(" -Version '%s'",
+			escapeForPSSingleQuote(target.installVersion()))
 	}
 
 	// Reset PSModulePath to the Windows PowerShell 5.1 system modules directory.

@@ -55,6 +55,7 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 	tests := []struct {
 		name    string
 		channel Channel
+		version string
 		// We check that certain substrings appear in the constructed args
 		wantContains    []string
 		wantNotContains []string
@@ -62,12 +63,13 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 		{
 			name:    "stable",
 			channel: ChannelStable,
+			version: "1.28.1",
 			wantContains: []string{
 				"-NoProfile",
 				"-ExecutionPolicy", "Bypass",
 				"-Command",
 				installScriptURL,
-				"-Version 'stable'",
+				"-Version '1.28.1'",
 				"Remove-Item",
 				"$env:PSModulePath",
 			},
@@ -77,8 +79,22 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 			},
 		},
 		{
+			name:    "stable without resolved version",
+			channel: ChannelStable,
+			wantContains: []string{
+				"-Command",
+				installScriptURL,
+				"-Version 'stable'",
+			},
+			wantNotContains: []string{
+				"-InstallFolder",
+				"-SkipVerify",
+			},
+		},
+		{
 			name:    "daily",
 			channel: ChannelDaily,
+			version: "1.29.0-beta.1-daily.6614998",
 			wantContains: []string{
 				"-NoProfile",
 				"-ExecutionPolicy", "Bypass",
@@ -98,7 +114,7 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			args := buildInstallScriptArgs(tt.channel)
+			args := buildInstallScriptArgs(&VersionInfo{Channel: tt.channel, Version: tt.version})
 			require.NotNil(t, args)
 			require.True(t, len(args) > 0, "expected non-empty args slice")
 
@@ -135,7 +151,7 @@ func TestEscapeForPSSingleQuote(t *testing.T) {
 func TestBuildInstallScriptArgs_ApostropheInPath(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", `C:\Users\O'Connor\AppData\Local`)
 
-	args := buildInstallScriptArgs(ChannelDaily)
+	args := buildInstallScriptArgs(&VersionInfo{Channel: ChannelDaily, Version: "1.29.0-beta.1-daily.6614998"})
 	script := args[4]
 
 	// The apostrophe must be doubled for a valid PowerShell single-quoted string.
@@ -148,7 +164,7 @@ func TestBuildInstallScriptArgs_Structure(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", `C:\Users\testuser\AppData\Local`)
 	expectedDir := expectedPerUserInstallDir()
 
-	args := buildInstallScriptArgs(ChannelStable)
+	args := buildInstallScriptArgs(&VersionInfo{Channel: ChannelStable, Version: "1.28.1"})
 
 	require.Equal(t, 5, len(args), "expected exactly 5 args")
 	require.Equal(t, "-NoProfile", args[0])
@@ -156,17 +172,17 @@ func TestBuildInstallScriptArgs_Structure(t *testing.T) {
 	require.Equal(t, "Bypass", args[2])
 	require.Equal(t, "-Command", args[3])
 
-	// Stable downloads to temp file — passes -Version 'stable' explicitly
+	// Stable downloads to temp file — pinned to the resolved version
 	script := args[4]
 	require.True(t, strings.HasPrefix(script, "$env:PSModulePath"), "script should start with PSModulePath reset")
 	require.Contains(t, script, "Invoke-RestMethod")
 	require.Contains(t, script, installScriptURL)
 	require.Contains(t, script, "Remove-Item")
-	require.Contains(t, script, "-Version 'stable'")
+	require.Contains(t, script, "-Version '1.28.1'")
 	require.NotContains(t, script, "-InstallFolder")
 
 	// Daily downloads to temp file with -Version 'daily'
-	argsDaily := buildInstallScriptArgs(ChannelDaily)
+	argsDaily := buildInstallScriptArgs(&VersionInfo{Channel: ChannelDaily, Version: "1.29.0-beta.1-daily.6614998"})
 	require.Equal(t, 5, len(argsDaily))
 	require.Equal(t, "Bypass", argsDaily[2])
 	scriptDaily := argsDaily[4]
@@ -261,9 +277,9 @@ func TestUpdateViaMSI_NonStandardInstallBlocks(t *testing.T) {
 	mockRunner := mockexec.NewMockCommandRunner()
 	m := NewManager(mockRunner, nil)
 	var buf strings.Builder
-	cfg := &UpdateConfig{Channel: ChannelStable}
+	target := &VersionInfo{Channel: ChannelStable, Version: "1.28.1"}
 
-	err := m.updateViaMSI(t.Context(), cfg, &buf)
+	err := m.updateViaMSI(t.Context(), target, &buf)
 	require.Error(t, err)
 
 	var updateErr *UpdateError

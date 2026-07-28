@@ -264,13 +264,17 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	// Perform the update
-	a.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: fmt.Sprintf("Updating azd to %s (%s)", versionInfo.Version, cfg.Channel),
-	})
+	// Perform the update.
+	// Package manager installs can't be pinned to a version, so don't promise one.
+	updateTitle := fmt.Sprintf("Updating azd to %s (%s)", versionInfo.Version, cfg.Channel)
+	if installedBy == installer.InstallTypeBrew || update.IsPackageManagerInstall() {
+		updateTitle = fmt.Sprintf("Updating azd via %s (%s)", installedBy, cfg.Channel)
+	}
+
+	a.console.MessageUxItem(ctx, &ux.MessageTitle{Title: updateTitle})
 
 	stdout := a.console.Handles().Stdout
-	if err := mgr.Update(ctx, cfg, stdout); err != nil {
+	if err := mgr.Update(ctx, versionInfo, stdout); err != nil {
 		// UpdateError already has the right code, just track it
 		if updateErr, ok := errors.AsType[*update.UpdateError](err); ok {
 			tracing.SetUsageAttributes(fields.UpdateResult.String(updateErr.Code))
@@ -300,12 +304,16 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Clean up any staged binary now that a manual update succeeded
 	update.CleanStagedUpdate()
 
+	// Report the resolved version only when the install method can be pinned to it.
+	// Package managers decide which version they make available, so don't claim one.
+	header := fmt.Sprintf("Updated azd to version %s! Changes take effect on next invocation.", versionInfo.Version)
+	if installedBy == installer.InstallTypeBrew || update.IsPackageManagerInstall() {
+		header = "Updated azd! Changes take effect on next invocation."
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf(
-				"Updated azd to version %s! Changes take effect on next invocation.",
-				versionInfo.Version,
-			),
+			Header:   header,
 			FollowUp: "Run `azd version` to confirm.",
 		},
 	}, nil

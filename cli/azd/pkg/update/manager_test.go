@@ -63,12 +63,22 @@ func TestBuildDownloadURL(t *testing.T) {
 	tests := []struct {
 		name    string
 		channel Channel
+		version string
 		wantErr bool
 		// We check that the URL contains these substrings
 		contains []string
 	}{
 		{
-			name:    "stable",
+			name:    "stable pinned to resolved version",
+			channel: ChannelStable,
+			version: "1.28.1",
+			contains: []string{
+				blobBaseURL + "/1.28.1/",
+				fmt.Sprintf("azd-%s-%s", runtime.GOOS, runtime.GOARCH),
+			},
+		},
+		{
+			name:    "stable without resolved version",
 			channel: ChannelStable,
 			contains: []string{
 				blobBaseURL + "/stable/",
@@ -78,6 +88,7 @@ func TestBuildDownloadURL(t *testing.T) {
 		{
 			name:    "daily",
 			channel: ChannelDaily,
+			version: "1.29.0-beta.1-daily.6614998",
 			contains: []string{
 				blobBaseURL + "/daily/",
 				fmt.Sprintf("azd-%s-%s", runtime.GOOS, runtime.GOARCH),
@@ -92,7 +103,7 @@ func TestBuildDownloadURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := m.buildDownloadURL(tt.channel)
+			got, err := m.buildDownloadURL(&VersionInfo{Channel: tt.channel, Version: tt.version})
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -101,6 +112,46 @@ func TestBuildDownloadURL(t *testing.T) {
 			for _, s := range tt.contains {
 				require.Contains(t, got, s)
 			}
+		})
+	}
+}
+
+// The stable channel folder can hold a newer build than the version marker azd reads,
+// so a stable update must download the exact version that was reported to the user.
+// See https://github.com/Azure/azure-dev/issues/9145.
+func TestBuildDownloadURL_StableDoesNotUseRollingFolder(t *testing.T) {
+	m := NewManager(nil, nil)
+
+	got, err := m.buildDownloadURL(&VersionInfo{Channel: ChannelStable, Version: "1.27.0"})
+	require.NoError(t, err)
+	require.Contains(t, got, blobBaseURL+"/1.27.0/")
+	require.NotContains(t, got, "/stable/")
+}
+
+func TestUpdate_RequiresResolvedVersion(t *testing.T) {
+	m := NewManager(nil, nil)
+
+	require.Error(t, m.Update(t.Context(), nil, &strings.Builder{}))
+	require.Error(t, m.StageUpdate(t.Context(), nil))
+}
+
+func TestInstallVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		channel Channel
+		version string
+		want    string
+	}{
+		{"stable pins the resolved version", ChannelStable, "1.28.1", "1.28.1"},
+		{"stable falls back to the channel", ChannelStable, "", "stable"},
+		{"daily uses the rolling channel", ChannelDaily, "1.29.0-beta.1-daily.6614998", "daily"},
+		{"daily without version", ChannelDaily, "", "daily"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := &VersionInfo{Channel: tt.channel, Version: tt.version}
+			require.Equal(t, tt.want, target.installVersion())
 		})
 	}
 }
@@ -676,7 +727,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 		m := NewManager(mockRunner, nil)
 		var buf bytes.Buffer
-		err := m.updateViaBrew(t.Context(), &UpdateConfig{Channel: ChannelStable}, &buf)
+		err := m.updateViaBrew(t.Context(), &VersionInfo{Channel: ChannelStable}, &buf)
 		require.NoError(t, err)
 		require.Contains(t, buf.String(), "not installed as a Homebrew cask")
 	})
@@ -696,7 +747,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 		m := NewManager(mockRunner, nil)
 		var buf bytes.Buffer
-		err := m.updateViaBrew(t.Context(), &UpdateConfig{Channel: ChannelDaily}, &buf)
+		err := m.updateViaBrew(t.Context(), &VersionInfo{Channel: ChannelDaily}, &buf)
 		require.NoError(t, err)
 		require.Contains(t, buf.String(), "not installed as a Homebrew cask")
 	})
@@ -713,7 +764,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 		m := NewManager(mockRunner, nil)
 		var buf bytes.Buffer
-		err := m.updateViaBrew(t.Context(), &UpdateConfig{Channel: Channel("nightly")}, &buf)
+		err := m.updateViaBrew(t.Context(), &VersionInfo{Channel: Channel("nightly")}, &buf)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unsupported channel")
 	})
@@ -733,7 +784,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 		m := NewManager(mockRunner, nil)
 		var buf bytes.Buffer
-		err := m.updateViaBrew(t.Context(), &UpdateConfig{Channel: ChannelStable}, &buf)
+		err := m.updateViaBrew(t.Context(), &VersionInfo{Channel: ChannelStable}, &buf)
 		require.NoError(t, err)
 		require.Contains(t, buf.String(), "Switching from daily to stable")
 	})
@@ -753,7 +804,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 		m := NewManager(mockRunner, nil)
 		var buf bytes.Buffer
-		err := m.updateViaBrew(t.Context(), &UpdateConfig{Channel: ChannelDaily}, &buf)
+		err := m.updateViaBrew(t.Context(), &VersionInfo{Channel: ChannelDaily}, &buf)
 		require.NoError(t, err)
 		require.Contains(t, buf.String(), "Switching from stable to daily")
 	})
@@ -770,7 +821,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 		m := NewManager(mockRunner, nil)
 		var buf bytes.Buffer
-		err := m.updateViaBrew(t.Context(), &UpdateConfig{Channel: ChannelStable}, &buf)
+		err := m.updateViaBrew(t.Context(), &VersionInfo{Channel: ChannelStable}, &buf)
 		require.Error(t, err)
 		var updateErr *UpdateError
 		require.ErrorAs(t, err, &updateErr)
@@ -789,7 +840,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 		m := NewManager(mockRunner, nil)
 		var buf bytes.Buffer
-		err := m.updateViaBrew(t.Context(), &UpdateConfig{Channel: ChannelStable}, &buf)
+		err := m.updateViaBrew(t.Context(), &VersionInfo{Channel: ChannelStable}, &buf)
 		require.NoError(t, err)
 		require.Contains(t, buf.String(), "Trusting azd's Homebrew source (azure/azd)")
 		require.Contains(t, buf.String(), "Updating azd (stable channel)")
@@ -811,7 +862,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 		m := NewManager(mockRunner, nil)
 		var buf bytes.Buffer
-		err := m.updateViaBrew(t.Context(), &UpdateConfig{Channel: ChannelStable}, &buf)
+		err := m.updateViaBrew(t.Context(), &VersionInfo{Channel: ChannelStable}, &buf)
 		require.NoError(t, err)
 		require.Contains(t, buf.String(), "Updating azd (stable channel)")
 	})
@@ -828,7 +879,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 		m := NewManager(mockRunner, nil)
 		var buf bytes.Buffer
-		err := m.updateViaBrew(t.Context(), &UpdateConfig{Channel: ChannelDaily}, &buf)
+		err := m.updateViaBrew(t.Context(), &VersionInfo{Channel: ChannelDaily}, &buf)
 		require.NoError(t, err)
 		require.Contains(t, buf.String(), "Updating azd (daily channel)")
 	})
@@ -845,7 +896,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 		m := NewManager(mockRunner, nil)
 		var buf bytes.Buffer
-		err := m.updateViaBrew(t.Context(), &UpdateConfig{Channel: ChannelStable}, &buf)
+		err := m.updateViaBrew(t.Context(), &VersionInfo{Channel: ChannelStable}, &buf)
 		require.Error(t, err)
 		var updateErr *UpdateError
 		require.ErrorAs(t, err, &updateErr)
@@ -861,7 +912,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 		m := NewManager(mockRunner, nil)
 		var buf bytes.Buffer
-		err := m.updateViaBrew(t.Context(), &UpdateConfig{Channel: Channel("nightly")}, &buf)
+		err := m.updateViaBrew(t.Context(), &VersionInfo{Channel: Channel("nightly")}, &buf)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unsupported channel")
 	})
@@ -881,7 +932,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 		m := NewManager(mockRunner, nil)
 		var buf bytes.Buffer
-		err := m.updateViaBrew(t.Context(), &UpdateConfig{Channel: ChannelStable}, &buf)
+		err := m.updateViaBrew(t.Context(), &VersionInfo{Channel: ChannelStable}, &buf)
 		require.NoError(t, err)
 	})
 
@@ -900,7 +951,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 		m := NewManager(mockRunner, nil)
 		var buf bytes.Buffer
-		err := m.updateViaBrew(t.Context(), &UpdateConfig{Channel: ChannelStable}, &buf)
+		err := m.updateViaBrew(t.Context(), &VersionInfo{Channel: ChannelStable}, &buf)
 		require.NoError(t, err)
 	})
 }
@@ -933,20 +984,53 @@ func TestUpdateViaInstallScript(t *testing.T) {
 
 		m := NewManager(mockRunner, client)
 		var buf bytes.Buffer
-		err := m.updateViaInstallScript(t.Context(), &UpdateConfig{Channel: ChannelStable}, &buf)
+		err := m.updateViaInstallScript(t.Context(), &VersionInfo{Channel: ChannelStable, Version: "1.28.1"}, &buf)
 		require.NoError(t, err)
 		require.Contains(t, buf.String(), "Updating azd via install script")
 		require.Contains(t, buf.String(), "Installing azd stable channel")
 
-		// Verify bash was called with correct arguments
+		// Verify bash was called with correct arguments. Stable installs are pinned to the
+		// resolved version so the install can't drift from the version reported to the user.
 		require.Equal(t, "bash", capturedArgs.Cmd)
 		require.True(t, strings.HasSuffix(capturedArgs.Args[0], "install-azd.sh"))
 		require.Equal(t, "--version", capturedArgs.Args[1])
-		require.Equal(t, "stable", capturedArgs.Args[2])
+		require.Equal(t, "1.28.1", capturedArgs.Args[2])
 		require.Equal(t, "--install-folder", capturedArgs.Args[3])
 		require.NotEmpty(t, capturedArgs.Args[4]) // install folder path
 		require.Equal(t, "--symlink-folder", capturedArgs.Args[5])
 		require.Equal(t, "", capturedArgs.Args[6])
+	})
+
+	t.Run("Success_StableWithoutResolvedVersion", func(t *testing.T) {
+		scriptContent := []byte("#!/bin/bash\necho installing")
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(scriptContent)))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(scriptContent)
+		}))
+		defer server.Close()
+
+		client := &http.Client{
+			Transport: &urlRewriteTransport{
+				base:      http.DefaultTransport,
+				targetURL: server.URL,
+			},
+		}
+
+		var capturedArgs exec.RunArgs
+		mockRunner := mockexec.NewMockCommandRunner()
+		mockRunner.When(func(args exec.RunArgs, command string) bool {
+			return args.Cmd == "bash"
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			capturedArgs = args
+			return exec.NewRunResult(0, "Installation complete", ""), nil
+		})
+
+		m := NewManager(mockRunner, client)
+		var buf bytes.Buffer
+		err := m.updateViaInstallScript(t.Context(), &VersionInfo{Channel: ChannelStable, Version: ""}, &buf)
+		require.NoError(t, err)
+		require.Equal(t, "stable", capturedArgs.Args[2])
 	})
 
 	t.Run("Success_Daily", func(t *testing.T) {
@@ -976,7 +1060,8 @@ func TestUpdateViaInstallScript(t *testing.T) {
 
 		m := NewManager(mockRunner, client)
 		var buf bytes.Buffer
-		err := m.updateViaInstallScript(t.Context(), &UpdateConfig{Channel: ChannelDaily}, &buf)
+		err := m.updateViaInstallScript(
+			t.Context(), &VersionInfo{Channel: ChannelDaily, Version: "1.29.0-beta.1-daily.6614998"}, &buf)
 		require.NoError(t, err)
 		require.Contains(t, buf.String(), "Installing azd daily channel")
 		require.Equal(t, "daily", capturedArgs.Args[2])
@@ -997,7 +1082,7 @@ func TestUpdateViaInstallScript(t *testing.T) {
 
 		m := NewManager(nil, client)
 		var buf bytes.Buffer
-		err := m.updateViaInstallScript(t.Context(), &UpdateConfig{Channel: ChannelStable}, &buf)
+		err := m.updateViaInstallScript(t.Context(), &VersionInfo{Channel: ChannelStable, Version: "1.28.1"}, &buf)
 		require.Error(t, err)
 		var updateErr *UpdateError
 		require.ErrorAs(t, err, &updateErr)
@@ -1027,7 +1112,7 @@ func TestUpdateViaInstallScript(t *testing.T) {
 
 		m := NewManager(mockRunner, client)
 		var buf bytes.Buffer
-		err := m.updateViaInstallScript(t.Context(), &UpdateConfig{Channel: ChannelStable}, &buf)
+		err := m.updateViaInstallScript(t.Context(), &VersionInfo{Channel: ChannelStable, Version: "1.28.1"}, &buf)
 		require.Error(t, err)
 		var updateErr *UpdateError
 		require.ErrorAs(t, err, &updateErr)
@@ -1057,7 +1142,7 @@ func TestUpdateViaInstallScript(t *testing.T) {
 
 		m := NewManager(mockRunner, client)
 		var buf bytes.Buffer
-		err := m.updateViaInstallScript(t.Context(), &UpdateConfig{Channel: ChannelStable}, &buf)
+		err := m.updateViaInstallScript(t.Context(), &VersionInfo{Channel: ChannelStable, Version: "1.28.1"}, &buf)
 		require.Error(t, err)
 		var updateErr *UpdateError
 		require.ErrorAs(t, err, &updateErr)

@@ -27,6 +27,7 @@ func NewRootCommand() *cobra.Command {
 
 	rootCmd.AddCommand(
 		newInitCommand(),
+		newGenerateCommand(),
 		newDatasetCommand(),
 		newRunCommand(),
 		newEvaluatorCommand(),

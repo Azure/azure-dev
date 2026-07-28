@@ -18,12 +18,30 @@ import (
 //
 // A failure is deliberately not fatal: without schemas the builder falls back
 // to the agent-target shape, which is what it always used to send.
+// evaluatorSchemas indexes the published contract of every evaluator a group
+// can reference.
+//
+// Built-ins have to be asked for separately. An unfiltered list returns only
+// the project's own evaluators, so relying on it leaves every built-in without
+// a schema and falling back to legacyInputs — which happens to match
+// query/response and so looks right for the common evaluators while quietly
+// dropping the fields anything else needs.
 func (ec *evalContext) evaluatorSchemas(ctx context.Context) map[string]*eval_api.EvaluatorSummary {
-	list, err := ec.evalClient.ListEvaluators(ctx, "", ProjectEndpointAPIVersion)
-	if err != nil {
+	index := map[string]*eval_api.EvaluatorSummary{}
+
+	for _, filter := range []string{"", eval_api.EvaluatorTypeBuiltin} {
+		list, err := ec.evalClient.ListEvaluators(ctx, filter, ProjectEndpointAPIVersion)
+		if err != nil {
+			continue
+		}
+		for name, summary := range list.ByName() {
+			index[name] = summary
+		}
+	}
+	if len(index) == 0 {
 		return nil
 	}
-	return list.ByName()
+	return index
 }
 
 // sampleBindings are the fields an agent target produces at run time. Anything

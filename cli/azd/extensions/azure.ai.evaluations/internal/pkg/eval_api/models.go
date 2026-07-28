@@ -325,6 +325,9 @@ const (
 	// EvalRunDataSourceTypeResponses evaluates responses the project already
 	// stored, addressed by id.
 	EvalRunDataSourceTypeResponses EvalRunDataSourceType = "azure_ai_responses"
+
+	// EvalRunDataSourceTypeJSONL scores the rows as they are, invoking nothing.
+	EvalRunDataSourceTypeJSONL EvalRunDataSourceType = "jsonl"
 )
 
 // EvalRunDataContentType defines the source type for eval run data content.
@@ -434,6 +437,14 @@ func NewTracesDataSource(agentName string, lookbackHours int, end time.Time, max
 		ds.EndTime = end.Unix()
 	}
 	return ds
+}
+
+// NewDatasetOnlyDataSource scores the dataset as it stands, invoking nothing.
+//
+// Used when a group declares no target: the rows already hold both sides of
+// the exchange, which is how a recorded conversation is evaluated.
+func NewDatasetOnlyDataSource() *EvalRunDataSource {
+	return &EvalRunDataSource{Type: EvalRunDataSourceTypeJSONL}
 }
 
 // NewModelTargetDataSource sends the dataset's questions straight to a model

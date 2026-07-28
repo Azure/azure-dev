@@ -393,15 +393,20 @@ func (ec *evalContext) buildRunDataSource(
 	configPath string,
 	maxSamples int,
 ) (*eval_api.EvalRunDataSource, error) {
-	if group == nil || group.Target == nil {
-		return nil, fmt.Errorf(
-			"the eval group must declare a target so the run knows what to invoke")
+	if group == nil {
+		return nil, fmt.Errorf("no eval group to run")
 	}
 
+	// A group with no target scores a dataset that already holds the exchange,
+	// so there is nothing to invoke. That is how recorded conversations are
+	// evaluated.
 	var ds *eval_api.EvalRunDataSource
-	if group.Target.Type == project.TargetTypeModel {
+	switch {
+	case group.Target == nil || group.Target.Name == "":
+		ds = eval_api.NewDatasetOnlyDataSource()
+	case group.Target.Type == project.TargetTypeModel:
 		ds = eval_api.NewModelTargetDataSource(group.Target.Name)
-	} else {
+	default:
 		ds = eval_api.NewAgentTargetDataSource(group.Target.Name, nil)
 	}
 

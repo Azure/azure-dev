@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -129,7 +130,7 @@ func (p *EvalServiceTargetProvider) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
-	cfg, err := EvalConfigFromService(serviceConfig)
+	cfg, err := EvalConfigFromService(serviceConfig, p.projectRoot(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -187,6 +188,19 @@ func (p *EvalServiceTargetProvider) Deploy(
 	return &azdext.ServiceDeployResult{}, nil
 }
 
+// projectRoot is the directory `$ref` paths resolve against. It is the
+// directory holding azure.yaml, which only azd can report.
+func (p *EvalServiceTargetProvider) projectRoot(ctx context.Context) string {
+	if p.azdClient == nil {
+		return ""
+	}
+	resp, err := p.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || resp.GetProject() == nil {
+		return ""
+	}
+	return resp.GetProject().GetPath()
+}
+
 // describeResult reports whether a version was published or reused, so a
 // no-op deploy is visibly a no-op.
 func describeResult(kind, name, version string, changed bool) string {
@@ -205,7 +219,13 @@ func report(progress azdext.ProgressReporter, message string) {
 // EvalConfigFromService reads the eval configuration carried inline on the
 // service entry. azd captures unknown keys into AdditionalProperties and hands
 // them to the extension untouched.
-func EvalConfigFromService(svc *azdext.ServiceConfig) (*EvalConfig, error) {
+//
+// azd core deliberately does not resolve `$ref` includes for extensions — it
+// strips the ServiceConfig fields it owns and leaves `$ref` at the top of the
+// map for the owning extension to resolve. Without this call a service written
+// as `host: azure.ai.eval` + `$ref: ./evals/azure.yaml` deploys nothing at all,
+// because the config parses to an empty set of datasets and groups.
+func EvalConfigFromService(svc *azdext.ServiceConfig, projectRoot string) (*EvalConfig, error) {
 	props := serviceProps(svc)
 	if props == nil || len(props.GetFields()) == 0 {
 		return nil, fmt.Errorf(
@@ -213,7 +233,16 @@ func EvalConfigFromService(svc *azdext.ServiceConfig) (*EvalConfig, error) {
 			svc.GetName())
 	}
 
-	raw, err := props.MarshalJSON()
+	values := props.AsMap()
+	if projectRoot != "" {
+		resolved, err := foundry.ResolveFileRefs(values, projectRoot)
+		if err != nil {
+			return nil, fmt.Errorf("resolving $ref in the eval service configuration: %w", err)
+		}
+		values = resolved
+	}
+
+	raw, err := json.Marshal(values)
 	if err != nil {
 		return nil, fmt.Errorf("reading the eval service configuration: %w", err)
 	}
@@ -235,9 +264,22 @@ func serviceProps(svc *azdext.ServiceConfig) *structpb.Struct {
 }
 
 // serviceRelativeDir returns the directory that `source:` paths resolve against.
+//
+// When the service is authored as `host:` + `$ref: ./evals/azure.yaml`, the
+// paths inside that file are written relative to the file itself, so the
+// include's own directory is the base. ResolveFileRefs inlines the content
+// without rebasing paths, so the base has to be recovered from the `$ref`
+// value before resolution.
 func serviceRelativeDir(svc *azdext.ServiceConfig) string {
 	if svc == nil {
 		return "."
+	}
+	if props := serviceProps(svc); props != nil {
+		if ref, ok := props.AsMap()["$ref"].(string); ok && ref != "" {
+			if dir := filepath.Dir(filepath.FromSlash(ref)); dir != "" {
+				return dir
+			}
+		}
 	}
 	if p := svc.GetRelativePath(); p != "" {
 		return p

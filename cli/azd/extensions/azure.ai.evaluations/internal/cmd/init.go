@@ -4,7 +4,7 @@
 package cmd
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,8 +13,10 @@ import (
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // newInitCommand scaffolds the eval configuration. It makes no service calls at
@@ -76,7 +78,7 @@ func newInitCommand() *cobra.Command {
 			// Printing the block and leaving the edit to the reader was enough
 			// to make the documented flow stop working between `init` and
 			// `azd up`.
-			rootWiring, err := ensureRootEvalService(rootConfigName, depPath)
+			rootWiring, err := ensureRootEvalService(cmd.Context(), depPath)
 			if err != nil {
 				return err
 			}
@@ -93,36 +95,17 @@ func newInitCommand() *cobra.Command {
 
 			fmt.Fprintf(out, "Wrote %s\n", genPath)
 			fmt.Fprintf(out, "Wrote %s\n", depPath)
+			switch rootWiring {
+			case wiringAdded:
+				fmt.Fprintf(out, "Added the evals service to %s\n", rootConfigName)
+			case wiringPresent:
+				fmt.Fprintf(out, "%s already declares an eval service\n", rootConfigName)
+			}
 
 			fmt.Fprintln(out, "\nNext:")
-			step := 1
-			if rootWiring == wiringManual {
-				// Only reached when the root config could not be read or has a
-				// shape this cannot safely edit, so the wiring is the caller's
-				// to do.
-				fmt.Fprintf(out, "  %d. Reference %s from your root azure.yaml:\n", step, depPath)
-				fmt.Fprintln(out, "       services:")
-				fmt.Fprintln(out, "         evals:")
-				fmt.Fprintln(out, "           host: azure.ai.eval")
-				fmt.Fprintln(out, "           uses: [ai-project]")
-				fmt.Fprintf(out, "           $ref: ./%s\n", filepath.ToSlash(depPath))
-				step++
-			} else {
-				fmt.Fprintf(out, "  (%s references %s)\n", rootConfigName, depPath)
-			}
-			fmt.Fprintf(out, "  %d. azd ai eval generate    (or supply your own dataset)\n", step)
-			step++
-			// azd up provisions before it deploys, which needs a bicep template.
-			// An eval-only project has none, and the failure names a missing
-			// infra/main.bicep rather than the reason, so it is only suggested
-			// where it can work.
-			if hasInfra() {
-				fmt.Fprintf(out, "  %d. azd up\n", step)
-			} else {
-				fmt.Fprintf(out, "  %d. azd deploy evals    (azd up once the project has infra to provision)\n", step)
-			}
-			step++
-			fmt.Fprintf(out, "  %d. azd ai eval run\n", step)
+			fmt.Fprintln(out, "  1. azd ai eval generate    (or supply your own dataset)")
+			fmt.Fprintln(out, "  2. azd up")
+			fmt.Fprintln(out, "  3. azd ai eval run")
 			return nil
 		},
 	}
@@ -143,132 +126,78 @@ const rootConfigName = "azure.yaml"
 
 // How the root config ended up referencing the eval service.
 const (
-	wiringCreated = "created" // there was no root config, so one was written
-	wiringAdded   = "added"   // the service was added to an existing config
+	wiringAdded   = "added"   // the service was added to the project
 	wiringPresent = "present" // an eval service was already declared
-	wiringManual  = "manual"  // the caller has to do it; the block is printed
 )
 
 // ensureRootEvalService declares the eval service in azd's project file.
 //
-// A config azd cannot see does nothing, and the reference is mechanical, so it
-// is written rather than described. An existing project file is edited in place
-// through the YAML node tree, which keeps its comments and key order; anything
-// that cannot be edited safely falls back to printing the block.
-func ensureRootEvalService(rootPath, depPath string) (string, error) {
-	ref := "./" + filepath.ToSlash(depPath)
-
-	raw, err := os.ReadFile(rootPath)
-	if errors.Is(err, os.ErrNotExist) {
-		name := filepath.Base(mustAbs(filepath.Dir(rootPath)))
-		body := fmt.Sprintf(""+
-			"name: %s\n"+
-			"services:\n"+
-			"  evals:\n"+
-			"    host: azure.ai.eval\n"+
-			"    $ref: %s\n", name, ref)
-		if err := os.WriteFile(rootPath, []byte(body), 0o600); err != nil {
-			return "", fmt.Errorf("writing %s: %w", rootPath, err)
-		}
-		return wiringCreated, nil
-	}
+// azd acts on nothing until the service exists, so the reference is made rather
+// than described. It goes through azd's own Project().AddService, the same call
+// the agents extension uses, so azd owns the edit and the project file keeps
+// whatever shape azd gives it.
+//
+// The eval config itself stays in evals/azure.yaml and is referenced with
+// `$ref`. azd carries unknown keys through AdditionalProperties untouched,
+// which is how the extension gets it back at deploy time.
+func ensureRootEvalService(ctx context.Context, depPath string) (string, error) {
+	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
-		return wiringManual, nil
+		return "", fmt.Errorf("connecting to azd: %w", err)
+	}
+	defer azdClient.Close()
+
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || resp.GetProject() == nil {
+		// Evals attach to a project; they do not create one. Saying which
+		// command makes one is more use than a gRPC error.
+		return "", fmt.Errorf(
+			"no azd project found in this directory. Run `azd init` first, "+
+				"or run this from the root of an existing one; the eval service is "+
+				"added to its %s", rootConfigName)
 	}
 
-	var doc yaml.Node
-	if err := yaml.Unmarshal(raw, &doc); err != nil || len(doc.Content) == 0 {
-		return wiringManual, nil
-	}
-	root := doc.Content[0]
-	if root.Kind != yaml.MappingNode {
-		return wiringManual, nil
-	}
-
-	services := mappingValue(root, "services")
-	if services != nil && services.Kind == yaml.MappingNode {
-		// A service already pointing at an eval config is left alone, whatever
-		// it is called: adding a second would deploy the same evals twice.
-		for i := 0; i+1 < len(services.Content); i += 2 {
-			if host := mappingValue(services.Content[i+1], "host"); host != nil &&
-				host.Value == project.EvalHost {
-				return wiringPresent, nil
-			}
+	// A service already pointing at an eval config is left alone, whatever it
+	// is called: a second one would deploy the same evals twice.
+	for _, svc := range resp.GetProject().GetServices() {
+		if svc.GetHost() == project.EvalHost {
+			return wiringPresent, nil
 		}
 	}
-	if services == nil {
-		root.Content = append(root.Content,
-			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "services"},
-			&yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"})
-		services = root.Content[len(root.Content)-1]
-	}
-	if services.Kind != yaml.MappingNode {
-		return wiringManual, nil
-	}
 
-	entry := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
-	entry.Content = append(entry.Content,
-		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "host"},
-		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: project.EvalHost},
-		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "$ref"},
-		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: ref})
-	services.Content = append(services.Content,
-		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: uniqueServiceName(services)},
-		entry)
-
-	out, err := yaml.Marshal(&doc)
+	props, err := structpb.NewStruct(map[string]any{
+		"$ref": "./" + filepath.ToSlash(depPath),
+	})
 	if err != nil {
-		return wiringManual, nil
+		return "", fmt.Errorf("building the eval service entry: %w", err)
 	}
-	if err := os.WriteFile(rootPath, out, 0o600); err != nil {
-		return "", fmt.Errorf("updating %s: %w", rootPath, err)
+
+	_, err = azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{
+		Service: &azdext.ServiceConfig{
+			Name:                 evalServiceName(resp.GetProject()),
+			Host:                 project.EvalHost,
+			AdditionalProperties: props,
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("adding the eval service to %s: %w", rootConfigName, err)
 	}
 	return wiringAdded, nil
 }
 
-// mappingValue returns the value node for key, or nil.
-func mappingValue(m *yaml.Node, key string) *yaml.Node {
-	if m == nil || m.Kind != yaml.MappingNode {
-		return nil
-	}
-	for i := 0; i+1 < len(m.Content); i += 2 {
-		if m.Content[i].Value == key {
-			return m.Content[i+1]
-		}
-	}
-	return nil
-}
-
-// uniqueServiceName avoids colliding with a service the project already has.
-func uniqueServiceName(services *yaml.Node) string {
-	taken := map[string]bool{}
-	for i := 0; i+1 < len(services.Content); i += 2 {
-		taken[services.Content[i].Value] = true
-	}
-	if !taken["evals"] {
+// evalServiceName avoids colliding with a service the project already has.
+// azd keys services by name, so the map key is the name to avoid.
+func evalServiceName(proj *azdext.ProjectConfig) string {
+	taken := proj.GetServices()
+	if _, exists := taken["evals"]; !exists {
 		return "evals"
 	}
 	for i := 2; ; i++ {
 		candidate := fmt.Sprintf("evals%d", i)
-		if !taken[candidate] {
+		if _, exists := taken[candidate]; !exists {
 			return candidate
 		}
 	}
-}
-
-func mustAbs(p string) string {
-	abs, err := filepath.Abs(p)
-	if err != nil {
-		return p
-	}
-	return abs
-}
-
-// hasInfra reports whether azd has a template to provision, which decides
-// whether `azd up` can work here.
-func hasInfra() bool {
-	_, err := os.Stat(filepath.Join("infra", "main.bicep"))
-	return err == nil
 }
 
 func buildGenerateScaffold(target, rubricName, evalModel string) *project.GenerateConfig {

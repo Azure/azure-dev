@@ -4,12 +4,14 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 
 	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/project"
@@ -64,6 +66,13 @@ func (r *evalReconciler) EnsureDataset(
 
 	if _, err := os.Stat(localPath); err != nil {
 		return "", false, fmt.Errorf("dataset source %q: %w", localPath, err)
+	}
+
+	// A malformed row is only noticed once the service tries to evaluate it,
+	// by which point a version has been published and the eval group points at
+	// it. Reading the file here costs nothing and names the offending line.
+	if err := validateJSONL(localPath); err != nil {
+		return "", false, fmt.Errorf("dataset %q: %w", decl.Name, err)
 	}
 
 	digest, err := project.Fingerprint(localPath)
@@ -140,6 +149,50 @@ func (r *evalReconciler) EnsureDataset(
 // pinning the eval group to the older version would quietly evaluate against
 // stale data. Publishing is not destructive — versions are immutable — so the
 // remedy is to sync, not to overwrite.
+// validateJSONL checks that every row is a JSON object before the file is
+// published.
+//
+// The service accepts the upload whatever the bytes are, so a typo becomes a
+// registered version, an eval group bound to it, and a run that fails on a row
+// nobody has looked at. Blank lines are skipped: they are not rows.
+func validateJSONL(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", path, err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	// A row carrying a whole conversation runs well past the 64KB default.
+	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+
+	rows := 0
+	for line := 1; scanner.Scan(); line++ {
+		text := strings.TrimSpace(scanner.Text())
+		if text == "" {
+			continue
+		}
+		var row map[string]any
+		if err := json.Unmarshal([]byte(text), &row); err != nil {
+			return fmt.Errorf(
+				"%s line %d is not valid JSON: %w. Every line must be one JSON object",
+				path, line, err)
+		}
+		if len(row) == 0 {
+			return fmt.Errorf(
+				"%s line %d is an empty object, which evaluates to nothing", path, line)
+		}
+		rows++
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("reading %s: %w", path, err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("%s has no rows to evaluate", path)
+	}
+	return nil
+}
+
 func (r *evalReconciler) checkDatasetDrift(
 	ctx context.Context,
 	name, recorded string,

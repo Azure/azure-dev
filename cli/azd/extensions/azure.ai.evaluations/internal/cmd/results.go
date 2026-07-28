@@ -222,6 +222,11 @@ func (ec *evalContext) latestOrNamedRun(
 
 	list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 1)
 	if err != nil {
+		if eval_api.IsNotFound(err) {
+			return nil, fmt.Errorf(
+				"no eval group %q in this project; "+
+					"`azd up` creates the ones your config declares", evalID)
+		}
 		return nil, fmt.Errorf("listing runs for eval group %s: %w", evalID, err)
 	}
 	if len(list.Data) == 0 {

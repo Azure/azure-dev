@@ -49,6 +49,11 @@ func newRunListCommand() *cobra.Command {
 
 			list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 0)
 			if err != nil {
+				if eval_api.IsNotFound(err) {
+					return fmt.Errorf(
+						"no eval group %q in this project; "+
+							"`azd up` creates the ones your config declares", evalID)
+				}
 				return fmt.Errorf("listing runs for %q: %w", evalID, err)
 			}
 			if isJSON(cmd) {

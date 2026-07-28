@@ -82,6 +82,10 @@ func buildRunCommand(use, short string) *cobra.Command {
 					return err
 				}
 
+				if err := ec.checkDatasetRegistered(ctx, cfg, group, configPath); err != nil {
+					return err
+				}
+
 				evalID, err = ec.resolveEvalGroupID(
 					ctx, group, configPath, resolveLevel(level, group), out, isJSON(cmd))
 				if err != nil {
@@ -89,7 +93,14 @@ func buildRunCommand(use, short string) *cobra.Command {
 				}
 			}
 
-			dataSource, err := buildRunDataSource(group, configPath, maxSamples)
+			// With --eval-id there is no config to read, so the pairing of
+			// target and dataset comes from the group's previous run.
+			var dataSource *eval_api.EvalRunDataSource
+			if group == nil {
+				dataSource, err = ec.reuseDataSourceFromLastRun(ctx, evalID)
+			} else {
+				dataSource, err = buildRunDataSource(group, configPath, maxSamples)
+			}
 			if err != nil {
 				return err
 			}
@@ -221,6 +232,81 @@ func (ec *evalContext) resolveEvalGroupID(
 		fmt.Fprintf(out, "warning: %v\n", err)
 	}
 	return created.ID, nil
+}
+
+// checkDatasetRegistered fails when the group's local dataset has edits that
+// were never deployed.
+//
+// A run sends a local dataset inline, so without this the run would evaluate
+// content that no registered version corresponds to: the results are attributed
+// to the eval group but cannot be traced back to a dataset version, which
+// makes them impossible to reproduce or compare.
+//
+// The check only applies once a deploy has recorded a fingerprint. Before that
+// there is nothing to have drifted from, and running is how a group first comes
+// into existence.
+func (ec *evalContext) checkDatasetRegistered(
+	ctx context.Context,
+	cfg *project.EvalConfig,
+	group *project.EvalGroup,
+	configPath string,
+) error {
+	localPath := localDatasetPath(configPath, group)
+	if localPath == "" {
+		return nil
+	}
+
+	decl, ok := cfg.Dataset(group.Dataset)
+	if !ok {
+		return nil
+	}
+
+	recorded := ec.getEnvValue(ctx, project.FingerprintKey("dataset", decl.Name))
+	if recorded == "" {
+		return nil
+	}
+
+	digest, err := project.Fingerprint(localPath)
+	if err != nil {
+		// Reading the file is the run's problem to report, not this check's.
+		return nil
+	}
+	if digest == recorded {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"dataset %q has local edits that are not registered.\n"+
+			"  Run `azd up` to register them, or `--eval-id <id>` to run against "+
+			"an existing eval group",
+		decl.Name)
+}
+
+// reuseDataSourceFromLastRun rebuilds a run's data source from the group's most
+// recent run.
+//
+// `--eval-id` deliberately ignores the config, but a run still needs a target
+// and a dataset, and an eval group carries neither: the group holds only its
+// testing criteria, and the dataset travels on the run. The previous run is the
+// only place that pairing survives, so re-running a group means repeating what
+// it last ran.
+func (ec *evalContext) reuseDataSourceFromLastRun(
+	ctx context.Context,
+	evalID string,
+) (*eval_api.EvalRunDataSource, error) {
+	list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 1)
+	if err != nil {
+		return nil, fmt.Errorf("reading previous runs of eval group %s: %w", evalID, err)
+	}
+	if list == nil || len(list.Data) == 0 || list.Data[0].DataSource == nil {
+		return nil, fmt.Errorf(
+			"eval group %s has no previous run to repeat, so there is no target or dataset "+
+				"to reuse.\n"+
+				"  Run it from the config once with `azd ai eval run`, or pass a config that "+
+				"declares the group",
+			evalID)
+	}
+	return list.Data[0].DataSource, nil
 }
 
 // buildRunDataSource binds the dataset to the run. The eval group carries no

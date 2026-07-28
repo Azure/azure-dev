@@ -25,5 +25,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.SilenceErrors = true
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 
+	rootCmd.AddCommand(newDatasetCommand())
+
 	return rootCmd
 }

@@ -110,8 +110,11 @@ func buildGenerateScaffold(target, rubricName, evalModel string) *project.Genera
 		Agent: project.AgentSpec{
 			Name: target,
 			Context: project.AgentContext{
+				// Scaffolded even though the file does not exist yet: writing
+				// it overrides the agent's published instructions, which is the
+				// usual way to narrow what gets generated. `tools` is left out
+				// because nothing reads it yet.
 				Instructions: "./agent/instructions.md",
-				Tools:        "./agent/tools.json",
 			},
 		},
 		Generate: project.GenerateSpec{

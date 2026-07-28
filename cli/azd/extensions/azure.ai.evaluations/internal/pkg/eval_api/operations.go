@@ -30,6 +30,7 @@ const (
 	pathEvaluators              = "/evaluators"
 	pathDatasets                = "/datasets"
 	pathOpenAIEvals             = "/openai/v1/evals"
+	pathAgents                  = "/agents"
 )
 
 // EvalClient provides methods for interacting with the Azure AI eval APIs.
@@ -112,6 +113,19 @@ func (c *EvalClient) GetEvaluatorGenerationJob(
 ) (*GenerationJob, error) {
 	path := pathEvaluatorGenerationJobs + "/" + url.PathEscape(operationID)
 	return doRequestTyped[GenerationJob](c, ctx, http.MethodGet, path, nil, nil, apiVersion)
+}
+
+// GetAgent reads an agent from the project's catalog.
+//
+// Only the newest version is returned, which is the one generation is seeded
+// from: the point is to describe what the agent does now.
+func (c *EvalClient) GetAgent(
+	ctx context.Context,
+	name string,
+	apiVersion string,
+) (*Agent, error) {
+	path := pathAgents + "/" + url.PathEscape(name)
+	return doRequestTyped[Agent](c, ctx, http.MethodGet, path, nil, nil, apiVersion)
 }
 
 // CreateEvaluatorVersion creates a new version of a named evaluator.

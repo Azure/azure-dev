@@ -3,7 +3,10 @@
 
 package eval_api
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // ---------------------------------------------------------------------------
 // Data Generation Jobs
@@ -41,6 +44,35 @@ type GenerationSource struct {
 	AgentName    string `json:"agent_name,omitempty"`
 	AgentVersion string `json:"agent_version,omitempty"`
 	StartTime    int64  `json:"start_time,omitempty"`
+}
+
+// Agent is the part of a catalog agent that describes what it does.
+//
+// An agent is returned with its versions inlined rather than as a list, and
+// only `latest` is populated on a plain read.
+type Agent struct {
+	Name     string `json:"name"`
+	Versions struct {
+		Latest *AgentVersion `json:"latest"`
+	} `json:"versions"`
+}
+
+// AgentVersion is one published revision of an agent.
+type AgentVersion struct {
+	Version    string `json:"version"`
+	Definition struct {
+		Model        string `json:"model"`
+		Instructions string `json:"instructions"`
+	} `json:"definition"`
+}
+
+// Instructions returns the newest version's system prompt, or "" when the agent
+// has no published version.
+func (a *Agent) Instructions() string {
+	if a == nil || a.Versions.Latest == nil {
+		return ""
+	}
+	return strings.TrimSpace(a.Versions.Latest.Definition.Instructions)
 }
 
 // GenerationJob is the response for data and evaluator generation job operations.

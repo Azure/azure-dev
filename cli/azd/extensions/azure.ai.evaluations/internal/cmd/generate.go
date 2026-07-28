@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -71,11 +72,29 @@ func newGenerateCommand() *cobra.Command {
 				warnIgnoredTraceFields(cfg, out)
 			}
 
+			// Both jobs are billed against a model deployment. Checking before
+			// any network work keeps the failure at the flag the caller can act
+			// on, instead of a service rejection partway through the command.
+			generatingRubric := len(evaluators) == 0 && cfg.Generate.Rubric != nil
+			generatingDataset := datasetFlag == "" && cfg.Generate.Dataset != nil
+			if (generatingRubric || generatingDataset) && generationModel(cfg) == "" {
+				return fmt.Errorf(
+					"a model deployment is required to generate: pass --eval-model, " +
+						"or set generate.rubric.model in the generation spec")
+			}
+
 			ec, err := newEvalContext(ctx, endpointFlg)
 			if err != nil {
 				return err
 			}
 			defer ec.Close()
+
+			instruction, err = ec.resolveGenerationInstruction(
+				ctx, cfg, instruction, configPath, out, isJSON(cmd),
+			)
+			if err != nil {
+				return err
+			}
 
 			baseDir := filepath.Dir(deployPath)
 			var datasetRefs, evaluatorRefs []project.ArtifactRef
@@ -154,33 +173,30 @@ func newGenerateCommand() *cobra.Command {
 	return cmd
 }
 
-// warnIgnoredTraceFields reports trace settings that are accepted but have no
-// effect yet.
+// warnIgnoredTraceFields reports generation settings that are accepted but have
+// no effect yet.
 //
 // The generation API takes a day window and nothing else, so `source` and
 // `sample` are parsed and dropped. Silently discarding them is worse than not
 // accepting them: the author believes they narrowed the trace selection when
-// nothing changed.
+// nothing changed. `agent.context.tools` is in the same position — nothing
+// reads it, and only the instructions half of the agent's context is used.
 func warnIgnoredTraceFields(cfg *project.GenerateConfig, out io.Writer) {
-	traces := cfg.Agent.Context.Traces
-	if traces == nil {
-		return
-	}
+	var fields []string
 
-	var ignored []string
-	if traces.Source != "" {
-		ignored = append(ignored, "source")
+	if traces := cfg.Agent.Context.Traces; traces != nil {
+		if traces.Source != "" {
+			fields = append(fields, "agent.context.traces.source")
+		}
+		if traces.Sample > 0 {
+			fields = append(fields, "agent.context.traces.sample")
+		}
 	}
-	if traces.Sample > 0 {
-		ignored = append(ignored, "sample")
+	if cfg.Agent.Context.Tools != "" {
+		fields = append(fields, "agent.context.tools")
 	}
-	if len(ignored) == 0 {
+	if len(fields) == 0 {
 		return
-	}
-
-	fields := make([]string, 0, len(ignored))
-	for _, name := range ignored {
-		fields = append(fields, "agent.context.traces."+name)
 	}
 
 	verb := "has"
@@ -188,8 +204,8 @@ func warnIgnoredTraceFields(cfg *project.GenerateConfig, out io.Writer) {
 		verb = "have"
 	}
 	fmt.Fprintf(out,
-		"warning: %s %s no effect yet; trace seeding uses only `window`. "+
-			"Trace selection lands with the trace scenarios.\n",
+		"warning: %s %s no effect yet; generation is seeded from the agent's "+
+			"instructions and, when a window is set, its traces.\n",
 		strings.Join(fields, " and "), verb)
 }
 
@@ -212,6 +228,91 @@ func resolveInstruction(inline, path string) (string, error) {
 		return "", fmt.Errorf("--gen-instruction-file %q is empty", path)
 	}
 	return text, nil
+}
+
+// generationModel returns the deployment both generation jobs run against.
+//
+// Dataset generation has no model of its own: the spec carries one judge model
+// and both jobs use it.
+func generationModel(cfg *project.GenerateConfig) string {
+	if cfg.Generate.Rubric == nil {
+		return ""
+	}
+	return cfg.Generate.Rubric.Model
+}
+
+// agentContextInstructions reads the instructions named by
+// `agent.context.instructions`, relative to the spec that declared them.
+//
+// A missing file is not an error. `init` writes the field pointing at a
+// conventional path before that file exists, so treating its absence as a
+// failure would break the flow it scaffolds.
+func agentContextInstructions(cfg *project.GenerateConfig, configPath string) (string, error) {
+	named := cfg.Agent.Context.Instructions
+	if named == "" {
+		return "", nil
+	}
+
+	path := named
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(filepath.Dir(configPath), filepath.FromSlash(named))
+	}
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading agent.context.instructions %q: %w", named, err)
+	}
+	return strings.TrimSpace(string(raw)), nil
+}
+
+// resolveGenerationInstruction decides what generation is seeded from.
+//
+// The service accepts an agent source that is meant to pull the agent's own
+// instructions, but it fails for every agent, so the agent's context is read
+// here instead. In precedence order: what the caller passed, then the
+// instructions file the spec names, then the agent's published instructions.
+//
+// The last step is what makes `generate` work with no authored input at all,
+// which is the flow `init` sets up.
+func (ec *evalContext) resolveGenerationInstruction(
+	ctx context.Context,
+	cfg *project.GenerateConfig,
+	explicit, configPath string,
+	out io.Writer,
+	quiet bool,
+) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
+
+	fromFile, err := agentContextInstructions(cfg, configPath)
+	if err != nil {
+		return "", err
+	}
+	if fromFile != "" {
+		return fromFile, nil
+	}
+
+	if cfg.Agent.Name == "" {
+		return "", nil
+	}
+	agent, err := ec.evalClient.GetAgent(ctx, cfg.Agent.Name, ProjectEndpointAPIVersion)
+	if err != nil {
+		// Generation can still proceed from the agent source alone, so a
+		// failure to read the agent is reported without stopping.
+		if !quiet {
+			fmt.Fprintf(out, "  warning: could not read agent %q for generation context: %v\n",
+				cfg.Agent.Name, err)
+		}
+		return "", nil
+	}
+	instructions := agent.Instructions()
+	if instructions != "" && !quiet {
+		fmt.Fprintf(out, "  Seeding generation from the instructions of agent %q.\n", cfg.Agent.Name)
+	}
+	return instructions, nil
 }
 
 // resolveGenerateConfig loads the spec when present, then layers flags on top.
@@ -325,10 +426,7 @@ func (ec *evalContext) generateDataset(
 	sources := eval_api.BuildGenerationSources(
 		"agent", cfg.Agent.Name, "", instruction, traceOptions(cfg),
 	)
-	model := ""
-	if cfg.Generate.Rubric != nil {
-		model = cfg.Generate.Rubric.Model
-	}
+	model := generationModel(cfg)
 	req := eval_api.NewDataGenerationJobRequest(spec.Name, model, spec.SampleSize, sources)
 
 	job, err := ec.evalClient.CreateDataGenerationJob(ctx, req, DataGenerationAPIVersion)

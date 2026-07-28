@@ -227,7 +227,7 @@ func newEvaluatorBuiltinsCommand() *cobra.Command {
 
 func renderEvaluators(cmd *cobra.Command, list *eval_api.EvaluatorListResponse) error {
 	if isJSON(cmd) {
-		return emitJSON(cmd.OutOrStdout(), list)
+		return emitJSONList(cmd.OutOrStdout(), list.Value)
 	}
 	if len(list.Value) == 0 {
 		fmt.Fprintln(cmd.OutOrStdout(), "No evaluators found.")

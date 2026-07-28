@@ -52,7 +52,11 @@ func newRunListCommand() *cobra.Command {
 				return fmt.Errorf("listing runs for %q: %w", evalID, err)
 			}
 			if isJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), list)
+				var runs []eval_api.OpenAIEvalRun
+				if list != nil {
+					runs = list.Data
+				}
+				return emitJSONList(cmd.OutOrStdout(), runs)
 			}
 			if list == nil || len(list.Data) == 0 {
 				fmt.Fprintf(cmd.OutOrStdout(), "Eval group %s has no runs yet.\n", evalID)

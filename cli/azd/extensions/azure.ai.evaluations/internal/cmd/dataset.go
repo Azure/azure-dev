@@ -138,7 +138,7 @@ func newDatasetListCommand() *cobra.Command {
 			}
 
 			if isJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), list)
+				return emitJSONList(cmd.OutOrStdout(), list.Value)
 			}
 			rows := make([][]string, 0, len(list.Value))
 			for _, d := range list.Value {

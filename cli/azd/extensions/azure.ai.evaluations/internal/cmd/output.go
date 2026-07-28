@@ -39,6 +39,24 @@ func emitJSON(w io.Writer, v any) error {
 	return enc.Encode(v)
 }
 
+// emitJSONList writes items as a JSON array.
+//
+// List commands emit a bare array rather than the envelope the service replied
+// with. The envelopes disagree with each other — the OpenAI-shaped APIs wrap
+// results in `data`, the ARM-shaped ones in `value` — so passing them through
+// would make a caller's parsing depend on which service happens to back a given
+// command. They also carry paging fields that this extension does not follow,
+// which would suggest there is more to fetch when there is not.
+//
+// A nil slice encodes as `null`, so it is normalized to an empty array: a
+// caller iterating the result should see no elements, not a type error.
+func emitJSONList[T any](w io.Writer, items []T) error {
+	if items == nil {
+		items = []T{}
+	}
+	return emitJSON(w, items)
+}
+
 // emitTable writes a simple aligned table. Rows must match the header width.
 func emitTable(w io.Writer, headers []string, rows [][]string) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)

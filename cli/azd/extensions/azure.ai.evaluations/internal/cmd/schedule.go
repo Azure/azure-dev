@@ -117,7 +117,8 @@ func newScheduleSetCommand() *cobra.Command {
 					return err
 				}
 				evalID, err = ec.resolveEvalGroupID(
-					ctx, group, configPath, resolveLevel(level, group), out, isJSON(cmd))
+					ctx, group, configPath, resolveLevel(level, group),
+					len(cfg.EvalGroups) == 1, out, isJSON(cmd))
 				if err != nil {
 					return err
 				}
@@ -239,7 +240,11 @@ func newScheduleListCommand() *cobra.Command {
 				return fmt.Errorf("listing schedules: %w", err)
 			}
 			if isJSON(cmd) {
-				return emitJSON(out, list)
+				var schedules []eval_api.Schedule
+				if list != nil {
+					schedules = list.Value
+				}
+				return emitJSONList(out, schedules)
 			}
 			if list == nil || len(list.Value) == 0 {
 				fmt.Fprintln(out, "No schedules.")

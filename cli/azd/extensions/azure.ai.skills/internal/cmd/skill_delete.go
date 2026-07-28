@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"azureaiskills/internal/exterrors"
 	"azureaiskills/internal/foundry/envkey"
@@ -65,23 +66,28 @@ func (a *deleteAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := deleteSkillAndClearMarkers(ctx, skillCtx.client, a.flags.name); err != nil {
+	if err := deleteSkillAndClearMarkers(ctx, skillCtx.client, a.flags.name, skillCtx.endpoint); err != nil {
 		return err
 	}
 	return a.printResult(deleteResult{Name: a.flags.name, Deleted: true})
 }
 
-func deleteSkillAndClearMarkers(ctx context.Context, client skillDeleteClient, skillName string) error {
+func deleteSkillAndClearMarkers(
+	ctx context.Context,
+	client skillDeleteClient,
+	skillName string,
+	projectEndpoint string,
+) error {
 	if _, err := client.DeleteSkill(ctx, skillName); err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpDeleteSkill)
 	}
-	if err := clearSkillMarkersFunc(ctx, skillName); err != nil {
+	if err := clearSkillMarkersFunc(ctx, skillName, projectEndpoint); err != nil {
 		return err
 	}
 	return nil
 }
 
-func clearSkillMarkers(ctx context.Context, skillName string) error {
+func clearSkillMarkers(ctx context.Context, skillName, projectEndpoint string) error {
 	client, err := azdext.NewAzdClient()
 	if err != nil {
 		log.Printf("skill marker cleanup skipped: azd client unavailable: %v", err)
@@ -93,14 +99,35 @@ func clearSkillMarkers(ctx context.Context, skillName string) error {
 		log.Printf("skill marker cleanup skipped: no active azd environment: %v", err)
 		return nil
 	}
-	for _, key := range []string{envkey.SkillVersion(skillName), envkey.SkillProjectEndpoint(skillName)} {
-		if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+	projectKey := envkey.SkillProjectEndpoint(skillName)
+	marker, err := client.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: env.Environment.GetName(), Key: projectKey,
+	})
+	if err != nil || !sameSkillProjectEndpoint(marker.Value, projectEndpoint) {
+		return nil
+	}
+	return clearSkillMarkerValues(skillName, func(key, value string) error {
+		_, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 			EnvName: env.Environment.GetName(), Key: key, Value: "",
-		}); err != nil {
+		})
+		return err
+	})
+}
+
+func clearSkillMarkerValues(skillName string, setValue func(string, string) error) error {
+	for _, key := range []string{envkey.SkillVersion(skillName), envkey.SkillProjectEndpoint(skillName)} {
+		if err := setValue(key, ""); err != nil {
 			return fmt.Errorf("clearing skill readiness marker %s: %w", key, err)
 		}
 	}
 	return nil
+}
+
+func sameSkillProjectEndpoint(a, b string) bool {
+	return strings.EqualFold(
+		strings.TrimRight(strings.TrimSpace(a), "/"),
+		strings.TrimRight(strings.TrimSpace(b), "/"),
+	)
 }
 
 func (a *deleteAction) confirmDelete(ctx context.Context) (bool, error) {

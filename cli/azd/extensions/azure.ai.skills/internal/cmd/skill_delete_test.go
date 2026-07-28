@@ -30,13 +30,16 @@ func TestDeleteSkillAndClearMarkers(t *testing.T) {
 		client := &stubSkillDeleteClient{}
 		var cleared []string
 		previous := clearSkillMarkersFunc
-		clearSkillMarkersFunc = func(_ context.Context, name string) error {
+		clearSkillMarkersFunc = func(_ context.Context, name, endpoint string) error {
 			cleared = append(cleared, name)
+			require.Equal(t, "https://example.test/projects/current", endpoint)
 			return nil
 		}
 		t.Cleanup(func() { clearSkillMarkersFunc = previous })
 
-		require.NoError(t, deleteSkillAndClearMarkers(t.Context(), client, "my-skill"))
+		require.NoError(t, deleteSkillAndClearMarkers(
+			t.Context(), client, "my-skill", "https://example.test/projects/current",
+		))
 		require.Equal(t, []string{"my-skill"}, client.names)
 		require.Equal(t, []string{"my-skill"}, cleared)
 	})
@@ -45,28 +48,43 @@ func TestDeleteSkillAndClearMarkers(t *testing.T) {
 		client := &stubSkillDeleteClient{err: errors.New("delete failed")}
 		called := false
 		previous := clearSkillMarkersFunc
-		clearSkillMarkersFunc = func(context.Context, string) error {
+		clearSkillMarkersFunc = func(context.Context, string, string) error {
 			called = true
 			return nil
 		}
 		t.Cleanup(func() { clearSkillMarkersFunc = previous })
 
-		require.Error(t, deleteSkillAndClearMarkers(t.Context(), client, "my-skill"))
+		require.Error(t, deleteSkillAndClearMarkers(
+			t.Context(), client, "my-skill", "https://example.test/projects/current",
+		))
 		require.False(t, called)
 	})
 }
 
-func TestClearSkillMarkersSeam(t *testing.T) {
-	called := false
-	previous := clearSkillMarkersFunc
-	clearSkillMarkersFunc = func(context.Context, string) error {
-		called = true
-		return nil
-	}
-	t.Cleanup(func() { clearSkillMarkersFunc = previous })
+func TestSameSkillProjectEndpoint(t *testing.T) {
+	t.Parallel()
+	require.True(t, sameSkillProjectEndpoint(
+		"HTTPS://ACCOUNT.TEST/projects/current/",
+		"https://account.test/projects/current",
+	))
+	require.False(t, sameSkillProjectEndpoint(
+		"https://account.test/projects/old",
+		"https://account.test/projects/current",
+	))
+}
 
-	require.NoError(t, clearSkillMarkersFunc(t.Context(), "my-skill"))
-	require.True(t, called)
+func TestClearSkillMarkerValues(t *testing.T) {
+	values := map[string]string{
+		"SKILL_MY_SKILL_VERSION":          "3",
+		"SKILL_MY_SKILL_PROJECT_ENDPOINT": "https://example.test/projects/current",
+	}
+	err := clearSkillMarkerValues("my-skill", func(key, value string) error {
+		values[key] = value
+		return nil
+	})
+	require.NoError(t, err)
+	require.Empty(t, values["SKILL_MY_SKILL_VERSION"])
+	require.Empty(t, values["SKILL_MY_SKILL_PROJECT_ENDPOINT"])
 }
 
 func TestDeleteAction_RejectsInvalidName(t *testing.T) {

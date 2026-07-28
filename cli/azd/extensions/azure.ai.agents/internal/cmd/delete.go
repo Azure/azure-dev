@@ -14,6 +14,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/envkey"
+	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -244,7 +245,15 @@ func (a *DeleteAction) clearDeletedVersionMarker(
 	if err != nil || resp.Value != deletedVersion {
 		return
 	}
-	a.clearEnvVars(ctx, azdClient, serviceName, []string{versionKey})
+	serviceKey := toServiceKey(serviceName)
+	keys := []string{
+		versionKey,
+		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
+	}
+	for _, protocol := range project.DisplayableProtocolEnvSuffixes() {
+		keys = append(keys, fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, protocol.Suffix))
+	}
+	a.clearEnvVars(ctx, azdClient, serviceName, keys)
 }
 
 func (a *DeleteAction) clearEnvVars(

@@ -123,6 +123,18 @@ func TestValidateFoundryDependencies(t *testing.T) {
 			},
 		},
 		{
+			name: "skill endpoint aliases resolve to the same project",
+			uses: []string{"summarize"},
+			services: map[string]*azdext.ServiceConfig{
+				"summarize": {Name: "summarize", Host: foundrySkillHost},
+			},
+			env: map[string]string{
+				"FOUNDRY_PROJECT_ENDPOINT":               "https://account.services.ai.azure.com/api/projects/current",
+				envkey.SkillVersion("summarize"):         "1",
+				envkey.SkillProjectEndpoint("summarize"): "https://account.services.ai.azure.com/projects/current",
+			},
+		},
+		{
 			name: "skill without version marker fails",
 			uses: []string{"summarize"},
 			services: map[string]*azdext.ServiceConfig{

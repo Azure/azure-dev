@@ -42,7 +42,15 @@ func TestDeleteMarkerCleanup(t *testing.T) {
 		action.clearDeletedVersionMarker(t.Context(), client, "my-agent", "1")
 		require.Equal(t, "2", envServer.values["dev"]["AGENT_MY_AGENT_VERSION"])
 		action.clearDeletedVersionMarker(t.Context(), client, "my-agent", "2")
-		require.Equal(t, "", envServer.values["dev"]["AGENT_MY_AGENT_VERSION"])
+		for _, key := range []string{
+			"AGENT_MY_AGENT_VERSION",
+			"AGENT_MY_AGENT_ENDPOINT",
+			"AGENT_MY_AGENT_RESPONSES_ENDPOINT",
+			"AGENT_MY_AGENT_INVOCATIONS_ENDPOINT",
+			"AGENT_MY_AGENT_INVOCATIONS_WS_ENDPOINT",
+		} {
+			require.Equal(t, "", envServer.values["dev"][key], key)
+		}
 	})
 }
 

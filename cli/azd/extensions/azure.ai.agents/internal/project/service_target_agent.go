@@ -405,6 +405,8 @@ func (p *AgentServiceTargetProvider) isDependencyEnabled(ctx context.Context, se
 	if err != nil {
 		return false, fmt.Errorf("malformed deployment condition for service %q: %w", serviceName, err)
 	}
+	// Keep this list aligned with pkg/project/service_config.go:isConditionTrue;
+	// extensions cannot import that unexported core helper.
 	switch condition {
 	case "1", "true", "TRUE", "True", "yes", "YES", "Yes":
 		return true, nil

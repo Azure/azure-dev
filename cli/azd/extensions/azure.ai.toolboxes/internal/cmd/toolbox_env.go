@@ -61,14 +61,11 @@ func setToolboxEndpointEnv(ctx context.Context, toolboxName, value string) error
 		}
 		projectEndpoint := toolboxProjectEndpoint(value)
 		if projectEndpoint == "" {
-			projectResp, err := c.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-				EnvName: envName, Key: "FOUNDRY_PROJECT_ENDPOINT",
-			})
-			if err != nil {
-				return exterrors.Internal(exterrors.CodeAzdClientFailed,
-					fmt.Sprintf("failed to read FOUNDRY_PROJECT_ENDPOINT: %s", err))
+			// Reused custom endpoints remain usable, but cannot prove project readiness.
+			if err := setValue(envkey.ToolboxProjectEndpoint(toolboxName), ""); err != nil {
+				return err
 			}
-			projectEndpoint = projectResp.Value
+			return setValue(commitKey, value)
 		}
 		if err := setValue(envkey.ToolboxProjectEndpoint(toolboxName), projectEndpoint); err != nil {
 			return err

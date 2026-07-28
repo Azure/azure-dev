@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -247,10 +248,30 @@ func validateFoundrySkillDependency(service *azdext.ServiceConfig, env map[strin
 }
 
 func sameProjectEndpoint(a, b string) bool {
-	return strings.EqualFold(
+	if strings.EqualFold(
 		strings.TrimRight(strings.TrimSpace(a), "/"),
 		strings.TrimRight(strings.TrimSpace(b), "/"),
-	)
+	) {
+		return true
+	}
+	aHost, aProject := foundryProjectIdentity(a)
+	bHost, bProject := foundryProjectIdentity(b)
+	return aHost != "" && aProject != "" &&
+		strings.EqualFold(aHost, bHost) && strings.EqualFold(aProject, bProject)
+}
+
+func foundryProjectIdentity(endpoint string) (string, string) {
+	u, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil || u.Hostname() == "" {
+		return "", ""
+	}
+	const segment = "/projects/"
+	index := strings.Index(strings.ToLower(u.Path), segment)
+	if index < 0 {
+		return "", ""
+	}
+	project := strings.Split(strings.Trim(u.Path[index+len(segment):], "/"), "/")[0]
+	return u.Hostname(), project
 }
 
 func serviceExists(services map[string]*azdext.ServiceConfig, name string) bool {

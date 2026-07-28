@@ -32,7 +32,7 @@ stimuli:
         - src: fixtures/existing-node-api/index.js
           dest: index.js
     rubric:
-      - "Suggests azd as a way to deploy the API to Azure (init + up/provision/deploy, or azd up)"
+      - "Suggests azd as a way to deploy the API to Azure, with azd init before azd up or before azd provision/deploy"
       - "If azd is suggested, the steps are in a sensible order (initialize before provisioning/deploying)"
     graders:
       - type: output-matches
@@ -45,9 +45,10 @@ stimuli:
           scoring: binary
 
   - name: deploy-python-webapp
+  
     prompt: "I want to deploy a Python web app to Azure. What's the best way to do that?"
     rubric:
-      - "Suggests azd as a way to stand up and deploy the app (init + provision/deploy, or azd up)"
+      - "Suggests azd as a way to stand up and deploy the app, with azd init before azd up or before azd provision/deploy"
       - "If azd is suggested, the steps are in a sensible order (initialize before provisioning/deploying)"
     graders:
       - type: output-matches

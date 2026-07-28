@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"azure.ai.projects/internal/azure"
+	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -281,11 +282,7 @@ func (c *ResourceGroupLocationCheck) isBrownfieldFoundryProject(ctx context.Cont
 		return false
 	}
 
-	endpoint, err := foundryServiceEndpointAtRoot(
-		rawYAML,
-		projectPath,
-		svcName,
-	)
+	endpoint, err := synthesis.ProjectEndpoint(rawYAML, svcName, projectPath)
 	return err == nil && endpoint != ""
 }
 

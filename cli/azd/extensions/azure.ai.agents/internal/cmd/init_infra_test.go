@@ -169,6 +169,29 @@ services:
 	assert.Contains(t, localErr.Message, "endpoint:")
 }
 
+func TestEjectInfra_BrownfieldRefusalPrecedesSiblingRefValidation(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+services:
+  ai-project:
+    host: azure.ai.project
+    endpoint: https://acct.services.ai.azure.com/api/projects/p1
+  agent:
+    host: azure.ai.agent
+    $ref: ./missing-agent.yaml
+  connection:
+    host: azure.ai.connection
+    $ref: ./missing-connection.yaml
+`)
+
+	err := ejectInfra(dir, "bicep")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInfraEjectBrownfieldUnsupported, localErr.Code)
+}
+
 func TestEjectInfra_HappyPath_WritesExpectedFiles(t *testing.T) {
 	// Intentionally NOT parallel: this test captures os.Stdout, and running
 	// it concurrently with other stdout-capturing tests in the same package

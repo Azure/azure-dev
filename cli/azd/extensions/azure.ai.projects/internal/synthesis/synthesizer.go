@@ -8,8 +8,9 @@
 //     for the bicep compiler
 //   - a Parameters map of the values the template's params consume
 //
-// Greenfield only: if the service has an endpoint: field, ErrEndpointBrownfield
-// is returned so callers can short-circuit the provision path.
+// Both greenfield and brownfield services produce a Result. Brownfield services
+// reference an existing project through endpoint: while still synthesizing the
+// deployments and connections that azd manages on that project.
 package synthesis
 
 import (
@@ -26,16 +27,17 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// Sentinel errors returned by Synthesize.
-var (
-	// ErrEndpointBrownfield indicates the service points at an existing
-	// Foundry project via endpoint:. The provider should skip ARM
-	// provisioning and connect to the endpoint directly.
-	ErrEndpointBrownfield = errors.New("synthesis: service has endpoint: (brownfield)")
+// ErrServiceNotFound indicates the requested service does not exist in
+// azure.yaml or its host: value is not in AcceptedHosts.
+var ErrServiceNotFound = errors.New("synthesis: service not found or host not accepted")
 
-	// ErrServiceNotFound indicates the requested service does not exist
-	// in azure.yaml or its host: value is not in AcceptedHosts.
-	ErrServiceNotFound = errors.New("synthesis: service not found or host not accepted")
+// Mode identifies whether synthesis creates a Foundry project or reconciles an
+// existing project.
+type Mode string
+
+const (
+	ModeGreenfield Mode = "greenfield"
+	ModeBrownfield Mode = "brownfield"
 )
 
 // Input is the synthesizer's view of azure.yaml.
@@ -72,18 +74,39 @@ type Input struct {
 	ProjectRoot string
 }
 
-// Result bundles the bicep sources and the parameter values derived
-// from the service body. Callers stage Templates on disk, compile
-// main.bicep, and pass Parameters when invoking the resulting ARM
-// deployment.
+// Result contains the typed resources and settings derived from one Foundry
+// project service.
 type Result struct {
-	// Parameters maps bicep param names to plain Go values. Callers wrap
-	// these in ARM's {"value": ...} envelope when serializing.
-	Parameters map[string]any
+	// Mode selects the greenfield or brownfield provisioning template.
+	Mode Mode
+
+	// Endpoint is the existing Foundry project endpoint in brownfield mode.
+	// It is empty in greenfield mode.
+	Endpoint string
+
+	Deployments           []Deployment
+	Connections           []Connection
+	ConnectionCredentials map[string]map[string]any
+	RequiresAcr           bool
+	NetworkConfigured     bool
+	networkParameters     map[string]any
 
 	// NetworkMode is "none", "byo", or "managed" — derived from the
 	// network: block (or its absence). Exposed for telemetry.
 	NetworkMode string
+}
+
+// Parameters returns the Bicep parameter contract derived from the typed
+// synthesis result. The external parameter remains includeAcr for compatibility.
+func (r *Result) Parameters() map[string]any {
+	params := map[string]any{
+		"deployments":           r.Deployments,
+		"includeAcr":            r.RequiresAcr,
+		"connections":           r.Connections,
+		"connectionCredentials": r.ConnectionCredentials,
+	}
+	maps.Copy(params, r.networkParameters)
+	return params
 }
 
 // Deployment mirrors the deploymentType in main.bicep.
@@ -270,18 +293,6 @@ func Synthesize(in Input) (*Result, error) {
 	if len(in.AcceptedHosts) > 0 && !slices.Contains(in.AcceptedHosts, svc.Host) {
 		return nil, ErrServiceNotFound
 	}
-	if strings.TrimSpace(svc.Endpoint) != "" {
-		return nil, ErrEndpointBrownfield
-	}
-
-	includeAcr, err := deriveIncludeAcr(
-		root.Services,
-		svc,
-		in.ProjectRoot,
-	)
-	if err != nil {
-		return nil, err
-	}
 
 	deployments := svc.Deployments
 	if deployments == nil {
@@ -298,82 +309,44 @@ func Synthesize(in Input) (*Result, error) {
 		return nil, err
 	}
 	connections, connectionCredentials := SplitConnectionCredentials(connections)
+
+	endpoint := strings.TrimSpace(svc.Endpoint)
+	if endpoint != "" {
+		return &Result{
+			Mode:                  ModeBrownfield,
+			Endpoint:              endpoint,
+			Deployments:           deployments,
+			Connections:           connections,
+			ConnectionCredentials: connectionCredentials,
+			NetworkConfigured:     svc.Network != nil,
+		}, nil
+	}
+
+	requiresAcr, err := deriveRequiresAcr(root.Services, svc, in.ProjectRoot)
+	if err != nil {
+		return nil, err
+	}
+
 	netParams, netMode, err := synthesizeNetwork(svc.Network, in.ServiceName, in.Env, !in.PreserveVarRefs)
 	if err != nil {
 		return nil, err
 	}
-	if includeAcr && netMode != NetworkModeNone {
+	if requiresAcr && netMode != NetworkModeNone {
 		return nil, errors.New(
 			"synthesis: private networking does not support an auto-created Azure Container Registry; specify an image instead",
 		)
 	}
 
-	params := map[string]any{
-		"deployments":           deployments,
-		"includeAcr":            includeAcr,
-		"connections":           connections,
-		"connectionCredentials": connectionCredentials,
-	}
-	maps.Copy(params, netParams)
-
 	return &Result{
-		Parameters:  params,
-		NetworkMode: netMode,
+		Mode:                  ModeGreenfield,
+		Deployments:           deployments,
+		Connections:           connections,
+		ConnectionCredentials: connectionCredentials,
+		RequiresAcr:           requiresAcr,
+		NetworkConfigured:     svc.Network != nil,
+		networkParameters:     netParams,
+		NetworkMode:           netMode,
 	}, nil
-}
-
-// BrownfieldDeployments returns the model deployments declared on a brownfield
-// (endpoint:) Foundry project service. Synthesize short-circuits with
-// ErrEndpointBrownfield before reading deployments:, so the provider uses this
-// to learn which model deployments to create on the existing account. Returns
-// nil (not an error) when the service declares no deployments.
-func BrownfieldDeployments(
-	raw []byte,
-	serviceName string,
-	projectRoot string,
-) ([]Deployment, error) {
-	if len(raw) == 0 {
-		return nil, errors.New("synthesis: raw azure.yaml is empty")
-	}
-	if serviceName == "" {
-		return nil, errors.New("synthesis: serviceName is empty")
-	}
-
-	var root projectFile
-	if err := yaml.Unmarshal(raw, &root); err != nil {
-		return nil, fmt.Errorf("parse azure.yaml: %w", err)
-	}
-
-	svc, err := loadProjectService(root.Services, serviceName, projectRoot)
-	if err != nil {
-		return nil, err
-	}
-
-	return svc.Deployments, nil
-}
-
-// BrownfieldConnections returns the host: azure.ai.connection services declared
-// in azure.yaml, for a brownfield (endpoint:) project. Synthesize short-circuits
-// with ErrEndpointBrownfield before collecting connections, so the provider uses
-// this to create the same connections on the existing account. ${VAR} is
-// resolved from env since brownfield provisions immediately; Foundry ${{...}}
-// expressions pass through. Returns an empty slice (not an error) when none
-// are declared.
-func BrownfieldConnections(
-	raw []byte,
-	env map[string]string,
-	projectRoot string,
-) ([]Connection, error) {
-	if len(raw) == 0 {
-		return nil, errors.New("synthesis: raw azure.yaml is empty")
-	}
-
-	var root projectFile
-	if err := yaml.Unmarshal(raw, &root); err != nil {
-		return nil, fmt.Errorf("parse azure.yaml: %w", err)
-	}
-
-	return collectConnections(root.Services, env, true, projectRoot)
 }
 
 // ProjectEndpoint returns the endpoint configured on a Foundry project service.
@@ -542,7 +515,7 @@ func validateAgentRootRefCoreFields(
 	return nil
 }
 
-// deriveIncludeAcr reports whether provisioning should create an ACR. An ACR is
+// deriveRequiresAcr reports whether the project needs an ACR. An ACR is
 // needed when any agent is a hosted, build-from-source agent: azd builds its
 // image and pushes it to the registry. Agents live on sibling azure.ai.agent
 // services in the split shape, or under agents[] in the legacy inline shape;
@@ -555,7 +528,7 @@ func validateAgentRootRefCoreFields(
 // Keying on image/codeConfiguration rather than the optional docker: block is
 // deliberate: docker: is not in the agent schema and is dropped by omitempty
 // when remoteBuild is false, so it is not a reliable build signal.
-func deriveIncludeAcr(
+func deriveRequiresAcr(
 	services map[string]yaml.Node,
 	svc projectService,
 	projectRoot string,

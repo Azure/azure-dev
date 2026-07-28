@@ -51,9 +51,8 @@ func ARMTemplate() ([]byte, error) {
 }
 
 // BrownfieldARMTemplate returns the compiled ARM JSON for brownfield.bicep, which
-// creates/upserts model deployments on an EXISTING Foundry account (referenced,
-// not created). Used by the provider when the project sets endpoint: and declares
-// deployments: to add to the existing project.
+// reconciles synthesized resources on an EXISTING Foundry account (referenced,
+// not created).
 func BrownfieldARMTemplate() ([]byte, error) {
 	return templatesFS.ReadFile("templates/brownfield.arm.json")
 }

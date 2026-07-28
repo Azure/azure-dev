@@ -121,8 +121,8 @@ func newScheduleSetCommand() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				dataSource, err = buildRunDataSource(
-					group, configPath, resolveMaxSamples(maxSamples, group))
+				dataSource, err = ec.buildRunDataSource(
+					ctx, group, configPath, resolveMaxSamples(maxSamples, group))
 				if err != nil {
 					return err
 				}

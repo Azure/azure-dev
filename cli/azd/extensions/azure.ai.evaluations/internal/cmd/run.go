@@ -5,15 +5,18 @@ package cmd
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
 
@@ -110,8 +113,8 @@ func buildRunCommand(use, short string) *cobra.Command {
 			case group == nil:
 				dataSource, err = ec.reuseDataSourceFromLastRun(ctx, evalID)
 			default:
-				dataSource, err = buildRunDataSource(
-					group, configPath, resolveMaxSamples(maxSamples, group))
+				dataSource, err = ec.buildRunDataSource(
+					ctx, group, configPath, resolveMaxSamples(maxSamples, group))
 			}
 			if err != nil {
 				return err
@@ -179,7 +182,7 @@ func buildRunCommand(use, short string) *cobra.Command {
 	cmd.Flags().StringVar(&level, "level", "",
 		"Scoring granularity: turn or conversation. Defaults to the service default (turn).")
 	cmd.Flags().IntVar(&maxSamples, "max-samples", 0,
-		"Cap the rows sent from a local dataset file. Ignored for registered datasets.")
+		"Cap the rows sent from the dataset.")
 	cmd.Flags().BoolVar(&fromTraces, "from-traces", false,
 		"Evaluate the agent's recorded traces instead of the dataset.")
 	cmd.Flags().StringVar(&traceWindow, "trace-window", "",
@@ -379,7 +382,8 @@ func buildTracesDataSource(
 
 // buildRunDataSource binds the dataset to the run. The eval group carries no
 // dataset today, so it is supplied here.
-func buildRunDataSource(
+func (ec *evalContext) buildRunDataSource(
+	ctx context.Context,
 	group *project.EvalGroup,
 	configPath string,
 	maxSamples int,
@@ -400,10 +404,17 @@ func buildRunDataSource(
 		return nil, fmt.Errorf("eval group %q does not reference a dataset", group.Name)
 	}
 
-	// A local source is sent inline; anything else is a registered dataset.
+	// A local source is read from disk; anything else is already registered and
+	// has to be fetched. Either way the rows are sent inline, because a run's
+	// file_id means an uploaded file and a dataset name is not one: sending the
+	// name is rejected with "invalid data source file ids".
 	localPath := localDatasetPath(configPath, group)
 	if localPath == "" {
-		ds.SetFileID(group.Dataset)
+		items, err := ec.readRegisteredDataset(ctx, group.Dataset, maxSamples)
+		if err != nil {
+			return nil, err
+		}
+		ds.SetFileContent(items)
 		return ds, nil
 	}
 
@@ -416,6 +427,49 @@ func buildRunDataSource(
 	}
 	ds.SetFileContent(items)
 	return ds, nil
+}
+
+// readRegisteredDataset fetches a published dataset's rows, optionally keeping
+// only the first n.
+//
+// The rows have to be fetched because a run cannot reference a dataset by
+// name: `file_id` means an uploaded file, and passing a dataset name there is
+// rejected. Fetching also makes --max-samples mean the same thing whether the
+// dataset is local or published, which a file reference could not — that
+// source carries no row limit.
+func (ec *evalContext) readRegisteredDataset(
+	ctx context.Context,
+	name string,
+	maxSamples int,
+) ([]map[string]any, error) {
+	version := ec.getEnvValue(ctx, envKeyDatasetVersion)
+	if version == "" {
+		versions, err := ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
+		if err != nil {
+			return nil, fmt.Errorf("reading dataset %q: %w", name, err)
+		}
+		if versions != nil {
+			version = dataset_api.LatestVersion(versions.Value)
+		}
+	}
+	if version == "" {
+		return nil, fmt.Errorf("dataset %q has no versions to read", name)
+	}
+
+	content, err := ec.datasetClient.DownloadDatasetContent(
+		ctx, name, version, ProjectEndpointAPIVersion)
+	if err != nil {
+		return nil, fmt.Errorf("reading dataset %q version %s: %w", name, version, err)
+	}
+
+	items, err := readJSONLBytes(content, maxSamples)
+	if err != nil {
+		return nil, fmt.Errorf("reading dataset %q version %s: %w", name, version, err)
+	}
+	if len(items) == 0 {
+		return nil, fmt.Errorf("dataset %q version %s has no rows", name, version)
+	}
+	return items, nil
 }
 
 // datasetColumns reports the columns a group's dataset provides, so criteria
@@ -472,8 +526,24 @@ func readJSONL(path string, limit int) ([]map[string]any, error) {
 	}
 	defer f.Close()
 
+	items, err := scanJSONL(f, limit)
+	if err != nil {
+		return nil, fmt.Errorf("reading dataset %q: %w", path, err)
+	}
+	return items, nil
+}
+
+// readJSONLBytes parses JSONL already in memory, which is how a registered
+// dataset arrives.
+func readJSONLBytes(content []byte, limit int) ([]map[string]any, error) {
+	return scanJSONL(bytes.NewReader(content), limit)
+}
+
+// scanJSONL reads rows until the limit is reached, so a subset costs only the
+// rows it needs to parse.
+func scanJSONL(r io.Reader, limit int) ([]map[string]any, error) {
 	var items []map[string]any
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	line := 0
 	for scanner.Scan() {
@@ -484,7 +554,7 @@ func readJSONL(path string, limit int) ([]map[string]any, error) {
 		}
 		var row map[string]any
 		if err := json.Unmarshal([]byte(text), &row); err != nil {
-			return nil, fmt.Errorf("%s line %d is not valid JSON: %w", path, line, err)
+			return nil, fmt.Errorf("line %d is not valid JSON: %w", line, err)
 		}
 		items = append(items, row)
 		if limit > 0 && len(items) >= limit {
@@ -492,7 +562,7 @@ func readJSONL(path string, limit int) ([]map[string]any, error) {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("reading dataset %q: %w", path, err)
+		return nil, err
 	}
 	return items, nil
 }

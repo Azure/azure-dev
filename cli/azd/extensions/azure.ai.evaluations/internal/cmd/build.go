@@ -237,6 +237,11 @@ func buildEvalGroupRequest(
 		metadata["azd_agent"] = group.Target.Name
 	}
 	metadata["azd_eval_group"] = group.Name
+	// The create request has no description field, so the group's own
+	// description rides in metadata rather than being dropped.
+	if group.Description != "" {
+		metadata["azd_description"] = group.Description
+	}
 
 	evalModel := ""
 	level := ""

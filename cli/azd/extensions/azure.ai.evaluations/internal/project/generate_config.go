@@ -114,11 +114,20 @@ func (c *GenerateConfig) Validate() error {
 			return fmt.Errorf("generate.dataset.name is required")
 		}
 		switch d.Strategy {
-		case "", StrategySynthetic, StrategyFromTraces:
+		case "", StrategySynthetic:
+		case StrategyFromTraces:
+			// Accepting this and generating synthetic rows anyway would hand back
+			// data that looks nothing like what was asked for. The generation API
+			// takes one dataset strategy today; traces seed generation through
+			// the agent's context instead.
+			return fmt.Errorf(
+				"generate.dataset.strategy %q is not supported yet; "+
+					"use %q, and set agent.context.traces.window to seed generation from traces",
+				StrategyFromTraces, StrategySynthetic)
 		default:
 			return fmt.Errorf(
-				"generate.dataset.strategy %q is invalid; expected %q or %q",
-				d.Strategy, StrategySynthetic, StrategyFromTraces)
+				"generate.dataset.strategy %q is invalid; expected %q",
+				d.Strategy, StrategySynthetic)
 		}
 		if d.SampleSize != 0 && (d.SampleSize < MinSampleSize || d.SampleSize > MaxSampleSize) {
 			return fmt.Errorf(

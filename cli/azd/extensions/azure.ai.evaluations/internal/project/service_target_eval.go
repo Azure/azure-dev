@@ -321,8 +321,12 @@ func Fingerprint(path string) (string, error) {
 // evaluators are untouched. Without this a retargeted group keeps running
 // against the old definition.
 func FingerprintGroup(group EvalGroup) (string, error) {
-	// The id is server-assigned and the description is cosmetic; neither
-	// changes what the group evaluates.
+	// The id is server-assigned. The description is carried in the group's
+	// metadata, so editing it does change the request, but recreating an
+	// immutable group over a reworded description would cost the group id and
+	// break comparison against earlier runs. It is documentation, not
+	// evaluation semantics, so an edit lands the next time the group is
+	// recreated for a reason that matters.
 	group.ID = ""
 	group.Description = ""
 

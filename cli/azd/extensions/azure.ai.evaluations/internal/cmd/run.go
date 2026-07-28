@@ -99,7 +99,8 @@ func buildRunCommand(use, short string) *cobra.Command {
 			if group == nil {
 				dataSource, err = ec.reuseDataSourceFromLastRun(ctx, evalID)
 			} else {
-				dataSource, err = buildRunDataSource(group, configPath, maxSamples)
+				dataSource, err = buildRunDataSource(
+					group, configPath, resolveMaxSamples(maxSamples, group))
 			}
 			if err != nil {
 				return err
@@ -433,6 +434,22 @@ func resolveLevel(flag string, group *project.EvalGroup) string {
 		return group.Options.EvaluationLevel
 	}
 	return ""
+}
+
+// resolveMaxSamples prefers the flag, then the group's options, matching how
+// the evaluation level resolves.
+//
+// Without this, options.max_samples parsed and did nothing: a group that caps
+// its sample count in config would send the whole dataset, and only a flag on
+// every invocation would honour the cap.
+func resolveMaxSamples(flag int, group *project.EvalGroup) int {
+	if flag > 0 {
+		return flag
+	}
+	if group != nil && group.Options != nil && group.Options.MaxSamples > 0 {
+		return group.Options.MaxSamples
+	}
+	return 0
 }
 
 // pollRun waits for the run to reach a terminal state, reporting status changes.

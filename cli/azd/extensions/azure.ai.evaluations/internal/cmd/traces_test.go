@@ -74,6 +74,34 @@ func TestRunFailureMessage(t *testing.T) {
 	assert.Empty(t, nilRun.Failure())
 }
 
+// The ids travel as ordinary JSONL rows with a mapping pointing at the field
+// that holds each one; that is how the service finds the chat history.
+func TestNewResponsesDataSource(t *testing.T) {
+	ds := eval_api.NewResponsesDataSource([]string{"resp_a", "resp_b"}, 10)
+	assert.Equal(t, eval_api.EvalRunDataSourceTypeResponses, ds.Type)
+	require.NotNil(t, ds.ItemGenerationParams)
+	assert.Equal(t, "response_retrieval", ds.ItemGenerationParams.Type)
+	assert.Equal(t, 10, ds.ItemGenerationParams.MaxNumTurns)
+	assert.Equal(t,
+		map[string]string{"response_id": "{{item.response_id}}"},
+		ds.ItemGenerationParams.DataMapping)
+
+	raw, err := json.Marshal(ds)
+	require.NoError(t, err)
+	body := string(raw)
+	assert.Contains(t, body, `"response_id":"resp_a"`)
+	assert.Contains(t, body, `"response_id":"resp_b"`)
+	assert.NotContains(t, body, "agent_name", "responses carry no agent")
+}
+
+// An unset turn limit is left to the service rather than sent as zero.
+func TestNewResponsesDataSource_OmitsAnUnsetTurnLimit(t *testing.T) {
+	ds := eval_api.NewResponsesDataSource([]string{"resp_a"}, 0)
+	raw, err := json.Marshal(ds)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "max_num_turns")
+}
+
 func TestRenderRun_ShowsTheFailureReason(t *testing.T) {
 	var buf bytes.Buffer
 	run := &eval_api.OpenAIEvalRun{

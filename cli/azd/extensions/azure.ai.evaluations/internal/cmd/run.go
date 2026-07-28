@@ -54,6 +54,8 @@ func buildRunCommand(use, short string) *cobra.Command {
 		fromTraces  bool
 		traceWindow string
 		maxTraces   int
+		responseIDs []string
+		maxTurns    int
 		wait        bool
 		endpointFlg string
 	)
@@ -101,6 +103,8 @@ func buildRunCommand(use, short string) *cobra.Command {
 			// target and dataset comes from the group's previous run.
 			var dataSource *eval_api.EvalRunDataSource
 			switch {
+			case len(responseIDs) > 0:
+				dataSource = eval_api.NewResponsesDataSource(responseIDs, maxTurns)
 			case fromTraces:
 				dataSource, err = buildTracesDataSource(ctx, ec, group, evalID, traceWindow, maxTraces)
 			case group == nil:
@@ -181,6 +185,11 @@ func buildRunCommand(use, short string) *cobra.Command {
 	cmd.Flags().StringVar(&traceWindow, "trace-window", "",
 		"How far back to read traces, for example 7d. Defaults to the service's window.")
 	cmd.Flags().IntVar(&maxTraces, "max-traces", 0, "Cap the traces evaluated.")
+	cmd.Flags().StringSliceVar(&responseIDs, "response-id", nil,
+		"Evaluate stored responses by id instead of the dataset; repeatable.")
+	cmd.Flags().IntVar(&maxTurns, "max-turns", 0,
+		"Turns of chat history to pull back per response. Defaults to the service's limit.")
+	cmd.MarkFlagsMutuallyExclusive("from-traces", "response-id")
 	cmd.Flags().BoolVar(&wait, "wait", true, "Block until the run reaches a terminal state.")
 	// The spec documents --no-wait, and cobra does not derive it from a bool.
 	var noWait bool

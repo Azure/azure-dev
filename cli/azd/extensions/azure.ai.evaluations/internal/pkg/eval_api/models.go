@@ -321,6 +321,10 @@ const (
 	// a dataset. The service reads them from Application Insights, so the agent
 	// must be emitting gen_ai.input.messages / gen_ai.output.messages.
 	EvalRunDataSourceTypeTraces EvalRunDataSourceType = "azure_ai_traces"
+
+	// EvalRunDataSourceTypeResponses evaluates responses the project already
+	// stored, addressed by id.
+	EvalRunDataSourceTypeResponses EvalRunDataSourceType = "azure_ai_responses"
 )
 
 // EvalRunDataContentType defines the source type for eval run data content.
@@ -345,6 +349,18 @@ type EvalRunDataSource struct {
 	LookbackHours int    `json:"lookback_hours,omitempty"`
 	EndTime       int64  `json:"end_time,omitempty"`
 	MaxTraces     int    `json:"max_traces,omitempty"`
+
+	// Responses only.
+	ItemGenerationParams *ItemGenerationParams `json:"item_generation_params,omitempty"`
+}
+
+// ItemGenerationParams says how the service should turn a source into the items
+// it evaluates.
+type ItemGenerationParams struct {
+	Type        string              `json:"type"`
+	MaxNumTurns int                 `json:"max_num_turns,omitempty"`
+	DataMapping map[string]string   `json:"data_mapping,omitempty"`
+	Source      *EvalRunDataContent `json:"source,omitempty"`
 }
 
 // EvalRunInputMessages describes how input messages are constructed from dataset items.
@@ -416,6 +432,31 @@ func NewTracesDataSource(agentName string, lookbackHours int, end time.Time, max
 		ds.EndTime = end.Unix()
 	}
 	return ds
+}
+
+// NewResponsesDataSource evaluates responses the project already stored.
+//
+// The ids travel as ordinary JSONL rows and a data_mapping points the service
+// at the field holding each one, which is how it retrieves the chat history
+// behind the response.
+func NewResponsesDataSource(responseIDs []string, maxTurns int) *EvalRunDataSource {
+	rows := make([]map[string]any, 0, len(responseIDs))
+	for _, id := range responseIDs {
+		rows = append(rows, map[string]any{"item": map[string]any{"response_id": id}})
+	}
+
+	return &EvalRunDataSource{
+		Type: EvalRunDataSourceTypeResponses,
+		ItemGenerationParams: &ItemGenerationParams{
+			Type:        "response_retrieval",
+			MaxNumTurns: maxTurns,
+			DataMapping: map[string]string{"response_id": "{{item.response_id}}"},
+			Source: &EvalRunDataContent{
+				Type:    EvalRunDataContentTypeFileContent,
+				Content: rows,
+			},
+		},
+	}
 }
 
 // SetFileContent sets the data source to use inline file content.

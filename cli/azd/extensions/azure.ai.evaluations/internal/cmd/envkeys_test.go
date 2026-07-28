@@ -51,4 +51,3 @@ func TestGroupIDKeys_SharedKeyReadOnlyWhenUnambiguous(t *testing.T) {
 	assert.Equal(t, []string{idKey("evalgroup", "quality")}, groupIDKeys("quality", false),
 		"with several groups the shared entry cannot say which group it means")
 }
-

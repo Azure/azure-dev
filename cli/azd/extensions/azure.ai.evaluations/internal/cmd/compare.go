@@ -167,6 +167,17 @@ func (ec *evalContext) pollInsight(ctx context.Context, insightID string) (*eval
 }
 
 // renderComparison prints one row per criterion per treatment run.
+// formatStat renders a statistic, showing an undefined one as a dash. A
+// standard deviation over a single sample has no value, and printing the
+// literal "NaN" in a results table reads like a failure rather than the
+// arithmetic it is.
+func formatStat(verb string, v eval_api.LenientFloat) string {
+	if !v.Defined() {
+		return "-"
+	}
+	return fmt.Sprintf(verb, float64(v))
+}
+
 func renderComparison(w interface{ Write([]byte) (int, error) }, insight *eval_api.Insight) error {
 	if insight.Result == nil || len(insight.Result.Comparisons) == 0 {
 		fmt.Fprintln(w, "The comparison produced no metrics.")
@@ -181,13 +192,13 @@ func renderComparison(w interface{ Write([]byte) (int, error) }, insight *eval_a
 	for _, c := range insight.Result.Comparisons {
 		baseAvg := "-"
 		if c.BaselineRunSummary != nil {
-			baseAvg = fmt.Sprintf("%.3f", c.BaselineRunSummary.Average)
+			baseAvg = formatStat("%.3f", c.BaselineRunSummary.Average)
 		}
 		for _, item := range c.CompareItems {
 			treatAvg := "-"
 			runID := "-"
 			if item.TreatmentRunSummary != nil {
-				treatAvg = fmt.Sprintf("%.3f", item.TreatmentRunSummary.Average)
+				treatAvg = formatStat("%.3f", item.TreatmentRunSummary.Average)
 				runID = item.TreatmentRunSummary.RunID
 			}
 			rows = append(rows, []string{
@@ -195,8 +206,8 @@ func renderComparison(w interface{ Write([]byte) (int, error) }, insight *eval_a
 				runID,
 				baseAvg,
 				treatAvg,
-				fmt.Sprintf("%+.3f", item.DeltaEstimate),
-				fmt.Sprintf("%.3f", item.PValue),
+				formatStat("%+.3f", item.DeltaEstimate),
+				formatStat("%.3f", item.PValue),
 				item.TreatmentEffect,
 			})
 		}

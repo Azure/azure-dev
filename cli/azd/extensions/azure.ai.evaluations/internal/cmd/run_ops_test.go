@@ -8,6 +8,7 @@ import (
 
 	"azureaieval/internal/pkg/eval_api"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,8 +39,26 @@ func TestRunCommandExposesAtomicSubcommands(t *testing.T) {
 	for _, sub := range cmd.Commands() {
 		found[sub.Name()] = true
 	}
-	for _, name := range []string{"list", "show", "cancel"} {
+	for _, name := range []string{"start", "list", "show", "cancel"} {
 		require.True(t, found[name], "run should expose the %q subcommand", name)
+	}
+}
+
+// `run start` is the atomic form of the composite and must accept the same
+// flags, otherwise the two forms diverge.
+func TestRunStartMirrorsCompositeFlags(t *testing.T) {
+	composite := newRunCommand()
+
+	var start *cobra.Command
+	for _, sub := range composite.Commands() {
+		if sub.Name() == "start" {
+			start = sub
+		}
+	}
+	require.NotNil(t, start)
+
+	for _, flag := range []string{"eval-id", "eval-group", "name", "level", "max-samples", "wait", "no-wait"} {
+		require.NotNil(t, start.Flags().Lookup(flag), "run start should accept --%s", flag)
 	}
 }
 

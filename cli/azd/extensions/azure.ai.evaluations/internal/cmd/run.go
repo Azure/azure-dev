@@ -28,7 +28,21 @@ var terminalRunStates = map[string]bool{
 	"error":     true,
 }
 
+// newRunCommand builds the composite `azd ai eval run` and attaches the atomic
+// run operations, including `run start` which the spec lists as the atomic form
+// of this same command.
 func newRunCommand() *cobra.Command {
+	cmd := buildRunCommand(
+		"run", "Run an evaluation, creating the eval group if it does not exist yet.")
+	addRunSubcommands(cmd)
+	cmd.AddCommand(buildRunCommand(
+		"start", "Start a run, creating the eval group if it does not exist yet."))
+	return cmd
+}
+
+// buildRunCommand is shared by `run` and `run start` so the two forms cannot
+// drift apart.
+func buildRunCommand(use, short string) *cobra.Command {
 	var (
 		configPath  string
 		groupName   string
@@ -41,8 +55,8 @@ func newRunCommand() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "run",
-		Short: "Run an evaluation, creating the eval group if it does not exist yet.",
+		Use:   use,
+		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			out := cmd.OutOrStdout()
@@ -150,7 +164,6 @@ func newRunCommand() *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("wait", "no-wait")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 
-	addRunSubcommands(cmd)
 	return cmd
 }
 

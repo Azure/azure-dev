@@ -29,7 +29,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -82,22 +81,6 @@ type FoundryProvisioningProvider struct {
 	armTemplate  map[string]any  // embedded ARM JSON; nil when onDiskSource is set
 	onDiskSource *templateSource // non-nil when ./infra/main.{bicep,bicepparam} exists
 
-	// brownfieldEndpoint is the existing project endpoint when the foundry
-	// service sets endpoint: (bring-your-own). When non-empty the provider skips
-	// provisioning and connects to that project instead of creating a new one.
-	brownfieldEndpoint string
-
-	// brownfieldDeployments are the model deployments declared under a brownfield
-	// (endpoint:) project service. They are created/upserted on the existing
-	// account at Deploy time; the existing account itself is never re-created.
-	brownfieldDeployments []synthesis.Deployment
-
-	// brownfieldConnections are the host: azure.ai.connection services declared
-	// alongside a brownfield (endpoint:) project. They are created/upserted on
-	// the existing project at Deploy time, mirroring greenfield synthesis, so
-	// the deploy-time connection service target does not have to create them.
-	brownfieldConnections []synthesis.Connection
-
 	// Lazily constructed on first compile. nil until needed.
 	bicepCliInstance bicepCompiler
 }
@@ -124,8 +107,8 @@ func NewFoundryProvisioningProvider(azdClient *azdext.AzdClient) azdext.Provisio
 }
 
 // Initialize loads azure.yaml, decides between the embedded ARM template
-// and the on-disk Bicep path, and resolves required env values. It rejects
-// brownfield (endpoint:) and missing services with structured errors.
+// and the on-disk Bicep path, and resolves required env values. Brownfield
+// services produce a synthesis result for the provider's existing-project path.
 //
 // Initialize is cheap by contract: it does no network I/O and builds no
 // credential. Tenant lookup and credential construction happen lazily in
@@ -169,46 +152,23 @@ func (p *FoundryProvisioningProvider) Initialize(
 		return err
 	}
 
-	// Detect on-disk Bicep before synthesizing. Stat-only; no compile here.
+	// User-authored greenfield Bicep owns its own parameter contract, so preserve
+	// the existing behavior of skipping synthesis for that path. Brownfield still
+	// synthesizes azure.yaml below because its embedded template is provider-owned.
 	if p.onDiskTemplatePresent() {
-		log.Printf("[debug] foundry provider: on-disk Bicep detected under %s; "+
-			"skipping synthesizer", filepath.Join(projectPath, onDiskInfraDir))
-		// endpoint: (brownfield) reuse skips provisioning even on the on-disk
-		// path; connect to the existing project instead of compiling Bicep.
-		endpoint, endpointErr := foundryServiceEndpointAtRoot(
-			rawYAML,
-			projectPath,
-			svcName,
-		)
-		if endpointErr != nil {
+		endpoint, err := synthesis.ProjectEndpoint(rawYAML, svcName, projectPath)
+		if err != nil {
 			return exterrors.Validation(
 				exterrors.CodeInvalidAzureYaml,
-				fmt.Sprintf(
-					"resolve existing Foundry project endpoint: %s",
-					endpointErr,
-				),
+				fmt.Sprintf("resolve existing Foundry project endpoint: %s", err),
 				"fix the project service configuration in azure.yaml",
 			)
 		}
-		if endpoint != "" {
-			if err := warnNetworkIgnoredInBrownfield(
-				rawYAML,
-				projectPath,
-				svcName,
-			); err != nil {
-				return exterrors.Validation(
-					exterrors.CodeInvalidAzureYaml,
-					fmt.Sprintf("resolve Foundry service configuration: %s", err),
-					"fix the project service configuration in azure.yaml",
-				)
-			}
-			p.brownfieldEndpoint = endpoint
-			if err := p.captureBrownfieldDeployments(ctx, rawYAML, svcName); err != nil {
-				return err
-			}
-			return p.resolveEnvName(ctx)
+		if endpoint == "" {
+			log.Printf("[debug] foundry provider: on-disk Bicep detected under %s; "+
+				"skipping synthesizer", filepath.Join(projectPath, onDiskInfraDir))
+			return p.resolveEnv(ctx)
 		}
-		return p.resolveEnv(ctx)
 	}
 
 	res, err := synthesis.Synthesize(synthesis.Input{
@@ -219,40 +179,6 @@ func (p *FoundryProvisioningProvider) Initialize(
 		ProjectRoot:   projectPath,
 	})
 	switch {
-	case errors.Is(err, synthesis.ErrEndpointBrownfield):
-		// endpoint: reuse — connect to the existing project, skip provisioning.
-		// network: has no effect in brownfield mode; warn if both are present.
-		if err := warnNetworkIgnoredInBrownfield(
-			rawYAML,
-			projectPath,
-			svcName,
-		); err != nil {
-			return exterrors.Validation(
-				exterrors.CodeInvalidAzureYaml,
-				fmt.Sprintf("resolve Foundry service configuration: %s", err),
-				"fix the project service configuration in azure.yaml",
-			)
-		}
-		endpoint, endpointErr := foundryServiceEndpointAtRoot(
-			rawYAML,
-			projectPath,
-			svcName,
-		)
-		if endpointErr != nil {
-			return exterrors.Validation(
-				exterrors.CodeInvalidAzureYaml,
-				fmt.Sprintf(
-					"resolve existing Foundry project endpoint: %s",
-					endpointErr,
-				),
-				"fix the project service configuration in azure.yaml",
-			)
-		}
-		p.brownfieldEndpoint = endpoint
-		if err := p.captureBrownfieldDeployments(ctx, rawYAML, svcName); err != nil {
-			return err
-		}
-		return p.resolveEnvName(ctx)
 	case errors.Is(err, synthesis.ErrServiceNotFound):
 		return exterrors.Dependency(
 			exterrors.CodeProvisioningServiceNotFound,
@@ -267,6 +193,14 @@ func (p *FoundryProvisioningProvider) Initialize(
 		)
 	}
 	p.synthResult = res
+	if res.Mode == synthesis.ModeBrownfield {
+		// network: has no effect when the project is referenced by endpoint.
+		if res.NetworkConfigured {
+			log.Printf("[warn] foundry provider: service %q sets both endpoint: and network:; "+
+				"network: is ignored in brownfield mode (the account's network posture is fixed)", svcName)
+		}
+		return p.resolveEnvName(ctx)
+	}
 
 	tmplBytes, err := synthesis.ARMTemplate()
 	if err != nil {
@@ -321,96 +255,11 @@ func (p *FoundryProvisioningProvider) networkEnvMap(ctx context.Context) map[str
 	return out
 }
 
-// warnNetworkIgnoredInBrownfield logs a warning when a service declares both
-// endpoint: (brownfield) and network:. The account's network posture is fixed
-// by whoever created it, so the network: block has no effect.
-func warnNetworkIgnoredInBrownfield(
-	rawYAML []byte,
-	projectRoot string,
-	svcName string,
-) error {
-	type svc struct {
-		Endpoint string    `yaml:"endpoint,omitempty"`
-		Network  yaml.Node `yaml:"network,omitempty"`
-	}
-	type root struct {
-		Services map[string]map[string]any `yaml:"services"`
-	}
-	var r root
-	if err := yaml.Unmarshal(rawYAML, &r); err != nil {
-		return err
-	}
-	values := r.Services[svcName]
-	if values == nil {
-		return nil
-	}
-	if projectRoot != "" {
-		resolved, err := foundry.ResolveFileRefs(values, projectRoot)
-		if err != nil {
-			return err
-		}
-		values = resolved
-	}
-	data, err := yaml.Marshal(values)
-	if err != nil {
-		return err
-	}
-	var service svc
-	if err := yaml.Unmarshal(data, &service); err != nil {
-		return err
-	}
-	if strings.TrimSpace(service.Endpoint) != "" && !service.Network.IsZero() {
-		log.Printf("[warn] foundry provider: service %q sets both endpoint: and network:; "+
-			"network: is ignored in brownfield mode (the account's network posture is fixed)", svcName)
-	}
-	return nil
-}
-
 // or infra/main.bicep exists under p.projectPath. Stat-only.
 func (p *FoundryProvisioningProvider) onDiskTemplatePresent() bool {
 	infraDir := filepath.Join(p.projectPath, onDiskInfraDir)
 	return fileExistsAt(filepath.Join(infraDir, onDiskBicepParamFile)) ||
 		fileExistsAt(filepath.Join(infraDir, onDiskBicepFile))
-}
-
-func foundryServiceEndpointAtRoot(
-	rawYAML []byte,
-	projectRoot string,
-	svcName string,
-) (string, error) {
-	type svc struct {
-		Endpoint string `yaml:"endpoint,omitempty"`
-	}
-	type root struct {
-		Services map[string]map[string]any `yaml:"services"`
-	}
-	var r root
-	if err := yaml.Unmarshal(rawYAML, &r); err != nil {
-		return "", err
-	}
-	values := r.Services[svcName]
-	if values == nil {
-		return "", nil
-	}
-	if projectRoot != "" {
-		resolved, err := foundry.ResolveFileRefs(
-			values,
-			projectRoot,
-		)
-		if err != nil {
-			return "", err
-		}
-		values = resolved
-	}
-	data, err := yaml.Marshal(values)
-	if err != nil {
-		return "", err
-	}
-	var service svc
-	if err := yaml.Unmarshal(data, &service); err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(service.Endpoint), nil
 }
 
 // resolveEnvName resolves just the active azd environment name. The brownfield
@@ -704,16 +553,27 @@ func (p *FoundryProvisioningProvider) EnsureEnv(ctx context.Context) error {
 	return nil
 }
 
+func (p *FoundryProvisioningProvider) isBrownfield() bool {
+	return p.synthResult != nil && p.synthResult.Mode == synthesis.ModeBrownfield
+}
+
+func (p *FoundryProvisioningProvider) brownfieldDeployments() []synthesis.Deployment {
+	if !p.isBrownfield() {
+		return nil
+	}
+	return p.synthResult.Deployments
+}
+
 // State returns the most recent deployment's outputs as the current state,
 // or empty state when no deployment exists yet.
 func (p *FoundryProvisioningProvider) State(
 	ctx context.Context,
 	options *azdext.ProvisioningStateOptions,
 ) (*azdext.ProvisioningStateResult, error) {
-	if p.brownfieldEndpoint != "" {
+	if p.isBrownfield() {
 		return &azdext.ProvisioningStateResult{
 			State: &azdext.ProvisioningState{
-				Outputs:   p.withTenantOutput(brownfieldOutputs(p.brownfieldEndpoint)),
+				Outputs:   p.withTenantOutput(brownfieldOutputs(p.synthResult.Endpoint)),
 				Resources: []*azdext.ProvisioningResource{},
 			},
 		}, nil
@@ -754,7 +614,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDeployResult, error) {
-	if p.brownfieldEndpoint != "" {
+	if p.isBrownfield() {
 		return p.deployBrownfield(ctx, progress)
 	}
 
@@ -815,42 +675,6 @@ func (p *FoundryProvisioningProvider) Deploy(
 	}, nil
 }
 
-// captureBrownfieldDeployments records the model deployments declared on a
-// brownfield (endpoint:) project service so Deploy can create them on the
-// existing account. No-op (nil) when none are declared.
-func (p *FoundryProvisioningProvider) captureBrownfieldDeployments(
-	ctx context.Context, rawYAML []byte, svcName string,
-) error {
-	deployments, err := synthesis.BrownfieldDeployments(
-		rawYAML,
-		svcName,
-		p.projectPath,
-	)
-	if err != nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidAzureYaml,
-			fmt.Sprintf("read deployments for existing Foundry project service %q: %s", svcName, err),
-			"check the deployments: list under your azure.ai.project service",
-		)
-	}
-	p.brownfieldDeployments = deployments
-
-	connections, err := synthesis.BrownfieldConnections(
-		rawYAML,
-		p.networkEnvMap(ctx),
-		p.projectPath,
-	)
-	if err != nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidAzureYaml,
-			fmt.Sprintf("read connections for existing Foundry project service %q: %s", svcName, err),
-			"check the host: azure.ai.connection services in azure.yaml",
-		)
-	}
-	p.brownfieldConnections = connections
-	return nil
-}
-
 // deployBrownfield handles the existing-project (endpoint:) Deploy path. Via a
 // single resource-group-scoped ARM deployment against the existing (referenced,
 // never re-created) account it reconciles declared model deployments and, when
@@ -862,8 +686,10 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDeployResult, error) {
 	createACR := p.brownfieldACRRequested(ctx)
+	deployments := p.brownfieldDeployments()
+	connections := p.synthResult.Connections
 
-	if len(p.brownfieldDeployments) == 0 && !createACR && len(p.brownfieldConnections) == 0 {
+	if len(deployments) == 0 && !createACR && len(connections) == 0 {
 		progress("Using existing Foundry project (endpoint set); skipping provisioning")
 		// Best-effort tenant lookup so AZURE_TENANT_ID is still surfaced for the
 		// existing-project path (no resources are provisioned here). Log on
@@ -874,12 +700,12 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 		}
 		return &azdext.ProvisioningDeployResult{
 			Deployment: &azdext.ProvisioningDeployment{
-				Outputs: p.withTenantOutput(brownfieldOutputs(p.brownfieldEndpoint)),
+				Outputs: p.withTenantOutput(brownfieldOutputs(p.synthResult.Endpoint)),
 			},
 		}, nil
 	}
 
-	progress(brownfieldReconcileMessage(len(p.brownfieldDeployments) > 0, createACR, len(p.brownfieldConnections) > 0))
+	progress(brownfieldReconcileMessage(len(deployments) > 0, createACR, len(connections) > 0))
 
 	// Locate the existing account (subscription, resource group, account name).
 	// resolveBrownfieldTarget sets p.subID, which the deployments client needs.
@@ -929,7 +755,7 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 
 	// Merge endpoint/project outputs with any ACR outputs the template emitted,
 	// skipping empty values (includeAcr=false leg) so we don't clobber the env.
-	outputs := brownfieldOutputs(p.brownfieldEndpoint)
+	outputs := brownfieldOutputs(p.synthResult.Endpoint)
 	for k, v := range armOutputsToProto(deploymentOutputs(resp.Properties)) {
 		if v != nil && v.Value == "" {
 			continue
@@ -968,14 +794,12 @@ func brownfieldReconcileMessage(hasDeployments, createACR, hasConnections bool) 
 func (p *FoundryProvisioningProvider) brownfieldParams(
 	ctx context.Context, account, rg string, createACR bool,
 ) (map[string]any, error) {
-	connections, connectionCredentials := synthesis.SplitConnectionCredentials(
-		p.brownfieldConnections,
-	)
+	deployments := p.brownfieldDeployments()
 	params := map[string]any{
 		"accountName":           map[string]any{"value": account},
-		"deployments":           map[string]any{"value": p.brownfieldDeployments},
-		"connections":           map[string]any{"value": connections},
-		"connectionCredentials": map[string]any{"value": connectionCredentials},
+		"deployments":           map[string]any{"value": deployments},
+		"connections":           map[string]any{"value": p.synthResult.Connections},
+		"connectionCredentials": map[string]any{"value": p.synthResult.ConnectionCredentials},
 		// projectName feeds the unconditional existing `foundryAccountPreview::project`
 		// resource, so it must always be set -- even on the model-deployments-only
 		// reconcile path. Omitting it collapses the resource name to "<account>/"
@@ -1004,7 +828,7 @@ func (p *FoundryProvisioningProvider) previewBrownfield(
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningPreviewResult, error) {
 	createACR := p.brownfieldACRRequested(ctx)
-	if len(p.brownfieldDeployments) == 0 && !createACR && len(p.brownfieldConnections) == 0 {
+	if len(p.brownfieldDeployments()) == 0 && !createACR && len(p.synthResult.Connections) == 0 {
 		progress("Using existing Foundry project (endpoint set); nothing to provision")
 		return &azdext.ProvisioningPreviewResult{
 			Preview: &azdext.ProvisioningDeploymentPreview{},
@@ -1083,7 +907,7 @@ func (p *FoundryProvisioningProvider) brownfieldACRRequested(ctx context.Context
 // resources (the ACR connection and user connections), preferring the value
 // parsed from the endpoint and falling back to p.foundryName.
 func (p *FoundryProvisioningProvider) brownfieldProjectName() string {
-	if name := projectNameFromEndpoint(p.brownfieldEndpoint); name != "" {
+	if name := projectNameFromEndpoint(p.synthResult.Endpoint); name != "" {
 		return name
 	}
 	return p.foundryName
@@ -1325,7 +1149,7 @@ func (p *FoundryProvisioningProvider) Preview(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningPreviewResult, error) {
-	if p.brownfieldEndpoint != "" {
+	if p.isBrownfield() {
 		return p.previewBrownfield(ctx, progress)
 	}
 
@@ -1404,7 +1228,7 @@ func (p *FoundryProvisioningProvider) Destroy(
 	options *azdext.ProvisioningDestroyOptions,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDestroyResult, error) {
-	if p.brownfieldEndpoint != "" {
+	if p.isBrownfield() {
 		progress("Foundry project is bring-your-own (endpoint set); azd did not " +
 			"create it, so azd down leaves it in place")
 		return &azdext.ProvisioningDestroyResult{}, nil
@@ -1734,7 +1558,7 @@ func (p *FoundryProvisioningProvider) Parameters(
 	if p.synthResult != nil {
 		out = append(out, &azdext.ProvisioningParameter{
 			Name:  "includeAcr",
-			Value: fmt.Sprintf("%v", p.synthResult.Parameters["includeAcr"]),
+			Value: fmt.Sprintf("%v", p.synthResult.RequiresAcr),
 		})
 	}
 	return out, nil
@@ -1842,7 +1666,7 @@ func (p *FoundryProvisioningProvider) armParameters() map[string]any {
 	if p.synthResult == nil {
 		return out
 	}
-	for k, v := range p.synthResult.Parameters {
+	for k, v := range p.synthResult.Parameters() {
 		out[k] = map[string]any{"value": v}
 	}
 	return out

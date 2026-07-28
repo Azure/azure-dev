@@ -17,6 +17,27 @@ import (
 	"google.golang.org/grpc"
 )
 
+func brownfieldResult(
+	endpoint string,
+	deployments []synthesis.Deployment,
+	connections []synthesis.Connection,
+) *synthesis.Result {
+	if deployments == nil {
+		deployments = []synthesis.Deployment{}
+	}
+	if connections == nil {
+		connections = []synthesis.Connection{}
+	}
+	connections, credentials := synthesis.SplitConnectionCredentials(connections)
+	return &synthesis.Result{
+		Mode:                  synthesis.ModeBrownfield,
+		Endpoint:              endpoint,
+		Deployments:           deployments,
+		Connections:           connections,
+		ConnectionCredentials: credentials,
+	}
+}
+
 // kvEnvServer is an environment service stub that returns per-key values,
 // used to drive brownfieldACRRequested's env reads.
 type kvEnvServer struct {
@@ -105,8 +126,9 @@ func TestBrownfieldACRName(t *testing.T) {
 	t.Parallel()
 
 	p := &FoundryProvisioningProvider{
-		envName:            "dev",
-		brownfieldEndpoint: "https://acct.services.ai.azure.com/api/projects/my-project",
+		envName: "dev",
+		synthResult: brownfieldResult(
+			"https://acct.services.ai.azure.com/api/projects/my-project", nil, nil),
 	}
 	name := p.brownfieldACRName("acct")
 
@@ -123,8 +145,8 @@ func TestBrownfieldACRName(t *testing.T) {
 
 	// Different env or account changes the name (collision avoidance).
 	other := &FoundryProvisioningProvider{
-		envName:            "prod",
-		brownfieldEndpoint: p.brownfieldEndpoint,
+		envName:     "prod",
+		synthResult: p.synthResult,
 	}
 	assert.NotEqual(t, name, other.brownfieldACRName("acct"))
 }
@@ -134,15 +156,17 @@ func TestBrownfieldProjectName(t *testing.T) {
 
 	// Prefers the name parsed from the endpoint.
 	p := &FoundryProvisioningProvider{
-		foundryName:        "fallback",
-		brownfieldEndpoint: "https://acct.services.ai.azure.com/api/projects/my-project",
+		foundryName: "fallback",
+		synthResult: brownfieldResult(
+			"https://acct.services.ai.azure.com/api/projects/my-project", nil, nil),
 	}
 	assert.Equal(t, "my-project", p.brownfieldProjectName())
 
 	// Falls back to foundryName when the endpoint has no project segment.
 	p2 := &FoundryProvisioningProvider{
-		foundryName:        "fallback",
-		brownfieldEndpoint: "https://acct.services.ai.azure.com/",
+		foundryName: "fallback",
+		synthResult: brownfieldResult(
+			"https://acct.services.ai.azure.com/", nil, nil),
 	}
 	assert.Equal(t, "fallback", p2.brownfieldProjectName())
 }
@@ -180,9 +204,9 @@ func TestBrownfieldParams(t *testing.T) {
 		// test for the InvalidTemplate failure where the name collapsed to
 		// "<account>/" because projectName was omitted.
 		p := &FoundryProvisioningProvider{
-			envName:               "dev",
-			brownfieldEndpoint:    "https://acct.services.ai.azure.com/api/projects/my-project",
-			brownfieldDeployments: deployments,
+			envName: "dev",
+			synthResult: brownfieldResult(
+				"https://acct.services.ai.azure.com/api/projects/my-project", deployments, nil),
 		}
 		params, err := p.brownfieldParams(t.Context(), "acct", "rg", false)
 		require.NoError(t, err)
@@ -208,9 +232,9 @@ func TestBrownfieldParams(t *testing.T) {
 			Credentials: map[string]any{"key": "secret"},
 		}}
 		p := &FoundryProvisioningProvider{
-			envName:               "dev",
-			brownfieldEndpoint:    "https://acct.services.ai.azure.com/api/projects/my-project",
-			brownfieldConnections: conns,
+			envName: "dev",
+			synthResult: brownfieldResult(
+				"https://acct.services.ai.azure.com/api/projects/my-project", nil, conns),
 		}
 		params, err := p.brownfieldParams(t.Context(), "acct", "rg", false)
 		require.NoError(t, err)
@@ -239,9 +263,10 @@ func TestBrownfieldParams(t *testing.T) {
 	t.Run("with ACR adds registry params", func(t *testing.T) {
 		t.Parallel()
 		p := &FoundryProvisioningProvider{
-			envName:            "dev",
-			brownfieldEndpoint: "https://acct.services.ai.azure.com/api/projects/my-project",
-			azdClient:          newKVEnvClient(t, map[string]string{"AZURE_LOCATION": "westus2"}),
+			envName: "dev",
+			synthResult: brownfieldResult(
+				"https://acct.services.ai.azure.com/api/projects/my-project", nil, nil),
+			azdClient: newKVEnvClient(t, map[string]string{"AZURE_LOCATION": "westus2"}),
 		}
 		params, err := p.brownfieldParams(t.Context(), "acct", "rg", true)
 		require.NoError(t, err)
@@ -257,9 +282,10 @@ func TestBrownfieldParams(t *testing.T) {
 		// AZURE_LOCATION unset and no usable credential => brownfieldLocation
 		// returns ""; the param must be omitted, not set to "".
 		p := &FoundryProvisioningProvider{
-			envName:            "dev",
-			brownfieldEndpoint: "https://acct.services.ai.azure.com/api/projects/my-project",
-			azdClient:          newKVEnvClient(t, map[string]string{}),
+			envName: "dev",
+			synthResult: brownfieldResult(
+				"https://acct.services.ai.azure.com/api/projects/my-project", nil, nil),
+			azdClient: newKVEnvClient(t, map[string]string{}),
 		}
 		params, err := p.brownfieldParams(t.Context(), "acct", "rg", true)
 		require.NoError(t, err)

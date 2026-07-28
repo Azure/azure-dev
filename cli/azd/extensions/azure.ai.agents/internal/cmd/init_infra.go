@@ -139,6 +139,23 @@ func ejectInfra(projectRoot, provider string) error {
 	if err != nil {
 		return err
 	}
+	endpoint, err := synthesis.ProjectEndpoint(rawYAML, svcName, projectRoot)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf("resolve existing Foundry project endpoint: %s", err),
+			"fix the project service configuration in azure.yaml",
+		)
+	}
+	if endpoint != "" {
+		return exterrors.Validation(
+			exterrors.CodeInfraEjectBrownfieldUnsupported,
+			"`azd ai agent init --infra` is not supported for a project that reuses an existing "+
+				"Foundry resource (the azure.ai.project service sets endpoint:)",
+			"remove --infra: the extension provisions the existing project (and any required "+
+				"container registry) directly with `azd provision`",
+		)
+	}
 
 	infraDir := filepath.Join(projectRoot, "infra")
 	if _, err := os.Stat(infraDir); err == nil {
@@ -162,19 +179,6 @@ func ejectInfra(projectRoot, provider string) error {
 		PreserveVarRefs: true,
 	})
 	if err != nil {
-		// A brownfield (endpoint:) project provisions through the extension's
-		// brownfield path, which never compiles ./infra/. Ejecting IaC for it
-		// would be misleading, so refuse with a clear message instead of the
-		// raw synthesizer error.
-		if errors.Is(err, synthesis.ErrEndpointBrownfield) {
-			return exterrors.Validation(
-				exterrors.CodeInfraEjectBrownfieldUnsupported,
-				"`azd ai agent init --infra` is not supported for a project that reuses an existing "+
-					"Foundry resource (the azure.ai.project service sets endpoint:)",
-				"remove --infra: the extension provisions the existing project (and any required "+
-					"container registry) directly with `azd provision`",
-			)
-		}
 		// Reuse the provider's vocabulary so eject and provision report
 		// consistent codes for the same azure.yaml problems.
 		return exterrors.Validation(
@@ -183,7 +187,6 @@ func ejectInfra(projectRoot, provider string) error {
 			"check the endpoint, deployments, and network fields under your azure.ai.project service",
 		)
 	}
-
 	if provider == project.TerraformProviderName {
 		// Private networking is Bicep-only today: the Terraform module has no
 		// VNet / private-endpoint / DNS / networkInjections resources, so ejecting
@@ -206,9 +209,9 @@ func ejectInfra(projectRoot, provider string) error {
 	// retryable without manual cleanup.
 	var ejectErr error
 	if provider == project.TerraformProviderName {
-		ejectErr = ejectTerraform(projectRoot, infraDir, res.Parameters)
+		ejectErr = ejectTerraform(projectRoot, infraDir, res.Parameters())
 	} else {
-		ejectErr = ejectBicep(infraDir, res.Parameters)
+		ejectErr = ejectBicep(infraDir, res.Parameters())
 	}
 	if ejectErr != nil {
 		_ = os.RemoveAll(infraDir)

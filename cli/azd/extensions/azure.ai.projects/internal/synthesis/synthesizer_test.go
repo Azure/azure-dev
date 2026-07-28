@@ -21,6 +21,8 @@ func TestSynthesize(t *testing.T) {
 		serviceName string
 
 		wantErr        error
+		wantMode       Mode
+		wantEndpoint   string
 		wantDeployLen  int
 		wantIncludeAcr bool
 		// wantDeployName0, if non-empty, asserts the name of the first deployment.
@@ -411,7 +413,7 @@ services:
 			wantConnectionNames: []string{},
 		},
 		{
-			name: "brownfield: endpoint set => ErrEndpointBrownfield",
+			name: "brownfield: endpoint returns managed resources",
 			yaml: `
 services:
   my-project:
@@ -422,11 +424,13 @@ services:
         model: {format: OpenAI, name: gpt-4.1-mini, version: "2025-04-14"}
         sku: {capacity: 10, name: GlobalStandard}
 `,
-			serviceName: "my-project",
-			wantErr:     ErrEndpointBrownfield,
+			serviceName:   "my-project",
+			wantMode:      ModeBrownfield,
+			wantEndpoint:  "https://existing.services.ai.azure.com/api/projects/p1",
+			wantDeployLen: 1,
 		},
 		{
-			name: "brownfield: endpoint + network => network ignored, still ErrEndpointBrownfield",
+			name: "brownfield: endpoint ignores network",
 			yaml: `
 services:
   my-project:
@@ -435,8 +439,9 @@ services:
     network:
       peSubnet: {vnet: /subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/v, name: pe}
 `,
-			serviceName: "my-project",
-			wantErr:     ErrEndpointBrownfield,
+			serviceName:  "my-project",
+			wantMode:     ModeBrownfield,
+			wantEndpoint: "https://existing.services.ai.azure.com/api/projects/p1",
 		},
 		{
 			name: "blank endpoint is treated as greenfield",
@@ -487,18 +492,20 @@ services:
 
 			require.NoError(t, err)
 			require.NotNil(t, res)
+			if tt.wantMode != "" {
+				assert.Equal(t, tt.wantMode, res.Mode)
+			} else {
+				assert.Equal(t, ModeGreenfield, res.Mode)
+			}
+			assert.Equal(t, tt.wantEndpoint, res.Endpoint)
 
-			deployments, ok := res.Parameters["deployments"].([]Deployment)
-			require.True(t, ok, "deployments param should be []Deployment, got %T", res.Parameters["deployments"])
-			assert.Len(t, deployments, tt.wantDeployLen)
+			assert.Len(t, res.Deployments, tt.wantDeployLen)
 			if tt.wantDeployName0 != "" {
-				require.NotEmpty(t, deployments)
-				assert.Equal(t, tt.wantDeployName0, deployments[0].Name)
+				require.NotEmpty(t, res.Deployments)
+				assert.Equal(t, tt.wantDeployName0, res.Deployments[0].Name)
 			}
 
-			includeAcr, ok := res.Parameters["includeAcr"].(bool)
-			require.True(t, ok, "includeAcr param should be bool")
-			assert.Equal(t, tt.wantIncludeAcr, includeAcr)
+			assert.Equal(t, tt.wantIncludeAcr, res.RequiresAcr)
 
 			connections := resultConnections(t, res)
 			if tt.wantConnectionNames != nil {
@@ -560,10 +567,8 @@ services:
 		assert.Equal(t, "secret-value", keys["x-api-key"])
 		assert.Equal(t, "team-ai", c.Metadata["owner"])
 
-		publicConnections := res.Parameters["connections"].([]Connection)
-		assert.Nil(t, publicConnections[0].Credentials)
-		secureCredentials := res.Parameters["connectionCredentials"].(map[string]map[string]any)
-		assert.Equal(t, "secret-value", secureCredentials["mcp-conn"]["keys"].(map[string]any)["x-api-key"])
+		assert.Nil(t, res.Connections[0].Credentials)
+		assert.Equal(t, "secret-value", res.ConnectionCredentials["mcp-conn"]["keys"].(map[string]any)["x-api-key"])
 	})
 
 	t.Run("eject path preserves ${VAR} verbatim", func(t *testing.T) {
@@ -658,17 +663,16 @@ services:
 `
 
 	t.Run("collects and resolves connections (sorted)", func(t *testing.T) {
-		conns, err := BrownfieldConnections(
-			[]byte(yaml),
-			map[string]string{"SEARCH_API_KEY": "secret"},
-			"",
-		)
+		res, err := Synthesize(Input{RawAzureYAML: []byte(yaml), ServiceName: "my-project", Env: map[string]string{
+			"SEARCH_API_KEY": "secret",
+		}})
 		require.NoError(t, err)
-		require.Len(t, conns, 2)
-		assert.Equal(t, "bing-conn", conns[0].Name)
-		assert.Equal(t, "search-conn", conns[1].Name)
-		assert.Equal(t, "CognitiveSearch", conns[1].Category)
-		assert.Equal(t, "secret", conns[1].Credentials["key"])
+		assert.Equal(t, ModeBrownfield, res.Mode)
+		require.Len(t, res.Connections, 2)
+		assert.Equal(t, "bing-conn", res.Connections[0].Name)
+		assert.Equal(t, "search-conn", res.Connections[1].Name)
+		assert.Equal(t, "CognitiveSearch", res.Connections[1].Category)
+		assert.Equal(t, "secret", res.ConnectionCredentials["search-conn"]["key"])
 	})
 
 	t.Run("no connection services yields empty slice", func(t *testing.T) {
@@ -678,15 +682,49 @@ services:
     host: azure.ai.project
     endpoint: https://existing.services.ai.azure.com/api/projects/p1
 `
-		conns, err := BrownfieldConnections([]byte(noConns), nil, "")
+		res, err := Synthesize(Input{RawAzureYAML: []byte(noConns), ServiceName: "my-project"})
 		require.NoError(t, err)
-		assert.Empty(t, conns)
+		assert.Empty(t, res.Connections)
 	})
 
 	t.Run("empty raw errors", func(t *testing.T) {
-		_, err := BrownfieldConnections(nil, nil, "")
+		_, err := Synthesize(Input{ServiceName: "my-project"})
 		require.Error(t, err)
 	})
+}
+
+func TestSynthesize_BrownfieldSkipsAgentReferences(t *testing.T) {
+	t.Parallel()
+	raw := []byte(`services:
+  project:
+    host: azure.ai.project
+    endpoint: https://existing.services.ai.azure.com/api/projects/p1
+  agent:
+    host: azure.ai.agent
+    $ref: ./missing-agent.yaml
+`)
+
+	res, err := Synthesize(Input{RawAzureYAML: raw, ServiceName: "project", ProjectRoot: t.TempDir()})
+
+	require.NoError(t, err)
+	assert.Equal(t, ModeBrownfield, res.Mode)
+	assert.False(t, res.RequiresAcr)
+}
+
+func TestSynthesize_BrownfieldValidatesManagedConnectionReferences(t *testing.T) {
+	t.Parallel()
+	raw := []byte(`services:
+  project:
+    host: azure.ai.project
+    endpoint: https://existing.services.ai.azure.com/api/projects/p1
+  connection:
+    host: azure.ai.connection
+    $ref: ./missing-connection.yaml
+`)
+
+	_, err := Synthesize(Input{RawAzureYAML: raw, ServiceName: "project", ProjectRoot: t.TempDir()})
+
+	require.ErrorContains(t, err, "missing-connection.yaml")
 }
 
 func TestBrownfieldDeployments(t *testing.T) {
@@ -768,7 +806,7 @@ services:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := BrownfieldDeployments([]byte(tt.yaml), tt.serviceName, "")
+			res, err := Synthesize(Input{RawAzureYAML: []byte(tt.yaml), ServiceName: tt.serviceName})
 
 			if tt.serviceName == "" {
 				require.Error(t, err)
@@ -781,21 +819,21 @@ services:
 			}
 
 			require.NoError(t, err)
-			assert.Len(t, got, tt.wantLen)
+			assert.Len(t, res.Deployments, tt.wantLen)
 			if tt.wantName0 != "" {
-				require.NotEmpty(t, got)
-				assert.Equal(t, tt.wantName0, got[0].Name)
+				require.NotEmpty(t, res.Deployments)
+				assert.Equal(t, tt.wantName0, res.Deployments[0].Name)
 			}
 			if tt.wantVersion != "" {
-				require.NotEmpty(t, got)
-				assert.Equal(t, tt.wantVersion, got[0].Model.Version)
+				require.NotEmpty(t, res.Deployments)
+				assert.Equal(t, tt.wantVersion, res.Deployments[0].Model.Version)
 			}
 		})
 	}
 }
 
 func TestBrownfieldDeployments_EmptyRaw(t *testing.T) {
-	_, err := BrownfieldDeployments(nil, "my-project", "")
+	_, err := Synthesize(Input{ServiceName: "my-project"})
 	require.Error(t, err)
 }
 
@@ -821,9 +859,10 @@ services:
 	})
 	require.NoError(t, err, "unset ${VAR} must not fail on the eject path")
 	require.NotNil(t, res)
-	assert.Equal(t, "${AZURE_VNET_ID}", res.Parameters["vnetId"])
-	assert.Equal(t, "${AZURE_DNS_SUBSCRIPTION_ID}", res.Parameters["dnsZonesSubscription"])
-	assert.Equal(t, "rg-dns", res.Parameters["dnsZonesResourceGroup"])
+	params := res.Parameters()
+	assert.Equal(t, "${AZURE_VNET_ID}", params["vnetId"])
+	assert.Equal(t, "${AZURE_DNS_SUBSCRIPTION_ID}", params["dnsZonesSubscription"])
+	assert.Equal(t, "rg-dns", params["dnsZonesResourceGroup"])
 }
 
 func TestSynthesize_NetworkPreserveVarRefs_StillValidatesConcrete(t *testing.T) {
@@ -869,12 +908,10 @@ services:
 		ProjectRoot:   root,
 	})
 	require.NoError(t, err)
-	deployments, ok := res.Parameters["deployments"].([]Deployment)
-	require.True(t, ok, "deployments param should be []Deployment, got %T", res.Parameters["deployments"])
-	require.Len(t, deployments, 1)
-	assert.Equal(t, "gpt-4o", deployments[0].Name)
-	assert.Equal(t, "gpt-4o", deployments[0].Model.Name)
-	assert.Equal(t, 10, deployments[0].Sku.Capacity)
+	require.Len(t, res.Deployments, 1)
+	assert.Equal(t, "gpt-4o", res.Deployments[0].Name)
+	assert.Equal(t, "gpt-4o", res.Deployments[0].Model.Name)
+	assert.Equal(t, 10, res.Deployments[0].Sku.Capacity)
 }
 
 func TestSynthesize_ResolvesSiblingServiceRefs(t *testing.T) {
@@ -911,7 +948,7 @@ services:
 		ProjectRoot:   root,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, false, res.Parameters["includeAcr"])
+	assert.False(t, res.RequiresAcr)
 
 	connections := resultConnections(t, res)
 	require.Len(t, connections, 1)
@@ -923,11 +960,7 @@ services:
 func resultConnections(t *testing.T, result *Result) []Connection {
 	t.Helper()
 
-	connections, ok := result.Parameters["connections"].([]Connection)
-	require.True(t, ok, "connections param should be []Connection")
-	credentials, ok := result.Parameters["connectionCredentials"].(map[string]map[string]any)
-	require.True(t, ok, "connectionCredentials param should be a credential map")
-	return JoinConnectionCredentials(connections, credentials)
+	return JoinConnectionCredentials(result.Connections, result.ConnectionCredentials)
 }
 
 func TestBrownfieldServiceResolversResolveRefs(t *testing.T) {
@@ -967,15 +1000,13 @@ services:
 		endpoint,
 	)
 
-	deployments, err := BrownfieldDeployments([]byte(yaml), "project", root)
+	res, err := Synthesize(Input{RawAzureYAML: []byte(yaml), ServiceName: "project", ProjectRoot: root})
 	require.NoError(t, err)
-	require.Len(t, deployments, 1)
-	assert.Equal(t, "gpt-4o", deployments[0].Name)
-
-	connections, err := BrownfieldConnections([]byte(yaml), nil, root)
-	require.NoError(t, err)
-	require.Len(t, connections, 1)
-	assert.Equal(t, "CognitiveSearch", connections[0].Category)
+	assert.Equal(t, ModeBrownfield, res.Mode)
+	require.Len(t, res.Deployments, 1)
+	assert.Equal(t, "gpt-4o", res.Deployments[0].Name)
+	require.Len(t, res.Connections, 1)
+	assert.Equal(t, "CognitiveSearch", res.Connections[0].Category)
 }
 
 func TestSynthesize_InputValidation(t *testing.T) {
@@ -1374,7 +1405,7 @@ services:
 			require.NotNil(t, res)
 			assert.Equal(t, tt.wantMode, res.NetworkMode)
 			if tt.check != nil {
-				tt.check(t, res.Parameters)
+				tt.check(t, res.Parameters())
 			}
 		})
 	}

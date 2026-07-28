@@ -3,6 +3,14 @@
 // simple changes (simple version bump, no changes to important fields) can go by with just a simple approval from any developer.
 const { isDeepStrictEqual } = require('node:util');
 
+// The registries this check governs. The ext-registry-check workflow keeps an inline
+// copy of this list (it runs its detection step before the checkout, so it can't
+// require this file); a test asserts the two stay in sync.
+const REGISTRY_JSON_PATHS = new Set([
+  'cli/azd/extensions/registry.json',
+  'cli/azd/extensions/registry.dev.json',
+]);
+
 // GitHub Actions entry point.
 module.exports = run;
 
@@ -14,12 +22,8 @@ module.exports.forTests = {
   isAllowedRegistryJsonUpdate,
   isCreatedByCoreTeam,
   diffRegistry,
+  REGISTRY_JSON_PATHS,
 }
-
-const REGISTRY_JSON_PATHS = new Set([
-  'cli/azd/extensions/registry.json',
-  'cli/azd/extensions/registry.dev.json',
-]);
 
 // We only allow URLs that point to our GitHub releases page.
 const ALLOWED_ARTIFACT_URL_ORIGIN = 'https://github.com';

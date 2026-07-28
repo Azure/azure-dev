@@ -15,6 +15,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
+	"google.golang.org/grpc"
 )
 
 // aiToolboxHost is the azure.yaml service host kind owned by this extension. A
@@ -46,8 +47,9 @@ type toolboxServiceConfig struct {
 // name is the service key. Package and Publish are no-ops because a toolbox has no build
 // artifact.
 type toolboxServiceTarget struct {
-	azdClient *azdext.AzdClient
-	resolver  connectionResolver
+	azdClient     *azdext.AzdClient
+	projectClient serviceConfigReader
+	resolver      connectionResolver
 }
 
 // newToolboxServiceTarget creates the azure.ai.toolbox service-target provider.
@@ -55,8 +57,9 @@ func newToolboxServiceTarget(
 	azdClient *azdext.AzdClient,
 ) azdext.ServiceTargetProvider {
 	return &toolboxServiceTarget{
-		azdClient: azdClient,
-		resolver:  defaultConnectionResolver{},
+		azdClient:     azdClient,
+		projectClient: azdClient.Project(),
+		resolver:      defaultConnectionResolver{},
 	}
 }
 
@@ -334,12 +337,24 @@ func parseToolboxServiceConfig(svc *azdext.ServiceConfig) (*toolboxServiceConfig
 	return cfg, nil
 }
 
-var serviceEnvDeclared = func(
+// serviceConfigReader is the slice of azdext.ProjectServiceClient
+// this target uses. Depending on the interface rather than the
+// concrete *azdext.AzdClient lets tests supply a fake: the client's
+// project field is unexported and no option overrides it.
+type serviceConfigReader interface {
+	GetServiceConfigValue(
+		ctx context.Context,
+		in *azdext.GetServiceConfigValueRequest,
+		opts ...grpc.CallOption,
+	) (*azdext.GetServiceConfigValueResponse, error)
+}
+
+func serviceEnvDeclared(
 	ctx context.Context,
-	azdClient *azdext.AzdClient,
+	projectClient serviceConfigReader,
 	serviceName string,
 ) (bool, error) {
-	resp, err := azdClient.Project().GetServiceConfigValue(ctx, &azdext.GetServiceConfigValueRequest{
+	resp, err := projectClient.GetServiceConfigValue(ctx, &azdext.GetServiceConfigValueRequest{
 		ServiceName: serviceName,
 		Path:        "env",
 	})
@@ -361,7 +376,7 @@ func (p *toolboxServiceTarget) environmentValues(
 	// Core forwards it as an empty map, indistinguishable from
 	// an omitted env, so consult the raw config before falling
 	// back to the full azd environment.
-	declared, err := serviceEnvDeclared(ctx, p.azdClient, serviceConfig.GetName())
+	declared, err := serviceEnvDeclared(ctx, p.projectClient, serviceConfig.GetName())
 	if err != nil {
 		return nil, err
 	}

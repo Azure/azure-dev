@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -81,14 +82,26 @@ func TestExpandRoutineValue(t *testing.T) {
 	}, expandRoutineValue(input, environment))
 }
 
-func TestRoutineEnvironmentValuesEmptyDeclaredIsolates(t *testing.T) {
-	orig := serviceEnvDeclared
-	t.Cleanup(func() { serviceEnvDeclared = orig })
-	serviceEnvDeclared = func(context.Context, *azdext.AzdClient, string) (bool, error) {
-		return true, nil
-	}
+// fakeServiceConfigReader reports a fixed env-declared result.
+type fakeServiceConfigReader struct {
+	found bool
+}
 
-	env, err := (&routineServiceTarget{}).environmentValues(
+func (f fakeServiceConfigReader) GetServiceConfigValue(
+	context.Context,
+	*azdext.GetServiceConfigValueRequest,
+	...grpc.CallOption,
+) (*azdext.GetServiceConfigValueResponse, error) {
+	return &azdext.GetServiceConfigValueResponse{Found: f.found}, nil
+}
+
+func TestRoutineEnvironmentValuesEmptyDeclaredIsolates(t *testing.T) {
+	t.Parallel()
+
+	target := &routineServiceTarget{
+		projectClient: fakeServiceConfigReader{found: true},
+	}
+	env, err := target.environmentValues(
 		t.Context(),
 		&azdext.ServiceConfig{Name: "nightly-digest"},
 	)

@@ -28,12 +28,16 @@ import (
 // protocol; it is a no-op for any other agent, so non-activity deployments are
 // completely unaffected.
 //
-// It provisions ONLY the Azure resource plane: create the Azure Bot, bind it to
-// the agent instance identity, enable the bot's Microsoft Teams *channel*, and
-// point the bot's messaging endpoint at the agent. That "Teams channel" is an
-// Azure Bot Service resource toggle — NOT a Teams app. Packaging and sideloading
-// the Teams *app* live on the M365/Graph plane, stay out of azd, and are left to
-// the user; postdeploy writes TEAMS_APP_SETUP.md with those manual steps.
+// It provisions the Azure resource plane: create the Azure Bot, bind it to the
+// agent instance identity, enable the bot's Microsoft Teams *channel*, and point
+// the bot's messaging endpoint at the agent. That "Teams channel" is an Azure Bot
+// Service resource toggle — NOT a Teams app.
+//
+// It then best-effort downloads a ready-to-sideload Teams *app* package from the
+// Microsoft 365 service and writes TEAMS_APP_SETUP.md next to the agent source. If
+// packaging fails, the guide falls back to manual packaging steps, so deploy never
+// breaks. Installing (sideloading) the app stays on the M365/Graph plane and is
+// left to the user (per-user sideload needs no Teams admin).
 func ensureActivityBot(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,

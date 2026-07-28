@@ -337,104 +337,15 @@ func collectEnvironmentTemplates(value any, environment map[string]string) {
 }
 
 func collectStringEnvironmentTemplates(value string, environment map[string]string) {
-	for offset := 0; offset < len(value); {
-		startOffset := strings.Index(value[offset:], "${")
-		if startOffset < 0 {
-			return
-		}
-		start := offset + startOffset
-		if strings.HasPrefix(value[start:], "${{") {
-			end := strings.Index(value[start+3:], "}}")
-			if end < 0 {
-				return
-			}
-			offset = start + end + 5
-			continue
-		}
-
-		name, end, found := environmentTemplateAt(value, start)
-		if !found {
-			offset = start + 2
-			continue
-		}
+	for _, reference := range findEnvironmentReferences(value, honorEnvironmentEscaping) {
 		// env is keyed by name, so store one canonical ${NAME}.
 		// A ${NAME:-default} default is re-applied by the owning
 		// extension against the raw config at deploy, so the env section
 		// only needs NAME's resolved base value. Collapsing every form of
 		// a var to one value also keeps collection deterministic when the
 		// same var appears with and without a default.
-		environment[name] = "${" + name + "}"
-		offset = end
+		environment[reference.Name] = "${" + reference.Name + "}"
 	}
-}
-
-func environmentTemplateAt(value string, start int) (string, int, bool) {
-	if start > 0 && value[start-1] == '$' {
-		return "", 0, false
-	}
-
-	index := start + 2
-	if index >= len(value) || !isEnvironmentNameStart(value[index]) {
-		return "", 0, false
-	}
-	nameStart := index
-	index++
-	for index < len(value) && isEnvironmentNameCharacter(value[index]) {
-		index++
-	}
-	name := value[nameStart:index]
-
-	if index < len(value) && value[index] == '}' {
-		return name, index + 1, true
-	}
-	if !strings.HasPrefix(value[index:], ":-") {
-		return "", 0, false
-	}
-
-	end, found := environmentTemplateEnd(value, index+2)
-	if !found {
-		return "", 0, false
-	}
-	return name, end, true
-}
-
-// environmentTemplateEnd skips nested Foundry expressions.
-func environmentTemplateEnd(value string, index int) (int, bool) {
-	depth := 1
-	for index < len(value) {
-		if strings.HasPrefix(value[index:], "${{") {
-			end := strings.Index(value[index+3:], "}}")
-			if end < 0 {
-				return 0, false
-			}
-			index += end + 5
-			continue
-		}
-		if strings.HasPrefix(value[index:], "${") {
-			depth++
-			index += 2
-			continue
-		}
-		if value[index] == '}' {
-			depth--
-			index++
-			if depth == 0 {
-				return index, true
-			}
-			continue
-		}
-		index++
-	}
-	return 0, false
-}
-
-func isEnvironmentNameStart(value byte) bool {
-	return value == '_' || value >= 'A' && value <= 'Z' ||
-		value >= 'a' && value <= 'z'
-}
-
-func isEnvironmentNameCharacter(value byte) bool {
-	return isEnvironmentNameStart(value) || value >= '0' && value <= '9'
 }
 
 // escapeFoundryTemplates escapes Foundry ${{...}} spans as $${{...}}

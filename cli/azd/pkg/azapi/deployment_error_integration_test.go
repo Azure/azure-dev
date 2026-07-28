@@ -4,9 +4,11 @@
 package azapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -272,4 +274,58 @@ func TestPipeline_DeploymentErrorLine_LocationNotAvailableForResourceType(t *tes
 	require.NotNil(t, result,
 		"Should match LocationNotAvailableForResourceType")
 	assert.Equal(t, "Resource not available in region.", result.Message)
+}
+
+// A failed what-if returns HTTP 200 with the failure in the payload, so the
+// preview path builds its error from an armresources.ErrorResponse rather than
+// from an HTTP error. The actionable cause sits two levels deep, under a
+// top-level code that getErrorsFromMap does NOT blank out (unlike
+// DeploymentFailed), so the pipeline must keep searching past the outer node.
+// Regression test for https://github.com/Azure/azure-dev/issues/9011.
+func TestPipeline_PreviewErrorResponse_NestedQuota(t *testing.T) {
+	const whatIfBody = `{
+	  "status": "Failed",
+	  "error": {
+	    "code": "InvalidTemplateDeployment",
+	    "message": "The template deployment 'dev-1' is not valid according to the validation procedure. ` +
+		`The following resource provider(s) - 'Microsoft.Storage/storageAccounts' reported preflight ` +
+		`validation errors. See inner errors for details.",
+	    "details": [{
+	      "code": "PreflightValidationCheckFailed",
+	      "message": "Preflight validation failed. Please refer to the details for the specific errors.",
+	      "details": [{
+	        "code": "SubscriptionIsOverQuotaForSku",
+	        "target": "stdev1",
+	        "message": "Subscription has reached the maximum number of storage accounts allowed in 'eastus'."
+	      }]
+	    }]
+	  }
+	}`
+
+	var whatIfResult armresources.WhatIfOperationResult
+	require.NoError(t, json.Unmarshal([]byte(whatIfBody), &whatIfResult))
+	require.NotNil(t, whatIfResult.Error)
+
+	deployErr := NewAzureDeploymentErrorFromResponse(whatIfResult.Error, DeploymentOperationPreview)
+
+	// Every level of the ARM error tree must be rendered, especially the leaf cause.
+	rendered := deployErr.Error()
+	assert.Contains(t, rendered, "Preview Error Details")
+	assert.Contains(t, rendered, "InvalidTemplateDeployment")
+	assert.Contains(t, rendered, "PreflightValidationCheckFailed")
+	assert.Contains(t, rendered, "SubscriptionIsOverQuotaForSku")
+	assert.Contains(t, rendered, "maximum number of storage accounts")
+
+	// Reproduce the production wrapping chain: provisioning.Manager.Preview
+	// followed by wrapProvisionError's default branch.
+	wrapped := fmt.Errorf("deployment failed: %w",
+		fmt.Errorf("error deploying infrastructure: %w", deployErr))
+
+	// Exercise the real embedded error_suggestions.yaml rules, not inline ones.
+	result := errorhandler.NewErrorHandlerPipeline(nil).Process(t.Context(), wrapped)
+
+	require.NotNil(t, result,
+		"Should match SubscriptionIsOverQuotaForSku nested under InvalidTemplateDeployment")
+	assert.Equal(t, "Your subscription quota for this SKU is exceeded.", result.Message)
+	assert.Contains(t, result.Suggestion, "Request a quota increase")
 }

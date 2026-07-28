@@ -4,6 +4,7 @@
 package project
 
 import (
+	"maps"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -114,9 +115,7 @@ func TestAgentPoliciesReachRaiConfig(t *testing.T) {
 					},
 				},
 			}
-			for key, value := range test.extra {
-				values[key] = value
-			}
+			maps.Copy(values, test.extra)
 
 			agentDef, isHosted, found, _, err := AgentDefinitionFromService(
 				inlineAgentService(t, values),

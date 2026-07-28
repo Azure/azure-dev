@@ -361,12 +361,11 @@ func buildTracesDataSource(
 				"name an agent. Declare target.type: agent on the group")
 	}
 
-	var start, end time.Time
+	var lookbackHours int
 	if days := parseWindowDays(window); days > 0 {
-		end = time.Now().UTC()
-		start = end.AddDate(0, 0, -days)
+		lookbackHours = days * 24
 	}
-	return eval_api.NewTracesDataSource(agent, start, end, maxTraces), nil
+	return eval_api.NewTracesDataSource(agent, lookbackHours, time.Time{}, maxTraces), nil
 }
 
 // buildRunDataSource binds the dataset to the run. The eval group carries no

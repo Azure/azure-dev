@@ -16,29 +16,35 @@ import (
 )
 
 // A window is only sent when one was asked for; the service defaults it
-// otherwise, and an epoch-zero bound would silently mean 1970.
+// otherwise.
 func TestNewTracesDataSource_OmitsAnUnsetWindow(t *testing.T) {
-	ds := eval_api.NewTracesDataSource("support-agent", time.Time{}, time.Time{}, 0)
+	ds := eval_api.NewTracesDataSource("support-agent", 0, time.Time{}, 0)
 	assert.Equal(t, eval_api.EvalRunDataSourceTypeTraces, ds.Type)
 	assert.Equal(t, "support-agent", ds.AgentName)
 
 	raw, err := json.Marshal(ds)
 	require.NoError(t, err)
 	body := string(raw)
-	assert.NotContains(t, body, "start_time")
+	assert.NotContains(t, body, "lookback_hours")
 	assert.NotContains(t, body, "end_time")
 	assert.NotContains(t, body, "max_traces")
 	assert.NotContains(t, body, "input_messages", "traces carry no template")
 }
 
-func TestNewTracesDataSource_SendsTheWindowItWasGiven(t *testing.T) {
-	end := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
-	start := end.AddDate(0, 0, -7)
-
-	ds := eval_api.NewTracesDataSource("support-agent", start, end, 25)
-	assert.Equal(t, start.Unix(), ds.StartTime)
-	assert.Equal(t, end.Unix(), ds.EndTime)
+// The service reads `lookback_hours` and has no start bound. Sending a
+// start_time is accepted and dropped, which silently leaves the default seven
+// days in place, so the window has to travel as hours.
+func TestNewTracesDataSource_SendsAWindowTheServiceReads(t *testing.T) {
+	ds := eval_api.NewTracesDataSource("support-agent", 30*24, time.Time{}, 25)
+	assert.Equal(t, 720, ds.LookbackHours)
 	assert.Equal(t, 25, ds.MaxTraces)
+
+	raw, err := json.Marshal(ds)
+	require.NoError(t, err)
+	body := string(raw)
+	assert.Contains(t, body, `"lookback_hours":720`)
+	assert.NotContains(t, body, "start_time",
+		"the service drops start_time and falls back to its default window")
 }
 
 // The reason a run failed is the only actionable part of the response, so it

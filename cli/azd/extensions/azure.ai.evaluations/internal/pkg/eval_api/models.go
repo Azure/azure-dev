@@ -338,11 +338,13 @@ type EvalRunDataSource struct {
 	Source        *EvalRunDataContent   `json:"source,omitempty"`
 	Target        *EvalRunTarget        `json:"target,omitempty"`
 
-	// Traces only. The window defaults to the last seven days when left unset.
-	AgentName string `json:"agent_name,omitempty"`
-	StartTime int64  `json:"start_time,omitempty"`
-	EndTime   int64  `json:"end_time,omitempty"`
-	MaxTraces int    `json:"max_traces,omitempty"`
+	// Traces only. The window is expressed as a lookback in hours, not as a
+	// start bound: the service has no start_time on this data source and
+	// silently falls back to its default when one is sent.
+	AgentName     string `json:"agent_name,omitempty"`
+	LookbackHours int    `json:"lookback_hours,omitempty"`
+	EndTime       int64  `json:"end_time,omitempty"`
+	MaxTraces     int    `json:"max_traces,omitempty"`
 }
 
 // EvalRunInputMessages describes how input messages are constructed from dataset items.
@@ -399,16 +401,16 @@ func NewAgentTargetDataSource(agentName string, agentVersion *string) *EvalRunDa
 
 // NewTracesDataSource evaluates an agent's recorded traces instead of a dataset.
 //
-// The service reads them from Application Insights and defaults to the last
-// seven days, so a zero window is left off rather than sent as an epoch.
-func NewTracesDataSource(agentName string, start, end time.Time, maxTraces int) *EvalRunDataSource {
+// The window is a lookback in hours. The service's own field is
+// `lookback_hours` and it has no start bound: a `start_time` is accepted and
+// dropped, leaving the default seven days in place, so the conversion happens
+// here rather than being left to look like it worked.
+func NewTracesDataSource(agentName string, lookbackHours int, end time.Time, maxTraces int) *EvalRunDataSource {
 	ds := &EvalRunDataSource{
-		Type:      EvalRunDataSourceTypeTraces,
-		AgentName: agentName,
-		MaxTraces: maxTraces,
-	}
-	if !start.IsZero() {
-		ds.StartTime = start.Unix()
+		Type:          EvalRunDataSourceTypeTraces,
+		AgentName:     agentName,
+		LookbackHours: lookbackHours,
+		MaxTraces:     maxTraces,
 	}
 	if !end.IsZero() {
 		ds.EndTime = end.Unix()

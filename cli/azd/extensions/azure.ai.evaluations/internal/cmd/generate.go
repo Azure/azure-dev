@@ -82,7 +82,10 @@ func newGenerateCommand() *cobra.Command {
 				}
 			}
 
-			if datasetFlag != "" && looksLikeLocalDataset(datasetFlag) {
+			// --dataset means use this one, whether it names a local file or a
+			// dataset already registered on the project. Either way there is
+			// nothing to generate, which is how --evaluator behaves too.
+			if datasetFlag != "" {
 				fmt.Fprintf(out, "Using the supplied dataset; skipping data generation.\n")
 			} else if cfg.Generate.Dataset != nil {
 				ref, err := ec.generateDataset(ctx, cfg, instruction, baseDir, out, noWait)
@@ -166,7 +169,7 @@ func resolveGenerateConfig(
 			LocalDir: "./" + project.DefaultEvaluatorsDir,
 		}
 	}
-	if cfg.Generate.Dataset == nil && !looksLikeLocalDataset(datasetFlag) {
+	if cfg.Generate.Dataset == nil && datasetFlag == "" {
 		cfg.Generate.Dataset = &project.DatasetSpec{
 			Name:       cfg.Agent.Name + "-golden",
 			Strategy:   project.StrategySynthetic,

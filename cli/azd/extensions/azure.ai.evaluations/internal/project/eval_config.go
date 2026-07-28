@@ -118,6 +118,17 @@ func (c *EvalConfig) Validate() error {
 		if evaluators[e.Name] {
 			return fmt.Errorf("evaluators[%d]: duplicate evaluator name %q", i, e.Name)
 		}
+		// The service assigns an evaluator's version on publish, so a declared
+		// one cannot be honoured alongside a source: the upload lands on
+		// whatever comes next and the group binds that, leaving the pin
+		// describing a version nothing uses.
+		if e.Source != "" && e.Version != "" {
+			return fmt.Errorf(
+				"evaluators[%d] (%s): `version` cannot be set with `source`, because the "+
+					"service assigns the version when it publishes. Drop `version` to "+
+					"publish this file, or drop `source` to reference a version already "+
+					"on the project", i, e.Name)
+		}
 		evaluators[e.Name] = true
 	}
 

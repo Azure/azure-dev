@@ -25,7 +25,10 @@ func addRunSubcommands(cmd *cobra.Command) {
 }
 
 func newRunListCommand() *cobra.Command {
-	var endpointFlg string
+	var (
+		endpointFlg string
+		groupName   string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "list [eval-id]",
@@ -39,7 +42,7 @@ func newRunListCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			evalID, err := resolveEvalID(cmd, ec, args)
+			evalID, err := resolveEvalID(cmd, ec, args, groupName)
 			if err != nil {
 				return err
 			}
@@ -64,6 +67,7 @@ func newRunListCommand() *cobra.Command {
 				[]string{"RUN ID", "NAME", "STATUS", "RESULTS"}, rows)
 		},
 	}
+	addEvalGroupFlag(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -72,6 +76,7 @@ func newRunShowCommand() *cobra.Command {
 	var (
 		runID       string
 		endpointFlg string
+		groupName   string
 	)
 
 	cmd := &cobra.Command{
@@ -86,7 +91,7 @@ func newRunShowCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			evalID, err := resolveEvalID(cmd, ec, args)
+			evalID, err := resolveEvalID(cmd, ec, args, groupName)
 			if err != nil {
 				return err
 			}
@@ -113,6 +118,7 @@ func newRunShowCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&runID, "run-id", "", "Run to show. Defaults to the most recent run.")
+	addEvalGroupFlag(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -121,6 +127,7 @@ func newRunCancelCommand() *cobra.Command {
 	var (
 		runID       string
 		endpointFlg string
+		groupName   string
 	)
 
 	cmd := &cobra.Command{
@@ -135,7 +142,7 @@ func newRunCancelCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			evalID, err := resolveEvalID(cmd, ec, args)
+			evalID, err := resolveEvalID(cmd, ec, args, groupName)
 			if err != nil {
 				return err
 			}
@@ -167,6 +174,7 @@ func newRunCancelCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&runID, "run-id", "", "Run to cancel. Defaults to the most recent run.")
+	addEvalGroupFlag(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }

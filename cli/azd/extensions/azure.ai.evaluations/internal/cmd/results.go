@@ -31,6 +31,7 @@ func newResultsShowCommand() *cobra.Command {
 		failedOnly  bool
 		outFile     string
 		endpointFlg string
+		groupName   string
 	)
 
 	cmd := &cobra.Command{
@@ -45,7 +46,7 @@ func newResultsShowCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			evalID, err := resolveEvalID(cmd, ec, args)
+			evalID, err := resolveEvalID(cmd, ec, args, groupName)
 			if err != nil {
 				return err
 			}
@@ -73,6 +74,7 @@ func newResultsShowCommand() *cobra.Command {
 	cmd.Flags().StringVar(&runID, "run-id", "", "Run to show. Defaults to the most recent run.")
 	cmd.Flags().BoolVar(&failedOnly, "failed-only", false, "Show only criteria with failures.")
 	cmd.Flags().StringVarP(&outFile, "out-file", "O", "", "Write JSON results to this path.")
+	addEvalGroupFlag(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -83,6 +85,7 @@ func newResultsExportCommand() *cobra.Command {
 		format      string
 		outFile     string
 		endpointFlg string
+		groupName   string
 	)
 
 	cmd := &cobra.Command{
@@ -102,7 +105,7 @@ func newResultsExportCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			evalID, err := resolveEvalID(cmd, ec, args)
+			evalID, err := resolveEvalID(cmd, ec, args, groupName)
 			if err != nil {
 				return err
 			}
@@ -132,22 +135,51 @@ func newResultsExportCommand() *cobra.Command {
 	cmd.Flags().StringVar(&runID, "run-id", "", "Run to export. Defaults to the most recent run.")
 	cmd.Flags().StringVar(&format, "format", "json", "Output format: json or csv.")
 	cmd.Flags().StringVarP(&outFile, "out-file", "O", "", "Write to this path instead of stdout.")
+	addEvalGroupFlag(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
 
-// resolveEvalID takes the eval group id from the argument, falling back to the
-// id cached in the azd environment.
-func resolveEvalID(cmd *cobra.Command, ec *evalContext, args []string) (string, error) {
+// resolveEvalID takes the eval group id from the argument, from a group named
+// with --eval-group, or from the id cached in the azd environment.
+//
+// The cached id is the last group deployed, which is unambiguous only while a
+// config declares one. --eval-group is how the others are reached without
+// having to know their service ids.
+func resolveEvalID(
+	cmd *cobra.Command,
+	ec *evalContext,
+	args []string,
+	groupName string,
+) (string, error) {
 	if len(args) > 0 && args[0] != "" {
 		return args[0], nil
 	}
+
+	if groupName != "" {
+		if id := ec.getEnvValue(cmd.Context(), idKey("evalgroup", groupName)); id != "" {
+			return id, nil
+		}
+		return "", fmt.Errorf(
+			"eval group %q has no id recorded in this environment; deploy it first, "+
+				"or pass its id directly", groupName)
+	}
+
 	if cached := ec.getEnvValue(cmd.Context(), envKeyEvalGroupID); cached != "" {
 		return cached, nil
 	}
 	return "", fmt.Errorf(
-		"no eval group id given; pass it as an argument or set %s in the azd environment",
+		"no eval group id given; pass it as an argument, name one with --eval-group, "+
+			"or set %s in the azd environment",
 		envKeyEvalGroupID)
+}
+
+// addEvalGroupFlag registers the flag that names a group from the config, so
+// every command taking an eval-id can reach a group by the name its author
+// used.
+func addEvalGroupFlag(cmd *cobra.Command, target *string) {
+	cmd.Flags().StringVar(target, "eval-group", "",
+		"Name a group from the config instead of passing its id.")
 }
 
 // latestOrNamedRun returns the named run, or the most recent one for the group.
@@ -157,17 +189,22 @@ func (ec *evalContext) latestOrNamedRun(
 ) (*eval_api.OpenAIEvalRun, error) {
 	ctx := cmd.Context()
 
+	// The remembered run is per group. A single shared one belongs to whichever
+	// group ran last, and asking another group for it returns 404 rather than
+	// that group's own latest run.
 	if runID == "" {
-		if cached := ec.getEnvValue(ctx, envKeyEvalRunID); cached != "" {
-			runID = cached
-		}
+		runID = ec.getEnvValue(ctx, idKey("evalrun", evalID))
 	}
 	if runID != "" {
 		run, err := ec.evalClient.GetOpenAIEvalRun(ctx, evalID, runID)
-		if err != nil {
+		if err == nil {
+			return run, nil
+		}
+		// A remembered run that no longer resolves is not worth failing on:
+		// fall through to whatever the group has now.
+		if cmd.Flag("run-id") != nil && cmd.Flag("run-id").Changed {
 			return nil, fmt.Errorf("reading run %s: %w", runID, err)
 		}
-		return run, nil
 	}
 
 	list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 1)

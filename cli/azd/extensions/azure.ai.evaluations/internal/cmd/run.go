@@ -142,6 +142,10 @@ func buildRunCommand(use, short string) *cobra.Command {
 				return fmt.Errorf("starting the evaluation run: %w", err)
 			}
 
+			// Remembered per group as well as globally: a single shared key
+			// belongs to whichever group ran last, so another group asking for
+			// "the last run" would be handed one that is not its own.
+			_ = ec.setEnvValue(ctx, idKey("evalrun", evalID), run.ID)
 			if err := ec.setEnvValue(ctx, envKeyEvalRunID, run.ID); err != nil {
 				// Persisting the run id is a convenience for later commands.
 				// Reported on stdout because azd does not surface an

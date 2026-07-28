@@ -26,6 +26,7 @@ func newResultsCompareCommand() *cobra.Command {
 		treatments  []string
 		displayName string
 		endpointFlg string
+		groupName   string
 	)
 
 	cmd := &cobra.Command{
@@ -42,7 +43,7 @@ func newResultsCompareCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			evalID, err := resolveEvalID(cmd, ec, args)
+			evalID, err := resolveEvalID(cmd, ec, args, groupName)
 			if err != nil {
 				return err
 			}
@@ -89,6 +90,7 @@ func newResultsCompareCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&treatments, "treatment", nil,
 		"Run to measure, repeatable. Defaults to the most recent completed run.")
 	cmd.Flags().StringVar(&displayName, "name", "", "Name for this comparison.")
+	addEvalGroupFlag(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }

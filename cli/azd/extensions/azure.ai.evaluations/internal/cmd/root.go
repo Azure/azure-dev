@@ -28,6 +28,8 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(
 		newDatasetCommand(),
 		newRunCommand(),
+		newEvaluatorCommand(),
+		newResultsCommand(),
 	)
 
 	return rootCmd

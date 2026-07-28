@@ -148,7 +148,7 @@ func TestValidate_Rejects(t *testing.T) {
 		},
 		{
 			name:    "unsupported target type",
-			body:    "evalGroups:\n  - name: g\n    evaluators: [builtin.relevance]\n    target:\n      type: model\n",
+			body:    "evalGroups:\n  - name: g\n    evaluators: [builtin.relevance]\n    target:\n      type: prompt\n",
 			wantErr: "is not supported",
 		},
 		{

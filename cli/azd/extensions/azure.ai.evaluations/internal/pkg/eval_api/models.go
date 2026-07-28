@@ -376,12 +376,14 @@ type EvalRunMessageTemplate struct {
 	Type    string `json:"type"`
 }
 
-// EvalRunTarget describes the agent target for completions.
+// EvalRunTarget describes what the run invokes: an agent by name, or a model
+// deployment directly. Only the fields belonging to Type are sent.
 type EvalRunTarget struct {
 	Type             string   `json:"type"`
-	Name             string   `json:"name"`
-	Version          *string  `json:"version"`
-	ToolDescriptions []string `json:"tool_descriptions"`
+	Name             string   `json:"name,omitempty"`
+	Version          *string  `json:"version,omitempty"`
+	ToolDescriptions []string `json:"tool_descriptions,omitempty"`
+	Model            string   `json:"model,omitempty"`
 }
 
 // EvalRunDataContent holds the source reference within an EvalRunDataSource.
@@ -432,6 +434,32 @@ func NewTracesDataSource(agentName string, lookbackHours int, end time.Time, max
 		ds.EndTime = end.Unix()
 	}
 	return ds
+}
+
+// NewModelTargetDataSource sends the dataset's questions straight to a model
+// deployment, with no agent in front of it.
+//
+// The model answers as plain text, so a group evaluating one has to bind its
+// response to {{sample.output_text}} rather than the richer output an agent
+// produces.
+func NewModelTargetDataSource(model string) *EvalRunDataSource {
+	return &EvalRunDataSource{
+		Type: EvalRunDataSourceTypeAgentTarget,
+		InputMessages: &EvalRunInputMessages{
+			Type: "template",
+			Template: []EvalRunMessageTemplate{
+				{
+					Role:    "user",
+					Content: "{{item.query}}",
+					Type:    "message",
+				},
+			},
+		},
+		Target: &EvalRunTarget{
+			Type:  "azure_ai_model",
+			Model: model,
+		},
+	}
 }
 
 // NewResponsesDataSource evaluates responses the project already stored.

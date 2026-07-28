@@ -58,6 +58,11 @@ type Target struct {
 
 const TargetTypeAgent = "agent"
 
+// TargetTypeModel evaluates a model deployment directly, with no agent in
+// front of it. A model answers as plain text, so a group targeting one binds
+// its response differently from a group targeting an agent.
+const TargetTypeModel = "model"
+
 // Options are run settings carried on the group.
 type Options struct {
 	EvalModel       string `yaml:"eval_model,omitempty"       json:"eval_model,omitempty"`
@@ -145,10 +150,11 @@ func (c *EvalConfig) Validate() error {
 					i, g.Name, ref.Name, evalcore.BuiltinPrefix)
 			}
 		}
-		if g.Target != nil && g.Target.Type != "" && g.Target.Type != TargetTypeAgent {
+		if g.Target != nil && g.Target.Type != "" &&
+			g.Target.Type != TargetTypeAgent && g.Target.Type != TargetTypeModel {
 			return fmt.Errorf(
-				"evalGroups[%d] (%s): target.type %q is not supported; only %q is available today",
-				i, g.Name, g.Target.Type, TargetTypeAgent)
+				"evalGroups[%d] (%s): target.type %q is not supported; use %q or %q",
+				i, g.Name, g.Target.Type, TargetTypeAgent, TargetTypeModel)
 		}
 		if g.Options != nil {
 			switch g.Options.EvaluationLevel {

@@ -35,6 +35,25 @@ var sampleBindings = map[string]string{
 	"tool_definitions": "{{sample.tool_definitions}}",
 }
 
+// modelSampleBindings are what a model target produces. A model answers as
+// plain text and calls no tools, so binding an agent's richer output would
+// leave the evaluator waiting on fields the run never produces.
+var modelSampleBindings = map[string]string{
+	"response": "{{sample.output_text}}",
+}
+
+// sampleBindingsFor returns the run-time bindings a target of this kind can
+// satisfy. An empty target kind means nothing is invoked, so nothing is bound.
+func sampleBindingsFor(targetType string) map[string]string {
+	switch targetType {
+	case project.TargetTypeAgent:
+		return sampleBindings
+	case project.TargetTypeModel:
+		return modelSampleBindings
+	}
+	return nil
+}
+
 // legacyInputs is the mapping used when the service publishes no schema for an
 // evaluator, which is the case for freshly uploaded custom evaluators. It
 // matches the agent-target shape.
@@ -116,7 +135,7 @@ func selectLevelFields(accepted, required []string, level string) []string {
 func planCriterion(
 	ref evalcore.EvaluatorRef,
 	schema *eval_api.EvaluatorSummary,
-	hasTarget bool,
+	targetBindings map[string]string,
 	datasetColumns map[string]bool,
 	evalModel string,
 	level string,
@@ -138,7 +157,7 @@ func planCriterion(
 	}
 
 	for _, field := range accepted {
-		if binding, ok := sampleBindings[field]; ok && hasTarget {
+		if binding, ok := targetBindings[field]; ok {
 			plan.dataMapping[field] = binding
 			continue
 		}
@@ -233,9 +252,15 @@ func buildEvalGroupRequest(
 ) (*eval_api.CreateOpenAIEvalRequest, error) {
 	metadata := map[string]string{}
 	hasTarget := group.Target != nil && group.Target.Name != ""
+	targetType := ""
 	if hasTarget {
 		metadata["azd_agent"] = group.Target.Name
+		targetType = group.Target.Type
+		if targetType == "" {
+			targetType = project.TargetTypeAgent
+		}
 	}
+	targetBindings := sampleBindingsFor(targetType)
 	metadata["azd_eval_group"] = group.Name
 	// The create request has no description field, so the group's own
 	// description rides in metadata rather than being dropped.
@@ -263,7 +288,7 @@ func buildEvalGroupRequest(
 			schema = &eval_api.EvaluatorSummary{Name: ref.Name}
 		}
 
-		plan, err := planCriterion(ref, schema, hasTarget, datasetColumns, evalModel, level)
+		plan, err := planCriterion(ref, schema, targetBindings, datasetColumns, evalModel, level)
 		if err != nil {
 			return nil, err
 		}

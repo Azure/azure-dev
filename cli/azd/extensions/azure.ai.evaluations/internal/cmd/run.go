@@ -386,10 +386,15 @@ func buildRunDataSource(
 ) (*eval_api.EvalRunDataSource, error) {
 	if group == nil || group.Target == nil {
 		return nil, fmt.Errorf(
-			"the eval group must declare target.type: agent so the run knows what to invoke")
+			"the eval group must declare a target so the run knows what to invoke")
 	}
 
-	ds := eval_api.NewAgentTargetDataSource(group.Target.Name, nil)
+	var ds *eval_api.EvalRunDataSource
+	if group.Target.Type == project.TargetTypeModel {
+		ds = eval_api.NewModelTargetDataSource(group.Target.Name)
+	} else {
+		ds = eval_api.NewAgentTargetDataSource(group.Target.Name, nil)
+	}
 
 	if group.Dataset == "" {
 		return nil, fmt.Errorf("eval group %q does not reference a dataset", group.Name)

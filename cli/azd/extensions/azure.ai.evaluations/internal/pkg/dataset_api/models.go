@@ -21,28 +21,46 @@ type CreateDatasetRequest struct {
 }
 
 // Dataset is the response for dataset operations.
-// Note: The GET /datasets API returns snake_case field names (data_uri, blob_uri,
-// content_uri), while the POST /finalize API accepts camelCase (dataUri).
-// Both conventions are correct for their respective endpoints.
+//
+// The field spelling is not consistent across the surface: the live
+// project-endpoint GET returns camelCase (dataUri, isSingleFile), while other
+// paths have used snake_case (data_uri, blob_uri, content_uri). Both spellings
+// are accepted here because binding only one silently yields an empty URI,
+// which then fails much later at download time.
 type Dataset struct {
-	Name       string `json:"name"`
-	Version    string `json:"version"`
+	ID      string `json:"id,omitempty"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Type    string `json:"type,omitempty"`
+	Format  string `json:"format,omitempty"`
+
+	// camelCase spellings (project endpoint).
+	DataURICamel     string `json:"dataUri,omitempty"`
+	BlobURICamel     string `json:"blobUri,omitempty"`
+	ContentURICamel  string `json:"contentUri,omitempty"`
+	IsSingleFile     bool   `json:"isSingleFile,omitempty"`
+	ConnectionName   string `json:"connectionName,omitempty"`
+
+	// snake_case spellings.
 	BlobURI    string `json:"blob_uri,omitempty"`
-	Format     string `json:"format,omitempty"`
 	DataURI    string `json:"data_uri,omitempty"`
 	ContentURI string `json:"content_uri,omitempty"`
 }
 
-// ResolvedBlobURI returns the best available blob URI. Prefers blob_uri,
-// falls back to data_uri, then content_uri.
+// ResolvedBlobURI returns the first URI the service supplied, across both
+// spellings. An empty result means the dataset carries no downloadable URI and
+// the caller must fetch a credential instead.
 func (d *Dataset) ResolvedBlobURI() string {
-	if d.BlobURI != "" {
-		return d.BlobURI
+	for _, candidate := range []string{
+		d.BlobURI, d.BlobURICamel,
+		d.DataURI, d.DataURICamel,
+		d.ContentURI, d.ContentURICamel,
+	} {
+		if candidate != "" {
+			return candidate
+		}
 	}
-	if d.DataURI != "" {
-		return d.DataURI
-	}
-	return d.ContentURI
+	return ""
 }
 
 // DatasetCredential is the response for dataset credential (SAS token) requests.

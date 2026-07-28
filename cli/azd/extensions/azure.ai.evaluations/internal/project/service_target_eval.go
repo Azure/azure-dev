@@ -23,7 +23,7 @@ const EvalHost = "azure.ai.eval"
 
 // azd environment keys owned by this extension.
 const (
-	EnvKeyEvalGroupID       = "EVAL_GROUP_ID"
+	EnvKeyEvalID            = "EVAL_ID"
 	EnvKeyDatasetVersion    = "EVAL_DATASET_VERSION"
 	EnvKeyFingerprintPrefix = "EVAL_FINGERPRINT_"
 )
@@ -37,11 +37,11 @@ type Reconciler interface {
 	// EnsureEvaluator registers a new evaluator version when the definition
 	// differs from what the service already holds.
 	EnsureEvaluator(ctx context.Context, decl EvaluatorDecl, localPath string) (version string, changed bool, err error)
-	// EnsureEvalGroup creates the group when it is absent or its resolved
+	// EnsureEval creates the group when it is absent or its resolved
 	// evaluators or options changed, returning its id. datasetPath is the local
 	// dataset backing the group, or empty when it is already registered; it lets
 	// the reconciler bind criteria to the columns that actually exist.
-	EnsureEvalGroup(ctx context.Context, group EvalGroup, datasetPath string, recreate bool) (id string, err error)
+	EnsureEval(ctx context.Context, group Eval, datasetPath string, recreate bool) (id string, err error)
 }
 
 // EvalServiceTargetProvider deploys eval resources during `azd up`. azd owns
@@ -120,7 +120,7 @@ func (p *EvalServiceTargetProvider) Publish(
 }
 
 // Deploy reconciles the eval configuration in a fixed order — datasets, then
-// evaluators, then eval groups — because a group references the versions the
+// evaluators, then evals — because a group references the versions the
 // first two resolve to. It fails fast; the next `azd up` resumes from wherever
 // it stopped.
 func (p *EvalServiceTargetProvider) Deploy(
@@ -170,19 +170,19 @@ func (p *EvalServiceTargetProvider) Deploy(
 		report(progress, describeResult("evaluator", decl.Name, version, changed))
 	}
 
-	// 3. Eval groups. Groups are immutable, so a change upstream means a new
+	// 3. Evals. Groups are immutable, so a change upstream means a new
 	// group must be created and the stored id replaced.
-	for _, group := range cfg.EvalGroups {
-		report(progress, fmt.Sprintf("Reconciling eval group %s", group.Name))
+	for _, group := range cfg.Evals {
+		report(progress, fmt.Sprintf("Reconciling eval %s", group.Name))
 		datasetPath := ""
 		if decl, ok := cfg.Dataset(group.Dataset); ok {
 			datasetPath = resolveSource(baseDir, decl.Source)
 		}
-		id, err := reconciler.EnsureEvalGroup(ctx, group, datasetPath, anyChanged)
+		id, err := reconciler.EnsureEval(ctx, group, datasetPath, anyChanged)
 		if err != nil {
-			return nil, fmt.Errorf("eval group %q: %w", group.Name, err)
+			return nil, fmt.Errorf("eval %q: %w", group.Name, err)
 		}
-		report(progress, fmt.Sprintf("Eval group %s is %s", group.Name, id))
+		report(progress, fmt.Sprintf("Eval %s is %s", group.Name, id))
 	}
 
 	return &azdext.ServiceDeployResult{}, nil
@@ -229,7 +229,7 @@ func EvalConfigFromService(svc *azdext.ServiceConfig, projectRoot string) (*Eval
 	props := serviceProps(svc)
 	if props == nil || len(props.GetFields()) == 0 {
 		return nil, fmt.Errorf(
-			"service %q carries no eval configuration; expected evaluators, datasets, or evalGroups",
+			"service %q carries no eval configuration; expected evaluators, datasets, or evals",
 			svc.GetName())
 	}
 
@@ -313,14 +313,14 @@ func Fingerprint(path string) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// FingerprintGroup hashes an eval group's own declaration.
+// FingerprintGroup hashes an eval's own declaration.
 //
 // Change detection on upstream artifacts is not sufficient: editing a group's
 // evaluators, target, or options changes what the group means, and groups are
 // immutable, so the group has to be recreated even when the dataset and
 // evaluators are untouched. Without this a retargeted group keeps running
 // against the old definition.
-func FingerprintGroup(group EvalGroup) (string, error) {
+func FingerprintGroup(group Eval) (string, error) {
 	// The id is server-assigned. The description is carried in the group's
 	// metadata, so editing it does change the request, but recreating an
 	// immutable group over a reworded description would cost the group id and
@@ -332,7 +332,7 @@ func FingerprintGroup(group EvalGroup) (string, error) {
 
 	data, err := json.Marshal(group)
 	if err != nil {
-		return "", fmt.Errorf("hashing eval group %q: %w", group.Name, err)
+		return "", fmt.Errorf("hashing eval %q: %w", group.Name, err)
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil

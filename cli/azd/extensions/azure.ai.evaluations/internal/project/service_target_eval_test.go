@@ -73,7 +73,7 @@ func TestEvalConfigFromServiceReadsInlineConfig(t *testing.T) {
 			"datasets": []any{
 				map[string]any{"name": "golden", "source": "./datasets/golden.jsonl"},
 			},
-			"evalGroups": []any{
+			"evals": []any{
 				map[string]any{
 					"name":       "quality",
 					"dataset":    "golden",
@@ -88,9 +88,9 @@ func TestEvalConfigFromServiceReadsInlineConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, cfg.Datasets, 1)
 	require.Equal(t, "golden", cfg.Datasets[0].Name)
-	require.Len(t, cfg.EvalGroups, 1)
-	require.Len(t, cfg.EvalGroups[0].Evaluators, 1)
-	require.Equal(t, "builtin.task_adherence", cfg.EvalGroups[0].Evaluators[0].Name)
+	require.Len(t, cfg.Evals, 1)
+	require.Len(t, cfg.Evals[0].Evaluators, 1)
+	require.Equal(t, "builtin.task_adherence", cfg.Evals[0].Evaluators[0].Name)
 }
 
 func TestEvalConfigFromServiceRejectsEmptyService(t *testing.T) {
@@ -103,7 +103,7 @@ func TestEvalConfigFromServiceRejectsEmptyService(t *testing.T) {
 // detectable. Upstream artifact fingerprints do not cover it: retargeting a
 // group at a different agent leaves the dataset and evaluators untouched.
 func TestFingerprintGroupTracksMeaningfulChanges(t *testing.T) {
-	base := EvalGroup{
+	base := Eval{
 		Name:       "quality",
 		Dataset:    "golden",
 		Evaluators: evalcore.EvaluatorList{{Name: "builtin.task_adherence"}},
@@ -118,13 +118,13 @@ func TestFingerprintGroupTracksMeaningfulChanges(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, original, same, "an unchanged group must keep its fingerprint")
 
-	cases := map[string]func(g *EvalGroup){
-		"target": func(g *EvalGroup) { g.Target = &Target{Type: "agent", Name: "agent-b"} },
-		"evaluators": func(g *EvalGroup) {
+	cases := map[string]func(g *Eval){
+		"target": func(g *Eval) { g.Target = &Target{Type: "agent", Name: "agent-b"} },
+		"evaluators": func(g *Eval) {
 			g.Evaluators = append(g.Evaluators, evalcore.EvaluatorRef{Name: "builtin.similarity"})
 		},
-		"options": func(g *EvalGroup) { g.Options = &Options{EvalModel: "gpt-4o-mini"} },
-		"dataset": func(g *EvalGroup) { g.Dataset = "other" },
+		"options": func(g *Eval) { g.Options = &Options{EvalModel: "gpt-4o-mini"} },
+		"dataset": func(g *Eval) { g.Dataset = "other" },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -141,7 +141,7 @@ func TestFingerprintGroupTracksMeaningfulChanges(t *testing.T) {
 
 // Server-assigned and cosmetic fields must not force a recreate.
 func TestFingerprintGroupIgnoresIdAndDescription(t *testing.T) {
-	base := EvalGroup{
+	base := Eval{
 		Name:       "quality",
 		Dataset:    "golden",
 		Evaluators: evalcore.EvaluatorList{{Name: "builtin.task_adherence"}},

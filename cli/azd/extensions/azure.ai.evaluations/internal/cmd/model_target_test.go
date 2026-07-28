@@ -33,7 +33,7 @@ func TestSampleBindingsFor(t *testing.T) {
 }
 
 // The criteria a group sends depend on what it targets.
-func TestBuildEvalGroupRequest_BindsByTargetKind(t *testing.T) {
+func TestBuildEvalRequest_BindsByTargetKind(t *testing.T) {
 	schemas := map[string]*eval_api.EvaluatorSummary{
 		"builtin.coherence": {
 			Name: "builtin.coherence",
@@ -57,12 +57,12 @@ func TestBuildEvalGroupRequest_BindsByTargetKind(t *testing.T) {
 		{project.TargetTypeModel, "{{sample.output_text}}"},
 	} {
 		t.Run(tc.targetType, func(t *testing.T) {
-			group := &project.EvalGroup{
+			group := &project.Eval{
 				Name:       "quality",
 				Evaluators: []evalcore.EvaluatorRef{{Name: "builtin.coherence"}},
 				Target:     &project.Target{Type: tc.targetType, Name: "thing"},
 			}
-			req, err := buildEvalGroupRequest(group, schemas, map[string]bool{"query": true})
+			req, err := buildEvalRequest(group, schemas, map[string]bool{"query": true})
 			require.NoError(t, err)
 			require.Len(t, req.TestingCriteria, 1)
 			assert.Equal(t, tc.want, req.TestingCriteria[0].DataMapping["response"])

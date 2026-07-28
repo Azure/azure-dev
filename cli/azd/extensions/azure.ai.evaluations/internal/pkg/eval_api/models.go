@@ -5,6 +5,8 @@ package eval_api
 
 import (
 	"encoding/json"
+	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -565,4 +567,68 @@ type EvalRunCriteriaResult struct {
 // OpenAIEvalRunList is the response for listing OpenAI eval runs.
 type OpenAIEvalRunList struct {
 	Data []OpenAIEvalRun `json:"data"`
+}
+
+// OutputItemList is a page of a run's per-sample results.
+type OutputItemList struct {
+	Data []OutputItem `json:"data"`
+}
+
+// OutputItem is one evaluated row: the dataset item, and every evaluator's
+// verdict on it.
+type OutputItem struct {
+	ID             string         `json:"id"`
+	RunID          string         `json:"run_id"`
+	Status         string         `json:"status"`
+	DataSourceItem map[string]any `json:"datasource_item,omitempty"`
+	Results        []OutputResult `json:"results,omitempty"`
+}
+
+// OutputResult is one evaluator's verdict on one row.
+type OutputResult struct {
+	Name   string       `json:"name"`
+	Metric string       `json:"metric,omitempty"`
+	Score  LenientFloat `json:"score"`
+	Label  string       `json:"label,omitempty"`
+	Passed bool         `json:"passed"`
+	// Reason is the judge's explanation, which is the part a failing row is
+	// actually looked at for.
+	Reason string `json:"reason,omitempty"`
+}
+
+// Failed reports whether any evaluator failed this row.
+func (o OutputItem) Failed() bool {
+	for _, r := range o.Results {
+		if !r.Passed {
+			return true
+		}
+	}
+	return false
+}
+
+// Input renders the row's own columns for display, leaving out the
+// service-injected `sample.*` bindings and the plumbing ids, which are not what
+// the dataset author wrote.
+func (o OutputItem) Input() string {
+	if len(o.DataSourceItem) == 0 {
+		return ""
+	}
+	skip := map[string]bool{
+		"response_id": true, "agent_id": true, "agent_name": true,
+		"agent_version": true, "conversation_id": true,
+		"previous_response_id": true, "trace_id": true, "span_id": true,
+	}
+	keys := make([]string, 0, len(o.DataSourceItem))
+	for k := range o.DataSourceItem {
+		if skip[k] || strings.HasPrefix(k, "sample.") {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%v", k, o.DataSourceItem[k]))
+	}
+	return strings.Join(parts, "  ")
 }

@@ -16,7 +16,7 @@ import (
 // stripped before the name is sent as testing_criteria[].evaluator_name.
 const BuiltinPrefix = "builtin."
 
-// EvaluatorRef references an evaluator from an eval group. It accepts either a
+// EvaluatorRef references an evaluator from an eval. It accepts either a
 // bare string or a mapping carrying a pass threshold:
 //
 //	evaluators:

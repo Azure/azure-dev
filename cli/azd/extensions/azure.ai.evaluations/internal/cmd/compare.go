@@ -31,7 +31,7 @@ func newResultsCompareCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "compare [eval-id]",
-		Short: "Compare runs of an eval group against a baseline.",
+		Short: "Compare runs of an eval against a baseline.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -90,7 +90,7 @@ func newResultsCompareCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&treatments, "treatment", nil,
 		"Run to measure, repeatable. Defaults to the most recent completed run.")
 	cmd.Flags().StringVar(&displayName, "name", "", "Name for this comparison.")
-	addEvalGroupFlags(cmd, &groupName)
+	addEvalFlags(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -110,12 +110,12 @@ func (ec *evalContext) resolveComparisonRuns(
 
 	list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 0)
 	if err != nil {
-		return "", nil, fmt.Errorf("listing runs of eval group %s: %w", evalID, err)
+		return "", nil, fmt.Errorf("listing runs of eval %s: %w", evalID, err)
 	}
 
 	completed := make([]string, 0, 2)
 	if list == nil {
-		return "", nil, fmt.Errorf("eval group %s has no runs", evalID)
+		return "", nil, fmt.Errorf("eval %s has no runs", evalID)
 	}
 	for _, run := range list.Data {
 		if run.Status == "completed" {
@@ -126,14 +126,14 @@ func (ec *evalContext) resolveComparisonRuns(
 	if len(treatments) == 0 {
 		if len(completed) == 0 {
 			return "", nil, fmt.Errorf(
-				"eval group %s has no completed runs to compare", evalID)
+				"eval %s has no completed runs to compare", evalID)
 		}
 		treatments = []string{completed[0]}
 	}
 	if baseline == "" {
 		if len(completed) < 2 {
 			return "", nil, fmt.Errorf(
-				"eval group %s has only one completed run, so there is nothing to compare it "+
+				"eval %s has only one completed run, so there is nothing to compare it "+
 					"against; run it again, or name a baseline with --baseline",
 				evalID)
 		}

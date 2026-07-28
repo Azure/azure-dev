@@ -25,7 +25,7 @@ func TestBuildCarriesGroupDescriptionInMetadata(t *testing.T) {
 		&project.Options{EvalModel: "m"})
 	group.Description = "Quality gate for the support agent"
 
-	req, err := buildEvalGroupRequest(group, schemas, map[string]bool{"query": true})
+	req, err := buildEvalRequest(group, schemas, map[string]bool{"query": true})
 	require.NoError(t, err)
 	require.Equal(t, "Quality gate for the support agent", req.Metadata["azd_description"])
 }
@@ -40,7 +40,7 @@ func TestBuildOmitsEmptyDescription(t *testing.T) {
 	group := groupWith([]evalcore.EvaluatorRef{{Name: "builtin.similarity"}},
 		&project.Options{EvalModel: "m"})
 
-	req, err := buildEvalGroupRequest(group, schemas, map[string]bool{"query": true})
+	req, err := buildEvalRequest(group, schemas, map[string]bool{"query": true})
 	require.NoError(t, err)
 	require.NotContains(t, req.Metadata, "azd_description")
 }

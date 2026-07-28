@@ -56,25 +56,45 @@ func newResultsShowCommand() *cobra.Command {
 				return err
 			}
 
+			// The run carries totals and a per-criterion breakdown. The output
+			// items are the rows themselves, which is what "which one failed,
+			// and why" needs. A run that never produced any still renders its
+			// totals rather than failing.
+			items, err := ec.evalClient.ListOutputItems(ctx, evalID, run.ID, 0)
+			if err != nil {
+				return fmt.Errorf("reading the results of run %s: %w", run.ID, err)
+			}
+			rows := items.Data
+			if failedOnly {
+				kept := make([]eval_api.OutputItem, 0, len(rows))
+				for _, it := range rows {
+					if it.Failed() {
+						kept = append(kept, it)
+					}
+				}
+				rows = kept
+			}
+
+			payload := map[string]any{"run": run, "output_items": rows}
 			if outFile != "" {
 				f, err := os.Create(outFile)
 				if err != nil {
 					return fmt.Errorf("creating %q: %w", outFile, err)
 				}
 				defer f.Close()
-				return emitJSON(f, run)
+				return emitJSON(f, payload)
 			}
 			if isJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), run)
+				return emitJSON(cmd.OutOrStdout(), payload)
 			}
-			return renderResults(cmd.OutOrStdout(), run, failedOnly)
+			return renderResults(cmd.OutOrStdout(), run, rows, failedOnly)
 		},
 	}
 
 	cmd.Flags().StringVar(&runID, "run-id", "", "Run to show. Defaults to the most recent run.")
-	cmd.Flags().BoolVar(&failedOnly, "failed-only", false, "Show only criteria with failures.")
+	cmd.Flags().BoolVar(&failedOnly, "failed-only", false, "Show only the rows that failed.")
 	cmd.Flags().StringVarP(&outFile, "out-file", "O", "", "Write JSON results to this path.")
-	addEvalGroupFlags(cmd, &groupName)
+	addEvalFlags(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -135,16 +155,16 @@ func newResultsExportCommand() *cobra.Command {
 	cmd.Flags().StringVar(&runID, "run-id", "", "Run to export. Defaults to the most recent run.")
 	cmd.Flags().StringVar(&format, "format", "json", "Output format: json or csv.")
 	cmd.Flags().StringVarP(&outFile, "out-file", "O", "", "Write to this path instead of stdout.")
-	addEvalGroupFlags(cmd, &groupName)
+	addEvalFlags(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
 
-// resolveEvalID takes the eval group id from the argument, from a group named
-// with --eval-group, or from the id cached in the azd environment.
+// resolveEvalID takes the eval id from the argument, from a group named
+// with --eval, or from the id cached in the azd environment.
 //
 // The cached id is the last group deployed, which is unambiguous only while a
-// config declares one. --eval-group is how the others are reached without
+// config declares one. --eval is how the others are reached without
 // having to know their service ids.
 func resolveEvalID(
 	cmd *cobra.Command,
@@ -161,38 +181,38 @@ func resolveEvalID(
 	}
 
 	if groupName != "" {
-		if id := ec.getEnvValue(cmd.Context(), idKey("evalgroup", groupName)); id != "" {
+		if id := ec.getEnvValue(cmd.Context(), idKey("eval", groupName)); id != "" {
 			return id, nil
 		}
 		return "", fmt.Errorf(
-			"eval group %q has no id recorded in this environment; deploy it first, "+
+			"eval %q has no id recorded in this environment; deploy it first, "+
 				"or pass its id directly", groupName)
 	}
 
-	if cached := ec.getEnvValue(cmd.Context(), envKeyEvalGroupID); cached != "" {
+	if cached := ec.getEnvValue(cmd.Context(), envKeyEvalID); cached != "" {
 		return cached, nil
 	}
 	return "", fmt.Errorf(
-		"no eval group id given; pass it as an argument, name one with --eval-group, "+
+		"no eval id given; pass it as an argument, name one with --eval, "+
 			"or set %s in the azd environment",
-		envKeyEvalGroupID)
+		envKeyEvalID)
 }
 
-// addEvalGroupFlag registers the flag that names a group from the config, so
+// addEvalFlag registers the flag that names a group from the config, so
 // every command taking an eval-id can reach a group by the name its author
 // used.
-// addEvalGroupFlags registers the two ways to say which group a command acts
-// on: --eval-group names one from the config, --eval-id gives its service id.
+// addEvalFlags registers the two ways to say which group a command acts
+// on: --eval names one from the config, --eval-id gives its service id.
 //
 // The id is also accepted as a positional argument. The flag exists because
 // `run start --eval-id` already spells it that way, and a script that learned
 // it there should not have to find out that the sibling commands take only a
 // positional.
-func addEvalGroupFlags(cmd *cobra.Command, target *string) {
-	cmd.Flags().StringVar(target, "eval-group", "",
+func addEvalFlags(cmd *cobra.Command, target *string) {
+	cmd.Flags().StringVar(target, "eval", "",
 		"Name a group from the config instead of passing its id.")
 	cmd.Flags().String("eval-id", "",
-		"Id of the eval group. Same as passing the id as an argument.")
+		"Id of the eval. Same as passing the id as an argument.")
 }
 
 // latestOrNamedRun returns the named run, or the most recent one for the group.
@@ -224,18 +244,23 @@ func (ec *evalContext) latestOrNamedRun(
 	if err != nil {
 		if eval_api.IsNotFound(err) {
 			return nil, fmt.Errorf(
-				"no eval group %q in this project; "+
+				"no eval %q in this project; "+
 					"`azd up` creates the ones your config declares", evalID)
 		}
-		return nil, fmt.Errorf("listing runs for eval group %s: %w", evalID, err)
+		return nil, fmt.Errorf("listing runs for eval %s: %w", evalID, err)
 	}
 	if len(list.Data) == 0 {
-		return nil, fmt.Errorf("eval group %s has no runs yet", evalID)
+		return nil, fmt.Errorf("eval %s has no runs yet", evalID)
 	}
 	return &list.Data[0], nil
 }
 
-func renderResults(w io.Writer, run *eval_api.OpenAIEvalRun, failedOnly bool) error {
+func renderResults(
+	w io.Writer,
+	run *eval_api.OpenAIEvalRun,
+	items []eval_api.OutputItem,
+	failedOnly bool,
+) error {
 	fmt.Fprintf(w, "Run %s  status: %s\n", run.ID, run.Status)
 
 	if c := run.ResultCounts; c != nil {
@@ -243,33 +268,78 @@ func renderResults(w io.Writer, run *eval_api.OpenAIEvalRun, failedOnly bool) er
 			c.Passed, c.Failed, c.Errored)
 	}
 
-	if len(run.PerTestingCriteria) == 0 {
-		fmt.Fprintln(w, "No per-criteria results are available yet.")
-		return nil
+	if len(run.PerTestingCriteria) > 0 {
+		rows := make([][]string, 0, len(run.PerTestingCriteria))
+		for _, cr := range run.PerTestingCriteria {
+			if failedOnly && cr.Failed == 0 {
+				continue
+			}
+			rows = append(rows, []string{
+				cr.TestingCriteria,
+				strconv.Itoa(cr.Passed),
+				strconv.Itoa(cr.Failed),
+			})
+		}
+		if len(rows) > 0 {
+			if err := emitTable(w, []string{"CRITERION", "PASSED", "FAILED"}, rows); err != nil {
+				return err
+			}
+		}
 	}
 
-	rows := make([][]string, 0, len(run.PerTestingCriteria))
-	for _, cr := range run.PerTestingCriteria {
-		if failedOnly && cr.Failed == 0 {
-			continue
+	// The rows are the point of `results show`: totals say how many failed,
+	// these say which and why.
+	if len(items) == 0 {
+		if failedOnly {
+			fmt.Fprintln(w, "\nNo failing rows.")
+		} else {
+			fmt.Fprintln(w, "\nNo rows have been scored yet.")
 		}
-		rows = append(rows, []string{
-			cr.TestingCriteria,
-			strconv.Itoa(cr.Passed),
-			strconv.Itoa(cr.Failed),
-		})
+	} else {
+		fmt.Fprintln(w)
+		rows := make([][]string, 0, len(items))
+		for _, it := range items {
+			for _, r := range it.Results {
+				if failedOnly && r.Passed {
+					continue
+				}
+				verdict := "pass"
+				if !r.Passed {
+					verdict = "FAIL"
+				}
+				rows = append(rows, []string{
+					it.ID,
+					r.Name,
+					verdict,
+					formatStat("%.3f", r.Score),
+					truncate(it.Input(), 48),
+					truncate(r.Reason, 60),
+				})
+			}
+		}
+		if err := emitTable(w,
+			[]string{"ITEM", "EVALUATOR", "RESULT", "SCORE", "INPUT", "REASON"}, rows); err != nil {
+			return err
+		}
 	}
-	if len(rows) == 0 {
-		fmt.Fprintln(w, "No failing criteria.")
-		return nil
-	}
-	if err := emitTable(w, []string{"CRITERION", "PASSED", "FAILED"}, rows); err != nil {
-		return err
-	}
+
 	if run.ReportURL != "" {
 		fmt.Fprintf(w, "\nReport: %s\n", run.ReportURL)
 	}
 	return nil
+}
+
+// truncate keeps a table readable when a reason runs to a paragraph. The full
+// text is always in `-o json`.
+func truncate(s string, n int) string {
+	s = strings.ReplaceAll(strings.ReplaceAll(s, "\n", " "), "\r", "")
+	if len(s) <= n {
+		return s
+	}
+	if n <= 1 {
+		return s[:n]
+	}
+	return s[:n-1] + "…"
 }
 
 func writeResultsCSV(w io.Writer, run *eval_api.OpenAIEvalRun) error {

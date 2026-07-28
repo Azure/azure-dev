@@ -57,16 +57,16 @@ func TestRunStartMirrorsCompositeFlags(t *testing.T) {
 	}
 	require.NotNil(t, start)
 
-	for _, flag := range []string{"eval-id", "eval-group", "name", "level", "max-samples", "wait", "no-wait"} {
+	for _, flag := range []string{"eval-id", "eval", "name", "level", "max-samples", "wait", "no-wait"} {
 		require.NotNil(t, start.Flags().Lookup(flag), "run start should accept --%s", flag)
 	}
 }
 
-// Every command that acts on an eval group takes the id the same two ways.
+// Every command that acts on an eval takes the id the same two ways.
 // `run start --eval-id` is the form the CI example uses, and `run list` used to
 // reject that flag and accept only a positional, so a script that worked for
 // one sibling failed on the next.
-func TestEvalGroupCommandsAcceptIDAsAFlag(t *testing.T) {
+func TestEvalCommandsAcceptIDAsAFlag(t *testing.T) {
 	subs := map[string]*cobra.Command{}
 	for _, sub := range newRunCommand().Commands() {
 		subs["run "+sub.Name()] = sub
@@ -82,7 +82,7 @@ func TestEvalGroupCommandsAcceptIDAsAFlag(t *testing.T) {
 		cmd := subs[name]
 		require.NotNil(t, cmd, "%s should exist", name)
 		require.NotNil(t, cmd.Flags().Lookup("eval-id"), "%s should accept --eval-id", name)
-		require.NotNil(t, cmd.Flags().Lookup("eval-group"), "%s should accept --eval-group", name)
+		require.NotNil(t, cmd.Flags().Lookup("eval"), "%s should accept --eval", name)
 	}
 }
 

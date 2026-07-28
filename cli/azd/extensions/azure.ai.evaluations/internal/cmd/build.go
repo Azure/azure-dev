@@ -246,7 +246,7 @@ func planCriterion(
 		}
 		if len(missingInit) > 0 {
 			return nil, fmt.Errorf(
-				"evaluator %q requires %s; set the judge model on the eval group",
+				"evaluator %q requires %s; set the judge model on the eval",
 				ref.Name, quoteList(missingInit),
 			)
 		}
@@ -255,7 +255,7 @@ func planCriterion(
 	return plan, nil
 }
 
-// buildEvalGroupRequest converts an eval group declaration into the create
+// buildEvalRequest converts an eval declaration into the create
 // request. Each evaluator becomes a testing criterion bound to its own
 // contract, and the item schema declares every dataset column those bindings
 // reference.
@@ -263,8 +263,8 @@ func planCriterion(
 // schemas may be nil or partial; an evaluator with no published contract falls
 // back to the agent-target shape. datasetColumns may be nil, meaning the
 // columns are unknown and every accepted field is assumed present.
-func buildEvalGroupRequest(
-	group *project.EvalGroup,
+func buildEvalRequest(
+	group *project.Eval,
 	schemas map[string]*eval_api.EvaluatorSummary,
 	datasetColumns map[string]bool,
 ) (*eval_api.CreateOpenAIEvalRequest, error) {

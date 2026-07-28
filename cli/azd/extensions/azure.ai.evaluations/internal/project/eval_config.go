@@ -20,7 +20,7 @@ import (
 type EvalConfig struct {
 	Evaluators []EvaluatorDecl `yaml:"evaluators,omitempty" json:"evaluators,omitempty"`
 	Datasets   []DatasetDecl   `yaml:"datasets,omitempty"   json:"datasets,omitempty"`
-	EvalGroups []EvalGroup     `yaml:"evalGroups,omitempty" json:"evalGroups,omitempty"`
+	Evals      []Eval          `yaml:"evals,omitempty" json:"evals,omitempty"`
 }
 
 // DatasetDecl declares a dataset. A local Source is uploaded on deploy; without
@@ -32,15 +32,15 @@ type DatasetDecl struct {
 }
 
 // EvaluatorDecl declares a custom evaluator. Built-ins are referenced directly
-// from an eval group and never declared here.
+// from an eval and never declared here.
 type EvaluatorDecl struct {
 	Name    string `yaml:"name"              json:"name"`
 	Source  string `yaml:"source,omitempty"  json:"source,omitempty"`
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`
 }
 
-// EvalGroup is a run definition: evaluators plus options, bound to a dataset.
-type EvalGroup struct {
+// Eval is a run definition: evaluators plus options, bound to a dataset.
+type Eval struct {
 	Name        string                 `yaml:"name"                  json:"name"`
 	ID          string                 `yaml:"id,omitempty"          json:"id,omitempty"`
 	Description string                 `yaml:"description,omitempty" json:"description,omitempty"`
@@ -113,7 +113,7 @@ func (c *EvalConfig) Validate() error {
 		if strings.HasPrefix(e.Name, evalcore.BuiltinPrefix) {
 			return fmt.Errorf(
 				"evaluators[%d]: built-in evaluator %q must not be declared; "+
-					"reference it directly from an eval group", i, e.Name)
+					"reference it directly from an eval", i, e.Name)
 		}
 		if evaluators[e.Name] {
 			return fmt.Errorf("evaluators[%d]: duplicate evaluator name %q", i, e.Name)
@@ -133,22 +133,22 @@ func (c *EvalConfig) Validate() error {
 	}
 
 	groups := map[string]bool{}
-	for i, g := range c.EvalGroups {
+	for i, g := range c.Evals {
 		if g.Name == "" {
-			return fmt.Errorf("evalGroups[%d]: 'name' is required", i)
+			return fmt.Errorf("evals[%d]: 'name' is required", i)
 		}
 		if groups[g.Name] {
-			return fmt.Errorf("evalGroups[%d]: duplicate eval group name %q", i, g.Name)
+			return fmt.Errorf("evals[%d]: duplicate eval name %q", i, g.Name)
 		}
 		groups[g.Name] = true
 
 		if g.Dataset != "" && !datasets[g.Dataset] {
 			return fmt.Errorf(
-				"evalGroups[%d] (%s): dataset %q is not declared in datasets",
+				"evals[%d] (%s): dataset %q is not declared in datasets",
 				i, g.Name, g.Dataset)
 		}
 		if len(g.Evaluators) == 0 {
-			return fmt.Errorf("evalGroups[%d] (%s): at least one evaluator is required", i, g.Name)
+			return fmt.Errorf("evals[%d] (%s): at least one evaluator is required", i, g.Name)
 		}
 		for _, ref := range g.Evaluators {
 			if ref.IsBuiltin() {
@@ -156,7 +156,7 @@ func (c *EvalConfig) Validate() error {
 			}
 			if !evaluators[ref.Name] {
 				return fmt.Errorf(
-					"evalGroups[%d] (%s): evaluator %q is not declared in evaluators "+
+					"evals[%d] (%s): evaluator %q is not declared in evaluators "+
 						"(built-ins need the %q prefix)",
 					i, g.Name, ref.Name, evalcore.BuiltinPrefix)
 			}
@@ -164,7 +164,7 @@ func (c *EvalConfig) Validate() error {
 		if g.Target != nil && g.Target.Type != "" &&
 			g.Target.Type != TargetTypeAgent && g.Target.Type != TargetTypeModel {
 			return fmt.Errorf(
-				"evalGroups[%d] (%s): target.type %q is not supported; use %q or %q",
+				"evals[%d] (%s): target.type %q is not supported; use %q or %q",
 				i, g.Name, g.Target.Type, TargetTypeAgent, TargetTypeModel)
 		}
 		if g.Options != nil {
@@ -172,7 +172,7 @@ func (c *EvalConfig) Validate() error {
 			case "", EvaluationLevelTurn, EvaluationLevelConversation:
 			default:
 				return fmt.Errorf(
-					"evalGroups[%d] (%s): evaluation_level %q is invalid; expected %q or %q",
+					"evals[%d] (%s): evaluation_level %q is invalid; expected %q or %q",
 					i, g.Name, g.Options.EvaluationLevel,
 					EvaluationLevelTurn, EvaluationLevelConversation)
 			}
@@ -202,11 +202,11 @@ func (c *EvalConfig) Evaluator(name string) (*EvaluatorDecl, bool) {
 	return nil, false
 }
 
-// Group returns the eval group with the given name.
-func (c *EvalConfig) Group(name string) (*EvalGroup, bool) {
-	for i := range c.EvalGroups {
-		if c.EvalGroups[i].Name == name {
-			return &c.EvalGroups[i], true
+// Group returns the eval with the given name.
+func (c *EvalConfig) Group(name string) (*Eval, bool) {
+	for i := range c.Evals {
+		if c.Evals[i].Name == name {
+			return &c.Evals[i], true
 		}
 	}
 	return nil, false
@@ -214,26 +214,26 @@ func (c *EvalConfig) Group(name string) (*EvalGroup, bool) {
 
 // ResolveGroup picks the group to act on: the named one, or the only one when
 // the config declares exactly one.
-func (c *EvalConfig) ResolveGroup(name string) (*EvalGroup, error) {
+func (c *EvalConfig) ResolveGroup(name string) (*Eval, error) {
 	if name != "" {
 		g, ok := c.Group(name)
 		if !ok {
-			return nil, fmt.Errorf("eval group %q is not declared in the config", name)
+			return nil, fmt.Errorf("eval %q is not declared in the config", name)
 		}
 		return g, nil
 	}
-	switch len(c.EvalGroups) {
+	switch len(c.Evals) {
 	case 0:
-		return nil, fmt.Errorf("no eval groups are declared in the config")
+		return nil, fmt.Errorf("no evals are declared in the config")
 	case 1:
-		return &c.EvalGroups[0], nil
+		return &c.Evals[0], nil
 	default:
-		names := make([]string, 0, len(c.EvalGroups))
-		for _, g := range c.EvalGroups {
+		names := make([]string, 0, len(c.Evals))
+		for _, g := range c.Evals {
 			names = append(names, g.Name)
 		}
 		return nil, fmt.Errorf(
-			"the config declares %d eval groups (%s); choose one with --eval-group",
-			len(c.EvalGroups), strings.Join(names, ", "))
+			"the config declares %d evals (%s); choose one with --eval",
+			len(c.Evals), strings.Join(names, ", "))
 	}
 }

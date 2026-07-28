@@ -40,7 +40,7 @@ func TestResolveInstructionPrefersInlineWhenNoFile(t *testing.T) {
 func TestResolveInstructionRejectsUnusableFile(t *testing.T) {
 	_, err := resolveInstruction("", filepath.Join(t.TempDir(), "absent.md"))
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "gen-instruction-file")
+	require.Contains(t, err.Error(), "agent-instruction-file")
 
 	empty := filepath.Join(t.TempDir(), "empty.md")
 	require.NoError(t, os.WriteFile(empty, []byte("   \n"), 0o600))

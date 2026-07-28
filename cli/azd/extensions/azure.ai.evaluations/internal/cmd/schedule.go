@@ -20,7 +20,7 @@ import (
 func newScheduleCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "schedule",
-		Short: "Run an eval group on a schedule.",
+		Short: "Run an eval on a schedule.",
 	}
 	cmd.AddCommand(
 		newScheduleSetCommand(),
@@ -31,7 +31,7 @@ func newScheduleCommand() *cobra.Command {
 	return cmd
 }
 
-// newScheduleSetCommand creates the schedule that runs an eval group.
+// newScheduleSetCommand creates the schedule that runs an eval.
 //
 // It does not update. The service accepts a PUT over an existing schedule,
 // echoes the new body and keeps the old trigger, so an in-place edit would
@@ -64,7 +64,7 @@ func newScheduleSetCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "set [eval-id]",
-		Short: "Create the schedule that runs an eval group.",
+		Short: "Create the schedule that runs an eval.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -99,7 +99,7 @@ func newScheduleSetCommand() *cobra.Command {
 			// Same resolution as `run`: the config names the group unless
 			// --eval-id bypasses it, and the run payload carries the target
 			// and dataset because the group holds neither.
-			var group *project.EvalGroup
+			var group *project.Eval
 			var dataSource *eval_api.EvalRunDataSource
 			if evalID == "" {
 				cfg, err := project.LoadEvalConfig(configPath)
@@ -116,9 +116,9 @@ func newScheduleSetCommand() *cobra.Command {
 				if err := ec.checkDatasetRegistered(ctx, cfg, group, configPath); err != nil {
 					return err
 				}
-				evalID, err = ec.resolveEvalGroupID(
+				evalID, err = ec.resolveEvalIDFromConfig(
 					ctx, group, configPath, resolveLevel(level, group),
-					len(cfg.EvalGroups) == 1, out, isJSON(cmd))
+					len(cfg.Evals) == 1, out, isJSON(cmd))
 				if err != nil {
 					return err
 				}
@@ -195,8 +195,8 @@ func newScheduleSetCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&configPath, "config", project.DefaultDeployConfig,
 		"Path to the eval deployment config.")
-	cmd.Flags().StringVar(&groupName, "eval-group", "", "Which evalGroups entry to schedule.")
-	cmd.Flags().StringVar(&evalID, "eval-id", "", "Schedule an existing eval group by id, ignoring config.")
+	cmd.Flags().StringVar(&groupName, "eval", "", "Which evals entry to schedule.")
+	cmd.Flags().StringVar(&evalID, "eval-id", "", "Schedule an existing eval by id, ignoring config.")
 	cmd.Flags().StringVar(&name, "name", "", "Schedule name. Defaults to the group name.")
 	cmd.Flags().StringVar(&description, "description", "", "Schedule description.")
 	cmd.Flags().StringVar(&cron, "cron", "", `Cron expression, for example "0 9 * * *".`)
@@ -535,7 +535,7 @@ func normalizeDaysOfWeek(days []string) ([]string, error) {
 }
 
 // defaultScheduleName derives a schedule name from the group being scheduled.
-func defaultScheduleName(group *project.EvalGroup) string {
+func defaultScheduleName(group *project.Eval) string {
 	if group != nil && group.Name != "" {
 		return group.Name
 	}

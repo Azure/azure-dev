@@ -22,7 +22,7 @@ datasets:
     source: ./datasets/old.jsonl
     version: "3"
 
-evalGroups:
+evals:
   - name: pr-gate
     dataset: support-golden
     evaluators:
@@ -68,8 +68,8 @@ func TestMergeArtifactRefs_PreservesCommentsAndSiblings(t *testing.T) {
 	require.Len(t, cfg.Evaluators, 2)
 }
 
-// The eval group's evaluator list must be left exactly as written.
-func TestMergeArtifactRefs_DoesNotTouchEvalGroups(t *testing.T) {
+// The eval's evaluator list must be left exactly as written.
+func TestMergeArtifactRefs_DoesNotTouchEvals(t *testing.T) {
 	path := writeTemp(t, handAuthored)
 	require.NoError(t, MergeArtifactRefs(path, nil,
 		[]ArtifactRef{{Name: "support-quality", Source: "./evaluators/q.json"}}))
@@ -85,7 +85,7 @@ func TestMergeArtifactRefs_DoesNotTouchEvalGroups(t *testing.T) {
 
 // Sections absent from the file are created rather than erroring.
 func TestMergeArtifactRefs_CreatesMissingSections(t *testing.T) {
-	path := writeTemp(t, "evalGroups:\n  - name: pr-gate\n    evaluators: [builtin.relevance]\n")
+	path := writeTemp(t, "evals:\n  - name: pr-gate\n    evaluators: [builtin.relevance]\n")
 
 	require.NoError(t, MergeArtifactRefs(path,
 		[]ArtifactRef{{Name: "d1", Source: "./datasets/d1.jsonl"}},

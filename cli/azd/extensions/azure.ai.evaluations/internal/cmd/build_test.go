@@ -35,8 +35,8 @@ func schema(name string, dataRequired, dataProps, initRequired, initProps []stri
 	}
 }
 
-func groupWith(evaluators []evalcore.EvaluatorRef, opts *project.Options) *project.EvalGroup {
-	return &project.EvalGroup{
+func groupWith(evaluators []evalcore.EvaluatorRef, opts *project.Options) *project.Eval {
+	return &project.Eval{
 		Name:       "g",
 		Dataset:    "d",
 		Target:     &project.Target{Type: "agent", Name: "my-agent"},
@@ -59,7 +59,7 @@ func TestBuildBindsAgentFieldsFromSample(t *testing.T) {
 		&project.Options{EvalModel: "gpt-4.1-nano"},
 	)
 
-	req, err := buildEvalGroupRequest(group, schemas, map[string]bool{"query": true})
+	req, err := buildEvalRequest(group, schemas, map[string]bool{"query": true})
 	require.NoError(t, err)
 	require.Len(t, req.TestingCriteria, 1)
 
@@ -82,7 +82,7 @@ func TestBuildRejectsUnsatisfiableEvaluator(t *testing.T) {
 	}
 	group := groupWith([]evalcore.EvaluatorRef{{Name: "builtin.ifeval"}}, nil)
 
-	_, err := buildEvalGroupRequest(group, schemas, map[string]bool{"query": true})
+	_, err := buildEvalRequest(group, schemas, map[string]bool{"query": true})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "instruction_id_list")
 	require.Contains(t, err.Error(), "instruction_kwargs")
@@ -98,7 +98,7 @@ func TestBuildAcceptsEvaluatorWhenDatasetSupplies(t *testing.T) {
 	}
 	group := groupWith([]evalcore.EvaluatorRef{{Name: "builtin.ifeval"}}, nil)
 
-	req, err := buildEvalGroupRequest(group, schemas, map[string]bool{
+	req, err := buildEvalRequest(group, schemas, map[string]bool{
 		"instruction_id_list": true,
 		"instruction_kwargs":  true,
 	})
@@ -131,7 +131,7 @@ func TestBuildOmitsUnacceptedInitParameters(t *testing.T) {
 		{Name: "builtin.similarity", Threshold: &threshold},
 	}, &project.Options{EvalModel: "gpt-4.1-nano"})
 
-	req, err := buildEvalGroupRequest(group, schemas, map[string]bool{
+	req, err := buildEvalRequest(group, schemas, map[string]bool{
 		"query": true, "ground_truth": true,
 	})
 	require.NoError(t, err)
@@ -163,7 +163,7 @@ func TestBuildPassesEvaluationLevelAsInitParameter(t *testing.T) {
 		{Name: "builtin.similarity"},
 	}, &project.Options{EvalModel: "m", EvaluationLevel: "turn"})
 
-	req, err := buildEvalGroupRequest(group, schemas, map[string]bool{"query": true})
+	req, err := buildEvalRequest(group, schemas, map[string]bool{"query": true})
 	require.NoError(t, err)
 
 	require.Equal(t, "turn", req.TestingCriteria[0].InitializationParameters["evaluation_level"])
@@ -181,7 +181,7 @@ func TestBuildRejectsUnsupportedLevel(t *testing.T) {
 	group := groupWith([]evalcore.EvaluatorRef{{Name: "builtin.similarity"}},
 		&project.Options{EvalModel: "m", EvaluationLevel: "conversation"})
 
-	_, err := buildEvalGroupRequest(group, schemas, map[string]bool{"query": true})
+	_, err := buildEvalRequest(group, schemas, map[string]bool{"query": true})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "conversation")
 	require.Contains(t, err.Error(), "turn")
@@ -196,7 +196,7 @@ func TestBuildRequiresJudgeModelWhenEvaluatorDoes(t *testing.T) {
 	}
 	group := groupWith([]evalcore.EvaluatorRef{{Name: "builtin.similarity"}}, nil)
 
-	_, err := buildEvalGroupRequest(group, schemas, map[string]bool{"query": true})
+	_, err := buildEvalRequest(group, schemas, map[string]bool{"query": true})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "deployment_name")
 }
@@ -207,7 +207,7 @@ func TestBuildFallsBackWithoutSchema(t *testing.T) {
 	group := groupWith([]evalcore.EvaluatorRef{{Name: "my-custom-evaluator"}},
 		&project.Options{EvalModel: "m"})
 
-	req, err := buildEvalGroupRequest(group, nil, nil)
+	req, err := buildEvalRequest(group, nil, nil)
 	require.NoError(t, err)
 
 	mapping := req.TestingCriteria[0].DataMapping
@@ -232,7 +232,7 @@ func TestBuildResolvesConversationTurnExclusivity(t *testing.T) {
 	// Turn level keeps query/response and drops messages.
 	turn := groupWith([]evalcore.EvaluatorRef{{Name: "builtin.task_completion"}},
 		&project.Options{EvalModel: "m", EvaluationLevel: "turn"})
-	req, err := buildEvalGroupRequest(turn, schemas, columns)
+	req, err := buildEvalRequest(turn, schemas, columns)
 	require.NoError(t, err)
 	mapping := req.TestingCriteria[0].DataMapping
 	require.Contains(t, mapping, "query")
@@ -241,7 +241,7 @@ func TestBuildResolvesConversationTurnExclusivity(t *testing.T) {
 	// Conversation level keeps messages and drops query/response.
 	conv := groupWith([]evalcore.EvaluatorRef{{Name: "builtin.task_completion"}},
 		&project.Options{EvalModel: "m", EvaluationLevel: "conversation"})
-	req, err = buildEvalGroupRequest(conv, schemas, columns)
+	req, err = buildEvalRequest(conv, schemas, columns)
 	require.NoError(t, err)
 	mapping = req.TestingCriteria[0].DataMapping
 	require.Contains(t, mapping, "messages")
@@ -251,7 +251,7 @@ func TestBuildResolvesConversationTurnExclusivity(t *testing.T) {
 	// An unset level behaves as turn, matching the service default.
 	dflt := groupWith([]evalcore.EvaluatorRef{{Name: "builtin.task_completion"}},
 		&project.Options{EvalModel: "m"})
-	req, err = buildEvalGroupRequest(dflt, schemas, columns)
+	req, err = buildEvalRequest(dflt, schemas, columns)
 	require.NoError(t, err)
 	require.NotContains(t, req.TestingCriteria[0].DataMapping, "messages")
 }
@@ -273,7 +273,7 @@ func TestBuildBindsJudgeModelUnderTheDeclaredName(t *testing.T) {
 		{Name: "my-rubric"},
 	}, &project.Options{EvalModel: "gpt-4.1-nano"})
 
-	req, err := buildEvalGroupRequest(group, schemas, map[string]bool{"query": true})
+	req, err := buildEvalRequest(group, schemas, map[string]bool{"query": true})
 	require.NoError(t, err)
 
 	builtin := req.TestingCriteria[0].InitializationParameters
@@ -297,7 +297,7 @@ func TestBuildWithoutTargetSourcesEverythingFromDataset(t *testing.T) {
 	group := groupWith([]evalcore.EvaluatorRef{{Name: "builtin.similarity"}}, nil)
 	group.Target = nil
 
-	req, err := buildEvalGroupRequest(group, schemas, map[string]bool{
+	req, err := buildEvalRequest(group, schemas, map[string]bool{
 		"query": true, "response": true, "ground_truth": true,
 	})
 	require.NoError(t, err)

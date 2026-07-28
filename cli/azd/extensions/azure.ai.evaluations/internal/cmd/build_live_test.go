@@ -3,7 +3,7 @@
 
 //go:build live
 
-// This file proves the request buildEvalGroupRequest produces is accepted by
+// This file proves the request buildEvalRequest produces is accepted by
 // the real service. It lives in the cmd package on purpose: the tests under
 // tests/live can only hand-roll a request, which validates the API but not the
 // code that ships.
@@ -93,7 +93,7 @@ func TestLiveBuildAcceptedForEveryBuiltin(t *testing.T) {
 				level = summary.SupportedEvaluationLevels[0]
 			}
 
-			group := &project.EvalGroup{
+			group := &project.Eval{
 				Name:       fmt.Sprintf("azd-live-%d", time.Now().UTC().UnixNano()),
 				Dataset:    "inline",
 				Target:     &project.Target{Type: "agent", Name: "probe-agent"},
@@ -101,7 +101,7 @@ func TestLiveBuildAcceptedForEveryBuiltin(t *testing.T) {
 				Options:    &project.Options{EvalModel: judge, EvaluationLevel: level},
 			}
 
-			req, err := buildEvalGroupRequest(group, schemas, columns)
+			req, err := buildEvalRequest(group, schemas, columns)
 			require.NoError(t, err, "the builder must satisfy every published contract")
 
 			created, err := client.CreateOpenAIEval(ctx, req)
@@ -135,7 +135,7 @@ func TestLiveBuildRejectsMissingColumnsLocally(t *testing.T) {
 	require.NotEmpty(t, target.DataSchema().Required,
 		"this test relies on ifeval declaring required inputs")
 
-	group := &project.EvalGroup{
+	group := &project.Eval{
 		Name:       "azd-live-negative",
 		Dataset:    "inline",
 		Target:     &project.Target{Type: "agent", Name: "probe-agent"},
@@ -144,7 +144,7 @@ func TestLiveBuildRejectsMissingColumnsLocally(t *testing.T) {
 	}
 
 	// A dataset with only `query` cannot satisfy ifeval.
-	_, err = buildEvalGroupRequest(group, schemas, map[string]bool{"query": true})
+	_, err = buildEvalRequest(group, schemas, map[string]bool{"query": true})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "instruction_id_list")
 	t.Logf("pre-flight error: %v", err)

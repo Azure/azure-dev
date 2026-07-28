@@ -19,32 +19,29 @@ func newEvaluatorCommand() *cobra.Command {
 		Short: "Manage custom evaluators.",
 	}
 	cmd.AddCommand(
-		newEvaluatorUploadCommand(false),
-		newEvaluatorUploadCommand(true),
+		newEvaluatorCreateCommand(),
 		newEvaluatorListCommand(),
 		newEvaluatorShowCommand(),
-		newEvaluatorBuiltinsCommand(),
 		newEvaluatorDeleteCommand(),
 	)
 	return cmd
 }
 
-// newEvaluatorUploadCommand builds `evaluator upload` and `evaluator update`.
-// Both publish a new immutable version.
+// newEvaluatorCreateCommand builds `evaluator create`, named to match
+// `dataset create`: both register an artifact and both publish a new immutable
+// version every time, so there is nothing for a separate `update` to do.
 //
 // M1 supports rubric evaluators only. Code evaluators need a folder walk,
-// multi-blob upload, and the Azure AI User role assignment, so they land in M2.
-func newEvaluatorUploadCommand(update bool) *cobra.Command {
+// multi-blob upload, and the Azure AI User role assignment, so they land later.
+func newEvaluatorCreateCommand() *cobra.Command {
 	var (
 		name        string
 		rubric      string
 		endpointFlg string
 	)
 
-	use, short := "upload", "Register a rubric evaluator, creating its first version."
-	if update {
-		use, short = "update", "Publish a new version of an existing rubric evaluator."
-	}
+	use := "create"
+	short := "Register a rubric evaluator, publishing a new version."
 
 	cmd := &cobra.Command{
 		Use:   use,
@@ -165,12 +162,13 @@ func normalizeRubricBody(name string, raw []byte) (json.RawMessage, error) {
 func newEvaluatorListCommand() *cobra.Command {
 	var (
 		name        string
+		builtin     bool
 		endpointFlg string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List evaluators, or the versions of one evaluator.",
+		Short: "List evaluators, the versions of one evaluator, or the built-in evaluators.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
@@ -180,9 +178,15 @@ func newEvaluatorListCommand() *cobra.Command {
 			defer ec.Close()
 
 			var list *eval_api.EvaluatorListResponse
-			if name != "" {
+			switch {
+			case name != "":
 				list, err = ec.evalClient.ListEvaluatorVersions(ctx, name, ProjectEndpointAPIVersion)
-			} else {
+			case builtin:
+				// The service filters by type, and asking for nothing returns
+				// only the project's own evaluators.
+				list, err = ec.evalClient.ListEvaluators(
+					ctx, eval_api.EvaluatorTypeBuiltin, ProjectEndpointAPIVersion)
+			default:
 				list, err = ec.evalClient.ListEvaluators(ctx, "", ProjectEndpointAPIVersion)
 			}
 			if err != nil {
@@ -193,34 +197,8 @@ func newEvaluatorListCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&name, "name", "", "Limit the listing to versions of this evaluator.")
-	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
-	return cmd
-}
-
-func newEvaluatorBuiltinsCommand() *cobra.Command {
-	var endpointFlg string
-
-	cmd := &cobra.Command{
-		Use:   "builtins",
-		Short: "List the platform's built-in evaluators.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			ec, err := newEvalContext(ctx, endpointFlg)
-			if err != nil {
-				return err
-			}
-			defer ec.Close()
-
-			list, err := ec.evalClient.ListEvaluators(
-				ctx, eval_api.EvaluatorTypeBuiltin, ProjectEndpointAPIVersion,
-			)
-			if err != nil {
-				return fmt.Errorf("listing built-in evaluators: %w", err)
-			}
-			return renderEvaluators(cmd, list)
-		},
-	}
-
+	cmd.Flags().BoolVar(&builtin, "builtin", false, "List the built-in evaluators instead of the project's own.")
+	cmd.MarkFlagsMutuallyExclusive("name", "builtin")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }

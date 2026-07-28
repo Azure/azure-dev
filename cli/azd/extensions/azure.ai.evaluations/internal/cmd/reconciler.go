@@ -69,7 +69,7 @@ func (r *evalReconciler) EnsureDataset(
 	}
 
 	// A malformed row is only noticed once the service tries to evaluate it,
-	// by which point a version has been published and the eval group points at
+	// by which point a version has been published and the eval points at
 	// it. Reading the file here costs nothing and names the offending line.
 	if err := validateJSONL(localPath); err != nil {
 		return "", false, fmt.Errorf("dataset %q: %w", decl.Name, err)
@@ -146,14 +146,14 @@ func (r *evalReconciler) EnsureDataset(
 //
 // Local content being unchanged is not enough to reuse the recorded version:
 // someone may have published a newer one outside the repo, and silently
-// pinning the eval group to the older version would quietly evaluate against
+// pinning the eval to the older version would quietly evaluate against
 // stale data. Publishing is not destructive — versions are immutable — so the
 // remedy is to sync, not to overwrite.
 // validateJSONL checks that every row is a JSON object before the file is
 // published.
 //
 // The service accepts the upload whatever the bytes are, so a typo becomes a
-// registered version, an eval group bound to it, and a run that fails on a row
+// registered version, an eval bound to it, and a run that fails on a row
 // nobody has looked at. Blank lines are skipped: they are not rows.
 func validateJSONL(path string) error {
 	f, err := os.Open(path)
@@ -270,12 +270,12 @@ func (r *evalReconciler) EnsureEvaluator(
 	return created.Version, true, nil
 }
 
-// EnsureEvalGroup creates the group when it has never been deployed, or when an
+// EnsureEval creates the group when it has never been deployed, or when an
 // upstream artifact changed. Groups are immutable, so a change means a new
 // group and a new id.
-func (r *evalReconciler) EnsureEvalGroup(
+func (r *evalReconciler) EnsureEval(
 	ctx context.Context,
-	group project.EvalGroup,
+	group project.Eval,
 	datasetPath string,
 	recreate bool,
 ) (string, error) {
@@ -290,24 +290,24 @@ func (r *evalReconciler) EnsureEvalGroup(
 	if err != nil {
 		return "", err
 	}
-	key := project.FingerprintKey("evalgroup", group.Name)
+	key := project.FingerprintKey("eval", group.Name)
 	if prior := r.ec.getEnvValue(ctx, key); prior != "" && prior != digest {
 		recreate = true
 	}
 
-	cached := r.ec.getEnvValue(ctx, idKey("evalgroup", group.Name))
+	cached := r.ec.getEnvValue(ctx, idKey("eval", group.Name))
 	if cached != "" && !recreate {
 		if _, err := r.ec.evalClient.GetOpenAIEval(ctx, cached); err == nil {
 			// Record the digest on reuse as well, otherwise a group deployed
 			// before fingerprinting existed never establishes a baseline and
 			// later edits go undetected.
 			_ = r.ec.setEnvValue(ctx, key, digest)
-			_ = r.ec.setEnvValue(ctx, envKeyEvalGroupID, cached)
+			_ = r.ec.setEnvValue(ctx, envKeyEvalID, cached)
 			return cached, nil
 		}
 	}
 
-	req, err := buildEvalGroupRequest(
+	req, err := buildEvalRequest(
 		&group,
 		r.ec.evaluatorSchemas(ctx),
 		datasetColumnsFromPath(datasetPath),
@@ -320,10 +320,10 @@ func (r *evalReconciler) EnsureEvalGroup(
 		return "", err
 	}
 	_ = r.ec.setEnvValue(ctx, key, digest)
-	_ = r.ec.setEnvValue(ctx, idKey("evalgroup", group.Name), created.ID)
-	// EVAL_GROUP_ID stays the last-deployed group, which is what the commands
+	_ = r.ec.setEnvValue(ctx, idKey("eval", group.Name), created.ID)
+	// EVAL_ID stays the last-deployed group, which is what the commands
 	// fall back to when a config names only one.
-	_ = r.ec.setEnvValue(ctx, envKeyEvalGroupID, created.ID)
+	_ = r.ec.setEnvValue(ctx, envKeyEvalID, created.ID)
 	return created.ID, nil
 }
 

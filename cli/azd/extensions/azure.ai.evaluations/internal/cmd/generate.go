@@ -79,7 +79,7 @@ func newGenerateCommand() *cobra.Command {
 			generatingDataset := datasetFlag == "" && cfg.Generate.Dataset != nil
 			if (generatingRubric || generatingDataset) && generationModel(cfg) == "" {
 				return fmt.Errorf(
-					"a model deployment is required to generate: pass --eval-model, " +
+					"a model deployment is required to generate: pass --generation-model, " +
 						"or set generate.rubric.model in the generation spec")
 			}
 
@@ -154,11 +154,11 @@ func newGenerateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&deployPath, "deploy-config", project.DefaultDeployConfig,
 		"Deployment spec to write source references into.")
 	cmd.Flags().StringVar(&target, "target", "", "Agent whose context seeds generation.")
-	cmd.Flags().StringVar(&instruction, "gen-instruction", "",
+	cmd.Flags().StringVar(&instruction, "agent-instruction", "",
 		"What the agent does and what to test.")
-	cmd.Flags().StringVar(&instructionFile, "gen-instruction-file", "",
-		"Read the generation instruction from this file. Mutually exclusive with --gen-instruction.")
-	cmd.MarkFlagsMutuallyExclusive("gen-instruction", "gen-instruction-file")
+	cmd.Flags().StringVar(&instructionFile, "agent-instruction-file", "",
+		"Read the agent instruction from this file. Mutually exclusive with --agent-instruction.")
+	cmd.MarkFlagsMutuallyExclusive("agent-instruction", "agent-instruction-file")
 	cmd.Flags().StringVar(&datasetFlag, "dataset", "",
 		"Use this dataset instead of generating one.")
 	cmd.Flags().StringArrayVar(&evaluators, "evaluator", nil,
@@ -167,7 +167,7 @@ func newGenerateCommand() *cobra.Command {
 		fmt.Sprintf("Rows to synthesize (%d-%d).", project.MinSampleSize, project.MaxSampleSize))
 	cmd.Flags().IntVar(&traceDays, "trace-days", 0,
 		"Days of traces to seed rubric generation. 0 disables.")
-	cmd.Flags().StringVar(&evalModel, "eval-model", "", "Model deployment used for generation.")
+	cmd.Flags().StringVar(&evalModel, "generation-model", "", "Model deployment that generates the dataset and rubric.")
 	cmd.Flags().BoolVar(&noWait, "no-wait", false, "Submit the jobs and return without polling.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
@@ -221,11 +221,11 @@ func resolveInstruction(inline, path string) (string, error) {
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("reading --gen-instruction-file %q: %w", path, err)
+		return "", fmt.Errorf("reading --agent-instruction-file %q: %w", path, err)
 	}
 	text := strings.TrimSpace(string(raw))
 	if text == "" {
-		return "", fmt.Errorf("--gen-instruction-file %q is empty", path)
+		return "", fmt.Errorf("--agent-instruction-file %q is empty", path)
 	}
 	return text, nil
 }

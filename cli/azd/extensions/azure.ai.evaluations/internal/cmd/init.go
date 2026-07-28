@@ -114,7 +114,7 @@ func newInitCommand() *cobra.Command {
 	cmd.Flags().StringVar(&dataset, "dataset", "", "Path to a local .jsonl, or the name of a registered dataset.")
 	cmd.Flags().StringArrayVar(&evaluators, "evaluator", nil,
 		"Evaluator reference, repeatable. Use builtin.<name> for a built-in.")
-	cmd.Flags().StringVar(&evalModel, "eval-model", "", "Model deployment used as the LLM judge.")
+	cmd.Flags().StringVar(&evalModel, "judge-model", "", "Model deployment that scores the results.")
 	cmd.Flags().StringVar(&outDir, "out-dir", project.DefaultEvalDir,
 		"Directory to write the config into. Used verbatim, never re-rooted.")
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing files.")
@@ -334,7 +334,7 @@ func buildDeployScaffold(
 		}
 	}
 
-	group := project.EvalGroup{
+	group := project.Eval{
 		Name:        fmt.Sprintf("%s-quality", target),
 		Description: fmt.Sprintf("Quality gate for %s", target),
 		Dataset:     datasetName,
@@ -347,7 +347,7 @@ func buildDeployScaffold(
 	if evalModel != "" {
 		group.Options = &project.Options{EvalModel: evalModel}
 	}
-	cfg.EvalGroups = append(cfg.EvalGroups, group)
+	cfg.Evals = append(cfg.Evals, group)
 
 	return cfg
 }

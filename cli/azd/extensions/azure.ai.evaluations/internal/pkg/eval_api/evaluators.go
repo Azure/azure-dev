@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -183,4 +184,37 @@ func (c *EvalClient) CancelOpenAIEvalRun(
 		pathOpenAIEvals, url.PathEscape(evalID), url.PathEscape(runID),
 	)
 	return doRequestTyped[OpenAIEvalRun](c, ctx, http.MethodPost, path, nil, nil, "")
+}
+
+// DeleteOpenAIEvalRun removes a single run.
+func (c *EvalClient) DeleteOpenAIEvalRun(ctx context.Context, evalID, runID string) error {
+	path := fmt.Sprintf(
+		"%s/%s/runs/%s",
+		pathOpenAIEvals, url.PathEscape(evalID), url.PathEscape(runID),
+	)
+	_, err := c.doRequest(ctx, http.MethodDelete, path, nil, nil, "")
+	return err
+}
+
+// ListOutputItems returns a run's per-sample results.
+//
+// The run itself carries only totals and a per-criterion breakdown. The output
+// items are the rows: each one holds the dataset item that was evaluated, what
+// the target answered, and every evaluator's score, verdict and reason. Showing
+// results without them can say how many failed but never which, or why.
+func (c *EvalClient) ListOutputItems(
+	ctx context.Context,
+	evalID, runID string,
+	limit int,
+) (*OutputItemList, error) {
+	query := map[string]string{}
+	if limit > 0 {
+		query["limit"] = strconv.Itoa(limit)
+	}
+
+	path := fmt.Sprintf(
+		"%s/%s/runs/%s/output_items",
+		pathOpenAIEvals, url.PathEscape(evalID), url.PathEscape(runID),
+	)
+	return doRequestTyped[OutputItemList](c, ctx, http.MethodGet, path, query, nil, "")
 }

@@ -15,28 +15,28 @@ import (
 // is silent. options.max_samples was parsed and dropped once already, which is
 // what these lock down.
 func TestResolveMaxSamples_Precedence(t *testing.T) {
-	withOptions := &project.EvalGroup{Options: &project.Options{MaxSamples: 25}}
+	withOptions := &project.Eval{Options: &project.Options{MaxSamples: 25}}
 
 	assert.Equal(t, 5, resolveMaxSamples(5, withOptions), "the flag wins over the config")
 	assert.Equal(t, 25, resolveMaxSamples(0, withOptions), "the config is used when no flag is given")
-	assert.Equal(t, 0, resolveMaxSamples(0, &project.EvalGroup{}), "neither means no cap")
+	assert.Equal(t, 0, resolveMaxSamples(0, &project.Eval{}), "neither means no cap")
 	assert.Equal(t, 0, resolveMaxSamples(0, nil))
 	assert.Equal(t, 7, resolveMaxSamples(7, nil), "a flag stands on its own")
 
 	// Zero in config is absent, not a cap of zero: a cap of zero would send
 	// nothing at all.
-	assert.Equal(t, 0, resolveMaxSamples(0, &project.EvalGroup{Options: &project.Options{MaxSamples: 0}}))
+	assert.Equal(t, 0, resolveMaxSamples(0, &project.Eval{Options: &project.Options{MaxSamples: 0}}))
 }
 
 func TestResolveLevel_Precedence(t *testing.T) {
-	withOptions := &project.EvalGroup{
+	withOptions := &project.Eval{
 		Options: &project.Options{EvaluationLevel: project.EvaluationLevelConversation},
 	}
 
 	assert.Equal(t, project.EvaluationLevelTurn, resolveLevel(project.EvaluationLevelTurn, withOptions),
 		"the flag wins over the config")
 	assert.Equal(t, project.EvaluationLevelConversation, resolveLevel("", withOptions))
-	assert.Empty(t, resolveLevel("", &project.EvalGroup{}), "unset defers to the service default")
+	assert.Empty(t, resolveLevel("", &project.Eval{}), "unset defers to the service default")
 	assert.Empty(t, resolveLevel("", nil))
 }
 

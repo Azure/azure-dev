@@ -48,7 +48,7 @@ func newEvalContext(ctx context.Context, endpointFlag string) (*evalContext, err
 	ec := &evalContext{azdClient: azdClient}
 
 	// The environment name is resolved regardless of where the endpoint comes
-	// from: it is what the cached eval group and run ids are read from and
+	// from: it is what the cached eval and run ids are read from and
 	// written to. Deriving it only when the endpoint came from azd meant
 	// --project-endpoint silently disabled that cache.
 	azdEndpoint, envName := lookupEndpointFromAzd(ctx, azdClient)
@@ -153,7 +153,7 @@ func (ec *evalContext) Close() {
 
 // azd environment keys written by this extension.
 const (
-	envKeyEvalGroupID       = "EVAL_GROUP_ID"
+	envKeyEvalID            = "EVAL_ID"
 	envKeyEvalRunID         = "EVAL_RUN_ID"
 	envKeyDatasetVersion    = "EVAL_DATASET_VERSION"
 	envKeyFingerprintPrefix = "EVAL_FINGERPRINT_"

@@ -60,9 +60,9 @@ func TestScaffold_BuiltinEvaluatorsAreNotDeclared(t *testing.T) {
 	require.Len(t, cfg.Evaluators, 1, "only the custom evaluator should be declared")
 	require.Equal(t, "my-custom", cfg.Evaluators[0].Name)
 
-	require.Len(t, cfg.EvalGroups[0].Evaluators, 2)
-	require.True(t, cfg.EvalGroups[0].Evaluators[0].IsBuiltin())
-	require.False(t, cfg.EvalGroups[0].Evaluators[1].IsBuiltin())
+	require.Len(t, cfg.Evals[0].Evaluators, 2)
+	require.True(t, cfg.Evals[0].Evaluators[0].IsBuiltin())
+	require.False(t, cfg.Evals[0].Evaluators[1].IsBuiltin())
 
 	path := filepath.Join(t.TempDir(), "azure.yaml")
 	require.NoError(t, writeYAML(path, cfg))

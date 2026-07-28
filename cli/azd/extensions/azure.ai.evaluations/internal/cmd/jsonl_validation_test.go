@@ -20,7 +20,7 @@ func writeJSONL(t *testing.T, body string) string {
 }
 
 // The service accepts whatever bytes it is given, so a malformed row becomes a
-// published version with an eval group bound to it, and only fails much later
+// published version with an eval bound to it, and only fails much later
 // on a row nobody has looked at. A live deploy published `{not json at all}`
 // as version 1.0 before this existed.
 func TestValidateJSONL_RejectsAMalformedRowByLine(t *testing.T) {

@@ -21,6 +21,7 @@ func addRunSubcommands(cmd *cobra.Command) {
 		newRunListCommand(),
 		newRunShowCommand(),
 		newRunCancelCommand(),
+		newRunDeleteCommand(),
 	)
 }
 
@@ -32,7 +33,7 @@ func newRunListCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "list [eval-id]",
-		Short: "List runs for an eval group.",
+		Short: "List runs for an eval.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -51,7 +52,7 @@ func newRunListCommand() *cobra.Command {
 			if err != nil {
 				if eval_api.IsNotFound(err) {
 					return fmt.Errorf(
-						"no eval group %q in this project; "+
+						"no eval %q in this project; "+
 							"`azd up` creates the ones your config declares", evalID)
 				}
 				return fmt.Errorf("listing runs for %q: %w", evalID, err)
@@ -64,7 +65,7 @@ func newRunListCommand() *cobra.Command {
 				return emitJSONList(cmd.OutOrStdout(), runs)
 			}
 			if list == nil || len(list.Data) == 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "Eval group %s has no runs yet.\n", evalID)
+				fmt.Fprintf(cmd.OutOrStdout(), "Eval %s has no runs yet.\n", evalID)
 				return nil
 			}
 
@@ -76,7 +77,7 @@ func newRunListCommand() *cobra.Command {
 				[]string{"RUN ID", "NAME", "STATUS", "RESULTS"}, rows)
 		},
 	}
-	addEvalGroupFlags(cmd, &groupName)
+	addEvalFlags(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -127,7 +128,7 @@ func newRunShowCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&runID, "run-id", "", "Run to show. Defaults to the most recent run.")
-	addEvalGroupFlags(cmd, &groupName)
+	addEvalFlags(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -183,7 +184,62 @@ func newRunCancelCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&runID, "run-id", "", "Run to cancel. Defaults to the most recent run.")
-	addEvalGroupFlags(cmd, &groupName)
+	addEvalFlags(cmd, &groupName)
+	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	return cmd
+}
+
+// newRunDeleteCommand removes a run.
+//
+// Runs accumulate — every `azd ai eval run` adds one — and a run that evaluated
+// the wrong dataset or target is noise in every later listing and comparison.
+// The id is required rather than defaulted to the most recent run, because
+// deleting is not undoable and "the latest one" is a poor thing to guess at.
+func newRunDeleteCommand() *cobra.Command {
+	var (
+		runID       string
+		endpointFlg string
+		groupName   string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "delete [eval-id]",
+		Short: "Delete a run.",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			if runID == "" {
+				return requireFlag("run-id")
+			}
+			ec, err := newEvalContext(ctx, endpointFlg)
+			if err != nil {
+				return err
+			}
+			defer ec.Close()
+
+			evalID, err := resolveEvalID(cmd, ec, args, groupName)
+			if err != nil {
+				return err
+			}
+
+			if err := ec.evalClient.DeleteOpenAIEvalRun(ctx, evalID, runID); err != nil {
+				if eval_api.IsNotFound(err) {
+					return fmt.Errorf("no run %q on eval %q", runID, evalID)
+				}
+				return fmt.Errorf("deleting run %s: %w", runID, err)
+			}
+
+			if isJSON(cmd) {
+				return emitJSON(cmd.OutOrStdout(), map[string]string{
+					"id": runID, "eval_id": evalID, "status": "deleted",
+				})
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Deleted run %s\n", runID)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&runID, "run-id", "", "Run to delete.")
+	addEvalFlags(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }

@@ -26,7 +26,7 @@ datasets:
     source: ./datasets/support-golden.jsonl
     version: "1"
 
-evalGroups:
+evals:
   - name: pr-gate
     description: Quality gate for the support agent
     dataset: support-golden
@@ -57,7 +57,7 @@ func TestLoadEvalConfig_ParsesAllSections(t *testing.T) {
 
 	require.Len(t, cfg.Evaluators, 2)
 	require.Len(t, cfg.Datasets, 1)
-	require.Len(t, cfg.EvalGroups, 1)
+	require.Len(t, cfg.Evals, 1)
 
 	ds, ok := cfg.Dataset("support-golden")
 	require.True(t, ok)
@@ -127,13 +127,13 @@ func TestValidate_Rejects(t *testing.T) {
 	}{
 		{
 			name:    "dataset referenced but not declared",
-			body:    "evalGroups:\n  - name: g\n    dataset: missing\n    evaluators: [builtin.relevance]\n",
+			body:    "evals:\n  - name: g\n    dataset: missing\n    evaluators: [builtin.relevance]\n",
 			wantErr: "is not declared in datasets",
 		},
 		{
 			name: "custom evaluator referenced but not declared",
 			body: "datasets:\n  - name: d\n" +
-				"evalGroups:\n  - name: g\n    dataset: d\n    evaluators: [not-declared]\n",
+				"evals:\n  - name: g\n    dataset: d\n    evaluators: [not-declared]\n",
 			wantErr: "is not declared in evaluators",
 		},
 		{
@@ -143,17 +143,17 @@ func TestValidate_Rejects(t *testing.T) {
 		},
 		{
 			name:    "group without evaluators",
-			body:    "evalGroups:\n  - name: g\n    evaluators: []\n",
+			body:    "evals:\n  - name: g\n    evaluators: []\n",
 			wantErr: "at least one evaluator is required",
 		},
 		{
 			name:    "unsupported target type",
-			body:    "evalGroups:\n  - name: g\n    evaluators: [builtin.relevance]\n    target:\n      type: prompt\n",
+			body:    "evals:\n  - name: g\n    evaluators: [builtin.relevance]\n    target:\n      type: prompt\n",
 			wantErr: "is not supported",
 		},
 		{
 			name: "invalid evaluation level",
-			body: "evalGroups:\n  - name: g\n    evaluators: [builtin.relevance]\n" +
+			body: "evals:\n  - name: g\n    evaluators: [builtin.relevance]\n" +
 				"    options:\n      evaluation_level: sentence\n",
 			wantErr: "evaluation_level",
 		},
@@ -195,16 +195,16 @@ func TestResolveGroup(t *testing.T) {
 
 	t.Run("ambiguous without a name", func(t *testing.T) {
 		multi := loadFromString(t,
-			"evalGroups:\n  - name: pr-gate\n    evaluators: [builtin.relevance]\n"+
+			"evals:\n  - name: pr-gate\n    evaluators: [builtin.relevance]\n"+
 				"  - name: nightly\n    evaluators: [builtin.relevance]\n")
 		_, err := multi.ResolveGroup("")
-		require.ErrorContains(t, err, "--eval-group")
+		require.ErrorContains(t, err, "--eval")
 		require.ErrorContains(t, err, "nightly")
 	})
 
 	t.Run("empty config", func(t *testing.T) {
 		_, err := (&EvalConfig{}).ResolveGroup("")
-		require.ErrorContains(t, err, "no eval groups")
+		require.ErrorContains(t, err, "no evals")
 	})
 }
 

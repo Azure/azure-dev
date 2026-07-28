@@ -37,10 +37,10 @@ var terminalRunStates = map[string]bool{
 // of this same command.
 func newRunCommand() *cobra.Command {
 	cmd := buildRunCommand(
-		"run", "Run an evaluation, creating the eval group if it does not exist yet.")
+		"run", "Run an evaluation, creating the eval if it does not exist yet.")
 	addRunSubcommands(cmd)
 	cmd.AddCommand(buildRunCommand(
-		"start", "Start a run, creating the eval group if it does not exist yet."))
+		"start", "Start a run, creating the eval if it does not exist yet."))
 	return cmd
 }
 
@@ -77,7 +77,7 @@ func buildRunCommand(use, short string) *cobra.Command {
 			defer ec.Close()
 
 			// --eval-id bypasses the config entirely.
-			var group *project.EvalGroup
+			var group *project.Eval
 			if evalID == "" {
 				cfg, err := project.LoadEvalConfig(configPath)
 				if err != nil {
@@ -95,9 +95,9 @@ func buildRunCommand(use, short string) *cobra.Command {
 					return err
 				}
 
-				evalID, err = ec.resolveEvalGroupID(
+				evalID, err = ec.resolveEvalIDFromConfig(
 					ctx, group, configPath, resolveLevel(level, group),
-					len(cfg.EvalGroups) == 1, out, isJSON(cmd))
+					len(cfg.Evals) == 1, out, isJSON(cmd))
 				if err != nil {
 					return err
 				}
@@ -179,10 +179,10 @@ func buildRunCommand(use, short string) *cobra.Command {
 
 	cmd.Flags().StringVar(&configPath, "config", project.DefaultDeployConfig,
 		"Path to the eval deployment config.")
-	cmd.Flags().StringVar(&groupName, "eval-group", "",
-		"Which evalGroups entry to run. Defaults to the only one.")
+	cmd.Flags().StringVar(&groupName, "eval", "",
+		"Which evals entry to run. Defaults to the only one.")
 	cmd.Flags().StringVar(&evalID, "eval-id", "",
-		"Run against an existing eval group by id, ignoring the config.")
+		"Run against an existing eval by id, ignoring the config.")
 	cmd.Flags().StringVar(&runName, "name", "", "Name for this run. Defaults to the group name plus a timestamp.")
 	cmd.Flags().StringVar(&level, "level", "",
 		"Scoring granularity: turn or conversation. Defaults to the service default (turn).")
@@ -213,12 +213,12 @@ func buildRunCommand(use, short string) *cobra.Command {
 	return cmd
 }
 
-// resolveEvalGroupID finds the eval group to run against, creating it when it
+// resolveEvalIDFromConfig finds the eval to run against, creating it when it
 // has never been deployed. Resolution order: an id pinned on the group, then
 // the azd environment, then create.
-func (ec *evalContext) resolveEvalGroupID(
+func (ec *evalContext) resolveEvalIDFromConfig(
 	ctx context.Context,
-	group *project.EvalGroup,
+	group *project.Eval,
 	configPath string,
 	level string,
 	soleGroup bool,
@@ -229,7 +229,7 @@ func (ec *evalContext) resolveEvalGroupID(
 		return group.ID, nil
 	}
 
-	for _, key := range groupIDKeys(group.Name, soleGroup) {
+	for _, key := range evalIDKeys(group.Name, soleGroup) {
 		cached := ec.getEnvValue(ctx, key)
 		if cached == "" {
 			continue
@@ -241,7 +241,7 @@ func (ec *evalContext) resolveEvalGroupID(
 	}
 
 	if !jsonMode {
-		fmt.Fprintf(out, "Creating eval group %q...\n", group.Name)
+		fmt.Fprintf(out, "Creating eval %q...\n", group.Name)
 	}
 
 	// The level from the flag wins over the group's own options, so it has to
@@ -256,7 +256,7 @@ func (ec *evalContext) resolveEvalGroupID(
 		effective.Options = &opts
 	}
 
-	req, err := buildEvalGroupRequest(
+	req, err := buildEvalRequest(
 		&effective,
 		ec.evaluatorSchemas(ctx),
 		datasetColumns(configPath, group),
@@ -266,28 +266,28 @@ func (ec *evalContext) resolveEvalGroupID(
 	}
 	created, err := ec.evalClient.CreateOpenAIEval(ctx, req)
 	if err != nil {
-		return "", fmt.Errorf("creating eval group %q: %w", group.Name, err)
+		return "", fmt.Errorf("creating eval %q: %w", group.Name, err)
 	}
-	if err := ec.setEnvValue(ctx, idKey("evalgroup", group.Name), created.ID); err != nil {
+	if err := ec.setEnvValue(ctx, idKey("eval", group.Name), created.ID); err != nil {
 		fmt.Fprintf(out, "warning: %v\n", err)
 	}
-	_ = ec.setEnvValue(ctx, envKeyEvalGroupID, created.ID)
+	_ = ec.setEnvValue(ctx, envKeyEvalID, created.ID)
 	return created.ID, nil
 }
 
-// groupIDKeys lists the env entries that may hold this group's id, most
+// evalIDKeys lists the env entries that may hold this group's id, most
 // specific first.
 //
-// The per-name entry is what the extension writes. EVAL_GROUP_ID is also the
+// The per-name entry is what the extension writes. EVAL_ID is also the
 // documented way to point a config at a group that already exists, created in
 // the portal or by another tool, so it stays readable — but only when the
 // config declares a single group. With more than one there is no way to tell
 // which group a shared entry refers to, and reading it anyway is what let a
 // second group adopt the first one's id.
-func groupIDKeys(name string, soleGroup bool) []string {
-	keys := []string{idKey("evalgroup", name)}
+func evalIDKeys(name string, soleGroup bool) []string {
+	keys := []string{idKey("eval", name)}
 	if soleGroup {
-		keys = append(keys, envKeyEvalGroupID)
+		keys = append(keys, envKeyEvalID)
 	}
 	return keys
 }
@@ -297,7 +297,7 @@ func groupIDKeys(name string, soleGroup bool) []string {
 //
 // A run sends a local dataset inline, so without this the run would evaluate
 // content that no registered version corresponds to: the results are attributed
-// to the eval group but cannot be traced back to a dataset version, which
+// to the eval but cannot be traced back to a dataset version, which
 // makes them impossible to reproduce or compare.
 //
 // The check only applies once a deploy has recorded a fingerprint. Before that
@@ -306,7 +306,7 @@ func groupIDKeys(name string, soleGroup bool) []string {
 func (ec *evalContext) checkDatasetRegistered(
 	ctx context.Context,
 	cfg *project.EvalConfig,
-	group *project.EvalGroup,
+	group *project.Eval,
 	configPath string,
 ) error {
 	localPath := localDatasetPath(configPath, group)
@@ -336,7 +336,7 @@ func (ec *evalContext) checkDatasetRegistered(
 	return fmt.Errorf(
 		"dataset %q has local edits that are not registered.\n"+
 			"  Run `azd up` to register them, or `--eval-id <id>` to run against "+
-			"an existing eval group",
+			"an existing eval",
 		decl.Name)
 }
 
@@ -344,7 +344,7 @@ func (ec *evalContext) checkDatasetRegistered(
 // recent run.
 //
 // `--eval-id` deliberately ignores the config, but a run still needs a target
-// and a dataset, and an eval group carries neither: the group holds only its
+// and a dataset, and an eval carries neither: the group holds only its
 // testing criteria, and the dataset travels on the run. The previous run is the
 // only place that pairing survives, so re-running a group means repeating what
 // it last ran.
@@ -354,11 +354,11 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 ) (*eval_api.EvalRunDataSource, error) {
 	list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 1)
 	if err != nil {
-		return nil, fmt.Errorf("reading previous runs of eval group %s: %w", evalID, err)
+		return nil, fmt.Errorf("reading previous runs of eval %s: %w", evalID, err)
 	}
 	if list == nil || len(list.Data) == 0 || list.Data[0].DataSource == nil {
 		return nil, fmt.Errorf(
-			"eval group %s has no previous run to repeat, so there is no target or dataset "+
+			"eval %s has no previous run to repeat, so there is no target or dataset "+
 				"to reuse.\n"+
 				"  Run it from the config once with `azd ai eval run`, or pass a config that "+
 				"declares the group",
@@ -376,7 +376,7 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 func buildTracesDataSource(
 	ctx context.Context,
 	ec *evalContext,
-	group *project.EvalGroup,
+	group *project.Eval,
 	evalID, window string,
 	maxTraces int,
 ) (*eval_api.EvalRunDataSource, error) {
@@ -397,7 +397,7 @@ func buildTracesDataSource(
 	}
 	if agent == "" {
 		return nil, fmt.Errorf(
-			"--from-traces needs to know whose traces to read, and the eval group does not " +
+			"--from-traces needs to know whose traces to read, and the eval does not " +
 				"name an agent. Declare target.type: agent on the group")
 	}
 
@@ -408,16 +408,16 @@ func buildTracesDataSource(
 	return eval_api.NewTracesDataSource(agent, lookbackHours, time.Time{}, maxTraces), nil
 }
 
-// buildRunDataSource binds the dataset to the run. The eval group carries no
+// buildRunDataSource binds the dataset to the run. The eval carries no
 // dataset today, so it is supplied here.
 func (ec *evalContext) buildRunDataSource(
 	ctx context.Context,
-	group *project.EvalGroup,
+	group *project.Eval,
 	configPath string,
 	maxSamples int,
 ) (*eval_api.EvalRunDataSource, error) {
 	if group == nil {
-		return nil, fmt.Errorf("no eval group to run")
+		return nil, fmt.Errorf("no eval to run")
 	}
 
 	// A group with no target scores a dataset that already holds the exchange,
@@ -434,7 +434,7 @@ func (ec *evalContext) buildRunDataSource(
 	}
 
 	if group.Dataset == "" {
-		return nil, fmt.Errorf("eval group %q does not reference a dataset", group.Name)
+		return nil, fmt.Errorf("eval %q does not reference a dataset", group.Name)
 	}
 
 	// A local source is read from disk; anything else is already registered and
@@ -512,7 +512,7 @@ func (ec *evalContext) readRegisteredDataset(
 // A nil result means the columns are unknown, which is the case for a dataset
 // already registered in the project. The builder then assumes every field an
 // evaluator accepts is present.
-func datasetColumns(configPath string, group *project.EvalGroup) map[string]bool {
+func datasetColumns(configPath string, group *project.Eval) map[string]bool {
 	return datasetColumnsFromPath(localDatasetPath(configPath, group))
 }
 
@@ -536,7 +536,7 @@ func datasetColumnsFromPath(localPath string) map[string]bool {
 
 // localDatasetPath resolves the dataset's local source relative to the config
 // file, returning empty when the dataset is registered rather than local.
-func localDatasetPath(configPath string, group *project.EvalGroup) string {
+func localDatasetPath(configPath string, group *project.Eval) string {
 	cfg, err := project.LoadEvalConfig(configPath)
 	if err != nil {
 		return ""
@@ -601,7 +601,7 @@ func scanJSONL(r io.Reader, limit int) ([]map[string]any, error) {
 }
 
 // resolveLevel prefers the flag, then the group's options.
-func resolveLevel(flag string, group *project.EvalGroup) string {
+func resolveLevel(flag string, group *project.Eval) string {
 	if flag != "" {
 		return flag
 	}
@@ -617,7 +617,7 @@ func resolveLevel(flag string, group *project.EvalGroup) string {
 // Without this, options.max_samples parsed and did nothing: a group that caps
 // its sample count in config would send the whole dataset, and only a flag on
 // every invocation would honour the cap.
-func resolveMaxSamples(flag int, group *project.EvalGroup) int {
+func resolveMaxSamples(flag int, group *project.Eval) int {
 	if flag > 0 {
 		return flag
 	}

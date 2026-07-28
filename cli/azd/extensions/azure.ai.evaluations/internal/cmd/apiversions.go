@@ -12,6 +12,6 @@ const (
 	// DataGenerationAPIVersion covers dataset generation jobs.
 	DataGenerationAPIVersion = "v1"
 
-	// OpenAI-compatible eval group and run calls send no api-version, so there
+	// OpenAI-compatible eval and run calls send no api-version, so there
 	// is deliberately no constant for them.
 )

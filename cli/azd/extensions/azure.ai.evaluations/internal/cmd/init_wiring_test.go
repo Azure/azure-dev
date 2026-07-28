@@ -30,3 +30,19 @@ func TestEvalServiceName_StepsAsideForAnExistingName(t *testing.T) {
 	assert.Equal(t, "evals2", evalServiceName(projectWith("evals")))
 	assert.Equal(t, "evals3", evalServiceName(projectWith("evals", "evals2")))
 }
+
+// The agents extension wires uses: only to services the project actually
+// declares. Naming one it does not have is a broken reference, and an eval
+// config can sit in a repo that reaches an existing Foundry project by
+// endpoint instead of declaring one.
+func TestProjectServiceUses_OnlyWhenTheProjectDeclaresOne(t *testing.T) {
+	assert.Nil(t, projectServiceUses(projectWith("api", "web")),
+		"no Foundry project service means no uses entry")
+
+	withProject := projectWith("api")
+	withProject.Services["ai-project"] = &azdext.ServiceConfig{
+		Name: "ai-project", Host: aiProjectHost,
+	}
+	assert.Equal(t, []string{"ai-project"}, projectServiceUses(withProject),
+		"the eval service should be ordered after the project it evaluates against")
+}

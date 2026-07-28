@@ -124,6 +124,10 @@ func newInitCommand() *cobra.Command {
 // rootConfigName is azd's project file, which the eval service is declared in.
 const rootConfigName = "azure.yaml"
 
+// aiProjectHost is the Foundry project service other extensions declare. The
+// eval service uses it for ordering when the repo has one.
+const aiProjectHost = "azure.ai.project"
+
 // How the root config ended up referencing the eval service.
 const (
 	wiringAdded   = "added"   // the service was added to the project
@@ -176,6 +180,7 @@ func ensureRootEvalService(ctx context.Context, depPath string) (string, error) 
 		Service: &azdext.ServiceConfig{
 			Name:                 evalServiceName(resp.GetProject()),
 			Host:                 project.EvalHost,
+			Uses:                 projectServiceUses(resp.GetProject()),
 			AdditionalProperties: props,
 		},
 	})
@@ -183,6 +188,22 @@ func ensureRootEvalService(ctx context.Context, depPath string) (string, error) 
 		return "", fmt.Errorf("adding the eval service to %s: %w", rootConfigName, err)
 	}
 	return wiringAdded, nil
+}
+
+// projectServiceUses points the eval service at the Foundry project service
+// when the repo declares one, so azd provisions it first.
+//
+// It is conditional for the same reason the agents extension makes it
+// conditional: naming a service the project does not declare is a broken
+// reference, and an eval config can perfectly well sit in a repo that reaches
+// an existing Foundry project by endpoint instead.
+func projectServiceUses(proj *azdext.ProjectConfig) []string {
+	for name, svc := range proj.GetServices() {
+		if svc.GetHost() == aiProjectHost {
+			return []string{name}
+		}
+	}
+	return nil
 }
 
 // evalServiceName avoids colliding with a service the project already has.

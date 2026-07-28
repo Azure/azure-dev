@@ -96,7 +96,8 @@ func buildRunCommand(use, short string) *cobra.Command {
 				}
 
 				evalID, err = ec.resolveEvalGroupID(
-					ctx, group, configPath, resolveLevel(level, group), out, isJSON(cmd))
+					ctx, group, configPath, resolveLevel(level, group),
+					len(cfg.EvalGroups) == 1, out, isJSON(cmd))
 				if err != nil {
 					return err
 				}
@@ -220,6 +221,7 @@ func (ec *evalContext) resolveEvalGroupID(
 	group *project.EvalGroup,
 	configPath string,
 	level string,
+	soleGroup bool,
 	out interface{ Write([]byte) (int, error) },
 	jsonMode bool,
 ) (string, error) {
@@ -227,7 +229,11 @@ func (ec *evalContext) resolveEvalGroupID(
 		return group.ID, nil
 	}
 
-	if cached := ec.getEnvValue(ctx, idKey("evalgroup", group.Name)); cached != "" {
+	for _, key := range groupIDKeys(group.Name, soleGroup) {
+		cached := ec.getEnvValue(ctx, key)
+		if cached == "" {
+			continue
+		}
 		// Confirm it still exists; a deleted group should fall through to create.
 		if _, err := ec.evalClient.GetOpenAIEval(ctx, cached); err == nil {
 			return cached, nil
@@ -267,6 +273,23 @@ func (ec *evalContext) resolveEvalGroupID(
 	}
 	_ = ec.setEnvValue(ctx, envKeyEvalGroupID, created.ID)
 	return created.ID, nil
+}
+
+// groupIDKeys lists the env entries that may hold this group's id, most
+// specific first.
+//
+// The per-name entry is what the extension writes. EVAL_GROUP_ID is also the
+// documented way to point a config at a group that already exists, created in
+// the portal or by another tool, so it stays readable — but only when the
+// config declares a single group. With more than one there is no way to tell
+// which group a shared entry refers to, and reading it anyway is what let a
+// second group adopt the first one's id.
+func groupIDKeys(name string, soleGroup bool) []string {
+	keys := []string{idKey("evalgroup", name)}
+	if soleGroup {
+		keys = append(keys, envKeyEvalGroupID)
+	}
+	return keys
 }
 
 // checkDatasetRegistered fails when the group's local dataset has edits that

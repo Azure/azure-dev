@@ -35,3 +35,20 @@ func TestIDKey_NormalizesNames(t *testing.T) {
 func TestIDKey_DoesNotCollideWithVersionKey(t *testing.T) {
 	assert.NotEqual(t, idKey("dataset", "golden"), versionKey("dataset", "golden"))
 }
+
+// Setting EVAL_GROUP_ID by hand is the documented way to point a config at a
+// group that already exists. It is also the key the extension writes itself,
+// which is what let a second group adopt the first one's id — so it stays
+// readable only where it cannot be ambiguous. Fixing the aliasing dropped this
+// fallback entirely once, silently breaking the documented behaviour.
+func TestGroupIDKeys_SharedKeyReadOnlyWhenUnambiguous(t *testing.T) {
+	sole := groupIDKeys("quality", true)
+	assert.Equal(t, idKey("evalgroup", "quality"), sole[0],
+		"a group's own entry is preferred over the shared one")
+	assert.Contains(t, sole, envKeyEvalGroupID,
+		"a single-group config honours an id set by hand")
+
+	assert.Equal(t, []string{idKey("evalgroup", "quality")}, groupIDKeys("quality", false),
+		"with several groups the shared entry cannot say which group it means")
+}
+

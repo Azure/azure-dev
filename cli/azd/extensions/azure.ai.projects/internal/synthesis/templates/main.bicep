@@ -1,8 +1,8 @@
 // Provisioning template for a Foundry project service.
 //
 // Inputs are derived from the host: azure.ai.project service body in
-// azure.yaml by internal/synthesis. Greenfield only (no endpoint:); a
-// brownfield path is handled by the provider before synthesis.
+// azure.yaml by internal/synthesis. Parameters select whether azd creates the
+// Foundry account/project or reconciles resources on an existing project.
 //
 // Subscription-scoped so the resource group is part of the deployment. This
 // keeps `azd provision --preview` side-effect free: the resource group shows
@@ -58,16 +58,30 @@ param tags object = {}
 @description('Optional salt to vary resource names across re-provisions.')
 param resourceTokenSalt string = ''
 
-@description('Foundry project name. 3-32 alphanumeric/hyphen chars.')
-@minLength(3)
-@maxLength(32)
+@description('Foundry project name. New projects require 3-32 characters; existing project names are preserved.')
 param foundryProjectName string
+
+@description('Foundry account name to reuse. Empty provisions a new account.')
+param foundryAccountName string = ''
 
 @description('Model deployments to provision on the Foundry account.')
 param deployments deploymentsType = []
 
 @description('Include an Azure Container Registry. Set true when any agent uses docker:.')
 param includeAcr bool = false
+
+@allowed([
+  'none'
+  'create'
+  'existing'
+])
+param acrMode string = includeAcr ? 'create' : 'none'
+param acrName string = ''
+param existingAcrSubscriptionId string = subscription().subscriptionId
+param existingAcrResourceGroup string = resourceGroupName
+param existingAcrName string = acrName
+param existingAcrEndpoint string = ''
+param existingAcrConnectionName string = ''
 
 @description('Foundry project connections to create (host: azure.ai.connection services).')
 param connections connectionsType = []
@@ -123,7 +137,9 @@ param dnsZonesSubscription string = ''
 
 // Resources
 
-resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
+var createFoundryResources = empty(foundryAccountName)
+
+resource managedResourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = if (createFoundryResources) {
   name: resourceGroupName
   location: location
   tags: tags
@@ -131,14 +147,22 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
 
 module resources 'modules/resources.bicep' = {
   name: 'foundry-resources'
-  scope: resourceGroup
+  scope: resourceGroup(resourceGroupName)
   params: {
+    foundryAccountName: foundryAccountName
     location: location
     tags: tags
     resourceTokenSalt: resourceTokenSalt
     foundryProjectName: foundryProjectName
     deployments: deployments
     includeAcr: includeAcr
+    acrMode: acrMode
+    acrName: acrName
+    existingAcrSubscriptionId: existingAcrSubscriptionId
+    existingAcrResourceGroup: existingAcrResourceGroup
+    existingAcrName: existingAcrName
+    existingAcrEndpoint: existingAcrEndpoint
+    existingAcrConnectionName: existingAcrConnectionName
     connections: connections
     connectionCredentials: connectionCredentials
     principalId: principalId
@@ -156,11 +180,12 @@ module resources 'modules/resources.bicep' = {
     dnsZonesResourceGroup: dnsZonesResourceGroup
     dnsZonesSubscription: dnsZonesSubscription
   }
+  dependsOn: [managedResourceGroup]
 }
 
 // Outputs
 
-output AZURE_RESOURCE_GROUP string = resourceGroup.name
+output AZURE_RESOURCE_GROUP string = resourceGroupName
 output AZURE_AI_PROJECT_ID string = resources.outputs.AZURE_AI_PROJECT_ID
 output AZURE_AI_ACCOUNT_NAME string = resources.outputs.AZURE_AI_ACCOUNT_NAME
 output AZURE_AI_PROJECT_NAME string = resources.outputs.AZURE_AI_PROJECT_NAME

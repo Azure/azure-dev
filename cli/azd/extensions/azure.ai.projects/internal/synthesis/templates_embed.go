@@ -11,12 +11,9 @@ import "embed"
 // needs a bicep CLI at user runtime.
 //
 //go:generate bicep build templates/main.bicep --outfile templates/main.arm.json
-//go:generate bicep build templates/brownfield.bicep --outfile templates/brownfield.arm.json
 
 //go:embed templates/main.bicep
 //go:embed templates/main.arm.json
-//go:embed templates/brownfield.bicep
-//go:embed templates/brownfield.arm.json
 //go:embed templates/abbreviations.json
 //go:embed templates/modules/*.bicep
 var templatesFS embed.FS
@@ -48,11 +45,4 @@ func TerraformTemplatesFS() embed.FS { return terraformTemplatesFS }
 // ARMTemplate returns the compiled ARM JSON for main.bicep.
 func ARMTemplate() ([]byte, error) {
 	return templatesFS.ReadFile("templates/main.arm.json")
-}
-
-// BrownfieldARMTemplate returns the compiled ARM JSON for brownfield.bicep, which
-// reconciles synthesized resources on an EXISTING Foundry account (referenced,
-// not created).
-func BrownfieldARMTemplate() ([]byte, error) {
-	return templatesFS.ReadFile("templates/brownfield.arm.json")
 }

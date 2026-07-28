@@ -6,11 +6,13 @@ package provisioning
 import (
 	"context"
 	"net"
-	"strings"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"azure.ai.projects/internal/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -45,16 +47,37 @@ type kvEnvServer struct {
 	values map[string]string
 }
 
+type kvAccountServer struct {
+	azdext.UnimplementedAccountServiceServer
+}
+
+func (s *kvAccountServer) LookupTenant(
+	context.Context, *azdext.LookupTenantRequest,
+) (*azdext.LookupTenantResponse, error) {
+	return &azdext.LookupTenantResponse{TenantId: "tenant-id"}, nil
+}
+
 func (s *kvEnvServer) GetValue(
 	_ context.Context, req *azdext.GetEnvRequest,
 ) (*azdext.KeyValueResponse, error) {
 	return &azdext.KeyValueResponse{Value: s.values[req.Key]}, nil
 }
 
+func (s *kvEnvServer) GetValues(
+	_ context.Context, _ *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	values := make([]*azdext.KeyValue, 0, len(s.values))
+	for key, value := range s.values {
+		values = append(values, &azdext.KeyValue{Key: key, Value: value})
+	}
+	return &azdext.KeyValueListResponse{KeyValues: values}, nil
+}
+
 func newKVEnvClient(t *testing.T, values map[string]string) *azdext.AzdClient {
 	t.Helper()
 	srv := grpc.NewServer()
 	azdext.RegisterEnvironmentServiceServer(srv, &kvEnvServer{values: values})
+	azdext.RegisterAccountServiceServer(srv, &kvAccountServer{})
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -122,6 +145,164 @@ func TestBrownfieldACRRequested(t *testing.T) {
 	}
 }
 
+func TestBrownfieldNeedsProvisioning(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		result      *synthesis.Result
+		createACR   bool
+		existingACR *existingACR
+		onDisk      bool
+		want        bool
+	}{
+		{name: "endpoint only", result: brownfieldResult("https://acct.services.ai.azure.com/api/projects/p", nil, nil)},
+		{
+			name: "model deployment",
+			result: brownfieldResult("https://acct.services.ai.azure.com/api/projects/p",
+				[]synthesis.Deployment{{Name: "model"}}, nil),
+			want: true,
+		},
+		{
+			name: "connection",
+			result: brownfieldResult("https://acct.services.ai.azure.com/api/projects/p",
+				nil, []synthesis.Connection{{Name: "connection"}}),
+			want: true,
+		},
+		{
+			name:      "pending ACR",
+			result:    brownfieldResult("https://acct.services.ai.azure.com/api/projects/p", nil, nil),
+			createACR: true,
+			want:      true,
+		},
+		{
+			name:        "existing ACR needs connection",
+			result:      brownfieldResult("https://acct.services.ai.azure.com/api/projects/p", nil, nil),
+			existingACR: &existingACR{name: "acr"},
+			want:        true,
+		},
+		{
+			name:        "existing ACR already configured",
+			result:      brownfieldResult("https://acct.services.ai.azure.com/api/projects/p", nil, nil),
+			existingACR: &existingACR{name: "acr", connectionName: "acr-conn"},
+		},
+		{
+			name:   "on-disk Bicep",
+			result: brownfieldResult("https://acct.services.ai.azure.com/api/projects/p", nil, nil),
+			onDisk: true,
+			want:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			projectPath := t.TempDir()
+			if tt.onDisk {
+				infraDir := filepath.Join(projectPath, onDiskInfraDir)
+				require.NoError(t, os.MkdirAll(infraDir, 0o750))
+				require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepFile), nil, 0o600))
+			}
+			p := &FoundryProvisioningProvider{
+				projectPath:         projectPath,
+				synthResult:         tt.result,
+				brownfieldCreateACR: tt.createACR,
+				brownfieldACR:       tt.existingACR,
+			}
+			assert.Equal(t, tt.want, p.brownfieldNeedsProvisioning())
+		})
+	}
+}
+
+func TestBrownfieldNoWorkSkipsARM(t *testing.T) {
+	t.Parallel()
+	p := &FoundryProvisioningProvider{
+		synthResult: brownfieldResult("https://acct.services.ai.azure.com/api/projects/p", nil, nil),
+	}
+
+	state, err := p.State(t.Context(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, "p", state.State.Outputs["AZURE_AI_PROJECT_NAME"].Value)
+
+	deployed, err := p.Deploy(t.Context(), func(string) {})
+	require.NoError(t, err)
+	assert.Equal(t, "p", deployed.Deployment.Outputs["AZURE_AI_PROJECT_NAME"].Value)
+
+	preview, err := p.Preview(t.Context(), func(string) {})
+	require.NoError(t, err)
+	assert.Empty(t, preview.Preview.Changes)
+}
+
+func TestBrownfieldNoWorkIncludesTenantOutput(t *testing.T) {
+	t.Parallel()
+	p := &FoundryProvisioningProvider{
+		envName: "dev",
+		azdClient: newKVEnvClient(t, map[string]string{
+			"AZURE_AI_PROJECT_ID": "/subscriptions/sub/resourceGroups/rg/providers/" +
+				"Microsoft.CognitiveServices/accounts/acct/projects/p",
+		}),
+		synthResult: brownfieldResult("https://acct.services.ai.azure.com/api/projects/p", nil, nil),
+	}
+
+	deployed, err := p.Deploy(t.Context(), func(string) {})
+	require.NoError(t, err)
+	assert.Equal(t, "tenant-id", deployed.Deployment.Outputs[envKeyTenantID].Value)
+}
+
+func TestBrownfieldPendingACRUsesCreateMode(t *testing.T) {
+	t.Parallel()
+	p := &FoundryProvisioningProvider{
+		envName:             "dev",
+		brownfieldAccount:   "account",
+		brownfieldCreateACR: true,
+		synthResult:         brownfieldResult("https://account.services.ai.azure.com/api/projects/p", nil, nil),
+	}
+
+	params := p.armParameters()
+	assert.Equal(t, "create", params["acrMode"].(map[string]any)["value"])
+	assert.NotEmpty(t, params["acrName"].(map[string]any)["value"])
+}
+
+func TestBrownfieldExistingACRNeedsConfiguration(t *testing.T) {
+	t.Parallel()
+	resourceID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/acr"
+
+	needs := &FoundryProvisioningProvider{envName: "dev", azdClient: newKVEnvClient(t, map[string]string{
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceID,
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "acr.azurecr.io",
+	})}
+	got, err := needs.brownfieldExistingACRNeedsConfiguration(t.Context())
+	require.NoError(t, err)
+	assert.True(t, got)
+
+	configured := &FoundryProvisioningProvider{envName: "dev", azdClient: newKVEnvClient(t, map[string]string{
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceID,
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "acr.azurecr.io",
+		"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "acr-conn",
+	})}
+	got, err = configured.brownfieldExistingACRNeedsConfiguration(t.Context())
+	require.NoError(t, err)
+	assert.False(t, got)
+}
+
+func TestBrownfieldExistingACRValidation(t *testing.T) {
+	t.Parallel()
+	validID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/acr"
+
+	missingEndpoint := &FoundryProvisioningProvider{envName: "dev", azdClient: newKVEnvClient(t, map[string]string{
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": validID,
+	})}
+	_, err := missingEndpoint.brownfieldExistingACR(t.Context())
+	require.ErrorContains(t, err, "AZURE_CONTAINER_REGISTRY_ENDPOINT")
+
+	wrongType := &FoundryProvisioningProvider{envName: "dev", azdClient: newKVEnvClient(t, map[string]string{
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/notacr",
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "notacr.azurecr.io",
+	})}
+	_, err = wrongType.brownfieldExistingACR(t.Context())
+	require.ErrorContains(t, err, "not a container registry")
+}
+
 func TestBrownfieldACRName(t *testing.T) {
 	t.Parallel()
 
@@ -171,203 +352,85 @@ func TestBrownfieldProjectName(t *testing.T) {
 	assert.Equal(t, "fallback", p2.brownfieldProjectName())
 }
 
-func TestBrownfieldDeploymentName(t *testing.T) {
+func TestBrownfieldStateMergesPersistedDeploymentOutputs(t *testing.T) {
 	t.Parallel()
-
-	// Short env name: full "<name>-brownfield" fits under 64 chars.
-	short := &FoundryProvisioningProvider{envName: "dev", projectPath: "/p"}
-	name := short.brownfieldDeploymentName()
-	assert.LessOrEqual(t, len(name), 64)
-	assert.True(t, strings.HasSuffix(name, "-brownfield"), "got %q", name)
-	assert.Equal(t, short.deploymentName()+"-brownfield", name)
-
-	// Long env name: must be capped at 64 while keeping the suffix.
-	long := &FoundryProvisioningProvider{
-		envName:     "agent-framework-agent-basic-invocations-dev",
-		projectPath: "/some/long/project/path",
+	p := &FoundryProvisioningProvider{
+		tenantID: "tenant",
+		synthResult: brownfieldResult(
+			"https://acct.services.ai.azure.com/api/projects/my-project", nil, nil),
 	}
-	lname := long.brownfieldDeploymentName()
-	assert.LessOrEqual(t, len(lname), 64, "got %q (len %d)", lname, len(lname))
-	assert.True(t, strings.HasSuffix(lname, "-brownfield"), "got %q", lname)
+	properties := &armresources.DeploymentPropertiesExtended{
+		Outputs: map[string]any{
+			"AZURE_CONTAINER_REGISTRY_ENDPOINT": map[string]any{"type": "String", "value": "acr.azurecr.io"},
+			"EMPTY":                             map[string]any{"type": "String", "value": ""},
+		},
+		OutputResources: []*armresources.ResourceReference{{ID: new("/subscriptions/sub/resourceGroups/rg/providers/Test/type/name")}},
+	}
+
+	state := p.brownfieldState(properties).State
+
+	assert.Equal(t, "my-project", state.Outputs["AZURE_AI_PROJECT_NAME"].Value)
+	assert.Equal(t, "acr.azurecr.io", state.Outputs["AZURE_CONTAINER_REGISTRY_ENDPOINT"].Value)
+	assert.NotContains(t, state.Outputs, "EMPTY")
+	require.Len(t, state.Resources, 1)
+
+	empty := p.brownfieldState(nil).State
+	assert.Contains(t, empty.Outputs, "FOUNDRY_PROJECT_ENDPOINT")
+	assert.Empty(t, empty.Resources)
 }
 
-func TestBrownfieldParams(t *testing.T) {
+func TestBrownfieldDeploymentResultRedactsSecretsAndPreservesCanonicalOutputs(t *testing.T) {
 	t.Parallel()
+	p := &FoundryProvisioningProvider{
+		tenantID: "tenant",
+		synthResult: brownfieldResult(
+			"https://acct.services.ai.azure.com/api/projects/current-project", nil, nil),
+	}
+	src := &templateSource{
+		armTemplate: map[string]any{"parameters": map[string]any{
+			"connectionCredentials": map[string]any{"type": "secureObject"},
+			"customSecret":          map[string]any{"type": "secureString"},
+			"location":              map[string]any{"type": "string"},
+		}},
+		parameters: map[string]any{
+			"connectionCredentials": map[string]any{"value": map[string]any{"key": "secret"}},
+			"customSecret":          map[string]any{"value": "secret"},
+			"location":              map[string]any{"value": "eastus"},
+		},
+	}
+	properties := &armresources.DeploymentPropertiesExtended{Outputs: map[string]any{
+		"FOUNDRY_PROJECT_ENDPOINT": map[string]any{"type": "String", "value": ""},
+		"AZURE_AI_PROJECT_NAME":    map[string]any{"type": "String", "value": "stale-project"},
+	}}
 
-	deployments := []synthesis.Deployment{{Name: "gpt-4o-mini"}}
-
-	t.Run("without ACR still carries projectName for the existing project resource", func(t *testing.T) {
-		t.Parallel()
-		// The brownfield template declares `foundryAccountPreview::project` as an
-		// unconditional existing resource, so projectName must be supplied even
-		// when no ACR is created (model-deployments-only reconcile). Regression
-		// test for the InvalidTemplate failure where the name collapsed to
-		// "<account>/" because projectName was omitted.
-		p := &FoundryProvisioningProvider{
-			envName: "dev",
-			synthResult: brownfieldResult(
-				"https://acct.services.ai.azure.com/api/projects/my-project", deployments, nil),
-		}
-		params, err := p.brownfieldParams(t.Context(), "acct", "rg", false)
-		require.NoError(t, err)
-
-		assert.Equal(t, map[string]any{"value": "acct"}, params["accountName"])
-		assert.Equal(t, map[string]any{"value": deployments}, params["deployments"])
-		assert.Equal(t, map[string]any{"value": []synthesis.Connection{}}, params["connections"])
-		assert.Equal(
-			t,
-			map[string]any{"value": map[string]map[string]any{}},
-			params["connectionCredentials"],
-		)
-		assert.Equal(t, map[string]any{"value": "my-project"}, params["projectName"])
-		assert.NotContains(t, params, "includeAcr")
-		assert.NotContains(t, params, "acrName")
-	})
-
-	t.Run("connections without ACR carry connections and set projectName", func(t *testing.T) {
-		t.Parallel()
-		conns := []synthesis.Connection{{
-			Name:        "search-conn",
-			Category:    "CognitiveSearch",
-			Credentials: map[string]any{"key": "secret"},
-		}}
-		p := &FoundryProvisioningProvider{
-			envName: "dev",
-			synthResult: brownfieldResult(
-				"https://acct.services.ai.azure.com/api/projects/my-project", nil, conns),
-		}
-		params, err := p.brownfieldParams(t.Context(), "acct", "rg", false)
-		require.NoError(t, err)
-
-		assert.Equal(
-			t,
-			map[string]any{"value": []synthesis.Connection{{
-				Name:     "search-conn",
-				Category: "CognitiveSearch",
-			}}},
-			params["connections"],
-		)
-		assert.Equal(
-			t,
-			map[string]any{"value": map[string]map[string]any{
-				"search-conn": {"key": "secret"},
-			}},
-			params["connectionCredentials"],
-		)
-		// Connections are project-scoped, so projectName must be supplied even
-		// without ACR.
-		assert.Equal(t, map[string]any{"value": "my-project"}, params["projectName"])
-		assert.NotContains(t, params, "includeAcr")
-	})
-
-	t.Run("with ACR adds registry params", func(t *testing.T) {
-		t.Parallel()
-		p := &FoundryProvisioningProvider{
-			envName: "dev",
-			synthResult: brownfieldResult(
-				"https://acct.services.ai.azure.com/api/projects/my-project", nil, nil),
-			azdClient: newKVEnvClient(t, map[string]string{"AZURE_LOCATION": "westus2"}),
-		}
-		params, err := p.brownfieldParams(t.Context(), "acct", "rg", true)
-		require.NoError(t, err)
-
-		assert.Equal(t, map[string]any{"value": true}, params["includeAcr"])
-		assert.Equal(t, map[string]any{"value": "my-project"}, params["projectName"])
-		assert.Equal(t, map[string]any{"value": "westus2"}, params["location"])
-		assert.Equal(t, map[string]any{"value": p.brownfieldACRName("acct")}, params["acrName"])
-	})
-
-	t.Run("omits location when unresolved so template default applies", func(t *testing.T) {
-		t.Parallel()
-		// AZURE_LOCATION unset and no usable credential => brownfieldLocation
-		// returns ""; the param must be omitted, not set to "".
-		p := &FoundryProvisioningProvider{
-			envName: "dev",
-			synthResult: brownfieldResult(
-				"https://acct.services.ai.azure.com/api/projects/my-project", nil, nil),
-			azdClient: newKVEnvClient(t, map[string]string{}),
-		}
-		params, err := p.brownfieldParams(t.Context(), "acct", "rg", true)
-		require.NoError(t, err)
-
-		assert.Contains(t, params, "includeAcr")
-		assert.NotContains(t, params, "location")
-	})
+	result := p.deploymentResult(src, properties)
+	assert.NotContains(t, result.Parameters, "connectionCredentials")
+	assert.NotContains(t, result.Parameters, "customSecret")
+	assert.Equal(t, "eastus", result.Parameters["location"].Value)
+	assert.Equal(t, "https://acct.services.ai.azure.com/api/projects/current-project",
+		result.Outputs["FOUNDRY_PROJECT_ENDPOINT"].Value)
+	assert.Equal(t, "current-project", result.Outputs["AZURE_AI_PROJECT_NAME"].Value)
+	assert.Equal(t, "tenant", result.Outputs[envKeyTenantID].Value)
 }
 
-// TestBrownfieldReconcileMessage covers every combination the caller can
-// reach (deployBrownfield's own guard skips provisioning entirely when all
-// three are false, so at least one is always true here). Regression guard
-// for a live-tested bug: a brownfield project declaring only a connection
-// (no deployments, no ACR) previously printed "reconciling declared model
-// deployments..." even though zero deployments existed.
-func TestBrownfieldReconcileMessage(t *testing.T) {
+func TestMergeUnifiedParametersProtectsTargeting(t *testing.T) {
 	t.Parallel()
-
-	tests := []struct {
-		name           string
-		hasDeployments bool
-		createACR      bool
-		hasConnections bool
-		want           string
-	}{
-		{
-			name:           "connections only (the live-tested regression case)",
-			hasConnections: true,
-			want:           "Using existing Foundry project; reconciling connections...",
-		},
-		{
-			name:           "deployments only",
-			hasDeployments: true,
-			want:           "Using existing Foundry project; reconciling model deployments...",
-		},
-		{
-			name:      "ACR only",
-			createACR: true,
-			want:      "Using existing Foundry project; reconciling container registry...",
-		},
-		{
-			name:           "deployments and ACR",
-			hasDeployments: true,
-			createACR:      true,
-			want:           "Using existing Foundry project; reconciling model deployments, container registry...",
-		},
-		{
-			name:           "deployments and connections",
-			hasDeployments: true,
-			hasConnections: true,
-			want:           "Using existing Foundry project; reconciling model deployments, connections...",
-		},
-		{
-			name:           "ACR and connections",
-			createACR:      true,
-			hasConnections: true,
-			want:           "Using existing Foundry project; reconciling container registry, connections...",
-		},
-		{
-			name:           "all three",
-			hasDeployments: true,
-			createACR:      true,
-			hasConnections: true,
-			want:           "Using existing Foundry project; reconciling model deployments, container registry, connections...",
-		},
+	host := map[string]any{
+		"foundryAccountName": map[string]any{"value": "host-account"},
+		"foundryProjectName": map[string]any{"value": "host-project"},
+		"deployments":        map[string]any{"value": []any{"host"}},
+	}
+	user := map[string]any{
+		"foundryAccountName": map[string]any{"value": "user-account"},
+		"foundryProjectName": map[string]any{"value": "user-project"},
+		"deployments":        map[string]any{"value": []any{"user"}},
+		"acrMode":            map[string]any{"value": "existing"},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := brownfieldReconcileMessage(tt.hasDeployments, tt.createACR, tt.hasConnections)
-			assert.Equal(t, tt.want, got)
-			// Never claim to reconcile something that isn't actually pending.
-			if !tt.hasDeployments {
-				assert.NotContains(t, got, "model deployments")
-			}
-			if !tt.createACR {
-				assert.NotContains(t, got, "container registry")
-			}
-			if !tt.hasConnections {
-				assert.NotContains(t, got, "connections")
-			}
-		})
-	}
+	got := mergeUnifiedParameters(user, host)
+
+	assert.Equal(t, host["foundryAccountName"], got["foundryAccountName"])
+	assert.Equal(t, host["foundryProjectName"], got["foundryProjectName"])
+	assert.Equal(t, user["deployments"], got["deployments"])
+	assert.NotContains(t, got, "acrMode")
 }

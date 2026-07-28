@@ -1344,7 +1344,7 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	// enableNetworkIsolation (not on egress mode), so a network-bound account is
 	// never left public. This is the regression guard for the data-plane fix.
 	text := string(data)
-	wantDisable := `"disablePublicDataPlaneAccess": "[parameters('enableNetworkIsolation')]"`
+	wantDisable := `"disablePublicDataPlaneAccess": "[and(variables('createFoundryResources'), parameters('enableNetworkIsolation'))]"`
 	wantPublic := `"publicNetworkAccess": "[if(variables('disablePublicDataPlaneAccess'), 'Disabled', 'Enabled')]"`
 	assert.Contains(t, text, wantDisable,
 		"public data-plane access must be disabled for every network-isolated account")

@@ -1,0 +1,74 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"testing"
+
+	"azureaieval/internal/project"
+
+	"github.com/stretchr/testify/assert"
+)
+
+// Precedence decides behaviour without announcing it, so a wrong answer here
+// is silent. options.max_samples was parsed and dropped once already, which is
+// what these lock down.
+func TestResolveMaxSamples_Precedence(t *testing.T) {
+	withOptions := &project.EvalGroup{Options: &project.Options{MaxSamples: 25}}
+
+	assert.Equal(t, 5, resolveMaxSamples(5, withOptions), "the flag wins over the config")
+	assert.Equal(t, 25, resolveMaxSamples(0, withOptions), "the config is used when no flag is given")
+	assert.Equal(t, 0, resolveMaxSamples(0, &project.EvalGroup{}), "neither means no cap")
+	assert.Equal(t, 0, resolveMaxSamples(0, nil))
+	assert.Equal(t, 7, resolveMaxSamples(7, nil), "a flag stands on its own")
+
+	// Zero in config is absent, not a cap of zero: a cap of zero would send
+	// nothing at all.
+	assert.Equal(t, 0, resolveMaxSamples(0, &project.EvalGroup{Options: &project.Options{MaxSamples: 0}}))
+}
+
+func TestResolveLevel_Precedence(t *testing.T) {
+	withOptions := &project.EvalGroup{
+		Options: &project.Options{EvaluationLevel: project.EvaluationLevelConversation},
+	}
+
+	assert.Equal(t, project.EvaluationLevelTurn, resolveLevel(project.EvaluationLevelTurn, withOptions),
+		"the flag wins over the config")
+	assert.Equal(t, project.EvaluationLevelConversation, resolveLevel("", withOptions))
+	assert.Empty(t, resolveLevel("", &project.EvalGroup{}), "unset defers to the service default")
+	assert.Empty(t, resolveLevel("", nil))
+}
+
+// A group's target decides which run-time fields its criteria can bind. Getting
+// this wrong passes validation and then errors on every row.
+func TestSampleBindingsFor_UnknownTargetBindsNothing(t *testing.T) {
+	assert.Nil(t, sampleBindingsFor("prompt"),
+		"an unrecognised target must bind nothing rather than guess at agent fields")
+}
+
+// The level filter is what keeps a conversation evaluator from being sent turn
+// fields and the reverse. Both directions matter.
+func TestSelectLevelFields_KeepsOnlyTheLevelsShape(t *testing.T) {
+	accepted := []string{"query", "response", "messages", "tool_definitions"}
+
+	conv := selectLevelFields(accepted, nil, project.EvaluationLevelConversation)
+	assert.Contains(t, conv, "messages")
+	assert.NotContains(t, conv, "query")
+	assert.NotContains(t, conv, "response")
+	assert.Contains(t, conv, "tool_definitions", "fields outside the split are untouched")
+
+	turn := selectLevelFields(accepted, nil, project.EvaluationLevelTurn)
+	assert.Contains(t, turn, "query")
+	assert.Contains(t, turn, "response")
+	assert.NotContains(t, turn, "messages")
+
+	// An evaluator offering only one shape is left alone, whatever the level.
+	only := []string{"query", "response"}
+	assert.Equal(t, only, selectLevelFields(only, nil, project.EvaluationLevelConversation))
+
+	// A required field is never dropped: a genuine conflict has to surface as a
+	// missing-field error rather than being reshaped away.
+	kept := selectLevelFields(accepted, []string{"query"}, project.EvaluationLevelConversation)
+	assert.Contains(t, kept, "query", "a required field survives the level filter")
+}

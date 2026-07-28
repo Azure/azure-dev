@@ -6,6 +6,7 @@ package eval_api
 import (
 	"encoding/json"
 	"strings"
+	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -315,6 +316,11 @@ type EvalRunDataSourceType string
 const (
 	// EvalRunDataSourceTypeAgentTarget is the data source type for agent target completions.
 	EvalRunDataSourceTypeAgentTarget EvalRunDataSourceType = "azure_ai_target_completions"
+
+	// EvalRunDataSourceTypeTraces evaluates an agent's recorded traces instead of
+	// a dataset. The service reads them from Application Insights, so the agent
+	// must be emitting gen_ai.input.messages / gen_ai.output.messages.
+	EvalRunDataSourceTypeTraces EvalRunDataSourceType = "azure_ai_traces"
 )
 
 // EvalRunDataContentType defines the source type for eval run data content.
@@ -331,6 +337,12 @@ type EvalRunDataSource struct {
 	InputMessages *EvalRunInputMessages `json:"input_messages,omitempty"`
 	Source        *EvalRunDataContent   `json:"source,omitempty"`
 	Target        *EvalRunTarget        `json:"target,omitempty"`
+
+	// Traces only. The window defaults to the last seven days when left unset.
+	AgentName string `json:"agent_name,omitempty"`
+	StartTime int64  `json:"start_time,omitempty"`
+	EndTime   int64  `json:"end_time,omitempty"`
+	MaxTraces int    `json:"max_traces,omitempty"`
 }
 
 // EvalRunInputMessages describes how input messages are constructed from dataset items.
@@ -385,6 +397,25 @@ func NewAgentTargetDataSource(agentName string, agentVersion *string) *EvalRunDa
 	}
 }
 
+// NewTracesDataSource evaluates an agent's recorded traces instead of a dataset.
+//
+// The service reads them from Application Insights and defaults to the last
+// seven days, so a zero window is left off rather than sent as an epoch.
+func NewTracesDataSource(agentName string, start, end time.Time, maxTraces int) *EvalRunDataSource {
+	ds := &EvalRunDataSource{
+		Type:      EvalRunDataSourceTypeTraces,
+		AgentName: agentName,
+		MaxTraces: maxTraces,
+	}
+	if !start.IsZero() {
+		ds.StartTime = start.Unix()
+	}
+	if !end.IsZero() {
+		ds.EndTime = end.Unix()
+	}
+	return ds
+}
+
 // SetFileContent sets the data source to use inline file content.
 func (ds *EvalRunDataSource) SetFileContent(items []map[string]any) {
 	ds.Source = &EvalRunDataContent{
@@ -417,7 +448,18 @@ type OpenAIEvalRun struct {
 	// Result summary
 	ResultCounts       *EvalRunResultCounts    `json:"result_counts,omitempty"`
 	PerTestingCriteria []EvalRunCriteriaResult `json:"per_testing_criteria_results,omitempty"`
-	Error              any                     `json:"error,omitempty"`
+	Error              *JobError               `json:"error,omitempty"`
+}
+
+// Failure returns why the run failed, or "" when it did not.
+//
+// The field is always present and its members are null on success, so its
+// presence says nothing on its own.
+func (r *OpenAIEvalRun) Failure() string {
+	if r == nil || r.Error == nil {
+		return ""
+	}
+	return strings.TrimSpace(r.Error.Message)
 }
 
 // EvalRunResultCounts holds pass/fail/error/skip counts for a run.

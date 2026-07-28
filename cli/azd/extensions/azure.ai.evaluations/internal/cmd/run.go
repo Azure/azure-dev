@@ -51,6 +51,9 @@ func buildRunCommand(use, short string) *cobra.Command {
 		runName     string
 		level       string
 		maxSamples  int
+		fromTraces  bool
+		traceWindow string
+		maxTraces   int
 		wait        bool
 		endpointFlg string
 	)
@@ -97,9 +100,12 @@ func buildRunCommand(use, short string) *cobra.Command {
 			// With --eval-id there is no config to read, so the pairing of
 			// target and dataset comes from the group's previous run.
 			var dataSource *eval_api.EvalRunDataSource
-			if group == nil {
+			switch {
+			case fromTraces:
+				dataSource, err = buildTracesDataSource(ctx, ec, group, evalID, traceWindow, maxTraces)
+			case group == nil:
 				dataSource, err = ec.reuseDataSourceFromLastRun(ctx, evalID)
-			} else {
+			default:
 				dataSource, err = buildRunDataSource(
 					group, configPath, resolveMaxSamples(maxSamples, group))
 			}
@@ -170,6 +176,11 @@ func buildRunCommand(use, short string) *cobra.Command {
 		"Scoring granularity: turn or conversation. Defaults to the service default (turn).")
 	cmd.Flags().IntVar(&maxSamples, "max-samples", 0,
 		"Cap the rows sent from a local dataset file. Ignored for registered datasets.")
+	cmd.Flags().BoolVar(&fromTraces, "from-traces", false,
+		"Evaluate the agent's recorded traces instead of the dataset.")
+	cmd.Flags().StringVar(&traceWindow, "trace-window", "",
+		"How far back to read traces, for example 7d. Defaults to the service's window.")
+	cmd.Flags().IntVar(&maxTraces, "max-traces", 0, "Cap the traces evaluated.")
 	cmd.Flags().BoolVar(&wait, "wait", true, "Block until the run reaches a terminal state.")
 	// The spec documents --no-wait, and cobra does not derive it from a bool.
 	var noWait bool
@@ -314,6 +325,48 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 			evalID)
 	}
 	return list.Data[0].DataSource, nil
+}
+
+// buildTracesDataSource evaluates what the agent has already done, rather than
+// asking it fresh questions from a dataset.
+//
+// The service reads the traces from Application Insights, so the agent has to
+// be emitting gen_ai.input.messages / gen_ai.output.messages for anything to be
+// found; when it is not, the run fails with the service saying so.
+func buildTracesDataSource(
+	ctx context.Context,
+	ec *evalContext,
+	group *project.EvalGroup,
+	evalID, window string,
+	maxTraces int,
+) (*eval_api.EvalRunDataSource, error) {
+	agent := ""
+	switch {
+	case group != nil && group.Target != nil:
+		agent = group.Target.Name
+	default:
+		// With --eval-id there is no config, so the agent comes from whatever
+		// the group ran against last.
+		last, err := ec.reuseDataSourceFromLastRun(ctx, evalID)
+		if err != nil {
+			return nil, err
+		}
+		if last != nil && last.Target != nil {
+			agent = last.Target.Name
+		}
+	}
+	if agent == "" {
+		return nil, fmt.Errorf(
+			"--from-traces needs to know whose traces to read, and the eval group does not " +
+				"name an agent. Declare target.type: agent on the group")
+	}
+
+	var start, end time.Time
+	if days := parseWindowDays(window); days > 0 {
+		end = time.Now().UTC()
+		start = end.AddDate(0, 0, -days)
+	}
+	return eval_api.NewTracesDataSource(agent, start, end, maxTraces), nil
 }
 
 // buildRunDataSource binds the dataset to the run. The eval group carries no
@@ -492,6 +545,12 @@ func (ec *evalContext) pollRun(
 
 func renderRun(out interface{ Write([]byte) (int, error) }, run *eval_api.OpenAIEvalRun) error {
 	fmt.Fprintf(out, "\nRun %s finished with status %s\n", run.ID, run.Status)
+	// A run that failed carries why, and it is usually the only actionable
+	// thing in the response — dropping it leaves the caller with just the word
+	// "failed".
+	if why := run.Failure(); why != "" {
+		fmt.Fprintf(out, "  %s\n", why)
+	}
 	if run.ReportURL != "" {
 		fmt.Fprintf(out, "Report: %s\n", run.ReportURL)
 	}

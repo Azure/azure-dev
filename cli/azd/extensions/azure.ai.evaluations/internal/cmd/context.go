@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -100,13 +101,20 @@ func lookupEndpointFromAzd(ctx context.Context, azdClient *azdext.AzdClient) (en
 	return val.Value, envResp.Environment.Name
 }
 
+// errNoAzdEnvironment reports that there is no azd environment to persist into.
+//
+// The atomic commands are meant to work standalone against the data plane, so
+// running outside a project is ordinary rather than a problem worth reporting.
+// A write that fails for any other reason still is.
+var errNoAzdEnvironment = errors.New("no active azd environment")
+
 // setEnvValue persists a value into the active azd environment. azd itself
 // writes none of these keys — the extension owns them.
 func (ec *evalContext) setEnvValue(ctx context.Context, key, value string) error {
 	if ec.envName == "" {
 		envResp, err := ec.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 		if err != nil || envResp == nil || envResp.Environment == nil {
-			return fmt.Errorf("no active azd environment to write %s into", key)
+			return fmt.Errorf("%w to write %s into", errNoAzdEnvironment, key)
 		}
 		ec.envName = envResp.Environment.Name
 	}

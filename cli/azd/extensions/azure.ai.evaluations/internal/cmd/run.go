@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -129,7 +130,12 @@ func buildRunCommand(use, short string) *cobra.Command {
 			}
 
 			if err := ec.setEnvValue(ctx, envKeyEvalRunID, run.ID); err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "warning: %v\n", err)
+				// Persisting the run id is a convenience for later commands.
+				// Reported on stdout because azd does not surface an
+				// extension's stderr, and skipped outside a project.
+				if !errors.Is(err, errNoAzdEnvironment) && !isJSON(cmd) {
+					fmt.Fprintf(out, "warning: %v\n", err)
+				}
 			}
 
 			if !wait {

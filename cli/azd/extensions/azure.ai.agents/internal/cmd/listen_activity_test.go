@@ -14,12 +14,15 @@ import (
 
 func TestTeamsSetupGuideContent(t *testing.T) {
 	const msaAppID = "11111111-2222-3333-4444-555555555555"
-	content := teamsSetupGuideContent("echo-agent", "echo-agent-bot-uai", msaAppID)
+
+	// Fallback (no generated package): the guide must give the manual packaging
+	// steps and carry the bot id verbatim into the sample manifest.
+	manual := teamsSetupGuideContent("echo-agent", "echo-agent-bot-uai", msaAppID, "")
 
 	// The bot id is the one value the user must not get wrong: it has to be
 	// carried verbatim into the Teams manifest bots[].botId.
-	if !strings.Contains(content, `"botId": "`+msaAppID+`"`) {
-		t.Fatalf("guide must set bots[].botId to the msaAppId; got:\n%s", content)
+	if !strings.Contains(manual, `"botId": "`+msaAppID+`"`) {
+		t.Fatalf("guide must set bots[].botId to the msaAppId; got:\n%s", manual)
 	}
 
 	// The guide must point at the official Microsoft Learn docs, not any
@@ -29,16 +32,33 @@ func TestTeamsSetupGuideContent(t *testing.T) {
 		"learn.microsoft.com/microsoftteams/platform/concepts/deploy-and-publish/apps-upload",
 		"dev.teams.microsoft.com/apps",
 	} {
-		if !strings.Contains(content, link) {
+		if !strings.Contains(manual, link) {
 			t.Errorf("guide missing official doc link %q", link)
 		}
 	}
 	// The guide must give the concrete sideload step, not just link out.
-	if !strings.Contains(content, "Upload a custom app") {
+	if !strings.Contains(manual, "Upload a custom app") {
 		t.Errorf("guide missing the concrete sideload step")
 	}
-	if strings.Contains(content, "package-teams-app.ps1") {
+	if strings.Contains(manual, "package-teams-app.ps1") {
 		t.Errorf("guide must not reference sample-specific scripts")
+	}
+
+	// Generated-package path: the guide must lead with sideloading the generated
+	// package (by name) and must NOT ask the user to build a manifest by hand.
+	const pkg = "appPackage.zip"
+	generated := teamsSetupGuideContent("echo-agent", "echo-agent-bot-uai", msaAppID, pkg)
+	if !strings.Contains(generated, pkg) {
+		t.Errorf("generated-package guide must reference %q", pkg)
+	}
+	if !strings.Contains(generated, "Upload a custom app") {
+		t.Errorf("generated-package guide missing the concrete sideload step")
+	}
+	if !strings.Contains(generated, "--scope Personal") {
+		t.Errorf("generated-package guide missing the atk sideload command")
+	}
+	if strings.Contains(generated, "REPLACE-WITH-A-NEW-GUID") {
+		t.Errorf("generated-package guide must not include the manual manifest template")
 	}
 }
 
@@ -50,7 +70,7 @@ func TestWriteTeamsSetupGuide(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	path := writeTeamsSetupGuide(proj, svc, "echo-agent", "echo-agent-bot-uai", "app-id")
+	path := writeTeamsSetupGuide(proj, svc, "echo-agent", "echo-agent-bot-uai", "app-id", "")
 	want := filepath.Join(root, "src", teamsSetupGuideFile)
 	if path != want {
 		t.Fatalf("guide path = %q, want %q", path, want)

@@ -173,3 +173,10 @@ func TestMessagingEndpoint(t *testing.T) {
 		t.Errorf("MessagingEndpoint = %q, want %q", got, want)
 	}
 }
+
+func TestBotArmID(t *testing.T) {
+	want := "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.BotService/botServices/echo-bot-uai"
+	if got := BotArmID("sub-1", "rg-1", "echo-bot-uai"); got != want {
+		t.Errorf("BotArmID = %q, want %q", got, want)
+	}
+}

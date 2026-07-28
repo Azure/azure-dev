@@ -68,7 +68,8 @@ func newRunCommand() *cobra.Command {
 					return err
 				}
 
-				evalID, err = ec.resolveEvalGroupID(ctx, group, out, isJSON(cmd))
+				evalID, err = ec.resolveEvalGroupID(
+					ctx, group, configPath, resolveLevel(level, group), out, isJSON(cmd))
 				if err != nil {
 					return err
 				}
@@ -148,6 +149,8 @@ func newRunCommand() *cobra.Command {
 func (ec *evalContext) resolveEvalGroupID(
 	ctx context.Context,
 	group *project.EvalGroup,
+	configPath string,
+	level string,
 	out interface{ Write([]byte) (int, error) },
 	jsonMode bool,
 ) (string, error) {
@@ -165,7 +168,28 @@ func (ec *evalContext) resolveEvalGroupID(
 	if !jsonMode {
 		fmt.Fprintf(out, "Creating eval group %q...\n", group.Name)
 	}
-	created, err := ec.evalClient.CreateOpenAIEval(ctx, buildEvalGroupRequest(group))
+
+	// The level from the flag wins over the group's own options, so it has to
+	// reach the criteria that accept evaluation_level.
+	effective := *group
+	if level != "" {
+		opts := project.Options{}
+		if group.Options != nil {
+			opts = *group.Options
+		}
+		opts.EvaluationLevel = level
+		effective.Options = &opts
+	}
+
+	req, err := buildEvalGroupRequest(
+		&effective,
+		ec.evaluatorSchemas(ctx),
+		datasetColumns(configPath, group),
+	)
+	if err != nil {
+		return "", err
+	}
+	created, err := ec.evalClient.CreateOpenAIEval(ctx, req)
 	if err != nil {
 		return "", fmt.Errorf("creating eval group %q: %w", group.Name, err)
 	}
@@ -209,6 +233,35 @@ func buildRunDataSource(
 	}
 	ds.SetFileContent(items)
 	return ds, nil
+}
+
+// datasetColumns reports the columns a group's dataset provides, so criteria
+// bind only to fields that exist and a missing required field is caught
+// locally rather than as a service rejection.
+//
+// A nil result means the columns are unknown, which is the case for a dataset
+// already registered in the project. The builder then assumes every field an
+// evaluator accepts is present.
+func datasetColumns(configPath string, group *project.EvalGroup) map[string]bool {
+	return datasetColumnsFromPath(localDatasetPath(configPath, group))
+}
+
+// datasetColumnsFromPath reads one row to learn the dataset's shape. An empty
+// path, or an unreadable file, yields nil.
+func datasetColumnsFromPath(localPath string) map[string]bool {
+	if localPath == "" {
+		return nil
+	}
+	// One row is enough to learn the shape.
+	items, err := readJSONL(localPath, 1)
+	if err != nil || len(items) == 0 {
+		return nil
+	}
+	columns := make(map[string]bool, len(items[0]))
+	for name := range items[0] {
+		columns[name] = true
+	}
+	return columns
 }
 
 // localDatasetPath resolves the dataset's local source relative to the config

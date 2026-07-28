@@ -35,11 +35,11 @@ type Dataset struct {
 	Format  string `json:"format,omitempty"`
 
 	// camelCase spellings (project endpoint).
-	DataURICamel     string `json:"dataUri,omitempty"`
-	BlobURICamel     string `json:"blobUri,omitempty"`
-	ContentURICamel  string `json:"contentUri,omitempty"`
-	IsSingleFile     bool   `json:"isSingleFile,omitempty"`
-	ConnectionName   string `json:"connectionName,omitempty"`
+	DataURICamel    string `json:"dataUri,omitempty"`
+	BlobURICamel    string `json:"blobUri,omitempty"`
+	ContentURICamel string `json:"contentUri,omitempty"`
+	IsSingleFile    bool   `json:"isSingleFile,omitempty"`
+	ConnectionName  string `json:"connectionName,omitempty"`
 
 	// snake_case spellings.
 	BlobURI    string `json:"blob_uri,omitempty"`

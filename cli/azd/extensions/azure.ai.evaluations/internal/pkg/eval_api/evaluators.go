@@ -8,23 +8,113 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
+	"strings"
 )
 
 // EvaluatorTypeBuiltin selects the platform-provided evaluators.
 const EvaluatorTypeBuiltin = "Builtin"
 
+// JSONSchema is the subset of JSON Schema the evaluator contract uses.
+type JSONSchema struct {
+	Type       string         `json:"type,omitempty"`
+	Required   []string       `json:"required,omitempty"`
+	Properties map[string]any `json:"properties,omitempty"`
+}
+
+// PropertyNames returns the accepted property names, sorted for stable output.
+func (s *JSONSchema) PropertyNames() []string {
+	if s == nil {
+		return nil
+	}
+	names := make([]string, 0, len(s.Properties))
+	for name := range s.Properties {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// Accepts reports whether the schema declares the named property.
+func (s *JSONSchema) Accepts(name string) bool {
+	if s == nil || s.Properties == nil {
+		return false
+	}
+	_, ok := s.Properties[name]
+	return ok
+}
+
+// EvaluatorContract is the published input contract for an evaluator: which
+// data fields it consumes and which initialization parameters it takes.
+type EvaluatorContract struct {
+	Type           string      `json:"type,omitempty"`
+	DataSchema     *JSONSchema `json:"data_schema,omitempty"`
+	InitParameters *JSONSchema `json:"init_parameters,omitempty"`
+}
+
 // EvaluatorSummary is a single entry in an evaluator listing.
+//
+// The listing carries the full contract, so callers can shape a request to
+// match an evaluator instead of guessing and taking a service-side rejection.
 type EvaluatorSummary struct {
 	Name        string `json:"name"`
 	Version     string `json:"version,omitempty"`
 	Type        string `json:"type,omitempty"`
 	Description string `json:"description,omitempty"`
+
+	Categories                []string           `json:"categories,omitempty"`
+	SupportedEvaluationLevels []string           `json:"supported_evaluation_levels,omitempty"`
+	Definition                *EvaluatorContract `json:"definition,omitempty"`
+}
+
+// SupportsLevel reports whether the evaluator runs at the given evaluation
+// level. An evaluator that declares no levels is treated as unconstrained.
+func (e *EvaluatorSummary) SupportsLevel(level string) bool {
+	if level == "" || len(e.SupportedEvaluationLevels) == 0 {
+		return true
+	}
+	for _, supported := range e.SupportedEvaluationLevels {
+		if strings.EqualFold(supported, level) {
+			return true
+		}
+	}
+	return false
+}
+
+// DataSchema returns the evaluator's input schema, or nil when the listing
+// did not describe one.
+func (e *EvaluatorSummary) DataSchema() *JSONSchema {
+	if e == nil || e.Definition == nil {
+		return nil
+	}
+	return e.Definition.DataSchema
+}
+
+// InitSchema returns the evaluator's initialization-parameter schema, or nil
+// when the listing did not describe one.
+func (e *EvaluatorSummary) InitSchema() *JSONSchema {
+	if e == nil || e.Definition == nil {
+		return nil
+	}
+	return e.Definition.InitParameters
 }
 
 // EvaluatorListResponse is the paged response for an evaluator listing.
 type EvaluatorListResponse struct {
 	Value    []EvaluatorSummary `json:"value"`
 	NextLink string             `json:"nextLink,omitempty"`
+}
+
+// ByName indexes the listing by evaluator name.
+func (r *EvaluatorListResponse) ByName() map[string]*EvaluatorSummary {
+	if r == nil {
+		return nil
+	}
+	index := make(map[string]*EvaluatorSummary, len(r.Value))
+	for i := range r.Value {
+		index[r.Value[i].Name] = &r.Value[i]
+	}
+	return index
 }
 
 // ListEvaluators returns the evaluators visible to the project. Pass

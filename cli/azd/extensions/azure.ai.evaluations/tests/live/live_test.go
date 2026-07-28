@@ -195,7 +195,7 @@ func TestLiveEvalGroupLifecycle(t *testing.T) {
 		ctx, eval_api.EvaluatorTypeBuiltin, projectAPIVersion)
 	require.NoError(t, err)
 	require.NotEmpty(t, builtins.Value, "need at least one built-in evaluator")
-evaluatorName := pickQualityEvaluator(t, builtins.Value)
+	evaluatorName := pickQualityEvaluator(t, builtins.Value)
 
 	threshold := 3.0
 	req := &eval_api.CreateOpenAIEvalRequest{
@@ -249,7 +249,7 @@ func TestLiveRun(t *testing.T) {
 		ctx, eval_api.EvaluatorTypeBuiltin, projectAPIVersion)
 	require.NoError(t, err)
 	require.NotEmpty(t, builtins.Value)
-evaluatorName := pickQualityEvaluator(t, builtins.Value)
+	evaluatorName := pickQualityEvaluator(t, builtins.Value)
 
 	group, err := env.evalClient.CreateOpenAIEval(ctx, &eval_api.CreateOpenAIEvalRequest{
 		Name: uniqueName("azd-eval-e2e-run"),

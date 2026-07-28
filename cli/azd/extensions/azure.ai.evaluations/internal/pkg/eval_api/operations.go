@@ -165,6 +165,13 @@ func (c *EvalClient) GetOpenAIEval(ctx context.Context, evalID string) (*OpenAIE
 	return doRequestTyped[OpenAIEval](c, ctx, http.MethodGet, path, nil, nil, "")
 }
 
+// DeleteOpenAIEval removes an eval definition and its runs.
+func (c *EvalClient) DeleteOpenAIEval(ctx context.Context, evalID string) error {
+	path := pathOpenAIEvals + "/" + url.PathEscape(evalID)
+	_, err := c.doRequest(ctx, http.MethodDelete, path, nil, nil, "")
+	return err
+}
+
 // CreateOpenAIEvalRun starts a run for an OpenAI eval definition.
 func (c *EvalClient) CreateOpenAIEvalRun(
 	ctx context.Context,

@@ -152,6 +152,7 @@ func (r *evalReconciler) EnsureEvaluator(
 func (r *evalReconciler) EnsureEvalGroup(
 	ctx context.Context,
 	group project.EvalGroup,
+	datasetPath string,
 	recreate bool,
 ) (string, error) {
 	if group.ID != "" {
@@ -165,7 +166,15 @@ func (r *evalReconciler) EnsureEvalGroup(
 		}
 	}
 
-	created, err := r.ec.evalClient.CreateOpenAIEval(ctx, buildEvalGroupRequest(&group))
+	req, err := buildEvalGroupRequest(
+		&group,
+		r.ec.evaluatorSchemas(ctx),
+		datasetColumnsFromPath(datasetPath),
+	)
+	if err != nil {
+		return "", err
+	}
+	created, err := r.ec.evalClient.CreateOpenAIEval(ctx, req)
 	if err != nil {
 		return "", err
 	}

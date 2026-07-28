@@ -4,80 +4,318 @@
 package cmd
 
 import (
+	"context"
+	"fmt"
+	"sort"
+	"strings"
+
 	"azureaieval/internal/pkg/eval_api"
+	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
 )
 
-// dataMapping is the template binding the service uses to feed each evaluator.
-// It pairs with the item schema below, which declares a single `query` field.
-func dataMapping() map[string]string {
-	return map[string]string{
-		"query":            "{{item.query}}",
-		"response":         "{{sample.output_items}}",
-		"tool_calls":       "{{sample.tool_calls}}",
-		"tool_definitions": "{{sample.tool_definitions}}",
+// evaluatorSchemas indexes the published evaluator contracts by name.
+//
+// A failure is deliberately not fatal: without schemas the builder falls back
+// to the agent-target shape, which is what it always used to send.
+func (ec *evalContext) evaluatorSchemas(ctx context.Context) map[string]*eval_api.EvaluatorSummary {
+	list, err := ec.evalClient.ListEvaluators(ctx, "", ProjectEndpointAPIVersion)
+	if err != nil {
+		return nil
 	}
+	return list.ByName()
 }
 
-// agentItemSchema mirrors the shape the agent-target runner expects. It is a
-// fixed schema, not inferred from the dataset.
-func agentItemSchema() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"query": map[string]any{"type": "string"},
-		},
+// sampleBindings are the fields an agent target produces at run time. Anything
+// an evaluator accepts that is not in this set has to come from a dataset
+// column instead.
+var sampleBindings = map[string]string{
+	"response":         "{{sample.output_items}}",
+	"tool_calls":       "{{sample.tool_calls}}",
+	"tool_definitions": "{{sample.tool_definitions}}",
+}
+
+// legacyInputs is the mapping used when the service publishes no schema for an
+// evaluator, which is the case for freshly uploaded custom evaluators. It
+// matches the agent-target shape.
+var legacyInputs = []string{"query", "response", "tool_calls", "tool_definitions"}
+
+// criterionPlan is the resolved binding for one evaluator.
+type criterionPlan struct {
+	dataMapping map[string]string
+	initParams  map[string]any
+	// itemFields are the fields sourced from dataset columns; they have to be
+	// declared in the item schema.
+	itemFields []string
+}
+
+// conversationField carries a whole conversation. The service rejects a
+// mapping that pairs it with the turn-level fields:
+//
+//	Evaluator 'builtin.task_completion' has both 'messages' and
+//	'query'/'response' in data_mapping. Use 'messages' for conversation-level
+//	evaluation or 'query'/'response' for turn-level evaluation, but not both.
+const conversationField = "messages"
+
+// turnFields are the per-turn counterparts to conversationField.
+var turnFields = []string{"query", "response"}
+
+// selectLevelFields resolves the conversation/turn exclusivity for evaluators
+// that accept both shapes, keeping whichever matches the evaluation level.
+// Required fields are never dropped, so a genuine conflict still surfaces as a
+// missing-field error rather than being silently reshaped.
+func selectLevelFields(accepted, required []string, level string) []string {
+	isRequired := make(map[string]bool, len(required))
+	for _, name := range required {
+		isRequired[name] = true
 	}
+
+	acceptsConversation := false
+	acceptsTurn := false
+	for _, field := range accepted {
+		if field == conversationField {
+			acceptsConversation = true
+		}
+		for _, turn := range turnFields {
+			if field == turn {
+				acceptsTurn = true
+			}
+		}
+	}
+	if !acceptsConversation || !acceptsTurn {
+		return accepted
+	}
+
+	drop := map[string]bool{}
+	if strings.EqualFold(level, project.EvaluationLevelConversation) {
+		for _, turn := range turnFields {
+			drop[turn] = true
+		}
+	} else {
+		drop[conversationField] = true
+	}
+
+	kept := make([]string, 0, len(accepted))
+	for _, field := range accepted {
+		if drop[field] && !isRequired[field] {
+			continue
+		}
+		kept = append(kept, field)
+	}
+	return kept
+}
+
+// planCriterion shapes one evaluator's bindings from its published contract.
+//
+// Evaluators do not share an input contract: builtin.similarity needs
+// ground_truth, builtin.retrieval needs context, and builtin.ifeval needs
+// instruction_id_list. Sending one fixed mapping to all of them earns a
+// service-side MissingRequiredDataMapping rejection, so the mapping is derived
+// per evaluator and anything unsatisfiable is reported before the request is
+// sent.
+func planCriterion(
+	ref evalcore.EvaluatorRef,
+	schema *eval_api.EvaluatorSummary,
+	hasTarget bool,
+	datasetColumns map[string]bool,
+	evalModel string,
+	level string,
+) (*criterionPlan, error) {
+	accepted := legacyInputs
+	var required []string
+	// A published schema is authoritative even when it is empty: an empty
+	// property set means the evaluator accepts nothing, which is different from
+	// publishing no schema at all.
+	if dataSchema := schema.DataSchema(); dataSchema != nil {
+		accepted = dataSchema.PropertyNames()
+		required = dataSchema.Required
+	}
+	accepted = selectLevelFields(accepted, required, level)
+
+	plan := &criterionPlan{
+		dataMapping: map[string]string{},
+		initParams:  map[string]any{},
+	}
+
+	for _, field := range accepted {
+		if binding, ok := sampleBindings[field]; ok && hasTarget {
+			plan.dataMapping[field] = binding
+			continue
+		}
+		// Everything else comes from the dataset. When the columns are known,
+		// bind only the ones that exist so optional fields stay unbound rather
+		// than resolving to nothing at run time.
+		if datasetColumns != nil && !datasetColumns[field] {
+			continue
+		}
+		plan.dataMapping[field] = fmt.Sprintf("{{item.%s}}", field)
+		plan.itemFields = append(plan.itemFields, field)
+	}
+
+	var missing []string
+	for _, field := range required {
+		if _, ok := plan.dataMapping[field]; !ok {
+			missing = append(missing, field)
+		}
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf(
+			"evaluator %q requires %s, which the dataset does not provide; "+
+				"add %s to the dataset, or choose an evaluator that matches the data",
+			ref.Name, quoteList(missing), pluralColumns(missing),
+		)
+	}
+
+	if !schema.SupportsLevel(level) {
+		return nil, fmt.Errorf(
+			"evaluator %q does not support evaluation level %q; it supports %s",
+			ref.Name, level, quoteList(schema.SupportedEvaluationLevels),
+		)
+	}
+
+	initSchema := schema.InitSchema()
+	accepts := func(name string) bool {
+		// Only an absent schema falls back to the historical parameters;
+		// builtin.ifeval publishes an empty one and takes none.
+		if initSchema == nil {
+			return name == "deployment_name" || name == "threshold"
+		}
+		return initSchema.Accepts(name)
+	}
+
+	if evalModel != "" && accepts("deployment_name") {
+		plan.initParams["deployment_name"] = evalModel
+	}
+	if ref.Threshold != nil && accepts("threshold") {
+		plan.initParams["threshold"] = *ref.Threshold
+	}
+	if level != "" && accepts("evaluation_level") {
+		plan.initParams["evaluation_level"] = level
+	}
+
+	if initSchema != nil {
+		var missingInit []string
+		for _, name := range initSchema.Required {
+			if _, ok := plan.initParams[name]; !ok {
+				missingInit = append(missingInit, name)
+			}
+		}
+		if len(missingInit) > 0 {
+			return nil, fmt.Errorf(
+				"evaluator %q requires %s; set the judge model on the eval group",
+				ref.Name, quoteList(missingInit),
+			)
+		}
+	}
+
+	return plan, nil
 }
 
 // buildEvalGroupRequest converts an eval group declaration into the create
-// request. Evaluators become testing criteria; a per-evaluator threshold is
-// carried in initialization_parameters alongside the judge model.
-func buildEvalGroupRequest(group *project.EvalGroup) *eval_api.CreateOpenAIEvalRequest {
+// request. Each evaluator becomes a testing criterion bound to its own
+// contract, and the item schema declares every dataset column those bindings
+// reference.
+//
+// schemas may be nil or partial; an evaluator with no published contract falls
+// back to the agent-target shape. datasetColumns may be nil, meaning the
+// columns are unknown and every accepted field is assumed present.
+func buildEvalGroupRequest(
+	group *project.EvalGroup,
+	schemas map[string]*eval_api.EvaluatorSummary,
+	datasetColumns map[string]bool,
+) (*eval_api.CreateOpenAIEvalRequest, error) {
 	metadata := map[string]string{}
-	if group.Target != nil && group.Target.Name != "" {
+	hasTarget := group.Target != nil && group.Target.Name != ""
+	if hasTarget {
 		metadata["azd_agent"] = group.Target.Name
 	}
 	metadata["azd_eval_group"] = group.Name
 
+	evalModel := ""
+	level := ""
+	if group.Options != nil {
+		evalModel = group.Options.EvalModel
+		level = group.Options.EvaluationLevel
+	}
+
 	req := &eval_api.CreateOpenAIEvalRequest{
 		Name:     group.Name,
 		Metadata: metadata,
-		DataSourceConfig: &eval_api.DataSourceConfig{
-			Type:                "custom",
-			IncludeSampleSchema: true,
-			ItemSchema:          agentItemSchema(),
-		},
 	}
 
-	evalModel := ""
-	if group.Options != nil {
-		evalModel = group.Options.EvalModel
-	}
+	itemFields := map[string]bool{}
 
 	for _, ref := range group.Evaluators {
+		schema := schemas[ref.Name]
+		if schema == nil {
+			schema = &eval_api.EvaluatorSummary{Name: ref.Name}
+		}
+
+		plan, err := planCriterion(ref, schema, hasTarget, datasetColumns, evalModel, level)
+		if err != nil {
+			return nil, err
+		}
+
 		criterion := eval_api.TestingCriterion{
 			Type: "azure_ai_evaluator",
 			// Name drops the builtin prefix; EvaluatorName keeps it.
 			Name:          ref.APIName(),
 			EvaluatorName: ref.Name,
-			DataMapping:   dataMapping(),
+			DataMapping:   plan.dataMapping,
 		}
-
-		params := map[string]any{}
-		if evalModel != "" {
-			params["model"] = evalModel
-			params["deployment_name"] = evalModel
+		if len(plan.initParams) > 0 {
+			criterion.InitializationParameters = plan.initParams
 		}
-		if ref.Threshold != nil {
-			params["threshold"] = *ref.Threshold
-		}
-		if len(params) > 0 {
-			criterion.InitializationParameters = params
+		for _, field := range plan.itemFields {
+			itemFields[field] = true
 		}
 
 		req.TestingCriteria = append(req.TestingCriteria, criterion)
 	}
 
-	return req
+	req.DataSourceConfig = &eval_api.DataSourceConfig{
+		Type:                "custom",
+		IncludeSampleSchema: hasTarget,
+		ItemSchema:          itemSchema(itemFields),
+	}
+
+	return req, nil
+}
+
+// itemSchema declares the dataset columns the criteria bind to. It always
+// declares at least `query`, the column an agent target reads.
+func itemSchema(fields map[string]bool) map[string]any {
+	if len(fields) == 0 {
+		fields = map[string]bool{"query": true}
+	}
+	properties := map[string]any{}
+	for field := range fields {
+		properties[field] = map[string]any{"type": "string"}
+	}
+	return map[string]any{
+		"type":       "object",
+		"properties": properties,
+	}
+}
+
+func quoteList(values []string) string {
+	if len(values) == 0 {
+		return "nothing"
+	}
+	quoted := make([]string, 0, len(values))
+	for _, value := range values {
+		quoted = append(quoted, fmt.Sprintf("%q", value))
+	}
+	sort.Strings(quoted)
+	if len(quoted) == 1 {
+		return quoted[0]
+	}
+	return strings.Join(quoted[:len(quoted)-1], ", ") + " and " + quoted[len(quoted)-1]
+}
+
+func pluralColumns(values []string) string {
+	if len(values) == 1 {
+		return "that column"
+	}
+	return "those columns"
 }

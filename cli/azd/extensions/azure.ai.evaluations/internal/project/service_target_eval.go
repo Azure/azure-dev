@@ -37,8 +37,10 @@ type Reconciler interface {
 	// differs from what the service already holds.
 	EnsureEvaluator(ctx context.Context, decl EvaluatorDecl, localPath string) (version string, changed bool, err error)
 	// EnsureEvalGroup creates the group when it is absent or its resolved
-	// evaluators or options changed, returning its id.
-	EnsureEvalGroup(ctx context.Context, group EvalGroup, recreate bool) (id string, err error)
+	// evaluators or options changed, returning its id. datasetPath is the local
+	// dataset backing the group, or empty when it is already registered; it lets
+	// the reconciler bind criteria to the columns that actually exist.
+	EnsureEvalGroup(ctx context.Context, group EvalGroup, datasetPath string, recreate bool) (id string, err error)
 }
 
 // EvalServiceTargetProvider deploys eval resources during `azd up`. azd owns
@@ -171,7 +173,11 @@ func (p *EvalServiceTargetProvider) Deploy(
 	// group must be created and the stored id replaced.
 	for _, group := range cfg.EvalGroups {
 		report(progress, fmt.Sprintf("Reconciling eval group %s", group.Name))
-		id, err := reconciler.EnsureEvalGroup(ctx, group, anyChanged)
+		datasetPath := ""
+		if decl, ok := cfg.Dataset(group.Dataset); ok {
+			datasetPath = resolveSource(baseDir, decl.Source)
+		}
+		id, err := reconciler.EnsureEvalGroup(ctx, group, datasetPath, anyChanged)
 		if err != nil {
 			return nil, fmt.Errorf("eval group %q: %w", group.Name, err)
 		}

@@ -127,18 +127,74 @@ func (c *EvalClient) CreateEvaluatorVersion(
 }
 
 // GetEvaluatorRaw gets an evaluator by name and version as raw JSON.
-// If version is empty, the latest version is fetched.
+// If version is empty, the latest version is resolved first.
+//
+// The service has no route for an unversioned evaluator: GET
+// /evaluators/{name} returns 404 with no body, so the version cannot simply be
+// left off the path.
 func (c *EvalClient) GetEvaluatorRaw(
 	ctx context.Context,
 	name string,
 	version string,
 	apiVersion string,
 ) (json.RawMessage, error) {
-	path := pathEvaluators + "/" + url.PathEscape(name)
-	if version != "" {
-		path += "/versions/" + url.PathEscape(version)
+	if version == "" {
+		latest, err := c.LatestEvaluatorVersion(ctx, name, apiVersion)
+		if err != nil {
+			return nil, err
+		}
+		version = latest
 	}
+	path := pathEvaluators + "/" + url.PathEscape(name) +
+		"/versions/" + url.PathEscape(version)
 	return c.doRequest(ctx, http.MethodGet, path, nil, nil, apiVersion)
+}
+
+// LatestEvaluatorVersion returns the newest registered version of an evaluator.
+func (c *EvalClient) LatestEvaluatorVersion(
+	ctx context.Context,
+	name string,
+	apiVersion string,
+) (string, error) {
+	list, err := c.ListEvaluatorVersions(ctx, name, apiVersion)
+	if err != nil {
+		return "", err
+	}
+	if list == nil || len(list.Value) == 0 {
+		return "", fmt.Errorf("evaluator %q has no versions", name)
+	}
+	latest := pickLatestVersion(list.Value)
+	if latest == "" {
+		return "", fmt.Errorf("evaluator %q has no usable version", name)
+	}
+	return latest, nil
+}
+
+// pickLatestVersion selects the highest evaluator version.
+//
+// Versions are integers rendered as strings, so they are compared numerically:
+// a lexical compare would rank "9" above "15", and the service already
+// publishes evaluators at version 15 and 17. A non-numeric version is used
+// only when nothing numeric is present.
+func pickLatestVersion(entries []EvaluatorSummary) string {
+	best := ""
+	bestNum := -1
+	for _, entry := range entries {
+		if entry.Version == "" {
+			continue
+		}
+		num, err := strconv.Atoi(entry.Version)
+		if err != nil {
+			if best == "" {
+				best = entry.Version
+			}
+			continue
+		}
+		if num > bestNum {
+			bestNum, best = num, entry.Version
+		}
+	}
+	return best
 }
 
 // CreateOpenAIEval creates an OpenAI eval definition.

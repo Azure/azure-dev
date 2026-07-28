@@ -76,7 +76,7 @@ func newDatasetCreateCommand(update bool) *cobra.Command {
 			}
 			defer ec.Close()
 
-			ds, err := ec.datasetClient.UploadNewVersion(
+			ds, err := ec.datasetClient.UploadNextVersion(
 				ctx, name, version, localDir, ProjectEndpointAPIVersion,
 			)
 			if err != nil {
@@ -99,7 +99,7 @@ func newDatasetCreateCommand(update bool) *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "Name of the dataset.")
 	cmd.Flags().StringVar(&file, "file", "", "Path to a .jsonl file, or a directory containing one.")
 	cmd.Flags().StringVar(&version, "version", "",
-		"Current version to increment from. Omit to let the server assign the next version.")
+		"Current version to increment from. Omit to increment from the latest registered version.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }

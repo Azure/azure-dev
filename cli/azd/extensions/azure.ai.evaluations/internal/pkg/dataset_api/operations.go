@@ -80,6 +80,31 @@ func (c *DatasetClient) CreateDataset(
 	return doRequestTyped[Dataset](c, ctx, http.MethodPost, pathDatasets, nil, request, apiVersion)
 }
 
+// UploadNextVersion registers the next version of a dataset, discovering the
+// current one from the service when currentVersion is empty.
+//
+// Prefer this over UploadNewVersion. That function derives the next version
+// from whatever it is handed, so an empty value restarts at 1.0 and the
+// service rejects the pending upload with a 409
+// TemporaryDataReferencesForExistingAsset as soon as 1.0 exists. Callers
+// almost always mean "the version after whatever is registered", which is what
+// this does.
+func (c *DatasetClient) UploadNextVersion(
+	ctx context.Context,
+	name string,
+	currentVersion string,
+	localDir string,
+	apiVersion string,
+) (*Dataset, error) {
+	if currentVersion == "" {
+		list, err := c.ListDatasetVersions(ctx, name, apiVersion)
+		if err == nil && list != nil && len(list.Value) > 0 {
+			currentVersion = LatestVersion(list.Value)
+		}
+	}
+	return c.UploadNewVersion(ctx, name, currentVersion, localDir, apiVersion)
+}
+
 // UploadNewVersion reads the first JSONL file from localDir, computes the next
 // version from currentVersion, and uploads it as a new dataset version using
 // the 3-step pending upload flow:

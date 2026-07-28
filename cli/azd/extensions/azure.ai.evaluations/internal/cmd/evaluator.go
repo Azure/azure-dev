@@ -98,14 +98,42 @@ func newEvaluatorUploadCommand(update bool) *cobra.Command {
 
 // normalizeRubricBody accepts either a bare definition ({type, dimensions}) or
 // a full evaluator document ({name, definition}) and returns the request body.
+// rubricDefinitionType is the discriminator the service uses to deserialize a
+// rubric definition.
+const rubricDefinitionType = "rubric"
+
+// ensureDefinitionType adds the type discriminator when a definition omits it.
+//
+// Without it the service cannot tell which definition kind it is holding and
+// rejects the whole request with "The request field is required", which points
+// at the wrong field entirely. Generated rubrics carry the type; hand-authored
+// ones written to the shape the spec documents — a bare list of weighted
+// dimensions — do not.
+func ensureDefinitionType(definition json.RawMessage) (json.RawMessage, error) {
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(definition, &doc); err != nil {
+		return nil, fmt.Errorf("the definition is not a JSON object: %w", err)
+	}
+	if _, ok := doc["type"]; ok {
+		return definition, nil
+	}
+	doc["type"] = json.RawMessage(fmt.Sprintf("%q", rubricDefinitionType))
+	return json.Marshal(doc)
+}
+
 func normalizeRubricBody(name string, raw []byte) (json.RawMessage, error) {
 	var probe map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &probe); err != nil {
 		return nil, fmt.Errorf("not valid JSON: %w", err)
 	}
 
-	if _, hasDefinition := probe["definition"]; hasDefinition {
+	if definition, hasDefinition := probe["definition"]; hasDefinition {
 		// Already a full document; make sure the name matches the flag.
+		typed, err := ensureDefinitionType(definition)
+		if err != nil {
+			return nil, err
+		}
+		probe["definition"] = typed
 		probe["name"] = json.RawMessage(fmt.Sprintf("%q", name))
 		out, err := json.Marshal(probe)
 		if err != nil {
@@ -119,9 +147,13 @@ func normalizeRubricBody(name string, raw []byte) (json.RawMessage, error) {
 			"expected a rubric definition with 'dimensions', or a document with 'definition'")
 	}
 
+	typed, err := ensureDefinitionType(raw)
+	if err != nil {
+		return nil, err
+	}
 	doc := map[string]any{
 		"name":       name,
-		"definition": json.RawMessage(raw),
+		"definition": typed,
 	}
 	out, err := json.Marshal(doc)
 	if err != nil {

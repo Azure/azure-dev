@@ -1,0 +1,313 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"azureaieval/internal/pkg/eval_api"
+	"azureaieval/internal/project"
+
+	"github.com/spf13/cobra"
+)
+
+// Terminal run states reported by the service.
+var terminalRunStates = map[string]bool{
+	"completed": true,
+	"failed":    true,
+	"canceled":  true,
+	"cancelled": true,
+	"error":     true,
+}
+
+func newRunCommand() *cobra.Command {
+	var (
+		configPath  string
+		groupName   string
+		evalID      string
+		runName     string
+		level       string
+		maxSamples  int
+		wait        bool
+		endpointFlg string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "run",
+		Short: "Run an evaluation, creating the eval group if it does not exist yet.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			out := cmd.OutOrStdout()
+
+			ec, err := newEvalContext(ctx, endpointFlg)
+			if err != nil {
+				return err
+			}
+			defer ec.Close()
+
+			// --eval-id bypasses the config entirely.
+			var group *project.EvalGroup
+			if evalID == "" {
+				cfg, err := project.LoadEvalConfig(configPath)
+				if err != nil {
+					return err
+				}
+				if err := cfg.Validate(); err != nil {
+					return err
+				}
+				group, err = cfg.ResolveGroup(groupName)
+				if err != nil {
+					return err
+				}
+
+				evalID, err = ec.resolveEvalGroupID(ctx, group, out, isJSON(cmd))
+				if err != nil {
+					return err
+				}
+			}
+
+			dataSource, err := buildRunDataSource(group, configPath, maxSamples)
+			if err != nil {
+				return err
+			}
+
+			if runName == "" {
+				base := "eval"
+				if group != nil {
+					base = group.Name
+				}
+				runName = fmt.Sprintf("%s-%s", base, time.Now().UTC().Format("20060102-150405"))
+			}
+
+			metadata := map[string]string{}
+			if lvl := resolveLevel(level, group); lvl != "" {
+				metadata["evaluation_level"] = lvl
+			}
+
+			run, err := ec.evalClient.CreateOpenAIEvalRun(ctx, evalID, &eval_api.CreateOpenAIEvalRunRequest{
+				Name:       runName,
+				DataSource: dataSource,
+				Metadata:   metadata,
+			})
+			if err != nil {
+				return fmt.Errorf("starting the evaluation run: %w", err)
+			}
+
+			if err := ec.setEnvValue(ctx, envKeyEvalRunID, run.ID); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: %v\n", err)
+			}
+
+			if !wait {
+				if isJSON(cmd) {
+					return emitJSON(out, run)
+				}
+				fmt.Fprintf(out, "Started run %s (status: %s)\n", run.ID, run.Status)
+				fmt.Fprintf(out, "Check progress with: azd ai eval results show %s --run-id %s\n", evalID, run.ID)
+				return nil
+			}
+
+			final, err := ec.pollRun(ctx, evalID, run.ID, out, isJSON(cmd))
+			if err != nil {
+				return err
+			}
+
+			if isJSON(cmd) {
+				return emitJSON(out, final)
+			}
+			return renderRun(out, final)
+		},
+	}
+
+	cmd.Flags().StringVar(&configPath, "config", project.DefaultDeployConfig,
+		"Path to the eval deployment config.")
+	cmd.Flags().StringVar(&groupName, "eval-group", "",
+		"Which evalGroups entry to run. Defaults to the only one.")
+	cmd.Flags().StringVar(&evalID, "eval-id", "",
+		"Run against an existing eval group by id, ignoring the config.")
+	cmd.Flags().StringVar(&runName, "name", "", "Name for this run. Defaults to the group name plus a timestamp.")
+	cmd.Flags().StringVar(&level, "level", "",
+		"Scoring granularity: turn or conversation. Defaults to the service default (turn).")
+	cmd.Flags().IntVar(&maxSamples, "max-samples", 0,
+		"Cap the rows sent from a local dataset file. Ignored for registered datasets.")
+	cmd.Flags().BoolVar(&wait, "wait", true, "Block until the run reaches a terminal state.")
+	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	return cmd
+}
+
+// resolveEvalGroupID finds the eval group to run against, creating it when it
+// has never been deployed. Resolution order: an id pinned on the group, then
+// the azd environment, then create.
+func (ec *evalContext) resolveEvalGroupID(
+	ctx context.Context,
+	group *project.EvalGroup,
+	out interface{ Write([]byte) (int, error) },
+	jsonMode bool,
+) (string, error) {
+	if group.ID != "" {
+		return group.ID, nil
+	}
+
+	if cached := ec.getEnvValue(ctx, envKeyEvalGroupID); cached != "" {
+		// Confirm it still exists; a deleted group should fall through to create.
+		if _, err := ec.evalClient.GetOpenAIEval(ctx, cached); err == nil {
+			return cached, nil
+		}
+	}
+
+	if !jsonMode {
+		fmt.Fprintf(out, "Creating eval group %q...\n", group.Name)
+	}
+	created, err := ec.evalClient.CreateOpenAIEval(ctx, buildEvalGroupRequest(group))
+	if err != nil {
+		return "", fmt.Errorf("creating eval group %q: %w", group.Name, err)
+	}
+	if err := ec.setEnvValue(ctx, envKeyEvalGroupID, created.ID); err != nil {
+		fmt.Fprintf(out, "warning: %v\n", err)
+	}
+	return created.ID, nil
+}
+
+// buildRunDataSource binds the dataset to the run. The eval group carries no
+// dataset today, so it is supplied here.
+func buildRunDataSource(
+	group *project.EvalGroup,
+	configPath string,
+	maxSamples int,
+) (*eval_api.EvalRunDataSource, error) {
+	if group == nil || group.Target == nil {
+		return nil, fmt.Errorf(
+			"the eval group must declare target.type: agent so the run knows what to invoke")
+	}
+
+	ds := eval_api.NewAgentTargetDataSource(group.Target.Name, nil)
+
+	if group.Dataset == "" {
+		return nil, fmt.Errorf("eval group %q does not reference a dataset", group.Name)
+	}
+
+	// A local source is sent inline; anything else is a registered dataset.
+	localPath := localDatasetPath(configPath, group)
+	if localPath == "" {
+		ds.SetFileID(group.Dataset)
+		return ds, nil
+	}
+
+	items, err := readJSONL(localPath, maxSamples)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return nil, fmt.Errorf("dataset file %q has no rows", localPath)
+	}
+	ds.SetFileContent(items)
+	return ds, nil
+}
+
+// localDatasetPath resolves the dataset's local source relative to the config
+// file, returning empty when the dataset is registered rather than local.
+func localDatasetPath(configPath string, group *project.EvalGroup) string {
+	cfg, err := project.LoadEvalConfig(configPath)
+	if err != nil {
+		return ""
+	}
+	decl, ok := cfg.Dataset(group.Dataset)
+	if !ok || decl.Source == "" {
+		return ""
+	}
+	if filepath.IsAbs(decl.Source) {
+		return decl.Source
+	}
+	return filepath.Join(filepath.Dir(configPath), decl.Source)
+}
+
+// readJSONL reads newline-delimited JSON, optionally truncating to limit rows.
+func readJSONL(path string, limit int) ([]map[string]any, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading dataset %q: %w", path, err)
+	}
+	defer f.Close()
+
+	var items []map[string]any
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	line := 0
+	for scanner.Scan() {
+		line++
+		text := strings.TrimSpace(scanner.Text())
+		if text == "" {
+			continue
+		}
+		var row map[string]any
+		if err := json.Unmarshal([]byte(text), &row); err != nil {
+			return nil, fmt.Errorf("%s line %d is not valid JSON: %w", path, line, err)
+		}
+		items = append(items, row)
+		if limit > 0 && len(items) >= limit {
+			break
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("reading dataset %q: %w", path, err)
+	}
+	return items, nil
+}
+
+// resolveLevel prefers the flag, then the group's options.
+func resolveLevel(flag string, group *project.EvalGroup) string {
+	if flag != "" {
+		return flag
+	}
+	if group != nil && group.Options != nil {
+		return group.Options.EvaluationLevel
+	}
+	return ""
+}
+
+// pollRun waits for the run to reach a terminal state, reporting status changes.
+func (ec *evalContext) pollRun(
+	ctx context.Context,
+	evalID, runID string,
+	out interface{ Write([]byte) (int, error) },
+	jsonMode bool,
+) (*eval_api.OpenAIEvalRun, error) {
+	const interval = 5 * time.Second
+	lastStatus := ""
+
+	for {
+		run, err := ec.evalClient.GetOpenAIEvalRun(ctx, evalID, runID)
+		if err != nil {
+			return nil, fmt.Errorf("polling run %s: %w", runID, err)
+		}
+		if run.Status != lastStatus {
+			lastStatus = run.Status
+			if !jsonMode {
+				fmt.Fprintf(out, "  status: %s\n", run.Status)
+			}
+		}
+		if terminalRunStates[strings.ToLower(run.Status)] {
+			return run, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(interval):
+		}
+	}
+}
+
+func renderRun(out interface{ Write([]byte) (int, error) }, run *eval_api.OpenAIEvalRun) error {
+	fmt.Fprintf(out, "\nRun %s finished with status %s\n", run.ID, run.Status)
+	if run.ReportURL != "" {
+		fmt.Fprintf(out, "Report: %s\n", run.ReportURL)
+	}
+	return nil
+}

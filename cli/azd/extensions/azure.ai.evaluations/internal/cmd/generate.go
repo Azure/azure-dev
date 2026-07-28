@@ -95,6 +95,14 @@ func newGenerateCommand() *cobra.Command {
 			}
 
 			if len(datasetRefs) == 0 && len(evaluatorRefs) == 0 {
+				// With --no-wait the jobs were submitted and nothing was
+				// downloaded, which is success, not an empty result.
+				if noWait {
+					fmt.Fprintln(out,
+						"\nJobs submitted. Re-run without --no-wait to download the artifacts "+
+							"and reference them from the deployment spec.")
+					return nil
+				}
 				fmt.Fprintln(out, "Nothing was generated.")
 				return nil
 			}

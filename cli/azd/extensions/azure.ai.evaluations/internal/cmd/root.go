@@ -25,6 +25,25 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.SilenceErrors = true
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 
+	// The data-plane clients trace requests through the standard logger, which
+	// Go writes to stderr, so it has to be silenced unless debug was asked for.
+	//
+	// The SDK's own hook is chained rather than replaced, and cobra ignores
+	// PersistentPreRun entirely once PersistentPreRunE is set. The SDK sets
+	// cobra.EnableTraverseRunHooks, so this still runs alongside subcommand
+	// hooks. The cleanup func is discarded on purpose: log writes are
+	// unbuffered and the OS closes the file at exit.
+	sdkPreRun := rootCmd.PersistentPreRunE
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if sdkPreRun != nil {
+			if err := sdkPreRun(cmd, args); err != nil {
+				return err
+			}
+		}
+		setupDebugLogging(cmd.Flags())
+		return nil
+	}
+
 	rootCmd.AddCommand(
 		newInitCommand(),
 		newGenerateCommand(),

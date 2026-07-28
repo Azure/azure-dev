@@ -220,13 +220,14 @@ func (r *evalReconciler) EnsureEvalGroup(
 		recreate = true
 	}
 
-	cached := r.ec.getEnvValue(ctx, envKeyEvalGroupID)
+	cached := r.ec.getEnvValue(ctx, idKey("evalgroup", group.Name))
 	if cached != "" && !recreate {
 		if _, err := r.ec.evalClient.GetOpenAIEval(ctx, cached); err == nil {
 			// Record the digest on reuse as well, otherwise a group deployed
 			// before fingerprinting existed never establishes a baseline and
 			// later edits go undetected.
 			_ = r.ec.setEnvValue(ctx, key, digest)
+			_ = r.ec.setEnvValue(ctx, envKeyEvalGroupID, cached)
 			return cached, nil
 		}
 	}
@@ -244,6 +245,9 @@ func (r *evalReconciler) EnsureEvalGroup(
 		return "", err
 	}
 	_ = r.ec.setEnvValue(ctx, key, digest)
+	_ = r.ec.setEnvValue(ctx, idKey("evalgroup", group.Name), created.ID)
+	// EVAL_GROUP_ID stays the last-deployed group, which is what the commands
+	// fall back to when a config names only one.
 	_ = r.ec.setEnvValue(ctx, envKeyEvalGroupID, created.ID)
 	return created.ID, nil
 }
@@ -313,4 +317,13 @@ func versionFromRaw(raw []byte, fallback string) string {
 // versionKey holds the version resolved for an artifact at the last deploy.
 func versionKey(kind, name string) string {
 	return project.FingerprintKey(kind, name) + "_VERSION"
+}
+
+// idKey names the env entry holding a resolved id.
+//
+// Ids are per declaration. A single shared key works only while a config has
+// one group: with two, the second deploy finds the first's id cached, confirms
+// it exists, and hands it back for the wrong group.
+func idKey(kind, name string) string {
+	return project.FingerprintKey(kind, name) + "_ID"
 }

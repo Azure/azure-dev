@@ -223,7 +223,7 @@ func (ec *evalContext) resolveEvalGroupID(
 		return group.ID, nil
 	}
 
-	if cached := ec.getEnvValue(ctx, envKeyEvalGroupID); cached != "" {
+	if cached := ec.getEnvValue(ctx, idKey("evalgroup", group.Name)); cached != "" {
 		// Confirm it still exists; a deleted group should fall through to create.
 		if _, err := ec.evalClient.GetOpenAIEval(ctx, cached); err == nil {
 			return cached, nil
@@ -258,9 +258,10 @@ func (ec *evalContext) resolveEvalGroupID(
 	if err != nil {
 		return "", fmt.Errorf("creating eval group %q: %w", group.Name, err)
 	}
-	if err := ec.setEnvValue(ctx, envKeyEvalGroupID, created.ID); err != nil {
+	if err := ec.setEnvValue(ctx, idKey("evalgroup", group.Name), created.ID); err != nil {
 		fmt.Fprintf(out, "warning: %v\n", err)
 	}
+	_ = ec.setEnvValue(ctx, envKeyEvalGroupID, created.ID)
 	return created.ID, nil
 }
 
@@ -442,7 +443,7 @@ func (ec *evalContext) readRegisteredDataset(
 	name string,
 	maxSamples int,
 ) ([]map[string]any, error) {
-	version := ec.getEnvValue(ctx, envKeyDatasetVersion)
+	version := ec.getEnvValue(ctx, versionKey("dataset", name))
 	if version == "" {
 		versions, err := ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
 		if err != nil {

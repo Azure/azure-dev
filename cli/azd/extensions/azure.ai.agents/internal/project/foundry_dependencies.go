@@ -103,6 +103,7 @@ func validateFoundryDependencies(
 
 	if agentConfig != nil {
 		for _, toolbox := range agentConfig.Toolboxes {
+			service, serviceExists := services[toolbox.Name]
 			if _, isDisabled := disabled[toolbox.Name]; isDisabled {
 				failures = append(failures, foundryDependencyFailure{
 					name: toolbox.Name, host: foundryToolboxHost,
@@ -113,11 +114,23 @@ func validateFoundryDependencies(
 				continue
 			}
 			_, isReachable := reachable[toolbox.Name]
-			if service, ok := services[toolbox.Name]; ok && service.GetHost() == foundryToolboxHost && isReachable {
+			if serviceExists && service.GetHost() != foundryToolboxHost {
+				failures = append(failures, foundryDependencyFailure{
+					name: toolbox.Name, host: service.GetHost(),
+					detail: fmt.Sprintf("toolbox reference resolves to service host %s instead of %s",
+						strconv.Quote(service.GetHost()), strconv.Quote(foundryToolboxHost)),
+					configurationFix: fmt.Sprintf(
+						"change the %s service host to %s or remove it from the agent toolboxes",
+						strconv.Quote(toolbox.Name), strconv.Quote(foundryToolboxHost),
+					),
+				})
+				continue
+			}
+			if serviceExists && isReachable {
 				continue
 			}
 			_, isDeclared := declared[toolbox.Name]
-			if service, ok := services[toolbox.Name]; ok && service.GetHost() == foundryToolboxHost && !isDeclared {
+			if serviceExists && !isDeclared {
 				failures = append(failures, foundryDependencyFailure{
 					name: toolbox.Name, host: foundryToolboxHost,
 					detail: fmt.Sprintf("toolbox service is not declared in %s uses", agent.GetName()),

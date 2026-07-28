@@ -67,6 +67,10 @@ func TestSameSkillProjectEndpoint(t *testing.T) {
 		"HTTPS://ACCOUNT.TEST/projects/current/",
 		"https://account.test/projects/current",
 	))
+	require.True(t, sameSkillProjectEndpoint(
+		"https://account.test/api/projects/current",
+		"https://account.test/projects/current",
+	))
 	require.False(t, sameSkillProjectEndpoint(
 		"https://account.test/projects/old",
 		"https://account.test/projects/current",

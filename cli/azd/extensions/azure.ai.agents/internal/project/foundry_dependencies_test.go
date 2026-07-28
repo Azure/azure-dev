@@ -267,6 +267,28 @@ func TestValidateFoundryDependenciesUnwiredSplitToolbox(t *testing.T) {
 	require.Contains(t, localErr.Suggestion, `add "tools" to the "agent" service uses list`)
 }
 
+func TestValidateFoundryDependenciesRejectsToolboxServiceWithWrongHost(t *testing.T) {
+	t.Parallel()
+	agent := &azdext.ServiceConfig{Name: "agent", Host: foundryAgentHost, Uses: []string{"tools"}}
+	config := &ServiceTargetAgentConfig{Toolboxes: []Toolbox{{Name: "tools"}}}
+	services := map[string]*azdext.ServiceConfig{
+		"agent": agent,
+		"tools": {Name: "tools", Host: foundryAgentHost},
+	}
+	env := map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT":             "https://example.test/projects/current",
+		envkey.ToolboxMCPEndpoint("tools"):     "https://example.test/projects/current/toolboxes/tools/mcp",
+		envkey.ToolboxProjectEndpoint("tools"): "https://example.test/projects/current",
+		envkey.AgentProjectEndpoint("tools"):   "https://example.test/projects/current",
+		"AGENT_TOOLS_NAME":                     "tools",
+		"AGENT_TOOLS_VERSION":                  "1",
+	}
+
+	err := validateFoundryDependencies(t.Context(), agent, config, services, env, nil)
+	require.ErrorContains(t, err, "resolves to service host")
+	require.ErrorContains(t, err, "instead of")
+}
+
 func TestValidateFoundryDependenciesSkipsDisabledDependency(t *testing.T) {
 	t.Parallel()
 	agent := &azdext.ServiceConfig{Name: "agent", Host: foundryAgentHost, Uses: []string{"tools"}}

@@ -27,7 +27,7 @@ var setToolboxEndpointEnvFunc = setToolboxEndpointEnv
 // instead). Best-effort: when no azd environment is in play (no daemon, or no
 // default environment selected) the write is skipped rather than failing the
 // toolbox operation.
-func setToolboxEndpointEnv(ctx context.Context, toolboxName, value string) error {
+func setToolboxEndpointEnv(ctx context.Context, toolboxName, value, projectScope string) error {
 	commitKey := envkey.ToolboxMCPEndpoint(toolboxName)
 
 	return withAzdClient(func(c *azdext.AzdClient) error {
@@ -59,13 +59,9 @@ func setToolboxEndpointEnv(ctx context.Context, toolboxName, value string) error
 		if err := setValue(commitKey, ""); err != nil {
 			return err
 		}
-		projectEndpoint := toolboxProjectEndpoint(value)
+		projectEndpoint := strings.TrimRight(strings.TrimSpace(projectScope), "/")
 		if projectEndpoint == "" {
-			// Reused custom endpoints remain usable, but cannot prove project readiness.
-			if err := setValue(envkey.ToolboxProjectEndpoint(toolboxName), ""); err != nil {
-				return err
-			}
-			return setValue(commitKey, value)
+			projectEndpoint = toolboxProjectEndpoint(value)
 		}
 		if err := setValue(envkey.ToolboxProjectEndpoint(toolboxName), projectEndpoint); err != nil {
 			return err

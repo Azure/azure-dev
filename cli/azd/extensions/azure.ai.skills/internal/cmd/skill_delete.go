@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 
 	"azureaiskills/internal/exterrors"
@@ -103,7 +104,12 @@ func clearSkillMarkers(ctx context.Context, skillName, projectEndpoint string) e
 	marker, err := client.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: env.Environment.GetName(), Key: projectKey,
 	})
-	if err != nil || !sameSkillProjectEndpoint(marker.Value, projectEndpoint) {
+	if err != nil {
+		log.Printf("skill marker cleanup skipped: cannot read %s: %v", projectKey, err)
+		return nil
+	}
+	if !sameSkillProjectEndpoint(marker.Value, projectEndpoint) {
+		log.Printf("skill marker cleanup skipped: %s belongs to another project", projectKey)
 		return nil
 	}
 	return clearSkillMarkerValues(skillName, func(key, value string) error {
@@ -124,10 +130,31 @@ func clearSkillMarkerValues(skillName string, setValue func(string, string) erro
 }
 
 func sameSkillProjectEndpoint(a, b string) bool {
-	return strings.EqualFold(
+	if strings.EqualFold(
 		strings.TrimRight(strings.TrimSpace(a), "/"),
 		strings.TrimRight(strings.TrimSpace(b), "/"),
-	)
+	) {
+		return true
+	}
+	aHost, aProject := skillProjectIdentity(a)
+	bHost, bProject := skillProjectIdentity(b)
+	return aHost != "" && aProject != "" &&
+		strings.EqualFold(aHost, bHost) && strings.EqualFold(aProject, bProject)
+}
+
+// Keep project identity semantics aligned with azure.ai.agents foundry_dependencies.go.
+func skillProjectIdentity(endpoint string) (string, string) {
+	u, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil || u.Hostname() == "" {
+		return "", ""
+	}
+	const segment = "/projects/"
+	index := strings.Index(strings.ToLower(u.Path), segment)
+	if index < 0 {
+		return "", ""
+	}
+	project := strings.Split(strings.Trim(u.Path[index+len(segment):], "/"), "/")[0]
+	return u.Hostname(), project
 }
 
 func (a *deleteAction) confirmDelete(ctx context.Context) (bool, error) {

@@ -85,9 +85,8 @@ func TestGenerationModel(t *testing.T) {
 	assert.Equal(t, "gpt-4.1-nano", generationModel(cfg))
 }
 
-// `tools` is accepted and ignored, so it has to be called out — the same
-// reasoning as the trace fields it now shares a warning with.
-func TestWarnIgnoredFields_CoversTools(t *testing.T) {
+// Trace selection is accepted and ignored, so it has to be called out.
+func TestWarnIgnoredFields_CoversTraceSelection(t *testing.T) {
 	cases := []struct {
 		name  string
 		build func(*project.GenerateConfig)
@@ -100,17 +99,18 @@ func TestWarnIgnoredFields_CoversTools(t *testing.T) {
 			quiet: true,
 		},
 		{
-			name:  "tools alone",
-			build: func(c *project.GenerateConfig) { c.Agent.Context.Tools = "./agent/tools.json" },
-			want:  []string{"agent.context.tools", "has no effect"},
-		},
-		{
-			name: "tools and a trace field agree in number",
+			name: "a source alone",
 			build: func(c *project.GenerateConfig) {
-				c.Agent.Context.Tools = "./agent/tools.json"
 				c.Agent.Context.Traces = &project.TraceSpec{Source: "app-insights"}
 			},
-			want: []string{"agent.context.traces.source", "agent.context.tools", "have no effect"},
+			want: []string{"agent.context.traces.source", "has no effect"},
+		},
+		{
+			name: "source and sample agree in number",
+			build: func(c *project.GenerateConfig) {
+				c.Agent.Context.Traces = &project.TraceSpec{Source: "app-insights", Sample: 100}
+			},
+			want: []string{"agent.context.traces.source", "agent.context.traces.sample", "have no effect"},
 		},
 		{
 			name: "a window alone is honored, so no warning",
@@ -141,9 +141,7 @@ func TestWarnIgnoredFields_CoversTools(t *testing.T) {
 }
 
 // init scaffolds only the context fields that are read.
-func TestInitScaffold_OmitsToolsButKeepsInstructions(t *testing.T) {
+func TestInitScaffold_KeepsInstructions(t *testing.T) {
 	cfg := buildGenerateScaffold("support-agent", "support-agent-quality", "gpt-4.1-nano")
 	assert.Equal(t, "./agent/instructions.md", cfg.Agent.Context.Instructions)
-	assert.Empty(t, cfg.Agent.Context.Tools,
-		"scaffolding a field nothing reads would warn on every default init")
 }

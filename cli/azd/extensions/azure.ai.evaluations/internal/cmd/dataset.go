@@ -21,8 +21,7 @@ func newDatasetCommand() *cobra.Command {
 		Short: "Manage evaluation datasets.",
 	}
 	cmd.AddCommand(
-		newDatasetCreateCommand(false),
-		newDatasetCreateCommand(true),
+		newDatasetCreateCommand(),
 		newDatasetListCommand(),
 		newDatasetShowCommand(),
 		newDatasetDeleteCommand(),
@@ -30,9 +29,12 @@ func newDatasetCommand() *cobra.Command {
 	return cmd
 }
 
-// newDatasetCreateCommand builds `dataset create` and `dataset update`. Both
-// publish a new immutable version; the server auto-increments.
-func newDatasetCreateCommand(update bool) *cobra.Command {
+// newDatasetCreateCommand builds `dataset create`.
+//
+// There is no separate `update`: every registration publishes a new immutable
+// version and the server auto-increments, so `create` covers both the first
+// version and every later one.
+func newDatasetCreateCommand() *cobra.Command {
 	var (
 		name        string
 		file        string
@@ -40,10 +42,8 @@ func newDatasetCreateCommand(update bool) *cobra.Command {
 		endpointFlg string
 	)
 
-	use, short := "create", "Register a dataset, creating its first version."
-	if update {
-		use, short = "update", "Publish a new version of an existing dataset."
-	}
+	use := "create"
+	short := "Register a dataset, publishing a new version."
 
 	cmd := &cobra.Command{
 		Use:   use,

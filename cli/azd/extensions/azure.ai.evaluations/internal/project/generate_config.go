@@ -38,7 +38,6 @@ type AgentSpec struct {
 // AgentContext points at the material used to synthesize a rubric and dataset.
 type AgentContext struct {
 	Instructions string     `yaml:"instructions,omitempty" json:"instructions,omitempty"`
-	Tools        string     `yaml:"tools,omitempty"        json:"tools,omitempty"`
 	Traces       *TraceSpec `yaml:"traces,omitempty"       json:"traces,omitempty"`
 }
 

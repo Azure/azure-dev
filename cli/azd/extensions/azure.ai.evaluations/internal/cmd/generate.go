@@ -179,8 +179,7 @@ func newGenerateCommand() *cobra.Command {
 // The generation API takes a day window and nothing else, so `source` and
 // `sample` are parsed and dropped. Silently discarding them is worse than not
 // accepting them: the author believes they narrowed the trace selection when
-// nothing changed. `agent.context.tools` is in the same position — nothing
-// reads it, and only the instructions half of the agent's context is used.
+// nothing changed.
 func warnIgnoredTraceFields(cfg *project.GenerateConfig, out io.Writer) {
 	var fields []string
 
@@ -191,9 +190,6 @@ func warnIgnoredTraceFields(cfg *project.GenerateConfig, out io.Writer) {
 		if traces.Sample > 0 {
 			fields = append(fields, "agent.context.traces.sample")
 		}
-	}
-	if cfg.Agent.Context.Tools != "" {
-		fields = append(fields, "agent.context.tools")
 	}
 	if len(fields) == 0 {
 		return

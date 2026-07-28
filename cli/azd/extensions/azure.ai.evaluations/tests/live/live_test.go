@@ -191,9 +191,9 @@ func TestLiveDatasetLifecycle(t *testing.T) {
 	})
 }
 
-// TestLiveEvalGroupLifecycle proves the create request this extension builds is
+// TestLiveEvalLifecycle proves the create request this extension builds is
 // accepted, which is the single most important contract to get right.
-func TestLiveEvalGroupLifecycle(t *testing.T) {
+func TestLiveEvalLifecycle(t *testing.T) {
 	env := setup(t)
 	ctx := context.Background()
 
@@ -234,12 +234,12 @@ func TestLiveEvalGroupLifecycle(t *testing.T) {
 	}
 
 	group, err := env.evalClient.CreateOpenAIEval(ctx, req)
-	require.NoError(t, err, "creating the eval group")
+	require.NoError(t, err, "creating the eval")
 	require.NotEmpty(t, group.ID, "the service assigns the id; name is not unique")
-	t.Logf("created eval group %s (name %q)", group.ID, group.Name)
+	t.Logf("created eval %s (name %q)", group.ID, group.Name)
 
 	fetched, err := env.evalClient.GetOpenAIEval(ctx, group.ID)
-	require.NoError(t, err, "reading the eval group back")
+	require.NoError(t, err, "reading the eval back")
 	require.Equal(t, group.ID, fetched.ID)
 }
 
@@ -283,7 +283,7 @@ func TestLiveRun(t *testing.T) {
 			},
 		}},
 	})
-	require.NoError(t, err, "creating the eval group for the run")
+	require.NoError(t, err, "creating the eval for the run")
 
 	ds := eval_api.NewAgentTargetDataSource(env.agentName, nil)
 	ds.SetFileContent([]map[string]any{

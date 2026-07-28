@@ -46,10 +46,17 @@ func newEvalContext(ctx context.Context, endpointFlag string) (*evalContext, err
 
 	ec := &evalContext{azdClient: azdClient}
 
+	// The environment name is resolved regardless of where the endpoint comes
+	// from: it is what the cached eval group and run ids are read from and
+	// written to. Deriving it only when the endpoint came from azd meant
+	// --project-endpoint silently disabled that cache.
+	azdEndpoint, envName := lookupEndpointFromAzd(ctx, azdClient)
+	ec.envName = envName
+
 	if endpointFlag != "" {
 		ec.endpoint = endpointFlag
 	} else {
-		ec.endpoint, ec.envName = lookupEndpointFromAzd(ctx, azdClient)
+		ec.endpoint = azdEndpoint
 	}
 	if ec.endpoint == "" {
 		ec.endpoint = os.Getenv(projectEndpointEnvKey)

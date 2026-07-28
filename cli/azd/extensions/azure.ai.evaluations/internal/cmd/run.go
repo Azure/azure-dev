@@ -139,7 +139,18 @@ func newRunCommand() *cobra.Command {
 	cmd.Flags().IntVar(&maxSamples, "max-samples", 0,
 		"Cap the rows sent from a local dataset file. Ignored for registered datasets.")
 	cmd.Flags().BoolVar(&wait, "wait", true, "Block until the run reaches a terminal state.")
+	// The spec documents --no-wait, and cobra does not derive it from a bool.
+	var noWait bool
+	cmd.Flags().BoolVar(&noWait, "no-wait", false, "Submit the run and return immediately.")
+	cmd.PreRun = func(*cobra.Command, []string) {
+		if noWait {
+			wait = false
+		}
+	}
+	cmd.MarkFlagsMutuallyExclusive("wait", "no-wait")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+
+	addRunSubcommands(cmd)
 	return cmd
 }
 

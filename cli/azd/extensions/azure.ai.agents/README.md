@@ -34,6 +34,7 @@ services:
     project: .
     config:
       kind: hosted
+      name: my-agent
       description: My hosted agent
 ```
 
@@ -45,6 +46,7 @@ services:
     host: azure.ai.agent
     project: .
     kind: hosted
+    name: my-agent
     description: My hosted agent
 ```
 
@@ -60,6 +62,7 @@ services:
     host: azure.ai.agent
     project: .
     kind: hosted
+    name: my-agent
     policies:
       - type: rai_policy
         raiPolicyName: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account-name>/raiPolicies/<policy-name>

@@ -178,9 +178,25 @@ func (r *evalReconciler) EnsureEvalGroup(
 		return group.ID, nil
 	}
 
+	// Groups are immutable, so a change to the group's own declaration —
+	// evaluators, target, or options — needs a new group just as much as a
+	// change to an upstream artifact does.
+	digest, err := project.FingerprintGroup(group)
+	if err != nil {
+		return "", err
+	}
+	key := project.FingerprintKey("evalgroup", group.Name)
+	if prior := r.ec.getEnvValue(ctx, key); prior != "" && prior != digest {
+		recreate = true
+	}
+
 	cached := r.ec.getEnvValue(ctx, envKeyEvalGroupID)
 	if cached != "" && !recreate {
 		if _, err := r.ec.evalClient.GetOpenAIEval(ctx, cached); err == nil {
+			// Record the digest on reuse as well, otherwise a group deployed
+			// before fingerprinting existed never establishes a baseline and
+			// later edits go undetected.
+			_ = r.ec.setEnvValue(ctx, key, digest)
 			return cached, nil
 		}
 	}
@@ -197,6 +213,7 @@ func (r *evalReconciler) EnsureEvalGroup(
 	if err != nil {
 		return "", err
 	}
+	_ = r.ec.setEnvValue(ctx, key, digest)
 	_ = r.ec.setEnvValue(ctx, envKeyEvalGroupID, created.ID)
 	return created.ID, nil
 }

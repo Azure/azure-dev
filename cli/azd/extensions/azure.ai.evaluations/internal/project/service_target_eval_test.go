@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaieval/internal/pkg/evalcore"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -95,4 +97,63 @@ func TestEvalConfigFromServiceRejectsEmptyService(t *testing.T) {
 	_, err := EvalConfigFromService(&azdext.ServiceConfig{Name: "evals"}, "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no eval configuration")
+}
+
+// Groups are immutable, so a change to the group's own declaration has to be
+// detectable. Upstream artifact fingerprints do not cover it: retargeting a
+// group at a different agent leaves the dataset and evaluators untouched.
+func TestFingerprintGroupTracksMeaningfulChanges(t *testing.T) {
+	base := EvalGroup{
+		Name:       "quality",
+		Dataset:    "golden",
+		Evaluators: evalcore.EvaluatorList{{Name: "builtin.task_adherence"}},
+		Target:     &Target{Type: "agent", Name: "agent-a"},
+		Options:    &Options{EvalModel: "gpt-4.1-nano"},
+	}
+
+	original, err := FingerprintGroup(base)
+	require.NoError(t, err)
+
+	same, err := FingerprintGroup(base)
+	require.NoError(t, err)
+	require.Equal(t, original, same, "an unchanged group must keep its fingerprint")
+
+	cases := map[string]func(g *EvalGroup){
+		"target": func(g *EvalGroup) { g.Target = &Target{Type: "agent", Name: "agent-b"} },
+		"evaluators": func(g *EvalGroup) {
+			g.Evaluators = append(g.Evaluators, evalcore.EvaluatorRef{Name: "builtin.similarity"})
+		},
+		"options": func(g *EvalGroup) { g.Options = &Options{EvalModel: "gpt-4o-mini"} },
+		"dataset": func(g *EvalGroup) { g.Dataset = "other" },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			changed := base
+			changed.Evaluators = append(evalcore.EvaluatorList(nil), base.Evaluators...)
+			mutate(&changed)
+
+			digest, err := FingerprintGroup(changed)
+			require.NoError(t, err)
+			require.NotEqual(t, original, digest, "changing %s must change the fingerprint", name)
+		})
+	}
+}
+
+// Server-assigned and cosmetic fields must not force a recreate.
+func TestFingerprintGroupIgnoresIdAndDescription(t *testing.T) {
+	base := EvalGroup{
+		Name:       "quality",
+		Dataset:    "golden",
+		Evaluators: evalcore.EvaluatorList{{Name: "builtin.task_adherence"}},
+	}
+	original, err := FingerprintGroup(base)
+	require.NoError(t, err)
+
+	noisy := base
+	noisy.ID = "eval_abc123"
+	noisy.Description = "reworded"
+
+	digest, err := FingerprintGroup(noisy)
+	require.NoError(t, err)
+	require.Equal(t, original, digest)
 }

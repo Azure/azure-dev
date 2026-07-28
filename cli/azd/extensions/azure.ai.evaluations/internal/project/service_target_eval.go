@@ -313,6 +313,27 @@ func Fingerprint(path string) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
+// FingerprintGroup hashes an eval group's own declaration.
+//
+// Change detection on upstream artifacts is not sufficient: editing a group's
+// evaluators, target, or options changes what the group means, and groups are
+// immutable, so the group has to be recreated even when the dataset and
+// evaluators are untouched. Without this a retargeted group keeps running
+// against the old definition.
+func FingerprintGroup(group EvalGroup) (string, error) {
+	// The id is server-assigned and the description is cosmetic; neither
+	// changes what the group evaluates.
+	group.ID = ""
+	group.Description = ""
+
+	data, err := json.Marshal(group)
+	if err != nil {
+		return "", fmt.Errorf("hashing eval group %q: %w", group.Name, err)
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
+}
+
 // FingerprintKey is the azd environment key holding an artifact's fingerprint.
 func FingerprintKey(kind, name string) string {
 	safe := strings.Map(func(r rune) rune {

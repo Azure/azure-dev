@@ -40,7 +40,7 @@ outputs:
     description: Exit code of the `vally eval` invocation.
     value: ${{ steps.run.outputs.vally-exit-code }}
   vally-run-dir:
-    description: Path to the timestamped run directory produced by the eval, relative to the repo root.
+    description: Absolute path to the timestamped run directory produced by the eval.
     value: ${{ steps.run.outputs.vally-run-dir }}
 
 runs:
@@ -74,7 +74,6 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         JUNIT: ${{ inputs.junit }}
         EVAL_FILE: ${{ inputs.eval-file }}
-        WORKING_DIRECTORY: ${{ inputs.working-directory }}
       run: |
         junit_flag=""
         [[ "$JUNIT" == "true" ]] && junit_flag="--junit"
@@ -90,10 +89,17 @@ runs:
         #
         run_dir=$(find vally-results -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | tail -n1)
         run_dir=${run_dir:-vally-results}
-        echo "vally-run-dir=$WORKING_DIRECTORY/$run_dir" >> "$GITHUB_OUTPUT"
+        echo "vally-run-dir=$(pwd)/$run_dir" >> "$GITHUB_OUTPUT"
 
-        if [[ -d "$run_dir" ]]; then
-          npm run report -- --output-dir "$run_dir/vally_report"
+    - name: Generate vally report
+      if: always() && steps.run.outputs.vally-run-dir != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        VALLY_RUN_DIR: ${{ steps.run.outputs.vally-run-dir }}
+      run: |
+        if [[ -d "$VALLY_RUN_DIR" ]]; then
+          npm run report -- --output-dir "$VALLY_RUN_DIR/vally_report"
         fi
 
     - name: Write job summary
@@ -131,7 +137,6 @@ runs:
       shell: bash
       env:
         VALLY_EXIT_CODE: ${{ steps.run.outputs.vally-exit-code }}
-        VALLY_RUN_DIR: ${{ steps.run.outputs.vally-run-dir }}
       run: |
         if [[ "${VALLY_EXIT_CODE:-1}" -ne 0 ]]; then
           echo "npx vally eval itself failed (exit code ${VALLY_EXIT_CODE:-unknown}) -- see the 'Run vally eval' log above."

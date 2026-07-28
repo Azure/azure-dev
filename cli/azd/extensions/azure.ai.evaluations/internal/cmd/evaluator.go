@@ -203,7 +203,7 @@ func renderEvaluators(cmd *cobra.Command, list *eval_api.EvaluatorListResponse) 
 	}
 	rows := make([][]string, 0, len(list.Value))
 	for _, e := range list.Value {
-		rows = append(rows, []string{e.Name, e.Version, e.Type})
+		rows = append(rows, []string{e.Name, e.Version, e.Type()})
 	}
 	return emitTable(cmd.OutOrStdout(), []string{"NAME", "VERSION", "TYPE"}, rows)
 }

@@ -59,12 +59,24 @@ type EvaluatorContract struct {
 type EvaluatorSummary struct {
 	Name        string `json:"name"`
 	Version     string `json:"version,omitempty"`
-	Type        string `json:"type,omitempty"`
 	Description string `json:"description,omitempty"`
+
+	// The listing spells this evaluator_type; `type` is accepted too because
+	// other evaluator payloads use it.
+	EvaluatorType string `json:"evaluator_type,omitempty"`
+	TypeAlias     string `json:"type,omitempty"`
 
 	Categories                []string           `json:"categories,omitempty"`
 	SupportedEvaluationLevels []string           `json:"supported_evaluation_levels,omitempty"`
 	Definition                *EvaluatorContract `json:"definition,omitempty"`
+}
+
+// Type reports the evaluator kind across both spellings.
+func (e *EvaluatorSummary) Type() string {
+	if e.EvaluatorType != "" {
+		return e.EvaluatorType
+	}
+	return e.TypeAlias
 }
 
 // SupportsLevel reports whether the evaluator runs at the given evaluation

@@ -14,6 +14,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 
 	"azureaieval/internal/version"
@@ -274,6 +275,80 @@ func (c *DatasetClient) GetDatasetCredential(
 		pathDatasets, url.PathEscape(name), url.PathEscape(version),
 	)
 	return doRequestTyped[DatasetCredential](c, ctx, http.MethodPost, path, nil, nil, apiVersion)
+}
+
+// DownloadDatasetContent fetches a dataset version's content, whether its URI
+// names a blob or a container.
+//
+// The two differ by origin, not by any field: a dataset uploaded through
+// startPendingUpload gets a URI ending in the file name, while one produced by
+// a generation job gets the container it was written into, with isSingleFile
+// true either way. Downloading the container directly returns a 409, so the
+// blob inside has to be found first.
+//
+// A credential is always fetched, because the URI on the dataset carries no
+// SAS token and an unauthenticated read fails.
+func (c *DatasetClient) DownloadDatasetContent(
+	ctx context.Context,
+	name string,
+	version string,
+	apiVersion string,
+) ([]byte, error) {
+	cred, err := c.GetDatasetCredential(ctx, name, version, apiVersion)
+	if err != nil {
+		return nil, fmt.Errorf("reading download credentials for %q: %w", name, err)
+	}
+
+	sasURI := cred.ResolvedDownloadURI()
+	if sasURI == "" {
+		return nil, fmt.Errorf("no download URI returned for dataset %q", name)
+	}
+
+	// A URI whose last path segment carries a file extension is the blob
+	// itself; anything else is the container holding it.
+	if looksLikeBlobURI(sasURI) {
+		data, err := c.DownloadDataset(ctx, sasURI)
+		if err == nil {
+			return data, nil
+		}
+		log.Printf("[dataset_api] direct download failed (%v); treating the URI as a container", err)
+	}
+
+	names, err := c.ListContainerBlobs(ctx, sasURI)
+	if err != nil {
+		return nil, fmt.Errorf("listing the content of dataset %q: %w", name, err)
+	}
+	blobName := pickDatasetBlob(names)
+	if blobName == "" {
+		return nil, fmt.Errorf("dataset %q holds no downloadable file", name)
+	}
+	return c.DownloadBlob(ctx, sasURI, blobName)
+}
+
+// looksLikeBlobURI reports whether the URI's final segment names a file.
+func looksLikeBlobURI(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	last := path.Base(strings.TrimSuffix(u.Path, "/"))
+	return path.Ext(last) != ""
+}
+
+// pickDatasetBlob chooses the file to read from a container, preferring JSONL
+// since that is what an evaluation dataset is.
+func pickDatasetBlob(names []string) string {
+	for _, n := range names {
+		if strings.EqualFold(path.Ext(n), ".jsonl") {
+			return n
+		}
+	}
+	for _, n := range names {
+		if n != "" && !strings.HasSuffix(n, "/") {
+			return n
+		}
+	}
+	return ""
 }
 
 // DownloadDataset downloads dataset content from blob storage using a SAS-authenticated URL.

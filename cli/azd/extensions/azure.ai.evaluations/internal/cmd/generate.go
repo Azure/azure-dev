@@ -342,6 +342,27 @@ func (ec *evalContext) generateDataset(
 
 	completed, err := ec.pollGeneration(ctx, job.ID, DataGenerationAPIVersion,
 		ec.evalClient.GetDataGenerationJob)
+	if err != nil && isAgentSeededGenerationFailure(err) {
+		// Agent-seeded generation fails server-side for every agent, while the
+		// same request carrying only the prompt succeeds. Failing the whole
+		// command would block the documented flow on a defect the user cannot
+		// do anything about, so retry without the agent and say so.
+		promptOnly := eval_api.WithoutAgentSource(sources)
+		if eval_api.HasPromptSource(promptOnly) {
+			fmt.Fprintf(out,
+				"  warning: generating from agent %q failed in the service; "+
+					"retrying from the instruction alone.\n", cfg.Agent.Name)
+
+			req = eval_api.NewDataGenerationJobRequest(
+				spec.Name, model, spec.SampleSize, promptOnly)
+			job, err = ec.evalClient.CreateDataGenerationJob(ctx, req, DataGenerationAPIVersion)
+			if err != nil {
+				return nil, fmt.Errorf("submitting the data generation job: %w", err)
+			}
+			completed, err = ec.pollGeneration(ctx, job.ID, DataGenerationAPIVersion,
+				ec.evalClient.GetDataGenerationJob)
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("data generation: %w", explainDataGenerationFailure(err, cfg.Agent.Name))
 	}
@@ -351,11 +372,14 @@ func (ec *evalContext) generateDataset(
 		return nil, fmt.Errorf("the data generation job returned no dataset reference")
 	}
 
-	ds, err := ec.datasetClient.GetDataset(ctx, name, version, ProjectEndpointAPIVersion)
-	if err != nil {
+	// Confirm the version exists before reading it, so a missing dataset is
+	// reported as such rather than as a download failure.
+	if _, err := ec.datasetClient.GetDataset(
+		ctx, name, version, ProjectEndpointAPIVersion,
+	); err != nil {
 		return nil, fmt.Errorf("reading the generated dataset %q: %w", name, err)
 	}
-	content, err := ec.datasetClient.DownloadDataset(ctx, ds.ResolvedBlobURI())
+	content, err := ec.datasetClient.DownloadDatasetContent(ctx, name, version, ProjectEndpointAPIVersion)
 	if err != nil {
 		return nil, fmt.Errorf("downloading the generated dataset %q: %w", name, err)
 	}
@@ -370,6 +394,17 @@ func (ec *evalContext) generateDataset(
 	fmt.Fprintf(out, "  wrote %s\n", path)
 
 	return &project.ArtifactRef{Name: spec.Name, Source: relativeSource(baseDir, path)}, nil
+}
+
+// isAgentSeededGenerationFailure recognises the service-side failure that hits
+// every agent, so it can be retried without the agent rather than surfaced.
+func isAgentSeededGenerationFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	return strings.Contains(text, "DataGenerationJobSystemError") ||
+		strings.Contains(text, "Something went wrong during data generation")
 }
 
 // explainDataGenerationFailure adds context to the service's opaque system

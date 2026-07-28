@@ -64,11 +64,20 @@ func TestLiveBuildAcceptedForEveryBuiltin(t *testing.T) {
 	listed, err := client.ListEvaluators(ctx, eval_api.EvaluatorTypeBuiltin, ProjectEndpointAPIVersion)
 	require.NoError(t, err)
 	require.NotEmpty(t, listed.Value)
-	schemas := listed.ByName()
+
+	// Deliberately the production lookup rather than the listing above. Taking
+	// the schemas straight from a filtered list is what let this test pass
+	// while the shipping path resolved none of them: it built the input the
+	// product was failing to build.
+	ec := &evalContext{evalClient: client}
+	schemas := ec.evaluatorSchemas(ctx)
+	require.NotEmpty(t, schemas)
 
 	for _, summary := range listed.Value {
 		summary := summary
 		t.Run(summary.Name, func(t *testing.T) {
+			require.NotNil(t, schemas[summary.Name],
+				"the shipping lookup did not resolve %s", summary.Name)
 			// Give the builder a dataset carrying every column the evaluator
 			// accepts, so a rejection means the request shape is wrong rather
 			// than the data being genuinely absent.

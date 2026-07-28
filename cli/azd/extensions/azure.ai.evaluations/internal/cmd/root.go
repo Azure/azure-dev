@@ -31,6 +31,7 @@ func NewRootCommand() *cobra.Command {
 		newRunCommand(),
 		newEvaluatorCommand(),
 		newResultsCommand(),
+		newListenCommand(),
 	)
 
 	return rootCmd

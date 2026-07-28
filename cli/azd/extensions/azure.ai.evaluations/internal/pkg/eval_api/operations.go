@@ -330,7 +330,11 @@ func (c *EvalClient) doRequest(
 
 	log.Printf("[eval_api] response status: %d", resp.StatusCode)
 
-	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated, http.StatusAccepted) {
+	// 204 belongs here: a delete that removed the resource answers No Content,
+	// and treating that as a failure reports every successful delete as an
+	// error. doRequestTyped already tolerates the empty body.
+	if !runtime.HasStatusCode(resp,
+		http.StatusOK, http.StatusCreated, http.StatusAccepted, http.StatusNoContent) {
 		// Restore the body so runtime.NewResponseError can read it.
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
 		return nil, runtime.NewResponseError(resp)

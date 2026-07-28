@@ -51,6 +51,7 @@ func NewRootCommand() *cobra.Command {
 		newRunCommand(),
 		newEvaluatorCommand(),
 		newResultsCommand(),
+		newScheduleCommand(),
 		newListenCommand(),
 	)
 

@@ -1186,7 +1186,7 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	// enableNetworkIsolation (not on egress mode), so a network-bound account is
 	// never left public. This is the regression guard for the data-plane fix.
 	text := string(data)
-	wantDisable := `"disablePublicDataPlaneAccess": "[parameters('enableNetworkIsolation')]"`
+	wantDisable := `"disablePublicDataPlaneAccess": "[and(variables('createFoundryResources'), parameters('enableNetworkIsolation'))]"`
 	wantPublic := `"publicNetworkAccess": "[if(variables('disablePublicDataPlaneAccess'), 'Disabled', 'Enabled')]"`
 	assert.Contains(t, text, wantDisable,
 		"public data-plane access must be disabled for every network-isolated account")
@@ -1213,25 +1213,6 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	assert.Contains(t, text,
 		`"value": "[reference('network').outputs.vnetLocation.value]"`,
 		"private endpoint location must come from the customer VNet")
-}
-
-func TestBrownfieldARMTemplate_SecuresConnectionCredentials(t *testing.T) {
-	data, err := BrownfieldARMTemplate()
-	require.NoError(t, err)
-
-	var arm map[string]any
-	require.NoError(t, json.Unmarshal(data, &arm))
-	params, ok := arm["parameters"].(map[string]any)
-	require.True(t, ok, "parameters must be an object")
-	connections, ok := params["connections"].(map[string]any)
-	require.True(t, ok, "connections param must be an object")
-	assert.Equal(t, "#/definitions/connectionsType", connections["$ref"])
-	credentials, ok := params["connectionCredentials"].(map[string]any)
-	require.True(t, ok, "connectionCredentials param must be an object")
-	assert.Equal(t, "secureObject", credentials["type"])
-	assert.Contains(t, string(data),
-		"parameters('principalId'), parameters('roleDefinitionId')",
-		"ACR role assignment name must include the assigned principal")
 }
 
 func TestSynthesize_Network(t *testing.T) {

@@ -416,6 +416,23 @@ func TestLoadParametersFile_NestedUnresolvedIsKept(t *testing.T) {
 	require.Contains(t, got, "ok")
 }
 
+func TestLoadParametersFile_BrownfieldConnectionVariablesMustResolve(t *testing.T) {
+	t.Parallel()
+	body := minimalARMParametersFile(t, map[string]any{
+		"connections": []any{map[string]any{"name": "search", "target": "${SEARCH_ENDPOINT}"}},
+	})
+	path := filepath.Join(t.TempDir(), "main.parameters.json")
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+
+	_, err := loadParametersFile(path, map[string]string{})
+
+	require.Error(t, err)
+	var local *azdext.LocalError
+	require.True(t, errors.As(err, &local))
+	assert.Equal(t, exterrors.CodeOnDiskParametersInvalid, local.Code)
+	assert.Contains(t, local.Message, "SEARCH_ENDPOINT")
+}
+
 // Sanity test that the helper handles the path the production code
 // actually exercises: writing the file via writeParametersFile in
 // init_infra.go produces output that loadParametersFile can read back.

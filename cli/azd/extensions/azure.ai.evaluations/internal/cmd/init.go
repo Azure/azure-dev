@@ -64,7 +64,7 @@ func newInitCommand() *cobra.Command {
 				return err
 			}
 
-			depCfg := buildDeployScaffold(target, rubricName, dataset, evaluators, evalModel)
+			depCfg := buildDeployScaffold(target, rubricName, dataset, evaluators, evalModel, outDir)
 			if err := writeYAML(depPath, depCfg); err != nil {
 				return err
 			}
@@ -130,10 +130,45 @@ func buildGenerateScaffold(target, rubricName, evalModel string) *project.Genera
 	}
 }
 
+// relativeToConfig rewrites a path given relative to the working directory so
+// it resolves from the directory holding the deploy spec.
+//
+// `--dataset ./tests/golden.jsonl` means "relative to where I am", but the
+// deploy spec's `source:` is resolved relative to that file, so writing the
+// path through unchanged sends the deploy looking inside evals/. An absolute
+// path is left alone, and forward slashes are kept so the config reads the same
+// on every platform.
+func relativeToConfig(path, outDir string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	absOut, err := filepath.Abs(outDir)
+	if err != nil {
+		return path
+	}
+
+	rel, err := filepath.Rel(absOut, absPath)
+	if err != nil {
+		return path
+	}
+
+	rel = filepath.ToSlash(rel)
+	if !strings.HasPrefix(rel, ".") {
+		rel = "./" + rel
+	}
+	return rel
+}
+
 func buildDeployScaffold(
 	target, rubricName, dataset string,
 	evaluators []string,
 	evalModel string,
+	outDir string,
 ) *project.EvalConfig {
 	cfg := &project.EvalConfig{}
 
@@ -141,7 +176,10 @@ func buildDeployScaffold(
 	datasetSource := ""
 	if dataset != "" {
 		if looksLikeLocalDataset(dataset) {
-			datasetSource = dataset
+			// --dataset is given relative to where the user is standing, but
+			// source: is resolved relative to the deploy spec, so the path has
+			// to be rebased or the deploy looks for it inside evals/.
+			datasetSource = relativeToConfig(dataset, outDir)
 			datasetName = strings.TrimSuffix(filepath.Base(dataset), filepath.Ext(dataset))
 		} else {
 			// A bare name references an already-registered dataset.

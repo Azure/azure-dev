@@ -19,7 +19,7 @@ func TestScaffold_RoundTripsAndValidates(t *testing.T) {
 	dir := t.TempDir()
 	depPath := filepath.Join(dir, "azure.yaml")
 
-	cfg := buildDeployScaffold("support-agent", "support-agent-quality", "", nil, "gpt-4.1-nano")
+	cfg := buildDeployScaffold("support-agent", "support-agent-quality", "", nil, "gpt-4.1-nano", project.DefaultEvalDir)
 	require.NoError(t, writeYAML(depPath, cfg))
 
 	loaded, err := project.LoadEvalConfig(depPath)
@@ -54,7 +54,7 @@ func TestGenerateScaffold_RoundTripsAndValidates(t *testing.T) {
 func TestScaffold_BuiltinEvaluatorsAreNotDeclared(t *testing.T) {
 	cfg := buildDeployScaffold(
 		"support-agent", "unused", "",
-		[]string{"builtin.task_adherence", "my-custom"}, "",
+		[]string{"builtin.task_adherence", "my-custom"}, "", project.DefaultEvalDir,
 	)
 
 	require.Len(t, cfg.Evaluators, 1, "only the custom evaluator should be declared")
@@ -74,20 +74,23 @@ func TestScaffold_BuiltinEvaluatorsAreNotDeclared(t *testing.T) {
 // A bare name means an already-registered dataset; a path means a local file.
 func TestScaffold_DatasetReferenceForms(t *testing.T) {
 	t.Run("local path becomes a source", func(t *testing.T) {
-		cfg := buildDeployScaffold("a", "r", "./tests/golden.jsonl", nil, "")
-		require.Equal(t, "./tests/golden.jsonl", cfg.Datasets[0].Source)
+		// --dataset is relative to the working directory, but source: is
+		// resolved relative to the deploy spec, so it has to be rebased.
+		cfg := buildDeployScaffold("a", "r", "./tests/golden.jsonl", nil, "", "evals")
+		require.Equal(t, "../tests/golden.jsonl", cfg.Datasets[0].Source,
+			"a dataset outside the eval dir must be reached with ..")
 		require.Equal(t, "golden", cfg.Datasets[0].Name)
 	})
 
 	t.Run("bare name references a registered dataset", func(t *testing.T) {
-		cfg := buildDeployScaffold("a", "r", "prod-sample", nil, "")
+		cfg := buildDeployScaffold("a", "r", "prod-sample", nil, "", project.DefaultEvalDir)
 		require.Equal(t, "prod-sample", cfg.Datasets[0].Name)
 		require.Empty(t, cfg.Datasets[0].Source,
 			"a registered dataset must not get a local source")
 	})
 
 	t.Run("no dataset flag scaffolds a local path", func(t *testing.T) {
-		cfg := buildDeployScaffold("support-agent", "r", "", nil, "")
+		cfg := buildDeployScaffold("support-agent", "r", "", nil, "", project.DefaultEvalDir)
 		require.Contains(t, cfg.Datasets[0].Source, "support-agent-golden.jsonl")
 	})
 }

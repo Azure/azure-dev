@@ -26,6 +26,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 
 	rootCmd.AddCommand(
+		newInitCommand(),
 		newDatasetCommand(),
 		newRunCommand(),
 		newEvaluatorCommand(),

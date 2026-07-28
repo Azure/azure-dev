@@ -90,7 +90,7 @@ func newResultsCompareCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&treatments, "treatment", nil,
 		"Run to measure, repeatable. Defaults to the most recent completed run.")
 	cmd.Flags().StringVar(&displayName, "name", "", "Name for this comparison.")
-	addEvalGroupFlag(cmd, &groupName)
+	addEvalGroupFlags(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }

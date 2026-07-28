@@ -74,7 +74,7 @@ func newResultsShowCommand() *cobra.Command {
 	cmd.Flags().StringVar(&runID, "run-id", "", "Run to show. Defaults to the most recent run.")
 	cmd.Flags().BoolVar(&failedOnly, "failed-only", false, "Show only criteria with failures.")
 	cmd.Flags().StringVarP(&outFile, "out-file", "O", "", "Write JSON results to this path.")
-	addEvalGroupFlag(cmd, &groupName)
+	addEvalGroupFlags(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -135,7 +135,7 @@ func newResultsExportCommand() *cobra.Command {
 	cmd.Flags().StringVar(&runID, "run-id", "", "Run to export. Defaults to the most recent run.")
 	cmd.Flags().StringVar(&format, "format", "json", "Output format: json or csv.")
 	cmd.Flags().StringVarP(&outFile, "out-file", "O", "", "Write to this path instead of stdout.")
-	addEvalGroupFlag(cmd, &groupName)
+	addEvalGroupFlags(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -154,6 +154,10 @@ func resolveEvalID(
 ) (string, error) {
 	if len(args) > 0 && args[0] != "" {
 		return args[0], nil
+	}
+
+	if flag, err := cmd.Flags().GetString("eval-id"); err == nil && flag != "" {
+		return flag, nil
 	}
 
 	if groupName != "" {
@@ -177,9 +181,18 @@ func resolveEvalID(
 // addEvalGroupFlag registers the flag that names a group from the config, so
 // every command taking an eval-id can reach a group by the name its author
 // used.
-func addEvalGroupFlag(cmd *cobra.Command, target *string) {
+// addEvalGroupFlags registers the two ways to say which group a command acts
+// on: --eval-group names one from the config, --eval-id gives its service id.
+//
+// The id is also accepted as a positional argument. The flag exists because
+// `run start --eval-id` already spells it that way, and a script that learned
+// it there should not have to find out that the sibling commands take only a
+// positional.
+func addEvalGroupFlags(cmd *cobra.Command, target *string) {
 	cmd.Flags().StringVar(target, "eval-group", "",
 		"Name a group from the config instead of passing its id.")
+	cmd.Flags().String("eval-id", "",
+		"Id of the eval group. Same as passing the id as an argument.")
 }
 
 // latestOrNamedRun returns the named run, or the most recent one for the group.

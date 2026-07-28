@@ -71,7 +71,7 @@ func newRunListCommand() *cobra.Command {
 				[]string{"RUN ID", "NAME", "STATUS", "RESULTS"}, rows)
 		},
 	}
-	addEvalGroupFlag(cmd, &groupName)
+	addEvalGroupFlags(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -122,7 +122,7 @@ func newRunShowCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&runID, "run-id", "", "Run to show. Defaults to the most recent run.")
-	addEvalGroupFlag(cmd, &groupName)
+	addEvalGroupFlags(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -178,7 +178,7 @@ func newRunCancelCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&runID, "run-id", "", "Run to cancel. Defaults to the most recent run.")
-	addEvalGroupFlag(cmd, &groupName)
+	addEvalGroupFlags(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }

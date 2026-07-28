@@ -62,6 +62,30 @@ func TestRunStartMirrorsCompositeFlags(t *testing.T) {
 	}
 }
 
+// Every command that acts on an eval group takes the id the same two ways.
+// `run start --eval-id` is the form the CI example uses, and `run list` used to
+// reject that flag and accept only a positional, so a script that worked for
+// one sibling failed on the next.
+func TestEvalGroupCommandsAcceptIDAsAFlag(t *testing.T) {
+	subs := map[string]*cobra.Command{}
+	for _, sub := range newRunCommand().Commands() {
+		subs["run "+sub.Name()] = sub
+	}
+	for _, sub := range newResultsCommand().Commands() {
+		subs["results "+sub.Name()] = sub
+	}
+
+	for _, name := range []string{
+		"run list", "run show", "run cancel",
+		"results show", "results export", "results compare",
+	} {
+		cmd := subs[name]
+		require.NotNil(t, cmd, "%s should exist", name)
+		require.NotNil(t, cmd.Flags().Lookup("eval-id"), "%s should accept --eval-id", name)
+		require.NotNil(t, cmd.Flags().Lookup("eval-group"), "%s should accept --eval-group", name)
+	}
+}
+
 // --no-wait is documented in the spec, and cobra does not derive it from the
 // --wait bool.
 func TestRunCommandAcceptsNoWait(t *testing.T) {

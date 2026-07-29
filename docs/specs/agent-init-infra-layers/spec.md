@@ -2,95 +2,42 @@
 
 ## Summary
 
-`azd ai agent init --infra` currently cannot eject Foundry infrastructure into
-an azd project that already has infrastructure in `infra/`. The command refuses
-because both the existing project and the generated Foundry templates expect to
-own the same directory and entry point.
+`azd ai agent init --infra` cannot currently generate Foundry IaC in an azd
+project that already has an `infra/` directory. Both the existing project and
+the generated Foundry templates expect to own the same deployment entry point.
 
-This design preserves the project's existing infrastructure and adds generated
-Foundry infrastructure as a separate provisioning layer under
-`infra/foundry`. Foundry-only projects keep the existing simple layout under
-`infra/`.
+This design preserves the project's existing infrastructure and adds Foundry
+infrastructure as a separate provisioning layer under `infra/foundry`.
+Foundry-only projects keep the existing simple `infra/` layout.
 
-The user mental model becomes:
-
-> `--infra` adds editable Foundry infrastructure to my project without merging
-> into or overwriting the infrastructure I already own.
+> `--infra` adds editable Foundry infrastructure without merging into or
+> overwriting infrastructure the user already owns.
 
 Source issue: [Azure/azure-dev#9126](https://github.com/Azure/azure-dev/issues/9126).
 
 ## Problem
 
-### Who is affected
-
-Developers who start with an existing azd application and later add a Foundry
-agent are affected when the application already contains Bicep, Terraform, or a
-custom provisioning provider.
-
-### Current experience
-
-Running:
-
-```console
-azd ai agent init --infra
-```
-
-against a project with an existing `infra/` directory fails with:
+Developers commonly add a Foundry agent to an existing web application or API.
+When that application already contains Bicep or Terraform, eject fails:
 
 ```text
 ERROR: `./infra/` already exists
 ```
 
-The user must then choose between deleting existing infrastructure, manually
-merging generated resources, or abandoning IaC eject. None is a safe default:
-
-- Deleting `infra/` loses application infrastructure.
-- File-level merging conflicts at `infra/main.bicep`, the deployment entry
-  point.
-- Resource-level Bicep merging requires semantic understanding of arbitrary
-  user-authored infrastructure.
-- Keeping Foundry provisioning implicit prevents users from reviewing or
-  customizing its IaC.
-
-The current eject path treats one `infra/` tree as exclusively owned at
-`cli/azd/extensions/azure.ai.agents/internal/cmd/init_infra.go:89`.
+Deleting `infra/` loses application infrastructure. File-level merging is not
+safe because both trees normally contain `main.bicep` or Terraform entry-point
+files. Resource-level merging would require azd to understand and rewrite
+arbitrary user-authored IaC.
 
 ## Goals
 
-1. Let users add editable Foundry IaC to an azd project that already has
-   infrastructure.
-2. Preserve all existing infrastructure files and configuration.
-3. Avoid semantic merging of Bicep or Terraform.
-4. Support both Bicep and Terraform eject.
-5. Produce an `azure.yaml` that `azd provision`, targeted layer provision, and
-   `azd down` can understand.
-6. Keep the existing Foundry-only experience simple and backward-compatible.
-7. Fail before modifying the project when a safe migration cannot be proven.
+1. Add editable Foundry IaC to projects with existing infrastructure.
+2. Preserve existing files and configuration.
+3. Support Bicep and Terraform eject.
+4. Avoid semantic IaC merging and silent overwrites.
+5. Keep Foundry-only projects backward-compatible.
 
-## Non-Goals
-
-### Out of scope
-
-- Merging a sample's unified `azure.yaml` into an existing project. That is
-  tracked by [Azure/azure-dev#8884](https://github.com/Azure/azure-dev/issues/8884).
-- General resource-level Bicep composition or arbitrary IaC merge tooling.
-- Terraform support for Foundry private networking. Terraform eject continues
-  to reject a `network:` block because the generated module does not implement
-  the equivalent private-network topology.
-- Ejecting greenfield IaC for a brownfield Foundry service with `endpoint:`.
-  The existing resource remains externally owned.
-
-### Explicitly not in scope
-
-- Overwriting generated infrastructure with `--force`.
-- Automatically importing pre-existing resources into Terraform state.
-- Converting Bicep infrastructure to Terraform or Terraform infrastructure to
-  Bicep.
-- Inferring dependencies from arbitrary extension provisioning providers.
-
-## User Experience
-
-### Command surface
+## Proposed Experience
 
 The command surface is unchanged:
 
@@ -100,42 +47,38 @@ The command surface is unchanged:
 | `azd ai agent init --infra=bicep` | Eject Bicep explicitly |
 | `azd ai agent init --infra=terraform` | Eject Terraform |
 
-The flag contract is registered at
-`cli/azd/extensions/azure.ai.agents/internal/cmd/init.go:1587`.
-
 ### Behavior by project shape
 
 | Project shape | Behavior |
 |---|---|
-| New or Foundry-only project, no existing IaC entry point | Generate the existing root layout under `infra/` |
-| Existing single-layer Bicep project | Preserve it as a layer and add `foundry` at `infra/foundry` |
-| Existing single-layer Terraform project | Preserve it as a layer and add `foundry` at `infra/foundry` |
-| Existing custom/fileless provisioning provider | Preserve it as a layer and add `foundry` at `infra/foundry` |
-| Existing `infra.layers` project | Append a `foundry` layer without rewriting existing layer bodies |
-| Existing generated Foundry files at the target | Refuse without overwriting |
-| Brownfield Foundry project with `endpoint:` | Refuse eject; continue using the existing-project provisioning path |
-| Terraform request with `network:` | Refuse and recommend Bicep |
+| New or Foundry-only project | Generate the existing root layout under `infra/` |
+| Existing single-layer Bicep or Terraform project | Preserve it as a layer and add `foundry` at `infra/foundry` |
+| Existing custom/fileless provider | Preserve it as a layer and add `foundry` |
+| Existing layered project without `foundry` | Append a `foundry` layer; preserve existing layer bodies |
+| Existing compatible `foundry` layer with empty target | Generate into its declared `path` and `module` |
+| Existing `foundry` layer with a different provider | Refuse; do not convert providers implicitly |
+| Existing `infra/foundry` directory without a layer | Add only non-conflicting files; refuse generated-file collisions |
+| Existing files in the declared `foundry` target | Refuse without overwriting |
+| Brownfield project with `endpoint:` | Refuse eject; existing resource remains externally owned |
+| Terraform request with private `network:` | Refuse and recommend Bicep |
 
-### Resulting configuration
+A folder and a layer are separate signals. An `infra/foundry` folder does not
+authorize azd to overwrite its contents. An existing `foundry` layer is reused
+only when its provider matches the requested format and generated files do not
+already exist.
 
-Given an existing project:
+### Example migration
+
+Before:
 
 ```yaml
-name: web-app
 infra:
   provider: bicep
-services:
-  web:
-    host: containerapp
-    project: src/web
-  ai-project:
-    host: azure.ai.project
 ```
 
-running `azd ai agent init --infra` produces:
+After `azd ai agent init --infra`:
 
 ```yaml
-name: web-app
 infra:
   layers:
     - name: infra
@@ -146,375 +89,126 @@ infra:
       provider: bicep
       dependsOn:
         - infra
-services:
-  web:
-    host: containerapp
-    project: src/web
-  ai-project:
-    host: azure.ai.project
 ```
 
-The existing `infra/main.bicep` is unchanged. Generated Foundry files are
-written to `infra/foundry/`.
+The existing `infra/main.bicep` remains unchanged. Foundry files are generated
+under `infra/foundry/`.
 
-### Resource-group ownership
+## Ownership and Lifecycle
 
-The generated Foundry layer owns a separate resource group:
+Generated layers use azd's core `bicep` or `terraform` provider, not the
+IaC-less `microsoft.foundry` provider. This gives each layer normal preview,
+state, targeted provision, and teardown behavior.
+
+The Foundry layer owns an isolated resource group:
 
 ```text
 rg-${AZURE_ENV_NAME}-foundry
 ```
 
-Its canonical environment output is:
-
-```text
-AZURE_FOUNDRY_RESOURCE_GROUP
-```
-
-This avoids changing or deleting the resource group owned by the existing
-application layer. Root, Foundry-only projects retain the established
-`AZURE_RESOURCE_GROUP` contract.
-
-## Architecture and Touch-Points
-
-| Component | Responsibility |
-|---|---|
-| `azure.ai.agents/internal/cmd/init_infra.go` | Detect project shape, plan migration, generate files, atomically install files, and update `azure.yaml` |
-| `azure.ai.agents/internal/synthesis/templates/` | Source Bicep/Terraform templates and canonical Foundry outputs |
-| `azure.ai.projects/internal/provisioning/` | Preserve compatibility for the IaC-less `microsoft.foundry` provider and layer-aware environment handling |
-| `schemas/v1.0/azure.yaml.json` and `schemas/alpha/azure.yaml.json` | Permit `provider` on individual `infra.layers[]` entries |
-| azd core provisioning graph | Execute layers using `dependsOn` and provider-specific state |
-
-### Data flow
-
-```text
-azure.yaml
-    |
-    v
-validate Foundry service + requested provider
-    |
-    v
-classify current infra shape
-    |
-    +--> Foundry-only ----------> generate infra/*
-    |
-    +--> existing single layer -> convert config to infra.layers[]
-    |
-    +--> existing layers -------> append foundry layer
-                                      |
-                                      v
-                              generate in temp directory
-                                      |
-                                      v
-                         validate target files do not exist
-                                      |
-                                      v
-                         atomically install + update azure.yaml
-```
-
-## Mechanism
-
-### 1. Project classification
-
-The eject planner parses `azure.yaml` as a YAML node tree so it can preserve
-unknown extension properties and existing layer configuration. The entry point
-is `planInfraEject` at
-`cli/azd/extensions/azure.ai.agents/internal/cmd/init_infra.go:282`.
-
-Classification uses:
-
-- Root `infra.provider`, `infra.path`, and `infra.module`.
-- Existing `infra.layers` entries.
-- Provider-specific entry points such as `<module>.bicep`,
-  `<module>.bicepparam`, or `.tf` files.
-- Explicit custom providers, including providers with no on-disk entry point.
-
-Single-layer migration is handled by `planSingleInfraEject` at
-`init_infra.go:328`; existing layered projects are handled by
-`planLayeredInfraEject` at `init_infra.go:449`.
-
-### 2. Layer migration
-
-For an existing single-layer project:
-
-1. Copy the root infrastructure options into the first layer.
-2. Materialize defaults (`path: infra`, `module: main`, default provider) so
-   the migrated layer remains explicit.
-3. Name the preserved layer `infra`.
-4. Add `foundry` at `infra/foundry`.
-5. Set the Foundry layer provider to the requested on-disk provider:
-   `bicep` or `terraform`.
-6. Add `dependsOn` from the Foundry layer to the preserved layer.
-
-For an existing layered project, all existing layer nodes remain in place and
-the new Foundry layer depends on the existing layer names. Existing hooks,
-modules, providers, and dependency declarations are preserved.
-
-### 3. Generated IaC ownership
-
-Generated layers use azd core providers rather than the IaC-less
-`microsoft.foundry` provider:
-
-| Requested format | Layer provider | Generated entry point |
-|---|---|---|
-| Bicep | `bicep` | `infra/foundry/main.bicep` |
-| Terraform | `terraform` | `infra/foundry/main.tf` |
-
-This avoids sharing a mutable extension-provider instance between multiple
-layers and delegates normal Bicep/Terraform state and teardown behavior to azd
-core.
-
-The generated layer owns `rg-${AZURE_ENV_NAME}-foundry`. Layer-specific Bicep
-parameters are added by `writeParametersFile` at `init_infra.go:1041`.
-Terraform values are generated by `writeTfvarsFile` at `init_infra.go:1241`.
-
-For layered output, `AZURE_RESOURCE_GROUP` is omitted from the generated layer
-artifact so it cannot overwrite the application's root resource-group value.
-`AZURE_FOUNDRY_RESOURCE_GROUP` is emitted instead. Root eject retains both the
-legacy root output and the Foundry-specific output for compatibility.
-
-### 4. File installation and rollback
-
-Generation occurs in a temporary directory under the project root. No user
-file is modified during synthesis.
-
-`installStagedInfra` at `init_infra.go:629`:
-
-1. Enumerates every generated file.
-2. Refuses if any destination file already exists.
-3. Creates only missing directories.
-4. Copies files atomically.
-5. Records created files and directories for rollback.
-6. Rolls back generated files if the subsequent atomic `azure.yaml` write
-   fails.
+It publishes `AZURE_FOUNDRY_RESOURCE_GROUP` rather than replacing the existing
+application's `AZURE_RESOURCE_GROUP`. This keeps targeted `azd down foundry`
+from deleting sibling-layer resources.
 
-The command never deletes, edits, or semantically merges an existing IaC file.
+## Safety Rules
 
-### 5. Layer-aware provider compatibility
+The command validates the full plan before updating the project:
 
-The `microsoft.foundry` provider remains the default for IaC-less projects.
-Compatibility changes ensure it honors provisioning options passed by azd,
-including layer `path`, `module`, and virtual environment values. The provider
-entry point is
-`cli/azd/extensions/azure.ai.projects/internal/provisioning/foundry_provisioning_provider.go:122`;
-on-disk module loading is generalized by `loadOnDiskTemplateAt` at
-`internal/provisioning/ondisk_template.go:96`.
+- Exactly one Foundry provisioning service must exist.
+- Brownfield `endpoint:` projects cannot eject greenfield IaC.
+- Terraform cannot eject private networking until it reaches Bicep parity.
+- Layer names and paths must not conflict.
+- Paths must stay inside the project and cannot escape through symlinks.
+- Module names cannot contain traversal, separators, or file extensions.
+- Existing generated destinations are never overwritten.
+- Files are generated in a temporary directory, installed atomically, and
+  removed if the `azure.yaml` update fails.
 
-The provider also distinguishes root and layer resource-group outputs and
-validation through `AZURE_FOUNDRY_RESOURCE_GROUP`.
+## Key Decisions
 
-## Validation
+### 1. Layers instead of file merging
 
-Validation occurs before generated files are installed, in this order:
+We preserve existing IaC as one layer and generate Foundry IaC as another.
+File-level merging was rejected because deployment entry-point conflicts are
+semantic, not only textual.
 
-1. **Provider value**: only `bicep` and `terraform` are accepted.
-2. **Project manifest**: `azure.yaml` must exist and be a top-level YAML map.
-3. **Foundry service**: exactly one supported Foundry provisioning service must
-   exist.
-4. **Service shape**: networking must be declared on `host: azure.ai.project`.
-5. **Brownfield**: `endpoint:` projects reject eject.
-6. **Terraform networking**: Terraform rejects non-public network modes.
-7. **Layer shape**: layer names and paths must be present and non-conflicting.
-8. **Provider compatibility**: an existing `foundry` layer cannot silently
-   switch between Bicep and Terraform.
-9. **Path safety**: generated paths must be project-relative, must not contain
-   `..`, and must not escape through symlinks.
-10. **Module safety**: module names cannot contain separators, traversal, or a
-    file extension.
-11. **File conflicts**: every generated destination must be absent.
+### 2. Core providers for ejected IaC
 
-Errors use stable extension error codes such as `infra_eject_exists`,
-`infra_eject_no_foundry_service`, `infra_eject_network_unsupported`, and
-`invalid_azure_yaml`.
+Generated Bicep uses `provider: bicep`; generated Terraform uses
+`provider: terraform`. The IaC-less `microsoft.foundry` provider remains the
+default only when infrastructure is not ejected.
 
-## Edge Cases and Failure Modes
+### 3. Isolated resource-group ownership
 
-| Case | Behavior | Rationale |
-|---|---|---|
-| Empty `infra/` directory | Use the root layout | No existing IaC ownership to preserve |
-| Existing IaC entry point | Create layers | Avoid entry-point collision |
-| Fileless custom provider | Preserve it as a layer | Provider configuration is infrastructure ownership even without files |
-| Existing generated Foundry root IaC | Refuse | Re-eject must not overwrite user-owned edits |
-| Existing `foundry` layer with generated files | Refuse on file conflict | Reruns are non-destructive |
-| Existing `foundry` layer with another provider | Refuse | No implicit provider conversion |
-| Existing path is a file | Refuse | Cannot replace a user file with a directory |
-| Target path is a symlink outside project | Refuse | Prevent project-root escape |
-| Multiple Foundry project services | Refuse | Synthesis supports one project service |
-| Brownfield `endpoint:` | Refuse | Existing resource is not represented by greenfield IaC |
-| Terraform plus `network:` | Refuse | Avoid silently provisioning a public account |
-| Failure after partial file install | Remove only files/directories created by this invocation | Preserve retryability and user files |
-| Targeted `azd provision foundry` | Supported | Layer has complete parameters and isolated state |
-| Targeted `azd down foundry` | Supported | Layer owns an isolated Foundry resource group |
+The Foundry layer receives its own resource group instead of sharing
+`AZURE_RESOURCE_GROUP`. This avoids Terraform import conflicts and destructive
+cross-layer teardown.
 
-## Decisions
+### 4. Fail closed on rerun
 
-### Decision 1: Use provisioning layers instead of file-level merge
+If generated files already exist, eject refuses rather than regenerating or
+using `--force`. Once ejected, IaC is user-owned and may contain intentional
+customizations.
 
-**Chosen:** Preserve existing IaC as one layer and generate Foundry IaC in
-`infra/foundry`.
+### 5. Preserve the simple project shape
 
-**Rejected:** Copy generated files into the existing `infra/` tree and prompt
-only on filename conflicts.
+Foundry-only projects continue using root `infra/`. Layers are introduced only
+when composition requires them.
 
-**Why:** The conflict is semantic, not only textual. Both systems normally own
-the deployment entry point. A successful file copy could still produce an
-invalid or incomplete deployment graph.
+## Scope
 
-### Decision 2: Do not perform resource-level Bicep merging
+### In scope
 
-**Chosen:** Keep separate deployment entry points.
+- Bicep and Terraform Foundry layers
+- Migration from a root provider to `infra.layers`
+- Appending to existing layered projects
+- Path, module, provider, and file-conflict validation
+- Isolated Foundry resource-group ownership
 
-**Rejected:** Parse and insert Foundry modules/resources into arbitrary
-`main.bicep`.
+### Out of scope
 
-**Why:** Resource-level transformation would need to preserve scope,
-parameters, modules, outputs, dependencies, naming conventions, and user
-formatting. It creates high blast radius for a convenience command.
+- Semantic Bicep/Terraform merging
+- Overwriting or regenerating user-owned IaC
+- Terraform private networking
+- Brownfield IaC generation
+- Merging a unified sample `azure.yaml` into an existing project
+  ([#8884](https://github.com/Azure/azure-dev/issues/8884))
 
-### Decision 3: Use core Bicep/Terraform providers for ejected layers
+## Rollout and Validation
 
-**Chosen:** Set the generated layer provider to `bicep` or `terraform`.
+Existing projects are unchanged until users explicitly run `--infra`. The
+stable and alpha `azure.yaml` schemas add per-layer `provider` support.
 
-**Rejected:** Keep the layer provider as `microsoft.foundry` and let the
-extension compile on-disk IaC.
+Automated coverage includes:
 
-**Why:** Core providers already own file-based state, preview, and teardown.
-It also avoids extension-provider instance caching conflicts when a project has
-multiple layers.
+- Root Bicep/Terraform migration
+- Existing layered and custom-provider projects
+- Existing `foundry` layer and folder conflicts
+- Bicep/Terraform generation and complete non-interactive parameters
+- Path traversal, symlink, module, brownfield, and networking failures
+- Atomic install and rollback behavior
+- Bicep compilation and agents/projects template parity
 
-### Decision 4: Give the Foundry layer an isolated resource group
+Before release, manually validate:
 
-**Chosen:** `rg-${AZURE_ENV_NAME}-foundry`, surfaced as
-`AZURE_FOUNDRY_RESOURCE_GROUP`.
-
-**Rejected:** Reuse `AZURE_RESOURCE_GROUP` from the existing application.
-
-**Why:** Shared resource-group ownership makes targeted teardown unsafe and can
-cause Terraform import conflicts. Isolation gives each layer a clear lifecycle.
-
-### Decision 5: Refuse overwrite rather than support `--force`
-
-**Chosen:** Fail when any generated destination exists.
-
-**Rejected:** Regenerate or patch existing ejected files with `--force`.
-
-**Why:** Once ejected, files are user-owned and may contain intentional
-customizations. The command cannot distinguish generated content from user
-changes safely.
-
-### Decision 6: Keep Foundry-only projects on the root layout
-
-**Chosen:** Continue writing `infra/main.bicep` or root Terraform when no
-existing IaC entry point exists.
-
-**Rejected:** Always create `infra.layers`, even for one layer.
-
-**Why:** The simple project stays simple, existing behavior remains compatible,
-and users only see layering when composition requires it.
-
-## Rollout and Compatibility
-
-- Existing projects are unchanged until the user explicitly runs `--infra`.
-- Existing Foundry-only eject behavior remains compatible.
-- The schema adds per-layer `provider` to both stable and alpha
-  `azure.yaml` schemas at `schemas/v1.0/azure.yaml.json:94`.
-- Existing root-provider inheritance remains valid for user-authored layers.
-- Generated Foundry layers declare their provider explicitly.
-- No extension or CLI version number is proposed in this spec; release
-  packaging follows the normal extension release process.
-
-## Product Metrics
-
-No new telemetry is included in this implementation. Proposed follow-up:
-
-- Count `--infra` ejects that use a new layer versus the root layout.
-- Count Bicep versus Terraform Foundry layers.
-- Count validation failures by existing structured error code.
-
-Proposed privacy classification: system metadata only; do not emit layer names,
-paths, project names, or resource-group names.
+1. Existing Bicep app -> eject -> provision -> `azd down foundry`.
+2. Existing Terraform app -> eject -> provision -> `azd down foundry`.
+3. Existing mixed-layer project -> eject -> targeted preview/provision.
+4. Foundry-only project -> root eject regression.
+5. Rerun after editing generated files -> non-destructive refusal.
 
 ## Open Questions
 
-### 1. Should rerun support regeneration into an existing Foundry layer?
-
-**Proposed answer:** No for this release. Keep fail-closed behavior until there
-is an explicit, reviewable regeneration workflow with backup/diff UX.
-
-### 2. Should the resource-group name be configurable at eject time?
-
-**Proposed answer:** Not as a new CLI flag. Users who need a custom name can
-edit the generated Bicep parameter or Terraform variable file; avoid expanding
-`init` with another infrastructure naming option.
-
-### 3. Should all new agent projects use layers by default?
-
-**Proposed answer:** No. Use layers only when composing with existing
-infrastructure. This limits conceptual overhead for first-time users.
-
-### 4. Should Terraform private networking be added to reach Bicep parity?
-
-**Proposed answer:** Track separately. Until parity exists, reject rather than
-silently weaken network security.
-
-## Test Plan
-
-### Unit tests
-
-- Preserve existing root Bicep and migrate it into `infra.layers`.
-- Preserve existing Terraform and custom/fileless providers.
-- Append to an existing layer list without changing hooks or dependencies.
-- Generate Bicep and Terraform under `infra/foundry`.
-- Honor a predeclared Foundry layer's custom path and module.
-- Emit complete non-interactive Bicep parameters for a generated layer.
-- Emit layer-specific Terraform values and isolated resource-group naming.
-- Reject brownfield, multiple Foundry services, unsupported providers, and
-  Terraform private networking.
-- Reject file, directory, module, path, and symlink conflicts without changing
-  `azure.yaml`.
-- Roll back generated files if the manifest update fails.
-- Preserve root behavior and provider stamping for Foundry-only eject.
-
-Primary coverage is in
-`cli/azd/extensions/azure.ai.agents/internal/cmd/init_infra_test.go:66` and
-`init_infra_test.go:1273`.
-
-### Provider and schema tests
-
-- Validate layer-specific path/module handling.
-- Validate root and Foundry-specific resource-group outputs.
-- Validate layer-aware location checks.
-- Validate parity between the agents/projects synthesis copies.
-- Parse both stable and alpha JSON schemas.
-- Compile Bicep and compare generated ARM JSON to checked-in artifacts.
-
-### Integration tests
-
-- Parse the migrated `azure.yaml` through azd core.
-- Run targeted core project/provisioning/gRPC tests.
-- Verify command completion snapshots remain stable.
-
-### Manual/E2E validation
-
-The following scenarios should be run before release:
-
-1. Existing Bicep application -> add Bicep Foundry layer -> `azd provision` ->
-   `azd down foundry`.
-2. Existing Terraform application -> add Terraform Foundry layer ->
-   `azd provision` -> `azd down foundry`.
-3. Existing mixed-layer project -> append Bicep Foundry layer -> targeted
-   preview/provision.
-4. Foundry-only project -> root Bicep eject -> provision/down regression.
-5. Rerun eject after editing generated files -> confirm non-destructive refusal.
-
-Live Azure provisioning is not covered by unit tests and remains a release
-validation requirement.
+1. **Should rerun support regeneration?** Proposed: no, until there is an
+   explicit backup/diff workflow.
+2. **Should resource-group naming become an init flag?** Proposed: no; users
+   can edit generated parameters without expanding the init surface.
+3. **Should all agent projects use layers?** Proposed: no; introduce layers
+   only when composing with existing infrastructure.
 
 ## References
 
-- Issue: [Unable to generate Bicep into existing project #9126](https://github.com/Azure/azure-dev/issues/9126)
-- Original Bicep-less/eject RFC: [#8065](https://github.com/Azure/azure-dev/issues/8065)
-- Layered provisioning implementation: [#5492](https://github.com/Azure/azure-dev/pull/5492)
-- Parallel layer dependencies: [#6291](https://github.com/Azure/azure-dev/issues/6291)
-- Unified manifest adoption boundary: [#8884](https://github.com/Azure/azure-dev/issues/8884)
-- Private networking behavior: `cli/azd/extensions/azure.ai.agents/docs/private-networking.md`
+- [Issue #9126](https://github.com/Azure/azure-dev/issues/9126)
+- [Bicep-less/eject RFC #8065](https://github.com/Azure/azure-dev/issues/8065)
+- [Layered provisioning PR #5492](https://github.com/Azure/azure-dev/pull/5492)
+- [Unified manifest adoption boundary #8884](https://github.com/Azure/azure-dev/issues/8884)

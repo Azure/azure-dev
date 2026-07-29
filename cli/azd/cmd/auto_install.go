@@ -665,9 +665,10 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			Provider:   requiredHost,
 		})
 		if err != nil {
-			// Do not fail if we couldn't check for extensions - just proceed to normal execution
+			// Do not fail if we couldn't check for extensions - just report the command's own failure
 			log.Println("Error: check for extensions. Skipping auto-install:", err)
 			console.Message(ctx, unsupportedErr.ErrorMessage)
+			result.Err = commandErr
 			return result
 		}
 		installedExtensions, err := extensionManager.ListInstalled()
@@ -687,8 +688,9 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		)
 		availableExtensionsForHost = uninstalledExtensionMatches(availableExtensionsForHost, installedExtensions)
 		if len(availableExtensionsForHost) == 0 {
-			// did not find an extension with the capability, just print the original error message
+			// Nothing can be installed to supply the host, so the command's failure stands.
 			console.Message(ctx, unsupportedErr.ErrorMessage)
+			result.Err = commandErr
 			return result
 		}
 
@@ -726,7 +728,8 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			return result
 		}
 
-		result.Err = err
+		// The install was declined, so the command's failure stands.
+		result.Err = commandErr
 		return result
 	}
 

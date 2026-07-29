@@ -314,7 +314,7 @@ func TestPipeline_PreviewErrorResponse_NestedQuota(t *testing.T) {
 	// descending would drop trailing entries rather than fail a substring check.
 	rendered := deployErr.Error()
 	var codes []string
-	for _, line := range strings.Split(strings.TrimSpace(rendered), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(rendered), "\n") {
 		if code, _, found := strings.Cut(line, ":"); found {
 			codes = append(codes, strings.TrimSpace(code))
 		}

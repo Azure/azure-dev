@@ -381,6 +381,13 @@ func Test_MatchesVersionConstraint(t *testing.T) {
 	}
 }
 
+func TestResolveExtensionVersionNil(t *testing.T) {
+	version, err := ResolveExtensionVersion(nil, "", nil)
+
+	require.Nil(t, version)
+	require.EqualError(t, err, "extension metadata cannot be nil")
+}
+
 func Test_CreateExtensionFilter_VersionConstraints(t *testing.T) {
 	ext := &ExtensionMetadata{
 		Id: "test.constraints",
@@ -412,6 +419,38 @@ func Test_CreateExtensionFilter_VersionConstraints(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			filter := createExtensionFilter(&FilterOptions{Version: tc.Version})
+			require.Equal(t, tc.Match, filter(ext))
+		})
+	}
+}
+
+func Test_CreateExtensionFilter_ProviderUsesSelectedVersion(t *testing.T) {
+	foundry := []Provider{{Type: ProvisioningProviderType, Name: "microsoft.foundry"}}
+	ext := &ExtensionMetadata{
+		Id: "test.provider",
+		Versions: []ExtensionVersion{
+			{Version: "1.0.0-beta.6", Providers: foundry},
+			{Version: "1.0.0-beta.7"},
+		},
+	}
+
+	testCases := []struct {
+		Name    string
+		Version string
+		Match   bool
+	}{
+		{Name: "selected version dropped the provider", Version: "", Match: false},
+		{Name: "pinned to a version that provides it", Version: "1.0.0-beta.6", Match: true},
+		{Name: "constraint resolves to a version without it", Version: ">=1.0.0-beta.6", Match: false},
+		{Name: "constraint excludes the version without it", Version: "<1.0.0-beta.7", Match: true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			filter := createExtensionFilter(&FilterOptions{
+				Version:  tc.Version,
+				Provider: "microsoft.foundry",
+			})
 			require.Equal(t, tc.Match, filter(ext))
 		})
 	}

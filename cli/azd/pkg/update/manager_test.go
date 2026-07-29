@@ -78,14 +78,6 @@ func TestBuildDownloadURL(t *testing.T) {
 			},
 		},
 		{
-			name:    "stable without resolved version",
-			channel: ChannelStable,
-			contains: []string{
-				blobBaseURL + "/stable/",
-				fmt.Sprintf("azd-%s-%s", runtime.GOOS, runtime.GOARCH),
-			},
-		},
-		{
 			name:    "daily",
 			channel: ChannelDaily,
 			version: "1.29.0-beta.1-daily.6614998",
@@ -133,6 +125,17 @@ func TestUpdate_RequiresResolvedVersion(t *testing.T) {
 
 	require.Error(t, m.Update(t.Context(), nil, &strings.Builder{}))
 	require.Error(t, m.StageUpdate(t.Context(), nil))
+
+	// A stable target must carry the version the check resolved. Falling back to the rolling
+	// stable folder would silently reintroduce the drift pinning exists to prevent, so an
+	// unresolved stable target fails the update instead. See
+	// https://github.com/Azure/azure-dev/issues/9145.
+	unresolved := &VersionInfo{Channel: ChannelStable}
+	require.Error(t, m.Update(t.Context(), unresolved, &strings.Builder{}))
+	require.Error(t, m.StageUpdate(t.Context(), unresolved))
+
+	// Daily installs from the rolling folder, so they don't require a resolved version.
+	require.NoError(t, (&VersionInfo{Channel: ChannelDaily}).validate())
 }
 
 func TestInstallVersion(t *testing.T) {
@@ -143,7 +146,6 @@ func TestInstallVersion(t *testing.T) {
 		want    string
 	}{
 		{"stable pins the resolved version", ChannelStable, "1.28.1", "1.28.1"},
-		{"stable falls back to the channel", ChannelStable, "", "stable"},
 		{"daily uses the rolling channel", ChannelDaily, "1.29.0-beta.1-daily.6614998", "daily"},
 		{"daily without version", ChannelDaily, "", "daily"},
 	}
@@ -999,38 +1001,6 @@ func TestUpdateViaInstallScript(t *testing.T) {
 		require.NotEmpty(t, capturedArgs.Args[4]) // install folder path
 		require.Equal(t, "--symlink-folder", capturedArgs.Args[5])
 		require.Equal(t, "", capturedArgs.Args[6])
-	})
-
-	t.Run("Success_StableWithoutResolvedVersion", func(t *testing.T) {
-		scriptContent := []byte("#!/bin/bash\necho installing")
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(scriptContent)))
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(scriptContent)
-		}))
-		defer server.Close()
-
-		client := &http.Client{
-			Transport: &urlRewriteTransport{
-				base:      http.DefaultTransport,
-				targetURL: server.URL,
-			},
-		}
-
-		var capturedArgs exec.RunArgs
-		mockRunner := mockexec.NewMockCommandRunner()
-		mockRunner.When(func(args exec.RunArgs, command string) bool {
-			return args.Cmd == "bash"
-		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-			capturedArgs = args
-			return exec.NewRunResult(0, "Installation complete", ""), nil
-		})
-
-		m := NewManager(mockRunner, client)
-		var buf bytes.Buffer
-		err := m.updateViaInstallScript(t.Context(), &VersionInfo{Channel: ChannelStable, Version: ""}, &buf)
-		require.NoError(t, err)
-		require.Equal(t, "stable", capturedArgs.Args[2])
 	})
 
 	t.Run("Success_Daily", func(t *testing.T) {

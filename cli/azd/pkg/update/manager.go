@@ -277,8 +277,8 @@ func parseDailyBuildNumber(version string) (int, error) {
 // Package manager installs (brew, winget, choco) cannot be pinned — the package manager
 // decides which version it makes available.
 func (m *Manager) Update(ctx context.Context, target *VersionInfo, writer io.Writer) error {
-	if target == nil {
-		return fmt.Errorf("no resolved version to install")
+	if err := target.validate(); err != nil {
+		return fmt.Errorf("cannot install update: %w", err)
 	}
 
 	installedBy := installer.InstalledBy()
@@ -309,6 +309,26 @@ func (m *Manager) Update(ctx context.Context, target *VersionInfo, writer io.Wri
 	}
 }
 
+// validate reports whether v is usable as an install target, i.e. whether it is a version
+// [Manager.CheckForUpdate] actually resolved.
+//
+// A stable target with no version cannot be pinned, and installing from the rolling stable
+// folder instead would silently reintroduce the drift that pinning exists to prevent
+// (Azure/azure-dev#9145). Failing the update is better than installing a version other than
+// the one reported to the user, so an unresolved target is rejected rather than downgraded
+// to an unpinned install.
+func (v *VersionInfo) validate() error {
+	if v == nil {
+		return fmt.Errorf("no resolved version")
+	}
+
+	if v.Channel == ChannelStable && v.Version == "" {
+		return fmt.Errorf("no resolved version for the %s channel", ChannelStable)
+	}
+
+	return nil
+}
+
 // installVersion returns the release folder to install from: either an exact version or the
 // channel's rolling folder. Channels are validated by [ParseChannel] and [CheckForUpdate],
 // so the channel is always `stable` or `daily` here.
@@ -323,8 +343,11 @@ func (m *Manager) Update(ctx context.Context, target *VersionInfo, writer io.Wri
 // marker and their archives in a single operation, so the folder never advertises a version
 // it cannot serve, and per-version daily archives live outside the release folder the
 // install scripts download from.
+//
+// Callers must pass a target accepted by [VersionInfo.validate], which guarantees a stable
+// target carries a version, so this never silently falls back to the rolling stable folder.
 func (v *VersionInfo) installVersion() string {
-	if v.Channel == ChannelStable && v.Version != "" {
+	if v.Channel == ChannelStable {
 		return v.Version
 	}
 
@@ -1066,8 +1089,8 @@ func HasStagedUpdate() bool {
 // StageUpdate downloads target to ~/.azd/staging/ for later apply.
 // This is intended to run in the background without user interaction.
 func (m *Manager) StageUpdate(ctx context.Context, target *VersionInfo) error {
-	if target == nil {
-		return fmt.Errorf("no resolved version to stage")
+	if err := target.validate(); err != nil {
+		return fmt.Errorf("cannot stage update: %w", err)
 	}
 
 	// Only stage for direct binary installs, not package managers

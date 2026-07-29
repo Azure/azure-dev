@@ -169,12 +169,14 @@ func buildInstallScriptArgs(target *VersionInfo) []string {
 	case ChannelDaily:
 		scriptArgs = fmt.Sprintf(" -Version 'daily' -InstallFolder '%s'",
 			escapeForPSSingleQuote(expectedPerUserInstallDir()))
-	default:
+	case ChannelStable:
 		// Pin stable to the resolved version so the MSI comes from the immutable
 		// release/<version>/ folder rather than the rolling release/stable/ folder,
 		// which can already hold a newer build (Azure/azure-dev#9145).
 		scriptArgs = fmt.Sprintf(" -Version '%s'",
 			escapeForPSSingleQuote(target.installVersion()))
+	default:
+		scriptArgs = " -Version 'stable'"
 	}
 
 	// Reset PSModulePath to the Windows PowerShell 5.1 system modules directory.

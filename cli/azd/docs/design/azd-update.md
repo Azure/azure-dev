@@ -223,11 +223,15 @@ Exceptions:
   in its progress or success messages ("Updating azd via winget (stable)", "Updated azd!"),
   and directs the user to `azd version` to confirm.
 
-**Code**: `pkg/update/manager.go` → `VersionInfo.installVersion()`, `buildDownloadURL()`
+**Code**: `pkg/update/manager.go` → `VersionInfo.installVersion()`, `VersionInfo.validate()`,
+`buildDownloadURL()`
 
 `Manager.Update` takes the `*VersionInfo` returned by `CheckForUpdate` rather than a
 channel, so an install can only ever target the version that was actually resolved and
-reported.
+reported. `Manager.Update` and `Manager.StageUpdate` reject a stable target that carries no
+version: falling back to the rolling `release/stable/` folder would silently reintroduce the
+drift pinning exists to prevent, so the update fails instead of installing a version other
+than the one reported.
 
 #### Windows Update Flow (MSI via `install-azd.ps1`)
 

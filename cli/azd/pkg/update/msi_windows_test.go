@@ -79,8 +79,10 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 			},
 		},
 		{
-			name:    "stable without resolved version",
-			channel: ChannelStable,
+			// Unreachable in practice; channels are validated before an update starts. The
+			// script must still receive a real channel folder, not the unknown name.
+			name:    "unknown channel falls back to stable",
+			channel: Channel("nightly"),
 			wantContains: []string{
 				"-Command",
 				installScriptURL,

@@ -6,6 +6,7 @@ package azapi
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -309,11 +310,21 @@ func TestPipeline_PreviewErrorResponse_NestedQuota(t *testing.T) {
 	deployErr := NewAzureDeploymentErrorFromResponse(whatIfResult.Error, DeploymentOperationPreview)
 
 	// Every level of the ARM error tree must be rendered, especially the leaf cause.
+	// Asserting the codes in order locks the nesting: a regression that stops
+	// descending would drop trailing entries rather than fail a substring check.
 	rendered := deployErr.Error()
-	assert.Contains(t, rendered, "Preview Error Details")
-	assert.Contains(t, rendered, "InvalidTemplateDeployment")
-	assert.Contains(t, rendered, "PreflightValidationCheckFailed")
-	assert.Contains(t, rendered, "SubscriptionIsOverQuotaForSku")
+	var codes []string
+	for _, line := range strings.Split(strings.TrimSpace(rendered), "\n") {
+		if code, _, found := strings.Cut(line, ":"); found {
+			codes = append(codes, strings.TrimSpace(code))
+		}
+	}
+	assert.Equal(t, []string{
+		"Preview Error Details",
+		"InvalidTemplateDeployment",
+		"PreflightValidationCheckFailed",
+		"SubscriptionIsOverQuotaForSku",
+	}, codes)
 	assert.Contains(t, rendered, "maximum number of storage accounts")
 
 	// Reproduce the production wrapping chain: provisioning.Manager.Preview

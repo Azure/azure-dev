@@ -260,6 +260,12 @@ rules:
       - url: "https://learn.microsoft.com/azure/container-apps/troubleshooting"
         title: "Troubleshoot Container Apps"
 
+  - errorType: "AzureDeploymentError"
+    properties:
+      Operation: "preview"
+    message: "Azure validation rejected the deployment template."
+    suggestion: "Review the nested error codes above for the specific cause."
+
   - errorType: "DeploymentErrorLine"
     properties:
       Code: "InvalidTemplate"

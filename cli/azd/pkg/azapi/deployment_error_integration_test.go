@@ -340,3 +340,116 @@ func TestPipeline_PreviewErrorResponse_NestedQuota(t *testing.T) {
 	assert.Equal(t, "Your subscription quota for this SKU is exceeded.", result.Message)
 	assert.Contains(t, result.Suggestion, "Request a quota increase")
 }
+
+// Property matching is a case-insensitive substring check, so the rule keyed on
+// "InvalidTemplate" also matches ARM's "InvalidTemplateDeployment". Its advice —
+// run 'azd provision --preview' — is correct for a deploy but absurd for a
+// preview, which is the command already running. The preview guard rule keys on
+// AzureDeploymentError.Operation to suppress it there, and must leave every
+// other operation untouched.
+func TestSuggestions_PreviewNeverAdvisesRunningPreview(t *testing.T) {
+	// Cause with no dedicated rule, so matching falls through to the generic
+	// template rules where the bad advice lives.
+	const armError = `{
+	  "code": "InvalidTemplateDeployment",
+	  "message": "The template deployment is not valid. See inner errors for details.",
+	  "details": [{
+	    "code": "PreflightValidationCheckFailed",
+	    "message": "Preflight validation failed.",
+	    "details": [{
+	      "code": "StorageAccountAlreadyTaken",
+	      "message": "The storage account named storage is already taken."
+	    }]
+	  }]
+	}`
+
+	tests := []struct {
+		name string
+		op   DeploymentOperation
+		// wantMessage identifies which rule won, since both rules produce advice.
+		wantMessage    string
+		wantSelfAdvice bool
+	}{
+		{
+			name:           "preview is suppressed",
+			op:             DeploymentOperationPreview,
+			wantMessage:    "Azure validation rejected the deployment template.",
+			wantSelfAdvice: false,
+		},
+		{
+			// Not self-referential, so the original advice must survive unchanged.
+			name:           "deploy keeps the advice",
+			op:             DeploymentOperationDeploy,
+			wantMessage:    "The deployment template contains errors.",
+			wantSelfAdvice: true,
+		},
+		{
+			// Validate runs inside provision, not preview, so the guard must not
+			// widen to it just because it is also a non-deploy operation.
+			name:           "validate keeps the advice",
+			op:             DeploymentOperationValidate,
+			wantMessage:    "The deployment template contains errors.",
+			wantSelfAdvice: true,
+		},
+	}
+
+	pipeline := errorhandler.NewErrorHandlerPipeline(nil)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Preview marshals the ErrorResponse directly; the other paths receive
+			// the same tree nested under an "error" key. Mirror both real shapes.
+			body := armError
+			if tt.op != DeploymentOperationPreview {
+				body = `{"error":` + armError + `}`
+			}
+
+			deployErr := NewAzureDeploymentError(deploymentErrorTitle(tt.op), body, tt.op)
+			wrapped := fmt.Errorf("deployment failed: %w",
+				fmt.Errorf("error deploying infrastructure: %w", deployErr))
+
+			result := pipeline.Process(t.Context(), wrapped)
+
+			require.NotNil(t, result, "every operation should still get a suggestion")
+			assert.Equal(t, tt.wantMessage, result.Message)
+
+			if tt.wantSelfAdvice {
+				assert.Contains(t, result.Suggestion, "azd provision --preview")
+			} else {
+				assert.NotContains(t, result.Suggestion, "--preview",
+					"must not tell a --preview run to run --preview")
+			}
+		})
+	}
+}
+
+// The preview guard matches on operation alone, so ordering is the only thing
+// keeping it from swallowing every preview failure: it must sit after the
+// specific error-code rules, which are evaluated first and win. Locking that
+// here because the ordering constraint is invisible at the YAML call site.
+// This is the issue #9011 behaviour and must not regress.
+func TestSuggestions_PreviewGuardDoesNotMaskSpecificCauses(t *testing.T) {
+	const armError = `{
+	  "code": "InvalidTemplateDeployment",
+	  "message": "The template deployment is not valid. See inner errors for details.",
+	  "details": [{
+	    "code": "PreflightValidationCheckFailed",
+	    "message": "Preflight validation failed.",
+	    "details": [{
+	      "code": "SubscriptionIsOverQuotaForSku",
+	      "message": "Subscription has reached the maximum number of storage accounts."
+	    }]
+	  }]
+	}`
+
+	deployErr := NewAzureDeploymentError(
+		deploymentErrorTitle(DeploymentOperationPreview), armError, DeploymentOperationPreview)
+	wrapped := fmt.Errorf("deployment failed: %w",
+		fmt.Errorf("error deploying infrastructure: %w", deployErr))
+
+	result := errorhandler.NewErrorHandlerPipeline(nil).Process(t.Context(), wrapped)
+
+	require.NotNil(t, result)
+	assert.Equal(t, "Your subscription quota for this SKU is exceeded.", result.Message,
+		"specific quota rule must outrank the generic preview guard")
+}

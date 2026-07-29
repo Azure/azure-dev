@@ -197,7 +197,7 @@ func newScheduleSetCommand() *cobra.Command {
 		"Path to the eval deployment config.")
 	cmd.Flags().StringVar(&groupName, "eval", "", "Which evals entry to schedule.")
 	cmd.Flags().StringVar(&evalID, "eval-id", "", "Schedule an existing eval by id, ignoring config.")
-	cmd.Flags().StringVar(&name, "name", "", "Schedule name. Defaults to the group name.")
+	cmd.Flags().StringVar(&name, "name", "", "Schedule name. Defaults to the eval name.")
 	cmd.Flags().StringVar(&description, "description", "", "Schedule description.")
 	cmd.Flags().StringVar(&cron, "cron", "", `Cron expression, for example "0 9 * * *".`)
 	cmd.Flags().StringVar(&every, "every", "",
@@ -254,20 +254,20 @@ func newScheduleListCommand() *cobra.Command {
 			rows := make([][]string, 0, len(list.Value))
 			for i := range list.Value {
 				s := &list.Value[i]
-				evalGroup := ""
+				evalID := ""
 				if s.Task != nil {
-					evalGroup = s.Task.EvalID
+					evalID = s.Task.EvalID
 				}
 				rows = append(rows, []string{
 					s.ID,
 					strconv.FormatBool(s.Enabled),
 					s.ProvisioningStatus,
 					s.Summary(),
-					evalGroup,
+					evalID,
 				})
 			}
 			return emitTable(out,
-				[]string{"NAME", "ENABLED", "STATUS", "TRIGGER", "EVAL GROUP"}, rows)
+				[]string{"NAME", "ENABLED", "STATUS", "TRIGGER", "EVAL"}, rows)
 		},
 	}
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
@@ -317,7 +317,7 @@ func newScheduleShowCommand() *cobra.Command {
 				fmt.Fprintf(out, "  timezone: %s\n", s.Trigger.Timezone)
 			}
 			if s.Task != nil {
-				fmt.Fprintf(out, "  group:    %s\n", s.Task.EvalID)
+				fmt.Fprintf(out, "  eval:     %s\n", s.Task.EvalID)
 			}
 			if s.Description != "" {
 				fmt.Fprintf(out, "  about:    %s\n", s.Description)
@@ -599,9 +599,9 @@ func explainScheduleFailure(
 	// is bewildering when the trigger was the only thing asked for.
 	if isTracesHourlyOnly(cause) {
 		return fmt.Errorf(
-			"saving schedule %q: this group's most recent run read from traces, and a schedule "+
+			"saving schedule %q: this eval's most recent run read from traces, and a schedule "+
 				"repeats that run, so the service treats it as a scheduled trace evaluation "+
-				"and allows only `--every hourly`. Use `--every hourly`, or run the group "+
+				"and allows only `--every hourly`. Use `--every hourly`, or run the eval "+
 				"once against its dataset first so the schedule repeats that instead", name)
 	}
 

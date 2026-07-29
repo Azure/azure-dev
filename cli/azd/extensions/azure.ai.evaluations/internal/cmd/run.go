@@ -183,7 +183,7 @@ func buildRunCommand(use, short string) *cobra.Command {
 		"Which evals entry to run. Defaults to the only one.")
 	cmd.Flags().StringVar(&evalID, "eval-id", "",
 		"Run against an existing eval by id, ignoring the config.")
-	cmd.Flags().StringVar(&runName, "name", "", "Name for this run. Defaults to the group name plus a timestamp.")
+	cmd.Flags().StringVar(&runName, "name", "", "Name for this run. Defaults to the eval name plus a timestamp.")
 	cmd.Flags().StringVar(&level, "level", "",
 		"Scoring granularity: turn or conversation. Defaults to the service default (turn).")
 	cmd.Flags().IntVar(&maxSamples, "max-samples", 0,
@@ -361,7 +361,7 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 			"eval %s has no previous run to repeat, so there is no target or dataset "+
 				"to reuse.\n"+
 				"  Run it from the config once with `azd ai eval run`, or pass a config that "+
-				"declares the group",
+				"declares the eval",
 			evalID)
 	}
 	return list.Data[0].DataSource, nil
@@ -398,7 +398,7 @@ func buildTracesDataSource(
 	if agent == "" {
 		return nil, fmt.Errorf(
 			"--from-traces needs to know whose traces to read, and the eval does not " +
-				"name an agent. Declare target.type: agent on the group")
+				"name an agent. Declare target.type: agent on the eval")
 	}
 
 	var lookbackHours int

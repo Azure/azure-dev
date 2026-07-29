@@ -210,12 +210,12 @@ func resolveEvalID(
 // positional.
 func addEvalFlags(cmd *cobra.Command, target *string) {
 	cmd.Flags().StringVar(target, "eval", "",
-		"Name a group from the config instead of passing its id.")
+		"Name an evals entry from the config instead of passing its id.")
 	cmd.Flags().String("eval-id", "",
 		"Id of the eval. Same as passing the id as an argument.")
 }
 
-// latestOrNamedRun returns the named run, or the most recent one for the group.
+// latestOrNamedRun returns the named run, or the most recent one for the eval.
 func (ec *evalContext) latestOrNamedRun(
 	cmd *cobra.Command,
 	evalID, runID string,

@@ -279,7 +279,7 @@ func buildEvalRequest(
 		}
 	}
 	targetBindings := sampleBindingsFor(targetType)
-	metadata["azd_eval_group"] = group.Name
+	metadata["azd_eval"] = group.Name
 	// The create request has no description field, so the group's own
 	// description rides in metadata rather than being dropped.
 	if group.Description != "" {

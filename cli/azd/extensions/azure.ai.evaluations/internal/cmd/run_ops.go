@@ -29,6 +29,7 @@ func newRunListCommand() *cobra.Command {
 	var (
 		endpointFlg string
 		groupName   string
+		limit       int
 	)
 
 	cmd := &cobra.Command{
@@ -48,7 +49,7 @@ func newRunListCommand() *cobra.Command {
 				return err
 			}
 
-			list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 0)
+			list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, limit)
 			if err != nil {
 				if eval_api.IsNotFound(err) {
 					return fmt.Errorf(
@@ -78,6 +79,8 @@ func newRunListCommand() *cobra.Command {
 		},
 	}
 	addEvalFlags(cmd, &groupName)
+	cmd.Flags().IntVar(&limit, "limit", 0,
+		"Return at most this many runs. Omit for the service default.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }

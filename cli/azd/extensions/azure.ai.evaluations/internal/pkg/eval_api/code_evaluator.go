@@ -38,7 +38,7 @@ const evaluatorTypeCustom = "custom"
 const (
 	foundryFeaturesHeader  = "Foundry-Features"
 	foundryFeatureEvalsV1  = "Evaluations=V1Preview"
-	pendingUploadTypeBlob  = "BlobReference"
+	pendingUploadTypeBlob  = "TemporaryBlobReference"
 	defaultCodeMetricName  = "result"
 	defaultCodeMetricType  = "continuous"
 	defaultMetricDirection = "increase"
@@ -46,6 +46,9 @@ const (
 	blobTypeHeader         = "x-ms-blob-type"
 	blobTypeBlock          = "BlockBlob"
 	octetStreamContentType = "application/octet-stream"
+	// maxVersionProbes bounds how far past a stale version guess the publish
+	// will step before giving up.
+	maxVersionProbes = 5
 )
 
 // DefaultCodeMetrics is used when neither the folder nor the caller declares
@@ -104,10 +107,17 @@ type pendingUploadRequest struct {
 
 // PendingUploadResponse is the reply to startPendingUpload: a container to
 // write into, and the SAS that authorizes writing.
+//
+// The evaluator endpoint answers with TemporaryDataReferenceResponseDto, which
+// carries the location under blobReferenceForConsumption. Datasets answer with
+// blobReference instead, so both are modelled and whichever arrives is used:
+// the two resources share this step but not the name they return it under.
 type PendingUploadResponse struct {
-	BlobReference   *BlobReference `json:"blobReference,omitempty"`
-	PendingUploadID string         `json:"pendingUploadId,omitempty"`
-	Version         string         `json:"version,omitempty"`
+	BlobReference            *BlobReference `json:"blobReference,omitempty"`
+	BlobReferenceConsumption *BlobReference `json:"blobReferenceForConsumption,omitempty"`
+	PendingUploadID          string         `json:"pendingUploadId,omitempty"`
+	TemporaryDataReferenceID string         `json:"temporaryDataReferenceId,omitempty"`
+	Version                  string         `json:"version,omitempty"`
 }
 
 // BlobReference is a storage location plus the credential to reach it.
@@ -123,23 +133,36 @@ type BlobCredential struct {
 	SASUri string `json:"sasUri,omitempty"`
 }
 
+// reference returns whichever of the two blob references the service populated.
+func (p *PendingUploadResponse) reference() *BlobReference {
+	if p == nil {
+		return nil
+	}
+	if p.BlobReferenceConsumption != nil {
+		return p.BlobReferenceConsumption
+	}
+	return p.BlobReference
+}
+
 // UploadURI returns the container URI carrying the SAS token, or empty when
 // the service granted no credential.
 func (p *PendingUploadResponse) UploadURI() string {
-	if p == nil || p.BlobReference == nil || p.BlobReference.Credential == nil {
+	ref := p.reference()
+	if ref == nil || ref.Credential == nil {
 		return ""
 	}
-	return p.BlobReference.Credential.SASUri
+	return ref.Credential.SASUri
 }
 
 // ContainerURI returns the container URI without the SAS token. This is what
 // the evaluator definition records, because the definition is persisted and a
 // SAS in it would expire.
 func (p *PendingUploadResponse) ContainerURI() string {
-	if p == nil || p.BlobReference == nil {
+	ref := p.reference()
+	if ref == nil {
 		return ""
 	}
-	return p.BlobReference.BlobURI
+	return ref.BlobURI
 }
 
 // UploadCodeEvaluatorVersion publishes a folder of Python as a new version of
@@ -219,11 +242,9 @@ func (c *EvalClient) uploadCodeEvaluatorFiles(
 	pkg *evalcore.CodeEvaluatorPackage,
 	apiVersion string,
 ) (string, error) {
-	version := c.NextEvaluatorVersion(ctx, pkg.Name, apiVersion)
-
-	pending, err := c.StartEvaluatorPendingUpload(ctx, pkg.Name, version, apiVersion)
+	pending, err := c.reserveEvaluatorStorage(ctx, pkg.Name, apiVersion)
 	if err != nil {
-		return "", fmt.Errorf("starting the upload for evaluator %q: %w", pkg.Name, err)
+		return "", err
 	}
 
 	uploadURI := pending.UploadURI()
@@ -248,6 +269,56 @@ func (c *EvalClient) uploadCodeEvaluatorFiles(
 	}
 
 	return containerURI, nil
+}
+
+// reserveEvaluatorStorage provisions storage for the version being published,
+// stepping past versions that are already taken.
+//
+// Storage has to be reserved under a version number before the version exists,
+// and the number is guessed by reading the ones already registered. That read
+// is eventually consistent: immediately after a publish it can still report
+// the evaluator as unknown, which makes the guess collide with a version that
+// is already there. The service answers a collision with a conflict, so the
+// guess is advanced and tried again rather than failing the publish.
+//
+// Only a conflict is retried. Any other failure is the caller's to see.
+func (c *EvalClient) reserveEvaluatorStorage(
+	ctx context.Context,
+	name string,
+	apiVersion string,
+) (*PendingUploadResponse, error) {
+	version, err := strconv.Atoi(c.NextEvaluatorVersion(ctx, name, apiVersion))
+	if err != nil {
+		version = 1
+	}
+
+	var lastErr error
+	for attempt := 0; attempt < maxVersionProbes; attempt++ {
+		pending, err := c.StartEvaluatorPendingUpload(
+			ctx, name, strconv.Itoa(version+attempt), apiVersion)
+		if err == nil {
+			return pending, nil
+		}
+		lastErr = err
+		if !isVersionConflict(err) {
+			break
+		}
+	}
+	return nil, fmt.Errorf("starting the upload for evaluator %q: %w", name, lastErr)
+}
+
+// isVersionConflict reports whether a failed reservation was refused because
+// the version already exists.
+//
+// The conflict is not surfaced as one: the service wraps the downstream 409 in
+// a 500 whose message quotes the original status, so the status code on the
+// response cannot be used and the message is what is left to read.
+func isVersionConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	return strings.Contains(text, "409") || strings.Contains(text, "Conflict")
 }
 
 // StartEvaluatorPendingUpload provisions the storage an evaluator version's

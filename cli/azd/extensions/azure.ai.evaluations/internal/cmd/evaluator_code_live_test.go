@@ -211,17 +211,39 @@ func TestLiveCodeEvaluatorPublishesNextVersion(t *testing.T) {
 		_ = client.DeleteEvaluatorVersion(
 			context.Background(), name, first.Version, ProjectEndpointAPIVersion)
 	})
-	require.Equal(t, predicted, first.Version,
-		"the service assigned a version other than the one storage was reserved under")
+	require.NotEmpty(t, first.Version, "the service must assign a version")
 
-	// Publishing again must land on the next version, not overwrite the first.
-	predictedSecond := client.NextEvaluatorVersion(ctx, name, ProjectEndpointAPIVersion)
+	// Publishing again must land on a new version, not overwrite the first.
+	//
+	// The version is deliberately not asserted to equal the one storage was
+	// reserved under. There is no create-at-version route: the create assigns
+	// its own number, and reserving storage can itself take a number, so the
+	// two legitimately differ. It does not matter, because a reservation
+	// returns a container named by GUID rather than by version, so a published
+	// definition always points at exactly the bytes uploaded for it. What must
+	// hold is that a second publish does not land on the first version.
 	second, err := client.UploadCodeEvaluatorVersion(ctx, pkg, opts, ProjectEndpointAPIVersion)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = client.DeleteEvaluatorVersion(
 			context.Background(), name, second.Version, ProjectEndpointAPIVersion)
 	})
-	require.Equal(t, predictedSecond, second.Version)
-	require.NotEqual(t, first.Version, second.Version)
+	require.NotEqual(t, first.Version, second.Version,
+		"a second publish must create a new version rather than replace the first")
+
+	require.NotEqual(t,
+		blobURIOnService(t, client, name, first.Version),
+		blobURIOnService(t, client, name, second.Version),
+		"each version must keep its own storage, or republishing would rewrite the older one")
+}
+
+// blobURIOnService reads back the storage location recorded on a version.
+func blobURIOnService(
+	t *testing.T,
+	client *eval_api.EvalClient,
+	name string,
+	version string,
+) string {
+	t.Helper()
+	return stringField(t, codeDefinitionOnService(t, client, name, version), "blob_uri")
 }

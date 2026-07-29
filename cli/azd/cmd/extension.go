@@ -2192,10 +2192,19 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			installed, matches, a.flags.source,
 		)
 		if res == nil {
-			return fail(fmt.Errorf(
-				"extension '%s' not found in source '%s'",
-				extensionId, a.flags.source,
-			))
+			suggestion := "Run 'azd extension list' to browse available extensions."
+			if a.flags.source != "" {
+				suggestion = fmt.Sprintf(
+					"Extension not found in source '%s'. %s",
+					a.flags.source, suggestion,
+				)
+			} else {
+				suggestion = fmt.Sprintf(
+					"Extension '%s' not available in stored source or main registry. %s",
+					extensionId, suggestion,
+				)
+			}
+			return fail(errors.New(suggestion))
 		}
 		selectedExt = res.Extension
 		isPromotion = res.IsPromotion

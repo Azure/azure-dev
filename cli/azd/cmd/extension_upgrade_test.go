@@ -185,6 +185,7 @@ func TestUpgradeOneExtension(t *testing.T) {
 		registry       extensions.Registry
 		flags          extensionUpgradeFlags
 		wantStatus     extensions.UpgradeStatus
+		wantErr        string
 		wantErrSubstr  string
 		wantSkipReason string
 	}{
@@ -232,6 +233,23 @@ func TestUpgradeOneExtension(t *testing.T) {
 			wantSkipReason: "extension no longer available in any configured registry",
 		},
 		{
+			name:        "failed_no_stored_or_main_source_match",
+			extensionId: "ext-a",
+			installed: map[string]*extensions.Extension{
+				"ext-a": {Id: "ext-a", Version: "1.0.0", Source: "removed-registry"},
+			},
+			registry: testRegistry(
+				testExtMeta("ext-a", "2.0.0", "test"),
+			),
+			flags: extensionUpgradeFlags{
+				all:    true,
+				global: &internal.GlobalCommandOptions{NoPrompt: true},
+			},
+			wantStatus: extensions.UpgradeStatusFailed,
+			wantErr: "Extension 'ext-a' not available in stored source or main registry. " +
+				"Run 'azd extension list' to browse available extensions.",
+		},
+		{
 			name:        "failed_not_installed",
 			extensionId: "not-installed",
 			installed:   map[string]*extensions.Extension{},
@@ -272,6 +290,10 @@ func TestUpgradeOneExtension(t *testing.T) {
 
 			assert.Equal(t, tt.wantStatus, result.Status)
 			assert.Equal(t, tt.extensionId, result.ExtensionId)
+
+			if tt.wantErr != "" {
+				require.EqualError(t, result.Error, tt.wantErr)
+			}
 
 			if tt.wantErrSubstr != "" {
 				require.NotNil(t, result.Error)

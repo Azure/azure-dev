@@ -400,3 +400,76 @@ func TestRelocateInto_ConcurrentRelocationsDoNotCollide(t *testing.T) {
 
 	require.Len(t, payloads, concurrent, "no relocation may have overwritten another's file")
 }
+
+// T80: SweepTrash removes the shared trash directory the moment it observes it empty, and
+// a second azd process sweeps the same directory. That delete can land between the walk's
+// create and this rename, and the relocation has to recover rather than leave the locked
+// file in place and fail the removal this fallback exists to make succeed.
+func TestRelocateInto_RecreatesSweptTrashDirectory(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	trashDir := filepath.Join(base, ".trash")
+	source := filepath.Join(base, "tool.exe")
+	require.NoError(t, os.WriteFile(source, []byte("payload"), 0600))
+
+	// Exactly the state a concurrent sweep leaves behind: the directory the caller
+	// created before handing off is already gone.
+	require.NoDirExists(t, trashDir)
+
+	require.NoError(t, relocateInto(source, trashDir, "tool.exe"))
+
+	require.NoFileExists(t, source, "the locked file must have been moved aside")
+
+	entries, err := os.ReadDir(trashDir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "the swept directory should have been recreated to receive the file")
+	require.True(t, strings.HasPrefix(entries[0].Name(), "tool.exe."),
+		"the original name should remain recognizable, got %q", entries[0].Name())
+
+	content, err := os.ReadFile(filepath.Join(trashDir, entries[0].Name()))
+	require.NoError(t, err)
+	require.Equal(t, "payload", string(content), "the retried move must carry the original contents")
+}
+
+// A trash path that is a file rather than a directory cannot be relocated into, and that
+// failure has to reach the caller with the original file untouched.
+//
+// The branch taken differs by platform, which is exactly why it is asserted here. Windows
+// reports a file standing in for a directory component as ERROR_PATH_NOT_FOUND, which Go
+// maps to fs.ErrNotExist, so the move is retried and then fails because the directory
+// cannot be created over the file. Unix reports ENOTDIR, which is not fs.ErrNotExist, so
+// the retry guard short-circuits and the rename error is reported unchanged. Without this
+// split the test would pass on either branch and could not tell that the guard still works.
+func TestRelocateInto_ReportsFailureAndLeavesSourceInPlace(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	trashDir := filepath.Join(base, ".trash")
+	source := filepath.Join(base, "tool.exe")
+	require.NoError(t, os.WriteFile(source, []byte("payload"), 0600))
+	require.NoError(t, os.WriteFile(trashDir, []byte("not a directory"), 0600))
+
+	err := relocateInto(source, trashDir, "tool.exe")
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "failed to relocate")
+
+	if runtime.GOOS == "windows" {
+		require.ErrorContains(t, err, "failed to create trash directory",
+			"a not-found rename should have been retried and failed on the recreate")
+	} else {
+		var linkErr *os.LinkError
+
+		require.ErrorAs(t, err, &linkErr,
+			"a failure the retry guard rejects should surface the original rename error")
+		require.NotContains(t, err.Error(), "failed to create trash directory",
+			"the guard should have prevented a pointless recreate")
+	}
+
+	require.FileExists(t, source, "a failed relocation must leave the original in place")
+
+	content, readErr := os.ReadFile(source)
+	require.NoError(t, readErr)
+	require.Equal(t, "payload", string(content), "a failed relocation must not damage the original")
+}

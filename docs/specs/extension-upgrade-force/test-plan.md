@@ -127,6 +127,8 @@ Written because implementation exposed behavior the plan did not anticipate.
 | T77 | A backslash in a Unix executable path is a filename character, not a separator, so it cannot be used to escape the scope | AC-5, AC-9 | unit | `pkg/processutil/processutil_test.go` -> `TestFindByExecutableDir_UnixBackslashIsNotASeparator` | automated |
 | T78 | Host-native containment accepts self and descendants, and refuses parents, prefix siblings, and traversal escapes | AC-5 | unit | `pkg/processutil/processutil_test.go` -> `TestPathContained` | automated |
 | T79 | `DescribeExecutables` names the held-open binaries distinctly, in first-seen order | AC-7 | unit | `pkg/processutil/processutil_test.go` -> `TestDescribeExecutables` | automated |
+| T80 | A relocation whose trash directory was swept away between the create and the rename recreates it and completes the move | AC-1, AC-11 | unit | `pkg/osutil/relocate_test.go` -> `TestRelocateInto_RecreatesSweptTrashDirectory` | automated |
+| T81 | A relocation failure that recreating the directory cannot fix is reported, leaving the original intact, on the retry path on Windows and via the guard on Unix | AC-1 | unit | `pkg/osutil/relocate_test.go` -> `TestRelocateInto_ReportsFailureAndLeavesSourceInPlace` | automated |
 
 ## Functionality Inventory (Phase 3 reconciliation)
 
@@ -166,6 +168,9 @@ files, then walking each back to an assertion.
 | 26 | `relocateLockedFiles` renames rather than deletes | `pkg/osutil/relocate.go` | T19, T20 | COVERED |
 | 27 | `uniqueTrashPath` never collides, within a process or across them | `pkg/osutil/relocate.go` | T45, T46, T71 | COVERED |
 | 28 | `relocateInto` renames onto a destination no other process can have chosen | `pkg/osutil/relocate.go` | T46 | COVERED |
+| 28a | `relocateInto` recreates a trash directory a concurrent sweep removed mid-move | `pkg/osutil/relocate.go` | T80 | COVERED |
+| 28b | `ensureTrashDir` creates the trash directory and re-checks it is not a link on every use | `pkg/osutil/relocate.go` | T66, T80 | COVERED |
+| 28c | `relocateInto` reports a failure a retry cannot fix and leaves the original in place | `pkg/osutil/relocate.go` | T81 | COVERED |
 | 29 | `UninstallOptions` carries `Force` and the stop callback | `pkg/extensions/manager_uninstall.go` | T25, T26, T29 | COVERED |
 | 30 | `Uninstall` succeeds against a running extension by default | `pkg/extensions/manager_uninstall.go` | T25 | COVERED |
 | 31 | `Uninstall` with `Force` stops processes first | `pkg/extensions/manager_uninstall.go` | T26, T29 | COVERED |
@@ -210,7 +215,8 @@ of them (G-5) was a real product defect rather than a missing test. G-7 to
 G-9 are security defects found by attacking the finished implementation rather than
 reading it, and all three were real. G-10 to G-14 are the review round that followed, four
 of them real defects and one an unmet acceptance criterion; G-15 corrected a spec claim
-that measurement disproved.
+that measurement disproved. G-16 came from a maintainer review of the finished branch and
+is a concurrency defect between the sweep and the relocation it cleans up after.
 | Gap | Detail | Resolution |
 |-----|--------|------------|
 | G-1 | Upgrade action wiring of `Force` and `OnProcessStopped` into `UpgradeOptions` was unverified | Added T54 and T55 |
@@ -228,5 +234,6 @@ that measurement disproved.
 | G-13 | `upgrade --force` dropped `Force` and the stop callback on the branch taken when the parent is already at the target version, so a stale dependency's process was left running and unreported | Propagated both into `ReconcileDependencies`; T75 |
 | G-14 | `--force` printed what it stopped only on the console, so `--output json` silently omitted it and AC-6 was unmet for scripted callers | Added `stoppedProcesses` to the upgrade JSON contract; T75 and T76 |
 | G-15 | The spec claimed `os.RemoveAll` follows a Windows junction, which is false and would have justified defenses against a threat that does not exist | Corrected the spec against a Windows 11 measurement |
+| G-16 | `SweepTrash` deletes the shared `.trash` directory as soon as it observes it empty, which a second azd process can do between this process's create and its rename, so the locked file was never moved aside and the removal failed with the original lock error | Made the relocation recover instead: a vanished destination is recreated and the move retried once, which also covers the directory being removed by anything other than the sweep; T80 and T81 |
 
 Zero `GAP` rows remain.

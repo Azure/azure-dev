@@ -164,15 +164,8 @@ func relocateLockedFiles(root string, trashDir string) (int, error) {
 			return nil
 		}
 
-		if mkdirErr := os.MkdirAll(trashDir, PermissionDirectory); mkdirErr != nil {
-			failures = append(failures, fmt.Errorf("failed to create trash directory: %w", mkdirErr))
-			return filepath.SkipAll
-		}
-
-		// Checked after the create so an existing link is caught, and on every iteration
-		// so a link swapped in mid-walk cannot receive the next relocated file.
-		if linkErr := RequireRealDir(trashDir); linkErr != nil {
-			failures = append(failures, linkErr)
+		if ensureErr := ensureTrashDir(trashDir); ensureErr != nil {
+			failures = append(failures, ensureErr)
 			return filepath.SkipAll
 		}
 
@@ -193,6 +186,23 @@ func relocateLockedFiles(root string, trashDir string) (int, error) {
 	return relocated, errors.Join(failures...)
 }
 
+// ensureTrashDir creates trashDir when it is missing and verifies it is a real directory
+// rather than a link.
+//
+// The two halves belong together and both have to run on every use. The create is
+// repeated because SweepTrash deletes the directory as soon as it observes it empty, and
+// a second azd process sweeps the same shared directory. The link check is repeated, and
+// deliberately runs after the create, because creating a directory does not prove the
+// name was not already a link, and a link swapped in after an earlier check would
+// otherwise receive the next relocated file.
+func ensureTrashDir(trashDir string) error {
+	if err := os.MkdirAll(trashDir, PermissionDirectory); err != nil {
+		return fmt.Errorf("failed to create trash directory: %w", err)
+	}
+
+	return RequireRealDir(trashDir)
+}
+
 // relocateInto moves a single locked file into trashDir under a name no concurrent azd
 // process can also have chosen.
 //
@@ -204,9 +214,32 @@ func relocateLockedFiles(root string, trashDir string) (int, error) {
 // is itself a locked executable, and the uninstall it belonged to fails after its
 // retries. Detecting the conflict afterwards is therefore not an option, and the name
 // itself has to make it impossible.
+//
+// The destination directory can also disappear between the caller's create and this
+// rename: SweepTrash removes it the moment it observes it empty, and a second azd process
+// sweeps the same shared directory. A vanished destination is therefore recreated and the
+// move retried once, because giving up here would leave the locked file in place and fail
+// the very removal this fallback exists to make succeed.
 func relocateInto(path string, trashDir string, name string) error {
-	if err := os.Rename(path, uniqueTrashPath(trashDir, name)); err != nil {
+	err := os.Rename(path, uniqueTrashPath(trashDir, name))
+	if err == nil {
+		return nil
+	}
+
+	// Only a missing path is worth a second attempt. A permission failure, or a
+	// destination that is itself a locked executable, fails again the same way.
+	if !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("failed to relocate %s: %w", path, err)
+	}
+
+	// ensureTrashDir repeats the link check, so recreating the directory cannot be turned
+	// into a redirect by a link planted in this window.
+	if ensureErr := ensureTrashDir(trashDir); ensureErr != nil {
+		return fmt.Errorf("failed to relocate %s: %w", path, ensureErr)
+	}
+
+	if retryErr := os.Rename(path, uniqueTrashPath(trashDir, name)); retryErr != nil {
+		return fmt.Errorf("failed to relocate %s: %w", path, retryErr)
 	}
 
 	return nil

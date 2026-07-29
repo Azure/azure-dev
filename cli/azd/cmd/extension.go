@@ -2036,6 +2036,12 @@ func upgradeSourceResolutionError(extensionId, flagSource, installedSource strin
 	if sourceName == "" {
 		sourceName = extensions.MainRegistryName
 	}
+	if strings.EqualFold(sourceName, extensions.MainRegistryName) {
+		return fmt.Errorf(
+			"extension '%s' not available in the main registry",
+			extensionId,
+		)
+	}
 	return fmt.Errorf(
 		"extension '%s' not available in source '%s' or the main registry",
 		extensionId, sourceName,

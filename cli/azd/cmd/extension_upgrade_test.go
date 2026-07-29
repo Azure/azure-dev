@@ -249,6 +249,22 @@ func TestUpgradeOneExtension(t *testing.T) {
 			wantErr:    "extension 'ext-a' not available in source 'removed-registry' or the main registry",
 		},
 		{
+			name:        "failed_main_source_only_match_elsewhere",
+			extensionId: "ext-a",
+			installed: map[string]*extensions.Extension{
+				"ext-a": {Id: "ext-a", Version: "1.0.0", Source: "azd"},
+			},
+			registry: testRegistry(
+				testExtMeta("ext-a", "2.0.0", "test"),
+			),
+			flags: extensionUpgradeFlags{
+				all:    true,
+				global: &internal.GlobalCommandOptions{NoPrompt: true},
+			},
+			wantStatus: extensions.UpgradeStatusFailed,
+			wantErr:    "extension 'ext-a' not available in the main registry",
+		},
+		{
 			name:        "failed_explicit_source_not_found",
 			extensionId: "ext-a",
 			installed: map[string]*extensions.Extension{

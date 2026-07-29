@@ -351,6 +351,21 @@ max_candidates: 7
 	assert.Equal(t, 7, *opts.MaxCandidates)
 }
 
+// TestOptions_MaxStalls verifies the max_stalls key populates MaxStalls.
+func TestOptions_MaxStalls(t *testing.T) {
+	t.Parallel()
+
+	input := `
+eval_model: gpt-4.1
+max_stalls: 3
+`
+	var opts Options
+	require.NoError(t, yaml.Unmarshal([]byte(input), &opts))
+
+	require.NotNil(t, opts.MaxStalls)
+	assert.Equal(t, 3, *opts.MaxStalls)
+}
+
 func TestOptions_OptimizationConfig_NativeYAML(t *testing.T) {
 	t.Parallel()
 

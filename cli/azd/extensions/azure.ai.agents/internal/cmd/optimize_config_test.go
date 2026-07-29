@@ -344,6 +344,73 @@ func TestValidate_NeitherDatasetFileNorReference(t *testing.T) {
 	assert.Contains(t, err.Error(), "a dataset is required")
 }
 
+func TestValidate_MaxStallsZeroIsRejected(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel:         "gpt-4o-mini",
+			OptimizationModel: "gpt-5",
+			MaxStalls:         new(0),
+		},
+	}
+
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "max_stalls must be >= 1")
+}
+
+// TestValidate_MaxStallsNegativeIsRejected verifies Validate() rejects a negative
+// max_stalls value set via the YAML config.
+func TestValidate_MaxStallsNegativeIsRejected(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel:         "gpt-4o-mini",
+			OptimizationModel: "gpt-5",
+			MaxStalls:         new(-1),
+		},
+	}
+
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "max_stalls must be >= 1")
+}
+
+func TestValidate_MaxStallsPositiveIsAccepted(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel:         "gpt-4o-mini",
+			OptimizationModel: "gpt-5",
+			MaxStalls:         new(3),
+		},
+	}
+
+	err := cfg.Validate()
+	require.NoError(t, err)
+}
+
 func TestLoadOptimizeConfig_FileNotFound(t *testing.T) {
 	t.Parallel()
 
@@ -826,4 +893,25 @@ func TestLoadSkillsFromDir_AllEmpty(t *testing.T) {
 	skills, err := loadSkillsFromDir(dir)
 	require.NoError(t, err)
 	assert.Empty(t, skills)
+}
+
+func TestToRequest_MaxStalls(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel: "gpt-4o-mini",
+			MaxStalls: new(3),
+		},
+	}
+
+	req, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+	require.NotNil(t, req.Options.MaxStalls)
+	assert.Equal(t, 3, *req.Options.MaxStalls)
 }

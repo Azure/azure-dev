@@ -631,14 +631,15 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			return result
 		}
 
-		// Known command, proceed with normal execution
-		err = rootCmd.ExecuteContext(ctx)
+		// Known command, proceed with normal execution. The failure is held separately because the
+		// auto-install below declares its own err, and every path out of here has to report it.
+		commandErr := rootCmd.ExecuteContext(ctx)
 
 		// Only attempt service-host auto-install when the command failed with that specific error.
 		// Other command errors (for example, unsupported output formats) should be returned directly.
-		unsupportedErr, ok := errors.AsType[*project.UnsupportedServiceHostError](err)
+		unsupportedErr, ok := errors.AsType[*project.UnsupportedServiceHostError](commandErr)
 		if !ok {
-			result.Err = err
+			result.Err = commandErr
 			return result
 		}
 		if projectExtensions.handled {
@@ -647,7 +648,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			} else {
 				console.Message(ctx, unsupportedErr.ErrorMessage)
 			}
-			result.Err = err
+			result.Err = commandErr
 			return result
 		}
 
@@ -673,6 +674,8 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		if err != nil {
 			log.Println("Error: list installed extensions. Skipping auto-install:", err)
 			console.Message(ctx, unsupportedErr.ErrorMessage)
+			// Auto-install could not run, so the command's own failure stands.
+			result.Err = commandErr
 			return result
 		}
 		// Offer only the extensions whose selected version supplies the host and that are not

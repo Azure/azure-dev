@@ -316,14 +316,23 @@ func (m *Manager) Update(ctx context.Context, target *VersionInfo, writer io.Wri
 // folder instead would silently reintroduce the drift that pinning exists to prevent
 // (Azure/azure-dev#9145). Failing the update is better than installing a version other than
 // the one reported to the user, so an unresolved target is rejected rather than downgraded
-// to an unpinned install.
+// to an unpinned install. An unsupported channel is rejected for the same reason: it has no
+// release folder of its own, so every install method would have to fall back to some other
+// channel's folder to serve it.
 func (v *VersionInfo) validate() error {
 	if v == nil {
 		return fmt.Errorf("no resolved version")
 	}
 
-	if v.Channel == ChannelStable && v.Version == "" {
-		return fmt.Errorf("no resolved version for the %s channel", ChannelStable)
+	switch v.Channel {
+	case ChannelStable:
+		if v.Version == "" {
+			return fmt.Errorf("no resolved version for the %s channel", ChannelStable)
+		}
+	case ChannelDaily:
+		// Daily installs from the rolling folder, so it needs no resolved version.
+	default:
+		return fmt.Errorf("unsupported channel: %s", v.Channel)
 	}
 
 	return nil
@@ -565,7 +574,10 @@ func (m *Manager) updateViaMSI(ctx context.Context, target *VersionInfo, writer 
 
 	// Run the install script synchronously. The MSI overwrites the unlocked
 	// safety copy at the original path with the new version.
-	psArgs := buildInstallScriptArgs(target)
+	psArgs, err := buildInstallScriptArgs(target)
+	if err != nil {
+		return newUpdateError(CodeReplaceFailed, err)
+	}
 
 	// Hash the safety copy before install so we can detect whether the MSI
 	// actually replaced the file.
@@ -1010,6 +1022,23 @@ func IsPackageManagerInstall() bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// CanPinVersion reports whether azd can install an exact version using installedBy.
+//
+// Package managers resolve the version themselves, so azd cannot pin one and must not name
+// a version in its progress or success messages for those installs — it would be promising
+// a version it does not control (Azure/azure-dev#9145).
+//
+// This is broader than [IsPackageManagerInstall], which is about channel support and so
+// excludes brew: brew publishes an azd@daily cask, but it still picks the version.
+func CanPinVersion(installedBy installer.InstallType) bool {
+	switch installedBy {
+	case installer.InstallTypeBrew, installer.InstallTypeWinget, installer.InstallTypeChoco:
+		return false
+	default:
+		return true
 	}
 }
 

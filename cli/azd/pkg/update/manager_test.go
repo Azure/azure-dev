@@ -136,6 +136,12 @@ func TestUpdate_RequiresResolvedVersion(t *testing.T) {
 
 	// Daily installs from the rolling folder, so they don't require a resolved version.
 	require.NoError(t, (&VersionInfo{Channel: ChannelDaily}).validate())
+
+	// An unsupported channel has no release folder of its own, so serving it would mean
+	// falling back to another channel's folder — the unpinned install this prevents.
+	unsupported := &VersionInfo{Channel: Channel("nightly"), Version: "1.28.1"}
+	require.Error(t, m.Update(t.Context(), unsupported, &strings.Builder{}))
+	require.Error(t, m.StageUpdate(t.Context(), unsupported))
 }
 
 func TestInstallVersion(t *testing.T) {

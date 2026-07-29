@@ -162,8 +162,10 @@ func escapeForPSSingleQuote(s string) string {
 // For daily channel, an additional parameter (-InstallFolder) is passed
 // to the script. The install folder and version are escaped for PowerShell single-quoted
 // strings to handle values containing apostrophes (e.g. O'Connor).
+// An unsupported channel is an error rather than a fallback: defaulting to the rolling
+// stable folder would produce the unpinned install this exists to prevent.
 // Returns the arguments to pass to the "powershell" command.
-func buildInstallScriptArgs(target *VersionInfo) []string {
+func buildInstallScriptArgs(target *VersionInfo) ([]string, error) {
 	var scriptArgs string
 	switch target.Channel {
 	case ChannelDaily:
@@ -176,7 +178,7 @@ func buildInstallScriptArgs(target *VersionInfo) []string {
 		scriptArgs = fmt.Sprintf(" -Version '%s'",
 			escapeForPSSingleQuote(target.installVersion()))
 	default:
-		scriptArgs = " -Version 'stable'"
+		return nil, fmt.Errorf("unsupported channel: %s", target.Channel)
 	}
 
 	// Reset PSModulePath to the Windows PowerShell 5.1 system modules directory.
@@ -194,5 +196,5 @@ func buildInstallScriptArgs(target *VersionInfo) []string {
 			"Remove-Item $tmpScript -Force -ErrorAction SilentlyContinue",
 		installScriptURL, scriptArgs,
 	)
-	return []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script}
+	return []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script}, nil
 }

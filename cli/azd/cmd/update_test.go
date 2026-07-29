@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/installer"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/update"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
@@ -294,6 +295,93 @@ func Test_UpdateAction_Run_NoChannelNoConfigFlags(t *testing.T) {
 	_, err := action.Run(t.Context())
 	// Will fail at CI check or CheckForUpdate since noopCommandRunner returns error
 	require.Error(t, err)
+}
+
+// A misleading version promise for brew, winget, or choco users is exactly the mismatch
+// this messaging exists to avoid, so both branches are asserted.
+// See https://github.com/Azure/azure-dev/issues/9145.
+func Test_UpdateMessages_NameVersionOnlyWhenPinnable(t *testing.T) {
+	t.Parallel()
+
+	target := &update.VersionInfo{Channel: update.ChannelStable, Version: "1.28.1"}
+
+	tests := []struct {
+		name         string
+		installedBy  installer.InstallType
+		wantTitle    string
+		wantHeader   string
+		wantNoDigits bool
+	}{
+		{
+			name:        "install script pins the resolved version",
+			installedBy: installer.InstallTypeSh,
+			wantTitle:   "Updating azd to 1.28.1 (stable)",
+			wantHeader:  "Updated azd to version 1.28.1! Changes take effect on next invocation.",
+		},
+		{
+			name:        "ps1 install pins the resolved version",
+			installedBy: installer.InstallTypePs,
+			wantTitle:   "Updating azd to 1.28.1 (stable)",
+			wantHeader:  "Updated azd to version 1.28.1! Changes take effect on next invocation.",
+		},
+		{
+			name:        "deb install pins the resolved version",
+			installedBy: installer.InstallTypeDeb,
+			wantTitle:   "Updating azd to 1.28.1 (stable)",
+			wantHeader:  "Updated azd to version 1.28.1! Changes take effect on next invocation.",
+		},
+		{
+			name:         "brew names no version",
+			installedBy:  installer.InstallTypeBrew,
+			wantTitle:    "Updating azd via brew (stable)",
+			wantHeader:   "Updated azd! Changes take effect on next invocation.",
+			wantNoDigits: true,
+		},
+		{
+			name:         "winget names no version",
+			installedBy:  installer.InstallTypeWinget,
+			wantTitle:    "Updating azd via winget (stable)",
+			wantHeader:   "Updated azd! Changes take effect on next invocation.",
+			wantNoDigits: true,
+		},
+		{
+			name:         "choco names no version",
+			installedBy:  installer.InstallTypeChoco,
+			wantTitle:    "Updating azd via choco (stable)",
+			wantHeader:   "Updated azd! Changes take effect on next invocation.",
+			wantNoDigits: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			title := updateTitle(tt.installedBy, target)
+			header := updatedHeader(tt.installedBy, target)
+
+			require.Equal(t, tt.wantTitle, title)
+			require.Equal(t, tt.wantHeader, header)
+
+			if tt.wantNoDigits {
+				require.NotContains(t, title, target.Version)
+				require.NotContains(t, header, target.Version)
+			}
+		})
+	}
+}
+
+func Test_UpdateMessages_Daily(t *testing.T) {
+	t.Parallel()
+
+	target := &update.VersionInfo{Channel: update.ChannelDaily, Version: "1.29.0-beta.1-daily.6614998"}
+
+	require.Equal(t,
+		"Updating azd to 1.29.0-beta.1-daily.6614998 (daily)",
+		updateTitle(installer.InstallTypeSh, target))
+	require.Equal(t,
+		"Updating azd via brew (daily)",
+		updateTitle(installer.InstallTypeBrew, target))
 }
 
 func Test_UpdateAction_OnlyConfigFlagsSet(t *testing.T) {

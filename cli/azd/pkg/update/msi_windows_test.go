@@ -56,6 +56,7 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 		name    string
 		channel Channel
 		version string
+		wantErr bool
 		// We check that certain substrings appear in the constructed args
 		wantContains    []string
 		wantNotContains []string
@@ -79,19 +80,12 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 			},
 		},
 		{
-			// Unreachable in practice; channels are validated before an update starts. The
-			// script must still receive a real channel folder, not the unknown name.
-			name:    "unknown channel falls back to stable",
+			// Rejected rather than defaulted: falling back to the rolling stable folder
+			// would be the unpinned install pinning exists to prevent. Unreachable in
+			// practice, since VersionInfo.validate rejects the channel first.
+			name:    "unknown channel is an error",
 			channel: Channel("nightly"),
-			wantContains: []string{
-				"-Command",
-				installScriptURL,
-				"-Version 'stable'",
-			},
-			wantNotContains: []string{
-				"-InstallFolder",
-				"-SkipVerify",
-			},
+			wantErr: true,
 		},
 		{
 			name:    "daily",
@@ -116,7 +110,13 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			args := buildInstallScriptArgs(&VersionInfo{Channel: tt.channel, Version: tt.version})
+			args, err := buildInstallScriptArgs(&VersionInfo{Channel: tt.channel, Version: tt.version})
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Nil(t, args)
+				return
+			}
+			require.NoError(t, err)
 			require.NotNil(t, args)
 			require.True(t, len(args) > 0, "expected non-empty args slice")
 
@@ -153,7 +153,8 @@ func TestEscapeForPSSingleQuote(t *testing.T) {
 func TestBuildInstallScriptArgs_ApostropheInPath(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", `C:\Users\O'Connor\AppData\Local`)
 
-	args := buildInstallScriptArgs(&VersionInfo{Channel: ChannelDaily, Version: "1.29.0-beta.1-daily.6614998"})
+	args, err := buildInstallScriptArgs(&VersionInfo{Channel: ChannelDaily, Version: "1.29.0-beta.1-daily.6614998"})
+	require.NoError(t, err)
 	script := args[4]
 
 	// The apostrophe must be doubled for a valid PowerShell single-quoted string.
@@ -166,7 +167,8 @@ func TestBuildInstallScriptArgs_Structure(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", `C:\Users\testuser\AppData\Local`)
 	expectedDir := expectedPerUserInstallDir()
 
-	args := buildInstallScriptArgs(&VersionInfo{Channel: ChannelStable, Version: "1.28.1"})
+	args, err := buildInstallScriptArgs(&VersionInfo{Channel: ChannelStable, Version: "1.28.1"})
+	require.NoError(t, err)
 
 	require.Equal(t, 5, len(args), "expected exactly 5 args")
 	require.Equal(t, "-NoProfile", args[0])
@@ -184,7 +186,8 @@ func TestBuildInstallScriptArgs_Structure(t *testing.T) {
 	require.NotContains(t, script, "-InstallFolder")
 
 	// Daily downloads to temp file with -Version 'daily'
-	argsDaily := buildInstallScriptArgs(&VersionInfo{Channel: ChannelDaily, Version: "1.29.0-beta.1-daily.6614998"})
+	argsDaily, err := buildInstallScriptArgs(&VersionInfo{Channel: ChannelDaily, Version: "1.29.0-beta.1-daily.6614998"})
+	require.NoError(t, err)
 	require.Equal(t, 5, len(argsDaily))
 	require.Equal(t, "Bypass", argsDaily[2])
 	scriptDaily := argsDaily[4]

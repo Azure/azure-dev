@@ -229,9 +229,9 @@ Exceptions:
 `Manager.Update` takes the `*VersionInfo` returned by `CheckForUpdate` rather than a
 channel, so an install can only ever target the version that was actually resolved and
 reported. `Manager.Update` and `Manager.StageUpdate` reject a stable target that carries no
-version: falling back to the rolling `release/stable/` folder would silently reintroduce the
-drift pinning exists to prevent, so the update fails instead of installing a version other
-than the one reported.
+version, and any target whose channel is neither `stable` nor `daily`: falling back to the
+rolling `release/stable/` folder would silently reintroduce the drift pinning exists to
+prevent, so the update fails instead of installing a version other than the one reported.
 
 #### Windows Update Flow (MSI via `install-azd.ps1`)
 

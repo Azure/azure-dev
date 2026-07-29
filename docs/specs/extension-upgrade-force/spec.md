@@ -59,6 +59,27 @@ running the new version when they are not.
 - Reconciling the process query code that already exists in `pkg/azdext`. See
   Risks.
 
+## Acceptance Criteria
+
+These are the identifiers the `Source` column in
+[`test-plan.md`](./test-plan.md) cites. Each one is a behavior that has to hold,
+stated so a reviewer can check a test row against it.
+
+| Id | Criterion |
+| --- | --- |
+| AC-1 | Files that cannot be deleted because a process holds them open are relocated out of the extension directory instead of failing the operation, and relocation is a no-op when nothing is locked. |
+| AC-2 | `azd extension upgrade` and `azd extension uninstall` succeed by default, with no `--force`, while the extension has running processes. Removing a path that does not exist is also a success. |
+| AC-3 | `azd extension upgrade <id> --force` succeeds while the extension has running processes, stopping them gracefully first and escalating to a forceful stop only after the grace period expires. |
+| AC-4 | `azd extension uninstall <id> --force` behaves the same way, and stopping processes in a directory with none running is a no-op rather than an error. |
+| AC-5 | Process discovery is provably scoped to executables inside the extension's install directory. Empty and root scopes are refused, prefix siblings do not match, and unrelated processes are never candidates. |
+| AC-6 | The command reports which processes it stopped, by name and PID, on both human-readable and `--output json` paths. |
+| AC-7 | Without `--force`, the failure names the blocking processes and points at `--force`, rather than surfacing a bare permission error. A blocked removal with no discoverable process still explains itself. |
+| AC-8 | Behavior is deterministic under `--no-prompt` for CI and scripted use. Termination is bounded by the grace period and honors context cancellation. |
+| AC-9 | Discovery works on Windows, macOS, and Linux, including the case where a stale process keeps running an unlinked binary on non-Windows platforms, and follows each platform's path casing rules. |
+| AC-10 | `--force` composes with `--all`, stopping processes for every extension in the run rather than only the first. |
+| AC-11 | Relocated files are swept on later extension operations. Entries still held open are left in place, and a sweep failure never fails the command. |
+| AC-12 | `--force` is registered on both commands and bound to their options, with help text, usage snapshots, and completion metadata updated. |
+
 ## Solution
 
 Two independent layers. The first makes the failure stop happening. The second

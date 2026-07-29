@@ -210,6 +210,60 @@ func TestFindByExecutableDir_CaseSensitivityByPlatform(t *testing.T) {
 		"case-sensitive filesystems must treat a differently cased path as a different path")
 }
 
+// A literal backslash is a legal filename character on Unix. osutil.IsPathContained
+// rewrites backslashes to the OS separator, which is correct for validating a path a user
+// typed but wrong for an OS-reported executable image: it would clean an out-of-scope
+// binary into scope and make it a termination candidate. Containment must stay host-native.
+func TestFindByExecutableDir_UnixBackslashIsNotASeparator(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("backslash is a real separator on Windows, so there is nothing to confuse")
+	}
+
+	t.Parallel()
+
+	base := t.TempDir()
+	scope := filepath.Join(base, "extensions", "demo")
+	require.NoError(t, os.MkdirAll(scope, 0755))
+
+	normalized, err := normalizeScope(scope)
+	require.NoError(t, err)
+
+	// A single file directly under base whose name literally contains backslashes.
+	// Rewriting them as separators cleans it to <base>/extensions/demo/tool, in scope.
+	outside := filepath.Join(base, `other\..\extensions\demo\tool`)
+
+	require.False(t, executableInScope(normalized, outside),
+		"a backslash in a Unix filename must not be reinterpreted as a path separator")
+}
+
+// Containment is the safety property the package is built around, so an escaping path must
+// be refused no matter how it is spelled.
+func TestPathContained(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	scope := filepath.Join(base, "extensions", "demo")
+
+	require.True(t, pathContained(scope, scope), "a scope contains itself")
+	require.True(t, pathContained(scope, filepath.Join(scope, "tool")))
+	require.True(t, pathContained(scope, filepath.Join(scope, "nested", "tool")))
+
+	// A child whose name merely starts with ".." is inside the scope. This is why the
+	// escape check tests for ".." followed by a separator rather than a bare prefix.
+	require.True(t, pathContained(scope, filepath.Join(scope, "..cache", "tool")))
+
+	// The immediate parent is the only input that relativizes to exactly "..", so it is
+	// the only one that exercises the equality half of the escape check. Without it,
+	// dropping that clause would widen the termination boundary to the parent directory
+	// with every other assertion here still passing.
+	require.False(t, pathContained(scope, filepath.Join(base, "extensions")),
+		"the immediate parent of the scope is not contained by it")
+
+	require.False(t, pathContained(scope, base))
+	require.False(t, pathContained(scope, filepath.Join(base, "extensions", "demo-backup", "tool")))
+	require.False(t, pathContained(scope, filepath.Join(scope, "..", "other", "tool")))
+}
+
 // T10: a directory that was never created is a normal state (nothing installed there).
 // It must yield no matches rather than an error or a panic.
 func TestFindByExecutableDir_MissingDir(t *testing.T) {
@@ -317,4 +371,27 @@ func TestDescribe(t *testing.T) {
 		{PID: 1, Name: "a"},
 		{PID: 2, Name: "b"},
 	}))
+}
+
+// Error messages name the binary being held open, and several instances of one extension
+// normally share it, so the path is listed once rather than once per PID.
+func TestDescribeExecutables(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "", DescribeExecutables(nil))
+	require.Equal(t, "", DescribeExecutables([]ProcessInfo{{PID: 1, Name: "a"}}),
+		"a process with no recorded image contributes no path")
+
+	require.Equal(t, filepath.Join("x", "a"), DescribeExecutables([]ProcessInfo{
+		{PID: 1, Name: "a", Executable: filepath.Join("x", "a")},
+		{PID: 2, Name: "a", Executable: filepath.Join("x", "a")},
+	}), "watch-mode instances sharing one binary must not repeat its path")
+
+	require.Equal(t,
+		filepath.Join("x", "a")+", "+filepath.Join("x", "b"),
+		DescribeExecutables([]ProcessInfo{
+			{PID: 1, Name: "a", Executable: filepath.Join("x", "a")},
+			{PID: 2, Name: "b", Executable: filepath.Join("x", "b")},
+			{PID: 3, Name: "a", Executable: filepath.Join("x", "a")},
+		}), "distinct binaries are listed in the order first seen")
 }

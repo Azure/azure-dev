@@ -51,7 +51,7 @@ at `cli/azd/`.
 | T8 | Sibling directory sharing a name prefix is not matched | AC-5 | unit | `pkg/processutil/processutil_test.go` -> `TestFindByExecutableDir_RejectsPrefixSibling` | automated |
 | T9 | Containment is case-insensitive on Windows and case-sensitive on Linux | AC-5, AC-9 | unit | `pkg/processutil/processutil_test.go` -> `TestFindByExecutableDir_CaseSensitivityByPlatform` | automated |
 | T10 | A directory that does not exist yields no matches and no panic | AC-5 | unit | `pkg/processutil/processutil_test.go` -> `TestFindByExecutableDir_MissingDir` | automated |
-| T11 | A real spawned process inside the directory is discovered with correct PID, name, and executable | AC-3, AC-9 | integration | `pkg/processutil/processutil_integration_test.go` -> `TestFindByExecutableDir_FindsSpawnedProcess` | automated |
+| T11 | A real spawned process inside the directory is discovered with correct PID, name, and executable | AC-5, AC-9 | integration | `pkg/processutil/processutil_integration_test.go` -> `TestFindByExecutableDir_FindsSpawnedProcess` | automated |
 | T12 | A real process outside the directory is not discovered | AC-5 | integration | `pkg/processutil/processutil_integration_test.go` -> `TestFindByExecutableDir_IgnoresOutsideProcess` | automated |
 | T13 | Linux `(deleted)` suffix on `/proc/<pid>/exe` is stripped so unlinked binaries still match | AC-9 | unit | `pkg/processutil/processutil_procfs_test.go` -> `TestNormalizeProcExe_StripsDeletedSuffix` | automated |
 | T14 | Enumeration tolerates per-PID permission denials and keeps scanning | AC-9 | integration | `pkg/processutil/processutil_integration_test.go` -> `TestFindByExecutableDir_TolerantOfDeniedPids` | automated |
@@ -91,7 +91,7 @@ Written because implementation exposed behavior the plan did not anticipate.
 | T41 | A zero wait timeout reports liveness without blocking | AC-8 | integration | `pkg/processutil/processutil_integration_test.go` -> `TestWaitForExit_ZeroTimeout` | automated |
 | T42 | Removing a path that does not exist succeeds rather than erroring | AC-2 | unit | `pkg/osutil/relocate_test.go` -> `TestRemoveAllWithRelocation_MissingPath` | automated |
 | T43 | A trash directory nested inside the directory being removed is rejected | AC-11 | unit | `pkg/osutil/relocate_test.go` -> `TestRemoveAllWithRelocation_RejectsTrashInsidePath` | automated |
-| T44 | Both path arguments are required | AC-11 | unit | `pkg/osutil/relocate_test.go` -> `TestRemoveAllWithRelocation_RequiresPaths` | automated |
+| T44 | Both path arguments are required | AC-1 | unit | `pkg/osutil/relocate_test.go` -> `TestRemoveAllWithRelocation_RequiresPaths` | automated |
 | T45 | Trash destinations never collide, across repeated relocations or across processes | AC-11 | unit | `pkg/osutil/relocate_test.go` -> `TestUniqueTrashPath` | automated |
 | T46 | Concurrent relocations of the same base name all succeed and none overwrites another | AC-11 | unit | `pkg/osutil/relocate_test.go` -> `TestRelocateInto_ConcurrentRelocationsDoNotCollide` | automated |
 | T47 | A blocked removal with no discoverable processes still explains itself | AC-7 | integration | `pkg/extensions/manager_uninstall_test.go` -> `TestUninstall_BlockedErrorWithoutProcesses` | automated |
@@ -114,8 +114,8 @@ Written because implementation exposed behavior the plan did not anticipate.
 | T64 | `RequireRealDir` accepts a real directory and a missing path, refuses a file and a directory link | AC-5 | unit | `pkg/osutil/relocate_test.go` -> `TestRequireRealDir` | automated |
 | T65 | A link planted at the trash directory is refused, leaving the target's contents intact | AC-5, AC-11 | unit | `pkg/osutil/relocate_test.go` -> `TestSweepTrash_RefusesLinkedDirectory` | automated |
 | T66 | Relocation refuses a linked trash directory rather than renaming files through it | AC-5, AC-11 | integration | `pkg/osutil/relocate_test.go` -> `TestRelocateLocked_RefusesLinkedTrash` | automated |
-| T67 | A scope reached through a symlinked ancestor still resolves, so macOS containment keeps working | AC-2 | unit | `pkg/processutil/processutil_test.go` -> `TestFindByExecutableDir_ResolvesSymlinkedAncestors` | automated |
-| T68 | A scope whose own final component is a link is refused by both normalization and discovery | AC-2, AC-5 | unit | `pkg/processutil/processutil_test.go` -> `TestFindByExecutableDir_RejectsLinkedScope` | automated |
+| T67 | A scope reached through a symlinked ancestor still resolves, so macOS containment keeps working | AC-5, AC-9 | unit | `pkg/processutil/processutil_test.go` -> `TestFindByExecutableDir_ResolvesSymlinkedAncestors` | automated |
+| T68 | A scope whose own final component is a link is refused by both normalization and discovery | AC-5 | unit | `pkg/processutil/processutil_test.go` -> `TestFindByExecutableDir_RejectsLinkedScope` | automated |
 | T69 | Ids that Windows aliases away (trailing dot or space), device names, and ids carrying `:` or control characters are rejected | AC-5 | unit | `pkg/extensions/manager_uninstall_test.go` -> `TestExtensionPaths_RejectsUnsafeIds` | automated |
 | T70 | An aliased id resolves onto the directory a different extension owns, and is refused | AC-5 | unit | `pkg/extensions/manager_uninstall_test.go` -> `TestExtensionPaths_AliasedIdWouldResolveOntoAnotherExtension` | automated |
 | T71 | Trash destinations carry the original base name so a leftover entry stays recognizable | AC-11 | unit | `pkg/osutil/relocate_test.go` -> `TestUniqueTrashPath` | automated |
@@ -124,6 +124,9 @@ Written because implementation exposed behavior the plan did not anticipate.
 | T74 | Windows `forceKill` refuses a process outside the scope of its own pinned handle, and still stops one inside it | AC-5 | integration | `pkg/processutil/processutil_windows_test.go` -> `TestForceKill_RefusesProcessOutsideScope` | automated |
 | T75 | `upgrade --force` reaches a stale dependency when the parent is already current, and reports it in `--output json` | AC-3, AC-6 | integration | `cmd/extension_force_test.go` -> `TestExtensionUpgradeAction_ForceReachesStaleDependencyOfCurrentParent` | automated |
 | T76 | `stoppedProcesses` is present in the JSON contract when `--force` stopped something and omitted otherwise | AC-6 | unit | `pkg/extensions/upgrade_result_test.go` -> `TestUpgradeResult_MarshalJSON` | automated |
+| T77 | A backslash in a Unix executable path is a filename character, not a separator, so it cannot be used to escape the scope | AC-5, AC-9 | unit | `pkg/processutil/processutil_test.go` -> `TestFindByExecutableDir_UnixBackslashIsNotASeparator` | automated |
+| T78 | Host-native containment accepts self and descendants, and refuses parents, prefix siblings, and traversal escapes | AC-5 | unit | `pkg/processutil/processutil_test.go` -> `TestPathContained` | automated |
+| T79 | `DescribeExecutables` names the held-open binaries distinctly, in first-seen order | AC-7 | unit | `pkg/processutil/processutil_test.go` -> `TestDescribeExecutables` | automated |
 
 ## Functionality Inventory (Phase 3 reconciliation)
 
@@ -136,12 +139,14 @@ files, then walking each back to an assertion.
 | 1 | `ProcessInfo` carries PID, name, and executable path | `pkg/processutil/processutil.go` | T11, T39 | COVERED |
 | 2 | `ProcessInfo.String` renders a process for a human | `pkg/processutil/processutil.go` | T39 | COVERED |
 | 3 | `Describe` renders a set of processes as one list | `pkg/processutil/processutil.go` | T40 | COVERED |
+| 3a | `DescribeExecutables` renders the distinct binaries a set of processes runs | `pkg/processutil/processutil.go` | T79 | COVERED |
 | 4 | `FindByExecutableDir` returns only processes running from a directory | `pkg/processutil/processutil.go` | T5, T11, T12, T14 | COVERED |
 | 5 | `Terminate` ends a process, gracefully first where the platform allows | `pkg/processutil/processutil.go` | T15, T16, T18 | COVERED |
 | 6 | `Terminate` refuses to target azd itself or a non-positive PID | `pkg/processutil/processutil.go` | T37, T38 | COVERED |
 | 7 | `normalizeScope` resolves symlinks and rejects empty input | `pkg/processutil/processutil.go` | T1, T6, T7, T10 | COVERED |
 | 8 | `isFilesystemRoot` blocks a whole-volume scope | `pkg/processutil/processutil.go` | T2, T3, T36 | COVERED |
-| 9 | `executableInScope` containment, including case rules and prefix traps | `pkg/processutil/processutil.go` | T8, T9, T12 | COVERED |
+| 9 | `executableInScope` containment, including case rules and prefix traps | `pkg/processutil/processutil.go` | T8, T9, T12, T77 | COVERED |
+| 9a | `pathContained` compares host-native paths without rewriting separators | `pkg/processutil/processutil.go` | T78 | COVERED |
 | 10 | `waitForExit` confirms exit within a budget without blocking forever | `pkg/processutil/processutil.go` | T18, T41 | COVERED |
 | 11 | `ErrEmptyDirectory` and `ErrRootDirectory` sentinels | `pkg/processutil/processutil.go` | T1, T2, T3, T4, T48 | COVERED |
 | 12 | Windows `enumerateProcesses` via `CreateToolhelp32Snapshot` | `pkg/processutil/processutil_windows.go` | T11, T12, T14 | COVERED |
@@ -168,6 +173,7 @@ files, then walking each back to an assertion.
 | 33 | `stopExtensionProcesses` refuses an unscoped directory | `pkg/extensions/manager_uninstall.go` | T48 | COVERED |
 | 34 | `stopExtensionProcesses` is a no-op when nothing is running | `pkg/extensions/manager_uninstall.go` | T49 | COVERED |
 | 35 | `extensionRemovalError` explains a blocked removal and suggests a fix | `pkg/extensions/manager_uninstall.go` | T28, T47 | COVERED |
+| 35a | `removalMessage` names the held-open binary so the cause is demoted below the explanation | `pkg/extensions/manager_uninstall.go` | T28 | COVERED |
 | 36 | `UpgradeOptions.Force` and callback propagate into `Uninstall` | `pkg/extensions/manager.go` | T27, T50 | COVERED |
 | 37 | `installInternal` sweeps trash when recreating the install directory | `pkg/extensions/manager.go` | T59 | COVERED |
 | 38 | `--force`/`-f` registered and bound on `extension upgrade` | `cmd/extension.go` | T31, T33 | COVERED |

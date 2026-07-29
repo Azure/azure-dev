@@ -264,24 +264,53 @@ func stopExtensionProcesses(
 // A bare "Access is denied" says nothing about what is holding the files, so the blocking
 // processes are named when they can be found, and --force is suggested when it was not
 // already used.
+//
+// Message is set deliberately. ux.ErrorWithSuggestion promotes the whole wrapped error to
+// the red ERROR: line when Message is empty, which puts the filesystem cause first and
+// buries the process names behind it. Setting Message leads with the readable sentence and
+// demotes the cause to the grey technical block, while Err keeps it for logs and %w.
 func extensionRemovalError(ctx context.Context, extensionDir string, forced bool, cause error) error {
 	running, err := processutil.FindByExecutableDir(ctx, extensionDir)
 	if err != nil || len(running) == 0 {
-		return fmt.Errorf("failed to remove extension: %w", cause)
+		// Nothing the extension owns is holding the files. Discovery is deliberately scoped
+		// to the extension binary itself, so the holder here is something else: a tool the
+		// extension started, an antivirus scanner, an indexer, or a shell preview handler.
+		// --force only stops processes this discovery returns, so suggesting it would send
+		// the user down a path that cannot help, whether or not it was already passed.
+		return &internal.ErrorWithSuggestion{
+			Message: "Cannot remove extension because a file in its directory is held open by another program.",
+			Err:     fmt.Errorf("failed to remove extension: %w", cause),
+			Suggestion: "Close any program that might be using the extension's files, " +
+				"then run the command again.",
+		}
 	}
+
+	described := processutil.Describe(running)
 
 	if forced {
 		return &internal.ErrorWithSuggestion{
+			Message: removalMessage(running, described, "is still in use by"),
 			Err: fmt.Errorf("failed to remove extension, still in use by %s: %w",
-				processutil.Describe(running), cause),
+				described, cause),
 			Suggestion: "Stop the listed processes and run the command again.",
 		}
 	}
 
 	return &internal.ErrorWithSuggestion{
+		Message: removalMessage(running, described, "is currently in use by"),
 		Err: fmt.Errorf("failed to remove extension, in use by %s: %w",
-			processutil.Describe(running), cause),
+			described, cause),
 		Suggestion: "Re-run with --force to stop those processes automatically, " +
 			"or stop them yourself and try again.",
 	}
+}
+
+// removalMessage builds the user-facing sentence for a blocked removal, naming the binary
+// that is held open when it is known so the user can identify what to stop.
+func removalMessage(running []processutil.ProcessInfo, described string, phrase string) string {
+	if executables := processutil.DescribeExecutables(running); executables != "" {
+		return fmt.Sprintf("Cannot remove extension because %s %s %s.", executables, phrase, described)
+	}
+
+	return fmt.Sprintf("Cannot remove extension because it %s %s.", phrase, described)
 }

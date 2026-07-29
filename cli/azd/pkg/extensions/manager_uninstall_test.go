@@ -223,11 +223,26 @@ func TestUninstall_BlockedErrorNamesProcesses(t *testing.T) {
 	require.Contains(t, suggestionOf(t, unforced), "--force",
 		"an unforced failure should point at the flag that resolves it")
 
+	// The headline the user actually reads. Without Message, ux.ErrorWithSuggestion
+	// promotes the wrapped error and "Access is denied" becomes the ERROR: line, which is
+	// the cryptic output this message exists to replace.
+	unforcedMessage := messageOf(t, unforced)
+	require.Contains(t, unforcedMessage, "Cannot remove extension")
+	require.Contains(t, unforcedMessage, helperExecutableName(fixture.id),
+		"the blocking process must be named in the headline, not just the wrapped cause")
+	require.NotContains(t, unforcedMessage, cause.Error(),
+		"the filesystem cause belongs in the grey technical block, not the headline")
+
 	forced := extensionRemovalError(t.Context(), fixture.extensionDir, true, cause)
 	require.ErrorIs(t, forced, cause)
 	require.ErrorContains(t, forced, helperExecutableName(fixture.id))
 	require.NotContains(t, suggestionOf(t, forced), "--force",
 		"suggesting --force to someone who already used it is not actionable")
+
+	forcedMessage := messageOf(t, forced)
+	require.Contains(t, forcedMessage, "Cannot remove extension")
+	require.NotContains(t, forcedMessage, cause.Error(),
+		"the forced branch has the same headline problem and the same fix")
 }
 
 // A removal that failed for a reason other than a running process must not be dressed up
@@ -239,6 +254,19 @@ func TestUninstall_BlockedErrorWithoutProcesses(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrPermission)
 	require.ErrorContains(t, err, "failed to remove extension")
 	require.NotContains(t, err.Error(), "--force")
+
+	// AC-7: even with nothing to name, the failure has to explain itself rather than
+	// leading with the filesystem cause. Message is what keeps the raw error off the
+	// ERROR: line, so its absence is the whole bug this asserts against.
+	message := messageOf(t, err)
+	require.Contains(t, message, "Cannot remove extension")
+	require.NotContains(t, message, os.ErrPermission.Error())
+
+	// --force only stops processes discovery returned, and it returned none, so pointing
+	// the user at it here would be advice that cannot work.
+	suggestion := suggestionOf(t, err)
+	require.NotEmpty(t, suggestion)
+	require.NotContains(t, suggestion, "--force")
 }
 
 // stopExtensionProcesses must refuse an unscoped directory rather than ranging wider than
@@ -740,6 +768,19 @@ func suggestionOf(t *testing.T, err error) string {
 
 	if withSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		return withSuggestion.Suggestion
+	}
+
+	return ""
+}
+
+// messageOf returns the user-facing headline. ux.ErrorWithSuggestion renders Message as the
+// red ERROR: line and falls back to the whole wrapped error when it is empty, so an empty
+// result here means the raw filesystem cause is what the user reads.
+func messageOf(t *testing.T, err error) string {
+	t.Helper()
+
+	if withSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
+		return withSuggestion.Message
 	}
 
 	return ""

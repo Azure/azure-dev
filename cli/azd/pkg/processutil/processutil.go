@@ -88,6 +88,30 @@ func Describe(processes []ProcessInfo) string {
 	return strings.Join(parts, ", ")
 }
 
+// DescribeExecutables renders the distinct executable images backing processes, in the
+// order first seen, for messages that need to name the files being held open. Several
+// instances of one extension normally share a single binary, so duplicates are collapsed
+// rather than repeating the same path once per PID.
+func DescribeExecutables(processes []ProcessInfo) string {
+	seen := make(map[string]struct{}, len(processes))
+	paths := make([]string, 0, len(processes))
+
+	for _, process := range processes {
+		if process.Executable == "" {
+			continue
+		}
+
+		if _, duplicate := seen[process.Executable]; duplicate {
+			continue
+		}
+
+		seen[process.Executable] = struct{}{}
+		paths = append(paths, process.Executable)
+	}
+
+	return strings.Join(paths, ", ")
+}
+
 // FindByExecutableDir returns every running process whose executable image is contained
 // within dir. The calling process is never returned.
 //
@@ -295,13 +319,19 @@ func isFilesystemRoot(p string) bool {
 // executableInScope reports whether an executable path falls inside the scope directory.
 // Both the reported path and its symlink-resolved form are checked, because a relocated
 // or unlinked binary may no longer resolve while its process keeps running.
+//
+// Containment is deliberately host-native rather than osutil.IsPathContained. That helper
+// rewrites every backslash to the OS separator, which is right for validating paths a user
+// typed but wrong for an OS-reported executable image: backslash is a legal filename
+// character on Unix, so a process running from "/home/u/other\..\extensions\demo\tool"
+// would be rewritten and cleaned into the demo scope and become a termination candidate.
 func executableInScope(scope, executable string) bool {
 	absolute, err := filepath.Abs(executable)
 	if err != nil {
 		return false
 	}
 
-	if osutil.IsPathContained(scope, filepath.Clean(absolute)) {
+	if pathContained(scope, absolute) {
 		return true
 	}
 
@@ -310,7 +340,26 @@ func executableInScope(scope, executable string) bool {
 		return false
 	}
 
-	return osutil.IsPathContained(scope, filepath.Clean(resolved))
+	return pathContained(scope, resolved)
+}
+
+// pathContained reports whether candidate sits at or beneath scope, treating both as
+// host-native paths. filepath.Rel supplies the platform's own separator and case-folding
+// rules, so no character is reinterpreted on the way in.
+func pathContained(scope, candidate string) bool {
+	relative, err := filepath.Rel(filepath.Clean(scope), filepath.Clean(candidate))
+	if err != nil {
+		// Different volumes, or one path relative and the other absolute. Neither can be
+		// shown to be contained, so the candidate is refused.
+		return false
+	}
+
+	if relative == "." {
+		return true
+	}
+
+	// An escaping result is the only way out of scope once both paths are cleaned.
+	return relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 // waitForExit polls until the process exits, the timeout elapses, or ctx is cancelled.

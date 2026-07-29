@@ -109,6 +109,9 @@ jobs:
       - bash: dotnet nuget add source --name azure-sdk-for-net https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-net/nuget/v3/index.json
         displayName: Add Azure SDK dev nuget feed
 
+      - bash: dotnet nuget disable source nuget.org
+        displayName: Disable public nuget feed
+
       - bash: dotnet nuget add source --name dotnet9 https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet9/nuget/v3/index.json
         displayName: Add internal dotnet nuget feed
 

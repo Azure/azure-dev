@@ -62,6 +62,24 @@ func (e *DependencyNotFoundError) Error() string {
 	return fmt.Sprintf("dependency %s required by %s was not found", e.DependencyId, e.ParentId)
 }
 
+// DependencyVersionNotFoundError indicates that a required dependency exists
+// but none of its versions satisfy the constraint declared by its parent.
+type DependencyVersionNotFoundError struct {
+	// DependencyId is the id of the dependency without a matching version.
+	DependencyId string
+	// ParentId is the id of the extension that declares the dependency.
+	ParentId string
+	// Constraint is the version constraint that could not be satisfied.
+	Constraint string
+}
+
+func (e *DependencyVersionNotFoundError) Error() string {
+	return fmt.Sprintf(
+		"dependency %s required by %s was found, but no version satisfies constraint %q",
+		e.DependencyId, e.ParentId, e.Constraint,
+	)
+}
+
 // DependencyAmbiguousSourceError indicates that a required dependency of an
 // extension was found in more than one configured source, so azd cannot decide
 // which one to use. The caller must disambiguate by specifying an exact source.
@@ -630,6 +648,22 @@ func (m *Manager) installInternal(
 			}
 
 			if len(dependencyMatches) == 0 {
+				if dependency.Version != "" && !strings.EqualFold(dependency.Version, "latest") {
+					unconstrainedOptions := *dependencyOptions
+					unconstrainedOptions.Version = ""
+					unconstrainedMatches, err := m.FindExtensions(ctx, &unconstrainedOptions)
+					if err != nil {
+						return nil, fmt.Errorf("failed to find dependency %s: %w", dependency.Id, err)
+					}
+					if len(unconstrainedMatches) > 0 {
+						return nil, &DependencyVersionNotFoundError{
+							DependencyId: dependency.Id,
+							ParentId:     extension.Id,
+							Constraint:   dependency.Version,
+						}
+					}
+				}
+
 				return nil, &DependencyNotFoundError{DependencyId: dependency.Id, ParentId: extension.Id}
 			}
 

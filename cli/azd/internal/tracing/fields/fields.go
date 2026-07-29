@@ -1025,6 +1025,18 @@ var (
 	}
 )
 
+// Aspire related fields
+var (
+	// AspireAppHostLanguageKey is the language of a detected Aspire polyglot (non-C#) AppHost
+	// (e.g. "typescript", "python", "go", "java", "rust"). This is a fixed enum of Aspire-supported
+	// AppHost languages, so it is emitted raw (not hashed).
+	AspireAppHostLanguageKey = AttributeKey{
+		Key:            attribute.Key("aspire.apphost.language"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
 // Mcp related fields
 var (
 	// The name of the MCP client.

@@ -343,7 +343,9 @@ func collectStringEnvironmentTemplates(value string, environment map[string]stri
 		// extension against the raw config at deploy, so the env section
 		// only needs NAME's resolved base value. Collapsing every form of
 		// a var to one value also keeps collection deterministic when the
-		// same var appears with and without a default.
+		// same var appears with and without a default. This assumes a
+		// literal default: a nested ${VAR} default is unsupported and
+		// gets no entry here. See findEnvironmentReferences.
 		environment[reference.Name] = "${" + reference.Name + "}"
 	}
 }

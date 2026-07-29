@@ -41,6 +41,15 @@ type environmentReference struct {
 // References the expander would not resolve are dropped: escaped
 // ones and any reserved by a Foundry ${{...}} span. honorEscaping
 // must match the expander that owns the field.
+//
+// A reference inside a :- default is not reported: nested azd
+// references are unsupported by design, so ${OUTER:-${NESTED}}
+// yields OUTER only. foundry.ExpandEnv still resolves NESTED at
+// deploy, but nothing discovers it, so init never prompts for it
+// and it gets no entry in the generated service env block. It
+// then resolves only where the consumer keeps an azd environment
+// fallback, and to empty where a declared env: drops it. Keep
+// defaults literal.
 func findEnvironmentReferences(value string, honorEscaping bool) []environmentReference {
 	candidates := environmentReferenceCandidates(value, honorEscaping)
 	if !honorEscaping || len(candidates) == 0 {
@@ -67,7 +76,9 @@ func findEnvironmentReferences(value string, honorEscaping bool) []environmentRe
 // '$' and keeps reading, so an escape only neutralizes the '${'
 // it precedes: the text after it, including a default, still
 // holds live references. Membership of a ${{...}} span is left to
-// findEnvironmentReferences.
+// findEnvironmentReferences. Scanning resumes at the end of a
+// match, so a default span is never scanned again; that is what
+// keeps nested references out.
 func environmentReferenceCandidates(value string, honorEscaping bool) []environmentReference {
 	var references []environmentReference
 	for index := 0; index < len(value); {

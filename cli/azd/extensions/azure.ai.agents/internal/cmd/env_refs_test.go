@@ -111,9 +111,10 @@ func TestFindEnvironmentReferences(t *testing.T) {
 			},
 		},
 		{
-			// The span covers the nested default so scanning resumes
-			// after it. Collecting NESTED itself is a separate concern.
-			name:          "nested default is spanned but not collected",
+			// Nested references are unsupported by design. The span
+			// covers the default so scanning resumes after it and
+			// NESTED is never reported.
+			name:          "nested default is spanned, inner name unsupported",
 			value:         "${OUTER:-${NESTED}} ${AFTER}",
 			honorEscaping: honorEnvironmentEscaping,
 			want: []environmentReference{
@@ -185,6 +186,30 @@ func TestFindEnvironmentReferencesPolicies(t *testing.T) {
 			"WITH_DEFAULT": "${WITH_DEFAULT}",
 		}, environment)
 	})
+}
+
+// TestNestedDefaultIsNotDiscovered pins the agreed limitation:
+// azd nested references are unsupported, so only the outer name
+// reaches the generated service env block and init prompting.
+// Without this, ${OUTER:-${NESTED}} would look half-supported.
+func TestNestedDefaultIsNotDiscovered(t *testing.T) {
+	t.Parallel()
+
+	const value = "${OUTER:-${NESTED}}"
+
+	environment := map[string]string{}
+	collectStringEnvironmentTemplates(value, environment)
+	require.Equal(t, map[string]string{"OUTER": "${OUTER}"}, environment)
+
+	var references []azureYamlEnvironmentReference
+	collectAzureYamlEnvironmentReferences(
+		value,
+		false,
+		honorEnvironmentEscaping,
+		&references,
+		map[string]int{},
+	)
+	require.Empty(t, references)
 }
 
 func TestCollectAzureYamlEnvironmentReferencesUpgradesSecret(t *testing.T) {

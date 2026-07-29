@@ -12,6 +12,7 @@
 
 - [[#9281]](https://github.com/Azure/azure-dev/pull/9281) Fix `azd deploy` for container-based App Service services overwriting unrelated site configuration; the container image is now updated through the dedicated App Service configuration endpoint.
 - [[#9211]](https://github.com/Azure/azure-dev/pull/9211) Fix concurrent extension updates to `azure.yaml` losing service fields by serializing project configuration writes.
+- [[#9218]](https://github.com/Azure/azure-dev/pull/9218) Fix and improve automatic installation of project extension requirements so `azd` resolves every missing provider declared or inferred from `azure.yaml` before project commands run, instead of failing on the first unsupported one.
 
 ### Other Changes
 

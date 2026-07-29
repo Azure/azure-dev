@@ -2022,6 +2022,27 @@ loop:
 	return upgradeActionResult(results)
 }
 
+// upgradeSourceResolutionError builds a user-facing error when upgrade cannot
+// select a registry source for the extension.
+func upgradeSourceResolutionError(extensionId, flagSource, installedSource string) error {
+	browse := "Run 'azd extension list' to browse available extensions."
+	if flagSource != "" {
+		return fmt.Errorf(
+			"Extension '%s' not found in source '%s'. %s",
+			extensionId, flagSource, browse,
+		)
+	}
+
+	sourceName := installedSource
+	if sourceName == "" {
+		sourceName = extensions.MainRegistryName
+	}
+	return fmt.Errorf(
+		"Extension '%s' not available in source '%s' or the main registry. %s",
+		extensionId, sourceName, browse,
+	)
+}
+
 // upgradeOneExtension processes a single extension upgrade and returns
 // the result. It never returns an error — failures are captured in
 // the returned UpgradeResult. A telemetry span is emitted for every
@@ -2163,6 +2184,16 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		))
 	}
 	if len(matches) == 0 {
+		// Explicit --source miss: FindExtensions already filtered by source, so
+		// an empty result means the extension is not in that source (it may
+		// still exist elsewhere). Fail with a source-aware error instead of the
+		// generic "no longer available" skip used for fully delisted extensions.
+		if a.flags.source != "" {
+			return fail(upgradeSourceResolutionError(
+				extensionId, a.flags.source, installed.Source,
+			))
+		}
+
 		// Delisted or unavailable — skip instead of fail so
 		// the batch continues.
 		baseResult.Status = extensions.UpgradeStatusSkipped
@@ -2192,19 +2223,9 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			installed, matches, a.flags.source,
 		)
 		if res == nil {
-			suggestion := "Run 'azd extension list' to browse available extensions."
-			if a.flags.source != "" {
-				suggestion = fmt.Sprintf(
-					"Extension not found in source '%s'. %s",
-					a.flags.source, suggestion,
-				)
-			} else {
-				suggestion = fmt.Sprintf(
-					"Extension '%s' not available in stored source or main registry. %s",
-					extensionId, suggestion,
-				)
-			}
-			return fail(errors.New(suggestion))
+			return fail(upgradeSourceResolutionError(
+				extensionId, a.flags.source, installed.Source,
+			))
 		}
 		selectedExt = res.Extension
 		isPromotion = res.IsPromotion

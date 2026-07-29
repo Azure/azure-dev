@@ -33,6 +33,11 @@ type DatasetDecl struct {
 
 // EvaluatorDecl declares a custom evaluator. Built-ins are referenced directly
 // from an eval and never declared here.
+//
+// Source decides which kind of evaluator this is: a folder holds Python and
+// publishes a code evaluator, a file holds a rubric. The distinction is made
+// by stat-ing the path on deploy, not by its spelling, so a folder does not
+// need a trailing separator to be recognised.
 type EvaluatorDecl struct {
 	Name    string `yaml:"name"              json:"name"`
 	Source  string `yaml:"source,omitempty"  json:"source,omitempty"`

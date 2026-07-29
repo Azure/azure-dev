@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"azureaieval/internal/pkg/evalcore"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -311,6 +313,22 @@ func Fingerprint(path string) (string, error) {
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// FingerprintPath hashes whatever a declared source names.
+//
+// A rubric evaluator is one JSON file; a code evaluator is a folder of Python.
+// Both need change detection with the same meaning, so the artifact's shape is
+// resolved by stat-ing it rather than by asking the caller to know.
+func FingerprintPath(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("hashing %q: %w", path, err)
+	}
+	if info.IsDir() {
+		return evalcore.FingerprintCodeFolder(path)
+	}
+	return Fingerprint(path)
 }
 
 // FingerprintGroup hashes an eval's own declaration.

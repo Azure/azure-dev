@@ -11,9 +11,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"azureaieval/internal/pkg/dataset_api"
+	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
 )
 
@@ -223,8 +225,14 @@ func (r *evalReconciler) latestDatasetVersion(ctx context.Context, name string) 
 }
 
 // EnsureEvaluator publishes a new version when the local definition differs
-// from what the service holds. Evaluator definitions come back inline, so this
-// compares content directly rather than relying on a cached digest.
+// from what the service holds.
+//
+// The two kinds of evaluator are told apart by what the source names, not by
+// its spelling: a folder is code, a file is a rubric. They also detect change
+// differently. A rubric definition comes back inline, so it is compared
+// directly; code does not — the service returns a storage URI, never the
+// source — so a fingerprint of the folder is kept in the azd environment, the
+// same way datasets work.
 func (r *evalReconciler) EnsureEvaluator(
 	ctx context.Context,
 	decl project.EvaluatorDecl,
@@ -240,6 +248,14 @@ func (r *evalReconciler) EnsureEvaluator(
 				decl.Name, err)
 		}
 		return versionFromRaw(raw, decl.Version), false, nil
+	}
+
+	info, err := os.Stat(localPath)
+	if err != nil {
+		return "", false, fmt.Errorf("evaluator source %q: %w", localPath, err)
+	}
+	if info.IsDir() {
+		return r.ensureCodeEvaluator(ctx, decl, localPath)
 	}
 
 	raw, err := os.ReadFile(localPath)
@@ -268,6 +284,86 @@ func (r *evalReconciler) EnsureEvaluator(
 		return "", false, err
 	}
 	return created.Version, true, nil
+}
+
+// ensureCodeEvaluator publishes a folder of Python only when its content
+// changed since the last deploy.
+//
+// Every publish is a new immutable version, so without this a repeated
+// `azd up` would leave a trail of identical versions and force every eval
+// bound to the evaluator to be recreated along with them.
+func (r *evalReconciler) ensureCodeEvaluator(
+	ctx context.Context,
+	decl project.EvaluatorDecl,
+	dir string,
+) (string, bool, error) {
+	// Validated before anything is uploaded: a folder missing its entry point
+	// or class is only rejected when a run executes, long after a version has
+	// been published and an eval bound to it.
+	pkg, err := evalcore.LoadCodeEvaluator(decl.Name, dir)
+	if err != nil {
+		return "", false, err
+	}
+
+	digest, err := project.FingerprintPath(dir)
+	if err != nil {
+		return "", false, err
+	}
+
+	key := project.FingerprintKey("evaluator", decl.Name)
+	recordedVersion := r.ec.getEnvValue(ctx, versionKey("evaluator", decl.Name))
+	if r.ec.getEnvValue(ctx, key) == digest && recordedVersion != "" {
+		// Unchanged since the last deploy, but that alone does not make the
+		// recorded version safe to reuse: someone may have published a newer
+		// one outside the repo, and binding the eval to the older one would
+		// quietly evaluate with superseded code.
+		if err := r.checkEvaluatorDrift(ctx, decl.Name, recordedVersion); err != nil {
+			return "", false, err
+		}
+		return recordedVersion, false, nil
+	}
+
+	opts, err := codeEvaluatorOptions(pkg, codeEvaluatorFlags{})
+	if err != nil {
+		return "", false, err
+	}
+
+	created, err := r.ec.evalClient.UploadCodeEvaluatorVersion(
+		ctx, pkg, opts, ProjectEndpointAPIVersion,
+	)
+	if err != nil {
+		return "", false, err
+	}
+
+	_ = r.ec.setEnvValue(ctx, key, digest)
+	_ = r.ec.setEnvValue(ctx, versionKey("evaluator", decl.Name), created.Version)
+	return created.Version, true, nil
+}
+
+// checkEvaluatorDrift fails when the service holds a newer version than the
+// one recorded at the last deploy.
+//
+// Publishing is not destructive — versions are immutable — so the remedy is to
+// sync with what is on the project, not to overwrite it.
+func (r *evalReconciler) checkEvaluatorDrift(
+	ctx context.Context,
+	name, recorded string,
+) error {
+	recordedNumber, err := strconv.Atoi(recorded)
+	if err != nil {
+		return nil
+	}
+	latest := r.ec.evalClient.LatestEvaluatorVersionNumber(
+		ctx, name, ProjectEndpointAPIVersion,
+	)
+	if latest <= recordedNumber {
+		return nil
+	}
+	return fmt.Errorf(
+		"evaluator %q is at version %d on the project but %s was recorded at the last deploy; "+
+			"someone published a version outside this repo. "+
+			"Pull the newer code locally, or delete version %d, then deploy again",
+		name, latest, recorded, latest)
 }
 
 // EnsureEval creates the group when it has never been deployed, or when an

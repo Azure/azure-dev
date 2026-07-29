@@ -285,6 +285,20 @@ func (c *EvalClient) doRequest(
 	body any,
 	apiVersion string,
 ) ([]byte, error) {
+	return c.doRequestWithHeaders(ctx, method, path, query, body, apiVersion, nil)
+}
+
+// doRequestWithHeaders is doRequest with extra request headers, which the
+// preview evaluator operations need to opt in to the properties they set.
+func (c *EvalClient) doRequestWithHeaders(
+	ctx context.Context,
+	method string,
+	path string,
+	query map[string]string,
+	body any,
+	apiVersion string,
+	headers map[string]string,
+) ([]byte, error) {
 	u, err := url.Parse(c.endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
@@ -303,6 +317,9 @@ func (c *EvalClient) doRequest(
 	req, err := runtime.NewRequest(ctx, method, u.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	for k, v := range headers {
+		req.Raw().Header.Set(k, v)
 	}
 
 	log.Printf("[eval_api] %s %s", method, u.Redacted())

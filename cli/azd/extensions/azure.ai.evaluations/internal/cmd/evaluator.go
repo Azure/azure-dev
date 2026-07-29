@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"azureaieval/internal/pkg/eval_api"
+	"azureaieval/internal/pkg/evalcore"
 
 	"github.com/spf13/cobra"
 )
@@ -31,17 +32,22 @@ func newEvaluatorCommand() *cobra.Command {
 // `dataset create`: both register an artifact and both publish a new immutable
 // version every time, so there is nothing for a separate `update` to do.
 //
-// M1 supports rubric evaluators only. Code evaluators need a folder walk,
-// multi-blob upload, and the Azure AI User role assignment, so they land later.
+// An evaluator is either a rubric — a JSON file of weighted dimensions — or
+// code — a folder of Python. They are different definition types on the wire,
+// so exactly one of the two sources has to be named.
 func newEvaluatorCreateCommand() *cobra.Command {
 	var (
 		name        string
 		rubric      string
+		folder      string
+		initParams  string
+		dataSchema  string
+		metrics     string
 		endpointFlg string
 	)
 
 	use := "create"
-	short := "Register a rubric evaluator, publishing a new version."
+	short := "Register a rubric or code evaluator, publishing a new version."
 
 	cmd := &cobra.Command{
 		Use:   use,
@@ -50,8 +56,20 @@ func newEvaluatorCreateCommand() *cobra.Command {
 			if name == "" {
 				return requireFlag("name")
 			}
-			if rubric == "" {
-				return requireFlag("rubric")
+			flags := codeEvaluatorFlags{
+				initParams: initParams,
+				dataSchema: dataSchema,
+				metrics:    metrics,
+				endpoint:   endpointFlg,
+			}
+			if err := validateEvaluatorSource(rubric, folder, flags); err != nil {
+				return err
+			}
+
+			ctx := cmd.Context()
+
+			if folder != "" {
+				return runEvaluatorCreateFromFolder(cmd, name, folder, flags)
 			}
 
 			raw, err := os.ReadFile(rubric)
@@ -64,7 +82,6 @@ func newEvaluatorCreateCommand() *cobra.Command {
 				return fmt.Errorf("rubric %q: %w", rubric, err)
 			}
 
-			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
 			if err != nil {
 				return err
@@ -89,8 +106,166 @@ func newEvaluatorCreateCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&name, "name", "", "Name of the evaluator.")
 	cmd.Flags().StringVar(&rubric, "rubric", "", "Path to the rubric JSON file.")
+	cmd.Flags().StringVar(&folder, "folder", "",
+		"Path to a folder of Python holding the evaluator code.")
+	cmd.Flags().StringVar(&initParams, "init-params", "",
+		"Path to a JSON Schema for the evaluator's initialization parameters. "+
+			"Overrides the folder's "+evalcore.CodeEvaluatorMetadataFile+".")
+	cmd.Flags().StringVar(&dataSchema, "data-schema", "",
+		"Path to a JSON Schema for the evaluator's input data. "+
+			"Overrides the folder's "+evalcore.CodeEvaluatorMetadataFile+".")
+	cmd.Flags().StringVar(&metrics, "metrics", "",
+		"Path to a JSON object describing the metrics the evaluator produces. "+
+			"Overrides the folder's "+evalcore.CodeEvaluatorMetadataFile+".")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
+}
+
+// codeEvaluatorFlags are the optional overrides for a code evaluator.
+type codeEvaluatorFlags struct {
+	initParams string
+	dataSchema string
+	metrics    string
+	endpoint   string
+}
+
+// validateEvaluatorSource enforces that exactly one source is named, and that
+// the schema overrides are only used with the source they apply to.
+//
+// Deliberately checked here rather than with MarkFlagsMutuallyExclusive: that
+// only rejects the "both" case, and its message names a flag group rather than
+// saying what the two flags mean. Both mistakes deserve advice, and this is
+// testable without driving cobra.
+func validateEvaluatorSource(rubric, folder string, flags codeEvaluatorFlags) error {
+	switch {
+	case rubric == "" && folder == "":
+		return fmt.Errorf(
+			"one of --rubric or --folder is required: --rubric takes a JSON file of " +
+				"weighted dimensions, --folder takes a directory of Python")
+	case rubric != "" && folder != "":
+		return fmt.Errorf(
+			"--rubric and --folder cannot be used together: an evaluator is either a " +
+				"rubric or code, not both")
+	}
+
+	// A rubric's schemas are fixed by the service, so these would be accepted
+	// and then quietly dropped — the worst kind of no-op, because the author
+	// believes the evaluator was published carrying them.
+	if folder == "" {
+		for _, named := range []struct {
+			flag  string
+			value string
+		}{
+			{"init-params", flags.initParams},
+			{"data-schema", flags.dataSchema},
+			{"metrics", flags.metrics},
+		} {
+			if named.value != "" {
+				return fmt.Errorf(
+					"--%s applies to a code evaluator and needs --folder; "+
+						"a rubric's schemas are set by the service", named.flag)
+			}
+		}
+	}
+	return nil
+}
+
+// runEvaluatorCreateFromFolder validates the folder, then publishes it.
+func runEvaluatorCreateFromFolder(
+	cmd *cobra.Command,
+	name string,
+	folder string,
+	flags codeEvaluatorFlags,
+) error {
+	pkg, err := evalcore.LoadCodeEvaluator(name, folder)
+	if err != nil {
+		return err
+	}
+
+	opts, err := codeEvaluatorOptions(pkg, flags)
+	if err != nil {
+		return err
+	}
+
+	ctx := cmd.Context()
+	ec, err := newEvalContext(ctx, flags.endpoint)
+	if err != nil {
+		return err
+	}
+	defer ec.Close()
+
+	created, err := ec.evalClient.UploadCodeEvaluatorVersion(
+		ctx, pkg, opts, ProjectEndpointAPIVersion,
+	)
+	if err != nil {
+		return fmt.Errorf("publishing evaluator %q: %w", name, err)
+	}
+
+	if isJSON(cmd) {
+		return emitJSON(cmd.OutOrStdout(), created)
+	}
+	fmt.Fprintf(cmd.OutOrStdout(),
+		"Published evaluator %s version %s from %d file(s) in %s\n",
+		created.Name, created.Version, len(pkg.Files), folder)
+	return nil
+}
+
+// codeEvaluatorOptions resolves the evaluator's schemas, preferring an
+// explicit flag over whatever the folder declares.
+//
+// The folder is the better place for them — they describe the code and belong
+// beside it — but a folder that has none must still be publishable without
+// editing it, which is what the flags are for.
+func codeEvaluatorOptions(
+	pkg *evalcore.CodeEvaluatorPackage,
+	flags codeEvaluatorFlags,
+) (eval_api.CodeEvaluatorOptions, error) {
+	var opts eval_api.CodeEvaluatorOptions
+	if md := pkg.Metadata; md != nil {
+		opts.DisplayName = md.DisplayName
+		opts.Description = md.Description
+		opts.Categories = md.Categories
+		opts.InitParameters = md.InitParameters
+		opts.DataSchema = md.DataSchema
+		opts.Metrics = md.Metrics
+	}
+
+	for _, override := range []struct {
+		path  string
+		flag  string
+		field *json.RawMessage
+	}{
+		{flags.initParams, "init-params", &opts.InitParameters},
+		{flags.dataSchema, "data-schema", &opts.DataSchema},
+		{flags.metrics, "metrics", &opts.Metrics},
+	} {
+		if override.path == "" {
+			continue
+		}
+		raw, err := readJSONObject(override.path)
+		if err != nil {
+			return opts, fmt.Errorf("--%s %q: %w", override.flag, override.path, err)
+		}
+		*override.field = raw
+	}
+
+	return opts, nil
+}
+
+// readJSONObject reads a file that must hold a JSON object.
+//
+// Parsing here rather than letting the service reject it keeps a typo from
+// costing an upload and a published version, and names the file that is wrong.
+func readJSONObject(path string) (json.RawMessage, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return nil, fmt.Errorf("not a JSON object: %w", err)
+	}
+	return json.RawMessage(raw), nil
 }
 
 // normalizeRubricBody accepts either a bare definition ({type, dimensions}) or

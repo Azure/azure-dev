@@ -386,13 +386,18 @@ func printJobDetails(d *jobDetails) {
 		_ = w.Flush()
 	}
 
-	// Resources — only instance_count is meaningful; instance_type / slaTier / AISuperComputer
-	// have been removed from the wire and the service now infers the SKU from the compute
-	// cluster. Partial-SKU allocation is surfaced via capacityUnitCount in the Compute section.
-	if props.Resources != nil && props.Resources.InstanceCount > 0 {
+	// Resources — on submit only instance_count is set (the service infers the
+	// SKU from the compute cluster); on Get Job the service echoes what it
+	// inferred (instance_type, slaTier), so display whatever comes back.
+	if props.Resources != nil && (props.Resources.InstanceCount > 0 || props.Resources.InstanceType != "") {
 		fmt.Println()
 		w = tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(w, "Instance Count:\t%d\n", props.Resources.InstanceCount)
+		if props.Resources.InstanceCount > 0 {
+			fmt.Fprintf(w, "Instance Count:\t%d\n", props.Resources.InstanceCount)
+		}
+		if props.Resources.InstanceType != "" {
+			fmt.Fprintf(w, "Instance Type:\t%s\n", props.Resources.InstanceType)
+		}
 		_ = w.Flush()
 	}
 
@@ -476,9 +481,8 @@ func printComputeSection(d *jobDetails) {
 		if c.InstanceCount > 0 {
 			fmt.Fprintf(w, "Nodes:\t%d\n", c.InstanceCount)
 		}
-		// Prefer the user-submitted capacityUnitCount (from Get Job) when present — for
-		// partial-SKU jobs it reflects the actual allocation. Fall back to the SKU GPU
-		// count reported by run history for older jobs that pre-date capacityUnitCount.
+		// Capacity Units: prefer the top-level CapacityUnitCount from Get Job,
+		// then whatever run history reports, then the SKU-level GPU count.
 		if d.Job.Properties.CapacityUnitCount > 0 {
 			fmt.Fprintf(w, "Capacity Units:\t%d\n", d.Job.Properties.CapacityUnitCount)
 		} else if c.CapacityUnitCount > 0 {
@@ -486,8 +490,8 @@ func printComputeSection(d *jobDetails) {
 		} else if c.GPUCount > 0 {
 			fmt.Fprintf(w, "GPUs:\t%d\n", c.GPUCount)
 		}
-		// Priority: prefer the top-level user-submitted field (new shape), then fall
-		// back to whatever run history reports (older AISuperComputer nesting).
+		// Priority: prefer the top-level Priority from Get Job, otherwise use
+		// whatever run history reports.
 		if d.Job.Properties.Priority != "" {
 			fmt.Fprintf(w, "Priority:\t%s\n", d.Job.Properties.Priority)
 		} else if c.Priority != "" {

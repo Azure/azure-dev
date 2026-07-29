@@ -44,13 +44,13 @@ type Distribution struct {
 	WorkerNodeAdditionalArgs string `json:"workerNodeAdditionalArgs,omitempty"`
 }
 
-// ResourceConfig represents compute resource specifications.
+// ResourceConfig represents compute resource specifications on the wire.
+// Only instanceCount is honored; instance_type, slaTier, priority and the AISuperComputer
+// properties block have been removed — the service now infers the SKU from the compute
+// cluster, priority is a top-level CommandJob field, and users specify partial capacity via
+// the top-level capacityUnitCount field.
 type ResourceConfig struct {
-	InstanceCount int            `json:"instanceCount,omitempty"`
-	InstanceType  string         `json:"instanceType,omitempty"`
-	ShmSize       string         `json:"shmSize,omitempty"`
-	DockerArgs    string         `json:"dockerArgs,omitempty"`
-	Properties    map[string]any `json:"properties,omitempty"`
+	InstanceCount int `json:"instanceCount,omitempty"`
 }
 
 // JobServiceRequest is the request-side shape for a job service (e.g., SSH).

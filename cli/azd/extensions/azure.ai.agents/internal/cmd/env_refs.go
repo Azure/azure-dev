@@ -11,10 +11,16 @@ import (
 )
 
 // Escape handling must match the expander that owns each field.
-// foundry.ExpandEnv collapses '$' pairs, so $${VAR} stays
-// literal, and it reserves ${{...}} spans for Foundry. The project
-// synthesizers' resolveVars helper expands every match
-// unconditionally.
+// Fields resolved by foundry.ExpandEnv take
+// honorEnvironmentEscaping: it collapses '$' pairs, so $${VAR}
+// stays literal, and it reserves ${{...}} spans for Foundry.
+// The three project network fields (network.agentSubnet.vnet,
+// network.peSubnet.vnet, network.dns.subscription) take
+// ignoreEnvironmentEscaping because resolveVars in the projects
+// synthesizer is a plain regex replace with no '$$' handling,
+// so $${VAR} does expand there. The split mirrors that existing
+// divergence rather than choosing two policies; it collapses
+// once resolveVars moves to foundry.ExpandEnv.
 const (
 	honorEnvironmentEscaping  = true
 	ignoreEnvironmentEscaping = false

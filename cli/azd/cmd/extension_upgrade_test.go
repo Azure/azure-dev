@@ -246,8 +246,7 @@ func TestUpgradeOneExtension(t *testing.T) {
 				global: &internal.GlobalCommandOptions{NoPrompt: true},
 			},
 			wantStatus: extensions.UpgradeStatusFailed,
-			wantErr: "Extension 'ext-a' not available in source 'removed-registry' or the main registry. " +
-				"Run 'azd extension list' to browse available extensions.",
+			wantErr:    "extension 'ext-a' not available in source 'removed-registry' or the main registry",
 		},
 		{
 			name:        "failed_explicit_source_not_found",
@@ -263,8 +262,7 @@ func TestUpgradeOneExtension(t *testing.T) {
 				global: &internal.GlobalCommandOptions{NoPrompt: true},
 			},
 			wantStatus: extensions.UpgradeStatusFailed,
-			wantErr: "Extension 'ext-a' not found in source 'missing-source'. " +
-				"Run 'azd extension list' to browse available extensions.",
+			wantErr:    "extension 'ext-a' not found in source 'missing-source'",
 		},
 		{
 			name:        "failed_not_installed",

@@ -2025,11 +2025,10 @@ loop:
 // upgradeSourceResolutionError builds a user-facing error when upgrade cannot
 // select a registry source for the extension.
 func upgradeSourceResolutionError(extensionId, flagSource, installedSource string) error {
-	browse := "Run 'azd extension list' to browse available extensions."
 	if flagSource != "" {
 		return fmt.Errorf(
-			"Extension '%s' not found in source '%s'. %s",
-			extensionId, flagSource, browse,
+			"extension '%s' not found in source '%s'",
+			extensionId, flagSource,
 		)
 	}
 
@@ -2038,8 +2037,8 @@ func upgradeSourceResolutionError(extensionId, flagSource, installedSource strin
 		sourceName = extensions.MainRegistryName
 	}
 	return fmt.Errorf(
-		"Extension '%s' not available in source '%s' or the main registry. %s",
-		extensionId, sourceName, browse,
+		"extension '%s' not available in source '%s' or the main registry",
+		extensionId, sourceName,
 	)
 }
 

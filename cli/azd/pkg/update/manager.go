@@ -1025,21 +1025,33 @@ func IsPackageManagerInstall() bool {
 	}
 }
 
-// CanPinVersion reports whether azd can install an exact version using installedBy.
+// UsesPackageManager reports whether azd delegates the install to a package manager
+// (brew, winget, choco) instead of downloading a release artifact itself. Package managers
+// resolve the version themselves, so azd can neither choose nor promise one.
 //
-// Package managers resolve the version themselves, so azd cannot pin one and must not name
-// a version in its progress or success messages for those installs — it would be promising
-// a version it does not control (Azure/azure-dev#9145).
-//
-// This is broader than [IsPackageManagerInstall], which is about channel support and so
-// excludes brew: brew publishes an azd@daily cask, but it still picks the version.
-func CanPinVersion(installedBy installer.InstallType) bool {
+// This differs from [IsPackageManagerInstall], which answers the narrower question of
+// whether the install method can serve the daily channel, and so excludes brew.
+func UsesPackageManager(installedBy installer.InstallType) bool {
 	switch installedBy {
 	case installer.InstallTypeBrew, installer.InstallTypeWinget, installer.InstallTypeChoco:
-		return false
-	default:
 		return true
+	default:
+		return false
 	}
+}
+
+// CanPinVersion reports whether installing channel with installedBy lands on exactly the
+// version the check resolved.
+//
+// Two conditions must hold. azd must control the download — see [UsesPackageManager] — and
+// the channel must publish immutable per-version folders. Only stable does: daily installs
+// from the rolling `release/daily/` folder, which another daily publish can advance between
+// the check and the download.
+//
+// azd names a version in its progress and success messages only when this returns true, so
+// it never reports a version it cannot guarantee it installed (Azure/azure-dev#9145).
+func CanPinVersion(installedBy installer.InstallType, channel Channel) bool {
+	return !UsesPackageManager(installedBy) && channel == ChannelStable
 }
 
 // PackageManagerUninstallCmd returns the uninstall command for the detected package manager.

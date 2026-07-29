@@ -214,14 +214,18 @@ construction.
 
 Exceptions:
 
-- **Daily** keeps using the rolling `release/daily/` folder. Daily builds publish their
-  version marker and archives in a single operation, so the folder never advertises a
-  version it cannot serve, and per-version daily archives live outside the release folder
-  the install scripts download from.
+- **Daily** keeps using the rolling `release/daily/` folder — per-version daily archives live
+  outside the release folder the install scripts download from, so there is nothing to pin
+  to. Because another daily publish can advance that folder between the check and the
+  download, azd does not name a version for daily either ("Updating azd (daily)").
 - **Package managers** (`brew`, `winget`, `choco`) cannot be pinned — the package manager
   decides which version it makes available. For these installs azd does not name a version
   in its progress or success messages ("Updating azd via winget (stable)", "Updated azd!"),
   and directs the user to `azd version` to confirm.
+
+A version is reported only when the install is pinned to it — see
+`update.CanPinVersion(installedBy, channel)`, which requires both a self-managed install and
+the stable channel.
 
 **Code**: `pkg/update/manager.go` → `VersionInfo.installVersion()`, `VersionInfo.validate()`,
 `buildDownloadURL()`

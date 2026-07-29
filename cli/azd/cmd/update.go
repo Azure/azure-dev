@@ -308,21 +308,25 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 // updateTitle returns the progress title shown before an update runs.
 //
-// A version is named only when azd controls which version gets installed. Package manager
-// installs resolve the version themselves, so naming one would promise a version azd cannot
-// guarantee — the mismatch this fix exists to remove (Azure/azure-dev#9145).
+// A version is named only when azd controls exactly which build gets installed. Package
+// managers resolve the version themselves, and daily installs come from a rolling folder
+// that can advance between the check and the download, so neither can be promised a
+// specific version — that mismatch is what this fix removes (Azure/azure-dev#9145).
 func updateTitle(installedBy installer.InstallType, target *update.VersionInfo) string {
-	if !update.CanPinVersion(installedBy) {
+	switch {
+	case update.CanPinVersion(installedBy, target.Channel):
+		return fmt.Sprintf("Updating azd to %s (%s)", target.Version, target.Channel)
+	case update.UsesPackageManager(installedBy):
 		return fmt.Sprintf("Updating azd via %s (%s)", installedBy, target.Channel)
+	default:
+		return fmt.Sprintf("Updating azd (%s)", target.Channel)
 	}
-
-	return fmt.Sprintf("Updating azd to %s (%s)", target.Version, target.Channel)
 }
 
 // updatedHeader returns the success message shown after an update completes.
 // It reports the resolved version only when the install was pinned to it; see [updateTitle].
 func updatedHeader(installedBy installer.InstallType, target *update.VersionInfo) string {
-	if !update.CanPinVersion(installedBy) {
+	if !update.CanPinVersion(installedBy, target.Channel) {
 		return "Updated azd! Changes take effect on next invocation."
 	}
 

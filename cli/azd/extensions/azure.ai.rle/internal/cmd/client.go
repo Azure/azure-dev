@@ -82,17 +82,25 @@ func serviceError(err error) error {
 	return &azdext.ServiceError{
 		Message:     err.Error(),
 		ServiceName: "rle-control-plane",
-		Suggestion:  fmt.Sprintf("Ensure the Foundry project endpoint in %s is reachable and enabled for RLE.", foundryProjectEndpointEnvVar),
+		Suggestion: fmt.Sprintf(
+			"Ensure the Foundry project endpoint in %s is reachable and enabled for RLE.",
+			foundryProjectEndpointEnvVar,
+		),
 	}
 }
 
 func newRleClient(endpoint string) (*rleClient, error) {
+	normalizedEndpoint, err := normalizeFoundryProjectEndpoint(endpoint)
+	if err != nil {
+		return nil, err
+	}
+
 	credential, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, fmt.Errorf("create Azure credential: %w", err)
 	}
 
-	return newRleClientWithCredential(endpoint, credential), nil
+	return newRleClientWithCredential(normalizedEndpoint, credential), nil
 }
 
 func newRleClientWithCredential(endpoint string, credential azcore.TokenCredential) *rleClient {

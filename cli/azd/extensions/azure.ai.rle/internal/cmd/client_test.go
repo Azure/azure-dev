@@ -63,7 +63,7 @@ func TestRleClientAuthenticatesFoundryRequests(t *testing.T) {
 		}, nil
 	})
 
-	if err := client.do(context.Background(), http.MethodGet, environmentCollectionPath, nil, nil); err != nil {
+	if err := client.do(t.Context(), http.MethodGet, environmentCollectionPath, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(credential.scopes) != 1 || credential.scopes[0] != foundryTokenScope {
@@ -77,9 +77,20 @@ func TestRleClientRefusesAuthenticationOverHTTP(t *testing.T) {
 		&testTokenCredential{},
 	)
 
-	err := client.do(context.Background(), http.MethodGet, environmentCollectionPath, nil, nil)
+	err := client.do(t.Context(), http.MethodGet, environmentCollectionPath, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "requires an HTTPS") {
 		t.Fatalf("expected HTTPS authentication error, got %v", err)
+	}
+}
+
+func TestNewRleClientRejectsUntrustedEndpoint(t *testing.T) {
+	_, err := newRleClient("https://attacker.example/api/projects/project-1")
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected LocalError, got %T", err)
+	}
+	if localErr.Code != "rle_invalid_project_endpoint" {
+		t.Fatalf("expected invalid endpoint code, got %q", localErr.Code)
 	}
 }
 

@@ -7,6 +7,7 @@ Quickstart for the `azd ai rle` preview extension. The extension manages an Open
 Install:
 
 - Azure Developer CLI (`azd`): https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd
+- Azure CLI (`az`): https://learn.microsoft.com/cli/azure/install-azure-cli
 - Docker Desktop: https://www.docker.com/products/docker-desktop/
 - Go, if building from source: https://go.dev/doc/install
 - Git, if building from source: https://git-scm.com/downloads
@@ -16,7 +17,7 @@ Verify:
 ```powershell
 azd version
 docker version
-az account show
+az version
 ```
 
 Sign in with Azure CLI before calling the Foundry project APIs:

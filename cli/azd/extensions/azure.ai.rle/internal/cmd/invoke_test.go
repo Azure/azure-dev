@@ -25,6 +25,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
+const testFoundryProjectPath = "/api/projects/project-1"
+
 func TestInvokeRemoteCreatesSandboxAndRunsShell(t *testing.T) {
 	captureBrowserOpen(t)
 	tempDir := t.TempDir()
@@ -55,16 +57,16 @@ func TestInvokeRemoteCreatesSandboxAndRunsShell(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet &&
-			r.URL.Path == "/fine_tuning/environments/code_rl/versions/v1":
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/code_rl/versions/v1":
 			_, _ = w.Write([]byte(`{"id":"env-1","version":"v1","diskImageConversionStatus":"Ready"}`))
 		case r.Method == http.MethodPost &&
-			r.URL.Path == "/fine_tuning/environments/env-1/sandboxes/lease":
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/env-1/sandboxes/lease":
 			if err := json.NewDecoder(r.Body).Decode(&sandboxBody); err != nil {
 				t.Fatal(err)
 			}
 			_, _ = w.Write([]byte(`{"id":"sandbox-1","status":"Running","baseUrl":` + strconv.Quote(envServer.URL) + `}`))
 		case r.Method == http.MethodDelete &&
-			r.URL.Path == "/fine_tuning/environments/env-1/sandboxes/sandbox-1/release":
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/env-1/sandboxes/sandbox-1/release":
 			deleteCalled = true
 			w.WriteHeader(http.StatusNoContent)
 		default:
@@ -127,15 +129,15 @@ func TestInvokeRemoteUsesSandboxWebWhenAvailable(t *testing.T) {
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet &&
-			r.URL.Path == "/fine_tuning/environments/code_rl/versions/1.0.0":
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/code_rl/versions/1.0.0":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"id":"env-1","version":"1.0.0","diskImageConversionStatus":"Ready"}`))
 		case r.Method == http.MethodPost &&
-			r.URL.Path == "/fine_tuning/environments/env-1/sandboxes/lease":
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/env-1/sandboxes/lease":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"id":"sandbox-1","status":"Running","baseUrl":` + strconv.Quote(envServer.URL) + `}`))
 		case r.Method == http.MethodDelete &&
-			r.URL.Path == "/fine_tuning/environments/env-1/sandboxes/sandbox-1/release":
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/env-1/sandboxes/sandbox-1/release":
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			t.Fatalf("unexpected sandbox request: %s %s", r.Method, r.URL.Path)
@@ -233,20 +235,20 @@ func TestInvokeRemotePollsSandboxUntilRunning(t *testing.T) {
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet &&
-			r.URL.Path == "/fine_tuning/environments/code_rl/versions/1.0.0":
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/code_rl/versions/1.0.0":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"id":"env-1","version":"1.0.0","diskImageConversionStatus":"Ready"}`))
 		case r.Method == http.MethodPost &&
-			r.URL.Path == "/fine_tuning/environments/env-1/sandboxes/lease":
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/env-1/sandboxes/lease":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"id":"sandbox-1","status":"Starting"}`))
 		case r.Method == http.MethodGet &&
-			r.URL.Path == "/fine_tuning/environments/env-1/sandboxes/sandbox-1":
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/env-1/sandboxes/sandbox-1":
 			getCount++
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"id":"sandbox-1","status":"Running","baseUrl":` + strconv.Quote(envServer.URL) + `}`))
 		case r.Method == http.MethodDelete &&
-			r.URL.Path == "/fine_tuning/environments/env-1/sandboxes/sandbox-1/release":
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/env-1/sandboxes/sandbox-1/release":
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			t.Fatalf("unexpected sandbox request: %s %s", r.Method, r.URL.Path)
@@ -289,11 +291,11 @@ func TestInvokeRemoteFailsWhenSandboxFails(t *testing.T) {
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost &&
-			r.URL.Path == "/fine_tuning/environments/env-1/sandboxes/lease":
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/env-1/sandboxes/lease":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"id":"sandbox-1","status":"Failed","error":"image pull failed"}`))
 		case r.Method == http.MethodDelete &&
-			r.URL.Path == "/fine_tuning/environments/env-1/sandboxes/sandbox-1/release":
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/env-1/sandboxes/sandbox-1/release":
 			deleteCalled = true
 			w.WriteHeader(http.StatusNoContent)
 		default:
@@ -441,7 +443,7 @@ func TestInvokeRemoteWaitsForDiskImageConversion(t *testing.T) {
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet &&
-			r.URL.Path == "/fine_tuning/environments/code_rl/versions/1.0.0":
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/code_rl/versions/1.0.0":
 			conversionGetCount++
 			w.Header().Set("Content-Type", "application/json")
 			status := "Pending"
@@ -450,12 +452,12 @@ func TestInvokeRemoteWaitsForDiskImageConversion(t *testing.T) {
 			}
 			_, _ = fmt.Fprintf(w, `{"id":"env-1","version":"1.0.0","diskImageConversionStatus":%q}`, status)
 		case r.Method == http.MethodPost &&
-			r.URL.Path == "/fine_tuning/environments/env-1/sandboxes/lease":
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/env-1/sandboxes/lease":
 			createCount++
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"id":"sandbox-1","status":"Running","baseUrl":` + strconv.Quote(envServer.URL) + `}`))
 		case r.Method == http.MethodDelete &&
-			r.URL.Path == "/fine_tuning/environments/env-1/sandboxes/sandbox-1/release":
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/env-1/sandboxes/sandbox-1/release":
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			t.Fatalf("unexpected sandbox request: %s %s", r.Method, r.URL.Path)
@@ -504,13 +506,13 @@ func TestRemoteInvokeDoesNotRetrySandboxLeaseConflictsAfterImageReady(t *testing
 	createCount := 0
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet &&
-			r.URL.Path == "/fine_tuning/environments/code_rl/versions/1.0.0" {
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/code_rl/versions/1.0.0" {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"id":"env-1","version":"1.0.0","diskImageConversionStatus":"Ready"}`))
 			return
 		}
 		if r.Method == http.MethodPost &&
-			r.URL.Path == "/fine_tuning/environments/env-1/sandboxes/lease" {
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/env-1/sandboxes/lease" {
 			createCount++
 			http.Error(w, `{"error":"quota unavailable"}`, http.StatusConflict)
 			return
@@ -589,7 +591,10 @@ func useTestProjectEndpoint(t *testing.T, endpoint string) {
 	}
 	oldCreateRleClient := createRleClient
 	createRleClient = func(string) (*rleClient, error) {
-		client := newRleClientWithCredential("https://rle.test", &testTokenCredential{})
+		client := newRleClientWithCredential(
+			"https://rle.test"+testFoundryProjectPath,
+			&testTokenCredential{},
+		)
 		client.httpClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
 			request = request.Clone(request.Context())
 			request.URL.Scheme = target.Scheme

@@ -1,13 +1,12 @@
 # Release History
 
-## 0.2.0-preview
+## 0.2.0-preview (Unreleased)
 
 - Use the Foundry project endpoint for project-relative RLE environment and sandbox APIs.
 - Authenticate Foundry API requests with Azure credentials from `az login`, `azd auth login`, or another supported development credential.
 - Send the required `2025-11-15-preview` Foundry data-plane API version.
 - Support versioned environment deployments and sandbox `baseUrl` invocation.
 - Wait for asynchronous disk-image conversion before leasing a sandbox and surface conversion failures directly.
-- Keep container command output concise while preserving actionable failure diagnostics.
 
 ## 0.1.0-preview
 

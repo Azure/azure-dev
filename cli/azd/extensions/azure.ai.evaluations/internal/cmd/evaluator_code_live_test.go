@@ -40,28 +40,19 @@ func liveCodeEvaluatorName(t *testing.T, suffix string) string {
 	return fmt.Sprintf("azdcode_%s_%d", suffix, time.Now().UnixNano())
 }
 
-// writeLiveEvaluator lays out a folder to the packaging convention and returns
-// it. The source is written for the derived class name so the production
+// writeLiveEvaluator writes a self-contained evaluator script and returns its
+// path. It goes through the production loader afterwards, so the shipping
 // validation is exercised rather than bypassed.
-func writeLiveEvaluator(t *testing.T, name string, extraFiles map[string]string) string {
+func writeLiveEvaluator(t *testing.T, name string) string {
 	t.Helper()
 	dir := t.TempDir()
+	path := filepath.Join(dir, name+".py")
 
-	className := evalcore.EvaluatorClassName(name)
-	entry := fmt.Sprintf(`class %s:
-    def __call__(self, **kwargs):
-        return {"result": float(len(kwargs.get("response", "")))}
-`, className)
-
-	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, name+".py"), []byte(entry), 0o600))
-
-	for rel, content := range extraFiles {
-		path := filepath.Join(dir, filepath.FromSlash(rel))
-		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
-		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
-	}
-	return dir
+	source := `def grade(sample, item) -> float:
+    return float(len((item or {}).get("response", "")))
+`
+	require.NoError(t, os.WriteFile(path, []byte(source), 0o600))
+	return path
 }
 
 // codeDefinitionOnService reads the registered version back and returns its
@@ -101,30 +92,31 @@ func stringField(t *testing.T, definition map[string]json.RawMessage, key string
 	return value
 }
 
-// TestLiveCodeEvaluatorSingleFileRoundTrip publishes a one-file evaluator and
-// asserts it comes back as a code definition pointing at storage.
+// TestLiveCodeEvaluatorRoundTrip publishes a script and asserts it comes back
+// as a code definition carrying the source inline.
 //
-// A single file takes the same path as a folder. The contract also accepts
-// inline source through code_text, which would save the upload, but nothing
-// observable confirms the executor runs it, so the CLI does not send it. If
-// that is ever settled, this is the test that should change first.
-func TestLiveCodeEvaluatorSingleFileRoundTrip(t *testing.T) {
+// code_text is the only source property that reaches the executor: the
+// definition is consumed as an OpenAI python grader, whose contract is a
+// single Source string. A version registered with blob_uri instead publishes
+// cleanly and then fails every run with "top-level grade() function not found
+// in source", so what matters here is that the source itself round-trips.
+func TestLiveCodeEvaluatorRoundTrip(t *testing.T) {
 	client, _ := liveEvalClient(t)
 	ctx := context.Background()
 
-	name := liveCodeEvaluatorName(t, "single")
-	dir := writeLiveEvaluator(t, name, nil)
+	name := liveCodeEvaluatorName(t, "roundtrip")
+	path := writeLiveEvaluator(t, name)
 
-	// The shipping loader, not a hand-built package: this test has to fail if
-	// the production path stops producing a valid package.
-	pkg, err := evalcore.LoadCodeEvaluator(name, dir)
+	// The shipping loader, not a hand-built script: this test has to fail if
+	// the production path stops producing a publishable script.
+	script, err := evalcore.LoadCodeEvaluator(name, path)
 	require.NoError(t, err)
-	require.Len(t, pkg.Files, 1)
+	require.Contains(t, script.Source, "def grade(")
 
-	opts, err := codeEvaluatorOptions(pkg, codeEvaluatorFlags{})
+	opts, err := codeEvaluatorOptions(codeEvaluatorFlags{})
 	require.NoError(t, err)
 
-	created, err := client.UploadCodeEvaluatorVersion(ctx, pkg, opts, ProjectEndpointAPIVersion)
+	created, err := client.CreateCodeEvaluatorVersion(ctx, script, opts, ProjectEndpointAPIVersion)
 	require.NoError(t, err, "the service rejected the code evaluator body")
 	require.NotEmpty(t, created.Version)
 	t.Cleanup(func() {
@@ -136,76 +128,79 @@ func TestLiveCodeEvaluatorSingleFileRoundTrip(t *testing.T) {
 
 	require.Equal(t, eval_api.CodeDefinitionType, stringField(t, definition, "type"),
 		"the discriminator must round-trip as the lowercase snake_case value")
-	require.NotEmpty(t, stringField(t, definition, "blob_uri"),
-		"a published evaluator must record the storage location it was uploaded to")
+	require.Contains(t, stringField(t, definition, "code_text"), "def grade(",
+		"the source must round-trip inline; an empty code_text means the grader "+
+			"would be handed nothing to run")
 	require.Contains(t, definition, "metrics",
 		"a code definition must carry metrics; the service rejects one without")
 }
 
-// TestLiveCodeEvaluatorFolderRoundTrip publishes a multi-file evaluator and
-// asserts the service records the storage location it handed out.
+// TestLiveCodeEvaluatorCarriesSchemasAndImage proves the settings that only
+// reach the service through flags survive the round trip.
 //
-// This is the path that exercises startPendingUpload, the SAS write, and the
-// blob_uri property, none of which the single-file case touches.
-func TestLiveCodeEvaluatorFolderRoundTrip(t *testing.T) {
+// They cannot come from anywhere else. The grader is handed one file of
+// source, so a descriptor beside the script would never travel with it, and an
+// image tag dropped on the way would leave an evaluator whose imports fail at
+// run time with no sign of why.
+func TestLiveCodeEvaluatorCarriesSchemasAndImage(t *testing.T) {
 	client, _ := liveEvalClient(t)
 	ctx := context.Background()
 
-	name := liveCodeEvaluatorName(t, "folder")
-	dir := writeLiveEvaluator(t, name, map[string]string{
-		"helpers/text.py": "def clean(value):\n    return value.strip()\n",
-		// Must be excluded from both the upload and the fingerprint.
-		"__pycache__/stale.pyc": "cache",
-	})
+	name := liveCodeEvaluatorName(t, "schemas")
+	path := writeLiveEvaluator(t, name)
 
-	pkg, err := evalcore.LoadCodeEvaluator(name, dir)
-	require.NoError(t, err)
-	require.Len(t, pkg.Files, 2, "the compiled artifact must not be part of the package")
-
-	opts, err := codeEvaluatorOptions(pkg, codeEvaluatorFlags{})
+	script, err := evalcore.LoadCodeEvaluator(name, path)
 	require.NoError(t, err)
 
-	created, err := client.UploadCodeEvaluatorVersion(ctx, pkg, opts, ProjectEndpointAPIVersion)
-	require.NoError(t, err, "the service rejected the uploaded code evaluator")
-	require.NotEmpty(t, created.Version)
+	dir := t.TempDir()
+	schemaPath := filepath.Join(dir, "schema.json")
+	require.NoError(t, os.WriteFile(schemaPath, []byte(
+		`{"type":"object","properties":{"response":{"type":"string"}},"required":["response"]}`,
+	), 0o600))
+
+	opts, err := codeEvaluatorOptions(codeEvaluatorFlags{dataSchema: schemaPath})
+	require.NoError(t, err)
+	require.NotEmpty(t, opts.DataSchema)
+
+	created, err := client.CreateCodeEvaluatorVersion(ctx, script, opts, ProjectEndpointAPIVersion)
+	require.NoError(t, err, "the service rejected a definition carrying a data schema")
 	t.Cleanup(func() {
 		_ = client.DeleteEvaluatorVersion(
 			context.Background(), name, created.Version, ProjectEndpointAPIVersion)
 	})
 
 	definition := codeDefinitionOnService(t, client, name, created.Version)
-
-	require.Equal(t, eval_api.CodeDefinitionType, stringField(t, definition, "type"))
-	require.NotEmpty(t, stringField(t, definition, "blob_uri"),
-		"a multi-file evaluator must round-trip carrying the storage location; "+
-			"an empty blob_uri means the service dropped the preview property")
-	require.Contains(t, definition, "metrics")
+	require.Contains(t, definition, "data_schema",
+		"the declared data schema must round-trip; without it the criteria builder "+
+			"derives no data_mapping and the eval cannot be created")
+	require.Contains(t, string(definition["data_schema"]), "response")
 }
 
-// TestLiveCodeEvaluatorPublishesNextVersion proves the version the upload
-// reserves storage under is the one the create then assigns.
+// TestLiveCodeEvaluatorPublishesANewVersion proves a second publish does not
+// overwrite the first.
 //
-// Storage is provisioned per version before the version exists, so the client
-// has to predict it. A drift between the two would leave the code in one
-// version's container and the definition on another.
-func TestLiveCodeEvaluatorPublishesNextVersion(t *testing.T) {
+// Versions are immutable and evals bind to one, so a publish that replaced the
+// previous version would silently change what every existing eval evaluates.
+//
+// The wait between the two publishes is not padding. The service assigns the
+// next version from its own listing, and that listing lags the create by about
+// a second: two publishes issued back to back were both answered with version
+// 1, the second overwriting the first. The reconciler waits for a published
+// version to appear in the listing before it moves on, so this waits the same
+// way — the assertion is about publishing twice, not about racing the service.
+func TestLiveCodeEvaluatorPublishesANewVersion(t *testing.T) {
 	client, _ := liveEvalClient(t)
 	ctx := context.Background()
 
 	name := liveCodeEvaluatorName(t, "versions")
-	dir := writeLiveEvaluator(t, name, map[string]string{
-		"helpers.py": "VALUE = 1\n",
-	})
+	path := writeLiveEvaluator(t, name)
 
-	pkg, err := evalcore.LoadCodeEvaluator(name, dir)
+	script, err := evalcore.LoadCodeEvaluator(name, path)
 	require.NoError(t, err)
-	opts, err := codeEvaluatorOptions(pkg, codeEvaluatorFlags{})
+	opts, err := codeEvaluatorOptions(codeEvaluatorFlags{})
 	require.NoError(t, err)
 
-	predicted := client.NextEvaluatorVersion(ctx, name, ProjectEndpointAPIVersion)
-	require.Equal(t, "1", predicted, "an unpublished evaluator starts at version 1")
-
-	first, err := client.UploadCodeEvaluatorVersion(ctx, pkg, opts, ProjectEndpointAPIVersion)
+	first, err := client.CreateCodeEvaluatorVersion(ctx, script, opts, ProjectEndpointAPIVersion)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = client.DeleteEvaluatorVersion(
@@ -213,16 +208,9 @@ func TestLiveCodeEvaluatorPublishesNextVersion(t *testing.T) {
 	})
 	require.NotEmpty(t, first.Version, "the service must assign a version")
 
-	// Publishing again must land on a new version, not overwrite the first.
-	//
-	// The version is deliberately not asserted to equal the one storage was
-	// reserved under. There is no create-at-version route: the create assigns
-	// its own number, and reserving storage can itself take a number, so the
-	// two legitimately differ. It does not matter, because a reservation
-	// returns a container named by GUID rather than by version, so a published
-	// definition always points at exactly the bytes uploaded for it. What must
-	// hold is that a second publish does not land on the first version.
-	second, err := client.UploadCodeEvaluatorVersion(ctx, pkg, opts, ProjectEndpointAPIVersion)
+	awaitVersionListed(t, client, name, first.Version)
+
+	second, err := client.CreateCodeEvaluatorVersion(ctx, script, opts, ProjectEndpointAPIVersion)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = client.DeleteEvaluatorVersion(
@@ -230,20 +218,29 @@ func TestLiveCodeEvaluatorPublishesNextVersion(t *testing.T) {
 	})
 	require.NotEqual(t, first.Version, second.Version,
 		"a second publish must create a new version rather than replace the first")
-
-	require.NotEqual(t,
-		blobURIOnService(t, client, name, first.Version),
-		blobURIOnService(t, client, name, second.Version),
-		"each version must keep its own storage, or republishing would rewrite the older one")
 }
 
-// blobURIOnService reads back the storage location recorded on a version.
-func blobURIOnService(
-	t *testing.T,
-	client *eval_api.EvalClient,
-	name string,
-	version string,
-) string {
+// awaitVersionListed blocks until a published version shows up in the version
+// listing, which is the view the service's own version assignment reads.
+func awaitVersionListed(t *testing.T, client *eval_api.EvalClient, name, version string) {
 	t.Helper()
-	return stringField(t, codeDefinitionOnService(t, client, name, version), "blob_uri")
+	ctx := context.Background()
+
+	start := time.Now()
+	for {
+		list, err := client.ListEvaluatorVersions(ctx, name, ProjectEndpointAPIVersion)
+		if err == nil && list != nil {
+			for _, entry := range list.Value {
+				if entry.Version == version {
+					t.Logf("version %s listed after %s",
+						version, time.Since(start).Round(time.Millisecond))
+					return
+				}
+			}
+		}
+		if time.Since(start) > 30*time.Second {
+			t.Fatalf("version %s of evaluator %s never appeared in the listing", version, name)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }

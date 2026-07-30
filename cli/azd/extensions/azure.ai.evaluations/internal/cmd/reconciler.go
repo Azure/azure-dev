@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/pkg/evalcore"
@@ -227,12 +228,12 @@ func (r *evalReconciler) latestDatasetVersion(ctx context.Context, name string) 
 // EnsureEvaluator publishes a new version when the local definition differs
 // from what the service holds.
 //
-// The two kinds of evaluator are told apart by what the source names, not by
-// its spelling: a folder is code, a file is a rubric. They also detect change
-// differently. A rubric definition comes back inline, so it is compared
-// directly; code does not — the service returns a storage URI, never the
-// source — so a fingerprint of the folder is kept in the azd environment, the
-// same way datasets work.
+// The two kinds of evaluator are told apart by the source's extension: `.py`
+// is code, anything else is a rubric. They also detect change differently. A
+// rubric definition comes back inline, so it is compared directly; a code
+// definition's source is not read back in a form worth comparing, so a
+// fingerprint of the script is kept in the azd environment, the same way
+// datasets work.
 func (r *evalReconciler) EnsureEvaluator(
 	ctx context.Context,
 	decl project.EvaluatorDecl,
@@ -250,11 +251,10 @@ func (r *evalReconciler) EnsureEvaluator(
 		return versionFromRaw(raw, decl.Version), false, nil
 	}
 
-	info, err := os.Stat(localPath)
-	if err != nil {
+	if _, err := os.Stat(localPath); err != nil {
 		return "", false, fmt.Errorf("evaluator source %q: %w", localPath, err)
 	}
-	if info.IsDir() {
+	if evalcore.IsCodeEvaluatorSource(localPath) {
 		return r.ensureCodeEvaluator(ctx, decl, localPath)
 	}
 
@@ -283,11 +283,12 @@ func (r *evalReconciler) EnsureEvaluator(
 	if err != nil {
 		return "", false, err
 	}
+	r.awaitEvaluatorReadable(ctx, decl.Name, created.Version)
 	return created.Version, true, nil
 }
 
-// ensureCodeEvaluator publishes a folder of Python only when its content
-// changed since the last deploy.
+// ensureCodeEvaluator publishes a Python script only when its content changed
+// since the last deploy.
 //
 // Every publish is a new immutable version, so without this a repeated
 // `azd up` would leave a trail of identical versions and force every eval
@@ -295,17 +296,17 @@ func (r *evalReconciler) EnsureEvaluator(
 func (r *evalReconciler) ensureCodeEvaluator(
 	ctx context.Context,
 	decl project.EvaluatorDecl,
-	dir string,
+	path string,
 ) (string, bool, error) {
-	// Validated before anything is uploaded: a folder missing its entry point
-	// or class is only rejected when a run executes, long after a version has
+	// Validated before anything is published: a script with no top-level
+	// grade() is only rejected when a run executes, long after a version has
 	// been published and an eval bound to it.
-	pkg, err := evalcore.LoadCodeEvaluator(decl.Name, dir)
+	script, err := evalcore.LoadCodeEvaluator(decl.Name, path)
 	if err != nil {
 		return "", false, err
 	}
 
-	digest, err := project.FingerprintPath(dir)
+	digest, err := project.Fingerprint(path)
 	if err != nil {
 		return "", false, err
 	}
@@ -323,21 +324,99 @@ func (r *evalReconciler) ensureCodeEvaluator(
 		return recordedVersion, false, nil
 	}
 
-	opts, err := codeEvaluatorOptions(pkg, codeEvaluatorFlags{})
+	opts, err := codeEvaluatorOptions(codeEvaluatorFlags{})
 	if err != nil {
 		return "", false, err
 	}
 
-	created, err := r.ec.evalClient.UploadCodeEvaluatorVersion(
-		ctx, pkg, opts, ProjectEndpointAPIVersion,
+	created, err := r.ec.evalClient.CreateCodeEvaluatorVersion(
+		ctx, script, opts, ProjectEndpointAPIVersion,
 	)
 	if err != nil {
 		return "", false, err
 	}
 
+	r.awaitEvaluatorReadable(ctx, decl.Name, created.Version)
+
 	_ = r.ec.setEnvValue(ctx, key, digest)
 	_ = r.ec.setEnvValue(ctx, versionKey("evaluator", decl.Name), created.Version)
 	return created.Version, true, nil
+}
+
+// evaluatorPropagation bounds the wait for a freshly published evaluator to
+// become usable.
+//
+// A create returns before the version is resolvable everywhere, and the very
+// next step of a deploy is EnsureEval, which names the evaluator in a testing
+// criterion. Creating the eval inside that window fails with "The evaluator X
+// was not found" — a confusing error, because the evaluator was published
+// seconds earlier and is plainly there by the time anyone looks. The observed
+// gap is under a second, so the poll is frequent and the cap is generous
+// enough to absorb a slow day without stalling a deploy on an evaluator that
+// is genuinely missing.
+const (
+	evaluatorPropagationTimeout  = 30 * time.Second
+	evaluatorPropagationInterval = 250 * time.Millisecond
+)
+
+// awaitEvaluatorReadable polls until a published version is resolvable, or the
+// cap passes.
+//
+// Two reads have to agree, because they are not backed by the same view. The
+// direct read goes consistent almost immediately; the version listing lags it
+// by seconds, the same way the dataset listing does. A live publish was
+// observed reading back at 03:06:58 and still failing eval creation at
+// 03:06:59, so waiting on the direct read alone leaves exactly the race this
+// exists to close. The listing is the slower of the two and therefore the one
+// worth waiting on.
+//
+// A timeout is not an error. The wait is a courtesy that makes the common case
+// reliable; if it never succeeds, the create that follows will report the real
+// problem with far more context than a wait that gave up could.
+func (r *evalReconciler) awaitEvaluatorReadable(ctx context.Context, name, version string) {
+	if version == "" {
+		return
+	}
+	deadline := time.Now().Add(evaluatorPropagationTimeout)
+	for {
+		if r.evaluatorVersionResolvable(ctx, name, version) {
+			return
+		}
+		if time.Now().After(deadline) {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(evaluatorPropagationInterval):
+		}
+	}
+}
+
+// evaluatorVersionResolvable reports whether a version can be both read
+// directly and found in the listing.
+func (r *evalReconciler) evaluatorVersionResolvable(
+	ctx context.Context,
+	name, version string,
+) bool {
+	if _, err := r.ec.evalClient.GetEvaluatorRaw(
+		ctx, name, version, ProjectEndpointAPIVersion,
+	); err != nil {
+		return false
+	}
+
+	list, err := r.ec.evalClient.ListEvaluatorVersions(
+		ctx, name, ProjectEndpointAPIVersion,
+	)
+	if err != nil || list == nil {
+		return false
+	}
+	for _, entry := range list.Value {
+		if entry.Version == version {
+			return true
+		}
+	}
+	return false
 }
 
 // checkEvaluatorDrift fails when the service holds a newer version than the

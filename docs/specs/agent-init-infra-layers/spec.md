@@ -96,9 +96,11 @@ under `infra/foundry/`.
 
 ## Ownership and Lifecycle
 
-Generated layers use azd's core `bicep` or `terraform` provider, not the
-IaC-less `microsoft.foundry` provider. This gives each layer normal preview,
-state, targeted provision, and teardown behavior.
+When Foundry is added as a layer, generated Bicep uses azd's core `bicep`
+provider and generated Terraform uses `terraform`. A Foundry-only root Bicep
+eject keeps `microsoft.foundry` for backward compatibility. The layer-specific
+routing gives composed projects normal per-layer preview, state, targeted
+provision, and teardown behavior.
 
 The Foundry layer owns an isolated resource group:
 
@@ -134,9 +136,10 @@ semantic, not only textual.
 
 ### 2. Core providers for ejected IaC
 
-Generated Bicep uses `provider: bicep`; generated Terraform uses
-`provider: terraform`. The IaC-less `microsoft.foundry` provider remains the
-default only when infrastructure is not ejected.
+For a composed project, generated Bicep uses `provider: bicep` and generated
+Terraform uses `provider: terraform`. A Foundry-only root Bicep eject continues
+to use `provider: microsoft.foundry`; the change applies specifically to the
+new `foundry` layer shape.
 
 ### 3. Isolated resource-group ownership
 

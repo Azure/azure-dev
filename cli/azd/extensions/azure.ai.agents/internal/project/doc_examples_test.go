@@ -51,6 +51,106 @@ var coreServiceKeys = []string{
 	"resourceGroup", "resourceName", "uses",
 }
 
+// docSchema is the extension's published JSON Schema for the `azure.ai.agent`
+// service block, used to check that every property a doc advertises is one the
+// extension actually declares — including properties nested inside documented
+// objects, which the non-strict unmarshalling this test guards against would
+// otherwise drop silently.
+type docSchema struct {
+	root map[string]any
+}
+
+// loadDocSchema reads schemas/azure.ai.agent.json from the extension root.
+func loadDocSchema(t *testing.T, root string) *docSchema {
+	t.Helper()
+
+	raw, err := os.ReadFile(filepath.Join(root, "schemas", "azure.ai.agent.json"))
+	require.NoError(t, err)
+
+	var schema map[string]any
+	require.NoError(t, json.Unmarshal(raw, &schema))
+
+	s := &docSchema{root: schema}
+	require.NotEmpty(t, s.properties(schema), "azure.ai.agent.json declares no properties")
+	return s
+}
+
+// property returns the schema node declared for a top-level service property.
+func (s *docSchema) property(key string) (map[string]any, bool) {
+	node, ok := s.properties(s.root)[key].(map[string]any)
+	return node, ok
+}
+
+// properties returns the `properties` map of a schema node, resolving nothing.
+func (s *docSchema) properties(node map[string]any) map[string]any {
+	props, _ := node["properties"].(map[string]any)
+	return props
+}
+
+// resolve follows a local `$ref` (`#/definitions/<name>`) to the node it names.
+func (s *docSchema) resolve(node map[string]any) map[string]any {
+	ref, ok := node["$ref"].(string)
+	if !ok {
+		return node
+	}
+
+	name := strings.TrimPrefix(ref, "#/definitions/")
+	defs, _ := s.root["definitions"].(map[string]any)
+	if target, ok := defs[name].(map[string]any); ok {
+		return s.resolve(target)
+	}
+	return node
+}
+
+// checkValue asserts that value contains no property the schema node does not
+// declare, recursing through objects and array items. A node that permits
+// additional properties (the JSON Schema default) is not narrowed further.
+func (s *docSchema) checkValue(t *testing.T, e docExample, name, path string, node map[string]any, value any) {
+	t.Helper()
+
+	node = s.resolve(node)
+
+	switch v := value.(type) {
+	case map[string]any:
+		props := s.properties(node)
+		additional, declared := node["additionalProperties"]
+
+		for key, child := range v {
+			childPath := path + "." + key
+
+			if sub, ok := props[key].(map[string]any); ok {
+				s.checkValue(t, e, name, childPath, sub, child)
+				continue
+			}
+			if sub, ok := additional.(map[string]any); ok {
+				s.checkValue(t, e, name, childPath, sub, child)
+				continue
+			}
+			if allowed, ok := additional.(bool); !declared || (ok && allowed) {
+				continue
+			}
+			require.Fail(t, "undeclared property", undeclaredPropertyMessage(e, name, childPath))
+		}
+	case []any:
+		items, ok := node["items"].(map[string]any)
+		if !ok {
+			return
+		}
+		for i, item := range v {
+			s.checkValue(t, e, name, fmt.Sprintf("%s[%d]", path, i), items, item)
+		}
+	}
+}
+
+// undeclaredPropertyMessage explains why an unsupported property is a defect
+// rather than a harmless extra, since azd itself reports nothing.
+func undeclaredPropertyMessage(e docExample, name, path string) string {
+	return fmt.Sprintf(
+		"%s: service %q documents property %q, which azd does not support. "+
+			"azd ignores unknown properties, so users copying this get no error and no effect.",
+		e, name, path)
+}
+
 // docExample is a single fenced YAML block extracted from a markdown file.
 type docExample struct {
 	file    string
@@ -151,60 +251,68 @@ func dedent(line string, n int) string {
 	return line
 }
 
-// agentServiceKeys returns the property names documented for the
-// `azure.ai.agent` service block, read from the extension's published schema.
-func agentServiceKeys(t *testing.T, root string) []string {
-	t.Helper()
-
-	raw, err := os.ReadFile(filepath.Join(root, "schemas", "azure.ai.agent.json"))
-	require.NoError(t, err)
-
-	var schema struct {
-		Properties map[string]json.RawMessage `json:"properties"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &schema))
-	require.NotEmpty(t, schema.Properties, "azure.ai.agent.json declares no properties")
-
-	keys := make([]string, 0, len(schema.Properties))
-	for k := range schema.Properties {
-		keys = append(keys, k)
-	}
-	return keys
+// coreServiceFields mirrors the typed fields azd core parses out of a
+// `services.<name>` block, following ServiceConfig in
+// cli/azd/pkg/project/service_config.go. Decoding a snippet through it applies
+// core's own shape rules — `project: [src]` is a type error for core and must be
+// one here too — instead of silently coercing a malformed value to its zero
+// value. Everything core does not name lands in AdditionalProperties, exactly as
+// core's `yaml:",inline"` field does before the block reaches this extension.
+//
+// Core's package is mirrored rather than imported: it is not part of this
+// module's dependency surface, and pulling it in for a docs test would drag
+// azd's provisioning tree behind it.
+type coreServiceFields struct {
+	ResourceGroupName    string            `yaml:"resourceGroup"`
+	ResourceName         string            `yaml:"resourceName"`
+	ApiVersion           string            `yaml:"apiVersion"`
+	RelativePath         string            `yaml:"project"`
+	Host                 string            `yaml:"host"`
+	Language             string            `yaml:"language"`
+	OutputPath           string            `yaml:"dist"`
+	Image                string            `yaml:"image"`
+	Docker               map[string]any    `yaml:"docker"`
+	K8s                  map[string]any    `yaml:"k8s"`
+	Module               string            `yaml:"module"`
+	Infra                map[string]any    `yaml:"infra"`
+	Hooks                map[string]any    `yaml:"hooks"`
+	Uses                 []string          `yaml:"uses"`
+	Config               map[string]any    `yaml:"config"`
+	Environment          map[string]string `yaml:"env"`
+	Condition            string            `yaml:"condition"`
+	RemoteBuild          *bool             `yaml:"remoteBuild"`
+	AdditionalProperties map[string]any    `yaml:",inline"`
 }
 
 // serviceConfigFromDoc builds the ServiceConfig azd core would hand this
-// extension for the given service block, applying core's split: typed fields for
-// known keys, AdditionalProperties for everything else.
-func serviceConfigFromDoc(t *testing.T, name string, svc map[string]any) *azdext.ServiceConfig {
+// extension for the given service block, failing the test if any field core
+// itself parses has a shape core would reject.
+func serviceConfigFromDoc(t *testing.T, e docExample, name string, svc map[string]any) *azdext.ServiceConfig {
 	t.Helper()
 
-	str := func(key string) string {
-		s, _ := svc[key].(string)
-		return s
-	}
+	raw, err := yaml.Marshal(svc)
+	require.NoError(t, err)
 
-	extra := map[string]any{}
-	for k, v := range svc {
-		if !slices.Contains(coreServiceKeys, k) {
-			extra[k] = v
-		}
-	}
+	var core coreServiceFields
+	require.NoError(t, yaml.Unmarshal(raw, &core),
+		"%s: service %q cannot be parsed by azd core. "+
+			"Fix the example so it can be copied into azure.yaml as-is.", e, name)
 
-	props, err := structpb.NewStruct(extra)
+	props, err := structpb.NewStruct(core.AdditionalProperties)
 	require.NoError(t, err)
 
 	out := &azdext.ServiceConfig{
 		Name:                 name,
-		Host:                 str("host"),
-		Language:             str("language"),
-		RelativePath:         str("project"),
-		Image:                str("image"),
+		Host:                 core.Host,
+		Language:             core.Language,
+		RelativePath:         core.RelativePath,
+		Image:                core.Image,
 		AdditionalProperties: props,
 	}
 
 	// The deprecated shape nests the agent definition under `config`.
-	if cfg, ok := svc["config"].(map[string]any); ok {
-		legacy, err := structpb.NewStruct(cfg)
+	if core.Config != nil {
+		legacy, err := structpb.NewStruct(core.Config)
 		require.NoError(t, err)
 		out.Config = legacy
 	}
@@ -238,7 +346,7 @@ func TestDocExamplesAreValid(t *testing.T) {
 	t.Parallel()
 
 	root := extensionRoot(t)
-	knownKeys := append(agentServiceKeys(t, root), coreServiceKeys...)
+	schema := loadDocSchema(t, root)
 
 	var files []string
 	require.NoError(t, filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
@@ -274,7 +382,7 @@ func TestDocExamplesAreValid(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/%s", e, name), func(t *testing.T) {
 				t.Parallel()
 
-				cfg := serviceConfigFromDoc(t, name, svc)
+				cfg := serviceConfigFromDoc(t, e, name, svc)
 				_, _, found, _, err := AgentDefinitionFromService(cfg)
 
 				require.NoError(t, err,
@@ -291,12 +399,7 @@ func TestDocExamplesAreValid(t *testing.T) {
 				// Guard the silent-no-op class of defect: azd ignores properties
 				// it does not recognize, so an undocumented key deploys cleanly
 				// while doing nothing at all.
-				for key := range definitionProps(svc) {
-					require.Contains(t, knownKeys, key,
-						"%s: service %q documents property %q, which azd does not support. "+
-							"azd ignores unknown properties, so users copying this get no error and no effect.",
-						e, name, key)
-				}
+				checkVocabulary(t, e, name, svc, schema)
 			})
 		}
 	}
@@ -304,15 +407,38 @@ func TestDocExamplesAreValid(t *testing.T) {
 	require.NotZero(t, checked, "no azure.ai.agent doc examples were found — is the extractor still working?")
 }
 
-// definitionProps returns the properties carrying the agent definition: the
-// service block itself, or its `config` child for the deprecated nested shape.
-func definitionProps(svc map[string]any) map[string]any {
+// checkVocabulary asserts that every property the snippet declares is one azd
+// understands: a key azd core parses itself, or a property the extension's
+// schema declares — recursively, so neither an unsupported sibling of `config`
+// in the deprecated shape nor an unsupported key nested inside a documented
+// object slips through.
+func checkVocabulary(t *testing.T, e docExample, name string, svc map[string]any, schema *docSchema) {
+	t.Helper()
+
+	for key, value := range svc {
+		// Core owns the shape of its own keys; coreServiceFields already
+		// validated them.
+		if slices.Contains(coreServiceKeys, key) {
+			continue
+		}
+
+		prop, ok := schema.property(key)
+		require.True(t, ok, undeclaredPropertyMessage(e, name, key))
+		schema.checkValue(t, e, name, key, prop, value)
+	}
+
+	// The deprecated shape nests the agent definition under `config`, which core
+	// passes through untyped — so the extension's schema, not core, owns every
+	// key inside it.
 	if cfg, ok := svc["config"].(map[string]any); ok {
-		if _, nested := cfg["kind"]; nested {
-			return cfg
+		for key, value := range cfg {
+			path := "config." + key
+
+			prop, ok := schema.property(key)
+			require.True(t, ok, undeclaredPropertyMessage(e, name, path))
+			schema.checkValue(t, e, name, path, prop, value)
 		}
 	}
-	return svc
 }
 
 // TestExtractYAMLExamples covers the extractor itself, since every other

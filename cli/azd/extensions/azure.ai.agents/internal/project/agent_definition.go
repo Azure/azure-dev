@@ -172,6 +172,20 @@ func AgentEnvironment(ca agent_yaml.ContainerAgent) map[string]string {
 }
 
 // ResolveAgentEnvironmentVariable preserves values forwarded by core.
+// A name the service declares in env: wins outright. Every other
+// name expands through mapping, which both callers back with the
+// full azd environment even when the service declares env:.
+//
+// That project fallback is deliberate. environment_variables is
+// deprecated but additive: mergeAgentRunEnvironment lets env:
+// override a same-named entry and keeps the rest, so a ${FOO} an
+// author wrote there stays resolvable mid-migration. Dropping the
+// fallback would turn it into an empty string with no error.
+//
+// The connections extension does drop it once env: is declared
+// (connectionEnvironmentMapping in azure.ai.projects), because
+// those values become ARM parameters at provision time rather
+// than runtime values for a container the author owns.
 func ResolveAgentEnvironmentVariable(
 	name string,
 	value string,

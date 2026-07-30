@@ -695,6 +695,60 @@ func TestMergeAgentRunEnvironment(t *testing.T) {
 	})
 }
 
+// TestLegacyEnvVarsKeepProjectFallback pins the deliberate gap in
+// the env: scope: an explicit env: {} stops the azd environment
+// from reaching the child, but a ${VAR} the author wrote in the
+// deprecated environment_variables block still resolves against
+// it. Cutting that off would silently empty the value for a
+// project mid-migration, so the fallback stays. Without this
+// test ResolveAgentEnvironmentVariable reads as fully
+// scope-aware, which it is not.
+func TestLegacyEnvVarsKeepProjectFallback(t *testing.T) {
+	t.Parallel()
+
+	azdEnvironment := map[string]string{
+		"FOO":               "project-wide",
+		"UNDECLARED_SECRET": "hidden",
+	}
+	serviceEnvironment := map[string]string{}
+
+	definition := &agent_yaml.ContainerAgent{
+		EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
+			{Name: "TARGET", Value: "${FOO}"},
+		},
+	}
+
+	definitionEnvironment, err := resolveAgentDefinitionEnvVars(
+		t.Context(),
+		definition,
+		serviceEnvironment,
+		azdEnvironment,
+		"",
+	)
+	if err != nil {
+		t.Fatalf("resolveAgentDefinitionEnvVars: %v", err)
+	}
+
+	environment := mergeAgentRunEnvironment(
+		[]string{"PATH=/usr/bin"},
+		azdEnvironment,
+		serviceEnvironment,
+		definitionEnvironment,
+		"agent",
+		true,
+	)
+
+	if !slices.Contains(environment, "TARGET=project-wide") {
+		t.Errorf("expected legacy fallback to resolve, got %v", environment)
+	}
+	for _, entry := range environment {
+		name, _, _ := strings.Cut(entry, "=")
+		if name == "FOO" || name == "UNDECLARED_SECRET" {
+			t.Errorf("did not expect %q in %v", name, environment)
+		}
+	}
+}
+
 func TestResolveLocalServiceEnvironment(t *testing.T) {
 	t.Parallel()
 

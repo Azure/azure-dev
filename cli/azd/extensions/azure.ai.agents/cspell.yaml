@@ -123,3 +123,9 @@ words:
   - upsert
   - m365agentstoolkit
   - atk
+  # Managed agent (Foundry PES / vienna harness) terms
+  - vienna
+  - azureml
+  - cognitiveservices
+  - fdp
+  - PES

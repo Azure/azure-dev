@@ -33,8 +33,8 @@ func newDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "delete [name]",
-		Short: "Delete a hosted agent.",
-		Long: `Delete a hosted agent and all of its versions.
+		Short: "Delete an agent.",
+		Long: `Delete an agent and all of its versions.
 
 If --version is specified, only that version is deleted (the agent itself remains).
 
@@ -98,6 +98,15 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to create azd client: %w", err)
 	}
 	defer azdClient.Close()
+
+	// Prompt (kind=managed) agents are azd services on the harness. They are
+	// torn down with the rest of the project via `azd down`, so redirect
+	// rather than calling the Foundry agent-delete path that would fail.
+	if pctx, isPrompt, pErr := resolvePromptAgentService(
+		ctx, azdClient, a.flags.name, a.flags.noPrompt,
+	); pErr == nil && isPrompt {
+		return a.runPromptDelete(ctx, azdClient, pctx)
+	}
 
 	info, err := resolveAgentServiceFromProject(ctx, azdClient, a.flags.name, a.flags.noPrompt)
 	if err != nil {
@@ -265,4 +274,86 @@ func classifyDeleteError(err error, agentName string) error {
 		}
 	}
 	return exterrors.ServiceFromAzure(err, exterrors.OpDeleteAgent)
+}
+
+// runPromptDelete deletes a prompt (kind=managed) agent from the harness. It
+// is dispatched from Run() when the resolved azure.ai.agent service carries a
+// promptAgent config block. The agent is removed from the harness directly;
+// to tear down the whole project (infra included) use `azd down`.
+//
+// Versioning is not supported for prompt agents today — the backend does not
+// expose a per-version delete on the v2.0 surface — so --version is rejected
+// with a typed validation error rather than silently ignored.
+func (a *DeleteAction) runPromptDelete(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	pctx *promptServiceContext,
+) error {
+	if a.flags.version != "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--version is not supported for prompt agents",
+			"prompt agents do not expose per-version delete; omit --version to delete the agent",
+		)
+	}
+
+	agentName := pctx.AgentName()
+	if agentName == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentName,
+			"agent name is required but could not be resolved",
+			"set 'name' in agent.yaml or pass the agent name as a positional argument",
+		)
+	}
+
+	// Confirmation prompt (skip in --no-prompt mode).
+	if !a.flags.noPrompt {
+		message := fmt.Sprintf("Delete prompt agent %q from the harness?", agentName)
+		if a.flags.force {
+			message = fmt.Sprintf(
+				"Force-delete prompt agent %q? This will terminate all active sessions.",
+				agentName,
+			)
+		}
+		defaultValue := false
+		resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+			Options: &azdext.ConfirmOptions{
+				Message:      message,
+				DefaultValue: &defaultValue,
+			},
+		})
+		if promptErr != nil {
+			if exterrors.IsCancellation(promptErr) {
+				return exterrors.Cancelled("delete cancelled")
+			}
+			return fmt.Errorf("prompting for confirmation: %w", promptErr)
+		}
+		if resp.Value == nil || !*resp.Value {
+			return exterrors.Cancelled("delete cancelled by user")
+		}
+	}
+
+	client, err := pctx.newClient()
+	if err != nil {
+		return err
+	}
+
+	result, err := client.DeleteAgent(ctx, agentName, pctx.Settings.EffectiveAPIVersion(), a.flags.force)
+	if err != nil {
+		return classifyDeleteError(err, agentName)
+	}
+
+	switch a.flags.output {
+	case "json":
+		data, jsonErr := json.MarshalIndent(result, "", "  ")
+		if jsonErr != nil {
+			return fmt.Errorf("failed to marshal response: %w", jsonErr)
+		}
+		fmt.Println(string(data))
+	default:
+		fmt.Printf("Prompt agent %q deleted from the harness.\n", agentName)
+		fmt.Println("To also tear down the project infrastructure, run `azd down`.")
+	}
+
+	return nil
 }

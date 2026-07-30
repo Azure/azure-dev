@@ -7,9 +7,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"slices"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -46,8 +48,8 @@ func newShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "show [name]",
-		Short: "Show the status of a hosted agent.",
-		Long: `Show the status of a hosted agent.
+		Short: "Show the status of an agent.",
+		Long: `Show the status of an agent.
 
 The agent name and version are resolved automatically from the azure.yaml service
 configuration and the current azd environment. Optionally specify the service name
@@ -74,6 +76,18 @@ configuration and the current azd environment. Optionally specify the service na
 				return fmt.Errorf("failed to create azd client: %w", err)
 			}
 			defer azdClient.Close()
+
+			// Prompt (kind=managed) agents are azd services too, but they live
+			// on the harness rather than the Foundry service. Resolve the
+			// service and, when it is a prompt agent, query the harness for
+			// status instead of the Foundry agent endpoint.
+			if pctx, isPrompt, pErr := resolvePromptAgentService(
+				ctx, azdClient, flags.name, extCtx.NoPrompt,
+			); pErr != nil {
+				return pErr
+			} else if isPrompt {
+				return runPromptShow(ctx, flags, pctx)
+			}
 
 			info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.name, extCtx.NoPrompt)
 			if err != nil {
@@ -194,6 +208,147 @@ func (a *ShowAction) Run(ctx context.Context) error {
 	}
 
 	return printShowResult(result, a.flags.output, suggestions)
+}
+
+// runPromptShow handles `azd ai agent show` for a prompt (kind=managed) agent.
+// It is dispatched from RunE when the resolved azure.ai.agent service carries a
+// promptAgent config block. The status comes from the harness GetAgent API
+// rather than the Foundry agent endpoint.
+func runPromptShow(ctx context.Context, flags *showFlags, pctx *promptServiceContext) error {
+	agentName := pctx.AgentName()
+	client, err := pctx.newClient()
+	if err != nil {
+		return err
+	}
+
+	agent, err := client.GetAgent(ctx, agentName, pctx.Settings.EffectiveAPIVersion())
+	if err != nil {
+		return fmt.Errorf("failed to get prompt agent %q: %w", agentName, err)
+	}
+
+	switch flags.output {
+	case "json":
+		data, jsonErr := json.MarshalIndent(agent, "", "  ")
+		if jsonErr != nil {
+			return fmt.Errorf("failed to marshal response: %w", jsonErr)
+		}
+		fmt.Println(string(data))
+	default:
+		printPromptShowTable(agent, pctx.Settings)
+	}
+	return nil
+}
+
+// printPromptShowTable renders a concise status table for a prompt agent.
+func printPromptShowTable(agent *agent_api.AgentObject, settings *projectpkg.PromptAgentSettings) {
+	latest := agent.Versions.Latest
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(w, "Name:\t%s\n", agent.Name)
+	fmt.Fprintf(w, "Kind:\t%s\n", "prompt")
+	if latest.Version != "" {
+		fmt.Fprintf(w, "Version:\t%s\n", latest.Version)
+	}
+	if latest.Status != "" {
+		fmt.Fprintf(w, "Status:\t%s\n", latest.Status)
+	}
+
+	def := promptDefinitionMap(latest)
+
+	// Harness is the execution harness the platform runs the agent on, taken
+	// from the deployed definition's `harness` field (e.g. "ghcp"). The
+	// previous implementation printed settings.BaseURL here, which is the
+	// harness *API base URL*, not the harness itself.
+	if harness := stringFromMap(def, "harness"); harness != "" {
+		fmt.Fprintf(w, "Harness:\t%s\n", displayHarness(harness))
+	}
+
+	// Project endpoint is where the agent is actually served/invoked. This is
+	// the useful "where does this live" value that Harness was standing in for.
+	if endpoint := promptAgentEndpoint(settings); endpoint != "" {
+		fmt.Fprintf(w, "Project Endpoint:\t%s\n", endpoint)
+	}
+
+	if latest.Error != nil && latest.Error.Message != "" {
+		fmt.Fprintf(w, "Error:\t%s (%s)\n", latest.Error.Message, latest.Error.Code)
+	}
+
+	printPromptToolboxTools(w, def)
+	_ = w.Flush()
+}
+
+// promptDefinitionMap extracts the deployed agent version's definition as a
+// generic map. The API models Definition as `any`, which decodes from JSON into
+// a map[string]any; returns nil when the definition is absent or another shape.
+func promptDefinitionMap(version agent_api.AgentVersionObject) map[string]any {
+	if def, ok := version.Definition.(map[string]any); ok {
+		return def
+	}
+	return nil
+}
+
+// stringFromMap returns m[key] as a trimmed string, or "" when absent/non-string.
+func stringFromMap(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	if v, ok := m[key].(string); ok {
+		return strings.TrimSpace(v)
+	}
+	return ""
+}
+
+// displayHarness maps a harness identifier to a friendlier label, preserving
+// the raw identifier in parentheses for unambiguous reference.
+func displayHarness(harness string) string {
+	switch harness {
+	case agent_api.ManagedAgentHarnessGitHubCopilot:
+		return fmt.Sprintf("GitHub Copilot (%s)", harness)
+	default:
+		return harness
+	}
+}
+
+// promptAgentEndpoint returns the Foundry project endpoint the prompt agent is
+// served from, falling back to the harness base URL when unset.
+func promptAgentEndpoint(settings *projectpkg.PromptAgentSettings) string {
+	if settings == nil {
+		return ""
+	}
+	if pe := strings.TrimSpace(settings.ProjectEndpoint); pe != "" {
+		return pe
+	}
+	return strings.TrimSpace(settings.BaseURL)
+}
+
+// printPromptToolboxTools lists the mcp/toolbox tools attached to the deployed
+// prompt agent, including the backing project connection that authenticates the
+// agent to each toolbox. This surfaces the toolbox created during deploy without
+// mutating the authored agent.yaml.
+func printPromptToolboxTools(w io.Writer, def map[string]any) {
+	if def == nil {
+		return
+	}
+	rawTools, ok := def["tools"].([]any)
+	if !ok || len(rawTools) == 0 {
+		return
+	}
+	for _, raw := range rawTools {
+		tool, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if stringFromMap(tool, "type") != "mcp" {
+			continue
+		}
+		label := stringFromMap(tool, "server_label")
+		if label == "" {
+			label = "mcp"
+		}
+		fmt.Fprintf(w, "Toolbox (%s):\t%s\n", label, stringFromMap(tool, "server_url"))
+		if conn := stringFromMap(tool, "project_connection_id"); conn != "" {
+			fmt.Fprintf(w, "  Connection:\t%s\n", conn)
+		}
+	}
 }
 
 func printShowResult(result *showResult, output string, suggestions []nextstep.Suggestion) error {

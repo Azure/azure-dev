@@ -236,6 +236,15 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 		return err
 	}
 
+	// Prompt (kind=managed) agents target the managed harness, not an ARM
+	// Foundry project. They self-authenticate via the harness client and carry
+	// their entire deploy target in the service config, so skip the
+	// subscription/tenant/credential resolution the hosted path needs.
+	if serviceIsPromptAgent(p.serviceConfig) {
+		fmt.Fprintf(os.Stderr, "Project path: %s, Service path: %s\n", proj.Project.Path, fullPath)
+		return p.resolveAgentDefinitionPath(proj.Project.Path, servicePath, fullPath)
+	}
+
 	// Get subscription ID from environment
 	azdEnvClient := p.azdClient.Environment()
 	resp, err := azdEnvClient.GetValue(ctx, &azdext.GetEnvRequest{
@@ -286,6 +295,15 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	p.projectPath = proj.Project.Path
 	p.servicePath = fullPath
 
+	return p.resolveAgentDefinitionPath(proj.Project.Path, servicePath, fullPath)
+}
+
+// resolveAgentDefinitionPath locates the agent definition (agent.yaml/agent.yml
+// or the AGENT_DEFINITION_PATH override) for the service and stores it on the
+// provider. It is shared by the hosted and prompt-agent Initialize paths.
+func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
+	projectPath, servicePath, fullPath string,
+) error {
 	// Check if user has specified agent definition path via environment variable
 	if envPath := os.Getenv("AGENT_DEFINITION_PATH"); envPath != "" {
 		// Verify the file exists and has correct extension
@@ -317,7 +335,7 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	// so no on-disk agent.yaml is required.
 	if _, _, found, _, defErr := AgentDefinitionFromResolvedService(
 		p.serviceConfig,
-		proj.Project.Path,
+		projectPath,
 	); defErr != nil {
 		return defErr
 	} else if found {
@@ -326,7 +344,7 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	}
 
 	// Legacy shape: look for agent.yaml or agent.yml in the service directory root
-	agentYamlPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath, "agent.yaml")
+	agentYamlPath, err := paths.JoinAllowRoot(projectPath, servicePath, "agent.yaml")
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
@@ -334,7 +352,7 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 			"update azure.yaml so the agent definition stays within the project directory",
 		)
 	}
-	agentYmlPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath, "agent.yml")
+	agentYmlPath, err := paths.JoinAllowRoot(projectPath, servicePath, "agent.yml")
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
@@ -395,6 +413,15 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	serviceConfig *azdext.ServiceConfig,
 	targetResource *azdext.TargetResource,
 ) ([]string, error) {
+	// Prompt agents expose a single workspace-rooted Responses endpoint on the
+	// harness. Build it from the service config rather than azd env vars.
+	if p.isPromptAgentService() {
+		settings, err := p.promptAgentSettings()
+		if err != nil {
+			return nil, err
+		}
+		return []string{promptAgentResponsesEndpoint(settings)}, nil
+	}
 	if err := p.ensureEnv(ctx); err != nil {
 		return nil, err
 	}
@@ -464,6 +491,27 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	serviceConfig *azdext.ServiceConfig,
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
+	// Prompt agents target the managed harness, not an ARM Foundry project.
+	// Synthesize a target resource from the harness workspace tuple so core
+	// azd has something to display without resolving a CognitiveServices
+	// project that does not exist for this flow.
+	if p.isPromptAgentService() {
+		settings, err := p.promptAgentSettings()
+		if err != nil {
+			return nil, err
+		}
+		return &azdext.TargetResource{
+			SubscriptionId:    settings.SubscriptionID,
+			ResourceGroupName: settings.ResourceGroup,
+			ResourceName:      settings.Workspace,
+			ResourceType:      "Microsoft.MachineLearningServices/workspaces",
+			Metadata: map[string]string{
+				"workspace": settings.Workspace,
+				"baseUrl":   settings.BaseURL,
+			},
+		}, nil
+	}
+
 	if err := p.ensureDeployContext(ctx); err != nil {
 		return nil, err
 	}
@@ -527,6 +575,12 @@ func (p *AgentServiceTargetProvider) Package(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
+	// Prompt agents have no container/code to build — the harness owns the
+	// runtime. Skip packaging entirely.
+	if p.isPromptAgentService() {
+		return &azdext.ServicePackageResult{}, nil
+	}
+
 	if err := p.ensureDeployContext(ctx); err != nil {
 		return nil, err
 	}
@@ -634,6 +688,16 @@ func (p *AgentServiceTargetProvider) Publish(
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
+	// Prompt agents have no container image to publish.
+	if p.isPromptAgentService() {
+		return &azdext.ServicePublishResult{}, nil
+	}
+
+	// Code deploy skips Publish (no ACR needed)
+	if p.isCodeDeployAgent() {
+		return &azdext.ServicePublishResult{}, nil
+	}
+
 	// Pre-built image: nothing to package or push. Skip deploy-context
 	// resolution so this path stays cheap and doesn't require agent.yaml.
 	if preBuiltArtifact := findPreBuiltImageArtifact(serviceContext.Package); preBuiltArtifact != nil {
@@ -1022,6 +1086,13 @@ func (p *AgentServiceTargetProvider) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
+	// Prompt agents are created on the managed harness, not the Foundry
+	// service. Dispatch to the dedicated harness deploy path before any
+	// ARM/Foundry resolution the hosted path requires.
+	if p.isPromptAgentService() {
+		return p.deployPromptAgent(ctx, serviceConfig, progress)
+	}
+
 	if err := p.ensureDeployContext(ctx); err != nil {
 		return nil, err
 	}

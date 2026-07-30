@@ -1,5 +1,20 @@
 # Release History
 
+## Unreleased
+
+- Prompt (kind: prompt) agents now support a convention-over-configuration deploy pipeline. `azd up` resolves an internal dependency graph before publishing the agent and validates the whole graph first so a failure never leaves a half-wired agent:
+  - A sibling `instructions.md` supplies the agent's instructions when none are declared inline (inline wins).
+  - A non-empty `files/` folder is uploaded to a vector store and wired into an auto-added `file_search` tool (content-hash dedupe; existing `file_search` tools are merged, not duplicated).
+  - A non-empty `skills/` folder registers each `SKILL.md` bundle into a Foundry toolbox version and attaches its MCP endpoint as an `mcp` tool; an explicit `toolbox:` reference attaches an existing toolbox instead.
+  - A `connections:` block resolves through a precedence ladder (use existing, create-if-missing with Entra default, auto-fill target from provisioning outputs, or provision/fail-fast), and each tool's required role is surfaced for assignment.
+  - The model deployment is create-if-missing, and container-only fields (`image`, `protocols`, `code_configuration`, …) are rejected for prompt agents.
+  - The manifest parser recognizes `skill` and `file` resource kinds.
+- `azd ai agent init` now scaffolds the prompt-agent authoring layout: an `instructions.md` sidecar (instructions are written there instead of inline in `agent.yaml`) plus an empty `skills/` folder so the deploy conventions are discoverable from a fresh init.
+- **Breaking:** the `agent.yaml` discriminator for prompt agents is now `kind: prompt` (was `kind: managed`). Existing `agent.yaml` files must be updated; the scaffolded schema annotation now points at `PromptAgent.yaml`. The `--kind managed` init flag value is still accepted as a backward-compatible alias for `--kind prompt`.
+- Fixed a bug where only `SKILL.md` was uploaded when registering a skill under `skills/<name>/` — any other files in the bundle (e.g. `references/`, `assets/`, `scripts/`, at any nesting depth) were silently dropped. Skill registration now uploads the entire bundle via multipart upload instead of sending just the parsed `SKILL.md` body inline.
+- Fixed a bug where a toolbox attached to a prompt agent (via a `skills/` folder or a `toolbox:` reference) was wired into the agent's `mcp` tool without a `project_connection_id`, leaving the agent with no credential to reach the toolbox MCP endpoint so its skills were never invoked. Deploy now creates (or updates) a `RemoteTool` project connection — via the Microsoft.CognitiveServices control plane, since the data-plane connections API is read-only — that fronts the toolbox endpoint and sets it as the tool's `project_connection_id`.
+- Fixed a bug where `azd up` re-prompted for an Azure region for a prompt agent even after an existing Foundry project was selected during init. Selecting an existing project now seeds `AZURE_LOCATION` from the project's region (in addition to `AZURE_AI_DEPLOYMENTS_LOCATION`), so the model is deployed to the project's region without a redundant prompt.
+- `azd ai agent show` now lists the toolbox tools attached to a prompt agent — each `mcp` tool's server URL and its backing `project_connection_id` — so the toolbox created during deploy is discoverable without inspecting the deployed definition. Also fixed the `Harness` field, which previously printed the harness API base URL instead of the actual execution harness (e.g. `GitHub Copilot (ghcp)`), and added a `Project Endpoint` row showing where the agent is served.
 ## 1.0.0-beta.7 (2026-07-23)
 
 ### Features Added

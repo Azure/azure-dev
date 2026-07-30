@@ -66,10 +66,15 @@ func NewFoundryToolboxClient(
 
 // CreateToolboxVersionRequest is the request body for creating a new toolbox version.
 // The toolbox name is provided in the URL path, not in the body.
+//
+// Skills are attached via a separate top-level `skills` array (skill references),
+// distinct from `tools`. Each skill reference is
+// {"type": "skill_reference", "name": <skill>, "version": <optional>}.
 type CreateToolboxVersionRequest struct {
 	Description string            `json:"description,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 	Tools       []map[string]any  `json:"tools"`
+	Skills      []map[string]any  `json:"skills,omitempty"`
 }
 
 // ToolboxObject is the lightweight response for a toolbox (no tools list).
@@ -205,5 +210,52 @@ func (c *FoundryToolboxClient) DeleteToolbox(
 		return runtime.NewResponseError(resp)
 	}
 
+	return nil
+}
+
+// PromoteToolboxVersion updates the toolbox's default_version, making it the
+// version the consumer MCP endpoint (/toolboxes/{name}/mcp) serves. Creating a
+// toolbox version does NOT automatically promote it — the Foundry API tracks
+// default_version separately, and the first version created for a brand-new
+// toolbox is the only one auto-promoted. Every subsequent version must be
+// promoted explicitly for consumers (including the Foundry portal skill/tool
+// view) to see it.
+//
+// PATCH {endpoint}/toolboxes/{name}?api-version=v1
+func (c *FoundryToolboxClient) PromoteToolboxVersion(
+	ctx context.Context,
+	toolboxName string,
+	version string,
+) error {
+	targetUrl := fmt.Sprintf(
+		"%s/toolboxes/%s?api-version=%s",
+		c.endpoint, url.PathEscape(toolboxName), toolboxesApiVersion,
+	)
+
+	payload, err := json.Marshal(map[string]string{"default_version": version})
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := runtime.NewRequest(ctx, http.MethodPatch, targetUrl)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	if err := req.SetBody(
+		streaming.NopCloser(bytes.NewReader(payload)),
+		"application/json",
+	); err != nil {
+		return fmt.Errorf("failed to set request body: %w", err)
+	}
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return runtime.NewResponseError(resp)
+	}
 	return nil
 }

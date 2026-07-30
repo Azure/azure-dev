@@ -117,6 +117,14 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 
 		agent.AgentDefinition = agentDef
 		return agent, nil
+	case AgentKindPrompt:
+		var agent PromptAgent
+		if err := yaml.Unmarshal(templateBytes, &agent); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal to PromptAgent: %w", err)
+		}
+
+		agent.AgentDefinition = agentDef
+		return agent, nil
 	}
 
 	return nil, fmt.Errorf("unrecognized agent kind: %s", agentDef.Kind)
@@ -173,6 +181,18 @@ func ExtractResourceDefinitions(manifestYamlContent []byte) ([]any, error) {
 				return nil, fmt.Errorf("failed to unmarshal to ConnectionResource: %w", err)
 			}
 			resourceDefs = append(resourceDefs, connDef)
+		case ResourceKindSkill:
+			var skillDef SkillResource
+			if err := yaml.Unmarshal(resourceBytes, &skillDef); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal to SkillResource: %w", err)
+			}
+			resourceDefs = append(resourceDefs, skillDef)
+		case ResourceKindFile:
+			var fileDef FileResource
+			if err := yaml.Unmarshal(resourceBytes, &fileDef); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal to FileResource: %w", err)
+			}
+			resourceDefs = append(resourceDefs, fileDef)
 		default:
 			return nil, fmt.Errorf("unrecognized resource kind: %s", resourceDef.Kind)
 		}
@@ -418,6 +438,39 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 					// Workflow doesn't have models, so no model validation needed
 				} else {
 					errors = append(errors, fmt.Sprintf("failed to unmarshal to Workflow: %v", err))
+				}
+			case AgentKindPrompt:
+				var agent PromptAgent
+				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
+					if strings.TrimSpace(agent.Model) == "" {
+						errors = append(errors, "template.model is required for prompt agents")
+					}
+					// Instructions are intentionally NOT required inline here:
+					// prompt agents may supply them via a sibling instructions.md
+					// file (the deploy engine reads it when the inline value is
+					// empty). The deploy-time graph validation enforces that
+					// instructions are present from one source or the other, so a
+					// truly instruction-less agent is still rejected — just with a
+					// clearer, convention-aware message.
+					for i, policy := range agent.Policies {
+						switch policy.Type {
+						case PolicyTypeRai:
+							if policy.RaiPolicyName == "" {
+								errors = append(errors, fmt.Sprintf(
+									"policies[%d] of type '%s' requires a policy name (rai_policy_name)",
+									i, policy.Type))
+							}
+						case "":
+							errors = append(errors, fmt.Sprintf(
+								"policies[%d] requires a type", i))
+						default:
+							errors = append(errors, fmt.Sprintf(
+								"policies[%d] has an unsupported type '%s' (supported: %s)",
+								i, policy.Type, PolicyTypeRai))
+						}
+					}
+				} else {
+					errors = append(errors, fmt.Sprintf("failed to unmarshal to PromptAgent: %v", err))
 				}
 			}
 		}

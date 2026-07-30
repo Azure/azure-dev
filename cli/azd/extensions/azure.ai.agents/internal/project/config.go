@@ -54,6 +54,12 @@ type ServiceTargetAgentConfig struct {
 	Connections     []Connection       `json:"connections,omitempty"`
 	MemoryStores    []MemoryStore      `json:"memoryStores,omitempty"`
 	StartupCommand  string             `json:"startupCommand,omitempty"`
+	// PromptAgent holds the harness connection details for a "prompt"
+	// (kind=managed) agent service. It is only populated for prompt agents;
+	// hosted/workflow agents leave it nil. The harness has no container/code
+	// to build, so prompt-agent services carry their entire deploy target in
+	// this block instead of a Docker/code configuration.
+	PromptAgent *PromptAgentSettings `json:"promptAgent,omitempty"`
 }
 
 // ContainerSettings provides container configuration for the Azure AI Service target

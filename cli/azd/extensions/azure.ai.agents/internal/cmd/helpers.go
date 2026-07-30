@@ -29,6 +29,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/google/uuid"
 	"golang.org/x/term"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -995,12 +996,17 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 		}
 	}
 
-	hasServiceEnvironment := false
-	if resp, envErr := azdClient.Project().GetServiceConfigValue(
+	// A read failure must not be read as "no env: declared":
+	// that silently reopens the full azd environment fallback
+	// below. A missing env: is reported as Found=false with no
+	// error, so only real failures land here.
+	hasServiceEnvironment, err := serviceEnvDeclared(
 		ctx,
-		&azdext.GetServiceConfigValueRequest{ServiceName: svc.Name, Path: "env"},
-	); envErr == nil {
-		hasServiceEnvironment = resp.GetFound()
+		azdClient.Project(),
+		svc.Name,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	return &ServiceRunContext{
@@ -1011,6 +1017,38 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 		HasServiceEnvironment: hasServiceEnvironment,
 		Definition:            definition,
 	}, nil
+}
+
+// serviceConfigReader reads raw azure.yaml service config values.
+// It mirrors the same seam in the routines and toolboxes targets
+// so all three read a declared env: the same way.
+type serviceConfigReader interface {
+	GetServiceConfigValue(
+		ctx context.Context,
+		in *azdext.GetServiceConfigValueRequest,
+		opts ...grpc.CallOption,
+	) (*azdext.GetServiceConfigValueResponse, error)
+}
+
+// serviceEnvDeclared reports whether the service declares an env:
+// block. An explicit empty env: {} declares an isolated scope,
+// and core forwards it as an empty map, indistinguishable from an
+// omitted env, so the raw config is the only way to tell them
+// apart. Errors are returned rather than treated as "not
+// declared", which would fall back to the full azd environment.
+func serviceEnvDeclared(
+	ctx context.Context,
+	projectClient serviceConfigReader,
+	serviceName string,
+) (bool, error) {
+	resp, err := projectClient.GetServiceConfigValue(ctx, &azdext.GetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        "env",
+	})
+	if err != nil {
+		return false, fmt.Errorf("reading env for service %q: %w", serviceName, err)
+	}
+	return resp.GetFound(), nil
 }
 
 // toServiceKey converts a service name into the env var key format (uppercase, underscores).

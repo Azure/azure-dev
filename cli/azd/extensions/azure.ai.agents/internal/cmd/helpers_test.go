@@ -956,3 +956,70 @@ func TestResolveAgentProtocol_MultipleServicesPromptsOnce(t *testing.T) {
 	require.Equal(t, int32(1), promptServer.selectCalls.Load(),
 		"resolveAgentProtocol should trigger exactly one prompt")
 }
+
+// fakeServiceConfigReader stands in for the project client so the
+// declared-env read can be exercised without a live RPC.
+type fakeServiceConfigReader struct {
+	found bool
+	err   error
+}
+
+func (f fakeServiceConfigReader) GetServiceConfigValue(
+	_ context.Context,
+	_ *azdext.GetServiceConfigValueRequest,
+	_ ...grpc.CallOption,
+) (*azdext.GetServiceConfigValueResponse, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &azdext.GetServiceConfigValueResponse{Found: f.found}, nil
+}
+
+// TestServiceEnvDeclaredFailsClosed pins that a read failure is
+// surfaced instead of being reported as "no env: declared". The
+// false return is what mergeAgentRunEnvironment reads as legacy,
+// so swallowing the error would inject the whole azd environment
+// into the agent process, which is the leak this scope closes.
+func TestServiceEnvDeclaredFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	declared, err := serviceEnvDeclared(
+		t.Context(),
+		fakeServiceConfigReader{
+			err: status.Error(codes.Unavailable, "project service unavailable"),
+		},
+		"my-agent",
+	)
+	require.Error(t, err)
+	require.False(t, declared)
+	require.ErrorContains(t, err, `reading env for service "my-agent"`)
+}
+
+// TestServiceEnvDeclaredReportsFound pins that a missing env: is
+// still a successful read, so a legacy service keeps its full
+// azd environment fallback.
+func TestServiceEnvDeclaredReportsFound(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		found bool
+	}{
+		{name: "env declared", found: true},
+		{name: "env omitted", found: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			declared, err := serviceEnvDeclared(
+				t.Context(),
+				fakeServiceConfigReader{found: tt.found},
+				"my-agent",
+			)
+			require.NoError(t, err)
+			require.Equal(t, tt.found, declared)
+		})
+	}
+}

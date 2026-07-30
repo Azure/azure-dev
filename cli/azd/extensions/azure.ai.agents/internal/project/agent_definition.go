@@ -8,6 +8,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 
 	"azureaiagent/internal/exterrors"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/braydonk/yaml"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -69,6 +71,46 @@ func WarnLegacyAgentShape(source AgentDefinitionSource) {
 			detail, MigrationGuideURL,
 		)
 	})
+}
+
+// WarnOrphanedConfigEnv warns when a service still declares
+// environment variables under the deprecated config-nested env:
+// block. azd reads service environment values only from the
+// service-level env:, so anything left under config: is ignored by
+// both `azd ai agent run` and deploy.
+//
+// Unlike the deprecated environmentVariables list, nothing migrates
+// config.env and no azd command ever wrote it, so without this the
+// values would disappear with no other signal.
+func WarnOrphanedConfigEnv(svc *azdext.ServiceConfig) {
+	names := orphanedConfigEnvNames(svc)
+	if len(names) == 0 {
+		return
+	}
+	fmt.Printf("%s\n", output.WithWarningFormat(
+		"WARNING: service %q sets %s under the deprecated `config: "+
+			"env:` block, which is no longer read and will be "+
+			"ignored. Move them to the service-level `env:` so they "+
+			"apply to both run and deploy. See %s",
+		svc.GetName(), strings.Join(names, ", "), MigrationGuideURL,
+	))
+}
+
+// orphanedConfigEnvNames returns the variable names a service still
+// declares under the deprecated config-nested env: block, sorted.
+// It reads svc.Config directly because core binds the service-level
+// env: to ServiceConfig.Environment, so an env key can only reach a
+// property bag from the nested shape.
+func orphanedConfigEnvNames(svc *azdext.ServiceConfig) []string {
+	value, found := svc.GetConfig().GetFields()["env"]
+	if !found {
+		return nil
+	}
+	fields := value.GetStructValue().GetFields()
+	if len(fields) == 0 {
+		return nil
+	}
+	return slices.Sorted(maps.Keys(fields))
 }
 
 // AgentDefinitionInline is the hosted-agent definition (formerly agent.yaml)

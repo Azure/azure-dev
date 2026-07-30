@@ -1510,6 +1510,7 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		)
 	}
 	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
+	WarnOrphanedConfigEnv(serviceConfig)
 
 	var cpu, memory string
 	if foundryAgentConfig != nil && foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {

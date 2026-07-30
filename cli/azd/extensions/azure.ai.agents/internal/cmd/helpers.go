@@ -987,6 +987,7 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	); cfgErr == nil {
 		startupCmd = agentConfig.StartupCommand
 	}
+	projectpkg.WarnOrphanedConfigEnv(svc)
 
 	var definition *agent_yaml.ContainerAgent
 	if def, _, source, defErr := projectpkg.LoadAgentDefinition(svc, project.Path); defErr == nil {

@@ -123,6 +123,23 @@ func TestFindEnvironmentReferences(t *testing.T) {
 			},
 		},
 		{
+			// A '$' the expander ignores must stay ignored here,
+			// or a literal like "costs $price} today" writes a
+			// phantom rice: ${rice} into the service env block.
+			name:          "bare dollar is not a reference",
+			value:         "$foo}",
+			honorEscaping: honorEnvironmentEscaping,
+			want:          nil,
+		},
+		{
+			// The phantom would span the whole string and carry
+			// HasDefault, hiding REAL from init prompting.
+			name:          "bare dollar keeps a later reference live",
+			value:         "$ab:-${REAL}}",
+			honorEscaping: honorEnvironmentEscaping,
+			want:          []environmentReference{{Name: "REAL", Start: 5, End: 12}},
+		},
+		{
 			name:          "invalid name yields nothing",
 			value:         "${1BAD}",
 			honorEscaping: honorEnvironmentEscaping,
@@ -189,8 +206,9 @@ func TestFindEnvironmentReferencesPolicies(t *testing.T) {
 }
 
 // TestNestedDefaultIsNotDiscovered pins the agreed limitation:
-// azd nested references are unsupported, so only the outer name
-// reaches the generated service env block and init prompting.
+// azd nested references are unsupported, so NESTED reaches
+// neither consumer. Only the env block keeps the outer name;
+// init prompting drops it too because it carries a default.
 // Without this, ${OUTER:-${NESTED}} would look half-supported.
 func TestNestedDefaultIsNotDiscovered(t *testing.T) {
 	t.Parallel()
@@ -243,7 +261,9 @@ func TestCollectAzureYamlEnvironmentReferencesUpgradesSecret(t *testing.T) {
 // scanner drifting from foundry.ExpandEnv, which is what actually
 // resolves these values at deploy. Every name the scanner reports
 // must be one the expander asks for, so a generated env block
-// never declares a variable the expander leaves alone.
+// never declares a variable the expander leaves alone. The corpus
+// covers both opening shapes: '$' followed by '{', and a bare '$'
+// the expander ignores.
 func TestFindEnvironmentReferencesMatchesExpander(t *testing.T) {
 	t.Parallel()
 
@@ -261,6 +281,10 @@ func TestFindEnvironmentReferencesMatchesExpander(t *testing.T) {
 		"${{f.g}}${AFTER}",
 		"${BEFORE}${{f.g}}",
 		"https://${HOST}/v1/${PATH:-default}",
+		"$foo}",
+		"prefix $bar} suffix",
+		"costs $price} today",
+		"$ab:-${REAL}}",
 	}
 
 	for _, value := range values {

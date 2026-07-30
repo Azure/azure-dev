@@ -2071,6 +2071,28 @@ func upgradeVersionResolutionError(extensionId, version, source string) error {
 	)
 }
 
+// upgradeRetryCommand returns a retry command that preserves the source and
+// version explicitly requested by the user.
+func upgradeRetryCommand(extensionId, source, version string) string {
+	command := fmt.Sprintf("azd extension upgrade %s", extensionId)
+	if source != "" {
+		command += fmt.Sprintf(" --source %q", source)
+	}
+	if version != "" {
+		command += fmt.Sprintf(" --version %q", version)
+	}
+	return command
+}
+
+// upgradeFailureDetails extracts actionable guidance from typed upgrade errors.
+func upgradeFailureDetails(err error) (error, string) {
+	wrappedErr := wrapDependencyError(err)
+	if suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](wrappedErr); ok {
+		return wrappedErr, suggestionErr.Suggestion
+	}
+	return wrappedErr, ""
+}
+
 // upgradeOneExtension processes a single extension upgrade and returns
 // the result. It never returns an error — failures are captured in
 // the returned UpgradeResult. A telemetry span is emitted for every
@@ -2134,6 +2156,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 
 	// Helper to record a failure and stop the spinner.
 	fail := func(err error) extensions.UpgradeResult {
+		err, baseResult.Suggestion = upgradeFailureDetails(err)
 		baseResult.Status = extensions.UpgradeStatusFailed
 		baseResult.Error = err
 		if !isJsonOutput {
@@ -2144,13 +2167,21 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 				"  %s",
 				output.WithGrayFormat("%s", err.Error()),
 			))
-			a.console.Message(ctx, fmt.Sprintf(
-				"  Retry with: %s",
-				output.WithHighLightFormat(
-					"azd extension upgrade %s",
-					extensionId,
-				),
-			))
+			if baseResult.Suggestion != "" {
+				a.console.Message(ctx, fmt.Sprintf(
+					"  %s", baseResult.Suggestion,
+				))
+			} else {
+				a.console.Message(ctx, fmt.Sprintf(
+					"  Retry with: %s",
+					output.WithHighLightFormat(
+						"%s",
+						upgradeRetryCommand(
+							extensionId, a.flags.source, a.flags.version,
+						),
+					),
+				))
+			}
 		}
 		return baseResult
 	}
@@ -2223,6 +2254,11 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			installed, unversionedMatches, a.flags.source,
 		)
 		if res == nil {
+			if len(unversionedMatches) > 0 {
+				return upgradeSourceResolutionError(
+					extensionId, a.flags.source, installed.Source,
+				)
+			}
 			return nil
 		}
 		return upgradeVersionResolutionError(

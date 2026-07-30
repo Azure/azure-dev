@@ -44,6 +44,62 @@ func testExtMeta(id, version, source string) *extensions.ExtensionMetadata {
 	}
 }
 
+func TestUpgradeRetryCommand(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		source  string
+		version string
+		want    string
+	}{
+		{
+			name: "extension only",
+			want: "azd extension upgrade ext-a",
+		},
+		{
+			name:   "source",
+			source: "test",
+			want:   `azd extension upgrade ext-a --source "test"`,
+		},
+		{
+			name:    "version",
+			version: "3.0.0",
+			want:    `azd extension upgrade ext-a --version "3.0.0"`,
+		},
+		{
+			name:    "source and version",
+			source:  "test source",
+			version: "3.0.0",
+			want:    `azd extension upgrade ext-a --source "test source" --version "3.0.0"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, test.want, upgradeRetryCommand("ext-a", test.source, test.version))
+		})
+	}
+}
+
+func TestUpgradeFailureDetails(t *testing.T) {
+	t.Parallel()
+
+	dependencyErr := fmt.Errorf("failed to upgrade extension: %w", &extensions.DependencyVersionNotFoundError{
+		DependencyId: "azure.ai.inspector",
+		ParentId:     "azure.ai.agents",
+		Constraint:   ">=2.0.0",
+	})
+
+	err, suggestion := upgradeFailureDetails(dependencyErr)
+
+	require.ErrorAs(t, err, new(*extensions.DependencyVersionNotFoundError))
+	require.Contains(t, suggestion, "azure.ai.inspector")
+	require.Contains(t, suggestion, ">=2.0.0")
+	require.Contains(t, suggestion, "azure.ai.agents")
+}
+
 // createUpgradeTestManager builds a real extensions.Manager backed by an
 // in-memory config with the given installed extensions. The mock HTTP
 // client serves the registry JSON from registryURL. This follows the
@@ -312,6 +368,22 @@ func TestUpgradeOneExtension(t *testing.T) {
 			},
 			wantStatus: extensions.UpgradeStatusFailed,
 			wantErr:    "extension 'ext-a' version '3.0.0' not available in source 'test'",
+		},
+		{
+			name:        "failed_version_and_source_not_found",
+			extensionId: "ext-a",
+			installed: map[string]*extensions.Extension{
+				"ext-a": {Id: "ext-a", Version: "1.0.0", Source: "removed-registry"},
+			},
+			registry: testRegistry(
+				testExtMeta("ext-a", "2.0.0", "test"),
+			),
+			flags: extensionUpgradeFlags{
+				version: "3.0.0",
+				global:  &internal.GlobalCommandOptions{NoPrompt: true},
+			},
+			wantStatus: extensions.UpgradeStatusFailed,
+			wantErr:    "extension 'ext-a' not available in source 'removed-registry' or the main registry",
 		},
 		{
 			name:        "failed_not_installed",

@@ -1,0 +1,35 @@
+name: azure-foundry-evals
+
+defaults:
+  # in general, more runs gets you better data overall, but we'll keep it simple.
+  runs: 1
+  timeout: 10m
+  executor: copilot-sdk
+  # This is the model that'll get used by the underlying copilot-sdk when the test runs
+  # NOTE: this is separate from the model used for prompts (where we often want to use a 
+  # separate family or different model, to avoid possible collusion)
+  model: claude-sonnet-4.6
+  # Judge model for LLM-judge graders (prompt or panel, but we're just using prompt grading).
+  # Deliberately different than the `model` above, to avoid collusion.
+  judge_model: gpt-5.5
+
+# Default weighting means every grader must pass in order to consider this a success.
+# You can add in weights, if you want, per grader _type_, to allow for some grader types to
+# be weighted differently, but simple "everything passing" is a great goal. :)
+scoring:
+  threshold: 1.0
+
+# http://aka.ms/vally
+stimuli:
+  - name: doctor-empty-dir
+    # This is the prompt that'll get sent to start the session for your test
+    prompt: |
+      Run 'azd ai agent doctor'
+    graders:
+      - type: tool-calls
+        name: "tool: runs azd ai agent doctor with bash"
+        config:
+          required:
+            - name: ^bash$
+              command: ^\s*azd ai agent doctor\s*$
+              result: with exit code 1

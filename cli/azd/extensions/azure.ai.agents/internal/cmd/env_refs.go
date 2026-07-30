@@ -21,6 +21,14 @@ import (
 // so $${VAR} does expand there. The split mirrors that existing
 // divergence rather than choosing two policies; it collapses
 // once resolveVars moves to foundry.ExpandEnv.
+//
+// resolveVars also diverges on ':-'. Its pattern matches only
+// ${NAME}, so a ${NAME:-default} on one of those three fields is
+// never substituted and no error is raised; the literal then
+// fails the field's own ARM id or subscription validation. No
+// escaping flag can mirror that, so the scanner still reports
+// the name and the gap is tracked upstream.
+// See: https://github.com/Azure/azure-dev/issues/9350
 const (
 	honorEnvironmentEscaping  = true
 	ignoreEnvironmentEscaping = false
@@ -109,7 +117,17 @@ func environmentReferenceCandidates(value string, honorEscaping bool) []environm
 	return references
 }
 
+// environmentReferenceAt parses the reference opening at start.
+// The '{' check is what keeps a bare '$' from being read as one:
+// without it "$foo}" reports "oo", swallowing the 'f' as if it
+// were the brace, while foundry.ExpandEnv leaves the value
+// alone. "$ab:-${REAL}}" is the costly shape, because the
+// phantom would span the string and hide the live REAL.
 func environmentReferenceAt(value string, start int) (environmentReference, bool) {
+	if start+1 >= len(value) || value[start+1] != '{' {
+		return environmentReference{}, false
+	}
+
 	index := start + 2
 	if index >= len(value) || !isEnvironmentNameStart(value[index]) {
 		return environmentReference{}, false

@@ -281,6 +281,39 @@ func TestUpgradeOneExtension(t *testing.T) {
 			wantErr:    "extension 'ext-a' not found in source 'missing-source'",
 		},
 		{
+			name:        "failed_explicit_source_version_not_found",
+			extensionId: "ext-a",
+			installed: map[string]*extensions.Extension{
+				"ext-a": {Id: "ext-a", Version: "1.0.0", Source: "test"},
+			},
+			registry: testRegistry(
+				testExtMeta("ext-a", "2.0.0", "test"),
+			),
+			flags: extensionUpgradeFlags{
+				source:  "test",
+				version: "3.0.0",
+				global:  &internal.GlobalCommandOptions{NoPrompt: true},
+			},
+			wantStatus: extensions.UpgradeStatusFailed,
+			wantErr:    "extension 'ext-a' version '3.0.0' not available in source 'test'",
+		},
+		{
+			name:        "failed_stored_source_version_not_found",
+			extensionId: "ext-a",
+			installed: map[string]*extensions.Extension{
+				"ext-a": {Id: "ext-a", Version: "1.0.0", Source: "test"},
+			},
+			registry: testRegistry(
+				testExtMeta("ext-a", "2.0.0", "test"),
+			),
+			flags: extensionUpgradeFlags{
+				version: "3.0.0",
+				global:  &internal.GlobalCommandOptions{NoPrompt: true},
+			},
+			wantStatus: extensions.UpgradeStatusFailed,
+			wantErr:    "extension 'ext-a' version '3.0.0' not available in source 'test'",
+		},
+		{
 			name:        "failed_not_installed",
 			extensionId: "not-installed",
 			installed:   map[string]*extensions.Extension{},

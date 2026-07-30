@@ -2056,6 +2056,21 @@ func upgradeSourceResolutionError(extensionId, flagSource, installedSource strin
 	)
 }
 
+// upgradeVersionResolutionError builds a user-facing error when the selected
+// upgrade source contains the extension but not the requested version.
+func upgradeVersionResolutionError(extensionId, version, source string) error {
+	if source == "" || strings.EqualFold(source, extensions.MainRegistryName) {
+		return fmt.Errorf(
+			"extension '%s' version '%s' not available in the main registry",
+			extensionId, version,
+		)
+	}
+	return fmt.Errorf(
+		"extension '%s' version '%s' not available in source '%s'",
+		extensionId, version, source,
+	)
+}
+
 // upgradeOneExtension processes a single extension upgrade and returns
 // the result. It never returns an error — failures are captured in
 // the returned UpgradeResult. A telemetry span is emitted for every
@@ -2181,6 +2196,40 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		allMatchOptions.Source = a.flags.source
 	}
 
+	versionMismatchError := func() error {
+		if a.flags.version == "" || strings.EqualFold(a.flags.version, "latest") {
+			return nil
+		}
+
+		unversionedOptions := *allMatchOptions
+		unversionedOptions.Version = ""
+		unversionedMatches, err := a.extensionManager.FindExtensions(
+			ctx, &unversionedOptions,
+		)
+		if err != nil {
+			if isNetworkError(err) {
+				return fmt.Errorf(
+					"network error looking up extension %s "+
+						"(check your connection and retry): %w",
+					extensionId, err,
+				)
+			}
+			return fmt.Errorf(
+				"failed to find extension %s: %w", extensionId, err,
+			)
+		}
+
+		res := extensions.ResolveUpgradeSource(
+			installed, unversionedMatches, a.flags.source,
+		)
+		if res == nil {
+			return nil
+		}
+		return upgradeVersionResolutionError(
+			extensionId, a.flags.version, res.NewSource,
+		)
+	}
+
 	matches, err := a.extensionManager.FindExtensions(
 		ctx, allMatchOptions,
 	)
@@ -2197,10 +2246,12 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		))
 	}
 	if len(matches) == 0 {
-		// Explicit --source miss: FindExtensions already filtered by source, so
-		// an empty result means the extension is not in that source (it may
-		// still exist elsewhere). Fail with a source-aware error instead of the
-		// generic "no longer available" skip used for fully delisted extensions.
+		if err := versionMismatchError(); err != nil {
+			return fail(err)
+		}
+
+		// Explicit --source miss: neither the requested version nor any other
+		// version of the extension exists in that source.
 		if a.flags.source != "" {
 			return fail(upgradeSourceResolutionError(
 				extensionId, a.flags.source, installed.Source,
@@ -2236,6 +2287,9 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			installed, matches, a.flags.source,
 		)
 		if res == nil {
+			if err := versionMismatchError(); err != nil {
+				return fail(err)
+			}
 			return fail(upgradeSourceResolutionError(
 				extensionId, a.flags.source, installed.Source,
 			))

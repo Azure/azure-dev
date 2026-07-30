@@ -86,7 +86,7 @@ infra:
       provider: bicep
     - name: foundry
       path: infra/foundry
-      provider: bicep
+      provider: microsoft.foundry
       dependsOn:
         - infra
 ```
@@ -96,11 +96,10 @@ under `infra/foundry/`.
 
 ## Ownership and Lifecycle
 
-When Foundry is added as a layer, generated Bicep uses azd's core `bicep`
-provider and generated Terraform uses `terraform`. A Foundry-only root Bicep
-eject keeps `microsoft.foundry` for backward compatibility. The layer-specific
-routing gives composed projects normal per-layer preview, state, targeted
-provision, and teardown behavior.
+Generated Bicep continues to use `microsoft.foundry`, with the layer's `path`
+and `module` telling the provider where to load the ejected templates.
+Generated Terraform uses the core `terraform` provider because Terraform state
+and lifecycle are owned by azd core.
 
 The Foundry layer owns an isolated resource group:
 
@@ -134,26 +133,19 @@ We preserve existing IaC as one layer and generate Foundry IaC as another.
 File-level merging was rejected because deployment entry-point conflicts are
 semantic, not only textual.
 
-### 2. Core providers for ejected IaC
-
-For a composed project, generated Bicep uses `provider: bicep` and generated
-Terraform uses `provider: terraform`. A Foundry-only root Bicep eject continues
-to use `provider: microsoft.foundry`; the change applies specifically to the
-new `foundry` layer shape.
-
-### 3. Isolated resource-group ownership
+### 2. Isolated resource-group ownership
 
 The Foundry layer receives its own resource group instead of sharing
 `AZURE_RESOURCE_GROUP`. This avoids Terraform import conflicts and destructive
 cross-layer teardown.
 
-### 4. Fail closed on rerun
+### 3. Fail closed on rerun
 
 If generated files already exist, eject refuses rather than regenerating or
 using `--force`. Once ejected, IaC is user-owned and may contain intentional
 customizations.
 
-### 5. Preserve the simple project shape
+### 4. Preserve the simple project shape
 
 Foundry-only projects continue using root `infra/`. Layers are introduced only
 when composition requires them.

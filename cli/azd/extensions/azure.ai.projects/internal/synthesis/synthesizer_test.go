@@ -1544,3 +1544,141 @@ services:
 		})
 	}
 }
+
+// TestResolveVars_MatchesFoundryExpandEnv locks in that the three project
+// network fields resolved through resolveVars use the same expander semantics
+// as every other Foundry field: ${VAR:-default} falls back, $${VAR} stays
+// literal, and a reference with neither a value nor a default is still a
+// load-bearing error naming the variable.
+func TestResolveVars_MatchesFoundryExpandEnv(t *testing.T) {
+	env := map[string]string{
+		"SET_VAR":   "set-value",
+		"EMPTY_VAR": "",
+	}
+
+	tests := []struct {
+		name    string
+		in      string
+		want    string
+		wantErr string
+	}{
+		{name: "plain reference", in: "${SET_VAR}", want: "set-value"},
+		{name: "default is unused when set", in: "${SET_VAR:-fallback}", want: "set-value"},
+		{name: "default fills in when unset", in: "${MISSING_VAR_XYZ:-fallback}", want: "fallback"},
+		{name: "empty default is allowed", in: "${MISSING_VAR_XYZ:-}", want: ""},
+		{name: "empty env value takes the default", in: "${EMPTY_VAR:-fallback}", want: "fallback"},
+		{name: "escaped reference stays literal", in: "$${MISSING_VAR_XYZ}", want: "${MISSING_VAR_XYZ}"},
+		{name: "no references", in: "/subscriptions/abc", want: "/subscriptions/abc"},
+		{
+			name: "default inside a resource id",
+			in:   "${MISSING_VAR_XYZ:-/subscriptions/s/resourceGroups/rg}",
+			want: "/subscriptions/s/resourceGroups/rg",
+		},
+		{
+			name:    "unresolved reference errors",
+			in:      "${MISSING_VAR_XYZ}",
+			wantErr: "unresolved environment variable ${MISSING_VAR_XYZ}",
+		},
+		{
+			name:    "first unresolved reference is named",
+			in:      "${MISSING_A_XYZ}/${MISSING_B_XYZ}",
+			wantErr: "unresolved environment variable ${MISSING_A_XYZ}",
+		},
+		{
+			name:    "a default elsewhere does not excuse a bare reference",
+			in:      "${MISSING_VAR_XYZ:-ok}/${MISSING_VAR_XYZ}",
+			wantErr: "unresolved environment variable ${MISSING_VAR_XYZ}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveVars(tt.in, env)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestContainsVarRef_RecognizesDefaults guards the eject path: a reference with
+// a default must be recognized as still-unresolved so the value is kept
+// verbatim and the ARM-shape checks are deferred to provision time, instead of
+// being rejected as a malformed resource id.
+func TestContainsVarRef_RecognizesDefaults(t *testing.T) {
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		{in: "${VNET}", want: true},
+		{in: "${VNET:-/subscriptions/s}", want: true},
+		{in: "/subscriptions/s/resourceGroups/rg", want: false},
+		{in: "", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			assert.Equal(t, tt.want, containsVarRef(tt.in))
+		})
+	}
+}
+
+// TestSynthesize_NetworkVarRefDefaults covers the reported bug end to end:
+// ${VAR:-default} on the three network fields previously fell through
+// resolveVars unchanged and was then rejected by the ARM id / subscription
+// shape checks, blaming the resource id instead of the unsupported syntax.
+func TestSynthesize_NetworkVarRefDefaults(t *testing.T) {
+	const (
+		fallbackVNet = "/subscriptions/00000000-0000-0000-0000-000000000000" +
+			"/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/default"
+		fallbackSub = "11111111-1111-1111-1111-111111111111"
+	)
+
+	yaml := `
+services:
+  my-project:
+    host: azure.ai.project
+    network:
+      peSubnet: {vnet: "${MISSING_VNET_XYZ:-` + fallbackVNet + `}", name: pe-subnet}
+      dns:
+        subscription: "${MISSING_SUB_XYZ:-` + fallbackSub + `}"
+`
+	res, err := Synthesize(Input{
+		RawAzureYAML:  []byte(yaml),
+		ServiceName:   "my-project",
+		AcceptedHosts: []string{"azure.ai.project"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	assert.Equal(t, fallbackVNet, res.Parameters["vnetId"])
+	assert.Equal(t, fallbackSub, res.Parameters["dnsZonesSubscription"])
+}
+
+// TestSynthesize_NetworkPreserveVarRefsWithDefault is the eject-path half of the
+// same bug: a defaulted reference must survive verbatim rather than being
+// rejected as a malformed VNet id.
+func TestSynthesize_NetworkPreserveVarRefsWithDefault(t *testing.T) {
+	const ref = "${AZURE_VNET_ID:-/subscriptions/s/resourceGroups/rg" +
+		"/providers/Microsoft.Network/virtualNetworks/default}"
+
+	yaml := `
+services:
+  my-project:
+    host: azure.ai.project
+    network:
+      peSubnet: {vnet: "` + ref + `", name: pe-subnet}
+`
+	res, err := Synthesize(Input{
+		RawAzureYAML:    []byte(yaml),
+		ServiceName:     "my-project",
+		AcceptedHosts:   []string{"azure.ai.project"},
+		PreserveVarRefs: true,
+	})
+	require.NoError(t, err, "a defaulted ${VAR} must not fail on the eject path")
+	require.NotNil(t, res)
+	assert.Equal(t, ref, res.Parameters["vnetId"])
+}

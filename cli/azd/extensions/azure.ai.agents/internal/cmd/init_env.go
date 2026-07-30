@@ -23,14 +23,10 @@ import (
 // environment value because the runtime expander supplies the fallback.
 var azureYamlEnvRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-[^}]*)?\}`)
 
-// Escape handling must match the expander that owns each field.
-// foundry.ExpandEnv treats an odd leading '$' as an escape, while the project
-// synthesizers' resolveVars helper expands every ${VAR} match regardless of
-// a preceding '$'.
-const (
-	honorAzureYamlEnvironmentEscaping  = true
-	ignoreAzureYamlEnvironmentEscaping = false
-)
+// Escape handling must match the expander that owns each field. Every Foundry
+// field, including the project network values, expands through
+// foundry.ExpandEnv, which treats an odd leading '$' as an escape.
+const honorAzureYamlEnvironmentEscaping = true
 
 // These types mirror only the fields each Foundry provider expands from the
 // azd environment. The owning provider types are unexported or live in sibling
@@ -406,7 +402,7 @@ func collectAzureYamlServiceEnvironmentReferences(
 				collectAzureYamlEnvironmentReferences(
 					config.Network.AgentSubnet.VNet,
 					false,
-					ignoreAzureYamlEnvironmentEscaping,
+					honorAzureYamlEnvironmentEscaping,
 					references,
 					indexByName,
 				)
@@ -415,7 +411,7 @@ func collectAzureYamlServiceEnvironmentReferences(
 				collectAzureYamlEnvironmentReferences(
 					config.Network.PESubnet.VNet,
 					false,
-					ignoreAzureYamlEnvironmentEscaping,
+					honorAzureYamlEnvironmentEscaping,
 					references,
 					indexByName,
 				)
@@ -424,7 +420,7 @@ func collectAzureYamlServiceEnvironmentReferences(
 				collectAzureYamlEnvironmentReferences(
 					config.Network.DNS.Subscription,
 					false,
-					ignoreAzureYamlEnvironmentEscaping,
+					honorAzureYamlEnvironmentEscaping,
 					references,
 					indexByName,
 				)

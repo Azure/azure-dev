@@ -808,8 +808,10 @@ var guidPattern = regexp.MustCompile(
 // rgNamePattern matches a valid Azure resource group name.
 var rgNamePattern = regexp.MustCompile(`^[-\w._()]{1,90}$`)
 
-// varRefPattern matches a ${VAR} reference.
-var varRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+// varRefPattern matches a ${VAR} reference, optionally carrying a
+// ${VAR:-default} fallback. Group 2 is non-empty when a default is present,
+// which means the reference resolves even with no environment value.
+var varRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-[^}]*)?\}`)
 
 // synthesizeNetwork validates the network: block and returns the bicep
 // parameter set plus the telemetry mode. When net is nil the returned
@@ -1010,7 +1012,8 @@ func sameVNet(a, b string) bool {
 	return strings.EqualFold(a, b)
 }
 
-// containsVarRef reports whether s still contains a ${VAR} reference.
+// containsVarRef reports whether s still contains a ${VAR} reference, including
+// the ${VAR:-default} form.
 func containsVarRef(s string) bool {
 	return varRefPattern.MatchString(s)
 }
@@ -1018,21 +1021,40 @@ func containsVarRef(s string) bool {
 // resolveVars expands ${VAR} references in s using env first, then the
 // process environment. An unresolved reference is an error naming the
 // variable.
+//
+// Expansion routes through foundry.ExpandEnv, the shared expander every other
+// Foundry field uses, so ${VAR:-default} and the $${VAR} escape behave here
+// exactly as they do elsewhere.
+//
+// ExpandEnv resolves through a mapping callback that only receives the variable
+// name, so the set of names that must resolve is collected up front: a name is
+// required only when it appears at least once without a :- default. Names inside
+// a Foundry ${{...}} span never reach the callback, because ExpandEnv masks
+// those spans, so they cannot trip this check.
 func resolveVars(s string, env map[string]string) (string, error) {
+	required := map[string]struct{}{}
+	for _, match := range varRefPattern.FindAllStringSubmatch(s, -1) {
+		if match[2] == "" {
+			required[match[1]] = struct{}{}
+		}
+	}
+
 	var unresolved string
-	out := varRefPattern.ReplaceAllStringFunc(s, func(match string) string {
-		name := varRefPattern.FindStringSubmatch(match)[1]
+	out, err := foundry.ExpandEnv(s, func(name string) string {
 		if v, ok := env[name]; ok {
 			return v
 		}
 		if v, ok := os.LookupEnv(name); ok {
 			return v
 		}
-		if unresolved == "" {
+		if _, ok := required[name]; ok && unresolved == "" {
 			unresolved = name
 		}
-		return match
+		return ""
 	})
+	if err != nil {
+		return "", err
+	}
 	if unresolved != "" {
 		return "", fmt.Errorf("unresolved environment variable ${%s}", unresolved)
 	}

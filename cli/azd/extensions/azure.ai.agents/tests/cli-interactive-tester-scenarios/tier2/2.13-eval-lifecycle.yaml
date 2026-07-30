@@ -17,6 +17,7 @@ name: "eval-lifecycle"
 command: "azd ai agent eval generate --max-samples 15 --no-wait"
 cwd: "~/working/azd-agents-shared/{shared_agent_name}"
 tags: ["tier:2", "cmd:eval", "serial-only"]
+requires: "tier2/2.00-setup-deploy-shared-agent.yaml"
 
 # Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
 pre:

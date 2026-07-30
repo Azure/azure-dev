@@ -23,15 +23,19 @@ formatting). Keep it scannable — full detail lives in the artifact. Suggested 
 ## 🧪 Agent scenario regression check
 
 **Branch:** `<headRef>` → `<baseRef>` · **Run:** `<run-timestamp>`
-**Impacted tags:** `cmd:invoke`, `cmd:sessions` · **Tiers run:** 0, 1, 2
+**Impacted tags:** `cmd:init`, `cmd:invoke` · **Tiers run:** 0, 1, 1b, 2
 
 | Scenario | Tier | Result | Duration |
 | --- | --- | --- | --- |
 | 0.01-version | 0 | ✅ PASS | 4s |
+| 1.01-init-template-python | 1 | ✅ PASS | 22s |
+| 1b.01-deploy-template-python | 1b | ✅ PASS | 3m 45s |
+| 1b.02-deploy-template-dotnet | 1b | ⏭️ SKIPPED | — |
 | 2.03-invoke-remote | 2 | ✅ PASS | 1m 12s |
 | 2.04-invoke-new-session | 2 | ❌ FAIL | 1m 40s |
 
 **Findings**
+- `1b.02-deploy-template-dotnet`: ⏭️ SKIPPED — prerequisite `tier1/1.02-init-template-dotnet.yaml` failed.
 - `2.04-invoke-new-session`: `--new-conversation` still recalled the prior name — memory
   was not reset. (screenshot: …)
 
@@ -42,7 +46,11 @@ formatting). Keep it scannable — full detail lives in the artifact. Suggested 
 
 Rules:
 
-- Use ✅ PASS / ❌ FAIL (and ⚠️ for a scenario that completed but raised a non-fatal finding).
+- Use ✅ PASS / ❌ FAIL / ⏭️ SKIPPED (and ⚠️ for a scenario that completed but raised a
+  non-fatal finding).
+- **SKIPPED** means the scenario's `requires:` prerequisite did not PASS — include the reason
+  in the Findings section (e.g. "prerequisite `tier1/1.01-…` failed"). SKIPPED scenarios
+  have no duration (`—`).
 - **Never** soften a real regression to make the table green. A scenario that failed because
   of the PR's change is a FAIL — report it and recommend fixing the code, not the scenario.
 - If the user opted out of posting (or there's no PR), write only the artifact and print the

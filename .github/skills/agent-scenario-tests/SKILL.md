@@ -45,8 +45,9 @@ for regressions. It:
 4. Posts a per-scenario results comment back on the PR.
 
 It is cost- and side-effect-aware: Tier 0 is free/offline, Tier 1 needs Azure auth but
-provisions nothing, and **Tier 2 incurs Azure cost and is only run after explicit user
-confirmation**.
+provisions nothing, **Tier 1b** (`verify-deploy`) provisions per-scenario Azure resources to
+verify Tier 1 scaffolds actually deploy, and **Tier 2** incurs Azure cost for cloud-feature
+testing — both Tier 1b and Tier 2 are only run after explicit user confirmation.
 
 > This skill drives scenarios **deliberately, with user consent**. That is different from
 > the extension's `AGENTS.md` rule that coding agents must not invoke scenarios on their
@@ -66,8 +67,10 @@ confirmation**.
 
 - The current branch's PR was resolved (or the user supplied one / chose to skip the comment).
 - The impacted scenario set was derived from the PR diff and **confirmed by the user**
-  (including an explicit cost acknowledgement before any Tier 2 run).
-- Every selected scenario was driven to completion with a recorded PASS/FAIL, duration, and
-  any findings, and a `FINAL-REPORT.md` was written under `.reports/<run-timestamp>/`.
-- A results comment was posted on the PR (unless the user opted out), and any Tier 2 run was
-  followed by `2.99-teardown-down` so no Azure resources are left running.
+  (including an explicit cost acknowledgement before any Tier 1b or Tier 2 run).
+- Every selected scenario was driven to completion with a recorded PASS/FAIL/SKIPPED, duration,
+  and any findings, and a `FINAL-REPORT.md` was written under `.reports/<run-timestamp>/`.
+- Scenarios with a `requires:` field whose prerequisite did not PASS are marked ⏭️ SKIPPED
+  (not FAIL) with a clear reason.
+- A results comment was posted on the PR (unless the user opted out), and any Tier 1b/Tier 2
+  run was followed by appropriate teardown so no Azure resources are left running.

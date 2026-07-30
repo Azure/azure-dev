@@ -50,10 +50,12 @@ run_post_hooks call — the scenarios reference {prefix}, {subscription}, {regio
 {tenant} (optional), and {shared_agent_name} placeholders.
 
 I want this run on fleet mode, to parallelize the tests as much as possible. Each of the scenarios
-in tiers 0 and 1 are completely independent of each other and can be run in parallel. The scenarios
-in tier 2 however rely on a setup scenario, and the teardown scenario should be run last, so make
-sure to take that into account when distributing the work. I want to run all of the tests regardless
-of tier, and I acknowledge that tier 2 has an azure cost implication, that's fine.
+in tiers 0 and 1 are completely independent of each other and can be run in parallel. Tier 1b
+(verify-deploy) scenarios depend on their Tier 1 prerequisite passing first — run them after Tier 1
+completes, but they can be parallelized with each other. The scenarios in tier 2 however rely on a
+setup scenario, and the teardown scenario should be run last, so make sure to take that into account
+when distributing the work. I want to run all of the tests regardless of tier, and I acknowledge
+that tier 1b and tier 2 have an azure cost implication, that's fine.
 
 After all of these scenarios are run, create a final result report.
 
@@ -140,7 +142,7 @@ Requires the Go toolchain and sudo access in WSL.
 
 ## Authentication
 
-Tier 1 and Tier 2 scenarios read from / write to Azure, so a **human must log in
+Tier 1, Tier 1b, and Tier 2 scenarios read from / write to Azure, so a **human must log in
 manually before** starting a run. The scenarios do **not** perform login
 themselves, and the test-driving agent **cannot** complete it either: `az login`
 opens a **separate browser window** for account selection that requires
@@ -238,6 +240,9 @@ fan-out primitive for the shape of the run:
   so parallel runs interfere), then `2.99-teardown` last. See the
   [Tier 2](#tier-2--cloud-end-to-end-tier2---%EF%B8%8F-incurs-azure-cost)
   section.
+- **Tier 1b** (`verify-deploy`) is `parallel-safe` but must run **after Tier 1
+  completes**. Check each scenario's `requires:` field — only proceed if the
+  prerequisite PASSED. Then fan out Tier 1b scenarios concurrently like Tier 0/1.
 
 ### Operational guardrails for the orchestrator
 
@@ -331,7 +336,7 @@ its bugs:
 
 ## Tiers
 
-Scenarios are organized into three tiers by cost and prerequisites. Each
+Scenarios are organized into four tiers by cost and prerequisites. Each
 scenario also carries a `tags:` list that exposes the same axes plus the
 command(s) under test — see [Tags](#tags) for the full taxonomy and how to
 filter via `list_scenarios`.
@@ -375,6 +380,27 @@ and verifies the generated files, then stops before `azd provision`.
 | `tier1/1.06-init-deploy-mode-code.yaml` | `init --deploy-mode code` (entry-point/runtime) |
 | `tier1/1.07-init-deploy-mode-container.yaml` | `init --deploy-mode container` (container build config) |
 | `tier1/1.08-init-validate-deploy-mode.yaml` | `init --deploy-mode` value validation (invalid value; code-mode required flags) — seeds from-code so the deploy-mode check is reached |
+
+### Tier 1b — Deploy-verify (`tier1b/`) — ⚠️ incurs Azure cost
+Verifies that Tier 1 scaffolds actually **deploy** and produce a working agent.
+Each scenario reuses the on-disk scaffold from a Tier 1 init run (no init
+duplication), provisions its own Azure resources, deploys, checks the agent is
+accessible, then tears down with `azd down`. Independent Azure environments per
+scenario — safe to parallelize once prerequisites pass.
+
+Each scenario declares a `requires:` field pointing to the Tier 1 scenario
+whose scaffold it deploys. The orchestrator **must** check this: if the
+prerequisite didn't PASS in the current run, the Tier 1b scenario is SKIPPED.
+
+| File | Verifies | Requires |
+|------|----------|----------|
+| `tier1b/1b.01-deploy-template-python.yaml` | Python scaffold deploys | `tier1/1.01-init-template-python.yaml` |
+| `tier1b/1b.02-deploy-template-dotnet.yaml` | .NET scaffold deploys | `tier1/1.02-init-template-dotnet.yaml` |
+| `tier1b/1b.03-deploy-from-azure-yaml-url.yaml` | URL-based scaffold deploys | `tier1/1.03-init-from-azure-yaml-url.yaml` |
+| `tier1b/1b.04-deploy-from-code.yaml` | From-code scaffold deploys | `tier1/1.04-init-from-code.yaml` |
+| `tier1b/1b.05-deploy-flags-agent-name-model.yaml` | Flags scaffold deploys | `tier1/1.05-init-flags-agent-name-model.yaml` |
+| `tier1b/1b.06-deploy-deploy-mode-code.yaml` | Code-deploy scaffold deploys | `tier1/1.06-init-deploy-mode-code.yaml` |
+| `tier1b/1b.07-deploy-deploy-mode-container.yaml` | Container-deploy scaffold deploys | `tier1/1.07-init-deploy-mode-container.yaml` |
 
 ### Tier 2 — Cloud end-to-end (`tier2/`) — ⚠️ incurs Azure cost
 Provisions real resources. **Run order matters:**
@@ -424,9 +450,9 @@ grouping — colons are treated as ordinary characters by the filter):
 
 | Namespace | Values | Meaning |
 |---|---|---|
-| `tier:N` | `tier:0`, `tier:1`, `tier:2` | The tier the scenario belongs to (same axis as the directory's three sections above). Use this to express cost / auth profile in one tag. |
+| `tier:N` | `tier:0`, `tier:1`, `tier:1b`, `tier:2` | The tier the scenario belongs to (same axis as the directory's four sections above). Use this to express cost / auth profile in one tag. |
 | `cmd:*` | `cmd:init`, `cmd:show`, `cmd:invoke`, `cmd:sessions`, `cmd:files`, `cmd:monitor`, `cmd:endpoint`, `cmd:run`, `cmd:doctor`, `cmd:eval`, `cmd:optimize`, `cmd:sample`, `cmd:down`, `cmd:provision`, `cmd:deploy`, `cmd:version`, `cmd:help`, `cmd:code`, `cmd:delete` | The top-level `azd ai agent` (or `azd`) command(s) the scenario exercises. Multi-command scenarios (e.g. `2.12-run-local-and-invoke-local` runs both `run` and `invoke --local`; `2.00-setup` runs `init` + `provision` + `deploy`) carry multiple `cmd:*` tags. |
-| traits | `parallel-safe`, `serial-only`, `negative-path`, `picker` | `parallel-safe` ↔ `serial-only` are mutually exclusive: all Tier 0 / Tier 1 scenarios are `parallel-safe`, all Tier 2 are `serial-only`. `negative-path` flags arg-/CLI-validation scenarios that assert errors or non-zero exit codes rather than happy-path success. `picker` flags scenarios whose primary purpose is exercising interactive picker UX. |
+| traits | `parallel-safe`, `serial-only`, `negative-path`, `picker`, `verify-deploy` | `parallel-safe` ↔ `serial-only` are mutually exclusive: all Tier 0 / Tier 1 / Tier 1b scenarios are `parallel-safe`, all Tier 2 are `serial-only`. `negative-path` flags arg-/CLI-validation scenarios that assert errors or non-zero exit codes rather than happy-path success. `picker` flags scenarios whose primary purpose is exercising interactive picker UX. `verify-deploy` flags Tier 1b scenarios that verify a Tier 1 scaffold deploys. |
 
 **Examples** (the tool's `tags:` parameter is OR across the list):
 
@@ -434,6 +460,7 @@ grouping — colons are treated as ordinary characters by the filter):
 |---|---|
 | All `init` scenarios across every tier | `["cmd:init"]` |
 | Everything offline (no Azure auth, no cost) | `["tier:0"]` |
+| All Tier 1b verify-deploy scenarios | `["verify-deploy"]` |
 | All Tier 2 cloud scenarios | `["tier:2"]` |
 | Invoke + sessions reuse scenarios | `["cmd:invoke", "cmd:sessions"]` |
 | CLI arg-validation scenarios only | `["negative-path"]` |
@@ -494,6 +521,32 @@ regression to fix.
 > `tags: (none)`). Filter by any `tier:*` / `cmd:*` / trait tag to exclude
 > them — they intentionally carry no tags because they are configuration,
 > not scenarios.
+
+## The `requires:` field
+
+A scenario may declare a `requires:` field with a path (relative to the scenarios
+root) to another scenario that must PASS before this one can run:
+
+```yaml
+requires: "tier1/1.01-init-template-python.yaml"
+```
+
+**Semantics:**
+
+- The orchestrator checks the prerequisite's result in the current run.
+- If the prerequisite **PASSED** → proceed with this scenario normally.
+- If the prerequisite **FAILED / was not run / was SKIPPED** → mark this
+  scenario as ⏭️ SKIPPED with reason "prerequisite `<path>` did not pass".
+- The `requires:` value is always a **relative path** from the scenarios root
+  (e.g. `tier1/1.01-init-template-python.yaml`, not an absolute path).
+- The cli-interactive-tester MCP server ignores unknown top-level YAML keys,
+  so `requires:` is purely orchestrator-side logic — it doesn't affect
+  `load_scenario` or session behavior.
+
+**When to use:** Tier 1b verify-deploy scenarios use `requires:` to express
+their dependency on the Tier 1 init scaffold they deploy. This ensures the
+orchestrator doesn't waste time (and Azure cost) attempting to deploy a
+scaffold that failed to initialize.
 
 ## Profile / overrides
 

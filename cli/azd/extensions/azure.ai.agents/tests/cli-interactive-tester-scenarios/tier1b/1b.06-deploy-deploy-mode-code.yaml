@@ -1,0 +1,42 @@
+# Tier 1b (verify-deploy) — provision + deploy the scaffold from tier1/1.06.
+#
+# ⚠️ Incurs Azure cost. Requires tier1/1.06-init-deploy-mode-code to have run
+# first — it leaves a complete scaffold on disk that this scenario deploys.
+#
+# This scenario does NOT re-run init. It reuses the Tier 1 scaffold directly,
+# provisions infrastructure, deploys the agent, verifies it's accessible and
+# responsive, then cleans up with `azd down`. This specifically validates the
+# code-deploy (ZIP upload) path end-to-end.
+name: "deploy-deploy-mode-code"
+command: "azd provision"
+cwd: "~/working/azd-agents-t1-code-deploy-{instance}/{prefix}-t1-code-deploy-{instance}"
+tags: ["tier:1b", "cmd:provision", "cmd:deploy", "verify-deploy", "parallel-safe"]
+requires: "tier1/1.06-init-deploy-mode-code.yaml"
+
+pre:
+  - run: |
+      SCAFFOLD=~/working/azd-agents-t1-code-deploy-{instance}/{prefix}-t1-code-deploy-{instance}
+      if [ ! -f "$SCAFFOLD/azure.yaml" ]; then
+        echo "ERROR: Scaffold not found. Run tier1/1.06-init-deploy-mode-code first."
+        exit 1
+      fi
+      if ! grep -q "azure.ai.agent" "$SCAFFOLD/azure.yaml"; then
+        echo "ERROR: Scaffold incomplete — azure.yaml missing agent service. Tier 1 likely failed."
+        exit 1
+      fi
+      if [ ! -d "$SCAFFOLD/.azure" ]; then
+        echo "ERROR: No .azure/ environment. Tier 1 init did not save Azure selections."
+        exit 1
+      fi
+    cwd: "~/working"
+    name: "assert tier 1 scaffold is complete"
+
+goals:
+  - "Wait for 'azd provision' to complete. This creates the Azure infrastructure (Foundry project, model deployment, resource group) defined by the Tier 1 scaffold."
+  - "After provision succeeds, run 'azd deploy' and wait for it to complete. This deploys the agent via the code-deploy (ZIP upload) path to the provisioned Foundry project."
+  - "Run 'azd ai agent show' and verify the agent is accessible — confirm it reports an agent name and endpoint URL."
+  - "Run 'azd ai agent invoke' and send a simple test message (e.g. 'Hello, are you there?'). Confirm the agent responds with a non-empty reply. This validates the code-deploy agent is functional, not just deployed."
+  - "Take a screenshot of the successful provision, deploy, show, and invoke output."
+  - "Run 'azd down --force --purge' to tear down all Azure resources created by this scenario."
+  - "Confirm the teardown succeeds (exit 0)."
+  - "Report a finding if provision, deploy, show, invoke, or teardown fails. A failure here means the Tier 1 code-deploy scaffold passed validation but cannot actually deploy or run — this is a real regression."

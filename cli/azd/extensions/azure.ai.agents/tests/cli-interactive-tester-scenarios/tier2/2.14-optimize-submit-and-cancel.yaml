@@ -18,6 +18,7 @@ name: "optimize-submit-and-cancel"
 command: "azd ai agent optimize --eval-model {model} --evaluator coherence --max-candidates 1 --no-wait"
 cwd: "~/working/azd-agents-shared/{shared_agent_name}"
 tags: ["tier:2", "cmd:optimize", "serial-only"]
+requires: "tier2/2.00-setup-deploy-shared-agent.yaml"
 
 # Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
 pre:

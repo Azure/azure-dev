@@ -58,6 +58,10 @@ these, broaden the impacted set (and ask the user how wide to go):
 From the impacted `cmd:*` set, decide the **highest tier to offer**:
 
 - Default to **Tier 0 + Tier 1** for any change to a covered command (free + auth-only).
+- Offer **Tier 1b** (`verify-deploy`) when the change touches `cmd:init` code — these
+  scenarios verify that init scaffolds actually deploy. Since they reuse Tier 1 scaffolds,
+  any init change warrants running them. Tier 1b requires cost acknowledgement (provisions
+  real Azure resources) but is `parallel-safe`.
 - Offer **Tier 2** only when the change can plausibly affect cloud behavior — i.e. it
   touches `cmd:invoke`, `cmd:sessions`, `cmd:files`, `cmd:monitor`, `cmd:endpoint`,
   `cmd:show`, `cmd:run`, `cmd:eval`, `cmd:optimize`, `cmd:doctor` provisioned paths,
@@ -74,3 +78,8 @@ Combine the derived `cmd:*` tags with the chosen tier tags and call
 `list_scenarios(tags=[...])`. Example: an `invoke.go` change approved for Tier 2 →
 `list_scenarios(tags=["cmd:invoke"])`, then keep the Tier 0/1 results plus the Tier 2
 `2.*-invoke-*` scenarios, prefixed by `2.00-setup` and suffixed by `2.99-teardown`.
+
+For **Tier 1b** (`verify-deploy`): when `cmd:init` is impacted and the user approves
+cost-incurring tiers, include `list_scenarios(tags=["verify-deploy"])`. These scenarios
+have `requires:` fields — the orchestrator will check prerequisites at runtime and SKIP
+any whose Tier 1 prerequisite did not PASS.

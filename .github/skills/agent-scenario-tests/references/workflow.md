@@ -63,9 +63,9 @@ and confirm via `ask_user` before running:
 
 - Always list the Tier 0 scenarios that will run (free).
 - If the set includes **Tier 1**, confirm `az login` is done.
-- If the set includes **Tier 2**, require an **explicit cost acknowledgement** ("Tier 2
-  provisions real Azure resources and incurs cost — proceed?"). If the user declines Tier 2,
-  drop it and run only Tier 0/1.
+- If the set includes **Tier 1b** or **Tier 2**, require an **explicit cost acknowledgement**
+  ("Tier 1b/2 provisions real Azure resources and incurs cost — proceed?"). If the user
+  declines, drop cost-incurring tiers and run only Tier 0/1.
 
 Pick one `<run-timestamp>` of the form `YYYYMMDD-HHMMSS` for the whole run. All artifacts go
 under `<scenarios-dir>/.reports/<run-timestamp>/`.
@@ -76,6 +76,11 @@ Drive each selected scenario per `running-scenarios.md`. Honor ordering:
 
 - **Tier 0 / Tier 1** are `parallel-safe` — they may be run concurrently (small waves), each
   with its own `cwd` (no `instance_id` needed for distinct scenarios).
+- **Tier 1b** (`verify-deploy`) is `parallel-safe` but **depends on Tier 1**: wait for all
+  Tier 1 scenarios to complete, then check each Tier 1b scenario's `requires:` field. Only
+  run it if the prerequisite PASSED; otherwise mark it ⏭️ SKIPPED. Once prerequisites are
+  confirmed, fan out Tier 1b scenarios concurrently. Tier 1b requires cost acknowledgement
+  (same as Tier 2) since it provisions Azure resources.
 - **Tier 2** is `serial-only` and order-dependent: `2.00-setup-deploy-shared-agent` **first**,
   then the targeted `2.01-`…`2.18-` scenarios **serially**, then `2.99-teardown-down` **last**.
 

@@ -5,6 +5,7 @@ name: "endpoint-show"
 command: "azd ai agent endpoint show"
 cwd: "~/working/azd-agents-shared/{shared_agent_name}"
 tags: ["tier:2", "cmd:endpoint", "serial-only"]
+requires: "tier2/2.00-setup-deploy-shared-agent.yaml"
 
 pre:
   - run: "test -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"

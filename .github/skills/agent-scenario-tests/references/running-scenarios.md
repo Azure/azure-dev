@@ -23,6 +23,14 @@ before fanning out.
 
 For each selected scenario:
 
+0. **Check `requires:`** — If `load_scenario` (or a prior YAML parse) reveals a `requires:`
+   field, look up the prerequisite scenario's result in the current run:
+   - Prerequisite **PASSED** → proceed normally (step 1+).
+   - Prerequisite **FAILED / not run / SKIPPED** → record this scenario as ⏭️ **SKIPPED**
+     with reason "prerequisite `<path>` did not pass" and move to the next scenario.
+   The `requires:` value is a relative path from the scenarios root (e.g.
+   `tier1/1.01-init-template-python.yaml`).
+
 1. `load_scenario(path=<wsl path>, session_vars=<merged profile>)` — also tells you whether
    the scenario declares `pre`/`post` hooks.
 2. If it has `pre` hooks: `run_pre_hooks(path=…, session_vars=…)`. Hooks run host-side,
@@ -74,6 +82,12 @@ For each selected scenario:
   seconds) prevents collisions when multiple agent sessions drive the tester concurrently.
   No `instance_id` is needed — each scenario's `cwd` already isolates itself (defaults to
   the `-main` suffix).
+- **Tier 1b** (`parallel-safe`, `verify-deploy`): runs **after all Tier 1 scenarios
+  complete**. Each Tier 1b scenario has a `requires:` field pointing to the Tier 1 scenario
+  whose scaffold it deploys. Only run a Tier 1b scenario if its prerequisite PASSED. Once
+  the prerequisites are confirmed, Tier 1b scenarios may be fanned out concurrently (each
+  has its own independent Azure environment). They also need the same cost acknowledgement
+  as Tier 2 since they provision real resources.
 - **Same scenario N times** in parallel: pass `instance_id="1"`, `"2"`, … See the README's
   parallel-readiness section for which scenarios support it.
 - **Tier 2** (`serial-only`): never parallelize. Run `2.00-setup-deploy-shared-agent` first,
@@ -84,6 +98,7 @@ For each selected scenario:
 
 ## Capture per scenario
 
-Record, for the report: the scenario stem, tier, PASS/FAIL, wall-clock **duration**
-(`start_session` → `finish_session` incl. hooks, formatted `Hh Mm Ss`), and any
-`report_finding` text (confusing UX, errors, doc mismatches).
+Record, for the report: the scenario stem, tier, PASS/FAIL/SKIPPED, wall-clock **duration**
+(`start_session` → `finish_session` incl. hooks, formatted `Hh Mm Ss`; `—` for SKIPPED), and
+any `report_finding` text (confusing UX, errors, doc mismatches). SKIPPED scenarios include
+the reason (e.g. "prerequisite `tier1/1.01-init-template-python.yaml` did not pass").

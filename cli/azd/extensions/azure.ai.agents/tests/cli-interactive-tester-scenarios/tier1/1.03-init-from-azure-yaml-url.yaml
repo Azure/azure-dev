@@ -29,6 +29,7 @@ pre:
 
 goals:
   - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with '{prefix}-' and suffixed with this run's instance id '-{instance}' (e.g. '{prefix}-basic-responses-{instance}') so concurrent instances don't collide on resource names. Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected. If a name prompt comes pre-filled with a default value, CLEAR it first (select-all then delete, or backspaces) before typing so your name replaces the default instead of appending to it."
+  - "When prompted for the AGENT NAME, set it to EXACTLY '{prefix}-t1-from-url-{instance}' (clear any pre-filled default first, then type it). This exact name is required so the scaffold subdirectory path is deterministic."
   - "Wait for the tool to fetch and parse the azure.yaml from the provided URL."
   - "If asked to select an Azure AI Foundry project, choose to create a new one, naming it with the '{prefix}-' prefix, and follow the prompts."
   - "If asked to select a subscription, search for and select the '{subscription}' subscription."

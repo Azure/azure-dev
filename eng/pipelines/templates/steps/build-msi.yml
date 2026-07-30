@@ -16,6 +16,7 @@ steps:
       restoreSolution: cli/installer/windows.sln
       feedsToUse: select
       vstsFeed: 'public/azure-sdk-for-net'
+      includeNuGetOrg: false
 
   - ${{ if eq(parameters.ShouldBuildForRelease, 'true') }}:
     - pwsh: |

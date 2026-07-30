@@ -617,7 +617,7 @@ func useTestProjectEndpoint(t *testing.T, endpoint string) {
 	}
 }
 
-func TestResolveDeployStateDefaultsToExistingFolderWithoutInit(t *testing.T) {
+func TestResolvePublishStateDefaultsToExistingFolderWithoutInit(t *testing.T) {
 	tempDir := filepath.Join(t.TempDir(), "My Env")
 	if err := os.MkdirAll(tempDir, 0750); err != nil {
 		t.Fatal(err)
@@ -625,7 +625,7 @@ func TestResolveDeployStateDefaultsToExistingFolderWithoutInit(t *testing.T) {
 	t.Chdir(tempDir)
 	t.Setenv(foundryProjectEndpointEnvVar, "https://account.services.ai.azure.com/api/projects/project-1")
 
-	state, initialized, err := resolveDeployState(&rleDeployFlags{})
+	state, initialized, err := resolvePublishState(&rlePublishFlags{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -640,12 +640,12 @@ func TestResolveDeployStateDefaultsToExistingFolderWithoutInit(t *testing.T) {
 	}
 }
 
-func TestResolveDeployStateDoesNotPersistDockerfileFlag(t *testing.T) {
+func TestResolvePublishStateDoesNotPersistDockerfileFlag(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	t.Setenv(foundryProjectEndpointEnvVar, "https://account.services.ai.azure.com/api/projects/project-1")
 
-	state, initialized, err := resolveDeployState(&rleDeployFlags{
+	state, initialized, err := resolvePublishState(&rlePublishFlags{
 		dockerfile: "server/Dockerfile",
 	})
 	if err != nil {
@@ -659,11 +659,11 @@ func TestResolveDeployStateDoesNotPersistDockerfileFlag(t *testing.T) {
 	}
 }
 
-func TestResolveDeployImageUsesTerminalAcrRegistryEnvironment(t *testing.T) {
+func TestResolvePublishImageUsesTerminalAcrRegistryEnvironment(t *testing.T) {
 	t.Setenv("AZURE_CONTAINER_REGISTRY_ENDPOINT", "example.azurecr.io")
 
-	image, err := resolveDeployImage(
-		&rleDeployFlags{},
+	image, err := resolvePublishImage(
+		&rlePublishFlags{},
 		rleState{Name: "My Env", ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/Project 1"},
 	)
 	if err != nil {
@@ -674,9 +674,9 @@ func TestResolveDeployImageUsesTerminalAcrRegistryEnvironment(t *testing.T) {
 	}
 }
 
-func TestResolveDeployImageRequiresAcrRegistry(t *testing.T) {
-	_, err := resolveDeployImage(
-		&rleDeployFlags{},
+func TestResolvePublishImageRequiresAcrRegistry(t *testing.T) {
+	_, err := resolvePublishImage(
+		&rlePublishFlags{},
 		rleState{Name: "my-env", ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1"},
 	)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
@@ -688,11 +688,11 @@ func TestResolveDeployImageRequiresAcrRegistry(t *testing.T) {
 	}
 }
 
-func TestResolveDeployImageUsesRegistryEvenWhenStateExists(t *testing.T) {
+func TestResolvePublishImageUsesRegistryEvenWhenStateExists(t *testing.T) {
 	t.Setenv("AZURE_CONTAINER_REGISTRY_ENDPOINT", "example.azurecr.io")
 
-	image, err := resolveDeployImage(
-		&rleDeployFlags{},
+	image, err := resolvePublishImage(
+		&rlePublishFlags{},
 		rleState{
 			Name:            "my-env",
 			ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",

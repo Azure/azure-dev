@@ -112,12 +112,12 @@ func TestServiceErrorSuggestionShowsFoundryProjectEndpoint(t *testing.T) {
 	}
 }
 
-func TestResolveDeployStateUsesFoundryProjectEndpointEnvironment(t *testing.T) {
+func TestResolvePublishStateUsesFoundryProjectEndpointEnvironment(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	t.Setenv(foundryProjectEndpointEnvVar, "https://ACCOUNT.services.ai.azure.com/api/projects/project-from-env/")
 
-	state, initialized, err := resolveDeployState(&rleDeployFlags{})
+	state, initialized, err := resolvePublishState(&rlePublishFlags{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestResolveDeployStateUsesFoundryProjectEndpointEnvironment(t *testing.T) {
 	}
 }
 
-func TestResolveDeployStateUsesSavedProjectEndpointFallback(t *testing.T) {
+func TestResolvePublishStateUsesSavedProjectEndpointFallback(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	if err := saveRleState(rleState{
@@ -139,7 +139,7 @@ func TestResolveDeployStateUsesSavedProjectEndpointFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	state, initialized, err := resolveDeployState(&rleDeployFlags{})
+	state, initialized, err := resolvePublishState(&rlePublishFlags{})
 	if err != nil {
 		t.Fatal(err)
 	}

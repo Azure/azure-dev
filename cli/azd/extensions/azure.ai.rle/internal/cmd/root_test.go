@@ -15,17 +15,27 @@ import (
 func TestNewRootCommandIncludesExpectedCommands(t *testing.T) {
 	rootCmd := NewRootCommand()
 
-	for _, commandName := range []string{"deploy", "init", "invoke", "run", "version", "metadata"} {
+	for _, commandName := range []string{"environment", "init", "invoke", "publish", "run", "version", "metadata"} {
 		if command, _, err := rootCmd.Find([]string{commandName}); err != nil || command.Name() != commandName {
 			t.Fatalf("expected command %q to be registered", commandName)
 		}
+	}
+	listCommand, _, err := rootCmd.Find([]string{"environment", "list"})
+	if err != nil || listCommand.Name() != "list" {
+		t.Fatal("expected environment list command to be registered")
+	}
+	if command, _, err := rootCmd.Find([]string{"environments"}); err == nil && command.Name() == "environments" {
+		t.Fatal("expected no environments alias")
+	}
+	if command, _, err := rootCmd.Find([]string{"deploy"}); err == nil && command.Name() == "deploy" {
+		t.Fatal("expected no deploy alias")
 	}
 }
 
 func TestRleUserCommandsHiddenUnlessEnabled(t *testing.T) {
 	t.Setenv(rleEnableEnvVar, "")
 	rootCmd := NewRootCommand()
-	for _, commandName := range []string{"deploy", "init", "invoke", "run"} {
+	for _, commandName := range []string{"environment", "init", "invoke", "publish", "run"} {
 		command, _, err := rootCmd.Find([]string{commandName})
 		if err != nil {
 			t.Fatalf("expected command %q to be registered: %v", commandName, err)
@@ -51,7 +61,7 @@ func TestRleUserCommandsHiddenUnlessEnabled(t *testing.T) {
 
 	t.Setenv(rleEnableEnvVar, "true")
 	rootCmd = NewRootCommand()
-	for _, commandName := range []string{"deploy", "init", "invoke", "run", "version"} {
+	for _, commandName := range []string{"environment", "init", "invoke", "publish", "run", "version"} {
 		command, _, err := rootCmd.Find([]string{commandName})
 		if err != nil {
 			t.Fatalf("expected command %q to be registered: %v", commandName, err)
@@ -62,26 +72,31 @@ func TestRleUserCommandsHiddenUnlessEnabled(t *testing.T) {
 	}
 }
 
-func TestDeployExposesStandaloneFlags(t *testing.T) {
+func TestPublishExposesStandaloneFlags(t *testing.T) {
 	rootCmd := NewRootCommand()
-	command, _, err := rootCmd.Find([]string{"deploy"})
+	command, _, err := rootCmd.Find([]string{"publish"})
 	if err != nil {
-		t.Fatalf("expected deploy command to be registered: %v", err)
+		t.Fatalf("expected publish command to be registered: %v", err)
 	}
 	if flag := command.Flags().Lookup("project-endpoint"); flag != nil {
-		t.Fatal("expected deploy not to expose --project-endpoint")
+		t.Fatal("expected publish not to expose --project-endpoint")
 	}
 	if flag := command.Flags().Lookup("project-id"); flag != nil {
-		t.Fatal("expected deploy not to expose --project-id")
+		t.Fatal("expected publish not to expose --project-id")
 	}
 	if flag := command.Flags().Lookup("image"); flag != nil {
-		t.Fatal("expected deploy not to expose --image")
+		t.Fatal("expected publish not to expose --image")
 	}
 	if flag := command.Flags().Lookup("dockerfile"); flag == nil {
-		t.Fatal("expected deploy to expose --dockerfile")
+		t.Fatal("expected publish to expose --dockerfile")
+	}
+	if flag := command.Flags().Lookup("version-bump"); flag == nil {
+		t.Fatal("expected publish to expose --version-bump")
+	} else if got := flag.DefValue; got != "major" {
+		t.Fatalf("expected --version-bump default to be major, got %q", got)
 	}
 	if flag := command.Flags().Lookup("name"); flag != nil {
-		t.Fatal("expected deploy not to expose --name")
+		t.Fatal("expected publish not to expose --name")
 	}
 }
 
@@ -166,10 +181,18 @@ func TestLifecycleFlagsAlignWithHostedAgentConventions(t *testing.T) {
 func TestLifecycleCommandsRejectPositionalArguments(t *testing.T) {
 	rootCmd := NewRootCommand()
 
-	for _, commandName := range []string{"deploy", "invoke", "run"} {
+	for _, commandName := range []string{"publish", "invoke", "run"} {
 		command, _, err := rootCmd.Find([]string{commandName})
 		if err != nil {
 			t.Fatalf("expected command %q to be registered: %v", commandName, err)
+		}
+
+		environmentListCommand, _, err := rootCmd.Find([]string{"environment", "list"})
+		if err != nil {
+			t.Fatalf("expected environment list command to be registered: %v", err)
+		}
+		if err := environmentListCommand.Args(environmentListCommand, []string{"unexpected"}); err == nil {
+			t.Fatal("expected environment list to reject positional arguments")
 		}
 		if err := command.Args(command, []string{"unexpected"}); err == nil {
 			t.Fatalf("expected command %q to reject positional arguments", commandName)

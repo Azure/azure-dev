@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,6 +39,7 @@ var createRleClient = newRleClient
 type v1EnvironmentRequest struct {
 	Name         string `json:"name,omitempty"`
 	AcrImagePath string `json:"acrImagePath"`
+	VersionBump  string `json:"versionBump,omitempty"`
 }
 
 type environmentResource struct {
@@ -51,6 +53,10 @@ type environmentResource struct {
 	VersionLabel              string `json:"versionLabel,omitempty"`
 	DiskImageConversionStatus string `json:"diskImageConversionStatus,omitempty"`
 	DiskImageConversionError  string `json:"diskImageConversionError,omitempty"`
+}
+
+type listEnvironmentsResponse struct {
+	Value []environmentResource `json:"value"`
 }
 
 type sandboxCreateRequest struct {
@@ -119,6 +125,23 @@ func (c *rleClient) createV1Environment(
 ) (*environmentResource, error) {
 	var result environmentResource
 	if err := c.do(ctx, http.MethodPost, environmentCollectionPath, request, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (c *rleClient) listEnvironments(
+	ctx context.Context,
+	skip int,
+	top int,
+) (*listEnvironmentsResponse, error) {
+	query := url.Values{}
+	query.Set("skip", strconv.Itoa(skip))
+	query.Set("top", strconv.Itoa(top))
+
+	var result listEnvironmentsResponse
+	if err := c.do(ctx, http.MethodGet, environmentCollectionPath+"?"+query.Encode(), nil, &result); err != nil {
 		return nil, err
 	}
 

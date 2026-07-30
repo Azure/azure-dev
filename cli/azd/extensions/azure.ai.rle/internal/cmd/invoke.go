@@ -401,7 +401,7 @@ func requireDeployedEnvironment(state rleState) error {
 			Message:    "Foundry project endpoint is required for remote invoke.",
 			Code:       "rle_project_required",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Run azd ai rle deploy first with FOUNDRY_PROJECT_ENDPOINT set.",
+			Suggestion: "Run azd ai rle publish first with FOUNDRY_PROJECT_ENDPOINT set.",
 		}
 	}
 	if strings.TrimSpace(state.EnvironmentId) == "" {
@@ -409,7 +409,7 @@ func requireDeployedEnvironment(state rleState) error {
 			Message:    "RLE environment has not been deployed.",
 			Code:       "rle_environment_not_deployed",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Run azd ai rle deploy from this environment folder first.",
+			Suggestion: "Run azd ai rle publish from this environment folder first.",
 		}
 	}
 	return nil

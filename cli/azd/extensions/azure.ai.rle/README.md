@@ -1,6 +1,6 @@
 # Azure AI RLE extension for azd
 
-Quickstart for the `azd ai rle` preview extension. The extension manages an OpenEnv-style RLE environment lifecycle: init, build and run the environment container, test it through a playground UI or shell, and deploy the environment image to the RLE control plane through your Foundry project endpoint.
+Quickstart for the `azd ai rle` preview extension. The extension manages an OpenEnv-style RLE environment lifecycle: init, build and run the environment container, test it through a playground UI or shell, and publish the environment image to the RLE control plane through your Foundry project endpoint.
 
 ## Prerequisites
 
@@ -41,7 +41,7 @@ azd ai rle --help
 azd ai rle version
 ```
 
-`version` is always available. The lifecycle commands are preview-gated; if commands such as `init`, `run`, `deploy`, or `invoke` are hidden, enable the preview flag in your terminal:
+`version` is always available. The lifecycle commands are preview-gated; if commands such as `init`, `run`, `publish`, `environment`, or `invoke` are hidden, enable the preview flag in your terminal:
 
 ```powershell
 $env:AZD_AI_RLE_ENABLE = "true"
@@ -51,7 +51,7 @@ $env:AZD_AI_RLE_ENABLE = "true"
 
 RLE control-plane APIs are called relative to the Foundry project endpoint. APIM maps the project endpoint request to the workspace-scoped RLE service internally, so the extension does not require a separate control-plane endpoint.
 
-Set the Foundry project endpoint once in the terminal where you run `deploy`:
+Set the Foundry project endpoint once in the terminal where you run `publish`:
 
 ```powershell
 $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
@@ -63,7 +63,7 @@ For example, RLE environment registration is sent to:
 <FOUNDRY_PROJECT_ENDPOINT>/fine_tuning/environments?api-version=2025-11-15-preview
 ```
 
-Deploy also needs an ACR registry endpoint:
+Publish also needs an ACR registry endpoint:
 
 ```powershell
 $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = "<registry>.azurecr.io"
@@ -148,25 +148,41 @@ Supported shell commands:
 | `schema` | `GET /schema` |
 | `exit` / `quit` | Exit shell |
 
-### 3. Deploy/register
+### 3. Publish/register
 
 ```powershell
 $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
 $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = "<registry>.azurecr.io"
-azd ai rle deploy
+azd ai rle publish --version-bump major
 ```
 
-Deploy reads the Foundry project endpoint from `FOUNDRY_PROJECT_ENDPOINT` and the ACR registry from `AZURE_CONTAINER_REGISTRY_ENDPOINT`. It derives the project route segment from `/api/projects/<project>`, builds the Docker image as `<registry>.azurecr.io/<project>-<environment>:latest`, pushes it to ACR, registers that image by calling `<FOUNDRY_PROJECT_ENDPOINT>/fine_tuning/environments`, and saves the project/environment details in `.azd-rle.json`.
+Publish reads the Foundry project endpoint from `FOUNDRY_PROJECT_ENDPOINT` and the ACR registry from `AZURE_CONTAINER_REGISTRY_ENDPOINT`. It derives the project route segment from `/api/projects/<project>`, builds the Docker image as `<registry>.azurecr.io/<project>-<environment>:latest`, pushes it to ACR, registers that image by calling `<FOUNDRY_PROJECT_ENDPOINT>/fine_tuning/environments`, and saves the project/environment details in `.azd-rle.json`.
 
-The deploy command prints a CLI-friendly summary using `environmentId`, `foundryProjectEndpoint`, `acrImage`, `environmentVersion`, `createdAt`, and `updatedAt`.
+Use `--version-bump major` (default), `--version-bump minor`, or `--version-bump patch` to control the environment version that RLE creates.
+
+The publish command prints a CLI-friendly summary using `environmentId`, `foundryProjectEndpoint`, `acrImage`, `environmentVersion`, `createdAt`, and `updatedAt`.
 
 If needed, override the Dockerfile path the same way as local run:
 
 ```powershell
-azd ai rle deploy --dockerfile server\Dockerfile
+azd ai rle publish --dockerfile server\Dockerfile
 ```
 
-### 4. Invoke remotely
+### 4. List deployed environments
+
+List all RLE environments in the configured Foundry project:
+
+```powershell
+azd ai rle environment list
+```
+
+The command uses `FOUNDRY_PROJECT_ENDPOINT` when it is set. Otherwise, it uses the project endpoint saved in the current folder's `.azd-rle.json`. Use JSON output for scripting:
+
+```powershell
+azd ai rle environment list --output json
+```
+
+### 5. Invoke remotely
 
 Remote invoke uses the deployed environment, leases a sandbox from `<FOUNDRY_PROJECT_ENDPOINT>/fine_tuning/environments/<environmentId>/sandboxes/lease`, opens the sandbox `/web` UI when available (or a local proxy UI otherwise), keeps the shell attached, and releases the sandbox when the shell exits:
 

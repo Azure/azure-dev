@@ -1705,7 +1705,7 @@ func TestToolUpgradeAction_ChangedVersion_ReportsUpgraded(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.Message)
-	assert.Equal(t, "Tool is upgraded to v2.0.0.", result.Message.Header)
+	assert.Equal(t, "Tool is updated to v2.0.0.", result.Message.Header)
 }
 
 // TestSkillAgentDisplayName verifies an installed agent's command identity is
@@ -2004,7 +2004,7 @@ func TestToolUpgradeAction_MultiAgentSkill_UpgradedNotUpToDate(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.Message)
-	assert.Equal(t, "Tool is upgraded to v1.1.87.", result.Message.Header,
+	assert.Equal(t, "Tool is updated to v1.1.87.", result.Message.Header,
 		"a multi-agent skill with an upgraded agent must not read as already up to date")
 }
 

@@ -494,7 +494,7 @@ func TestDisplayUpgradeSummary(t *testing.T) {
 				{Status: extensions.UpgradeStatusUpgraded},
 			},
 			wantMsgs: []string{
-				"2 upgraded",
+				"2 updated",
 			},
 		},
 		{
@@ -506,7 +506,7 @@ func TestDisplayUpgradeSummary(t *testing.T) {
 				{Status: extensions.UpgradeStatusFailed},
 			},
 			wantMsgs: []string{
-				"1 upgraded",
+				"1 updated",
 				"1 skipped",
 				"1 promoted",
 				"1 failed",
@@ -519,7 +519,7 @@ func TestDisplayUpgradeSummary(t *testing.T) {
 			},
 			wantMsgs: []string{
 				"1 failed",
-				"azd extension upgrade <name>",
+				"azd extension update <name>",
 			},
 		},
 		{
@@ -590,7 +590,7 @@ func TestUpgradeActionResult(t *testing.T) {
 		require.NotNil(t, actionResult)
 		assert.Equal(
 			t,
-			"Extensions upgraded successfully",
+			"Extensions updated successfully",
 			actionResult.Message.Header,
 		)
 	})
@@ -609,7 +609,7 @@ func TestUpgradeActionResult(t *testing.T) {
 			require.NotNil(t, actionResult)
 			assert.Contains(
 				t, err.Error(),
-				"2 of 3 extensions failed to upgrade",
+				"2 of 3 extensions failed to update",
 			)
 			assert.Contains(
 				t, actionResult.Message.Header,
@@ -643,7 +643,7 @@ func TestUpgradeActionResult_EmptyResults(t *testing.T) {
 	require.NotNil(t, actionResult)
 	assert.Equal(
 		t,
-		"Extensions upgraded successfully",
+		"Extensions updated successfully",
 		actionResult.Message.Header,
 	)
 }

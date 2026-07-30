@@ -148,14 +148,16 @@ Uninstalls one or more previously installed extensions.
 
 - `--all` Removes all installed extensions when specified.
 
-#### `azd extension upgrade <extension-ids>`
+#### `azd extension update <extension-ids>`
 
-Upgrades one or more extensions to the latest versions.
+> Aliased as `azd extension upgrade` for backward compatibility.
 
-- `--all` Upgrades all previously installed extensions when specified.
-- `-v, --version` Upgrades a specified extension to an exact version, if provided.
-- `-s, --source` Specifies the source used for the upgrade. In addition to registered source names, this accepts a registry location (URL or file path). `azd` registers the location as a source before resolving the extension, updates the extension's stored source after a successful upgrade, and rejects locations under `--no-prompt`; add the source first with `azd extension source add`.
-- `--no-dependency-upgrades` Skips upgrading dependencies declared by extension packs.
+Updates one or more extensions to the latest versions.
+
+- `--all` Updates all previously installed extensions when specified.
+- `-v, --version` Updates a specified extension to an exact version, if provided.
+- `-s, --source` Specifies the source used for the update. In addition to registered source names, this accepts a registry location (URL or file path). `azd` registers the location as a source before resolving the extension, updates the extension's stored source after a successful update, and rejects locations under `--no-prompt`; add the source first with `azd extension source add`.
+- `--no-dependency-upgrades` Skips updating dependencies declared by extension packs.
 
 ## Developing Extensions
 
@@ -1209,9 +1211,9 @@ dependencies:
     version: "~0.1.0-preview"
 ```
 
-Pack manifests must include at least one dependency. They may omit `capabilities`, `namespace`, `entryPoint`, `usage`, and `examples` when the pack has no commands of its own. Installing a pack installs its dependencies recursively from the same extension source as the pack. Dependency versions in the manifest support semver constraints, but command-line `--version` values for `azd extension install` and `azd extension upgrade` are exact versions.
+Pack manifests must include at least one dependency. They may omit `capabilities`, `namespace`, `entryPoint`, `usage`, and `examples` when the pack has no commands of its own. Installing a pack installs its dependencies recursively from the same extension source as the pack. Dependency versions in the manifest support semver constraints, but command-line `--version` values for `azd extension install` and `azd extension update` are exact versions.
 
-Upgrading a pack upgrades the pack and, by default, reconciles installed dependencies to the highest published versions that satisfy the pack's declared dependency constraints. This dependency reconciliation still runs when the pack itself is already current, because an unchanged pack can point to a dependency range with newer matching versions. Users can disable automatic dependency upgrades with `azd extension upgrade <pack-id> --no-dependency-upgrades`.
+Updating a pack updates the pack and, by default, reconciles installed dependencies to the highest published versions that satisfy the pack's declared dependency constraints. This dependency reconciliation still runs when the pack itself is already current, because an unchanged pack can point to a dependency range with newer matching versions. Users can disable automatic dependency updates with `azd extension update <pack-id> --no-dependency-upgrades`.
 
 #### Provider Registration
 

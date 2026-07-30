@@ -147,7 +147,7 @@ func TestUpgradeAction_ContextCancellation(t *testing.T) {
 	// All extensions should be marked as failed
 	require.Error(t, err)
 	require.NotNil(t, result)
-	assert.Contains(t, err.Error(), "extensions failed to upgrade")
+	assert.Contains(t, err.Error(), "extensions failed to update")
 
 	// Parse the JSON output to verify all have failed status
 	var report struct {

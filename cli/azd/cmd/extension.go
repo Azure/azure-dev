@@ -114,32 +114,33 @@ tracked for updates; reinstall from a newer bundle to update.`,
 		FlagsResolver:  newExtensionUninstallFlags,
 	})
 
-	// azd extension upgrade <extension-id>
-	group.Add("upgrade", &actions.ActionDescriptorOptions{
+	// azd extension update <extension-id>
+	group.Add("update", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "upgrade [extension-id]",
-			Short: "Upgrade installed extensions to the latest version.",
-			Long: `Upgrade one or more installed extensions.
+			Use:     "update [extension-id]",
+			Aliases: []string{"upgrade"},
+			Short:   "Update installed extensions to the latest version.",
+			Long: `Update one or more installed extensions.
 
 By default, uses the stored registry source for each extension. If the stored
 source is unavailable, falls back to the main (azd) registry. Extensions that
 were installed from a non-main registry (e.g., dev) are automatically promoted
 to the main registry when a newer version is available there.
 
-Use --source to override the registry source for the upgrade. It accepts a
+Use --source to override the registry source for the update. It accepts a
 registered source name or registry location (URL or file path); locations are
-registered first and the upgraded extension's stored source is updated. Because
+registered first and the updated extension's stored source is updated. Because
 registration is interactive, locations are rejected under --no-prompt. Use --all
-to upgrade all installed extensions in a single batch; failures in one extension
-do not prevent the remaining extensions from being upgraded.
+to update all installed extensions in a single batch; failures in one extension
+do not prevent the remaining extensions from being updated.
 
-When upgrading an extension that has dependencies, any installed
-dependencies are automatically upgraded too, to the highest version
+When updating an extension that has dependencies, any installed
+dependencies are automatically updated too, to the highest version
 satisfying the extension's declared constraints. Use
---no-dependency-upgrades to opt out and upgrade only the named
+--no-dependency-upgrades to opt out and update only the named
 extension.
 
-Use --output json for a structured report of all upgrade results.`,
+Use --output json for a structured report of all update results.`,
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
@@ -169,7 +170,7 @@ Use --output json for a structured report of all upgrade results.`,
 			Use:   "add",
 			Short: "Add an extension source with the specified name",
 			Long: "Add an extension source with the specified name.\n\n" +
-				"`azd extension install --source` and `azd extension upgrade --source` also accept " +
+				"`azd extension install --source` and `azd extension update --source` also accept " +
 				"a registry URL or file path directly.",
 		},
 		ActionResolver: newExtensionSourceAddAction,
@@ -484,9 +485,9 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 
 			if hasCompatibleUpdates {
 				a.console.Message(ctx, fmt.Sprintf(
-					"To upgrade: %s", output.WithHighLightFormat("azd extension upgrade <extension-id>")))
+					"To update: %s", output.WithHighLightFormat("azd extension update <extension-id>")))
 				a.console.Message(ctx, fmt.Sprintf(
-					"To upgrade all: %s", output.WithHighLightFormat("azd extension upgrade --all")))
+					"To update all: %s", output.WithHighLightFormat("azd extension update --all")))
 			}
 
 			if hasIncompatibleUpdates {
@@ -507,7 +508,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 // Status indicator constants for extension list display.
 const (
 	statusUpToDate   = "Up to date"
-	statusUpgrade    = "Upgrade available"
+	statusUpgrade    = "Update available"
 	statusIncompat   = "Incompatible"
 	statusNotInstall = "Not installed"
 )
@@ -1057,7 +1058,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			)
 			if err != nil {
 				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return nil, wrapDependencyError(fmt.Errorf("failed to upgrade extension: %w", err))
+			return nil, wrapDependencyError(fmt.Errorf("failed to update extension: %w", err))
 			}
 
 			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
@@ -1137,7 +1138,7 @@ func (a *extensionInstallAction) sourceDisplayLabelForInstalled(source string) s
 
 // versionTransitionVerb returns a capitalized verb phrase describing the move
 // from the installed version to the target version: "Reinstall" when they match,
-// "Upgrade to <target>" / "Downgrade to <target>" when both parse as semver, and
+// "Update to <target>" / "Downgrade to <target>" when both parse as semver, and
 // a neutral "Replace with <target>" when ordering is undefined (non-semver tags).
 func versionTransitionVerb(installedVersion, targetVersion string) string {
 	if installedVersion == targetVersion {
@@ -1150,7 +1151,7 @@ func versionTransitionVerb(installedVersion, targetVersion string) string {
 	case installedErr == nil && targetErr == nil && targetSemver.LessThan(installedSemver):
 		return fmt.Sprintf("Downgrade to %s", targetVersion)
 	case installedErr == nil && targetErr == nil && targetSemver.GreaterThan(installedSemver):
-		return fmt.Sprintf("Upgrade to %s", targetVersion)
+		return fmt.Sprintf("Update to %s", targetVersion)
 	default:
 		return fmt.Sprintf("Replace with %s", targetVersion)
 	}
@@ -1852,12 +1853,12 @@ func newExtensionUpgradeFlags(cmd *cobra.Command, global *internal.GlobalCommand
 	flags := &extensionUpgradeFlags{
 		global: global,
 	}
-	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to upgrade to")
+	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to update to")
 	cmd.Flags().StringVarP(&flags.source, "source", "s", "",
-		"The registered source name or registry location (URL or file path) to use for upgrades.")
-	cmd.Flags().BoolVar(&flags.all, "all", false, "Upgrade all installed extensions")
+		"The registered source name or registry location (URL or file path) to use for updates.")
+	cmd.Flags().BoolVar(&flags.all, "all", false, "Update all installed extensions")
 	cmd.Flags().BoolVar(&flags.noDependencyUpgrades, "no-dependency-upgrades", false,
-		"Do not upgrade dependencies when upgrading an extension that has dependencies")
+		"Do not update dependencies when updating an extension that has dependencies")
 
 	return flags
 }
@@ -1902,8 +1903,8 @@ func (a *extensionUpgradeAction) Run(
 			Err: fmt.Errorf(
 				"cannot specify both an extension name and --all flag: %w",
 				internal.ErrInvalidFlagCombination),
-			Suggestion: "Use either 'azd extension upgrade <id>' " +
-				"or 'azd extension upgrade --all'.",
+			Suggestion: "Use either 'azd extension update <id>' " +
+				"or 'azd extension update --all'.",
 		}
 	}
 
@@ -1912,7 +1913,7 @@ func (a *extensionUpgradeAction) Run(
 			Err: fmt.Errorf(
 				"cannot specify --version with multiple extensions: %w",
 				internal.ErrInvalidFlagCombination),
-			Suggestion: "Upgrade one extension at a time when " +
+			Suggestion: "Update one extension at a time when " +
 				"using --version.",
 		}
 	}
@@ -1927,8 +1928,8 @@ func (a *extensionUpgradeAction) Run(
 	if len(a.args) == 0 && !a.flags.all {
 		return nil, &internal.ErrorWithSuggestion{
 			Err: internal.ErrNoArgsProvided,
-			Suggestion: "Run 'azd extension upgrade <extension-id>'" +
-				" or 'azd extension upgrade --all'.",
+			Suggestion: "Run 'azd extension update <extension-id>'" +
+				" or 'azd extension update --all'.",
 		}
 	}
 
@@ -1936,9 +1937,9 @@ func (a *extensionUpgradeAction) Run(
 
 	if !isJsonOutput {
 		a.console.MessageUxItem(ctx, &ux.MessageTitle{
-			Title: "Upgrade azd extensions " +
-				"(azd extension upgrade)",
-			TitleNote: "Upgrades the specified extensions " +
+			Title: "Update azd extensions " +
+				"(azd extension update)",
+			TitleNote: "Updates the specified extensions " +
 				"on the local machine",
 		})
 	}
@@ -2010,7 +2011,7 @@ loop:
 			report, a.writer, nil,
 		); err != nil {
 			return nil, fmt.Errorf(
-				"failed to format upgrade report: %w", err,
+				"failed to format update report: %w", err,
 			)
 		}
 		return upgradeActionResult(results)
@@ -2076,7 +2077,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	}
 
 	stepMsg := fmt.Sprintf(
-		"Upgrading %s extension",
+		"Updating %s extension",
 		output.WithHighLightFormat(extensionId),
 	)
 	if !isJsonOutput {
@@ -2098,7 +2099,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			a.console.Message(ctx, fmt.Sprintf(
 				"  Retry with: %s",
 				output.WithHighLightFormat(
-					"azd extension upgrade %s",
+					"azd extension update %s",
 					extensionId,
 				),
 			))
@@ -2126,7 +2127,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			"reinstall with a newer bundle to update"
 		if !isJsonOutput {
 			skipMsg := fmt.Sprintf(
-				"Upgrading %s extension",
+				"Updating %s extension",
 				output.WithHighLightFormat(extensionId),
 			) + output.WithGrayFormat(
 				" (Installed from a bundle)",
@@ -2170,7 +2171,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			"in any configured registry"
 		if !isJsonOutput {
 			skipMsg := fmt.Sprintf(
-				"Upgrading %s extension",
+				"Updating %s extension",
 				output.WithHighLightFormat(extensionId),
 			) + output.WithGrayFormat(
 				" (No longer available in any registry)",
@@ -2308,7 +2309,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		baseResult.SkipReason = "already up to date"
 		if !isJsonOutput {
 			skipMsg := stepMsg + output.WithGrayFormat(
-				" (No upgrade available)",
+				" (No update available)",
 			)
 			a.console.StopSpinner(
 				ctx, skipMsg, input.StepSkipped,
@@ -2329,13 +2330,13 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	if err != nil {
 		if isNetworkError(err) {
 			return fail(fmt.Errorf(
-				"network error upgrading %s "+
+				"network error updating %s "+
 					"(check your connection and retry): %w",
 				extensionId, err,
 			))
 		}
 		return fail(fmt.Errorf(
-			"failed to upgrade extension: %w", err,
+			"failed to update extension: %w", err,
 		))
 	}
 	baseResult.ToVersion = extVersion.Version
@@ -2362,7 +2363,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 
 	if !isJsonOutput {
 		doneMsg := fmt.Sprintf(
-			"Upgraded %s extension %s",
+			"Updated %s extension %s",
 			output.WithHighLightFormat(extensionId),
 			output.WithGrayFormat(
 				"(%s \u2192 %s)",
@@ -2392,7 +2393,7 @@ func (a *extensionUpgradeAction) displayPromotionWarning(
 ) {
 	a.console.StopSpinner(ctx, stepMsg, input.StepWarning)
 	a.console.Message(ctx, output.WithWarningFormat(
-		"  (!) Warning: Upgraded %s extension (%s \u2192 %s, %s \u2192 %s registry)",
+		"  (!) Warning: Updated %s extension (%s \u2192 %s, %s \u2192 %s registry)",
 		output.WithHighLightFormat(extensionId),
 		fromVersion, toVersion,
 		output.WithHighLightFormat(oldSource),
@@ -2442,7 +2443,7 @@ func displayDependencyUpgradeResults(
 			))
 		case extensions.UpgradeStatusFailed:
 			console.Message(ctx, fmt.Sprintf(
-				"%s%s Upgrading %s dependency%s",
+				"%s%s Updating %s dependency%s",
 				indent,
 				output.WithErrorFormat("(x) Failed:"),
 				output.WithHighLightFormat(child.ExtensionId),
@@ -2457,7 +2458,7 @@ func displayDependencyUpgradeResults(
 			))
 		case extensions.UpgradeStatusSkipped:
 			line := fmt.Sprintf(
-				"%s%s Upgrading %s dependency",
+				"%s%s Updating %s dependency",
 				indent,
 				output.WithGrayFormat("(-) Skipped:"),
 				output.WithHighLightFormat(child.ExtensionId),
@@ -2488,7 +2489,7 @@ func dependencyChangeVerb(fromVersion, toVersion string) string {
 	if to.LessThan(from) {
 		return "Downgraded"
 	}
-	return "Upgraded"
+	return "Updated"
 }
 
 // displayUpgradeSummary prints the batch summary line after all
@@ -2505,7 +2506,7 @@ func displayUpgradeSummary(
 	depUpgraded := summary.DependencyUpgradesByStatus[extensions.UpgradeStatusUpgraded]
 	if summary.Upgraded > 0 {
 		upgradedPart := output.WithSuccessFormat(
-			"%d upgraded", summary.Upgraded,
+			"%d updated", summary.Upgraded,
 		)
 		if depUpgraded > 0 {
 			noun := "dependency"
@@ -2551,7 +2552,7 @@ func displayUpgradeSummary(
 		console.Message(ctx, fmt.Sprintf(
 			"  Run '%s' to retry failed extensions.",
 			output.WithHighLightFormat(
-				"azd extension upgrade <name>",
+				"azd extension update <name>",
 			),
 		))
 	}
@@ -2568,19 +2569,19 @@ func upgradeActionResult(
 		return &actions.ActionResult{
 				Message: &actions.ResultMessage{
 					Header: fmt.Sprintf(
-						"%d of %d extensions failed to upgrade",
+						"%d of %d extensions failed to update",
 						summary.Failed, summary.Total,
 					),
 				},
 			}, fmt.Errorf(
-				"%d of %d extensions failed to upgrade",
+				"%d of %d extensions failed to update",
 				summary.Failed, summary.Total,
 			)
 	}
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Extensions upgraded successfully",
+			Header: "Extensions updated successfully",
 		},
 	}, nil
 }

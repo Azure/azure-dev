@@ -2,6 +2,10 @@
 
 ## 1.30.0-beta.1 (Unreleased)
 
+### Other Changes
+
+- Rename the `azd extension upgrade` and `azd tool upgrade` commands to `azd extension update` and `azd tool update`. The former `upgrade` names continue to work as aliases for backward compatibility.
+
 ## 1.29.0 (2026-07-29)
 
 ### Features Added

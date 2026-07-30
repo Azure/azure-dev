@@ -325,7 +325,7 @@ function isRegistryFile(file) {
 
 /**
  * Whether a changed file is an allowed in-place edit of a companion snapshot.
- * Only unmodified-path content edits qualify; deletions and renames do not.
+ * Only same-path content edits qualify; deletions and renames do not.
  *
  * @param {PullRequestFile} file
  * @returns {boolean}

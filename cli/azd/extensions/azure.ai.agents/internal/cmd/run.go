@@ -46,14 +46,18 @@ const (
 
 type runFlags struct {
 	port int
-	// inspectorPort is the port the Agent Inspector UI listens on. Zero means
-	// unset, in which case --inspector-port is not forwarded to the inspector.
+	// inspectorPort is the port the Agent Inspector UI listens on. When
+	// inspectorPortSet is false the flag was not supplied and
+	// --inspector-port is not forwarded to the inspector.
 	inspectorPort int
-	name          string
-	startCommand  string
-	noInspector   bool
-	noClient      bool
-	channel       string
+	// inspectorPortSet records whether --inspector-port was explicitly
+	// supplied, so an explicit (and invalid) 0 is not mistaken for unset.
+	inspectorPortSet bool
+	name             string
+	startCommand     string
+	noInspector      bool
+	noClient         bool
+	channel          string
 }
 
 type environmentEntry struct {
@@ -105,6 +109,7 @@ Playground for activity agents. Use --no-client to skip this.`,
 			if len(args) > 0 {
 				flags.name = args[0]
 			}
+			flags.inspectorPortSet = cmd.Flags().Changed("inspector-port")
 			ctx := azdext.WithAccessToken(cmd.Context())
 			return runRun(ctx, flags, extCtx.NoPrompt)
 		},
@@ -129,7 +134,7 @@ Playground for activity agents. Use --no-client to skip this.`,
 }
 
 func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
-	if err := validateInspectorPort(flags.inspectorPort); err != nil {
+	if err := validateInspectorPort(flags.inspectorPort, flags.inspectorPortSet); err != nil {
 		return err
 	}
 
@@ -498,12 +503,13 @@ func launchInspector(
 	return err
 }
 
-// validateInspectorPort rejects out-of-range --inspector-port values. Zero means
-// the flag was not set: the inspector extension then applies its own default UI
-// port. Validating here keeps an invalid value from being silently dropped or
-// failing later inside the inspector with a less obvious message.
-func validateInspectorPort(inspectorPort int) error {
-	if inspectorPort == 0 || (inspectorPort >= 1 && inspectorPort <= 65535) {
+// validateInspectorPort rejects out-of-range --inspector-port values. When the
+// flag was not supplied (set is false) the inspector extension applies its own
+// default UI port. An explicitly supplied zero is out of range and rejected.
+// Validating here keeps an invalid value from being silently dropped or failing
+// later inside the inspector with a less obvious message.
+func validateInspectorPort(inspectorPort int, set bool) error {
+	if !set || (inspectorPort >= 1 && inspectorPort <= 65535) {
 		return nil
 	}
 

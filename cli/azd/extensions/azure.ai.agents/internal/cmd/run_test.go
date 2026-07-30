@@ -313,24 +313,26 @@ func TestValidateInspectorPort(t *testing.T) {
 	tests := []struct {
 		name    string
 		port    int
+		set     bool
 		wantErr bool
 	}{
 		{name: "unset is allowed", port: 0},
-		{name: "lower bound", port: 1},
-		{name: "typical port", port: 9002},
-		{name: "upper bound", port: 65535},
-		{name: "negative is rejected", port: -1, wantErr: true},
-		{name: "above range is rejected", port: 70000, wantErr: true},
+		{name: "explicit zero is rejected", port: 0, set: true, wantErr: true},
+		{name: "lower bound", port: 1, set: true},
+		{name: "typical port", port: 9002, set: true},
+		{name: "upper bound", port: 65535, set: true},
+		{name: "negative is rejected", port: -1, set: true, wantErr: true},
+		{name: "above range is rejected", port: 70000, set: true, wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := validateInspectorPort(tt.port)
+			err := validateInspectorPort(tt.port, tt.set)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("validateInspectorPort(%d) = nil, want error", tt.port)
+					t.Fatalf("validateInspectorPort(%d, %t) = nil, want error", tt.port, tt.set)
 				}
 				if !strings.Contains(err.Error(), "--inspector-port") {
 					t.Fatalf("error should name the flag, got %q", err.Error())
@@ -338,7 +340,7 @@ func TestValidateInspectorPort(t *testing.T) {
 				return
 			}
 			if err != nil {
-				t.Fatalf("validateInspectorPort(%d) = %v, want nil", tt.port, err)
+				t.Fatalf("validateInspectorPort(%d, %t) = %v, want nil", tt.port, tt.set, err)
 			}
 		})
 	}

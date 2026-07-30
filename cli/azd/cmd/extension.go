@@ -2072,10 +2072,10 @@ func upgradeVersionResolutionError(extensionId, version, source string) error {
 func upgradeRetryCommand(extensionId, source, version string) string {
 	command := fmt.Sprintf("azd extension upgrade %s", extensionId)
 	if source != "" {
-		command += fmt.Sprintf(" --source %q", source)
+		command += fmt.Sprintf(" --source %s", source)
 	}
 	if version != "" {
-		command += fmt.Sprintf(" --version %q", version)
+		command += fmt.Sprintf(" --version %s", version)
 	}
 	return command
 }

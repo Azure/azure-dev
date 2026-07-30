@@ -62,18 +62,18 @@ func TestUpgradeRetryCommand(t *testing.T) {
 		{
 			name:   "source",
 			source: "test",
-			want:   `azd extension upgrade ext-a --source "test"`,
+			want:   "azd extension upgrade ext-a --source test",
 		},
 		{
 			name:    "version",
 			version: "3.0.0",
-			want:    `azd extension upgrade ext-a --version "3.0.0"`,
+			want:    "azd extension upgrade ext-a --version 3.0.0",
 		},
 		{
 			name:    "source and version",
-			source:  "test source",
+			source:  "test",
 			version: "3.0.0",
-			want:    `azd extension upgrade ext-a --source "test source" --version "3.0.0"`,
+			want:    "azd extension upgrade ext-a --source test --version 3.0.0",
 		},
 	}
 

@@ -10,7 +10,7 @@ This guide covers the **agentic (AI / GitHub Copilot) UX patterns** for the Azur
 
 ## Agentic (AI / GitHub Copilot) UX Patterns
 
-azd has an **agentic experience** — the AI-driven flow entered when a user picks **"Set up with GitHub Copilot (Preview)"** during `azd init`, and used by the `azd agent` / copilot session runtime. This experience has a **deliberately distinct visual language** from core azd flows. Its signature is **magenta**, which marks AI/agent identity and active AI work.
+azd has an **agentic experience** — the AI-driven flow entered when a user picks **"Set up with GitHub Copilot (Preview)"** during `azd init`. This experience has a **deliberately distinct visual language** from core azd flows. Its signature is **magenta**, which marks AI/agent identity and active AI work.
 
 > **Do not blend the two systems.** Core azd status colors (green `(✓)`, red `(x)`, yellow `(!)`) still mean success/failure/warning inside agentic output, but the agent's own identity, tool activity, and thinking states use the magenta + glyph vocabulary described here. Never use magenta for core-flow status, and never restyle core progress reports with the agentic glyphs.
 

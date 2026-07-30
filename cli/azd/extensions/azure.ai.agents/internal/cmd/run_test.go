@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -240,19 +241,106 @@ func TestWaitForLocalPort(t *testing.T) {
 func TestLaunchInspectorUsesWorkflowCommand(t *testing.T) {
 	t.Parallel()
 
-	workflow := &recordingWorkflowClient{}
-	if err := launchInspector(t.Context(), workflow, 9090); err != nil {
-		t.Fatalf("launchInspector returned error: %v", err)
+	tests := []struct {
+		name          string
+		agentPort     int
+		inspectorPort int
+		want          []string
+	}{
+		{
+			name:      "inspector port unset is not forwarded",
+			agentPort: 9090,
+			want:      []string{"ai", "inspector", "launch", "--port", "9090", "--silent"},
+		},
+		{
+			name:          "inspector port is forwarded when set",
+			agentPort:     9091,
+			inspectorPort: 9002,
+			want: []string{
+				"ai", "inspector", "launch",
+				"--port", "9091",
+				"--inspector-port", "9002",
+				"--silent",
+			},
+		},
 	}
 
-	if workflow.request == nil || workflow.request.Workflow == nil || len(workflow.request.Workflow.Steps) != 1 {
-		t.Fatalf("unexpected workflow request: %#v", workflow.request)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			workflow := &recordingWorkflowClient{}
+			if err := launchInspector(t.Context(), workflow, tt.agentPort, tt.inspectorPort); err != nil {
+				t.Fatalf("launchInspector returned error: %v", err)
+			}
+
+			if workflow.request == nil || workflow.request.Workflow == nil ||
+				len(workflow.request.Workflow.Steps) != 1 {
+				t.Fatalf("unexpected workflow request: %#v", workflow.request)
+			}
+
+			got := workflow.request.Workflow.Steps[0].Command.Args
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("workflow args = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunCommandInspectorPortFlag(t *testing.T) {
+	t.Parallel()
+
+	cmd := newRunCommand(nil)
+
+	flag := cmd.Flags().Lookup("inspector-port")
+	if flag == nil {
+		t.Fatal("run command should expose --inspector-port")
+	}
+	// Zero means unset so the inspector extension keeps applying its own
+	// default UI port; the effective default is documented in the usage text.
+	if flag.DefValue != "0" {
+		t.Fatalf("--inspector-port default = %q, want %q", flag.DefValue, "0")
+	}
+	if !strings.Contains(flag.Usage, strconv.Itoa(defaultInspectorUIPort)) {
+		t.Fatalf("--inspector-port usage should document the %d default, got %q",
+			defaultInspectorUIPort, flag.Usage)
+	}
+}
+
+func TestValidateInspectorPort(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		port    int
+		wantErr bool
+	}{
+		{name: "unset is allowed", port: 0},
+		{name: "lower bound", port: 1},
+		{name: "typical port", port: 9002},
+		{name: "upper bound", port: 65535},
+		{name: "negative is rejected", port: -1, wantErr: true},
+		{name: "above range is rejected", port: 70000, wantErr: true},
 	}
 
-	got := workflow.request.Workflow.Steps[0].Command.Args
-	want := []string{"ai", "inspector", "launch", "--port", "9090", "--silent"}
-	if !slices.Equal(got, want) {
-		t.Fatalf("workflow args = %v, want %v", got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateInspectorPort(tt.port)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("validateInspectorPort(%d) = nil, want error", tt.port)
+				}
+				if !strings.Contains(err.Error(), "--inspector-port") {
+					t.Fatalf("error should name the flag, got %q", err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("validateInspectorPort(%d) = %v, want nil", tt.port, err)
+			}
+		})
 	}
 }
 
@@ -309,6 +397,7 @@ func TestInspectorLaunchFailureOnlyWarns(t *testing.T) {
 		ctx,
 		workflow,
 		ln.Addr().(*net.TCPAddr).Port,
+		0,
 		time.Millisecond,
 		&stderr,
 	)
@@ -364,7 +453,7 @@ func TestNoInspectorSkipsWorkflowLaunch(t *testing.T) {
 	t.Parallel()
 
 	workflow := &recordingWorkflowClient{called: make(chan struct{})}
-	handleInspectorAutoLaunch(t.Context(), workflow, 8088, true, true, nil, io.Discard)
+	handleInspectorAutoLaunch(t.Context(), workflow, 8088, 0, true, true, nil, io.Discard)
 
 	select {
 	case <-workflow.called:

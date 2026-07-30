@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/cmd/nextstep"
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
@@ -36,15 +37,23 @@ import (
 const (
 	agentInspectorExtensionID     = "azure.ai.inspector"
 	agentInspectorReadyPollPeriod = 250 * time.Millisecond
+	// defaultInspectorUIPort mirrors the default UI port of the
+	// azure.ai.inspector extension. It is referenced only in help text: when
+	// --inspector-port is unset we do not forward the flag, so the inspector
+	// extension remains the single source of truth for the actual default.
+	defaultInspectorUIPort = 8087
 )
 
 type runFlags struct {
-	port         int
-	name         string
-	startCommand string
-	noInspector  bool
-	noClient     bool
-	channel      string
+	port int
+	// inspectorPort is the port the Agent Inspector UI listens on. Zero means
+	// unset, in which case --inspector-port is not forwarded to the inspector.
+	inspectorPort int
+	name          string
+	startCommand  string
+	noInspector   bool
+	noClient      bool
+	channel       string
 }
 
 type environmentEntry struct {
@@ -83,6 +92,9 @@ Playground for activity agents. Use --no-client to skip this.`,
   # Start on a custom port
   azd ai agent run --port 9090
 
+  # Start a second agent with its own Agent Inspector UI port
+  azd ai agent run --port 9091 --inspector-port 9002
+
   # Start without opening a local client
   azd ai agent run --no-client
 
@@ -99,6 +111,8 @@ Playground for activity agents. Use --no-client to skip this.`,
 	}
 
 	cmd.Flags().IntVarP(&flags.port, "port", "p", DefaultPort, "Port to listen on")
+	cmd.Flags().IntVar(&flags.inspectorPort, "inspector-port", 0,
+		fmt.Sprintf("Port the Agent Inspector UI listens on (default: %d)", defaultInspectorUIPort))
 	cmd.Flags().StringVarP(&flags.startCommand, "start-command", "c", "",
 		"Explicit startup command (overrides azure.yaml and auto-detection)")
 	cmd.Flags().BoolVar(&flags.noInspector, "no-inspector", false, "Do not open the local client (Agent Inspector or Playground)")
@@ -115,6 +129,10 @@ Playground for activity agents. Use --no-client to skip this.`,
 }
 
 func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
+	if err := validateInspectorPort(flags.inspectorPort); err != nil {
+		return err
+	}
+
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return fmt.Errorf("failed to create azd client: %w", err)
@@ -309,6 +327,7 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 			ctx,
 			azdClient.Workflow(),
 			flags.port,
+			flags.inspectorPort,
 			suppressClient,
 			inspectorInstalled,
 			inspectorInstallErr,
@@ -366,6 +385,7 @@ func handleInspectorAutoLaunch(
 	ctx context.Context,
 	workflow azdext.WorkflowServiceClient,
 	agentPort int,
+	inspectorPort int,
 	noInspector bool,
 	inspectorInstalled bool,
 	inspectorInstallErr error,
@@ -386,6 +406,7 @@ func handleInspectorAutoLaunch(
 		ctx,
 		workflow,
 		agentPort,
+		inspectorPort,
 		agentInspectorReadyPollPeriod,
 		stderr,
 	)
@@ -395,6 +416,7 @@ func startInspectorAfterAgentReadyWithOptions(
 	ctx context.Context,
 	workflow azdext.WorkflowServiceClient,
 	agentPort int,
+	inspectorPort int,
 	pollPeriod time.Duration,
 	stderr io.Writer,
 ) {
@@ -411,7 +433,7 @@ func startInspectorAfterAgentReadyWithOptions(
 			return
 		}
 
-		if err := launchInspector(ctx, workflow, agentPort); err != nil && !isContextCancellation(err) {
+		if err := launchInspector(ctx, workflow, agentPort, inspectorPort); err != nil && !isContextCancellation(err) {
 			fmt.Fprintln(stderr, inspectorLaunchWarning(err))
 		}
 	}()
@@ -441,27 +463,55 @@ func waitForLocalPort(ctx context.Context, port int, pollPeriod time.Duration) e
 	}
 }
 
-func launchInspector(ctx context.Context, workflow azdext.WorkflowServiceClient, agentPort int) error {
+func launchInspector(
+	ctx context.Context,
+	workflow azdext.WorkflowServiceClient,
+	agentPort int,
+	inspectorPort int,
+) error {
+	args := []string{
+		"ai",
+		"inspector",
+		"launch",
+		"--port",
+		strconv.Itoa(agentPort),
+	}
+	// Only forward --inspector-port when the user asked for a specific UI port,
+	// so the inspector extension keeps applying its own default otherwise.
+	if inspectorPort > 0 {
+		args = append(args, "--inspector-port", strconv.Itoa(inspectorPort))
+	}
+	args = append(args, "--silent")
+
 	_, err := workflow.Run(ctx, &azdext.RunWorkflowRequest{
 		Workflow: &azdext.Workflow{
 			Name: "launch-agent-inspector",
 			Steps: []*azdext.WorkflowStep{
 				{
 					Command: &azdext.WorkflowCommand{
-						Args: []string{
-							"ai",
-							"inspector",
-							"launch",
-							"--port",
-							strconv.Itoa(agentPort),
-							"--silent",
-						},
+						Args: args,
 					},
 				},
 			},
 		},
 	})
 	return err
+}
+
+// validateInspectorPort rejects out-of-range --inspector-port values. Zero means
+// the flag was not set: the inspector extension then applies its own default UI
+// port. Validating here keeps an invalid value from being silently dropped or
+// failing later inside the inspector with a less obvious message.
+func validateInspectorPort(inspectorPort int) error {
+	if inspectorPort == 0 || (inspectorPort >= 1 && inspectorPort <= 65535) {
+		return nil
+	}
+
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--inspector-port must be between 1 and 65535, got %d", inspectorPort),
+		"pass a free TCP port, for example --inspector-port 9002",
+	)
 }
 
 func isInspectorExtensionInstalled(ctx context.Context, azdClient *azdext.AzdClient) (bool, error) {

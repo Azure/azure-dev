@@ -13,6 +13,14 @@ Use `--no-inspector` to run only the local agent process:
 azd ai agent run --no-inspector
 ```
 
+The Agent Inspector UI binds port `8087` by default. Use `--inspector-port` to
+move it, which is what you need when running two agents side by side or when a
+stale process still holds the default port:
+
+```bash
+azd ai agent run --port 9091 --inspector-port 9002
+```
+
 ## Migrating Legacy Agent Configuration
 
 New Foundry agent projects keep the agent definition directly on the

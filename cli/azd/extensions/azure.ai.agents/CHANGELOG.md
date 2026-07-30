@@ -1,5 +1,23 @@
 # Release History
 
+## 1.0.0-beta.8 (2026-07-30)
+
+### Features Added
+
+- [[#9314]](https://github.com/Azure/azure-dev/pull/9314) Add `max_stalls` early-stopping option to the prompt-optimization YAML config and API. When N consecutive full validation-set evaluations produce no improvement, the optimizer stops early to save cost. Omitting `max_stalls` uses the service default (5). This is a YAML-only setting; no CLI flag is exposed. Thanks @imatiach-msft for the contribution!
+- [[#9327]](https://github.com/Azure/azure-dev/pull/9327) Default new agents to `invocations` protocol version `2.0.0` (previously `1.0.0`). Existing manifests that pin `1.0.0` are unaffected.
+
+### Bugs Fixed
+
+- [[#9365]](https://github.com/Azure/azure-dev/pull/9365) Fix error message suggesting the removed `azd ai agent project set` command; the suggestion now correctly directs to `azd ai project set` (provided by the `azure.ai.projects` extension).
+- [[#9328]](https://github.com/Azure/azure-dev/pull/9328) Fix RAI policy validation error referencing the legacy `rai_policy_name` key instead of the unified `azure.yaml` key `raiPolicyName`.
+- [[#9291]](https://github.com/Azure/azure-dev/pull/9291) Fix `azd ai agent init --infra` not generating infrastructure after unified-manifest adoption or bare-definition reuse, including when invoked below the project root.
+- [[#9290]](https://github.com/Azure/azure-dev/pull/9290) Fix default agent init model still pointing to deprecated `gpt-4.1-mini`; the interactive model-selection default is now `gpt-5.4-mini`.
+- [[#9212]](https://github.com/Azure/azure-dev/pull/9212) Fix `azd ai agent init` not prompting for unset `${VAR}` environment references in adopted Foundry service configuration; prompted values are now persisted to the active azd environment with credential-like inputs masked.
+- [[#9211]](https://github.com/Azure/azure-dev/pull/9211) Fix `azd ai agent init` replacing the full service block when resolving container defaults, which discarded service hooks and image templates in `azure.yaml`.
+- [[#9280]](https://github.com/Azure/azure-dev/pull/9280) Fix `azd ai agent init` not preserving executable permissions on downloaded `.sh` files.
+- [[#9237]](https://github.com/Azure/azure-dev/pull/9237) Fix `azd ai agent run` ignoring `uv.lock`; locked Python agent projects now use `uv sync --locked` instead of falling through to pip.
+
 ## 1.0.0-beta.7 (2026-07-23)
 
 ### Features Added

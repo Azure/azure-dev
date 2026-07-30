@@ -4,7 +4,7 @@
 
 ### Features Added
 
-- [[#9314]](https://github.com/Azure/azure-dev/pull/9314) Add `max_stalls` early-stopping option to the prompt-optimization YAML config and API. When N consecutive full validation-set evaluations produce no improvement, the optimizer stops early to save cost. Omitting `max_stalls` uses the service default (5). This is a YAML-only setting; no CLI flag is exposed.
+- [[#9314]](https://github.com/Azure/azure-dev/pull/9314) Add `max_stalls` early-stopping option to the prompt-optimization YAML config and API. When N consecutive full validation-set evaluations produce no improvement, the optimizer stops early to save cost. Omitting `max_stalls` uses the service default (5). This is a YAML-only setting; no CLI flag is exposed. Thanks @imatiach-msft for the contribution!
 - [[#9327]](https://github.com/Azure/azure-dev/pull/9327) Default new agents to `invocations` protocol version `2.0.0` (previously `1.0.0`). Existing manifests that pin `1.0.0` are unaffected.
 
 ### Bugs Fixed

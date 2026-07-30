@@ -26,6 +26,8 @@ jobs:
 
     variables: 
       ${{ insert }}: ${{ parameters.Variables }}
+      AzureSdkNuGetFeedUrl: https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-net/nuget/v3/index.json
+      DotNet9NuGetFeedUrl: https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet9/nuget/v3/index.json
 
     pool:
         name: ${{ parameters.Pool }}
@@ -106,13 +108,13 @@ jobs:
           version: '9.x'
         displayName: Set up .NET 9
 
-      - bash: dotnet nuget add source --name azure-sdk-for-net https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-net/nuget/v3/index.json
+      - bash: dotnet nuget add source --name azure-sdk-for-net "$(AzureSdkNuGetFeedUrl)"
         displayName: Add Azure SDK dev nuget feed
 
       - bash: dotnet nuget disable source nuget.org
         displayName: Disable public nuget feed
 
-      - bash: dotnet nuget add source --name dotnet9 https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet9/nuget/v3/index.json
+      - bash: dotnet nuget add source --name dotnet9 "$(DotNet9NuGetFeedUrl)"
         displayName: Add internal dotnet nuget feed
 
       - template: /eng/common/pipelines/templates/steps/pypi-auth-dev-feed.yml
@@ -176,6 +178,7 @@ jobs:
           SYSTEM_ACCESSTOKEN: $(System.AccessToken)
           PIP_INDEX_URL: $(PIP_INDEX_URL)
           PIP_EXTRA_INDEX_URL: $(PIP_EXTRA_INDEX_URL)
+          RestoreSources: "$(AzureSdkNuGetFeedUrl);$(DotNet9NuGetFeedUrl)"
           # Disable MSBuild node reuse for Aspire-related tests.
           # MSBuild node reuse is a pure performance optimization that is generally recommended to be disabled on CI environments
           # that deal with short-lived processes.

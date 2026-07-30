@@ -71,6 +71,17 @@ type initFlags struct {
 	// connection prompts. Requires --agent-name when no --manifest is given. Incompatible
 	// with --deploy-mode code.
 	image string
+	// kind selects the agent kind to initialize non-interactively, bypassing the
+	// interactive init-mode/template prompts. Currently the only accepted value is
+	// "prompt-voice", which synthesizes a declarative (managed) voice agent
+	// manifest and routes it through the manifest flow (no code/image, no
+	// template/language selection, no ACR). An empty value keeps the existing
+	// inference-from-inputs behavior. Additive: existing kinds remain inferred.
+	kind string
+	// voice optionally overrides the output voice name for a prompt-voice agent
+	// (e.g. "alloy" for an OpenAI realtime voice or an Azure Neural voice name).
+	// Ignored for non-voice kinds.
+	voice string
 	// force, when true, lets headless callers (--no-prompt) pre-consent to
 	// overwrite prompts that would otherwise return a structured error. It
 	// mirrors the `--force` convention used by `azd down`, `azd env remove`,
@@ -635,6 +646,15 @@ func updateAgentDefinition(
 		}
 		update(&t.AgentDefinition)
 		return t, nil
+	case agent_yaml.VoiceAgent:
+		update(&t.AgentDefinition)
+		return t, nil
+	case *agent_yaml.VoiceAgent:
+		if t == nil {
+			return nil, fmt.Errorf("agent template is nil")
+		}
+		update(&t.AgentDefinition)
+		return t, nil
 	default:
 		return nil, fmt.Errorf("unsupported agent template type %T", template)
 	}
@@ -733,6 +753,64 @@ func synthesizeImageManifestFile(agentName, image string, flagProtocols []string
 			"description": fmt.Sprintf("Hosted container agent using pre-built image %s", image),
 			"protocols":   protocolDocs,
 		},
+	}
+
+	content, err := yaml.Marshal(doc)
+	if err != nil {
+		cleanup()
+		return "", noop, fmt.Errorf("marshaling synthesized manifest: %w", err)
+	}
+
+	manifestPath := filepath.Join(tmpDir, "agent.yaml")
+	if err := os.WriteFile(manifestPath, content, osutil.PermissionFile); err != nil {
+		cleanup()
+		return "", noop, fmt.Errorf("writing synthesized manifest: %w", err)
+	}
+
+	return manifestPath, cleanup, nil
+}
+
+// defaultVoiceModel is the speech-to-speech model used for a prompt-voice agent
+// when --model is not supplied.
+const defaultVoiceModel = "gpt-realtime"
+
+// kindFlagPromptVoice is the accepted --kind value for a declarative voice agent.
+const kindFlagPromptVoice = "prompt-voice"
+
+// synthesizeVoiceManifestFile writes a temporary declarative (managed) voice
+// agent manifest (kind: prompt-voice) to a temp dir and returns its path plus a
+// cleanup func. Like synthesizeImageManifestFile, it lets `--kind prompt-voice`
+// (and the interactive voice option) route through the existing manifest flow,
+// skipping template/language selection and code scaffolding. A voice agent has
+// no image, Dockerfile, or source, so none of those are emitted. model_type is
+// written explicitly as "managed" from day one.
+func synthesizeVoiceManifestFile(agentName, model, voice string) (string, func(), error) {
+	noop := func() {}
+
+	if strings.TrimSpace(model) == "" {
+		model = defaultVoiceModel
+	}
+
+	tmpDir, err := os.MkdirTemp("", "azd-agent-voice-")
+	if err != nil {
+		return "", noop, fmt.Errorf("creating temp directory for synthesized manifest: %w", err)
+	}
+	cleanup := func() { _ = os.RemoveAll(tmpDir) }
+
+	template := map[string]any{
+		"kind":        string(agent_yaml.AgentKindPromptVoice),
+		"name":        agentName,
+		"description": "Declarative (managed) voice speech-to-speech agent",
+		"model_type":  string(agent_yaml.VoiceModelTypeManaged),
+		"model":       map[string]any{"id": model},
+	}
+	if v := strings.TrimSpace(voice); v != "" {
+		template["voice"] = v
+	}
+
+	doc := map[string]any{
+		"name":     agentName,
+		"template": template,
 	}
 
 	content, err := yaml.Marshal(doc)
@@ -1205,7 +1283,43 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				userProvidedManifest = true
 			}
 
-			// Auto-detect an existing agent manifest in the target directory
+			// Prompt-voice fast path: when --kind prompt-voice is set without a
+			// manifest, there is no source to scaffold and no template/language to
+			// choose. Synthesize a declarative (managed) voice manifest and route it
+			// through the manifest flow (which skips the init-mode / template /
+			// language prompts and code scaffolding). Mirrors the --image fast path.
+			if flags.kind != "" && flags.manifestPointer == "" {
+				if !strings.EqualFold(flags.kind, kindFlagPromptVoice) {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						fmt.Sprintf("unsupported --kind value %q", flags.kind),
+						fmt.Sprintf("the only supported --kind value is %q", kindFlagPromptVoice),
+					)
+				}
+				if flags.image != "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"--kind prompt-voice cannot be combined with --image",
+						"a voice agent is managed and has no container image; drop --image",
+					)
+				}
+				if flags.agentName == "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"--kind prompt-voice requires --agent-name when no --manifest is provided",
+						"pass --agent-name <name> (or provide --manifest with the agent definition)",
+					)
+				}
+				manifestPath, cleanup, err := synthesizeVoiceManifestFile(
+					flags.agentName, flags.model, flags.voice,
+				)
+				if err != nil {
+					return err
+				}
+				defer cleanup()
+				flags.manifestPointer = manifestPath
+				userProvidedManifest = true
+			}
 			// when no --manifest flag was provided.
 			//
 			// manifestDetectedButDeclined: gates the definition-reuse scan below so
@@ -1498,6 +1612,44 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 					}
 
+				case initModeVoice:
+					// User chose to create a declarative (managed) voice agent.
+					// Resolve the agent name, synthesize a prompt-voice manifest,
+					// and route it through the manifest flow — the same path as
+					// `azd ai agent init --kind prompt-voice`.
+					resolvedName, err := resolveInitAgentName(ctx, azdClient, flags, "voice-agent")
+					if err != nil {
+						if exterrors.IsCancellation(err) {
+							return exterrors.Cancelled("initialization was cancelled")
+						}
+						return err
+					}
+
+					manifestPath, cleanup, err := synthesizeVoiceManifestFile(
+						resolvedName, flags.model, flags.voice,
+					)
+					if err != nil {
+						return err
+					}
+					defer cleanup()
+					flags.manifestPointer = manifestPath
+
+					folderName := sanitizeAgentName(resolvedName)
+					_, statErr := os.Stat(folderName)
+					newlyCreated := errors.Is(statErr, fs.ErrNotExist)
+					var folderDisplay string
+					if newlyCreated && !existingProject {
+						folderDisplay = filepath.ToSlash(folderName)
+					}
+					if err := runInitFromManifest(
+						ctx, flags, azdClient, httpClient, folderName, folderDisplay, true,
+					); err != nil {
+						if exterrors.IsCancellation(err) {
+							return exterrors.Cancelled("initialization was cancelled")
+						}
+						return err
+					}
+
 				default:
 					// initModeFromCode - use existing code in current directory
 					action := &InitFromCodeAction{
@@ -1566,6 +1718,15 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"When set without --manifest, skips template/language selection, code scaffolding, "+
 			"Dockerfile generation, and ACR setup, and requires --agent-name. "+
 			"Incompatible with --deploy-mode code.")
+
+	cmd.Flags().StringVar(&flags.kind, "kind", "",
+		"Agent kind to initialize non-interactively. Currently supports 'prompt-voice' to create a "+
+			"declarative (managed) voice agent, skipping template/language selection and code scaffolding. "+
+			"Use --model to name the speech-to-speech model and --voice to set the output voice.")
+
+	cmd.Flags().StringVar(&flags.voice, "voice", "",
+		"Output voice name for a --kind prompt-voice agent (e.g. 'alloy' for an OpenAI realtime voice, "+
+			"or an Azure Neural voice name). Ignored for other kinds.")
 
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Overwrite an input manifest that already lives inside the generated src tree without prompting. "+
@@ -2799,6 +2960,13 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		return fmt.Errorf("failed to unmarshal JSON to AgentDefinition: %w", err)
 	}
 
+	// Voice agents (kind: prompt-voice) carry no container/image/code config and
+	// take an entirely different service-entry shape. Handle them in an isolated
+	// branch and return early so the container path below is unaffected.
+	if agentDef.Kind == agent_yaml.AgentKindPromptVoice {
+		return a.addVoiceAgentToProject(ctx, targetDir, agentManifest)
+	}
+
 	var agentConfig = project.ServiceTargetAgentConfig{}
 
 	resourceDetails := []project.Resource{}
@@ -2983,6 +3151,78 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	// everything is configured. All paths append the deploy hint as the
 	// trailing line. State-assembly errors are intentionally ignored: the
 	// resolver degrades gracefully on partial state per the design spec.
+	var stateOpts []nextstep.Option
+	if a.createdFolderDisplay != "" {
+		stateOpts = append(stateOpts, nextstep.WithCreatedFolder(a.createdFolderDisplay))
+	}
+	state, _ := nextstep.AssembleState(ctx, a.azdClient, stateOpts...)
+	_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state, readmeExistsForProject(ctx, a.azdClient)))
+	return nil
+}
+
+// addVoiceAgentToProject writes a prompt-voice (declarative, managed) agent as an
+// azure.ai.agent service entry. Voice agents carry no container/image/code
+// config, so this path skips startup-command detection, Docker settings, and
+// pre-built image handling entirely. The agent definition is embedded inline
+// using the voice-specific writer; sibling Foundry resource services (project)
+// are still emitted so provision wires the endpoint.
+func (a *InitAction) addVoiceAgentToProject(
+	ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest,
+) error {
+	if targetDir == "." {
+		if cwd, err := os.Getwd(); err == nil && a.projectConfig != nil && a.projectConfig.Path != "" {
+			if relPath, err := filepath.Rel(a.projectConfig.Path, cwd); err == nil && relPath != "." {
+				targetDir = filepath.ToSlash(relPath)
+			}
+		}
+	}
+
+	// Rebuild the full VoiceAgent from the manifest template so it can be
+	// embedded inline on the service entry.
+	templateYAML, err := yaml.Marshal(agentManifest.Template)
+	if err != nil {
+		return fmt.Errorf("marshaling voice agent definition: %w", err)
+	}
+	var voiceDef agent_yaml.VoiceAgent
+	if err := yaml.Unmarshal(templateYAML, &voiceDef); err != nil {
+		return fmt.Errorf("parsing voice agent definition: %w", err)
+	}
+
+	agentConfig := project.ServiceTargetAgentConfig{}
+	agentProps, err := project.VoiceAgentDefinitionToServiceProperties(voiceDef, &agentConfig)
+	if err != nil {
+		return err
+	}
+
+	serviceConfig := &azdext.ServiceConfig{
+		Name:                 a.serviceNameOverride,
+		RelativePath:         targetDir,
+		Host:                 AiAgentHost,
+		AdditionalProperties: agentProps,
+	}
+
+	req := &azdext.AddServiceRequest{Service: serviceConfig}
+	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
+		return fmt.Errorf("adding voice agent service to project: %w", err)
+	}
+
+	// Emit the sibling Foundry project service so provision reuses/creates the
+	// project. Voice v1 uses a managed model with no tool connections or
+	// toolboxes, so no deployment/connection/toolbox siblings are emitted.
+	if err := emitResourceServices(
+		ctx, a.azdClient, a.serviceNameOverride,
+		projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),
+		a.selectedFoundryProject.Endpoint(),
+		nil, nil, nil,
+	); err != nil {
+		return err
+	}
+
+	fmt.Printf(
+		"\nAdded your voice agent as a service entry named '%s' under the file azure.yaml.\n",
+		a.serviceNameOverride,
+	)
+
 	var stateOpts []nextstep.Option
 	if a.createdFolderDisplay != "" {
 		stateOpts = append(stateOpts, nextstep.WithCreatedFolder(a.createdFolderDisplay))

@@ -133,8 +133,11 @@ func CreateAgentAPIRequestFromDefinition(agentTemplate any, options ...AgentBuil
 	case AgentKindHosted:
 		hostedDef := agentTemplate.(ContainerAgent)
 		return CreateHostedAgentAPIRequest(hostedDef, buildConfig)
+	case AgentKindPromptVoice:
+		voiceDef := agentTemplate.(VoiceAgent)
+		return CreateVoiceAgentAPIRequest(voiceDef)
 	default:
-		return nil, fmt.Errorf("unsupported agent kind: %s. Supported kinds are: hosted", agentDef.Kind)
+		return nil, fmt.Errorf("unsupported agent kind: %s. Supported kinds are: hosted, prompt-voice", agentDef.Kind)
 	}
 }
 
@@ -451,6 +454,93 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 
 	return createAgentAPIRequest(hostedAgent.AgentDefinition, imageDef,
 		hostedAgent.AgentEndpoint, hostedAgent.AgentCard)
+}
+
+// Default audio-pipeline values for a voice agent. Authors don't specify the
+// audio block in v1; these mirror the Voice Live sample (PCM16 @ 24 kHz, server
+// VAD turn detection, input transcription enabled).
+const (
+	defaultVoiceAudioType         = "audio/pcm"
+	defaultVoiceAudioRate         = 24000
+	defaultVoiceTurnDetectionType = "server_vad"
+	defaultVoiceInstructions      = "You are a helpful voice assistant. Respond naturally and concisely."
+	// defaultVoiceInputTranscriptionModel enables user-speech transcription events.
+	defaultVoiceInputTranscriptionModel = "whisper-1"
+	// defaultVoiceName is a DragonHD (HD) Azure Neural voice used when the author
+	// omits a voice.
+	defaultVoiceName = "en-US-Ava:DragonHDLatestNeural"
+)
+
+// isOpenAIVoice reports whether a voice name denotes an OpenAI realtime voice
+// (single lowercase word, e.g. "alloy") vs an Azure Neural voice (contains "-",
+// e.g. "en-US-Ava:DragonHDLatestNeural").
+func isOpenAIVoice(name string) bool {
+	return !strings.Contains(name, "-")
+}
+
+// buildVoiceConfig chooses the OpenAI vs Azure voice type by name shape.
+func buildVoiceConfig(name string) *agent_api.VoiceConfig {
+	if isOpenAIVoice(name) {
+		return &agent_api.VoiceConfig{Type: "openai", Name: name}
+	}
+	return &agent_api.VoiceConfig{Type: "azure_standard", Name: name}
+}
+
+// CreateVoiceAgentAPIRequest builds a CreateAgentRequest for a declarative
+// (managed) voice agent. It translates the authoring kind "prompt-voice" into
+// the data-plane service kind "voice" and defaults the audio pipeline.
+func CreateVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
+	if voiceAgent.Model == nil || voiceAgent.Model.Id == "" {
+		return nil, fmt.Errorf("model.id is required for a prompt-voice agent")
+	}
+
+	// v1 only supports managed inference; default and enforce it.
+	modelType := agent_api.VoiceModelTypeManaged
+	if voiceAgent.ModelType != "" && voiceAgent.ModelType != VoiceModelTypeManaged {
+		return nil, fmt.Errorf(
+			"model_type '%s' is not supported; only '%s' is available",
+			voiceAgent.ModelType, VoiceModelTypeManaged)
+	}
+
+	instructions := defaultVoiceInstructions
+	if voiceAgent.Instructions != nil && *voiceAgent.Instructions != "" {
+		instructions = *voiceAgent.Instructions
+	}
+
+	voiceName := defaultVoiceName
+	if voiceAgent.Voice != nil && *voiceAgent.Voice != "" {
+		voiceName = *voiceAgent.Voice
+	}
+
+	audioFormat := &agent_api.VoiceAudioFormat{
+		Type: defaultVoiceAudioType,
+		Rate: defaultVoiceAudioRate,
+	}
+
+	voiceDef := agent_api.VoiceAgentDefinition{
+		AgentDefinition: agent_api.AgentDefinition{
+			// Translate authoring kind prompt-voice -> service kind voice.
+			Kind: agent_api.AgentKindVoice,
+		},
+		ModelType:    modelType,
+		Model:        voiceAgent.Model.Id,
+		Instructions: instructions,
+		Audio: &agent_api.VoiceAudioConfig{
+			Input: &agent_api.VoiceInputConfig{
+				Format:        audioFormat,
+				TurnDetection: &agent_api.VoiceTurnDetection{Type: defaultVoiceTurnDetectionType},
+				Transcription: &agent_api.VoiceTranscription{Model: defaultVoiceInputTranscriptionModel},
+			},
+			Output: &agent_api.VoiceOutputConfig{
+				Format: audioFormat,
+				Voice:  buildVoiceConfig(voiceName),
+			},
+		},
+		OutputModalities: []string{"audio"},
+		Store:            voiceAgent.Store,
+	}
+
+	return createAgentAPIRequest(voiceAgent.AgentDefinition, voiceDef, nil, nil)
 }
 
 // createAgentAPIRequest is a helper function to create the final request with common fields.

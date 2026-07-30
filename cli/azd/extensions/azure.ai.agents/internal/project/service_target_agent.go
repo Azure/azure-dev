@@ -1071,6 +1071,17 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, err
 	}
 
+	// Voice agents (kind: prompt-voice) use a fundamentally different data-plane
+	// contract than hosted/workflow agents: a synchronous POST to /voice_agents
+	// that returns an AgentObject directly, with no version/polling model. Peek
+	// the definition first and dispatch to an isolated method so the container
+	// deploy path below stays byte-for-byte unchanged.
+	if va, isVoice, vErr := VoiceAgentFromResolvedService(serviceConfig, p.projectPath); vErr != nil {
+		return nil, vErr
+	} else if isVoice {
+		return p.deployVoiceAgent(ctx, serviceConfig, va, azdEnv, progress)
+	}
+
 	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
 	if err != nil {
 		return nil, err
@@ -1711,6 +1722,91 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		protocols:    prep.protocols,
 		request:      prep.request,
 	}, nil
+}
+
+// voiceOverriddenHostEnvKey optionally routes the /voice_agents call directly to
+// a regional data-plane host (bypassing the public Foundry APIM, whose voice
+// route may not yet be rolled out). When unset, default endpoint routing is used.
+//
+//nolint:gosec // env var key name, not a credential
+const voiceOverriddenHostEnvKey = "AZURE_VOICE_OVERRIDDEN_HOST"
+
+// deployVoiceAgent deploys a declarative (managed) voice agent (kind:
+// prompt-voice) to the Foundry service. Unlike hosted agents, voice agents are
+// created synchronously via a single POST to /voice_agents that returns the
+// created AgentObject directly — there is no container build, no agent-version
+// object, and no active-state polling. This method is intentionally isolated
+// from the container deploy path so the two contracts never entangle.
+func (p *AgentServiceTargetProvider) deployVoiceAgent(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+	va agent_yaml.VoiceAgent,
+	azdEnv map[string]string,
+	progress azdext.ProgressReporter,
+) (*azdext.ServiceDeployResult, error) {
+	progress("Deploying voice agent")
+
+	request, err := agent_yaml.CreateVoiceAgentAPIRequest(va)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("invalid voice agent definition: %s", err),
+			"fix the agent definition in azure.yaml and re-run `azd deploy`",
+		)
+	}
+
+	projectEndpoint := azdEnv["FOUNDRY_PROJECT_ENDPOINT"]
+	if projectEndpoint == "" {
+		return nil, exterrors.Dependency(
+			exterrors.CodeMissingAiProjectEndpoint,
+			"cannot deploy voice agent: the Foundry project endpoint is not set",
+			"run 'azd provision' or connect to an existing project via "+
+				"'azd ai agent init --project-id <resource-id>'",
+		)
+	}
+
+	agentClient := agent_api.NewAgentClient(projectEndpoint, p.credential)
+
+	progress("Creating voice agent")
+	agentObject, err := agentClient.CreateVoiceAgent(
+		ctx, request, agent_api.AgentEndpointAPIVersion, azdEnv[voiceOverriddenHostEnvKey],
+	)
+	if err != nil {
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
+	}
+
+	fmt.Fprintf(os.Stderr, "Voice agent '%s' created successfully!\n", agentObject.Name)
+
+	// Persist the agent name/endpoint so `azd ai agent run`/`list` can find it.
+	serviceKey := p.getServiceKey(serviceConfig.Name)
+	baseEndpoint := fmt.Sprintf(
+		"%s/voice_agents/%s", strings.TrimRight(projectEndpoint, "/"), agentObject.Name,
+	)
+	for key, value := range map[string]string{
+		fmt.Sprintf("AGENT_%s_NAME", serviceKey):     agentObject.Name,
+		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey): baseEndpoint,
+	} {
+		if _, setErr := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     key,
+			Value:   value,
+		}); setErr != nil {
+			return nil, fmt.Errorf("registering voice agent environment variable %s: %w", key, setErr)
+		}
+	}
+
+	artifacts := []*azdext.Artifact{{
+		Kind:         azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Location:     baseEndpoint,
+		LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+		Metadata: map[string]string{
+			"agentName": agentObject.Name,
+			"label":     "Voice agent endpoint",
+			"clickable": "false",
+		},
+	}}
+
+	return &azdext.ServiceDeployResult{Artifacts: artifacts}, nil
 }
 
 // packageCodeDeploy creates a ZIP archive of the agent source code, writes it to a temp file,

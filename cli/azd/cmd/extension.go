@@ -1216,10 +1216,8 @@ func (a *extensionInstallAction) confirmReplace(
 	return true, nil
 }
 
-// wrapDependencyError augments a dependency-not-found failure with actionable
-// guidance. azd does not resolve dependencies across sources during install, so
-// when a required dependency is missing from the parent's source the user is
-// directed to install it explicitly first. Other errors pass through unchanged.
+// wrapDependencyError augments dependency resolution failures with actionable
+// guidance. Other errors pass through unchanged.
 func wrapDependencyError(err error) error {
 	if depErr, ok := errors.AsType[*extensions.DependencyNotFoundError](err); ok {
 		return &internal.ErrorWithSuggestion{
@@ -1227,6 +1225,16 @@ func wrapDependencyError(err error) error {
 			Suggestion: fmt.Sprintf(
 				"Install the required dependency first with %s, then retry.",
 				output.WithHighLightFormat("azd extension install %s", depErr.DependencyId),
+			),
+		}
+	}
+	if depErr, ok := errors.AsType[*extensions.DependencyVersionNotFoundError](err); ok {
+		return &internal.ErrorWithSuggestion{
+			Err: depErr,
+			Suggestion: fmt.Sprintf(
+				"Install a version of %s that satisfies constraint %q, publish one to the same source as %s, "+
+					"or update %s's dependency constraint, then retry.",
+				depErr.DependencyId, depErr.Constraint, depErr.ParentId, depErr.ParentId,
 			),
 		}
 	}

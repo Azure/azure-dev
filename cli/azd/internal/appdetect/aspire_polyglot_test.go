@@ -9,6 +9,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"go.opentelemetry.io/otel"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/stretchr/testify/require"
@@ -36,7 +42,7 @@ func TestDetectAspirePolyglotAppHost(t *testing.T) {
 		files      map[string]string
 		expectOk   bool
 		expectLang string
-		expectFile string // base name only
+		expectFile string // path relative to the scanned dir (may include subdirectories)
 	}{
 		{
 			name: "TypeScriptWithConfig",
@@ -112,6 +118,16 @@ func TestDetectAspirePolyglotAppHost(t *testing.T) {
 			expectOk: false,
 		},
 		{
+			name: "TypeScriptWithSubdirectoryPath",
+			files: map[string]string{
+				"package.json":       "{}",
+				"aspire.config.json": `{"appHost":{"path":"src/apphost.mts","language":"typescript/nodejs"}}`,
+			},
+			expectOk:   true,
+			expectLang: "typescript",
+			expectFile: filepath.Join("src", "apphost.mts"),
+		},
+		{
 			name: "PlainNodeAppIsNotDetected",
 			files: map[string]string{
 				"package.json": "{}",
@@ -129,7 +145,10 @@ func TestDetectAspirePolyglotAppHost(t *testing.T) {
 			require.Equal(t, tt.expectOk, ok)
 			if tt.expectOk {
 				require.Equal(t, tt.expectLang, lang)
-				require.Equal(t, tt.expectFile, filepath.Base(appHostFile))
+				// The reported AppHost file preserves any subdirectories from aspire.config.json.
+				rel, err := filepath.Rel(dir, appHostFile)
+				require.NoError(t, err)
+				require.Equal(t, tt.expectFile, rel)
 			}
 		})
 	}
@@ -153,4 +172,43 @@ func TestDotNetAppHostDetector_PolyglotReturnsSuggestionError(t *testing.T) {
 	require.ErrorAs(t, err, &suggestionErr)
 	require.Contains(t, suggestionErr.Suggestion, "7138")
 	require.NotEmpty(t, suggestionErr.Links)
+}
+
+// TestDotNetAppHostDetector_EmitsUnsupportedTelemetry verifies that detecting a polyglot AppHost
+// emits the aspire.apphost.unsupported span with the aspire.apphost.language attribute, as required
+// by cli/azd/AGENTS.md. It installs an in-memory tracer provider so the emitted span is captured.
+func TestDotNetAppHostDetector_EmitsUnsupportedTelemetry(t *testing.T) {
+	// Not parallel: mutates the global OpenTelemetry tracer provider.
+	sr := tracetest.NewSpanRecorder()
+	tp := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(sr))
+	prev := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+
+	dir, entries := writeFiles(t, map[string]string{
+		"apphost.mts":        "await createBuilder();",
+		"aspire.config.json": `{"appHost":{"path":"apphost.mts","language":"typescript/nodejs"}}`,
+	})
+
+	detector := &dotNetAppHostDetector{}
+	_, err := detector.DetectProject(t.Context(), dir, entries)
+	require.Error(t, err)
+
+	var language string
+	var found bool
+	for _, span := range sr.Ended() {
+		if span.Name() != events.AspireUnsupportedAppHostEvent {
+			continue
+		}
+		for _, attr := range span.Attributes() {
+			if attr.Key == fields.AspireAppHostLanguageKey.Key {
+				language = attr.Value.AsString()
+				found = true
+			}
+		}
+	}
+
+	require.True(t, found, "expected %q span with %q attribute",
+		events.AspireUnsupportedAppHostEvent, fields.AspireAppHostLanguageKey.Key)
+	require.Equal(t, "typescript", language)
 }

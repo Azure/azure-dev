@@ -109,7 +109,8 @@ func detectAspirePolyglotAppHost(dir string, entries []fs.DirEntry) (language st
 
 // languageFromAspireConfig resolves the polyglot language declared in aspire.config.json. It
 // returns an empty language for C# AppHosts (which are handled by the regular .NET path) or when
-// the config cannot be read/parsed.
+// the config cannot be read/parsed. The returned appHostFile preserves the relative path declared
+// in the config (which may include subdirectories, e.g. "src/apphost.mts").
 func languageFromAspireConfig(configPath string, present map[string]string) (language string, appHostFile string) {
 	//nolint:gosec // G304: configPath is derived from a directory listing during app detection.
 	contents, err := os.ReadFile(configPath)
@@ -122,10 +123,21 @@ func languageFromAspireConfig(configPath string, present map[string]string) (lan
 		return "", ""
 	}
 
-	appHostFile = filepath.Base(config.AppHost.Path)
-	if resolved, has := present[strings.ToLower(appHostFile)]; has {
-		appHostFile = resolved
+	if strings.TrimSpace(config.AppHost.Path) == "" {
+		return "", ""
 	}
+
+	// Preserve the full relative path (may contain subdirectories). Only case-resolve the path
+	// against the directory listing when it refers to an immediate child, since `present` only
+	// contains the top-level entries of the scanned directory.
+	appHostFile = filepath.Clean(filepath.FromSlash(config.AppHost.Path))
+	if !strings.ContainsRune(appHostFile, filepath.Separator) {
+		if resolved, has := present[strings.ToLower(appHostFile)]; has {
+			appHostFile = resolved
+		}
+	}
+
+	fileName := strings.ToLower(filepath.Base(appHostFile))
 
 	// Prefer the explicit language declaration.
 	if lang := normalizeAspireLanguage(config.AppHost.Language); lang != "" {
@@ -134,8 +146,7 @@ func languageFromAspireConfig(configPath string, present map[string]string) (lan
 
 	// No explicit (polyglot) language: infer from the AppHost path's file name. This treats a
 	// ".csproj"/"apphost.cs" path as C# (empty language), so it is not misreported as polyglot.
-	pathFileName := strings.ToLower(filepath.Base(config.AppHost.Path))
-	if lang, isAppHostFile := polyglotAppHostFileLanguage[pathFileName]; isAppHostFile {
+	if lang, isAppHostFile := polyglotAppHostFileLanguage[fileName]; isAppHostFile {
 		return lang, appHostFile
 	}
 

@@ -1,0 +1,251 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"context"
+	"fmt"
+	"sort"
+	"strings"
+
+	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/botservice"
+	"azureaiagent/internal/project"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+)
+
+// teamsPackScope is a user-facing Teams publish scope. It maps onto the
+// Microsoft 365 service's PublishScope contract (Microsoft365Constants:
+// Personal/Shared/Tenant).
+type teamsPackScope struct {
+	// flag is the value the user types on the command line (lowercase).
+	flag string
+	// api is the corresponding PublishScope value sent to the service.
+	api string
+	// summary explains, in one line, what the scope means for distribution.
+	summary string
+}
+
+// teamsPackScopes enumerates the supported publish scopes. "personal" is the
+// default because it needs no Teams admin approval (per-user sideload); "shared"
+// distributes via a shareable link without tenant-admin approval; "org" publishes
+// to the whole organization and requires IT-admin approval.
+var teamsPackScopes = []teamsPackScope{
+	{flag: "personal", api: "Personal", summary: "per-user sideload (no admin approval required)"},
+	{flag: "shared", api: "Shared", summary: "shareable link distribution (no tenant-admin approval required)"},
+	{flag: "org", api: "Tenant", summary: "organization-wide catalog (requires IT-admin approval)"},
+}
+
+// resolveTeamsPackScope validates a user-supplied scope value and returns the
+// matching scope descriptor. An empty value resolves to the default ("personal").
+// An unknown value is a loud, actionable validation error rather than a silent
+// fallback, so a typo can never quietly publish to the wrong audience.
+func resolveTeamsPackScope(value string) (teamsPackScope, error) {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" {
+		normalized = "personal"
+	}
+	// "tenant" is accepted as an alias for "org" because that is the underlying
+	// PublishScope value; users familiar with the service contract may reach for it.
+	if normalized == "tenant" {
+		normalized = "org"
+	}
+	for _, scope := range teamsPackScopes {
+		if scope.flag == normalized {
+			return scope, nil
+		}
+	}
+	return teamsPackScope{}, exterrors.Validation(
+		exterrors.CodeInvalidPublishScope,
+		fmt.Sprintf("unsupported Teams publish scope %q", value),
+		fmt.Sprintf("use one of: %s", strings.Join(teamsPackScopeFlags(), ", ")),
+	)
+}
+
+// teamsPackScopeFlags returns the supported scope flag values in a stable order,
+// for help text and error hints.
+func teamsPackScopeFlags() []string {
+	flags := make([]string, 0, len(teamsPackScopes))
+	for _, scope := range teamsPackScopes {
+		flags = append(flags, scope.flag)
+	}
+	sort.Strings(flags)
+	return flags
+}
+
+// teamsPackContext holds everything the pack and publish commands need after
+// resolving the target agent from the azd project and environment. Both commands
+// operate on an agent that has already been deployed (the Azure Bot is created
+// during 'azd deploy'), so this resolver requires a recorded deployment and fails
+// loudly when the agent is missing, is not an activity agent, or has not been
+// deployed yet.
+type teamsPackContext struct {
+	azdClient   *azdext.AzdClient
+	proj        *azdext.ProjectConfig
+	svc         *azdext.ServiceConfig
+	agentName   string
+	botArmID    string
+	credential  azcore.TokenCredential
+	agentClient *agent_api.AgentClient
+}
+
+// resolveTeamsPackContext resolves the target activity agent and derives the Azure
+// Bot ARM id, credential, and Microsoft 365 client shared by the pack and publish
+// commands. It enforces the preconditions loudly:
+//   - the resolved service must be a hosted agent that speaks the Activity protocol
+//     (pack/publish only make sense for Teams-facing agents);
+//   - the agent must already be deployed (an AGENT_{KEY}_VERSION recorded by
+//     'azd deploy'), because the bot the Teams app binds to is created during deploy.
+func resolveTeamsPackContext(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	name string,
+	noPrompt bool,
+) (*teamsPackContext, error) {
+	svc, proj, err := resolveAgentService(ctx, azdClient, name, noPrompt)
+	if err != nil {
+		return nil, err
+	}
+
+	ca, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
+	if err != nil {
+		return nil, err
+	}
+	if !isHosted || !project.ResolveActivityProfile(ca).IsActivity {
+		return nil, exterrors.Validation(
+			exterrors.CodeNotActivityAgent,
+			fmt.Sprintf("agent service %q is not an Activity (Teams) agent", svc.Name),
+			"'azd ai agent pack' and 'azd ai agent publish' only apply to hosted agents that "+
+				"speak the Activity protocol; check the agent's protocols in azure.yaml",
+		)
+	}
+
+	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return nil, exterrors.Dependency(
+			exterrors.CodeEnvironmentNotFound,
+			"no azd environment is selected",
+			"run 'azd env select <name>' or deploy the agent with 'azd deploy' first",
+		)
+	}
+	envName := envResp.Environment.Name
+
+	// The API agent name is the service name (deploy binds the bot with it), so the
+	// bot name derived below must use the same value.
+	agentName := svc.Name
+
+	// A recorded version is the signal that 'azd deploy' has run and created the bot
+	// this Teams app binds to. Without it, packaging would reference a bot that does
+	// not exist, so fail loudly with a clear next step instead of producing a broken
+	// package.
+	serviceKey := toServiceKey(svc.Name)
+	version, err := readEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_VERSION", serviceKey))
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(version) == "" {
+		return nil, exterrors.Dependency(
+			exterrors.CodeAgentNotDeployed,
+			fmt.Sprintf("agent %q has not been deployed in environment %q", agentName, envName),
+			"run 'azd deploy' first; the Teams bot is created during deploy and is required "+
+				"before packaging or publishing",
+		)
+	}
+
+	subscriptionID, err := readEnvValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID")
+	if err != nil {
+		return nil, err
+	}
+	resourceGroup, err := readEnvValue(ctx, azdClient, envName, "AZURE_RESOURCE_GROUP")
+	if err != nil {
+		return nil, err
+	}
+
+	botName := botservice.BotName(agentName, botservice.BotScopeSalt(subscriptionID, resourceGroup))
+	botArmID := botservice.BotArmID(subscriptionID, resourceGroup, botName)
+
+	endpoint, err := resolveAgentEndpoint(ctx, "", "")
+	if err != nil {
+		return nil, err
+	}
+	credential, err := newAgentCredential()
+	if err != nil {
+		return nil, err
+	}
+
+	return &teamsPackContext{
+		azdClient:   azdClient,
+		proj:        proj,
+		svc:         svc,
+		agentName:   agentName,
+		botArmID:    botArmID,
+		credential:  credential,
+		agentClient: agent_api.NewAgentClient(endpoint, credential),
+	}, nil
+}
+
+// teamsAppRequestOptions carries the user-overridable display metadata for a Teams
+// app package/publish request. Zero-value fields fall back to sensible defaults
+// derived from the agent name.
+type teamsAppRequestOptions struct {
+	scope       teamsPackScope
+	displayName string
+	appVersion  string
+}
+
+// buildTeamsAppPackageRequest assembles the Microsoft 365 request body shared by
+// the zip (pack) and publish endpoints. Only display metadata and the publish
+// scope vary; the agent itself is resolved server-side from the route. Defaults
+// mirror the postdeploy packaging path so a command run with no flags produces the
+// same package the deploy hook would.
+func buildTeamsAppPackageRequest(
+	botArmID string,
+	opts teamsAppRequestOptions,
+) agent_api.TeamsAppPackageRequest {
+	displayName := strings.TrimSpace(opts.displayName)
+	appVersion := strings.TrimSpace(opts.appVersion)
+	if appVersion == "" {
+		appVersion = "1.0.0"
+	}
+	return agent_api.TeamsAppPackageRequest{
+		BotServiceArmID:          botArmID,
+		PublishScope:             opts.scope.api,
+		AgentDisplayName:         displayName,
+		AppVersion:               appVersion,
+		ShortDescription:         fmt.Sprintf("%s agent", displayName),
+		FullDescription:          fmt.Sprintf("%s agent on Microsoft Teams (activity protocol)", displayName),
+		DeveloperName:            "Azure AI Foundry",
+		DeveloperWebsiteURL:      "https://learn.microsoft.com/azure/ai-foundry/",
+		PrivacyURL:               "https://learn.microsoft.com/azure/ai-foundry/",
+		TermsOfUseURL:            "https://learn.microsoft.com/azure/ai-foundry/",
+		CanRespondWithoutMention: true,
+	}
+}
+
+// teamsAppDeepLink returns the Teams deep link that installs the published custom
+// engine agent. Anyone the app is shared with (for the "shared" scope) or the
+// publishing user (for "personal") can open it to add the app in Teams.
+func teamsAppDeepLink(teamsAppID string) string {
+	return fmt.Sprintf("https://teams.microsoft.com/l/app/%s", teamsAppID)
+}
+
+// validatePublishScope rejects scopes the Microsoft 365 publish backend does not
+// support. "personal" (per-user install) is a Teams client action, not a store
+// publish, so 'azd ai agent publish' cannot fulfill it; the user is pointed to the
+// 'azd ai agent pack' + 'atk install' path instead.
+func validatePublishScope(scope teamsPackScope) error {
+	if scope.flag == "personal" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidPublishScope,
+			"'personal' scope is not supported by 'azd ai agent publish'",
+			"personal install is a Teams client action, not a store publish; run "+
+				"'azd ai agent pack' and sideload with 'atk install --scope personal', "+
+				"or publish with --scope shared or --scope org",
+		)
+	}
+	return nil
+}

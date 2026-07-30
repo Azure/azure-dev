@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.8 (Unreleased)
+
+### Features Added
+
+- [[#9332]](https://github.com/Azure/azure-dev/pull/9332) Add `azd ai agent pack` and `azd ai agent publish` for Activity (Teams) agents. `pack` downloads a ready-to-sideload Teams app package (`appPackage.zip`) from the Foundry Microsoft 365 service for local customization and `atk install --scope personal` sideloading; `publish` builds and publishes the package to the Microsoft 365 store, defaulting to `shared` scope (shareable install link, no tenant-admin approval) and supporting `org` scope (organization catalog, admin-gated). Both require a prior `azd deploy` and surface platform failures (tenant policy, permissions, service errors) as command failures rather than silently skipping.
+
 ## 1.0.0-beta.7 (2026-07-23)
 
 ### Features Added

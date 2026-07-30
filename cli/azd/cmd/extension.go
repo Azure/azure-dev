@@ -1230,12 +1230,8 @@ func wrapDependencyError(err error) error {
 	}
 	if depErr, ok := errors.AsType[*extensions.DependencyVersionNotFoundError](err); ok {
 		return &internal.ErrorWithSuggestion{
-			Err: depErr,
-			Suggestion: fmt.Sprintf(
-				"Install a version of %s that satisfies constraint %q, publish one to the same source as %s, "+
-					"or update %s's dependency constraint, then retry.",
-				depErr.DependencyId, depErr.Constraint, depErr.ParentId, depErr.ParentId,
-			),
+			Err:        depErr,
+			Suggestion: depErr.Suggestion(),
 		}
 	}
 
@@ -2085,12 +2081,12 @@ func upgradeRetryCommand(extensionId, source, version string) string {
 }
 
 // upgradeFailureDetails extracts actionable guidance from typed upgrade errors.
-func upgradeFailureDetails(err error) (error, string) {
+func upgradeFailureDetails(err error) (string, error) {
 	wrappedErr := wrapDependencyError(err)
 	if suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](wrappedErr); ok {
-		return wrappedErr, suggestionErr.Suggestion
+		return suggestionErr.Suggestion, wrappedErr
 	}
-	return wrappedErr, ""
+	return "", wrappedErr
 }
 
 // upgradeOneExtension processes a single extension upgrade and returns
@@ -2156,7 +2152,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 
 	// Helper to record a failure and stop the spinner.
 	fail := func(err error) extensions.UpgradeResult {
-		err, baseResult.Suggestion = upgradeFailureDetails(err)
+		baseResult.Suggestion, err = upgradeFailureDetails(err)
 		baseResult.Status = extensions.UpgradeStatusFailed
 		baseResult.Error = err
 		if !isJsonOutput {
@@ -2171,17 +2167,16 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 				a.console.Message(ctx, fmt.Sprintf(
 					"  %s", baseResult.Suggestion,
 				))
-			} else {
-				a.console.Message(ctx, fmt.Sprintf(
-					"  Retry with: %s",
-					output.WithHighLightFormat(
-						"%s",
-						upgradeRetryCommand(
-							extensionId, a.flags.source, a.flags.version,
-						),
-					),
-				))
 			}
+			a.console.Message(ctx, fmt.Sprintf(
+				"  Retry with: %s",
+				output.WithHighLightFormat(
+					"%s",
+					upgradeRetryCommand(
+						extensionId, a.flags.source, a.flags.version,
+					),
+				),
+			))
 		}
 		return baseResult
 	}
@@ -2599,14 +2594,14 @@ func displayDependencyUpgradeResults(
 				line += output.WithGrayFormat(" (%s)", child.SkipReason)
 			}
 			console.Message(ctx, line)
-			if child.Suggestion != "" {
-				console.Message(ctx, fmt.Sprintf(
-					"%s%s%s",
-					indent,
-					strings.Repeat(" ", len("(-) Skipped: ")),
-					child.Suggestion,
-				))
-			}
+		}
+		if child.Suggestion != "" {
+			console.Message(ctx, fmt.Sprintf(
+				"%s%s%s",
+				indent,
+				strings.Repeat(" ", len("(-) Skipped: ")),
+				child.Suggestion,
+			))
 		}
 		displayDependencyUpgradeResults(ctx, console, child.DependencyUpgrades, indent)
 	}

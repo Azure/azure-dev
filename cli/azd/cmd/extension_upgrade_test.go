@@ -7,9 +7,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -92,12 +94,33 @@ func TestUpgradeFailureDetails(t *testing.T) {
 		Constraint:   ">=2.0.0",
 	})
 
-	err, suggestion := upgradeFailureDetails(dependencyErr)
+	suggestion, err := upgradeFailureDetails(dependencyErr)
 
 	require.ErrorAs(t, err, new(*extensions.DependencyVersionNotFoundError))
 	require.Contains(t, suggestion, "azure.ai.inspector")
 	require.Contains(t, suggestion, ">=2.0.0")
 	require.Contains(t, suggestion, "azure.ai.agents")
+}
+
+func TestDisplayDependencyUpgradeResultsFailedSuggestion(t *testing.T) {
+	t.Parallel()
+
+	console := mockinput.NewMockConsole()
+	displayDependencyUpgradeResults(
+		t.Context(),
+		console,
+		[]extensions.UpgradeResult{{
+			ExtensionId: "azure.ai.inspector",
+			Status:      extensions.UpgradeStatusFailed,
+			Error:       errors.New("dependency version not found"),
+			Suggestion:  "Install or publish a compatible version, then retry.",
+		}},
+		"  ",
+	)
+
+	rendered := strings.Join(console.Output(), "\n")
+	require.Contains(t, rendered, "dependency version not found")
+	require.Contains(t, rendered, "Install or publish a compatible version, then retry.")
 }
 
 // createUpgradeTestManager builds a real extensions.Manager backed by an

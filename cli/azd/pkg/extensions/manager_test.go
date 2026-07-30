@@ -2465,6 +2465,75 @@ func Test_Upgrade_DependencyUpgrade_RefusesToDowngradeOutsideConstraint(t *testi
 	require.Equal(t, "2.0.0", installed.Version)
 }
 
+func Test_Upgrade_DependencyUpgrade_NoPublishedVersionSatisfiesConstraint(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "test.pack",
+				Versions: []ExtensionVersion{{
+					Version: "1.0.0",
+					Dependencies: []ExtensionDependency{{
+						Id:      "test.child",
+						Version: ">=2.0.0",
+					}},
+					Artifacts: sampleArtifacts,
+				}},
+			},
+			{
+				Id: "test.child",
+				Versions: []ExtensionVersion{{
+					Version:   "1.0.0",
+					Artifacts: sampleArtifacts,
+				}},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	children, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, children[0], "1.0.0")
+	require.NoError(t, err)
+
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
+	require.NoError(t, err)
+	_, err = manager.InstallWithOptions(*mockContext.Context, packs[0], InstallOptions{SkipDependencies: true})
+	require.NoError(t, err)
+
+	_, depUpgrades, err := manager.ReconcileDependencies(
+		*mockContext.Context,
+		packs[0],
+		DefaultUpgradeOptions(""),
+	)
+	require.NoError(t, err)
+	require.Len(t, depUpgrades, 1)
+	require.Equal(t, UpgradeStatusFailed, depUpgrades[0].Status)
+	require.ErrorAs(t, depUpgrades[0].Error, new(*DependencyVersionNotFoundError))
+	require.Contains(t, depUpgrades[0].Suggestion, "test.child")
+	require.Contains(t, depUpgrades[0].Suggestion, ">=2.0.0")
+	require.Contains(t, depUpgrades[0].Suggestion, "test.pack")
+}
+
 func Test_Upgrade_DependencyUpgrade_KeepsNewerInstalledWhenInRange(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 

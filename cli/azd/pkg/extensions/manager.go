@@ -80,6 +80,15 @@ func (e *DependencyVersionNotFoundError) Error() string {
 	)
 }
 
+// Suggestion returns actionable guidance for resolving the dependency constraint.
+func (e *DependencyVersionNotFoundError) Suggestion() string {
+	return fmt.Sprintf(
+		"Install a version of %s that satisfies constraint %q, publish one to the same source as %s, "+
+			"or update %s's dependency constraint, then retry.",
+		e.DependencyId, e.Constraint, e.ParentId, e.ParentId,
+	)
+}
+
 // DependencyAmbiguousSourceError indicates that a required dependency of an
 // extension was found in more than one configured source, so azd cannot decide
 // which one to use. The caller must disambiguate by specifying an exact source.
@@ -1029,21 +1038,34 @@ func (m *Manager) evaluateDependencyChanges(
 			continue
 		}
 
+		publishedVersion := bestSatisfyingVersion(dep.Version, childMetadata.Versions)
 		bestVersion := bestSatisfyingVersionForAzd(dep.Version, childMetadata.Versions, opts.AzdVersion)
 		if bestVersion == nil {
 			// If no published version matches, keep a compatible installed version.
 			if matchesVersionConstraint(dep.Version, installed.Version) {
 				continue
 			}
+			var resultErr error = fmt.Errorf(
+				"no compatible published version of %s satisfies constraint %q",
+				dep.Id, dep.Version,
+			)
+			suggestion := ""
+			if publishedVersion == nil {
+				versionErr := &DependencyVersionNotFoundError{
+					DependencyId: dep.Id,
+					ParentId:     parentExtension.Id,
+					Constraint:   dep.Version,
+				}
+				resultErr = versionErr
+				suggestion = versionErr.Suggestion()
+			}
 			results = append(results, UpgradeResult{
 				ExtensionId: dep.Id,
 				Status:      UpgradeStatusFailed,
 				FromVersion: installed.Version,
 				FromSource:  installed.Source,
-				Error: fmt.Errorf(
-					"no compatible published version of %s satisfies constraint %q",
-					dep.Id, dep.Version,
-				),
+				Error:       resultErr,
+				Suggestion:  suggestion,
 			})
 			continue
 		}

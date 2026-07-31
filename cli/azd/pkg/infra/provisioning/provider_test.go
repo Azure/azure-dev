@@ -124,13 +124,15 @@ func TestOptions_GetWithDefaults(t *testing.T) {
 				Provider: Bicep,
 				DeploymentStacks: &DeploymentStacksConfig{
 					ActionOnUnmanage: &ActionOnUnmanageConfig{Resources: "delete"},
-					DenySettings:     &DenySettingsConfig{Mode: "denyDelete"},
 				},
 			},
 			otherOptions: []Options{
 				{
 					Module: "custom-module",
 					Name:   "custom-name",
+					DeploymentStacks: &DeploymentStacksConfig{
+						DenySettings: &DenySettingsConfig{Mode: "denyDelete"},
+					},
 				},
 			},
 			expectedResult: Options{

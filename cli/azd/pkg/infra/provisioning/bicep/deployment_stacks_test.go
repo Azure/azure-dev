@@ -4,9 +4,11 @@
 package bicep
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -306,13 +308,15 @@ func TestUseDeploymentStateShortcut(t *testing.T) {
 }
 
 // TestResolveDeploymentStacksMap_ActionOnUnmanageManagementGroups covers the management-groups
-// branch of actionOnUnmanage and confirms an empty ActionOnUnmanage still produces the (empty) map.
+// branch of actionOnUnmanage. resources is set alongside it to mirror a schema-valid config
+// (the deployment stacks API requires actionOnUnmanage.resources).
 func TestResolveDeploymentStacksMap_ActionOnUnmanageManagementGroups(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
 
 	provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
 		ActionOnUnmanage: &provisioning.ActionOnUnmanageConfig{
+			Resources:        "delete",
 			ManagementGroups: "detach",
 		},
 	}
@@ -323,6 +327,7 @@ func TestResolveDeploymentStacksMap_ActionOnUnmanageManagementGroups(t *testing.
 	actionOnUnmanage, ok := stacks["actionOnUnmanage"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "detach", actionOnUnmanage["managementGroups"])
+	require.Equal(t, "delete", actionOnUnmanage["resources"])
 	require.NotContains(t, stacks, "denySettings")
 }
 
@@ -342,4 +347,62 @@ func TestResolveDeploymentStacksValues_BlankLiteralErrors(t *testing.T) {
 	_, err := provider.resolveDeploymentStacksMap(true)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "empty string")
+}
+
+// TestResolveDeploymentStacksMap_RoundTripsIntoSDKTypes guards against drift between the string
+// keys produced by resolveDeploymentStacksMap and the JSON field names the Deployment Stacks SDK
+// types consume. The runtime consumer (azapi.StackDeployments via config.GetSection) JSON-marshals
+// this map and unmarshals it into a struct whose fields are armdeploymentstacks.ActionOnUnmanage /
+// DenySettings, so this test mirrors that path exactly. If a key here is misspelled or the SDK
+// renames a field, the round-trip drops the value and the assertions fail.
+func TestResolveDeploymentStacksMap_RoundTripsIntoSDKTypes(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), map[string]string{
+		"OPERATOR_OBJECT_ID": "11111111-1111-1111-1111-111111111111",
+	})
+
+	provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
+		ActionOnUnmanage: &provisioning.ActionOnUnmanageConfig{
+			Resources:        "delete",
+			ResourceGroups:   "detach",
+			ManagementGroups: "detach",
+		},
+		DenySettings: &provisioning.DenySettingsConfig{
+			Mode:               "denyDelete",
+			ApplyToChildScopes: new(true),
+			ExcludedActions:    expandableStrings("Microsoft.Authorization/*/write"),
+			ExcludedPrincipals: expandableStrings("${OPERATOR_OBJECT_ID}"),
+		},
+	}
+
+	stacks, err := provider.resolveDeploymentStacksMap(true)
+	require.NoError(t, err)
+
+	// Mirror azapi.deploymentStackOptions: the runtime consumer unmarshals the resolved map into
+	// the SDK types via config.GetSection (json.Marshal followed by json.Unmarshal).
+	var roundTrip struct {
+		ActionOnUnmanage *armdeploymentstacks.ActionOnUnmanage `json:"actionOnUnmanage"`
+		DenySettings     *armdeploymentstacks.DenySettings     `json:"denySettings"`
+	}
+
+	jsonBytes, err := json.Marshal(stacks)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(jsonBytes, &roundTrip))
+
+	require.NotNil(t, roundTrip.ActionOnUnmanage)
+	require.NotNil(t, roundTrip.ActionOnUnmanage.Resources)
+	require.Equal(t, armdeploymentstacks.DeploymentStacksDeleteDetachEnumDelete, *roundTrip.ActionOnUnmanage.Resources)
+	require.NotNil(t, roundTrip.ActionOnUnmanage.ResourceGroups)
+	require.Equal(t, armdeploymentstacks.DeploymentStacksDeleteDetachEnumDetach, *roundTrip.ActionOnUnmanage.ResourceGroups)
+	require.NotNil(t, roundTrip.ActionOnUnmanage.ManagementGroups)
+	require.Equal(
+		t, armdeploymentstacks.DeploymentStacksDeleteDetachEnumDetach, *roundTrip.ActionOnUnmanage.ManagementGroups)
+
+	require.NotNil(t, roundTrip.DenySettings)
+	require.NotNil(t, roundTrip.DenySettings.Mode)
+	require.Equal(t, armdeploymentstacks.DenySettingsModeDenyDelete, *roundTrip.DenySettings.Mode)
+	require.NotNil(t, roundTrip.DenySettings.ApplyToChildScopes)
+	require.True(t, *roundTrip.DenySettings.ApplyToChildScopes)
+	require.Equal(t, []*string{new("Microsoft.Authorization/*/write")}, roundTrip.DenySettings.ExcludedActions)
+	require.Equal(t, []*string{new("11111111-1111-1111-1111-111111111111")}, roundTrip.DenySettings.ExcludedPrincipals)
 }

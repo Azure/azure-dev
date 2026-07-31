@@ -1631,13 +1631,22 @@
                     "title": "The action to take when when resources become unmanaged",
                     "description": "Defines the behavior of resources that are no longer managed after the Deployment stack is updated or deleted. Defaults to 'delete' for all resource scopes.",
                     "required": [
-                        "resourceGroups",
                         "resources"
                     ],
                     "properties": {
                         "resourceGroups": {
                             "type": "string",
-                            "title": "Required. The action on unmanage setting for resource groups",
+                            "title": "The action on unmanage setting for resource groups",
+                            "description": "Specifies an action for a newly unmanaged resource. Delete will attempt to delete the resource from Azure. Detach will leave the resource in it's current state.",
+                            "default": "delete",
+                            "enum": [
+                                "delete",
+                                "detach"
+                            ]
+                        },
+                        "managementGroups": {
+                            "type": "string",
+                            "title": "The action on unmanage setting for management groups",
                             "description": "Specifies an action for a newly unmanaged resource. Delete will attempt to delete the resource from Azure. Detach will leave the resource in it's current state.",
                             "default": "delete",
                             "enum": [

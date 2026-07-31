@@ -137,16 +137,16 @@ func Test_ExternalProvisioningProvider_NameAndProgress(t *testing.T) {
 	t.Run("progress with console", func(t *testing.T) {
 		provider := factory(mockinput.NewMockConsole()).(*ExternalProvisioningProvider)
 		// Should not panic and should route through the console spinner.
-		provider.reportProgress(context.Background(), "deploying")
-		provider.stopProgress(context.Background(), nil)
-		provider.stopProgress(context.Background(), assert.AnError)
+		provider.reportProgress(t.Context(), "deploying")
+		provider.stopProgress(t.Context(), nil)
+		provider.stopProgress(t.Context(), assert.AnError)
 	})
 
 	t.Run("progress with nil console", func(t *testing.T) {
 		provider := &ExternalProvisioningProvider{providerName: "no-console"}
 		// Falls back to a debug log / no-op without a console.
-		provider.reportProgress(context.Background(), "deploying")
-		provider.stopProgress(context.Background(), nil)
+		provider.reportProgress(t.Context(), "deploying")
+		provider.stopProgress(t.Context(), nil)
 		assert.Equal(t, "no-console", provider.Name())
 	})
 }

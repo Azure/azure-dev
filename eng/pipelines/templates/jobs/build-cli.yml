@@ -175,7 +175,6 @@ jobs:
           GOTESTSUM_JUNITFILE: junitTestReport.xml
           SYSTEM_ACCESSTOKEN: $(System.AccessToken)
           PIP_INDEX_URL: $(PIP_INDEX_URL)
-          PIP_EXTRA_INDEX_URL: $(PIP_EXTRA_INDEX_URL)
           RestoreSources: "$(AzureSdkNuGetFeedUrl);$(DotNet9NuGetFeedUrl)"
           # Disable MSBuild node reuse for Aspire-related tests.
           # MSBuild node reuse is a pure performance optimization that is generally recommended to be disabled on CI environments

@@ -46,6 +46,15 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Reject PRs from forks
+      if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+      shell: bash
+      env:
+        HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+      run: |
+        echo "::error::Vally evals do not run for fork pull requests. Create a branch in Azure/azure-dev and recreate your PR"
+        exit 1
+
     - name: Set up Node.js
       uses: actions/setup-node@v7
       with:
@@ -132,7 +141,7 @@ runs:
         path: ${{ steps.run.outputs.vally-run-dir }}/**
         if-no-files-found: warn
 
-    - name: Fail on eval failures
+    - name: Propagate vally result
       if: always()
       shell: bash
       env:
@@ -142,5 +151,3 @@ runs:
           echo "npx vally eval itself failed (exit code ${VALLY_EXIT_CODE:-unknown}) -- see the 'Run vally eval' log above."
           exit 1
         fi
-
-        echo "All vally evals passed."

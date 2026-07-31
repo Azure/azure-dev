@@ -2612,8 +2612,26 @@ func Test_Upgrade_DependencyUpgrade_RequiresNewerAzd(t *testing.T) {
 	require.Equal(t, "test.pack", compatibilityErr.ParentId)
 	require.Equal(t, ">=2.0.0", compatibilityErr.Constraint)
 	require.Equal(t, ">=2.0.0", compatibilityErr.RequiredAzdVersion)
-	require.Contains(t, depUpgrades[0].Suggestion, "Upgrade azd")
+	require.Contains(t, depUpgrades[0].Suggestion, "Use an azd version")
 	require.Contains(t, depUpgrades[0].Suggestion, ">=2.0.0")
+}
+
+func TestDependencyAzdVersionIncompatibleError_UpperBoundSuggestion(t *testing.T) {
+	t.Parallel()
+
+	err := &DependencyAzdVersionIncompatibleError{
+		DependencyId:       "test.child",
+		ParentId:           "test.pack",
+		Constraint:         ">=1.0.0",
+		RequiredAzdVersion: "<2.0.0",
+	}
+
+	require.Equal(
+		t,
+		`Use an azd version that satisfies "<2.0.0", then retry.`,
+		err.Suggestion(),
+	)
+	require.NotContains(t, err.Suggestion(), "Upgrade")
 }
 
 func Test_Upgrade_DependencyUpgrade_KeepsNewerInstalledWhenInRange(t *testing.T) {

@@ -121,10 +121,10 @@ func (e *DependencyAzdVersionIncompatibleError) Error() string {
 // Suggestion returns actionable guidance for installing a compatible azd version.
 func (e *DependencyAzdVersionIncompatibleError) Suggestion() string {
 	if e.RequiredAzdVersion == "" {
-		return "Upgrade azd to the latest version, then retry."
+		return "Use an azd version compatible with the dependency, then retry."
 	}
 	return fmt.Sprintf(
-		"Upgrade azd to a version that satisfies %q, then retry.",
+		"Use an azd version that satisfies %q, then retry.",
 		e.RequiredAzdVersion,
 	)
 }
@@ -1084,11 +1084,8 @@ func (m *Manager) evaluateDependencyChanges(
 			if matchesVersionConstraint(dep.Version, installed.Version) {
 				continue
 			}
-			var resultErr error = fmt.Errorf(
-				"no compatible published version of %s satisfies constraint %q",
-				dep.Id, dep.Version,
-			)
-			suggestion := ""
+			var resultErr error
+			var suggestion string
 			publishedVersion := bestSatisfyingVersion(dep.Version, childMetadata.Versions)
 			if publishedVersion == nil {
 				versionErr := &DependencyVersionNotFoundError{

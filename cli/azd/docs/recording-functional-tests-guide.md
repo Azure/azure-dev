@@ -295,6 +295,40 @@ Config fallbacks are only consulted when the `CI` environment variable is unset.
 | Tenant | `AZD_TEST_TENANT_ID` | `defaults.test.tenant` |
 | Location | `AZD_TEST_AZURE_LOCATION` | `defaults.test.location` |
 
+#### Recommended Local Recording Environment
+
+Set the test-specific variables before recording so the functional harness does not depend on your regular azd defaults. If your login can access subscriptions in multiple tenants, also set `AZURE_TENANT_ID` to the same tenant. `AZD_TEST_TENANT_ID` configures the test harness, while `AZURE_TENANT_ID` filters azd's own tenant and subscription prompts.
+
+PowerShell:
+
+```powershell
+$env:AZD_TEST_AZURE_SUBSCRIPTION_ID = "<subscription-id>"
+$env:AZD_TEST_TENANT_ID = "<tenant-id>"
+$env:AZD_TEST_AZURE_LOCATION = "eastus2"
+$env:AZURE_TENANT_ID = $env:AZD_TEST_TENANT_ID
+$env:AZURE_RECORD_MODE = "record"
+```
+
+Bash:
+
+```bash
+export AZD_TEST_AZURE_SUBSCRIPTION_ID="<subscription-id>"
+export AZD_TEST_TENANT_ID="<tenant-id>"
+export AZD_TEST_AZURE_LOCATION="eastus2"
+export AZURE_TENANT_ID="$AZD_TEST_TENANT_ID"
+export AZURE_RECORD_MODE="record"
+```
+
+#### Provision Validation Prompts
+
+Provision-validation warnings can vary with the recording principal's permissions. There is no environment variable that disables local provision validation; use the user-config switch:
+
+```bash
+azd config set validation.provision off
+```
+
+Keep this setting consistent between recording and playback.
+
 ### Manual Re-recording
 
 If you prefer manual control:

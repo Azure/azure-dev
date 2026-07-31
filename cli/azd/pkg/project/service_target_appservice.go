@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -72,7 +71,7 @@ func (st *appServiceTarget) Package(
 	// 1. Local docker build: container artifact already present from framework service
 	// 2. Remote build (docker.RemoteBuild): no artifacts from Package phase by design
 	// 3. Dotnet-publish docker: no artifacts from Package phase by design
-	if st.isContainerDeploy(serviceConfig, serviceContext) {
+	if isContainerDeploy(serviceConfig, serviceContext) {
 		return &ServicePackageResult{}, nil
 	}
 
@@ -124,7 +123,7 @@ func (st *appServiceTarget) Publish(
 	// Gate on service configuration, not just artifact presence.
 	// Remote build and dotnet-publish docker flows produce no package artifacts by design;
 	// ContainerHelper.Publish handles everything (build + push) in those modes.
-	if !st.isContainerDeploy(serviceConfig, serviceContext) {
+	if !isContainerDeploy(serviceConfig, serviceContext) {
 		return &ServicePublishResult{}, nil
 	}
 
@@ -288,23 +287,9 @@ func (st *appServiceTarget) containerDeploy(
 		return nil, err
 	}
 
-	artifacts := ArtifactCollection{}
-
-	for _, endpoint := range endpoints {
-		if err := artifacts.Add(&Artifact{
-			Kind:         ArtifactKindEndpoint,
-			Location:     endpoint,
-			LocationKind: LocationKindRemote,
-		}); err != nil {
-			return nil, fmt.Errorf("failed to add endpoint artifact: %w", err)
-		}
-	}
-
-	var resourceArtifact *Artifact
-	if err := mapper.Convert(targetResource, &resourceArtifact); err == nil {
-		if err := artifacts.Add(resourceArtifact); err != nil {
-			return nil, fmt.Errorf("failed to add resource artifact: %w", err)
-		}
+	artifacts, err := newDeployArtifacts(endpoints, targetResource)
+	if err != nil {
+		return nil, err
 	}
 
 	return &ServiceDeployResult{
@@ -405,25 +390,9 @@ func (st *appServiceTarget) zipDeploy(
 		return nil, err
 	}
 
-	artifacts := ArtifactCollection{}
-
-	// Add endpoints as artifacts
-	for _, endpoint := range endpoints {
-		if err := artifacts.Add(&Artifact{
-			Kind:         ArtifactKindEndpoint,
-			Location:     endpoint,
-			LocationKind: LocationKindRemote,
-		}); err != nil {
-			return nil, fmt.Errorf("failed to add endpoint artifact: %w", err)
-		}
-	}
-
-	// Add resource artifact
-	var resourceArtifact *Artifact
-	if err := mapper.Convert(targetResource, &resourceArtifact); err == nil {
-		if err := artifacts.Add(resourceArtifact); err != nil {
-			return nil, fmt.Errorf("failed to add resource artifact: %w", err)
-		}
+	artifacts, err := newDeployArtifacts(endpoints, targetResource)
+	if err != nil {
+		return nil, err
 	}
 
 	return &ServiceDeployResult{
@@ -637,17 +606,23 @@ func (st *appServiceTarget) validateTargetResource(
 	return nil
 }
 
-// isContainerDeploy returns true when the service is configured for container deployment.
-// For App Service, container deployment is triggered by language=docker, docker.path set
-// (polyglot containerization), or a pre-built image.
-func (st *appServiceTarget) isContainerDeploy(serviceConfig *ServiceConfig, serviceContext *ServiceContext) bool {
-	if serviceConfig.Language == ServiceLanguageDocker || serviceConfig.Docker.Path != "" {
+// containerConfigured returns true when the service configuration asks for a container deployment:
+// language=docker, docker.path set (polyglot containerization), or a pre-built image.
+func containerConfigured(serviceConfig *ServiceConfig) bool {
+	return serviceConfig.Language == ServiceLanguageDocker ||
+		serviceConfig.Docker.Path != "" ||
+		!serviceConfig.Image.Empty()
+}
+
+// isContainerDeploy returns true when the service is configured for container deployment, or when
+// the framework service already produced a container artifact during packaging.
+func isContainerDeploy(serviceConfig *ServiceConfig, serviceContext *ServiceContext) bool {
+	if containerConfigured(serviceConfig) {
 		return true
 	}
-	if _, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer)); found {
-		return true
-	}
-	return false
+
+	_, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer))
+	return found
 }
 
 // validateContainerConfig is a no-op; polyglot containerization is now supported via the

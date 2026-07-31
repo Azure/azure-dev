@@ -1219,16 +1219,12 @@ func (a *extensionInstallAction) confirmReplace(
 // wrapDependencyError augments dependency resolution failures with actionable
 // guidance. Other errors pass through unchanged.
 func wrapDependencyError(err error) error {
-	if depErr, ok := errors.AsType[*extensions.DependencyNotFoundError](err); ok {
-		return &internal.ErrorWithSuggestion{
-			Err: depErr,
-			Suggestion: fmt.Sprintf(
-				"Install the required dependency first with %s, then retry.",
-				output.WithHighLightFormat("azd extension install %s", depErr.DependencyId),
-			),
-		}
+	type dependencyErrorWithSuggestion interface {
+		error
+		Suggestion() string
 	}
-	if depErr, ok := errors.AsType[*extensions.DependencyVersionNotFoundError](err); ok {
+
+	if depErr, ok := errors.AsType[dependencyErrorWithSuggestion](err); ok {
 		return &internal.ErrorWithSuggestion{
 			Err:        depErr,
 			Suggestion: depErr.Suggestion(),
@@ -2283,7 +2279,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 
 		// Explicit --source miss: neither the requested version nor any other
 		// version of the extension exists in that source.
-		if a.flags.source != "" {
+		if a.flags.source != "" && !a.flags.all {
 			return fail(upgradeSourceResolutionError(
 				extensionId, a.flags.source, installed.Source,
 			))
@@ -2292,8 +2288,15 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		// Delisted or unavailable — skip instead of fail so
 		// the batch continues.
 		baseResult.Status = extensions.UpgradeStatusSkipped
-		baseResult.SkipReason = "extension no longer available " +
-			"in any configured registry"
+		if a.flags.source != "" {
+			baseResult.SkipReason = fmt.Sprintf(
+				"extension not available in source '%s'",
+				a.flags.source,
+			)
+		} else {
+			baseResult.SkipReason = "extension no longer available " +
+				"in any configured registry"
+		}
 		if !isJsonOutput {
 			skipMsg := fmt.Sprintf(
 				"Upgrading %s extension",
@@ -2554,6 +2557,7 @@ func displayDependencyUpgradeResults(
 	indent string,
 ) {
 	for _, child := range results {
+		suggestionPadding := 0
 		switch child.Status {
 		case extensions.UpgradeStatusUpgraded:
 			verb := dependencyChangeVerb(child.FromVersion, child.ToVersion)
@@ -2569,6 +2573,7 @@ func displayDependencyUpgradeResults(
 				),
 			))
 		case extensions.UpgradeStatusFailed:
+			suggestionPadding = len("(x) Failed: ")
 			console.Message(ctx, fmt.Sprintf(
 				"%s%s Upgrading %s dependency%s",
 				indent,
@@ -2584,6 +2589,7 @@ func displayDependencyUpgradeResults(
 				}(),
 			))
 		case extensions.UpgradeStatusSkipped:
+			suggestionPadding = len("(-) Skipped: ")
 			line := fmt.Sprintf(
 				"%s%s Upgrading %s dependency",
 				indent,
@@ -2595,11 +2601,11 @@ func displayDependencyUpgradeResults(
 			}
 			console.Message(ctx, line)
 		}
-		if child.Suggestion != "" {
+		if child.Suggestion != "" && suggestionPadding > 0 {
 			console.Message(ctx, fmt.Sprintf(
 				"%s%s%s",
 				indent,
-				strings.Repeat(" ", len("(-) Skipped: ")),
+				strings.Repeat(" ", suggestionPadding),
 				child.Suggestion,
 			))
 		}

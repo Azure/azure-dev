@@ -62,6 +62,14 @@ func (e *DependencyNotFoundError) Error() string {
 	return fmt.Sprintf("dependency %s required by %s was not found", e.DependencyId, e.ParentId)
 }
 
+// Suggestion returns actionable guidance for installing the missing dependency.
+func (e *DependencyNotFoundError) Suggestion() string {
+	return fmt.Sprintf(
+		"Install the required dependency first with azd extension install %s, then retry.",
+		e.DependencyId,
+	)
+}
+
 // DependencyVersionNotFoundError indicates that a required dependency exists
 // but none of its versions satisfy the constraint declared by its parent.
 type DependencyVersionNotFoundError struct {
@@ -86,6 +94,38 @@ func (e *DependencyVersionNotFoundError) Suggestion() string {
 		"Install a version of %s that satisfies constraint %q, publish one to the same source as %s, "+
 			"or update %s's dependency constraint, then retry.",
 		e.DependencyId, e.Constraint, e.ParentId, e.ParentId,
+	)
+}
+
+// DependencyAzdVersionIncompatibleError indicates that dependency versions
+// satisfy the parent's constraint, but none support the running azd version.
+type DependencyAzdVersionIncompatibleError struct {
+	// DependencyId is the id of the incompatible dependency.
+	DependencyId string
+	// ParentId is the id of the extension that declares the dependency.
+	ParentId string
+	// Constraint is the dependency version constraint declared by the parent.
+	Constraint string
+	// RequiredAzdVersion is the azd version constraint declared by the dependency.
+	RequiredAzdVersion string
+}
+
+func (e *DependencyAzdVersionIncompatibleError) Error() string {
+	return fmt.Sprintf(
+		"dependency %s required by %s has versions satisfying constraint %q, "+
+			"but none are compatible with the current azd version",
+		e.DependencyId, e.ParentId, e.Constraint,
+	)
+}
+
+// Suggestion returns actionable guidance for installing a compatible azd version.
+func (e *DependencyAzdVersionIncompatibleError) Suggestion() string {
+	if e.RequiredAzdVersion == "" {
+		return "Upgrade azd to the latest version, then retry."
+	}
+	return fmt.Sprintf(
+		"Upgrade azd to a version that satisfies %q, then retry.",
+		e.RequiredAzdVersion,
 	)
 }
 
@@ -1038,7 +1078,6 @@ func (m *Manager) evaluateDependencyChanges(
 			continue
 		}
 
-		publishedVersion := bestSatisfyingVersion(dep.Version, childMetadata.Versions)
 		bestVersion := bestSatisfyingVersionForAzd(dep.Version, childMetadata.Versions, opts.AzdVersion)
 		if bestVersion == nil {
 			// If no published version matches, keep a compatible installed version.
@@ -1050,6 +1089,7 @@ func (m *Manager) evaluateDependencyChanges(
 				dep.Id, dep.Version,
 			)
 			suggestion := ""
+			publishedVersion := bestSatisfyingVersion(dep.Version, childMetadata.Versions)
 			if publishedVersion == nil {
 				versionErr := &DependencyVersionNotFoundError{
 					DependencyId: dep.Id,
@@ -1058,6 +1098,15 @@ func (m *Manager) evaluateDependencyChanges(
 				}
 				resultErr = versionErr
 				suggestion = versionErr.Suggestion()
+			} else {
+				compatibilityErr := &DependencyAzdVersionIncompatibleError{
+					DependencyId:       dep.Id,
+					ParentId:           parentExtension.Id,
+					Constraint:         dep.Version,
+					RequiredAzdVersion: publishedVersion.RequiredAzdVersion,
+				}
+				resultErr = compatibilityErr
+				suggestion = compatibilityErr.Suggestion()
 			}
 			results = append(results, UpgradeResult{
 				ExtensionId: dep.Id,

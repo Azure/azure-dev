@@ -42,6 +42,7 @@ const {
 
 const PROD_REGISTRY_PATH = 'cli/azd/extensions/registry.json';
 const DEV_REGISTRY_PATH = 'cli/azd/extensions/registry.dev.json';
+const FIG_SPEC_SNAPSHOT_PATH = 'cli/azd/cmd/testdata/TestFigSpec.ts';
 const REGISTRY_PATH_LIST = `${PROD_REGISTRY_PATH}, ${DEV_REGISTRY_PATH}`;
 
 /**
@@ -693,6 +694,129 @@ describe('run', () => {
     expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
       path: 'cli/azd/extensions/registry.dev.json',
     }));
+  });
+
+  it('allows a simple registry PR that also updates the TestFigSpec snapshot', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension({ versions: [version({ version: '1.0.0' })] })]),
+      pr: registry([extension({ versions: [version({ version: '1.0.0' }), version({ version: '1.1.0' })] })]),
+      files: [
+        { filename: PROD_REGISTRY_PATH },
+        { filename: FIG_SPEC_SNAPSHOT_PATH, status: 'modified' },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).not.toHaveBeenCalled();
+  });
+
+  it('requires review when a registry.dev.json-only PR updates the TestFigSpec snapshot', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension({ versions: [version({ version: '1.0.0' })] })]),
+      pr: registry([extension({ versions: [version({ version: '1.0.0' }), version({ version: '1.1.0' })] })]),
+      files: [
+        { filename: DEV_REGISTRY_PATH },
+        { filename: FIG_SPEC_SNAPSHOT_PATH, status: 'modified' },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(`files outside the extension registries (${REGISTRY_PATH_LIST})`));
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(FIG_SPEC_SNAPSHOT_PATH));
+  });
+
+  it('requires review for other non-registry files alongside TestFigSpec', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension()]),
+      pr: registry([extension()]),
+      files: [
+        { filename: PROD_REGISTRY_PATH },
+        { filename: FIG_SPEC_SNAPSHOT_PATH, status: 'modified' },
+        { filename: 'cli/azd/extensions/README.md' },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(`files outside the extension registries (${REGISTRY_PATH_LIST})`));
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('cli/azd/extensions/README.md'));
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.not.stringContaining(FIG_SPEC_SNAPSHOT_PATH));
+  });
+
+  it('requires review when the TestFigSpec snapshot is deleted', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension({ versions: [version({ version: '1.0.0' })] })]),
+      pr: registry([extension({ versions: [version({ version: '1.0.0' }), version({ version: '1.1.0' })] })]),
+      files: [
+        { filename: PROD_REGISTRY_PATH },
+        { filename: FIG_SPEC_SNAPSHOT_PATH, status: 'removed' },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(`files outside the extension registries (${REGISTRY_PATH_LIST})`));
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(FIG_SPEC_SNAPSHOT_PATH));
+  });
+
+  it('requires review when the TestFigSpec snapshot is renamed', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension({ versions: [version({ version: '1.0.0' })] })]),
+      pr: registry([extension({ versions: [version({ version: '1.0.0' }), version({ version: '1.1.0' })] })]),
+      files: [
+        { filename: PROD_REGISTRY_PATH },
+        {
+          filename: FIG_SPEC_SNAPSHOT_PATH,
+          previous_filename: 'cli/azd/cmd/testdata/TestFigSpec.old.ts',
+          status: 'renamed',
+        },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(`files outside the extension registries (${REGISTRY_PATH_LIST})`));
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(FIG_SPEC_SNAPSHOT_PATH));
   });
 
   it('skips changed-file review when a registry maintainer authored the PR', async () => {

@@ -1,4 +1,6 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import run from '../src/ext-registry-check.js';
 
@@ -35,6 +37,7 @@ const {
   diffRegistry,
   getCoreReviewers,
   isAllowedRegistryJsonUpdate,
+  REGISTRY_JSON_PATHS,
 } = run.forTests;
 
 const PROD_REGISTRY_PATH = 'cli/azd/extensions/registry.json';
@@ -1021,6 +1024,25 @@ describe('getCoreReviewers', () => {
     expect(reviewers.size).toBeGreaterThan(0);
     expect(reviewers.has('tg-msft')).toBe(true);
     expect(core.info).toHaveBeenCalledWith(expect.stringContaining(`Loaded ${reviewers.size} registry maintainer(s)`));
+  });
+});
+
+describe('REGISTRY_JSON_PATHS', () => {
+  // The ext-registry-check workflow detects registry changes before it checks out the
+  // repo, so it can't require this script and keeps its own copy of the path list.
+  // A path added here but missed there fails open: the gated steps skip and the
+  // required check reports green without the policy ever running.
+  it('matches the inline registryPaths list in ext-registry-check.yml', () => {
+    const workflowPath = join(__dirname, '..', '..', 'workflows', 'ext-registry-check.yml');
+    const workflow = readFileSync(workflowPath, 'utf8');
+
+    const setLiteral = /const registryPaths = new Set\(\[([^\]]*)\]\)/.exec(workflow);
+    // Fail loudly rather than silently stop guarding if the literal is renamed or restructured.
+    expect(setLiteral, 'could not find the `registryPaths` Set literal in ext-registry-check.yml').not.toBeNull();
+
+    const workflowPaths = [...(setLiteral?.[1] ?? '').matchAll(/'([^']+)'/g)].map((match) => String(match[1]));
+    expect(workflowPaths.length).toBeGreaterThan(0);
+    expect(workflowPaths.sort()).toEqual([...REGISTRY_JSON_PATHS].sort());
   });
 });
 

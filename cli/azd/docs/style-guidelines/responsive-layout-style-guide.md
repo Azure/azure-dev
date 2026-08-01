@@ -1,5 +1,7 @@
 # Azure Developer CLI (`azd`) Responsive Layout Style Guide
 
+<!-- cspell:ignore tabwriter -->
+
 ## Overview
 
 This guide defines the responsive list and table layouts used by Azure Developer CLI commands.

@@ -562,10 +562,64 @@
                         }
                     },
                     {
-                        "comment": "Traditional hosts (non-container only) - require project, disable container-specific properties",
+                        "comment": "Function host - supports code or container deployment from project or image",
                         "if": {
                             "properties": {
-                                "host": { "enum": ["function", "springapp", "staticwebapp"] }
+                                "host": { "const": "function" }
+                            }
+                        },
+                        "then": {
+                            "anyOf": [
+                                {
+                                    "required": ["image"],
+                                    "not": { "required": ["project"] },
+                                    "properties": {
+                                        "language": { "const": "docker" },
+                                        "remoteBuild": false
+                                    }
+                                },
+                                {
+                                    "required": ["project"],
+                                    "not": { "required": ["image"] }
+                                }
+                            ],
+                            "allOf": [
+                                {
+                                    "if": {
+                                        "anyOf": [
+                                            {
+                                                "required": ["language"],
+                                                "properties": {
+                                                    "language": { "const": "docker" }
+                                                }
+                                            },
+                                            {
+                                                "required": ["docker"],
+                                                "properties": {
+                                                    "docker": { "required": ["path"] }
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    "then": {
+                                        "properties": {
+                                            "remoteBuild": false
+                                        }
+                                    }
+                                }
+                            ],
+                            "properties": {
+                                "k8s": false,
+                                "apiVersion": false,
+                                "env": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "Traditional non-container hosts - require project and disable container-specific properties",
+                        "if": {
+                            "properties": {
+                                "host": { "enum": ["springapp", "staticwebapp"] }
                             }
                         },
                         "then": {

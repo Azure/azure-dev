@@ -187,7 +187,7 @@ This file is the authoritative reference for core azd terminal UX patterns inclu
 
 📄 **`cli/azd/docs/style-guidelines/agentic-ux-style-guide.md`** — **agentic (AI / GitHub Copilot) UX patterns**
 
-Read this file instead when working on the AI-driven / agentic experience (the "Set up with GitHub Copilot (Preview)" flow, `azd agent`, the copilot session runtime, and the `AgentDisplay` renderer). It documents the distinct magenta + glyph visual language for agent identity, tool activity, subagents, and thinking states.
+Read this file instead when working on the AI-driven / agentic experience (the "Set up with GitHub Copilot (Preview)" flow, the Copilot session runtime, and the `AgentDisplay` renderer). It documents the distinct magenta + glyph visual language for agent identity, tool activity, subagents, and thinking states.
 
 > **Note**: These are two distinct visual systems. The core guide's patterns are **not enforced on extensions**, but extension developers are encouraged to follow them where applicable for consistency. Do **not** apply core azd status patterns to agentic flows (or vice versa) — pick the guide that matches the flow. Extension-specific UX is documented in `cli/azd/docs/extensions/extensions-style-guide.md`.
 

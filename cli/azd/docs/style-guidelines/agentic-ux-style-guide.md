@@ -8,11 +8,9 @@ This guide covers the **agentic (AI / GitHub Copilot) UX patterns** for the Azur
 
 > **Do not blend the two systems.** Core azd status colors (green `(✓)`, red `(x)`, yellow `(!)`) still mean success/failure/warning inside agentic output, but the agent's own identity, tool activity, and thinking states use the magenta + glyph vocabulary described here. Never use magenta for core-flow status, and never restyle core progress reports with the agentic glyphs. Note that agentic **prompts deliberately reuse the core prompt conventions** (the blue `?` marker); it is only the agent's own status/output that uses the agentic vocabulary.
 
-## Agentic (AI / GitHub Copilot) UX Patterns
+## Implementation Scope
 
-azd has an **agentic experience** — the AI-driven flow entered when a user picks **"Set up with GitHub Copilot (Preview)"** during `azd init`, and used by the `azd agent` / copilot session runtime. This experience has a **deliberately distinct visual language** from core azd flows. Its signature is **magenta**, which marks AI/agent identity and active AI work.
-
-> **Do not blend the two systems.** Core azd status colors (green `(✓)`, red `(x)`, yellow `(!)`) still mean success/failure/warning inside agentic output, but the agent's own identity, tool activity, and thinking states use the magenta + glyph vocabulary described here. Never use magenta for core-flow status, and never restyle core progress reports with the agentic glyphs.
+The agentic experience begins when a user picks **"Set up with GitHub Copilot (Preview)"** during `azd init` and continues through the internal Copilot session runtime. Its signature is **magenta**, which marks AI/agent identity and active AI work.
 
 - Entry point (init branch): [`cmd/init.go`](../../cmd/init.go) — `promptInitType()` adds the Copilot option and `initAppWithAgent()` runs the flow.
 - Agent display/event renderer: [`internal/agent/display.go`](../../internal/agent/display.go) (`AgentDisplay`).
@@ -25,9 +23,11 @@ azd has an **agentic experience** — the AI-driven flow entered when a user pic
 
 ### Magenta: The Agentic Signature Color
 
-There is **no `WithMagentaFormat` helper** in `pkg/output/colors.go`. The only magenta-mapped helper is `WithHintFormat` (`color.MagentaString`), which is a **shared** hint color used in both core and agentic flows (spinner glyph, prompt hints, next-step messages) — its magenta is *not* exclusive to agentic UX. The agentic **agent-identity** styling is different: it applies magenta **directly** through `color.MagentaString` from `fatih/color` to agent/tool/subagent names and in-progress AI messages. When flagging violations, distinguish shared `WithHintFormat` hints (allowed anywhere) from direct `color.MagentaString` agent-identity styling (agentic only).
+There is **no semantic agent-color helper** in `pkg/output/colors.go`. The shared `WithHintFormat` helper maps to magenta and is used in both core and agentic flows for hints, including the spinner glyph. Agent identity is currently styled directly with `color.MagentaString` from `fatih/color`.
 
-Magenta agent-identity styling semantically means **"this is the AI agent / AI is actively working"**. It is applied to:
+Treat the semantic meaning, not the formatting API, as the boundary: within agentic output, magenta identity styling means **"this is the AI agent / AI is actively working."** Direct magenta also has a legacy core use for recommended service names in `internal/repository/detect_confirm.go`; that exception is not agent identity and should not be copied into new core UX.
+
+Agentic magenta is applied to:
 
 | Element                      | Rendering                                              | Location |
 | ---------------------------- | ----------------------------------------------------- | -------- |
@@ -39,7 +39,7 @@ Magenta agent-identity styling semantically means **"this is the AI agent / AI i
 | Subagent completed name      | `✔︎ <subagent> completed` — name magenta (check green) | `SessionEventTypeSubagentCompleted` |
 | Init "preparing" message     | `Preparing application for Azure deployment...` magenta | `cmd/init.go` |
 
-Reserve **direct `color.MagentaString`** styling for these agent-identity / active-AI-work cases. Do not magenta-color arbitrary text. (Shared `WithHintFormat` hints are a separate, allowed use of magenta.)
+In new agentic code, use direct `color.MagentaString` only for these agent-identity / active-AI-work cases. Do not magenta-color arbitrary text. Shared `WithHintFormat` hints are separate and allowed in any flow.
 
 ### Agentic Glyph & Layout Vocabulary
 
@@ -78,11 +78,12 @@ Agentic flows **reuse the core prompt component** ([`pkg/ux/prompt.go`](../../pk
   Press Ctrl+C to cancel
 ```
 
-**Tool run and completion:**
+**Tool run and completion:** The spinner shows a concise summary. A completed PowerShell tool may show the actual command on a gray tree line.
 
 ```
-Running powershell go build...
-✔︎ Ran powershell
+Running powershell Run tests...
+✔︎ Ran powershell Run tests
+  └ go test ./...
 ```
 
 **Subagent lifecycle:**
@@ -93,12 +94,11 @@ Running powershell go build...
 ✔︎ GitHub Copilot completed
 ```
 
-> Colors: `◆` and the subagent/tool names → magenta (`color.MagentaString`). `✔︎` → green. `✖` and error detail → red. Reasoning, sub-detail (`├`/`└`), and hints → gray. `◇ Using skill:` → cyan. Assistant prose → `WithMarkdown`.
+> Colors: `◆` and the subagent/tool names → magenta (`color.MagentaString`). `✔︎` → green. `✖` and error detail → red. Reasoning, sub-detail (`├`/`└`), and the cancel affordance → gray. `◇ Using skill:` → cyan. Assistant prose → `WithMarkdown`.
 
 ### Agentic UX Guidelines
 
-- **Keep the two systems separate.** Don't apply core progress-report prefixes to agent events, and don't apply agentic glyphs/magenta to core commands.
+- **Keep the two systems separate.** Use `✔︎ Ran powershell` for an agent tool event, not the core progress-report form `(✓) Ran powershell`. Do not apply agentic glyphs or agent-identity magenta to core commands.
 - **Direct magenta = agent identity / active AI work.** Use `color.MagentaString` for agent/tool/subagent names and in-progress AI messages — not for arbitrary text. (The shared `WithHintFormat` hint color is separate and allowed in any flow.)
-- **Reuse the shared prompt and spinner components** — don't fork a magenta prompt marker.
 - **Preserve the preview notice and consent guidance** in the init entry flow.
 - **Render assistant messages as markdown** (`output.WithMarkdown`) so formatting is legible in the terminal.

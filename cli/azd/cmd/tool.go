@@ -28,7 +28,7 @@ import (
 )
 
 // singleResultCommonAttrs returns the usage attributes shared by single-target
-// `azd tool install` and `azd tool upgrade`: success, tool.id, and the
+// `azd tool install` and `azd tool update`: success, tool.id, and the
 // installation strategy. Callers append upgrade-specific version attrs
 // (tool.upgrade.{from,to}_version) on top.
 //
@@ -1162,7 +1162,7 @@ func (a *toolInstallAction) resolveToolIds(ctx context.Context) ([]string, error
 }
 
 // ---------------------------------------------------------------------------
-// azd tool upgrade [tool-name...]
+// azd tool update [tool-name...]
 // ---------------------------------------------------------------------------
 
 type toolUpgradeFlags struct {
@@ -1382,6 +1382,11 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 
 	if a.formatter.Kind() == output.JsonFormat {
+		// Keep the existing machine-readable action value stable for callers
+		// using either the update command or its upgrade alias.
+		for _, result := range upgradeResults {
+			result.Action = "upgrade"
+		}
 		return nil, a.formatter.Format(upgradeResults, a.writer, nil)
 	}
 
@@ -1551,6 +1556,11 @@ func (a *toolUpgradeAction) dryRun(
 	}
 
 	if a.formatter.Kind() == output.JsonFormat {
+		// Keep the existing machine-readable action value stable for callers
+		// using either the update command or its upgrade alias.
+		for i := range rows {
+			rows[i].Action = "upgrade"
+		}
 		return nil, a.formatter.Format(rows, a.writer, nil)
 	}
 

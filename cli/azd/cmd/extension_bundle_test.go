@@ -295,9 +295,9 @@ func TestVersionTransitionVerb(t *testing.T) {
 		expected  string
 	}{
 		{"1.0.0", "1.0.0", "Reinstall"},
-		{"1.0.0", "2.0.0", "Upgrade to 2.0.0"},
+		{"1.0.0", "2.0.0", "Update to 2.0.0"},
 		{"1.0.0", "0.9.0", "Downgrade to 0.9.0"},
-		{"1.0.0-preview", "1.0.0", "Upgrade to 1.0.0"},
+		{"1.0.0-preview", "1.0.0", "Update to 1.0.0"},
 		// Non-semver tags have no defined ordering -> neutral verb.
 		{"nightly", "1.0.0", "Replace with 1.0.0"},
 		{"1.0.0", "nightly", "Replace with nightly"},

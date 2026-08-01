@@ -481,7 +481,7 @@ azd extension install my.experimental.extension --version 2.0.0-beta.1 --source 
 
 If an extension exists in both the `azd` and `dev` sources and you do not specify `--source`, `azd` will prompt you to choose (in interactive mode) or return an error (in non-interactive mode). See [Handle Conflicts](#3-handle-conflicts) for details.
 
-### Upgrade and Dev→Main Promotion
+### Update and Dev→Main Promotion
 
 When you run `azd extension update`, extensions installed from the dev registry are evaluated for **one-way promotion** to the main registry. Promotion occurs automatically when:
 
@@ -493,7 +493,7 @@ When promotion happens, the extension's stored source switches from `dev` to `az
 > [!NOTE]
 > If the main and dev registries have the **same** latest version, the extension stays on its current (dev) source. Equal versions are source-sticky.
 
-The upgrade priority chain is:
+The update priority chain is:
 
 1. **Explicit `--source` flag** — always wins if provided
 2. **Stored source** — the source the extension was originally installed from
@@ -680,12 +680,12 @@ To remove the nightly registry later:
 azd extension source remove nightly
 ```
 
-### Upgrade and Nightly→Main Promotion
+### Update and Nightly→Main Promotion
 
 Nightly versions use semver prerelease labels, so the standard `azd extension update` flow works:
 
 - A newer nightly (higher build id, or a higher base version) supersedes an older one, so `azd extension update` pulls the latest nightly.
-- When the extension ships a **stable** release whose base version matches your nightly (for example stable `1.2.3` versus `1.2.3-nightly.200`), the stable release outranks the nightly and you are **automatically promoted** to the `azd` registry on your next upgrade.
+- When the extension ships a **stable** release whose base version matches your nightly (for example stable `1.2.3` versus `1.2.3-nightly.200`), the stable release outranks the nightly and you are **automatically promoted** to the `azd` registry on your next update.
 
 > [!NOTE]
 > If your nightly was built from a **prerelease** base (for example `1.2.3-preview.nightly.60`), it sorts **above** the matching stable prerelease `1.2.3-preview`. In that case you are not promoted until the stable registry advances to a higher base version. This is expected semver precedence behavior.

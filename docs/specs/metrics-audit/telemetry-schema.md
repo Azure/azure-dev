@@ -17,7 +17,7 @@ OpenTelemetry span name or event name.
 | `AgentTroubleshootEvent` | `agent.troubleshoot` | Agent troubleshooting event |
 | `ExtensionRunEvent` | `ext.run` | Extension execution event |
 | `ExtensionInstallEvent` | `ext.install` | Extension install/upgrade event |
-| `ExtensionUpgradeEvent` | `ext.upgrade` | Single extension upgrade attempt |
+| `ExtensionUpgradeEvent` | `ext.upgrade` | Single extension update attempt |
 | `ExtensionPromoteEvent` | `ext.promote` | Extension registry promotion (e.g., dev → main) |
 | `CopilotInitializeEvent` | `copilot.initialize` | Copilot initialization event |
 | `CopilotSessionEvent` | `copilot.session` | Copilot session lifecycle event |

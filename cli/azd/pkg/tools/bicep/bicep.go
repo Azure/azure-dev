@@ -123,7 +123,7 @@ func (cli *Cli) ensureInstalled(ctx context.Context) error {
 		log.Printf("installed bicep version %s is older than %s; updating.", ver.String(), Version.String())
 
 		if err := runStep(
-			ctx, cli.console, "Upgrading Bicep", func() error {
+			ctx, cli.console, "Updating Bicep", func() error {
 				return downloadBicep(ctx, cli.transporter, Version, bicepPath)
 			},
 		); err != nil {

@@ -230,7 +230,7 @@ The first-run middleware (`cmd/middleware/tool_first_run.go`) is not registered 
 
 ### Per-Operation Attributes
 
-The `tool install` / `tool upgrade` / `tool check` / `tool show` actions emit:
+The `tool install` / `tool update` / `tool check` / `tool show` actions emit:
 
 | Attribute | Type | Emitted by | Notes |
 | --- | --- | --- | --- |
@@ -243,7 +243,7 @@ The `tool install` / `tool upgrade` / `tool check` / `tool show` actions emit:
 | `tool.install.failure_count` | int | Batch install / upgrade | Number of tools that failed. |
 | `tool.install.failed_ids` | string | At least one failure | Comma-separated **sorted** tool IDs whose operation failed. **Only tool IDs are recorded — error messages flow through the global error middleware (`error.message`).** When the batch call itself errors before any per-tool result is produced, the count of failed IDs may be **less than `failure_count`** (failures are synthesized from the requested set, but a synthesized entry with no `Tool` reference is omitted from the ID list to avoid emitting "unknown"). |
 | `tool.install.duration_ms` | int | Batch install / upgrade | Wall-clock duration of the operation in milliseconds. Per-tool durations are intentionally **not** emitted: the cardinality cost would be `O(tools × installs)` for limited diagnostic value, and the aggregate captures the only number actionable at fleet scale. Per-tool durations remain available in the in-process `InstallResult.Duration` for local logging / dry-run reporting. |
-| `tool.upgrade.from_version` | string | Single-target upgrade | Pre-upgrade installed version. Captured via detection on both the explicit-args (`azd tool upgrade <id>`) and auto-detect (`azd tool upgrade`) paths. Unset only when detection failed or the tool was not previously installed. |
+| `tool.upgrade.from_version` | string | Single-target update | Pre-update installed version. Captured via detection on both the explicit-args (`azd tool update <id>`) and auto-detect (`azd tool update`) paths. Unset only when detection failed or the tool was not previously installed. |
 | `tool.upgrade.to_version` | string | Single-target upgrade succeeded | Post-upgrade installed version. Only emitted when the upgrade succeeded — on failure `InstalledVersion` is either the unchanged pre-upgrade value or empty, which would be ambiguous against `from_version`. |
 | `tool.check.updates_available` | int | `tool check` | Count of tools whose `UpdateAvailable` is `true`. |
 

@@ -6042,6 +6042,7 @@ const completionSpec: Fig.Spec = {
 					args: {
 						name: 'extension-id',
 						isOptional: true,
+						generators: azdGenerators.listInstalledExtensions,
 					},
 				},
 			],

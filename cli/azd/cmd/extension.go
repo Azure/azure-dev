@@ -1058,7 +1058,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			)
 			if err != nil {
 				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, wrapDependencyError(fmt.Errorf("failed to update extension: %w", err))
+				return nil, wrapDependencyError(fmt.Errorf("failed to update extension: %w", err))
 			}
 
 			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
@@ -1863,7 +1863,7 @@ func newExtensionUpgradeFlags(cmd *cobra.Command, global *internal.GlobalCommand
 	return flags
 }
 
-// azd extension upgrade
+// azd extension update
 type extensionUpgradeAction struct {
 	args             []string
 	flags            *extensionUpgradeFlags

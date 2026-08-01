@@ -165,7 +165,7 @@ func TestCheckGRPCAndVersion_BelowFloor_Warns(t *testing.T) {
 	require.Equal(t, StatusWarn, got.Status)
 	require.Contains(t, got.Message, "0.1.26-preview")
 	require.Contains(t, got.Message, MinNewBackendVersion)
-	require.Contains(t, got.Suggestion, "azd ext upgrade azure.ai.agents")
+	require.Contains(t, got.Suggestion, "azd ext update azure.ai.agents")
 	require.Contains(t, got.Links, "https://aka.ms/hostedagents/tsg/readme")
 	require.Equal(t, "0.1.26-preview", got.Details["extensionVersion"])
 	require.Equal(t, MinNewBackendVersion, got.Details["minBackendVersion"])

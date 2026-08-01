@@ -238,7 +238,7 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 		"extension install", // extension.source.kind
 		"extension list",    // extension.source.kind
 		"extension show",    // extension.source.kind
-		"extension upgrade", // extension.source.kind + extension upgrade spans
+		"extension update",  // extension.source.kind + extension upgrade spans
 		"hooks run",         // hooks.name, hooks.type
 		"infra generate",    // infra.provider
 		"init",              // init.method, appinit.* fields
@@ -250,7 +250,7 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 		"tool install",      // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
 		"tool show",         // tool.id
 		"tool uninstall",    // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
-		"tool upgrade",      // tool.id(s), tool.dry_run, tool.install.* aggregate + tool.upgrade.* versions
+		"tool update",       // tool.id(s), tool.dry_run, tool.install.* aggregate + tool.upgrade.* versions
 		"up",                // infra.provider (via provisioning manager; composes provision+deploy)
 		"update",            // update.* fields
 	}

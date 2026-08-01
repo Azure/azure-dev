@@ -1351,7 +1351,7 @@ func TestToolUninstallAction_DryRun_DoesNotDelegate(t *testing.T) {
 }
 
 // TestToolUpgradeAction_All_UpgradesInstalledTools verifies that
-// `azd tool upgrade --all` upgrades every installed tool (and only those),
+// `azd tool update --all` updates every installed tool (and only those),
 // without an interactive selection prompt.
 func TestToolUpgradeAction_All_UpgradesInstalledTools(t *testing.T) {
 	tracing.ResetUsageAttributesForTest()
@@ -1403,7 +1403,7 @@ func TestToolUpgradeAction_All_UpgradesInstalledTools(t *testing.T) {
 }
 
 // TestToolUpgradeAction_All_JsonFormat_EmitsCleanJson exercises the reviewer's
-// exact trigger — `azd tool upgrade --all --output json` — and verifies the
+// exact trigger — `azd tool update --all --output json` — and verifies the
 // writer receives valid JSON. In JSON mode the detection spinner is
 // bypassed (detectAllTools) so no control bytes can corrupt the stream.
 func TestToolUpgradeAction_All_JsonFormat_EmitsCleanJson(t *testing.T) {
@@ -1440,12 +1440,14 @@ func TestToolUpgradeAction_All_JsonFormat_EmitsCleanJson(t *testing.T) {
 
 	var items []toolInstallResultItem
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &items),
-		"upgrade --all --output json must emit valid JSON")
+		"update --all --output json must emit valid JSON")
 	require.NotEmpty(t, items, "at least one installed tool must be reported")
+	require.Equal(t, "upgrade", items[0].Action,
+		"the machine-readable action must remain stable for backward compatibility")
 }
 
 // TestToolUpgradeAction_All_JsonFormat_EmptyEmitsArray verifies that when there
-// is nothing to upgrade, `azd tool upgrade --all --output json` still emits an
+// is nothing to update, `azd tool update --all --output json` still emits an
 // empty result array ([]) rather than a consoleMessage object, so automation
 // sees one stable shape.
 func TestToolUpgradeAction_All_JsonFormat_EmptyEmitsArray(t *testing.T) {
@@ -1484,7 +1486,7 @@ func TestToolUpgradeAction_All_JsonFormat_EmptyEmitsArray(t *testing.T) {
 	assert.Empty(t, items)
 }
 
-// TestToolUpgradeAction_IDsWithAll_Errors verifies that `azd tool upgrade foo
+// TestToolUpgradeAction_IDsWithAll_Errors verifies that `azd tool update foo
 // --all` is rejected rather than silently ignoring foo and upgrading everything.
 func TestToolUpgradeAction_IDsWithAll_Errors(t *testing.T) {
 	tracing.ResetUsageAttributesForTest()
@@ -1514,7 +1516,7 @@ func TestToolUpgradeAction_IDsWithAll_Errors(t *testing.T) {
 }
 
 // TestToolUpgradeAction_NoPrompt_WithoutTarget_Errors verifies that
-// `azd tool upgrade` with --no-prompt (or a non-interactive terminal) and no
+// `azd tool update` with --no-prompt (or a non-interactive terminal) and no
 // tool IDs and no --all fails with guidance instead of implicitly upgrading
 // every installed tool — consistent with install/uninstall and azd's
 // --no-prompt contract.
@@ -1555,7 +1557,7 @@ func TestToolUpgradeAction_NoPrompt_WithoutTarget_Errors(t *testing.T) {
 }
 
 // TestToolUpgradeAction_JsonOnTTY_WithoutTarget_Errors verifies that
-// `azd tool upgrade --output json` on an interactive terminal (no --no-prompt)
+// `azd tool update --output json` on an interactive terminal (no --no-prompt)
 // requires an explicit target rather than opening the no-argument picker, whose
 // output would corrupt the JSON result written to the same stdout.
 func TestToolUpgradeAction_JsonOnTTY_WithoutTarget_Errors(t *testing.T) {

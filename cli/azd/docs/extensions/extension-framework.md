@@ -3245,19 +3245,19 @@ Registry schema versions use `major.minor` format (e.g. `"1.0"`, `"1.1"`, `"2.0"
 |----------|----------|
 | Missing `schemaVersion` | Treated as `"1.0"` for backward compatibility |
 | Same major, newer minor (e.g. `"1.1"`) | Accepted silently — minor bumps are backward compatible |
-| Newer major (e.g. `"2.0"`) | Rejected with an error and upgrade guidance |
+| Newer major (e.g. `"2.0"`) | Rejected with an error and update guidance |
 | `0.x` (e.g. `"0.1"`) | Accepted — pre-release schema versions are valid |
 | Malformed version string | Rejected with a descriptive parse error |
 
-### Upgrade Guidance
+### Update Guidance
 
 When azd encounters a registry with a schema version it cannot support, it will
-display an error with a suggestion to upgrade:
+display an error with a suggestion to update:
 
 ```
 ERROR: registry schema version 2.0 is not supported (max supported: 1.0)
 
-Suggestion: Upgrade azd to the latest version to use this registry
+Suggestion: Update azd to the latest version to use this registry
   https://aka.ms/azd/install
 ```
 

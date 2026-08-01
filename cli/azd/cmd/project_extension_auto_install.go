@@ -225,7 +225,7 @@ func validateInstalledExtensionVersion(
 			versionPreference,
 		),
 		Suggestion: fmt.Sprintf(
-			"Run 'azd extension upgrade %s' to move to the latest version, or "+
+			"Run 'azd extension update %s' to move to the latest version, or "+
 				"'azd extension install %s --version <version>' to select an exact version "+
 				"that satisfies %q.",
 			installed.Id,

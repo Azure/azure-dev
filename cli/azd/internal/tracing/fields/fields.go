@@ -525,7 +525,7 @@ var (
 	}
 
 	// ToolDryRunKey records whether `--dry-run` was specified for an
-	// `azd tool install` or `azd tool upgrade` invocation.
+	// `azd tool install` or `azd tool update` invocation.
 	ToolDryRunKey = AttributeKey{
 		Key:            attribute.Key("tool.dry_run"),
 		Classification: SystemMetadata,
@@ -590,7 +590,7 @@ var (
 
 	// ToolFirstRunInstallSuccessCountKey mirrors ToolInstallSuccessCountKey
 	// but is emitted only from the first-run middleware, so the user's
-	// subsequent `azd tool install` / `azd tool upgrade` command (which
+	// subsequent `azd tool install` / `azd tool update` command (which
 	// emits its own `tool.install.success_count`) does not overwrite the
 	// first-run signal on the same span.
 	ToolFirstRunInstallSuccessCountKey = AttributeKey{

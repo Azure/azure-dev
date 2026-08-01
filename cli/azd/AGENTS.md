@@ -185,6 +185,10 @@ This file is the authoritative reference for core azd terminal UX patterns inclu
 - User input patterns (text input, list select, yes/no confirm)
 - Prompt styling (`?` marker in bold blue, `[Type ? for hint]`, post-submit states)
 
+📄 **`cli/azd/docs/style-guidelines/responsive-layout-style-guide.md`** — **responsive list and table layouts**
+
+Read this file when adding or changing list-command output that uses `output.PrettyTableFormatter`. It documents full, compact, and stacked-row layouts, column priorities, grouping, status styling, and empty states.
+
 📄 **`cli/azd/docs/style-guidelines/agentic-ux-style-guide.md`** — **agentic (AI / GitHub Copilot) UX patterns**
 
 Read this file instead when working on the AI-driven / agentic experience (the "Set up with GitHub Copilot (Preview)" flow, the Copilot session runtime, and the `AgentDisplay` renderer). It documents the distinct magenta + glyph visual language for agent identity, tool activity, subagents, and thinking states.
@@ -410,7 +414,8 @@ go build
 Feature-specific docs are in `docs/` — refer to them as needed. Some key docs include:
 
 - `docs/style-guidelines/azd-style-guide.md` - Core azd CLI style guide (colors, spinners, progress states, terminal UX)
-- `docs/style-guidelines/agentic-ux-style-guide.md` - Agentic (AI / GitHub Copilot) UX patterns (magenta + glyph vocabulary)
+- `docs/style-guidelines/responsive-layout-style-guide.md` - Responsive list and table layouts
+- `docs/style-guidelines/agentic-ux-style-guide.md` - Agentic UX patterns (magenta styling and status symbols)
 - `docs/style-guidelines/new-azd-command.md` - Adding new commands
 - `docs/extensions/extension-framework.md` - Extension development using gRPC extension framework
 - `docs/style-guidelines/guiding-principles.md` - Design principles

@@ -558,7 +558,11 @@ func (c *DatasetClient) doRequest(
 
 	log.Printf("[dataset_api] response status: %d", resp.StatusCode)
 
-	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated, http.StatusAccepted) {
+	// 204 belongs here for the same reason it does in eval_api: a delete that
+	// removed the version answers No Content, and rejecting that reports every
+	// successful delete as an error.
+	if !runtime.HasStatusCode(resp,
+		http.StatusOK, http.StatusCreated, http.StatusAccepted, http.StatusNoContent) {
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
 		return nil, runtime.NewResponseError(resp)
 	}

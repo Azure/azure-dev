@@ -68,6 +68,9 @@ func TestMain(m *testing.M) {
 	}
 
 	code := m.Run()
+	// The shared eval outlives any single test, so it cannot be released with
+	// t.Cleanup without taking it away from the tests that run after.
+	runTeardown()
 	os.RemoveAll(dir)
 	os.Exit(code)
 }

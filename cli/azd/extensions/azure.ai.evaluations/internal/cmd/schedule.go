@@ -605,6 +605,15 @@ func explainScheduleFailure(
 				"once against its dataset first so the schedule repeats that instead", name)
 	}
 
+	if isScheduleRoleMissing(cause) {
+		return fmt.Errorf(
+			"saving schedule %q: the project's managed identity needs the Foundry User "+
+				"role on the project before it can run scheduled evaluations. A schedule "+
+				"runs later, as the project rather than as you, which is why creating one "+
+				"needs a role that running an eval yourself does not. Grant it on the "+
+				"project and retry", name)
+	}
+
 	list, listErr := ec.evalClient.ListSchedules(ctx, ProjectEndpointAPIVersion)
 	if listErr != nil || list == nil {
 		return fmt.Errorf("saving schedule %q: %w", name, cause)
@@ -626,4 +635,11 @@ func explainScheduleFailure(
 func isTracesHourlyOnly(err error) bool {
 	return err != nil &&
 		strings.Contains(err.Error(), "trace evaluations only support hourly")
+}
+
+// isScheduleRoleMissing matches the refusal when the project identity cannot
+// run the evaluation the schedule would trigger.
+func isScheduleRoleMissing(err error) bool {
+	return err != nil &&
+		strings.Contains(err.Error(), "lacks Foundry User role")
 }

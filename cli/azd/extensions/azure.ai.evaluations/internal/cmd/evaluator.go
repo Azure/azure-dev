@@ -420,6 +420,11 @@ func newEvaluatorShowCommand() *cobra.Command {
 
 			raw, err := ec.evalClient.GetEvaluatorRaw(ctx, name, version, ProjectEndpointAPIVersion)
 			if err != nil {
+				if eval_api.IsNotFound(err) {
+					return fmt.Errorf(
+						"no evaluator %q in this project; "+
+							"`azd ai eval evaluator list` shows the ones there are", name)
+				}
 				return fmt.Errorf("reading evaluator %q: %w", name, err)
 			}
 
@@ -466,6 +471,10 @@ func newEvaluatorDeleteCommand() *cobra.Command {
 			if err := ec.evalClient.DeleteEvaluatorVersion(
 				ctx, name, version, ProjectEndpointAPIVersion,
 			); err != nil {
+				if eval_api.IsNotFound(err) {
+					return fmt.Errorf(
+						"no evaluator %q at version %q in this project", name, version)
+				}
 				return fmt.Errorf("deleting evaluator %q version %q: %w", name, version, err)
 			}
 

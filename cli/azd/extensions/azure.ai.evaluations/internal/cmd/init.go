@@ -53,6 +53,13 @@ func newInitCommand() *cobra.Command {
 				}
 			}
 
+			// Asked before anything is written: the project is the one thing init
+			// cannot supply for itself, and failing after creating directories
+			// leaves a half-scaffolded tree behind for the user to clean up.
+			if err := confirmAzdProject(cmd.Context()); err != nil {
+				return err
+			}
+
 			if err := os.MkdirAll(filepath.Join(outDir, project.DefaultDatasetsDir), 0o750); err != nil {
 				return fmt.Errorf("creating the datasets directory: %w", err)
 			}
@@ -133,6 +140,25 @@ const (
 	wiringAdded   = "added"   // the service was added to the project
 	wiringPresent = "present" // an eval service was already declared
 )
+
+// noAzdProject is what init reports when there is nothing to attach to.
+const noAzdProject = "no azd project found in this directory. Run `azd init` first, " +
+	"or run this from the root of an existing one; the eval service is "
+
+// confirmAzdProject reports whether a project exists, without changing it.
+func confirmAzdProject(ctx context.Context) error {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return fmt.Errorf("%sadded to its azure.yaml", noAzdProject)
+	}
+	defer azdClient.Close()
+
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || resp.GetProject() == nil {
+		return fmt.Errorf("%sadded to its azure.yaml", noAzdProject)
+	}
+	return nil
+}
 
 // ensureRootEvalService declares the eval service in azd's project file.
 //

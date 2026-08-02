@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"azureaieval/internal/pkg/dataset_api"
+	"azureaieval/internal/pkg/eval_api"
 
 	"github.com/spf13/cobra"
 )
@@ -192,6 +193,11 @@ func newDatasetShowCommand() *cobra.Command {
 
 			ds, err := ec.datasetClient.GetDataset(ctx, name, version, ProjectEndpointAPIVersion)
 			if err != nil {
+				if eval_api.IsNotFound(err) {
+					return fmt.Errorf(
+						"no dataset %q at version %q in this project; "+
+							"`azd ai eval dataset list` shows the ones there are", name, version)
+				}
 				return fmt.Errorf("reading dataset %q version %q: %w", name, version, err)
 			}
 
@@ -239,6 +245,10 @@ func newDatasetDeleteCommand() *cobra.Command {
 			if err := ec.datasetClient.DeleteDatasetVersion(
 				ctx, name, version, ProjectEndpointAPIVersion,
 			); err != nil {
+				if eval_api.IsNotFound(err) {
+					return fmt.Errorf(
+						"no dataset %q at version %q in this project", name, version)
+				}
 				return fmt.Errorf("deleting dataset %q version %q: %w", name, version, err)
 			}
 

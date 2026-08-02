@@ -6,7 +6,7 @@
 - Rename `azd ai rle deploy` to `azd ai rle publish` to avoid confusion with the core `azd deploy` command.
 - Add `--version-bump` to `azd ai rle publish` so users can choose major, minor, or patch environment versioning.
 
-## 0.2.0-preview
+## 0.2.0-preview (2026-07-29)
 
 - Use the Foundry project endpoint for project-relative RLE environment and sandbox APIs.
 - Authenticate Foundry API requests with Azure credentials from `az login`, `azd auth login`, or another supported development credential.

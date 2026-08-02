@@ -56,7 +56,7 @@ func (a *publishAction) Run() error {
 		return err
 	}
 
-	state, initialized, err := resolvePublishState(a.flags)
+	state, initialized, err := resolvePublishState()
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func (a *publishAction) Run() error {
 		}
 	}
 
-	image, err := resolvePublishImage(a.flags, state)
+	image, err := resolvePublishImage(state)
 	if err != nil {
 		return err
 	}
@@ -119,14 +119,11 @@ func (a *publishAction) Run() error {
 	); err != nil {
 		return err
 	}
-	if state.EnvironmentId == "" {
-		environment, err = client.createV1Environment(a.cmd.Context(), request)
-	} else {
-		environment, err = client.createV1Environment(a.cmd.Context(), request)
-	}
+	environment, err = client.createV1Environment(a.cmd.Context(), request)
 	if err != nil {
 		return serviceError(err)
 	}
+	state.Name = environment.Name
 	state.EnvironmentId = environment.Id
 	state.EnvironmentVersion = environment.Version
 	if err := saveRleState(state); err != nil {
@@ -190,7 +187,7 @@ func buildEnvironmentCreateRequest(name string, image string, versionBump string
 	}
 }
 
-func resolvePublishState(flags *rlePublishFlags) (rleState, bool, error) {
+func resolvePublishState() (rleState, bool, error) {
 	state, err := loadRleState()
 	initialized := err == nil
 	if err != nil {
@@ -214,7 +211,7 @@ func resolvePublishState(flags *rlePublishFlags) (rleState, bool, error) {
 	return state, initialized, nil
 }
 
-func resolvePublishImage(flags *rlePublishFlags, state rleState) (string, error) {
+func resolvePublishImage(state rleState) (string, error) {
 	registry := strings.Trim(strings.TrimSpace(os.Getenv("AZURE_CONTAINER_REGISTRY_ENDPOINT")), "/")
 	if registry == "" {
 		return "", &azdext.LocalError{

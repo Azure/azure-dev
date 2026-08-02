@@ -117,7 +117,7 @@ func TestResolvePublishStateUsesFoundryProjectEndpointEnvironment(t *testing.T) 
 	t.Chdir(tempDir)
 	t.Setenv(foundryProjectEndpointEnvVar, "https://ACCOUNT.services.ai.azure.com/api/projects/project-from-env/")
 
-	state, initialized, err := resolvePublishState(&rlePublishFlags{})
+	state, initialized, err := resolvePublishState()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestResolvePublishStateUsesSavedProjectEndpointFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	state, initialized, err := resolvePublishState(&rlePublishFlags{})
+	state, initialized, err := resolvePublishState()
 	if err != nil {
 		t.Fatal(err)
 	}

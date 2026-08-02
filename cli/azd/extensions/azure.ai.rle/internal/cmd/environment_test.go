@@ -189,6 +189,7 @@ func TestListAllEnvironmentsPaginates(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		requestCount++
 		pageSize := environmentListPageSize
 		if skip > 0 {
@@ -217,6 +218,27 @@ func TestListAllEnvironmentsPaginates(t *testing.T) {
 	}
 	if len(environments) != environmentListPageSize+1 {
 		t.Fatalf("expected %d environments, got %d", environmentListPageSize+1, len(environments))
+	}
+}
+
+func TestListAllEnvironmentsStopsAtSafetyLimit(t *testing.T) {
+	requestCount := 0
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		value := make([]environmentResource, environmentListPageSize)
+		if err := json.NewEncoder(w).Encode(listEnvironmentsResponse{Value: value}); err != nil {
+			t.Fatal(err)
+		}
+	}))
+	defer controlPlane.Close()
+
+	client := testRleClientForServer(t, controlPlane.URL)
+	_, err := listAllEnvironments(t.Context(), client)
+	if err == nil || !strings.Contains(err.Error(), "safety limit") {
+		t.Fatalf("expected safety-limit error, got %v", err)
+	}
+	if requestCount != environmentListMaxPages {
+		t.Fatalf("expected %d pages, got %d", environmentListMaxPages, requestCount)
 	}
 }
 

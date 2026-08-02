@@ -13,7 +13,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const environmentListPageSize = 200
+const (
+	environmentListPageSize = 200
+	environmentListMaxPages = 100
+)
 
 type environmentListAction struct {
 	cmd          *cobra.Command
@@ -99,7 +102,8 @@ func (a *environmentListAction) Run() error {
 
 func listAllEnvironments(ctx context.Context, client *rleClient) ([]environmentResource, error) {
 	var environments []environmentResource
-	for skip := 0; ; skip += environmentListPageSize {
+	for pageNumber := 0; pageNumber < environmentListMaxPages; pageNumber++ {
+		skip := pageNumber * environmentListPageSize
 		page, err := client.listEnvironments(ctx, skip, environmentListPageSize)
 		if err != nil {
 			return nil, err
@@ -109,6 +113,7 @@ func listAllEnvironments(ctx context.Context, client *rleClient) ([]environmentR
 			return environments, nil
 		}
 	}
+	return nil, fmt.Errorf("environment list exceeded the %d-item safety limit", environmentListPageSize*environmentListMaxPages)
 }
 
 func resolveEnvironmentListProjectEndpoint() (string, error) {

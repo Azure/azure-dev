@@ -324,6 +324,14 @@ func (r *evalReconciler) ensureCodeEvaluator(
 		return recordedVersion, false, nil
 	}
 
+	// TODO: a code evaluator deployed by `azd up` cannot be configured. The
+	// flags exist on `evaluator create` but the config has nowhere to put them,
+	// so this passes none. Scoring still works, but image_tag is the one that
+	// bites: an evaluator needing any dependency cannot be deployed this way at
+	// all, only published by hand. metrics and init_parameters are the same
+	// story for anything that is not a 0-to-1 increasing score. The fix is
+	// fields on project.EvaluatorDecl - image_tag, metrics, data_schema,
+	// init_parameters - read here instead of this empty struct.
 	opts, err := codeEvaluatorOptions(codeEvaluatorFlags{})
 	if err != nil {
 		return "", false, err

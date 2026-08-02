@@ -39,6 +39,10 @@ type DatasetDecl struct {
 // `.json` file holds a rubric. A code evaluator cannot name a folder — it runs
 // as a python grader, which is handed one script's source and cannot import a
 // helper module beside it.
+// TODO: carry the code evaluator settings `evaluator create` accepts -
+// image_tag, metrics, data_schema, init_parameters. Without them a code
+// evaluator can be declared but not configured, so one needing a dependency
+// has to be published by hand. See EnsureEvaluator in internal/cmd/reconciler.go.
 type EvaluatorDecl struct {
 	Name    string `yaml:"name"              json:"name"`
 	Source  string `yaml:"source,omitempty"  json:"source,omitempty"`

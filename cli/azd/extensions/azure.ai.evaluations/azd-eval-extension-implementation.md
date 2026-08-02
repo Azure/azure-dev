@@ -162,7 +162,7 @@ type OpenAIEval struct { ID, Name string }      // ID is canonical; Name is NOT 
 | get / list | `GET /openai/v1/evals/{id}` · `GET /openai/v1/evals?limit=` |
 | start run | `POST /openai/v1/evals/{evalId}/runs` |
 | poll / list runs | `GET /openai/v1/evals/{evalId}/runs/{runId}` · `GET …/runs` |
-| cancel | `POST /openai/v1/evals/{evalId}/runs/{runId}/cancel` |
+| cancel | `POST /openai/v1/evals/{evalId}/runs/{runId}` with an empty body |
 | results | `GET …/runs/{runId}` → `result_counts` + `per_testing_criteria_results` |
 
 **The group carries evaluators, not the dataset.** The dataset goes on the **run**. `evaluation_level` is `turn` | `conversation`, service default **`turn`**.

@@ -174,13 +174,16 @@ func (c *EvalClient) DeleteEvaluatorVersion(
 }
 
 // CancelOpenAIEvalRun stops an in-flight run.
+//
+// The body must stay nil: this route cancels only when the body is empty, and
+// updates the run's status and counters when it is not.
 func (c *EvalClient) CancelOpenAIEvalRun(
 	ctx context.Context,
 	evalID string,
 	runID string,
 ) (*OpenAIEvalRun, error) {
 	path := fmt.Sprintf(
-		"%s/%s/runs/%s/cancel",
+		"%s/%s/runs/%s",
 		pathOpenAIEvals, url.PathEscape(evalID), url.PathEscape(runID),
 	)
 	return doRequestTyped[OpenAIEvalRun](c, ctx, http.MethodPost, path, nil, nil, "")

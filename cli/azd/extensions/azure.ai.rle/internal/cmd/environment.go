@@ -102,7 +102,7 @@ func (a *environmentListAction) Run() error {
 
 func listAllEnvironments(ctx context.Context, client *rleClient) ([]environmentResource, error) {
 	var environments []environmentResource
-	for pageNumber := 0; pageNumber < environmentListMaxPages; pageNumber++ {
+	for pageNumber := range environmentListMaxPages {
 		skip := pageNumber * environmentListPageSize
 		page, err := client.listEnvironments(ctx, skip, environmentListPageSize)
 		if err != nil {

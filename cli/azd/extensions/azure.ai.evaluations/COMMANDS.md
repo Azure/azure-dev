@@ -189,5 +189,16 @@ What the live tests on that branch establish:
 | `generate` has no live coverage | The most complex composite command |
 | `TestLiveRun` skips | Agent-target runs, `--from-traces`, `--response-id` all unverified |
 | `--image-tag` never used with a real image | The only supported way to give a code evaluator dependencies |
-| `azd up` cannot configure a code evaluator | Reconciler passes empty options; no config fields for `data_schema`, `metrics`, `init_params`, `image_tag` |
-| Default metric name `result` is invented | Real evaluators use semantic names (`groundedness`, `relevance`) |
+| `azd up` cannot configure a code evaluator | Not a correctness break — a schema-less evaluator scores identically to a configured one. But `image_tag`, `metrics` and `init_parameters` cannot be declared, so an evaluator needing a dependency or a non-default metric range can only be published with `evaluator create` |
+
+### Not a gap: the default metric
+
+`evaluator create` defaults to `{"result": {"type": "continuous", "desirable_direction": "increase"}}`
+when `--metrics` is omitted. The name matches the SDK's code-based evaluator sample.
+
+The type and bounds are deliberately unbounded. A metric describes what the author's
+own `grade()` returns, so it can be continuous, ordinal or boolean over any range —
+that is what `--metrics` is for. The service does not validate scores against declared
+bounds (a grader returning 14 and 33 scores fine under a declared `ordinal 0.0–1.0`),
+so a wrong bound is not an error, only bad range metadata. Defaulting to unbounded
+asserts nothing, which is the correct claim to make about a range we cannot know.

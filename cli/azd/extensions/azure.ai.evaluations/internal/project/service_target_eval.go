@@ -162,6 +162,9 @@ func (p *EvalServiceTargetProvider) Deploy(
 	for _, decl := range cfg.Evaluators {
 		report(progress, fmt.Sprintf("Reconciling evaluator %s", decl.Name))
 		localPath := resolveSource(baseDir, decl.Source)
+		decl.Metrics = resolveSource(baseDir, decl.Metrics)
+		decl.DataSchema = resolveSource(baseDir, decl.DataSchema)
+		decl.InitParameters = resolveSource(baseDir, decl.InitParameters)
 		version, changed, err := reconciler.EnsureEvaluator(ctx, decl, localPath)
 		if err != nil {
 			return nil, fmt.Errorf("evaluator %q: %w", decl.Name, err)

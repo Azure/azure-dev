@@ -24,15 +24,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/pkg/eval_api"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/stretchr/testify/require"
 )
@@ -54,6 +57,29 @@ type liveEnv struct {
 	datasetClient *dataset_api.DatasetClient
 }
 
+// One credential for the whole package, because azidentity caches tokens per
+// instance. Building one per test made every test shell out to azd again, and
+// a refresh that overruns the SDK's ten-second budget for that subprocess
+// surfaces as "AzureDeveloperCLICredential: exit status 1" — which reads like
+// a broken login rather than a timeout, and lands on whichever test happened
+// to run after a slow one.
+var (
+	sharedCredOnce sync.Once
+	sharedCred     *azidentity.AzureDeveloperCLICredential
+	sharedCredErr  error
+)
+
+func liveCredential() (*azidentity.AzureDeveloperCLICredential, error) {
+	sharedCredOnce.Do(func() {
+		// Works non-interactively when azd already holds a refresh token,
+		// which is what makes an unattended run possible.
+		sharedCred, sharedCredErr = azidentity.NewAzureDeveloperCLICredential(
+			&azidentity.AzureDeveloperCLICredentialOptions{},
+		)
+	})
+	return sharedCred, sharedCredErr
+}
+
 func setup(t *testing.T) *liveEnv {
 	t.Helper()
 
@@ -65,11 +91,7 @@ func setup(t *testing.T) *liveEnv {
 		t.Fatal("FOUNDRY_PROJECT_ENDPOINT is required")
 	}
 
-	// The azd developer CLI credential works non-interactively when azd already
-	// holds a refresh token, which is what makes an unattended run possible.
-	cred, err := azidentity.NewAzureDeveloperCLICredential(
-		&azidentity.AzureDeveloperCLICredentialOptions{},
-	)
+	cred, err := liveCredential()
 	require.NoError(t, err, "acquiring an azd credential")
 
 	judge := os.Getenv("AZURE_AI_EVAL_MODEL")
@@ -243,12 +265,67 @@ func TestLiveEvalLifecycle(t *testing.T) {
 	require.Equal(t, group.ID, fetched.ID)
 }
 
-// TestLiveRun invokes a real agent, so it only runs when one is named.
+// resolveAgent names the agent the run phase evaluates.
+//
+// AZURE_AI_EVAL_AGENT wins when set. Otherwise one is discovered, and failing
+// to find one is a failure rather than a skip: skipping by default is how the
+// agent-target path went unverified for weeks while the suite reported green.
+//
+// The listing is /agents, not /assistants. They are different collections and
+// a project can have plenty of the latter and none of the former — an eval
+// target resolves against /agents, so an assistant name is accepted by the
+// request and then fails the run with "resources not found".
+func resolveAgent(t *testing.T, env *liveEnv) string {
+	t.Helper()
+
+	if env.agentName != "" {
+		return env.agentName
+	}
+
+	cred, err := liveCredential()
+	require.NoError(t, err)
+	token, err := cred.GetToken(context.Background(), policy.TokenRequestOptions{
+		Scopes: []string{"https://ai.azure.com/.default"},
+	})
+	require.NoError(t, err, "acquiring a token to list agents")
+
+	req, err := http.NewRequest(http.MethodGet, env.endpoint+"/agents?api-version="+projectAPIVersion, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token.Token)
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err, "listing the project's agents")
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode,
+		"could not list agents; set AZURE_AI_EVAL_AGENT to name one directly")
+
+	var listing struct {
+		Data []struct {
+			Name string `json:"name"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listing))
+
+	for _, a := range listing.Data {
+		if a.Name != "" {
+			t.Logf("no AZURE_AI_EVAL_AGENT set; evaluating %q", a.Name)
+			return a.Name
+		}
+	}
+
+	t.Fatal("this project has no agent in /agents, so the agent-target run path " +
+		"cannot be verified here. Assistants do not count: an eval target " +
+		"resolves against /agents, and naming an assistant fails the run with " +
+		"\"resources not found\". Deploy an agent, or set AZURE_AI_EVAL_AGENT " +
+		"to one in another project")
+	return ""
+}
+
+// TestLiveRun invokes a real agent, which is the only cover the agent-target
+// run path has.
 func TestLiveRun(t *testing.T) {
 	env := setup(t)
-	if env.agentName == "" {
-		t.Skip("set AZURE_AI_EVAL_AGENT to a deployed agent to exercise the run phase")
-	}
+	agentName := resolveAgent(t, env)
 	ctx := context.Background()
 
 	builtins, err := env.evalClient.ListEvaluators(
@@ -285,7 +362,7 @@ func TestLiveRun(t *testing.T) {
 	})
 	require.NoError(t, err, "creating the eval for the run")
 
-	ds := eval_api.NewAgentTargetDataSource(env.agentName, nil)
+	ds := eval_api.NewAgentTargetDataSource(agentName, nil)
 	ds.SetFileContent([]map[string]any{
 		{"query": "How do I reset my password?"},
 	})

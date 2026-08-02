@@ -6,6 +6,8 @@ package cmd
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -287,6 +289,41 @@ func (r *evalReconciler) EnsureEvaluator(
 	return created.Version, true, nil
 }
 
+// codeEvaluatorDigest fingerprints everything a published version depends on.
+//
+// The script alone is not enough: changing only metrics or the image tag
+// changes what gets published, and hashing just the source would leave that
+// edit undeployed with `azd up` reporting no change.
+func codeEvaluatorDigest(decl project.EvaluatorDecl, path string) (string, error) {
+	sum := sha256.New()
+
+	script, err := project.Fingerprint(path)
+	if err != nil {
+		return "", err
+	}
+	fmt.Fprintf(sum, "script:%s\nimage:%s\n", script, decl.ImageTag)
+
+	for _, settings := range []struct {
+		label string
+		path  string
+	}{
+		{"metrics", decl.Metrics},
+		{"data_schema", decl.DataSchema},
+		{"init_parameters", decl.InitParameters},
+	} {
+		if settings.path == "" {
+			continue
+		}
+		digest, err := project.Fingerprint(settings.path)
+		if err != nil {
+			return "", fmt.Errorf("evaluator %q %s: %w", decl.Name, settings.label, err)
+		}
+		fmt.Fprintf(sum, "%s:%s\n", settings.label, digest)
+	}
+
+	return hex.EncodeToString(sum.Sum(nil)), nil
+}
+
 // ensureCodeEvaluator publishes a Python script only when its content changed
 // since the last deploy.
 //
@@ -306,7 +343,7 @@ func (r *evalReconciler) ensureCodeEvaluator(
 		return "", false, err
 	}
 
-	digest, err := project.Fingerprint(path)
+	digest, err := codeEvaluatorDigest(decl, path)
 	if err != nil {
 		return "", false, err
 	}
@@ -324,15 +361,12 @@ func (r *evalReconciler) ensureCodeEvaluator(
 		return recordedVersion, false, nil
 	}
 
-	// TODO: a code evaluator deployed by `azd up` cannot be configured. The
-	// flags exist on `evaluator create` but the config has nowhere to put them,
-	// so this passes none. Scoring still works, but image_tag is the one that
-	// bites: an evaluator needing any dependency cannot be deployed this way at
-	// all, only published by hand. metrics and init_parameters are the same
-	// story for anything that is not a 0-to-1 increasing score. The fix is
-	// fields on project.EvaluatorDecl - image_tag, metrics, data_schema,
-	// init_parameters - read here instead of this empty struct.
-	opts, err := codeEvaluatorOptions(codeEvaluatorFlags{})
+	opts, err := codeEvaluatorOptions(codeEvaluatorFlags{
+		imageTag:   decl.ImageTag,
+		metrics:    decl.Metrics,
+		dataSchema: decl.DataSchema,
+		initParams: decl.InitParameters,
+	})
 	if err != nil {
 		return "", false, err
 	}

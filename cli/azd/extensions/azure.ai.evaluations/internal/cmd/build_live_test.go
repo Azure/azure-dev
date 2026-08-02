@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -30,6 +31,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// One credential for the whole package, because azidentity caches tokens per
+// instance. Building one per test made every test shell out to azd again, and
+// a refresh that overruns the SDK's ten-second budget for that subprocess
+// surfaces as "AzureDeveloperCLICredential: exit status 1" — which reads like
+// a broken login rather than a timeout, and lands on whichever test happened
+// to run after a slow one.
+var (
+	sharedCredOnce sync.Once
+	sharedCred     *azidentity.AzureDeveloperCLICredential
+	sharedCredErr  error
+)
+
+func liveCredential() (*azidentity.AzureDeveloperCLICredential, error) {
+	sharedCredOnce.Do(func() {
+		sharedCred, sharedCredErr = azidentity.NewAzureDeveloperCLICredential(
+			&azidentity.AzureDeveloperCLICredentialOptions{})
+	})
+	return sharedCred, sharedCredErr
+}
+
 func liveEvalClient(t *testing.T) (*eval_api.EvalClient, string) {
 	t.Helper()
 	if os.Getenv("AZURE_AI_EVAL_E2E_LIVE") != "1" {
@@ -39,8 +60,7 @@ func liveEvalClient(t *testing.T) (*eval_api.EvalClient, string) {
 	if endpoint == "" {
 		t.Fatal("FOUNDRY_PROJECT_ENDPOINT is required")
 	}
-	cred, err := azidentity.NewAzureDeveloperCLICredential(
-		&azidentity.AzureDeveloperCLICredentialOptions{})
+	cred, err := liveCredential()
 	require.NoError(t, err)
 
 	judge := os.Getenv("AZURE_AI_EVAL_MODEL")

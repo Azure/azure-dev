@@ -248,6 +248,15 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 4. **Eval groups** — `POST /openai/v1/evals` with `testing_criteria` from the resolved evaluator versions. Groups are immutable, so only recreate when the resolved versions or options actually changed.
 5. Persist resolved ids, versions, and fingerprints to the azd env.
 
+**Publish → reference is eventually consistent.** After an evaluator version is
+published, the direct read `GET /evaluators/{name}/versions/{version}` goes
+consistent in roughly 330 ms, but the version *listing* lags 650 ms–1.4 s — and
+eval creation resolves the reference through the listing, not the direct read.
+Step 4 has to gate on both, or it fails with *"The evaluator X was not found"*
+just after successfully publishing that evaluator. It reads like a flake,
+because retrying a second later succeeds, so the tempting fix is a blanket retry
+rather than the wait.
+
 **How azd reaches us:** `azd up` runs one DAG; per service it calls `GetServiceTarget()`, which does `serviceLocator.ResolveNamed(host, &target)`. If our extension is not installed, azd fails that service with *"install an extension that provides this host."* We implement **no sequencing or rollback across services** — `uses:` and the DAG handle that.
 
 ---

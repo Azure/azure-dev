@@ -193,29 +193,6 @@ func TestAddResourceServiceWritesEnvironment(t *testing.T) {
 	}, server.env["search"])
 }
 
-func TestAddResourceServiceWritesEmptyEnvironment(t *testing.T) {
-	server := &recordingProjectServer{}
-	client := newProjectRecorderClient(t, server)
-	cfg, err := project.MarshalStruct(&project.Connection{
-		Target: "https://search.example",
-	})
-	require.NoError(t, err)
-
-	require.NoError(t, addResourceService(
-		t.Context(),
-		client,
-		"search",
-		AiConnectionHost,
-		cfg,
-		nil,
-	))
-
-	server.mu.Lock()
-	defer server.mu.Unlock()
-	require.Contains(t, server.env, "search")
-	assert.Empty(t, server.env["search"])
-}
-
 func TestCollectLegacyProjectDeploymentsIgnoresSplitProject(
 	t *testing.T,
 ) {
@@ -564,20 +541,14 @@ func (s *recordingProjectServer) UnsetServiceConfig(
 
 // newProjectRecorderClient spins up an in-process gRPC server backed by the
 // supplied project server stub and returns a client wired to its address.
-// An optional environment stub is registered for callers
-// that persist azd environment values, such as init.
 func newProjectRecorderClient(
 	t *testing.T,
 	server azdext.ProjectServiceServer,
-	environmentServers ...azdext.EnvironmentServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
 
 	grpcServer := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(grpcServer, server)
-	if len(environmentServers) > 0 {
-		azdext.RegisterEnvironmentServiceServer(grpcServer, environmentServers[0])
-	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

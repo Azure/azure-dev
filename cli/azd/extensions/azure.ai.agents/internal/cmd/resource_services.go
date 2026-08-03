@@ -288,7 +288,7 @@ func addResourceService(
 		return fmt.Errorf("adding %s service %q: %w", host, name, err)
 	}
 
-	if err := setServiceEnvironmentScope(
+	if err := setServiceEnvironment(
 		ctx,
 		azdClient,
 		name,
@@ -370,11 +370,15 @@ func escapeFoundryTemplates(value string) string {
 	return b.String()
 }
 
-// setServiceEnvironment updates the env: block of a service that
-// may predate env: scoping, and leaves azure.yaml untouched when
-// there is nothing to write. Writing env: {} on such a service
-// would newly isolate it from the azd environment it still reads,
-// so only callers updating an existing service belong here.
+// setServiceEnvironment writes the env: block of a service, and
+// leaves azure.yaml untouched when there is nothing to write.
+//
+// A generated service with no variables of its own therefore reads
+// as legacy at run and deploy. Declaring an explicit env: {} here
+// would not change that today: core drops a zero-length env on
+// save because ServiceConfig.Environment is tagged omitempty.
+// Fixing it needs core to distinguish an absent env: from an
+// explicitly empty one.
 func setServiceEnvironment(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -384,28 +388,7 @@ func setServiceEnvironment(
 	if len(environment) == 0 {
 		return nil
 	}
-	return setServiceEnvironmentScope(
-		ctx,
-		azdClient,
-		serviceName,
-		environment,
-	)
-}
 
-// setServiceEnvironmentScope declares the service's env: scope and
-// writes an explicit env: {} for an empty map. Generated services
-// use this so one with no variables of its own is still isolated
-// instead of reading as legacy and inheriting the whole azd
-// environment at run and deploy.
-//
-// It writes raw templates through the config RPC because
-// AddService treats ServiceConfig.Environment as expanded literals.
-func setServiceEnvironmentScope(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	serviceName string,
-	environment map[string]string,
-) error {
 	sectionValues := make(map[string]any, len(environment))
 	for key, value := range environment {
 		sectionValues[key] = escapeFoundryTemplates(value)

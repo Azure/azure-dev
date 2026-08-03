@@ -485,47 +485,6 @@ func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
 	require.False(t, hasInlineEnvironment)
 }
 
-// TestAddToProjectWritesEmptyServiceEnvironment pins that an agent
-// generated with no variables of its own still gets an explicit
-// env: {}. Without it the service reads as legacy at run and
-// deploy, so the whole azd environment leaks into the agent.
-func TestAddToProjectWritesEmptyServiceEnvironment(t *testing.T) {
-	server := &recordingProjectServer{}
-	client := newProjectRecorderClient(t, server)
-	action := &InitAction{
-		azdClient:   client,
-		environment: &azdext.Environment{Name: "test-env"},
-		flags: &initFlags{
-			image:    "myacr.azurecr.io/agents/my-agent:v1",
-			noPrompt: true,
-		},
-		serviceNameOverride: "my-agent",
-	}
-	description := "Hosted container agent with no environment variables"
-	manifest := &agent_yaml.AgentManifest{
-		Template: agent_yaml.ContainerAgent{
-			AgentDefinition: agent_yaml.AgentDefinition{
-				Kind:        agent_yaml.AgentKindHosted,
-				Name:        "my-agent",
-				Description: &description,
-			},
-			Protocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "2.0.0"},
-			},
-		},
-	}
-
-	_, err := captureStdout(t, func() error {
-		return action.addToProject(t.Context(), "src/my-agent", manifest)
-	})
-	require.NoError(t, err)
-
-	server.mu.Lock()
-	defer server.mu.Unlock()
-	require.Contains(t, server.env, "my-agent")
-	require.Empty(t, server.env["my-agent"])
-}
-
 func TestValidateInitAgentName(t *testing.T) {
 	t.Parallel()
 

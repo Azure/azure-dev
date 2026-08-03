@@ -870,7 +870,7 @@ func (a *InitFromCodeAction) addToProject(
 	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
-	if err := setServiceEnvironmentScope(
+	if err := setServiceEnvironment(
 		ctx,
 		a.azdClient,
 		agentServiceName,

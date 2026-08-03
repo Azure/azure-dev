@@ -447,43 +447,6 @@ func TestWriteAgentIgnoreToSrcDir(t *testing.T) {
 	})
 }
 
-// TestAddToProjectFromCodeWritesEmptyServiceEnvironment pins the
-// same isolation for the from-code init path: an agent detected
-// from source with no variables of its own is still born with an
-// explicit env: {} rather than the legacy azd-wide fallback.
-func TestAddToProjectFromCodeWritesEmptyServiceEnvironment(t *testing.T) {
-	const envName = "test-env"
-	server := &recordingProjectServer{}
-	envServer := &testEnvironmentServiceServer{
-		values: map[string]map[string]string{envName: {}},
-	}
-	client := newProjectRecorderClient(t, server, envServer)
-	action := &InitFromCodeAction{
-		azdClient:     client,
-		flags:         &initFlags{noPrompt: true},
-		projectConfig: &azdext.ProjectConfig{Path: t.TempDir()},
-		environment:   &azdext.Environment{Name: envName},
-	}
-	definition := &agent_yaml.ContainerAgent{
-		AgentDefinition: agent_yaml.AgentDefinition{
-			Kind: agent_yaml.AgentKindHosted,
-			Name: "my-agent",
-		},
-	}
-
-	_, err := captureStdout(t, func() error {
-		return action.addToProject(
-			t.Context(), "src/my-agent", definition, true,
-		)
-	})
-	require.NoError(t, err)
-
-	server.mu.Lock()
-	defer server.mu.Unlock()
-	require.Contains(t, server.env, "my-agent")
-	require.Empty(t, server.env["my-agent"])
-}
-
 func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)

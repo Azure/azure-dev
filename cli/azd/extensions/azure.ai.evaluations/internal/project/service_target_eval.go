@@ -145,21 +145,27 @@ func (p *EvalServiceTargetProvider) Deploy(
 
 	baseDir := serviceRelativeDir(serviceConfig)
 
-	// 1. Datasets.
+	// The eval takes its name from the service entry that pulled this config
+	// in, which is what makes one service per eval work.
+	eval := cfg.Eval(serviceConfig.Name)
+
+	// 1. Dataset.
 	anyChanged := false
-	for _, decl := range cfg.Datasets {
-		report(progress, fmt.Sprintf("Reconciling dataset %s", decl.Name))
-		localPath := resolveSource(baseDir, decl.Source)
-		version, changed, err := reconciler.EnsureDataset(ctx, decl, localPath)
+	datasetPath := ""
+	if cfg.Dataset != nil {
+		report(progress, fmt.Sprintf("Reconciling dataset %s", cfg.Dataset.Name))
+		datasetPath = resolveSource(baseDir, cfg.Dataset.Source)
+		version, changed, err := reconciler.EnsureDataset(ctx, *cfg.Dataset, datasetPath)
 		if err != nil {
-			return nil, fmt.Errorf("dataset %q: %w", decl.Name, err)
+			return nil, fmt.Errorf("dataset %q: %w", cfg.Dataset.Name, err)
 		}
 		anyChanged = anyChanged || changed
-		report(progress, describeResult("dataset", decl.Name, version, changed))
+		report(progress, describeResult("dataset", cfg.Dataset.Name, version, changed))
 	}
 
-	// 2. Evaluators.
-	for _, decl := range cfg.Evaluators {
+	// 2. Evaluators this config owns. Built-ins and already-registered ones
+	// need no publish.
+	for _, decl := range cfg.CustomEvaluators() {
 		report(progress, fmt.Sprintf("Reconciling evaluator %s", decl.Name))
 		localPath := resolveSource(baseDir, decl.Source)
 		version, changed, err := reconciler.EnsureEvaluator(ctx, decl, localPath)
@@ -170,20 +176,14 @@ func (p *EvalServiceTargetProvider) Deploy(
 		report(progress, describeResult("evaluator", decl.Name, version, changed))
 	}
 
-	// 3. Evals. Groups are immutable, so a change upstream means a new
-	// group must be created and the stored id replaced.
-	for _, group := range cfg.Evals {
-		report(progress, fmt.Sprintf("Reconciling eval %s", group.Name))
-		datasetPath := ""
-		if decl, ok := cfg.Dataset(group.Dataset); ok {
-			datasetPath = resolveSource(baseDir, decl.Source)
-		}
-		id, err := reconciler.EnsureEval(ctx, group, datasetPath, anyChanged)
-		if err != nil {
-			return nil, fmt.Errorf("eval %q: %w", group.Name, err)
-		}
-		report(progress, fmt.Sprintf("Eval %s is %s", group.Name, id))
+	// 3. The eval. Evals are immutable, so a change upstream means a new one
+	// must be created and the stored id replaced.
+	report(progress, fmt.Sprintf("Reconciling eval %s", eval.Name))
+	id, err := reconciler.EnsureEval(ctx, eval, datasetPath, anyChanged)
+	if err != nil {
+		return nil, fmt.Errorf("eval %q: %w", eval.Name, err)
 	}
+	report(progress, fmt.Sprintf("Eval %s is %s", eval.Name, id))
 
 	return &azdext.ServiceDeployResult{}, nil
 }

@@ -59,7 +59,6 @@ func TestCLIGenerateRefusesBadFlagCombinations(t *testing.T) {
 		args: []string{"evaluator", "generate", "e", "--target", "a", "--agent-instruction", "inline"},
 		want: "--generation-model",
 	}}
-
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := requireFailure(t, runIn(t, dir, tc.args...))
@@ -80,37 +79,48 @@ func TestCLIGenerateNamesTheArtifact(t *testing.T) {
 	}
 }
 
-// TestCLIGenerateNoPromptNamesWhatIsMissing is the CI case: with no target and
-// nothing to prompt with, the process has to end saying which flag to pass.
+// TestCLIGenerateNoPromptNamesWhatIsMissing is the CI case: with nothing to
+// prompt with, the process has to end saying which flag to pass.
+//
+// The target is no longer among them — it is read from the eval's declaration —
+// but the generation model has no other source, so it is the one input a bare
+// directory cannot supply.
 func TestCLIGenerateNoPromptNamesWhatIsMissing(t *testing.T) {
 	r := requireFailure(t, runIn(t, t.TempDir(), "dataset", "generate", "d", "--no-prompt"))
-	require.Contains(t, r.Combined(), "--target is required")
-	require.Contains(t, r.Combined(), "--no-prompt",
-		"the message must say why it could not be resolved")
+	require.Contains(t, r.Combined(), "--generation-model")
+	require.Contains(t, r.Combined(), "generationModel",
+		"the message must name both ways of supplying it")
 }
 
-// TestCLIGenerateReadsTheSpec proves the config file is loaded and validated
-// rather than only the flags.
+// TestCLIGenerateReadsTheSpec proves the config file is loaded and that its
+// entries are looked up by artifact name, rather than only the flags being read.
 //
-// The strategy is the clearest evidence: `from-traces` is a value the spec
-// accepts syntactically and the generation API cannot honour, so the refusal
-// can only come from having parsed the file.
+// The sample size is the clearest evidence: a value the service would reject is
+// refused before any job is submitted, and it can only have come from the file.
 func TestCLIGenerateReadsTheSpec(t *testing.T) {
 	dir := t.TempDir()
-	spec := filepath.Join(dir, "gen.yaml")
+	spec := filepath.Join(dir, "generate.yaml")
 	require.NoError(t, os.WriteFile(spec, []byte(`
-agent:
-  name: from-spec
-generate:
-  dataset:
-    name: spec-dataset
-    strategy: from-traces
+generationModel: gpt-4o-mini
+dataset:
+  spec-dataset:
+    sampleSize: 5
 `), 0o600))
 
+	r := requireFailure(t, runIn(t, dir, "dataset", "generate", "spec-dataset", "--config", spec))
+	require.Contains(t, r.Combined(), "between 15 and 1000",
+		"the spec's sampleSize must be validated before a job is billed")
+}
+
+// A spec that cannot be parsed has to name itself, or the caller is left
+// guessing which of several YAML files the command choked on.
+func TestCLIGenerateReportsAnUnparseableSpec(t *testing.T) {
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "generate.yaml")
+	require.NoError(t, os.WriteFile(spec, []byte("dataset: [not-a-mapping\n"), 0o600))
+
 	r := requireFailure(t, runIn(t, dir, "dataset", "generate", "d", "--config", spec))
-	require.Contains(t, r.Combined(), "from-traces")
-	require.Contains(t, r.Combined(), "agent.context.traces.window",
-		"the refusal must point at the field that does seed generation from traces")
+	require.Contains(t, r.Combined(), "generate.yaml")
 }
 
 // TestCLIGenerateFlagsAreScopedToTheirArtifact asserts the two commands do not

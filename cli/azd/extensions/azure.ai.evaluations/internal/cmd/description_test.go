@@ -8,7 +8,6 @@ import (
 
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/pkg/evalcore"
-	"azureaieval/internal/project"
 
 	"github.com/stretchr/testify/require"
 )
@@ -21,8 +20,7 @@ func TestBuildCarriesGroupDescriptionInMetadata(t *testing.T) {
 			nil, []string{"query", "response"},
 			[]string{"deployment_name"}, []string{"deployment_name"}, "turn"),
 	}
-	group := groupWith([]evalcore.EvaluatorRef{{Name: "builtin.similarity"}},
-		&project.Options{EvalModel: "m"})
+	group := groupWith(withJudge("m", evalcore.EvaluatorRef{Name: "builtin.similarity"}), nil)
 	group.Description = "Quality gate for the support agent"
 
 	req, err := buildEvalRequest(group, schemas, map[string]bool{"query": true})
@@ -37,8 +35,7 @@ func TestBuildOmitsEmptyDescription(t *testing.T) {
 			nil, []string{"query", "response"},
 			[]string{"deployment_name"}, []string{"deployment_name"}, "turn"),
 	}
-	group := groupWith([]evalcore.EvaluatorRef{{Name: "builtin.similarity"}},
-		&project.Options{EvalModel: "m"})
+	group := groupWith(withJudge("m", evalcore.EvaluatorRef{Name: "builtin.similarity"}), nil)
 
 	req, err := buildEvalRequest(group, schemas, map[string]bool{"query": true})
 	require.NoError(t, err)

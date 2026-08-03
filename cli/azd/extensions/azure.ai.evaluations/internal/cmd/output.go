@@ -15,6 +15,14 @@ import (
 
 const outputJSON = "json"
 
+// Progress markers from the azd style guide, so the extension's lines sit
+// alongside core's without a second vocabulary.
+const (
+	doneMark    = "(✓) Done:"    // finished successfully
+	skippedMark = "(-) Skipped:" // intentionally not done, not a failure
+	failedMark  = "(x) Failed:"  // the step did not complete
+)
+
 // outputFormat reads the inherited -o/--output flag.
 func outputFormat(cmd *cobra.Command) string {
 	if cmd == nil {

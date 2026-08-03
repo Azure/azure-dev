@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"azureaieval/internal/project"
 
@@ -22,6 +23,7 @@ import (
 // generateFlags are the settings both generate commands share.
 type generateFlags struct {
 	configPath      string
+	evalName        string
 	target          string
 	instruction     string
 	instructionFile string
@@ -34,6 +36,7 @@ type generateFlags struct {
 func addGenerateFlags(cmd *cobra.Command, f *generateFlags) {
 	cmd.Flags().StringVar(&f.configPath, "config", project.DefaultGenerateConfig,
 		"Path to the generation spec. Optional; flags alone are sufficient.")
+	addEvalFlag(cmd, &f.evalName)
 	cmd.Flags().StringVar(&f.target, "target", "", "Agent whose context seeds generation.")
 	cmd.Flags().StringVar(&f.instruction, "agent-instruction", "",
 		"What the agent does and what to test.")
@@ -42,8 +45,8 @@ func addGenerateFlags(cmd *cobra.Command, f *generateFlags) {
 	cmd.MarkFlagsMutuallyExclusive("agent-instruction", "agent-instruction-file")
 	cmd.Flags().StringVar(&f.model, "generation-model", "",
 		"Model deployment that generates the artifact.")
-	cmd.Flags().StringVar(&f.outputDir, "output-dir", project.DefaultEvalDir,
-		"Directory the generated artifact is written under.")
+	cmd.Flags().StringVar(&f.outputDir, "output-dir", "",
+		"Directory the generated artifact is written to. Overrides the generation spec.")
 	cmd.Flags().BoolVar(&f.noWait, "no-wait", false,
 		"Submit the job and return its id without polling.")
 	cmd.Flags().StringVar(&f.endpoint, "project-endpoint", "", "Foundry project endpoint.")
@@ -57,45 +60,130 @@ func addGenerateFlags(cmd *cobra.Command, f *generateFlags) {
 func prepareGeneration(
 	cmd *cobra.Command,
 	f *generateFlags,
-	maxSamples, traceDays int,
-) (*evalContext, *project.GenerateConfig, string, error) {
+	plan generationPlan,
+	declared genEntry,
+) (*evalContext, generationPlan, error) {
 	instruction, err := resolveInstruction(f.instruction, f.instructionFile)
 	if err != nil {
-		return nil, nil, "", err
-	}
-
-	cfg, err := resolveGenerateConfig(
-		f.configPath, f.target, f.model, "", maxSamples, traceDays,
-	)
-	if err != nil {
-		return nil, nil, "", err
-	}
-	if err := cfg.Validate(); err != nil {
-		return nil, nil, "", err
-	}
-	if !isJSON(cmd) {
-		warnIgnoredTraceFields(cfg, cmd.OutOrStdout())
-	}
-	if generationModel(cfg) == "" {
-		return nil, nil, "", fmt.Errorf(
-			"a model deployment is required to generate: pass --generation-model, " +
-				"or set it in the generation spec")
+		return nil, plan, err
 	}
 
 	ctx := cmd.Context()
 	ec, err := newEvalContext(ctx, f.endpoint)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, plan, err
 	}
 
-	instruction, err = ec.resolveGenerationInstruction(
-		ctx, cfg, instruction, f.configPath, cmd.OutOrStdout(), isJSON(cmd),
+	plan.Instruction, err = ec.resolveGenerationInstruction(
+		ctx, instruction, declared.instructions, f.configPath, plan.Agent,
+		cmd.OutOrStdout(), isJSON(cmd),
 	)
 	if err != nil {
 		ec.Close()
-		return nil, nil, "", err
+		return nil, plan, err
 	}
-	return ec, cfg, instruction, nil
+	return ec, plan, nil
+}
+
+// resolvePlan settles every input that does not need the network.
+//
+// Resolution order is the one the spec fixes for every input: flags, then the
+// generation spec, then what can be detected from the eval configuration.
+// Doing it before the client is built means a missing model or an out-of-range
+// sample count is refused without an authentication round trip.
+func resolvePlan(
+	f *generateFlags,
+	cfg *project.GenerateConfig,
+	name string,
+	declared genEntry,
+) (generationPlan, error) {
+	plan := generationPlan{
+		Name:       name,
+		Agent:      firstNonEmpty(f.target, declared.deriveFrom, evalTarget(f)),
+		Model:      firstNonEmpty(f.model, cfg.GenerationModel),
+		BaseDir:    filepath.Dir(f.configPath),
+		OutputDir:  firstNonEmpty(f.outputDir, declared.outputDir),
+		SampleSize: declared.sampleSize,
+		TraceDays:  declared.traceDays,
+	}
+	if plan.Model == "" {
+		return plan, fmt.Errorf(
+			"a model deployment is required to generate: pass --generation-model, " +
+				"or set `generationModel` in the generation spec")
+	}
+	return plan, nil
+}
+
+// genEntry is the subset of a generation spec entry both commands share, so
+// resolvePlan does not need to know which one it is serving.
+type genEntry struct {
+	outputDir    string
+	deriveFrom   string
+	instructions string
+	sampleSize   int
+	traceDays    int
+}
+
+// evalTarget reads the agent from the eval configuration, which is where the
+// target is already declared, so `generate` does not need it repeated.
+//
+// Best effort: generation runs from the instruction alone when there is no
+// eval config to read, which is the case in a bare directory.
+func evalTarget(f *generateFlags) string {
+	path, err := project.ResolveEvalConfigPath(filepath.Dir(f.configPath), f.evalName)
+	if err != nil {
+		return ""
+	}
+	cfg, err := project.LoadEvalConfig(path)
+	if err != nil || cfg.Target == nil {
+		return ""
+	}
+	return cfg.Target.Name
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// datasetGenEntry reads one dataset's settings out of the generation spec,
+// applying the flag override and the default row count.
+func datasetGenEntry(cfg *project.GenerateConfig, name string, maxSamples int) genEntry {
+	spec, _ := cfg.DatasetSpec(name)
+	entry := genEntry{
+		outputDir:    firstNonEmpty(spec.OutputDir, "./"+project.DefaultDatasetsDir),
+		deriveFrom:   spec.DeriveFrom,
+		instructions: spec.Instructions,
+		sampleSize:   spec.SampleSize,
+		traceDays:    spec.TraceDays,
+	}
+	if maxSamples > 0 {
+		entry.sampleSize = maxSamples
+	}
+	if entry.sampleSize == 0 {
+		entry.sampleSize = project.DefaultSampleSize
+	}
+	return entry
+}
+
+// evaluatorGenEntry reads one evaluator's settings out of the generation spec,
+// applying the flag override.
+func evaluatorGenEntry(cfg *project.GenerateConfig, name string, traceDays int) genEntry {
+	spec, _ := cfg.EvaluatorSpec(name)
+	entry := genEntry{
+		outputDir:    firstNonEmpty(spec.OutputDir, "./"+project.DefaultEvaluatorsDir),
+		deriveFrom:   spec.DeriveFrom,
+		instructions: spec.Instructions,
+		traceDays:    spec.TraceDays,
+	}
+	if traceDays > 0 {
+		entry.traceDays = traceDays
+	}
+	return entry
 }
 
 func newDatasetGenerateCommand() *cobra.Command {
@@ -111,19 +199,31 @@ func newDatasetGenerateCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 
-			ec, cfg, instruction, err := prepareGeneration(cmd, &flags, maxSamples, 0)
+			if err := project.ValidateSampleSize(maxSamples); err != nil {
+				return err
+			}
+
+			cfg, err := project.LoadGenerateConfig(flags.configPath)
+			if err != nil {
+				return err
+			}
+			declared := datasetGenEntry(cfg, name, maxSamples)
+
+			plan, err := resolvePlan(&flags, cfg, name, declared)
+			if err != nil {
+				return err
+			}
+			if err := project.ValidateSampleSize(plan.SampleSize); err != nil {
+				return err
+			}
+
+			ec, plan, err := prepareGeneration(cmd, &flags, plan, declared)
 			if err != nil {
 				return err
 			}
 			defer ec.Close()
 
-			if cfg.Generate.Dataset == nil {
-				return fmt.Errorf("the generation spec declares no dataset to generate")
-			}
-			cfg.Generate.Dataset.Name = name
-
-			ref, err := ec.generateDataset(
-				cmd.Context(), cfg, instruction, flags.outputDir, cmd.OutOrStdout(), flags.noWait)
+			ref, err := ec.generateDataset(cmd.Context(), plan, cmd.OutOrStdout(), flags.noWait)
 			if err != nil {
 				return err
 			}
@@ -150,19 +250,24 @@ func newEvaluatorGenerateCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 
-			ec, cfg, instruction, err := prepareGeneration(cmd, &flags, 0, traceDays)
+			cfg, err := project.LoadGenerateConfig(flags.configPath)
+			if err != nil {
+				return err
+			}
+			declared := evaluatorGenEntry(cfg, name, traceDays)
+
+			plan, err := resolvePlan(&flags, cfg, name, declared)
+			if err != nil {
+				return err
+			}
+
+			ec, plan, err := prepareGeneration(cmd, &flags, plan, declared)
 			if err != nil {
 				return err
 			}
 			defer ec.Close()
 
-			if cfg.Generate.Rubric == nil {
-				return fmt.Errorf("the generation spec declares no rubric to generate")
-			}
-			cfg.Generate.Rubric.Name = name
-
-			ref, err := ec.generateRubric(
-				cmd.Context(), cfg, instruction, flags.outputDir, cmd.OutOrStdout(), flags.noWait)
+			ref, err := ec.generateRubric(cmd.Context(), plan, cmd.OutOrStdout(), flags.noWait)
 			if err != nil {
 				return err
 			}

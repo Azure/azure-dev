@@ -4,9 +4,12 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Ids are per declaration. A shared key works only while a config has one
@@ -36,18 +39,28 @@ func TestIDKey_DoesNotCollideWithVersionKey(t *testing.T) {
 	assert.NotEqual(t, idKey("dataset", "golden"), versionKey("dataset", "golden"))
 }
 
-// Setting EVAL_ID by hand is the documented way to point a config at a
-// group that already exists. It is also the key the extension writes itself,
-// which is what let a second group adopt the first one's id — so it stays
-// readable only where it cannot be ambiguous. Fixing the aliasing dropped this
-// fallback entirely once, silently breaking the documented behaviour.
+// Setting EVAL_ID by hand is the documented way to point a config at an eval
+// that already exists. It is also the key the extension writes itself, which is
+// what let a second eval adopt the first one's id — so it stays readable only
+// where it cannot be ambiguous. Fixing the aliasing dropped this fallback
+// entirely once, silently breaking the documented behaviour.
 func TestGroupIDKeys_SharedKeyReadOnlyWhenUnambiguous(t *testing.T) {
-	sole := evalIDKeys("quality", true)
-	assert.Equal(t, idKey("eval", "quality"), sole[0],
-		"a group's own entry is preferred over the shared one")
-	assert.Contains(t, sole, envKeyEvalID,
-		"a single-group config honours an id set by hand")
+	write := func(t *testing.T, names ...string) string {
+		t.Helper()
+		dir := t.TempDir()
+		for _, n := range names {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, n+".yaml"), []byte("{}\n"), 0o600))
+		}
+		return dir
+	}
 
-	assert.Equal(t, []string{idKey("eval", "quality")}, evalIDKeys("quality", false),
-		"with several groups the shared entry cannot say which group it means")
+	sole := evalIDKeys("quality", write(t, "quality"))
+	assert.Equal(t, idKey("eval", "quality"), sole[0],
+		"an eval's own entry is preferred over the shared one")
+	assert.Contains(t, sole, envKeyEvalID,
+		"a project with one eval honours an id set by hand")
+
+	assert.Equal(t, []string{idKey("eval", "quality")},
+		evalIDKeys("quality", write(t, "quality", "nightly")),
+		"with several evals the shared entry cannot say which one it means")
 }

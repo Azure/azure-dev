@@ -4,37 +4,65 @@
 package project
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func generateCfgWithStrategy(strategy string) *GenerateConfig {
-	cfg := &GenerateConfig{}
-	cfg.Agent.Name = "my-agent"
-	cfg.Generate.Rubric = &RubricSpec{Name: "r"}
-	cfg.Generate.Dataset = &DatasetSpec{Name: "d", Strategy: strategy}
-	return cfg
+// The generation spec is keyed by artifact name, which is what makes
+// `dataset generate <name>` and `evaluator generate <name>` able to look up
+// exactly the entry they were asked for.
+func TestLoadGenerateConfig_ParsesTheDocumentedShape(t *testing.T) {
+	body := `
+generationModel: gpt-5.6-luna
+dataset:
+  support-agent-smoke:
+    sampleSize: 15
+    outputDir: ./datasets
+evaluator:
+  support-quality:
+    outputDir: ./evaluators
+    deriveFrom: support-agent
+`
+	path := filepath.Join(t.TempDir(), "generate.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+
+	cfg, err := LoadGenerateConfig(path)
+	require.NoError(t, err)
+	require.Equal(t, "gpt-5.6-luna", cfg.GenerationModel)
+
+	ds, ok := cfg.DatasetSpec("support-agent-smoke")
+	require.True(t, ok)
+	require.Equal(t, 15, ds.SampleSize)
+	require.Equal(t, "./datasets", ds.OutputDir)
+
+	ev, ok := cfg.EvaluatorSpec("support-quality")
+	require.True(t, ok)
+	require.Equal(t, "./evaluators", ev.OutputDir)
+	require.Equal(t, "support-agent", ev.DeriveFrom)
 }
 
-// from-traces used to pass validation and then generate synthetic rows anyway,
-// handing back data that looked nothing like what was asked for. Rejecting it
-// is better than answering the wrong question.
-func TestValidateRejectsUnsupportedDatasetStrategy(t *testing.T) {
-	err := generateCfgWithStrategy(StrategyFromTraces).Validate()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "not supported yet")
-	require.Contains(t, err.Error(), "agent.context.traces.window",
-		"the error should point at the way traces are actually used")
+// Generation is optional: a developer with hand-authored data and evaluators
+// never writes a spec, and the generate commands still run from flags alone.
+func TestLoadGenerateConfig_MissingFileIsNotAnError(t *testing.T) {
+	cfg, err := LoadGenerateConfig(filepath.Join(t.TempDir(), "generate.yaml"))
+	require.NoError(t, err)
+	require.Empty(t, cfg.GenerationModel)
+	require.Empty(t, cfg.Dataset)
+
+	_, ok := cfg.DatasetSpec("anything")
+	require.False(t, ok)
 }
 
-func TestValidateAcceptsSupportedDatasetStrategies(t *testing.T) {
-	require.NoError(t, generateCfgWithStrategy("").Validate())
-	require.NoError(t, generateCfgWithStrategy(StrategySynthetic).Validate())
-}
+// A row count the service would reject costs a billed job to find out about,
+// so it is refused at the flag that carried it.
+func TestValidateSampleSize(t *testing.T) {
+	require.NoError(t, ValidateSampleSize(0), "unset means the default applies")
+	require.NoError(t, ValidateSampleSize(MinSampleSize))
+	require.NoError(t, ValidateSampleSize(MaxSampleSize))
 
-func TestValidateRejectsUnknownDatasetStrategy(t *testing.T) {
-	err := generateCfgWithStrategy("made-up").Validate()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "invalid")
+	require.ErrorContains(t, ValidateSampleSize(MinSampleSize-1), "must be between")
+	require.ErrorContains(t, ValidateSampleSize(MaxSampleSize+1), "must be between")
 }

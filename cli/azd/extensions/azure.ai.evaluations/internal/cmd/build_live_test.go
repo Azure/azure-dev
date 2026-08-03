@@ -114,11 +114,14 @@ func TestLiveBuildAcceptedForEveryBuiltin(t *testing.T) {
 			}
 
 			group := &project.Eval{
-				Name:       fmt.Sprintf("azd-live-%d", time.Now().UTC().UnixNano()),
-				Dataset:    "inline",
-				Target:     &project.Target{Type: "agent", Name: "probe-agent"},
-				Evaluators: []evalcore.EvaluatorRef{{Name: summary.Name}},
-				Options:    &project.Options{EvalModel: judge, EvaluationLevel: level},
+				Name:    fmt.Sprintf("azd-live-%d", time.Now().UTC().UnixNano()),
+				Dataset: "inline",
+				Target:  &project.Target{Type: "agent", Name: "probe-agent"},
+				Evaluators: []evalcore.EvaluatorRef{{
+					Name:                     summary.Name,
+					InitializationParameters: map[string]any{"deployment_name": judge},
+				}},
+				Options: &project.Options{EvaluationLevel: level},
 			}
 
 			req, err := buildEvalRequest(group, schemas, columns)
@@ -156,11 +159,13 @@ func TestLiveBuildRejectsMissingColumnsLocally(t *testing.T) {
 		"this test relies on ifeval declaring required inputs")
 
 	group := &project.Eval{
-		Name:       "azd-live-negative",
-		Dataset:    "inline",
-		Target:     &project.Target{Type: "agent", Name: "probe-agent"},
-		Evaluators: []evalcore.EvaluatorRef{{Name: "builtin.ifeval"}},
-		Options:    &project.Options{EvalModel: judge},
+		Name:    "azd-live-negative",
+		Dataset: "inline",
+		Target:  &project.Target{Type: "agent", Name: "probe-agent"},
+		Evaluators: []evalcore.EvaluatorRef{{
+			Name:                     "builtin.ifeval",
+			InitializationParameters: map[string]any{"deployment_name": judge},
+		}},
 	}
 
 	// A dataset with only `query` cannot satisfy ifeval.

@@ -148,7 +148,6 @@ func planCriterion(
 	schema *eval_api.EvaluatorSummary,
 	targetBindings map[string]string,
 	datasetColumns map[string]bool,
-	evalModel string,
 	level string,
 ) (*criterionPlan, error) {
 	accepted := legacyInputs
@@ -214,13 +213,16 @@ func planCriterion(
 	}
 
 	// Evaluators disagree on what the judge model is called: built-ins declare
-	// deployment_name, custom rubrics declare model. Bind whichever the
-	// evaluator actually accepts rather than guessing one spelling.
-	if evalModel != "" {
-		for _, alias := range []string{"deployment_name", "model"} {
-			if accepts(alias) {
-				plan.initParams[alias] = evalModel
-			}
+	// deployment_name, custom rubrics declare model. The declaration names one
+	// of them; bind whichever the evaluator actually accepts rather than
+	// forwarding a spelling it will reject.
+	for name, value := range ref.InitializationParameters {
+		if accepts(name) {
+			plan.initParams[name] = value
+			continue
+		}
+		if alias, ok := judgeModelAliases[name]; ok && accepts(alias) {
+			plan.initParams[alias] = value
 		}
 	}
 	if ref.Threshold != nil && accepts("threshold") {
@@ -239,13 +241,21 @@ func planCriterion(
 		}
 		if len(missingInit) > 0 {
 			return nil, fmt.Errorf(
-				"evaluator %q requires %s; set the judge model on the eval",
+				"evaluator %q requires %s; set it under the evaluator's "+
+					"`initialization_parameters` in the eval config",
 				ref.Name, quoteList(missingInit),
 			)
 		}
 	}
 
 	return plan, nil
+}
+
+// judgeModelAliases maps the two spellings of the judge deployment onto each
+// other, so one declaration works whichever the evaluator publishes.
+var judgeModelAliases = map[string]string{
+	"deployment_name": "model",
+	"model":           "deployment_name",
 }
 
 // buildEvalRequest converts an eval declaration into the create
@@ -279,10 +289,8 @@ func buildEvalRequest(
 		metadata["azd_description"] = group.Description
 	}
 
-	evalModel := ""
 	level := ""
 	if group.Options != nil {
-		evalModel = group.Options.EvalModel
 		level = group.Options.EvaluationLevel
 	}
 
@@ -299,7 +307,7 @@ func buildEvalRequest(
 			schema = &eval_api.EvaluatorSummary{Name: ref.Name}
 		}
 
-		plan, err := planCriterion(ref, schema, targetBindings, datasetColumns, evalModel, level)
+		plan, err := planCriterion(ref, schema, targetBindings, datasetColumns, level)
 		if err != nil {
 			return nil, err
 		}

@@ -84,7 +84,7 @@ func TestCLIInitNeedsAnAzdProject(t *testing.T) {
 
 	r := requireFailure(t, runIn(t, dir, "init",
 		"--target", "probe-agent",
-		"--judge-model", "gpt-4o-mini",
+		"--generation-model", "gpt-4o-mini",
 		"--no-prompt"))
 
 	require.Contains(t, r.Combined(), "azd init",

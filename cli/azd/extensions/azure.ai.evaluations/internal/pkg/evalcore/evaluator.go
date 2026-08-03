@@ -93,7 +93,7 @@ func (el *EvaluatorList) UnmarshalYAML(value *yaml.Node) error {
 func (el EvaluatorList) MarshalYAML() (any, error) {
 	out := make([]any, 0, len(el))
 	for _, ref := range el {
-		if ref.Threshold == nil && ref.Version == "" {
+		if ref.isBareName() {
 			out = append(out, ref.Name)
 			continue
 		}
@@ -141,18 +141,29 @@ func (el *EvaluatorList) UnmarshalJSON(data []byte) error {
 }
 
 // MarshalJSON mirrors MarshalYAML's compact form.
+//
+// Everything the reference carries has to survive the round trip, including
+// the source and the initialization parameters: the eval fingerprint is taken
+// over this encoding, so a field dropped here is a change the reconciler
+// cannot see.
 func (el EvaluatorList) MarshalJSON() ([]byte, error) {
+	// Aliased so the element encoder does not recurse through this method.
+	type ref = EvaluatorRef
+
 	out := make([]any, 0, len(el))
-	for _, ref := range el {
-		if ref.Threshold == nil && ref.Version == "" {
-			out = append(out, ref.Name)
+	for _, r := range el {
+		if r.isBareName() {
+			out = append(out, r.Name)
 			continue
 		}
-		out = append(out, struct {
-			Name      string   `json:"name"`
-			Version   string   `json:"version,omitempty"`
-			Threshold *float64 `json:"threshold,omitempty"`
-		}{ref.Name, ref.Version, ref.Threshold})
+		out = append(out, ref(r))
 	}
 	return json.Marshal(out)
+}
+
+// isBareName reports whether the reference carries nothing but its name, in
+// which case both encoders emit the compact string form.
+func (e EvaluatorRef) isBareName() bool {
+	return e.Threshold == nil && e.Version == "" && e.Source == "" &&
+		len(e.InitializationParameters) == 0
 }

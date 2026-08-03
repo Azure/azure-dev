@@ -45,6 +45,15 @@ func groupWith(evaluators []evalcore.EvaluatorRef, opts *project.Options) *proje
 	}
 }
 
+// withJudge declares the judge deployment where the service reads it from: an
+// evaluator's initialization parameters, not a setting on the eval.
+func withJudge(model string, refs ...evalcore.EvaluatorRef) []evalcore.EvaluatorRef {
+	for i := range refs {
+		refs[i].InitializationParameters = map[string]any{"deployment_name": model}
+	}
+	return refs
+}
+
 // An agent evaluator takes its response from the sample and its query from the
 // dataset.
 func TestBuildBindsAgentFieldsFromSample(t *testing.T) {
@@ -55,8 +64,8 @@ func TestBuildBindsAgentFieldsFromSample(t *testing.T) {
 			"turn"),
 	}
 	group := groupWith(
-		[]evalcore.EvaluatorRef{{Name: "builtin.task_adherence"}},
-		&project.Options{EvalModel: "gpt-4.1-nano"},
+		withJudge("gpt-4.1-nano", evalcore.EvaluatorRef{Name: "builtin.task_adherence"}),
+		nil,
 	)
 
 	req, err := buildEvalRequest(group, schemas, map[string]bool{"query": true})
@@ -126,10 +135,10 @@ func TestBuildOmitsUnacceptedInitParameters(t *testing.T) {
 			nil, []string{"query", "response", "ground_truth"},
 			[]string{"deployment_name"}, []string{"deployment_name", "threshold"}, "turn"),
 	}
-	group := groupWith([]evalcore.EvaluatorRef{
-		{Name: "builtin.ifeval", Threshold: &threshold},
-		{Name: "builtin.similarity", Threshold: &threshold},
-	}, &project.Options{EvalModel: "gpt-4.1-nano"})
+	group := groupWith(withJudge("gpt-4.1-nano",
+		evalcore.EvaluatorRef{Name: "builtin.ifeval", Threshold: &threshold},
+		evalcore.EvaluatorRef{Name: "builtin.similarity", Threshold: &threshold},
+	), nil)
 
 	req, err := buildEvalRequest(group, schemas, map[string]bool{
 		"query": true, "ground_truth": true,
@@ -158,10 +167,10 @@ func TestBuildPassesEvaluationLevelAsInitParameter(t *testing.T) {
 			nil, []string{"query", "response"},
 			[]string{"deployment_name"}, []string{"deployment_name", "threshold"}, "turn"),
 	}
-	group := groupWith([]evalcore.EvaluatorRef{
-		{Name: "builtin.task_completion"},
-		{Name: "builtin.similarity"},
-	}, &project.Options{EvalModel: "m", EvaluationLevel: "turn"})
+	group := groupWith(withJudge("m",
+		evalcore.EvaluatorRef{Name: "builtin.task_completion"},
+		evalcore.EvaluatorRef{Name: "builtin.similarity"},
+	), &project.Options{EvaluationLevel: "turn"})
 
 	req, err := buildEvalRequest(group, schemas, map[string]bool{"query": true})
 	require.NoError(t, err)
@@ -178,8 +187,8 @@ func TestBuildRejectsUnsupportedLevel(t *testing.T) {
 			nil, []string{"query", "response"},
 			[]string{"deployment_name"}, []string{"deployment_name"}, "turn"),
 	}
-	group := groupWith([]evalcore.EvaluatorRef{{Name: "builtin.similarity"}},
-		&project.Options{EvalModel: "m", EvaluationLevel: "conversation"})
+	group := groupWith(withJudge("m", evalcore.EvaluatorRef{Name: "builtin.similarity"}),
+		&project.Options{EvaluationLevel: "conversation"})
 
 	_, err := buildEvalRequest(group, schemas, map[string]bool{"query": true})
 	require.Error(t, err)
@@ -204,8 +213,7 @@ func TestBuildRequiresJudgeModelWhenEvaluatorDoes(t *testing.T) {
 // An evaluator with no published contract keeps the historical agent-target
 // shape, so custom evaluators still deploy.
 func TestBuildFallsBackWithoutSchema(t *testing.T) {
-	group := groupWith([]evalcore.EvaluatorRef{{Name: "my-custom-evaluator"}},
-		&project.Options{EvalModel: "m"})
+	group := groupWith(withJudge("m", evalcore.EvaluatorRef{Name: "my-custom-evaluator"}), nil)
 
 	req, err := buildEvalRequest(group, nil, nil)
 	require.NoError(t, err)
@@ -230,8 +238,8 @@ func TestBuildResolvesConversationTurnExclusivity(t *testing.T) {
 	columns := map[string]bool{"query": true, "messages": true, "response": true}
 
 	// Turn level keeps query/response and drops messages.
-	turn := groupWith([]evalcore.EvaluatorRef{{Name: "builtin.task_completion"}},
-		&project.Options{EvalModel: "m", EvaluationLevel: "turn"})
+	turn := groupWith(withJudge("m", evalcore.EvaluatorRef{Name: "builtin.task_completion"}),
+		&project.Options{EvaluationLevel: "turn"})
 	req, err := buildEvalRequest(turn, schemas, columns)
 	require.NoError(t, err)
 	mapping := req.TestingCriteria[0].DataMapping
@@ -239,8 +247,8 @@ func TestBuildResolvesConversationTurnExclusivity(t *testing.T) {
 	require.NotContains(t, mapping, "messages")
 
 	// Conversation level keeps messages and drops query/response.
-	conv := groupWith([]evalcore.EvaluatorRef{{Name: "builtin.task_completion"}},
-		&project.Options{EvalModel: "m", EvaluationLevel: "conversation"})
+	conv := groupWith(withJudge("m", evalcore.EvaluatorRef{Name: "builtin.task_completion"}),
+		&project.Options{EvaluationLevel: "conversation"})
 	req, err = buildEvalRequest(conv, schemas, columns)
 	require.NoError(t, err)
 	mapping = req.TestingCriteria[0].DataMapping
@@ -249,16 +257,16 @@ func TestBuildResolvesConversationTurnExclusivity(t *testing.T) {
 	require.NotContains(t, mapping, "response")
 
 	// An unset level behaves as turn, matching the service default.
-	dflt := groupWith([]evalcore.EvaluatorRef{{Name: "builtin.task_completion"}},
-		&project.Options{EvalModel: "m"})
+	dflt := groupWith(withJudge("m", evalcore.EvaluatorRef{Name: "builtin.task_completion"}), nil)
 	req, err = buildEvalRequest(dflt, schemas, columns)
 	require.NoError(t, err)
 	require.NotContains(t, req.TestingCriteria[0].DataMapping, "messages")
 }
 
 // Evaluators disagree on what the judge model is called. Built-ins declare
-// deployment_name; a custom rubric declares model, and rejects the group with
-// "requires model" if only deployment_name is sent.
+// deployment_name; a custom rubric declares model, and rejects the eval with
+// "requires model" if only deployment_name is sent. One declaration binds
+// whichever the evaluator actually accepts.
 func TestBuildBindsJudgeModelUnderTheDeclaredName(t *testing.T) {
 	schemas := map[string]*eval_api.EvaluatorSummary{
 		"builtin.similarity": schema("builtin.similarity",
@@ -268,10 +276,10 @@ func TestBuildBindsJudgeModelUnderTheDeclaredName(t *testing.T) {
 			nil, []string{"query", "response"},
 			[]string{"model"}, []string{"model"}, "turn"),
 	}
-	group := groupWith([]evalcore.EvaluatorRef{
-		{Name: "builtin.similarity"},
-		{Name: "my-rubric"},
-	}, &project.Options{EvalModel: "gpt-4.1-nano"})
+	group := groupWith(withJudge("gpt-4.1-nano",
+		evalcore.EvaluatorRef{Name: "builtin.similarity"},
+		evalcore.EvaluatorRef{Name: "my-rubric"},
+	), nil)
 
 	req, err := buildEvalRequest(group, schemas, map[string]bool{"query": true})
 	require.NoError(t, err)

@@ -68,29 +68,25 @@ func TestServiceRelativeDirDefaultsToProjectRoot(t *testing.T) {
 // includes against.
 func TestEvalConfigFromServiceReadsInlineConfig(t *testing.T) {
 	svc := &azdext.ServiceConfig{
-		Name: "evals",
+		Name: "support-agent-smoke",
 		AdditionalProperties: propsFrom(t, map[string]any{
-			"datasets": []any{
-				map[string]any{"name": "golden", "source": "./datasets/golden.jsonl"},
-			},
-			"evals": []any{
-				map[string]any{
-					"name":       "quality",
-					"dataset":    "golden",
-					"evaluators": []any{"builtin.task_adherence"},
-					"target":     map[string]any{"type": "agent", "name": "my-agent"},
-				},
-			},
+			"dataset":    map[string]any{"name": "golden", "source": "./datasets/golden.jsonl"},
+			"evaluators": []any{"builtin.task_adherence"},
+			"target":     map[string]any{"type": "agent", "name": "my-agent"},
 		}),
 	}
 
 	cfg, err := EvalConfigFromService(svc, "")
 	require.NoError(t, err)
-	require.Len(t, cfg.Datasets, 1)
-	require.Equal(t, "golden", cfg.Datasets[0].Name)
-	require.Len(t, cfg.Evals, 1)
-	require.Len(t, cfg.Evals[0].Evaluators, 1)
-	require.Equal(t, "builtin.task_adherence", cfg.Evals[0].Evaluators[0].Name)
+	require.NotNil(t, cfg.Dataset)
+	require.Equal(t, "golden", cfg.Dataset.Name)
+	require.Len(t, cfg.Evaluators, 1)
+	require.Equal(t, "builtin.task_adherence", cfg.Evaluators[0].Name)
+	require.Equal(t, "my-agent", cfg.Target.Name)
+
+	// The eval's name is the service key, which is what makes one service per
+	// eval work without the body repeating it.
+	require.Equal(t, "support-agent-smoke", cfg.Eval(svc.Name).Name)
 }
 
 func TestEvalConfigFromServiceRejectsEmptyService(t *testing.T) {
@@ -99,16 +95,16 @@ func TestEvalConfigFromServiceRejectsEmptyService(t *testing.T) {
 	require.Contains(t, err.Error(), "no eval configuration")
 }
 
-// Groups are immutable, so a change to the group's own declaration has to be
-// detectable. Upstream artifact fingerprints do not cover it: retargeting a
-// group at a different agent leaves the dataset and evaluators untouched.
+// Evals are immutable, so a change to the eval's own declaration has to be
+// detectable. Upstream artifact fingerprints do not cover it: retargeting an
+// eval at a different agent leaves the dataset and evaluators untouched.
 func TestFingerprintGroupTracksMeaningfulChanges(t *testing.T) {
 	base := Eval{
 		Name:       "quality",
 		Dataset:    "golden",
 		Evaluators: evalcore.EvaluatorList{{Name: "builtin.task_adherence"}},
 		Target:     &Target{Type: "agent", Name: "agent-a"},
-		Options:    &Options{EvalModel: "gpt-4.1-nano"},
+		Options:    &Options{EvaluationLevel: EvaluationLevelTurn},
 	}
 
 	original, err := FingerprintGroup(base)
@@ -116,14 +112,20 @@ func TestFingerprintGroupTracksMeaningfulChanges(t *testing.T) {
 
 	same, err := FingerprintGroup(base)
 	require.NoError(t, err)
-	require.Equal(t, original, same, "an unchanged group must keep its fingerprint")
+	require.Equal(t, original, same, "an unchanged eval must keep its fingerprint")
 
 	cases := map[string]func(g *Eval){
 		"target": func(g *Eval) { g.Target = &Target{Type: "agent", Name: "agent-b"} },
 		"evaluators": func(g *Eval) {
 			g.Evaluators = append(g.Evaluators, evalcore.EvaluatorRef{Name: "builtin.similarity"})
 		},
-		"options": func(g *Eval) { g.Options = &Options{EvalModel: "gpt-4o-mini"} },
+		"judge deployment": func(g *Eval) {
+			g.Evaluators = evalcore.EvaluatorList{{
+				Name:                     "builtin.task_adherence",
+				InitializationParameters: map[string]any{"deployment_name": "gpt-4o-mini"},
+			}}
+		},
+		"options": func(g *Eval) { g.Options = &Options{EvaluationLevel: EvaluationLevelConversation} },
 		"dataset": func(g *Eval) { g.Dataset = "other" },
 	}
 	for name, mutate := range cases {

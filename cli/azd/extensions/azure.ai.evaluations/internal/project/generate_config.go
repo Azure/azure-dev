@@ -12,69 +12,81 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// Conventional locations. Both are relative to the working directory and are
+// Conventional locations. All are relative to the working directory and are
 // used verbatim — never re-rooted under the agent or project directory.
 const (
 	DefaultEvalDir        = "evals"
-	DefaultGenerateConfig = "evals/eval_generate.yaml"
-	DefaultDeployConfig   = "evals/azure.yaml"
+	DefaultGenerateConfig = "evals/generate.yaml"
 	DefaultDatasetsDir    = "datasets"
 	DefaultEvaluatorsDir  = "evaluators"
 )
 
-// GenerateConfig is the generation spec — input to `azd ai eval generate`. It
-// is never deployed.
+// EvalConfigPath is where the body of the eval named by a service entry lives.
+func EvalConfigPath(evalDir, evalName string) string {
+	return filepath.Join(evalDir, evalName+".yaml")
+}
+
+// GenerateConfig says how the local dataset and evaluator artifacts referenced
+// by an eval are produced. It is never deployed.
+//
+//	generationModel: gpt-5.6-luna
+//	dataset:
+//	  support-agent-smoke:
+//	    sampleSize: 15
+//	    outputDir: ./datasets
+//	evaluator:
+//	  support-quality:
+//	    outputDir: ./evaluators
+//	    deriveFrom: support-agent
+//
+// The maps are keyed by artifact name so `dataset generate <name>` and
+// `evaluator generate <name>` each look up exactly the entry they were asked
+// for, and generating one artifact never reads the other's settings.
 type GenerateConfig struct {
-	Agent    AgentSpec    `yaml:"agent"    json:"agent"`
-	Generate GenerateSpec `yaml:"generate" json:"generate"`
+	GenerationModel string                      `yaml:"generationModel,omitempty" json:"generationModel,omitempty"`
+	Dataset         map[string]DatasetGenSpec   `yaml:"dataset,omitempty"         json:"dataset,omitempty"`
+	Evaluator       map[string]EvaluatorGenSpec `yaml:"evaluator,omitempty"       json:"evaluator,omitempty"`
 }
 
-// AgentSpec identifies the agent and the context the generator reads.
-type AgentSpec struct {
-	Name    string       `yaml:"name"              json:"name"`
-	Context AgentContext `yaml:"context,omitempty" json:"context,omitempty"`
-}
-
-// AgentContext points at the material used to synthesize a rubric and dataset.
-type AgentContext struct {
-	Instructions string     `yaml:"instructions,omitempty" json:"instructions,omitempty"`
-	Traces       *TraceSpec `yaml:"traces,omitempty"       json:"traces,omitempty"`
-}
-
-// TraceSpec seeds rubric generation from recent traces. Traces are a generation
-// input only; they cannot be a run's data source.
-type TraceSpec struct {
-	Source string `yaml:"source,omitempty" json:"source,omitempty"`
-	Window string `yaml:"window,omitempty" json:"window,omitempty"`
-	Sample int    `yaml:"sample,omitempty" json:"sample,omitempty"`
-}
-
-// GenerateSpec configures what gets produced.
-type GenerateSpec struct {
-	Rubric  *RubricSpec  `yaml:"rubric,omitempty"  json:"rubric,omitempty"`
-	Dataset *DatasetSpec `yaml:"dataset,omitempty" json:"dataset,omitempty"`
-}
-
-// RubricSpec configures rubric (LLM-graded evaluator) generation.
-type RubricSpec struct {
-	Name     string `yaml:"name"                json:"name"`
-	Model    string `yaml:"model,omitempty"     json:"model,omitempty"`
-	LocalDir string `yaml:"local_dir,omitempty" json:"local_dir,omitempty"`
-}
-
-// DatasetSpec configures synthetic dataset generation.
-type DatasetSpec struct {
-	Name       string `yaml:"name"                 json:"name"`
-	Strategy   string `yaml:"strategy,omitempty"   json:"strategy,omitempty"`
+// DatasetGenSpec configures synthetic dataset generation for one dataset.
+type DatasetGenSpec struct {
 	SampleSize int    `yaml:"sampleSize,omitempty" json:"sampleSize,omitempty"`
-	LocalDir   string `yaml:"local_dir,omitempty"  json:"local_dir,omitempty"`
+	OutputDir  string `yaml:"outputDir,omitempty"  json:"outputDir,omitempty"`
+	// DeriveFrom names the agent whose context seeds generation. Optional: the
+	// eval's target supplies it, and --target overrides both.
+	DeriveFrom string `yaml:"deriveFrom,omitempty" json:"deriveFrom,omitempty"`
+	// Instructions points at a local file whose contents stand in for the
+	// agent's published instructions for this generation only.
+	Instructions string `yaml:"instructions,omitempty" json:"instructions,omitempty"`
+	// TraceDays seeds generation from that many days of recent traces. Zero
+	// disables it. Traces are a generation input only; they cannot be a run's
+	// data source.
+	TraceDays int `yaml:"traceDays,omitempty" json:"traceDays,omitempty"`
 }
 
-// Generation strategies.
-const (
-	StrategySynthetic  = "synthetic"
-	StrategyFromTraces = "from-traces"
-)
+// EvaluatorGenSpec configures rubric generation for one evaluator.
+type EvaluatorGenSpec struct {
+	OutputDir string `yaml:"outputDir,omitempty" json:"outputDir,omitempty"`
+	// DeriveFrom names the agent the rubric is written against.
+	DeriveFrom string `yaml:"deriveFrom,omitempty" json:"deriveFrom,omitempty"`
+	// Instructions points at a local file whose contents stand in for the
+	// agent's published instructions for this generation only.
+	Instructions string `yaml:"instructions,omitempty" json:"instructions,omitempty"`
+	// TraceDays seeds generation from that many days of recent traces. Zero
+	// disables it.
+	TraceDays int `yaml:"traceDays,omitempty" json:"traceDays,omitempty"`
+}
+
+// ArtifactRef is the name/source pair a generation run produces, so the
+// command can tell the developer how to reference it.
+//
+// Generation writes artifacts only and never edits azure.yaml or the eval
+// config: `init` declares the paths and `generate` fills them in, which is what
+// keeps a generation run a data-file-only diff.
+type ArtifactRef struct {
+	Name   string `json:"name"`
+	Source string `json:"source"`
+}
 
 // Sample-count bounds enforced by the generation service.
 const (
@@ -84,9 +96,16 @@ const (
 )
 
 // LoadGenerateConfig reads a generation spec from disk.
+//
+// A missing file is not an error. Generation is optional — a developer with
+// hand-authored data and evaluators never writes one — and every setting it
+// carries can be given on the command line instead.
 func LoadGenerateConfig(path string) (*GenerateConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return &GenerateConfig{}, nil
+		}
 		return nil, fmt.Errorf("reading generation config %q: %w", path, err)
 	}
 
@@ -97,58 +116,43 @@ func LoadGenerateConfig(path string) (*GenerateConfig, error) {
 	return &cfg, nil
 }
 
-// Validate reports configuration errors before any generation job is submitted.
-func (c *GenerateConfig) Validate() error {
-	if c.Agent.Name == "" {
-		return fmt.Errorf("agent.name is required")
-	}
-	if c.Generate.Rubric == nil && c.Generate.Dataset == nil {
-		return fmt.Errorf("generate must declare a rubric, a dataset, or both")
-	}
-	if r := c.Generate.Rubric; r != nil && r.Name == "" {
-		return fmt.Errorf("generate.rubric.name is required")
-	}
-	if d := c.Generate.Dataset; d != nil {
-		if d.Name == "" {
-			return fmt.Errorf("generate.dataset.name is required")
-		}
-		switch d.Strategy {
-		case "", StrategySynthetic:
-		case StrategyFromTraces:
-			// Accepting this and generating synthetic rows anyway would hand back
-			// data that looks nothing like what was asked for. The generation API
-			// takes one dataset strategy today; traces seed generation through
-			// the agent's context instead.
-			return fmt.Errorf(
-				"generate.dataset.strategy %q is not supported yet; "+
-					"use %q, and set agent.context.traces.window to seed generation from traces",
-				StrategyFromTraces, StrategySynthetic)
-		default:
-			return fmt.Errorf(
-				"generate.dataset.strategy %q is invalid; expected %q",
-				d.Strategy, StrategySynthetic)
-		}
-		if d.SampleSize != 0 && (d.SampleSize < MinSampleSize || d.SampleSize > MaxSampleSize) {
-			return fmt.Errorf(
-				"generate.dataset.sampleSize must be between %d and %d, got %d",
-				MinSampleSize, MaxSampleSize, d.SampleSize)
-		}
+// DatasetSpec returns the settings for one dataset, and whether the config
+// declared them.
+func (c *GenerateConfig) DatasetSpec(name string) (DatasetGenSpec, bool) {
+	spec, ok := c.Dataset[name]
+	return spec, ok
+}
+
+// EvaluatorSpec returns the settings for one evaluator, and whether the config
+// declared them.
+func (c *GenerateConfig) EvaluatorSpec(name string) (EvaluatorGenSpec, bool) {
+	spec, ok := c.Evaluator[name]
+	return spec, ok
+}
+
+// ValidateSampleSize rejects a row count the service would reject, before a
+// generation job is submitted and billed.
+func ValidateSampleSize(n int) error {
+	if n != 0 && (n < MinSampleSize || n > MaxSampleSize) {
+		return fmt.Errorf(
+			"sample size must be between %d and %d, got %d",
+			MinSampleSize, MaxSampleSize, n)
 	}
 	return nil
 }
 
-// ArtifactPath resolves a local_dir value against baseDir. The value may be a
+// ArtifactPath resolves an outputDir value against baseDir. The value may be a
 // directory, in which case the file name is derived from resourceName and ext,
 // or an explicit file path, which is used as-is.
-func ArtifactPath(baseDir, localDir, resourceName, ext string) string {
-	if localDir == "" {
+func ArtifactPath(baseDir, outputDir, resourceName, ext string) string {
+	if outputDir == "" {
 		return filepath.Join(baseDir, resourceName+ext)
 	}
-	candidate := localDir
+	candidate := outputDir
 	if !filepath.IsAbs(candidate) {
 		candidate = filepath.Join(baseDir, candidate)
 	}
-	if looksLikeFile(localDir, ext) {
+	if looksLikeFile(outputDir, ext) {
 		return candidate
 	}
 	return filepath.Join(candidate, resourceName+ext)

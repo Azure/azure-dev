@@ -14,38 +14,36 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-const sampleDeployConfig = `
+// sampleEvalConfig is the shape the spec documents for evals/<eval-name>.yaml.
+const sampleEvalConfig = `
+description: Quality gate for the support agent
+
+dataset:
+  name: support-golden
+  source: ./datasets/support-golden.jsonl
+  version: "1"
+
 evaluators:
+  - builtin.task_adherence
   - name: support-quality
-    source: ./evaluators/support-quality/rubric_dimensions.json
-  - name: safety-check
-    source: ./evaluators/safety-check.json
+    source: ./evaluators/support-quality.json
+    threshold: 4.0
+    initialization_parameters:
+      deployment_name: gpt-4.1-nano
+  - safety-check
 
-datasets:
-  - name: support-golden
-    source: ./datasets/support-golden.jsonl
-    version: "1"
+target:
+  type: agent
+  name: support-agent
 
-evals:
-  - name: pr-gate
-    description: Quality gate for the support agent
-    dataset: support-golden
-    evaluators:
-      - builtin.task_adherence
-      - { name: support-quality, threshold: 4.0 }
-      - safety-check
-    target:
-      type: agent
-      name: support-agent
-    options:
-      eval_model: gpt-4.1-nano
-      max_samples: 100
-      evaluation_level: conversation
+options:
+  max_samples: 100
+  evaluation_level: conversation
 `
 
 func loadFromString(t *testing.T, body string) *EvalConfig {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "azure.yaml")
+	path := filepath.Join(t.TempDir(), "support-agent-smoke.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 	cfg, err := LoadEvalConfig(path)
 	require.NoError(t, err)
@@ -53,45 +51,66 @@ func loadFromString(t *testing.T, body string) *EvalConfig {
 }
 
 func TestLoadEvalConfig_ParsesAllSections(t *testing.T) {
-	cfg := loadFromString(t, sampleDeployConfig)
+	cfg := loadFromString(t, sampleEvalConfig)
 
-	require.Len(t, cfg.Evaluators, 2)
-	require.Len(t, cfg.Datasets, 1)
-	require.Len(t, cfg.Evals, 1)
+	require.NotNil(t, cfg.Dataset)
+	require.Equal(t, "support-golden", cfg.Dataset.Name)
+	require.Equal(t, "./datasets/support-golden.jsonl", cfg.Dataset.Source)
+	require.Equal(t, "1", cfg.Dataset.Version)
 
-	ds, ok := cfg.Dataset("support-golden")
-	require.True(t, ok)
-	require.Equal(t, "./datasets/support-golden.jsonl", ds.Source)
-	require.Equal(t, "1", ds.Version)
-
-	g, ok := cfg.Group("pr-gate")
-	require.True(t, ok)
-	require.Equal(t, "support-golden", g.Dataset)
-	require.Equal(t, TargetTypeAgent, g.Target.Type)
-	require.Equal(t, "support-agent", g.Target.Name)
-	require.Equal(t, EvaluationLevelConversation, g.Options.EvaluationLevel)
+	require.Len(t, cfg.Evaluators, 3)
+	require.Equal(t, TargetTypeAgent, cfg.Target.Type)
+	require.Equal(t, "support-agent", cfg.Target.Name)
+	require.Equal(t, EvaluationLevelConversation, cfg.Options.EvaluationLevel)
+	require.Equal(t, 100, cfg.Options.MaxSamples)
 }
 
-// Evaluator entries accept a bare string or a mapping carrying a threshold.
+// The eval takes its name from the service entry that pulled the file in, so
+// the body never repeats it.
+func TestEval_TakesNameFromTheService(t *testing.T) {
+	cfg := loadFromString(t, sampleEvalConfig)
+
+	eval := cfg.Eval("support-agent-smoke")
+	require.Equal(t, "support-agent-smoke", eval.Name)
+	require.Equal(t, "support-golden", eval.Dataset)
+	require.Equal(t, "Quality gate for the support agent", eval.Description)
+	require.Len(t, eval.Evaluators, 3)
+	require.Same(t, cfg.Target, eval.Target)
+}
+
+// Only the referenced evaluators carrying a local source are this config's to
+// publish. A built-in needs nothing, and one without a source already exists.
+func TestCustomEvaluators_OnlyOwnsLocalSources(t *testing.T) {
+	cfg := loadFromString(t, sampleEvalConfig)
+
+	owned := cfg.CustomEvaluators()
+	require.Len(t, owned, 1)
+	require.Equal(t, "support-quality", owned[0].Name)
+	require.Equal(t, "./evaluators/support-quality.json", owned[0].Source)
+}
+
+// Evaluator entries accept a bare string or a mapping carrying the rest of the
+// declaration.
 func TestEvaluatorList_MixedForms(t *testing.T) {
-	cfg := loadFromString(t, sampleDeployConfig)
-	g, ok := cfg.Group("pr-gate")
-	require.True(t, ok)
-	require.Len(t, g.Evaluators, 3)
+	cfg := loadFromString(t, sampleEvalConfig)
+	require.Len(t, cfg.Evaluators, 3)
 
-	require.Equal(t, "builtin.task_adherence", g.Evaluators[0].Name)
-	require.True(t, g.Evaluators[0].IsBuiltin())
-	require.Equal(t, "task_adherence", g.Evaluators[0].APIName(),
+	require.Equal(t, "builtin.task_adherence", cfg.Evaluators[0].Name)
+	require.True(t, cfg.Evaluators[0].IsBuiltin())
+	require.Equal(t, "task_adherence", cfg.Evaluators[0].APIName(),
 		"the builtin prefix must be stripped before it reaches the service")
-	require.Nil(t, g.Evaluators[0].Threshold)
+	require.Nil(t, cfg.Evaluators[0].Threshold)
 
-	require.Equal(t, "support-quality", g.Evaluators[1].Name)
-	require.False(t, g.Evaluators[1].IsBuiltin())
-	require.NotNil(t, g.Evaluators[1].Threshold)
-	require.InDelta(t, 4.0, *g.Evaluators[1].Threshold, 0.0001)
+	require.Equal(t, "support-quality", cfg.Evaluators[1].Name)
+	require.False(t, cfg.Evaluators[1].IsBuiltin())
+	require.NotNil(t, cfg.Evaluators[1].Threshold)
+	require.InDelta(t, 4.0, *cfg.Evaluators[1].Threshold, 0.0001)
+	require.Equal(t, "gpt-4.1-nano",
+		cfg.Evaluators[1].InitializationParameters["deployment_name"],
+		"the judge deployment is declared per evaluator, not once per eval")
 
-	require.Equal(t, "safety-check", g.Evaluators[2].Name)
-	require.Nil(t, g.Evaluators[2].Threshold)
+	require.Equal(t, "safety-check", cfg.Evaluators[2].Name)
+	require.Nil(t, cfg.Evaluators[2].Threshold)
 }
 
 // Round-tripping must not rewrite bare names into mappings.
@@ -115,8 +134,27 @@ func TestEvaluatorList_RoundTripKeepsCompactForm(t *testing.T) {
 		"an evaluator with only a name should stay a plain string")
 }
 
+// An evaluator carrying a source must not be flattened to its name, or the
+// declaration that says what to publish is lost on the next write.
+func TestEvaluatorList_RoundTripKeepsSource(t *testing.T) {
+	list := evalcore.EvaluatorList{
+		{Name: "support-quality", Source: "./evaluators/support-quality.json"},
+		{Name: "builtin.task_adherence",
+			InitializationParameters: map[string]any{"deployment_name": "gpt-4.1-nano"}},
+	}
+
+	out, err := yaml.Marshal(list)
+	require.NoError(t, err)
+
+	var back evalcore.EvaluatorList
+	require.NoError(t, yaml.Unmarshal(out, &back))
+	require.Len(t, back, 2)
+	require.Equal(t, "./evaluators/support-quality.json", back[0].Source)
+	require.Equal(t, "gpt-4.1-nano", back[1].InitializationParameters["deployment_name"])
+}
+
 func TestValidate_Accepts(t *testing.T) {
-	require.NoError(t, loadFromString(t, sampleDeployConfig).Validate())
+	require.NoError(t, loadFromString(t, sampleEvalConfig).Validate())
 }
 
 func TestValidate_Rejects(t *testing.T) {
@@ -126,41 +164,40 @@ func TestValidate_Rejects(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "dataset referenced but not declared",
-			body:    "evals:\n  - name: g\n    dataset: missing\n    evaluators: [builtin.relevance]\n",
-			wantErr: "is not declared in datasets",
+			name:    "dataset without a name",
+			body:    "dataset:\n  source: ./d.jsonl\nevaluators: [builtin.relevance]\n",
+			wantErr: "'name' is required",
 		},
 		{
-			name: "custom evaluator referenced but not declared",
-			body: "datasets:\n  - name: d\n" +
-				"evals:\n  - name: g\n    dataset: d\n    evaluators: [not-declared]\n",
-			wantErr: "is not declared in evaluators",
-		},
-		{
-			name:    "built-in declared as a custom evaluator",
-			body:    "evaluators:\n  - name: builtin.relevance\n",
-			wantErr: "must not be declared",
-		},
-		{
-			name:    "group without evaluators",
-			body:    "evals:\n  - name: g\n    evaluators: []\n",
+			name:    "no evaluators",
+			body:    "evaluators: []\n",
 			wantErr: "at least one evaluator is required",
 		},
 		{
+			name:    "built-in with a source to publish",
+			body:    "evaluators:\n  - name: builtin.relevance\n    source: ./x.json\n",
+			wantErr: "has no source to publish",
+		},
+		{
+			name:    "duplicate evaluator",
+			body:    "evaluators: [builtin.relevance, builtin.relevance]\n",
+			wantErr: "duplicate evaluator name",
+		},
+		{
+			name:    "version pinned alongside a source",
+			body:    "evaluators:\n  - name: q\n    source: ./q.json\n    version: \"3\"\n",
+			wantErr: "cannot be set with `source`",
+		},
+		{
 			name:    "unsupported target type",
-			body:    "evals:\n  - name: g\n    evaluators: [builtin.relevance]\n    target:\n      type: prompt\n",
+			body:    "evaluators: [builtin.relevance]\ntarget:\n  type: prompt\n",
 			wantErr: "is not supported",
 		},
 		{
 			name: "invalid evaluation level",
-			body: "evals:\n  - name: g\n    evaluators: [builtin.relevance]\n" +
-				"    options:\n      evaluation_level: sentence\n",
+			body: "evaluators: [builtin.relevance]\n" +
+				"options:\n  evaluation_level: sentence\n",
 			wantErr: "evaluation_level",
-		},
-		{
-			name:    "duplicate dataset",
-			body:    "datasets:\n  - name: d\n  - name: d\n",
-			wantErr: "duplicate dataset name",
 		},
 	}
 
@@ -173,55 +210,73 @@ func TestValidate_Rejects(t *testing.T) {
 	}
 }
 
-func TestResolveGroup(t *testing.T) {
-	single := loadFromString(t, sampleDeployConfig)
+// One file is one eval, named after the file, so the directory listing is the
+// list of evals a project declares.
+func TestResolveEvalConfigPath(t *testing.T) {
+	write := func(t *testing.T, dir string, names ...string) {
+		t.Helper()
+		for _, n := range names {
+			require.NoError(t, os.WriteFile(
+				filepath.Join(dir, n), []byte("evaluators: [builtin.relevance]\n"), 0o600))
+		}
+	}
 
-	t.Run("only group is used when unnamed", func(t *testing.T) {
-		g, err := single.ResolveGroup("")
+	t.Run("the only eval is used when unnamed", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, dir, "pr-gate.yaml", "generate.yaml")
+
+		path, err := ResolveEvalConfigPath(dir, "")
 		require.NoError(t, err)
-		require.Equal(t, "pr-gate", g.Name)
+		require.Equal(t, filepath.Join(dir, "pr-gate.yaml"), path,
+			"the generation spec shares the directory and is not an eval")
 	})
 
-	t.Run("named group", func(t *testing.T) {
-		g, err := single.ResolveGroup("pr-gate")
+	t.Run("named eval", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, dir, "pr-gate.yaml", "nightly.yaml")
+
+		path, err := ResolveEvalConfigPath(dir, "nightly")
 		require.NoError(t, err)
-		require.Equal(t, "pr-gate", g.Name)
+		require.Equal(t, filepath.Join(dir, "nightly.yaml"), path)
 	})
 
 	t.Run("unknown name is an error", func(t *testing.T) {
-		_, err := single.ResolveGroup("nope")
+		dir := t.TempDir()
+		write(t, dir, "pr-gate.yaml")
+
+		_, err := ResolveEvalConfigPath(dir, "nope")
 		require.ErrorContains(t, err, "is not declared")
 	})
 
 	t.Run("ambiguous without a name", func(t *testing.T) {
-		multi := loadFromString(t,
-			"evals:\n  - name: pr-gate\n    evaluators: [builtin.relevance]\n"+
-				"  - name: nightly\n    evaluators: [builtin.relevance]\n")
-		_, err := multi.ResolveGroup("")
+		dir := t.TempDir()
+		write(t, dir, "pr-gate.yaml", "nightly.yaml")
+
+		_, err := ResolveEvalConfigPath(dir, "")
 		require.ErrorContains(t, err, "--eval")
 		require.ErrorContains(t, err, "nightly")
 	})
 
-	t.Run("empty config", func(t *testing.T) {
-		_, err := (&EvalConfig{}).ResolveGroup("")
+	t.Run("empty directory", func(t *testing.T) {
+		_, err := ResolveEvalConfigPath(t.TempDir(), "")
 		require.ErrorContains(t, err, "no evals")
 	})
 }
 
-// local_dir accepts a directory or an explicit file path.
+// outputDir accepts a directory or an explicit file path.
 func TestArtifactPath(t *testing.T) {
 	cases := []struct {
-		name     string
-		localDir string
-		resource string
-		ext      string
-		want     string
+		name      string
+		outputDir string
+		resource  string
+		ext       string
+		want      string
 	}{
 		{"directory derives the file name", "datasets", "support-golden", ".jsonl",
 			filepath.Join("base", "datasets", "support-golden.jsonl")},
 		{"explicit file path is used as-is", "generated/datasets/support-golden.jsonl", "ignored", ".jsonl",
 			filepath.Join("base", "generated", "datasets", "support-golden.jsonl")},
-		{"empty local_dir falls back to the base", "", "support-quality", ".json",
+		{"empty outputDir falls back to the base", "", "support-quality", ".json",
 			filepath.Join("base", "support-quality.json")},
 		{"yaml rubric file path", "generated/rubrics/quality.yaml", "ignored", ".json",
 			filepath.Join("base", "generated", "rubrics", "quality.yaml")},
@@ -229,7 +284,7 @@ func TestArtifactPath(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, ArtifactPath("base", tc.localDir, tc.resource, tc.ext))
+			require.Equal(t, tc.want, ArtifactPath("base", tc.outputDir, tc.resource, tc.ext))
 		})
 	}
 }

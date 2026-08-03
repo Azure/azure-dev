@@ -269,10 +269,14 @@ func resolveEvalID(
 		envKeyEvalID)
 }
 
-// addEvalFlag registers the flag that names a group from the config, so
-// every command taking an eval-id can reach a group by the name its author
-// used.
-// addEvalFlags registers the two ways to say which group a command acts
+// addEvalFlag registers the flag that names an eval from the config, for
+// commands that never take a raw service id.
+func addEvalFlag(cmd *cobra.Command, target *string) {
+	cmd.Flags().StringVar(target, "eval", "",
+		"Name of the eval declared in azure.yaml.")
+}
+
+// addEvalFlags registers the two ways to say which eval a command acts
 // on: --eval names one from the config, --eval-id gives its service id.
 //
 // The id is also accepted as a positional argument. The flag exists because
@@ -280,8 +284,7 @@ func resolveEvalID(
 // it there should not have to find out that the sibling commands take only a
 // positional.
 func addEvalFlags(cmd *cobra.Command, target *string) {
-	cmd.Flags().StringVar(target, "eval", "",
-		"Name an evals entry from the config instead of passing its id.")
+	addEvalFlag(cmd, target)
 	cmd.Flags().String("eval-id", "",
 		"Id of the eval. Same as passing the id as an argument.")
 }

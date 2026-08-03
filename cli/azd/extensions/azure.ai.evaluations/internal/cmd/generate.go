@@ -11,7 +11,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -27,36 +26,35 @@ var generatePollBudget = eval_api.PollerOptions{
 	MaxAttempts: 720, // one hour
 }
 
-// warnIgnoredTraceFields reports generation settings that are accepted but have
-// no effect yet.
-//
-// The generation API takes a day window and nothing else, so `source` and
-// `sample` are parsed and dropped. Silently discarding them is worse than not
-// accepting them: the author believes they narrowed the trace selection when
-// nothing changed.
-func warnIgnoredTraceFields(cfg *project.GenerateConfig, out io.Writer) {
-	var fields []string
+// generationPlan is everything one generation job needs, after the flags, the
+// generation spec, and the eval's own target have been reconciled.
+type generationPlan struct {
+	// Name of the artifact being generated — the positional argument.
+	Name string
+	// Agent whose context seeds generation. May be empty, in which case
+	// generation runs from the instruction alone.
+	Agent string
+	// Model deployment the generation job runs against.
+	Model string
+	// Instruction describing what the agent does and what to test.
+	Instruction string
+	// BaseDir is the directory OutputDir resolves against.
+	BaseDir string
+	// OutputDir is where the artifact is written.
+	OutputDir string
+	// SampleSize applies to dataset generation only.
+	SampleSize int
+	// TraceDays seeds generation from that many days of recent traces.
+	TraceDays int
+}
 
-	if traces := cfg.Agent.Context.Traces; traces != nil {
-		if traces.Source != "" {
-			fields = append(fields, "agent.context.traces.source")
-		}
-		if traces.Sample > 0 {
-			fields = append(fields, "agent.context.traces.sample")
-		}
+// traceOptions converts the plan's trace window into the generation client's
+// day count. Traces seed generation only; they are never a run's data source.
+func (p generationPlan) traceOptions() *eval_api.TraceOptions {
+	if p.TraceDays <= 0 {
+		return nil
 	}
-	if len(fields) == 0 {
-		return
-	}
-
-	verb := "has"
-	if len(fields) > 1 {
-		verb = "have"
-	}
-	fmt.Fprintf(out,
-		"warning: %s %s no effect yet; generation is seeded from the agent's "+
-			"instructions and, when a window is set, its traces.\n",
-		strings.Join(fields, " and "), verb)
+	return &eval_api.TraceOptions{Days: p.TraceDays}
 }
 
 // resolveInstruction returns the generation instruction, reading it from a
@@ -82,23 +80,19 @@ func resolveInstruction(inline, path string) (string, error) {
 
 // generationModel returns the deployment both generation jobs run against.
 //
-// Dataset generation has no model of its own: the spec carries one judge model
-// and both jobs use it.
+// Dataset generation has no model of its own: the spec carries one generation
+// model and both jobs use it.
 func generationModel(cfg *project.GenerateConfig) string {
-	if cfg.Generate.Rubric == nil {
-		return ""
-	}
-	return cfg.Generate.Rubric.Model
+	return cfg.GenerationModel
 }
 
-// agentContextInstructions reads the instructions named by
-// `agent.context.instructions`, relative to the spec that declared them.
+// declaredInstructions reads the file named by a generation entry's
+// `instructions`, relative to the spec that declared it.
 //
-// A missing file is not an error. `init` writes the field pointing at a
-// conventional path before that file exists, so treating its absence as a
-// failure would break the flow it scaffolds.
-func agentContextInstructions(cfg *project.GenerateConfig, configPath string) (string, error) {
-	named := cfg.Agent.Context.Instructions
+// A missing file is not an error. The path can be written before the file
+// exists, so treating its absence as a failure would break the flow `init`
+// scaffolds.
+func declaredInstructions(named, configPath string) (string, error) {
 	if named == "" {
 		return "", nil
 	}
@@ -112,7 +106,7 @@ func agentContextInstructions(cfg *project.GenerateConfig, configPath string) (s
 		return "", nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("reading agent.context.instructions %q: %w", named, err)
+		return "", fmt.Errorf("reading instructions %q: %w", named, err)
 	}
 	return strings.TrimSpace(string(raw)), nil
 }
@@ -128,8 +122,7 @@ func agentContextInstructions(cfg *project.GenerateConfig, configPath string) (s
 // which is the flow `init` sets up.
 func (ec *evalContext) resolveGenerationInstruction(
 	ctx context.Context,
-	cfg *project.GenerateConfig,
-	explicit, configPath string,
+	explicit, declared, configPath, agentName string,
 	out io.Writer,
 	quiet bool,
 ) (string, error) {
@@ -137,7 +130,7 @@ func (ec *evalContext) resolveGenerationInstruction(
 		return explicit, nil
 	}
 
-	fromFile, err := agentContextInstructions(cfg, configPath)
+	fromFile, err := declaredInstructions(declared, configPath)
 	if err != nil {
 		return "", err
 	}
@@ -145,98 +138,39 @@ func (ec *evalContext) resolveGenerationInstruction(
 		return fromFile, nil
 	}
 
-	if cfg.Agent.Name == "" {
+	if agentName == "" {
 		return "", nil
 	}
-	agent, err := ec.evalClient.GetAgent(ctx, cfg.Agent.Name, ProjectEndpointAPIVersion)
+	agent, err := ec.evalClient.GetAgent(ctx, agentName, ProjectEndpointAPIVersion)
 	if err != nil {
 		// Generation can still proceed from the agent source alone, so a
 		// failure to read the agent is reported without stopping.
 		if !quiet {
 			fmt.Fprintf(out, "  warning: could not read agent %q for generation context: %v\n",
-				cfg.Agent.Name, err)
+				agentName, err)
 		}
 		return "", nil
 	}
 	instructions := agent.Instructions()
 	if instructions != "" && !quiet {
-		fmt.Fprintf(out, "  Seeding generation from the instructions of agent %q.\n", cfg.Agent.Name)
+		fmt.Fprintf(out, "  Seeding generation from the instructions of agent %q.\n", agentName)
 	}
 	return instructions, nil
-}
-
-// resolveGenerateConfig loads the spec when present, then layers flags on top.
-// A missing file is not an error: flags alone are sufficient.
-func resolveGenerateConfig(
-	path, target, evalModel, datasetFlag string,
-	maxSamples, traceDays int,
-) (*project.GenerateConfig, error) {
-	cfg := &project.GenerateConfig{}
-
-	if _, err := os.Stat(path); err == nil {
-		loaded, err := project.LoadGenerateConfig(path)
-		if err != nil {
-			return nil, err
-		}
-		cfg = loaded
-	}
-
-	if target != "" {
-		cfg.Agent.Name = target
-	}
-	if cfg.Agent.Name == "" {
-		return nil, requireFlag("target")
-	}
-
-	if cfg.Generate.Rubric == nil {
-		cfg.Generate.Rubric = &project.RubricSpec{
-			Name:     cfg.Agent.Name + "-quality",
-			LocalDir: "./" + project.DefaultEvaluatorsDir,
-		}
-	}
-	if cfg.Generate.Dataset == nil && datasetFlag == "" {
-		cfg.Generate.Dataset = &project.DatasetSpec{
-			Name:       cfg.Agent.Name + "-golden",
-			Strategy:   project.StrategySynthetic,
-			SampleSize: project.DefaultSampleSize,
-			LocalDir:   "./" + project.DefaultDatasetsDir,
-		}
-	}
-
-	if evalModel != "" {
-		cfg.Generate.Rubric.Model = evalModel
-	}
-	if maxSamples > 0 && cfg.Generate.Dataset != nil {
-		cfg.Generate.Dataset.SampleSize = maxSamples
-	}
-	if cfg.Generate.Dataset != nil && cfg.Generate.Dataset.SampleSize == 0 {
-		cfg.Generate.Dataset.SampleSize = project.DefaultSampleSize
-	}
-	if traceDays > 0 {
-		if cfg.Agent.Context.Traces == nil {
-			cfg.Agent.Context.Traces = &project.TraceSpec{}
-		}
-		cfg.Agent.Context.Traces.Window = fmt.Sprintf("%dd", traceDays)
-	}
-
-	return cfg, nil
 }
 
 // generateRubric submits the evaluator generation job and saves the rubric.
 func (ec *evalContext) generateRubric(
 	ctx context.Context,
-	cfg *project.GenerateConfig,
-	instruction, baseDir string,
+	plan generationPlan,
 	out io.Writer,
 	noWait bool,
 ) (*project.ArtifactRef, error) {
-	spec := cfg.Generate.Rubric
-	fmt.Fprintf(out, "Generating rubric %s...\n", spec.Name)
+	fmt.Fprintf(out, "Generating rubric %s...\n", plan.Name)
 
 	sources := eval_api.BuildGenerationSources(
-		"agent", cfg.Agent.Name, "", instruction, traceOptions(cfg),
+		"agent", plan.Agent, "", plan.Instruction, plan.traceOptions(),
 	)
-	req := eval_api.NewEvaluatorGenerationJobRequest(spec.Name, spec.Model, sources)
+	req := eval_api.NewEvaluatorGenerationJobRequest(plan.Name, plan.Model, sources)
 
 	job, err := ec.evalClient.CreateEvaluatorGenerationJob(ctx, req, ProjectEndpointAPIVersion)
 	if err != nil {
@@ -253,31 +187,28 @@ func (ec *evalContext) generateRubric(
 		return nil, fmt.Errorf("rubric generation: %w", err)
 	}
 
-	path := project.ArtifactPath(baseDir, spec.LocalDir, spec.Name, ".json")
+	path := project.ArtifactPath(plan.BaseDir, plan.OutputDir, plan.Name, ".json")
 	if err := writeRubric(path, completed.Result); err != nil {
 		return nil, err
 	}
 	fmt.Fprintf(out, "  wrote %s\n", path)
 
-	return &project.ArtifactRef{Name: spec.Name, Source: relativeSource(baseDir, path)}, nil
+	return &project.ArtifactRef{Name: plan.Name, Source: relativeSource(plan.BaseDir, path)}, nil
 }
 
 // generateDataset submits the data generation job and downloads the result.
 func (ec *evalContext) generateDataset(
 	ctx context.Context,
-	cfg *project.GenerateConfig,
-	instruction, baseDir string,
+	plan generationPlan,
 	out io.Writer,
 	noWait bool,
 ) (*project.ArtifactRef, error) {
-	spec := cfg.Generate.Dataset
-	fmt.Fprintf(out, "Generating dataset %s (%d samples)...\n", spec.Name, spec.SampleSize)
+	fmt.Fprintf(out, "Generating dataset %s (%d samples)...\n", plan.Name, plan.SampleSize)
 
 	sources := eval_api.BuildGenerationSources(
-		"agent", cfg.Agent.Name, "", instruction, traceOptions(cfg),
+		"agent", plan.Agent, "", plan.Instruction, plan.traceOptions(),
 	)
-	model := generationModel(cfg)
-	req := eval_api.NewDataGenerationJobRequest(spec.Name, model, spec.SampleSize, sources)
+	req := eval_api.NewDataGenerationJobRequest(plan.Name, plan.Model, plan.SampleSize, sources)
 
 	job, err := ec.evalClient.CreateDataGenerationJob(ctx, req, DataGenerationAPIVersion)
 	if err != nil {
@@ -299,10 +230,10 @@ func (ec *evalContext) generateDataset(
 		if eval_api.HasPromptSource(promptOnly) {
 			fmt.Fprintf(out,
 				"  warning: generating from agent %q failed in the service; "+
-					"retrying from the instruction alone.\n", cfg.Agent.Name)
+					"retrying from the instruction alone.\n", plan.Agent)
 
 			req = eval_api.NewDataGenerationJobRequest(
-				spec.Name, model, spec.SampleSize, promptOnly)
+				plan.Name, plan.Model, plan.SampleSize, promptOnly)
 			job, err = ec.evalClient.CreateDataGenerationJob(ctx, req, DataGenerationAPIVersion)
 			if err != nil {
 				return nil, fmt.Errorf("submitting the data generation job: %w", err)
@@ -312,7 +243,7 @@ func (ec *evalContext) generateDataset(
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("data generation: %w", explainDataGenerationFailure(err, cfg.Agent.Name))
+		return nil, fmt.Errorf("data generation: %w", explainDataGenerationFailure(err, plan.Agent))
 	}
 
 	name, version := completed.ResolvedNameVersion()
@@ -332,7 +263,7 @@ func (ec *evalContext) generateDataset(
 		return nil, fmt.Errorf("downloading the generated dataset %q: %w", name, err)
 	}
 
-	path := project.ArtifactPath(baseDir, spec.LocalDir, spec.Name, ".jsonl")
+	path := project.ArtifactPath(plan.BaseDir, plan.OutputDir, plan.Name, ".jsonl")
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return nil, fmt.Errorf("creating %q: %w", filepath.Dir(path), err)
 	}
@@ -341,7 +272,7 @@ func (ec *evalContext) generateDataset(
 	}
 	fmt.Fprintf(out, "  wrote %s\n", path)
 
-	return &project.ArtifactRef{Name: spec.Name, Source: relativeSource(baseDir, path)}, nil
+	return &project.ArtifactRef{Name: plan.Name, Source: relativeSource(plan.BaseDir, path)}, nil
 }
 
 // isAgentSeededGenerationFailure recognises the service-side failure that hits
@@ -391,35 +322,6 @@ func (ec *evalContext) pollGeneration(
 	poller := eval_api.NewPoller(operationID, apiVersion, get)
 	poller.Options = generatePollBudget
 	return poller.Poll(ctx)
-}
-
-// traceOptions converts the config's trace window into the generation client's
-// day count. Traces seed rubric generation only; they are never a run's data
-// source.
-func traceOptions(cfg *project.GenerateConfig) *eval_api.TraceOptions {
-	t := cfg.Agent.Context.Traces
-	if t == nil {
-		return nil
-	}
-	days := parseWindowDays(t.Window)
-	if days <= 0 {
-		return nil
-	}
-	return &eval_api.TraceOptions{Days: days}
-}
-
-// parseWindowDays reads a window such as "30d" or a bare day count.
-func parseWindowDays(window string) int {
-	w := strings.TrimSpace(strings.ToLower(window))
-	if w == "" {
-		return 0
-	}
-	w = strings.TrimSuffix(w, "d")
-	days, err := strconv.Atoi(w)
-	if err != nil {
-		return 0
-	}
-	return days
 }
 
 // writeRubric persists only the rubric dimensions so the developer can edit

@@ -6,7 +6,6 @@ package cmd
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"azureaieval/internal/project"
@@ -15,133 +14,157 @@ import (
 )
 
 // `generate` decides what to submit before it touches the network, so the plan
-// it builds — which artifacts, from what instruction, at what sample size — is
-// checkable without paying for a generation job. These are the parts that
-// cannot be observed afterwards: once the jobs are submitted, a wrong default
-// is indistinguishable from an intended one.
+// it builds — which agent, what model, where the artifact lands, at what sample
+// size — is checkable without paying for a generation job. These are the parts
+// that cannot be observed afterwards: once the job is submitted, a wrong
+// default is indistinguishable from an intended one.
 
-func writeConfig(t *testing.T, body string) string {
+// evalsDir writes a generation spec and returns the flags pointing at it.
+func evalsDir(t *testing.T, generateBody string, files map[string]string) *generateFlags {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "eval_generate.yaml")
-	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
-	return path
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "generate.yaml")
+	if generateBody != "" {
+		require.NoError(t, os.WriteFile(configPath, []byte(generateBody), 0o600))
+	}
+	for name, body := range files {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600))
+	}
+	return &generateFlags{configPath: configPath}
 }
 
-// A spec is optional, so the defaults are what most callers actually run with.
-func TestResolveGenerateConfigDefaultsFromFlagsAlone(t *testing.T) {
-	absent := filepath.Join(t.TempDir(), "absent.yaml")
-
-	cfg, err := resolveGenerateConfig(absent, "shop-agent", "gpt-4o-mini", "", 0, 0)
+func loadSpec(t *testing.T, f *generateFlags) *project.GenerateConfig {
+	t.Helper()
+	cfg, err := project.LoadGenerateConfig(f.configPath)
 	require.NoError(t, err)
-	require.NoError(t, cfg.Validate())
-
-	require.Equal(t, "shop-agent", cfg.Agent.Name)
-	require.NotNil(t, cfg.Generate.Rubric)
-	require.Equal(t, "shop-agent-quality", cfg.Generate.Rubric.Name)
-	require.Equal(t, "gpt-4o-mini", cfg.Generate.Rubric.Model)
-	require.Equal(t, "./"+project.DefaultEvaluatorsDir, cfg.Generate.Rubric.LocalDir)
-
-	require.NotNil(t, cfg.Generate.Dataset)
-	require.Equal(t, "shop-agent-golden", cfg.Generate.Dataset.Name)
-	require.Equal(t, project.StrategySynthetic, cfg.Generate.Dataset.Strategy)
-	require.Equal(t, project.DefaultSampleSize, cfg.Generate.Dataset.SampleSize)
-	require.Equal(t, "./"+project.DefaultDatasetsDir, cfg.Generate.Dataset.LocalDir)
+	return cfg
 }
 
-// Without a target there is nothing to generate from, and the refusal has to
-// name the flag rather than a config field the caller may not have.
-func TestResolveGenerateConfigRequiresATarget(t *testing.T) {
-	_, err := resolveGenerateConfig(
-		filepath.Join(t.TempDir(), "absent.yaml"), "", "gpt-4o-mini", "", 0, 0)
+// A spec is optional, so flags alone are what most callers actually run with.
+func TestResolvePlan_FromFlagsAlone(t *testing.T) {
+	f := evalsDir(t, "", nil)
+	f.target = "shop-agent"
+	f.model = "gpt-4o-mini"
+
+	plan, err := resolvePlan(f, loadSpec(t, f), "shop-golden",
+		datasetGenEntry(loadSpec(t, f), "shop-golden", 0))
+	require.NoError(t, err)
+
+	require.Equal(t, "shop-golden", plan.Name)
+	require.Equal(t, "shop-agent", plan.Agent)
+	require.Equal(t, "gpt-4o-mini", plan.Model)
+	require.Equal(t, "./"+project.DefaultDatasetsDir, plan.OutputDir)
+	require.Equal(t, project.DefaultSampleSize, plan.SampleSize)
+}
+
+// Without a model there is nothing to bill the job against, and the refusal has
+// to name both ways of supplying one.
+func TestResolvePlan_RequiresAGenerationModel(t *testing.T) {
+	f := evalsDir(t, "", nil)
+	f.target = "shop-agent"
+
+	_, err := resolvePlan(f, loadSpec(t, f), "d", genEntry{})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "--target")
+	require.Contains(t, err.Error(), "--generation-model")
+	require.Contains(t, err.Error(), "generationModel")
 }
 
-func TestResolveGenerateConfigReadsTheSpec(t *testing.T) {
-	path := writeConfig(t, `
-agent:
-  name: from-spec
-  context:
-    instructions: ./instructions.md
-    traces:
-      window: 7d
-      source: ignored-today
-      sample: 5
-generate:
-  rubric:
-    name: spec-rubric
-    model: gpt-4o
-    local_dir: ./custom-evaluators
-  dataset:
-    name: spec-dataset
-    strategy: synthetic
+// The spec is read per artifact name, so generating one artifact never picks up
+// the other's settings.
+func TestResolvePlan_ReadsTheNamedSpecEntry(t *testing.T) {
+	f := evalsDir(t, `
+generationModel: gpt-4o
+dataset:
+  spec-dataset:
     sampleSize: 200
-    local_dir: ./custom-datasets
-`)
+    outputDir: ./custom-datasets
+    deriveFrom: from-spec
+evaluator:
+  spec-rubric:
+    outputDir: ./custom-evaluators
+    deriveFrom: rubric-agent
+`, nil)
 
-	cfg, err := resolveGenerateConfig(path, "", "", "", 0, 0)
+	cfg := loadSpec(t, f)
+
+	ds, err := resolvePlan(f, cfg, "spec-dataset", datasetGenEntry(cfg, "spec-dataset", 0))
 	require.NoError(t, err)
-	require.NoError(t, cfg.Validate())
+	require.Equal(t, "gpt-4o", ds.Model)
+	require.Equal(t, 200, ds.SampleSize)
+	require.Equal(t, "./custom-datasets", ds.OutputDir)
+	require.Equal(t, "from-spec", ds.Agent)
 
-	require.Equal(t, "from-spec", cfg.Agent.Name)
-	require.Equal(t, "./instructions.md", cfg.Agent.Context.Instructions)
-	require.Equal(t, "spec-rubric", cfg.Generate.Rubric.Name)
-	require.Equal(t, "gpt-4o", cfg.Generate.Rubric.Model)
-	require.Equal(t, "./custom-evaluators", cfg.Generate.Rubric.LocalDir)
-	require.Equal(t, "spec-dataset", cfg.Generate.Dataset.Name)
-	require.Equal(t, 200, cfg.Generate.Dataset.SampleSize)
+	ev, err := resolvePlan(f, cfg, "spec-rubric", evaluatorGenEntry(cfg, "spec-rubric", 0))
+	require.NoError(t, err)
+	require.Equal(t, "./custom-evaluators", ev.OutputDir)
+	require.Equal(t, "rubric-agent", ev.Agent)
 
-	require.NotNil(t, cfg.Agent.Context.Traces)
-	require.Equal(t, "7d", cfg.Agent.Context.Traces.Window)
-	require.Equal(t, 5, cfg.Agent.Context.Traces.Sample)
+	// An artifact the spec says nothing about still generates, on the defaults.
+	other, err := resolvePlan(f, cfg, "unlisted", datasetGenEntry(cfg, "unlisted", 0))
+	require.NoError(t, err)
+	require.Equal(t, project.DefaultSampleSize, other.SampleSize)
+	require.Equal(t, "./"+project.DefaultDatasetsDir, other.OutputDir)
 }
 
 // Flags win over the spec, which is what makes a one-off run possible without
 // editing a file that is checked in.
-func TestResolveGenerateConfigLayersFlagsOverTheSpec(t *testing.T) {
-	path := writeConfig(t, `
-agent:
-  name: from-spec
-generate:
-  rubric:
-    name: spec-rubric
-    model: gpt-4o
-  dataset:
-    name: spec-dataset
+func TestResolvePlan_LayersFlagsOverTheSpec(t *testing.T) {
+	f := evalsDir(t, `
+generationModel: gpt-4o
+dataset:
+  spec-dataset:
     sampleSize: 200
-`)
+    outputDir: ./custom-datasets
+    deriveFrom: from-spec
+`, nil)
+	f.target = "from-flag"
+	f.model = "gpt-4o-mini"
+	f.outputDir = "./from-flag-dir"
 
-	cfg, err := resolveGenerateConfig(path, "from-flag", "gpt-4o-mini", "", 500, 14)
+	cfg := loadSpec(t, f)
+	plan, err := resolvePlan(f, cfg, "spec-dataset", datasetGenEntry(cfg, "spec-dataset", 500))
 	require.NoError(t, err)
-	require.NoError(t, cfg.Validate())
 
-	require.Equal(t, "from-flag", cfg.Agent.Name)
-	require.Equal(t, "gpt-4o-mini", cfg.Generate.Rubric.Model)
-	require.Equal(t, 500, cfg.Generate.Dataset.SampleSize)
-	require.Equal(t, "14d", cfg.Agent.Context.Traces.Window,
-		"--trace-days must reach the spec as a window, since that is the only "+
-			"trace field the generation API takes")
-
-	// The rubric name is not derived when the spec named one, so a --target
-	// override must not silently rename an artifact the spec author declared.
-	require.Equal(t, "spec-rubric", cfg.Generate.Rubric.Name)
+	require.Equal(t, "from-flag", plan.Agent)
+	require.Equal(t, "gpt-4o-mini", plan.Model)
+	require.Equal(t, "./from-flag-dir", plan.OutputDir)
+	require.Equal(t, 500, plan.SampleSize)
 }
 
-// A spec that declares a dataset without a size still has to submit a legal
-// job, so the default is applied rather than left at zero.
-func TestResolveGenerateConfigFillsAMissingSampleSize(t *testing.T) {
-	path := writeConfig(t, `
-agent:
-  name: sized
-generate:
-  dataset:
-    name: no-size
-`)
+// The target is already declared on the eval, so `generate` does not need it
+// repeated on every invocation.
+func TestResolvePlan_FallsBackToTheEvalTarget(t *testing.T) {
+	f := evalsDir(t, "generationModel: gpt-4o\n", map[string]string{
+		"support-agent-smoke.yaml": "evaluators: [builtin.relevance]\n" +
+			"target:\n  type: agent\n  name: support-agent\n",
+	})
 
-	cfg, err := resolveGenerateConfig(path, "", "", "", 0, 0)
+	cfg := loadSpec(t, f)
+	plan, err := resolvePlan(f, cfg, "support-agent-smoke",
+		datasetGenEntry(cfg, "support-agent-smoke", 0))
 	require.NoError(t, err)
-	require.Equal(t, project.DefaultSampleSize, cfg.Generate.Dataset.SampleSize)
-	require.NoError(t, cfg.Validate())
+	require.Equal(t, "support-agent", plan.Agent,
+		"the eval's declared target is the agent to generate from")
+}
+
+// With more than one eval the target is ambiguous, so nothing is guessed:
+// generation falls back to the instruction alone rather than picking one.
+func TestResolvePlan_AmbiguousEvalTargetIsNotGuessed(t *testing.T) {
+	f := evalsDir(t, "generationModel: gpt-4o\n", map[string]string{
+		"a.yaml": "target:\n  type: agent\n  name: agent-a\n",
+		"b.yaml": "target:\n  type: agent\n  name: agent-b\n",
+	})
+
+	cfg := loadSpec(t, f)
+	plan, err := resolvePlan(f, cfg, "d", datasetGenEntry(cfg, "d", 0))
+	require.NoError(t, err)
+	require.Empty(t, plan.Agent)
+
+	// Naming one resolves it.
+	f.evalName = "b"
+	plan, err = resolvePlan(f, cfg, "d", datasetGenEntry(cfg, "d", 0))
+	require.NoError(t, err)
+	require.Equal(t, "agent-b", plan.Agent)
 }
 
 // The bounds are the service's, and the boundaries themselves have to be
@@ -158,43 +181,24 @@ func TestGenerateSampleSizeBounds(t *testing.T) {
 		{project.MaxSampleSize, true},
 		{project.MaxSampleSize + 1, false},
 	} {
-		cfg, err := resolveGenerateConfig(
-			filepath.Join(t.TempDir(), "absent.yaml"),
-			"bounded", "gpt-4o-mini", "", tc.size, 0)
-		require.NoError(t, err)
-		require.Equal(t, tc.size, cfg.Generate.Dataset.SampleSize)
-
-		err = cfg.Validate()
+		err := project.ValidateSampleSize(tc.size)
 		if tc.allowed {
 			require.NoErrorf(t, err, "%d is inside the service's range", tc.size)
 			continue
 		}
 		require.Errorf(t, err, "%d is outside the service's range", tc.size)
-		require.Contains(t, err.Error(), "sampleSize")
+		require.Contains(t, err.Error(), "must be between")
 	}
 }
 
-// --dataset and --evaluator both mean "use this one". Only the dataset side is
-// resolved here; the evaluator side is decided in the command body, so it is
-// covered by the CLI test that watches for the skip message.
-func TestResolveGenerateConfigSkipsTheDatasetWhenOneIsSupplied(t *testing.T) {
-	cfg, err := resolveGenerateConfig(
-		filepath.Join(t.TempDir(), "absent.yaml"),
-		"supplied", "gpt-4o-mini", "prod-sample", 0, 0)
-	require.NoError(t, err)
-	require.Nil(t, cfg.Generate.Dataset, "a supplied dataset must not be generated")
-	require.NotNil(t, cfg.Generate.Rubric)
-	require.NoError(t, cfg.Validate())
-}
-
-// Both jobs bill against one deployment, so a spec with no rubric has no model
-// to run either of them.
-func TestGenerationModelComesFromTheRubricSpec(t *testing.T) {
-	require.Equal(t, "", generationModel(&project.GenerateConfig{}))
-
-	cfg := &project.GenerateConfig{}
-	cfg.Generate.Rubric = &project.RubricSpec{Name: "r", Model: "gpt-4o"}
-	require.Equal(t, "gpt-4o", generationModel(cfg))
+// Trace days come from the spec, and the flag overrides them.
+func TestEvaluatorGenEntry_TraceDays(t *testing.T) {
+	cfg := &project.GenerateConfig{
+		Evaluator: map[string]project.EvaluatorGenSpec{"r": {TraceDays: 7}},
+	}
+	require.Equal(t, 7, evaluatorGenEntry(cfg, "r", 0).traceDays)
+	require.Equal(t, 30, evaluatorGenEntry(cfg, "r", 30).traceDays)
+	require.Zero(t, evaluatorGenEntry(cfg, "absent", 0).traceDays)
 }
 
 func TestResolveInstruction(t *testing.T) {
@@ -229,25 +233,4 @@ func TestResolveInstruction(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "--agent-instruction-file")
 	})
-}
-
-// The generation API takes a day window and nothing else, so the two fields it
-// drops are reported rather than silently discarded.
-func TestWarnIgnoredTraceFields(t *testing.T) {
-	cfg := &project.GenerateConfig{}
-	cfg.Agent.Context.Traces = &project.TraceSpec{Window: "7d", Source: "some-source", Sample: 5}
-
-	var out strings.Builder
-	warnIgnoredTraceFields(cfg, &out)
-	require.Contains(t, out.String(), "agent.context.traces.source")
-	require.Contains(t, out.String(), "agent.context.traces.sample")
-	require.NotContains(t, out.String(), "agent.context.traces.window",
-		"the window is the one trace field the API takes, so it is not a no-op")
-
-	// A window on its own is fully supported and must not produce a warning.
-	quiet := &project.GenerateConfig{}
-	quiet.Agent.Context.Traces = &project.TraceSpec{Window: "7d"}
-	out.Reset()
-	warnIgnoredTraceFields(quiet, &out)
-	require.Empty(t, out.String())
 }

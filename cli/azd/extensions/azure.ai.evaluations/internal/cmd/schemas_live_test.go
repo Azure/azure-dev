@@ -82,11 +82,13 @@ func TestLiveConversationEvaluatorBindsMessages(t *testing.T) {
 	}
 
 	plan, err := planCriterion(
-		evalcore.EvaluatorRef{Name: name},
+		evalcore.EvaluatorRef{
+			Name:                     name,
+			InitializationParameters: map[string]any{"deployment_name": judge},
+		},
 		schemas[name],
 		nil, // no target: the dataset holds both sides of the exchange
 		map[string]bool{conversationField: true},
-		judge,
 		"conversation",
 	)
 	require.NoError(t, err)

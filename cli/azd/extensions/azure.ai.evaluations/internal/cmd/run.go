@@ -53,7 +53,6 @@ func newRunCommand() *cobra.Command {
 // buildRunCommand builds `run start`.
 func buildRunCommand(use, short string) *cobra.Command {
 	var (
-		configPath  string
 		groupName   string
 		evalID      string
 		runName     string
@@ -86,7 +85,12 @@ func buildRunCommand(use, short string) *cobra.Command {
 
 			// --eval-id bypasses the config entirely.
 			var group *project.Eval
+			configPath := ""
 			if evalID == "" {
+				configPath, err = project.ResolveEvalConfigPath(project.DefaultEvalDir, groupName)
+				if err != nil {
+					return err
+				}
 				cfg, err := project.LoadEvalConfig(configPath)
 				if err != nil {
 					return err
@@ -94,10 +98,8 @@ func buildRunCommand(use, short string) *cobra.Command {
 				if err := cfg.Validate(); err != nil {
 					return err
 				}
-				group, err = cfg.ResolveGroup(groupName)
-				if err != nil {
-					return err
-				}
+				resolved := cfg.Eval(evalNameFromPath(configPath))
+				group = &resolved
 
 				if err := ec.checkDatasetRegistered(ctx, cfg, group, configPath); err != nil {
 					return err
@@ -105,7 +107,7 @@ func buildRunCommand(use, short string) *cobra.Command {
 
 				evalID, err = ec.resolveEvalIDFromConfig(
 					ctx, group, configPath, resolveLevel(level, group),
-					len(cfg.Evals) == 1, out, isJSON(cmd))
+					out, isJSON(cmd))
 				if err != nil {
 					return err
 				}
@@ -190,10 +192,8 @@ func buildRunCommand(use, short string) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&configPath, "config", project.DefaultDeployConfig,
-		"Path to the eval deployment config.")
 	cmd.Flags().StringVar(&groupName, "eval", "",
-		"Which evals entry to run. Defaults to the only one.")
+		"Name of the eval to run. Defaults to the only one declared.")
 	cmd.Flags().StringVar(&evalID, "eval-id", "",
 		"Run against an existing eval by id, ignoring the config.")
 	cmd.Flags().StringVar(&runName, "name", "", "Name for this run. Defaults to the eval name plus a timestamp.")
@@ -225,7 +225,6 @@ func (ec *evalContext) resolveEvalIDFromConfig(
 	group *project.Eval,
 	configPath string,
 	level string,
-	soleGroup bool,
 	out interface{ Write([]byte) (int, error) },
 	jsonMode bool,
 ) (string, error) {
@@ -233,7 +232,7 @@ func (ec *evalContext) resolveEvalIDFromConfig(
 		return group.ID, nil
 	}
 
-	for _, key := range evalIDKeys(group.Name, soleGroup) {
+	for _, key := range evalIDKeys(group.Name, filepath.Dir(configPath)) {
 		cached := ec.getEnvValue(ctx, key)
 		if cached == "" {
 			continue
@@ -279,18 +278,18 @@ func (ec *evalContext) resolveEvalIDFromConfig(
 	return created.ID, nil
 }
 
-// evalIDKeys lists the env entries that may hold this group's id, most
+// evalIDKeys lists the env entries that may hold this eval's id, most
 // specific first.
 //
 // The per-name entry is what the extension writes. EVAL_ID is also the
-// documented way to point a config at a group that already exists, created in
+// documented way to point a config at an eval that already exists, created in
 // the portal or by another tool, so it stays readable — but only when the
-// config declares a single group. With more than one there is no way to tell
-// which group a shared entry refers to, and reading it anyway is what let a
-// second group adopt the first one's id.
-func evalIDKeys(name string, soleGroup bool) []string {
+// project declares a single eval. With more than one there is no way to tell
+// which eval a shared entry refers to, and reading it anyway is what let a
+// second eval adopt the first one's id.
+func evalIDKeys(name, evalDir string) []string {
 	keys := []string{idKey("eval", name)}
-	if soleGroup {
+	if names, err := project.EvalNamesIn(evalDir); err == nil && len(names) == 1 {
 		keys = append(keys, envKeyEvalID)
 	}
 	return keys
@@ -318,8 +317,8 @@ func (ec *evalContext) checkDatasetRegistered(
 		return nil
 	}
 
-	decl, ok := cfg.Dataset(group.Dataset)
-	if !ok {
+	decl := cfg.Dataset
+	if decl == nil {
 		return nil
 	}
 
@@ -496,14 +495,21 @@ func localDatasetPath(configPath string, group *project.Eval) string {
 	if err != nil {
 		return ""
 	}
-	decl, ok := cfg.Dataset(group.Dataset)
-	if !ok || decl.Source == "" {
+	decl := cfg.Dataset
+	if decl == nil || decl.Source == "" {
 		return ""
 	}
 	if filepath.IsAbs(decl.Source) {
 		return decl.Source
 	}
 	return filepath.Join(filepath.Dir(configPath), decl.Source)
+}
+
+// evalNameFromPath is the eval's name: one config file is one eval, and the
+// file is named after it, matching the azure.yaml service key that $refs it.
+func evalNameFromPath(configPath string) string {
+	base := filepath.Base(configPath)
+	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
 // readJSONL reads newline-delimited JSON, optionally truncating to limit rows.

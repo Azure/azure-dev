@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -20,7 +19,7 @@ import (
 // The generation spec names an instructions file relative to itself, not to the
 // working directory, so `generate --config <elsewhere>` reads the same file the
 // author sees next to the spec.
-func TestAgentContextInstructions_ResolvesRelativeToTheSpec(t *testing.T) {
+func TestDeclaredInstructions_ResolvesRelativeToTheSpec(t *testing.T) {
 	dir := t.TempDir()
 	specDir := filepath.Join(dir, "evals")
 	require.NoError(t, os.MkdirAll(filepath.Join(specDir, "agent"), 0o755))
@@ -29,28 +28,23 @@ func TestAgentContextInstructions_ResolvesRelativeToTheSpec(t *testing.T) {
 	require.NoError(t, os.WriteFile(
 		filepath.Join(specDir, "agent", "instructions.md"), []byte("  "+body+"\n"), 0o600))
 
-	cfg := &project.GenerateConfig{}
-	cfg.Agent.Context.Instructions = "./agent/instructions.md"
-
-	got, err := agentContextInstructions(cfg, filepath.Join(specDir, "eval_generate.yaml"))
+	got, err := declaredInstructions(
+		"./agent/instructions.md", filepath.Join(specDir, "generate.yaml"))
 	require.NoError(t, err)
 	assert.Equal(t, body, got, "the file's contents should be used, trimmed")
 }
 
-// `init` writes the instructions path before that file exists. Treating the
-// gap as an error would break the flow init itself scaffolds.
-func TestAgentContextInstructions_MissingFileIsNotAnError(t *testing.T) {
-	dir := t.TempDir()
-	cfg := &project.GenerateConfig{}
-	cfg.Agent.Context.Instructions = "./agent/instructions.md"
-
-	got, err := agentContextInstructions(cfg, filepath.Join(dir, "eval_generate.yaml"))
+// A path can be declared before that file exists. Treating the gap as an error
+// would break the flow `init` itself scaffolds.
+func TestDeclaredInstructions_MissingFileIsNotAnError(t *testing.T) {
+	got, err := declaredInstructions(
+		"./agent/instructions.md", filepath.Join(t.TempDir(), "generate.yaml"))
 	require.NoError(t, err)
 	assert.Empty(t, got)
 }
 
-func TestAgentContextInstructions_UnsetIsEmpty(t *testing.T) {
-	got, err := agentContextInstructions(&project.GenerateConfig{}, "eval_generate.yaml")
+func TestDeclaredInstructions_UnsetIsEmpty(t *testing.T) {
+	got, err := declaredInstructions("", "generate.yaml")
 	require.NoError(t, err)
 	assert.Empty(t, got)
 }
@@ -75,73 +69,10 @@ func TestAgentInstructions(t *testing.T) {
 	assert.Empty(t, nilAgent.Instructions())
 }
 
-// Dataset generation has no model of its own; it runs against the judge model
-// the spec declares.
+// Dataset generation has no model of its own; both jobs run against the one
+// generation model the spec declares.
 func TestGenerationModel(t *testing.T) {
-	cfg := &project.GenerateConfig{}
-	assert.Empty(t, generationModel(cfg), "no rubric means no model to borrow")
-
-	cfg.Generate.Rubric = &project.RubricSpec{Model: "gpt-4.1-nano"}
-	assert.Equal(t, "gpt-4.1-nano", generationModel(cfg))
-}
-
-// Trace selection is accepted and ignored, so it has to be called out.
-func TestWarnIgnoredFields_CoversTraceSelection(t *testing.T) {
-	cases := []struct {
-		name  string
-		build func(*project.GenerateConfig)
-		want  []string
-		quiet bool
-	}{
-		{
-			name:  "nothing set stays silent",
-			build: func(*project.GenerateConfig) {},
-			quiet: true,
-		},
-		{
-			name: "a source alone",
-			build: func(c *project.GenerateConfig) {
-				c.Agent.Context.Traces = &project.TraceSpec{Source: "app-insights"}
-			},
-			want: []string{"agent.context.traces.source", "has no effect"},
-		},
-		{
-			name: "source and sample agree in number",
-			build: func(c *project.GenerateConfig) {
-				c.Agent.Context.Traces = &project.TraceSpec{Source: "app-insights", Sample: 100}
-			},
-			want: []string{"agent.context.traces.source", "agent.context.traces.sample", "have no effect"},
-		},
-		{
-			name: "a window alone is honored, so no warning",
-			build: func(c *project.GenerateConfig) {
-				c.Agent.Context.Traces = &project.TraceSpec{Window: "7d"}
-			},
-			quiet: true,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := &project.GenerateConfig{}
-			tc.build(cfg)
-
-			var buf bytes.Buffer
-			warnIgnoredTraceFields(cfg, &buf)
-
-			if tc.quiet {
-				assert.Empty(t, buf.String())
-				return
-			}
-			for _, want := range tc.want {
-				assert.Contains(t, buf.String(), want)
-			}
-		})
-	}
-}
-
-// init scaffolds only the context fields that are read.
-func TestInitScaffold_KeepsInstructions(t *testing.T) {
-	cfg := buildGenerateScaffold("support-agent", "support-agent-quality", "gpt-4.1-nano")
-	assert.Equal(t, "./agent/instructions.md", cfg.Agent.Context.Instructions)
+	assert.Empty(t, generationModel(&project.GenerateConfig{}))
+	assert.Equal(t, "gpt-4.1-nano",
+		generationModel(&project.GenerateConfig{GenerationModel: "gpt-4.1-nano"}))
 }

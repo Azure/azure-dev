@@ -41,7 +41,7 @@ azd ai rle --help
 azd ai rle version
 ```
 
-`version` is always available. The lifecycle commands are preview-gated; if commands such as `init`, `run`, `publish`, `environment`, or `invoke` are hidden, enable the preview flag in your terminal:
+`version` is always available. The lifecycle commands are preview-gated; if commands such as `init`, `run`, `publish`, `list`, `show`, or `invoke` are hidden, enable the preview flag in your terminal:
 
 ```powershell
 $env:AZD_AI_RLE_ENABLE = "true"
@@ -173,22 +173,51 @@ azd ai rle publish --dockerfile server\Dockerfile
 List all RLE environments in the configured Foundry project:
 
 ```powershell
-azd ai rle environment list
+azd ai rle list
 ```
 
 The command uses `FOUNDRY_PROJECT_ENDPOINT` when it is set. Otherwise, it uses the project endpoint saved in the current folder's `.azd-rle.json`. Use JSON output for scripting:
 
 ```powershell
-azd ai rle environment list --output json
+azd ai rle list --output json
 ```
 
-### 5. Invoke remotely
+### 5. Show environment details
+
+Show the full details for a specific environment, including version history:
+
+```powershell
+azd ai rle show code_rl
+```
+
+If you run the command from a published environment folder, omit the name to inspect the local environment record:
+
+```powershell
+azd ai rle show
+```
+
+### 6. Invoke remotely
 
 Remote invoke uses the deployed environment, leases a sandbox from `<FOUNDRY_PROJECT_ENDPOINT>/fine_tuning/environments/<environmentId>/sandboxes/lease`, opens the sandbox `/web` UI when available (or a local proxy UI otherwise), keeps the shell attached, and releases the sandbox when the shell exits:
 
 ```powershell
 azd ai rle invoke --timeout 60
 ```
+
+To invoke an existing environment without its source code or `.azd-rle.json`, set the Foundry project endpoint and provide the environment name:
+
+```powershell
+$env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
+azd ai rle invoke code_rl
+```
+
+The command resolves the latest version and environment ID returned by the project. Pin a specific published version when needed:
+
+```powershell
+azd ai rle invoke code_rl --version 2.1.0
+```
+
+Cloud-only invocation does not create or modify `.azd-rle.json`. If the selected disk image is not ready, invoke fails with a user-facing error instead of waiting.
 
 ## Build and install from source
 

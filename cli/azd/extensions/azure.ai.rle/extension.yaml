@@ -11,7 +11,7 @@ tags:
   - ai
   - rle
 usage: $env:AZD_AI_RLE_ENABLE = "true"; azd ai rle <command> [options]
-version: 0.2.1-preview
+version: 0.3.0-preview
 examples:
   - name: init
     description: Copy the OpenEnv echo sample into a local RLE environment.
@@ -24,7 +24,10 @@ examples:
     usage: $env:AZD_AI_RLE_ENABLE = "true"; azd ai rle run
   - name: invoke
     description: Lease a deployed RLE sandbox and open an OpenEnv runtime shell.
-    usage: $env:AZD_AI_RLE_ENABLE = "true"; azd ai rle invoke
-  - name: environment list
+    usage: $env:AZD_AI_RLE_ENABLE = "true"; $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"; azd ai rle invoke <environment-name> [--version <version>]
+  - name: list
     description: List RLE environments in a Foundry project.
-    usage: $env:AZD_AI_RLE_ENABLE = "true"; $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"; azd ai rle environment list
+    usage: $env:AZD_AI_RLE_ENABLE = "true"; $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"; azd ai rle list
+  - name: show
+    description: Show the details and version history for an RLE environment.
+    usage: $env:AZD_AI_RLE_ENABLE = "true"; $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"; azd ai rle show <environment-name>

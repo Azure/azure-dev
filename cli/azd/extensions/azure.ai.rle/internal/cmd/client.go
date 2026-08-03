@@ -59,6 +59,14 @@ type listEnvironmentsResponse struct {
 	Value []environmentResource `json:"value"`
 }
 
+type environmentVersionResource struct {
+	EnvironmentId string `json:"environmentId"`
+	ProjectId     string `json:"projectId,omitempty"`
+	Version       string `json:"version,omitempty"`
+	AcrImagePath  string `json:"acrImagePath,omitempty"`
+	CreatedAt     string `json:"createdAtUtc,omitempty"`
+}
+
 type sandboxCreateRequest struct {
 	Version string `json:"version,omitempty"`
 }
@@ -166,6 +174,20 @@ func (c *rleClient) getEnvironmentVersion(
 	}
 
 	return &result, nil
+}
+
+func (c *rleClient) listEnvironmentVersions(
+	ctx context.Context,
+	name string,
+) ([]environmentVersionResource, error) {
+	path := fmt.Sprintf("%s/%s/versions", environmentCollectionPath, url.PathEscape(name))
+
+	var result []environmentVersionResource
+	if err := c.do(ctx, http.MethodGet, path, nil, &result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 func (c *rleClient) createSandbox(

@@ -101,6 +101,206 @@ func TestInvokeRemoteCreatesSandboxAndRunsShell(t *testing.T) {
 	}
 }
 
+func TestInvokeRemoteByNameUsesLatestListedVersionWithoutLocalState(t *testing.T) {
+	captureBrowserOpen(t)
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/project-1",
+	)
+
+	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health":
+			_, _ = w.Write([]byte(`{"status":"healthy"}`))
+		case "/web":
+			_, _ = w.Write([]byte("<html>environment</html>"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer envServer.Close()
+
+	var sandboxBody sandboxCreateRequest
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet &&
+			r.URL.Path == testFoundryProjectPath+environmentCollectionPath:
+			_, _ = w.Write([]byte(`{
+				"value": [{"id":"env-2","name":"code_rl","version":"2.0.0","diskImageConversionStatus":"Ready"}]
+			}`))
+		case r.Method == http.MethodGet &&
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/code_rl/versions/2.0.0":
+			_, _ = w.Write([]byte(`{"id":"env-2","name":"code_rl","version":"2.0.0","diskImageConversionStatus":"Ready"}`))
+		case r.Method == http.MethodPost &&
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/env-2/sandboxes/lease":
+			if err := json.NewDecoder(r.Body).Decode(&sandboxBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"id":"sandbox-1","status":"Running","baseUrl":` + strconv.Quote(envServer.URL) + `}`))
+		case r.Method == http.MethodDelete &&
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/env-2/sandboxes/sandbox-1/release":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer controlPlane.Close()
+	stubRleClientEndpoint(t, controlPlane.URL)
+
+	command := newInvokeCommand()
+	command.SetArgs([]string{"code_rl"})
+	command.SetIn(strings.NewReader("exit\n"))
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if sandboxBody.Version != "2.0.0" {
+		t.Fatalf("expected latest listed version, got %q", sandboxBody.Version)
+	}
+	if !strings.Contains(output.String(), "Creating sandbox for environment code_rl version 2.0.0") {
+		t.Fatalf("expected resolved environment output, got %s", output.String())
+	}
+	if _, err := os.Stat(stateFilePath(".")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected cloud-only invoke not to create local state, got %v", err)
+	}
+}
+
+func TestInvokeRemoteByNameFailsWhenLatestDiskImageIsNotReady(t *testing.T) {
+	captureBrowserOpen(t)
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/project-1",
+	)
+
+	leaseCalled := false
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet &&
+			r.URL.Path == testFoundryProjectPath+environmentCollectionPath:
+			_, _ = w.Write([]byte(`{
+				"value": [{"id":"env-2","name":"code_rl","version":"2.0.0","diskImageConversionStatus":"Pending"}]
+			}`))
+		case r.Method == http.MethodPost &&
+			strings.Contains(r.URL.Path, "/sandboxes/lease"):
+			leaseCalled = true
+			t.Fatalf("expected invoke to stop before leasing a sandbox")
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer controlPlane.Close()
+	stubRleClientEndpoint(t, controlPlane.URL)
+
+	command := newInvokeCommand()
+	command.SetArgs([]string{"code_rl"})
+	command.SetIn(strings.NewReader("exit\n"))
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	err := command.Execute()
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected LocalError, got %T: %v", err, err)
+	}
+	if localErr.Code != "rle_disk_image_not_ready" {
+		t.Fatalf("expected disk image not ready code, got %q", localErr.Code)
+	}
+	if localErr.Message != `Environment "code_rl" disk image status is "Pending", expected "Ready".` {
+		t.Fatalf("unexpected disk image error message: %q", localErr.Message)
+	}
+	if localErr.Suggestion != "Run azd ai rle show code_rl to inspect the environment details and version history." {
+		t.Fatalf("unexpected disk image error suggestion: %q", localErr.Suggestion)
+	}
+	if leaseCalled {
+		t.Fatal("expected invoke not to lease sandbox when disk image is not ready")
+	}
+}
+
+func TestInvokeRemoteByNameUsesExplicitVersion(t *testing.T) {
+	captureBrowserOpen(t)
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/project-1",
+	)
+
+	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health":
+			_, _ = w.Write([]byte(`{"status":"healthy"}`))
+		case "/web":
+			_, _ = w.Write([]byte("<html>environment</html>"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer envServer.Close()
+
+	var sandboxBody sandboxCreateRequest
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet &&
+			r.URL.Path == testFoundryProjectPath+environmentCollectionPath:
+			_, _ = w.Write([]byte(`{
+				"value": [{"id":"env-2","name":"code_rl","version":"2.0.0","diskImageConversionStatus":"Ready"}]
+			}`))
+		case r.Method == http.MethodGet &&
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/code_rl/versions/1.0.0":
+			_, _ = w.Write([]byte(`{"id":"env-1","name":"code_rl","version":"1.0.0","diskImageConversionStatus":"Ready"}`))
+		case r.Method == http.MethodPost &&
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/env-1/sandboxes/lease":
+			if err := json.NewDecoder(r.Body).Decode(&sandboxBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"id":"sandbox-1","status":"Running","baseUrl":` + strconv.Quote(envServer.URL) + `}`))
+		case r.Method == http.MethodDelete &&
+			r.URL.Path == testFoundryProjectPath+"/fine_tuning/environments/env-1/sandboxes/sandbox-1/release":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer controlPlane.Close()
+	stubRleClientEndpoint(t, controlPlane.URL)
+
+	command := newInvokeCommand()
+	command.SetArgs([]string{"code_rl", "--version", "1.0.0"})
+	command.SetIn(strings.NewReader("exit\n"))
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if sandboxBody.Version != "1.0.0" {
+		t.Fatalf("expected explicit version, got %q", sandboxBody.Version)
+	}
+}
+
+func TestInvokeRemoteRejectsVersionWithoutEnvironmentName(t *testing.T) {
+	command := newInvokeCommand()
+	command.SetArgs([]string{"--version", "1.0.0"})
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+
+	err := command.Execute()
+	var localErr *azdext.LocalError
+	if !errors.As(err, &localErr) {
+		t.Fatalf("expected local error, got %v", err)
+	}
+	if localErr.Code != "rle_environment_name_required" {
+		t.Fatalf("expected environment-name-required error, got %q", localErr.Code)
+	}
+}
+
 func TestInvokeRemoteUsesSandboxWebWhenAvailable(t *testing.T) {
 	openedUrl := captureBrowserOpen(t)
 	tempDir := t.TempDir()

@@ -15,14 +15,10 @@ import (
 func TestNewRootCommandIncludesExpectedCommands(t *testing.T) {
 	rootCmd := NewRootCommand()
 
-	for _, commandName := range []string{"environment", "init", "invoke", "publish", "run", "version", "metadata"} {
+	for _, commandName := range []string{"list", "show", "init", "invoke", "publish", "run", "version", "metadata"} {
 		if command, _, err := rootCmd.Find([]string{commandName}); err != nil || command.Name() != commandName {
 			t.Fatalf("expected command %q to be registered", commandName)
 		}
-	}
-	listCommand, _, err := rootCmd.Find([]string{"environment", "list"})
-	if err != nil || listCommand.Name() != "list" {
-		t.Fatal("expected environment list command to be registered")
 	}
 	if command, _, err := rootCmd.Find([]string{"environments"}); err == nil && command.Name() == "environments" {
 		t.Fatal("expected no environments alias")
@@ -35,7 +31,7 @@ func TestNewRootCommandIncludesExpectedCommands(t *testing.T) {
 func TestRleUserCommandsHiddenUnlessEnabled(t *testing.T) {
 	t.Setenv(rleEnableEnvVar, "")
 	rootCmd := NewRootCommand()
-	for _, commandName := range []string{"environment", "init", "invoke", "publish", "run"} {
+	for _, commandName := range []string{"list", "show", "init", "invoke", "publish", "run"} {
 		command, _, err := rootCmd.Find([]string{commandName})
 		if err != nil {
 			t.Fatalf("expected command %q to be registered: %v", commandName, err)
@@ -61,7 +57,7 @@ func TestRleUserCommandsHiddenUnlessEnabled(t *testing.T) {
 
 	t.Setenv(rleEnableEnvVar, "true")
 	rootCmd = NewRootCommand()
-	for _, commandName := range []string{"environment", "init", "invoke", "publish", "run", "version"} {
+	for _, commandName := range []string{"list", "show", "init", "invoke", "publish", "run", "version"} {
 		command, _, err := rootCmd.Find([]string{commandName})
 		if err != nil {
 			t.Fatalf("expected command %q to be registered: %v", commandName, err)
@@ -155,6 +151,9 @@ func TestLifecycleFlagsAlignWithHostedAgentConventions(t *testing.T) {
 	if flag := invokeCommand.Flags().Lookup("timeout"); flag == nil {
 		t.Fatal("expected invoke to expose --timeout")
 	}
+	if flag := invokeCommand.Flags().Lookup("version"); flag == nil {
+		t.Fatal("expected invoke to expose --version")
+	}
 	if flag := invokeCommand.Flags().Lookup("local"); flag != nil {
 		t.Fatal("expected invoke not to expose --local")
 	}
@@ -181,22 +180,51 @@ func TestLifecycleFlagsAlignWithHostedAgentConventions(t *testing.T) {
 func TestLifecycleCommandsRejectPositionalArguments(t *testing.T) {
 	rootCmd := NewRootCommand()
 
-	for _, commandName := range []string{"publish", "invoke", "run"} {
+	for _, commandName := range []string{"publish", "run"} {
 		command, _, err := rootCmd.Find([]string{commandName})
 		if err != nil {
 			t.Fatalf("expected command %q to be registered: %v", commandName, err)
 		}
 
-		environmentListCommand, _, err := rootCmd.Find([]string{"environment", "list"})
+		listCommand, _, err := rootCmd.Find([]string{"list"})
 		if err != nil {
-			t.Fatalf("expected environment list command to be registered: %v", err)
+			t.Fatalf("expected list command to be registered: %v", err)
 		}
-		if err := environmentListCommand.Args(environmentListCommand, []string{"unexpected"}); err == nil {
-			t.Fatal("expected environment list to reject positional arguments")
+		if err := listCommand.Args(listCommand, []string{"unexpected"}); err == nil {
+			t.Fatal("expected list to reject positional arguments")
+		}
+		showCommand, _, err := rootCmd.Find([]string{"show"})
+		if err != nil {
+			t.Fatalf("expected show command to be registered: %v", err)
+		}
+		if err := showCommand.Args(showCommand, []string{"unexpected", "extra"}); err == nil {
+			t.Fatal("expected show to reject multiple positional arguments")
 		}
 		if err := command.Args(command, []string{"unexpected"}); err == nil {
 			t.Fatalf("expected command %q to reject positional arguments", commandName)
 		}
+	}
+
+	invokeCommand, _, err := rootCmd.Find([]string{"invoke"})
+	if err != nil {
+		t.Fatalf("expected invoke command to be registered: %v", err)
+	}
+	if err := invokeCommand.Args(invokeCommand, []string{"code_rl"}); err != nil {
+		t.Fatalf("expected invoke to accept one environment name: %v", err)
+	}
+	if err := invokeCommand.Args(invokeCommand, []string{"one", "two"}); err == nil {
+		t.Fatal("expected invoke to reject multiple environment names")
+	}
+
+	showCommand, _, err := rootCmd.Find([]string{"show"})
+	if err != nil {
+		t.Fatalf("expected show command to be registered: %v", err)
+	}
+	if err := showCommand.Args(showCommand, []string{"code_rl"}); err != nil {
+		t.Fatalf("expected show to accept one environment name: %v", err)
+	}
+	if err := showCommand.Args(showCommand, []string{"one", "two"}); err == nil {
+		t.Fatal("expected show to reject multiple environment names")
 	}
 
 	initCommand, _, err := rootCmd.Find([]string{"init"})

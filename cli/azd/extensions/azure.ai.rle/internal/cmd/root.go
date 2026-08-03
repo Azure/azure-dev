@@ -36,7 +36,8 @@ func NewRootCommand() *cobra.Command {
 	})
 
 	userCommands := []*cobra.Command{
-		newEnvironmentCommand(&extCtx.OutputFormat),
+		newListCommand(&extCtx.OutputFormat),
+		newShowCommand(&extCtx.OutputFormat),
 		newInitCommand(),
 		newInvokeCommand(),
 		newPublishCommand(),

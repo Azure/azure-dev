@@ -66,7 +66,7 @@ func TestEnvironmentListListsProjectEnvironments(t *testing.T) {
 	stubRleClientEndpoint(t, controlPlane.URL)
 
 	outputFormat := "default"
-	command := newEnvironmentListCommand(&outputFormat)
+	command := newListCommand(&outputFormat)
 	var output bytes.Buffer
 	command.SetOut(&output)
 	command.SetErr(&output)
@@ -117,7 +117,7 @@ func TestEnvironmentListSupportsJSONOutput(t *testing.T) {
 	stubRleClientEndpoint(t, controlPlane.URL)
 
 	outputFormat := "json"
-	command := newEnvironmentListCommand(&outputFormat)
+	command := newListCommand(&outputFormat)
 	var output bytes.Buffer
 	command.SetOut(&output)
 	command.SetErr(&output)
@@ -150,7 +150,7 @@ func TestEnvironmentListReportsEmptyProject(t *testing.T) {
 	stubRleClientEndpoint(t, controlPlane.URL)
 
 	outputFormat := "default"
-	command := newEnvironmentListCommand(&outputFormat)
+	command := newListCommand(&outputFormat)
 	var output bytes.Buffer
 	command.SetOut(&output)
 	command.SetErr(&output)
@@ -168,7 +168,7 @@ func TestEnvironmentListRequiresProjectEndpoint(t *testing.T) {
 	t.Setenv(foundryProjectEndpointEnvVar, "")
 
 	outputFormat := "default"
-	command := newEnvironmentListCommand(&outputFormat)
+	command := newListCommand(&outputFormat)
 	err := command.Execute()
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	if !ok {
@@ -239,6 +239,86 @@ func TestListAllEnvironmentsStopsAtSafetyLimit(t *testing.T) {
 	}
 	if requestCount != environmentListMaxPages {
 		t.Fatalf("expected %d pages, got %d", environmentListMaxPages, requestCount)
+	}
+}
+
+func TestShowDisplaysEnvironmentHistory(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	if err := saveRleState(rleState{
+		Name:               "echo_env",
+		ProjectEndpoint:    "https://account.services.ai.azure.com/api/projects/saved-project",
+		EnvironmentId:      "env-1",
+		EnvironmentVersion: "1.2.0",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions/1.2.0":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"id":"env-1",
+				"name":"echo_env",
+				"version":"1.2.0",
+				"diskImageConversionStatus":"Ready",
+				"updatedAtUtc":"2026-07-30T05:00:00Z"
+			}`))
+		case r.Method == http.MethodGet && r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{"environmentId":"env-1","version":"1.0.0","createdAtUtc":"2026-07-28T05:00:00Z","acrImagePath":"registry/echo:1.0.0"},
+				{"environmentId":"env-1","version":"1.2.0","createdAtUtc":"2026-07-30T05:00:00Z","acrImagePath":"registry/echo:1.2.0"}
+			]`))
+		case r.Method == http.MethodGet && r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions/1.0.0":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"id":"env-1",
+				"name":"echo_env",
+				"version":"1.0.0",
+				"diskImageConversionStatus":"Failed",
+				"updatedAtUtc":"2026-07-28T06:00:00Z"
+			}`))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer controlPlane.Close()
+	stubRleClientEndpoint(t, controlPlane.URL)
+
+	outputFormat := "default"
+	command := newShowCommand(&outputFormat)
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, expected := range []string{
+		"NAME",
+		"VERSION",
+		"DISK IMAGE",
+		"ENVIRONMENT ID",
+		"UPDATED",
+		"ACR IMAGE",
+		"echo_env",
+		"1.2.0",
+		"Ready",
+		"registry/echo:1.2.0",
+		"1.0.0",
+		"Failed",
+		"registry/echo:1.0.0",
+	} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("expected output to contain %q, got %s", expected, output.String())
+		}
+	}
+	for _, unexpected := range []string{"CREATED", "FIELD", "VALUE", "Version history:"} {
+		if strings.Contains(output.String(), unexpected) {
+			t.Fatalf("expected one consolidated table without %q, got %s", unexpected, output.String())
+		}
 	}
 }
 

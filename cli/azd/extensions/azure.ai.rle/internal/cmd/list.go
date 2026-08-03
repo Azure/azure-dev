@@ -18,28 +18,18 @@ const (
 	environmentListMaxPages = 100
 )
 
-type environmentListAction struct {
+type listAction struct {
 	cmd          *cobra.Command
 	outputFormat *string
 }
 
-func newEnvironmentCommand(outputFormat *string) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "environment",
-		Short: "Manage RLE environments",
-		Args:  cobra.NoArgs,
-	}
-	cmd.AddCommand(newEnvironmentListCommand(outputFormat))
-	return cmd
-}
-
-func newEnvironmentListCommand(outputFormat *string) *cobra.Command {
+func newListCommand(outputFormat *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List RLE environments in the Foundry project",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return (&environmentListAction{cmd: cmd, outputFormat: outputFormat}).Run()
+			return (&listAction{cmd: cmd, outputFormat: outputFormat}).Run()
 		},
 	}
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
@@ -49,7 +39,7 @@ func newEnvironmentListCommand(outputFormat *string) *cobra.Command {
 	return cmd
 }
 
-func (a *environmentListAction) Run() error {
+func (a *listAction) Run() error {
 	projectEndpoint, err := resolveEnvironmentListProjectEndpoint()
 	if err != nil {
 		return err

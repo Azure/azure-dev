@@ -24,11 +24,13 @@ import (
 
 type remoteInvokeFlags struct {
 	timeout int
+	version string
 }
 
 type remoteInvokeAction struct {
-	cmd   *cobra.Command
-	flags *remoteInvokeFlags
+	cmd             *cobra.Command
+	flags           *remoteInvokeFlags
+	environmentName string
 }
 
 func newInvokeCommand() *cobra.Command {
@@ -37,11 +39,25 @@ func newInvokeCommand() *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use:   "invoke",
+		Use:   "invoke [environment-name]",
 		Short: "Open a remote OpenEnv runtime shell",
-		Args:  cobra.NoArgs,
+		Long: `Open a remote OpenEnv runtime shell.
+
+With no environment name, invoke uses the environment saved in .azd-rle.json.
+To invoke an existing environment without local source or state, provide its name
+and set FOUNDRY_PROJECT_ENDPOINT. Use --version to select a specific published
+version; otherwise, the latest version returned by the project is used.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return (&remoteInvokeAction{cmd: cmd, flags: flags}).Run()
+			environmentName := ""
+			if len(args) == 1 {
+				environmentName = args[0]
+			}
+			return (&remoteInvokeAction{
+				cmd:             cmd,
+				flags:           flags,
+				environmentName: environmentName,
+			}).Run()
 		},
 	}
 
@@ -51,34 +67,34 @@ func newInvokeCommand() *cobra.Command {
 		flags.timeout,
 		"Per-command OpenEnv request timeout in seconds (0 for no timeout).",
 	)
+	cmd.Flags().StringVar(
+		&flags.version,
+		"version",
+		"",
+		"Published environment version to invoke.",
+	)
 	return cmd
 }
 
 func (a *remoteInvokeAction) Run() error {
-	state, err := loadRleState()
+	state, client, err := a.resolveTarget()
 	if err != nil {
-		return err
-	}
-	if err := requireDeployedEnvironment(state); err != nil {
 		return err
 	}
 
 	ctx, stopSignals := signal.NotifyContext(a.cmd.Context(), os.Interrupt)
 	defer stopSignals()
 
-	client, err := createRleClient(state.ProjectEndpoint)
-	if err != nil {
-		return err
-	}
 	if _, err := fmt.Fprintf(
 		a.cmd.OutOrStdout(),
-		"Creating sandbox for environment %s ...\n",
-		state.EnvironmentId,
+		"Creating sandbox for environment %s version %s ...\n",
+		state.Name,
+		state.EnvironmentVersion,
 	); err != nil {
 		return err
 	}
 
-	sandbox, err := leaseRemoteSandbox(ctx, a.cmd.OutOrStdout(), client, state)
+	sandbox, err := leaseRemoteSandbox(ctx, a.cmd.OutOrStdout(), client, state, a.environmentName == "")
 	if err != nil {
 		if _, ok := errors.AsType[*azdext.LocalError](err); ok {
 			return err
@@ -113,6 +129,79 @@ func (a *remoteInvokeAction) Run() error {
 	return project.RunShellWithContext(ctx, a.cmd.InOrStdin(), a.cmd.OutOrStdout(), sandboxUrl, a.flags.timeout)
 }
 
+func (a *remoteInvokeAction) resolveTarget() (rleState, *rleClient, error) {
+	requestedVersion := strings.TrimSpace(a.flags.version)
+	if a.cmd.Flags().Changed("version") && requestedVersion == "" {
+		return rleState{}, nil, &azdext.LocalError{
+			Message:    "--version requires a non-empty environment version.",
+			Code:       "rle_environment_version_required",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Provide a semantic version, for example --version 2.1.0.",
+		}
+	}
+	if strings.TrimSpace(a.environmentName) == "" && requestedVersion != "" {
+		return rleState{}, nil, &azdext.LocalError{
+			Message:    "--version requires an environment name.",
+			Code:       "rle_environment_name_required",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Run azd ai rle invoke <environment-name> --version <version>.",
+		}
+	}
+
+	if strings.TrimSpace(a.environmentName) == "" {
+		state, err := loadRleState()
+		if err != nil {
+			return rleState{}, nil, err
+		}
+		if err := requireDeployedEnvironment(state); err != nil {
+			return rleState{}, nil, err
+		}
+		client, err := createRleClient(state.ProjectEndpoint)
+		return state, client, err
+	}
+
+	environmentName := strings.TrimSpace(a.environmentName)
+	projectEndpoint, err := resolveEnvironmentListProjectEndpoint()
+	if err != nil {
+		return rleState{}, nil, err
+	}
+	client, err := createRleClient(projectEndpoint)
+	if err != nil {
+		return rleState{}, nil, err
+	}
+	environment, err := resolveLatestEnvironmentByName(a.cmd.Context(), client, environmentName)
+	if err != nil {
+		return rleState{}, nil, err
+	}
+
+	if requestedVersion == "" {
+		if err := requireReadyEnvironment(environment, environmentName); err != nil {
+			return rleState{}, nil, err
+		}
+		return rleState{
+			Name:               environment.Name,
+			ProjectEndpoint:    projectEndpoint,
+			EnvironmentId:      environment.Id,
+			EnvironmentVersion: environment.Version,
+		}, client, nil
+	}
+
+	versionedEnvironment, err := client.getEnvironmentVersion(a.cmd.Context(), environmentName, requestedVersion)
+	if err != nil {
+		return rleState{}, nil, err
+	}
+	if err := requireReadyEnvironment(versionedEnvironment, environmentName); err != nil {
+		return rleState{}, nil, err
+	}
+	return rleState{
+		Name:               versionedEnvironment.Name,
+		ProjectEndpoint:    projectEndpoint,
+		EnvironmentId:      versionedEnvironment.Id,
+		EnvironmentVersion: versionedEnvironment.Version,
+	}, client, nil
+
+}
+
 const (
 	sandboxStatusRunning            = "Running"
 	sandboxStatusFailed             = "Failed"
@@ -132,9 +221,12 @@ func leaseRemoteSandbox(
 	output io.Writer,
 	client *rleClient,
 	state rleState,
+	waitForImage bool,
 ) (*sandboxResource, error) {
-	if err := waitForEnvironmentImage(ctx, output, client, state); err != nil {
-		return nil, err
+	if waitForImage {
+		if err := waitForEnvironmentImage(ctx, output, client, state); err != nil {
+			return nil, err
+		}
 	}
 
 	sandbox, err := client.createSandbox(ctx, state.EnvironmentId, sandboxCreateRequest{

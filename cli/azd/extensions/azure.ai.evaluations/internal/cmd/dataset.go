@@ -23,52 +23,51 @@ func newDatasetCommand() *cobra.Command {
 	}
 	cmd.AddCommand(
 		newDatasetCreateCommand(),
+		newDatasetUpdateCommand(),
 		newDatasetListCommand(),
 		newDatasetShowCommand(),
 		newDatasetDeleteCommand(),
+		newDatasetVersionsCommand(),
 	)
 	return cmd
 }
 
-// newDatasetCreateCommand builds `dataset create`.
-//
-// There is no separate `update`: every registration publishes a new immutable
-// version and the server auto-increments, so `create` covers both the first
-// version and every later one.
+// newDatasetCreateCommand builds `dataset create <name>`, which registers a
+// dataset that does not exist yet.
 func newDatasetCreateCommand() *cobra.Command {
+	return newDatasetWriteCommand("create", "Register a dataset, publishing its first version.")
+}
+
+// newDatasetUpdateCommand builds `dataset update <name>`, which publishes a
+// further version of one that does.
+func newDatasetUpdateCommand() *cobra.Command {
+	return newDatasetWriteCommand("update", "Publish a new version of a dataset.")
+}
+
+// newDatasetWriteCommand builds create and update. Both run the same upload,
+// and the existence check is the only thing that separates them: a version is
+// brought into being by startPendingUpload, which neither knows nor cares
+// whether the name was already in use.
+func newDatasetWriteCommand(verb, short string) *cobra.Command {
 	var (
-		name        string
-		file        string
+		fromFile    string
 		version     string
 		endpointFlg string
 	)
 
-	use := "create"
-	short := "Register a dataset, publishing a new version."
-
 	cmd := &cobra.Command{
-		Use:   use,
+		Use:   verb + " <name>",
 		Short: short,
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if name == "" {
-				return requireFlag("name")
-			}
-			if file == "" {
-				return requireFlag("file")
+			name := args[0]
+			if fromFile == "" {
+				return requireFlag("from-file")
 			}
 
-			info, err := os.Stat(file)
+			localDir, err := datasetUploadDir(fromFile)
 			if err != nil {
-				return fmt.Errorf("reading --file %q: %w", file, err)
-			}
-			// The upload helper scans a directory for the first .jsonl, so pass
-			// the containing directory when given a file path.
-			localDir := file
-			if !info.IsDir() {
-				if !strings.EqualFold(filepath.Ext(file), ".jsonl") {
-					return fmt.Errorf("--file must be a .jsonl file or a directory containing one, got %q", file)
-				}
-				localDir = filepath.Dir(file)
+				return err
 			}
 
 			ctx := cmd.Context()
@@ -77,6 +76,14 @@ func newDatasetCreateCommand() *cobra.Command {
 				return err
 			}
 			defer ec.Close()
+
+			existing, err := ec.datasetClient.ListDatasetVersions(
+				ctx, name, ProjectEndpointAPIVersion,
+			)
+			exists := err == nil && existing != nil && len(existing.Value) > 0
+			if err := checkAssetExistence(verb, "dataset", name, exists); err != nil {
+				return err
+			}
 
 			ds, err := ec.datasetClient.UploadNextVersion(
 				ctx, name, version, localDir, ProjectEndpointAPIVersion,
@@ -103,23 +110,37 @@ func newDatasetCreateCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "Name of the dataset.")
-	cmd.Flags().StringVar(&file, "file", "", "Path to a .jsonl file, or a directory containing one.")
+	cmd.Flags().StringVar(&fromFile, "from-file", "",
+		"Path to a .jsonl file, or a directory containing one.")
 	cmd.Flags().StringVar(&version, "version", "",
 		"Current version to increment from. Omit to increment from the latest registered version.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
 
+// datasetUploadDir resolves what was named into the directory the upload scans.
+func datasetUploadDir(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("reading --from-file %q: %w", path, err)
+	}
+	if info.IsDir() {
+		return path, nil
+	}
+	if !strings.EqualFold(filepath.Ext(path), ".jsonl") {
+		return "", fmt.Errorf(
+			"--from-file must be a .jsonl file or a directory containing one, got %q", path)
+	}
+	return filepath.Dir(path), nil
+}
+
 func newDatasetListCommand() *cobra.Command {
-	var (
-		name        string
-		endpointFlg string
-	)
+	var endpointFlg string
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List registered datasets, or the versions of one dataset.",
+		Short: "List the project's datasets.",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
@@ -128,50 +149,85 @@ func newDatasetListCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			var list *dataset_api.DatasetList
-			if name != "" {
-				list, err = ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
-			} else {
-				list, err = ec.datasetClient.ListDatasets(ctx, ProjectEndpointAPIVersion)
-			}
+			list, err := ec.datasetClient.ListDatasets(ctx, ProjectEndpointAPIVersion)
 			if err != nil {
 				return fmt.Errorf("listing datasets: %w", err)
 			}
-
-			if isJSON(cmd) {
-				return emitJSONList(cmd.OutOrStdout(), list.Value)
-			}
-			rows := make([][]string, 0, len(list.Value))
-			for _, d := range list.Value {
-				rows = append(rows, []string{d.Name, d.Version, d.Format})
-			}
-			if len(rows) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "No datasets found.")
-				return nil
-			}
-			return emitTable(cmd.OutOrStdout(), []string{"NAME", "VERSION", "FORMAT"}, rows)
+			return renderDatasets(cmd, list)
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "Limit the listing to versions of this dataset.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
 
+// newDatasetVersionsCommand groups the version listing, so that `list` means
+// the assets rather than the history of one of them.
+func newDatasetVersionsCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "versions",
+		Short: "Inspect the versions of one dataset.",
+	}
+	cmd.AddCommand(newDatasetVersionsListCommand())
+	return cmd
+}
+
+func newDatasetVersionsListCommand() *cobra.Command {
+	var endpointFlg string
+
+	cmd := &cobra.Command{
+		Use:   "list <name>",
+		Short: "List the versions of a dataset.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+
+			ctx := cmd.Context()
+			ec, err := newEvalContext(ctx, endpointFlg)
+			if err != nil {
+				return err
+			}
+			defer ec.Close()
+
+			list, err := ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
+			if err != nil {
+				return fmt.Errorf("listing versions of dataset %q: %w", name, err)
+			}
+			return renderDatasets(cmd, list)
+		},
+	}
+
+	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	return cmd
+}
+
+func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList) error {
+	if isJSON(cmd) {
+		return emitJSONList(cmd.OutOrStdout(), list.Value)
+	}
+	rows := make([][]string, 0, len(list.Value))
+	for _, d := range list.Value {
+		rows = append(rows, []string{d.Name, d.Version, d.Format})
+	}
+	if len(rows) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "No datasets found.")
+		return nil
+	}
+	return emitTable(cmd.OutOrStdout(), []string{"NAME", "VERSION", "FORMAT"}, rows)
+}
+
 func newDatasetShowCommand() *cobra.Command {
 	var (
-		name        string
 		version     string
 		endpointFlg string
 	)
 
 	cmd := &cobra.Command{
-		Use:   "show",
+		Use:   "show <name>",
 		Short: "Show a dataset version.",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if name == "" {
-				return requireFlag("name")
-			}
+			name := args[0]
 
 			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
@@ -211,7 +267,6 @@ func newDatasetShowCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "Name of the dataset.")
 	cmd.Flags().StringVar(&version, "version", "", "Version to show. Omit for the latest.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
@@ -219,18 +274,16 @@ func newDatasetShowCommand() *cobra.Command {
 
 func newDatasetDeleteCommand() *cobra.Command {
 	var (
-		name        string
 		version     string
 		endpointFlg string
 	)
 
 	cmd := &cobra.Command{
-		Use:   "delete",
+		Use:   "delete <name>",
 		Short: "Delete a dataset version.",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if name == "" {
-				return requireFlag("name")
-			}
+			name := args[0]
 			if version == "" {
 				return requireFlag("version")
 			}
@@ -262,7 +315,6 @@ func newDatasetDeleteCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "Name of the dataset.")
 	cmd.Flags().StringVar(&version, "version", "", "Version to delete.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd

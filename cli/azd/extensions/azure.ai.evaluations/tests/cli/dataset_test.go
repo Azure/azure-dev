@@ -59,9 +59,15 @@ func registerDataset(t *testing.T, versions int) *registeredDataset {
 	require.NoError(t, os.WriteFile(path, []byte(datasetRows), 0o600))
 
 	ds := &registeredDataset{Name: uniqueName("azdcli_ds")}
-	for range versions {
-		r := requireSuccess(t, run(t, "dataset", "create",
-			"--name", ds.Name, "--file", path, "-o", "json"))
+	for i := range versions {
+		// The first publish is a create; every later one is an update, which is
+		// the only difference between them.
+		verb := "update"
+		if i == 0 {
+			verb = "create"
+		}
+		r := requireSuccess(t, run(t, "dataset", verb,
+			ds.Name, "--from-file", path, "-o", "json"))
 
 		var created datasetSummary
 		r.JSON(t, &created)
@@ -70,12 +76,12 @@ func registerDataset(t *testing.T, versions int) *registeredDataset {
 
 		version := created.Version
 		deferTeardown(func() {
-			runQuietly("dataset", "delete", "--name", ds.Name, "--version", version)
+			runQuietly("dataset", "delete", ds.Name, "--version", version)
 		})
 	}
 	require.Len(t, ds.Versions, versions)
 	require.NotEqual(t, ds.Versions[0], ds.Versions[len(ds.Versions)-1],
-		"re-registering must advance the version rather than overwrite")
+		"updating must advance the version rather than overwrite")
 	return ds
 }
 
@@ -83,17 +89,17 @@ func TestCLIDatasetList(t *testing.T) {
 	ds := sharedDataset(t)
 
 	t.Run("table", func(t *testing.T) {
-		r := requireSuccess(t, run(t, "dataset", "list", "--name", ds.Name))
+		r := requireSuccess(t, run(t, "dataset", "versions", "list", ds.Name))
 		for _, header := range []string{"NAME", "VERSION", "FORMAT"} {
 			require.Containsf(t, r.Stdout, header, "the listing lost its %s column", header)
 		}
 		require.Contains(t, r.Stdout, ds.Name)
 	})
 
-	// --name is what makes the listing usable once a project holds more than a
-	// screenful: it narrows to one dataset's versions.
-	t.Run("name scopes the listing to one dataset's versions", func(t *testing.T) {
-		r := requireSuccess(t, run(t, "dataset", "list", "--name", ds.Name, "-o", "json"))
+	// `versions list` is what makes the listing usable once a project holds more
+	// than a screenful: it narrows to one dataset's versions.
+	t.Run("versions list scopes to one dataset's versions", func(t *testing.T) {
+		r := requireSuccess(t, run(t, "dataset", "versions", "list", ds.Name, "-o", "json"))
 		var listed []datasetSummary
 		r.JSON(t, &listed)
 		require.NotEmpty(t, listed)
@@ -101,7 +107,7 @@ func TestCLIDatasetList(t *testing.T) {
 		seen := map[string]bool{}
 		for _, v := range listed {
 			require.Equalf(t, ds.Name, v.Name,
-				"--name must return only that dataset's versions; got %q", v.Name)
+				"the listing must return only that dataset's versions; got %q", v.Name)
 			seen[v.Version] = true
 		}
 		for _, want := range ds.Versions {
@@ -127,8 +133,8 @@ func TestCLIDatasetList(t *testing.T) {
 	})
 
 	t.Run("an unknown name lists nothing rather than failing", func(t *testing.T) {
-		r := requireSuccess(t, run(t, "dataset", "list",
-			"--name", "azdcli-no-such-dataset", "-o", "json"))
+		r := requireSuccess(t, run(t, "dataset", "versions", "list",
+			"azdcli-no-such-dataset", "-o", "json"))
 		var listed []datasetSummary
 		r.JSON(t, &listed)
 		require.Empty(t, listed)
@@ -142,7 +148,7 @@ func TestCLIDatasetShow(t *testing.T) {
 	// Omitting the version means the latest, which is the only sensible
 	// default for a name that gains a version on every registration.
 	t.Run("defaults to the latest version", func(t *testing.T) {
-		r := requireSuccess(t, run(t, "dataset", "show", "--name", ds.Name, "-o", "json"))
+		r := requireSuccess(t, run(t, "dataset", "show", ds.Name, "-o", "json"))
 		var shown datasetSummary
 		r.JSON(t, &shown)
 		require.Equal(t, ds.Name, shown.Name)
@@ -151,7 +157,7 @@ func TestCLIDatasetShow(t *testing.T) {
 
 	t.Run("version pins an earlier one", func(t *testing.T) {
 		r := requireSuccess(t, run(t, "dataset", "show",
-			"--name", ds.Name, "--version", ds.Versions[0], "-o", "json"))
+			ds.Name, "--version", ds.Versions[0], "-o", "json"))
 		var shown datasetSummary
 		r.JSON(t, &shown)
 		require.Equal(t, ds.Versions[0], shown.Version)
@@ -159,7 +165,7 @@ func TestCLIDatasetShow(t *testing.T) {
 	})
 
 	t.Run("table", func(t *testing.T) {
-		r := requireSuccess(t, run(t, "dataset", "show", "--name", ds.Name))
+		r := requireSuccess(t, run(t, "dataset", "show", ds.Name))
 		for _, header := range []string{"NAME", "VERSION", "FORMAT", "URI"} {
 			require.Containsf(t, r.Stdout, header, "the table lost its %s column", header)
 		}
@@ -168,11 +174,11 @@ func TestCLIDatasetShow(t *testing.T) {
 
 	t.Run("the name is required", func(t *testing.T) {
 		r := requireFailure(t, run(t, "dataset", "show"))
-		require.Contains(t, r.Combined(), "--name is required")
+		require.Contains(t, r.Combined(), "accepts 1 arg")
 	})
 
 	t.Run("an unknown dataset is brief", func(t *testing.T) {
-		r := requireFailure(t, run(t, "dataset", "show", "--name", "azdcli-no-such-dataset"))
+		r := requireFailure(t, run(t, "dataset", "show", "azdcli-no-such-dataset"))
 		require.Less(t, len(r.Combined()), 600,
 			"a not-found must stay short, not dump the service body:\n%s", r.Combined())
 		require.Contains(t, r.Combined(), "azdcli-no-such-dataset")
@@ -180,19 +186,19 @@ func TestCLIDatasetShow(t *testing.T) {
 
 	t.Run("an unknown version of a real dataset is refused", func(t *testing.T) {
 		r := requireFailure(t, run(t, "dataset", "show",
-			"--name", ds.Name, "--version", "9999"))
+			ds.Name, "--version", "9999"))
 		require.Contains(t, r.Combined(), "9999")
 		require.Less(t, len(r.Combined()), 600, r.Combined())
 	})
 }
 
 func TestCLIDatasetDelete(t *testing.T) {
-	t.Run("both flags are required", func(t *testing.T) {
+	t.Run("the name and version are both required", func(t *testing.T) {
 		require.Contains(t,
 			requireFailure(t, run(t, "dataset", "delete", "--version", "1")).Combined(),
-			"--name is required")
+			"accepts 1 arg")
 		require.Contains(t,
-			requireFailure(t, run(t, "dataset", "delete", "--name", "whatever")).Combined(),
+			requireFailure(t, run(t, "dataset", "delete", "whatever")).Combined(),
 			"--version is required")
 	})
 
@@ -204,11 +210,11 @@ func TestCLIDatasetDelete(t *testing.T) {
 	// entitled to know it means "gone", not "was there and is now gone".
 	t.Run("deleting an unregistered dataset is idempotent, not an error", func(t *testing.T) {
 		r := requireSuccess(t, run(t, "dataset", "delete",
-			"--name", "azdcli-no-such-dataset", "--version", "1"))
+			"azdcli-no-such-dataset", "--version", "1"))
 		require.Contains(t, r.Stdout, "Deleted dataset")
 
-		listed := requireSuccess(t, run(t, "dataset", "list",
-			"--name", "azdcli-no-such-dataset", "-o", "json"))
+		listed := requireSuccess(t, run(t, "dataset", "versions", "list",
+			"azdcli-no-such-dataset", "-o", "json"))
 		var remaining []datasetSummary
 		listed.JSON(t, &remaining)
 		require.Empty(t, remaining, "nothing was there to delete in the first place")
@@ -222,12 +228,12 @@ func TestCLIDatasetDelete(t *testing.T) {
 		gone, kept := ds.Versions[0], ds.Versions[1]
 
 		r := requireSuccess(t, run(t, "dataset", "delete",
-			"--name", ds.Name, "--version", gone))
+			ds.Name, "--version", gone))
 		require.Contains(t, r.Stdout, "Deleted dataset")
 		require.Contains(t, r.Stdout, ds.Name)
 
-		listed := requireSuccess(t, run(t, "dataset", "list",
-			"--name", ds.Name, "-o", "json"))
+		listed := requireSuccess(t, run(t, "dataset", "versions", "list",
+			ds.Name, "-o", "json"))
 		var remaining []datasetSummary
 		listed.JSON(t, &remaining)
 

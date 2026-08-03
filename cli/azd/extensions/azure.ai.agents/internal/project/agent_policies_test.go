@@ -1,0 +1,201 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package project
+
+import (
+	"maps"
+	"testing"
+
+	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
+)
+
+// raiPolicyID is a representative RAI policy ARM resource ID, the value users
+// put in `raiPolicyName`.
+const raiPolicyID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/" +
+	"my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/raiPolicies/Microsoft.DefaultV2"
+
+// inlineAgentService builds an azure.ai.agent service entry whose inline
+// (service-level) properties are exactly what a user would author under the
+// unified azure.yaml shape.
+func inlineAgentService(t *testing.T, values map[string]any) *azdext.ServiceConfig {
+	t.Helper()
+
+	props, err := structpb.NewStruct(values)
+	require.NoError(t, err)
+
+	return &azdext.ServiceConfig{
+		Name:                 "rai-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+}
+
+// TestAgentPoliciesRoundTrip verifies governance policies survive a marshal into
+// the inline service properties and back, and that they are persisted under the
+// camelCase `raiPolicyName` key that azure.yaml authors use — not the
+// `rai_policy_name` key of the deprecated on-disk agent.yaml.
+func TestAgentPoliciesRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	ca := sampleContainerAgent()
+	ca.Policies = []agent_yaml.Policy{
+		{Type: agent_yaml.PolicyTypeRai, RaiPolicyName: raiPolicyID},
+	}
+
+	props, err := AgentDefinitionToServiceProperties(ca, nil)
+	require.NoError(t, err)
+
+	policies := props.GetFields()["policies"].GetListValue().GetValues()
+	require.Len(t, policies, 1)
+	policy := policies[0].GetStructValue().GetFields()
+	require.Equal(t, "rai_policy", policy["type"].GetStringValue())
+	require.Equal(t, raiPolicyID, policy["raiPolicyName"].GetStringValue())
+	require.NotContains(t, policy, "rai_policy_name",
+		"azure.yaml uses the camelCase raiPolicyName key")
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "rai-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+
+	got, isHosted, found, source, err := AgentDefinitionFromService(svc)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.True(t, isHosted)
+	require.Equal(t, AgentDefinitionSourceInline, source)
+	require.Equal(t, ca.Policies, got.Policies)
+}
+
+// TestAgentPoliciesReachRaiConfig is the end-to-end regression test for
+// https://github.com/Azure/azure-dev/issues/8709: a `policies` entry authored on
+// the unified azure.yaml service entry must reach the Foundry data plane as
+// `rai_config.rai_policy_name`. It covers both deploy modes, mirroring the two
+// mapRaiConfig call sites in agent_yaml/map.go.
+func TestAgentPoliciesReachRaiConfig(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		extra   map[string]any
+		options []agent_yaml.AgentBuildOption
+	}{
+		{
+			name:    "container deploy",
+			options: []agent_yaml.AgentBuildOption{agent_yaml.WithImageURL("myregistry.azurecr.io/img:v1")},
+		},
+		{
+			name: "code deploy",
+			extra: map[string]any{
+				"codeConfiguration": map[string]any{
+					"runtime":    "python_3_12",
+					"entryPoint": "agent.py",
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			values := map[string]any{
+				"kind": "hosted",
+				"name": "rai-agent",
+				"policies": []any{
+					map[string]any{
+						"type":          "rai_policy",
+						"raiPolicyName": raiPolicyID,
+					},
+				},
+			}
+			maps.Copy(values, test.extra)
+
+			agentDef, isHosted, found, _, err := AgentDefinitionFromService(
+				inlineAgentService(t, values),
+			)
+			require.NoError(t, err)
+			require.True(t, found)
+			require.True(t, isHosted)
+
+			request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(agentDef, test.options...)
+			require.NoError(t, err)
+
+			definition, ok := request.Definition.(agent_api.HostedAgentDefinition)
+			require.True(t, ok)
+			require.NotNil(t, definition.RaiConfig)
+			require.Equal(t, raiPolicyID, definition.RaiConfig.RaiPolicyName)
+		})
+	}
+}
+
+// TestAgentPoliciesNoRaiConfigWhenAbsent verifies an agent without policies
+// sends no rai_config, so existing projects are unaffected.
+func TestAgentPoliciesNoRaiConfigWhenAbsent(t *testing.T) {
+	t.Parallel()
+
+	agentDef, _, found, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind": "hosted",
+		"name": "rai-agent",
+	}))
+	require.NoError(t, err)
+	require.True(t, found)
+
+	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(
+		agentDef,
+		agent_yaml.WithImageURL("myregistry.azurecr.io/img:v1"),
+	)
+	require.NoError(t, err)
+
+	definition, ok := request.Definition.(agent_api.HostedAgentDefinition)
+	require.True(t, ok)
+	require.Nil(t, definition.RaiConfig)
+}
+
+// TestAgentPoliciesValidation verifies malformed policies authored inline in
+// azure.yaml are rejected, and that the missing-name error names the
+// azure.yaml key (raiPolicyName) rather than only the agent.yaml one.
+func TestAgentPoliciesValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		policy       map[string]any
+		wantErrSubst string
+	}{
+		{
+			name:         "missing policy name",
+			policy:       map[string]any{"type": "rai_policy"},
+			wantErrSubst: "'raiPolicyName' in azure.yaml",
+		},
+		{
+			name:         "missing type",
+			policy:       map[string]any{"raiPolicyName": raiPolicyID},
+			wantErrSubst: "policies[0] requires a type",
+		},
+		{
+			name:         "unsupported type",
+			policy:       map[string]any{"type": "network_policy"},
+			wantErrSubst: "policies[0] has an unsupported type 'network_policy'",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+				"kind":     "hosted",
+				"name":     "rai-agent",
+				"policies": []any{test.policy},
+			}))
+			require.ErrorContains(t, err, test.wantErrSubst)
+		})
+	}
+}

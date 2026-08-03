@@ -367,6 +367,28 @@ func TestSynthesizeImageManifestFile_UsesFlagProtocols(t *testing.T) {
 	require.Equal(t, "2.0.0", containerAgent.Protocols[0].Version)
 }
 
+func TestSynthesizeImageManifestFile_UsesInvocationsProtocol(t *testing.T) {
+	t.Parallel()
+
+	const agentName = "my-agent"
+	const image = "myacr.azurecr.io/agents/my-agent:v1"
+
+	manifestPath, cleanup, err := synthesizeImageManifestFile(agentName, image, []string{"invocations"})
+	require.NoError(t, err)
+	defer cleanup()
+
+	content, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+	template, err := agent_yaml.ExtractAgentDefinition(content)
+	require.NoError(t, err)
+
+	containerAgent, ok := template.(agent_yaml.ContainerAgent)
+	require.True(t, ok, "synthesized template should be a ContainerAgent, got %T", template)
+	require.Equal(t, []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "invocations", Version: "2.0.0"},
+	}, containerAgent.Protocols)
+}
+
 func TestSynthesizeImageManifestFile_RejectsUnknownProtocol(t *testing.T) {
 	t.Parallel()
 

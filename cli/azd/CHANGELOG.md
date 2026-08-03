@@ -1,6 +1,22 @@
 # Release History
 
-## 1.29.0-beta.1 (Unreleased)
+## 1.30.0-beta.1 (Unreleased)
+
+## 1.29.0 (2026-07-29)
+
+### Features Added
+
+- [[#9125]](https://github.com/Azure/azure-dev/pull/9125) Automatically enable no-prompt mode when azd detects a CI/CD or AI-agent environment, so commands fail fast with a clear error instead of hanging on a prompt. Set `AZD_NON_INTERACTIVE=false` to opt out. Confirmation prompts now also honor their default value when stdin has no more input.
+
+### Bugs Fixed
+
+- [[#9281]](https://github.com/Azure/azure-dev/pull/9281) Fix `azd deploy` for container-based App Service services overwriting unrelated site configuration; the container image is now updated through the dedicated App Service configuration endpoint.
+- [[#9211]](https://github.com/Azure/azure-dev/pull/9211) Fix concurrent extension updates to `azure.yaml` losing service fields by serializing project configuration writes.
+- [[#9218]](https://github.com/Azure/azure-dev/pull/9218) Fix and improve automatic installation of project extension requirements so `azd` resolves every missing provider declared or inferred from `azure.yaml` before project commands run, instead of failing on the first unsupported one.
+
+### Other Changes
+
+- [[#9288]](https://github.com/Azure/azure-dev/pull/9288) Report the GitHub Copilot app separately from the GitHub Copilot CLI in the `execution.environment` telemetry field.
 
 ## 1.28.1 (2026-07-22)
 

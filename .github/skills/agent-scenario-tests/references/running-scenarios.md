@@ -19,6 +19,20 @@ This applies to `path:` on `load_scenario` / `run_pre_hooks` / `run_post_hooks` 
 the path style is almost certainly the cause — translate `C:\…` → `/mnt/c/…` and retry once
 before fanning out.
 
+## Environment integrity
+
+The driving agent must **never install, replace, or modify** the `azd` binary, any `azd`
+extension, or any system tool during a scenario run — regardless of operating system. The
+environment was set up before scenarios start (Step 1b on Windows/WSL, manual build on native
+Linux/macOS); if it is broken, the run stops — the agent does not fix it.
+
+- If a scenario fails due to an environment issue (wrong binary, missing tool, file-locking
+  error on WSL, path resolution failure, or similar), report it as **FAIL** with an
+  infrastructure finding. Do NOT attempt to work around it by installing packages, switching
+  binaries, downloading alternative builds, or modifying system state.
+- This rule applies to both the orchestrating agent and any fleet sub-agents. No agent
+  participating in the run may alter the test environment.
+
 ## Per-scenario loop
 
 For each selected scenario:
@@ -68,6 +82,11 @@ For each selected scenario:
   that does not exist, or expect output that does not appear, fail the scenario. Do not
   substitute an alternative command, skip the broken step, or invent a workaround. The
   scenario must be updated by a human — the driving agent must not silently patch over it.
+- **Never work around infrastructure failures.** If `azd` fails due to file-locking (common
+  on WSL when using the wrong binary), path resolution, missing tools, or similar environment
+  issues, that is a FAIL — not an invitation to install a different binary or modify the
+  environment. Report the infrastructure failure and move on. Workarounds mask setup gaps and
+  make results unreliable. This applies on all platforms (Windows/WSL, native Linux, macOS).
 - **Prefer `choice_text` over `choice_index`** (indices shift between releases).
 - **Clear a pre-filled text field before typing** (e.g. the agent-name prompt); otherwise
   your value *appends* to the default (`defaultyourvalue`).
@@ -95,6 +114,21 @@ For each selected scenario:
   endpoint state), then `2.99-teardown-down` last.
 - **Validate the recipe with one scenario before fanning out** — confirm `load_scenario` →
   `start_session` → one `send_action` round-trips for a single Tier 0 scenario first.
+
+### Fleet sub-agent rules
+
+When fanning out scenarios to sub-agents (e.g. Tier 0/1 parallel waves), every sub-agent
+must obey these rules:
+
+- **Do not modify the environment.** Each sub-agent inherits the verified environment set up
+  by the orchestrator (Step 1b on Windows/WSL, or the user's build on native Linux/macOS).
+  Sub-agents must NOT install software, modify PATH, download binaries, or change the `azd`
+  binary or any extension — on any platform.
+- **Infrastructure errors → FAIL and return.** If a sub-agent encounters an environment error
+  (wrong binary, file-locking, missing tool), it must FAIL the scenario with an infrastructure
+  finding and return the error to the orchestrator. It must NOT attempt to fix the environment.
+- **Each sub-agent runs exactly one scenario.** It loads the scenario, drives the goals, and
+  reports PASS/FAIL. It does not make decisions about other scenarios or the overall run.
 
 ## Capture per scenario
 

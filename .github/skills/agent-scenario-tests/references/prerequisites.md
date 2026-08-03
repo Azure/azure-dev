@@ -21,7 +21,8 @@ the user exactly what to fix — do **not** try to work around it.
 | `git` + `gh` CLIs | `gh auth status` | Ask the user to run `gh auth login`. |
 | cli-interactive-tester MCP server | The `list_scenarios` / `start_session` MCP tools are available to you | Stop. Tell the user to register the cli-interactive-tester MCP server (see its README) and re-run. |
 | `profile.local.yaml` | File exists in the scenarios dir | Stop. Tell the user to `cp profile.local.yaml.example profile.local.yaml` and set `prefix` + `subscription`. |
-| Native Linux `azd` in WSL (Windows only) | `azd version` inside the tester returns a dev build, not a Windows `.exe` interop version | The skill automatically runs `setup-wsl.sh` (Step 1b) to rebuild from source. If you need to run it manually: `bash setup-wsl.sh` from the scenarios directory inside WSL. Symlinking to `azd.exe` does not work (causes git safe.directory, TTY, and file-locking errors). |
+| Native Linux `azd` in WSL (Windows only) | Inside WSL, run `which azd` — must return `/usr/local/bin/azd` (not `/mnt/c/…` or a path ending in `azd.exe`). Then run `azd version` — must contain the expected dev version string. | **Hard stop.** If `which azd` returns a Windows interop path, the file-locking on UNC paths will fail all init/provision scenarios. Run Step 1b (`setup-wsl.sh`) to build and install native Linux azd. Do not proceed until both checks pass. |
+| Native Linux `azd` (native Linux/macOS) | `azd version` returns the expected dev build | Ask the user to build and install `azd` from source. No special path check is needed — any valid `azd` path works on native Linux. |
 
 ### Auth (tier-dependent — only enforce for tiers actually selected)
 

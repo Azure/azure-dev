@@ -5,11 +5,17 @@
 Run the checks in `prerequisites.md`. If a hard prerequisite is missing, stop with a clear
 message. Don't auto-install or work around a missing MCP server or profile.
 
-### Step 1b — Rebuild WSL binaries (Windows only)
+### Step 1b — Build and verify the `azd` binary (mandatory gate)
 
-Before running any scenarios, rebuild the native Linux `azd` and extension binaries from the
-current repo source so the tester always exercises the latest local code. Execute
-`setup-wsl.sh` inside WSL via the tester:
+Before running **any** scenarios, the orchestrator must ensure a working native Linux `azd`
+dev build is available. The exact steps depend on the host OS:
+
+#### Windows (WSL)
+
+On Windows, scenarios run inside WSL where the default `azd` may resolve to Windows
+`azd.exe` via interop — which causes file-locking failures on UNC paths (`\\wsl.localhost\…`).
+**This step is mandatory and must not be skipped.** Execute `setup-wsl.sh` inside WSL via
+the tester:
 
 ```text
 start_session(command="bash /mnt/c/<path-to-scenarios>/setup-wsl.sh",
@@ -20,6 +26,27 @@ start_session(command="bash /mnt/c/<path-to-scenarios>/setup-wsl.sh",
 
 Wait for it to print "Done. WSL is ready for scenario testing." and then `finish_session`.
 If the build fails, stop and report the build error — do not proceed with stale binaries.
+
+After `setup-wsl.sh` succeeds, **verify** the installation by starting a quick tester session
+and running `which azd && azd version`. Confirm that:
+1. `which azd` returns `/usr/local/bin/azd` (not `/mnt/c/…` or a path ending in `azd.exe`)
+2. `azd version` output contains the expected dev version string (e.g. `0.0.0-dev.0`)
+
+Record the verified version string for the report. If either check fails, stop — do NOT
+proceed to Step 5.
+
+#### Native Linux / macOS
+
+On native Linux or macOS, `setup-wsl.sh` does not apply. The user builds and installs `azd`
+from source using their normal workflow (e.g. `go install`, `make`, or equivalent). Before
+proceeding, verify that `azd version` returns the expected dev build version. If it does not,
+stop and ask the user to build and install the correct version.
+
+#### Hard gate
+
+**If Step 1b is skipped or verification fails, do NOT proceed to Step 5.** No scenarios may
+run until the `azd` binary is verified. This is not optional — running scenarios against
+the wrong binary produces unreliable results and wastes time and cost.
 
 ### Step 2 — Resolve the PR
 
@@ -72,17 +99,24 @@ under `<scenarios-dir>/.reports/<run-timestamp>/`.
 
 ### Step 5 — Run the scenarios
 
-Drive each selected scenario per `running-scenarios.md`. Honor ordering:
+Drive each selected scenario per `running-scenarios.md`. Start with a mandatory validation
+step, then honor ordering:
 
-- **Tier 0 / Tier 1** are `parallel-safe` — they may be run concurrently (small waves), each
-  with its own `cwd` (no `instance_id` needed for distinct scenarios).
-- **Tier 1b** (`verify-deploy`) is `parallel-safe` but **depends on Tier 1**: wait for all
-  Tier 1 scenarios to complete, then check each Tier 1b scenario's `requires:` field. Only
-  run it if the prerequisite PASSED; otherwise mark it ⏭️ SKIPPED. Once prerequisites are
-  confirmed, fan out Tier 1b scenarios concurrently. Tier 1b requires cost acknowledgement
-  (same as Tier 2) since it provisions Azure resources.
-- **Tier 2** is `serial-only` and order-dependent: `2.00-setup-deploy-shared-agent` **first**,
-  then the targeted `2.01-`…`2.18-` scenarios **serially**, then `2.99-teardown-down` **last**.
+1. **Recipe validation (mandatory).** Run one Tier 0 scenario synchronously before fanning
+   out. Pick a fast, non-interactive scenario (e.g. `0.01-version`). If it fails with an
+   infrastructure error (file-locking, wrong binary, missing tool), **stop the entire run** —
+   do not fan out into a fleet of failures. Fix the environment issue (re-run Step 1b on
+   Windows, rebuild on native Linux) and start over.
+
+2. **Tier 0 / Tier 1** are `parallel-safe` — they may be run concurrently (small waves), each
+   with its own `cwd` (no `instance_id` needed for distinct scenarios).
+3. **Tier 1b** (`verify-deploy`) is `parallel-safe` but **depends on Tier 1**: wait for all
+   Tier 1 scenarios to complete, then check each Tier 1b scenario's `requires:` field. Only
+   run it if the prerequisite PASSED; otherwise mark it ⏭️ SKIPPED. Once prerequisites are
+   confirmed, fan out Tier 1b scenarios concurrently. Tier 1b requires cost acknowledgement
+   (same as Tier 2) since it provisions Azure resources.
+4. **Tier 2** is `serial-only` and order-dependent: `2.00-setup-deploy-shared-agent` **first**,
+   then the targeted `2.01-`…`2.18-` scenarios **serially**, then `2.99-teardown-down` **last**.
 
 Record per scenario: PASS/FAIL, wall-clock duration (`Hh Mm Ss`), and any `report_finding`
 entries.

@@ -82,10 +82,17 @@ func newEvaluatorWriteCommand(verb, short string) *cobra.Command {
 			}
 			defer ec.Close()
 
-			latest := ec.evalClient.LatestEvaluatorVersionNumber(
-				ctx, name, ProjectEndpointAPIVersion,
+			// Asked of the direct read, not the version listing. The listing
+			// lags a publish by up to a second and a half, so an update
+			// issued straight after a create would be told the evaluator it
+			// just made does not exist.
+			_, readErr := ec.evalClient.GetEvaluatorRaw(
+				ctx, name, "", ProjectEndpointAPIVersion,
 			)
-			if err := checkAssetExistence(verb, "evaluator", name, latest > 0); err != nil {
+			if readErr != nil && !eval_api.IsNotFound(readErr) {
+				return fmt.Errorf("checking whether evaluator %q exists: %w", name, readErr)
+			}
+			if err := checkAssetExistence(verb, "evaluator", name, readErr == nil); err != nil {
 				return err
 			}
 

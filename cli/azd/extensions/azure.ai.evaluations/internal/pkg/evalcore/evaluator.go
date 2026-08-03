@@ -17,14 +17,26 @@ import (
 const BuiltinPrefix = "builtin."
 
 // EvaluatorRef references an evaluator from an eval. It accepts either a
-// bare string or a mapping carrying a pass threshold:
+// bare string or a mapping carrying the rest of the declaration:
 //
 //	evaluators:
 //	  - builtin.task_adherence
-//	  - { name: support-quality, threshold: 4.0 }
+//	  - name: support-quality
+//	    source: ./evaluators/support-quality.json
+//	    initialization_parameters:
+//	      deployment_name: gpt-5.6-luna
+//
+// A built-in needs nothing but its name. One with a Source is the project's
+// own, and is published before the eval that references it is created.
 type EvaluatorRef struct {
 	Name    string `yaml:"name" json:"name"`
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+	// Source names a local rubric JSON file. Empty means the evaluator is
+	// already registered, or is a built-in.
+	Source string `yaml:"source,omitempty" json:"source,omitempty"`
+	// InitializationParameters are passed through to the testing criterion,
+	// which is where a judge deployment is named.
+	InitializationParameters map[string]any `yaml:"initialization_parameters,omitempty" json:"initialization_parameters,omitempty"`
 	// Threshold maps to testing_criteria[].initialization_parameters.threshold.
 	Threshold *float64 `yaml:"threshold,omitempty" json:"threshold,omitempty"`
 }

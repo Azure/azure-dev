@@ -2957,7 +2957,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
-	if err := setServiceEnvironment(
+	if err := setServiceEnvironmentScope(
 		ctx,
 		a.azdClient,
 		a.serviceNameOverride,

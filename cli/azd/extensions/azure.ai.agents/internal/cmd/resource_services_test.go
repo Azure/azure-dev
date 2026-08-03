@@ -564,11 +564,20 @@ func (s *recordingProjectServer) UnsetServiceConfig(
 
 // newProjectRecorderClient spins up an in-process gRPC server backed by the
 // supplied project server stub and returns a client wired to its address.
-func newProjectRecorderClient(t *testing.T, server azdext.ProjectServiceServer) *azdext.AzdClient {
+// An optional environment stub is registered for callers
+// that persist azd environment values, such as init.
+func newProjectRecorderClient(
+	t *testing.T,
+	server azdext.ProjectServiceServer,
+	environmentServers ...azdext.EnvironmentServiceServer,
+) *azdext.AzdClient {
 	t.Helper()
 
 	grpcServer := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(grpcServer, server)
+	if len(environmentServers) > 0 {
+		azdext.RegisterEnvironmentServiceServer(grpcServer, environmentServers[0])
+	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

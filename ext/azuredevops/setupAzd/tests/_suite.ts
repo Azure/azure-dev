@@ -68,4 +68,21 @@ describe('Setup azd task tests', function () {
             done(error);
         });
     });
+
+    it('should reject an invalid version format', function(done: Mocha.Done) {
+        this.timeout(30000);
+
+        const tp: string = path.join(__dirname, 'invalidVersionFormat.js');
+        const tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);
+
+        tr.runAsync().then(() => {
+            assert.equal(tr.succeeded, false, 'should have failed');
+            assert.equal(tr.warningIssues.length, 0, 'should have no warnings');
+            assert.ok(tr.errorIssues.some((issue) => issue.includes('Version must be')), 'should report an invalid version');
+            assert.equal(tr.stdout.indexOf('Installing azd version'), -1, 'should fail before installation');
+            done();
+        }).catch((error) => {
+            done(error);
+        });
+    });
 });

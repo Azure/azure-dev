@@ -93,6 +93,9 @@ func (c *AgentClient) DownloadTeamsAppPackage(
 	if err != nil {
 		return nil, fmt.Errorf("failed to read Teams app package response: %w", err)
 	}
+	if len(zipBytes) == 0 {
+		return nil, fmt.Errorf("Teams app package response was empty")
+	}
 	return zipBytes, nil
 }
 

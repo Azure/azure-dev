@@ -155,6 +155,41 @@ func TestCommitTeamsAppPackage_DoesNotUseFixedTempPath(t *testing.T) {
 	}
 }
 
+func TestCommitTeamsAppPackage_DoesNotUseFixedMarkerTempPath(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, teamsAppPackageFile)
+	marker := filepath.Join(dir, teamsAppPackageMarkerFile)
+	fixedTemp := marker + ".tmp"
+	if err := os.WriteFile(fixedTemp, []byte("DO-NOT-CLOBBER"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := commitTeamsAppPackage(pkg, marker, []byte("AZD-GENERATED"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	tempData, _ := os.ReadFile(fixedTemp)
+	if string(tempData) != "DO-NOT-CLOBBER" {
+		t.Errorf("fixed marker temp path was clobbered; content = %q", string(tempData))
+	}
+}
+
+func TestTeamsAppPackageIsOwned_RejectsSymlinkMarker(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	marker := filepath.Join(dir, teamsAppPackageMarkerFile)
+	if err := os.WriteFile(target, []byte("not an azd marker"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, marker); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	if teamsAppPackageIsOwned(marker) {
+		t.Fatal("symlink marker must not mark a package as azd-owned")
+	}
+}
+
 func TestCommitTeamsAppPackage_OverwritesOwned(t *testing.T) {
 	dir := t.TempDir()
 	pkg := filepath.Join(dir, teamsAppPackageFile)

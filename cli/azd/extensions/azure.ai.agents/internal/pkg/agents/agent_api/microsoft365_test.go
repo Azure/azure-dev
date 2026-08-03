@@ -57,6 +57,16 @@ func TestDownloadTeamsAppPackage_ErrorStatus(t *testing.T) {
 	require.Contains(t, err.Error(), "nope")
 }
 
+func TestDownloadTeamsAppPackage_EmptyBody(t *testing.T) {
+	client := newTestClient("https://example.test/api/projects/proj", &fakeTransport{statusCode: http.StatusOK})
+
+	_, err := client.DownloadTeamsAppPackage(
+		t.Context(), "my-agent", TeamsAppPackageRequest{}, Microsoft365APIVersion,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "empty")
+}
+
 func TestPublishTeamsApp_Success(t *testing.T) {
 	client, transport := newCaptureClient(
 		http.StatusOK,

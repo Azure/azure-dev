@@ -62,11 +62,14 @@ func parseGate(spec string) (gate, error) {
 
 // breach reports why the run missed the threshold, or empty when it met it.
 //
-// Errored and skipped rows count against the pass rate: they are in the total
-// and they did not pass. A run that scored nothing at all breaches every
-// threshold rather than dividing by zero — "no rows passed" is the honest
-// reading of an empty result, and treating it as 100% would let a broken
-// evaluation hold a gate open.
+// Errored and skipped rows count against the pass rate, and they can: the
+// service puts them inside `total`, verified live on a run that reported
+// total=3 passed=2 errored=1. Were they outside it, a run with two passes and
+// one error would report total=2 and score a perfect rate, which is precisely
+// the broken evaluation a gate exists to catch.
+//
+// A run that scored nothing at all breaches every threshold rather than
+// dividing by zero — "no rows passed" is the honest reading of an empty result.
 func (g gate) breach(counts *eval_api.EvalRunResultCounts) string {
 	if !g.set {
 		return ""
@@ -86,8 +89,8 @@ func (g gate) breach(counts *eval_api.EvalRunResultCounts) string {
 	}
 	actual := float64(counts.Passed) / float64(counts.Total)
 	if actual < g.passRate {
-		return fmt.Sprintf("pass rate %.3f is below the required %.3f (%d of %d passed)",
-			actual, g.passRate, counts.Passed, counts.Total)
+		return fmt.Sprintf("pass rate %.1f%% is below the required %.1f%%",
+			actual*100, g.passRate*100)
 	}
 	return ""
 }
@@ -106,7 +109,8 @@ func applyGate(cmd *cobra.Command, g gate, run *eval_api.OpenAIEvalRun) {
 	if reason == "" {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "Evaluation gate failed: %s\n", reason)
+	fmt.Fprintf(os.Stderr, "(x) Failed: Evaluation gate: %s\n\n", reason)
+	fmt.Fprintln(os.Stderr, "ERROR: evaluation quality gate not met.")
 	os.Exit(exitCodeGateBreached)
 }
 

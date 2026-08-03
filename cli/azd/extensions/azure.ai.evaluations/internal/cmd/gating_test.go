@@ -51,14 +51,22 @@ func TestGateBreach(t *testing.T) {
 		require.NotEmpty(t, anyFailure.breach(&eval_api.EvalRunResultCounts{Total: 2, Passed: 1, Failed: 1}))
 	})
 
-	// Errored rows are in the total and did not pass, so they count against the
-	// threshold the same way a failing row does.
+	// Errored rows are inside the total, verified live, so they count against
+	// the threshold the same way a failing row does.
 	t.Run("errored rows count against the rate", func(t *testing.T) {
 		counts := &eval_api.EvalRunResultCounts{Total: 10, Passed: 8, Errored: 2}
 		require.Empty(t, eighty.breach(counts), "0.8 exactly meets a 0.8 threshold")
 
 		counts = &eval_api.EvalRunResultCounts{Total: 10, Passed: 7, Errored: 3}
 		require.NotEmpty(t, eighty.breach(counts))
+	})
+
+	// The wording is pinned because the hero scenario shows it verbatim.
+	t.Run("reads as a percentage", func(t *testing.T) {
+		counts := &eval_api.EvalRunResultCounts{Total: 1000, Passed: 764}
+		require.Equal(t,
+			"pass rate 76.4% is below the required 80.0%",
+			eighty.breach(counts))
 	})
 
 	// A run that scored nothing has no defensible pass rate, and treating it as

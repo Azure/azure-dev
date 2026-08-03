@@ -327,6 +327,39 @@ func Synthesize(in Input) (*Result, error) {
 	}, nil
 }
 
+// ConnectionEnvironmentScopes returns services that declare env.
+// An empty env block still establishes an isolated service scope.
+func ConnectionEnvironmentScopes(
+	raw []byte,
+	projectRoot string,
+) (map[string]bool, error) {
+	if len(raw) == 0 {
+		return nil, errors.New("synthesis: raw azure.yaml is empty")
+	}
+
+	var root projectFile
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return nil, fmt.Errorf("parse azure.yaml: %w", err)
+	}
+
+	scopes := map[string]bool{}
+	for name, node := range root.Services {
+		node, matches, err := serviceForHost(
+			node,
+			projectRoot,
+			name,
+			aiConnectionHost,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if matches && connectionEnvDeclared(node) {
+			scopes[name] = true
+		}
+	}
+	return scopes, nil
+}
+
 // BrownfieldDeployments returns the model deployments declared on a brownfield
 // (endpoint:) Foundry project service. Synthesize short-circuits with
 // ErrEndpointBrownfield before reading deployments:, so the provider uses this

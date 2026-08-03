@@ -18,6 +18,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -276,6 +277,101 @@ services:
 	require.True(t, ok)
 	require.Len(t, connections, 1)
 	require.Equal(t, "https://service.example", connections[0].Target)
+}
+
+func TestResolveTemplateUsesOnDiskConnectionServiceEnvironment(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	projectPath := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectPath, "azure.yaml"),
+		[]byte(`
+services:
+  project:
+    host: azure.ai.project
+  connection:
+    host: azure.ai.connection
+    env:
+      ENDPOINT: ${SEARCH_ENDPOINT}
+`),
+		0o600,
+	))
+	infraDir := filepath.Join(projectPath, onDiskInfraDir)
+	require.NoError(t, os.MkdirAll(infraDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(infraDir, onDiskBicepFile),
+		[]byte("// bicep\n"),
+		0o600,
+	))
+	params := minimalARMParametersFile(t, map[string]any{
+		"connections": []map[string]any{
+			{"name": "connection", "target": "${ENDPOINT}"},
+		},
+	})
+	require.NoError(t, os.WriteFile(
+		filepath.Join(infraDir, onDiskParamsFile),
+		[]byte(params),
+		0o600,
+	))
+
+	projectServer := &validateStubProjectServer{
+		project: &azdext.ProjectConfig{
+			Path: projectPath,
+			Services: map[string]*azdext.ServiceConfig{
+				"connection": {
+					Environment: map[string]string{
+						"ENDPOINT": "https://service.example",
+					},
+				},
+			},
+		},
+	}
+	client := newValidateTestClient(
+		t,
+		projectServer,
+		&validateStubEnvServer{
+			envName: "test",
+			get: map[string]string{
+				envKeySubscriptionID: "sub-id",
+				envKeyLocation:       "eastus",
+			},
+		},
+	)
+	provider := &FoundryProvisioningProvider{
+		azdClient: client,
+		bicepCliInstance: &stubCompiler{
+			buildResult: bicep.BuildResult{
+				Compiled: minimalARMTemplate(),
+			},
+		},
+	}
+
+	require.NoError(t, provider.Initialize(
+		t.Context(),
+		projectPath,
+		&azdext.ProvisioningOptions{Provider: FoundryProviderName},
+	))
+	source, err := provider.resolveTemplate(
+		t.Context(),
+		func(string) {},
+	)
+	require.NoError(t, err)
+
+	connectionEntry, ok :=
+		source.parameters["connections"].(map[string]any)
+	require.True(t, ok)
+	connections, ok := connectionEntry["value"].([]any)
+	require.True(t, ok)
+	require.Len(t, connections, 1)
+	connection, ok := connections[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(
+		t,
+		"https://service.example",
+		connection["target"],
+	)
 }
 
 func TestArmOutputsToProto(t *testing.T) {

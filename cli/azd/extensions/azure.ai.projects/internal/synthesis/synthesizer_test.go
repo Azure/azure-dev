@@ -664,6 +664,32 @@ services:
 		assert.Equal(t, "", keys["x-api-key"])
 	})
 
+	t.Run("reports declared connection environment scopes", func(t *testing.T) {
+		const scopesYAML = `
+services:
+  my-project:
+    host: azure.ai.project
+  populated:
+    host: azure.ai.connection
+    env:
+      ENDPOINT: ${MCP_URL}
+  empty:
+    host: azure.ai.connection
+    env: {}
+  legacy:
+    host: azure.ai.connection
+`
+		scopes, err := ConnectionEnvironmentScopes(
+			[]byte(scopesYAML),
+			"",
+		)
+		require.NoError(t, err)
+		assert.Equal(t, map[string]bool{
+			"populated": true,
+			"empty":     true,
+		}, scopes)
+	})
+
 	t.Run("eject path preserves ${VAR} verbatim", func(t *testing.T) {
 		res, err := Synthesize(Input{
 			RawAzureYAML:    []byte(yaml),

@@ -69,20 +69,21 @@ type FoundryProvisioningProvider struct {
 	azdClient *azdext.AzdClient
 
 	// Populated by Initialize.
-	projectPath         string
-	synthResult         *synthesis.Result // nil when onDiskSource != nil
-	serviceEnvironments map[string]map[string]string
-	envName             string
-	subID               string
-	location            string
-	rgName              string
-	rgExplicit          bool // AZURE_RESOURCE_GROUP came from env, not the rg-<env> default
-	foundryName         string
-	principalID         string
-	credential          azcore.TokenCredential
-	tenantID            string          // resolved lazily by ensureCredential; surfaced as AZURE_TENANT_ID
-	armTemplate         map[string]any  // embedded ARM JSON; nil when onDiskSource is set
-	onDiskSource        *templateSource // non-nil when ./infra/main.{bicep,bicepparam} exists
+	projectPath                 string
+	synthResult                 *synthesis.Result // nil when onDiskSource != nil
+	serviceEnvironments         map[string]map[string]string
+	connectionEnvironmentScopes map[string]bool
+	envName                     string
+	subID                       string
+	location                    string
+	rgName                      string
+	rgExplicit                  bool // AZURE_RESOURCE_GROUP came from env, not the rg-<env> default
+	foundryName                 string
+	principalID                 string
+	credential                  azcore.TokenCredential
+	tenantID                    string          // resolved lazily by ensureCredential; surfaced as AZURE_TENANT_ID
+	armTemplate                 map[string]any  // embedded ARM JSON; nil when onDiskSource is set
+	onDiskSource                *templateSource // non-nil when ./infra/main.{bicep,bicepparam} exists
 
 	// brownfieldEndpoint is the existing project endpoint when the foundry
 	// service sets endpoint: (bring-your-own). When non-empty the provider skips
@@ -178,8 +179,40 @@ func (p *FoundryProvisioningProvider) Initialize(
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
-			fmt.Sprintf("resolve existing Foundry project endpoint: %s", err),
+			fmt.Sprintf(
+				"read Foundry project service configuration: %s",
+				err,
+			),
 			"fix the project service configuration in azure.yaml",
+		)
+	}
+
+	onDisk := p.onDiskTemplatePresent()
+	if !onDisk {
+		// Validate embedded config before any interactive prompts.
+		_, validationErr := synthesis.Synthesize(synthesis.Input{
+			RawAzureYAML:    rawYAML,
+			ServiceName:     svcName,
+			AcceptedHosts:   FoundryProvisioningServiceHosts,
+			PreserveVarRefs: true,
+			ProjectRoot:     projectPath,
+		})
+		if validationErr != nil &&
+			!errors.Is(validationErr, synthesis.ErrEndpointBrownfield) {
+			return foundrySynthesisError(svcName, validationErr)
+		}
+	}
+
+	p.connectionEnvironmentScopes, err =
+		synthesis.ConnectionEnvironmentScopes(rawYAML, projectPath)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf(
+				"read Foundry connection service configuration: %s",
+				err,
+			),
+			"fix the connection service configuration in azure.yaml",
 		)
 	}
 
@@ -203,7 +236,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 
 	// Detect on-disk Bicep before synthesizing. Stat-only; no compile here.
-	if p.onDiskTemplatePresent() {
+	if onDisk {
 		log.Printf("[debug] foundry provider: on-disk Bicep detected under %s; "+
 			"skipping synthesizer", filepath.Join(projectPath, onDiskInfraDir))
 		// endpoint: (brownfield) reuse skips provisioning even on the on-disk
@@ -251,18 +284,8 @@ func (p *FoundryProvisioningProvider) Initialize(
 		}
 		p.brownfieldEndpoint = endpoint
 		return p.captureBrownfieldDeployments(ctx, rawYAML, svcName)
-	case errors.Is(err, synthesis.ErrServiceNotFound):
-		return exterrors.Dependency(
-			exterrors.CodeProvisioningServiceNotFound,
-			fmt.Sprintf("no service in azure.yaml has host in %v", FoundryProjectServiceHosts),
-			fmt.Sprintf("add a service with `host: %s` to azure.yaml", FoundryProjectHost),
-		)
 	case err != nil:
-		return exterrors.Validation(
-			exterrors.CodeInvalidAzureYaml,
-			fmt.Sprintf("synthesize foundry project service %q: %s", svcName, err),
-			"check the endpoint, deployments, and network fields under your azure.ai.project service",
-		)
+		return foundrySynthesisError(svcName, err)
 	}
 	p.synthResult = res
 
@@ -283,6 +306,32 @@ func (p *FoundryProvisioningProvider) Initialize(
 	p.armTemplate = tmpl
 
 	return nil
+}
+
+func foundrySynthesisError(serviceName string, err error) error {
+	if errors.Is(err, synthesis.ErrServiceNotFound) {
+		return exterrors.Dependency(
+			exterrors.CodeProvisioningServiceNotFound,
+			fmt.Sprintf(
+				"no service in azure.yaml has host in %v",
+				FoundryProjectServiceHosts,
+			),
+			fmt.Sprintf(
+				"add a service with `host: %s` to azure.yaml",
+				FoundryProjectHost,
+			),
+		)
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidAzureYaml,
+		fmt.Sprintf(
+			"synthesize foundry project service %q: %s",
+			serviceName,
+			err,
+		),
+		"check the endpoint, deployments, and network fields "+
+			"under your azure.ai.project service",
+	)
 }
 
 // networkEnvMap returns a best-effort name -> value map of the azd environment
@@ -1243,7 +1292,16 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 ) (*templateSource, error) {
 	if p.onDiskSource == nil && p.onDiskTemplatePresent() {
 		progress("Compiling on-disk Bicep templates...")
-		src, err := loadOnDiskTemplate(ctx, p.projectPath, p.bicepCli(), p.envValues(ctx))
+		src, err := loadOnDiskTemplateWithEnvironment(
+			ctx,
+			p.projectPath,
+			p.bicepCli(),
+			onDiskEnvironment{
+				project:           p.envValues(ctx),
+				services:          p.serviceEnvironments,
+				scopedConnections: p.connectionEnvironmentScopes,
+			},
+		)
 		if err != nil {
 			return nil, err
 		}

@@ -420,3 +420,98 @@ services:
 	require.Len(t, connections, 1)
 	assert.Equal(t, "https://search.westus2.example", connections[0].Target)
 }
+
+func TestInitializeValidatesConfigBeforePrompting(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  string
+		wantErr string
+	}{
+		{
+			name:    "invalid deployments",
+			config:  "    deployments: invalid\n",
+			wantErr: "decode service",
+		},
+		{
+			name: "invalid network",
+			config: "    network:\n" +
+				"      peSubnet: {vnet: not-an-arm-id, name: pe}\n",
+			wantErr: "not a well-formed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projectPath := t.TempDir()
+			require.NoError(t, os.WriteFile(
+				filepath.Join(projectPath, "azure.yaml"),
+				[]byte("services:\n"+
+					"  project:\n"+
+					"    host: azure.ai.project\n"+
+					tt.config),
+				0o600,
+			))
+
+			env := &resolveEnvStubEnvServer{
+				envName: "test",
+				get:     map[string]string{},
+			}
+			prompt := &resolveEnvStubPromptServer{
+				subscriptionID: "sub-id",
+				location:       "westus2",
+			}
+			client := newResolveEnvTestClient(t, env, prompt)
+			provider := &FoundryProvisioningProvider{
+				azdClient: client,
+			}
+
+			err := provider.Initialize(
+				t.Context(),
+				projectPath,
+				&azdext.ProvisioningOptions{
+					Provider: FoundryProviderName,
+				},
+			)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+			assert.Zero(t, prompt.subscriptionN)
+			assert.Zero(t, prompt.locationN)
+		})
+	}
+}
+
+func TestInitializeProjectRefErrorUsesGenericMessage(t *testing.T) {
+	projectPath := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectPath, "azure.yaml"),
+		[]byte(`services:
+  project:
+    host: azure.ai.project
+    $ref: missing.yaml
+`),
+		0o600,
+	))
+
+	env := &resolveEnvStubEnvServer{
+		envName: "test",
+		get:     map[string]string{},
+	}
+	prompt := &resolveEnvStubPromptServer{}
+	client := newResolveEnvTestClient(t, env, prompt)
+	provider := &FoundryProvisioningProvider{azdClient: client}
+
+	err := provider.Initialize(
+		t.Context(),
+		projectPath,
+		&azdext.ProvisioningOptions{Provider: FoundryProviderName},
+	)
+	require.Error(t, err)
+	assert.Contains(
+		t,
+		err.Error(),
+		"read Foundry project service configuration",
+	)
+	assert.NotContains(t, err.Error(), "existing Foundry project endpoint")
+	assert.Zero(t, prompt.subscriptionN)
+	assert.Zero(t, prompt.locationN)
+}

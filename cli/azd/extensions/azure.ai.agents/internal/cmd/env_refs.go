@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
@@ -32,6 +33,12 @@ import (
 const (
 	honorEnvironmentEscaping  = true
 	ignoreEnvironmentEscaping = false
+)
+
+// environmentReferencePrefix parses only the reference prefix.
+// Balanced defaults remain the scanner's responsibility.
+var environmentReferencePrefix = regexp.MustCompile(
+	`^\$\{([A-Za-z_][A-Za-z0-9_]*)(\}|:-)`,
 )
 
 // environmentReference is one azd ${VAR} occurrence in a string.
@@ -118,36 +125,29 @@ func environmentReferenceCandidates(value string, honorEscaping bool) []environm
 }
 
 // environmentReferenceAt parses the reference opening at start.
-// The '{' check is what keeps a bare '$' from being read as one:
-// without it "$foo}" reports "oo", swallowing the 'f' as if it
-// were the brace, while foundry.ExpandEnv leaves the value
-// alone. "$ab:-${REAL}}" is the costly shape, because the
-// phantom would span the string and hide the live REAL.
+// The anchored prefix keeps a bare '$' from being read as one.
+// Balanced defaults still need the stateful end scanner below.
 func environmentReferenceAt(value string, start int) (environmentReference, bool) {
-	if start+1 >= len(value) || value[start+1] != '{' {
+	if start < 0 || start >= len(value) {
 		return environmentReference{}, false
 	}
 
-	index := start + 2
-	if index >= len(value) || !isEnvironmentNameStart(value[index]) {
+	match := environmentReferencePrefix.FindStringSubmatch(value[start:])
+	if match == nil {
 		return environmentReference{}, false
 	}
 
-	nameStart := index
-	index++
-	for index < len(value) && isEnvironmentNameCharacter(value[index]) {
-		index++
-	}
-	name := value[nameStart:index]
-
-	if index < len(value) && value[index] == '}' {
-		return environmentReference{Name: name, Start: start, End: index + 1}, true
-	}
-	if !strings.HasPrefix(value[index:], ":-") {
-		return environmentReference{}, false
+	name := match[1]
+	prefixEnd := start + len(match[0])
+	if match[2] == "}" {
+		return environmentReference{
+			Name:  name,
+			Start: start,
+			End:   prefixEnd,
+		}, true
 	}
 
-	end, found := environmentReferenceEnd(value, index+2)
+	end, found := environmentReferenceEnd(value, prefixEnd)
 	if !found {
 		return environmentReference{}, false
 	}
@@ -230,13 +230,4 @@ func protectedEnvironmentReferences(value string, references []environmentRefere
 		protected[i] = strings.Contains(expanded, probeRef)
 	}
 	return protected
-}
-
-func isEnvironmentNameStart(value byte) bool {
-	return value == '_' || value >= 'A' && value <= 'Z' ||
-		value >= 'a' && value <= 'z'
-}
-
-func isEnvironmentNameCharacter(value byte) bool {
-	return isEnvironmentNameStart(value) || value >= '0' && value <= '9'
 }

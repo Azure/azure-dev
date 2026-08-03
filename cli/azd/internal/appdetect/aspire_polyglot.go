@@ -123,7 +123,7 @@ func detectAspirePolyglotAppHost(dir string, entries []fs.DirEntry) (language st
 //     .NET path) or when no language could be resolved.
 //   - appHostFile: the relative AppHost path declared in the config (may include subdirectories,
 //     e.g. "src/apphost.mts").
-//   - declared: whether the config authoritatively declares an AppHost (a readable, parseable
+//   - declared: whether the config authoritatively declares an AppHost (a readable, parsable
 //     config with a non-empty "appHost.path"). When true but language is "", the config declares a
 //     C#/non-polyglot AppHost; callers should treat that as authoritative and skip filename-based
 //     fallback detection. When false, the config was missing/unreadable/malformed and callers may

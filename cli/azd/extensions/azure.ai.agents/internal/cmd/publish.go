@@ -39,7 +39,7 @@ requested scope, then returns the published title id and Teams app id.
 
 Scopes:
   shared    shareable-link distribution (no tenant-admin approval required) [default]
-  org       organization-wide catalog (requires IT-admin approval)
+  tenant    organization-wide catalog (requires IT-admin approval)
 
 'personal' is not supported here: per-user install is a Teams client action, not a
 store publish. For local testing, run 'azd ai agent pack' and sideload with
@@ -55,7 +55,7 @@ failure rather than silently skipped.`,
   azd ai agent publish my-agent --scope shared
 
   # Publish organization-wide (requires IT-admin approval)
-  azd ai agent publish --scope org`,
+  azd ai agent publish --scope tenant`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
@@ -126,7 +126,9 @@ func (a *PublishAction) Run(ctx context.Context) error {
 		appVersion:  a.flags.appVersion,
 	})
 
-	fmt.Printf("Publishing Teams app for agent %q (scope: %s)...\n", packCtx.agentName, scope.flag)
+	if a.flags.output != "json" {
+		fmt.Printf("Publishing Teams app for agent %q (scope: %s)...\n", packCtx.agentName, scope.flag)
+	}
 
 	result, err := packCtx.agentClient.PublishTeamsApp(
 		ctx, packCtx.agentName, request, agent_api.Microsoft365APIVersion,
@@ -157,7 +159,7 @@ func (a *PublishAction) Run(ctx context.Context) error {
 	fmt.Printf("  Teams App ID: %s\n", result.TeamsAppID)
 	fmt.Printf("  Install link: %s\n", deepLink)
 	switch scope.flag {
-	case "org":
+	case "tenant":
 		fmt.Println("The app is submitted to the organization catalog and awaits IT-admin approval.")
 	default:
 		fmt.Println("Share the install link above; recipients can add the app without tenant-admin approval.")

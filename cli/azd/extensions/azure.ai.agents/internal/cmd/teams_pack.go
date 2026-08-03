@@ -32,12 +32,12 @@ type teamsPackScope struct {
 
 // teamsPackScopes enumerates the supported publish scopes. "personal" is the
 // default because it needs no Teams admin approval (per-user sideload); "shared"
-// distributes via a shareable link without tenant-admin approval; "org" publishes
-// to the whole organization and requires IT-admin approval.
+// distributes via a shareable link without tenant-admin approval; "tenant"
+// publishes to the whole organization and requires IT-admin approval.
 var teamsPackScopes = []teamsPackScope{
 	{flag: "personal", api: "Personal", summary: "per-user sideload (no admin approval required)"},
 	{flag: "shared", api: "Shared", summary: "shareable link distribution (no tenant-admin approval required)"},
-	{flag: "org", api: "Tenant", summary: "organization-wide catalog (requires IT-admin approval)"},
+	{flag: "tenant", api: "Tenant", summary: "organization-wide catalog (requires IT-admin approval)"},
 }
 
 // resolveTeamsPackScope validates a user-supplied scope value and returns the
@@ -49,10 +49,9 @@ func resolveTeamsPackScope(value string) (teamsPackScope, error) {
 	if normalized == "" {
 		normalized = "personal"
 	}
-	// "tenant" is accepted as an alias for "org" because that is the underlying
-	// PublishScope value; users familiar with the service contract may reach for it.
-	if normalized == "tenant" {
-		normalized = "org"
+	// "org" is accepted as a friendly alias for the Vienna API's "Tenant" scope.
+	if normalized == "org" {
+		normalized = "tenant"
 	}
 	for _, scope := range teamsPackScopes {
 		if scope.flag == normalized {

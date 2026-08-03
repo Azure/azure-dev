@@ -89,7 +89,7 @@ func TestValidatePublishScope(t *testing.T) {
 	if err := validatePublishScope(personal); err == nil {
 		t.Error("expected personal scope to be rejected for publish, got nil")
 	}
-	for _, s := range []string{"shared", "org"} {
+	for _, s := range []string{"shared", "tenant", "org"} {
 		scope, _ := resolveTeamsPackScope(s)
 		if err := validatePublishScope(scope); err != nil {
 			t.Errorf("validatePublishScope(%q) = %v, want nil", s, err)

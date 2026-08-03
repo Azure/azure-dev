@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -159,12 +160,12 @@ func (a *PackAction) resolveOutputPath(packCtx *teamsPackContext) (string, error
 // joinScopeHelp renders the supported scope values with their one-line summaries
 // for the --scope flag help text.
 func joinScopeHelp() string {
-	out := ""
+	var out strings.Builder
 	for i, scope := range teamsPackScopes {
 		if i > 0 {
-			out += "; "
+			out.WriteString("; ")
 		}
-		out += fmt.Sprintf("%s: %s", scope.flag, scope.summary)
+		out.WriteString(fmt.Sprintf("%s: %s", scope.flag, scope.summary))
 	}
-	return out
+	return out.String()
 }

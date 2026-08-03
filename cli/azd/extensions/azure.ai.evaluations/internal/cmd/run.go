@@ -60,6 +60,7 @@ func buildRunCommand(use, short string) *cobra.Command {
 		level       string
 		maxSamples  int
 		wait        bool
+		failOn      string
 		endpointFlg string
 	)
 
@@ -69,6 +70,13 @@ func buildRunCommand(use, short string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			out := cmd.OutOrStdout()
+
+			// Parsed before any network work, so a malformed threshold costs
+			// nothing to find out about.
+			threshold, err := parseGate(failOn)
+			if err != nil {
+				return err
+			}
 
 			ec, err := newEvalContext(ctx, endpointFlg)
 			if err != nil {
@@ -167,9 +175,18 @@ func buildRunCommand(use, short string) *cobra.Command {
 			}
 
 			if isJSON(cmd) {
-				return emitJSON(out, final)
+				if err := emitJSON(out, final); err != nil {
+					return err
+				}
+			} else if err := renderRun(out, final); err != nil {
+				return err
 			}
-			return renderRun(out, final)
+
+			// Last, so that the results are reported whether or not the gate
+			// holds: a pipeline that only learns it failed is worse off than
+			// one that can see by how much.
+			applyGate(cmd, threshold, final)
+			return nil
 		},
 	}
 
@@ -185,6 +202,7 @@ func buildRunCommand(use, short string) *cobra.Command {
 	cmd.Flags().IntVar(&maxSamples, "max-samples", 0,
 		"Cap the rows sent from the dataset.")
 	cmd.Flags().BoolVar(&wait, "wait", true, "Block until the run reaches a terminal state.")
+	addFailOnFlag(cmd, &failOn)
 	// The spec documents --no-wait, and cobra does not derive it from a bool.
 	var noWait bool
 	cmd.Flags().BoolVar(&noWait, "no-wait", false, "Submit the run and return immediately.")

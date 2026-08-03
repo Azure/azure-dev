@@ -21,6 +21,7 @@ func newEvaluatorCommand() *cobra.Command {
 	cmd.AddCommand(
 		newEvaluatorCreateCommand(),
 		newEvaluatorUpdateCommand(),
+		newEvaluatorGenerateCommand(),
 		newEvaluatorListCommand(),
 		newEvaluatorShowCommand(),
 		newEvaluatorDeleteCommand(),

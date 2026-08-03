@@ -8,21 +8,21 @@ package cli
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-// `generate` submits two jobs that cost model time and take minutes, so what
-// is exercised here is everything up to that point: the flag combinations it
-// refuses, the spec it parses, and the two flags that mean "I already have
-// this one, do not make another". None of these tests submits a job — the last
-// one reaches the service and deliberately generates nothing.
+// Generation submits a job that costs model time and takes minutes, so what is
+// exercised here is everything up to that point: the flag combinations each
+// command refuses and the spec it parses. No test here submits a job.
+//
+// There is one command per artifact, so nothing suppresses anything: a caller
+// who already has a dataset simply does not run `dataset generate`.
 
 // TestCLIGenerateRefusesBadFlagCombinations covers the mistakes that must cost
-// nothing to make. Each of these is decided locally, so a user finds out
-// before a job is billed.
+// nothing to make. Each is decided locally, so a user finds out before a job is
+// billed.
 func TestCLIGenerateRefusesBadFlagCombinations(t *testing.T) {
 	dir := t.TempDir()
 	instruction := filepath.Join(dir, "instruction.md")
@@ -34,32 +34,48 @@ func TestCLIGenerateRefusesBadFlagCombinations(t *testing.T) {
 		want string
 	}{{
 		name: "the two instruction sources are mutually exclusive",
-		args: []string{"--target", "a", "--agent-instruction", "inline",
-			"--agent-instruction-file", instruction},
+		args: []string{"dataset", "generate", "d", "--target", "a",
+			"--agent-instruction", "inline", "--agent-instruction-file", instruction},
 		want: "agent-instruction-file",
 	}, {
 		name: "below the minimum sample size",
-		args: []string{"--target", "a", "--max-samples", "14"},
+		args: []string{"dataset", "generate", "d", "--target", "a", "--max-samples", "14"},
 		want: "between 15 and 1000",
 	}, {
 		name: "above the maximum sample size",
-		args: []string{"--target", "a", "--max-samples", "1001"},
+		args: []string{"dataset", "generate", "d", "--target", "a", "--max-samples", "1001"},
 		want: "between 15 and 1000",
 	}, {
 		name: "a missing instruction file names the flag",
-		args: []string{"--target", "a", "--agent-instruction-file",
-			filepath.Join(dir, "absent.md")},
+		args: []string{"dataset", "generate", "d", "--target", "a",
+			"--agent-instruction-file", filepath.Join(dir, "absent.md")},
 		want: "--agent-instruction-file",
 	}, {
-		name: "generating needs a model deployment",
-		args: []string{"--target", "a", "--agent-instruction", "inline"},
+		name: "generating a dataset needs a model deployment",
+		args: []string{"dataset", "generate", "d", "--target", "a", "--agent-instruction", "inline"},
+		want: "--generation-model",
+	}, {
+		name: "generating an evaluator needs a model deployment",
+		args: []string{"evaluator", "generate", "e", "--target", "a", "--agent-instruction", "inline"},
 		want: "--generation-model",
 	}}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := requireFailure(t, runIn(t, dir, append([]string{"generate"}, tc.args...)...))
+			r := requireFailure(t, runIn(t, dir, tc.args...))
 			require.Contains(t, r.Combined(), tc.want)
+		})
+	}
+}
+
+// TestCLIGenerateNamesTheArtifact pins the positional argument. Without it the
+// name would come from the spec, and two runs would quietly overwrite the same
+// artifact.
+func TestCLIGenerateNamesTheArtifact(t *testing.T) {
+	for _, group := range []string{"dataset", "evaluator"} {
+		t.Run(group, func(t *testing.T) {
+			r := requireFailure(t, runIn(t, t.TempDir(), group, "generate"))
+			require.Contains(t, r.Combined(), "accepts 1 arg")
 		})
 	}
 }
@@ -67,7 +83,7 @@ func TestCLIGenerateRefusesBadFlagCombinations(t *testing.T) {
 // TestCLIGenerateNoPromptNamesWhatIsMissing is the CI case: with no target and
 // nothing to prompt with, the process has to end saying which flag to pass.
 func TestCLIGenerateNoPromptNamesWhatIsMissing(t *testing.T) {
-	r := requireFailure(t, runIn(t, t.TempDir(), "generate", "--no-prompt"))
+	r := requireFailure(t, runIn(t, t.TempDir(), "dataset", "generate", "d", "--no-prompt"))
 	require.Contains(t, r.Combined(), "--target is required")
 	require.Contains(t, r.Combined(), "--no-prompt",
 		"the message must say why it could not be resolved")
@@ -91,68 +107,26 @@ generate:
     strategy: from-traces
 `), 0o600))
 
-	r := requireFailure(t, runIn(t, dir, "generate", "--config", spec))
+	r := requireFailure(t, runIn(t, dir, "dataset", "generate", "d", "--config", spec))
 	require.Contains(t, r.Combined(), "from-traces")
 	require.Contains(t, r.Combined(), "agent.context.traces.window",
 		"the refusal must point at the field that does seed generation from traces")
 }
 
-// TestCLIGenerateSkipsWhatWasSupplied is the one generate test that reaches the
-// service, and it is here because the skip decision is made in the command
-// body rather than in the config resolver.
-//
-// With both artifacts supplied there is nothing left to generate, so the whole
-// command runs without submitting a job — which is what makes it affordable to
-// assert on. A regression that stopped honouring either flag would show up as
-// a generation job starting instead of this returning.
-func TestCLIGenerateSkipsWhatWasSupplied(t *testing.T) {
+// TestCLIGenerateFlagsAreScopedToTheirArtifact asserts the two commands do not
+// share settings that only one of them can honour. A sample count means nothing
+// to a rubric, and a trace window means nothing to a synthetic dataset; either
+// would be accepted and dropped.
+func TestCLIGenerateFlagsAreScopedToTheirArtifact(t *testing.T) {
 	dir := t.TempDir()
 
-	r := requireSuccess(t, runIn(t, dir, "generate",
-		"--target", "azd-eval-probe-agent",
-		"--agent-instruction", "answer questions about orders",
-		"--evaluator", "already-published",
-		"--dataset", "already-registered"))
+	r := requireFailure(t, runIn(t, dir, "evaluator", "generate", "e",
+		"--target", "a", "--max-samples", "20"))
+	require.Contains(t, r.Combined(), "max-samples",
+		"--max-samples belongs to dataset generate")
 
-	require.Contains(t, r.Stdout, "skipping rubric generation")
-	require.Contains(t, r.Stdout, "skipping data generation")
-	require.Contains(t, r.Stdout, "Nothing was generated.")
-
-	// The deployment spec is only rewritten when something was produced, and
-	// writing an empty reference into it would be worse than not writing.
-	entries, err := os.ReadDir(dir)
-	require.NoError(t, err)
-	require.Empty(t, entries, "a generate that produced nothing must write nothing")
-}
-
-// TestCLIGenerateSuppressionIsPerArtifact pins the two flags apart: neither
-// may suppress the artifact it does not name.
-//
-// Each case supplies one artifact and leaves the other to be generated, and is
-// stopped at the model check that precedes submission. Reaching that error is
-// the proof: it is only raised when something is still going to be generated,
-// so it says the unsupplied artifact survived the other flag.
-func TestCLIGenerateSuppressionIsPerArtifact(t *testing.T) {
-	cases := []struct {
-		name     string
-		supplied []string
-		survives string
-	}{
-		{"a supplied evaluator leaves the dataset", []string{"--evaluator", "already-published"}, "dataset"},
-		{"a supplied dataset leaves the rubric", []string{"--dataset", "already-registered"}, "rubric"},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			args := append([]string{"generate",
-				"--target", "azd-eval-probe-agent",
-				"--agent-instruction", "answer questions about orders"}, tc.supplied...)
-
-			r := requireFailure(t, runIn(t, t.TempDir(), args...))
-			require.Contains(t, r.Combined(), "--generation-model",
-				"the %s was suppressed by a flag that does not name it", tc.survives)
-			require.NotContains(t, strings.ToLower(r.Combined()), "generating ",
-				"the run must stop at the model check, before any job is submitted")
-		})
-	}
+	r = requireFailure(t, runIn(t, dir, "dataset", "generate", "d",
+		"--target", "a", "--trace-days", "7"))
+	require.Contains(t, r.Combined(), "trace-days",
+		"--trace-days belongs to evaluator generate")
 }

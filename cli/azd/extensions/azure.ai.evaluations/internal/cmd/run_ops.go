@@ -90,6 +90,8 @@ func newRunShowCommand() *cobra.Command {
 	var (
 		endpointFlg string
 		groupName   string
+		wait        bool
+		failOn      string
 	)
 
 	cmd := &cobra.Command{
@@ -98,6 +100,12 @@ func newRunShowCommand() *cobra.Command {
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+
+			threshold, err := parseGate(failOn)
+			if err != nil {
+				return err
+			}
+
 			ec, err := newEvalContext(ctx, endpointFlg)
 			if err != nil {
 				return err
@@ -114,8 +122,22 @@ func newRunShowCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			// Reattaching to a run started asynchronously: the pipeline that
+			// gates on it is often not the one that started it.
+			if wait {
+				run, err = ec.pollRun(ctx, evalID, run.ID, cmd.OutOrStdout(), isJSON(cmd))
+				if err != nil {
+					return err
+				}
+			}
+
 			if isJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), run)
+				if err := emitJSON(cmd.OutOrStdout(), run); err != nil {
+					return err
+				}
+				applyGate(cmd, threshold, run)
+				return nil
 			}
 
 			out := cmd.OutOrStdout()
@@ -128,9 +150,13 @@ func newRunShowCommand() *cobra.Command {
 			if run.ReportURL != "" {
 				fmt.Fprintf(out, "  report  : %s\n", run.ReportURL)
 			}
+			applyGate(cmd, threshold, run)
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&wait, "wait", false,
+		"Block until the run reaches a terminal state before reporting.")
+	addFailOnFlag(cmd, &failOn)
 	addEvalFlags(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd

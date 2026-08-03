@@ -65,6 +65,35 @@ func TestScaffold_ExplicitEvaluatorsOptOutOfGeneration(t *testing.T) {
 	require.Empty(t, plan.generate.Evaluator)
 }
 
+// `init` closes by naming what to run next, and only what has something to do.
+// Pointing a caller who supplied their own artifacts at a generation command
+// would submit a billed job for something they already have.
+func TestScaffold_NextStepsOfferOnlyWhatIsScheduled(t *testing.T) {
+	t.Run("nothing supplied", func(t *testing.T) {
+		plan := planScaffold("support-agent-smoke", "support-agent", "support-agent-quality",
+			"", nil, "m", project.DefaultEvalDir)
+		require.Equal(t, []string{
+			"azd ai eval dataset generate support-agent-smoke",
+			"azd ai eval evaluator generate support-agent-quality",
+		}, plan.nextSteps())
+	})
+
+	t.Run("dataset supplied", func(t *testing.T) {
+		plan := planScaffold("smoke", "support-agent", "support-agent-quality",
+			"prod-golden", nil, "m", project.DefaultEvalDir)
+		require.Equal(t,
+			[]string{"azd ai eval evaluator generate support-agent-quality"},
+			plan.nextSteps())
+	})
+
+	t.Run("everything supplied", func(t *testing.T) {
+		plan := planScaffold("smoke", "support-agent", "support-agent-quality",
+			"prod-golden", []string{"builtin.task_adherence"}, "m", project.DefaultEvalDir)
+		require.Equal(t, []string{"azd up", "azd ai eval run start"}, plan.nextSteps(),
+			"with every artifact in place the next step is to deploy")
+	})
+}
+
 func TestGenerateScaffold_RoundTripsAndValidates(t *testing.T) {
 	dir := t.TempDir()
 	genPath := filepath.Join(dir, "generate.yaml")

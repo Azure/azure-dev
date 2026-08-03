@@ -128,9 +128,13 @@ func newInitCommand() *cobra.Command {
 				fmt.Fprintf(out, "  %-33s already declares service '%s'\n", rootConfigName, evalName)
 			}
 
-			fmt.Fprintf(out, "\nNext: azd ai eval dataset generate %s\n", plan.datasetName)
-			if plan.rubricCount() > 0 {
-				fmt.Fprintf(out, "      azd ai eval evaluator generate %s\n", rubricName)
+			// Only what was actually scheduled is offered. Suggesting
+			// `dataset generate` for a dataset the caller supplied sends them
+			// to submit a billed job for an artifact they already have.
+			next := plan.nextSteps()
+			fmt.Fprintf(out, "\nNext: %s\n", next[0])
+			for _, step := range next[1:] {
+				fmt.Fprintf(out, "      %s\n", step)
 			}
 			return nil
 		},
@@ -329,6 +333,27 @@ func (s scaffold) rubricCount() int {
 		return 0
 	}
 	return len(s.generate.Evaluator)
+}
+
+// nextSteps are the commands to run after `init`, and only the ones that have
+// something to do.
+//
+// A caller who supplied both a dataset and their evaluators has nothing left to
+// generate, and pointing them at a generation command would submit a billed job
+// for an artifact they already have. With everything in place the next step is
+// to deploy it.
+func (s scaffold) nextSteps() []string {
+	var steps []string
+	if s.generate != nil && len(s.generate.Dataset) > 0 {
+		steps = append(steps, "azd ai eval dataset generate "+s.datasetName)
+	}
+	if s.rubricCount() > 0 {
+		steps = append(steps, "azd ai eval evaluator generate "+s.rubricName)
+	}
+	if len(steps) == 0 {
+		steps = append(steps, "azd up", "azd ai eval run start")
+	}
+	return steps
 }
 
 // relativeToConfig rewrites a path given relative to the working directory so

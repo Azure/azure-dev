@@ -441,6 +441,15 @@ func TestDeploymentName_LongEnvironmentName(t *testing.T) {
 	assert.NotEqual(t, name, other.deploymentName())
 }
 
+func TestBrownfieldDeploymentNameIsIsolated(t *testing.T) {
+	t.Parallel()
+	p := &FoundryProvisioningProvider{envName: "dev", projectPath: "/proj/a"}
+
+	assert.NotEqual(t, p.deploymentName(), p.brownfieldDeploymentName())
+	assert.Contains(t, p.brownfieldDeploymentName(), "brownfield")
+	assert.LessOrEqual(t, len(p.brownfieldDeploymentName()), maxDeploymentNameLength)
+}
+
 func TestDeploymentOutputsResources_NilSafe(t *testing.T) {
 	assert.Nil(t, deploymentOutputs(nil))
 	assert.Nil(t, deploymentResources(nil))
@@ -575,7 +584,7 @@ func TestParameters_EmbeddedPath_IncludesSynthResultDerivedValues(t *testing.T) 
 		foundryName: "fp",
 		principalID: "pid",
 		synthResult: &synthesis.Result{
-			Parameters: map[string]any{"includeAcr": true},
+			RequiresAcr: true,
 		},
 	}
 	got, err := p.Parameters(t.Context())
@@ -620,9 +629,7 @@ func TestArmParameters_NilSafeOnMissingSynthResult(t *testing.T) {
 func TestArmParameters_UseValueEnvelopeForSecureConnections(t *testing.T) {
 	p := &FoundryProvisioningProvider{
 		synthResult: &synthesis.Result{
-			Parameters: map[string]any{
-				"connections": `[{"name":"search-conn"}]`,
-			},
+			Connections: []synthesis.Connection{{Name: "search-conn"}},
 		},
 	}
 
@@ -630,7 +637,7 @@ func TestArmParameters_UseValueEnvelopeForSecureConnections(t *testing.T) {
 
 	assert.Equal(
 		t,
-		map[string]any{"value": `[{"name":"search-conn"}]`},
+		map[string]any{"value": []synthesis.Connection{{Name: "search-conn"}}},
 		out["connections"],
 	)
 }
@@ -719,10 +726,7 @@ func TestResolveTemplate_FallsBackToEmbeddedWhenNoOnDisk(t *testing.T) {
 		principalID: "pid",
 		armTemplate: map[string]any{"$schema": "embedded", "contentVersion": "1.0.0.0"},
 		synthResult: &synthesis.Result{
-			Parameters: map[string]any{
-				"includeAcr":  false,
-				"deployments": []any{},
-			},
+			Deployments: []synthesis.Deployment{},
 		},
 	}
 
@@ -766,7 +770,18 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 	// (resolveTemplate skips the loadOnDiskTemplate call when
 	// onDiskSource is already set; this lets the test exercise the
 	// merge logic in isolation.)
-	armFromDisk := map[string]any{"$schema": "ondisk", "contentVersion": "1.0.0.0"}
+	armFromDisk := map[string]any{
+		"$schema":        "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+		"contentVersion": "1.0.0.0",
+		"parameters": map[string]any{
+			"location":           map[string]any{},
+			"userOnly":           map[string]any{},
+			"resourceGroupName":  map[string]any{},
+			"foundryAccountName": map[string]any{}, "foundryProjectName": map[string]any{},
+			"deployments": map[string]any{}, "connections": map[string]any{},
+			"connectionCredentials": map[string]any{},
+		},
+	}
 	p := &FoundryProvisioningProvider{
 		projectPath: dir,
 		envName:     "dev",
@@ -775,7 +790,7 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 		principalID: "pid",
 		armTemplate: map[string]any{"$schema": "embedded"},
 		synthResult: &synthesis.Result{
-			Parameters: map[string]any{"includeAcr": false},
+			RequiresAcr: false,
 		},
 		onDiskSource: &templateSource{
 			mode:        templateModeBicep,
@@ -793,7 +808,7 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 	require.NotNil(t, got)
 
 	assert.Equal(t, templateModeBicep, got.mode, "on-disk Bicep mode wins")
-	assert.Equal(t, "ondisk", got.armTemplate["$schema"],
+	assert.Contains(t, got.armTemplate["$schema"], "subscriptionDeploymentTemplate",
 		"on-disk template is returned, not the embedded one")
 	assert.Equal(t, filepath.Join(infraDir, onDiskBicepFile), got.sourcePath)
 
@@ -832,7 +847,7 @@ func TestResolveTemplate_OnDiskFallsBackWhenSourceLoaderReturnsNil(t *testing.T)
 		principalID: "pid",
 		armTemplate: map[string]any{"$schema": "embedded"},
 		synthResult: &synthesis.Result{
-			Parameters: map[string]any{"includeAcr": false},
+			RequiresAcr: false,
 		},
 	}
 
@@ -841,110 +856,20 @@ func TestResolveTemplate_OnDiskFallsBackWhenSourceLoaderReturnsNil(t *testing.T)
 	assert.Equal(t, templateModeEmbedded, got.mode)
 }
 
-func TestFoundryServiceEndpointAtRoot(t *testing.T) {
+func TestValidateUnifiedTemplateContractAllowsLegacyGreenfieldTemplate(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name         string
-		yaml         string
-		svcName      string
-		wantEndpoint string
-		wantErr      bool
-	}{
-		{
-			name: "greenfield (no endpoint:) -> empty",
-			yaml: `name: x
-services:
-  foundry:
-    host: azure.ai.project`,
-			svcName:      "foundry",
-			wantEndpoint: "",
-		},
-		{
-			name: "endpoint set -> returned for brownfield reuse",
-			yaml: `name: x
-services:
-  foundry:
-    host: azure.ai.project
-    endpoint: https://example.foundry.example.com`,
-			svcName:      "foundry",
-			wantEndpoint: "https://example.foundry.example.com",
-		},
-		{
-			name: "blank endpoint -> empty",
-			yaml: `name: x
-services:
-  foundry:
-    host: azure.ai.project
-    endpoint: "   "`,
-			svcName:      "foundry",
-			wantEndpoint: "",
-		},
-		{
-			name: "service not in yaml -> empty",
-			yaml: `name: x
-services:
-  other:
-    host: containerapp`,
-			svcName:      "foundry",
-			wantEndpoint: "",
-		},
-		{
-			name:    "malformed yaml returns parse error",
-			yaml:    "not: : valid: yaml",
-			svcName: "foundry",
-			wantErr: true,
+	tmpl := map[string]any{
+		"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+		"parameters": map[string]any{
+			"resourceGroupName":  map[string]any{},
+			"foundryProjectName": map[string]any{},
+			"deployments":        map[string]any{},
 		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			endpoint, err := foundryServiceEndpointAtRoot(
-				[]byte(tt.yaml),
-				"",
-				tt.svcName,
-			)
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, tt.wantEndpoint, endpoint)
-		})
-	}
-}
 
-func TestFoundryServiceEndpointAtRoot_ResolvesFileRef(
-	t *testing.T,
-) {
-	t.Parallel()
-
-	root := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(root, "project.yaml"),
-		[]byte(
-			"endpoint: https://acct.services.ai.azure.com/"+
-				"api/projects/existing\n",
-		),
-		0o600,
-	))
-	raw := []byte(`services:
-  foundry:
-    host: azure.ai.project
-    $ref: ./project.yaml
-`)
-
-	endpoint, err := foundryServiceEndpointAtRoot(
-		raw,
-		root,
-		"foundry",
-	)
-
-	require.NoError(t, err)
-	assert.Equal(
-		t,
-		"https://acct.services.ai.azure.com/api/projects/existing",
-		endpoint,
-	)
+	require.NoError(t, validateUnifiedTemplateContract(tmpl, false))
+	err := validateUnifiedTemplateContract(tmpl, true)
+	require.ErrorContains(t, err, "foundryAccountName")
 }
 
 func TestProjectNameFromEndpoint(t *testing.T) {
@@ -1028,6 +953,22 @@ func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {
 	assert.Equal(t, "my-rg", got[envKeyResourceGroup])
 	assert.Equal(t, "fp", got[envKeyProjectName])
 	assert.Equal(t, "pid", got[envKeyPrincipalID])
+}
+
+func TestEnvValues_DoesNotMaskAzdValuesWithEmptyCanonicalValues(t *testing.T) {
+	t.Parallel()
+	p := &FoundryProvisioningProvider{
+		envName: "dev",
+		azdClient: newKVEnvClient(t, map[string]string{
+			envKeySubscriptionID: "sub-from-env",
+			envKeyLocation:       "westus2",
+		}),
+	}
+
+	got := p.envValues(t.Context())
+
+	assert.Equal(t, "sub-from-env", got[envKeySubscriptionID])
+	assert.Equal(t, "westus2", got[envKeyLocation])
 }
 
 func TestCollectPurgeableAccounts(t *testing.T) {

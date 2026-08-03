@@ -19,6 +19,17 @@ param tags object = {}
 @maxLength(50)
 param name string
 
+@allowed([
+  'create'
+  'existing'
+])
+param acrMode string = 'create'
+param existingAcrSubscriptionId string = subscription().subscriptionId
+param existingAcrResourceGroup string = resourceGroup().name
+param existingAcrName string = name
+param existingAcrEndpoint string = ''
+param existingAcrConnectionName string = ''
+
 @description('Name of the existing Foundry CognitiveServices account that hosts the project receiving the ACR connection.')
 param foundryAccountName string
 
@@ -33,15 +44,19 @@ param enableNetworkIsolation bool = false
 
 // Variables
 
-// Built-in role definition ids. See: https://learn.microsoft.com/azure/role-based-access-control/built-in-roles
-var acrPullRoleId = subscriptionResourceId(
-  'Microsoft.Authorization/roleDefinitions',
-  '7f951dda-4ed3-4680-a7ca-43fe172d538d'
+var createAcr = acrMode == 'create'
+var configureAcr = createAcr || empty(existingAcrConnectionName)
+var resolvedAcrName = createAcr ? name : existingAcrName
+var resolvedAcrId = resourceId(
+  existingAcrSubscriptionId,
+  existingAcrResourceGroup,
+  'Microsoft.ContainerRegistry/registries',
+  resolvedAcrName
 )
 
 // Resources
 
-resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
+resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = if (createAcr) {
   name: name
   location: location
   tags: tags
@@ -64,13 +79,20 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
 
 // Grant the Foundry project's managed identity AcrPull on this registry so the
 // hosted agent can pull images using the project identity.
-resource foundryAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(registry.id, foundryProjectPrincipalId, acrPullRoleId)
-  scope: registry
-  properties: {
+module foundryAcrPullNew 'acr-pull-role-assignment.bicep' = if (createAcr) {
+  name: 'foundry-acr-pull-new'
+  params: {
+    registryName: name
     principalId: foundryProjectPrincipalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: acrPullRoleId
+  }
+}
+
+module foundryAcrPullExisting 'acr-pull-role-assignment.bicep' = if (!createAcr && empty(existingAcrConnectionName)) {
+  name: 'foundry-acr-pull-existing'
+  scope: resourceGroup(existingAcrSubscriptionId, existingAcrResourceGroup)
+  params: {
+    registryName: existingAcrName
+    principalId: foundryProjectPrincipalId
   }
 }
 
@@ -84,25 +106,26 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview
     name: foundryProjectName
 
     // Project-scoped connection so Foundry can resolve the registry by name.
-    resource acrConnection 'connections' = {
-      name: '${name}-conn'
+    resource acrConnection 'connections' = if (configureAcr) {
+      name: '${resolvedAcrName}-conn'
       properties: {
         category: 'ContainerRegistry'
-        target: registry.properties.loginServer
+        target: createAcr ? registry!.properties.loginServer : existingAcrEndpoint
         authType: 'ManagedIdentity'
         // RegistryIdentity auth requires both the identity client id (the
         // project principal) and the registry resource id.
         credentials: {
           clientId: foundryProjectPrincipalId
-          resourceId: registry.id
+          resourceId: resolvedAcrId
         }
         isSharedToAll: true
         metadata: {
-          ResourceId: registry.id
+          ResourceId: resolvedAcrId
         }
       }
       dependsOn: [
-        foundryAcrPull
+        foundryAcrPullNew
+        foundryAcrPullExisting
       ]
     }
   }
@@ -110,6 +133,6 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview
 
 // Outputs
 
-output loginServer string = registry.properties.loginServer
-output resourceId string = registry.id
-output connectionName string = foundryAccount::project::acrConnection.name
+output loginServer string = createAcr ? registry!.properties.loginServer : existingAcrEndpoint
+output resourceId string = resolvedAcrId
+output connectionName string = configureAcr ? foundryAccount::project::acrConnection!.name : existingAcrConnectionName

@@ -12,6 +12,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"azure.ai.projects/internal/exterrors"
 
@@ -248,11 +249,11 @@ func substituteParamValue(
 		)
 	}
 
-	hasUnsetEnvVar := false
+	unsetEnvVars := map[string]struct{}{}
 	substituted, err := envsubst.Eval(string(enc), func(varName string) string {
 		v, ok := envValues[varName]
 		if !ok {
-			hasUnsetEnvVar = true
+			unsetEnvVars[varName] = struct{}{}
 			return ""
 		}
 		// The value is being injected into a JSON-encoded entry, so JSON-escape
@@ -272,6 +273,14 @@ func substituteParamValue(
 			"check for malformed ${VAR} references in the parameters file",
 		)
 	}
+	if len(unsetEnvVars) > 0 && (name == "connections" || name == "connectionCredentials") {
+		return nil, exterrors.Validation(
+			exterrors.CodeOnDiskParametersInvalid,
+			fmt.Sprintf("parameter %q in %s references unset environment variables %v",
+				name, sourcePath, slices.Sorted(maps.Keys(unsetEnvVars))),
+			"set the missing azd environment values before provisioning",
+		)
+	}
 
 	var resolved any
 	if err := json.Unmarshal([]byte(substituted), &resolved); err != nil {
@@ -286,7 +295,7 @@ func substituteParamValue(
 	// because of an unresolved ${VAR}. Non-string values are always kept.
 	if entry, ok := resolved.(map[string]any); ok {
 		if val, ok := entry["value"]; ok {
-			if str, ok := val.(string); ok && str == "" && hasUnsetEnvVar {
+			if str, ok := val.(string); ok && str == "" && len(unsetEnvVars) > 0 {
 				return nil, nil
 			}
 		}

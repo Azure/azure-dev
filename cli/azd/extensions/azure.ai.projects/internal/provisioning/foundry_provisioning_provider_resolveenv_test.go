@@ -141,6 +141,31 @@ func TestResolveEnv_PromptsAndPersistsSubscriptionAndLocation(t *testing.T) {
 		"location should be persisted to the azd environment")
 }
 
+func TestResolveBrownfieldDeploymentContextDoesNotPromptForSubscriptionOrLocation(t *testing.T) {
+	t.Parallel()
+	env := &resolveEnvStubEnvServer{
+		envName: "dev",
+		get: map[string]string{
+			"AZURE_AI_PROJECT_ID": "/subscriptions/project-sub/resourceGroups/project-rg/providers/" +
+				"Microsoft.CognitiveServices/accounts/acct/projects/p",
+			envKeyLocation: "eastus",
+		},
+	}
+	prompt := &resolveEnvStubPromptServer{}
+	p := &FoundryProvisioningProvider{
+		envName:     "dev",
+		azdClient:   newResolveEnvTestClient(t, env, prompt),
+		synthResult: brownfieldResult("https://acct.services.ai.azure.com/api/projects/p", nil, nil),
+	}
+
+	require.NoError(t, p.resolveBrownfieldDeploymentContext(t.Context()))
+	assert.Equal(t, "project-sub", p.subID)
+	assert.Equal(t, "project-rg", p.rgName)
+	assert.Equal(t, "eastus", p.location)
+	assert.Zero(t, prompt.subscriptionN)
+	assert.Zero(t, prompt.locationN)
+}
+
 func TestResolveEnv_NoPromptSubscriptionReturnsActionableError(t *testing.T) {
 	// Under `--no-prompt` the azd host returns a "prompt required" error. The
 	// provider must surface an actionable suggestion naming the env var so CI

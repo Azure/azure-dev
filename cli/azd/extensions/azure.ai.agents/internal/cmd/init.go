@@ -1342,8 +1342,6 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				flags.manifestPointer = manifestPath
 				userProvidedManifest = true
 			}
-			// when no --manifest flag was provided.
-			//
 			// manifestDetectedButDeclined: gates the definition-reuse scan below so
 			// a declined manifest is not re-discovered and mis-classified.
 			manifestDetectedButDeclined := false

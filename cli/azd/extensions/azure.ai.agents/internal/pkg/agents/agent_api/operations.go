@@ -177,6 +177,15 @@ const voiceAgentsPreviewFeature = "VoiceAgents=V1Preview"
 // This routes the request directly to the regional Hyena data-plane host,
 // bypassing the public Foundry APIM (whose voice route may not yet be rolled
 // out). Pass "" to use the default endpoint routing.
+//
+// Redeploy semantics: the voice data-plane exposes create-only POST /voice_agents
+// with no version/upsert model (unlike hosted agents, which mint a new
+// agent-version per deploy). A second `azd deploy` of the same voice service
+// therefore re-POSTs with the same name and the service rejects it with a
+// non-success status, which this method surfaces as a deploy error rather than
+// silently overwriting the existing agent. Idempotent redeploy/update is tracked
+// as a follow-up (see the PR "Follow-ups" section); until the service adds an
+// update route, redeploy requires deleting the existing voice agent first.
 func (c *AgentClient) CreateVoiceAgent(
 	ctx context.Context,
 	request *CreateAgentRequest,

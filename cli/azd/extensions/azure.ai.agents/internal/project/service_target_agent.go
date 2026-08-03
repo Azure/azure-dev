@@ -432,10 +432,14 @@ func (p *AgentServiceTargetProvider) Endpoints(
 
 	// Voice agents (kind: prompt-voice) are created synchronously with no
 	// agent-version object and no per-protocol endpoints; they record only NAME
-	// and a base ENDPOINT. Recognize that shape via the base endpoint marker so a
-	// successfully deployed voice agent reports its endpoint instead of failing
-	// the version/per-protocol checks below (which only apply to hosted agents).
-	if azdEnv[agentVersionKey] == "" && azdEnv[agentEndpointKey] != "" {
+	// and a base ENDPOINT. Gate the base-endpoint fallback on the service's
+	// actual declared kind rather than on the env-var shape: a hosted agent whose
+	// deploy partially failed (or whose vars were cleaned up) can also present an
+	// empty VERSION with a lingering ENDPOINT, and for that case we must still
+	// surface the actionable CodeMissingAgentEnvVars error below.
+	if _, isVoice, err := VoiceAgentFromResolvedService(serviceConfig, p.projectPath); err != nil {
+		return nil, err
+	} else if isVoice && azdEnv[agentEndpointKey] != "" {
 		return []string{azdEnv[agentEndpointKey]}, nil
 	}
 

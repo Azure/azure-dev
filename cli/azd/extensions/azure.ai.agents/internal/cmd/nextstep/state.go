@@ -452,7 +452,7 @@ func collectServices(
 			RelativePath:  svc.RelativePath,
 			Protocol:      protocol,
 			MultiProtocol: multiProtocol,
-			IsDeployed:    isDeployed(ctx, src, envName, svc.Name, errs),
+			IsDeployed:    isDeployed(ctx, src, envName, svc.Name, isVoiceService(project.Path, svc), errs),
 		})
 	}
 
@@ -517,6 +517,53 @@ func structHasKind(s *structpb.Struct) bool {
 	}
 	v, ok := s.GetFields()["kind"]
 	return ok && strings.TrimSpace(v.GetStringValue()) != ""
+}
+
+// isVoiceService reports whether the service declares kind: prompt-voice,
+// preferring the inline/legacy config carried on the service entry and falling
+// back to the on-disk agent.yaml. It is the nextstep-local mirror of the kind
+// gate used by project.VoiceAgentFromResolvedService; the two live in separate
+// packages because project imports nextstep, so a literally shared helper would
+// create an import cycle.
+func isVoiceService(projectPath string, svc *azdext.ServiceConfig) bool {
+	if kind := serviceConfigKind(svc); kind != "" {
+		return kind == string(agent_yaml.AgentKindPromptVoice)
+	}
+	return fileServiceKind(projectPath, svc) == string(agent_yaml.AgentKindPromptVoice)
+}
+
+// serviceConfigKind returns the declared kind carried inline (or in the legacy
+// config block) on the service entry, or "" when none is present.
+func serviceConfigKind(svc *azdext.ServiceConfig) string {
+	props := nextStepServiceConfigProps(svc)
+	if len(props) == 0 {
+		return ""
+	}
+	kind, _ := props["kind"].(string)
+	return strings.TrimSpace(kind)
+}
+
+// fileServiceKind returns the declared kind from the service's on-disk
+// agent.yaml, or "" when the manifest is missing or unreadable.
+func fileServiceKind(projectPath string, svc *azdext.ServiceConfig) string {
+	if projectPath == "" || svc == nil {
+		return ""
+	}
+	manifestPath, err := paths.JoinAllowRoot(projectPath, svc.RelativePath, "agent.yaml")
+	if err != nil {
+		return ""
+	}
+	data, err := os.ReadFile(manifestPath) //nolint:gosec // path is validated under the project root
+	if err != nil {
+		return ""
+	}
+	var def struct {
+		Kind string `yaml:"kind"`
+	}
+	if err := yaml.Unmarshal(data, &def); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(def.Kind)
 }
 
 func loadServiceProtocolFromFile(projectPath, relativePath string) (string, bool) {
@@ -747,6 +794,7 @@ func isDeployed(
 	ctx context.Context,
 	src Source,
 	envName, serviceName string,
+	isVoice bool,
 	errs *[]error,
 ) bool {
 	if envName == "" || serviceName == "" {
@@ -765,7 +813,16 @@ func isDeployed(
 	// Voice agents (kind: prompt-voice) deploy without an agent-version object,
 	// so they never set AGENT_<KEY>_VERSION. Fall back to the base endpoint
 	// marker, which every voice deploy writes, so a successfully created voice
-	// agent is not reported as undeployed.
+	// agent is not reported as undeployed. Gate this on the service's actual
+	// declared kind: a hosted agent whose deploy partially failed can also
+	// present an empty VERSION with a lingering ENDPOINT, and must stay reported
+	// as not-deployed. This mirrors the kind gate in
+	// AgentServiceTargetProvider.Endpoints (project package); the two live in
+	// separate packages because project imports nextstep, so a literally shared
+	// helper would create an import cycle.
+	if !isVoice {
+		return false
+	}
 	endpointKey := fmt.Sprintf(agentEndpointVarFormat, serviceKey(serviceName))
 	endpointValue, err := src.EnvValue(ctx, envName, endpointKey)
 	if err != nil {

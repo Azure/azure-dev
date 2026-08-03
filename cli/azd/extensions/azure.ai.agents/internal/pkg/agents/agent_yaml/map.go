@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"regexp"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -471,11 +472,39 @@ const (
 	defaultVoiceName = "en-US-Ava:DragonHDLatestNeural"
 )
 
+// knownOpenAIVoices is the set of OpenAI realtime voice names accepted by the
+// data-plane voice service. OpenAI voices are single lowercase tokens; Azure
+// Neural voices are locale-prefixed (see azureNeuralVoicePattern). Keep this in
+// sync with the service's supported voice list.
+var knownOpenAIVoices = map[string]struct{}{
+	"alloy":   {},
+	"ash":     {},
+	"ballad":  {},
+	"coral":   {},
+	"echo":    {},
+	"sage":    {},
+	"shimmer": {},
+	"verse":   {},
+}
+
+// azureNeuralVoicePattern matches the locale prefix that every Azure Neural
+// voice name carries, e.g. "en-US-Ava:DragonHDLatestNeural" or
+// "ja-JP-NanamiNeural". The service contract guarantees this <lang>-<REGION>-
+// shape for Azure voices, which is what distinguishes them from the flat
+// lowercase OpenAI voice tokens.
+var azureNeuralVoicePattern = regexp.MustCompile(`^[a-z]{2,3}-[A-Z]{2,3}-`)
+
 // isOpenAIVoice reports whether a voice name denotes an OpenAI realtime voice
-// (single lowercase word, e.g. "alloy") vs an Azure Neural voice (contains "-",
-// e.g. "en-US-Ava:DragonHDLatestNeural").
+// (e.g. "alloy") vs an Azure Neural voice (e.g. "en-US-Ava:DragonHDLatestNeural").
+// It first matches the explicit known-OpenAI set, then falls back to structure:
+// anything lacking the Azure Neural locale prefix is treated as OpenAI. This is
+// deliberately stricter than a plain "contains '-'" check so that a partly
+// specified or future name is classified by its actual shape.
 func isOpenAIVoice(name string) bool {
-	return !strings.Contains(name, "-")
+	if _, ok := knownOpenAIVoices[strings.ToLower(strings.TrimSpace(name))]; ok {
+		return true
+	}
+	return !azureNeuralVoicePattern.MatchString(name)
 }
 
 // buildVoiceConfig chooses the OpenAI vs Azure voice type by name shape.

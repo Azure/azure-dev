@@ -16,10 +16,12 @@ import (
 func TestIsOpenAIVoice(t *testing.T) {
 	t.Parallel()
 	cases := map[string]bool{
-		"alloy":                          true, // single lowercase word -> OpenAI
+		"alloy":                          true, // known OpenAI voice
 		"verse":                          true,
-		"en-US-Ava:DragonHDLatestNeural": false, // contains "-" -> Azure Neural
+		"Shimmer":                        true,  // known OpenAI voice, case-insensitive
+		"en-US-Ava:DragonHDLatestNeural": false, // Azure Neural locale prefix
 		"en-US-JennyNeural":              false,
+		"ja-JP-NanamiNeural":             false, // non-en Azure locale prefix
 	}
 	for name, want := range cases {
 		if got := isOpenAIVoice(name); got != want {

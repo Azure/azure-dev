@@ -56,3 +56,48 @@ func TestDownloadTeamsAppPackage_ErrorStatus(t *testing.T) {
 	require.Contains(t, err.Error(), "403")
 	require.Contains(t, err.Error(), "nope")
 }
+
+func TestPublishTeamsApp_Success(t *testing.T) {
+	client, transport := newCaptureClient(
+		http.StatusOK,
+		`{"titleId":"T_123","teamsAppId":"app-456"}`,
+	)
+
+	request := TeamsAppPackageRequest{
+		BotServiceArmID:          "/subscriptions/s/resourceGroups/rg/providers/Microsoft.BotService/botServices/b",
+		PublishScope:             "Shared",
+		AgentDisplayName:         "my-agent",
+		AppVersion:               "1.0.0",
+		CanRespondWithoutMention: true,
+	}
+
+	result, err := client.PublishTeamsApp(t.Context(), "my-agent", request, Microsoft365APIVersion)
+	require.NoError(t, err)
+	require.Equal(t, "T_123", result.TitleID)
+	require.Equal(t, "app-456", result.TeamsAppID)
+
+	require.Len(t, transport.requests, 1)
+	got := transport.requests[0]
+	require.Equal(t, http.MethodPost, got.Method)
+	require.Equal(t, "/api/projects/proj/agents/my-agent/microsoft365/publish", got.URL.Path)
+	require.Equal(t, Microsoft365APIVersion, got.URL.Query().Get("api-version"))
+	require.Equal(t, "application/json", got.Header.Get("Content-Type"))
+	require.Equal(t, "HostedAgents=V1Preview,AgentEndpoints=V1Preview", got.Header.Get("Foundry-Features"))
+
+	bodyBytes, err := io.ReadAll(got.Body)
+	require.NoError(t, err)
+	var sent TeamsAppPackageRequest
+	require.NoError(t, json.Unmarshal(bodyBytes, &sent))
+	require.Equal(t, request, sent)
+}
+
+func TestPublishTeamsApp_ErrorStatus(t *testing.T) {
+	client, _ := newCaptureClient(http.StatusForbidden, `{"error":{"code":"Forbidden","message":"no publish"}}`)
+
+	_, err := client.PublishTeamsApp(
+		t.Context(), "my-agent", TeamsAppPackageRequest{}, Microsoft365APIVersion,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "403")
+	require.Contains(t, err.Error(), "no publish")
+}

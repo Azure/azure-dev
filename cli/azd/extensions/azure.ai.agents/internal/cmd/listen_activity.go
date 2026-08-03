@@ -252,13 +252,7 @@ func commitTeamsAppPackage(packagePath, markerPath string, zipBytes []byte) (str
 		return "", nil
 	}
 
-	tmpPath := packagePath + ".tmp"
-	if err := os.WriteFile(tmpPath, zipBytes, 0o600); err != nil {
-		_ = os.Remove(tmpPath)
-		return "", err
-	}
-	if err := os.Rename(tmpPath, packagePath); err != nil {
-		_ = os.Remove(tmpPath)
+	if err := writeTeamsAppPackageAtomically(packagePath, zipBytes); err != nil {
 		return "", err
 	}
 	// Best-effort marker: if it can't be written the zip is still valid; azd just
@@ -267,6 +261,19 @@ func commitTeamsAppPackage(packagePath, markerPath string, zipBytes []byte) (str
 		log.Printf("postdeploy: could not write Teams app package ownership marker %q: %v", markerPath, err)
 	}
 	return packagePath, nil
+}
+
+func writeTeamsAppPackageAtomically(packagePath string, zipBytes []byte) error {
+	tmpPath := packagePath + ".tmp"
+	if err := os.WriteFile(tmpPath, zipBytes, 0o600); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Rename(tmpPath, packagePath); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return nil
 }
 
 // removeOwnedTeamsAppPackage deletes a leftover azd-generated package (and its

@@ -140,7 +140,7 @@ func (a *PackAction) Run(ctx context.Context) error {
 				"remove the existing file or use --output-dir to write the generated package elsewhere",
 			)
 		}
-	} else if err := os.WriteFile(outputPath, zipBytes, 0o600); err != nil {
+	} else if err := writeTeamsAppPackageAtomically(outputPath, zipBytes); err != nil {
 		return fmt.Errorf("failed to write Teams app package %q: %w", outputPath, err)
 	}
 

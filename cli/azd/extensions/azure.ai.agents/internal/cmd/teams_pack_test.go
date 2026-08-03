@@ -40,8 +40,8 @@ func TestResolveTeamsPackScopeInvalid(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unsupported scope, got nil")
 	}
-	var localErr *azdext.LocalError
-	if !errors.As(err, &localErr) {
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
 		t.Fatalf("expected *azdext.LocalError, got %T", err)
 	}
 	if localErr.Code != exterrors.CodeInvalidPublishScope {

@@ -383,15 +383,27 @@ func printTeamsNextSteps(botName, msaAppID, guidePath, packagePath string) {
 func readEnvValue(
 	ctx context.Context, azdClient *azdext.AzdClient, envName, key string,
 ) (string, error) {
+	value, err := readOptionalEnvValue(ctx, azdClient, envName, key)
+	if err != nil {
+		return "", err
+	}
+	if value == "" {
+		return "", fmt.Errorf("%s is not set in the environment", key)
+	}
+	return value, nil
+}
+
+// readOptionalEnvValue reads an environment value, returning an empty string
+// without error when it is missing or empty.
+func readOptionalEnvValue(
+	ctx context.Context, azdClient *azdext.AzdClient, envName, key string,
+) (string, error) {
 	resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: envName,
 		Key:     key,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to read %s: %w", key, err)
-	}
-	if resp.Value == "" {
-		return "", fmt.Errorf("%s is not set in the environment", key)
 	}
 	return resp.Value, nil
 }
@@ -403,7 +415,7 @@ func readEnvValue(
 func teardownActivityBots(
 	ctx context.Context, azdClient *azdext.AzdClient, envName string, proj *azdext.ProjectConfig,
 ) {
-	var activityAgents []string
+	var activityServices []*azdext.ServiceConfig
 	for _, svc := range proj.Services {
 		if svc.Host != AiAgentHost {
 			continue
@@ -413,10 +425,10 @@ func teardownActivityBots(
 			continue
 		}
 		if project.IsActivityProtocol(ca) {
-			activityAgents = append(activityAgents, svc.Name)
+			activityServices = append(activityServices, svc)
 		}
 	}
-	if len(activityAgents) == 0 {
+	if len(activityServices) == 0 {
 		return
 	}
 
@@ -453,7 +465,19 @@ func teardownActivityBots(
 		return
 	}
 
-	for _, agentName := range activityAgents {
+	for _, svc := range activityServices {
+		agentName := svc.Name
+		serviceKey := toServiceKey(svc.Name)
+		if deployedName, err := readOptionalEnvValue(
+			ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_NAME", serviceKey),
+		); err != nil {
+			log.Printf(
+				"postdown: using service name %q for Teams bot cleanup because AGENT_%s_NAME could not be read: %v",
+				svc.Name, serviceKey, err,
+			)
+		} else if deployedName != "" {
+			agentName = deployedName
+		}
 		botName := botservice.BotName(agentName, botservice.BotScopeSalt(subscriptionID, resourceGroup))
 		if err := botClient.DeleteBot(ctx, resourceGroup, botName); err != nil {
 			log.Printf("postdown: failed to delete Azure Bot %q: %v", botName, err)

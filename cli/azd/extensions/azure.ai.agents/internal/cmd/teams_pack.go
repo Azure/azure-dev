@@ -14,7 +14,6 @@ import (
 	"azureaiagent/internal/pkg/botservice"
 	"azureaiagent/internal/project"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
@@ -61,7 +60,7 @@ func resolveTeamsPackScope(value string) (teamsPackScope, error) {
 	return teamsPackScope{}, exterrors.Validation(
 		exterrors.CodeInvalidPublishScope,
 		fmt.Sprintf("unsupported Teams publish scope %q", value),
-		fmt.Sprintf("use one of: %s", strings.Join(teamsPackScopeFlags(), ", ")),
+		fmt.Sprintf("use one of: %s (alias: org)", strings.Join(teamsPackScopeFlags(), ", ")),
 	)
 }
 
@@ -83,12 +82,10 @@ func teamsPackScopeFlags() []string {
 // loudly when the agent is missing, is not an activity agent, or has not been
 // deployed yet.
 type teamsPackContext struct {
-	azdClient   *azdext.AzdClient
 	proj        *azdext.ProjectConfig
 	svc         *azdext.ServiceConfig
 	agentName   string
 	botArmID    string
-	credential  azcore.TokenCredential
 	agentClient *agent_api.AgentClient
 }
 
@@ -138,7 +135,7 @@ func resolveTeamsPackContext(
 	// not exist, so fail loudly with a clear next step instead of producing a broken
 	// package.
 	serviceKey := toServiceKey(svc.Name)
-	agentName, err := readEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_NAME", serviceKey))
+	agentName, err := readOptionalEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_NAME", serviceKey))
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +147,7 @@ func resolveTeamsPackContext(
 				"before packaging or publishing",
 		)
 	}
-	version, err := readEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_VERSION", serviceKey))
+	version, err := readOptionalEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_VERSION", serviceKey))
 	if err != nil {
 		return nil, err
 	}
@@ -185,12 +182,10 @@ func resolveTeamsPackContext(
 	}
 
 	return &teamsPackContext{
-		azdClient:   azdClient,
 		proj:        proj,
 		svc:         svc,
 		agentName:   agentName,
 		botArmID:    botArmID,
-		credential:  credential,
 		agentClient: agent_api.NewAgentClient(endpoint, credential),
 	}, nil
 }
@@ -251,7 +246,7 @@ func validatePublishScope(scope teamsPackScope) error {
 			"'personal' scope is not supported by 'azd ai agent publish'",
 			"personal install is a Teams client action, not a store publish; run "+
 				"'azd ai agent pack' and sideload with 'atk install --scope personal', "+
-				"or publish with --scope shared or --scope org",
+				"or publish with --scope shared or --scope tenant",
 		)
 	}
 	return nil

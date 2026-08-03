@@ -15,6 +15,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var teamsPublishScopes = []teamsPackScope{
+	{flag: "shared", api: "Shared", summary: "shareable link distribution (no tenant-admin approval required)"},
+	{flag: "tenant", api: "Tenant", summary: "organization-wide catalog (requires IT-admin approval; alias: org)"},
+}
+
 type publishFlags struct {
 	name        string
 	scope       string
@@ -71,7 +76,7 @@ failure rather than silently skipped.`,
 	}
 
 	cmd.Flags().StringVar(&flags.scope, "scope", "shared",
-		fmt.Sprintf("Publish scope (%s)", joinScopeHelp()))
+		fmt.Sprintf("Publish scope (%s)", joinScopesHelp(teamsPublishScopes)))
 	cmd.Flags().StringVar(&flags.displayName, "display-name", "",
 		"Display name for the Teams app (defaults to the agent name)")
 	cmd.Flags().StringVar(&flags.appVersion, "app-version", "1.0.0",

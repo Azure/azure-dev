@@ -1295,6 +1295,73 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			}
 
+			// When the project's own azure.yaml already declares agent
+			// service(s), the values init would prompt for (agent name,
+			// protocols, deploy mode) are already recorded there. Offer to
+			// reuse that configuration instead of re-asking (issue #9154).
+			// This is the unified-format counterpart to the bare agent.yaml
+			// reuse above: the definition now lives inline on the service
+			// entry rather than in a separate file.
+			//
+			// An explicit --agent-name states intent to set up that specific
+			// agent, so it opts out of reuse and falls through to the normal
+			// flow rather than silently adopting whatever azure.yaml already
+			// declares.
+			if flags.manifestPointer == "" && !manifestDetectedButDeclined && flags.agentName == "" {
+				checkDir := flags.src
+				if checkDir == "" {
+					checkDir = "."
+				}
+				manifestPath, findErr := findProjectManifest(checkDir)
+				if findErr != nil {
+					return findErr
+				}
+				if manifestPath != "" {
+					agentServices, servicesErr := findProjectAgentServices(manifestPath)
+					if servicesErr != nil {
+						return servicesErr
+					}
+					if len(agentServices) > 0 {
+						displayPath, relErr := filepath.Rel(checkDir, manifestPath)
+						if relErr != nil || displayPath == "" {
+							displayPath = manifestPath
+						}
+
+						useExisting := flags.noPrompt
+						if !flags.noPrompt {
+							confirmResp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+								Options: &azdext.ConfirmOptions{
+									Message: fmt.Sprintf(
+										"%s already configures %s. Use it?",
+										displayPath,
+										describeProjectAgentServices(agentServices),
+									),
+									DefaultValue: new(true),
+								},
+							})
+							if promptErr != nil {
+								if exterrors.IsCancellation(promptErr) {
+									return exterrors.Cancelled("initialization was cancelled")
+								}
+								return fmt.Errorf("prompting for project agent reuse: %w", promptErr)
+							}
+							useExisting = *confirmResp.Value
+						}
+						if useExisting {
+							if flags.src == "" {
+								flags.src = checkDir
+							}
+							if err := runReuseProjectAgentServices(
+								ctx, flags, azdClient, checkDir, displayPath, agentServices,
+							); err != nil {
+								return err
+							}
+							return ejectInfraAfterInit(infraProvider)
+						}
+					}
+				}
+			}
+
 			if flags.manifestPointer != "" {
 				// Fail fast when the user accidentally passes a directory
 				// instead of a manifest file — before downloading templates.

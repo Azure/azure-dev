@@ -98,6 +98,12 @@ func (c *OptimizeConfig) Validate() error {
 				"or run 'azd ai agent eval generate' to generate one")
 	}
 
+	if c.Options.MaxStalls != nil && *c.Options.MaxStalls < 1 {
+		return fmt.Errorf(
+			"options.max_stalls must be >= 1 (got %d): set 'max_stalls' under 'options:' in your config file",
+			*c.Options.MaxStalls)
+	}
+
 	return nil
 }
 
@@ -129,6 +135,7 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 			MaxCandidates:     c.Options.MaxCandidates,
 			OptimizationModel: c.Options.OptimizationModel,
 			EvaluationLevel:   c.Options.EvaluationLevel,
+			MaxStalls:         c.Options.MaxStalls,
 		},
 	}
 

@@ -113,6 +113,9 @@ type OptimizeOptions struct {
 	OptimizationModel  string                     `json:"optimization_model"`
 	OptimizationConfig map[string]json.RawMessage `json:"optimization_config,omitempty"`
 	EvaluationLevel    string                     `json:"evaluation_level,omitempty"`
+	// MaxStalls is the maximum number of consecutive non-improving iterations
+	// before the optimizer stops early. Omitted when nil (service default applies).
+	MaxStalls *int `json:"max_stalls,omitempty"`
 }
 
 // --- Response models ---

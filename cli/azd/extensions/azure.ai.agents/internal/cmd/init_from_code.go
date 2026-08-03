@@ -904,7 +904,7 @@ type protocolInfo struct {
 // knownProtocols lists the protocols offered during init, in display order.
 var knownProtocols = []protocolInfo{
 	{Name: "responses", Version: "2.0.0"},
-	{Name: "invocations", Version: "1.0.0"},
+	{Name: "invocations", Version: "2.0.0"},
 	{Name: "invocations_ws", Version: "2.0.0"},
 	// "activity" is the canonical protocol name (legacy alias: "activity_protocol").
 	// The version selects the platform's internal container route ("v1"/"1.0.0" ->

@@ -26,6 +26,19 @@ const (
 	Test         ProviderKind = "test"
 )
 
+// Arm, Pulumi and Test are omitted because azd defines the kinds but registers no implementation.
+// Keep in sync with the providers registered in pkg/azd.
+var builtInProviderKinds = []ProviderKind{
+	Bicep,
+	Terraform,
+}
+
+// BuiltInProviderKinds returns the provisioning providers implemented by azd itself, as opposed to
+// those supplied by an extension.
+func BuiltInProviderKinds() []ProviderKind {
+	return builtInProviderKinds
+}
+
 type Mode string
 
 const (

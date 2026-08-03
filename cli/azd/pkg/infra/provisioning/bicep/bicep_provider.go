@@ -1088,25 +1088,9 @@ func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPrevie
 	}
 
 	if deployPreviewResult.Error != nil {
-		deploymentErr := *deployPreviewResult.Error
-		errDetailsList := make([]string, len(deploymentErr.Details))
-		for index, errDetail := range deploymentErr.Details {
-			errDetailsList[index] = fmt.Sprintf(
-				"code: %s, message: %s",
-				convert.ToValueWithDefault(errDetail.Code, ""),
-				convert.ToValueWithDefault(errDetail.Message, ""),
-			)
-		}
-
-		var errDetails string
-		if len(errDetailsList) > 0 {
-			errDetails = fmt.Sprintf(" Details: %s", strings.Join(errDetailsList, "\n"))
-		}
-		return nil, fmt.Errorf(
-			"generating preview: error code: %s, message: %s.%s",
-			convert.ToValueWithDefault(deploymentErr.Code, ""),
-			convert.ToValueWithDefault(deploymentErr.Message, ""),
-			errDetails,
+		return nil, azapi.NewAzureDeploymentErrorFromResponse(
+			deployPreviewResult.Error,
+			azapi.DeploymentOperationPreview,
 		)
 	}
 

@@ -139,6 +139,21 @@ func TestWrapDependencyError(t *testing.T) {
 	require.True(t, ok, "expected ErrorWithSuggestion, got %T", wrapped)
 	require.Contains(t, suggestErr.Suggestion, "azd extension install azure.ai.inspector")
 	require.ErrorAs(t, suggestErr.Err, new(*extensions.DependencyNotFoundError))
+
+	// Dependency-version errors explain how to satisfy or update the constraint.
+	versionErr := fmt.Errorf("install failed: %w", &extensions.DependencyVersionNotFoundError{
+		DependencyId: "azure.ai.inspector",
+		ParentId:     "azure.ai.agents",
+		Constraint:   ">=2.0.0",
+	})
+	wrapped = wrapDependencyError(versionErr)
+
+	suggestErr, ok = errors.AsType[*internal.ErrorWithSuggestion](wrapped)
+	require.True(t, ok, "expected ErrorWithSuggestion, got %T", wrapped)
+	require.Contains(t, suggestErr.Suggestion, "azure.ai.inspector")
+	require.Contains(t, suggestErr.Suggestion, ">=2.0.0")
+	require.Contains(t, suggestErr.Suggestion, "azure.ai.agents")
+	require.ErrorAs(t, suggestErr.Err, new(*extensions.DependencyVersionNotFoundError))
 }
 
 func newConfirmTestAction(console input.Console, noPrompt bool) *extensionInstallAction {

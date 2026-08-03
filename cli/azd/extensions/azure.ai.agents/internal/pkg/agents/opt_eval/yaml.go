@@ -480,6 +480,10 @@ type Options struct {
 	MaxCandidates      *int               `yaml:"max_candidates,omitempty"`
 	OptimizationModel  string             `yaml:"optimization_model,omitempty"`
 	EvaluationLevel    string             `yaml:"evaluation_level,omitempty"`
+	// MaxStalls is the maximum number of consecutive stalled iterations
+	// (iterations that do not improve over the current best score) before
+	// the optimizer stops early. When nil the service default is used.
+	MaxStalls *int `yaml:"max_stalls,omitempty"`
 }
 
 // Read reads a YAML config file (eval or optimize format).

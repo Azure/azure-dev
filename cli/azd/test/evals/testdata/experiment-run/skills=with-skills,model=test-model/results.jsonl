@@ -1,0 +1,2 @@
+{"type":"trial-result","stimulus":"experiment-trial","model":"test-model","variant":"skills=with-skills,model=test-model","trialIndex":0,"totalTrials":1,"status":"success","durationMs":100,"gradeResult":{"passed":true,"details":[{"name":"uses injected skill","passed":true}]},"trajectory":{"output":"Run azd up.","sessionPath":null,"metadata":{"skillsLoaded":["azd"]},"events":[]}}
+{"type":"run-summary","status":"completed","durationMs":100}

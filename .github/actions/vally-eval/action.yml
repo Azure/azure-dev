@@ -99,7 +99,7 @@ runs:
     # Keep installed extensions and auth state in a job-local dir so a run never
     # touches or depends on persistent runner state.
     - name: Configure azd environment
-      if: inputs.install-azd == 'true' || inputs.azd-extensions != ''
+      if: steps.copilot.outputs.enabled == 'true' && (inputs.install-azd == 'true' || inputs.azd-extensions != '')
       shell: bash
       run: |
         azd_config_dir="$RUNNER_TEMP/azd-config"
@@ -111,14 +111,14 @@ runs:
         } >> "$GITHUB_ENV"
 
     - name: Install azd
-      if: inputs.install-azd == 'true' || inputs.azd-extensions != ''
+      if: steps.copilot.outputs.enabled == 'true' && (inputs.install-azd == 'true' || inputs.azd-extensions != '')
       shell: bash
       run: |
         curl -fsSL https://aka.ms/install-azd.sh | bash
         azd version
 
     - name: Install azd extensions
-      if: inputs.azd-extensions != ''
+      if: steps.copilot.outputs.enabled == 'true' && inputs.azd-extensions != ''
       shell: bash
       env:
         AZD_EXTENSIONS: ${{ inputs.azd-extensions }}
@@ -138,7 +138,7 @@ runs:
         azd extension list --installed
 
     - name: Fetch external skills
-      if: inputs.fetch-skills == 'true'
+      if: steps.copilot.outputs.enabled == 'true' && inputs.fetch-skills == 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: |
@@ -174,7 +174,7 @@ runs:
     # The skill tracks another repo's default branch, so record which commit this run
     # saw -- otherwise the results artifact can't be tied back to it.
     - name: Capture skill provenance
-      if: always() && inputs.fetch-skills == 'true' && steps.run.outputs.vally-run-dir != ''
+      if: always() && steps.copilot.outputs.enabled == 'true' && inputs.fetch-skills == 'true' && steps.run.outputs.vally-run-dir != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:

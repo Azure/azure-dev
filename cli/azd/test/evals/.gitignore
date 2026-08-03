@@ -1,7 +1,7 @@
 vally-results/
 vally-experiment-results/
 
-# Skills fetched from other repos by scripts/fetch-foundry-skill.sh. Not vendored
+# Skills fetched from other repos by scripts/fetch-foundry-skill.mjs. Not vendored
 # so we don't carry a copy of someone else's content that silently goes stale.
 skills/.external/
 

@@ -90,6 +90,7 @@ words:
   # Doctor / next-step terms
   - nextstep
   - nextsteps
+  - agentkind
   - undeployed
   - unredacted
   - UNKN

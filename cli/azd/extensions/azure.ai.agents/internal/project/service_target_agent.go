@@ -29,6 +29,7 @@ import (
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/pkg/projectconfig"
@@ -433,13 +434,18 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	// Voice agents (kind: prompt-voice) are created synchronously with no
 	// agent-version object and no per-protocol endpoints; they record only NAME
 	// and a base ENDPOINT. Gate the base-endpoint fallback on the service's
-	// actual declared kind rather than on the env-var shape: a hosted agent whose
-	// deploy partially failed (or whose vars were cleaned up) can also present an
-	// empty VERSION with a lingering ENDPOINT, and for that case we must still
-	// surface the actionable CodeMissingAgentEnvVars error below.
-	if _, isVoice, err := VoiceAgentFromResolvedService(serviceConfig, p.projectPath); err != nil {
-		return nil, err
-	} else if isVoice && azdEnv[agentEndpointKey] != "" {
+	// actual declared kind (resolved via the shared agentkind lookup, so this
+	// agrees with the deploy path and next-step reader) rather than on the
+	// env-var shape: a hosted agent whose deploy partially failed (or whose vars
+	// were cleaned up) can also present an empty VERSION with a lingering
+	// ENDPOINT, and for that case we must still surface the actionable
+	// CodeMissingAgentEnvVars error below. Kind resolution is best-effort here:
+	// an error (or non-voice result) simply falls through to the hosted guard, so
+	// hosted services keep their prior behavior on a path that never resolved
+	// config before.
+	if isVoice, err := agentkind.IsPromptVoice(
+		serviceConfig, p.projectPath, p.agentDefinitionPath,
+	); err == nil && isVoice && azdEnv[agentEndpointKey] != "" {
 		return []string{azdEnv[agentEndpointKey]}, nil
 	}
 

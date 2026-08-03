@@ -11,6 +11,7 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/pkg/projectconfig"
 
@@ -825,11 +826,22 @@ func voiceAgentFromDefinitionFile(path string) (agent_yaml.VoiceAgent, bool, err
 // loadContainerAgentDefinition). When agentDefinitionPath is empty the resolved
 // service entry is inspected instead. A non-voice result returns found=false so
 // the caller falls through to the container deploy path unchanged.
+//
+// The voice/non-voice decision is delegated to the shared agentkind lookup so
+// deploy, Endpoints, and next-step all classify a service identically; this
+// function then parses the definition from whichever source agentkind matched.
 func resolveVoiceAgentForDeploy(
 	agentDefinitionPath string,
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (agent_yaml.VoiceAgent, bool, error) {
+	isVoice, err := agentkind.IsPromptVoice(svc, projectRoot, agentDefinitionPath)
+	if err != nil {
+		return agent_yaml.VoiceAgent{}, false, err
+	}
+	if !isVoice {
+		return agent_yaml.VoiceAgent{}, false, nil
+	}
 	if agentDefinitionPath != "" {
 		return voiceAgentFromDefinitionFile(agentDefinitionPath)
 	}

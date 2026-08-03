@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
 
@@ -519,51 +520,13 @@ func structHasKind(s *structpb.Struct) bool {
 	return ok && strings.TrimSpace(v.GetStringValue()) != ""
 }
 
-// isVoiceService reports whether the service declares kind: prompt-voice,
-// preferring the inline/legacy config carried on the service entry and falling
-// back to the on-disk agent.yaml. It is the nextstep-local mirror of the kind
-// gate used by project.VoiceAgentFromResolvedService; the two live in separate
-// packages because project imports nextstep, so a literally shared helper would
-// create an import cycle.
+// isVoiceService reports whether the service declares kind: prompt-voice. It
+// delegates to the shared agentkind lookup so the next-step reader classifies a
+// service identically to the deploy path and Endpoints. Kind resolution is
+// best-effort for next-step hints, so any error is treated as not-voice.
 func isVoiceService(projectPath string, svc *azdext.ServiceConfig) bool {
-	if kind := serviceConfigKind(svc); kind != "" {
-		return kind == string(agent_yaml.AgentKindPromptVoice)
-	}
-	return fileServiceKind(projectPath, svc) == string(agent_yaml.AgentKindPromptVoice)
-}
-
-// serviceConfigKind returns the declared kind carried inline (or in the legacy
-// config block) on the service entry, or "" when none is present.
-func serviceConfigKind(svc *azdext.ServiceConfig) string {
-	props := nextStepServiceConfigProps(svc)
-	if len(props) == 0 {
-		return ""
-	}
-	kind, _ := props["kind"].(string)
-	return strings.TrimSpace(kind)
-}
-
-// fileServiceKind returns the declared kind from the service's on-disk
-// agent.yaml, or "" when the manifest is missing or unreadable.
-func fileServiceKind(projectPath string, svc *azdext.ServiceConfig) string {
-	if projectPath == "" || svc == nil {
-		return ""
-	}
-	manifestPath, err := paths.JoinAllowRoot(projectPath, svc.RelativePath, "agent.yaml")
-	if err != nil {
-		return ""
-	}
-	data, err := os.ReadFile(manifestPath) //nolint:gosec // path is validated under the project root
-	if err != nil {
-		return ""
-	}
-	var def struct {
-		Kind string `yaml:"kind"`
-	}
-	if err := yaml.Unmarshal(data, &def); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(def.Kind)
+	isVoice, err := agentkind.IsPromptVoice(svc, projectPath, "")
+	return err == nil && isVoice
 }
 
 func loadServiceProtocolFromFile(projectPath, relativePath string) (string, bool) {

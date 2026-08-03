@@ -618,6 +618,40 @@ func TestToolInstallAction_DryRun_MultiTool_EmitsSortedToolIds(t *testing.T) {
 	assert.False(t, ok, "tool.id must NOT be emitted alongside tool.ids (mutual exclusion)")
 }
 
+func TestToolUpgradeAction_DryRun_JsonPreservesSkippedAction(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+
+	detector := &cmdMockDetector{
+		detectTool: func(_ context.Context, td *tool.ToolDefinition) (*tool.ToolStatus, error) {
+			return &tool.ToolStatus{
+				Tool:             td,
+				Installed:        td.Id == "az-cli",
+				InstalledVersion: "1.0.0",
+			}, nil
+		},
+	}
+	manager := tool.NewManager(detector, &cmdMockInstaller{}, nil)
+
+	var buf bytes.Buffer
+	action := newToolUpgradeAction(
+		[]string{"az-cli", "github-copilot-cli"},
+		&toolUpgradeFlags{dryRun: true},
+		manager,
+		mockinput.NewMockConsole(),
+		&output.JsonFormatter{},
+		&buf,
+	)
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+
+	var items []toolDryRunItem
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &items))
+	require.Len(t, items, 2)
+	assert.Equal(t, "upgrade", items[0].Action)
+	assert.Equal(t, "skip (not installed)", items[1].Action)
+}
+
 // TestToolInstallAction_AllFailureBatch_EmitsCorrectAggregates exercises the
 // install path end-to-end against a mock Installer that fails every per-tool
 // install. It verifies the aggregate telemetry contract:

@@ -1524,7 +1524,7 @@ func (a *toolUpgradeAction) resolveAgentOptions(
 }
 
 // dryRun detects the current status of the tools and displays what
-// the upgrade command would do without making changes.
+// the update command would do without making changes.
 func (a *toolUpgradeAction) dryRun(
 	ctx context.Context,
 	tools []*tool.ToolDefinition,
@@ -1559,7 +1559,9 @@ func (a *toolUpgradeAction) dryRun(
 		// Keep the existing machine-readable action value stable for callers
 		// using either the update command or its upgrade alias.
 		for i := range rows {
-			rows[i].Action = "upgrade"
+			if rows[i].Action == "update" {
+				rows[i].Action = "upgrade"
+			}
 		}
 		return nil, a.formatter.Format(rows, a.writer, nil)
 	}

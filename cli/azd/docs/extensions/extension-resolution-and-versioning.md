@@ -139,8 +139,8 @@ When `azd` resolves versions, it filters them into compatible and incompatible s
 ### Behavior
 
 - `azd` filters out all versions whose `requiredAzdVersion` constraint is not satisfied by the running `azd` version, then selects the **highest remaining compatible version** that also matches the user's version constraint.
-- If a **newer incompatible version** exists beyond the selected version, `azd` shows a **warning** suggesting the user upgrade `azd`.
-- If **no compatible versions** remain after filtering, the install **fails** with guidance to upgrade `azd`. The install also fails if the user explicitly requests a specific version that is incompatible.
+- If a **newer incompatible version** exists beyond the selected version, `azd` shows a **warning** suggesting the user update `azd`.
+- If **no compatible versions** remain after filtering, the install **fails** with guidance to update `azd`. The install also fails if the user explicitly requests a specific version that is incompatible.
 - If `requiredAzdVersion` is **empty or cannot be parsed**, the version is treated as compatible (fail-open). This ensures that extensions without the field remain installable.
 
 ## Install Flow
@@ -166,10 +166,10 @@ Once a version is resolved, installation proceeds through these steps:
 When the source is **not** changing (same source as the installed extension):
 
 - **Same version** — a no-op; the install is skipped.
-- **Newer version** — upgraded in place.
+- **Newer version** — updated in place.
 - **Older version** — a downgrade; `azd` **prompts for confirmation** before replacing the newer install with an older one. Declining skips the install. In `--no-prompt` mode `azd` skips with guidance to pass `--force`, and `--force` proceeds without prompting.
 
-When the source **is** changing (for example installing a bundle build over a registry build, or vice versa), the artifacts may differ, so `azd` does not silently proceed, no-op, or block a downgrade. Instead it **prompts for confirmation** before replacing the installed extension. The prompt states the version transition explicitly — *Reinstall*, *Upgrade to `<version>`*, or *Downgrade to `<version>`* — and the target source. Declining skips the install; confirming reinstalls and re-points the extension to the new source. In `--no-prompt` mode `azd` skips with guidance to pass `--force`, and `--force` proceeds without prompting.
+When the source **is** changing (for example installing a bundle build over a registry build, or vice versa), the artifacts may differ, so `azd` does not silently proceed, no-op, or block a downgrade. Instead it **prompts for confirmation** before replacing the installed extension. The prompt states the version transition explicitly — *Reinstall*, *Update to `<version>`*, or *Downgrade to `<version>`* — and the target source. Declining skips the install; confirming reinstalls and re-points the extension to the new source. In `--no-prompt` mode `azd` skips with guidance to pass `--force`, and `--force` proceeds without prompting.
 
 Because each bundle install registers a unique transient source, installing from **any** bundle over an already-installed extension is always treated as a source change — so it prompts even when the bundled version matches the installed one (the two builds may not be byte-identical).
 
@@ -500,7 +500,7 @@ The update priority chain is:
 2. **Stored source** — the source the extension was originally installed from
 3. **Main registry fallback** — `azd` checks the main registry for promotion opportunities
 
-Promotion events are tracked via `ext.promote` telemetry. Upgrade events (regardless of promotion) are tracked via `ext.upgrade`.
+Promotion events are tracked via `ext.promote` telemetry. Update events (regardless of promotion) are tracked via `ext.upgrade`.
 
 #### Example: Dev→Main Promotion in Action
 
@@ -610,7 +610,7 @@ When the same extension ID is present in both `azd` and `dev`:
 
 #### Source ordering affects resolution
 
-Sources are sorted **alphabetically by name**. With the default naming (`azd` and `dev`), `azd` is consulted first because `"azd"` sorts before `"dev"`. If you name your dev source `"aaa-dev"`, it would be consulted first. The name only affects the order in which sources are searched — it does not affect upgrade or promotion behavior.
+Sources are sorted **alphabetically by name**. With the default naming (`azd` and `dev`), `azd` is consulted first because `"azd"` sorts before `"dev"`. If you name your dev source `"aaa-dev"`, it would be consulted first. The name only affects the order in which sources are searched — it does not affect update or promotion behavior.
 
 #### Stale cache after registry updates
 

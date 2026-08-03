@@ -129,6 +129,32 @@ func TestCommitTeamsAppPackage_WritesWhenAbsent(t *testing.T) {
 	}
 }
 
+func TestCommitTeamsAppPackage_DoesNotUseFixedTempPath(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, teamsAppPackageFile)
+	marker := filepath.Join(dir, teamsAppPackageMarkerFile)
+	fixedTemp := pkg + ".tmp"
+	if err := os.WriteFile(fixedTemp, []byte("DO-NOT-CLOBBER"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := commitTeamsAppPackage(pkg, marker, []byte("AZD-GENERATED"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != pkg {
+		t.Errorf("path = %q, want %q", got, pkg)
+	}
+	data, _ := os.ReadFile(pkg)
+	if string(data) != "AZD-GENERATED" {
+		t.Errorf("package content = %q", string(data))
+	}
+	tempData, _ := os.ReadFile(fixedTemp)
+	if string(tempData) != "DO-NOT-CLOBBER" {
+		t.Errorf("fixed temp path was clobbered; content = %q", string(tempData))
+	}
+}
+
 func TestCommitTeamsAppPackage_OverwritesOwned(t *testing.T) {
 	dir := t.TempDir()
 	pkg := filepath.Join(dir, teamsAppPackageFile)

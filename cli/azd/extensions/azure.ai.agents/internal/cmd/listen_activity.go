@@ -264,15 +264,29 @@ func commitTeamsAppPackage(packagePath, markerPath string, zipBytes []byte) (str
 }
 
 func writeTeamsAppPackageAtomically(packagePath string, zipBytes []byte) error {
-	tmpPath := packagePath + ".tmp"
-	if err := os.WriteFile(tmpPath, zipBytes, 0o600); err != nil {
-		_ = os.Remove(tmpPath)
+	tmpFile, err := os.CreateTemp(filepath.Dir(packagePath), filepath.Base(packagePath)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmpFile.Name()
+	removeTemp := true
+	defer func() {
+		if removeTemp {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if _, err := tmpFile.Write(zipBytes); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
 		return err
 	}
 	if err := os.Rename(tmpPath, packagePath); err != nil {
-		_ = os.Remove(tmpPath)
 		return err
 	}
+	removeTemp = false
 	return nil
 }
 

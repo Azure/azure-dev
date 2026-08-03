@@ -7,13 +7,14 @@
 #
 # The live integration tests are excluded: they carry the `live` build tag, so
 # an untagged run does not compile them, and they additionally require
-# AZURE_AI_EVAL_E2E_LIVE and a project endpoint.
+# AZURE_AI_EVAL_E2E_LIVE and a project endpoint. They are still type-checked
+# below, so a change that breaks them cannot reach main unnoticed.
 #
 # TODO before the first release: PR CI runs this script on windows, linux and
 # darwin amd64, so the untagged tests are covered on all three. The live and
-# hero suites are not -- being tagged, no pipeline has ever compiled them, and
-# both have only ever run on Windows by hand. Run them once on linux, where
-# they assume a path separator and shell out to `azd` and to a proxy address.
+# hero suites are only type-checked, never executed, and both have only ever
+# run on Windows by hand. Run them once on linux, where they assume a path
+# separator and shell out to `azd` and to a proxy address.
 
 $gopath = go env GOPATH
 $gotestsumBinary = "gotestsum"
@@ -34,6 +35,19 @@ if (Test-Path $gotestsum) {
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "Tests failed with exit code: $LASTEXITCODE" -ForegroundColor Red
+    exit $LASTEXITCODE
+}
+
+# The tagged suites are never run here, so without this nothing compiles them
+# and a change that breaks one reaches main silently. Type-checking needs no
+# credentials, so it costs a few seconds and runs everywhere the tests do.
+Write-Host ""
+Write-Host "Type-checking the live and hero suites..."
+go vet -tags live,hero ./...
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ""
+    Write-Host "The tagged test suites do not compile: $LASTEXITCODE" -ForegroundColor Red
     exit $LASTEXITCODE
 }
 

@@ -289,16 +289,13 @@ func newEvaluatorGenerateCommand() *cobra.Command {
 // reportGenerated closes out either command.
 //
 // With --no-wait nothing was downloaded and there is no ref, which is success:
-// the job id was printed and `job show` reattaches to it.
+// reportSubmitted has already said how to reattach.
 func reportGenerated(cmd *cobra.Command, ref *project.ArtifactRef, noWait bool) error {
 	out := cmd.OutOrStdout()
 	if ref == nil {
-		if noWait {
-			fmt.Fprintln(out,
-				"\nSubmitted. `azd ai eval job show <job-id>` reports its progress.")
-			return nil
+		if !noWait {
+			fmt.Fprintln(out, "Nothing was generated.")
 		}
-		fmt.Fprintln(out, "Nothing was generated.")
 		return nil
 	}
 	if isJSON(cmd) {

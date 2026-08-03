@@ -252,3 +252,45 @@ func TestSuggestedCommandsExist(t *testing.T) {
 	})
 	require.NoError(t, err)
 }
+
+// A command suggested with an argument has to be suggested with the argument
+// filled in.
+//
+// `--no-wait` exists so the caller can walk away, and the line they walk away
+// with is the one they paste when they come back. Printing
+// `azd ai eval job show <job-id>` reads like a command and is not one: it
+// resolves, so the check above passes, and it fails the moment anyone uses it.
+func TestSuggestedCommandsCarryNoPlaceholders(t *testing.T) {
+	placeholder := regexp.MustCompile(`azd ai eval [^"'\n]*<[a-z-]+>`)
+
+	err := filepath.WalkDir("../..", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for i, line := range strings.Split(string(body), "\n") {
+			trimmed := strings.TrimSpace(line)
+			// A `Use:` string and the help text around it are where a
+			// placeholder belongs: cobra prints it as the signature.
+			if strings.HasPrefix(trimmed, "//") ||
+				strings.HasPrefix(trimmed, "Use:") ||
+				strings.HasPrefix(trimmed, "Short:") ||
+				strings.HasPrefix(trimmed, "Long:") {
+				continue
+			}
+			if m := placeholder.FindString(line); m != "" {
+				t.Errorf("%s:%d suggests %q; substitute the value instead",
+					path, i+1, m)
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+}

@@ -177,7 +177,7 @@ func (ec *evalContext) generateRubric(
 		return nil, fmt.Errorf("submitting the rubric generation job: %w", err)
 	}
 	if noWait {
-		fmt.Fprintf(out, "  submitted job %s\n", job.ID)
+		reportSubmitted(out, job.ID)
 		return nil, nil
 	}
 
@@ -194,6 +194,16 @@ func (ec *evalContext) generateRubric(
 	fmt.Fprintf(out, "  wrote %s\n", path)
 
 	return &project.ArtifactRef{Name: plan.Name, Source: relativeSource(plan.BaseDir, path)}, nil
+}
+
+// reportSubmitted says what was started and how to get back to it.
+//
+// The job id goes into the command rather than being left as a placeholder:
+// --no-wait exists so the caller can walk away, and the line they walk away
+// with has to be the one they can paste when they come back.
+func reportSubmitted(out io.Writer, jobID string) {
+	fmt.Fprintf(out, "  submitted job %s\n", jobID)
+	fmt.Fprintf(out, "\nReattach with: azd ai eval job show %s\n", jobID)
 }
 
 // generateDataset submits the data generation job and downloads the result.
@@ -215,7 +225,7 @@ func (ec *evalContext) generateDataset(
 		return nil, fmt.Errorf("submitting the data generation job: %w", err)
 	}
 	if noWait {
-		fmt.Fprintf(out, "  submitted job %s\n", job.ID)
+		reportSubmitted(out, job.ID)
 		return nil, nil
 	}
 

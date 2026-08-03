@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strconv"
 	"strings"
 	"time"
 
@@ -361,32 +360,6 @@ func (r *evalReconciler) evaluatorVersionResolvable(
 		}
 	}
 	return false
-}
-
-// checkEvaluatorDrift fails when the service holds a newer version than the
-// one recorded at the last deploy.
-//
-// Publishing is not destructive — versions are immutable — so the remedy is to
-// sync with what is on the project, not to overwrite it.
-func (r *evalReconciler) checkEvaluatorDrift(
-	ctx context.Context,
-	name, recorded string,
-) error {
-	recordedNumber, err := strconv.Atoi(recorded)
-	if err != nil {
-		return nil
-	}
-	latest := r.ec.evalClient.LatestEvaluatorVersionNumber(
-		ctx, name, ProjectEndpointAPIVersion,
-	)
-	if latest <= recordedNumber {
-		return nil
-	}
-	return fmt.Errorf(
-		"evaluator %q is at version %d on the project but %s was recorded at the last deploy; "+
-			"someone published a version outside this repo. "+
-			"Pull the newer code locally, or delete version %d, then deploy again",
-		name, latest, recorded, latest)
 }
 
 // EnsureEval creates the group when it has never been deployed, or when an

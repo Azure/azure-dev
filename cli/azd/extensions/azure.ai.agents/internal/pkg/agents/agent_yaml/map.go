@@ -508,11 +508,18 @@ func isOpenAIVoice(name string) bool {
 }
 
 // buildVoiceConfig chooses the OpenAI vs Azure voice type by name shape.
+//
+// OpenAI realtime voice IDs are lowercase on the wire, and the classifier
+// already matches them case-insensitively, so normalize to lowercase to keep
+// e.g. "--voice Shimmer" from being emitted as "Shimmer". Azure Neural voice
+// names are case-sensitive (e.g. "en-US-Ava:DragonHDLatestNeural"), so only the
+// surrounding whitespace is trimmed for those.
 func buildVoiceConfig(name string) *agent_api.VoiceConfig {
-	if isOpenAIVoice(name) {
-		return &agent_api.VoiceConfig{Type: "openai", Name: name}
+	trimmed := strings.TrimSpace(name)
+	if isOpenAIVoice(trimmed) {
+		return &agent_api.VoiceConfig{Type: "openai", Name: strings.ToLower(trimmed)}
 	}
-	return &agent_api.VoiceConfig{Type: "azure_standard", Name: name}
+	return &agent_api.VoiceConfig{Type: "azure_standard", Name: trimmed}
 }
 
 // CreateVoiceAgentAPIRequest builds a CreateAgentRequest for a declarative

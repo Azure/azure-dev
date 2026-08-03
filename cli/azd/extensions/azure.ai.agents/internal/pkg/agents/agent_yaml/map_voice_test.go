@@ -41,6 +41,18 @@ func TestBuildVoiceConfig_OpenAI(t *testing.T) {
 	}
 }
 
+func TestBuildVoiceConfig_OpenAINormalizesCasing(t *testing.T) {
+	t.Parallel()
+	// OpenAI wire IDs are lowercase; mixed-case/padded input must normalize.
+	cfg := buildVoiceConfig("  Shimmer ")
+	if cfg.Type != "openai" {
+		t.Errorf("Type = %q, want openai", cfg.Type)
+	}
+	if cfg.Name != "shimmer" {
+		t.Errorf("Name = %q, want shimmer", cfg.Name)
+	}
+}
+
 func TestBuildVoiceConfig_Azure(t *testing.T) {
 	t.Parallel()
 	cfg := buildVoiceConfig("en-US-Ava:DragonHDLatestNeural")

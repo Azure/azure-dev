@@ -56,18 +56,11 @@ var sampleBindings = map[string]string{
 // modelSampleBindings are what a model target produces. A model answers as
 // plain text and calls no tools, so binding an agent's richer output would
 // leave the evaluator waiting on fields the run never produces.
-var modelSampleBindings = map[string]string{
-	"response": "{{sample.output_text}}",
-}
-
 // sampleBindingsFor returns the run-time bindings a target of this kind can
 // satisfy. An empty target kind means nothing is invoked, so nothing is bound.
 func sampleBindingsFor(targetType string) map[string]string {
-	switch targetType {
-	case project.TargetTypeAgent:
+	if targetType == project.TargetTypeAgent {
 		return sampleBindings
-	case project.TargetTypeModel:
-		return modelSampleBindings
 	}
 	return nil
 }

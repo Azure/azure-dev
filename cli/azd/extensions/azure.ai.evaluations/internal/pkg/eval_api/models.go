@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -418,84 +417,6 @@ func NewAgentTargetDataSource(agentName string, agentVersion *string) *EvalRunDa
 			Name:             agentName,
 			Version:          agentVersion,
 			ToolDescriptions: []string{},
-		},
-	}
-}
-
-// NewTracesDataSource evaluates an agent's recorded traces instead of a dataset.
-//
-// The window is a lookback in hours. The service's own field is
-// `lookback_hours` and it has no start bound: a `start_time` is accepted and
-// dropped, leaving the default seven days in place, so the conversion happens
-// here rather than being left to look like it worked.
-func NewTracesDataSource(agentName string, lookbackHours int, end time.Time, maxTraces int) *EvalRunDataSource {
-	ds := &EvalRunDataSource{
-		Type:          EvalRunDataSourceTypeTraces,
-		AgentName:     agentName,
-		LookbackHours: lookbackHours,
-		MaxTraces:     maxTraces,
-	}
-	if !end.IsZero() {
-		ds.EndTime = end.Unix()
-	}
-	return ds
-}
-
-// NewDatasetOnlyDataSource scores the dataset as it stands, invoking nothing.
-//
-// Used when a group declares no target: the rows already hold both sides of
-// the exchange, which is how a recorded conversation is evaluated.
-func NewDatasetOnlyDataSource() *EvalRunDataSource {
-	return &EvalRunDataSource{Type: EvalRunDataSourceTypeJSONL}
-}
-
-// NewModelTargetDataSource sends the dataset's questions straight to a model
-// deployment, with no agent in front of it.
-//
-// The model answers as plain text, so a group evaluating one has to bind its
-// response to {{sample.output_text}} rather than the richer output an agent
-// produces.
-func NewModelTargetDataSource(model string) *EvalRunDataSource {
-	return &EvalRunDataSource{
-		Type: EvalRunDataSourceTypeAgentTarget,
-		InputMessages: &EvalRunInputMessages{
-			Type: "template",
-			Template: []EvalRunMessageTemplate{
-				{
-					Role:    "user",
-					Content: "{{item.query}}",
-					Type:    "message",
-				},
-			},
-		},
-		Target: &EvalRunTarget{
-			Type:  "azure_ai_model",
-			Model: model,
-		},
-	}
-}
-
-// NewResponsesDataSource evaluates responses the project already stored.
-//
-// The ids travel as ordinary JSONL rows and a data_mapping points the service
-// at the field holding each one, which is how it retrieves the chat history
-// behind the response.
-func NewResponsesDataSource(responseIDs []string, maxTurns int) *EvalRunDataSource {
-	rows := make([]map[string]any, 0, len(responseIDs))
-	for _, id := range responseIDs {
-		rows = append(rows, map[string]any{"item": map[string]any{"response_id": id}})
-	}
-
-	return &EvalRunDataSource{
-		Type: EvalRunDataSourceTypeResponses,
-		ItemGenerationParams: &ItemGenerationParams{
-			Type:        "response_retrieval",
-			MaxNumTurns: maxTurns,
-			DataMapping: map[string]string{"response_id": "{{item.response_id}}"},
-			Source: &EvalRunDataContent{
-				Type:    EvalRunDataContentTypeFileContent,
-				Content: rows,
-			},
 		},
 	}
 }

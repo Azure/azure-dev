@@ -54,11 +54,6 @@ func buildRunCommand(use, short string) *cobra.Command {
 		runName     string
 		level       string
 		maxSamples  int
-		fromTraces  bool
-		traceWindow string
-		maxTraces   int
-		responseIDs []string
-		maxTurns    int
 		wait        bool
 		endpointFlg string
 	)
@@ -107,10 +102,6 @@ func buildRunCommand(use, short string) *cobra.Command {
 			// target and dataset comes from the group's previous run.
 			var dataSource *eval_api.EvalRunDataSource
 			switch {
-			case len(responseIDs) > 0:
-				dataSource = eval_api.NewResponsesDataSource(responseIDs, maxTurns)
-			case fromTraces:
-				dataSource, err = buildTracesDataSource(ctx, ec, group, evalID, traceWindow, maxTraces)
 			case group == nil:
 				dataSource, err = ec.reuseDataSourceFromLastRun(ctx, evalID)
 			default:
@@ -188,16 +179,6 @@ func buildRunCommand(use, short string) *cobra.Command {
 		"Scoring granularity: turn or conversation. Defaults to the service default (turn).")
 	cmd.Flags().IntVar(&maxSamples, "max-samples", 0,
 		"Cap the rows sent from the dataset.")
-	cmd.Flags().BoolVar(&fromTraces, "from-traces", false,
-		"Evaluate the agent's recorded traces instead of the dataset.")
-	cmd.Flags().StringVar(&traceWindow, "trace-window", "",
-		"How far back to read traces, for example 7d. Defaults to the service's window.")
-	cmd.Flags().IntVar(&maxTraces, "max-traces", 0, "Cap the traces evaluated.")
-	cmd.Flags().StringSliceVar(&responseIDs, "response-id", nil,
-		"Evaluate stored responses by id instead of the dataset; repeatable.")
-	cmd.Flags().IntVar(&maxTurns, "max-turns", 0,
-		"Turns of chat history to pull back per response. Defaults to the service's limit.")
-	cmd.MarkFlagsMutuallyExclusive("from-traces", "response-id")
 	cmd.Flags().BoolVar(&wait, "wait", true, "Block until the run reaches a terminal state.")
 	// The spec documents --no-wait, and cobra does not derive it from a bool.
 	var noWait bool
@@ -367,47 +348,6 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 	return list.Data[0].DataSource, nil
 }
 
-// buildTracesDataSource evaluates what the agent has already done, rather than
-// asking it fresh questions from a dataset.
-//
-// The service reads the traces from Application Insights, so the agent has to
-// be emitting gen_ai.input.messages / gen_ai.output.messages for anything to be
-// found; when it is not, the run fails with the service saying so.
-func buildTracesDataSource(
-	ctx context.Context,
-	ec *evalContext,
-	group *project.Eval,
-	evalID, window string,
-	maxTraces int,
-) (*eval_api.EvalRunDataSource, error) {
-	agent := ""
-	switch {
-	case group != nil && group.Target != nil:
-		agent = group.Target.Name
-	default:
-		// With --eval-id there is no config, so the agent comes from whatever
-		// the group ran against last.
-		last, err := ec.reuseDataSourceFromLastRun(ctx, evalID)
-		if err != nil {
-			return nil, err
-		}
-		if last != nil && last.Target != nil {
-			agent = last.Target.Name
-		}
-	}
-	if agent == "" {
-		return nil, fmt.Errorf(
-			"--from-traces needs to know whose traces to read, and the eval does not " +
-				"name an agent. Declare target.type: agent on the eval")
-	}
-
-	var lookbackHours int
-	if days := parseWindowDays(window); days > 0 {
-		lookbackHours = days * 24
-	}
-	return eval_api.NewTracesDataSource(agent, lookbackHours, time.Time{}, maxTraces), nil
-}
-
 // buildRunDataSource binds the dataset to the run. The eval carries no
 // dataset today, so it is supplied here.
 func (ec *evalContext) buildRunDataSource(
@@ -419,19 +359,11 @@ func (ec *evalContext) buildRunDataSource(
 	if group == nil {
 		return nil, fmt.Errorf("no eval to run")
 	}
-
-	// A group with no target scores a dataset that already holds the exchange,
-	// so there is nothing to invoke. That is how recorded conversations are
-	// evaluated.
-	var ds *eval_api.EvalRunDataSource
-	switch {
-	case group.Target == nil || group.Target.Name == "":
-		ds = eval_api.NewDatasetOnlyDataSource()
-	case group.Target.Type == project.TargetTypeModel:
-		ds = eval_api.NewModelTargetDataSource(group.Target.Name)
-	default:
-		ds = eval_api.NewAgentTargetDataSource(group.Target.Name, nil)
+	if group.Target == nil || group.Target.Name == "" {
+		return nil, fmt.Errorf("eval %q does not name a target agent", group.Name)
 	}
+
+	ds := eval_api.NewAgentTargetDataSource(group.Target.Name, nil)
 
 	if group.Dataset == "" {
 		return nil, fmt.Errorf("eval %q does not reference a dataset", group.Name)

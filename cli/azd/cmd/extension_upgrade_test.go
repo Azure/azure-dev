@@ -291,7 +291,7 @@ func TestDependencyChangeVerb(t *testing.T) {
 		toVersion   string
 		want        string
 	}{
-		{name: "upgrade", fromVersion: "1.0.0", toVersion: "2.0.0", want: "Upgraded"},
+		{name: "update", fromVersion: "1.0.0", toVersion: "2.0.0", want: "Updated"},
 		{name: "downgrade", fromVersion: "2.0.0", toVersion: "1.0.0", want: "Downgraded"},
 		{name: "non-semver", fromVersion: "nightly", toVersion: "dev", want: "Updated"},
 	}

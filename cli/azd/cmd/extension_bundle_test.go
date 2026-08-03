@@ -188,7 +188,7 @@ func TestConfirmSourceChange(t *testing.T) {
 			`azure.ai.agents 1.0.0 is already installed from source "azd". Reinstall from bundle?`)
 	})
 
-	t.Run("UpgradeShowsTargetVersion", func(t *testing.T) {
+	t.Run("UpdateShowsTargetVersion", func(t *testing.T) {
 		console := mockinput.NewMockConsole()
 		console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(true)
 		action := newConfirmTestAction(console, false)
@@ -199,7 +199,7 @@ func TestConfirmSourceChange(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, proceed)
 		require.Contains(t, lastConfirmMessage(console),
-			`azure.ai.agents 1.0.0 is already installed from source "azd". Upgrade to 2.0.0 from bundle?`)
+			`azure.ai.agents 1.0.0 is already installed from source "azd". Update to 2.0.0 from bundle?`)
 	})
 
 	t.Run("DowngradeDeclined", func(t *testing.T) {

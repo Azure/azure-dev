@@ -77,8 +77,8 @@ func TestBuildTeamsAppPackageRequest(t *testing.T) {
 }
 
 func TestTeamsAppDeepLink(t *testing.T) {
-	got := teamsAppDeepLink("abc-123")
-	want := "https://teams.microsoft.com/l/app/abc-123"
+	got := teamsAppDeepLink("T_abc 123")
+	want := "https://teams.microsoft.com/v2/#/l/app/?source=agent-details-page&titleId=T_abc+123&launchAgent=join_launcher_web"
 	if got != want {
 		t.Errorf("teamsAppDeepLink = %q, want %q", got, want)
 	}

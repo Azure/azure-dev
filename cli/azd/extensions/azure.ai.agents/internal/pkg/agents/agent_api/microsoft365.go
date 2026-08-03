@@ -98,8 +98,8 @@ func (c *AgentClient) DownloadTeamsAppPackage(
 
 // TeamsAppPublishResult is the response of the Microsoft 365 "publish" endpoint.
 // The V3 publish surface returns only the MOS title id and the generated Teams app
-// id; the caller can build a Teams deep link (https://teams.microsoft.com/l/app/{TeamsAppID})
-// from TeamsAppID so a user (or anyone the app is shared with) can install it.
+// id; the caller builds the install link from TitleID because shared-scope
+// distribution is acquired through the MOS title before Teams can open the app id.
 type TeamsAppPublishResult struct {
 	// TitleID is the MOS catalog title id for the published app.
 	TitleID string `json:"titleId"`

@@ -142,7 +142,7 @@ func (a *PublishAction) Run(ctx context.Context) error {
 		return exterrors.ServiceFromAzure(err, exterrors.OpPublishTeamsApp)
 	}
 
-	deepLink := teamsAppDeepLink(result.TeamsAppID)
+	deepLink := teamsAppDeepLink(result.TitleID)
 
 	if a.flags.output == "json" {
 		payload := map[string]string{

@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -228,11 +229,14 @@ func buildTeamsAppPackageRequest(
 	}
 }
 
-// teamsAppDeepLink returns the Teams deep link that installs the published custom
-// engine agent. Anyone the app is shared with (for the "shared" scope) or the
-// publishing user (for "personal") can open it to add the app in Teams.
-func teamsAppDeepLink(teamsAppID string) string {
-	return fmt.Sprintf("https://teams.microsoft.com/l/app/%s", teamsAppID)
+// teamsAppDeepLink returns the Teams v2 launcher link for a Microsoft Organization
+// Store title. Shared-scope Foundry publishes are discoverable through the MOS
+// title id; the Teams app id alone can open a catalog app only after acquisition.
+func teamsAppDeepLink(titleID string) string {
+	return fmt.Sprintf(
+		"https://teams.microsoft.com/v2/#/l/app/?source=agent-details-page&titleId=%s&launchAgent=join_launcher_web",
+		url.QueryEscape(titleID),
+	)
 }
 
 // validatePublishScope rejects scopes the Microsoft 365 publish backend does not

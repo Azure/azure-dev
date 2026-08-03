@@ -69,6 +69,21 @@ func TestResolvePlan_RequiresAGenerationModel(t *testing.T) {
 	require.Contains(t, err.Error(), "generationModel")
 }
 
+// An input the caller named and got wrong is reported ahead of one they simply
+// left out. Both checks are local, so the only thing deciding which the user
+// sees is the order they run in — and a missing instruction file is a typo the
+// caller can act on, while the model has a documented default path.
+func TestResolvePlan_ReportsABadExplicitInputFirst(t *testing.T) {
+	f := evalsDir(t, "", nil)
+	f.target = "shop-agent"
+	f.instructionFile = filepath.Join(t.TempDir(), "absent.md")
+
+	_, err := resolvePlan(f, loadSpec(t, f), "d", genEntry{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "--agent-instruction-file",
+		"the flag the caller got wrong must win over the one they omitted")
+}
+
 // The spec is read per artifact name, so generating one artifact never picks up
 // the other's settings.
 func TestResolvePlan_ReadsTheNamedSpecEntry(t *testing.T) {

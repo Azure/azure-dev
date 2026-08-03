@@ -52,22 +52,18 @@ func addGenerateFlags(cmd *cobra.Command, f *generateFlags) {
 	cmd.Flags().StringVar(&f.endpoint, "project-endpoint", "", "Foundry project endpoint.")
 }
 
-// prepareGeneration resolves everything both commands need before they diverge.
+// prepareGeneration builds the client and settles the one input that needs it.
 //
-// The model check happens here rather than at the service, because a generation
-// job is billed against a deployment and a rejection partway through the
-// command says less than a refusal at the flag that caused it.
+// Everything decidable offline is already on the plan by this point, so a
+// mistake in the flags has been reported without an authentication round trip.
+// What is left is the generation instruction's last fallback: the agent's
+// published instructions, which only the service can supply.
 func prepareGeneration(
 	cmd *cobra.Command,
 	f *generateFlags,
 	plan generationPlan,
 	declared genEntry,
 ) (*evalContext, generationPlan, error) {
-	instruction, err := resolveInstruction(f.instruction, f.instructionFile)
-	if err != nil {
-		return nil, plan, err
-	}
-
 	ctx := cmd.Context()
 	ec, err := newEvalContext(ctx, f.endpoint)
 	if err != nil {
@@ -75,7 +71,7 @@ func prepareGeneration(
 	}
 
 	plan.Instruction, err = ec.resolveGenerationInstruction(
-		ctx, instruction, declared.instructions, f.configPath, plan.Agent,
+		ctx, plan.Instruction, declared.instructions, f.configPath, plan.Agent,
 		cmd.OutOrStdout(), isJSON(cmd),
 	)
 	if err != nil {
@@ -91,20 +87,29 @@ func prepareGeneration(
 // generation spec, then what can be detected from the eval configuration.
 // Doing it before the client is built means a missing model or an out-of-range
 // sample count is refused without an authentication round trip.
+//
+// The instruction file is read here rather than later so that an input the
+// caller named and got wrong is reported ahead of one they simply left out.
 func resolvePlan(
 	f *generateFlags,
 	cfg *project.GenerateConfig,
 	name string,
 	declared genEntry,
 ) (generationPlan, error) {
+	instruction, err := resolveInstruction(f.instruction, f.instructionFile)
+	if err != nil {
+		return generationPlan{}, err
+	}
+
 	plan := generationPlan{
-		Name:       name,
-		Agent:      firstNonEmpty(f.target, declared.deriveFrom, evalTarget(f)),
-		Model:      firstNonEmpty(f.model, cfg.GenerationModel),
-		BaseDir:    filepath.Dir(f.configPath),
-		OutputDir:  firstNonEmpty(f.outputDir, declared.outputDir),
-		SampleSize: declared.sampleSize,
-		TraceDays:  declared.traceDays,
+		Name:        name,
+		Agent:       firstNonEmpty(f.target, declared.deriveFrom, evalTarget(f)),
+		Model:       firstNonEmpty(f.model, cfg.GenerationModel),
+		Instruction: instruction,
+		BaseDir:     filepath.Dir(f.configPath),
+		OutputDir:   firstNonEmpty(f.outputDir, declared.outputDir),
+		SampleSize:  declared.sampleSize,
+		TraceDays:   declared.traceDays,
 	}
 	if plan.Model == "" {
 		return plan, fmt.Errorf(

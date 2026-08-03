@@ -1,0 +1,93 @@
+# Evals for the official `microsoft-foundry` skill, as it drives azd.
+#
+# Run `npm run fetch:skill` first -- the skill is fetched, not vendored (see README).
+#
+# One routing stimulus and one rule stimulus, as a pattern to copy rather than a sweep.
+# Both are checkable without azd or Azure: routing from which docs the agent reads,
+# command shape from the commands it reports.
+name: foundry-skill
+description: >-
+  Does the official microsoft-foundry skill route to the right sub-skill, and does the
+  agent follow the skill's own mandatory azd rules?
+
+environment:
+  skills:
+    - ./skills/.external/microsoft-foundry
+  files:
+    - src: fixtures/foundry-agent-project/azure.yaml
+      dest: azure.yaml
+    - src: fixtures/foundry-agent-project/main.py
+      dest: src/triage-agent/main.py
+
+defaults:
+  runs: 2
+  timeout: 5m
+  executor: copilot-sdk
+  model: claude-sonnet-4.6
+  judge_model: gpt-5.5
+
+# High on purpose. Vally's eval verdict is the mean of stimulus scores, and each
+# stimulus score is the mean of its graders, so a low bar hides a single failure twice
+# over. At 0.95 any one grader failing in any stimulus fails the eval.
+scoring:
+  threshold: 0.95
+
+stimuli:
+  # SKILL.md's mandatory-read rule only binds when *executing* a workflow, so this
+  # prompt is imperative, not advisory -- "where do I start?" is answerable straight
+  # from the routing table without ever opening the sub-skill doc.
+  - name: route-optimize-instructions
+    prompt: >-
+      My Foundry agent gives inconsistent answers on customer billing questions.
+      Work out how to improve its instructions and walk me through doing it.
+    rubric:
+      - "Routes to the eval/observe workflow rather than guessing at prompt edits"
+      - "Explains that optimization is driven by evaluation results, not ad-hoc rewriting"
+    graders:
+      - type: skill-invocation
+        name: "microsoft-foundry skill activated"
+        config:
+          required:
+            - microsoft-foundry
+      - type: tool-calls
+        name: "reads the observe sub-skill"
+        config:
+          required:
+            - name: view
+              path: 'observe/observe\.md$'
+      - type: prompt
+        name: "judge: eval-driven optimization guidance"
+        config:
+          scoring: binary
+
+  # azd-guidance.md requires the AZURE_DEV_USER_AGENT prefix inline and never
+  # persisted. Asking for commands rather than execution keeps this azd-free.
+  - name: rule-user-agent-inline
+    prompt: >-
+      I have a hosted Foundry agent in this project. Give me the exact terminal
+      commands to deploy it and then send it a test message. Don't run anything yet --
+      I want to review the commands first.
+    rubric:
+      - "Every azd command is prefixed inline with AZURE_DEV_USER_AGENT=microsoft_foundry_skill"
+      - "The variable is not persisted via azd env set, .env, or azure.yaml"
+      - "Deploy comes before invoking the agent"
+    graders:
+      # Tag and command on the same logical line -- matching them separately would pass
+      # an untagged `azd deploy` next to a tagged `azd version`, and allowing a bare
+      # newline between them would pass `export AZURE_DEV_USER_AGENT=...` followed by a
+      # plain `azd deploy`, which is the persistence the skill forbids. The optional
+      # group allows a backslash line-continuation.
+      - type: output-matches
+        name: "deploy command carries the skill user agent"
+        config:
+          pattern: 'AZURE_DEV_USER_AGENT=microsoft_foundry_skill[ \t]+(?:\\[ \t]*\n[ \t]*)?azd[ \t]+deploy'
+      # The skill says set it inline only -- never via azd env set, an export, or a
+      # dotfile.
+      - type: output-not-matches
+        name: "does not persist the user agent"
+        config:
+          pattern: '(?:azd env set|export)\s+AZURE_DEV_USER_AGENT'
+      - type: prompt
+        name: "judge: correctly-sequenced, correctly-tagged commands"
+        config:
+          scoring: binary

@@ -129,6 +129,23 @@ func TestCommitTeamsAppPackage_WritesWhenAbsent(t *testing.T) {
 	}
 }
 
+func TestCommitTeamsAppPackage_RollsBackNewPackageWhenMarkerWriteFails(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, teamsAppPackageFile)
+	marker := filepath.Join(dir, "missing", teamsAppPackageMarkerFile)
+
+	got, err := commitTeamsAppPackage(pkg, marker, []byte("AZD-GENERATED"))
+	if err == nil {
+		t.Fatal("expected marker write error")
+	}
+	if got != "" {
+		t.Errorf("path = %q, want empty path on failure", got)
+	}
+	if _, err := os.Stat(pkg); !os.IsNotExist(err) {
+		t.Errorf("new package must be rolled back when marker write fails")
+	}
+}
+
 func TestCommitTeamsAppPackage_DoesNotUseFixedTempPath(t *testing.T) {
 	dir := t.TempDir()
 	pkg := filepath.Join(dir, teamsAppPackageFile)

@@ -329,25 +329,30 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 	}
 
 	for _, expected := range []string{
-		"NAME",
 		"VERSION",
 		"DISK IMAGE",
 		"ENVIRONMENT ID",
 		"UPDATED",
-		"ACR IMAGE",
-		"echo_env",
 		"1.2.0",
 		"Ready",
-		"registry/echo:1.2.0",
 		"1.0.0",
 		"Failed",
-		"registry/echo:1.0.0",
 	} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("expected output to contain %q, got %s", expected, output.String())
 		}
 	}
-	for _, unexpected := range []string{"CREATED", "FIELD", "VALUE", "Version history:"} {
+	for _, unexpected := range []string{
+		"NAME",
+		"ACR IMAGE",
+		"echo_env",
+		"registry/echo:1.2.0",
+		"registry/echo:1.0.0",
+		"CREATED",
+		"FIELD",
+		"VALUE",
+		"Version history:",
+	} {
 		if strings.Contains(output.String(), unexpected) {
 			t.Fatalf("expected one consolidated table without %q, got %s", unexpected, output.String())
 		}
@@ -402,8 +407,11 @@ func TestShowUsesEnvironmentNameAndProjectEndpointFromState(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), "echo_env") || !strings.Contains(output.String(), "1.2.0") {
+	if !strings.Contains(output.String(), "1.2.0") {
 		t.Fatalf("expected API environment resolved from saved name, got %s", output.String())
+	}
+	if strings.Contains(output.String(), "echo_env") {
+		t.Fatalf("expected environment name to be omitted from the version table, got %s", output.String())
 	}
 	if resolvedProjectEndpoint != "https://account.services.ai.azure.com/api/projects/saved-project" {
 		t.Fatalf("expected saved project endpoint, got %q", resolvedProjectEndpoint)

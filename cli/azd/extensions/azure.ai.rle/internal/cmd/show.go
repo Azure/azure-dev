@@ -71,17 +71,15 @@ func (a *showAction) Run() error {
 	rows := make([][]string, 0, len(result.Versions))
 	for _, version := range result.Versions {
 		rows = append(rows, []string{
-			version.Name,
 			version.Version,
 			version.DiskImageConversionStatus,
 			version.Id,
 			version.UpdatedAt,
-			version.AcrImagePath,
 		})
 	}
 	output.Message("")
 	output.Table(
-		[]string{"NAME", "VERSION", "DISK IMAGE", "ENVIRONMENT ID", "UPDATED", "ACR IMAGE"},
+		[]string{"VERSION", "DISK IMAGE", "ENVIRONMENT ID", "UPDATED"},
 		rows,
 	)
 	output.Message("")

@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -640,6 +641,14 @@ func (ec *evalContext) pollRun(
 	}
 }
 
+// renderRun prints what a person needs after waiting for a run.
+//
+// The status line alone is not that. A run's whole purpose is the verdict per
+// evaluator, and the service returns it — passed, failed and errored counts
+// for every testing criterion — so leaving it out meant the answer to the
+// question the command was asked required a second command to see. The report
+// URL and the run id come last, because they are what you act on after
+// reading the numbers rather than instead of reading them.
 func renderRun(out interface{ Write([]byte) (int, error) }, run *eval_api.OpenAIEvalRun) error {
 	fmt.Fprintf(out, "\nRun %s finished with status %s\n", run.ID, run.Status)
 	// A run that failed carries why, and it is usually the only actionable
@@ -648,8 +657,80 @@ func renderRun(out interface{ Write([]byte) (int, error) }, run *eval_api.OpenAI
 	if why := run.Failure(); why != "" {
 		fmt.Fprintf(out, "  %s\n", why)
 	}
+
+	renderCriteriaTable(out, run.PerTestingCriteria)
+
+	// Counted over samples, not over verdicts: a sample that failed two
+	// evaluators is one sample to go and look at, and reporting it as two
+	// overstates how much is wrong.
+	if c := run.ResultCounts; c != nil && c.Total > 0 {
+		fmt.Fprintf(out, "\nOverall pass rate: %s  (%d/%d samples passed every evaluator)\n",
+			formatRate(c.Passed, c.Total), c.Passed, c.Total)
+		if c.Errored > 0 {
+			fmt.Fprintf(out, "%d sample(s) errored and were not scored.\n", c.Errored)
+		}
+		if c.Failed > 0 {
+			fmt.Fprintln(out,
+				"\nView failing samples: azd ai eval run output list --failed-only")
+		}
+	}
+
 	if run.ReportURL != "" {
 		fmt.Fprintf(out, "Report: %s\n", run.ReportURL)
 	}
 	return nil
+}
+
+// renderCriteriaTable prints one row per evaluator.
+//
+// Sorted by name so two runs of the same eval read the same way; the service
+// returns the criteria in whatever order it evaluated them.
+func renderCriteriaTable(
+	out interface{ Write([]byte) (int, error) },
+	results []eval_api.EvalRunCriteriaResult,
+) {
+	if len(results) == 0 {
+		return
+	}
+
+	sorted := append([]eval_api.EvalRunCriteriaResult(nil), results...)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].TestingCriteria < sorted[j].TestingCriteria
+	})
+
+	width := len("EVALUATOR")
+	for _, r := range sorted {
+		if n := len(r.TestingCriteria); n > width {
+			width = n
+		}
+	}
+
+	fmt.Fprintf(out, "\n%-*s  %4s  %4s  %9s\n", width, "EVALUATOR", "PASS", "FAIL", "PASS RATE")
+	fmt.Fprintf(out, "%s  %s  %s  %s\n",
+		strings.Repeat("-", width), "----", "----", "---------")
+	for _, r := range sorted {
+		scored := r.Passed + r.Failed
+		fmt.Fprintf(out, "%-*s  %4d  %4d  %9s\n",
+			width, r.TestingCriteria, r.Passed, r.Failed, formatRate(r.Passed, scored))
+		// Errors are not failures — the evaluator never reached a verdict —
+		// so they are named rather than folded into the fail column, where
+		// they would look like a quality problem.
+		if r.Errored > 0 {
+			fmt.Fprintf(out, "%-*s  %s\n", width, "", errorNote(r.Errored))
+		}
+	}
+}
+
+// errorNote describes rows an evaluator could not score.
+func errorNote(errored int) string {
+	return fmt.Sprintf("(%d errored, not scored)", errored)
+}
+
+// formatRate renders a share as a percentage, and a rate over nothing as a
+// dash: 0.0%% would read as a total failure rather than as no data.
+func formatRate(part, whole int) string {
+	if whole <= 0 {
+		return "-"
+	}
+	return fmt.Sprintf("%.1f%%", float64(part)/float64(whole)*100)
 }

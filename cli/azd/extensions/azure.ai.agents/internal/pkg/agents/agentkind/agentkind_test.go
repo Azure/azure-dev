@@ -51,7 +51,7 @@ func TestKind_ManifestFallback(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	svcDir := filepath.Join(root, "svc")
-	require.NoError(t, os.MkdirAll(svcDir, 0o755))
+	require.NoError(t, os.MkdirAll(svcDir, 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(svcDir, "agent.yaml"),
 		[]byte("kind: prompt-voice\nname: concierge\n"), 0o600))
@@ -83,7 +83,7 @@ func TestKind_HostedIsNotVoice(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	svcDir := filepath.Join(root, "svc")
-	require.NoError(t, os.MkdirAll(svcDir, 0o755))
+	require.NoError(t, os.MkdirAll(svcDir, 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(svcDir, "agent.yaml"),
 		[]byte("kind: hosted\nname: worker\n"), 0o600))

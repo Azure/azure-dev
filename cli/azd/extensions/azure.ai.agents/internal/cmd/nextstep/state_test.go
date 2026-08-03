@@ -337,7 +337,7 @@ func TestIsDeployed_VoiceEndpointFallback(t *testing.T) {
 			t.Parallel()
 			src := &fakeSource{values: tc.values}
 			var errs []error
-			got := isDeployed(context.Background(), src, "env1", "voice-svc", tc.isVoice, &errs)
+			got := isDeployed(t.Context(), src, "env1", "voice-svc", tc.isVoice, &errs)
 			assert.Equal(t, tc.want, got)
 			assert.Empty(t, errs)
 		})

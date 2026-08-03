@@ -3831,3 +3831,52 @@ func TestRemoveContainerFiles(t *testing.T) {
 		}
 	})
 }
+
+// TestSynthesizeVoiceManifestFile verifies the --kind prompt-voice scaffold path
+// writes a valid managed voice manifest that round-trips through the real parser,
+// covering the default model, the explicit model/voice overrides, and that no
+// voice key is emitted when none is supplied.
+func TestSynthesizeVoiceManifestFile(t *testing.T) {
+	t.Parallel()
+
+	parse := func(t *testing.T, path string) agent_yaml.VoiceAgent {
+		t.Helper()
+		data, err := os.ReadFile(path) //nolint:gosec // path is produced by the function under test
+		require.NoError(t, err)
+		def, err := agent_yaml.ExtractAgentDefinition(data)
+		require.NoError(t, err)
+		va, ok := def.(agent_yaml.VoiceAgent)
+		require.True(t, ok, "expected VoiceAgent, got %T", def)
+		return va
+	}
+
+	t.Run("defaults model when empty and omits voice", func(t *testing.T) {
+		t.Parallel()
+		path, cleanup, err := synthesizeVoiceManifestFile("my-voice", "", "")
+		require.NoError(t, err)
+		defer cleanup()
+
+		va := parse(t, path)
+		require.Equal(t, agent_yaml.AgentKindPromptVoice, va.Kind)
+		require.Equal(t, agent_yaml.VoiceModelTypeManaged, va.ModelType)
+		require.NotNil(t, va.Model)
+		require.Equal(t, defaultVoiceModel, va.Model.Id)
+		require.Nil(t, va.Voice, "no voice key should be emitted when none is supplied")
+	})
+
+	t.Run("honors explicit model and voice", func(t *testing.T) {
+		t.Parallel()
+		path, cleanup, err := synthesizeVoiceManifestFile(
+			"my-voice", "gpt-realtime-preview", "en-US-Ava:DragonHDLatestNeural",
+		)
+		require.NoError(t, err)
+		defer cleanup()
+
+		va := parse(t, path)
+		require.Equal(t, agent_yaml.VoiceModelTypeManaged, va.ModelType)
+		require.NotNil(t, va.Model)
+		require.Equal(t, "gpt-realtime-preview", va.Model.Id)
+		require.NotNil(t, va.Voice)
+		require.Equal(t, "en-US-Ava:DragonHDLatestNeural", *va.Voice)
+	})
+}

@@ -188,7 +188,7 @@ func (a *remoteInvokeAction) resolveTarget() (rleState, *rleClient, error) {
 
 	versionedEnvironment, err := client.getEnvironmentVersion(a.cmd.Context(), environmentName, requestedVersion)
 	if err != nil {
-		return rleState{}, nil, err
+		return rleState{}, nil, serviceError(err)
 	}
 	if err := requireReadyEnvironment(versionedEnvironment, environmentName); err != nil {
 		return rleState{}, nil, err

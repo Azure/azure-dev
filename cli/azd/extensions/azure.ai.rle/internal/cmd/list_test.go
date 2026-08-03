@@ -234,28 +234,59 @@ func TestListAllEnvironmentsStopsAtSafetyLimit(t *testing.T) {
 
 	client := testRleClientForServer(t, controlPlane.URL)
 	_, err := listAllEnvironments(t.Context(), client)
-	if err == nil || !strings.Contains(err.Error(), "safety limit") {
-		t.Fatalf("expected safety-limit error, got %v", err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected safety-limit LocalError, got %T: %v", err, err)
+	}
+	if localErr.Code != "rle_environment_list_safety_limit" {
+		t.Fatalf("expected safety-limit code, got %q", localErr.Code)
+	}
+	if localErr.Category != azdext.LocalErrorCategoryInternal {
+		t.Fatalf("expected internal error category, got %q", localErr.Category)
 	}
 	if requestCount != environmentListMaxPages {
 		t.Fatalf("expected %d pages, got %d", environmentListMaxPages, requestCount)
 	}
 }
 
+func TestListAllEnvironmentsClassifiesRequestFailuresAsServiceErrors(t *testing.T) {
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+	}))
+	defer controlPlane.Close()
+
+	client := testRleClientForServer(t, controlPlane.URL)
+	_, err := listAllEnvironments(t.Context(), client)
+	var serviceErr *azdext.ServiceError
+	if !errors.As(err, &serviceErr) {
+		t.Fatalf("expected ServiceError, got %T: %v", err, err)
+	}
+	if serviceErr.ServiceName != "rle-control-plane" {
+		t.Fatalf("expected rle-control-plane service, got %q", serviceErr.ServiceName)
+	}
+}
+
 func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	if err := saveRleState(rleState{
-		Name:               "echo_env",
-		ProjectEndpoint:    "https://account.services.ai.azure.com/api/projects/saved-project",
-		EnvironmentId:      "env-1",
-		EnvironmentVersion: "1.2.0",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/saved-project",
+	)
 
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == testFoundryProjectPath+environmentCollectionPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"value": [{
+					"id":"env-1",
+					"name":"echo_env",
+					"version":"1.2.0",
+					"diskImageConversionStatus":"Ready",
+					"updatedAtUtc":"2026-07-30T05:00:00Z"
+				}]
+			}`))
 		case r.Method == http.MethodGet && r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions/1.2.0":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{
@@ -289,6 +320,7 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 
 	outputFormat := "default"
 	command := newShowCommand(&outputFormat)
+	command.SetArgs([]string{"echo_env"})
 	var output bytes.Buffer
 	command.SetOut(&output)
 	command.SetErr(&output)
@@ -319,6 +351,62 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 		if strings.Contains(output.String(), unexpected) {
 			t.Fatalf("expected one consolidated table without %q, got %s", unexpected, output.String())
 		}
+	}
+}
+
+func TestShowUsesEnvironmentNameAndProjectEndpointFromState(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	if err := saveRleState(rleState{
+		Name:            "echo_env",
+		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/saved-project",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == testFoundryProjectPath+environmentCollectionPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"value": [{
+					"id":"env-1",
+					"name":"echo_env",
+					"version":"1.2.0",
+					"diskImageConversionStatus":"Ready"
+				}]
+			}`))
+		case r.Method == http.MethodGet && r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer controlPlane.Close()
+	oldCreateRleClient := createRleClient
+	var resolvedProjectEndpoint string
+	createRleClient = func(projectEndpoint string) (*rleClient, error) {
+		resolvedProjectEndpoint = projectEndpoint
+		return testRleClientForServer(t, controlPlane.URL), nil
+	}
+	t.Cleanup(func() {
+		createRleClient = oldCreateRleClient
+	})
+
+	outputFormat := "default"
+	command := newShowCommand(&outputFormat)
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "echo_env") || !strings.Contains(output.String(), "1.2.0") {
+		t.Fatalf("expected API environment resolved from saved name, got %s", output.String())
+	}
+	if resolvedProjectEndpoint != "https://account.services.ai.azure.com/api/projects/saved-project" {
+		t.Fatalf("expected saved project endpoint, got %q", resolvedProjectEndpoint)
 	}
 }
 

@@ -190,7 +190,9 @@ Show the full details for a specific environment, including version history:
 azd ai rle show code_rl
 ```
 
-If you run the command from a published environment folder, omit the name to inspect the local environment record:
+When run from a published environment folder, the environment name and Foundry
+project endpoint can come from `.azd-rle.json`. Environment details and version
+history are still retrieved from the Foundry APIs:
 
 ```powershell
 azd ai rle show

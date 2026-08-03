@@ -51,7 +51,7 @@ func (a *listAction) Run() error {
 	}
 	environments, err := listAllEnvironments(a.cmd.Context(), client)
 	if err != nil {
-		return serviceError(err)
+		return err
 	}
 
 	format, err := azdext.ParseOutputFormat(*a.outputFormat)
@@ -96,14 +96,18 @@ func listAllEnvironments(ctx context.Context, client *rleClient) ([]environmentR
 		skip := pageNumber * environmentListPageSize
 		page, err := client.listEnvironments(ctx, skip, environmentListPageSize)
 		if err != nil {
-			return nil, err
+			return nil, serviceError(err)
 		}
 		environments = append(environments, page.Value...)
 		if len(page.Value) < environmentListPageSize {
 			return environments, nil
 		}
 	}
-	return nil, fmt.Errorf("environment list exceeded the %d-item safety limit", environmentListPageSize*environmentListMaxPages)
+	return nil, &azdext.LocalError{
+		Message:  fmt.Sprintf("Environment list exceeded the %d-item safety limit.", environmentListPageSize*environmentListMaxPages),
+		Code:     "rle_environment_list_safety_limit",
+		Category: azdext.LocalErrorCategoryInternal,
+	}
 }
 
 func resolveEnvironmentListProjectEndpoint() (string, error) {

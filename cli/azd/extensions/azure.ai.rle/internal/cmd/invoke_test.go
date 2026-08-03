@@ -285,6 +285,73 @@ func TestInvokeRemoteByNameUsesExplicitVersion(t *testing.T) {
 	}
 }
 
+func TestInvokeRemoteByNameClassifiesListFailuresAsServiceErrors(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/project-1",
+	)
+
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+	}))
+	defer controlPlane.Close()
+	stubRleClientEndpoint(t, controlPlane.URL)
+
+	command := newInvokeCommand()
+	command.SetArgs([]string{"code_rl"})
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	err := command.Execute()
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	if !ok {
+		t.Fatalf("expected ServiceError, got %T: %v", err, err)
+	}
+	if serviceErr.ServiceName != "rle-control-plane" {
+		t.Fatalf("expected rle-control-plane service, got %q", serviceErr.ServiceName)
+	}
+}
+
+func TestInvokeRemoteByNameClassifiesVersionFailuresAsServiceErrors(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/project-1",
+	)
+
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == testFoundryProjectPath+environmentCollectionPath:
+			_, _ = w.Write([]byte(`{
+				"value": [{"id":"env-2","name":"code_rl","version":"2.0.0","diskImageConversionStatus":"Ready"}]
+			}`))
+		case r.Method == http.MethodGet &&
+			r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/code_rl/versions/1.0.0":
+			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer controlPlane.Close()
+	stubRleClientEndpoint(t, controlPlane.URL)
+
+	command := newInvokeCommand()
+	command.SetArgs([]string{"code_rl", "--version", "1.0.0"})
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	err := command.Execute()
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	if !ok {
+		t.Fatalf("expected ServiceError, got %T: %v", err, err)
+	}
+	if serviceErr.ServiceName != "rle-control-plane" {
+		t.Fatalf("expected rle-control-plane service, got %q", serviceErr.ServiceName)
+	}
+}
+
 func TestInvokeRemoteRejectsVersionWithoutEnvironmentName(t *testing.T) {
 	command := newInvokeCommand()
 	command.SetArgs([]string{"--version", "1.0.0"})

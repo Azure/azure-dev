@@ -25,9 +25,9 @@ func newShowCommand(outputFormat *string) *cobra.Command {
 		Short: "Show RLE environment details",
 		Long: `Show RLE environment details.
 
-With no environment name, show uses the environment saved in .azd-rle.json.
-When an environment name is provided, the command resolves it from the Foundry
-project and includes its full version history.`,
+The command resolves the environment from the Foundry project and includes its
+full version history. With no environment name, it uses the name saved in
+.azd-rle.json.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			environmentName := ""
@@ -68,11 +68,6 @@ func (a *showAction) Run() error {
 		return output.JSON(result)
 	}
 
-	if len(result.Versions) == 0 {
-		output.Message("No version history found.")
-		return nil
-	}
-
 	rows := make([][]string, 0, len(result.Versions))
 	for _, version := range result.Versions {
 		rows = append(rows, []string{
@@ -94,29 +89,21 @@ func (a *showAction) Run() error {
 }
 
 func (a *showAction) resolveTarget() (showResult, error) {
-	if strings.TrimSpace(a.environmentName) == "" {
+	environmentName := strings.TrimSpace(a.environmentName)
+	if environmentName == "" {
 		state, err := loadRleState()
 		if err != nil {
 			return showResult{}, err
 		}
-		if err := requireDeployedEnvironment(state); err != nil {
-			return showResult{}, err
+		environmentName = strings.TrimSpace(state.Name)
+		if environmentName == "" {
+			return showResult{}, &azdext.LocalError{
+				Message:    "The saved RLE environment does not include a name.",
+				Code:       "rle_environment_name_missing",
+				Category:   azdext.LocalErrorCategoryUser,
+				Suggestion: "Provide an environment name: azd ai rle show <environment-name>.",
+			}
 		}
-
-		client, err := createRleClient(state.ProjectEndpoint)
-		if err != nil {
-			return showResult{}, err
-		}
-
-		environment, err := client.getEnvironmentVersion(a.cmd.Context(), state.Name, state.EnvironmentVersion)
-		if err != nil {
-			return showResult{}, serviceError(err)
-		}
-		versions, err := resolveEnvironmentVersions(a.cmd.Context(), client, environment)
-		if err != nil {
-			return showResult{}, serviceError(err)
-		}
-		return showResult{Environment: *environment, Versions: versions}, nil
 	}
 
 	projectEndpoint, err := resolveEnvironmentListProjectEndpoint()
@@ -127,7 +114,7 @@ func (a *showAction) resolveTarget() (showResult, error) {
 	if err != nil {
 		return showResult{}, err
 	}
-	environment, err := resolveLatestEnvironmentByName(a.cmd.Context(), client, strings.TrimSpace(a.environmentName))
+	environment, err := resolveLatestEnvironmentByName(a.cmd.Context(), client, environmentName)
 	if err != nil {
 		return showResult{}, err
 	}

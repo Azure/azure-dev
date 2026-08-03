@@ -68,6 +68,130 @@ func parseInfraProvider(value string) (string, error) {
 	}
 }
 
+// readProjectAzureYAML reads azure.yaml from projectRoot, reporting a missing
+// file as the structured CodeInfraEjectAzureYamlMissing refusal so every eject
+// entry point surfaces the same code for the same condition.
+func readProjectAzureYAML(projectRoot string) ([]byte, error) {
+	//nolint:gosec // G304: azure.yaml under the caller-supplied azd project root
+	raw, err := os.ReadFile(filepath.Join(projectRoot, "azure.yaml"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, exterrors.Validation(
+				exterrors.CodeInfraEjectAzureYamlMissing,
+				"azure.yaml not found in the current directory; "+
+					"`azd ai agent init --infra` requires an existing azd agent project",
+				"run `azd ai agent init` first to create azure.yaml, then re-run with --infra",
+			)
+		}
+		return nil, fmt.Errorf("read azure.yaml: %w", err)
+	}
+
+	return raw, nil
+}
+
+// hasFoundryServiceForEject reports whether azure.yaml at projectRoot already
+// declares the Foundry provisioning service that eject synthesizes from.
+//
+// "No Foundry service" is reported as (false, nil) rather than an error: it
+// means the project simply has nothing to eject yet, which callers resolve by
+// running the normal init flow first. Malformed YAML and ambiguous projects
+// (several Foundry services) still surface as errors.
+func hasFoundryServiceForEject(projectRoot string) (bool, error) {
+	rawYAML, err := readProjectAzureYAML(projectRoot)
+	if err != nil {
+		return false, err
+	}
+
+	if _, err := findFoundryServiceForEject(rawYAML); err != nil {
+		if localErr, ok := errors.AsType[*azdext.LocalError](err); ok &&
+			localErr.Code == exterrors.CodeInfraEjectNoFoundryService {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
+// ensureInfraDirAbsent refuses when projectRoot already contains ./infra/.
+// Eject writes the whole tree or nothing, so it never merges into or overwrites
+// what is already there.
+//
+// Eject leaves no marker behind, so nothing at this point can tell prior eject
+// output apart from infrastructure the user authored for the project's other
+// services — a plain "delete ./infra/" would be destructive advice half the
+// time. The suggestion therefore covers both cases and leads with the
+// non-destructive one.
+func ensureInfraDirAbsent(projectRoot string) error {
+	// A plain file at ./infra counts too: os.Stat cannot tell the caller's
+	// intent apart, and silently overwriting a user-owned file is never correct.
+	if _, err := os.Stat(filepath.Join(projectRoot, "infra")); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("stat infra directory: %w", err)
+	}
+
+	return exterrors.Validation(
+		exterrors.CodeInfraEjectExists,
+		"`./infra/` already exists",
+		"if you authored ./infra/, keep it and run `azd ai agent init` without --infra: "+
+			"--infra synthesizes a self-contained Foundry template and cannot merge into "+
+			"infrastructure you already own. If a previous --infra run generated it, "+
+			"delete ./infra/ and run the command again to regenerate it from azure.yaml",
+	)
+}
+
+// infraGate is how `azd ai agent init --infra` should behave for the azd
+// project (if any) that contains the current directory.
+type infraGate struct {
+	// standaloneEject is true when an existing project already declares a
+	// Foundry service, so eject runs on its own and skips the init prompts.
+	standaloneEject bool
+	// projectRoot is the resolved azd project root. Empty when the current
+	// directory is not inside a project yet.
+	projectRoot string
+}
+
+// resolveInfraGate decides between a standalone eject and the normal init flow
+// for a `--infra` run.
+//
+// A project that already declares a Foundry service ejects standalone. Anything
+// else — no project at all, or a project azd already manages that has no Foundry
+// service yet — runs init first and ejects afterwards, so "add an agent to my
+// existing project and give me its IaC" stays a single step instead of failing
+// with "nothing to eject".
+//
+// The one refusal kept up front is a pre-existing ./infra/: init cannot clear
+// it, so failing here beats mutating azure.yaml and then refusing on the
+// trailing eject.
+func resolveInfraGate() (infraGate, error) {
+	projectRoot, err := azdext.GetProjectDir()
+	if errors.Is(err, azdext.ErrProjectNotFound) {
+		return infraGate{}, nil
+	}
+	if err != nil {
+		return infraGate{}, fmt.Errorf("resolve azd project directory: %w", err)
+	}
+
+	hasFoundry, err := hasFoundryServiceForEject(projectRoot)
+	if err != nil {
+		return infraGate{}, err
+	}
+	if hasFoundry {
+		return infraGate{standaloneEject: true, projectRoot: projectRoot}, nil
+	}
+
+	// The trailing eject writes ./infra/, and init cannot clear a directory that
+	// is already there. Refuse now rather than mutating azure.yaml and adding an
+	// azd environment first and only then refusing.
+	if err := ensureInfraDirAbsent(projectRoot); err != nil {
+		return infraGate{}, err
+	}
+
+	return infraGate{projectRoot: projectRoot}, nil
+}
+
 // ejectInfraAfterInit ejects from the azd project containing the current
 // directory. Init may create or discover a project above cwd, so use the same
 // upward project resolution as the rest of azd.
@@ -84,16 +208,12 @@ func ejectInfraAfterInit(provider string) error {
 		return fmt.Errorf("resolve azd project directory after init: %w", err)
 	}
 
-	rawYAML, err := os.ReadFile(filepath.Join(projectRoot, "azure.yaml")) //nolint:gosec // resolved azd project file
+	hasFoundry, err := hasFoundryServiceForEject(projectRoot)
 	if err != nil {
-		return fmt.Errorf("read azure.yaml after init: %w", err)
-	}
-	if _, err := findFoundryServiceForEject(rawYAML); err != nil {
-		if localErr, ok := errors.AsType[*azdext.LocalError](err); ok &&
-			localErr.Code == exterrors.CodeInfraEjectNoFoundryService {
-			return nil
-		}
 		return err
+	}
+	if !hasFoundry {
+		return nil
 	}
 
 	return ejectInfra(projectRoot, provider)
@@ -120,19 +240,9 @@ func ejectInfraAfterInit(provider string) error {
 //
 // On success it prints the summary block and returns nil.
 func ejectInfra(projectRoot, provider string) error {
-	yamlPath := filepath.Join(projectRoot, "azure.yaml")
-	//nolint:gosec // G304: azure.yaml under the caller-supplied azd project root
-	rawYAML, err := os.ReadFile(yamlPath)
+	rawYAML, err := readProjectAzureYAML(projectRoot)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return exterrors.Validation(
-				exterrors.CodeInfraEjectAzureYamlMissing,
-				"azure.yaml not found in the current directory; "+
-					"`azd ai agent init --infra` requires an existing azd agent project",
-				"run `azd ai agent init` first to create azure.yaml, then re-run with --infra",
-			)
-		}
-		return fmt.Errorf("read azure.yaml: %w", err)
+		return err
 	}
 
 	svcName, err := findFoundryServiceForEject(rawYAML)
@@ -141,14 +251,8 @@ func ejectInfra(projectRoot, provider string) error {
 	}
 
 	infraDir := filepath.Join(projectRoot, "infra")
-	if _, err := os.Stat(infraDir); err == nil {
-		return exterrors.Validation(
-			exterrors.CodeInfraEjectExists,
-			"`./infra/` already exists",
-			"to regenerate from azure.yaml, delete the infra directory and run the command again",
-		)
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat infra directory: %w", err)
+	if err := ensureInfraDirAbsent(projectRoot); err != nil {
+		return err
 	}
 
 	res, err := synthesis.Synthesize(synthesis.Input{

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
@@ -77,7 +78,7 @@ func TestEjectInfra_RefusesWhenInfraExists(t *testing.T) {
 	require.True(t, ok, "expected structured azdext.LocalError, got %T", err)
 	assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
 	assert.Contains(t, localErr.Message, "./infra/")
-	assert.Contains(t, localErr.Suggestion, "delete the infra directory")
+	assert.Contains(t, localErr.Suggestion, "delete ./infra/")
 
 	// Pre-existing infra/ must not be wiped by the refusal.
 	info, err := os.Stat(filepath.Join(dir, "infra"))
@@ -711,6 +712,233 @@ services:
 	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
 	assert.Equal(t, exterrors.CodeInfraEjectMultipleFoundryServices, localErr.Code)
 	assert.NoDirExists(t, filepath.Join(projectRoot, "infra"))
+}
+
+func TestHasFoundryServiceForEject(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		yaml        string
+		omitYAML    bool
+		want        bool
+		wantErrCode string
+	}{
+		{name: "foundry project service", yaml: validFoundryAzureYAML, want: true},
+		{
+			name: "legacy foundry host",
+			yaml: `name: my-project
+services:
+  agent:
+    host: azure.ai.agent
+`,
+			want: true,
+		},
+		{
+			name: "non-foundry services only",
+			yaml: `name: my-project
+services:
+  web:
+    host: containerapp
+    project: src/web
+`,
+			want: false,
+		},
+		{name: "no services block", yaml: "name: my-project\n", want: false},
+		{
+			name: "multiple foundry services",
+			yaml: `name: my-project
+services:
+  first:
+    host: azure.ai.project
+  second:
+    host: azure.ai.project
+`,
+			wantErrCode: exterrors.CodeInfraEjectMultipleFoundryServices,
+		},
+		{name: "azure.yaml missing", omitYAML: true, wantErrCode: exterrors.CodeInfraEjectAzureYamlMissing},
+		{
+			name:        "malformed yaml",
+			yaml:        "name: my-project\nservices: [oops\n",
+			wantErrCode: exterrors.CodeInvalidAzureYaml,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			if !tt.omitYAML {
+				mustWriteFile(t, filepath.Join(dir, "azure.yaml"), tt.yaml)
+			}
+
+			got, err := hasFoundryServiceForEject(dir)
+			if tt.wantErrCode != "" {
+				require.Error(t, err)
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+				assert.Equal(t, tt.wantErrCode, localErr.Code)
+				assert.False(t, got)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestEnsureInfraDirAbsent(t *testing.T) {
+	t.Parallel()
+
+	t.Run("absent", func(t *testing.T) {
+		t.Parallel()
+		assert.NoError(t, ensureInfraDirAbsent(t.TempDir()))
+	})
+
+	t.Run("directory present", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), 0o750))
+
+		err := ensureInfraDirAbsent(dir)
+		require.Error(t, err)
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+		assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
+	})
+
+	t.Run("file present", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		mustWriteFile(t, filepath.Join(dir, "infra"), "not a dir")
+
+		err := ensureInfraDirAbsent(dir)
+		require.Error(t, err)
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+		assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
+	})
+}
+
+// TestResolveInfraGate_ExistingProjectWithoutFoundryServiceRunsInit is the
+// regression test for #9124: `azd ai agent init --infra` inside an azd project
+// that has no Foundry service must fall through to the normal init flow rather
+// than refusing with CodeInfraEjectNoFoundryService ("nothing to eject").
+func TestResolveInfraGate_ExistingProjectWithoutFoundryServiceRunsInit(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	projectRoot := t.TempDir()
+	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), `name: my-project
+services:
+  web:
+    host: containerapp
+    project: src/web
+`)
+	t.Chdir(projectRoot)
+
+	gate, err := resolveInfraGate()
+	require.NoError(t, err, "an existing project without a Foundry service must not refuse")
+	assert.False(t, gate.standaloneEject, "init runs first, then the trailing eject")
+	assert.Equal(t, projectRoot, gate.projectRoot)
+}
+
+func TestResolveInfraGate_ExistingFoundryProjectEjectsStandalone(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	projectRoot := t.TempDir()
+	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), validFoundryAzureYAML)
+	t.Chdir(projectRoot)
+
+	gate, err := resolveInfraGate()
+	require.NoError(t, err)
+	assert.True(t, gate.standaloneEject)
+	assert.Equal(t, projectRoot, gate.projectRoot)
+}
+
+func TestResolveInfraGate_NoProjectRunsInit(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	t.Chdir(t.TempDir())
+
+	gate, err := resolveInfraGate()
+	require.NoError(t, err)
+	assert.False(t, gate.standaloneEject)
+	assert.Empty(t, gate.projectRoot, "no project root to eject from yet")
+}
+
+// A project with no Foundry service now runs the whole init flow before
+// ejecting, so the ./infra/ conflict has to surface up front instead of after
+// the user has answered every prompt. The existing tree usually belongs to the
+// project's own services, so the refusal must offer the non-destructive path.
+func TestResolveInfraGate_RefusesExistingInfraBeforeRunningInit(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	projectRoot := t.TempDir()
+	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), `name: my-project
+services:
+  web:
+    host: containerapp
+`)
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
+	t.Chdir(projectRoot)
+
+	_, err := resolveInfraGate()
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+	assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
+	assert.Contains(t, localErr.Suggestion, "without --infra",
+		"the non-destructive path has to be offered, and offered first")
+	assert.Less(t,
+		strings.Index(localErr.Suggestion, "without --infra"),
+		strings.Index(localErr.Suggestion, "delete ./infra/"),
+		"never lead with deleting IaC the extension may not have authored")
+}
+
+func TestResolveInfraGate_PropagatesInvalidFoundryConfiguration(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	projectRoot := t.TempDir()
+	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), `name: my-project
+services:
+  first:
+    host: azure.ai.project
+  second:
+    host: azure.ai.project
+`)
+	t.Chdir(projectRoot)
+
+	_, err := resolveInfraGate()
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+	assert.Equal(t, exterrors.CodeInfraEjectMultipleFoundryServices, localErr.Code)
+}
+
+// End-to-end through cobra: before #9124 this returned
+// CodeInfraEjectNoFoundryService. It now gets past that gate and reports the
+// ./infra/ conflict instead, which also keeps the command from touching the azd
+// client or prompting.
+func TestInitInfra_ExistingProjectWithoutFoundryServiceSkipsNothingToEject(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	projectRoot := t.TempDir()
+	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), `name: my-project
+services:
+  web:
+    host: containerapp
+`)
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
+	t.Chdir(projectRoot)
+
+	cmd := newInitCommand(&azdext.ExtensionContext{})
+	cmd.SetArgs([]string{"--infra"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	var execErr error
+	withCapturedStdout(t, func() {
+		execErr = cmd.Execute()
+	})
+
+	require.Error(t, execErr)
+	localErr, ok := errors.AsType[*azdext.LocalError](execErr)
+	require.True(t, ok, "expected *azdext.LocalError, got %T", execErr)
+	assert.NotEqual(t, exterrors.CodeInfraEjectNoFoundryService, localErr.Code,
+		"--infra must no longer refuse a project that simply has no agent service yet")
+	assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
 }
 
 func TestEjectInfra_Terraform_HappyPath_WritesExpectedFiles(t *testing.T) {

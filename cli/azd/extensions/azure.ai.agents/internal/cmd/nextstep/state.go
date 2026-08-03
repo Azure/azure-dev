@@ -522,10 +522,12 @@ func structHasKind(s *structpb.Struct) bool {
 
 // isVoiceService reports whether the service declares kind: prompt-voice. It
 // delegates to the shared agentkind lookup so the next-step reader classifies a
-// service identically to the deploy path and Endpoints. Kind resolution is
-// best-effort for next-step hints, so any error is treated as not-voice.
+// service identically to the deploy path and Endpoints, including honoring an
+// explicit AGENT_DEFINITION_PATH override (which deploy follows). Kind
+// resolution is best-effort for next-step hints, so any error is treated as
+// not-voice.
 func isVoiceService(projectPath string, svc *azdext.ServiceConfig) bool {
-	isVoice, err := agentkind.IsPromptVoice(svc, projectPath, "")
+	isVoice, err := agentkind.IsPromptVoice(svc, projectPath, os.Getenv("AGENT_DEFINITION_PATH"))
 	return err == nil && isVoice
 }
 

@@ -1705,8 +1705,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		fmt.Sprintf(
 			"Name of the AI model to deploy. Defaults to '%s' during interactive model selection; "+
 				"required to deploy a new model with --no-prompt. If --model-deployment is also provided, "+
-				"--model-deployment takes precedence",
+				"--model-deployment takes precedence. For --kind prompt-voice this instead names the "+
+				"managed speech-to-speech model (no model is deployed) and defaults to '%s'",
 			defaultAgentModel,
+			defaultVoiceModel,
 		))
 
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",

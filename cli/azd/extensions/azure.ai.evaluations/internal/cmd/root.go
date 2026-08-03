@@ -50,7 +50,6 @@ func NewRootCommand() *cobra.Command {
 		newDatasetCommand(),
 		newRunCommand(),
 		newEvaluatorCommand(),
-		newResultsCommand(),
 		newJobCommand(),
 		newEvalListCommand(),
 		newEvalShowCommand(),

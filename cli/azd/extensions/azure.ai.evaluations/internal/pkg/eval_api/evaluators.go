@@ -239,3 +239,15 @@ func (c *EvalClient) ListOutputItems(
 	)
 	return doRequestTyped[OutputItemList](c, ctx, http.MethodGet, path, query, nil, "")
 }
+
+// GetOutputItem reads a single evaluated row.
+func (c *EvalClient) GetOutputItem(
+	ctx context.Context,
+	evalID, runID, itemID string,
+) (*OutputItem, error) {
+	path := fmt.Sprintf(
+		"%s/%s/runs/%s/output_items/%s",
+		pathOpenAIEvals, url.PathEscape(evalID), url.PathEscape(runID), url.PathEscape(itemID),
+	)
+	return doRequestTyped[OutputItem](c, ctx, http.MethodGet, path, nil, nil, "")
+}

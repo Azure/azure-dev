@@ -22,6 +22,7 @@ func addRunSubcommands(cmd *cobra.Command) {
 		newRunShowCommand(),
 		newRunCancelCommand(),
 		newRunDeleteCommand(),
+		newRunOutputCommand(),
 	)
 }
 
@@ -33,9 +34,9 @@ func newRunListCommand() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "list [eval-id]",
+		Use:   "list",
 		Short: "List runs for an eval.",
-		Args:  cobra.MaximumNArgs(1),
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
@@ -44,7 +45,7 @@ func newRunListCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			evalID, err := resolveEvalID(cmd, ec, args, groupName)
+			evalID, err := resolveEvalID(cmd, ec, nil, groupName)
 			if err != nil {
 				return err
 			}
@@ -87,13 +88,12 @@ func newRunListCommand() *cobra.Command {
 
 func newRunShowCommand() *cobra.Command {
 	var (
-		runID       string
 		endpointFlg string
 		groupName   string
 	)
 
 	cmd := &cobra.Command{
-		Use:   "show [eval-id]",
+		Use:   "show [run]",
 		Short: "Show a single run.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -104,12 +104,13 @@ func newRunShowCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			evalID, err := resolveEvalID(cmd, ec, args, groupName)
+			evalID, err := resolveEvalID(cmd, ec, nil, groupName)
 			if err != nil {
 				return err
 			}
 
-			run, err := ec.latestOrNamedRun(cmd, evalID, runID)
+			runID := firstArg(args)
+			run, err := ec.latestOrNamedRun(cmd, evalID, runID, runID != "")
 			if err != nil {
 				return err
 			}
@@ -130,21 +131,27 @@ func newRunShowCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&runID, "run-id", "", "Run to show. Defaults to the most recent run.")
 	addEvalFlags(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
 
+// firstArg returns the positional argument, or empty when none was given.
+func firstArg(args []string) string {
+	if len(args) > 0 {
+		return args[0]
+	}
+	return ""
+}
+
 func newRunCancelCommand() *cobra.Command {
 	var (
-		runID       string
 		endpointFlg string
 		groupName   string
 	)
 
 	cmd := &cobra.Command{
-		Use:   "cancel [eval-id]",
+		Use:   "cancel [run]",
 		Short: "Cancel an in-flight run.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -155,12 +162,13 @@ func newRunCancelCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			evalID, err := resolveEvalID(cmd, ec, args, groupName)
+			evalID, err := resolveEvalID(cmd, ec, nil, groupName)
 			if err != nil {
 				return err
 			}
 
-			target, err := ec.latestOrNamedRun(cmd, evalID, runID)
+			runID := firstArg(args)
+			target, err := ec.latestOrNamedRun(cmd, evalID, runID, runID != "")
 			if err != nil {
 				return err
 			}
@@ -186,7 +194,6 @@ func newRunCancelCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&runID, "run-id", "", "Run to cancel. Defaults to the most recent run.")
 	addEvalFlags(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
@@ -194,33 +201,30 @@ func newRunCancelCommand() *cobra.Command {
 
 // newRunDeleteCommand removes a run.
 //
-// Runs accumulate — every `azd ai eval run` adds one — and a run that evaluated
-// the wrong dataset or target is noise in every later listing and comparison.
-// The id is required rather than defaulted to the most recent run, because
-// deleting is not undoable and "the latest one" is a poor thing to guess at.
+// Runs accumulate — every `run start` adds one — and a run that evaluated the
+// wrong dataset or target is noise in every later listing. The run is required
+// rather than defaulted to the most recent, because deleting is not undoable
+// and "the latest one" is a poor thing to guess at.
 func newRunDeleteCommand() *cobra.Command {
 	var (
-		runID       string
 		endpointFlg string
 		groupName   string
 	)
 
 	cmd := &cobra.Command{
-		Use:   "delete [eval-id]",
+		Use:   "delete <run>",
 		Short: "Delete a run.",
-		Args:  cobra.MaximumNArgs(1),
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			if runID == "" {
-				return requireFlag("run-id")
-			}
+			runID := args[0]
 			ec, err := newEvalContext(ctx, endpointFlg)
 			if err != nil {
 				return err
 			}
 			defer ec.Close()
 
-			evalID, err := resolveEvalID(cmd, ec, args, groupName)
+			evalID, err := resolveEvalID(cmd, ec, nil, groupName)
 			if err != nil {
 				return err
 			}
@@ -241,7 +245,6 @@ func newRunDeleteCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&runID, "run-id", "", "Run to delete.")
 	addEvalFlags(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd

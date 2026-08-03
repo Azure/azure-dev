@@ -35,17 +35,22 @@ var terminalRunStates = map[string]bool{
 // newRunCommand builds the composite `azd ai eval run` and attaches the atomic
 // run operations, including `run start` which the spec lists as the atomic form
 // of this same command.
+// newRunCommand builds the run group.
+//
+// `run` is a group, not an executable verb: once `run output` exists, a bare
+// `run` would make `azd ai eval run list` read as "run the thing called list".
 func newRunCommand() *cobra.Command {
-	cmd := buildRunCommand(
-		"run", "Run an evaluation, creating the eval if it does not exist yet.")
+	cmd := &cobra.Command{
+		Use:   "run",
+		Short: "Start and inspect evaluation runs.",
+	}
 	addRunSubcommands(cmd)
 	cmd.AddCommand(buildRunCommand(
 		"start", "Start a run, creating the eval if it does not exist yet."))
 	return cmd
 }
 
-// buildRunCommand is shared by `run` and `run start` so the two forms cannot
-// drift apart.
+// buildRunCommand builds `run start`.
 func buildRunCommand(use, short string) *cobra.Command {
 	var (
 		configPath  string

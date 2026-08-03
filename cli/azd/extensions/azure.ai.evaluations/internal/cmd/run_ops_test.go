@@ -70,14 +70,16 @@ func TestEvalCommandsAcceptIDAsAFlag(t *testing.T) {
 	subs := map[string]*cobra.Command{}
 	for _, sub := range newRunCommand().Commands() {
 		subs["run "+sub.Name()] = sub
-	}
-	for _, sub := range newResultsCommand().Commands() {
-		subs["results "+sub.Name()] = sub
+		if sub.Name() == "output" {
+			for _, leaf := range sub.Commands() {
+				subs["run output "+leaf.Name()] = leaf
+			}
+		}
 	}
 
 	for _, name := range []string{
 		"run list", "run show", "run cancel",
-		"results show", "results export",
+		"run output list", "run output show", "run output export",
 	} {
 		cmd := subs[name]
 		require.NotNil(t, cmd, "%s should exist", name)
@@ -87,9 +89,15 @@ func TestEvalCommandsAcceptIDAsAFlag(t *testing.T) {
 }
 
 // --no-wait is documented in the spec, and cobra does not derive it from the
-// --wait bool.
+// --wait bool. It belongs to `run start`: `run` itself is a group.
 func TestRunCommandAcceptsNoWait(t *testing.T) {
-	cmd := newRunCommand()
-	require.NotNil(t, cmd.Flags().Lookup("no-wait"), "run should accept --no-wait")
-	require.NotNil(t, cmd.Flags().Lookup("wait"), "run should keep --wait")
+	var start *cobra.Command
+	for _, sub := range newRunCommand().Commands() {
+		if sub.Name() == "start" {
+			start = sub
+		}
+	}
+	require.NotNil(t, start)
+	require.NotNil(t, start.Flags().Lookup("no-wait"), "run start should accept --no-wait")
+	require.NotNil(t, start.Flags().Lookup("wait"), "run start should keep --wait")
 }

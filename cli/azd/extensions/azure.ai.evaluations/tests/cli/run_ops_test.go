@@ -28,7 +28,7 @@ func TestCLIRunList(t *testing.T) {
 	f := sharedEval(t)
 
 	t.Run("table", func(t *testing.T) {
-		r := requireSuccess(t, run(t, "run", "list", f.EvalID))
+		r := requireSuccess(t, run(t, "run", "list", "--eval-id", f.EvalID))
 		for _, header := range []string{"RUN ID", "NAME", "STATUS", "RESULTS"} {
 			require.Containsf(t, r.Stdout, header, "the listing lost its %s column", header)
 		}
@@ -39,7 +39,7 @@ func TestCLIRunList(t *testing.T) {
 	})
 
 	t.Run("json", func(t *testing.T) {
-		r := requireSuccess(t, run(t, "run", "list", f.EvalID, "-o", "json"))
+		r := requireSuccess(t, run(t, "run", "list", "--eval-id", f.EvalID, "-o", "json"))
 		require.True(t, strings.HasPrefix(strings.TrimSpace(r.Stdout), "["),
 			"a list must be a bare array, not the service's envelope")
 
@@ -63,14 +63,14 @@ func TestCLIRunList(t *testing.T) {
 	// The client has always taken a limit; until recently the command did not
 	// expose one, so a service-side truncation would have passed unnoticed.
 	t.Run("limit", func(t *testing.T) {
-		r := requireSuccess(t, run(t, "run", "list", f.EvalID, "--limit", "1", "-o", "json"))
+		r := requireSuccess(t, run(t, "run", "list", "--eval-id", f.EvalID, "--limit", "1", "-o", "json"))
 		var runs []runSummary
 		r.JSON(t, &runs)
 		require.Len(t, runs, 1, "--limit must reach the service")
 	})
 
 	t.Run("unknown eval is brief", func(t *testing.T) {
-		r := requireFailure(t, run(t, "run", "list", "eval_azdcli_no_such_eval"))
+		r := requireFailure(t, run(t, "run", "list", "--eval-id", "eval_azdcli_no_such_eval"))
 		require.Less(t, len(r.Combined()), 600,
 			"a not-found must stay short, not dump the service body:\n%s", r.Combined())
 		require.Contains(t, r.Combined(), "eval_azdcli_no_such_eval")
@@ -81,7 +81,7 @@ func TestCLIRunShow(t *testing.T) {
 	f := sharedEval(t)
 
 	t.Run("by run id", func(t *testing.T) {
-		r := requireSuccess(t, run(t, "run", "show", f.EvalID, "--run-id", f.FirstRunID))
+		r := requireSuccess(t, run(t, "run", "show", f.FirstRunID, "--eval-id", f.EvalID))
 		require.Contains(t, r.Stdout, f.FirstRunID)
 		require.Contains(t, r.Stdout, "status")
 		require.Contains(t, r.Stdout, "completed")
@@ -93,12 +93,12 @@ func TestCLIRunShow(t *testing.T) {
 	// environment there is no remembered id to fall back on, so what is
 	// exercised is the listing path.
 	t.Run("defaults to the most recent run", func(t *testing.T) {
-		listed := requireSuccess(t, run(t, "run", "list", f.EvalID, "--limit", "1", "-o", "json"))
+		listed := requireSuccess(t, run(t, "run", "list", "--eval-id", f.EvalID, "--limit", "1", "-o", "json"))
 		var newest []runSummary
 		listed.JSON(t, &newest)
 		require.Len(t, newest, 1)
 
-		r := requireSuccess(t, run(t, "run", "show", f.EvalID, "-o", "json"))
+		r := requireSuccess(t, run(t, "run", "show", "--eval-id", f.EvalID, "-o", "json"))
 		var shown runSummary
 		r.JSON(t, &shown)
 		require.Equal(t, newest[0].ID, shown.ID,
@@ -114,7 +114,7 @@ func TestCLIRunShow(t *testing.T) {
 	// about 1700 characters of raw JSON — recorded in the report rather than
 	// pinned here, since pinning it would make the length a requirement.
 	t.Run("an unknown run id is reported, not silently replaced", func(t *testing.T) {
-		r := requireFailure(t, run(t, "run", "show", f.EvalID, "--run-id", "evalrun_azdcli_nope"))
+		r := requireFailure(t, run(t, "run", "show", "evalrun_azdcli_nope", "--eval-id", f.EvalID))
 		require.Contains(t, r.Combined(), "evalrun_azdcli_nope",
 			"the failure must name the run that was asked for")
 		require.NotContains(t, r.Combined(), f.FirstRunID,
@@ -132,7 +132,7 @@ func TestCLIRunCancelAndDelete(t *testing.T) {
 	f := sharedEval(t)
 
 	t.Run("a finished run is refused", func(t *testing.T) {
-		r := requireFailure(t, run(t, "run", "cancel", f.EvalID, "--run-id", f.FirstRunID))
+		r := requireFailure(t, run(t, "run", "cancel", f.FirstRunID, "--eval-id", f.EvalID))
 		require.Contains(t, r.Combined(), "already finished")
 		require.Contains(t, r.Combined(), "completed")
 	})
@@ -148,21 +148,21 @@ func TestCLIRunCancelAndDelete(t *testing.T) {
 	t.Run("an in-flight run is cancelled, and the delete is accepted", func(t *testing.T) {
 		runID := startCancellableRun(t, f)
 
-		cancelled := requireSuccess(t, run(t, "run", "cancel", f.EvalID, "--run-id", runID))
+		cancelled := requireSuccess(t, run(t, "run", "cancel", runID, "--eval-id", f.EvalID))
 		require.Contains(t, cancelled.Stdout, runID)
 		require.Contains(t, cancelled.Stdout, "is now")
 
-		shown := requireSuccess(t, run(t, "run", "show", f.EvalID, "--run-id", runID, "-o", "json"))
+		shown := requireSuccess(t, run(t, "run", "show", runID, "--eval-id", f.EvalID, "-o", "json"))
 		var after runSummary
 		shown.JSON(t, &after)
 		require.NotEqual(t, "completed", after.Status,
 			"a cancelled run must not go on to complete")
 
-		deleted := requireSuccess(t, run(t, "run", "delete", f.EvalID, "--run-id", runID))
+		deleted := requireSuccess(t, run(t, "run", "delete", runID, "--eval-id", f.EvalID))
 		require.Contains(t, deleted.Stdout, "Deleted run")
 		require.Contains(t, deleted.Stdout, runID)
 
-		still := requireSuccess(t, run(t, "run", "show", f.EvalID, "--run-id", runID, "-o", "json"))
+		still := requireSuccess(t, run(t, "run", "show", runID, "--eval-id", f.EvalID, "-o", "json"))
 		var survivor runSummary
 		still.JSON(t, &survivor)
 		t.Logf("the run is still readable after a successful delete (status %q); "+
@@ -172,12 +172,12 @@ func TestCLIRunCancelAndDelete(t *testing.T) {
 	// Deleting is not undoable, so the id is required rather than defaulted to
 	// whichever run happens to be newest.
 	t.Run("delete requires the run id", func(t *testing.T) {
-		r := requireFailure(t, run(t, "run", "delete", f.EvalID))
-		require.Contains(t, r.Combined(), "--run-id is required")
+		r := requireFailure(t, run(t, "run", "delete", "--eval-id", f.EvalID))
+		require.Contains(t, r.Combined(), "accepts 1 arg")
 	})
 
 	t.Run("deleting an unknown run is reported briefly", func(t *testing.T) {
-		r := requireFailure(t, run(t, "run", "delete", f.EvalID, "--run-id", "evalrun_azdcli_nope"))
+		r := requireFailure(t, run(t, "run", "delete", "evalrun_azdcli_nope", "--eval-id", f.EvalID))
 		require.Contains(t, r.Combined(), "evalrun_azdcli_nope")
 		require.Less(t, len(r.Combined()), 600,
 			"a not-found must stay short, not dump the service body:\n%s", r.Combined())

@@ -16,12 +16,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newResultsCommand() *cobra.Command {
+// newRunOutputCommand groups the per-sample views of a run.
+//
+// `run show` is the summary - how many passed. These are the rows: which ones
+// failed, and why.
+func newRunOutputCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "results",
-		Short: "Inspect evaluation results.",
+		Use:   "output",
+		Short: "Inspect the per-sample results of a run.",
 	}
-	cmd.AddCommand(newResultsShowCommand(), newResultsExportCommand())
+	cmd.AddCommand(
+		newRunOutputListCommand(),
+		newRunOutputShowCommand(),
+		newRunOutputExportCommand(),
+	)
 	return cmd
 }
 
@@ -35,9 +43,8 @@ func formatStat(verb string, v eval_api.LenientFloat) string {
 	return fmt.Sprintf(verb, float64(v))
 }
 
-func newResultsShowCommand() *cobra.Command {
+func newRunOutputListCommand() *cobra.Command {
 	var (
-		runID       string
 		failedOnly  bool
 		outFile     string
 		endpointFlg string
@@ -45,8 +52,8 @@ func newResultsShowCommand() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "show <eval-id>",
-		Short: "Show per-sample results for a run.",
+		Use:   "list [run]",
+		Short: "List the per-sample results of a run.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -56,12 +63,13 @@ func newResultsShowCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			evalID, err := resolveEvalID(cmd, ec, args, groupName)
+			evalID, err := resolveEvalID(cmd, ec, nil, groupName)
 			if err != nil {
 				return err
 			}
 
-			run, err := ec.latestOrNamedRun(cmd, evalID, runID)
+			runID := firstArg(args)
+			run, err := ec.latestOrNamedRun(cmd, evalID, runID, runID != "")
 			if err != nil {
 				return err
 			}
@@ -101,7 +109,6 @@ func newResultsShowCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&runID, "run-id", "", "Run to show. Defaults to the most recent run.")
 	cmd.Flags().BoolVar(&failedOnly, "failed-only", false, "Show only the rows that failed.")
 	cmd.Flags().StringVarP(&outFile, "out-file", "O", "", "Write JSON results to this path.")
 	addEvalFlags(cmd, &groupName)
@@ -109,9 +116,63 @@ func newResultsShowCommand() *cobra.Command {
 	return cmd
 }
 
-func newResultsExportCommand() *cobra.Command {
+// newRunOutputShowCommand reads one evaluated row by its id.
+//
+// The listing truncates the input and the reason to keep a table readable, so
+// this is how the whole of either is seen.
+func newRunOutputShowCommand() *cobra.Command {
 	var (
 		runID       string
+		endpointFlg string
+		groupName   string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "show <output-item>",
+		Short: "Show a single evaluated row.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			itemID := args[0]
+
+			ctx := cmd.Context()
+			ec, err := newEvalContext(ctx, endpointFlg)
+			if err != nil {
+				return err
+			}
+			defer ec.Close()
+
+			evalID, err := resolveEvalID(cmd, ec, nil, groupName)
+			if err != nil {
+				return err
+			}
+
+			run, err := ec.latestOrNamedRun(cmd, evalID, runID, runID != "")
+			if err != nil {
+				return err
+			}
+
+			item, err := ec.evalClient.GetOutputItem(ctx, evalID, run.ID, itemID)
+			if err != nil {
+				if eval_api.IsNotFound(err) {
+					return fmt.Errorf(
+						"no output item %q on run %s; "+
+							"`azd ai eval run output list` shows the ones there are",
+						itemID, run.ID)
+				}
+				return fmt.Errorf("reading output item %q: %w", itemID, err)
+			}
+			return emitJSON(cmd.OutOrStdout(), item)
+		},
+	}
+
+	cmd.Flags().StringVar(&runID, "run", "", "Run the item belongs to. Defaults to the most recent run.")
+	addEvalFlags(cmd, &groupName)
+	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	return cmd
+}
+
+func newRunOutputExportCommand() *cobra.Command {
+	var (
 		format      string
 		outFile     string
 		endpointFlg string
@@ -119,7 +180,7 @@ func newResultsExportCommand() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "export <eval-id>",
+		Use:   "export [run]",
 		Short: "Export run results as JSON or CSV.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -135,12 +196,13 @@ func newResultsExportCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			evalID, err := resolveEvalID(cmd, ec, args, groupName)
+			evalID, err := resolveEvalID(cmd, ec, nil, groupName)
 			if err != nil {
 				return err
 			}
 
-			run, err := ec.latestOrNamedRun(cmd, evalID, runID)
+			runID := firstArg(args)
+			run, err := ec.latestOrNamedRun(cmd, evalID, runID, runID != "")
 			if err != nil {
 				return err
 			}
@@ -162,7 +224,6 @@ func newResultsExportCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&runID, "run-id", "", "Run to export. Defaults to the most recent run.")
 	cmd.Flags().StringVar(&format, "format", "json", "Output format: json or csv.")
 	cmd.Flags().StringVarP(&outFile, "out-file", "O", "", "Write to this path instead of stdout.")
 	addEvalFlags(cmd, &groupName)
@@ -226,9 +287,14 @@ func addEvalFlags(cmd *cobra.Command, target *string) {
 }
 
 // latestOrNamedRun returns the named run, or the most recent one for the eval.
+//
+// explicit says whether the caller named the run rather than leaving it to
+// default. A remembered run that no longer resolves is worth falling through
+// on; one that was asked for by name is not.
 func (ec *evalContext) latestOrNamedRun(
 	cmd *cobra.Command,
 	evalID, runID string,
+	explicit bool,
 ) (*eval_api.OpenAIEvalRun, error) {
 	ctx := cmd.Context()
 
@@ -243,9 +309,7 @@ func (ec *evalContext) latestOrNamedRun(
 		if err == nil {
 			return run, nil
 		}
-		// A remembered run that no longer resolves is not worth failing on:
-		// fall through to whatever the group has now.
-		if cmd.Flag("run-id") != nil && cmd.Flag("run-id").Changed {
+		if explicit {
 			return nil, fmt.Errorf("reading run %s: %w", runID, err)
 		}
 	}

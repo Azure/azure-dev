@@ -2272,6 +2272,7 @@ func (a *InitAction) configureModelChoice(
 		result, err := configureFoundryProject(
 			ctx, a.azdClient, a.azureContext, a.environment.Name,
 			a.flags.projectResourceId, a.flags.noPrompt, a.skipACR(),
+			a.isHostedAgent(), // filterHostedRegions: voice/managed agents are not region-restricted
 		)
 		if err != nil {
 			return nil, err

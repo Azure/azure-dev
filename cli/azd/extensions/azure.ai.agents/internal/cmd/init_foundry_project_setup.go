@@ -40,6 +40,7 @@ func configureFoundryProject(
 	projectResourceId string,
 	noPrompt bool,
 	skipACR bool,
+	filterHostedRegions bool,
 ) (*foundryProjectSetupResult, error) {
 	result := &foundryProjectSetupResult{}
 
@@ -71,8 +72,8 @@ func configureFoundryProject(
 			ctx, azdClient, newCred, azureContext, envName,
 			azureContext.Scope.SubscriptionId, projectResourceId,
 			skipACR,
-			skipACR, // filterHostedRegions: this path is code/container only (non-voice)
-			true,    // bicepless
+			filterHostedRegions,
+			true, // bicepless
 		)
 		if err != nil {
 			return nil, err
@@ -145,8 +146,8 @@ func configureFoundryProject(
 				ctx, azdClient, newCred, azureContext, envName,
 				azureContext.Scope.SubscriptionId, "",
 				skipACR,
-				skipACR, // filterHostedRegions: this path is code/container only (non-voice)
-				true,    // bicepless
+				filterHostedRegions,
+				true, // bicepless
 			)
 			if err != nil {
 				return nil, err

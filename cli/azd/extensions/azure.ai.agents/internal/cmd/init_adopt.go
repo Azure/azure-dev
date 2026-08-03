@@ -909,6 +909,7 @@ func runInitFromAzureYaml(
 		ctx, azdClient, azureContext, env.Name,
 		flags.projectResourceId, flags.noPrompt,
 		skipACR,
+		skipACR, // filterHostedRegions: adopt path is container/code only (no voice); preserve prior behavior
 	)
 	if err != nil {
 		if exterrors.IsCancellation(err) {

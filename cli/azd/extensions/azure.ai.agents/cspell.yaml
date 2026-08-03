@@ -10,6 +10,7 @@ words:
   - Reprompt
   # Voice (prompt-voice) agents
   - BYOM
+  - Nanami
   # Azure region names
   - australiaeast
   - brazilsouth

@@ -91,7 +91,7 @@ fetched rather than checked in so it doesn't go stale:
 
 ```bash
 npm run fetch:skill                       # tracks main
-./scripts/fetch-foundry-skill.sh <ref>    # or pin to a branch, tag, or commit
+node scripts/fetch-foundry-skill.mjs <ref>   # or pin to a branch, tag, or commit
 ```
 
 It lands in `skills/.external/microsoft-foundry/` (gitignored). The script records the

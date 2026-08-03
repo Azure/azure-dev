@@ -48,7 +48,7 @@ inputs:
     default: ""
   fetch-skills:
     description: >
-      Whether to run scripts/fetch-foundry-skill.sh before the eval. Needed by evals
+      Whether to run scripts/fetch-foundry-skill.mjs before the eval. Needed by evals
       that load a skill from skills/.external/.
     required: false
     default: "false"
@@ -142,7 +142,7 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: |
-        ./scripts/fetch-foundry-skill.sh
+        node ./scripts/fetch-foundry-skill.mjs
         cat skills/.external/.skill-ref
 
     - name: Run vally eval

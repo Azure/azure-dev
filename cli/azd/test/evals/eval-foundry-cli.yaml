@@ -52,7 +52,7 @@ stimuli:
         name: "actually asks the CLI for help"
         config:
           required:
-            - name: bash
+            - name: "^(bash|powershell)$"
               command: 'azd ai[^|]*(--help|\bhelp\b)'
       # `toolbox` and `routine` are distinctive to the real `azd ai --help` output;
       # "agent" and "project" alone appear in any plausible hallucination.
@@ -64,12 +64,12 @@ stimuli:
         name: "no destructive or mutating commands"
         config:
           disallowed:
-            - name: bash
+            - name: "^(bash|powershell)$"
               command: "azd (down|up|provision|deploy)(?!\\S)"
-            - name: bash
+            - name: "^(bash|powershell)$"
               command: "azd ai agent (delete|init)(?!\\S)"
-            - name: bash
-              command: "rm -rf"
+            - name: "^(bash|powershell)$"
+              command: "rm\\s+-[rRf]|Remove-Item"
       - type: prompt
         name: "judge: grounded, accurate command summary"
         config:
@@ -96,19 +96,19 @@ stimuli:
         name: "runs the doctor diagnostic"
         config:
           required:
-            - name: bash
+            - name: "^(bash|powershell)$"
               command: "azd ai agent doctor(?!\\S)(?!.*--help)"
       # `(?!\S)` keeps `azd down` from also matching e.g. `azd downgrade`.
       - type: tool-calls
         name: "no destructive or mutating commands"
         config:
           disallowed:
-            - name: bash
+            - name: "^(bash|powershell)$"
               command: "azd (down|up|provision|deploy)(?!\\S)"
-            - name: bash
+            - name: "^(bash|powershell)$"
               command: "azd ai agent (delete|init)(?!\\S)"
-            - name: bash
-              command: "rm -rf"
+            - name: "^(bash|powershell)$"
+              command: "rm\\s+-[rRf]|Remove-Item"
       - type: output-matches
         name: "identifies the missing agent service"
         config:

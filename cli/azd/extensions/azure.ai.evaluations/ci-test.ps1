@@ -8,6 +8,11 @@
 # The live integration tests are excluded: they carry the `live` build tag, so
 # an untagged run does not compile them, and they additionally require
 # AZURE_AI_EVAL_E2E_LIVE and a project endpoint.
+#
+# TODO before the first release: build.sh ships six platforms and only
+# windows/amd64 has ever been executed. The live and hero suites assume it too
+# -- they derive the .exe suffix from the path separator and shell out to `azd`
+# -- so run both on linux and darwin before publishing.
 
 $gopath = go env GOPATH
 $gotestsumBinary = "gotestsum"

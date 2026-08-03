@@ -6,8 +6,9 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // various fields from vally's trajectory
@@ -40,33 +41,19 @@ func TestExtractToolCallsIncludesRelevantArgumentDetails(t *testing.T) {
 		"skill: azd",
 		"create_file: Create a project file",
 	}
-	if len(got) != len(want) {
-		t.Fatalf("extractToolCalls() = %v, want %v", got, want)
-	}
-	for index := range want {
-		if got[index] != want[index] {
-			t.Errorf("extractToolCalls()[%d] = %q, want %q", index, got[index], want[index])
-		}
-	}
+	require.Equal(t, want, got)
 }
 
 func TestFilteredEntriesHandlesVallyTrialOutcomes(t *testing.T) {
 	records, err := loadRecords(filepath.Join("testdata", "results.jsonl"))
-	if err != nil {
-		t.Fatalf("loadRecords() error = %v", err)
-	}
+	require.NoError(t, err)
 
 	passed, failed := filteredEntries(records)
-	if len(passed) != 1 {
-		t.Fatalf("passed entries = %d, want 1", len(passed))
-	}
-	if len(failed) != 3 {
-		t.Fatalf("failed entries = %d, want 3", len(failed))
-	}
-
-	if got := passed[0]; got.stimulus != "successful-trial" || got.status != statusSuccess || !got.passed {
-		t.Errorf("passed entry = %+v, want successful trial", got)
-	}
+	require.Len(t, passed, 1)
+	require.Len(t, failed, 3)
+	require.Equal(t, "successful-trial", passed[0].stimulus)
+	require.Equal(t, statusSuccess, passed[0].status)
+	require.True(t, passed[0].passed)
 
 	failedByStimulus := map[string]reportEntry{}
 	for _, entry := range failed {
@@ -82,23 +69,16 @@ func TestFilteredEntriesHandlesVallyTrialOutcomes(t *testing.T) {
 		{stimulus: "executor-error", status: "error", diagnostic: "The test executor could not start."},
 		{stimulus: "skipped-trial", status: "skipped", diagnostic: "The executor is unsupported."},
 	} {
-		entry, ok := failedByStimulus[test.stimulus]
-		if !ok {
-			t.Errorf("missing failed entry for %q", test.stimulus)
-			continue
-		}
-		if entry.status != test.status || entry.diagnostic != test.diagnostic {
-			t.Errorf("entry %q = status %q, diagnostic %q; want status %q, diagnostic %q",
-				test.stimulus, entry.status, entry.diagnostic, test.status, test.diagnostic)
-		}
+		require.Contains(t, failedByStimulus, test.stimulus)
+		entry := failedByStimulus[test.stimulus]
+		require.Equal(t, test.status, entry.status)
+		require.Equal(t, test.diagnostic, entry.diagnostic)
 	}
 }
 
 func TestBuildReportIncludesDiagnostics(t *testing.T) {
 	records, err := loadRecords(filepath.Join("testdata", "results.jsonl"))
-	if err != nil {
-		t.Fatalf("loadRecords() error = %v", err)
-	}
+	require.NoError(t, err)
 
 	_, failed := filteredEntries(records)
 	report := buildReport(failed, 4, "testdata/results.jsonl", "testdata", ".", false)
@@ -109,68 +89,53 @@ func TestBuildReportIncludesDiagnostics(t *testing.T) {
 		"- Status: skipped",
 		"- Diagnostic: The executor is unsupported.",
 	} {
-		if !strings.Contains(report, want) {
-			t.Errorf("report does not contain %q", want)
-		}
+		require.Contains(t, report, want)
 	}
+}
+
+func TestBuildReportDefaultsMissingSingleRunTrialMetadata(t *testing.T) {
+	records, err := loadRecords(filepath.Join("testdata", "single-run-results.jsonl"))
+	require.NoError(t, err)
+
+	passed, failed := filteredEntries(records)
+	require.Len(t, passed, 1)
+	require.Empty(t, failed)
+
+	report := buildReport(passed, 1, "testdata/single-run-results.jsonl", "testdata", ".", true)
+	require.Contains(t, report, "single-run-trial (trial 1/1, test-model)")
+	require.NotContains(t, report, "trial 1/0")
 }
 
 func TestExperimentResultsIncludeVariantInReport(t *testing.T) {
 	runDir := filepath.Join("testdata", "experiment-run")
 	resultsFiles, err := collectResultsFiles(runDir)
-	if err != nil {
-		t.Fatalf("collectResultsFiles() error = %v", err)
-	}
-	if len(resultsFiles) != 1 {
-		t.Fatalf("result files = %d, want 1", len(resultsFiles))
-	}
+	require.NoError(t, err)
+	require.Len(t, resultsFiles, 1)
 
 	records, err := loadResults(resultsFiles)
-	if err != nil {
-		t.Fatalf("loadResults() error = %v", err)
-	}
+	require.NoError(t, err)
 	passed, failed := filteredEntries(records)
-	if len(failed) != 0 {
-		t.Fatalf("failed entries = %d, want 0", len(failed))
-	}
-	if len(passed) != 1 {
-		t.Fatalf("passed entries = %d, want 1", len(passed))
-	}
+	require.Empty(t, failed)
+	require.Len(t, passed, 1)
 
 	const variant = "skills=with-skills,model=test-model"
-	if passed[0].experimentVariant != variant {
-		t.Errorf("experiment variant = %q, want %q", passed[0].experimentVariant, variant)
-	}
+	require.Equal(t, variant, passed[0].experimentVariant)
 
 	renderedReport := buildReport(passed, 1, runDir, runDir, ".", true)
-	if !strings.Contains(renderedReport, ", "+variant+")") {
-		t.Errorf("report does not contain experiment variant %q", variant)
-	}
+	require.Contains(t, renderedReport, ", "+variant+")")
 
 	prefix := filepath.Join(t.TempDir(), "experiment-results")
 	message, err := report(runDir, prefix)
-	if err != nil {
-		t.Fatalf("report() error = %v", err)
-	}
-	if !strings.Contains(message, "0 failed, 1 passed") {
-		t.Errorf("report() message = %q, want counts", message)
-	}
+	require.NoError(t, err)
+	require.Contains(t, message, "0 failed, 1 passed")
 
 	passedReport, err := os.ReadFile(prefix + "-passed.md")
-	if err != nil {
-		t.Fatalf("ReadFile(passed report) error = %v", err)
-	}
-	if !strings.Contains(string(passedReport), ", "+variant+")") {
-		t.Errorf("passed report does not contain experiment variant %q", variant)
-	}
+	require.NoError(t, err)
+	require.Contains(t, string(passedReport), ", "+variant+")")
 
 	failedReport, err := os.ReadFile(prefix + "-failed.md")
-	if err != nil {
-		t.Fatalf("ReadFile(failed report) error = %v", err)
-	}
-	if !strings.Contains(string(failedReport), "No failed trials in this run.") {
-		t.Error("failed report does not contain the expected empty state")
-	}
+	require.NoError(t, err)
+	require.Contains(t, string(failedReport), "No failed trials in this run.")
 }
 
 func TestLatestExperimentRunSelectsNewestValidRun(t *testing.T) {
@@ -180,27 +145,17 @@ func TestLatestExperimentRunSelectsNewestValidRun(t *testing.T) {
 		"2026-07-24T01-00-00-000Z",
 	} {
 		resultsPath := filepath.Join(baseDir, runName, "skills=with-skills", "results.jsonl")
-		if err := os.MkdirAll(filepath.Dir(resultsPath), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%q) error = %v", resultsPath, err)
-		}
-		if err := os.WriteFile(resultsPath, []byte("{}\n"), 0o600); err != nil {
-			t.Fatalf("WriteFile(%q) error = %v", resultsPath, err)
-		}
+		require.NoError(t, os.MkdirAll(filepath.Dir(resultsPath), 0o755))
+		require.NoError(t, os.WriteFile(resultsPath, []byte("{}\n"), 0o600))
 	}
 
 	// A newer directory without a variant results file must not be selected.
-	if err := os.Mkdir(filepath.Join(baseDir, "2026-07-25T01-00-00-000Z"), 0o755); err != nil {
-		t.Fatalf("Mkdir() error = %v", err)
-	}
+	require.NoError(t, os.Mkdir(filepath.Join(baseDir, "2026-07-25T01-00-00-000Z"), 0o755))
 
 	got, err := latestExperimentRun(baseDir)
-	if err != nil {
-		t.Fatalf("latestExperimentRun() error = %v", err)
-	}
+	require.NoError(t, err)
 	want := filepath.Join(baseDir, "2026-07-24T01-00-00-000Z")
-	if got != want {
-		t.Errorf("latestExperimentRun() = %q, want %q", got, want)
-	}
+	require.Equal(t, want, got)
 }
 
 func TestLatestRunFromVallyResultsSelectsNewestValidRun(t *testing.T) {
@@ -210,27 +165,17 @@ func TestLatestRunFromVallyResultsSelectsNewestValidRun(t *testing.T) {
 		"2026-07-24T01-00-00-000Z",
 	} {
 		resultsPath := filepath.Join(baseDir, runName, "results.jsonl")
-		if err := os.MkdirAll(filepath.Dir(resultsPath), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%q) error = %v", resultsPath, err)
-		}
-		if err := os.WriteFile(resultsPath, []byte("{}\n"), 0o600); err != nil {
-			t.Fatalf("WriteFile(%q) error = %v", resultsPath, err)
-		}
+		require.NoError(t, os.MkdirAll(filepath.Dir(resultsPath), 0o755))
+		require.NoError(t, os.WriteFile(resultsPath, []byte("{}\n"), 0o600))
 	}
 
 	// A newer directory without results must not be selected.
-	if err := os.Mkdir(filepath.Join(baseDir, "2026-07-25T01-00-00-000Z"), 0o755); err != nil {
-		t.Fatalf("Mkdir() error = %v", err)
-	}
+	require.NoError(t, os.Mkdir(filepath.Join(baseDir, "2026-07-25T01-00-00-000Z"), 0o755))
 
 	got, err := latestRunFromVallyResults(baseDir)
-	if err != nil {
-		t.Fatalf("latestRunFromVallyResults() error = %v", err)
-	}
+	require.NoError(t, err)
 	want := filepath.Join(baseDir, "2026-07-24T01-00-00-000Z")
-	if got != want {
-		t.Errorf("latestRunFromVallyResults() = %q, want %q", got, want)
-	}
+	require.Equal(t, want, got)
 }
 
 func TestCollectResultsFilesPrefersRootResultsFile(t *testing.T) {
@@ -238,47 +183,26 @@ func TestCollectResultsFilesPrefersRootResultsFile(t *testing.T) {
 	rootResultsPath := filepath.Join(runDir, "results.jsonl")
 	shardResultsPath := filepath.Join(runDir, "skills=with-skills", "results.jsonl")
 
-	if err := os.WriteFile(rootResultsPath, []byte("{}\n"), 0o600); err != nil {
-		t.Fatalf("WriteFile(%q) error = %v", rootResultsPath, err)
-	}
-	if err := os.MkdirAll(filepath.Dir(shardResultsPath), 0o755); err != nil {
-		t.Fatalf("MkdirAll(%q) error = %v", shardResultsPath, err)
-	}
-	if err := os.WriteFile(shardResultsPath, []byte("{}\n"), 0o600); err != nil {
-		t.Fatalf("WriteFile(%q) error = %v", shardResultsPath, err)
-	}
+	require.NoError(t, os.WriteFile(rootResultsPath, []byte("{}\n"), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Dir(shardResultsPath), 0o755))
+	require.NoError(t, os.WriteFile(shardResultsPath, []byte("{}\n"), 0o600))
 
 	got, err := collectResultsFiles(runDir)
-	if err != nil {
-		t.Fatalf("collectResultsFiles() error = %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("collectResultsFiles() returned %d files, want 1", len(got))
-	}
-	if got[0] != rootResultsPath {
-		t.Errorf("collectResultsFiles() = %q, want root result %q", got[0], rootResultsPath)
-	}
+	require.NoError(t, err)
+	require.Equal(t, []string{rootResultsPath}, got)
 }
 
 func TestReportWritesPassedAndFailedReports(t *testing.T) {
 	runDir := t.TempDir()
 	results, err := os.ReadFile(filepath.Join("testdata", "results.jsonl"))
-	if err != nil {
-		t.Fatalf("ReadFile() error = %v", err)
-	}
+	require.NoError(t, err)
 	// #nosec G703 -- runDir is t.TempDir(); test-only file write, not user input.
-	if err := os.WriteFile(filepath.Join(runDir, "results.jsonl"), results, 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
+	require.NoError(t, os.WriteFile(filepath.Join(runDir, "results.jsonl"), results, 0o600))
 
 	prefix := filepath.Join(t.TempDir(), "eval-results")
 	message, err := report(runDir, prefix)
-	if err != nil {
-		t.Fatalf("report() error = %v", err)
-	}
-	if !strings.Contains(message, "3 failed, 1 passed") {
-		t.Errorf("report() message = %q, want counts", message)
-	}
+	require.NoError(t, err)
+	require.Contains(t, message, "3 failed, 1 passed")
 
 	const (
 		reportFailedSuffix = "-failed.md"
@@ -288,81 +212,50 @@ func TestReportWritesPassedAndFailedReports(t *testing.T) {
 	for _, suffix := range []string{reportFailedSuffix, reportPassedSuffix} {
 		path := prefix + suffix
 		contents, err := os.ReadFile(path)
-		if err != nil {
-			t.Errorf("ReadFile(%q) error = %v", path, err)
-			continue
-		}
-		if len(contents) == 0 {
-			t.Errorf("report %q is empty", path)
-		}
-		if !strings.Contains(string(contents), "Generated by vally_report.go") {
-			t.Errorf("report %q does not identify its generator", path)
-		}
+		require.NoError(t, err)
+		require.NotEmpty(t, contents)
+		require.Contains(t, string(contents), "Generated by vally_report.go")
 	}
 
 	failedReport, err := os.ReadFile(prefix + reportFailedSuffix)
-	if err != nil {
-		t.Fatalf("ReadFile(failed report) error = %v", err)
-	}
-	if !strings.Contains(string(failedReport), "- Failed trials: 3/4") {
-		t.Errorf("failed report does not contain the expected trial count")
-	}
+	require.NoError(t, err)
+	require.Contains(t, string(failedReport), "- Failed trials: 3/4")
 
 	passedReport, err := os.ReadFile(prefix + reportPassedSuffix)
-	if err != nil {
-		t.Fatalf("ReadFile(passed report) error = %v", err)
-	}
-	if !strings.Contains(string(passedReport), "- Successful trials: 1/4") {
-		t.Errorf("passed report does not contain the expected trial count")
-	}
+	require.NoError(t, err)
+	require.Contains(t, string(passedReport), "- Successful trials: 1/4")
 }
 
 func TestReportCreatesMissingOutputDirectory(t *testing.T) {
 	runDir := t.TempDir()
 	results, err := os.ReadFile(filepath.Join("testdata", "results.jsonl"))
-	if err != nil {
-		t.Fatalf("ReadFile() error = %v", err)
-	}
+	require.NoError(t, err)
 	// #nosec G703 -- runDir is t.TempDir(); test-only file write, not user input.
-	if err := os.WriteFile(filepath.Join(runDir, "results.jsonl"), results, 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
+	require.NoError(t, os.WriteFile(filepath.Join(runDir, "results.jsonl"), results, 0o600))
 
 	prefix := filepath.Join(t.TempDir(), "reports", "eval-results")
-	if _, err := report(runDir, prefix); err != nil {
-		t.Fatalf("report() error = %v", err)
-	}
+	_, err = report(runDir, prefix)
+	require.NoError(t, err)
 
 	for _, suffix := range []string{"-failed.md", "-passed.md"} {
-		if _, err := os.Stat(prefix + suffix); err != nil {
-			t.Errorf("Stat(%q) error = %v", prefix+suffix, err)
-		}
+		require.FileExists(t, prefix+suffix)
 	}
 }
 
 func TestReportLinksAreRelativeToGeneratedReport(t *testing.T) {
 	runDir := t.TempDir()
 	results, err := os.ReadFile(filepath.Join("testdata", "results.jsonl"))
-	if err != nil {
-		t.Fatalf("ReadFile() error = %v", err)
-	}
+	require.NoError(t, err)
 	// #nosec G703 -- runDir is t.TempDir(); test-only file write, not user input.
-	if err := os.WriteFile(filepath.Join(runDir, "results.jsonl"), results, 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
+	require.NoError(t, os.WriteFile(filepath.Join(runDir, "results.jsonl"), results, 0o600))
 
 	prefix := filepath.Join(runDir, "vally_report", "eval-results")
-	if _, err := report(runDir, prefix); err != nil {
-		t.Fatalf("report() error = %v", err)
-	}
+	_, err = report(runDir, prefix)
+	require.NoError(t, err)
 
 	contents, err := os.ReadFile(prefix + "-failed.md")
-	if err != nil {
-		t.Fatalf("ReadFile(failed report) error = %v", err)
-	}
-	if !strings.Contains(string(contents), "](../results.jsonl#L2)") {
-		t.Errorf("report links must be relative to the report directory: %s", contents)
-	}
+	require.NoError(t, err)
+	require.Contains(t, string(contents), "](../results.jsonl#L2)")
 }
 
 func TestReportLatestRunsReportsBothAvailableRuns(t *testing.T) {
@@ -379,12 +272,8 @@ func TestReportLatestRunsReportsBothAvailableRuns(t *testing.T) {
 			"results.jsonl",
 		),
 	} {
-		if err := os.MkdirAll(filepath.Dir(resultsPath), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%q) error = %v", resultsPath, err)
-		}
-		if err := os.WriteFile(resultsPath, []byte("{}\n"), 0o600); err != nil {
-			t.Fatalf("WriteFile(%q) error = %v", resultsPath, err)
-		}
+		require.NoError(t, os.MkdirAll(filepath.Dir(resultsPath), 0o755))
+		require.NoError(t, os.WriteFile(resultsPath, []byte("{}\n"), 0o600))
 	}
 
 	messages, err := reportLatestRuns(
@@ -394,18 +283,12 @@ func TestReportLatestRunsReportsBothAvailableRuns(t *testing.T) {
 		"eval-results",
 		"eval-experiments",
 	)
-	if err != nil {
-		t.Fatalf("reportLatestRuns() error = %v", err)
-	}
-	if len(messages) != 2 {
-		t.Fatalf("messages = %d, want 2", len(messages))
-	}
+	require.NoError(t, err)
+	require.Len(t, messages, 2)
 
 	for _, prefix := range []string{"eval-results", "eval-experiments"} {
 		for _, suffix := range []string{"-failed.md", "-passed.md"} {
-			if _, err := os.Stat(filepath.Join(baseDir, prefix) + suffix); err != nil {
-				t.Errorf("Stat(%q) error = %v", prefix+suffix, err)
-			}
+			require.FileExists(t, filepath.Join(baseDir, prefix)+suffix)
 		}
 	}
 }
@@ -416,12 +299,8 @@ func TestReportLatestRunsReportsAvailableRunsAndSkipsMissingRuns(t *testing.T) {
 	experimentResultsDir := filepath.Join(baseDir, "vally-experiment-results")
 
 	evalResultsPath := filepath.Join(evalResultsDir, "2026-07-24T01-00-00-000Z", "results.jsonl")
-	if err := os.MkdirAll(filepath.Dir(evalResultsPath), 0o755); err != nil {
-		t.Fatalf("MkdirAll() error = %v", err)
-	}
-	if err := os.WriteFile(evalResultsPath, []byte("{}\n"), 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
+	require.NoError(t, os.MkdirAll(filepath.Dir(evalResultsPath), 0o755))
+	require.NoError(t, os.WriteFile(evalResultsPath, []byte("{}\n"), 0o600))
 
 	messages, err := reportLatestRuns(
 		evalResultsDir,
@@ -430,16 +309,8 @@ func TestReportLatestRunsReportsAvailableRunsAndSkipsMissingRuns(t *testing.T) {
 		"eval-results",
 		"eval-experiments",
 	)
-	if len(messages) != 2 {
-		t.Fatalf("messages = %d, want 2", len(messages))
-	}
-	if !strings.Contains(messages[0], "0 failed, 0 passed") {
-		t.Errorf("message = %q, want empty run counts", messages[0])
-	}
-	if err != nil {
-		t.Errorf("reportLatestRuns() error = %v, want nil", err)
-	}
-	if len(messages) != 2 || !strings.Contains(messages[1], "Skipping "+experimentResultsDir) {
-		t.Errorf("messages = %v, want skipped experiment results", messages)
-	}
+	require.NoError(t, err)
+	require.Len(t, messages, 2)
+	require.Contains(t, messages[0], "0 failed, 0 passed")
+	require.Contains(t, messages[1], "Skipping "+experimentResultsDir)
 }

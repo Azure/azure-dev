@@ -115,6 +115,62 @@ func (c *EvalClient) GetEvaluatorGenerationJob(
 	return doRequestTyped[GenerationJob](c, ctx, http.MethodGet, path, nil, nil, apiVersion)
 }
 
+// GenerationJobList is the listing envelope both job types answer with. It is
+// `data`, not the `value` the dataset and evaluator routes use.
+type GenerationJobList struct {
+	Data []GenerationJob `json:"data"`
+}
+
+// ListDataGenerationJobs returns the project's dataset generation jobs.
+func (c *EvalClient) ListDataGenerationJobs(
+	ctx context.Context,
+	apiVersion string,
+) (*GenerationJobList, error) {
+	return doRequestTyped[GenerationJobList](
+		c, ctx, http.MethodGet, pathDataGenerationJobs, nil, nil, apiVersion)
+}
+
+// ListEvaluatorGenerationJobs returns the project's evaluator generation jobs.
+func (c *EvalClient) ListEvaluatorGenerationJobs(
+	ctx context.Context,
+	apiVersion string,
+) (*GenerationJobList, error) {
+	return doRequestTyped[GenerationJobList](
+		c, ctx, http.MethodGet, pathEvaluatorGenerationJobs, nil, nil, apiVersion)
+}
+
+// CancelDataGenerationJob stops a dataset generation job.
+func (c *EvalClient) CancelDataGenerationJob(
+	ctx context.Context,
+	operationID string,
+	apiVersion string,
+) (*GenerationJob, error) {
+	return c.cancelGenerationJob(ctx, pathDataGenerationJobs, operationID, apiVersion)
+}
+
+// CancelEvaluatorGenerationJob stops an evaluator generation job.
+func (c *EvalClient) CancelEvaluatorGenerationJob(
+	ctx context.Context,
+	operationID string,
+	apiVersion string,
+) (*GenerationJob, error) {
+	return c.cancelGenerationJob(ctx, pathEvaluatorGenerationJobs, operationID, apiVersion)
+}
+
+// cancelGenerationJob posts to the colon form of the route.
+//
+// The separator is a colon, not a path segment: `{id}/cancel` is a 404 while
+// `{id}:cancel` reaches the action. The empty object is what carries a content
+// type, without which the route answers 415.
+func (c *EvalClient) cancelGenerationJob(
+	ctx context.Context,
+	basePath, operationID, apiVersion string,
+) (*GenerationJob, error) {
+	path := basePath + "/" + url.PathEscape(operationID) + ":cancel"
+	return doRequestTyped[GenerationJob](
+		c, ctx, http.MethodPost, path, nil, json.RawMessage(`{}`), apiVersion)
+}
+
 // GetAgent reads an agent from the project's catalog.
 //
 // Only the newest version is returned, which is the one generation is seeded

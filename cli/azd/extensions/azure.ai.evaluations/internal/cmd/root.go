@@ -51,6 +51,10 @@ func NewRootCommand() *cobra.Command {
 		newRunCommand(),
 		newEvaluatorCommand(),
 		newResultsCommand(),
+		newJobCommand(),
+		newEvalListCommand(),
+		newEvalShowCommand(),
+		newEvalDeleteCommand(),
 		newListenCommand(),
 	)
 

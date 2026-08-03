@@ -86,7 +86,7 @@ func newEvaluatorWriteCommand(verb, short string) *cobra.Command {
 			// lags a publish by up to a second and a half, so an update
 			// issued straight after a create would be told the evaluator it
 			// just made does not exist.
-			_, readErr := ec.evalClient.GetEvaluatorRaw(
+			existing, readErr := ec.evalClient.GetEvaluatorRaw(
 				ctx, name, "", ProjectEndpointAPIVersion,
 			)
 			if readErr != nil && !eval_api.IsNotFound(readErr) {
@@ -96,8 +96,14 @@ func newEvaluatorWriteCommand(verb, short string) *cobra.Command {
 				return err
 			}
 
+			// What that read saw is what keeps the publish from being
+			// answered with the same version and replacing it.
+			if readErr != nil {
+				existing = nil
+			}
+
 			created, err := ec.evalClient.CreateEvaluatorVersion(
-				ctx, name, body, ProjectEndpointAPIVersion,
+				ctx, name, body, existing, ProjectEndpointAPIVersion,
 			)
 			if err != nil {
 				return fmt.Errorf("registering evaluator %q: %w", name, err)

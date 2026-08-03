@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"azureaieval/internal/version"
 
@@ -186,14 +187,125 @@ func (c *EvalClient) GetAgent(
 
 // CreateEvaluatorVersion creates a new version of a named evaluator.
 // The body should be the full evaluator JSON with the definition field updated.
+//
+// previous is the evaluator document the caller has already read, or nil when
+// it read none. It is what keeps the publish from being answered with the
+// version that document holds.
 func (c *EvalClient) CreateEvaluatorVersion(
 	ctx context.Context,
 	name string,
 	body json.RawMessage,
+	previous json.RawMessage,
 	apiVersion string,
 ) (*EvaluatorVersion, error) {
-	path := pathEvaluators + "/" + url.PathEscape(name) + "/versions"
-	return doRequestTyped[EvaluatorVersion](c, ctx, http.MethodPost, path, nil, body, apiVersion)
+	return c.publishEvaluatorVersion(ctx, name, previous, apiVersion, func() (*EvaluatorVersion, error) {
+		path := pathEvaluators + "/" + url.PathEscape(name) + "/versions"
+		return doRequestTyped[EvaluatorVersion](c, ctx, http.MethodPost, path, nil, body, apiVersion)
+	})
+}
+
+// versionSettle bounds the wait for the service to start assigning the next
+// version number.
+const (
+	versionSettleTimeout  = 45 * time.Second
+	versionSettleInterval = 3 * time.Second
+	versionSettleAge      = 8 * time.Second
+)
+
+// publishedVersion is the little of an evaluator document this needs: which
+// version it is, and when it was written.
+type publishedVersion struct {
+	Version    string    `json:"version"`
+	ModifiedAt time.Time `json:"modified_at"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// writtenAt reports when the version was last written, preferring the
+// modification time and falling back to creation.
+func (p publishedVersion) writtenAt() time.Time {
+	if !p.ModifiedAt.IsZero() {
+		return p.ModifiedAt
+	}
+	return p.CreatedAt
+}
+
+// publishEvaluatorVersion publishes and then makes sure a new version is what
+// came back.
+//
+// For a few seconds after a publish the service can answer the next one with
+// the version it just assigned, writing over that version's contents instead
+// of adding one. It is a race rather than a fixed window — a second publish
+// has been seen both colliding a quarter of a second later and succeeding
+// immediately — and nothing observable marks its end.
+//
+// That matters because versions are the unit an eval binds to. `evaluator
+// create` followed by `evaluator update`, which is what a first authoring
+// session looks like, would otherwise leave one version holding the second
+// definition and every eval bound to the first silently scoring against a
+// rubric nobody chose.
+//
+// So there are two defences. The publish is held back until the version the
+// caller read has had time to settle, which is what keeps the collision from
+// happening at all; and the version that comes back is checked, which is what
+// keeps a collision that happens anyway from being reported as success. The
+// recheck republishes the same body, so it cannot make a collision worse than
+// the first attempt already did.
+//
+// What the caller reads is used rather than the version listing because the
+// listing lags a publish too: asked immediately after a create it answers 404,
+// so a guard that trusted it would stand down in exactly the case it exists
+// for. Callers that publish an evaluator have already read it to decide
+// between creating and updating.
+func (c *EvalClient) publishEvaluatorVersion(
+	ctx context.Context,
+	name string,
+	previous json.RawMessage,
+	apiVersion string,
+	publish func() (*EvaluatorVersion, error),
+) (*EvaluatorVersion, error) {
+	var known publishedVersion
+	if len(previous) > 0 {
+		_ = json.Unmarshal(previous, &known)
+	}
+
+	latest := parseVersionNumber(known.Version)
+	if listed := c.LatestEvaluatorVersionNumber(ctx, name, apiVersion); listed > latest {
+		latest = listed
+	}
+
+	if written := known.writtenAt(); !written.IsZero() {
+		if wait := versionSettleAge - time.Since(written); wait > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(wait):
+			}
+		}
+	}
+
+	deadline := time.Now().Add(versionSettleTimeout)
+	for {
+		created, err := publish()
+		if err != nil {
+			return nil, err
+		}
+		if latest == 0 || parseVersionNumber(created.Version) > latest {
+			return created, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf(
+				"publishing evaluator %q kept returning version %s, which already "+
+					"existed. The service was still assigning that version after %s, so "+
+					"version %s now holds what was just published and any eval bound to "+
+					"it is scoring against it",
+				name, created.Version, versionSettleTimeout, created.Version)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(versionSettleInterval):
+		}
+	}
 }
 
 // GetEvaluatorRaw gets an evaluator by name and version as raw JSON.

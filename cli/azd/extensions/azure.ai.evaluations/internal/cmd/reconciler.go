@@ -265,16 +265,20 @@ func (r *evalReconciler) EnsureEvaluator(
 	}
 
 	// Compare against the definition already on the service.
+	var known json.RawMessage
 	if existing, err := r.ec.evalClient.GetEvaluatorRaw(
 		ctx, decl.Name, "", ProjectEndpointAPIVersion,
 	); err == nil {
 		if sameDefinition(existing, body) {
 			return versionFromRaw(existing, decl.Version), false, nil
 		}
+		// Different, so a version is about to be published. What that read
+		// saw is what keeps the publish from being answered with it again.
+		known = existing
 	}
 
 	created, err := r.ec.evalClient.CreateEvaluatorVersion(
-		ctx, decl.Name, body, ProjectEndpointAPIVersion,
+		ctx, decl.Name, body, known, ProjectEndpointAPIVersion,
 	)
 	if err != nil {
 		return "", false, err

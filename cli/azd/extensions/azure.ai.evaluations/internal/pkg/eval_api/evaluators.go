@@ -176,6 +176,16 @@ func (c *EvalClient) LatestEvaluatorVersionNumber(
 	return number
 }
 
+// parseVersionNumber reads a version string as an integer, answering 0 for one
+// that is not numeric.
+func parseVersionNumber(version string) int {
+	number, err := strconv.Atoi(version)
+	if err != nil {
+		return 0
+	}
+	return number
+}
+
 // DeleteEvaluatorVersion removes a single evaluator version.
 func (c *EvalClient) DeleteEvaluatorVersion(
 	ctx context.Context,

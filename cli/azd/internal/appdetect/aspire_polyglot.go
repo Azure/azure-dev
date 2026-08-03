@@ -37,8 +37,10 @@ var polyglotAppHostFileLanguage = map[string]string{
 }
 
 // pythonAppHostCompanions are additional files that corroborate a Python Aspire AppHost. Because
-// "apphost.py" is a fairly generic file name, azd only treats it as an Aspire AppHost when one of
-// these companion markers (or aspire.config.json) is also present, to avoid false positives.
+// "apphost.py" is a fairly generic file name, azd only treats it as an Aspire AppHost (via the
+// file-name fallback) when one of these companion markers is also present, to avoid false
+// positives. A Python AppHost declared explicitly in aspire.config.json is resolved earlier and
+// does not rely on these companions.
 var pythonAppHostCompanions = []string{"pylock.apphost.toml", "apphost_requirements.txt"}
 
 // normalizeAspireLanguage maps an aspire.config.json "appHost.language" value to a normalized
@@ -79,8 +81,16 @@ func detectAspirePolyglotAppHost(dir string, entries []fs.DirEntry) (language st
 
 	// Strongest signal: aspire.config.json explicitly declares the AppHost language/path.
 	if configName, has := present[aspirePolyglotConfigFile]; has {
-		if lang, file := languageFromAspireConfig(filepath.Join(dir, configName), present); lang != "" {
+		lang, file, declared := languageFromAspireConfig(filepath.Join(dir, configName), present)
+		if lang != "" {
 			return lang, filepath.Join(dir, file), true
+		}
+		if declared {
+			// The config authoritatively declares an AppHost that resolves to C# (or an
+			// otherwise non-polyglot target). Trust it and do NOT run the filename fallback:
+			// a sibling apphost.ts/apphost.py in a C# Aspire layout must not be misreported as
+			// polyglot, which would hard-fail `azd init`/`up` on a supported project.
+			return "", "", false
 		}
 	}
 
@@ -108,23 +118,33 @@ func detectAspirePolyglotAppHost(dir string, entries []fs.DirEntry) (language st
 }
 
 // languageFromAspireConfig resolves the polyglot language declared in aspire.config.json. It
-// returns an empty language for C# AppHosts (which are handled by the regular .NET path) or when
-// the config cannot be read/parsed. The returned appHostFile preserves the relative path declared
-// in the config (which may include subdirectories, e.g. "src/apphost.mts").
-func languageFromAspireConfig(configPath string, present map[string]string) (language string, appHostFile string) {
+// returns:
+//   - language: the normalized polyglot language, or "" for a C# AppHost (handled by the regular
+//     .NET path) or when no language could be resolved.
+//   - appHostFile: the relative AppHost path declared in the config (may include subdirectories,
+//     e.g. "src/apphost.mts").
+//   - declared: whether the config authoritatively declares an AppHost (a readable, parseable
+//     config with a non-empty "appHost.path"). When true but language is "", the config declares a
+//     C#/non-polyglot AppHost; callers should treat that as authoritative and skip filename-based
+//     fallback detection. When false, the config was missing/unreadable/malformed and callers may
+//     fall back to file-name heuristics.
+func languageFromAspireConfig(
+	configPath string,
+	present map[string]string,
+) (language string, appHostFile string, declared bool) {
 	//nolint:gosec // G304: configPath is derived from a directory listing during app detection.
 	contents, err := os.ReadFile(configPath)
 	if err != nil {
-		return "", ""
+		return "", "", false
 	}
 
 	var config aspireConfig
 	if err := json.Unmarshal(contents, &config); err != nil {
-		return "", ""
+		return "", "", false
 	}
 
 	if strings.TrimSpace(config.AppHost.Path) == "" {
-		return "", ""
+		return "", "", false
 	}
 
 	// Preserve the full relative path (may contain subdirectories). Only case-resolve the path
@@ -141,23 +161,20 @@ func languageFromAspireConfig(configPath string, present map[string]string) (lan
 
 	// Prefer the explicit language declaration.
 	if lang := normalizeAspireLanguage(config.AppHost.Language); lang != "" {
-		return lang, appHostFile
+		return lang, appHostFile, true
 	}
 
 	// No explicit (polyglot) language: infer from the AppHost path's file name. This treats a
 	// ".csproj"/"apphost.cs" path as C# (empty language), so it is not misreported as polyglot.
 	if lang, isAppHostFile := polyglotAppHostFileLanguage[fileName]; isAppHostFile {
-		return lang, appHostFile
+		return lang, appHostFile, true
 	}
 
-	return "", ""
+	return "", appHostFile, true
 }
 
 // hasPythonAppHostCompanion reports whether a Python Aspire AppHost companion marker is present.
 func hasPythonAppHostCompanion(present map[string]string) bool {
-	if _, has := present[aspirePolyglotConfigFile]; has {
-		return true
-	}
 	for _, companion := range pythonAppHostCompanions {
 		if _, has := present[companion]; has {
 			return true

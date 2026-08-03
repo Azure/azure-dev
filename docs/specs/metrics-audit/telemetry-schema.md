@@ -162,7 +162,7 @@ not emitted by azd spans.
 
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
-| AppHost language | `aspire.apphost.language` | SystemMetadata | FeatureInsight | Fixed enum (`typescript`/`python`/`go`/`java`/`rust`); not hashed. Emitted on `aspire.apphost.unsupported`. |
+| AppHost language | `aspire.apphost.language` | SystemMetadata | FeatureInsight | Fixed enum (`typescript`/`python`/`go`/`java`/`rust`); not hashed; not a measurement. Emitted on `aspire.apphost.unsupported`. |
 
 ### MCP
 

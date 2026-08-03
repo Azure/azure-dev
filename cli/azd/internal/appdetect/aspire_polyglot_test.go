@@ -118,6 +118,26 @@ func TestDetectAspirePolyglotAppHost(t *testing.T) {
 			expectOk: false,
 		},
 		{
+			name: "CSharpConfigWithSiblingPythonFileIsNotPolyglot",
+			files: map[string]string{
+				// A supported C# Aspire layout that also has a root-level apphost.py must not be
+				// misreported as a Python polyglot AppHost. The config is authoritative.
+				"aspire.config.json": `{"appHost":{"path":"AppHost/AppHost.csproj"}}`,
+				"apphost.py":         "print('unrelated')",
+			},
+			expectOk: false,
+		},
+		{
+			name: "CSharpConfigWithSiblingTypeScriptFileIsNotPolyglot",
+			files: map[string]string{
+				// Same class of problem for TypeScript: an apphost.ts next to a C# config must not
+				// trigger the file-name fallback.
+				"aspire.config.json": `{"appHost":{"path":"AppHost/AppHost.csproj"}}`,
+				"apphost.ts":         "createBuilder();",
+			},
+			expectOk: false,
+		},
+		{
 			name: "TypeScriptWithSubdirectoryPath",
 			files: map[string]string{
 				"package.json":       "{}",

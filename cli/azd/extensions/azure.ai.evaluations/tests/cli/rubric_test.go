@@ -56,13 +56,13 @@ func TestCLIRubricRoundTrip(t *testing.T) {
 		{"id":"accuracy","description":"Is the answer correct?","weight":10}
 	]`)
 
-	created := requireSuccess(t, run(t, "evaluator", "create", "--name", name, "--rubric", rubric))
+	created := requireSuccess(t, run(t, "evaluator", "create", name, "--from-file", rubric))
 	require.Contains(t, created.Stdout, "version 1")
 	t.Cleanup(func() {
-		run(t, "evaluator", "delete", "--name", name, "--version", "1")
+		run(t, "evaluator", "delete", name, "--version", "1")
 	})
 
-	shown := requireSuccess(t, run(t, "evaluator", "show", "--name", name))
+	shown := requireSuccess(t, run(t, "evaluator", "show", name))
 	var doc evaluatorDocument
 	shown.JSON(t, &doc)
 
@@ -91,18 +91,18 @@ func TestCLIRubricRoundTrip(t *testing.T) {
 	require.NotEmpty(t, doc.Definition.Metrics)
 	require.NotEmpty(t, doc.SupportedEvaluationLevels)
 
-	// Every registration publishes a new immutable version, which is why there
-	// is no separate update command.
-	republished := requireSuccess(t, run(t, "evaluator", "create", "--name", name, "--rubric", rubric))
+	// Every registration publishes a new immutable version, which is what
+	// `update` means for an evaluator.
+	republished := requireSuccess(t, run(t, "evaluator", "update", name, "--from-file", rubric))
 	require.Contains(t, republished.Stdout, "version 2",
-		"re-registering must advance the version rather than overwrite")
+		"updating must advance the version rather than overwrite")
 	t.Cleanup(func() {
-		run(t, "evaluator", "delete", "--name", name, "--version", "2")
+		run(t, "evaluator", "delete", name, "--version", "2")
 	})
 
 	// The earlier version stays reachable, which is what makes a published
 	// version safe to reference from a config.
-	pinned := requireSuccess(t, run(t, "evaluator", "show", "--name", name, "--version", "1"))
+	pinned := requireSuccess(t, run(t, "evaluator", "show", name, "--version", "1"))
 	var first evaluatorDocument
 	pinned.JSON(t, &first)
 	require.Equal(t, "1", first.Version)
@@ -131,7 +131,7 @@ func TestCLIRubricWeightMustBeAnIntegerFromOneToTen(t *testing.T) {
 				`[{"id":"tone","description":"Is the answer polite?","weight":`+tc.weight+`}]`)
 
 			r := requireFailure(t, run(t, "evaluator", "create",
-				"--name", uniqueName("azdcli_badweight"), "--rubric", rubric))
+				uniqueName("azdcli_badweight"), "--from-file", rubric))
 			require.Contains(t, r.Combined(), "between 1 and 10",
 				"the refusal must say what a legal weight is")
 		})
@@ -141,9 +141,9 @@ func TestCLIRubricWeightMustBeAnIntegerFromOneToTen(t *testing.T) {
 	// weight rather than on the rubric shape they share.
 	name := uniqueName("azdcli_goodweight")
 	ok := writeRubric(t, `[{"id":"tone","description":"Is the answer polite?","weight":1}]`)
-	requireSuccess(t, run(t, "evaluator", "create", "--name", name, "--rubric", ok))
+	requireSuccess(t, run(t, "evaluator", "create", name, "--from-file", ok))
 	t.Cleanup(func() {
-		run(t, "evaluator", "delete", "--name", name, "--version", "1")
+		run(t, "evaluator", "delete", name, "--version", "1")
 	})
 }
 
@@ -154,23 +154,8 @@ func TestCLIRubricNeedsDimensions(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(`{"criteria":[]}`), 0o600))
 
 	r := requireFailure(t, run(t, "evaluator", "create",
-		"--name", uniqueName("azdcli_nodims"), "--rubric", path))
+		uniqueName("azdcli_nodims"), "--from-file", path))
 	require.Contains(t, r.Combined(), "dimensions")
-}
-
-// TestCLIRubricRejectsCodeOnlyFlags asserts the settings that would be
-// accepted and then dropped are refused instead. A rubric runs no code and its
-// schemas come from the service, so carrying them would be a silent no-op.
-func TestCLIRubricRejectsCodeOnlyFlags(t *testing.T) {
-	rubric := writeRubric(t, `[{"id":"tone","description":"polite","weight":5}]`)
-	schema := filepath.Join(t.TempDir(), "schema.json")
-	require.NoError(t, os.WriteFile(schema, []byte(`{"type":"object"}`), 0o600))
-
-	r := requireFailure(t, run(t, "evaluator", "create",
-		"--name", uniqueName("azdcli_rubricflags"), "--rubric", rubric,
-		"--data-schema", schema))
-	require.Contains(t, r.Combined(), "--data-schema")
-	require.Contains(t, r.Combined(), "--file")
 }
 
 // TestCLIEvaluatorShowAcceptsAFullDocument proves `evaluator show` emits JSON a
@@ -186,12 +171,12 @@ func TestCLIEvaluatorShowAcceptsAFullDocument(t *testing.T) {
 		`{"name":"ignored","definition":{"dimensions":[{"id":"tone","description":"polite","weight":3}]}}`,
 	), 0o600))
 
-	requireSuccess(t, run(t, "evaluator", "create", "--name", name, "--rubric", path))
+	requireSuccess(t, run(t, "evaluator", "create", name, "--from-file", path))
 	t.Cleanup(func() {
-		run(t, "evaluator", "delete", "--name", name, "--version", "1")
+		run(t, "evaluator", "delete", name, "--version", "1")
 	})
 
-	shown := requireSuccess(t, run(t, "evaluator", "show", "--name", name))
+	shown := requireSuccess(t, run(t, "evaluator", "show", name))
 	var raw map[string]any
 	require.NoError(t, json.Unmarshal([]byte(shown.Stdout), &raw),
 		"evaluator show must emit parseable JSON:\n%s", shown.Stdout)

@@ -77,7 +77,7 @@ func TestEvalCommandsAcceptIDAsAFlag(t *testing.T) {
 
 	for _, name := range []string{
 		"run list", "run show", "run cancel",
-		"results show", "results export", "results compare",
+		"results show", "results export",
 	} {
 		cmd := subs[name]
 		require.NotNil(t, cmd, "%s should exist", name)

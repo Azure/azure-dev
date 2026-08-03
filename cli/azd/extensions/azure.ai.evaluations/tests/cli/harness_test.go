@@ -204,16 +204,3 @@ func requireFailure(t *testing.T, r result) result {
 func uniqueName(prefix string) string {
 	return fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
 }
-
-// writeGrader lays down a code evaluator script and returns its path.
-func writeGrader(t *testing.T, body string) string {
-	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "grader.py")
-	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
-	return path
-}
-
-const lengthGrader = `def grade(sample, item) -> float:
-    return float(len((item or {}).get("response", "")))
-`

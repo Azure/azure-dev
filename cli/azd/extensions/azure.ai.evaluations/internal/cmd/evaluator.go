@@ -9,7 +9,6 @@ import (
 	"os"
 
 	"azureaieval/internal/pkg/eval_api"
-	"azureaieval/internal/pkg/evalcore"
 
 	"github.com/spf13/cobra"
 )
@@ -21,82 +20,73 @@ func newEvaluatorCommand() *cobra.Command {
 	}
 	cmd.AddCommand(
 		newEvaluatorCreateCommand(),
+		newEvaluatorUpdateCommand(),
 		newEvaluatorListCommand(),
 		newEvaluatorShowCommand(),
 		newEvaluatorDeleteCommand(),
+		newEvaluatorVersionsCommand(),
 	)
 	return cmd
 }
 
-// newEvaluatorCreateCommand builds `evaluator create`, named to match
-// `dataset create`: both register an artifact and both publish a new immutable
-// version every time, so there is nothing for a separate `update` to do.
-//
-// An evaluator is either a rubric — a JSON file of weighted dimensions — or
-// code — one self-contained Python script. They are different definition types
-// on the wire, so exactly one of the two sources has to be named.
+// newEvaluatorCreateCommand builds `evaluator create <name>`, which registers
+// an evaluator that does not exist yet.
 func newEvaluatorCreateCommand() *cobra.Command {
+	return newEvaluatorWriteCommand("create", "Register an evaluator, publishing its first version.")
+}
+
+// newEvaluatorUpdateCommand builds `evaluator update <name>`, which publishes a
+// further version of one that does.
+func newEvaluatorUpdateCommand() *cobra.Command {
+	return newEvaluatorWriteCommand("update", "Publish a new version of an evaluator.")
+}
+
+// newEvaluatorWriteCommand builds create and update, which send the same
+// request and differ only in which starting state they accept. The service has
+// one route for both and assigns the version either way, so the existence check
+// is ours: without it, `create` on a name already in use would silently publish
+// a further version of someone else's evaluator.
+func newEvaluatorWriteCommand(verb, short string) *cobra.Command {
 	var (
-		name        string
-		rubric      string
-		file        string
-		imageTag    string
-		initParams  string
-		dataSchema  string
-		metrics     string
+		fromFile    string
 		endpointFlg string
 	)
 
-	use := "create"
-	short := "Register a rubric or code evaluator, publishing a new version."
-	long := short + "\n\n" +
-		"A rubric (--rubric) is a JSON file of weighted dimensions.\n\n" +
-		"A code evaluator (--file) is a single Python script declaring a top-level\n" +
-		"grade(sample, item) function that returns a float. It runs as a python\n" +
-		"grader, which is handed the script's source and nothing else: there is no\n" +
-		"package and no import path, so a helper module beside the script cannot be\n" +
-		"imported. Dependencies come from the image named by --image-tag."
-
 	cmd := &cobra.Command{
-		Use:   use,
+		Use:   verb + " <name>",
 		Short: short,
-		Long:  long,
+		Long: short + "\n\n" +
+			"An evaluator is a rubric: a JSON file of weighted scoring dimensions.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if name == "" {
-				return requireFlag("name")
-			}
-			flags := codeEvaluatorFlags{
-				imageTag:   imageTag,
-				initParams: initParams,
-				dataSchema: dataSchema,
-				metrics:    metrics,
-				endpoint:   endpointFlg,
-			}
-			if err := validateEvaluatorSource(rubric, file, flags); err != nil {
-				return err
+			name := args[0]
+			if fromFile == "" {
+				return requireFlag("from-file")
 			}
 
-			ctx := cmd.Context()
-
-			if file != "" {
-				return runEvaluatorCreateFromFile(cmd, name, file, flags)
-			}
-
-			raw, err := os.ReadFile(rubric)
+			raw, err := os.ReadFile(fromFile)
 			if err != nil {
-				return fmt.Errorf("reading rubric %q: %w", rubric, err)
+				return fmt.Errorf("reading evaluator %q: %w", fromFile, err)
 			}
 
 			body, err := normalizeRubricBody(name, raw)
 			if err != nil {
-				return fmt.Errorf("rubric %q: %w", rubric, err)
+				return fmt.Errorf("evaluator %q: %w", fromFile, err)
 			}
 
+			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
 			if err != nil {
 				return err
 			}
 			defer ec.Close()
+
+			latest := ec.evalClient.LatestEvaluatorVersionNumber(
+				ctx, name, ProjectEndpointAPIVersion,
+			)
+			if err := checkAssetExistence(verb, "evaluator", name, latest > 0); err != nil {
+				return err
+			}
 
 			created, err := ec.evalClient.CreateEvaluatorVersion(
 				ctx, name, body, ProjectEndpointAPIVersion,
@@ -114,165 +104,24 @@ func newEvaluatorCreateCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "Name of the evaluator.")
-	cmd.Flags().StringVar(&rubric, "rubric", "", "Path to the rubric JSON file.")
-	cmd.Flags().StringVar(&file, "file", "",
-		"Path to a single Python script declaring a top-level grade(sample, item) function.")
-	cmd.Flags().StringVar(&imageTag, "image-tag", "",
-		"Container image the evaluator runs in. Its packages are the only "+
-			"dependencies the script can import beyond the standard library.")
-	cmd.Flags().StringVar(&initParams, "init-params", "",
-		"Path to a JSON Schema for the evaluator's initialization parameters.")
-	cmd.Flags().StringVar(&dataSchema, "data-schema", "",
-		"Path to a JSON Schema for the evaluator's input data.")
-	cmd.Flags().StringVar(&metrics, "metrics", "",
-		"Path to a JSON object describing the metrics the evaluator produces.")
+	cmd.Flags().StringVar(&fromFile, "from-file", "", "Path to the evaluator JSON file.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
 
-// codeEvaluatorFlags are the optional settings for a code evaluator.
-type codeEvaluatorFlags struct {
-	imageTag   string
-	initParams string
-	dataSchema string
-	metrics    string
-	endpoint   string
-}
-
-// validateEvaluatorSource enforces that exactly one source is named, and that
-// the code-only settings are only used with the source they apply to.
-//
-// Deliberately checked here rather than with MarkFlagsMutuallyExclusive: that
-// only rejects the "both" case, and its message names a flag group rather than
-// saying what the two flags mean. Both mistakes deserve advice, and this is
-// testable without driving cobra.
-func validateEvaluatorSource(rubric, file string, flags codeEvaluatorFlags) error {
+// checkAssetExistence enforces the one difference between create and update.
+func checkAssetExistence(verb, kind, name string, exists bool) error {
 	switch {
-	case rubric == "" && file == "":
+	case verb == "create" && exists:
 		return fmt.Errorf(
-			"one of --rubric or --file is required: --rubric takes a JSON file of " +
-				"weighted dimensions, --file takes a single Python script")
-	case rubric != "" && file != "":
+			"%s %q already exists: use `update` to publish a new version", kind, name)
+	case verb == "update" && !exists:
 		return fmt.Errorf(
-			"--rubric and --file cannot be used together: an evaluator is either a " +
-				"rubric or code, not both")
-	}
-
-	// A rubric's schemas are fixed by the service and a rubric runs no code, so
-	// these would be accepted and then quietly dropped — the worst kind of
-	// no-op, because the author believes the evaluator was published carrying
-	// them.
-	if file == "" {
-		for _, named := range []struct {
-			flag  string
-			value string
-		}{
-			{"image-tag", flags.imageTag},
-			{"init-params", flags.initParams},
-			{"data-schema", flags.dataSchema},
-			{"metrics", flags.metrics},
-		} {
-			if named.value != "" {
-				return fmt.Errorf(
-					"--%s applies to a code evaluator and needs --file; "+
-						"a rubric runs no code and its schemas are set by the service",
-					named.flag)
-			}
-		}
+			"%s %q does not exist: use `create` to register it", kind, name)
 	}
 	return nil
 }
 
-// runEvaluatorCreateFromFile validates the script, then publishes it.
-func runEvaluatorCreateFromFile(
-	cmd *cobra.Command,
-	name string,
-	file string,
-	flags codeEvaluatorFlags,
-) error {
-	script, err := evalcore.LoadCodeEvaluator(name, file)
-	if err != nil {
-		return err
-	}
-
-	opts, err := codeEvaluatorOptions(flags)
-	if err != nil {
-		return err
-	}
-
-	ctx := cmd.Context()
-	ec, err := newEvalContext(ctx, flags.endpoint)
-	if err != nil {
-		return err
-	}
-	defer ec.Close()
-
-	created, err := ec.evalClient.CreateCodeEvaluatorVersion(
-		ctx, script, opts, ProjectEndpointAPIVersion,
-	)
-	if err != nil {
-		return fmt.Errorf("publishing evaluator %q: %w", name, err)
-	}
-
-	if isJSON(cmd) {
-		return emitJSON(cmd.OutOrStdout(), created)
-	}
-	fmt.Fprintf(cmd.OutOrStdout(),
-		"Published evaluator %s version %s from %s\n",
-		created.Name, created.Version, file)
-	return nil
-}
-
-// codeEvaluatorOptions resolves the evaluator's schemas from the flags.
-//
-// They are not read from the script and not read from a descriptor beside it:
-// the grader is handed one file of source, so anything the service needs that
-// is not Python has to be named on the command line or carried in the eval
-// config.
-func codeEvaluatorOptions(flags codeEvaluatorFlags) (eval_api.CodeEvaluatorOptions, error) {
-	opts := eval_api.CodeEvaluatorOptions{ImageTag: flags.imageTag}
-
-	for _, declared := range []struct {
-		path  string
-		flag  string
-		field *json.RawMessage
-	}{
-		{flags.initParams, "init-params", &opts.InitParameters},
-		{flags.dataSchema, "data-schema", &opts.DataSchema},
-		{flags.metrics, "metrics", &opts.Metrics},
-	} {
-		if declared.path == "" {
-			continue
-		}
-		raw, err := readJSONObject(declared.path)
-		if err != nil {
-			return opts, fmt.Errorf("--%s %q: %w", declared.flag, declared.path, err)
-		}
-		*declared.field = raw
-	}
-
-	return opts, nil
-}
-
-// readJSONObject reads a file that must hold a JSON object.
-//
-// Parsing here rather than letting the service reject it keeps a typo from
-// costing an upload and a published version, and names the file that is wrong.
-func readJSONObject(path string) (json.RawMessage, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var probe map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &probe); err != nil {
-		return nil, fmt.Errorf("not a JSON object: %w", err)
-	}
-	return json.RawMessage(raw), nil
-}
-
-// normalizeRubricBody accepts either a bare definition ({type, dimensions}) or
-// a full evaluator document ({name, definition}) and returns the request body.
 // rubricDefinitionType is the discriminator the service uses to deserialize a
 // rubric definition.
 const rubricDefinitionType = "rubric"
@@ -296,6 +145,8 @@ func ensureDefinitionType(definition json.RawMessage) (json.RawMessage, error) {
 	return json.Marshal(doc)
 }
 
+// normalizeRubricBody accepts either a bare definition ({type, dimensions}) or
+// a full evaluator document ({name, definition}) and returns the request body.
 func normalizeRubricBody(name string, raw []byte) (json.RawMessage, error) {
 	var probe map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &probe); err != nil {
@@ -303,7 +154,7 @@ func normalizeRubricBody(name string, raw []byte) (json.RawMessage, error) {
 	}
 
 	if definition, hasDefinition := probe["definition"]; hasDefinition {
-		// Already a full document; make sure the name matches the flag.
+		// Already a full document; make sure the name matches the argument.
 		typed, err := ensureDefinitionType(definition)
 		if err != nil {
 			return nil, err
@@ -339,14 +190,14 @@ func normalizeRubricBody(name string, raw []byte) (json.RawMessage, error) {
 
 func newEvaluatorListCommand() *cobra.Command {
 	var (
-		name        string
 		builtin     bool
 		endpointFlg string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List evaluators, the versions of one evaluator, or the built-in evaluators.",
+		Short: "List the project's evaluators, or the built-in ones.",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
@@ -355,18 +206,13 @@ func newEvaluatorListCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			var list *eval_api.EvaluatorListResponse
-			switch {
-			case name != "":
-				list, err = ec.evalClient.ListEvaluatorVersions(ctx, name, ProjectEndpointAPIVersion)
-			case builtin:
-				// The service filters by type, and asking for nothing returns
-				// only the project's own evaluators.
-				list, err = ec.evalClient.ListEvaluators(
-					ctx, eval_api.EvaluatorTypeBuiltin, ProjectEndpointAPIVersion)
-			default:
-				list, err = ec.evalClient.ListEvaluators(ctx, "", ProjectEndpointAPIVersion)
+			// The service filters by type, and asking for nothing returns only
+			// the project's own evaluators.
+			filter := ""
+			if builtin {
+				filter = eval_api.EvaluatorTypeBuiltin
 			}
+			list, err := ec.evalClient.ListEvaluators(ctx, filter, ProjectEndpointAPIVersion)
 			if err != nil {
 				return fmt.Errorf("listing evaluators: %w", err)
 			}
@@ -374,9 +220,49 @@ func newEvaluatorListCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "Limit the listing to versions of this evaluator.")
-	cmd.Flags().BoolVar(&builtin, "builtin", false, "List the built-in evaluators instead of the project's own.")
-	cmd.MarkFlagsMutuallyExclusive("name", "builtin")
+	cmd.Flags().BoolVar(&builtin, "builtin", false,
+		"List the built-in evaluators instead of the project's own.")
+	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	return cmd
+}
+
+// newEvaluatorVersionsCommand groups the version listing, so that `list` means
+// the same thing for evaluators as it does for datasets: the assets, not their
+// history.
+func newEvaluatorVersionsCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "versions",
+		Short: "Inspect the versions of one evaluator.",
+	}
+	cmd.AddCommand(newEvaluatorVersionsListCommand())
+	return cmd
+}
+
+func newEvaluatorVersionsListCommand() *cobra.Command {
+	var endpointFlg string
+
+	cmd := &cobra.Command{
+		Use:   "list <name>",
+		Short: "List the versions of an evaluator.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+
+			ctx := cmd.Context()
+			ec, err := newEvalContext(ctx, endpointFlg)
+			if err != nil {
+				return err
+			}
+			defer ec.Close()
+
+			list, err := ec.evalClient.ListEvaluatorVersions(ctx, name, ProjectEndpointAPIVersion)
+			if err != nil {
+				return fmt.Errorf("listing versions of evaluator %q: %w", name, err)
+			}
+			return renderEvaluators(cmd, list)
+		},
+	}
+
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -398,18 +284,16 @@ func renderEvaluators(cmd *cobra.Command, list *eval_api.EvaluatorListResponse) 
 
 func newEvaluatorShowCommand() *cobra.Command {
 	var (
-		name        string
 		version     string
 		endpointFlg string
 	)
 
 	cmd := &cobra.Command{
-		Use:   "show",
+		Use:   "show <name>",
 		Short: "Show an evaluator definition.",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if name == "" {
-				return requireFlag("name")
-			}
+			name := args[0]
 
 			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
@@ -437,7 +321,6 @@ func newEvaluatorShowCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "Name of the evaluator.")
 	cmd.Flags().StringVar(&version, "version", "", "Version to show. Omit for the latest.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
@@ -445,18 +328,16 @@ func newEvaluatorShowCommand() *cobra.Command {
 
 func newEvaluatorDeleteCommand() *cobra.Command {
 	var (
-		name        string
 		version     string
 		endpointFlg string
 	)
 
 	cmd := &cobra.Command{
-		Use:   "delete",
+		Use:   "delete <name>",
 		Short: "Delete an evaluator version.",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if name == "" {
-				return requireFlag("name")
-			}
+			name := args[0]
 			if version == "" {
 				return requireFlag("version")
 			}
@@ -488,7 +369,6 @@ func newEvaluatorDeleteCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "Name of the evaluator.")
 	cmd.Flags().StringVar(&version, "version", "", "Version to delete.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd

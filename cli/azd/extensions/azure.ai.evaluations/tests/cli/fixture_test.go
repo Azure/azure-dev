@@ -9,16 +9,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"azureaieval/internal/pkg/eval_api"
-	"azureaieval/internal/pkg/evalcore"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -26,34 +25,47 @@ import (
 
 // The command tests need an eval that has already been run, and building one
 // through the CLI is not possible: there is no command that creates an eval
-// from flags, only `run`, which needs a config file and a deployed target.
-// So the fixture is built with the client and every assertion is made against
-// the binary. What is under test is the command surface; the eval is scenery.
+// from flags, only `run start`, which needs a config file and a deployed
+// target. So the fixture is built with the client and every assertion is made
+// against the binary. What is under test is the command surface; the eval is
+// scenery.
 //
 // It is built once for the whole package because two completed runs cost
 // minutes, and torn down in TestMain rather than t.Cleanup so that whichever
 // test happened to trigger the build does not take the fixture away from the
 // rest.
+//
+// It evaluates an agent with a built-in evaluator, because that is all M1 can
+// run: a deterministic code grader over a target-less dataset would score the
+// rows predictably, but code evaluators and no-target runs are both M2. The
+// cost is that pass and fail are decided by a judge, so no test may assert how
+// many rows failed — only that filtering by verdict is self-consistent.
 
 const fixtureAPIVersion = "2025-11-15-preview"
 
-// scoringGrader splits the rows deterministically. A grader that scores every
-// row the same way makes --failed-only and a comparison indistinguishable from
-// a no-op, so "good" is the difference between a pass and a failure.
-const scoringGrader = `def grade(sample, item) -> float:
-    response = (item or {}).get("response", "")
-    return 1.0 if "good" in response else 0.0
-`
+const defaultFixtureModel = "gpt-4o-mini"
 
-// evalFixture is one eval with two completed runs of the same criterion.
+// fixtureQueries are answered by the agent under evaluation. They are ordinary
+// support questions: the fixture proves the command surface, not the agent.
+var fixtureQueries = []string{
+	"How do I reset my password?",
+	"How do I change my billing address?",
+	"What are your support hours?",
+}
+
+// evalFixture is one eval with two completed runs.
 type evalFixture struct {
 	EvaluatorName string
 	EvalID        string
 
-	// Baseline scores worse than Treatment, so a comparison between them has
-	// a delta to report rather than zero.
-	BaselineRunID  string
-	TreatmentRunID string
+	// The agent the runs evaluate, so that a test needing a further run does
+	// not have to resolve one again.
+	AgentName string
+
+	// Two runs of the same eval, so that listing, limiting and defaulting to
+	// the most recent all have something to distinguish.
+	FirstRunID  string
+	SecondRunID string
 }
 
 var (
@@ -162,6 +174,72 @@ func sharedEval(t *testing.T) *evalFixture {
 	return fixture
 }
 
+func fixtureModel() string {
+	if model := os.Getenv("AZURE_AI_EVAL_MODEL"); model != "" {
+		return model
+	}
+	return defaultFixtureModel
+}
+
+// resolveFixtureAgent names the agent the fixture evaluates.
+//
+// It reads /agents, not /assistants: they are different collections, and an
+// eval target resolves against the former. Naming an assistant is accepted by
+// the create and then fails the run with "resources not found".
+func resolveFixtureAgent(ctx context.Context) (string, error) {
+	if name := os.Getenv("AZURE_AI_EVAL_AGENT"); name != "" {
+		return name, nil
+	}
+
+	// Builds the shared credential if it does not exist yet; the token below
+	// comes from it.
+	if _, err := liveClient(); err != nil {
+		return "", err
+	}
+
+	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes: []string{"https://ai.azure.com/.default"},
+	})
+	if err != nil {
+		return "", fmt.Errorf("acquiring a token to list agents: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, endpoint+"/agents?api-version="+fixtureAPIVersion, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token.Token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("listing the project's agents: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf(
+			"listing the project's agents returned %d; set AZURE_AI_EVAL_AGENT to name one",
+			resp.StatusCode)
+	}
+
+	var listing struct {
+		Data []struct {
+			Name string `json:"name"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&listing); err != nil {
+		return "", err
+	}
+	for _, a := range listing.Data {
+		if a.Name != "" {
+			return a.Name, nil
+		}
+	}
+	return "", fmt.Errorf(
+		"this project has no agent in /agents, so an agent-target run cannot be built; " +
+			"deploy an agent or set AZURE_AI_EVAL_AGENT")
+}
+
 func buildFixture(logf func(string, ...any)) (*evalFixture, error) {
 	ctx := context.Background()
 
@@ -170,40 +248,33 @@ func buildFixture(logf func(string, ...any)) (*evalFixture, error) {
 		return nil, fmt.Errorf("acquiring an azd credential: %w", err)
 	}
 
-	name := strings.ReplaceAll(uniqueName("azdclifx"), "-", "_")
-	script, err := publishScoringEvaluator(ctx, client, name)
+	agent, err := resolveFixtureAgent(ctx)
 	if err != nil {
 		return nil, err
 	}
-	logf("published code evaluator %s version %s", name, script.Version)
+	logf("evaluating agent %q", agent)
 
-	if err := awaitEvaluatorListed(ctx, client, name, script.Version); err != nil {
-		return nil, err
-	}
-
-	evalID, err := createFixtureEval(ctx, client, name)
+	evaluatorName := "builtin.task_adherence"
+	evalID, err := createFixtureEval(ctx, client, evaluatorName)
 	if err != nil {
 		return nil, err
 	}
 	logf("created eval %s", evalID)
 
-	// Different pass rates so the comparison has something to measure.
-	baseline, err := startFixtureRun(ctx, client, evalID, "baseline",
-		[]string{"a bad answer", "another bad answer", "a good answer"})
+	first, err := startFixtureRun(ctx, client, evalID, agent, "first")
 	if err != nil {
 		return nil, err
 	}
-	treatment, err := startFixtureRun(ctx, client, evalID, "treatment",
-		[]string{"a good answer", "another good answer", "a third good answer"})
+	second, err := startFixtureRun(ctx, client, evalID, agent, "second")
 	if err != nil {
 		return nil, err
 	}
-	logf("started runs %s and %s", baseline, treatment)
+	logf("started runs %s and %s", first, second)
 
 	// Polled together: they are independent, and serialising them doubles the
 	// slowest part of the suite for nothing.
 	errs := make(chan error, 2)
-	for _, runID := range []string{baseline, treatment} {
+	for _, runID := range []string{first, second} {
 		go func(id string) { errs <- awaitCompleted(ctx, client, evalID, id, logf) }(runID)
 	}
 	for range 2 {
@@ -213,81 +284,14 @@ func buildFixture(logf func(string, ...any)) (*evalFixture, error) {
 	}
 
 	return &evalFixture{
-		EvaluatorName:  name,
-		EvalID:         evalID,
-		BaselineRunID:  baseline,
-		TreatmentRunID: treatment,
+		// The criterion is named without the builtin. prefix, and that is the
+		// name results are reported under.
+		EvaluatorName: strings.TrimPrefix(evaluatorName, "builtin."),
+		EvalID:        evalID,
+		AgentName:     agent,
+		FirstRunID:    first,
+		SecondRunID:   second,
 	}, nil
-}
-
-func publishScoringEvaluator(
-	ctx context.Context,
-	client *eval_api.EvalClient,
-	name string,
-) (*eval_api.EvaluatorVersion, error) {
-	dir, err := os.MkdirTemp("", "azdcli-grader")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(dir)
-
-	path := filepath.Join(dir, name+".py")
-	if err := os.WriteFile(path, []byte(scoringGrader), 0o600); err != nil {
-		return nil, err
-	}
-	script, err := evalcore.LoadCodeEvaluator(name, path)
-	if err != nil {
-		return nil, fmt.Errorf("loading the grader: %w", err)
-	}
-
-	// Without a data_schema the criteria builder has no mapping to derive, so
-	// the schema is what makes the evaluator usable rather than merely
-	// publishable.
-	opts := eval_api.CodeEvaluatorOptions{
-		DataSchema: json.RawMessage(
-			`{"type":"object","properties":{"response":{"type":"string"}},"required":["response"]}`),
-		Metrics: json.RawMessage(
-			`{"result":{"type":"continuous","desirable_direction":"increase","is_primary":true}}`),
-	}
-	var version *eval_api.EvaluatorVersion
-	if err := retryCredentialFlake(func() error {
-		var err error
-		version, err = client.CreateCodeEvaluatorVersion(ctx, script, opts, fixtureAPIVersion)
-		return err
-	}); err != nil {
-		return nil, fmt.Errorf("publishing the code evaluator: %w", err)
-	}
-	deferTeardown(func() {
-		_ = client.DeleteEvaluatorVersion(
-			context.Background(), name, version.Version, fixtureAPIVersion)
-	})
-	return version, nil
-}
-
-// awaitEvaluatorListed waits for the version listing to catch up, which is the
-// view eval creation resolves against. The direct read goes consistent first,
-// so waiting on that alone still leaves the create failing with "was not
-// found".
-func awaitEvaluatorListed(
-	ctx context.Context,
-	client *eval_api.EvalClient,
-	name, version string,
-) error {
-	deadline := time.Now().Add(2 * time.Minute)
-	for {
-		list, err := client.ListEvaluatorVersions(ctx, name, fixtureAPIVersion)
-		if err == nil && list != nil {
-			for _, entry := range list.Value {
-				if entry.Version == version {
-					return nil
-				}
-			}
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("evaluator %s version %s never appeared in the listing", name, version)
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
 }
 
 func createFixtureEval(
@@ -295,27 +299,35 @@ func createFixtureEval(
 	client *eval_api.EvalClient,
 	evaluatorName string,
 ) (string, error) {
-	// Hand-written rather than built with buildEvalRequest, which is
-	// unexported. That is safe only because the evaluator is one published
-	// here whose schema is a single `response` column; a built-in would need
-	// the shipping builder, since their input contracts differ per evaluator.
+	criterionName := strings.TrimPrefix(evaluatorName, "builtin.")
+
 	var group *eval_api.OpenAIEval
 	if err := retryCredentialFlake(func() error {
 		var err error
 		group, err = client.CreateOpenAIEval(ctx, &eval_api.CreateOpenAIEvalRequest{
 			Name: uniqueName("azdcli-fixture"),
 			DataSourceConfig: &eval_api.DataSourceConfig{
-				Type: "custom",
+				Type:                "custom",
+				IncludeSampleSchema: true,
 				ItemSchema: map[string]any{
 					"type":       "object",
-					"properties": map[string]any{"response": map[string]any{"type": "string"}},
+					"properties": map[string]any{"query": map[string]any{"type": "string"}},
 				},
 			},
 			TestingCriteria: []eval_api.TestingCriterion{{
 				Type:          "azure_ai_evaluator",
-				Name:          evaluatorName,
+				Name:          criterionName,
 				EvaluatorName: evaluatorName,
-				DataMapping:   map[string]string{"response": "{{item.response}}"},
+				DataMapping: map[string]string{
+					"query":            "{{item.query}}",
+					"response":         "{{sample.output_items}}",
+					"tool_calls":       "{{sample.tool_calls}}",
+					"tool_definitions": "{{sample.tool_definitions}}",
+				},
+				InitializationParameters: map[string]any{
+					"model":           fixtureModel(),
+					"deployment_name": fixtureModel(),
+				},
 			}},
 		})
 		return err
@@ -331,15 +343,14 @@ func createFixtureEval(
 func startFixtureRun(
 	ctx context.Context,
 	client *eval_api.EvalClient,
-	evalID, label string,
-	responses []string,
+	evalID, agentName, label string,
 ) (string, error) {
-	rows := make([]map[string]any, 0, len(responses))
-	for _, r := range responses {
-		rows = append(rows, map[string]any{"response": r})
+	rows := make([]map[string]any, 0, len(fixtureQueries))
+	for _, q := range fixtureQueries {
+		rows = append(rows, map[string]any{"query": q})
 	}
 
-	ds := eval_api.NewDatasetOnlyDataSource()
+	ds := eval_api.NewAgentTargetDataSource(agentName, nil)
 	ds.SetFileContent(rows)
 
 	var run *eval_api.OpenAIEvalRun

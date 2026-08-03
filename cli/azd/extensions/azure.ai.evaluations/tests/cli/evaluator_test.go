@@ -7,7 +7,6 @@ package cli
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -60,83 +59,13 @@ func TestCLIJSONListsAreBareArrays(t *testing.T) {
 	}
 }
 
-// TestCLICodeEvaluatorRoundTrip drives the whole custom evaluator lifecycle
-// through the command surface: create from a script, read it back, list its
-// versions, then delete it.
-func TestCLICodeEvaluatorRoundTrip(t *testing.T) {
-	name := uniqueName("azdcli_code")
-	script := writeGrader(t, lengthGrader)
-
-	requireSuccess(t, run(t, "evaluator", "create", "--name", name, "--file", script))
-	t.Cleanup(func() {
-		run(t, "evaluator", "delete", "--name", name, "--version", "1")
-	})
-
-	shown := requireSuccess(t, run(t, "evaluator", "show", "--name", name, "-o", "json"))
-	var def struct {
-		Name       string `json:"name"`
-		Definition struct {
-			Type     string `json:"type"`
-			CodeText string `json:"code_text"`
-		} `json:"definition"`
-	}
-	shown.JSON(t, &def)
-	require.Equal(t, "code", def.Definition.Type,
-		"a script must register as a code definition")
-	require.Contains(t, def.Definition.CodeText, "def grade",
-		"the script's source must round-trip in code_text")
-
-	listed := requireSuccess(t, run(t, "evaluator", "list", "--name", name, "-o", "json"))
-	var versions []struct {
-		Name    string `json:"name"`
-		Version string `json:"version"`
-	}
-	listed.JSON(t, &versions)
-	require.NotEmpty(t, versions, "the evaluator must list its own versions")
-}
-
-// TestCLIEvaluatorSourcesAreMutuallyExclusive covers the validation a user is
-// most likely to trip, and asserts it costs nothing to find out — no version
-// is published on the way to the error.
-func TestCLIEvaluatorSourcesAreMutuallyExclusive(t *testing.T) {
-	script := writeGrader(t, lengthGrader)
-	rubric := filepath.Join(t.TempDir(), "rubric.json")
-	require.NoError(t, os.WriteFile(rubric,
-		[]byte(`{"dimensions":[{"id":"tone","description":"polite","weight":5}]}`), 0o600))
-
-	both := requireFailure(t, run(t, "evaluator", "create",
-		"--name", uniqueName("azdcli_both"), "--file", script, "--rubric", rubric))
-	require.Contains(t, strings.ToLower(both.Combined()), "rubric",
-		"the error must name the flags in conflict")
-
-	neither := requireFailure(t, run(t, "evaluator", "create",
-		"--name", uniqueName("azdcli_neither")))
-	require.NotEmpty(t, strings.TrimSpace(neither.Combined()),
-		"refusing without a source must explain itself")
-}
-
-// TestCLIGraderIsValidatedBeforePublishing asserts the check that saves a user
-// from a late failure: a script with no top-level grade() is refused locally,
-// because the executor would otherwise accept the publish and fail the run.
-func TestCLIGraderIsValidatedBeforePublishing(t *testing.T) {
-	script := writeGrader(t, `class AnswerLengthEvaluator:
-    def __call__(self, **kwargs):
-        return {"result": 1.0}
-`)
-
-	r := requireFailure(t, run(t, "evaluator", "create",
-		"--name", uniqueName("azdcli_noglade"), "--file", script))
-	require.Contains(t, strings.ToLower(r.Combined()), "grade",
-		"the refusal must name the function the executor looks for")
-}
-
 // TestCLIUnknownEvaluatorIsBrief covers the failure a user hits by typo.
 //
 // The service answers with a long JSON body. Printing it verbatim buries the
 // one useful sentence, so the CLI shortens it, and a regression here is the
 // kind that only shows up in someone's terminal.
 func TestCLIUnknownEvaluatorIsBrief(t *testing.T) {
-	r := requireFailure(t, run(t, "evaluator", "show", "--name", "azdcli-does-not-exist-9999"))
+	r := requireFailure(t, run(t, "evaluator", "show", "azdcli-does-not-exist-9999"))
 	require.Less(t, len(r.Combined()), 600,
 		"a not-found must stay short, not dump the service body:\n%s", r.Combined())
 }

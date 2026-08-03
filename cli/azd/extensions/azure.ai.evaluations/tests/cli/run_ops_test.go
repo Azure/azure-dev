@@ -32,9 +32,9 @@ func TestCLIRunList(t *testing.T) {
 		for _, header := range []string{"RUN ID", "NAME", "STATUS", "RESULTS"} {
 			require.Containsf(t, r.Stdout, header, "the listing lost its %s column", header)
 		}
-		require.Contains(t, r.Stdout, f.BaselineRunID)
-		require.Contains(t, r.Stdout, f.TreatmentRunID)
-		require.Contains(t, r.Stdout, "1 passed, 2 failed, 0 errored",
+		require.Contains(t, r.Stdout, f.FirstRunID)
+		require.Contains(t, r.Stdout, f.SecondRunID)
+		require.Regexp(t, `\d+ passed, \d+ failed, \d+ errored`, r.Stdout,
 			"the listing must summarise each run's counts, not just its status")
 	})
 
@@ -51,11 +51,13 @@ func TestCLIRunList(t *testing.T) {
 		for _, entry := range runs {
 			byID[entry.ID] = entry
 		}
-		baseline, ok := byID[f.BaselineRunID]
+		first, ok := byID[f.FirstRunID]
 		require.True(t, ok, "the eval's own run is missing from its listing")
-		require.Equal(t, "completed", baseline.Status)
-		require.NotNil(t, baseline.ResultCounts)
-		require.Equal(t, 2, baseline.ResultCounts.Failed)
+		require.Equal(t, "completed", first.Status)
+		require.NotNil(t, first.ResultCounts)
+		require.Equal(t, len(fixtureQueries),
+			first.ResultCounts.Passed+first.ResultCounts.Failed,
+			"every dataset row must be accounted for by a verdict")
 	})
 
 	// The client has always taken a limit; until recently the command did not
@@ -79,11 +81,11 @@ func TestCLIRunShow(t *testing.T) {
 	f := sharedEval(t)
 
 	t.Run("by run id", func(t *testing.T) {
-		r := requireSuccess(t, run(t, "run", "show", f.EvalID, "--run-id", f.BaselineRunID))
-		require.Contains(t, r.Stdout, f.BaselineRunID)
+		r := requireSuccess(t, run(t, "run", "show", f.EvalID, "--run-id", f.FirstRunID))
+		require.Contains(t, r.Stdout, f.FirstRunID)
 		require.Contains(t, r.Stdout, "status")
 		require.Contains(t, r.Stdout, "completed")
-		require.Contains(t, r.Stdout, "1 passed, 2 failed, 0 errored")
+		require.Regexp(t, `\d+ passed, \d+ failed, \d+ errored`, r.Stdout)
 		require.Contains(t, r.Stdout, "report")
 	})
 
@@ -115,7 +117,7 @@ func TestCLIRunShow(t *testing.T) {
 		r := requireFailure(t, run(t, "run", "show", f.EvalID, "--run-id", "evalrun_azdcli_nope"))
 		require.Contains(t, r.Combined(), "evalrun_azdcli_nope",
 			"the failure must name the run that was asked for")
-		require.NotContains(t, r.Combined(), f.BaselineRunID,
+		require.NotContains(t, r.Combined(), f.FirstRunID,
 			"an explicit --run-id must not fall back to another run")
 	})
 }
@@ -130,7 +132,7 @@ func TestCLIRunCancelAndDelete(t *testing.T) {
 	f := sharedEval(t)
 
 	t.Run("a finished run is refused", func(t *testing.T) {
-		r := requireFailure(t, run(t, "run", "cancel", f.EvalID, "--run-id", f.BaselineRunID))
+		r := requireFailure(t, run(t, "run", "cancel", f.EvalID, "--run-id", f.FirstRunID))
 		require.Contains(t, r.Combined(), "already finished")
 		require.Contains(t, r.Combined(), "completed")
 	})
@@ -185,21 +187,17 @@ func TestCLIRunCancelAndDelete(t *testing.T) {
 // startCancellableRun adds a run to the fixture's eval and returns it before it
 // can finish.
 //
-// The rows are padded so the run cannot complete inside the second it takes to
-// issue the cancel; a run that finished first would turn the cancel test into
-// an assertion about the guard it is not testing.
+// An agent-target run invokes the agent once per row and is judged after that,
+// which takes far longer than the second it takes to issue the cancel; a run
+// that finished first would turn the cancel test into an assertion about the
+// guard it is not testing.
 func startCancellableRun(t *testing.T, f *evalFixture) string {
 	t.Helper()
 
 	client, err := liveClient()
 	require.NoError(t, err)
 
-	responses := make([]string, 0, 40)
-	for i := range 40 {
-		responses = append(responses, strings.Repeat("a good answer ", i%5+1))
-	}
-
-	runID, err := startFixtureRun(context.Background(), client, f.EvalID, "cancelme", responses)
+	runID, err := startFixtureRun(context.Background(), client, f.EvalID, f.AgentName, "cancelme")
 	require.NoError(t, err, "starting a run to cancel")
 	t.Cleanup(func() {
 		_ = client.DeleteOpenAIEvalRun(context.Background(), f.EvalID, runID)

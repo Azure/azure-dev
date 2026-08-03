@@ -158,6 +158,24 @@ func (c *EvalClient) ListEvaluatorVersions(
 	)
 }
 
+// LatestEvaluatorVersionNumber reports the newest registered version as an
+// integer, or 0 when the evaluator is unknown or its versions are not numeric.
+func (c *EvalClient) LatestEvaluatorVersionNumber(
+	ctx context.Context,
+	name string,
+	apiVersion string,
+) int {
+	list, err := c.ListEvaluatorVersions(ctx, name, apiVersion)
+	if err != nil || list == nil || len(list.Value) == 0 {
+		return 0
+	}
+	number, err := strconv.Atoi(pickLatestVersion(list.Value))
+	if err != nil {
+		return 0
+	}
+	return number
+}
+
 // DeleteEvaluatorVersion removes a single evaluator version.
 func (c *EvalClient) DeleteEvaluatorVersion(
 	ctx context.Context,

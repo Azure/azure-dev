@@ -21,8 +21,18 @@ func newResultsCommand() *cobra.Command {
 		Use:   "results",
 		Short: "Inspect evaluation results.",
 	}
-	cmd.AddCommand(newResultsShowCommand(), newResultsExportCommand(), newResultsCompareCommand())
+	cmd.AddCommand(newResultsShowCommand(), newResultsExportCommand())
 	return cmd
+}
+
+// formatStat renders a statistic, showing an undefined one as a dash. A score
+// the service left unset has no value, and printing the literal "NaN" in a
+// results table reads like a failure rather than the arithmetic it is.
+func formatStat(verb string, v eval_api.LenientFloat) string {
+	if !v.Defined() {
+		return "-"
+	}
+	return fmt.Sprintf(verb, float64(v))
 }
 
 func newResultsShowCommand() *cobra.Command {

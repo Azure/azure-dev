@@ -443,8 +443,20 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	// an error (or non-voice result) simply falls through to the hosted guard, so
 	// hosted services keep their prior behavior on a path that never resolved
 	// config before.
+	// Endpoints may run in a fresh CLI process (e.g. `azd show`) where
+	// ensureDeployContext has not populated p.projectPath. A voice manifest
+	// supplied via a root `$ref` or an on-disk agent.yaml can only be classified
+	// with the project root, so resolve it best-effort here; an inline `kind`
+	// does not need it. Failure to resolve leaves the root empty and simply falls
+	// through to the hosted guard below, so hosted behavior is unchanged.
+	projectRoot := p.projectPath
+	if projectRoot == "" {
+		if proj, perr := p.azdClient.Project().Get(ctx, nil); perr == nil {
+			projectRoot = proj.Project.Path
+		}
+	}
 	if isVoice, err := agentkind.IsPromptVoice(
-		serviceConfig, p.projectPath, p.agentDefinitionPath,
+		serviceConfig, projectRoot, p.agentDefinitionPath,
 	); err == nil && isVoice && azdEnv[agentEndpointKey] != "" {
 		return []string{azdEnv[agentEndpointKey]}, nil
 	}

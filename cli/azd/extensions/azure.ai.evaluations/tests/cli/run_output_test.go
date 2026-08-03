@@ -179,14 +179,14 @@ func TestCLIResultsExport(t *testing.T) {
 		require.Equal(t, f.EvaluatorName, rows[1][2])
 	})
 
-	t.Run("out-file writes the path instead of stdout", func(t *testing.T) {
+	t.Run("output-file writes the path instead of stdout", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "results.csv")
 
 		r := requireSuccess(t, runIn(t, dir, "run", "output", "export", f.FirstRunID,
-			"--eval-id", f.EvalID, "--format", "csv", "-O", path))
+			"--eval-id", f.EvalID, "--format", "csv", "--output-file", path))
 		require.Empty(t, strings.TrimSpace(r.Stdout),
-			"-O redirects the payload; leaving it on stdout too would double it")
+			"--output-file redirects the payload; leaving it on stdout too would double it")
 
 		body, err := os.ReadFile(path)
 		require.NoError(t, err)

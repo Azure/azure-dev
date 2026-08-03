@@ -110,7 +110,7 @@ func newRunOutputListCommand() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&failedOnly, "failed-only", false, "Show only the rows that failed.")
-	cmd.Flags().StringVarP(&outFile, "out-file", "O", "", "Write JSON results to this path.")
+	cmd.Flags().StringVar(&outFile, "output-file", "", "Write JSON results to this path.")
 	addEvalFlags(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
@@ -225,7 +225,7 @@ func newRunOutputExportCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&format, "format", "json", "Output format: json or csv.")
-	cmd.Flags().StringVarP(&outFile, "out-file", "O", "", "Write to this path instead of stdout.")
+	cmd.Flags().StringVar(&outFile, "output-file", "", "Write to this path instead of stdout.")
 	addEvalFlags(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd

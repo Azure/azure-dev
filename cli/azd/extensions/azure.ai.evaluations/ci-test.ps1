@@ -9,10 +9,11 @@
 # an untagged run does not compile them, and they additionally require
 # AZURE_AI_EVAL_E2E_LIVE and a project endpoint.
 #
-# TODO before the first release: build.sh ships six platforms and only
-# windows/amd64 has ever been executed. The live and hero suites assume it too
-# -- they derive the .exe suffix from the path separator and shell out to `azd`
-# -- so run both on linux and darwin before publishing.
+# TODO before the first release: PR CI runs this script on windows, linux and
+# darwin amd64, so the untagged tests are covered on all three. The live and
+# hero suites are not -- being tagged, no pipeline has ever compiled them, and
+# both have only ever run on Windows by hand. Run them once on linux, where
+# they assume a path separator and shell out to `azd` and to a proxy address.
 
 $gopath = go env GOPATH
 $gotestsumBinary = "gotestsum"

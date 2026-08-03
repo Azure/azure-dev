@@ -182,7 +182,7 @@ func buildRunCommand(use, short string) *cobra.Command {
 
 			if !wait {
 				if isJSON(cmd) {
-					return emitJSON(out, run)
+					return emitJSON(out, startedRun(run, evalID, group))
 				}
 				fmt.Fprintf(out, "Started run %s (status: %s)\n", run.ID, run.Status)
 				fmt.Fprintf(out, "Reattach with: azd ai eval run show %s --eval-id %s\n", run.ID, evalID)
@@ -641,8 +641,43 @@ func (ec *evalContext) pollRun(
 	}
 }
 
-// renderRun prints what a person needs after waiting for a run.
+// startedRunHandoff is what `run start --no-wait -o json` returns.
 //
+// It is a handoff rather than a dump of the service object. The pipeline that
+// started the run has to come back for it later, and doing that needs exactly
+// three things: the run, the eval it belongs to, and a name a human can read
+// in the log that reports it. The service object carries none of the third and
+// buries the first two under the data source, the metadata and every field the
+// API happens to return, so a script reading it would depend on a shape this
+// extension does not control.
+type startedRunHandoff struct {
+	RunID     string `json:"run_id"`
+	EvalID    string `json:"eval_id"`
+	EvalName  string `json:"eval_name,omitempty"`
+	Status    string `json:"status,omitempty"`
+	CreatedAt any    `json:"created_at,omitempty"`
+}
+
+// startedRun builds the handoff.
+func startedRun(
+	run *eval_api.OpenAIEvalRun,
+	evalID string,
+	group *project.Eval,
+) startedRunHandoff {
+	handoff := startedRunHandoff{
+		RunID:     run.ID,
+		EvalID:    evalID,
+		Status:    run.Status,
+		CreatedAt: run.CreatedAt,
+	}
+	// Absent with --eval-id, where there is no config to take a name from.
+	if group != nil {
+		handoff.EvalName = group.Name
+	}
+	return handoff
+}
+
+// renderRun prints what a person needs after waiting for a run.
 // The status line alone is not that. A run's whole purpose is the verdict per
 // evaluator, and the service returns it — passed, failed and errored counts
 // for every testing criterion — so leaving it out meant the answer to the

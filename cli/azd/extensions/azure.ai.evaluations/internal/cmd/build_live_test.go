@@ -27,6 +27,8 @@ import (
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/stretchr/testify/require"
 )
@@ -51,6 +53,44 @@ func liveCredential() (*azidentity.AzureDeveloperCLICredential, error) {
 	return sharedCred, sharedCredErr
 }
 
+// credentialFlake is what a token refresh that overran its budget looks like
+// by the time it reaches a test.
+const credentialFlake = "AzureDeveloperCLICredential: exit status 1"
+
+// retryingCredential retries a token request that failed for that reason.
+//
+// The refresh shells out to azd, and the SDK gives that subprocess ten
+// seconds. On a machine already running the rest of this suite it sometimes
+// does not finish in ten, and the failure lands on whichever test asked for a
+// token at the wrong moment — reproducibly at 10.1s, and never when that test
+// is run on its own. Retrying is right because nothing about the request was
+// wrong: the same call succeeds moments later.
+type retryingCredential struct {
+	inner azcore.TokenCredential
+}
+
+func (c retryingCredential) GetToken(
+	ctx context.Context,
+	opts policy.TokenRequestOptions,
+) (azcore.AccessToken, error) {
+	var token azcore.AccessToken
+	var err error
+	for attempt := range 4 {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return azcore.AccessToken{}, ctx.Err()
+			case <-time.After(time.Duration(attempt) * 2 * time.Second):
+			}
+		}
+		token, err = c.inner.GetToken(ctx, opts)
+		if err == nil || !strings.Contains(err.Error(), credentialFlake) {
+			return token, err
+		}
+	}
+	return token, err
+}
+
 func liveEvalClient(t *testing.T) (*eval_api.EvalClient, string) {
 	t.Helper()
 	if os.Getenv("AZURE_AI_EVAL_E2E_LIVE") != "1" {
@@ -67,7 +107,7 @@ func liveEvalClient(t *testing.T) (*eval_api.EvalClient, string) {
 	if judge == "" {
 		judge = "gpt-4.1-nano"
 	}
-	return eval_api.NewEvalClient(endpoint, cred), judge
+	return eval_api.NewEvalClient(endpoint, retryingCredential{inner: cred}), judge
 }
 
 // TestLiveBuildAcceptedForEveryBuiltin walks every built-in the project

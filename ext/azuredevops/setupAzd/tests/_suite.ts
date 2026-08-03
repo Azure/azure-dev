@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as assert from 'assert';
 import * as ttm from 'azure-pipelines-task-lib/mock-test';
+import { isValidVersion } from '../version';
 
 describe('Setup azd task tests', function () {
 
@@ -84,5 +85,35 @@ describe('Setup azd task tests', function () {
         }).catch((error) => {
             done(error);
         });
+    });
+
+    it('should accept supported version formats', function() {
+        const versions = [
+            'latest',
+            'daily',
+            '1.0.0',
+            '1.14.0-beta.1',
+            '1.14.0-beta.1+build.5',
+        ];
+
+        for (const version of versions) {
+            assert.equal(isValidVersion(version), true, `should accept ${version}`);
+        }
+    });
+
+    it('should reject unsupported version formats', function() {
+        const versions = [
+            '01.2.3',
+            '1.02.3',
+            '1.2.03',
+            '1.2.3-01',
+            '1.2',
+            '1.2.3.4',
+            'latest ',
+        ];
+
+        for (const version of versions) {
+            assert.equal(isValidVersion(version), false, `should reject ${version}`);
+        }
     });
 });

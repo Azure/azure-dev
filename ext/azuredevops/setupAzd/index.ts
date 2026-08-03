@@ -4,13 +4,7 @@ import * as path from 'path'
 import * as task from 'azure-pipelines-task-lib/task'
 import * as toolRunner from 'azure-pipelines-task-lib/toolrunner'
 
-const numericIdentifier = '(?:0|[1-9]\\d*)'
-const prereleaseIdentifier = `(?:${numericIdentifier}|\\d*[A-Za-z-][0-9A-Za-z-]*)`
-const semanticVersion =
-    `${numericIdentifier}\\.${numericIdentifier}\\.${numericIdentifier}` +
-    `(?:-${prereleaseIdentifier}(?:\\.${prereleaseIdentifier})*)?` +
-    '(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?'
-const validVersionPattern = new RegExp(`^(?:latest|daily|${semanticVersion})$`)
+import { isValidVersion } from './version'
 
 function errorMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err)
@@ -33,7 +27,7 @@ export async function runMain(): Promise<void> {
             return
         }
         const version = task.getInput('version') || 'latest'
-        if (version.length > 128 || !validVersionPattern.test(version)) {
+        if (!isValidVersion(version)) {
             task.setResult(
                 task.TaskResult.Failed,
                 'Version must be latest, daily, or a semantic version such as 1.2.3.',

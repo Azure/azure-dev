@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -268,11 +269,30 @@ func (r *evalReconciler) EnsureEvaluator(
 	if existing, err := r.ec.evalClient.GetEvaluatorRaw(
 		ctx, decl.Name, "", ProjectEndpointAPIVersion,
 	); err == nil {
+		remote := versionFromRaw(existing, "")
 		if sameDefinition(existing, body) {
+			// Nothing to publish, but the version is still worth recording:
+			// it is what a later deploy compares against to notice that
+			// someone moved the evaluator on from here.
+			if remote != "" {
+				_ = r.ec.setEnvValue(ctx, versionKey("evaluator", decl.Name), remote)
+			}
 			return versionFromRaw(existing, decl.Version), false, nil
 		}
-		// Different, so a version is about to be published. What that read
-		// saw is what keeps the publish from being answered with it again.
+
+		// The definitions differ, which means either the local file changed
+		// or someone published a version outside the repo. The version
+		// recorded at the last deploy is what tells them apart, and
+		// publishing over the second case would bury an intentional change
+		// under one nobody asked for.
+		if recorded := r.ec.getEnvValue(ctx, versionKey("evaluator", decl.Name)); recorded != "" {
+			if err := checkEvaluatorDrift(decl.Name, recorded, remote); err != nil {
+				return "", false, err
+			}
+		}
+
+		// What that read saw is what keeps the publish from being answered
+		// with it again.
 		known = existing
 	}
 
@@ -283,7 +303,40 @@ func (r *evalReconciler) EnsureEvaluator(
 		return "", false, err
 	}
 	r.awaitEvaluatorReadable(ctx, decl.Name, created.Version)
+	_ = r.ec.setEnvValue(ctx, versionKey("evaluator", decl.Name), created.Version)
 	return created.Version, true, nil
+}
+
+// checkEvaluatorDrift fails when the service holds a newer version than the
+// one recorded at the last deploy.
+//
+// It is asked only when the local definition and the remote one disagree,
+// which on its own says nothing about who moved: the author may have edited
+// the file, or someone may have published a version from outside the repo.
+// The recorded version settles it, and the difference matters because
+// publishing is how this reconciler resolves a disagreement — doing that over
+// a version somebody deliberately published would bury their change under one
+// nobody asked for, with `azd up` reporting success.
+//
+// The remote version is passed in rather than listed, because the version
+// listing lags a publish and would report an evaluator as un-drifted for the
+// first seconds of its newest version's life.
+func checkEvaluatorDrift(name, recorded, remote string) error {
+	recordedNumber, err := strconv.Atoi(recorded)
+	if err != nil {
+		return nil
+	}
+	remoteNumber, err := strconv.Atoi(remote)
+	if err != nil || remoteNumber <= recordedNumber {
+		return nil
+	}
+	return fmt.Errorf(
+		"evaluator %q is at version %s on the project but %s was recorded at the last "+
+			"deploy, and the local definition does not match it: someone published a "+
+			"version outside this repo. Publishing over it would leave their change "+
+			"behind, so bring version %s into the declared source and deploy again, or "+
+			"delete that version if it was a mistake",
+		name, remote, recorded, remote)
 }
 
 // evaluatorPropagation bounds the wait for a freshly published evaluator to

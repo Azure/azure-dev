@@ -125,6 +125,12 @@ func newRunShowCommand() *cobra.Command {
 
 			// Reattaching to a run started asynchronously: the pipeline that
 			// gates on it is often not the one that started it.
+			//
+			// Only a caller that waited is told a bad status through the exit
+			// code. Without --wait this is an inspection command: it was asked
+			// what happened, and answering that is a success whatever the
+			// answer.
+			gateOnStatus := wait
 			if wait {
 				run, err = ec.pollRun(ctx, evalID, run.ID, cmd.OutOrStdout(), isJSON(cmd))
 				if err != nil {
@@ -135,6 +141,11 @@ func newRunShowCommand() *cobra.Command {
 			if isJSON(cmd) {
 				if err := emitJSON(cmd.OutOrStdout(), run); err != nil {
 					return err
+				}
+				if gateOnStatus {
+					if err := runCompleted(run); err != nil {
+						return err
+					}
 				}
 				applyGate(cmd, threshold, run)
 				return nil
@@ -149,6 +160,11 @@ func newRunShowCommand() *cobra.Command {
 			}
 			if run.ReportURL != "" {
 				fmt.Fprintf(out, "  report  : %s\n", run.ReportURL)
+			}
+			if gateOnStatus {
+				if err := runCompleted(run); err != nil {
+					return err
+				}
 			}
 			applyGate(cmd, threshold, run)
 			return nil

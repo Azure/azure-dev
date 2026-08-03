@@ -32,6 +32,26 @@ var terminalRunStates = map[string]bool{
 	"error":     true,
 }
 
+// runCompleted turns a run that did not complete into an error, so that a
+// caller who waited for it exits non-zero.
+//
+// The results have already been printed by the time this is asked, which is
+// the point: a run that errored has a reason worth reading, and reporting it
+// and then exiting 0 tells a pipeline the evaluation passed. It is checked
+// before the gate because the gate's exit code means "the evaluation
+// regressed", and a run that never produced results has not regressed — it did
+// not run. Distinguishing those two is what the separate code is for.
+func runCompleted(run *eval_api.OpenAIEvalRun) error {
+	if run == nil {
+		return nil
+	}
+	switch strings.ToLower(run.Status) {
+	case "completed", "":
+		return nil
+	}
+	return fmt.Errorf("run %s finished with status %s", run.ID, run.Status)
+}
+
 // newRunCommand builds the run group.
 //
 // `run` is a group, not an executable verb: once `run output` exists, a bare
@@ -184,6 +204,9 @@ func buildRunCommand(use, short string) *cobra.Command {
 			// Last, so that the results are reported whether or not the gate
 			// holds: a pipeline that only learns it failed is worse off than
 			// one that can see by how much.
+			if err := runCompleted(final); err != nil {
+				return err
+			}
 			applyGate(cmd, threshold, final)
 			return nil
 		},

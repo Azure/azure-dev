@@ -2330,7 +2330,42 @@ func TestEndpoints_VoiceManifestOnDisk_ResolvesProjectRoot(t *testing.T) {
 	require.Equal(t, []string{endpoint}, got)
 }
 
-// TestEndpoints_HostedMissingVersion_StillErrors guards that the project-root
+// TestEndpoints_VoiceAgentDefinitionPathOverride covers the fresh-process case
+// where a voice manifest is supplied via the AGENT_DEFINITION_PATH override.
+// Deploy follows the override and writes NAME+ENDPOINT but no VERSION; Endpoints
+// runs without ensureDeployContext (so p.agentDefinitionPath is empty) and must
+// read the process override to classify the service as voice, rather than
+// classifying the (kind-less) service entry and returning missing-VERSION.
+func TestEndpoints_VoiceAgentDefinitionPathOverride(t *testing.T) {
+	projectRoot := t.TempDir()
+	overridePath := filepath.Join(projectRoot, "custom-voice.yaml")
+	require.NoError(t, os.WriteFile(
+		overridePath,
+		[]byte("kind: prompt-voice\nname: my-voice\n"),
+		0o600,
+	))
+	t.Setenv("AGENT_DEFINITION_PATH", overridePath)
+
+	const endpoint = "https://proj.services.ai.azure.com/voice/my-voice"
+	client := newEndpointsTestClient(t, projectRoot, map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com",
+		"AGENT_VOICE_NAME":         "my-voice",
+		"AGENT_VOICE_ENDPOINT":     endpoint,
+		// no AGENT_VOICE_VERSION: voice agents have no version.
+	})
+
+	// Fresh process: the service entry carries no kind; only the override does.
+	provider := &AgentServiceTargetProvider{azdClient: client}
+
+	got, err := provider.Endpoints(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "voice", RelativePath: "src/voice"},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{endpoint}, got)
+}
+
 // resolution added for voice does not change hosted behavior: a hosted service
 // (no voice manifest) with a lingering ENDPOINT but no VERSION must still
 // surface the actionable missing-env-vars error.

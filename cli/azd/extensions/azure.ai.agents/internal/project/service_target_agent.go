@@ -444,19 +444,24 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	// hosted services keep their prior behavior on a path that never resolved
 	// config before.
 	// Endpoints may run in a fresh CLI process (e.g. `azd show`) where
-	// ensureDeployContext has not populated p.projectPath. A voice manifest
-	// supplied via a root `$ref` or an on-disk agent.yaml can only be classified
-	// with the project root, so resolve it best-effort here; an inline `kind`
-	// does not need it. Failure to resolve leaves the root empty and simply falls
-	// through to the hosted guard below, so hosted behavior is unchanged.
+	// ensureDeployContext has not populated p.projectPath or p.agentDefinitionPath.
+	// A voice manifest supplied via a root `$ref` or an on-disk agent.yaml can only
+	// be classified with the project root, and an explicit AGENT_DEFINITION_PATH
+	// override drives deploy, so honor both here to match the deploy classification.
+	// Both are resolved best-effort: any failure falls through to the hosted guard
+	// below, so hosted behavior is unchanged.
 	projectRoot := p.projectPath
 	if projectRoot == "" {
 		if proj, perr := p.azdClient.Project().Get(ctx, nil); perr == nil {
 			projectRoot = proj.Project.Path
 		}
 	}
+	agentDefinitionPath := p.agentDefinitionPath
+	if agentDefinitionPath == "" {
+		agentDefinitionPath = os.Getenv("AGENT_DEFINITION_PATH")
+	}
 	if isVoice, err := agentkind.IsPromptVoice(
-		serviceConfig, projectRoot, p.agentDefinitionPath,
+		serviceConfig, projectRoot, agentDefinitionPath,
 	); err == nil && isVoice && azdEnv[agentEndpointKey] != "" {
 		return []string{azdEnv[agentEndpointKey]}, nil
 	}

@@ -193,6 +193,29 @@ func TestAddResourceServiceWritesEnvironment(t *testing.T) {
 	}, server.env["search"])
 }
 
+func TestAddResourceServiceWritesEmptyEnvironment(t *testing.T) {
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	cfg, err := project.MarshalStruct(&project.Connection{
+		Target: "https://search.example",
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, addResourceService(
+		t.Context(),
+		client,
+		"search",
+		AiConnectionHost,
+		cfg,
+		nil,
+	))
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Contains(t, server.env, "search")
+	assert.Empty(t, server.env["search"])
+}
+
 func TestCollectLegacyProjectDeploymentsIgnoresSplitProject(
 	t *testing.T,
 ) {

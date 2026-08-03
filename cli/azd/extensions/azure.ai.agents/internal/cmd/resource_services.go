@@ -288,7 +288,7 @@ func addResourceService(
 		return fmt.Errorf("adding %s service %q: %w", host, name, err)
 	}
 
-	if err := setServiceEnvironment(
+	if err := setServiceEnvironmentScope(
 		ctx,
 		azdClient,
 		name,
@@ -381,7 +381,20 @@ func setServiceEnvironment(
 	if len(environment) == 0 {
 		return nil
 	}
+	return setServiceEnvironmentScope(
+		ctx,
+		azdClient,
+		serviceName,
+		environment,
+	)
+}
 
+func setServiceEnvironmentScope(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	environment map[string]string,
+) error {
 	sectionValues := make(map[string]any, len(environment))
 	for key, value := range environment {
 		sectionValues[key] = escapeFoundryTemplates(value)

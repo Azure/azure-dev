@@ -118,6 +118,7 @@ type InitAction struct {
 	deploymentDetails    []project.Deployment
 	containerSettings    *project.ContainerSettings
 	isCodeDeploy         bool // true when user selects code deploy mode; skips ACR config
+	isVoiceAgent         bool // true when the manifest kind is prompt-voice (managed, no container)
 	httpClient           *http.Client
 	serviceNameOverride  string // when set, addToProject uses this instead of the manifest name
 	createdFolderDisplay string // pre-computed relative display path for the created folder
@@ -139,7 +140,18 @@ type InitAction struct {
 // This happens when:
 // - Code deploy mode is selected (ZIP upload, no container build)
 // - Pre-built image is provided via --image flag (user manages their own registry)
+// - The manifest is a prompt-voice agent (managed, no container image)
 func (a *InitAction) skipACR() bool {
+	return a.isCodeDeploy || a.flags.image != "" || a.isVoiceAgent
+}
+
+// isHostedAgent reports whether the agent is deployed as an azd hosted agent
+// (code deploy or a pre-built --image). Hosted agents must land in a Foundry
+// project whose region supports hosted agents, so this gates the region filter
+// in selectFoundryProject. It is deliberately distinct from skipACR: a
+// prompt-voice agent also skips ACR, but is managed rather than hosted and must
+// not be constrained to hosted-agent regions.
+func (a *InitAction) isHostedAgent() bool {
 	return a.isCodeDeploy || a.flags.image != ""
 }
 
@@ -1254,6 +1266,28 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// when a template adds a subfolder to an existing project.
 			existingProject := fileExists("azure.yaml")
 
+			// Validate --kind and its incompatible options before either synthesis
+			// branch. The image and prompt-voice fast paths both mutate
+			// flags.manifestPointer, so validating inside one branch is unreachable
+			// when the other runs first (e.g. --kind prompt-voice --image would
+			// otherwise silently create a hosted image agent).
+			if flags.kind != "" {
+				if !strings.EqualFold(flags.kind, kindFlagPromptVoice) {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						fmt.Sprintf("unsupported --kind value %q", flags.kind),
+						fmt.Sprintf("the only supported --kind value is %q", kindFlagPromptVoice),
+					)
+				}
+				if flags.image != "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"--kind prompt-voice cannot be combined with --image",
+						"a voice agent is managed and has no container image; drop --image",
+					)
+				}
+			}
+
 			// Bring-your-own-image fast path: when --image is set without a manifest,
 			// there is no source to scaffold and no template/language to choose.
 			// Synthesize a minimal hosted container manifest and route it through the
@@ -1288,21 +1322,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// choose. Synthesize a declarative (managed) voice manifest and route it
 			// through the manifest flow (which skips the init-mode / template /
 			// language prompts and code scaffolding). Mirrors the --image fast path.
+			// --kind value and --image incompatibility are validated above, before
+			// either synthesis branch.
 			if flags.kind != "" && flags.manifestPointer == "" {
-				if !strings.EqualFold(flags.kind, kindFlagPromptVoice) {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						fmt.Sprintf("unsupported --kind value %q", flags.kind),
-						fmt.Sprintf("the only supported --kind value is %q", kindFlagPromptVoice),
-					)
-				}
-				if flags.image != "" {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						"--kind prompt-voice cannot be combined with --image",
-						"a voice agent is managed and has no container image; drop --image",
-					)
-				}
 				if flags.agentName == "" {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
@@ -2163,6 +2185,24 @@ func manifestHasModelResources(manifest *agent_yaml.AgentManifest) bool {
 	return false
 }
 
+// agentManifestKind extracts the agent kind from a manifest's template. The kind
+// lives inside the (untyped) Template payload rather than on AgentManifest, so we
+// round-trip the template into an AgentDefinition to read it. Mirrors the
+// extraction addToProject performs before dispatching on kind.
+func agentManifestKind(manifest *agent_yaml.AgentManifest) (agent_yaml.AgentKind, error) {
+	templateBytes, err := json.Marshal(manifest.Template)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal agent template to JSON: %w", err)
+	}
+
+	var agentDef agent_yaml.AgentDefinition
+	if err := json.Unmarshal(templateBytes, &agentDef); err != nil {
+		return "", fmt.Errorf("failed to unmarshal agent template to AgentDefinition: %w", err)
+	}
+
+	return agentDef.Kind, nil
+}
+
 // configureModelChoice presents the "use existing / deploy new" model configuration choice
 // and establishes the necessary Azure context (subscription, location, project) before
 // ProcessModels is called. This defers subscription/location prompting until we know
@@ -2170,6 +2210,14 @@ func manifestHasModelResources(manifest *agent_yaml.AgentManifest) bool {
 func (a *InitAction) configureModelChoice(
 	ctx context.Context, agentManifest *agent_yaml.AgentManifest,
 ) (*agent_yaml.AgentManifest, error) {
+	// Record whether this manifest is a prompt-voice (managed) agent so ACR is
+	// skipped (skipACR) without treating it as a hosted agent for region
+	// filtering (isHostedAgent). Best-effort: a parse failure here leaves the
+	// default non-voice behavior unchanged.
+	if kind, err := agentManifestKind(agentManifest); err == nil {
+		a.isVoiceAgent = kind == agent_yaml.AgentKindPromptVoice
+	}
+
 	// When no --project-id flag was given, check whether the azd environment already
 	// has a Foundry project configured from a previous init. If so, reuse it so the
 	// user isn't prompted to select a project they already chose.
@@ -2254,7 +2302,8 @@ func (a *InitAction) configureModelChoice(
 			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
 			a.skipACR(),
-			true, // bicepless
+			a.isHostedAgent(), // filterHostedRegions
+			true,              // bicepless
 		)
 		if err != nil {
 			return nil, err
@@ -2333,7 +2382,8 @@ func (a *InitAction) configureModelChoice(
 				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 				a.azureContext.Scope.SubscriptionId, "",
 				a.skipACR(),
-				true, // bicepless
+				a.isHostedAgent(), // filterHostedRegions
+				true,              // bicepless
 			)
 			if err != nil {
 				return nil, err

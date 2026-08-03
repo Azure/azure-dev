@@ -428,6 +428,16 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	serviceKey := p.getServiceKey(serviceConfig.Name)
 	agentNameKey := fmt.Sprintf("AGENT_%s_NAME", serviceKey)
 	agentVersionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
+	agentEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
+
+	// Voice agents (kind: prompt-voice) are created synchronously with no
+	// agent-version object and no per-protocol endpoints; they record only NAME
+	// and a base ENDPOINT. Recognize that shape via the base endpoint marker so a
+	// successfully deployed voice agent reports its endpoint instead of failing
+	// the version/per-protocol checks below (which only apply to hosted agents).
+	if azdEnv[agentVersionKey] == "" && azdEnv[agentEndpointKey] != "" {
+		return []string{azdEnv[agentEndpointKey]}, nil
+	}
 
 	if azdEnv[agentNameKey] == "" || azdEnv[agentVersionKey] == "" {
 		return nil, exterrors.Dependency(
@@ -1073,10 +1083,14 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	// Voice agents (kind: prompt-voice) use a fundamentally different data-plane
 	// contract than hosted/workflow agents: a synchronous POST to /voice_agents
-	// that returns an AgentObject directly, with no version/polling model. Peek
-	// the definition first and dispatch to an isolated method so the container
-	// deploy path below stays byte-for-byte unchanged.
-	if va, isVoice, vErr := VoiceAgentFromResolvedService(serviceConfig, p.projectPath); vErr != nil {
+	// that returns an AgentObject directly, with no version/polling model. Resolve
+	// the definition first — honoring the AGENT_DEFINITION_PATH override precedence
+	// so an override drives this dispatch just as it does the container path — and
+	// route voice to an isolated method so the container deploy path below stays
+	// byte-for-byte unchanged.
+	if va, isVoice, vErr := resolveVoiceAgentForDeploy(
+		p.agentDefinitionPath, serviceConfig, p.projectPath,
+	); vErr != nil {
 		return nil, vErr
 	} else if isVoice {
 		return p.deployVoiceAgent(ctx, serviceConfig, va, azdEnv, progress)

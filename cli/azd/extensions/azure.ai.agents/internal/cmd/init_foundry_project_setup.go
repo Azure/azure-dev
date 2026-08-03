@@ -71,7 +71,8 @@ func configureFoundryProject(
 			ctx, azdClient, newCred, azureContext, envName,
 			azureContext.Scope.SubscriptionId, projectResourceId,
 			skipACR,
-			true, // bicepless
+			skipACR, // filterHostedRegions: this path is code/container only (non-voice)
+			true,    // bicepless
 		)
 		if err != nil {
 			return nil, err
@@ -144,7 +145,8 @@ func configureFoundryProject(
 				ctx, azdClient, newCred, azureContext, envName,
 				azureContext.Scope.SubscriptionId, "",
 				skipACR,
-				true, // bicepless
+				skipACR, // filterHostedRegions: this path is code/container only (non-voice)
+				true,    // bicepless
 			)
 			if err != nil {
 				return nil, err

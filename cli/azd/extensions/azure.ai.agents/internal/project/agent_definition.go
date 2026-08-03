@@ -768,7 +768,74 @@ func parseContainerAgentYAML(data []byte) (agent_yaml.ContainerAgent, bool, erro
 	return agentDef, true, nil
 }
 
-// AgentDefinitionToServiceProperties marshals a ContainerAgent into the inline
+// voiceAgentFromDefinitionFile reads an agent definition file (an
+// AGENT_DEFINITION_PATH override) and reports whether it declares a prompt-voice
+// agent, returning the parsed VoiceAgent when it does. A non-voice (e.g. hosted)
+// definition returns found=false with no error so the caller can fall through to
+// the container path, mirroring VoiceAgentFromResolvedService's contract. This
+// lets an explicit override drive the voice/container dispatch with the same
+// precedence loadContainerAgentDefinition documents.
+func voiceAgentFromDefinitionFile(path string) (agent_yaml.VoiceAgent, bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("failed to read agent manifest file: %s", err),
+			"verify the agent.yaml file exists and is readable",
+		)
+	}
+
+	var genericTemplate map[string]any
+	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
+		return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("YAML content is not valid: %s", err),
+			"verify the agent.yaml has valid YAML syntax",
+		)
+	}
+
+	if kind, _ := genericTemplate["kind"].(string); kind != string(agent_yaml.AgentKindPromptVoice) {
+		// Not a voice definition; let the container path handle the override.
+		return agent_yaml.VoiceAgent{}, false, nil
+	}
+
+	if err := agent_yaml.ValidateAgentDefinition(data); err != nil {
+		return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("agent.yaml is not valid: %s", err),
+			"fix the agent.yaml file according to the schema",
+		)
+	}
+
+	var va agent_yaml.VoiceAgent
+	if err := yaml.Unmarshal(data, &va); err != nil {
+		return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("YAML content is not valid for a voice agent: %s", err),
+			"fix the agent.yaml to match the prompt-voice schema",
+		)
+	}
+
+	return va, true, nil
+}
+
+// resolveVoiceAgentForDeploy determines whether the service should deploy a
+// prompt-voice agent, honoring the AGENT_DEFINITION_PATH override precedence: an
+// explicit override file wins over the service entry (matching
+// loadContainerAgentDefinition). When agentDefinitionPath is empty the resolved
+// service entry is inspected instead. A non-voice result returns found=false so
+// the caller falls through to the container deploy path unchanged.
+func resolveVoiceAgentForDeploy(
+	agentDefinitionPath string,
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (agent_yaml.VoiceAgent, bool, error) {
+	if agentDefinitionPath != "" {
+		return voiceAgentFromDefinitionFile(agentDefinitionPath)
+	}
+	return VoiceAgentFromResolvedService(svc, projectRoot)
+}
+
 // service-level properties (and the `container` CPU/memory config) used by the
 // unified azure.ai.agent service entry. The returned struct is merged into the
 // service entry's AdditionalProperties at init time.

@@ -292,6 +292,47 @@ func TestServiceKey(t *testing.T) {
 	}
 }
 
+// TestIsDeployed_VoiceEndpointFallback verifies that a voice agent — which sets
+// only AGENT_<KEY>_NAME and AGENT_<KEY>_ENDPOINT, never AGENT_<KEY>_VERSION — is
+// still reported as deployed via the base endpoint marker, while an agent with
+// neither version nor endpoint is reported undeployed.
+func TestIsDeployed_VoiceEndpointFallback(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		values map[string]string
+		want   bool
+	}{
+		{
+			name:   "version set: deployed (hosted agent)",
+			values: map[string]string{"env1/AGENT_VOICE_SVC_VERSION": "1"},
+			want:   true,
+		},
+		{
+			name:   "no version but base endpoint set: deployed (voice agent)",
+			values: map[string]string{"env1/AGENT_VOICE_SVC_ENDPOINT": "https://x/voice_agents/a"},
+			want:   true,
+		},
+		{
+			name:   "neither version nor endpoint: undeployed",
+			values: map[string]string{},
+			want:   false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			src := &fakeSource{values: tc.values}
+			var errs []error
+			got := isDeployed(context.Background(), src, "env1", "voice-svc", &errs)
+			assert.Equal(t, tc.want, got)
+			assert.Empty(t, errs)
+		})
+	}
+}
+
 func TestOptionsApplyCleanly(t *testing.T) {
 	t.Parallel()
 

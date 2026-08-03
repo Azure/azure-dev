@@ -34,6 +34,12 @@ const (
 	// agent service. Filled with the upper-cased service key.
 	agentVersionVarFormat = "AGENT_%s_VERSION"
 
+	// agentEndpointVarFormat is the base endpoint env-var written for every
+	// deployed agent. Voice agents (kind: prompt-voice) are created
+	// synchronously with no agent-version object, so this base endpoint is the
+	// only deployment marker they set — isDeployed falls back to it.
+	agentEndpointVarFormat = "AGENT_%s_ENDPOINT"
+
 	// projectEndpointVar is the env-var that carries the Foundry project
 	// endpoint URL produced by `azd ai agent init`.
 	projectEndpointVar = "FOUNDRY_PROJECT_ENDPOINT"
@@ -752,7 +758,21 @@ func isDeployed(
 		*errs = append(*errs, fmt.Errorf("read %s: %w", key, err))
 		return false
 	}
-	return value != ""
+	if value != "" {
+		return true
+	}
+
+	// Voice agents (kind: prompt-voice) deploy without an agent-version object,
+	// so they never set AGENT_<KEY>_VERSION. Fall back to the base endpoint
+	// marker, which every voice deploy writes, so a successfully created voice
+	// agent is not reported as undeployed.
+	endpointKey := fmt.Sprintf(agentEndpointVarFormat, serviceKey(serviceName))
+	endpointValue, err := src.EnvValue(ctx, envName, endpointKey)
+	if err != nil {
+		*errs = append(*errs, fmt.Errorf("read %s: %w", endpointKey, err))
+		return false
+	}
+	return endpointValue != ""
 }
 
 // serviceKey converts a service name into the env-var key fragment used by

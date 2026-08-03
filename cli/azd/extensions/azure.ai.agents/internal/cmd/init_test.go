@@ -269,6 +269,7 @@ func TestSkipACR(t *testing.T) {
 		name         string
 		isCodeDeploy bool
 		image        string
+		isVoiceAgent bool
 		want         bool
 	}{
 		{
@@ -290,6 +291,13 @@ func TestSkipACR(t *testing.T) {
 			want:         true,
 		},
 		{
+			name:         "voice agent skips ACR",
+			isCodeDeploy: false,
+			image:        "",
+			isVoiceAgent: true,
+			want:         true,
+		},
+		{
 			name:         "neither set does not skip ACR",
 			isCodeDeploy: false,
 			image:        "",
@@ -303,10 +311,45 @@ func TestSkipACR(t *testing.T) {
 
 			action := &InitAction{
 				isCodeDeploy: tt.isCodeDeploy,
+				isVoiceAgent: tt.isVoiceAgent,
 				flags:        &initFlags{image: tt.image},
 			}
 
 			require.Equal(t, tt.want, action.skipACR())
+		})
+	}
+}
+
+// TestIsHostedAgent verifies that isHostedAgent is decoupled from skipACR: a
+// voice agent skips ACR but is not a hosted agent, so it must not be treated as
+// hosted for region filtering.
+func TestIsHostedAgent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		isCodeDeploy bool
+		image        string
+		isVoiceAgent bool
+		want         bool
+	}{
+		{name: "code deploy is hosted", isCodeDeploy: true, want: true},
+		{name: "image is hosted", image: "myacr.azurecr.io/agent:v1", want: true},
+		{name: "voice is not hosted", isVoiceAgent: true, want: false},
+		{name: "plain container is not hosted", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			action := &InitAction{
+				isCodeDeploy: tt.isCodeDeploy,
+				isVoiceAgent: tt.isVoiceAgent,
+				flags:        &initFlags{image: tt.image},
+			}
+
+			require.Equal(t, tt.want, action.isHostedAgent())
 		})
 	}
 }

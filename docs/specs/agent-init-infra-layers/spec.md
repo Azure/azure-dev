@@ -87,12 +87,14 @@ infra:
     - name: foundry
       path: infra/foundry
       provider: microsoft.foundry
-      dependsOn:
-        - infra
 ```
 
 The existing `infra/main.bicep` remains unchanged. Foundry files are generated
 under `infra/foundry/`.
+
+The Foundry layer is independent by default. Eject does not add `dependsOn`;
+projects can declare a dependency explicitly when their Foundry template
+actually consumes another layer's outputs.
 
 ## Ownership and Lifecycle
 

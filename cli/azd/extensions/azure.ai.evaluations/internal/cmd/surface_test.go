@@ -4,6 +4,10 @@
 package cmd
 
 import (
+	"io/fs"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -193,4 +197,58 @@ func find(t *testing.T, path string) *cobra.Command {
 	require.Equal(t, strings.Fields(path)[len(strings.Fields(path))-1],
 		strings.Fields(cmd.Use)[0], "resolved the wrong command for %s", path)
 	return cmd
+}
+
+// Messages that tell a user what to run next have to name a command that
+// exists.
+//
+// Rebuilding the surface left `run start --no-wait` closing with "Check
+// progress with: azd ai eval results show", a command that had been renamed
+// out of existence — so the one instruction printed at the moment a user needs
+// it was the one thing guaranteed to fail. Nothing catches that: the string
+// compiles, the command that prints it succeeds, and only someone following
+// the advice finds out.
+func TestSuggestedCommandsExist(t *testing.T) {
+	root := "../.."
+	pattern := regexp.MustCompile("azd ai eval ([a-z][a-z0-9-]*(?: [a-z][a-z0-9-]*)*)")
+
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		for _, line := range strings.Split(string(body), "\n") {
+			// Comments explain the surface; only what reaches a terminal has
+			// to resolve.
+			if strings.HasPrefix(strings.TrimSpace(line), "//") {
+				continue
+			}
+			for _, m := range pattern.FindAllStringSubmatch(line, -1) {
+				words := strings.Fields(m[1])
+				// Trim trailing prose: "run start" is a command, "run start
+				// and summarize" is a sentence that begins with one.
+				for len(words) > 0 {
+					if _, _, err := NewRootCommand().Find(words); err == nil {
+						resolved, _, _ := NewRootCommand().Find(words)
+						if strings.Fields(resolved.Use)[0] == words[len(words)-1] {
+							break
+						}
+					}
+					words = words[:len(words)-1]
+				}
+				assert.NotEmpty(t, words,
+					"%s suggests `azd ai eval %s`, which is not a command", path, m[1])
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
 }

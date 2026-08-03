@@ -9,6 +9,7 @@ import (
 	"encoding/csv"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -115,12 +116,23 @@ func TestCLIResultsShowFailedOnly(t *testing.T) {
 	f := sharedEval(t)
 
 	payload := resultsFor(t, f.EvalID, f.FirstRunID)
-	failed := payload.Run.ResultCounts.Failed
+
+	// One rendered row is one evaluator's verdict on one sample, so the count
+	// to expect is failing *results*, not failing rows: a sample that fails two
+	// evaluators is two lines. `ResultCounts.Failed` answers the other question.
+	failing := 0
+	for _, item := range payload.OutputItems {
+		for _, r := range item.Results {
+			if !r.Passed {
+				failing++
+			}
+		}
+	}
 
 	r := requireSuccess(t, run(t, "run", "output", "list", f.FirstRunID,
 		"--eval-id", f.EvalID, "--failed-only"))
 
-	if failed == 0 {
+	if failing == 0 {
 		// Saying so is not the same as printing an empty table.
 		require.Contains(t, r.Stdout, "No failing rows.")
 		return
@@ -128,9 +140,12 @@ func TestCLIResultsShowFailedOnly(t *testing.T) {
 
 	require.NotContains(t, r.Stdout, " pass ",
 		"--failed-only must drop the rows that passed")
-	require.Contains(t, r.Stdout, "FAIL")
-	require.Equal(t, failed, strings.Count(r.Stdout, "FAIL"),
-		"every failing row must appear exactly once")
+
+	// Matched on a word boundary so the per-criterion table's FAILED column
+	// header is not counted as a verdict.
+	verdicts := regexp.MustCompile(`\bFAIL\b`).FindAllString(r.Stdout, -1)
+	require.Equal(t, failing, len(verdicts),
+		"every failing verdict must appear exactly once:\n%s", r.Stdout)
 }
 
 // resultsFor reads a run's results as JSON, which several tests need before

@@ -32,9 +32,6 @@ var terminalRunStates = map[string]bool{
 	"error":     true,
 }
 
-// newRunCommand builds the composite `azd ai eval run` and attaches the atomic
-// run operations, including `run start` which the spec lists as the atomic form
-// of this same command.
 // newRunCommand builds the run group.
 //
 // `run` is a group, not an executable verb: once `run output` exists, a bare
@@ -167,7 +164,7 @@ func buildRunCommand(use, short string) *cobra.Command {
 					return emitJSON(out, run)
 				}
 				fmt.Fprintf(out, "Started run %s (status: %s)\n", run.ID, run.Status)
-				fmt.Fprintf(out, "Check progress with: azd ai eval results show %s --run-id %s\n", evalID, run.ID)
+				fmt.Fprintf(out, "Reattach with: azd ai eval run show %s --eval-id %s\n", run.ID, evalID)
 				return nil
 			}
 
@@ -363,8 +360,8 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 		return nil, fmt.Errorf(
 			"eval %s has no previous run to repeat, so there is no target or dataset "+
 				"to reuse.\n"+
-				"  Run it from the config once with `azd ai eval run`, or pass a config that "+
-				"declares the eval",
+				"  Run it from the config once with `azd ai eval run start`, or name an "+
+				"eval that declares one with `--eval`",
 			evalID)
 	}
 	return list.Data[0].DataSource, nil

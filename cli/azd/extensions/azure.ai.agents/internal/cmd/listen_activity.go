@@ -81,14 +81,30 @@ func ensureActivityBot(
 		)
 	}
 
+	agentNameResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     fmt.Sprintf("AGENT_%s_NAME", serviceKey),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to read AGENT_%s_NAME for %q: %w", serviceKey, svc.Name, err)
+	}
+	if agentNameResp.Value == "" {
+		return fmt.Errorf(
+			"activity agent service %q has no recorded agent name yet; cannot bind the Teams bot. "+
+				"Re-run 'azd deploy' once the agent is active.",
+			svc.Name,
+		)
+	}
+	agentName := agentNameResp.Value
+
 	agentClient := agent_api.NewAgentClient(projectEndpoint, cred)
 	versionObj, err := agentClient.GetAgentVersion(
-		ctx, svc.Name, versionResp.Value, DefaultAgentAPIVersion,
+		ctx, agentName, versionResp.Value, DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return fmt.Errorf(
 			"failed to fetch agent version for %s/%s: %w",
-			svc.Name, versionResp.Value, err,
+			agentName, versionResp.Value, err,
 		)
 	}
 
@@ -116,9 +132,8 @@ func ensureActivityBot(
 		return err
 	}
 
-	// The API agent name is the service name (deploy fetched the version with it),
-	// so the messaging endpoint and bot name must use the same value.
-	agentName := svc.Name
+	// Use the deployed agent name recorded by deploy, which may differ from the
+	// azure.yaml service key.
 	botName := botservice.BotName(agentName, botservice.BotScopeSalt(subscriptionID, resourceGroup))
 
 	cfg := botservice.BotConfig{

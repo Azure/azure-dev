@@ -133,15 +133,23 @@ func resolveTeamsPackContext(
 	}
 	envName := envResp.Environment.Name
 
-	// The API agent name is the service name (deploy binds the bot with it), so the
-	// bot name derived below must use the same value.
-	agentName := svc.Name
-
 	// A recorded version is the signal that 'azd deploy' has run and created the bot
 	// this Teams app binds to. Without it, packaging would reference a bot that does
 	// not exist, so fail loudly with a clear next step instead of producing a broken
 	// package.
 	serviceKey := toServiceKey(svc.Name)
+	agentName, err := readEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_NAME", serviceKey))
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(agentName) == "" {
+		return nil, exterrors.Dependency(
+			exterrors.CodeAgentNotDeployed,
+			fmt.Sprintf("agent service %q has not been deployed in environment %q", svc.Name, envName),
+			"run 'azd deploy' first; the deployed agent name is recorded during deploy and is required "+
+				"before packaging or publishing",
+		)
+	}
 	version, err := readEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_VERSION", serviceKey))
 	if err != nil {
 		return nil, err

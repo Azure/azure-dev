@@ -99,8 +99,10 @@ under `<scenarios-dir>/.reports/<run-timestamp>/`.
 
 ### Step 5 — Run the scenarios
 
-Drive each selected scenario per `running-scenarios.md`. Start with a mandatory validation
-step, then honor ordering:
+Drive each selected scenario per the executor spec
+`cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/driving-mechanics.md`
+— fan each scenario out to a **foundry-extension-scenario-worker** agent (one scenario per worker). Start with a
+mandatory validation step, then honor ordering:
 
 1. **Recipe validation (mandatory).** Run one Tier 0 scenario synchronously before fanning
    out. Pick a fast, non-interactive scenario (e.g. `0.01-version`). If it fails with an

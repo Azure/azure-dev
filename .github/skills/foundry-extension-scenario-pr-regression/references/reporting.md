@@ -41,7 +41,7 @@ formatting). Keep it scannable — full detail lives in the artifact. Suggested 
 
 **Coverage gaps:** this PR also touches `mcp.go`, which has no scenario — consider adding one.
 
-<sub>Run locally via the `agent-scenario-tests` skill. Not run in CI.</sub>
+<sub>Run locally via the `foundry-extension-scenario-pr-regression` skill (or the `foundry-extension-scenario-orchestrator` agent). Not run in CI.</sub>
 ```
 
 Rules:

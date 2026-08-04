@@ -17,14 +17,24 @@ cp profile.local.yaml.example profile.local.yaml
 # edit profile.local.yaml — set `prefix` and `subscription` at minimum
 ```
 
-Then ask Copilot CLI to load a scenario and accomplish its goals. The
-orchestrator must **load both profile files, merge them (local overrides
-shared), derive `shared_agent_name = {prefix}-{shared_agent_suffix}-{ts}`
-(where `{ts}` is a compact timestamp like `MMDDHHmm`, e.g. `07141038`), and pass
-the merged map as `session_vars` on every `load_scenario`, `run_pre_hooks`,
-`start_session`, and `run_post_hooks` call** — the scenario YAMLs reference
-those values via `{prefix}`, `{subscription}`, `{region}`, `{model}`,
-`{tenant}` (optional), and `{shared_agent_name}` placeholders.
+**You don't drive these scenarios by hand.** Runs are executed by agents so they stay
+deterministic and fail-loud. Pick the **`foundry-extension-scenario-orchestrator`** agent as your front door
+and tell it what you want; it routes to a run skill and fans the work out to
+`foundry-extension-scenario-worker` agents:
+
+- **Testing a PR / your change** → it uses the **`foundry-extension-scenario-pr-regression`** skill (maps the
+  diff to impacted scenarios and posts a results comment).
+- **A full or tag/tier sweep** ("run everything", "all `init` scenarios", "all of Tier 2") →
+  it uses the **`foundry-extension-scenario-suite-run`** skill.
+
+The orchestrator (or the run skill) **loads both profile files, merges them (local overrides
+shared), derives `shared_agent_name = {prefix}-{shared_agent_suffix}-{ts}` (where `{ts}` is a
+compact timestamp like `MMDDHHmm`, e.g. `07141038`), and passes the merged map as
+`session_vars` on every `load_scenario`, `run_pre_hooks`, `start_session`, and
+`run_post_hooks` call** — the scenario YAMLs reference those values via `{prefix}`,
+`{subscription}`, `{region}`, `{model}`, `{tenant}` (optional), and `{shared_agent_name}`
+placeholders. The step-by-step driving rules those agents follow live in
+[`driving-mechanics.md`](./driving-mechanics.md).
 
 Most scenarios here declare **`pre:` hooks** (host-side setup such as resetting
 the working dir or seeding a fixture), and a few declare **`post:` hooks**
@@ -32,39 +42,15 @@ the working dir or seeding a fixture), and a few declare **`post:` hooks**
 `run_post_hooks` MCP tools — `load_scenario` surfaces whether a scenario has any.
 See [Pre/post hooks](#prepost-hooks) below.
 
-Here's also a sample prompt to run all of the scenarios, utilizing fleet mode:
+To run **everything**, select the `foundry-extension-scenario-orchestrator` agent and state your intent and
+cost consent, e.g. *"Run the full scenario suite across all tiers; I accept the Tier 1b /
+Tier 2 Azure cost."* It discovers the scenarios, enforces the prerequisite and `azd`-binary
+gates, validates the recipe on one scenario, fans Tier 0/1 out in parallel waves, runs Tier 1b
+after its Tier 1 prerequisites pass, runs Tier 2 serially, and writes a final report.
 
-```
-Within the agents extension, there is a tests/cli-interactive-tester-scenarios directory, containing
-a set of test scenarios for the cli-interactive-tester. I want you to use the cli-interactive-tester to;
-    load the scenarios,
-    start the session and accomplish the goals,
-    if the scenario declares pre or post hooks, run them before/after the session,
-    and take screenshots at each step.
-
-First, read tests/cli-interactive-tester-scenarios/profile.yaml and profile.local.yaml and merge
-them (local overrides shared); also derive shared_agent_name = "{prefix}-{shared_agent_suffix}-{ts}"
-where {ts} is a compact timestamp (MMDDHHmm, e.g. 07141038).
-Pass the merged map as session_vars on every load_scenario / run_pre_hooks / start_session /
-run_post_hooks call — the scenarios reference {prefix}, {subscription}, {region}, {model},
-{tenant} (optional), and {shared_agent_name} placeholders.
-
-I want this run on fleet mode, to parallelize the tests as much as possible. Each of the scenarios
-in tiers 0 and 1 are completely independent of each other and can be run in parallel. Tier 1b
-(verify-deploy) scenarios depend on their Tier 1 prerequisite passing first — run them after Tier 1
-completes, but they can be parallelized with each other. The scenarios in tier 2 however rely on a
-setup scenario, and the teardown scenario should be run last, so make sure to take that into account
-when distributing the work. I want to run all of the tests regardless of tier, and I acknowledge
-that tier 1b and tier 2 have an azure cost implication, that's fine.
-
-After all of these scenarios are run, create a final result report.
-
-Create a plan to accomplish this
-```
-
-For more selective fan-outs (e.g. "just the `init` scenarios" or "everything
-in Tier 0") the tester's `list_scenarios` MCP tool filters by `tags:`. See
-[Tags](#tags) below for the taxonomy and an example tag-filtered prompt.
+For a **subset** (e.g. "just the `init` scenarios" or "everything in Tier 0") name the subset
+instead — the `foundry-extension-scenario-suite-run` skill filters by `tags:` via `list_scenarios`. See
+[Tags](#tags) for the taxonomy.
 
 ## Paths run inside WSL (on Windows)
 
@@ -98,20 +84,11 @@ On macOS/Linux these are simply native paths (no WSL involved).
 
 ### This applies to MCP tool arguments too
 
-The same path-resolution rule applies to **every path-shaped argument an
-orchestrator passes to the tester's MCP tools** — most importantly the `path:`
-argument on `load_scenario`, `run_pre_hooks`, and `run_post_hooks`, and the
-`scenario_path:` argument on `start_session`. The server resolves them on the
-WSL side, **not** on the orchestrator side. On Windows hosts, pass a POSIX path:
-
-| Orchestrator OS | Pass to MCP tools | Don't pass |
-| --- | --- | --- |
-| Windows | `/mnt/c/Repos/azure-dev/cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/tier0/0.01-version.yaml` | `C:\Repos\azure-dev\...\tier0\0.01-version.yaml` |
-| macOS / Linux | native absolute path | — |
-
-**Failure-mode hint:** if `load_scenario` returns `Scenario file not found`, the
-path style is almost certainly the cause — translate `C:\…` to `/mnt/c/…` and
-retry one call before fanning out.
+Driving agents must pass **WSL-style paths** to every path-shaped argument on the tester's MCP
+tools (`path:` on `load_scenario` / `run_pre_hooks` / `run_post_hooks`, and `scenario_path:` /
+`output_dir:` on `start_session`). The full rule, the Windows/macOS/Linux table, and the
+`Scenario file not found` failure-mode hint live in the executor spec:
+[`driving-mechanics.md`](./driving-mechanics.md) § Path style (Windows → WSL).
 
 ### Installing azd in WSL (Windows developers)
 
@@ -216,122 +193,44 @@ advantage of both where it's safe.
   **not** parameterized with `{instance}` (doing so would break the shared-agent
   assumption) and should be run serially.
 
-To fan out, pass a distinct `instance_id` per `start_session` call (and reuse the
-same `instance_id` for paired `run`/`invoke` sessions of one scenario).
+How the executor actually fans these out (per-instance `session_id`s, wave sizes, tier
+ordering) is specified in [`driving-mechanics.md`](./driving-mechanics.md) § Parallelism &
+ordering — this section only documents which scenarios are *authored* to support concurrency.
 
 ## Orchestrating a fleet run
 
-When a driving agent wants to run **many scenarios concurrently** (e.g. via
-parallel background sub-agents, one scenario per sub-agent), pick the right
-fan-out primitive for the shape of the run:
+Fleet orchestration — fan-out primitives, per-`session_id` timestamps, wave sizes, Tier 1b /
+Tier 2 ordering, and the operational guardrails (validate the recipe first, launch
+cost-incurring waves conservatively, keep waves small) — is the executor's job and is
+specified once in [`driving-mechanics.md`](./driving-mechanics.md) § Parallelism & ordering. In
+practice you don't orchestrate by hand: the `foundry-extension-scenario-orchestrator` agent runs that flow and
+spawns one `foundry-extension-scenario-worker` per scenario.
 
-- **Different scenarios in parallel** (the common case for a full Tier 0/1
-  sweep): give each sub-agent a distinct, descriptive `session_id` — e.g.
-  `fleet-0.01-version`, `fleet-1.04-init-from-code` — and call `start_session` with
-  the scenario's own `cwd`. **No `instance_id` is needed**: each scenario's `cwd`
-  already isolates itself via the `{instance}` substitution, which defaults to
-  `"main"` when `instance_id` is omitted.
-- **Same scenario N times in parallel:** use `instance_id="1"`, `"2"`, … per
-  call. See [Parallel-readiness](#parallel-readiness--port-allocation) for which
-  scenarios are authored to support this.
-- **Tier 2 ordering is fixed**, not parallel-friendly. Run `2.00-setup` first,
-  then the targeted `2.01-`…`2.18-` scenarios **serially** (they share one deployed
-  agent and mutate shared state — sessions, files, endpoint configuration —
-  so parallel runs interfere), then `2.99-teardown` last. See the
-  [Tier 2](#tier-2--cloud-end-to-end-tier2---%EF%B8%8F-incurs-azure-cost)
-  section.
-- **Tier 1b** (`verify-deploy`) is `parallel-safe` but must run **after Tier 1
-  completes**. Check each scenario's `requires:` field — only proceed if the
-  prerequisite PASSED. Then fan out Tier 1b scenarios concurrently like Tier 0/1.
+## How scenarios are judged (authoring contract)
 
-### Operational guardrails for the orchestrator
+These are the rules that decide whether a scenario **passes**, so they matter most when you
+*author* goals — write goals that hold under them. This is the human-facing half of the
+contract; the operational rules the executor follows (select handling, retries,
+`run_name` / `output_dir` / duration capture, environment integrity, path style) live in
+[`driving-mechanics.md`](./driving-mechanics.md). A driving agent applies both.
 
-A few hard-won lessons that apply regardless of fleet size:
-
-- **Validate the recipe with one sub-agent before fanning out.** Spend 30
-  seconds confirming that `load_scenario`, `start_session`, and one
-  `send_action` round-trip work end-to-end for *one* scenario before launching
-  a wave. This is the cheapest way to catch wiring issues (wrong path style,
-  wrong tool surface, auth not set up) before they multiply across many agents.
-- **Background sub-agents are typically not cancellable mid-run.** Once launched,
-  they will run to completion (or until the runtime times them out). For Tier 1
-  and especially Tier 2 scenarios with Azure side effects, launch
-  conservatively — a stop request can't recall an in-flight `azd provision`.
-- **Keep waves small.** The wall-clock bottleneck on a fleet run is per-agent
-  LLM time and per-account model concurrency, not the MCP server (which is
-  per-`session_id`-parallel by design). Launching 4–6 sub-agents at a time and
-  rolling forward typically finishes a sweep faster than launching everything
-  at once.
-
-## Driving conventions
-
-These mirror the tester's own `AGENTS.md` ("Driving the MCP") — the driving agent
-should follow them so the runs actually *test* the CLI instead of papering over
-its bugs:
-
-- **The scenario goals are the contract.** A scenario PASSES only when the
-  product's actual behavior matches what the goals describe. If the goals say
-  "expect error X" and the product prints a different error (even a reasonable
-  one), that is a FAIL. If the goals reference a flag or subcommand that no
-  longer exists, that is a FAIL. The driving agent's job is to **verify** goals
-  were met, not to **rationalize** why they weren't. Do not mark a scenario as
-  PASSED with an "observation" when the goals were not achieved — observations
-  are for incidental notes on scenarios that genuinely passed all their goals.
-- **Don't verify/retry after a `select`.** These runs exist to catch picker
-  bugs; reading back the echo and "correcting" a pick hides the very defect the
-  test is for. Send the action and let downstream prompts surface any failure.
-- **Treat a select miss as a hard failure.** The tester's `select_by_text` is
-  fail-loud: a missing target raises `LookupError`, surfaced as
-  `ERROR during 'select': …`. **Report a finding and stop** — do not retry with a
-  different `choice_text`/`choice_index` to work around it.
-- **Never retry a failed scenario.** If a scenario fails (command errors,
-  unexpected output, non-zero exit), report the finding and move on. Do **not**
-  re-run the scenario hoping for a different result — unless the scenario's
-  `goals:` explicitly instruct a retry. Retrying masks flaky behavior and makes
-  the test suite unreliable as a regression signal.
-- **Never adapt around broken goals.** If the goals instruct you to run a
-  command or flag that does not exist, or expect output that does not appear,
-  fail the scenario. Do not substitute an alternative command, skip the broken
-  step, or invent a workaround. The scenario must be updated by a human — the
-  driving agent must not silently patch over it.
-- **Prefer `choice_text` over `choice_index`** when the label is stable (indices
-  shift between releases).
-- **Clear a pre-filled text field before typing.** Some prompts (e.g. the agent
-  name) come pre-populated with an editable default; typing without clearing
-  *appends* to it. Select-all then delete (or backspace) first so your value
-  replaces the default instead of producing `defaultyourvalue`.
+- **The scenario goals are the contract.** A scenario PASSES only when the product's actual
+  behavior matches what the goals describe. If the goals say "expect error X" and the product
+  prints a different error (even a reasonable one), that is a FAIL. If the goals reference a
+  flag or subcommand that no longer exists, that is a FAIL. So write goals as the *literal,
+  verifiable* spec of correct behavior — the driver's job is to **verify** them, not to
+  **rationalize** why they weren't met, and it will not mark a scenario PASSED with an
+  "observation" when the goals were not achieved.
+- **Never adapt around broken goals.** If a goal instructs a command or flag that does not
+  exist, or expects output that does not appear, the driver **fails** the scenario rather than
+  substituting an alternative, skipping the step, or inventing a workaround. Keep goals current
+  so this doesn't happen — a broken goal must be fixed by a human, not patched over at run time.
+- **Prefer stable labels.** When a goal drives an interactive picker, key it off a stable text
+  label rather than a positional index — the driver prefers `choice_text` over `choice_index`
+  because indices shift between releases.
 - **Pause before the first cloud-creating action.** Provisioning is expensive and
-  irreversible-ish; confirm with the user before entering an `init`/`provision`
-  flow that creates real resources (especially when running in parallel).
-- **Pass `run_name=<scenario-stem>` to every `start_session` call.** The
-  scenario stem is the YAML filename without `.yaml` (e.g. `0.01-version`,
-  `2.02-show-json`, `2.12-run-local-and-invoke-local`). Without `run_name` the
-  tester auto-names the run folder `agent_YYYYMMDD_HHMMSS`, which makes
-  archived runs in `.reports/<run>/tester-reports/` hard to cross-reference
-  with the scenario list. For scenarios that start two sessions
-  (e.g. `2.12-run-local-and-invoke-local`), suffix the run_name with a role tag
-  (`2.12-run-local-and-invoke-local-run`, `2.12-run-local-and-invoke-local-invoke`)
-  so each session gets its own clearly named folder.
-- **Pass `output_dir` to every `start_session` call** so the tester writes
-  screenshots and HTML reports directly into this repo's archive layout
-  instead of its own working directory. Use the WSL path of the
-  `.reports/<run-timestamp>/tester-reports/` folder under this scenarios
-  directory, with `<run-timestamp>` of the form `YYYYMMDD-HHMMSS`. Pick **one**
-  `<run-timestamp>` per suite run and reuse it across every session — this
-  groups all scenarios from one run under a single folder. The driving agent
-  should also write the final cross-scenario summary to
-  `.reports/<run-timestamp>/FINAL-REPORT.md` at the end. Example
-  `output_dir` (the WSL view of this scenarios directory in this repo):
-  `/mnt/c/Repos/azure-dev/cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/.reports/20260603-171132/tester-reports`.
-  If your clone lives elsewhere, substitute the WSL path of *your*
-  `cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/`.
-- **Record a time-to-complete per scenario.** Capture wall-clock duration for
-  every scenario (from `start_session` to `finish_session`, including pre/post
-  hooks) and include it as a `Duration` column in the per-scenario tables of
-  `FINAL-REPORT.md`. Use `Hh Mm Ss` formatting (e.g. `3m 21s`, `1h 04m 12s`).
-  This makes regression slowdowns easy to spot across runs — Tier 2 in
-  particular has scenarios that legitimately take many minutes (provision,
-  deploy) and others that should complete in seconds.
+  irreversible-ish; a run must have explicit cost consent before entering any `init` /
+  `provision` flow that creates real resources (especially in parallel).
 
 
 ## Tiers
@@ -466,49 +365,14 @@ grouping — colons are treated as ordinary characters by the filter):
 | CLI arg-validation scenarios only | `["negative-path"]` |
 | Everything safe to run in parallel | `["parallel-safe"]` |
 
-Sample prompt that uses tag filtering:
+To run a **tag or tier subset**, use the `foundry-extension-scenario-suite-run` skill (or the
+`foundry-extension-scenario-orchestrator` agent) and name the subset — e.g. *"run every `init` scenario across
+all tiers"* or *"run everything tagged `parallel-safe`"*. It calls `list_scenarios` with the
+right tags, applies the cost gate for any Tier 1b / Tier 2 members, and drives them.
 
-```
-Use the cli-interactive-tester to run every `init` scenario across all tiers.
-
-First, call list_scenarios with root="tests/cli-interactive-tester-scenarios"
-and tags=["cmd:init"] to enumerate the matching scenarios.
-
-Then read tests/cli-interactive-tester-scenarios/profile.yaml and
-profile.local.yaml and merge them (local overrides shared); also derive
-shared_agent_name = "{prefix}-{shared_agent_suffix}-{ts}" where {ts} is a compact
-timestamp (MMDDHHmm, e.g. 07141038). Pass the merged map as
-session_vars on every load_scenario / run_pre_hooks / start_session /
-run_post_hooks call.
-
-For each scenario returned by list_scenarios: load it, run any pre hooks,
-start the session and accomplish the goals (take screenshots at each step),
-finish the session, run any post hooks. The Tier 0/1 `init` scenarios are
-parallel-safe (also tagged `parallel-safe`); fan them out via fleet mode.
-The Tier 2 `init` scenario (`2.00-setup-deploy-shared-agent`) is `serial-only`
-— run it on its own and only if I confirm I want to spend on Azure resources.
-```
-
-You can also get copilot to generate the tags list instead of manually specifying
-it. For example, if you want to run all of the scenarios to test the changes
-in a PR, modify the above prompt to start with something like:
-
-```
-Here's a PR: https://github.com/Azure/azure-dev/pull/8532. In the
-tests\cli-interactive-tester-scenarios directory, there are a set of test scenarios,
-with tags to categorize what they're testing. I want you to come up with a set of
-tags which, when used to select these test scenarios, would properly test the
-changes made by the PR provided.
-
-Next, call list_scenarios with those tags, to enumerate matching scenarios.
-
-Then read tests/cli-interactive-tester-scenarios/profile.yaml and ....
-<remaining prompt from above>
-```
-
-And, if you're running these scenarios as a part of creating or reviewing a PR,
-you can ask copilot to generate a summary report and add it as a comment directly
-on the pull request.
+To **test a PR**, use the `foundry-extension-scenario-pr-regression` skill (or the `foundry-extension-scenario-orchestrator`
+agent): it maps the PR's changed files to the impacted tags automatically, enumerates the
+matching scenarios, runs them, and posts a summary report as a PR comment.
 
 When adding a new scenario, give it a `tags:` list that follows this
 taxonomy: at minimum a `tier:N`, at least one `cmd:*`, and either

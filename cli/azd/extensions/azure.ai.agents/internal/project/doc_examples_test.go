@@ -299,7 +299,9 @@ func serviceConfigFromDoc(t *testing.T, e docExample, name string, svc map[strin
 			"Fix the example so it can be copied into azure.yaml as-is.", e, name)
 
 	props, err := structpb.NewStruct(core.AdditionalProperties)
-	require.NoError(t, err)
+	require.NoError(t, err,
+		"%s: service %q has a value that cannot be represented in azure.yaml "+
+			"(quote ambiguous scalars such as dates).", e, name)
 
 	out := &azdext.ServiceConfig{
 		Name:                 name,
@@ -313,7 +315,9 @@ func serviceConfigFromDoc(t *testing.T, e docExample, name string, svc map[strin
 	// The deprecated shape nests the agent definition under `config`.
 	if core.Config != nil {
 		legacy, err := structpb.NewStruct(core.Config)
-		require.NoError(t, err)
+		require.NoError(t, err,
+			"%s: service %q has a value under `config` that cannot be represented in "+
+				"azure.yaml (quote ambiguous scalars such as dates).", e, name)
 		out.Config = legacy
 	}
 

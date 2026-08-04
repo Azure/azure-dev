@@ -1308,9 +1308,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// flow rather than silently adopting whatever azure.yaml already
 			// declares.
 			if flags.manifestPointer == "" && !manifestDetectedButDeclined && flags.agentName == "" {
-				checkDir := flags.src
-				if checkDir == "" {
+checkDir, projectErr := azdext.GetProjectDir()
+				if errors.Is(projectErr, azdext.ErrProjectNotFound) {
 					checkDir = "."
+				} else if projectErr != nil {
+					return fmt.Errorf("resolving existing project directory: %w", projectErr)
 				}
 				manifestPath, findErr := findProjectManifest(checkDir)
 				if findErr != nil {

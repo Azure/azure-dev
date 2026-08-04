@@ -1855,24 +1855,30 @@ func TestValidateEnvReferences_RejectsUnsupportedForms(t *testing.T) {
 		})
 	}
 
-	// A nested reference is expanded but never discovered, so ${A:-${B}} with
-	// neither set resolves to empty and the field's own shape check then blames
-	// the empty value instead of naming B. Refusing it is what makes the scan
-	// complete for the fields that run this.
-	nested := []string{
-		"${OUTER:-${NESTED}}",
-		"${OUTER:-prefix-${NESTED}-suffix}",
-		"${OUTER:-${NESTED:-inner}}",
+	// A nested reference is expanded but never discovered. Refusing it withdraws
+	// a shape that works today when the nested name is set, because `required`
+	// is static: reporting the nested name would fail whenever the outer one
+	// resolves, and not reporting it lets ${A:-${B}} with neither set expand to
+	// empty, so the field's own shape check blames the empty value.
+	nested := map[string]string{
+		"${OUTER:-${NESTED}}":               "${NESTED}",
+		"${OUTER:-prefix-${NESTED}-suffix}": "${NESTED}",
+		"${OUTER:-${NESTED:-inner}}":        "${NESTED:-inner}",
+		// The quoted fragment has to be the nested reference's real span; a
+		// truncate-at-the-first-'}' fragment would come out unbalanced here.
+		"${A:-${B:-${C}}}": "${B:-${C}}",
 		// Unsupported grammar nested in a default is caught by the same walk;
 		// without stepping into the default it would expand unseen.
-		"${OUTER:-${INNER:=x}}",
+		"${OUTER:-${INNER:=x}}": "${INNER:=x}",
 	}
-	for _, value := range nested {
+	for value, fragment := range nested {
 		t.Run("nested/"+value, func(t *testing.T) {
 			t.Parallel()
 			err := ValidateEnvReferences(value)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "nests an environment variable reference inside a :- default")
+			assert.Contains(t, err.Error(), fmt.Sprintf("%q", fragment),
+				"the message has to quote the nested reference's real span")
 		})
 	}
 

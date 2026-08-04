@@ -77,10 +77,16 @@ func FindEnvReferences(value string) []EnvReference {
 // Typing ':=' instead of ':-' is a one character slip that would otherwise
 // succeed while skipping the very guard it looks like it is using.
 //
-// A reference nested in a :- default is refused for the same reason: the
-// expander resolves it, the scanner deliberately does not report it, so
-// ${A:-${B}} with neither set expands to empty and the caller then blames the
-// empty value rather than naming B.
+// A reference nested in a :- default is refused too — and that is a shape which
+// resolves correctly today whenever the nested name is set:
+// ${VNET_ID:-${FALLBACK_VNET_ID}} works on a project that has FALLBACK_VNET_ID
+// in its environment. It is withdrawn rather than fixed because `required` is
+// computed statically, and whether the nested name has to resolve depends on
+// whether the outer one does — which is not known when the value is scanned.
+// Reporting the nested name would raise a false unresolved-variable error every
+// time the outer name IS set; not reporting it leaves ${A:-${B}} with neither
+// set expanding to empty, so the caller blames the empty value instead of naming
+// B. Neither half is right, so the shape goes.
 //
 // Where this runs, it makes [FindEnvReferences] complete: every occurrence the
 // expander acts on is one the scanner saw. That is a property of the *call*,
@@ -129,11 +135,20 @@ func ValidateEnvReferences(value string) error {
 			continue
 		}
 		if defaultEnd > 0 {
+			// A nested reference can usually be bounded, so quote its real span
+			// rather than the truncated fragment, which would come out
+			// unbalanced once the nested one carries its own default.
+			fragment := unsupportedEnvFragment(value, index)
+			if nested, ok := envReferenceAt(value, index); ok {
+				fragment = value[nested.Start:nested.End]
+			}
 			return fmt.Errorf(
-				"%q nests an environment variable reference inside a :- default, which azd does "+
-					"not resolve as one; give the default a literal value, or use ${{...}} for a "+
-					"Foundry expression",
-				unsupportedEnvFragment(value, index))
+				"%q nests an environment variable reference inside a :- default, which azd "+
+					"cannot check: whether the nested name is required depends on whether the "+
+					"outer one resolves, and that is not known when the value is scanned. Use a "+
+					"single ${VAR} and set it in the azd environment, or give the default a "+
+					"literal value",
+				fragment)
 		}
 
 		reference, found := envReferenceAt(value, index)

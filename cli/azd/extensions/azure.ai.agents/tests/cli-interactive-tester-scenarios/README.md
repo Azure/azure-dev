@@ -105,17 +105,26 @@ bash setup-wsl.sh
 ```
 
 This script:
-1. Cross-compiles `azd` core (`linux/amd64`) → `/usr/local/bin/azd`
-2. Ensures the extensions dev kit (`microsoft.azd.extensions`) is installed
-3. Builds, packages, and installs the `azure.ai.agents` extension from source
+1. Reads the required Go version from `cli/azd/go.mod` and, when necessary, downloads the
+   matching official WSL architecture build from `go.dev`, verifies its SHA-256 checksum, and
+   installs it under `/usr/local/go`
+2. Builds `azd` core for the native WSL architecture → `/usr/local/bin/azd`
+3. Ensures the extensions dev kit (`microsoft.azd.extensions`) is installed
+4. Builds, packages, and installs the `azure.ai.agents` extension from source
    using `azd x build` → `azd x pack --bundle` → `azd extension install`
-4. Verifies both azd and the extension report expected dev versions
+5. Verifies both azd and the extension report expected dev versions
 
 The script properly registers the extension in azd's config, so it will always
 use your dev build — never the published registry version.
 
 **Re-run `setup-wsl.sh` after every local code change** you want to test.
-Requires the Go toolchain and sudo access in WSL.
+It supports x86-64 and ARM64 WSL environments. Go does not need to be installed first; the
+script bootstraps the exact repository-pinned version. It requires network access to `go.dev`,
+Git, `curl` or `wget`, `awk`, `grep`, `tar`, `sha256sum`, `uname`, and sudo access in WSL. It
+does not install general OS packages or modify shell startup files.
+
+On native Linux or macOS, do not run `setup-wsl.sh`. Build and install the repository's
+development `azd` and extension through your normal local workflow.
 
 ## Authentication
 

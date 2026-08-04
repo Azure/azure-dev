@@ -55,9 +55,11 @@ source — read it, don't restate it.
 2. **`azd` binary gate (mandatory).** Ensure a verified native-Linux `azd` dev build is
    installed before any scenario runs, per
    `.github/skills/foundry-extension-scenario-pr-regression/references/workflow.md` § Step 1b (Windows/WSL:
-   `setup-wsl.sh` then confirm `which azd` = `/usr/local/bin/azd` and `azd version` shows the
-   dev string; native Linux/macOS: confirm the user's dev build). **If verification fails,
-   stop** — do not run scenarios against the wrong binary.
+   `setup-wsl.sh` bootstraps the repository-pinned Go version when needed, then confirm
+   `which azd` = `/usr/local/bin/azd` and `azd version` shows the dev string; native
+   Linux/macOS: confirm the user's dev build without running WSL setup). **If bootstrap or
+   verification fails, stop** — do not run scenarios against the wrong binary and do not
+   delegate environment repair to a worker.
 3. **Cost / consent gate.** List the plan grouped by tier. Tier 0 is free; Tier 1 needs
    `az login`; **Tier 1b and Tier 2 provision real Azure resources** and require an *explicit*
    cost acknowledgement before running. If the user declines, drop the cost-incurring tiers.

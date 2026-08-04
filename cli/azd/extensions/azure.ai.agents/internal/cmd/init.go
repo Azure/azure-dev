@@ -1286,6 +1286,14 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						"a voice agent is managed and has no container image; drop --image",
 					)
 				}
+				if flags.manifestPointer != "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"--kind prompt-voice cannot be combined with --manifest",
+						"a voice agent is synthesized from --agent-name/--model/--voice; "+
+							"drop --manifest, or omit --kind to adopt the manifest as-is",
+					)
+				}
 			}
 
 			// Bring-your-own-image fast path: when --image is set without a manifest,

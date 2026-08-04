@@ -726,7 +726,7 @@
       "description": "Manage RLE resources from your terminal. (Preview)",
       "versions": [
         {
-          "version": "0.1.0-preview.nightly.6648112",
+          "version": "0.1.0-preview.nightly.6655206",
           "capabilities": [
             "custom-commands",
             "metadata"
@@ -758,7 +758,7 @@
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "00b2200103836563be37d13e09bcd5bbd567758bacb3ccb67aaf03759b50d88b"
+                "value": "18e883bed93c238b6047d890675c23afea2474ac17a9a6f0666a0e3dca8ad1fa"
               },
               "entryPoint": "azure-ai-rle-darwin-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-rle/nightly/azure-ai-rle-darwin-amd64.zip"
@@ -766,7 +766,7 @@
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "b2dc5c6403aae0b5109bc2b9e62425fe858689f710ff5fcdce5ab09962577c71"
+                "value": "fb1a41af16a0465999d8c2ccbe98b5fd987943b9b8e13b7fc2d36345be7381f5"
               },
               "entryPoint": "azure-ai-rle-darwin-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-rle/nightly/azure-ai-rle-darwin-arm64.zip"
@@ -774,7 +774,7 @@
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "680b45470626b12be0c1a5b7d24731b1795d2ed927d0b85aaaae6877d9ea2d23"
+                "value": "ea56af4b07970c968ed4a73059404ff4c84a717dceb59986bbe452cc822b7dd5"
               },
               "entryPoint": "azure-ai-rle-linux-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-rle/nightly/azure-ai-rle-linux-amd64.tar.gz"
@@ -782,7 +782,7 @@
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "0ccf555f5757be1d4a34ab06c386c5a1e8c43100757bed0a4c385c48aea26a64"
+                "value": "403ecde02f1db2877394db822331943e65d643e2c3d6a27793377ee644c39772"
               },
               "entryPoint": "azure-ai-rle-linux-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-rle/nightly/azure-ai-rle-linux-arm64.tar.gz"
@@ -790,7 +790,7 @@
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "cf5597a970a516e5ced44fbf6e2457f89847926964108dd9719b65a3ad5ee9f4"
+                "value": "51ef096257706e4034aef4f52af0a50b1439da5a8ce57cf2dc2e3be3c388bae2"
               },
               "entryPoint": "azure-ai-rle-windows-amd64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-rle/nightly/azure-ai-rle-windows-amd64.zip"
@@ -798,7 +798,7 @@
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "cc93a7a339e0f4d271eabf5756e71ec22137f2dff9cd16a95e0540b1a97ead3a"
+                "value": "fb929da0e9e42a1cc6aad5f706f1bb771fde5f85597df9cb1881cb2537c8f629"
               },
               "entryPoint": "azure-ai-rle-windows-arm64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-rle/nightly/azure-ai-rle-windows-arm64.zip"

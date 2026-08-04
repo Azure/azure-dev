@@ -818,6 +818,121 @@ func TestEnsureInfraDirAbsent(t *testing.T) {
 	})
 }
 
+// A project can point azd at IaC outside ./infra/ with `infra.path`. Eject
+// always writes ./infra/, and the Terraform path drops `infra.path` on its way
+// out, so such a project has to be refused before anything is written — an
+// absent ./infra/ says nothing about whether the project owns infrastructure.
+func TestEnsureDefaultInfraPath(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		yaml    string
+		wantErr bool
+	}{
+		{name: "no infra block", yaml: "name: my-project\n"},
+		{name: "infra block without path", yaml: "name: my-project\ninfra:\n  provider: bicep\n"},
+		{name: "explicit default path", yaml: "name: my-project\ninfra:\n  path: infra\n"},
+		{name: "explicit default path dot-prefixed", yaml: "name: my-project\ninfra:\n  path: ./infra\n"},
+		{name: "empty path", yaml: "name: my-project\ninfra:\n  path: \"\"\n"},
+		{name: "custom path", yaml: "name: my-project\ninfra:\n  path: myinfra\n", wantErr: true},
+		{name: "nested path", yaml: "name: my-project\ninfra:\n  path: deploy/infra\n", wantErr: true},
+		// Malformed YAML must keep the CodeInvalidAzureYaml classification the
+		// service scan and the provider stamp already give it.
+		{name: "malformed yaml defers classification", yaml: "name: [unterminated\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := ensureDefaultInfraPath([]byte(tt.yaml))
+			if !tt.wantErr {
+				assert.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+			assert.Equal(t, exterrors.CodeInfraEjectCustomInfraPath, localErr.Code)
+			assert.Contains(t, localErr.Suggestion, "without --infra",
+				"the non-destructive path has to be offered")
+		})
+	}
+}
+
+// The gate refuses a project that keeps its IaC elsewhere on both branches:
+// standalone eject and the init fall-through both end in ejectInfra.
+func TestResolveInfraGate_RefusesCustomInfraPath(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+	}{
+		{
+			name: "project without a foundry service",
+			yaml: `name: my-project
+infra:
+  path: myinfra
+services:
+  web:
+    host: containerapp
+`,
+		},
+		{
+			name: "project that already declares a foundry service",
+			yaml: `name: my-project
+infra:
+  path: myinfra
+services:
+  ai-project:
+    host: azure.ai.project
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+			projectRoot := t.TempDir()
+			mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), tt.yaml)
+			// The declared directory exists; ./infra/ deliberately does not, so
+			// only the infra.path check can catch this.
+			require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "myinfra"), 0o750))
+			t.Chdir(projectRoot)
+
+			_, err := resolveInfraGate()
+			require.Error(t, err)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+			assert.Equal(t, exterrors.CodeInfraEjectCustomInfraPath, localErr.Code)
+			assert.Contains(t, localErr.Message, "myinfra")
+		})
+	}
+}
+
+// Terraform eject stamps infra.provider and removes infra.path. Refusing before
+// anything is written is what keeps a project's own IaC from being orphaned.
+func TestEjectInfra_Terraform_RefusesCustomInfraPath(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	azureYAML := `name: my-project
+infra:
+  path: myinfra
+services:
+  my-foundry:
+    host: azure.ai.project
+`
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), azureYAML)
+
+	err := ejectInfra(dir, "terraform")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+	assert.Equal(t, exterrors.CodeInfraEjectCustomInfraPath, localErr.Code)
+
+	assert.NoDirExists(t, filepath.Join(dir, "infra"))
+	raw, readErr := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // G304: test path from t.TempDir()
+	require.NoError(t, readErr)
+	assert.Equal(t, azureYAML, string(raw),
+		"a refused eject must not stamp infra.provider or drop the declared infra.path")
+}
+
 // TestResolveInfraGate_ExistingProjectWithoutFoundryServiceRunsInit is the
 // regression test for #9124: `azd ai agent init --infra` inside an azd project
 // that has no Foundry service must fall through to the normal init flow rather
@@ -908,11 +1023,121 @@ services:
 	assert.Equal(t, exterrors.CodeInfraEjectMultipleFoundryServices, localErr.Code)
 }
 
-// End-to-end through cobra: before #9124 this returned
-// CodeInfraEjectNoFoundryService. It now gets past that gate and reports the
-// ./infra/ conflict instead, which also keeps the command from touching the azd
-// client or prompting.
-func TestInitInfra_ExistingProjectWithoutFoundryServiceSkipsNothingToEject(t *testing.T) {
+// End-to-end through cobra with nothing in the way: before #9124 this returned
+// CodeInfraEjectNoFoundryService before the command did anything else. The gate
+// now falls through, so the run reaches the normal init flow and only stops
+// there, on the azd host RPCs this test deliberately leaves unreachable.
+//
+// The interesting assertions are negative — no eject-gate refusal fires, and a
+// refused-at-the-gate run cannot be mistaken for a fall-through because it never
+// reaches the azd host at all.
+func TestInitInfra_ExistingProjectWithoutFoundryServiceFallsThroughToInit(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	// No azd host, and no `azd` on PATH for the auth probe, so the run fails at
+	// a fixed point inside init instead of depending on the developer's machine.
+	t.Setenv("AZD_SERVER", "")
+	t.Setenv("PATH", "")
+	projectRoot := t.TempDir()
+	azureYAML := `name: my-project
+services:
+  web:
+    host: containerapp
+`
+	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), azureYAML)
+	t.Chdir(projectRoot)
+
+	cmd := newInitCommand(&azdext.ExtensionContext{})
+	cmd.SetArgs([]string{"--infra"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	var execErr error
+	withCapturedStdout(t, func() {
+		execErr = cmd.Execute()
+	})
+
+	require.Error(t, execErr, "init cannot complete without an azd host")
+	if localErr, ok := errors.AsType[*azdext.LocalError](execErr); ok {
+		assert.NotContains(t, []string{
+			exterrors.CodeInfraEjectNoFoundryService,
+			exterrors.CodeInfraEjectExists,
+			exterrors.CodeInfraEjectCustomInfraPath,
+			exterrors.CodeInfraEjectConflictingArguments,
+		}, localErr.Code, "--infra must not refuse a project that simply has no agent service yet")
+	}
+	assert.Contains(t, execErr.Error(), "rpc error",
+		"the run has to get far enough into init to talk to the azd host")
+
+	// A refusal at the gate is the only thing that could have stopped the run
+	// earlier, and it would have left these untouched too — so also assert init
+	// did not half-write anything on its way out.
+	assert.NoDirExists(t, filepath.Join(projectRoot, "infra"))
+	raw, err := os.ReadFile(filepath.Join(projectRoot, "azure.yaml")) //nolint:gosec // G304: test path from t.TempDir()
+	require.NoError(t, err)
+	assert.Equal(t, azureYAML, string(raw))
+}
+
+// The fall-through only pays off if the trailing eject still runs: every init
+// exit path ends in ejectInfraAfterInit. Drive that seam end to end — gate,
+// then the azure.yaml mutation init performs when it adds the agent service,
+// then the trailing eject — so a regression that stopped generating IaC after
+// init on an existing project cannot pass.
+//
+// The init flow in between is exercised by its own tests; reproducing it here
+// would mean standing up the whole azd host (prompts, model catalog, template
+// download), which belongs in the functional suite.
+func TestInitInfra_FallThroughEjectsAfterInitAddsFoundryService(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	projectRoot := t.TempDir()
+	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), `name: my-project
+services:
+  web:
+    host: containerapp
+`)
+	t.Chdir(projectRoot)
+
+	gate, err := resolveInfraGate()
+	require.NoError(t, err)
+	require.False(t, gate.standaloneEject, "no Foundry service yet, so init has to run first")
+	require.Equal(t, projectRoot, gate.projectRoot)
+
+	// Stand in for the init flow: add the Foundry project service the same way
+	// init does before it hands off to ejectInfraAfterInit.
+	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), `name: my-project
+services:
+  web:
+    host: containerapp
+  ai-project:
+    host: azure.ai.project
+    deployments:
+      - name: gpt-4-1-mini
+        model:
+          name: gpt-4.1-mini
+          format: OpenAI
+          version: "2024-07-18"
+        sku:
+          name: GlobalStandard
+          capacity: 50
+`)
+
+	withCapturedStdout(t, func() {
+		require.NoError(t, ejectInfraAfterInit("bicep"))
+	})
+
+	assert.FileExists(t, filepath.Join(projectRoot, "infra", "main.bicep"))
+	assert.FileExists(t, filepath.Join(projectRoot, "infra", "main.parameters.json"))
+
+	// The project's pre-existing service has to survive the round trip.
+	raw, err := os.ReadFile(filepath.Join(projectRoot, "azure.yaml")) //nolint:gosec // G304: test path from t.TempDir()
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), "host: containerapp")
+	assert.Contains(t, string(raw), "host: azure.ai.project")
+}
+
+// The pre-existing ./infra/ refusal moved into the gate, so it now fires before
+// the user is walked through init. Asserted at the command level because the
+// ordering is what the gate exists for.
+func TestInitInfra_ExistingProjectWithPreexistingInfraRefusesUpFront(t *testing.T) {
 	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
 	projectRoot := t.TempDir()
 	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), `name: my-project

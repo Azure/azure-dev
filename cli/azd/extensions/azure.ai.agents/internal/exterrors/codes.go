@@ -231,6 +231,7 @@ const (
 	CodeInfraEjectConflictingArguments    = "infra_eject_conflicting_arguments"
 	CodeInfraEjectNetworkUnsupported      = "infra_eject_network_unsupported"
 	CodeInfraEjectBrownfieldUnsupported   = "infra_eject_brownfield_unsupported"
+	CodeInfraEjectCustomInfraPath         = "infra_eject_custom_infra_path"
 )
 
 // Operation names for the microsoft.foundry provisioning provider.

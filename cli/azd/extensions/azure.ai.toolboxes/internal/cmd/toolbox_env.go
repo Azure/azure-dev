@@ -54,6 +54,25 @@ func setToolboxEndpointEnv(ctx context.Context, toolboxName, value, projectScope
 			return nil
 		}
 		if value == "" {
+			projectKey := envkey.ToolboxProjectEndpoint(toolboxName)
+			projectResp, err := c.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+				EnvName: envName, Key: projectKey,
+			})
+			if err != nil {
+				return exterrors.Internal(exterrors.CodeAzdClientFailed,
+					fmt.Sprintf("failed to read %s from the azd environment: %s", projectKey, err))
+			}
+			endpointResp, err := c.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+				EnvName: envName, Key: commitKey,
+			})
+			if err != nil {
+				return exterrors.Internal(exterrors.CodeAzdClientFailed,
+					fmt.Sprintf("failed to read %s from the azd environment: %s", commitKey, err))
+			}
+			if !shouldClearToolboxMarkers(projectResp.Value, endpointResp.Value, projectScope) {
+				log.Printf("toolbox marker cleanup skipped: %s belongs to another project", projectKey)
+				return nil
+			}
 			return clearToolboxMarkers(toolboxName, setValue)
 		}
 		if err := setValue(commitKey, ""); err != nil {
@@ -91,6 +110,15 @@ func toolboxProjectEndpoint(endpoint string) string {
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	return strings.TrimRight(parsed.String(), "/")
+}
+
+func shouldClearToolboxMarkers(markerProject, markerEndpoint, deletionProject string) bool {
+	deletionProject = strings.TrimRight(strings.TrimSpace(deletionProject), "/")
+	markerProject = strings.TrimRight(strings.TrimSpace(markerProject), "/")
+	if markerProject == "" {
+		markerProject = toolboxProjectEndpoint(markerEndpoint)
+	}
+	return deletionProject != "" && strings.EqualFold(markerProject, deletionProject)
 }
 
 // isNoAzdEnvironment reports whether err from GetCurrent means there is no azd

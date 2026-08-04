@@ -36,7 +36,9 @@ func TestDeleteMarkerCleanup(t *testing.T) {
 			"AGENT_MY_AGENT_INVOCATIONS_ENDPOINT",
 			"AGENT_MY_AGENT_INVOCATIONS_WS_ENDPOINT",
 		} {
-			require.Equal(t, "", envServer.values["dev"][key], key)
+			got, ok := envServer.values["dev"][key]
+			require.True(t, ok, "%s was not cleared", key)
+			require.Equal(t, "", got, key)
 		}
 	})
 
@@ -59,7 +61,9 @@ func TestDeleteMarkerCleanup(t *testing.T) {
 			"AGENT_MY_AGENT_INVOCATIONS_ENDPOINT",
 			"AGENT_MY_AGENT_INVOCATIONS_WS_ENDPOINT",
 		} {
-			require.Equal(t, "", envServer.values["dev"][key], key)
+			got, ok := envServer.values["dev"][key]
+			require.True(t, ok, "%s was not cleared", key)
+			require.Equal(t, "", got, key)
 		}
 	})
 }

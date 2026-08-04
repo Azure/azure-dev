@@ -28,7 +28,7 @@ func TestRunDeleteToolbox_ClearsEndpointEnv(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Len(t, client.deleteCalls, 1)
-	require.Equal(t, []toolboxEnvCall{{name: "tb", value: ""}}, *envCalls)
+	require.Equal(t, []toolboxEnvCall{{name: "tb", value: "", projectScope: "https://e/"}}, *envCalls)
 }
 
 func TestRunDeleteToolboxVersion_DoesNotTouchEnv(t *testing.T) {
@@ -121,4 +121,20 @@ func TestClearToolboxMarkers(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, values["TOOLBOX_TOOLS_MCP_ENDPOINT"])
 	require.Empty(t, values["TOOLBOX_TOOLS_PROJECT_ENDPOINT"])
+}
+
+func TestShouldClearToolboxMarkers(t *testing.T) {
+	t.Parallel()
+	const current = "https://account.services.ai.azure.com/api/projects/current"
+	require.True(t, shouldClearToolboxMarkers(current+"/", "", current))
+	require.True(t, shouldClearToolboxMarkers(
+		"",
+		current+"/toolboxes/tools/versions/1/mcp",
+		current,
+	))
+	require.False(t, shouldClearToolboxMarkers(
+		"https://account.services.ai.azure.com/api/projects/other",
+		"",
+		current,
+	))
 }

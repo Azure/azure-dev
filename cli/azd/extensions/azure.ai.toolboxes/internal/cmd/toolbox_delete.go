@@ -119,7 +119,7 @@ func runDeleteToolbox(
 				return exterrors.ServiceFromAzure(err, exterrors.OpDeleteToolbox)
 			}
 			// Whole-toolbox delete clears the endpoint; version delete does not.
-			if err := setToolboxEndpointEnvFunc(ctx, name, "", ""); err != nil {
+			if err := setToolboxEndpointEnvFunc(ctx, name, "", client.Endpoint()); err != nil {
 				return err
 			}
 			return emitDeleteResult(name, "", "deleted", parent.output)
@@ -190,7 +190,7 @@ func runDeleteToolboxVersion(
 	}
 
 	if cascaded {
-		if err := setToolboxEndpointEnvFunc(ctx, name, "", ""); err != nil {
+		if err := setToolboxEndpointEnvFunc(ctx, name, "", client.Endpoint()); err != nil {
 			return err
 		}
 		if parent.output == "json" {

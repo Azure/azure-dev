@@ -1307,9 +1307,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				// (generate the project). For private GitHub URLs, the detector
 				// falls back to the authenticated gh CLI download path before
 				// deciding whether this is a unified azure.yaml. See #8798.
+				manifestRoot := ""
+				if isLocalFilePath(flags.manifestPointer) {
+					manifestRoot = filepath.Dir(flags.manifestPointer)
+				}
 				if content, ok := readManifestContentForInitDetection(
 					ctx, azdClient, flags.manifestPointer, httpClient,
-				); ok && looksLikeFoundryAzureYaml(content) {
+				); ok && declaresAgentService(content, manifestRoot) {
 					if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content); err != nil {
 						if exterrors.IsCancellation(err) {
 							return exterrors.Cancelled("initialization was cancelled")

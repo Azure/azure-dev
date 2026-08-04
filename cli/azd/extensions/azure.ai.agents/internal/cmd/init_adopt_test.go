@@ -18,7 +18,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-func TestLooksLikeFoundryAzureYaml(t *testing.T) {
+func TestDeclaresAgentService(t *testing.T) {
 	tests := []struct {
 		name    string
 		content string
@@ -113,9 +113,26 @@ services:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, looksLikeFoundryAzureYaml([]byte(tt.content)))
+			require.Equal(t, tt.want, declaresAgentService([]byte(tt.content), ""))
 		})
 	}
+}
+
+func TestDeclaresAgentService_LocalServiceRef(t *testing.T) {
+	root := t.TempDir()
+	refPath := filepath.Join(root, "services", "agent.yaml")
+	require.NoError(t, os.MkdirAll(filepath.Dir(refPath), 0700))
+	require.NoError(t, os.WriteFile(refPath, []byte("host: azure.ai.agent\nkind: hosted\n"), 0600))
+
+	content := []byte(`name: foundry-ref
+services:
+  ai-project:
+    host: azure.ai.project
+  assistant:
+    $ref: ./services/agent.yaml
+`)
+
+	require.True(t, declaresAgentService(content, root))
 }
 
 func TestFoundryProjectName(t *testing.T) {

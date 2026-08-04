@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -34,14 +35,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// looksLikeFoundryAzureYaml reports whether the content is a unified
-// Foundry azure.yaml project manifest rather than an agent manifest.
+// declaresAgentService reports whether a unified azure.yaml declares an
+// azure.ai.agent service rather than an agent manifest.
 //
-// It returns true when services contains host: azure.ai.agent.
-// Agent manifests have a top-level template and no services, so they
-// never match. This routes Agent project manifests to adoption and agent
-// manifests to legacy generation.
-func looksLikeFoundryAzureYaml(content []byte) bool {
+// Local service-level $ref entries are resolved against projectRoot.
+// Remote manifest references are left unresolved because sibling files
+// are not available during the initial peek.
+func declaresAgentService(content []byte, projectRoot string) bool {
 	var top map[string]any
 	if err := yaml.Unmarshal(content, &top); err != nil {
 		return false
@@ -57,10 +57,23 @@ func looksLikeFoundryAzureYaml(content []byte) bool {
 		if !ok {
 			continue
 		}
-		host, ok := svcMap["host"].(string)
-		if !ok {
+		host, _ := svcMap["host"].(string)
+		if host == AiAgentHost {
+			return true
+		}
+
+		if projectRoot == "" {
 			continue
 		}
+		if _, ok := svcMap["$ref"]; !ok {
+			continue
+		}
+
+		resolved, err := foundry.ResolveFileRefs(svcMap, projectRoot)
+		if err != nil {
+			continue
+		}
+		host, _ = resolved["host"].(string)
 		if host == AiAgentHost {
 			return true
 		}

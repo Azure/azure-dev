@@ -46,14 +46,21 @@ func TestDeleteMarkerCleanup(t *testing.T) {
 		envServer := &testEnvironmentServiceServer{
 			current: &azdext.Environment{Name: "dev"},
 			values: map[string]map[string]string{
-				"dev": {"AGENT_MY_AGENT_VERSION": "2"},
+				"dev": {
+					"AGENT_MY_AGENT_VERSION":          "2",
+					"AGENT_MY_AGENT_PROJECT_ENDPOINT": "https://account.test/api/projects/current",
+				},
 			},
 		}
 		client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
 		action := &DeleteAction{}
-		action.clearDeletedVersionMarker(t.Context(), client, "my-agent", "1")
+		action.clearDeletedVersionMarker(
+			t.Context(), client, "my-agent", "1", "https://account.test/projects/current",
+		)
 		require.Equal(t, "2", envServer.values["dev"]["AGENT_MY_AGENT_VERSION"])
-		action.clearDeletedVersionMarker(t.Context(), client, "my-agent", "2")
+		action.clearDeletedVersionMarker(
+			t.Context(), client, "my-agent", "2", "https://account.test/projects/current",
+		)
 		for _, key := range []string{
 			"AGENT_MY_AGENT_VERSION",
 			"AGENT_MY_AGENT_ENDPOINT",
@@ -65,6 +72,24 @@ func TestDeleteMarkerCleanup(t *testing.T) {
 			require.True(t, ok, "%s was not cleared", key)
 			require.Equal(t, "", got, key)
 		}
+	})
+
+	t.Run("version marker is preserved for another project", func(t *testing.T) {
+		envServer := &testEnvironmentServiceServer{
+			current: &azdext.Environment{Name: "dev"},
+			values: map[string]map[string]string{
+				"dev": {
+					"AGENT_MY_AGENT_VERSION":          "2",
+					"AGENT_MY_AGENT_PROJECT_ENDPOINT": "https://account.test/projects/other",
+				},
+			},
+		}
+		client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+		action := &DeleteAction{}
+		action.clearDeletedVersionMarker(
+			t.Context(), client, "my-agent", "2", "https://account.test/projects/current",
+		)
+		require.Equal(t, "2", envServer.values["dev"]["AGENT_MY_AGENT_VERSION"])
 	})
 }
 

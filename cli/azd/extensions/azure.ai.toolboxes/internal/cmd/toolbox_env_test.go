@@ -137,4 +137,5 @@ func TestShouldClearToolboxMarkers(t *testing.T) {
 		"",
 		current,
 	))
+	require.False(t, shouldClearToolboxMarkers("", "", current))
 }

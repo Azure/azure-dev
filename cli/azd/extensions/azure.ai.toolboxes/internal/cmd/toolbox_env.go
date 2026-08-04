@@ -70,7 +70,7 @@ func setToolboxEndpointEnv(ctx context.Context, toolboxName, value, projectScope
 					fmt.Sprintf("failed to read %s from the azd environment: %s", commitKey, err))
 			}
 			if !shouldClearToolboxMarkers(projectResp.Value, endpointResp.Value, projectScope) {
-				log.Printf("toolbox marker cleanup skipped: %s belongs to another project", projectKey)
+				log.Printf("toolbox marker cleanup skipped: %s is empty or scoped to another project", projectKey)
 				return nil
 			}
 			return clearToolboxMarkers(toolboxName, setValue)

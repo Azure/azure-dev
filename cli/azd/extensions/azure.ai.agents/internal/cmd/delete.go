@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -170,7 +172,7 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 		if err != nil {
 			return classifyDeleteError(err, agentName)
 		}
-		a.clearDeletedVersionMarker(ctx, azdClient, info.ServiceName, a.flags.version)
+		a.clearDeletedVersionMarker(ctx, azdClient, info.ServiceName, a.flags.version, endpoint)
 		switch a.flags.output {
 		case "json":
 			data, jsonErr := json.MarshalIndent(result, "", "  ")
@@ -233,6 +235,7 @@ func (a *DeleteAction) clearDeletedVersionMarker(
 	azdClient *azdext.AzdClient,
 	serviceName string,
 	deletedVersion string,
+	deletedProjectEndpoint string,
 ) {
 	if serviceName == "" {
 		return
@@ -249,6 +252,14 @@ func (a *DeleteAction) clearDeletedVersionMarker(
 	if err != nil || resp.Value != deletedVersion {
 		return
 	}
+	projectKey := envkey.AgentProjectEndpoint(serviceName)
+	projectResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envResp.Environment.Name,
+		Key:     projectKey,
+	})
+	if err != nil || !sameAgentProjectEndpoint(projectResp.Value, deletedProjectEndpoint) {
+		return
+	}
 	serviceKey := toServiceKey(serviceName)
 	keys := []string{
 		versionKey,
@@ -258,6 +269,33 @@ func (a *DeleteAction) clearDeletedVersionMarker(
 		keys = append(keys, fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, protocol.Suffix))
 	}
 	a.clearEnvVars(ctx, azdClient, serviceName, keys)
+}
+
+func sameAgentProjectEndpoint(a, b string) bool {
+	if strings.EqualFold(
+		strings.TrimRight(strings.TrimSpace(a), "/"),
+		strings.TrimRight(strings.TrimSpace(b), "/"),
+	) {
+		return true
+	}
+	aHost, aProject := agentProjectIdentity(a)
+	bHost, bProject := agentProjectIdentity(b)
+	return aHost != "" && aProject != "" &&
+		strings.EqualFold(aHost, bHost) && strings.EqualFold(aProject, bProject)
+}
+
+func agentProjectIdentity(endpoint string) (string, string) {
+	u, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil || u.Hostname() == "" {
+		return "", ""
+	}
+	const segment = "/projects/"
+	index := strings.Index(strings.ToLower(u.Path), segment)
+	if index < 0 {
+		return "", ""
+	}
+	projectName := strings.Split(strings.Trim(u.Path[index+len(segment):], "/"), "/")[0]
+	return u.Hostname(), projectName
 }
 
 func (a *DeleteAction) clearEnvVars(

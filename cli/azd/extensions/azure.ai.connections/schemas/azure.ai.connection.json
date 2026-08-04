@@ -12,7 +12,7 @@
     },
     "target": {
       "type": "string",
-      "description": "Target endpoint URL or ARM resource ID. May contain ${VAR} (azd env, resolved client-side)."
+      "description": "Target endpoint URL or ARM resource ID. May contain ${VAR}; declare each referenced variable in the service-level env object."
     },
     "authType": {
       "type": "string",
@@ -38,7 +38,7 @@
     },
     "credentials": {
       "type": "object",
-      "description": "Credentials. Values may contain ${VAR} (azd env, resolved client-side) or ${{...}} (Foundry server-side resolution, passed through untouched).",
+      "description": "Credentials. Use ${VAR} for azd service env substitution or ${{...}} for Foundry server-side resolution. In a service env value, use $${{...}} so azd forwards the Foundry expression unchanged.",
       "additionalProperties": true
     },
     "metadata": {

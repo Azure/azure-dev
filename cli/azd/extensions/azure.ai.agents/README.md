@@ -50,6 +50,26 @@ services:
     description: My hosted agent
 ```
 
+### Environment variables under `config:`
+
+Older projects could also set environment variables in an `env:` block nested
+under the service's `config:`. That position is no longer read: azd takes the
+service environment only from the service-level `env:`. A service that still
+carries `config: env:` gets a warning naming the affected variables on both
+`azd ai agent run` and `azd deploy`.
+
+Move them up one level to fix it:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    env:
+      API_KEY: ${SECRET}
+      LOG_LEVEL: debug
+```
+
 ## Content safety policies
 
 A hosted agent can be bound to an Azure AI Content Safety (RAI) policy so every

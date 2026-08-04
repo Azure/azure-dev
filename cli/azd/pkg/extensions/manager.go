@@ -1169,8 +1169,8 @@ func (m *Manager) evaluateDependencyChanges(
 			FromSource:  installed.Source,
 		}
 
-		// Correlate the child upgrade with its triggering parent.
-		childCtx, span := tracing.Start(ctx, events.ExtensionUpgradeEvent)
+		// Correlate the child update with its triggering parent.
+		childCtx, span := tracing.Start(ctx, events.ExtensionUpdateEvent)
 		span.SetAttributes(
 			fields.ExtensionId.String(dep.Id),
 			fields.ExtensionDependencyOf.String(parentExtension.Id),

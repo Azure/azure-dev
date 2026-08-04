@@ -82,7 +82,7 @@ adding new events for extension and hook lifecycle telemetry.
 | ----- | --------- | -------------------- | ---------- |
 | `ext.run` | Running an installed extension command through `azd`. | Command attributes such as `cmd.entry`, `cmd.flags`, `cmd.args.count`, plus `extension.installed` on the root span. | `name=ext.run`, `cmd.entry=cmd.ai.chat`, `cmd.flags=["model"]`, `cmd.args.count=0` |
 | `ext.install` | Installing one extension version. | `extension.id` (set as soon as installation begins); `extension.version` (set after the version is resolved). On failure the span uses OpenTelemetry status `Error`; `EndWithStatus` derives the status description from the error type. | `name=ext.install`, `extension.id=microsoft.azd.ai`, `extension.version=1.2.0`, `status=Ok` |
-| `ext.upgrade` | Updating one extension attempt. | `extension.id`, `extension.version.from`, `extension.version.to`, `extension.source`, `extension.upgrade.duration_ms`, `extension.upgrade.outcome`. | `name=ext.upgrade`, `extension.id=microsoft.azd.ai`, `extension.version.from=1.1.0`, `extension.version.to=1.2.0`, `extension.upgrade.outcome=upgraded` |
+| `ext.update` | Updating one extension attempt. | `extension.id`, `extension.version.from`, `extension.version.to`, `extension.source`, `extension.update.duration_ms`, `extension.update.outcome`. | `name=ext.update`, `extension.id=microsoft.azd.ai`, `extension.version.from=1.1.0`, `extension.version.to=1.2.0`, `extension.update.outcome=upgraded` |
 | `ext.promote` | Promoting an extension registry entry, such as dev to main. | `extension.id`, `extension.version.from`, `extension.version.to`, `extension.source.from`, `extension.source.to`. | `name=ext.promote`, `extension.id=microsoft.azd.ai`, `extension.source.from=dev`, `extension.source.to=main`, `status=Ok` |
 | `hooks.exec` | Executing a project, layer, or service lifecycle hook. | `hooks.name`, `hooks.type`, `hooks.kind`; status description uses hook-specific codes such as `hook.validation_failed`. | `name=hooks.exec`, `hooks.name=predeploy`, `hooks.type=service`, `hooks.kind=sh`, `status=Ok` |
 
@@ -100,8 +100,8 @@ Extension telemetry attributes are defined in [`fields.go`](../internal/tracing/
 | `extension.source` | Registry source used for an update. | `main` |
 | `extension.source.from` | Registry source before a promotion. | `dev` |
 | `extension.source.to` | Registry source after a promotion. | `main` |
-| `extension.upgrade.duration_ms` | Update duration in milliseconds. | `1532` |
-| `extension.upgrade.outcome` | Update result status. | `upgraded` |
+| `extension.update.duration_ms` | Update duration in milliseconds. | `1532` |
+| `extension.update.outcome` | Update result status. | `upgraded` |
 
 ### Hook Attributes
 
@@ -243,8 +243,8 @@ The `tool install` / `tool update` / `tool check` / `tool show` actions emit:
 | `tool.install.failure_count` | int | Batch install / update | Number of tools that failed. |
 | `tool.install.failed_ids` | string | At least one failure | Comma-separated **sorted** tool IDs whose operation failed. **Only tool IDs are recorded — error messages flow through the global error middleware (`error.message`).** When the batch call itself errors before any per-tool result is produced, the count of failed IDs may be **less than `failure_count`** (failures are synthesized from the requested set, but a synthesized entry with no `Tool` reference is omitted from the ID list to avoid emitting "unknown"). |
 | `tool.install.duration_ms` | int | Batch install / update | Wall-clock duration of the operation in milliseconds. Per-tool durations are intentionally **not** emitted: the cardinality cost would be `O(tools × installs)` for limited diagnostic value, and the aggregate captures the only number actionable at fleet scale. Per-tool durations remain available in the in-process `InstallResult.Duration` for local logging / dry-run reporting. |
-| `tool.upgrade.from_version` | string | Single-target update | Pre-update installed version. Captured via detection on both the explicit-args (`azd tool update <id>`) and auto-detect (`azd tool update`) paths. Unset only when detection failed or the tool was not previously installed. |
-| `tool.upgrade.to_version` | string | Single-target update succeeded | Post-update installed version. Only emitted when the update succeeded — on failure `InstalledVersion` is either the unchanged pre-update value or empty, which would be ambiguous against `from_version`. |
+| `tool.update.from_version` | string | Single-target update | Pre-update installed version. Captured via detection on both the explicit-args (`azd tool update <id>`) and auto-detect (`azd tool update`) paths. Unset only when detection failed or the tool was not previously installed. |
+| `tool.update.to_version` | string | Single-target update succeeded | Post-update installed version. Only emitted when the update succeeded — on failure `InstalledVersion` is either the unchanged pre-update value or empty, which would be ambiguous against `from_version`. |
 | `tool.check.updates_available` | int | `tool check` | Count of tools whose `UpdateAvailable` is `true`. |
 
 > **PII rule:** Never include free-form error strings, file paths, or user input in tool telemetry.  Stick to built-in tool IDs and semver-style version strings.  Error messages are already captured by the global error middleware on the same span.

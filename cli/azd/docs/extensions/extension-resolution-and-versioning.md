@@ -500,7 +500,7 @@ The update priority chain is:
 2. **Stored source** — the source the extension was originally installed from
 3. **Main registry fallback** — `azd` checks the main registry for promotion opportunities
 
-Promotion events are tracked via `ext.promote` telemetry. Update events (regardless of promotion) are tracked via `ext.upgrade`.
+Promotion events are tracked via `ext.promote` telemetry. Update events (regardless of promotion) are tracked via `ext.update`.
 
 #### Example: Dev→Main Promotion in Action
 

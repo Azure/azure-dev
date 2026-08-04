@@ -182,7 +182,7 @@ flowchart LR
   - Validation: `ext.validation.*`
   - Auth: `ext.auth.*`
   - Dependency: `ext.dependency.*`
-- Extension lifecycle events: `ext.install`, `ext.upgrade`, `ext.promote`
+- Extension lifecycle events: `ext.install`, `ext.update`, `ext.promote`
 
 ## Consent & Privacy
 

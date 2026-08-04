@@ -626,19 +626,19 @@ var (
 		IsMeasurement:  true,
 	}
 
-	// ToolUpgradeFromVersionKey records the previous version of a tool
-	// being upgraded (single-target upgrades only).
-	ToolUpgradeFromVersionKey = AttributeKey{
-		Key:            attribute.Key("tool.upgrade.from_version"),
+	// ToolUpdateFromVersionKey records the previous version of a tool
+	// being updated (single-target updates only).
+	ToolUpdateFromVersionKey = AttributeKey{
+		Key:            attribute.Key("tool.update.from_version"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
 
-	// ToolUpgradeToVersionKey records the new version after upgrade
-	// (single-target upgrades only). Emitted only when the upgrade
+	// ToolUpdateToVersionKey records the new version after update
+	// (single-target updates only). Emitted only when the update
 	// succeeds.
-	ToolUpgradeToVersionKey = AttributeKey{
-		Key:            attribute.Key("tool.upgrade.to_version"),
+	ToolUpdateToVersionKey = AttributeKey{
+		Key:            attribute.Key("tool.update.to_version"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
@@ -1160,19 +1160,19 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionVersionFrom is the installed version before an upgrade.
+	// ExtensionVersionFrom is the installed version before an update.
 	ExtensionVersionFrom = AttributeKey{
 		Key:            attribute.Key("extension.version.from"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionVersionTo is the target version after an upgrade.
+	// ExtensionVersionTo is the target version after an update.
 	ExtensionVersionTo = AttributeKey{
 		Key:            attribute.Key("extension.version.to"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionSource is the registry source used for the upgrade.
+	// ExtensionSource is the registry source used for the update.
 	ExtensionSource = AttributeKey{
 		Key:            attribute.Key("extension.source"),
 		Classification: SystemMetadata,
@@ -1196,28 +1196,28 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionUpgradeDurationMs is the time in milliseconds for one upgrade.
-	ExtensionUpgradeDurationMs = AttributeKey{
-		Key:            attribute.Key("extension.upgrade.duration_ms"),
+	// ExtensionUpdateDurationMs is the time in milliseconds for one update.
+	ExtensionUpdateDurationMs = AttributeKey{
+		Key:            attribute.Key("extension.update.duration_ms"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 		IsMeasurement:  true,
 	}
-	// ExtensionUpgradeOutcome is the upgrade result status.
-	ExtensionUpgradeOutcome = AttributeKey{
-		Key:            attribute.Key("extension.upgrade.outcome"),
+	// ExtensionUpdateOutcome is the update result status.
+	ExtensionUpdateOutcome = AttributeKey{
+		Key:            attribute.Key("extension.update.outcome"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionDependencyOf is the parent extension for a dependency upgrade.
+	// ExtensionDependencyOf is the parent extension for a dependency update.
 	ExtensionDependencyOf = AttributeKey{
 		Key:            attribute.Key("extension.dependency_of"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionDependencyUpgradeCount is the recursive dependency upgrade count.
-	ExtensionDependencyUpgradeCount = AttributeKey{
-		Key:            attribute.Key("extension.dependency_upgrade_count"),
+	// ExtensionDependencyUpdateCount is the recursive dependency update count.
+	ExtensionDependencyUpdateCount = AttributeKey{
+		Key:            attribute.Key("extension.dependency_update_count"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 		IsMeasurement:  true,

@@ -72,7 +72,7 @@ Commands follow the pattern `cmd.<command.path>` where spaces become dots.
 |-------|-------------|
 | `ext.run` | Extension command execution |
 | `ext.install` | Extension installation |
-| `ext.upgrade` | Extension update attempt |
+| `ext.update` | Extension update attempt |
 | `ext.promote` | Registry promotion (e.g., dev → main) |
 
 ### Agent & Copilot Events
@@ -449,16 +449,16 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.id` | string | Extension identifier |
 | `extension.version` | string | Extension version |
 | `extension.installed` | string[] | List of installed extensions (`id@version`) |
-| `extension.version.from` | string | Version before an update or promotion (`ext.upgrade`, `ext.promote`) |
-| `extension.version.to` | string | Version after an update or promotion (`ext.upgrade`, `ext.promote`) |
-| `extension.source` | string | Registry source used for an update (`ext.upgrade`) |
+| `extension.version.from` | string | Version before an update or promotion (`ext.update`, `ext.promote`) |
+| `extension.version.to` | string | Version after an update or promotion (`ext.update`, `ext.promote`) |
+| `extension.source` | string | Registry source used for an update (`ext.update`) |
 | `extension.source.kind` | string | Kind of `--source` argument: `none`, `registered`, or `location` (`azd extension list`, `show`, `install`, `update`) |
 | `extension.source.from` | string | Registry source before a promotion (`ext.promote`) |
 | `extension.source.to` | string | Registry source after a promotion (`ext.promote`) |
-| `extension.upgrade.duration_ms` | measurement | Duration (ms) of a single update (`ext.upgrade`) |
-| `extension.upgrade.outcome` | string | Update result status (`ext.upgrade`) |
-| `extension.dependency_of` | string | Parent extension ID when an extension is updated as a dependency (`ext.upgrade`) |
-| `extension.dependency_upgrade_count` | measurement | Number of dependency extensions updated recursively (`ext.upgrade`) |
+| `extension.update.duration_ms` | measurement | Duration (ms) of a single update (`ext.update`) |
+| `extension.update.outcome` | string | Update result status (`ext.update`) |
+| `extension.dependency_of` | string | Parent extension ID when an extension is updated as a dependency (`ext.update`) |
+| `extension.dependency_update_count` | measurement | Number of dependency extensions updated recursively (`ext.update`) |
 </details>
 
 <details>
@@ -502,8 +502,8 @@ The first-run middleware is not currently registered, so these fields are not em
 | `tool.install.failure_count` | measurement | Tools that failed in a batch install/update/uninstall |
 | `tool.install.failed_ids` | string | Comma-separated tool IDs whose install/update/uninstall failed |
 | `tool.install.duration_ms` | measurement | Total install/update/uninstall duration (ms) |
-| `tool.upgrade.from_version` | string | Previous version (single-target update) |
-| `tool.upgrade.to_version` | string | New version after a successful update (single-target) |
+| `tool.update.from_version` | string | Previous version (single-target update) |
+| `tool.update.to_version` | string | New version after a successful update (single-target) |
 | `tool.check.updates_available` | measurement | Installed tools with an available update (`azd tool check`) |
 </details>
 
@@ -698,7 +698,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Provisioning (IaC)** | `cmd.provision`, `cmd.up`, `cmd.down`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`/`terraform`/`arm`/`pulumi`/custom; slice of each distinct provider for multi-layer projects) | Provision success, ARM errors, duration |
 | **Authentication** | `cmd.auth.login` | `auth.method` | Auth method usage, failure rates |
 | **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
-| **Extensions** | `ext.run`, `ext.install`, `ext.upgrade` | `extension.id`, `extension.version`, `extension.installed` | Extension adoption, errors |
+| **Extensions** | `ext.run`, `ext.install`, `ext.update` | `extension.id`, `extension.version`, `extension.installed` | Extension adoption, errors |
 | **MCP** | `mcp.<tool_name>` | `mcp.client.name`, `mcp.client.version` | Tool usage by client |
 | **Agentic (Copilot)** | `copilot.initialize`, `copilot.session` | `copilot.mode`, `copilot.init.model`, `copilot.message.*` | Session counts, token usage |
 | **Agent Troubleshooting** | `agent.troubleshoot` | `agent.fix.attempts` | Auto-fix adoption, retry counts |

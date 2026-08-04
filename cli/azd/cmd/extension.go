@@ -2104,8 +2104,8 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	startTime := time.Now()
 	baseResult := extensions.UpgradeResult{ExtensionId: extensionId}
 
-	// Start a telemetry span for this individual extension upgrade.
-	ctx, span := tracing.Start(ctx, events.ExtensionUpgradeEvent)
+	// Start a telemetry span for this individual extension update.
+	ctx, span := tracing.Start(ctx, events.ExtensionUpdateEvent)
 	defer func() {
 		elapsed := time.Since(startTime).Milliseconds()
 		span.SetAttributes(
@@ -2119,16 +2119,16 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			fields.ExtensionSource.String(
 				baseResult.ToSource,
 			),
-			fields.ExtensionUpgradeDurationMs.Int64(elapsed),
-			fields.ExtensionUpgradeOutcome.String(
+			fields.ExtensionUpdateDurationMs.Int64(elapsed),
+			fields.ExtensionUpdateOutcome.String(
 				baseResult.Status.String(),
 			),
-			fields.ExtensionDependencyUpgradeCount.Int(
+			fields.ExtensionDependencyUpdateCount.Int(
 				extensions.CountDependencyUpgrades(baseResult.DependencyUpgrades),
 			),
 		)
 		if baseResult.Status == extensions.UpgradeStatusFailed {
-			span.SetStatus(codes.Error, "upgrade.failed")
+			span.SetStatus(codes.Error, "update.failed")
 		} else {
 			span.SetStatus(codes.Ok, "")
 		}

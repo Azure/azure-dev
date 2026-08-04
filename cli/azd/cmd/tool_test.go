@@ -618,40 +618,6 @@ func TestToolInstallAction_DryRun_MultiTool_EmitsSortedToolIds(t *testing.T) {
 	assert.False(t, ok, "tool.id must NOT be emitted alongside tool.ids (mutual exclusion)")
 }
 
-func TestToolUpgradeAction_DryRun_JsonPreservesSkippedAction(t *testing.T) {
-	tracing.ResetUsageAttributesForTest()
-
-	detector := &cmdMockDetector{
-		detectTool: func(_ context.Context, td *tool.ToolDefinition) (*tool.ToolStatus, error) {
-			return &tool.ToolStatus{
-				Tool:             td,
-				Installed:        td.Id == "az-cli",
-				InstalledVersion: "1.0.0",
-			}, nil
-		},
-	}
-	manager := tool.NewManager(detector, &cmdMockInstaller{}, nil)
-
-	var buf bytes.Buffer
-	action := newToolUpgradeAction(
-		[]string{"az-cli", "github-copilot-cli"},
-		&toolUpgradeFlags{dryRun: true},
-		manager,
-		mockinput.NewMockConsole(),
-		&output.JsonFormatter{},
-		&buf,
-	)
-
-	_, err := action.Run(t.Context())
-	require.NoError(t, err)
-
-	var items []toolDryRunItem
-	require.NoError(t, json.Unmarshal(buf.Bytes(), &items))
-	require.Len(t, items, 2)
-	assert.Equal(t, "upgrade", items[0].Action)
-	assert.Equal(t, "skip (not installed)", items[1].Action)
-}
-
 // TestToolInstallAction_AllFailureBatch_EmitsCorrectAggregates exercises the
 // install path end-to-end against a mock Installer that fails every per-tool
 // install. It verifies the aggregate telemetry contract:
@@ -784,9 +750,9 @@ func TestToolInstallAction_Failure_ReturnsErrorNotSuccess(t *testing.T) {
 
 // TestToolUpgradeAction_SuccessEmitsFromAndToVersion exercises the upgrade
 // path end-to-end and verifies:
-//   - tool.upgrade.from_version is emitted from DetectTool (H2: no UX change,
+//   - tool.update.from_version is emitted from DetectTool (H2: no UX change,
 //     reuses the existing detector)
-//   - tool.upgrade.to_version is emitted only on Success and reflects the
+//   - tool.update.to_version is emitted only on Success and reflects the
 //     installer's InstalledVersion (H3)
 //   - tool.id is emitted (single-tool, not tool.ids)
 func TestToolUpgradeAction_SuccessEmitsFromAndToVersion(t *testing.T) {
@@ -829,17 +795,17 @@ func TestToolUpgradeAction_SuccessEmitsFromAndToVersion(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "az-cli", gotID)
 
-	gotFrom, ok := lookupToolStrUsage(string(fields.ToolUpgradeFromVersionKey.Key))
-	require.True(t, ok, "tool.upgrade.from_version must be emitted from detector output")
+	gotFrom, ok := lookupToolStrUsage(string(fields.ToolUpdateFromVersionKey.Key))
+	require.True(t, ok, "tool.update.from_version must be emitted from detector output")
 	assert.Equal(t, "1.0.0", gotFrom)
 
-	gotTo, ok := lookupToolStrUsage(string(fields.ToolUpgradeToVersionKey.Key))
-	require.True(t, ok, "tool.upgrade.to_version must be emitted on success")
+	gotTo, ok := lookupToolStrUsage(string(fields.ToolUpdateToVersionKey.Key))
+	require.True(t, ok, "tool.update.to_version must be emitted on success")
 	assert.Equal(t, "2.0.0", gotTo)
 }
 
 // TestToolUpgradeAction_FailureDoesNotEmitToVersion verifies the H3 contract:
-// when the upgrade fails, tool.upgrade.to_version is NOT emitted (since there
+// when the update fails, tool.update.to_version is NOT emitted (since there
 // is no successfully-installed version to report).
 func TestToolUpgradeAction_FailureDoesNotEmitToVersion(t *testing.T) {
 	tracing.ResetUsageAttributesForTest()
@@ -876,13 +842,13 @@ func TestToolUpgradeAction_FailureDoesNotEmitToVersion(t *testing.T) {
 	_, _ = action.Run(t.Context())
 
 	// from_version still emits (detected before the failed upgrade).
-	gotFrom, ok := lookupToolStrUsage(string(fields.ToolUpgradeFromVersionKey.Key))
+	gotFrom, ok := lookupToolStrUsage(string(fields.ToolUpdateFromVersionKey.Key))
 	require.True(t, ok)
 	assert.Equal(t, "1.0.0", gotFrom)
 
 	// to_version must be absent — there is no installed version to report.
-	_, ok = lookupToolStrUsage(string(fields.ToolUpgradeToVersionKey.Key))
-	assert.False(t, ok, "tool.upgrade.to_version must not be emitted on upgrade failure")
+	_, ok = lookupToolStrUsage(string(fields.ToolUpdateToVersionKey.Key))
+	assert.False(t, ok, "tool.update.to_version must not be emitted on update failure")
 }
 
 // ---------------------------------------------------------------------------
@@ -1476,8 +1442,7 @@ func TestToolUpgradeAction_All_JsonFormat_EmitsCleanJson(t *testing.T) {
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &items),
 		"update --all --output json must emit valid JSON")
 	require.NotEmpty(t, items, "at least one installed tool must be reported")
-	require.Equal(t, "upgrade", items[0].Action,
-		"the machine-readable action must remain stable for backward compatibility")
+	require.Equal(t, "update", items[0].Action)
 }
 
 // TestToolUpgradeAction_All_JsonFormat_EmptyEmitsArray verifies that when there

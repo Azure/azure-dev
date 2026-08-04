@@ -29,8 +29,8 @@ import (
 
 // singleResultCommonAttrs returns the usage attributes shared by single-target
 // `azd tool install` and `azd tool update`: success, tool.id, and the
-// installation strategy. Callers append upgrade-specific version attrs
-// (tool.upgrade.{from,to}_version) on top.
+// installation strategy. Callers append update-specific version attrs
+// (tool.update.{from,to}_version) on top.
 //
 // Returns nil if r is nil so callers can safely pass through results without
 // pre-validating the slice element.
@@ -53,7 +53,7 @@ func singleResultCommonAttrs(r *tool.InstallResult) []attribute.KeyValue {
 // emitToolInstallTelemetry emits aggregate telemetry attributes for a batch
 // install or upgrade operation. When the batch contains exactly one tool the
 // caller is responsible for also emitting tool.id, tool.install.strategy, and
-// tool.install.success (and, for upgrades, tool.upgrade.{from,to}_version).
+// tool.install.success (and, for updates, tool.update.{from,to}_version).
 //
 // When the batch infrastructure itself fails (opErr != nil and results is
 // empty) every requested tool is counted as a failure and its ID is added to
@@ -1223,7 +1223,7 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 	var toolsToUpgrade []*tool.ToolDefinition
 
 	// fromVersions captures the pre-upgrade installed version per tool ID,
-	// populated on both branches so that tool.upgrade.from_version is
+	// populated on both branches so that tool.update.from_version is
 	// emitted on the single-tool path regardless of whether the user
 	// supplied explicit args. Detection failures are non-fatal here —
 	// from_version is a best-effort telemetry signal, not a precondition
@@ -1372,21 +1372,16 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		singleAttrs := singleResultCommonAttrs(r)
 		if r.Tool != nil {
 			if from, ok := fromVersions[r.Tool.Id]; ok && from != "" {
-				singleAttrs = append(singleAttrs, fields.ToolUpgradeFromVersionKey.String(from))
+				singleAttrs = append(singleAttrs, fields.ToolUpdateFromVersionKey.String(from))
 			}
 		}
 		if r.Success && r.InstalledVersion != "" {
-			singleAttrs = append(singleAttrs, fields.ToolUpgradeToVersionKey.String(r.InstalledVersion))
+			singleAttrs = append(singleAttrs, fields.ToolUpdateToVersionKey.String(r.InstalledVersion))
 		}
 		tracing.SetUsageAttributes(singleAttrs...)
 	}
 
 	if a.formatter.Kind() == output.JsonFormat {
-		// Keep the existing machine-readable action value stable for callers
-		// using either the update command or its upgrade alias.
-		for _, result := range upgradeResults {
-			result.Action = "upgrade"
-		}
 		return nil, a.formatter.Format(upgradeResults, a.writer, nil)
 	}
 
@@ -1556,13 +1551,6 @@ func (a *toolUpgradeAction) dryRun(
 	}
 
 	if a.formatter.Kind() == output.JsonFormat {
-		// Keep the existing machine-readable action value stable for callers
-		// using either the update command or its upgrade alias.
-		for i := range rows {
-			if rows[i].Action == "update" {
-				rows[i].Action = "upgrade"
-			}
-		}
 		return nil, a.formatter.Format(rows, a.writer, nil)
 	}
 

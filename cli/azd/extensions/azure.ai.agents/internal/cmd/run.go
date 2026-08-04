@@ -38,9 +38,10 @@ const (
 	agentInspectorExtensionID     = "azure.ai.inspector"
 	agentInspectorReadyPollPeriod = 250 * time.Millisecond
 	// defaultInspectorUIPort mirrors the default UI port of the
-	// azure.ai.inspector extension. It is referenced only in help text: when
-	// --inspector-port is unset we do not forward the flag, so the inspector
-	// extension remains the single source of truth for the actual default.
+	// azure.ai.inspector extension. The inspector extension remains the source
+	// of truth for the actual default: when --inspector-port is unset we do not
+	// forward the flag. This constant is only used to describe that default in
+	// help text and to warn about a likely bind conflict, never to assert it.
 	defaultInspectorUIPort = 8087
 )
 
@@ -169,6 +170,12 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	// unaffected. Detection is self-contained (reads the agent definition), so
 	// this command has no dependency on the deploy-side activity work.
 	activityProfile := resolveActivityRunProfile(runCtx.Definition)
+
+	// Surface the advisory --inspector-port problems before the agent starts.
+	// Once proc.Start() runs, this would land under the dependency install
+	// output and compete with the agent's own stdout/stderr, where it is easy
+	// to scroll past.
+	warnInspectorPortIssues(flags, activityProfile.IsActivity, os.Stderr)
 
 	// Resolve start command: --start-command flag > azure.yaml startupCommand > detect
 	startCmd := flags.startCommand
@@ -321,15 +328,6 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	// are suppressed by --no-inspector or its neutral alias --no-client.
 	suppressClient := flags.noInspector || flags.noClient
 	if activityProfile.IsActivity {
-		// Activity agents open the Playground, which has no inspector UI port.
-		// This branch is only known after the service is resolved, and users
-		// can't always predict which client they'll get, so an unusable
-		// --inspector-port warns rather than failing the run.
-		if flags.inspectorPortSet {
-			fmt.Fprintln(os.Stderr,
-				"Warning: --inspector-port is ignored for activity-protocol agents, "+
-					"which open the Microsoft 365 Agents Playground instead of the Agent Inspector.")
-		}
 		handlePlaygroundAutoLaunch(ctx, flags.port, flags.channel, suppressClient, os.Stderr)
 	} else {
 		inspectorInstalled := false
@@ -580,6 +578,45 @@ func validateInspectorPortFlags(flags *runFlags) error {
 	}
 
 	return nil
+}
+
+// warnInspectorPortIssues emits the --inspector-port problems that are advisory
+// rather than fatal, so they can be surfaced before the agent process starts.
+// The fatal combinations are rejected up front by validateInspectorPortFlags.
+//
+// Two cases warn instead of failing:
+//
+//   - Activity-protocol agents open the Playground, which has no inspector UI
+//     port. Which client a service gets is only known after the definition is
+//     resolved, so a user cannot reliably predict it from the command line.
+//   - The agent port matches the inspector's default UI port while
+//     --inspector-port is unset. The inspector extension owns that default, so
+//     azd flags the likely bind conflict rather than asserting a value it does
+//     not control.
+func warnInspectorPortIssues(flags *runFlags, isActivity bool, stderr io.Writer) {
+	if isActivity {
+		if flags.inspectorPortSet {
+			fmt.Fprintln(stderr,
+				"Warning: --inspector-port is ignored for activity-protocol agents, "+
+					"which open the Microsoft 365 Agents Playground instead of the Agent Inspector.")
+		}
+		return
+	}
+
+	// No inspector launches, so no port is used and nothing can collide.
+	// (--inspector-port with a suppressed client is already a hard error.)
+	if flags.noInspector || flags.noClient {
+		return
+	}
+
+	// An explicit --inspector-port equal to --port is already a hard error; this
+	// covers the unset case, where the inspector falls back to its own default.
+	if !flags.inspectorPortSet && flags.port == defaultInspectorUIPort {
+		fmt.Fprintf(stderr,
+			"Warning: --port %d is also the Agent Inspector UI's default port, so the inspector may fail to start.\n"+
+				"Pass --inspector-port to move the Agent Inspector UI to a free port.\n",
+			flags.port)
+	}
 }
 
 func isInspectorExtensionInstalled(ctx context.Context, azdClient *azdext.AzdClient) (bool, error) {

@@ -424,6 +424,85 @@ func TestValidateInspectorPortFlags(t *testing.T) {
 	}
 }
 
+func TestWarnInspectorPortIssues(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		flags      runFlags
+		isActivity bool
+		wantParts  []string
+		wantSilent bool
+	}{
+		{
+			name:       "activity agent with an explicit inspector port warns",
+			flags:      runFlags{port: 9091, inspectorPort: 9002, inspectorPortSet: true},
+			isActivity: true,
+			wantParts:  []string{"--inspector-port is ignored", "Playground"},
+		},
+		{
+			name:       "activity agent without the flag is silent",
+			flags:      runFlags{port: 9091},
+			isActivity: true,
+			wantSilent: true,
+		},
+		{
+			name:      "agent port on the inspector default warns",
+			flags:     runFlags{port: defaultInspectorUIPort},
+			wantParts: []string{"also the Agent Inspector UI's default port", "Pass --inspector-port"},
+		},
+		{
+			name:       "explicit inspector port suppresses the default collision warning",
+			flags:      runFlags{port: defaultInspectorUIPort, inspectorPort: 9002, inspectorPortSet: true},
+			wantSilent: true,
+		},
+		{
+			name:       "suppressed client launches no inspector, so nothing can collide",
+			flags:      runFlags{port: defaultInspectorUIPort, noClient: true},
+			wantSilent: true,
+		},
+		{
+			name:       "deprecated suppress flag is also honored",
+			flags:      runFlags{port: defaultInspectorUIPort, noInspector: true},
+			wantSilent: true,
+		},
+		{
+			name:       "unrelated agent port is silent",
+			flags:      runFlags{port: DefaultPort},
+			wantSilent: true,
+		},
+		{
+			name:       "activity agent on the inspector default port is silent",
+			flags:      runFlags{port: defaultInspectorUIPort},
+			isActivity: true,
+			wantSilent: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			flags := tt.flags
+			var stderr bytes.Buffer
+			warnInspectorPortIssues(&flags, tt.isActivity, &stderr)
+
+			got := stderr.String()
+			if tt.wantSilent {
+				if got != "" {
+					t.Fatalf("expected no warning, got %q", got)
+				}
+				return
+			}
+			for _, part := range tt.wantParts {
+				if !strings.Contains(got, part) {
+					t.Fatalf("warning = %q, want it to contain %q", got, part)
+				}
+			}
+		})
+	}
+}
+
 func TestInspectorLaunchWarningForMissingExtension(t *testing.T) {
 	t.Parallel()
 

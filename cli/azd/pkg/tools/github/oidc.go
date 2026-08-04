@@ -13,8 +13,10 @@ import (
 // OIDCSubjectConfig represents the OIDC subject claim customization
 // returned by the GitHub Actions OIDC customization API.
 type OIDCSubjectConfig struct {
-	UseDefault       bool     `json:"use_default"`
-	IncludeClaimKeys []string `json:"include_claim_keys"`
+	UseDefault          bool     `json:"use_default"`
+	IncludeClaimKeys    []string `json:"include_claim_keys"`
+	UseImmutableSubject bool     `json:"use_immutable_subject"`
+	SubClaimPrefix      string   `json:"sub_claim_prefix"`
 }
 
 // RepoInfo holds GitHub API repository metadata needed for OIDC subject construction.
@@ -107,9 +109,12 @@ func (cli *Cli) GetRepoInfo(
 // pre-fetched. The suffix is the trailing part of the subject, e.g.
 // "ref:refs/heads/main" or "pull_request".
 //
-// If oidcConfig is nil or UseDefault is true, the default GitHub format is used:
+// If oidcConfig is nil or UseDefault is true, the default GitHub format is used.
+// When GitHub returns SubClaimPrefix, it is the authoritative repository prefix
+// and may include immutable owner and repository IDs:
 //
 //	repo:{owner}/{repo}:{suffix}
+//	repo:{owner}@{owner_id}/{repo}@{repo_id}:{suffix}
 //
 // For custom configs, claim keys are mapped to values and joined.
 // The special "context" claim key represents the dynamic trailing part of
@@ -123,6 +128,13 @@ func BuildOIDCSubject(
 	suffix string,
 ) (string, error) {
 	if oidcConfig == nil || oidcConfig.UseDefault {
+		if oidcConfig != nil && oidcConfig.SubClaimPrefix != "" {
+			return fmt.Sprintf(
+				"%s:%s",
+				strings.TrimSuffix(oidcConfig.SubClaimPrefix, ":"),
+				suffix,
+			), nil
+		}
 		return fmt.Sprintf("repo:%s:%s", repoSlug, suffix), nil
 	}
 

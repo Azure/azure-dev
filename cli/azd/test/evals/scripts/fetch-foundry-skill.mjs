@@ -96,7 +96,7 @@ try {
     renameSync(src, dest);
 
     writeFileSync(stamp, [
-        `repo=${REPO_URL}`,
+        `repo=${redact(REPO_URL)}`,
         `ref=${REF}`,
         `commit=${resolvedSha}`,
         `fetched_at=${new Date().toISOString().replace(/\.\d{3}Z$/, "Z")}`,

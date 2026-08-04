@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.4 (2026-07-30)
+
+### Bugs Fixed
+
+- [[#9292]](https://github.com/Azure/azure-dev/pull/9292) Fix Foundry ARM deployment names exceeding ARM's 64-character limit when long azd environment names are used. Long environment-name segments are now truncated while retaining deterministic environment and project-path hashes for uniqueness.
+
 ## 1.0.0-beta.3 (2026-07-23)
 
 ### Features Added

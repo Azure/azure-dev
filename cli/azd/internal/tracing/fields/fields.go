@@ -295,11 +295,12 @@ const (
 	EnvCloudShell         = "Azure CloudShell"
 
 	// AI Coding Agent environments
-	EnvClaudeCode       = "Claude Code"
-	EnvGitHubCopilotCLI = "GitHub Copilot CLI"
-	EnvGitHubCopilotApp = "GitHub Copilot App"
-	EnvGemini           = "Gemini"
-	EnvOpenCode         = "OpenCode"
+	EnvClaudeCode          = "Claude Code"
+	EnvGitHubCopilotCLI    = "GitHub Copilot CLI"
+	EnvGitHubCopilotApp    = "GitHub Copilot App"
+	EnvGitHubCopilotVSCode = "GitHub Copilot VSCode"
+	EnvGemini              = "Gemini"
+	EnvOpenCode            = "OpenCode"
 
 	// Continuous Integration environments
 

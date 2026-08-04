@@ -471,10 +471,12 @@ class is classified as `SystemMetadata` for `FeatureInsight`. Extension authors
 are responsible for keeping values low cardinality and free of customer
 content, and for having them privacy reviewed with their extension.
 
-Only extensions installed from the official `azd` registry produce these spans,
-which is what ties the recorded values to that privacy review. A report from any
-other install source succeeds but records nothing, as does any report past the
-limit of 100 spans per `azd` invocation.
+Only extensions whose configured `azd` source matches the verified official
+registry name, type, and normalized URL produce these spans, which is what ties
+the recorded values to that privacy review. A report from any other install
+source succeeds but records nothing, as does any report past the limit of 100
+spans per `azd` invocation. This is a configuration-based admission check, not
+a cryptographic provenance guarantee.
 </details>
 
 <details>

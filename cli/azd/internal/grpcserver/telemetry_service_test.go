@@ -29,8 +29,9 @@ const testExtensionId = "azd.internal.telemetry"
 
 // stubExtensionLookup returns a configured error or installed record.
 type stubExtensionLookup struct {
-	extension *extensions.Extension
-	err       error
+	extension     *extensions.Extension
+	err           error
+	sourceConfigs map[string]*extensions.SourceConfig
 }
 
 func (s stubExtensionLookup) GetInstalled(
@@ -45,6 +46,22 @@ func (s stubExtensionLookup) GetInstalled(
 	}
 
 	return s.extension, nil
+}
+
+func (s stubExtensionLookup) IsOfficialRegistrySource(
+	ctx context.Context,
+	name string,
+) (bool, error) {
+	if s.sourceConfigs == nil {
+		return strings.EqualFold(name, extensions.MainRegistryName), nil
+	}
+
+	source, ok := s.sourceConfigs[extensions.NormalizeSourceKey(name)]
+	if !ok {
+		return false, nil
+	}
+
+	return extensions.IsOfficialMainRegistrySource(source), nil
 }
 
 func testExtension() *extensions.Extension {
@@ -261,6 +278,55 @@ func Test_TelemetryService_DropsEventFromUnofficialSource(t *testing.T) {
 	}
 }
 
+func Test_TelemetryService_RejectsPollutedMainSource(t *testing.T) {
+	t.Parallel()
+
+	extension := testExtension()
+	service := newTelemetryService(stubExtensionLookup{
+		extension: extension,
+		sourceConfigs: map[string]*extensions.SourceConfig{
+			extensions.MainRegistryName: {
+				Name:     extensions.MainRegistryName,
+				Type:     extensions.SourceKindUrl,
+				Location: "https://example.com/registry",
+			},
+		},
+	})
+
+	ctx, command := testTracerProvider.Tracer("test").Start(t.Context(), "cmd.deploy")
+	defer command.End()
+
+	resp, err := callServiceWithContext(t, service, ctx, extension,
+		&azdext.ReportUsageRequest{EventName: "deploy.completed"})
+
+	require.NoError(t, err)
+	require.False(t, resp.Accepted)
+	require.Empty(t, usageSpansIn(command.SpanContext().TraceID()))
+}
+
+func Test_TelemetryService_ValidatesBeforeSourceGate(t *testing.T) {
+	t.Parallel()
+
+	extension := testExtension()
+	extension.Source = "dev"
+	service := newTelemetryService(stubExtensionLookup{extension: extension})
+
+	_, err := callServiceWithContext(t, service, t.Context(), extension,
+		&azdext.ReportUsageRequest{
+			EventName: "deploy.completed",
+			Attributes: map[string]string{
+				"deploy.mode": strings.Repeat("v", maxUsageValueBytes+1),
+			},
+		})
+	requireCode(t, err, codes.InvalidArgument)
+	require.Zero(t, service.recorded.Load())
+
+	resp, err := callServiceWithContext(t, service, t.Context(), extension,
+		&azdext.ReportUsageRequest{EventName: "deploy.completed"})
+	require.NoError(t, err)
+	require.False(t, resp.Accepted)
+}
+
 func Test_TelemetryService_CapsEventsPerInvocation(t *testing.T) {
 	t.Parallel()
 
@@ -394,7 +460,7 @@ func Test_TelemetryService_RejectsInvalidRequests(t *testing.T) {
 		"nil":               nil,
 		"missing eventName": {},
 		"long eventName": {
-			EventName: strings.Repeat("e", maxUsageEventNameLength+1),
+			EventName: strings.Repeat("e", maxUsageEventNameBytes+1),
 		},
 		"empty key": {
 			EventName:  "deploy.completed",
@@ -403,13 +469,13 @@ func Test_TelemetryService_RejectsInvalidRequests(t *testing.T) {
 		"long key": {
 			EventName: "deploy.completed",
 			Attributes: map[string]string{
-				strings.Repeat("k", maxUsageKeyLength+1): "container",
+				strings.Repeat("k", maxUsageKeyBytes+1): "container",
 			},
 		},
 		"long value": {
 			EventName: "deploy.completed",
 			Attributes: map[string]string{
-				"deploy.mode": strings.Repeat("v", maxUsageValueLength+1),
+				"deploy.mode": strings.Repeat("v", maxUsageValueBytes+1),
 			},
 		},
 		"too many attributes": {
@@ -434,11 +500,11 @@ func Test_TelemetryService_AcceptsValuesAtTheBounds(t *testing.T) {
 	ctx, command := testTracerProvider.Tracer("test").Start(t.Context(), "cmd.deploy")
 	defer command.End()
 
-	key := strings.Repeat("k", maxUsageKeyLength)
+	key := strings.Repeat("k", maxUsageKeyBytes)
 	resp, err := callWithContext(t, ctx, testExtension(), &azdext.ReportUsageRequest{
-		EventName: strings.Repeat("e", maxUsageEventNameLength),
+		EventName: strings.Repeat("e", maxUsageEventNameBytes),
 		Attributes: map[string]string{
-			key: strings.Repeat("v", maxUsageValueLength),
+			key: strings.Repeat("v", maxUsageValueBytes),
 		},
 	})
 
@@ -448,6 +514,24 @@ func Test_TelemetryService_AcceptsValuesAtTheBounds(t *testing.T) {
 	recorded := usageSpansIn(command.SpanContext().TraceID())
 	require.Len(t, recorded, 1)
 	require.Contains(t, attributesOf(recorded[0]), attribute.Key("ext."+key))
+}
+
+func Test_TelemetryService_UsesUtf8ByteLimits(t *testing.T) {
+	t.Parallel()
+
+	accepted := strings.Repeat("é", 63)
+	rejected := accepted + "éa"
+
+	resp, err := callWith(t, testExtension(), &azdext.ReportUsageRequest{
+		EventName: accepted,
+	})
+	require.NoError(t, err)
+	require.True(t, resp.Accepted)
+
+	_, err = callWith(t, testExtension(), &azdext.ReportUsageRequest{
+		EventName: rejected,
+	})
+	requireCode(t, err, codes.InvalidArgument)
 }
 
 func Test_TelemetryService_RejectsUninstalledExtension(t *testing.T) {

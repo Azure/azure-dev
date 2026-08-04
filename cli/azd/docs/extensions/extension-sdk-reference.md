@@ -527,9 +527,9 @@ Always call `defer client.Close()` after creation.
 
 `Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{EventName, Attributes})`
 lets an authenticated extension report a named usage event with an arbitrary
-`map[string]string` of attributes. There is no capability to declare and
-nothing to register in the registry — telemetry is a service `azd` offers to
-extensions installed from the official `azd` registry.
+`map[string]string` of attributes. Telemetry is a service `azd` offers to
+extensions whose configured source matches the verified official registry
+name, type, and normalized URL.
 
 The host writes `extension.id`, `extension.version`, and `extension.source`
 from the signed claims and the installed record, and `extension.event` from the
@@ -547,14 +547,16 @@ so the same code path runs during local development and in production. Run
 `azd --debug` to see which applied.
 
 ```go
-_, err := client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
+if _, err := client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
     EventName:  "deploy.completed",
     Attributes: map[string]string{"deploy.mode": "container"},
-})
+}); err != nil {
+    log.Printf("telemetry unavailable: %v", err)
+}
 ```
 
 The host bounds shape only: at most 32 attributes, event name and keys at most
-128 characters, and values at most 512 characters. It does not inspect what a
+128 UTF-8 bytes, and values at most 512 UTF-8 bytes. It does not inspect what a
 value means, so keeping values low cardinality and free of customer content is
 the extension author's responsibility. See
 [Extension Telemetry](./extension-telemetry.md) for the full rules and review

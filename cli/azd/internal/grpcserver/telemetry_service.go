@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"strings"
 	"sync/atomic"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -27,19 +26,17 @@ const (
 	// maxUsageAttributes caps attributes per event. The exporter enforces
 	// no such limit, so this guards against a loop inflating span size.
 	maxUsageAttributes = 32
-	// maxUsageEventNameLength bounds the extension.event value, which is a
-	// query dimension and should stay low cardinality.
-	maxUsageEventNameLength = 128
-	// maxUsageKeyLength bounds a caller key. The App Insights contracts
-	// library truncates and renames property names longer than 150
-	// characters, which would silently merge two distinct keys into one
-	// column. Prefixed with "ext.", 128 stays well clear of that.
-	maxUsageKeyLength = 128
-	// maxUsageValueLength bounds a caller value. The exporter truncates at
-	// 8192 with only a diagnostic, so this is a cardinality and cost
-	// policy: a payload dump fails loudly here instead of quietly landing
-	// in the pipeline.
-	maxUsageValueLength = 512
+	// maxUsageEventNameBytes bounds the extension.event value.
+	// The value is a query dimension and should stay low cardinality.
+	maxUsageEventNameBytes = 128
+	// maxUsageKeyBytes bounds a caller key. The App Insights contracts
+	// library truncates and renames property names longer than 150 UTF-8
+	// bytes, which would silently merge distinct keys into one column.
+	maxUsageKeyBytes = 128
+	// maxUsageValueBytes bounds a caller value. The exporter
+	// truncates at 8192 bytes with only a diagnostic, so this is a
+	// cardinality and cost policy: payload dumps fail loudly here.
+	maxUsageValueBytes = 512
 	// maxUsageEventsPerInvocation caps recorded events for one azd
 	// process. Every other bound is per event and says nothing about
 	// how many arrive, and ReportUsage can be called in a loop.
@@ -50,6 +47,7 @@ const (
 // signed extension id. *extensions.Manager satisfies it.
 type installedExtensionLookup interface {
 	GetInstalled(options extensions.FilterOptions) (*extensions.Extension, error)
+	IsOfficialRegistrySource(ctx context.Context, name string) (bool, error)
 }
 
 // telemetryService implements azdext.TelemetryServiceServer.
@@ -97,14 +95,8 @@ func (s *telemetryService) ReportUsage(
 		return nil, status.Error(codes.Unauthenticated, "validated extension claims are required")
 	}
 
-	if req == nil || req.EventName == "" || len(req.EventName) > maxUsageEventNameLength {
-		return nil, status.Errorf(codes.InvalidArgument,
-			"event name is required and must be at most %d characters", maxUsageEventNameLength)
-	}
-
-	if len(req.Attributes) > maxUsageAttributes {
-		return nil, status.Errorf(codes.InvalidArgument,
-			"event declares more than %d attributes", maxUsageAttributes)
+	if err := validateUsageRequest(req); err != nil {
+		return nil, err
 	}
 
 	extension, err := s.extensions.GetInstalled(extensions.FilterOptions{Id: claims.Subject})
@@ -116,18 +108,15 @@ func (s *telemetryService) ReportUsage(
 		return nil, status.Error(codes.Internal, "failed to verify installed extension")
 	}
 
-	// Only extensions admitted to the official azd registry report
-	// usage. Values are authored by the extension and are never
-	// reviewed at runtime, so registry admission is what keeps
-	// unchecked content out of azd's shared pipeline.
-	//
-	// This is a source check, not proof of first party. Registry
-	// admission is the durable control and this only reflects it, so a
-	// future third-party entry in the official registry would report
-	// too. A blank source is not treated as official: the upgrade
-	// resolver defaults it to the main registry, but a gate cannot
-	// inherit that leniency.
-	if !strings.EqualFold(extension.Source, extensions.MainRegistryName) {
+	official, err := s.extensions.IsOfficialRegistrySource(ctx, extension.Source)
+	if err != nil {
+		log.Printf(
+			"telemetry: failed to verify source %q for %s: %v",
+			extension.Source, extension.Id, err)
+		return &azdext.ReportUsageResponse{Accepted: false}, nil
+	}
+
+	if !official {
 		log.Printf(
 			"telemetry: dropping usage event from %s installed from source %q",
 			extension.Id, extension.Source)
@@ -143,16 +132,6 @@ func (s *telemetryService) ReportUsage(
 	}
 
 	for key, value := range req.Attributes {
-		if key == "" || len(key) > maxUsageKeyLength {
-			return nil, status.Errorf(codes.InvalidArgument,
-				"attribute keys are required and must be at most %d characters", maxUsageKeyLength)
-		}
-
-		if len(value) > maxUsageValueLength {
-			return nil, status.Errorf(codes.InvalidArgument,
-				"attribute values must be at most %d characters", maxUsageValueLength)
-		}
-
 		attributes = append(attributes, fields.ExtensionUsageAttribute(key).String(value))
 	}
 
@@ -177,4 +156,33 @@ func (s *telemetryService) ReportUsage(
 	span.End()
 
 	return &azdext.ReportUsageResponse{Accepted: true}, nil
+}
+
+func validateUsageRequest(req *azdext.ReportUsageRequest) error {
+	if req == nil || req.EventName == "" || len(req.EventName) > maxUsageEventNameBytes {
+		return status.Errorf(codes.InvalidArgument,
+			"event name is required and must be at most %d UTF-8 bytes",
+			maxUsageEventNameBytes)
+	}
+
+	if len(req.Attributes) > maxUsageAttributes {
+		return status.Errorf(codes.InvalidArgument,
+			"event declares more than %d attributes", maxUsageAttributes)
+	}
+
+	for key, value := range req.Attributes {
+		if key == "" || len(key) > maxUsageKeyBytes {
+			return status.Errorf(codes.InvalidArgument,
+				"attribute keys are required and must be at most %d UTF-8 bytes",
+				maxUsageKeyBytes)
+		}
+
+		if len(value) > maxUsageValueBytes {
+			return status.Errorf(codes.InvalidArgument,
+				"attribute values must be at most %d UTF-8 bytes",
+				maxUsageValueBytes)
+		}
+	}
+
+	return nil
 }

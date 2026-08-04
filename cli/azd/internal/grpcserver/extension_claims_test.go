@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 func Test_GenerateSigningKey_Length(t *testing.T) {
@@ -42,7 +43,12 @@ func Test_GenerateParse_TokenClaims(t *testing.T) {
 		Version:     "0.0.1",
 	}
 
-	token, err := GenerateExtensionToken(extension, serverInfo)
+	traceContext := propagation.TraceContext{}.Extract(t.Context(),
+		propagation.MapCarrier{
+			traceparentHeader: testTraceparent(),
+			tracestateHeader:  "vendor=value",
+		})
+	token, err := GenerateExtensionTokenWithContext(traceContext, extension, serverInfo)
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 
@@ -53,6 +59,8 @@ func Test_GenerateParse_TokenClaims(t *testing.T) {
 
 		require.Equal(t, serverInfo.Address, claims.Audience[0])
 		require.Equal(t, extension.Id, claims.Subject)
+		require.Equal(t, testTraceparent(), claims.Traceparent)
+		require.Equal(t, "vendor=value", claims.Tracestate)
 	})
 
 	t.Run("Invalid", func(t *testing.T) {

@@ -173,6 +173,10 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		kv := fields.ExtensionSourceKind.String("location")
 		require.Equal(t, "extension.source.kind", string(kv.Key))
 		require.Equal(t, "location", kv.Value.AsString())
+
+		kv = fields.ExtensionEvent.String("deploy.completed")
+		require.Equal(t, "extension.event", string(kv.Key))
+		require.Equal(t, "deploy.completed", kv.Value.AsString())
 	})
 
 	// Provision validation telemetry fields (emitted by both the Bicep

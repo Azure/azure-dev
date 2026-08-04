@@ -138,9 +138,9 @@ The `telemetry` command demonstrates the telemetry service, which lets an extens
 
 The command reports a single `demo.telemetry.reported` event with two fixed, low-cardinality attributes and prints whether the host recorded it.
 
-Two things this example is showing:
+This example shows two things:
 
-- **Every value is a fixed enum.** Resource names, paths, prompts, and anything a user typed are customer content and must never be sent. The elapsed time is bucketed rather than reported exactly, so the dimension stays cheap to aggregate.
-- **A dropped event is not an error.** `ReportUsage` returns `Accepted: false` with no error when the host keeps nothing — because the extension was not installed from the official `azd` registry, or because the per-invocation event budget is spent. Run `azd` with `--debug` to see which. This means an extension runs the same code path during local development and in production.
+- **Every value is a fixed enum.** Resource names, paths, prompts, and anything a user typed are customer content and must never be sent.
+- **Telemetry is best effort.** `ReportUsage` errors are logged and shown as warnings without failing the command. `Accepted: false` is also non-fatal when the host drops an event because the configured source does not match the verified official `azd` registry or the per-invocation event budget is spent.
 
 See [Extension Telemetry](../../docs/extensions/extension-telemetry.md) for the full author guide.

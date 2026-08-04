@@ -49,7 +49,8 @@ records events from extensions admitted to the official registry.**
   OpenTelemetry attributes overwrite on a duplicate key, so without the prefix
   an extension sending `extension.id` would overwrite the host's own value.
 - Bounds are shape-only: at most 32 attributes, event name and keys at most 128
-  characters, values at most 512. No charset rules and no value enumeration.
+  UTF-8 bytes, values at most 512 UTF-8 bytes. No charset rules and no value
+  enumeration.
 - A separate volume bound caps recorded events at 100 per `azd` invocation. The
   shape bounds are per event and say nothing about how many arrive, and
   `ReportUsage` can be called in a loop. Budget is spent only by events that
@@ -58,21 +59,21 @@ records events from extensions admitted to the official registry.**
 - Telemetry is not a capability. Capabilities describe customer-facing features
   the host calls into; telemetry is a service the host offers, like every other
   service on the extension gRPC API.
-- Only extensions installed from the official `azd` registry are recorded.
-  Attribute values are authored by the extension and are never reviewed at
-  runtime, so registry admission is the thing that keeps unchecked third-party
-  content out of a pipeline covered by `azd`'s privacy statement. This is a
-  source check, not proof of first party: registry admission is the durable
-  control and the check only reflects it, so a future third-party entry in the
-  official registry would report too. A blank source is not treated as
-  official, even though the upgrade resolver defaults it to the main registry.
+- Only extensions whose installed `azd` source has the reserved name, URL, and
+  URL source type of the official registry are recorded. Attribute values are
+  authored by the extension and are never reviewed at runtime, so registry
+  admission is the thing that keeps unchecked third-party content out of a
+  pipeline covered by `azd`'s privacy statement. This is a configuration-based
+  source check, not a cryptographic provenance guarantee. A blank or polluted
+  source is not treated as official, even though the upgrade resolver defaults
+  a missing source to the main registry.
 - A dropped event is not an error. An extension outside the official registry,
   and one past the event budget, get `Accepted: false` and no span. Reporting is
   best effort, so an author runs the same code path during local development as
   in production instead of having to swallow an error that only appears in one
   of them. The reason is written to the `azd` log, visible with `--debug`.
-- `extension.source` is still recorded on the span. Once the gate has passed it
-  is a useful dimension rather than a filter.
+- `extension.source` is still recorded on the span. Once the verified source
+  gate has passed it is a useful dimension rather than a filter.
 - Accepted events are recorded on an `ext.usage` span rather than being appended
   to the command span.
 
@@ -136,7 +137,7 @@ install: telemetry ingestion is not authenticated per client, so a reviewed set
 cannot be enforced from the client anyway. Governing content authoritatively
 belongs downstream or in review, not in a runtime check.
 
-**Gate reporting on the official registry install source.** Adopted, after
+**Gate reporting on the verified official registry source.** Adopted, after
 review pushed back on shipping unchecked third-party strings into a pipeline
 covered by `azd`'s privacy statement. The earlier position — that gating
 `ext.usage` was inconsistent with `ext.run`, `ext.install`, and
@@ -146,12 +147,12 @@ without carrying its text. `ext.usage` is the first path where the extension
 supplies the strings.
 
 The caveat is that install source is a proxy for first party, not the same
-thing. It answers "did this come from the official registry", which only equals
-first party for as long as that registry stays first-party. If the intent is
-genuinely first-party-only, the durable control is registry admission and this
-check merely reflects it. It is also a client-side check against a record in
-user-writable config; that is acceptable because editing it already implies
-local write access, which is a strictly larger problem than telemetry.
+thing. It answers "does the configured source match the official registry",
+which only equals first party for as long as that registry stays first-party.
+Future reviewed third-party extensions may therefore report. It is also a
+client-side check against a record in user-writable config; that is acceptable
+because editing it already implies local write access, which is a strictly
+larger problem than telemetry.
 
 **Rejecting an unofficial extension with an error.** Rejected in favour of
 `Accepted: false`. An error forces every author to swallow a failure that

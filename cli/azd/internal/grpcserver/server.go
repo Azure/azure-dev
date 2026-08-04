@@ -100,13 +100,13 @@ func (s *Server) Start() (*ServerInfo, error) {
 	s.grpcServer = grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			s.errorWrappingInterceptor(),
-			s.traceContextInterceptor(),
 			s.tokenAuthInterceptor(&serverInfo),
+			s.traceContextInterceptor(),
 		),
 		grpc.ChainStreamInterceptor(
 			s.errorWrappingStreamInterceptor(),
-			s.traceContextStreamInterceptor(),
 			s.tokenAuthStreamInterceptor(&serverInfo),
+			s.traceContextStreamInterceptor(),
 		),
 	)
 

@@ -4,8 +4,7 @@
 package cmd
 
 import (
-	"fmt"
-	"time"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -23,27 +22,30 @@ func newTelemetryCommand() *cobra.Command {
 
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
-				return fmt.Errorf("failed to create azd client: %w", err)
+				log.Printf("demo telemetry: failed to create azd client: %v", err)
+				color.Yellow("Telemetry is unavailable; continuing without reporting.")
+				return nil
 			}
 
 			defer azdClient.Close()
 
-			started := time.Now()
-
-			// Every value here is a fixed, low-cardinality string. Never
-			// send resource names, paths, prompts, or anything a user
-			// typed: those are customer content and must not reach the
-			// telemetry pipeline. Durations are bucketed for the same
-			// reason, so the dimension stays cheap to aggregate.
 			resp, err := azdClient.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
 				EventName: "demo.telemetry.reported",
 				Attributes: map[string]string{
-					"demo.mode":     "sample",
-					"demo.duration": durationBucket(time.Since(started)),
+					"demo.mode":    "sample",
+					"demo.outcome": "completed",
 				},
 			})
 			if err != nil {
-				return fmt.Errorf("failed to report usage event: %w", err)
+				log.Printf("demo telemetry: failed to report usage: %v", err)
+				color.Yellow("Telemetry could not be reported; continuing.")
+				return nil
+			}
+
+			if resp == nil {
+				log.Print("demo telemetry: host returned an empty response")
+				color.Yellow("Telemetry returned no response; continuing.")
+				return nil
 			}
 
 			if resp.Accepted {
@@ -59,19 +61,5 @@ func newTelemetryCommand() *cobra.Command {
 
 			return nil
 		},
-	}
-}
-
-// durationBucket maps an elapsed time onto a small fixed set of values.
-// An exact duration would be unbounded cardinality, which makes the data
-// expensive to store and useless to aggregate.
-func durationBucket(elapsed time.Duration) string {
-	switch {
-	case elapsed < time.Second:
-		return "under_1s"
-	case elapsed < 10*time.Second:
-		return "under_10s"
-	default:
-		return "over_10s"
 	}
 }

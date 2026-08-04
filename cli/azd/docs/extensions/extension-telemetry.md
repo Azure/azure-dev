@@ -5,11 +5,15 @@
 This guide is for extension authors who need `azd` to record a usage signal on
 their behalf — for example, which deployment mode a user picked.
 
-Telemetry is a service `azd` offers to extensions installed from the official
-`azd` registry. There is no capability to declare and nothing to register: call
-`ReportUsage` with an event name and the attributes you care about. `azd` core
-owns the identity fields, namespaces your attributes, and bounds their size and
-number. It does not inspect what they mean.
+Telemetry is a service `azd` offers to extensions installed from the verified
+official `azd` registry source. Call `ReportUsage` with an event name and the
+attributes you care about. `azd` core owns the identity fields, namespaces your
+attributes, and bounds their size and number. It does not inspect what they
+mean.
+
+The reserved `azd` source is eligible only when its name, source type, and
+normalized URL match the official registry. This is a configuration-based
+admission check, not a cryptographic provenance guarantee.
 
 See [ADR-001](../../../../docs/architecture/adr-001-extension-telemetry-events.md)
 for the reasoning behind this design.
@@ -28,7 +32,7 @@ identity fields — a key of `extension.id` is recorded as `ext.extension.id`.
 ## Reporting an event
 
 ```go
-_, err := client.Telemetry().ReportUsage(
+if _, err := client.Telemetry().ReportUsage(
     ctx,
     &azdext.ReportUsageRequest{
         EventName: "deploy.completed",
@@ -37,12 +41,14 @@ _, err := client.Telemetry().ReportUsage(
             "retries":     "2",
         },
     },
-)
+); err != nil {
+    log.Printf("telemetry unavailable: %v", err)
+}
 ```
 
 Treat the call as best-effort. Older `azd` hosts return `Unimplemented`, and a
-malformed request is a plain error. Never let the result change command
-behavior, and never retry. Report as soon as the values are known so a later
+malformed request is a plain error. Log the error, but never let it change
+command behavior or retry. Report as soon as the values are known so a later
 failure in your command still keeps the signal.
 
 An event with no attributes is valid — "this happened" is a legitimate signal.
@@ -56,9 +62,9 @@ runnable with `azd demo telemetry`.
 | Rule | Limit |
 |---|---|
 | Attributes per event | 32 |
-| Event name length | 1–128 characters |
-| Attribute key length | 1–128 characters |
-| Attribute value length | 512 characters |
+| Event name length | 1–128 UTF-8 bytes |
+| Attribute key length | 1–128 UTF-8 bytes |
+| Attribute value length | 512 UTF-8 bytes |
 | Recorded events per `azd` invocation | 100 |
 
 There are no charset rules. Exceeding a per-event bound rejects the whole call
@@ -102,7 +108,7 @@ Two outcomes are deliberately **not** errors. The call succeeds and
 
 | Cause | Why |
 |---|---|
-| Your extension was not installed from the official `azd` registry | Attribute values are never reviewed at runtime, so registry admission is what keeps unchecked content out of `azd`'s pipeline |
+| Your configured source does not match the verified official `azd` registry | Attribute values are never reviewed at runtime, so registry admission is what keeps unchecked content out of `azd`'s pipeline |
 | The per-invocation event budget is spent | `ReportUsage` can be called in a loop, and the per-event bounds do not limit how many events arrive |
 
 Run `azd` with `--debug` to see which one applied.
@@ -121,7 +127,7 @@ attribute per entry in your map. The span shares the command's trace, so it
 joins to the originating command on `operation_Id` in Application Insights:
 
 ```kusto
-dependencies
+requests
 | where name == "ext.usage"
 | where customDimensions["extension.id"] == "contoso.tools"
 | where customDimensions["extension.event"] == "deploy.completed"

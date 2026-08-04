@@ -6,7 +6,9 @@ package grpcserver
 import (
 	"context"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -17,9 +19,8 @@ const (
 	tracestateHeader  = "tracestate"
 )
 
-// traceContextInterceptor restores the caller's W3C trace context so spans the
-// host records while serving an extension call join the command's trace
-// instead of starting an unrelated root span.
+// traceContextInterceptor restores the authenticated caller's trace
+// context so host spans join the command's trace.
 func (s *Server) traceContextInterceptor() grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
@@ -47,18 +48,35 @@ func (s *Server) traceContextStreamInterceptor() grpc.StreamServerInterceptor {
 	}
 }
 
-// withIncomingTraceContext extracts W3C trace context from gRPC metadata.
-// A missing or malformed traceparent leaves the context untouched, so calls
-// from older extensions keep working.
+// withIncomingTraceContext accepts only the signed trace.
+// It otherwise uses the signed context and ignores caller metadata.
 func withIncomingTraceContext(ctx context.Context) context.Context {
+	claims, err := extensions.GetClaimsFromContext(ctx)
+	if err != nil || claims.Traceparent == "" {
+		return ctx
+	}
+
+	tokenCarrier := propagation.MapCarrier{
+		traceparentHeader: claims.Traceparent,
+	}
+	if claims.Tracestate != "" {
+		tokenCarrier[tracestateHeader] = claims.Tracestate
+	}
+
+	tokenContext := propagation.TraceContext{}.Extract(context.Background(), tokenCarrier)
+	tokenSpanContext := trace.SpanContextFromContext(tokenContext)
+	if !tokenSpanContext.IsValid() {
+		return ctx
+	}
+
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
-		return ctx
+		return propagation.TraceContext{}.Extract(ctx, tokenCarrier)
 	}
 
 	parent := md.Get(traceparentHeader)
 	if len(parent) == 0 || parent[0] == "" {
-		return ctx
+		return propagation.TraceContext{}.Extract(ctx, tokenCarrier)
 	}
 
 	carrier := propagation.MapCarrier{traceparentHeader: parent[0]}
@@ -66,5 +84,12 @@ func withIncomingTraceContext(ctx context.Context) context.Context {
 		carrier[tracestateHeader] = state[0]
 	}
 
-	return propagation.TraceContext{}.Extract(ctx, carrier)
+	incomingContext := propagation.TraceContext{}.Extract(context.Background(), carrier)
+	incomingSpanContext := trace.SpanContextFromContext(incomingContext)
+	if incomingSpanContext.IsValid() &&
+		incomingSpanContext.TraceID() == tokenSpanContext.TraceID() {
+		return propagation.TraceContext{}.Extract(ctx, carrier)
+	}
+
+	return propagation.TraceContext{}.Extract(ctx, tokenCarrier)
 }

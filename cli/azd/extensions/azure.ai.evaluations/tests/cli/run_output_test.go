@@ -61,14 +61,17 @@ func TestCLIResultsShowRendersTheRows(t *testing.T) {
 	require.Contains(t, r.Stdout, f.FirstRunID)
 	require.Contains(t, r.Stdout, "Totals:")
 	require.Contains(t, r.Stdout, "CRITERION")
-	require.Contains(t, r.Stdout, "ITEM")
-	require.Contains(t, r.Stdout, "EVALUATOR")
-	require.Contains(t, r.Stdout, "SCORE")
 	require.Contains(t, r.Stdout, f.EvaluatorName)
 
-	// The row's own input, so that a table printing only counts would not
-	// satisfy every assertion above.
-	require.Contains(t, r.Stdout, "query=")
+	// One row per evaluated sample, which is what makes "how many should I go
+	// and look at" answerable by counting lines.
+	for _, header := range []string{"ITEM", "SAMPLE", "FAILED EVALUATORS", "REASON (first failure)"} {
+		require.Containsf(t, r.Stdout, header, "the listing lost its %s column", header)
+	}
+	require.NotContains(t, r.Stdout, "EVALUATOR  ",
+		"a per-verdict table would list a sample once per evaluator")
+
+	// The fixture's rows all pass, so every row names no failing evaluator.
 	require.Contains(t, r.Stdout, "Report:")
 }
 

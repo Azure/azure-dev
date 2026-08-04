@@ -95,8 +95,11 @@ func (c *DatasetClient) CreateDataset(
 // The version listing is eventually consistent — it returns nothing for a
 // second or two after a version is created — so an empty listing cannot be
 // trusted to mean the dataset is new. A conflict is therefore treated as a
-// stale read and retried once against a re-read listing, rather than adding a
-// delay to every first upload.
+// stale read: the listing is re-read, and when it is still behind, the version
+// just refused is taken as proof that it exists and the next one is tried.
+// Trusting the listing alone left a second upload issued moments after the
+// first reporting a 409 to the user for a publish that should simply have
+// added a version.
 func (c *DatasetClient) UploadNextVersion(
 	ctx context.Context,
 	name string,
@@ -107,16 +110,37 @@ func (c *DatasetClient) UploadNextVersion(
 	if currentVersion == "" {
 		currentVersion = c.latestRegisteredVersion(ctx, name, apiVersion)
 	}
-	ds, err := c.UploadNewVersion(ctx, name, currentVersion, localDir, apiVersion)
-	if err == nil || !IsVersionConflict(err) {
-		return ds, err
-	}
 
-	latest := c.latestRegisteredVersion(ctx, name, apiVersion)
-	if latest == "" || latest == currentVersion {
-		return nil, err
+	var err error
+	for attempt := 0; attempt < versionConflictAttempts; attempt++ {
+		var ds *Dataset
+		ds, err = c.UploadNewVersion(ctx, name, currentVersion, localDir, apiVersion)
+		if err == nil || !IsVersionConflict(err) {
+			return ds, err
+		}
+
+		// The version derived from currentVersion is taken, so it exists
+		// whatever the listing says. Prefer the listing when it has caught up
+		// and moved further ahead; otherwise step past what was just refused.
+		refused := NextVersion(currentVersion)
+		currentVersion = refused
+		if latest := c.latestRegisteredVersion(ctx, name, apiVersion); versionAtLeast(latest, refused) {
+			currentVersion = latest
+		}
 	}
-	return c.UploadNewVersion(ctx, name, latest, localDir, apiVersion)
+	return nil, err
+}
+
+// versionConflictAttempts bounds the walk past versions the listing has not
+// caught up with. Each attempt is one refused pending upload, so this is short.
+const versionConflictAttempts = 4
+
+// versionAtLeast reports whether a is a version at or beyond b.
+func versionAtLeast(a, b string) bool {
+	if a == "" {
+		return false
+	}
+	return LatestVersion([]Dataset{{Version: a}, {Version: b}}) == a
 }
 
 // latestRegisteredVersion returns the newest registered version, or empty when

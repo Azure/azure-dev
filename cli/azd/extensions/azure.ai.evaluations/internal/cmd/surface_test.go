@@ -131,6 +131,21 @@ func TestFlagVocabularyIsShared(t *testing.T) {
 	})
 }
 
+// M1 promises `-o json` and `--no-prompt` throughout. Both come from the azd
+// extension SDK's root command, so every command inherits them — until one
+// declares its own flag by the same name, which silently shadows the global
+// and leaves that one command unable to answer in JSON or to run unattended.
+func TestNoCommandShadowsAGlobalFlag(t *testing.T) {
+	global := []string{"output", "no-prompt", "environment", "cwd", "debug"}
+
+	walk(t, NewRootCommand(), nil, func(path string, cmd *cobra.Command) {
+		for _, name := range global {
+			assert.Nilf(t, cmd.LocalFlags().Lookup(name),
+				"%s declares its own --%s, which shadows the global one", path, name)
+		}
+	})
+}
+
 // The two commands that write a file have to agree on what that flag is
 // called, and it has to be the name the sibling extensions use.
 func TestOutputFileFlagIsSpelledTheSharedWay(t *testing.T) {

@@ -6,6 +6,7 @@ package synthesis
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -1716,6 +1717,19 @@ func TestResolveVars_MatchesFoundryExpandEnv(t *testing.T) {
 		{name: "empty default is allowed", in: "${MISSING_VAR_XYZ:-}", want: ""},
 		{name: "empty env value takes the default", in: "${EMPTY_VAR:-fallback}", want: "fallback"},
 		{name: "escaped reference stays literal", in: "$${MISSING_VAR_XYZ}", want: "${MISSING_VAR_XYZ}"},
+		{
+			// required is derived from the same scanner the expander drives, so
+			// an occurrence the expander never resolves cannot make a live,
+			// defaulted occurrence of the same name look unresolvable.
+			name: "escaped reference does not make a defaulted one required",
+			in:   "$${MISSING_VAR_XYZ} ${MISSING_VAR_XYZ:-fallback}",
+			want: "${MISSING_VAR_XYZ} fallback",
+		},
+		{
+			name: "a name in a Foundry span does not make a defaulted one required",
+			in:   "${{connections.${MISSING_VAR_XYZ}.key}} ${MISSING_VAR_XYZ:-fallback}",
+			want: "${{connections.${MISSING_VAR_XYZ}.key}} fallback",
+		},
 		{name: "no references", in: "/subscriptions/abc", want: "/subscriptions/abc"},
 		{
 			name: "default inside a resource id",
@@ -1757,6 +1771,11 @@ func TestResolveVars_MatchesFoundryExpandEnv(t *testing.T) {
 // a default must be recognized as still-unresolved so the value is kept
 // verbatim and the ARM-shape checks are deferred to provision time, instead of
 // being rejected as a malformed resource id.
+//
+// The converse matters too. An escaped reference and a name reserved by a
+// Foundry ${{...}} span are never expanded, so the value is already as concrete
+// as it will ever be and the shape checks have to run on it now rather than
+// being deferred to a provision that can only fail.
 func TestContainsVarRef_RecognizesDefaults(t *testing.T) {
 	tests := []struct {
 		in   string
@@ -1765,12 +1784,170 @@ func TestContainsVarRef_RecognizesDefaults(t *testing.T) {
 		{in: "${VNET}", want: true},
 		{in: "${VNET:-/subscriptions/s}", want: true},
 		{in: "/subscriptions/s/resourceGroups/rg", want: false},
+		{in: "$${VNET}", want: false},
+		{in: "${{connections.store.key}}", want: false},
+		{in: "$${VNET} ${OTHER}", want: true},
 		{in: "", want: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
 			assert.Equal(t, tt.want, containsVarRef(tt.in))
+		})
+	}
+}
+
+// TestValidateEnvReferences_RejectsUnsupportedForms pins the guard on
+// drone/envsubst's wider grammar. Every rejected form below is one envsubst
+// expands and the scanner does not report, so without this check it slips past
+// the unresolved-variable guard: ${MISSING:=x} silently resolves, ${MISSING#x}
+// silently becomes "", and the caller then validates the rewritten value as if
+// the user had typed it. Typing ':=' for ':-' is a one character slip.
+func TestValidateEnvReferences_RejectsUnsupportedForms(t *testing.T) {
+	t.Parallel()
+
+	supported := []string{
+		"${VAR}",
+		"${VAR:-default}",
+		"${VAR:-}",
+		"$${VAR}",
+		"${{connections.store.credentials.key}}",
+		"${{ tools.${INNER} }}",
+		"${MISSING:-${{event.body}}}",
+		"${OUTER:-${NESTED}}",
+		// An escaped Foundry span: ExpandEnv masks the span starting at the
+		// second '$', so nothing inside it reaches envsubst and the '$' pair is
+		// never an escape.
+		"$${{ tools.${INNER} }}",
+		"/subscriptions/s/resourceGroups/rg",
+		// Bare '$' forms survive expansion untouched: envsubst only expands the
+		// braced shape, so these need no rejection.
+		"$VAR",
+		"costs $5 today",
+		"a$b",
+		"",
+	}
+	for _, value := range supported {
+		t.Run("ok/"+value, func(t *testing.T) {
+			t.Parallel()
+			assert.NoError(t, ValidateEnvReferences(value))
+		})
+	}
+
+	unsupported := []string{
+		"${MISSING:=default}",
+		"${MISSING:+alt}",
+		"${MISSING:?boom}",
+		"${MISSING#prefix}",
+		"${MISSING%suffix}",
+		"${MISSING:0:3}",
+		"${MISSING-nodefault}",
+		"${1BAD}",
+		"prefix ${MISSING:=x} suffix",
+		// envsubst evaluates the default expression, so an unsupported form
+		// nested in one expands exactly like a top-level one. The scanner stops
+		// at the default, which is why this needs its own step-in.
+		"${OUTER:-${INNER:=x}}",
+	}
+	for _, value := range unsupported {
+		t.Run("rejected/"+value, func(t *testing.T) {
+			t.Parallel()
+			err := ValidateEnvReferences(value)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "is not a supported environment variable reference")
+			assert.Contains(t, err.Error(), "${VAR:-default}",
+				"the message has to name the shape the user probably meant")
+		})
+	}
+
+	t.Run("rejected/unterminated foundry span", func(t *testing.T) {
+		t.Parallel()
+		err := ValidateEnvReferences("${{connections.store.key}")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "missing the closing }}")
+	})
+}
+
+// TestSynthesize_NetworkRejectsUnsupportedVarSyntax covers the guard end to end
+// on both paths. envsubst would expand these, so on the provision path the
+// value is silently rewritten before the ARM id / subscription checks see it,
+// and on the eject path it is written into the template verbatim and rewritten
+// at provision. Either way the user never learns their ':=' did not mean ':-'.
+func TestSynthesize_NetworkRejectsUnsupportedVarSyntax(t *testing.T) {
+	tests := []struct {
+		name  string
+		yaml  string
+		field string
+	}{
+		{
+			name:  "subnet vnet",
+			field: "peSubnet.vnet",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.project
+    network:
+      peSubnet: {vnet: "${MISSING_VNET_XYZ:=/subscriptions/s}", name: pe-subnet}
+`,
+		},
+		{
+			name:  "dns subscription",
+			field: "dns.subscription",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.project
+    network:
+      peSubnet:
+        vnet: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/v
+        name: pe-subnet
+      dns:
+        subscription: "${MISSING_SUB_XYZ#prefix}"
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		for _, preserve := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/preserveVarRefs=%v", tt.name, preserve), func(t *testing.T) {
+				_, err := Synthesize(Input{
+					RawAzureYAML:    []byte(tt.yaml),
+					ServiceName:     "my-project",
+					AcceptedHosts:   []string{"azure.ai.project"},
+					PreserveVarRefs: preserve,
+				})
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "is not a supported environment variable reference")
+				assert.Contains(t, err.Error(), tt.field,
+					"the error has to name the offending field")
+			})
+		}
+	}
+}
+
+// TestSynthesize_NetworkEscapedRefIsValidatedOnBothPaths pins that an escaped
+// reference is final on both paths. $${VNET} resolves to the literal ${VNET},
+// which is not a vnet id and never becomes one, so deferring the shape check to
+// provision only moves the failure somewhere less useful — and made eject and
+// provision disagree about the same azure.yaml.
+func TestSynthesize_NetworkEscapedRefIsValidatedOnBothPaths(t *testing.T) {
+	const yaml = `
+services:
+  my-project:
+    host: azure.ai.project
+    network:
+      peSubnet: {vnet: "$${VNET_XYZ}", name: pe-subnet}
+`
+	for _, preserve := range []bool{false, true} {
+		t.Run(fmt.Sprintf("preserveVarRefs=%v", preserve), func(t *testing.T) {
+			_, err := Synthesize(Input{
+				RawAzureYAML:    []byte(yaml),
+				ServiceName:     "my-project",
+				AcceptedHosts:   []string{"azure.ai.project"},
+				PreserveVarRefs: preserve,
+			})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "is not a well-formed Microsoft.Network/virtualNetworks id")
 		})
 	}
 }

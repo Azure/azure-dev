@@ -902,11 +902,6 @@ var guidPattern = regexp.MustCompile(
 // rgNamePattern matches a valid Azure resource group name.
 var rgNamePattern = regexp.MustCompile(`^[-\w._()]{1,90}$`)
 
-// varRefPattern matches a ${VAR} reference, optionally carrying a
-// ${VAR:-default} fallback. Group 2 is non-empty when a default is present,
-// which means the reference resolves even with no environment value.
-var varRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-[^}]*)?\}`)
-
 // synthesizeNetwork validates the network: block and returns the bicep
 // parameter set plus the telemetry mode. When net is nil the returned
 // params disable network isolation and the output is byte-identical to the
@@ -1019,6 +1014,12 @@ func synthesizeNetwork(
 			params["dnsZonesResourceGroup"] = rg
 		}
 		if sub := strings.TrimSpace(net.DNS.Subscription); sub != "" {
+			// Rejected before either path reads it: an unsupported '$' form is
+			// silently rewritten by the expander on the provision path, and
+			// written verbatim into the ejected template on the other.
+			if err := ValidateEnvReferences(sub); err != nil {
+				return nil, "", fmt.Errorf("%s.dns.subscription: %w", fp(""), err)
+			}
 			if resolve {
 				resolved, err := resolveVars(sub, env)
 				if err != nil {
@@ -1026,9 +1027,12 @@ func synthesizeNetwork(
 				}
 				sub = resolved
 			}
-			// Normalize to a bare GUID only when concrete; an unexpanded ${VAR}
-			// (eject path) is normalized at provision time.
-			if containsVarRef(sub) {
+			// Normalize to a bare GUID only when the value is final. On the eject
+			// path an unexpanded ${VAR} is normalized at provision time; once
+			// resolveVars has run there is nothing left to expand, so anything
+			// still shaped like a reference (an escaped $${VAR} resolves to a
+			// literal ${VAR}) is a subscription id that never will be.
+			if !resolve && containsVarRef(sub) {
 				params["dnsZonesSubscription"] = sub
 			} else {
 				guid, err := normalizeSubscription(sub)
@@ -1072,6 +1076,11 @@ func resolveSubnet(
 	if name == "" {
 		return "", "", "", false, fmt.Errorf("%s.name: required", fieldPath)
 	}
+	// Rejected on both paths: see the dns.subscription call for why this cannot
+	// wait for resolveVars.
+	if err := ValidateEnvReferences(vnetID); err != nil {
+		return "", "", "", false, fmt.Errorf("%s.vnet: %w", fieldPath, err)
+	}
 	if resolve {
 		resolved, rerr := resolveVars(vnetID, env)
 		if rerr != nil {
@@ -1079,9 +1088,12 @@ func resolveSubnet(
 		}
 		vnetID = resolved
 	}
-	// Validate the ARM id shape only when fully concrete; an unexpanded ${VAR}
-	// (eject path) is validated at provision time.
-	if !containsVarRef(vnetID) && !vnetIDPattern.MatchString(vnetID) {
+	// Validate the ARM id shape unless the value can still change: on the eject
+	// path an unexpanded ${VAR} is validated at provision time. After
+	// resolveVars there is nothing left to expand, so a leftover ${VAR} (what an
+	// escaped $${VAR} resolves to) is checked now rather than deferred to a
+	// provision that can only fail.
+	if (resolve || !containsVarRef(vnetID)) && !vnetIDPattern.MatchString(vnetID) {
 		return "", "", "", false, fmt.Errorf(
 			"%s.vnet: %q is not a well-formed Microsoft.Network/virtualNetworks id", fieldPath, vnetID)
 	}
@@ -1106,10 +1118,14 @@ func sameVNet(a, b string) bool {
 	return strings.EqualFold(a, b)
 }
 
-// containsVarRef reports whether s still contains a ${VAR} reference, including
-// the ${VAR:-default} form.
+// containsVarRef reports whether s still carries an azd ${VAR} reference the
+// expander will resolve, including the ${VAR:-default} form.
+//
+// Escaped references and names reserved by a Foundry ${{...}} span do not count:
+// [foundry.ExpandEnv] leaves those alone, so the value is already as concrete as
+// it will ever be and the caller's own shape validation should run on it.
 func containsVarRef(s string) bool {
-	return varRefPattern.MatchString(s)
+	return len(FindEnvReferences(s)) > 0
 }
 
 // resolveVars expands ${VAR} references in s using env first, then the
@@ -1121,15 +1137,19 @@ func containsVarRef(s string) bool {
 // exactly as they do elsewhere.
 //
 // ExpandEnv resolves through a mapping callback that only receives the variable
-// name, so the set of names that must resolve is collected up front: a name is
-// required only when it appears at least once without a :- default. Names inside
-// a Foundry ${{...}} span never reach the callback, because ExpandEnv masks
-// those spans, so they cannot trip this check.
+// name, so the names that must resolve are collected up front from
+// [FindEnvReferences]: a name is required only where it occurs at least once
+// without a :- default, in a position the expander will actually act on. Reusing
+// that scanner is what keeps an escaped or ${{...}} reserved occurrence from
+// making a live, defaulted occurrence of the same name look unresolvable.
+//
+// Callers validate the value with [ValidateEnvReferences] first, so every
+// occurrence the expander acts on is one the scanner saw.
 func resolveVars(s string, env map[string]string) (string, error) {
 	required := map[string]struct{}{}
-	for _, match := range varRefPattern.FindAllStringSubmatch(s, -1) {
-		if match[2] == "" {
-			required[match[1]] = struct{}{}
+	for _, reference := range FindEnvReferences(s) {
+		if !reference.HasDefault {
+			required[reference.Name] = struct{}{}
 		}
 	}
 

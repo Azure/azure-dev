@@ -1336,8 +1336,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if flags.agentName == "" {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
-						"--kind prompt-voice requires --agent-name when no --manifest is provided",
-						"pass --agent-name <name> (or provide --manifest with the agent definition)",
+						"--kind prompt-voice requires --agent-name",
+						"pass --agent-name <name>",
 					)
 				}
 				manifestPath, cleanup, err := synthesizeVoiceManifestFile(

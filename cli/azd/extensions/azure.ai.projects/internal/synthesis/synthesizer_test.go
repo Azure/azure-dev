@@ -1814,7 +1814,6 @@ func TestValidateEnvReferences_RejectsUnsupportedForms(t *testing.T) {
 		"${{connections.store.credentials.key}}",
 		"${{ tools.${INNER} }}",
 		"${MISSING:-${{event.body}}}",
-		"${OUTER:-${NESTED}}",
 		// An escaped Foundry span: ExpandEnv masks the span starting at the
 		// second '$', so nothing inside it reaches envsubst and the '$' pair is
 		// never an escape.
@@ -1844,10 +1843,6 @@ func TestValidateEnvReferences_RejectsUnsupportedForms(t *testing.T) {
 		"${MISSING-nodefault}",
 		"${1BAD}",
 		"prefix ${MISSING:=x} suffix",
-		// envsubst evaluates the default expression, so an unsupported form
-		// nested in one expands exactly like a top-level one. The scanner stops
-		// at the default, which is why this needs its own step-in.
-		"${OUTER:-${INNER:=x}}",
 	}
 	for _, value := range unsupported {
 		t.Run("rejected/"+value, func(t *testing.T) {
@@ -1857,6 +1852,27 @@ func TestValidateEnvReferences_RejectsUnsupportedForms(t *testing.T) {
 			assert.Contains(t, err.Error(), "is not a supported environment variable reference")
 			assert.Contains(t, err.Error(), "${VAR:-default}",
 				"the message has to name the shape the user probably meant")
+		})
+	}
+
+	// A nested reference is expanded but never discovered, so ${A:-${B}} with
+	// neither set resolves to empty and the field's own shape check then blames
+	// the empty value instead of naming B. Refusing it is what makes the scan
+	// complete for the fields that run this.
+	nested := []string{
+		"${OUTER:-${NESTED}}",
+		"${OUTER:-prefix-${NESTED}-suffix}",
+		"${OUTER:-${NESTED:-inner}}",
+		// Unsupported grammar nested in a default is caught by the same walk;
+		// without stepping into the default it would expand unseen.
+		"${OUTER:-${INNER:=x}}",
+	}
+	for _, value := range nested {
+		t.Run("nested/"+value, func(t *testing.T) {
+			t.Parallel()
+			err := ValidateEnvReferences(value)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "nests an environment variable reference inside a :- default")
 		})
 	}
 

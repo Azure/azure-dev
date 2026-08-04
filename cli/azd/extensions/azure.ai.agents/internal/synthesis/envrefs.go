@@ -67,7 +67,7 @@ func FindEnvReferences(value string) []EnvReference {
 }
 
 // ValidateEnvReferences reports an error when value carries a '$' form that
-// [foundry.ExpandEnv] would act on but azd does not model.
+// [foundry.ExpandEnv] would act on but [FindEnvReferences] does not report.
 //
 // drone/envsubst, which backs the expander, implements the full shell parameter
 // grammar: ${VAR:=default}, ${VAR:+alt}, ${VAR:?message}, ${VAR#prefix} and
@@ -77,11 +77,27 @@ func FindEnvReferences(value string) []EnvReference {
 // Typing ':=' instead of ':-' is a one character slip that would otherwise
 // succeed while skipping the very guard it looks like it is using.
 //
-// Rejecting the whole grammar except the four shapes azd documents keeps
-// [FindEnvReferences] complete by construction: after this passes, every
-// occurrence the expander acts on is one the scanner saw.
+// A reference nested in a :- default is refused for the same reason: the
+// expander resolves it, the scanner deliberately does not report it, so
+// ${A:-${B}} with neither set expands to empty and the caller then blames the
+// empty value rather than naming B.
+//
+// Where this runs, it makes [FindEnvReferences] complete: every occurrence the
+// expander acts on is one the scanner saw. That is a property of the *call*,
+// not of the scanner — only callers that invoke this get it. Today that is the
+// three project network fields (network.agentSubnet.vnet, network.peSubnet.vnet,
+// network.dns.subscription). Discovery-only consumers, such as init prompting
+// and the generated service env block, still scan values that were never
+// validated; extending the check to them is tracked by
+// https://github.com/Azure/azure-dev/issues/9428.
 func ValidateEnvReferences(value string) error {
+	// Non-zero while scanning the inside of a :- default. Nesting is refused on
+	// sight, so one boundary is enough — there is never a second level.
+	defaultEnd := 0
 	for index := 0; index < len(value); {
+		if defaultEnd > 0 && index >= defaultEnd {
+			defaultEnd = 0
+		}
 		if value[index] != '$' {
 			index++
 			continue
@@ -95,7 +111,8 @@ func ValidateEnvReferences(value string) error {
 			index += 2
 			continue
 		}
-		// A Foundry span is reserved verbatim for the service to resolve.
+		// A Foundry span is reserved verbatim for the service to resolve. Legal
+		// as a default value, so this stays allowed inside one.
 		if strings.HasPrefix(value[index:], "${{") {
 			end := strings.Index(value[index+3:], "}}")
 			if end < 0 {
@@ -111,6 +128,13 @@ func ValidateEnvReferences(value string) error {
 			index++
 			continue
 		}
+		if defaultEnd > 0 {
+			return fmt.Errorf(
+				"%q nests an environment variable reference inside a :- default, which azd does "+
+					"not resolve as one; give the default a literal value, or use ${{...}} for a "+
+					"Foundry expression",
+				unsupportedEnvFragment(value, index))
+		}
 
 		reference, found := envReferenceAt(value, index)
 		if !found {
@@ -122,8 +146,9 @@ func ValidateEnvReferences(value string) error {
 		if reference.HasDefault {
 			// Step into the default rather than over it. FindEnvReferences stops
 			// at the default because nested references are not *discovered*;
-			// envsubst still *expands* them, so an unsupported form nested in a
-			// default reaches the expander exactly like a top-level one.
+			// envsubst still *expands* whatever is in there, so both an
+			// unsupported form and a nested reference have to be caught here.
+			defaultEnd = reference.End
 			index = reference.Start + len("${") + len(reference.Name) + len(":-")
 			continue
 		}

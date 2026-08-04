@@ -1058,8 +1058,9 @@ func synthesizeNetwork(
 //	vnet + name + prefix  -> create subnet with that CIDR (create=true)
 //
 // vnet and name are required; ${VAR} references in vnet are expanded when
-// resolve is true and validated as a Microsoft.Network/virtualNetworks id only
-// when fully concrete.
+// resolve is true. The Microsoft.Network/virtualNetworks id shape is then
+// checked, except on the eject path (resolve false), where an unexpanded
+// reference is left for provision time to validate.
 func resolveSubnet(
 	s *subnetSpec, fieldPath string, env map[string]string, resolve bool,
 ) (vnetID, name, prefix string, create bool, err error) {

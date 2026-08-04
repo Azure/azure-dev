@@ -198,7 +198,7 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 	}
 
 	// Best-effort: clear readiness and endpoint state after a successful delete.
-	a.cleanupEnvVars(ctx, azdClient, info.ServiceName)
+	a.cleanupEnvVars(ctx, azdClient, info.ServiceName, endpoint)
 
 	switch a.flags.output {
 	case "json":
@@ -216,7 +216,21 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 
 // cleanupEnvVars removes agent readiness and endpoint values after a successful delete.
 // The SDK has no DeleteValue API, so we set values to empty string as a workaround.
-func (a *DeleteAction) cleanupEnvVars(ctx context.Context, azdClient *azdext.AzdClient, serviceName string) {
+func (a *DeleteAction) cleanupEnvVars(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	deletedProjectEndpoint string,
+) {
+	if serviceName == "" {
+		return
+	}
+	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil || !agentMarkersBelongToProject(
+		ctx, azdClient, envResp.Environment.Name, serviceName, deletedProjectEndpoint,
+	) {
+		return
+	}
 	serviceKey := toServiceKey(serviceName)
 	keys := []string{
 		fmt.Sprintf("AGENT_%s_NAME", serviceKey),
@@ -252,12 +266,9 @@ func (a *DeleteAction) clearDeletedVersionMarker(
 	if err != nil || resp.Value != deletedVersion {
 		return
 	}
-	projectKey := envkey.AgentProjectEndpoint(serviceName)
-	projectResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envResp.Environment.Name,
-		Key:     projectKey,
-	})
-	if err != nil || !sameAgentProjectEndpoint(projectResp.Value, deletedProjectEndpoint) {
+	if !agentMarkersBelongToProject(
+		ctx, azdClient, envResp.Environment.Name, serviceName, deletedProjectEndpoint,
+	) {
 		return
 	}
 	serviceKey := toServiceKey(serviceName)
@@ -269,6 +280,34 @@ func (a *DeleteAction) clearDeletedVersionMarker(
 		keys = append(keys, fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, protocol.Suffix))
 	}
 	a.clearEnvVars(ctx, azdClient, serviceName, keys)
+}
+
+func agentMarkersBelongToProject(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	serviceName string,
+	deletedProjectEndpoint string,
+) bool {
+	projectResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     envkey.AgentProjectEndpoint(serviceName),
+	})
+	if err != nil {
+		return false
+	}
+	markerEndpoint := projectResp.Value
+	if strings.TrimSpace(markerEndpoint) == "" {
+		endpointResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: envName,
+			Key:     fmt.Sprintf("AGENT_%s_ENDPOINT", toServiceKey(serviceName)),
+		})
+		if err != nil {
+			return false
+		}
+		markerEndpoint = endpointResp.Value
+	}
+	return sameAgentProjectEndpoint(markerEndpoint, deletedProjectEndpoint)
 }
 
 func sameAgentProjectEndpoint(a, b string) bool {

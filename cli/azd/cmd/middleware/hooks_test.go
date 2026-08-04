@@ -238,6 +238,52 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 	require.True(t, *actionRan)
 }
 
+func Test_CommandHooks_Middleware_WithQualifiedCmdAlias(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	registerHookExecutors(mockContext)
+	azdContext := createAzdContext(t)
+
+	envName := "test"
+	runOptions := Options{CommandPath: "azd tool update", Aliases: []string{"upgrade"}}
+
+	projectConfig := project.ProjectConfig{
+		Name: envName,
+		Hooks: map[string][]*ext.HookConfig{
+			"pretoolupgrade": {
+				{
+					Run:   "echo 'pretoolupgrade hook'",
+					Shell: string(language.HookKindBash),
+				},
+			},
+			"posttoolupgrade": {
+				{
+					Run:   "echo 'posttoolupgrade hook'",
+					Shell: string(language.HookKindBash),
+				},
+			},
+		},
+	}
+
+	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
+	require.NoError(t, err)
+
+	hookCount := 0
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return true
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		hookCount++
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	nextFn, actionRan := createNextFn()
+	result, err := runMiddleware(mockContext, envName, &projectConfig, &runOptions, nextFn)
+
+	require.NotNil(t, result)
+	require.NoError(t, err)
+	require.True(t, *actionRan)
+	require.Equal(t, 2, hookCount)
+}
+
 func Test_ServiceHooks_Registered(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)

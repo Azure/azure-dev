@@ -428,11 +428,12 @@ func TestWarnInspectorPortIssues(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		flags      runFlags
-		isActivity bool
-		wantParts  []string
-		wantSilent bool
+		name               string
+		flags              runFlags
+		isActivity         bool
+		inspectorInstalled bool
+		wantParts          []string
+		wantSilent         bool
 	}{
 		{
 			name:       "activity agent with an explicit inspector port warns",
@@ -447,24 +448,33 @@ func TestWarnInspectorPortIssues(t *testing.T) {
 			wantSilent: true,
 		},
 		{
-			name:      "agent port on the inspector default warns",
-			flags:     runFlags{port: defaultInspectorUIPort},
-			wantParts: []string{"also the Agent Inspector UI's default port", "Pass --inspector-port"},
+			name:               "agent port on the inspector default warns when inspector is installed",
+			flags:              runFlags{port: defaultInspectorUIPort},
+			inspectorInstalled: true,
+			wantParts:          []string{"also the Agent Inspector UI's default port", "Pass --inspector-port"},
 		},
 		{
-			name:       "explicit inspector port suppresses the default collision warning",
-			flags:      runFlags{port: defaultInspectorUIPort, inspectorPort: 9002, inspectorPortSet: true},
+			name:       "missing inspector suppresses the default collision warning",
+			flags:      runFlags{port: defaultInspectorUIPort},
 			wantSilent: true,
 		},
 		{
-			name:       "suppressed client launches no inspector, so nothing can collide",
-			flags:      runFlags{port: defaultInspectorUIPort, noClient: true},
-			wantSilent: true,
+			name:               "explicit inspector port suppresses the default collision warning",
+			flags:              runFlags{port: defaultInspectorUIPort, inspectorPort: 9002, inspectorPortSet: true},
+			inspectorInstalled: true,
+			wantSilent:         true,
 		},
 		{
-			name:       "deprecated suppress flag is also honored",
-			flags:      runFlags{port: defaultInspectorUIPort, noInspector: true},
-			wantSilent: true,
+			name:               "suppressed client launches no inspector, so nothing can collide",
+			flags:              runFlags{port: defaultInspectorUIPort, noClient: true},
+			inspectorInstalled: true,
+			wantSilent:         true,
+		},
+		{
+			name:               "deprecated suppress flag is also honored",
+			flags:              runFlags{port: defaultInspectorUIPort, noInspector: true},
+			inspectorInstalled: true,
+			wantSilent:         true,
 		},
 		{
 			name:       "unrelated agent port is silent",
@@ -485,7 +495,7 @@ func TestWarnInspectorPortIssues(t *testing.T) {
 
 			flags := tt.flags
 			var stderr bytes.Buffer
-			warnInspectorPortIssues(&flags, tt.isActivity, &stderr)
+			warnInspectorPortIssues(&flags, tt.isActivity, tt.inspectorInstalled, &stderr)
 
 			got := stderr.String()
 			if tt.wantSilent {

@@ -12,7 +12,7 @@ the user exactly what to fix — do **not** try to work around it.
    tester runs inside WSL, so a Windows path like
    `C:\Repos\azure-dev\...\scenarios\tier0\0.01-version.yaml` must be passed as
    `/mnt/c/Repos/azure-dev/.../scenarios/tier0/0.01-version.yaml`. On macOS/Linux use the native
-   absolute path. See `running-scenarios.md` § Path style.
+   absolute path. See `driving-mechanics.md` § Path style (Windows → WSL).
 
 ### Tooling
 
@@ -49,7 +49,7 @@ The scenarios reference `{prefix}`, `{subscription}`, `{region}`, `{model}`, `{t
    inside the scenarios directory. On Windows (where the tester runs inside WSL) this is
    the WSL-translated path (e.g. `/mnt/c/Repos/azure-dev/.../fixtures`); on native
    Linux/macOS it is the regular absolute path. Apply the same path-style logic used for
-   scenario paths (see `running-scenarios.md` § Path style).
+   scenario paths (see `driving-mechanics.md` § Path style (Windows → WSL)).
    Scenario pre-hooks use `{fixtures_dir}` to locate test fixture files.
 4. Pass the merged map (including `shared_agent_name` and `fixtures_dir`) as `session_vars`
    on **every** `load_scenario`, `run_pre_hooks`, `start_session`, and `run_post_hooks`

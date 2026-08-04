@@ -801,7 +801,7 @@ func prepareContainerSettings(
 
 	// Defaults are runtime values. Do not persist them here:
 	// lifecycle hooks must not rewrite user-authored azure.yaml.
-	if _, _, err := project.SetAgentContainerSettings(
+	if err := project.SetAgentContainerSettings(
 		svc,
 		&project.ContainerSettings{Resources: result},
 	); err != nil {

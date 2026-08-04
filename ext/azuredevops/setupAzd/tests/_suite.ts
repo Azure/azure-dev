@@ -63,7 +63,10 @@ describe('Setup azd task tests', function () {
         tr.runAsync().then(() => {
             assert.equal(tr.succeeded, false, 'should have failed');
             assert.equal(tr.warningIssues.length, 0, 'should have no warnings');
-            assert.ok(tr.errorIssues.length > 0, 'should have at least one error');
+            assert.ok(
+                tr.errorIssues.some((issue) => issue.includes('Failed to install azd. Exit code: 1')),
+                'should report the installer exit code',
+            );
             done();
         }).catch((error) => {
             done(error);
@@ -90,6 +93,7 @@ describe('Setup azd task tests', function () {
     it('should accept supported version formats', function() {
         const versions = [
             'latest',
+            'stable',
             'daily',
             '1.0.0',
             '1.14.0-beta.1',
@@ -115,5 +119,65 @@ describe('Setup azd task tests', function () {
         for (const version of versions) {
             assert.equal(isValidVersion(version), false, `should reject ${version}`);
         }
+    });
+
+    it('should warn when installer cleanup fails', function(done: Mocha.Done) {
+        this.timeout(30000);
+
+        const tp: string = path.join(__dirname, 'cleanupFailure.js');
+        const tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);
+
+        tr.runAsync().then(() => {
+            assert.equal(tr.succeeded, true, 'should have succeeded');
+            assert.equal(tr.errorIssues.length, 0, 'should have no errors');
+            assert.ok(
+                tr.warningIssues.some((issue) => issue.includes('Failed to clean up installer files')),
+                'should report the cleanup warning',
+            );
+            done();
+        }).catch((error) => {
+            done(error);
+        });
+    });
+
+    it('should preserve installer errors when cleanup also fails', function(done: Mocha.Done) {
+        this.timeout(30000);
+
+        const tp: string = path.join(__dirname, 'installAndCleanupFailure.js');
+        const tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);
+
+        tr.runAsync().then(() => {
+            assert.equal(tr.succeeded, false, 'should have failed');
+            assert.ok(
+                tr.errorIssues.some((issue) => issue.includes('Failed to install azd. Exit code: 1')),
+                'should preserve the installer error',
+            );
+            assert.ok(
+                tr.warningIssues.some((issue) => issue.includes('Failed to clean up installer files')),
+                'should report the cleanup warning',
+            );
+            done();
+        }).catch((error) => {
+            done(error);
+        });
+    });
+
+    it('should report download failures with the exit code', function(done: Mocha.Done) {
+        this.timeout(30000);
+
+        const tp: string = path.join(__dirname, 'downloadFailure.js');
+        const tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);
+
+        tr.runAsync().then(() => {
+            assert.equal(tr.succeeded, false, 'should have failed');
+            assert.equal(tr.warningIssues.length, 0, 'should have no warnings');
+            assert.ok(
+                tr.errorIssues.some((issue) => issue.includes('Failed to download the azd installer. Exit code: 1')),
+                'should report the download exit code',
+            );
+            done();
+        }).catch((error) => {
+            done(error);
+        });
     });
 });

@@ -19,7 +19,7 @@
             "type": "string",
             "label": "The version of azd to install (default: latest)",
             "required": false,
-            "helpMarkDown": "Use `latest`, `daily`, or a semantic version such as `1.13.0` or `1.14.0-beta.1`."
+            "helpMarkDown": "Use `latest`, `stable`, `daily`, or a semantic version such as `1.13.0` or `1.14.0-beta.1`."
         }
     ],
     "execution": {

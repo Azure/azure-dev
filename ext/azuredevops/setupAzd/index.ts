@@ -30,7 +30,7 @@ export async function runMain(): Promise<void> {
         if (!isValidVersion(version)) {
             task.setResult(
                 task.TaskResult.Failed,
-                'Version must be latest, daily, or a semantic version such as 1.2.3.',
+                'Version must be latest, stable, daily, or a semantic version such as 1.2.3.',
             )
             return
         }
@@ -56,6 +56,7 @@ export async function runMain(): Promise<void> {
                     ...process.env,
                     AZD_INSTALL_SCRIPT: installScriptPath,
                 },
+                ignoreReturnCode: true,
             })
             if (downloadResult !== 0) {
                 task.setResult(task.TaskResult.Failed, `Failed to download the azd installer. Exit code: ${downloadResult}`)
@@ -72,7 +73,7 @@ export async function runMain(): Promise<void> {
             installer.arg(version)
             installer.arg('-Verbose')
 
-            const installResult = await installer.exec()
+            const installResult = await installer.exec({ ignoreReturnCode: true })
             if (installResult !== 0) {
                 task.setResult(task.TaskResult.Failed, `Failed to install azd. Exit code: ${installResult}`)
                 return
@@ -85,7 +86,7 @@ export async function runMain(): Promise<void> {
             const azdPath = `${localAppData}\\Programs\\Azure Dev CLI\\azd.exe`
             const azd: toolRunner.ToolRunner = task.tool(azdPath)
             azd.arg('version')
-            const versionResult = await azd.exec()
+            const versionResult = await azd.exec({ ignoreReturnCode: true })
             if (versionResult !== 0) {
                 task.setResult(task.TaskResult.Failed, `azd version check failed. Exit code: ${versionResult}`)
                 return
@@ -101,7 +102,7 @@ export async function runMain(): Promise<void> {
             download.arg('https://aka.ms/install-azd.sh')
             download.arg('-o')
             download.arg(installScriptPath)
-            const downloadResult = await download.exec()
+            const downloadResult = await download.exec({ ignoreReturnCode: true })
             if (downloadResult !== 0) {
                 task.setResult(task.TaskResult.Failed, `Failed to download the azd installer. Exit code: ${downloadResult}`)
                 return
@@ -114,7 +115,7 @@ export async function runMain(): Promise<void> {
             installer.arg(version)
             installer.arg('--verbose')
 
-            const installResult = await installer.exec()
+            const installResult = await installer.exec({ ignoreReturnCode: true })
             if (installResult !== 0) {
                 task.setResult(task.TaskResult.Failed, `Failed to install azd. Exit code: ${installResult}`)
                 return
@@ -127,9 +128,9 @@ export async function runMain(): Promise<void> {
     } finally {
         if (tempDirectory) {
             try {
-                await rm(tempDirectory, { recursive: true, force: true })
+                await rm(tempDirectory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
             } catch (err: unknown) {
-                task.setResult(task.TaskResult.Failed, `Failed to clean up installer files: ${errorMessage(err)}`)
+                task.warning(`Failed to clean up installer files: ${errorMessage(err)}`)
             }
         }
     }

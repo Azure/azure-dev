@@ -1899,7 +1899,7 @@ services:
     host: azure.ai.project
     network:
       peSubnet:
-        vnet: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/v
+        vnet: /subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/v
         name: pe-subnet
       dns:
         subscription: "${MISSING_SUB_XYZ#prefix}"

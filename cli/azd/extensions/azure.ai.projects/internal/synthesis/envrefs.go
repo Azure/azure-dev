@@ -134,24 +134,16 @@ func ValidateEnvReferences(value string) error {
 			index++
 			continue
 		}
-		if defaultEnd > 0 {
-			// A nested reference can usually be bounded, so quote its real span
-			// rather than the truncated fragment, which would come out
-			// unbalanced once the nested one carries its own default.
-			fragment := unsupportedEnvFragment(value, index)
-			if nested, ok := envReferenceAt(value, index); ok {
-				fragment = value[nested.Start:nested.End]
-			}
+		reference, found := envReferenceAt(value, index)
+		if defaultEnd > 0 && found {
 			return fmt.Errorf(
 				"%q nests an environment variable reference inside a :- default, which azd "+
 					"cannot check: whether the nested name is required depends on whether the "+
 					"outer one resolves, and that is not known when the value is scanned. Use a "+
 					"single ${VAR} and set it in the azd environment, or give the default a "+
 					"literal value",
-				fragment)
+				value[reference.Start:reference.End])
 		}
-
-		reference, found := envReferenceAt(value, index)
 		if !found {
 			return fmt.Errorf(
 				"%q is not a supported environment variable reference; use ${VAR} or "+

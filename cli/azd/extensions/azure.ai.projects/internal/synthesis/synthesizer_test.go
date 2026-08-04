@@ -1843,6 +1843,8 @@ func TestValidateEnvReferences_RejectsUnsupportedForms(t *testing.T) {
 		"${MISSING-nodefault}",
 		"${1BAD}",
 		"prefix ${MISSING:=x} suffix",
+		"${OUTER:-${INNER:=x}}",
+		"${A:-${9BAD}}",
 	}
 	for _, value := range unsupported {
 		t.Run("rejected/"+value, func(t *testing.T) {
@@ -1867,9 +1869,6 @@ func TestValidateEnvReferences_RejectsUnsupportedForms(t *testing.T) {
 		// The quoted fragment has to be the nested reference's real span; a
 		// truncate-at-the-first-'}' fragment would come out unbalanced here.
 		"${A:-${B:-${C}}}": "${B:-${C}}",
-		// Unsupported grammar nested in a default is caught by the same walk;
-		// without stepping into the default it would expand unseen.
-		"${OUTER:-${INNER:=x}}": "${INNER:=x}",
 	}
 	for value, fragment := range nested {
 		t.Run("nested/"+value, func(t *testing.T) {

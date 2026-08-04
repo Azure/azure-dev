@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -139,7 +141,8 @@ func TestAgentDefiningFlagsSet(t *testing.T) {
 		{name: "protocol", flags: &initFlags{protocols: []string{"responses"}}, want: true},
 
 		// An explicit --src names where a new agent's source goes, so it opts
-		// out; the same field populated from a positional path must not.
+		// out. A positional path is classified separately against the project
+		// root after detection.
 		{
 			name:        "explicit --src",
 			flags:       &initFlags{src: "agents/chat"},
@@ -147,7 +150,7 @@ func TestAgentDefiningFlagsSet(t *testing.T) {
 			want:        true,
 		},
 		{
-			name:  "src folded from a positional arg does not opt out",
+			name:  "src folded from a positional arg is not an explicit flag",
 			flags: &initFlags{src: "."},
 			want:  false,
 		},
@@ -169,7 +172,8 @@ func TestAgentDefiningFlagsSet(t *testing.T) {
 
 // Regression guard for the positional form documented in the command's Use
 // string: `azd ai agent init .` resolves to flags.src via applyPositionalArg,
-// which must not be mistaken for an explicit --src and disable reuse (#9154).
+// which must not be mistaken for an explicit --src before it is compared with
+// the active project root (#9154).
 func TestAgentDefiningFlagsSet_PositionalPathKeepsReuse(t *testing.T) {
 	t.Parallel()
 
@@ -181,7 +185,55 @@ func TestAgentDefiningFlagsSet_PositionalPathKeepsReuse(t *testing.T) {
 	require.Equal(t, dir, flags.src, "a positional directory is folded into flags.src")
 
 	assert.False(t, agentDefiningFlagsSet(flags, cmd.Flags().Changed("src")),
-		"a positional path must not opt the project out of agent reuse")
+		"a positional path must not be treated as an explicit --src flag")
+}
+
+func TestPositionalSourceOptsOutOfReuse(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	agentDir := filepath.Join(projectRoot, "agents", "new")
+	require.NoError(t, os.MkdirAll(agentDir, 0o750))
+
+	tests := []struct {
+		name        string
+		src         string
+		projectRoot string
+		want        bool
+	}{
+		{
+			name:        "project root keeps reuse",
+			src:         projectRoot,
+			projectRoot: projectRoot,
+			want:        false,
+		},
+		{
+			name:        "selected agent directory opts out",
+			src:         agentDir,
+			projectRoot: projectRoot,
+			want:        true,
+		},
+		{
+			name:        "no positional source keeps reuse",
+			src:         "",
+			projectRoot: projectRoot,
+			want:        false,
+		},
+		{
+			name:        "missing project root opts out conservatively",
+			src:         projectRoot,
+			projectRoot: "",
+			want:        true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.want, positionalSourceOptsOutOfReuse(tt.src, tt.projectRoot))
+		})
+	}
 }
 
 func TestDescribeProjectAgentServices(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -25,7 +26,12 @@ type projectAgentService struct {
 	AgentName   string
 }
 
-// findProjectAgentServices returns the agent services the azd host reports for
+type projectAgentDetection struct {
+	services    []projectAgentService
+	projectRoot string
+}
+
+// detectProjectAgentServices returns the agent services the azd host reports for
 // the current project, sorted by service name so output is deterministic.
 //
 // Project discovery is left to the host: it resolves the manifest by walking up
@@ -41,14 +47,18 @@ type projectAgentService struct {
 // yields no detections, so init falls through to its normal prompts rather than
 // hard-failing on a file the user has not been asked about yet. The cause is
 // logged so --debug still surfaces a typo'd manifest.
-func findProjectAgentServices(ctx context.Context, azdClient *azdext.AzdClient) []projectAgentService {
+func detectProjectAgentServices(ctx context.Context, azdClient *azdext.AzdClient) projectAgentDetection {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		log.Printf("agent reuse: project config unavailable, continuing with normal init: %v", err)
-		return nil
+		return projectAgentDetection{}
 	}
 
-	return projectAgentServicesFrom(projectResponse.GetProject().GetServices())
+	project := projectResponse.GetProject()
+	return projectAgentDetection{
+		services:    projectAgentServicesFrom(project.GetServices()),
+		projectRoot: project.GetPath(),
+	}
 }
 
 // projectAgentServicesFrom selects the agent services out of a project's service
@@ -75,6 +85,42 @@ func projectAgentServicesFrom(services map[string]*azdext.ServiceConfig) []proje
 	return found
 }
 
+// positionalSourceOptsOutOfReuse reports whether a positional source directory
+// selects something below or outside the active project root.
+//
+// `azd ai agent init .` from the project root is a documented way to initialize
+// the current project and may reuse its configured agent. A positional
+// `./agents/new`, however, explicitly selects source for a new agent and must
+// not be silently ignored by reuse.
+func positionalSourceOptsOutOfReuse(src, projectRoot string) bool {
+	if src == "" {
+		return false
+	}
+	if projectRoot == "" {
+		return true
+	}
+
+	srcPath, err := filepath.Abs(src)
+	if err != nil {
+		return true
+	}
+	rootPath, err := filepath.Abs(projectRoot)
+	if err != nil {
+		return true
+	}
+
+	srcInfo, err := os.Stat(srcPath)
+	if err != nil {
+		return true
+	}
+	rootInfo, err := os.Stat(rootPath)
+	if err != nil {
+		return true
+	}
+
+	return !os.SameFile(srcInfo, rootInfo)
+}
+
 // describeProjectAgentServices renders the detected agent services for a prompt
 // or status line, e.g. `"chat" (agent: my-chat-agent)`.
 func describeProjectAgentServices(services []projectAgentService) string {
@@ -98,6 +144,9 @@ func describeProjectAgentServices(services []projectAgentService) string {
 // next-step resolver. It mirrors runReuseDefinition (issue #7268), which does
 // the same for a bare on-disk agent.yaml; the unified format moved the
 // definition inline, and this is the inline equivalent.
+//
+// The caller reaches this function only after detectProjectAgentServices has
+// loaded the project through the azd host, so no project setup is needed here.
 func runReuseProjectAgentServices(
 	ctx context.Context,
 	flags *initFlags,
@@ -108,10 +157,6 @@ func runReuseProjectAgentServices(
 		"Detected existing agent configuration: %s.",
 		describeProjectAgentServices(services),
 	))
-
-	if _, err := ensureProject(ctx, flags, azdClient, "."); err != nil {
-		return err
-	}
 
 	env := getExistingEnvironment(ctx, flags.env, azdClient)
 	if env == nil {

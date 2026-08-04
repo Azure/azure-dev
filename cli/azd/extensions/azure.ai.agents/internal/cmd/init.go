@@ -1340,15 +1340,16 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// honoring the flags the caller passed.
 			if flags.manifestPointer == "" && !manifestDetectedButDeclined &&
 				!agentDefiningFlagsSet(flags, cmd.Flags().Changed("src")) {
-				agentServices := findProjectAgentServices(ctx, azdClient)
-				if len(agentServices) > 0 {
+				detection := detectProjectAgentServices(ctx, azdClient)
+				if len(detection.services) > 0 &&
+					!positionalSourceOptsOutOfReuse(flags.src, detection.projectRoot) {
 					useExisting := flags.noPrompt
 					if !flags.noPrompt {
 						confirmResp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 							Options: &azdext.ConfirmOptions{
 								Message: fmt.Sprintf(
 									"This project already configures %s. Use it?",
-									describeProjectAgentServices(agentServices),
+									describeProjectAgentServices(detection.services),
 								),
 								DefaultValue: new(true),
 							},
@@ -1362,7 +1363,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						useExisting = *confirmResp.Value
 					}
 					if useExisting {
-						if err := runReuseProjectAgentServices(ctx, flags, azdClient, agentServices); err != nil {
+						if err := runReuseProjectAgentServices(
+							ctx, flags, azdClient, detection.services,
+						); err != nil {
 							return err
 						}
 						return ejectInfraAfterInit(infraProvider)

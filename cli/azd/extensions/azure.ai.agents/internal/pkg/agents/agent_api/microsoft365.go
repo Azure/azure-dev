@@ -156,10 +156,16 @@ func (c *AgentClient) PublishTeamsApp(
 	if err != nil {
 		return nil, fmt.Errorf("failed to read Teams app publish response: %w", err)
 	}
+	if len(body) == 0 {
+		return nil, fmt.Errorf("Teams app publish response was empty")
+	}
 
 	var result TeamsAppPublishResult
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse Teams app publish response: %w", err)
+	}
+	if result.TitleID == "" {
+		return nil, fmt.Errorf("Teams app publish response was missing titleId")
 	}
 	return &result, nil
 }

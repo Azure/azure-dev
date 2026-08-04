@@ -111,3 +111,27 @@ func TestPublishTeamsApp_ErrorStatus(t *testing.T) {
 	require.Contains(t, err.Error(), "403")
 	require.Contains(t, err.Error(), "no publish")
 }
+
+func TestPublishTeamsApp_EmptyBody(t *testing.T) {
+	client := newTestClient("https://example.test/api/projects/proj", &fakeTransport{statusCode: http.StatusOK})
+
+	_, err := client.PublishTeamsApp(
+		t.Context(), "my-agent", TeamsAppPackageRequest{}, Microsoft365APIVersion,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "empty")
+}
+
+func TestPublishTeamsApp_MissingTitleID(t *testing.T) {
+	for _, body := range []string{`{}`, `null`, `{"teamsAppId":"app-456"}`} {
+		t.Run(body, func(t *testing.T) {
+			client, _ := newCaptureClient(http.StatusOK, body)
+
+			_, err := client.PublishTeamsApp(
+				t.Context(), "my-agent", TeamsAppPackageRequest{}, Microsoft365APIVersion,
+			)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "titleId")
+		})
+	}
+}

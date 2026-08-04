@@ -72,6 +72,25 @@ func TestAgentIgnore_UserFileOverridesDefaults(t *testing.T) {
 	require.False(t, m.ShouldExclude(".git", true))
 }
 
+func TestAgentIgnore_AlwaysExcludesGeneratedTeamsArtifacts(t *testing.T) {
+	for _, name := range []string{
+		"appPackage.zip",
+		".appPackage.zip.azd-generated",
+		"TEAMS_APP_SETUP.md",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			err := os.WriteFile(filepath.Join(dir, ".agentignore"), []byte(""), 0600)
+			require.NoError(t, err)
+
+			m, err := newAgentIgnoreMatcher(t.Context(), dir)
+			require.NoError(t, err)
+			require.True(t, m.hasUserIgnore)
+			require.True(t, m.ShouldExclude(name, false))
+		})
+	}
+}
+
 func TestAgentIgnore_NegationWorks(t *testing.T) {
 	dir := t.TempDir()
 	// Exclude all .txt but keep important.txt
@@ -143,4 +162,7 @@ func TestDefaultAgentIgnoreContent(t *testing.T) {
 	require.Contains(t, content, ".git/")
 	require.Contains(t, content, "Dockerfile")
 	require.Contains(t, content, ".dockerignore")
+	require.Contains(t, content, "appPackage.zip")
+	require.Contains(t, content, ".appPackage.zip.azd-generated")
+	require.Contains(t, content, "TEAMS_APP_SETUP.md")
 }

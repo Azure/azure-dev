@@ -8,5 +8,5 @@ const semanticVersion =
 const validVersionPattern = new RegExp(`^(?:latest|stable|daily|${semanticVersion})$`)
 
 export function isValidVersion(version: string): boolean {
-    return version.length <= 128 && validVersionPattern.test(version)
+    return version.length <= 128 && validVersionPattern.exec(version)?.[0] === version
 }

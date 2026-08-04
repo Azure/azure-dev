@@ -114,6 +114,7 @@ describe('Setup azd task tests', function () {
             '1.2',
             '1.2.3.4',
             'latest ',
+            'latest\n',
         ];
 
         for (const version of versions) {

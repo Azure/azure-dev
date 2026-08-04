@@ -85,9 +85,9 @@ func TestCustomizations_GetCommandArgs(t *testing.T) {
 		args := c.GetCommandArgs(ctx)
 		require.Len(t, args, 1)
 		require.Equal(t, "extension-id|extension-bundle.zip", args[0].Name)
-		// Offers both extension-id completion and file-path suggestions.
-		require.Equal(t, FigGenListExtensions, args[0].Generator)
-		require.Equal(t, "filepaths", args[0].Template)
+		// Offers both extension-id completion and zip file-path suggestions.
+		require.Equal(t, []string{FigGenListExtensions, FigGenFilepathsZip}, args[0].Generators)
+		require.Empty(t, args[0].Generator)
 	})
 
 	t.Run("unknown", func(t *testing.T) {

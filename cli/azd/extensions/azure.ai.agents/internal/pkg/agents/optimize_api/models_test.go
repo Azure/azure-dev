@@ -34,6 +34,7 @@ func TestOptimizeRequest_RoundTrip(t *testing.T) {
 			MaxCandidates:     new(5),
 			EvalModel:         "gpt-4o-mini",
 			OptimizationModel: "gpt-4o",
+			MaxStalls:         new(3),
 		},
 	}
 
@@ -46,7 +47,7 @@ func TestOptimizeRequest_RoundTrip(t *testing.T) {
 		`"agent"`, `"agent_name"`, `"agent_version"`,
 		`"train_dataset"`, `"type"`, `"items"`, `"evaluators"`,
 		`"options"`, `"eval_model"`, `"max_candidates"`,
-		`"optimization_model"`,
+		`"optimization_model"`, `"max_stalls"`,
 		`"ground_truth"`,
 	} {
 		assert.True(t, strings.Contains(s, field), "JSON should contain %s", field)
@@ -64,6 +65,8 @@ func TestOptimizeRequest_RoundTrip(t *testing.T) {
 	assert.Equal(t, "relevance", got.Evaluators[1].Name)
 	assert.Equal(t, "1", got.Evaluators[1].Version)
 	assert.Equal(t, "gpt-4o-mini", got.Options.EvalModel)
+	require.NotNil(t, got.Options.MaxStalls)
+	assert.Equal(t, 3, *got.Options.MaxStalls)
 }
 
 func TestOptimizeJobStatus_RoundTrip(t *testing.T) {

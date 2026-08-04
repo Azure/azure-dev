@@ -5,8 +5,9 @@ Usage
   azd tool upgrade [tool-name...] [flags]
 
 Flags
-        --dry-run      	: Preview what would be upgraded without making changes
-        --host strings 	: Upgrade the skill for the specified agent host(s): copilot, claude. Use --host all for every detected host (skill tools only)
+        --agent strings 	: Upgrade the skill for the specified agent(s): copilot, claude. Use --agent all for every detected agent (skill tools only)
+        --all           	: Upgrade all installed tools
+        --dry-run       	: Preview what would be upgraded without making changes
 
 Global Flags
     -C, --cwd string         	: Sets the current working directory.
@@ -14,7 +15,7 @@ Global Flags
         --docs               	: Opens the documentation for azd tool upgrade in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for upgrade.
-        --no-prompt          	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+        --no-prompt          	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically. Automatically enabled when azd detects a CI/CD or AI-agent environment; set AZD_NON_INTERACTIVE=false to opt out of that automatic enablement.
 
 Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
 

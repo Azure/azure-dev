@@ -94,7 +94,7 @@ func NewConfirm(options *ConfirmOptions) *Confirm {
 	}
 
 	return &Confirm{
-		input:        internal.NewInput(),
+		input:        internal.NewInput(mergedOptions.Writer),
 		options:      &mergedOptions,
 		displayValue: displayValue,
 		value:        mergedOptions.DefaultValue,

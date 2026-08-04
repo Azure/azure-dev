@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -186,41 +187,44 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 
 	cmdParts = resolveVenvCommand(projectDir, cmdParts)
 
-	env := os.Environ()
-	env = appendPortEnvVars(env, pt, flags.port)
+	env := appendPortEnvVars(os.Environ(), pt, flags.port)
 
-	// Load azd environment variables (e.g., FOUNDRY_PROJECT_ENDPOINT)
-	// so the agent can reach Azure services during local development.
-	// Also translate azd env keys to FOUNDRY_* env vars so the agent code
-	// works identically whether running locally or in a hosted container
-	// (where the platform automatically injects FOUNDRY_* env vars).
+	// Load azd values as template inputs and legacy fallback values.
 	var azdEnvVars map[string]string
 	if loaded, err := loadAzdEnvironment(ctx, azdClient); err == nil {
 		azdEnvVars = loaded
-		for k, v := range azdEnvVars {
-			env = append(env, fmt.Sprintf("%s=%s", k, v))
-		}
-		env = appendFoundryEnvVars(env, azdEnvVars, runCtx.ServiceName)
 	} else if shouldWarnLoadAzdEnvironmentFailure(err) {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load azd environment values: %s\n", err)
 	}
 
-	// Resolve environment_variables from the agent definition (agent.yaml).
-	// This handles hardcoded values, ${VAR} references (resolved via azd env),
-	// and ${{connections.<name>.credentials.<key>}} references (resolved via
-	// the Foundry data plane). Agent definition env vars do not override
-	// values already present in the process environment.
 	endpoint, _ := resolveAgentEndpoint(ctx, "", "")
-	defEnv, defErr := resolveAgentDefinitionEnvVars(ctx, runCtx.Definition, azdEnvVars, endpoint)
+	endpoint = localProjectEndpoint(
+		env,
+		runCtx.ServiceEnvironment,
+		endpoint,
+	)
+	serviceEnvironment := resolveLocalServiceEnvironment(
+		runCtx.ServiceEnvironment,
+		endpoint,
+	)
+	defEnv, defErr := resolveAgentDefinitionEnvVars(
+		ctx,
+		runCtx.Definition,
+		serviceEnvironment,
+		azdEnvVars,
+		endpoint,
+	)
 	if defErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: %s\n", defErr)
 	}
-	for _, entry := range defEnv {
-		key, _, _ := strings.Cut(entry, "=")
-		if !envSliceHasKey(env, key) {
-			env = append(env, entry)
-		}
-	}
+	env = mergeAgentRunEnvironment(
+		env,
+		azdEnvVars,
+		serviceEnvironment,
+		defEnv,
+		runCtx.ServiceName,
+		runCtx.HasServiceEnvironment,
+	)
 
 	// Activity agents bind IPv4 and are reached at 127.0.0.1 everywhere else
 	// (the port-readiness check and the Playground URL), because `localhost`
@@ -514,6 +518,7 @@ func shouldWarnLoadAzdEnvironmentFailure(err error) bool {
 func resolveAgentDefinitionEnvVars(
 	ctx context.Context,
 	agentDef *agent_yaml.ContainerAgent,
+	serviceEnvironment map[string]string,
 	azdEnvVars map[string]string,
 	endpoint string,
 ) ([]string, error) {
@@ -544,8 +549,15 @@ func resolveAgentDefinitionEnvVars(
 		if _, isConn := connRefEnvNames[ev.Name]; isConn {
 			continue
 		}
-		// ExpandEnv returns the original value on error, so a failed expansion is a no-op.
-		resolved, _ := project.ExpandEnv(ev.Value, lookup)
+		resolved, err := project.ResolveAgentEnvironmentVariable(
+			ev.Name,
+			ev.Value,
+			serviceEnvironment,
+			lookup,
+		)
+		if err != nil {
+			resolved = ev.Value
+		}
 		result = append(result, fmt.Sprintf("%s=%s", ev.Name, resolved))
 	}
 
@@ -559,6 +571,41 @@ func resolveAgentDefinitionEnvVars(
 	}
 
 	return result, nil
+}
+
+func resolveLocalServiceEnvironment(
+	environment map[string]string,
+	endpoint string,
+) map[string]string {
+	resolved := maps.Clone(environment)
+	if endpoint == "" {
+		return resolved
+	}
+	for key, value := range resolved {
+		resolved[key] = strings.ReplaceAll(
+			value,
+			"${{project.endpoint}}",
+			endpoint,
+		)
+	}
+	return resolved
+}
+
+func localProjectEndpoint(
+	baseEnvironment []string,
+	serviceEnvironment map[string]string,
+	fallback string,
+) string {
+	if value, found := envSliceValue(
+		baseEnvironment,
+		"FOUNDRY_PROJECT_ENDPOINT",
+	); found {
+		return value
+	}
+	if value, found := serviceEnvironment["FOUNDRY_PROJECT_ENDPOINT"]; found {
+		return value
+	}
+	return fallback
 }
 
 // findAgentYaml locates the agent definition file in the given directory.
@@ -604,8 +651,25 @@ func installDependencies(projectDir string) error {
 	return nil
 }
 
+type dependencyInstallStep struct {
+	startMessage   string
+	successMessage string
+	errorMessage   string
+	args           []string
+}
+
 func installPythonDeps(projectDir string) error {
-	if _, err := exec.LookPath("uv"); err != nil {
+	lockedProject := uvLockedProject(projectDir)
+	uvPath, err := exec.LookPath("uv")
+	if err != nil {
+		if lockedProject {
+			return fmt.Errorf(
+				"uv is required to synchronize dependencies from uv.lock; "+
+					"install it from https://docs.astral.sh/uv/: %w",
+				err,
+			)
+		}
+
 		fmt.Println("Warning: uv is not installed. Install it from https://docs.astral.sh/uv/")
 		fmt.Println("Falling back to pip...")
 		return installPythonDepsPip(projectDir)
@@ -614,7 +678,8 @@ func installPythonDeps(projectDir string) error {
 	venvDir := filepath.Join(projectDir, ".venv")
 	if _, err := os.Stat(venvDir); os.IsNotExist(err) {
 		fmt.Println("Setting up Python environment...")
-		cmd := exec.Command("uv", "venv", venvDir, "--python", minPythonUvSpec()) //nolint:gosec // G204: venvDir is derived from the project directory path
+		//nolint:gosec // G204: uvPath is from LookPath; venvDir is derived from the project directory path
+		cmd := exec.Command(uvPath, "venv", venvDir, "--python", minPythonUvSpec())
 		cmd.Dir = projectDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -625,31 +690,72 @@ func installPythonDeps(projectDir string) error {
 
 	pythonPath := venvPython(venvDir)
 
-	if fileExists(filepath.Join(projectDir, "pyproject.toml")) {
-		fmt.Println("Installing dependencies (pyproject.toml)...")
-		cmd := exec.Command("uv", "pip", "install", "-e", ".", "--python", pythonPath, "--prerelease", "allow", "--quiet") //nolint:gosec // G204: pythonPath is derived from the project venv directory
+	for _, step := range uvPythonInstallSteps(projectDir, pythonPath) {
+		fmt.Println(step.startMessage)
+		//nolint:gosec // G204: uvPath is from LookPath; command arguments are static or derived from the project venv
+		cmd := exec.Command(uvPath, step.args...)
 		cmd.Dir = projectDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("uv pip install failed: %w", err)
+			return fmt.Errorf("%s: %w", step.errorMessage, err)
 		}
-		fmt.Println("  ✓ Dependencies installed (pyproject.toml)")
-	}
-
-	if fileExists(filepath.Join(projectDir, "requirements.txt")) {
-		fmt.Println("Installing dependencies (requirements.txt)...")
-		cmd := exec.Command("uv", "pip", "install", "-r", "requirements.txt", "--python", pythonPath, "--prerelease", "allow", "--quiet") //nolint:gosec // G204: pythonPath is derived from the project venv directory
-		cmd.Dir = projectDir
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("uv pip install failed: %w", err)
-		}
-		fmt.Println("  ✓ Dependencies installed (requirements.txt)")
+		fmt.Println(step.successMessage)
 	}
 
 	return nil
+}
+
+func uvLockedProject(projectDir string) bool {
+	return fileExists(filepath.Join(projectDir, "pyproject.toml")) &&
+		fileExists(filepath.Join(projectDir, "uv.lock"))
+}
+
+func uvPythonInstallSteps(projectDir string, pythonPath string) []dependencyInstallStep {
+	if uvLockedProject(projectDir) {
+		return []dependencyInstallStep{{
+			startMessage:   "Synchronizing dependencies (uv.lock)...",
+			successMessage: "  ✓ Dependencies synchronized (uv.lock)",
+			errorMessage:   "uv sync failed",
+			args: []string{
+				"sync",
+				"--locked",
+				"--python", pythonPath,
+				"--quiet",
+			},
+		}}
+	}
+
+	steps := []dependencyInstallStep{}
+	if fileExists(filepath.Join(projectDir, "pyproject.toml")) {
+		steps = append(steps, dependencyInstallStep{
+			startMessage:   "Installing dependencies (pyproject.toml)...",
+			successMessage: "  ✓ Dependencies installed (pyproject.toml)",
+			errorMessage:   "uv pip install failed",
+			args: []string{
+				"pip", "install", "-e", ".",
+				"--python", pythonPath,
+				"--prerelease", "allow",
+				"--quiet",
+			},
+		})
+	}
+
+	if fileExists(filepath.Join(projectDir, "requirements.txt")) {
+		steps = append(steps, dependencyInstallStep{
+			startMessage:   "Installing dependencies (requirements.txt)...",
+			successMessage: "  ✓ Dependencies installed (requirements.txt)",
+			errorMessage:   "uv pip install failed",
+			args: []string{
+				"pip", "install", "-r", "requirements.txt",
+				"--python", pythonPath,
+				"--prerelease", "allow",
+				"--quiet",
+			},
+		})
+	}
+
+	return steps
 }
 
 func installPythonDepsPip(projectDir string) error {
@@ -970,63 +1076,142 @@ func findSystemPython() (pythonInterpreter, error) {
 	return firstCompatiblePython(pythonCandidates(), pythonVersion)
 }
 
-// appendFoundryEnvVars translates azd environment keys to FOUNDRY_* env vars that hosted
-// agent containers receive automatically from the platform. This ensures the agent code
-// works identically whether running locally (via azd ai agent run) or in a hosted container.
+// mergeAgentRunEnvironment builds the local agent environment.
+//
+// baseEnvironment contains process and command-owned values.
+// azdEnvironment is the full active environment for legacy fallback.
+// serviceEnvironment is core-expanded services.<name>.env.
+// definitionEnvironment comes from legacy agent definitions.
+// hasServiceEnvironment reports whether the service declares an
+// env: block (even an empty one).
+func mergeAgentRunEnvironment(
+	baseEnvironment []string,
+	azdEnvironment map[string]string,
+	serviceEnvironment map[string]string,
+	definitionEnvironment []string,
+	serviceName string,
+	hasServiceEnvironment bool,
+) []string {
+	environment := slices.Clone(baseEnvironment)
+
+	// The full azd environment is a compatibility fallback only.
+	if !hasServiceEnvironment {
+		for key, value := range azdEnvironment {
+			if !envSliceHasKey(baseEnvironment, key) {
+				environment = append(
+					environment,
+					fmt.Sprintf("%s=%s", key, value),
+				)
+			}
+		}
+	} else {
+		for key, value := range serviceEnvironment {
+			if !envSliceHasKey(baseEnvironment, key) {
+				environment = append(
+					environment,
+					fmt.Sprintf("%s=%s", key, value),
+				)
+			}
+		}
+	}
+
+	environment = appendFoundryEnvVars(
+		environment,
+		azdEnvironment,
+		serviceName,
+	)
+
+	for _, entry := range definitionEnvironment {
+		key, _, _ := strings.Cut(entry, "=")
+		_, serviceScoped := serviceEnvironment[key]
+		if serviceScoped {
+			continue
+		}
+		if !envSliceHasKey(environment, key) {
+			environment = append(environment, entry)
+		}
+	}
+
+	return environment
+}
+
+// appendFoundryEnvVars adds values injected by hosted agents.
 //
 // The mapping is:
 //
-//	AZURE_AI_PROJECT_ID                → FOUNDRY_PROJECT_ARM_ID
-//	AGENT_{SVC}_NAME                   → FOUNDRY_AGENT_NAME
-//	AGENT_{SVC}_VERSION                → FOUNDRY_AGENT_VERSION
-//	APPLICATIONINSIGHTS_CONNECTION_STRING (unchanged — already matches platform name)
+//	FOUNDRY_PROJECT_ENDPOINT           -> unchanged
+//	AZURE_AI_PROJECT_ID                -> FOUNDRY_PROJECT_ARM_ID
+//	AGENT_{SVC}_NAME                   -> FOUNDRY_AGENT_NAME
+//	AGENT_{SVC}_VERSION                -> FOUNDRY_AGENT_VERSION
+//	APPLICATIONINSIGHTS_CONNECTION_STRING -> unchanged
 func appendFoundryEnvVars(env []string, azdEnv map[string]string, serviceName string) []string {
-	// Static mappings from azd env key names to FOUNDRY_* env var names
-	staticMappings := []struct {
-		azdKey     string
-		foundryKey string
-	}{
-		{"AZURE_AI_PROJECT_ID", "FOUNDRY_PROJECT_ARM_ID"},
-	}
+	env = appendEnvValue(
+		env,
+		"FOUNDRY_PROJECT_ENDPOINT",
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
+	)
 
-	for _, m := range staticMappings {
-		if v := azdEnv[m.azdKey]; v != "" {
-			if _, exists := azdEnv[m.foundryKey]; !exists && !envSliceHasKey(env, m.foundryKey) {
-				env = append(env, fmt.Sprintf("%s=%s", m.foundryKey, v))
-			}
-		}
+	projectArmID := azdEnv["FOUNDRY_PROJECT_ARM_ID"]
+	if projectArmID == "" {
+		projectArmID = azdEnv["AZURE_AI_PROJECT_ID"]
 	}
+	env = appendEnvValue(env, "FOUNDRY_PROJECT_ARM_ID", projectArmID)
 
-	// Service-specific mappings (AGENT_{SVC}_NAME → FOUNDRY_AGENT_NAME, etc.)
+	agentName := ""
+	agentVersion := ""
 	if serviceName != "" {
 		serviceKey := toServiceKey(serviceName)
-		agentMappings := []struct {
-			azdKeyFmt  string
-			foundryKey string
-		}{
-			{"AGENT_%s_NAME", "FOUNDRY_AGENT_NAME"},
-			{"AGENT_%s_VERSION", "FOUNDRY_AGENT_VERSION"},
-		}
-
-		for _, m := range agentMappings {
-			azdKey := fmt.Sprintf(m.azdKeyFmt, serviceKey)
-			if v := azdEnv[azdKey]; v != "" {
-				if _, exists := azdEnv[m.foundryKey]; !exists && !envSliceHasKey(env, m.foundryKey) {
-					env = append(env, fmt.Sprintf("%s=%s", m.foundryKey, v))
-				}
-			}
-		}
+		agentName = azdEnv[fmt.Sprintf("AGENT_%s_NAME", serviceKey)]
+		agentVersion = azdEnv[fmt.Sprintf("AGENT_%s_VERSION", serviceKey)]
 	}
+	if agentName == "" {
+		agentName = azdEnv["FOUNDRY_AGENT_NAME"]
+	}
+	if agentVersion == "" {
+		agentVersion = azdEnv["FOUNDRY_AGENT_VERSION"]
+	}
+	env = appendEnvValue(env, "FOUNDRY_AGENT_NAME", agentName)
+	env = appendEnvValue(env, "FOUNDRY_AGENT_VERSION", agentVersion)
+
+	env = appendEnvValue(
+		env,
+		"APPLICATIONINSIGHTS_CONNECTION_STRING",
+		azdEnv["APPLICATIONINSIGHTS_CONNECTION_STRING"],
+	)
 
 	return env
 }
 
-// envSliceHasKey reports whether the env slice already contains an entry for the given key.
+func appendEnvValue(env []string, key string, value string) []string {
+	if value == "" || envSliceHasKey(env, key) {
+		return env
+	}
+	return append(env, fmt.Sprintf("%s=%s", key, value))
+}
+
+// envSliceHasKey reports whether env contains an entry for key.
 func envSliceHasKey(env []string, key string) bool {
-	prefix := key + "="
-	return slices.ContainsFunc(env, func(entry string) bool {
-		return strings.HasPrefix(entry, prefix)
-	})
+	_, found := envSliceValue(env, key)
+	return found
+}
+
+func envSliceValue(env []string, key string) (string, bool) {
+	for _, entry := range env {
+		entryKey, value, found := strings.Cut(entry, "=")
+		if !found {
+			continue
+		}
+		if runtime.GOOS == "windows" {
+			if strings.EqualFold(entryKey, key) {
+				return value, true
+			}
+			continue
+		}
+		if entryKey == key {
+			return value, true
+		}
+	}
+	return "", false
 }
 
 // loadAzdEnvironment reads all key-value pairs from the current azd environment.

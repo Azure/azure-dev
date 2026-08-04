@@ -16,7 +16,7 @@ Global Flags
         --debug      	: Enables debugging and diagnostics logging.
         --docs       	: Opens the documentation for azd restore in your web browser.
     -h, --help       	: Gets help for restore.
-        --no-prompt  	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+        --no-prompt  	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically. Automatically enabled when azd detects a CI/CD or AI-agent environment; set AZD_NON_INTERACTIVE=false to opt out of that automatic enablement.
 
 Examples
   Downloads and installs a specific application service dependency, Individual services are listed in your azure.yaml file.

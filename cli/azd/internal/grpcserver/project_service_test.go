@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -2647,6 +2648,143 @@ func TestProjectService_SetServiceConfigValue_HappyPath(t *testing.T) {
 		Value:       val,
 	})
 	require.NoError(t, err)
+}
+
+func TestProjectService_SetServiceConfigValue_PreservesServiceHooksAndTemplatedImage(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, `name: my-app
+services:
+  agent:
+    project: src/my-agent
+    host: azure.ai.agent
+    language: python
+    image: myregistry.azurecr.io/my-agent:${MY_TAG}
+    kind: hosted
+    name: my-chat-agent
+    protocols:
+      - protocol: responses
+        version: 2.0.0
+    startupCommand: python init.py
+    hooks:
+      predeploy:
+        shell: sh
+        run: ./hooks/agent-predeploy.sh
+        interactive: true
+      postdeploy:
+        shell: sh
+        run: ./hooks/agent-postdeploy.sh
+        interactive: true
+`)
+
+	_, err := svc.SetServiceConfigValue(t.Context(), &azdext.SetServiceConfigValueRequest{
+		ServiceName: "agent",
+		Path:        "container.resources.cpu",
+		Value:       structpb.NewStringValue("2"),
+	})
+	require.NoError(t, err)
+
+	projectService := svc.(*projectService)
+	azdContext, err := projectService.lazyAzdContext.GetValue()
+	require.NoError(t, err)
+	saved, err := project.LoadConfig(t.Context(), azdContext.ProjectPath())
+	require.NoError(t, err)
+	services, found := saved.GetMap("services")
+	require.True(t, found)
+	serviceConfig, ok := services["agent"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "myregistry.azurecr.io/my-agent:${MY_TAG}", serviceConfig["image"])
+	require.Equal(t, map[string]any{
+		"predeploy": map[string]any{
+			"shell":       "sh",
+			"run":         "./hooks/agent-predeploy.sh",
+			"interactive": true,
+		},
+		"postdeploy": map[string]any{
+			"shell":       "sh",
+			"run":         "./hooks/agent-postdeploy.sh",
+			"interactive": true,
+		},
+	}, serviceConfig["hooks"])
+}
+
+func TestProjectService_SetServiceConfigValue_DottedServiceName(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, `name: test-project
+services:
+  my.agent:
+    host: appservice
+`)
+
+	_, err := svc.SetServiceConfigValue(t.Context(), &azdext.SetServiceConfigValueRequest{
+		ServiceName: "my.agent",
+		Path:        "container.resources.cpu",
+		Value:       structpb.NewStringValue("2"),
+	})
+	require.NoError(t, err)
+
+	projectService := svc.(*projectService)
+	azdContext, err := projectService.lazyAzdContext.GetValue()
+	require.NoError(t, err)
+	cfg, err := project.LoadConfig(t.Context(), azdContext.ProjectPath())
+	require.NoError(t, err)
+	services, found := cfg.GetMap("services")
+	require.True(t, found)
+	serviceConfig, ok := services["my.agent"].(map[string]any)
+	require.True(t, ok)
+	value, found := config.NewConfig(serviceConfig).Get("container.resources.cpu")
+	require.True(t, found)
+	require.Equal(t, "2", value)
+	require.NotContains(t, services, "my")
+}
+
+func TestProjectService_SetServiceConfigValue_Concurrent(t *testing.T) {
+	t.Parallel()
+	svc := newProjectServiceWithYaml(t, yamlWithService)
+	paths := []string{
+		"custom.one",
+		"custom.two",
+		"custom.three",
+		"custom.four",
+		"custom.five",
+		"custom.six",
+		"custom.seven",
+		"custom.eight",
+		"custom.nine",
+		"custom.ten",
+	}
+	start := make(chan struct{})
+	errs := make(chan error, len(paths))
+	var wg sync.WaitGroup
+
+	for _, path := range paths {
+		wg.Go(func() {
+			<-start
+			_, err := svc.SetServiceConfigValue(t.Context(), &azdext.SetServiceConfigValueRequest{
+				ServiceName: "api",
+				Path:        path,
+				Value:       structpb.NewStringValue(path),
+			})
+			errs <- err
+		})
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	projectService := svc.(*projectService)
+	azdContext, err := projectService.lazyAzdContext.GetValue()
+	require.NoError(t, err)
+	cfg, err := project.LoadConfig(t.Context(), azdContext.ProjectPath())
+	require.NoError(t, err)
+	for _, path := range paths {
+		value, found := cfg.Get("services.api." + path)
+		require.True(t, found)
+		require.Equal(t, path, value)
+	}
 }
 
 func TestProjectService_UnsetServiceConfig_HappyPath(t *testing.T) {

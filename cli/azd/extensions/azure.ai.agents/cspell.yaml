@@ -22,6 +22,7 @@ words:
   - germanywestcentral
   - italynorth
   - japaneast
+  - japanwest
   - koreacentral
   - northcentralus
   - norwayeast
@@ -32,9 +33,12 @@ words:
   - southindia
   - spaincentral
   - switzerlandnorth
+  - switzerlandwest
   - uaenorth
   - uksouth
+  - ukwest
   - westeurope
+  - westcentralus
   # Project terms
   - ABAC
   - abbrs
@@ -75,6 +79,7 @@ words:
   - ondisk
   - openapitool
   - posixpath
+  - projectconfig
   - projectpkg
   - protocolversionrecord
   - Qdrant
@@ -83,6 +88,7 @@ words:
   - underscoped
   - unparseable
   - Vnext
+  - VOICELIVE
   - webp
   # Doctor / next-step terms
   - nextstep

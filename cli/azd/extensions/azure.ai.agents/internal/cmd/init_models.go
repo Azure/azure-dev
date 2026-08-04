@@ -27,6 +27,9 @@ import (
 
 var defaultSkuPriority = []string{"GlobalStandard", "DataZoneStandard", "Standard"}
 
+// defaultAgentModel is preselected in interactive catalog prompts.
+const defaultAgentModel = "gpt-5.4-mini"
+
 // defaultDeploymentCapacity is the preferred deployment capacity for agent model deployments.
 // This overrides the lower SKU default (typically 10) which is insufficient for agents.
 const defaultDeploymentCapacity int32 = 50

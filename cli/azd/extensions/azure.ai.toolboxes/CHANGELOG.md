@@ -1,5 +1,29 @@
 # Release History
 
+## 1.0.0-beta.4 (2026-07-23)
+
+### Features Added
+
+- [[#9229]](https://github.com/Azure/azure-dev/pull/9229) `azd ai toolbox` now supports the WorkIQ (`work_iq_preview`), FabricIQ (`fabric_iq_preview`), and toolbox-search (`toolbox_search_preview`) preview tools, and `azd ai toolbox connection list` now surfaces any tool that exposes a project connection.
+
+### Bugs Fixed
+
+- [[#9220]](https://github.com/Azure/azure-dev/pull/9220) Fix `azd ai toolbox create --project-endpoint --from-file` failing when run outside an azd project; the best-effort environment sync now skips silently when no `azure.yaml` is present instead of failing the command.
+
+## 1.0.0-beta.3 (2026-07-16)
+
+### Features Added
+
+- [[#9024]](https://github.com/Azure/azure-dev/pull/9024) `azd deploy` for `host: azure.ai.toolbox` services now supports an `endpoint:` field in `azure.yaml` to reference an existing toolbox by its MCP endpoint URL, skipping version creation. This enables reusing a toolbox managed outside the current project.
+
+### Bugs Fixed
+
+- [[#9013]](https://github.com/Azure/azure-dev/pull/9013) Fix `azd ai toolbox skill add/remove` and `connection add/remove` branching from the toolbox's default version instead of its latest, causing sequential mutations to silently drop earlier changes. Add a `--from-version` flag to override the branch source.
+
+### Other Changes
+
+- [[#9103]](https://github.com/Azure/azure-dev/pull/9103) Pin internal azd module dependency to released version.
+
 ## 1.0.0-beta.2 (2026-07-09)
 
 ### Other Changes

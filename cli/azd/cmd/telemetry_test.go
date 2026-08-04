@@ -174,6 +174,40 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		require.Equal(t, "extension.source.kind", string(kv.Key))
 		require.Equal(t, "location", kv.Value.AsString())
 	})
+
+	// Provision validation telemetry fields (emitted by both the Bicep
+	// "arm-provision" dispatch and the provider-agnostic "provision" dispatch).
+	t.Run("ProvisionValidationFields", func(t *testing.T) {
+		t.Parallel()
+
+		kvOutcome := fields.ProvisionValidationOutcomeKey.String("passed")
+		require.Equal(t, "validation.provision.outcome", string(kvOutcome.Key))
+		require.Equal(t, "passed", kvOutcome.Value.AsString())
+
+		kvDiagnostics := fields.ProvisionValidationDiagnosticsKey.StringSlice([]string{"BCP081"})
+		require.Equal(t, "validation.provision.diagnostics", string(kvDiagnostics.Key))
+		require.Equal(t, []string{"BCP081"}, kvDiagnostics.Value.AsStringSlice())
+
+		kvRules := fields.ProvisionValidationRulesKey.StringSlice([]string{"rule-a"})
+		require.Equal(t, "validation.provision.rules", string(kvRules.Key))
+		require.Equal(t, []string{"rule-a"}, kvRules.Value.AsStringSlice())
+
+		kvExtensionRules := fields.ProvisionValidationExtensionRulesKey.StringSlice([]string{"ext-rule"})
+		require.Equal(t, "validation.provision.extension_rules", string(kvExtensionRules.Key))
+		require.Equal(t, []string{"ext-rule"}, kvExtensionRules.Value.AsStringSlice())
+
+		kvCheckType := fields.ProvisionValidationCheckTypeKey.String("provision")
+		require.Equal(t, "validation.provision.check_type", string(kvCheckType.Key))
+		require.Equal(t, "provision", kvCheckType.Value.AsString())
+
+		kvWarnings := fields.ProvisionValidationWarningCountKey.Int(2)
+		require.Equal(t, "validation.provision.warning.count", string(kvWarnings.Key))
+		require.Equal(t, int64(2), kvWarnings.Value.AsInt64())
+
+		kvErrors := fields.ProvisionValidationErrorCountKey.Int(1)
+		require.Equal(t, "validation.provision.error.count", string(kvErrors.Key))
+		require.Equal(t, int64(1), kvErrors.Value.AsInt64())
+	})
 }
 
 // TestCommandTelemetryCoverage ensures every user-facing command is explicitly categorized
@@ -198,8 +232,8 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 	commandsWithSpecificTelemetry := []string{
 		"auth login",        // auth.method
 		"build",             // (via hooks middleware)
-		"deploy",            // infra.provider, service attributes (via hooks middleware)
-		"down",              // infra.provider (via hooks middleware)
+		"deploy",            // service attributes (via hooks middleware)
+		"down",              // infra.provider (resolved provider, via provisioning manager)
 		"env list",          // env.count
 		"extension install", // extension.source.kind
 		"extension list",    // extension.source.kind
@@ -210,14 +244,14 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 		"init",              // init.method, appinit.* fields
 		"package",           // (via hooks middleware)
 		"pipeline config",   // pipeline.provider, pipeline.auth
-		"provision",         // infra.provider (via hooks middleware)
+		"provision",         // infra.provider (resolved provider, via provisioning manager)
 		"restore",           // (via hooks middleware)
 		"tool check",        // tool.check.updates_available
 		"tool install",      // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
 		"tool show",         // tool.id
 		"tool uninstall",    // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
 		"tool upgrade",      // tool.id(s), tool.dry_run, tool.install.* aggregate + tool.upgrade.* versions
-		"up",                // infra.provider (via hooks middleware, composes provision+deploy)
+		"up",                // infra.provider (via provisioning manager; composes provision+deploy)
 		"update",            // update.* fields
 	}
 
@@ -256,7 +290,7 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 		"template source add",    // Global telemetry sufficient — command name captures operation
 		"template source list",   // Global telemetry sufficient — command name captures operation
 		"template source remove", // Global telemetry sufficient — command name captures operation
-		"tool",                   // Parent group — first-run middleware telemetry attaches to invoked subcommand
+		"tool",                   // Parent group — no operation-specific telemetry
 		"tool list",              // Listing tool registry — global telemetry sufficient
 		"version",                // Telemetry explicitly disabled (DisableTelemetry: true)
 		"vs-server",              // JSON-RPC server — telemetry handled by rpc.* fields per call

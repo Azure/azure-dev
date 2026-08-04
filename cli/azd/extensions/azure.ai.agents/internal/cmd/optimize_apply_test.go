@@ -11,13 +11,16 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
+	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // ---- newOptimizeApplyCommand — command shape ----
@@ -45,6 +48,270 @@ func TestNewOptimizeApplyCommand_CandidateIsRequired(t *testing.T) {
 	err := cmd.Execute()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "candidate")
+}
+
+func TestPersistInlineAgentEnvironmentMigratesLegacyTemplates(t *testing.T) {
+	props, err := projectpkg.AgentDefinitionToServiceProperties(
+		agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindHosted,
+				Name: "basic-agent",
+			},
+			Protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "2.0.0"},
+			},
+		},
+		nil,
+	)
+	require.NoError(t, err)
+	legacyEnvironment, err := structpb.NewValue([]any{
+		map[string]any{
+			"name":  "LEGACY_KEY",
+			"value": "${LEGACY_KEY}",
+		},
+	})
+	require.NoError(t, err)
+	props.Fields["environmentVariables"] = legacyEnvironment
+	svc := &azdext.ServiceConfig{
+		Name:   "basic-agent",
+		Host:   AiAgentHost,
+		Config: props,
+	}
+
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	require.NoError(t, persistInlineAgentEnvironment(
+		t.Context(),
+		client,
+		svc,
+		map[string]string{"OPTIMIZATION_CANDIDATE_ID": "candidate-1"},
+	))
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Empty(t, server.added)
+	require.Equal(
+		t,
+		[]string{"config.environmentVariables"},
+		server.unsetPaths,
+	)
+	require.Equal(t, map[string]any{
+		"LEGACY_KEY":                "${LEGACY_KEY}",
+		"OPTIMIZATION_CANDIDATE_ID": "candidate-1",
+	}, server.env["basic-agent"])
+}
+
+// TestPersistInlineAgentEnvironmentPreservesTopLevelEnv verifies a
+// modern agent's top-level env templates survive the OPTIMIZATION_*
+// update: they are read raw and rewritten via the env section, not
+// snapshotted to expanded literals through AddService.
+func TestPersistInlineAgentEnvironmentPreservesTopLevelEnv(t *testing.T) {
+	props, err := projectpkg.AgentDefinitionToServiceProperties(
+		agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindHosted,
+				Name: "basic-agent",
+			},
+			Protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "2.0.0"},
+			},
+		},
+		nil,
+	)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+		// Core forwards expanded values; the raw templates live on disk.
+		Environment: map[string]string{
+			"LOG_LEVEL":      "debug",
+			"MODEL_ENDPOINT": "https://resolved.example",
+		},
+	}
+
+	server := &recordingProjectServer{
+		rawEnv: map[string]map[string]any{
+			"basic-agent": {
+				"LOG_LEVEL":      "${AZURE_LOG_LEVEL}",
+				"MODEL_ENDPOINT": "$${{project.endpoint}}",
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+	require.NoError(t, persistInlineAgentEnvironment(
+		t.Context(),
+		client,
+		svc,
+		map[string]string{"OPTIMIZATION_CANDIDATE_ID": "candidate-1"},
+	))
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Empty(t, server.added)
+	require.Equal(
+		t,
+		[]string{"environmentVariables"},
+		server.unsetPaths,
+	)
+	require.Equal(t, map[string]any{
+		"LOG_LEVEL":                 "${AZURE_LOG_LEVEL}",
+		"MODEL_ENDPOINT":            "$${{project.endpoint}}",
+		"OPTIMIZATION_CANDIDATE_ID": "candidate-1",
+	}, server.env["basic-agent"])
+}
+
+// TestPersistInlineAgentEnvironmentEscapesLegacyFoundrySpan verifies
+// a legacy environmentVariables value carrying a raw Foundry ${{...}}
+// span is escaped to $${{...}} when migrated into the env section.
+func TestPersistInlineAgentEnvironmentEscapesLegacyFoundrySpan(t *testing.T) {
+	props, err := projectpkg.AgentDefinitionToServiceProperties(
+		agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindHosted,
+				Name: "basic-agent",
+			},
+			Protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "2.0.0"},
+			},
+		},
+		nil,
+	)
+	require.NoError(t, err)
+	legacyEnvironment, err := structpb.NewValue([]any{
+		map[string]any{
+			"name":  "SEARCH_KEY",
+			"value": "${{connections.search.credentials.key}}",
+		},
+	})
+	require.NoError(t, err)
+	props.Fields["environmentVariables"] = legacyEnvironment
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}
+
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	require.NoError(t, persistInlineAgentEnvironment(
+		t.Context(),
+		client,
+		svc,
+		map[string]string{"OPTIMIZATION_CANDIDATE_ID": "candidate-1"},
+	))
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Equal(
+		t,
+		[]string{"environmentVariables"},
+		server.unsetPaths,
+	)
+	require.Equal(t, map[string]any{
+		"SEARCH_KEY":                "$${{connections.search.credentials.key}}",
+		"OPTIMIZATION_CANDIDATE_ID": "candidate-1",
+	}, server.env["basic-agent"])
+}
+
+func TestPersistInlineAgentEnvironmentNormalizesScalars(t *testing.T) {
+	props, err := projectpkg.AgentDefinitionToServiceProperties(
+		agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindHosted,
+				Name: "basic-agent",
+			},
+			Protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "2.0.0"},
+			},
+		},
+		nil,
+	)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+		Environment: map[string]string{
+			"LARGE": "9007199254740993",
+		},
+	}
+	server := &recordingProjectServer{
+		rawEnv: map[string]map[string]any{
+			"basic-agent": {
+				"ENABLED": true,
+				"RETRIES": float64(3),
+				"EMPTY":   nil,
+				"LARGE":   float64(9007199254740992),
+			},
+		},
+	}
+
+	client := newProjectRecorderClient(t, server)
+	require.NoError(t, persistInlineAgentEnvironment(
+		t.Context(),
+		client,
+		svc,
+		map[string]string{"OPTIMIZATION_CANDIDATE_ID": "candidate-1"},
+	))
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Equal(t, map[string]any{
+		"ENABLED":                   "true",
+		"RETRIES":                   "3",
+		"EMPTY":                     "",
+		"LARGE":                     "9007199254740993",
+		"OPTIMIZATION_CANDIDATE_ID": "candidate-1",
+	}, server.env["basic-agent"])
+}
+
+func TestPersistInlineAgentEnvironmentKeepsLegacyOnEnvFailure(
+	t *testing.T,
+) {
+	props, err := projectpkg.AgentDefinitionToServiceProperties(
+		agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindHosted,
+				Name: "basic-agent",
+			},
+			Protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "2.0.0"},
+			},
+		},
+		nil,
+	)
+	require.NoError(t, err)
+	legacyEnvironment, err := structpb.NewValue([]any{
+		map[string]any{
+			"name":  "LEGACY_KEY",
+			"value": "${LEGACY_KEY}",
+		},
+	})
+	require.NoError(t, err)
+	props.Fields["environmentVariables"] = legacyEnvironment
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}
+	server := &recordingProjectServer{
+		setEnvironmentErr: fmt.Errorf("write failed"),
+	}
+
+	client := newProjectRecorderClient(t, server)
+	err = persistInlineAgentEnvironment(
+		t.Context(),
+		client,
+		svc,
+		map[string]string{"OPTIMIZATION_CANDIDATE_ID": "candidate-1"},
+	)
+
+	require.ErrorContains(t, err, "write failed")
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Empty(t, server.unsetPaths)
+	require.Empty(t, server.added)
 }
 
 // ---- printPreviewLines ----

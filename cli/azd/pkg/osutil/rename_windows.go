@@ -8,6 +8,7 @@ package osutil
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -20,15 +21,24 @@ import (
 // Rename fails due to what may be transient file system errors. This can help work around issues where the file may
 // temporary be opened by a virus scanner or some other process which prevents us from renaming the file.
 func Rename(ctx context.Context, old, new string) error {
-	return retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(1*time.Second)), func(ctx context.Context) error {
-		err := os.Rename(old, new)
-		if errors.Is(err, windows.ERROR_SHARING_VIOLATION) {
-			// If some other process has a open handle to the source file, Rename can fail with ERROR_SHARING_VIOLATION.
-			log.Printf("rename of %s to %s failed due to ERROR_SHARING_VIOLATION, allowing retry", old, new)
-			return retry.RetryableError(err)
-		} else if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
-			// If the target file has already exists and is in use, Rename can fail with ERROR_ACCESS_DENIED.
-			log.Printf("rename of %s to %s failed due to ERROR_ACCESS_DENIED, allowing retry", old, new)
+	return retryFileSystemOperation(ctx, fmt.Sprintf("rename of %s to %s", old, new), func() error {
+		return os.Rename(old, new)
+	})
+}
+
+// RemoveAll removes path and any children it contains, retrying transient Windows file locks.
+func RemoveAll(ctx context.Context, path string) error {
+	return retryFileSystemOperation(ctx, fmt.Sprintf("remove of %s", path), func() error {
+		return os.RemoveAll(path)
+	})
+}
+
+func retryFileSystemOperation(ctx context.Context, description string, operation func() error) error {
+	return retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(time.Second)), func(context.Context) error {
+		err := operation()
+		if errors.Is(err, windows.ERROR_SHARING_VIOLATION) ||
+			errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+			log.Printf("%s failed due to a transient file lock, allowing retry", description)
 			return retry.RetryableError(err)
 		}
 		return err

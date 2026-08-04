@@ -1,5 +1,15 @@
 # Release History
 
+## 1.0.0-beta.3 (2026-07-16)
+
+### Breaking Changes
+
+- [[#9046]](https://github.com/Azure/azure-dev/pull/9046) `azd deploy` for `host: azure.ai.connection` services is now a no-op; connections are created at provision time by the `microsoft.foundry` provider via `azd provision`. This removes the redundant ARM write on every `azd deploy`.
+
+### Other Changes
+
+- [[#9103]](https://github.com/Azure/azure-dev/pull/9103) Pin internal azd module dependency to released version.
+
 ## 1.0.0-beta.2 (2026-07-09)
 
 ### Bugs Fixed

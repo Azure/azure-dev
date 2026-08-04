@@ -271,7 +271,7 @@ func TestCheckReservedResourceNames(t *testing.T) {
 	require.Len(t, results, 4)
 
 	for _, r := range results {
-		require.Equal(t, PreflightCheckWarning, r.Severity)
+		require.Equal(t, ProvisionValidationCheckWarning, r.Severity)
 		require.Equal(t, "reserved_resource_name", r.DiagnosticID)
 	}
 

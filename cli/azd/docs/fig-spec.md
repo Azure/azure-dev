@@ -159,6 +159,7 @@ The `resources/index.d.ts` file contains a copy of [VS Code's Fig type definitio
 | `listTemplatesFiltered` | `azd template list --filter <tag> --output json` | Suggest templates filtered by `--filter` flag |
 | `listExtensions` | `azd ext list --output json` | Suggest available extension IDs |
 | `listInstalledExtensions` | `azd ext list --installed --output json` | Suggest installed extension IDs |
+| `listConfigKeys` | `azd config options --output json` | Suggest config keys for `azd config get`/`set`/`unset` |
 
 **Basic Generator Structure:**
 ```typescript
@@ -177,6 +178,19 @@ The `resources/index.d.ts` file contains a copy of [VS Code's Fig type definitio
 This generator uses `custom` field instead of `postProcess`, which offers more flexibility for complex logic like:
 - Inspects command line tokens to find the `--filter` flag value
 - Dynamically builds the `azd template list` command that is executed with appropriate filters
+
+**Combining generators: the `filepaths` helper**
+
+An argument can specify multiple generators as an array, so that completions from each are merged. For example, `azd extension install` accepts either an extension ID or a local `.zip` bundle, so its arg combines `azdGenerators.listExtensions` with VS Code's built-in `filepaths` helper restricted to `.zip` files:
+
+```typescript
+args: {
+  name: 'extension-id|extension-bundle.zip',
+  generators: [azdGenerators.listExtensions, filepaths({ extensions: ['zip'] })],
+},
+```
+
+The `filepaths` helper is provided by VS Code's terminal-suggest package (not by azd's own `azdGenerators` object), so it requires a top-level import. The renderer automatically emits `import { filepaths } from '../helpers/filepaths';` as the first line of every generated spec. This import resolves correctly in the VS Code repo where the spec lives.
 
 ## Advanced customization
 

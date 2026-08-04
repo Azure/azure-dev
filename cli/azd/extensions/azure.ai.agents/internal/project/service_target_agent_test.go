@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestApplyAgentMetadata(t *testing.T) {
@@ -140,14 +141,18 @@ type stubContainerServer struct {
 	buildCalls   atomic.Int32
 	packageCalls atomic.Int32
 	publishCalls atomic.Int32
+	buildRequest *azdext.ContainerBuildRequest
+	packRequest  *azdext.ContainerPackageRequest
+	pubRequest   *azdext.ContainerPublishRequest
 	publishErr   error
 }
 
 func (s *stubContainerServer) Build(
 	_ context.Context,
-	_ *azdext.ContainerBuildRequest,
+	request *azdext.ContainerBuildRequest,
 ) (*azdext.ContainerBuildResponse, error) {
 	s.buildCalls.Add(1)
+	s.buildRequest = request
 	return &azdext.ContainerBuildResponse{
 		Result: &azdext.ServiceBuildResult{
 			Artifacts: []*azdext.Artifact{{
@@ -160,9 +165,10 @@ func (s *stubContainerServer) Build(
 
 func (s *stubContainerServer) Package(
 	_ context.Context,
-	_ *azdext.ContainerPackageRequest,
+	request *azdext.ContainerPackageRequest,
 ) (*azdext.ContainerPackageResponse, error) {
 	s.packageCalls.Add(1)
+	s.packRequest = request
 	return &azdext.ContainerPackageResponse{
 		Result: &azdext.ServicePackageResult{
 			Artifacts: []*azdext.Artifact{{
@@ -175,9 +181,10 @@ func (s *stubContainerServer) Package(
 
 func (s *stubContainerServer) Publish(
 	_ context.Context,
-	_ *azdext.ContainerPublishRequest,
+	request *azdext.ContainerPublishRequest,
 ) (*azdext.ContainerPublishResponse, error) {
 	s.publishCalls.Add(1)
+	s.pubRequest = request
 	if s.publishErr != nil {
 		return nil, s.publishErr
 	}
@@ -204,6 +211,7 @@ func newServiceTargetTestClient(
 	t *testing.T,
 	containerSrv azdext.ContainerServiceServer,
 	promptSrv azdext.PromptServiceServer,
+	projectSrvs ...azdext.ProjectServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
 
@@ -213,6 +221,9 @@ func newServiceTargetTestClient(
 	}
 	if promptSrv != nil {
 		azdext.RegisterPromptServiceServer(srv, promptSrv)
+	}
+	if len(projectSrvs) > 0 && projectSrvs[0] != nil {
+		azdext.RegisterProjectServiceServer(srv, projectSrvs[0])
 	}
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -393,6 +404,93 @@ func TestInitializeRejectsAgentYamlSymlinkEscapingRoot(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "escapes project root")
 	require.Empty(t, provider.agentDefinitionPath)
+}
+
+func TestDeployTimeServiceConfigReplacesInitializeSnapshot(t *testing.T) {
+	// azd core re-expands ${VAR} against the environment on every
+	// call, so a deploy-time config can carry a value that was still
+	// unset (and therefore expanded to "") when Initialize ran.
+	// `azd up` initializes service targets before provisioning
+	// prompts for a missing subscription or location, so keeping the
+	// Initialize snapshot would deploy those empty strings.
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+
+	projectRoot := t.TempDir()
+	serviceDir := filepath.Join(projectRoot, "svc")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(serviceDir, "agent.yaml"),
+		[]byte("kind: hostedAgent\n"),
+		0o600,
+	))
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+
+	// AGENT_REGION references an unset variable at Initialize time.
+	stale := &azdext.ServiceConfig{
+		Name:         "echo",
+		RelativePath: "svc",
+		Environment:  map[string]string{"AGENT_REGION": ""},
+	}
+	require.NoError(t, provider.Initialize(t.Context(), stale))
+	require.NoError(t, provider.ensureDeployContext(t.Context()))
+
+	// The user is prompted during provision, so core hands the
+	// deploy-time call a config with the persisted value.
+	fresh := &azdext.ServiceConfig{
+		Name:         "echo",
+		RelativePath: "svc",
+		Environment:  map[string]string{"AGENT_REGION": "westus2"},
+	}
+
+	// Deploy must adopt the config it was handed rather than reuse the
+	// snapshot. It still fails further along (this stub has no Foundry
+	// project), which is after the config has been adopted.
+	_, err := provider.Deploy(
+		t.Context(),
+		fresh,
+		&azdext.ServiceContext{},
+		nil,
+		func(string) {},
+	)
+	require.Error(t, err)
+	require.Same(t, fresh, provider.serviceConfig)
+
+	prep, err := provider.prepareDeploy(
+		provider.serviceConfig,
+		sampleContainerAgent(),
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://project.example"},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:latest"),
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "westus2", prep.resolvedEnvVars["AGENT_REGION"])
+}
+
+func TestAdoptServiceConfigIgnoresNilAndKeepsResolvedState(t *testing.T) {
+	t.Parallel()
+
+	existing := &azdext.ServiceConfig{Name: "echo"}
+	provider := &AgentServiceTargetProvider{
+		serviceConfig:         existing,
+		serviceConfigResolved: true,
+	}
+
+	// A nil config (or the same instance) must not drop the resolved
+	// state, otherwise every repeat call would re-expand $ref
+	// includes.
+	provider.adoptServiceConfig(nil)
+	require.Same(t, existing, provider.serviceConfig)
+	require.True(t, provider.serviceConfigResolved)
+
+	provider.adoptServiceConfig(existing)
+	require.True(t, provider.serviceConfigResolved)
+
+	provider.adoptServiceConfig(&azdext.ServiceConfig{Name: "echo"})
+	require.False(t, provider.serviceConfigResolved)
 }
 
 func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
@@ -993,6 +1091,51 @@ func TestLoadContainerAgentDefinition_MalformedYAMLReturnsError(t *testing.T) {
 	require.Contains(t, err.Error(), "agent.yaml is not valid")
 }
 
+func TestPrepareDeployIncludesServiceEnvironment(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	*agentDef.EnvironmentVariables = append(
+		*agentDef.EnvironmentVariables,
+		agent_yaml.EnvironmentVariable{
+			Name:  "LEGACY_ONLY",
+			Value: "${GLOBAL_VALUE}",
+		},
+		agent_yaml.EnvironmentVariable{
+			Name:  "SHARED",
+			Value: "${SHARED}",
+		},
+	)
+	serviceConfig := &azdext.ServiceConfig{
+		Name: "basic-agent",
+		Environment: map[string]string{
+			"SERVICE_ONLY": "literal ${NOT_A_TEMPLATE}",
+			"SHARED":       "service",
+		},
+	}
+
+	prep, err := (&AgentServiceTargetProvider{}).prepareDeploy(
+		serviceConfig,
+		agentDef,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://project.example",
+			"GLOBAL_VALUE":             "legacy",
+			"SHARED":                   "global",
+		},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:latest"),
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		"literal ${NOT_A_TEMPLATE}",
+		prep.resolvedEnvVars["SERVICE_ONLY"],
+	)
+	require.Equal(t, "service", prep.resolvedEnvVars["SHARED"])
+	require.Equal(t, "legacy", prep.resolvedEnvVars["LEGACY_ONLY"])
+}
+
 func TestLoadContainerAgentDefinition_EnvPathOverridesInlineDefinition(t *testing.T) {
 	t.Parallel()
 
@@ -1019,6 +1162,105 @@ func TestLoadContainerAgentDefinition_EnvPathOverridesInlineDefinition(t *testin
 	require.NoError(t, err)
 	require.True(t, isHosted)
 	require.Equal(t, "override-agent", got.Name)
+}
+
+func TestLoadContainerAgentDefinition_FileRef(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "agent.yaml"),
+		[]byte(
+			"kind: hosted\n"+
+				"name: referenced-agent\n"+
+				"protocols:\n"+
+				"  - protocol: responses\n"+
+				"    version: \"1.0.0\"\n",
+		),
+		0o600,
+	))
+	props, err := structpb.NewStruct(map[string]any{
+		"$ref": "./agent.yaml",
+	})
+	require.NoError(t, err)
+	provider := &AgentServiceTargetProvider{
+		projectPath: dir,
+		serviceConfig: &azdext.ServiceConfig{
+			Name:                 "referenced-agent",
+			Host:                 "azure.ai.agent",
+			AdditionalProperties: props,
+		},
+	}
+
+	got, isHosted, err := provider.loadContainerAgentDefinition()
+
+	require.NoError(t, err)
+	require.True(t, isHosted)
+	require.Equal(t, "referenced-agent", got.Name)
+}
+
+func TestPackageBuildsContainerAgent(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAML(t, dir)
+	containerStub := &stubContainerServer{}
+	client := newContainerTestClient(t, containerStub)
+	provider := &AgentServiceTargetProvider{
+		azdClient:           client,
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+		serviceConfig: &azdext.ServiceConfig{
+			Name:         "referenced-agent",
+			Host:         "azure.ai.agent",
+			RelativePath: "src/agent",
+		},
+	}
+
+	_, err := provider.Package(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "referenced-agent"},
+		&azdext.ServiceContext{},
+		func(string) {},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, int32(1), containerStub.buildCalls.Load())
+	require.Equal(t, int32(1), containerStub.packageCalls.Load())
+}
+
+func TestPrepareDeployAppliesDefaultResources(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	agentDef.Resources = nil
+	props, err := AgentDefinitionToServiceProperties(
+		agentDef,
+		&ServiceTargetAgentConfig{},
+	)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		AdditionalProperties: props,
+	}
+	provider := &AgentServiceTargetProvider{}
+
+	prep, err := provider.prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://example",
+		},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	definition, ok := prep.request.Definition.(agent_api.HostedAgentDefinition)
+	require.True(t, ok)
+	require.Equal(t, DefaultCpu, definition.CPU)
+	require.Equal(t, DefaultMemory, definition.Memory)
 }
 
 func TestShouldUsePreBuiltImage_NoImageDefaultsToBuild(t *testing.T) {
@@ -1220,6 +1462,10 @@ func TestPublish_PublishesWhenPackageBuiltFromDockerfile(t *testing.T) {
 		azdClient:           client,
 		agentDefinitionPath: agentPath,
 		env:                 &azdext.Environment{Name: "test-env"},
+		serviceConfig: &azdext.ServiceConfig{
+			Name:         "test-svc",
+			RelativePath: "src/agent",
+		},
 	}
 
 	result, err := provider.Publish(

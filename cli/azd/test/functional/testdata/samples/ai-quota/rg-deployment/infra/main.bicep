@@ -1,4 +1,4 @@
-// Minimal resource-group scoped template for testing AI model quota preflight checks.
+// Minimal resource-group scoped template for testing AI model quota validation checks.
 // All model parameters are configurable to exercise different quota validation scenarios.
 targetScope = 'resourceGroup'
 

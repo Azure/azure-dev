@@ -156,7 +156,7 @@ In-memory `sync.Map` cache keyed by SHA-256 of the full Bicep file tree:
    shared manager before concurrent steps start, so CI runs are race-free
 5. All step failures flow through `wrapProvisionError(ctx, unwrapStepErrors(result))` at
    the outer boundary: the scheduler's `step "X" failed:` prefix is stripped, and
-   preflight-abort / JSON state dump / OpenAI-access / Responsible-AI wrappers are
+   validation-cancel / JSON state dump / OpenAI-access / Responsible-AI wrappers are
    applied exactly once
 6. `FailFast` error policy
 7. Concurrency limit configurable via `AZD_PROVISION_CONCURRENCY` env var

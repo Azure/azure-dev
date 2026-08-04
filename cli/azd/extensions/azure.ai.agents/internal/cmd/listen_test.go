@@ -17,7 +17,96 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
+
+func TestPrepareContainerSettings_AppliesSettingsInMemory(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		legacy     bool
+		resources  map[string]any
+		wantCPU    string
+		wantMemory string
+	}{
+		{
+			name: "inline explicit resources",
+			resources: map[string]any{
+				"cpu":    "0.25",
+				"memory": "0.5Gi",
+			},
+			wantCPU:    "0.25",
+			wantMemory: "0.5Gi",
+		},
+		{
+			name:   "legacy explicit resources",
+			legacy: true,
+			resources: map[string]any{
+				"cpu":    "0.25",
+				"memory": "0.5Gi",
+			},
+			wantCPU:    "0.25",
+			wantMemory: "0.5Gi",
+		},
+		{
+			name: "inline missing memory",
+			resources: map[string]any{
+				"cpu": "1",
+			},
+			wantCPU:    "1",
+			wantMemory: project.DefaultMemory,
+		},
+		{
+			name:   "legacy missing memory",
+			legacy: true,
+			resources: map[string]any{
+				"cpu": "1",
+			},
+			wantCPU:    "1",
+			wantMemory: project.DefaultMemory,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			props, err := structpb.NewStruct(map[string]any{
+				"kind":        "hosted",
+				"name":        "my-chat-agent",
+				"customField": "preserved",
+				"container": map[string]any{
+					"resources": tt.resources,
+				},
+			})
+			require.NoError(t, err)
+
+			svc := &azdext.ServiceConfig{
+				Name:  "agent",
+				Host:  AiAgentHost,
+				Image: "myregistry.azurecr.io/my-agent:${MY_TAG}",
+			}
+			if tt.legacy {
+				svc.Config = props
+			} else {
+				svc.AdditionalProperties = props
+			}
+
+			require.NoError(t, prepareContainerSettings(svc, t.TempDir()))
+
+			cfg, err := project.LoadServiceTargetAgentConfig(svc)
+			require.NoError(t, err)
+			require.NotNil(t, cfg.Container)
+			require.NotNil(t, cfg.Container.Resources)
+			require.Equal(t, tt.wantCPU, cfg.Container.Resources.Cpu)
+			require.Equal(t, tt.wantMemory, cfg.Container.Resources.Memory)
+			require.Equal(t, "myregistry.azurecr.io/my-agent:${MY_TAG}", svc.Image)
+			require.Equal(t, "preserved",
+				project.ServiceConfigProps(svc).GetFields()["customField"].GetStringValue())
+		})
+	}
+}
 
 // TestPostdeployHandler_NonHostedAgent_NoOp verifies postdeployHandler returns nil
 // without any RPC calls when the service is an agent but not a hosted agent (no agent.yaml
@@ -70,7 +159,7 @@ func TestPostdeployHandler_MissingTelemetryEnv_ReturnsNil(t *testing.T) {
 	}{
 		{
 			name:   "FOUNDRY_PROJECT_ENDPOINT not set",
-			values: nil, // GetValue returns NotFound for every key
+			values: nil, // GetValue returns an empty value for every missing key
 		},
 		{
 			name:   "FOUNDRY_PROJECT_ENDPOINT empty",
@@ -128,6 +217,127 @@ func TestIsHostedAgentServiceRejectsTraversal(t *testing.T) {
 	if isHostedAgentService(svc, proj) {
 		t.Fatal("expected traversal service path to be rejected")
 	}
+}
+
+func TestPrepareContainerSettings_ResolvesFileRefInMemory(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "agent.yaml"),
+		[]byte(
+			"kind: hosted\n"+
+				"name: echo\n"+
+				"container:\n"+
+				"  resources:\n"+
+				"    cpu: \"2\"\n"+
+				"    memory: 4Gi\n",
+		),
+		0o600,
+	))
+	props, err := structpb.NewStruct(map[string]any{
+		"$ref": "./agent.yaml",
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "echo",
+		Host:                 AiAgentHost,
+		RelativePath:         "src/echo",
+		AdditionalProperties: props,
+	}
+	err = prepareContainerSettings(svc, root)
+
+	require.NoError(t, err)
+	require.Equal(t, "src/echo", svc.GetRelativePath())
+	cfg, err := project.LoadServiceTargetAgentConfig(svc)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Container)
+	require.NotNil(t, cfg.Container.Resources)
+	require.Equal(t, "2", cfg.Container.Resources.Cpu)
+	require.Equal(t, "4Gi", cfg.Container.Resources.Memory)
+}
+
+func TestPrepareContainerSettings_PreservesNestedFileRef(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "echo",
+		"deployments": []any{
+			map[string]any{"$ref": "./missing-deployment.yaml"},
+		},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "echo",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}
+	err = prepareContainerSettings(svc, t.TempDir())
+
+	require.NoError(t, err)
+	deployments, ok := svc.GetAdditionalProperties().
+		AsMap()["deployments"].([]any)
+	require.True(t, ok)
+	require.Len(t, deployments, 1)
+	deployment, ok := deployments[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(
+		t,
+		"./missing-deployment.yaml",
+		deployment["$ref"],
+	)
+	cfg, err := project.LoadServiceTargetAgentConfig(svc)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Container)
+	require.NotNil(t, cfg.Container.Resources)
+	require.Equal(t, project.DefaultCpu, cfg.Container.Resources.Cpu)
+	require.Equal(t, project.DefaultMemory, cfg.Container.Resources.Memory)
+}
+
+func TestPrepareContainerSettings_NormalizesInlineEnvironment(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "echo",
+		"env": map[string]any{
+			"ENABLED": true,
+		},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "echo",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}
+	err = prepareContainerSettings(svc, t.TempDir())
+
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		"true",
+		svc.GetAdditionalProperties().
+			GetFields()["env"].GetStructValue().
+			GetFields()["ENABLED"].GetStringValue(),
+	)
+}
+
+func TestPrepareContainerSettings_WithoutProperties(t *testing.T) {
+	t.Parallel()
+
+	svc := &azdext.ServiceConfig{Name: "echo", Host: AiAgentHost}
+	err := prepareContainerSettings(svc, t.TempDir())
+
+	require.NoError(t, err)
+	cfg, err := project.LoadServiceTargetAgentConfig(svc)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Container)
+	require.NotNil(t, cfg.Container.Resources)
+	require.Equal(t, project.DefaultCpu, cfg.Container.Resources.Cpu)
+	require.Equal(t, project.DefaultMemory, cfg.Container.Resources.Memory)
 }
 
 func TestKindEnvUpdateRejectsTraversal(t *testing.T) {

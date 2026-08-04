@@ -13,6 +13,8 @@ import (
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -275,6 +277,7 @@ func addResourceService(
 	cfg *structpb.Struct,
 	uses []string,
 ) error {
+	environment := serviceEnvironmentTemplates(cfg)
 	svc := &azdext.ServiceConfig{
 		Name:                 name,
 		Host:                 host,
@@ -285,12 +288,137 @@ func addResourceService(
 		return fmt.Errorf("adding %s service %q: %w", host, name, err)
 	}
 
+	if err := setServiceEnvironment(
+		ctx,
+		azdClient,
+		name,
+		environment,
+	); err != nil {
+		return err
+	}
+
 	if len(uses) > 0 {
 		if err := setServiceUses(ctx, azdClient, name, uses); err != nil {
 			return err
 		}
 	}
 
+	return nil
+}
+
+// serviceEnvironmentTemplates discovers client-side templates in the
+// generic nested resource config emitted to azure.yaml.
+func serviceEnvironmentTemplates(cfg *structpb.Struct) map[string]string {
+	if cfg == nil {
+		return nil
+	}
+
+	environment := map[string]string{}
+	collectEnvironmentTemplates(cfg.AsMap(), environment)
+	if len(environment) == 0 {
+		return nil
+	}
+	return environment
+}
+
+func collectEnvironmentTemplates(value any, environment map[string]string) {
+	switch typed := value.(type) {
+	case string:
+		collectStringEnvironmentTemplates(typed, environment)
+	case map[string]any:
+		for _, nested := range typed {
+			collectEnvironmentTemplates(nested, environment)
+		}
+	case []any:
+		for _, nested := range typed {
+			collectEnvironmentTemplates(nested, environment)
+		}
+	}
+}
+
+func collectStringEnvironmentTemplates(value string, environment map[string]string) {
+	for _, reference := range findEnvironmentReferences(value, honorEnvironmentEscaping) {
+		// env is keyed by name, so store one canonical ${NAME}.
+		// A ${NAME:-default} default is re-applied by the owning
+		// extension against the raw config at deploy, so the env section
+		// only needs NAME's resolved base value. Collapsing every form of
+		// a var to one value also keeps collection deterministic when the
+		// same var appears with and without a default. This assumes a
+		// literal default: a nested ${VAR} default is unsupported and
+		// gets no entry here. See findEnvironmentReferences.
+		environment[reference.Name] = "${" + reference.Name + "}"
+	}
+}
+
+// escapeFoundryTemplates escapes Foundry ${{...}} spans as $${{...}}
+// so azd core's envsubst emits a literal ${{...}} for the owning
+// extension to resolve. Already-escaped $${{...}} and bare ${VAR}
+// are left unchanged, so it is safe on values read back from disk.
+func escapeFoundryTemplates(value string) string {
+	if !strings.Contains(value, "${{") {
+		return value
+	}
+	var b strings.Builder
+	b.Grow(len(value) + 2)
+	for i := 0; i < len(value); i++ {
+		if value[i] == '$' && strings.HasPrefix(value[i:], "${{") &&
+			(i == 0 || value[i-1] != '$') {
+			b.WriteByte('$')
+		}
+		b.WriteByte(value[i])
+	}
+	return b.String()
+}
+
+// setServiceEnvironment writes the env: block of a service, and
+// leaves azure.yaml untouched when there is nothing to write.
+//
+// A generated service with no variables of its own therefore reads
+// as legacy at run and deploy. Declaring an explicit env: {} here
+// would not change that today: core drops a zero-length env on
+// save because ServiceConfig.Environment is tagged omitempty.
+// Fixing it needs core to distinguish an absent env: from an
+// explicitly empty one.
+func setServiceEnvironment(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	environment map[string]string,
+) error {
+	if len(environment) == 0 {
+		return nil
+	}
+
+	sectionValues := make(map[string]any, len(environment))
+	for key, value := range environment {
+		sectionValues[key] = escapeFoundryTemplates(value)
+	}
+	section, err := structpb.NewStruct(sectionValues)
+	if err != nil {
+		return fmt.Errorf(
+			"encoding env for service %q: %w",
+			serviceName,
+			err,
+		)
+	}
+
+	// ServiceConfig.Environment only carries expanded values.
+	// The config RPC preserves raw ${VAR} templates.
+	_, err = azdClient.Project().SetServiceConfigSection(
+		ctx,
+		&azdext.SetServiceConfigSectionRequest{
+			ServiceName: serviceName,
+			Path:        "env",
+			Section:     section,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"setting env for service %q: %w",
+			serviceName,
+			err,
+		)
+	}
 	return nil
 }
 
@@ -346,36 +474,27 @@ func reserveServiceName(used map[string]string, name, source string) error {
 	return nil
 }
 
-// collectProjectDeployments gathers the model deployments declared across all
-// azure.ai.project services so provisioning handlers can source them from the
-// sibling project service instead of the agent service config. Services are
-// visited in sorted name order so serialized env-var output stays stable.
-//
-// Falls back to the deployments bundled on the agent service when no project
-// service carries any, so an azure.yaml written before the per-resource split
-// still provisions without re-running init.
-func collectProjectDeployments(services map[string]*azdext.ServiceConfig) ([]project.Deployment, error) {
-	var out []project.Deployment
-	for _, svc := range sortedServices(services) {
-		props := project.ServiceConfigProps(svc)
-		if svc.Host != AiProjectHost || props == nil {
-			continue
-		}
-		var cfg *project.ServiceTargetAgentConfig
-		if err := project.UnmarshalStruct(props, &cfg); err != nil {
-			return nil, fmt.Errorf("parsing project service %q config: %w", svc.Name, err)
-		}
-		if cfg != nil {
-			out = append(out, cfg.Deployments...)
+// collectLegacyProjectDeployments reads only pre-split agent config.
+// A split project disables this compatibility path because projects
+// owns that service's runtime projection.
+func collectLegacyProjectDeployments(
+	services map[string]*azdext.ServiceConfig,
+	projectRoot string,
+) ([]project.Deployment, error) {
+	for _, svc := range services {
+		if svc.GetHost() == AiProjectHost {
+			return nil, nil
 		}
 	}
-	if len(out) > 0 {
-		return out, nil
-	}
-	legacy, err := collectLegacyAgentConfigs(services)
+
+	legacy, err := collectLegacyAgentConfigs(
+		services,
+		projectRoot,
+	)
 	if err != nil {
 		return nil, err
 	}
+	var out []project.Deployment
 	for _, cfg := range legacy {
 		out = append(out, cfg.Deployments...)
 	}
@@ -386,11 +505,23 @@ func collectProjectDeployments(services map[string]*azdext.ServiceConfig) ([]pro
 // azure.ai.connection services. Falls back to the connections bundled on the
 // agent service when no connection service carries any, so a pre-split
 // azure.yaml still provisions without re-running init.
-func collectConnections(services map[string]*azdext.ServiceConfig) ([]project.Connection, error) {
+func collectConnections(
+	services map[string]*azdext.ServiceConfig,
+	projectRoot string,
+) ([]project.Connection, error) {
 	var out []project.Connection
 	for _, svc := range sortedServices(services) {
-		props := project.ServiceConfigProps(svc)
-		if svc.Host != AiConnectionHost || props == nil {
+		if svc.Host != AiConnectionHost {
+			continue
+		}
+		props, err := resolvedResourceServiceProps(
+			svc,
+			projectRoot,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if props == nil {
 			continue
 		}
 		var conn *project.Connection
@@ -398,13 +529,19 @@ func collectConnections(services map[string]*azdext.ServiceConfig) ([]project.Co
 			return nil, fmt.Errorf("parsing connection service %q config: %w", svc.Name, err)
 		}
 		if conn != nil {
+			if conn.Name == "" {
+				conn.Name = svc.Name
+			}
 			out = append(out, *conn)
 		}
 	}
 	if len(out) > 0 {
 		return out, nil
 	}
-	legacy, err := collectLegacyAgentConfigs(services)
+	legacy, err := collectLegacyAgentConfigs(
+		services,
+		projectRoot,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -418,11 +555,23 @@ func collectConnections(services map[string]*azdext.ServiceConfig) ([]project.Co
 // services. Falls back to the toolboxes bundled on the agent service when no
 // toolbox service carries any, so a pre-split azure.yaml still provisions
 // without re-running init.
-func collectToolboxes(services map[string]*azdext.ServiceConfig) ([]project.Toolbox, error) {
+func collectToolboxes(
+	services map[string]*azdext.ServiceConfig,
+	projectRoot string,
+) ([]project.Toolbox, error) {
 	var out []project.Toolbox
 	for _, svc := range sortedServices(services) {
-		props := project.ServiceConfigProps(svc)
-		if svc.Host != AiToolboxHost || props == nil {
+		if svc.Host != AiToolboxHost {
+			continue
+		}
+		props, err := resolvedResourceServiceProps(
+			svc,
+			projectRoot,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if props == nil {
 			continue
 		}
 		var toolbox *project.Toolbox
@@ -430,13 +579,19 @@ func collectToolboxes(services map[string]*azdext.ServiceConfig) ([]project.Tool
 			return nil, fmt.Errorf("parsing toolbox service %q config: %w", svc.Name, err)
 		}
 		if toolbox != nil {
+			if toolbox.Name == "" {
+				toolbox.Name = svc.Name
+			}
 			out = append(out, *toolbox)
 		}
 	}
 	if len(out) > 0 {
 		return out, nil
 	}
-	legacy, err := collectLegacyAgentConfigs(services)
+	legacy, err := collectLegacyAgentConfigs(
+		services,
+		projectRoot,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -450,8 +605,11 @@ func collectToolboxes(services map[string]*azdext.ServiceConfig) ([]project.Tool
 // services. Tool connections stay on the agent service (they are agent tool
 // configuration), so toolbox enrichment still needs them alongside the
 // connections sourced from azure.ai.connection services.
-func collectAgentToolConnections(services map[string]*azdext.ServiceConfig) ([]project.ToolConnection, error) {
-	configs, err := collectLegacyAgentConfigs(services)
+func collectAgentToolConnections(
+	services map[string]*azdext.ServiceConfig,
+	projectRoot string,
+) ([]project.ToolConnection, error) {
+	configs, err := collectLegacyAgentConfigs(services, projectRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -467,7 +625,10 @@ func collectAgentToolConnections(services map[string]*azdext.ServiceConfig) ([]p
 // projects created before the per-resource split also carry their deployments,
 // connections, and toolboxes here rather than in sibling azure.ai.<kind>
 // services, so the collectors fall back to these when no sibling service exists.
-func collectLegacyAgentConfigs(services map[string]*azdext.ServiceConfig) ([]*project.ServiceTargetAgentConfig, error) {
+func collectLegacyAgentConfigs(
+	services map[string]*azdext.ServiceConfig,
+	projectRoot string,
+) ([]*project.ServiceTargetAgentConfig, error) {
 	var out []*project.ServiceTargetAgentConfig
 	for _, svc := range sortedServices(services) {
 		if svc.Host != AiAgentHost {
@@ -476,13 +637,56 @@ func collectLegacyAgentConfigs(services map[string]*azdext.ServiceConfig) ([]*pr
 		if project.ServiceConfigProps(svc) == nil {
 			continue
 		}
-		cfg, err := project.LoadServiceTargetAgentConfig(svc)
+		effective := proto.Clone(svc).(*azdext.ServiceConfig)
+		if projectRoot != "" {
+			if err := project.ResolveServiceConfigInPlace(
+				effective,
+				projectRoot,
+			); err != nil {
+				return nil, fmt.Errorf(
+					"resolving agent service %q config: %w",
+					svc.Name,
+					err,
+				)
+			}
+		}
+		cfg, err := project.LoadServiceTargetAgentConfig(effective)
 		if err != nil {
 			return nil, fmt.Errorf("parsing agent service %q config: %w", svc.Name, err)
 		}
 		if cfg != nil {
 			out = append(out, cfg)
 		}
+	}
+	return out, nil
+}
+
+func resolvedResourceServiceProps(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (*structpb.Struct, error) {
+	props := project.ServiceConfigProps(svc)
+	if props == nil || projectRoot == "" {
+		return props, nil
+	}
+	resolved, err := foundry.ResolveFileRefs(
+		props.AsMap(),
+		projectRoot,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"resolving service %q config: %w",
+			svc.Name,
+			err,
+		)
+	}
+	out, err := structpb.NewStruct(resolved)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"encoding service %q config: %w",
+			svc.Name,
+			err,
+		)
 	}
 	return out, nil
 }

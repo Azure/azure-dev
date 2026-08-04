@@ -237,8 +237,8 @@ func (*ValidationMessage_PrepareValidationContextResponse) isValidationMessage_M
 type RegisterValidationCheckRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// check_type identifies the validation context this check targets
-	// (e.g. "local-preflight", "project-config"). Future check types can be
-	// added without changing the protocol.
+	// (e.g. "provision", "arm-provision", "project-config"). Future check
+	// types can be added without changing the protocol.
 	CheckType string `protobuf:"bytes,1,opt,name=check_type,json=checkType,proto3" json:"check_type,omitempty"`
 	// rule_id is a stable, unique identifier for this check rule,
 	// used in telemetry and diagnostics.

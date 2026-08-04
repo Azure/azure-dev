@@ -26,6 +26,7 @@ gofrs
 haoozhang
 hemarina
 huimiu
+imatiach
 isatty
 joho
 karolz
@@ -46,6 +47,7 @@ pauldotyu
 pbnj
 rajeshkamal
 richardpark-msft
+rguptar
 rujche
 Saipriya
 saragluna

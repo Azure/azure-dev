@@ -4,8 +4,6 @@
 
 This style guide establishes standards for code, user experience, testing, and documentation across the Azure Developer CLI project. Following these guidelines ensures consistency, maintainability, and a high-quality user experience.
 
-> **Scope**: This guide covers **core azd flows** only. Separate guidelines for agentic flows and extension-specific UX will be provided in dedicated files in the future.
-
 ## Code Style Guidelines
 
 ### Go Conventions

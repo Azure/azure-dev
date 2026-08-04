@@ -19,6 +19,7 @@ func TestAgentType_DisplayName(t *testing.T) {
 	}{
 		{AgentTypeClaudeCode, "Claude Code"},
 		{AgentTypeGitHubCopilotCLI, "GitHub Copilot CLI"},
+		{AgentTypeGitHubCopilotApp, "GitHub Copilot App"},
 		{AgentTypeVSCodeCopilot, "VS Code GitHub Copilot"},
 		{AgentTypeGemini, "Gemini"},
 		{AgentTypeOpenCode, "OpenCode"},
@@ -50,6 +51,21 @@ func TestDetectFromEnvVars(t *testing.T) {
 		{
 			name:          "No env vars",
 			envVars:       map[string]string{},
+			expectedAgent: AgentTypeUnknown,
+			detected:      false,
+		},
+		{
+			name: "GitHub Copilot App takes precedence over Copilot CLI",
+			envVars: map[string]string{
+				"AI_AGENT":    "github_copilot_app_agent",
+				"COPILOT_CLI": "1",
+			},
+			expectedAgent: AgentTypeGitHubCopilotApp,
+			detected:      true,
+		},
+		{
+			name:          "Unrecognized AI_AGENT value",
+			envVars:       map[string]string{"AI_AGENT": "another_agent"},
 			expectedAgent: AgentTypeUnknown,
 			detected:      false,
 		},
@@ -327,6 +343,8 @@ func TestDisableAgentDetect(t *testing.T) {
 // This list must be kept in sync with knownEnvVarPatterns in detect_env.go.
 func clearAgentEnvVars(t *testing.T) {
 	envVarsToUnset := []string{
+		// GitHub Copilot App
+		"AI_AGENT",
 		// Claude Code
 		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",
 		// GitHub Copilot CLI

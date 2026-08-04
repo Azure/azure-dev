@@ -1,0 +1,3 @@
+* Renew the Azure subscription certificate
+* Review the open vally eval pull request
+* Update the AGENTS.md contributor guide

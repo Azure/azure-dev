@@ -1,3 +1,5 @@
+import { filepaths } from '../helpers/filepaths';
+
 interface AzdEnvListItem {
 	Name: string;
 	DotEnvPath: string;
@@ -908,7 +910,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--model'],
-									description: 'Name of the AI model to use (e.g., \'gpt-4o\'). If not specified, defaults to \'gpt-4.1-mini\'. Mutually exclusive with --model-deployment, with --model-deployment being used if both are provided',
+									description: 'Name of the AI model to deploy. Defaults to \'gpt-5.4-mini\' during interactive model selection; required to deploy a new model with --no-prompt. If --model-deployment is also provided, --model-deployment takes precedence',
 									args: [
 										{
 											name: 'model',
@@ -935,7 +937,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--protocol'],
-									description: 'Protocols supported by the agent (e.g., \'responses\', \'invocations\'). Can be specified multiple times.',
+									description: 'Protocols supported by the agent (responses, invocations, invocations_ws, activity). Can be specified multiple times.',
 									isRepeatable: true,
 									args: [
 										{
@@ -3438,6 +3440,18 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['version'],
 							description: 'Display the extension version',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json'],
+										},
+									],
+								},
+							],
 						},
 					],
 				},
@@ -4496,6 +4510,15 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--from-version'],
+											description: 'Version to branch the new version from (defaults to the latest version).',
+											args: [
+												{
+													name: 'from-version',
+												},
+											],
+										},
+										{
 											name: ['--index'],
 											description: 'Search index name. Only valid for CognitiveSearch (Azure AI Search) connections; required there.',
 											args: [
@@ -4567,6 +4590,15 @@ const completionSpec: Fig.Spec = {
 											name: ['--force'],
 											description: 'Skip confirmation prompts and apply the removal immediately.',
 											isDangerous: true,
+										},
+										{
+											name: ['--from-version'],
+											description: 'Version to branch the new version from (defaults to the latest version).',
+											args: [
+												{
+													name: 'from-version',
+												},
+											],
 										},
 										{
 											name: ['--output', '-o'],
@@ -4777,6 +4809,15 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--from-version'],
+											description: 'Version to branch the new version from (defaults to the latest version).',
+											args: [
+												{
+													name: 'from-version',
+												},
+											],
+										},
+										{
 											name: ['--output', '-o'],
 											description: 'The output format',
 											args: [
@@ -4830,6 +4871,15 @@ const completionSpec: Fig.Spec = {
 											name: ['--force'],
 											description: 'Skip confirmation prompts and apply the removal immediately.',
 											isDangerous: true,
+										},
+										{
+											name: ['--from-version'],
+											description: 'Version to branch the new version from (defaults to the latest version).',
+											args: [
+												{
+													name: 'from-version',
+												},
+											],
 										},
 										{
 											name: ['--output', '-o'],
@@ -5829,8 +5879,7 @@ const completionSpec: Fig.Spec = {
 					],
 					args: {
 						name: 'extension-id|extension-bundle.zip',
-						generators: azdGenerators.listExtensions,
-						template: 'filepaths',
+						generators: [azdGenerators.listExtensions, filepaths({ extensions: ['zip'] })],
 					},
 				},
 				{
@@ -6211,7 +6260,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--auth-type'],
-							description: 'The authentication type used between the pipeline provider and Azure for deployment (Only valid for GitHub provider). Valid values: federated, client-credentials.',
+							description: 'The authentication type used between the pipeline provider and Azure for deployment. Valid values: federated, client-credentials. Both the GitHub and Azure DevOps providers default to federated (OIDC) credentials.',
 							args: [
 								{
 									name: 'auth-type',
@@ -6466,12 +6515,22 @@ const completionSpec: Fig.Spec = {
 			subcommands: [
 				{
 					name: ['check'],
-					description: 'Check for tool updates.',
+					description: 'Check for tool upgrades.',
 				},
 				{
 					name: ['install'],
 					description: 'Install specified tools.',
 					options: [
+						{
+							name: ['--agent'],
+							description: 'Install the skill for the specified agent(s): copilot, claude. Use --agent all for every detected agent (skill tools only)',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'agent',
+								},
+							],
+						},
 						{
 							name: ['--all'],
 							description: 'Install all recommended tools',
@@ -6479,16 +6538,6 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['--dry-run'],
 							description: 'Preview what would be installed without making changes',
-						},
-						{
-							name: ['--host'],
-							description: 'Install the skill for the specified agent host(s): copilot, claude. Use --host all for every detected host (skill tools only)',
-							isRepeatable: true,
-							args: [
-								{
-									name: 'host',
-								},
-							],
 						},
 					],
 					args: {
@@ -6512,22 +6561,22 @@ const completionSpec: Fig.Spec = {
 					description: 'Uninstall installed tools.',
 					options: [
 						{
+							name: ['--agent'],
+							description: 'Uninstall the skill from the specified agent(s): copilot, claude. Use --agent all (or omit --agent) to remove the skill from every agent it is installed through (skill tools only)',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'agent',
+								},
+							],
+						},
+						{
 							name: ['--all'],
 							description: 'Uninstall all installed tools',
 						},
 						{
 							name: ['--dry-run'],
 							description: 'Preview what would be uninstalled without making changes',
-						},
-						{
-							name: ['--host'],
-							description: 'Uninstall the skill from the specified agent host(s): copilot, claude. Use --host all (or omit --host) to remove the skill from every host it is installed through (skill tools only)',
-							isRepeatable: true,
-							args: [
-								{
-									name: 'host',
-								},
-							],
 						},
 					],
 					args: {
@@ -6540,18 +6589,22 @@ const completionSpec: Fig.Spec = {
 					description: 'Upgrade installed tools.',
 					options: [
 						{
-							name: ['--dry-run'],
-							description: 'Preview what would be upgraded without making changes',
-						},
-						{
-							name: ['--host'],
-							description: 'Upgrade the skill for the specified agent host(s): copilot, claude. Use --host all for every detected host (skill tools only)',
+							name: ['--agent'],
+							description: 'Upgrade the skill for the specified agent(s): copilot, claude. Use --agent all for every detected agent (skill tools only)',
 							isRepeatable: true,
 							args: [
 								{
-									name: 'host',
+									name: 'agent',
 								},
 							],
+						},
+						{
+							name: ['--all'],
+							description: 'Upgrade all installed tools',
+						},
+						{
+							name: ['--dry-run'],
+							description: 'Preview what would be upgraded without making changes',
 						},
 					],
 					args: {
@@ -6911,7 +6964,7 @@ const completionSpec: Fig.Spec = {
 		},
 		{
 			name: ['--no-prompt'],
-			description: 'Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.',
+			description: 'Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically. Automatically enabled when azd detects a CI/CD or AI-agent environment; set AZD_NON_INTERACTIVE=false to opt out of that automatic enablement.',
 			isPersistent: true,
 		},
 		{

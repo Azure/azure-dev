@@ -633,6 +633,51 @@ tools:
 	assert.Equal(t, "file_search", tools[1]["type"])
 }
 
+// Preview toolbox tools are forwarded in the exact shape defined by the
+// Foundry toolbox API. Type-specific validation remains service-owned.
+func TestRunToolboxCreateWith_NewPreviewTools(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+tools:
+  - type: work_iq_preview
+    name: work-iq
+    project_connection_id: /connections/work-iq
+  - type: fabric_iq_preview
+    name: fabric-iq
+    project_connection_id: /connections/fabric-iq
+    server_label: fabric
+    server_url: https://fabric.example.com/mcp
+    require_approval: never
+  - type: toolbox_search_preview
+    name: toolbox-search
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, newStubConnectionResolver(), "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	assert.Equal(t, []map[string]any{
+		{
+			"type":                  "work_iq_preview",
+			"name":                  "work-iq",
+			"project_connection_id": "/connections/work-iq",
+		},
+		{
+			"type":                  "fabric_iq_preview",
+			"name":                  "fabric-iq",
+			"project_connection_id": "/connections/fabric-iq",
+			"server_label":          "fabric",
+			"server_url":            "https://fabric.example.com/mcp",
+			"require_approval":      "never",
+		},
+		{"type": "toolbox_search_preview", "name": "toolbox-search"},
+	}, client.createVersionCalls[0].req.Tools)
+}
+
 // Connection-backed entries come first, raw tools[] entries after.
 func TestRunToolboxCreateWith_MixedConnectionsAndTools(t *testing.T) {
 	client := newMockToolboxClient("https://e/")

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -453,6 +455,142 @@ func TestInvokeLocalWithNamedAgent(t *testing.T) {
 	if strings.Contains(err.Error(), "cannot use --local with a named agent") {
 		t.Fatalf("unexpected validation rejection: %v", err)
 	}
+}
+
+func TestUnresolvedRemoteAgentNameError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("resolved service has not been deployed", func(t *testing.T) {
+		t.Parallel()
+
+		err := unresolvedRemoteAgentNameError("my-agent-service")
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		if !ok {
+			t.Fatalf("error type = %T, want *azdext.LocalError", err)
+		}
+		if !strings.Contains(localErr.Message, "does not appear to have been deployed") {
+			t.Errorf("message = %q, want deploy-state guidance", localErr.Message)
+		}
+		if !strings.Contains(localErr.Suggestion, "azd deploy") {
+			t.Errorf("suggestion = %q, want azd deploy guidance", localErr.Suggestion)
+		}
+		if localErr.Code != exterrors.CodeMissingAgentEnvVars {
+			t.Errorf("code = %q, want %q", localErr.Code, exterrors.CodeMissingAgentEnvVars)
+		}
+		if localErr.Category != azdext.LocalErrorCategoryDependency {
+			t.Errorf("category = %q, want %q", localErr.Category, azdext.LocalErrorCategoryDependency)
+		}
+	})
+
+	t.Run("no service resolved", func(t *testing.T) {
+		t.Parallel()
+
+		err := unresolvedRemoteAgentNameError("")
+		if !strings.Contains(err.Error(), "agent name is required") {
+			t.Errorf("error = %q, want missing-name guidance", err)
+		}
+	})
+}
+
+func TestRemoteAgentNameFromService(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                    string
+		currentName             string
+		info                    *AgentServiceInfo
+		protocolServiceSelected bool
+		want                    string
+	}{
+		{
+			name:                    "auto protocol clears cached service key without deploy output",
+			currentName:             "service-key",
+			info:                    &AgentServiceInfo{ServiceName: "service-key"},
+			protocolServiceSelected: true,
+			want:                    "",
+		},
+		{
+			name:        "positional name survives auto-detected protocol",
+			currentName: "existing-agent",
+			info:        &AgentServiceInfo{ServiceName: "service-key"},
+			want:        "existing-agent",
+		},
+		{
+			name:        "resolved deployed or brownfield name wins",
+			currentName: "service-key",
+			info: &AgentServiceInfo{
+				ServiceName: "service-key",
+				AgentName:   "resolved-agent",
+			},
+			want: "resolved-agent",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := remoteAgentNameFromService(tt.currentName, tt.info, tt.protocolServiceSelected)
+			if got != tt.want {
+				t.Errorf("remoteAgentNameFromService() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRemoteAgentServiceResolutionError(t *testing.T) {
+	t.Parallel()
+
+	resolveErr := errors.New("project service unavailable")
+
+	t.Run("missing direct name surfaces resolver failure", func(t *testing.T) {
+		t.Parallel()
+
+		err := remoteAgentServiceResolutionError(resolveErr, false)
+		if err == nil {
+			t.Fatal("expected resolver error, got nil")
+		}
+		if !errors.Is(err, resolveErr) {
+			t.Errorf("error %q does not wrap resolver error", err)
+		}
+	})
+
+	t.Run("direct name preserves fallback", func(t *testing.T) {
+		t.Parallel()
+
+		if err := remoteAgentServiceResolutionError(resolveErr, true); err != nil {
+			t.Errorf("direct name should ignore project resolver failure, got %v", err)
+		}
+	})
+}
+
+func TestInvokeActionServiceNameSelector(t *testing.T) {
+	t.Parallel()
+
+	t.Run("auto-selected protocol service is kept separate", func(t *testing.T) {
+		t.Parallel()
+
+		action := &InvokeAction{
+			flags:               &invokeFlags{},
+			protocolServiceName: "service-key",
+		}
+
+		if got := action.serviceNameSelector(); got != "service-key" {
+			t.Errorf("serviceNameSelector() = %q, want service-key", got)
+		}
+		if action.flags.name != "" {
+			t.Errorf("flags.name = %q, want empty", action.flags.name)
+		}
+	})
+
+	t.Run("positional name remains the selector without cached service", func(t *testing.T) {
+		t.Parallel()
+
+		action := &InvokeAction{flags: &invokeFlags{name: "existing-agent"}}
+		if got := action.serviceNameSelector(); got != "existing-agent" {
+			t.Errorf("serviceNameSelector() = %q, want existing-agent", got)
+		}
+	})
 }
 
 func TestUserIdentityFlags_SessionRequestOptions(t *testing.T) {

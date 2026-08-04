@@ -19,6 +19,7 @@ import (
 	"azureaiagent/internal/project"
 	"azureaiagent/internal/synthesis"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"go.yaml.in/yaml/v3"
 )
@@ -65,6 +66,37 @@ func parseInfraProvider(value string) (string, error) {
 			"pass --infra=bicep or --infra=terraform (a bare --infra ejects Bicep)",
 		)
 	}
+}
+
+// ejectInfraAfterInit ejects from the azd project containing the current
+// directory. Init may create or discover a project above cwd, so use the same
+// upward project resolution as the rest of azd.
+func ejectInfraAfterInit(provider string) error {
+	if provider == "" {
+		return nil
+	}
+
+	projectRoot, err := azdext.GetProjectDir()
+	if errors.Is(err, azdext.ErrProjectNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("resolve azd project directory after init: %w", err)
+	}
+
+	rawYAML, err := os.ReadFile(filepath.Join(projectRoot, "azure.yaml")) //nolint:gosec // resolved azd project file
+	if err != nil {
+		return fmt.Errorf("read azure.yaml after init: %w", err)
+	}
+	if _, err := findFoundryServiceForEject(rawYAML); err != nil {
+		if localErr, ok := errors.AsType[*azdext.LocalError](err); ok &&
+			localErr.Code == exterrors.CodeInfraEjectNoFoundryService {
+			return nil
+		}
+		return err
+	}
+
+	return ejectInfra(projectRoot, provider)
 }
 
 // ejectInfra synthesizes the embedded Bicep templates from azure.yaml and
@@ -587,10 +619,10 @@ func writeOutputsFile(infraDir string, includeAcr bool) (ejectArtifact, error) {
 
 // writeTfvarsFile emits infra/main.tfvars.json. azd-core's Terraform provider
 // reads this file and substitutes the ${...} placeholders from the azd
-// environment at provision time. The synthesizer-known value `deployments` is
-// written literally; deploy-time inputs (location, resource_group_name,
-// foundry_project_name, principal_id, subscription_id, environment_name,
-// resource_token_salt) are left as ${AZURE_*} placeholders.
+// environment at provision time. The synthesizer-known values `deployments`
+// and `connections` are written literally; deploy-time inputs (location,
+// resource_group_name, foundry_project_name, principal_id, subscription_id,
+// environment_name, resource_token_salt) are left as ${AZURE_*} placeholders.
 //
 // include_acr is NOT written: whether ACR is provisioned is decided at eject
 // time by the presence of acr.tf, not by a Terraform variable.
@@ -608,10 +640,33 @@ func writeTfvarsFile(infraDir string, params map[string]any) (ejectArtifact, err
 		"resource_token_salt":  "${AZURE_RESOURCE_TOKEN_SALT}",
 	}
 
-	// deployments is the only synthesizer-derived value written to tfvars.
+	// deployments and connections are the only synthesizer-derived values
+	// written to tfvars. The Terraform provider resolves ${VAR} references
+	// across the generated file at provision time.
 	if v, ok := params["deployments"]; ok {
 		doc["deployments"] = v
 	}
+	connections, ok := params["connections"].([]synthesis.Connection)
+	if !ok {
+		return ejectArtifact{}, exterrors.Internal(
+			exterrors.CodeInfraEjectWriteFailed,
+			fmt.Sprintf("connections parameter has unexpected type %T", params["connections"]),
+		)
+	}
+	connectionCredentials, ok := params["connectionCredentials"].(map[string]map[string]any)
+	if !ok {
+		return ejectArtifact{}, exterrors.Internal(
+			exterrors.CodeInfraEjectWriteFailed,
+			fmt.Sprintf(
+				"connectionCredentials parameter has unexpected type %T",
+				params["connectionCredentials"],
+			),
+		)
+	}
+	doc["connections"] = synthesis.JoinConnectionCredentials(
+		connections,
+		connectionCredentials,
+	)
 
 	data, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {

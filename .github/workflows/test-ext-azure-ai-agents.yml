@@ -5,6 +5,7 @@ on:
     paths:
       - "cli/azd/extensions/azure.ai.agents/**"
       - "cli/azd/extensions/azure.ai.inspector/**"
+      - "cli/azd/extensions/azure.ai.projects/**"
       - "cli/azd/test/functional/ai_agents/**"
       - ".github/workflows/test-ext-azure-ai-agents.yml"
     branches: [main]
@@ -20,12 +21,78 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      TIER_0_TEST_PATTERN: '^Test_AIAgent_(Version|Help|Init_NoPrompt_MissingFlags|Doctor_Help)$'
+      TIER_1_TEST_PATTERN: '^Test_AIAgent_(Init_(NoPrompt_(Defer|WithProject)|NegativeControl_BadCassette)|SampleList_(Recorded|JSON_Recorded))$'
     steps:
       - uses: actions/checkout@v6
 
       - uses: actions/setup-go@v6
         with:
           go-version-file: cli/azd/go.mod
+
+      - name: Validate tier test selectors
+        working-directory: cli/azd
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          list_tests() {
+            go test -tags=record -list "$1" ./test/functional/ai_agents/ |
+              awk '/^Test_AIAgent_/ { print }' |
+              tr -d '\r'
+          }
+
+          all_tests="$(list_tests '^Test_AIAgent_')"
+          tier_0_tests="$(list_tests "$TIER_0_TEST_PATTERN")"
+          tier_1_tests="$(list_tests "$TIER_1_TEST_PATTERN")"
+
+          if [[ -z "$all_tests" ]]; then
+            echo "::error::No Test_AIAgent_ tests were discovered."
+            exit 1
+          fi
+          if [[ -z "$tier_0_tests" ]]; then
+            echo "::error::The Tier 0 test selector matched no tests."
+            exit 1
+          fi
+          if [[ -z "$tier_1_tests" ]]; then
+            echo "::error::The Tier 1 test selector matched no tests."
+            exit 1
+          fi
+
+          duplicate_tests="$(
+            printf '%s\n%s\n' "$tier_0_tests" "$tier_1_tests" |
+              sort |
+              uniq -d |
+              tr -d '\r'
+          )"
+          if [[ -n "$duplicate_tests" ]]; then
+            echo "::error::Tests are assigned to multiple tiers:"
+            echo "$duplicate_tests"
+            exit 1
+          fi
+
+          all_tests_sorted="$(
+            printf '%s\n' "$all_tests" |
+              sort |
+              tr -d '\r'
+          )"
+          selected_tests_sorted="$(
+            printf '%s\n%s\n' "$tier_0_tests" "$tier_1_tests" |
+              sort |
+              tr -d '\r'
+          )"
+          if ! diff -u \
+            <(printf '%s\n' "$all_tests_sorted") \
+            <(printf '%s\n' "$selected_tests_sorted"); then
+            echo "::error::Tier selectors must cover every Test_AIAgent_ test exactly once."
+            exit 1
+          fi
+
+          echo "Tier 0 tests:"
+          echo "$tier_0_tests"
+          echo "Tier 1 tests:"
+          echo "$tier_1_tests"
 
       - name: Build azd
         working-directory: cli/azd
@@ -55,6 +122,20 @@ jobs:
           azd x publish
           azd extension install azure.ai.inspector --source local --force --no-prompt
 
+      - name: Build & install projects dependency from source
+        working-directory: cli/azd/extensions/azure.ai.projects
+        run: |
+          pwsh -File ci-build.ps1 -OutputFileName azure-ai-projects-linux-amd64 -Version "$(cat version.txt | tr -d '\r\n')"
+          mkdir -p bin
+          mv azure-ai-projects-linux-amd64 bin/
+          azd x pack
+          azd x publish
+          azd extension install azure.ai.projects --source local --force --no-prompt
+
+      - name: Run projects unit tests
+        working-directory: cli/azd/extensions/azure.ai.projects
+        run: go test ./... -count=1
+
       - name: Build extension (ci-build.ps1)
         working-directory: cli/azd/extensions/azure.ai.agents
         run: |
@@ -71,14 +152,14 @@ jobs:
         run: |
           azd x pack
           azd x publish
-          azd extension install azure.ai.agents --source local --force --no-prompt
+          azd extension install azure.ai.agents --source local --force --no-dependencies --no-prompt
 
       - name: Run Tier 0 tests (offline, production extension)
         working-directory: cli/azd
         env:
           CLI_TEST_AZD_PATH: ${{ github.workspace }}/cli/azd/azd-record
         run: |
-          go test -tags=record -run "Test_AIAgent_(Version|Help|Init_NoPrompt_MissingFlags|Doctor_Help)" \
+          go test -tags=record -run "$TIER_0_TEST_PATTERN" \
             ./test/functional/ai_agents/ -v -timeout 5m
 
       - name: Swap extension to record binary for Tier 1
@@ -94,5 +175,5 @@ jobs:
           AZURE_RECORD_MODE: playback
           CLI_TEST_AZD_PATH: ${{ github.workspace }}/cli/azd/azd-record
         run: |
-          go test -tags=record -run "Test_AIAgent_(Init_(NoPrompt_(Defer|WithProject)|NegativeControl_BadCassette)|SampleList_(Recorded|JSON_Recorded))" \
+          go test -tags=record -run "$TIER_1_TEST_PATTERN" \
             ./test/functional/ai_agents/ -v -timeout 5m

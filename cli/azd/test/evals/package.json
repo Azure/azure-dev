@@ -1,0 +1,26 @@
+{
+  "name": "evals",
+  "version": "1.0.0",
+  "private": true,
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "eval:simple": "npx vally eval -e ./eval.yaml",
+    "eval:qna": "npx vally eval -e ./eval-azd-qna.yaml",
+    "eval:deploy": "npx vally eval -e ./eval-azd-deploy.yaml",
+    "eval:experiment": "npx vally experiment run ./eval-azd.experiments.yaml",
+    "report": "go run ./vally_report.go"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@microsoft/vally-cli": "^0.10.0"
+  },
+  "devDependencies": {
+    "@microsoft/vally": "^0.10.0",
+    "@types/node": "^24.13.3",
+    "typescript": "^7.0.2"
+  }
+}

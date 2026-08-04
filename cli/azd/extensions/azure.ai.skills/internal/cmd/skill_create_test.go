@@ -38,6 +38,11 @@ func TestCreateAction_NoPromptWithNoInput(t *testing.T) {
 	require.Equal(t, exterrors.CodeMissingRequiredField, le.Code)
 }
 
+func TestCreateCommand_HasSaveToAzureYamlFlag(t *testing.T) {
+	cmd := newCreateCommand(&azdext.ExtensionContext{})
+	require.NotNil(t, cmd.Flags().Lookup("save-to-azure-yaml"))
+}
+
 // TestCreateAction_ConflictingFlagsViRun exercises the full Run path (not just
 // selectCreateMode) so that the validation is also reached via the command
 // entry-point.

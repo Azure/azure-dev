@@ -18,6 +18,10 @@
       "type": "array",
       "description": "Tool type names the skill uses (must be declared on a toolbox the agent references, or attached directly to the agent's tools list).",
       "items": { "type": "string" }
+    },
+    "archive": {
+      "type": "string",
+      "description": "Path to a .zip skill package or a directory containing SKILL.md. Mutually exclusive with description, instructions, and tools. Relative paths resolve from the service path when set, otherwise from the current project directory."
     }
   }
 }

@@ -1507,15 +1507,23 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 					}
 
-					if !manifestInCwd {
+					if manifestInCwd {
+						if flags.src == "" {
+							flags.src = "."
+						}
+					} else if strings.EqualFold(flags.kind, kindFlagPromptVoice) && existingProject {
+						// A prompt-voice agent carries no source code, so inside an
+						// existing project it is appended to the current azure.yaml
+						// (targetDir stays ".") like other agents, rather than
+						// scaffolded into a nested <name>/ project. Matches the
+						// interactive voice branch.
+					} else {
 						_, statErr := os.Stat(folderName)
 						newlyCreated := errors.Is(statErr, fs.ErrNotExist)
 						targetDir = folderName
 						if newlyCreated && !existingProject {
 							folderDisplay = filepath.ToSlash(folderName)
 						}
-					} else if flags.src == "" {
-						flags.src = "."
 					}
 				}
 
@@ -1666,15 +1674,24 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					defer cleanup()
 					flags.manifestPointer = manifestPath
 
-					folderName := sanitizeAgentName(resolvedName)
-					_, statErr := os.Stat(folderName)
-					newlyCreated := errors.Is(statErr, fs.ErrNotExist)
+					// When run inside an existing azd project, append the voice
+					// agent as a new service to the current azure.yaml
+					// (targetDir="."), matching hosted and other agents, instead
+					// of scaffolding a nested <name>/ project. Only a brand-new
+					// (empty) init creates the <name>/ project folder.
+					targetDir := "."
 					var folderDisplay string
-					if newlyCreated && !existingProject {
-						folderDisplay = filepath.ToSlash(folderName)
+					if !existingProject {
+						folderName := sanitizeAgentName(resolvedName)
+						_, statErr := os.Stat(folderName)
+						newlyCreated := errors.Is(statErr, fs.ErrNotExist)
+						targetDir = folderName
+						if newlyCreated {
+							folderDisplay = filepath.ToSlash(folderName)
+						}
 					}
 					if err := runInitFromManifest(
-						ctx, flags, azdClient, httpClient, folderName, folderDisplay, true,
+						ctx, flags, azdClient, httpClient, targetDir, folderDisplay, true,
 					); err != nil {
 						if exterrors.IsCancellation(err) {
 							return exterrors.Cancelled("initialization was cancelled")

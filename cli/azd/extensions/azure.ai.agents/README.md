@@ -34,6 +34,7 @@ services:
     project: .
     config:
       kind: hosted
+      name: my-agent
       description: My hosted agent
 ```
 
@@ -45,8 +46,66 @@ services:
     host: azure.ai.agent
     project: .
     kind: hosted
+    name: my-agent
     description: My hosted agent
 ```
+
+### Environment variables under `config:`
+
+Older projects could also set environment variables in an `env:` block nested
+under the service's `config:`. That position is no longer read: azd takes the
+service environment only from the service-level `env:`. A service that still
+carries `config: env:` gets a warning naming the affected variables on both
+`azd ai agent run` and `azd deploy`.
+
+Move them up one level to fix it:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    env:
+      API_KEY: ${SECRET}
+      LOG_LEVEL: debug
+```
+
+## Content safety policies
+
+A hosted agent can be bound to an Azure AI Content Safety (RAI) policy so every
+request and response it handles is screened by that policy. Declare it with a
+`policies` list on the `azure.ai.agent` service entry in `azure.yaml`:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    kind: hosted
+    name: my-agent
+    policies:
+      - type: rai_policy
+        raiPolicyName: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account-name>/raiPolicies/<policy-name>
+```
+
+`policies` applies to both deploy modes — container images and code deploys
+(`codeConfiguration`) alike. It is optional; agents without it deploy exactly as
+before.
+
+Details:
+
+- `type` is required. `rai_policy` is currently the only supported value.
+- `raiPolicyName` is required for `rai_policy` and takes the **full ARM resource
+  ID** of the policy, not its short name. Built-in policies such as
+  `Microsoft.DefaultV2` still need the full ID, with the account that hosts them
+  in the path.
+- Create or list policies on the Foundry account first — azd does not create the
+  policy, it only associates the agent with an existing one.
+
+> **Note:** In the deprecated on-disk `agent.yaml` shape the key is snake_case
+> (`rai_policy_name`). In `azure.yaml` it is camelCase (`raiPolicyName`), like
+> the other inline agent properties such as `codeConfiguration` and
+> `environmentVariables`.
 
 ## Session carry-over across deploys
 

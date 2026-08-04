@@ -45,7 +45,6 @@ type ServiceTargetAgentConfig struct {
 	// Foundry project. Its presence is the brownfield signal that makes provision
 	// connect to that project instead of creating a new one.
 	Endpoint        string             `json:"endpoint,omitempty"`
-	Environment     map[string]string  `json:"env,omitempty"`
 	Container       *ContainerSettings `json:"container,omitempty"`
 	Deployments     []Deployment       `json:"deployments,omitempty"`
 	Resources       []Resource         `json:"resources,omitempty"`

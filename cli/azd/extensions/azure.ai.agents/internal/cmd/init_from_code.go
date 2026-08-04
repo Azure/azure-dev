@@ -831,6 +831,7 @@ func (a *InitFromCodeAction) addToProject(
 	if err != nil {
 		return err
 	}
+	agentEnvironment := project.AgentEnvironment(*definition)
 
 	language := "python"
 	if !isCodeDeploy {
@@ -840,8 +841,9 @@ func (a *InitFromCodeAction) addToProject(
 		language = "csharp"
 	}
 
+	agentServiceName := strings.ReplaceAll(agentName, " ", "")
 	serviceConfig := &azdext.ServiceConfig{
-		Name:                 strings.ReplaceAll(agentName, " ", ""),
+		Name:                 agentServiceName,
 		RelativePath:         targetDir,
 		Host:                 AiAgentHost,
 		Language:             language,
@@ -868,11 +870,18 @@ func (a *InitFromCodeAction) addToProject(
 	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
+	if err := setServiceEnvironment(
+		ctx,
+		a.azdClient,
+		agentServiceName,
+		agentEnvironment,
+	); err != nil {
+		return err
+	}
 
 	// Emit the sibling azure.ai.project service carrying the model deployments
 	// and wire the agent's uses: to it. A selected existing project contributes
 	// its endpoint so provision reuses it instead of creating a new project.
-	agentServiceName := strings.ReplaceAll(agentName, " ", "")
 	if err := emitResourceServices(
 		ctx, a.azdClient, agentServiceName,
 		projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),
@@ -904,7 +913,7 @@ type protocolInfo struct {
 // knownProtocols lists the protocols offered during init, in display order.
 var knownProtocols = []protocolInfo{
 	{Name: "responses", Version: "2.0.0"},
-	{Name: "invocations", Version: "1.0.0"},
+	{Name: "invocations", Version: "2.0.0"},
 	{Name: "invocations_ws", Version: "2.0.0"},
 	// "activity" is the canonical protocol name (legacy alias: "activity_protocol").
 	// The version selects the platform's internal container route ("v1"/"1.0.0" ->

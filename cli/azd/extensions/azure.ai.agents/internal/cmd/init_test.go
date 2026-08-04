@@ -367,6 +367,28 @@ func TestSynthesizeImageManifestFile_UsesFlagProtocols(t *testing.T) {
 	require.Equal(t, "2.0.0", containerAgent.Protocols[0].Version)
 }
 
+func TestSynthesizeImageManifestFile_UsesInvocationsProtocol(t *testing.T) {
+	t.Parallel()
+
+	const agentName = "my-agent"
+	const image = "myacr.azurecr.io/agents/my-agent:v1"
+
+	manifestPath, cleanup, err := synthesizeImageManifestFile(agentName, image, []string{"invocations"})
+	require.NoError(t, err)
+	defer cleanup()
+
+	content, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+	template, err := agent_yaml.ExtractAgentDefinition(content)
+	require.NoError(t, err)
+
+	containerAgent, ok := template.(agent_yaml.ContainerAgent)
+	require.True(t, ok, "synthesized template should be a ContainerAgent, got %T", template)
+	require.Equal(t, []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "invocations", Version: "2.0.0"},
+	}, containerAgent.Protocols)
+}
+
 func TestSynthesizeImageManifestFile_RejectsUnknownProtocol(t *testing.T) {
 	t.Parallel()
 
@@ -425,6 +447,9 @@ func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
 			Protocols: []agent_yaml.ProtocolVersionRecord{
 				{Protocol: "responses", Version: "2.0.0"},
 			},
+			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
+				{Name: "LOG_LEVEL", Value: "info"},
+			},
 		},
 	}
 
@@ -448,9 +473,16 @@ func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
 	require.Equal(t, "docker", agentService.GetLanguage())
 	require.NotNil(t, agentService.GetDocker())
 	require.NotNil(t, agentService.GetAdditionalProperties())
+	require.Empty(t, agentService.GetEnvironment())
+	require.Equal(t, map[string]any{
+		"LOG_LEVEL": "info",
+	}, server.env["my-agent"])
 
 	_, hasInlineImage := agentService.GetAdditionalProperties().GetFields()["image"]
 	require.False(t, hasInlineImage, "pre-built image must ride on the top-level service image field")
+	_, hasInlineEnvironment := agentService.GetAdditionalProperties().
+		GetFields()["environmentVariables"]
+	require.False(t, hasInlineEnvironment)
 }
 
 func TestValidateInitAgentName(t *testing.T) {

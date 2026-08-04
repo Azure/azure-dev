@@ -1,4 +1,6 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import run from '../src/ext-registry-check.js';
 
@@ -35,7 +37,13 @@ const {
   diffRegistry,
   getCoreReviewers,
   isAllowedRegistryJsonUpdate,
+  REGISTRY_JSON_PATHS,
 } = run.forTests;
+
+const PROD_REGISTRY_PATH = 'cli/azd/extensions/registry.json';
+const DEV_REGISTRY_PATH = 'cli/azd/extensions/registry.dev.json';
+const FIG_SPEC_SNAPSHOT_PATH = 'cli/azd/cmd/testdata/TestFigSpec.ts';
+const REGISTRY_PATH_LIST = `${PROD_REGISTRY_PATH}, ${DEV_REGISTRY_PATH}`;
 
 /**
  * @param {object} [opts]
@@ -515,7 +523,12 @@ describe('isAllowedRegistryJsonUpdate', () => {
     const octokit = createRegistryOctokit({ base, pr });
     const context = createRegistryContext();
 
-    await expect(isAllowedRegistryJsonUpdate({ octokit, context })).resolves.toContainEqual(expect.stringContaining('changes metadata that requires core review'));
+    await expect(isAllowedRegistryJsonUpdate({
+      octokit,
+      context,
+      registryPath: PROD_REGISTRY_PATH,
+      registryBaseRef: 'main',
+    })).resolves.toContainEqual(expect.stringContaining('changes metadata that requires core review'));
     expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
       owner: 'Azure',
       repo: 'azure-dev',
@@ -537,12 +550,29 @@ describe('isAllowedRegistryJsonUpdate', () => {
     await expect(isAllowedRegistryJsonUpdate({
       octokit,
       context,
+      registryPath: PROD_REGISTRY_PATH,
       registryBaseRef: 'base-before-pr',
     })).resolves.toContainEqual(expect.stringContaining('changes metadata that requires core review'));
     expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
       owner: 'Azure',
       repo: 'azure-dev',
       ref: 'base-before-pr',
+    }));
+  });
+
+  it('loads and validates registry.dev.json when requested', async () => {
+    const base = registry([extension({ id: 'ext.one' })]);
+    const pr = registry([{ ...extension({ id: 'ext.one' }), namespace: 'other' }]);
+    const octokit = createRegistryOctokit({ base, pr });
+
+    await expect(isAllowedRegistryJsonUpdate({
+      octokit,
+      context: createRegistryContext(),
+      registryPath: DEV_REGISTRY_PATH,
+      registryBaseRef: 'main',
+    })).resolves.toContainEqual(expect.stringContaining('changes metadata that requires core review'));
+    expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
+      path: 'cli/azd/extensions/registry.dev.json',
     }));
   });
 
@@ -554,6 +584,8 @@ describe('isAllowedRegistryJsonUpdate', () => {
     const reasons = await isAllowedRegistryJsonUpdate({
       octokit,
       context: createRegistryContext(),
+      registryPath: PROD_REGISTRY_PATH,
+      registryBaseRef: 'main',
     });
 
     expect(reasons).toContainEqual(expect.stringContaining('changes capabilities'));
@@ -614,6 +646,177 @@ describe('run', () => {
     expect(octokit.paginate).toHaveBeenCalledWith(octokit.rest.pulls.listFiles, expect.objectContaining({
       pull_number: 1,
     }));
+  });
+
+  it('allows a simple registry.dev.json-only PR without core review', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension({ versions: [version({ version: '1.0.0' })] })]),
+      pr: registry([extension({ versions: [version({ version: '1.0.0' }), version({ version: '1.1.0' })] })]),
+      files: [{ filename: 'cli/azd/extensions/registry.dev.json' }],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).not.toHaveBeenCalled();
+    expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
+      path: 'cli/azd/extensions/registry.dev.json',
+    }));
+  });
+
+  it('allows simple updates to both registries without core review', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension({ versions: [version({ version: '1.0.0' })] })]),
+      pr: registry([extension({ versions: [version({ version: '1.0.0' }), version({ version: '1.1.0' })] })]),
+      files: [
+        { filename: 'cli/azd/extensions/registry.json' },
+        { filename: 'cli/azd/extensions/registry.dev.json' },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).not.toHaveBeenCalled();
+    expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
+      path: 'cli/azd/extensions/registry.json',
+    }));
+    expect(octokit.rest.repos.getContent).toHaveBeenCalledWith(expect.objectContaining({
+      path: 'cli/azd/extensions/registry.dev.json',
+    }));
+  });
+
+  it('allows a simple registry PR that also updates the TestFigSpec snapshot', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension({ versions: [version({ version: '1.0.0' })] })]),
+      pr: registry([extension({ versions: [version({ version: '1.0.0' }), version({ version: '1.1.0' })] })]),
+      files: [
+        { filename: PROD_REGISTRY_PATH },
+        { filename: FIG_SPEC_SNAPSHOT_PATH, status: 'modified' },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).not.toHaveBeenCalled();
+  });
+
+  it('requires review when a registry.dev.json-only PR updates the TestFigSpec snapshot', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension({ versions: [version({ version: '1.0.0' })] })]),
+      pr: registry([extension({ versions: [version({ version: '1.0.0' }), version({ version: '1.1.0' })] })]),
+      files: [
+        { filename: DEV_REGISTRY_PATH },
+        { filename: FIG_SPEC_SNAPSHOT_PATH, status: 'modified' },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(`files outside the extension registries (${REGISTRY_PATH_LIST})`));
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(FIG_SPEC_SNAPSHOT_PATH));
+  });
+
+  it('requires review for other non-registry files alongside TestFigSpec', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension()]),
+      pr: registry([extension()]),
+      files: [
+        { filename: PROD_REGISTRY_PATH },
+        { filename: FIG_SPEC_SNAPSHOT_PATH, status: 'modified' },
+        { filename: 'cli/azd/extensions/README.md' },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(`files outside the extension registries (${REGISTRY_PATH_LIST})`));
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('cli/azd/extensions/README.md'));
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.not.stringContaining(FIG_SPEC_SNAPSHOT_PATH));
+  });
+
+  it('requires review when the TestFigSpec snapshot is deleted', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension({ versions: [version({ version: '1.0.0' })] })]),
+      pr: registry([extension({ versions: [version({ version: '1.0.0' }), version({ version: '1.1.0' })] })]),
+      files: [
+        { filename: PROD_REGISTRY_PATH },
+        { filename: FIG_SPEC_SNAPSHOT_PATH, status: 'removed' },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(`files outside the extension registries (${REGISTRY_PATH_LIST})`));
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(FIG_SPEC_SNAPSHOT_PATH));
+  });
+
+  it('requires review when the TestFigSpec snapshot is renamed', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension({ versions: [version({ version: '1.0.0' })] })]),
+      pr: registry([extension({ versions: [version({ version: '1.0.0' }), version({ version: '1.1.0' })] })]),
+      files: [
+        { filename: PROD_REGISTRY_PATH },
+        {
+          filename: FIG_SPEC_SNAPSHOT_PATH,
+          previous_filename: 'cli/azd/cmd/testdata/TestFigSpec.old.ts',
+          status: 'renamed',
+        },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(`files outside the extension registries (${REGISTRY_PATH_LIST})`));
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(FIG_SPEC_SNAPSHOT_PATH));
   });
 
   it('skips changed-file review when a registry maintainer authored the PR', async () => {
@@ -687,7 +890,8 @@ describe('run', () => {
       coreTeam: new Set(['core-member']),
     });
 
-    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('files outside cli/azd/extensions/registry.json'));
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(`files outside the extension registries (${REGISTRY_PATH_LIST})`));
     expect(octokit.paginate).toHaveBeenCalledWith(octokit.rest.pulls.listFiles, expect.objectContaining({
       pull_number: 1,
     }));
@@ -745,7 +949,8 @@ describe('run', () => {
       coreTeam: new Set(['core-member']),
     });
 
-    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('files outside cli/azd/extensions/registry.json'));
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(`files outside the extension registries (${REGISTRY_PATH_LIST})`));
     expect(octokit.paginate).toHaveBeenCalledWith(octokit.rest.pulls.listFiles, expect.objectContaining({
       pull_number: 1,
     }));
@@ -799,7 +1004,7 @@ describe('run', () => {
     }));
   });
 
-  it('requires review when the PR changes files outside registry.json', async () => {
+  it('requires review when the PR changes files outside the extension registries', async () => {
     const core = createNoopCore();
     const octokit = createRegistryOctokit({
       base: registry([extension()]),
@@ -817,8 +1022,119 @@ describe('run', () => {
       coreTeam: new Set(['core-member']),
     });
 
-    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('files outside cli/azd/extensions/registry.json'));
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(`files outside the extension registries (${REGISTRY_PATH_LIST})`));
     expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('cli/azd/extensions/README.md'));
+  });
+
+  it('requires review when a file is renamed into a registry path', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      base: registry([extension()]),
+      pr: registry([extension()]),
+      files: [
+        { filename: PROD_REGISTRY_PATH, previous_filename: 'cli/azd/extensions/registry.old.json', status: 'renamed' },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('renames extension registry files'));
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(`cli/azd/extensions/registry.old.json -> ${PROD_REGISTRY_PATH}`));
+  });
+
+  it('requires review when a registry file is renamed away', async () => {
+    const core = createNoopCore();
+    // A registry renamed away no longer exists at either registry path, so no fixture is
+    // configured - the mock throws if the policy tries to load one anyway.
+    const octokit = createRegistryOctokit({
+      registries: {},
+      files: [
+        { filename: 'cli/azd/extensions/registry.old.json', previous_filename: DEV_REGISTRY_PATH, status: 'renamed' },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('renames extension registry files'));
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(`${DEV_REGISTRY_PATH} -> cli/azd/extensions/registry.old.json`));
+    // The renamed registry must be reported as a rename, not as an unrelated outside file.
+    expect(core.setFailed).not.toHaveBeenCalledWith(
+      expect.stringContaining('files outside the extension registries'));
+  });
+
+  it('requires review with a policy message when a registry file is deleted', async () => {
+    const core = createNoopCore();
+    // A deleted registry has nothing to fetch at the PR head, so no fixture is configured -
+    // the mock throws if the policy tries to load it anyway.
+    const octokit = createRegistryOctokit({
+      registries: {},
+      files: [{ filename: DEV_REGISTRY_PATH, status: 'removed' }],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('deletes extension registry files'));
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining(DEV_REGISTRY_PATH));
+    // A deletion must surface as policy guidance, not as an unhandled 404 from the registry fetch.
+    expect(core.setFailed).not.toHaveBeenCalledWith(expect.stringContaining('Internal failure in script'));
+    expect(octokit.rest.repos.getContent).not.toHaveBeenCalled();
+  });
+
+  it('evaluates each registry independently and names only the one that requires review', async () => {
+    const core = createNoopCore();
+    const octokit = createRegistryOctokit({
+      registries: {
+        // Prod registry: a simple, policy-valid new release.
+        [PROD_REGISTRY_PATH]: {
+          base: registry([extension({ versions: [version({ version: '1.0.0' })] })]),
+          pr: registry([extension({ versions: [version({ version: '1.0.0' }), version({ version: '1.1.0' })] })]),
+        },
+        // Dev registry: a new release that changes capabilities, which requires core review.
+        [DEV_REGISTRY_PATH]: {
+          base: registry([extension({ versions: [version({ version: '1.0.0', capabilities: ['custom-commands'] })] })]),
+          pr: registry([
+            extension({
+              versions: [
+                version({ version: '1.0.0', capabilities: ['custom-commands'] }),
+                version({ version: '1.1.0', capabilities: ['custom-commands', 'lifecycle-events'] }),
+              ],
+            }),
+          ]),
+        },
+      },
+      files: [
+        { filename: PROD_REGISTRY_PATH },
+        { filename: DEV_REGISTRY_PATH },
+      ],
+    });
+
+    await run({
+      github: octokit,
+      context: createRegistryContext(),
+      core,
+      coreTeam: new Set(['core-member']),
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining(`${DEV_REGISTRY_PATH}: `));
+    expect(core.setFailed).not.toHaveBeenCalledWith(expect.stringContaining(`${PROD_REGISTRY_PATH}: `));
   });
 });
 
@@ -835,11 +1151,44 @@ describe('getCoreReviewers', () => {
   });
 });
 
+describe('REGISTRY_JSON_PATHS', () => {
+  // The ext-registry-check workflow detects registry changes before it checks out the
+  // repo, so it can't require this script and keeps its own copy of the path list.
+  // A path added here but missed there fails open: the gated steps skip and the
+  // required check reports green without the policy ever running.
+  it('matches the inline registryPaths list in ext-registry-check.yml', () => {
+    const workflowPath = join(__dirname, '..', '..', 'workflows', 'ext-registry-check.yml');
+    const workflow = readFileSync(workflowPath, 'utf8');
+
+    const setLiteral = /const registryPaths = new Set\(\[([^\]]*)\]\)/.exec(workflow);
+    // Fail loudly rather than silently stop guarding if the literal is renamed or restructured.
+    expect(setLiteral, 'could not find the `registryPaths` Set literal in ext-registry-check.yml').not.toBeNull();
+
+    const workflowPaths = [...(setLiteral?.[1] ?? '').matchAll(/'([^']+)'/g)].map((match) => String(match[1]));
+    expect(workflowPaths.length).toBeGreaterThan(0);
+    expect(workflowPaths.sort()).toEqual([...REGISTRY_JSON_PATHS].sort());
+  });
+});
+
 /**
- * @param {{ base: RegistryJson, pr: RegistryJson, files?: { filename: string, previous_filename?: string }[], reviews?: { user: { login: string }, state: string, commit_id: string }[] }} args
+ * @param {{
+ *   base?: RegistryJson,
+ *   pr?: RegistryJson,
+ *   registries?: Object<string, { base: RegistryJson, pr: RegistryJson }>,
+ *   files?: { filename: string, previous_filename?: string, status?: string }[],
+ *   reviews?: { user: { login: string }, state: string, commit_id: string }[],
+ * }} args
  * @returns {Octokit}
  */
-function createRegistryOctokit({ base, pr, files = [{ filename: 'cli/azd/extensions/registry.json' }], reviews = [] }) {
+function createRegistryOctokit({ base, pr, registries, files = [{ filename: PROD_REGISTRY_PATH }], reviews = [] }) {
+  // Per-path fixtures let a test drive each registry independently. When they're not
+  // supplied, every registry path shares the same base/pr content.
+  /** @type {Record<string, { base?: RegistryJson | undefined, pr?: RegistryJson | undefined }>} */
+  const registriesByPath = registries ?? {
+    [PROD_REGISTRY_PATH]: { base, pr },
+    [DEV_REGISTRY_PATH]: { base, pr },
+  };
+
   const octokit = {
     rest: {
       pulls: {
@@ -847,9 +1196,16 @@ function createRegistryOctokit({ base, pr, files = [{ filename: 'cli/azd/extensi
         listFiles: vi.fn(),
       },
       repos: {
-        getContent: vi.fn(({ ref }) => Promise.resolve({
-          data: JSON.stringify(ref === 'abc123' ? pr : base),
-        })),
+        getContent: vi.fn(({ path, ref }) => {
+          const fixture = registriesByPath[path];
+          if (fixture == null) {
+            throw new Error(`No registry fixture configured for ${path}`);
+          }
+
+          return Promise.resolve({
+            data: JSON.stringify(ref === 'abc123' ? fixture.pr : fixture.base),
+          });
+        }),
       },
     },
     paginate: vi.fn((endpoint) => {

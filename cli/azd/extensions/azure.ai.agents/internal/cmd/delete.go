@@ -216,12 +216,16 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 // The SDK has no DeleteValue API, so we set values to empty string as a workaround.
 func (a *DeleteAction) cleanupEnvVars(ctx context.Context, azdClient *azdext.AzdClient, serviceName string) {
 	serviceKey := toServiceKey(serviceName)
-	a.clearEnvVars(ctx, azdClient, serviceName, []string{
+	keys := []string{
 		fmt.Sprintf("AGENT_%s_NAME", serviceKey),
 		fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
 		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
 		envkey.AgentProjectEndpoint(serviceName),
-	})
+	}
+	for _, protocol := range project.DisplayableProtocolEnvSuffixes() {
+		keys = append(keys, fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, protocol.Suffix))
+	}
+	a.clearEnvVars(ctx, azdClient, serviceName, keys)
 }
 
 func (a *DeleteAction) clearDeletedVersionMarker(

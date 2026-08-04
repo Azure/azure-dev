@@ -219,6 +219,8 @@ func (p *toolboxServiceTarget) publishReuseEndpoint(
 		progress(fmt.Sprintf("Reusing existing toolbox %q", name))
 	}
 
+	// Explicit reuse may reference a toolbox managed outside this project. The scope records
+	// readiness for this deployment context rather than asserting ownership of the endpoint.
 	if err := setToolboxEndpointEnvFunc(ctx, name, resolved, env["FOUNDRY_PROJECT_ENDPOINT"]); err != nil {
 		return nil, err
 	}

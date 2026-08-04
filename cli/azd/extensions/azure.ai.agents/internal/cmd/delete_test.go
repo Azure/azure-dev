@@ -19,7 +19,7 @@ import (
 func TestDeleteMarkerCleanup(t *testing.T) {
 	t.Parallel()
 
-	t.Run("whole agent clears project marker", func(t *testing.T) {
+	t.Run("whole agent clears readiness and endpoint markers", func(t *testing.T) {
 		envServer := &testEnvironmentServiceServer{
 			current: &azdext.Environment{Name: "dev"},
 			values:  map[string]map[string]string{"dev": {}},
@@ -27,7 +27,17 @@ func TestDeleteMarkerCleanup(t *testing.T) {
 		client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
 		action := &DeleteAction{}
 		action.cleanupEnvVars(t.Context(), client, "my-agent")
-		require.Equal(t, "", envServer.values["dev"]["AGENT_MY_AGENT_PROJECT_ENDPOINT"])
+		for _, key := range []string{
+			"AGENT_MY_AGENT_NAME",
+			"AGENT_MY_AGENT_VERSION",
+			"AGENT_MY_AGENT_ENDPOINT",
+			"AGENT_MY_AGENT_PROJECT_ENDPOINT",
+			"AGENT_MY_AGENT_RESPONSES_ENDPOINT",
+			"AGENT_MY_AGENT_INVOCATIONS_ENDPOINT",
+			"AGENT_MY_AGENT_INVOCATIONS_WS_ENDPOINT",
+		} {
+			require.Equal(t, "", envServer.values["dev"][key], key)
+		}
 	})
 
 	t.Run("version marker clears only when matching", func(t *testing.T) {

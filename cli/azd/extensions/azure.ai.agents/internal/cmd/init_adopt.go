@@ -656,7 +656,7 @@ func updateAzureYamlDeployments(
 type adoptedAgentNameResolver func(context.Context, string) (string, error)
 
 func adoptedAgentNameConflictSuggestion() string {
-	return "To create a separate agent, update the agent service's `name` in the adopted azure.yaml before deploying.\n"
+	return "To create a separate agent, re-run init with --agent-name <unique-name>.\n"
 }
 
 // confirmAdoptedAgentNameConflicts checks every agent definition embedded in an
@@ -729,6 +729,60 @@ func updateAdoptedAgentNames(
 		}); err != nil {
 			return fmt.Errorf("updating agent name in azure.yaml for service %q: %w", serviceName, err)
 		}
+	}
+
+	return nil
+}
+
+func applyAdoptedAgentNameOverride(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentName string,
+) error {
+	agentName, err := validateInitAgentName(agentName)
+	if err != nil {
+		return err
+	}
+
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("reading adopted project for agent name override: %w", err)
+	}
+
+	var serviceName string
+	var configPath string
+	for name, svc := range resp.GetProject().GetServices() {
+		if svc.GetHost() != AiAgentHost {
+			continue
+		}
+		currentName, path := adoptedAgentNameConfig(svc)
+		if currentName == "" {
+			continue
+		}
+		if serviceName != "" {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--agent-name cannot be applied to an adopted azure.yaml with multiple agent services",
+				"update each agent service's `name` in azure.yaml after init, or use a sample with a single agent service",
+			)
+		}
+		serviceName = name
+		configPath = path
+	}
+	if serviceName == "" {
+		return nil
+	}
+
+	value, err := structpb.NewValue(agentName)
+	if err != nil {
+		return fmt.Errorf("encoding agent name override for agent service %q: %w", serviceName, err)
+	}
+	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        configPath,
+		Value:       value,
+	}); err != nil {
+		return fmt.Errorf("updating agent name in adopted azure.yaml for service %q: %w", serviceName, err)
 	}
 
 	return nil
@@ -832,7 +886,19 @@ func runInitFromAzureYaml(
 	httpClient *http.Client,
 	content []byte,
 ) error {
-	targetDir, folderDisplay := adoptTargetDir(flags, foundryProjectName(content))
+	projectName := foundryProjectName(content)
+	agentNameOverride := strings.TrimSpace(flags.agentName)
+	if agentNameOverride != "" {
+		validatedName, err := validateInitAgentName(agentNameOverride)
+		if err != nil {
+			return err
+		}
+		flags.agentName = validatedName
+		agentNameOverride = validatedName
+		projectName = validatedName
+	}
+
+	targetDir, folderDisplay := adoptTargetDir(flags, projectName)
 
 	// Adoption is a fresh-project operation: it lays down the project-root
 	// azure.yaml. When the target already contains an azd project manifest we
@@ -869,6 +935,11 @@ func runInitFromAzureYaml(
 	// bicep-less by default.
 	if err := ensureFoundryProviderDeclared(ctx, azdClient); err != nil {
 		return err
+	}
+	if agentNameOverride != "" {
+		if err := applyAdoptedAgentNameOverride(ctx, azdClient, agentNameOverride); err != nil {
+			return err
+		}
 	}
 
 	// --- Interactive Azure context setup (subscription, Foundry project) ---

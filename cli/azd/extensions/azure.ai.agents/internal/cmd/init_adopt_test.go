@@ -641,8 +641,7 @@ func TestAdoptedAgentNameConflictSuggestion(t *testing.T) {
 	t.Parallel()
 
 	suggestion := adoptedAgentNameConflictSuggestion()
-	require.Contains(t, suggestion, "adopted azure.yaml")
-	require.NotContains(t, suggestion, "--agent-name")
+	require.Contains(t, suggestion, "--agent-name")
 }
 
 func newAdoptedAgentNameTestClient(
@@ -796,6 +795,66 @@ func TestUpdateAdoptedAgentNames_UnchangedNamesAreNotWritten(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, []string{"alpha-agent", "zeta-agent"}, checkedNames)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Empty(t, server.configValues)
+}
+
+func TestApplyAdoptedAgentNameOverride_PersistsFlagName(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"agent-service": {
+				Name: "agent-service",
+				Host: AiAgentHost,
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("echo-activity"),
+				}},
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	err := applyAdoptedAgentNameOverride(t.Context(), client, "test0804")
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Equal(t, "agent-service", server.configValues["name"].serviceName)
+	require.Equal(t, "test0804", server.configValues["name"].value)
+}
+
+func TestApplyAdoptedAgentNameOverride_RejectsMultipleAgents(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"agent-a": {
+				Name: "agent-a",
+				Host: AiAgentHost,
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("agent-a"),
+				}},
+			},
+			"agent-b": {
+				Name: "agent-b",
+				Host: AiAgentHost,
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("agent-b"),
+				}},
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	err := applyAdoptedAgentNameOverride(t.Context(), client, "test0804")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "multiple agent services")
 
 	server.mu.Lock()
 	defer server.mu.Unlock()

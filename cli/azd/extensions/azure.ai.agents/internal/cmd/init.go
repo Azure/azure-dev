@@ -1441,6 +1441,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 							}
 							return err
 						}
+						flags.agentName = resolvedName
 
 						if flags.src == "" && resolvedName != "" {
 							flags.src = sanitizeAgentName(resolvedName)

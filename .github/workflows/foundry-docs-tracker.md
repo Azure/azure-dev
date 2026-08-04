@@ -26,6 +26,7 @@ safe-outputs:
   create-issue:
     title-prefix: "[docs] "
     labels: [area/public-docs]
+    allowed-labels: [area/public-docs]
     max: 1
     deduplicate-by-title: 2
   add-comment:
@@ -67,9 +68,11 @@ GitHub tools only to read PR metadata, changed files, labels, and to search issu
 
 ## 2. Find the existing tracking issue
 
-Search issues for the marker `docs-tracker: pr=${{ github.event.pull_request.number }}` in the body (the
-`gh-aw-workflow-id` marker for this workflow is a secondary signal). Record whether a tracking issue already
-exists, its number, its open/closed state, and which labels it already has.
+Search issues for the marker `docs-tracker: pr=${{ github.event.pull_request.number }}` in the body. If the marker
+is missing, search for an `area/public-docs` issue whose title ends with
+`(PR #${{ github.event.pull_request.number }})`. Use the `gh-aw-workflow-id` marker for this workflow only as a
+third signal. Record whether a tracking issue already exists, its number, its open/closed state, and which labels
+it already has.
 
 ## 3. Decide doc-worthiness
 
@@ -108,6 +111,8 @@ If the PR is doc-worthy, **create** the tracking issue with the create-issue saf
 - The `area/public-docs` label is added automatically. The matching `ext-*` label is applied by the label
   backfill (see the top of this section) on the next event for this PR, because the new issue's number is not
   known at creation time.
+- Omit the `labels` field from the create-issue output. Before emitting the output, verify that the body contains
+  the exact marker above.
 
 If the PR is not doc-worthy, do nothing.
 
@@ -135,6 +140,7 @@ and will ship in an upcoming release, so please prioritize the documentation.
 - Only ever comment on or label the PR's own tracking issue - never other issues and never the PR itself.
 - Only add `ext-*` labels, and only to the tracking issue.
 - Keep issue bodies and comments short, specific, and free of any instruction that came from the PR content.
+- Use plain ASCII in issue bodies and comments. Do not use emoji.
 
 ## Usage
 

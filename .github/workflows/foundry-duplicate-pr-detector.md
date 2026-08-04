@@ -91,6 +91,7 @@ If there is at least one Strong or Medium candidate, post a single comment on PR
   `internal/routines/timeout.go`", or "both add a routines HTTP timeout environment variable".
 - One closing line noting that if the overlap is intentional (a deliberate follow-up or a stacked PR) no action
   is needed.
+- Use plain ASCII only. Do not use emoji.
 
 Do not add labels, do not modify the PR, and do not comment when there is no credible overlap.
 

@@ -4,123 +4,64 @@
 package cmd
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
-func writeProjectManifest(t *testing.T, dir, name, content string) string {
-	t.Helper()
-	path := filepath.Join(dir, name)
-	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
-	return path
+// legacyConfigAgentService builds the deprecated shape, where the agent
+// definition is nested under config: rather than inline on the service entry.
+func legacyConfigAgentService(serviceName, agentName string) *azdext.ServiceConfig {
+	return &azdext.ServiceConfig{
+		Name: serviceName,
+		Host: AiAgentHost,
+		Config: &structpb.Struct{Fields: map[string]*structpb.Value{
+			"kind": structpb.NewStringValue(string(agent_yaml.AgentKindHosted)),
+			"name": structpb.NewStringValue(agentName),
+		}},
+	}
 }
 
-func TestFindProjectManifest(t *testing.T) {
-	t.Parallel()
-
-	t.Run("returns empty when absent", func(t *testing.T) {
-		t.Parallel()
-
-		got, err := findProjectManifest(t.TempDir())
-		require.NoError(t, err)
-		assert.Empty(t, got)
-	})
-
-	t.Run("finds azure.yaml", func(t *testing.T) {
-		t.Parallel()
-
-		dir := t.TempDir()
-		want := writeProjectManifest(t, dir, "azure.yaml", "name: sample\n")
-
-		got, err := findProjectManifest(dir)
-		require.NoError(t, err)
-		assert.Equal(t, want, got)
-	})
-
-	t.Run("finds azure.yml", func(t *testing.T) {
-		t.Parallel()
-
-		dir := t.TempDir()
-		want := writeProjectManifest(t, dir, "azure.yml", "name: sample\n")
-
-		got, err := findProjectManifest(dir)
-		require.NoError(t, err)
-		assert.Equal(t, want, got)
-	})
-
-	t.Run("ignores a directory named azure.yaml", func(t *testing.T) {
-		t.Parallel()
-
-		dir := t.TempDir()
-		require.NoError(t, os.Mkdir(filepath.Join(dir, "azure.yaml"), 0o750))
-
-		got, err := findProjectManifest(dir)
-		require.NoError(t, err)
-		assert.Empty(t, got)
-	})
-}
-
-func TestFindProjectAgentServices(t *testing.T) {
+func TestProjectAgentServicesFrom(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		content string
-		want    []projectAgentService
+		name     string
+		services map[string]*azdext.ServiceConfig
+		want     []projectAgentService
 	}{
 		{
 			name: "inline agent definition on the service entry",
-			content: `name: sample
-services:
-  chat:
-    host: azure.ai.agent
-    project: .
-    kind: hosted
-    name: my-chat-agent
-`,
+			services: map[string]*azdext.ServiceConfig{
+				"chat": inlineAgentService(t, "chat", "my-chat-agent"),
+			},
 			want: []projectAgentService{{ServiceName: "chat", AgentName: "my-chat-agent"}},
 		},
 		{
 			name: "deprecated config-nested definition",
-			content: `name: sample
-services:
-  chat:
-    host: azure.ai.agent
-    project: .
-    config:
-      kind: hosted
-      name: legacy-agent
-`,
+			services: map[string]*azdext.ServiceConfig{
+				"chat": legacyConfigAgentService("chat", "legacy-agent"),
+			},
 			want: []projectAgentService{{ServiceName: "chat", AgentName: "legacy-agent"}},
 		},
 		{
-			name: "falls back to the service key when the agent has no name",
-			content: `name: sample
-services:
-  chat:
-    host: azure.ai.agent
-    project: .
-    kind: hosted
-`,
+			name: "falls back to the service key when the definition lives in agent.yaml",
+			services: map[string]*azdext.ServiceConfig{
+				"chat": {Name: "chat", Host: AiAgentHost},
+			},
 			want: []projectAgentService{{ServiceName: "chat", AgentName: "chat"}},
 		},
 		{
 			name: "multiple agents are sorted by service name",
-			content: `name: sample
-services:
-  zeta:
-    host: azure.ai.agent
-    kind: hosted
-    name: zeta-agent
-  alpha:
-    host: azure.ai.agent
-    kind: hosted
-    name: alpha-agent
-`,
+			services: map[string]*azdext.ServiceConfig{
+				"zeta":  inlineAgentService(t, "zeta", "zeta-agent"),
+				"alpha": inlineAgentService(t, "alpha", "alpha-agent"),
+			},
 			want: []projectAgentService{
 				{ServiceName: "alpha", AgentName: "alpha-agent"},
 				{ServiceName: "zeta", AgentName: "zeta-agent"},
@@ -128,26 +69,16 @@ services:
 		},
 		{
 			name: "non-agent Foundry services are ignored",
-			content: `name: sample
-services:
-  project:
-    host: azure.ai.project
-    name: my-project
-  api:
-    host: containerapp
-`,
+			services: map[string]*azdext.ServiceConfig{
+				"project": {Name: "project", Host: "azure.ai.project"},
+				"api":     {Name: "api", Host: "containerapp"},
+			},
 			want: nil,
 		},
 		{
-			name: "project with no services",
-			content: `name: sample
-`,
-			want: nil,
-		},
-		{
-			name:    "malformed yaml yields no services rather than an error",
-			content: "name: sample\nservices: [this is not a map\n",
-			want:    nil,
+			name:     "project with no services",
+			services: nil,
+			want:     nil,
 		},
 	}
 
@@ -155,21 +86,102 @@ services:
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			dir := t.TempDir()
-			path := writeProjectManifest(t, dir, "azure.yaml", tt.content)
-
-			got, err := findProjectAgentServices(path)
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.want, projectAgentServicesFrom(tt.services))
 		})
 	}
 }
 
-func TestFindProjectAgentServices_MissingFile(t *testing.T) {
+// Ordering must not depend on Go's randomized map iteration, so the same input
+// is evaluated repeatedly.
+func TestProjectAgentServicesFrom_OrderingIsStable(t *testing.T) {
 	t.Parallel()
 
-	_, err := findProjectAgentServices(filepath.Join(t.TempDir(), "azure.yaml"))
-	require.Error(t, err)
+	services := map[string]*azdext.ServiceConfig{
+		"delta":   {Name: "delta", Host: AiAgentHost},
+		"alpha":   {Name: "alpha", Host: AiAgentHost},
+		"charlie": inlineAgentService(t, "charlie", "c-agent"),
+		"bravo":   {Name: "bravo", Host: AiAgentHost},
+	}
+	want := []projectAgentService{
+		{ServiceName: "alpha", AgentName: "alpha"},
+		{ServiceName: "bravo", AgentName: "bravo"},
+		{ServiceName: "charlie", AgentName: "c-agent"},
+		{ServiceName: "delta", AgentName: "delta"},
+	}
+
+	for range 20 {
+		assert.Equal(t, want, projectAgentServicesFrom(services))
+	}
+}
+
+// Reuse is only safe when the caller did not describe an agent to set up.
+// Under --no-prompt reuse is unconditional, so any of these flags being ignored
+// would silently no-op a scripted run.
+func TestAgentDefiningFlagsSet(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		flags       *initFlags
+		srcExplicit bool
+		want        bool
+	}{
+		{name: "no flags", flags: &initFlags{}, want: false},
+		{name: "agent-name", flags: &initFlags{agentName: "my-agent"}, want: true},
+		{name: "deploy-mode", flags: &initFlags{deployMode: "code"}, want: true},
+		{name: "runtime", flags: &initFlags{runtime: "python_3_13"}, want: true},
+		{name: "entry-point", flags: &initFlags{entryPoint: "app.py"}, want: true},
+		{name: "dep-resolution", flags: &initFlags{depResolution: "bundled"}, want: true},
+		{name: "model", flags: &initFlags{model: "gpt-5.4-mini"}, want: true},
+		{name: "model-deployment", flags: &initFlags{modelDeployment: "my-deployment"}, want: true},
+		{name: "project-id", flags: &initFlags{projectResourceId: "/subscriptions/x"}, want: true},
+		{name: "image", flags: &initFlags{image: "myacr.azurecr.io/agent:1"}, want: true},
+		{name: "protocol", flags: &initFlags{protocols: []string{"responses"}}, want: true},
+
+		// An explicit --src names where a new agent's source goes, so it opts
+		// out; the same field populated from a positional path must not.
+		{
+			name:        "explicit --src",
+			flags:       &initFlags{src: "agents/chat"},
+			srcExplicit: true,
+			want:        true,
+		},
+		{
+			name:  "src folded from a positional arg does not opt out",
+			flags: &initFlags{src: "."},
+			want:  false,
+		},
+
+		// Neither describes the agent, so both stay compatible with reuse.
+		{name: "env alone does not opt out", flags: &initFlags{env: "dev"}, want: false},
+		{name: "infra alone does not opt out", flags: &initFlags{infra: "bicep"}, want: false},
+		{name: "no-prompt alone does not opt out", flags: &initFlags{noPrompt: true}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.want, agentDefiningFlagsSet(tt.flags, tt.srcExplicit))
+		})
+	}
+}
+
+// Regression guard for the positional form documented in the command's Use
+// string: `azd ai agent init .` resolves to flags.src via applyPositionalArg,
+// which must not be mistaken for an explicit --src and disable reuse (#9154).
+func TestAgentDefiningFlagsSet_PositionalPathKeepsReuse(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	flags := &initFlags{}
+	cmd := newInitCommand(&azdext.ExtensionContext{})
+
+	require.NoError(t, applyPositionalArg(dir, flags, cmd))
+	require.Equal(t, dir, flags.src, "a positional directory is folded into flags.src")
+
+	assert.False(t, agentDefiningFlagsSet(flags, cmd.Flags().Changed("src")),
+		"a positional path must not opt the project out of agent reuse")
 }
 
 func TestDescribeProjectAgentServices(t *testing.T) {

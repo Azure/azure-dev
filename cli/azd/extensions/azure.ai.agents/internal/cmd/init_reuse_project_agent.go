@@ -5,11 +5,9 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
+	"log"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -17,92 +15,52 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
-	"go.yaml.in/yaml/v3"
 )
 
-// projectManifestCandidates lists the project manifest file names scanned when
-// looking for an already-configured agent service, in priority order.
-var projectManifestCandidates = []string{"azure.yaml", "azure.yml"}
-
-// projectAgentService is an agent already declared in the project's azure.yaml.
+// projectAgentService is an agent already declared in the project manifest.
 // ServiceName is the key under services:; AgentName is the agent's own name from
-// the inline definition, which may differ from the service key.
+// the definition, which may differ from the service key.
 type projectAgentService struct {
 	ServiceName string
 	AgentName   string
 }
 
-// azureYamlAgentServices is the minimal view needed to spot agent services in a
-// unified azure.yaml. yaml.v3 ignores every other key, so this stays tolerant of
-// the rest of the (large) service schema.
-type azureYamlAgentServices struct {
-	Services map[string]struct {
-		Host string `yaml:"host"`
-		Name string `yaml:"name"`
-		Kind string `yaml:"kind"`
-		// Config carries the deprecated config-nested definition shape.
-		Config struct {
-			Name string `yaml:"name"`
-			Kind string `yaml:"kind"`
-		} `yaml:"config"`
-	} `yaml:"services"`
-}
-
-// findProjectManifest returns the path to the project's azure.yaml in dir, or an
-// empty string when none exists. The scan is shallow, mirroring
-// findExistingAgentYaml.
-func findProjectManifest(dir string) (string, error) {
-	for _, name := range projectManifestCandidates {
-		candidate := filepath.Join(dir, name)
-		info, err := os.Stat(candidate)
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return "", fmt.Errorf("checking for %s: %w", candidate, err)
-		}
-		if info.IsDir() {
-			continue
-		}
-		return candidate, nil
-	}
-
-	return "", nil
-}
-
-// findProjectAgentServices returns the agent services already declared in the
-// project manifest at path, sorted by service name so output is deterministic.
+// findProjectAgentServices returns the agent services the azd host reports for
+// the current project, sorted by service name so output is deterministic.
+//
+// Project discovery is left to the host: it resolves the manifest by walking up
+// from the working directory and accepts both azure.yaml and azure.yml, so this
+// sees exactly the manifest every other azd command does, including when init
+// runs from a subdirectory of the project.
 //
 // The agent definition is carried inline on the service entry in the unified
-// azure.yaml format; older projects nest it under config:. Both shapes are
-// recognized, matching adoptedAgentNameConfig.
+// format and nested under config: in older projects; adoptedAgentNameConfig
+// resolves the name from either shape.
 //
-// A manifest that cannot be parsed yields no services rather than an error: the
-// caller treats "nothing detected" as "fall through to the normal init prompts",
-// which is the safe outcome for a malformed file.
-func findProjectAgentServices(path string) ([]projectAgentService, error) {
-	//nolint:gosec // path comes from findProjectManifest against a user-controlled directory
-	data, err := os.ReadFile(path)
+// A project that cannot be loaded (none present, or a manifest azd rejects)
+// yields no detections, so init falls through to its normal prompts rather than
+// hard-failing on a file the user has not been asked about yet. The cause is
+// logged so --debug still surfaces a typo'd manifest.
+func findProjectAgentServices(ctx context.Context, azdClient *azdext.AzdClient) []projectAgentService {
+	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
+		log.Printf("agent reuse: project config unavailable, continuing with normal init: %v", err)
+		return nil
 	}
 
-	var doc azureYamlAgentServices
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, nil
-	}
+	return projectAgentServicesFrom(projectResponse.GetProject().GetServices())
+}
 
+// projectAgentServicesFrom selects the agent services out of a project's service
+// map, resolving each display name and sorting by service name.
+func projectAgentServicesFrom(services map[string]*azdext.ServiceConfig) []projectAgentService {
 	var found []projectAgentService
-	for serviceName, svc := range doc.Services {
-		if strings.TrimSpace(svc.Host) != AiAgentHost {
+	for serviceName, svc := range services {
+		if svc.GetHost() != AiAgentHost {
 			continue
 		}
 
-		agentName := strings.TrimSpace(svc.Name)
-		if strings.TrimSpace(svc.Kind) == "" && strings.TrimSpace(svc.Config.Kind) != "" {
-			// Deprecated config-nested definition.
-			agentName = strings.TrimSpace(svc.Config.Name)
-		}
+		agentName, _ := adoptedAgentNameConfig(svc)
 		if agentName == "" {
 			agentName = serviceName
 		}
@@ -114,7 +72,7 @@ func findProjectAgentServices(path string) ([]projectAgentService, error) {
 		return strings.Compare(a.ServiceName, b.ServiceName)
 	})
 
-	return found, nil
+	return found
 }
 
 // describeProjectAgentServices renders the detected agent services for a prompt
@@ -131,26 +89,23 @@ func describeProjectAgentServices(services []projectAgentService) string {
 	return strings.Join(parts, ", ")
 }
 
-// runReuseProjectAgentServices completes init for a project whose azure.yaml
+// runReuseProjectAgentServices completes init for a project whose manifest
 // already declares its agents, without re-asking for the values the manifest
 // already answers (agent name, protocols, deploy mode, ...).
 //
-// The definitions already live in azure.yaml, so there is nothing to write:
-// this ensures an azd environment exists and then hands off to the shared
+// The definitions already live in the project manifest, so there is nothing to
+// write: this ensures an azd environment exists and then hands off to the shared
 // next-step resolver. It mirrors runReuseDefinition (issue #7268), which does
-// the same for a bare on-disk agent.yaml; the unified azure.yaml format moved
-// the definition inline, and this is the inline equivalent.
+// the same for a bare on-disk agent.yaml; the unified format moved the
+// definition inline, and this is the inline equivalent.
 func runReuseProjectAgentServices(
 	ctx context.Context,
 	flags *initFlags,
 	azdClient *azdext.AzdClient,
-	srcDir string,
-	manifestDisplayPath string,
 	services []projectAgentService,
 ) error {
 	fmt.Println(color.HiBlackString(
-		"Detected existing agent configuration in %s: %s.",
-		manifestDisplayPath,
+		"Detected existing agent configuration: %s.",
 		describeProjectAgentServices(services),
 	))
 
@@ -172,13 +127,7 @@ func runReuseProjectAgentServices(
 		flags.env = env.Name
 	}
 
-	fmt.Println(color.HiBlackString(
-		"Reusing the agent configuration already in %s.", manifestDisplayPath,
-	))
-
-	// Advisory only, matching the other reuse paths. The deploy-mode specific
-	// checks need a CodeConfiguration, which is not re-parsed here.
-	validatePostInit(srcDir, nil)
+	fmt.Println(color.HiBlackString("Reusing the agent configuration already in this project."))
 
 	state, _ := nextstep.AssembleState(ctx, azdClient)
 	_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state, readmeExistsForProject(ctx, azdClient)))

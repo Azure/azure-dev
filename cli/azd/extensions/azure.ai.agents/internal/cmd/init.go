@@ -1046,6 +1046,35 @@ func runInitFromManifest(
 	return action.Run(ctx)
 }
 
+// agentDefiningFlagsSet reports whether the caller passed any flag that
+// describes the agent to set up.
+//
+// Reusing an already-configured project is only safe when the command was not
+// told what to build. Each of these flags feeds a value init would otherwise
+// prompt for, so reusing while one is set would silently discard it — notably
+// under --no-prompt, where reuse is unconditional.
+//
+// srcExplicit must come from cmd.Flags().Changed("src"), not from flags.src:
+// applyPositionalArg folds a positional directory into flags.src, so testing
+// the field would make `azd ai agent init .` — a documented form — skip reuse
+// and re-prompt, which is the very behavior issue #9154 reports.
+//
+// --env and --infra are deliberately absent: they describe the environment and
+// the IaC output rather than the agent, and both stay meaningful on a reuse run.
+func agentDefiningFlagsSet(flags *initFlags, srcExplicit bool) bool {
+	return flags.agentName != "" ||
+		flags.deployMode != "" ||
+		flags.runtime != "" ||
+		flags.entryPoint != "" ||
+		flags.depResolution != "" ||
+		flags.model != "" ||
+		flags.modelDeployment != "" ||
+		flags.projectResourceId != "" ||
+		flags.image != "" ||
+		srcExplicit ||
+		len(flags.protocols) > 0
+}
+
 func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &initFlags{}
 	extCtx = ensureExtensionContext(extCtx)
@@ -1295,7 +1324,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			}
 
-			// When the project's own azure.yaml already declares agent
+			// When the project's own manifest already declares agent
 			// service(s), the values init would prompt for (agent name,
 			// protocols, deploy mode) are already recorded there. Offer to
 			// reuse that configuration instead of re-asking (issue #9154).
@@ -1303,63 +1332,40 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// reuse above: the definition now lives inline on the service
 			// entry rather than in a separate file.
 			//
-			// An explicit --agent-name states intent to set up that specific
-			// agent, so it opts out of reuse and falls through to the normal
-			// flow rather than silently adopting whatever azure.yaml already
-			// declares.
-			if flags.manifestPointer == "" && !manifestDetectedButDeclined && flags.agentName == "" {
-checkDir, projectErr := azdext.GetProjectDir()
-				if errors.Is(projectErr, azdext.ErrProjectNotFound) {
-					checkDir = "."
-				} else if projectErr != nil {
-					return fmt.Errorf("resolving existing project directory: %w", projectErr)
-				}
-				manifestPath, findErr := findProjectManifest(checkDir)
-				if findErr != nil {
-					return findErr
-				}
-				if manifestPath != "" {
-					agentServices, servicesErr := findProjectAgentServices(manifestPath)
-					if servicesErr != nil {
-						return servicesErr
+			// Any flag that describes the agent to set up states intent to
+			// configure that agent, so it opts out of reuse and falls through
+			// to the normal flow. Without that, a scripted
+			// `--no-prompt --deploy-mode code --runtime ...` in a repo that
+			// already declares an agent would silently no-op instead of
+			// honoring the flags the caller passed.
+			if flags.manifestPointer == "" && !manifestDetectedButDeclined &&
+				!agentDefiningFlagsSet(flags, cmd.Flags().Changed("src")) {
+				agentServices := findProjectAgentServices(ctx, azdClient)
+				if len(agentServices) > 0 {
+					useExisting := flags.noPrompt
+					if !flags.noPrompt {
+						confirmResp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+							Options: &azdext.ConfirmOptions{
+								Message: fmt.Sprintf(
+									"This project already configures %s. Use it?",
+									describeProjectAgentServices(agentServices),
+								),
+								DefaultValue: new(true),
+							},
+						})
+						if promptErr != nil {
+							if exterrors.IsCancellation(promptErr) {
+								return exterrors.Cancelled("initialization was cancelled")
+							}
+							return fmt.Errorf("prompting for project agent reuse: %w", promptErr)
+						}
+						useExisting = *confirmResp.Value
 					}
-					if len(agentServices) > 0 {
-						displayPath, relErr := filepath.Rel(checkDir, manifestPath)
-						if relErr != nil || displayPath == "" {
-							displayPath = manifestPath
+					if useExisting {
+						if err := runReuseProjectAgentServices(ctx, flags, azdClient, agentServices); err != nil {
+							return err
 						}
-
-						useExisting := flags.noPrompt
-						if !flags.noPrompt {
-							confirmResp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-								Options: &azdext.ConfirmOptions{
-									Message: fmt.Sprintf(
-										"%s already configures %s. Use it?",
-										displayPath,
-										describeProjectAgentServices(agentServices),
-									),
-									DefaultValue: new(true),
-								},
-							})
-							if promptErr != nil {
-								if exterrors.IsCancellation(promptErr) {
-									return exterrors.Cancelled("initialization was cancelled")
-								}
-								return fmt.Errorf("prompting for project agent reuse: %w", promptErr)
-							}
-							useExisting = *confirmResp.Value
-						}
-						if useExisting {
-							if flags.src == "" {
-								flags.src = checkDir
-							}
-							if err := runReuseProjectAgentServices(
-								ctx, flags, azdClient, checkDir, displayPath, agentServices,
-							); err != nil {
-								return err
-							}
-							return ejectInfraAfterInit(infraProvider)
-						}
+						return ejectInfraAfterInit(infraProvider)
 					}
 				}
 			}

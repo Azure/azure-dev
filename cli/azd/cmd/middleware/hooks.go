@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -101,7 +100,8 @@ func (m *HooksMiddleware) registerCommandHooks(
 
 	var actionResult *actions.ActionResult
 
-	commandNames := commandHookNames(m.options.CommandPath, m.options.Aliases)
+	commandNames := []string{m.options.CommandPath}
+	commandNames = append(commandNames, m.options.Aliases...)
 
 	err := hooksRunner.Invoke(ctx, commandNames, "project", func() error {
 		result, err := next(ctx)
@@ -118,21 +118,6 @@ func (m *HooksMiddleware) registerCommandHooks(
 	}
 
 	return actionResult, nil
-}
-
-func commandHookNames(commandPath string, aliases []string) []string {
-	commandNames := []string{commandPath}
-	parentEnd := strings.LastIndex(commandPath, " ")
-
-	for _, alias := range aliases {
-		// Keep leaf aliases for compatibility with existing hook behavior.
-		commandNames = append(commandNames, alias)
-		if parentEnd >= 0 {
-			commandNames = append(commandNames, commandPath[:parentEnd+1]+alias)
-		}
-	}
-
-	return commandNames
 }
 
 // Registers event handlers for all services within the project configuration

@@ -83,12 +83,14 @@ stimuli:
         name: "deploy command carries the skill user agent"
         config:
           pattern: 'AZURE_DEV_USER_AGENT=microsoft_foundry_skill[ \t]+(?:\\[ \t]*\n[ \t]*)?azd[ \t]+deploy'
-      # The skill says set it inline only -- never via azd env set, an export, or a
-      # dotfile.
+      # Anchored to a line start so it only trips on something that looks like a command.
+      # Unanchored, an answer that correctly says "don't `export AZURE_DEV_USER_AGENT`"
+      # failed for describing the rule. A "don't do this" fenced example still trips it;
+      # the judge below covers intent.
       - type: output-not-matches
         name: "does not persist the user agent"
         config:
-          pattern: '(?:azd env set|export)\s+AZURE_DEV_USER_AGENT'
+          pattern: '(?m)^\s*(?:azd env set|export)\s+AZURE_DEV_USER_AGENT'
       - type: prompt
         name: "judge: correctly-sequenced, correctly-tagged commands"
         config:

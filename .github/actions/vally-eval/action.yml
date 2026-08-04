@@ -130,9 +130,9 @@ runs:
           [[ "$spec" == *@* ]] && version="${spec##*@}"
 
           if [[ -n "$version" ]]; then
-            azd extension install "$id" --version "$version"
+            azd extension install "$id" --version "$version" --no-prompt
           else
-            azd extension install "$id"
+            azd extension install "$id" --no-prompt
           fi
         done
         azd extension list --installed

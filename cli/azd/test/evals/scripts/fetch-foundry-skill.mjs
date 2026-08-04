@@ -27,19 +27,29 @@ const destRoot = join(evalsDir, "skills", ".external");
 const dest = join(destRoot, "microsoft-foundry");
 const stamp = join(destRoot, ".skill-ref");
 
-/** Runs git, returning the exit code and stdout rather than throwing. */
+/** Runs git, returning the exit code and captured output rather than throwing. */
 function git(args, { cwd } = {}) {
     const res = spawnSync("git", args, { cwd, encoding: "utf-8" });
     if (res.error) {
         fail(`could not run git: ${res.error.message}`);
     }
-    return { code: res.status ?? 1, stdout: (res.stdout ?? "").trim() };
+    return {
+        code: res.status ?? 1,
+        stdout: (res.stdout ?? "").trim(),
+        stderr: (res.stderr ?? "").trim(),
+    };
+}
+
+// git echoes the remote URL back when a clone fails, so strip any credentials a
+// custom AZURE_SKILLS_REPO might carry before they reach a CI log.
+function redact(text) {
+    return text.replace(/\/\/[^/@\s]+@/g, "//***@");
 }
 
 function gitOrFail(args, opts) {
     const res = git(args, opts);
     if (res.code !== 0) {
-        fail(`git ${args.join(" ")} failed`);
+        fail(`git ${redact(args.join(" "))} failed: ${redact(res.stderr) || "no stderr output"}`);
     }
     return res;
 }
@@ -61,7 +71,7 @@ const tmpDir = mkdtempSync(join(destRoot, ".fetch-"));
 const clone = join(tmpDir, "azure-skills");
 
 try {
-    console.error(`Fetching ${SKILL_PATH} from ${REPO_URL}@${REF} ...`);
+    console.error(`Fetching ${SKILL_PATH} from ${redact(REPO_URL)}@${REF} ...`);
 
     // --branch only accepts branches and tags, so fall back to clone+checkout when
     // REF is a commit SHA.

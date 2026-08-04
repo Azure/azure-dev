@@ -146,6 +146,10 @@ func BuildOIDCSubject(
 	}
 
 	var parts []string
+	if oidcConfig.SubClaimPrefix != "" {
+		parts = append(parts, strings.TrimSuffix(oidcConfig.SubClaimPrefix, ":"))
+	}
+
 	for _, key := range oidcConfig.IncludeClaimKeys {
 		switch key {
 		case "repository_owner_id":
@@ -193,9 +197,11 @@ func BuildOIDCSubject(
 		case "repo":
 			// "repo" is the short-form repository claim used in default format
 			// subjects: "repo:owner/name".
-			parts = append(parts,
-				fmt.Sprintf("repo:%s", repoSlug),
-			)
+			if oidcConfig.SubClaimPrefix == "" {
+				parts = append(parts,
+					fmt.Sprintf("repo:%s", repoSlug),
+				)
+			}
 		default:
 			return "", fmt.Errorf(
 				"unsupported OIDC claim key %q in subject"+

@@ -181,6 +181,22 @@ func TestBuildOIDCSubject(t *testing.T) {
 			want:   "repo:Azure-Samples/my-repo:ref:refs/heads/main",
 		},
 		{
+			name:     "custom immutable repo and context use returned prefix",
+			repoSlug: repoSlug,
+			repoInfo: repoInfo,
+			oidcConfig: &OIDCSubjectConfig{
+				UseDefault:     false,
+				SubClaimPrefix: "repo:Azure-Samples@1844662/my-repo@599293758",
+				IncludeClaimKeys: []string{
+					"repo",
+					"context",
+				},
+			},
+			suffix: "ref:refs/heads/main",
+			want: "repo:Azure-Samples@1844662/my-repo@599293758:" +
+				"ref:refs/heads/main",
+		},
+		{
 			name:     "repo claim key without context",
 			repoSlug: repoSlug,
 			repoInfo: repoInfo,

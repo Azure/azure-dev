@@ -183,6 +183,13 @@ flowchart LR
   - Auth: `ext.auth.*`
   - Dependency: `ext.dependency.*`
 - Extension lifecycle events: `ext.install`, `ext.upgrade`, `ext.promote`
+- Extensions can report **usage events** via `TelemetryService.ReportUsage`.
+  Each event becomes an `ext.usage` span sharing the command's trace, carrying
+  the extension's identity plus the caller's event name and attributes. Core
+  namespaces every caller attribute under `ext.` and bounds its size, but does
+  not declare or enumerate the values. Only extensions installed from the
+  official `azd` registry are recorded — see
+  [ADR-001](./adr-001-extension-telemetry-events.md).
 
 ## Consent & Privacy
 

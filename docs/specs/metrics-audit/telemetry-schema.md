@@ -19,6 +19,7 @@ OpenTelemetry span name or event name.
 | `ExtensionInstallEvent` | `ext.install` | Extension install/upgrade event |
 | `ExtensionUpgradeEvent` | `ext.upgrade` | Single extension upgrade attempt |
 | `ExtensionPromoteEvent` | `ext.promote` | Extension registry promotion (e.g., dev → main) |
+| `ExtensionUsageEvent` | `ext.usage` | One usage event reported by an extension through the telemetry service |
 | `CopilotInitializeEvent` | `copilot.initialize` | Copilot initialization event |
 | `CopilotSessionEvent` | `copilot.session` | Copilot session lifecycle event |
 | `ProvisionValidationEvent` | `validation.provision` | Local provision validation outcome |
@@ -214,6 +215,48 @@ not emitted by azd spans.
 | Upgrade outcome | `extension.upgrade.outcome` | SystemMetadata | FeatureInsight | Upgrade result status |
 | Dependency of | `extension.dependency_of` | SystemMetadata | FeatureInsight | Parent extension for a dependency upgrade |
 | Dependency upgrade count | `extension.dependency_upgrade_count` | SystemMetadata | FeatureInsight | Recursive dependency upgrade count |
+
+#### Extension-contributed usage attributes
+
+Extensions do not have individual fields listed in this document. An extension
+reports a named event with an arbitrary attribute map, and `azd` records it on
+an `ext.usage` span alongside `extension.id`, `extension.version`,
+`extension.source`, and `extension.event`.
+
+`azd` core carries no product-specific telemetry semantics for these fields.
+The following rules are enforced by the host and are what this schema
+guarantees about the whole class:
+
+| Rule | Enforcement |
+|------|-------------|
+| Eligibility | Only extensions installed from the official `azd` registry produce `ext.usage` spans. A call from any other install source succeeds but is dropped without recording |
+| Key namespace | Every caller-supplied key is prefixed with `ext.` by the host, so it can never overwrite a host-owned attribute |
+| Size | At most 32 attributes per event; event name and keys at most 128 characters; values at most 512 characters |
+| Volume | At most 100 `ext.usage` spans per `azd` invocation across all extensions; calls beyond that are dropped without recording |
+| Values | Not enumerated or pattern-checked. The extension author owns what a value means and is responsible for keeping it low cardinality and free of customer content |
+| Classification | Always `SystemMetadata` |
+| Purpose | Always `FeatureInsight` |
+| Trust | `extension.id`, `extension.version`, and `extension.source` are derived from host-signed claims and the installed record, never from the request, so an extension cannot assert which extension it is |
+| Review | Extension telemetry is reviewed when the extension is admitted to the official registry, under the same documentation, classification, and privacy rules as core fields. The eligibility rule above is what ties recording to that review |
+
+Because `ext.usage` spans share the command's trace, they join the originating
+command in Kusto on `operation_Id`. See
+[ADR-001](../../architecture/adr-001-extension-telemetry-events.md) for
+the design rationale and
+[Extension Telemetry](../../../cli/azd/docs/extensions/extension-telemetry.md)
+for the author-facing rules.
+
+#### What this class does and does not guarantee
+
+These rules bound what a **non-tampered** install emits: a well-behaved
+extension can only report values that went through registry review. They are
+not a cryptographic provenance guarantee. The capability, the install source,
+and the stored declaration all originate from local `azd` config, which is the
+same trust level every other extension capability gate already depends on.
+
+When governing this data, treat `(extension.id, extension.version, key)` as
+the authoritative filter rather than assuming the client enforced the reviewed
+set on its own.
 
 ### Update
 

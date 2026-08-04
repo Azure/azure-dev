@@ -38,6 +38,21 @@ const (
 	PerformanceAndHealth Purpose = "PerformanceAndHealth"
 )
 
+// ExtensionAttributePrefix namespaces every extension-supplied telemetry
+// attribute so it can never overwrite a host-owned field on the span.
+const ExtensionAttributePrefix = "ext."
+
+// ExtensionUsageAttribute namespaces an extension-supplied usage attribute
+// key. Callers must bound the key and value before use; the extension owns
+// what the value means, so it is never customer content by contract.
+func ExtensionUsageAttribute(key string) AttributeKey {
+	return AttributeKey{
+		Key:            attribute.Key(ExtensionAttributePrefix + key),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+}
+
 // Application-level fields. Guaranteed to be set and available for all events.
 var (
 	// Application name. Value is always "azd".
@@ -1154,6 +1169,14 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
+	// ExtensionEvent is the event name an extension chose for a usage
+	// event. Extensions own this value; it exists so queries can filter
+	// an extension's events without parsing its attributes.
+	ExtensionEvent = AttributeKey{
+		Key:            attribute.Key("extension.event"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 	// The list of installed extensions, each formatted as "id@version".
 	ExtensionsInstalled = AttributeKey{
 		Key:            attribute.Key("extension.installed"),
@@ -1172,7 +1195,8 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionSource is the registry source used for the upgrade.
+	// ExtensionSource is the registry source the extension was
+	// installed from. On ext.usage it is also what gates recording.
 	ExtensionSource = AttributeKey{
 		Key:            attribute.Key("extension.source"),
 		Classification: SystemMetadata,

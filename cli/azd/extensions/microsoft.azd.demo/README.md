@@ -129,3 +129,18 @@ This `listen` command is required when your extension leverages `LifecycleEvents
 #### Usage: `azd demo listen`
 
 This command is invoked by `azd` to allow your extension to subscribe to lifecycle events within the current `azd` project and services.
+
+### `telemetry`
+
+The `telemetry` command demonstrates the telemetry service, which lets an extension report its own usage events into `azd`'s telemetry pipeline.
+
+#### Usage: `azd demo telemetry`
+
+The command reports a single `demo.telemetry.reported` event with two fixed, low-cardinality attributes and prints whether the host recorded it.
+
+Two things this example is showing:
+
+- **Every value is a fixed enum.** Resource names, paths, prompts, and anything a user typed are customer content and must never be sent. The elapsed time is bucketed rather than reported exactly, so the dimension stays cheap to aggregate.
+- **A dropped event is not an error.** `ReportUsage` returns `Accepted: false` with no error when the host keeps nothing — because the extension was not installed from the official `azd` registry, or because the per-invocation event budget is spent. Run `azd` with `--debug` to see which. This means an extension runs the same code path during local development and in production.
+
+See [Extension Telemetry](../../docs/extensions/extension-telemetry.md) for the full author guide.

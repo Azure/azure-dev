@@ -1644,6 +1644,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 						return err
 					}
+					// Pin the resolved name so the inner resolveInitAgentName call
+					// in runInitFromManifest short-circuits instead of prompting a
+					// second time. Mirrors resolveAgentNameFromManifestPointer.
+					flags.agentName = resolvedName
 
 					manifestPath, cleanup, err := synthesizeVoiceManifestFile(
 						resolvedName, flags.model, flags.voice,

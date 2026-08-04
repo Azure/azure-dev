@@ -477,6 +477,34 @@ func (cli *AzureClient) UpdateAppServiceSlotContainerImage(
 	return nil
 }
 
+// AppServiceContainerConfiguration describes whether an App Service site can host a container image.
+type AppServiceContainerConfiguration struct {
+	IsLinux     bool
+	IsContainer bool
+}
+
+// appServiceContainerConfiguration derives the container-related configuration of a site from its
+// `kind` and `linuxFxVersion`. Both signals are optional on the ARM response, so a missing value is
+// reported as "not linux" / "not a container" rather than an error.
+func appServiceContainerConfiguration(
+	response *armappservice.WebAppsClientGetResponse,
+) AppServiceContainerConfiguration {
+	configuration := AppServiceContainerConfiguration{}
+	if response.Kind != nil {
+		configuration.IsLinux = strings.Contains(strings.ToLower(*response.Kind), "linux")
+	}
+	if response.Properties != nil &&
+		response.Properties.SiteConfig != nil &&
+		response.Properties.SiteConfig.LinuxFxVersion != nil {
+		configuration.IsContainer = strings.HasPrefix(
+			strings.ToUpper(*response.Properties.SiteConfig.LinuxFxVersion),
+			"DOCKER|",
+		)
+	}
+
+	return configuration
+}
+
 // ValidateAppServiceForContainerDeploy checks that the App Service is configured for container
 // deployment (Linux kind with an existing DOCKER| linuxFxVersion). Returns an error with
 // actionable suggestions if the site is not ready for container deployment.
@@ -491,7 +519,9 @@ func (cli *AzureClient) ValidateAppServiceForContainerDeploy(
 		return err
 	}
 
-	if response.Kind == nil || !strings.Contains(*response.Kind, "linux") {
+	configuration := appServiceContainerConfiguration(response)
+
+	if !configuration.IsLinux {
 		return fmt.Errorf(
 			"app service '%s' is not configured as a Linux app. "+
 				"Container deployment requires a Linux App Service Plan. "+
@@ -499,9 +529,7 @@ func (cli *AzureClient) ValidateAppServiceForContainerDeploy(
 			appName)
 	}
 
-	if response.Properties == nil || response.Properties.SiteConfig == nil ||
-		response.Properties.SiteConfig.LinuxFxVersion == nil ||
-		!strings.HasPrefix(strings.ToUpper(*response.Properties.SiteConfig.LinuxFxVersion), "DOCKER|") {
+	if !configuration.IsContainer {
 		return fmt.Errorf(
 			"app service '%s' is not configured for container deployment. "+
 				"Ensure your infrastructure sets linuxFxVersion to a DOCKER| image "+

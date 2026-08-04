@@ -519,6 +519,72 @@ func Test_Install_PackDependency_SemverConstraint(t *testing.T) {
 	require.Equal(t, "0.1.31-preview", installed.Version)
 }
 
+func Test_Install_PackDependency_ErrorClassification(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                    string
+		dependency              *ExtensionMetadata
+		expectVersionConstraint bool
+	}{
+		{
+			name: "dependency not found",
+		},
+		{
+			name: "dependency version not found",
+			dependency: &ExtensionMetadata{
+				Id:     "test.child",
+				Source: "local",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0", Artifacts: sampleArtifacts},
+				},
+			},
+			expectVersionConstraint: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			parent := &ExtensionMetadata{
+				Id:     "test.pack",
+				Source: "local",
+				Versions: []ExtensionVersion{
+					{
+						Version: "1.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "test.child", Version: ">=2.0.0"},
+						},
+					},
+				},
+			}
+			sourceExtensions := []*ExtensionMetadata{parent}
+			if test.dependency != nil {
+				sourceExtensions = append(sourceExtensions, test.dependency)
+			}
+
+			manager := newTestManager(t)
+			manager.sources = []Source{&mockSource{name: "local", extensions: sourceExtensions}}
+
+			_, err := manager.Install(t.Context(), parent, "")
+			require.Error(t, err)
+			if test.expectVersionConstraint {
+				versionErr, ok := errors.AsType[*DependencyVersionNotFoundError](err)
+				require.True(t, ok)
+				require.Equal(t, "test.child", versionErr.DependencyId)
+				require.Equal(t, "test.pack", versionErr.ParentId)
+				require.Equal(t, ">=2.0.0", versionErr.Constraint)
+				require.Contains(t, versionErr.Error(), "was found, but no version satisfies constraint")
+				return
+			}
+
+			notFoundErr, ok := errors.AsType[*DependencyNotFoundError](err)
+			require.True(t, ok)
+			require.Equal(t, "test.child", notFoundErr.DependencyId)
+			require.Equal(t, "test.pack", notFoundErr.ParentId)
+		})
+	}
+}
+
 func Test_Install_PackDependency_InstalledDependencyMustSatisfyConstraint(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 
@@ -2397,6 +2463,175 @@ func Test_Upgrade_DependencyUpgrade_RefusesToDowngradeOutsideConstraint(t *testi
 	installed, err := manager.GetInstalled(FilterOptions{Id: "test.child"})
 	require.NoError(t, err)
 	require.Equal(t, "2.0.0", installed.Version)
+}
+
+func Test_Upgrade_DependencyUpgrade_NoPublishedVersionSatisfiesConstraint(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "test.pack",
+				Versions: []ExtensionVersion{{
+					Version: "1.0.0",
+					Dependencies: []ExtensionDependency{{
+						Id:      "test.child",
+						Version: ">=2.0.0",
+					}},
+					Artifacts: sampleArtifacts,
+				}},
+			},
+			{
+				Id: "test.child",
+				Versions: []ExtensionVersion{{
+					Version:   "1.0.0",
+					Artifacts: sampleArtifacts,
+				}},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	children, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, children[0], "1.0.0")
+	require.NoError(t, err)
+
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
+	require.NoError(t, err)
+	_, err = manager.InstallWithOptions(*mockContext.Context, packs[0], InstallOptions{SkipDependencies: true})
+	require.NoError(t, err)
+
+	_, depUpgrades, err := manager.ReconcileDependencies(
+		*mockContext.Context,
+		packs[0],
+		DefaultUpgradeOptions(""),
+	)
+	require.NoError(t, err)
+	require.Len(t, depUpgrades, 1)
+	require.Equal(t, UpgradeStatusFailed, depUpgrades[0].Status)
+	require.ErrorAs(t, depUpgrades[0].Error, new(*DependencyVersionNotFoundError))
+	require.Contains(t, depUpgrades[0].Suggestion, "test.child")
+	require.Contains(t, depUpgrades[0].Suggestion, ">=2.0.0")
+	require.Contains(t, depUpgrades[0].Suggestion, "test.pack")
+}
+
+func Test_Upgrade_DependencyUpgrade_RequiresNewerAzd(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "test.pack",
+				Versions: []ExtensionVersion{{
+					Version: "1.0.0",
+					Dependencies: []ExtensionDependency{{
+						Id:      "test.child",
+						Version: ">=2.0.0",
+					}},
+					Artifacts: sampleArtifacts,
+				}},
+			},
+			{
+				Id: "test.child",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0", Artifacts: sampleArtifacts},
+					{
+						Version:            "2.0.0",
+						RequiredAzdVersion: ">=2.0.0",
+						Artifacts:          sampleArtifacts,
+					},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	children, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, children[0], "1.0.0")
+	require.NoError(t, err)
+
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
+	require.NoError(t, err)
+	_, err = manager.InstallWithOptions(*mockContext.Context, packs[0], InstallOptions{SkipDependencies: true})
+	require.NoError(t, err)
+
+	azdVersion := semver.MustParse("1.0.0")
+	_, depUpgrades, err := manager.ReconcileDependencies(
+		*mockContext.Context,
+		packs[0],
+		UpgradeOptions{
+			UpgradeDependencies: true,
+			AzdVersion:          azdVersion,
+		},
+	)
+	require.NoError(t, err)
+	require.Len(t, depUpgrades, 1)
+	require.Equal(t, UpgradeStatusFailed, depUpgrades[0].Status)
+
+	compatibilityErr, ok := errors.AsType[*DependencyAzdVersionIncompatibleError](depUpgrades[0].Error)
+	require.True(t, ok)
+	require.Equal(t, "test.child", compatibilityErr.DependencyId)
+	require.Equal(t, "test.pack", compatibilityErr.ParentId)
+	require.Equal(t, ">=2.0.0", compatibilityErr.Constraint)
+	require.Equal(t, ">=2.0.0", compatibilityErr.RequiredAzdVersion)
+	require.Contains(t, depUpgrades[0].Suggestion, "Use an azd version")
+	require.Contains(t, depUpgrades[0].Suggestion, ">=2.0.0")
+}
+
+func TestDependencyAzdVersionIncompatibleError_UpperBoundSuggestion(t *testing.T) {
+	t.Parallel()
+
+	err := &DependencyAzdVersionIncompatibleError{
+		DependencyId:       "test.child",
+		ParentId:           "test.pack",
+		Constraint:         ">=1.0.0",
+		RequiredAzdVersion: "<2.0.0",
+	}
+
+	require.Equal(
+		t,
+		`Use an azd version that satisfies "<2.0.0", then retry.`,
+		err.Suggestion(),
+	)
+	require.NotContains(t, err.Suggestion(), "Upgrade")
 }
 
 func Test_Upgrade_DependencyUpgrade_KeepsNewerInstalledWhenInRange(t *testing.T) {

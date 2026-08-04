@@ -406,6 +406,93 @@ func TestInitializeRejectsAgentYamlSymlinkEscapingRoot(t *testing.T) {
 	require.Empty(t, provider.agentDefinitionPath)
 }
 
+func TestDeployTimeServiceConfigReplacesInitializeSnapshot(t *testing.T) {
+	// azd core re-expands ${VAR} against the environment on every
+	// call, so a deploy-time config can carry a value that was still
+	// unset (and therefore expanded to "") when Initialize ran.
+	// `azd up` initializes service targets before provisioning
+	// prompts for a missing subscription or location, so keeping the
+	// Initialize snapshot would deploy those empty strings.
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+
+	projectRoot := t.TempDir()
+	serviceDir := filepath.Join(projectRoot, "svc")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(serviceDir, "agent.yaml"),
+		[]byte("kind: hostedAgent\n"),
+		0o600,
+	))
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+
+	// AGENT_REGION references an unset variable at Initialize time.
+	stale := &azdext.ServiceConfig{
+		Name:         "echo",
+		RelativePath: "svc",
+		Environment:  map[string]string{"AGENT_REGION": ""},
+	}
+	require.NoError(t, provider.Initialize(t.Context(), stale))
+	require.NoError(t, provider.ensureDeployContext(t.Context()))
+
+	// The user is prompted during provision, so core hands the
+	// deploy-time call a config with the persisted value.
+	fresh := &azdext.ServiceConfig{
+		Name:         "echo",
+		RelativePath: "svc",
+		Environment:  map[string]string{"AGENT_REGION": "westus2"},
+	}
+
+	// Deploy must adopt the config it was handed rather than reuse the
+	// snapshot. It still fails further along (this stub has no Foundry
+	// project), which is after the config has been adopted.
+	_, err := provider.Deploy(
+		t.Context(),
+		fresh,
+		&azdext.ServiceContext{},
+		nil,
+		func(string) {},
+	)
+	require.Error(t, err)
+	require.Same(t, fresh, provider.serviceConfig)
+
+	prep, err := provider.prepareDeploy(
+		provider.serviceConfig,
+		sampleContainerAgent(),
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://project.example"},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:latest"),
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "westus2", prep.resolvedEnvVars["AGENT_REGION"])
+}
+
+func TestAdoptServiceConfigIgnoresNilAndKeepsResolvedState(t *testing.T) {
+	t.Parallel()
+
+	existing := &azdext.ServiceConfig{Name: "echo"}
+	provider := &AgentServiceTargetProvider{
+		serviceConfig:         existing,
+		serviceConfigResolved: true,
+	}
+
+	// A nil config (or the same instance) must not drop the resolved
+	// state, otherwise every repeat call would re-expand $ref
+	// includes.
+	provider.adoptServiceConfig(nil)
+	require.Same(t, existing, provider.serviceConfig)
+	require.True(t, provider.serviceConfigResolved)
+
+	provider.adoptServiceConfig(existing)
+	require.True(t, provider.serviceConfigResolved)
+
+	provider.adoptServiceConfig(&azdext.ServiceConfig{Name: "echo"})
+	require.False(t, provider.serviceConfigResolved)
+}
+
 func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
 	t.Helper()
 
@@ -1004,6 +1091,51 @@ func TestLoadContainerAgentDefinition_MalformedYAMLReturnsError(t *testing.T) {
 	require.Contains(t, err.Error(), "agent.yaml is not valid")
 }
 
+func TestPrepareDeployIncludesServiceEnvironment(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	*agentDef.EnvironmentVariables = append(
+		*agentDef.EnvironmentVariables,
+		agent_yaml.EnvironmentVariable{
+			Name:  "LEGACY_ONLY",
+			Value: "${GLOBAL_VALUE}",
+		},
+		agent_yaml.EnvironmentVariable{
+			Name:  "SHARED",
+			Value: "${SHARED}",
+		},
+	)
+	serviceConfig := &azdext.ServiceConfig{
+		Name: "basic-agent",
+		Environment: map[string]string{
+			"SERVICE_ONLY": "literal ${NOT_A_TEMPLATE}",
+			"SHARED":       "service",
+		},
+	}
+
+	prep, err := (&AgentServiceTargetProvider{}).prepareDeploy(
+		serviceConfig,
+		agentDef,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://project.example",
+			"GLOBAL_VALUE":             "legacy",
+			"SHARED":                   "global",
+		},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:latest"),
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		"literal ${NOT_A_TEMPLATE}",
+		prep.resolvedEnvVars["SERVICE_ONLY"],
+	)
+	require.Equal(t, "service", prep.resolvedEnvVars["SHARED"])
+	require.Equal(t, "legacy", prep.resolvedEnvVars["LEGACY_ONLY"])
+}
+
 func TestLoadContainerAgentDefinition_EnvPathOverridesInlineDefinition(t *testing.T) {
 	t.Parallel()
 
@@ -1095,129 +1227,6 @@ func TestPackageBuildsContainerAgent(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int32(1), containerStub.buildCalls.Load())
 	require.Equal(t, int32(1), containerStub.packageCalls.Load())
-}
-
-func TestPrepareDeploy_MergesUnifiedEnvironment(t *testing.T) {
-	t.Parallel()
-
-	agentDef := sampleContainerAgent()
-	agentDef.EnvironmentVariables = &[]agent_yaml.EnvironmentVariable{
-		{Name: "LEGACY_ONLY", Value: "${LEGACY_VALUE}"},
-		{Name: "SHARED", Value: "legacy"},
-	}
-	props, err := AgentDefinitionToServiceProperties(
-		agentDef,
-		&ServiceTargetAgentConfig{
-			Environment: map[string]string{
-				"REF_ONLY": "${REF_VALUE}",
-				"SHARED":   "ref",
-			},
-		},
-	)
-	require.NoError(t, err)
-	svc := &azdext.ServiceConfig{
-		Name:                 "basic-agent",
-		AdditionalProperties: props,
-		Environment: map[string]string{
-			"DIRECT_ONLY": "direct",
-			"SHARED":      "direct",
-		},
-	}
-	provider := &AgentServiceTargetProvider{}
-
-	prep, err := provider.prepareDeploy(
-		svc,
-		agentDef,
-		map[string]string{
-			"FOUNDRY_PROJECT_ENDPOINT": "https://example",
-			"LEGACY_VALUE":             "legacy-value",
-			"REF_VALUE":                "ref-value",
-		},
-		[]agent_yaml.AgentBuildOption{
-			agent_yaml.WithImageURL("registry.example/agent:v1"),
-		},
-	)
-
-	require.NoError(t, err)
-	definition, ok := prep.request.Definition.(agent_api.HostedAgentDefinition)
-	require.True(t, ok)
-	require.Equal(
-		t,
-		"legacy-value",
-		definition.EnvironmentVariables["LEGACY_ONLY"],
-	)
-	require.Equal(
-		t,
-		"ref-value",
-		definition.EnvironmentVariables["REF_ONLY"],
-	)
-	require.Equal(
-		t,
-		"direct",
-		definition.EnvironmentVariables["DIRECT_ONLY"],
-	)
-	require.Equal(
-		t,
-		"direct",
-		definition.EnvironmentVariables["SHARED"],
-	)
-}
-
-func TestPrepareDeployUsesRawUnifiedEnvironment(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(root, "azure.yaml"),
-		[]byte(`services:
-  basic-agent:
-    host: azure.ai.agent
-    env:
-      PROJECT: ${{project.endpoint}}
-      ENABLED: true
-`),
-		0o600,
-	))
-	agentDef := sampleContainerAgent()
-	props, err := AgentDefinitionToServiceProperties(
-		agentDef,
-		&ServiceTargetAgentConfig{},
-	)
-	require.NoError(t, err)
-	svc := &azdext.ServiceConfig{
-		Name:                 "basic-agent",
-		AdditionalProperties: props,
-		Environment: map[string]string{
-			"PROJECT": "",
-			"ENABLED": "",
-		},
-	}
-	provider := &AgentServiceTargetProvider{projectPath: root}
-
-	prep, err := provider.prepareDeploy(
-		svc,
-		agentDef,
-		map[string]string{
-			"FOUNDRY_PROJECT_ENDPOINT": "https://example",
-		},
-		[]agent_yaml.AgentBuildOption{
-			agent_yaml.WithImageURL("registry.example/agent:v1"),
-		},
-	)
-
-	require.NoError(t, err)
-	definition, ok := prep.request.Definition.(agent_api.HostedAgentDefinition)
-	require.True(t, ok)
-	require.Equal(
-		t,
-		"${{project.endpoint}}",
-		definition.EnvironmentVariables["PROJECT"],
-	)
-	require.Equal(
-		t,
-		"true",
-		definition.EnvironmentVariables["ENABLED"],
-	)
 }
 
 func TestPrepareDeployAppliesDefaultResources(t *testing.T) {

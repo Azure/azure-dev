@@ -562,10 +562,64 @@
                         }
                     },
                     {
-                        "comment": "Traditional hosts (non-container only) - require project, disable container-specific properties",
+                        "comment": "Function host - supports code or container deployment from project or image",
                         "if": {
                             "properties": {
-                                "host": { "enum": ["function", "springapp", "staticwebapp"] }
+                                "host": { "const": "function" }
+                            }
+                        },
+                        "then": {
+                            "anyOf": [
+                                {
+                                    "required": ["image"],
+                                    "not": { "required": ["project"] },
+                                    "properties": {
+                                        "language": { "const": "docker" },
+                                        "remoteBuild": false
+                                    }
+                                },
+                                {
+                                    "required": ["project"],
+                                    "not": { "required": ["image"] }
+                                }
+                            ],
+                            "allOf": [
+                                {
+                                    "if": {
+                                        "anyOf": [
+                                            {
+                                                "required": ["language"],
+                                                "properties": {
+                                                    "language": { "const": "docker" }
+                                                }
+                                            },
+                                            {
+                                                "required": ["docker"],
+                                                "properties": {
+                                                    "docker": { "required": ["path"] }
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    "then": {
+                                        "properties": {
+                                            "remoteBuild": false
+                                        }
+                                    }
+                                }
+                            ],
+                            "properties": {
+                                "k8s": false,
+                                "apiVersion": false,
+                                "env": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "Traditional non-container hosts - require project and disable container-specific properties",
+                        "if": {
+                            "properties": {
+                                "host": { "enum": ["springapp", "staticwebapp"] }
                             }
                         },
                         "then": {
@@ -1631,13 +1685,22 @@
                     "title": "The action to take when when resources become unmanaged",
                     "description": "Defines the behavior of resources that are no longer managed after the Deployment stack is updated or deleted. Defaults to 'delete' for all resource scopes.",
                     "required": [
-                        "resourceGroups",
                         "resources"
                     ],
                     "properties": {
                         "resourceGroups": {
                             "type": "string",
-                            "title": "Required. The action on unmanage setting for resource groups",
+                            "title": "The action on unmanage setting for resource groups",
+                            "description": "Specifies an action for a newly unmanaged resource. Delete will attempt to delete the resource from Azure. Detach will leave the resource in it's current state.",
+                            "default": "delete",
+                            "enum": [
+                                "delete",
+                                "detach"
+                            ]
+                        },
+                        "managementGroups": {
+                            "type": "string",
+                            "title": "The action on unmanage setting for management groups",
                             "description": "Specifies an action for a newly unmanaged resource. Delete will attempt to delete the resource from Azure. Detach will leave the resource in it's current state.",
                             "default": "delete",
                             "enum": [
@@ -1682,11 +1745,19 @@
                         },
                         "excludedActions": {
                             "type": "array",
-                            "title": "List of role-based management operations that are excluded from the denySettings."
+                            "title": "List of role-based management operations that are excluded from the denySettings.",
+                            "description": "Each entry supports ${VAR} environment variable substitution, resolved at deployment time.",
+                            "items": {
+                                "type": "string"
+                            }
                         },
                         "excludedPrincipals": {
                             "type": "array",
-                            "title": "List of Entra ID principal IDs excluded from the lock. Up to 5 principals are permitted."
+                            "title": "List of Entra ID principal IDs excluded from the lock. Up to 5 principals are permitted.",
+                            "description": "Each entry supports ${VAR} environment variable substitution, resolved at deployment time.",
+                            "items": {
+                                "type": "string"
+                            }
                         }
                     }
                 }

@@ -46,28 +46,41 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Check Copilot availability
+      id: copilot
+      shell: bash
+      env:
+        COPILOT_ENABLED: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+      run: |
+        echo "enabled=$COPILOT_ENABLED" >> "$GITHUB_OUTPUT"
+
     - name: Set up Node.js
+      if: steps.copilot.outputs.enabled == 'true'
       uses: actions/setup-node@v7
       with:
         node-version: ${{ inputs.node-version }}
 
     - name: Set up Go
+      if: steps.copilot.outputs.enabled == 'true'
       uses: actions/setup-go@v6
       with:
         go-version-file: ${{ inputs.working-directory }}/go.mod
 
     - name: Test report generator
+      if: steps.copilot.outputs.enabled == 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: go test ./...
 
     - name: Install eval dependencies
+      if: steps.copilot.outputs.enabled == 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: npm ci
 
     - name: Run vally eval
       id: run
+      if: steps.copilot.outputs.enabled == 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -92,7 +105,7 @@ runs:
         echo "vally-run-dir=$(pwd)/$run_dir" >> "$GITHUB_OUTPUT"
 
     - name: Generate vally report
-      if: always() && steps.run.outputs.vally-run-dir != ''
+      if: always() && steps.copilot.outputs.enabled == 'true' && steps.run.outputs.vally-run-dir != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -103,7 +116,7 @@ runs:
         fi
 
     - name: Write job summary
-      if: always()
+      if: always() && steps.copilot.outputs.enabled == 'true'
       shell: bash
       env:
         VALLY_RUN_DIR: ${{ steps.run.outputs.vally-run-dir }}
@@ -125,22 +138,32 @@ runs:
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Upload vally results
-      if: always() && steps.run.outputs.vally-run-dir != ''
+      if: always() && steps.copilot.outputs.enabled == 'true' && steps.run.outputs.vally-run-dir != ''
       uses: actions/upload-artifact@v7
       with:
         name: ${{ inputs.artifact-name }}
         path: ${{ steps.run.outputs.vally-run-dir }}/**
         if-no-files-found: warn
 
-    - name: Fail on eval failures
-      if: always()
+    - name: Propagate vally result
+      if: always() && steps.copilot.outputs.enabled == 'true'
       shell: bash
       env:
         VALLY_EXIT_CODE: ${{ steps.run.outputs.vally-exit-code }}
       run: |
-        if [[ "${VALLY_EXIT_CODE:-1}" -ne 0 ]]; then
-          echo "npx vally eval itself failed (exit code ${VALLY_EXIT_CODE:-unknown}) -- see the 'Run vally eval' log above."
+        if [[ -z "$VALLY_EXIT_CODE" ]]; then
+          echo "::error::Vally did not run -- check the preceding setup and test steps."
           exit 1
         fi
 
-        echo "All vally evals passed."
+        if [[ "$VALLY_EXIT_CODE" -ne 0 ]]; then
+          echo "::error::npx vally eval failed with exit code $VALLY_EXIT_CODE -- see the 'Run vally eval' log above."
+          exit 1
+        fi
+
+    - name: Reject PRs from forks
+      if: always() && steps.copilot.outputs.enabled != 'true'
+      shell: bash
+      run: |
+        echo "::error::Vally evals cannot run for fork pull requests because Copilot request permission is unavailable."
+        exit 1

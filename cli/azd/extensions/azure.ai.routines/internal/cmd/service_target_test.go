@@ -4,11 +4,13 @@
 package cmd
 
 import (
+	"context"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -56,4 +58,53 @@ func TestParseRoutineServiceConfig_ConfigFallback(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "legacy", body.Description)
+}
+
+func TestExpandRoutineValue(t *testing.T) {
+	t.Parallel()
+
+	serviceConfig := &azdext.ServiceConfig{
+		Environment: map[string]string{"DIGEST_TOPIC": "weekly changes"},
+	}
+	environment, err := (&routineServiceTarget{}).environmentValues(
+		t.Context(),
+		serviceConfig,
+	)
+	require.NoError(t, err)
+	input := map[string]any{
+		"topic":  "${DIGEST_TOPIC}",
+		"secret": "${{connections.search.credentials.key}}",
+	}
+
+	assert.Equal(t, map[string]any{
+		"topic":  "weekly changes",
+		"secret": "${{connections.search.credentials.key}}",
+	}, expandRoutineValue(input, environment))
+}
+
+// fakeServiceConfigReader reports a fixed env-declared result.
+type fakeServiceConfigReader struct {
+	found bool
+}
+
+func (f fakeServiceConfigReader) GetServiceConfigValue(
+	context.Context,
+	*azdext.GetServiceConfigValueRequest,
+	...grpc.CallOption,
+) (*azdext.GetServiceConfigValueResponse, error) {
+	return &azdext.GetServiceConfigValueResponse{Found: f.found}, nil
+}
+
+func TestRoutineEnvironmentValuesEmptyDeclaredIsolates(t *testing.T) {
+	t.Parallel()
+
+	target := &routineServiceTarget{
+		projectClient: fakeServiceConfigReader{found: true},
+	}
+	env, err := target.environmentValues(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "nightly-digest"},
+	)
+	require.NoError(t, err)
+	require.Empty(t, env)
 }

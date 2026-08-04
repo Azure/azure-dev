@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -103,28 +102,69 @@ type functionAppTarget struct {
 	env     *environment.Environment
 	cli     *azapi.AzureClient
 	console input.Console
+	// containerTarget handles the phases that are identical to App Service container deployments
+	// (tool discovery, packaging, and publishing the image to ACR). Deployment is handled locally
+	// because Function Apps do not support azd's App Service deployment slot workflow.
+	containerTarget ServiceTarget
 }
 
 // NewFunctionAppTarget creates a new instance of the Function App target
 func NewFunctionAppTarget(
 	env *environment.Environment,
+	envManager environment.Manager,
+	containerHelper *ContainerHelper,
 	azCli *azapi.AzureClient,
 	console input.Console,
 ) ServiceTarget {
 	return &functionAppTarget{
-		env:     env,
-		cli:     azCli,
-		console: console,
+		env:             env,
+		cli:             azCli,
+		console:         console,
+		containerTarget: NewAppServiceTarget(env, envManager, containerHelper, azCli, console),
 	}
 }
 
 // Gets the required external tools for the Function app
 func (f *functionAppTarget) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
+	if containerConfigured(serviceConfig) {
+		return f.containerTarget.RequiredExternalTools(ctx, serviceConfig)
+	}
 	return []tools.ExternalTool{}
 }
 
 // Initializes the function app target
 func (f *functionAppTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+	if err := validateFunctionAppContainerConfig(serviceConfig); err != nil {
+		return err
+	}
+	if containerConfigured(serviceConfig) {
+		return f.containerTarget.Initialize(ctx, serviceConfig)
+	}
+	return nil
+}
+
+// validateFunctionAppContainerConfig rejects service configurations that mix code and container
+// deployment settings, before any Azure resources are contacted.
+func validateFunctionAppContainerConfig(serviceConfig *ServiceConfig) error {
+	if !serviceConfig.Image.Empty() &&
+		serviceConfig.Language != ServiceLanguageNone &&
+		serviceConfig.Language != ServiceLanguageDocker {
+		return &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"pre-built image deployments cannot use source language '%s'",
+				serviceConfig.Language,
+			),
+			Suggestion: "Remove 'language' or set 'language: docker' when using 'image'.",
+		}
+	}
+
+	if containerConfigured(serviceConfig) && serviceConfig.RemoteBuild != nil {
+		return &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("top-level 'remoteBuild' is only supported for code-based function deployments"),
+			Suggestion: "Remove the top-level setting and use 'docker.remoteBuild' for container deployments.",
+		}
+	}
+
 	return nil
 }
 
@@ -135,6 +175,10 @@ func (f *functionAppTarget) Package(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
+	if isContainerDeploy(serviceConfig, serviceContext) {
+		return f.containerTarget.Package(ctx, serviceConfig, serviceContext, progress)
+	}
+
 	// Extract build artifact from service context
 	var buildPath string
 	if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindDirectory)); found {
@@ -176,10 +220,22 @@ func (f *functionAppTarget) Publish(
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
 ) (*ServicePublishResult, error) {
+	if isContainerDeploy(serviceConfig, serviceContext) {
+		return f.containerTarget.Publish(
+			ctx,
+			serviceConfig,
+			serviceContext,
+			targetResource,
+			progress,
+			publishOptions,
+		)
+	}
+
 	return &ServicePublishResult{}, nil
 }
 
-// Deploys the prepared zip archive using Zip deploy to the Azure App Service resource
+// Deploys the packaged service to the Azure Function App resource. Container services update the
+// site's image reference; code services are uploaded through zip deploy.
 func (f *functionAppTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -189,6 +245,104 @@ func (f *functionAppTarget) Deploy(
 ) (*ServiceDeployResult, error) {
 	if err := f.validateTargetResource(targetResource); err != nil {
 		return nil, fmt.Errorf("validating target resource: %w", err)
+	}
+
+	// Fetch site properties up front so an incompatible site is reported before any upload is
+	// attempted. Zip deploying to a container site leaves the deployment API polling indefinitely.
+	props, err := f.cli.GetFunctionAppProperties(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("fetching function app properties: %w", err)
+	}
+
+	if isContainerDeploy(serviceConfig, serviceContext) {
+		return f.containerDeploy(ctx, serviceConfig, serviceContext, targetResource, props, progress)
+	}
+
+	return f.zipDeploy(ctx, serviceConfig, serviceContext, targetResource, props, progress)
+}
+
+// containerDeploy points the Function App at the container image published to the registry.
+// Unlike App Service, Function Apps always deploy to the main site: azd does not support deployment
+// slots for this host, so no slot resolution or prompting takes place.
+func (f *functionAppTarget) containerDeploy(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	targetResource *environment.TargetResource,
+	props *azapi.AzCliFunctionAppProperties,
+	progress *async.Progress[ServiceProgress],
+) (*ServiceDeployResult, error) {
+	artifact, found := serviceContext.Publish.FindFirst(WithKind(ArtifactKindContainer))
+	if !found || artifact.Location == "" {
+		return nil, fmt.Errorf("no container image found in publish artifacts for service: %s", serviceConfig.Name)
+	}
+
+	if !props.ContainerConfiguration.IsContainer {
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"function app '%s' is configured for zip deployment, "+
+					"but service '%s' is configured for container deployment",
+				targetResource.ResourceName(),
+				serviceConfig.Name,
+			),
+			Suggestion: "Update your infrastructure to provision a Linux function app whose 'linuxFxVersion' " +
+				"is set to a 'DOCKER|<image>' value, or configure the service for zip deployment by removing " +
+				"'language: docker', 'docker.path', and 'image'.",
+		}
+	}
+
+	progress.SetProgress(NewServiceProgress("Updating container image"))
+	if err := f.cli.UpdateAppServiceContainerImage(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+		artifact.Location,
+	); err != nil {
+		return nil, fmt.Errorf("deploying container to function app %s: %w", serviceConfig.Name, err)
+	}
+
+	progress.SetProgress(NewServiceProgress("Fetching endpoints for function app"))
+	endpoints, err := f.Endpoints(ctx, serviceConfig, targetResource)
+	if err != nil {
+		return nil, err
+	}
+
+	artifacts, err := newDeployArtifacts(endpoints, targetResource)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ServiceDeployResult{
+		Artifacts: artifacts,
+	}, nil
+}
+
+// zipDeploy uploads the packaged zip archive using the Function App deployment API.
+func (f *functionAppTarget) zipDeploy(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	targetResource *environment.TargetResource,
+	props *azapi.AzCliFunctionAppProperties,
+	progress *async.Progress[ServiceProgress],
+) (*ServiceDeployResult, error) {
+	if props.ContainerConfiguration.IsContainer {
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"function app '%s' is configured for container deployment, "+
+					"but service '%s' is configured for zip deployment",
+				targetResource.ResourceName(),
+				serviceConfig.Name,
+			),
+			Suggestion: "Configure the service for container deployment using 'language: docker', " +
+				"'docker.path', or 'image'.",
+		}
 	}
 
 	// Extract zip package from service context
@@ -206,16 +360,6 @@ func (f *functionAppTarget) Deploy(
 	}
 
 	defer zipFile.Close()
-
-	props, err := f.cli.GetFunctionAppProperties(
-		ctx,
-		targetResource.SubscriptionId(),
-		targetResource.ResourceGroupName(),
-		targetResource.ResourceName(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("fetching function app properties: %w", err)
-	}
 
 	plan, err := f.cli.GetFunctionAppPlan(ctx, props)
 	if err != nil {
@@ -269,25 +413,9 @@ func (f *functionAppTarget) Deploy(
 		return nil, err
 	}
 
-	artifacts := ArtifactCollection{}
-
-	// Add endpoints as artifacts
-	for _, endpoint := range endpoints {
-		if err := artifacts.Add(&Artifact{
-			Kind:         ArtifactKindEndpoint,
-			Location:     endpoint,
-			LocationKind: LocationKindRemote,
-		}); err != nil {
-			return nil, fmt.Errorf("failed to add endpoint artifact: %w", err)
-		}
-	}
-
-	// Add resource artifact
-	var resourceArtifact *Artifact
-	if err := mapper.Convert(targetResource, &resourceArtifact); err == nil {
-		if err := artifacts.Add(resourceArtifact); err != nil {
-			return nil, fmt.Errorf("failed to add resource artifact: %w", err)
-		}
+	artifacts, err := newDeployArtifacts(endpoints, targetResource)
+	if err != nil {
+		return nil, err
 	}
 
 	return &ServiceDeployResult{

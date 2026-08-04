@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "cli/azd/extensions/registry.json"
+      - "cli/azd/extensions/registry.dev.json"
       - ".github/workflows/ext-registry-ci.yml"
     branches: [main]
 
@@ -34,16 +35,16 @@ jobs:
       - name: Build azd
         run: go build .
 
-      # Validates registry.json and fails on any hard validation error. The most
-      # important case is a declared dependency constraint that no published version
+      # Validates the extension registries and fails on any hard validation error. The
+      # most important case is a declared dependency constraint that no published version
       # satisfies, which is the inconsistency a coordinated multi-extension bump can
       # introduce, but schema, id, and artifact errors also fail here. Warnings (e.g.
       # an absent dependency id) do not fail this step, so routine extension releases
-      # are not blocked. Runs on the same trigger as registry.json.
+      # are not blocked. Runs on the same trigger as the registry files.
       - name: Validate registry dependency consistency
         run: |
-          if ! go test ./pkg/extensions -run '^TestRegistryFileIsValid$' -v; then
-            echo "::error::registry.json failed validation. See the test output above for the specific error(s)."
+          if ! go test ./pkg/extensions -run '^TestRegistryFileIsValid$|^TestDevRegistryFileIsValid$' -v; then
+            echo "::error::An extension registry failed validation. See the test output above for the specific error(s)."
             echo "Suggestion: a common cause is a dependency pinned to a version that is not yet published in the registry; ensure that version is published before updating the dependent extension."
             exit 1
           fi

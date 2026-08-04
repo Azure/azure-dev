@@ -33,6 +33,7 @@ Canonical flows:
 - Select environment: `azd env select <name>`
 - Redeploy app only: `azd deploy`
 - Tear down resources: `azd down`
+- Remove an environment completely: `azd down` -> `azd env remove <name>`
 
 az to azd mental model:
 - Use this as a translation guide, not an exact command mapping. `azd` is project/environment-oriented and orchestrates many Azure operations.
@@ -48,6 +49,7 @@ az to azd mental model:
   - Manual variable/parameter handling in scripts -> `azd env new`, `azd env select`, and `.env`-driven project settings
 - Resource teardown:
   - `az group delete` (or equivalent manual cleanup) -> `azd down`
+  - After resource teardown, remove local environment state with `azd env remove <name>`
 
 Template discovery:
 - Templates: Use https://azure.github.io/awesome-azd/ for full community gallery.

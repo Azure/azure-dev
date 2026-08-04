@@ -181,6 +181,9 @@ overrides:
       - compatResult
       - compatCopy
       - Incompat
+  - filename: pkg/tools/dotnet/dotnet.go
+    words:
+      - MSBUILDDISABLENODEREUSE
   - filename: pkg/output/pretty_table.go
     words:
       - runewidth

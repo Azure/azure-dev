@@ -370,7 +370,8 @@ When `latest` is specified (or the version is omitted), `azd` selects the **high
 | *"extension X not found"* | The extension ID is not present in any configured source. | Verify your sources with `azd extension source list`. Check the extension ID spelling. |
 | *"found in multiple sources, specify exact source"* | The extension exists in two or more configured sources. | Use `azd extension install X --source <name>` to specify which source to use. |
 | *"no matching version found"* | The version constraint excludes all available versions. | Check available versions with `azd extension show X`. Relax the constraint. |
-| *"dependency X not found"* | A recursive dependency declared by the extension is missing from all sources. | Ensure the dependency is published to an accessible source. |
+| *"dependency X not found"* | A recursive dependency is not installed and is missing from the parent extension's source. | Publish the dependency to the same source or install it explicitly before installing the parent. |
+| *"no version satisfies constraint"* | The dependency exists, but none of its versions match the parent extension's constraint. | Publish a compatible dependency version or update the parent extension's constraint. |
 | Stale version installed | The source cache has not expired yet, so `azd` is using an older manifest. | Set `AZD_EXTENSION_CACHE_TTL=0s` or delete files in `~/.azd/cache/extensions/`. |
 
 ### Diagnostic Steps

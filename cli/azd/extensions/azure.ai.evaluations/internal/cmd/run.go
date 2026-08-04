@@ -198,7 +198,7 @@ func buildRunCommand(use, short string) *cobra.Command {
 				if err := emitJSON(out, final); err != nil {
 					return err
 				}
-			} else if err := renderRun(out, final); err != nil {
+			} else if err := renderRun(out, final, ec.runMeans(ctx, evalID, final)); err != nil {
 				return err
 			}
 
@@ -702,23 +702,61 @@ func timestampString(value any) string {
 	}
 }
 
+// runMeans reads the run's rows to average each evaluator's score.
+//
+// Best effort: the summary is worth printing without the column, and a run
+// that scored nothing has no rows to read.
+func (ec *evalContext) runMeans(
+	ctx context.Context,
+	evalID string,
+	run *eval_api.OpenAIEvalRun,
+) map[string]float64 {
+	if run == nil || run.ResultCounts == nil || run.ResultCounts.Total == 0 {
+		return nil
+	}
+	items, err := ec.evalClient.ListOutputItems(ctx, evalID, run.ID, 0)
+	if err != nil || items == nil {
+		return nil
+	}
+	return criteriaMeans(items.Data)
+}
+
+// timestampTime reads a service timestamp, which arrives as epoch seconds on a
+// run and as a formatted string elsewhere.
+func timestampTime(value any) time.Time {
+	switch t := value.(type) {
+	case float64:
+		return time.Unix(int64(t), 0).UTC()
+	case int64:
+		return time.Unix(t, 0).UTC()
+	case string:
+		if parsed, err := time.Parse(time.RFC3339, t); err == nil {
+			return parsed.UTC()
+		}
+	}
+	return time.Time{}
+}
+
 // renderRun prints what a person needs after waiting for a run.
-// The status line alone is not that. A run's whole purpose is the verdict per
-// evaluator, and the service returns it — passed, failed and errored counts
-// for every testing criterion — so leaving it out meant the answer to the
-// question the command was asked required a second command to see. The report
-// URL and the run id come last, because they are what you act on after
-// reading the numbers rather than instead of reading them.
-func renderRun(out interface{ Write([]byte) (int, error) }, run *eval_api.OpenAIEvalRun) error {
-	fmt.Fprintf(out, "\nRun %s finished with status %s\n", run.ID, run.Status)
+//
+// means carries each criterion's average score, which the run summary does not
+// return; it is nil when the rows were not fetched, and the column is dropped.
+func renderRun(
+	out interface{ Write([]byte) (int, error) },
+	run *eval_api.OpenAIEvalRun,
+	means map[string]float64,
+) error {
+	fmt.Fprintln(out)
+	renderRunHeader(out, run)
+
 	// A run that failed carries why, and it is usually the only actionable
 	// thing in the response — dropping it leaves the caller with just the word
 	// "failed".
 	if why := run.Failure(); why != "" {
-		fmt.Fprintf(out, "  %s\n", why)
+		fmt.Fprintf(out, "\n%s\n", why)
 	}
 
-	renderCriteriaTable(out, run.PerTestingCriteria)
+	renderCriteriaTable(out, run.PerTestingCriteria, means)
 
 	// Counted over samples, not over verdicts: a sample that failed two
 	// evaluators is one sample to go and look at, and reporting it as two
@@ -741,6 +779,39 @@ func renderRun(out interface{ Write([]byte) (int, error) }, run *eval_api.OpenAI
 	return nil
 }
 
+// renderRunHeader prints the run's identity above the per-evaluator table.
+//
+// The eval is named from the metadata the extension wrote at create time,
+// because the run carries only an id and the id is not what anyone declared.
+func renderRunHeader(out interface{ Write([]byte) (int, error) }, run *eval_api.OpenAIEvalRun) {
+	fmt.Fprintf(out, "%-10s %s\n", "Run", run.ID)
+	if name := run.Metadata["azd_eval"]; name != "" {
+		fmt.Fprintf(out, "%-10s %s\n", "Eval", name)
+	} else if run.EvalID != "" {
+		fmt.Fprintf(out, "%-10s %s\n", "Eval", run.EvalID)
+	}
+	fmt.Fprintf(out, "%-10s %s\n", "Status", run.Status)
+	if c := run.ResultCounts; c != nil && c.Total > 0 {
+		fmt.Fprintf(out, "%-10s %d\n", "Samples", c.Total)
+	}
+	if d := runDuration(run); d != "" {
+		fmt.Fprintf(out, "%-10s %s\n", "Duration", d)
+	}
+}
+
+// runDuration reports how long the run took, or "" when either end is missing.
+func runDuration(run *eval_api.OpenAIEvalRun) string {
+	start, end := timestampTime(run.CreatedAt), timestampTime(run.ModifiedAt)
+	if start.IsZero() || end.IsZero() || !end.After(start) {
+		return ""
+	}
+	d := end.Sub(start).Round(time.Second)
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
+}
+
 // renderCriteriaTable prints one row per evaluator.
 //
 // Sorted by name so two runs of the same eval read the same way; the service
@@ -748,6 +819,7 @@ func renderRun(out interface{ Write([]byte) (int, error) }, run *eval_api.OpenAI
 func renderCriteriaTable(
 	out interface{ Write([]byte) (int, error) },
 	results []eval_api.EvalRunCriteriaResult,
+	means map[string]float64,
 ) {
 	if len(results) == 0 {
 		return
@@ -765,13 +837,23 @@ func renderCriteriaTable(
 		}
 	}
 
-	fmt.Fprintf(out, "\n%-*s  %4s  %4s  %9s\n", width, "EVALUATOR", "PASS", "FAIL", "PASS RATE")
-	fmt.Fprintf(out, "%s  %s  %s  %s\n",
-		strings.Repeat("-", width), "----", "----", "---------")
+	fmt.Fprintf(out, "\n%-*s  %4s  %4s  %9s", width, "EVALUATOR", "PASS", "FAIL", "PASS RATE")
+	fmt.Fprintf(out, "%s\n", meanHeader(means))
+	fmt.Fprintf(out, "%s  %s  %s  %s%s\n",
+		strings.Repeat("-", width), "----", "----", "---------", meanRule(means))
+
 	for _, r := range sorted {
 		scored := r.Passed + r.Failed
-		fmt.Fprintf(out, "%-*s  %4d  %4d  %9s\n",
+		fmt.Fprintf(out, "%-*s  %4d  %4d  %9s",
 			width, r.TestingCriteria, r.Passed, r.Failed, formatRate(r.Passed, scored))
+		if means != nil {
+			if mean, ok := means[r.TestingCriteria]; ok {
+				fmt.Fprintf(out, "  %10.1f", mean)
+			} else {
+				fmt.Fprintf(out, "  %10s", "-")
+			}
+		}
+		fmt.Fprintln(out)
 		// Errors are not failures — the evaluator never reached a verdict —
 		// so they are named rather than folded into the fail column, where
 		// they would look like a quality problem.
@@ -779,6 +861,53 @@ func renderCriteriaTable(
 			fmt.Fprintf(out, "%-*s  %s\n", width, "", errorNote(r.Errored))
 		}
 	}
+}
+
+// meanHeader and meanRule add the score column only when there are scores.
+func meanHeader(means map[string]float64) string {
+	if means == nil {
+		return ""
+	}
+	return fmt.Sprintf("  %10s", "MEAN SCORE")
+}
+
+func meanRule(means map[string]float64) string {
+	if means == nil {
+		return ""
+	}
+	return "  " + strings.Repeat("-", 10)
+}
+
+// criteriaMeans averages each evaluator's score over the rows it scored.
+//
+// The run summary reports pass and fail counts but no score, so a table that
+// shows how close a passing evaluator came to failing has to read the rows.
+// Errored and unscored rows are left out rather than counted as zero, which
+// would drag the average toward a number no evaluator produced.
+func criteriaMeans(items []eval_api.OutputItem) map[string]float64 {
+	sums := map[string]float64{}
+	counts := map[string]int{}
+	for _, item := range items {
+		for _, r := range item.Results {
+			if !r.Score.Defined() {
+				continue
+			}
+			name := r.Name
+			if name == "" {
+				name = r.Metric
+			}
+			sums[name] += float64(r.Score)
+			counts[name]++
+		}
+	}
+	if len(counts) == 0 {
+		return nil
+	}
+	means := make(map[string]float64, len(counts))
+	for name, n := range counts {
+		means[name] = sums[name] / float64(n)
+	}
+	return means
 }
 
 // errorNote describes rows an evaluator could not score.

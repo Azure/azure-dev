@@ -35,7 +35,7 @@ func finishedRun() *eval_api.OpenAIEvalRun {
 // a second command to see.
 func TestRenderRunReportsEveryEvaluator(t *testing.T) {
 	var out bytes.Buffer
-	require.NoError(t, renderRun(&out, finishedRun()))
+	require.NoError(t, renderRun(&out, finishedRun(), nil))
 	text := out.String()
 
 	assert.Contains(t, text, "evalrun_abc123")
@@ -54,7 +54,7 @@ func TestRenderRunReportsEveryEvaluator(t *testing.T) {
 // criteria in whatever order it evaluated them, which is not stable.
 func TestRenderRunOrdersEvaluatorsByName(t *testing.T) {
 	var out bytes.Buffer
-	require.NoError(t, renderRun(&out, finishedRun()))
+	require.NoError(t, renderRun(&out, finishedRun(), nil))
 
 	text := out.String()
 	assert.Less(t, strings.Index(text, "coherence"), strings.Index(text, "relevance"),
@@ -71,7 +71,7 @@ func TestRenderRunSeparatesErrorsFromFailures(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	require.NoError(t, renderRun(&out, run))
+	require.NoError(t, renderRun(&out, run, nil))
 	text := out.String()
 
 	assert.Contains(t, text, "2 errored")
@@ -93,7 +93,7 @@ func TestFormatRateHasNoOpinionAboutNothing(t *testing.T) {
 // command that shows them is named — and it has to be a command that exists.
 func TestRenderRunPointsAtTheFailingSamples(t *testing.T) {
 	var out bytes.Buffer
-	require.NoError(t, renderRun(&out, finishedRun()))
+	require.NoError(t, renderRun(&out, finishedRun(), nil))
 	assert.Contains(t, out.String(), "azd ai eval run output list --failed-only")
 
 	clean := finishedRun()
@@ -102,7 +102,7 @@ func TestRenderRunPointsAtTheFailingSamples(t *testing.T) {
 		{TestingCriteria: "relevance", Passed: 10},
 	}
 	var cleanOut bytes.Buffer
-	require.NoError(t, renderRun(&cleanOut, clean))
+	require.NoError(t, renderRun(&cleanOut, clean, nil))
 	assert.NotContains(t, cleanOut.String(), "--failed-only",
 		"a run with nothing to look at must not send anyone looking")
 }
@@ -112,6 +112,6 @@ func TestRenderRunPointsAtTheFailingSamples(t *testing.T) {
 // replace the failure message with a panic.
 func TestRenderRunSurvivesAnEmptyResult(t *testing.T) {
 	var out bytes.Buffer
-	require.NoError(t, renderRun(&out, &eval_api.OpenAIEvalRun{ID: "evalrun_x", Status: "failed"}))
+	require.NoError(t, renderRun(&out, &eval_api.OpenAIEvalRun{ID: "evalrun_x", Status: "failed"}, nil))
 	assert.Contains(t, out.String(), "evalrun_x")
 }

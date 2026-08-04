@@ -375,28 +375,42 @@ func renderResults(
 	} else {
 		fmt.Fprintln(w)
 		rows := make([][]string, 0, len(items))
-		for _, it := range items {
+		for i, it := range items {
+			// One row per evaluated sample, not per verdict: a sample that
+			// failed three evaluators is one sample to go and look at, and
+			// listing it three times buries how much is actually wrong.
+			var failed []string
+			reason := ""
 			for _, r := range it.Results {
-				if failedOnly && r.Passed {
+				if r.Passed {
 					continue
 				}
-				verdict := "pass"
-				if !r.Passed {
-					verdict = "FAIL"
+				failed = append(failed, r.Name)
+				if reason == "" {
+					reason = r.Reason
 				}
-				rows = append(rows, []string{
-					it.ID,
-					r.Name,
-					verdict,
-					formatStat("%.3f", r.Score),
-					truncate(it.Input(), 48),
-					truncate(r.Reason, 60),
-				})
 			}
+			if failedOnly && len(failed) == 0 {
+				continue
+			}
+			verdicts := strings.Join(failed, ", ")
+			if verdicts == "" {
+				verdicts = "-"
+			}
+			rows = append(rows, []string{
+				it.ID,
+				strconv.Itoa(i + 1),
+				truncate(verdicts, 40),
+				truncate(reason, 44),
+			})
 		}
 		if err := emitTable(w,
-			[]string{"ITEM", "EVALUATOR", "RESULT", "SCORE", "INPUT", "REASON"}, rows); err != nil {
+			[]string{"ITEM", "SAMPLE", "FAILED EVALUATORS", "REASON (first failure)"},
+			rows); err != nil {
 			return err
+		}
+		if n := len(rows); failedOnly && n > 0 {
+			fmt.Fprintf(w, "\n%d sample(s) failed at least one evaluator.\n", n)
 		}
 	}
 

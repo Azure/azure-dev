@@ -134,7 +134,7 @@ Playground for activity agents. Use --no-client to skip this.`,
 }
 
 func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
-	if err := validateInspectorPort(flags.inspectorPort, flags.inspectorPortSet); err != nil {
+	if err := validateInspectorPortFlags(flags); err != nil {
 		return err
 	}
 
@@ -321,6 +321,15 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	// are suppressed by --no-inspector or its neutral alias --no-client.
 	suppressClient := flags.noInspector || flags.noClient
 	if activityProfile.IsActivity {
+		// Activity agents open the Playground, which has no inspector UI port.
+		// This branch is only known after the service is resolved, and users
+		// can't always predict which client they'll get, so an unusable
+		// --inspector-port warns rather than failing the run.
+		if flags.inspectorPortSet {
+			fmt.Fprintln(os.Stderr,
+				"Warning: --inspector-port is ignored for activity-protocol agents, "+
+					"which open the Microsoft 365 Agents Playground instead of the Agent Inspector.")
+		}
 		handlePlaygroundAutoLaunch(ctx, flags.port, flags.channel, suppressClient, os.Stderr)
 	} else {
 		inspectorInstalled := false
@@ -518,6 +527,59 @@ func validateInspectorPort(inspectorPort int, set bool) error {
 		fmt.Sprintf("--inspector-port must be between 1 and 65535, got %d", inspectorPort),
 		"pass a free TCP port, for example --inspector-port 9002",
 	)
+}
+
+// validateInspectorPortFlags checks --inspector-port against its own range and
+// against the other run flags it interacts with. It extends the range check
+// with the two cases where an accepted value would otherwise be silently
+// dropped:
+//
+//   - --no-client (or the deprecated --no-inspector) suppresses the local
+//     client entirely, so the inspector never launches and the port is unused.
+//   - An inspector port equal to the agent port is the very collision this flag
+//     exists to avoid: the agent binds it first and the inspector then fails to
+//     bind the same address.
+//
+// The activity-agent case (the Playground branch, which has no inspector port)
+// cannot be decided here because the profile is only known after the service is
+// resolved; it warns at that point instead. See runRun.
+func validateInspectorPortFlags(flags *runFlags) error {
+	if err := validateInspectorPort(flags.inspectorPort, flags.inspectorPortSet); err != nil {
+		return err
+	}
+	if !flags.inspectorPortSet {
+		return nil
+	}
+
+	if flags.noClient || flags.noInspector {
+		// Name the flag the user actually passed; --no-inspector is deprecated
+		// but still accepted.
+		suppressFlag := "--no-client"
+		if flags.noInspector && !flags.noClient {
+			suppressFlag = "--no-inspector"
+		}
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			fmt.Sprintf("--inspector-port cannot be used with %s", suppressFlag),
+			fmt.Sprintf(
+				"drop %s to open the Agent Inspector on that port, or drop --inspector-port to run without a local client",
+				suppressFlag,
+			),
+		)
+	}
+
+	if flags.inspectorPort == flags.port {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			fmt.Sprintf(
+				"--inspector-port must differ from --port; both are %d and cannot bind the same address",
+				flags.inspectorPort,
+			),
+			"pass a different free TCP port, for example --inspector-port 9002",
+		)
+	}
+
+	return nil
 }
 
 func isInspectorExtensionInstalled(ctx context.Context, azdClient *azdext.AzdClient) (bool, error) {

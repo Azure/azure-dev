@@ -346,6 +346,84 @@ func TestValidateInspectorPort(t *testing.T) {
 	}
 }
 
+func TestValidateInspectorPortFlags(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		flags       runFlags
+		wantErr     bool
+		wantErrPart string
+	}{
+		{
+			name:  "unset flag with suppressed client is allowed",
+			flags: runFlags{port: DefaultPort, noClient: true},
+		},
+		{
+			name:  "distinct ports are allowed",
+			flags: runFlags{port: 9091, inspectorPort: 9002, inspectorPortSet: true},
+		},
+		{
+			name:        "out of range still rejected",
+			flags:       runFlags{port: DefaultPort, inspectorPort: 70000, inspectorPortSet: true},
+			wantErr:     true,
+			wantErrPart: "between 1 and 65535",
+		},
+		{
+			name:        "conflicts with --no-client",
+			flags:       runFlags{port: DefaultPort, inspectorPort: 9002, inspectorPortSet: true, noClient: true},
+			wantErr:     true,
+			wantErrPart: "--no-client",
+		},
+		{
+			name:        "conflicts with deprecated --no-inspector",
+			flags:       runFlags{port: DefaultPort, inspectorPort: 9002, inspectorPortSet: true, noInspector: true},
+			wantErr:     true,
+			wantErrPart: "--no-inspector",
+		},
+		{
+			name: "both suppress flags name the canonical one",
+			flags: runFlags{
+				port: DefaultPort, inspectorPort: 9002, inspectorPortSet: true,
+				noClient: true, noInspector: true,
+			},
+			wantErr:     true,
+			wantErrPart: "--no-client",
+		},
+		{
+			name:        "inspector port equal to agent port is rejected",
+			flags:       runFlags{port: 9091, inspectorPort: 9091, inspectorPortSet: true},
+			wantErr:     true,
+			wantErrPart: "must differ from --port",
+		},
+		{
+			name:  "collision check ignores an unset inspector port",
+			flags: runFlags{port: 0},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			flags := tt.flags
+			err := validateInspectorPortFlags(&flags)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("validateInspectorPortFlags(%+v) = nil, want error", tt.flags)
+				}
+				if !strings.Contains(err.Error(), tt.wantErrPart) {
+					t.Fatalf("error = %q, want it to contain %q", err.Error(), tt.wantErrPart)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("validateInspectorPortFlags(%+v) = %v, want nil", tt.flags, err)
+			}
+		})
+	}
+}
+
 func TestInspectorLaunchWarningForMissingExtension(t *testing.T) {
 	t.Parallel()
 

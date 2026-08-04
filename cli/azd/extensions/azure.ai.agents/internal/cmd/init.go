@@ -1056,10 +1056,10 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Initialize a new AI agent project.
 
 When -m points at a sample's unified azure.yaml (a project manifest that
-declares services with host: azure.ai.project / azure.ai.agent / ...), that
-azure.yaml is adopted as the project manifest and its referenced files are
-placed at the project root. When -m points at an agent manifest instead, the
-project's azure.yaml is generated from it.
+declares a service with host: azure.ai.agent), that azure.yaml is adopted as
+the project manifest and its referenced files are placed at the project root.
+When -m points at an agent manifest instead, the project's azure.yaml is
+generated from it.
 
 The agent name written to agent.yaml is the Foundry agent identity. Foundry
 agents are unique by name within a project, so deploying with an existing name

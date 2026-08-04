@@ -266,8 +266,7 @@ func foundryAzureYamlServiceHost(service *yaml.Node) (string, bool) {
 		return "", false
 	}
 
-	_, knownHost := foundryServiceHosts[host.Value]
-	if !knownHost && !strings.HasPrefix(host.Value, "azure.ai.") {
+	if !strings.HasPrefix(host.Value, "azure.ai.") {
 		return "", false
 	}
 	return host.Value, true
@@ -279,8 +278,7 @@ func supportsAzureYamlEnvironmentReferences(host string) bool {
 		"azure.ai.connection",
 		"azure.ai.project",
 		"azure.ai.routine",
-		"azure.ai.toolbox",
-		"microsoft.foundry":
+		"azure.ai.toolbox":
 		return true
 	default:
 		return false
@@ -381,7 +379,7 @@ func collectAzureYamlServiceEnvironmentReferences(
 		); err != nil {
 			return fmt.Errorf("scanning connection service %q metadata: %w", serviceName, err)
 		}
-	case "azure.ai.project", "microsoft.foundry":
+	case "azure.ai.project":
 		var config azureYamlProjectEnvironmentConfig
 		if err := active.Decode(&config); err != nil {
 			return fmt.Errorf("decoding project service %q: %w", serviceName, err)

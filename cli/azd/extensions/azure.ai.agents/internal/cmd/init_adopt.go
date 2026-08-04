@@ -34,25 +34,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// foundryServiceHosts are the azure.yaml service `host` values that identify a
-// unified Microsoft Foundry project manifest. The legacy `microsoft.foundry`
-// host is included for backward compatibility with older non-split files.
-var foundryServiceHosts = map[string]struct{}{
-	"azure.ai.agent":      {},
-	"azure.ai.project":    {},
-	"azure.ai.connection": {},
-	"azure.ai.toolbox":    {},
-	"microsoft.foundry":   {},
-}
-
-// looksLikeFoundryAzureYaml reports whether the given YAML content is a unified
-// Foundry `azure.yaml` project manifest rather than an agent manifest.
+// looksLikeFoundryAzureYaml reports whether the content is a unified
+// Foundry azure.yaml project manifest rather than an agent manifest.
 //
-// It returns true when the document has a top-level `services:` map in which at
-// least one service declares a Foundry `host:`. Agent manifests have a top-level
-// `template:` and no `services:`, so they never match. This lets `azd ai agent
-// init -m <pointer>` route a unified `azure.yaml` to the adoption path and an
-// agent manifest to the legacy generate path unambiguously.
+// It returns true when services contains host: azure.ai.agent.
+// Agent manifests have a top-level template and no services, so they
+// never match. This routes Agent project manifests to adoption and agent
+// manifests to legacy generation.
 func looksLikeFoundryAzureYaml(content []byte) bool {
 	var top map[string]any
 	if err := yaml.Unmarshal(content, &top); err != nil {
@@ -73,7 +61,7 @@ func looksLikeFoundryAzureYaml(content []byte) bool {
 		if !ok {
 			continue
 		}
-		if _, isFoundry := foundryServiceHosts[host]; isFoundry {
+		if host == AiAgentHost {
 			return true
 		}
 	}

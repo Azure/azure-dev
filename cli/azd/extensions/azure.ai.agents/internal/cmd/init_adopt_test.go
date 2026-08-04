@@ -37,13 +37,30 @@ services:
 			want: true,
 		},
 		{
-			name: "legacy microsoft.foundry host",
+			name: "unsupported microsoft.foundry host",
 			content: `name: foundry-legacy
 services:
   agents:
     host: microsoft.foundry
 `,
-			want: true,
+			want: false,
+		},
+		{
+			name: "unified azure.yaml with only sibling Foundry hosts",
+			content: `name: foundry-resources
+services:
+  ai-project:
+    host: azure.ai.project
+  search-connection:
+    host: azure.ai.connection
+  toolbox:
+    host: azure.ai.toolbox
+  summarize:
+    host: azure.ai.skill
+  daily-report:
+    host: azure.ai.routine
+`,
+			want: false,
 		},
 		{
 			name: "agent manifest with top-level template",

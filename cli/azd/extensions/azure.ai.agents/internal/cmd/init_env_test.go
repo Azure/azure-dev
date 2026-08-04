@@ -238,6 +238,18 @@ services:
 			want: nil,
 		},
 		{
+			name: "deprecated Foundry host refs are ignored",
+			content: `name: sample
+services:
+  project:
+    host: microsoft.foundry
+    network:
+      agentSubnet:
+        vnet: ${UNSUPPORTED_FOUNDRY_HOST}
+`,
+			want: nil,
+		},
+		{
 			name: "deprecated toolbox and routine config fields are scanned",
 			content: `name: sample
 services:

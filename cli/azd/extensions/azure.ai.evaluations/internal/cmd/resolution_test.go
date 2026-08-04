@@ -44,7 +44,7 @@ func TestResolveLevel_Precedence(t *testing.T) {
 // this wrong passes validation and then errors on every row.
 func TestSampleBindingsFor_UnknownTargetBindsNothing(t *testing.T) {
 	assert.Nil(t, sampleBindingsFor("prompt"),
-		"an unrecognised target must bind nothing rather than guess at agent fields")
+		"an unrecognized target must bind nothing rather than guess at agent fields")
 }
 
 // The level filter is what keeps a conversation evaluator from being sent turn

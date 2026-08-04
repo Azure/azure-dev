@@ -465,10 +465,10 @@ Recorded for review. Anything marked **corrected** was an assumption that live t
 | **Agent-seeded generation, nothing authored** | `init` → `generate` with no instruction file: seeded from the agent's published instructions, 14 rows generated, 13 of 14 on the agent's actual catalog/policies; `azd deploy` published them; the run scored 14 passed / 0 failed / 0 errored |
 | Missing generation model | Fails before any network call, naming `--eval-model` and the spec field |
 | **`schedule` (M2)** | Create, list, show and delete against the live project; trigger read back from the service as stored, not echoed. One-per-project and existing-name refusals both verified, each naming the schedule and the command to clear it. Delete waits out `Creating` and leaves the project empty |
-| **`run --from-traces` (M4)** | Accepted and executed by the service, which stored the payload and normalised `7d` into `lookback_hours: 168` while honouring `max_traces`. The run fails only because this project's agent emits no GenAI traces, and now says exactly that |
+| **`run --from-traces` (M4)** | Accepted and executed by the service, which stored the payload and normalized `7d` into `lookback_hours: 168` while honouring `max_traces`. The run fails only because this project's agent emits no GenAI traces, and now says exactly that |
 | Failed runs | The reason reaches the caller instead of just the word "failed" |
 | **`run --response-id` (M4)** | Three stored responses evaluated, 3 passed / 0 errored; the stored payload matched what was sent field for field |
-| Sent-vs-stored audit | Every payload compared against what the service kept. Only the trace window was actually being dropped; inline content becoming a `file_id`, and `item_schema` being normalised to `schema.item`, are both benign |
+| Sent-vs-stored audit | Every payload compared against what the service kept. Only the trace window was actually being dropped; inline content becoming a `file_id`, and `item_schema` being normalized to `schema.item`, are both benign |
 | **`target.type: model` (M4)** | Group deployed with `response` bound to `{{sample.output_text}}`, ran, and scored 2 passed / 1 failed / 0 errored across coherence and fluency |
 | **Registered dataset on a run (M4)** | A group with no local `source:` now runs: whole set scores 2 passed / 1 failed, `--max-samples 2` scores 2 rows. Previously a 400 |
 | **Two groups in one config** | Distinct ids across repeated deploys, each running its own criteria. Previously the second deploy aliased them onto one group |

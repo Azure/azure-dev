@@ -256,7 +256,7 @@ func TestHeroInitWiresTheServiceIntoTheProject(t *testing.T) {
 }
 
 // Running `init` twice must not deploy the same eval twice. The service key is
-// the eval's name, so the second run recognises its own work.
+// the eval's name, so the second run recognizes its own work.
 func TestHeroInitIsIdempotent(t *testing.T) {
 	dir := project(t, "support-agent")
 	args := []string{"init", "--target", "support-agent", "--generation-model", "m"}

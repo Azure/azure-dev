@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -169,7 +170,8 @@ const (
 
 // noAzdProject is what init reports when there is nothing to attach to.
 const noAzdProject = "no azd project found in this directory. Run `azd init` first, " +
-	"or run this from the root of an existing one; the eval service is "
+	"or run this from the root of an existing one; the eval service is added to " +
+	"its azure.yaml"
 
 // readAzdProject returns the project, without changing it.
 //
@@ -179,13 +181,13 @@ const noAzdProject = "no azd project found in this directory. Run `azd init` fir
 func readAzdProject(ctx context.Context) (*azdext.ProjectConfig, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
-		return nil, fmt.Errorf("%sadded to its azure.yaml", noAzdProject)
+		return nil, errors.New(noAzdProject)
 	}
 	defer azdClient.Close()
 
 	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil || resp.GetProject() == nil {
-		return nil, fmt.Errorf("%sadded to its azure.yaml", noAzdProject)
+		return nil, errors.New(noAzdProject)
 	}
 	return resp.GetProject(), nil
 }

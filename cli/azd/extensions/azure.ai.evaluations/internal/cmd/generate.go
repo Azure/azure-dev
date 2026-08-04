@@ -285,7 +285,7 @@ func (ec *evalContext) generateDataset(
 	return &project.ArtifactRef{Name: plan.Name, Source: relativeSource(plan.BaseDir, path)}, nil
 }
 
-// isAgentSeededGenerationFailure recognises the service-side failure that hits
+// isAgentSeededGenerationFailure recognizes the service-side failure that hits
 // every agent, so it can be retried without the agent rather than surfaced.
 func isAgentSeededGenerationFailure(err error) bool {
 	if err == nil {

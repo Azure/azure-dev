@@ -52,7 +52,27 @@ func TestStartedRunIsTheHandoffAPipelineNeeds(t *testing.T) {
 	}
 }
 
-// With --eval-id there is no config, so there is no declaration name to give.
+// A script logging created_at should not have to know which route produced
+// the run: the service sends epoch seconds here and a formatted string
+// elsewhere, so the handoff settles on one.
+func TestStartedRunNormalizesTheTimestamp(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value any
+		want  string
+	}{
+		{"epoch seconds", float64(1785801525), "2026-08-03T23:58:45Z"},
+		{"already formatted", "2026-07-31T21:04:11Z", "2026-07-31T21:04:11Z"},
+		{"absent", nil, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handoff := startedRun(
+				&eval_api.OpenAIEvalRun{ID: "evalrun_1", CreatedAt: tc.value}, "eval_1", nil)
+			assert.Equal(t, tc.want, handoff.CreatedAt)
+		})
+	}
+}
+
 // An empty one is omitted rather than reported as "", which a script would
 // otherwise print as the eval's name.
 func TestStartedRunOmitsTheNameItDoesNotHave(t *testing.T) {

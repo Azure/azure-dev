@@ -1,0 +1,26 @@
+import: ../../.vscode/cspell.yaml
+words:
+  # Go module and package names
+  - azureaieval
+  - evalcore
+  - httptest
+  - creack
+  # Service identifiers and API fields
+  - evalrun
+  - lookback
+  - AOAI
+  # Built-in evaluator names
+  - ifeval
+  - groundedness
+  # Repository names
+  - foundrysdk
+  # Terms
+  - inlines
+  - negotiables
+  - parseable
+  - retargeted
+  - subsetting
+  - undeployed
+  - undoable
+  - unpassed
+  - Unparseable

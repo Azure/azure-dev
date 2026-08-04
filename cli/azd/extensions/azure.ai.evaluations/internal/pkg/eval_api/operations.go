@@ -244,7 +244,7 @@ func (p publishedVersion) writtenAt() time.Time {
 // definition and every eval bound to the first silently scoring against a
 // rubric nobody chose.
 //
-// So there are two defences. The publish is held back until the version the
+// So there are two defenses. The publish is held back until the version the
 // caller read has had time to settle, which is what keeps the collision from
 // happening at all; and the version that comes back is checked, which is what
 // keeps a collision that happens anyway from being reported as success. The

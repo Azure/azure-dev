@@ -655,7 +655,7 @@ type startedRunHandoff struct {
 	EvalID    string `json:"eval_id"`
 	EvalName  string `json:"eval_name,omitempty"`
 	Status    string `json:"status,omitempty"`
-	CreatedAt any    `json:"created_at,omitempty"`
+	CreatedAt string `json:"created_at,omitempty"`
 }
 
 // startedRun builds the handoff.
@@ -668,13 +668,38 @@ func startedRun(
 		RunID:     run.ID,
 		EvalID:    evalID,
 		Status:    run.Status,
-		CreatedAt: run.CreatedAt,
+		CreatedAt: timestampString(run.CreatedAt),
 	}
 	// Absent with --eval-id, where there is no config to take a name from.
 	if group != nil {
 		handoff.EvalName = group.Name
 	}
 	return handoff
+}
+
+// timestampString renders a service timestamp as RFC 3339.
+//
+// The field arrives as epoch seconds on a run and as a formatted string
+// elsewhere, so passing it through would hand a script a value whose type
+// depends on which route produced it.
+func timestampString(value any) string {
+	switch t := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return t
+	case float64:
+		return time.Unix(int64(t), 0).UTC().Format(time.RFC3339)
+	case int64:
+		return time.Unix(t, 0).UTC().Format(time.RFC3339)
+	case json.Number:
+		if seconds, err := t.Int64(); err == nil {
+			return time.Unix(seconds, 0).UTC().Format(time.RFC3339)
+		}
+		return t.String()
+	default:
+		return fmt.Sprint(value)
+	}
 }
 
 // renderRun prints what a person needs after waiting for a run.

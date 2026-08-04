@@ -9,7 +9,7 @@
   agent, making no service calls.
 - `generate` synthesizes a rubric and dataset from the agent's context, writes
   them under `evals/`, and merges `source:` references into the deployment spec
-  while preserving comments, ordering and neighbouring entries.
+  while preserving comments, ordering and neighboring entries.
 - `run` creates the eval group when it does not exist, starts a run, and
   summarizes the result.
 - `azure.ai.eval` service-target provider deploys datasets, evaluators and eval

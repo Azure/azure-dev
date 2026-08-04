@@ -21,7 +21,7 @@ import (
 // kept in evals/<eval-name>.yaml and pulled in with $ref.
 //
 // The eval's name is the service key in azure.yaml and is not repeated here.
-// One service per eval is what lets azd's own dependency graph order an eval
+// One service per eval is what lets the azd dependency graph order an eval
 // after the agent it evaluates.
 type EvalConfig struct {
 	Description string                 `yaml:"description,omitempty" json:"description,omitempty"`

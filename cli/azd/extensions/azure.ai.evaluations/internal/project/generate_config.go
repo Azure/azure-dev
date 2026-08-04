@@ -158,7 +158,7 @@ func ArtifactPath(baseDir, outputDir, resourceName, ext string) string {
 	return filepath.Join(candidate, resourceName+ext)
 }
 
-// looksLikeFile treats a trailing recognised extension as an explicit file path.
+// looksLikeFile treats a trailing recognized extension as an explicit file path.
 func looksLikeFile(p, ext string) bool {
 	got := strings.ToLower(filepath.Ext(p))
 	if got == "" {

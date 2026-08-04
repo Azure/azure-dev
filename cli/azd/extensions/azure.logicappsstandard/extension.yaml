@@ -10,3 +10,4 @@ requiredAzdVersion: ">= 1.28.1"
 language: go
 capabilities:
     - framework-service-provider
+    - metadata

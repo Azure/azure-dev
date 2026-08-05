@@ -22,6 +22,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -429,10 +430,17 @@ func (p *AgentServiceTargetProvider) isDependencyEnabled(ctx context.Context, se
 	if err != nil {
 		return false, fmt.Errorf("read deployment condition for service %q: %w", serviceName, err)
 	}
-	if !resp.GetFound() || strings.TrimSpace(resp.GetValue().GetStringValue()) == "" {
+	if !resp.GetFound() {
 		return true, nil
 	}
-	condition, err := ExpandEnv(resp.GetValue().GetStringValue(), func(name string) string {
+	conditionValue, err := dependencyConditionValue(resp.GetValue())
+	if err != nil {
+		return false, fmt.Errorf("read deployment condition for service %q: %w", serviceName, err)
+	}
+	if strings.TrimSpace(conditionValue) == "" {
+		return true, nil
+	}
+	condition, err := ExpandEnv(conditionValue, func(name string) string {
 		return p.dependencyEnvValue(name)
 	})
 	if err != nil {
@@ -445,6 +453,24 @@ func (p *AgentServiceTargetProvider) isDependencyEnabled(ctx context.Context, se
 		return true, nil
 	default:
 		return false, nil
+	}
+}
+
+func dependencyConditionValue(value *structpb.Value) (string, error) {
+	if value == nil {
+		return "", nil
+	}
+	switch kind := value.Kind.(type) {
+	case *structpb.Value_StringValue:
+		return kind.StringValue, nil
+	case *structpb.Value_BoolValue:
+		return strconv.FormatBool(kind.BoolValue), nil
+	case *structpb.Value_NumberValue:
+		return strconv.FormatFloat(kind.NumberValue, 'g', -1, 64), nil
+	case *structpb.Value_NullValue:
+		return "", nil
+	default:
+		return "", fmt.Errorf("condition must be a string, boolean, or number")
 	}
 }
 

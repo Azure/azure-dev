@@ -2,15 +2,10 @@ module azure.ai.routines
 
 go 1.26.4
 
-// TEMPORARY: local validation against the in-tree azd core for the shared
-// pkg/foundry helpers (the ${VAR}/${{...}} expander). Remove before merging —
-// the core change must land first, then bump the azd dependency.
-replace github.com/azure/azure-dev/cli/azd => ../../
-
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.20.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
-	github.com/azure/azure-dev/cli/azd v1.25.0
+	github.com/azure/azure-dev/cli/azd v1.28.0
 	github.com/fatih/color v1.18.0
 	github.com/spf13/cobra v1.10.1
 	github.com/stretchr/testify v1.11.1

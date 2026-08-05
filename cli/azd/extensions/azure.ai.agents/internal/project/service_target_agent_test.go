@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestApplyAgentMetadata(t *testing.T) {
@@ -123,6 +124,14 @@ func TestGetServiceKey_NormalizesToolboxNames(t *testing.T) {
 	}
 }
 
+func TestDependencyConditionLookupPrefersAzdEnvironment(t *testing.T) {
+	t.Setenv("DEPLOY_TOOLS", "true")
+	provider := &AgentServiceTargetProvider{dependencyEnv: map[string]string{"DEPLOY_TOOLS": "false"}}
+	require.Equal(t, "false", provider.dependencyEnvValue("DEPLOY_TOOLS"))
+	provider.dependencyEnv = nil
+	require.Equal(t, "true", provider.dependencyEnvValue("DEPLOY_TOOLS"))
+}
+
 // --- helpers for Package tests ---
 
 // writeHostedAgentYAML creates a minimal hosted-kind agent.yaml in dir.
@@ -140,14 +149,18 @@ type stubContainerServer struct {
 	buildCalls   atomic.Int32
 	packageCalls atomic.Int32
 	publishCalls atomic.Int32
+	buildRequest *azdext.ContainerBuildRequest
+	packRequest  *azdext.ContainerPackageRequest
+	pubRequest   *azdext.ContainerPublishRequest
 	publishErr   error
 }
 
 func (s *stubContainerServer) Build(
 	_ context.Context,
-	_ *azdext.ContainerBuildRequest,
+	request *azdext.ContainerBuildRequest,
 ) (*azdext.ContainerBuildResponse, error) {
 	s.buildCalls.Add(1)
+	s.buildRequest = request
 	return &azdext.ContainerBuildResponse{
 		Result: &azdext.ServiceBuildResult{
 			Artifacts: []*azdext.Artifact{{
@@ -160,9 +173,10 @@ func (s *stubContainerServer) Build(
 
 func (s *stubContainerServer) Package(
 	_ context.Context,
-	_ *azdext.ContainerPackageRequest,
+	request *azdext.ContainerPackageRequest,
 ) (*azdext.ContainerPackageResponse, error) {
 	s.packageCalls.Add(1)
+	s.packRequest = request
 	return &azdext.ContainerPackageResponse{
 		Result: &azdext.ServicePackageResult{
 			Artifacts: []*azdext.Artifact{{
@@ -175,9 +189,10 @@ func (s *stubContainerServer) Package(
 
 func (s *stubContainerServer) Publish(
 	_ context.Context,
-	_ *azdext.ContainerPublishRequest,
+	request *azdext.ContainerPublishRequest,
 ) (*azdext.ContainerPublishResponse, error) {
 	s.publishCalls.Add(1)
+	s.pubRequest = request
 	if s.publishErr != nil {
 		return nil, s.publishErr
 	}
@@ -204,6 +219,7 @@ func newServiceTargetTestClient(
 	t *testing.T,
 	containerSrv azdext.ContainerServiceServer,
 	promptSrv azdext.PromptServiceServer,
+	projectSrvs ...azdext.ProjectServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
 
@@ -213,6 +229,9 @@ func newServiceTargetTestClient(
 	}
 	if promptSrv != nil {
 		azdext.RegisterPromptServiceServer(srv, promptSrv)
+	}
+	if len(projectSrvs) > 0 && projectSrvs[0] != nil {
+		azdext.RegisterProjectServiceServer(srv, projectSrvs[0])
 	}
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -233,7 +252,39 @@ func newServiceTargetTestClient(
 
 type stubProjectServer struct {
 	azdext.UnimplementedProjectServiceServer
-	project *azdext.ProjectConfig
+	project     *azdext.ProjectConfig
+	configValue *structpb.Value
+}
+
+func (s *stubProjectServer) GetServiceConfigValue(
+	context.Context, *azdext.GetServiceConfigValueRequest,
+) (*azdext.GetServiceConfigValueResponse, error) {
+	return &azdext.GetServiceConfigValueResponse{Value: s.configValue, Found: s.configValue != nil}, nil
+}
+
+func TestDependencyConditionScalarValues(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   any
+		enabled bool
+	}{
+		{name: "boolean false", value: false, enabled: false},
+		{name: "boolean true", value: true, enabled: true},
+		{name: "number zero", value: 0, enabled: false},
+		{name: "number one", value: 1, enabled: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			value, err := structpb.NewValue(tt.value)
+			require.NoError(t, err)
+			client := newServiceTargetTestClient(t, nil, nil, &stubProjectServer{configValue: value})
+			provider := &AgentServiceTargetProvider{azdClient: client}
+
+			enabled, err := provider.isDependencyEnabled(t.Context(), "tools")
+			require.NoError(t, err)
+			require.Equal(t, tt.enabled, enabled)
+		})
+	}
 }
 
 func (s *stubProjectServer) Get(
@@ -395,6 +446,93 @@ func TestInitializeRejectsAgentYamlSymlinkEscapingRoot(t *testing.T) {
 	require.Empty(t, provider.agentDefinitionPath)
 }
 
+func TestDeployTimeServiceConfigReplacesInitializeSnapshot(t *testing.T) {
+	// azd core re-expands ${VAR} against the environment on every
+	// call, so a deploy-time config can carry a value that was still
+	// unset (and therefore expanded to "") when Initialize ran.
+	// `azd up` initializes service targets before provisioning
+	// prompts for a missing subscription or location, so keeping the
+	// Initialize snapshot would deploy those empty strings.
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+
+	projectRoot := t.TempDir()
+	serviceDir := filepath.Join(projectRoot, "svc")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(serviceDir, "agent.yaml"),
+		[]byte("kind: hostedAgent\n"),
+		0o600,
+	))
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+
+	// AGENT_REGION references an unset variable at Initialize time.
+	stale := &azdext.ServiceConfig{
+		Name:         "echo",
+		RelativePath: "svc",
+		Environment:  map[string]string{"AGENT_REGION": ""},
+	}
+	require.NoError(t, provider.Initialize(t.Context(), stale))
+	require.NoError(t, provider.ensureDeployContext(t.Context()))
+
+	// The user is prompted during provision, so core hands the
+	// deploy-time call a config with the persisted value.
+	fresh := &azdext.ServiceConfig{
+		Name:         "echo",
+		RelativePath: "svc",
+		Environment:  map[string]string{"AGENT_REGION": "westus2"},
+	}
+
+	// Deploy must adopt the config it was handed rather than reuse the
+	// snapshot. It still fails further along (this stub has no Foundry
+	// project), which is after the config has been adopted.
+	_, err := provider.Deploy(
+		t.Context(),
+		fresh,
+		&azdext.ServiceContext{},
+		nil,
+		func(string) {},
+	)
+	require.Error(t, err)
+	require.Same(t, fresh, provider.serviceConfig)
+
+	prep, err := provider.prepareDeploy(
+		provider.serviceConfig,
+		sampleContainerAgent(),
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://project.example"},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:latest"),
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "westus2", prep.resolvedEnvVars["AGENT_REGION"])
+}
+
+func TestAdoptServiceConfigIgnoresNilAndKeepsResolvedState(t *testing.T) {
+	t.Parallel()
+
+	existing := &azdext.ServiceConfig{Name: "echo"}
+	provider := &AgentServiceTargetProvider{
+		serviceConfig:         existing,
+		serviceConfigResolved: true,
+	}
+
+	// A nil config (or the same instance) must not drop the resolved
+	// state, otherwise every repeat call would re-expand $ref
+	// includes.
+	provider.adoptServiceConfig(nil)
+	require.Same(t, existing, provider.serviceConfig)
+	require.True(t, provider.serviceConfigResolved)
+
+	provider.adoptServiceConfig(existing)
+	require.True(t, provider.serviceConfigResolved)
+
+	provider.adoptServiceConfig(&azdext.ServiceConfig{Name: "echo"})
+	require.False(t, provider.serviceConfigResolved)
+}
+
 func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
 	t.Helper()
 
@@ -411,6 +549,7 @@ func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
 type stubEnvServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 	values map[string]string
+	writes []*azdext.SetEnvRequest
 }
 
 func (s *stubEnvServer) SetValue(
@@ -420,6 +559,7 @@ func (s *stubEnvServer) SetValue(
 		s.values = make(map[string]string)
 	}
 	s.values[req.Key] = req.Value
+	s.writes = append(s.writes, req)
 	return &azdext.EmptyResponse{}, nil
 }
 
@@ -505,6 +645,11 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 	// Base agent endpoint for session management
 	require.Contains(t, envStub.values, "AGENT_MY_SVC_ENDPOINT")
 	require.Equal(t, "https://proj.azure.com/agents/my-agent/versions/1.0.0", envStub.values["AGENT_MY_SVC_ENDPOINT"])
+	require.Equal(t, "https://proj.azure.com", envStub.values["AGENT_MY_SVC_PROJECT_ENDPOINT"])
+	require.Equal(t, "AGENT_MY_SVC_VERSION", envStub.writes[0].Key)
+	require.Empty(t, envStub.writes[0].Value)
+	require.Equal(t, "AGENT_MY_SVC_VERSION", envStub.writes[len(envStub.writes)-1].Key)
+	require.Equal(t, "1.0.0", envStub.writes[len(envStub.writes)-1].Value)
 }
 
 func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
@@ -589,14 +734,13 @@ func TestDisplayableProtocolFor(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name             string
-		protocol         string
-		wantNil          bool
-		wantProtocol     agent_api.AgentProtocol
-		wantEnvSuffix    string
-		wantURLContains  string
-		wantURLScheme    string // "https" or "wss"
-		wantURLOmitAgent bool   // true when the protocol does not embed the agent name in the path
+		name            string
+		protocol        string
+		wantNil         bool
+		wantProtocol    agent_api.AgentProtocol
+		wantEnvSuffix   string
+		wantURLContains string
+		wantURLScheme   string // "https" or "wss"
 	}{
 		{
 			name:            "responses",
@@ -615,13 +759,12 @@ func TestDisplayableProtocolFor(t *testing.T) {
 			wantURLScheme:   "https",
 		},
 		{
-			name:             "invocations_ws",
-			protocol:         "invocations_ws",
-			wantProtocol:     agent_api.AgentProtocolInvocationsWS,
-			wantEnvSuffix:    "INVOCATIONS_WS",
-			wantURLContains:  "/api/projects/agents/endpoint/protocols/invocations_ws",
-			wantURLScheme:    "wss",
-			wantURLOmitAgent: true,
+			name:            "invocations_ws",
+			protocol:        "invocations_ws",
+			wantProtocol:    agent_api.AgentProtocolInvocationsWS,
+			wantEnvSuffix:   "INVOCATIONS_WS",
+			wantURLContains: "/api/projects/proj/agents/my-agent/endpoint/protocols/invocations_ws",
+			wantURLScheme:   "wss",
 		},
 		{name: "activity excluded", protocol: "activity", wantNil: true},
 		{name: "legacy activity_protocol excluded", protocol: "activity_protocol", wantNil: true},
@@ -650,11 +793,6 @@ func TestDisplayableProtocolFor(t *testing.T) {
 			require.True(t, strings.HasPrefix(url, tt.wantURLScheme+"://"),
 				"url %q should use %s scheme", url, tt.wantURLScheme)
 			require.Contains(t, url, tt.wantURLContains)
-			if tt.wantURLOmitAgent {
-				require.NotContains(t, url, "/agents/"+agentName+"/")
-				require.Contains(t, url, "agent_name="+agentName)
-				require.Contains(t, url, "project_name=proj")
-			}
 		})
 	}
 }
@@ -666,11 +804,9 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 	const agentName = "my-agent"
 	baseURL := endpoint + "/agents/" + agentName + "/endpoint/protocols/"
 
-	const wsBase = "wss://myproject.services.ai.azure.com" +
-		"/api/projects/agents/endpoint/protocols/invocations_ws"
-	const wsQuery = "agent_name=" + agentName +
-		"&api-version=" + agent_api.AgentEndpointAPIVersion +
-		"&project_name=proj"
+	const wsURL = "wss://myproject.services.ai.azure.com" +
+		"/api/projects/proj/agents/" + agentName +
+		"/endpoint/protocols/invocations_ws?api-version=" + agent_api.AgentEndpointAPIVersion
 
 	tests := []struct {
 		name      string
@@ -702,14 +838,14 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 			},
 		},
 		{
-			name: "single invocations_ws protocol uses dispatcher form",
+			name: "single invocations_ws protocol uses path-based form",
 			protocols: []agent_yaml.ProtocolVersionRecord{
 				{Protocol: "invocations_ws", Version: "1.0.0"},
 			},
 			expected: []protocolEndpointInfo{
 				{
 					Protocol: "invocations_ws",
-					URL:      wsBase + "?" + wsQuery,
+					URL:      wsURL,
 				},
 			},
 		},
@@ -732,7 +868,7 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 				},
 				{
 					Protocol: "invocations_ws",
-					URL:      wsBase + "?" + wsQuery,
+					URL:      wsURL,
 				},
 			},
 		},
@@ -788,8 +924,22 @@ func TestBuildInvocationsWSProtocolURL_TrimsWhitespace(t *testing.T) {
 	)
 	require.NotEmpty(t, got)
 	require.Contains(t, got, "wss://myproject.services.ai.azure.com")
-	require.Contains(t, got, "project_name=proj")
-	require.Contains(t, got, "agent_name=my-agent")
+	require.Contains(t, got, "/api/projects/proj/agents/my-agent/endpoint/protocols/invocations_ws")
+	require.Contains(t, got, "api-version="+agent_api.AgentEndpointAPIVersion)
+}
+
+func TestBuildInvocationsWSProtocolURL_TrimsTrailingSlash(t *testing.T) {
+	t.Parallel()
+
+	got := buildInvocationsWSProtocolURL(
+		"https://myproject.services.ai.azure.com/api/projects/proj/",
+		"my-agent",
+	)
+	require.Equal(t,
+		"wss://myproject.services.ai.azure.com/api/projects/proj/agents/my-agent/"+
+			"endpoint/protocols/invocations_ws?api-version="+agent_api.AgentEndpointAPIVersion,
+		got,
+	)
 }
 
 func TestAgentInvocationEndpoints_SkipsInvocationsWSWithMalformedEndpoint(t *testing.T) {
@@ -988,6 +1138,51 @@ func TestLoadContainerAgentDefinition_MalformedYAMLReturnsError(t *testing.T) {
 	require.Contains(t, err.Error(), "agent.yaml is not valid")
 }
 
+func TestPrepareDeployIncludesServiceEnvironment(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	*agentDef.EnvironmentVariables = append(
+		*agentDef.EnvironmentVariables,
+		agent_yaml.EnvironmentVariable{
+			Name:  "LEGACY_ONLY",
+			Value: "${GLOBAL_VALUE}",
+		},
+		agent_yaml.EnvironmentVariable{
+			Name:  "SHARED",
+			Value: "${SHARED}",
+		},
+	)
+	serviceConfig := &azdext.ServiceConfig{
+		Name: "basic-agent",
+		Environment: map[string]string{
+			"SERVICE_ONLY": "literal ${NOT_A_TEMPLATE}",
+			"SHARED":       "service",
+		},
+	}
+
+	prep, err := (&AgentServiceTargetProvider{}).prepareDeploy(
+		serviceConfig,
+		agentDef,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://project.example",
+			"GLOBAL_VALUE":             "legacy",
+			"SHARED":                   "global",
+		},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:latest"),
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		"literal ${NOT_A_TEMPLATE}",
+		prep.resolvedEnvVars["SERVICE_ONLY"],
+	)
+	require.Equal(t, "service", prep.resolvedEnvVars["SHARED"])
+	require.Equal(t, "legacy", prep.resolvedEnvVars["LEGACY_ONLY"])
+}
+
 func TestLoadContainerAgentDefinition_EnvPathOverridesInlineDefinition(t *testing.T) {
 	t.Parallel()
 
@@ -1014,6 +1209,105 @@ func TestLoadContainerAgentDefinition_EnvPathOverridesInlineDefinition(t *testin
 	require.NoError(t, err)
 	require.True(t, isHosted)
 	require.Equal(t, "override-agent", got.Name)
+}
+
+func TestLoadContainerAgentDefinition_FileRef(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "agent.yaml"),
+		[]byte(
+			"kind: hosted\n"+
+				"name: referenced-agent\n"+
+				"protocols:\n"+
+				"  - protocol: responses\n"+
+				"    version: \"1.0.0\"\n",
+		),
+		0o600,
+	))
+	props, err := structpb.NewStruct(map[string]any{
+		"$ref": "./agent.yaml",
+	})
+	require.NoError(t, err)
+	provider := &AgentServiceTargetProvider{
+		projectPath: dir,
+		serviceConfig: &azdext.ServiceConfig{
+			Name:                 "referenced-agent",
+			Host:                 "azure.ai.agent",
+			AdditionalProperties: props,
+		},
+	}
+
+	got, isHosted, err := provider.loadContainerAgentDefinition()
+
+	require.NoError(t, err)
+	require.True(t, isHosted)
+	require.Equal(t, "referenced-agent", got.Name)
+}
+
+func TestPackageBuildsContainerAgent(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAML(t, dir)
+	containerStub := &stubContainerServer{}
+	client := newContainerTestClient(t, containerStub)
+	provider := &AgentServiceTargetProvider{
+		azdClient:           client,
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+		serviceConfig: &azdext.ServiceConfig{
+			Name:         "referenced-agent",
+			Host:         "azure.ai.agent",
+			RelativePath: "src/agent",
+		},
+	}
+
+	_, err := provider.Package(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "referenced-agent"},
+		&azdext.ServiceContext{},
+		func(string) {},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, int32(1), containerStub.buildCalls.Load())
+	require.Equal(t, int32(1), containerStub.packageCalls.Load())
+}
+
+func TestPrepareDeployAppliesDefaultResources(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	agentDef.Resources = nil
+	props, err := AgentDefinitionToServiceProperties(
+		agentDef,
+		&ServiceTargetAgentConfig{},
+	)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		AdditionalProperties: props,
+	}
+	provider := &AgentServiceTargetProvider{}
+
+	prep, err := provider.prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://example",
+		},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	definition, ok := prep.request.Definition.(agent_api.HostedAgentDefinition)
+	require.True(t, ok)
+	require.Equal(t, DefaultCpu, definition.CPU)
+	require.Equal(t, DefaultMemory, definition.Memory)
 }
 
 func TestShouldUsePreBuiltImage_NoImageDefaultsToBuild(t *testing.T) {
@@ -1215,6 +1509,10 @@ func TestPublish_PublishesWhenPackageBuiltFromDockerfile(t *testing.T) {
 		azdClient:           client,
 		agentDefinitionPath: agentPath,
 		env:                 &azdext.Environment{Name: "test-env"},
+		serviceConfig: &azdext.ServiceConfig{
+			Name:         "test-svc",
+			RelativePath: "src/agent",
+		},
 	}
 
 	result, err := provider.Publish(

@@ -24,6 +24,11 @@ const PackBuildEvent = "tools.pack.build"
 // AgentTroubleshootEvent is the name of the event which tracks agent troubleshoot operations.
 const AgentTroubleshootEvent = "agent.troubleshoot"
 
+// AspireUnsupportedAppHostEvent tracks when azd detects an Aspire polyglot (non-C#) AppHost
+// (e.g. a TypeScript or Python AppHost) which azd does not yet support. See
+// https://github.com/Azure/azure-dev/issues/7138.
+const AspireUnsupportedAppHostEvent = "aspire.apphost.unsupported"
+
 // Extension related events.
 const (
 	ExtensionRunEvent     = "ext.run"
@@ -43,11 +48,11 @@ const (
 	CopilotSessionEvent = "copilot.session"
 )
 
-// Preflight validation events.
+// Provision validation events.
 const (
-	// PreflightValidationEvent tracks the local preflight validation operation
-	// and its outcome (passed, warnings accepted, aborted).
-	PreflightValidationEvent = "validation.preflight"
+	// ProvisionValidationEvent tracks the local provision validation operation
+	// and its outcome (passed, warnings accepted, canceled).
+	ProvisionValidationEvent = "validation.provision"
 )
 
 // Hook execution events.

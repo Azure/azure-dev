@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,6 +14,57 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+func TestPublishSkillMarkers(t *testing.T) {
+	t.Parallel()
+
+	values := map[string]string{}
+	var writes []string
+	err := publishSkillMarkers(
+		t.Context(),
+		"my--skill",
+		"3",
+		"https://example.test/projects/current",
+		"test-env",
+		func(_ context.Context, envName, key, value string) error {
+			require.Equal(t, "test-env", envName)
+			writes = append(writes, key+"="+value)
+			values[key] = value
+			return nil
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "3", values["SKILL_MY__SKILL_VERSION"])
+	require.Equal(
+		t,
+		"https://example.test/projects/current",
+		values["SKILL_MY__SKILL_PROJECT_ENDPOINT"],
+	)
+	require.Equal(t, []string{
+		"SKILL_MY__SKILL_VERSION=",
+		"SKILL_MY__SKILL_PROJECT_ENDPOINT=https://example.test/projects/current",
+		"SKILL_MY__SKILL_VERSION=3",
+	}, writes)
+}
+
+func TestPublishSkillMarkersRejectsEmptyVersion(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	err := publishSkillMarkers(
+		t.Context(),
+		"skill",
+		"",
+		"https://example.test/projects/current",
+		"test-env",
+		func(context.Context, string, string, string) error {
+			called = true
+			return nil
+		},
+	)
+	require.Error(t, err)
+	require.False(t, called)
+}
 
 func TestParseSkillServiceConfig_ServiceLevel(t *testing.T) {
 	t.Parallel()

@@ -5,16 +5,20 @@ package project
 
 import (
 	"fmt"
-	"log"
 	"maps"
 	"os"
+	"slices"
+	"strings"
 	"sync"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
+	"azureaiagent/internal/pkg/projectconfig"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/braydonk/yaml"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -69,6 +73,46 @@ func WarnLegacyAgentShape(source AgentDefinitionSource) {
 	})
 }
 
+// WarnOrphanedConfigEnv warns when a service still declares
+// environment variables under the deprecated config-nested env:
+// block. azd reads service environment values only from the
+// service-level env:, so anything left under config: is ignored by
+// both `azd ai agent run` and deploy.
+//
+// Unlike the deprecated environmentVariables list, nothing migrates
+// config.env and no azd command ever wrote it, so without this the
+// values would disappear with no other signal.
+func WarnOrphanedConfigEnv(svc *azdext.ServiceConfig) {
+	names := orphanedConfigEnvNames(svc)
+	if len(names) == 0 {
+		return
+	}
+	fmt.Printf("%s\n", output.WithWarningFormat(
+		"WARNING: service %q sets %s under the deprecated `config: "+
+			"env:` block, which is no longer read and will be "+
+			"ignored. Move them to the service-level `env:` so they "+
+			"apply to both run and deploy. See %s",
+		svc.GetName(), strings.Join(names, ", "), MigrationGuideURL,
+	))
+}
+
+// orphanedConfigEnvNames returns the variable names a service still
+// declares under the deprecated config-nested env: block, sorted.
+// It reads svc.Config directly because core binds the service-level
+// env: to ServiceConfig.Environment, so an env key can only reach a
+// property bag from the nested shape.
+func orphanedConfigEnvNames(svc *azdext.ServiceConfig) []string {
+	value, found := svc.GetConfig().GetFields()["env"]
+	if !found {
+		return nil
+	}
+	fields := value.GetStructValue().GetFields()
+	if len(fields) == 0 {
+		return nil
+	}
+	return slices.Sorted(maps.Keys(fields))
+}
+
 // AgentDefinitionInline is the hosted-agent definition (formerly agent.yaml)
 // carried as flat service-level properties on the azure.ai.agent service entry.
 //
@@ -83,11 +127,12 @@ func WarnLegacyAgentShape(source AgentDefinitionSource) {
 type AgentDefinitionInline struct {
 	agent_yaml.AgentDefinition `json:",inline"`
 	Protocols                  []agent_yaml.ProtocolVersionRecord `json:"protocols,omitempty"`
-	EnvironmentVariables       *[]agent_yaml.EnvironmentVariable  `json:"environmentVariables,omitempty"`
-	AgentEndpoint              *agent_yaml.AgentEndpoint          `json:"agentEndpoint,omitempty"`
-	AgentCard                  *agent_yaml.AgentCard              `json:"agentCard,omitempty"`
-	CodeConfiguration          *agent_yaml.CodeConfiguration      `json:"codeConfiguration,omitempty"`
-	Policies                   []agent_yaml.Policy                `json:"policies,omitempty"`
+	// EnvironmentVariables reads the deprecated inline shape.
+	EnvironmentVariables *[]agent_yaml.EnvironmentVariable `json:"environmentVariables,omitempty"`
+	AgentEndpoint        *agent_yaml.AgentEndpoint         `json:"agentEndpoint,omitempty"`
+	AgentCard            *agent_yaml.AgentCard             `json:"agentCard,omitempty"`
+	CodeConfiguration    *agent_yaml.CodeConfiguration     `json:"codeConfiguration,omitempty"`
+	Policies             []agent_yaml.Policy               `json:"policies,omitempty"`
 }
 
 // agentDefinitionToInline splits a ContainerAgent into the inline definition,
@@ -96,13 +141,12 @@ type AgentDefinitionInline struct {
 // returned separately so the caller can place them on their respective homes.
 func agentDefinitionToInline(ca agent_yaml.ContainerAgent) (AgentDefinitionInline, *ContainerSettings, string) {
 	inline := AgentDefinitionInline{
-		AgentDefinition:      ca.AgentDefinition,
-		Protocols:            ca.Protocols,
-		EnvironmentVariables: ca.EnvironmentVariables,
-		AgentEndpoint:        ca.AgentEndpoint,
-		AgentCard:            ca.AgentCard,
-		CodeConfiguration:    ca.CodeConfiguration,
-		Policies:             ca.Policies,
+		AgentDefinition:   ca.AgentDefinition,
+		Protocols:         ca.Protocols,
+		AgentEndpoint:     ca.AgentEndpoint,
+		AgentCard:         ca.AgentCard,
+		CodeConfiguration: ca.CodeConfiguration,
+		Policies:          ca.Policies,
 	}
 
 	var container *ContainerSettings
@@ -118,12 +162,28 @@ func agentDefinitionToInline(ca agent_yaml.ContainerAgent) (AgentDefinitionInlin
 // toContainerAgent rebuilds the agent_yaml.ContainerAgent from the inline
 // definition, the CPU/memory carried in the `container` config, and the image
 // carried on the core service field.
-func (d AgentDefinitionInline) toContainerAgent(container *ContainerSettings, image string) agent_yaml.ContainerAgent {
+func (d AgentDefinitionInline) toContainerAgent(
+	container *ContainerSettings,
+	image string,
+	environment map[string]string,
+) agent_yaml.ContainerAgent {
+	environmentVariables := d.EnvironmentVariables
+	if len(environment) > 0 {
+		legacyEnvironment := AgentEnvironment(agent_yaml.ContainerAgent{
+			EnvironmentVariables: d.EnvironmentVariables,
+		})
+		if legacyEnvironment == nil {
+			legacyEnvironment = map[string]string{}
+		}
+		maps.Copy(legacyEnvironment, environment)
+		environmentVariables = environmentVariablesFromMap(legacyEnvironment)
+	}
+
 	ca := agent_yaml.ContainerAgent{
 		AgentDefinition:      d.AgentDefinition,
 		Image:                image,
 		Protocols:            d.Protocols,
-		EnvironmentVariables: d.EnvironmentVariables,
+		EnvironmentVariables: environmentVariables,
 		AgentEndpoint:        d.AgentEndpoint,
 		AgentCard:            d.AgentCard,
 		CodeConfiguration:    d.CodeConfiguration,
@@ -138,6 +198,75 @@ func (d AgentDefinitionInline) toContainerAgent(container *ContainerSettings, im
 	}
 
 	return ca
+}
+
+// AgentEnvironment converts an agent environment list to a map.
+func AgentEnvironment(ca agent_yaml.ContainerAgent) map[string]string {
+	if ca.EnvironmentVariables == nil || len(*ca.EnvironmentVariables) == 0 {
+		return nil
+	}
+
+	environment := make(map[string]string, len(*ca.EnvironmentVariables))
+	for _, variable := range *ca.EnvironmentVariables {
+		environment[variable.Name] = variable.Value
+	}
+	return environment
+}
+
+// ResolveAgentEnvironmentVariable preserves values forwarded by core.
+// A name the service declares in env: wins outright. Every other
+// name expands through mapping, which both callers back with the
+// full azd environment even when the service declares env:.
+//
+// That project fallback is deliberate. environment_variables is
+// deprecated but additive: mergeAgentRunEnvironment lets env:
+// override a same-named entry and keeps the rest, so a ${FOO} an
+// author wrote there stays resolvable mid-migration. Dropping the
+// fallback would turn it into an empty string with no error.
+//
+// The connections extension does drop it once env: is declared
+// (connectionEnvironmentMapping in azure.ai.projects), because
+// those values become ARM parameters at provision time rather
+// than runtime values for a container the author owns.
+func ResolveAgentEnvironmentVariable(
+	name string,
+	value string,
+	serviceEnvironment map[string]string,
+	mapping func(string) string,
+) (string, error) {
+	if environmentValue, found := serviceEnvironment[name]; found {
+		return environmentValue, nil
+	}
+	return ExpandEnv(value, func(variableName string) string {
+		if environmentValue, found := serviceEnvironment[variableName]; found {
+			return environmentValue
+		}
+		if mapping == nil {
+			return ""
+		}
+		return mapping(variableName)
+	})
+}
+
+func environmentVariablesFromMap(
+	environment map[string]string,
+) *[]agent_yaml.EnvironmentVariable {
+	if len(environment) == 0 {
+		return nil
+	}
+
+	variables := make(
+		[]agent_yaml.EnvironmentVariable,
+		0,
+		len(environment),
+	)
+	for _, name := range slices.Sorted(maps.Keys(environment)) {
+		variables = append(variables, agent_yaml.EnvironmentVariable{
+			Name:  name,
+			Value: environment[name],
+		})
+	}
+	return &variables
 }
 
 // structHasKind reports whether the struct carries a non-empty string `kind`,
@@ -167,7 +296,8 @@ func LoadAgentDefinition(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (agent_yaml.ContainerAgent, bool, AgentDefinitionSource, error) {
-	ca, isHosted, found, source, err := AgentDefinitionFromService(svc)
+	ca, isHosted, found, source, err :=
+		AgentDefinitionFromResolvedService(svc, projectRoot)
 	if err != nil {
 		return agent_yaml.ContainerAgent{}, false, source, err
 	}
@@ -175,8 +305,97 @@ func LoadAgentDefinition(
 		return ca, isHosted, source, nil
 	}
 
-	// Fall back to a legacy agent.yaml/agent.yml on disk.
 	return agentDefinitionFromDisk(svc, projectRoot)
+}
+
+// AgentDefinitionFromResolvedService expands local file includes.
+func AgentDefinitionFromResolvedService(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (
+	agent_yaml.ContainerAgent,
+	bool,
+	bool,
+	AgentDefinitionSource,
+	error,
+) {
+	candidates := []struct {
+		props  *structpb.Struct
+		source AgentDefinitionSource
+	}{
+		{svc.GetAdditionalProperties(), AgentDefinitionSourceInline},
+		{svc.GetConfig(), AgentDefinitionSourceLegacyConfig},
+	}
+	for _, candidate := range candidates {
+		if candidate.props == nil ||
+			len(candidate.props.GetFields()) == 0 {
+			continue
+		}
+		resolved, err := resolveServiceProps(
+			candidate.props,
+			svc.GetName(),
+			projectRoot,
+		)
+		if err != nil {
+			return agent_yaml.ContainerAgent{},
+				false,
+				false,
+				candidate.source,
+				err
+		}
+		if !structHasKind(resolved) {
+			continue
+		}
+		image := svc.GetImage()
+		if image == "" {
+			if value := resolved.GetFields()["image"]; value != nil {
+				image = value.GetStringValue()
+			}
+		}
+		ca, isHosted, err := agentDefinitionFromStruct(
+			resolved,
+			image,
+			svc.GetEnvironment(),
+		)
+		return ca, isHosted, true, candidate.source, err
+	}
+
+	return agent_yaml.ContainerAgent{},
+		false,
+		false,
+		AgentDefinitionSourceInline,
+		nil
+}
+
+// AgentDefinitionUsesFileRef reports whether a root $ref supplies the
+// agent definition.
+func AgentDefinitionUsesFileRef(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (bool, error) {
+	for _, props := range []*structpb.Struct{
+		svc.GetAdditionalProperties(),
+		svc.GetConfig(),
+	} {
+		if props == nil || props.GetFields()["$ref"] == nil {
+			continue
+		}
+		refOnly := &structpb.Struct{Fields: map[string]*structpb.Value{
+			"$ref": props.GetFields()["$ref"],
+		}}
+		resolved, err := resolveServiceProps(
+			refOnly,
+			svc.GetName(),
+			projectRoot,
+		)
+		if err != nil {
+			return false, err
+		}
+		if structHasKind(resolved) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // AgentDefinitionFromService returns the agent definition carried inline on the
@@ -197,7 +416,11 @@ func AgentDefinitionFromService(
 		}
 	}
 
-	ca, isHosted, err := agentDefinitionFromStruct(inlineStruct, svc.GetImage())
+	ca, isHosted, err := agentDefinitionFromStruct(
+		inlineStruct,
+		svc.GetImage(),
+		svc.GetEnvironment(),
+	)
 	return ca, isHosted, true, source, err
 }
 
@@ -223,16 +446,174 @@ func LoadServiceTargetAgentConfig(svc *azdext.ServiceConfig) (*ServiceTargetAgen
 // which shape a project uses.
 func ServiceConfigProps(svc *azdext.ServiceConfig) *structpb.Struct {
 	if s := svc.GetAdditionalProperties(); s != nil && len(s.GetFields()) > 0 {
+		if svc.GetHost() == "azure.ai.agent" &&
+			!structHasKind(s) &&
+			structHasKind(svc.GetConfig()) {
+			return svc.GetConfig()
+		}
 		return s
 	}
 	return svc.GetConfig()
 }
 
-// UpsertAgentEnvVars adds or updates environment variables on the agent
-// definition carried inline on the service entry, preserving every other key.
-// It is used by commands that mutate the definition (e.g. `optimize apply`).
-// Returns an error when the service carries no inline definition; callers fall
-// back to mutating a legacy on-disk agent.yaml in that case.
+// ResolveServiceConfigProps expands local $ref file includes.
+func ResolveServiceConfigProps(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (*structpb.Struct, error) {
+	props := ServiceConfigProps(svc)
+	if props == nil {
+		return nil, nil
+	}
+	return resolveServiceProps(props, svc.GetName(), projectRoot)
+}
+
+// ResolveServiceConfigInPlace expands local file references in both
+// service-level properties and legacy config. It also normalizes
+// environment scalars so consumers receive an effective config.
+func ResolveServiceConfigInPlace(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) error {
+	if props := svc.GetAdditionalProperties(); props != nil &&
+		len(props.GetFields()) > 0 {
+		resolved, err := resolveServiceProps(
+			props,
+			svc.GetName(),
+			projectRoot,
+		)
+		if err != nil {
+			return err
+		}
+		svc.AdditionalProperties = resolved
+	}
+	if config := svc.GetConfig(); config != nil &&
+		len(config.GetFields()) > 0 {
+		resolved, err := resolveServiceProps(
+			config,
+			svc.GetName(),
+			projectRoot,
+		)
+		if err != nil {
+			return err
+		}
+		svc.Config = resolved
+	}
+	return nil
+}
+
+// NormalizeServiceConfigInPlace converts environment scalars in both
+// service-level properties and legacy config.
+// File references remain intact for persistence.
+func NormalizeServiceConfigInPlace(svc *azdext.ServiceConfig) error {
+	if props := svc.GetAdditionalProperties(); props != nil &&
+		len(props.GetFields()) > 0 {
+		normalized, err := normalizeServiceProps(props, svc.GetName())
+		if err != nil {
+			return err
+		}
+		svc.AdditionalProperties = normalized
+	}
+	if config := svc.GetConfig(); config != nil &&
+		len(config.GetFields()) > 0 {
+		normalized, err := normalizeServiceProps(config, svc.GetName())
+		if err != nil {
+			return err
+		}
+		svc.Config = normalized
+	}
+	return nil
+}
+
+func resolveServiceProps(
+	props *structpb.Struct,
+	serviceName string,
+	projectRoot string,
+) (*structpb.Struct, error) {
+	if err := validateRootRefCoreFields(props, projectRoot); err != nil {
+		return nil, fmt.Errorf(
+			"validating service %q config: %w",
+			serviceName,
+			err,
+		)
+	}
+	resolved, err := foundry.ResolveFileRefs(
+		props.AsMap(),
+		projectRoot,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"resolving service %q config: %w",
+			serviceName,
+			err,
+		)
+	}
+	return normalizedServiceProps(resolved, serviceName)
+}
+
+func normalizeServiceProps(
+	props *structpb.Struct,
+	serviceName string,
+) (*structpb.Struct, error) {
+	return normalizedServiceProps(props.AsMap(), serviceName)
+}
+
+func normalizedServiceProps(
+	values map[string]any,
+	serviceName string,
+) (*structpb.Struct, error) {
+	if err := projectconfig.NormalizeEnvironment(values); err != nil {
+		return nil, fmt.Errorf(
+			"normalizing service %q environment: %w",
+			serviceName,
+			err,
+		)
+	}
+
+	out, err := structpb.NewStruct(values)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"encoding normalized service %q config: %w",
+			serviceName,
+			err,
+		)
+	}
+	return out, nil
+}
+
+func validateRootRefCoreFields(
+	props *structpb.Struct,
+	projectRoot string,
+) error {
+	ref := props.GetFields()["$ref"]
+	if ref == nil || ref.GetStringValue() == "" {
+		return nil
+	}
+	referenced, err := foundry.ResolveFileRefs(
+		map[string]any{"$ref": ref.GetStringValue()},
+		projectRoot,
+	)
+	if err != nil {
+		return err
+	}
+	for _, field := range []string{
+		"env",
+		"project",
+		"language",
+		"image",
+		"docker",
+	} {
+		if _, found := referenced[field]; found {
+			return fmt.Errorf(
+				"root $ref must not provide core field %q; declare it in azure.yaml",
+				field,
+			)
+		}
+	}
+	return nil
+}
+
+// UpsertAgentEnvVars updates the service-level environment map.
 func UpsertAgentEnvVars(svc *azdext.ServiceConfig, kv map[string]string) error {
 	ca, _, found, source, err := AgentDefinitionFromService(svc)
 	if err != nil {
@@ -242,42 +623,42 @@ func UpsertAgentEnvVars(svc *azdext.ServiceConfig, kv map[string]string) error {
 		return fmt.Errorf("service %q does not carry an inline agent definition", svc.GetName())
 	}
 
-	envVars := []agent_yaml.EnvironmentVariable{}
-	if ca.EnvironmentVariables != nil {
-		envVars = *ca.EnvironmentVariables
+	environment := AgentEnvironment(ca)
+	if environment == nil {
+		environment = map[string]string{}
 	}
-	for key, value := range kv {
-		idx := -1
-		for i := range envVars {
-			if envVars[i].Name == key {
-				idx = i
-				break
-			}
-		}
-		if idx >= 0 {
-			envVars[idx].Value = value
-		} else {
-			envVars = append(envVars, agent_yaml.EnvironmentVariable{Name: key, Value: value})
-		}
-	}
-	ca.EnvironmentVariables = &envVars
+	maps.Copy(environment, kv)
+	svc.Environment = environment
 
-	cfg, err := LoadServiceTargetAgentConfig(svc)
-	if err != nil {
-		return err
-	}
-
-	props, err := AgentDefinitionToServiceProperties(ca, cfg)
-	if err != nil {
-		return err
-	}
-
+	props := svc.GetAdditionalProperties()
 	if source == AgentDefinitionSourceLegacyConfig {
-		svc.Config = props
-	} else {
-		svc.AdditionalProperties = props
+		props = svc.GetConfig()
+	}
+	if props != nil {
+		delete(props.Fields, "environmentVariables")
 	}
 	return nil
+}
+
+// InlineAgentEnvironmentVariables returns the deprecated inline
+// environmentVariables carried on the agent definition as a raw
+// template map, without merging the core-forwarded (already expanded)
+// service environment. Values are the templates as authored, suitable
+// for migrating into the env section without losing them.
+func InlineAgentEnvironmentVariables(
+	svc *azdext.ServiceConfig,
+) (map[string]string, error) {
+	props := ServiceConfigProps(svc)
+	if props == nil || len(props.GetFields()) == 0 {
+		return nil, nil
+	}
+	var inline AgentDefinitionInline
+	if err := UnmarshalStruct(props, &inline); err != nil {
+		return nil, err
+	}
+	return AgentEnvironment(agent_yaml.ContainerAgent{
+		EnvironmentVariables: inline.EnvironmentVariables,
+	}), nil
 }
 
 // SetAgentContainerSettings writes the resolved container settings onto the
@@ -285,16 +666,14 @@ func UpsertAgentEnvVars(svc *azdext.ServiceConfig, kv map[string]string) error {
 // definition and the rest of the deploy/provision config). It mutates whichever
 // shape the service uses (the unified AdditionalProperties, or — for older
 // projects — the config-nested struct).
-func SetAgentContainerSettings(svc *azdext.ServiceConfig, container *ContainerSettings) error {
-	legacy := false
-	props := svc.GetAdditionalProperties()
-	if props == nil || len(props.GetFields()) == 0 {
-		if cfg := svc.GetConfig(); cfg != nil && len(cfg.GetFields()) > 0 {
-			props = cfg
-			legacy = true
-		} else {
-			props = &structpb.Struct{}
-		}
+func SetAgentContainerSettings(
+	svc *azdext.ServiceConfig,
+	container *ContainerSettings,
+) error {
+	props := ServiceConfigProps(svc)
+	legacy := props != nil && props == svc.GetConfig()
+	if props == nil {
+		props = &structpb.Struct{}
 	}
 	if props.Fields == nil {
 		props.Fields = map[string]*structpb.Value{}
@@ -318,7 +697,11 @@ func SetAgentContainerSettings(svc *azdext.ServiceConfig, container *ContainerSe
 // struct that carries the agent definition as service-level properties. coreImage
 // is the value of the service's `image` field, which is carried on the core
 // [azdext.ServiceConfig] rather than in the inline property bag.
-func agentDefinitionFromStruct(s *structpb.Struct, coreImage string) (agent_yaml.ContainerAgent, bool, error) {
+func agentDefinitionFromStruct(
+	s *structpb.Struct,
+	coreImage string,
+	environment map[string]string,
+) (agent_yaml.ContainerAgent, bool, error) {
 	var inline AgentDefinitionInline
 	if err := UnmarshalStruct(s, &inline); err != nil {
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
@@ -329,6 +712,9 @@ func agentDefinitionFromStruct(s *structpb.Struct, coreImage string) (agent_yaml
 	}
 
 	if inline.Kind != agent_yaml.AgentKindHosted {
+		if err := validateAgentServiceDefinition(s.AsMap()); err != nil {
+			return agent_yaml.ContainerAgent{}, false, err
+		}
 		return agent_yaml.ContainerAgent{}, false, nil
 	}
 
@@ -341,23 +727,10 @@ func agentDefinitionFromStruct(s *structpb.Struct, coreImage string) (agent_yaml
 		)
 	}
 
-	ca := inline.toContainerAgent(cfg.Container, coreImage)
+	ca := inline.toContainerAgent(cfg.Container, coreImage, environment)
 
-	// Validate the inline definition with the same rules the on-disk agent.yaml
-	// path uses (kind, name format, policies), so an inline definition cannot
-	// silently bypass validation. Marshal back to YAML so ValidateAgentDefinition
-	// sees the same shape it expects from disk.
-	if defBytes, marshalErr := yaml.Marshal(ca); marshalErr != nil {
-		// A ContainerAgent should always marshal; log at debug so a regression
-		// here is visible during troubleshooting rather than silently skipping
-		// validation.
-		log.Printf("[debug] skipping inline agent definition validation: marshal to YAML failed: %v", marshalErr)
-	} else if err := agent_yaml.ValidateAgentDefinition(defBytes); err != nil {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("agent service definition is not valid: %s", err),
-			"fix the agent service entry in azure.yaml or re-run `azd ai agent init`",
-		)
+	if err := validateAgentServiceDefinition(ca); err != nil {
+		return agent_yaml.ContainerAgent{}, false, err
 	}
 
 	if ca.Image != "" && !containerImageRefRe.MatchString(ca.Image) {
@@ -369,6 +742,28 @@ func agentDefinitionFromStruct(s *structpb.Struct, coreImage string) (agent_yaml
 	}
 
 	return ca, true, nil
+}
+
+func validateAgentServiceDefinition(definition any) error {
+	defBytes, err := yaml.Marshal(definition)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf(
+				"agent service definition is not valid: failed to marshal: %s",
+				err,
+			),
+			"fix the agent service entry in azure.yaml or re-run `azd ai agent init`",
+		)
+	}
+	if err := agent_yaml.ValidateAgentDefinition(defBytes); err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("agent service definition is not valid: %s", err),
+			"fix the agent service entry in azure.yaml or re-run `azd ai agent init`",
+		)
+	}
+	return nil
 }
 
 // agentDefinitionFromDisk reads a legacy agent.yaml/agent.yml from the service

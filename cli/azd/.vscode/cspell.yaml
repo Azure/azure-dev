@@ -159,6 +159,7 @@ words:
   - DYLD
   - dyld
   - LDLIBS
+  - vally
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -172,6 +173,13 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: internal/appdetect/aspire_polyglot.go
+    words:
+      - pylock
+  - filename: internal/appdetect/dotnet_apphost.go
+    words:
+      - buildpack
+      - upvote
   - filename: cmd/mcp.go
     words:
       - internalcmd
@@ -180,6 +188,9 @@ overrides:
       - compatResult
       - compatCopy
       - Incompat
+  - filename: pkg/tools/dotnet/dotnet.go
+    words:
+      - MSBUILDDISABLENODEREUSE
   - filename: pkg/output/pretty_table.go
     words:
       - runewidth
@@ -407,7 +418,7 @@ overrides:
   - filename: extensions/azure.ai.models/internal/cmd/custom_create.go
     words:
       - Qwen
-  - filename: pkg/infra/provisioning/bicep/local_preflight.go
+  - filename: pkg/infra/provisioning/bicep/provision_validation.go
     words:
       - actioned
   - filename: pkg/project/project.go
@@ -440,28 +451,6 @@ overrides:
       - covcounters
       - covmeta
       - AMRD
-  - filename: test/eval/README.md
-    words:
-      - Waza
-      - waza
-      - urlopen
-  - filename: "test/eval/graders/*.py"
-    words:
-      - Waza
-      - waza
-      - hdrs
-      - mysite
-      - mydb
-  - filename: "test/eval/tasks/**/*.yaml"
-    words:
-      - authenticat
-      - idempoten
-  - filename: "test/eval/tests/human/*.test.ts"
-    words:
-      - compdef
-      - badcfg
-      - provison
-      - notacommand
   - filename: pkg/infra/provisioning/bicep/bicep_provider.go
     words:
       - BIZSPARK

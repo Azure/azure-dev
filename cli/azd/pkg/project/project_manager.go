@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"slices"
 	"strings"
@@ -46,6 +47,17 @@ type ProjectManager interface {
 	// handlers to participate in the lifecycle of an azd project
 	Initialize(ctx context.Context, projectConfig *ProjectConfig) error
 
+	// InitializeFrameworks initializes only the framework service for each service in the project,
+	// best-effort: unlike Initialize, it never resolves service targets, and a per-service failure
+	// is skipped rather than fatal. It exists for read-only flows such as `env refresh`, which
+	// need framework lifecycle hooks (for example the .NET ServiceEventEnvUpdated handler) but
+	// must tolerate hosts provided by extensions that are not loaded. It returns the initialized
+	// services and the skipped services with their causes.
+	InitializeFrameworks(
+		ctx context.Context,
+		projectConfig *ProjectConfig,
+	) ([]*ServiceConfig, []ServiceFrameworkInitFailure, error)
+
 	// Returns the default service name to target based on the current working directory.
 	//
 	//   - If the working directory is the project directory, then an empty string is returned to indicate all services.
@@ -72,6 +84,13 @@ type ProjectManager interface {
 
 // ServiceFilterPredicate is a function that can be used to filter services that match a given criteria
 type ServiceFilterPredicate func(svc *ServiceConfig) bool
+
+// ServiceFrameworkInitFailure describes a service whose framework service could not be initialized
+// during best-effort initialization, along with the cause.
+type ServiceFrameworkInitFailure struct {
+	Service *ServiceConfig
+	Err     error
+}
 
 type projectManager struct {
 	azdContext     *azdcontext.AzdContext
@@ -113,6 +132,42 @@ func (pm *projectManager) Initialize(ctx context.Context, projectConfig *Project
 	}
 
 	return nil
+}
+
+// InitializeFrameworks initializes only the framework service for each service in the
+// project, on a best-effort, per-service basis. See the ProjectManager interface for details.
+func (pm *projectManager) InitializeFrameworks(
+	ctx context.Context,
+	projectConfig *ProjectConfig,
+) ([]*ServiceConfig, []ServiceFrameworkInitFailure, error) {
+	servicesStable, err := pm.importManager.ServiceStable(ctx, projectConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	serviceTargets := make([]string, 0, len(servicesStable))
+	for _, svc := range servicesStable {
+		serviceTargets = append(serviceTargets, string(svc.Host))
+	}
+
+	tracing.SetUsageAttributes(fields.ProjectServiceTargetsKey.StringSlice(serviceTargets))
+
+	initialized := make([]*ServiceConfig, 0, len(servicesStable))
+	var skipped []ServiceFrameworkInitFailure
+	for _, svc := range servicesStable {
+		if err := pm.serviceManager.InitializeFrameworkService(ctx, svc); err != nil {
+			log.Printf(
+				"skipping service events for service '%s'; its framework could not be initialized: %v",
+				svc.Name, err,
+			)
+			skipped = append(skipped, ServiceFrameworkInitFailure{Service: svc, Err: err})
+			continue
+		}
+
+		initialized = append(initialized, svc)
+	}
+
+	return initialized, skipped, nil
 }
 
 // Returns the default service name to target based on the current working directory.

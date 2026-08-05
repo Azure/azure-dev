@@ -89,7 +89,7 @@ func TestValidationService_DispatchChecks_NoChecks(t *testing.T) {
 	svc := &ValidationService{}
 
 	results, ruleIDs, err := svc.DispatchChecks(
-		t.Context(), "local-preflight", nil,
+		t.Context(), "provision", nil,
 	)
 	require.NoError(t, err)
 	require.Nil(t, results)
@@ -107,10 +107,10 @@ func TestValidationService_OnRegisterRequest_Validations(t *testing.T) {
 		wantErr   bool
 	}{
 		{"empty_check_type", "", "rule1", true},
-		{"empty_rule_id", "local-preflight", "", true},
+		{"empty_rule_id", "provision", "", true},
 		{"whitespace_check_type", "  ", "rule1", true},
-		{"whitespace_rule_id", "local-preflight", "  ", true},
-		{"valid", "local-preflight", "rule1", false},
+		{"whitespace_rule_id", "provision", "  ", true},
+		{"valid", "provision", "rule1", false},
 	}
 
 	for _, tt := range tests {
@@ -150,7 +150,7 @@ func TestValidationService_OnRegisterRequest_DuplicateRejection(t *testing.T) {
 	resp, err := svc.onRegisterRequest(
 		t.Context(),
 		&azdext.RegisterValidationCheckRequest{
-			CheckType: "local-preflight",
+			CheckType: "provision",
 			RuleId:    "unique_rule",
 		},
 		ext,
@@ -165,7 +165,7 @@ func TestValidationService_OnRegisterRequest_DuplicateRejection(t *testing.T) {
 	_, err = svc.onRegisterRequest(
 		t.Context(),
 		&azdext.RegisterValidationCheckRequest{
-			CheckType: "local-preflight",
+			CheckType: "provision",
 			RuleId:    "unique_rule",
 		},
 		ext,
@@ -181,13 +181,13 @@ func TestValidationService_DispatchChecks_NoMatchingType(t *testing.T) {
 	svc := &ValidationService{}
 	ext := newTestValidationExtension()
 
-	// Register a check for "local-preflight"
+	// Register a check for "provision"
 	var registered []validationCheckEntry
 	mu := &sync.Mutex{}
 	_, _ = svc.onRegisterRequest(
 		t.Context(),
 		&azdext.RegisterValidationCheckRequest{
-			CheckType: "local-preflight",
+			CheckType: "provision",
 			RuleId:    "test_rule",
 		},
 		ext,
@@ -222,7 +222,7 @@ func TestSendContextChunks_EmptyContext(t *testing.T) {
 	)
 
 	err := sendContextChunks(
-		t.Context(), broker, "ctx-1", "local-preflight",
+		t.Context(), broker, "ctx-1", "provision",
 		map[string][]byte{},
 	)
 	require.NoError(t, err)
@@ -273,7 +273,7 @@ func TestSendContextChunks_SmallData(t *testing.T) {
 	}
 
 	err := sendContextChunks(
-		ctx, broker, "ctx-123", "local-preflight", contextData,
+		ctx, broker, "ctx-123", "provision", contextData,
 	)
 	require.NoError(t, err)
 	cancel()
@@ -344,13 +344,13 @@ func TestValidationService_DispatchChecks_WithBroker(t *testing.T) {
 	svc := &ValidationService{}
 	svc.checks = []validationCheckEntry{
 		{
-			CheckType: "local-preflight",
+			CheckType: "provision",
 			RuleID:    "ext_rule_1",
 			Extension: ext,
 			Broker:    broker,
 		},
 		{
-			CheckType: "local-preflight",
+			CheckType: "provision",
 			RuleID:    "ext_rule_2",
 			Extension: ext,
 			Broker:    broker,
@@ -362,7 +362,7 @@ func TestValidationService_DispatchChecks_WithBroker(t *testing.T) {
 	}
 
 	results, ruleIDs, err := svc.DispatchChecks(
-		ctx, "local-preflight", contextData,
+		ctx, "provision", contextData,
 	)
 	require.NoError(t, err)
 	require.Len(t, results, 2, "should have 2 results (one per check)")

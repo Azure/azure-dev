@@ -199,22 +199,15 @@ func Test_AzureClient_UpdateAppServiceContainerImage(t *testing.T) {
 	var capturedBody string
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
 		return req.Method == http.MethodPatch &&
-			strings.Contains(req.URL.Path, "/Microsoft.Web/sites/my-app") &&
+			strings.HasSuffix(req.URL.Path, "/Microsoft.Web/sites/my-app/config/web") &&
 			!strings.Contains(req.URL.Path, "/slots/")
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		bodyBytes, _ := io.ReadAll(req.Body)
 		capturedBody = string(bodyBytes)
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
-			armappservice.Site{
-				ID:       new("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.Web/sites/my-app"),
-				Name:     new("my-app"),
-				Location: new("eastus"),
-				Kind:     new("app,linux,container"),
-				Properties: &armappservice.SiteProperties{
-					DefaultHostName: new("my-app.azurewebsites.net"),
-					SiteConfig: &armappservice.SiteConfig{
-						LinuxFxVersion: new("DOCKER|myregistry.azurecr.io/myapp:v1"),
-					},
+			armappservice.SiteConfigResource{
+				Properties: &armappservice.SiteConfig{
+					LinuxFxVersion: new("DOCKER|myregistry.azurecr.io/myapp:v1"),
 				},
 			})
 	})
@@ -223,10 +216,11 @@ func Test_AzureClient_UpdateAppServiceContainerImage(t *testing.T) {
 		*mockCtx.Context, "SUB", "RG", "my-app", "myregistry.azurecr.io/myapp:v1")
 	require.NoError(t, err)
 	assert.NotEmpty(t, capturedBody, "Update should have been called with a body")
-	assert.Contains(t, capturedBody, "DOCKER|myregistry.azurecr.io/myapp:v1",
-		"body should contain the correct linuxFxVersion")
-	assert.NotContains(t, capturedBody, "acrUseManagedIdentityCreds",
-		"should NOT set acrUseManagedIdentityCreds (IaC responsibility)")
+	assert.JSONEq(t, `{
+		"properties": {
+			"linuxFxVersion": "DOCKER|myregistry.azurecr.io/myapp:v1"
+		}
+	}`, capturedBody, "body should patch only linuxFxVersion on the configuration resource")
 }
 
 func Test_AzureClient_UpdateAppServiceContainerImage_Error(t *testing.T) {
@@ -235,7 +229,7 @@ func Test_AzureClient_UpdateAppServiceContainerImage_Error(t *testing.T) {
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
 		return req.Method == http.MethodPatch &&
-			strings.Contains(req.URL.Path, "/Microsoft.Web/sites/my-app")
+			strings.HasSuffix(req.URL.Path, "/Microsoft.Web/sites/my-app/config/web")
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateEmptyHttpResponse(req, http.StatusInternalServerError)
 	})
@@ -253,19 +247,14 @@ func Test_AzureClient_UpdateAppServiceSlotContainerImage(t *testing.T) {
 	var capturedBody string
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
 		return req.Method == http.MethodPatch &&
-			strings.Contains(req.URL.Path, "/slots/staging")
+			strings.HasSuffix(req.URL.Path, "/slots/staging/config/web")
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		bodyBytes, _ := io.ReadAll(req.Body)
 		capturedBody = string(bodyBytes)
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
-			armappservice.Site{
-				ID:   new("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.Web/sites/my-app/slots/staging"),
-				Name: new("my-app/staging"),
-				Properties: &armappservice.SiteProperties{
-					DefaultHostName: new("my-app-staging.azurewebsites.net"),
-					SiteConfig: &armappservice.SiteConfig{
-						LinuxFxVersion: new("DOCKER|myregistry.azurecr.io/myapp:v1"),
-					},
+			armappservice.SiteConfigResource{
+				Properties: &armappservice.SiteConfig{
+					LinuxFxVersion: new("DOCKER|myregistry.azurecr.io/myapp:v1"),
 				},
 			})
 	})
@@ -274,10 +263,11 @@ func Test_AzureClient_UpdateAppServiceSlotContainerImage(t *testing.T) {
 		*mockCtx.Context, "SUB", "RG", "my-app", "staging", "myregistry.azurecr.io/myapp:v1")
 	require.NoError(t, err)
 	assert.NotEmpty(t, capturedBody, "UpdateSlot should have been called with a body")
-	assert.Contains(t, capturedBody, "DOCKER|myregistry.azurecr.io/myapp:v1",
-		"body should contain the correct linuxFxVersion")
-	assert.NotContains(t, capturedBody, "acrUseManagedIdentityCreds",
-		"should NOT set acrUseManagedIdentityCreds (IaC responsibility)")
+	assert.JSONEq(t, `{
+		"properties": {
+			"linuxFxVersion": "DOCKER|myregistry.azurecr.io/myapp:v1"
+		}
+	}`, capturedBody, "body should patch only linuxFxVersion on the slot configuration resource")
 }
 
 func Test_AzureClient_ValidateAppServiceForContainerDeploy(t *testing.T) {
@@ -349,6 +339,83 @@ func Test_AzureClient_ValidateAppServiceForContainerDeploy(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not configured for container deployment")
 	})
+
+	t.Run("GetError_ReturnsError", func(t *testing.T) {
+		mockCtx := mocks.NewMockContext(t.Context())
+		client := newAzureClientFromMockContext(mockCtx)
+
+		mockCtx.HttpClient.When(func(req *http.Request) bool {
+			return req.Method == http.MethodGet &&
+				strings.Contains(req.URL.Path, "/Microsoft.Web/sites/my-app")
+		}).RespondFn(func(req *http.Request) (*http.Response, error) {
+			return mocks.CreateEmptyHttpResponse(req, http.StatusNotFound)
+		})
+
+		err := client.ValidateAppServiceForContainerDeploy(*mockCtx.Context, "SUB", "RG", "my-app")
+		require.Error(t, err)
+	})
+}
+
+func Test_appServiceContainerConfiguration(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		kind            *string
+		siteConfig      *armappservice.SiteConfig
+		expectLinux     bool
+		expectContainer bool
+	}{
+		{
+			name:            "LinuxContainer",
+			kind:            new("functionapp,linux,container"),
+			siteConfig:      &armappservice.SiteConfig{LinuxFxVersion: new("DOCKER|registry/image:tag")},
+			expectLinux:     true,
+			expectContainer: true,
+		},
+		{
+			name:            "CaseInsensitive",
+			kind:            new("FUNCTIONAPP,LINUX,CONTAINER"),
+			siteConfig:      &armappservice.SiteConfig{LinuxFxVersion: new("docker|registry/image:tag")},
+			expectLinux:     true,
+			expectContainer: true,
+		},
+		{
+			name:        "LinuxCode",
+			kind:        new("functionapp,linux"),
+			siteConfig:  &armappservice.SiteConfig{LinuxFxVersion: new("NODE|20-lts")},
+			expectLinux: true,
+		},
+		{
+			name:       "Windows",
+			kind:       new("functionapp"),
+			siteConfig: &armappservice.SiteConfig{},
+		},
+		{
+			name: "MissingProperties",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var properties *armappservice.SiteProperties
+			if tt.siteConfig != nil {
+				properties = &armappservice.SiteProperties{SiteConfig: tt.siteConfig}
+			}
+
+			configuration := appServiceContainerConfiguration(&armappservice.WebAppsClientGetResponse{
+				Site: armappservice.Site{
+					Kind:       tt.kind,
+					Properties: properties,
+				},
+			})
+
+			assert.Equal(t, tt.expectLinux, configuration.IsLinux)
+			assert.Equal(t, tt.expectContainer, configuration.IsContainer)
+		})
+	}
 }
 
 func Test_AzureClient_UpdateAppServiceAppSettings(t *testing.T) {

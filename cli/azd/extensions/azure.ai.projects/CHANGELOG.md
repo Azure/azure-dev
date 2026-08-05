@@ -1,5 +1,27 @@
 # Release History
 
+## 1.0.0-beta.4 (2026-07-30)
+
+### Bugs Fixed
+
+- [[#9292]](https://github.com/Azure/azure-dev/pull/9292) Fix Foundry ARM deployment names exceeding ARM's 64-character limit when long azd environment names are used. Long environment-name segments are now truncated while retaining deterministic environment and project-path hashes for uniqueness.
+
+## 1.0.0-beta.3 (2026-07-23)
+
+### Features Added
+
+- [[#9133]](https://github.com/Azure/azure-dev/pull/9133) The `azure.ai.projects` extension now owns Foundry project provisioning through the `microsoft.foundry` provider, including updating deployments and connections on existing projects (set `AZURE_AI_PROJECT_ID` to the project ARM resource ID), using the customer VNet region for private endpoints, and blocking automatic Azure Container Registry creation for private-network projects. Release it together with `azure.ai.agents`, since mixing versions can cause both extensions to register the same provider.
+
+### Bugs Fixed
+
+- [[#9149]](https://github.com/Azure/azure-dev/pull/9149) Fix Foundry project synthesis and provisioning not consistently resolving configuration declared inline in `azure.yaml`, via the deprecated `config:` block, or through local `$ref` files.
+
+## 1.0.0-beta.2 (2026-07-09)
+
+### Other Changes
+
+- [[#9027]](https://github.com/Azure/azure-dev/pull/9027) Bump `golang.org/x/crypto` to v0.53.0 (and transitively `golang.org/x/net` to v0.55.0) to address security advisories.
+
 ## 1.0.0-beta.1 (2026-06-30)
 
 ### Features Added

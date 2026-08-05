@@ -21,6 +21,7 @@ type connectionAddFlags struct {
 	index        string
 	instanceName string
 	fromFile     string
+	fromVersion  string
 }
 
 // newToolboxConnectionAddCommand returns the `connection add` command.
@@ -111,6 +112,7 @@ Examples:
 		&flags.fromFile, "from-file", "",
 		"Path to a JSON/YAML file describing the connections to add (see --help for the file shape).",
 	)
+	registerFromVersionFlag(cmd, &flags.fromVersion)
 	registerToolboxOutputFlag(cmd)
 	return cmd
 }
@@ -164,7 +166,11 @@ func runConnectionAddWith(
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolbox)
 	}
 
-	current, err := client.GetToolboxVersion(ctx, toolboxName, tb.DefaultVersion)
+	branch, err := resolveBranchVersion(ctx, client, toolboxName, tb, verb.fromVersion)
+	if err != nil {
+		return err
+	}
+	current, err := client.GetToolboxVersion(ctx, toolboxName, branch.Branch)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolboxVersion)
 	}
@@ -247,7 +253,13 @@ func runConnectionAddWith(
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
 	}
 
-	return emitConnectionAddResult(toolboxName, created.Version, addedConnectionNames, parent.output, endpoint)
+	if err := emitConnectionAddResult(
+		toolboxName, created.Version, addedConnectionNames, parent.output, endpoint,
+	); err != nil {
+		return err
+	}
+	printBranchNote(parent.output, branch)
+	return nil
 }
 
 // rejectDuplicatesAgainstCurrentAndBatch flags a duplicate if any new entry

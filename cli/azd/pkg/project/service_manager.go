@@ -134,6 +134,11 @@ type ServiceManager interface {
 		serviceTarget ServiceTarget,
 	) (*environment.TargetResource, error)
 
+	// Initializes only the framework service for the specified service config, without resolving
+	// the service target. This supports read-only flows such as `env refresh` that need framework
+	// lifecycle hooks but must not require a service target, which may be extension-provided.
+	InitializeFrameworkService(ctx context.Context, serviceConfig *ServiceConfig) error
+
 	// Gets the framework service for the specified service config
 	// The framework service performs the restoration and building of the service app code
 	GetFrameworkService(ctx context.Context, serviceConfig *ServiceConfig) (FrameworkService, error)
@@ -200,14 +205,36 @@ func (sm *serviceManager) GetRequiredTools(ctx context.Context, serviceConfig *S
 // Initializes the service configuration and dependent framework & service target
 // This allows frameworks & service targets to hook into a services lifecycle events
 func (sm *serviceManager) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
-	if err != nil {
-		return fmt.Errorf("getting framework service: %w", err)
+	if err := sm.InitializeFrameworkService(ctx, serviceConfig); err != nil {
+		return err
 	}
 
 	serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
 	if err != nil {
 		return fmt.Errorf("getting service target: %w", err)
+	}
+
+	if ok := sm.isComponentInitialized(serviceConfig, serviceTarget); !ok {
+		if err := serviceTarget.Initialize(ctx, serviceConfig); err != nil {
+			return err
+		}
+
+		sm.mu.Lock()
+		sm.initialized[serviceConfig][serviceTarget] = true
+		sm.mu.Unlock()
+	}
+
+	return nil
+}
+
+// InitializeFrameworkService resolves and initializes only the framework service for the
+// specified service config, without resolving the service target. Frameworks resolve by service
+// language, so built-in languages work even when the host is extension-provided; extension-provided
+// languages may still fail to resolve, which ProjectManager.InitializeFrameworks tolerates.
+func (sm *serviceManager) InitializeFrameworkService(ctx context.Context, serviceConfig *ServiceConfig) error {
+	frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
+	if err != nil {
+		return fmt.Errorf("getting framework service: %w", err)
 	}
 
 	if ok := sm.isComponentInitialized(serviceConfig, frameworkService); !ok {
@@ -220,16 +247,6 @@ func (sm *serviceManager) Initialize(ctx context.Context, serviceConfig *Service
 		sm.mu.Unlock()
 	} else {
 		log.Printf("frameworkService already initialized for service: %s", serviceConfig.Name)
-	}
-
-	if ok := sm.isComponentInitialized(serviceConfig, serviceTarget); !ok {
-		if err := serviceTarget.Initialize(ctx, serviceConfig); err != nil {
-			return err
-		}
-
-		sm.mu.Lock()
-		sm.initialized[serviceConfig][serviceTarget] = true
-		sm.mu.Unlock()
 	}
 
 	return nil

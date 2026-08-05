@@ -45,7 +45,6 @@ type ServiceTargetAgentConfig struct {
 	// Foundry project. Its presence is the brownfield signal that makes provision
 	// connect to that project instead of creating a new one.
 	Endpoint        string             `json:"endpoint,omitempty"`
-	Environment     map[string]string  `json:"env,omitempty"`
 	Container       *ContainerSettings `json:"container,omitempty"`
 	Deployments     []Deployment       `json:"deployments,omitempty"`
 	Resources       []Resource         `json:"resources,omitempty"`
@@ -111,6 +110,22 @@ type Toolbox struct {
 	Name        string           `json:"name"`
 	Description string           `json:"description,omitempty"`
 	Tools       []map[string]any `json:"tools"`
+}
+
+// UnmarshalJSON accepts split-service names and legacy objects.
+func (t *Toolbox) UnmarshalJSON(data []byte) error {
+	var name string
+	if err := json.Unmarshal(data, &name); err == nil {
+		t.Name = name
+		return nil
+	}
+	type toolbox Toolbox
+	var value toolbox
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	*t = Toolbox(value)
+	return nil
 }
 
 // MemoryStore represents a Foundry memory store provisioned (create-if-not-exists)

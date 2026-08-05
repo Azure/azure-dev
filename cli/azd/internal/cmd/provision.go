@@ -291,6 +291,11 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		layers = []provisioning.Options{layerOption}
 	}
 
+	// Record the resolved IaC provider(s) directly on the cmd.provision span up front — before the
+	// preview/multi-layer validation and provider work — so the attribute is present on success,
+	// failure, and preview runs alike, scoped to the provisioning lifecycle.
+	p.provisionManager.RecordInfraProviderUsage(ctx, layers)
+
 	if previewMode && len(layers) > 1 {
 		return nil, &internal.ErrorWithSuggestion{
 			Err:        internal.ErrPreviewMultipleLayers,

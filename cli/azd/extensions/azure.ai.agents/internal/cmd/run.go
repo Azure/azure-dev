@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -186,41 +187,44 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 
 	cmdParts = resolveVenvCommand(projectDir, cmdParts)
 
-	env := os.Environ()
-	env = appendPortEnvVars(env, pt, flags.port)
+	env := appendPortEnvVars(os.Environ(), pt, flags.port)
 
-	// Load azd environment variables (e.g., FOUNDRY_PROJECT_ENDPOINT)
-	// so the agent can reach Azure services during local development.
-	// Also translate azd env keys to FOUNDRY_* env vars so the agent code
-	// works identically whether running locally or in a hosted container
-	// (where the platform automatically injects FOUNDRY_* env vars).
+	// Load azd values as template inputs and legacy fallback values.
 	var azdEnvVars map[string]string
 	if loaded, err := loadAzdEnvironment(ctx, azdClient); err == nil {
 		azdEnvVars = loaded
-		for k, v := range azdEnvVars {
-			env = append(env, fmt.Sprintf("%s=%s", k, v))
-		}
-		env = appendFoundryEnvVars(env, azdEnvVars, runCtx.ServiceName)
 	} else if shouldWarnLoadAzdEnvironmentFailure(err) {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load azd environment values: %s\n", err)
 	}
 
-	// Resolve environment_variables from the agent definition (agent.yaml).
-	// This handles hardcoded values, ${VAR} references (resolved via azd env),
-	// and ${{connections.<name>.credentials.<key>}} references (resolved via
-	// the Foundry data plane). Agent definition env vars do not override
-	// values already present in the process environment.
 	endpoint, _ := resolveAgentEndpoint(ctx, "", "")
-	defEnv, defErr := resolveAgentDefinitionEnvVars(ctx, runCtx.Definition, azdEnvVars, endpoint)
+	endpoint = localProjectEndpoint(
+		env,
+		runCtx.ServiceEnvironment,
+		endpoint,
+	)
+	serviceEnvironment := resolveLocalServiceEnvironment(
+		runCtx.ServiceEnvironment,
+		endpoint,
+	)
+	defEnv, defErr := resolveAgentDefinitionEnvVars(
+		ctx,
+		runCtx.Definition,
+		serviceEnvironment,
+		azdEnvVars,
+		endpoint,
+	)
 	if defErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: %s\n", defErr)
 	}
-	for _, entry := range defEnv {
-		key, _, _ := strings.Cut(entry, "=")
-		if !envSliceHasKey(env, key) {
-			env = append(env, entry)
-		}
-	}
+	env = mergeAgentRunEnvironment(
+		env,
+		azdEnvVars,
+		serviceEnvironment,
+		defEnv,
+		runCtx.ServiceName,
+		runCtx.HasServiceEnvironment,
+	)
 
 	// Activity agents bind IPv4 and are reached at 127.0.0.1 everywhere else
 	// (the port-readiness check and the Playground URL), because `localhost`
@@ -514,6 +518,7 @@ func shouldWarnLoadAzdEnvironmentFailure(err error) bool {
 func resolveAgentDefinitionEnvVars(
 	ctx context.Context,
 	agentDef *agent_yaml.ContainerAgent,
+	serviceEnvironment map[string]string,
 	azdEnvVars map[string]string,
 	endpoint string,
 ) ([]string, error) {
@@ -544,8 +549,15 @@ func resolveAgentDefinitionEnvVars(
 		if _, isConn := connRefEnvNames[ev.Name]; isConn {
 			continue
 		}
-		// ExpandEnv returns the original value on error, so a failed expansion is a no-op.
-		resolved, _ := project.ExpandEnv(ev.Value, lookup)
+		resolved, err := project.ResolveAgentEnvironmentVariable(
+			ev.Name,
+			ev.Value,
+			serviceEnvironment,
+			lookup,
+		)
+		if err != nil {
+			resolved = ev.Value
+		}
 		result = append(result, fmt.Sprintf("%s=%s", ev.Name, resolved))
 	}
 
@@ -559,6 +571,41 @@ func resolveAgentDefinitionEnvVars(
 	}
 
 	return result, nil
+}
+
+func resolveLocalServiceEnvironment(
+	environment map[string]string,
+	endpoint string,
+) map[string]string {
+	resolved := maps.Clone(environment)
+	if endpoint == "" {
+		return resolved
+	}
+	for key, value := range resolved {
+		resolved[key] = strings.ReplaceAll(
+			value,
+			"${{project.endpoint}}",
+			endpoint,
+		)
+	}
+	return resolved
+}
+
+func localProjectEndpoint(
+	baseEnvironment []string,
+	serviceEnvironment map[string]string,
+	fallback string,
+) string {
+	if value, found := envSliceValue(
+		baseEnvironment,
+		"FOUNDRY_PROJECT_ENDPOINT",
+	); found {
+		return value
+	}
+	if value, found := serviceEnvironment["FOUNDRY_PROJECT_ENDPOINT"]; found {
+		return value
+	}
+	return fallback
 }
 
 // findAgentYaml locates the agent definition file in the given directory.
@@ -604,8 +651,25 @@ func installDependencies(projectDir string) error {
 	return nil
 }
 
+type dependencyInstallStep struct {
+	startMessage   string
+	successMessage string
+	errorMessage   string
+	args           []string
+}
+
 func installPythonDeps(projectDir string) error {
-	if _, err := exec.LookPath("uv"); err != nil {
+	lockedProject := uvLockedProject(projectDir)
+	uvPath, err := exec.LookPath("uv")
+	if err != nil {
+		if lockedProject {
+			return fmt.Errorf(
+				"uv is required to synchronize dependencies from uv.lock; "+
+					"install it from https://docs.astral.sh/uv/: %w",
+				err,
+			)
+		}
+
 		fmt.Println("Warning: uv is not installed. Install it from https://docs.astral.sh/uv/")
 		fmt.Println("Falling back to pip...")
 		return installPythonDepsPip(projectDir)
@@ -614,7 +678,8 @@ func installPythonDeps(projectDir string) error {
 	venvDir := filepath.Join(projectDir, ".venv")
 	if _, err := os.Stat(venvDir); os.IsNotExist(err) {
 		fmt.Println("Setting up Python environment...")
-		cmd := exec.Command("uv", "venv", venvDir, "--python", ">=3.13") //nolint:gosec // G204: venvDir is derived from the project directory path
+		//nolint:gosec // G204: uvPath is from LookPath; venvDir is derived from the project directory path
+		cmd := exec.Command(uvPath, "venv", venvDir, "--python", minPythonUvSpec())
 		cmd.Dir = projectDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -625,31 +690,72 @@ func installPythonDeps(projectDir string) error {
 
 	pythonPath := venvPython(venvDir)
 
-	if fileExists(filepath.Join(projectDir, "pyproject.toml")) {
-		fmt.Println("Installing dependencies (pyproject.toml)...")
-		cmd := exec.Command("uv", "pip", "install", "-e", ".", "--python", pythonPath, "--prerelease", "allow", "--quiet") //nolint:gosec // G204: pythonPath is derived from the project venv directory
+	for _, step := range uvPythonInstallSteps(projectDir, pythonPath) {
+		fmt.Println(step.startMessage)
+		//nolint:gosec // G204: uvPath is from LookPath; command arguments are static or derived from the project venv
+		cmd := exec.Command(uvPath, step.args...)
 		cmd.Dir = projectDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("uv pip install failed: %w", err)
+			return fmt.Errorf("%s: %w", step.errorMessage, err)
 		}
-		fmt.Println("  ✓ Dependencies installed (pyproject.toml)")
-	}
-
-	if fileExists(filepath.Join(projectDir, "requirements.txt")) {
-		fmt.Println("Installing dependencies (requirements.txt)...")
-		cmd := exec.Command("uv", "pip", "install", "-r", "requirements.txt", "--python", pythonPath, "--prerelease", "allow", "--quiet") //nolint:gosec // G204: pythonPath is derived from the project venv directory
-		cmd.Dir = projectDir
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("uv pip install failed: %w", err)
-		}
-		fmt.Println("  ✓ Dependencies installed (requirements.txt)")
+		fmt.Println(step.successMessage)
 	}
 
 	return nil
+}
+
+func uvLockedProject(projectDir string) bool {
+	return fileExists(filepath.Join(projectDir, "pyproject.toml")) &&
+		fileExists(filepath.Join(projectDir, "uv.lock"))
+}
+
+func uvPythonInstallSteps(projectDir string, pythonPath string) []dependencyInstallStep {
+	if uvLockedProject(projectDir) {
+		return []dependencyInstallStep{{
+			startMessage:   "Synchronizing dependencies (uv.lock)...",
+			successMessage: "  ✓ Dependencies synchronized (uv.lock)",
+			errorMessage:   "uv sync failed",
+			args: []string{
+				"sync",
+				"--locked",
+				"--python", pythonPath,
+				"--quiet",
+			},
+		}}
+	}
+
+	steps := []dependencyInstallStep{}
+	if fileExists(filepath.Join(projectDir, "pyproject.toml")) {
+		steps = append(steps, dependencyInstallStep{
+			startMessage:   "Installing dependencies (pyproject.toml)...",
+			successMessage: "  ✓ Dependencies installed (pyproject.toml)",
+			errorMessage:   "uv pip install failed",
+			args: []string{
+				"pip", "install", "-e", ".",
+				"--python", pythonPath,
+				"--prerelease", "allow",
+				"--quiet",
+			},
+		})
+	}
+
+	if fileExists(filepath.Join(projectDir, "requirements.txt")) {
+		steps = append(steps, dependencyInstallStep{
+			startMessage:   "Installing dependencies (requirements.txt)...",
+			successMessage: "  ✓ Dependencies installed (requirements.txt)",
+			errorMessage:   "uv pip install failed",
+			args: []string{
+				"pip", "install", "-r", "requirements.txt",
+				"--python", pythonPath,
+				"--prerelease", "allow",
+				"--quiet",
+			},
+		})
+	}
+
+	return steps
 }
 
 func installPythonDepsPip(projectDir string) error {
@@ -663,15 +769,11 @@ func installPythonDepsPip(projectDir string) error {
 		return fmt.Errorf("failed to check .venv: %w", err)
 	case os.IsNotExist(err):
 		fmt.Println("Setting up Python environment...")
-		pythonBin, findErr := findSystemPython()
+		python, findErr := findSystemPython()
 		if findErr != nil {
 			return findErr
 		}
-		if err := checkPythonVersion(pythonBin); err != nil {
-			return err
-		}
-		//nolint:gosec // G204: venvDir is derived from the project directory path
-		cmd := exec.Command(pythonBin, "-m", "venv", venvDir)
+		cmd := python.command("-m", "venv", venvDir)
 		cmd.Dir = projectDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -820,117 +922,296 @@ func venvPip(venvDir string) string {
 	return filepath.Join(venvDir, "bin", "pip")
 }
 
-func findSystemPython() (string, error) {
-	candidates := []string{"python3", "python"}
-	if runtime.GOOS == "windows" {
-		candidates = append(candidates, "py")
-	}
-	for _, name := range candidates {
-		if p, err := exec.LookPath(name); err == nil {
-			return p, nil
-		}
-	}
-	return "", fmt.Errorf(
-		"python not found on PATH. Install Python 3.13+ from https://www.python.org/downloads/")
+// Minimum supported system Python runtime. This is the single source of truth
+// for the required Python version across both the uv and pip installation
+// paths (see minPythonUvSpec and the version checks below).
+const (
+	minPythonMajor = 3
+	minPythonMinor = 13
+)
+
+// minPythonUvSpec returns the minimum runtime as a uv `--python` version
+// specifier (e.g. ">=3.13"), derived from the constants so the uv path stays in
+// sync with the pip-path version checks.
+func minPythonUvSpec() string {
+	return fmt.Sprintf(">=%d.%d", minPythonMajor, minPythonMinor)
 }
 
-// checkPythonVersion verifies the Python binary is >= 3.13 (matching the uv path's
-// --python ">=3.13" constraint). Returns an error if the version is too old.
-func checkPythonVersion(pythonBin string) error {
-	//nolint:gosec // G204: pythonBin is from findSystemPython (exec.LookPath result)
-	out, err := exec.Command(pythonBin, "--version").Output()
-	if err != nil {
-		return fmt.Errorf("failed to check Python version: %w", err)
+// pythonInterpreter is a resolved interpreter invocation: the executable to run
+// plus any leading launcher arguments needed to select a specific version (for
+// example the Windows `py -3` launcher, which selects the newest installed
+// Python 3 rather than whichever python.exe happens to appear first on PATH).
+type pythonInterpreter struct {
+	// path is the resolved path to the interpreter or launcher (from LookPath).
+	path string
+	// args are leading arguments applied before any command (e.g. ["-3"]).
+	args []string
+}
+
+// command builds an *exec.Cmd that invokes the interpreter with the provided
+// trailing arguments, preserving any launcher args (e.g. `py -3 -m venv ...`).
+func (p pythonInterpreter) command(extra ...string) *exec.Cmd {
+	args := append(slices.Clone(p.args), extra...)
+	//nolint:gosec // G204: path is an exec.LookPath result; args are static/derived
+	return exec.Command(p.path, args...)
+}
+
+// pythonCandidates returns the ordered interpreter candidates to probe, limited
+// to those that resolve on PATH. On Windows the `py -3` launcher is preferred
+// because it selects the newest installed Python 3, which is frequently newer
+// than the first python.exe on PATH.
+func pythonCandidates() []pythonInterpreter {
+	type candidate struct {
+		name string
+		args []string
 	}
 
-	// Output is like "Python 3.13.2"
+	var candidates []candidate
+	if runtime.GOOS == "windows" {
+		candidates = []candidate{
+			{"py", []string{"-3"}},
+			{"python3", nil},
+			{"python", nil},
+			{"py", nil},
+		}
+	} else {
+		candidates = []candidate{
+			{"python3", nil},
+			{"python", nil},
+		}
+	}
+
+	var resolved []pythonInterpreter
+	for _, c := range candidates {
+		p, err := exec.LookPath(c.name)
+		if err != nil {
+			continue
+		}
+		resolved = append(resolved, pythonInterpreter{path: p, args: c.args})
+	}
+	return resolved
+}
+
+// pythonVersion runs `--version` on the interpreter and returns the parsed major
+// and minor version numbers along with the raw version string (e.g. "3.13.2").
+func pythonVersion(interpreter pythonInterpreter) (major, minor int, raw string, err error) {
+	out, err := interpreter.command("--version").Output()
+	if err != nil {
+		return 0, 0, "", fmt.Errorf("failed to check Python version: %w", err)
+	}
+
+	// Output is like "Python 3.13.2".
 	version := strings.TrimSpace(string(out))
 	parts := strings.SplitN(version, " ", 2)
 	if len(parts) != 2 {
-		return fmt.Errorf("unexpected python --version output: %s", version)
+		return 0, 0, "", fmt.Errorf("unexpected python --version output: %s", version)
 	}
+	raw = parts[1]
 
-	segments := strings.SplitN(parts[1], ".", 3)
+	segments := strings.SplitN(raw, ".", 3)
 	if len(segments) < 2 {
-		return fmt.Errorf("unexpected python version format: %s", parts[1])
+		return 0, 0, "", fmt.Errorf("unexpected python version format: %s", raw)
 	}
 
-	major, err := strconv.Atoi(segments[0])
+	major, err = strconv.Atoi(segments[0])
 	if err != nil {
-		return fmt.Errorf("unexpected python major version: %s", segments[0])
+		return 0, 0, "", fmt.Errorf("unexpected python major version: %s", segments[0])
 	}
-	minor, err := strconv.Atoi(segments[1])
+	minor, err = strconv.Atoi(segments[1])
 	if err != nil {
-		return fmt.Errorf("unexpected python minor version: %s", segments[1])
+		return 0, 0, "", fmt.Errorf("unexpected python minor version: %s", segments[1])
 	}
 
-	if major < 3 || (major == 3 && minor < 13) {
-		return fmt.Errorf(
-			"Python 3.13+ is required (found %s). "+
-				"Install Python 3.13+ from https://www.python.org/downloads/",
-			parts[1])
-	}
-
-	return nil
+	return major, minor, raw, nil
 }
 
-// appendFoundryEnvVars translates azd environment keys to FOUNDRY_* env vars that hosted
-// agent containers receive automatically from the platform. This ensures the agent code
-// works identically whether running locally (via azd ai agent run) or in a hosted container.
+// pythonVersionOK reports whether the given version satisfies the minimum
+// supported Python runtime.
+func pythonVersionOK(major, minor int) bool {
+	return major > minPythonMajor || (major == minPythonMajor && minor >= minPythonMinor)
+}
+
+// firstCompatiblePython returns the first candidate whose version satisfies the
+// minimum supported runtime. Candidates whose version cannot be determined are
+// skipped. If every resolvable candidate is too old, the error names the newest
+// incompatible version found so the user knows what is on their machine.
+func firstCompatiblePython(
+	candidates []pythonInterpreter,
+	versionFn func(pythonInterpreter) (int, int, string, error),
+) (pythonInterpreter, error) {
+	newestRaw := ""
+	newestMajor, newestMinor := -1, -1
+	for _, c := range candidates {
+		major, minor, raw, err := versionFn(c)
+		if err != nil {
+			continue
+		}
+		if pythonVersionOK(major, minor) {
+			return c, nil
+		}
+		if major > newestMajor || (major == newestMajor && minor > newestMinor) {
+			newestMajor, newestMinor, newestRaw = major, minor, raw
+		}
+	}
+
+	if newestRaw != "" {
+		return pythonInterpreter{}, fmt.Errorf(
+			"Python %d.%d+ is required (found %s). "+
+				"Install Python %d.%d+ from https://www.python.org/downloads/",
+			minPythonMajor, minPythonMinor, newestRaw, minPythonMajor, minPythonMinor)
+	}
+
+	return pythonInterpreter{}, fmt.Errorf(
+		"no compatible Python found on PATH. "+
+			"Install Python %d.%d+ from https://www.python.org/downloads/",
+		minPythonMajor, minPythonMinor)
+}
+
+// findSystemPython locates a system Python interpreter that satisfies the
+// minimum supported runtime (>= 3.13). It probes several candidates and checks
+// each one's version rather than blindly using the first python on PATH,
+// because on Windows the first python.exe on PATH is frequently older than the
+// newest installed Python (which the `py -3` launcher can locate).
+func findSystemPython() (pythonInterpreter, error) {
+	return firstCompatiblePython(pythonCandidates(), pythonVersion)
+}
+
+// mergeAgentRunEnvironment builds the local agent environment.
+//
+// baseEnvironment contains process and command-owned values.
+// azdEnvironment is the full active environment for legacy fallback.
+// serviceEnvironment is core-expanded services.<name>.env.
+// definitionEnvironment comes from legacy agent definitions.
+// hasServiceEnvironment reports whether the service declares an
+// env: block (even an empty one).
+func mergeAgentRunEnvironment(
+	baseEnvironment []string,
+	azdEnvironment map[string]string,
+	serviceEnvironment map[string]string,
+	definitionEnvironment []string,
+	serviceName string,
+	hasServiceEnvironment bool,
+) []string {
+	environment := slices.Clone(baseEnvironment)
+
+	// The full azd environment is a compatibility fallback only.
+	if !hasServiceEnvironment {
+		for key, value := range azdEnvironment {
+			if !envSliceHasKey(baseEnvironment, key) {
+				environment = append(
+					environment,
+					fmt.Sprintf("%s=%s", key, value),
+				)
+			}
+		}
+	} else {
+		for key, value := range serviceEnvironment {
+			if !envSliceHasKey(baseEnvironment, key) {
+				environment = append(
+					environment,
+					fmt.Sprintf("%s=%s", key, value),
+				)
+			}
+		}
+	}
+
+	environment = appendFoundryEnvVars(
+		environment,
+		azdEnvironment,
+		serviceName,
+	)
+
+	for _, entry := range definitionEnvironment {
+		key, _, _ := strings.Cut(entry, "=")
+		_, serviceScoped := serviceEnvironment[key]
+		if serviceScoped {
+			continue
+		}
+		if !envSliceHasKey(environment, key) {
+			environment = append(environment, entry)
+		}
+	}
+
+	return environment
+}
+
+// appendFoundryEnvVars adds values injected by hosted agents.
 //
 // The mapping is:
 //
-//	AZURE_AI_PROJECT_ID                → FOUNDRY_PROJECT_ARM_ID
-//	AGENT_{SVC}_NAME                   → FOUNDRY_AGENT_NAME
-//	AGENT_{SVC}_VERSION                → FOUNDRY_AGENT_VERSION
-//	APPLICATIONINSIGHTS_CONNECTION_STRING (unchanged — already matches platform name)
+//	FOUNDRY_PROJECT_ENDPOINT           -> unchanged
+//	AZURE_AI_PROJECT_ID                -> FOUNDRY_PROJECT_ARM_ID
+//	AGENT_{SVC}_NAME                   -> FOUNDRY_AGENT_NAME
+//	AGENT_{SVC}_VERSION                -> FOUNDRY_AGENT_VERSION
+//	APPLICATIONINSIGHTS_CONNECTION_STRING -> unchanged
 func appendFoundryEnvVars(env []string, azdEnv map[string]string, serviceName string) []string {
-	// Static mappings from azd env key names to FOUNDRY_* env var names
-	staticMappings := []struct {
-		azdKey     string
-		foundryKey string
-	}{
-		{"AZURE_AI_PROJECT_ID", "FOUNDRY_PROJECT_ARM_ID"},
-	}
+	env = appendEnvValue(
+		env,
+		"FOUNDRY_PROJECT_ENDPOINT",
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
+	)
 
-	for _, m := range staticMappings {
-		if v := azdEnv[m.azdKey]; v != "" {
-			if _, exists := azdEnv[m.foundryKey]; !exists && !envSliceHasKey(env, m.foundryKey) {
-				env = append(env, fmt.Sprintf("%s=%s", m.foundryKey, v))
-			}
-		}
+	projectArmID := azdEnv["FOUNDRY_PROJECT_ARM_ID"]
+	if projectArmID == "" {
+		projectArmID = azdEnv["AZURE_AI_PROJECT_ID"]
 	}
+	env = appendEnvValue(env, "FOUNDRY_PROJECT_ARM_ID", projectArmID)
 
-	// Service-specific mappings (AGENT_{SVC}_NAME → FOUNDRY_AGENT_NAME, etc.)
+	agentName := ""
+	agentVersion := ""
 	if serviceName != "" {
 		serviceKey := toServiceKey(serviceName)
-		agentMappings := []struct {
-			azdKeyFmt  string
-			foundryKey string
-		}{
-			{"AGENT_%s_NAME", "FOUNDRY_AGENT_NAME"},
-			{"AGENT_%s_VERSION", "FOUNDRY_AGENT_VERSION"},
-		}
-
-		for _, m := range agentMappings {
-			azdKey := fmt.Sprintf(m.azdKeyFmt, serviceKey)
-			if v := azdEnv[azdKey]; v != "" {
-				if _, exists := azdEnv[m.foundryKey]; !exists && !envSliceHasKey(env, m.foundryKey) {
-					env = append(env, fmt.Sprintf("%s=%s", m.foundryKey, v))
-				}
-			}
-		}
+		agentName = azdEnv[fmt.Sprintf("AGENT_%s_NAME", serviceKey)]
+		agentVersion = azdEnv[fmt.Sprintf("AGENT_%s_VERSION", serviceKey)]
 	}
+	if agentName == "" {
+		agentName = azdEnv["FOUNDRY_AGENT_NAME"]
+	}
+	if agentVersion == "" {
+		agentVersion = azdEnv["FOUNDRY_AGENT_VERSION"]
+	}
+	env = appendEnvValue(env, "FOUNDRY_AGENT_NAME", agentName)
+	env = appendEnvValue(env, "FOUNDRY_AGENT_VERSION", agentVersion)
+
+	env = appendEnvValue(
+		env,
+		"APPLICATIONINSIGHTS_CONNECTION_STRING",
+		azdEnv["APPLICATIONINSIGHTS_CONNECTION_STRING"],
+	)
 
 	return env
 }
 
-// envSliceHasKey reports whether the env slice already contains an entry for the given key.
+func appendEnvValue(env []string, key string, value string) []string {
+	if value == "" || envSliceHasKey(env, key) {
+		return env
+	}
+	return append(env, fmt.Sprintf("%s=%s", key, value))
+}
+
+// envSliceHasKey reports whether env contains an entry for key.
 func envSliceHasKey(env []string, key string) bool {
-	prefix := key + "="
-	return slices.ContainsFunc(env, func(entry string) bool {
-		return strings.HasPrefix(entry, prefix)
-	})
+	_, found := envSliceValue(env, key)
+	return found
+}
+
+func envSliceValue(env []string, key string) (string, bool) {
+	for _, entry := range env {
+		entryKey, value, found := strings.Cut(entry, "=")
+		if !found {
+			continue
+		}
+		if runtime.GOOS == "windows" {
+			if strings.EqualFold(entryKey, key) {
+				return value, true
+			}
+			continue
+		}
+		if entryKey == key {
+			return value, true
+		}
+	}
+	return "", false
 }
 
 // loadAzdEnvironment reads all key-value pairs from the current azd environment.
@@ -999,11 +1280,22 @@ func emitNextAfterBind(
 	_ = printNextIfTerminal(os.Stdout, nextstep.ResolveAfterRun(state, serviceName, readmeExistsForProject(ctx, azdClient)))
 }
 
-// portReadyBudget is the wall-clock ceiling for waitForPortReady;
-// most agent runtimes (uvicorn, dotnet, node) bind within a second
-// of start so 5 s is generous without making a failed boot drag
-// the user's attention.
-const portReadyBudget = 5 * time.Second
+// portReadyBudget is the wall-clock ceiling for waitForPortReady, which
+// spans process-start → the server accepting on the loopback port.
+// (Dependency setup — venv creation + pip install — runs before the
+// server process is spawned, so it is NOT part of this window.) The gap
+// this budget covers is the interpreter booting and importing the agent
+// stack before it binds: empirically ~3–5 s for a minimal sample and
+// ~8 s once heavier frameworks (e.g. agent_framework) are imported, with
+// more on cold caches or slow CI. A short budget gives up before the
+// listener is up, so the "Agent ready" signal never prints and a user
+// (or coding agent) following the quickstart fires `invoke --local`
+// against a listener that isn't accepting yet. 90 s leaves generous
+// headroom for slow imports while still bounding a genuinely stuck boot.
+// The budget is effectively free: it only governs a background goroutine
+// that prints a readiness hint, and waitForPortReady honors ctx.Done, so
+// Ctrl+C during the wait returns immediately. See issue #8411.
+const portReadyBudget = 90 * time.Second
 
 // portReadyPollInterval is how often waitForPortReady probes the
 // loopback address; 100 ms is short enough to feel snappy while

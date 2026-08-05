@@ -4,22 +4,27 @@
 package cmd
 
 import (
+	"context"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-func TestLooksLikeFoundryAzureYaml(t *testing.T) {
+func TestInspectAzureYaml(t *testing.T) {
 	tests := []struct {
-		name    string
-		content string
-		want    bool
+		name             string
+		content          string
+		wantServices     bool
+		wantAgentService bool
 	}{
 		{
 			name: "unified azure.yaml with split foundry hosts",
@@ -31,16 +36,34 @@ services:
     host: azure.ai.agent
     kind: hosted
 `,
-			want: true,
+			wantServices:     true,
+			wantAgentService: true,
 		},
 		{
-			name: "legacy microsoft.foundry host",
+			name: "unsupported microsoft.foundry host",
 			content: `name: foundry-legacy
 services:
   agents:
     host: microsoft.foundry
 `,
-			want: true,
+			wantServices: true,
+		},
+		{
+			name: "unified azure.yaml with only sibling Foundry hosts",
+			content: `name: foundry-resources
+services:
+  ai-project:
+    host: azure.ai.project
+  search-connection:
+    host: azure.ai.connection
+  toolbox:
+    host: azure.ai.toolbox
+  summarize:
+    host: azure.ai.skill
+  daily-report:
+    host: azure.ai.routine
+`,
+			wantServices: true,
 		},
 		{
 			name: "agent manifest with top-level template",
@@ -51,7 +74,7 @@ template:
 parameters: {}
 resources: []
 `,
-			want: false,
+			wantServices: false,
 		},
 		{
 			name: "azure.yaml with only non-foundry services",
@@ -61,24 +84,21 @@ services:
     host: containerapp
     language: js
 `,
-			want: false,
+			wantServices: true,
 		},
 		{
 			name:    "empty content",
 			content: "",
-			want:    false,
 		},
 		{
 			name:    "malformed yaml",
 			content: "name: [unterminated",
-			want:    false,
 		},
 		{
 			name: "services present but not a map",
 			content: `name: broken
 services: just-a-string
 `,
-			want: false,
 		},
 		{
 			name: "service without host",
@@ -87,15 +107,134 @@ services:
   ai-project:
     deployments: []
 `,
-			want: false,
+			wantServices: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, looksLikeFoundryAzureYaml([]byte(tt.content)))
+			info, err := inspectAzureYaml([]byte(tt.content), "")
+			require.NoError(t, err)
+			require.Equal(t, tt.wantServices, info.hasServices)
+			require.Equal(t, tt.wantAgentService, info.hasAgentService)
 		})
 	}
+}
+
+func TestDeclaresAgentService_LocalServiceRef(t *testing.T) {
+	root := t.TempDir()
+	refPath := filepath.Join(root, "services", "agent.yaml")
+	require.NoError(t, os.MkdirAll(filepath.Dir(refPath), 0700))
+	require.NoError(t, os.WriteFile(refPath, []byte("host: azure.ai.agent\nkind: hosted\n"), 0600))
+
+	content := []byte(`name: foundry-ref
+services:
+  ai-project:
+    host: azure.ai.project
+  assistant:
+    $ref: ./services/agent.yaml
+`)
+
+	info, err := inspectAzureYaml(content, root)
+	require.NoError(t, err)
+	require.True(t, info.hasServices)
+	require.True(t, info.hasAgentService)
+	require.False(t, info.hasUnresolvedRefs)
+}
+
+func TestInspectAzureYaml_LocalServiceRefValidation(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "services"), 0700))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "services", "project.yaml"),
+		[]byte("host: azure.ai.project\n"),
+		0600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "services", "agent.yaml"),
+		[]byte("host: azure.ai.agent\n"),
+		0600,
+	))
+
+	t.Run("non-Agent ref", func(t *testing.T) {
+		info, err := inspectAzureYaml([]byte(`services:
+  project:
+    $ref: ./services/project.yaml
+`), root)
+		require.NoError(t, err)
+		require.True(t, info.hasServices)
+		require.False(t, info.hasAgentService)
+	})
+
+	t.Run("inline host overrides referenced host", func(t *testing.T) {
+		info, err := inspectAzureYaml([]byte(`services:
+  project:
+    $ref: ./services/agent.yaml
+    host: azure.ai.project
+`), root)
+		require.NoError(t, err)
+		require.True(t, info.hasServices)
+		require.False(t, info.hasAgentService)
+	})
+
+	t.Run("missing ref is returned", func(t *testing.T) {
+		_, err := inspectAzureYaml([]byte(`services:
+  agent:
+    $ref: ./services/missing.yaml
+`), root)
+		require.ErrorContains(t, err, "cannot read")
+	})
+
+	t.Run("remote ref is returned", func(t *testing.T) {
+		_, err := inspectAzureYaml([]byte(`services:
+  agent:
+    $ref: https://example.com/agent.yaml
+`), root)
+		require.ErrorContains(t, err, "remote includes are not supported")
+	})
+}
+
+func TestInspectAzureYaml_RemoteServiceRefIsDeferred(t *testing.T) {
+	info, err := inspectAzureYaml([]byte(`services:
+  agent:
+    $ref: ./services/agent.yaml
+`), "")
+	require.NoError(t, err)
+	require.True(t, info.hasServices)
+	require.False(t, info.hasAgentService)
+	require.True(t, info.hasUnresolvedRefs)
+}
+
+func TestValidateStagedAzureYamlRequiresAgentService(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte("services:\n  project:\n    host: azure.ai.project\n"),
+		0600,
+	))
+
+	err := validateStagedAzureYaml(root, filepath.Join(root, "azure.yaml"))
+	require.Error(t, err)
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	require.Equal(t, exterrors.CodeInvalidManifestPointer, localErr.Code)
+	require.Contains(t, localErr.Message, "does not declare an agent service")
+}
+
+func TestValidateStagedAzureYamlReturnsRefErrors(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte(`services:
+  agent:
+    $ref: ./services/missing.yaml
+`),
+		0600,
+	))
+
+	err := validateStagedAzureYaml(root, filepath.Join(root, "azure.yaml"))
+	require.ErrorContains(t, err, "cannot read")
+	require.ErrorContains(t, err, "missing.yaml")
 }
 
 func TestFoundryProjectName(t *testing.T) {
@@ -552,6 +691,251 @@ services:
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestAdoptedAgentNameConfig(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		svc      *azdext.ServiceConfig
+		wantName string
+		wantPath string
+	}{
+		{
+			name: "unified inline hosted agent",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("inline-agent"),
+				}},
+			},
+			wantName: "inline-agent",
+			wantPath: "name",
+		},
+		{
+			name: "unified inline workflow agent",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("workflow"),
+					"name": structpb.NewStringValue("workflow-agent"),
+				}},
+			},
+			wantName: "workflow-agent",
+			wantPath: "name",
+		},
+		{
+			name: "deprecated config-nested agent",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"docker": structpb.NewStructValue(&structpb.Struct{}),
+				}},
+				Config: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("legacy-agent"),
+				}},
+			},
+			wantName: "legacy-agent",
+			wantPath: "config.name",
+		},
+		{
+			name: "inline definition remains authoritative during partial migration",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+				}},
+				Config: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("legacy-agent"),
+				}},
+			},
+			wantPath: "name",
+		},
+		{
+			name: "service properties without agent definition",
+			svc: &azdext.ServiceConfig{
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"name": structpb.NewStringValue("not-an-agent-definition"),
+				}},
+			},
+		},
+		{name: "nil service"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			gotName, gotPath := adoptedAgentNameConfig(tt.svc)
+			require.Equal(t, tt.wantName, gotName)
+			require.Equal(t, tt.wantPath, gotPath)
+		})
+	}
+}
+
+func TestAdoptedAgentNameConflictSuggestion(t *testing.T) {
+	t.Parallel()
+
+	suggestion := adoptedAgentNameConflictSuggestion()
+	require.Contains(t, suggestion, "adopted azure.yaml")
+	require.NotContains(t, suggestion, "--agent-name")
+}
+
+func newAdoptedAgentNameTestClient(
+	t *testing.T,
+	projectServer azdext.ProjectServiceServer,
+	promptServer azdext.PromptServiceServer,
+) *azdext.AzdClient {
+	t.Helper()
+
+	grpcServer := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(grpcServer, projectServer)
+	azdext.RegisterPromptServiceServer(grpcServer, promptServer)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	go func() {
+		_ = grpcServer.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		client.Close()
+	})
+
+	return client
+}
+
+func TestUpdateAdoptedAgentNames_PersistsReplacement(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"agent-service": {
+				Name: "agent-service",
+				Host: AiAgentHost,
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("existing-agent"),
+				}},
+			},
+			"ai-project": {
+				Name: "ai-project",
+				Host: AiProjectHost,
+			},
+		},
+	}
+	prompts := &testPromptServiceServer{
+		confirmResponses: []bool{false},
+		promptResponses:  []string{"replacement-agent"},
+	}
+	client := newAdoptedAgentNameTestClient(t, server, prompts)
+	checker := &fakeConflictAgentChecker{
+		exists: map[string]bool{"existing-agent": true},
+	}
+
+	err := updateAdoptedAgentNames(
+		t.Context(),
+		client,
+		func(ctx context.Context, agentName string) (string, error) {
+			return resolveExistingAgentNameConflictWithChecker(
+				ctx,
+				client,
+				checker,
+				false,
+				agentName,
+			)
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{"existing-agent", "replacement-agent"}, checker.calls)
+	require.Len(t, prompts.confirmRequests, 1)
+	require.Len(t, prompts.promptRequests, 1)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Equal(t, "agent-service", server.configValues["name"].serviceName)
+	require.Equal(t, "replacement-agent", server.configValues["name"].value)
+}
+
+func TestUpdateAdoptedAgentNames_UsesLegacyConfigPath(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"agent-service": {
+				Name: "agent-service",
+				Host: AiAgentHost,
+				Config: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("existing-agent"),
+				}},
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	err := updateAdoptedAgentNames(
+		t.Context(),
+		client,
+		func(_ context.Context, _ string) (string, error) {
+			return "replacement-agent", nil
+		},
+	)
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Equal(t, "agent-service", server.configValues["config.name"].serviceName)
+	require.Equal(t, "replacement-agent", server.configValues["config.name"].value)
+}
+
+func TestUpdateAdoptedAgentNames_UnchangedNamesAreNotWritten(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"zeta-service": {
+				Name: "zeta-service",
+				Host: AiAgentHost,
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("zeta-agent"),
+				}},
+			},
+			"alpha-service": {
+				Name: "alpha-service",
+				Host: AiAgentHost,
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+					"name": structpb.NewStringValue("alpha-agent"),
+				}},
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	var checkedNames []string
+	err := updateAdoptedAgentNames(
+		t.Context(),
+		client,
+		func(_ context.Context, agentName string) (string, error) {
+			checkedNames = append(checkedNames, agentName)
+			return agentName, nil
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{"alpha-agent", "zeta-agent"}, checkedNames)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Empty(t, server.configValues)
 }
 
 // TestStampProjectEndpoint_WritesEndpoint verifies that stampProjectEndpoint

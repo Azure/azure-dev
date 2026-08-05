@@ -210,9 +210,10 @@ type ResourceRef struct {
 // underscores — the convention used by the deploy-time env-var writer in
 // project/service_target_agent.go.
 type ServiceState struct {
-	Name         string
-	Host         string
-	Protocol     string
-	RelativePath string
-	IsDeployed   bool
+	Name          string
+	Host          string
+	Protocol      string
+	MultiProtocol bool
+	RelativePath  string
+	IsDeployed    bool
 }

@@ -315,6 +315,15 @@ func (m *mockProjectManager) Initialize(ctx context.Context, projectConfig *proj
 	return m.Called(ctx, projectConfig).Error(0)
 }
 
+func (m *mockProjectManager) InitializeFrameworks(
+	ctx context.Context, projectConfig *project.ProjectConfig,
+) ([]*project.ServiceConfig, []project.ServiceFrameworkInitFailure, error) {
+	args := m.Called(ctx, projectConfig)
+	services, _ := args.Get(0).([]*project.ServiceConfig)
+	skipped, _ := args.Get(1).([]project.ServiceFrameworkInitFailure)
+	return services, skipped, args.Error(2)
+}
+
 func (m *mockProjectManager) EnsureAllTools(
 	ctx context.Context, projectConfig *project.ProjectConfig, filter project.ServiceFilterPredicate,
 ) error {

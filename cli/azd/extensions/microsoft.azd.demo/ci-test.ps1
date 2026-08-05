@@ -1,4 +1,8 @@
-Write-Host "Run test command(s) here..."
+Write-Host "Running unit tests..."
+go test ./... -count=1
 
-# Exit 0 for success, nonzero exit for failure
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
+
 exit 0

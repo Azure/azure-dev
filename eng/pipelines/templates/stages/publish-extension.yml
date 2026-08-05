@@ -5,9 +5,13 @@ parameters:
     type: string
   - name: SanitizedExtensionId
     type: string
-  - name: PublishToDevRegistry
-    type: boolean
-    default: false
+  - name: PublishToRegistry
+    type: string
+    default: stable
+    values:
+      - stable
+      - dev
+      - nightly
 
 stages:
   - stage: PublishExtension
@@ -29,14 +33,13 @@ stages:
       - template: /eng/pipelines/templates/variables/image.yml
       - template: /eng/pipelines/templates/variables/globals.yml
       #
-      # Scheduled runs publish our nightly builds to a dedicated registry on the
-      # 'nightly' branch (direct push, no PR).
-      #
-      # Manual runs publish to the stable or dev registry via a pull request.
-      - ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+      # Registry channel selection. Nightly publishes (scheduled runs, or a manual
+      # run that selected 'nightly') go to a dedicated registry on the 'nightly'
+      # branch (direct push, no PR). Dev and stable publishes go via a pull request.
+      - ${{ if or(eq(variables['Build.Reason'], 'Schedule'), eq(parameters.PublishToRegistry, 'nightly')) }}:
         - name: ExtensionRegistryFile
           value: registry.nightly.json
-      - ${{ elseif eq(parameters.PublishToDevRegistry, true) }}:
+      - ${{ elseif eq(parameters.PublishToRegistry, 'dev') }}:
         - name: ExtensionRegistryFile
           value: registry.dev.json
         - name: ExtensionRegistryPullRequestPrefix
@@ -52,7 +55,7 @@ stages:
           value: Registry update
 
     jobs:
-      - ${{ if ne(variables['Build.Reason'], 'Schedule') }}:
+      - ${{ if and(ne(variables['Build.Reason'], 'Schedule'), ne(parameters.PublishToRegistry, 'nightly')) }}:
         - job: Create_GitHub_Release
           dependsOn: []
           condition: >-
@@ -92,7 +95,7 @@ stages:
       # production governance (package-publish approval on manual runs). No
       # GH_TOKEN needed here. azcopy --overwrite=true makes retry safe.
       - deployment: Publish_Storage
-        ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+        ${{ if or(eq(variables['Build.Reason'], 'Schedule'), eq(parameters.PublishToRegistry, 'nightly')) }}:
           dependsOn: []
           environment: none
         ${{ else }}:
@@ -111,7 +114,7 @@ stages:
 
         templateContext:
           type: releaseJob
-          ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+          ${{ if or(eq(variables['Build.Reason'], 'Schedule'), eq(parameters.PublishToRegistry, 'nightly')) }}:
             isProduction: false
           ${{ else }}:
             isProduction: true
@@ -128,7 +131,7 @@ stages:
                   parameters:
                     Use1ESArtifactTask: true
 
-                - ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+                - ${{ if or(eq(variables['Build.Reason'], 'Schedule'), eq(parameters.PublishToRegistry, 'nightly')) }}:
                   - pwsh: |
                       # Nightly: always-latest folder, overwritten each run.
                       $publishUploadLocations = '${{ parameters.SanitizedExtensionId }}/nightly'
@@ -184,7 +187,7 @@ stages:
               azd ext install microsoft.azd.extensions --source azd
             displayName: Install microsoft.azd.extensions
 
-          - ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+          - ${{ if or(eq(variables['Build.Reason'], 'Schedule'), eq(parameters.PublishToRegistry, 'nightly')) }}:
             # Nightly: there is no GitHub release, so publish from the local
             # release artifacts and direct-push the nightly registry to the
             # 'nightly' branch with a fetch/reset/retry loop so concurrent
@@ -275,7 +278,7 @@ stages:
               env:
                 GH_TOKEN: $(GH_TOKEN)
 
-            - ${{ if ne(parameters.PublishToDevRegistry, true) }}:
+            - ${{ if ne(parameters.PublishToRegistry, 'dev') }}:
               - bash: |
                   set -euo pipefail
                   cd cli/azd

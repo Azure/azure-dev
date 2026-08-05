@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -17,16 +18,38 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// fakeStepRenderer records the step spinner calls the installer makes, so
+// tests can assert the per-step titles and any skill-count sub-line.
+type fakeStepRenderer struct {
+	starts   []string
+	stops    []string
+	messages []string
+}
+
+func (f *fakeStepRenderer) ShowSpinner(_ context.Context, title string, _ input.SpinnerUxType) {
+	f.starts = append(f.starts, title)
+}
+
+func (f *fakeStepRenderer) StopSpinner(_ context.Context, lastMessage string, _ input.SpinnerUxType) {
+	f.stops = append(f.stops, lastMessage)
+}
+
+func (f *fakeStepRenderer) Message(_ context.Context, message string) {
+	f.messages = append(f.messages, message)
+}
 
 // ---------------------------------------------------------------------------
 // mockDetector — simple in-package mock for the Detector interface
@@ -41,10 +64,10 @@ type mockDetector struct {
 		ctx context.Context,
 		tools []*ToolDefinition,
 	) ([]*ToolStatus, error)
-	detectSkillHostsFn func(
+	detectSkillAgentsFn func(
 		ctx context.Context,
 		tool *ToolDefinition,
-	) ([]InstalledSkillHost, error)
+	) ([]InstalledSkillAgent, error)
 }
 
 func (m *mockDetector) DetectTool(
@@ -71,32 +94,32 @@ func (m *mockDetector) DetectAll(
 	return results, nil
 }
 
-func (m *mockDetector) DetectSkillHosts(
+func (m *mockDetector) DetectSkillAgents(
 	ctx context.Context,
 	tool *ToolDefinition,
-) ([]InstalledSkillHost, error) {
-	if m.detectSkillHostsFn != nil {
-		return m.detectSkillHostsFn(ctx, tool)
+) ([]InstalledSkillAgent, error) {
+	if m.detectSkillAgentsFn != nil {
+		return m.detectSkillAgentsFn(ctx, tool)
 	}
-	// Default (host-agnostic): when detectToolFn reports the skill
-	// installed, treat every configured host as having that version. This
-	// keeps host-selection tests passing without per-host wiring;
-	// host-scoped verification is covered by tests that set
-	// detectSkillHostsFn explicitly.
+	// Default (agent-agnostic): when detectToolFn reports the skill
+	// installed, treat every configured agent as having that version. This
+	// keeps agent-selection tests passing without per-agent wiring;
+	// agent-scoped verification is covered by tests that set
+	// detectSkillAgentsFn explicitly.
 	if m.detectToolFn != nil && tool != nil {
 		status, err := m.detectToolFn(ctx, tool)
 		if err != nil {
 			return nil, err
 		}
 		if status != nil && status.Installed {
-			hosts := make([]InstalledSkillHost, 0, len(tool.SkillHosts))
-			for _, h := range tool.SkillHosts {
-				hosts = append(hosts, InstalledSkillHost{
-					Host:    h.Host,
+			agents := make([]InstalledSkillAgent, 0, len(tool.SkillAgents))
+			for _, h := range tool.SkillAgents {
+				agents = append(agents, InstalledSkillAgent{
+					Agent:   h.Command,
 					Version: status.InstalledVersion,
 				})
 			}
-			return hosts, nil
+			return agents, nil
 		}
 	}
 	return nil, nil
@@ -172,6 +195,104 @@ func TestInstall_WithPackageManager(t *testing.T) {
 	assert.Equal(t, "npm", capturedCmd)
 	assert.Contains(t, capturedArgs, "install")
 	assert.Contains(t, capturedArgs, "@test/tool")
+}
+
+// TestRunToolInstall_StepProgress verifies that a non-skill tool install
+// renders a single step spinner for the tool (no per-agent title) and no
+// skill-count sub-line.
+func TestRunToolInstall_StepProgress(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "install")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: true, InstalledVersion: "2.64.0"}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	nonSkill := &ToolDefinition{
+		Id:       "test-tool",
+		Name:     "Test Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/tool",
+		}),
+	}
+
+	r := &fakeStepRenderer{}
+	result, err := inst.Install(t.Context(), nonSkill, WithStepProgress(r))
+	require.NoError(t, err)
+	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
+
+	assert.Equal(t, []string{"Installing Test Tool"}, r.starts)
+	assert.Equal(t, []string{"Installing Test Tool"}, r.stops)
+	assert.Empty(t, r.messages, "non-skill install reports no skill count")
+}
+
+// TestRunToolUpgrade_StepProgress_ShowsVersion verifies that a non-skill
+// upgrade appends the resulting version to the step result line — the same
+// treatment skills get — e.g. "Upgrading Test Tool (v2.64.0)".
+func TestRunToolUpgrade_StepProgress_ShowsVersion(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "update")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: true, InstalledVersion: "2.64.0"}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	nonSkill := &ToolDefinition{
+		Id:       "test-tool",
+		Name:     "Test Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/tool",
+		}),
+	}
+
+	r := &fakeStepRenderer{}
+	result, err := inst.Upgrade(t.Context(), nonSkill, WithStepProgress(r))
+	require.NoError(t, err)
+	require.True(t, result.Success, "upgrade must succeed; err=%v", result.Error)
+
+	assert.Equal(t, []string{"Upgrading Test Tool"}, r.starts)
+	assert.Equal(t, []string{"Upgrading Test Tool (v2.64.0)"}, r.stops,
+		"a non-skill upgrade must report the resulting version, like skills")
 }
 
 func TestInstall_WithInstallCommand(t *testing.T) {
@@ -1146,13 +1267,62 @@ func TestAggregateInstallResults_EmptyInputs(t *testing.T) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-// allSkillHostNames lists the host binary names checked by the prereq
+// allSkillAgentNames lists the agent binary names checked by the prereq
 // logic; tests must explicitly mock every entry so ToolInPath does not
 // fall back to the real PATH on the developer's machine.
-var allSkillHostNames = []string{"copilot", "claude"}
+var allSkillAgentNames = []string{"copilot", "claude"}
+
+// TestRunSkill_Install_UsesConfiguredStdin verifies that when a step spinner is
+// showing, the skill agent command reads stdin from the reader supplied via
+// WithInput (the console's input) rather than the process-global os.Stdin — so
+// an agent prompt is answered on the stream azd owns (e.g. Cobra's redirected
+// input), not the wrong one.
+func TestRunSkill_Install_UsesConfiguredStdin(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+
+	myInput := strings.NewReader("y\n")
+	var pluginStdin io.Reader
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "marketplace")
+	}).Respond(exec.RunResult{ExitCode: 0})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "install")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		pluginStdin = args.StdIn
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillAgentsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillAgent, error) {
+				return []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.70"}}, nil
+			},
+		},
+	)
+
+	var r fakeStepRenderer
+	result, err := inst.Install(
+		t.Context(), newSkillTool(),
+		WithAgents("copilot"),
+		WithStepProgress(&r),
+		WithInput(myInput),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
+
+	assert.Same(t, myInput, pluginStdin,
+		"the plugin install command must read stdin from the WithInput reader, not os.Stdin")
+}
 
 // newSkillTool returns a minimal ToolDefinition exercising the
-// codepaths covered by these tests. The host commands are simplified
+// codepaths covered by these tests. The agent commands are simplified
 // but preserve the structural distinctions (copilot/claude each with a
 // MarketplaceAddCommand).
 func newSkillTool() *ToolDefinition {
@@ -1161,9 +1331,10 @@ func newSkillTool() *ToolDefinition {
 		Name:     "Test Azure Skills",
 		Category: ToolCategorySkill,
 		Priority: ToolPriorityRecommended,
-		SkillHosts: []SkillHost{
+		SkillAgents: []SkillAgent{
 			{
-				Host:                   "copilot",
+				DisplayName:            "copilot",
+				Command:                "copilot",
 				MarketplaceAddCommand:  []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
 				PluginInstallCommand:   []string{"plugin", "install", "azure@azure-skills"},
 				PluginUpdateCommand:    []string{"plugin", "update", "azure@azure-skills"},
@@ -1174,7 +1345,8 @@ func newSkillTool() *ToolDefinition {
 				BinaryVersionRegex:     `(?m)^GitHub Copilot CLI\s+v?(\d+\.\d+\.\d+)`,
 			},
 			{
-				Host: "claude",
+				DisplayName: "claude",
+				Command:     "claude",
 				MarketplaceAddCommand: []string{
 					"plugin", "marketplace", "add", "https://github.com/microsoft/azure-skills",
 				},
@@ -1190,30 +1362,423 @@ func newSkillTool() *ToolDefinition {
 	}
 }
 
-// mockHostPresence wires ToolInPath responses so only the named hosts
-// resolve successfully. Pass an empty slice to mock every host as
-// missing. Present hosts also get a version-probe response whose banner
-// matches the host's anchored BinaryVersionRegex (see newSkillTool), so
-// installer.hostUsable treats them as genuine, functional CLIs rather than
+// TestRunSkill_StepProgress verifies that a silent skill install (the agent
+// CLI writes nothing to the terminal) shows the step spinner for the whole
+// step and stops it with the result, using the display-cased agent name. No
+// skill count is emitted.
+func TestRunSkill_StepProgress(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+
+	// The version-probe ("--version") is handled by mockAgentPresence; the
+	// marketplace-add and plugin-install commands succeed.
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "plugin")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillAgentsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillAgent, error) {
+				return []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.70"}}, nil
+			},
+		},
+	)
+
+	var r fakeStepRenderer
+	result, err := inst.Install(
+		t.Context(), newSkillTool(),
+		WithAgents("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
+
+	// A silent install (the mock agent CLI writes nothing) keeps the spinner
+	// for the whole step, then stops it with the result — no early teardown,
+	// no streamed-output result line, and no skill count.
+	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.starts)
+	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.stops)
+	assert.Empty(t, r.messages)
+}
+
+// TestParseUpgradeOutput covers extracting the version and the "already at
+// latest" state from each agent CLI's plugin-update output.
+func TestParseUpgradeOutput(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name            string
+		in              string
+		wantVersion     string
+		wantAlreadyLast bool
+	}{
+		{
+			name:            "CopilotAlreadyLatest",
+			in:              `updated successfully (v1.1.86, already at latest). 27 skills.`,
+			wantVersion:     "1.1.86",
+			wantAlreadyLast: true,
+		},
+		{
+			name:            "ClaudeUpdatedFromTo",
+			in:              `✔ Plugin "azure" updated from 1.1.73 to 1.1.86 for scope user. Restart to apply changes.`,
+			wantVersion:     "1.1.86",
+			wantAlreadyLast: false,
+		},
+		{
+			name:            "ClaudeAlreadyLatest",
+			in:              `✔ azure is already at the latest version (1.1.86).`,
+			wantVersion:     "1.1.86",
+			wantAlreadyLast: true,
+		},
+		{
+			name:            "NoVersion",
+			in:              "Plugin updated.",
+			wantVersion:     "",
+			wantAlreadyLast: false,
+		},
+		{
+			name:            "Empty",
+			in:              "",
+			wantVersion:     "",
+			wantAlreadyLast: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			gotVersion, gotAlreadyLast := parseUpgradeOutput(tc.in)
+			assert.Equal(t, tc.wantVersion, gotVersion)
+			assert.Equal(t, tc.wantAlreadyLast, gotAlreadyLast)
+		})
+	}
+}
+
+// TestRunSkill_Upgrade_StepResultShowsVersion verifies that an upgrade shows a
+// plain in-progress spinner title and reports the version — parsed from the
+// update command's output — on the result line only.
+func TestRunSkill_Upgrade_StepResultShowsVersion(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+	// The update command reports the new version (claude-style "from A to B").
+	var upgraded bool
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "update")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		upgraded = true
+		return exec.RunResult{
+			ExitCode: 0,
+			Stdout:   `Plugin "azure" updated from 1.1.73 to 1.1.86 for scope user.`,
+		}, nil
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillAgentsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillAgent, error) {
+				// An actual upgrade: the old version before the update runs,
+				// the new version afterwards.
+				version := "1.1.73"
+				if upgraded {
+					version = "1.1.86"
+				}
+				return []InstalledSkillAgent{{Agent: "copilot", Version: version}}, nil
+			},
+		},
+	)
+
+	var r fakeStepRenderer
+	result, err := inst.Upgrade(
+		t.Context(), newSkillTool(),
+		WithAgents("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "upgrade must succeed; err=%v", result.Error)
+	assert.False(t, result.AlreadyUpToDate, "an actual upgrade is not up-to-date")
+
+	// Spinner title has no version; the result line appends the new version.
+	assert.Equal(t, []string{"Upgrading Test Azure Skills in copilot"}, r.starts)
+	assert.Equal(t, []string{"Upgrading Test Azure Skills in copilot (v1.1.86)"}, r.stops)
+}
+
+// TestRunSkill_Upgrade_AlreadyUpToDate verifies that when the agent reports the
+// skill is already at the latest version, the result line says so (with the
+// version) and the result is flagged AlreadyUpToDate.
+func TestRunSkill_Upgrade_AlreadyUpToDate(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "update")
+	}).Respond(exec.RunResult{
+		ExitCode: 0,
+		Stdout:   `updated successfully (v1.1.86, already at latest). 27 skills.`,
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillAgentsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillAgent, error) {
+				return []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.86"}}, nil
+			},
+		},
+	)
+
+	var r fakeStepRenderer
+	result, err := inst.Upgrade(
+		t.Context(), newSkillTool(),
+		WithAgents("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "upgrade must succeed; err=%v", result.Error)
+	assert.True(t, result.AlreadyUpToDate, "nothing changed, so already up to date")
+
+	assert.Equal(t, []string{"Upgrading Test Azure Skills in copilot"}, r.starts)
+	assert.Equal(t, []string{"Test Azure Skills in copilot is already up to date (v1.1.86)."}, r.stops)
+}
+
+// TestRunSkill_Upgrade_DetectionLag_NotUpToDate verifies that when the plugin
+// listing still reports the pre-upgrade version (detection lag) but the upgrade
+// command reports a new version, the operation is NOT misreported as "already
+// up to date": the command-reported version is authoritative over the (laggy)
+// detected version for the equality check.
+func TestRunSkill_Upgrade_DetectionLag_NotUpToDate(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "update")
+	}).Respond(exec.RunResult{
+		ExitCode: 0,
+		Stdout:   `Plugin "azure" updated from 1.0.0 to 2.0.0 for scope user.`,
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillAgentsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillAgent, error) {
+				// Detection lags: the plugin listing keeps reporting the
+				// pre-upgrade version even after the update command succeeds.
+				return []InstalledSkillAgent{{Agent: "copilot", Version: "1.0.0"}}, nil
+			},
+		},
+	)
+
+	var r fakeStepRenderer
+	result, err := inst.Upgrade(
+		t.Context(), newSkillTool(),
+		WithAgents("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "upgrade must succeed; err=%v", result.Error)
+	assert.False(t, result.AlreadyUpToDate,
+		"a reported upgrade must not be marked up-to-date even when detection lags")
+	assert.Equal(t, []string{"Upgrading Test Azure Skills in copilot (v2.0.0)"}, r.stops)
+}
+
+// TestRunSkill_OutputPrintedBelowStep verifies that when the agent CLI writes
+// to the terminal, each line is captured and surfaced via Message below the
+// resolved step line (indented gray sub-section), and the spinner is stopped
+// with the step result before that output is printed.
+func TestRunSkill_OutputPrintedBelowStep(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+
+	// The plugin command writes to the terminal (StdOut), simulating the
+	// agent CLI surfacing progress. Both marketplace-add and install route
+	// their output through the step writer.
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "plugin")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		if args.StdOut != nil {
+			_, _ = args.StdOut.Write([]byte("Installing plugin...\n"))
+		}
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillAgentsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillAgent, error) {
+				return []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.70"}}, nil
+			},
+		},
+	)
+
+	var r fakeStepRenderer
+	result, err := inst.Install(
+		t.Context(), newSkillTool(),
+		WithAgents("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
+
+	// The spinner is shown and stopped with the step result, and the agent
+	// CLI's line is surfaced (indented) below the step line via Message.
+	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.starts)
+	assert.Equal(t, []string{"Installing Test Azure Skills in copilot"}, r.stops)
+	assert.Contains(t, strings.Join(r.messages, "\n"), "Installing plugin...")
+}
+
+// TestRunSkill_Quiet_CapturesOutput verifies that WithQuiet (used for
+// `--output json`) runs the agent CLI command with captured streams instead of
+// connecting it interactively to the process stdout — so agent output cannot
+// leak onto stdout ahead of the JSON result.
+func TestRunSkill_Quiet_CapturesOutput(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+
+	var (
+		pluginInteractive bool
+		pluginHadStdOut   bool
+	)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "plugin")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		if slices.Contains(args.Args, "install") {
+			pluginInteractive = args.Interactive
+			pluginHadStdOut = args.StdOut != nil
+		}
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillAgentsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillAgent, error) {
+				return []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.70"}}, nil
+			},
+		},
+	)
+
+	// No renderer (as in JSON mode) + WithQuiet.
+	result, err := inst.Install(t.Context(), newSkillTool(), WithAgents("copilot"), WithQuiet())
+	require.NoError(t, err)
+	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
+
+	assert.False(t, pluginInteractive,
+		"quiet mode must not run the agent command interactively (would write to stdout)")
+	assert.True(t, pluginHadStdOut,
+		"quiet mode must route the agent command's stdout to a captured writer")
+}
+
+// TestSkillAgent_DisplayVsCommand verifies the split between the display Agent
+// and the lowercase Command: the CLI is exec'd by Command, the step spinner
+// uses the display Agent, and --agent resolves via Command even when it
+// differs from the Agent.
+func TestSkillAgent_DisplayVsCommand(t *testing.T) {
+	t.Parallel()
+
+	skill := &ToolDefinition{
+		Id:       "test-azure-skills",
+		Name:     "Test Azure Skills",
+		Category: ToolCategorySkill,
+		SkillAgents: []SkillAgent{{
+			DisplayName:           "GitHub Copilot CLI", // display name (differs from Command)
+			Command:               "copilot",            // exec binary
+			MarketplaceAddCommand: []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
+			PluginInstallCommand:  []string{"plugin", "install", "azure@azure-skills"},
+			PluginListCommand:     []string{"plugin", "list"},
+			PluginName:            "azure@azure-skills",
+			BinaryVersionArgs:     []string{"--version"},
+			BinaryVersionRegex:    `(?m)^GitHub Copilot CLI\s+v?(\d+\.\d+\.\d+)`,
+		}},
+	}
+
+	runner := mockexec.NewMockCommandRunner()
+	runner.MockToolInPath("copilot", nil) // looked up by the lowercase Command
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "GitHub Copilot CLI 1.1.70"})
+	var execCmds []string
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "plugin")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		execCmds = append(execCmds, args.Cmd)
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	det := &mockDetector{
+		detectSkillAgentsFn: func(_ context.Context, _ *ToolDefinition) ([]InstalledSkillAgent, error) {
+			// DetectSkillAgents reports the command identity (see
+			// InstalledSkillAgent.Agent), so verification matches by command.
+			return []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.70"}}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	// --agent "copilot" (the Command) must resolve even though the Agent is the
+	// full display name "GitHub Copilot CLI".
+	var r fakeStepRenderer
+	result, err := inst.Install(t.Context(), skill, WithAgents("copilot"), WithStepProgress(&r))
+	require.NoError(t, err)
+	require.True(t, result.Success, "install must succeed; err=%v", result.Error)
+
+	require.NotEmpty(t, execCmds, "the agent CLI must be exec'd")
+	for _, c := range execCmds {
+		assert.Equal(t, "copilot", c, "exec must use the lowercase Command, not display Agent")
+	}
+	require.NotEmpty(t, r.starts, "the step spinner must be shown")
+	assert.Equal(t, []string{"Installing Test Azure Skills in GitHub Copilot CLI"}, r.starts,
+		"the step spinner must use the display-cased Agent")
+}
+
+// mockAgentPresence wires ToolInPath responses so only the named agents
+// resolve successfully. Pass an empty slice to mock every agent as
+// missing. Present agents also get a version-probe response whose banner
+// matches the agent's anchored BinaryVersionRegex (see newSkillTool), so
+// installer.agentUsable treats them as genuine, functional CLIs rather than
 // launcher stubs. Tests that want to simulate a stub register their own
 // later "--version" expectation, which wins (last match).
-func mockHostPresence(
+func mockAgentPresence(
 	runner *mockexec.MockCommandRunner,
 	present ...string,
 ) {
-	// Per-host `--version` banner that satisfies the host's anchored
+	// Per-agent `--version` banner that satisfies the agent's anchored
 	// BinaryVersionRegex.
 	versionBanner := map[string]string{
 		"copilot": "GitHub Copilot CLI 1.1.70",
 		"claude":  "1.1.70 (Claude Code)",
 	}
-	for _, h := range allSkillHostNames {
+	for _, h := range allSkillAgentNames {
 		if slices.Contains(present, h) {
 			runner.MockToolInPath(h, nil)
-			host := h
+			agent := h
 			banner := versionBanner[h]
 			runner.When(func(args exec.RunArgs, _ string) bool {
-				return args.Cmd == host && slices.Contains(args.Args, "--version")
+				return args.Cmd == agent && slices.Contains(args.Args, "--version")
 			}).Respond(exec.RunResult{Stdout: banner, ExitCode: 0})
 		} else {
 			runner.MockToolInPath(h, errors.New("not found"))
@@ -1269,37 +1834,37 @@ func installedDetector(version string) *mockDetector {
 }
 
 // ---------------------------------------------------------------------------
-// runSkill — host selection
+// runSkill — agent selection
 // ---------------------------------------------------------------------------
 
-func TestRunSkill_PicksFirstAvailableHost(t *testing.T) {
+func TestRunSkill_PicksFirstAvailableAgent(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
 		name       string
 		present    []string
-		wantHost   string
+		wantAgent  string
 		wantCmd    string
 		wantPlugin string
 	}{
 		{
 			name:       "CopilotOnly",
 			present:    []string{"copilot"},
-			wantHost:   "copilot",
+			wantAgent:  "copilot",
 			wantCmd:    "copilot",
 			wantPlugin: "azure@azure-skills",
 		},
 		{
 			name:       "ClaudeOnly",
 			present:    []string{"claude"},
-			wantHost:   "claude",
+			wantAgent:  "claude",
 			wantCmd:    "claude",
 			wantPlugin: "azure@azure-skills",
 		},
 		{
 			name:       "AllPresent_PrefersCopilot",
-			present:    allSkillHostNames,
-			wantHost:   "copilot",
+			present:    allSkillAgentNames,
+			wantAgent:  "copilot",
 			wantCmd:    "copilot",
 			wantPlugin: "azure@azure-skills",
 		},
@@ -1310,7 +1875,7 @@ func TestRunSkill_PicksFirstAvailableHost(t *testing.T) {
 			t.Parallel()
 
 			runner := mockexec.NewMockCommandRunner()
-			mockHostPresence(runner, tc.present...)
+			mockAgentPresence(runner, tc.present...)
 			runner.MockToolInPath("node", nil)
 
 			var ranInstall bool
@@ -1329,13 +1894,13 @@ func TestRunSkill_PicksFirstAvailableHost(t *testing.T) {
 				}
 				return exec.RunResult{ExitCode: 0}, nil
 			})
-			// Marketplace-add fallback for hosts that have one.
+			// Marketplace-add fallback for agents that have one.
 			runner.When(func(args exec.RunArgs, _ string) bool {
 				return slices.Contains(args.Args, "marketplace")
 			}).Respond(exec.RunResult{ExitCode: 0})
 
 			// Detector reflects reality: the skill becomes "installed"
-			// only after the host's install command runs, so on a fresh
+			// only after the agent's install command runs, so on a fresh
 			// install the pre-verify detect reports not-installed and the
 			// install command still runs.
 			det := &mockDetector{
@@ -1364,7 +1929,7 @@ func TestRunSkill_PicksFirstAvailableHost(t *testing.T) {
 				result.Success,
 				"expected success; result.Error=%v", result.Error,
 			)
-			assert.Equal(t, tc.wantHost, result.Strategy)
+			assert.Equal(t, tc.wantAgent, result.Strategy)
 			assert.Equal(t, "1.1.70", result.InstalledVersion)
 			assert.True(t, ranInstall,
 				"expected plugin install command to run; args=%v",
@@ -1374,11 +1939,11 @@ func TestRunSkill_PicksFirstAvailableHost(t *testing.T) {
 	}
 }
 
-func TestRunSkill_NoHost_FailsWithSuggestion(t *testing.T) {
+func TestRunSkill_NoAgent_FailsWithSuggestion(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner /* none present */)
+	mockAgentPresence(runner /* none present */)
 	runner.MockToolInPath("node", nil)
 
 	inst := NewInstaller(
@@ -1411,15 +1976,15 @@ func TestRunSkill_NoHost_FailsWithSuggestion(t *testing.T) {
 	assert.Contains(t, ews.Links[0].Title, "GitHub Copilot CLI")
 }
 
-// TestRunSkill_Install_LauncherStubHost_ReturnsInstallGuidance verifies
-// that a host binary present on PATH but non-functional — e.g. the VS Code
+// TestRunSkill_Install_LauncherStubAgent_ReturnsInstallGuidance verifies
+// that an agent binary present on PATH but non-functional — e.g. the VS Code
 // Copilot Chat extension's `copilot` launcher stub, which only prompts to
-// install the real CLI and exits 0 — is not mistaken for a usable host.
+// install the real CLI and exits 0 — is not mistaken for a usable agent.
 // The install must fail with the same clean "install GitHub Copilot CLI"
-// guidance as a host that is entirely absent (matching Windows), never the
+// guidance as an agent that is entirely absent (matching Windows), never the
 // misleading "was installed via copilot but verification failed", and must
 // not attempt any plugin command through the stub.
-func TestRunSkill_Install_LauncherStubHost_ReturnsInstallGuidance(t *testing.T) {
+func TestRunSkill_Install_LauncherStubAgent_ReturnsInstallGuidance(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
@@ -1483,14 +2048,14 @@ func TestRunSkill_Install_LauncherStubHost_ReturnsInstallGuidance(t *testing.T) 
 	// stub's response (guards against a silent mock-precedence flip that would
 	// otherwise let a stub be treated as usable without failing this test).
 	assert.True(t, stubVersionProbed,
-		"hostUsable must probe `copilot --version` and observe the stub response")
+		"agentUsable must probe `copilot --version` and observe the stub response")
 }
 
 // TestRunSkill_Install_StubWithIncidentalVersion_Rejected verifies that a
 // launcher stub is still rejected when its output contains a version-shaped
 // token that is not a genuine version report — e.g. a bundled node version, a
 // path build number, or even a line that starts with the real CLI's banner
-// prefix but carries no version. BinaryVersionRegex is anchored to the host's
+// prefix but carries no version. BinaryVersionRegex is anchored to the agent's
 // `--version` banner, so only a real version line counts.
 func TestRunSkill_Install_StubWithIncidentalVersion_Rejected(t *testing.T) {
 	t.Parallel()
@@ -1553,7 +2118,7 @@ func TestRunSkill_NodeMissing_WarnsButProceeds(t *testing.T) {
 	// tests in this package.
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot")
+	mockAgentPresence(runner, "copilot")
 	// node intentionally NOT on PATH — must produce only a warning.
 	runner.MockToolInPath("node", errors.New("not found"))
 
@@ -1592,7 +2157,7 @@ func TestRunSkill_Upgrade_RunsUpdateCommand_NotMarketplaceAdd(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot")
+	mockAgentPresence(runner, "copilot")
 	runner.MockToolInPath("node", nil)
 
 	var sawMarketplaceAdd bool
@@ -1617,10 +2182,10 @@ func TestRunSkill_Upgrade_RunsUpdateCommand_NotMarketplaceAdd(t *testing.T) {
 	inst := NewInstaller(
 		runner, NewPlatformDetector(runner),
 		&mockDetector{
-			detectSkillHostsFn: func(
+			detectSkillAgentsFn: func(
 				_ context.Context, _ *ToolDefinition,
-			) ([]InstalledSkillHost, error) {
-				return []InstalledSkillHost{{Host: "copilot", Version: "1.1.71"}}, nil
+			) ([]InstalledSkillAgent, error) {
+				return []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.71"}}, nil
 			},
 		},
 	)
@@ -1636,32 +2201,32 @@ func TestRunSkill_Upgrade_RunsUpdateCommand_NotMarketplaceAdd(t *testing.T) {
 		"copilot upgrade must not also run plugin install")
 }
 
-// TestRunSkill_Upgrade_PrefersInstalledHost verifies that, with no
-// explicit --host, an upgrade targets the host the detector reports the
-// skill is installed through — not simply the first host on PATH.
-func TestRunSkill_Upgrade_PrefersInstalledHost(t *testing.T) {
+// TestRunSkill_Upgrade_PrefersInstalledAgent verifies that, with no
+// explicit --agent, an upgrade targets the agent the detector reports the
+// skill is installed through — not simply the first agent on PATH.
+func TestRunSkill_Upgrade_PrefersInstalledAgent(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot", "claude") // both on PATH
+	mockAgentPresence(runner, "copilot", "claude") // both on PATH
 	runner.MockToolInPath("node", nil)
 
-	var updatedHost string
+	var updatedAgent string
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return (args.Cmd == "copilot" || args.Cmd == "claude") &&
 			slices.Contains(args.Args, "update")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		updatedHost = args.Cmd
+		updatedAgent = args.Cmd
 		return exec.RunResult{ExitCode: 0}, nil
 	})
 
 	// The detector reports the skill is installed via claude, even though
 	// copilot is listed first; the upgrade must run against claude.
 	det := &mockDetector{
-		detectSkillHostsFn: func(
+		detectSkillAgentsFn: func(
 			_ context.Context, _ *ToolDefinition,
-		) ([]InstalledSkillHost, error) {
-			return []InstalledSkillHost{{Host: "claude", Version: "1.1.71"}}, nil
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{{Agent: "claude", Version: "1.1.71"}}, nil
 		},
 	}
 
@@ -1671,39 +2236,39 @@ func TestRunSkill_Upgrade_PrefersInstalledHost(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.Success, "result.Error=%v", result.Error)
 	assert.Equal(t, "claude", result.Strategy)
-	assert.Equal(t, "claude", updatedHost,
-		"upgrade must target the host that has the skill (claude), "+
+	assert.Equal(t, "claude", updatedAgent,
+		"upgrade must target the agent that has the skill (claude), "+
 			"not the first on PATH (copilot)",
 	)
 }
 
-// TestRunSkill_Upgrade_AllInstalledHosts verifies that, with no explicit
-// --host, an upgrade refreshes EVERY host the skill is installed through
-// (not just the first), so a multi-host install is kept fully current.
-func TestRunSkill_Upgrade_AllInstalledHosts(t *testing.T) {
+// TestRunSkill_Upgrade_AllInstalledAgents verifies that, with no explicit
+// --agent, an upgrade refreshes EVERY agent the skill is installed through
+// (not just the first), so a multi-agent install is kept fully current.
+func TestRunSkill_Upgrade_AllInstalledAgents(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot", "claude")
+	mockAgentPresence(runner, "copilot", "claude")
 	runner.MockToolInPath("node", nil)
 
-	var updatedHosts []string
+	var updatedAgents []string
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return (args.Cmd == "copilot" || args.Cmd == "claude") &&
 			slices.Contains(args.Args, "update")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		updatedHosts = append(updatedHosts, args.Cmd)
+		updatedAgents = append(updatedAgents, args.Cmd)
 		return exec.RunResult{ExitCode: 0}, nil
 	})
 
 	// The skill is installed through BOTH copilot and claude.
 	det := &mockDetector{
-		detectSkillHostsFn: func(
+		detectSkillAgentsFn: func(
 			_ context.Context, _ *ToolDefinition,
-		) ([]InstalledSkillHost, error) {
-			return []InstalledSkillHost{
-				{Host: "copilot", Version: "1.1.71"},
-				{Host: "claude", Version: "1.1.71"},
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{
+				{Agent: "copilot", Version: "1.1.71"},
+				{Agent: "claude", Version: "1.1.71"},
 			}, nil
 		},
 	}
@@ -1713,20 +2278,20 @@ func TestRunSkill_Upgrade_AllInstalledHosts(t *testing.T) {
 	result, err := inst.Upgrade(t.Context(), newSkillTool())
 	require.NoError(t, err)
 	require.True(t, result.Success, "result.Error=%v", result.Error)
-	assert.ElementsMatch(t, []string{"copilot", "claude"}, updatedHosts,
-		"upgrade with no --host must refresh every installed host")
+	assert.ElementsMatch(t, []string{"copilot", "claude"}, updatedAgents,
+		"upgrade with no --agent must refresh every installed agent")
 	assert.Contains(t, result.Strategy, "copilot")
 	assert.Contains(t, result.Strategy, "claude")
 }
 
-// TestRunSkill_Upgrade_PrintsPerHostHeader verifies a header line is
-// printed before each host's (interactive) command output so the user
-// can tell which host the streamed output belongs to.
-func TestRunSkill_Upgrade_PrintsPerHostHeader(t *testing.T) {
+// TestRunSkill_Upgrade_PrintsPerAgentHeader verifies a header line is
+// printed before each agent's (interactive) command output so the user
+// can tell which agent the streamed output belongs to.
+func TestRunSkill_Upgrade_PrintsPerAgentHeader(t *testing.T) {
 	// NOT parallel: captureStderr mutates the global os.Stderr.
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot", "claude")
+	mockAgentPresence(runner, "copilot", "claude")
 	runner.MockToolInPath("node", nil)
 
 	runner.When(func(args exec.RunArgs, _ string) bool {
@@ -1735,12 +2300,12 @@ func TestRunSkill_Upgrade_PrintsPerHostHeader(t *testing.T) {
 	}).Respond(exec.RunResult{ExitCode: 0})
 
 	det := &mockDetector{
-		detectSkillHostsFn: func(
+		detectSkillAgentsFn: func(
 			_ context.Context, _ *ToolDefinition,
-		) ([]InstalledSkillHost, error) {
-			return []InstalledSkillHost{
-				{Host: "copilot", Version: "1.1.71"},
-				{Host: "claude", Version: "1.1.71"},
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{
+				{Agent: "copilot", Version: "1.1.71"},
+				{Agent: "claude", Version: "1.1.71"},
 			}, nil
 		},
 	}
@@ -1759,17 +2324,17 @@ func TestRunSkill_Upgrade_PrintsPerHostHeader(t *testing.T) {
 	assert.Contains(t, stderr, "Upgrading Test Azure Skills in claude")
 }
 
-// TestRunSkill_Upgrade_NoHost_NotInstalled_ReturnsInstallGuidance
-// verifies that `azd tool upgrade <skill>` with no --host, when the
-// skill is installed on no available host, returns a clear "install
-// first" guidance error instead of falling through to a host and
+// TestRunSkill_Upgrade_NoAgent_NotInstalled_ReturnsInstallGuidance
+// verifies that `azd tool upgrade <skill>` with no --agent, when the
+// skill is installed on no available agent, returns a clear "install
+// first" guidance error instead of falling through to an agent and
 // attempting to update a plugin that was never installed (which used to
 // produce a confusing "verification failed" error).
-func TestRunSkill_Upgrade_NoHost_NotInstalled_ReturnsInstallGuidance(t *testing.T) {
+func TestRunSkill_Upgrade_NoAgent_NotInstalled_ReturnsInstallGuidance(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot", "claude") // both on PATH
+	mockAgentPresence(runner, "copilot", "claude") // both on PATH
 	runner.MockToolInPath("node", nil)
 
 	updateRan := false
@@ -1781,11 +2346,11 @@ func TestRunSkill_Upgrade_NoHost_NotInstalled_ReturnsInstallGuidance(t *testing.
 		return exec.RunResult{ExitCode: 0}, nil
 	})
 
-	// The skill is installed on no host.
+	// The skill is installed on no agent.
 	det := &mockDetector{
-		detectSkillHostsFn: func(
+		detectSkillAgentsFn: func(
 			_ context.Context, _ *ToolDefinition,
-		) ([]InstalledSkillHost, error) {
+		) ([]InstalledSkillAgent, error) {
 			return nil, nil
 		},
 	}
@@ -1806,59 +2371,59 @@ func TestRunSkill_Upgrade_NoHost_NotInstalled_ReturnsInstallGuidance(t *testing.
 	assert.NotEmpty(t, ews.Err)
 	assert.NotEmpty(t, ews.Message)
 	assert.NotEmpty(t, ews.Suggestion)
-	assert.Contains(t, result.Error.Error(), "not installed on any available host")
+	assert.Contains(t, result.Error.Error(), "not installed on any available agent")
 	assert.Contains(t, ews.Suggestion, "azd tool install test-azure-skills")
 }
 
 // TestRunSkill_Upgrade_AllAvailable_SkipsNotInstalled verifies that
-// `upgrade --host all` upgrades only the hosts that actually have the
-// skill installed and skips on-PATH-but-not-installed hosts (with a
-// warning to stderr) rather than erroring — a host CLI cannot upgrade a
+// `upgrade --agent all` upgrades only the agents that actually have the
+// skill installed and skips on-PATH-but-not-installed agents (with a
+// warning to stderr) rather than erroring — an agent CLI cannot upgrade a
 // plugin it never installed.
 func TestRunSkill_Upgrade_AllAvailable_SkipsNotInstalled(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot", "claude") // both on PATH
+	mockAgentPresence(runner, "copilot", "claude") // both on PATH
 	runner.MockToolInPath("node", nil)
 
-	var updatedHosts []string
+	var updatedAgents []string
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return (args.Cmd == "copilot" || args.Cmd == "claude") &&
 			slices.Contains(args.Args, "update")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		updatedHosts = append(updatedHosts, args.Cmd)
+		updatedAgents = append(updatedAgents, args.Cmd)
 		return exec.RunResult{ExitCode: 0}, nil
 	})
 
 	// Only copilot has the skill installed.
 	det := &mockDetector{
-		detectSkillHostsFn: func(
+		detectSkillAgentsFn: func(
 			_ context.Context, _ *ToolDefinition,
-		) ([]InstalledSkillHost, error) {
-			return []InstalledSkillHost{{Host: "copilot", Version: "1.1.71"}}, nil
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.71"}}, nil
 		},
 	}
 
 	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
 
-	result, err := inst.Upgrade(t.Context(), newSkillTool(), WithAllAvailableHosts())
+	result, err := inst.Upgrade(t.Context(), newSkillTool(), WithAllAvailableAgents())
 	require.NoError(t, err)
 	require.True(t, result.Success,
-		"upgrade must succeed by skipping the not-installed host; err=%v",
+		"upgrade must succeed by skipping the not-installed agent; err=%v",
 		result.Error)
-	assert.Equal(t, []string{"copilot"}, updatedHosts,
-		"only the installed host (copilot) must be upgraded; claude skipped")
+	assert.Equal(t, []string{"copilot"}, updatedAgents,
+		"only the installed agent (copilot) must be upgraded; claude skipped")
 }
 
 // TestRunSkill_Upgrade_AllAvailable_NoneInstalled verifies that
-// `upgrade --host all` errors with a clear "not installed on any host"
-// message when the skill is present on no host (and runs no update).
+// `upgrade --agent all` errors with a clear "not installed on any agent"
+// message when the skill is present on no agent (and runs no update).
 func TestRunSkill_Upgrade_AllAvailable_NoneInstalled(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot", "claude")
+	mockAgentPresence(runner, "copilot", "claude")
 	runner.MockToolInPath("node", nil)
 
 	var updateRan bool
@@ -1870,87 +2435,87 @@ func TestRunSkill_Upgrade_AllAvailable_NoneInstalled(t *testing.T) {
 	})
 
 	det := &mockDetector{
-		detectSkillHostsFn: func(
+		detectSkillAgentsFn: func(
 			_ context.Context, _ *ToolDefinition,
-		) ([]InstalledSkillHost, error) {
+		) ([]InstalledSkillAgent, error) {
 			return nil, nil // not installed anywhere
 		},
 	}
 
 	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
 
-	result, err := inst.Upgrade(t.Context(), newSkillTool(), WithAllAvailableHosts())
+	result, err := inst.Upgrade(t.Context(), newSkillTool(), WithAllAvailableAgents())
 	require.NoError(t, err)
 	require.False(t, result.Success)
 	require.NotNil(t, result.Error)
-	assert.Contains(t, result.Error.Error(), "not installed on any available host")
-	assert.False(t, updateRan, "no host update must run when nothing is installed")
+	assert.Contains(t, result.Error.Error(), "not installed on any available agent")
+	assert.False(t, updateRan, "no agent update must run when nothing is installed")
 }
 
-// TestRunSkill_Install_AllAvailable_TargetsEveryHostOnPath verifies that
-// `install --host all` installs through every host on PATH regardless of
+// TestRunSkill_Install_AllAvailable_TargetsEveryAgentOnPath verifies that
+// `install --agent all` installs through every agent on PATH regardless of
 // prior install state (unlike upgrade, install does not skip).
-func TestRunSkill_Install_AllAvailable_TargetsEveryHostOnPath(t *testing.T) {
+func TestRunSkill_Install_AllAvailable_TargetsEveryAgentOnPath(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot", "claude")
+	mockAgentPresence(runner, "copilot", "claude")
 	runner.MockToolInPath("node", nil)
 
-	var installedHosts []string
+	var installedAgents []string
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return (args.Cmd == "copilot" || args.Cmd == "claude") &&
 			(slices.Contains(args.Args, "install") || slices.Contains(args.Args, "marketplace"))
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		if slices.Contains(args.Args, "install") {
-			installedHosts = append(installedHosts, args.Cmd)
+			installedAgents = append(installedAgents, args.Cmd)
 		}
 		return exec.RunResult{ExitCode: 0}, nil
 	})
 
 	det := &mockDetector{
-		detectSkillHostsFn: func(
+		detectSkillAgentsFn: func(
 			_ context.Context, _ *ToolDefinition,
-		) ([]InstalledSkillHost, error) {
+		) ([]InstalledSkillAgent, error) {
 			// Reflects post-install state for verification.
-			return []InstalledSkillHost{
-				{Host: "copilot", Version: "1.1.71"},
-				{Host: "claude", Version: "1.1.71"},
+			return []InstalledSkillAgent{
+				{Agent: "copilot", Version: "1.1.71"},
+				{Agent: "claude", Version: "1.1.71"},
 			}, nil
 		},
 	}
 
 	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
 
-	result, err := inst.Install(t.Context(), newSkillTool(), WithAllAvailableHosts())
+	result, err := inst.Install(t.Context(), newSkillTool(), WithAllAvailableAgents())
 	require.NoError(t, err)
 	require.True(t, result.Success, "result.Error=%v", result.Error)
-	assert.ElementsMatch(t, []string{"copilot", "claude"}, installedHosts,
-		"install --host all must install through every host on PATH")
+	assert.ElementsMatch(t, []string{"copilot", "claude"}, installedAgents,
+		"install --agent all must install through every agent on PATH")
 }
 
-// TestRunSkill_Install_HostScopedVerification verifies that install
-// verification is scoped to the host just installed: if claude's install
+// TestRunSkill_Install_AgentScopedVerification verifies that install
+// verification is scoped to the agent just installed: if claude's install
 // silently no-ops while copilot already has the skill, verification must
 // FAIL — it must not falsely succeed on copilot's presence (the prior
-// DetectTool-based check did, reporting the wrong host's version).
-func TestRunSkill_Install_HostScopedVerification(t *testing.T) {
+// DetectTool-based check did, reporting the wrong agent's version).
+func TestRunSkill_Install_AgentScopedVerification(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot", "claude")
+	mockAgentPresence(runner, "copilot", "claude")
 	runner.MockToolInPath("node", nil)
-	// Both hosts' commands exit 0 (claude's install silently no-ops).
+	// Both agents' commands exit 0 (claude's install silently no-ops).
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return args.Cmd == "copilot" || args.Cmd == "claude"
 	}).Respond(exec.RunResult{ExitCode: 0})
 
 	// Detector reports the skill installed ONLY via copilot — never claude.
 	det := &mockDetector{
-		detectSkillHostsFn: func(
+		detectSkillAgentsFn: func(
 			_ context.Context, _ *ToolDefinition,
-		) ([]InstalledSkillHost, error) {
-			return []InstalledSkillHost{{Host: "copilot", Version: "1.1.71"}}, nil
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{{Agent: "copilot", Version: "1.1.71"}}, nil
 		},
 	}
 
@@ -1959,7 +2524,7 @@ func TestRunSkill_Install_HostScopedVerification(t *testing.T) {
 
 	// Install via claude: claude is not actually registered, so
 	// verification must fail rather than pass on copilot's presence.
-	result, err := inst.Install(t.Context(), newSkillTool(), WithHosts("claude"))
+	result, err := inst.Install(t.Context(), newSkillTool(), WithAgents("claude"))
 	require.NoError(t, err)
 	require.False(t, result.Success,
 		"claude install must NOT be verified by copilot's presence")
@@ -1971,7 +2536,7 @@ func TestRunSkill_MarketplaceAlreadyRegistered_StillInstalls(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot")
+	mockAgentPresence(runner, "copilot")
 	runner.MockToolInPath("node", nil)
 
 	var installRan bool
@@ -2016,7 +2581,7 @@ func TestRunSkill_MarketplaceRealError_FailsBeforeInstall(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot")
+	mockAgentPresence(runner, "copilot")
 	runner.MockToolInPath("node", nil)
 
 	var installRan bool
@@ -2068,7 +2633,7 @@ func TestRunSkill_InstallCommandFails_SurfacesError(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "claude")
+	mockAgentPresence(runner, "claude")
 	runner.MockToolInPath("node", nil)
 
 	wantErr := errors.New("exit status 2")
@@ -2099,10 +2664,10 @@ func TestRunSkill_InstallCommandFails_SurfacesError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runSkill — no SkillHosts configured
+// runSkill — no SkillAgents configured
 // ---------------------------------------------------------------------------
 
-func TestRunSkill_NoSkillHosts_Errors(t *testing.T) {
+func TestRunSkill_NoSkillAgents_Errors(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
@@ -2112,14 +2677,14 @@ func TestRunSkill_NoSkillHosts_Errors(t *testing.T) {
 		Id:       "empty-skill",
 		Name:     "Empty Skill",
 		Category: ToolCategorySkill,
-		// No SkillHosts configured.
+		// No SkillAgents configured.
 	}
 
 	result, err := inst.Install(t.Context(), tool)
 	require.NoError(t, err)
 	require.False(t, result.Success)
 	require.NotNil(t, result.Error)
-	assert.Contains(t, result.Error.Error(), "no SkillHosts configured")
+	assert.Contains(t, result.Error.Error(), "no SkillAgents configured")
 }
 
 // ---------------------------------------------------------------------------
@@ -2130,7 +2695,7 @@ func TestRunSkill_VerifyDetectorError_Surfaces(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot")
+	mockAgentPresence(runner, "copilot")
 	runner.MockToolInPath("node", nil)
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return args.Cmd == "copilot" &&
@@ -2164,7 +2729,7 @@ func TestRunSkill_VerificationFails_AfterRetries(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot")
+	mockAgentPresence(runner, "copilot")
 	runner.MockToolInPath("node", nil)
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return args.Cmd == "copilot" &&
@@ -2204,7 +2769,7 @@ func TestRunSkill_ContextCanceledDuringVerify(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot")
+	mockAgentPresence(runner, "copilot")
 	runner.MockToolInPath("node", nil)
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return args.Cmd == "copilot" &&
@@ -2237,14 +2802,14 @@ func TestRunSkill_ContextCanceledDuringVerify(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// runSkill — explicit host selection (WithHosts)
+// runSkill — explicit agent selection (WithAgents)
 // ---------------------------------------------------------------------------
 
-func TestRunSkill_ExplicitHosts_InstallsEachHost(t *testing.T) {
+func TestRunSkill_ExplicitAgents_InstallsEachAgent(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot", "claude")
+	mockAgentPresence(runner, "copilot", "claude")
 	runner.MockToolInPath("node", nil)
 
 	installed := map[string]bool{}
@@ -2256,7 +2821,7 @@ func TestRunSkill_ExplicitHosts_InstallsEachHost(t *testing.T) {
 		installed[args.Cmd] = true
 		return exec.RunResult{ExitCode: 0}, nil
 	})
-	// Marketplace-add fallback for hosts that have one.
+	// Marketplace-add fallback for agents that have one.
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return slices.Contains(args.Args, "marketplace")
 	}).Respond(exec.RunResult{ExitCode: 0})
@@ -2266,7 +2831,7 @@ func TestRunSkill_ExplicitHosts_InstallsEachHost(t *testing.T) {
 	)
 
 	result, err := inst.Install(
-		t.Context(), newSkillTool(), WithHosts("copilot", "claude"),
+		t.Context(), newSkillTool(), WithAgents("copilot", "claude"),
 	)
 	require.NoError(t, err)
 	require.True(t, result.Success, "result.Error=%v", result.Error)
@@ -2276,11 +2841,11 @@ func TestRunSkill_ExplicitHosts_InstallsEachHost(t *testing.T) {
 	assert.True(t, installed["claude"], "claude install must run")
 }
 
-func TestRunSkill_ExplicitUnknownHost_Errors(t *testing.T) {
+func TestRunSkill_ExplicitUnknownAgent_Errors(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot")
+	mockAgentPresence(runner, "copilot")
 	runner.MockToolInPath("node", nil)
 
 	inst := NewInstaller(
@@ -2288,21 +2853,21 @@ func TestRunSkill_ExplicitUnknownHost_Errors(t *testing.T) {
 	)
 
 	result, err := inst.Install(
-		t.Context(), newSkillTool(), WithHosts("bogus"),
+		t.Context(), newSkillTool(), WithAgents("bogus"),
 	)
 	require.NoError(t, err)
 	require.False(t, result.Success)
 	require.NotNil(t, result.Error)
 	assert.Contains(t, result.Error.Error(), "not available")
-	// The error names the requested host so a typo is obvious.
+	// The error names the requested agent so a typo is obvious.
 	assert.Contains(t, result.Error.Error(), "bogus")
 }
 
-func TestRunSkill_ExplicitHostNotPresent_Errors(t *testing.T) {
+func TestRunSkill_ExplicitAgentNotPresent_Errors(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot") // claude deliberately NOT on PATH
+	mockAgentPresence(runner, "copilot") // claude deliberately NOT on PATH
 	runner.MockToolInPath("node", nil)
 
 	inst := NewInstaller(
@@ -2310,24 +2875,24 @@ func TestRunSkill_ExplicitHostNotPresent_Errors(t *testing.T) {
 	)
 
 	result, err := inst.Install(
-		t.Context(), newSkillTool(), WithHosts("claude"),
+		t.Context(), newSkillTool(), WithAgents("claude"),
 	)
 	require.NoError(t, err)
 	require.False(t, result.Success)
 	require.NotNil(t, result.Error)
 	assert.Contains(t, result.Error.Error(), "not available")
-	// The error names the requested host so the user knows which one failed.
+	// The error names the requested agent so the user knows which one failed.
 	assert.Contains(t, result.Error.Error(), "claude")
 }
 
-// TestRunSkill_Install_ExplicitStubHost_Rejected is a regression guard for
-// the explicit `--host` path: a host requested by name that is present on
+// TestRunSkill_Install_ExplicitStubAgent_Rejected is a regression guard for
+// the explicit `--agent` path: an agent requested by name that is present on
 // PATH only as a launcher stub (not a functional CLI) must be rejected the
-// same way the default / `--host all` path rejects it. explicitSkillHostTargets
-// uses [installer.hostUsable] (a version probe), not a bare PATH-existence
+// same way the default / `--agent all` path rejects it. explicitSkillAgentTargets
+// uses [installer.agentUsable] (a version probe), not a bare PATH-existence
 // check, so the stub fails with "not available" instead of being driven
 // through an install flow that would later surface "verification failed".
-func TestRunSkill_Install_ExplicitStubHost_Rejected(t *testing.T) {
+func TestRunSkill_Install_ExplicitStubAgent_Rejected(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
@@ -2369,13 +2934,13 @@ func TestRunSkill_Install_ExplicitStubHost_Rejected(t *testing.T) {
 	)
 
 	result, err := inst.Install(
-		t.Context(), newSkillTool(), WithHosts("copilot"),
+		t.Context(), newSkillTool(), WithAgents("copilot"),
 	)
 	require.NoError(t, err)
 	require.False(t, result.Success)
 	require.NotNil(t, result.Error)
 
-	// The explicit host is rejected up front, naming the requested host —
+	// The explicit agent is rejected up front, naming the requested agent —
 	// not driven through an install that fails verification.
 	assert.Contains(t, result.Error.Error(), "not available")
 	assert.Contains(t, result.Error.Error(), "copilot")
@@ -2383,23 +2948,23 @@ func TestRunSkill_Install_ExplicitStubHost_Rejected(t *testing.T) {
 	assert.False(t, attemptedInstall,
 		"must not attempt to install through a non-functional launcher stub")
 	assert.True(t, stubVersionProbed,
-		"explicitSkillHostTargets must probe `copilot --version` via hostUsable")
+		"explicitSkillAgentTargets must probe `copilot --version` vian agentUsable")
 }
 
 // TestRunSkill_Upgrade_DetectError_Propagated verifies that a context
-// cancellation/timeout from DetectSkillHosts on the default upgrade path
-// is treated as fatal rather than silently falling back to a host.
+// cancellation/timeout from DetectSkillAgents on the default upgrade path
+// is treated as fatal rather than silently falling back to an agent.
 func TestRunSkill_Upgrade_DetectError_Propagated(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot")
+	mockAgentPresence(runner, "copilot")
 	runner.MockToolInPath("node", nil)
 
 	det := &mockDetector{
-		detectSkillHostsFn: func(
+		detectSkillAgentsFn: func(
 			_ context.Context, _ *ToolDefinition,
-		) ([]InstalledSkillHost, error) {
+		) ([]InstalledSkillAgent, error) {
 			return nil, context.Canceled
 		},
 	}
@@ -2412,19 +2977,19 @@ func TestRunSkill_Upgrade_DetectError_Propagated(t *testing.T) {
 	require.ErrorIs(t, result.Error, context.Canceled)
 }
 
-// TestRunSkill_UpgradeAllHosts_DetectError_Propagated verifies the same
-// for the --host all upgrade path.
-func TestRunSkill_UpgradeAllHosts_DetectError_Propagated(t *testing.T) {
+// TestRunSkill_UpgradeAllAgents_DetectError_Propagated verifies the same
+// for the --agent all upgrade path.
+func TestRunSkill_UpgradeAllAgents_DetectError_Propagated(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot", "claude")
+	mockAgentPresence(runner, "copilot", "claude")
 	runner.MockToolInPath("node", nil)
 
 	det := &mockDetector{
-		detectSkillHostsFn: func(
+		detectSkillAgentsFn: func(
 			_ context.Context, _ *ToolDefinition,
-		) ([]InstalledSkillHost, error) {
+		) ([]InstalledSkillAgent, error) {
 			return nil, context.Canceled
 		},
 	}
@@ -2432,7 +2997,7 @@ func TestRunSkill_UpgradeAllHosts_DetectError_Propagated(t *testing.T) {
 	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
 
 	result, err := inst.Upgrade(
-		t.Context(), newSkillTool(), WithAllAvailableHosts(),
+		t.Context(), newSkillTool(), WithAllAvailableAgents(),
 	)
 	require.NoError(t, err)
 	require.False(t, result.Success)
@@ -2440,35 +3005,37 @@ func TestRunSkill_UpgradeAllHosts_DetectError_Propagated(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// AvailableSkillHosts
+// AvailableSkillAgents
 // ---------------------------------------------------------------------------
 
-func TestAvailableSkillHosts_ReturnsPresentInManifestOrder(t *testing.T) {
+func TestAvailableSkillAgents_ReturnsPresentInManifestOrder(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
 	// Present out of manifest order; result must follow manifest order
 	// (copilot, claude).
-	mockHostPresence(runner, "claude", "copilot")
+	mockAgentPresence(runner, "claude", "copilot")
 
 	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
 
-	assert.Equal(t,
-		[]string{"copilot", "claude"},
-		inst.AvailableSkillHosts(t.Context(), newSkillTool()),
-	)
+	commands, names := inst.AvailableSkillAgents(t.Context(), newSkillTool())
+	// newSkillTool uses Agent == Command, so both slices match.
+	assert.Equal(t, []string{"copilot", "claude"}, commands)
+	assert.Equal(t, []string{"copilot", "claude"}, names)
 }
 
-func TestAvailableSkillHosts_NonSkillToolReturnsNil(t *testing.T) {
+func TestAvailableSkillAgents_NonSkillToolReturnsNil(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
 	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
 
-	assert.Nil(t, inst.AvailableSkillHosts(t.Context(), &ToolDefinition{
+	commands, names := inst.AvailableSkillAgents(t.Context(), &ToolDefinition{
 		Id:       "not-a-skill",
 		Category: ToolCategoryServer,
-	}))
+	})
+	assert.Nil(t, commands)
+	assert.Nil(t, names)
 }
 
 // ---------------------------------------------------------------------------
@@ -3471,37 +4038,37 @@ func TestBuildUninstallCommand(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Uninstall — skill (per-host) path
+// Uninstall — skill (per-agent) path
 // ---------------------------------------------------------------------------
 
-func TestUninstallSkill_RemovesFromInstalledHosts(t *testing.T) {
+func TestUninstallSkill_RemovesFromInstalledAgents(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot", "claude")
+	mockAgentPresence(runner, "copilot", "claude")
 
-	// Capture which hosts ran an uninstall command.
-	var uninstalledHosts []string
+	// Capture which agents ran an uninstall command.
+	var uninstalledAgents []string
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return slices.Contains(args.Args, "uninstall")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		uninstalledHosts = append(uninstalledHosts, args.Cmd)
+		uninstalledAgents = append(uninstalledAgents, args.Cmd)
 		return exec.RunResult{ExitCode: 0}, nil
 	})
 
-	// Installed on both hosts before uninstall; gone after.
+	// Installed on both agents before uninstall; gone after.
 	var uninstallStarted bool
 	det := &mockDetector{
-		detectSkillHostsFn: func(
+		detectSkillAgentsFn: func(
 			_ context.Context, tool *ToolDefinition,
-		) ([]InstalledSkillHost, error) {
+		) ([]InstalledSkillAgent, error) {
 			if uninstallStarted {
 				return nil, nil
 			}
 			uninstallStarted = true
-			return []InstalledSkillHost{
-				{Host: "copilot", Version: "1.0.0"},
-				{Host: "claude", Version: "1.0.0"},
+			return []InstalledSkillAgent{
+				{Agent: "copilot", Version: "1.0.0"},
+				{Agent: "claude", Version: "1.0.0"},
 			}, nil
 		},
 	}
@@ -3513,53 +4080,174 @@ func TestUninstallSkill_RemovesFromInstalledHosts(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.True(t, result.Success)
-	assert.ElementsMatch(t, []string{"copilot", "claude"}, uninstalledHosts)
+	assert.ElementsMatch(t, []string{"copilot", "claude"}, uninstalledAgents)
 }
 
-func TestUninstallSkill_ExplicitHost_RemovesOnlyThatHost(t *testing.T) {
+// TestRunSkillUninstall_StepProgress verifies the step spinner is rendered
+// per agent (shown then stopped, capitalized) for a skill uninstall, with no
+// skill-count sub-line.
+func TestRunSkillUninstall_StepProgress(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot", "claude")
-
-	var uninstalledHosts []string
+	mockAgentPresence(runner, "copilot")
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return slices.Contains(args.Args, "uninstall")
-	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		uninstalledHosts = append(uninstalledHosts, args.Cmd)
-		return exec.RunResult{ExitCode: 0}, nil
-	})
+	}).Respond(exec.RunResult{ExitCode: 0})
 
-	// After uninstall, the skill is gone from copilot (the explicit host).
+	// After uninstall, copilot no longer reports the skill so verification
+	// passes.
 	det := &mockDetector{
-		detectSkillHostsFn: func(
-			_ context.Context, tool *ToolDefinition,
-		) ([]InstalledSkillHost, error) {
-			return []InstalledSkillHost{{Host: "claude", Version: "1.0.0"}}, nil
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return nil, nil
 		},
 	}
 
 	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
 
-	result, err := inst.Uninstall(t.Context(), newSkillTool(), WithHosts("copilot"))
+	var r fakeStepRenderer
+	result, err := inst.Uninstall(
+		t.Context(), newSkillTool(),
+		WithAgents("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "uninstall must succeed; err=%v", result.Error)
+
+	// A silent uninstall keeps the spinner for the whole step, then stops it
+	// with the result.
+	assert.Equal(t, []string{"Uninstalling Test Azure Skills from copilot"}, r.starts)
+	assert.Equal(t, []string{"Uninstalling Test Azure Skills from copilot"}, r.stops)
+	assert.Empty(t, r.messages)
+}
+
+// TestRunSkillUninstall_StepProgress_SuccessStreamsOutput verifies that the
+// agent CLI's output is surfaced above the spinner as it arrives — even when the
+// uninstall completes without error — so an interactive uninstall confirmation
+// prompt stays visible and answerable rather than being buffered until failure.
+func TestRunSkillUninstall_StepProgress_SuccessStreamsOutput(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		if args.StdOut != nil {
+			_, _ = args.StdOut.Write([]byte("Plugin \"azure@azure-skills\" uninstalled successfully.\n"))
+		}
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	// After uninstall the skill is gone, so verification passes.
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return nil, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	var r fakeStepRenderer
+	result, err := inst.Uninstall(
+		t.Context(), newSkillTool(),
+		WithAgents("copilot"),
+		WithStepProgress(&r),
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success, "uninstall must succeed; err=%v", result.Error)
+
+	assert.Contains(t, strings.Join(r.messages, "\n"), "Plugin \"azure@azure-skills\" uninstalled successfully.",
+		"agent CLI output must be shown below the step result line")
+	assert.Equal(t, []string{"Uninstalling Test Azure Skills from copilot"}, r.stops)
+}
+
+// TestRunSkillUninstall_StepProgress_FailureShowsOutput verifies the converse:
+// when the uninstall fails, the buffered agent CLI output is replayed so the
+// user can see what went wrong.
+func TestRunSkillUninstall_StepProgress_FailureShowsOutput(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot")
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		if args.StdOut != nil {
+			_, _ = args.StdOut.Write([]byte("could not remove plugin\n"))
+		}
+		return exec.RunResult{ExitCode: 1}, errors.New("exit code 1")
+	})
+
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{{Agent: "copilot", Version: "1.0.0"}}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	var r fakeStepRenderer
+	result, _ := inst.Uninstall(
+		t.Context(), newSkillTool(),
+		WithAgents("copilot"),
+		WithStepProgress(&r),
+	)
+	require.False(t, result.Success)
+	require.Error(t, result.Error)
+
+	assert.Contains(t, strings.Join(r.messages, "\n"), "could not remove plugin",
+		"agent CLI output must be shown when uninstall fails")
+}
+
+func TestUninstallSkill_ExplicitAgent_RemovesOnlyThatAgent(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockAgentPresence(runner, "copilot", "claude")
+
+	var uninstalledAgents []string
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		uninstalledAgents = append(uninstalledAgents, args.Cmd)
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	// After uninstall, the skill is gone from copilot (the explicit agent).
+	det := &mockDetector{
+		detectSkillAgentsFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{{Agent: "claude", Version: "1.0.0"}}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Uninstall(t.Context(), newSkillTool(), WithAgents("copilot"))
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.True(t, result.Success)
-	assert.Equal(t, []string{"copilot"}, uninstalledHosts)
+	assert.Equal(t, []string{"copilot"}, uninstalledAgents)
 }
 
 func TestUninstallSkill_NotInstalledAnywhere_Errors(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot", "claude")
+	mockAgentPresence(runner, "copilot", "claude")
 
-	// Skill is not installed on any host.
+	// Skill is not installed on any agent.
 	det := &mockDetector{
-		detectSkillHostsFn: func(
+		detectSkillAgentsFn: func(
 			_ context.Context, _ *ToolDefinition,
-		) ([]InstalledSkillHost, error) {
+		) ([]InstalledSkillAgent, error) {
 			return nil, nil
 		},
 	}
@@ -3578,15 +4266,15 @@ func TestUninstallSkill_NotInstalledAnywhere_Errors(t *testing.T) {
 	assert.Contains(t, suggestion.Suggestion, "nothing to uninstall")
 }
 
-func TestUninstallSkill_ExplicitUnknownHost_Errors(t *testing.T) {
+func TestUninstallSkill_ExplicitUnknownAgent_Errors(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot", "claude")
+	mockAgentPresence(runner, "copilot", "claude")
 
 	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
 
-	result, err := inst.Uninstall(t.Context(), newSkillTool(), WithHosts("bogus"))
+	result, err := inst.Uninstall(t.Context(), newSkillTool(), WithAgents("bogus"))
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -3823,17 +4511,17 @@ func TestUninstall_NonSkill_VerifyDetectError(t *testing.T) {
 // Uninstall — additional skill branch coverage
 // ---------------------------------------------------------------------------
 
-func TestUninstallSkill_NoSkillHosts_Errors(t *testing.T) {
+func TestUninstallSkill_NoSkillAgents_Errors(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
 	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
 
 	tool := &ToolDefinition{
-		Id:       "skill-no-hosts",
-		Name:     "Skill No Hosts",
+		Id:       "skill-no-agents",
+		Name:     "Skill No Agents",
 		Category: ToolCategorySkill,
-		// No SkillHosts configured.
+		// No SkillAgents configured.
 	}
 
 	result, err := inst.Uninstall(t.Context(), tool)
@@ -3842,14 +4530,14 @@ func TestUninstallSkill_NoSkillHosts_Errors(t *testing.T) {
 	require.NotNil(t, result)
 	assert.False(t, result.Success)
 	require.Error(t, result.Error)
-	assert.Contains(t, result.Error.Error(), "no SkillHosts configured")
+	assert.Contains(t, result.Error.Error(), "no SkillAgents configured")
 }
 
-func TestUninstallSkill_MultipleHostFailures_Summarized(t *testing.T) {
+func TestUninstallSkill_MultipleAgentFailures_Summarized(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot", "claude")
+	mockAgentPresence(runner, "copilot", "claude")
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return slices.Contains(args.Args, "uninstall")
 	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
@@ -3857,12 +4545,12 @@ func TestUninstallSkill_MultipleHostFailures_Summarized(t *testing.T) {
 	})
 
 	det := &mockDetector{
-		detectSkillHostsFn: func(
+		detectSkillAgentsFn: func(
 			_ context.Context, _ *ToolDefinition,
-		) ([]InstalledSkillHost, error) {
-			return []InstalledSkillHost{
-				{Host: "copilot", Version: "1.0.0"},
-				{Host: "claude", Version: "1.0.0"},
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{
+				{Agent: "copilot", Version: "1.0.0"},
+				{Agent: "claude", Version: "1.0.0"},
 			}, nil
 		},
 	}
@@ -3874,31 +4562,31 @@ func TestUninstallSkill_MultipleHostFailures_Summarized(t *testing.T) {
 	require.NotNil(t, result)
 	assert.False(t, result.Success)
 	require.Error(t, result.Error)
-	assert.Contains(t, result.Error.Error(), "could not be uninstalled for 2 host(s)")
+	assert.Contains(t, result.Error.Error(), "could not be uninstalled for 2 agent(s)")
 }
 
 func TestUninstallSkill_VerificationFails(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot")
+	mockAgentPresence(runner, "copilot")
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return slices.Contains(args.Args, "uninstall")
 	}).Respond(exec.RunResult{ExitCode: 0})
 
 	// The skill remains installed on copilot after the command runs, so
-	// host-scoped verification never confirms removal.
+	// agent-scoped verification never confirms removal.
 	det := &mockDetector{
-		detectSkillHostsFn: func(
+		detectSkillAgentsFn: func(
 			_ context.Context, _ *ToolDefinition,
-		) ([]InstalledSkillHost, error) {
-			return []InstalledSkillHost{{Host: "copilot", Version: "1.0.0"}}, nil
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{{Agent: "copilot", Version: "1.0.0"}}, nil
 		},
 	}
 	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
 	inst.(*installer).retryBackoff = time.Millisecond // keep the test fast
 
-	result, err := inst.Uninstall(t.Context(), newSkillTool(), WithHosts("copilot"))
+	result, err := inst.Uninstall(t.Context(), newSkillTool(), WithAgents("copilot"))
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -3911,24 +4599,24 @@ func TestUninstallSkill_VerifyDetectError(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
-	mockHostPresence(runner, "copilot")
+	mockAgentPresence(runner, "copilot")
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return slices.Contains(args.Args, "uninstall")
 	}).Respond(exec.RunResult{ExitCode: 0})
 
-	// Explicit --host copilot skips DetectSkillHosts during target
+	// Explicit --agent copilot skips DetectSkillAgents during target
 	// resolution, so the only call is from verification, which errors.
 	wantErr := errors.New("plugin list failed")
 	det := &mockDetector{
-		detectSkillHostsFn: func(
+		detectSkillAgentsFn: func(
 			_ context.Context, _ *ToolDefinition,
-		) ([]InstalledSkillHost, error) {
+		) ([]InstalledSkillAgent, error) {
 			return nil, wantErr
 		},
 	}
 	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
 
-	result, err := inst.Uninstall(t.Context(), newSkillTool(), WithHosts("copilot"))
+	result, err := inst.Uninstall(t.Context(), newSkillTool(), WithAgents("copilot"))
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -3944,22 +4632,23 @@ func TestUninstallSkill_NoUninstallCommandConfigured(t *testing.T) {
 	runner.MockToolInPath("copilot", nil)
 
 	det := &mockDetector{
-		detectSkillHostsFn: func(
+		detectSkillAgentsFn: func(
 			_ context.Context, _ *ToolDefinition,
-		) ([]InstalledSkillHost, error) {
-			return []InstalledSkillHost{{Host: "copilot", Version: "1.0.0"}}, nil
+		) ([]InstalledSkillAgent, error) {
+			return []InstalledSkillAgent{{Agent: "copilot", Version: "1.0.0"}}, nil
 		},
 	}
 	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
 
-	// A skill host with no PluginUninstallCommand configured.
+	// A skill agent with no PluginUninstallCommand configured.
 	tool := &ToolDefinition{
 		Id:       "skill-no-uninstall-cmd",
 		Name:     "Skill No Uninstall Cmd",
 		Category: ToolCategorySkill,
-		SkillHosts: []SkillHost{
+		SkillAgents: []SkillAgent{
 			{
-				Host:              "copilot",
+				DisplayName:       "copilot",
+				Command:           "copilot",
 				PluginListCommand: []string{"plugin", "list"},
 				PluginName:        "azure@azure-skills",
 				VersionRegex:      `(\d+\.\d+\.\d+)`,
@@ -3968,7 +4657,7 @@ func TestUninstallSkill_NoUninstallCommandConfigured(t *testing.T) {
 		},
 	}
 
-	result, err := inst.Uninstall(t.Context(), tool, WithHosts("copilot"))
+	result, err := inst.Uninstall(t.Context(), tool, WithAgents("copilot"))
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -3977,11 +4666,11 @@ func TestUninstallSkill_NoUninstallCommandConfigured(t *testing.T) {
 	assert.Contains(t, result.Error.Error(), "no uninstall command configured")
 }
 
-// TestHostUsable_OnPathProbeMemoizedAcrossPasses verifies that an on-PATH
-// host's `--version` is spawned at most once per command even though host
+// TestAgentUsable_OnPathProbeMemoizedAcrossPasses verifies that an on-PATH
+// agent's `--version` is spawned at most once per command even though agent
 // resolution probes it from several call sites: the result is memoized on the
 // installer for its lifetime (one process == one command).
-func TestHostUsable_OnPathProbeMemoizedAcrossPasses(t *testing.T) {
+func TestAgentUsable_OnPathProbeMemoizedAcrossPasses(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
@@ -3998,21 +4687,21 @@ func TestHostUsable_OnPathProbeMemoizedAcrossPasses(t *testing.T) {
 
 	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
 
-	// Two separate host-resolution passes on the same installer.
-	require.Equal(t, []string{"copilot"},
-		inst.AvailableSkillHosts(t.Context(), newSkillTool()))
-	require.Equal(t, []string{"copilot"},
-		inst.AvailableSkillHosts(t.Context(), newSkillTool()))
+	// Two separate agent-resolution passes on the same installer.
+	commands1, _ := inst.AvailableSkillAgents(t.Context(), newSkillTool())
+	require.Equal(t, []string{"copilot"}, commands1)
+	commands2, _ := inst.AvailableSkillAgents(t.Context(), newSkillTool())
+	require.Equal(t, []string{"copilot"}, commands2)
 
 	assert.Equal(t, 1, copilotVersionCalls,
-		"on-PATH host `--version` must be probed at most once per command")
+		"on-PATH agent `--version` must be probed at most once per command")
 }
 
-// TestHostUsable_NotOnPathResultNotMemoized verifies that a not-on-PATH result
-// is never cached, so a host installed earlier in the same command (e.g.
+// TestAgentUsable_NotOnPathResultNotMemoized verifies that a not-on-PATH result
+// is never cached, so an agent installed earlier in the same command (e.g.
 // `azd tool install github-copilot-cli azure-skills`) is still picked up by a
 // later resolution pass.
-func TestHostUsable_NotOnPathResultNotMemoized(t *testing.T) {
+func TestAgentUsable_NotOnPathResultNotMemoized(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
@@ -4022,7 +4711,8 @@ func TestHostUsable_NotOnPathResultNotMemoized(t *testing.T) {
 	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
 
 	// First pass: copilot absent.
-	require.Empty(t, inst.AvailableSkillHosts(t.Context(), newSkillTool()))
+	commandsAbsent, _ := inst.AvailableSkillAgents(t.Context(), newSkillTool())
+	require.Empty(t, commandsAbsent)
 
 	// copilot becomes available and functional mid-command.
 	runner.MockToolInPath("copilot", nil)
@@ -4031,6 +4721,52 @@ func TestHostUsable_NotOnPathResultNotMemoized(t *testing.T) {
 	}).Respond(exec.RunResult{Stdout: "GitHub Copilot CLI 1.1.70", ExitCode: 0})
 
 	// Second pass picks it up: the earlier "not on PATH" result was not cached.
-	assert.Equal(t, []string{"copilot"},
-		inst.AvailableSkillHosts(t.Context(), newSkillTool()))
+	commandsPresent, _ := inst.AvailableSkillAgents(t.Context(), newSkillTool())
+	assert.Equal(t, []string{"copilot"}, commandsPresent)
+}
+
+// TestLineWriter_Write_SerializesEmit drives lineWriter.Write from many
+// goroutines at once — as os/exec does when a command's stdout and stderr are
+// written concurrently — with an unsynchronized emit (mirroring the buffered
+// slice in renderSkillStep). The mutex must serialize emit so no line is lost
+// or corrupted. Run under -race to catch a regression.
+func TestLineWriter_Write_SerializesEmit(t *testing.T) {
+	var got []string // deliberately unsynchronized, like renderSkillStep's buffer
+	lw := &lineWriter{emit: func(s string) { got = append(got, s) }}
+
+	const writers = 100
+	var wg sync.WaitGroup
+	for range writers {
+		wg.Go(func() {
+			_, _ = lw.Write([]byte("a\nb\nc\n")) // 3 lines per write
+		})
+	}
+	wg.Wait()
+
+	assert.Len(t, got, writers*3,
+		"every emitted line must be recorded without loss under concurrent writes")
+}
+
+// TestLineWriter_BuffersAcrossWritesAndPreservesEmptyLines verifies the
+// line-splitting contract: a logical line split across multiple Write calls is
+// emitted once (os/exec chunks arbitrarily), empty lines are preserved, and a
+// trailing line with no newline is held until Flush rather than dropped.
+func TestLineWriter_BuffersAcrossWritesAndPreservesEmptyLines(t *testing.T) {
+	var got []string
+	lw := &lineWriter{emit: func(s string) { got = append(got, s) }}
+
+	// A single logical line split across two writes must emit once, joined.
+	_, _ = lw.Write([]byte("hel"))
+	_, _ = lw.Write([]byte("lo\n"))
+	// Consecutive newlines yield preserved empty lines.
+	_, _ = lw.Write([]byte("a\n\nb\n"))
+	// Trailing content with no newline is buffered, not emitted yet.
+	_, _ = lw.Write([]byte("no newline"))
+
+	assert.Equal(t, []string{"hello", "a", "", "b"}, got,
+		"complete lines emit once, empty lines preserved, partial line held")
+
+	lw.Flush()
+	assert.Equal(t, []string{"hello", "a", "", "b", "no newline"}, got,
+		"Flush emits the trailing line that had no terminating newline")
 }

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -21,6 +22,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -316,7 +318,7 @@ func TestSynthesizeImageManifestFile(t *testing.T) {
 	const image = "myacr.azurecr.io/agents/my-agent@sha256:" +
 		"76a9463463acf11d4068e8468fb232a3de0709177b6b35de95de6a34b33fa686"
 
-	manifestPath, cleanup, err := synthesizeImageManifestFile(agentName, image)
+	manifestPath, cleanup, err := synthesizeImageManifestFile(agentName, image, nil)
 	require.NoError(t, err)
 	require.NotNil(t, cleanup)
 	require.FileExists(t, manifestPath)
@@ -343,6 +345,87 @@ func TestSynthesizeImageManifestFile(t *testing.T) {
 	require.NoFileExists(t, manifestPath)
 }
 
+func TestSynthesizeImageManifestFile_UsesFlagProtocols(t *testing.T) {
+	t.Parallel()
+
+	const agentName = "my-agent"
+	const image = "myacr.azurecr.io/agents/my-agent:v1"
+
+	manifestPath, cleanup, err := synthesizeImageManifestFile(agentName, image, []string{"invocations_ws"})
+	require.NoError(t, err)
+	defer cleanup()
+
+	content, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+	template, err := agent_yaml.ExtractAgentDefinition(content)
+	require.NoError(t, err)
+
+	containerAgent, ok := template.(agent_yaml.ContainerAgent)
+	require.True(t, ok, "synthesized template should be a ContainerAgent, got %T", template)
+	require.Len(t, containerAgent.Protocols, 1)
+	require.Equal(t, "invocations_ws", containerAgent.Protocols[0].Protocol)
+	require.Equal(t, "2.0.0", containerAgent.Protocols[0].Version)
+}
+
+func TestSynthesizeImageManifestFile_UsesInvocationsProtocol(t *testing.T) {
+	t.Parallel()
+
+	const agentName = "my-agent"
+	const image = "myacr.azurecr.io/agents/my-agent:v1"
+
+	manifestPath, cleanup, err := synthesizeImageManifestFile(agentName, image, []string{"invocations"})
+	require.NoError(t, err)
+	defer cleanup()
+
+	content, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+	template, err := agent_yaml.ExtractAgentDefinition(content)
+	require.NoError(t, err)
+
+	containerAgent, ok := template.(agent_yaml.ContainerAgent)
+	require.True(t, ok, "synthesized template should be a ContainerAgent, got %T", template)
+	require.Equal(t, []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "invocations", Version: "2.0.0"},
+	}, containerAgent.Protocols)
+}
+
+func TestSynthesizeImageManifestFile_RejectsUnknownProtocol(t *testing.T) {
+	t.Parallel()
+
+	manifestPath, cleanup, err := synthesizeImageManifestFile(
+		"my-agent",
+		"myacr.azurecr.io/agents/my-agent:v1",
+		[]string{"unknown"},
+	)
+	require.Error(t, err)
+	require.Empty(t, manifestPath)
+	cleanup()
+	require.Contains(t, err.Error(), "unknown protocol")
+}
+
+func TestSynthesizeImageManifestFile_AcceptsActivityProtocol(t *testing.T) {
+	t.Parallel()
+
+	manifestPath, cleanup, err := synthesizeImageManifestFile(
+		"my-agent",
+		"myacr.azurecr.io/agents/my-agent:v1",
+		[]string{"activity"},
+	)
+	require.NoError(t, err)
+	defer cleanup()
+
+	content, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+	template, err := agent_yaml.ExtractAgentDefinition(content)
+	require.NoError(t, err)
+
+	containerAgent, ok := template.(agent_yaml.ContainerAgent)
+	require.True(t, ok, "synthesized template should be a ContainerAgent, got %T", template)
+	require.Equal(t, []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "activity", Version: "2.0.0"},
+	}, containerAgent.Protocols)
+}
+
 func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
 	const image = "myacr.azurecr.io/agents/my-agent:v1"
 	server := &recordingProjectServer{}
@@ -363,6 +446,9 @@ func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
 			},
 			Protocols: []agent_yaml.ProtocolVersionRecord{
 				{Protocol: "responses", Version: "2.0.0"},
+			},
+			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
+				{Name: "LOG_LEVEL", Value: "info"},
 			},
 		},
 	}
@@ -387,9 +473,16 @@ func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
 	require.Equal(t, "docker", agentService.GetLanguage())
 	require.NotNil(t, agentService.GetDocker())
 	require.NotNil(t, agentService.GetAdditionalProperties())
+	require.Empty(t, agentService.GetEnvironment())
+	require.Equal(t, map[string]any{
+		"LOG_LEVEL": "info",
+	}, server.env["my-agent"])
 
 	_, hasInlineImage := agentService.GetAdditionalProperties().GetFields()["image"]
 	require.False(t, hasInlineImage, "pre-built image must ride on the top-level service image field")
+	_, hasInlineEnvironment := agentService.GetAdditionalProperties().
+		GetFields()["environmentVariables"]
+	require.False(t, hasInlineEnvironment)
 }
 
 func TestValidateInitAgentName(t *testing.T) {
@@ -835,6 +928,89 @@ func TestCopyDirectory_NoOpWhenSamePath(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(dir, "file.txt")); err != nil {
 		t.Fatalf("expected file to still exist: %v", err)
+	}
+}
+
+func TestWriteDownloadedFilePermissions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		fileName        string
+		wantPermissions os.FileMode
+	}{
+		{
+			name:            "shell scripts are executable",
+			fileName:        "postprovision.sh",
+			wantPermissions: osutil.PermissionExecutableFile,
+		},
+		{
+			name:            "shell script extension is case insensitive",
+			fileName:        "predeploy.SH",
+			wantPermissions: osutil.PermissionExecutableFile,
+		},
+		{
+			name:            "other files remain non-executable",
+			fileName:        "azure.yaml",
+			wantPermissions: osutil.PermissionFile,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), tt.fileName)
+			if got := downloadedFilePermissions(path); got != tt.wantPermissions {
+				t.Fatalf("downloadedFilePermissions() = %04o, want %04o", got, tt.wantPermissions)
+			}
+
+			if err := writeDownloadedFile(path, []byte("new")); err != nil {
+				t.Fatal(err)
+			}
+
+			content, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(content) != "new" {
+				t.Fatalf("content = %q, want %q", content, "new")
+			}
+
+			if runtime.GOOS == "windows" {
+				return
+			}
+
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := info.Mode().Perm(); got != tt.wantPermissions {
+				t.Errorf("permissions = %04o, want %04o", got, tt.wantPermissions)
+			}
+		})
+	}
+}
+
+func TestWriteDownloadedFileRefusesToOverwrite(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "postprovision.sh")
+	if err := os.WriteFile(path, []byte("old"), osutil.PermissionFile); err != nil {
+		t.Fatal(err)
+	}
+
+	err := writeDownloadedFile(path, []byte("new"))
+	if !errors.Is(err, fs.ErrExist) {
+		t.Fatalf("writeDownloadedFile() error = %v, want fs.ErrExist", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "old" {
+		t.Fatalf("content = %q, want %q", content, "old")
 	}
 }
 

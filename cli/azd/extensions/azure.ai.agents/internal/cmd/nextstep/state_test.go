@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // fakeSource is a hand-rolled Source for table-driven tests.
@@ -597,6 +598,33 @@ protocols:
 			want: ProtocolInvocations,
 		},
 		{
+			name: "single invocations_ws protocol",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: invocations_ws
+    version: "2.0.0"
+`,
+			want: ProtocolInvocationsWS,
+		},
+		{
+			name: "single activity protocol",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: activity
+    version: "2.0.0"
+`,
+			want: ProtocolActivity,
+		},
+		{
+			name: "single legacy activity protocol",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: activity_protocol
+    version: "1.0.0"
+`,
+			want: ProtocolActivity,
+		},
+		{
 			name: "responses wins when both declared",
 			manifest: `kind: hostedAgent
 protocols:
@@ -606,6 +634,39 @@ protocols:
     version: "1.0.0"
 `,
 			want: ProtocolResponses,
+		},
+		{
+			name: "responses wins over invocations_ws regardless of order",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: invocations_ws
+    version: "2.0.0"
+  - protocol: responses
+    version: "2.0.0"
+`,
+			want: ProtocolResponses,
+		},
+		{
+			name: "invocations wins over invocations_ws regardless of order",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: invocations_ws
+    version: "2.0.0"
+  - protocol: invocations
+    version: "1.0.0"
+`,
+			want: ProtocolInvocations,
+		},
+		{
+			name: "invocations wins over activity regardless of order",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: activity
+    version: "2.0.0"
+  - protocol: invocations
+    version: "1.0.0"
+`,
+			want: ProtocolInvocations,
 		},
 		{
 			name: "empty protocols section",
@@ -651,7 +712,7 @@ protocols:
 					0o600,
 				))
 			}
-			got := loadServiceProtocol(projectRoot, relPath)
+			got := loadServiceProtocol(projectRoot, &azdext.ServiceConfig{RelativePath: relPath})
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -660,7 +721,7 @@ protocols:
 func TestLoadServiceProtocol_EmptyArgs(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "", loadServiceProtocol("", "echo"))
+	assert.Equal(t, "", loadServiceProtocol("", &azdext.ServiceConfig{RelativePath: "echo"}))
 }
 
 func TestLoadServiceProtocol_RootRelativePath(t *testing.T) {
@@ -673,8 +734,8 @@ func TestLoadServiceProtocol_RootRelativePath(t *testing.T) {
 		0o600,
 	))
 
-	assert.Equal(t, ProtocolInvocations, loadServiceProtocol(projectRoot, ""))
-	assert.Equal(t, ProtocolInvocations, loadServiceProtocol(projectRoot, "."))
+	assert.Equal(t, ProtocolInvocations, loadServiceProtocol(projectRoot, &azdext.ServiceConfig{}))
+	assert.Equal(t, ProtocolInvocations, loadServiceProtocol(projectRoot, &azdext.ServiceConfig{RelativePath: "."}))
 }
 
 func TestLoadServiceProtocol_RejectsTraversal(t *testing.T) {
@@ -691,7 +752,50 @@ func TestLoadServiceProtocol_RejectsTraversal(t *testing.T) {
 		0o600,
 	))
 
-	assert.Equal(t, "", loadServiceProtocol(projectRoot, "../outside"))
+	assert.Equal(t, "", loadServiceProtocol(projectRoot, &azdext.ServiceConfig{RelativePath: "../outside"}))
+}
+
+func TestLoadServiceProtocol_InlineAdditionalPropertiesWinOverAgentYaml(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	relPath := "echo"
+	svcDir := filepath.Join(projectRoot, relPath)
+	require.NoError(t, os.MkdirAll(svcDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(svcDir, "agent.yaml"),
+		[]byte("kind: hostedAgent\nprotocols:\n  - protocol: responses\n    version: \"2.0.0\"\n"),
+		0o600,
+	))
+
+	config, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"protocols": []any{
+			map[string]any{"protocol": "invocations_ws", "version": "2.0.0"},
+		},
+	})
+	require.NoError(t, err)
+
+	got := loadServiceProtocol(projectRoot, &azdext.ServiceConfig{
+		RelativePath:         relPath,
+		AdditionalProperties: config,
+	})
+	assert.Equal(t, ProtocolInvocationsWS, got)
+}
+
+func TestLoadServiceProtocol_LegacyConfigFallback(t *testing.T) {
+	t.Parallel()
+
+	config, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"protocols": []any{
+			map[string]any{"protocol": "invocations_ws", "version": "2.0.0"},
+		},
+	})
+	require.NoError(t, err)
+
+	got := loadServiceProtocol(t.TempDir(), &azdext.ServiceConfig{Config: config})
+	assert.Equal(t, ProtocolInvocationsWS, got)
 }
 
 func TestAssembleState_PopulatesProtocolFromAgentYaml(t *testing.T) {
@@ -719,6 +823,62 @@ func TestAssembleState_PopulatesProtocolFromAgentYaml(t *testing.T) {
 	require.Empty(t, errs)
 	require.Len(t, state.Services, 1)
 	assert.Equal(t, ProtocolInvocations, state.Services[0].Protocol)
+}
+
+func TestAssembleState_PopulatesProtocolFromInlineAdditionalProperties(t *testing.T) {
+	t.Parallel()
+
+	config, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"protocols": []any{
+			map[string]any{"protocol": "invocations_ws", "version": "2.0.0"},
+		},
+	})
+	require.NoError(t, err)
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, AdditionalProperties: config},
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	require.Len(t, state.Services, 1)
+	assert.Equal(t, ProtocolInvocationsWS, state.Services[0].Protocol)
+}
+
+func TestAssembleState_MarksInlineMultiProtocolService(t *testing.T) {
+	t.Parallel()
+
+	config, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"protocols": []any{
+			map[string]any{"protocol": "invocations_ws", "version": "2.0.0"},
+			map[string]any{"protocol": "responses", "version": "2.0.0"},
+		},
+	})
+	require.NoError(t, err)
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, AdditionalProperties: config},
+			},
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.Empty(t, errs)
+	require.Len(t, state.Services, 1)
+	assert.Equal(t, ProtocolResponses, state.Services[0].Protocol)
+	assert.True(t, state.Services[0].MultiProtocol)
 }
 
 func TestExtractAgentYamlEnvRefs(t *testing.T) {

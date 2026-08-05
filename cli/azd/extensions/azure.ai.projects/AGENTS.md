@@ -6,6 +6,8 @@ Use this file together with `cli/azd/AGENTS.md`. This guide supplements the root
 
 `azure.ai.projects` is a first-party azd extension under `cli/azd/extensions/azure.ai.projects/`. It runs as a separate Go binary and talks to the azd host over gRPC.
 
+It owns the `azure.ai.project` service target and the `microsoft.foundry` provisioning provider. The provider handles greenfield and existing-project provisioning, preview, and teardown.
+
 It owns the Foundry project endpoint context used by other AI extensions (e.g. `azure.ai.agents`). The `azd ai project` commands persist, resolve, and surface the endpoint through a 5-level cascade:
 
 1. Explicit `--project-endpoint` flag
@@ -19,7 +21,11 @@ The resolver also performs a one-time auto-migration from the legacy `extensions
 Useful places to start:
 
 - `internal/cmd/`: Cobra commands, the endpoint resolver, and the config store
+- `internal/provisioning/`: the `microsoft.foundry` provider
+- `internal/synthesis/`: project config synthesis and embedded IaC
 - `internal/exterrors/`: structured error factories and extension-specific codes
+
+During the staged ownership migration, `internal/synthesis/` is also present in `azure.ai.agents` for `azd ai agent init --infra`. Keep the production files and templates byte-for-byte aligned until init moves.
 
 ## Build and test
 
@@ -137,6 +143,10 @@ When changing the store:
 ## Release preparation
 
 A new extension release ships in two PRs:
+
+### Provider handoff release
+
+The first release that moves `microsoft.foundry` here must be coordinated with the matching `azure.ai.agents` release. Publish both artifacts before updating either registry entry, then update both entries and the `microsoft.foundry` meta-package together. Old agents and new projects versions cannot run together because azd rejects duplicate provider registration.
 
 ### PR 1 — Version bump
 

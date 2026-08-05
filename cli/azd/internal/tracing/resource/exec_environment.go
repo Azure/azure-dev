@@ -75,6 +75,8 @@ func execEnvFromAgent() string {
 		return fields.EnvClaudeCode
 	case agentdetect.AgentTypeGitHubCopilotCLI:
 		return fields.EnvGitHubCopilotCLI
+	case agentdetect.AgentTypeGitHubCopilotApp:
+		return fields.EnvGitHubCopilotApp
 	case agentdetect.AgentTypeVSCodeCopilot:
 		return fields.EnvVSCodeAzureCopilot
 	case agentdetect.AgentTypeGemini:
@@ -106,6 +108,9 @@ func execEnvModifiers() []string {
 
 	if strings.Contains(userAgent, "azure_app_space_portal") {
 		modifiers = append(modifiers, fields.EnvModifierAzureSpace)
+	}
+	if strings.Contains(userAgent, "microsoft_foundry_skill") {
+		modifiers = append(modifiers, fields.EnvModifierMicrosoftFoundrySkill)
 	}
 
 	return modifiers

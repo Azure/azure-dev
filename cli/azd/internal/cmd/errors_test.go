@@ -1202,7 +1202,7 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 		"ErrRemoteHostIsNotGitHub":             "caught in pkg/pipeline and pkg/github before reaching telemetry",
 		"ErrSSHNotSupported":                   "only defined, referenced via ErrRemoteHostIsNotAzDo flow",
 		"ErrDeploymentNotFound":                "caught in provisioning/deployment callers before reaching telemetry",
-		"ErrProvisionValidationAborted": "translated to internal.ErrAbortedByUser by wrapProvisionError " +
+		"ErrProvisionValidationCanceled": "translated to internal.ErrAbortedByUser by wrapProvisionError " +
 			"before reaching telemetry",
 		"ErrDeploymentsNotFound":         "caught in infra callers before reaching telemetry",
 		"ErrDeploymentResourcesNotFound": "caught in infra callers before reaching telemetry",

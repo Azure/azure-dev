@@ -279,7 +279,6 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		}
 		a.azureContext = azureContext
 	}
-
 	// TODO: Prompt user for agent kind
 	agentKind := agent_yaml.AgentKindHosted
 
@@ -289,7 +288,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	if srcDir == "" {
 		srcDir, _ = os.Getwd()
 	}
-	showCodeDeploy := isPythonProject(srcDir) || isDotnetProject(srcDir)
+	showCodeDeploy := supportsCodeDeploy(srcDir)
 	deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy, a.flags.deployMode, false)
 	if err != nil {
 		return nil, err
@@ -832,6 +831,7 @@ func (a *InitFromCodeAction) addToProject(
 	if err != nil {
 		return err
 	}
+	agentEnvironment := project.AgentEnvironment(*definition)
 
 	language := "python"
 	if !isCodeDeploy {
@@ -841,8 +841,9 @@ func (a *InitFromCodeAction) addToProject(
 		language = "csharp"
 	}
 
+	agentServiceName := strings.ReplaceAll(agentName, " ", "")
 	serviceConfig := &azdext.ServiceConfig{
-		Name:                 strings.ReplaceAll(agentName, " ", ""),
+		Name:                 agentServiceName,
 		RelativePath:         targetDir,
 		Host:                 AiAgentHost,
 		Language:             language,
@@ -869,11 +870,18 @@ func (a *InitFromCodeAction) addToProject(
 	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
+	if err := setServiceEnvironment(
+		ctx,
+		a.azdClient,
+		agentServiceName,
+		agentEnvironment,
+	); err != nil {
+		return err
+	}
 
 	// Emit the sibling azure.ai.project service carrying the model deployments
 	// and wire the agent's uses: to it. A selected existing project contributes
 	// its endpoint so provision reuses it instead of creating a new project.
-	agentServiceName := strings.ReplaceAll(agentName, " ", "")
 	if err := emitResourceServices(
 		ctx, a.azdClient, agentServiceName,
 		projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),
@@ -905,7 +913,8 @@ type protocolInfo struct {
 // knownProtocols lists the protocols offered during init, in display order.
 var knownProtocols = []protocolInfo{
 	{Name: "responses", Version: "2.0.0"},
-	{Name: "invocations", Version: "1.0.0"},
+	{Name: "invocations", Version: "2.0.0"},
+	{Name: "invocations_ws", Version: "2.0.0"},
 	// "activity" is the canonical protocol name (legacy alias: "activity_protocol").
 	// The version selects the platform's internal container route ("v1"/"1.0.0" ->
 	// /api/messages, "2.0.0" -> /activity/messages), but that hop is Bot Service ->
@@ -1270,45 +1279,4 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 		EntryPoint:           entryPoint,
 		DependencyResolution: &depResolution,
 	}, nil
-}
-
-// isPythonProject returns true if the directory appears to be a Python project,
-// determined by the presence of requirements.txt or any .py file.
-func isPythonProject(dir string) bool {
-	if dir == "" {
-		dir = "."
-	}
-	// Check for requirements.txt
-	if _, err := os.Stat(filepath.Join(dir, "requirements.txt")); err == nil {
-		return true
-	}
-	// Check for any .py file (shallow scan)
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false
-	}
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".py") {
-			return true
-		}
-	}
-	return false
-}
-
-// isDotnetProject returns true if the directory contains a .csproj file.
-// NOTE: .fsproj (F#) is not yet supported by the packaging path (packageDotnetBundled/detectDefaultEntryPoint).
-func isDotnetProject(dir string) bool {
-	if dir == "" {
-		dir = "."
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false
-	}
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".csproj") {
-			return true
-		}
-	}
-	return false
 }

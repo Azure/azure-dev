@@ -22,6 +22,8 @@ overrides:
           - msrc
     - filename: ./docs/specs/metrics-audit/**
       words:
+          - apphost
+          - appdetect
           - vsrpc
           - Buildpacks
           - devdeviceid
@@ -44,6 +46,7 @@ overrides:
           - dependson
           - exegraph
           - pseudonymizing
+          - pulumi
     - filename: ./README.md
       words:
           - VSIX
@@ -116,23 +119,32 @@ overrides:
           - vsrpc
     - filename: docs/reference/**/*.md
       words:
+          - apphost
           - appinit
           - appservice
+          - buildpack
           - Buildpacks
+          - centralus
+          - chinacloudapi
           - containerapp
           - dcount
           - dependson
           - devdeviceid
           - Entra
+          - entraid
           - Errorf
           - exegraph
           - firstrun
           - javac
+          - livediagnostics
+          - microsoftonline
           - oneauth
           - postprovision
           - preprovision
           - postdeploy
           - pseudonymized
+          - pulumi
+          - redirector
           - remotebuild
           - resourcegroup
           - springapp
@@ -141,5 +153,6 @@ overrides:
           - toreal
           - tostring
           - unhashed
+          - usgovcloudapi
           - vsrpc
           - whatif

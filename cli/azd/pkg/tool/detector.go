@@ -26,17 +26,21 @@ type ToolStatus struct {
 	// output. It is empty when the tool is not installed or when
 	// version parsing fails.
 	InstalledVersion string
+	// SkillAgents lists every agent CLI the skill is installed
+	// through, with the version installed via each, in manifest order.
+	// Populated only for skill tools (see detectSkill); nil otherwise.
+	SkillAgents []InstalledSkillAgent
 	// Error records any unexpected failure during detection (e.g. a
 	// timeout). A tool that is simply not installed has Error == nil.
 	Error error
 }
 
-// InstalledSkillHost pairs an agentic CLI host with the skill version
+// InstalledSkillAgent pairs an agent CLI with the skill version
 // installed through it.
-type InstalledSkillHost struct {
-	// Host is the agentic CLI host binary name (e.g. "copilot").
-	Host string
-	// Version is the skill version installed through that host.
+type InstalledSkillAgent struct {
+	// Agent is the agent CLI binary name (e.g. "copilot").
+	Agent string
+	// Version is the skill version installed through that agent.
 	Version string
 }
 
@@ -58,15 +62,15 @@ type Detector interface {
 		tools []*ToolDefinition,
 	) ([]*ToolStatus, error)
 
-	// DetectSkillHosts returns every configured SkillHost the skill is
+	// DetectSkillAgents returns every configured SkillAgent the skill is
 	// currently installed through (with the version installed via each),
 	// in manifest order. It returns nil for non-skill tools. The returned
 	// error is non-nil only for context cancellation/timeout while
 	// listing plugins.
-	DetectSkillHosts(
+	DetectSkillAgents(
 		ctx context.Context,
 		tool *ToolDefinition,
-	) ([]InstalledSkillHost, error)
+	) ([]InstalledSkillAgent, error)
 }
 
 type detector struct {
@@ -461,51 +465,61 @@ func (d *detector) detectAzdExtension(
 // Skill detection
 // ---------------------------------------------------------------------------
 
-// detectSkill checks whether a skill is installed by running each
-// SkillHost's PluginListCommand. A host is reported as having the skill
+// detectSkill checks whether a skill is installed by probing every
+// SkillAgent's PluginListCommand. An agent is reported as having the skill
 // installed only when its PluginName appears in the listing AND its
-// (required) VersionRegex captures a version. Because a host's list
+// (required) VersionRegex captures a version. Because an agent's list
 // command reports every installed plugin, the regex anchors on this
 // skill's identity so another plugin's version is never mistaken for
-// it. The captured group becomes InstalledVersion. Hosts whose binary
-// is not on PATH are skipped silently — a missing host is not an error,
-// it just means the skill cannot be installed through that host.
+// it. Every agent the skill is installed through is recorded in
+// SkillAgents (in manifest order); Installed and InstalledVersion reflect
+// the first such agent, so a skill installed anywhere reads as installed.
+// Agents whose binary is not on PATH are skipped silently — a missing
+// agent is not an error, it just means the skill cannot be installed
+// through that agent.
 func (d *detector) detectSkill(
 	ctx context.Context,
 	tool *ToolDefinition,
 ) *ToolStatus {
 	status := &ToolStatus{Tool: tool}
 
-	if len(tool.SkillHosts) == 0 {
+	if len(tool.SkillAgents) == 0 {
 		return status
 	}
 
-	for _, host := range tool.SkillHosts {
-		version, err := d.skillHostVersion(ctx, host)
-		if err != nil {
-			status.Error = err
-			return status
-		}
-		if version != "" {
-			status.Installed = true
-			status.InstalledVersion = version
-			return status
-		}
+	agents, err := d.DetectSkillAgents(ctx, tool)
+	status.SkillAgents = agents
+	if len(agents) > 0 {
+		// The skill was found on at least one agent; report it installed even if
+		// a later agent's probe errored, mirroring the first-match behavior from
+		// before multi-agent detection. Installed and InstalledVersion reflect
+		// the first such agent.
+		status.Installed = true
+		status.InstalledVersion = agents[0].Version
+	}
+
+	// Record any detection failure (e.g. a later agent's timeout/cancellation)
+	// even when an earlier agent was found: SkillAgents may be incomplete, so per
+	// ToolStatus.Error's contract we surface the failure rather than present a
+	// truncated result as a complete detection.
+	if err != nil {
+		status.Error = err
 	}
 
 	return status
 }
 
-// DetectSkillHosts returns every configured SkillHost the skill is
+// DetectSkillAgents returns every configured SkillAgent the skill is
 // currently installed through (with the version installed via each), in
-// manifest order. Unlike detectSkill (which stops at the first match) it
-// probes all hosts, so callers can act on every install — e.g.
-// `azd tool upgrade` refreshing the skill on each host it was installed
-// to, or per-host install verification.
-func (d *detector) DetectSkillHosts(
+// manifest order. It probes every agent so callers can act on every
+// install — e.g. `azd tool upgrade` refreshing the skill on each agent it
+// was installed to, or per-agent install verification. detectSkill
+// delegates to it and reports the first matched agent as the aggregate
+// Installed/InstalledVersion.
+func (d *detector) DetectSkillAgents(
 	ctx context.Context,
 	tool *ToolDefinition,
-) ([]InstalledSkillHost, error) {
+) ([]InstalledSkillAgent, error) {
 	if tool == nil {
 		return nil, errors.New("tool definition must not be nil")
 	}
@@ -513,24 +527,27 @@ func (d *detector) DetectSkillHosts(
 		return nil, nil
 	}
 
-	var hosts []InstalledSkillHost
-	for _, host := range tool.SkillHosts {
-		version, err := d.skillHostVersion(ctx, host)
+	var agents []InstalledSkillAgent
+	for _, agent := range tool.SkillAgents {
+		version, err := d.skillAgentVersion(ctx, agent)
 		if err != nil {
-			return nil, err
+			// Return the agents discovered before the error (e.g. a later agent's
+			// probe was cancelled) so a caller — detectSkill in particular — can
+			// still act on an earlier match instead of losing it.
+			return agents, err
 		}
 		if version != "" {
-			hosts = append(hosts, InstalledSkillHost{
-				Host:    host.Host,
+			agents = append(agents, InstalledSkillAgent{
+				Agent:   agent.Command,
 				Version: version,
 			})
 		}
 	}
-	return hosts, nil
+	return agents, nil
 }
 
-// skillHostVersion reports the version of the skill as installed through
-// a single host, or "" when the host is not on PATH, its list command
+// skillAgentVersion reports the version of the skill as installed through
+// a single agent, or "" when the agent is not on PATH, its list command
 // fails, or the skill is not present. The error is non-nil only for
 // context cancellation/timeout.
 //
@@ -539,44 +556,48 @@ func (d *detector) DetectSkillHosts(
 // VersionRegex must capture a version. The regex anchors on this
 // skill's identity (the azure@azure-skills entry in claude's `plugin
 // list --json` output, or the plugin name in copilot's `plugin list`),
-// so a host that lists other plugins but not this skill is reported as
+// so an agent that lists other plugins but not this skill is reported as
 // not installed.
-func (d *detector) skillHostVersion(
+func (d *detector) skillAgentVersion(
 	ctx context.Context,
-	host SkillHost,
+	agent SkillAgent,
 ) (string, error) {
-	if len(host.PluginListCommand) == 0 || host.PluginName == "" {
+	if len(agent.PluginListCommand) == 0 || agent.PluginName == "" {
 		return "", nil
 	}
 
-	// A host that is not on PATH cannot have the skill installed through
-	// it; skip silently.
-	if err := d.commandRunner.ToolInPath(host.Host); err != nil {
+	// An agent that is not on PATH cannot have the skill installed through
+	// it; skip silently. Probe the exec binary (Command), not the display
+	// Agent, so this PATH check matches the command actually run below —
+	// otherwise a manifest whose Agent differs from its binary (e.g. Agent
+	// "Claude Code CLI" / Command "claude") is never detected and a
+	// just-completed install fails verification.
+	if err := d.commandRunner.ToolInPath(agent.Command); err != nil {
 		return "", nil
 	}
 
 	// Run the list command. If it fails for any reason other than a
 	// context error we cannot reliably tell whether the skill is
-	// installed via this host — fail closed and report not-installed
+	// installed via this agent — fail closed and report not-installed
 	// rather than guessing from the error output (which often echoes the
 	// queried name).
 	result, err := d.commandRunner.Run(ctx, exec.RunArgs{
-		Cmd:  host.Host,
-		Args: host.PluginListCommand,
+		Cmd:  agent.Command,
+		Args: agent.PluginListCommand,
 	})
 	if err != nil {
 		if isContextErr(err) {
-			return "", fmt.Errorf("listing %s plugins: %w", host.Host, err)
+			return "", fmt.Errorf("listing %s plugins: %w", agent.DisplayName, err)
 		}
 		return "", nil
 	}
 
 	// Match only against stdout: stderr is usually diagnostics, not the
 	// canonical listing.
-	if !strings.Contains(result.Stdout, host.PluginName) {
+	if !strings.Contains(result.Stdout, agent.PluginName) {
 		return "", nil
 	}
-	return matchVersion(result.Stdout, host.VersionRegex), nil
+	return matchVersion(result.Stdout, agent.VersionRegex), nil
 }
 
 // ---------------------------------------------------------------------------

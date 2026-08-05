@@ -131,13 +131,15 @@ func Test_suggestRemoteBuild(t *testing.T) {
 
 // ---------- fake ServiceManager ----------
 type fakeServiceManager struct {
-	frameworkSvc        FrameworkService
-	serviceTarget       ServiceTarget
-	requiredTools       []tools.ExternalTool
-	getRequiredToolsErr error
-	getFrameworkErr     error
-	getTargetErr        error
-	initErr             error
+	frameworkSvc               FrameworkService
+	serviceTarget              ServiceTarget
+	requiredTools              []tools.ExternalTool
+	getRequiredToolsErr        error
+	getFrameworkErr            error
+	getTargetErr               error
+	initErr                    error
+	initFrameworkErr           error
+	initFrameworkErrForService map[string]error
 }
 
 func (f *fakeServiceManager) GetRequiredTools(
@@ -148,6 +150,16 @@ func (f *fakeServiceManager) GetRequiredTools(
 
 func (f *fakeServiceManager) Initialize(ctx context.Context, sc *ServiceConfig) error {
 	return f.initErr
+}
+
+func (f *fakeServiceManager) InitializeFrameworkService(ctx context.Context, sc *ServiceConfig) error {
+	if _, err := f.GetFrameworkService(ctx, sc); err != nil {
+		return err
+	}
+	if err, ok := f.initFrameworkErrForService[sc.Name]; ok {
+		return err
+	}
+	return f.initFrameworkErr
 }
 
 func (f *fakeServiceManager) Restore(
@@ -289,6 +301,54 @@ func Test_projectManager_Initialize(t *testing.T) {
 		err := pm.Initialize(t.Context(), sc.Project)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "initializing service 'api'")
+	})
+}
+
+func Test_projectManager_InitializeFrameworks(t *testing.T) {
+	newProject := func(dir string) *ProjectConfig {
+		prj := &ProjectConfig{Path: dir, Services: map[string]*ServiceConfig{}}
+		for _, name := range []string{"api", "agent"} {
+			prj.Services[name] = &ServiceConfig{
+				Name:         name,
+				RelativePath: name,
+				Host:         AppServiceTarget,
+				Language:     ServiceLanguagePython,
+				Project:      prj,
+			}
+		}
+		return prj
+	}
+
+	t.Run("AllServicesInitialized", func(t *testing.T) {
+		prj := newProject(t.TempDir())
+		pm := &projectManager{
+			importManager:  NewImportManager(nil),
+			serviceManager: &fakeServiceManager{frameworkSvc: &noOpProject{}},
+		}
+		initialized, skipped, err := pm.InitializeFrameworks(t.Context(), prj)
+		require.NoError(t, err)
+		require.Len(t, initialized, 2)
+		require.Empty(t, skipped)
+	})
+
+	// A per-service framework initialization failure (for example an extension-provided host that
+	// is not loaded) must be skipped, not abort the whole project. The other services still init.
+	t.Run("SkipsServiceThatFailsFrameworkInit", func(t *testing.T) {
+		prj := newProject(t.TempDir())
+		pm := &projectManager{
+			importManager: NewImportManager(nil),
+			serviceManager: &fakeServiceManager{
+				frameworkSvc:               &noOpProject{},
+				initFrameworkErrForService: map[string]error{"agent": assert.AnError},
+			},
+		}
+		initialized, skipped, err := pm.InitializeFrameworks(t.Context(), prj)
+		require.NoError(t, err)
+		require.Len(t, initialized, 1)
+		require.Equal(t, "api", initialized[0].Name)
+		require.Len(t, skipped, 1)
+		require.Equal(t, "agent", skipped[0].Service.Name)
+		require.ErrorIs(t, skipped[0].Err, assert.AnError)
 	})
 }
 

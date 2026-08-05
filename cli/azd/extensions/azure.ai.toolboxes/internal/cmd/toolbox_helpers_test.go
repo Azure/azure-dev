@@ -329,6 +329,18 @@ func TestExtractConnectionTools(t *testing.T) {
 			"name":                  "a2a",
 			"project_connection_id": "/conn/a2a",
 		},
+		// New connection-backed preview tools use the same top-level ID shape.
+		{
+			"type":                  "work_iq_preview",
+			"name":                  "work",
+			"project_connection_id": "/conn/work-iq",
+		},
+		{
+			"type":                  "fabric_iq_preview",
+			"name":                  "fabric",
+			"project_connection_id": "/conn/fabric-iq",
+			"server_label":          "fabric",
+		},
 		// Connection-backed web_search (GroundingWithCustomSearch).
 		{
 			"type": "web_search",
@@ -349,7 +361,7 @@ func TestExtractConnectionTools(t *testing.T) {
 	}
 
 	rows := extractConnectionTools(tools)
-	require.Len(t, rows, 4, "expected one row per connection-backed entry; built-in web_search must be skipped")
+	require.Len(t, rows, 6, "expected one row per connection-backed entry; built-in web_search must be skipped")
 
 	byName := map[string]map[string]string{}
 	for _, r := range rows {
@@ -374,6 +386,16 @@ func TestExtractConnectionTools(t *testing.T) {
 	require.NotNil(t, a2a)
 	assert.Equal(t, "a2a_preview", a2a["type"])
 	assert.Equal(t, "/conn/a2a", a2a["connection_id"])
+
+	workIQ := byName["work"]
+	require.NotNil(t, workIQ)
+	assert.Equal(t, "work_iq_preview", workIQ["type"])
+	assert.Equal(t, "/conn/work-iq", workIQ["connection_id"])
+
+	fabricIQ := byName["fabric"]
+	require.NotNil(t, fabricIQ)
+	assert.Equal(t, "fabric_iq_preview", fabricIQ["type"])
+	assert.Equal(t, "/conn/fabric-iq", fabricIQ["connection_id"])
 
 	bing := byName["bing"]
 	require.NotNil(t, bing)

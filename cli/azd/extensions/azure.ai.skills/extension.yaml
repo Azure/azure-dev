@@ -5,7 +5,7 @@ displayName: Foundry skills (Beta)
 description: Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Beta)
 usage: azd ai skill <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
-version: 1.0.0-beta.1
+version: 1.0.0-beta.2
 requiredAzdVersion: ">=1.27.0"
 language: go
 capabilities:

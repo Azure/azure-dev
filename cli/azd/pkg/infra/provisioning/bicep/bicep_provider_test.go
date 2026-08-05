@@ -2073,32 +2073,32 @@ func TestHelperEvalParamEnvSubst(t *testing.T) {
 	require.Contains(t, substResult.mappedEnvVars, "VAR2")
 	require.False(t, substResult.hasUnsetEnvVar)
 }
-func TestSetPreflightOutcome_SetsSpanAndUsageAttributes(t *testing.T) {
+func TestSetProvisionValidationOutcome_SetsSpanAndUsageAttributes(t *testing.T) {
 	span := &mocktracing.Span{}
 	provider := &BicepProvider{}
 
 	diagnosticIDs := []string{"role_assignment_missing", "role_assignment_conditional"}
-	provider.setPreflightOutcome(span, preflightOutcomeWarningsAccepted, diagnosticIDs)
+	provider.setProvisionValidationOutcome(span, provisionValidationOutcomeWarningsAccepted, diagnosticIDs)
 
 	// Verify outcome is set on the span directly.
-	outcomeAttr := findSpanAttribute(span.Attributes, "validation.preflight.outcome")
+	outcomeAttr := findSpanAttribute(span.Attributes, "validation.provision.outcome")
 	require.NotNil(t, outcomeAttr, "expected outcome attribute on span")
-	require.Equal(t, preflightOutcomeWarningsAccepted, outcomeAttr.Value.AsString())
+	require.Equal(t, provisionValidationOutcomeWarningsAccepted, outcomeAttr.Value.AsString())
 
 	// Verify usage-level attributes are set for parent command span correlation.
 	usageAttrs := tracing.GetUsageAttributes()
-	usageOutcome := findSpanAttribute(usageAttrs, "validation.preflight.outcome")
+	usageOutcome := findSpanAttribute(usageAttrs, "validation.provision.outcome")
 	require.NotNil(t, usageOutcome, "expected outcome in usage attributes")
-	require.Equal(t, preflightOutcomeWarningsAccepted, usageOutcome.Value.AsString())
+	require.Equal(t, provisionValidationOutcomeWarningsAccepted, usageOutcome.Value.AsString())
 
 	usageDiag := findSpanAttribute(
-		usageAttrs, "validation.preflight.diagnostics",
+		usageAttrs, "validation.provision.diagnostics",
 	)
 	require.NotNil(t, usageDiag, "expected diagnostics in usage attributes")
 	require.Equal(t, diagnosticIDs, usageDiag.Value.AsStringSlice())
 }
 
-func TestSetPreflightOutcome_AllOutcomeValues(t *testing.T) {
+func TestSetProvisionValidationOutcome_AllOutcomeValues(t *testing.T) {
 	tests := []struct {
 		name          string
 		outcome       string
@@ -2106,32 +2106,32 @@ func TestSetPreflightOutcome_AllOutcomeValues(t *testing.T) {
 	}{
 		{
 			name:          "passed",
-			outcome:       preflightOutcomePassed,
+			outcome:       provisionValidationOutcomePassed,
 			diagnosticIDs: nil,
 		},
 		{
 			name:          "warnings accepted",
-			outcome:       preflightOutcomeWarningsAccepted,
+			outcome:       provisionValidationOutcomeWarningsAccepted,
 			diagnosticIDs: []string{"role_assignment_missing"},
 		},
 		{
-			name:          "aborted by errors",
-			outcome:       preflightOutcomeAbortedByErrors,
+			name:          "canceled by errors",
+			outcome:       provisionValidationOutcomeCanceledByErrors,
 			diagnosticIDs: []string{"role_assignment_missing"},
 		},
 		{
-			name:          "aborted by user",
-			outcome:       preflightOutcomeAbortedByUser,
+			name:          "canceled by user",
+			outcome:       provisionValidationOutcomeCanceledByUser,
 			diagnosticIDs: []string{"role_assignment_conditional"},
 		},
 		{
 			name:          "skipped",
-			outcome:       preflightOutcomeSkipped,
+			outcome:       provisionValidationOutcomeSkipped,
 			diagnosticIDs: nil,
 		},
 		{
 			name:          "error",
-			outcome:       preflightOutcomeError,
+			outcome:       provisionValidationOutcomeError,
 			diagnosticIDs: nil,
 		},
 	}
@@ -2141,10 +2141,10 @@ func TestSetPreflightOutcome_AllOutcomeValues(t *testing.T) {
 			span := &mocktracing.Span{}
 			provider := &BicepProvider{}
 
-			provider.setPreflightOutcome(span, tt.outcome, tt.diagnosticIDs)
+			provider.setProvisionValidationOutcome(span, tt.outcome, tt.diagnosticIDs)
 
 			outcomeAttr := findSpanAttribute(
-				span.Attributes, "validation.preflight.outcome",
+				span.Attributes, "validation.provision.outcome",
 			)
 			require.NotNil(t, outcomeAttr)
 			require.Equal(t, tt.outcome, outcomeAttr.Value.AsString())
@@ -3269,11 +3269,11 @@ func TestConvertIntAndJsonHelpers(t *testing.T) {
 	})
 }
 
-// TestNewLocalArmPreflightAndAddCheck covers the constructor and AddCheck append path.
-func TestNewLocalArmPreflightAndAddCheck(t *testing.T) {
+// TestNewProvisionValidatorAndAddCheck covers the constructor and AddCheck append path.
+func TestNewProvisionValidatorAndAddCheck(t *testing.T) {
 	t.Parallel()
 
-	pf := newLocalArmPreflight("infra/main.bicep", nil, nil, "westus2")
+	pf := newProvisionValidator("infra/main.bicep", nil, nil, "westus2")
 	require.NotNil(t, pf)
 	require.Equal(t, "infra/main.bicep", pf.modulePath)
 	require.Equal(t, "westus2", pf.envLocation)
@@ -3281,11 +3281,11 @@ func TestNewLocalArmPreflightAndAddCheck(t *testing.T) {
 	require.Empty(t, pf.checks)
 
 	// AddCheck appends; verify count grows.
-	noopFn := func(ctx context.Context, valCtx *validationContext) ([]PreflightCheckResult, error) {
+	noopFn := func(ctx context.Context, valCtx *validationContext) ([]ProvisionValidationCheckResult, error) {
 		return nil, nil
 	}
-	pf.AddCheck(PreflightCheck{RuleID: "rule1", Fn: noopFn})
-	pf.AddCheck(PreflightCheck{RuleID: "rule2", Fn: noopFn})
+	pf.AddCheck(ProvisionValidationCheck{RuleID: "rule1", Fn: noopFn})
+	pf.AddCheck(ProvisionValidationCheck{RuleID: "rule2", Fn: noopFn})
 	require.Len(t, pf.checks, 2)
 }
 
@@ -3343,7 +3343,7 @@ func TestDeploymentStateErrors(t *testing.T) {
 	})
 }
 
-// TestValidateErrors exercises the error/skip paths of localArmPreflight.validate
+// TestValidateErrors exercises the error/skip paths of provisionValidator.validate
 // without depending on a real Bicep snapshot.
 func TestValidateErrors(t *testing.T) {
 	t.Parallel()
@@ -3354,7 +3354,7 @@ func TestValidateErrors(t *testing.T) {
 		prepareBicepMocks(mockContext)
 		p := createBicepProvider(t, mockContext)
 
-		pre := newLocalArmPreflight("main.bicep", p.bicepCli, nil, "eastus2")
+		pre := newProvisionValidator("main.bicep", p.bicepCli, nil, "eastus2")
 		// Pass invalid JSON to trigger parseTemplate error.
 		_, _, err := pre.validate(
 			t.Context(),
@@ -3386,7 +3386,7 @@ func TestValidateErrors(t *testing.T) {
 				`"resources":[{"type":"Microsoft.Resources/deployments",` +
 				`"name":"x","apiVersion":"2020-10-01"}]}`)
 
-		pre := newLocalArmPreflight("nonexistent.bicepparam", p.bicepCli, nil, "")
+		pre := newProvisionValidator("nonexistent.bicepparam", p.bicepCli, nil, "")
 		_, results, err := pre.validate(
 			t.Context(),
 			mockContext.Console,
@@ -3421,7 +3421,7 @@ func TestValidateErrors(t *testing.T) {
 		moduleDir := t.TempDir()
 		modulePath := moduleDir + "/main.bicep"
 
-		pre := newLocalArmPreflight(modulePath, p.bicepCli, nil, "eastus2")
+		pre := newProvisionValidator(modulePath, p.bicepCli, nil, "eastus2")
 		_, results, err := pre.validate(
 			t.Context(),
 			mockContext.Console,

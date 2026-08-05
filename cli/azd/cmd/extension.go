@@ -507,7 +507,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 // Status indicator constants for extension list display.
 const (
 	statusUpToDate   = "Up to date"
-	statusUpdate     = "Update available"
+	statusUpgrade    = "Upgrade available"
 	statusIncompat   = "Incompatible"
 	statusNotInstall = "Not installed"
 )
@@ -518,7 +518,7 @@ func extensionStatus(installed, updateAvailable, incompatible bool) string {
 	case incompatible:
 		return statusIncompat
 	case updateAvailable:
-		return statusUpdate
+		return statusUpgrade
 	case installed:
 		return statusUpToDate
 	default:
@@ -531,7 +531,7 @@ func extensionStatusColor(s string) string {
 	switch s {
 	case statusUpToDate:
 		return output.WithSuccessFormat(s)
-	case statusUpdate:
+	case statusUpgrade:
 		return output.WithWarningFormat(s)
 	case statusIncompat:
 		return output.WithErrorFormat(s)
@@ -1216,18 +1216,18 @@ func (a *extensionInstallAction) confirmReplace(
 	return true, nil
 }
 
-// wrapDependencyError augments a dependency-not-found failure with actionable
-// guidance. azd does not resolve dependencies across sources during install, so
-// when a required dependency is missing from the parent's source the user is
-// directed to install it explicitly first. Other errors pass through unchanged.
+// wrapDependencyError augments dependency resolution failures with actionable
+// guidance. Other errors pass through unchanged.
 func wrapDependencyError(err error) error {
-	if depErr, ok := errors.AsType[*extensions.DependencyNotFoundError](err); ok {
+	type dependencyErrorWithSuggestion interface {
+		error
+		Suggestion() string
+	}
+
+	if depErr, ok := errors.AsType[dependencyErrorWithSuggestion](err); ok {
 		return &internal.ErrorWithSuggestion{
-			Err: depErr,
-			Suggestion: fmt.Sprintf(
-				"Install the required dependency first with %s, then retry.",
-				output.WithHighLightFormat("azd extension install %s", depErr.DependencyId),
-			),
+			Err:        depErr,
+			Suggestion: depErr.Suggestion(),
 		}
 	}
 
@@ -1825,7 +1825,7 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 		stepMessage += fmt.Sprintf(" (%s)", installed.Version)
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
-		if err := a.extensionManager.Uninstall(extensionId); err != nil {
+		if err := a.extensionManager.Uninstall(ctx, extensionId); err != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, fmt.Errorf("failed to uninstall extension: %w", err)
 		}
@@ -2022,6 +2022,69 @@ loop:
 	return upgradeActionResult(results)
 }
 
+// upgradeSourceResolutionError builds a user-facing error when upgrade cannot
+// select a registry source for the extension.
+func upgradeSourceResolutionError(extensionId, flagSource, installedSource string) error {
+	if flagSource != "" {
+		return fmt.Errorf(
+			"extension '%s' not found in source '%s'",
+			extensionId, flagSource,
+		)
+	}
+
+	sourceName := installedSource
+	if sourceName == "" {
+		sourceName = extensions.MainRegistryName
+	}
+	if strings.EqualFold(sourceName, extensions.MainRegistryName) {
+		return fmt.Errorf(
+			"extension '%s' not available in the main registry",
+			extensionId,
+		)
+	}
+	return fmt.Errorf(
+		"extension '%s' not available in source '%s' or the main registry",
+		extensionId, sourceName,
+	)
+}
+
+// upgradeVersionResolutionError builds a user-facing error when the selected
+// upgrade source contains the extension but not the requested version.
+func upgradeVersionResolutionError(extensionId, version, source string) error {
+	if source == "" || strings.EqualFold(source, extensions.MainRegistryName) {
+		return fmt.Errorf(
+			"extension '%s' version '%s' not available in the main registry",
+			extensionId, version,
+		)
+	}
+	return fmt.Errorf(
+		"extension '%s' version '%s' not available in source '%s'",
+		extensionId, version, source,
+	)
+}
+
+// upgradeRetryCommand returns a retry command that preserves the source and
+// version explicitly requested by the user.
+func upgradeRetryCommand(extensionId, source, version string) string {
+	command := fmt.Sprintf("azd extension upgrade %s", extensionId)
+	if source != "" {
+		command += fmt.Sprintf(" --source %s", source)
+	}
+	if version != "" {
+		command += fmt.Sprintf(" --version %s", version)
+	}
+	return command
+}
+
+// upgradeFailureDetails extracts actionable guidance from typed upgrade errors.
+func upgradeFailureDetails(err error) (string, error) {
+	wrappedErr := wrapDependencyError(err)
+	if suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](wrappedErr); ok {
+		return suggestionErr.Suggestion, wrappedErr
+	}
+	return "", wrappedErr
+}
+
 // upgradeOneExtension processes a single extension upgrade and returns
 // the result. It never returns an error — failures are captured in
 // the returned UpgradeResult. A telemetry span is emitted for every
@@ -2085,6 +2148,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 
 	// Helper to record a failure and stop the spinner.
 	fail := func(err error) extensions.UpgradeResult {
+		baseResult.Suggestion, err = upgradeFailureDetails(err)
 		baseResult.Status = extensions.UpgradeStatusFailed
 		baseResult.Error = err
 		if !isJsonOutput {
@@ -2095,11 +2159,18 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 				"  %s",
 				output.WithGrayFormat("%s", err.Error()),
 			))
+			if baseResult.Suggestion != "" {
+				a.console.Message(ctx, fmt.Sprintf(
+					"  %s", baseResult.Suggestion,
+				))
+			}
 			a.console.Message(ctx, fmt.Sprintf(
 				"  Retry with: %s",
 				output.WithHighLightFormat(
-					"azd extension upgrade %s",
-					extensionId,
+					"%s",
+					upgradeRetryCommand(
+						extensionId, a.flags.source, a.flags.version,
+					),
 				),
 			))
 		}
@@ -2147,6 +2218,45 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		allMatchOptions.Source = a.flags.source
 	}
 
+	versionMismatchError := func() error {
+		if a.flags.version == "" || strings.EqualFold(a.flags.version, "latest") {
+			return nil
+		}
+
+		unversionedOptions := *allMatchOptions
+		unversionedOptions.Version = ""
+		unversionedMatches, err := a.extensionManager.FindExtensions(
+			ctx, &unversionedOptions,
+		)
+		if err != nil {
+			if isNetworkError(err) {
+				return fmt.Errorf(
+					"network error looking up extension %s "+
+						"(check your connection and retry): %w",
+					extensionId, err,
+				)
+			}
+			return fmt.Errorf(
+				"failed to find extension %s: %w", extensionId, err,
+			)
+		}
+
+		res := extensions.ResolveUpgradeSource(
+			installed, unversionedMatches, a.flags.source,
+		)
+		if res == nil {
+			if len(unversionedMatches) > 0 {
+				return upgradeSourceResolutionError(
+					extensionId, a.flags.source, installed.Source,
+				)
+			}
+			return nil
+		}
+		return upgradeVersionResolutionError(
+			extensionId, a.flags.version, res.NewSource,
+		)
+	}
+
 	matches, err := a.extensionManager.FindExtensions(
 		ctx, allMatchOptions,
 	)
@@ -2163,11 +2273,30 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		))
 	}
 	if len(matches) == 0 {
+		if err := versionMismatchError(); err != nil {
+			return fail(err)
+		}
+
+		// Explicit --source miss: neither the requested version nor any other
+		// version of the extension exists in that source.
+		if a.flags.source != "" && !a.flags.all {
+			return fail(upgradeSourceResolutionError(
+				extensionId, a.flags.source, installed.Source,
+			))
+		}
+
 		// Delisted or unavailable — skip instead of fail so
 		// the batch continues.
 		baseResult.Status = extensions.UpgradeStatusSkipped
-		baseResult.SkipReason = "extension no longer available " +
-			"in any configured registry"
+		if a.flags.source != "" {
+			baseResult.SkipReason = fmt.Sprintf(
+				"extension not available in source '%s'",
+				a.flags.source,
+			)
+		} else {
+			baseResult.SkipReason = "extension no longer available " +
+				"in any configured registry"
+		}
 		if !isJsonOutput {
 			skipMsg := fmt.Sprintf(
 				"Upgrading %s extension",
@@ -2192,9 +2321,11 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			installed, matches, a.flags.source,
 		)
 		if res == nil {
-			return fail(fmt.Errorf(
-				"extension '%s' not found in source '%s'",
-				extensionId, a.flags.source,
+			if err := versionMismatchError(); err != nil {
+				return fail(err)
+			}
+			return fail(upgradeSourceResolutionError(
+				extensionId, a.flags.source, installed.Source,
 			))
 		}
 		selectedExt = res.Extension
@@ -2426,6 +2557,7 @@ func displayDependencyUpgradeResults(
 	indent string,
 ) {
 	for _, child := range results {
+		suggestionPadding := 0
 		switch child.Status {
 		case extensions.UpgradeStatusUpgraded:
 			verb := dependencyChangeVerb(child.FromVersion, child.ToVersion)
@@ -2441,6 +2573,7 @@ func displayDependencyUpgradeResults(
 				),
 			))
 		case extensions.UpgradeStatusFailed:
+			suggestionPadding = len("(x) Failed: ")
 			console.Message(ctx, fmt.Sprintf(
 				"%s%s Upgrading %s dependency%s",
 				indent,
@@ -2456,6 +2589,7 @@ func displayDependencyUpgradeResults(
 				}(),
 			))
 		case extensions.UpgradeStatusSkipped:
+			suggestionPadding = len("(-) Skipped: ")
 			line := fmt.Sprintf(
 				"%s%s Upgrading %s dependency",
 				indent,
@@ -2466,14 +2600,14 @@ func displayDependencyUpgradeResults(
 				line += output.WithGrayFormat(" (%s)", child.SkipReason)
 			}
 			console.Message(ctx, line)
-			if child.Suggestion != "" {
-				console.Message(ctx, fmt.Sprintf(
-					"%s%s%s",
-					indent,
-					strings.Repeat(" ", len("(-) Skipped: ")),
-					child.Suggestion,
-				))
-			}
+		}
+		if child.Suggestion != "" && suggestionPadding > 0 {
+			console.Message(ctx, fmt.Sprintf(
+				"%s%s%s",
+				indent,
+				strings.Repeat(" ", suggestionPadding),
+				child.Suggestion,
+			))
 		}
 		displayDependencyUpgradeResults(ctx, console, child.DependencyUpgrades, indent)
 	}

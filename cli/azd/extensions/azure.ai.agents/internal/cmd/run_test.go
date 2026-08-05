@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -438,14 +439,15 @@ func createVenv(t *testing.T, projectDir string) string {
 func TestAppendFoundryEnvVars(t *testing.T) {
 	t.Parallel()
 
-	t.Run("does not map FOUNDRY_PROJECT_ENDPOINT to itself", func(t *testing.T) {
+	t.Run("forwards FOUNDRY_PROJECT_ENDPOINT", func(t *testing.T) {
 		t.Parallel()
 		azdEnv := map[string]string{
 			"FOUNDRY_PROJECT_ENDPOINT": "https://myaccount.services.ai.azure.com/api/projects/myproject",
 		}
 		env := appendFoundryEnvVars(nil, azdEnv, "")
-		if len(env) != 0 {
-			t.Errorf("expected no translated env vars, got %v", env)
+		expected := "FOUNDRY_PROJECT_ENDPOINT=https://myaccount.services.ai.azure.com/api/projects/myproject"
+		if !slices.Contains(env, expected) {
+			t.Errorf("expected %q in env, got %v", expected, env)
 		}
 	})
 
@@ -494,12 +496,12 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 			"AGENT_AGENT1_VERSION":     "v1",
 		}
 		env := appendFoundryEnvVars(nil, azdEnv, "agent1")
-		if len(env) != 3 {
-			t.Errorf("expected 3 env vars, got %d: %v", len(env), env)
+		if len(env) != 4 {
+			t.Errorf("expected 4 env vars, got %d: %v", len(env), env)
 		}
 	})
 
-	t.Run("skips foundry key when already set in azd env", func(t *testing.T) {
+	t.Run("prefers service-specific agent metadata", func(t *testing.T) {
 		t.Parallel()
 		azdEnv := map[string]string{
 			"FOUNDRY_PROJECT_ENDPOINT": "https://explicit.services.ai.azure.com",
@@ -508,20 +510,26 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 		}
 		env := appendFoundryEnvVars(nil, azdEnv, "my-svc")
 
-		// Neither FOUNDRY_PROJECT_ENDPOINT nor FOUNDRY_AGENT_NAME should be
-		// appended because they already exist in azdEnv (and were thus already
-		// added to the env slice by the caller's loop over azdEnv).
-		for _, entry := range env {
-			if strings.HasPrefix(entry, "FOUNDRY_PROJECT_ENDPOINT=") ||
-				strings.HasPrefix(entry, "FOUNDRY_AGENT_NAME=") {
-				t.Errorf("should not translate when foundry key already in azdEnv, got %q", entry)
-			}
+		if !slices.Contains(
+			env,
+			"FOUNDRY_PROJECT_ENDPOINT=https://explicit.services.ai.azure.com",
+		) {
+			t.Errorf("expected project endpoint in env, got %v", env)
 		}
+		if !slices.Contains(env, "FOUNDRY_AGENT_NAME=my-agent") {
+			t.Errorf("expected service agent name in env, got %v", env)
+		}
+	})
 
-		// AZURE_AI_PROJECT_ID has no explicit FOUNDRY_PROJECT_ARM_ID, so it should still be skipped
-		// (it's not in azdEnv either, so appendFoundryEnvVars skips it because the source key is empty)
-		if len(env) != 0 {
-			t.Errorf("expected no translated env vars, got %v", env)
+	t.Run("forwards application insights", func(t *testing.T) {
+		t.Parallel()
+		azdEnv := map[string]string{
+			"APPLICATIONINSIGHTS_CONNECTION_STRING": "InstrumentationKey=test",
+		}
+		env := appendFoundryEnvVars(nil, azdEnv, "")
+		expected := "APPLICATIONINSIGHTS_CONNECTION_STRING=InstrumentationKey=test"
+		if !slices.Contains(env, expected) {
+			t.Errorf("expected %q in env, got %v", expected, env)
 		}
 	})
 
@@ -569,6 +577,234 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 			t.Errorf("expected FOUNDRY_AGENT_VERSION to be translated, got %v", env)
 		}
 	})
+}
+
+func TestMergeAgentRunEnvironment(t *testing.T) {
+	t.Parallel()
+
+	value := func(environment []string, key string) (string, bool) {
+		t.Helper()
+		for i := len(environment) - 1; i >= 0; i-- {
+			name, entryValue, found := strings.Cut(environment[i], "=")
+			if found && name == key {
+				return entryValue, true
+			}
+		}
+		return "", false
+	}
+
+	t.Run("service env wins without leaking azd values", func(t *testing.T) {
+		t.Parallel()
+		environment := mergeAgentRunEnvironment(
+			[]string{"FOO=process", "PORT=8088"},
+			map[string]string{
+				"FOO":                      "global",
+				"BAR":                      "global",
+				"UNDECLARED_SECRET":        "hidden",
+				"FOUNDRY_PROJECT_ENDPOINT": "https://project.example",
+			},
+			map[string]string{
+				"FOO":          "service",
+				"BAR":          "service",
+				"EMPTY":        "",
+				"PORT":         "9000",
+				"SERVICE_ONLY": "service-only",
+			},
+			[]string{
+				"FOO=service",
+				"BAR=service",
+				"PORT=9000",
+				"LEGACY=declared",
+			},
+			"agent",
+			true,
+		)
+
+		if got, _ := value(environment, "FOO"); got != "process" {
+			t.Errorf("expected process FOO, got %q", got)
+		}
+		if got, _ := value(environment, "BAR"); got != "service" {
+			t.Errorf("expected service BAR, got %q", got)
+		}
+		if got, _ := value(environment, "PORT"); got != "8088" {
+			t.Errorf("expected command PORT, got %q", got)
+		}
+		if _, found := value(environment, "UNDECLARED_SECRET"); found {
+			t.Errorf("did not expect undeclared azd value in %v", environment)
+		}
+		if got, _ := value(environment, "FOUNDRY_PROJECT_ENDPOINT"); got !=
+			"https://project.example" {
+			t.Errorf("expected Foundry endpoint, got %q", got)
+		}
+		if got, _ := value(environment, "LEGACY"); got != "declared" {
+			t.Errorf("expected declared legacy value, got %q", got)
+		}
+		if got, _ := value(environment, "SERVICE_ONLY"); got != "service-only" {
+			t.Errorf("expected service-only value, got %q", got)
+		}
+		if got, found := value(environment, "EMPTY"); !found || got != "" {
+			t.Errorf("expected empty service value, got %q, found %v", got, found)
+		}
+	})
+
+	t.Run("explicit empty env stays isolated", func(t *testing.T) {
+		t.Parallel()
+		environment := mergeAgentRunEnvironment(
+			[]string{"FOO=process"},
+			map[string]string{"SECRET": "leaked", "OTHER": "leaked"},
+			map[string]string{},
+			nil,
+			"agent",
+			true,
+		)
+		if _, found := value(environment, "SECRET"); found {
+			t.Errorf("did not expect azd value in isolated env %v", environment)
+		}
+		if got, _ := value(environment, "FOO"); got != "process" {
+			t.Errorf("expected process FOO, got %q", got)
+		}
+	})
+
+	t.Run("legacy service keeps azd fallback", func(t *testing.T) {
+		t.Parallel()
+		environment := mergeAgentRunEnvironment(
+			[]string{"FOO=process"},
+			map[string]string{
+				"FOO":        "global",
+				"BAR":        "global",
+				"PROJECT_ID": "project",
+			},
+			nil,
+			[]string{"BAR=inline", "BAZ=inline"},
+			"agent",
+			false,
+		)
+
+		if got, _ := value(environment, "FOO"); got != "process" {
+			t.Errorf("expected process FOO, got %q", got)
+		}
+		if got, _ := value(environment, "BAR"); got != "global" {
+			t.Errorf("expected global BAR, got %q", got)
+		}
+		if got, _ := value(environment, "PROJECT_ID"); got != "project" {
+			t.Errorf("expected legacy azd value, got %q", got)
+		}
+		if got, _ := value(environment, "BAZ"); got != "inline" {
+			t.Errorf("expected inline BAZ, got %q", got)
+		}
+	})
+}
+
+// TestLegacyEnvVarsKeepProjectFallback pins the deliberate gap in
+// the env: scope: an explicit env: {} stops the azd environment
+// from reaching the child, but a ${VAR} the author wrote in the
+// deprecated environment_variables block still resolves against
+// it. Cutting that off would silently empty the value for a
+// project mid-migration, so the fallback stays. Without this
+// test ResolveAgentEnvironmentVariable reads as fully
+// scope-aware, which it is not.
+func TestLegacyEnvVarsKeepProjectFallback(t *testing.T) {
+	t.Parallel()
+
+	azdEnvironment := map[string]string{
+		"FOO":               "project-wide",
+		"UNDECLARED_SECRET": "hidden",
+	}
+	serviceEnvironment := map[string]string{}
+
+	definition := &agent_yaml.ContainerAgent{
+		EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
+			{Name: "TARGET", Value: "${FOO}"},
+		},
+	}
+
+	definitionEnvironment, err := resolveAgentDefinitionEnvVars(
+		t.Context(),
+		definition,
+		serviceEnvironment,
+		azdEnvironment,
+		"",
+	)
+	if err != nil {
+		t.Fatalf("resolveAgentDefinitionEnvVars: %v", err)
+	}
+
+	environment := mergeAgentRunEnvironment(
+		[]string{"PATH=/usr/bin"},
+		azdEnvironment,
+		serviceEnvironment,
+		definitionEnvironment,
+		"agent",
+		true,
+	)
+
+	if !slices.Contains(environment, "TARGET=project-wide") {
+		t.Errorf("expected legacy fallback to resolve, got %v", environment)
+	}
+	for _, entry := range environment {
+		name, _, _ := strings.Cut(entry, "=")
+		if name == "FOO" || name == "UNDECLARED_SECRET" {
+			t.Errorf("did not expect %q in %v", name, environment)
+		}
+	}
+}
+
+func TestResolveLocalServiceEnvironment(t *testing.T) {
+	t.Parallel()
+
+	original := map[string]string{
+		"MODEL_ENDPOINT": "${{project.endpoint}}/models",
+		"LITERAL":        "literal ${NOT_A_TEMPLATE}",
+	}
+	endpoint := localProjectEndpoint(
+		[]string{"FOUNDRY_PROJECT_ENDPOINT=https://process.example"},
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://service.example",
+		},
+		"https://azd.example",
+	)
+	resolved := resolveLocalServiceEnvironment(
+		original,
+		endpoint,
+	)
+
+	if got := resolved["MODEL_ENDPOINT"]; got !=
+		"https://process.example/models" {
+		t.Errorf("expected resolved endpoint, got %q", got)
+	}
+	if got := resolved["LITERAL"]; got != "literal ${NOT_A_TEMPLATE}" {
+		t.Errorf("expected literal value, got %q", got)
+	}
+	if got := original["MODEL_ENDPOINT"]; got !=
+		"${{project.endpoint}}/models" {
+		t.Errorf("expected original map to stay unchanged, got %q", got)
+	}
+
+	serviceEndpoint := localProjectEndpoint(
+		nil,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://service.example",
+		},
+		"https://azd.example",
+	)
+	if serviceEndpoint != "https://service.example" {
+		t.Errorf("expected service endpoint, got %q", serviceEndpoint)
+	}
+}
+
+func TestEnvSliceHasKeyUsesPlatformCasing(t *testing.T) {
+	t.Parallel()
+
+	env := []string{"Path=process-value"}
+	if !envSliceHasKey(env, "Path") {
+		t.Fatal("expected exact-case environment key to match")
+	}
+
+	got := envSliceHasKey(env, "PATH")
+	want := runtime.GOOS == "windows"
+	if got != want {
+		t.Errorf("envSliceHasKey() = %t, want %t", got, want)
+	}
 }
 
 func TestAppendPortEnvVars(t *testing.T) {
@@ -893,7 +1129,7 @@ environment_variables:
     value: debug
 `)
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -917,7 +1153,7 @@ environment_variables:
 		azdEnv := map[string]string{
 			"FOUNDRY_PROJECT_ENDPOINT": "https://example.azure.com",
 		}
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, azdEnv, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, azdEnv, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -938,7 +1174,7 @@ environment_variables:
     value: hello
 `)
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -954,7 +1190,7 @@ environment_variables:
 	})
 
 	t.Run("returns nil for nil definition", func(t *testing.T) {
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), nil, nil, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), nil, nil, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -966,7 +1202,7 @@ environment_variables:
 	t.Run("returns nil for empty environment_variables", func(t *testing.T) {
 		def := parse(t, "name: test-agent\n")
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -982,12 +1218,34 @@ environment_variables:
     value: ${DOES_NOT_EXIST}
 `)
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, map[string]string{}, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, map[string]string{}, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if !slices.Contains(result, "MISSING_REF=") {
 			t.Errorf("expected MISSING_REF= (empty), got %v", result)
+		}
+	})
+
+	t.Run("keeps forwarded core values literal", func(t *testing.T) {
+		def := parse(t, `name: test-agent
+environment_variables:
+  - name: FORWARDED_VALUE
+    value: ${FORWARDED_VALUE}
+`)
+
+		result, err := resolveAgentDefinitionEnvVars(
+			t.Context(),
+			def,
+			map[string]string{"FORWARDED_VALUE": "literal ${NOT_A_TEMPLATE}"},
+			map[string]string{"NOT_A_TEMPLATE": "expanded"},
+			"",
+		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !slices.Contains(result, "FORWARDED_VALUE=literal ${NOT_A_TEMPLATE}") {
+			t.Errorf("expected literal forwarded value, got %v", result)
 		}
 	})
 }
@@ -1011,58 +1269,269 @@ func TestVenvPip(t *testing.T) {
 	}
 }
 
-func TestFindSystemPython(t *testing.T) {
-	t.Run("finds python3 on PATH", func(t *testing.T) {
-		dir := t.TempDir()
+func TestUvPythonInstallSteps(t *testing.T) {
+	t.Parallel()
 
-		// Create a fake python3 executable
-		name := "python3"
-		if runtime.GOOS == "windows" {
-			name = "python3.exe"
-		}
-		fakePython := filepath.Join(dir, name)
-		err := os.WriteFile(fakePython, []byte(""), 0o755) //nolint:gosec // G306: test binary needs exec permission
-		if err != nil {
+	tests := []struct {
+		name      string
+		files     []string
+		wantSteps []dependencyInstallStep
+	}{
+		{
+			name:  "uv lock is authoritative",
+			files: []string{"pyproject.toml", "uv.lock", "requirements.txt"},
+			wantSteps: []dependencyInstallStep{{
+				startMessage:   "Synchronizing dependencies (uv.lock)...",
+				successMessage: "  ✓ Dependencies synchronized (uv.lock)",
+				errorMessage:   "uv sync failed",
+				args: []string{
+					"sync",
+					"--locked",
+					"--python", "python-path",
+					"--quiet",
+				},
+			}},
+		},
+		{
+			name:  "pyproject without lock uses editable install",
+			files: []string{"pyproject.toml"},
+			wantSteps: []dependencyInstallStep{{
+				startMessage:   "Installing dependencies (pyproject.toml)...",
+				successMessage: "  ✓ Dependencies installed (pyproject.toml)",
+				errorMessage:   "uv pip install failed",
+				args: []string{
+					"pip", "install", "-e", ".",
+					"--python", "python-path",
+					"--prerelease", "allow",
+					"--quiet",
+				},
+			}},
+		},
+		{
+			name:  "requirements without lock keeps requirements install",
+			files: []string{"requirements.txt"},
+			wantSteps: []dependencyInstallStep{{
+				startMessage:   "Installing dependencies (requirements.txt)...",
+				successMessage: "  ✓ Dependencies installed (requirements.txt)",
+				errorMessage:   "uv pip install failed",
+				args: []string{
+					"pip", "install", "-r", "requirements.txt",
+					"--python", "python-path",
+					"--prerelease", "allow",
+					"--quiet",
+				},
+			}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			projectDir := t.TempDir()
+			for _, name := range tt.files {
+				if err := os.WriteFile(filepath.Join(projectDir, name), nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			got := uvPythonInstallSteps(projectDir, "python-path")
+			if len(got) != len(tt.wantSteps) {
+				t.Fatalf("got %d steps, want %d: %#v", len(got), len(tt.wantSteps), got)
+			}
+			for i := range got {
+				if got[i].startMessage != tt.wantSteps[i].startMessage ||
+					got[i].successMessage != tt.wantSteps[i].successMessage ||
+					got[i].errorMessage != tt.wantSteps[i].errorMessage ||
+					!slices.Equal(got[i].args, tt.wantSteps[i].args) {
+					t.Errorf("step %d = %#v, want %#v", i, got[i], tt.wantSteps[i])
+				}
+			}
+		})
+	}
+}
+
+func TestInstallPythonDepsRequiresUvForLock(t *testing.T) {
+	projectDir := t.TempDir()
+	for _, name := range []string{"pyproject.toml", "uv.lock"} {
+		if err := os.WriteFile(filepath.Join(projectDir, name), nil, 0o600); err != nil {
 			t.Fatal(err)
 		}
+	}
 
-		t.Setenv("PATH", dir)
-		result, err := findSystemPython()
+	t.Setenv("PATH", t.TempDir())
+
+	err := installPythonDeps(projectDir)
+	if err == nil {
+		t.Fatal("expected locked project without uv to fail")
+	}
+	if !strings.Contains(err.Error(), "uv is required to synchronize dependencies from uv.lock") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestMinPythonUvSpec(t *testing.T) {
+	// The uv `--python` specifier must derive from the shared constants so the
+	// uv and pip paths cannot drift apart.
+	want := fmt.Sprintf(">=%d.%d", minPythonMajor, minPythonMinor)
+	if got := minPythonUvSpec(); got != want {
+		t.Errorf("minPythonUvSpec() = %q, want %q", got, want)
+	}
+}
+
+func TestPythonVersionOK(t *testing.T) {
+	tests := []struct {
+		major, minor int
+		want         bool
+	}{
+		{3, 13, true},
+		{3, 14, true},
+		{4, 0, true},
+		{3, 12, false},
+		{3, 11, false},
+		{2, 7, false},
+	}
+	for _, tc := range tests {
+		if got := pythonVersionOK(tc.major, tc.minor); got != tc.want {
+			t.Errorf("pythonVersionOK(%d, %d) = %v, want %v", tc.major, tc.minor, got, tc.want)
+		}
+	}
+}
+
+func TestFirstCompatiblePython(t *testing.T) {
+	// versionMap maps interpreter path -> version parts returned by the fake
+	// version function. A missing entry simulates a candidate that fails to
+	// report its version (e.g. a Windows Store stub) and should be skipped.
+	newVersionFn := func(versions map[string][3]any) func(pythonInterpreter) (int, int, string, error) {
+		return func(p pythonInterpreter) (int, int, string, error) {
+			v, ok := versions[p.path]
+			if !ok {
+				return 0, 0, "", errors.New("cannot run")
+			}
+			return v[0].(int), v[1].(int), v[2].(string), nil
+		}
+	}
+
+	t.Run("prefers first compatible candidate", func(t *testing.T) {
+		// Mirrors the Windows repro: `python` (first on PATH) is 3.11 but the
+		// `py -3` launcher (probed first) selects 3.13.
+		candidates := []pythonInterpreter{
+			{path: "py", args: []string{"-3"}},
+			{path: "python", args: nil},
+		}
+		versionFn := newVersionFn(map[string][3]any{
+			"py":     {3, 13, "3.13.2"},
+			"python": {3, 11, "3.11.9"},
+		})
+
+		got, err := firstCompatiblePython(candidates, versionFn)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if result != fakePython {
-			t.Errorf("expected %q, got %q", fakePython, result)
+		if got.path != "py" || !slices.Equal(got.args, []string{"-3"}) {
+			t.Errorf("got %+v, want py -3", got)
 		}
 	})
 
-	t.Run("returns error when no python on PATH", func(t *testing.T) {
-		dir := t.TempDir() // empty directory
-		t.Setenv("PATH", dir)
-		_, err := findSystemPython()
+	t.Run("skips too-old candidate for a later compatible one", func(t *testing.T) {
+		candidates := []pythonInterpreter{
+			{path: "python3"},
+			{path: "python"},
+		}
+		versionFn := newVersionFn(map[string][3]any{
+			"python3": {3, 11, "3.11.9"},
+			"python":  {3, 13, "3.13.0"},
+		})
+
+		got, err := firstCompatiblePython(candidates, versionFn)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.path != "python" {
+			t.Errorf("got %q, want python", got.path)
+		}
+	})
+
+	t.Run("errors naming newest incompatible version", func(t *testing.T) {
+		candidates := []pythonInterpreter{
+			{path: "python3"},
+			{path: "python"},
+		}
+		versionFn := newVersionFn(map[string][3]any{
+			"python3": {3, 11, "3.11.9"},
+			"python":  {3, 12, "3.12.4"},
+		})
+
+		_, err := firstCompatiblePython(candidates, versionFn)
 		if err == nil {
-			t.Fatal("expected error when no python on PATH")
+			t.Fatal("expected an error when all candidates are too old")
+		}
+		if !strings.Contains(err.Error(), "3.13+ is required") ||
+			!strings.Contains(err.Error(), "3.12.4") {
+			t.Errorf("error should name the required and newest-found versions, got: %v", err)
+		}
+	})
+
+	t.Run("skips candidates whose version cannot be determined", func(t *testing.T) {
+		candidates := []pythonInterpreter{
+			{path: "broken"},
+			{path: "python"},
+		}
+		versionFn := newVersionFn(map[string][3]any{
+			// "broken" intentionally absent -> versionFn returns an error.
+			"python": {3, 13, "3.13.1"},
+		})
+
+		got, err := firstCompatiblePython(candidates, versionFn)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.path != "python" {
+			t.Errorf("got %q, want python", got.path)
+		}
+	})
+
+	t.Run("errors when no candidates resolve a version", func(t *testing.T) {
+		_, err := firstCompatiblePython(nil, newVersionFn(nil))
+		if err == nil {
+			t.Fatal("expected an error when there are no candidates")
+		}
+		if !strings.Contains(err.Error(), "no compatible Python") {
+			t.Errorf("unexpected error: %v", err)
 		}
 	})
 }
 
-func TestCheckPythonVersion(t *testing.T) {
-	// This test requires a real python on PATH to run --version.
-	// Skip if python is not available or can't execute.
-	pythonBin, err := findSystemPython()
-	if err != nil {
+func TestFindSystemPython_NoPython(t *testing.T) {
+	dir := t.TempDir() // empty directory, no python on PATH
+	t.Setenv("PATH", dir)
+	if _, err := findSystemPython(); err == nil {
+		t.Fatal("expected error when no python on PATH")
+	}
+}
+
+func TestPythonVersion(t *testing.T) {
+	// Requires a real python on PATH to run --version.
+	candidates := pythonCandidates()
+	if len(candidates) == 0 {
 		t.Skip("python not available on PATH")
 	}
 
-	err = checkPythonVersion(pythonBin)
+	major, minor, raw, err := pythonVersion(candidates[0])
 	if err != nil {
-		// Accept either a version-too-old error or an execution error
-		// (e.g., Windows Store stub that LookPath finds but can't run).
-		if !strings.Contains(err.Error(), "3.13+ is required") &&
-			!strings.Contains(err.Error(), "failed to check Python version") {
-			t.Errorf("unexpected error: %v", err)
+		// A Windows Store stub can be found by LookPath but fail to execute.
+		if strings.Contains(err.Error(), "failed to check Python version") {
+			t.Skip("python present but not executable")
 		}
+		t.Fatalf("unexpected error: %v", err)
 	}
+	if major <= 0 {
+		t.Errorf("expected a positive major version, got %d", major)
+	}
+	if raw == "" {
+		t.Error("expected a non-empty raw version string")
+	}
+	_ = minor
 }
 
 func TestPlaygroundMessagesURLUsesIPv4Loopback(t *testing.T) {

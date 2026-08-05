@@ -12,13 +12,21 @@ import (
 
 // envVarPattern maps environment variables to agent types.
 type envVarPattern struct {
-	envVar    string
-	agentType AgentType
+	envVar        string
+	expectedValue string
+	agentType     AgentType
 }
 
 // knownEnvVarPatterns defines environment variables that indicate known AI agents.
 // These are checked in order, so more specific patterns should come first.
 var knownEnvVarPatterns = []envVarPattern{
+	// GitHub Copilot App can expose Copilot CLI markers, so check its host-specific marker first.
+	{
+		envVar:        "AI_AGENT",
+		expectedValue: "github_copilot_app_agent",
+		agentType:     AgentTypeGitHubCopilotApp,
+	},
+
 	// Claude Code - Anthropic's coding agent
 	{envVar: "CLAUDE_CODE", agentType: AgentTypeClaudeCode},
 	{envVar: "CLAUDE_CODE_ENTRYPOINT", agentType: AgentTypeClaudeCode},
@@ -39,14 +47,17 @@ var knownEnvVarPatterns = []envVarPattern{
 // detectFromEnvVars checks for known AI agent environment variables.
 func detectFromEnvVars() AgentInfo {
 	for _, pattern := range knownEnvVarPatterns {
-		if _, exists := os.LookupEnv(pattern.envVar); exists {
-			return AgentInfo{
-				Type:     pattern.agentType,
-				Name:     pattern.agentType.DisplayName(),
-				Source:   DetectionSourceEnvVar,
-				Detected: true,
-				Details:  pattern.envVar,
-			}
+		value, exists := os.LookupEnv(pattern.envVar)
+		if !exists || (pattern.expectedValue != "" && value != pattern.expectedValue) {
+			continue
+		}
+
+		return AgentInfo{
+			Type:     pattern.agentType,
+			Name:     pattern.agentType.DisplayName(),
+			Source:   DetectionSourceEnvVar,
+			Detected: true,
+			Details:  pattern.envVar,
 		}
 	}
 

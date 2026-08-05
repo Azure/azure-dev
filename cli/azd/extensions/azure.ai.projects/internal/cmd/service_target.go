@@ -9,41 +9,38 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// aiProjectHost is the azure.yaml service host kind owned by this extension. A
-// `host: azure.ai.project` service entry represents the Foundry project and carries its
-// model `deployments` (and an optional `endpoint:` for reuse).
+// aiProjectHost is the azure.yaml host owned by this extension.
+// A project service carries model deployments.
+// It may also carry an endpoint for an existing project.
 const aiProjectHost = "azure.ai.project"
 
 var _ azdext.ServiceTargetProvider = (*projectServiceTarget)(nil)
 
-// projectServiceTarget owns the azure.ai.project host. The Foundry project, its model
-// deployments, the underlying Account, and RBAC are provisioned at `azd provision` by the
-// built-in `microsoft.foundry` Bicep provider (or by the user's own infra), so this
-// target has no deploy-time work: Package, Publish, and Deploy are no-ops. It exists so
-// the azure.ai.projects extension owns the project host (rather than the shared no-op
-// shim in the agents extension) and so `azd deploy`/`azd up` can walk a project entry.
+// projectServiceTarget owns the azure.ai.project host.
+// The microsoft.foundry provider provisions projects, deployments,
+// accounts, and RBAC. This target keeps deploy graph ordering but has
+// no package, publish, or deploy work.
 //
-// When the project entry sets `endpoint:` (bring-your-own project), provisioning is
-// skipped by the provider and azd connects to the existing project; this target still
-// has nothing to upsert at deploy.
+// When the entry sets `endpoint:`, provisioning reuses that project.
+// This target still has nothing to upsert during deploy.
 type projectServiceTarget struct {
 	azdClient     *azdext.AzdClient
 	serviceConfig *azdext.ServiceConfig
 }
 
-// newProjectServiceTarget creates the azure.ai.project service-target provider.
+// newProjectServiceTarget creates the project service target.
 func newProjectServiceTarget(azdClient *azdext.AzdClient) azdext.ServiceTargetProvider {
 	return &projectServiceTarget{azdClient: azdClient}
 }
 
-// Initialize stores the service configuration; no other setup is required.
+// Initialize stores the service configuration.
 func (p *projectServiceTarget) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
 	p.serviceConfig = serviceConfig
 	return nil
 }
 
-// Endpoints returns no endpoints; the project endpoint is surfaced through the azd
-// environment (FOUNDRY_PROJECT_ENDPOINT) during provisioning, not here.
+// Endpoints returns no endpoints.
+// Provisioning publishes the endpoint through the azd environment.
 func (p *projectServiceTarget) Endpoints(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
@@ -52,8 +49,8 @@ func (p *projectServiceTarget) Endpoints(
 	return nil, nil
 }
 
-// GetTargetResource delegates to azd's default resolver and falls back to a minimal
-// target so the deploy pipeline can proceed.
+// GetTargetResource delegates to azd's resolver.
+// It returns a minimal target when the resolver cannot find one.
 func (p *projectServiceTarget) GetTargetResource(
 	ctx context.Context,
 	subscriptionId string,
@@ -90,10 +87,9 @@ func (p *projectServiceTarget) Publish(
 	return &azdext.ServicePublishResult{}, nil
 }
 
-// Deploy is a no-op; the project and its model deployments are created at provision time
-// by the built-in microsoft.foundry Bicep provider (or the user's infra). Removing the
-// service from azure.yaml stops azd managing the project but does not delete it; teardown
-// runs through `azd down`.
+// Deploy is a no-op because resources are provisioned earlier.
+// Removing the service stops management without deleting resources.
+// Teardown continues to run through `azd down`.
 func (p *projectServiceTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,

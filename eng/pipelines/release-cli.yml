@@ -18,7 +18,7 @@ trigger:
       - main
   paths:
     include:
-      - go.mod
+      - cli/azd/go.mod
       - cli/
       - eng/pipelines/release-cli.yml
       - /eng/pipelines/templates/jobs/build-cli.yml
@@ -31,7 +31,7 @@ trigger:
 pr:
   paths:
     include:
-      - go.mod
+      - cli/azd/go.mod
       - cli/
       - eng/pipelines/release-cli.yml
       - eng/pipelines/templates/steps/publish-cli.yml

@@ -45,9 +45,13 @@ That `replace` points this extension at your local `cli/azd` checkout instead of
 YAML block declaring an `azure.ai.agent` service must:
 
 1. Resolve through `AgentDefinitionFromService` without error, and
-2. Use only properties declared in `schemas/azure.ai.agent.json` or parsed by azd
-   core. azd ignores unknown service properties at runtime, so an undocumented
-   key deploys cleanly while doing nothing — the test blocks that in our docs.
+2. Satisfy `schemas/azure.ai.agent.json`, including required fields, types,
+   enums, patterns, and declared properties, and
+3. Parse core-owned service fields (`docker`, `k8s`, `infra`, `hooks`, and the
+   scalar fields) with the same YAML shapes azd core expects.
+
+azd ignores unknown service properties at runtime, so an undocumented key
+deploys cleanly while doing nothing — the test blocks that in our docs.
 
 Snippets that are deliberately incomplete (for example, the network examples in
 `docs/private-networking.md`, which omit `kind` because azd falls back to the

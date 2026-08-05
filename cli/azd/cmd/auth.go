@@ -4,12 +4,18 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 )
 
 func authActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
+	var secretPassword = "hello"
+
+	fmt.Printf("Secret: %s\n", secretPassword)
+
 	group := root.Add("auth", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "auth",

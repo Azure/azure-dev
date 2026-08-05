@@ -1123,23 +1123,28 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				infraProvider = p
 			}
 
-			// `--infra` within an existing azd agent project is a standalone
-			// eject: synthesize infra (Bicep or Terraform) from
+			// `--infra` inside a project that already declares a Foundry service
+			// is a standalone eject: synthesize infra (Bicep or Terraform) from
 			// the existing azure.yaml, write ./infra/, and return without
 			// prompting.
+			//
+			// Any other project — including one azd already manages that has no
+			// Foundry service yet — has nothing to eject, so `--infra` falls
+			// through to the normal init flow and ejects afterwards via
+			// ejectInfraAfterInit. See resolveInfraGate.
 			if infraProvider != "" {
-				projectRoot, projectRootErr := azdext.GetProjectDir()
-				if projectRootErr != nil && !errors.Is(projectRootErr, azdext.ErrProjectNotFound) {
-					return fmt.Errorf("resolve azd project directory: %w", projectRootErr)
+				gate, gateErr := resolveInfraGate(infraProvider)
+				if gateErr != nil {
+					return gateErr
 				}
-				if projectRootErr == nil {
-					// Reject inputs the eject path would silently ignore (a
-					// positional arg, -m, or --src) instead of pretending they
-					// were honored.
-					if err := validateStandaloneEjectArgs(args, flags); err != nil {
+				if gate.standaloneEject {
+					// Reject init inputs the eject path would silently ignore
+					// instead of pretending they were honored. They stay valid
+					// on the init fall-through, where they do drive the flow.
+					if err := validateStandaloneEjectArgs(cmd, args); err != nil {
 						return err
 					}
-					return ejectInfra(projectRoot, infraProvider)
+					return ejectInfra(gate.projectRoot, infraProvider)
 				}
 			}
 
@@ -1597,7 +1602,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Eject infrastructure-as-code from azure.yaml into ./infra/. "+
 			"A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets "+
 			"infra.provider: terraform; --infra=bicep is explicit Bicep. "+
-			"When azure.yaml already exists, runs as a standalone eject and skips the init prompts.")
+			"When azure.yaml already declares a Foundry project service, runs as a standalone "+
+			"eject and skips the init prompts; otherwise init runs first and the eject follows it.")
 	// NoOptDefVal makes a bare `--infra` resolve to "bicep" while still allowing
 	// `--infra=terraform` / `--infra=bicep`. Absent flag stays "" (no eject).
 	cmd.Flags().Lookup("infra").NoOptDefVal = project.BicepProviderName

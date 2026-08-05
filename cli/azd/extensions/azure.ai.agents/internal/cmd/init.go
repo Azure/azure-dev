@@ -2786,6 +2786,10 @@ func writeAgentIgnoreFile(targetDir string) error {
 	return nil
 }
 
+func printAgentAddedMessage(agentName string) {
+	fmt.Printf("\nAdded agent '%s' to azure.yaml.\n", agentName)
+}
+
 func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest) error {
 	// If targetDir is ".", resolve the actual relative path from the project root to cwd.
 	// This ensures azure.yaml gets the correct "project:" value when init is run from a subdirectory.
@@ -3000,10 +3004,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		return err
 	}
 
-	fmt.Printf(
-		"\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n",
-		a.serviceNameOverride,
-	)
+	printAgentAddedMessage(agentDef.Name)
 
 	// Replace the legacy hardcoded `azd up` / `azd deploy` hint with the
 	// shared nextstep resolver. The resolver inspects the current azd

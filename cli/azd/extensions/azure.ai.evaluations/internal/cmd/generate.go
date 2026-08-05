@@ -164,7 +164,7 @@ func (ec *evalContext) generateRubric(
 		return nil, fmt.Errorf("submitting the rubric generation job: %w", err)
 	}
 	if noWait {
-		reportSubmitted(out, job.ID)
+		reportSubmitted(out, "azd ai eval evaluator", job.ID)
 		return nil, nil
 	}
 
@@ -187,10 +187,11 @@ func (ec *evalContext) generateRubric(
 //
 // The job id goes into the command rather than being left as a placeholder:
 // --no-wait exists so the caller can walk away, and the line they walk away
-// with has to be the one they can paste when they come back.
-func reportSubmitted(out io.Writer, jobID string) {
+// with has to be the one they can paste when they come back. The group is named
+// too, because the two job types share no collection.
+func reportSubmitted(out io.Writer, group, jobID string) {
 	fmt.Fprintf(out, "  submitted job %s\n", jobID)
-	fmt.Fprintf(out, "\nReattach with: azd ai eval job show %s\n", jobID)
+	fmt.Fprintf(out, "\nReattach with: %s job show %s\n", group, jobID)
 }
 
 // generateDataset submits the data generation job and downloads the result.
@@ -212,7 +213,7 @@ func (ec *evalContext) generateDataset(
 		return nil, fmt.Errorf("submitting the data generation job: %w", err)
 	}
 	if noWait {
-		reportSubmitted(out, job.ID)
+		reportSubmitted(out, "azd ai dataset", job.ID)
 		return nil, nil
 	}
 

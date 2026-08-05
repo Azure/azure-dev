@@ -49,7 +49,7 @@ func NewRootCommand() *cobra.Command {
 		newDatasetCommand(),
 		newRunCommand(),
 		newEvaluatorCommand(),
-		newJobCommand(),
+		newEvalCreateCommand(),
 		newEvalListCommand(),
 		newEvalShowCommand(),
 		newEvalDeleteCommand(),

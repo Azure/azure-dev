@@ -172,6 +172,35 @@ func (c *EvalClient) cancelGenerationJob(
 		c, ctx, http.MethodPost, path, nil, json.RawMessage(`{}`), apiVersion)
 }
 
+// DeleteDataGenerationJob removes a dataset generation job record.
+func (c *EvalClient) DeleteDataGenerationJob(
+	ctx context.Context,
+	operationID string,
+	apiVersion string,
+) error {
+	return c.deleteGenerationJob(ctx, pathDataGenerationJobs, operationID, apiVersion)
+}
+
+// DeleteEvaluatorGenerationJob removes an evaluator generation job record.
+func (c *EvalClient) DeleteEvaluatorGenerationJob(
+	ctx context.Context,
+	operationID string,
+	apiVersion string,
+) error {
+	return c.deleteGenerationJob(ctx, pathEvaluatorGenerationJobs, operationID, apiVersion)
+}
+
+// deleteGenerationJob discards the job record. The artifact the job produced is
+// already registered and is not affected.
+func (c *EvalClient) deleteGenerationJob(
+	ctx context.Context,
+	basePath, operationID, apiVersion string,
+) error {
+	path := basePath + "/" + url.PathEscape(operationID)
+	_, err := c.doRequest(ctx, http.MethodDelete, path, nil, nil, apiVersion)
+	return err
+}
+
 // GetAgent reads an agent from the project's catalog.
 //
 // Only the newest version is returned, which is the one generation is seeded

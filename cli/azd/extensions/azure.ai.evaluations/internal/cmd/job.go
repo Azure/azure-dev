@@ -13,37 +13,89 @@ import (
 )
 
 // Generation runs as two independent long-running resources — one for datasets,
-// one for evaluators — and a job id does not say which it came from. Rather
-// than make the caller remember, every command here tries both.
+// one for evaluators — sharing no collection. A job group therefore nests under
+// the resource that produced it: a top-level `job show <id>` would have to guess
+// the endpoint from an id prefix that is not a documented contract.
 
 const (
 	jobKindDataset   = "dataset"
 	jobKindEvaluator = "evaluator"
 )
 
-func newJobCommand() *cobra.Command {
+// jobKind binds a group to one generation resource, so every command under it
+// calls one endpoint rather than trying both and reporting whichever answered.
+type jobKind struct {
+	name   string
+	list   func(context.Context, *evalContext) ([]eval_api.GenerationJob, error)
+	get    func(context.Context, *evalContext, string) (*eval_api.GenerationJob, error)
+	cancel func(context.Context, *evalContext, string) (*eval_api.GenerationJob, error)
+	remove func(context.Context, *evalContext, string) error
+}
+
+var datasetJobs = jobKind{
+	name: jobKindDataset,
+	list: func(ctx context.Context, ec *evalContext) ([]eval_api.GenerationJob, error) {
+		out, err := ec.evalClient.ListDataGenerationJobs(ctx, ProjectEndpointAPIVersion)
+		if err != nil {
+			return nil, err
+		}
+		return out.Data, nil
+	},
+	get: func(ctx context.Context, ec *evalContext, id string) (*eval_api.GenerationJob, error) {
+		return ec.evalClient.GetDataGenerationJob(ctx, id, ProjectEndpointAPIVersion)
+	},
+	cancel: func(ctx context.Context, ec *evalContext, id string) (*eval_api.GenerationJob, error) {
+		return ec.evalClient.CancelDataGenerationJob(ctx, id, ProjectEndpointAPIVersion)
+	},
+	remove: func(ctx context.Context, ec *evalContext, id string) error {
+		return ec.evalClient.DeleteDataGenerationJob(ctx, id, ProjectEndpointAPIVersion)
+	},
+}
+
+var evaluatorJobs = jobKind{
+	name: jobKindEvaluator,
+	list: func(ctx context.Context, ec *evalContext) ([]eval_api.GenerationJob, error) {
+		out, err := ec.evalClient.ListEvaluatorGenerationJobs(ctx, ProjectEndpointAPIVersion)
+		if err != nil {
+			return nil, err
+		}
+		return out.Data, nil
+	},
+	get: func(ctx context.Context, ec *evalContext, id string) (*eval_api.GenerationJob, error) {
+		return ec.evalClient.GetEvaluatorGenerationJob(ctx, id, ProjectEndpointAPIVersion)
+	},
+	cancel: func(ctx context.Context, ec *evalContext, id string) (*eval_api.GenerationJob, error) {
+		return ec.evalClient.CancelEvaluatorGenerationJob(ctx, id, ProjectEndpointAPIVersion)
+	},
+	remove: func(ctx context.Context, ec *evalContext, id string) error {
+		return ec.evalClient.DeleteEvaluatorGenerationJob(ctx, id, ProjectEndpointAPIVersion)
+	},
+}
+
+func newJobCommand(kind jobKind) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "job",
-		Short: "Inspect and cancel generation jobs.",
-		Long: "Inspect and cancel generation jobs.\n\n" +
-			"This is the resume path for `dataset generate` and `evaluator generate`: " +
-			"a job started with --no-wait, or one whose client was interrupted, is " +
-			"reattached to here rather than restarted.",
+		Short: fmt.Sprintf("Inspect, cancel and delete %s generation jobs.", kind.name),
+		Long: fmt.Sprintf("Inspect, cancel and delete %s generation jobs.\n\n", kind.name) +
+			fmt.Sprintf("This is the resume path for `%s generate`: a job started with ", kind.name) +
+			"--no-wait, or one whose client was interrupted, is reattached to here " +
+			"rather than restarted.",
 	}
 	cmd.AddCommand(
-		newJobListCommand(),
-		newJobShowCommand(),
-		newJobCancelCommand(),
+		newJobListCommand(kind),
+		newJobShowCommand(kind),
+		newJobCancelCommand(kind),
+		newJobDeleteCommand(kind),
 	)
 	return cmd
 }
 
-func newJobListCommand() *cobra.Command {
+func newJobListCommand(kind jobKind) *cobra.Command {
 	var endpointFlg string
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List the project's generation jobs.",
+		Short: fmt.Sprintf("List the project's %s generation jobs.", kind.name),
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -53,40 +105,23 @@ func newJobListCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			datasets, err := ec.evalClient.ListDataGenerationJobs(ctx, ProjectEndpointAPIVersion)
+			jobs, err := kind.list(ctx, ec)
 			if err != nil {
-				return fmt.Errorf("listing dataset generation jobs: %w", err)
-			}
-			evaluators, err := ec.evalClient.ListEvaluatorGenerationJobs(ctx, ProjectEndpointAPIVersion)
-			if err != nil {
-				return fmt.Errorf("listing evaluator generation jobs: %w", err)
-			}
-
-			type jobRow struct {
-				ID     string `json:"id"`
-				Kind   string `json:"kind"`
-				Status string `json:"status"`
-			}
-			rows := make([]jobRow, 0, len(datasets.Data)+len(evaluators.Data))
-			for _, j := range datasets.Data {
-				rows = append(rows, jobRow{ID: j.ID, Kind: jobKindDataset, Status: j.Status})
-			}
-			for _, j := range evaluators.Data {
-				rows = append(rows, jobRow{ID: j.ID, Kind: jobKindEvaluator, Status: j.Status})
+				return fmt.Errorf("listing %s generation jobs: %w", kind.name, err)
 			}
 
 			if isJSON(cmd) {
-				return emitJSONList(cmd.OutOrStdout(), rows)
+				return emitJSONList(cmd.OutOrStdout(), jobs)
 			}
-			if len(rows) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "No generation jobs found.")
+			if len(jobs) == 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "No %s generation jobs found.\n", kind.name)
 				return nil
 			}
-			table := make([][]string, 0, len(rows))
-			for _, r := range rows {
-				table = append(table, []string{r.ID, r.Kind, r.Status})
+			table := make([][]string, 0, len(jobs))
+			for _, j := range jobs {
+				table = append(table, []string{j.ID, j.Status})
 			}
-			return emitTable(cmd.OutOrStdout(), []string{"JOB ID", "KIND", "STATUS"}, table)
+			return emitTable(cmd.OutOrStdout(), []string{"JOB ID", "STATUS"}, table)
 		},
 	}
 
@@ -94,12 +129,12 @@ func newJobListCommand() *cobra.Command {
 	return cmd
 }
 
-func newJobShowCommand() *cobra.Command {
+func newJobShowCommand(kind jobKind) *cobra.Command {
 	var endpointFlg string
 
 	cmd := &cobra.Command{
 		Use:   "show <job-id>",
-		Short: "Show a generation job.",
+		Short: fmt.Sprintf("Show a %s generation job.", kind.name),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			jobID := args[0]
@@ -111,9 +146,9 @@ func newJobShowCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			job, _, err := findGenerationJob(ctx, ec, jobID)
+			job, err := kind.get(ctx, ec, jobID)
 			if err != nil {
-				return err
+				return jobLookupError(kind, jobID, err)
 			}
 
 			if isJSON(cmd) {
@@ -131,12 +166,12 @@ func newJobShowCommand() *cobra.Command {
 	return cmd
 }
 
-func newJobCancelCommand() *cobra.Command {
+func newJobCancelCommand(kind jobKind) *cobra.Command {
 	var endpointFlg string
 
 	cmd := &cobra.Command{
 		Use:   "cancel <job-id>",
-		Short: "Cancel an in-flight generation job.",
+		Short: fmt.Sprintf("Cancel an in-flight %s generation job.", kind.name),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			jobID := args[0]
@@ -148,28 +183,16 @@ func newJobCancelCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			_, kind, err := findGenerationJob(ctx, ec, jobID)
+			canceled, err := kind.cancel(ctx, ec, jobID)
 			if err != nil {
-				return err
-			}
-
-			var canceled *eval_api.GenerationJob
-			if kind == jobKindDataset {
-				canceled, err = ec.evalClient.CancelDataGenerationJob(
-					ctx, jobID, ProjectEndpointAPIVersion)
-			} else {
-				canceled, err = ec.evalClient.CancelEvaluatorGenerationJob(
-					ctx, jobID, ProjectEndpointAPIVersion)
-			}
-			if err != nil {
-				return fmt.Errorf("cancelling job %s: %w", jobID, err)
+				return jobLookupError(kind, jobID, err)
 			}
 
 			if isJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), canceled)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Cancelled %s generation job %s (%s)\n",
-				kind, jobID, canceled.Status)
+				kind.name, jobID, canceled.Status)
 			return nil
 		},
 	}
@@ -178,24 +201,55 @@ func newJobCancelCommand() *cobra.Command {
 	return cmd
 }
 
-// findGenerationJob resolves an id against both job types and reports which one
-// answered, so that a caller never has to know which command started it.
-func findGenerationJob(
-	ctx context.Context,
-	ec *evalContext,
-	jobID string,
-) (*eval_api.GenerationJob, string, error) {
-	if job, err := ec.evalClient.GetDataGenerationJob(
-		ctx, jobID, ProjectEndpointAPIVersion,
-	); err == nil {
-		return job, jobKindDataset, nil
+func newJobDeleteCommand(kind jobKind) *cobra.Command {
+	var endpointFlg string
+
+	cmd := &cobra.Command{
+		Use:   "delete <job-id>",
+		Short: fmt.Sprintf("Delete a %s generation job record.", kind.name),
+		Long: fmt.Sprintf("Delete a %s generation job record.\n\n", kind.name) +
+			"The artifact the job produced is already registered as its own version " +
+			"and is not affected.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			jobID := args[0]
+
+			ctx := cmd.Context()
+			ec, err := newEvalContext(ctx, endpointFlg)
+			if err != nil {
+				return err
+			}
+			defer ec.Close()
+
+			if err := kind.remove(ctx, ec, jobID); err != nil {
+				return jobLookupError(kind, jobID, err)
+			}
+
+			if isJSON(cmd) {
+				return emitJSON(cmd.OutOrStdout(), map[string]string{
+					"id": jobID, "kind": kind.name, "status": "deleted",
+				})
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Deleted %s generation job %s\n", kind.name, jobID)
+			return nil
+		},
 	}
-	if job, err := ec.evalClient.GetEvaluatorGenerationJob(
-		ctx, jobID, ProjectEndpointAPIVersion,
-	); err == nil {
-		return job, jobKindEvaluator, nil
+
+	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	return cmd
+}
+
+// jobLookupError names the sibling group, because the two job types share an id
+// shape and reaching for the wrong one is the likely mistake.
+func jobLookupError(kind jobKind, jobID string, err error) error {
+	if eval_api.IsNotFound(err) {
+		other := jobKindEvaluator
+		if kind.name == jobKindEvaluator {
+			other = jobKindDataset
+		}
+		return fmt.Errorf(
+			"no %s generation job %q in this project; if it generated a %s, "+
+				"use the %s job group instead", kind.name, jobID, other, other)
 	}
-	return nil, "", fmt.Errorf(
-		"no generation job %s in this project; "+
-			"`azd ai eval job list` shows the ones there are", jobID)
+	return fmt.Errorf("reading %s generation job %s: %w", kind.name, jobID, err)
 }

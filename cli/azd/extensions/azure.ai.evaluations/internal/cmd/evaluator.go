@@ -26,6 +26,7 @@ func newEvaluatorCommand() *cobra.Command {
 		newEvaluatorShowCommand(),
 		newEvaluatorDeleteCommand(),
 		newEvaluatorVersionsCommand(),
+		newJobCommand(evaluatorJobs),
 	)
 	return cmd
 }

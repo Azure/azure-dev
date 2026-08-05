@@ -33,6 +33,7 @@ func newDatasetCommand() *cobra.Command {
 		newDatasetShowCommand(),
 		newDatasetDeleteCommand(),
 		newDatasetVersionsCommand(),
+		newJobCommand(datasetJobs),
 	)
 	return cmd
 }

@@ -656,7 +656,8 @@ func updateAzureYamlDeployments(
 type adoptedAgentNameResolver func(context.Context, string) (string, error)
 
 func adoptedAgentNameConflictSuggestion() string {
-	return "To create a separate agent, re-run init with --agent-name <unique-name>.\n"
+	return "To create a separate agent, re-run init with --agent-name <unique-name> for single-agent samples, " +
+		"or update each agent service's `name` in the adopted azure.yaml.\n"
 }
 
 // confirmAdoptedAgentNameConflicts checks every agent definition embedded in an
@@ -770,7 +771,11 @@ func applyAdoptedAgentNameOverride(
 		configPath = path
 	}
 	if serviceName == "" {
-		return nil
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--agent-name could not be applied because the adopted azure.yaml has no named agent service",
+			"update the agent service's `name` in azure.yaml after init, or use a sample with a named agent service",
+		)
 	}
 
 	value, err := structpb.NewValue(agentName)

@@ -132,7 +132,12 @@ func (a *PublishAction) Run(ctx context.Context) error {
 	})
 
 	if a.flags.output != "json" {
-		fmt.Printf("Publishing Teams app for agent %q (scope: %s)...\n", packCtx.agentName, scope.flag)
+		fmt.Printf(
+			"Publishing Teams app %q for agent %q (scope: %s)...\n",
+			displayName,
+			packCtx.agentName,
+			scope.flag,
+		)
 	}
 
 	result, err := packCtx.agentClient.PublishTeamsApp(
@@ -146,10 +151,11 @@ func (a *PublishAction) Run(ctx context.Context) error {
 
 	if a.flags.output == "json" {
 		payload := map[string]string{
-			"titleId":    result.TitleID,
-			"teamsAppId": result.TeamsAppID,
-			"scope":      scope.flag,
-			"deepLink":   deepLink,
+			"titleId":     result.TitleID,
+			"teamsAppId":  result.TeamsAppID,
+			"scope":       scope.flag,
+			"displayName": displayName,
+			"deepLink":    deepLink,
 		}
 		data, jsonErr := json.MarshalIndent(payload, "", "  ")
 		if jsonErr != nil {
@@ -159,7 +165,7 @@ func (a *PublishAction) Run(ctx context.Context) error {
 		return nil
 	}
 
-	fmt.Printf("Published Teams app for agent %q (scope: %s)\n", packCtx.agentName, scope.flag)
+	fmt.Printf("Published Teams app %q for agent %q (scope: %s)\n", displayName, packCtx.agentName, scope.flag)
 	fmt.Printf("  Title ID:     %s\n", result.TitleID)
 	fmt.Printf("  Teams App ID: %s\n", result.TeamsAppID)
 	fmt.Printf("  Install link: %s\n", deepLink)

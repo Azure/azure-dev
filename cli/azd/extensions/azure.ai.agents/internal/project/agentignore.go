@@ -25,13 +25,11 @@ const (
 // Generated from DefaultAgentIgnoreContent() to maintain a single source of truth.
 var defaultExclusionsContent = DefaultAgentIgnoreContent()
 
-// alwaysExcludedFromCodeDeploy are azd-generated artifacts that are never part of
-// the agent source code, even when an existing project has a custom .agentignore.
-var alwaysExcludedFromCodeDeploy = map[string]struct{}{
-	"appPackage.zip":                {},
-	".appPackage.zip.azd-generated": {},
-	"TEAMS_APP_SETUP.md":            {},
-}
+const generatedTeamsArtifactsIgnoreContent = `# azd-generated Teams app artifacts
+appPackage.zip
+.appPackage.zip.azd-generated
+TEAMS_APP_SETUP.md
+`
 
 // utf8BOM is the byte order mark that some Windows editors prepend to UTF-8 files.
 var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
@@ -73,11 +71,6 @@ func newAgentIgnoreMatcher(ctx context.Context, srcDir string) (*agentIgnoreMatc
 // relPath is the path relative to srcDir using forward slashes.
 // isDir indicates whether the path is a directory.
 func (m *agentIgnoreMatcher) ShouldExclude(relPath string, isDir bool) bool {
-	if !isDir {
-		if _, ok := alwaysExcludedFromCodeDeploy[relPath]; ok {
-			return true
-		}
-	}
 	match := m.ignore.Relative(relPath, isDir)
 	if match != nil && match.Ignore() {
 		return true
@@ -120,6 +113,7 @@ func loadAgentIgnore(ctx context.Context, srcDir string) (gitignore.GitIgnore, e
 
 	// Strip UTF-8 BOM
 	data = bytes.TrimPrefix(data, utf8BOM)
+	data = append([]byte(generatedTeamsArtifactsIgnoreContent+"\n"), data...)
 
 	return gitignore.New(bytes.NewReader(data), srcDir, nil), nil
 }

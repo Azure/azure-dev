@@ -642,6 +642,7 @@ func TestAdoptedAgentNameConflictSuggestion(t *testing.T) {
 
 	suggestion := adoptedAgentNameConflictSuggestion()
 	require.Contains(t, suggestion, "--agent-name")
+	require.Contains(t, suggestion, "adopted azure.yaml")
 }
 
 func newAdoptedAgentNameTestClient(
@@ -855,6 +856,31 @@ func TestApplyAdoptedAgentNameOverride_RejectsMultipleAgents(t *testing.T) {
 	err := applyAdoptedAgentNameOverride(t.Context(), client, "test0804")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "multiple agent services")
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Empty(t, server.configValues)
+}
+
+func TestApplyAdoptedAgentNameOverride_RejectsNoNamedAgent(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"agent-service": {
+				Name: "agent-service",
+				Host: AiAgentHost,
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"kind": structpb.NewStringValue("hosted"),
+				}},
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	err := applyAdoptedAgentNameOverride(t.Context(), client, "test0804")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no named agent service")
 
 	server.mu.Lock()
 	defer server.mu.Unlock()

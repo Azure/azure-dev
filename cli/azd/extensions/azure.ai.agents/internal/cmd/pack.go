@@ -115,7 +115,12 @@ func (a *PackAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	fmt.Printf("Packing Teams app for agent %q (scope: %s)...\n", packCtx.agentName, scope.flag)
+	fmt.Printf(
+		"Packing Teams app %q for agent %q (scope: %s)...\n",
+		displayName,
+		packCtx.agentName,
+		scope.flag,
+	)
 
 	zipBytes, err := packCtx.agentClient.DownloadTeamsAppPackage(
 		ctx, packCtx.agentName, request, agent_api.Microsoft365APIVersion,

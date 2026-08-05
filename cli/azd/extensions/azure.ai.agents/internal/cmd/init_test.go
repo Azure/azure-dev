@@ -489,32 +489,11 @@ func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
 func TestAgentAddedMessage(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name        string
-		agentName   string
-		serviceName string
-		want        string
-	}{
-		{
-			name:        "matching names",
-			agentName:   "my-agent",
-			serviceName: "my-agent",
-			want:        "\nAdded agent 'my-agent' to azure.yaml.\n",
-		},
-		{
-			name:        "different names",
-			agentName:   "My Agent",
-			serviceName: "MyAgent",
-			want:        "\nAdded agent 'My Agent' to azure.yaml as service 'MyAgent'.\n",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			require.Equal(t, tt.want, agentAddedMessage(tt.agentName, tt.serviceName))
-		})
-	}
+	require.Equal(
+		t,
+		"\nAdded agent 'my-agent' to azure.yaml.\n",
+		agentAddedMessage("my-agent"),
+	)
 }
 
 func TestValidateInitAgentName(t *testing.T) {

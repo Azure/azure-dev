@@ -891,7 +891,7 @@ func (a *InitFromCodeAction) addToProject(
 		return err
 	}
 
-	printAgentAddedMessage(agentName, agentServiceName)
+	printAgentAddedMessage(agentName)
 	return nil
 }
 

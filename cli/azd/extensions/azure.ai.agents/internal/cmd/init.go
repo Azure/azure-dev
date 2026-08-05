@@ -2978,7 +2978,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		return err
 	}
 
-	printAgentAddedMessage(agentDef.Name, a.serviceNameOverride)
+	printAgentAddedMessage(agentDef.Name)
 
 	// Replace the legacy hardcoded `azd up` / `azd deploy` hint with the
 	// shared nextstep resolver. The resolver inspects the current azd

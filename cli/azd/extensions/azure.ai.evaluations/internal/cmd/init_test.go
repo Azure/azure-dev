@@ -11,6 +11,7 @@ import (
 	"azureaieval/internal/project"
 
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 )
 
 // scaffoldFor runs planScaffold against a fresh configuration, which is what
@@ -71,18 +72,34 @@ func TestScaffold_AppendsToAnExistingConfiguration(t *testing.T) {
 }
 
 // A trace-backed eval invokes nothing, so agent_name filters instead of
-// targeting, and the service default caps how many traces are read.
+// targeting, and a scaffolded cap keeps the first run bounded rather than
+// taking the service's default of 1000.
 func TestScaffold_TraceSourceHasNoTarget(t *testing.T) {
 	plan, _ := scaffoldFor(t, scaffoldInput{
-		evalName: "support-agent-trace-eval",
-		target:   "support-agent",
-		source:   initSourceTraces,
+		evalName:  "support-agent-trace-eval",
+		target:    "support-agent",
+		source:    initSourceTraces,
+		maxTraces: project.DefaultScaffoldMaxTraces,
 	})
 
 	require.Nil(t, plan.eval.Target)
 	require.NotNil(t, plan.eval.Source)
 	require.Equal(t, project.SourceTypeTraces, plan.eval.Source.Type)
 	require.Equal(t, "support-agent", plan.eval.Source.AgentName)
+	require.Equal(t, 20, plan.eval.Source.MaxTraces)
+}
+
+// Omitting the cap leaves the key out, which is how the service default is
+// taken — writing a zero would send one.
+func TestScaffold_TraceCapIsOmittedWhenZero(t *testing.T) {
+	plan, _ := scaffoldFor(t, scaffoldInput{
+		evalName: "t", target: "a", source: initSourceTraces,
+	})
+	require.Zero(t, plan.eval.Source.MaxTraces)
+
+	body, err := yaml.Marshal(plan.eval)
+	require.NoError(t, err)
+	require.NotContains(t, string(body), "max_traces")
 }
 
 // The default set is a built-in plus a generated rubric: the built-in alone

@@ -410,6 +410,22 @@ func (c *EvalClient) DeleteOpenAIEval(ctx context.Context, evalID string) error 
 	return err
 }
 
+// UpdateOpenAIEval edits an eval in place. The route is a POST on the eval
+// itself, matching how this surface spells run cancel — there is no PATCH verb
+// here.
+//
+// Only what UpdateEvalParametersBody reaches is editable: name, metadata and
+// properties. Anything else the service drops silently, so substance never
+// travels through this call and an edit that touches it is a new eval.
+func (c *EvalClient) UpdateOpenAIEval(
+	ctx context.Context,
+	evalID string,
+	request *UpdateOpenAIEvalRequest,
+) (*OpenAIEval, error) {
+	path := pathOpenAIEvals + "/" + url.PathEscape(evalID)
+	return doRequestTyped[OpenAIEval](c, ctx, http.MethodPost, path, nil, request, "")
+}
+
 // CreateOpenAIEvalRun starts a run for an OpenAI eval definition.
 func (c *EvalClient) CreateOpenAIEvalRun(
 	ctx context.Context,

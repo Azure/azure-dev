@@ -40,6 +40,7 @@ func newInitCommand() *cobra.Command {
 		target     string
 		source     string
 		dataset    string
+		maxTraces  int
 		evaluators []string
 		judgeModel string
 		path       string
@@ -64,6 +65,12 @@ func newInitCommand() *cobra.Command {
 			}
 			if source == initSourceTraces && dataset != "" {
 				return errors.New("--source traces reads production traces, so it takes no --dataset")
+			}
+			if cmd.Flags().Changed("max-traces") && source != initSourceTraces {
+				return errors.New("--max-traces caps a trace-backed eval; pass --source traces")
+			}
+			if maxTraces < 0 {
+				return errors.New("--max-traces must be positive")
 			}
 			if source == "" {
 				source = initSourceDataset
@@ -116,6 +123,7 @@ func newInitCommand() *cobra.Command {
 				target:     target,
 				source:     source,
 				dataset:    dataset,
+				maxTraces:  maxTraces,
 				evaluators: evaluators,
 				judgeModel: judgeModel,
 				rubricName: target + "-quality",
@@ -187,6 +195,9 @@ func newInitCommand() *cobra.Command {
 		"Where rows come from: dataset or traces. Defaults to dataset.")
 	cmd.Flags().StringVar(&dataset, "dataset", "",
 		"Path to a local .jsonl, or the name of a registered dataset.")
+	cmd.Flags().IntVar(&maxTraces, "max-traces", project.DefaultScaffoldMaxTraces,
+		"Cap on traces read by a --source traces eval. Delete max_traces from the "+
+			"file to take the service default instead.")
 	cmd.Flags().StringArrayVar(&evaluators, "evaluator", nil,
 		"Evaluator reference, repeatable. Use builtin.<name> for a built-in. "+
 			"Passing this replaces the defaults, so it also opts out of rubric generation.")
@@ -214,6 +225,7 @@ type scaffoldInput struct {
 	target     string
 	source     string
 	dataset    string
+	maxTraces  int
 	evaluators []string
 	judgeModel string
 	rubricName string
@@ -258,6 +270,7 @@ func planScaffold(in scaffoldInput) scaffold {
 		eval.Source = &project.SourceDecl{
 			Type:      project.SourceTypeTraces,
 			AgentName: in.target,
+			MaxTraces: in.maxTraces,
 		}
 	} else {
 		datasetName := in.evalName

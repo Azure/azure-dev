@@ -278,6 +278,15 @@ type CreateOpenAIEvalRequest struct {
 	TestingCriteria  []TestingCriterion `json:"testing_criteria,omitempty"`
 }
 
+// UpdateOpenAIEvalRequest is UpdateEvalParametersBody: the only fields an eval
+// accepts after creation. Testing criteria and the data source are fixed at
+// create time, and the service drops anything else here silently rather than
+// rejecting it.
+type UpdateOpenAIEvalRequest struct {
+	Name     string            `json:"name,omitempty"`
+	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
 // OpenAIEval is the response for an OpenAI eval definition.
 type OpenAIEval struct {
 	ID         string            `json:"id"`

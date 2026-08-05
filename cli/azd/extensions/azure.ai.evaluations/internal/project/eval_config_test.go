@@ -288,6 +288,12 @@ func TestValidate_Rejects(t *testing.T) {
 				"    evaluators:\n      - evaluator: builtin.relevance\n",
 			wantErr: "evaluation_level",
 		},
+		{
+			name: "two evals differing only by name",
+			body: "evals:\n  - name: a\n    evaluators:\n      - evaluator: builtin.relevance\n" +
+				"  - name: b\n    evaluators:\n      - evaluator: builtin.relevance\n",
+			wantErr: "identical to",
+		},
 	}
 
 	for _, tc := range cases {

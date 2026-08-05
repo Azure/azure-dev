@@ -78,6 +78,11 @@ const (
 	SourceTypeResponses = "responses"
 )
 
+// DefaultScaffoldMaxTraces is the cap init writes on a trace-backed eval, so a
+// first run is bounded rather than taking the service's own default of 1000.
+// Deleting max_traces from the file restores that default.
+const DefaultScaffoldMaxTraces = 20
+
 // Target names what the run invokes.
 type Target struct {
 	Type string `yaml:"type" json:"type"`
@@ -214,6 +219,7 @@ func (c *EvalConfig) Validate() error {
 	}
 
 	seen := map[string]bool{}
+	substance := map[string]string{}
 	for i, eval := range c.Evals {
 		if eval.Name == "" {
 			return fmt.Errorf("evals[%d]: 'name' is required", i)
@@ -226,6 +232,22 @@ func (c *EvalConfig) Validate() error {
 		if err := c.validateEval(i, eval); err != nil {
 			return err
 		}
+
+		// Two evals that differ only by name are indistinguishable once
+		// deployed: the environment records an id against each eval's substance
+		// so a renamed declaration can find what it already deployed, and a
+		// shared substance makes that lookup ambiguous.
+		digest, err := FingerprintGroup(eval)
+		if err != nil {
+			return err
+		}
+		if first, clash := substance[digest]; clash {
+			return fmt.Errorf(
+				"evals[%d] (%s): identical to %q apart from its name and description; "+
+					"give them different evaluators, datasets or settings, or declare one",
+				i, eval.Name, first)
+		}
+		substance[digest] = eval.Name
 	}
 	return nil
 }

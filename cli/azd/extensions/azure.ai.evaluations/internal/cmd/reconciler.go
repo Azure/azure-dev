@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"azureaieval/internal/pkg/dataset_api"
+	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
 )
 
@@ -428,9 +429,10 @@ func (r *evalReconciler) EnsureEval(
 		return group.ID, nil
 	}
 
-	// Groups are immutable, so a change to the group's own declaration —
-	// evaluators, target, or options — needs a new group just as much as a
-	// change to an upstream artifact does.
+	// Evals are immutable, so a change to the eval's own substance — evaluators,
+	// dataset, source, target, level — needs a new eval just as much as a change
+	// to an upstream artifact does. Name and description are excluded from the
+	// digest and pushed in place instead.
 	digest, err := project.FingerprintGroup(group)
 	if err != nil {
 		return "", err
@@ -441,12 +443,23 @@ func (r *evalReconciler) EnsureEval(
 	}
 
 	cached := r.ec.getEnvValue(ctx, idKey("eval", group.Name))
+	if cached == "" && !recreate {
+		// Nothing recorded under this name, but the substance may already be
+		// deployed under the name it had before. The environment records the id
+		// against the digest as well, which is what recognises a rename rather
+		// than reading it as a delete plus an add.
+		if adopted := r.adoptRenamed(ctx, group, digest); adopted != "" {
+			cached = adopted
+		}
+	}
 	if cached != "" && !recreate {
 		if _, err := r.ec.evalClient.GetOpenAIEval(ctx, cached); err == nil {
-			// Record the digest on reuse as well, otherwise a group deployed
+			// Record the digest on reuse as well, otherwise an eval deployed
 			// before fingerprinting existed never establishes a baseline and
 			// later edits go undetected.
 			_ = r.ec.setEnvValue(ctx, key, digest)
+			_ = r.ec.setEnvValue(ctx, idKey("eval", group.Name), cached)
+			_ = r.ec.setEnvValue(ctx, digestIDKey(digest), cached)
 			_ = r.ec.setEnvValue(ctx, envKeyEvalID, cached)
 			return cached, nil
 		}
@@ -466,10 +479,40 @@ func (r *evalReconciler) EnsureEval(
 	}
 	_ = r.ec.setEnvValue(ctx, key, digest)
 	_ = r.ec.setEnvValue(ctx, idKey("eval", group.Name), created.ID)
-	// EVAL_ID stays the last-deployed group, which is what the commands
+	_ = r.ec.setEnvValue(ctx, digestIDKey(digest), created.ID)
+	// EVAL_ID stays the last-deployed eval, which is what the commands
 	// fall back to when a config names only one.
 	_ = r.ec.setEnvValue(ctx, envKeyEvalID, created.ID)
 	return created.ID, nil
+}
+
+// adoptRenamed reclaims the eval this declaration used to be called, so a
+// rename keeps the id and every run under it rather than forking the history.
+//
+// The name is what UpdateEvalParametersBody reaches, so the new one is pushed
+// to the service. A failure there is not fatal: the eval is still the right one
+// and the declaration still resolves, it just reads under its old name in the
+// portal until the next deploy.
+func (r *evalReconciler) adoptRenamed(
+	ctx context.Context,
+	group project.Eval,
+	digest string,
+) string {
+	id := r.ec.getEnvValue(ctx, digestIDKey(digest))
+	if id == "" {
+		return ""
+	}
+	remote, err := r.ec.evalClient.GetOpenAIEval(ctx, id)
+	if err != nil {
+		return ""
+	}
+	if remote.Name == group.Name {
+		return id
+	}
+	_, _ = r.ec.evalClient.UpdateOpenAIEval(ctx, id, &eval_api.UpdateOpenAIEvalRequest{
+		Name: group.Name,
+	})
+	return id
 }
 
 // sameDefinition reports whether the locally authored definition already
@@ -546,4 +589,11 @@ func versionKey(kind, name string) string {
 // it exists, and hands it back for the wrong group.
 func idKey(kind, name string) string {
 	return project.FingerprintKey(kind, name) + "_ID"
+}
+
+// digestIDKey records an eval's id against its substance, which is what lets a
+// renamed declaration find the eval it already deployed. Keyed by a prefix of
+// the digest, because the whole hash makes an unreadable environment variable.
+func digestIDKey(digest string) string {
+	return "EVAL_SUBSTANCE_" + strings.ToUpper(digest[:16]) + "_ID"
 }

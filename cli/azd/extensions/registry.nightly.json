@@ -726,7 +726,7 @@
       "description": "Manage RLE resources from your terminal. (Preview)",
       "versions": [
         {
-          "version": "0.1.0-preview.nightly.6655206",
+          "version": "0.3.0-preview.nightly.6661137",
           "capabilities": [
             "custom-commands",
             "metadata"
@@ -739,9 +739,9 @@
               "usage": "$env:AZD_AI_RLE_ENABLE = \"true\"; azd ai rle init"
             },
             {
-              "name": "deploy",
+              "name": "publish",
               "description": "Build, push, and create or update the RLE environment.",
-              "usage": "$env:AZD_AI_RLE_ENABLE = \"true\"; $env:FOUNDRY_PROJECT_ENDPOINT = \"https://<account>.services.ai.azure.com/api/projects/<project>\"; $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = \"<registry>.azurecr.io\"; azd ai rle deploy"
+              "usage": "$env:AZD_AI_RLE_ENABLE = \"true\"; $env:FOUNDRY_PROJECT_ENDPOINT = \"https://<account>.services.ai.azure.com/api/projects/<project>\"; $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = \"<registry>.azurecr.io\"; azd ai rle publish --version-bump major"
             },
             {
               "name": "run",
@@ -751,14 +751,24 @@
             {
               "name": "invoke",
               "description": "Lease a deployed RLE sandbox and open an OpenEnv runtime shell.",
-              "usage": "$env:AZD_AI_RLE_ENABLE = \"true\"; azd ai rle invoke"
+              "usage": "$env:AZD_AI_RLE_ENABLE = \"true\"; $env:FOUNDRY_PROJECT_ENDPOINT = \"https://<account>.services.ai.azure.com/api/projects/<project>\"; azd ai rle invoke <environment-name> [--version <version>]"
+            },
+            {
+              "name": "list",
+              "description": "List RLE environments in a Foundry project.",
+              "usage": "$env:AZD_AI_RLE_ENABLE = \"true\"; $env:FOUNDRY_PROJECT_ENDPOINT = \"https://<account>.services.ai.azure.com/api/projects/<project>\"; azd ai rle list"
+            },
+            {
+              "name": "show",
+              "description": "Show the details and version history for an RLE environment.",
+              "usage": "$env:AZD_AI_RLE_ENABLE = \"true\"; $env:FOUNDRY_PROJECT_ENDPOINT = \"https://<account>.services.ai.azure.com/api/projects/<project>\"; azd ai rle show <environment-name>"
             }
           ],
           "artifacts": {
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "18e883bed93c238b6047d890675c23afea2474ac17a9a6f0666a0e3dca8ad1fa"
+                "value": "f832f54865a300201b28cba92f92f27bb4c2e30f4795f9d897163ee19971b045"
               },
               "entryPoint": "azure-ai-rle-darwin-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-rle/nightly/azure-ai-rle-darwin-amd64.zip"
@@ -766,7 +776,7 @@
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "fb1a41af16a0465999d8c2ccbe98b5fd987943b9b8e13b7fc2d36345be7381f5"
+                "value": "495ab87ce6dc9aebcefa171e843ce81a10ef2953eb034d587ba8a7ef9ec4912a"
               },
               "entryPoint": "azure-ai-rle-darwin-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-rle/nightly/azure-ai-rle-darwin-arm64.zip"
@@ -774,7 +784,7 @@
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "ea56af4b07970c968ed4a73059404ff4c84a717dceb59986bbe452cc822b7dd5"
+                "value": "75006b8ea9d1032440d2b3cc2e74a897021b5e88d43f3ce1531ee9ddeb02725e"
               },
               "entryPoint": "azure-ai-rle-linux-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-rle/nightly/azure-ai-rle-linux-amd64.tar.gz"
@@ -782,7 +792,7 @@
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "403ecde02f1db2877394db822331943e65d643e2c3d6a27793377ee644c39772"
+                "value": "87bbed16d1e3fa84295a252777063ba0ace7a0fc3ec7cc57b4258e3bd59f091e"
               },
               "entryPoint": "azure-ai-rle-linux-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-rle/nightly/azure-ai-rle-linux-arm64.tar.gz"
@@ -790,7 +800,7 @@
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "51ef096257706e4034aef4f52af0a50b1439da5a8ce57cf2dc2e3be3c388bae2"
+                "value": "ae4df9c17aa86e1d8c394b0317e1547805355d0b51b8e3ce0d51dec49f234d69"
               },
               "entryPoint": "azure-ai-rle-windows-amd64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-rle/nightly/azure-ai-rle-windows-amd64.zip"
@@ -798,7 +808,7 @@
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "fb929da0e9e42a1cc6aad5f706f1bb771fde5f85597df9cb1881cb2537c8f629"
+                "value": "bb62fbe36d4fcb43161a3a6e3839b423d8a300339288e1b9ef30110e034196d3"
               },
               "entryPoint": "azure-ai-rle-windows-arm64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-rle/nightly/azure-ai-rle-windows-arm64.zip"

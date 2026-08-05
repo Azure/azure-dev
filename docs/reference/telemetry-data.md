@@ -116,6 +116,7 @@ Commands follow the pattern `cmd.<command.path>` where spaces become dots.
 | `container.remotebuild` | Remote container build |
 | `exegraph.run` | Execution graph run (parallel operations) |
 | `exegraph.step` | Single step within execution graph |
+| `aspire.apphost.unsupported` | Detected an unsupported Aspire polyglot (non-C#) AppHost during app detection |
 
 ### VS Code Extension Events (`azure-dev.*`)
 
@@ -319,6 +320,14 @@ Set **only when an external command-line tool invocation fails**, during error c
 | `appinit.modify_add.count` | measurement | Services added during modification |
 | `appinit.modify_remove.count` | measurement | Services removed during modification |
 | `appinit.lastStep` | string | Last init step reached |
+</details>
+
+<details>
+<summary><strong>Aspire</strong></summary>
+
+| Field Key | Type | Description |
+|-----------|------|-------------|
+| `aspire.apphost.language` | string | Language of a detected but unsupported Aspire polyglot (non-C#) AppHost. Emitted on `aspire.apphost.unsupported`. Values: `typescript`, `python`, `go`, `java`, `rust`. |
 </details>
 
 <details>
@@ -707,6 +716,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Self-Update** | `cmd.update` | `update.installMethod`, `update.fromVersion` | Update adoption |
 | **Hooks** | `hooks.exec` | `hooks.name`, `hooks.type`, `hooks.kind` | Hook usage by type |
 | **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `pack.builder.image` | Build method usage, success rates |
+| **App Detection (Aspire polyglot)** | `aspire.apphost.unsupported` | `aspire.apphost.language` (`typescript`/`python`/`go`/`java`/`rust`) | How often an unsupported Aspire polyglot (non-C#) AppHost is encountered, by language. **Emitted only during app detection for `init` and fresh `up` (no existing `azure.yaml`)** — not for already-initialized projects, so absence does not mean zero unsupported AppHosts. |
 | **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.upgrade`, `cmd.tool.uninstall`, `cmd.tool.check` | `tool.id`, `tool.install.strategy` | Install/upgrade/uninstall success, upgrade availability |
 
 ## See Also

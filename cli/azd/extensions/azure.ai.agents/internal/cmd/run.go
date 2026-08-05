@@ -152,6 +152,14 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	}
 	projectDir := runCtx.ProjectDir
 
+	// Resolve the activity profile before registering session cleanup. Port
+	// validation can fail without starting a process, and such a failure must
+	// not clear a session belonging to an already-running agent.
+	activityProfile := resolveActivityRunProfile(runCtx.Definition)
+	if err := validateInspectorPortForProfile(flags, activityProfile.IsActivity); err != nil {
+		return err
+	}
+
 	// Clean up stored local session when the agent process exits.
 	localAgentKey := resolveLocalAgentKeyWithPort(ctx, azdClient, runCtx.ServiceName, noPrompt, flags.port)
 	defer func() {
@@ -163,13 +171,6 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	// Detect project type early — used for both start-command resolution and
 	// environment setup (e.g., setting ASPNETCORE_URLS for .NET).
 	pt := detectProjectType(projectDir)
-
-	// Detect whether the target service is an activity agent.
-	// This is the single gate that keeps all activity-specific local behavior off
-	// the path of non-activity (responses/invocations) agents — they are entirely
-	// unaffected. Detection is self-contained (reads the agent definition), so
-	// this command has no dependency on the deploy-side activity work.
-	activityProfile := resolveActivityRunProfile(runCtx.Definition)
 
 	// Resolve local-client availability before the agent starts so advisory
 	// port warnings can account for whether an inspector will actually launch.
@@ -532,19 +533,10 @@ func validateInspectorPort(inspectorPort int, set bool) error {
 }
 
 // validateInspectorPortFlags checks --inspector-port against its own range and
-// against the other run flags it interacts with. It extends the range check
-// with the two cases where an accepted value would otherwise be silently
-// dropped:
+// against the client-suppression flags that would silently discard it:
 //
 //   - --no-client (or the deprecated --no-inspector) suppresses the local
 //     client entirely, so the inspector never launches and the port is unused.
-//   - An inspector port equal to the agent port is the very collision this flag
-//     exists to avoid: the agent binds it first and the inspector then fails to
-//     bind the same address.
-//
-// The activity-agent case (the Playground branch, which has no inspector port)
-// cannot be decided here because the profile is only known after the service is
-// resolved; it warns at that point instead. See runRun.
 func validateInspectorPortFlags(flags *runFlags) error {
 	if err := validateInspectorPort(flags.inspectorPort, flags.inspectorPortSet); err != nil {
 		return err
@@ -570,7 +562,15 @@ func validateInspectorPortFlags(flags *runFlags) error {
 		)
 	}
 
-	if flags.inspectorPort == flags.port {
+	return nil
+}
+
+// validateInspectorPortForProfile rejects an inspector/agent port collision
+// only when the resolved agent actually launches the Agent Inspector. Activity
+// agents launch the Playground instead, so --inspector-port is advisory and the
+// equal values do not contend for the same listener.
+func validateInspectorPortForProfile(flags *runFlags, isActivity bool) error {
+	if !isActivity && flags.inspectorPortSet && flags.inspectorPort == flags.port {
 		return exterrors.Validation(
 			exterrors.CodeConflictingArguments,
 			fmt.Sprintf(
@@ -586,7 +586,8 @@ func validateInspectorPortFlags(flags *runFlags) error {
 
 // warnInspectorPortIssues emits the --inspector-port problems that are advisory
 // rather than fatal, so they can be surfaced before the agent process starts.
-// The fatal combinations are rejected up front by validateInspectorPortFlags.
+// The fatal combinations are rejected up front by validateInspectorPortFlags
+// and validateInspectorPortForProfile.
 //
 // Two cases warn instead of failing:
 //

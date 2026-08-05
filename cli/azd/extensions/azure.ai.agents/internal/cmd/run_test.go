@@ -390,16 +390,6 @@ func TestValidateInspectorPortFlags(t *testing.T) {
 			wantErr:     true,
 			wantErrPart: "--no-client",
 		},
-		{
-			name:        "inspector port equal to agent port is rejected",
-			flags:       runFlags{port: 9091, inspectorPort: 9091, inspectorPortSet: true},
-			wantErr:     true,
-			wantErrPart: "must differ from --port",
-		},
-		{
-			name:  "collision check ignores an unset inspector port",
-			flags: runFlags{port: 0},
-		},
 	}
 
 	for _, tt := range tests {
@@ -421,6 +411,121 @@ func TestValidateInspectorPortFlags(t *testing.T) {
 				t.Fatalf("validateInspectorPortFlags(%+v) = %v, want nil", tt.flags, err)
 			}
 		})
+	}
+}
+
+func TestValidateInspectorPortForProfile(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		flags       runFlags
+		isActivity  bool
+		wantErrPart string
+	}{
+		{
+			name:        "non-activity agent rejects equal ports",
+			flags:       runFlags{port: 9091, inspectorPort: 9091, inspectorPortSet: true},
+			wantErrPart: "must differ from --port",
+		},
+		{
+			name:       "activity agent allows equal ports because it opens the Playground",
+			flags:      runFlags{port: 9091, inspectorPort: 9091, inspectorPortSet: true},
+			isActivity: true,
+		},
+		{
+			name:  "non-activity agent allows distinct ports",
+			flags: runFlags{port: 9091, inspectorPort: 9002, inspectorPortSet: true},
+		},
+		{
+			name:  "collision check ignores an unset inspector port",
+			flags: runFlags{port: 0},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			flags := tt.flags
+			err := validateInspectorPortForProfile(&flags, tt.isActivity)
+			if tt.wantErrPart != "" {
+				if err == nil {
+					t.Fatalf("validateInspectorPortForProfile(%+v, %t) = nil, want error", tt.flags, tt.isActivity)
+				}
+				if !strings.Contains(err.Error(), tt.wantErrPart) {
+					t.Fatalf("error = %q, want it to contain %q", err.Error(), tt.wantErrPart)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf(
+					"validateInspectorPortForProfile(%+v, %t) = %v, want nil",
+					tt.flags,
+					tt.isActivity,
+					err,
+				)
+			}
+		})
+	}
+}
+
+func TestRunRun_PortCollisionDoesNotClearStoredSession(t *testing.T) {
+	projectDir := t.TempDir()
+	projectServer := &helpersProjectServer{
+		project: &azdext.ProjectConfig{
+			Name: "test-project",
+			Path: projectDir,
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": {
+					Name:         "agent",
+					Host:         AiAgentHost,
+					RelativePath: ".",
+				},
+			},
+		},
+	}
+	userConfigServer := newInvokeUserConfigServer()
+
+	grpcServer := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(grpcServer, projectServer)
+	azdext.RegisterUserConfigServiceServer(grpcServer, userConfigServer)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+
+	const (
+		port      = 9091
+		sessionID = "existing-session"
+	)
+	agentKey := buildLocalAgentKey(port, "agent", "", projectDir)
+	userConfigServer.setJSON(t, configPath("sessions"), map[string]string{
+		agentKey: sessionID,
+	})
+
+	err = runRun(t.Context(), &runFlags{
+		name:             "agent",
+		port:             port,
+		inspectorPort:    port,
+		inspectorPortSet: true,
+	}, true)
+	if err == nil || !strings.Contains(err.Error(), "must differ from --port") {
+		t.Fatalf("runRun() error = %v, want equal-port validation error", err)
+	}
+
+	userConfigServer.mu.Lock()
+	stored := slices.Clone(userConfigServer.values[configPath("sessions")])
+	userConfigServer.mu.Unlock()
+	if !bytes.Contains(stored, []byte(agentKey)) || !bytes.Contains(stored, []byte(sessionID)) {
+		t.Fatalf("session store = %s, want existing session %q at key %q", stored, sessionID, agentKey)
 	}
 }
 
@@ -477,9 +582,10 @@ func TestWarnInspectorPortIssues(t *testing.T) {
 			wantSilent:         true,
 		},
 		{
-			name:       "unrelated agent port is silent",
-			flags:      runFlags{port: DefaultPort},
-			wantSilent: true,
+			name:               "unrelated agent port is silent",
+			flags:              runFlags{port: DefaultPort},
+			inspectorInstalled: true,
+			wantSilent:         true,
 		},
 		{
 			name:       "activity agent on the inspector default port is silent",

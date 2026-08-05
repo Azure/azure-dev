@@ -4,18 +4,22 @@
 
 ### Features Added
 
-- [[#9284]](https://github.com/Azure/azure-dev/pull/9284) Add container image deployment support for Function App services, while preserving zip deployment for code-based Function Apps.
-- [[#9238]](https://github.com/Azure/azure-dev/pull/9238) Support `${VAR}` substitution in `infra.deploymentStacks` configuration.
-- [[#9353]](https://github.com/Azure/azure-dev/pull/9353) Detect unsupported Aspire polyglot AppHosts and provide an actionable error instead of falling through to a source build.
+- [[#9284]](https://github.com/Azure/azure-dev/pull/9284) Add container image deployment for `host: function` services using a Dockerfile, prebuilt image, or remote ACR build, while preserving zip deployment for code-based Function Apps and failing fast on configuration mismatches.
 
 ### Bugs Fixed
 
-- [[#9324]](https://github.com/Azure/azure-dev/pull/9324) Surface nested ARM error details and applicable suggestions from `azd provision --preview`.
-- [[#9325]](https://github.com/Azure/azure-dev/pull/9325) Pin self-managed stable updates to the version resolved and reported by `azd update`.
-- [[#9329]](https://github.com/Azure/azure-dev/pull/9329) Allow explicitly selecting federated authentication when configuring Azure DevOps pipelines.
-- [[#9347]](https://github.com/Azure/azure-dev/pull/9347) Prevent Aspire manifest generation from hanging because of persistent MSBuild worker nodes.
-- [[#9361]](https://github.com/Azure/azure-dev/pull/9361) Improve errors and recovery guidance for extension source and dependency version resolution failures.
-- [[#9430]](https://github.com/Azure/azure-dev/pull/9430) Support GitHub Actions OIDC's immutable subject claims when configuring federated credentials.
+- [[#9324]](https://github.com/Azure/azure-dev/pull/9324) Fix `azd provision --preview` to show nested ARM failures such as quota limits and provide relevant recovery guidance.
+- [[#9325]](https://github.com/Azure/azure-dev/pull/9325) Fix `azd update` to install the exact stable version it reports instead of potentially installing a newer release.
+- [[#9329]](https://github.com/Azure/azure-dev/pull/9329) Fix `azd pipeline config --provider azdo --auth-type federated` incorrectly rejecting federated authentication and update the flag's help text to reflect existing Azure DevOps support.
+- [[#9347]](https://github.com/Azure/azure-dev/pull/9347) Fix `azd init --from-code` and `azd infra generate --force` hanging indefinitely on Aspire solutions when persistent MSBuild worker nodes keep output pipes open.
+- [[#9361]](https://github.com/Azure/azure-dev/pull/9361) Fix extension upgrade errors to identify the requested version and the source or registries checked, while preserving source and version values in retry commands.
+- [[#9361]](https://github.com/Azure/azure-dev/pull/9361) Fix extension install and upgrade errors to distinguish a missing dependency from one whose available versions do not satisfy the required constraint.
+- [[#9430]](https://github.com/Azure/azure-dev/pull/9430) Fix GitHub Actions pipeline authentication for repositories using immutable OIDC subject claims.
+- [[#9353]](https://github.com/Azure/azure-dev/pull/9353) Improve `azd init` and `azd up` to detect unsupported non-C# Aspire AppHosts early and show actionable guidance instead of misleading Docker and source-build failures.
+
+### Other Changes
+
+- [[#9380]](https://github.com/Azure/azure-dev/pull/9380) Update the bundled GitHub CLI to v2.97.0.
 
 ## 1.29.0 (2026-07-29)
 

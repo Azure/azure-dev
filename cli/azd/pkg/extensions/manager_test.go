@@ -175,6 +175,7 @@ func Test_List_Install_Uninstall_Flow(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, extensions)
 	require.Greater(t, len(extensions), 0)
+	require.Equal(t, SourceCategoryAzd, extensions[0].SourceCategory)
 
 	// Install the first extension
 	extensionVersion, err := manager.Install(*mockContext.Context, extensions[0], "")
@@ -186,6 +187,7 @@ func Test_List_Install_Uninstall_Flow(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, installed)
 	require.Greater(t, len(installed), 0)
+	require.Equal(t, SourceCategoryAzd, installed[extensions[0].Id].SourceCategory)
 
 	// Uninstall the first extension
 	err = manager.Uninstall(t.Context(), extensions[0].Id)

@@ -439,21 +439,28 @@ func TestUpgradeOneExtension(t *testing.T) {
 	const registryURL = "https://test.example.com/registry.json"
 
 	tests := []struct {
-		name           string
-		extensionId    string
-		installed      map[string]*extensions.Extension
-		registry       extensions.Registry
-		flags          extensionUpgradeFlags
-		wantStatus     extensions.UpgradeStatus
-		wantErr        string
-		wantErrSubstr  string
-		wantSkipReason string
+		name                   string
+		extensionId            string
+		installed              map[string]*extensions.Extension
+		registry               extensions.Registry
+		flags                  extensionUpgradeFlags
+		wantStatus             extensions.UpgradeStatus
+		wantErr                string
+		wantErrSubstr          string
+		wantSkipReason         string
+		wantFromSourceCategory extensions.SourceCategory
+		wantToSourceCategory   extensions.SourceCategory
 	}{
 		{
 			name:        "skip_already_up_to_date",
 			extensionId: "ext-a",
 			installed: map[string]*extensions.Extension{
-				"ext-a": {Id: "ext-a", Version: "1.0.0", Source: "test"},
+				"ext-a": {
+					Id:             "ext-a",
+					Version:        "1.0.0",
+					Source:         "test",
+					SourceCategory: extensions.SourceCategoryLocal,
+				},
 			},
 			registry: testRegistry(
 				testExtMeta("ext-a", "1.0.0", "test"),
@@ -461,8 +468,10 @@ func TestUpgradeOneExtension(t *testing.T) {
 			flags: extensionUpgradeFlags{
 				global: &internal.GlobalCommandOptions{NoPrompt: true},
 			},
-			wantStatus:     extensions.UpgradeStatusSkipped,
-			wantSkipReason: "already up to date",
+			wantStatus:             extensions.UpgradeStatusSkipped,
+			wantSkipReason:         "already up to date",
+			wantFromSourceCategory: extensions.SourceCategoryLocal,
+			wantToSourceCategory:   extensions.SourceCategoryOther,
 		},
 		{
 			name:        "skip_installed_is_newer",
@@ -661,6 +670,12 @@ func TestUpgradeOneExtension(t *testing.T) {
 
 			if tt.wantSkipReason != "" {
 				assert.Equal(t, tt.wantSkipReason, result.SkipReason)
+			}
+			if tt.wantFromSourceCategory != "" {
+				assert.Equal(t, tt.wantFromSourceCategory, result.FromSourceCategory)
+			}
+			if tt.wantToSourceCategory != "" {
+				assert.Equal(t, tt.wantToSourceCategory, result.ToSourceCategory)
 			}
 		})
 	}

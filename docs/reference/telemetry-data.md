@@ -458,16 +458,19 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.id` | string | Extension identifier |
 | `extension.version` | string | Extension version |
 | `extension.installed` | string[] | List of installed extensions (`id@version`) |
+| `extension.installed.source.category` | string[] | Installed extension source categories (`id@category`) |
 | `extension.version.from` | string | Version before an upgrade or promotion (`ext.upgrade`, `ext.promote`) |
 | `extension.version.to` | string | Version after an upgrade or promotion (`ext.upgrade`, `ext.promote`) |
-| `extension.source` | string | Registry source used for an upgrade (`ext.upgrade`) |
+| `extension.source.category` | string | Fixed source category: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, or `unknown` (`ext.install`, `ext.upgrade`, `azd extension source add`) |
 | `extension.source.kind` | string | Kind of `--source` argument: `none`, `registered`, or `location` (`azd extension list`, `show`, `install`, `upgrade`) |
-| `extension.source.from` | string | Registry source before a promotion (`ext.promote`) |
-| `extension.source.to` | string | Registry source after a promotion (`ext.promote`) |
+| `extension.source.category.from` | string | Fixed source category before a promotion (`ext.promote`) |
+| `extension.source.category.to` | string | Fixed source category after a promotion (`ext.promote`) |
 | `extension.upgrade.duration_ms` | measurement | Duration (ms) of a single upgrade (`ext.upgrade`) |
 | `extension.upgrade.outcome` | string | Upgrade result status (`ext.upgrade`) |
 | `extension.dependency_of` | string | Parent extension ID when an extension is upgraded as a dependency (`ext.upgrade`) |
 | `extension.dependency_upgrade_count` | measurement | Number of dependency extensions upgraded recursively (`ext.upgrade`) |
+
+Source categories are classified from the configured source type and location, not the user-defined source name. Raw source names, URLs, paths, and hosts are not emitted.
 </details>
 
 <details>
@@ -708,7 +711,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Provisioning (IaC)** | `cmd.provision`, `cmd.up`, `cmd.down`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`/`terraform`/`arm`/`pulumi`/custom; slice of each distinct provider for multi-layer projects) | Provision success, ARM errors, duration |
 | **Authentication** | `cmd.auth.login` | `auth.method` | Auth method usage, failure rates |
 | **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
-| **Extensions** | `ext.run`, `ext.install`, `ext.upgrade` | `extension.id`, `extension.version`, `extension.installed` | Extension adoption, errors |
+| **Extensions** | `ext.run`, `ext.install`, `ext.upgrade`, `ext.promote` | `extension.id`, `extension.version`, `extension.installed`, `extension.source.category` | Extension adoption, source-category adoption, errors |
 | **MCP** | `mcp.<tool_name>` | `mcp.client.name`, `mcp.client.version` | Tool usage by client |
 | **Agentic (Copilot)** | `copilot.initialize`, `copilot.session` | `copilot.mode`, `copilot.init.model`, `copilot.message.*` | Session counts, token usage |
 | **Agent Troubleshooting** | `agent.troubleshoot` | `agent.fix.attempts` | Auto-fix adoption, retry counts |

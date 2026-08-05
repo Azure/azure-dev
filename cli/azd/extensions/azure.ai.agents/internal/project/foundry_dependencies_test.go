@@ -62,17 +62,17 @@ func TestValidateFoundryDependencies(t *testing.T) {
 			},
 		},
 		{
-			name: "transitive Foundry dependency is validated",
+			name: "transitive Foundry dependency is left to the producer",
 			uses: []string{"toolbox"},
 			services: map[string]*azdext.ServiceConfig{
 				"project": {Name: "project", Host: foundryProjectHost},
 				"toolbox": {Name: "toolbox", Host: foundryToolboxHost, Uses: []string{"project"}},
 			},
 			env: map[string]string{
-				envkey.ToolboxMCPEndpoint("toolbox"): "https://example.test/toolbox/mcp",
+				"FOUNDRY_PROJECT_ENDPOINT":               "https://example.test/projects/test",
+				envkey.ToolboxMCPEndpoint("toolbox"):     "https://example.test/toolbox/mcp",
+				envkey.ToolboxProjectEndpoint("toolbox"): "https://example.test/projects/test",
 			},
-			wantErr:    true,
-			wantDetail: []string{"project (azure.ai.project)"},
 		},
 		{
 			name: "single deploy dependency has targeted remediation",
@@ -135,13 +135,33 @@ func TestValidateFoundryDependencies(t *testing.T) {
 			},
 		},
 		{
-			name: "skill without version marker fails",
+			name: "legacy skill without readiness markers is accepted",
 			uses: []string{"summarize"},
 			services: map[string]*azdext.ServiceConfig{
 				"summarize": {Name: "summarize", Host: foundrySkillHost},
 			},
+		},
+		{
+			name: "partial skill marker fails",
+			uses: []string{"summarize"},
+			services: map[string]*azdext.ServiceConfig{
+				"summarize": {Name: "summarize", Host: foundrySkillHost},
+			},
+			env: map[string]string{
+				envkey.SkillProjectEndpoint("summarize"): "https://example.test/projects/current",
+			},
 			wantErr:    true,
 			wantDetail: []string{"summarize (azure.ai.skill): SKILL_SUMMARIZE_VERSION is not set", `azd deploy "summarize"`},
+		},
+		{
+			name: "legacy connection names without scope are accepted",
+			uses: []string{"connection"},
+			services: map[string]*azdext.ServiceConfig{
+				"connection": {Name: "connection", Host: foundryConnectionHost},
+			},
+			env: map[string]string{
+				"AZURE_AI_PROJECT_CONNECTION_NAMES": "connection",
+			},
 		},
 		{
 			name: "skill marker from another project fails",

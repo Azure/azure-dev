@@ -112,13 +112,10 @@ func toolboxProjectEndpoint(endpoint string) string {
 	return strings.TrimRight(parsed.String(), "/")
 }
 
-func shouldClearToolboxMarkers(markerProject, markerEndpoint, deletionProject string) bool {
+func shouldClearToolboxMarkers(_ string, markerEndpoint, deletionProject string) bool {
 	deletionProject = strings.TrimRight(strings.TrimSpace(deletionProject), "/")
-	markerProject = strings.TrimRight(strings.TrimSpace(markerProject), "/")
-	if markerProject == "" {
-		markerProject = toolboxProjectEndpoint(markerEndpoint)
-	}
-	return deletionProject != "" && strings.EqualFold(markerProject, deletionProject)
+	resourceProject := toolboxProjectEndpoint(markerEndpoint)
+	return deletionProject != "" && strings.EqualFold(resourceProject, deletionProject)
 }
 
 // isNoAzdEnvironment reports whether err from GetCurrent means there is no azd

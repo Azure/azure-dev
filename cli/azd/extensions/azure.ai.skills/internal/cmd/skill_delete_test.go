@@ -74,10 +74,23 @@ func TestDeleteSkillAndClearMarkers(t *testing.T) {
 		}
 		t.Cleanup(func() { clearSkillMarkersFunc = previous })
 
-		require.Error(t, deleteSkillAndClearMarkers(
+		require.NoError(t, deleteSkillAndClearMarkers(
 			t.Context(), client, "my-skill", "https://example.test/projects/current",
 		))
 		require.True(t, called)
+	})
+
+	t.Run("cleanup failure does not hide successful deletion", func(t *testing.T) {
+		client := &stubSkillDeleteClient{}
+		previous := clearSkillMarkersFunc
+		clearSkillMarkersFunc = func(context.Context, string, string) error {
+			return errors.New("cleanup failed")
+		}
+		t.Cleanup(func() { clearSkillMarkersFunc = previous })
+
+		require.NoError(t, deleteSkillAndClearMarkers(
+			t.Context(), client, "my-skill", "https://example.test/projects/current",
+		))
 	})
 }
 

@@ -48,57 +48,41 @@ func validateFoundryDependencies(
 	isEnabled dependencyEnabled,
 ) error {
 	failures := make([]foundryDependencyFailure, 0)
-	visited := map[string]struct{}{agent.GetName(): {}}
-	reachable := map[string]struct{}{}
 	declared := map[string]struct{}{}
+	enabled := map[string]struct{}{}
 	disabled := map[string]struct{}{}
 
-	var visit func(*azdext.ServiceConfig) error
-	visit = func(service *azdext.ServiceConfig) error {
-		for _, dependencyName := range service.GetUses() {
-			dependency, ok := services[dependencyName]
-			if !ok {
-				continue
-			}
-			declared[dependencyName] = struct{}{}
-			if isEnabled != nil {
-				enabled, err := isEnabled(ctx, dependencyName)
-				if err != nil {
-					return err
-				}
-				if !enabled {
-					disabled[dependencyName] = struct{}{}
-					continue
-				}
-			}
-			reachable[dependencyName] = struct{}{}
-			if _, ok := visited[dependencyName]; ok {
-				continue
-			}
-			visited[dependencyName] = struct{}{}
-
-			if err := visit(dependency); err != nil {
+	for _, dependencyName := range agent.GetUses() {
+		dependency, ok := services[dependencyName]
+		if !ok {
+			continue
+		}
+		declared[dependencyName] = struct{}{}
+		if isEnabled != nil {
+			isDependencyEnabled, err := isEnabled(ctx, dependencyName)
+			if err != nil {
 				return err
 			}
-
-			host := dependency.GetHost()
-			detail := validateFoundryDependency(dependency, env)
-			if detail != "" {
-				failures = append(failures, foundryDependencyFailure{
-					name:   dependencyName,
-					host:   host,
-					detail: detail,
-					requiresProvision: host == foundryProjectHost || host == legacyFoundryHost ||
-						host == foundryConnectionHost,
-					requiresDeploy: host == foundryToolboxHost || host == foundryAgentHost ||
-						host == foundrySkillHost,
-				})
+			if !isDependencyEnabled {
+				disabled[dependencyName] = struct{}{}
+				continue
 			}
 		}
-		return nil
-	}
-	if err := visit(agent); err != nil {
-		return err
+		enabled[dependencyName] = struct{}{}
+
+		host := dependency.GetHost()
+		detail := validateFoundryDependency(dependency, env)
+		if detail != "" {
+			failures = append(failures, foundryDependencyFailure{
+				name:   dependencyName,
+				host:   host,
+				detail: detail,
+				requiresProvision: host == foundryProjectHost || host == legacyFoundryHost ||
+					host == foundryConnectionHost,
+				requiresDeploy: host == foundryToolboxHost || host == foundryAgentHost ||
+					host == foundrySkillHost,
+			})
+		}
 	}
 
 	if agentConfig != nil {
@@ -113,7 +97,7 @@ func validateFoundryDependencies(
 				})
 				continue
 			}
-			_, isReachable := reachable[toolbox.Name]
+			_, isEnabled := enabled[toolbox.Name]
 			if serviceExists && service.GetHost() != foundryToolboxHost {
 				failures = append(failures, foundryDependencyFailure{
 					name: toolbox.Name, host: service.GetHost(),
@@ -126,7 +110,7 @@ func validateFoundryDependencies(
 				})
 				continue
 			}
-			if serviceExists && isReachable {
+			if serviceExists && isEnabled {
 				continue
 			}
 			_, isDeclared := declared[toolbox.Name]
@@ -250,10 +234,17 @@ func validateFoundryDependency(
 
 func validateFoundrySkillDependency(service *azdext.ServiceConfig, env map[string]string) string {
 	versionKey := envkey.SkillVersion(service.GetName())
-	if strings.TrimSpace(env[versionKey]) == "" {
+	projectKey := envkey.SkillProjectEndpoint(service.GetName())
+	version := strings.TrimSpace(env[versionKey])
+	projectEndpoint := strings.TrimSpace(env[projectKey])
+	// Older skill extensions did not publish readiness markers. Preserve those
+	// deployments until marker-bearing extension releases can be required.
+	if version == "" && projectEndpoint == "" {
+		return ""
+	}
+	if version == "" {
 		return fmt.Sprintf("%s is not set", versionKey)
 	}
-	projectKey := envkey.SkillProjectEndpoint(service.GetName())
 	if !sameProjectEndpoint(env[projectKey], env["FOUNDRY_PROJECT_ENDPOINT"]) {
 		return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", projectKey)
 	}
@@ -300,15 +291,24 @@ func validateFoundryProjectDependency(_ *azdext.ServiceConfig, env map[string]st
 }
 
 func validateFoundryConnectionDependency(service *azdext.ServiceConfig, env map[string]string) string {
+	found := false
+	for name := range strings.SplitSeq(env["AZURE_AI_PROJECT_CONNECTION_NAMES"], ",") {
+		if strings.TrimSpace(name) == service.GetName() {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return "connection is not listed in AZURE_AI_PROJECT_CONNECTION_NAMES"
+	}
+	// Older project extensions published connection names without a scope marker.
+	if strings.TrimSpace(env[envkey.ConnectionProjectEndpoint]) == "" {
+		return ""
+	}
 	if !sameProjectEndpoint(env[envkey.ConnectionProjectEndpoint], env["FOUNDRY_PROJECT_ENDPOINT"]) {
 		return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", envkey.ConnectionProjectEndpoint)
 	}
-	for name := range strings.SplitSeq(env["AZURE_AI_PROJECT_CONNECTION_NAMES"], ",") {
-		if strings.TrimSpace(name) == service.GetName() {
-			return ""
-		}
-	}
-	return "connection is not listed in AZURE_AI_PROJECT_CONNECTION_NAMES"
+	return ""
 }
 
 func validateFoundryToolboxDependency(service *azdext.ServiceConfig, env map[string]string) string {

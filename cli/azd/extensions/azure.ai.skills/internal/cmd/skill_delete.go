@@ -84,13 +84,14 @@ func deleteSkillAndClearMarkers(
 	if _, err := client.DeleteSkill(ctx, skillName); err != nil {
 		if isNotFound(err) {
 			if clearErr := clearSkillMarkersFunc(ctx, skillName, projectEndpoint); clearErr != nil {
-				return clearErr
+				log.Printf("skill deleted remotely; marker cleanup failed: %v", clearErr)
 			}
+			return nil
 		}
 		return exterrors.ServiceFromAzure(err, exterrors.OpDeleteSkill)
 	}
 	if err := clearSkillMarkersFunc(ctx, skillName, projectEndpoint); err != nil {
-		return err
+		log.Printf("skill deleted remotely; marker cleanup failed: %v", err)
 	}
 	return nil
 }

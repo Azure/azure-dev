@@ -38,7 +38,7 @@ func TestRunDeleteToolbox_NotFoundAttemptsMarkerCleanup(t *testing.T) {
 	err := runDeleteToolbox(
 		t.Context(), client, "tb", toolboxDeleteFlags{force: true}, toolboxFlags{output: "json"},
 	)
-	require.Error(t, err)
+	require.NoError(t, err)
 	require.Equal(t, []toolboxEnvCall{{name: "tb", value: "", projectScope: "https://e/"}}, *envCalls)
 }
 
@@ -76,7 +76,7 @@ func TestRunToolboxCreateWith_EnvSyncErrorPropagates(t *testing.T) {
 	require.Len(t, *envCalls, 1)
 }
 
-func TestRunDeleteToolbox_EnvSyncErrorPropagates(t *testing.T) {
+func TestRunDeleteToolbox_EnvSyncErrorDoesNotHideDeletion(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
 	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{Name: "tb", DefaultVersion: "1"}}
 	sentinel := errors.New("env clear failed")
@@ -85,7 +85,7 @@ func TestRunDeleteToolbox_EnvSyncErrorPropagates(t *testing.T) {
 	err := runDeleteToolbox(
 		t.Context(), client, "tb", toolboxDeleteFlags{force: true}, toolboxFlags{output: "json"},
 	)
-	require.ErrorIs(t, err, sentinel)
+	require.NoError(t, err)
 	require.Len(t, client.deleteCalls, 1)
 }
 
@@ -137,15 +137,15 @@ func TestClearToolboxMarkers(t *testing.T) {
 func TestShouldClearToolboxMarkers(t *testing.T) {
 	t.Parallel()
 	const current = "https://account.services.ai.azure.com/api/projects/current"
-	require.True(t, shouldClearToolboxMarkers(current+"/", "", current))
+	require.False(t, shouldClearToolboxMarkers(current+"/", "", current))
 	require.True(t, shouldClearToolboxMarkers(
 		"",
 		current+"/toolboxes/tools/versions/1/mcp",
 		current,
 	))
 	require.False(t, shouldClearToolboxMarkers(
-		"https://account.services.ai.azure.com/api/projects/other",
-		"",
+		current,
+		"https://account.services.ai.azure.com/api/projects/other/toolboxes/tools/versions/1/mcp",
 		current,
 	))
 	require.False(t, shouldClearToolboxMarkers("", "", current))

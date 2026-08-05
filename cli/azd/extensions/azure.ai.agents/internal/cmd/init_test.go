@@ -486,16 +486,6 @@ func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
 	require.False(t, hasInlineEnvironment)
 }
 
-func TestAgentAddedMessage(t *testing.T) {
-	t.Parallel()
-
-	require.Equal(
-		t,
-		"\nAdded agent 'my-agent' to azure.yaml.\n",
-		agentAddedMessage("my-agent"),
-	)
-}
-
 func TestValidateInitAgentName(t *testing.T) {
 	t.Parallel()
 

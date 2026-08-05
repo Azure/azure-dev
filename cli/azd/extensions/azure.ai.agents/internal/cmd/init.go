@@ -2764,12 +2764,8 @@ func writeAgentIgnoreFile(targetDir string) error {
 	return nil
 }
 
-func agentAddedMessage(agentName string) string {
-	return fmt.Sprintf("\nAdded agent '%s' to azure.yaml.\n", agentName)
-}
-
 func printAgentAddedMessage(agentName string) {
-	fmt.Print(agentAddedMessage(agentName))
+	fmt.Printf("\nAdded agent '%s' to azure.yaml.\n", agentName)
 }
 
 func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest) error {

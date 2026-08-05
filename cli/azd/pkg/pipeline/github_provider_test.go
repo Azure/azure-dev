@@ -194,6 +194,81 @@ func Test_credentialOptions_withOIDCCustomSubject(t *testing.T) {
 		)
 	})
 
+	t.Run("immutable OIDC subjects use API prefix", func(t *testing.T) {
+		mockContext := setupMock(t)
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "/repos/"+repoSlug+
+				"/actions/oidc/customization/sub")
+		}).Respond(exec.NewRunResult(
+			0,
+			`{"use_default":true,"use_immutable_subject":false,`+
+				`"sub_claim_prefix":`+
+				`"repo:Azure-Samples@1844662/my-repo@599293758"}`,
+			"",
+		))
+
+		provider := createGitHubCiProvider(t, mockContext).(*GitHubCiProvider)
+		opts, err := provider.credentialOptions(
+			t.Context(),
+			repoDetails,
+			provisioning.Options{},
+			AuthTypeFederated,
+			nil,
+		)
+		require.NoError(t, err)
+		require.True(t, opts.EnableFederatedCredentials)
+		require.Len(t, opts.FederatedCredentialOptions, 2)
+
+		require.Equal(t,
+			"repo:Azure-Samples@1844662/my-repo@599293758:pull_request",
+			opts.FederatedCredentialOptions[0].Subject,
+		)
+		require.Equal(t,
+			"repo:Azure-Samples@1844662/my-repo@599293758:"+
+				"ref:refs/heads/main",
+			opts.FederatedCredentialOptions[1].Subject,
+		)
+	})
+
+	t.Run("custom immutable OIDC subjects use API prefix", func(t *testing.T) {
+		mockContext := setupMock(t)
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "/repos/"+repoSlug+
+				"/actions/oidc/customization/sub")
+		}).Respond(exec.NewRunResult(
+			0,
+			`{"use_default":false,"use_immutable_subject":true,`+
+				`"sub_claim_prefix":`+
+				`"repo:Azure-Samples@1844662/my-repo@599293758",`+
+				`"include_claim_keys":["repo","context"]}`,
+			"",
+		))
+
+		provider := createGitHubCiProvider(t, mockContext).(*GitHubCiProvider)
+		opts, err := provider.credentialOptions(
+			t.Context(),
+			repoDetails,
+			provisioning.Options{},
+			AuthTypeFederated,
+			nil,
+		)
+		require.NoError(t, err)
+		require.True(t, opts.EnableFederatedCredentials)
+		require.Len(t, opts.FederatedCredentialOptions, 2)
+
+		require.Equal(t,
+			"repo:Azure-Samples@1844662/my-repo@599293758:pull_request",
+			opts.FederatedCredentialOptions[0].Subject,
+		)
+		require.Equal(t,
+			"repo:Azure-Samples@1844662/my-repo@599293758:"+
+				"ref:refs/heads/main",
+			opts.FederatedCredentialOptions[1].Subject,
+		)
+	})
+
 	t.Run("custom OIDC subjects with ID-based claims", func(t *testing.T) {
 		mockContext := setupMock(t)
 

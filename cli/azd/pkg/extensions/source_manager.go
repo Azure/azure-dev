@@ -296,11 +296,11 @@ func ValidateSourceName(name string) error {
 func validateConfiguredSource(key string, source *SourceConfig) error {
 	if err := ValidateSourceName(key); err != nil {
 		return fmt.Errorf(
-			"configured extension source %q has an invalid name: %w; remove it with "+
-				"`azd extension source remove %q` and add it again with a valid name",
+			"configured extension source %q has an invalid name: %w; run "+
+				"`azd extension source remove <source-name>` using the exact name shown above, "+
+				"then add it again with a valid name",
 			key,
 			err,
-			key,
 		)
 	}
 	if source == nil {
@@ -308,21 +308,21 @@ func validateConfiguredSource(key string, source *SourceConfig) error {
 	}
 	if err := ValidateSourceName(source.Name); err != nil {
 		return fmt.Errorf(
-			"configured extension source %q has an invalid stored name %q: %w; remove it with "+
-				"`azd extension source remove %q` and add it again with a valid name",
+			"configured extension source %q has an invalid stored name %q: %w; run "+
+				"`azd extension source remove <source-name>` using the source key shown above, "+
+				"then add it again with a valid name",
 			key,
 			source.Name,
 			err,
-			key,
 		)
 	}
 	if source.Name != key {
 		return fmt.Errorf(
-			"configured extension source key %q does not match its stored name %q; remove it with "+
-				"`azd extension source remove %q` and add it again",
+			"configured extension source key %q does not match its stored name %q; run "+
+				"`azd extension source remove <source-name>` using the source key shown above, "+
+				"then add it again",
 			key,
 			source.Name,
-			key,
 		)
 	}
 	return nil

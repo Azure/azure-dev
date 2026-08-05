@@ -264,6 +264,7 @@ func TestSourceManager_ListRejectsInvalidConfiguration(t *testing.T) {
 			_, err := sourceManager.List(t.Context())
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tt.errText)
+			require.NotContains(t, err.Error(), "remove "+tt.key)
 		})
 	}
 }

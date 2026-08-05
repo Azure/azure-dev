@@ -411,6 +411,93 @@ func TestValidate_MaxStallsPositiveIsAccepted(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestValidate_MaxConcurrentAgentRunsZeroIsRejected(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel:              "gpt-4o-mini",
+			OptimizationModel:      "gpt-5",
+			MaxConcurrentAgentRuns: new(0),
+		},
+	}
+
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "max_concurrent_agent_runs must be >= 1")
+}
+
+func TestValidate_MaxConcurrentAgentRunsPositiveIsAccepted(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel:              "gpt-4o-mini",
+			OptimizationModel:      "gpt-5",
+			MaxConcurrentAgentRuns: new(8),
+		},
+	}
+
+	err := cfg.Validate()
+	require.NoError(t, err)
+}
+
+func TestToRequest_MaxConcurrentAgentRunsForwardedToAPI(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel:              "gpt-4o-mini",
+			OptimizationModel:      "gpt-5",
+			MaxConcurrentAgentRuns: new(8),
+		},
+	}
+
+	req, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+	require.NotNil(t, req.Options.MaxConcurrentAgentRuns)
+	assert.Equal(t, 8, *req.Options.MaxConcurrentAgentRuns)
+}
+
+func TestToRequest_MaxConcurrentAgentRunsNilWhenOmitted(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel:         "gpt-4o-mini",
+			OptimizationModel: "gpt-5",
+		},
+	}
+
+	req, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+	assert.Nil(t, req.Options.MaxConcurrentAgentRuns)
+}
+
 func TestLoadOptimizeConfig_FileNotFound(t *testing.T) {
 	t.Parallel()
 

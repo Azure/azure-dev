@@ -104,6 +104,13 @@ func (c *OptimizeConfig) Validate() error {
 			*c.Options.MaxStalls)
 	}
 
+	if c.Options.MaxConcurrentAgentRuns != nil && *c.Options.MaxConcurrentAgentRuns < 1 {
+		return fmt.Errorf(
+			"options.max_concurrent_agent_runs must be >= 1 (got %d): "+
+				"set 'max_concurrent_agent_runs' under 'options:' in your config file",
+			*c.Options.MaxConcurrentAgentRuns)
+	}
+
 	return nil
 }
 
@@ -131,11 +138,12 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 		},
 		Evaluators: evaluatorRefs(c.Evaluators),
 		Options: optimize_api.OptimizeOptions{
-			EvalModel:         c.Options.EvalModel,
-			MaxCandidates:     c.Options.MaxCandidates,
-			OptimizationModel: c.Options.OptimizationModel,
-			EvaluationLevel:   c.Options.EvaluationLevel,
-			MaxStalls:         c.Options.MaxStalls,
+			EvalModel:              c.Options.EvalModel,
+			MaxCandidates:          c.Options.MaxCandidates,
+			OptimizationModel:      c.Options.OptimizationModel,
+			EvaluationLevel:        c.Options.EvaluationLevel,
+			MaxStalls:              c.Options.MaxStalls,
+			MaxConcurrentAgentRuns: c.Options.MaxConcurrentAgentRuns,
 		},
 	}
 

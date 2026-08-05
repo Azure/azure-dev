@@ -4,7 +4,7 @@
 
 ### Features Added
 
-- [[#9284]](https://github.com/Azure/azure-dev/pull/9284) Add container image deployment for `host: function` services using a Dockerfile, prebuilt image, or remote ACR build, while preserving zip deployment for code-based Function Apps and failing fast on configuration mismatches.
+- [[#9284]](https://github.com/Azure/azure-dev/pull/9284) Add container image deployment support for `host: function` services using a Dockerfile, prebuilt image, or remote ACR build.
 
 ### Bugs Fixed
 

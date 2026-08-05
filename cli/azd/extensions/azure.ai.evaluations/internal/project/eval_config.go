@@ -7,31 +7,26 @@ package project
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 
 	"azureaieval/internal/pkg/evalcore"
-
-	"go.yaml.in/yaml/v3"
 )
 
-// EvalConfig is one eval — the body of a single `azure.ai.eval` service entry,
-// kept in evals/<eval-name>.yaml and pulled in with $ref.
+// EvalConfig is one evaluation configuration: the catalogs of reusable assets,
+// and every eval defined over them.
 //
-// The eval's name is the service key in azure.yaml and is not repeated here.
-// One service per eval is what lets the azd dependency graph order an eval
-// after the agent it evaluates.
+// It is the body of a single `azure.ai.eval` service entry, pulled in with
+// $ref. One file rather than one per eval, because the catalogs are shared:
+// two evals over the same dataset should name it once.
+//
+// How it is stored lives in eval_config_store.go.
 type EvalConfig struct {
-	Description string                 `yaml:"description,omitempty" json:"description,omitempty"`
-	Dataset     *DatasetDecl           `yaml:"dataset,omitempty"     json:"dataset,omitempty"`
-	Evaluators  evalcore.EvaluatorList `yaml:"evaluators,omitempty"  json:"evaluators,omitempty"`
-	Target      *Target                `yaml:"target,omitempty"      json:"target,omitempty"`
-	Options     *Options               `yaml:"options,omitempty"     json:"options,omitempty"`
+	Datasets   []DatasetDecl   `yaml:"datasets,omitempty"   json:"datasets,omitempty"`
+	Evaluators []EvaluatorDecl `yaml:"evaluators,omitempty" json:"evaluators,omitempty"`
+	Evals      []Eval          `yaml:"evals,omitempty"      json:"evals,omitempty"`
 }
 
-// DatasetDecl declares a dataset. A local Source is uploaded on deploy; without
+// DatasetDecl is a catalog entry. A local Source is uploaded on deploy; without
 // one the name must already resolve to a registered dataset.
 type DatasetDecl struct {
 	Name    string `yaml:"name"              json:"name"`
@@ -39,8 +34,8 @@ type DatasetDecl struct {
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`
 }
 
-// EvaluatorDecl declares a custom evaluator. Built-ins are referenced directly
-// from an eval and never declared here.
+// EvaluatorDecl is a catalog entry for a custom evaluator. Built-ins are
+// referenced straight from an eval and never declared here.
 //
 // Source names a `.json` file holding a rubric: a list of weighted scoring
 // dimensions.
@@ -50,34 +45,51 @@ type EvaluatorDecl struct {
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`
 }
 
-// Eval is a run definition: evaluators plus options, bound to a dataset.
+// Eval is one evaluation defined over the catalogs.
+//
+// Dataset and Source are alternatives: rows come from a catalog dataset, or
+// from a source such as production traces. Target is what gets invoked, and is
+// a separate axis — an eval can read traces and invoke nothing.
 type Eval struct {
-	Name        string                 `yaml:"name"                  json:"name"`
-	ID          string                 `yaml:"id,omitempty"          json:"id,omitempty"`
-	Description string                 `yaml:"description,omitempty" json:"description,omitempty"`
-	Dataset     string                 `yaml:"dataset,omitempty"     json:"dataset,omitempty"`
-	Evaluators  evalcore.EvaluatorList `yaml:"evaluators,omitempty"  json:"evaluators,omitempty"`
-	Target      *Target                `yaml:"target,omitempty"      json:"target,omitempty"`
-	Options     *Options               `yaml:"options,omitempty"     json:"options,omitempty"`
+	Name            string                 `yaml:"name"                        json:"name"`
+	ID              string                 `yaml:"id,omitempty"                json:"id,omitempty"`
+	Description     string                 `yaml:"description,omitempty"       json:"description,omitempty"`
+	Dataset         string                 `yaml:"dataset,omitempty"           json:"dataset,omitempty"`
+	Source          *SourceDecl            `yaml:"source,omitempty"            json:"source,omitempty"`
+	EvaluationLevel string                 `yaml:"evaluation_level,omitempty"  json:"evaluation_level,omitempty"`
+	MaxSamples      int                    `yaml:"max_samples,omitempty"       json:"max_samples,omitempty"`
+	Evaluators      evalcore.EvaluatorList `yaml:"evaluators,omitempty"        json:"evaluators,omitempty"`
+	Target          *Target                `yaml:"target,omitempty"            json:"target,omitempty"`
 }
 
-// Target names what the run invokes. Only type "agent" is supported today.
+// SourceDecl says where an eval's rows come from when they are not a dataset.
+type SourceDecl struct {
+	Type          string   `yaml:"type"                      json:"type"`
+	LookbackHours int      `yaml:"lookback_hours,omitempty"  json:"lookback_hours,omitempty"`
+	MaxTraces     int      `yaml:"max_traces,omitempty"      json:"max_traces,omitempty"`
+	AgentName     string   `yaml:"agent_name,omitempty"      json:"agent_name,omitempty"`
+	ResponseIDs   []string `yaml:"response_ids,omitempty"    json:"response_ids,omitempty"`
+	MaxTurns      int      `yaml:"max_turns,omitempty"       json:"max_turns,omitempty"`
+}
+
+// Source types an eval can read rows from.
+const (
+	SourceTypeTraces    = "traces"
+	SourceTypeResponses = "responses"
+)
+
+// Target names what the run invokes.
 type Target struct {
 	Type string `yaml:"type" json:"type"`
 	Name string `yaml:"name" json:"name"`
 }
 
-const TargetTypeAgent = "agent"
-
-// Options are run settings carried on the eval.
-//
-// There is deliberately no judge-model option. A judge deployment is a testing
-// criterion's `initialization_parameters.deployment_name`, which differs per
-// evaluator, so it is declared on the evaluator reference instead.
-type Options struct {
-	MaxSamples      int    `yaml:"max_samples,omitempty"      json:"max_samples,omitempty"`
-	EvaluationLevel string `yaml:"evaluation_level,omitempty" json:"evaluation_level,omitempty"`
-}
+// Target types the extension can invoke. Absent means nothing is invoked and
+// the dataset already carries the answers.
+const (
+	TargetTypeAgent = "agent"
+	TargetTypeModel = "model"
+)
 
 // Evaluation levels accepted by the service. The service default is turn.
 const (
@@ -85,92 +97,149 @@ const (
 	EvaluationLevelConversation = "conversation"
 )
 
-// LoadEvalConfig reads an eval body from disk. The path is used verbatim,
-// relative to the process working directory — never re-rooted.
-func LoadEvalConfig(path string) (*EvalConfig, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading eval config %q: %w", path, err)
+// EvalNames lists the declared evals in declaration order.
+func (c *EvalConfig) EvalNames() []string {
+	names := make([]string, 0, len(c.Evals))
+	for _, e := range c.Evals {
+		names = append(names, e.Name)
 	}
-
-	var cfg EvalConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing eval config %q: %w", path, err)
-	}
-	return &cfg, nil
+	return names
 }
 
-// EvalNamesIn lists the evals declared under evalDir, in sorted order.
+// Eval returns the named eval.
 //
-// One file is one eval, named after it. The generation spec shares the
-// directory and is not one, so it is excluded by name.
-func EvalNamesIn(evalDir string) ([]string, error) {
-	entries, err := os.ReadDir(evalDir)
-	if err != nil {
-		return nil, err
+// An empty name is only answered when the file declares exactly one, because
+// guessing which eval a command meant is the kind of mistake that is noticed
+// only after it has run.
+func (c *EvalConfig) Eval(name string) (*Eval, error) {
+	if name == "" {
+		switch len(c.Evals) {
+		case 0:
+			return nil, fmt.Errorf("no evals are declared")
+		case 1:
+			return &c.Evals[0], nil
+		default:
+			return nil, fmt.Errorf(
+				"this configuration declares %d evals (%s); choose one with --eval",
+				len(c.Evals), strings.Join(c.EvalNames(), ", "))
+		}
 	}
 
-	var names []string
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
+	for i := range c.Evals {
+		if c.Evals[i].Name == name {
+			return &c.Evals[i], nil
 		}
-		ext := strings.ToLower(filepath.Ext(e.Name()))
-		if ext != ".yaml" && ext != ".yml" {
-			continue
-		}
-		name := strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
-		if name == generateConfigBase {
-			continue
-		}
-		names = append(names, name)
 	}
-	sort.Strings(names)
-	return names, nil
+	return nil, fmt.Errorf(
+		"eval %q is not declared; this configuration has %s",
+		name, strings.Join(c.EvalNames(), ", "))
 }
 
-// generateConfigBase is the reserved file name in the evals directory.
-const generateConfigBase = "generate"
-
-// ResolveEvalConfigPath finds the config file holding one eval's body.
-//
-// A named eval is evals/<name>.yaml. With no name the directory must hold
-// exactly one eval, and anything else names the candidates rather than
-// picking one, because guessing which eval a command meant is the kind of
-// mistake that is only noticed after it has run.
-func ResolveEvalConfigPath(evalDir, evalName string) (string, error) {
-	if evalName != "" {
-		path := EvalConfigPath(evalDir, evalName)
-		if _, err := os.Stat(path); err != nil {
-			return "", fmt.Errorf("eval %q is not declared in %s", evalName, evalDir)
+// HasEval reports whether the named eval is declared. Unlike Eval it never
+// falls back to "the only one", so callers checking for a collision cannot
+// match a differently named entry.
+func (c *EvalConfig) HasEval(name string) bool {
+	for i := range c.Evals {
+		if c.Evals[i].Name == name {
+			return true
 		}
-		return path, nil
 	}
+	return false
+}
 
-	names, err := EvalNamesIn(evalDir)
-	if err != nil {
-		return "", fmt.Errorf("reading %s: %w", evalDir, err)
+// RemoveEval drops the named eval, reporting whether it was there.
+func (c *EvalConfig) RemoveEval(name string) bool {
+	for i := range c.Evals {
+		if c.Evals[i].Name == name {
+			c.Evals = append(c.Evals[:i], c.Evals[i+1:]...)
+			return true
+		}
 	}
-	switch len(names) {
-	case 0:
-		return "", fmt.Errorf("no evals are declared in %s", evalDir)
-	case 1:
-		return EvalConfigPath(evalDir, names[0]), nil
-	default:
-		return "", fmt.Errorf(
-			"%s declares %d evals (%s); choose one with --eval",
-			evalDir, len(names), strings.Join(names, ", "))
+	return false
+}
+
+// DatasetDeclaration returns the catalog entry an eval's `dataset:` names.
+func (c *EvalConfig) DatasetDeclaration(name string) (*DatasetDecl, bool) {
+	for i := range c.Datasets {
+		if c.Datasets[i].Name == name {
+			return &c.Datasets[i], true
+		}
 	}
+	return nil, false
+}
+
+// EvaluatorDeclaration returns the catalog entry an evaluator reference names.
+func (c *EvalConfig) EvaluatorDeclaration(name string) (*EvaluatorDecl, bool) {
+	for i := range c.Evaluators {
+		if c.Evaluators[i].Name == name {
+			return &c.Evaluators[i], true
+		}
+	}
+	return nil, false
+}
+
+// CustomEvaluators are the catalog entries this configuration owns — the ones
+// carrying a local source, published before the evals that name them.
+func (c *EvalConfig) CustomEvaluators() []EvaluatorDecl {
+	var owned []EvaluatorDecl
+	for _, decl := range c.Evaluators {
+		if decl.Source == "" {
+			continue
+		}
+		owned = append(owned, decl)
+	}
+	return owned
+}
+
+// LocalDatasets are the catalog entries carrying a file to upload.
+func (c *EvalConfig) LocalDatasets() []DatasetDecl {
+	var owned []DatasetDecl
+	for _, decl := range c.Datasets {
+		if decl.Source == "" {
+			continue
+		}
+		owned = append(owned, decl)
+	}
+	return owned
 }
 
 // Validate checks the invariants the provider relies on before it calls the
 // service, so failures surface as config errors rather than opaque 4xx.
 func (c *EvalConfig) Validate() error {
-	if c.Dataset != nil && c.Dataset.Name == "" {
-		return fmt.Errorf("dataset: 'name' is required")
+	if err := c.validateCatalogs(); err != nil {
+		return err
 	}
-	if len(c.Evaluators) == 0 {
-		return fmt.Errorf("at least one evaluator is required")
+	if len(c.Evals) == 0 {
+		return fmt.Errorf("at least one eval is required")
+	}
+
+	seen := map[string]bool{}
+	for i, eval := range c.Evals {
+		if eval.Name == "" {
+			return fmt.Errorf("evals[%d]: 'name' is required", i)
+		}
+		if seen[eval.Name] {
+			return fmt.Errorf("evals[%d]: duplicate eval name %q", i, eval.Name)
+		}
+		seen[eval.Name] = true
+
+		if err := c.validateEval(i, eval); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *EvalConfig) validateCatalogs() error {
+	datasets := map[string]bool{}
+	for i, d := range c.Datasets {
+		if d.Name == "" {
+			return fmt.Errorf("datasets[%d]: 'name' is required", i)
+		}
+		if datasets[d.Name] {
+			return fmt.Errorf("datasets[%d]: duplicate dataset name %q", i, d.Name)
+		}
+		datasets[d.Name] = true
 	}
 
 	evaluators := map[string]bool{}
@@ -183,13 +252,10 @@ func (c *EvalConfig) Validate() error {
 		}
 		evaluators[e.Name] = true
 
-		if e.IsBuiltin() {
-			if e.Source != "" {
-				return fmt.Errorf(
-					"evaluators[%d] (%s): a built-in evaluator has no source to publish",
-					i, e.Name)
-			}
-			continue
+		if strings.HasPrefix(e.Name, evalcore.BuiltinPrefix) {
+			return fmt.Errorf(
+				"evaluators[%d] (%s): a built-in needs no catalog entry; reference it "+
+					"straight from an eval", i, e.Name)
 		}
 		// The service assigns an evaluator's version on publish, so a declared
 		// one cannot be honoured alongside a source: the upload lands on
@@ -203,54 +269,74 @@ func (c *EvalConfig) Validate() error {
 					"on the project", i, e.Name)
 		}
 	}
-
-	if c.Target != nil && c.Target.Type != "" && c.Target.Type != TargetTypeAgent {
-		return fmt.Errorf(
-			"target.type %q is not supported; use %q", c.Target.Type, TargetTypeAgent)
-	}
-	if c.Options != nil {
-		switch c.Options.EvaluationLevel {
-		case "", EvaluationLevelTurn, EvaluationLevelConversation:
-		default:
-			return fmt.Errorf(
-				"options.evaluation_level %q is invalid; expected %q or %q",
-				c.Options.EvaluationLevel, EvaluationLevelTurn, EvaluationLevelConversation)
-		}
-	}
-
 	return nil
 }
 
-// Eval resolves the config into the eval the reconciler publishes, taking its
-// name from the service entry that pulled the file in.
-func (c *EvalConfig) Eval(name string) Eval {
-	resolved := Eval{
-		Name:        name,
-		Description: c.Description,
-		Evaluators:  c.Evaluators,
-		Target:      c.Target,
-		Options:     c.Options,
+func (c *EvalConfig) validateEval(i int, eval Eval) error {
+	if eval.Dataset != "" && eval.Source != nil {
+		return fmt.Errorf(
+			"evals[%d] (%s): `dataset` and `source` both say where rows come from; "+
+				"declare one", i, eval.Name)
 	}
-	if c.Dataset != nil {
-		resolved.Dataset = c.Dataset.Name
+	if eval.Dataset != "" {
+		if _, ok := c.DatasetDeclaration(eval.Dataset); !ok {
+			return fmt.Errorf(
+				"evals[%d] (%s): dataset %q is not in the datasets catalog",
+				i, eval.Name, eval.Dataset)
+		}
 	}
-	return resolved
-}
+	if eval.Source != nil {
+		switch eval.Source.Type {
+		case SourceTypeTraces, SourceTypeResponses:
+		case "":
+			return fmt.Errorf("evals[%d] (%s): source.type is required", i, eval.Name)
+		default:
+			return fmt.Errorf(
+				"evals[%d] (%s): source.type %q is not supported; use %q or %q",
+				i, eval.Name, eval.Source.Type, SourceTypeTraces, SourceTypeResponses)
+		}
+	}
 
-// CustomEvaluators are the evaluators this config owns — the referenced ones
-// carrying a local source, which are published before the eval that names them.
-// A built-in needs nothing, and one without a source is already registered.
-func (c *EvalConfig) CustomEvaluators() []EvaluatorDecl {
-	var owned []EvaluatorDecl
-	for _, ref := range c.Evaluators {
-		if ref.IsBuiltin() || ref.Source == "" {
+	if len(eval.Evaluators) == 0 {
+		return fmt.Errorf("evals[%d] (%s): at least one evaluator is required", i, eval.Name)
+	}
+	criteria := map[string]bool{}
+	for j, ref := range eval.Evaluators {
+		if ref.Evaluator == "" {
+			return fmt.Errorf("evals[%d].evaluators[%d]: 'evaluator' is required", i, j)
+		}
+		// The criterion name is what identifies a result row, so two rows that
+		// cannot be told apart are refused here rather than in the results.
+		criterion := ref.CriterionName()
+		if criteria[criterion] {
+			return fmt.Errorf(
+				"evals[%d].evaluators[%d]: duplicate criterion %q; give one a `name`",
+				i, j, criterion)
+		}
+		criteria[criterion] = true
+
+		if ref.IsBuiltin() {
 			continue
 		}
-		owned = append(owned, EvaluatorDecl{
-			Name:    ref.Name,
-			Source:  ref.Source,
-			Version: ref.Version,
-		})
+		if _, ok := c.EvaluatorDeclaration(ref.Evaluator); !ok {
+			return fmt.Errorf(
+				"evals[%d].evaluators[%d]: evaluator %q is not in the evaluators catalog",
+				i, j, ref.Evaluator)
+		}
 	}
-	return owned
+
+	if eval.Target != nil && eval.Target.Type != "" &&
+		eval.Target.Type != TargetTypeAgent && eval.Target.Type != TargetTypeModel {
+		return fmt.Errorf(
+			"evals[%d] (%s): target.type %q is not supported; use %q or %q",
+			i, eval.Name, eval.Target.Type, TargetTypeAgent, TargetTypeModel)
+	}
+	switch eval.EvaluationLevel {
+	case "", EvaluationLevelTurn, EvaluationLevelConversation:
+	default:
+		return fmt.Errorf(
+			"evals[%d] (%s): evaluation_level %q is invalid; expected %q or %q",
+			i, eval.Name, eval.EvaluationLevel, EvaluationLevelTurn, EvaluationLevelConversation)
+	}
+	return nil
 }

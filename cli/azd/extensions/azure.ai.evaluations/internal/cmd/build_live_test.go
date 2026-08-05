@@ -158,10 +158,10 @@ func TestLiveBuildAcceptedForEveryBuiltin(t *testing.T) {
 				Dataset: "inline",
 				Target:  &project.Target{Type: "agent", Name: "probe-agent"},
 				Evaluators: []evalcore.EvaluatorRef{{
-					Name:                     summary.Name,
+					Evaluator:                summary.Name,
 					InitializationParameters: map[string]any{"deployment_name": judge},
 				}},
-				Options: &project.Options{EvaluationLevel: level},
+				EvaluationLevel: level,
 			}
 
 			req, err := buildEvalRequest(group, schemas, columns)

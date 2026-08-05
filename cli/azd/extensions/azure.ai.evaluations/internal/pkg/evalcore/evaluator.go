@@ -16,45 +16,66 @@ import (
 // stripped before the name is sent as testing_criteria[].evaluator_name.
 const BuiltinPrefix = "builtin."
 
-// EvaluatorRef references an evaluator from an eval. It accepts either a
-// bare string or a mapping carrying the rest of the declaration:
+// EvaluatorRef is one entry in an eval's `evaluators:` list. Every entry is a
+// map keyed `evaluator:`; what to publish lives on the catalog entry instead,
+// so a reference only names an evaluator and says how to run it:
 //
 //	evaluators:
-//	  - builtin.task_adherence
-//	  - name: support-quality
-//	    source: ./evaluators/support-quality.json
+//	  - evaluator: builtin.task_adherence
 //	    initialization_parameters:
-//	      deployment_name: gpt-5.6-luna
-//
-// A built-in needs nothing but its name. One with a Source is the project's
-// own, and is published before the eval that references it is created.
+//	      model: gpt-5.6-luna
+//	      threshold: 3
+//	  - evaluator: support-agent-quality
+//	    name: quality_strict
+//	    version: "2"
+//	    data_mapping:
+//	      query: "{{item.customer_message}}"
 type EvaluatorRef struct {
-	Name    string `yaml:"name" json:"name"`
+	// Evaluator is the evaluator to run: a catalog name or builtin.<name>.
+	Evaluator string `yaml:"evaluator" json:"evaluator"`
+	// Name labels the criterion in results. Empty means the evaluator's name.
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+	// Version pins this reference. Pinning belongs to one eval's reference
+	// rather than to the asset, matching evaluator_version on the criterion.
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`
-	// Source names a local rubric JSON file. Empty means the evaluator is
-	// already registered, or is a built-in.
-	Source string `yaml:"source,omitempty" json:"source,omitempty"`
-	// InitializationParameters are passed through to the testing criterion,
-	// which is where a judge deployment is named.
+	// InitializationParameters carry the judge deployment and a built-in's
+	// numeric threshold. They are bound against the evaluator's published
+	// contract rather than forwarded as written.
 	InitializationParameters map[string]any `yaml:"initialization_parameters,omitempty" json:"initialization_parameters,omitempty"`
-	// Threshold maps to testing_criteria[].initialization_parameters.threshold.
-	Threshold *float64 `yaml:"threshold,omitempty" json:"threshold,omitempty"`
+	// DataMapping binds evaluator inputs to dataset columns, and is written
+	// only when the inference from declared inputs and columns gets it wrong.
+	DataMapping map[string]string `yaml:"data_mapping,omitempty" json:"data_mapping,omitempty"`
 }
 
 // IsBuiltin reports whether the reference names a platform evaluator, which
-// needs no declaration and is never uploaded.
+// needs no catalog entry and is never uploaded.
 func (e EvaluatorRef) IsBuiltin() bool {
-	return strings.HasPrefix(e.Name, BuiltinPrefix)
+	return strings.HasPrefix(e.Evaluator, BuiltinPrefix)
 }
 
 // APIName is the name the service expects, with the builtin prefix removed.
 func (e EvaluatorRef) APIName() string {
-	return strings.TrimPrefix(e.Name, BuiltinPrefix)
+	return strings.TrimPrefix(e.Evaluator, BuiltinPrefix)
 }
 
-// EvaluatorList is a sequence of EvaluatorRef supporting mixed string and
-// mapping entries.
+// CriterionName labels this criterion in results.
+func (e EvaluatorRef) CriterionName() string {
+	if e.Name != "" {
+		return e.Name
+	}
+	return e.APIName()
+}
+
+// EvaluatorList is a sequence of EvaluatorRef.
+//
+// A bare string is refused rather than accepted quietly. Every other collection
+// in the file is a list of named maps, and a bare string would have to mean the
+// evaluator while reading as the criterion's own name — a different key this
+// same entry also carries.
 type EvaluatorList []EvaluatorRef
+
+const bareEvaluatorRemedy = "an evaluator entry is a mapping, not a bare string: " +
+	"write `- evaluator: %s`"
 
 func (el *EvaluatorList) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind != yaml.SequenceNode {
@@ -69,18 +90,18 @@ func (el *EvaluatorList) UnmarshalYAML(value *yaml.Node) error {
 			if err := node.Decode(&name); err != nil {
 				return fmt.Errorf("decoding evaluator name: %w", err)
 			}
-			result = append(result, EvaluatorRef{Name: name})
+			return fmt.Errorf(bareEvaluatorRemedy, name)
 		case yaml.MappingNode:
 			var ref EvaluatorRef
 			if err := node.Decode(&ref); err != nil {
 				return fmt.Errorf("decoding evaluator: %w", err)
 			}
-			if ref.Name == "" {
-				return fmt.Errorf("evaluator entry is missing 'name'")
+			if ref.Evaluator == "" {
+				return fmt.Errorf("evaluator entry is missing 'evaluator'")
 			}
 			result = append(result, ref)
 		default:
-			return fmt.Errorf("evaluator entry must be a string or a mapping, got %v", node.Kind)
+			return fmt.Errorf("evaluator entry must be a mapping, got %v", node.Kind)
 		}
 	}
 
@@ -88,26 +109,12 @@ func (el *EvaluatorList) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-// MarshalYAML emits the compact string form when an entry carries nothing but a
-// name, so round-tripping a hand-written config does not rewrite it.
-func (el EvaluatorList) MarshalYAML() (any, error) {
-	out := make([]any, 0, len(el))
-	for _, ref := range el {
-		if ref.isBareName() {
-			out = append(out, ref.Name)
-			continue
-		}
-		out = append(out, ref)
-	}
-	return out, nil
-}
-
-// UnmarshalJSON accepts the same mixed string-or-mapping form as the YAML
-// decoder.
+// UnmarshalJSON accepts the same mapping-only form as the YAML decoder.
 //
 // This matters for the service-target provider: azd hands the service entry to
-// the extension as JSON, so a config written as `- builtin.task_adherence`
-// arrives as a bare string and would otherwise fail to decode.
+// the extension as JSON, so a config written the old way arrives here as a bare
+// string and has to be refused with the same remedy rather than with a
+// decoder's own type error.
 func (el *EvaluatorList) UnmarshalJSON(data []byte) error {
 	var entries []json.RawMessage
 	if err := json.Unmarshal(data, &entries); err != nil {
@@ -122,16 +129,15 @@ func (el *EvaluatorList) UnmarshalJSON(data []byte) error {
 			if err := json.Unmarshal(trimmed, &name); err != nil {
 				return fmt.Errorf("decoding evaluator name: %w", err)
 			}
-			result = append(result, EvaluatorRef{Name: name})
-			continue
+			return fmt.Errorf(bareEvaluatorRemedy, name)
 		}
 
 		var ref EvaluatorRef
 		if err := json.Unmarshal(trimmed, &ref); err != nil {
 			return fmt.Errorf("decoding evaluator: %w", err)
 		}
-		if ref.Name == "" {
-			return fmt.Errorf("evaluator entry is missing 'name'")
+		if ref.Evaluator == "" {
+			return fmt.Errorf("evaluator entry is missing 'evaluator'")
 		}
 		result = append(result, ref)
 	}
@@ -140,30 +146,19 @@ func (el *EvaluatorList) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// MarshalJSON mirrors MarshalYAML's compact form.
+// MarshalJSON is the default list encoding, defined so a compact form cannot
+// creep back in through the encoder.
 //
-// Everything the reference carries has to survive the round trip, including
-// the source and the initialization parameters: the eval fingerprint is taken
-// over this encoding, so a field dropped here is a change the reconciler
-// cannot see.
+// Everything the reference carries has to survive the round trip: the eval
+// fingerprint is taken over this encoding, so a field dropped here is a change
+// the reconciler cannot see.
 func (el EvaluatorList) MarshalJSON() ([]byte, error) {
 	// Aliased so the element encoder does not recurse through this method.
 	type ref = EvaluatorRef
 
 	out := make([]any, 0, len(el))
 	for _, r := range el {
-		if r.isBareName() {
-			out = append(out, r.Name)
-			continue
-		}
 		out = append(out, ref(r))
 	}
 	return json.Marshal(out)
-}
-
-// isBareName reports whether the reference carries nothing but its name, in
-// which case both encoders emit the compact string form.
-func (e EvaluatorRef) isBareName() bool {
-	return e.Threshold == nil && e.Version == "" && e.Source == "" &&
-		len(e.InitializationParameters) == 0
 }

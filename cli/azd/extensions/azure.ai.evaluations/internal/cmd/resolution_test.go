@@ -15,7 +15,7 @@ import (
 // is silent. options.max_samples was parsed and dropped once already, which is
 // what these lock down.
 func TestResolveMaxSamples_Precedence(t *testing.T) {
-	withOptions := &project.Eval{Options: &project.Options{MaxSamples: 25}}
+	withOptions := &project.Eval{MaxSamples: 25}
 
 	assert.Equal(t, 5, resolveMaxSamples(5, withOptions), "the flag wins over the config")
 	assert.Equal(t, 25, resolveMaxSamples(0, withOptions), "the config is used when no flag is given")
@@ -25,12 +25,12 @@ func TestResolveMaxSamples_Precedence(t *testing.T) {
 
 	// Zero in config is absent, not a cap of zero: a cap of zero would send
 	// nothing at all.
-	assert.Equal(t, 0, resolveMaxSamples(0, &project.Eval{Options: &project.Options{MaxSamples: 0}}))
+	assert.Equal(t, 0, resolveMaxSamples(0, &project.Eval{MaxSamples: 0}))
 }
 
 func TestResolveLevel_Precedence(t *testing.T) {
 	withOptions := &project.Eval{
-		Options: &project.Options{EvaluationLevel: project.EvaluationLevelConversation},
+		EvaluationLevel: project.EvaluationLevelConversation,
 	}
 
 	assert.Equal(t, project.EvaluationLevelTurn, resolveLevel(project.EvaluationLevelTurn, withOptions),

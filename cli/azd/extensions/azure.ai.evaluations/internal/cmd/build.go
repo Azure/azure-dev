@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
@@ -34,9 +35,7 @@ func (ec *evalContext) evaluatorSchemas(ctx context.Context) map[string]*eval_ap
 		if err != nil {
 			continue
 		}
-		for name, summary := range list.ByName() {
-			index[name] = summary
-		}
+		maps.Copy(index, list.ByName())
 	}
 	if len(index) == 0 {
 		return nil
@@ -181,6 +180,16 @@ func planCriterion(
 		plan.itemFields = append(plan.itemFields, field)
 	}
 
+	// A declared mapping is the author saying the inference got it wrong, so it
+	// wins. Anything it binds to an item column is a column the schema has to
+	// declare, whether or not inference found it.
+	for field, binding := range ref.DataMapping {
+		plan.dataMapping[field] = binding
+		if column, ok := itemColumn(binding); ok && !contains(plan.itemFields, column) {
+			plan.itemFields = append(plan.itemFields, column)
+		}
+	}
+
 	var missing []string
 	for _, field := range required {
 		if _, ok := plan.dataMapping[field]; !ok {
@@ -190,15 +199,15 @@ func planCriterion(
 	if len(missing) > 0 {
 		return nil, fmt.Errorf(
 			"evaluator %q requires %s, which the dataset does not provide; "+
-				"add %s to the dataset, or choose an evaluator that matches the data",
-			ref.Name, quoteList(missing), pluralColumns(missing),
+				"add %s to the dataset, or bind it with `data_mapping`",
+			ref.Evaluator, quoteList(missing), pluralColumns(missing),
 		)
 	}
 
 	if !schema.SupportsLevel(level) {
 		return nil, fmt.Errorf(
 			"evaluator %q does not support evaluation level %q; it supports %s",
-			ref.Name, level, quoteList(schema.SupportedEvaluationLevels),
+			ref.Evaluator, level, quoteList(schema.SupportedEvaluationLevels),
 		)
 	}
 
@@ -225,9 +234,6 @@ func planCriterion(
 			plan.initParams[alias] = value
 		}
 	}
-	if ref.Threshold != nil && accepts("threshold") {
-		plan.initParams["threshold"] = *ref.Threshold
-	}
 	if level != "" && accepts("evaluation_level") {
 		plan.initParams["evaluation_level"] = level
 	}
@@ -243,7 +249,7 @@ func planCriterion(
 			return nil, fmt.Errorf(
 				"evaluator %q requires %s; set it under the evaluator's "+
 					"`initialization_parameters` in the eval config",
-				ref.Name, quoteList(missingInit),
+				ref.Evaluator, quoteList(missingInit),
 			)
 		}
 	}
@@ -256,6 +262,28 @@ func planCriterion(
 var judgeModelAliases = map[string]string{
 	"deployment_name": "model",
 	"model":           "deployment_name",
+}
+
+// itemColumn reads the dataset column out of an `{{item.<name>}}` binding.
+func itemColumn(binding string) (string, bool) {
+	const prefix, suffix = "{{item.", "}}"
+	if !strings.HasPrefix(binding, prefix) || !strings.HasSuffix(binding, suffix) {
+		return "", false
+	}
+	name := strings.TrimSuffix(strings.TrimPrefix(binding, prefix), suffix)
+	if name == "" {
+		return "", false
+	}
+	return name, true
+}
+
+func contains(values []string, want string) bool {
+	for _, v := range values {
+		if v == want {
+			return true
+		}
+	}
+	return false
 }
 
 // buildEvalRequest converts an eval declaration into the create
@@ -289,10 +317,7 @@ func buildEvalRequest(
 		metadata["azd_description"] = group.Description
 	}
 
-	level := ""
-	if group.Options != nil {
-		level = group.Options.EvaluationLevel
-	}
+	level := group.EvaluationLevel
 
 	req := &eval_api.CreateOpenAIEvalRequest{
 		Name:     group.Name,
@@ -302,9 +327,9 @@ func buildEvalRequest(
 	itemFields := map[string]bool{}
 
 	for _, ref := range group.Evaluators {
-		schema := schemas[ref.Name]
+		schema := schemas[ref.Evaluator]
 		if schema == nil {
-			schema = &eval_api.EvaluatorSummary{Name: ref.Name}
+			schema = &eval_api.EvaluatorSummary{Name: ref.Evaluator}
 		}
 
 		plan, err := planCriterion(ref, schema, targetBindings, datasetColumns, level)
@@ -314,10 +339,14 @@ func buildEvalRequest(
 
 		criterion := eval_api.TestingCriterion{
 			Type: "azure_ai_evaluator",
-			// Name drops the builtin prefix; EvaluatorName keeps it.
-			Name:          ref.APIName(),
-			EvaluatorName: ref.Name,
+			// Name labels the criterion in results and defaults to the
+			// evaluator without its builtin prefix; EvaluatorName keeps it.
+			Name:          ref.CriterionName(),
+			EvaluatorName: ref.Evaluator,
 			DataMapping:   plan.dataMapping,
+		}
+		if ref.Version != "" {
+			criterion.EvaluatorVersion = ref.Version
 		}
 		if len(plan.initParams) > 0 {
 			criterion.InitializationParameters = plan.initParams

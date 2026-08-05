@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,16 +21,28 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
+// Data sources `init` can point an eval at.
+const (
+	initSourceDataset = "dataset"
+	initSourceTraces  = "traces"
+)
+
 // newInitCommand scaffolds the eval configuration. It makes no service calls at
 // all, so it works offline and unauthenticated.
+//
+// It only ever adds. A name already declared is refused rather than
+// overwritten, because the settings a reader tunes by hand — thresholds, judge
+// model, data mapping — live nowhere but that entry and `init` cannot
+// reproduce them. Editing an eval is a file edit.
 func newInitCommand() *cobra.Command {
 	var (
 		evalName   string
 		target     string
+		source     string
 		dataset    string
 		evaluators []string
-		genModel   string
-		outputDir  string
+		judgeModel string
+		path       string
 		force      bool
 	)
 
@@ -42,91 +55,117 @@ func newInitCommand() *cobra.Command {
 			if target == "" {
 				return requireFlag("target")
 			}
-			if outputDir == "" {
-				outputDir = project.DefaultEvalDir
+			switch source {
+			case "", initSourceDataset, initSourceTraces:
+			default:
+				return fmt.Errorf(
+					"--source %q is not a data source; use %q or %q",
+					source, initSourceDataset, initSourceTraces)
+			}
+			if source == initSourceTraces && dataset != "" {
+				return errors.New("--source traces reads production traces, so it takes no --dataset")
+			}
+			if source == "" {
+				source = initSourceDataset
+			}
+			if path == "" {
+				path = project.DefaultEvalDir
 			}
 			if evalName == "" {
-				evalName = target + "-smoke"
+				evalName = defaultEvalName(target, source)
 			}
 
-			evalPath := project.EvalConfigPath(outputDir, evalName)
-			genPath := filepath.Join(outputDir, "generate.yaml")
-
-			for _, p := range []string{evalPath, genPath} {
-				if _, err := os.Stat(p); err == nil && !force {
-					return fmt.Errorf("%s already exists; pass --force to overwrite", p)
-				}
-			}
-
-			// Asked before anything is written: the project is the one thing init
-			// cannot supply for itself, and failing after creating directories
-			// leaves a half-scaffolded tree behind for the user to clean up.
+			// Asked before anything is written: the project is the one thing
+			// init cannot supply for itself, and failing after creating
+			// directories leaves a half-scaffolded tree behind.
 			azdProject, err := readAzdProject(cmd.Context())
 			if err != nil {
 				return err
 			}
-			if genModel == "" {
-				genModel = detectModelDeployment(azdProject)
+			if judgeModel == "" {
+				judgeModel = detectModelDeployment(azdProject)
 			}
 
-			if err := os.MkdirAll(filepath.Join(outputDir, project.DefaultDatasetsDir), 0o750); err != nil {
+			configPath := project.EvalConfigPath(path)
+			cfg, err := project.OpenEvalConfig(path)
+			if err != nil {
+				return err
+			}
+			if cfg == nil {
+				cfg = &project.EvalConfig{}
+			}
+			if cfg.HasEval(evalName) {
+				if !force {
+					return fmt.Errorf(
+						"an eval named %q already exists in %s; choose another name with --name, "+
+							"or pass --force to replace it. `init` only adds: editing an eval is a file edit",
+						evalName, filepath.ToSlash(configPath))
+				}
+				cfg.RemoveEval(evalName)
+			}
+
+			if err := os.MkdirAll(filepath.Join(path, project.DefaultDatasetsDir), 0o750); err != nil {
 				return fmt.Errorf("creating the datasets directory: %w", err)
 			}
-			if err := os.MkdirAll(filepath.Join(outputDir, project.DefaultEvaluatorsDir), 0o750); err != nil {
+			if err := os.MkdirAll(filepath.Join(path, project.DefaultEvaluatorsDir), 0o750); err != nil {
 				return fmt.Errorf("creating the evaluators directory: %w", err)
 			}
 
-			rubricName := target + "-quality"
+			plan := planScaffold(scaffoldInput{
+				evalName:   evalName,
+				target:     target,
+				source:     source,
+				dataset:    dataset,
+				evaluators: evaluators,
+				judgeModel: judgeModel,
+				rubricName: target + "-quality",
+				evalDir:    path,
+				cfg:        cfg,
+			})
 
-			plan := planScaffold(evalName, target, rubricName, dataset, evaluators, genModel, outputDir)
-
-			if err := writeYAML(evalPath, plan.eval); err != nil {
-				return err
-			}
-			if err := writeYAML(genPath, plan.generate); err != nil {
+			if err := project.SaveEvalConfig(path, cfg); err != nil {
 				return err
 			}
 
 			// Scaffolding a config azd cannot see is half a step: the eval
 			// service has to be referenced from the root config before any of
 			// `azd up`, `azd deploy` or `azd ai eval run` will act on it.
-			// Printing the block and leaving the edit to the reader was enough
-			// to make the documented flow stop working between `init` and
-			// `azd up`.
-			rootWiring, err := ensureRootEvalService(cmd.Context(), evalName, target, evalPath)
+			serviceName := target + "-evals"
+			rootWiring, err := ensureRootEvalService(cmd.Context(), serviceName, target, configPath)
 			if err != nil {
 				return err
 			}
 
 			if isJSON(cmd) {
 				return emitJSON(out, map[string]any{
-					"eval":            evalName,
-					"evalConfig":      evalPath,
-					"generateConfig":  genPath,
-					"datasetsDir":     filepath.Join(outputDir, project.DefaultDatasetsDir),
-					"evaluatorsDir":   filepath.Join(outputDir, project.DefaultEvaluatorsDir),
-					"rootConfig":      rootWiring,
-					"target":          target,
-					"generationModel": genModel,
-					"evaluators":      plan.evaluatorNames(),
+					"eval":          evalName,
+					"evalConfig":    configPath,
+					"service":       serviceName,
+					"datasetsDir":   filepath.Join(path, project.DefaultDatasetsDir),
+					"evaluatorsDir": filepath.Join(path, project.DefaultEvaluatorsDir),
+					"rootConfig":    rootWiring,
+					"target":        target,
+					"source":        source,
+					"judgeModel":    judgeModel,
+					"evaluators":    plan.evaluatorNames(),
 				})
 			}
 
 			fmt.Fprintf(out, "%s Detected agent target: %s\n", doneMark, target)
-			if genModel != "" {
-				fmt.Fprintf(out, "%s Detected model deployment: %s\n", doneMark, genModel)
+			if source == initSourceTraces {
+				fmt.Fprintf(out, "%s Using data source: traces (Application Insights)\n", doneMark)
 			}
-			fmt.Fprintf(out, "%s Planned evaluators: %s\n", doneMark, plan.evaluatorSummary())
+			if judgeModel != "" {
+				fmt.Fprintf(out, "%s Judge model deployment: %s\n", doneMark, judgeModel)
+			}
 
 			fmt.Fprintln(out, "\nCreated")
-			fmt.Fprintf(out, "  %-33s eval definition\n", filepath.ToSlash(evalPath))
-			fmt.Fprintf(out, "  %-33s generation settings (%d samples, %d rubric)\n",
-				filepath.ToSlash(genPath), project.DefaultSampleSize, plan.rubricCount())
+			fmt.Fprintf(out, "  %-33s evaluation configuration\n", filepath.ToSlash(configPath))
 			switch rootWiring {
 			case wiringAdded:
-				fmt.Fprintf(out, "  %-33s added service '%s'\n", rootConfigName, evalName)
+				fmt.Fprintf(out, "  %-33s added service '%s'\n", rootConfigName, serviceName)
 			case wiringPresent:
-				fmt.Fprintf(out, "  %-33s already declares service '%s'\n", rootConfigName, evalName)
+				fmt.Fprintf(out, "  %-33s already declares service '%s'\n", rootConfigName, serviceName)
 			}
 
 			// Only what was actually scheduled is offered. Suggesting
@@ -141,18 +180,239 @@ func newInitCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&evalName, "name", "", "Name of the eval. Defaults to <target>-smoke.")
+	cmd.Flags().StringVar(&evalName, "name", "",
+		"Name of the eval. Defaults to <target>-eval, or <target>-trace-eval under --source traces.")
 	cmd.Flags().StringVar(&target, "target", "", "Name of the agent to evaluate.")
-	cmd.Flags().StringVar(&dataset, "dataset", "", "Path to a local .jsonl, or the name of a registered dataset.")
+	cmd.Flags().StringVar(&source, "source", "",
+		"Where rows come from: dataset or traces. Defaults to dataset.")
+	cmd.Flags().StringVar(&dataset, "dataset", "",
+		"Path to a local .jsonl, or the name of a registered dataset.")
 	cmd.Flags().StringArrayVar(&evaluators, "evaluator", nil,
 		"Evaluator reference, repeatable. Use builtin.<name> for a built-in. "+
 			"Passing this replaces the defaults, so it also opts out of rubric generation.")
-	cmd.Flags().StringVar(&genModel, "generation-model", "",
-		"Model deployment that generates and judges. Detected from the project when omitted.")
-	cmd.Flags().StringVar(&outputDir, "output-dir", project.DefaultEvalDir,
-		"Directory to write the config into. Used verbatim, never re-rooted.")
-	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing files.")
+	cmd.Flags().StringVar(&judgeModel, "judge-model", "",
+		"Model deployment the graders judge with. Detected from the project when omitted.")
+	cmd.Flags().StringVar(&path, "path", project.DefaultEvalDir,
+		"Directory to write the configuration into. Used verbatim, never re-rooted.")
+	cmd.Flags().BoolVar(&force, "force", false,
+		"Replace an eval of the same name instead of failing.")
 	return cmd
+}
+
+// defaultEvalName names an eval after what it evaluates and what it reads.
+func defaultEvalName(target, source string) string {
+	if source == initSourceTraces {
+		return target + "-trace-eval"
+	}
+	return target + "-eval"
+}
+
+// scaffoldInput is everything planScaffold needs, gathered so the signature
+// does not grow a seventh positional string.
+type scaffoldInput struct {
+	evalName   string
+	target     string
+	source     string
+	dataset    string
+	evaluators []string
+	judgeModel string
+	rubricName string
+	evalDir    string
+	cfg        *project.EvalConfig
+}
+
+// scaffold is what `init` added, and what it should suggest doing next.
+type scaffold struct {
+	eval            *project.Eval
+	datasetName     string
+	rubricName      string
+	generateDataset bool
+	generateRubric  bool
+}
+
+// planScaffold appends one eval to the configuration, adding any catalog
+// entries it needs.
+//
+// The default evaluator set is a built-in plus a generated rubric: the built-in
+// alone would be generic, and the rubric is what makes the baseline about this
+// agent. Passing --evaluator replaces both, which is how a caller opts out of
+// rubric generation.
+func planScaffold(in scaffoldInput) scaffold {
+	cfg := in.cfg
+	out := scaffold{rubricName: in.rubricName}
+
+	eval := project.Eval{
+		Name:            in.evalName,
+		Description:     fmt.Sprintf("Basic quality evaluation for %s", in.target),
+		EvaluationLevel: project.EvaluationLevelTurn,
+		Target: &project.Target{
+			Type: project.TargetTypeAgent,
+			Name: in.target,
+		},
+	}
+
+	if in.source == initSourceTraces {
+		// A trace-backed eval filters by agent rather than invoking one: the
+		// conversations already happened.
+		eval.Target = nil
+		eval.Source = &project.SourceDecl{
+			Type:      project.SourceTypeTraces,
+			AgentName: in.target,
+		}
+	} else {
+		datasetName := in.evalName
+		datasetSource := ""
+		out.generateDataset = true
+		if in.dataset != "" {
+			out.generateDataset = false
+			if looksLikeLocalDataset(in.dataset) {
+				// --dataset is given relative to where the user is standing,
+				// but source: resolves relative to the config, so the path has
+				// to be rebased or the deploy looks for it inside evals/.
+				datasetSource = relativeToConfig(in.dataset, in.evalDir)
+				datasetName = strings.TrimSuffix(
+					filepath.Base(in.dataset), filepath.Ext(in.dataset))
+			} else {
+				// A bare name references an already-registered dataset.
+				datasetName = in.dataset
+			}
+		} else {
+			datasetSource = fmt.Sprintf("./%s/%s.jsonl", project.DefaultDatasetsDir, datasetName)
+		}
+		eval.Dataset = datasetName
+		out.datasetName = datasetName
+		addDatasetDecl(cfg, project.DatasetDecl{Name: datasetName, Source: datasetSource})
+	}
+
+	// Every evaluator carries the judge deployment, because that is where the
+	// service reads it from: judging built-ins declare it as required, so an
+	// eval that leaves it off is rejected before it runs. The binding step
+	// drops it again for a rule-based evaluator that declares no judge.
+	initParams := map[string]any{}
+	if in.judgeModel != "" {
+		initParams["model"] = in.judgeModel
+	}
+	withModel := func(ref evalcore.EvaluatorRef) evalcore.EvaluatorRef {
+		if len(initParams) == 0 {
+			return ref
+		}
+		params := make(map[string]any, len(initParams))
+		maps.Copy(params, initParams)
+		ref.InitializationParameters = params
+		return ref
+	}
+
+	refs := evalcore.EvaluatorList{}
+	if len(in.evaluators) == 0 {
+		refs = append(refs,
+			withModel(evalcore.EvaluatorRef{
+				Evaluator: evalcore.BuiltinPrefix + "task_adherence",
+			}))
+		if in.source != initSourceTraces {
+			refs = append(refs, withModel(evalcore.EvaluatorRef{Evaluator: in.rubricName}))
+			addEvaluatorDecl(cfg, project.EvaluatorDecl{
+				Name:   in.rubricName,
+				Source: fmt.Sprintf("./%s/%s.json", project.DefaultEvaluatorsDir, in.rubricName),
+			})
+			out.generateRubric = true
+		}
+	} else {
+		for _, e := range in.evaluators {
+			ref := evalcore.EvaluatorRef{Evaluator: e}
+			refs = append(refs, withModel(ref))
+			if ref.IsBuiltin() {
+				continue
+			}
+			addEvaluatorDecl(cfg, project.EvaluatorDecl{
+				Name:   e,
+				Source: fmt.Sprintf("./%s/%s.json", project.DefaultEvaluatorsDir, e),
+			})
+		}
+	}
+	eval.Evaluators = refs
+
+	cfg.Evals = append(cfg.Evals, eval)
+	out.eval = &cfg.Evals[len(cfg.Evals)-1]
+	return out
+}
+
+// addDatasetDecl adds a catalog entry unless the name is already declared.
+func addDatasetDecl(cfg *project.EvalConfig, decl project.DatasetDecl) {
+	if decl.Name == "" {
+		return
+	}
+	// A source-less entry is still declared: it names a dataset already
+	// registered on the project. Skipping it left the eval referencing a
+	// dataset absent from the catalog, which its own validation rejects.
+	if _, ok := cfg.DatasetDeclaration(decl.Name); ok {
+		return
+	}
+	cfg.Datasets = append(cfg.Datasets, decl)
+}
+
+// addEvaluatorDecl adds a catalog entry unless the name is already declared.
+func addEvaluatorDecl(cfg *project.EvalConfig, decl project.EvaluatorDecl) {
+	if _, ok := cfg.EvaluatorDeclaration(decl.Name); ok {
+		return
+	}
+	cfg.Evaluators = append(cfg.Evaluators, decl)
+}
+
+// evaluatorNames lists the evaluators the eval will run, in declaration order.
+func (s scaffold) evaluatorNames() []string {
+	names := make([]string, 0, len(s.eval.Evaluators))
+	for _, ref := range s.eval.Evaluators {
+		names = append(names, ref.Evaluator)
+	}
+	return names
+}
+
+// nextSteps are the commands to run after `init`, and only the ones that have
+// something to do.
+//
+// A caller who supplied both a dataset and their evaluators has nothing left to
+// generate, and pointing them at a generation command would submit a billed job
+// for an artifact they already have.
+func (s scaffold) nextSteps() []string {
+	var steps []string
+	if s.generateDataset {
+		steps = append(steps, "azd ai dataset generate "+s.datasetName)
+	}
+	if s.generateRubric {
+		steps = append(steps, "azd ai eval evaluator generate "+s.rubricName)
+	}
+	if len(steps) == 0 {
+		steps = append(steps, "azd up", "azd ai eval run start")
+	}
+	return steps
+}
+
+// relativeToConfig rewrites a path given relative to the working directory so
+// it resolves from the directory holding the eval config.
+func relativeToConfig(path, evalDir string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	absOut, err := filepath.Abs(evalDir)
+	if err != nil {
+		return path
+	}
+
+	rel, err := filepath.Rel(absOut, absPath)
+	if err != nil {
+		return path
+	}
+
+	rel = filepath.ToSlash(rel)
+	if !strings.HasPrefix(rel, ".") {
+		rel = "./" + rel
+	}
+	return rel
 }
 
 // rootConfigName is azd's project file, which the eval service is declared in.
@@ -174,10 +434,6 @@ const noAzdProject = "no azd project found in this directory. Run `azd init` fir
 	"its azure.yaml"
 
 // readAzdProject returns the project, without changing it.
-//
-// It is read before anything is written: the project is the one thing init
-// cannot supply for itself, and it also carries the agent and model detection
-// that `init` reports.
 func readAzdProject(ctx context.Context) (*azdext.ProjectConfig, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
@@ -197,12 +453,11 @@ func readAzdProject(ctx context.Context) (*azdext.ProjectConfig, error) {
 // call.
 const aiModelHost = "azure.ai.model"
 
-// detectModelDeployment finds the deployment generation and judging run
-// against, from what the project already declares.
+// detectModelDeployment finds the deployment the graders judge with, from what
+// the project already declares.
 //
 // `init` makes no service calls, so detection is limited to the project file.
-// Coming back empty is not a failure: --generation-model supplies it, and the
-// generate commands say so when it is missing.
+// Coming back empty is not a failure: --judge-model supplies it.
 func detectModelDeployment(proj *azdext.ProjectConfig) string {
 	for name, svc := range proj.GetServices() {
 		if svc.GetHost() != aiModelHost {
@@ -226,12 +481,10 @@ func detectModelDeployment(proj *azdext.ProjectConfig) string {
 // than described. It goes through azd's own Project().AddService, the same call
 // the agents extension uses, so azd owns the edit and the project file keeps
 // whatever shape azd gives it.
-//
-// The service key is the eval's name — one `azure.ai.eval` service per eval —
-// and the eval body stays in evals/<eval-name>.yaml, referenced with `$ref`.
-// azd carries unknown keys through AdditionalProperties untouched, which is how
-// the extension gets it back at deploy time.
-func ensureRootEvalService(ctx context.Context, evalName, target, evalPath string) (string, error) {
+func ensureRootEvalService(
+	ctx context.Context,
+	serviceName, target, configPath string,
+) (string, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return "", fmt.Errorf("connecting to azd: %w", err)
@@ -240,23 +493,17 @@ func ensureRootEvalService(ctx context.Context, evalName, target, evalPath strin
 
 	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil || resp.GetProject() == nil {
-		// Evals attach to a project; they do not create one. Saying which
-		// command makes one is more use than a gRPC error.
-		return "", fmt.Errorf(
-			"no azd project found in this directory. Run `azd init` first, "+
-				"or run this from the root of an existing one; the eval service is "+
-				"added to its %s", rootConfigName)
+		return "", errors.New(noAzdProject)
 	}
 
-	// A service already declaring this eval is left alone: re-adding it would
-	// deploy the same eval twice. A differently-named eval service is not a
-	// conflict, because one service is one eval.
-	if svc, ok := resp.GetProject().GetServices()[evalName]; ok && svc.GetHost() == project.EvalHost {
+	// A service already pointing at this configuration is left alone:
+	// re-adding it would deploy the same evals twice.
+	if svc, ok := resp.GetProject().GetServices()[serviceName]; ok && svc.GetHost() == project.EvalHost {
 		return wiringPresent, nil
 	}
 
 	props, err := structpb.NewStruct(map[string]any{
-		"$ref": "./" + filepath.ToSlash(evalPath),
+		"$ref": "./" + filepath.ToSlash(configPath),
 	})
 	if err != nil {
 		return "", fmt.Errorf("building the eval service entry: %w", err)
@@ -264,7 +511,7 @@ func ensureRootEvalService(ctx context.Context, evalName, target, evalPath strin
 
 	_, err = azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{
 		Service: &azdext.ServiceConfig{
-			Name:                 evalName,
+			Name:                 serviceName,
 			Host:                 project.EvalHost,
 			Uses:                 evalServiceUses(resp.GetProject(), target),
 			AdditionalProperties: props,
@@ -281,8 +528,11 @@ func ensureRootEvalService(ctx context.Context, evalName, target, evalPath strin
 // It is conditional for the same reason the agents extension makes it
 // conditional: naming a service the project does not declare is a broken
 // reference, and an eval config can perfectly well sit in a repo that reaches
-// an existing Foundry project by endpoint and an agent that is deployed
-// elsewhere.
+// an existing Foundry project by endpoint and an agent deployed elsewhere.
+//
+// Catalog entries need no ordering of their own — datasets, evaluators and
+// evals are reconciled in a fixed order inside one deploy, forced by the
+// contract rather than chosen.
 func evalServiceUses(proj *azdext.ProjectConfig, target string) []string {
 	var uses []string
 	for name, svc := range proj.GetServices() {
@@ -295,217 +545,6 @@ func evalServiceUses(proj *azdext.ProjectConfig, target string) []string {
 		uses = append(uses, target)
 	}
 	return uses
-}
-
-// scaffold is what `init` writes: one eval body and the generation settings
-// that fill in the artifacts it references.
-type scaffold struct {
-	eval        *project.EvalConfig
-	generate    *project.GenerateConfig
-	datasetName string
-	rubricName  string
-}
-
-// evaluatorNames lists the evaluators the eval will run, in declaration order.
-func (s scaffold) evaluatorNames() []string {
-	names := make([]string, 0, len(s.eval.Evaluators))
-	for _, ref := range s.eval.Evaluators {
-		names = append(names, ref.Name)
-	}
-	return names
-}
-
-// evaluatorSummary is the one-line form `init` reports, marking the evaluator
-// that still has to be generated.
-func (s scaffold) evaluatorSummary() string {
-	parts := make([]string, 0, len(s.eval.Evaluators))
-	for _, ref := range s.eval.Evaluators {
-		if ref.Name == s.rubricName && s.rubricCount() > 0 {
-			parts = append(parts, ref.Name+" (rubric)")
-			continue
-		}
-		parts = append(parts, ref.Name)
-	}
-	return strings.Join(parts, ", ")
-}
-
-// rubricCount is the number of evaluators `init` expects to be generated.
-func (s scaffold) rubricCount() int {
-	if s.generate == nil {
-		return 0
-	}
-	return len(s.generate.Evaluator)
-}
-
-// nextSteps are the commands to run after `init`, and only the ones that have
-// something to do.
-//
-// A caller who supplied both a dataset and their evaluators has nothing left to
-// generate, and pointing them at a generation command would submit a billed job
-// for an artifact they already have. With everything in place the next step is
-// to deploy it.
-func (s scaffold) nextSteps() []string {
-	var steps []string
-	if s.generate != nil && len(s.generate.Dataset) > 0 {
-		steps = append(steps, "azd ai eval dataset generate "+s.datasetName)
-	}
-	if s.rubricCount() > 0 {
-		steps = append(steps, "azd ai eval evaluator generate "+s.rubricName)
-	}
-	if len(steps) == 0 {
-		steps = append(steps, "azd up", "azd ai eval run start")
-	}
-	return steps
-}
-
-// relativeToConfig rewrites a path given relative to the working directory so
-// it resolves from the directory holding the eval config.
-//
-// `--dataset ./tests/golden.jsonl` means "relative to where I am", but
-// `source:` is resolved relative to the config file, so writing the path
-// through unchanged sends the deploy looking inside evals/. An absolute path is
-// left alone, and forward slashes are kept so the config reads the same on
-// every platform.
-func relativeToConfig(path, outputDir string) string {
-	if filepath.IsAbs(path) {
-		return path
-	}
-
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return path
-	}
-	absOut, err := filepath.Abs(outputDir)
-	if err != nil {
-		return path
-	}
-
-	rel, err := filepath.Rel(absOut, absPath)
-	if err != nil {
-		return path
-	}
-
-	rel = filepath.ToSlash(rel)
-	if !strings.HasPrefix(rel, ".") {
-		rel = "./" + rel
-	}
-	return rel
-}
-
-// planScaffold builds both files `init` writes.
-//
-// The default evaluator set is a built-in plus a generated rubric: the built-in
-// alone would be generic, and the rubric is what makes the baseline about this
-// agent. Passing --evaluator replaces both, which is how a caller opts out of
-// rubric generation.
-func planScaffold(
-	evalName, target, rubricName, dataset string,
-	evaluators []string,
-	genModel string,
-	outputDir string,
-) scaffold {
-	cfg := &project.EvalConfig{
-		Description: fmt.Sprintf("Basic quality evaluation for %s", target),
-	}
-
-	datasetName := evalName
-	datasetSource := ""
-	generateDataset := true
-	if dataset != "" {
-		if looksLikeLocalDataset(dataset) {
-			// --dataset is given relative to where the user is standing, but
-			// source: is resolved relative to the config, so the path has to be
-			// rebased or the deploy looks for it inside evals/.
-			datasetSource = relativeToConfig(dataset, outputDir)
-			datasetName = strings.TrimSuffix(filepath.Base(dataset), filepath.Ext(dataset))
-		} else {
-			// A bare name references an already-registered dataset.
-			datasetName = dataset
-		}
-		generateDataset = false
-	} else {
-		datasetSource = fmt.Sprintf("./%s/%s.jsonl", project.DefaultDatasetsDir, datasetName)
-	}
-	cfg.Dataset = &project.DatasetDecl{
-		Name:   datasetName,
-		Source: datasetSource,
-	}
-
-	// Every evaluator carries the judge deployment, because that is where the
-	// service reads it from: built-ins declare `deployment_name` as required,
-	// so an eval that leaves it off is rejected before it runs.
-	initParams := map[string]any{}
-	if genModel != "" {
-		initParams["deployment_name"] = genModel
-	}
-	withModel := func(ref evalcore.EvaluatorRef) evalcore.EvaluatorRef {
-		if len(initParams) == 0 {
-			return ref
-		}
-		params := make(map[string]any, len(initParams))
-		for k, v := range initParams {
-			params[k] = v
-		}
-		ref.InitializationParameters = params
-		return ref
-	}
-
-	refs := evalcore.EvaluatorList{}
-	generateRubric := false
-	if len(evaluators) == 0 {
-		refs = append(refs,
-			withModel(evalcore.EvaluatorRef{Name: evalcore.BuiltinPrefix + "task_adherence"}),
-			withModel(evalcore.EvaluatorRef{
-				Name:   rubricName,
-				Source: fmt.Sprintf("./%s/%s.json", project.DefaultEvaluatorsDir, rubricName),
-			}),
-		)
-		generateRubric = true
-	} else {
-		for _, e := range evaluators {
-			ref := evalcore.EvaluatorRef{Name: e}
-			if !ref.IsBuiltin() {
-				ref.Source = fmt.Sprintf("./%s/%s.json", project.DefaultEvaluatorsDir, e)
-			}
-			refs = append(refs, withModel(ref))
-		}
-	}
-	cfg.Evaluators = refs
-
-	cfg.Target = &project.Target{
-		Type: project.TargetTypeAgent,
-		Name: target,
-	}
-	cfg.Options = &project.Options{
-		MaxSamples:      project.DefaultSampleSize,
-		EvaluationLevel: project.EvaluationLevelTurn,
-	}
-
-	gen := &project.GenerateConfig{GenerationModel: genModel}
-	if generateDataset {
-		gen.Dataset = map[string]project.DatasetGenSpec{
-			datasetName: {
-				SampleSize: project.DefaultSampleSize,
-				OutputDir:  "./" + project.DefaultDatasetsDir,
-				DeriveFrom: target,
-			},
-		}
-	}
-	if generateRubric {
-		gen.Evaluator = map[string]project.EvaluatorGenSpec{
-			rubricName: {
-				OutputDir:  "./" + project.DefaultEvaluatorsDir,
-				DeriveFrom: target,
-			},
-		}
-	}
-
-	return scaffold{
-		eval:        cfg,
-		generate:    gen,
-		datasetName: datasetName,
-		rubricName:  rubricName,
-	}
 }
 
 // looksLikeLocalDataset distinguishes a path from a registered dataset name.

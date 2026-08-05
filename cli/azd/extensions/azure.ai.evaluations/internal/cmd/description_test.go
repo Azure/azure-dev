@@ -20,7 +20,7 @@ func TestBuildCarriesGroupDescriptionInMetadata(t *testing.T) {
 			nil, []string{"query", "response"},
 			[]string{"deployment_name"}, []string{"deployment_name"}, "turn"),
 	}
-	group := groupWith(withJudge("m", evalcore.EvaluatorRef{Name: "builtin.similarity"}), nil)
+	group := groupWith(withJudge("m", evalcore.EvaluatorRef{Evaluator: "builtin.similarity"}), "")
 	group.Description = "Quality gate for the support agent"
 
 	req, err := buildEvalRequest(group, schemas, map[string]bool{"query": true})
@@ -35,7 +35,7 @@ func TestBuildOmitsEmptyDescription(t *testing.T) {
 			nil, []string{"query", "response"},
 			[]string{"deployment_name"}, []string{"deployment_name"}, "turn"),
 	}
-	group := groupWith(withJudge("m", evalcore.EvaluatorRef{Name: "builtin.similarity"}), nil)
+	group := groupWith(withJudge("m", evalcore.EvaluatorRef{Evaluator: "builtin.similarity"}), "")
 
 	req, err := buildEvalRequest(group, schemas, map[string]bool{"query": true})
 	require.NoError(t, err)

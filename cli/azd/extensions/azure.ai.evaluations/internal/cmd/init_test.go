@@ -13,56 +13,109 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The scaffold must load and validate cleanly, otherwise `azd up` fails on a
+// scaffoldFor runs planScaffold against a fresh configuration, which is what
+// `init` does on a project that has never been initialized.
+func scaffoldFor(t *testing.T, in scaffoldInput) (scaffold, *project.EvalConfig) {
+	t.Helper()
+	if in.cfg == nil {
+		in.cfg = &project.EvalConfig{}
+	}
+	if in.evalDir == "" {
+		in.evalDir = project.DefaultEvalDir
+	}
+	if in.rubricName == "" {
+		in.rubricName = in.target + "-quality"
+	}
+	return planScaffold(in), in.cfg
+}
+
+// The scaffold must round-trip and validate, otherwise `azd up` fails on a
 // config the tool itself produced.
 func TestScaffold_RoundTripsAndValidates(t *testing.T) {
 	dir := t.TempDir()
-	evalPath := filepath.Join(dir, "support-agent-smoke.yaml")
+	_, cfg := scaffoldFor(t, scaffoldInput{
+		evalName:   "support-agent-smoke",
+		target:     "support-agent",
+		judgeModel: "gpt-4.1-nano",
+		evalDir:    dir,
+	})
 
-	plan := planScaffold("support-agent-smoke", "support-agent", "support-agent-quality",
-		"", nil, "gpt-4.1-nano", project.DefaultEvalDir)
-	require.NoError(t, writeYAML(evalPath, plan.eval))
-
-	loaded, err := project.LoadEvalConfig(evalPath)
+	require.NoError(t, project.SaveEvalConfig(dir, cfg))
+	loaded, err := project.OpenEvalConfig(dir)
 	require.NoError(t, err)
 	require.NoError(t, loaded.Validate(), "the generated scaffold must be valid")
 
-	require.Equal(t, project.TargetTypeAgent, loaded.Target.Type)
-	require.Equal(t, "support-agent", loaded.Target.Name)
-	require.Equal(t, project.DefaultSampleSize, loaded.Options.MaxSamples)
+	eval, err := loaded.Eval("support-agent-smoke")
+	require.NoError(t, err)
+	require.Equal(t, project.TargetTypeAgent, eval.Target.Type)
+	require.Equal(t, "support-agent", eval.Target.Name)
+	require.Equal(t, project.EvaluationLevelTurn, eval.EvaluationLevel)
+}
 
-	// The eval takes its name from the file, which is the azure.yaml service key.
-	require.Equal(t, "support-agent-smoke", loaded.Eval("support-agent-smoke").Name)
+// Re-running init appends rather than replacing, so one file ends up holding
+// every eval for the target.
+func TestScaffold_AppendsToAnExistingConfiguration(t *testing.T) {
+	dir := t.TempDir()
+	_, cfg := scaffoldFor(t, scaffoldInput{
+		evalName: "first", target: "support-agent", judgeModel: "m", evalDir: dir,
+	})
+	_, cfg = scaffoldFor(t, scaffoldInput{
+		evalName: "second", target: "support-agent", judgeModel: "m", evalDir: dir, cfg: cfg,
+	})
+
+	require.Equal(t, []string{"first", "second"}, cfg.EvalNames())
+	require.NoError(t, project.SaveEvalConfig(dir, cfg))
+	loaded, err := project.OpenEvalConfig(dir)
+	require.NoError(t, err)
+	require.NoError(t, loaded.Validate())
+}
+
+// A trace-backed eval invokes nothing, so agent_name filters instead of
+// targeting, and the service default caps how many traces are read.
+func TestScaffold_TraceSourceHasNoTarget(t *testing.T) {
+	plan, _ := scaffoldFor(t, scaffoldInput{
+		evalName: "support-agent-trace-eval",
+		target:   "support-agent",
+		source:   initSourceTraces,
+	})
+
+	require.Nil(t, plan.eval.Target)
+	require.NotNil(t, plan.eval.Source)
+	require.Equal(t, project.SourceTypeTraces, plan.eval.Source.Type)
+	require.Equal(t, "support-agent", plan.eval.Source.AgentName)
 }
 
 // The default set is a built-in plus a generated rubric: the built-in alone
 // would be generic, and the rubric is what makes the baseline about this agent.
 func TestScaffold_DefaultEvaluators(t *testing.T) {
-	plan := planScaffold("support-agent-smoke", "support-agent", "support-agent-quality",
-		"", nil, "gpt-5.6-luna", project.DefaultEvalDir)
+	plan, _ := scaffoldFor(t, scaffoldInput{
+		evalName: "support-agent-smoke", target: "support-agent", judgeModel: "gpt-5.6-luna",
+	})
 
 	require.Equal(t,
 		[]string{"builtin.task_adherence", "support-agent-quality"},
 		plan.evaluatorNames())
-	require.Contains(t, plan.evaluatorSummary(), "support-agent-quality (rubric)")
 
-	// Every evaluator carries the judge deployment, because built-ins declare
-	// deployment_name as required and an eval that leaves it off is rejected.
+	// Every evaluator carries the judge deployment, because the judging
+	// built-ins declare it and an eval that leaves it off is rejected.
 	for _, ref := range plan.eval.Evaluators {
-		require.Equal(t, "gpt-5.6-luna", ref.InitializationParameters["deployment_name"],
-			"%s must name a judge deployment", ref.Name)
+		require.Equal(t, "gpt-5.6-luna", ref.InitializationParameters["model"],
+			"%s must name a judge deployment", ref.Evaluator)
 	}
 }
 
 // Passing --evaluator replaces the defaults, which is how a caller opts out of
 // rubric generation.
 func TestScaffold_ExplicitEvaluatorsOptOutOfGeneration(t *testing.T) {
-	plan := planScaffold("smoke", "support-agent", "support-agent-quality", "",
-		[]string{"builtin.task_adherence"}, "m", project.DefaultEvalDir)
+	plan, _ := scaffoldFor(t, scaffoldInput{
+		evalName:   "smoke",
+		target:     "support-agent",
+		evaluators: []string{"builtin.task_adherence"},
+		judgeModel: "m",
+	})
 
 	require.Equal(t, []string{"builtin.task_adherence"}, plan.evaluatorNames())
-	require.Zero(t, plan.rubricCount(), "no rubric is generated when evaluators are given")
-	require.Empty(t, plan.generate.Evaluator)
+	require.False(t, plan.generateRubric, "no rubric is generated when evaluators are given")
 }
 
 // `init` closes by naming what to run next, and only what has something to do.
@@ -70,105 +123,104 @@ func TestScaffold_ExplicitEvaluatorsOptOutOfGeneration(t *testing.T) {
 // would submit a billed job for something they already have.
 func TestScaffold_NextStepsOfferOnlyWhatIsScheduled(t *testing.T) {
 	t.Run("nothing supplied", func(t *testing.T) {
-		plan := planScaffold("support-agent-smoke", "support-agent", "support-agent-quality",
-			"", nil, "m", project.DefaultEvalDir)
+		plan, _ := scaffoldFor(t, scaffoldInput{
+			evalName: "support-agent-smoke", target: "support-agent", judgeModel: "m",
+		})
 		require.Equal(t, []string{
-			"azd ai eval dataset generate support-agent-smoke",
+			"azd ai dataset generate support-agent-smoke",
 			"azd ai eval evaluator generate support-agent-quality",
 		}, plan.nextSteps())
 	})
 
 	t.Run("dataset supplied", func(t *testing.T) {
-		plan := planScaffold("smoke", "support-agent", "support-agent-quality",
-			"prod-golden", nil, "m", project.DefaultEvalDir)
+		plan, _ := scaffoldFor(t, scaffoldInput{
+			evalName: "smoke", target: "support-agent", dataset: "prod-golden", judgeModel: "m",
+		})
 		require.Equal(t,
 			[]string{"azd ai eval evaluator generate support-agent-quality"},
 			plan.nextSteps())
 	})
 
 	t.Run("everything supplied", func(t *testing.T) {
-		plan := planScaffold("smoke", "support-agent", "support-agent-quality",
-			"prod-golden", []string{"builtin.task_adherence"}, "m", project.DefaultEvalDir)
+		plan, _ := scaffoldFor(t, scaffoldInput{
+			evalName:   "smoke",
+			target:     "support-agent",
+			dataset:    "prod-golden",
+			evaluators: []string{"builtin.task_adherence"},
+			judgeModel: "m",
+		})
 		require.Equal(t, []string{"azd up", "azd ai eval run start"}, plan.nextSteps(),
 			"with every artifact in place the next step is to deploy")
 	})
 }
 
-func TestGenerateScaffold_RoundTripsAndValidates(t *testing.T) {
+// Built-ins are referenced but never declared, so the scaffold must not give
+// one a catalog entry to publish.
+func TestScaffold_BuiltinEvaluatorsGetNoCatalogEntry(t *testing.T) {
 	dir := t.TempDir()
-	genPath := filepath.Join(dir, "generate.yaml")
+	plan, cfg := scaffoldFor(t, scaffoldInput{
+		evalName:   "smoke",
+		target:     "support-agent",
+		evaluators: []string{"builtin.task_adherence", "my-custom"},
+		judgeModel: "m",
+		evalDir:    dir,
+	})
 
-	plan := planScaffold("support-agent-smoke", "support-agent", "support-agent-quality",
-		"", nil, "gpt-4.1-nano", project.DefaultEvalDir)
-	require.NoError(t, writeYAML(genPath, plan.generate))
+	require.Len(t, plan.eval.Evaluators, 2)
+	require.True(t, plan.eval.Evaluators[0].IsBuiltin())
+	require.False(t, plan.eval.Evaluators[1].IsBuiltin())
 
-	loaded, err := project.LoadGenerateConfig(genPath)
-	require.NoError(t, err)
-	require.Equal(t, "gpt-4.1-nano", loaded.GenerationModel)
-
-	ds, ok := loaded.DatasetSpec("support-agent-smoke")
-	require.True(t, ok, "the generation spec is keyed by artifact name")
-	require.Equal(t, project.DefaultSampleSize, ds.SampleSize)
-	require.Equal(t, "support-agent", ds.DeriveFrom)
-
-	ev, ok := loaded.EvaluatorSpec("support-agent-quality")
-	require.True(t, ok)
-	require.Equal(t, "./"+project.DefaultEvaluatorsDir, ev.OutputDir)
-}
-
-// Built-ins are referenced but never published, so the scaffold must not give
-// one a local source to upload.
-func TestScaffold_BuiltinEvaluatorsHaveNoSource(t *testing.T) {
-	plan := planScaffold("smoke", "support-agent", "unused", "",
-		[]string{"builtin.task_adherence", "my-custom"}, "", project.DefaultEvalDir)
-	cfg := plan.eval
-
-	require.Len(t, cfg.Evaluators, 2)
-	require.True(t, cfg.Evaluators[0].IsBuiltin())
-	require.Empty(t, cfg.Evaluators[0].Source)
-	require.False(t, cfg.Evaluators[1].IsBuiltin())
-	require.NotEmpty(t, cfg.Evaluators[1].Source)
-
+	require.Len(t, cfg.Evaluators, 1, "only the custom evaluator is declared")
+	require.Equal(t, "my-custom", cfg.Evaluators[0].Name)
 	require.Len(t, cfg.CustomEvaluators(), 1,
 		"only the custom evaluator is this config's to publish")
 
-	path := filepath.Join(t.TempDir(), "smoke.yaml")
-	require.NoError(t, writeYAML(path, cfg))
-	loaded, err := project.LoadEvalConfig(path)
+	require.NoError(t, project.SaveEvalConfig(dir, cfg))
+	loaded, err := project.OpenEvalConfig(dir)
 	require.NoError(t, err)
 	require.NoError(t, loaded.Validate())
 }
 
 // A bare name means an already-registered dataset; a path means a local file.
 // Either way the dataset was supplied, so nothing is scheduled to generate it —
-// only a missing --dataset produces a generation entry.
+// only a missing --dataset produces a generation step.
 func TestScaffold_DatasetReferenceForms(t *testing.T) {
 	t.Run("local path becomes a source", func(t *testing.T) {
 		// --dataset is relative to the working directory, but source: is
 		// resolved relative to the eval config, so it has to be rebased.
-		plan := planScaffold("smoke", "a", "r", "./tests/golden.jsonl", nil, "", "evals")
-		require.Equal(t, "../tests/golden.jsonl", plan.eval.Dataset.Source,
+		plan, cfg := scaffoldFor(t, scaffoldInput{
+			evalName: "smoke", target: "a", dataset: "./tests/golden.jsonl", evalDir: "evals",
+		})
+		decl, ok := cfg.DatasetDeclaration("golden")
+		require.True(t, ok)
+		require.Equal(t, "../tests/golden.jsonl", decl.Source,
 			"a dataset outside the eval dir must be reached with ..")
-		require.Equal(t, "golden", plan.eval.Dataset.Name)
-		require.Empty(t, plan.generate.Dataset,
+		require.Equal(t, "golden", plan.eval.Dataset)
+		require.False(t, plan.generateDataset,
 			"a supplied dataset must not be scheduled for generation")
 	})
 
 	t.Run("bare name references a registered dataset", func(t *testing.T) {
-		plan := planScaffold("smoke", "a", "r", "prod-sample", nil, "", project.DefaultEvalDir)
-		require.Equal(t, "prod-sample", plan.eval.Dataset.Name)
-		require.Empty(t, plan.eval.Dataset.Source,
-			"a registered dataset must not get a local source")
-		require.Empty(t, plan.generate.Dataset)
+		plan, cfg := scaffoldFor(t, scaffoldInput{
+			evalName: "smoke", target: "a", dataset: "prod-sample",
+		})
+		decl, ok := cfg.DatasetDeclaration("prod-sample")
+		require.True(t, ok)
+		require.Empty(t, decl.Source, "a registered dataset must not get a local source")
+		require.Equal(t, "prod-sample", plan.eval.Dataset)
+		require.False(t, plan.generateDataset)
 	})
 
-	t.Run("no dataset flag scaffolds a local path and a generation entry", func(t *testing.T) {
-		plan := planScaffold("support-agent-smoke", "support-agent", "r", "",
-			nil, "", project.DefaultEvalDir)
-		require.Equal(t, "support-agent-smoke", plan.eval.Dataset.Name,
+	t.Run("no dataset flag scaffolds a local path and a generation step", func(t *testing.T) {
+		plan, cfg := scaffoldFor(t, scaffoldInput{
+			evalName: "support-agent-smoke", target: "support-agent",
+		})
+		require.Equal(t, "support-agent-smoke", plan.eval.Dataset,
 			"the dataset is named after the eval")
-		require.Contains(t, plan.eval.Dataset.Source, "support-agent-smoke.jsonl")
-		require.Contains(t, plan.generate.Dataset, "support-agent-smoke")
+		decl, ok := cfg.DatasetDeclaration("support-agent-smoke")
+		require.True(t, ok)
+		require.Contains(t, decl.Source, "support-agent-smoke.jsonl")
+		require.True(t, plan.generateDataset)
 	})
 }
 
@@ -181,15 +233,15 @@ func TestLooksLikeLocalDataset(t *testing.T) {
 
 // Paths are used verbatim relative to the working directory; the doubling bug
 // in the agent-scoped command must not reappear.
-func TestWriteYAML_UsesPathVerbatim(t *testing.T) {
+func TestSaveEvalConfig_UsesPathVerbatim(t *testing.T) {
 	dir := t.TempDir()
-	nested := filepath.Join(dir, "evals", "smoke.yaml")
+	nested := filepath.Join(dir, "evals")
 
-	require.NoError(t, writeYAML(nested, &project.EvalConfig{}))
-	_, err := os.Stat(nested)
+	require.NoError(t, project.SaveEvalConfig(nested, &project.EvalConfig{}))
+	_, err := os.Stat(project.EvalConfigPath(nested))
 	require.NoError(t, err, "the file must land exactly at the requested path")
 
-	doubled := filepath.Join(dir, "evals", "evals", "smoke.yaml")
+	doubled := filepath.Join(dir, "evals", "evals")
 	_, err = os.Stat(doubled)
 	require.Error(t, err, "the path must not be re-rooted under itself")
 }

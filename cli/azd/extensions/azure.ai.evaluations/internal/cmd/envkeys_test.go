@@ -4,9 +4,10 @@
 package cmd
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
+
+	"azureaieval/internal/pkg/evalcore"
+	"azureaieval/internal/project"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,9 +49,14 @@ func TestGroupIDKeys_SharedKeyReadOnlyWhenUnambiguous(t *testing.T) {
 	write := func(t *testing.T, names ...string) string {
 		t.Helper()
 		dir := t.TempDir()
+		cfg := &project.EvalConfig{}
 		for _, n := range names {
-			require.NoError(t, os.WriteFile(filepath.Join(dir, n+".yaml"), []byte("{}\n"), 0o600))
+			cfg.Evals = append(cfg.Evals, project.Eval{
+				Name:       n,
+				Evaluators: evalcore.EvaluatorList{{Evaluator: "builtin.relevance"}},
+			})
 		}
+		require.NoError(t, project.SaveEvalConfig(dir, cfg))
 		return dir
 	}
 

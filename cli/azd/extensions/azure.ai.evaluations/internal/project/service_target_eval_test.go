@@ -68,25 +68,37 @@ func TestServiceRelativeDirDefaultsToProjectRoot(t *testing.T) {
 // includes against.
 func TestEvalConfigFromServiceReadsInlineConfig(t *testing.T) {
 	svc := &azdext.ServiceConfig{
-		Name: "support-agent-smoke",
+		Name: "support-agent-evals",
 		AdditionalProperties: propsFrom(t, map[string]any{
-			"dataset":    map[string]any{"name": "golden", "source": "./datasets/golden.jsonl"},
-			"evaluators": []any{"builtin.task_adherence"},
-			"target":     map[string]any{"type": "agent", "name": "my-agent"},
+			"datasets": []any{
+				map[string]any{"name": "golden", "source": "./datasets/golden.jsonl"},
+			},
+			"evals": []any{
+				map[string]any{
+					"name":    "support-agent-smoke",
+					"dataset": "golden",
+					"evaluators": []any{
+						map[string]any{"evaluator": "builtin.task_adherence"},
+					},
+					"target": map[string]any{"type": "agent", "name": "my-agent"},
+				},
+			},
 		}),
 	}
 
 	cfg, err := EvalConfigFromService(svc, "")
 	require.NoError(t, err)
-	require.NotNil(t, cfg.Dataset)
-	require.Equal(t, "golden", cfg.Dataset.Name)
-	require.Len(t, cfg.Evaluators, 1)
-	require.Equal(t, "builtin.task_adherence", cfg.Evaluators[0].Name)
-	require.Equal(t, "my-agent", cfg.Target.Name)
+	require.Len(t, cfg.Datasets, 1)
+	require.Equal(t, "golden", cfg.Datasets[0].Name)
 
-	// The eval's name is the service key, which is what makes one service per
-	// eval work without the body repeating it.
-	require.Equal(t, "support-agent-smoke", cfg.Eval(svc.Name).Name)
+	// One service covers every eval in the file it pulled in, so the eval is
+	// selected by its own name rather than by the service key.
+	eval, err := cfg.Eval("support-agent-smoke")
+	require.NoError(t, err)
+	require.Equal(t, "golden", eval.Dataset)
+	require.Len(t, eval.Evaluators, 1)
+	require.Equal(t, "builtin.task_adherence", eval.Evaluators[0].Evaluator)
+	require.Equal(t, "my-agent", eval.Target.Name)
 }
 
 func TestEvalConfigFromServiceRejectsEmptyService(t *testing.T) {
@@ -95,16 +107,16 @@ func TestEvalConfigFromServiceRejectsEmptyService(t *testing.T) {
 	require.Contains(t, err.Error(), "no eval configuration")
 }
 
-// Evals are immutable, so a change to the eval's own declaration has to be
+// Evals are immutable, so a change to an eval's own declaration has to be
 // detectable. Upstream artifact fingerprints do not cover it: retargeting an
 // eval at a different agent leaves the dataset and evaluators untouched.
 func TestFingerprintGroupTracksMeaningfulChanges(t *testing.T) {
 	base := Eval{
-		Name:       "quality",
-		Dataset:    "golden",
-		Evaluators: evalcore.EvaluatorList{{Name: "builtin.task_adherence"}},
-		Target:     &Target{Type: "agent", Name: "agent-a"},
-		Options:    &Options{EvaluationLevel: EvaluationLevelTurn},
+		Name:            "quality",
+		Dataset:         "golden",
+		Evaluators:      evalcore.EvaluatorList{{Evaluator: "builtin.task_adherence"}},
+		Target:          &Target{Type: "agent", Name: "agent-a"},
+		EvaluationLevel: EvaluationLevelTurn,
 	}
 
 	original, err := FingerprintGroup(base)
@@ -117,16 +129,25 @@ func TestFingerprintGroupTracksMeaningfulChanges(t *testing.T) {
 	cases := map[string]func(g *Eval){
 		"target": func(g *Eval) { g.Target = &Target{Type: "agent", Name: "agent-b"} },
 		"evaluators": func(g *Eval) {
-			g.Evaluators = append(g.Evaluators, evalcore.EvaluatorRef{Name: "builtin.similarity"})
+			g.Evaluators = append(g.Evaluators, evalcore.EvaluatorRef{Evaluator: "builtin.similarity"})
 		},
 		"judge deployment": func(g *Eval) {
 			g.Evaluators = evalcore.EvaluatorList{{
-				Name:                     "builtin.task_adherence",
+				Evaluator:                "builtin.task_adherence",
 				InitializationParameters: map[string]any{"deployment_name": "gpt-4o-mini"},
 			}}
 		},
-		"options": func(g *Eval) { g.Options = &Options{EvaluationLevel: EvaluationLevelConversation} },
-		"dataset": func(g *Eval) { g.Dataset = "other" },
+		"version pin": func(g *Eval) {
+			g.Evaluators = evalcore.EvaluatorList{{
+				Evaluator: "builtin.task_adherence", Version: "2",
+			}}
+		},
+		"evaluation level": func(g *Eval) { g.EvaluationLevel = EvaluationLevelConversation },
+		"dataset":          func(g *Eval) { g.Dataset = "other" },
+		"source": func(g *Eval) {
+			g.Dataset = ""
+			g.Source = &SourceDecl{Type: SourceTypeTraces, AgentName: "agent-a"}
+		},
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -141,21 +162,48 @@ func TestFingerprintGroupTracksMeaningfulChanges(t *testing.T) {
 	}
 }
 
-// Server-assigned and cosmetic fields must not force a recreate.
-func TestFingerprintGroupIgnoresIdAndDescription(t *testing.T) {
+// The fingerprint covers substance only. The id is server-assigned, and name
+// and description are what UpdateEvalParametersBody reaches — an edit confined
+// to those is pushed in place, so it must not fork the run history.
+func TestFingerprintGroupIgnoresIdNameAndDescription(t *testing.T) {
 	base := Eval{
 		Name:       "quality",
 		Dataset:    "golden",
-		Evaluators: evalcore.EvaluatorList{{Name: "builtin.task_adherence"}},
+		Evaluators: evalcore.EvaluatorList{{Evaluator: "builtin.task_adherence"}},
 	}
 	original, err := FingerprintGroup(base)
 	require.NoError(t, err)
 
 	noisy := base
 	noisy.ID = "eval_abc123"
+	noisy.Name = "quality-renamed"
 	noisy.Description = "reworded"
 
 	digest, err := FingerprintGroup(noisy)
 	require.NoError(t, err)
 	require.Equal(t, original, digest)
+}
+
+// Editing one eval must not recreate its siblings: the unit compared is the
+// eval's own subtree, never the file.
+func TestFingerprintGroupIsScopedToOneEval(t *testing.T) {
+	gate := Eval{
+		Name:       "support-agent-gate",
+		Dataset:    "prod-golden",
+		Evaluators: evalcore.EvaluatorList{{Evaluator: "builtin.task_adherence"}},
+	}
+	regression := Eval{
+		Name:       "support-agent-regression-eval",
+		Dataset:    "support-agent-regression",
+		Evaluators: evalcore.EvaluatorList{{Evaluator: "builtin.task_adherence"}},
+	}
+
+	before, err := FingerprintGroup(regression)
+	require.NoError(t, err)
+
+	gate.Evaluators = append(gate.Evaluators, evalcore.EvaluatorRef{Evaluator: "builtin.similarity"})
+
+	after, err := FingerprintGroup(regression)
+	require.NoError(t, err)
+	require.Equal(t, before, after, "editing a sibling must leave this eval alone")
 }

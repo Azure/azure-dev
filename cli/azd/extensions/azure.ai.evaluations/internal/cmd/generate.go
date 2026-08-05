@@ -44,6 +44,9 @@ type generationPlan struct {
 	OutputDir string
 	// SampleSize applies to dataset generation only.
 	SampleSize int
+	// From selects which source the rows are generated out of. Empty lets the
+	// project decide: traces when Application Insights is connected.
+	From string
 	// TraceDays seeds generation from that many days of recent traces.
 	TraceDays int
 }
@@ -78,14 +81,6 @@ func resolveInstruction(inline, path string) (string, error) {
 	return text, nil
 }
 
-// generationModel returns the deployment both generation jobs run against.
-//
-// Dataset generation has no model of its own: the spec carries one generation
-// model and both jobs use it.
-func generationModel(cfg *project.GenerateConfig) string {
-	return cfg.GenerationModel
-}
-
 // declaredInstructions reads the file named by a generation entry's
 // `instructions`, relative to the spec that declared it.
 //
@@ -115,27 +110,19 @@ func declaredInstructions(named, configPath string) (string, error) {
 //
 // The service accepts an agent source that is meant to pull the agent's own
 // instructions, but it fails for every agent, so the agent's context is read
-// here instead. In precedence order: what the caller passed, then the
-// instructions file the spec names, then the agent's published instructions.
+// here instead. In precedence order: what the caller passed, then the agent's
+// published instructions.
 //
 // The last step is what makes `generate` work with no authored input at all,
 // which is the flow `init` sets up.
 func (ec *evalContext) resolveGenerationInstruction(
 	ctx context.Context,
-	explicit, declared, configPath, agentName string,
+	explicit, agentName string,
 	out io.Writer,
 	quiet bool,
 ) (string, error) {
 	if explicit != "" {
 		return explicit, nil
-	}
-
-	fromFile, err := declaredInstructions(declared, configPath)
-	if err != nil {
-		return "", err
-	}
-	if fromFile != "" {
-		return fromFile, nil
 	}
 
 	if agentName == "" {

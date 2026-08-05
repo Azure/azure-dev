@@ -145,26 +145,27 @@ func (p *EvalServiceTargetProvider) Deploy(
 
 	baseDir := serviceRelativeDir(serviceConfig)
 
-	// The eval takes its name from the service entry that pulled this config
-	// in, which is what makes one service per eval work.
-	eval := cfg.Eval(serviceConfig.Name)
-
-	// 1. Dataset.
+	// 1. Datasets the configuration owns. Paths are kept so an eval that names
+	// one can derive its columns without reading the blob back.
 	anyChanged := false
-	datasetPath := ""
-	if cfg.Dataset != nil {
-		report(progress, fmt.Sprintf("Reconciling dataset %s", cfg.Dataset.Name))
-		datasetPath = resolveSource(baseDir, cfg.Dataset.Source)
-		version, changed, err := reconciler.EnsureDataset(ctx, *cfg.Dataset, datasetPath)
+	datasetPaths := map[string]string{}
+	for _, decl := range cfg.Datasets {
+		if decl.Source == "" {
+			continue
+		}
+		report(progress, fmt.Sprintf("Reconciling dataset %s", decl.Name))
+		localPath := resolveSource(baseDir, decl.Source)
+		datasetPaths[decl.Name] = localPath
+		version, changed, err := reconciler.EnsureDataset(ctx, decl, localPath)
 		if err != nil {
-			return nil, fmt.Errorf("dataset %q: %w", cfg.Dataset.Name, err)
+			return nil, fmt.Errorf("dataset %q: %w", decl.Name, err)
 		}
 		anyChanged = anyChanged || changed
-		report(progress, describeResult("dataset", cfg.Dataset.Name, version, changed))
+		report(progress, describeResult("dataset", decl.Name, version, changed))
 	}
 
-	// 2. Evaluators this config owns. Built-ins and already-registered ones
-	// need no publish.
+	// 2. Evaluators this configuration owns. Built-ins and already-registered
+	// ones need no publish.
 	for _, decl := range cfg.CustomEvaluators() {
 		report(progress, fmt.Sprintf("Reconciling evaluator %s", decl.Name))
 		localPath := resolveSource(baseDir, decl.Source)
@@ -176,14 +177,17 @@ func (p *EvalServiceTargetProvider) Deploy(
 		report(progress, describeResult("evaluator", decl.Name, version, changed))
 	}
 
-	// 3. The eval. Evals are immutable, so a change upstream means a new one
+	// 3. The evals. Evals are immutable, so a change upstream means a new one
 	// must be created and the stored id replaced.
-	report(progress, fmt.Sprintf("Reconciling eval %s", eval.Name))
-	id, err := reconciler.EnsureEval(ctx, eval, datasetPath, anyChanged)
-	if err != nil {
-		return nil, fmt.Errorf("eval %q: %w", eval.Name, err)
+	for i := range cfg.Evals {
+		eval := cfg.Evals[i]
+		report(progress, fmt.Sprintf("Reconciling eval %s", eval.Name))
+		id, err := reconciler.EnsureEval(ctx, eval, datasetPaths[eval.Dataset], anyChanged)
+		if err != nil {
+			return nil, fmt.Errorf("eval %q: %w", eval.Name, err)
+		}
+		report(progress, fmt.Sprintf("Eval %s is %s", eval.Name, id))
 	}
-	report(progress, fmt.Sprintf("Eval %s is %s", eval.Name, id))
 
 	return &azdext.ServiceDeployResult{}, nil
 }
@@ -322,18 +326,19 @@ func Fingerprint(path string) (string, error) {
 // evaluators are untouched. Without this a retargeted group keeps running
 // against the old definition.
 func FingerprintGroup(group Eval) (string, error) {
-	// The id is server-assigned. The description is carried in the group's
-	// metadata, so editing it does change the request, but recreating an
-	// immutable group over a reworded description would cost the group id and
-	// break comparison against earlier runs. It is documentation, not
-	// evaluation semantics, so an edit lands the next time the group is
-	// recreated for a reason that matters.
+	// Only substance is hashed. The id is server-assigned; name and description
+	// are what UpdateEvalParametersBody reaches, so an edit confined to them is
+	// pushed in place and must not cost the eval its id and its run history.
+	// Everything else — dataset, source, evaluators, target, level — is fixed at
+	// creation, so a change there is a new eval.
+	name := group.Name
 	group.ID = ""
+	group.Name = ""
 	group.Description = ""
 
 	data, err := json.Marshal(group)
 	if err != nil {
-		return "", fmt.Errorf("hashing eval %q: %w", group.Name, err)
+		return "", fmt.Errorf("hashing eval %q: %w", name, err)
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil

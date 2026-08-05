@@ -101,38 +101,23 @@ func buildRunCommand(use, short string) *cobra.Command {
 			}
 			defer ec.Close()
 
-			// --eval-id bypasses the config entirely.
-			var group *project.Eval
-			configPath := ""
-			if evalID == "" {
-				configPath, err = project.ResolveEvalConfigPath(project.DefaultEvalDir, groupName)
-				if err != nil {
-					return err
-				}
-				cfg, err := project.LoadEvalConfig(configPath)
-				if err != nil {
-					return err
-				}
-				if err := cfg.Validate(); err != nil {
-					return err
-				}
-				resolved := cfg.Eval(evalNameFromPath(configPath))
-				group = &resolved
+			// One flag takes a name or an id. A declared name also brings the
+			// declaration, which is what says where rows come from; a bare id
+			// has none, so the pairing comes from the eval's previous run.
+			ref, err := ec.resolveEvalRef(ctx, project.DefaultEvalDir, groupName)
+			if err != nil {
+				return err
+			}
+			evalID := ref.ID
+			group := ref.Eval
+			configPath := ref.ConfigPath
 
-				if err := ec.checkDatasetRegistered(ctx, cfg, group, configPath); err != nil {
-					return err
-				}
-
-				evalID, err = ec.resolveEvalIDFromConfig(
-					ctx, group, configPath, resolveLevel(level, group),
-					out, isJSON(cmd))
-				if err != nil {
+			if ref.Declared() {
+				if err := ec.checkDatasetRegistered(ctx, ref.Config, group, configPath); err != nil {
 					return err
 				}
 			}
 
-			// With --eval-id there is no config to read, so the pairing of
-			// target and dataset comes from the group's previous run.
 			var dataSource *eval_api.EvalRunDataSource
 			switch {
 			case group == nil:
@@ -268,16 +253,11 @@ func (ec *evalContext) resolveEvalIDFromConfig(
 		fmt.Fprintf(out, "Creating eval %q...\n", group.Name)
 	}
 
-	// The level from the flag wins over the group's own options, so it has to
-	// reach the criteria that accept evaluation_level.
+	// The level from the flag wins over the eval's own declaration, so it has
+	// to reach the criteria that accept evaluation_level.
 	effective := *group
 	if level != "" {
-		opts := project.Options{}
-		if group.Options != nil {
-			opts = *group.Options
-		}
-		opts.EvaluationLevel = level
-		effective.Options = &opts
+		effective.EvaluationLevel = level
 	}
 
 	req, err := buildEvalRequest(
@@ -305,12 +285,13 @@ func (ec *evalContext) resolveEvalIDFromConfig(
 // The per-name entry is what the extension writes. EVAL_ID is also the
 // documented way to point a config at an eval that already exists, created in
 // the portal or by another tool, so it stays readable — but only when the
-// project declares a single eval. With more than one there is no way to tell
-// which eval a shared entry refers to, and reading it anyway is what let a
+// configuration declares a single eval. With more than one there is no way to
+// tell which eval a shared entry refers to, and reading it anyway is what let a
 // second eval adopt the first one's id.
 func evalIDKeys(name, evalDir string) []string {
 	keys := []string{idKey("eval", name)}
-	if names, err := project.EvalNamesIn(evalDir); err == nil && len(names) == 1 {
+	if cfg, err := project.OpenEvalConfig(evalDir); err == nil &&
+		cfg != nil && len(cfg.Evals) == 1 {
 		keys = append(keys, envKeyEvalID)
 	}
 	return keys
@@ -338,8 +319,8 @@ func (ec *evalContext) checkDatasetRegistered(
 		return nil
 	}
 
-	decl := cfg.Dataset
-	if decl == nil {
+	decl, ok := cfg.DatasetDeclaration(group.Dataset)
+	if !ok {
 		return nil
 	}
 
@@ -513,24 +494,17 @@ func datasetColumnsFromPath(localPath string) map[string]bool {
 // file, returning empty when the dataset is registered rather than local.
 func localDatasetPath(configPath string, group *project.Eval) string {
 	cfg, err := project.LoadEvalConfig(configPath)
-	if err != nil {
+	if err != nil || group == nil {
 		return ""
 	}
-	decl := cfg.Dataset
-	if decl == nil || decl.Source == "" {
+	decl, ok := cfg.DatasetDeclaration(group.Dataset)
+	if !ok || decl.Source == "" {
 		return ""
 	}
 	if filepath.IsAbs(decl.Source) {
 		return decl.Source
 	}
 	return filepath.Join(filepath.Dir(configPath), decl.Source)
-}
-
-// evalNameFromPath is the eval's name: one config file is one eval, and the
-// file is named after it, matching the azure.yaml service key that $refs it.
-func evalNameFromPath(configPath string) string {
-	base := filepath.Base(configPath)
-	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
 // readJSONL reads newline-delimited JSON, optionally truncating to limit rows.
@@ -582,29 +556,29 @@ func scanJSONL(r io.Reader, limit int) ([]map[string]any, error) {
 	return items, nil
 }
 
-// resolveLevel prefers the flag, then the group's options.
+// resolveLevel prefers the flag, then the eval's own declaration.
 func resolveLevel(flag string, group *project.Eval) string {
 	if flag != "" {
 		return flag
 	}
-	if group != nil && group.Options != nil {
-		return group.Options.EvaluationLevel
+	if group != nil {
+		return group.EvaluationLevel
 	}
 	return ""
 }
 
-// resolveMaxSamples prefers the flag, then the group's options, matching how
-// the evaluation level resolves.
+// resolveMaxSamples prefers the flag, then the eval's own declaration, matching
+// how the evaluation level resolves.
 //
-// Without this, options.max_samples parsed and did nothing: a group that caps
-// its sample count in config would send the whole dataset, and only a flag on
-// every invocation would honour the cap.
+// Without this, max_samples parsed and did nothing: an eval that caps its
+// sample count in config would send the whole dataset, and only a flag on every
+// invocation would honour the cap.
 func resolveMaxSamples(flag int, group *project.Eval) int {
 	if flag > 0 {
 		return flag
 	}
-	if group != nil && group.Options != nil && group.Options.MaxSamples > 0 {
-		return group.Options.MaxSamples
+	if group != nil && group.MaxSamples > 0 {
+		return group.MaxSamples
 	}
 	return 0
 }

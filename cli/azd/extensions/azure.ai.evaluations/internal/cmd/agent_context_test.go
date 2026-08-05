@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"azureaieval/internal/pkg/eval_api"
-	"azureaieval/internal/project"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -67,12 +66,4 @@ func TestAgentInstructions(t *testing.T) {
 
 	var nilAgent *eval_api.Agent
 	assert.Empty(t, nilAgent.Instructions())
-}
-
-// Dataset generation has no model of its own; both jobs run against the one
-// generation model the spec declares.
-func TestGenerationModel(t *testing.T) {
-	assert.Empty(t, generationModel(&project.GenerateConfig{}))
-	assert.Equal(t, "gpt-4.1-nano",
-		generationModel(&project.GenerateConfig{GenerationModel: "gpt-4.1-nano"}))
 }

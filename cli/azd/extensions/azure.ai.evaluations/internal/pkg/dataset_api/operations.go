@@ -112,7 +112,7 @@ func (c *DatasetClient) UploadNextVersion(
 	}
 
 	var err error
-	for attempt := 0; attempt < versionConflictAttempts; attempt++ {
+	for range versionConflictAttempts {
 		var ds *Dataset
 		ds, err = c.UploadNewVersion(ctx, name, currentVersion, localDir, apiVersion)
 		if err == nil || !IsVersionConflict(err) {

@@ -8,65 +8,77 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
 
 	"github.com/stretchr/testify/require"
 )
 
 // `generate` decides what to submit before it touches the network, so the plan
-// it builds — which agent, what model, where the artifact lands, at what sample
-// size — is checkable without paying for a generation job. These are the parts
-// that cannot be observed afterwards: once the job is submitted, a wrong
-// default is indistinguishable from an intended one.
+// it builds — which agent, what model, where the artifact lands — is checkable
+// without paying for a generation job. These are the parts that cannot be
+// observed afterwards: once the job is submitted, a wrong default is
+// indistinguishable from an intended one.
 
-// evalsDir writes a generation spec and returns the flags pointing at it.
-func evalsDir(t *testing.T, generateBody string, files map[string]string) *generateFlags {
+// evalsDir returns flags pointing at an empty eval directory.
+func evalsDir(t *testing.T) *generateFlags {
 	t.Helper()
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "generate.yaml")
-	if generateBody != "" {
-		require.NoError(t, os.WriteFile(configPath, []byte(generateBody), 0o600))
-	}
-	for name, body := range files {
-		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600))
-	}
-	return &generateFlags{configPath: configPath}
+	return &generateFlags{path: t.TempDir()}
 }
 
-func loadSpec(t *testing.T, f *generateFlags) *project.GenerateConfig {
+// withEvals writes a configuration into the flags' directory.
+func withEvals(t *testing.T, f *generateFlags, evals ...project.Eval) {
 	t.Helper()
-	cfg, err := project.LoadGenerateConfig(f.configPath)
-	require.NoError(t, err)
-	return cfg
+	require.NoError(t, project.SaveEvalConfig(f.path, &project.EvalConfig{Evals: evals}))
 }
 
-// A spec is optional, so flags alone are what most callers actually run with.
+// Generation settings are flags only: there is no generate.yaml, because the
+// artifact is checked in and regeneration usually wants different settings.
 func TestResolvePlan_FromFlagsAlone(t *testing.T) {
-	f := evalsDir(t, "", nil)
+	f := evalsDir(t)
 	f.target = "shop-agent"
 	f.model = "gpt-4o-mini"
 
-	plan, err := resolvePlan(f, loadSpec(t, f), "shop-golden",
-		datasetGenEntry(loadSpec(t, f), "shop-golden", 0))
+	plan, err := resolvePlan(f, "shop-golden", project.DefaultDatasetsDir)
 	require.NoError(t, err)
 
 	require.Equal(t, "shop-golden", plan.Name)
 	require.Equal(t, "shop-agent", plan.Agent)
 	require.Equal(t, "gpt-4o-mini", plan.Model)
 	require.Equal(t, "./"+project.DefaultDatasetsDir, plan.OutputDir)
-	require.Equal(t, project.DefaultSampleSize, plan.SampleSize)
+	require.Equal(t, f.path, plan.BaseDir)
+}
+
+// Each generate has its own default output directory, so a rubric never lands
+// in the datasets folder.
+func TestResolvePlan_OutputDirDefaultsPerArtifact(t *testing.T) {
+	f := evalsDir(t)
+	f.target = "shop-agent"
+	f.model = "gpt-4o-mini"
+
+	ds, err := resolvePlan(f, "d", project.DefaultDatasetsDir)
+	require.NoError(t, err)
+	require.Equal(t, "./"+project.DefaultDatasetsDir, ds.OutputDir)
+
+	ev, err := resolvePlan(f, "r", project.DefaultEvaluatorsDir)
+	require.NoError(t, err)
+	require.Equal(t, "./"+project.DefaultEvaluatorsDir, ev.OutputDir)
+
+	f.outputDir = "./from-flag"
+	override, err := resolvePlan(f, "d", project.DefaultDatasetsDir)
+	require.NoError(t, err)
+	require.Equal(t, "./from-flag", override.OutputDir)
 }
 
 // Without a model there is nothing to bill the job against, and the refusal has
-// to name both ways of supplying one.
+// to name the flag that supplies one.
 func TestResolvePlan_RequiresAGenerationModel(t *testing.T) {
-	f := evalsDir(t, "", nil)
+	f := evalsDir(t)
 	f.target = "shop-agent"
 
-	_, err := resolvePlan(f, loadSpec(t, f), "d", genEntry{})
+	_, err := resolvePlan(f, "d", project.DefaultDatasetsDir)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "--generation-model")
-	require.Contains(t, err.Error(), "generationModel")
 }
 
 // An input the caller named and got wrong is reported ahead of one they simply
@@ -74,112 +86,51 @@ func TestResolvePlan_RequiresAGenerationModel(t *testing.T) {
 // sees is the order they run in — and a missing instruction file is a typo the
 // caller can act on, while the model has a documented default path.
 func TestResolvePlan_ReportsABadExplicitInputFirst(t *testing.T) {
-	f := evalsDir(t, "", nil)
+	f := evalsDir(t)
 	f.target = "shop-agent"
 	f.instructionFile = filepath.Join(t.TempDir(), "absent.md")
 
-	_, err := resolvePlan(f, loadSpec(t, f), "d", genEntry{})
+	_, err := resolvePlan(f, "d", project.DefaultDatasetsDir)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "--agent-instruction-file",
 		"the flag the caller got wrong must win over the one they omitted")
 }
 
-// The spec is read per artifact name, so generating one artifact never picks up
-// the other's settings.
-func TestResolvePlan_ReadsTheNamedSpecEntry(t *testing.T) {
-	f := evalsDir(t, `
-generationModel: gpt-4o
-dataset:
-  spec-dataset:
-    sampleSize: 200
-    outputDir: ./custom-datasets
-    deriveFrom: from-spec
-evaluator:
-  spec-rubric:
-    outputDir: ./custom-evaluators
-    deriveFrom: rubric-agent
-`, nil)
-
-	cfg := loadSpec(t, f)
-
-	ds, err := resolvePlan(f, cfg, "spec-dataset", datasetGenEntry(cfg, "spec-dataset", 0))
-	require.NoError(t, err)
-	require.Equal(t, "gpt-4o", ds.Model)
-	require.Equal(t, 200, ds.SampleSize)
-	require.Equal(t, "./custom-datasets", ds.OutputDir)
-	require.Equal(t, "from-spec", ds.Agent)
-
-	ev, err := resolvePlan(f, cfg, "spec-rubric", evaluatorGenEntry(cfg, "spec-rubric", 0))
-	require.NoError(t, err)
-	require.Equal(t, "./custom-evaluators", ev.OutputDir)
-	require.Equal(t, "rubric-agent", ev.Agent)
-
-	// An artifact the spec says nothing about still generates, on the defaults.
-	other, err := resolvePlan(f, cfg, "unlisted", datasetGenEntry(cfg, "unlisted", 0))
-	require.NoError(t, err)
-	require.Equal(t, project.DefaultSampleSize, other.SampleSize)
-	require.Equal(t, "./"+project.DefaultDatasetsDir, other.OutputDir)
-}
-
-// Flags win over the spec, which is what makes a one-off run possible without
-// editing a file that is checked in.
-func TestResolvePlan_LayersFlagsOverTheSpec(t *testing.T) {
-	f := evalsDir(t, `
-generationModel: gpt-4o
-dataset:
-  spec-dataset:
-    sampleSize: 200
-    outputDir: ./custom-datasets
-    deriveFrom: from-spec
-`, nil)
-	f.target = "from-flag"
-	f.model = "gpt-4o-mini"
-	f.outputDir = "./from-flag-dir"
-
-	cfg := loadSpec(t, f)
-	plan, err := resolvePlan(f, cfg, "spec-dataset", datasetGenEntry(cfg, "spec-dataset", 500))
-	require.NoError(t, err)
-
-	require.Equal(t, "from-flag", plan.Agent)
-	require.Equal(t, "gpt-4o-mini", plan.Model)
-	require.Equal(t, "./from-flag-dir", plan.OutputDir)
-	require.Equal(t, 500, plan.SampleSize)
-}
-
-// The target is already declared on the eval, so `generate` does not need it
+// The target is already declared on an eval, so `generate` does not need it
 // repeated on every invocation.
-func TestResolvePlan_FallsBackToTheEvalTarget(t *testing.T) {
-	f := evalsDir(t, "generationModel: gpt-4o\n", map[string]string{
-		"support-agent-smoke.yaml": "evaluators: [builtin.relevance]\n" +
-			"target:\n  type: agent\n  name: support-agent\n",
+func TestResolvePlan_FallsBackToTheDeclaredTarget(t *testing.T) {
+	f := evalsDir(t)
+	f.model = "gpt-4o"
+	withEvals(t, f, project.Eval{
+		Name:       "support-agent-eval",
+		Evaluators: evalcore.EvaluatorList{{Evaluator: "builtin.relevance"}},
+		Target:     &project.Target{Type: project.TargetTypeAgent, Name: "support-agent"},
 	})
 
-	cfg := loadSpec(t, f)
-	plan, err := resolvePlan(f, cfg, "support-agent-smoke",
-		datasetGenEntry(cfg, "support-agent-smoke", 0))
+	plan, err := resolvePlan(f, "d", project.DefaultDatasetsDir)
 	require.NoError(t, err)
 	require.Equal(t, "support-agent", plan.Agent,
-		"the eval's declared target is the agent to generate from")
+		"the declared target is the agent to generate from")
+
+	// An explicit flag still wins, which is what makes a one-off run possible
+	// without editing a file that is checked in.
+	f.target = "from-flag"
+	plan, err = resolvePlan(f, "d", project.DefaultDatasetsDir)
+	require.NoError(t, err)
+	require.Equal(t, "from-flag", plan.Agent)
 }
 
-// With more than one eval the target is ambiguous, so nothing is guessed:
-// generation falls back to the instruction alone rather than picking one.
-func TestResolvePlan_AmbiguousEvalTargetIsNotGuessed(t *testing.T) {
-	f := evalsDir(t, "generationModel: gpt-4o\n", map[string]string{
-		"a.yaml": "target:\n  type: agent\n  name: agent-a\n",
-		"b.yaml": "target:\n  type: agent\n  name: agent-b\n",
-	})
+// With no configuration at all, generation runs from the instruction alone.
+// This is the golden path: both generates precede init.
+func TestResolvePlan_NoConfigurationYet(t *testing.T) {
+	f := evalsDir(t)
+	f.model = "gpt-4o"
+	f.instruction = "test refunds and returns"
 
-	cfg := loadSpec(t, f)
-	plan, err := resolvePlan(f, cfg, "d", datasetGenEntry(cfg, "d", 0))
+	plan, err := resolvePlan(f, "d", project.DefaultDatasetsDir)
 	require.NoError(t, err)
 	require.Empty(t, plan.Agent)
-
-	// Naming one resolves it.
-	f.evalName = "b"
-	plan, err = resolvePlan(f, cfg, "d", datasetGenEntry(cfg, "d", 0))
-	require.NoError(t, err)
-	require.Equal(t, "agent-b", plan.Agent)
+	require.Equal(t, "test refunds and returns", plan.Instruction)
 }
 
 // The bounds are the service's, and the boundaries themselves have to be
@@ -204,16 +155,6 @@ func TestGenerateSampleSizeBounds(t *testing.T) {
 		require.Errorf(t, err, "%d is outside the service's range", tc.size)
 		require.Contains(t, err.Error(), "must be between")
 	}
-}
-
-// Trace days come from the spec, and the flag overrides them.
-func TestEvaluatorGenEntry_TraceDays(t *testing.T) {
-	cfg := &project.GenerateConfig{
-		Evaluator: map[string]project.EvaluatorGenSpec{"r": {TraceDays: 7}},
-	}
-	require.Equal(t, 7, evaluatorGenEntry(cfg, "r", 0).traceDays)
-	require.Equal(t, 30, evaluatorGenEntry(cfg, "r", 30).traceDays)
-	require.Zero(t, evaluatorGenEntry(cfg, "absent", 0).traceDays)
 }
 
 func TestResolveInstruction(t *testing.T) {

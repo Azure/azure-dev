@@ -105,7 +105,6 @@ func TestFlagVocabularyIsShared(t *testing.T) {
 		"--out-dir":      "--output-dir",
 		"--file":         "--from-file",
 		"--rubric":       "--from-file",
-		"--judge-model":  "--generation-model, declared per evaluator instead",
 		"--from-traces":  "deferred to M2",
 		"--response-id":  "deferred to M2",
 		"--no-target":    "deferred to M2",
@@ -118,7 +117,6 @@ func TestFlagVocabularyIsShared(t *testing.T) {
 		"--data-schema":  "deferred to M2",
 		"--metrics":      "deferred to M2",
 		"--trace-window": "deferred to M2",
-		"--max-traces":   "deferred to M2",
 		"--max-turns":    "deferred to M2",
 	}
 
@@ -172,8 +170,8 @@ func TestInitFlagsMatchTheSpec(t *testing.T) {
 	})
 
 	assert.ElementsMatch(t, []string{
-		"--name", "--target", "--dataset", "--evaluator",
-		"--generation-model", "--output-dir", "--force",
+		"--name", "--target", "--source", "--dataset", "--evaluator",
+		"--judge-model", "--path", "--force",
 	}, got, "init's flags are a table in the spec; change both together")
 }
 
@@ -240,7 +238,7 @@ func TestSuggestedCommandsExist(t *testing.T) {
 			return err
 		}
 
-		for _, line := range strings.Split(string(body), "\n") {
+		for line := range strings.SplitSeq(string(body), "\n") {
 			// Comments explain the surface; only what reaches a terminal has
 			// to resolve.
 			if strings.HasPrefix(strings.TrimSpace(line), "//") {

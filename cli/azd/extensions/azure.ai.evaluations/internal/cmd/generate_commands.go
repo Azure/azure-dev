@@ -5,7 +5,9 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"azureaieval/internal/project"
 
@@ -17,26 +19,29 @@ import (
 // partial failure undefined, cannot regenerate one artifact after the other has
 // been hand-edited, and gives --no-wait nothing to reattach to.
 //
-// Neither command edits azure.yaml. `init` declares where the artifacts live;
-// these fill them in, so a generation run produces a data-file-only diff.
+// Neither command edits azure.yaml. Both add a catalog entry to eval.yaml for
+// what they produced, so the artifact is referenceable without a hand edit.
 
 // generateFlags are the settings both generate commands share.
+//
+// There is no generation spec file. Every setting is a flag, because the
+// artifact is checked in and a regeneration usually wants different settings
+// anyway; what that costs is provenance, which is Open Question 8.
 type generateFlags struct {
-	configPath      string
-	evalName        string
+	path            string
 	target          string
 	instruction     string
 	instructionFile string
 	model           string
 	outputDir       string
 	noWait          bool
+	force           bool
 	endpoint        string
 }
 
 func addGenerateFlags(cmd *cobra.Command, f *generateFlags) {
-	cmd.Flags().StringVar(&f.configPath, "config", project.DefaultGenerateConfig,
-		"Path to the generation spec. Optional; flags alone are sufficient.")
-	addEvalFlag(cmd, &f.evalName)
+	cmd.Flags().StringVar(&f.path, "path", project.DefaultEvalDir,
+		"Directory holding the evaluation configuration.")
 	cmd.Flags().StringVar(&f.target, "target", "", "Agent whose context seeds generation.")
 	cmd.Flags().StringVar(&f.instruction, "agent-instruction", "",
 		"What the agent does and what to test.")
@@ -46,23 +51,47 @@ func addGenerateFlags(cmd *cobra.Command, f *generateFlags) {
 	cmd.Flags().StringVar(&f.model, "generation-model", "",
 		"Model deployment that generates the artifact.")
 	cmd.Flags().StringVar(&f.outputDir, "output-dir", "",
-		"Directory the generated artifact is written to. Overrides the generation spec.")
+		"Directory the generated artifact is written to.")
 	cmd.Flags().BoolVar(&f.noWait, "no-wait", false,
 		"Submit the job and return its id without polling.")
+	cmd.Flags().BoolVar(&f.force, "force", false,
+		"Overwrite an artifact file that already exists.")
 	cmd.Flags().StringVar(&f.endpoint, "project-endpoint", "", "Foundry project endpoint.")
 }
 
-// prepareGeneration builds the client and settles the one input that needs it.
+// resolvePlan settles every input that does not need the network.
 //
-// Everything decidable offline is already on the plan by this point, so a
-// mistake in the flags has been reported without an authentication round trip.
-// What is left is the generation instruction's last fallback: the agent's
-// published instructions, which only the service can supply.
+// Doing it before the client is built means a missing model or an out-of-range
+// sample count is refused without an authentication round trip. The instruction
+// file is read here rather than later so that an input the caller named and got
+// wrong is reported ahead of one they simply left out.
+func resolvePlan(f *generateFlags, name string, defaultOutputDir string) (generationPlan, error) {
+	instruction, err := resolveInstruction(f.instruction, f.instructionFile)
+	if err != nil {
+		return generationPlan{}, err
+	}
+
+	plan := generationPlan{
+		Name:        name,
+		Agent:       firstNonEmpty(f.target, declaredTarget(f.path)),
+		Model:       f.model,
+		Instruction: instruction,
+		BaseDir:     f.path,
+		OutputDir:   firstNonEmpty(f.outputDir, "./"+defaultOutputDir),
+	}
+	if plan.Model == "" {
+		return plan, fmt.Errorf(
+			"a model deployment is required to generate: pass --generation-model")
+	}
+	return plan, nil
+}
+
+// prepareGeneration builds the client and settles the one input that needs it:
+// the agent's published instructions, which only the service can supply.
 func prepareGeneration(
 	cmd *cobra.Command,
 	f *generateFlags,
 	plan generationPlan,
-	declared genEntry,
 ) (*evalContext, generationPlan, error) {
 	ctx := cmd.Context()
 	ec, err := newEvalContext(ctx, f.endpoint)
@@ -71,8 +100,7 @@ func prepareGeneration(
 	}
 
 	plan.Instruction, err = ec.resolveGenerationInstruction(
-		ctx, plan.Instruction, declared.instructions, f.configPath, plan.Agent,
-		cmd.OutOrStdout(), isJSON(cmd),
+		ctx, plan.Instruction, plan.Agent, cmd.OutOrStdout(), isJSON(cmd),
 	)
 	if err != nil {
 		ec.Close()
@@ -81,69 +109,21 @@ func prepareGeneration(
 	return ec, plan, nil
 }
 
-// resolvePlan settles every input that does not need the network.
-//
-// Resolution order is the one the spec fixes for every input: flags, then the
-// generation spec, then what can be detected from the eval configuration.
-// Doing it before the client is built means a missing model or an out-of-range
-// sample count is refused without an authentication round trip.
-//
-// The instruction file is read here rather than later so that an input the
-// caller named and got wrong is reported ahead of one they simply left out.
-func resolvePlan(
-	f *generateFlags,
-	cfg *project.GenerateConfig,
-	name string,
-	declared genEntry,
-) (generationPlan, error) {
-	instruction, err := resolveInstruction(f.instruction, f.instructionFile)
-	if err != nil {
-		return generationPlan{}, err
-	}
-
-	plan := generationPlan{
-		Name:        name,
-		Agent:       firstNonEmpty(f.target, declared.deriveFrom, evalTarget(f)),
-		Model:       firstNonEmpty(f.model, cfg.GenerationModel),
-		Instruction: instruction,
-		BaseDir:     filepath.Dir(f.configPath),
-		OutputDir:   firstNonEmpty(f.outputDir, declared.outputDir),
-		SampleSize:  declared.sampleSize,
-		TraceDays:   declared.traceDays,
-	}
-	if plan.Model == "" {
-		return plan, fmt.Errorf(
-			"a model deployment is required to generate: pass --generation-model, " +
-				"or set `generationModel` in the generation spec")
-	}
-	return plan, nil
-}
-
-// genEntry is the subset of a generation spec entry both commands share, so
-// resolvePlan does not need to know which one it is serving.
-type genEntry struct {
-	outputDir    string
-	deriveFrom   string
-	instructions string
-	sampleSize   int
-	traceDays    int
-}
-
-// evalTarget reads the agent from the eval configuration, which is where the
-// target is already declared, so `generate` does not need it repeated.
-//
-// Best effort: generation runs from the instruction alone when there is no
-// eval config to read, which is the case in a bare directory.
-func evalTarget(f *generateFlags) string {
-	path, err := project.ResolveEvalConfigPath(filepath.Dir(f.configPath), f.evalName)
-	if err != nil {
+// declaredTarget reads the agent from the evaluation configuration, which is
+// where the target is already declared, so `generate` does not need it
+// repeated. Best effort: generation runs from the instruction alone when there
+// is no configuration to read, which is the case in a bare directory.
+func declaredTarget(evalDir string) string {
+	cfg, err := project.OpenEvalConfig(evalDir)
+	if err != nil || cfg == nil {
 		return ""
 	}
-	cfg, err := project.LoadEvalConfig(path)
-	if err != nil || cfg.Target == nil {
-		return ""
+	for _, eval := range cfg.Evals {
+		if eval.Target != nil && eval.Target.Name != "" {
+			return eval.Target.Name
+		}
 	}
-	return cfg.Target.Name
+	return ""
 }
 
 func firstNonEmpty(values ...string) string {
@@ -155,74 +135,63 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// datasetGenEntry reads one dataset's settings out of the generation spec,
-// applying the flag override and the default row count.
-func datasetGenEntry(cfg *project.GenerateConfig, name string, maxSamples int) genEntry {
-	spec, _ := cfg.DatasetSpec(name)
-	entry := genEntry{
-		outputDir:    firstNonEmpty(spec.OutputDir, "./"+project.DefaultDatasetsDir),
-		deriveFrom:   spec.DeriveFrom,
-		instructions: spec.Instructions,
-		sampleSize:   spec.SampleSize,
-		traceDays:    spec.TraceDays,
+// refuseExistingArtifact stops a generation that would overwrite a checked-in
+// file, because the job is billed and the diff is what the author reviews.
+func refuseExistingArtifact(path string, force bool) error {
+	if force {
+		return nil
 	}
-	if maxSamples > 0 {
-		entry.sampleSize = maxSamples
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf(
+			"%s already exists; pass --force to overwrite it, or --output-dir to write elsewhere",
+			filepath.ToSlash(path))
 	}
-	if entry.sampleSize == 0 {
-		entry.sampleSize = project.DefaultSampleSize
-	}
-	return entry
-}
-
-// evaluatorGenEntry reads one evaluator's settings out of the generation spec,
-// applying the flag override.
-func evaluatorGenEntry(cfg *project.GenerateConfig, name string, traceDays int) genEntry {
-	spec, _ := cfg.EvaluatorSpec(name)
-	entry := genEntry{
-		outputDir:    firstNonEmpty(spec.OutputDir, "./"+project.DefaultEvaluatorsDir),
-		deriveFrom:   spec.DeriveFrom,
-		instructions: spec.Instructions,
-		traceDays:    spec.TraceDays,
-	}
-	if traceDays > 0 {
-		entry.traceDays = traceDays
-	}
-	return entry
+	return nil
 }
 
 func newDatasetGenerateCommand() *cobra.Command {
 	var (
 		flags      generateFlags
 		maxSamples int
+		from       string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "generate <name>",
 		Short: "Generate a dataset and download it.",
-		Args:  cobra.ExactArgs(1),
+		Long: "Generate a dataset and download it.\n\n" +
+			"--from selects one of the four sources the service accepts. " +
+			"Generating from the agent's own definition is a preference rather " +
+			"than a fallback: it covers cases no user has hit yet, and it can " +
+			"supply reference answers, which a transcript cannot.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 
+			if err := project.ValidateGenerateSource(from); err != nil {
+				return err
+			}
 			if err := project.ValidateSampleSize(maxSamples); err != nil {
 				return err
 			}
 
-			cfg, err := project.LoadGenerateConfig(flags.configPath)
+			plan, err := resolvePlan(&flags, name, project.DefaultDatasetsDir)
 			if err != nil {
 				return err
 			}
-			declared := datasetGenEntry(cfg, name, maxSamples)
-
-			plan, err := resolvePlan(&flags, cfg, name, declared)
-			if err != nil {
+			plan.From = from
+			plan.SampleSize = maxSamples
+			if plan.SampleSize == 0 {
+				plan.SampleSize = project.DefaultSampleSize
+			}
+			if err := refuseExistingArtifact(
+				project.ArtifactPath(plan.BaseDir, plan.OutputDir, name, ".jsonl"),
+				flags.force,
+			); err != nil {
 				return err
 			}
-			if err := project.ValidateSampleSize(plan.SampleSize); err != nil {
-				return err
-			}
 
-			ec, plan, err := prepareGeneration(cmd, &flags, plan, declared)
+			ec, plan, err := prepareGeneration(cmd, &flags, plan)
 			if err != nil {
 				return err
 			}
@@ -232,12 +201,20 @@ func newDatasetGenerateCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := addDatasetToCatalog(cmd, flags.path, ref); err != nil {
+				return err
+			}
 			return reportGenerated(cmd, ref, flags.noWait)
 		},
 	}
 
 	cmd.Flags().IntVar(&maxSamples, "max-samples", 0,
-		fmt.Sprintf("Rows to synthesize (%d-%d).", project.MinSampleSize, project.MaxSampleSize))
+		fmt.Sprintf("Rows to synthesize (%d-%d). Defaults to %d.",
+			project.MinSampleSize, project.MaxSampleSize, project.DefaultSampleSize))
+	cmd.Flags().StringVar(&from, "from", "",
+		fmt.Sprintf("Where rows come from: %s. Defaults to traces when the project "+
+			"has Application Insights connected, otherwise agent.",
+			strings.Join(project.GenerateSources, ", ")))
 	addGenerateFlags(cmd, &flags)
 	return cmd
 }
@@ -255,18 +232,19 @@ func newEvaluatorGenerateCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 
-			cfg, err := project.LoadGenerateConfig(flags.configPath)
+			plan, err := resolvePlan(&flags, name, project.DefaultEvaluatorsDir)
 			if err != nil {
 				return err
 			}
-			declared := evaluatorGenEntry(cfg, name, traceDays)
-
-			plan, err := resolvePlan(&flags, cfg, name, declared)
-			if err != nil {
+			plan.TraceDays = traceDays
+			if err := refuseExistingArtifact(
+				project.ArtifactPath(plan.BaseDir, plan.OutputDir, name, ".json"),
+				flags.force,
+			); err != nil {
 				return err
 			}
 
-			ec, plan, err := prepareGeneration(cmd, &flags, plan, declared)
+			ec, plan, err := prepareGeneration(cmd, &flags, plan)
 			if err != nil {
 				return err
 			}
@@ -274,6 +252,9 @@ func newEvaluatorGenerateCommand() *cobra.Command {
 
 			ref, err := ec.generateRubric(cmd.Context(), plan, cmd.OutOrStdout(), flags.noWait)
 			if err != nil {
+				return err
+			}
+			if err := addEvaluatorToCatalog(cmd, flags.path, ref); err != nil {
 				return err
 			}
 			return reportGenerated(cmd, ref, flags.noWait)
@@ -289,7 +270,7 @@ func newEvaluatorGenerateCommand() *cobra.Command {
 // reportGenerated closes out either command.
 //
 // With --no-wait nothing was downloaded and there is no ref, which is success:
-// reportSubmitted has already said how to reattach.
+// the submission message has already said how to reattach.
 func reportGenerated(cmd *cobra.Command, ref *project.ArtifactRef, noWait bool) error {
 	out := cmd.OutOrStdout()
 	if ref == nil {
@@ -301,6 +282,5 @@ func reportGenerated(cmd *cobra.Command, ref *project.ArtifactRef, noWait bool) 
 	if isJSON(cmd) {
 		return emitJSON(out, ref)
 	}
-	fmt.Fprintf(out, "\nReference it from your eval config as: %s\n", ref.Source)
 	return nil
 }

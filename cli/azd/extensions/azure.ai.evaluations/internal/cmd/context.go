@@ -12,6 +12,7 @@ import (
 
 	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/pkg/eval_api"
+	"azureaieval/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -143,6 +144,29 @@ func (ec *evalContext) getEnvValue(ctx context.Context, key string) string {
 		return ""
 	}
 	return val.Value
+}
+
+// appInsightsEnvKey is where a connected Application Insights resource lands in
+// the azd environment. azd's own provisioning writes it, and the agents
+// extension reads the same key to pass tracing configuration to a running
+// agent, so its presence is the project's answer to "are traces being
+// collected?".
+const appInsightsEnvKey = "APPLICATIONINSIGHTS_CONNECTION_STRING"
+
+// defaultGenerationSource picks what `dataset generate` sends when --from was
+// not given, from the Application Insights connection string the project has
+// (or has not) been given.
+//
+// Traces are the better dataset when they exist, being real conversations
+// rather than synthesized ones, so they win whenever the project is wired to
+// collect them. Outside a project, or in one with no Application Insights,
+// there are no traces to ask for and the agent's own definition is all that is
+// left.
+func defaultGenerationSource(appInsightsConnection string) []string {
+	if appInsightsConnection != "" {
+		return []string{project.GenerateFromTraces}
+	}
+	return []string{project.GenerateFromAgent}
 }
 
 func (ec *evalContext) Close() {

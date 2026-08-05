@@ -153,23 +153,25 @@ func newDatasetGenerateCommand() *cobra.Command {
 	var (
 		flags      generateFlags
 		maxSamples int
-		from       string
+		from       []string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "generate <name>",
 		Short: "Generate a dataset and download it.",
 		Long: "Generate a dataset and download it.\n\n" +
-			"--from selects one of the four sources the service accepts. " +
-			"Generating from the agent's own definition is a preference rather " +
-			"than a fallback: it covers cases no user has hit yet, and it can " +
-			"supply reference answers, which a transcript cannot.",
+			"--from selects one or more of the sources the service accepts, and " +
+			"is repeatable. Generating from the agent's own definition is a " +
+			"preference rather than a fallback: it covers cases no user has hit " +
+			"yet, and it can supply reference answers, which a transcript cannot.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 
-			if err := project.ValidateGenerateSource(from); err != nil {
-				return err
+			for _, src := range from {
+				if err := project.ValidateGenerateSource(src); err != nil {
+					return err
+				}
 			}
 			if err := project.ValidateSampleSize(maxSamples); err != nil {
 				return err
@@ -197,6 +199,12 @@ func newDatasetGenerateCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
+			if len(plan.From) == 0 {
+				plan.From = defaultGenerationSource(
+					ec.getEnvValue(cmd.Context(), appInsightsEnvKey),
+				)
+			}
+
 			ref, err := ec.generateDataset(cmd.Context(), plan, cmd.OutOrStdout(), flags.noWait)
 			if err != nil {
 				return err
@@ -211,10 +219,12 @@ func newDatasetGenerateCommand() *cobra.Command {
 	cmd.Flags().IntVar(&maxSamples, "max-samples", 0,
 		fmt.Sprintf("Rows to synthesize (%d-%d). Defaults to %d.",
 			project.MinSampleSize, project.MaxSampleSize, project.DefaultSampleSize))
-	cmd.Flags().StringVar(&from, "from", "",
-		fmt.Sprintf("Where rows come from: %s. Defaults to traces when the project "+
-			"has Application Insights connected, otherwise agent.",
-			strings.Join(project.GenerateSources, ", ")))
+	cmd.Flags().StringSliceVar(&from, "from", nil,
+		fmt.Sprintf("Where rows come from: %s. Repeatable, and the service accepts "+
+			"more than one. Defaults to %s when the project has Application Insights "+
+			"connected, otherwise %s.",
+			strings.Join(project.GenerateSources, ", "),
+			project.GenerateFromTraces, project.GenerateFromAgent))
 	addGenerateFlags(cmd, &flags)
 	return cmd
 }

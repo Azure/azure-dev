@@ -44,9 +44,9 @@ type generationPlan struct {
 	OutputDir string
 	// SampleSize applies to dataset generation only.
 	SampleSize int
-	// From selects which source the rows are generated out of. Empty lets the
-	// project decide: traces when Application Insights is connected.
-	From string
+	// From is what --from named: which of the service's sources to send. Empty
+	// sends whatever the plan has to offer.
+	From []string
 	// TraceDays seeds generation from that many days of recent traces.
 	TraceDays int
 }
@@ -154,9 +154,12 @@ func (ec *evalContext) generateRubric(
 ) (*project.ArtifactRef, error) {
 	fmt.Fprintf(out, "Generating rubric %s...\n", plan.Name)
 
-	sources := eval_api.BuildGenerationSources(
-		"agent", plan.Agent, "", plan.Instruction, plan.traceOptions(),
+	sources, unbuildable := eval_api.BuildGenerationSources(
+		plan.From, plan.Agent, "", plan.Instruction, plan.traceOptions(),
 	)
+	if err := refuseUnbuildableSources(unbuildable); err != nil {
+		return nil, err
+	}
 	req := eval_api.NewEvaluatorGenerationJobRequest(plan.Name, plan.Model, sources)
 
 	job, err := ec.evalClient.CreateEvaluatorGenerationJob(ctx, req, ProjectEndpointAPIVersion)
@@ -183,6 +186,33 @@ func (ec *evalContext) generateRubric(
 	return &project.ArtifactRef{Name: plan.Name, Source: relativeSource(plan.BaseDir, path)}, nil
 }
 
+// refuseUnbuildableSources reports a --from the plan could not honour.
+//
+// Submitting anyway would run a billed job seeded from less than was asked for
+// and return a plausible-looking artifact, which is the worst outcome: the
+// caller has no way to tell it apart from one built the way they intended.
+func refuseUnbuildableSources(kinds []string) error {
+	if len(kinds) == 0 {
+		return nil
+	}
+	reasons := map[string]string{
+		"prompt": "--from prompt needs --agent-instruction or --agent-instruction-file",
+		"agent": "--from agent needs a target agent; pass --target, " +
+			"or declare one under target: in eval.yaml",
+		"file": "--from file is not a generation source; " +
+			"register the file with `azd ai dataset create <name> --file <path>` instead",
+	}
+	messages := make([]string, 0, len(kinds))
+	for _, k := range kinds {
+		if reason, ok := reasons[k]; ok {
+			messages = append(messages, reason)
+			continue
+		}
+		messages = append(messages, fmt.Sprintf("--from %s cannot be built from this plan", k))
+	}
+	return errors.New(strings.Join(messages, "; "))
+}
+
 // reportSubmitted says what was started and how to get back to it.
 //
 // The job id goes into the command rather than being left as a placeholder:
@@ -203,9 +233,12 @@ func (ec *evalContext) generateDataset(
 ) (*project.ArtifactRef, error) {
 	fmt.Fprintf(out, "Generating dataset %s (%d samples)...\n", plan.Name, plan.SampleSize)
 
-	sources := eval_api.BuildGenerationSources(
-		"agent", plan.Agent, "", plan.Instruction, plan.traceOptions(),
+	sources, unbuildable := eval_api.BuildGenerationSources(
+		plan.From, plan.Agent, "", plan.Instruction, plan.traceOptions(),
 	)
+	if err := refuseUnbuildableSources(unbuildable); err != nil {
+		return nil, err
+	}
 	req := eval_api.NewDataGenerationJobRequest(plan.Name, plan.Model, plan.SampleSize, sources)
 
 	job, err := ec.evalClient.CreateDataGenerationJob(ctx, req, DataGenerationAPIVersion)

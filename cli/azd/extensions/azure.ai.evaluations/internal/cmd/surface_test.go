@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"azureaieval/internal/project"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
@@ -207,6 +209,36 @@ func TestServiceCommandsTakeProjectEndpoint(t *testing.T) {
 		assert.NotNil(t, cmd.Flags().Lookup("project-endpoint"),
 			"%s reaches the service, so it must accept --project-endpoint", path)
 	})
+}
+
+// The spec says --from "selects one or more of the four sources", so it has to
+// be repeatable. Declared as a plain string it would still accept every
+// documented single-source invocation and silently keep only the last of a
+// repeated one, which is the kind of difference no example in the spec shows.
+func TestDatasetGenerateFromTakesMoreThanOneSource(t *testing.T) {
+	flag := find(t, "dataset generate").Flags().Lookup("from")
+	require.NotNil(t, flag, "dataset generate must offer --from")
+
+	assert.Equal(t, "stringSlice", flag.Value.Type(),
+		"--from selects one or more sources, so it cannot be a single string")
+}
+
+// `--from` names sources; the set it accepts is the set the service has a path
+// for, and the help has to list exactly that set.
+func TestDatasetGenerateFromListsEverySource(t *testing.T) {
+	usage := find(t, "dataset generate").Flags().Lookup("from").Usage
+
+	for _, source := range project.GenerateSources {
+		assert.Containsf(t, usage, source,
+			"--from accepts %q, so its help has to say so", source)
+	}
+}
+
+// `--from` is the only place a source is named, so `evaluator generate`, which
+// has no such flag, must not be left half-wired to one.
+func TestEvaluatorGenerateHasNoFromFlag(t *testing.T) {
+	assert.Nil(t, find(t, "evaluator generate").Flags().Lookup("from"),
+		"the spec gives --from to dataset generate only")
 }
 
 // find resolves a command path, failing the test when it does not exist.

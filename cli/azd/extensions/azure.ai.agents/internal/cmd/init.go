@@ -1313,14 +1313,32 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 				if content, ok := readManifestContentForInitDetection(
 					ctx, azdClient, flags.manifestPointer, httpClient,
-				); ok && declaresAgentService(content, manifestRoot) {
-					if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content); err != nil {
-						if exterrors.IsCancellation(err) {
-							return exterrors.Cancelled("initialization was cancelled")
-						}
+				); ok {
+					manifestInfo, err := inspectAzureYaml(content, manifestRoot)
+					if err != nil {
 						return err
 					}
-					return ejectInfraAfterInit(infraProvider)
+					if manifestInfo.hasServices {
+						if manifestInfo.hasAgentService ||
+							manifestInfo.hasUnresolvedRefs {
+							if err := runInitFromAzureYaml(
+								ctx,
+								flags,
+								azdClient,
+								httpClient,
+								content,
+							); err != nil {
+								if exterrors.IsCancellation(err) {
+									return exterrors.Cancelled(
+										"initialization was cancelled",
+									)
+								}
+								return err
+							}
+							return ejectInfraAfterInit(infraProvider)
+						}
+						return missingAgentServiceError(flags.manifestPointer)
+					}
 				}
 
 				// Resolve the agent name BEFORE creating the project folder

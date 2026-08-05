@@ -35,51 +35,113 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// declaresAgentService reports whether a unified azure.yaml declares an
-// azure.ai.agent service rather than an agent manifest.
+type azureYamlManifestInfo struct {
+	hasServices       bool
+	hasAgentService   bool
+	hasUnresolvedRefs bool
+}
+
+// inspectAzureYaml identifies unified manifests and Agent services.
 //
-// Local service-level $ref entries are resolved against projectRoot.
-// Remote manifest references are left unresolved because sibling files
-// are not available during the initial peek.
-func declaresAgentService(content []byte, projectRoot string) bool {
+// Local references are resolved against projectRoot. Remote references
+// wait for the sample directory download.
+func inspectAzureYaml(content []byte, projectRoot string) (azureYamlManifestInfo, error) {
+	var info azureYamlManifestInfo
 	var top map[string]any
 	if err := yaml.Unmarshal(content, &top); err != nil {
-		return false
+		return info, nil
 	}
 
 	services, ok := top["services"].(map[string]any)
 	if !ok {
-		return false
+		return info, nil
 	}
+	info.hasServices = true
 
-	for _, svc := range services {
+	for serviceName, svc := range services {
 		svcMap, ok := svc.(map[string]any)
 		if !ok {
 			continue
 		}
+
+		if hasAzureYamlFileRef(svcMap) {
+			if projectRoot == "" {
+				info.hasUnresolvedRefs = true
+			} else {
+				resolved, err := foundry.ResolveFileRefs(svcMap, projectRoot)
+				if err != nil {
+					return info, fmt.Errorf(
+						"resolving $ref includes for service %q: %w",
+						serviceName,
+						err,
+					)
+				}
+				svcMap = resolved
+			}
+		}
+
 		host, _ := svcMap["host"].(string)
 		if host == AiAgentHost {
+			info.hasAgentService = true
+		}
+	}
+
+	return info, nil
+}
+
+func hasAzureYamlFileRef(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		if _, ok := typed["$ref"]; ok {
 			return true
 		}
-
-		if projectRoot == "" {
-			continue
+		for _, child := range typed {
+			if hasAzureYamlFileRef(child) {
+				return true
+			}
 		}
-		if _, ok := svcMap["$ref"]; !ok {
-			continue
-		}
-
-		resolved, err := foundry.ResolveFileRefs(svcMap, projectRoot)
-		if err != nil {
-			continue
-		}
-		host, _ = resolved["host"].(string)
-		if host == AiAgentHost {
-			return true
+	case []any:
+		for _, child := range typed {
+			if hasAzureYamlFileRef(child) {
+				return true
+			}
 		}
 	}
 
 	return false
+}
+
+func missingAgentServiceError(manifestPointer string) error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidManifestPointer,
+		fmt.Sprintf(
+			"manifest %q is a unified azure.yaml but does not declare an agent service",
+			manifestPointer,
+		),
+		fmt.Sprintf(
+			"add a service with host: %s, or pass an agent manifest",
+			AiAgentHost,
+		),
+	)
+}
+
+func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
+	manifestPath := filepath.Join(stagingDir, "azure.yaml")
+	//nolint:gosec // stagingDir is created or selected by the init flow
+	content, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("reading staged azure.yaml: %w", err)
+	}
+
+	info, err := inspectAzureYaml(content, stagingDir)
+	if err != nil {
+		return err
+	}
+	if !info.hasServices || !info.hasAgentService {
+		return missingAgentServiceError(manifestPointer)
+	}
+
+	return nil
 }
 
 // foundryProjectName returns the top-level `name:` of a unified azure.yaml, used
@@ -857,6 +919,10 @@ func runInitFromAzureYaml(
 		return err
 	}
 	defer cleanup()
+
+	if err := validateStagedAzureYaml(stagingDir, flags.manifestPointer); err != nil {
+		return err
+	}
 
 	fmt.Println(output.WithGrayFormat("Adopting the sample's azure.yaml as your project manifest..."))
 

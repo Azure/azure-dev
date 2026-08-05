@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"maps"
 	"os"
@@ -53,6 +52,29 @@ type infraEjectPlan struct {
 	layer             bool
 	updatedYAML       []byte
 	updateDescription string
+}
+
+type infraTargetState struct {
+	dir    string
+	exists bool
+	empty  bool
+}
+
+type infraConfig struct {
+	root         *yaml.Node
+	infra        *yaml.Node
+	layersNode   *yaml.Node
+	rootProvider string
+	layers       []infraLayer
+}
+
+type infraLayer struct {
+	node              *yaml.Node
+	name              string
+	path              string
+	module            string
+	provider          string
+	effectiveProvider string
 }
 
 // validateStandaloneEjectArgs refuses init-driving inputs that the
@@ -391,10 +413,8 @@ type infraGate struct {
 // existing project and give me its IaC" stays a single step instead of failing
 // with "nothing to eject".
 //
-// The one refusal kept up front is a pre-existing ./infra/: init cannot clear
-// it, so failing here beats mutating azure.yaml and then refusing on the
-// trailing eject. Projects that use a custom infra.path, infra.layers, or an
-// incompatible provider are refused on both branches for the same reason.
+// Infrastructure compatibility is handled by the layer-aware eject planner.
+// The gate only decides whether init must add a Foundry service first.
 func resolveInfraGate(provider string) (infraGate, error) {
 	projectRoot, err := azdext.GetProjectDir()
 	if errors.Is(err, azdext.ErrProjectNotFound) {
@@ -416,30 +436,9 @@ func resolveInfraGate(provider string) (infraGate, error) {
 		return infraGate{}, err
 	}
 
-	if err := ensureNoInfraLayers(rawYAML); err != nil {
-		return infraGate{}, err
-	}
-	if err := ensureDefaultInfraPath(rawYAML); err != nil {
-		return infraGate{}, err
-	}
-	if err := ensureDefaultInfraModule(rawYAML); err != nil {
-		return infraGate{}, err
-	}
-	if err := ensureCompatibleInfraProvider(rawYAML, provider); err != nil {
-		return infraGate{}, err
-	}
-
 	if hasFoundry {
 		return infraGate{standaloneEject: true, projectRoot: projectRoot}, nil
 	}
-
-	// The trailing eject writes ./infra/, and init cannot clear a directory that
-	// is already there. Refuse now rather than mutating azure.yaml and adding an
-	// azd environment first and only then refusing.
-	if err := ensureInfraDirAbsent(projectRoot); err != nil {
-		return infraGate{}, err
-	}
-
 	return infraGate{projectRoot: projectRoot}, nil
 }
 
@@ -501,7 +500,7 @@ func ejectInfra(projectRoot, provider string) error {
 	if err != nil {
 		return err
 	}
-	if err := validateEjectTarget(projectRoot, plan); err != nil {
+	if err := validateEjectTarget(plan); err != nil {
 		return err
 	}
 
@@ -704,6 +703,17 @@ func planInfraEject(projectRoot string, rawYAML []byte, provider string) (*infra
 			"pass --infra=bicep or --infra=terraform",
 		)
 	}
+	config, err := parseInfraConfig(rawYAML)
+	if err != nil {
+		return nil, err
+	}
+	if config.layersNode == nil {
+		return planRootInfraEject(projectRoot, config, provider)
+	}
+	return planLayeredInfraEject(projectRoot, config, provider)
+}
+
+func parseInfraConfig(rawYAML []byte) (*infraConfig, error) {
 	var root yaml.Node
 	if err := yaml.Unmarshal(rawYAML, &root); err != nil {
 		return nil, exterrors.Validation(
@@ -719,7 +729,6 @@ func planInfraEject(projectRoot string, rawYAML []byte, provider string) (*infra
 			"verify azure.yaml is a valid azd project file",
 		)
 	}
-
 	doc := root.Content[0]
 	infra := mappingValue(doc, "infra")
 	if infra == nil {
@@ -729,345 +738,249 @@ func planInfraEject(projectRoot string, rawYAML []byte, provider string) (*infra
 	if infra.Kind != yaml.MappingNode {
 		return nil, invalidInfraForEject("infra must be a mapping")
 	}
-	for _, key := range []string{"path", "module", "provider"} {
+	for _, key := range []string{"name", "path", "module", "provider"} {
 		if value := mappingValue(infra, key); value != nil && value.Kind != yaml.ScalarNode {
 			return nil, invalidInfraForEject(fmt.Sprintf("infra.%s must be a string", key))
 		}
 	}
-
-	layers := mappingValue(infra, "layers")
-	if layers != nil {
-		return planLayeredInfraEject(projectRoot, &root, infra, layers, provider)
+	config := &infraConfig{
+		root:         &root,
+		infra:        infra,
+		layersNode:   mappingValue(infra, "layers"),
+		rootProvider: mappingScalar(infra, "provider"),
 	}
-	return planSingleInfraEject(projectRoot, &root, infra, provider)
+	if config.layersNode == nil {
+		return config, nil
+	}
+	if config.layersNode.Kind != yaml.SequenceNode {
+		return nil, invalidInfraForEject("infra.layers must be a sequence")
+	}
+	seen := make(map[string]struct{}, len(config.layersNode.Content))
+	for _, node := range config.layersNode.Content {
+		if node.Kind != yaml.MappingNode {
+			return nil, invalidInfraForEject("each infra.layers entry must be a mapping")
+		}
+		for _, key := range []string{"name", "path", "module", "provider"} {
+			if value := mappingValue(node, key); value != nil && value.Kind != yaml.ScalarNode {
+				return nil, invalidInfraForEject(fmt.Sprintf("infra.layers[].%s must be a string", key))
+			}
+		}
+		layer := infraLayer{
+			node:     node,
+			name:     mappingScalar(node, "name"),
+			path:     mappingScalar(node, "path"),
+			module:   mappingScalar(node, "module"),
+			provider: mappingScalar(node, "provider"),
+		}
+		name := layer.name
+		if name == "" {
+			return nil, invalidInfraForEject("each infra.layers entry must declare a name")
+		}
+		if layer.path == "" {
+			return nil, invalidInfraForEject(fmt.Sprintf("infra layer %q must declare path", name))
+		}
+		if _, ok := seen[name]; ok {
+			return nil, invalidInfraForEject(fmt.Sprintf("duplicate infrastructure layer name %q", name))
+		}
+		seen[name] = struct{}{}
+		layer.effectiveProvider = layer.provider
+		if layer.effectiveProvider == "" {
+			layer.effectiveProvider = config.rootProvider
+		}
+		config.layers = append(config.layers, layer)
+	}
+	return config, nil
 }
 
-func planSingleInfraEject(
-	projectRoot string,
-	root *yaml.Node,
-	infra *yaml.Node,
-	provider string,
-) (*infraEjectPlan, error) {
-	existingProvider := mappingScalar(infra, "provider")
-	existingName := mappingScalar(infra, "name")
-	existingPath := mappingScalar(infra, "path")
-	existingModule := mappingScalar(infra, "module")
-	effectivePath := existingPath
-	if effectivePath == "" {
-		effectivePath = defaultInfraPath
+func planRootInfraEject(projectRoot string, config *infraConfig, provider string) (*infraEjectPlan, error) {
+	root := infraLayer{
+		node:              config.infra,
+		name:              valueOrDefault(mappingScalar(config.infra, "name"), defaultInfraPath),
+		path:              valueOrDefault(mappingScalar(config.infra, "path"), defaultInfraPath),
+		module:            valueOrDefault(mappingScalar(config.infra, "module"), defaultInfraModule),
+		provider:          config.rootProvider,
+		effectiveProvider: valueOrDefault(config.rootProvider, project.BicepProviderName),
 	}
-	effectiveModule := existingModule
-	if effectiveModule == "" {
-		effectiveModule = defaultInfraModule
+	target, err := inspectInfraTarget(projectRoot, root.path)
+	if err != nil {
+		return nil, err
 	}
-	effectiveProvider := existingProvider
-	if effectiveProvider == "" {
-		effectiveProvider = project.BicepProviderName
+	userOwned, err := rootInfraUserOwned(root, target)
+	if err != nil {
+		return nil, err
 	}
-
-	existingDir := resolveInfraPath(projectRoot, effectivePath)
-	info, statErr := os.Stat(existingDir)
-	dirExists := statErr == nil
-	if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
-		return nil, fmt.Errorf("stat infrastructure path %s: %w", existingDir, statErr)
-	}
-	if dirExists && !info.IsDir() {
-		return nil, ejectExistsError(filepath.ToSlash(effectivePath))
-	}
-
-	hasEntrypoint := hasInfrastructureEntrypoint(
-		existingDir,
-		effectiveProvider,
-		effectiveModule,
-	)
-	customProvider := existingProvider != "" &&
-		existingProvider != project.BicepProviderName &&
-		existingProvider != project.TerraformProviderName &&
-		existingProvider != project.FoundryProviderName
-	if existingProvider == project.FoundryProviderName && hasEntrypoint {
-		return nil, foundryInfraExistsError(filepath.ToSlash(effectivePath), false)
-	}
-	if existingProvider == project.TerraformProviderName {
-		foundryTerraform, err := isFoundryTerraformInfra(existingDir, effectiveModule)
-		if err != nil {
-			return nil, err
-		}
-		if foundryTerraform {
-			return nil, foundryInfraExistsError(filepath.ToSlash(effectivePath), false)
-		}
-	}
-	if existingProvider != "" &&
-		(existingProvider == project.BicepProviderName || existingProvider == project.TerraformProviderName) &&
-		!hasEntrypoint {
-		return nil, invalidInfraForEject(
-			fmt.Sprintf("infrastructure declares provider %q but path %q contains no matching entry point",
-				existingProvider, effectivePath),
-		)
-	}
-	userOwned := existingProvider != project.FoundryProviderName && (hasEntrypoint || customProvider)
 	if !userOwned {
-		if dirExists && !customProvider {
-			empty, err := isDirectoryEmpty(existingDir)
-			if err != nil {
-				return nil, err
-			}
-			if !empty {
-				return nil, invalidInfraForEject(
-					fmt.Sprintf("infrastructure path %q contains files but no detectable entry point", effectivePath),
-				)
-			}
-		}
-		changed := false
-		wantedProvider := project.FoundryProviderName
-		if provider == project.TerraformProviderName {
-			wantedProvider = project.TerraformProviderName
-		}
-		if existingProvider != wantedProvider {
-			setMappingScalar(infra, "provider", wantedProvider)
-			changed = true
-		}
-
-		plan := &infraEjectPlan{
-			targetDir:  existingDir,
-			targetPath: filepath.ToSlash(effectivePath),
-			module:     effectiveModule,
-			layer:      false,
-		}
+		wanted := foundryLayerProvider(provider)
+		changed := root.provider != wanted
 		if changed {
-			updated, err := marshalAzureYAML(root)
-			if err != nil {
-				return nil, err
-			}
-			plan.updatedYAML = updated
-			plan.updateDescription = fmt.Sprintf("infra.provider: %s", wantedProvider)
+			setMappingScalar(config.infra, "provider", wanted)
 		}
-		return plan, nil
+		return newInfraEjectPlan(config, target, root.path, root.module, false, changed,
+			fmt.Sprintf("infra.provider: %s", wanted))
 	}
-	if sameInfraPath(effectivePath, foundryInfraLayerPath) {
+	if sameInfraPath(root.path, foundryInfraLayerPath) {
 		return nil, invalidInfraForEject(
 			fmt.Sprintf("existing infrastructure already uses the Foundry layer path %q", foundryInfraLayerPath),
 		)
 	}
-
-	existingLayer := cloneMappingNode(infra)
-	if existingName == "" {
-		existingName = defaultInfraPath
-	}
-	if existingName == foundryInfraLayerName {
+	if root.name == foundryInfraLayerName {
 		return nil, invalidInfraForEject(
-			fmt.Sprintf("existing infrastructure name %q conflicts with the Foundry layer name", existingName),
+			fmt.Sprintf("existing infrastructure name %q conflicts with the Foundry layer name", root.name),
 		)
 	}
-	setMappingScalar(existingLayer, "name", existingName)
-	setMappingScalar(existingLayer, "path", filepath.ToSlash(effectivePath))
-	setMappingScalar(existingLayer, "provider", effectiveProvider)
+	existingLayerValue := *config.infra
+	existingLayer := &existingLayerValue
+	setMappingScalar(existingLayer, "name", root.name)
+	setMappingScalar(existingLayer, "path", filepath.ToSlash(root.path))
+	setMappingScalar(existingLayer, "provider", root.effectiveProvider)
 	removeMappingKey(existingLayer, "layers")
-
-	foundryLayer := newInfraLayerNode(
-		foundryInfraLayerName,
-		foundryInfraLayerPath,
-		foundryLayerProvider(provider),
-		nil,
-	)
-	infra.Content = nil
-	infra.Content = append(infra.Content,
+	foundryLayer := newInfraLayerNode(foundryInfraLayerName, foundryInfraLayerPath, foundryLayerProvider(provider))
+	config.infra.Content = []*yaml.Node{
 		newScalarNode("layers"),
 		&yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Content: []*yaml.Node{existingLayer, foundryLayer}},
-	)
-	updated, err := marshalAzureYAML(root)
+	}
+	foundryTarget, err := inspectInfraTarget(projectRoot, foundryInfraLayerPath)
 	if err != nil {
 		return nil, err
 	}
-	return &infraEjectPlan{
-		targetDir:         resolveInfraPath(projectRoot, foundryInfraLayerPath),
-		targetPath:        foundryInfraLayerPath,
-		module:            defaultInfraModule,
-		layer:             true,
-		updatedYAML:       updated,
-		updateDescription: "infra.layers",
-	}, nil
+	return newInfraEjectPlan(config, foundryTarget, foundryInfraLayerPath, defaultInfraModule, true, true, "infra.layers")
 }
 
-func planLayeredInfraEject(
-	projectRoot string,
-	root *yaml.Node,
-	infra *yaml.Node,
-	layers *yaml.Node,
-	provider string,
-) (*infraEjectPlan, error) {
-	if layers.Kind != yaml.SequenceNode {
-		return nil, invalidInfraForEject("infra.layers must be a sequence")
-	}
-
-	var foundryLayer *yaml.Node
-	rootProvider := mappingScalar(infra, "provider")
-	existingLayerNames := make([]string, 0, len(layers.Content))
-	for _, layer := range layers.Content {
-		if layer.Kind != yaml.MappingNode {
-			return nil, invalidInfraForEject("each infra.layers entry must be a mapping")
-		}
-		for _, key := range []string{"name", "path", "module", "provider"} {
-			if value := mappingValue(layer, key); value != nil && value.Kind != yaml.ScalarNode {
-				return nil, invalidInfraForEject(
-					fmt.Sprintf("infra.layers[].%s must be a string", key),
-				)
-			}
-		}
-		name := mappingScalar(layer, "name")
-		if name == "" {
-			return nil, invalidInfraForEject("each infra.layers entry must declare a name")
-		}
-		if mappingScalar(layer, "path") == "" {
-			return nil, invalidInfraForEject(fmt.Sprintf("infra layer %q must declare path", name))
-		}
-		if slices.Contains(existingLayerNames, name) ||
-			(foundryLayer != nil && mappingScalar(foundryLayer, "name") == name) {
-			return nil, invalidInfraForEject(fmt.Sprintf("duplicate infrastructure layer name %q", name))
-		}
-		layerProvider := mappingScalar(layer, "provider")
-		effectiveLayerProvider := layerProvider
-		if effectiveLayerProvider == "" {
-			effectiveLayerProvider = rootProvider
-		}
-		if effectiveLayerProvider == project.FoundryProviderName && name != foundryInfraLayerName {
+func planLayeredInfraEject(projectRoot string, config *infraConfig, provider string) (*infraEjectPlan, error) {
+	var foundry *infraLayer
+	for i := range config.layers {
+		layer := &config.layers[i]
+		if layer.effectiveProvider == project.FoundryProviderName && layer.name != foundryInfraLayerName {
 			return nil, invalidInfraForEject(
 				fmt.Sprintf("Foundry infrastructure already exists as layer %q; eject expects the Foundry layer name %q",
-					name, foundryInfraLayerName),
+					layer.name, foundryInfraLayerName),
 			)
 		}
-		if name == foundryInfraLayerName &&
-			(effectiveLayerProvider == project.FoundryProviderName ||
-				effectiveLayerProvider == project.BicepProviderName ||
-				effectiveLayerProvider == project.TerraformProviderName) {
-			if foundryLayer != nil {
-				return nil, invalidInfraForEject("multiple Foundry infrastructure layers are declared")
-			}
-			foundryLayer = layer
+		if layer.name != foundryInfraLayerName {
 			continue
 		}
-		if name == foundryInfraLayerName {
+		if !isFoundryLayerProvider(layer.effectiveProvider) {
 			return nil, invalidInfraForEject(
 				fmt.Sprintf("layer name %q is reserved for Foundry infrastructure", foundryInfraLayerName),
 			)
 		}
-		existingLayerNames = append(existingLayerNames, name)
+		foundry = layer
 	}
-	if foundryLayer != nil && len(existingLayerNames) == 0 {
+	if foundry != nil && len(config.layers) == 1 {
 		return nil, invalidInfraForEject(
 			"infra.layers contains only a Foundry layer; use a root infra configuration for a Foundry-only project",
 		)
 	}
-	if foundryLayer == nil && len(existingLayerNames) == 0 {
+	if len(config.layers) == 0 {
 		return nil, invalidInfraForEject("infra.layers must contain at least one existing infrastructure layer")
 	}
-	if foundryLayer != nil {
-		for _, layer := range layers.Content {
-			if layer == foundryLayer {
-				continue
-			}
-			if sameInfraPath(mappingScalar(layer, "path"), mappingScalar(foundryLayer, "path")) {
-				return nil, invalidInfraForEject(
-					fmt.Sprintf("infra layer %q already uses the Foundry layer path %q",
-						mappingScalar(layer, "name"), mappingScalar(foundryLayer, "path")),
-				)
-			}
-		}
-	}
 	changed := false
-	if foundryLayer == nil {
-		for _, layer := range layers.Content {
-			if sameInfraPath(mappingScalar(layer, "path"), foundryInfraLayerPath) {
-				return nil, invalidInfraForEject(
-					fmt.Sprintf("infra layer %q already uses path %q",
-						mappingScalar(layer, "name"), foundryInfraLayerPath),
-				)
-			}
-		}
-		foundryLayer = newInfraLayerNode(
-			foundryInfraLayerName,
-			foundryInfraLayerPath,
-			foundryLayerProvider(provider),
-			nil,
-		)
-		layers.Content = append(layers.Content, foundryLayer)
+	if foundry == nil {
+		node := newInfraLayerNode(foundryInfraLayerName, foundryInfraLayerPath, foundryLayerProvider(provider))
+		config.layersNode.Content = append(config.layersNode.Content, node)
+		config.layers = append(config.layers, infraLayer{
+			node: node, name: foundryInfraLayerName, path: foundryInfraLayerPath,
+			provider: foundryLayerProvider(provider), effectiveProvider: foundryLayerProvider(provider),
+		})
+		foundry = &config.layers[len(config.layers)-1]
 		changed = true
-	}
-
-	targetPath := mappingScalar(foundryLayer, "path")
-	if targetPath == "" {
-		return nil, invalidInfraForEject(
-			fmt.Sprintf("Foundry infrastructure layer %q must declare path", mappingScalar(foundryLayer, "name")),
-		)
-	}
-	module := mappingScalar(foundryLayer, "module")
-	if module == "" {
-		module = defaultInfraModule
 	}
 	wantedProvider := foundryLayerProvider(provider)
-	currentProvider := mappingScalar(foundryLayer, "provider")
-	if currentProvider == "" {
-		currentProvider = rootProvider
-	}
-	if currentProvider == "" {
+	if foundry.effectiveProvider == "" {
 		return nil, invalidInfraForEject(
-			fmt.Sprintf(
-				"Foundry infrastructure layer %q must declare provider explicitly",
-				mappingScalar(foundryLayer, "name"),
-			),
+			fmt.Sprintf("Foundry infrastructure layer %q must declare provider explicitly", foundry.name),
 		)
 	}
-	if currentProvider != "" && currentProvider != wantedProvider {
+	if foundry.effectiveProvider != wantedProvider {
 		return nil, invalidInfraForEject(
-			fmt.Sprintf(
-				"Foundry infrastructure layer %q already uses provider %q",
-				mappingScalar(foundryLayer, "name"),
-				currentProvider,
-			),
+			fmt.Sprintf("Foundry infrastructure layer %q already uses provider %q", foundry.name, foundry.effectiveProvider),
 		)
 	}
-	if mappingScalar(foundryLayer, "provider") != wantedProvider {
-		setMappingScalar(foundryLayer, "provider", wantedProvider)
+	if foundry.provider != wantedProvider {
+		setMappingScalar(foundry.node, "provider", wantedProvider)
 		changed = true
 	}
+	for i := range config.layers {
+		layer := &config.layers[i]
+		if layer != foundry && sameInfraPath(layer.path, foundry.path) {
+			return nil, invalidInfraForEject(
+				fmt.Sprintf("infra layer %q already uses the Foundry layer path %q", layer.name, foundry.path),
+			)
+		}
+	}
+	target, err := inspectInfraTarget(projectRoot, foundry.path)
+	if err != nil {
+		return nil, err
+	}
+	if target.exists && !target.empty ||
+		hasInfrastructureEntrypoint(target.dir, wantedProvider, valueOrDefault(foundry.module, defaultInfraModule)) {
+		return nil, foundryInfraExistsError(filepath.ToSlash(foundry.path), true)
+	}
+	return newInfraEjectPlan(config, target, foundry.path, valueOrDefault(foundry.module, defaultInfraModule),
+		true, changed, "infra.layers")
+}
 
-	targetDir := resolveInfraPath(projectRoot, targetPath)
-	info, statErr := os.Stat(targetDir)
-	if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
-		return nil, fmt.Errorf("stat Foundry infrastructure path %s: %w", targetDir, statErr)
+func rootInfraUserOwned(layer infraLayer, target infraTargetState) (bool, error) {
+	hasEntrypoint := hasInfrastructureEntrypoint(target.dir, layer.effectiveProvider, layer.module)
+	if layer.provider == project.FoundryProviderName && hasEntrypoint {
+		return false, foundryInfraExistsError(filepath.ToSlash(layer.path), false)
 	}
-	if statErr == nil && !info.IsDir() {
-		return nil, ejectExistsError(filepath.ToSlash(targetPath))
-	}
-	if hasInfrastructureEntrypoint(targetDir, wantedProvider, module) {
-		return nil, foundryInfraExistsError(filepath.ToSlash(targetPath), true)
-	}
-	if statErr == nil {
-		empty, err := isDirectoryEmpty(targetDir)
+	if layer.provider == project.TerraformProviderName {
+		foundry, err := isFoundryTerraformInfra(target.dir, layer.module)
 		if err != nil {
-			return nil, err
+			return false, err
 		}
-		if !empty {
-			return nil, foundryInfraExistsError(filepath.ToSlash(targetPath), true)
+		if foundry {
+			return false, foundryInfraExistsError(filepath.ToSlash(layer.path), false)
 		}
 	}
+	builtIn := layer.provider == project.BicepProviderName || layer.provider == project.TerraformProviderName
+	if layer.provider != "" && builtIn && !hasEntrypoint {
+		return false, invalidInfraForEject(fmt.Sprintf(
+			"infrastructure declares provider %q but path %q contains no matching entry point", layer.provider, layer.path))
+	}
+	custom := layer.provider != "" && !builtIn && layer.provider != project.FoundryProviderName
+	if !hasEntrypoint && !custom && target.exists && !target.empty {
+		return false, invalidInfraForEject(
+			fmt.Sprintf("infrastructure path %q contains files but no detectable entry point", layer.path))
+	}
+	return layer.provider != project.FoundryProviderName && (hasEntrypoint || custom), nil
+}
+
+func newInfraEjectPlan(
+	config *infraConfig,
+	target infraTargetState,
+	path, module string,
+	layer, changed bool,
+	description string,
+) (*infraEjectPlan, error) {
 	plan := &infraEjectPlan{
-		targetDir:  targetDir,
-		targetPath: filepath.ToSlash(targetPath),
-		module:     module,
-		layer:      true,
+		targetDir: target.dir, targetPath: filepath.ToSlash(path), module: module, layer: layer,
 	}
 	if changed {
-		updated, err := marshalAzureYAML(root)
+		updated, err := marshalAzureYAML(config.root)
 		if err != nil {
 			return nil, err
 		}
-		plan.updatedYAML = updated
-		plan.updateDescription = "infra.layers"
+		plan.updatedYAML, plan.updateDescription = updated, description
 	}
 	return plan, nil
 }
 
-func validateEjectTarget(projectRoot string, plan *infraEjectPlan) error {
+func valueOrDefault(value, fallback string) string {
+	if value != "" {
+		return value
+	}
+	return fallback
+}
+
+func isFoundryLayerProvider(provider string) bool {
+	return provider == project.FoundryProviderName ||
+		provider == project.BicepProviderName ||
+		provider == project.TerraformProviderName
+}
+
+func validateEjectTarget(plan *infraEjectPlan) error {
 	if plan == nil || strings.TrimSpace(plan.targetDir) == "" {
 		return invalidInfraForEject("Foundry infrastructure path is empty")
 	}
@@ -1082,113 +995,88 @@ func validateEjectTarget(projectRoot string, plan *infraEjectPlan) error {
 			fmt.Sprintf("Foundry infrastructure module %q must not include a file extension", plan.module),
 		)
 	}
-	safeTarget, err := projectpaths.Join(projectRoot, plan.targetPath)
-	if err != nil {
-		return invalidInfraForEject(fmt.Sprintf("invalid Foundry infrastructure path %q: %s", plan.targetPath, err))
-	}
-	plan.targetDir = safeTarget
-	if info, err := os.Stat(plan.targetDir); err == nil && !info.IsDir() {
-		return ejectExistsError(plan.targetPath)
-	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("stat Foundry infrastructure path %s: %w", plan.targetDir, err)
-	}
 	return nil
 }
 
 func installStagedInfra(stageDir string, plan *infraEjectPlan) (func(), error) {
-	type stagedFile struct {
-		src string
-		dst string
-	}
-	var files []stagedFile
-	err := filepath.WalkDir(stageDir, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		rel, err := filepath.Rel(stageDir, path)
-		if err != nil {
-			return err
-		}
-		dst := filepath.Join(plan.targetDir, rel)
-		if _, err := os.Lstat(dst); err == nil {
-			return ejectExistsError(filepath.ToSlash(filepath.Join(plan.targetPath, rel)))
-		} else if !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("stat infrastructure destination %s: %w", dst, err)
-		}
-		files = append(files, stagedFile{src: path, dst: dst})
-		return nil
-	})
+	parent := filepath.Dir(plan.targetDir)
+	existingParent, err := existingDirectory(parent)
 	if err != nil {
 		return func() {}, err
 	}
-
-	createdFiles := make([]string, 0, len(files))
-	createdDirs := []string{}
-	rollback := func() {
-		for _, path := range createdFiles {
-			_ = os.Remove(path)
-		}
-		for i := len(createdDirs) - 1; i >= 0; i-- {
-			_ = os.Remove(createdDirs[i])
-		}
+	//nolint:gosec // G301: ejected infra directories must be readable/traversable by IDEs, Git, and CI
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return func() {}, infraInstallError("create infrastructure parent directory", err)
 	}
 
-	for _, file := range files {
-		parent := filepath.Dir(file.dst)
-		missing, err := missingDirectories(parent)
+	restoreEmptyTarget := false
+	if info, err := os.Lstat(plan.targetDir); err == nil {
+		if !info.IsDir() {
+			return func() {}, ejectExistsError(plan.targetPath)
+		}
+		empty, err := dirIsEmpty(plan.targetDir)
 		if err != nil {
-			rollback()
-			return func() {}, err
+			return func() {}, fmt.Errorf("inspect infrastructure destination %s: %w", plan.targetDir, err)
 		}
-		//nolint:gosec // G301: ejected infra directories must be readable/traversable by IDEs, Git, and CI
-		if err := os.MkdirAll(parent, 0o755); err != nil {
-			rollback()
-			return func() {}, exterrors.Internal(
-				exterrors.CodeInfraEjectWriteFailed,
-				fmt.Sprintf("create infrastructure directory %s: %s", parent, err),
-			)
+		if !empty {
+			return func() {}, foundryInfraExistsError(plan.targetPath, plan.layer)
 		}
-		createdDirs = append(createdDirs, missing...)
-		if err := azdext.CopyFileAtomic(file.src, file.dst, 0o644); err != nil {
-			rollback()
-			return func() {}, exterrors.Internal(
-				exterrors.CodeInfraEjectWriteFailed,
-				fmt.Sprintf("install infrastructure file %s: %s", file.dst, err),
-			)
+		if err := os.Remove(plan.targetDir); err != nil {
+			return func() {}, infraInstallError("prepare empty infrastructure destination", err)
 		}
-		createdFiles = append(createdFiles, file.dst)
+		restoreEmptyTarget = true
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return func() {}, fmt.Errorf("stat infrastructure destination %s: %w", plan.targetDir, err)
 	}
-	return rollback, nil
+
+	if err := os.Rename(stageDir, plan.targetDir); err != nil {
+		if restoreEmptyTarget {
+			_ = os.Mkdir(plan.targetDir, 0o755)
+		}
+		removeEmptyParents(parent, existingParent)
+		return func() {}, infraInstallError("install infrastructure directory", err)
+	}
+	return func() {
+		_ = os.RemoveAll(plan.targetDir)
+		if restoreEmptyTarget {
+			_ = os.Mkdir(plan.targetDir, 0o755)
+		}
+		removeEmptyParents(parent, existingParent)
+	}, nil
 }
 
-func missingDirectories(path string) ([]string, error) {
-	var missing []string
+func infraInstallError(action string, err error) error {
+	return exterrors.Internal(exterrors.CodeInfraEjectWriteFailed, fmt.Sprintf("%s: %s", action, err))
+}
+
+func existingDirectory(path string) (string, error) {
 	for current := path; ; current = filepath.Dir(current) {
 		info, err := os.Lstat(current)
-		switch {
-		case err == nil:
+		if err == nil {
 			if !info.IsDir() {
-				return nil, fmt.Errorf("infrastructure parent path %s is not a directory", current)
+				return "", fmt.Errorf("infrastructure parent path %s is not a directory", current)
 			}
-			slices.Reverse(missing)
-			return missing, nil
-		case errors.Is(err, fs.ErrNotExist):
-			missing = append(missing, current)
-		default:
-			return nil, fmt.Errorf("stat infrastructure parent path %s: %w", current, err)
+			return current, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("stat infrastructure parent path %s: %w", current, err)
 		}
 		parent := filepath.Dir(current)
 		if parent == current {
-			return nil, fmt.Errorf("no existing parent directory for infrastructure path %s", path)
+			return "", fmt.Errorf("no existing parent directory for infrastructure path %s", path)
 		}
 	}
 }
 
-func newInfraLayerNode(name, path, provider string, dependsOn []string) *yaml.Node {
-	layer := &yaml.Node{
+func removeEmptyParents(path, stop string) {
+	for path != stop {
+		_ = os.Remove(path)
+		path = filepath.Dir(path)
+	}
+}
+
+func newInfraLayerNode(name, path, provider string) *yaml.Node {
+	return &yaml.Node{
 		Kind: yaml.MappingNode,
 		Tag:  "!!map",
 		Content: []*yaml.Node{
@@ -1197,14 +1085,6 @@ func newInfraLayerNode(name, path, provider string, dependsOn []string) *yaml.No
 			newScalarNode("provider"), newScalarNode(provider),
 		},
 	}
-	if len(dependsOn) > 0 {
-		dependencies := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
-		for _, dependency := range dependsOn {
-			dependencies.Content = append(dependencies.Content, newScalarNode(dependency))
-		}
-		layer.Content = append(layer.Content, newScalarNode("dependsOn"), dependencies)
-	}
-	return layer
 }
 
 func foundryLayerProvider(ejectProvider string) string {
@@ -1214,32 +1094,28 @@ func foundryLayerProvider(ejectProvider string) string {
 	return project.FoundryProviderName
 }
 
-func cloneMappingNode(node *yaml.Node) *yaml.Node {
-	return cloneYAMLNode(node, make(map[*yaml.Node]*yaml.Node))
-}
-
-func cloneYAMLNode(node *yaml.Node, clones map[*yaml.Node]*yaml.Node) *yaml.Node {
-	if node == nil {
-		return nil
+func inspectInfraTarget(projectRoot, path string) (infraTargetState, error) {
+	dir, err := projectpaths.Join(projectRoot, path)
+	if err != nil {
+		return infraTargetState{}, invalidInfraForEject(
+			fmt.Sprintf("invalid Foundry infrastructure path %q: %s", path, err),
+		)
 	}
-	if clone, ok := clones[node]; ok {
-		return clone
+	info, err := os.Stat(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return infraTargetState{dir: dir}, nil
 	}
-	clone := *node
-	clones[node] = &clone
-	clone.Content = make([]*yaml.Node, len(node.Content))
-	for i, child := range node.Content {
-		clone.Content[i] = cloneYAMLNode(child, clones)
+	if err != nil {
+		return infraTargetState{}, fmt.Errorf("stat infrastructure path %s: %w", dir, err)
 	}
-	clone.Alias = cloneYAMLNode(node.Alias, clones)
-	return &clone
-}
-
-func resolveInfraPath(projectRoot, path string) string {
-	if filepath.IsAbs(path) {
-		return filepath.Clean(path)
+	if !info.IsDir() {
+		return infraTargetState{}, ejectExistsError(filepath.ToSlash(path))
 	}
-	return filepath.Join(projectRoot, filepath.FromSlash(path))
+	empty, err := dirIsEmpty(dir)
+	if err != nil {
+		return infraTargetState{}, fmt.Errorf("inspect infrastructure path %s: %w", dir, err)
+	}
+	return infraTargetState{dir: dir, exists: true, empty: empty}, nil
 }
 
 func sameInfraPath(a, b string) bool {
@@ -1312,22 +1188,6 @@ func invalidFoundryTerraformMarker(path, reason string) error {
 		"restore the marker from source control or use an azure.ai.agents version that supports it. "+
 			"If this is intentionally user-owned Terraform, remove the marker only after verifying the infrastructure",
 	)
-}
-
-func isDirectoryEmpty(path string) (bool, error) {
-	dir, err := os.Open(path) //nolint:gosec // path is validated as the project infrastructure directory
-	if err != nil {
-		return false, fmt.Errorf("open infrastructure path %s: %w", path, err)
-	}
-	defer dir.Close()
-	_, err = dir.Readdirnames(1)
-	if errors.Is(err, io.EOF) {
-		return true, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("read infrastructure path %s: %w", path, err)
-	}
-	return false, nil
 }
 
 func marshalAzureYAML(root *yaml.Node) ([]byte, error) {
@@ -1603,29 +1463,8 @@ func writeParametersFile(
 		"parameters":     wrapped,
 	}
 
-	data, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return ejectArtifact{}, exterrors.Internal(
-			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf("marshal main.parameters.json: %s", err),
-		)
-	}
-	// json.MarshalIndent omits a trailing newline; add one for editors/POSIX tools.
-	data = append(data, '\n')
-
 	filename := module + ".parameters.json"
-	dst := filepath.Join(infraDir, filename)
-	//nolint:gosec // G306: ejected parameters file is intended to be human-readable
-	if err := os.WriteFile(dst, data, 0o644); err != nil {
-		return ejectArtifact{}, exterrors.Internal(
-			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf("write main.parameters.json: %s", err),
-		)
-	}
-	return ejectArtifact{
-		relPath: filepath.ToSlash(filepath.Join(artifactRoot, filename)),
-		bytes:   len(data),
-	}, nil
+	return writeJSONArtifact(infraDir, artifactRoot, filename, doc)
 }
 
 // writeEmbeddedTerraformTemplates copies the static *.tf files under the
@@ -1735,36 +1574,15 @@ func writeOutputsFile(
 	}
 
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, struct{ IncludeAcr bool }{IncludeAcr: includeAcr}); err != nil {
+	if err := tmpl.Execute(&buf, struct {
+		IncludeAcr bool
+		Layer      bool
+	}{IncludeAcr: includeAcr, Layer: layer}); err != nil {
 		return ejectArtifact{}, exterrors.Internal(
 			exterrors.CodeInfraEjectWriteFailed,
 			fmt.Sprintf("render outputs template: %s", err),
 		)
 	}
-	if layer {
-		const resourceGroupOutput = "output \"AZURE_RESOURCE_GROUP\" {"
-		contents := buf.String()
-		start := strings.Index(contents, resourceGroupOutput)
-		if start < 0 || strings.Index(contents[start+len(resourceGroupOutput):], resourceGroupOutput) >= 0 {
-			return ejectArtifact{}, exterrors.Internal(
-				exterrors.CodeInfraEjectWriteFailed,
-				"render outputs.tf: expected exactly one AZURE_RESOURCE_GROUP output",
-			)
-		}
-		end := strings.Index(contents[start:], "}")
-		if end < 0 {
-			return ejectArtifact{}, exterrors.Internal(
-				exterrors.CodeInfraEjectWriteFailed,
-				"render outputs.tf: malformed AZURE_RESOURCE_GROUP output",
-			)
-		}
-		end += start + len("}")
-		for end < len(contents) && (contents[end] == '\r' || contents[end] == '\n') {
-			end++
-		}
-		buf = *bytes.NewBufferString(contents[:start] + contents[end:])
-	}
-
 	dst := filepath.Join(infraDir, "outputs.tf")
 	//nolint:gosec // G306: ejected Terraform sources are intended to be human-readable
 	if err := os.WriteFile(dst, buf.Bytes(), 0o644); err != nil {
@@ -1840,23 +1658,27 @@ func writeTfvarsFile(
 		connectionCredentials,
 	)
 
-	data, err := json.MarshalIndent(doc, "", "  ")
+	filename := module + ".tfvars.json"
+	return writeJSONArtifact(infraDir, artifactRoot, filename, doc)
+}
+
+func writeJSONArtifact(infraDir, artifactRoot, filename string, value any) (ejectArtifact, error) {
+	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return ejectArtifact{}, exterrors.Internal(
 			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf("marshal main.tfvars.json: %s", err),
+			fmt.Sprintf("marshal %s: %s", filename, err),
 		)
 	}
 	// json.MarshalIndent omits a trailing newline; add one for editors/POSIX tools.
 	data = append(data, '\n')
 
-	filename := module + ".tfvars.json"
 	dst := filepath.Join(infraDir, filename)
-	//nolint:gosec // G306: ejected tfvars file is intended to be human-readable
+	//nolint:gosec // G306: ejected JSON is intended to be human-readable
 	if err := os.WriteFile(dst, data, 0o644); err != nil {
 		return ejectArtifact{}, exterrors.Internal(
 			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf("write main.tfvars.json: %s", err),
+			fmt.Sprintf("write %s: %s", filename, err),
 		)
 	}
 	return ejectArtifact{

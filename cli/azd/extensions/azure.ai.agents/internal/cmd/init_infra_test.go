@@ -800,23 +800,6 @@ services:
 	assert.Equal(t, "// conflict\n", string(conflict))
 }
 
-func TestCloneMappingNode_DeepClonesNestedValues(t *testing.T) {
-	t.Parallel()
-	var root yaml.Node
-	require.NoError(t, yaml.Unmarshal([]byte("config:\n  nested:\n    enabled: true\n"), &root))
-	original := root.Content[0]
-	clone := cloneMappingNode(original)
-
-	cloneConfig := mappingValue(clone, "config")
-	cloneNested := mappingValue(cloneConfig, "nested")
-	setMappingScalar(cloneNested, "enabled", "false")
-
-	originalConfig := mappingValue(original, "config")
-	originalNested := mappingValue(originalConfig, "nested")
-	assert.Equal(t, "true", mappingScalar(originalNested, "enabled"))
-	assert.Equal(t, "false", mappingScalar(cloneNested, "enabled"))
-}
-
 func TestEjectInfra_RefusesFoundryLayerOutsideProject(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

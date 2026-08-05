@@ -14,13 +14,12 @@ tmr.registerMock('os', {
 });
 tmr.registerMock('fs/promises', {
     mkdtemp: async () => tempDirectory,
-    rm: async () => undefined,
+    rm: async () => {
+        throw new Error('directory is busy');
+    },
 });
+tmr.setInput('version', 'stable');
 
-// Set input with an invalid version
-tmr.setInput('version', '1.9999999.0');
-
-// Mock answers - simulate failure for an unavailable version
 const answers: ma.TaskLibAnswers = {
     which: {
         'bash': '/bin/bash',
@@ -37,9 +36,9 @@ const answers: ma.TaskLibAnswers = {
             code: 0,
             stdout: 'Downloaded azd installer',
         },
-        [`/usr/bin/sudo /bin/bash ${installScriptPath} --version 1.9999999.0 --verbose`]: {
-            code: 1,
-            stdout: 'Could not download azd version 1.9999999.0',
+        [`/usr/bin/sudo /bin/bash ${installScriptPath} --version stable --verbose`]: {
+            code: 0,
+            stdout: 'azd installed successfully',
         },
     },
 };

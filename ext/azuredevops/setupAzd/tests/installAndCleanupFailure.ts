@@ -14,13 +14,12 @@ tmr.registerMock('os', {
 });
 tmr.registerMock('fs/promises', {
     mkdtemp: async () => tempDirectory,
-    rm: async () => undefined,
+    rm: async () => {
+        throw new Error('directory is busy');
+    },
 });
-
-// Set input with an invalid version
 tmr.setInput('version', '1.9999999.0');
 
-// Mock answers - simulate failure for an unavailable version
 const answers: ma.TaskLibAnswers = {
     which: {
         'bash': '/bin/bash',

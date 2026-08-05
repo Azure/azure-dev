@@ -2764,6 +2764,14 @@ func writeAgentIgnoreFile(targetDir string) error {
 	return nil
 }
 
+func agentAddedMessage(agentName string) string {
+	return fmt.Sprintf("\nAdded agent '%s' to azure.yaml.\n", agentName)
+}
+
+func printAgentAddedMessage(agentName string) {
+	fmt.Print(agentAddedMessage(agentName))
+}
+
 func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest) error {
 	// If targetDir is ".", resolve the actual relative path from the project root to cwd.
 	// This ensures azure.yaml gets the correct "project:" value when init is run from a subdirectory.

@@ -8,6 +8,7 @@
 
 ### Bugs Fixed
 
+- [[#9238]](https://github.com/Azure/azure-dev/pull/9238) Fix `${VAR}` substitution in `infra.deploymentStacks` settings such as `denySettings.excludedActions` and `denySettings.excludedPrincipals`.
 - [[#9324]](https://github.com/Azure/azure-dev/pull/9324) Fix `azd provision --preview` to show nested ARM failures such as quota limits and provide relevant recovery guidance.
 - [[#9325]](https://github.com/Azure/azure-dev/pull/9325) Fix `azd update` to install the exact stable version it reports instead of potentially installing a newer release.
 - [[#9329]](https://github.com/Azure/azure-dev/pull/9329) Fix `azd pipeline config --provider azdo --auth-type federated` incorrectly rejecting federated authentication and update the flag's help text to reflect existing Azure DevOps support.

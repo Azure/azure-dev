@@ -108,11 +108,13 @@ func ValidateEnvReferences(value string) error {
 			index++
 			continue
 		}
-		// A '$' pair collapses to a literal '$', neutralizing only the '${' it
-		// precedes — unless the second '$' opens a Foundry span, which
-		// foundry.ExpandEnv masks before envsubst ever sees the pair. Leaving
-		// that '$' for the span rule below keeps the two in step.
-		if strings.HasPrefix(value[index:], "$$") &&
+		// Outside a default, a '$' pair collapses to a literal '$',
+		// neutralizing only the '${' it precedes. Inside a :- default,
+		// envsubst re-parses the default text and the second '$' can still open
+		// a live ${VAR}, so leave it for the nested-reference check below.
+		// A Foundry span is masked before envsubst sees the pair in either case.
+		if defaultEnd == 0 &&
+			strings.HasPrefix(value[index:], "$$") &&
 			!strings.HasPrefix(value[index+1:], "${{") {
 			index += 2
 			continue

@@ -1863,9 +1863,11 @@ func TestValidateEnvReferences_RejectsUnsupportedForms(t *testing.T) {
 	// resolves, and not reporting it lets ${A:-${B}} with neither set expand to
 	// empty, so the field's own shape check blames the empty value.
 	nested := map[string]string{
-		"${OUTER:-${NESTED}}":               "${NESTED}",
-		"${OUTER:-prefix-${NESTED}-suffix}": "${NESTED}",
-		"${OUTER:-${NESTED:-inner}}":        "${NESTED:-inner}",
+		"${OUTER:-${NESTED}}":                "${NESTED}",
+		"${OUTER:-prefix-${NESTED}-suffix}":  "${NESTED}",
+		"${OUTER:-${NESTED:-inner}}":         "${NESTED:-inner}",
+		"${OUTER:-$${NESTED}}":               "${NESTED}",
+		"${OUTER:-prefix-$${NESTED}-suffix}": "${NESTED}",
 		// The quoted fragment has to be the nested reference's real span; a
 		// truncate-at-the-first-'}' fragment would come out unbalanced here.
 		"${A:-${B:-${C}}}": "${B:-${C}}",

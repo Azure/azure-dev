@@ -31,6 +31,17 @@ func TestRunDeleteToolbox_ClearsEndpointEnv(t *testing.T) {
 	require.Equal(t, []toolboxEnvCall{{name: "tb", value: "", projectScope: "https://e/"}}, *envCalls)
 }
 
+func TestRunDeleteToolbox_NotFoundAttemptsMarkerCleanup(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	envCalls := stubToolboxEndpointEnv(t)
+
+	err := runDeleteToolbox(
+		t.Context(), client, "tb", toolboxDeleteFlags{force: true}, toolboxFlags{output: "json"},
+	)
+	require.Error(t, err)
+	require.Equal(t, []toolboxEnvCall{{name: "tb", value: "", projectScope: "https://e/"}}, *envCalls)
+}
+
 func TestRunDeleteToolboxVersion_DoesNotTouchEnv(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
 	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{Name: "tb", DefaultVersion: "5"}}

@@ -125,6 +125,9 @@ func runDeleteToolbox(
 			return emitDeleteResult(name, "", "deleted", parent.output)
 
 		case isAzureNotFound(getErr):
+			if err := setToolboxEndpointEnvFunc(ctx, name, "", client.Endpoint()); err != nil {
+				return err
+			}
 			return exterrors.Dependency(
 				exterrors.CodeToolboxNotFound,
 				fmt.Sprintf("toolbox %q not found", name),

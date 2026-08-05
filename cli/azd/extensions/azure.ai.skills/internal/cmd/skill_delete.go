@@ -16,6 +16,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type deleteFlags struct {
@@ -80,6 +82,11 @@ func deleteSkillAndClearMarkers(
 	projectEndpoint string,
 ) error {
 	if _, err := client.DeleteSkill(ctx, skillName); err != nil {
+		if isNotFound(err) {
+			if clearErr := clearSkillMarkersFunc(ctx, skillName, projectEndpoint); clearErr != nil {
+				return clearErr
+			}
+		}
 		return exterrors.ServiceFromAzure(err, exterrors.OpDeleteSkill)
 	}
 	if err := clearSkillMarkersFunc(ctx, skillName, projectEndpoint); err != nil {
@@ -91,22 +98,23 @@ func deleteSkillAndClearMarkers(
 func clearSkillMarkers(ctx context.Context, skillName, projectEndpoint string) error {
 	client, err := azdext.NewAzdClient()
 	if err != nil {
-		log.Printf("skill marker cleanup skipped: azd client unavailable: %v", err)
-		return nil
+		return fmt.Errorf("create azd client for skill marker cleanup: %w", err)
 	}
 	defer client.Close()
 	env, err := client.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		log.Printf("skill marker cleanup skipped: no active azd environment: %v", err)
-		return nil
+		if isNoSkillAzdEnvironment(err) {
+			log.Printf("skill marker cleanup skipped: no active azd environment: %v", err)
+			return nil
+		}
+		return fmt.Errorf("read active azd environment for skill marker cleanup: %w", err)
 	}
 	projectKey := envkey.SkillProjectEndpoint(skillName)
 	marker, err := client.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: env.Environment.GetName(), Key: projectKey,
 	})
 	if err != nil {
-		log.Printf("skill marker cleanup skipped: cannot read %s: %v", projectKey, err)
-		return nil
+		return fmt.Errorf("read skill readiness marker %s: %w", projectKey, err)
 	}
 	if !sameSkillProjectEndpoint(marker.Value, projectEndpoint) {
 		log.Printf("skill marker cleanup skipped: %s belongs to another project", projectKey)
@@ -118,6 +126,19 @@ func clearSkillMarkers(ctx context.Context, skillName, projectEndpoint string) e
 		})
 		return err
 	})
+}
+
+func isNoSkillAzdEnvironment(err error) bool {
+	st, ok := status.FromError(err)
+	if !ok {
+		return false
+	}
+	if st.Code() == codes.NotFound {
+		return true
+	}
+	message := strings.ToLower(st.Message())
+	return strings.Contains(message, "default environment not found") ||
+		strings.Contains(message, "no project exists")
 }
 
 func clearSkillMarkerValues(skillName string, setValue func(string, string) error) error {

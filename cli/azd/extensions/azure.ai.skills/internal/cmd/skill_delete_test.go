@@ -6,13 +6,17 @@ package cmd
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 
 	"azureaiskills/internal/exterrors"
 	"azureaiskills/internal/pkg/skill_api"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type stubSkillDeleteClient struct {
@@ -59,6 +63,22 @@ func TestDeleteSkillAndClearMarkers(t *testing.T) {
 		))
 		require.False(t, called)
 	})
+
+	t.Run("not found retries marker cleanup", func(t *testing.T) {
+		client := &stubSkillDeleteClient{err: &azcore.ResponseError{StatusCode: http.StatusNotFound}}
+		called := false
+		previous := clearSkillMarkersFunc
+		clearSkillMarkersFunc = func(context.Context, string, string) error {
+			called = true
+			return nil
+		}
+		t.Cleanup(func() { clearSkillMarkersFunc = previous })
+
+		require.Error(t, deleteSkillAndClearMarkers(
+			t.Context(), client, "my-skill", "https://example.test/projects/current",
+		))
+		require.True(t, called)
+	})
 }
 
 func TestSameSkillProjectEndpoint(t *testing.T) {
@@ -75,6 +95,13 @@ func TestSameSkillProjectEndpoint(t *testing.T) {
 		"https://account.test/projects/old",
 		"https://account.test/projects/current",
 	))
+}
+
+func TestIsNoSkillAzdEnvironment(t *testing.T) {
+	t.Parallel()
+	require.True(t, isNoSkillAzdEnvironment(status.Error(codes.NotFound, "environment not found")))
+	require.True(t, isNoSkillAzdEnvironment(status.Error(codes.Unknown, "default environment not found")))
+	require.False(t, isNoSkillAzdEnvironment(status.Error(codes.Unavailable, "daemon unavailable")))
 }
 
 func TestClearSkillMarkerValues(t *testing.T) {

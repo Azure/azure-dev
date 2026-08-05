@@ -1,6 +1,21 @@
 # Release History
 
-## 1.30.0-beta.1 (Unreleased)
+## 1.30.0-beta.1 (2026-08-05)
+
+### Features Added
+
+- [[#9284]](https://github.com/Azure/azure-dev/pull/9284) Add container image deployment support for Function App services, while preserving zip deployment for code-based Function Apps.
+- [[#9238]](https://github.com/Azure/azure-dev/pull/9238) Support `${VAR}` substitution in `infra.deploymentStacks` configuration.
+- [[#9353]](https://github.com/Azure/azure-dev/pull/9353) Detect unsupported Aspire polyglot AppHosts and provide an actionable error instead of falling through to a source build.
+
+### Bugs Fixed
+
+- [[#9324]](https://github.com/Azure/azure-dev/pull/9324) Surface nested ARM error details and applicable suggestions from `azd provision --preview`.
+- [[#9325]](https://github.com/Azure/azure-dev/pull/9325) Pin self-managed stable updates to the version resolved and reported by `azd update`.
+- [[#9329]](https://github.com/Azure/azure-dev/pull/9329) Allow explicitly selecting federated authentication when configuring Azure DevOps pipelines.
+- [[#9347]](https://github.com/Azure/azure-dev/pull/9347) Prevent Aspire manifest generation from hanging because of persistent MSBuild worker nodes.
+- [[#9361]](https://github.com/Azure/azure-dev/pull/9361) Improve errors and recovery guidance for extension source and dependency version resolution failures.
+- [[#9430]](https://github.com/Azure/azure-dev/pull/9430) Support GitHub Actions OIDC's immutable subject claims when configuring federated credentials.
 
 ## 1.29.0 (2026-07-29)
 

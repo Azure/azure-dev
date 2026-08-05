@@ -101,10 +101,8 @@ func hasAzureYamlFileRef(value any) bool {
 			}
 		}
 	case []any:
-		for _, child := range typed {
-			if hasAzureYamlFileRef(child) {
-				return true
-			}
+		if slices.ContainsFunc(typed, hasAzureYamlFileRef) {
+			return true
 		}
 	}
 

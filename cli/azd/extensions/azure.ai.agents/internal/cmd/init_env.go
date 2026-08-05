@@ -266,8 +266,8 @@ func foundryAzureYamlServiceHost(service *yaml.Node) (string, bool) {
 		return "", false
 	}
 
-	_, knownHost := foundryServiceHosts[host.Value]
-	if !knownHost && !strings.HasPrefix(host.Value, "azure.ai.") {
+	if host.Value != "microsoft.foundry" &&
+		!strings.HasPrefix(host.Value, "azure.ai.") {
 		return "", false
 	}
 	return host.Value, true

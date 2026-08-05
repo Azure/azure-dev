@@ -1056,10 +1056,10 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Initialize a new AI agent project.
 
 When -m points at a sample's unified azure.yaml (a project manifest that
-declares services with host: azure.ai.project / azure.ai.agent / ...), that
-azure.yaml is adopted as the project manifest and its referenced files are
-placed at the project root. When -m points at an agent manifest instead, the
-project's azure.yaml is generated from it.
+declares a service with host: azure.ai.agent), that azure.yaml is adopted as
+the project manifest and its referenced files are placed at the project root.
+When -m points at an agent manifest instead, the project's azure.yaml is
+generated from it.
 
 The agent name written to agent.yaml is the Foundry agent identity. Foundry
 agents are unique by name within a project, so deploying with an existing name
@@ -1307,16 +1307,38 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				// (generate the project). For private GitHub URLs, the detector
 				// falls back to the authenticated gh CLI download path before
 				// deciding whether this is a unified azure.yaml. See #8798.
+				manifestRoot := ""
+				if isLocalFilePath(flags.manifestPointer) {
+					manifestRoot = filepath.Dir(flags.manifestPointer)
+				}
 				if content, ok := readManifestContentForInitDetection(
 					ctx, azdClient, flags.manifestPointer, httpClient,
-				); ok && looksLikeFoundryAzureYaml(content) {
-					if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content); err != nil {
-						if exterrors.IsCancellation(err) {
-							return exterrors.Cancelled("initialization was cancelled")
-						}
+				); ok {
+					manifestInfo, err := inspectAzureYaml(content, manifestRoot)
+					if err != nil {
 						return err
 					}
-					return ejectInfraAfterInit(infraProvider)
+					if manifestInfo.hasServices {
+						if manifestInfo.hasAgentService ||
+							manifestInfo.hasUnresolvedRefs {
+							if err := runInitFromAzureYaml(
+								ctx,
+								flags,
+								azdClient,
+								httpClient,
+								content,
+							); err != nil {
+								if exterrors.IsCancellation(err) {
+									return exterrors.Cancelled(
+										"initialization was cancelled",
+									)
+								}
+								return err
+							}
+							return ejectInfraAfterInit(infraProvider)
+						}
+						return missingAgentServiceError(flags.manifestPointer)
+					}
 				}
 
 				// Resolve the agent name BEFORE creating the project folder

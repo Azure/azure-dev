@@ -238,6 +238,20 @@ services:
 			want: nil,
 		},
 		{
+			name: "deprecated Foundry host refs are scanned",
+			content: `name: sample
+services:
+  project:
+    host: microsoft.foundry
+    network:
+      agentSubnet:
+        vnet: ${FOUNDRY_HOST_NETWORK}
+`,
+			want: []azureYamlEnvironmentReference{
+				{Name: "FOUNDRY_HOST_NETWORK"},
+			},
+		},
+		{
 			name: "deprecated toolbox and routine config fields are scanned",
 			content: `name: sample
 services:

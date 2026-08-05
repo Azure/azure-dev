@@ -6,15 +6,18 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -538,42 +541,83 @@ func TestEjectInfra_RefusesWhenInfraIsAFile(t *testing.T) {
 }
 
 func TestValidateStandaloneEjectArgs(t *testing.T) {
-	// The standalone-eject branch in init.go runs after positional-arg
-	// resolution, so by the time validateStandaloneEjectArgs is called
-	// flags.manifestPointer / flags.src may have been set by
-	// applyPositionalArg even if the user never passed a `-m` or `--src`.
-	// Either way: any of args, manifestPointer, or src being set means
-	// init-driving input that standalone eject cannot honor.
 	tests := []struct {
 		name      string
 		args      []string
-		manifest  string
-		src       string
-		image     string
+		changed   map[string]string
 		wantError bool
+		wantInput string
 	}{
-		{name: "no extras: ok", args: nil, manifest: "", src: "", wantError: false},
-		{name: "positional arg: refuse", args: []string{"./foo"}, wantError: true},
-		{name: "manifest flag: refuse", manifest: "./agent.yaml", wantError: true},
-		{name: "src flag: refuse", src: "./src/agent", wantError: true},
-		{name: "image flag: refuse", image: "myacr.azurecr.io/agent:1", wantError: true},
+		{name: "no extras: ok"},
+		{name: "positional arg: refuse", args: []string{"./foo"}, wantError: true, wantInput: "positional path"},
 		{
-			name:      "all three set: refuse",
-			args:      []string{"./pos"},
-			manifest:  "./agent.yaml",
-			src:       "./src",
+			name:      "manifest flag: refuse",
+			changed:   map[string]string{"manifest": "./agent.yaml"},
 			wantError: true,
+			wantInput: "--manifest",
+		},
+		{
+			name:      "scalar init flag: refuse",
+			changed:   map[string]string{"model": "gpt-5.4-mini"},
+			wantError: true,
+			wantInput: "--model",
+		},
+		{
+			name:      "slice init flag: refuse",
+			changed:   map[string]string{"protocol": "responses"},
+			wantError: true,
+			wantInput: "--protocol",
+		},
+		{
+			name:      "boolean init flag: refuse",
+			changed:   map[string]string{"force": "true"},
+			wantError: true,
+			wantInput: "--force",
+		},
+		{
+			name:      "environment flag: refuse",
+			changed:   map[string]string{"environment": "dev"},
+			wantError: true,
+			wantInput: "--environment",
+		},
+		{
+			name: "global execution controls: ok",
+			changed: map[string]string{
+				"cwd":       ".",
+				"debug":     "true",
+				"infra":     "bicep",
+				"no-prompt": "true",
+				"output":    "json",
+			},
+		},
+		{
+			name:      "multiple inputs: refuse",
+			args:      []string{"./pos"},
+			changed:   map[string]string{"manifest": "./agent.yaml", "src": "./src"},
+			wantError: true,
+			wantInput: "--manifest",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			flags := &initFlags{
-				manifestPointer: tt.manifest,
-				src:             tt.src,
-				image:           tt.image,
+
+			cmd := newInitCommand(&azdext.ExtensionContext{})
+			// These are inherited global flags on the real extension command.
+			// Register them locally here so the standalone helper sees the same
+			// changed-flag state without constructing the full command tree.
+			if cmd.Flags().Lookup("cwd") == nil {
+				cmd.Flags().String("cwd", "", "")
+				cmd.Flags().Bool("debug", false, "")
+				cmd.Flags().String("environment", "", "")
+				cmd.Flags().Bool("no-prompt", false, "")
+				cmd.Flags().String("output", "default", "")
 			}
-			err := validateStandaloneEjectArgs(tt.args, flags)
+			for name, value := range tt.changed {
+				require.NoError(t, cmd.Flags().Set(name, value))
+			}
+
+			err := validateStandaloneEjectArgs(cmd, tt.args)
 			if !tt.wantError {
 				assert.NoError(t, err)
 				return
@@ -584,11 +628,37 @@ func TestValidateStandaloneEjectArgs(t *testing.T) {
 			assert.Equal(t, exterrors.CodeInfraEjectConflictingArguments, localErr.Code)
 			assert.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category,
 				"the conflict is bad-user-input, classified Validation")
+			assert.Contains(t, localErr.Message, tt.wantInput)
 			// Suggestion must point at both ways out: drop the arg, or drop --infra.
-			assert.Contains(t, localErr.Suggestion, "drop the extra argument")
+			assert.Contains(t, localErr.Suggestion, "drop the init inputs")
 			assert.Contains(t, localErr.Suggestion, "remove --infra")
 		})
 	}
+}
+
+func TestValidateStandaloneEjectArgs_AllowsSDKTraceFlags(t *testing.T) {
+	// Not parallel: NewRootCommand enables Cobra's package-level traverse-run
+	// hooks while constructing the real extension command tree.
+	root := NewRootCommand()
+	initCmd, _, err := root.Find([]string{"init"})
+	require.NoError(t, err)
+	require.NotNil(t, initCmd)
+
+	require.NotNil(t, initCmd.InheritedFlags().Lookup("trace-log-file"))
+	require.NotNil(t, initCmd.InheritedFlags().Lookup("trace-log-url"))
+	require.NoError(t, initCmd.InheritedFlags().Set("trace-log-file", "trace.jsonl"))
+	require.NoError(t, initCmd.InheritedFlags().Set("trace-log-url", "http://localhost:4318"))
+	require.NoError(t, initCmd.Flags().Set("infra", "bicep"))
+
+	var visited []string
+	initCmd.InheritedFlags().Visit(func(flag *pflag.Flag) {
+		visited = append(visited, flag.Name)
+	})
+	assert.Contains(t, visited, "trace-log-file", "the test must exercise changed inherited flags")
+	assert.Contains(t, visited, "trace-log-url", "the test must exercise changed inherited flags")
+
+	assert.NoError(t, validateStandaloneEjectArgs(initCmd, nil),
+		"SDK tracing and --infra are execution controls, not discarded init inputs")
 }
 
 func TestParseInfraProvider(t *testing.T) {
@@ -816,6 +886,22 @@ func TestEnsureInfraDirAbsent(t *testing.T) {
 		require.True(t, ok, "expected *azdext.LocalError, got %T", err)
 		assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
 	})
+
+	t.Run("dangling symlink present", func(t *testing.T) {
+		t.Parallel()
+		if runtime.GOOS == "windows" {
+			t.Skip("creating symlinks requires elevated privileges on some Windows hosts")
+		}
+
+		dir := t.TempDir()
+		require.NoError(t, os.Symlink("missing-target", filepath.Join(dir, "infra")))
+
+		err := ensureInfraDirAbsent(dir)
+		require.Error(t, err)
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+		assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
+	})
 }
 
 // A project can point azd at IaC outside ./infra/ with `infra.path`. Eject
@@ -825,35 +911,225 @@ func TestEnsureInfraDirAbsent(t *testing.T) {
 func TestEnsureDefaultInfraPath(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name    string
-		yaml    string
-		wantErr bool
+		name     string
+		yaml     string
+		wantCode string
 	}{
 		{name: "no infra block", yaml: "name: my-project\n"},
 		{name: "infra block without path", yaml: "name: my-project\ninfra:\n  provider: bicep\n"},
 		{name: "explicit default path", yaml: "name: my-project\ninfra:\n  path: infra\n"},
 		{name: "explicit default path dot-prefixed", yaml: "name: my-project\ninfra:\n  path: ./infra\n"},
+		{name: "explicit default path windows separators", yaml: "name: my-project\ninfra:\n  path: .\\infra\n"},
 		{name: "empty path", yaml: "name: my-project\ninfra:\n  path: \"\"\n"},
-		{name: "custom path", yaml: "name: my-project\ninfra:\n  path: myinfra\n", wantErr: true},
-		{name: "nested path", yaml: "name: my-project\ninfra:\n  path: deploy/infra\n", wantErr: true},
-		// Malformed YAML must keep the CodeInvalidAzureYaml classification the
-		// service scan and the provider stamp already give it.
-		{name: "malformed yaml defers classification", yaml: "name: [unterminated\n"},
+		{
+			name:     "custom path",
+			yaml:     "name: my-project\ninfra:\n  path: myinfra\n",
+			wantCode: exterrors.CodeInfraEjectCustomInfraPath,
+		},
+		{
+			name:     "nested path",
+			yaml:     "name: my-project\ninfra:\n  path: deploy/infra\n",
+			wantCode: exterrors.CodeInfraEjectCustomInfraPath,
+		},
+		{
+			name:     "space-padded path remains custom",
+			yaml:     "name: my-project\ninfra:\n  path: \" infra \"\n",
+			wantCode: exterrors.CodeInfraEjectCustomInfraPath,
+		},
+		{name: "malformed yaml", yaml: "name: [unterminated\n", wantCode: exterrors.CodeInvalidAzureYaml},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			err := ensureDefaultInfraPath([]byte(tt.yaml))
-			if !tt.wantErr {
+			if tt.wantCode == "" {
 				assert.NoError(t, err)
 				return
 			}
 			require.Error(t, err)
 			localErr, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-			assert.Equal(t, exterrors.CodeInfraEjectCustomInfraPath, localErr.Code)
-			assert.Contains(t, localErr.Suggestion, "without --infra",
-				"the non-destructive path has to be offered")
+			assert.Equal(t, tt.wantCode, localErr.Code)
+			if tt.wantCode == exterrors.CodeInfraEjectCustomInfraPath {
+				assert.Contains(t, localErr.Suggestion, "without --infra",
+					"the non-destructive path has to be offered")
+			}
+		})
+	}
+}
+
+func TestEnsureDefaultInfraModule(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		yaml     string
+		wantCode string
+	}{
+		{name: "no infra block", yaml: "name: my-project\n"},
+		{name: "infra block without module", yaml: "name: my-project\ninfra:\n  provider: bicep\n"},
+		{name: "explicit default module", yaml: "name: my-project\ninfra:\n  module: main\n"},
+		{name: "dot-prefixed default module", yaml: "name: my-project\ninfra:\n  module: ./main\n"},
+		{
+			name:     "trailing separator is not the default module",
+			yaml:     "name: my-project\ninfra:\n  module: main/\n",
+			wantCode: exterrors.CodeInfraEjectCustomModule,
+		},
+		{
+			name:     "trailing dot segment is not the default module",
+			yaml:     "name: my-project\ninfra:\n  module: main/.\n",
+			wantCode: exterrors.CodeInfraEjectCustomModule,
+		},
+		{
+			name:     "custom module",
+			yaml:     "name: my-project\ninfra:\n  module: platform\n",
+			wantCode: exterrors.CodeInfraEjectCustomModule,
+		},
+		{
+			name:     "type-invalid module",
+			yaml:     "name: my-project\ninfra:\n  module: [main]\n",
+			wantCode: exterrors.CodeInvalidAzureYaml,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := ensureDefaultInfraModule([]byte(tt.yaml))
+			if tt.wantCode == "" {
+				assert.NoError(t, err)
+				return
+			}
+
+			require.Error(t, err)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+			assert.Equal(t, tt.wantCode, localErr.Code)
+			if tt.wantCode == exterrors.CodeInfraEjectCustomModule {
+				assert.Contains(t, localErr.Message, "infra.module")
+				assert.Contains(t, localErr.Suggestion, "without --infra")
+			}
+		})
+	}
+}
+
+func TestEnsureNoInfraLayers(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		yaml     string
+		wantCode string
+	}{
+		{name: "no infra block", yaml: "name: my-project\n"},
+		{name: "empty layers", yaml: "name: my-project\ninfra:\n  layers: []\n"},
+		{
+			name: "layer with explicit provider",
+			yaml: `name: my-project
+infra:
+  provider: terraform
+  layers:
+    - name: app
+      provider: bicep
+      path: infra/app
+`,
+			wantCode: exterrors.CodeInfraEjectLayersUnsupported,
+		},
+		{
+			name: "layer inherits root provider",
+			yaml: `name: my-project
+infra:
+  provider: terraform
+  layers:
+    - name: app
+      path: infra/app
+`,
+			wantCode: exterrors.CodeInfraEjectLayersUnsupported,
+		},
+		{
+			name:     "type-invalid layers",
+			yaml:     "name: my-project\ninfra:\n  layers: unexpected\n",
+			wantCode: exterrors.CodeInvalidAzureYaml,
+		},
+		{name: "malformed yaml", yaml: "name: [unterminated\n", wantCode: exterrors.CodeInvalidAzureYaml},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := ensureNoInfraLayers([]byte(tt.yaml))
+			if tt.wantCode == "" {
+				assert.NoError(t, err)
+				return
+			}
+
+			require.Error(t, err)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+			assert.Equal(t, tt.wantCode, localErr.Code)
+			if tt.wantCode == exterrors.CodeInfraEjectLayersUnsupported {
+				assert.Contains(t, localErr.Suggestion, "without --infra")
+			}
+		})
+	}
+}
+
+func TestEnsureCompatibleInfraProvider(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		yaml      string
+		requested string
+		wantCode  string
+	}{
+		{name: "unspecified provider accepts bicep", yaml: "name: my-project\n", requested: "bicep"},
+		{
+			name:      "bicep provider accepts bicep",
+			yaml:      "name: my-project\ninfra:\n  provider: bicep\n",
+			requested: "bicep",
+		},
+		{
+			name:      "foundry provider accepts bicep",
+			yaml:      "name: my-project\ninfra:\n  provider: microsoft.foundry\n",
+			requested: "bicep",
+		},
+		{
+			name:      "terraform provider rejects bicep",
+			yaml:      "name: my-project\ninfra:\n  provider: terraform\n",
+			requested: "bicep",
+			wantCode:  exterrors.CodeInfraEjectProviderConflict,
+		},
+		{
+			name:      "terraform provider accepts terraform",
+			yaml:      "name: my-project\ninfra:\n  provider: terraform\n",
+			requested: "terraform",
+		},
+		{
+			name:      "type-invalid provider",
+			yaml:      "name: my-project\ninfra:\n  provider: [terraform]\n",
+			requested: "terraform",
+			wantCode:  exterrors.CodeInvalidAzureYaml,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := ensureCompatibleInfraProvider([]byte(tt.yaml), tt.requested)
+			if tt.wantCode == "" {
+				assert.NoError(t, err)
+				return
+			}
+
+			require.Error(t, err)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+			assert.Equal(t, tt.wantCode, localErr.Code)
+			if tt.wantCode == exterrors.CodeInfraEjectProviderConflict {
+				assert.Contains(t, localErr.Message, "ignore the generated files")
+				assert.Contains(t, localErr.Suggestion, "--infra=terraform")
+			}
 		})
 	}
 }
@@ -896,7 +1172,7 @@ services:
 			require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "myinfra"), 0o750))
 			t.Chdir(projectRoot)
 
-			_, err := resolveInfraGate()
+			_, err := resolveInfraGate("bicep")
 			require.Error(t, err)
 			localErr, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok, "expected *azdext.LocalError, got %T", err)
@@ -933,6 +1209,169 @@ services:
 		"a refused eject must not stamp infra.provider or drop the declared infra.path")
 }
 
+func TestResolveInfraGate_RefusesInfraLayers(t *testing.T) {
+	tests := []struct {
+		name string
+		host string
+	}{
+		{name: "init fall-through", host: "containerapp"},
+		{name: "standalone eject", host: "azure.ai.project"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+			projectRoot := t.TempDir()
+			mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), fmt.Sprintf(`name: my-project
+infra:
+  provider: terraform
+  layers:
+    - name: existing
+      path: infra/existing
+services:
+  service:
+    host: %s
+`, tt.host))
+			t.Chdir(projectRoot)
+
+			_, err := resolveInfraGate("terraform")
+			require.Error(t, err)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+			assert.Equal(t, exterrors.CodeInfraEjectLayersUnsupported, localErr.Code)
+			assert.NoDirExists(t, filepath.Join(projectRoot, "infra"))
+		})
+	}
+}
+
+func TestResolveInfraGate_RefusesBicepWithTerraformProvider(t *testing.T) {
+	tests := []struct {
+		name string
+		host string
+	}{
+		{name: "init fall-through", host: "containerapp"},
+		{name: "standalone eject", host: "azure.ai.project"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+			projectRoot := t.TempDir()
+			mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), fmt.Sprintf(`name: my-project
+infra:
+  provider: terraform
+services:
+  service:
+    host: %s
+`, tt.host))
+			t.Chdir(projectRoot)
+
+			_, err := resolveInfraGate("bicep")
+			require.Error(t, err)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+			assert.Equal(t, exterrors.CodeInfraEjectProviderConflict, localErr.Code)
+			assert.NoDirExists(t, filepath.Join(projectRoot, "infra"))
+		})
+	}
+}
+
+func TestResolveInfraGate_RefusesCustomInfraModule(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	projectRoot := t.TempDir()
+	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), `name: my-project
+infra:
+  module: platform
+services:
+  service:
+    host: containerapp
+`)
+	t.Chdir(projectRoot)
+
+	_, err := resolveInfraGate("bicep")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+	assert.Equal(t, exterrors.CodeInfraEjectCustomModule, localErr.Code)
+	assert.NoDirExists(t, filepath.Join(projectRoot, "infra"))
+}
+
+func TestEjectInfra_RefusesInfraLayers(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	azureYAML := `name: my-project
+infra:
+  provider: terraform
+  layers:
+    - name: foundry
+      path: infra/foundry
+services:
+  my-foundry:
+    host: azure.ai.project
+`
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), azureYAML)
+
+	err := ejectInfra(dir, "terraform")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+	assert.Equal(t, exterrors.CodeInfraEjectLayersUnsupported, localErr.Code)
+	assert.NoDirExists(t, filepath.Join(dir, "infra"))
+
+	raw, readErr := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // G304: test path from t.TempDir()
+	require.NoError(t, readErr)
+	assert.Equal(t, azureYAML, string(raw), "a refused eject must not rewrite the provider or layers")
+}
+
+func TestEjectInfra_RefusesCustomInfraModule(t *testing.T) {
+	t.Parallel()
+	for _, provider := range []string{"bicep", "terraform"} {
+		t.Run(provider, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			azureYAML := `name: my-project
+infra:
+  module: platform
+services:
+  my-foundry:
+    host: azure.ai.project
+`
+			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), azureYAML)
+
+			err := ejectInfra(dir, provider)
+			require.Error(t, err)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+			assert.Equal(t, exterrors.CodeInfraEjectCustomModule, localErr.Code)
+			assert.NoDirExists(t, filepath.Join(dir, "infra"))
+
+			raw, readErr := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // G304: test path
+			require.NoError(t, readErr)
+			assert.Equal(t, azureYAML, string(raw), "a refused eject must not rewrite infra.module")
+		})
+	}
+}
+
+func TestEjectInfra_BicepRefusesTerraformProvider(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	azureYAML := `name: my-project
+infra:
+  provider: terraform
+services:
+  my-foundry:
+    host: azure.ai.project
+`
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), azureYAML)
+
+	err := ejectInfra(dir, "bicep")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+	assert.Equal(t, exterrors.CodeInfraEjectProviderConflict, localErr.Code)
+	assert.NoDirExists(t, filepath.Join(dir, "infra"))
+}
+
 // TestResolveInfraGate_ExistingProjectWithoutFoundryServiceRunsInit is the
 // regression test for #9124: `azd ai agent init --infra` inside an azd project
 // that has no Foundry service must fall through to the normal init flow rather
@@ -948,7 +1387,7 @@ services:
 `)
 	t.Chdir(projectRoot)
 
-	gate, err := resolveInfraGate()
+	gate, err := resolveInfraGate("bicep")
 	require.NoError(t, err, "an existing project without a Foundry service must not refuse")
 	assert.False(t, gate.standaloneEject, "init runs first, then the trailing eject")
 	assert.Equal(t, projectRoot, gate.projectRoot)
@@ -960,7 +1399,7 @@ func TestResolveInfraGate_ExistingFoundryProjectEjectsStandalone(t *testing.T) {
 	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), validFoundryAzureYAML)
 	t.Chdir(projectRoot)
 
-	gate, err := resolveInfraGate()
+	gate, err := resolveInfraGate("bicep")
 	require.NoError(t, err)
 	assert.True(t, gate.standaloneEject)
 	assert.Equal(t, projectRoot, gate.projectRoot)
@@ -970,7 +1409,7 @@ func TestResolveInfraGate_NoProjectRunsInit(t *testing.T) {
 	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
 	t.Chdir(t.TempDir())
 
-	gate, err := resolveInfraGate()
+	gate, err := resolveInfraGate("bicep")
 	require.NoError(t, err)
 	assert.False(t, gate.standaloneEject)
 	assert.Empty(t, gate.projectRoot, "no project root to eject from yet")
@@ -991,7 +1430,7 @@ services:
 	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
 	t.Chdir(projectRoot)
 
-	_, err := resolveInfraGate()
+	_, err := resolveInfraGate("bicep")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
@@ -1016,7 +1455,7 @@ services:
 `)
 	t.Chdir(projectRoot)
 
-	_, err := resolveInfraGate()
+	_, err := resolveInfraGate("bicep")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
@@ -1096,7 +1535,7 @@ services:
 `)
 	t.Chdir(projectRoot)
 
-	gate, err := resolveInfraGate()
+	gate, err := resolveInfraGate("bicep")
 	require.NoError(t, err)
 	require.False(t, gate.standaloneEject, "no Foundry service yet, so init has to run first")
 	require.Equal(t, projectRoot, gate.projectRoot)

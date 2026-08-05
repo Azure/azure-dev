@@ -1133,16 +1133,15 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// through to the normal init flow and ejects afterwards via
 			// ejectInfraAfterInit. See resolveInfraGate.
 			if infraProvider != "" {
-				gate, gateErr := resolveInfraGate()
+				gate, gateErr := resolveInfraGate(infraProvider)
 				if gateErr != nil {
 					return gateErr
 				}
 				if gate.standaloneEject {
-					// Reject inputs the eject path would silently ignore (a
-					// positional arg, -m, or --src) instead of pretending they
-					// were honored. They stay valid on the init fall-through,
-					// where they do drive the flow.
-					if err := validateStandaloneEjectArgs(args, flags); err != nil {
+					// Reject init inputs the eject path would silently ignore
+					// instead of pretending they were honored. They stay valid
+					// on the init fall-through, where they do drive the flow.
+					if err := validateStandaloneEjectArgs(cmd, args); err != nil {
 						return err
 					}
 					return ejectInfra(gate.projectRoot, infraProvider)

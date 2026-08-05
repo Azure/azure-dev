@@ -892,6 +892,7 @@ services:
 	outputs, err := os.ReadFile(filepath.Join(dir, "infra", "outputs.tf")) //nolint:gosec // G304: test path from t.TempDir()
 	require.NoError(t, err)
 	assert.Contains(t, string(outputs), "AZURE_AI_PROJECT_CONNECTION_NAMES")
+	assert.Contains(t, string(outputs), "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT")
 }
 
 func TestEjectInfra_Terraform_NoDockerOmitsAcr(t *testing.T) {

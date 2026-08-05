@@ -436,6 +436,12 @@ func TestArmOutputsToProto(t *testing.T) {
 // The fix is in armOutputsToProto: case-insensitive lookup against
 // canonicalOutputNames, then emit the canonical name. Unknown keys
 // pass through verbatim so we never silently lose an output.
+func TestInvalidatedEnvKeysClearsConnectionReadinessRecord(t *testing.T) {
+	result := invalidatedEnvKeysResult()
+	assert.Contains(t, result.InvalidatedEnvKeys, "AZURE_AI_PROJECT_CONNECTION_NAMES")
+	assert.Contains(t, result.InvalidatedEnvKeys, "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT")
+}
+
 func TestArmOutputsToProto_RepairsMangledKeyCase(t *testing.T) {
 	tests := []struct {
 		name    string

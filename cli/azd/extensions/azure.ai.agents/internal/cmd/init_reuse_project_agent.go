@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"azureaiagent/internal/cmd/nextstep"
+	"azureaiagent/internal/pkg/paths"
+	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -24,6 +26,10 @@ import (
 type projectAgentService struct {
 	ServiceName string
 	AgentName   string
+	// RelativePath is the configured service source directory. It lets a
+	// positional `.` from that directory reuse the owning service rather than
+	// falling through to bare agent.yaml reuse.
+	RelativePath string
 }
 
 type projectAgentDetection struct {
@@ -55,34 +61,65 @@ func detectProjectAgentServices(ctx context.Context, azdClient *azdext.AzdClient
 	}
 
 	project := projectResponse.GetProject()
+	services, diagnostics := projectAgentServicesFrom(project.GetServices(), project.GetPath())
+	for _, diagnostic := range diagnostics {
+		log.Printf("agent reuse: configured service is not reusable: %s", diagnostic)
+	}
+
 	return projectAgentDetection{
-		services:    projectAgentServicesFrom(project.GetServices()),
+		services:    services,
 		projectRoot: project.GetPath(),
 	}
 }
 
 // projectAgentServicesFrom selects the agent services out of a project's service
-// map, resolving each display name and sorting by service name.
-func projectAgentServicesFrom(services map[string]*azdext.ServiceConfig) []projectAgentService {
+// map only when their definitions resolve successfully. Invalid or missing
+// definitions are returned as diagnostics so no-prompt reuse cannot report
+// success for an incomplete service.
+func projectAgentServicesFrom(
+	services map[string]*azdext.ServiceConfig,
+	projectRoot string,
+) ([]projectAgentService, []string) {
 	var found []projectAgentService
+	var diagnostics []string
 	for serviceName, svc := range services {
 		if svc.GetHost() != AiAgentHost {
 			continue
 		}
 
+		if _, err := paths.JoinAllowRoot(projectRoot, svc.GetRelativePath()); err != nil {
+			diagnostics = append(diagnostics,
+				fmt.Sprintf("service %q has invalid project path: %v", serviceName, err))
+			continue
+		}
+
+		definition, _, _, err := projectpkg.LoadAgentDefinition(svc, projectRoot)
+		if err != nil {
+			diagnostics = append(diagnostics,
+				fmt.Sprintf("service %q: %v", serviceName, err))
+			continue
+		}
+
 		agentName, _ := adoptedAgentNameConfig(svc)
+		if agentName == "" {
+			agentName = definition.Name
+		}
 		if agentName == "" {
 			agentName = serviceName
 		}
 
-		found = append(found, projectAgentService{ServiceName: serviceName, AgentName: agentName})
+		found = append(found, projectAgentService{
+			ServiceName:  serviceName,
+			AgentName:    agentName,
+			RelativePath: svc.GetRelativePath(),
+		})
 	}
 
 	slices.SortFunc(found, func(a, b projectAgentService) int {
 		return strings.Compare(a.ServiceName, b.ServiceName)
 	})
 
-	return found
+	return found, diagnostics
 }
 
 // positionalSourceOptsOutOfReuse reports whether a positional source directory
@@ -92,7 +129,11 @@ func projectAgentServicesFrom(services map[string]*azdext.ServiceConfig) []proje
 // the current project and may reuse its configured agent. A positional
 // `./agents/new`, however, explicitly selects source for a new agent and must
 // not be silently ignored by reuse.
-func positionalSourceOptsOutOfReuse(src, projectRoot string) bool {
+func positionalSourceOptsOutOfReuse(
+	src string,
+	projectRoot string,
+	services []projectAgentService,
+) bool {
 	if src == "" {
 		return false
 	}
@@ -118,7 +159,25 @@ func positionalSourceOptsOutOfReuse(src, projectRoot string) bool {
 		return true
 	}
 
-	return !os.SameFile(srcInfo, rootInfo)
+	if os.SameFile(srcInfo, rootInfo) {
+		return false
+	}
+
+	for _, service := range services {
+		if service.RelativePath == "" {
+			continue
+		}
+		servicePath, err := paths.JoinAllowRoot(projectRoot, service.RelativePath)
+		if err != nil {
+			continue
+		}
+		serviceInfo, err := os.Stat(servicePath)
+		if err == nil && os.SameFile(srcInfo, serviceInfo) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // describeProjectAgentServices renders the detected agent services for a prompt
@@ -174,7 +233,7 @@ func runReuseProjectAgentServices(
 
 	fmt.Println(color.HiBlackString("Reusing the agent configuration already in this project."))
 
-	state, _ := nextstep.AssembleState(ctx, azdClient)
+	state, _ := nextstep.AssembleState(ctx, azdClient, nextstep.WithEnvironment(env.Name))
 	_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state, readmeExistsForProject(ctx, azdClient)))
 
 	return nil

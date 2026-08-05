@@ -3,6 +3,15 @@
 // simple changes (simple version bump, no changes to important fields) can go by with just a simple approval from any developer.
 const { isDeepStrictEqual } = require('node:util');
 
+// The registries this check governs. The ext-registry-check workflow keeps an inline
+// copy of this list (it runs its detection step before the checkout, so it can't
+// require this file); a test asserts the two stay in sync.
+const PROD_REGISTRY_JSON_PATH = 'cli/azd/extensions/registry.json';
+const REGISTRY_JSON_PATHS = new Set([
+  PROD_REGISTRY_JSON_PATH,
+  'cli/azd/extensions/registry.dev.json',
+]);
+
 // GitHub Actions entry point.
 module.exports = run;
 
@@ -14,11 +23,12 @@ module.exports.forTests = {
   isAllowedRegistryJsonUpdate,
   isCreatedByCoreTeam,
   diffRegistry,
+  REGISTRY_JSON_PATHS,
 }
 
-const REGISTRY_JSON_PATHS = new Set([
-  'cli/azd/extensions/registry.json',
-  'cli/azd/extensions/registry.dev.json',
+// TestFigSpec snapshots may accompany production registry updates.
+const ALLOWED_COMPANION_PATHS = new Set([
+  'cli/azd/cmd/testdata/TestFigSpec.ts',
 ]);
 
 // We only allow URLs that point to our GitHub releases page.
@@ -312,18 +322,39 @@ function isRegistryFile(file) {
 }
 
 /**
- * Flags file-level changes that disqualify a PR from the registry-only fast path.
- * Only in-place edits to the known registry files may skip core review; touching any
- * other file, or renaming/deleting a registry file, requires a core reviewer.
+ * @param {PullRequestFile} file
+ * @returns {boolean}
+ */
+function isInPlaceModification(file) {
+  return file.previous_filename == null &&
+    (file.status == null || file.status === 'modified');
+}
+
+/**
+ * @param {PullRequestFile} file
+ * @returns {boolean}
+ */
+function isAllowedCompanionFileChange(file) {
+  return ALLOWED_COMPANION_PATHS.has(file.filename) && isInPlaceModification(file);
+}
+
+/**
+ * Flags file changes that require core review. Companion snapshots are allowed only
+ * with an in-place production registry update.
  *
  * @param {PullRequestFile[]} changedFiles
  * @returns {string[]} the reasons core review is needed; empty means every change is registry-only
  */
 function diffChangedFiles(changedFiles) {
   const registryPaths = [...REGISTRY_JSON_PATHS].join(', ');
+  const updatesProductionRegistry = changedFiles.some(
+    (file) => file.filename === PROD_REGISTRY_JSON_PATH &&
+      isInPlaceModification(file));
 
   const nonRegistryFiles = changedFiles
-    .filter((file) => !isRegistryFile(file))
+    .filter((file) =>
+      !isRegistryFile(file) &&
+      !(updatesProductionRegistry && isAllowedCompanionFileChange(file)))
     .map((file) => file.filename);
 
   const renamedRegistryFiles = changedFiles

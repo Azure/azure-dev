@@ -62,6 +62,73 @@ func (e *DependencyNotFoundError) Error() string {
 	return fmt.Sprintf("dependency %s required by %s was not found", e.DependencyId, e.ParentId)
 }
 
+// Suggestion returns actionable guidance for installing the missing dependency.
+func (e *DependencyNotFoundError) Suggestion() string {
+	return fmt.Sprintf(
+		"Install the required dependency first with azd extension install %s, then retry.",
+		e.DependencyId,
+	)
+}
+
+// DependencyVersionNotFoundError indicates that a required dependency exists
+// but none of its versions satisfy the constraint declared by its parent.
+type DependencyVersionNotFoundError struct {
+	// DependencyId is the id of the dependency without a matching version.
+	DependencyId string
+	// ParentId is the id of the extension that declares the dependency.
+	ParentId string
+	// Constraint is the version constraint that could not be satisfied.
+	Constraint string
+}
+
+func (e *DependencyVersionNotFoundError) Error() string {
+	return fmt.Sprintf(
+		"dependency %s required by %s was found, but no version satisfies constraint %q",
+		e.DependencyId, e.ParentId, e.Constraint,
+	)
+}
+
+// Suggestion returns actionable guidance for resolving the dependency constraint.
+func (e *DependencyVersionNotFoundError) Suggestion() string {
+	return fmt.Sprintf(
+		"Install a version of %s that satisfies constraint %q, publish one to the same source as %s, "+
+			"or update %s's dependency constraint, then retry.",
+		e.DependencyId, e.Constraint, e.ParentId, e.ParentId,
+	)
+}
+
+// DependencyAzdVersionIncompatibleError indicates that dependency versions
+// satisfy the parent's constraint, but none support the running azd version.
+type DependencyAzdVersionIncompatibleError struct {
+	// DependencyId is the id of the incompatible dependency.
+	DependencyId string
+	// ParentId is the id of the extension that declares the dependency.
+	ParentId string
+	// Constraint is the dependency version constraint declared by the parent.
+	Constraint string
+	// RequiredAzdVersion is the azd version constraint declared by the dependency.
+	RequiredAzdVersion string
+}
+
+func (e *DependencyAzdVersionIncompatibleError) Error() string {
+	return fmt.Sprintf(
+		"dependency %s required by %s has versions satisfying constraint %q, "+
+			"but none are compatible with the current azd version",
+		e.DependencyId, e.ParentId, e.Constraint,
+	)
+}
+
+// Suggestion returns actionable guidance for installing a compatible azd version.
+func (e *DependencyAzdVersionIncompatibleError) Suggestion() string {
+	if e.RequiredAzdVersion == "" {
+		return "Use an azd version compatible with the dependency, then retry."
+	}
+	return fmt.Sprintf(
+		"Use an azd version that satisfies %q, then retry.",
+		e.RequiredAzdVersion,
+	)
+}
+
 // DependencyAmbiguousSourceError indicates that a required dependency of an
 // extension was found in more than one configured source, so azd cannot decide
 // which one to use. The caller must disambiguate by specifying an exact source.
@@ -630,6 +697,22 @@ func (m *Manager) installInternal(
 			}
 
 			if len(dependencyMatches) == 0 {
+				if dependency.Version != "" && !strings.EqualFold(dependency.Version, "latest") {
+					unconstrainedOptions := *dependencyOptions
+					unconstrainedOptions.Version = ""
+					unconstrainedMatches, err := m.FindExtensions(ctx, &unconstrainedOptions)
+					if err != nil {
+						return nil, fmt.Errorf("failed to find dependency %s: %w", dependency.Id, err)
+					}
+					if len(unconstrainedMatches) > 0 {
+						return nil, &DependencyVersionNotFoundError{
+							DependencyId: dependency.Id,
+							ParentId:     extension.Id,
+							Constraint:   dependency.Version,
+						}
+					}
+				}
+
 				return nil, &DependencyNotFoundError{DependencyId: dependency.Id, ParentId: extension.Id}
 			}
 
@@ -1001,15 +1084,34 @@ func (m *Manager) evaluateDependencyChanges(
 			if matchesVersionConstraint(dep.Version, installed.Version) {
 				continue
 			}
+			var resultErr error
+			var suggestion string
+			publishedVersion := bestSatisfyingVersion(dep.Version, childMetadata.Versions)
+			if publishedVersion == nil {
+				versionErr := &DependencyVersionNotFoundError{
+					DependencyId: dep.Id,
+					ParentId:     parentExtension.Id,
+					Constraint:   dep.Version,
+				}
+				resultErr = versionErr
+				suggestion = versionErr.Suggestion()
+			} else {
+				compatibilityErr := &DependencyAzdVersionIncompatibleError{
+					DependencyId:       dep.Id,
+					ParentId:           parentExtension.Id,
+					Constraint:         dep.Version,
+					RequiredAzdVersion: publishedVersion.RequiredAzdVersion,
+				}
+				resultErr = compatibilityErr
+				suggestion = compatibilityErr.Suggestion()
+			}
 			results = append(results, UpgradeResult{
 				ExtensionId: dep.Id,
 				Status:      UpgradeStatusFailed,
 				FromVersion: installed.Version,
 				FromSource:  installed.Source,
-				Error: fmt.Errorf(
-					"no compatible published version of %s satisfies constraint %q",
-					dep.Id, dep.Version,
-				),
+				Error:       resultErr,
+				Suggestion:  suggestion,
 			})
 			continue
 		}

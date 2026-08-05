@@ -1,5 +1,9 @@
 # Release History
 
+## 0.7.2 (2026-07-16)
+
+- Simple test release of extension, with no changes.
+
 ## 0.7.1 (2026-07-14)
 
 - Simple test release of extension, with no changes.

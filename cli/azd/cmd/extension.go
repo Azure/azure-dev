@@ -3149,6 +3149,13 @@ type extensionSourceRemoveAction struct {
 	args          []string
 }
 
+func extensionSourceDisplayName(name string) string {
+	if err := extensions.ValidateSourceName(name); err != nil {
+		return fmt.Sprintf("%q", name)
+	}
+	return name
+}
+
 func newExtensionSourceRemoveAction(
 	sourceManager *extensions.SourceManager,
 	console input.Console,
@@ -3179,7 +3186,8 @@ func (a *extensionSourceRemoveAction) Run(ctx context.Context) (*actions.ActionR
 	})
 
 	key := a.args[0]
-	spinnerMessage := fmt.Sprintf("Removing extension source (%s)", key)
+	displayName := extensionSourceDisplayName(key)
+	spinnerMessage := fmt.Sprintf("Removing extension source (%s)", displayName)
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
 	err := a.sourceManager.Remove(ctx, key)
@@ -3190,7 +3198,7 @@ func (a *extensionSourceRemoveAction) Run(ctx context.Context) (*actions.ActionR
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("Removed azd extension source %s", key),
+			Header: fmt.Sprintf("Removed azd extension source %s", displayName),
 			FollowUp: fmt.Sprintf(
 				"Add more extension sources by running %s",
 				output.WithHighLightFormat("azd extension source add <key>"),

@@ -79,7 +79,7 @@ func newRunListCommand() *cobra.Command {
 				[]string{"RUN ID", "NAME", "STATUS", "RESULTS"}, rows)
 		},
 	}
-	addEvalFlags(cmd, &groupName)
+	addEvalFlag(cmd, &groupName)
 	cmd.Flags().IntVar(&limit, "limit", 0,
 		"Return at most this many runs. Omit for the service default.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
@@ -173,7 +173,7 @@ func newRunShowCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&wait, "wait", false,
 		"Block until the run reaches a terminal state before reporting.")
 	addFailOnFlag(cmd, &failOn)
-	addEvalFlags(cmd, &groupName)
+	addEvalFlag(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -236,7 +236,7 @@ func newRunCancelCommand() *cobra.Command {
 			return nil
 		},
 	}
-	addEvalFlags(cmd, &groupName)
+	addEvalFlag(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -287,7 +287,7 @@ func newRunDeleteCommand() *cobra.Command {
 			return nil
 		},
 	}
-	addEvalFlags(cmd, &groupName)
+	addEvalFlag(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }

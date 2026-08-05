@@ -72,9 +72,8 @@ func newRunCommand() *cobra.Command {
 func buildRunCommand(use, short string) *cobra.Command {
 	var (
 		groupName   string
-		evalID      string
+		datasetName string
 		runName     string
-		level       string
 		maxSamples  int
 		wait        bool
 		failOn      string
@@ -112,6 +111,24 @@ func buildRunCommand(use, short string) *cobra.Command {
 			group := ref.Eval
 			configPath := ref.ConfigPath
 
+			if datasetName != "" {
+				if !ref.Declared() {
+					return errors.New(
+						"--dataset overrides the dataset an eval declares, so it needs a " +
+							"declared eval; pass --eval with a name from the configuration")
+				}
+				if _, ok := ref.Config.DatasetDeclaration(datasetName); !ok {
+					return fmt.Errorf(
+						"dataset %q is not in the catalog in %s",
+						datasetName, filepath.ToSlash(configPath))
+				}
+				// The eval keeps its own declaration; only this run reads elsewhere.
+				overridden := *group
+				overridden.Dataset = datasetName
+				overridden.Source = nil
+				group = &overridden
+			}
+
 			if ref.Declared() {
 				if err := ec.checkDatasetRegistered(ctx, ref.Config, group, configPath); err != nil {
 					return err
@@ -139,7 +156,7 @@ func buildRunCommand(use, short string) *cobra.Command {
 			}
 
 			metadata := map[string]string{}
-			if lvl := resolveLevel(level, group); lvl != "" {
+			if lvl := resolveLevel(group); lvl != "" {
 				metadata["evaluation_level"] = lvl
 			}
 
@@ -199,12 +216,11 @@ func buildRunCommand(use, short string) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&groupName, "eval", "",
-		"Name of the eval to run. Defaults to the only one declared.")
-	cmd.Flags().StringVar(&evalID, "eval-id", "",
-		"Run against an existing eval by id, ignoring the config.")
+		"Name of the eval to run, or its id. Defaults to the only one declared.")
+	cmd.Flags().StringVar(&datasetName, "dataset", "",
+		"Catalog dataset to read instead of the one the eval declares. "+
+			"Must satisfy the eval's column schema.")
 	cmd.Flags().StringVar(&runName, "name", "", "Name for this run. Defaults to the eval name plus a timestamp.")
-	cmd.Flags().StringVar(&level, "level", "",
-		"Scoring granularity: turn or conversation. Defaults to the service default (turn).")
 	cmd.Flags().IntVar(&maxSamples, "max-samples", 0,
 		"Cap the rows sent from the dataset.")
 	cmd.Flags().BoolVar(&wait, "wait", true, "Block until the run reaches a terminal state.")
@@ -557,10 +573,13 @@ func scanJSONL(r io.Reader, limit int) ([]map[string]any, error) {
 }
 
 // resolveLevel prefers the flag, then the eval's own declaration.
-func resolveLevel(flag string, group *project.Eval) string {
-	if flag != "" {
-		return flag
-	}
+// resolveLevel is the eval's declared scoring granularity.
+//
+// There is no per-run override: the level decides the row mapping, so two
+// levels under one eval would put incomparable result sets in the same history,
+// and it would bypass the supported_evaluation_levels check `azd up` does
+// against the declared level. A second level is a second eval.
+func resolveLevel(group *project.Eval) string {
 	if group != nil {
 		return group.EvaluationLevel
 	}

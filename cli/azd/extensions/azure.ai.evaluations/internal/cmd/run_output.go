@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"strings"
 
 	"azureaieval/internal/pkg/eval_api"
+	"azureaieval/internal/project"
 
 	"github.com/spf13/cobra"
 )
@@ -111,7 +113,7 @@ func newRunOutputListCommand() *cobra.Command {
 
 	cmd.Flags().BoolVar(&failedOnly, "failed-only", false, "Show only the rows that failed.")
 	cmd.Flags().StringVar(&outFile, "output-file", "", "Write JSON results to this path.")
-	addEvalFlags(cmd, &groupName)
+	addEvalFlag(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -166,7 +168,7 @@ func newRunOutputShowCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&runID, "run", "", "Run the item belongs to. Defaults to the most recent run.")
-	addEvalFlags(cmd, &groupName)
+	addEvalFlag(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -217,26 +219,36 @@ func newRunOutputExportCommand() *cobra.Command {
 				w = f
 			}
 
-			if format == "json" {
+			switch format {
+			case formatCSV:
+				return writeResultsCSV(w, run)
+			case formatJSON:
 				return emitJSON(w, run)
+			case formatJSONL:
+				return writeResultsJSONL(w, run)
+			default:
+				return fmt.Errorf(
+					"--format %q is not supported; use %s, %s or %s",
+					format, formatCSV, formatJSON, formatJSONL)
 			}
-			return writeResultsCSV(w, run)
 		},
 	}
 
-	cmd.Flags().StringVar(&format, "format", "json", "Output format: json or csv.")
+	cmd.Flags().StringVar(&format, "format", formatCSV,
+		fmt.Sprintf("Output format: %s, %s or %s.", formatCSV, formatJSON, formatJSONL))
 	cmd.Flags().StringVar(&outFile, "output-file", "", "Write to this path instead of stdout.")
-	addEvalFlags(cmd, &groupName)
+	addEvalFlag(cmd, &groupName)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
 
-// resolveEvalID takes the eval id from the argument, from a group named
-// with --eval, or from the id cached in the azd environment.
+// resolveEvalID takes the eval id from the argument, from --eval, or from the
+// id cached in the azd environment.
 //
-// The cached id is the last group deployed, which is unambiguous only while a
-// config declares one. --eval is how the others are reached without
-// having to know their service ids.
+// --eval accepts a name or a raw id on the one flag: an eval created outside a
+// project has no declaration to name, and the environment records one id per
+// name, so editing a declaration leaves every run of the previous eval
+// reachable only by id.
 func resolveEvalID(
 	cmd *cobra.Command,
 	ec *evalContext,
@@ -247,46 +259,27 @@ func resolveEvalID(
 		return args[0], nil
 	}
 
-	if flag, err := cmd.Flags().GetString("eval-id"); err == nil && flag != "" {
-		return flag, nil
-	}
-
 	if groupName != "" {
-		if id := ec.getEnvValue(cmd.Context(), idKey("eval", groupName)); id != "" {
-			return id, nil
+		ref, err := ec.resolveEvalRef(cmd.Context(), project.DefaultEvalDir, groupName)
+		if err != nil {
+			return "", err
 		}
-		return "", fmt.Errorf(
-			"eval %q has no id recorded in this environment; deploy it first, "+
-				"or pass its id directly", groupName)
+		return ref.ID, nil
 	}
 
 	if cached := ec.getEnvValue(cmd.Context(), envKeyEvalID); cached != "" {
 		return cached, nil
 	}
 	return "", fmt.Errorf(
-		"no eval id given; pass it as an argument, name one with --eval, "+
-			"or set %s in the azd environment",
-		envKeyEvalID)
+		"no eval given; pass its id as an argument, or name one with --eval")
 }
 
-// addEvalFlag registers the flag that names an eval from the config, for
-// commands that never take a raw service id.
+// addEvalFlag registers the flag that says which eval a command acts on. It
+// takes a name from the configuration or a raw service id, which is why there
+// is no second --eval-id beside it.
 func addEvalFlag(cmd *cobra.Command, target *string) {
 	cmd.Flags().StringVar(target, "eval", "",
-		"Name of the eval declared in azure.yaml.")
-}
-
-// addEvalFlags registers the two ways to say which eval a command acts
-// on: --eval names one from the config, --eval-id gives its service id.
-//
-// The id is also accepted as a positional argument. The flag exists because
-// `run start --eval-id` already spells it that way, and a script that learned
-// it there should not have to find out that the sibling commands take only a
-// positional.
-func addEvalFlags(cmd *cobra.Command, target *string) {
-	addEvalFlag(cmd, target)
-	cmd.Flags().String("eval-id", "",
-		"Id of the eval. Same as passing the id as an argument.")
+		"Name of the eval declared in the configuration, or its id.")
 }
 
 // latestOrNamedRun returns the named run, or the most recent one for the eval.
@@ -447,6 +440,35 @@ func writeResultsCSV(w io.Writer, run *eval_api.OpenAIEvalRun) error {
 		if err := cw.Write([]string{
 			run.ID, run.Status, cr.TestingCriteria,
 			strconv.Itoa(cr.Passed), strconv.Itoa(cr.Failed),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Export formats. csv is the default because the results are a table and a
+// build artifact is normally read by a spreadsheet or a diff.
+const (
+	formatCSV   = "csv"
+	formatJSON  = "json"
+	formatJSONL = "jsonl"
+)
+
+// writeResultsJSONL emits one criterion per line, which is what a downstream
+// job can stream without holding the whole run in memory.
+func writeResultsJSONL(w io.Writer, run *eval_api.OpenAIEvalRun) error {
+	enc := json.NewEncoder(w)
+	if len(run.PerTestingCriteria) == 0 {
+		return enc.Encode(map[string]any{"run_id": run.ID, "status": run.Status})
+	}
+	for _, cr := range run.PerTestingCriteria {
+		if err := enc.Encode(map[string]any{
+			"run_id":           run.ID,
+			"status":           run.Status,
+			"testing_criteria": cr.TestingCriteria,
+			"passed":           cr.Passed,
+			"failed":           cr.Failed,
 		}); err != nil {
 			return err
 		}

@@ -28,16 +28,17 @@ func TestResolveMaxSamples_Precedence(t *testing.T) {
 	assert.Equal(t, 0, resolveMaxSamples(0, &project.Eval{MaxSamples: 0}))
 }
 
-func TestResolveLevel_Precedence(t *testing.T) {
-	withOptions := &project.Eval{
+// The level is the eval's alone. A per-run override would put two incomparable
+// result sets under one eval's history, and would bypass the
+// supported_evaluation_levels check `azd up` does against the declared level.
+func TestResolveLevel_ComesFromTheEval(t *testing.T) {
+	declared := &project.Eval{
 		EvaluationLevel: project.EvaluationLevelConversation,
 	}
 
-	assert.Equal(t, project.EvaluationLevelTurn, resolveLevel(project.EvaluationLevelTurn, withOptions),
-		"the flag wins over the config")
-	assert.Equal(t, project.EvaluationLevelConversation, resolveLevel("", withOptions))
-	assert.Empty(t, resolveLevel("", &project.Eval{}), "unset defers to the service default")
-	assert.Empty(t, resolveLevel("", nil))
+	assert.Equal(t, project.EvaluationLevelConversation, resolveLevel(declared))
+	assert.Empty(t, resolveLevel(&project.Eval{}), "unset defers to the service default")
+	assert.Empty(t, resolveLevel(nil))
 }
 
 // A group's target decides which run-time fields its criteria can bind. Getting

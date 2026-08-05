@@ -492,14 +492,21 @@ func TestUpgradeOneExtension(t *testing.T) {
 			name:        "skipped_delisted_extension",
 			extensionId: "missing-ext",
 			installed: map[string]*extensions.Extension{
-				"missing-ext": {Id: "missing-ext", Version: "1.0.0", Source: "test"},
+				"missing-ext": {
+					Id:             "missing-ext",
+					Version:        "1.0.0",
+					Source:         "test",
+					SourceCategory: extensions.SourceCategoryDev,
+				},
 			},
 			registry: testRegistry(), // empty registry
 			flags: extensionUpgradeFlags{
 				global: &internal.GlobalCommandOptions{NoPrompt: true},
 			},
-			wantStatus:     extensions.UpgradeStatusSkipped,
-			wantSkipReason: "extension no longer available in any configured registry",
+			wantStatus:             extensions.UpgradeStatusSkipped,
+			wantSkipReason:         "extension no longer available in any configured registry",
+			wantFromSourceCategory: extensions.SourceCategoryDev,
+			wantToSourceCategory:   extensions.SourceCategoryDev,
 		},
 		{
 			name:        "failed_no_stored_or_main_source_match",

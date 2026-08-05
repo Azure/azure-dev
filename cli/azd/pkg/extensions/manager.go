@@ -1177,6 +1177,8 @@ func (m *Manager) evaluateDependencyChanges(
 			FromVersion:        installed.Version,
 			FromSource:         installed.Source,
 			FromSourceCategory: installed.SourceCategoryOrUnknown(),
+			ToSource:           childMetadata.Source,
+			ToSourceCategory:   childMetadata.SourceCategoryOrUnknown(),
 		}
 
 		// Correlate the child upgrade with its triggering parent.
@@ -1184,6 +1186,7 @@ func (m *Manager) evaluateDependencyChanges(
 		span.SetAttributes(
 			fields.ExtensionId.String(dep.Id),
 			fields.ExtensionDependencyOf.String(parentExtension.Id),
+			fields.ExtensionSourceCategory.String(string(childMetadata.SourceCategoryOrUnknown())),
 		)
 
 		childOpts := UpgradeOptions{
@@ -1203,13 +1206,10 @@ func (m *Manager) evaluateDependencyChanges(
 
 		childResult.Status = UpgradeStatusUpgraded
 		childResult.ToVersion = childVersion.Version
-		childResult.ToSource = childMetadata.Source
-		childResult.ToSourceCategory = childMetadata.SourceCategoryOrUnknown()
 		childResult.DependencyUpgrades = nested
 		span.SetAttributes(
 			fields.ExtensionVersionFrom.String(installed.Version),
 			fields.ExtensionVersionTo.String(childVersion.Version),
-			fields.ExtensionSourceCategory.String(string(childMetadata.SourceCategoryOrUnknown())),
 		)
 		span.EndWithStatus(nil)
 		results = append(results, childResult)

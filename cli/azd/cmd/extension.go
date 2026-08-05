@@ -2404,6 +2404,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	baseResult.FromVersion = installed.Version
 	baseResult.FromSource = installed.Source
 	baseResult.FromSourceCategory = installed.SourceCategoryOrUnknown()
+	baseResult.ToSourceCategory = baseResult.FromSourceCategory
 
 	// Extensions installed from a self-contained bundle have no live registry to
 	// upgrade against. Skip them gracefully and direct the user to reinstall with

@@ -20,6 +20,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -1569,6 +1571,38 @@ func Test_ExtensionSourceAddAction_EmptyNameError(t *testing.T) {
 	}
 	_, err := action.Run(t.Context())
 	require.Error(t, err)
+}
+
+func Test_ExtensionSourceAddAction_EmitsSourceCategory(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+	t.Cleanup(tracing.ResetUsageAttributesForTest)
+
+	sm, cfgMgr := newTestSourceManager(t)
+	cfg := config.NewEmptyConfig()
+	cfgMgr.On("Load").Return(cfg, nil)
+	cfgMgr.On("Save", mock.Anything).Return(nil)
+
+	action := &extensionSourceAddAction{
+		sourceManager: sm,
+		console:       mockinput.NewMockConsole(),
+		flags: &extensionSourceAddFlags{
+			name:     "private-source",
+			location: writeRegistryFile(t),
+			kind:     string(extensions.SourceKindFile),
+		},
+	}
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+
+	var category string
+	for _, attr := range tracing.GetUsageAttributes() {
+		if attr.Key == fields.ExtensionSourceCategory.Key {
+			category = attr.Value.AsString()
+		}
+		require.NotContains(t, attr.Value.Emit(), action.flags.location)
+		require.NotContains(t, attr.Value.Emit(), action.flags.name)
+	}
+	require.Equal(t, string(extensions.SourceCategoryLocal), category)
 }
 
 func Test_ExtensionSourceListAction_DefaultSource(t *testing.T) {

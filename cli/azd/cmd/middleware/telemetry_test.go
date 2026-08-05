@@ -101,12 +101,15 @@ func Test_Telemetry_Run(t *testing.T) {
 		// to verify sorting behavior
 		installedExtensions := map[string]*extensions.Extension{
 			"microsoft.azd.demo": {
-				Id:      "microsoft.azd.demo",
-				Version: "0.5.0",
+				Id:             "microsoft.azd.demo",
+				Version:        "0.5.0",
+				Source:         "customer-private-registry",
+				SourceCategory: extensions.SourceCategoryOther,
 			},
 			"microsoft.azd.ai": {
 				Id:      "microsoft.azd.ai",
 				Version: "1.2.0",
+				Source:  "/private/legacy/path",
 			},
 		}
 		err = userConfig.Set("extension.installed", installedExtensions)
@@ -133,6 +136,17 @@ func Test_Telemetry_Run(t *testing.T) {
 			[]string{"microsoft.azd.ai@1.2.0", "microsoft.azd.demo@0.5.0"},
 			installedAttr.Value.AsStringSlice(),
 		)
+		sourceCategoryAttr := findAttribute(span.Attributes, "extension.installed.source.category")
+		require.NotNil(t, sourceCategoryAttr)
+		require.Equal(
+			t,
+			[]string{"microsoft.azd.ai@unknown", "microsoft.azd.demo@other"},
+			sourceCategoryAttr.Value.AsStringSlice(),
+		)
+		for _, attr := range span.Attributes {
+			require.NotContains(t, attr.Value.Emit(), "customer-private-registry")
+			require.NotContains(t, attr.Value.Emit(), "/private/legacy/path")
+		}
 	})
 
 	t.Run("WithNoInstalledExtensions", func(t *testing.T) {
@@ -159,6 +173,9 @@ func Test_Telemetry_Run(t *testing.T) {
 		installedAttr := findAttribute(span.Attributes, "extension.installed")
 		require.NotNil(t, installedAttr, "extension.installed attribute should be set")
 		require.Empty(t, installedAttr.Value.AsStringSlice(), "should be an empty slice when no extensions are installed")
+		sourceCategoryAttr := findAttribute(span.Attributes, "extension.installed.source.category")
+		require.NotNil(t, sourceCategoryAttr)
+		require.Empty(t, sourceCategoryAttr.Value.AsStringSlice())
 	})
 
 	t.Run("WithAllNilExtensionEntries", func(t *testing.T) {

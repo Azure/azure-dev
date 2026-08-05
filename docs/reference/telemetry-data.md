@@ -458,16 +458,19 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.id` | string | Extension identifier |
 | `extension.version` | string | Extension version |
 | `extension.installed` | string[] | List of installed extensions (`id@version`) |
+| `extension.installed.source.category` | string[] | Installed extension source categories (`id@category`) |
 | `extension.version.from` | string | Version before an update or promotion (`ext.update`, `ext.promote`) |
 | `extension.version.to` | string | Version after an update or promotion (`ext.update`, `ext.promote`) |
-| `extension.source` | string | Registry source used for an update (`ext.update`) |
+| `extension.source.category` | string | Fixed source category: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, or `unknown` (`ext.install`, `ext.update`, `azd extension source add`) |
 | `extension.source.kind` | string | Kind of `--source` argument: `none`, `registered`, or `location` (`azd extension list`, `show`, `install`, `update`) |
-| `extension.source.from` | string | Registry source before a promotion (`ext.promote`) |
-| `extension.source.to` | string | Registry source after a promotion (`ext.promote`) |
+| `extension.source.category.from` | string | Fixed source category before a promotion (`ext.promote`) |
+| `extension.source.category.to` | string | Fixed source category after a promotion (`ext.promote`) |
 | `extension.update.duration_ms` | measurement | Duration (ms) of a single update (`ext.update`) |
 | `extension.update.outcome` | string | Update result status (`ext.update`) |
 | `extension.dependency_of` | string | Parent extension ID when an extension is updated as a dependency (`ext.update`) |
 | `extension.dependency_update_count` | measurement | Number of dependency extensions updated recursively (`ext.update`) |
+
+Source categories are classified from the configured source type and location, not the user-defined source name. Raw source names, URLs, paths, and hosts are not emitted.
 </details>
 
 <details>

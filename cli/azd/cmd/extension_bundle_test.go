@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -76,6 +77,30 @@ func TestBundleSourceName(t *testing.T) {
 
 	require.Equal(t, "my-ext_1-0-0", bundleSourceName("/tmp/My Ext_1.0.0.zip"))
 	require.Equal(t, "bundle", bundleSourceName("bundle.zip"))
+}
+
+func TestPrepareBundleInstall_LongNameUsesValidTransientSource(t *testing.T) {
+	t.Parallel()
+
+	action, _ := newBundleInstallTestAction(t)
+	zipPath := makeBundleZip(t, []*extensions.ExtensionMetadata{
+		{
+			Id:          "test.ext",
+			DisplayName: "Test Extension",
+			Versions: []extensions.ExtensionVersion{
+				{Version: "1.0.0", Artifacts: map[string]extensions.ExtensionArtifact{
+					"linux/amd64": {URL: "artifacts/ext.tar.gz"},
+				}},
+			},
+		},
+	})
+	longPath := filepath.Join(filepath.Dir(zipPath), strings.Repeat("a", 100)+".zip")
+	require.NoError(t, os.Rename(zipPath, longPath))
+
+	require.NoError(t, action.prepareBundleInstall(t.Context(), longPath))
+	require.NoError(t, extensions.ValidateSourceName(action.bundleSourceName))
+	require.LessOrEqual(t, len(action.bundleSourceName), extensions.SourceNameMaxLength)
+	action.cleanupBundleInstall(t.Context())
 }
 
 func TestCleanupBundleInstall_RemovesTempDir(t *testing.T) {

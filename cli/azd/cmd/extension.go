@@ -174,6 +174,8 @@ Use --output json for a structured report of all upgrade results.`,
 			Use:   "add",
 			Short: "Add an extension source with the specified name",
 			Long: "Add an extension source with the specified name.\n\n" +
+				"Names must contain 1-64 lowercase ASCII letters, digits, hyphens, or underscores, " +
+				"and must begin and end with a letter or digit. The name 'bundle' is reserved.\n\n" +
 				"`azd extension install --source` and `azd extension upgrade --source` also accept " +
 				"a registry URL or file path directly.",
 		},
@@ -1331,6 +1333,13 @@ func (a *extensionInstallAction) prepareBundleInstall(ctx context.Context, bundl
 	if base == "" {
 		base = "bundle"
 	}
+	maxBaseLength := extensions.SourceNameMaxLength - len(suffix) - 1
+	if len(base) > maxBaseLength {
+		base = strings.TrimRight(base[:maxBaseLength], "-_")
+	}
+	if base == "" {
+		base = "bundle"
+	}
 	sourceName := fmt.Sprintf("%s-%s", base, suffix)
 
 	stepMessage := "Extracting extension bundle"
@@ -1746,11 +1755,11 @@ func registerSourceFromLocation(
 			console.Message(ctx, output.WithErrorFormat("Extension source name cannot be empty"))
 			continue
 		}
-		if err := validateSourceName(sourceName); err != nil {
+		if err := extensions.ValidateSourceName(sourceName); err != nil {
 			console.Message(ctx, output.WithErrorFormat(err.Error()))
 			continue
 		}
-		if _, err := sourceManager.Get(ctx, extensions.NormalizeSourceKey(sourceName)); err == nil {
+		if _, err := sourceManager.Get(ctx, sourceName); err == nil {
 			console.Message(ctx, output.WithErrorFormat("Extension source '%s' already exists", sourceName))
 			continue
 		} else if !errors.Is(err, extensions.ErrSourceNotFound) {
@@ -1799,19 +1808,6 @@ func resolveRegisteredSourceName(
 	_, err := sourceManager.Get(ctx, source)
 	if err == nil {
 		return source, true, nil
-	}
-	if !errors.Is(err, extensions.ErrSourceNotFound) {
-		return "", false, fmt.Errorf("failed to resolve extension source %q: %w", source, err)
-	}
-
-	normalizedSource := extensions.NormalizeSourceKey(source)
-	if normalizedSource == source {
-		return "", false, nil
-	}
-
-	_, err = sourceManager.Get(ctx, normalizedSource)
-	if err == nil {
-		return normalizedSource, true, nil
 	}
 	if !errors.Is(err, extensions.ErrSourceNotFound) {
 		return "", false, fmt.Errorf("failed to resolve extension source %q: %w", source, err)
@@ -1876,19 +1872,6 @@ func normalizeUrlLocation(location string) string {
 	return parsed.String()
 }
 
-func validateSourceName(name string) error {
-	if strings.Contains(name, ".") {
-		return errors.New("Extension source name cannot contain '.'")
-	}
-	if strings.ContainsAny(name, `/\`) {
-		return errors.New("Extension source name cannot contain path separators")
-	}
-	if strings.EqualFold(extensions.NormalizeSourceKey(name), extensions.BundleSourceName) {
-		return fmt.Errorf("Extension source name '%s' is reserved", extensions.BundleSourceName)
-	}
-	return nil
-}
-
 func sourceArgKind(source string) string {
 	if source == "" {
 		return "none"
@@ -1924,6 +1907,9 @@ func resolveSourceFilter(
 
 	kind, ok := inferSourceKind(source)
 	if !ok {
+		if err := extensions.ValidateSourceName(source); err != nil {
+			return sourceFilterResolution{}, err
+		}
 		return sourceFilterResolution{source: source}, nil
 	}
 
@@ -3073,7 +3059,13 @@ type extensionSourceAddFlags struct {
 
 func newExtensionSourceAddFlags(cmd *cobra.Command) *extensionSourceAddFlags {
 	flags := &extensionSourceAddFlags{}
-	cmd.Flags().StringVarP(&flags.name, "name", "n", "", "The name of the extension source")
+	cmd.Flags().StringVarP(
+		&flags.name,
+		"name",
+		"n",
+		"",
+		"The source name: 1-64 lowercase letters, digits, hyphens, or underscores.",
+	)
 	cmd.Flags().StringVarP(&flags.location, "location", "l", "", "The location of the extension source")
 	cmd.Flags().StringVarP(&flags.kind,
 		"type", "t", "", "The type of the extension source. Supported types are 'file' and 'url'")
@@ -3104,6 +3096,10 @@ func (a *extensionSourceAddAction) Run(ctx context.Context) (*actions.ActionResu
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Add extension source (azd extension source add)",
 	})
+
+	if err := extensions.ValidateSourceName(a.flags.name); err != nil {
+		return nil, err
+	}
 
 	spinnerMessage := "Validating extension source"
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
@@ -3182,7 +3178,7 @@ func (a *extensionSourceRemoveAction) Run(ctx context.Context) (*actions.ActionR
 		Title: "Remove extension source (azd extension source remove)",
 	})
 
-	var key = strings.ToLower(a.args[0])
+	key := a.args[0]
 	spinnerMessage := fmt.Sprintf("Removing extension source (%s)", key)
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 

@@ -30,6 +30,9 @@ const (
 	baseConfigKey      string = "extension.sources"
 	installedConfigKey string = "extension.installed"
 
+	// SourceNameMaxLength is the maximum number of ASCII characters in an extension source name.
+	SourceNameMaxLength = 64
+
 	// BundleSourceName is the reserved source recorded for extensions installed
 	// from a self-contained bundle (.zip). The bundle's own source is ephemeral
 	// and removed after install, so the extension is marked with this name; it has
@@ -40,6 +43,7 @@ const (
 var (
 	ErrSourceNotFound    = errors.New("extension source not found")
 	ErrSourceExists      = errors.New("extension source already exists")
+	ErrSourceNameInvalid = errors.New("invalid extension source name")
 	ErrSourceTypeInvalid = errors.New("invalid extension source type")
 	ErrSourceReserved    = errors.New("extension source name is reserved")
 )
@@ -88,51 +92,53 @@ func (sm *SourceManager) Get(ctx context.Context, name string) (*SourceConfig, e
 
 // Add adds a new extension source.
 func (sm *SourceManager) Add(ctx context.Context, name string, source *SourceConfig) error {
-	newKey := NormalizeSourceKey(name)
-
-	if strings.EqualFold(newKey, BundleSourceName) {
-		return fmt.Errorf(
-			"'%s' is reserved for extensions installed from a self-contained bundle, %w",
-			BundleSourceName, ErrSourceReserved,
-		)
+	if err := ValidateSourceName(name); err != nil {
+		return err
 	}
 
-	existing, err := sm.Get(ctx, newKey)
+	existing, err := sm.Get(ctx, name)
 	if existing != nil && err == nil {
 		return fmt.Errorf("extension source '%s' already exists, %w", name, ErrSourceExists)
 	}
-
-	if source.Name == "" {
-		source.Name = name
+	if err != nil && !errors.Is(err, ErrSourceNotFound) {
+		return fmt.Errorf("checking extension source '%s': %w", name, err)
 	}
 
-	source.Name = newKey
+	source.Name = name
 
 	return sm.addInternal(source)
 }
 
 // Remove removes an extension source.
 func (sm *SourceManager) Remove(ctx context.Context, name string) error {
-	name = NormalizeSourceKey(name)
-
-	_, err := sm.Get(ctx, name)
-	if err != nil && errors.Is(err, ErrSourceNotFound) {
-		return fmt.Errorf("extension source '%s' not found, %w", name, err)
-	}
-
 	config, err := sm.configManager.Load()
 	if err != nil {
 		return fmt.Errorf("unable to load user configuration: %w", err)
 	}
 
-	path := fmt.Sprintf("%s.%s", baseConfigKey, name)
-	_, ok := config.Get(path)
+	rawSources, ok := config.Get(baseConfigKey)
 	if !ok {
-		return nil
+		return fmt.Errorf("extension source '%s' not found, %w", name, ErrSourceNotFound)
 	}
 
-	err = config.Unset(path)
-	if err != nil {
+	sourceMap, ok := rawSources.(map[string]any)
+	if !ok {
+		return fmt.Errorf("unable to parse extension sources")
+	}
+
+	matches := sourceKeysMatchingName(sourceMap, name, false)
+	if len(matches) == 0 {
+		matches = sourceKeysMatchingName(sourceMap, name, true)
+	}
+	if len(matches) == 0 {
+		return fmt.Errorf("extension source '%s' not found, %w", name, ErrSourceNotFound)
+	}
+	if len(matches) > 1 {
+		return fmt.Errorf("extension source name '%s' matches multiple configured sources", name)
+	}
+
+	delete(sourceMap, matches[0])
+	if err := config.Set(baseConfigKey, sourceMap); err != nil {
 		return fmt.Errorf("unable to remove extension source '%s': %w", name, err)
 	}
 
@@ -155,7 +161,10 @@ func (sm *SourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 
 	rawSources, ok := config.Get(baseConfigKey)
 	if ok {
-		sourceMap := rawSources.(map[string]any)
+		sourceMap, ok := rawSources.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("unable to parse extension sources")
+		}
 		for key, rawSource := range sourceMap {
 			var sourceConfig *SourceConfig
 
@@ -167,6 +176,10 @@ func (sm *SourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 			err = json.Unmarshal(jsonBytes, &sourceConfig)
 			if err != nil {
 				return nil, fmt.Errorf("unable to parse source '%s': %w", key, err)
+			}
+
+			if err := validateConfiguredSource(key, sourceConfig); err != nil {
+				return nil, err
 			}
 
 			allSourceConfigs = append(allSourceConfigs, sourceConfig)
@@ -247,10 +260,98 @@ func (sm *SourceManager) addInternal(source *SourceConfig) error {
 	return nil
 }
 
-// NormalizeSourceKey normalizes an extension source name for use in configuration keys.
-func NormalizeSourceKey(key string) string {
-	key = strings.ToLower(key)
-	key = strings.ReplaceAll(key, " ", "-")
+// ValidateSourceName validates a source name for configuration and command-line use.
+func ValidateSourceName(name string) error {
+	if len(name) == 0 || len(name) > SourceNameMaxLength {
+		return fmt.Errorf(
+			"%w: must be between 1 and %d characters",
+			ErrSourceNameInvalid,
+			SourceNameMaxLength,
+		)
+	}
+	if strings.EqualFold(name, BundleSourceName) {
+		return fmt.Errorf(
+			"'%s' is reserved for extensions installed from a self-contained bundle, %w",
+			BundleSourceName,
+			ErrSourceReserved,
+		)
+	}
+	for i, char := range []byte(name) {
+		if char >= 'a' && char <= 'z' || char >= '0' && char <= '9' {
+			continue
+		}
+		if (char == '-' || char == '_') && i > 0 && i < len(name)-1 {
+			continue
+		}
+		return fmt.Errorf(
+			"%w: must use lowercase ASCII letters, digits, hyphens, or underscores "+
+				"and begin and end with a letter or digit",
+			ErrSourceNameInvalid,
+		)
+	}
 
-	return key
+	return nil
+}
+
+func validateConfiguredSource(key string, source *SourceConfig) error {
+	if err := ValidateSourceName(key); err != nil {
+		return fmt.Errorf(
+			"configured extension source %q has an invalid name: %w; remove it with "+
+				"`azd extension source remove %q` and add it again with a valid name",
+			key,
+			err,
+			key,
+		)
+	}
+	if source == nil {
+		return fmt.Errorf("configured extension source %q is empty", key)
+	}
+	if err := ValidateSourceName(source.Name); err != nil {
+		return fmt.Errorf(
+			"configured extension source %q has an invalid stored name %q: %w; remove it with "+
+				"`azd extension source remove %q` and add it again with a valid name",
+			key,
+			source.Name,
+			err,
+			key,
+		)
+	}
+	if source.Name != key {
+		return fmt.Errorf(
+			"configured extension source key %q does not match its stored name %q; remove it with "+
+				"`azd extension source remove %q` and add it again",
+			key,
+			source.Name,
+			key,
+		)
+	}
+	return nil
+}
+
+func sourceKeysMatchingName(sourceMap map[string]any, name string, ignoreCase bool) []string {
+	matches := []string{}
+	equal := func(a, b string) bool {
+		if ignoreCase {
+			return strings.EqualFold(a, b)
+		}
+		return a == b
+	}
+
+	for key, rawSource := range sourceMap {
+		if equal(key, name) {
+			matches = append(matches, key)
+			continue
+		}
+
+		jsonBytes, err := json.Marshal(rawSource)
+		if err != nil {
+			continue
+		}
+		var source SourceConfig
+		if err := json.Unmarshal(jsonBytes, &source); err == nil && equal(source.Name, name) {
+			matches = append(matches, key)
+		}
+	}
+
+	return matches
 }

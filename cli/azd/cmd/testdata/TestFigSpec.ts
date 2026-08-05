@@ -5958,7 +5958,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--name', '-n'],
-									description: 'The name of the extension source',
+									description: 'The source name: 1-64 lowercase letters, digits, hyphens, or underscores.',
 									args: [
 										{
 											name: 'name',

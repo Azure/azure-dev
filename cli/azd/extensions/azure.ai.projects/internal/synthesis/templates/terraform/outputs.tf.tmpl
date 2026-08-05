@@ -2,7 +2,11 @@
 # the names must stay stable.
 
 output "AZURE_RESOURCE_GROUP" {
-  value = azurerm_resource_group.this.name
+  value = local.resource_group_name
+}
+
+output "AZURE_FOUNDRY_RESOURCE_GROUP" {
+  value = local.resource_group_name
 }
 
 output "AZURE_AI_PROJECT_ID" {

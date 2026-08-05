@@ -60,6 +60,12 @@ func TestInitCommand_ForceFlag(t *testing.T) {
 // TestHasFoundryProviderDeclared covers the predicate ensureProject
 // uses to suppress the "missing infra/" warning.
 func TestHasFoundryProviderDeclared(t *testing.T) {
+	layeredProject := func(t *testing.T, body string) *azdext.ProjectConfig {
+		t.Helper()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.yaml"), []byte(body), 0o600))
+		return &azdext.ProjectConfig{Path: dir, Infra: &azdext.InfraOptions{Provider: "bicep"}}
+	}
 	cases := []struct {
 		name string
 		proj *azdext.ProjectConfig
@@ -81,6 +87,20 @@ func TestHasFoundryProviderDeclared(t *testing.T) {
 			name: "matches",
 			proj: &azdext.ProjectConfig{Infra: &azdext.InfraOptions{Provider: project.FoundryProviderName}},
 			want: true,
+		},
+		{
+			name: "bicep eject layer is not foundry provider",
+			proj: layeredProject(t, `name: test
+infra:
+  layers:
+    - name: app
+      path: infra/app
+      provider: bicep
+    - name: foundry
+      path: infra/foundry
+      provider: bicep
+`),
+			want: false,
 		},
 	}
 

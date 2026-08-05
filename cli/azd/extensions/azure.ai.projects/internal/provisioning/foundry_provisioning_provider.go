@@ -47,6 +47,7 @@ const (
 	envKeySubscriptionID = "AZURE_SUBSCRIPTION_ID"
 	envKeyLocation       = "AZURE_LOCATION"
 	envKeyResourceGroup  = "AZURE_RESOURCE_GROUP"
+	envKeyFoundryRG      = "AZURE_FOUNDRY_RESOURCE_GROUP"
 	envKeyTenantID       = "AZURE_TENANT_ID"
 	envKeyProjectName    = "AZURE_AI_PROJECT_NAME"
 	envKeyPrincipalID    = "AZURE_PRINCIPAL_ID"
@@ -62,14 +63,18 @@ const (
 // FoundryProvisioningProvider implements azdext.ProvisioningProvider for
 // the service whose host is FoundryProjectHost. By default it deploys
 // the extension's pre-compiled ARM template (no bicep CLI required). When
-// ./infra/main.bicep or ./infra/main.bicepparam exists on disk (e.g. after
-// `azd ai agent init --infra`), it compiles that Bicep at runtime instead
+// the configured <path>/<module>.bicep or .bicepparam exists on disk (e.g.
+// after `azd ai agent init --infra`), it compiles that Bicep at runtime instead
 // and the user owns the parameter contract. See ondisk_template.go.
 type FoundryProvisioningProvider struct {
 	azdClient *azdext.AzdClient
 
 	// Populated by Initialize.
 	projectPath                 string
+	infraPath                   string
+	infraModule                 string
+	isLayer                     bool
+	virtualEnv                  map[string]string
 	synthResult                 *synthesis.Result // nil when onDiskSource != nil
 	serviceEnvironments         map[string]map[string]string
 	connectionEnvironmentScopes map[string]bool
@@ -77,13 +82,13 @@ type FoundryProvisioningProvider struct {
 	subID                       string
 	location                    string
 	rgName                      string
-	rgExplicit                  bool // AZURE_RESOURCE_GROUP came from env, not the rg-<env> default
+	rgExplicit                  bool // active resource-group env key came from env, not the default
 	foundryName                 string
 	principalID                 string
 	credential                  azcore.TokenCredential
 	tenantID                    string          // resolved lazily by ensureCredential; surfaced as AZURE_TENANT_ID
 	armTemplate                 map[string]any  // embedded ARM JSON; nil when onDiskSource is set
-	onDiskSource                *templateSource // non-nil when ./infra/main.{bicep,bicepparam} exists
+	onDiskSource                *templateSource // non-nil when configured on-disk Bicep exists
 
 	// brownfieldEndpoint is the existing project endpoint when the foundry
 	// service sets endpoint: (bring-your-own). When non-empty the provider skips
@@ -148,9 +153,103 @@ func (p *FoundryProvisioningProvider) Initialize(
 				options.GetProvider(), FoundryProviderName),
 		)
 	}
-	p.projectPath = projectPath
+	projectRoot, err := filepath.Abs(projectPath)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("resolve project path %q: %s", projectPath, err),
+			"verify the project path and Foundry infrastructure layer path",
+		)
+	}
+	projectRoot = filepath.Clean(projectRoot)
+	p.projectPath = projectRoot
+	configuredInfraPath := strings.TrimSpace(options.GetPath())
+	if configuredInfraPath == "" {
+		configuredInfraPath = onDiskInfraDir
+	}
+	if filepath.IsAbs(configuredInfraPath) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("Foundry infrastructure path %q must be project-relative", options.GetPath()),
+			"set infra.layers[].path to a project-relative directory",
+		)
+	}
+	if slices.Contains(strings.FieldsFunc(filepath.ToSlash(configuredInfraPath), func(r rune) bool { return r == '/' }), "..") {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("Foundry infrastructure path %q must not contain '..'", options.GetPath()),
+			"set infra.layers[].path to a directory inside the project",
+		)
+	}
+	infraPath := filepath.Join(projectRoot, configuredInfraPath)
+	relInfraPath, err := filepath.Rel(projectRoot, infraPath)
+	if err != nil || relInfraPath == "." || relInfraPath == ".." ||
+		strings.HasPrefix(relInfraPath, ".."+string(filepath.Separator)) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("Foundry infrastructure path %q must be inside the project", options.GetPath()),
+			"set infra.layers[].path to a project-relative directory",
+		)
+	}
+	rootReal, rootErr := filepath.EvalSymlinks(projectRoot)
+	existingPath := infraPath
+	for {
+		if _, statErr := os.Lstat(existingPath); statErr == nil {
+			break
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				fmt.Sprintf("inspect Foundry infrastructure path %q: %s", options.GetPath(), statErr),
+				"verify the Foundry infrastructure layer path",
+			)
+		}
+		parent := filepath.Dir(existingPath)
+		if parent == existingPath {
+			break
+		}
+		existingPath = parent
+	}
+	existingReal, existingErr := filepath.EvalSymlinks(existingPath)
+	if rootErr != nil || existingErr != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("resolve Foundry infrastructure path %q", options.GetPath()),
+			"verify the project and Foundry infrastructure layer paths",
+		)
+	}
+	relRealPath, err := filepath.Rel(rootReal, existingReal)
+	if err != nil || relRealPath == ".." || strings.HasPrefix(relRealPath, ".."+string(filepath.Separator)) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("Foundry infrastructure path %q escapes the project through a symbolic link", options.GetPath()),
+			"set infra.layers[].path to a directory inside the project",
+		)
+	}
+	p.infraPath = infraPath
+	p.infraModule = strings.TrimSpace(options.GetModule())
+	if p.infraModule == "" {
+		p.infraModule = onDiskModule
+	}
+	if p.infraModule == "." || p.infraModule == ".." ||
+		filepath.Base(p.infraModule) != p.infraModule ||
+		strings.ContainsAny(p.infraModule, `/\\`) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("Foundry infrastructure module %q must be a file name", p.infraModule),
+			"set infra.layers[].module to a file name without path separators",
+		)
+	}
+	if filepath.Ext(p.infraModule) != "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("Foundry infrastructure module %q must not include a file extension", p.infraModule),
+			"set infra.layers[].module to the module base name",
+		)
+	}
+	p.isLayer = strings.TrimSpace(options.GetName()) != ""
+	p.virtualEnv = maps.Clone(options.GetVirtualEnv())
 
-	rawYAML, azureYamlPath, err := readProjectFile(projectPath)
+	rawYAML, azureYamlPath, err := readProjectFile(projectRoot)
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
@@ -165,6 +264,9 @@ func (p *FoundryProvisioningProvider) Initialize(
 			"verify azure.yaml or azure.yml exists at the project root",
 		)
 	}
+	if err := validateFoundryProviderLayers(rawYAML); err != nil {
+		return err
+	}
 
 	svcName, err := findFoundryProjectService(rawYAML)
 	if err != nil {
@@ -175,7 +277,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 	// so it needs no subscription or location. Detect it up front so
 	// the environment can be resolved before any service values are
 	// read.
-	endpoint, err := foundryServiceEndpointAtRoot(rawYAML, projectPath, svcName)
+	endpoint, err := foundryServiceEndpointAtRoot(rawYAML, projectRoot, svcName)
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
@@ -195,7 +297,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 			ServiceName:     svcName,
 			AcceptedHosts:   FoundryProvisioningServiceHosts,
 			PreserveVarRefs: true,
-			ProjectRoot:     projectPath,
+			ProjectRoot:     projectRoot,
 		})
 		if validationErr != nil &&
 			!errors.Is(validationErr, synthesis.ErrEndpointBrownfield) {
@@ -204,7 +306,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 
 	p.connectionEnvironmentScopes, err =
-		synthesis.ConnectionEnvironmentScopes(rawYAML, projectPath)
+		synthesis.ConnectionEnvironmentScopes(rawYAML, projectRoot)
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
@@ -238,13 +340,13 @@ func (p *FoundryProvisioningProvider) Initialize(
 	// Detect on-disk Bicep before synthesizing. Stat-only; no compile here.
 	if onDisk {
 		log.Printf("[debug] foundry provider: on-disk Bicep detected under %s; "+
-			"skipping synthesizer", filepath.Join(projectPath, onDiskInfraDir))
+			"skipping synthesizer", p.infraPath)
 		// endpoint: (brownfield) reuse skips provisioning even on the on-disk
 		// path; connect to the existing project instead of compiling Bicep.
 		if endpoint != "" {
 			if err := warnNetworkIgnoredInBrownfield(
 				rawYAML,
-				projectPath,
+				projectRoot,
 				svcName,
 			); err != nil {
 				return exterrors.Validation(
@@ -265,7 +367,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 		AcceptedHosts:       FoundryProvisioningServiceHosts,
 		Env:                 p.networkEnvMap(ctx),
 		ServiceEnvironments: p.serviceEnvironments,
-		ProjectRoot:         projectPath,
+		ProjectRoot:         projectRoot,
 	})
 	switch {
 	case errors.Is(err, synthesis.ErrEndpointBrownfield):
@@ -273,7 +375,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 		// network: has no effect in brownfield mode; warn if both are present.
 		if err := warnNetworkIgnoredInBrownfield(
 			rawYAML,
-			projectPath,
+			projectRoot,
 			svcName,
 		); err != nil {
 			return exterrors.Validation(
@@ -339,31 +441,34 @@ func foundrySynthesisError(serviceName string, err error) error {
 // require resolveEnv to have run; on any failure it returns nil and the
 // synthesizer falls back to the process environment.
 func (p *FoundryProvisioningProvider) networkEnvMap(ctx context.Context) map[string]string {
+	out := make(map[string]string, len(p.virtualEnv))
+	maps.Copy(out, p.virtualEnv)
 	if p.azdClient == nil {
 		log.Printf("[debug] foundry provider: no azd client; network ${VAR} uses process env only")
-		return nil
+		return out
 	}
 
 	envClient := p.azdClient.Environment()
 	if envClient == nil {
 		log.Printf("[debug] foundry provider: no environment client; network ${VAR} uses process env only")
-		return nil
+		return out
 	}
 	curr, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil || curr.GetEnvironment() == nil {
 		log.Printf("[debug] foundry provider: no current azd environment (%v); "+
 			"network ${VAR} uses process env only", err)
-		return nil
+		return out
 	}
 	resp, err := envClient.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: curr.GetEnvironment().GetName()})
 	if err != nil {
 		log.Printf("[debug] foundry provider: GetValues failed (%s); network ${VAR} uses process env only", err)
-		return nil
+		return out
 	}
-	out := make(map[string]string, len(resp.GetKeyValues()))
 	for _, kv := range resp.GetKeyValues() {
 		if kv != nil {
-			out[kv.Key] = kv.Value
+			if _, planned := out[kv.Key]; !planned {
+				out[kv.Key] = kv.Value
+			}
 		}
 	}
 	return out
@@ -454,11 +559,29 @@ func warnNetworkIgnoredInBrownfield(
 	return nil
 }
 
-// or infra/main.bicep exists under p.projectPath. Stat-only.
+// or <module>.bicep exists under the configured layer path. Stat-only.
 func (p *FoundryProvisioningProvider) onDiskTemplatePresent() bool {
-	infraDir := filepath.Join(p.projectPath, onDiskInfraDir)
-	return fileExistsAt(filepath.Join(infraDir, onDiskBicepParamFile)) ||
-		fileExistsAt(filepath.Join(infraDir, onDiskBicepFile))
+	infraPath := p.onDiskInfraPath()
+	module := p.onDiskModuleName()
+	return fileExistsAt(filepath.Join(infraPath, module+".bicepparam")) ||
+		fileExistsAt(filepath.Join(infraPath, module+".bicep"))
+}
+
+// onDiskInfraPath returns the path supplied for the active provisioning layer,
+// falling back to the legacy root infra directory for older callers and tests.
+func (p *FoundryProvisioningProvider) onDiskInfraPath() string {
+	if p.infraPath != "" {
+		return p.infraPath
+	}
+	return filepath.Join(p.projectPath, onDiskInfraDir)
+}
+
+// onDiskModuleName returns the active layer module or the legacy main module.
+func (p *FoundryProvisioningProvider) onDiskModuleName() string {
+	if p.infraModule != "" {
+		return p.infraModule
+	}
+	return onDiskModule
 }
 
 func foundryServiceEndpointAtRoot(
@@ -531,8 +654,8 @@ func brownfieldOutputs(endpoint string) map[string]*azdext.ProvisioningOutputPar
 	return outputs
 }
 
-// defaultResourceGroupName returns the resource group azd provisions into when
-// AZURE_RESOURCE_GROUP is unset, matching azd's standard rg-<env> convention.
+// defaultResourceGroupName returns the default resource group azd provisions
+// into, matching azd's standard rg-<env> convention.
 func defaultResourceGroupName(envName string) string {
 	return "rg-" + envName
 }
@@ -557,6 +680,15 @@ func (p *FoundryProvisioningProvider) withTenantOutput(
 		outputs["AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT"] = &azdext.ProvisioningOutputParameter{
 			Type: "string", Value: endpoint.Value,
 		}
+	}
+	return outputs
+}
+
+func (p *FoundryProvisioningProvider) normalizeOutputs(
+	outputs map[string]*azdext.ProvisioningOutputParameter,
+) map[string]*azdext.ProvisioningOutputParameter {
+	if p.isLayer && outputs != nil {
+		delete(outputs, envKeyResourceGroup)
 	}
 	return outputs
 }
@@ -594,6 +726,9 @@ func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 	p.envName = currEnv.Environment.Name
 
 	get := func(key string) (string, error) {
+		if value := strings.TrimSpace(p.virtualEnv[key]); value != "" {
+			return value, nil
+		}
 		resp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: p.envName,
 			Key:     key,
@@ -637,25 +772,53 @@ func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 		}
 	}
 
-	if p.rgName, err = get(envKeyResourceGroup); err != nil || p.rgName == "" {
+	rgKey := envKeyResourceGroup
+	if p.isLayer {
+		rgKey = envKeyFoundryRG
+	}
+	if p.rgName, err = get(rgKey); err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeEnvironmentValuesFailed,
+			fmt.Sprintf("read %s from azd environment %q: %s", rgKey, p.envName, err),
+			"verify the azd environment is accessible, then retry",
+		)
+	}
+	if p.rgName == "" {
 		// Default to rg-<env>, matching azd's standard Bicep provisioning,
 		// instead of failing. The subscription-scoped template creates the
 		// resource group when it doesn't exist yet. rgExplicit stays false so
 		// Destroy refuses to delete a group this provider never provisioned.
 		p.rgName = defaultResourceGroupName(p.envName)
-		log.Printf("[debug] %s not set; defaulting to %q", envKeyResourceGroup, p.rgName)
+		if p.isLayer {
+			p.rgName += "-foundry"
+		}
+		log.Printf("[debug] %s not set; defaulting to %q", rgKey, p.rgName)
 	} else {
 		p.rgExplicit = true
 	}
 
-	if p.foundryName, err = get(envKeyProjectName); err != nil || p.foundryName == "" {
+	if p.foundryName, err = get(envKeyProjectName); err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeEnvironmentValuesFailed,
+			fmt.Sprintf("read %s from azd environment %q: %s", envKeyProjectName, p.envName, err),
+			"verify the azd environment is accessible, then retry",
+		)
+	}
+	if p.foundryName == "" {
 		// Default to the azd environment name.
 		p.foundryName = sanitizeFoundryName(p.envName)
 		log.Printf("[debug] %s not set; defaulting to %q", envKeyProjectName, p.foundryName)
 	}
 
 	// principalId is optional; when empty the bicep skips the developer role assignment.
-	if p.principalID, _ = get(envKeyPrincipalID); p.principalID == "" {
+	if p.principalID, err = get(envKeyPrincipalID); err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeEnvironmentValuesFailed,
+			fmt.Sprintf("read %s from azd environment %q: %s", envKeyPrincipalID, p.envName, err),
+			"verify the azd environment is accessible, then retry",
+		)
+	}
+	if p.principalID == "" {
 		log.Printf("[debug] %s not set; skipping developer role assignment", envKeyPrincipalID)
 	}
 
@@ -806,12 +969,11 @@ func (p *FoundryProvisioningProvider) State(
 	if p.brownfieldEndpoint != "" {
 		return &azdext.ProvisioningStateResult{
 			State: &azdext.ProvisioningState{
-				Outputs:   p.withTenantOutput(brownfieldOutputs(p.brownfieldEndpoint)),
+				Outputs:   p.normalizeOutputs(p.withTenantOutput(brownfieldOutputs(p.brownfieldEndpoint))),
 				Resources: []*azdext.ProvisioningResource{},
 			},
 		}, nil
 	}
-
 	client, err := p.deploymentsClient(ctx)
 	if err != nil {
 		return nil, err
@@ -834,7 +996,7 @@ func (p *FoundryProvisioningProvider) State(
 
 	return &azdext.ProvisioningStateResult{
 		State: &azdext.ProvisioningState{
-			Outputs:   p.withTenantOutput(armOutputsToProto(deploymentOutputs(resp.Properties))),
+			Outputs:   p.normalizeOutputs(p.withTenantOutput(armOutputsToProto(deploymentOutputs(resp.Properties)))),
 			Resources: armResourcesToProto(deploymentResources(resp.Properties)),
 		},
 	}, nil
@@ -903,7 +1065,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 	return &azdext.ProvisioningDeployResult{
 		Deployment: &azdext.ProvisioningDeployment{
 			Parameters: armInputsToProto(src.parameters),
-			Outputs:    p.withTenantOutput(armOutputsToProto(deploymentOutputs(resp.Properties))),
+			Outputs:    p.normalizeOutputs(p.withTenantOutput(armOutputsToProto(deploymentOutputs(resp.Properties)))),
 		},
 	}, nil
 }
@@ -968,7 +1130,7 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 		}
 		return &azdext.ProvisioningDeployResult{
 			Deployment: &azdext.ProvisioningDeployment{
-				Outputs: p.withTenantOutput(brownfieldOutputs(p.brownfieldEndpoint)),
+				Outputs: p.normalizeOutputs(p.withTenantOutput(brownfieldOutputs(p.brownfieldEndpoint))),
 			},
 		}, nil
 	}
@@ -1033,7 +1195,7 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 
 	return &azdext.ProvisioningDeployResult{
 		Deployment: &azdext.ProvisioningDeployment{
-			Outputs: p.withTenantOutput(outputs),
+			Outputs: p.normalizeOutputs(p.withTenantOutput(outputs)),
 		},
 	}, nil
 }
@@ -1253,6 +1415,9 @@ func (p *FoundryProvisioningProvider) resolveBrownfieldTarget(ctx context.Contex
 
 // envValue reads a single value from the active azd environment, trimmed.
 func (p *FoundryProvisioningProvider) envValue(ctx context.Context, key string) (string, error) {
+	if value := strings.TrimSpace(p.virtualEnv[key]); value != "" {
+		return value, nil
+	}
 	resp, err := p.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: p.envName,
 		Key:     key,
@@ -1297,9 +1462,10 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 ) (*templateSource, error) {
 	if p.onDiskSource == nil && p.onDiskTemplatePresent() {
 		progress("Compiling on-disk Bicep templates...")
-		src, err := loadOnDiskTemplateWithEnvironment(
+		src, err := loadOnDiskTemplateAtWithEnvironment(
 			ctx,
-			p.projectPath,
+			p.onDiskInfraPath(),
+			p.onDiskModuleName(),
 			p.bicepCli(),
 			onDiskEnvironment{
 				project:           p.envValues(ctx),
@@ -1337,7 +1503,8 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 		return nil, exterrors.Validation(
 			exterrors.CodeOnDiskTemplateMissing,
 			"on-disk Bicep template is no longer present and no embedded template is loaded",
-			"restore infra/main.bicep (or main.bicepparam) or re-run init without --infra",
+			fmt.Sprintf("restore %s (or its .bicepparam file) or re-run init without --infra",
+				filepath.Join(p.onDiskInfraPath(), p.onDiskModuleName()+".bicep")),
 		)
 	}
 
@@ -1381,8 +1548,14 @@ func (p *FoundryProvisioningProvider) envValues(ctx context.Context) map[string]
 		envKeySubscriptionID: p.subID,
 		envKeyLocation:       p.location,
 		envKeyResourceGroup:  p.rgName,
+		envKeyFoundryRG:      p.rgName,
 		envKeyProjectName:    p.foundryName,
 		envKeyPrincipalID:    p.principalID,
+	}
+	for key, value := range p.virtualEnv {
+		if _, canonical := out[key]; !canonical {
+			out[key] = value
+		}
 	}
 	// Also surface the broader azd env. Best-effort: fall back to the
 	// canonical values above if the env service is unavailable.
@@ -1484,7 +1657,10 @@ func (p *FoundryProvisioningProvider) Preview(
 //     deleting, mirroring the built-in bicep provider. Under --no-prompt (or
 //     with no azd host attached) there is nothing to prompt, so deletion falls
 //     back to requiring an explicit --force choice via a structured error.
-//   - Force == true: delete every model deployment under the resource group's
+//   - A named infra.layers entry uses its isolated Foundry resource group, so
+//     teardown cannot remove resources owned by sibling layers.
+//   - Force == true on the legacy root provider: delete every model deployment
+//     under the resource group's
 //     Cognitive Services accounts, then delete the resource group (Foundry
 //     account, project, and any ACR). Deployments must go first: Azure refuses
 //     to delete an account that still has them, which would roll the RG delete
@@ -1513,19 +1689,32 @@ func (p *FoundryProvisioningProvider) Destroy(
 		return &azdext.ProvisioningDestroyResult{}, nil
 	}
 
-	// Fail closed when AZURE_RESOURCE_GROUP was never set: rgName is the rg-<env>
+	// Fail closed when the active resource-group key was never set: rgName is the rg-<env>
 	// default the provider made up, not a group it provisioned. Deleting it could
 	// wipe an unrelated group that happens to match a common env name like "dev".
 	// Check this before prompting so we never ask the user to confirm a deletion
 	// we are going to refuse anyway.
 	if !p.rgExplicit {
+		rgKey := envKeyResourceGroup
+		if p.isLayer {
+			rgKey = envKeyFoundryRG
+		}
 		return nil, exterrors.Validation(
 			exterrors.CodeMissingResourceGroup,
 			fmt.Sprintf("%s is not set, so this provider has no record of a resource group "+
-				"it provisioned; refusing to delete the assumed default %q", envKeyResourceGroup, p.rgName),
+				"it provisioned; refusing to delete the assumed default %q", rgKey, p.rgName),
 			fmt.Sprintf("set the group to delete with `azd env set %s <name>` if it was provisioned here",
-				envKeyResourceGroup),
+				rgKey),
 		)
+	}
+	if p.isLayer {
+		client, err := p.deploymentsClient(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if err := verifyLayerResourceGroupOwnership(ctx, client, p.deploymentName(), p.subID, p.rgName); err != nil {
+			return nil, err
+		}
 	}
 
 	if !options.GetForce() {
@@ -1537,7 +1726,6 @@ func (p *FoundryProvisioningProvider) Destroy(
 			return nil, exterrors.Cancelled("destroy cancelled")
 		}
 	}
-
 	if err := p.ensureCredential(ctx); err != nil {
 		return nil, err
 	}
@@ -1820,6 +2008,7 @@ func invalidatedEnvKeysResult() *azdext.ProvisioningDestroyResult {
 			"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
 			"AZURE_AI_PROJECT_CONNECTION_NAMES",
 			"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT",
+			"AZURE_FOUNDRY_RESOURCE_GROUP",
 		},
 	}
 }
@@ -1852,6 +2041,9 @@ func (p *FoundryProvisioningProvider) PlannedOutputs(
 ) ([]*azdext.ProvisioningPlannedOutput, error) {
 	out := make([]*azdext.ProvisioningPlannedOutput, 0, len(canonicalOutputNames))
 	for _, name := range canonicalOutputNames {
+		if p.isLayer && name == envKeyResourceGroup {
+			continue
+		}
 		out = append(out, &azdext.ProvisioningPlannedOutput{Name: name})
 	}
 	return out, nil
@@ -1859,9 +2051,7 @@ func (p *FoundryProvisioningProvider) PlannedOutputs(
 
 // canonicalOutputNames is the source of truth for the env-var names the
 // foundry deployment populates. Names must match the `output <NAME>`
-// declarations in internal/synthesis/templates/main.bicep (including
-// AZURE_RESOURCE_GROUP, which the subscription-scoped template emits as the
-// name of the resource group it creates).
+// declarations in internal/synthesis/templates/main.bicep.
 //
 // ARM's management SDK mangles output-name casing (e.g. AZURE_AI_PROJECT_ID
 // comes back as azurE_AI_PROJECT_ID). armOutputsToProto restores the
@@ -1871,6 +2061,7 @@ var canonicalOutputNames = []string{
 	"AZURE_AI_ACCOUNT_NAME",
 	"AZURE_AI_PROJECT_NAME",
 	"AZURE_RESOURCE_GROUP",
+	"AZURE_FOUNDRY_RESOURCE_GROUP",
 	"AZURE_OPENAI_ENDPOINT",
 	"FOUNDRY_PROJECT_ENDPOINT",
 	"AZURE_CONTAINER_REGISTRY_ENDPOINT",
@@ -1903,6 +2094,8 @@ func (p *FoundryProvisioningProvider) deploymentsClient(ctx context.Context) (*a
 // deploymentName is stable per azd env and capped at ARM's 64-character limit.
 // The project-path hash separates projects sharing an env name; an env-name hash
 // preserves that identity when the readable env-name segment must be truncated.
+// Hashing the project root rather than the layer path keeps the name stable
+// across a root-to-layer migration.
 func (p *FoundryProvisioningProvider) deploymentName() string {
 	pathHash := fnv.New32a()
 	_, _ = pathHash.Write([]byte(p.projectPath))
@@ -2066,6 +2259,114 @@ func deploymentOutputs(p *armresources.DeploymentPropertiesExtended) any {
 		return nil
 	}
 	return p.Outputs
+}
+
+type subscriptionDeploymentGetter interface {
+	GetAtSubscriptionScope(
+		context.Context,
+		string,
+		*armresources.DeploymentsClientGetAtSubscriptionScopeOptions,
+	) (armresources.DeploymentsClientGetAtSubscriptionScopeResponse, error)
+}
+
+func verifyLayerResourceGroupOwnership(
+	ctx context.Context,
+	client subscriptionDeploymentGetter,
+	deploymentName, subscriptionID, resourceGroup string,
+) error {
+	resp, err := client.GetAtSubscriptionScope(ctx, deploymentName, nil)
+	if err != nil {
+		if !isNotFound(err) {
+			return exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentGet)
+		}
+		return layerResourceGroupOwnershipError(resourceGroup, "the Foundry deployment was not found")
+	}
+
+	wantedID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, resourceGroup)
+	for _, resource := range deploymentResources(resp.Properties) {
+		if resource != nil && resource.ID != nil && strings.EqualFold(strings.TrimSuffix(*resource.ID, "/"), wantedID) {
+			return nil
+		}
+	}
+	return layerResourceGroupOwnershipError(
+		resourceGroup,
+		"the Foundry deployment does not record that it created this resource group",
+	)
+}
+
+func layerResourceGroupOwnershipError(resourceGroup, reason string) error {
+	return exterrors.Validation(
+		exterrors.CodeMissingResourceGroup,
+		fmt.Sprintf("refusing to delete Foundry layer resource group %q: %s", resourceGroup, reason),
+		"restore the original Foundry deployment state or delete only resources you have verified manually",
+	)
+}
+
+func validateFoundryProviderLayers(rawYAML []byte) error {
+	config, err := parseFoundryInfraConfig(rawYAML)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf("parse azure.yaml infrastructure layers: %s", err),
+			"verify azure.yaml is valid YAML",
+		)
+	}
+
+	if config.hasLayers && config.rootProvider == FoundryProviderName {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("infra.provider is %q while infra.layers is also declared; the root Foundry provider "+
+				"cannot be combined with named layers", FoundryProviderName),
+			"move existing infrastructure into explicitly named layers with their own providers, then keep one "+
+				"Foundry layer using microsoft.foundry",
+		)
+	}
+	if len(config.foundryLayers) > 1 {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("multiple infrastructure layers use provider %q: %s",
+				FoundryProviderName, strings.Join(config.foundryLayers, ", ")),
+			"use microsoft.foundry for only one infrastructure layer",
+		)
+	}
+	return nil
+}
+
+type foundryInfraConfig struct {
+	rootProvider  string
+	foundryLayers []string
+	hasLayers     bool
+}
+
+func parseFoundryInfraConfig(rawYAML []byte) (foundryInfraConfig, error) {
+	var doc struct {
+		Infra struct {
+			Provider string `yaml:"provider"`
+			Layers   []struct {
+				Name     string `yaml:"name"`
+				Provider string `yaml:"provider"`
+			} `yaml:"layers"`
+		} `yaml:"infra"`
+	}
+	if err := yaml.Unmarshal(rawYAML, &doc); err != nil {
+		return foundryInfraConfig{}, err
+	}
+
+	config := foundryInfraConfig{
+		rootProvider: strings.TrimSpace(doc.Infra.Provider),
+		hasLayers:    len(doc.Infra.Layers) > 0,
+	}
+	config.foundryLayers = make([]string, 0, len(doc.Infra.Layers))
+	for _, layer := range doc.Infra.Layers {
+		provider := strings.TrimSpace(layer.Provider)
+		if provider == "" {
+			provider = config.rootProvider
+		}
+		if provider == FoundryProviderName {
+			config.foundryLayers = append(config.foundryLayers, layer.Name)
+		}
+	}
+	return config, nil
 }
 
 // deploymentResources returns OutputResources from a possibly-nil properties.

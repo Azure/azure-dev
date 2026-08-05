@@ -178,7 +178,7 @@ The synthesized template covers the common private-networking shapes. When you n
 azd ai agent init --infra
 ```
 
-Eject reads `network:` from the `host: azure.ai.project` service and writes the full Bicep tree: `infra/main.bicep`, `infra/modules/{resources,network,subnet,private-endpoint-dns,acr}.bicep`, and `infra/main.parameters.json`. `${VAR}` placeholders are preserved in the generated parameters file and resolved from the azd environment at provision time. `azure.yaml` is left unchanged: `infra.provider` stays `microsoft.foundry`.
+Eject reads `network:` from the `host: azure.ai.project` service and writes the full Bicep tree. For a Foundry-only project, it writes `infra/main.bicep`, `infra/modules/{resources,network,subnet,private-endpoint-dns,acr}.bicep`, and `infra/main.parameters.json`. If the project already has infrastructure, azd preserves it and adds a separate `infra/foundry` layer with the same file layout and its own `AZURE_FOUNDRY_RESOURCE_GROUP`. `${VAR}` placeholders are preserved in the generated parameters file and resolved from the azd environment at provision time.
 
 ```bash
 azd provision --no-prompt

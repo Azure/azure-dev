@@ -4,6 +4,7 @@
 package provisioning
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -22,6 +23,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type stubSubscriptionDeploymentGetter struct {
+	resp armresources.DeploymentsClientGetAtSubscriptionScopeResponse
+	err  error
+}
+
+func (s *stubSubscriptionDeploymentGetter) GetAtSubscriptionScope(
+	context.Context,
+	string,
+	*armresources.DeploymentsClientGetAtSubscriptionScopeOptions,
+) (armresources.DeploymentsClientGetAtSubscriptionScopeResponse, error) {
+	return s.resp, s.err
+}
 
 func TestFindFoundryProjectService(t *testing.T) {
 	tests := []struct {
@@ -617,6 +631,7 @@ func TestDeploymentName_StableForEnv(t *testing.T) {
 	// Different project paths sharing an env name must not collide.
 	other := &FoundryProvisioningProvider{envName: "dev", projectPath: "/proj/b"}
 	assert.NotEqual(t, first, other.deploymentName())
+
 }
 
 func TestDeploymentName_LongEnvironmentName(t *testing.T) {
@@ -648,6 +663,70 @@ func TestDeploymentOutputsResources_NilSafe(t *testing.T) {
 	}
 	assert.NotNil(t, deploymentOutputs(props))
 	assert.Len(t, deploymentResources(props), 1)
+}
+
+func TestVerifyLayerResourceGroupOwnership(t *testing.T) {
+	const (
+		subscriptionID = "00000000-0000-0000-0000-000000000001"
+		resourceGroup  = "rg-foundry"
+	)
+	response := func(ids ...string) armresources.DeploymentsClientGetAtSubscriptionScopeResponse {
+		resources := make([]*armresources.ResourceReference, 0, len(ids))
+		for _, id := range ids {
+			resources = append(resources, &armresources.ResourceReference{ID: new(id)})
+		}
+		return armresources.DeploymentsClientGetAtSubscriptionScopeResponse{
+			DeploymentExtended: armresources.DeploymentExtended{
+				Properties: &armresources.DeploymentPropertiesExtended{OutputResources: resources},
+			},
+		}
+	}
+
+	ownedID := "/subscriptions/" + subscriptionID + "/resourceGroups/" + resourceGroup
+	require.NoError(t, verifyLayerResourceGroupOwnership(
+		t.Context(), &stubSubscriptionDeploymentGetter{resp: response(ownedID)},
+		"deployment", subscriptionID, resourceGroup))
+
+	for _, tt := range []struct {
+		name string
+		resp armresources.DeploymentsClientGetAtSubscriptionScopeResponse
+	}{
+		{name: "no output resources"},
+		{name: "only resources inside group", resp: response(ownedID + "/providers/Microsoft.Storage/storageAccounts/a")},
+		{name: "different group", resp: response("/subscriptions/" + subscriptionID + "/resourceGroups/other")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := verifyLayerResourceGroupOwnership(
+				t.Context(), &stubSubscriptionDeploymentGetter{resp: tt.resp},
+				"deployment", subscriptionID, resourceGroup)
+			require.Error(t, err)
+			var local *azdext.LocalError
+			require.ErrorAs(t, err, &local)
+			assert.Contains(t, local.Message, "refusing to delete")
+		})
+	}
+}
+
+func TestValidateFoundryProviderLayers(t *testing.T) {
+	require.NoError(t, validateFoundryProviderLayers([]byte(`infra:
+  provider: bicep
+  layers:
+    - name: app
+      provider: bicep
+    - name: foundry
+      provider: microsoft.foundry
+`)))
+
+	err := validateFoundryProviderLayers([]byte(`infra:
+  provider: microsoft.foundry
+  layers:
+    - name: first
+`))
+	require.Error(t, err)
+	var local *azdext.LocalError
+	require.ErrorAs(t, err, &local)
+	assert.Equal(t, exterrors.CodeInvalidServiceConfig, local.Code)
+	assert.Contains(t, local.Message, "root Foundry provider")
 }
 
 func TestEncodeParamValue(t *testing.T) {
@@ -888,7 +967,7 @@ func TestOnDiskTemplatePresent(t *testing.T) {
 	// main.bicep alone: true.
 	bicepDir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(bicepDir, onDiskInfraDir), 0o750))
-	require.NoError(t, os.WriteFile(filepath.Join(bicepDir, onDiskInfraDir, onDiskBicepFile), []byte("// b"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(bicepDir, onDiskInfraDir, onDiskModule+".bicep"), []byte("// b"), 0o600))
 	p = &FoundryProvisioningProvider{projectPath: bicepDir}
 	assert.True(t, p.onDiskTemplatePresent(),
 		"main.bicep present -> true")
@@ -896,11 +975,38 @@ func TestOnDiskTemplatePresent(t *testing.T) {
 	// main.bicepparam alone: true.
 	bicepparamDir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(bicepparamDir, onDiskInfraDir), 0o750))
-	bicepparamPath := filepath.Join(bicepparamDir, onDiskInfraDir, onDiskBicepParamFile)
+	bicepparamPath := filepath.Join(bicepparamDir, onDiskInfraDir, onDiskModule+".bicepparam")
 	require.NoError(t, os.WriteFile(bicepparamPath, []byte("// bp"), 0o600))
 	p = &FoundryProvisioningProvider{projectPath: bicepparamDir}
 	assert.True(t, p.onDiskTemplatePresent(),
 		"main.bicepparam present -> true")
+
+	// Layer path/module override: the provider must not fall back to root infra.
+	customDir := t.TempDir()
+	layerDir := filepath.Join(customDir, "infra", "foundry")
+	require.NoError(t, os.MkdirAll(layerDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(layerDir, "project.bicep"), []byte("// b"), 0o600))
+	p = &FoundryProvisioningProvider{
+		projectPath: customDir,
+		infraPath:   layerDir,
+		infraModule: "project",
+	}
+	assert.True(t, p.onDiskTemplatePresent(), "custom layer path and module -> true")
+}
+
+func TestInitialize_RejectsAbsoluteLayerPath(t *testing.T) {
+	t.Parallel()
+	projectRoot := t.TempDir()
+	p := &FoundryProvisioningProvider{}
+	err := p.Initialize(t.Context(), projectRoot, &azdext.ProvisioningOptions{
+		Provider: FoundryProviderName,
+		Path:     filepath.Join(projectRoot, "infra", "foundry"),
+	})
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
+	assert.Contains(t, localErr.Message, "project-relative")
 }
 
 func TestResolveTemplate_FallsBackToEmbeddedWhenNoOnDisk(t *testing.T) {
@@ -944,7 +1050,7 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 	dir := t.TempDir()
 	infraDir := filepath.Join(dir, onDiskInfraDir)
 	require.NoError(t, os.MkdirAll(infraDir, 0o750))
-	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepFile),
+	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskModule+".bicep"),
 		[]byte("// fake bicep, never actually compiled by the stub"), 0o600))
 
 	// Plant a user parameters file with one literal value so we can
@@ -957,7 +1063,7 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
     "userOnly": { "value": "from-user" }
   }
 }`
-	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskParamsFile), []byte(params), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskModule+".parameters.json"), []byte(params), 0o600))
 
 	// Pre-bake the on-disk source so we don't need a live bicep CLI.
 	// (resolveTemplate skips the loadOnDiskTemplate call when
@@ -981,7 +1087,7 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 				"location": map[string]any{"value": "user-supplied-location"},
 				"userOnly": map[string]any{"value": "from-user"},
 			},
-			sourcePath: filepath.Join(infraDir, onDiskBicepFile),
+			sourcePath: filepath.Join(infraDir, onDiskModule+".bicep"),
 		},
 	}
 
@@ -992,7 +1098,7 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 	assert.Equal(t, templateModeBicep, got.mode, "on-disk Bicep mode wins")
 	assert.Equal(t, "ondisk", got.armTemplate["$schema"],
 		"on-disk template is returned, not the embedded one")
-	assert.Equal(t, filepath.Join(infraDir, onDiskBicepFile), got.sourcePath)
+	assert.Equal(t, filepath.Join(infraDir, onDiskModule+".bicep"), got.sourcePath)
 
 	// Merge precedence: user wins on 'location'.
 	loc := got.parameters["location"].(map[string]any)
@@ -1204,6 +1310,17 @@ func TestWithTenantOutput(t *testing.T) {
 	})
 }
 
+func TestNormalizeOutputs_LayerOmitsRootResourceGroup(t *testing.T) {
+	t.Parallel()
+	p := &FoundryProvisioningProvider{isLayer: true}
+	got := p.normalizeOutputs(map[string]*azdext.ProvisioningOutputParameter{
+		envKeyResourceGroup: {Type: "string", Value: "rg-foundry"},
+		envKeyFoundryRG:     {Type: "string", Value: "rg-foundry"},
+	})
+	assert.NotContains(t, got, envKeyResourceGroup)
+	assert.Contains(t, got, envKeyFoundryRG)
+}
+
 func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {
 	t.Parallel()
 	// envValues must always include the canonical AZURE_* keys
@@ -1217,14 +1334,21 @@ func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {
 		rgName:      "my-rg",
 		foundryName: "fp",
 		principalID: "pid",
+		virtualEnv: map[string]string{
+			"PLATFORM_OUTPUT": "planned-value",
+			envKeyLocation:    "stale-planned-location",
+		},
 		// azdClient intentionally nil
 	}
 	got := p.envValues(t.Context())
 	assert.Equal(t, "sub-id", got[envKeySubscriptionID])
 	assert.Equal(t, "westus2", got[envKeyLocation])
 	assert.Equal(t, "my-rg", got[envKeyResourceGroup])
+	assert.Equal(t, "my-rg", got[envKeyFoundryRG])
 	assert.Equal(t, "fp", got[envKeyProjectName])
 	assert.Equal(t, "pid", got[envKeyPrincipalID])
+	assert.Equal(t, "planned-value", got["PLATFORM_OUTPUT"])
+	assert.Equal(t, "westus2", got[envKeyLocation], "canonical values take precedence over virtual env")
 }
 
 func TestCollectPurgeableAccounts(t *testing.T) {

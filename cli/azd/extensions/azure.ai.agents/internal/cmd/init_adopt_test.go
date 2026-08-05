@@ -221,6 +221,22 @@ func TestValidateStagedAzureYamlRequiresAgentService(t *testing.T) {
 	require.Contains(t, localErr.Message, "does not declare an agent service")
 }
 
+func TestValidateStagedAzureYamlReturnsRefErrors(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte(`services:
+  agent:
+    $ref: ./services/missing.yaml
+`),
+		0600,
+	))
+
+	err := validateStagedAzureYaml(root, filepath.Join(root, "azure.yaml"))
+	require.ErrorContains(t, err, "cannot read")
+	require.ErrorContains(t, err, "missing.yaml")
+}
+
 func TestFoundryProjectName(t *testing.T) {
 	tests := []struct {
 		name    string

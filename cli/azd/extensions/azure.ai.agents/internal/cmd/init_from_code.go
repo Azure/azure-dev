@@ -891,7 +891,7 @@ func (a *InitFromCodeAction) addToProject(
 		return err
 	}
 
-	fmt.Printf("\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n", agentName)
+	printAgentAddedMessage(agentName, agentServiceName)
 	return nil
 }
 

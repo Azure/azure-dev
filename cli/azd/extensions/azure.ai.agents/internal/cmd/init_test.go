@@ -453,10 +453,11 @@ func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
 		},
 	}
 
-	_, err := captureStdout(t, func() error {
+	output, err := captureStdout(t, func() error {
 		return action.addToProject(t.Context(), "src/my-agent", manifest)
 	})
 	require.NoError(t, err)
+	require.Contains(t, output, "\nAdded agent 'my-agent' to azure.yaml.\n")
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
@@ -483,6 +484,37 @@ func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
 	_, hasInlineEnvironment := agentService.GetAdditionalProperties().
 		GetFields()["environmentVariables"]
 	require.False(t, hasInlineEnvironment)
+}
+
+func TestAgentAddedMessage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		agentName   string
+		serviceName string
+		want        string
+	}{
+		{
+			name:        "matching names",
+			agentName:   "my-agent",
+			serviceName: "my-agent",
+			want:        "\nAdded agent 'my-agent' to azure.yaml.\n",
+		},
+		{
+			name:        "different names",
+			agentName:   "My Agent",
+			serviceName: "MyAgent",
+			want:        "\nAdded agent 'My Agent' to azure.yaml as service 'MyAgent'.\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, agentAddedMessage(tt.agentName, tt.serviceName))
+		})
+	}
 }
 
 func TestValidateInitAgentName(t *testing.T) {

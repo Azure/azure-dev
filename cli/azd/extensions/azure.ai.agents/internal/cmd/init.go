@@ -2978,10 +2978,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		return err
 	}
 
-	fmt.Printf(
-		"\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n",
-		a.serviceNameOverride,
-	)
+	printAgentAddedMessage(agentDef.Name, a.serviceNameOverride)
 
 	// Replace the legacy hardcoded `azd up` / `azd deploy` hint with the
 	// shared nextstep resolver. The resolver inspects the current azd

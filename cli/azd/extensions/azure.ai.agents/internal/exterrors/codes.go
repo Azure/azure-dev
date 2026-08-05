@@ -43,6 +43,10 @@ const (
 	CodeInvalidPositionalArg      = "invalid_positional_arg"
 )
 
+// CodeInvalidEnvironmentVariableName identifies a hosted-agent
+// environment variable name rejected by the service contract.
+const CodeInvalidEnvironmentVariableName = "invalid_environment_variable_name"
+
 // Error codes commonly used for dependency errors.
 //
 // These are usually paired with [Dependency] when required external

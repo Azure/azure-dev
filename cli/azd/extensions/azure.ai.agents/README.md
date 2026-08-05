@@ -70,6 +70,11 @@ services:
       LOG_LEVEL: debug
 ```
 
+Hosted Agent Service environment variable names must start with a letter or
+underscore and contain only letters, digits, or underscores. For example,
+`API_KEY` is valid, while `api-key` is not. `azd deploy` validates these names
+before contacting Foundry Agent Service.
+
 ## Content safety policies
 
 A hosted agent can be bound to an Azure AI Content Safety (RAI) policy so every

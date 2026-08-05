@@ -1130,6 +1130,26 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, err
 	}
 	serviceConfig = p.serviceConfig
+
+	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
+	if err != nil {
+		return nil, err
+	}
+	if !isContainerAgent {
+		return nil, exterrors.Validation(
+			exterrors.CodeUnsupportedAgentKind,
+			"unsupported agent kind in agent.yaml",
+			"use a supported kind: 'hosted'",
+		)
+	}
+
+	if err := validateEnvironmentVariableNames(
+		serviceConfig.GetEnvironment(),
+		agentDef.EnvironmentVariables,
+	); err != nil {
+		return nil, err
+	}
+
 	// Ensure Foundry project is loaded
 	if err := p.ensureFoundryProject(ctx); err != nil {
 		return nil, err
@@ -1180,18 +1200,6 @@ func (p *AgentServiceTargetProvider) Deploy(
 		ctx, serviceTargetConfig, azdEnv["FOUNDRY_PROJECT_ENDPOINT"], progress,
 	); err != nil {
 		return nil, err
-	}
-
-	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
-	if err != nil {
-		return nil, err
-	}
-	if !isContainerAgent {
-		return nil, exterrors.Validation(
-			exterrors.CodeUnsupportedAgentKind,
-			"unsupported agent kind in agent.yaml",
-			"use a supported kind: 'hosted'",
-		)
 	}
 
 	// Branch: code deploy vs container deploy

@@ -1276,19 +1276,22 @@ func isBundleArg(args []string) bool {
 }
 
 // isRemoteBundleArg reports whether the value is an HTTP or HTTPS URL pointing at a
-// self-contained extension bundle (.zip).
+// self-contained extension bundle (.zip). Detection is intentionally lexical so
+// malformed URLs still reach generic URL validation instead of being displayed as
+// extension IDs.
 func isRemoteBundleArg(value string) bool {
-	parsedURL, err := url.Parse(value)
-	if err != nil {
+	lowerValue := strings.ToLower(value)
+	if !strings.HasPrefix(lowerValue, "http://") &&
+		!strings.HasPrefix(lowerValue, "https://") {
 		return false
 	}
 
-	scheme := strings.ToLower(parsedURL.Scheme)
-	if scheme != "http" && scheme != "https" {
-		return false
+	pathEnd := len(value)
+	if index := strings.IndexAny(value, "?#"); index >= 0 {
+		pathEnd = index
 	}
 
-	return parsedURL.Host != "" && strings.EqualFold(path.Ext(parsedURL.Path), ".zip")
+	return strings.EqualFold(path.Ext(value[:pathEnd]), ".zip")
 }
 
 // prepareBundleInstall resolves the bundle (downloading it first when the
@@ -1463,7 +1466,15 @@ func (a *extensionInstallAction) cleanupBundleInstall(ctx context.Context) {
 // cleanupBundleInstall removes it whether the install succeeds or fails.
 func (a *extensionInstallAction) downloadBundle(ctx context.Context, bundleURL string) (string, error) {
 	parsedURL, err := url.Parse(bundleURL)
-	if err != nil || parsedURL.Host == "" || !strings.EqualFold(parsedURL.Scheme, "https") {
+	if err != nil || parsedURL.Host == "" {
+		return "", &internal.ErrorWithSuggestion{
+			Err:     errors.New("invalid remote extension bundle URL"),
+			Message: "Remote extension bundles require a valid HTTPS URL.",
+			Suggestion: "Use a valid HTTPS URL, or download the bundle and install it " +
+				"from a local path.",
+		}
+	}
+	if !strings.EqualFold(parsedURL.Scheme, "https") {
 		return "", &internal.ErrorWithSuggestion{
 			Err:     errors.New("remote extension bundle URL must use HTTPS"),
 			Message: "Remote extension bundles require a valid HTTPS URL.",

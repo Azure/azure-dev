@@ -48,8 +48,9 @@ func TestIsBundleArg(t *testing.T) {
 	require.True(t, isBundleArg([]string{"https://example.com/my-ext_1.0.0.zip"}))
 	require.True(t, isBundleArg([]string{"http://example.com/path/my-ext.ZIP"}))
 	require.True(t, isBundleArg([]string{"https://example.com/my-ext.zip?token=abc"}))
+	require.True(t, isBundleArg([]string{"https://example.com/%ZZ/my-ext.zip?token=abc"}))
 	require.False(t, isBundleArg([]string{"https://example.com/registry.json"}))
-	require.False(t, isBundleArg([]string{"https:///my-ext.zip"}))
+	require.True(t, isBundleArg([]string{"https:///my-ext.zip"}))
 	require.False(t, isBundleArg([]string{"ftp://example.com/my-ext.zip"}))
 	require.False(t, isBundleArg([]string{"https://example.com/my-ext_1.0.0.zip", "other"}))
 }
@@ -548,6 +549,40 @@ func TestPrepareBundleInstall_RejectsHTTPURL(t *testing.T) {
 	require.NotContains(t, err.Error(), "query-secret")
 	require.Empty(t, action.bundleTempZip)
 	require.Empty(t, action.bundleTempDir)
+}
+
+func TestExtensionInstall_InvalidRemoteURLDoesNotExposeURL(t *testing.T) {
+	t.Parallel()
+
+	const (
+		bundleURL   = "https://example.com/%ZZ-path-secret/bundle.zip?sig=query-secret"
+		pathSecret  = "path-secret"
+		querySecret = "query-secret"
+	)
+
+	action, _, _ := newBundleInstallTestActionWithMocks(t)
+	action.args = []string{bundleURL}
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.ErrorContains(t, err, "invalid remote extension bundle URL")
+	require.ErrorAs(t, err, new(*internal.ErrorWithSuggestion))
+	require.NotContains(t, err.Error(), bundleURL)
+	require.NotContains(t, err.Error(), pathSecret)
+	require.NotContains(t, err.Error(), querySecret)
+
+	console, ok := action.console.(*mockinput.MockConsole)
+	require.True(t, ok)
+	for _, message := range console.Output() {
+		require.NotContains(t, message, bundleURL)
+		require.NotContains(t, message, pathSecret)
+		require.NotContains(t, message, querySecret)
+	}
+	for _, op := range console.SpinnerOps() {
+		require.NotContains(t, op.Message, bundleURL)
+		require.NotContains(t, op.Message, pathSecret)
+		require.NotContains(t, op.Message, querySecret)
+	}
 }
 
 func TestDownloadBundle_RejectsInsecureRedirectHop(t *testing.T) {

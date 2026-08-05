@@ -12,8 +12,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -548,30 +550,49 @@ func TestPrepareBundleInstall_RejectsHTTPURL(t *testing.T) {
 	require.Empty(t, action.bundleTempDir)
 }
 
-func TestPrepareBundleInstall_RejectsRedirectToHTTP(t *testing.T) {
+func TestDownloadBundle_RejectsInsecureRedirectHop(t *testing.T) {
 	t.Parallel()
 
-	const bundleURL = "https://example.com/bundle.zip"
+	var insecureRequested atomic.Bool
+	var finalRequested atomic.Bool
+	var insecureServer *httptest.Server
 
-	action, _, mockContext := newBundleInstallTestActionWithMocks(t)
-	mockContext.HttpClient.
-		When(func(request *http.Request) bool { return request.URL.String() == bundleURL }).
-		RespondFn(func(request *http.Request) (*http.Response, error) {
-			request.URL.Scheme = "http"
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     http.Header{},
-				Request:    request,
-				Body:       io.NopCloser(bytes.NewReader(nil)),
-			}, nil
-		})
+	secureServer := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/bundle.zip":
+			http.Redirect(writer, request, insecureServer.URL+"/redirect", http.StatusFound)
+		case "/final.zip":
+			finalRequested.Store(true)
+			writer.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	t.Cleanup(secureServer.Close)
 
-	err := action.prepareBundleInstall(t.Context(), bundleURL)
+	insecureServer = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		insecureRequested.Store(true)
+		http.Redirect(writer, request, secureServer.URL+"/final.zip", http.StatusFound)
+	}))
+	t.Cleanup(insecureServer.Close)
+
+	action := &extensionInstallAction{
+		console:   mockinput.NewMockConsole(),
+		transport: secureServer.Client(),
+	}
+	t.Cleanup(func() {
+		if action.bundleTempZip != "" {
+			_ = os.Remove(action.bundleTempZip)
+		}
+	})
+
+	_, err := action.downloadBundle(t.Context(), secureServer.URL+"/bundle.zip")
 	require.Error(t, err)
-	require.ErrorContains(t, err, "redirected to an insecure URL")
+	require.ErrorIs(t, err, errInsecureBundleRedirect)
 	require.ErrorAs(t, err, new(*internal.ErrorWithSuggestion))
+	require.False(t, insecureRequested.Load(), "HTTP redirect target should not be requested")
+	require.False(t, finalRequested.Load(), "redirect chain should stop before the final HTTPS target")
 	require.Empty(t, action.bundleTempZip)
-	require.Empty(t, action.bundleTempDir)
 }
 
 func TestPrepareBundleInstall_RemoteDownloadFailure(t *testing.T) {

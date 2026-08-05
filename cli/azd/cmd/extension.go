@@ -1121,6 +1121,16 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 // directory is removed once installation completes.
 const extensionBundleTempPrefix = "azd-extension-bundle-"
 
+type insecureBundleRedirectError struct{}
+
+func (*insecureBundleRedirectError) Error() string {
+	return "extension bundle download redirected to an insecure URL"
+}
+
+func (*insecureBundleRedirectError) NonRetriable() {}
+
+var errInsecureBundleRedirect = &insecureBundleRedirectError{}
+
 // sourceDisplayLabel returns a user-facing label for an extension source. The
 // transient source registered while installing a bundle is an implementation
 // detail, so it (and the reserved bundle source) are presented as "bundle"
@@ -1480,10 +1490,18 @@ func (a *extensionInstallAction) downloadBundle(ctx context.Context, bundleURL s
 				"or download the bundle and install it from a local path.",
 		}
 	}
+	insecureRedirect := func() error {
+		return &internal.ErrorWithSuggestion{
+			Err:     errInsecureBundleRedirect,
+			Message: "The extension bundle download was redirected from HTTPS to HTTP.",
+			Suggestion: "Use a bundle URL that remains on HTTPS, or download the bundle and install it " +
+				"from a local path.",
+		}
+	}
 
 	pipeline := azruntime.NewPipeline(
 		"azd-extension-bundle", "1.0.0", azruntime.PipelineOptions{}, &policy.ClientOptions{
-			Transport: a.transport,
+			Transport: bundleTransportWithHTTPSRedirectsOnly(a.transport),
 		})
 
 	req, err := azruntime.NewRequest(ctx, http.MethodGet, bundleURL)
@@ -1493,18 +1511,16 @@ func (a *extensionInstallAction) downloadBundle(ctx context.Context, bundleURL s
 
 	resp, err := pipeline.Do(req)
 	if err != nil {
+		if errors.Is(err, errInsecureBundleRedirect) {
+			return downloadFailed(insecureRedirect())
+		}
 		return downloadFailed(requestFailed(err))
 	}
 	defer resp.Body.Close()
 
 	if resp.Request != nil && resp.Request.URL != nil &&
 		!strings.EqualFold(resp.Request.URL.Scheme, "https") {
-		return downloadFailed(&internal.ErrorWithSuggestion{
-			Err:     errors.New("extension bundle download redirected to an insecure URL"),
-			Message: "The extension bundle download was redirected from HTTPS to HTTP.",
-			Suggestion: "Use a bundle URL that remains on HTTPS, or download the bundle and install it " +
-				"from a local path.",
-		})
+		return downloadFailed(insecureRedirect())
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -1556,6 +1572,32 @@ func (e *bundleDownloadError) Error() string {
 
 func (e *bundleDownloadError) Unwrap() error {
 	return e.err
+}
+
+// bundleTransportWithHTTPSRedirectsOnly clones an injected HTTP client so the
+// stricter redirect policy applies only to extension bundle downloads.
+func bundleTransportWithHTTPSRedirectsOnly(transport policy.Transporter) policy.Transporter {
+	client, ok := transport.(*http.Client)
+	if !ok {
+		return transport
+	}
+
+	bundleClient := *client
+	existingCheckRedirect := bundleClient.CheckRedirect
+	bundleClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if req.URL == nil || !strings.EqualFold(req.URL.Scheme, "https") {
+			return errInsecureBundleRedirect
+		}
+		if existingCheckRedirect != nil {
+			return existingCheckRedirect(req, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+
+	return &bundleClient
 }
 
 // randomHexToken returns a short random hex string used to make the transient

@@ -1,8 +1,9 @@
 # Release History
 
-## 1.2.1 (2026-08-03)
+## 1.2.2 (2026-08-05)
 
-- Validates requested versions and runs installer scripts with explicit arguments.
+- Improves `version` input validation and installer handling across Windows, Linux, and macOS.
+- Updates dependencies to address security vulnerabilities.
 
 ## 1.2.0 (2026-01-14)
 

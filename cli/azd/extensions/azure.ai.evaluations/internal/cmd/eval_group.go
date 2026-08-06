@@ -161,7 +161,15 @@ func newEvalShowCommand() *cobra.Command {
 				}
 				return fmt.Errorf("reading eval %q: %w", evalID, err)
 			}
-			return emitJSON(cmd.OutOrStdout(), group)
+			if isJSON(cmd) {
+				return emitJSON(cmd.OutOrStdout(), group)
+			}
+			return emitDetail(cmd.OutOrStdout(), []field{
+				{"Id", group.ID},
+				{"Name", group.Name},
+				{"Created", fmt.Sprint(group.CreatedAt)},
+				{"Created By", group.CreatedBy},
+			})
 		},
 	}
 

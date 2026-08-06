@@ -251,7 +251,7 @@ func newDatasetShowCommand() *cobra.Command {
 				if gen_api.IsNotFound(err) {
 					return fmt.Errorf(
 						"no dataset %q at version %q in this project; "+
-							"`azd ai eval dataset list` shows the ones there are", name, version)
+							"`azd ai dataset list` shows the ones there are", name, version)
 				}
 				return fmt.Errorf("reading dataset %q version %q: %w", name, version, err)
 			}
@@ -259,10 +259,12 @@ func newDatasetShowCommand() *cobra.Command {
 			if isJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), ds)
 			}
-			return emitTable(cmd.OutOrStdout(),
-				[]string{"NAME", "VERSION", "FORMAT", "URI"},
-				[][]string{{ds.Name, ds.Version, ds.Format, ds.ResolvedBlobURI()}},
-			)
+			return emitDetail(cmd.OutOrStdout(), []field{
+				{"Name", ds.Name},
+				{"Version", ds.Version},
+				{"Format", ds.Format},
+				{"URI", ds.ResolvedBlobURI()},
+			})
 		},
 	}
 

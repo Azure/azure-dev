@@ -79,6 +79,30 @@ func emitTable(w io.Writer, headers []string, rows [][]string) error {
 	return tw.Flush()
 }
 
+// field is one row of a detail view.
+type field struct {
+	Key   string // Title Case, per the azd style guide
+	Value string
+}
+
+// emitDetail writes a two-column key/value view, the shape `show` uses.
+//
+// Empty values are dropped rather than printed blank: a detail view is read to
+// learn what a thing is, and a column of empty keys says only that the writer
+// did not know which fields this kind has.
+func emitDetail(w io.Writer, fields []field) error {
+	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
+	for _, f := range fields {
+		if f.Value == "" {
+			continue
+		}
+		if _, err := fmt.Fprintf(tw, "%s\t%s\n", f.Key, f.Value); err != nil {
+			return err
+		}
+	}
+	return tw.Flush()
+}
+
 // requireFlag returns an error naming the missing flag, used when --no-prompt
 // prevents asking for a required value.
 func requireFlag(name string) error {

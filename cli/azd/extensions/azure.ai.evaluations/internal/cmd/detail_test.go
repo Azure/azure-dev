@@ -6,6 +6,8 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,6 +16,44 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// The spec's output conventions split the two shapes: a list view is uppercase
+// headers over a rule, a detail view is Title Case key/value. `show` returns
+// one thing, so it is a detail view -- and all three used to disagree, two
+// emitting raw JSON whatever was asked for and one printing a one-row table.
+//
+// Checked by reading the source rather than running the command, because these
+// commands need a service; a shape regression should not wait for a live run.
+func TestShowCommandsUseDetailViews(t *testing.T) {
+	// Command → the file and function that renders it.
+	renderers := map[string]string{
+		"dataset show":   "dataset.go",
+		"evaluator show": "evaluator.go",
+		"show":           "eval_group.go",
+	}
+
+	for path, file := range renderers {
+		t.Run(path, func(t *testing.T) {
+			require.NotNil(t, find(t, path), "the command has to exist to have a shape")
+
+			body, err := os.ReadFile(filepath.Join(".", file))
+			require.NoError(t, err)
+			assert.Containsf(t, string(body), "emitDetail",
+				"%s returns one thing, so %s renders it as a detail view", path, file)
+		})
+	}
+}
+
+// Every command returning data supports -o json, which is what makes the
+// detail view a presentation choice rather than a loss of information.
+func TestShowCommandsStillAnswerInJSON(t *testing.T) {
+	for _, path := range []string{"dataset show", "evaluator show", "show"} {
+		cmd := find(t, path)
+		// -o comes from the SDK root, so a command must not shadow it.
+		assert.Nilf(t, cmd.LocalFlags().Lookup("output"),
+			"%s must inherit -o rather than declaring its own", path)
+	}
+}
 
 // A detail view is two columns with Title Case keys, per the spec's output
 // conventions. It is what `show` prints; `-o json` is the machine-readable

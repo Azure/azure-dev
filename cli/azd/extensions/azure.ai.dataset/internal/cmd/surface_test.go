@@ -187,6 +187,46 @@ func TestSuggestedCommandsExist(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// A message pointing at `azd ai eval dataset ...` is almost always the copy
+// these commands came from rather than a deliberate cross-extension pointer.
+// `dataset` is this extension's own namespace, so telling a user to run the
+// eval extension's version of a command it serves itself sends them somewhere
+// they may not have installed.
+//
+// generate's "register this in an eval configuration" line is the one real
+// exception, because eval.yaml genuinely belongs to the other extension.
+func TestNoStaleEvalDatasetSuggestions(t *testing.T) {
+	allowed := map[string]bool{
+		"azd ai eval dataset create": true, // registering a generated file in eval.yaml
+	}
+
+	err := filepath.WalkDir("../..", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		pattern := regexp.MustCompile(`azd ai eval dataset [a-z][a-z0-9-]*`)
+		for i, line := range strings.Split(string(body), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "//") {
+				continue
+			}
+			for _, m := range pattern.FindAllString(line, -1) {
+				assert.Truef(t, allowed[m],
+					"%s:%d suggests `%s`; this extension serves that command as "+
+						"`azd ai dataset ...`", path, i+1, m)
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+}
+
 // siblingNamespaces are the other Foundry extensions this one points users at.
 var siblingNamespaces = map[string]bool{
 	"eval":    true, // registering a generated dataset in an eval configuration

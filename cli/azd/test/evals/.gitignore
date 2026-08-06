@@ -1,6 +1,10 @@
 vally-results/
 vally-experiment-results/
 
+# Skills fetched from other repos by scripts/fetch-foundry-skill.mjs. Not vendored
+# so we don't carry a copy of someone else's content that silently goes stale.
+skills/.external/
+
 # output from vally_report.go
 eval-experiments-*.md
 eval-results-*.md

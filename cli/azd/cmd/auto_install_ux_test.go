@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -88,6 +89,35 @@ func TestRecommendedSourceCandidate(t *testing.T) {
 			assert.Same(t, tt.expected, recommendedSourceCandidate(requirement))
 		})
 	}
+}
+
+func TestSourceSummaryCollapsesFourOrMoreSources(t *testing.T) {
+	t.Parallel()
+
+	candidates := []*extensions.ExtensionMetadata{
+		autoInstallTestExtension("demo", "Demo", "azd", extensions.SourceCategoryAzd),
+		autoInstallTestExtension("demo", "Demo", "source-a", extensions.SourceCategoryOther),
+		autoInstallTestExtension("demo", "Demo", "source-b", extensions.SourceCategoryOther),
+		autoInstallTestExtension("demo", "Demo", "source-c", extensions.SourceCategoryOther),
+		autoInstallTestExtension("demo", "Demo", "source-d", extensions.SourceCategoryOther),
+	}
+	requirement := autoInstallTestRequirement(candidates...)
+
+	assert.Equal(
+		t,
+		"azd "+output.WithGrayFormat("(+4 more)"),
+		sourceSummary(requirement, true),
+	)
+	assert.Equal(
+		t,
+		"azd, source-a, source-b, source-c, source-d",
+		sourceSummary(requirement, false),
+	)
+	assert.Equal(
+		t,
+		"azd, source-a, source-b",
+		sourceSummary(autoInstallTestRequirement(candidates[:3]...), true),
+	)
 }
 
 func TestCommonRecommendedSourceRequiresSameConfiguredName(t *testing.T) {

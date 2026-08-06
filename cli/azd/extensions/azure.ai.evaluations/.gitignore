@@ -1,0 +1,5 @@
+# Test report written by ci-test.ps1 for the pipeline to publish.
+junitTestReport.xml
+
+# Debug log written when --debug or AZD_EXT_DEBUG is set.
+azd-ai-eval-*.log

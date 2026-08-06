@@ -1,0 +1,427 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"azureaieval/internal/pkg/eval_api"
+	"azureaieval/internal/project"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+)
+
+// generatePollBudget replaces the inherited 2s x 300 (10 minute) client budget.
+// The generation job is not gateway-capped; the old limit simply gave up while
+// the service was still working, forcing a second command.
+var generatePollBudget = eval_api.PollerOptions{
+	Interval:    5 * time.Second,
+	MaxAttempts: 720, // one hour
+}
+
+// generationPlan is everything one generation job needs, after the flags, the
+// generation spec, and the eval's own target have been reconciled.
+type generationPlan struct {
+	// Name of the artifact being generated — the positional argument.
+	Name string
+	// Agent whose context seeds generation. May be empty, in which case
+	// generation runs from the instruction alone.
+	Agent string
+	// Model deployment the generation job runs against.
+	Model string
+	// Instruction describing what the agent does and what to test.
+	Instruction string
+	// BaseDir is the directory OutputDir resolves against.
+	BaseDir string
+	// OutputDir is where the artifact is written.
+	OutputDir string
+	// SampleSize applies to dataset generation only.
+	SampleSize int
+	// From is what --from named: which of the service's sources to send. Empty
+	// sends whatever the plan has to offer.
+	From []string
+	// TraceDays seeds generation from that many days of recent traces.
+	TraceDays int
+}
+
+// traceOptions converts the plan's trace window into the generation client's
+// day count. Traces seed generation only; they are never a run's data source.
+func (p generationPlan) traceOptions() *eval_api.TraceOptions {
+	if p.TraceDays <= 0 {
+		return nil
+	}
+	return &eval_api.TraceOptions{Days: p.TraceDays}
+}
+
+// resolveInstruction returns the generation instruction, reading it from a
+// file when one is named.
+//
+// A useful instruction describes the agent and what to test, which is often
+// more than fits comfortably on a command line, so it can live in a file that
+// is reviewable alongside the rest of the config.
+func resolveInstruction(inline, path string) (string, error) {
+	if path == "" {
+		return inline, nil
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("reading --agent-instruction-file %q: %w", path, err)
+	}
+	text := strings.TrimSpace(string(raw))
+	if text == "" {
+		return "", fmt.Errorf("--agent-instruction-file %q is empty", path)
+	}
+	return text, nil
+}
+
+// declaredInstructions reads the file named by a generation entry's
+// `instructions`, relative to the spec that declared it.
+//
+// A missing file is not an error. The path can be written before the file
+// exists, so treating its absence as a failure would break the flow `init`
+// scaffolds.
+func declaredInstructions(named, configPath string) (string, error) {
+	if named == "" {
+		return "", nil
+	}
+
+	path := named
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(filepath.Dir(configPath), filepath.FromSlash(named))
+	}
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading instructions %q: %w", named, err)
+	}
+	return strings.TrimSpace(string(raw)), nil
+}
+
+// resolveGenerationInstruction decides what generation is seeded from.
+//
+// The service accepts an agent source that is meant to pull the agent's own
+// instructions, but it fails for every agent, so the agent's context is read
+// here instead. In precedence order: what the caller passed, the instructions
+// the project already holds, then the agent's published ones.
+//
+// The project comes before the service because a local read cannot fail
+// slowly, and because instructions that have been optimized but not yet
+// deployed are the ones the author means — generating against what is still
+// published would test the version they are replacing.
+//
+// The last step is what makes `generate` work with no authored input at all,
+// which is the flow `init` sets up.
+func (ec *evalContext) resolveGenerationInstruction(
+	ctx context.Context,
+	explicit, agentName string,
+	out io.Writer,
+	quiet bool,
+) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
+
+	if agentName == "" {
+		return "", nil
+	}
+
+	local, path, err := ec.agentInstructionsFromProject(ctx, agentName)
+	if err != nil {
+		return "", err
+	}
+	if local != "" {
+		if !quiet {
+			fmt.Fprintf(out, "  Seeding generation from %s.\n", filepath.ToSlash(path))
+		}
+		return local, nil
+	}
+
+	agent, err := ec.evalClient.GetAgent(ctx, agentName, ProjectEndpointAPIVersion)
+	if err != nil {
+		// Generation can still proceed from the agent source alone, so a
+		// failure to read the agent is reported without stopping.
+		if !quiet {
+			fmt.Fprintf(out, "  warning: could not read agent %q for generation context: %v\n",
+				agentName, err)
+		}
+		return "", nil
+	}
+	instructions := agent.Instructions()
+	if instructions != "" && !quiet {
+		fmt.Fprintf(out, "  Seeding generation from the instructions of agent %q.\n", agentName)
+	}
+	return instructions, nil
+}
+
+// agentInstructionsFromProject reads the agent's instructions out of the azd
+// project, coming back empty when there is no project to read.
+//
+// Running outside a project is ordinary — the atomic commands work standalone
+// against the data plane — so not finding one is not an error. An ambiguous
+// target inside one is, because it would otherwise pick an agent at random.
+func (ec *evalContext) agentInstructionsFromProject(
+	ctx context.Context,
+	agentName string,
+) (instruction string, path string, err error) {
+	if ec.azdClient == nil {
+		return "", "", nil
+	}
+	resp, err := ec.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || resp.GetProject() == nil {
+		return "", "", nil
+	}
+	return project.AgentInstructionsFromProject(resp.GetProject(), agentName)
+}
+
+// generateRubric submits the evaluator generation job and saves the rubric.
+func (ec *evalContext) generateRubric(
+	ctx context.Context,
+	plan generationPlan,
+	out io.Writer,
+	noWait bool,
+) (*project.ArtifactRef, error) {
+	fmt.Fprintf(out, "Generating rubric %s...\n", plan.Name)
+
+	sources, unbuildable := eval_api.BuildGenerationSources(
+		plan.From, plan.Agent, "", plan.Instruction, plan.traceOptions(),
+	)
+	if err := refuseUnbuildableSources(unbuildable); err != nil {
+		return nil, err
+	}
+	req := eval_api.NewEvaluatorGenerationJobRequest(plan.Name, plan.Model, sources)
+
+	job, err := ec.evalClient.CreateEvaluatorGenerationJob(ctx, req, ProjectEndpointAPIVersion)
+	if err != nil {
+		return nil, fmt.Errorf("submitting the rubric generation job: %w", err)
+	}
+	if noWait {
+		reportSubmitted(out, "azd ai eval evaluator", job.ID)
+		return nil, nil
+	}
+
+	completed, err := ec.pollGeneration(ctx, job.ID, ProjectEndpointAPIVersion,
+		ec.evalClient.GetEvaluatorGenerationJob)
+	if err != nil {
+		return nil, fmt.Errorf("rubric generation: %w", err)
+	}
+
+	path := project.ArtifactPath(plan.BaseDir, plan.OutputDir, plan.Name, ".json")
+	if err := writeRubric(path, completed.Result); err != nil {
+		return nil, err
+	}
+	fmt.Fprintf(out, "  wrote %s\n", path)
+
+	return &project.ArtifactRef{Name: plan.Name, Source: relativeSource(plan.BaseDir, path)}, nil
+}
+
+// refuseUnbuildableSources reports a --from the plan could not honour.
+//
+// Submitting anyway would run a billed job seeded from less than was asked for
+// and return a plausible-looking artifact, which is the worst outcome: the
+// caller has no way to tell it apart from one built the way they intended.
+func refuseUnbuildableSources(kinds []string) error {
+	if len(kinds) == 0 {
+		return nil
+	}
+	reasons := map[string]string{
+		"prompt": "--from prompt needs --agent-instruction or --agent-instruction-file",
+		"agent": "--from agent needs a target agent; pass --target, " +
+			"or declare one under target: in eval.yaml",
+		"file": "--from file is not a generation source; " +
+			"register the file with `azd ai eval dataset create` instead",
+	}
+	messages := make([]string, 0, len(kinds))
+	for _, k := range kinds {
+		if reason, ok := reasons[k]; ok {
+			messages = append(messages, reason)
+			continue
+		}
+		messages = append(messages, fmt.Sprintf("--from %s cannot be built from this plan", k))
+	}
+	return errors.New(strings.Join(messages, "; "))
+}
+
+// reportSubmitted says what was started and how to get back to it.
+//
+// The job id goes into the command rather than being left as a placeholder:
+// --no-wait exists so the caller can walk away, and the line they walk away
+// with has to be the one they can paste when they come back. The group is named
+// too, because the two job types share no collection.
+func reportSubmitted(out io.Writer, group, jobID string) {
+	fmt.Fprintf(out, "  submitted job %s\n", jobID)
+	fmt.Fprintf(out, "\nReattach with: %s job show %s\n", group, jobID)
+}
+
+// generateDataset submits the data generation job and downloads the result.
+func (ec *evalContext) generateDataset(
+	ctx context.Context,
+	plan generationPlan,
+	out io.Writer,
+	noWait bool,
+) (*project.ArtifactRef, error) {
+	fmt.Fprintf(out, "Generating dataset %s (%d samples)...\n", plan.Name, plan.SampleSize)
+
+	sources, unbuildable := eval_api.BuildGenerationSources(
+		plan.From, plan.Agent, "", plan.Instruction, plan.traceOptions(),
+	)
+	if err := refuseUnbuildableSources(unbuildable); err != nil {
+		return nil, err
+	}
+	req := eval_api.NewDataGenerationJobRequest(plan.Name, plan.Model, plan.SampleSize, sources)
+
+	job, err := ec.evalClient.CreateDataGenerationJob(ctx, req, DataGenerationAPIVersion)
+	if err != nil {
+		return nil, fmt.Errorf("submitting the data generation job: %w", err)
+	}
+	if noWait {
+		reportSubmitted(out, "azd ai eval dataset", job.ID)
+		return nil, nil
+	}
+
+	completed, err := ec.pollGeneration(ctx, job.ID, DataGenerationAPIVersion,
+		ec.evalClient.GetDataGenerationJob)
+	if err != nil && isAgentSeededGenerationFailure(err) {
+		// Agent-seeded generation fails server-side for every agent, while the
+		// same request carrying only the prompt succeeds. Failing the whole
+		// command would block the documented flow on a defect the user cannot
+		// do anything about, so retry without the agent and say so.
+		promptOnly := eval_api.WithoutAgentSource(sources)
+		if eval_api.HasPromptSource(promptOnly) {
+			fmt.Fprintf(out,
+				"  warning: generating from agent %q failed in the service; "+
+					"retrying from the instruction alone.\n", plan.Agent)
+
+			req = eval_api.NewDataGenerationJobRequest(
+				plan.Name, plan.Model, plan.SampleSize, promptOnly)
+			job, err = ec.evalClient.CreateDataGenerationJob(ctx, req, DataGenerationAPIVersion)
+			if err != nil {
+				return nil, fmt.Errorf("submitting the data generation job: %w", err)
+			}
+			completed, err = ec.pollGeneration(ctx, job.ID, DataGenerationAPIVersion,
+				ec.evalClient.GetDataGenerationJob)
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("data generation: %w", explainDataGenerationFailure(err, plan.Agent))
+	}
+
+	name, version := completed.ResolvedNameVersion()
+	if name == "" {
+		return nil, fmt.Errorf("the data generation job returned no dataset reference")
+	}
+
+	// Confirm the version exists before reading it, so a missing dataset is
+	// reported as such rather than as a download failure.
+	if _, err := ec.datasetClient.GetDataset(
+		ctx, name, version, ProjectEndpointAPIVersion,
+	); err != nil {
+		return nil, fmt.Errorf("reading the generated dataset %q: %w", name, err)
+	}
+	content, err := ec.datasetClient.DownloadDatasetContent(ctx, name, version, ProjectEndpointAPIVersion)
+	if err != nil {
+		return nil, fmt.Errorf("downloading the generated dataset %q: %w", name, err)
+	}
+
+	path := project.ArtifactPath(plan.BaseDir, plan.OutputDir, plan.Name, ".jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return nil, fmt.Errorf("creating %q: %w", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		return nil, fmt.Errorf("writing %q: %w", path, err)
+	}
+	fmt.Fprintf(out, "  wrote %s\n", path)
+
+	return &project.ArtifactRef{Name: plan.Name, Source: relativeSource(plan.BaseDir, path)}, nil
+}
+
+// isAgentSeededGenerationFailure recognizes the service-side failure that hits
+// every agent, so it can be retried without the agent rather than surfaced.
+func isAgentSeededGenerationFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	return strings.Contains(text, "DataGenerationJobSystemError") ||
+		strings.Contains(text, "Something went wrong during data generation")
+}
+
+// explainDataGenerationFailure adds context to the service's opaque system
+// error.
+//
+// Seeding generation from an agent currently fails server-side with
+// DataGenerationJobSystemError for every agent, within seconds, while the same
+// request without the agent source runs normally. The raw message says only
+// that something went wrong and to try again, which sends users into a retry
+// loop against a deterministic failure.
+func explainDataGenerationFailure(err error, agentName string) error {
+	if err == nil || agentName == "" {
+		return err
+	}
+	// The poller surfaces the service's message; the code is not always in it.
+	text := err.Error()
+	if !strings.Contains(text, "DataGenerationJobSystemError") &&
+		!strings.Contains(text, "Something went wrong during data generation") {
+		return err
+	}
+	return fmt.Errorf(
+		"%w\n\n"+
+			"This job seeded generation from agent %q. Agent-seeded data generation is "+
+			"currently failing in the service for every agent, so retrying will not help.\n"+
+			"Workarounds: supply your own dataset with --dataset, or run without --target "+
+			"to generate from the instruction alone.",
+		err, agentName)
+}
+
+// pollGeneration waits for a generation job using the raised budget.
+func (ec *evalContext) pollGeneration(
+	ctx context.Context,
+	operationID, apiVersion string,
+	get eval_api.GetJobFunc,
+) (*eval_api.GenerationJob, error) {
+	poller := eval_api.NewPoller(operationID, apiVersion, get)
+	poller.Options = generatePollBudget
+	return poller.Poll(ctx)
+}
+
+// writeRubric persists only the rubric dimensions so the developer can edit
+// weights and descriptions and publish a new version.
+func writeRubric(path string, result json.RawMessage) error {
+	if len(result) == 0 {
+		return fmt.Errorf("the rubric generation job returned no result")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return fmt.Errorf("creating %q: %w", filepath.Dir(path), err)
+	}
+
+	var parsed eval_api.EvaluatorResult
+	if err := json.Unmarshal(result, &parsed); err == nil && len(parsed.Definition.Dimensions) > 0 {
+		body, err := json.MarshalIndent(parsed.Definition, "", "  ")
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(path, body, 0o600)
+	}
+
+	// Fall back to the raw payload rather than losing the result.
+	return os.WriteFile(path, result, 0o600)
+}
+
+// relativeSource expresses an artifact path relative to the deployment spec.
+func relativeSource(baseDir, path string) string {
+	rel, err := filepath.Rel(baseDir, path)
+	if err != nil {
+		return filepath.ToSlash(path)
+	}
+	return "./" + filepath.ToSlash(rel)
+}

@@ -487,6 +487,7 @@ func ejectInfraAfterInit(provider string) error {
 //
 // On success it prints the summary block and returns nil.
 func ejectInfra(projectRoot, provider string) error {
+	yamlPath := filepath.Join(projectRoot, "azure.yaml")
 	rawYAML, err := readProjectAzureYAML(projectRoot)
 	if err != nil {
 		return err

@@ -1897,9 +1897,7 @@ func TestEnsureCompatibleInfraProvider(t *testing.T) {
 	}
 }
 
-// The gate refuses a project that keeps its IaC elsewhere on both branches:
-// standalone eject and the init fall-through both end in ejectInfra.
-func TestResolveInfraGate_RefusesCustomInfraPath(t *testing.T) {
+func TestResolveInfraGate_AllowsCustomInfraPath(t *testing.T) {
 	tests := []struct {
 		name string
 		yaml string
@@ -1935,19 +1933,14 @@ services:
 			require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "myinfra"), 0o750))
 			t.Chdir(projectRoot)
 
-			_, err := resolveInfraGate("bicep")
-			require.Error(t, err)
-			localErr, ok := errors.AsType[*azdext.LocalError](err)
-			require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-			assert.Equal(t, exterrors.CodeInfraEjectCustomInfraPath, localErr.Code)
-			assert.Contains(t, localErr.Message, "myinfra")
+			gate, err := resolveInfraGate("bicep")
+			require.NoError(t, err)
+			assert.Equal(t, tt.name == "project that already declares a foundry service", gate.standaloneEject)
 		})
 	}
 }
 
-// Terraform eject stamps infra.provider and removes infra.path. Refusing before
-// anything is written is what keeps a project's own IaC from being orphaned.
-func TestEjectInfra_Terraform_RefusesCustomInfraPath(t *testing.T) {
+func TestEjectInfra_Terraform_HonorsCustomInfraPath(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	azureYAML := `name: my-project
@@ -1959,20 +1952,12 @@ services:
 `
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), azureYAML)
 
-	err := ejectInfra(dir, "terraform")
-	require.Error(t, err)
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-	assert.Equal(t, exterrors.CodeInfraEjectCustomInfraPath, localErr.Code)
-
-	assert.NoDirExists(t, filepath.Join(dir, "infra"))
-	raw, readErr := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // G304: test path from t.TempDir()
-	require.NoError(t, readErr)
-	assert.Equal(t, azureYAML, string(raw),
-		"a refused eject must not stamp infra.provider or drop the declared infra.path")
+	require.NoError(t, ejectInfra(dir, "terraform"))
+	assert.FileExists(t, filepath.Join(dir, "myinfra", "main.tf"))
+	assert.FileExists(t, filepath.Join(dir, "myinfra", "main.tfvars.json"))
 }
 
-func TestResolveInfraGate_RefusesInfraLayers(t *testing.T) {
+func TestResolveInfraGate_AllowsInfraLayers(t *testing.T) {
 	tests := []struct {
 		name string
 		host string
@@ -1997,17 +1982,14 @@ services:
 `, tt.host))
 			t.Chdir(projectRoot)
 
-			_, err := resolveInfraGate("terraform")
-			require.Error(t, err)
-			localErr, ok := errors.AsType[*azdext.LocalError](err)
-			require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-			assert.Equal(t, exterrors.CodeInfraEjectLayersUnsupported, localErr.Code)
-			assert.NoDirExists(t, filepath.Join(projectRoot, "infra"))
+			gate, err := resolveInfraGate("terraform")
+			require.NoError(t, err)
+			assert.Equal(t, tt.host == "azure.ai.project", gate.standaloneEject)
 		})
 	}
 }
 
-func TestResolveInfraGate_RefusesBicepWithTerraformProvider(t *testing.T) {
+func TestResolveInfraGate_DefersProviderCompatibility(t *testing.T) {
 	tests := []struct {
 		name string
 		host string
@@ -2029,17 +2011,14 @@ services:
 `, tt.host))
 			t.Chdir(projectRoot)
 
-			_, err := resolveInfraGate("bicep")
-			require.Error(t, err)
-			localErr, ok := errors.AsType[*azdext.LocalError](err)
-			require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-			assert.Equal(t, exterrors.CodeInfraEjectProviderConflict, localErr.Code)
-			assert.NoDirExists(t, filepath.Join(projectRoot, "infra"))
+			gate, err := resolveInfraGate("bicep")
+			require.NoError(t, err)
+			assert.Equal(t, tt.host == "azure.ai.project", gate.standaloneEject)
 		})
 	}
 }
 
-func TestResolveInfraGate_RefusesCustomInfraModule(t *testing.T) {
+func TestResolveInfraGate_AllowsCustomInfraModule(t *testing.T) {
 	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
 	projectRoot := t.TempDir()
 	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), `name: my-project
@@ -2051,15 +2030,12 @@ services:
 `)
 	t.Chdir(projectRoot)
 
-	_, err := resolveInfraGate("bicep")
-	require.Error(t, err)
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-	assert.Equal(t, exterrors.CodeInfraEjectCustomModule, localErr.Code)
-	assert.NoDirExists(t, filepath.Join(projectRoot, "infra"))
+	gate, err := resolveInfraGate("bicep")
+	require.NoError(t, err)
+	assert.False(t, gate.standaloneEject)
 }
 
-func TestEjectInfra_RefusesInfraLayers(t *testing.T) {
+func TestEjectInfra_RefusesOnlyFoundryLayer(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	azureYAML := `name: my-project
@@ -2078,7 +2054,7 @@ services:
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-	assert.Equal(t, exterrors.CodeInfraEjectLayersUnsupported, localErr.Code)
+	assert.Equal(t, exterrors.CodeInvalidAzureYaml, localErr.Code)
 	assert.NoDirExists(t, filepath.Join(dir, "infra"))
 
 	raw, readErr := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // G304: test path from t.TempDir()
@@ -2086,7 +2062,7 @@ services:
 	assert.Equal(t, azureYAML, string(raw), "a refused eject must not rewrite the provider or layers")
 }
 
-func TestEjectInfra_RefusesCustomInfraModule(t *testing.T) {
+func TestEjectInfra_HonorsCustomInfraModule(t *testing.T) {
 	t.Parallel()
 	for _, provider := range []string{"bicep", "terraform"} {
 		t.Run(provider, func(t *testing.T) {
@@ -2101,16 +2077,13 @@ services:
 `
 			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), azureYAML)
 
-			err := ejectInfra(dir, provider)
-			require.Error(t, err)
-			localErr, ok := errors.AsType[*azdext.LocalError](err)
-			require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-			assert.Equal(t, exterrors.CodeInfraEjectCustomModule, localErr.Code)
-			assert.NoDirExists(t, filepath.Join(dir, "infra"))
-
-			raw, readErr := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // G304: test path
-			require.NoError(t, readErr)
-			assert.Equal(t, azureYAML, string(raw), "a refused eject must not rewrite infra.module")
+			require.NoError(t, ejectInfra(dir, provider))
+			if provider == "bicep" {
+				assert.FileExists(t, filepath.Join(dir, "infra", "platform.bicep"))
+				assert.FileExists(t, filepath.Join(dir, "infra", "platform.parameters.json"))
+			} else {
+				assert.FileExists(t, filepath.Join(dir, "infra", "platform.tfvars.json"))
+			}
 		})
 	}
 }
@@ -2131,7 +2104,7 @@ services:
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-	assert.Equal(t, exterrors.CodeInfraEjectProviderConflict, localErr.Code)
+	assert.Equal(t, exterrors.CodeInvalidAzureYaml, localErr.Code)
 	assert.NoDirExists(t, filepath.Join(dir, "infra"))
 }
 
@@ -2178,11 +2151,7 @@ func TestResolveInfraGate_NoProjectRunsInit(t *testing.T) {
 	assert.Empty(t, gate.projectRoot, "no project root to eject from yet")
 }
 
-// A project with no Foundry service now runs the whole init flow before
-// ejecting, so the ./infra/ conflict has to surface up front instead of after
-// the user has answered every prompt. The existing tree usually belongs to the
-// project's own services, so the refusal must offer the non-destructive path.
-func TestResolveInfraGate_RefusesExistingInfraBeforeRunningInit(t *testing.T) {
+func TestResolveInfraGate_AllowsExistingInfraBeforeRunningInit(t *testing.T) {
 	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
 	projectRoot := t.TempDir()
 	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), `name: my-project
@@ -2193,17 +2162,10 @@ services:
 	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
 	t.Chdir(projectRoot)
 
-	_, err := resolveInfraGate("bicep")
-	require.Error(t, err)
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-	assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
-	assert.Contains(t, localErr.Suggestion, "without --infra",
-		"the non-destructive path has to be offered, and offered first")
-	assert.Less(t,
-		strings.Index(localErr.Suggestion, "without --infra"),
-		strings.Index(localErr.Suggestion, "delete ./infra/"),
-		"never lead with deleting IaC the extension may not have authored")
+	gate, err := resolveInfraGate("bicep")
+	require.NoError(t, err)
+	assert.False(t, gate.standaloneEject)
+	assert.Equal(t, projectRoot, gate.projectRoot)
 }
 
 func TestResolveInfraGate_PropagatesInvalidFoundryConfiguration(t *testing.T) {
@@ -2334,38 +2296,6 @@ services:
 	require.NoError(t, err)
 	assert.Contains(t, string(raw), "host: containerapp")
 	assert.Contains(t, string(raw), "host: azure.ai.project")
-}
-
-// The pre-existing ./infra/ refusal moved into the gate, so it now fires before
-// the user is walked through init. Asserted at the command level because the
-// ordering is what the gate exists for.
-func TestInitInfra_ExistingProjectWithPreexistingInfraRefusesUpFront(t *testing.T) {
-	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
-	projectRoot := t.TempDir()
-	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), `name: my-project
-services:
-  web:
-    host: containerapp
-`)
-	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
-	t.Chdir(projectRoot)
-
-	cmd := newInitCommand(&azdext.ExtensionContext{})
-	cmd.SetArgs([]string{"--infra"})
-	cmd.SetOut(io.Discard)
-	cmd.SetErr(io.Discard)
-
-	var execErr error
-	withCapturedStdout(t, func() {
-		execErr = cmd.Execute()
-	})
-
-	require.Error(t, execErr)
-	localErr, ok := errors.AsType[*azdext.LocalError](execErr)
-	require.True(t, ok, "expected *azdext.LocalError, got %T", execErr)
-	assert.NotEqual(t, exterrors.CodeInfraEjectNoFoundryService, localErr.Code,
-		"--infra must no longer refuse a project that simply has no agent service yet")
-	assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
 }
 
 func TestEjectInfra_Terraform_HappyPath_WritesExpectedFiles(t *testing.T) {

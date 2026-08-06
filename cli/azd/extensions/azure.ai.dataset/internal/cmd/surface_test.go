@@ -32,18 +32,13 @@ func walk(t *testing.T, cmd *cobra.Command, path []string, visit func(string, *c
 	}
 }
 
-// The command tree is the spec's `azd ai dataset` table. The groups moved here
-// from azure.ai.evaluations, so this is also what says the move was complete.
+// The command tree is the spec's `azd ai dataset` table. The CRUD groups moved
+// here from azure.ai.evaluations; `generate` deliberately did not, because it
+// writes the `datasets:` entry in evals/eval.yaml, which that extension owns.
 func TestCommandTreeMatchesTheSpec(t *testing.T) {
 	want := []string{
 		"create",
 		"delete",
-		"generate",
-		"job",
-		"job cancel",
-		"job delete",
-		"job list",
-		"job show",
 		"list",
 		"show",
 		"update",
@@ -108,20 +103,16 @@ func TestServiceCommandsTakeProjectEndpoint(t *testing.T) {
 	})
 }
 
-// The spec says --from "selects one or more" of the sources, so it has to be
-// repeatable. Declared as a plain string it would still accept every documented
-// single-source invocation and silently keep only the last of a repeated one.
-func TestGenerateFromTakesMoreThanOneSource(t *testing.T) {
-	flag := find(t, "generate").Flags().Lookup("from")
-	require.NotNil(t, flag, "generate must offer --from")
-
-	assert.Equal(t, "stringSlice", flag.Value.Type(),
-		"--from selects one or more sources, so it cannot be a single string")
-
-	for _, source := range generateSources {
-		assert.Containsf(t, flag.Usage, source,
-			"--from accepts %q, so its help has to say so", source)
-	}
+// Generation stays with `azure.ai.evaluations`, so nothing here may grow a
+// `--from`: a second generate would be a second place for the catalog write to
+// go missing.
+func TestNoGenerationCommandLandsHere(t *testing.T) {
+	walk(t, NewRootCommand(), nil, func(path string, cmd *cobra.Command) {
+		assert.Nilf(t, cmd.Flags().Lookup("from"),
+			"%s offers --from; generation belongs to azure.ai.evaluations", path)
+		assert.NotEqualf(t, "generate", cmd.Name(),
+			"%s is a generation command; it belongs to azure.ai.evaluations", path)
+	})
 }
 
 // Messages that tell a user what to run next have to name a command that
@@ -193,12 +184,10 @@ func TestSuggestedCommandsExist(t *testing.T) {
 // eval extension's version of a command it serves itself sends them somewhere
 // they may not have installed.
 //
-// generate's "register this in an eval configuration" line is the one real
-// exception, because eval.yaml genuinely belongs to the other extension.
+// Nothing here may suggest one any more: `generate` was the only command with a
+// reason to, and it stayed with azure.ai.evaluations.
 func TestNoStaleEvalDatasetSuggestions(t *testing.T) {
-	allowed := map[string]bool{
-		"azd ai eval dataset create": true, // registering a generated file in eval.yaml
-	}
+	allowed := map[string]bool{}
 
 	err := filepath.WalkDir("../..", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -229,7 +218,6 @@ func TestNoStaleEvalDatasetSuggestions(t *testing.T) {
 
 // siblingNamespaces are the other Foundry extensions this one points users at.
 var siblingNamespaces = map[string]bool{
-	"eval":    true, // registering a generated dataset in an eval configuration
 	"project": true, // `azd ai project set` owns the shared endpoint context
 }
 

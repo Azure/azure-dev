@@ -167,6 +167,15 @@ func IsVersionConflict(err error) bool {
 	return respErr.StatusCode == http.StatusConflict
 }
 
+// IsNotFound reports whether the service answered 404.
+func IsNotFound(err error) bool {
+	var respErr *azcore.ResponseError
+	if !errors.As(err, &respErr) {
+		return false
+	}
+	return respErr.StatusCode == http.StatusNotFound
+}
+
 // UploadNewVersion reads the first JSONL file from localDir, computes the next
 // version from currentVersion, and uploads it as a new dataset version using
 // the 3-step pending upload flow:

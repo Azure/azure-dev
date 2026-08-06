@@ -17,7 +17,7 @@ func NewRootCommand() *cobra.Command {
 		Name: "dataset",
 		Use:  "dataset <command> [options]",
 		Short: fmt.Sprintf(
-			"Create, generate and version Foundry datasets from your terminal. %s",
+			"Register and version Foundry datasets from your terminal. %s",
 			color.YellowString("(Beta)"),
 		),
 	})
@@ -40,15 +40,15 @@ func NewRootCommand() *cobra.Command {
 		return nil
 	}
 
+	// Generation stays with `azure.ai.evaluations`: it writes the `datasets:`
+	// entry in evals/eval.yaml, which is that extension's file.
 	rootCmd.AddCommand(
 		newDatasetCreateCommand(),
 		newDatasetUpdateCommand(),
-		newDatasetGenerateCommand(),
 		newDatasetListCommand(),
 		newDatasetShowCommand(),
 		newDatasetDeleteCommand(),
 		newDatasetVersionsCommand(),
-		newJobCommand(),
 	)
 
 	// The manifest declares the `metadata` capability, which azd uses to

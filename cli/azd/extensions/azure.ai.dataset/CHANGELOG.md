@@ -4,8 +4,8 @@
 
 ### Features Added
 
-- Initial release. `create`, `update`, `generate`, `list`, `show`, `delete`,
-  `versions list`, and the `job` group for reattaching to generation jobs.
-- The command groups moved here from `azure.ai.evaluations`, where they shipped
-  first because M1's hero scenarios needed `dataset generate` to exist before a
-  second extension could be published.
+- Initial release. `create`, `update`, `list`, `show`, `delete`, and
+  `versions list`.
+- The CRUD groups moved here from `azure.ai.evaluations`. Generation stayed
+  there: `dataset generate` writes the `datasets:` entry in `evals/eval.yaml`,
+  and that file belongs to the evaluation extension.

@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"azureaidataset/internal/pkg/dataset_api"
-	"azureaidataset/internal/pkg/gen_api"
 
 	"github.com/spf13/cobra"
 )
@@ -248,7 +247,7 @@ func newDatasetShowCommand() *cobra.Command {
 
 			ds, err := ec.datasetClient.GetDataset(ctx, name, version, ProjectEndpointAPIVersion)
 			if err != nil {
-				if gen_api.IsNotFound(err) {
+				if dataset_api.IsNotFound(err) {
 					return fmt.Errorf(
 						"no dataset %q at version %q in this project; "+
 							"`azd ai dataset list` shows the ones there are", name, version)
@@ -299,7 +298,7 @@ func newDatasetDeleteCommand() *cobra.Command {
 			if err := ec.datasetClient.DeleteDatasetVersion(
 				ctx, name, version, ProjectEndpointAPIVersion,
 			); err != nil {
-				if gen_api.IsNotFound(err) {
+				if dataset_api.IsNotFound(err) {
 					return fmt.Errorf(
 						"no dataset %q at version %q in this project", name, version)
 				}

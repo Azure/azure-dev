@@ -1142,10 +1142,10 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Initialize a new AI agent project.
 
 When -m points at a sample's unified azure.yaml (a project manifest that
-declares services with host: azure.ai.project / azure.ai.agent / ...), that
-azure.yaml is adopted as the project manifest and its referenced files are
-placed at the project root. When -m points at an agent manifest instead, the
-project's azure.yaml is generated from it.
+declares a service with host: azure.ai.agent), that azure.yaml is adopted as
+the project manifest and its referenced files are placed at the project root.
+When -m points at an agent manifest instead, the project's azure.yaml is
+generated from it.
 
 The agent name written to agent.yaml is the Foundry agent identity. Foundry
 agents are unique by name within a project, so deploying with an existing name
@@ -1209,23 +1209,28 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				infraProvider = p
 			}
 
-			// `--infra` within an existing azd agent project is a standalone
-			// eject: synthesize infra (Bicep or Terraform) from
+			// `--infra` inside a project that already declares a Foundry service
+			// is a standalone eject: synthesize infra (Bicep or Terraform) from
 			// the existing azure.yaml, write ./infra/, and return without
 			// prompting.
+			//
+			// Any other project — including one azd already manages that has no
+			// Foundry service yet — has nothing to eject, so `--infra` falls
+			// through to the normal init flow and ejects afterwards via
+			// ejectInfraAfterInit. See resolveInfraGate.
 			if infraProvider != "" {
-				projectRoot, projectRootErr := azdext.GetProjectDir()
-				if projectRootErr != nil && !errors.Is(projectRootErr, azdext.ErrProjectNotFound) {
-					return fmt.Errorf("resolve azd project directory: %w", projectRootErr)
+				gate, gateErr := resolveInfraGate(infraProvider)
+				if gateErr != nil {
+					return gateErr
 				}
-				if projectRootErr == nil {
-					// Reject inputs the eject path would silently ignore (a
-					// positional arg, -m, or --src) instead of pretending they
-					// were honored.
-					if err := validateStandaloneEjectArgs(args, flags); err != nil {
+				if gate.standaloneEject {
+					// Reject init inputs the eject path would silently ignore
+					// instead of pretending they were honored. They stay valid
+					// on the init fall-through, where they do drive the flow.
+					if err := validateStandaloneEjectArgs(cmd, args); err != nil {
 						return err
 					}
-					return ejectInfra(projectRoot, infraProvider)
+					return ejectInfra(gate.projectRoot, infraProvider)
 				}
 			}
 
@@ -1445,16 +1450,38 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				// (generate the project). For private GitHub URLs, the detector
 				// falls back to the authenticated gh CLI download path before
 				// deciding whether this is a unified azure.yaml. See #8798.
+				manifestRoot := ""
+				if isLocalFilePath(flags.manifestPointer) {
+					manifestRoot = filepath.Dir(flags.manifestPointer)
+				}
 				if content, ok := readManifestContentForInitDetection(
 					ctx, azdClient, flags.manifestPointer, httpClient,
-				); ok && looksLikeFoundryAzureYaml(content) {
-					if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content); err != nil {
-						if exterrors.IsCancellation(err) {
-							return exterrors.Cancelled("initialization was cancelled")
-						}
+				); ok {
+					manifestInfo, err := inspectAzureYaml(content, manifestRoot)
+					if err != nil {
 						return err
 					}
-					return ejectInfraAfterInit(infraProvider)
+					if manifestInfo.hasServices {
+						if manifestInfo.hasAgentService ||
+							manifestInfo.hasUnresolvedRefs {
+							if err := runInitFromAzureYaml(
+								ctx,
+								flags,
+								azdClient,
+								httpClient,
+								content,
+							); err != nil {
+								if exterrors.IsCancellation(err) {
+									return exterrors.Cancelled(
+										"initialization was cancelled",
+									)
+								}
+								return err
+							}
+							return ejectInfraAfterInit(infraProvider)
+						}
+						return missingAgentServiceError(flags.manifestPointer)
+					}
 				}
 
 				// Resolve the agent name BEFORE creating the project folder
@@ -1782,7 +1809,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Eject infrastructure-as-code from azure.yaml into ./infra/. "+
 			"A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets "+
 			"infra.provider: terraform; --infra=bicep is explicit Bicep. "+
-			"When azure.yaml already exists, runs as a standalone eject and skips the init prompts.")
+			"When azure.yaml already declares a Foundry project service, runs as a standalone "+
+			"eject and skips the init prompts; otherwise init runs first and the eject follows it.")
 	// NoOptDefVal makes a bare `--infra` resolve to "bicep" while still allowing
 	// `--infra=terraform` / `--infra=bicep`. Absent flag stays "" (no eject).
 	cmd.Flags().Lookup("infra").NoOptDefVal = project.BicepProviderName
@@ -3000,6 +3028,10 @@ func writeAgentIgnoreFile(targetDir string) error {
 	return nil
 }
 
+func printAgentAddedMessage(agentName string) {
+	fmt.Printf("\nAdded agent '%s' to azure.yaml.\n", agentName)
+}
+
 func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest) error {
 	// If targetDir is ".", resolve the actual relative path from the project root to cwd.
 	// This ensures azure.yaml gets the correct "project:" value when init is run from a subdirectory.
@@ -3221,10 +3253,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		return err
 	}
 
-	fmt.Printf(
-		"\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n",
-		a.serviceNameOverride,
-	)
+	printAgentAddedMessage(agentDef.Name)
 
 	// Replace the legacy hardcoded `azd up` / `azd deploy` hint with the
 	// shared nextstep resolver. The resolver inspects the current azd

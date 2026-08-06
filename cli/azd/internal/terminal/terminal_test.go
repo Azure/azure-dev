@@ -46,6 +46,11 @@ func TestIsTerminal_AgentDetection(t *testing.T) {
 			expected: false,
 		},
 		{
+			name:     "GitHub Copilot VSCode disables TTY",
+			envVars:  map[string]string{"AI_AGENT": "github_copilot_vscode_agent"},
+			expected: false,
+		},
+		{
 			name:     "Gemini CLI disables TTY",
 			envVars:  map[string]string{"GEMINI_CLI": "1"},
 			expected: false,
@@ -92,7 +97,7 @@ func clearTestEnvVars(t *testing.T) {
 	envVarsToUnset := []string{
 		"AZD_FORCE_TTY",
 		// Agent env vars
-		"AI_AGENT",
+		"AI_AGENT", // GitHub Copilot hosts
 		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",
 		"GITHUB_COPILOT_CLI", "GH_COPILOT", "COPILOT_CLI",
 		"GEMINI_CLI", "GEMINI_CLI_NO_RELAUNCH",

@@ -1,0 +1,32 @@
+# Does the official microsoft-foundry skill make an agent better at editing Foundry
+# `azure.yaml` files?
+#
+#   npm run eval:foundry:experiment
+#
+# The authoring eval runs skill-free by default, so it A/Bs cleanly and is graded on
+# file contents -- the delta is "did it produce a correct file", not "did it sound more
+# confident". eval-foundry-skill.yaml is excluded: its graders assert on skill routing,
+# so the skill-off arm would fail by construction.
+name: foundry-skill-impact
+
+evals:
+  - eval-foundry-authoring.yaml
+
+# An empty skills list replaces the eval's skills entirely; the other value injects
+# the fetched skill.
+matrix:
+  skills:
+    path: /environment/skills
+    values:
+      - without-skill: []
+      - with-skill: ["./skills/.external/microsoft-foundry"]
+  model:
+    path: /defaults/model
+    values:
+      - claude-sonnet-4.6: claude-sonnet-4.6
+      - gpt-5.5: gpt-5.5
+
+# Control variant that deltas are measured against.
+baseline:
+  skills: without-skill
+  model: claude-sonnet-4.6

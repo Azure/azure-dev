@@ -24,6 +24,11 @@ const PackBuildEvent = "tools.pack.build"
 // AgentTroubleshootEvent is the name of the event which tracks agent troubleshoot operations.
 const AgentTroubleshootEvent = "agent.troubleshoot"
 
+// AspireUnsupportedAppHostEvent tracks when azd detects an Aspire polyglot (non-C#) AppHost
+// (e.g. a TypeScript or Python AppHost) which azd does not yet support. See
+// https://github.com/Azure/azure-dev/issues/7138.
+const AspireUnsupportedAppHostEvent = "aspire.apphost.unsupported"
+
 // Extension related events.
 const (
 	ExtensionRunEvent     = "ext.run"

@@ -38,6 +38,7 @@ OpenTelemetry span name or event name.
 | `ContainerRemoteBuildEvent` | `container.remotebuild` | Azure-side remote container build |
 | `ExeGraphRunEvent` | `exegraph.run` | Root span for executing an entire graph |
 | `ExeGraphStepEvent` | `exegraph.step` | Single step execution within the graph |
+| `AspireUnsupportedAppHostEvent` | `aspire.apphost.unsupported` | Detected an unsupported Aspire polyglot (non-C#) AppHost during app detection |
 
 ## Fields
 
@@ -156,6 +157,12 @@ not emitted by azd spans.
 |-------|----------|----------------|---------|
 | Builder image | `pack.builder.image` | SystemMetadata | FeatureInsight |
 | Builder tag | `pack.builder.tag` | SystemMetadata | FeatureInsight |
+
+### Aspire
+
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| AppHost language | `aspire.apphost.language` | SystemMetadata | FeatureInsight | Fixed enum (`typescript`/`python`/`go`/`java`/`rust`); not hashed; not a measurement. Emitted on `aspire.apphost.unsupported`. |
 
 ### MCP
 

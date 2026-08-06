@@ -20,6 +20,7 @@ func TestAgentType_DisplayName(t *testing.T) {
 		{AgentTypeClaudeCode, "Claude Code"},
 		{AgentTypeGitHubCopilotCLI, "GitHub Copilot CLI"},
 		{AgentTypeGitHubCopilotApp, "GitHub Copilot App"},
+		{AgentTypeGitHubCopilotVSCode, "GitHub Copilot VSCode"},
 		{AgentTypeVSCodeCopilot, "VS Code GitHub Copilot"},
 		{AgentTypeGemini, "Gemini"},
 		{AgentTypeOpenCode, "OpenCode"},
@@ -64,8 +65,42 @@ func TestDetectFromEnvVars(t *testing.T) {
 			detected:      true,
 		},
 		{
+			name: "GitHub Copilot VSCode takes precedence over Copilot CLI",
+			envVars: map[string]string{
+				"AI_AGENT":           "github_copilot_vscode_agent",
+				"GITHUB_COPILOT_CLI": "true",
+				"GH_COPILOT":         "1",
+				"COPILOT_CLI":        "1",
+			},
+			expectedAgent: AgentTypeGitHubCopilotVSCode,
+			detected:      true,
+		},
+		{
 			name:          "Unrecognized AI_AGENT value",
 			envVars:       map[string]string{"AI_AGENT": "another_agent"},
+			expectedAgent: AgentTypeUnknown,
+			detected:      false,
+		},
+		{
+			name: "AI_AGENT requires an exact value",
+			envVars: map[string]string{
+				"AI_AGENT": "github_copilot_vscode_agent_extra",
+			},
+			expectedAgent: AgentTypeUnknown,
+			detected:      false,
+		},
+		{
+			name: "Wrong AI_AGENT value falls back to Copilot CLI",
+			envVars: map[string]string{
+				"AI_AGENT":    "github_copilot_vscode",
+				"COPILOT_CLI": "1",
+			},
+			expectedAgent: AgentTypeGitHubCopilotCLI,
+			detected:      true,
+		},
+		{
+			name:          "COPILOT_AGENT alone is not attributed",
+			envVars:       map[string]string{"COPILOT_AGENT": "1"},
 			expectedAgent: AgentTypeUnknown,
 			detected:      false,
 		},
@@ -343,7 +378,7 @@ func TestDisableAgentDetect(t *testing.T) {
 // This list must be kept in sync with knownEnvVarPatterns in detect_env.go.
 func clearAgentEnvVars(t *testing.T) {
 	envVarsToUnset := []string{
-		// GitHub Copilot App
+		// GitHub Copilot hosts
 		"AI_AGENT",
 		// Claude Code
 		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",

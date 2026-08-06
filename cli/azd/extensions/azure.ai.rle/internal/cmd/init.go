@@ -91,7 +91,7 @@ func (a *initAction) Run() error {
 			"  azd ai rle run\n"+
 			"  $env:FOUNDRY_PROJECT_ENDPOINT = \"https://<account>.services.ai.azure.com/api/projects/<project>\"\n"+
 			"  $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = \"<registry>.azurecr.io\"\n"+
-			"  azd ai rle deploy\n",
+			"  azd ai rle publish\n",
 		displayDir,
 		displayDir,
 	)

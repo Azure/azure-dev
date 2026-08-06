@@ -5,13 +5,19 @@ package appdetect
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"log"
 	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type dotNetAppHostDetector struct {
@@ -58,6 +64,36 @@ func (ad *dotNetAppHostDetector) DetectProject(ctx context.Context, path string,
 					DetectionRule: "Inferred by presence of: " + projectPath,
 				}, nil
 			}
+		}
+	}
+
+	// Finally, check for an Aspire polyglot (non-C#) AppHost (e.g. TypeScript or Python). azd does
+	// not support these yet, so surface an actionable error instead of letting the AppHost fall
+	// through to a generic source build (which produces confusing Docker/buildpack failures).
+	// See https://github.com/Azure/azure-dev/issues/7138.
+	if language, appHostFile, ok := detectAspirePolyglotAppHost(path, entries); ok {
+		_, span := tracing.Start(
+			ctx,
+			events.AspireUnsupportedAppHostEvent,
+			trace.WithAttributes(fields.AspireAppHostLanguageKey.String(language)))
+		span.End()
+
+		return nil, &errorhandler.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"detected an Aspire polyglot (%s) AppHost at %q, which azd does not support yet",
+				language, appHostFile),
+			Message: "azd does not yet support Aspire polyglot (non-C#) AppHosts, " +
+				"such as TypeScript or Python AppHosts.",
+			Suggestion: "Track and upvote support for this scenario at " +
+				"https://github.com/Azure/azure-dev/issues/7138.\n" +
+				"In the meantime, use a C# (.NET) Aspire AppHost, or publish with the Aspire CLI " +
+				"(for example, 'aspire deploy').",
+			Links: []errorhandler.ErrorLink{
+				{
+					URL:   "https://github.com/Azure/azure-dev/issues/7138",
+					Title: "Support Aspire polyglot (non-C#) AppHost projects in azd",
+				},
+			},
 		}
 	}
 

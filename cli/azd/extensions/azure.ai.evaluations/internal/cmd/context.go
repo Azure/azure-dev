@@ -36,11 +36,14 @@ type evalContext struct {
 }
 
 // newEvalContext resolves the project endpoint and builds the data-plane
-// clients. Endpoint resolution order:
+// clients. The resolution order is projectctx's, so that every Foundry
+// extension answers the same question the same way:
 //
 //  1. --project-endpoint
-//  2. the active azd environment's FOUNDRY_PROJECT_ENDPOINT
-//  3. the host environment variable of the same name
+//  2. the active azd environment (FOUNDRY_PROJECT_ENDPOINT, then AZURE_AI_PROJECT_ENDPOINT)
+//  3. global config: extensions.ai-agents.project.context.endpoint
+//  4. the host environment variables of the same two names
+//  5. otherwise an error naming how to set one
 func newEvalContext(ctx context.Context, endpointFlag string) (*evalContext, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {

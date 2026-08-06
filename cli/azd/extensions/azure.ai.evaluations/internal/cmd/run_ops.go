@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"strconv"
 
 	"azureaieval/internal/pkg/eval_api"
 
@@ -73,10 +74,16 @@ func newRunListCommand() *cobra.Command {
 
 			rows := make([][]string, 0, len(list.Data))
 			for _, run := range list.Data {
-				rows = append(rows, []string{run.ID, run.Name, run.Status, summarizeCounts(run.ResultCounts)})
+				rows = append(rows, []string{
+					run.ID,
+					timestampString(run.CreatedAt),
+					run.Status,
+					sampleCount(run.ResultCounts),
+					runPassRate(run.ResultCounts),
+				})
 			}
 			return emitTable(cmd.OutOrStdout(),
-				[]string{"RUN ID", "NAME", "STATUS", "RESULTS"}, rows)
+				[]string{"RUN", "STARTED", "STATUS", "SAMPLES", "PASS RATE"}, rows)
 		},
 	}
 	addEvalFlag(cmd, &groupName)
@@ -300,4 +307,23 @@ func summarizeCounts(counts *eval_api.EvalRunResultCounts) string {
 	}
 	return fmt.Sprintf("%d passed, %d failed, %d errored",
 		counts.Passed, counts.Failed, counts.Errored)
+}
+
+// sampleCount is how many rows the run scored, which is what makes two rows of
+// `run list` comparable: a rate over 15 samples and one over 200 are not the
+// same claim.
+func sampleCount(counts *eval_api.EvalRunResultCounts) string {
+	if counts == nil {
+		return ""
+	}
+	return strconv.Itoa(counts.Total)
+}
+
+// runPassRate is the same passed/total the gate uses, so a row a reader gates
+// on cannot disagree with the gate.
+func runPassRate(counts *eval_api.EvalRunResultCounts) string {
+	if counts == nil || counts.Total == 0 {
+		return ""
+	}
+	return formatRate(counts.Passed, counts.Total)
 }

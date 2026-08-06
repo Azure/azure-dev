@@ -758,6 +758,7 @@ func TestTryAutoInstallExtensionVersionRejectsInstalledVersionConstraint(t *test
 		manager,
 		extensions.ExtensionMetadata{Id: "test.extension"},
 		">=2.0.0",
+		false,
 	)
 
 	require.False(t, installed)

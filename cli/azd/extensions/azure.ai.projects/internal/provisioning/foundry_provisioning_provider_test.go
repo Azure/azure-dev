@@ -4,7 +4,6 @@
 package provisioning
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -23,19 +22,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-type stubSubscriptionDeploymentGetter struct {
-	resp armresources.DeploymentsClientGetAtSubscriptionScopeResponse
-	err  error
-}
-
-func (s *stubSubscriptionDeploymentGetter) GetAtSubscriptionScope(
-	context.Context,
-	string,
-	*armresources.DeploymentsClientGetAtSubscriptionScopeOptions,
-) (armresources.DeploymentsClientGetAtSubscriptionScopeResponse, error) {
-	return s.resp, s.err
-}
 
 func TestFindFoundryProjectService(t *testing.T) {
 	tests := []struct {
@@ -670,35 +656,31 @@ func TestVerifyLayerResourceGroupOwnership(t *testing.T) {
 		subscriptionID = "00000000-0000-0000-0000-000000000001"
 		resourceGroup  = "rg-foundry"
 	)
-	response := func(ids ...string) armresources.DeploymentsClientGetAtSubscriptionScopeResponse {
+	properties := func(ids ...string) *armresources.DeploymentPropertiesExtended {
 		resources := make([]*armresources.ResourceReference, 0, len(ids))
 		for _, id := range ids {
 			resources = append(resources, &armresources.ResourceReference{ID: new(id)})
 		}
-		return armresources.DeploymentsClientGetAtSubscriptionScopeResponse{
-			DeploymentExtended: armresources.DeploymentExtended{
-				Properties: &armresources.DeploymentPropertiesExtended{OutputResources: resources},
-			},
-		}
+		return &armresources.DeploymentPropertiesExtended{OutputResources: resources}
 	}
 
 	ownedID := "/subscriptions/" + subscriptionID + "/resourceGroups/" + resourceGroup
-	require.NoError(t, verifyLayerResourceGroupOwnership(
-		t.Context(), &stubSubscriptionDeploymentGetter{resp: response(ownedID)},
-		"deployment", subscriptionID, resourceGroup))
+	assert.Equal(t, ownedID, ownedLayerResourceGroupID(properties(ownedID), subscriptionID, resourceGroup))
+	require.NoError(t, verifyLayerResourceGroupOwnership(ownedID, subscriptionID, resourceGroup))
+	require.NoError(t, verifyLayerResourceGroupOwnership(strings.ToUpper(ownedID)+"/", subscriptionID, resourceGroup))
 
 	for _, tt := range []struct {
-		name string
-		resp armresources.DeploymentsClientGetAtSubscriptionScopeResponse
+		name    string
+		ownerID string
+		props   *armresources.DeploymentPropertiesExtended
 	}{
-		{name: "no output resources"},
-		{name: "only resources inside group", resp: response(ownedID + "/providers/Microsoft.Storage/storageAccounts/a")},
-		{name: "different group", resp: response("/subscriptions/" + subscriptionID + "/resourceGroups/other")},
+		{name: "no ownership marker"},
+		{name: "only resource inside group", props: properties(ownedID + "/providers/Microsoft.Storage/storageAccounts/a")},
+		{name: "different group", ownerID: "/subscriptions/" + subscriptionID + "/resourceGroups/other"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			err := verifyLayerResourceGroupOwnership(
-				t.Context(), &stubSubscriptionDeploymentGetter{resp: tt.resp},
-				"deployment", subscriptionID, resourceGroup)
+			assert.Empty(t, ownedLayerResourceGroupID(tt.props, subscriptionID, resourceGroup))
+			err := verifyLayerResourceGroupOwnership(tt.ownerID, subscriptionID, resourceGroup)
 			require.Error(t, err)
 			var local *azdext.LocalError
 			require.ErrorAs(t, err, &local)
@@ -727,6 +709,25 @@ func TestValidateFoundryProviderLayers(t *testing.T) {
 	require.ErrorAs(t, err, &local)
 	assert.Equal(t, exterrors.CodeInvalidServiceConfig, local.Code)
 	assert.Contains(t, local.Message, "root Foundry provider")
+}
+
+func TestFoundryInfraConfig_HasFoundryLayer(t *testing.T) {
+	root, err := parseFoundryInfraConfig([]byte(`infra:
+  name: root-name
+  provider: microsoft.foundry
+`))
+	require.NoError(t, err)
+	assert.False(t, root.hasFoundryLayer("root-name"))
+
+	layered, err := parseFoundryInfraConfig([]byte(`infra:
+  provider: bicep
+  layers:
+    - name: foundry
+      provider: microsoft.foundry
+`))
+	require.NoError(t, err)
+	assert.True(t, layered.hasFoundryLayer("foundry"))
+	assert.False(t, layered.hasFoundryLayer(""))
 }
 
 func TestEncodeParamValue(t *testing.T) {
@@ -1312,13 +1313,17 @@ func TestWithTenantOutput(t *testing.T) {
 
 func TestNormalizeOutputs_LayerOmitsRootResourceGroup(t *testing.T) {
 	t.Parallel()
-	p := &FoundryProvisioningProvider{isLayer: true}
+	p := &FoundryProvisioningProvider{
+		isLayer:          true,
+		foundryRGOwnerID: "/subscriptions/sub/resourceGroups/rg-foundry",
+	}
 	got := p.normalizeOutputs(map[string]*azdext.ProvisioningOutputParameter{
 		envKeyResourceGroup: {Type: "string", Value: "rg-foundry"},
 		envKeyFoundryRG:     {Type: "string", Value: "rg-foundry"},
 	})
 	assert.NotContains(t, got, envKeyResourceGroup)
 	assert.Contains(t, got, envKeyFoundryRG)
+	assert.Equal(t, p.foundryRGOwnerID, got[envKeyFoundryRGOwner].Value)
 }
 
 func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {

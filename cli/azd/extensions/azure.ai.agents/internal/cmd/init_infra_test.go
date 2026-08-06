@@ -157,7 +157,7 @@ services:
 	assert.Empty(t, doc.Infra.Layers[1].DependsOn)
 }
 
-func TestEjectInfra_PreservesAllExistingInfraPropertiesWhenMigratingToLayers(t *testing.T) {
+func TestEjectInfra_PreservesAllRootInfraProperties(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
@@ -184,8 +184,7 @@ services:
 	require.NoError(t, err)
 	var doc map[string]any
 	require.NoError(t, yaml.Unmarshal(raw, &doc))
-	infra := doc["infra"].(map[string]any)
-	layers := infra["layers"].([]any)
+	layers := doc["infra"].(map[string]any)["layers"].([]any)
 	existing := layers[0].(map[string]any)
 	assert.Equal(t, "existing", existing["name"])
 	assert.Equal(t, "infra/existing", existing["path"])

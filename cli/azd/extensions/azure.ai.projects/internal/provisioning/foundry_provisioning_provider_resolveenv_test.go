@@ -167,6 +167,21 @@ func TestResolveEnv_UsesVirtualEnvFromPreviousLayer(t *testing.T) {
 	assert.Zero(t, prompt.locationN)
 }
 
+func TestResolveEnv_LoadsLayerResourceGroupOwnership(t *testing.T) {
+	const ownerID = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-platform-foundry"
+	env := &resolveEnvStubEnvServer{envName: "foundry-layer", get: map[string]string{
+		envKeySubscriptionID: "00000000-0000-0000-0000-000000000001",
+		envKeyLocation:       "westus2",
+		envKeyFoundryRG:      "rg-platform-foundry",
+		envKeyFoundryRGOwner: ownerID,
+	}}
+	client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+	p := &FoundryProvisioningProvider{azdClient: client, isLayer: true}
+
+	require.NoError(t, p.resolveEnv(t.Context()))
+	assert.Equal(t, ownerID, p.foundryRGOwnerID)
+}
+
 func TestResolveEnv_LayerDefaultResourceGroupIsNotPersistedOrOwned(t *testing.T) {
 	env := &resolveEnvStubEnvServer{envName: "foundry-layer", get: map[string]string{
 		envKeySubscriptionID: "00000000-0000-0000-0000-000000000001",
@@ -329,7 +344,7 @@ func TestResolveEnv_LocationReadErrorSurfaces(t *testing.T) {
 }
 
 func TestResolveEnv_OptionalValueReadErrorsSurface(t *testing.T) {
-	for _, key := range []string{envKeyFoundryRG, envKeyProjectName, envKeyPrincipalID} {
+	for _, key := range []string{envKeyFoundryRG, envKeyFoundryRGOwner, envKeyProjectName, envKeyPrincipalID} {
 		t.Run(key, func(t *testing.T) {
 			env := &resolveEnvStubEnvServer{
 				envName: "foundry-layer",

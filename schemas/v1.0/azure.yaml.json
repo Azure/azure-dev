@@ -102,9 +102,6 @@
                                     "microsoft.foundry"
                                 ]
                             },
-                            "deploymentStacks": {
-                                "$ref": "#/definitions/deploymentStacksConfig"
-                            },
                             "config": {
                                 "type": "object",
                                 "title": "Provider-specific configuration",

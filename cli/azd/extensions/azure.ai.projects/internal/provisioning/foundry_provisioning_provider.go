@@ -48,6 +48,7 @@ const (
 	envKeyLocation       = "AZURE_LOCATION"
 	envKeyResourceGroup  = "AZURE_RESOURCE_GROUP"
 	envKeyFoundryRG      = "AZURE_FOUNDRY_RESOURCE_GROUP"
+	envKeyFoundryRGOwner = "AZD_FOUNDRY_RESOURCE_GROUP_ID"
 	envKeyTenantID       = "AZURE_TENANT_ID"
 	envKeyProjectName    = "AZURE_AI_PROJECT_NAME"
 	envKeyPrincipalID    = "AZURE_PRINCIPAL_ID"
@@ -83,6 +84,7 @@ type FoundryProvisioningProvider struct {
 	location                    string
 	rgName                      string
 	rgExplicit                  bool // active resource-group env key came from env, not the default
+	foundryRGOwnerID            string
 	foundryName                 string
 	principalID                 string
 	credential                  azcore.TokenCredential
@@ -246,7 +248,6 @@ func (p *FoundryProvisioningProvider) Initialize(
 			"set infra.layers[].module to the module base name",
 		)
 	}
-	p.isLayer = strings.TrimSpace(options.GetName()) != ""
 	p.virtualEnv = maps.Clone(options.GetVirtualEnv())
 
 	rawYAML, azureYamlPath, err := readProjectFile(projectRoot)
@@ -267,6 +268,15 @@ func (p *FoundryProvisioningProvider) Initialize(
 	if err := validateFoundryProviderLayers(rawYAML); err != nil {
 		return err
 	}
+	config, err := parseFoundryInfraConfig(rawYAML)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf("parse azure.yaml infrastructure layers: %s", err),
+			"verify azure.yaml is valid YAML",
+		)
+	}
+	p.isLayer = config.hasFoundryLayer(strings.TrimSpace(options.GetName()))
 
 	svcName, err := findFoundryProjectService(rawYAML)
 	if err != nil {
@@ -687,8 +697,16 @@ func (p *FoundryProvisioningProvider) withTenantOutput(
 func (p *FoundryProvisioningProvider) normalizeOutputs(
 	outputs map[string]*azdext.ProvisioningOutputParameter,
 ) map[string]*azdext.ProvisioningOutputParameter {
-	if p.isLayer && outputs != nil {
+	if p.isLayer {
+		if outputs == nil {
+			outputs = map[string]*azdext.ProvisioningOutputParameter{}
+		}
 		delete(outputs, envKeyResourceGroup)
+		if p.foundryRGOwnerID != "" {
+			outputs[envKeyFoundryRGOwner] = &azdext.ProvisioningOutputParameter{
+				Type: "string", Value: p.foundryRGOwnerID,
+			}
+		}
 	}
 	return outputs
 }
@@ -795,6 +813,15 @@ func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 		log.Printf("[debug] %s not set; defaulting to %q", rgKey, p.rgName)
 	} else {
 		p.rgExplicit = true
+	}
+	if p.isLayer {
+		if p.foundryRGOwnerID, err = get(envKeyFoundryRGOwner); err != nil {
+			return exterrors.Dependency(
+				exterrors.CodeEnvironmentValuesFailed,
+				fmt.Sprintf("read %s from azd environment %q: %s", envKeyFoundryRGOwner, p.envName, err),
+				"verify the azd environment is accessible, then retry",
+			)
+		}
 	}
 
 	if p.foundryName, err = get(envKeyProjectName); err != nil {
@@ -1061,6 +1088,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 	}
 
 	progress("Foundry deployment complete")
+	if p.isLayer && p.foundryRGOwnerID == "" {
+		p.foundryRGOwnerID = ownedLayerResourceGroupID(resp.Properties, p.subID, p.rgName)
+	}
 
 	return &azdext.ProvisioningDeployResult{
 		Deployment: &azdext.ProvisioningDeployment{
@@ -1708,11 +1738,7 @@ func (p *FoundryProvisioningProvider) Destroy(
 		)
 	}
 	if p.isLayer {
-		client, err := p.deploymentsClient(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if err := verifyLayerResourceGroupOwnership(ctx, client, p.deploymentName(), p.subID, p.rgName); err != nil {
+		if err := verifyLayerResourceGroupOwnership(p.foundryRGOwnerID, p.subID, p.rgName); err != nil {
 			return nil, err
 		}
 	}
@@ -2009,6 +2035,7 @@ func invalidatedEnvKeysResult() *azdext.ProvisioningDestroyResult {
 			"AZURE_AI_PROJECT_CONNECTION_NAMES",
 			"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT",
 			"AZURE_FOUNDRY_RESOURCE_GROUP",
+			envKeyFoundryRGOwner,
 		},
 	}
 }
@@ -2261,37 +2288,25 @@ func deploymentOutputs(p *armresources.DeploymentPropertiesExtended) any {
 	return p.Outputs
 }
 
-type subscriptionDeploymentGetter interface {
-	GetAtSubscriptionScope(
-		context.Context,
-		string,
-		*armresources.DeploymentsClientGetAtSubscriptionScopeOptions,
-	) (armresources.DeploymentsClientGetAtSubscriptionScopeResponse, error)
+func ownedLayerResourceGroupID(
+	properties *armresources.DeploymentPropertiesExtended,
+	subscriptionID, resourceGroup string,
+) string {
+	wantedID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, resourceGroup)
+	for _, resource := range deploymentResources(properties) {
+		if resource != nil && resource.ID != nil && strings.EqualFold(strings.TrimSuffix(*resource.ID, "/"), wantedID) {
+			return wantedID
+		}
+	}
+	return ""
 }
 
-func verifyLayerResourceGroupOwnership(
-	ctx context.Context,
-	client subscriptionDeploymentGetter,
-	deploymentName, subscriptionID, resourceGroup string,
-) error {
-	resp, err := client.GetAtSubscriptionScope(ctx, deploymentName, nil)
-	if err != nil {
-		if !isNotFound(err) {
-			return exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentGet)
-		}
-		return layerResourceGroupOwnershipError(resourceGroup, "the Foundry deployment was not found")
-	}
-
+func verifyLayerResourceGroupOwnership(ownerID, subscriptionID, resourceGroup string) error {
 	wantedID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, resourceGroup)
-	for _, resource := range deploymentResources(resp.Properties) {
-		if resource != nil && resource.ID != nil && strings.EqualFold(strings.TrimSuffix(*resource.ID, "/"), wantedID) {
-			return nil
-		}
+	if ownerID != "" && strings.EqualFold(strings.TrimSuffix(ownerID, "/"), wantedID) {
+		return nil
 	}
-	return layerResourceGroupOwnershipError(
-		resourceGroup,
-		"the Foundry deployment does not record that it created this resource group",
-	)
+	return layerResourceGroupOwnershipError(resourceGroup, "the azd environment does not record ownership of this group")
 }
 
 func layerResourceGroupOwnershipError(resourceGroup, reason string) error {
@@ -2336,6 +2351,10 @@ type foundryInfraConfig struct {
 	rootProvider  string
 	foundryLayers []string
 	hasLayers     bool
+}
+
+func (c foundryInfraConfig) hasFoundryLayer(name string) bool {
+	return name != "" && slices.Contains(c.foundryLayers, name)
 }
 
 func parseFoundryInfraConfig(rawYAML []byte) (foundryInfraConfig, error) {

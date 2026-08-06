@@ -160,6 +160,7 @@ func displayExtensionRequirements(
 	} else {
 		console.Message(ctx, output.WithHighLightFormat("%d extensions required:", len(requirements)))
 	}
+	console.Message(ctx, "")
 
 	usePluralSource := slices.ContainsFunc(requirements, func(requirement projectExtensionRequirement) bool {
 		return len(requirementCandidates(requirement)) > 1

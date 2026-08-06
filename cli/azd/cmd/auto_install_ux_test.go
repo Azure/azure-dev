@@ -483,8 +483,9 @@ func TestDisplayExtensionRequirements(t *testing.T) {
 		)
 
 		output := strings.Join(console.Output(), "\n")
-		require.NotEmpty(t, console.Output())
+		require.GreaterOrEqual(t, len(console.Output()), 3)
 		assert.NotEmpty(t, console.Output()[0])
+		assert.Empty(t, console.Output()[1])
 		assert.Contains(t, output, "2 extensions required by azure.yaml:")
 		assert.Contains(t, output, "Extension")
 		assert.Contains(t, output, "ID")

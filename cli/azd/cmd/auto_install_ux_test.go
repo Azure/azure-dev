@@ -424,10 +424,13 @@ func TestDisplayExtensionRequirements(t *testing.T) {
 		)
 
 		output := strings.Join(console.Output(), "\n")
-		assert.Contains(t, output, "Extension required: Demo Extension")
+		require.NotEmpty(t, console.Output())
+		assert.NotEmpty(t, console.Output()[0])
+		assert.Contains(t, output, "Extension required by azure.yaml: Demo Extension")
 		assert.Contains(t, output, "ID:")
 		assert.Contains(t, output, "Source:")
-		assert.Contains(t, output, "Required by azure.yaml.")
+		assert.NotContains(t, output, "\nRequired by azure.yaml.")
+		assert.Empty(t, console.Output()[len(console.Output())-1])
 	})
 
 	t.Run("multiple requirements use sources heading", func(t *testing.T) {

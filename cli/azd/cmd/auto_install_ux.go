@@ -39,6 +39,7 @@ func autoInstallCommandMatches(
 	intro string,
 ) (autoInstallResult, error) {
 	console.Message(ctx, intro)
+	console.Message(ctx, "")
 	candidates, err := chooseLogicalExtensionCandidates(ctx, console, matches)
 	if err != nil {
 		return autoInstallResult{}, err
@@ -130,8 +131,11 @@ func displayExtensionRequirements(
 	if len(requirements) == 1 {
 		requirement := requirements[0]
 		extension := requirement.extension
-		console.Message(ctx, "")
-		console.Message(ctx, output.WithHighLightFormat("Extension required: %s", extension.DisplayName))
+		header := "Extension required: %s"
+		if display.requiredByProject {
+			header = "Extension required by azure.yaml: %s"
+		}
+		console.Message(ctx, output.WithHighLightFormat(header, extension.DisplayName))
 
 		var details strings.Builder
 		tabs := tabwriter.NewWriter(&details, 0, 4, 2, ' ', 0)
@@ -144,9 +148,7 @@ func displayExtensionRequirements(
 		fmt.Fprintf(tabs, "  Description:\t%s\n", extension.Description)
 		_ = tabs.Flush()
 		console.Message(ctx, strings.TrimRight(details.String(), "\n"))
-		if display.requiredByProject {
-			console.Message(ctx, "Required by azure.yaml.")
-		}
+		console.Message(ctx, "")
 		return
 	}
 

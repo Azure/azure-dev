@@ -198,10 +198,10 @@ func sourceSummary(requirement projectExtensionRequirement, compact bool) string
 	for _, candidate := range candidates {
 		names = append(names, candidate.Source)
 	}
-	if !compact || len(names) <= 2 {
+	if !compact || len(names) <= 3 {
 		return strings.Join(names, ", ")
 	}
-	return fmt.Sprintf("%s (+%d more)", names[0], len(names)-1)
+	return fmt.Sprintf("%s %s", names[0], output.WithGrayFormat("(+%d more)", len(names)-1))
 }
 
 func sortedRequirementCandidates(

@@ -173,6 +173,24 @@ func TestInteractiveSingleInstallPlan(t *testing.T) {
 		require.Len(t, selections, 1)
 		assert.Same(t, local, selections[0].extension)
 	})
+
+	t.Run("cancel stops the plan", func(t *testing.T) {
+		t.Parallel()
+		console := mockinput.NewMockConsole()
+		console.WhenSelect(func(options input.ConsoleOptions) bool {
+			return strings.HasPrefix(options.Message, "Install Demo Extension from 'azd'?")
+		}).Respond(2)
+
+		selections, declined, err := interactiveSingleInstallPlan(
+			t.Context(),
+			console,
+			autoInstallTestRequirement(local, azd),
+		)
+
+		require.NoError(t, err)
+		assert.True(t, declined)
+		assert.Empty(t, selections)
+	})
 }
 
 func TestInteractiveMultipleInstallPlanDifferentSourceShortcut(t *testing.T) {
@@ -353,6 +371,7 @@ func TestAutoInstallExtensionRequirementsNoPromptAmbiguous(t *testing.T) {
 	assert.False(t, result.installed)
 	suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
 	require.True(t, ok)
+	assert.Contains(t, suggestionErr.Suggestion, "Choose one source for demo:")
 	assert.Contains(t, suggestionErr.Suggestion, "azd extension install demo --source azd --version 1.2.3")
 	assert.Contains(t, suggestionErr.Suggestion, "azd extension install demo --source local --version 1.2.3")
 	assert.Empty(t, manager.installed)

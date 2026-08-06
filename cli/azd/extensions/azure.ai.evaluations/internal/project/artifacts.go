@@ -20,6 +20,9 @@ const (
 type ArtifactRef struct {
 	Name   string `json:"name"`
 	Source string `json:"source"`
+	// Version is what the generation job published, which the catalog line
+	// names so a reader can pin it without going to look.
+	Version string `json:"version,omitempty"`
 }
 
 // Sample-count bounds enforced by the generation service.

@@ -222,7 +222,12 @@ func (ec *evalContext) generateRubric(
 	}
 	fmt.Fprintf(out, "  wrote %s\n", path)
 
-	return &project.ArtifactRef{Name: plan.Name, Source: relativeSource(plan.BaseDir, path)}, nil
+	_, version := completed.ResolvedNameVersion()
+	return &project.ArtifactRef{
+		Name:    plan.Name,
+		Source:  relativeSource(plan.BaseDir, path),
+		Version: version,
+	}, nil
 }
 
 // refuseUnbuildableSources reports a --from the plan could not honour.
@@ -342,7 +347,11 @@ func (ec *evalContext) generateDataset(
 	}
 	fmt.Fprintf(out, "  wrote %s\n", path)
 
-	return &project.ArtifactRef{Name: plan.Name, Source: relativeSource(plan.BaseDir, path)}, nil
+	return &project.ArtifactRef{
+		Name:    plan.Name,
+		Source:  relativeSource(plan.BaseDir, path),
+		Version: version,
+	}, nil
 }
 
 // isAgentSeededGenerationFailure recognizes the service-side failure that hits

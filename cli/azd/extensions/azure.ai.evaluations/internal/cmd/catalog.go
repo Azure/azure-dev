@@ -22,7 +22,7 @@ func addDatasetToCatalog(cmd *cobra.Command, evalDir string, ref *project.Artifa
 	if ref == nil {
 		return nil
 	}
-	return updateCatalog(cmd, evalDir, func(cfg *project.EvalConfig) bool {
+	return updateCatalog(cmd, evalDir, "dataset", ref, func(cfg *project.EvalConfig) bool {
 		for i := range cfg.Datasets {
 			if cfg.Datasets[i].Name == ref.Name {
 				// Regeneration overwrites the file in place, so the entry only
@@ -47,7 +47,7 @@ func addEvaluatorToCatalog(cmd *cobra.Command, evalDir string, ref *project.Arti
 	if ref == nil {
 		return nil
 	}
-	return updateCatalog(cmd, evalDir, func(cfg *project.EvalConfig) bool {
+	return updateCatalog(cmd, evalDir, "evaluator", ref, func(cfg *project.EvalConfig) bool {
 		for i := range cfg.Evaluators {
 			if cfg.Evaluators[i].Name == ref.Name {
 				if cfg.Evaluators[i].Source == ref.Source {
@@ -74,6 +74,8 @@ func addEvaluatorToCatalog(cmd *cobra.Command, evalDir string, ref *project.Arti
 func updateCatalog(
 	cmd *cobra.Command,
 	evalDir string,
+	kind string,
+	ref *project.ArtifactRef,
 	apply func(*project.EvalConfig) bool,
 ) error {
 	cfg, err := project.OpenEvalConfig(evalDir)
@@ -94,10 +96,23 @@ func updateCatalog(
 	if !isJSON(cmd) {
 		path := filepath.ToSlash(project.EvalConfigPath(evalDir))
 		if created {
-			fmt.Fprintf(cmd.OutOrStdout(), "(✓) Done: Created %s with the catalog entry\n", path)
-		} else {
-			fmt.Fprintf(cmd.OutOrStdout(), "(✓) Done: Added catalog entry to %s\n", path)
+			fmt.Fprintf(cmd.OutOrStdout(),
+				"%s Created %s with the catalog entry\n", doneMark, path)
 		}
+		fmt.Fprintf(cmd.OutOrStdout(),
+			"%s Added %s %s to %s\n", doneMark, kind, describeArtifact(ref), path)
 	}
 	return nil
+}
+
+// describeArtifact names what was recorded, with the published version when the
+// job reported one, so a reader can pin it without going to look.
+//
+// Single-quoted to match the spec's transcripts; the surrounding Done: lines
+// carry bare values, but a dataset name can hold a space and these cannot.
+func describeArtifact(ref *project.ArtifactRef) string {
+	if ref.Version == "" || ref.Version == "latest" {
+		return fmt.Sprintf("'%s'", ref.Name)
+	}
+	return fmt.Sprintf("'%s' (version %s)", ref.Name, ref.Version)
 }

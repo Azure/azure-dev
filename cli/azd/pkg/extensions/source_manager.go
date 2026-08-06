@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -126,9 +127,9 @@ func (sm *SourceManager) Remove(ctx context.Context, name string) error {
 		return fmt.Errorf("unable to parse extension sources")
 	}
 
-	matches := sourceKeysMatchingName(sourceMap, name, false)
+	matches := sourcePathsMatchingName(sourceMap, name, false)
 	if len(matches) == 0 {
-		matches = sourceKeysMatchingName(sourceMap, name, true)
+		matches = sourcePathsMatchingName(sourceMap, name, true)
 	}
 	if len(matches) == 0 {
 		return fmt.Errorf("extension source '%s' not found, %w", name, ErrSourceNotFound)
@@ -137,7 +138,7 @@ func (sm *SourceManager) Remove(ctx context.Context, name string) error {
 		return fmt.Errorf("extension source name '%s' matches multiple configured sources", name)
 	}
 
-	delete(sourceMap, matches[0])
+	deleteSourcePath(sourceMap, matches[0])
 	if err := config.Set(baseConfigKey, sourceMap); err != nil {
 		return fmt.Errorf("unable to remove extension source '%s': %w", name, err)
 	}
@@ -165,24 +166,16 @@ func (sm *SourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 		if !ok {
 			return nil, fmt.Errorf("unable to parse extension sources")
 		}
-		for key, rawSource := range sourceMap {
-			var sourceConfig *SourceConfig
-
-			jsonBytes, err := json.Marshal(rawSource)
-			if err != nil {
-				return nil, fmt.Errorf("unable to parse source '%s': %w", key, err)
-			}
-
-			err = json.Unmarshal(jsonBytes, &sourceConfig)
-			if err != nil {
-				return nil, fmt.Errorf("unable to parse source '%s': %w", key, err)
-			}
-
-			if err := validateConfiguredSource(key, sourceConfig); err != nil {
+		sourceEntries, err := configuredSourceEntries(sourceMap)
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range sourceEntries {
+			if err := validateConfiguredSource(entry.name, entry.config); err != nil {
 				return nil, err
 			}
 
-			allSourceConfigs = append(allSourceConfigs, sourceConfig)
+			allSourceConfigs = append(allSourceConfigs, entry.config)
 		}
 	} else {
 		defaultSource := &SourceConfig{
@@ -328,8 +321,67 @@ func validateConfiguredSource(key string, source *SourceConfig) error {
 	return nil
 }
 
-func sourceKeysMatchingName(sourceMap map[string]any, name string, ignoreCase bool) []string {
-	matches := []string{}
+type configuredSourceEntry struct {
+	name   string
+	path   []string
+	config *SourceConfig
+}
+
+func configuredSourceEntries(sourceMap map[string]any) ([]configuredSourceEntry, error) {
+	entries := []configuredSourceEntry{}
+	if err := walkConfiguredSources(sourceMap, nil, func(entry configuredSourceEntry) {
+		entries = append(entries, entry)
+	}); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+func walkConfiguredSources(
+	sourceMap map[string]any,
+	parentPath []string,
+	visit func(configuredSourceEntry),
+) error {
+	for _, key := range slices.Sorted(maps.Keys(sourceMap)) {
+		rawSource := sourceMap[key]
+		path := append(slices.Clone(parentPath), key)
+		name := strings.Join(path, ".")
+
+		if nested, ok := rawSource.(map[string]any); ok && !isSourceConfigMap(nested) {
+			if err := walkConfiguredSources(nested, path, visit); err != nil {
+				return err
+			}
+			continue
+		}
+
+		var sourceConfig *SourceConfig
+		jsonBytes, err := json.Marshal(rawSource)
+		if err != nil {
+			return fmt.Errorf("unable to parse source '%s': %w", name, err)
+		}
+		if err := json.Unmarshal(jsonBytes, &sourceConfig); err != nil {
+			return fmt.Errorf("unable to parse source '%s': %w", name, err)
+		}
+
+		visit(configuredSourceEntry{
+			name:   name,
+			path:   path,
+			config: sourceConfig,
+		})
+	}
+
+	return nil
+}
+
+func isSourceConfigMap(value map[string]any) bool {
+	_, hasName := value["name"].(string)
+	_, hasType := value["type"].(string)
+	_, hasLocation := value["location"].(string)
+	return hasName || hasType || hasLocation
+}
+
+func sourcePathsMatchingName(sourceMap map[string]any, name string, ignoreCase bool) [][]string {
+	matches := [][]string{}
 	equal := func(a, b string) bool {
 		if ignoreCase {
 			return strings.EqualFold(a, b)
@@ -337,21 +389,27 @@ func sourceKeysMatchingName(sourceMap map[string]any, name string, ignoreCase bo
 		return a == b
 	}
 
-	for key, rawSource := range sourceMap {
-		if equal(key, name) {
-			matches = append(matches, key)
-			continue
+	_ = walkConfiguredSources(sourceMap, nil, func(entry configuredSourceEntry) {
+		if equal(entry.name, name) || entry.config != nil && equal(entry.config.Name, name) {
+			matches = append(matches, entry.path)
 		}
-
-		jsonBytes, err := json.Marshal(rawSource)
-		if err != nil {
-			continue
-		}
-		var source SourceConfig
-		if err := json.Unmarshal(jsonBytes, &source); err == nil && equal(source.Name, name) {
-			matches = append(matches, key)
-		}
-	}
+	})
 
 	return matches
+}
+
+func deleteSourcePath(sourceMap map[string]any, path []string) bool {
+	if len(path) == 1 {
+		delete(sourceMap, path[0])
+		return len(sourceMap) == 0
+	}
+
+	nested, ok := sourceMap[path[0]].(map[string]any)
+	if !ok {
+		return false
+	}
+	if deleteSourcePath(nested, path[1:]) {
+		delete(sourceMap, path[0])
+	}
+	return len(sourceMap) == 0
 }

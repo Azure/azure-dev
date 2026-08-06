@@ -142,6 +142,34 @@ func TestSourceManager_Remove(t *testing.T) {
 		require.True(t, ok)
 		require.NotContains(t, sources, "legacy.source")
 	})
+
+	t.Run("RemoveNestedLegacySourceOnly", func(t *testing.T) {
+		legacyConfig := config.NewEmptyConfig()
+		require.NoError(t, legacyConfig.Set("extension.sources.foo.bar", SourceConfig{
+			Name:     "foo.bar",
+			Type:     SourceKindUrl,
+			Location: "http://example.com/bar",
+		}))
+		require.NoError(t, legacyConfig.Set("extension.sources.foo.baz", SourceConfig{
+			Name:     "foo.baz",
+			Type:     SourceKindUrl,
+			Location: "http://example.com/baz",
+		}))
+		mockContext.ConfigManager.WithConfig(legacyConfig)
+
+		_, err := sourceManager.List(ctx)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), `"foo.bar"`)
+		require.NotContains(t, err.Error(), `source "foo"`)
+
+		require.NoError(t, sourceManager.Remove(ctx, "foo.bar"))
+
+		_, exists := legacyConfig.Get("extension.sources.foo.bar")
+		require.False(t, exists)
+		remaining, exists := legacyConfig.Get("extension.sources.foo.baz")
+		require.True(t, exists)
+		require.NotNil(t, remaining)
+	})
 }
 
 func TestSourceManager_List(t *testing.T) {

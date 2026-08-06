@@ -40,7 +40,7 @@ This spec proposes:
   `host: azure.ai.project`.
 - Preserve the current first-run experience for agent users.
 - Make repeated initialization safe and predictable.
-- Keep existing automation working during a compatibility period.
+- Keep existing automation working during the migration.
 - Make project ownership clear in commands, help, errors, and documentation.
 
 ## Non-goals
@@ -90,8 +90,9 @@ The command asks:
 ? Select a model:
 ```
 
-The model step is optional. A user can initialize an empty project and add
-models or agents later.
+Standalone project init does not select or recommend a model unless the user
+chooses model setup or passes `--model`. Agent init can still request models
+required by the selected agent template.
 
 The command creates:
 
@@ -215,20 +216,11 @@ prompt or silently choose a different project in `--no-prompt` mode.
 
 ### Repeated initialization
 
-Running project init again updates the existing project service instead of
-creating another one.
-
-The command:
-
-- Keeps the existing service name.
-- Preserves `network`, hooks, `uses`, `$ref`, and unknown fields.
-- Adds new model deployments without removing unrelated deployments.
-- Leaves an identical configuration unchanged.
-- Requires confirmation before switching to a different existing project.
-- Fails when more than one project service exists, because azd supports one
-  Foundry project per workspace.
-
-A second run with the same choices should produce no `azure.yaml` change.
+Project init is idempotent: it updates the existing project service in place,
+preserves existing service metadata and unrelated deployments, and leaves
+identical configurations unchanged. It requires confirmation before switching
+to a different existing project and fails when more than one project service
+exists. The detailed merge rules are defined in [Update behavior](#update-behavior).
 
 ### Existing and legacy projects
 
@@ -244,11 +236,12 @@ When init encounters legacy project settings:
   authoritative.
 
 This additive approach lets users update the agents and projects extensions
-without requiring an immediate manifest rewrite.
+without requiring an immediate manifest rewrite. Ending this compatibility or
+deleting legacy properties requires a separate migration proposal.
 
 ### Existing agent flags
 
-The following agent init flags remain available during a compatibility period:
+The following agent init flags remain supported by this feature:
 
 ```text
 --project-id
@@ -259,12 +252,9 @@ The following agent init flags remain available during a compatibility period:
 
 Agents forwards them to project setup and displays a deprecation notice with
 the equivalent `azd ai project init` command. Plain `azd ai agent init` does
-not display a warning because it remains a supported experience.
-
-### Provisioning and deployment
-
-`azd provision`, `azd deploy`, and `azd up` do not change; this feature only
-moves init-time ownership.
+not display a warning because it remains a supported experience. Removing the
+flags is outside this feature and requires a separately announced compatibility
+change.
 
 ### Failure and retry
 
@@ -304,7 +294,8 @@ The main code movement is from the project setup paths in
 
 `NewRootCommand` in the projects extension registers the new init command.
 `emitResourceServices` in agents stops creating the project service and only
-adds the returned service name to the agent's `uses`.
+locates the resulting project service by host and adds its key to the agent's
+`uses`.
 
 ### `azure.ai.project` content
 
@@ -317,21 +308,24 @@ contains:
 - `network` for private networking.
 - `$ref` support for reusable deployment definitions.
 
-The existing project ARM ID remains in `AZURE_AI_PROJECT_ID`. Adding a
-`resourceId` field to `azure.yaml` is a separate product decision because it
-would create two persisted sources for project identity.
+The existing project ARM ID remains in `AZURE_AI_PROJECT_ID`. We do not add a
+`resourceId` field to `azure.yaml` in this migration because it would create
+two persisted sources for project identity.
 
 ### Agent-to-project handoff
 
-Agent init sends the project requirements it discovered to a projects-owned
-init operation through the azd extension framework. Projects performs the
-selection and update, then returns the project service name and any project
-information agents still needs for its own setup.
+Agent init passes the project requirements it discovered to
+`azd ai project init` through `WorkflowService.Run`. Projects performs the
+selection and update, writes the project service, and persists shared project
+values in the azd environment.
 
-This handoff is internal. Users see the same prompts and completion flow as
-today. The two extensions use a versioned machine-readable contract so an
-incompatible extension combination fails with upgrade guidance instead of
-silently ignoring project settings.
+The workflow service reports completion rather than returning command data.
+After it completes, agents finds the single `azure.ai.project` service by host
+and reads any shared project values from the environment. `--output json`
+remains a user-facing summary and is not the extension handoff contract.
+Coordinated extension versions ensure a missing or incompatible project init
+command fails with upgrade guidance instead of silently ignoring project
+settings.
 
 ### Update behavior
 
@@ -340,6 +334,8 @@ Projects owns an idempotent merge rather than replacing the full service.
 The merge rules are:
 
 - Create a service only when none exists.
+- Reuse an existing project service key. For a new service, use the sanitized
+  project name when available and collision-free; otherwise use `ai-project`.
 - Update only project-owned fields.
 - Preserve fields not involved in the current request.
 - Match deployments by deployment name.
@@ -358,10 +354,16 @@ azd ai project init --infra
 azd ai project init --infra=terraform
 ```
 
-The agent command forwards its existing `--infra` flag during the migration
-period. Brownfield IaC support remains coordinated with
-[issue #9127](https://github.com/Azure/azure-dev/issues/9127) and draft
+The agent command forwards its existing `--infra` flag during the migration.
+Brownfield eject is not required for this ownership change and remains tracked
+by [issue #9127](https://github.com/Azure/azure-dev/issues/9127) and draft
 [PR #9348](https://github.com/Azure/azure-dev/pull/9348).
+
+Project init never replaces an existing non-Foundry infrastructure provider.
+Endpoint-only adoption that needs no ARM reconciliation leaves the provider
+unchanged. If project setup requires `microsoft.foundry` while another provider
+is configured, the command fails with guidance instead of overwriting it.
+Multi-provider composition is separate work.
 
 ### Rollout
 
@@ -377,88 +379,5 @@ The migration ships in three steps:
 the init contract. The `microsoft.foundry` meta-package must update both
 versions together.
 
-### Success criteria
-
-- A user can create an `azure.ai.project` service without agents.
-- Plain `azd ai agent init` still completes project and agent setup.
-- Agents no longer writes project service properties.
-- Repeating init does not create duplicate services or remove existing
-  settings.
-- Existing non-interactive agent scripts keep working during migration.
-- A pre-split manifest still provisions.
-
-## Part 3: Dependencies that need PM confirmation
-
-### Default model experience
-
-PM must confirm whether standalone `azd ai project init` should recommend a
-model by default or make model setup opt-in. Agent init can still request a
-model when the selected agent template requires one.
-
-### Brownfield IaC
-
-PM must confirm whether brownfield eject from
-[issue #9127](https://github.com/Azure/azure-dev/issues/9127) is required for
-this feature or can ship later. The ownership migration can work with the
-current refusal, but the final command guidance must be consistent.
-
-### Existing workspaces with another infrastructure provider
-
-PM must confirm the supported experience when a workspace already uses Bicep
-or Terraform for non-Foundry resources. This feature must not silently replace
-that provider. Full multi-provider composition may need separate work.
-
-### Sibling resource ownership
-
-[Issues #9086](https://github.com/Azure/azure-dev/issues/9086),
-[#9087](https://github.com/Azure/azure-dev/issues/9087),
-[#9088](https://github.com/Azure/azure-dev/issues/9088), and
-[#9089](https://github.com/Azure/azure-dev/issues/9089) track the same model
-for other Foundry resources. PM must confirm whether each extension migrates
-independently or whether the init handoffs ship as one milestone.
-
-### Compatibility period
-
-PM must confirm how long project-related flags remain on
-`azd ai agent init`. The recommendation is at least two coordinated beta
-releases before hiding or removing them.
-
-## Part 4: Open questions
-
-1. Should a future `azure.ai.project` schema add `resourceId`, or should the
-   ARM ID remain environment-only?
-2. Should users be able to choose the `azure.yaml` project service key with a
-   flag, or is a stable generated key sufficient?
-3. Should `azd ai project init --output json` expose only a user-facing
-   summary or also the project details needed by other extensions?
-4. When should init stop copying legacy project properties into a dedicated
-   project service and require users to migrate manually?
-
-## Summary of required changes
-
-### `azure.ai.projects`
-
-- Add `azd ai project init`.
-- Own project selection, model selection, and environment setup.
-- Create and safely update the project service.
-- Own project IaC generation.
-- Preserve legacy provisioning compatibility.
-- Add direct and delegated init coverage.
-- Update command help, README, migration guidance, and changelog.
-
-### `azure.ai.agents`
-
-- Delegate project setup to `azure.ai.projects`.
-- Keep plain agent init as a one-command experience.
-- Forward project-related flags during the compatibility period.
-- Stop reading or writing project service properties.
-- Keep only the project service name in agent `uses`.
-- Remove duplicated project setup and IaC code after handoff.
-- Update help, README, migration guidance, and changelog.
-
-### Packaging and release
-
-- Update the agents dependency on projects.
-- Update the `microsoft.foundry` meta-package.
-- Release the coordinated versions together.
-- Verify new, existing, and pre-split project flows.
+The sibling resource ownership issues migrate independently and do not gate
+this rollout.

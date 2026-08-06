@@ -295,11 +295,12 @@ const (
 	EnvCloudShell         = "Azure CloudShell"
 
 	// AI Coding Agent environments
-	EnvClaudeCode       = "Claude Code"
-	EnvGitHubCopilotCLI = "GitHub Copilot CLI"
-	EnvGitHubCopilotApp = "GitHub Copilot App"
-	EnvGemini           = "Gemini"
-	EnvOpenCode         = "OpenCode"
+	EnvClaudeCode          = "Claude Code"
+	EnvGitHubCopilotCLI    = "GitHub Copilot CLI"
+	EnvGitHubCopilotApp    = "GitHub Copilot App"
+	EnvGitHubCopilotVSCode = "GitHub Copilot VSCode"
+	EnvGemini              = "Gemini"
+	EnvOpenCode            = "OpenCode"
 
 	// Continuous Integration environments
 
@@ -1020,6 +1021,18 @@ var (
 	// The tag of the builder image used. Hashed when a user-defined image is used.
 	PackBuilderTag = AttributeKey{
 		Key:            attribute.Key("pack.builder.tag"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Aspire related fields
+var (
+	// AspireAppHostLanguageKey is the language of a detected Aspire polyglot (non-C#) AppHost
+	// (e.g. "typescript", "python", "go", "java", "rust"). This is a fixed enum of Aspire-supported
+	// AppHost languages, so it is emitted raw (not hashed).
+	AspireAppHostLanguageKey = AttributeKey{
+		Key:            attribute.Key("aspire.apphost.language"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}

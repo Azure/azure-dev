@@ -250,6 +250,27 @@ func TestAssembleState(t *testing.T) {
 	}
 }
 
+func TestAssembleState_WithEnvironmentDoesNotReadCurrent(t *testing.T) {
+	t.Parallel()
+
+	src := &fakeSource{
+		envName:    "dev",
+		envNameErr: errors.New("current environment should not be read"),
+		project:    &azdext.ProjectConfig{Name: "demo"},
+		values: map[string]string{
+			"prod/FOUNDRY_PROJECT_ENDPOINT": "https://x.services.ai.azure.com",
+			"prod/AZURE_SUBSCRIPTION_ID":    "sub-id",
+			"prod/AZURE_LOCATION":           "eastus",
+		},
+	}
+
+	state, errs := assembleState(t.Context(), src, WithEnvironment("prod"))
+	require.Empty(t, errs)
+	assert.Equal(t, "prod", state.EnvironmentName)
+	assert.True(t, state.HasProjectEndpoint)
+	assert.Empty(t, state.MissingAzureContextVars)
+}
+
 func TestAssembleState_NilServiceEntriesAreIgnored(t *testing.T) {
 	t.Parallel()
 
@@ -296,8 +317,10 @@ func TestOptionsApplyCleanly(t *testing.T) {
 	t.Parallel()
 
 	cfg := &config{}
+	WithEnvironment("prod")(cfg)
 	WithOpenAPIProbe("echo", "local")(cfg)
 	WithLiveOpenAPIProbe(func(context.Context) ([]byte, error) { return nil, nil })(cfg)
+	assert.Equal(t, "prod", cfg.environmentName)
 	assert.Equal(t, "echo", cfg.openAPIAgent)
 	assert.Equal(t, "local", cfg.openAPISuffix)
 	assert.NotNil(t, cfg.openAPILiveFetch)

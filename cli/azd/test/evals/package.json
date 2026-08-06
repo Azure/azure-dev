@@ -9,6 +9,11 @@
     "eval:qna": "npx vally eval -e ./eval-azd-qna.yaml",
     "eval:deploy": "npx vally eval -e ./eval-azd-deploy.yaml",
     "eval:experiment": "npx vally experiment run ./eval-azd.experiments.yaml",
+    "fetch:skill": "node ./scripts/fetch-foundry-skill.mjs",
+    "eval:foundry:skill": "npm run fetch:skill && npx vally eval -e ./eval-foundry-skill.yaml",
+    "eval:foundry:authoring": "npx vally eval -e ./eval-foundry-authoring.yaml",
+    "eval:foundry:cli": "npx vally eval -e ./eval-foundry-cli.yaml",
+    "eval:foundry:experiment": "npm run fetch:skill && npx vally experiment run ./eval-foundry.experiments.yaml",
     "report": "go run ./vally_report.go"
   },
   "keywords": [],
@@ -16,10 +21,10 @@
   "license": "MIT",
   "type": "module",
   "dependencies": {
-    "@microsoft/vally-cli": "^0.10.0"
+    "@microsoft/vally-cli": "^0.11.0"
   },
   "devDependencies": {
-    "@microsoft/vally": "^0.10.0",
+    "@microsoft/vally": "^0.11.0",
     "@types/node": "^24.13.3",
     "typescript": "^7.0.2"
   }

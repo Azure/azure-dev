@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -21,6 +22,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -33,20 +36,85 @@ type ejectArtifact struct {
 }
 
 // validateStandaloneEjectArgs refuses init-driving inputs that the
-// standalone-eject branch would silently drop. `--infra` on an existing
-// project runs eject only; honoring a positional path, -m, or --src would
-// falsely imply the input was acted upon.
-func validateStandaloneEjectArgs(args []string, flags *initFlags) error {
-	if len(args) == 0 && flags.manifestPointer == "" && flags.src == "" && flags.image == "" {
+// standalone-eject branch would silently drop. `--infra` on a project that
+// already declares a Foundry service runs eject only; honoring a positional
+// path or an explicitly changed init flag would falsely imply the input was
+// acted upon.
+//
+// Scoped to that branch only: on the init fall-through (a project without a
+// Foundry service, or no project at all) the same inputs are accepted, because
+// there they genuinely drive init.
+func validateStandaloneEjectArgs(cmd *cobra.Command, args []string) error {
+	conflicts := standaloneEjectConflictingInputs(cmd, args)
+	if len(conflicts) == 0 {
 		return nil
 	}
+
 	return exterrors.Validation(
 		exterrors.CodeInfraEjectConflictingArguments,
-		"`--infra` on an existing project runs eject only and does not "+
-			"accept a positional path, -m/--manifest, --src, or --image",
-		"drop the extra argument and run `azd ai agent init --infra` from the project root, "+
+		"`--infra` on a project that already declares a Foundry service runs eject only "+
+			fmt.Sprintf("and cannot use these init inputs: %s", strings.Join(conflicts, ", ")),
+		"drop the init inputs and run `azd ai agent init --infra` from the project root, "+
 			"or remove --infra to run the normal init flow",
 	)
+}
+
+// ensureDefaultInfraModule refuses a custom infra.module. Eject writes
+// main.bicep/main.parameters.json or main.tfvars.json, while azd derives those
+// filenames from infra.module and would ignore the generated entry point or
+// parameter file.
+func ensureDefaultInfraModule(rawYAML []byte) error {
+	config, err := readDeclaredInfraConfig(rawYAML)
+	if err != nil {
+		return err
+	}
+
+	if config.Module == "" || config.Module == "main" || config.Module == "./main" {
+		return nil
+	}
+
+	return exterrors.Validation(
+		exterrors.CodeInfraEjectCustomModule,
+		fmt.Sprintf("azure.yaml selects infrastructure module %q via `infra.module`; `--infra` "+
+			"generates the default main module and cannot preserve that entry point", config.Module),
+		fmt.Sprintf("run `azd ai agent init` without --infra to keep module %q, or remove "+
+			"`infra.module` first if you want the generated main module to replace it", config.Module),
+	)
+}
+
+// standaloneEjectConflictingInputs returns every changed input the standalone
+// eject branch cannot honor. Global execution controls remain valid; everything
+// else is assumed to belong to init so newly-added flags fail safe instead of
+// being silently ignored.
+func standaloneEjectConflictingInputs(cmd *cobra.Command, args []string) []string {
+	allowed := map[string]struct{}{
+		"cwd":            {},
+		"debug":          {},
+		"infra":          {},
+		"no-prompt":      {},
+		"output":         {},
+		"trace-log-file": {},
+		"trace-log-url":  {},
+	}
+	seen := map[string]struct{}{}
+	if len(args) > 0 {
+		seen["positional path"] = struct{}{}
+	}
+
+	collect := func(flags *pflag.FlagSet) {
+		flags.Visit(func(flag *pflag.Flag) {
+			if _, ok := allowed[flag.Name]; ok {
+				return
+			}
+			seen["--"+flag.Name] = struct{}{}
+		})
+	}
+	collect(cmd.Flags())
+	collect(cmd.InheritedFlags())
+
+	conflicts := slices.Collect(maps.Keys(seen))
+	slices.Sort(conflicts)
+	return conflicts
 }
 
 // parseInfraProvider normalizes the --infra flag value into a supported
@@ -68,6 +136,293 @@ func parseInfraProvider(value string) (string, error) {
 	}
 }
 
+// readProjectAzureYAML reads azure.yaml from projectRoot, reporting a missing
+// file as the structured CodeInfraEjectAzureYamlMissing refusal so every eject
+// entry point surfaces the same code for the same condition.
+func readProjectAzureYAML(projectRoot string) ([]byte, error) {
+	//nolint:gosec // G304: azure.yaml under the caller-supplied azd project root
+	raw, err := os.ReadFile(filepath.Join(projectRoot, "azure.yaml"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, exterrors.Validation(
+				exterrors.CodeInfraEjectAzureYamlMissing,
+				"azure.yaml not found in the current directory; "+
+					"`azd ai agent init --infra` requires an existing azd agent project",
+				"run `azd ai agent init` first to create azure.yaml, then re-run with --infra",
+			)
+		}
+		return nil, fmt.Errorf("read azure.yaml: %w", err)
+	}
+
+	return raw, nil
+}
+
+// defaultInfraDirName is the directory eject writes into, and the directory an
+// azd project uses when it does not declare `infra.path`.
+const defaultInfraDirName = "infra"
+
+// hasFoundryServiceForEject reports whether azure.yaml at projectRoot already
+// declares the Foundry provisioning service that eject synthesizes from.
+//
+// "No Foundry service" is reported as (false, nil) rather than an error: it
+// means the project simply has nothing to eject yet, which callers resolve by
+// running the normal init flow first. Malformed YAML and ambiguous projects
+// (several Foundry services) still surface as errors.
+func hasFoundryServiceForEject(projectRoot string) (bool, error) {
+	rawYAML, err := readProjectAzureYAML(projectRoot)
+	if err != nil {
+		return false, err
+	}
+
+	return hasFoundryServiceInYAML(rawYAML)
+}
+
+// hasFoundryServiceInYAML is hasFoundryServiceForEject for callers that have
+// already read azure.yaml and need it for more than the service scan.
+func hasFoundryServiceInYAML(rawYAML []byte) (bool, error) {
+	if _, err := findFoundryServiceForEject(rawYAML); err != nil {
+		if localErr, ok := errors.AsType[*azdext.LocalError](err); ok &&
+			localErr.Code == exterrors.CodeInfraEjectNoFoundryService {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
+type declaredInfraConfig struct {
+	Provider string `yaml:"provider"`
+	Path     string `yaml:"path"`
+	Module   string `yaml:"module"`
+	Layers   []struct {
+		Name     string `yaml:"name"`
+		Provider string `yaml:"provider"`
+		Path     string `yaml:"path"`
+	} `yaml:"layers"`
+}
+
+// readDeclaredInfraConfig returns the infra configuration declared in
+// azure.yaml. Type-invalid infra fields use the same invalid-azure.yaml
+// classification as the service scan; otherwise a value such as
+// `infra.layers: unexpected` would look like no layers and bypass the guard.
+func readDeclaredInfraConfig(rawYAML []byte) (declaredInfraConfig, error) {
+	var doc struct {
+		Infra declaredInfraConfig `yaml:"infra"`
+	}
+	if err := yaml.Unmarshal(rawYAML, &doc); err != nil {
+		return declaredInfraConfig{}, exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf("parse azure.yaml: %s", err),
+			"verify azure.yaml is valid YAML",
+		)
+	}
+
+	return doc.Infra, nil
+}
+
+// normalizeInfraPath mirrors azd core's project-path normalization before
+// comparing a declared path with the default ./infra directory.
+func normalizeInfraPath(path string) string {
+	if strings.Contains(path, "\\") && !strings.Contains(path, "/") {
+		path = strings.ReplaceAll(path, "\\", "/")
+	}
+	return filepath.Clean(filepath.FromSlash(path))
+}
+
+// ensureDefaultInfraPath refuses when azure.yaml points the project's
+// infrastructure somewhere other than ./infra/ via `infra.path`.
+//
+// Eject always writes ./infra/, and the Terraform path additionally stamps
+// `infra.provider: terraform` and drops `infra.path` so azd-core provisions the
+// generated module. On a project that declares its own `infra.path`, that
+// combination aims provisioning at the Foundry-only template and leaves the
+// directory the user actually maintains orphaned on disk.
+//
+// The refusal is about the declaration, not the directory: ./infra/ being absent
+// proves nothing when the project's IaC deliberately lives elsewhere, so
+// ensureInfraDirAbsent alone would wave this project through.
+func ensureDefaultInfraPath(rawYAML []byte) error {
+	config, err := readDeclaredInfraConfig(rawYAML)
+	if err != nil {
+		return err
+	}
+
+	declared := config.Path
+	if declared == "" || normalizeInfraPath(declared) == defaultInfraDirName {
+		return nil
+	}
+
+	return exterrors.Validation(
+		exterrors.CodeInfraEjectCustomInfraPath,
+		fmt.Sprintf("azure.yaml points this project's infrastructure at %q via `infra.path`; "+
+			"`--infra` writes a self-contained Foundry template to ./infra/ and cannot take "+
+			"over infrastructure the project already owns", declared),
+		fmt.Sprintf("run `azd ai agent init` without --infra to add the agent while %q stays the "+
+			"project's infrastructure, or remove `infra.path` from azure.yaml first if you want "+
+			"the generated ./infra/ to replace it", declared),
+	)
+}
+
+// ensureNoInfraLayers refuses projects that use infra.layers. Eject generates
+// one self-contained Foundry module under ./infra and cannot preserve layer
+// paths, dependency ordering, hooks, or provider inheritance.
+func ensureNoInfraLayers(rawYAML []byte) error {
+	config, err := readDeclaredInfraConfig(rawYAML)
+	if err != nil {
+		return err
+	}
+	if len(config.Layers) == 0 {
+		return nil
+	}
+
+	return exterrors.Validation(
+		exterrors.CodeInfraEjectLayersUnsupported,
+		fmt.Sprintf("azure.yaml declares %d infrastructure layer(s); `--infra` generates one "+
+			"self-contained Foundry template and cannot preserve layered provisioning", len(config.Layers)),
+		"run `azd ai agent init` without --infra to keep the existing layers, or remove "+
+			"`infra.layers` first if you want the generated ./infra/ template to replace them",
+	)
+}
+
+// ensureCompatibleInfraProvider refuses a Bicep eject when azure.yaml selects a
+// different provisioning provider. Bicep eject intentionally leaves
+// infra.provider unchanged, so azd would continue dispatching to that provider
+// and ignore the generated files.
+func ensureCompatibleInfraProvider(rawYAML []byte, requestedProvider string) error {
+	config, err := readDeclaredInfraConfig(rawYAML)
+	if err != nil {
+		return err
+	}
+
+	if requestedProvider != project.BicepProviderName {
+		return nil
+	}
+
+	declared := config.Provider
+	if declared == "" ||
+		declared == project.BicepProviderName ||
+		declared == project.FoundryProviderName {
+		return nil
+	}
+
+	suggestion := "change or remove `infra.provider` before ejecting Bicep"
+	if declared == project.TerraformProviderName {
+		suggestion = "use `azd ai agent init --infra=terraform` to generate Terraform, " +
+			"or change/remove `infra.provider` before ejecting Bicep"
+	}
+
+	return exterrors.Validation(
+		exterrors.CodeInfraEjectProviderConflict,
+		fmt.Sprintf("azure.yaml uses `infra.provider: %s`, but `--infra=bicep` generates Bicep "+
+			"without changing the provider; azd would continue using %s and ignore the generated files",
+			declared, declared),
+		suggestion,
+	)
+}
+
+// ensureInfraDirAbsent refuses when projectRoot already contains ./infra/.
+// Eject writes the whole tree or nothing, so it never merges into or overwrites
+// what is already there.
+//
+// Eject leaves no marker behind, so nothing at this point can tell prior eject
+// output apart from infrastructure the user authored for the project's other
+// services — a plain "delete ./infra/" would be destructive advice half the
+// time. The suggestion therefore covers both cases and leads with the
+// non-destructive one.
+func ensureInfraDirAbsent(projectRoot string) error {
+	// Lstat makes any directory entry count, including a dangling symlink.
+	// Eject must never replace a user-owned path whose target happens to be
+	// missing.
+	if _, err := os.Lstat(filepath.Join(projectRoot, defaultInfraDirName)); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("stat infra directory: %w", err)
+	}
+
+	return exterrors.Validation(
+		exterrors.CodeInfraEjectExists,
+		"`./infra/` already exists",
+		"if you authored ./infra/, keep it and run `azd ai agent init` without --infra: "+
+			"--infra synthesizes a self-contained Foundry template and cannot merge into "+
+			"infrastructure you already own. If a previous --infra run generated it, "+
+			"delete ./infra/ and run the command again to regenerate it from azure.yaml",
+	)
+}
+
+// infraGate is how `azd ai agent init --infra` should behave for the azd
+// project (if any) that contains the current directory.
+type infraGate struct {
+	// standaloneEject is true when an existing project already declares a
+	// Foundry service, so eject runs on its own and skips the init prompts.
+	standaloneEject bool
+	// projectRoot is the resolved azd project root. Empty when the current
+	// directory is not inside a project yet.
+	projectRoot string
+}
+
+// resolveInfraGate decides between a standalone eject and the normal init flow
+// for a `--infra` run.
+//
+// A project that already declares a Foundry service ejects standalone. Anything
+// else — no project at all, or a project azd already manages that has no Foundry
+// service yet — runs init first and ejects afterwards, so "add an agent to my
+// existing project and give me its IaC" stays a single step instead of failing
+// with "nothing to eject".
+//
+// The one refusal kept up front is a pre-existing ./infra/: init cannot clear
+// it, so failing here beats mutating azure.yaml and then refusing on the
+// trailing eject. Projects that use a custom infra.path, infra.layers, or an
+// incompatible provider are refused on both branches for the same reason.
+func resolveInfraGate(provider string) (infraGate, error) {
+	projectRoot, err := azdext.GetProjectDir()
+	if errors.Is(err, azdext.ErrProjectNotFound) {
+		return infraGate{}, nil
+	}
+	if err != nil {
+		return infraGate{}, fmt.Errorf("resolve azd project directory: %w", err)
+	}
+
+	rawYAML, err := readProjectAzureYAML(projectRoot)
+	if err != nil {
+		return infraGate{}, err
+	}
+
+	// Scanned before the infra.path check so a malformed azure.yaml keeps its
+	// established CodeInvalidAzureYaml classification.
+	hasFoundry, err := hasFoundryServiceInYAML(rawYAML)
+	if err != nil {
+		return infraGate{}, err
+	}
+
+	if err := ensureNoInfraLayers(rawYAML); err != nil {
+		return infraGate{}, err
+	}
+	if err := ensureDefaultInfraPath(rawYAML); err != nil {
+		return infraGate{}, err
+	}
+	if err := ensureDefaultInfraModule(rawYAML); err != nil {
+		return infraGate{}, err
+	}
+	if err := ensureCompatibleInfraProvider(rawYAML, provider); err != nil {
+		return infraGate{}, err
+	}
+
+	if hasFoundry {
+		return infraGate{standaloneEject: true, projectRoot: projectRoot}, nil
+	}
+
+	// The trailing eject writes ./infra/, and init cannot clear a directory that
+	// is already there. Refuse now rather than mutating azure.yaml and adding an
+	// azd environment first and only then refusing.
+	if err := ensureInfraDirAbsent(projectRoot); err != nil {
+		return infraGate{}, err
+	}
+
+	return infraGate{projectRoot: projectRoot}, nil
+}
+
 // ejectInfraAfterInit ejects from the azd project containing the current
 // directory. Init may create or discover a project above cwd, so use the same
 // upward project resolution as the rest of azd.
@@ -84,16 +439,12 @@ func ejectInfraAfterInit(provider string) error {
 		return fmt.Errorf("resolve azd project directory after init: %w", err)
 	}
 
-	rawYAML, err := os.ReadFile(filepath.Join(projectRoot, "azure.yaml")) //nolint:gosec // resolved azd project file
+	hasFoundry, err := hasFoundryServiceForEject(projectRoot)
 	if err != nil {
-		return fmt.Errorf("read azure.yaml after init: %w", err)
-	}
-	if _, err := findFoundryServiceForEject(rawYAML); err != nil {
-		if localErr, ok := errors.AsType[*azdext.LocalError](err); ok &&
-			localErr.Code == exterrors.CodeInfraEjectNoFoundryService {
-			return nil
-		}
 		return err
+	}
+	if !hasFoundry {
+		return nil
 	}
 
 	return ejectInfra(projectRoot, provider)
@@ -116,23 +467,17 @@ func ejectInfraAfterInit(provider string) error {
 //
 //   - azure.yaml is missing -> CodeInfraEjectAzureYamlMissing
 //   - no service has a Foundry host -> CodeInfraEjectNoFoundryService
+//   - azure.yaml declares infra.layers -> CodeInfraEjectLayersUnsupported
+//   - azure.yaml declares a non-default infra.path -> CodeInfraEjectCustomInfraPath
+//   - azure.yaml declares a non-default infra.module -> CodeInfraEjectCustomModule
+//   - Bicep eject conflicts with infra.provider -> CodeInfraEjectProviderConflict
 //   - ./infra/ already exists -> CodeInfraEjectExists
 //
 // On success it prints the summary block and returns nil.
 func ejectInfra(projectRoot, provider string) error {
-	yamlPath := filepath.Join(projectRoot, "azure.yaml")
-	//nolint:gosec // G304: azure.yaml under the caller-supplied azd project root
-	rawYAML, err := os.ReadFile(yamlPath)
+	rawYAML, err := readProjectAzureYAML(projectRoot)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return exterrors.Validation(
-				exterrors.CodeInfraEjectAzureYamlMissing,
-				"azure.yaml not found in the current directory; "+
-					"`azd ai agent init --infra` requires an existing azd agent project",
-				"run `azd ai agent init` first to create azure.yaml, then re-run with --infra",
-			)
-		}
-		return fmt.Errorf("read azure.yaml: %w", err)
+		return err
 	}
 
 	svcName, err := findFoundryServiceForEject(rawYAML)
@@ -140,15 +485,25 @@ func ejectInfra(projectRoot, provider string) error {
 		return err
 	}
 
-	infraDir := filepath.Join(projectRoot, "infra")
-	if _, err := os.Stat(infraDir); err == nil {
-		return exterrors.Validation(
-			exterrors.CodeInfraEjectExists,
-			"`./infra/` already exists",
-			"to regenerate from azure.yaml, delete the infra directory and run the command again",
-		)
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat infra directory: %w", err)
+	// Checked before anything is written: eject cannot preserve layers, the
+	// Terraform path drops infra.path, and Bicep leaves an existing provider
+	// unchanged. Any of those could make azd ignore or orphan user-owned IaC.
+	if err := ensureNoInfraLayers(rawYAML); err != nil {
+		return err
+	}
+	if err := ensureDefaultInfraPath(rawYAML); err != nil {
+		return err
+	}
+	if err := ensureDefaultInfraModule(rawYAML); err != nil {
+		return err
+	}
+	if err := ensureCompatibleInfraProvider(rawYAML, provider); err != nil {
+		return err
+	}
+
+	infraDir := filepath.Join(projectRoot, defaultInfraDirName)
+	if err := ensureInfraDirAbsent(projectRoot); err != nil {
+		return err
 	}
 
 	res, err := synthesis.Synthesize(synthesis.Input{

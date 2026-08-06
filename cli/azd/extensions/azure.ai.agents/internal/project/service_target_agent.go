@@ -15,12 +15,14 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,8 +32,8 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
+	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
-	"azureaiagent/internal/pkg/projectconfig"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -153,10 +155,17 @@ type AgentServiceTargetProvider struct {
 	// agentDefinitionPath is only set for the file-based and env-override paths
 	// (not the inline unified shape), so both are checked as the idempotency guard.
 	deployContextReady bool
-	credential         *azidentity.AzureDeveloperCLICredential
-	tenantId           string
-	env                *azdext.Environment
-	foundryProject     *arm.ResourceID
+	// serviceConfigResolved tracks whether serviceConfig has had
+	// its local $ref includes expanded. Cleared whenever a newer
+	// config is adopted.
+	serviceConfigResolved bool
+	credential            *azidentity.AzureDeveloperCLICredential
+	tenantId              string
+	env                   *azdext.Environment
+	foundryProject        *arm.ResourceID
+	projectServices       map[string]*azdext.ServiceConfig
+	dependencyEnabled     dependencyEnabled
+	dependencyEnv         map[string]string
 }
 
 const (
@@ -182,16 +191,56 @@ func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTa
 // agent.yaml, tenant lookup, credential) lives in ensureDeployContext and runs
 // only when a deploy-time entrypoint needs it.
 func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
+	p.adoptServiceConfig(serviceConfig)
+	return nil
+}
+
+// adoptServiceConfig stores the service config azd core supplied
+// for the current call. Core re-expands ${VAR} references against
+// the environment on every request, so a deploy-time config can
+// carry values the Initialize-time snapshot lacked, for example a
+// location the user was prompted for during provision. Keeping the
+// newest config avoids deploying with the empty strings that unset
+// variables expand to.
+func (p *AgentServiceTargetProvider) adoptServiceConfig(serviceConfig *azdext.ServiceConfig) {
+	if serviceConfig == nil || serviceConfig == p.serviceConfig {
+		return
+	}
 	p.serviceConfig = serviceConfig
+	p.serviceConfigResolved = false
+}
+
+// resolveServiceConfig expands local $ref includes on the current
+// service config. It is idempotent per config instance, so repeat
+// calls stay cheap while a freshly adopted config is always
+// re-resolved.
+func (p *AgentServiceTargetProvider) resolveServiceConfig() error {
+	if p.serviceConfigResolved || p.serviceConfig == nil || p.projectPath == "" {
+		return nil
+	}
+	if err := ResolveServiceConfigInPlace(p.serviceConfig, p.projectPath); err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf(
+				"failed to resolve service config for %s: %s",
+				p.serviceConfig.Name,
+				err,
+			),
+			"fix the agent service configuration in azure.yaml",
+		)
+	}
+	p.serviceConfigResolved = true
 	return nil
 }
 
 // ensureDeployContext lazily resolves the agent definition file, the azd
 // environment, the tenant, and the credential. Idempotent via the
-// agentDefinitionPath short-circuit.
+// agentDefinitionPath short-circuit. The short-circuit still resolves
+// the service config so a newer one adopted after the first
+// deploy-time call is expanded before consumers read it.
 func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) error {
 	if p.deployContextReady || p.agentDefinitionPath != "" {
-		return nil
+		return p.resolveServiceConfig()
 	}
 	if p.serviceConfig == nil {
 		return exterrors.Internal(
@@ -208,19 +257,11 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 			"run 'azd init' to initialize your project",
 		)
 	}
-	if err := ResolveServiceConfigInPlace(
-		p.serviceConfig,
-		proj.Project.Path,
-	); err != nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf(
-				"failed to resolve service config for %s: %s",
-				p.serviceConfig.Name,
-				err,
-			),
-			"fix the agent service configuration in azure.yaml",
-		)
+	p.projectPath = proj.Project.Path
+	p.projectServices = proj.GetProject().GetServices()
+	p.dependencyEnabled = p.isDependencyEnabled
+	if err := p.resolveServiceConfig(); err != nil {
+		return err
 	}
 	servicePath := p.serviceConfig.GetRelativePath()
 	fullPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath)
@@ -283,7 +324,6 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	}
 	p.credential = cred
 
-	p.projectPath = proj.Project.Path
 	p.servicePath = fullPath
 
 	// Check if user has specified agent definition path via environment variable
@@ -382,6 +422,65 @@ func (p *AgentServiceTargetProvider) ensureEnv(ctx context.Context) error {
 	return nil
 }
 
+func (p *AgentServiceTargetProvider) isDependencyEnabled(ctx context.Context, serviceName string) (bool, error) {
+	resp, err := p.azdClient.Project().GetServiceConfigValue(ctx, &azdext.GetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        "condition",
+	})
+	if err != nil {
+		return false, fmt.Errorf("read deployment condition for service %q: %w", serviceName, err)
+	}
+	if !resp.GetFound() {
+		return true, nil
+	}
+	conditionValue, err := dependencyConditionValue(resp.GetValue())
+	if err != nil {
+		return false, fmt.Errorf("read deployment condition for service %q: %w", serviceName, err)
+	}
+	if strings.TrimSpace(conditionValue) == "" {
+		return true, nil
+	}
+	condition, err := ExpandEnv(conditionValue, func(name string) string {
+		return p.dependencyEnvValue(name)
+	})
+	if err != nil {
+		return false, fmt.Errorf("malformed deployment condition for service %q: %w", serviceName, err)
+	}
+	// Keep this list aligned with pkg/project/service_config.go:isConditionTrue;
+	// extensions cannot import that unexported core helper.
+	switch condition {
+	case "1", "true", "TRUE", "True", "yes", "YES", "Yes":
+		return true, nil
+	default:
+		return false, nil
+	}
+}
+
+func dependencyConditionValue(value *structpb.Value) (string, error) {
+	if value == nil {
+		return "", nil
+	}
+	switch kind := value.Kind.(type) {
+	case *structpb.Value_StringValue:
+		return kind.StringValue, nil
+	case *structpb.Value_BoolValue:
+		return strconv.FormatBool(kind.BoolValue), nil
+	case *structpb.Value_NumberValue:
+		return strconv.FormatFloat(kind.NumberValue, 'g', -1, 64), nil
+	case *structpb.Value_NullValue:
+		return "", nil
+	default:
+		return "", fmt.Errorf("condition must be a string, boolean, or number")
+	}
+}
+
+func (p *AgentServiceTargetProvider) dependencyEnvValue(name string) string {
+	if value, ok := p.dependencyEnv[name]; ok {
+		return value
+	}
+	return os.Getenv(name)
+}
+
 // getServiceKey converts a service name into a standardized environment variable key format
 func (p *AgentServiceTargetProvider) getServiceKey(serviceName string) string {
 	serviceKey := strings.ReplaceAll(serviceName, " ", "_")
@@ -415,7 +514,6 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	for _, kval := range resp.KeyValues {
 		azdEnv[kval.Key] = kval.Value
 	}
-
 	// Check if required environment variables are set
 	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
 		return nil, exterrors.Dependency(
@@ -464,6 +562,7 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	serviceConfig *azdext.ServiceConfig,
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
+	p.adoptServiceConfig(serviceConfig)
 	if err := p.ensureDeployContext(ctx); err != nil {
 		return nil, err
 	}
@@ -527,9 +626,11 @@ func (p *AgentServiceTargetProvider) Package(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
+	p.adoptServiceConfig(serviceConfig)
 	if err := p.ensureDeployContext(ctx); err != nil {
 		return nil, err
 	}
+	serviceConfig = p.serviceConfig
 	// Code deploy: ZIP the source directory
 	if p.isCodeDeployAgent() {
 		progress("Packaging code")
@@ -643,9 +744,11 @@ func (p *AgentServiceTargetProvider) Publish(
 		}, nil
 	}
 
+	p.adoptServiceConfig(serviceConfig)
 	if err := p.ensureDeployContext(ctx); err != nil {
 		return nil, err
 	}
+	serviceConfig = p.serviceConfig
 	// Code deploy skips Publish (no ACR needed)
 	if p.isCodeDeployAgent() {
 		return &azdext.ServicePublishResult{}, nil
@@ -1022,10 +1125,31 @@ func (p *AgentServiceTargetProvider) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
+	p.adoptServiceConfig(serviceConfig)
 	if err := p.ensureDeployContext(ctx); err != nil {
 		return nil, err
 	}
 	serviceConfig = p.serviceConfig
+
+	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
+	if err != nil {
+		return nil, err
+	}
+	if !isContainerAgent {
+		return nil, exterrors.Validation(
+			exterrors.CodeUnsupportedAgentKind,
+			"unsupported agent kind in agent.yaml",
+			"use a supported kind: 'hosted'",
+		)
+	}
+
+	if err := validateEnvironmentVariableNames(
+		serviceConfig.GetEnvironment(),
+		agentDef.EnvironmentVariables,
+	); err != nil {
+		return nil, err
+	}
+
 	// Ensure Foundry project is loaded
 	if err := p.ensureFoundryProject(ctx); err != nil {
 		return nil, err
@@ -1047,6 +1171,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	for _, kval := range resp.KeyValues {
 		azdEnv[kval.Key] = kval.Value
 	}
+	p.dependencyEnv = azdEnv
 
 	serviceTargetConfig, err := LoadServiceTargetAgentConfig(serviceConfig)
 	if err != nil {
@@ -1061,6 +1186,12 @@ func (p *AgentServiceTargetProvider) Deploy(
 		fmt.Println("Loaded custom service target configuration")
 	}
 
+	if err := validateFoundryDependencies(
+		ctx, serviceConfig, serviceTargetConfig, p.projectServices, azdEnv, p.dependencyEnabled,
+	); err != nil {
+		return nil, err
+	}
+
 	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
 
 	// Provision any declared Foundry memory stores before deploying the agent, since
@@ -1069,18 +1200,6 @@ func (p *AgentServiceTargetProvider) Deploy(
 		ctx, serviceTargetConfig, azdEnv["FOUNDRY_PROJECT_ENDPOINT"], progress,
 	); err != nil {
 		return nil, err
-	}
-
-	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
-	if err != nil {
-		return nil, err
-	}
-	if !isContainerAgent {
-		return nil, exterrors.Validation(
-			exterrors.CodeUnsupportedAgentKind,
-			"unsupported agent kind in agent.yaml",
-			"use a supported kind: 'hosted'",
-		)
 	}
 
 	// Branch: code deploy vs container deploy
@@ -1442,6 +1561,25 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["FOUNDRY_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
+	// Seed core-expanded values before resolving legacy variables.
+	resolvedEnvVars := maps.Clone(serviceConfig.GetEnvironment())
+	if resolvedEnvVars == nil {
+		resolvedEnvVars = make(map[string]string)
+	}
+	if agentDef.EnvironmentVariables != nil {
+		for _, envVar := range *agentDef.EnvironmentVariables {
+			if _, found := resolvedEnvVars[envVar.Name]; found {
+				continue
+			}
+			resolvedEnvVars[envVar.Name] = p.resolveEnvironmentVariables(
+				envVar.Name,
+				envVar.Value,
+				serviceConfig.GetEnvironment(),
+				azdEnv,
+			)
+		}
+	}
+
 	// Parse service config for container resource overrides
 	foundryAgentConfig, err := LoadServiceTargetAgentConfig(serviceConfig)
 	if err != nil {
@@ -1451,35 +1589,8 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 			"check the service configuration in azure.yaml",
 		)
 	}
-	serviceEnv, err := p.serviceEnvironment(serviceConfig)
-	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf(
-				"failed to load service environment: %s",
-				err,
-			),
-			"fix the service env configuration in azure.yaml",
-		)
-	}
-
-	resolvedEnvVars := make(map[string]string)
-	if agentDef.EnvironmentVariables != nil {
-		for _, envVar := range *agentDef.EnvironmentVariables {
-			resolvedEnvVars[envVar.Name] =
-				p.resolveEnvironmentVariables(envVar.Value, azdEnv)
-		}
-	}
-	for name, value := range foundryAgentConfig.Environment {
-		resolvedEnvVars[name] =
-			p.resolveEnvironmentVariables(value, azdEnv)
-	}
-	for name, value := range serviceEnv {
-		resolvedEnvVars[name] =
-			p.resolveEnvironmentVariables(value, azdEnv)
-	}
-
 	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
+	WarnOrphanedConfigEnv(serviceConfig)
 
 	var cpu, memory string
 	if foundryAgentConfig != nil && foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
@@ -1532,22 +1643,6 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		request:         request,
 		protocols:       protocols,
 	}, nil
-}
-
-func (p *AgentServiceTargetProvider) serviceEnvironment(
-	serviceConfig *azdext.ServiceConfig,
-) (map[string]string, error) {
-	raw, err := projectconfig.LoadServiceEnvironment(
-		p.projectPath,
-		serviceConfig.GetName(),
-	)
-	if err != nil {
-		return nil, err
-	}
-	if raw != nil {
-		return raw, nil
-	}
-	return serviceConfig.GetEnvironment(), nil
 }
 
 // deployResult holds the intermediate results from a deploy method (code or container)
@@ -2647,17 +2742,18 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	}
 
 	serviceKey := p.getServiceKey(serviceConfig.Name)
-	envVars := map[string]string{
-		fmt.Sprintf("AGENT_%s_NAME", serviceKey):    agentVersionResponse.Name,
-		fmt.Sprintf("AGENT_%s_VERSION", serviceKey): agentVersionResponse.Version,
+	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
+	envVars := []azdext.SetEnvRequest{
+		{EnvName: p.env.Name, Key: versionKey, Value: ""},
+		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_NAME", serviceKey), Value: agentVersionResponse.Name},
 	}
 
 	// Set the base agent endpoint used for session management (not protocol-specific).
 	baseEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
 	projectEndpoint := strings.TrimRight(azdEnv["FOUNDRY_PROJECT_ENDPOINT"], "/")
-	envVars[baseEndpointKey] = fmt.Sprintf(
+	envVars = append(envVars, azdext.SetEnvRequest{EnvName: p.env.Name, Key: baseEndpointKey, Value: fmt.Sprintf(
 		"%s/agents/%s/versions/%s", projectEndpoint, agentVersionResponse.Name, agentVersionResponse.Version,
-	)
+	)})
 
 	endpoints := agentInvocationEndpoints(
 		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
@@ -2667,29 +2763,38 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	for _, ep := range endpoints {
 		suffix := strings.ToUpper(ep.Protocol)
 		key := fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, suffix)
-		envVars[key] = ep.URL
+		envVars = append(envVars, azdext.SetEnvRequest{EnvName: p.env.Name, Key: key, Value: ep.URL})
 	}
+	envVars = append(envVars,
+		azdext.SetEnvRequest{EnvName: p.env.Name, Key: envkey.AgentProjectEndpoint(serviceConfig.Name), Value: projectEndpoint},
+		azdext.SetEnvRequest{EnvName: p.env.Name, Key: versionKey, Value: agentVersionResponse.Version},
+	)
 
-	for key, value := range envVars {
-		_, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-			EnvName: p.env.Name,
-			Key:     key,
-			Value:   value,
-		})
+	for i := range envVars {
+		_, err := p.azdClient.Environment().SetValue(ctx, &envVars[i])
 		if err != nil {
-			return fmt.Errorf("failed to set environment variable %s: %w", key, err)
+			return fmt.Errorf("failed to set environment variable %s: %w", envVars[i].Key, err)
 		}
 	}
 
 	return nil
 }
 
-// resolveEnvironmentVariables resolves ${ENV_VAR} style references in value using azd environment variables.
-// Supports default values (e.g., "${VAR:-default}") and multiple expressions (e.g., "${VAR1}-${VAR2}").
-func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(value string, azdEnv map[string]string) string {
-	resolved, err := ExpandEnv(value, func(varName string) string {
-		return azdEnv[varName]
-	})
+// resolveEnvironmentVariables expands legacy inline templates.
+func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(
+	name string,
+	value string,
+	serviceEnvironment map[string]string,
+	azdEnv map[string]string,
+) string {
+	resolved, err := ResolveAgentEnvironmentVariable(
+		name,
+		value,
+		serviceEnvironment,
+		func(varName string) string {
+			return azdEnv[varName]
+		},
+	)
 	if err != nil {
 		// If resolution fails, return original value
 		return value

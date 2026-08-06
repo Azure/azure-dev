@@ -156,6 +156,103 @@ func TestLoadOnDiskTemplate_BicepWithParams(t *testing.T) {
 		"parameters referencing an unresolved ${VAR} must be dropped, not set to empty string")
 }
 
+func TestLoadOnDiskTemplate_ConnectionServiceScopes(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	infraDir := filepath.Join(dir, onDiskInfraDir)
+	require.NoError(t, os.MkdirAll(infraDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(infraDir, onDiskBicepFile),
+		[]byte("// bicep\n"),
+		0o600,
+	))
+
+	params := minimalARMParametersFile(t, map[string]any{
+		"connections": []map[string]any{
+			{"name": "first", "target": "${ENDPOINT}"},
+			{"name": "second", "target": "${ENDPOINT}"},
+			{"name": "isolated", "target": "${ENDPOINT}"},
+			{"name": "legacy", "target": "${ENDPOINT}"},
+		},
+		"connectionCredentials": map[string]any{
+			"first":    map[string]any{"key": "${KEY}"},
+			"second":   map[string]any{"key": "${KEY}"},
+			"isolated": map[string]any{"key": "${KEY}"},
+			"legacy":   map[string]any{"key": "${KEY}"},
+		},
+	})
+	require.NoError(t, os.WriteFile(
+		filepath.Join(infraDir, onDiskParamsFile),
+		[]byte(params),
+		0o600,
+	))
+
+	stub := &stubCompiler{
+		buildResult: bicep.BuildResult{Compiled: minimalARMTemplate()},
+	}
+	got, err := loadOnDiskTemplateWithEnvironment(
+		t.Context(),
+		dir,
+		stub,
+		onDiskEnvironment{
+			project: map[string]string{
+				"ENDPOINT": "https://project.example",
+				"KEY":      "project-key",
+			},
+			services: map[string]map[string]string{
+				"first": {
+					"ENDPOINT": "https://first.example",
+					"KEY":      "first-key",
+				},
+				"second": {
+					"ENDPOINT": "https://second.example",
+					"KEY":      "second-key",
+				},
+			},
+			scopedConnections: map[string]bool{
+				"first":    true,
+				"second":   true,
+				"isolated": true,
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	asMap := func(value any) map[string]any {
+		t.Helper()
+		mapped, ok := value.(map[string]any)
+		require.True(t, ok, "expected map, got %T", value)
+		return mapped
+	}
+	connectionEntry := asMap(got.parameters["connections"])
+	connections, ok := connectionEntry["value"].([]any)
+	require.True(t, ok)
+	require.Len(t, connections, 4)
+	assert.Equal(
+		t,
+		"https://first.example",
+		asMap(connections[0])["target"],
+	)
+	assert.Equal(
+		t,
+		"https://second.example",
+		asMap(connections[1])["target"],
+	)
+	assert.Equal(t, "", asMap(connections[2])["target"])
+	assert.Equal(
+		t,
+		"https://project.example",
+		asMap(connections[3])["target"],
+	)
+
+	credentialEntry := asMap(got.parameters["connectionCredentials"])
+	credentials := asMap(credentialEntry["value"])
+	assert.Equal(t, "first-key", asMap(credentials["first"])["key"])
+	assert.Equal(t, "second-key", asMap(credentials["second"])["key"])
+	assert.Equal(t, "", asMap(credentials["isolated"])["key"])
+	assert.Equal(t, "project-key", asMap(credentials["legacy"])["key"])
+}
+
 func TestLoadOnDiskTemplate_BicepparamPrecedence(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

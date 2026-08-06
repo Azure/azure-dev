@@ -3,7 +3,11 @@
 
 package envkey
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestToolboxMCPEndpoint(t *testing.T) {
 	t.Parallel()
@@ -43,4 +47,18 @@ func TestToolboxMCPEndpoint(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSkillVersion(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "SKILL_SUMMARIZE_TOOLS_VERSION", SkillVersion("summarize-tools"))
+	require.Equal(t, "SKILL_MY__SKILL_VERSION", SkillVersion("my--skill"))
+	require.Equal(t, "SKILL_SUMMARIZE_TOOLS_PROJECT_ENDPOINT", SkillProjectEndpoint("summarize-tools"))
+}
+
+func TestReadinessScopeKeys(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "TOOLBOX_MY_TOOL_PROJECT_ENDPOINT", ToolboxProjectEndpoint("my-tool"))
+	require.Equal(t, "AGENT_MY_AGENT_PROJECT_ENDPOINT", AgentProjectEndpoint("my-agent"))
+	require.Equal(t, "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT", ConnectionProjectEndpoint)
 }

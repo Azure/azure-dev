@@ -64,6 +64,7 @@ func TestRunToolboxDeleteWith_Branches(t *testing.T) {
 	})
 
 	t.Run("version_is_only_remaining_with_force_proceeds", func(t *testing.T) {
+		calls := stubToolboxEndpointEnv(t)
 		client := newMockToolboxClient("https://e/")
 		client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
 			Name: "tb", DefaultVersion: "1",
@@ -79,6 +80,7 @@ func TestRunToolboxDeleteWith_Branches(t *testing.T) {
 		require.Len(t, client.deleteVersionCalls, 1)
 		assert.Equal(t, "tb", client.deleteVersionCalls[0].name)
 		assert.Equal(t, "1", client.deleteVersionCalls[0].version)
+		require.Equal(t, []toolboxEnvCall{{name: "tb", value: "", projectScope: "https://e/"}}, *calls)
 	})
 
 	t.Run("non_default_version_with_force_proceeds", func(t *testing.T) {

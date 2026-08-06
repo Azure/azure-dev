@@ -41,3 +41,32 @@ func ToolboxMCPEndpoint(toolboxName string) string {
 	sanitized := nonAlphanumRe.ReplaceAllString(strings.ToUpper(toolboxName), "_")
 	return fmt.Sprintf("TOOLBOX_%s_MCP_ENDPOINT", sanitized)
 }
+
+// ToolboxProjectEndpoint scopes a toolbox marker to its Foundry project.
+func ToolboxProjectEndpoint(toolboxName string) string {
+	sanitized := nonAlphanumRe.ReplaceAllString(strings.ToUpper(toolboxName), "_")
+	return fmt.Sprintf("TOOLBOX_%s_PROJECT_ENDPOINT", sanitized)
+}
+
+// SkillVersion returns the canonical env-var key for the default version
+// produced by an azure.ai.skill deployment.
+func SkillVersion(skillName string) string {
+	sanitized := strings.ReplaceAll(strings.ToUpper(skillName), "-", "_")
+	return fmt.Sprintf("SKILL_%s_VERSION", sanitized)
+}
+
+// SkillProjectEndpoint returns the env-var key that scopes a skill deployment
+// marker to the Foundry project where the version was created.
+func SkillProjectEndpoint(skillName string) string {
+	sanitized := strings.ReplaceAll(strings.ToUpper(skillName), "-", "_")
+	return fmt.Sprintf("SKILL_%s_PROJECT_ENDPOINT", sanitized)
+}
+
+// AgentProjectEndpoint scopes an agent marker to its Foundry project.
+func AgentProjectEndpoint(agentName string) string {
+	sanitized := strings.NewReplacer(" ", "_", "-", "_").Replace(strings.ToUpper(agentName))
+	return fmt.Sprintf("AGENT_%s_PROJECT_ENDPOINT", sanitized)
+}
+
+// ConnectionProjectEndpoint scopes provisioned connection names to a Foundry project.
+const ConnectionProjectEndpoint = "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT"

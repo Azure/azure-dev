@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"log"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -68,19 +69,21 @@ type FoundryProvisioningProvider struct {
 	azdClient *azdext.AzdClient
 
 	// Populated by Initialize.
-	projectPath  string
-	synthResult  *synthesis.Result // nil when onDiskSource != nil
-	envName      string
-	subID        string
-	location     string
-	rgName       string
-	rgExplicit   bool // AZURE_RESOURCE_GROUP came from env, not the rg-<env> default
-	foundryName  string
-	principalID  string
-	credential   azcore.TokenCredential
-	tenantID     string          // resolved lazily by ensureCredential; surfaced as AZURE_TENANT_ID
-	armTemplate  map[string]any  // embedded ARM JSON; nil when onDiskSource is set
-	onDiskSource *templateSource // non-nil when ./infra/main.{bicep,bicepparam} exists
+	projectPath                 string
+	synthResult                 *synthesis.Result // nil when onDiskSource != nil
+	serviceEnvironments         map[string]map[string]string
+	connectionEnvironmentScopes map[string]bool
+	envName                     string
+	subID                       string
+	location                    string
+	rgName                      string
+	rgExplicit                  bool // AZURE_RESOURCE_GROUP came from env, not the rg-<env> default
+	foundryName                 string
+	principalID                 string
+	credential                  azcore.TokenCredential
+	tenantID                    string          // resolved lazily by ensureCredential; surfaced as AZURE_TENANT_ID
+	armTemplate                 map[string]any  // embedded ARM JSON; nil when onDiskSource is set
+	onDiskSource                *templateSource // non-nil when ./infra/main.{bicep,bicepparam} exists
 
 	// brownfieldEndpoint is the existing project endpoint when the foundry
 	// service sets endpoint: (bring-your-own). When non-empty the provider skips
@@ -127,12 +130,11 @@ func NewFoundryProvisioningProvider(azdClient *azdext.AzdClient) azdext.Provisio
 // and the on-disk Bicep path, and resolves required env values. It rejects
 // brownfield (endpoint:) and missing services with structured errors.
 //
-// Initialize is cheap by contract: it does no network I/O and builds no
-// credential. Tenant lookup and credential construction happen lazily in
-// [FoundryProvisioningProvider.ensureCredential]; the bicep CLI is built
-// only when an on-disk template actually needs compiling. azd-core may
-// call Initialize on providers it never deploys with, so keeping it cheap
-// lets pure metadata calls (Parameters, PlannedOutputs) succeed without auth.
+// Initialize is cheap and performs no Azure network I/O.
+// Credentials are created lazily by ensureCredential.
+// The bicep CLI is built only when an on-disk template needs it.
+// azd-core may initialize providers it never deploys with, so this
+// keeps metadata calls unauthenticated.
 func (p *FoundryProvisioningProvider) Initialize(
 	ctx context.Context,
 	projectPath string,
@@ -169,27 +171,76 @@ func (p *FoundryProvisioningProvider) Initialize(
 		return err
 	}
 
+	// endpoint: (brownfield) reuse connects to an existing project,
+	// so it needs no subscription or location. Detect it up front so
+	// the environment can be resolved before any service values are
+	// read.
+	endpoint, err := foundryServiceEndpointAtRoot(rawYAML, projectPath, svcName)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf(
+				"read Foundry project service configuration: %s",
+				err,
+			),
+			"fix the project service configuration in azure.yaml",
+		)
+	}
+
+	onDisk := p.onDiskTemplatePresent()
+	if !onDisk {
+		// Validate embedded config before any interactive prompts.
+		_, validationErr := synthesis.Synthesize(synthesis.Input{
+			RawAzureYAML:    rawYAML,
+			ServiceName:     svcName,
+			AcceptedHosts:   FoundryProvisioningServiceHosts,
+			PreserveVarRefs: true,
+			ProjectRoot:     projectPath,
+		})
+		if validationErr != nil &&
+			!errors.Is(validationErr, synthesis.ErrEndpointBrownfield) {
+			return foundrySynthesisError(svcName, validationErr)
+		}
+	}
+
+	p.connectionEnvironmentScopes, err =
+		synthesis.ConnectionEnvironmentScopes(rawYAML, projectPath)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf(
+				"read Foundry connection service configuration: %s",
+				err,
+			),
+			"fix the connection service configuration in azure.yaml",
+		)
+	}
+
+	// Resolve the environment before reading service values. azd core
+	// expands ${VAR} in service env against the environment, so
+	// reading them first would capture empty strings for values the
+	// user is about to be prompted for, and connection synthesis
+	// would provision those empty strings.
+	if endpoint != "" {
+		err = p.resolveEnvName(ctx)
+	} else {
+		err = p.resolveEnv(ctx)
+	}
+	if err != nil {
+		return err
+	}
+
+	p.serviceEnvironments, err = p.projectServiceEnvironments(ctx)
+	if err != nil {
+		return err
+	}
+
 	// Detect on-disk Bicep before synthesizing. Stat-only; no compile here.
-	if p.onDiskTemplatePresent() {
+	if onDisk {
 		log.Printf("[debug] foundry provider: on-disk Bicep detected under %s; "+
 			"skipping synthesizer", filepath.Join(projectPath, onDiskInfraDir))
 		// endpoint: (brownfield) reuse skips provisioning even on the on-disk
 		// path; connect to the existing project instead of compiling Bicep.
-		endpoint, endpointErr := foundryServiceEndpointAtRoot(
-			rawYAML,
-			projectPath,
-			svcName,
-		)
-		if endpointErr != nil {
-			return exterrors.Validation(
-				exterrors.CodeInvalidAzureYaml,
-				fmt.Sprintf(
-					"resolve existing Foundry project endpoint: %s",
-					endpointErr,
-				),
-				"fix the project service configuration in azure.yaml",
-			)
-		}
 		if endpoint != "" {
 			if err := warnNetworkIgnoredInBrownfield(
 				rawYAML,
@@ -203,20 +254,18 @@ func (p *FoundryProvisioningProvider) Initialize(
 				)
 			}
 			p.brownfieldEndpoint = endpoint
-			if err := p.captureBrownfieldDeployments(ctx, rawYAML, svcName); err != nil {
-				return err
-			}
-			return p.resolveEnvName(ctx)
+			return p.captureBrownfieldDeployments(ctx, rawYAML, svcName)
 		}
-		return p.resolveEnv(ctx)
+		return nil
 	}
 
 	res, err := synthesis.Synthesize(synthesis.Input{
-		RawAzureYAML:  rawYAML,
-		ServiceName:   svcName,
-		AcceptedHosts: FoundryProvisioningServiceHosts,
-		Env:           p.networkEnvMap(ctx),
-		ProjectRoot:   projectPath,
+		RawAzureYAML:        rawYAML,
+		ServiceName:         svcName,
+		AcceptedHosts:       FoundryProvisioningServiceHosts,
+		Env:                 p.networkEnvMap(ctx),
+		ServiceEnvironments: p.serviceEnvironments,
+		ProjectRoot:         projectPath,
 	})
 	switch {
 	case errors.Is(err, synthesis.ErrEndpointBrownfield):
@@ -233,38 +282,10 @@ func (p *FoundryProvisioningProvider) Initialize(
 				"fix the project service configuration in azure.yaml",
 			)
 		}
-		endpoint, endpointErr := foundryServiceEndpointAtRoot(
-			rawYAML,
-			projectPath,
-			svcName,
-		)
-		if endpointErr != nil {
-			return exterrors.Validation(
-				exterrors.CodeInvalidAzureYaml,
-				fmt.Sprintf(
-					"resolve existing Foundry project endpoint: %s",
-					endpointErr,
-				),
-				"fix the project service configuration in azure.yaml",
-			)
-		}
 		p.brownfieldEndpoint = endpoint
-		if err := p.captureBrownfieldDeployments(ctx, rawYAML, svcName); err != nil {
-			return err
-		}
-		return p.resolveEnvName(ctx)
-	case errors.Is(err, synthesis.ErrServiceNotFound):
-		return exterrors.Dependency(
-			exterrors.CodeProvisioningServiceNotFound,
-			fmt.Sprintf("no service in azure.yaml has host in %v", FoundryProjectServiceHosts),
-			fmt.Sprintf("add a service with `host: %s` to azure.yaml", FoundryProjectHost),
-		)
+		return p.captureBrownfieldDeployments(ctx, rawYAML, svcName)
 	case err != nil:
-		return exterrors.Validation(
-			exterrors.CodeInvalidAzureYaml,
-			fmt.Sprintf("synthesize foundry project service %q: %s", svcName, err),
-			"check the endpoint, deployments, and network fields under your azure.ai.project service",
-		)
+		return foundrySynthesisError(svcName, err)
 	}
 	p.synthResult = res
 
@@ -284,7 +305,33 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 	p.armTemplate = tmpl
 
-	return p.resolveEnv(ctx)
+	return nil
+}
+
+func foundrySynthesisError(serviceName string, err error) error {
+	if errors.Is(err, synthesis.ErrServiceNotFound) {
+		return exterrors.Dependency(
+			exterrors.CodeProvisioningServiceNotFound,
+			fmt.Sprintf(
+				"no service in azure.yaml has host in %v",
+				FoundryProjectServiceHosts,
+			),
+			fmt.Sprintf(
+				"add a service with `host: %s` to azure.yaml",
+				FoundryProjectHost,
+			),
+		)
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidAzureYaml,
+		fmt.Sprintf(
+			"synthesize foundry project service %q: %s",
+			serviceName,
+			err,
+		),
+		"check the endpoint, deployments, and network fields "+
+			"under your azure.ai.project service",
+	)
 }
 
 // networkEnvMap returns a best-effort name -> value map of the azd environment
@@ -296,6 +343,7 @@ func (p *FoundryProvisioningProvider) networkEnvMap(ctx context.Context) map[str
 		log.Printf("[debug] foundry provider: no azd client; network ${VAR} uses process env only")
 		return nil
 	}
+
 	envClient := p.azdClient.Environment()
 	if envClient == nil {
 		log.Printf("[debug] foundry provider: no environment client; network ${VAR} uses process env only")
@@ -319,6 +367,46 @@ func (p *FoundryProvisioningProvider) networkEnvMap(ctx context.Context) map[str
 		}
 	}
 	return out
+}
+
+// projectServiceEnvironments reads core-expanded service values.
+// It keeps service scopes separate for connection synthesis.
+func (p *FoundryProvisioningProvider) projectServiceEnvironments(
+	ctx context.Context,
+) (map[string]map[string]string, error) {
+	if p.azdClient == nil {
+		return nil, exterrors.Dependency(
+			exterrors.CodeAzdClientFailed,
+			"read project service environments: azd client is unavailable",
+			"restart azd and retry",
+		)
+	}
+
+	response, err := p.azdClient.Project().Get(
+		ctx,
+		&azdext.EmptyRequest{},
+	)
+	if err != nil {
+		return nil, exterrors.Dependency(
+			exterrors.CodeAzdClientFailed,
+			fmt.Sprintf("read project service environments: %s", err),
+			"verify the azd project is accessible, then retry",
+		)
+	}
+	if response.GetProject() == nil {
+		return nil, exterrors.Internal(
+			exterrors.CodeInvalidServiceConfig,
+			"read project service environments: project is missing",
+		)
+	}
+
+	environments := map[string]map[string]string{}
+	for name, service := range response.GetProject().GetServices() {
+		if len(service.GetEnvironment()) > 0 {
+			environments[name] = maps.Clone(service.GetEnvironment())
+		}
+	}
+	return environments, nil
 }
 
 // warnNetworkIgnoredInBrownfield logs a warning when a service declares both
@@ -434,7 +522,8 @@ func (p *FoundryProvisioningProvider) resolveEnvName(ctx context.Context) error 
 // parsed from it when present.
 func brownfieldOutputs(endpoint string) map[string]*azdext.ProvisioningOutputParameter {
 	outputs := map[string]*azdext.ProvisioningOutputParameter{
-		"FOUNDRY_PROJECT_ENDPOINT": {Type: "string", Value: endpoint},
+		"FOUNDRY_PROJECT_ENDPOINT":                      {Type: "string", Value: endpoint},
+		"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT": {Type: "string", Value: endpoint},
 	}
 	if name := projectNameFromEndpoint(endpoint); name != "" {
 		outputs["AZURE_AI_PROJECT_NAME"] = &azdext.ProvisioningOutputParameter{Type: "string", Value: name}
@@ -456,14 +545,18 @@ func defaultResourceGroupName(envName string) string {
 func (p *FoundryProvisioningProvider) withTenantOutput(
 	outputs map[string]*azdext.ProvisioningOutputParameter,
 ) map[string]*azdext.ProvisioningOutputParameter {
-	if p.tenantID == "" {
-		return outputs
-	}
 	if outputs == nil {
 		outputs = map[string]*azdext.ProvisioningOutputParameter{}
 	}
-	if _, ok := outputs[envKeyTenantID]; !ok {
-		outputs[envKeyTenantID] = &azdext.ProvisioningOutputParameter{Type: "string", Value: p.tenantID}
+	if p.tenantID != "" {
+		if _, ok := outputs[envKeyTenantID]; !ok {
+			outputs[envKeyTenantID] = &azdext.ProvisioningOutputParameter{Type: "string", Value: p.tenantID}
+		}
+	}
+	if endpoint, ok := outputs["FOUNDRY_PROJECT_ENDPOINT"]; ok && endpoint != nil {
+		outputs["AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT"] = &azdext.ProvisioningOutputParameter{
+			Type: "string", Value: endpoint.Value,
+		}
 	}
 	return outputs
 }
@@ -838,6 +931,7 @@ func (p *FoundryProvisioningProvider) captureBrownfieldDeployments(
 	connections, err := synthesis.BrownfieldConnections(
 		rawYAML,
 		p.networkEnvMap(ctx),
+		p.serviceEnvironments,
 		p.projectPath,
 	)
 	if err != nil {
@@ -1203,7 +1297,16 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 ) (*templateSource, error) {
 	if p.onDiskSource == nil && p.onDiskTemplatePresent() {
 		progress("Compiling on-disk Bicep templates...")
-		src, err := loadOnDiskTemplate(ctx, p.projectPath, p.bicepCli(), p.envValues(ctx))
+		src, err := loadOnDiskTemplateWithEnvironment(
+			ctx,
+			p.projectPath,
+			p.bicepCli(),
+			onDiskEnvironment{
+				project:           p.envValues(ctx),
+				services:          p.serviceEnvironments,
+				scopedConnections: p.connectionEnvironmentScopes,
+			},
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -1715,6 +1818,8 @@ func invalidatedEnvKeysResult() *azdext.ProvisioningDestroyResult {
 			"AZURE_CONTAINER_REGISTRY_ENDPOINT",
 			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
 			"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+			"AZURE_AI_PROJECT_CONNECTION_NAMES",
+			"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT",
 		},
 	}
 }
@@ -1772,6 +1877,7 @@ var canonicalOutputNames = []string{
 	"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
 	"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
 	"AZURE_AI_PROJECT_CONNECTION_NAMES",
+	"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT",
 	"AZURE_FOUNDRY_NETWORK_MODE",
 	"AZURE_FOUNDRY_MANAGED_ISOLATION_MODE",
 }

@@ -1365,6 +1365,14 @@ func TestNormalizeOutputs_LayerOmitsRootResourceGroup(t *testing.T) {
 	assert.Equal(t, p.foundryRGOwnerID, got[envKeyFoundryRGOwner].Value)
 }
 
+func TestNormalizeOutputs_LayerClearsStaleResourceGroupOwnership(t *testing.T) {
+	t.Parallel()
+	p := &FoundryProvisioningProvider{isLayer: true}
+	got := p.normalizeOutputs(nil)
+	require.Contains(t, got, envKeyFoundryRGOwner)
+	assert.Equal(t, "", got[envKeyFoundryRGOwner].Value)
+}
+
 func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {
 	t.Parallel()
 	// envValues must always include the canonical AZURE_* keys

@@ -702,10 +702,8 @@ func (p *FoundryProvisioningProvider) normalizeOutputs(
 			outputs = map[string]*azdext.ProvisioningOutputParameter{}
 		}
 		delete(outputs, envKeyResourceGroup)
-		if p.foundryRGOwnerID != "" {
-			outputs[envKeyFoundryRGOwner] = &azdext.ProvisioningOutputParameter{
-				Type: "string", Value: p.foundryRGOwnerID,
-			}
+		outputs[envKeyFoundryRGOwner] = &azdext.ProvisioningOutputParameter{
+			Type: "string", Value: p.foundryRGOwnerID,
 		}
 	}
 	return outputs

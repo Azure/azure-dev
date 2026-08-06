@@ -1659,7 +1659,7 @@ func normalizeBundleSourceName(name string) string {
 			}
 		}
 	}
-	return strings.Trim(sb.String(), "-")
+	return strings.Trim(sb.String(), "-_")
 }
 
 // resolveSourceLocation registers a direct --source location and rewrites it to

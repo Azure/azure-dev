@@ -64,6 +64,9 @@ func TestNormalizeBundleSourceName(t *testing.T) {
 		"ext_1.0.0":            "ext_1-0-0",
 		"weird@@name!!":        "weird-name",
 		"--leading-trailing--": "leading-trailing",
+		"_leading":             "leading",
+		"trailing_":            "trailing",
+		"___":                  "",
 		"UPPER":                "upper",
 	}
 

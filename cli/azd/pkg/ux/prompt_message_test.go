@@ -23,6 +23,8 @@ func TestFormatPromptMessage(t *testing.T) {
 		{name: "semicolon", message: "Continue;", want: "Continue; "},
 		{name: "trim trailing whitespace before punctuation", message: "Continue?   \t", want: "Continue? "},
 		{name: "trim trailing whitespace for plain message", message: "Continue   \t", want: "Continue: "},
+		{name: "empty", message: "", want: ""},
+		{name: "whitespace only", message: "  \t\n", want: ""},
 	}
 
 	for _, tt := range tests {

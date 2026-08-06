@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 
 	"github.com/stretchr/testify/assert"
@@ -21,12 +22,16 @@ import (
 
 // newRecordingClient points a client at a test server, with no credential
 // policy in the pipeline.
+//
+// MaxRetries -1 disables the SDK's retry policy, so a test that answers 5xx on
+// purpose does not spend ten seconds being retried.
 func newRecordingClient(t *testing.T, handler http.HandlerFunc) *EvalClient {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	return NewEvalClientFromPipeline(
-		server.URL, runtime.NewPipeline("test", "v1.0.0", runtime.PipelineOptions{}, nil))
+	return NewEvalClientFromPipeline(server.URL, runtime.NewPipeline(
+		"test", "v1.0.0", runtime.PipelineOptions{},
+		&policy.ClientOptions{Retry: policy.RetryOptions{MaxRetries: -1}}))
 }
 
 // versionServer answers a version listing and a publish, assigning whatever

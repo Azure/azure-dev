@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -143,6 +144,40 @@ func TestCommitTeamsAppPackage_RollsBackNewPackageWhenMarkerWriteFails(t *testin
 	}
 	if _, err := os.Stat(pkg); !os.IsNotExist(err) {
 		t.Errorf("new package must be rolled back when marker write fails")
+	}
+}
+
+func TestCommitTeamsAppPackage_RestoresOwnedPackageWhenMarkerWriteFails(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, teamsAppPackageFile)
+	marker := filepath.Join(dir, teamsAppPackageMarkerFile)
+	if err := os.WriteFile(pkg, []byte("OLD"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(marker, []byte(teamsAppPackageMarkerContent([]byte("OLD"))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldWriteMarker := writeTeamsAppMarkerAtomically
+	writeTeamsAppMarkerAtomically = func(string, []byte) error {
+		return errors.New("marker write failed")
+	}
+	t.Cleanup(func() {
+		writeTeamsAppMarkerAtomically = oldWriteMarker
+	})
+
+	got, err := commitTeamsAppPackage(pkg, marker, []byte("NEW"))
+	if err == nil {
+		t.Fatal("expected marker write error")
+	}
+	if got != "" {
+		t.Errorf("path = %q, want empty path on failure", got)
+	}
+	data, _ := os.ReadFile(pkg)
+	if string(data) != "OLD" {
+		t.Errorf("owned package must be restored after marker write fails; content = %q", string(data))
+	}
+	if !teamsAppPackageIsOwned(pkg, marker) {
+		t.Errorf("restored package must still match the ownership marker")
 	}
 }
 
@@ -307,6 +342,37 @@ func TestRemoveOwnedTeamsAppPackage_RemovesOwned(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Errorf("marker must be removed")
+	}
+}
+
+func TestRemoveOwnedTeamsAppPackage_KeepsMarkerWhenPackageRemoveFails(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, teamsAppPackageFile)
+	marker := filepath.Join(dir, teamsAppPackageMarkerFile)
+	if err := os.WriteFile(pkg, []byte("AZD-GENERATED"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(marker, []byte(teamsAppPackageMarkerContent([]byte("AZD-GENERATED"))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldRemove := removeTeamsAppFile
+	removeTeamsAppFile = func(path string) error {
+		if path == pkg {
+			return errors.New("package remove failed")
+		}
+		return oldRemove(path)
+	}
+	t.Cleanup(func() {
+		removeTeamsAppFile = oldRemove
+	})
+
+	removeOwnedTeamsAppPackage(pkg, marker)
+
+	if _, err := os.Stat(pkg); err != nil {
+		t.Errorf("package must remain when removal fails: %v", err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("marker must remain when package removal fails: %v", err)
 	}
 }
 

@@ -271,8 +271,13 @@ func teamsAppPackageMarkerContent(zipBytes []byte) string {
 // returned so the manual guide is used instead of clobbering the user's file.
 func commitTeamsAppPackage(packagePath, markerPath string, zipBytes []byte) (string, error) {
 	packageExisted := false
+	var previousPackageBytes []byte
 	if _, err := os.Stat(packagePath); err == nil {
 		packageExisted = true
+		previousPackageBytes, err = os.ReadFile(packagePath)
+		if err != nil {
+			return "", err
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", err
 	}
@@ -287,8 +292,16 @@ func commitTeamsAppPackage(packagePath, markerPath string, zipBytes []byte) (str
 	if err := writeTeamsAppPackageAtomically(packagePath, zipBytes); err != nil {
 		return "", err
 	}
-	if err := writeTeamsAppFileAtomically(markerPath, []byte(teamsAppPackageMarkerContent(zipBytes))); err != nil {
-		if !packageExisted {
+	if err := writeTeamsAppMarkerAtomically(markerPath, []byte(teamsAppPackageMarkerContent(zipBytes))); err != nil {
+		if packageExisted {
+			if restoreErr := writeTeamsAppPackageAtomically(packagePath, previousPackageBytes); restoreErr != nil {
+				log.Printf(
+					"postdeploy: could not restore Teams app package %q after marker write failed: %v",
+					packagePath,
+					restoreErr,
+				)
+			}
+		} else {
 			if removeErr := os.Remove(packagePath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
 				log.Printf(
 					"postdeploy: could not roll back Teams app package %q after marker write failed: %v",
@@ -302,9 +315,11 @@ func commitTeamsAppPackage(packagePath, markerPath string, zipBytes []byte) (str
 	return packagePath, nil
 }
 
-func writeTeamsAppPackageAtomically(packagePath string, zipBytes []byte) error {
-	return writeTeamsAppFileAtomically(packagePath, zipBytes)
-}
+var (
+	writeTeamsAppPackageAtomically = writeTeamsAppFileAtomically
+	writeTeamsAppMarkerAtomically  = writeTeamsAppFileAtomically
+	removeTeamsAppFile             = os.Remove
+)
 
 func writeTeamsAppFileAtomically(path string, data []byte) error {
 	tmpFile, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
@@ -342,10 +357,11 @@ func removeOwnedTeamsAppPackage(packagePath, markerPath string) {
 	if !teamsAppPackageIsOwned(packagePath, markerPath) {
 		return
 	}
-	if err := os.Remove(packagePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := removeTeamsAppFile(packagePath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		log.Printf("postdeploy: could not remove stale Teams app package %q: %v", packagePath, err)
+		return
 	}
-	if err := os.Remove(markerPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := removeTeamsAppFile(markerPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		log.Printf("postdeploy: could not remove Teams app package marker %q: %v", markerPath, err)
 	}
 }

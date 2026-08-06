@@ -415,3 +415,50 @@ optimization_config:
 	// model should be the JSON string, not double-quoted.
 	assert.JSONEq(t, `"gpt-4o"`, string(opts.OptimizationConfig["model"]))
 }
+
+// TestOptions_EvaluatorInitializationParameters verifies initialization_parameters
+// under an evaluator entry is parsed correctly.
+func TestOptions_EvaluatorInitializationParameters(t *testing.T) {
+	t.Parallel()
+
+	input := `
+name: test
+agent:
+  name: my-agent
+evaluators:
+  - name: builtin.regex_match
+    version: "4"
+    initialization_parameters:
+      patterns:
+        - "(?i)Answer:\\s*{{ground_truth}}"
+`
+	var cfg Config
+	require.NoError(t, yaml.Unmarshal([]byte(input), &cfg))
+
+	require.Len(t, cfg.Evaluators, 1)
+	ref := cfg.Evaluators[0]
+	assert.Equal(t, "builtin.regex_match", ref.Name)
+	require.NotNil(t, ref.InitializationParameters)
+	patterns, ok := ref.InitializationParameters["patterns"]
+	require.True(t, ok)
+	assert.NotEmpty(t, patterns)
+}
+
+// TestOptions_EvaluatorInitializationParametersOmitted verifies
+// InitializationParameters is nil when absent.
+func TestOptions_EvaluatorInitializationParametersOmitted(t *testing.T) {
+	t.Parallel()
+
+	input := `
+name: test
+agent:
+  name: my-agent
+evaluators:
+  - name: builtin.task_adherence
+`
+	var cfg Config
+	require.NoError(t, yaml.Unmarshal([]byte(input), &cfg))
+
+	require.Len(t, cfg.Evaluators, 1)
+	assert.Nil(t, cfg.Evaluators[0].InitializationParameters)
+}

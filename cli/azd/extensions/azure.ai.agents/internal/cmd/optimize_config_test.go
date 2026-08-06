@@ -915,3 +915,58 @@ func TestToRequest_MaxStalls(t *testing.T) {
 	require.NotNil(t, req.Options.MaxStalls)
 	assert.Equal(t, 3, *req.Options.MaxStalls)
 }
+
+func TestToRequest_EvaluatorInitParamsForwardedToAPI(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent: opt_eval.AgentRef{Name: "agent"},
+			Evaluators: opt_eval.EvaluatorList{
+				{
+					Name:    "builtin.regex_match",
+					Version: "4",
+					InitializationParameters: map[string]any{
+						"patterns": []any{"(?i)Answer:\\s*{{ground_truth}}"},
+					},
+				},
+			},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi","ground_truth":"yes"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel:         "gpt-4o-mini",
+			OptimizationModel: "gpt-5",
+		},
+	}
+
+	req, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+	require.NotNil(t, req.EvaluatorInitParamsMap)
+	params, ok := req.EvaluatorInitParamsMap["builtin.regex_match"]
+	require.True(t, ok, "expected entry for builtin.regex_match")
+	patterns, ok := params["patterns"]
+	require.True(t, ok, "expected patterns key")
+	assert.NotEmpty(t, patterns)
+}
+
+func TestToRequest_EvaluatorInitParamsNilWhenAbsent(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel:         "gpt-4o-mini",
+			OptimizationModel: "gpt-5",
+		},
+	}
+
+	req, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+	assert.Nil(t, req.EvaluatorInitParamsMap)
+}

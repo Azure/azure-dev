@@ -139,6 +139,11 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 		},
 	}
 
+	// Collect per-evaluator initialization_parameters into EvaluatorInitParamsMap.
+	if evalInitParams := evaluatorInitParamsMap(c.Evaluators); len(evalInitParams) > 0 {
+		req.EvaluatorInitParamsMap = evalInitParams
+	}
+
 	// Map optimization_config from YAML to API format.
 	if c.Options.OptimizationConfig != nil {
 		req.Options.OptimizationConfig = c.Options.OptimizationConfig
@@ -252,7 +257,21 @@ func evaluatorRefs(list opt_eval.EvaluatorList) []optimize_api.EvaluatorRef {
 	return refs
 }
 
-// mergeEvaluators appends add to base, skipping entries whose name already
+// evaluatorInitParamsMap builds the EvaluatorInitParamsMap from evaluators
+// that have initialization_parameters set. Returns nil when no evaluator
+// has initialization_parameters.
+func evaluatorInitParamsMap(list opt_eval.EvaluatorList) map[string]map[string]any {
+	var result map[string]map[string]any
+	for _, e := range list {
+		if len(e.InitializationParameters) > 0 {
+			if result == nil {
+				result = make(map[string]map[string]any)
+			}
+			result[e.Name] = e.InitializationParameters
+		}
+	}
+	return result
+}
 // exists in base (case-sensitive). Order is preserved: base first, then any
 // new entries from add. Used to layer --evaluator flags on top of config
 // evaluators without dropping the config entries.

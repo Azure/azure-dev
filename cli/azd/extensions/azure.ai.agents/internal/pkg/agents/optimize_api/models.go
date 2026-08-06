@@ -48,11 +48,16 @@ func IsTerminal(status string) bool {
 
 // OptimizeRequest is the top-level payload sent to POST /optimize.
 type OptimizeRequest struct {
-	Agent             AgentIdentifier `json:"agent"`
-	TrainDataset      *Dataset        `json:"train_dataset,omitempty"`
-	ValidationDataset *Dataset        `json:"validation_dataset,omitempty"`
-	Evaluators        []EvaluatorRef  `json:"evaluators,omitempty"`
-	Options           OptimizeOptions `json:"options"`
+	Agent                  AgentIdentifier           `json:"agent"`
+	TrainDataset           *Dataset                  `json:"train_dataset,omitempty"`
+	ValidationDataset      *Dataset                  `json:"validation_dataset,omitempty"`
+	Evaluators             []EvaluatorRef            `json:"evaluators,omitempty"`
+	Options                OptimizeOptions           `json:"options"`
+	// EvaluatorInitParamsMap maps evaluator name to its initialization_parameters.
+	// The C# API stores this in Cosmos; the Python optimizer reads it via
+	// cosmos_loader._resolve_evaluator_init_params_map to supply required params
+	// (e.g. regex_match's ``patterns``) when building testing criteria.
+	EvaluatorInitParamsMap map[string]map[string]any `json:"evaluatorInitParamsMap,omitempty"`
 }
 
 // AgentIdentifier references the agent to optimize by name and optional version.

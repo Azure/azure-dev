@@ -35,6 +35,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -2004,8 +2005,18 @@ func hasFoundryProviderDeclared(proj *azdext.ProjectConfig) bool {
 		return proj.Infra.Provider == project.FoundryProviderName
 	}
 
-	raw, err := os.ReadFile(filepath.Join(proj.Path, "azure.yaml")) //nolint:gosec // project path is from azd
-	if err != nil {
+	var raw []byte
+	for _, name := range azdcontext.ProjectFileNames {
+		data, err := os.ReadFile(filepath.Join(proj.Path, name)) //nolint:gosec // project path is from azd
+		if err == nil {
+			raw = data
+			break
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return proj.Infra.Provider == project.FoundryProviderName
+		}
+	}
+	if raw == nil {
 		return proj.Infra.Provider == project.FoundryProviderName
 	}
 	var doc struct {

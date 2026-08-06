@@ -120,6 +120,7 @@ func TestEjectInfra_MigratesExistingInfraToLayers(t *testing.T) {
 	assert.Equal(t, "${AZURE_AI_PROJECT_NAME=${AZURE_ENV_NAME}}", paramsDoc.Parameters["foundryProjectName"].Value)
 	assert.Equal(t, "${AZURE_FOUNDRY_RESOURCE_GROUP=rg-${AZURE_ENV_NAME}-foundry}",
 		paramsDoc.Parameters["resourceGroupName"].Value)
+	assert.Equal(t, "${AZD_RESOURCE_TOKEN_SALT}", paramsDoc.Parameters["resourceTokenSalt"].Value)
 }
 
 func TestEjectInfra_PreservesExistingInfraNameWhenMigratingToLayers(t *testing.T) {
@@ -764,6 +765,30 @@ services:
 	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", "main.bicep"))
 }
 
+func TestEjectInfra_MergesNonConflictingUndeclaredFoundryDirectory(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	yamlBody := `name: my-project
+infra:
+  provider: bicep
+  layers:
+    - name: app
+      path: infra/app
+services:
+  my-foundry:
+    host: azure.ai.project
+`
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), yamlBody)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra", "foundry"), 0o750))
+	mustWriteFile(t, filepath.Join(dir, "infra", "foundry", "README.md"), "keep me\n")
+
+	require.NoError(t, ejectInfra(dir, "bicep"))
+	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", "main.bicep"))
+	readme, err := os.ReadFile(filepath.Join(dir, "infra", "foundry", "README.md")) //nolint:gosec
+	require.NoError(t, err)
+	assert.Equal(t, "keep me\n", string(readme))
+}
+
 func TestEjectInfra_RefusesGeneratedFileConflictWithoutUpdatingAzureYaml(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -786,10 +811,7 @@ services:
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
 	assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
-	assert.Contains(t, localErr.Message, "Foundry infrastructure layer \"foundry\" already exists")
-	assert.Contains(t, localErr.Message, "./infra/foundry")
-	assert.Contains(t, localErr.Suggestion, "project-relative path")
-	assert.Contains(t, localErr.Suggestion, "'foundry' entry in infra.layers")
+	assert.Contains(t, localErr.Message, "./infra/foundry/main.bicep")
 
 	raw, readErr := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // temp test path
 	require.NoError(t, readErr)
@@ -2564,7 +2586,8 @@ func TestEjectInfra_Terraform_MigratesExistingInfraToLayers(t *testing.T) {
 	assert.NotContains(t, tfvarsDoc, "create_resource_group")
 	assert.Equal(t, "${AZURE_FOUNDRY_RESOURCE_GROUP=rg-${AZURE_ENV_NAME}-foundry}",
 		tfvarsDoc["resource_group_name"])
-	assert.Equal(t, "${AZURE_AI_PROJECT_NAME=${AZURE_ENV_NAME}}", tfvarsDoc["foundry_project_name"])
+	assert.Equal(t, "${AZURE_AI_PROJECT_NAME=}", tfvarsDoc["foundry_project_name"])
+	assert.Equal(t, "${AZD_RESOURCE_TOKEN_SALT}", tfvarsDoc["resource_token_salt"])
 
 	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // G304: test file path from t.TempDir()
 	require.NoError(t, err)

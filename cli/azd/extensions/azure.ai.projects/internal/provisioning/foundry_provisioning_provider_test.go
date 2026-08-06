@@ -689,6 +689,45 @@ func TestVerifyLayerResourceGroupOwnership(t *testing.T) {
 	}
 }
 
+func TestVerifyLayerResourceGroupTags(t *testing.T) {
+	require.NoError(t, verifyLayerResourceGroupTags(
+		map[string]*string{"azd-env-name": new("dev")}, "dev", "rg-foundry"))
+	require.NoError(t, verifyLayerResourceGroupTags(
+		map[string]*string{"AZD-ENV-NAME": new("dev")}, "dev", "rg-foundry"))
+
+	for _, tags := range []map[string]*string{
+		nil,
+		{"azd-env-name": nil},
+		{"azd-env-name": new("prod")},
+	} {
+		err := verifyLayerResourceGroupTags(tags, "dev", "rg-foundry")
+		require.Error(t, err)
+		var local *azdext.LocalError
+		require.ErrorAs(t, err, &local)
+		assert.Contains(t, local.Message, "not tagged")
+	}
+}
+
+func TestResolveLayerResourceGroupOwnership(t *testing.T) {
+	const (
+		subscriptionID = "00000000-0000-0000-0000-000000000001"
+		resourceGroup  = "rg-foundry"
+	)
+	ownedID := "/subscriptions/" + subscriptionID + "/resourceGroups/" + resourceGroup
+	properties := &armresources.DeploymentPropertiesExtended{
+		OutputResources: []*armresources.ResourceReference{{ID: new(ownedID)}},
+	}
+
+	assert.Equal(t, ownedID, resolveLayerResourceGroupOwnership(
+		ownedID, subscriptionID, resourceGroup, true, nil), "repeat provision preserves ownership")
+	assert.Empty(t, resolveLayerResourceGroupOwnership(
+		"/subscriptions/other/resourceGroups/old", subscriptionID, resourceGroup, true, properties),
+		"changing to an existing group must clear stale ownership")
+	assert.Equal(t, ownedID, resolveLayerResourceGroupOwnership(
+		"/subscriptions/other/resourceGroups/old", subscriptionID, resourceGroup, false, properties),
+		"changing to an absent group may establish ownership after creation")
+}
+
 func TestValidateFoundryProviderLayers(t *testing.T) {
 	require.NoError(t, validateFoundryProviderLayers([]byte(`infra:
   provider: bicep

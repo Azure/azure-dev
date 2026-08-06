@@ -1005,7 +1005,6 @@ func (p *FoundryProvisioningProvider) State(
 	if err != nil {
 		return nil, err
 	}
-
 	name := p.deploymentName()
 	resp, err := client.GetAtSubscriptionScope(ctx, name, nil)
 	if err != nil {
@@ -1073,6 +1072,13 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
+	resourceGroupExisted := false
+	if p.isLayer && !resourceGroupIDMatches(p.foundryRGOwnerID, p.subID, p.rgName) {
+		resourceGroupExisted, err = p.resourceGroupExists(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	name := p.deploymentName()
 	progress(fmt.Sprintf("Starting ARM deployment %q...", name))
@@ -1088,8 +1094,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 	}
 
 	progress("Foundry deployment complete")
-	if p.isLayer && p.foundryRGOwnerID == "" {
-		p.foundryRGOwnerID = ownedLayerResourceGroupID(resp.Properties, p.subID, p.rgName)
+	if p.isLayer {
+		p.foundryRGOwnerID = resolveLayerResourceGroupOwnership(
+			p.foundryRGOwnerID, p.subID, p.rgName, resourceGroupExisted, resp.Properties)
 	}
 
 	return &azdext.ProvisioningDeployResult{
@@ -1741,6 +1748,9 @@ func (p *FoundryProvisioningProvider) Destroy(
 		if err := verifyLayerResourceGroupOwnership(p.foundryRGOwnerID, p.subID, p.rgName); err != nil {
 			return nil, err
 		}
+		if err := p.verifyLayerResourceGroupAzureOwnership(ctx); err != nil {
+			return nil, err
+		}
 	}
 
 	if !options.GetForce() {
@@ -2302,11 +2312,80 @@ func ownedLayerResourceGroupID(
 }
 
 func verifyLayerResourceGroupOwnership(ownerID, subscriptionID, resourceGroup string) error {
-	wantedID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, resourceGroup)
-	if ownerID != "" && strings.EqualFold(strings.TrimSuffix(ownerID, "/"), wantedID) {
+	if resourceGroupIDMatches(ownerID, subscriptionID, resourceGroup) {
 		return nil
 	}
 	return layerResourceGroupOwnershipError(resourceGroup, "the azd environment does not record ownership of this group")
+}
+
+func resourceGroupIDMatches(resourceID, subscriptionID, resourceGroup string) bool {
+	wantedID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, resourceGroup)
+	return resourceID != "" && strings.EqualFold(strings.TrimSuffix(resourceID, "/"), wantedID)
+}
+
+func resolveLayerResourceGroupOwnership(
+	currentID, subscriptionID, resourceGroup string,
+	resourceGroupExisted bool,
+	properties *armresources.DeploymentPropertiesExtended,
+) string {
+	if resourceGroupIDMatches(currentID, subscriptionID, resourceGroup) {
+		return currentID
+	}
+	if resourceGroupExisted {
+		return ""
+	}
+	return ownedLayerResourceGroupID(properties, subscriptionID, resourceGroup)
+}
+
+func (p *FoundryProvisioningProvider) resourceGroupExists(ctx context.Context) (bool, error) {
+	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
+	if err != nil {
+		return false, exterrors.Internal(
+			exterrors.CodeAzdClientFailed,
+			fmt.Sprintf("create armresources client for resource-group existence check: %s", err),
+		)
+	}
+	_, err = factory.NewResourceGroupsClient().Get(ctx, p.rgName, nil)
+	if err == nil {
+		return true, nil
+	}
+	if isNotFound(err) {
+		return false, nil
+	}
+	return false, exterrors.ServiceFromAzure(err, exterrors.OpResourceGroupGet)
+}
+
+func (p *FoundryProvisioningProvider) verifyLayerResourceGroupAzureOwnership(ctx context.Context) error {
+	if err := p.ensureCredential(ctx); err != nil {
+		return err
+	}
+	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
+	if err != nil {
+		return exterrors.Internal(
+			exterrors.CodeAzdClientFailed,
+			fmt.Sprintf("create armresources client for resource-group ownership check: %s", err),
+		)
+	}
+	resp, err := factory.NewResourceGroupsClient().Get(ctx, p.rgName, nil)
+	if err != nil {
+		if isNotFound(err) {
+			return nil
+		}
+		return exterrors.ServiceFromAzure(err, exterrors.OpResourceGroupGet)
+	}
+	return verifyLayerResourceGroupTags(resp.Tags, p.envName, p.rgName)
+}
+
+func verifyLayerResourceGroupTags(tags map[string]*string, environmentName, resourceGroup string) error {
+	for key, value := range tags {
+		if strings.EqualFold(key, "azd-env-name") && value != nil && *value == environmentName {
+			return nil
+		}
+	}
+	return layerResourceGroupOwnershipError(
+		resourceGroup,
+		fmt.Sprintf("the Azure resource group is not tagged for azd environment %q", environmentName),
+	)
 }
 
 func layerResourceGroupOwnershipError(resourceGroup, reason string) error {

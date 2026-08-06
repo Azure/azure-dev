@@ -17,7 +17,7 @@ import (
 	"text/template"
 
 	"azureaiagent/internal/exterrors"
-	projectpaths "azureaiagent/internal/pkg/paths"
+	projectPaths "azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 	"azureaiagent/internal/synthesis"
 
@@ -50,6 +50,7 @@ type infraEjectPlan struct {
 	targetPath        string
 	module            string
 	layer             bool
+	mergeExisting     bool
 	updatedYAML       []byte
 	updateDescription string
 }
@@ -838,13 +839,18 @@ func planRootInfraEject(projectRoot string, config *infraConfig, provider string
 	foundryLayer := newInfraLayerNode(foundryInfraLayerName, foundryInfraLayerPath, foundryLayerProvider(provider))
 	config.infra.Content = []*yaml.Node{
 		newScalarNode("layers"),
-		&yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Content: []*yaml.Node{existingLayer, foundryLayer}},
+		{Kind: yaml.SequenceNode, Tag: "!!seq", Content: []*yaml.Node{existingLayer, foundryLayer}},
 	}
 	foundryTarget, err := inspectInfraTarget(projectRoot, foundryInfraLayerPath)
 	if err != nil {
 		return nil, err
 	}
-	return newInfraEjectPlan(config, foundryTarget, foundryInfraLayerPath, defaultInfraModule, true, true, "infra.layers")
+	plan, err := newInfraEjectPlan(
+		config, foundryTarget, foundryInfraLayerPath, defaultInfraModule, true, true, "infra.layers")
+	if plan != nil {
+		plan.mergeExisting = foundryTarget.exists
+	}
+	return plan, err
 }
 
 func planLayeredInfraEject(projectRoot string, config *infraConfig, provider string) (*infraEjectPlan, error) {
@@ -876,6 +882,7 @@ func planLayeredInfraEject(projectRoot string, config *infraConfig, provider str
 		return nil, invalidInfraForEject("infra.layers must contain at least one existing infrastructure layer")
 	}
 	changed := false
+	newLayer := foundry == nil
 	if foundry == nil {
 		node := newInfraLayerNode(foundryInfraLayerName, foundryInfraLayerPath, foundryLayerProvider(provider))
 		config.layersNode.Content = append(config.layersNode.Content, node)
@@ -913,12 +920,16 @@ func planLayeredInfraEject(projectRoot string, config *infraConfig, provider str
 	if err != nil {
 		return nil, err
 	}
-	if target.exists && !target.empty ||
-		hasInfrastructureEntrypoint(target.dir, wantedProvider, valueOrDefault(foundry.module, defaultInfraModule)) {
+	if !newLayer && (target.exists && !target.empty ||
+		hasInfrastructureEntrypoint(target.dir, wantedProvider, valueOrDefault(foundry.module, defaultInfraModule))) {
 		return nil, foundryInfraExistsError(filepath.ToSlash(foundry.path), true)
 	}
-	return newInfraEjectPlan(config, target, foundry.path, valueOrDefault(foundry.module, defaultInfraModule),
+	plan, err := newInfraEjectPlan(config, target, foundry.path, valueOrDefault(foundry.module, defaultInfraModule),
 		true, changed, "infra.layers")
+	if plan != nil {
+		plan.mergeExisting = newLayer && target.exists
+	}
+	return plan, err
 }
 
 func rootInfraUserOwned(layer infraLayer, target infraTargetState) (bool, error) {
@@ -1000,6 +1011,9 @@ func validateEjectTarget(plan *infraEjectPlan) error {
 }
 
 func installStagedInfra(stageDir string, plan *infraEjectPlan) (func(), error) {
+	if plan.mergeExisting {
+		return mergeStagedInfra(stageDir, plan)
+	}
 	parent := filepath.Dir(plan.targetDir)
 	existingParent, err := existingDirectory(parent)
 	if err != nil {
@@ -1032,6 +1046,7 @@ func installStagedInfra(stageDir string, plan *infraEjectPlan) (func(), error) {
 
 	if err := os.Rename(stageDir, plan.targetDir); err != nil {
 		if restoreEmptyTarget {
+			//nolint:gosec // G301: restore the readable/traversable empty project directory removed above
 			_ = os.Mkdir(plan.targetDir, 0o755)
 		}
 		removeEmptyParents(parent, existingParent)
@@ -1040,10 +1055,60 @@ func installStagedInfra(stageDir string, plan *infraEjectPlan) (func(), error) {
 	return func() {
 		_ = os.RemoveAll(plan.targetDir)
 		if restoreEmptyTarget {
+			//nolint:gosec // G301: restore the readable/traversable empty project directory removed above
 			_ = os.Mkdir(plan.targetDir, 0o755)
 		}
 		removeEmptyParents(parent, existingParent)
 	}, nil
+}
+
+func mergeStagedInfra(stageDir string, plan *infraEjectPlan) (func(), error) {
+	type stagedFile struct {
+		src string
+		dst string
+	}
+	var files []stagedFile
+	err := filepath.WalkDir(stageDir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(stageDir, path)
+		if err != nil {
+			return err
+		}
+		dst := filepath.Join(plan.targetDir, rel)
+		if _, err := os.Lstat(dst); err == nil {
+			return ejectExistsError(filepath.ToSlash(filepath.Join(plan.targetPath, rel)))
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("stat infrastructure destination %s: %w", dst, err)
+		}
+		files = append(files, stagedFile{src: path, dst: dst})
+		return nil
+	})
+	if err != nil {
+		return func() {}, err
+	}
+
+	createdFiles := make([]string, 0, len(files))
+	rollback := func() {
+		for i := len(createdFiles) - 1; i >= 0; i-- {
+			_ = os.Remove(createdFiles[i])
+			removeEmptyParents(filepath.Dir(createdFiles[i]), plan.targetDir)
+		}
+	}
+	for _, file := range files {
+		//nolint:gosec // G301: generated infrastructure directories must be readable by project tooling
+		if err := os.MkdirAll(filepath.Dir(file.dst), 0o755); err != nil {
+			rollback()
+			return func() {}, infraInstallError("create infrastructure directory", err)
+		}
+		if err := azdext.CopyFileAtomic(file.src, file.dst, 0o644); err != nil {
+			rollback()
+			return func() {}, infraInstallError("install infrastructure file", err)
+		}
+		createdFiles = append(createdFiles, file.dst)
+	}
+	return rollback, nil
 }
 
 func infraInstallError(action string, err error) error {
@@ -1096,7 +1161,7 @@ func foundryLayerProvider(ejectProvider string) string {
 }
 
 func inspectInfraTarget(projectRoot, path string) (infraTargetState, error) {
-	dir, err := projectpaths.Join(projectRoot, path)
+	dir, err := projectPaths.Join(projectRoot, path)
 	if err != nil {
 		return infraTargetState{}, invalidInfraForEject(
 			fmt.Sprintf("invalid Foundry infrastructure path %q: %s", path, err),
@@ -1452,7 +1517,7 @@ func writeParametersFile(
 		}
 		wrapped["location"] = paramValue{Value: "${AZURE_LOCATION}"}
 		wrapped["foundryProjectName"] = paramValue{Value: "${AZURE_AI_PROJECT_NAME=${AZURE_ENV_NAME}}"}
-		wrapped["resourceTokenSalt"] = paramValue{Value: "${AZURE_RESOURCE_TOKEN_SALT}"}
+		wrapped["resourceTokenSalt"] = paramValue{Value: "${AZD_RESOURCE_TOKEN_SALT}"}
 		wrapped["principalId"] = paramValue{Value: "${AZURE_PRINCIPAL_ID}"}
 		wrapped["principalType"] = paramValue{Value: "${AZURE_PRINCIPAL_TYPE}"}
 	}
@@ -1603,7 +1668,7 @@ func writeOutputsFile(
 // environment at provision time. The synthesizer-known values `deployments`
 // and `connections` are written literally; deploy-time inputs (location,
 // resource_group_name, foundry_project_name, principal_id, subscription_id,
-// environment_name, resource_token_salt) are left as ${AZURE_*} placeholders.
+// environment_name, resource_token_salt) are left as azd environment placeholders.
 //
 // include_acr is NOT written: whether ACR is provisioned is decided at eject
 // time by the presence of acr.tf, not by a Terraform variable.
@@ -1617,18 +1682,18 @@ func writeTfvarsFile(
 	// Static keys carry ${...} placeholders azd resolves from the environment.
 	// json.MarshalIndent sorts map keys alphabetically, so the generated file is
 	// deterministic; the placeholder values are JSON strings azd env-substitutes.
-	doc := map[string]any{
+	doc := map[string]any{ //nolint:gosec // G101: environment placeholder names, not credentials
 		"subscription_id":      "${AZURE_SUBSCRIPTION_ID}",
 		"location":             "${AZURE_LOCATION}",
 		"resource_group_name":  "${AZURE_RESOURCE_GROUP}",
 		"environment_name":     "${AZURE_ENV_NAME}",
 		"foundry_project_name": "${AZURE_AI_PROJECT_NAME}",
 		"principal_id":         "${AZURE_PRINCIPAL_ID}",
-		"resource_token_salt":  "${AZURE_RESOURCE_TOKEN_SALT}",
+		"resource_token_salt":  "${AZD_RESOURCE_TOKEN_SALT}",
 	}
 	if layer {
 		doc["resource_group_name"] = "${AZURE_FOUNDRY_RESOURCE_GROUP=rg-${AZURE_ENV_NAME}-foundry}"
-		doc["foundry_project_name"] = "${AZURE_AI_PROJECT_NAME=${AZURE_ENV_NAME}}"
+		doc["foundry_project_name"] = "${AZURE_AI_PROJECT_NAME=}"
 	}
 
 	// deployments and connections are the only synthesizer-derived values

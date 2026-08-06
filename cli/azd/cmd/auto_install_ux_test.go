@@ -378,8 +378,9 @@ func TestAutoInstallExtensionRequirementsNoPromptAmbiguous(t *testing.T) {
 	suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
 	require.True(t, ok)
 	assert.Contains(t, suggestionErr.Suggestion, "Choose one source for demo:")
-	assert.Contains(t, suggestionErr.Suggestion, "azd extension install demo --source azd --version 1.2.3")
-	assert.Contains(t, suggestionErr.Suggestion, "azd extension install demo --source local --version 1.2.3")
+	assert.Contains(t, suggestionErr.Suggestion, "azd extension install demo --source azd")
+	assert.Contains(t, suggestionErr.Suggestion, "azd extension install demo --source local")
+	assert.NotContains(t, suggestionErr.Suggestion, "--version")
 	assert.Empty(t, manager.installed)
 }
 
@@ -490,7 +491,8 @@ func TestAutoInstallExtensionRequirementsCIListsAllRequirements(t *testing.T) {
 	suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
 	require.True(t, ok)
 	assert.Equal(t, "Auto-installation is not supported in CI/CD environments.", suggestionErr.Message)
-	assert.Contains(t, suggestionErr.Suggestion, "azd extension install demo --source azd --version 1.2.3")
-	assert.Contains(t, suggestionErr.Suggestion, "azd extension install storage --source local --version 1.2.3")
+	assert.Contains(t, suggestionErr.Suggestion, "azd extension install demo --source azd")
+	assert.Contains(t, suggestionErr.Suggestion, "azd extension install storage --source local")
+	assert.NotContains(t, suggestionErr.Suggestion, "--version")
 	assert.Empty(t, manager.installed)
 }

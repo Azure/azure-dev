@@ -15,6 +15,8 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -24,6 +26,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 // ---------------------------------------------------------------------------
@@ -686,6 +692,113 @@ func TestUpgradeOneExtension(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestExtensionLifecycleTelemetrySpans(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(recorder))
+	previousProvider := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() { otel.SetTracerProvider(previousProvider) })
+
+	t.Run("UnresolvedUpgradeUsesPersistedCategory", func(t *testing.T) {
+		const registryURL = "https://private.example/registry.json"
+		const sourceName = "private-source"
+
+		mockContext := mocks.NewMockContext(t.Context())
+		manager, sourceManager := createUpgradeTestManager(
+			t,
+			mockContext,
+			map[string]*extensions.Extension{
+				"missing-ext": {
+					Id:             "missing-ext",
+					Version:        "1.0.0",
+					Source:         sourceName,
+					SourceCategory: extensions.SourceCategoryDev,
+				},
+			},
+			registryURL,
+			testRegistry(),
+		)
+		action := &extensionUpgradeAction{
+			args: []string{"missing-ext"},
+			flags: &extensionUpgradeFlags{
+				global: &internal.GlobalCommandOptions{NoPrompt: true},
+			},
+			formatter:        &output.JsonFormatter{},
+			writer:           &bytes.Buffer{},
+			console:          mockinput.NewMockConsole(),
+			sourceManager:    sourceManager,
+			extensionManager: manager,
+		}
+
+		result := action.upgradeOneExtension(t.Context(), "missing-ext", 0, nil, true)
+		require.Equal(t, extensions.UpgradeStatusSkipped, result.Status)
+
+		span := extensionEndedSpan(t, recorder, events.ExtensionUpgradeEvent)
+		require.Equal(
+			t,
+			string(extensions.SourceCategoryDev),
+			extensionSpanAttribute(t, span.Attributes(), fields.ExtensionSourceCategory.Key).Value.AsString(),
+		)
+		for _, attr := range span.Attributes() {
+			require.NotContains(t, attr.Value.Emit(), sourceName)
+			require.NotContains(t, attr.Value.Emit(), registryURL)
+		}
+	})
+
+	t.Run("PromotionUsesFixedCategories", func(t *testing.T) {
+		emitPromotionEvent(
+			t.Context(),
+			"test.extension",
+			"1.0.0",
+			"1.1.0",
+			extensions.SourceCategoryDev,
+			extensions.SourceCategoryAzd,
+		)
+
+		span := extensionEndedSpan(t, recorder, events.ExtensionPromoteEvent)
+		require.Equal(
+			t,
+			string(extensions.SourceCategoryDev),
+			extensionSpanAttribute(t, span.Attributes(), fields.ExtensionSourceCategoryFrom.Key).Value.AsString(),
+		)
+		require.Equal(
+			t,
+			string(extensions.SourceCategoryAzd),
+			extensionSpanAttribute(t, span.Attributes(), fields.ExtensionSourceCategoryTo.Key).Value.AsString(),
+		)
+	})
+}
+
+func extensionEndedSpan(
+	t *testing.T,
+	recorder *tracetest.SpanRecorder,
+	name string,
+) tracesdk.ReadOnlySpan {
+	t.Helper()
+	for _, span := range recorder.Ended() {
+		if span.Name() == name {
+			return span
+		}
+	}
+	require.FailNow(t, "telemetry span not found", "name: %s", name)
+	return nil
+}
+
+func extensionSpanAttribute(
+	t *testing.T,
+	attributes []attribute.KeyValue,
+	key attribute.Key,
+) attribute.KeyValue {
+	t.Helper()
+	for _, attr := range attributes {
+		if attr.Key == key {
+			return attr
+		}
+	}
+	require.FailNow(t, "telemetry attribute not found", "key: %s", key)
+	return attribute.KeyValue{}
 }
 
 // TestUpgradeAction_MixedBatch tests a batch with some skip, some fail.

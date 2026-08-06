@@ -216,8 +216,8 @@ not emitted by azd spans.
 | Extension version to | `extension.version.to` | SystemMetadata | FeatureInsight | Target version after an upgrade |
 | Extension source category | `extension.source.category` | SystemMetadata | FeatureInsight | Allowed values: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
 | Extension source kind | `extension.source.kind` | SystemMetadata | FeatureInsight | Allowed values: `none`, `registered`, `location` |
-| Extension source category from | `extension.source.category.from` | SystemMetadata | FeatureInsight | Category before a promotion |
-| Extension source category to | `extension.source.category.to` | SystemMetadata | FeatureInsight | Category after a promotion |
+| Extension source category from | `extension.source.category.from` | SystemMetadata | FeatureInsight | Category before a promotion; allowed values: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
+| Extension source category to | `extension.source.category.to` | SystemMetadata | FeatureInsight | Category after a promotion; allowed values: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
 | Upgrade duration | `extension.upgrade.duration_ms` | SystemMetadata | PerformanceAndHealth | **Measurement** — time in ms for one upgrade |
 | Upgrade outcome | `extension.upgrade.outcome` | SystemMetadata | FeatureInsight | Upgrade result status |
 | Dependency of | `extension.dependency_of` | SystemMetadata | FeatureInsight | Parent extension for a dependency upgrade |

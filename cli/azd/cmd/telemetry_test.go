@@ -208,6 +208,19 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		require.Equal(t, "validation.provision.error.count", string(kvErrors.Key))
 		require.Equal(t, int64(1), kvErrors.Value.AsInt64())
 	})
+
+	// Aspire telemetry fields
+	t.Run("AspireFields", func(t *testing.T) {
+		t.Parallel()
+		kv := fields.AspireAppHostLanguageKey.String("typescript")
+		require.Equal(t, "aspire.apphost.language", string(kv.Key))
+		require.Equal(t, "typescript", kv.Value.AsString())
+
+		for _, language := range []string{"typescript", "python", "go", "java", "rust"} {
+			kv := fields.AspireAppHostLanguageKey.String(language)
+			require.NotEmpty(t, kv.Value.AsString())
+		}
+	})
 }
 
 // TestCommandTelemetryCoverage ensures every user-facing command is explicitly categorized

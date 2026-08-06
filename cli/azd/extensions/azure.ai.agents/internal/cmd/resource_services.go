@@ -337,7 +337,7 @@ func collectEnvironmentTemplates(value any, environment map[string]string) {
 }
 
 func collectStringEnvironmentTemplates(value string, environment map[string]string) {
-	for _, reference := range findEnvironmentReferences(value, honorEnvironmentEscaping) {
+	for _, reference := range findEnvironmentReferences(value) {
 		// env is keyed by name, so store one canonical ${NAME}.
 		// A ${NAME:-default} default is re-applied by the owning
 		// extension against the raw config at deploy, so the env section

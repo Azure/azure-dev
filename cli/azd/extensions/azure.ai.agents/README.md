@@ -13,6 +13,26 @@ Use `--no-inspector` to run only the local agent process:
 azd ai agent run --no-inspector
 ```
 
+The Agent Inspector UI binds port `8087` by default. Use `--inspector-port` to
+move it, which is what you need when running two agents side by side or when a
+stale process still holds the default port:
+
+```bash
+azd ai agent run --port 9091 --inspector-port 9002
+```
+
+`--inspector-port` is rejected when it cannot be honored:
+
+- with `--no-client` (or the deprecated `--no-inspector`), since no local client
+  is opened and the port would go unused; and
+- for agents that use Agent Inspector, when it matches `--port`, since the agent
+  binds that address first and the inspector would then fail to bind it.
+
+azd also warns, without failing the run, when `--inspector-port` cannot take
+effect: activity-protocol agents open the Microsoft 365 Agents Playground rather
+than the Agent Inspector, and `--port 8087` on its own collides with the
+inspector's own default UI port.
+
 ## Migrating Legacy Agent Configuration
 
 New Foundry agent projects keep the agent definition directly on the
@@ -70,6 +90,11 @@ services:
       API_KEY: ${SECRET}
       LOG_LEVEL: debug
 ```
+
+Hosted Agent Service environment variable names must start with a letter or
+underscore and contain only letters, digits, or underscores. For example,
+`API_KEY` is valid, while `api-key` is not. `azd deploy` validates these names
+before contacting Foundry Agent Service.
 
 ## Content safety policies
 

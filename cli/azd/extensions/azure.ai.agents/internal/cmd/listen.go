@@ -73,12 +73,7 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 	for _, svc := range args.Project.Services {
 		switch svc.Host {
 		case AiAgentHost:
-			if err := prepareContainerSettings(
-				ctx,
-				azdClient,
-				svc,
-				args.Project.Path,
-			); err != nil {
+			if err := prepareContainerSettings(svc, args.Project.Path); err != nil {
 				return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
 			}
 			if err := envUpdate(
@@ -246,12 +241,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		return err
 	}
 
-	if err := prepareContainerSettings(
-		ctx,
-		azdClient,
-		svc,
-		args.Project.Path,
-	); err != nil {
+	if err := prepareContainerSettings(svc, args.Project.Path); err != nil {
 		return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
 	}
 	if err := envUpdate(
@@ -761,8 +751,6 @@ func setEnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string,
 }
 
 func prepareContainerSettings(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) error {
@@ -811,24 +799,13 @@ func prepareContainerSettings(
 		result.Cpu = project.DefaultCpu
 	}
 
-	// Persist the resolved container settings back onto the service's inline
-	// properties, preserving the agent definition and other config keys.
-	containerPath, containerValue, err := project.SetAgentContainerSettings(
+	// Defaults are runtime values. Do not persist them here:
+	// lifecycle hooks must not rewrite user-authored azure.yaml.
+	if err := project.SetAgentContainerSettings(
 		svc,
 		&project.ContainerSettings{Resources: result},
-	)
-	if err != nil {
+	); err != nil {
 		return fmt.Errorf("failed to update agent container settings: %w", err)
-	}
-
-	if !hasRootFileRef {
-		if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
-			ServiceName: svc.GetName(),
-			Path:        containerPath,
-			Value:       containerValue,
-		}); err != nil {
-			return fmt.Errorf("persisting agent container settings: %w", err)
-		}
 	}
 
 	return nil

@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.3 (2026-08-06)
+
+### Bugs Fixed
+
+- [[#9326]](https://github.com/Azure/azure-dev/pull/9326) Track skill readiness and cleanup state so dependent agent deployments fail early with actionable guidance.
+
 ## 1.0.0-beta.2 (2026-07-09)
 
 ### Other Changes

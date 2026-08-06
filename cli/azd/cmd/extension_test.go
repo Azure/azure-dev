@@ -916,6 +916,7 @@ func Test_NewExtensionInstallAction(t *testing.T) {
 		mockinput.NewMockConsole(),
 		nil, // extensionManager
 		nil, // sourceManager
+		nil, // transport
 	)
 	require.NotNil(t, action)
 }

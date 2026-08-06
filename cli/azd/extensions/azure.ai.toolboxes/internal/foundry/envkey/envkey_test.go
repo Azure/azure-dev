@@ -44,4 +44,7 @@ func TestToolboxMCPEndpoint(t *testing.T) {
 			}
 		})
 	}
+	if got := ToolboxProjectEndpoint("my-tools"); got != "TOOLBOX_MY_TOOLS_PROJECT_ENDPOINT" {
+		t.Fatalf("ToolboxProjectEndpoint() = %q", got)
+	}
 }

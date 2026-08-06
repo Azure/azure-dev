@@ -214,6 +214,24 @@ func TestResolveAfterInit_MissingAzureContextVarsPrecedeProvision(t *testing.T) 
 	assert.True(t, out[3].Trailing, "deploy footer must be Trailing")
 }
 
+func TestResolveAfterInit_QualifiesExplicitEnvironment(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		EnvironmentName:         "prod west",
+		PendingProvisionReasons: []string{"project"},
+		MissingAzureContextVars: []string{"AZURE_SUBSCRIPTION_ID"},
+	}
+	out := ResolveAfterInit(state, nil)
+	require.Len(t, out, 3)
+	assert.Equal(t,
+		`azd --environment "prod west" env set AZURE_SUBSCRIPTION_ID <value>`,
+		out[0].Command,
+	)
+	assert.Equal(t, `azd --environment "prod west" provision`, out[1].Command)
+	assert.Equal(t, `azd --environment "prod west" deploy`, out[2].Command)
+}
+
 func TestResolveAfterInit_NilState(t *testing.T) {
 	t.Parallel()
 	assert.Nil(t, ResolveAfterInit(nil, nil))

@@ -266,8 +266,8 @@ func foundryAzureYamlServiceHost(service *yaml.Node) (string, bool) {
 		return "", false
 	}
 
-	_, knownHost := foundryServiceHosts[host.Value]
-	if !knownHost && !strings.HasPrefix(host.Value, "azure.ai.") {
+	if host.Value != "microsoft.foundry" &&
+		!strings.HasPrefix(host.Value, "azure.ai.") {
 		return "", false
 	}
 	return host.Value, true
@@ -348,7 +348,6 @@ func collectAzureYamlServiceEnvironmentReferences(
 			collectAzureYamlEnvironmentReferences(
 				variable.Value,
 				false,
-				honorEnvironmentEscaping,
 				references,
 				indexByName,
 			)
@@ -361,7 +360,6 @@ func collectAzureYamlServiceEnvironmentReferences(
 		collectAzureYamlEnvironmentReferences(
 			config.Target,
 			false,
-			honorEnvironmentEscaping,
 			references,
 			indexByName,
 		)
@@ -391,7 +389,6 @@ func collectAzureYamlServiceEnvironmentReferences(
 				collectAzureYamlEnvironmentReferences(
 					config.Network.AgentSubnet.VNet,
 					false,
-					ignoreEnvironmentEscaping,
 					references,
 					indexByName,
 				)
@@ -400,7 +397,6 @@ func collectAzureYamlServiceEnvironmentReferences(
 				collectAzureYamlEnvironmentReferences(
 					config.Network.PESubnet.VNet,
 					false,
-					ignoreEnvironmentEscaping,
 					references,
 					indexByName,
 				)
@@ -409,7 +405,6 @@ func collectAzureYamlServiceEnvironmentReferences(
 				collectAzureYamlEnvironmentReferences(
 					config.Network.DNS.Subscription,
 					false,
-					ignoreEnvironmentEscaping,
 					references,
 					indexByName,
 				)
@@ -438,7 +433,6 @@ func collectAzureYamlServiceEnvironmentReferences(
 		collectAzureYamlEnvironmentReferences(
 			config.Endpoint,
 			false,
-			honorEnvironmentEscaping,
 			references,
 			indexByName,
 		)
@@ -501,7 +495,6 @@ func collectAzureYamlEnvironmentReferencesFromNode(
 		collectAzureYamlEnvironmentReferences(
 			node.Value,
 			secret,
-			honorEnvironmentEscaping,
 			references,
 			indexByName,
 		)
@@ -511,11 +504,10 @@ func collectAzureYamlEnvironmentReferencesFromNode(
 func collectAzureYamlEnvironmentReferences(
 	value string,
 	secret bool,
-	honorEscaping bool,
 	references *[]azureYamlEnvironmentReference,
 	indexByName map[string]int,
 ) {
-	for _, reference := range findEnvironmentReferences(value, honorEscaping) {
+	for _, reference := range findEnvironmentReferences(value) {
 		// A ${VAR:-default} needs no environment value because the
 		// runtime expander supplies the fallback.
 		if reference.HasDefault {

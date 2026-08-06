@@ -1,6 +1,26 @@
 # Release History
 
-## 1.30.0-beta.1 (Unreleased)
+## 1.30.0 (2026-08-05)
+
+### Features Added
+
+- [[#9284]](https://github.com/Azure/azure-dev/pull/9284) Add container image deployment support for `host: function` services using a Dockerfile, prebuilt image, or remote ACR build.
+
+### Bugs Fixed
+
+- [[#9238]](https://github.com/Azure/azure-dev/pull/9238) Fix `${VAR}` substitution in `infra.deploymentStacks` settings such as `denySettings.excludedActions` and `denySettings.excludedPrincipals`.
+- [[#9324]](https://github.com/Azure/azure-dev/pull/9324) Fix `azd provision --preview` to show nested ARM failures such as quota limits and provide relevant recovery guidance.
+- [[#9325]](https://github.com/Azure/azure-dev/pull/9325) Fix `azd update` to install the exact stable version it reports instead of potentially installing a newer release.
+- [[#9329]](https://github.com/Azure/azure-dev/pull/9329) Fix `azd pipeline config --provider azdo --auth-type federated` incorrectly rejecting federated authentication and update the flag's help text to reflect existing Azure DevOps support.
+- [[#9347]](https://github.com/Azure/azure-dev/pull/9347) Fix `azd init --from-code` and `azd infra generate --force` hanging indefinitely on Aspire solutions when persistent MSBuild worker nodes keep output pipes open.
+- [[#9361]](https://github.com/Azure/azure-dev/pull/9361) Fix extension upgrade errors to identify the requested version and the source or registries checked, while preserving source and version values in retry commands.
+- [[#9361]](https://github.com/Azure/azure-dev/pull/9361) Fix extension install and upgrade errors to distinguish a missing dependency from one whose available versions do not satisfy the required constraint.
+- [[#9430]](https://github.com/Azure/azure-dev/pull/9430) Fix GitHub Actions pipeline authentication for repositories using immutable OIDC subject claims.
+- [[#9353]](https://github.com/Azure/azure-dev/pull/9353) Improve `azd init` and `azd up` to detect unsupported non-C# Aspire AppHosts early and show actionable guidance instead of misleading Docker and source-build failures.
+
+### Other Changes
+
+- [[#9380]](https://github.com/Azure/azure-dev/pull/9380) Update the bundled GitHub CLI to v2.97.0.
 
 ## 1.29.0 (2026-07-29)
 

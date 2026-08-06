@@ -453,10 +453,11 @@ func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
 		},
 	}
 
-	_, err := captureStdout(t, func() error {
+	output, err := captureStdout(t, func() error {
 		return action.addToProject(t.Context(), "src/my-agent", manifest)
 	})
 	require.NoError(t, err)
+	require.Contains(t, output, "\nAdded agent 'my-agent' to azure.yaml.\n")
 
 	server.mu.Lock()
 	defer server.mu.Unlock()

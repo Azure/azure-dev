@@ -91,19 +91,6 @@ type JobError struct {
 	Message string `json:"message,omitempty"`
 }
 
-// OperationID returns the job's operation identifier.
-func (j *GenerationJob) OperationID() string {
-	return j.ID
-}
-
-// NormalizedStatus returns the lowercase status, defaulting to "running".
-func (j *GenerationJob) NormalizedStatus() string {
-	if j.Status == "" {
-		return "running"
-	}
-	return j.Status
-}
-
 // ResolvedNameVersion extracts the name and version from the generation job result.
 // If name is empty, both return values are empty (caller should treat as no result).
 // If version is empty, it defaults to "latest".
@@ -209,22 +196,6 @@ type EvaluatorDimension struct {
 	AlwaysApplicable bool   `json:"always_applicable,omitempty"`
 }
 
-// ParseEvaluatorResult parses a GenerationJob result into a structured EvaluatorResult.
-// Returns nil if the result cannot be parsed.
-func ParseEvaluatorResult(result json.RawMessage) *EvaluatorResult {
-	if len(result) == 0 {
-		return nil
-	}
-	var r EvaluatorResult
-	if err := json.Unmarshal(result, &r); err != nil {
-		return nil
-	}
-	if len(r.Definition.Dimensions) == 0 {
-		return nil
-	}
-	return &r
-}
-
 // ---------------------------------------------------------------------------
 // Datasets
 // ---------------------------------------------------------------------------
@@ -295,14 +266,6 @@ type OpenAIEval struct {
 	ModifiedAt any               `json:"modified_at,omitempty"`
 	CreatedBy  string            `json:"created_by,omitempty"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
-}
-
-// ResolvedID returns the eval's ID, falling back to name.
-func (e *OpenAIEval) ResolvedID() string {
-	if e.ID != "" {
-		return e.ID
-	}
-	return e.Name
 }
 
 // OpenAIEvalList is the response for listing OpenAI eval definitions.
@@ -408,7 +371,7 @@ type EvalRunDataContent struct {
 }
 
 // NewAgentTargetDataSource builds an EvalRunDataSource configured for agent target completions.
-// The source field must be set separately via SetFileContent or SetFileID.
+// The rows must be supplied separately via SetFileContent.
 func NewAgentTargetDataSource(agentName string, agentVersion *string) *EvalRunDataSource {
 	return &EvalRunDataSource{
 		Type: EvalRunDataSourceTypeAgentTarget,
@@ -432,18 +395,15 @@ func NewAgentTargetDataSource(agentName string, agentVersion *string) *EvalRunDa
 }
 
 // SetFileContent sets the data source to use inline file content.
+//
+// There is no by-reference counterpart. A run's `file_id` means an uploaded
+// file, and a dataset name is not one — sending it is rejected with "invalid
+// data source file ids" — so registered datasets are fetched and sent inline
+// too. See readRegisteredDataset.
 func (ds *EvalRunDataSource) SetFileContent(items []map[string]any) {
 	ds.Source = &EvalRunDataContent{
 		Type:    EvalRunDataContentTypeFileContent,
 		Content: items,
-	}
-}
-
-// SetFileID sets the data source to reference a remote dataset by ID.
-func (ds *EvalRunDataSource) SetFileID(fileID string) {
-	ds.Source = &EvalRunDataContent{
-		Type: EvalRunDataContentTypeFileID,
-		ID:   fileID,
 	}
 }
 

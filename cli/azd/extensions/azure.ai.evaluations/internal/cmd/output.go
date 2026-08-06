@@ -79,18 +79,6 @@ func emitTable(w io.Writer, headers []string, rows [][]string) error {
 	return tw.Flush()
 }
 
-// noPrompt reports whether the command must run without any interaction.
-func noPrompt(cmd *cobra.Command) bool {
-	if cmd == nil {
-		return false
-	}
-	v, err := cmd.Flags().GetBool("no-prompt")
-	if err != nil {
-		return false
-	}
-	return v
-}
-
 // requireFlag returns an error naming the missing flag, used when --no-prompt
 // prevents asking for a required value.
 func requireFlag(name string) error {

@@ -144,7 +144,7 @@ func TestScaffold_NextStepsOfferOnlyWhatIsScheduled(t *testing.T) {
 			evalName: "support-agent-smoke", target: "support-agent", judgeModel: "m",
 		})
 		require.Equal(t, []string{
-			"azd ai dataset generate support-agent-smoke",
+			"azd ai eval dataset generate support-agent-smoke",
 			"azd ai eval evaluator generate support-agent-quality",
 		}, plan.nextSteps())
 	})

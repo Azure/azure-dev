@@ -389,7 +389,7 @@ func (s scaffold) evaluatorNames() []string {
 func (s scaffold) nextSteps() []string {
 	var steps []string
 	if s.generateDataset {
-		steps = append(steps, "azd ai dataset generate "+s.datasetName)
+		steps = append(steps, "azd ai eval dataset generate "+s.datasetName)
 	}
 	if s.generateRubric {
 		steps = append(steps, "azd ai eval evaluator generate "+s.rubricName)

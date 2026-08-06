@@ -370,9 +370,15 @@ func find(t *testing.T, path string) *cobra.Command {
 // it was the one thing guaranteed to fail. Nothing catches that: the string
 // compiles, the command that prints it succeeds, and only someone following
 // the advice finds out.
+// This extension's namespace is `ai.eval`, so every command it can suggest
+// begins `azd ai eval`. Anchoring on that prefix is what caught the renamed
+// command above — and anchoring only on it is what let three suggestions
+// through pointing at `azd ai dataset`, a namespace no installed extension
+// serves. So the prefix checked is `azd ai`, and anything under it that is not
+// this extension's own is a command nobody can run.
 func TestSuggestedCommandsExist(t *testing.T) {
 	root := "../.."
-	pattern := regexp.MustCompile("azd ai eval ([a-z][a-z0-9-]*(?: [a-z][a-z0-9-]*)*)")
+	pattern := regexp.MustCompile("azd ai ([a-z][a-z0-9-]*(?: [a-z][a-z0-9-]*)*)")
 
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -395,6 +401,18 @@ func TestSuggestedCommandsExist(t *testing.T) {
 			}
 			for _, m := range pattern.FindAllStringSubmatch(line, -1) {
 				words := strings.Fields(m[1])
+
+				// `ai.eval` is this extension's namespace, so it is the only
+				// thing under `azd ai` that resolves here. Another namespace is
+				// a command this extension cannot suggest, whether or not some
+				// future extension serves it.
+				if len(words) == 0 || words[0] != "eval" {
+					t.Errorf("%s suggests `azd ai %s`, which is not this extension's "+
+						"namespace; commands here are `azd ai eval ...`", path, m[1])
+					continue
+				}
+				words = words[1:]
+
 				// Trim trailing prose: "run start" is a command, "run start
 				// and summarize" is a sentence that begins with one.
 				for len(words) > 0 {
@@ -407,7 +425,7 @@ func TestSuggestedCommandsExist(t *testing.T) {
 					words = words[:len(words)-1]
 				}
 				assert.NotEmpty(t, words,
-					"%s suggests `azd ai eval %s`, which is not a command", path, m[1])
+					"%s suggests `azd ai %s`, which is not a command", path, m[1])
 			}
 		}
 		return nil

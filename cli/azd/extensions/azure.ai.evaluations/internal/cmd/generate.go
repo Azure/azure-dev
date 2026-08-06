@@ -239,7 +239,7 @@ func refuseUnbuildableSources(kinds []string) error {
 		"agent": "--from agent needs a target agent; pass --target, " +
 			"or declare one under target: in eval.yaml",
 		"file": "--from file is not a generation source; " +
-			"register the file with `azd ai dataset create <name> --file <path>` instead",
+			"register the file with `azd ai eval dataset create` instead",
 	}
 	messages := make([]string, 0, len(kinds))
 	for _, k := range kinds {
@@ -285,7 +285,7 @@ func (ec *evalContext) generateDataset(
 		return nil, fmt.Errorf("submitting the data generation job: %w", err)
 	}
 	if noWait {
-		reportSubmitted(out, "azd ai dataset", job.ID)
+		reportSubmitted(out, "azd ai eval dataset", job.ID)
 		return nil, nil
 	}
 

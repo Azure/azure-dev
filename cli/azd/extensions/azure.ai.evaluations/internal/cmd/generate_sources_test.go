@@ -35,7 +35,7 @@ func TestRefuseUnbuildableSources(t *testing.T) {
 	}{
 		{"prompt", "--agent-instruction"},
 		{"agent", "--target"},
-		{"file", "azd ai dataset create"},
+		{"file", "azd ai eval dataset create"},
 	}
 
 	for _, tt := range tests {

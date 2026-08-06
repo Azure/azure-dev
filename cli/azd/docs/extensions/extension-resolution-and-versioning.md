@@ -177,7 +177,7 @@ If a required dependency cannot be resolved from the parent's source and is not 
 
 ## Self-Contained Bundles
 
-A **self-contained bundle** is a single portable `.zip` that contains a well-known `registry.json` plus the extension artifacts it references. It lets you share a one-off build (for example, a PR build or an internal extension) without hosting a registry or making the artifacts reachable over the network — the recipient runs a single command to install everything from the file.
+A **self-contained bundle** is a single portable `.zip` that contains a well-known `registry.json` plus the extension artifacts it references. It lets you share a one-off build (for example, a PR build or an internal extension) without hosting a registry — the recipient runs a single command to install everything from the file, or from a single link when the `.zip` is hosted somewhere reachable.
 
 ### Producing a bundle
 
@@ -197,12 +197,19 @@ Consumers install a bundle by passing its path to `azd extension install`:
 azd extension install ./my-ext_1.0.0.zip
 ```
 
+A bundle can also be installed directly from an `https` URL, so a preview or internal build can be shared as a single link:
+
+```bash
+azd extension install https://example.com/builds/my-ext_1.0.0.zip
+```
+
 The install flow treats the bundle as an **installer, not a registry** — nothing about the bundle persists as a configured source once installation finishes:
 
-1. **Extract** the bundle into a temporary directory.
-2. **Register an ephemeral source** that reads the extracted `registry.json` and rewrites each relative artifact URL to an absolute path anchored inside the extracted directory. This is what allows the standard install flow — including checksum validation — to resolve the bundled artifacts unchanged. Relative paths that escape the bundle directory are rejected. The source name is transient and is never surfaced to the user.
-3. **Install** the bundled extension through the normal install path. Bundles are produced per extension by `azd x pack --bundle`, so a bundle declares a single extension.
-4. **Clean up** — once the extension is installed, `azd` re-points it to the reserved `bundle` source, removes the ephemeral source, and deletes the temporary extraction directory. The only durable state left behind is the installed extension itself (its binary under `~/.azd/extensions/<id>/` and its `extension.installed` record).
+1. **Download** (URLs only) the bundle to a temporary file. Download failures — an unreachable host or a non-`200` response — are reported as such, separately from a `.zip` that turns out not to be a valid bundle. From here on, remote and local bundles follow the exact same path.
+2. **Extract** the bundle into a temporary directory.
+3. **Register an ephemeral source** that reads the extracted `registry.json` and rewrites each relative artifact URL to an absolute path anchored inside the extracted directory. This is what allows the standard install flow — including checksum validation — to resolve the bundled artifacts unchanged. Relative paths that escape the bundle directory are rejected. The source name is transient and is never surfaced to the user.
+4. **Install** the bundled extension through the normal install path. Bundles are produced per extension by `azd x pack --bundle`, so a bundle declares a single extension.
+5. **Clean up** — once the extension is installed, `azd` re-points it to the reserved `bundle` source, removes the ephemeral source, and deletes the temporary extraction directory along with any downloaded `.zip`. Temporary files are removed whether the install succeeds or fails. The only durable state left behind is the installed extension itself (its binary under `~/.azd/extensions/<id>/` and its `extension.installed` record).
 
 ### Lifecycle of a bundle-installed extension
 
@@ -226,7 +233,7 @@ azd extension install <extension-id> --source <source-name>
 
 ### Trust model
 
-Bundles run arbitrary extension binaries on your machine. The embedded `sha256` checksums protect the **integrity** of each artifact within the bundle (they guarantee the bytes were not altered after packing), but bundles are **not signed** — there is no verification of the publisher's identity. Only install bundles you obtained from a source you trust.
+Bundles run arbitrary extension binaries on your machine. The embedded `sha256` checksums verify that each artifact matches the checksum declared in the `registry.json` received in the same bundle. They can detect accidental corruption or inconsistencies within that bundle, but they do not authenticate the publisher or protect against an attacker replacing both the artifacts and their checksums. Bundles are not signed. Only install bundles obtained from a source you trust. Remote bundle installation requires `https` because HTTP downloads can be modified in transit.
 
 ## Declaring Extensions in `azure.yaml`
 

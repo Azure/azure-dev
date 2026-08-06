@@ -13,8 +13,10 @@ import (
 	"log"
 	"maps"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -22,6 +24,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -96,9 +100,10 @@ location is given, azd registers it as a source (prompting for a name, and
 confirming first for a URL) and then installs from it. If the location is already
 registered, azd reuses that source.
 
-You can also pass the path to a self-contained extension bundle (.zip): azd
-extracts it and installs the bundled extension. Bundled extensions aren't
-tracked for updates; reinstall from a newer bundle to update.`,
+You can also pass a self-contained extension bundle (.zip), either as a local
+path or an https URL: azd downloads (when remote) and extracts it, then installs
+the bundled extension. Bundled extensions aren't tracked for updates; reinstall
+from a newer bundle to update.`,
 		},
 		ActionResolver: newExtensionInstallAction,
 		FlagsResolver:  newExtensionInstallFlags,
@@ -836,6 +841,7 @@ type extensionInstallAction struct {
 	console          input.Console
 	extensionManager *extensions.Manager
 	sourceManager    *extensions.SourceManager
+	transport        policy.Transporter
 	// bundleSourceName is the transient source registered while installing from a
 	// self-contained bundle (.zip). It is removed during cleanup; extensions
 	// installed under it are re-pointed to extensions.BundleSourceName.
@@ -843,6 +849,9 @@ type extensionInstallAction struct {
 	// bundleTempDir is the temporary directory the bundle was extracted into. It
 	// is deleted during cleanup once installation completes.
 	bundleTempDir string
+	// bundleTempZip is the temporary file a remote bundle was downloaded to. It
+	// is deleted during cleanup once installation completes.
+	bundleTempZip string
 }
 
 func newExtensionInstallAction(
@@ -851,6 +860,7 @@ func newExtensionInstallAction(
 	console input.Console,
 	extensionManager *extensions.Manager,
 	sourceManager *extensions.SourceManager,
+	transport policy.Transporter,
 ) actions.Action {
 	return &extensionInstallAction{
 		args:             args,
@@ -858,6 +868,7 @@ func newExtensionInstallAction(
 		console:          console,
 		extensionManager: extensionManager,
 		sourceManager:    sourceManager,
+		transport:        transport,
 	}
 }
 
@@ -1110,6 +1121,16 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 // directory is removed once installation completes.
 const extensionBundleTempPrefix = "azd-extension-bundle-"
 
+type insecureBundleRedirectError struct{}
+
+func (*insecureBundleRedirectError) Error() string {
+	return "extension bundle download redirected to an insecure URL"
+}
+
+func (*insecureBundleRedirectError) NonRetriable() {}
+
+var errInsecureBundleRedirect = &insecureBundleRedirectError{}
+
 // sourceDisplayLabel returns a user-facing label for an extension source. The
 // transient source registered while installing a bundle is an implementation
 // detail, so it (and the reserved bundle source) are presented as "bundle"
@@ -1235,10 +1256,15 @@ func wrapDependencyError(err error) error {
 }
 
 // isBundleArg reports whether the provided arguments represent a single
-// self-contained extension bundle (.zip) path that exists on disk.
+// self-contained extension bundle (.zip), either as a local path that exists on
+// disk or as an HTTP or HTTPS URL.
 func isBundleArg(args []string) bool {
 	if len(args) != 1 {
 		return false
+	}
+
+	if isRemoteBundleArg(args[0]) {
+		return true
 	}
 
 	if !strings.EqualFold(filepath.Ext(args[0]), ".zip") {
@@ -1249,11 +1275,46 @@ func isBundleArg(args []string) bool {
 	return err == nil && !info.IsDir()
 }
 
-// prepareBundleInstall extracts the bundle, registers an ephemeral source over
-// it, and rewrites a.args/a.flags.source so the standard install loop installs
-// the bundled extensions from that source. cleanupBundleInstall tears the
-// ephemeral state down afterwards.
-func (a *extensionInstallAction) prepareBundleInstall(ctx context.Context, zipPath string) error {
+// isRemoteBundleArg reports whether the value is an HTTP or HTTPS URL pointing at a
+// self-contained extension bundle (.zip). Detection is intentionally lexical so
+// malformed URLs still reach generic URL validation instead of being displayed as
+// extension IDs.
+func isRemoteBundleArg(value string) bool {
+	lowerValue := strings.ToLower(value)
+	if !strings.HasPrefix(lowerValue, "http://") &&
+		!strings.HasPrefix(lowerValue, "https://") {
+		return false
+	}
+
+	pathEnd := len(value)
+	if index := strings.IndexAny(value, "?#"); index >= 0 {
+		pathEnd = index
+	}
+
+	return strings.EqualFold(path.Ext(value[:pathEnd]), ".zip")
+}
+
+// prepareBundleInstall resolves the bundle (downloading it first when the
+// argument is a remote URL), extracts it, registers an ephemeral source over it,
+// and rewrites a.args/a.flags.source so the standard install loop installs the
+// bundled extensions from that source. cleanupBundleInstall tears the ephemeral
+// state down afterwards.
+func (a *extensionInstallAction) prepareBundleInstall(ctx context.Context, bundleArg string) error {
+	// A remote bundle is downloaded to a temporary file first; from there it goes
+	// through the exact same validation, extraction and install path as a local one.
+	isRemote := isRemoteBundleArg(bundleArg)
+	displayName := filepath.Base(bundleArg)
+	sourceBaseName := displayName
+	zipPath := bundleArg
+	if isRemote {
+		downloadedPath, err := a.downloadBundle(ctx, bundleArg)
+		if err != nil {
+			return err
+		}
+		sourceBaseName = "bundle"
+		zipPath = downloadedPath
+	}
+
 	absZipPath, err := filepath.Abs(zipPath)
 	if err != nil {
 		return fmt.Errorf("failed to resolve bundle path: %w", err)
@@ -1266,13 +1327,16 @@ func (a *extensionInstallAction) prepareBundleInstall(ctx context.Context, zipPa
 	if err != nil {
 		return fmt.Errorf("failed to generate bundle source name: %w", err)
 	}
-	base := bundleSourceName(absZipPath)
+	base := bundleSourceName(sourceBaseName)
 	if base == "" {
 		base = "bundle"
 	}
 	sourceName := fmt.Sprintf("%s-%s", base, suffix)
 
-	stepMessage := fmt.Sprintf("Extracting bundle %s", output.WithHighLightFormat(filepath.Base(absZipPath)))
+	stepMessage := "Extracting extension bundle"
+	if !isRemote {
+		stepMessage = fmt.Sprintf("Extracting bundle %s", output.WithHighLightFormat(displayName))
+	}
 	a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 	bundleDir, err := os.MkdirTemp("", extensionBundleTempPrefix)
@@ -1316,7 +1380,10 @@ func (a *extensionInstallAction) prepareBundleInstall(ctx context.Context, zipPa
 		return fmt.Errorf("failed to read bundled extensions: %w", err)
 	}
 	if len(bundledExtensions) == 0 {
-		return fmt.Errorf("bundle %q contains no extensions", filepath.Base(absZipPath))
+		if isRemote {
+			return errors.New("downloaded extension bundle contains no extensions")
+		}
+		return fmt.Errorf("bundle %q contains no extensions", displayName)
 	}
 
 	// Register the ephemeral bundle source so the install loop can resolve it.
@@ -1350,8 +1417,9 @@ func (a *extensionInstallAction) prepareBundleInstall(ctx context.Context, zipPa
 // cleanupBundleInstall tears down the ephemeral state created by
 // prepareBundleInstall: it re-points any extension installed from the transient
 // bundle source to extensions.BundleSourceName, removes the transient source, and
-// deletes the extracted bundle directory. It is safe to call multiple times and
-// when prepareBundleInstall failed partway through.
+// deletes the extracted bundle directory and any downloaded bundle file. It is
+// safe to call multiple times and when prepareBundleInstall failed partway
+// through.
 func (a *extensionInstallAction) cleanupBundleInstall(ctx context.Context) {
 	if a.bundleSourceName != "" {
 		// Re-point extensions installed from the transient source so they are not
@@ -1384,6 +1452,163 @@ func (a *extensionInstallAction) cleanupBundleInstall(ctx context.Context) {
 		}
 		a.bundleTempDir = ""
 	}
+
+	if a.bundleTempZip != "" {
+		if err := os.Remove(a.bundleTempZip); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Printf("failed to remove downloaded bundle %q: %v", a.bundleTempZip, err)
+		}
+		a.bundleTempZip = ""
+	}
+}
+
+// downloadBundle downloads a remote bundle (.zip) to a temporary file and
+// returns its path. The temporary file is recorded on the action so
+// cleanupBundleInstall removes it whether the install succeeds or fails.
+func (a *extensionInstallAction) downloadBundle(ctx context.Context, bundleURL string) (string, error) {
+	parsedURL, err := url.Parse(bundleURL)
+	if err != nil || parsedURL.Host == "" {
+		return "", &internal.ErrorWithSuggestion{
+			Err:     errors.New("invalid remote extension bundle URL"),
+			Message: "Remote extension bundles require a valid HTTPS URL.",
+			Suggestion: "Use a valid HTTPS URL, or download the bundle and install it " +
+				"from a local path.",
+		}
+	}
+	if !strings.EqualFold(parsedURL.Scheme, "https") {
+		return "", &internal.ErrorWithSuggestion{
+			Err:     errors.New("remote extension bundle URL must use HTTPS"),
+			Message: "Remote extension bundles require a valid HTTPS URL.",
+			Suggestion: "Use an HTTPS URL, or download the bundle and install it " +
+				"from a local path.",
+		}
+	}
+
+	stepMessage := "Downloading extension bundle"
+	a.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+	downloadFailed := func(err error) (string, error) {
+		a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+		return "", err
+	}
+	requestFailed := func(err error) error {
+		return &internal.ErrorWithSuggestion{
+			Err: &bundleDownloadError{
+				message: "failed to download extension bundle",
+				err:     err,
+			},
+			Message: "The extension bundle could not be downloaded.",
+			Suggestion: "Check your network connection and verify the bundle URL is accessible, " +
+				"or download the bundle and install it from a local path.",
+		}
+	}
+	insecureRedirect := func() error {
+		return &internal.ErrorWithSuggestion{
+			Err:     errInsecureBundleRedirect,
+			Message: "The extension bundle download was redirected from HTTPS to HTTP.",
+			Suggestion: "Use a bundle URL that remains on HTTPS, or download the bundle and install it " +
+				"from a local path.",
+		}
+	}
+
+	pipeline := azruntime.NewPipeline(
+		"azd-extension-bundle", "1.0.0", azruntime.PipelineOptions{}, &policy.ClientOptions{
+			Transport: bundleTransportWithHTTPSRedirectsOnly(a.transport),
+		})
+
+	req, err := azruntime.NewRequest(ctx, http.MethodGet, bundleURL)
+	if err != nil {
+		return downloadFailed(requestFailed(err))
+	}
+
+	resp, err := pipeline.Do(req)
+	if err != nil {
+		if errors.Is(err, errInsecureBundleRedirect) {
+			return downloadFailed(insecureRedirect())
+		}
+		return downloadFailed(requestFailed(err))
+	}
+	defer resp.Body.Close()
+
+	if resp.Request != nil && resp.Request.URL != nil &&
+		!strings.EqualFold(resp.Request.URL.Scheme, "https") {
+		return downloadFailed(insecureRedirect())
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return downloadFailed(&internal.ErrorWithSuggestion{
+			Err:     fmt.Errorf("failed to download extension bundle: server responded with status %d", resp.StatusCode),
+			Message: "The extension bundle could not be downloaded.",
+			Suggestion: "Verify the bundle URL is correct and accessible, " +
+				"or download the bundle and install it from a local path.",
+		})
+	}
+
+	tempFile, err := os.CreateTemp("", extensionBundleTempPrefix+"*.zip")
+	if err != nil {
+		return downloadFailed(fmt.Errorf("failed to create temporary bundle file: %w", err))
+	}
+	// Record the temp file immediately so cleanup removes it even if a later step fails.
+	a.bundleTempZip = tempFile.Name()
+
+	if _, err := io.Copy(tempFile, resp.Body); err != nil {
+		tempFile.Close()
+		return downloadFailed(&bundleDownloadError{
+			message: "failed to save downloaded extension bundle",
+			err:     err,
+		})
+	}
+
+	if err := tempFile.Close(); err != nil {
+		return downloadFailed(&bundleDownloadError{
+			message: "failed to save downloaded extension bundle",
+			err:     err,
+		})
+	}
+
+	a.console.StopSpinner(ctx, stepMessage, input.StepDone)
+
+	return tempFile.Name(), nil
+}
+
+// bundleDownloadError preserves the underlying error for classification without
+// rendering request details that may contain credentials.
+type bundleDownloadError struct {
+	message string
+	err     error
+}
+
+func (e *bundleDownloadError) Error() string {
+	return e.message
+}
+
+func (e *bundleDownloadError) Unwrap() error {
+	return e.err
+}
+
+// bundleTransportWithHTTPSRedirectsOnly clones an injected HTTP client so the
+// stricter redirect policy applies only to extension bundle downloads.
+func bundleTransportWithHTTPSRedirectsOnly(transport policy.Transporter) policy.Transporter {
+	client, ok := transport.(*http.Client)
+	if !ok {
+		return transport
+	}
+
+	bundleClient := *client
+	existingCheckRedirect := bundleClient.CheckRedirect
+	bundleClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if req.URL == nil || !strings.EqualFold(req.URL.Scheme, "https") {
+			return errInsecureBundleRedirect
+		}
+		if existingCheckRedirect != nil {
+			return existingCheckRedirect(req, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+
+	return &bundleClient
 }
 
 // randomHexToken returns a short random hex string used to make the transient

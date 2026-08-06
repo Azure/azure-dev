@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -240,19 +241,381 @@ func TestWaitForLocalPort(t *testing.T) {
 func TestLaunchInspectorUsesWorkflowCommand(t *testing.T) {
 	t.Parallel()
 
-	workflow := &recordingWorkflowClient{}
-	if err := launchInspector(t.Context(), workflow, 9090); err != nil {
-		t.Fatalf("launchInspector returned error: %v", err)
+	tests := []struct {
+		name          string
+		agentPort     int
+		inspectorPort int
+		want          []string
+	}{
+		{
+			name:      "inspector port unset is not forwarded",
+			agentPort: 9090,
+			want:      []string{"ai", "inspector", "launch", "--port", "9090", "--silent"},
+		},
+		{
+			name:          "inspector port is forwarded when set",
+			agentPort:     9091,
+			inspectorPort: 9002,
+			want: []string{
+				"ai", "inspector", "launch",
+				"--port", "9091",
+				"--inspector-port", "9002",
+				"--silent",
+			},
+		},
 	}
 
-	if workflow.request == nil || workflow.request.Workflow == nil || len(workflow.request.Workflow.Steps) != 1 {
-		t.Fatalf("unexpected workflow request: %#v", workflow.request)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			workflow := &recordingWorkflowClient{}
+			if err := launchInspector(t.Context(), workflow, tt.agentPort, tt.inspectorPort); err != nil {
+				t.Fatalf("launchInspector returned error: %v", err)
+			}
+
+			if workflow.request == nil || workflow.request.Workflow == nil ||
+				len(workflow.request.Workflow.Steps) != 1 {
+				t.Fatalf("unexpected workflow request: %#v", workflow.request)
+			}
+
+			got := workflow.request.Workflow.Steps[0].Command.Args
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("workflow args = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunCommandInspectorPortFlag(t *testing.T) {
+	t.Parallel()
+
+	cmd := newRunCommand(nil)
+
+	flag := cmd.Flags().Lookup("inspector-port")
+	if flag == nil {
+		t.Fatal("run command should expose --inspector-port")
+	}
+	// Zero means unset so the inspector extension keeps applying its own
+	// default UI port; the effective default is documented in the usage text.
+	if flag.DefValue != "0" {
+		t.Fatalf("--inspector-port default = %q, want %q", flag.DefValue, "0")
+	}
+	if !strings.Contains(flag.Usage, strconv.Itoa(defaultInspectorUIPort)) {
+		t.Fatalf("--inspector-port usage should document the %d default, got %q",
+			defaultInspectorUIPort, flag.Usage)
+	}
+}
+
+func TestValidateInspectorPort(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		port    int
+		set     bool
+		wantErr bool
+	}{
+		{name: "unset is allowed", port: 0},
+		{name: "explicit zero is rejected", port: 0, set: true, wantErr: true},
+		{name: "lower bound", port: 1, set: true},
+		{name: "typical port", port: 9002, set: true},
+		{name: "upper bound", port: 65535, set: true},
+		{name: "negative is rejected", port: -1, set: true, wantErr: true},
+		{name: "above range is rejected", port: 70000, set: true, wantErr: true},
 	}
 
-	got := workflow.request.Workflow.Steps[0].Command.Args
-	want := []string{"ai", "inspector", "launch", "--port", "9090", "--silent"}
-	if !slices.Equal(got, want) {
-		t.Fatalf("workflow args = %v, want %v", got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateInspectorPort(tt.port, tt.set)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("validateInspectorPort(%d, %t) = nil, want error", tt.port, tt.set)
+				}
+				if !strings.Contains(err.Error(), "--inspector-port") {
+					t.Fatalf("error should name the flag, got %q", err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("validateInspectorPort(%d, %t) = %v, want nil", tt.port, tt.set, err)
+			}
+		})
+	}
+}
+
+func TestValidateInspectorPortFlags(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		flags       runFlags
+		wantErr     bool
+		wantErrPart string
+	}{
+		{
+			name:  "unset flag with suppressed client is allowed",
+			flags: runFlags{port: DefaultPort, noClient: true},
+		},
+		{
+			name:  "distinct ports are allowed",
+			flags: runFlags{port: 9091, inspectorPort: 9002, inspectorPortSet: true},
+		},
+		{
+			name:        "out of range still rejected",
+			flags:       runFlags{port: DefaultPort, inspectorPort: 70000, inspectorPortSet: true},
+			wantErr:     true,
+			wantErrPart: "between 1 and 65535",
+		},
+		{
+			name:        "conflicts with --no-client",
+			flags:       runFlags{port: DefaultPort, inspectorPort: 9002, inspectorPortSet: true, noClient: true},
+			wantErr:     true,
+			wantErrPart: "--no-client",
+		},
+		{
+			name:        "conflicts with deprecated --no-inspector",
+			flags:       runFlags{port: DefaultPort, inspectorPort: 9002, inspectorPortSet: true, noInspector: true},
+			wantErr:     true,
+			wantErrPart: "--no-inspector",
+		},
+		{
+			name: "both suppress flags name the canonical one",
+			flags: runFlags{
+				port: DefaultPort, inspectorPort: 9002, inspectorPortSet: true,
+				noClient: true, noInspector: true,
+			},
+			wantErr:     true,
+			wantErrPart: "--no-client",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			flags := tt.flags
+			err := validateInspectorPortFlags(&flags)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("validateInspectorPortFlags(%+v) = nil, want error", tt.flags)
+				}
+				if !strings.Contains(err.Error(), tt.wantErrPart) {
+					t.Fatalf("error = %q, want it to contain %q", err.Error(), tt.wantErrPart)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("validateInspectorPortFlags(%+v) = %v, want nil", tt.flags, err)
+			}
+		})
+	}
+}
+
+func TestValidateInspectorPortForProfile(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		flags       runFlags
+		isActivity  bool
+		wantErrPart string
+	}{
+		{
+			name:        "non-activity agent rejects equal ports",
+			flags:       runFlags{port: 9091, inspectorPort: 9091, inspectorPortSet: true},
+			wantErrPart: "must differ from --port",
+		},
+		{
+			name:       "activity agent allows equal ports because it opens the Playground",
+			flags:      runFlags{port: 9091, inspectorPort: 9091, inspectorPortSet: true},
+			isActivity: true,
+		},
+		{
+			name:  "non-activity agent allows distinct ports",
+			flags: runFlags{port: 9091, inspectorPort: 9002, inspectorPortSet: true},
+		},
+		{
+			name:  "collision check ignores an unset inspector port",
+			flags: runFlags{port: 0},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			flags := tt.flags
+			err := validateInspectorPortForProfile(&flags, tt.isActivity)
+			if tt.wantErrPart != "" {
+				if err == nil {
+					t.Fatalf("validateInspectorPortForProfile(%+v, %t) = nil, want error", tt.flags, tt.isActivity)
+				}
+				if !strings.Contains(err.Error(), tt.wantErrPart) {
+					t.Fatalf("error = %q, want it to contain %q", err.Error(), tt.wantErrPart)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf(
+					"validateInspectorPortForProfile(%+v, %t) = %v, want nil",
+					tt.flags,
+					tt.isActivity,
+					err,
+				)
+			}
+		})
+	}
+}
+
+func TestRunRun_PortCollisionDoesNotClearStoredSession(t *testing.T) {
+	projectDir := t.TempDir()
+	projectServer := &helpersProjectServer{
+		project: &azdext.ProjectConfig{
+			Name: "test-project",
+			Path: projectDir,
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": {
+					Name:         "agent",
+					Host:         AiAgentHost,
+					RelativePath: ".",
+				},
+			},
+		},
+	}
+	userConfigServer := newInvokeUserConfigServer()
+
+	grpcServer := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(grpcServer, projectServer)
+	azdext.RegisterUserConfigServiceServer(grpcServer, userConfigServer)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+
+	const (
+		port      = 9091
+		sessionID = "existing-session"
+	)
+	agentKey := buildLocalAgentKey(port, "agent", "", projectDir)
+	userConfigServer.setJSON(t, configPath("sessions"), map[string]string{
+		agentKey: sessionID,
+	})
+
+	err = runRun(t.Context(), &runFlags{
+		name:             "agent",
+		port:             port,
+		inspectorPort:    port,
+		inspectorPortSet: true,
+	}, true)
+	if err == nil || !strings.Contains(err.Error(), "must differ from --port") {
+		t.Fatalf("runRun() error = %v, want equal-port validation error", err)
+	}
+
+	userConfigServer.mu.Lock()
+	stored := slices.Clone(userConfigServer.values[configPath("sessions")])
+	userConfigServer.mu.Unlock()
+	if !bytes.Contains(stored, []byte(agentKey)) || !bytes.Contains(stored, []byte(sessionID)) {
+		t.Fatalf("session store = %s, want existing session %q at key %q", stored, sessionID, agentKey)
+	}
+}
+
+func TestWarnInspectorPortIssues(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name               string
+		flags              runFlags
+		isActivity         bool
+		inspectorInstalled bool
+		wantParts          []string
+		wantSilent         bool
+	}{
+		{
+			name:       "activity agent with an explicit inspector port warns",
+			flags:      runFlags{port: 9091, inspectorPort: 9002, inspectorPortSet: true},
+			isActivity: true,
+			wantParts:  []string{"--inspector-port is ignored", "Playground"},
+		},
+		{
+			name:       "activity agent without the flag is silent",
+			flags:      runFlags{port: 9091},
+			isActivity: true,
+			wantSilent: true,
+		},
+		{
+			name:               "agent port on the inspector default warns when inspector is installed",
+			flags:              runFlags{port: defaultInspectorUIPort},
+			inspectorInstalled: true,
+			wantParts:          []string{"also the Agent Inspector UI's default port", "Pass --inspector-port"},
+		},
+		{
+			name:       "missing inspector suppresses the default collision warning",
+			flags:      runFlags{port: defaultInspectorUIPort},
+			wantSilent: true,
+		},
+		{
+			name:               "explicit inspector port suppresses the default collision warning",
+			flags:              runFlags{port: defaultInspectorUIPort, inspectorPort: 9002, inspectorPortSet: true},
+			inspectorInstalled: true,
+			wantSilent:         true,
+		},
+		{
+			name:               "suppressed client launches no inspector, so nothing can collide",
+			flags:              runFlags{port: defaultInspectorUIPort, noClient: true},
+			inspectorInstalled: true,
+			wantSilent:         true,
+		},
+		{
+			name:               "deprecated suppress flag is also honored",
+			flags:              runFlags{port: defaultInspectorUIPort, noInspector: true},
+			inspectorInstalled: true,
+			wantSilent:         true,
+		},
+		{
+			name:               "unrelated agent port is silent",
+			flags:              runFlags{port: DefaultPort},
+			inspectorInstalled: true,
+			wantSilent:         true,
+		},
+		{
+			name:       "activity agent on the inspector default port is silent",
+			flags:      runFlags{port: defaultInspectorUIPort},
+			isActivity: true,
+			wantSilent: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			flags := tt.flags
+			var stderr bytes.Buffer
+			warnInspectorPortIssues(&flags, tt.isActivity, tt.inspectorInstalled, &stderr)
+
+			got := stderr.String()
+			if tt.wantSilent {
+				if got != "" {
+					t.Fatalf("expected no warning, got %q", got)
+				}
+				return
+			}
+			for _, part := range tt.wantParts {
+				if !strings.Contains(got, part) {
+					t.Fatalf("warning = %q, want it to contain %q", got, part)
+				}
+			}
+		})
 	}
 }
 
@@ -309,6 +672,7 @@ func TestInspectorLaunchFailureOnlyWarns(t *testing.T) {
 		ctx,
 		workflow,
 		ln.Addr().(*net.TCPAddr).Port,
+		0,
 		time.Millisecond,
 		&stderr,
 	)
@@ -364,7 +728,7 @@ func TestNoInspectorSkipsWorkflowLaunch(t *testing.T) {
 	t.Parallel()
 
 	workflow := &recordingWorkflowClient{called: make(chan struct{})}
-	handleInspectorAutoLaunch(t.Context(), workflow, 8088, true, true, nil, io.Discard)
+	handleInspectorAutoLaunch(t.Context(), workflow, 8088, 0, true, true, nil, io.Discard)
 
 	select {
 	case <-workflow.called:

@@ -188,3 +188,60 @@ func TestBuildGenerationSources_AgentVersionIsOptional(t *testing.T) {
 	require.Len(t, withoutVersion, 1)
 	assert.Empty(t, withoutVersion[0].AgentVersion)
 }
+
+// The retry that saves the documented flow: agent-seeded generation fails
+// server-side for every agent, and the same request without the agent source
+// succeeds.
+func TestWithoutAgentSource(t *testing.T) {
+	sources := []GenerationSource{
+		{Type: "prompt", Prompt: "be helpful"},
+		{Type: "agent", AgentName: "support"},
+		{Type: "traces", AgentName: "support"},
+	}
+
+	kept := WithoutAgentSource(sources)
+
+	assert.Equal(t, []string{"prompt", "traces"}, kindsOf(kept))
+	assert.Len(t, sources, 3, "the original must not be modified; it is retried from")
+}
+
+// The retry only happens when something is left to generate from, so this is
+// what stops a second billed job that would fail the same way.
+func TestHasPromptSource(t *testing.T) {
+	assert.True(t, HasPromptSource([]GenerationSource{{Type: "prompt", Prompt: "x"}}))
+	assert.False(t, HasPromptSource([]GenerationSource{{Type: "prompt"}}),
+		"an empty prompt is nothing to generate from")
+	assert.False(t, HasPromptSource([]GenerationSource{{Type: "agent", AgentName: "s"}}))
+	assert.False(t, HasPromptSource(nil))
+}
+
+// The request body is what the service validates, so the fields it keys on are
+// pinned rather than left to whatever the builder happens to set.
+func TestNewDataGenerationJobRequest(t *testing.T) {
+	sources := []GenerationSource{{Type: "prompt", Prompt: "be helpful"}}
+
+	req := NewDataGenerationJobRequest("support-regression", "gpt-4o", 15, sources)
+
+	require.NotNil(t, req)
+	assert.Equal(t, "support-regression", req.Inputs.Name)
+	assert.Equal(t, "evaluation", req.Inputs.Scenario)
+	assert.Equal(t, "simple_qna", req.Inputs.Options.Type)
+	assert.Equal(t, 15, req.Inputs.Options.MaxSamples)
+	assert.Equal(t, "gpt-4o", req.Inputs.Options.ModelOptions.Model)
+	assert.Equal(t, sources, req.Inputs.Sources)
+}
+
+// The evaluator request sends the name twice, under two keys the service reads
+// separately. Setting only one produces a job that runs and returns an
+// evaluator under the wrong name.
+func TestNewEvaluatorGenerationJobRequest(t *testing.T) {
+	sources := []GenerationSource{{Type: "prompt", Prompt: "grade politeness"}}
+
+	req := NewEvaluatorGenerationJobRequest("support-quality", "gpt-4o", sources)
+
+	require.NotNil(t, req)
+	assert.Equal(t, "support-quality", req.Inputs.Name)
+	assert.Equal(t, "support-quality", req.Inputs.EvaluatorName)
+	assert.Equal(t, "gpt-4o", req.Inputs.Model)
+	assert.Equal(t, sources, req.Inputs.Sources)
+}

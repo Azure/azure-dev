@@ -4,9 +4,12 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"azureaieval/internal/pkg/eval_api"
 
@@ -327,18 +330,58 @@ func newEvaluatorShowCommand() *cobra.Command {
 				return fmt.Errorf("reading evaluator %q: %w", name, err)
 			}
 
-			var pretty any
-			if err := json.Unmarshal(raw, &pretty); err != nil {
+			// -o json answers with the service's document untouched, because a
+			// caller asking for JSON wants the evaluator, not this view of it.
+			if isJSON(cmd) {
+				var pretty any
+				if err := json.Unmarshal(raw, &pretty); err != nil {
+					fmt.Fprintln(cmd.OutOrStdout(), string(raw))
+					return nil
+				}
+				return emitJSON(cmd.OutOrStdout(), pretty)
+			}
+
+			var summary eval_api.EvaluatorSummary
+			if err := json.Unmarshal(raw, &summary); err != nil {
+				// An evaluator shaped in a way this view cannot read is still
+				// worth showing; falling back beats refusing to print it.
 				fmt.Fprintln(cmd.OutOrStdout(), string(raw))
 				return nil
 			}
-			return emitJSON(cmd.OutOrStdout(), pretty)
+			return ec.renderEvaluator(ctx, cmd.OutOrStdout(), &summary)
 		},
 	}
 
 	cmd.Flags().StringVar(&version, "version", "", "Version to show. Omit for the latest.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
+}
+
+// renderEvaluator prints the detail view for one evaluator, closing with its
+// portal link.
+//
+// The columns an evaluator is identified by, then what it grades and where it
+// can run. The full definition is in `-o json`; a schema printed here would
+// bury the four lines a reader came for.
+func (ec *evalContext) renderEvaluator(
+	ctx context.Context,
+	out io.Writer,
+	e *eval_api.EvaluatorSummary,
+) error {
+	if err := emitDetail(out, []field{
+		{"Name", e.Name},
+		{"Version", e.Version},
+		{"Type", e.Type()},
+		{"Description", e.Description},
+		{"Categories", strings.Join(e.Categories, ", ")},
+		{"Evaluation Levels", strings.Join(e.SupportedEvaluationLevels, ", ")},
+	}); err != nil {
+		return err
+	}
+	if prefix := ec.portalPrefix(ctx); prefix != nil && e.Name != "" {
+		writePortalLink(out, prefix.EvaluatorURL(e.Name, e.Version))
+	}
+	return nil
 }
 
 func newEvaluatorDeleteCommand() *cobra.Command {

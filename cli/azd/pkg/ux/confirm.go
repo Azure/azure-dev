@@ -189,7 +189,7 @@ func (p *Confirm) Render(printer Printer) error {
 	printer.Fprintf("%s", output.WithHighLightFormat("? "))
 
 	// Message
-	printer.Fprintf("%s", BoldString("%s: ", p.options.Message))
+	printer.Fprintf("%s", BoldString("%s", formatPromptMessage(p.options.Message)))
 
 	// Hint indicator
 	if !p.cancelled && !p.complete && p.options.HelpMessage != "" {

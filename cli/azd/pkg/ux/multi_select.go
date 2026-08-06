@@ -425,7 +425,7 @@ func (p *MultiSelect) renderMessage(printer Printer) {
 	printer.Fprintf("%s", output.WithHighLightFormat("? "))
 
 	// Message
-	printer.Fprintf("%s", BoldString("%s: ", p.options.Message))
+	printer.Fprintf("%s", BoldString("%s", formatPromptMessage(p.options.Message)))
 
 	// Cancelled
 	if p.cancelled {

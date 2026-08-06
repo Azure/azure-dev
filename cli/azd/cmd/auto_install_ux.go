@@ -255,7 +255,11 @@ func manualInstallError(
 	var suggestion strings.Builder
 	suggestion.WriteString("Install the required extensions manually, then run this command again:")
 	for _, requirement := range requirements {
-		for _, candidate := range sortedRequirementCandidates(requirement) {
+		candidates := sortedRequirementCandidates(requirement)
+		if len(candidates) > 1 {
+			fmt.Fprintf(&suggestion, "\n\nChoose one source for %s:", requirement.extension.Id)
+		}
+		for _, candidate := range candidates {
 			version, err := extensions.ResolveExtensionVersion(
 				candidate,
 				requirement.versionPreference,

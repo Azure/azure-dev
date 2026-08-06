@@ -160,8 +160,9 @@ func TestInteractiveSingleInstallPlan(t *testing.T) {
 			return options.Message == "Install Demo Extension from 'azd'"
 		}).Respond(1)
 		console.WhenSelect(func(options input.ConsoleOptions) bool {
-			return options.Message == "Select a source for Demo Extension:"
-		}).Respond(0)
+			return options.Message == "Select a source for Demo Extension" &&
+				assert.Equal(t, []string{"azd", "local"}, options.Options)
+		}).Respond(1)
 
 		selections, declined, err := interactiveSingleInstallPlan(
 			t.Context(),
@@ -217,8 +218,8 @@ func TestInteractiveMultipleInstallPlanDifferentSourceShortcut(t *testing.T) {
 			options.EnableFiltering != nil && !*options.EnableFiltering
 	}).Respond(1)
 	console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return options.Message == "Select a source for Demo Extension:"
-	}).Respond(0)
+		return options.Message == "Select a source for Demo Extension"
+	}).Respond(1)
 	console.WhenConfirm(func(options input.ConsoleOptions) bool {
 		return options.Message == "Install remaining extensions from 'local'?"
 	}).Respond(true)
@@ -251,10 +252,10 @@ func TestInteractiveMultipleInstallPlanFallsBackToIndividualSources(t *testing.T
 		return options.Message == "Install all 2 required extensions from 'azd'"
 	}).Respond(1)
 	console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return options.Message == "Select a source for Demo Extension:"
-	}).Respond(0)
+		return options.Message == "Select a source for Demo Extension"
+	}).Respond(1)
 	console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return options.Message == "Select a source for Storage Helper:"
+		return options.Message == "Select a source for Storage Helper"
 	}).Respond(1)
 
 	selections, declined, err := interactiveMultipleInstallPlan(t.Context(), console, requirements)
@@ -324,6 +325,7 @@ func TestAutoInstallExtensionRequirementsNoPrompt(t *testing.T) {
 	require.Len(t, console.SpinnerOps(), 4)
 	assert.Equal(t, input.StepDone, console.SpinnerOps()[1].Format)
 	assert.Contains(t, console.SpinnerOps()[1].Message, "(1.2.3)")
+	assert.NotContains(t, console.SpinnerOps()[1].Message, " from ")
 	assert.Equal(t, input.StepDone, console.SpinnerOps()[3].Format)
 	require.NotEmpty(t, console.Output())
 	assert.Empty(t, console.Output()[len(console.Output())-1])
@@ -379,6 +381,31 @@ func TestAutoInstallExtensionRequirementsNoPromptAmbiguous(t *testing.T) {
 	assert.Contains(t, suggestionErr.Suggestion, "azd extension install demo --source azd --version 1.2.3")
 	assert.Contains(t, suggestionErr.Suggestion, "azd extension install demo --source local --version 1.2.3")
 	assert.Empty(t, manager.installed)
+}
+
+func TestAutoInstallExtensionRequirementsShowsSourceForMultiSourcePlan(t *testing.T) {
+	clearAgentEnvVarsForTest(t)
+
+	azd := autoInstallTestExtension("demo", "Demo Extension", "azd", extensions.SourceCategoryAzd)
+	local := autoInstallTestExtension("demo", "Demo Extension", "local", extensions.SourceCategoryLocal)
+	console := mockinput.NewMockConsole()
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Install Demo Extension from 'azd'"
+	}).Respond(0)
+	manager := &fakeExtensionAutoInstallManager{installed: map[string]*extensions.Extension{}}
+
+	result, err := autoInstallExtensionRequirements(
+		t.Context(),
+		console,
+		manager,
+		[]projectExtensionRequirement{autoInstallTestRequirement(azd, local)},
+		autoInstallDisplayContext{},
+	)
+
+	require.NoError(t, err)
+	assert.True(t, result.installed)
+	require.Len(t, console.SpinnerOps(), 2)
+	assert.Contains(t, console.SpinnerOps()[1].Message, "(1.2.3) from 'azd'")
 }
 
 func TestDisplayExtensionRequirements(t *testing.T) {

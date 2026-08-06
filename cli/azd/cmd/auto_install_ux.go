@@ -97,6 +97,9 @@ func autoInstallExtensionRequirements(
 
 	console.Message(ctx, "")
 	installedAny := false
+	displaySource := slices.ContainsFunc(requirements, func(requirement projectExtensionRequirement) bool {
+		return len(requirementCandidates(requirement)) > 1
+	})
 	for _, selection := range selections {
 		installed, err := tryAutoInstallExtensionVersion(
 			ctx,
@@ -104,6 +107,7 @@ func autoInstallExtensionRequirements(
 			extensionManager,
 			*selection.extension,
 			selection.requirement.versionPreference,
+			displaySource,
 		)
 		if err != nil {
 			return autoInstallResult{installed: installedAny}, err
@@ -351,7 +355,7 @@ func interactiveSingleInstallPlan(
 		case 0:
 			return []extensionInstallSelection{{requirement: requirement, extension: recommended}}, false, nil
 		case 1:
-			selected, err := selectRequirementSource(ctx, console, requirement, recommended)
+			selected, err := selectRequirementSource(ctx, console, requirement)
 			if err != nil {
 				return nil, false, err
 			}
@@ -371,7 +375,7 @@ func interactiveSingleInstallPlan(
 	if !confirmed {
 		return nil, true, nil
 	}
-	selected, err := selectRequirementSource(ctx, console, requirement, nil)
+	selected, err := selectRequirementSource(ctx, console, requirement)
 	if err != nil {
 		return nil, false, err
 	}
@@ -495,7 +499,6 @@ func selectDifferentSources(
 		ctx,
 		console,
 		first,
-		recommendedSourceCandidate(first),
 	)
 	if err != nil {
 		return nil, err
@@ -545,7 +548,7 @@ func selectSourcesIndividually(
 		selected := candidates[0]
 		var err error
 		if len(candidates) > 1 {
-			selected, err = selectRequirementSource(ctx, console, requirement, nil)
+			selected, err = selectRequirementSource(ctx, console, requirement)
 			if err != nil {
 				return nil, err
 			}
@@ -562,21 +565,15 @@ func selectRequirementSource(
 	ctx context.Context,
 	console input.Console,
 	requirement projectExtensionRequirement,
-	exclude *extensions.ExtensionMetadata,
 ) (*extensions.ExtensionMetadata, error) {
-	candidates := slices.DeleteFunc(
-		sortedRequirementCandidates(requirement),
-		func(candidate *extensions.ExtensionMetadata) bool {
-			return exclude != nil && candidate == exclude
-		},
-	)
+	candidates := sortedRequirementCandidates(requirement)
 	options := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
 		options = append(options, candidate.Source)
 	}
 
 	choice, err := console.Select(ctx, input.ConsoleOptions{
-		Message: fmt.Sprintf("Select a source for %s:", requirement.extension.DisplayName),
+		Message: fmt.Sprintf("Select a source for %s", requirement.extension.DisplayName),
 		Options: options,
 	})
 	if err != nil {

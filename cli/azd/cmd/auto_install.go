@@ -407,6 +407,7 @@ func tryAutoInstallExtensionVersion(
 	extensionManager extensionAutoInstallManager,
 	extension extensions.ExtensionMetadata,
 	versionPreference string,
+	displaySource bool,
 ) (bool, error) {
 	// Check if the extension is already installed
 	installedExtension, err := extensionManager.GetInstalled(extensions.FilterOptions{
@@ -428,6 +429,9 @@ func tryAutoInstallExtensionVersion(
 	}
 
 	stepMessage += output.WithGrayFormat(" (%s)", installedVersion.Version)
+	if displaySource {
+		stepMessage += fmt.Sprintf(" from '%s'", extension.Source)
+	}
 	console.StopSpinner(ctx, stepMessage, input.StepDone)
 	return true, nil
 }

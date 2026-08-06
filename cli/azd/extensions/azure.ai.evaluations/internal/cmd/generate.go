@@ -16,6 +16,8 @@ import (
 
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 // generatePollBudget replaces the inherited 2s x 300 (10 minute) client budget.
@@ -110,8 +112,13 @@ func declaredInstructions(named, configPath string) (string, error) {
 //
 // The service accepts an agent source that is meant to pull the agent's own
 // instructions, but it fails for every agent, so the agent's context is read
-// here instead. In precedence order: what the caller passed, then the agent's
-// published instructions.
+// here instead. In precedence order: what the caller passed, the instructions
+// the project already holds, then the agent's published ones.
+//
+// The project comes before the service because a local read cannot fail
+// slowly, and because instructions that have been optimized but not yet
+// deployed are the ones the author means — generating against what is still
+// published would test the version they are replacing.
 //
 // The last step is what makes `generate` work with no authored input at all,
 // which is the flow `init` sets up.
@@ -128,6 +135,18 @@ func (ec *evalContext) resolveGenerationInstruction(
 	if agentName == "" {
 		return "", nil
 	}
+
+	local, path, err := ec.agentInstructionsFromProject(ctx, agentName)
+	if err != nil {
+		return "", err
+	}
+	if local != "" {
+		if !quiet {
+			fmt.Fprintf(out, "  Seeding generation from %s.\n", filepath.ToSlash(path))
+		}
+		return local, nil
+	}
+
 	agent, err := ec.evalClient.GetAgent(ctx, agentName, ProjectEndpointAPIVersion)
 	if err != nil {
 		// Generation can still proceed from the agent source alone, so a
@@ -143,6 +162,26 @@ func (ec *evalContext) resolveGenerationInstruction(
 		fmt.Fprintf(out, "  Seeding generation from the instructions of agent %q.\n", agentName)
 	}
 	return instructions, nil
+}
+
+// agentInstructionsFromProject reads the agent's instructions out of the azd
+// project, coming back empty when there is no project to read.
+//
+// Running outside a project is ordinary — the atomic commands work standalone
+// against the data plane — so not finding one is not an error. An ambiguous
+// target inside one is, because it would otherwise pick an agent at random.
+func (ec *evalContext) agentInstructionsFromProject(
+	ctx context.Context,
+	agentName string,
+) (instruction string, path string, err error) {
+	if ec.azdClient == nil {
+		return "", "", nil
+	}
+	resp, err := ec.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || resp.GetProject() == nil {
+		return "", "", nil
+	}
+	return project.AgentInstructionsFromProject(resp.GetProject(), agentName)
 }
 
 // generateRubric submits the evaluator generation job and saves the rubric.

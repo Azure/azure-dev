@@ -10,6 +10,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -22,6 +23,18 @@ const (
 	skippedMark = "(-) Skipped:" // intentionally not done, not a failure
 	failedMark  = "(x) Failed:"  // the step did not complete
 )
+
+// writePortalLink closes a detail view with the asset's portal URL.
+//
+// Last line and cyan, matching the sibling extensions, and silent when there is
+// no URL — the link is a convenience on top of work already done, so its
+// absence must not look like a failure.
+func writePortalLink(w io.Writer, url string) {
+	if url == "" {
+		return
+	}
+	fmt.Fprintf(w, "Portal: %s\n", color.CyanString(url))
+}
 
 // outputFormat reads the inherited -o/--output flag.
 func outputFormat(cmd *cobra.Command) string {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -173,6 +174,46 @@ func (ec *evalContext) Close() {
 	if ec.azdClient != nil {
 		ec.azdClient.Close()
 	}
+}
+
+// projectARMIDEnvKey holds the project's ARM resource ID, which is what the
+// Foundry portal addresses a project by. azd provisioning writes it, and the
+// agents extension reads the same key to build the same links.
+const projectARMIDEnvKey = "AZURE_AI_PROJECT_ID"
+
+// portalPrefix builds the Foundry portal prefix for this project, or nil when
+// the project cannot be addressed.
+//
+// Best effort by design: a portal link is a convenience on top of a command
+// that already did its work, so a missing or unparseable resource ID drops the
+// line rather than failing the command that earned it.
+func (ec *evalContext) portalPrefix(ctx context.Context) *eval_api.PortalPrefix {
+	armID := ec.getEnvValue(ctx, projectARMIDEnvKey)
+	if armID == "" {
+		return nil
+	}
+	prefix, err := eval_api.NewPortalPrefix(armID)
+	if err != nil {
+		log.Printf("[portal] %s is not a project resource ID: %v", projectARMIDEnvKey, err)
+		return nil
+	}
+	return prefix
+}
+
+// withPortalLink stamps a run with its portal URL, so the terminal and `-o json`
+// answer with the same link from one place.
+func (ec *evalContext) withPortalLink(
+	ctx context.Context,
+	evalID string,
+	run *eval_api.OpenAIEvalRun,
+) *eval_api.OpenAIEvalRun {
+	if run == nil || evalID == "" || run.ID == "" {
+		return run
+	}
+	if prefix := ec.portalPrefix(ctx); prefix != nil {
+		run.PortalURL = prefix.EvalRunURL(evalID, run.ID)
+	}
+	return run
 }
 
 // azd environment keys written by this extension.

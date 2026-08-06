@@ -187,7 +187,7 @@ func buildRunCommand(use, short string) *cobra.Command {
 					return emitJSON(out, startedRun(run, evalID, group))
 				}
 				fmt.Fprintf(out, "Started run %s (status: %s)\n", run.ID, run.Status)
-				fmt.Fprintf(out, "Reattach with: azd ai eval run show %s --eval-id %s\n", run.ID, evalID)
+				fmt.Fprintf(out, "Reattach with: azd ai eval run show %s --eval %s\n", run.ID, evalID)
 				return nil
 			}
 
@@ -195,6 +195,7 @@ func buildRunCommand(use, short string) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			final = ec.withPortalLink(ctx, evalID, final)
 
 			if isJSON(cmd) {
 				if err := emitJSON(out, final); err != nil {
@@ -769,6 +770,7 @@ func renderRun(
 	if run.ReportURL != "" {
 		fmt.Fprintf(out, "Report: %s\n", run.ReportURL)
 	}
+	writePortalLink(out, run.PortalURL)
 	return nil
 }
 

@@ -277,10 +277,16 @@ func newDatasetShowCommand() *cobra.Command {
 			if isJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), ds)
 			}
-			return emitTable(cmd.OutOrStdout(),
+			if err := emitTable(cmd.OutOrStdout(),
 				[]string{"NAME", "VERSION", "FORMAT", "URI"},
 				[][]string{{ds.Name, ds.Version, ds.Format, ds.ResolvedBlobURI()}},
-			)
+			); err != nil {
+				return err
+			}
+			if prefix := ec.portalPrefix(ctx); prefix != nil {
+				writePortalLink(cmd.OutOrStdout(), prefix.DatasetURL(ds.Name, ds.Version))
+			}
+			return nil
 		},
 	}
 

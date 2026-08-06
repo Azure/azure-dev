@@ -122,6 +122,7 @@ func newRunShowCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			run = ec.withPortalLink(ctx, evalID, run)
 
 			// Reattaching to a run started asynchronously: the pipeline that
 			// gates on it is often not the one that started it.
@@ -161,6 +162,7 @@ func newRunShowCommand() *cobra.Command {
 			if run.ReportURL != "" {
 				fmt.Fprintf(out, "  report  : %s\n", run.ReportURL)
 			}
+			writePortalLink(out, run.PortalURL)
 			if gateOnStatus {
 				if err := runCompleted(run); err != nil {
 					return err

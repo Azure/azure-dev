@@ -419,6 +419,9 @@ type OpenAIEvalRun struct {
 	DataSource *EvalRunDataSource `json:"data_source,omitempty"`
 	Metadata   map[string]string  `json:"metadata,omitempty"`
 	ReportURL  string             `json:"report_url,omitempty"`
+	// PortalURL is built by the extension, not returned by the service, so that
+	// `-o json` carries the same link the terminal prints.
+	PortalURL string `json:"portal_url,omitempty"`
 
 	// Result summary
 	ResultCounts       *EvalRunResultCounts    `json:"result_counts,omitempty"`

@@ -351,6 +351,62 @@ func TestTaggedSuitesNameFlagsThatExist(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// A suggestion that names a flag has to name one the suggested command takes.
+//
+// `run start --no-wait` closed with "Reattach with: azd ai eval run show <id>
+// --eval-id <eval>" for the whole life of the branch that removed --eval-id.
+// The command resolved, so the suggestion check passed; the flag did not exist,
+// so the one line a user is told to paste was the one guaranteed to fail.
+func TestSuggestedFlagsExist(t *testing.T) {
+	// `azd ai eval <command path> ... --flag`, with the flag anywhere after it.
+	suggestion := regexp.MustCompile(`azd ai eval ((?:[a-z][a-z0-9-]*\s+)+)([^"'\n]*)`)
+	flagName := regexp.MustCompile(`--([a-z][a-z0-9-]*)`)
+
+	err := filepath.WalkDir("../..", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for i, line := range strings.Split(string(body), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "//") {
+				continue
+			}
+			for _, m := range suggestion.FindAllStringSubmatch(line, -1) {
+				flags := flagName.FindAllStringSubmatch(m[2], -1)
+				if len(flags) == 0 {
+					continue
+				}
+				// Longest command prefix that resolves; the rest is arguments.
+				words := strings.Fields(m[1])
+				for len(words) > 0 {
+					if resolved, _, e := NewRootCommand().Find(words); e == nil &&
+						strings.Fields(resolved.Use)[0] == words[len(words)-1] {
+						break
+					}
+					words = words[:len(words)-1]
+				}
+				if len(words) == 0 {
+					continue // the command itself is checked above
+				}
+				cmd, _, _ := NewRootCommand().Find(words)
+				for _, f := range flags {
+					assert.NotNilf(t, cmd.Flags().Lookup(f[1]),
+						"%s:%d suggests `azd ai eval %s --%s`, which that command does not accept",
+						path, i+1, strings.Join(words, " "), f[1])
+				}
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+}
+
 // find resolves a command path, failing the test when it does not exist.
 func find(t *testing.T, path string) *cobra.Command {
 	t.Helper()

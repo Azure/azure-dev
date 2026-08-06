@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -239,6 +240,67 @@ func TestDatasetGenerateFromListsEverySource(t *testing.T) {
 func TestEvaluatorGenerateHasNoFromFlag(t *testing.T) {
 	assert.Nil(t, find(t, "evaluator generate").Flags().Lookup("from"),
 		"the spec gives --from to dataset generate only")
+}
+
+// The spec's run table says which commands carry which flag. Where it says
+// "every", that is checkable; where it names two commands, a third carrying the
+// flag is a promise the spec does not make and a missing one is a promise it
+// does.
+//
+// This pins placement, not the whole flag list: unlike init's, the run table is
+// headed "Flag | Commands | Default" and documents defaults rather than
+// enumerating every flag.
+func TestRunFlagsSitWhereTheSpecSaysTheyDo(t *testing.T) {
+	// Flag → exactly the run commands that may declare it. nil means every
+	// run command that does something.
+	placement := map[string][]string{
+		"eval":    nil,
+		"dataset": {"run start"},
+		"fail-on": {"run start", "run show"},
+		"wait":    {"run start", "run show"},
+		"format":  {"run output export"},
+	}
+
+	// Every run command that actually runs, which is what "every run command"
+	// means — the bare groups take no flags.
+	var runCommands []string
+	walk(t, NewRootCommand(), nil, func(path string, cmd *cobra.Command) {
+		if strings.HasPrefix(path, "run") && cmd.RunE != nil {
+			runCommands = append(runCommands, path)
+		}
+	})
+	require.NotEmpty(t, runCommands)
+
+	for flag, allowed := range placement {
+		if allowed == nil {
+			allowed = runCommands
+		}
+		for _, path := range runCommands {
+			has := find(t, path).Flags().Lookup(flag) != nil
+			want := slices.Contains(allowed, path)
+
+			switch {
+			case want && !has:
+				t.Errorf("%s must accept --%s; the spec's run table says so", path, flag)
+			case !want && has:
+				t.Errorf("%s declares --%s, which the spec gives only to %s",
+					path, flag, strings.Join(allowed, ", "))
+			}
+		}
+	}
+}
+
+// `--eval` is how a run command finds the eval, and the spec gives it to every
+// one of them. Losing it from a single command makes that command unusable in a
+// project with more than one eval.
+func TestEveryRunCommandTakesEval(t *testing.T) {
+	walk(t, NewRootCommand(), nil, func(path string, cmd *cobra.Command) {
+		if !strings.HasPrefix(path, "run") || cmd.RunE == nil {
+			return
+		}
+		assert.NotNilf(t, cmd.Flags().Lookup("eval"),
+			"%s must accept --eval, which the spec gives to every run command", path)
+	})
 }
 
 // find resolves a command path, failing the test when it does not exist.

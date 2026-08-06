@@ -137,7 +137,8 @@ func TestInteractiveSingleInstallPlan(t *testing.T) {
 		t.Parallel()
 		console := mockinput.NewMockConsole()
 		console.WhenSelect(func(options input.ConsoleOptions) bool {
-			return strings.HasPrefix(options.Message, "Install Demo Extension from 'azd'?")
+			return options.Message == "Install Demo Extension from 'azd'" &&
+				options.EnableFiltering != nil && !*options.EnableFiltering
 		}).Respond(0)
 
 		selections, declined, err := interactiveSingleInstallPlan(
@@ -156,7 +157,7 @@ func TestInteractiveSingleInstallPlan(t *testing.T) {
 		t.Parallel()
 		console := mockinput.NewMockConsole()
 		console.WhenSelect(func(options input.ConsoleOptions) bool {
-			return strings.HasPrefix(options.Message, "Install Demo Extension from 'azd'?")
+			return options.Message == "Install Demo Extension from 'azd'"
 		}).Respond(1)
 		console.WhenSelect(func(options input.ConsoleOptions) bool {
 			return options.Message == "Select a source for Demo Extension:"
@@ -178,7 +179,7 @@ func TestInteractiveSingleInstallPlan(t *testing.T) {
 		t.Parallel()
 		console := mockinput.NewMockConsole()
 		console.WhenSelect(func(options input.ConsoleOptions) bool {
-			return strings.HasPrefix(options.Message, "Install Demo Extension from 'azd'?")
+			return options.Message == "Install Demo Extension from 'azd'"
 		}).Respond(2)
 
 		selections, declined, err := interactiveSingleInstallPlan(
@@ -212,7 +213,8 @@ func TestInteractiveMultipleInstallPlanDifferentSourceShortcut(t *testing.T) {
 	}
 	console := mockinput.NewMockConsole()
 	console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return strings.HasPrefix(options.Message, "Install all 3 required extensions from 'azd'?")
+		return options.Message == "Install all 3 required extensions from 'azd'" &&
+			options.EnableFiltering != nil && !*options.EnableFiltering
 	}).Respond(1)
 	console.WhenSelect(func(options input.ConsoleOptions) bool {
 		return options.Message == "Select a source for Demo Extension:"
@@ -246,7 +248,7 @@ func TestInteractiveMultipleInstallPlanFallsBackToIndividualSources(t *testing.T
 	}
 	console := mockinput.NewMockConsole()
 	console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return strings.HasPrefix(options.Message, "Install all 2 required extensions from 'azd'?")
+		return options.Message == "Install all 2 required extensions from 'azd'"
 	}).Respond(1)
 	console.WhenSelect(func(options input.ConsoleOptions) bool {
 		return options.Message == "Select a source for Demo Extension:"
@@ -323,6 +325,8 @@ func TestAutoInstallExtensionRequirementsNoPrompt(t *testing.T) {
 	assert.Equal(t, input.StepDone, console.SpinnerOps()[1].Format)
 	assert.Contains(t, console.SpinnerOps()[1].Message, "(1.2.3)")
 	assert.Equal(t, input.StepDone, console.SpinnerOps()[3].Format)
+	require.NotEmpty(t, console.Output())
+	assert.Empty(t, console.Output()[len(console.Output())-1])
 }
 
 func TestAutoInstallExtensionRequirementsInstallFailure(t *testing.T) {
@@ -418,12 +422,15 @@ func TestDisplayExtensionRequirements(t *testing.T) {
 		)
 
 		output := strings.Join(console.Output(), "\n")
+		require.NotEmpty(t, console.Output())
+		assert.NotEmpty(t, console.Output()[0])
 		assert.Contains(t, output, "2 extensions required by azure.yaml:")
 		assert.Contains(t, output, "Extension")
 		assert.Contains(t, output, "ID")
 		assert.Contains(t, output, "Sources")
 		assert.Contains(t, output, "Demo Extension")
 		assert.Contains(t, output, "azd, local")
+		assert.Empty(t, console.Output()[len(console.Output())-1])
 	})
 }
 

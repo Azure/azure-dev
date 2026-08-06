@@ -96,6 +96,9 @@ func TestKind_HostedIsNotVoice(t *testing.T) {
 	isVoice, err := IsPromptVoice(svc, root, "")
 	require.NoError(t, err)
 	assert.False(t, isVoice)
+	isHosted, err := IsHosted(svc, root, "")
+	require.NoError(t, err)
+	assert.True(t, isHosted)
 }
 
 func TestKind_AbsentReturnsEmpty(t *testing.T) {

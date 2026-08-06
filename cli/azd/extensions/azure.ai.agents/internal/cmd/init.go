@@ -78,9 +78,9 @@ type initFlags struct {
 	// template/language selection, no ACR). An empty value keeps the existing
 	// inference-from-inputs behavior. Additive: existing kinds remain inferred.
 	kind string
-	// voice optionally overrides the output voice name for a prompt-voice agent
-	// (e.g. "alloy" for an OpenAI realtime voice or an Azure Neural voice name).
-	// Ignored for non-voice kinds.
+	// voice optionally overrides the output voice name for hidden/private
+	// prompt-voice automation. Public interactive flows use the default and let
+	// users edit azure.yaml for customization.
 	voice string
 	// force, when true, lets headless callers (--no-prompt) pre-consent to
 	// overwrite prompts that would otherwise return a structured error. It
@@ -782,10 +782,6 @@ func synthesizeImageManifestFile(agentName, image string, flagProtocols []string
 	return manifestPath, cleanup, nil
 }
 
-// defaultVoiceModel is the speech-to-speech model used for a prompt-voice agent
-// when --model is not supplied.
-const defaultVoiceModel = "gpt-realtime"
-
 // kindFlagPromptVoice is the accepted --kind value for a declarative voice agent.
 const kindFlagPromptVoice = "prompt-voice"
 
@@ -1290,7 +1286,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
 						"--kind prompt-voice cannot be combined with --manifest",
-						"a voice agent is synthesized from --agent-name/--model/--voice; "+
+						"a voice agent is synthesized from --agent-name/--model; "+
 							"drop --manifest, or omit --kind to adopt the manifest as-is",
 					)
 				}
@@ -1734,10 +1730,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		fmt.Sprintf(
 			"Name of the AI model to deploy. Defaults to '%s' during interactive model selection; "+
 				"required to deploy a new model with --no-prompt. If --model-deployment is also provided, "+
-				"--model-deployment takes precedence. For --kind prompt-voice this instead names the "+
-				"managed speech-to-speech model (no model is deployed) and defaults to '%s'",
+				"--model-deployment takes precedence.",
 			defaultAgentModel,
-			defaultVoiceModel,
 		))
 
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
@@ -1776,8 +1770,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"Use --model to name the speech-to-speech model and --voice to set the output voice.")
 
 	cmd.Flags().StringVar(&flags.voice, "voice", "",
-		"Output voice name for a --kind prompt-voice agent (e.g. 'alloy' for an OpenAI realtime voice, "+
-			"or an Azure Neural voice name). Ignored for other kinds.")
+		"Output voice name for private prompt-voice automation. Hidden until public preview.")
+	_ = cmd.Flags().MarkHidden("kind")
+	_ = cmd.Flags().MarkHidden("voice")
 
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Overwrite an input manifest that already lives inside the generated src tree without prompting. "+

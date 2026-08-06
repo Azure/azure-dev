@@ -30,6 +30,10 @@ var defaultSkuPriority = []string{"GlobalStandard", "DataZoneStandard", "Standar
 // defaultAgentModel is preselected in interactive catalog prompts.
 const defaultAgentModel = "gpt-5.4-mini"
 
+// defaultVoiceModel is the managed speech-to-speech model used for a
+// prompt-voice agent when --model is not supplied.
+const defaultVoiceModel = "gpt-realtime"
+
 // defaultDeploymentCapacity is the preferred deployment capacity for agent model deployments.
 // This overrides the lower SKU default (typically 10) which is insufficient for agents.
 const defaultDeploymentCapacity int32 = 50

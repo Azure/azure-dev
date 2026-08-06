@@ -56,6 +56,15 @@ func IsPromptVoice(svc *azdext.ServiceConfig, projectRoot, overridePath string) 
 	return kind == string(agent_yaml.AgentKindPromptVoice), nil
 }
 
+// IsHosted reports whether the service resolves to kind: hosted.
+func IsHosted(svc *azdext.ServiceConfig, projectRoot, overridePath string) (bool, error) {
+	kind, err := Kind(svc, projectRoot, overridePath)
+	if err != nil {
+		return false, err
+	}
+	return kind == string(agent_yaml.AgentKindHosted), nil
+}
+
 // entryKind returns the kind declared inline on the service entry (or in the
 // legacy config block), resolving a `$ref` file reference when the kind is not
 // carried directly. Returns "" when the entry declares no kind.

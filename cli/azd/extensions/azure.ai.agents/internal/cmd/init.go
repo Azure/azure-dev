@@ -1046,6 +1046,51 @@ func runInitFromManifest(
 	return action.Run(ctx)
 }
 
+// agentDefiningFlagsSet reports whether the caller passed any flag that
+// describes the agent to set up.
+//
+// Reusing an already-configured project is only safe when the command was not
+// told what to build. Each of these flags feeds a value init would otherwise
+// prompt for, so reusing while one is set would silently discard it — notably
+// under --no-prompt, where reuse is unconditional.
+//
+// srcBlocksReuse must come from cmd.Flags().Changed("src") for project reuse,
+// not from flags.src:
+// applyPositionalArg folds a positional directory into flags.src, so testing
+// the field would make `azd ai agent init .` — a documented form — skip reuse
+// and re-prompt, which is the very behavior issue #9154 reports.
+// Bare agent.yaml reuse passes false because it consumes --src as the directory
+// containing the definition instead of ignoring it.
+//
+// --env and --infra are deliberately absent: they describe the environment and
+// the IaC output rather than the agent, and both stay meaningful on a reuse run.
+func agentDefiningFlagsSet(flags *initFlags, srcBlocksReuse bool) bool {
+	return flags.agentName != "" ||
+		flags.deployMode != "" ||
+		flags.runtime != "" ||
+		flags.entryPoint != "" ||
+		flags.depResolution != "" ||
+		flags.model != "" ||
+		flags.modelDeployment != "" ||
+		flags.projectResourceId != "" ||
+		flags.image != "" ||
+		srcBlocksReuse ||
+		len(flags.protocols) > 0
+}
+
+// canReuseExistingAgentConfiguration reports whether init may reuse either a
+// project-owned definition or a bare agent.yaml without discarding caller
+// intent.
+func canReuseExistingAgentConfiguration(
+	flags *initFlags,
+	manifestDetectedButDeclined bool,
+	srcBlocksReuse bool,
+) bool {
+	return flags.manifestPointer == "" &&
+		!manifestDetectedButDeclined &&
+		!agentDefiningFlagsSet(flags, srcBlocksReuse)
+}
+
 func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &initFlags{}
 	extCtx = ensureExtensionContext(extCtx)
@@ -1256,10 +1301,73 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			}
 
+			// When the project's own manifest already declares agent
+			// service(s), the values init would prompt for (agent name,
+			// protocols, deploy mode) are already recorded there. Offer to
+			// reuse that configuration instead of re-asking (issue #9154).
+			//
+			// This check runs before the bare agent.yaml scan below. A configured
+			// service may legitimately load its definition from agent.yaml; in
+			// that case project reuse must win so init does not add or replace a
+			// service that azure.yaml already owns.
+			//
+			// Any flag that describes the agent to set up states intent to
+			// configure that agent, so it opts out of reuse and falls through
+			// to the normal flow. Without that, a scripted
+			// `--no-prompt --deploy-mode code --runtime ...` in a repo that
+			// already declares an agent would silently no-op instead of
+			// honoring the flags the caller passed.
+			if canReuseExistingAgentConfiguration(
+				flags,
+				manifestDetectedButDeclined,
+				cmd.Flags().Changed("src"),
+			) {
+				detection := detectProjectAgentServices(ctx, azdClient)
+				if len(detection.services) > 0 &&
+					!positionalSourceOptsOutOfReuse(
+						flags.src,
+						detection.projectRoot,
+						detection.services,
+					) {
+					useExisting := flags.noPrompt
+					if !flags.noPrompt {
+						confirmResp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+							Options: &azdext.ConfirmOptions{
+								Message: fmt.Sprintf(
+									"This project already configures %s. Use it?",
+									describeProjectAgentServices(detection.services),
+								),
+								DefaultValue: new(true),
+							},
+						})
+						if promptErr != nil {
+							if exterrors.IsCancellation(promptErr) {
+								return exterrors.Cancelled("initialization was cancelled")
+							}
+							return fmt.Errorf("prompting for project agent reuse: %w", promptErr)
+						}
+						useExisting = *confirmResp.Value
+					}
+					if useExisting {
+						if err := runReuseProjectAgentServices(
+							ctx, flags, azdClient, detection.services,
+						); err != nil {
+							return err
+						}
+						return ejectInfraAfterInit(infraProvider)
+					}
+				}
+			}
+
 			// When no manifest was detected, look for a bare agent.yaml definition
 			// to reuse (issue #7268). Skips the init-mode prompt and from-code
-			// scaffolding. Bypassed when the user already declined a manifest above.
-			if flags.manifestPointer == "" && !manifestDetectedButDeclined {
+			// scaffolding. Bypassed when the user already declined a manifest
+			// above or supplied agent-defining flags that reuse would ignore.
+			if canReuseExistingAgentConfiguration(
+				flags,
+				manifestDetectedButDeclined,
+				false,
+			) {
 				checkDir := flags.src
 				if checkDir == "" {
 					checkDir = "."

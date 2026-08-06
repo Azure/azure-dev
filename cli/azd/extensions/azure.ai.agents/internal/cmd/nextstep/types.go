@@ -46,6 +46,11 @@ type Suggestion struct {
 // marked optional below are populated only by the resolver paths that
 // need them — see field docs.
 type State struct {
+	// EnvironmentName is the explicitly selected azd environment that emitted
+	// commands must target. It stays empty when assembly uses the current
+	// environment, preserving the existing unqualified command shape.
+	EnvironmentName string
+
 	// HasProjectEndpoint reports whether FOUNDRY_PROJECT_ENDPOINT is set
 	// (and non-empty) in the active azd environment.
 	HasProjectEndpoint bool

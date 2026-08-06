@@ -90,10 +90,16 @@ func (c *Config) RemoteDatasetReference() *DatasetRef {
 
 // EvaluatorRef describes an evaluator. It can be a simple string name or a
 // structured entry with name, version, and local_uri.
+// EvaluatorRef describes an evaluator. It can be a simple string name or a
+// structured entry with name, version, local_uri, and initialization_parameters.
 type EvaluatorRef struct {
-	Name     string `yaml:"name" json:"name"`
-	Version  string `yaml:"version,omitempty" json:"version,omitempty"`
-	LocalURI string `yaml:"local_uri,omitempty" json:"local_uri,omitempty"`
+	Name     string         `yaml:"name" json:"name"`
+	Version  string         `yaml:"version,omitempty" json:"version,omitempty"`
+	LocalURI string         `yaml:"local_uri,omitempty" json:"local_uri,omitempty"`
+	// InitializationParameters holds evaluator-specific configuration parameters
+	// such as regex_match's ``patterns``. Collected into EvaluatorInitParamsMap
+	// in the API request; not serialized per-evaluator in the evaluators array.
+	InitializationParameters map[string]any `yaml:"initialization_parameters,omitempty" json:"-"`
 }
 
 // EvaluatorList is a list of evaluators that supports mixed YAML:

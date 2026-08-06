@@ -20,24 +20,6 @@ import (
 // publish, and so the one that exists for every dataset that exists at all.
 const firstDatasetVersion = "1"
 
-func newDatasetCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "dataset",
-		Short: "Manage Foundry datasets.",
-	}
-	cmd.AddCommand(
-		newDatasetCreateCommand(),
-		newDatasetUpdateCommand(),
-		newDatasetGenerateCommand(),
-		newDatasetListCommand(),
-		newDatasetShowCommand(),
-		newDatasetDeleteCommand(),
-		newDatasetVersionsCommand(),
-		newJobCommand(),
-	)
-	return cmd
-}
-
 // newDatasetCreateCommand builds `dataset create <name>`, which registers a
 // dataset that does not exist yet.
 func newDatasetCreateCommand() *cobra.Command {

@@ -4,6 +4,10 @@
 package cmd
 
 import (
+	"io/fs"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -118,6 +122,68 @@ func TestGenerateFromTakesMoreThanOneSource(t *testing.T) {
 		assert.Containsf(t, flag.Usage, source,
 			"--from accepts %q, so its help has to say so", source)
 	}
+}
+
+// Messages that tell a user what to run next have to name a command that
+// exists.
+//
+// In the extension these commands moved from, three suggestions pointed at
+// `azd ai dataset ...` while that namespace was served by nobody, and the
+// check there matched on the wrong prefix so none of them failed. This
+// extension's namespace is `ai.dataset`; anything it suggests under
+// `azd ai dataset` has to resolve here, and a suggestion under another
+// namespace is one it cannot make.
+func TestSuggestedCommandsExist(t *testing.T) {
+	pattern := regexp.MustCompile("azd ai ([a-z][a-z0-9-]*(?: [a-z][a-z0-9-]*)*)")
+
+	err := filepath.WalkDir("../..", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, line := range strings.Split(string(body), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "//") {
+				continue
+			}
+			for _, m := range pattern.FindAllStringSubmatch(line, -1) {
+				words := strings.Fields(m[1])
+				if len(words) == 0 {
+					continue
+				}
+				// A suggestion pointing at a sibling extension is that
+				// extension's contract, not this one's, and cannot be resolved
+				// from here. `eval` is the only one this extension names.
+				if words[0] == "eval" {
+					continue
+				}
+				assert.Equalf(t, "dataset", words[0],
+					"%s suggests `azd ai %s`, which is neither this extension's "+
+						"namespace nor a sibling it knows about", path, m[1])
+				words = words[1:]
+
+				// Trim trailing prose: "job show" is a command, "job show and
+				// then" is a sentence that begins with one.
+				for len(words) > 0 {
+					if resolved, _, e := NewRootCommand().Find(words); e == nil {
+						if strings.Fields(resolved.Use)[0] == words[len(words)-1] {
+							break
+						}
+					}
+					words = words[:len(words)-1]
+				}
+				assert.NotEmptyf(t, words,
+					"%s suggests `azd ai %s`, which is not a command", path, m[1])
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
 }
 
 func find(t *testing.T, path string) *cobra.Command {

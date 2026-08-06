@@ -36,6 +36,6 @@ goals:
   - "If asked for a location/region, search for and select '{region}'."
   - "Accept any remaining model defaults (version, SKU, capacity). If prompted for a model deployment name, use a '{prefix}-'-prefixed name."
   - "Wait for initialization to complete — look for 'Next:' or a success message."
-  - "Verify the overrides: confirm azure.yaml records the Foundry agent name as '{prefix}-qa-named-agent-{instance}' (the flag value passed via --agent-name) and the model '{model}' — the values passed via flags, not the sample defaults."
+  - "Verify the overrides in agent-framework-agent-basic-responses/azure.yaml: confirm it records the Foundry agent name as '{prefix}-qa-named-agent-{instance}' (the flag value passed via --agent-name) and the model '{model}' — the values passed via flags, not the sample defaults. The flag changes the Foundry agent identity, not the downloaded project's local directory name."
   - "Take a screenshot of the completed init output."
   - "STOP here — do NOT run 'azd provision'. Report a finding if --agent-name or --model is ignored, or if the wizard still prompts for these values despite the flags."

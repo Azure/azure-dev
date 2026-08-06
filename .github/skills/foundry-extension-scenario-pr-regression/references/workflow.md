@@ -25,21 +25,24 @@ start_session(command="bash /mnt/c/<path-to-scenarios>/setup-wsl.sh",
 ```
 
 `setup-wsl.sh` owns the WSL build toolchain: it reads the exact Go version from
-`cli/azd/go.mod` and installs that official version under `/usr/local/go` when Go is absent or
-mismatched. The download is SHA-256 verified. This authorized bootstrap happens before scenario
-execution and is not a scenario workaround.
+`cli/azd/go.mod` and .NET SDK version from the scenario suite's `dotnet-sdk.version`, installing
+the official versions under `/usr/local/go` and `/usr/local/dotnet` when absent or mismatched.
+The downloads are verified against the SHA-256/SHA-512 values from their official release
+metadata. This authorized bootstrap happens before scenario execution and is not a scenario
+workaround.
 
 Wait for it to print "Done. WSL is ready for scenario testing." and then `finish_session`.
-If Go cannot be downloaded, verified, or installed, or if the build fails, stop and report the
-gate error — do not proceed with stale binaries and do not ask a scenario worker to repair the
-environment.
+If Go or .NET cannot be downloaded, verified, or installed, or if the build fails, stop and
+report the gate error — do not proceed with stale binaries and do not ask a scenario worker to
+repair the environment.
 
 After `setup-wsl.sh` succeeds, **verify** the installation by starting a quick tester session
-and running `which azd && azd version`. Confirm that:
+and running `which azd && azd version && dotnet --version`. Confirm that:
 1. `which azd` returns `/usr/local/bin/azd` (not `/mnt/c/…` or a path ending in `azd.exe`)
 2. `azd version` output contains the expected dev version string (e.g. `0.0.0-dev.0`)
+3. `dotnet --version` equals the exact SDK from `dotnet-sdk.version`
 
-Record the verified version string for the report. If either check fails, stop — do NOT
+Record the verified version string for the report. If any check fails, stop — do NOT
 proceed to Step 5.
 
 #### Native Linux / macOS

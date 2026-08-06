@@ -8,13 +8,13 @@
 # responsive, then cleans up with `azd down`.
 name: "deploy-flags-agent-name-model"
 command: "azd provision"
-cwd: "~/working/azd-agents-t1-flags-{instance}/{prefix}-qa-named-agent-{instance}"
+cwd: "~/working/azd-agents-t1-flags-{instance}/agent-framework-agent-basic-responses"
 tags: ["tier:1b", "cmd:provision", "cmd:deploy", "verify-deploy", "parallel-safe"]
 requires: "tier1/1.05-init-flags-agent-name-model.yaml"
 
 pre:
   - run: |
-      SCAFFOLD=~/working/azd-agents-t1-flags-{instance}/{prefix}-qa-named-agent-{instance}
+      SCAFFOLD=~/working/azd-agents-t1-flags-{instance}/agent-framework-agent-basic-responses
       if [ ! -f "$SCAFFOLD/azure.yaml" ]; then
         echo "ERROR: Scaffold not found. Run tier1/1.05-init-flags-agent-name-model first."
         exit 1

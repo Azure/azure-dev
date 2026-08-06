@@ -108,20 +108,24 @@ This script:
 1. Reads the required Go version from `cli/azd/go.mod` and, when necessary, downloads the
    matching official WSL architecture build from `go.dev`, verifies its SHA-256 checksum, and
    installs it under `/usr/local/go`
-2. Builds `azd` core for the native WSL architecture → `/usr/local/bin/azd`
-3. Ensures the extensions dev kit (`microsoft.azd.extensions`) is installed
-4. Builds, packages, and installs the `azure.ai.agents` extension from source
+2. Reads the required .NET SDK version from `dotnet-sdk.version` and, when necessary, downloads
+   the matching official WSL architecture build from Microsoft's release metadata, verifies its
+   SHA-512 checksum, and installs it under `/usr/local/dotnet`
+3. Builds `azd` core for the native WSL architecture → `/usr/local/bin/azd`
+4. Ensures the extensions dev kit (`microsoft.azd.extensions`) is installed
+5. Builds, packages, and installs the `azure.ai.agents` extension from source
    using `azd x build` → `azd x pack --bundle` → `azd extension install`
-5. Verifies both azd and the extension report expected dev versions
+6. Verifies azd, the extension, and the pinned .NET SDK report expected versions
 
 The script properly registers the extension in azd's config, so it will always
 use your dev build — never the published registry version.
 
 **Re-run `setup-wsl.sh` after every local code change** you want to test.
-It supports x86-64 and ARM64 WSL environments. Go does not need to be installed first; the
-script bootstraps the exact repository-pinned version. It requires network access to `go.dev`,
-Git, `curl` or `wget`, `awk`, `grep`, `tar`, `sha256sum`, `uname`, and sudo access in WSL. It
-does not install general OS packages or modify shell startup files.
+It supports x86-64 and ARM64 WSL environments. Go and .NET do not need to be installed first;
+the script bootstraps the exact pinned versions. It requires network access to `go.dev` and
+Microsoft's .NET release/download endpoints, Git, `curl` or `wget`, `awk`, `grep`, `tar`,
+`sha256sum`, `sha512sum`, `uname`, and sudo access in WSL. It does not install general OS
+packages or modify shell startup files.
 
 On native Linux or macOS, do not run `setup-wsl.sh`. Build and install the repository's
 development `azd` and extension through your normal local workflow.
@@ -299,6 +303,19 @@ scenario — safe to parallelize once prerequisites pass.
 Each scenario declares a `requires:` field pointing to the Tier 1 scenario
 whose scaffold it deploys. The orchestrator **must** check this: if the
 prerequisite didn't PASS in the current run, the Tier 1b scenario is SKIPPED.
+
+The scaffold path depends on the init flow and is explicit in each Tier 1b
+scenario:
+
+- Template flows (`1.01`, `1.02`) create a nested directory named for the requested agent.
+- Manifest URL flows (`1.03`, `1.05`) retain the downloaded project's directory,
+  `agent-framework-agent-basic-responses`; `--agent-name` changes the Foundry agent identity,
+  not that local directory.
+- Current-directory flows (`1.04`, `1.06`, `1.07`) write the scaffold directly into their
+  seeded working directory.
+
+Tier 1b intentionally does not search for `azure.yaml`: an upstream layout change fails the
+producer/consumer contract clearly instead of deploying an arbitrary directory.
 
 | File | Verifies | Requires |
 |------|----------|----------|

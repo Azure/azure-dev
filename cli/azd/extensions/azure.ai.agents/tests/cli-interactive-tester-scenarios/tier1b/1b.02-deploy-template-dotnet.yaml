@@ -14,6 +14,15 @@ requires: "tier1/1.02-init-template-dotnet.yaml"
 
 pre:
   - run: |
+      DOTNET_SDK_VERSION=$(awk 'NF { sub(/\r$/, "", $1); print $1; exit }' "{fixtures_dir}/../dotnet-sdk.version")
+      if ! command -v dotnet >/dev/null 2>&1 ||
+          [ "$(dotnet --version 2>/dev/null)" != "$DOTNET_SDK_VERSION" ]; then
+        echo "ERROR: Required .NET SDK $DOTNET_SDK_VERSION was not found. Run setup-wsl.sh before this scenario."
+        exit 1
+      fi
+    cwd: "~/working"
+    name: "assert scenario-pinned .NET SDK is installed"
+  - run: |
       SCAFFOLD=~/working/azd-agents-t1-dotnet-{instance}/{prefix}-t1-dotnet-{instance}
       if [ ! -f "$SCAFFOLD/azure.yaml" ]; then
         echo "ERROR: Scaffold not found. Run tier1/1.02-init-template-dotnet first."

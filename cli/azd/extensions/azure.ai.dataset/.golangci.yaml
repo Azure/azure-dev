@@ -1,0 +1,21 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - gosec
+    - lll
+    - unused
+    - errorlint
+  settings:
+    lll:
+      line-length: 220
+      tab-width: 4
+    gosec:
+      excludes:
+        - G204 # Subprocess launched with variable (bicep build invoked in tests)
+        - G304 # Potential file inclusion via variable
+
+formatters:
+  enable:
+    - gofmt

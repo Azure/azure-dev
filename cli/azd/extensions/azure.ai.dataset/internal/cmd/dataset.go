@@ -1,0 +1,338 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"azureaidataset/internal/pkg/dataset_api"
+	"azureaidataset/internal/pkg/gen_api"
+
+	"github.com/spf13/cobra"
+)
+
+// firstDatasetVersion is the version the service assigns to a dataset's first
+// publish, and so the one that exists for every dataset that exists at all.
+const firstDatasetVersion = "1"
+
+func newDatasetCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "dataset",
+		Short: "Manage Foundry datasets.",
+	}
+	cmd.AddCommand(
+		newDatasetCreateCommand(),
+		newDatasetUpdateCommand(),
+		newDatasetGenerateCommand(),
+		newDatasetListCommand(),
+		newDatasetShowCommand(),
+		newDatasetDeleteCommand(),
+		newDatasetVersionsCommand(),
+		newJobCommand(),
+	)
+	return cmd
+}
+
+// newDatasetCreateCommand builds `dataset create <name>`, which registers a
+// dataset that does not exist yet.
+func newDatasetCreateCommand() *cobra.Command {
+	return newDatasetWriteCommand("create", "Register a dataset, publishing its first version.")
+}
+
+// newDatasetUpdateCommand builds `dataset update <name>`, which publishes a
+// further version of one that does.
+func newDatasetUpdateCommand() *cobra.Command {
+	return newDatasetWriteCommand("update", "Publish a new version of a dataset.")
+}
+
+// newDatasetWriteCommand builds create and update. Both run the same upload,
+// and the existence check is the only thing that separates them: a version is
+// brought into being by startPendingUpload, which neither knows nor cares
+// whether the name was already in use.
+func newDatasetWriteCommand(verb, short string) *cobra.Command {
+	var (
+		fromFile    string
+		version     string
+		endpointFlg string
+	)
+
+	cmd := &cobra.Command{
+		Use:   verb + " <name>",
+		Short: short,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			if fromFile == "" {
+				return requireFlag("from-file")
+			}
+
+			localDir, err := datasetUploadDir(fromFile)
+			if err != nil {
+				return err
+			}
+
+			ctx := cmd.Context()
+			ec, err := newDatasetContext(ctx, endpointFlg)
+			if err != nil {
+				return err
+			}
+			defer ec.Close()
+
+			existing, err := ec.datasetClient.ListDatasetVersions(
+				ctx, name, ProjectEndpointAPIVersion,
+			)
+			exists := err == nil && existing != nil && len(existing.Value) > 0
+			if !exists {
+				// The version listing lags a publish, so a `create` followed by
+				// an `update` was told the dataset it had just made does not
+				// exist. A direct read of the first version settles it: point
+				// reads go consistent immediately.
+				if _, err := ec.datasetClient.GetDataset(
+					ctx, name, firstDatasetVersion, ProjectEndpointAPIVersion,
+				); err == nil {
+					exists = true
+				}
+			}
+			if err := checkAssetExistence(verb, "dataset", name, exists); err != nil {
+				return err
+			}
+
+			ds, err := ec.datasetClient.UploadNextVersion(
+				ctx, name, version, localDir, ProjectEndpointAPIVersion,
+			)
+			if err != nil {
+				return fmt.Errorf("registering dataset %q: %w", name, err)
+			}
+
+			if err := ec.setEnvValue(ctx, envKeyDatasetVersion, ds.Version); err != nil {
+				// Persisting is a convenience, so this never fails the command.
+				// It goes to stdout because azd does not surface an extension's
+				// stderr, and is skipped outside a project, where having nowhere
+				// to persist is expected rather than notable.
+				if !errors.Is(err, errNoAzdEnvironment) && !isJSON(cmd) {
+					fmt.Fprintf(cmd.OutOrStdout(), "warning: %v\n", err)
+				}
+			}
+
+			if isJSON(cmd) {
+				return emitJSON(cmd.OutOrStdout(), ds)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Registered dataset %s version %s\n", ds.Name, ds.Version)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&fromFile, "from-file", "",
+		"Path to a .jsonl file, or a directory containing one.")
+	cmd.Flags().StringVar(&version, "version", "",
+		"Current version to increment from. Omit to increment from the latest registered version.")
+	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	return cmd
+}
+
+// datasetUploadDir resolves what was named into the directory the upload scans.
+func datasetUploadDir(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("reading --from-file %q: %w", path, err)
+	}
+	if info.IsDir() {
+		return path, nil
+	}
+	if !strings.EqualFold(filepath.Ext(path), ".jsonl") {
+		return "", fmt.Errorf(
+			"--from-file must be a .jsonl file or a directory containing one, got %q", path)
+	}
+	return filepath.Dir(path), nil
+}
+
+func newDatasetListCommand() *cobra.Command {
+	var endpointFlg string
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List the project's datasets.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			ec, err := newDatasetContext(ctx, endpointFlg)
+			if err != nil {
+				return err
+			}
+			defer ec.Close()
+
+			list, err := ec.datasetClient.ListDatasets(ctx, ProjectEndpointAPIVersion)
+			if err != nil {
+				return fmt.Errorf("listing datasets: %w", err)
+			}
+			return renderDatasets(cmd, list)
+		},
+	}
+
+	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	return cmd
+}
+
+// newDatasetVersionsCommand groups the version listing, so that `list` means
+// the assets rather than the history of one of them.
+func newDatasetVersionsCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "versions",
+		Short: "Inspect the versions of one dataset.",
+	}
+	cmd.AddCommand(newDatasetVersionsListCommand())
+	return cmd
+}
+
+func newDatasetVersionsListCommand() *cobra.Command {
+	var endpointFlg string
+
+	cmd := &cobra.Command{
+		Use:   "list <name>",
+		Short: "List the versions of a dataset.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+
+			ctx := cmd.Context()
+			ec, err := newDatasetContext(ctx, endpointFlg)
+			if err != nil {
+				return err
+			}
+			defer ec.Close()
+
+			list, err := ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
+			if err != nil {
+				return fmt.Errorf("listing versions of dataset %q: %w", name, err)
+			}
+			return renderDatasets(cmd, list)
+		},
+	}
+
+	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	return cmd
+}
+
+func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList) error {
+	if isJSON(cmd) {
+		return emitJSONList(cmd.OutOrStdout(), list.Value)
+	}
+	rows := make([][]string, 0, len(list.Value))
+	for _, d := range list.Value {
+		rows = append(rows, []string{d.Name, d.Version, d.Format})
+	}
+	if len(rows) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "No datasets found.")
+		return nil
+	}
+	return emitTable(cmd.OutOrStdout(), []string{"NAME", "VERSION", "FORMAT"}, rows)
+}
+
+func newDatasetShowCommand() *cobra.Command {
+	var (
+		version     string
+		endpointFlg string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "show <name>",
+		Short: "Show a dataset version.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+
+			ctx := cmd.Context()
+			ec, err := newDatasetContext(ctx, endpointFlg)
+			if err != nil {
+				return err
+			}
+			defer ec.Close()
+
+			if version == "" {
+				list, err := ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
+				if err != nil {
+					return fmt.Errorf("resolving the latest version of %q: %w", name, err)
+				}
+				if len(list.Value) == 0 {
+					return fmt.Errorf("dataset %q has no versions", name)
+				}
+				version = dataset_api.LatestVersion(list.Value)
+			}
+
+			ds, err := ec.datasetClient.GetDataset(ctx, name, version, ProjectEndpointAPIVersion)
+			if err != nil {
+				if gen_api.IsNotFound(err) {
+					return fmt.Errorf(
+						"no dataset %q at version %q in this project; "+
+							"`azd ai eval dataset list` shows the ones there are", name, version)
+				}
+				return fmt.Errorf("reading dataset %q version %q: %w", name, version, err)
+			}
+
+			if isJSON(cmd) {
+				return emitJSON(cmd.OutOrStdout(), ds)
+			}
+			return emitTable(cmd.OutOrStdout(),
+				[]string{"NAME", "VERSION", "FORMAT", "URI"},
+				[][]string{{ds.Name, ds.Version, ds.Format, ds.ResolvedBlobURI()}},
+			)
+		},
+	}
+
+	cmd.Flags().StringVar(&version, "version", "", "Version to show. Omit for the latest.")
+	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	return cmd
+}
+
+func newDatasetDeleteCommand() *cobra.Command {
+	var (
+		version     string
+		endpointFlg string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "delete <name>",
+		Short: "Delete a dataset version.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			if version == "" {
+				return requireFlag("version")
+			}
+
+			ctx := cmd.Context()
+			ec, err := newDatasetContext(ctx, endpointFlg)
+			if err != nil {
+				return err
+			}
+			defer ec.Close()
+
+			if err := ec.datasetClient.DeleteDatasetVersion(
+				ctx, name, version, ProjectEndpointAPIVersion,
+			); err != nil {
+				if gen_api.IsNotFound(err) {
+					return fmt.Errorf(
+						"no dataset %q at version %q in this project", name, version)
+				}
+				return fmt.Errorf("deleting dataset %q version %q: %w", name, version, err)
+			}
+
+			if isJSON(cmd) {
+				return emitJSON(cmd.OutOrStdout(), map[string]string{
+					"name": name, "version": version, "status": "deleted",
+				})
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Deleted dataset %s version %s\n", name, version)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&version, "version", "", "Version to delete.")
+	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	return cmd
+}

@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../extension.schema.json
+id: azure.ai.dataset
+namespace: ai.dataset
+displayName: Foundry datasets (Beta)
+description: Create, generate and version Foundry datasets from your terminal. (Beta)
+usage: azd ai dataset <command> [options]
+# NOTE: Make sure version.txt is in sync with this version.
+version: 1.0.0-beta.1
+requiredAzdVersion: ">=1.27.1"
+language: go
+capabilities:
+  - custom-commands
+  - metadata
+examples:
+  - name: create
+    description: Register a dataset from a local file.
+    usage: azd ai dataset create support-regression --from-file ./data/golden.jsonl
+  - name: generate
+    description: Generate a dataset from an agent's traces.
+    usage: azd ai dataset generate support-regression --from traces
+tags:
+  - ai
+  - foundry
+  - dataset

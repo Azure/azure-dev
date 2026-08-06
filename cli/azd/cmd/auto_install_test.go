@@ -28,9 +28,10 @@ import (
 )
 
 type fakeExtensionAutoInstallManager struct {
-	available []*extensions.ExtensionMetadata
-	installed map[string]*extensions.Extension
-	findErr   error
+	available  []*extensions.ExtensionMetadata
+	installed  map[string]*extensions.Extension
+	findErr    error
+	installErr error
 }
 
 func (m *fakeExtensionAutoInstallManager) FindExtensions(
@@ -91,6 +92,9 @@ func (m *fakeExtensionAutoInstallManager) Install(
 	extension *extensions.ExtensionMetadata,
 	_ string,
 ) (*extensions.ExtensionVersion, error) {
+	if m.installErr != nil {
+		return nil, m.installErr
+	}
 	version := &extension.Versions[0]
 	m.installed[extension.Id] = &extensions.Extension{
 		Id:      extension.Id,
@@ -240,7 +244,7 @@ func TestMissingProjectExtensionsSkipsInstalledProviderAcrossSources(t *testing.
 	require.Empty(t, requirements)
 }
 
-func TestMissingProjectExtensionsReusesSourceChoiceAcrossProviders(t *testing.T) {
+func TestMissingProjectExtensionsPreservesSourceCandidatesAcrossProviders(t *testing.T) {
 	providerVersion := extensions.ExtensionVersion{
 		Version: "0.7.0",
 		Capabilities: []extensions.CapabilityType{
@@ -273,19 +277,14 @@ func TestMissingProjectExtensionsReusesSourceChoiceAcrossProviders(t *testing.T)
 		},
 		Infra: provisioning.Options{Provider: "demo"},
 	}
-	selectCount := 0
 	console := mockinput.NewMockConsole()
-	console.WhenSelect(func(options input.ConsoleOptions) bool {
-		selectCount++
-		return true
-	}).Respond(0)
 
 	requirements, err := missingProjectExtensions(t.Context(), console, manager, projectConfig)
 
 	require.NoError(t, err)
 	require.Len(t, requirements, 1)
 	require.Equal(t, "azd", requirements[0].extension.Source)
-	require.Equal(t, 1, selectCount)
+	require.Len(t, requirements[0].candidates, 2)
 }
 
 func TestMissingProjectExtensionsSkipsExtensionPackDependencies(t *testing.T) {
@@ -381,6 +380,57 @@ func TestMissingProjectExtensionsSkipsExtensionPackDependencies(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, requirements, 1)
 	require.Equal(t, "microsoft.foundry", requirements[0].extension.Id)
+}
+
+func TestMissingProjectExtensionsKeepsProviderWhenDependencyDiffersBySource(t *testing.T) {
+	manager := &fakeExtensionAutoInstallManager{
+		available: []*extensions.ExtensionMetadata{
+			{
+				Id:     "test.pack",
+				Source: "azd",
+				Versions: []extensions.ExtensionVersion{{
+					Version:      "1.0.0",
+					Dependencies: []extensions.ExtensionDependency{{Id: "test.provider"}},
+				}},
+			},
+			{
+				Id:       "test.pack",
+				Source:   "local",
+				Versions: []extensions.ExtensionVersion{{Version: "1.0.0"}},
+			},
+			{
+				Id:     "test.provider",
+				Source: "azd",
+				Versions: []extensions.ExtensionVersion{{
+					Version:      "1.0.0",
+					Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
+					Providers: []extensions.Provider{{
+						Name: "demo",
+						Type: extensions.ServiceTargetProviderType,
+					}},
+				}},
+			},
+		},
+		installed: map[string]*extensions.Extension{},
+	}
+	projectConfig := &project.ProjectConfig{
+		RequiredVersions: &project.RequiredVersions{
+			Extensions: map[string]*string{"test.pack": new("1.0.0")},
+		},
+		Services: map[string]*project.ServiceConfig{"demo": {Host: "demo"}},
+	}
+
+	requirements, err := missingProjectExtensions(
+		t.Context(),
+		mockinput.NewMockConsole(),
+		manager,
+		projectConfig,
+	)
+
+	require.NoError(t, err)
+	require.Len(t, requirements, 2)
+	assert.Equal(t, "test.pack", requirements[0].extension.Id)
+	assert.Equal(t, "test.provider", requirements[1].extension.Id)
 }
 
 // A pack pins the version of its dependency, so a later version of that dependency that publishes
@@ -1706,8 +1756,10 @@ func Test_TryAutoInstall_NoAnnotation(t *testing.T) {
 	t.Parallel()
 	cmd := &cobra.Command{Use: "root"}
 	container := ioc.NewNestedContainer(nil)
-	result := tryAutoInstallForPartialNamespace(t.Context(), container, cmd, nil)
-	assert.False(t, result)
+	result, err := tryAutoInstallForPartialNamespace(t.Context(), container, cmd, nil)
+	require.NoError(t, err)
+	assert.False(t, result.installed)
+	assert.False(t, result.declined)
 }
 
 func Test_TryAutoInstall_HasSubcommand(t *testing.T) {
@@ -1717,8 +1769,10 @@ func Test_TryAutoInstall_HasSubcommand(t *testing.T) {
 	root.AddCommand(child)
 	container := ioc.NewNestedContainer(nil)
 	// The "deploy" command already exists as sub-command, so partial namespace shouldn't trigger
-	result := tryAutoInstallForPartialNamespace(t.Context(), container, root, []string{"deploy"})
-	assert.False(t, result)
+	result, err := tryAutoInstallForPartialNamespace(t.Context(), container, root, []string{"deploy"})
+	require.NoError(t, err)
+	assert.False(t, result.installed)
+	assert.False(t, result.declined)
 }
 
 func TestHelpRequested(t *testing.T) {

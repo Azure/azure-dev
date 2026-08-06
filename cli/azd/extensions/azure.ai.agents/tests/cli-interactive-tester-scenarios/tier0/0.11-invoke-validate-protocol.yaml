@@ -1,0 +1,23 @@
+# Tier 0 (offline) — `invoke --protocol` rejects an unsupported value.
+#
+# The protocol flag is validated before any agent resolution or network call,
+# so a bogus value must fail fast with a message listing the supported protocols.
+name: "invoke-validate-protocol"
+command: "azd ai agent invoke --protocol bogus \"hello\""
+cwd: "~/working/azd-agents-validate-protocol-{instance}"
+tags: ["tier:0", "cmd:invoke", "negative-path", "parallel-safe"]
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+
+pre:
+  - run: "rm -rf ~/working/azd-agents-validate-protocol-{instance}"
+    cwd: "~/working"
+    name: "reset to an empty working dir"
+
+goals:
+  - "Run invoke with '--protocol bogus' and a prompt string."
+  - "Confirm it exits non-zero immediately with a clear 'unsupported protocol' message that lists the supported protocols (responses, invocations)."
+  - "Confirm it does NOT make a network call, prompt, or hang."
+  - "Take a screenshot of the error output."
+  - "Report a finding if it hangs, makes a network call before validating, or the error does not name the supported protocols."

@@ -1,0 +1,12 @@
+# Tier 0 (offline) — verify `azd ai agent endpoint show --help` prints usage.
+name: "endpoint-show-help"
+command: "azd ai agent endpoint show --help"
+cwd: "/tmp"
+tags: ["tier:0", "cmd:endpoint", "parallel-safe"]
+
+goals:
+  - "Wait for the help text to render."
+  - "Confirm the output includes the command description, usage line, examples, and supported output formats (json, table)."
+  - "Confirm the process exits cleanly (exit 0) without error or stack trace."
+  - "Take a screenshot of the help output."
+  - "Report a finding if help text is missing, incomplete, or the command errors."

@@ -149,7 +149,16 @@ func (c *Client) doRequest(
 		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
 	}
 
-	u.Path += path
+	// Callers escape the ids they interpolate, so the path is set as the raw
+	// one. Assigning it to u.Path re-escapes the percent signs, and a job id
+	// carrying a separator then addresses a literally-named resource.
+	escapedPath := u.EscapedPath() + path
+	decodedPath, err := url.PathUnescape(escapedPath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid request path %q: %w", escapedPath, err)
+	}
+	u.Path, u.RawPath = decodedPath, escapedPath
+
 	q := u.Query()
 	if apiVersion != "" {
 		q.Set("api-version", apiVersion)

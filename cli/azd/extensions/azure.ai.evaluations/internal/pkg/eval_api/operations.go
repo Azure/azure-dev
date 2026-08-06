@@ -517,7 +517,16 @@ func (c *EvalClient) doRequestWithHeaders(
 		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
 	}
 
-	u.Path += path
+	// Callers escape the ids they interpolate, so the path is set as the raw
+	// one. Assigning it to u.Path re-escapes the percent signs, and an
+	// evaluator named "my evaluator" then addresses one named "my%20evaluator".
+	escapedPath := u.EscapedPath() + path
+	decodedPath, err := url.PathUnescape(escapedPath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid request path %q: %w", escapedPath, err)
+	}
+	u.Path, u.RawPath = decodedPath, escapedPath
+
 	q := u.Query()
 	if apiVersion != "" {
 		q.Set("api-version", apiVersion)

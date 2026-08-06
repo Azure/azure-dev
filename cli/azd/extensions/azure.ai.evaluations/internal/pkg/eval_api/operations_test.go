@@ -20,8 +20,11 @@ import (
 type call struct {
 	method string
 	path   string
-	query  url.Values
-	body   string
+	// rawPath is the path as it went over the wire, where escaping is still
+	// visible. path has been decoded and cannot tell %2F from a separator.
+	rawPath string
+	query   url.Values
+	body    string
 }
 
 // recorder answers every request with status and body, remembering the last one.
@@ -30,7 +33,13 @@ func recorder(t *testing.T, status int, body string) (*EvalClient, *call) {
 	var last call
 	client := newRecordingClient(t, func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
-		last = call{method: r.Method, path: r.URL.Path, query: r.URL.Query(), body: string(raw)}
+		last = call{
+			method:  r.Method,
+			path:    r.URL.Path,
+			rawPath: r.URL.EscapedPath(),
+			query:   r.URL.Query(),
+			body:    string(raw),
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		if body != "" {
@@ -106,14 +115,17 @@ func TestListGenerationJobs_ReadsTheDataEnvelope(t *testing.T) {
 
 // An id goes into the path, so one containing a separator has to be escaped or
 // it silently addresses a different route.
+//
+// The assertion is on the wire form: the decoded path shows the separators
+// again, so it cannot tell a correctly escaped id from an unescaped one.
 func TestOperations_EscapeIdsInThePath(t *testing.T) {
 	client, last := recorder(t, http.StatusOK, `{"id":"x"}`)
 
 	_, err := client.GetDataGenerationJob(context.Background(), "dgj/../evil", "v1")
 
 	require.NoError(t, err)
-	assert.NotContains(t, last.path, "/../",
-		"an unescaped id would let a name climb out of its route")
+	assert.Equal(t, "/data_generation_jobs/dgj%2F..%2Fevil", last.rawPath,
+		"the id stays one segment; escaping it twice would send %252F and address a differently named job")
 }
 
 // The api-version is what selects the contract; sending the wrong one, or none,

@@ -542,7 +542,16 @@ func (c *DatasetClient) doRequest(
 		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
 	}
 
-	u.Path += path
+	// Callers escape the name and version they interpolate, so the path is set
+	// as the raw one. Assigning it to u.Path re-escapes the percent signs, and
+	// a dataset named "my dataset" then addresses one named "my%20dataset".
+	escapedPath := u.EscapedPath() + path
+	decodedPath, err := url.PathUnescape(escapedPath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid request path %q: %w", escapedPath, err)
+	}
+	u.Path, u.RawPath = decodedPath, escapedPath
+
 	q := u.Query()
 	if apiVersion != "" {
 		q.Set("api-version", apiVersion)

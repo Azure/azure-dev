@@ -115,11 +115,12 @@ func newSelectOptions(writer io.Writer, options ConsoleOptions) *uxlib.SelectOpt
 	choices, selectedIndex := selectChoices(options)
 
 	return &uxlib.SelectOptions{
-		Writer:        writer,
-		Message:       options.Message,
-		HelpMessage:   options.Help,
-		Choices:       choices,
-		SelectedIndex: new(selectedIndex),
+		Writer:          writer,
+		Message:         options.Message,
+		HelpMessage:     options.Help,
+		Choices:         choices,
+		SelectedIndex:   new(selectedIndex),
+		EnableFiltering: options.EnableFiltering,
 	}
 }
 

@@ -110,6 +110,9 @@ func autoInstallExtensionRequirements(
 		}
 		installedAny = installedAny || installed
 	}
+	if installedAny {
+		console.Message(ctx, "")
+	}
 
 	return autoInstallResult{installed: installedAny}, nil
 }
@@ -143,11 +146,13 @@ func displayExtensionRequirements(
 		return
 	}
 
-	console.Message(ctx, "")
 	if display.requiredByProject {
-		console.Message(ctx, fmt.Sprintf("%d extensions required by azure.yaml:", len(requirements)))
+		console.Message(
+			ctx,
+			output.WithHighLightFormat("%d extensions required by azure.yaml:", len(requirements)),
+		)
 	} else {
-		console.Message(ctx, fmt.Sprintf("%d extensions required:", len(requirements)))
+		console.Message(ctx, output.WithHighLightFormat("%d extensions required:", len(requirements)))
 	}
 
 	usePluralSource := slices.ContainsFunc(requirements, func(requirement projectExtensionRequirement) bool {
@@ -171,7 +176,14 @@ func displayExtensionRequirements(
 		)
 	}
 	_ = tabs.Flush()
-	console.Message(ctx, strings.TrimRight(table.String(), "\n"))
+	tableOutput := strings.TrimRight(table.String(), "\n")
+	if headerEnd := strings.IndexByte(tableOutput, '\n'); headerEnd >= 0 {
+		tableOutput = output.WithGrayFormat(tableOutput[:headerEnd]) + tableOutput[headerEnd:]
+	} else {
+		tableOutput = output.WithGrayFormat(tableOutput)
+	}
+	console.Message(ctx, tableOutput)
+	console.Message(ctx, "")
 }
 
 func sourceSummary(requirement projectExtensionRequirement, compact bool) string {
@@ -320,7 +332,7 @@ func interactiveSingleInstallPlan(
 	if recommended != nil {
 		choice, err := console.Select(ctx, input.ConsoleOptions{
 			Message: fmt.Sprintf(
-				"Install %s from '%s'?",
+				"Install %s from '%s'",
 				requirement.extension.DisplayName,
 				recommended.Source,
 			),
@@ -329,7 +341,8 @@ func interactiveSingleInstallPlan(
 				"Install from a different source",
 				"Cancel",
 			},
-			DefaultValue: fmt.Sprintf("Install from '%s' (recommended)", recommended.Source),
+			DefaultValue:    fmt.Sprintf("Install from '%s' (recommended)", recommended.Source),
+			EnableFiltering: new(false),
 		})
 		if err != nil {
 			return nil, false, err
@@ -384,7 +397,7 @@ func interactiveMultipleInstallPlan(
 	if source, hasCommonRecommendedSource := commonRecommendedSource(requirements); hasCommonRecommendedSource {
 		choice, err := console.Select(ctx, input.ConsoleOptions{
 			Message: fmt.Sprintf(
-				"Install all %d required extensions from '%s'?",
+				"Install all %d required extensions from '%s'",
 				len(requirements),
 				source,
 			),
@@ -393,7 +406,8 @@ func interactiveMultipleInstallPlan(
 				"Install all from a different source",
 				"Cancel",
 			},
-			DefaultValue: fmt.Sprintf("Install all from '%s' (recommended)", source),
+			DefaultValue:    fmt.Sprintf("Install all from '%s' (recommended)", source),
+			EnableFiltering: new(false),
 		})
 		if err != nil {
 			return nil, false, err

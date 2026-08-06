@@ -278,20 +278,11 @@ func manualInstallError(
 			fmt.Fprintf(&suggestion, "\n\nChoose one source for %s:", requirement.extension.Id)
 		}
 		for _, candidate := range candidates {
-			version, err := extensions.ResolveExtensionVersion(
-				candidate,
-				requirement.versionPreference,
-				nil,
-			)
-			if err != nil {
-				continue
-			}
 			fmt.Fprintf(
 				&suggestion,
-				"\n  azd extension install %s --source %s --version %s",
+				"\n  azd extension install %s --source %s",
 				candidate.Id,
 				candidate.Source,
-				version.Version,
 			)
 		}
 	}

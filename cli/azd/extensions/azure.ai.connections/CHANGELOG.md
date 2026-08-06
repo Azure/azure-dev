@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.4 (2026-08-06)
+
+### Features Added
+
+- [[#9079]](https://github.com/Azure/azure-dev/pull/9079) Add service-scoped environment support for Foundry connection services while preserving project-wide fallback behavior.
+
 ## 1.0.0-beta.3 (2026-07-16)
 
 ### Breaking Changes

@@ -156,3 +156,18 @@ They clean up every resource they create.
 
 Request tracing is off by default. `--debug`, or `AZD_EXT_DEBUG=true`, writes
 it to a dated log file rather than the terminal.
+
+## TODO before release
+
+Both are files the azd extensions team owns, so they are not changed here:
+
+- [ ] **`cli/azd/extensions/registry.json`** — add the `azure.ai.evaluations`
+  entry. Until it exists `azd extension install azure.ai.evaluations` cannot
+  resolve, so the extension is only reachable through `azd x pack` +
+  `azd x publish` into the local source registry.
+- [ ] **`.github/CODEOWNERS`** — add `/cli/azd/extensions/azure.ai.evaluations/`.
+  Every sibling Foundry extension has an entry; without one, PRs here get no
+  reviewer routing.
+- [ ] **`microsoft.foundry/extension.yaml`** — add the dependency, but only
+  after the registry entry lands. Declaring a dependency that cannot resolve
+  breaks installing the bundle.

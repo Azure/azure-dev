@@ -65,10 +65,21 @@ func emitJSONList[T any](w io.Writer, items []T) error {
 	return emitJSON(w, items)
 }
 
-// emitTable writes a simple aligned table. Rows must match the header width.
+// emitTable writes a list view: uppercase headers over a rule, tab-aligned.
+//
+// The rule is what separates the header from the data at a glance, and it is
+// what `azure.ai.skills` prints, so a reader moving between the Foundry
+// extensions sees one table.
 func emitTable(w io.Writer, headers []string, rows [][]string) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	if _, err := fmt.Fprintln(tw, strings.Join(headers, "\t")); err != nil {
+		return err
+	}
+	rule := make([]string, len(headers))
+	for i, h := range headers {
+		rule[i] = strings.Repeat("-", len(h))
+	}
+	if _, err := fmt.Fprintln(tw, strings.Join(rule, "\t")); err != nil {
 		return err
 	}
 	for _, row := range rows {

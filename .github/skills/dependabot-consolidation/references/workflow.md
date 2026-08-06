@@ -35,13 +35,16 @@ that would produce an incomplete security sweep.
 
 ## 2. Build the Inventory
 
-Fetch `origin/main`, then collect:
+Fetch `origin/main`, then collect every open Dependabot PR with paginated REST results:
 
 ```bash
-gh pr list --repo Azure/azure-dev --state open --author app/dependabot \
-  --limit 200 \
-  --json number,title,url,headRefName,baseRefName,files,commits,mergeable
+gh api --method GET --paginate \
+  'repos/Azure/azure-dev/pulls?state=open&per_page=100' \
+  --jq '.[] | select(.user.login == "dependabot[bot]")'
 ```
+
+Fetch files, commits, mergeability, and other required details for each returned PR separately.
+Do not use a fixed result limit for the repository-wide inventory.
 
 For each alert, retain:
 

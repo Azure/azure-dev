@@ -9,6 +9,7 @@
 ### Bugs Fixed
 
 - [[#9326]](https://github.com/Azure/azure-dev/pull/9326) Publish Foundry dependency readiness state so agent deployments can fail early with actionable guidance when resources are not ready.
+- [[#9367]](https://github.com/Azure/azure-dev/pull/9367) Fix Foundry project synthesis so network environment references use shared defaults, escaping, and unresolved-variable validation.
 
 ## 1.0.0-beta.4 (2026-07-30)
 

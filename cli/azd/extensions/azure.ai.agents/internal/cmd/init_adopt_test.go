@@ -887,6 +887,28 @@ func TestApplyAdoptedAgentNameOverride_RejectsNoNamedAgent(t *testing.T) {
 	require.Empty(t, server.configValues)
 }
 
+func TestAdoptedAgentNameOverride_IgnoresResolvedDefaultWhenFlagNotExplicit(t *testing.T) {
+	t.Parallel()
+
+	flags := &initFlags{agentName: "resolved-template-default"}
+
+	got, err := adoptedAgentNameOverride(flags)
+	require.NoError(t, err)
+	require.Empty(t, got)
+	require.Equal(t, "resolved-template-default", flags.agentName)
+}
+
+func TestAdoptedAgentNameOverride_UsesExplicitFlag(t *testing.T) {
+	t.Parallel()
+
+	flags := &initFlags{agentName: "test0804", agentNameExplicit: true}
+
+	got, err := adoptedAgentNameOverride(flags)
+	require.NoError(t, err)
+	require.Equal(t, "test0804", got)
+	require.Equal(t, "test0804", flags.agentName)
+}
+
 // TestStampProjectEndpoint_WritesEndpoint verifies that stampProjectEndpoint
 // writes the endpoint to the existing azure.ai.project service via
 // SetServiceConfigValue when a valid project is provided.

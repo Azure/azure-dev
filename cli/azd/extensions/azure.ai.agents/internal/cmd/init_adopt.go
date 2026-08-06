@@ -892,15 +892,12 @@ func runInitFromAzureYaml(
 	content []byte,
 ) error {
 	projectName := foundryProjectName(content)
-	agentNameOverride := strings.TrimSpace(flags.agentName)
+	agentNameOverride, err := adoptedAgentNameOverride(flags)
+	if err != nil {
+		return err
+	}
 	if agentNameOverride != "" {
-		validatedName, err := validateInitAgentName(agentNameOverride)
-		if err != nil {
-			return err
-		}
-		flags.agentName = validatedName
-		agentNameOverride = validatedName
-		projectName = validatedName
+		projectName = agentNameOverride
 	}
 
 	targetDir, folderDisplay := adoptTargetDir(flags, projectName)
@@ -1076,6 +1073,22 @@ func runInitFromAzureYaml(
 
 	printAdoptionNextSteps(ctx, azdClient, folderDisplay)
 	return nil
+}
+
+func adoptedAgentNameOverride(flags *initFlags) (string, error) {
+	if !flags.agentNameExplicit {
+		return "", nil
+	}
+	agentNameOverride := strings.TrimSpace(flags.agentName)
+	if agentNameOverride == "" {
+		return "", nil
+	}
+	validatedName, err := validateInitAgentName(agentNameOverride)
+	if err != nil {
+		return "", err
+	}
+	flags.agentName = validatedName
+	return validatedName, nil
 }
 
 // adoptTargetDir resolves the directory the adopted project is created in and

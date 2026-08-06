@@ -216,4 +216,27 @@ const (
 	envKeyEvalRunID         = "EVAL_RUN_ID"
 	envKeyDatasetVersion    = "EVAL_DATASET_VERSION"
 	envKeyFingerprintPrefix = "EVAL_FINGERPRINT_"
+	// envKeyEvalPath records where `init` put the configuration, so the
+	// commands that read it afterwards do not each need --path repeated.
+	envKeyEvalPath = "EVAL_CONFIG_PATH"
 )
+
+// evalDir resolves where the configuration lives:
+//
+//  1. --path
+//  2. the path `init` recorded in the azd environment
+//  3. ./evals
+//
+// The middle level is what stops `--path` from having to be repeated on every
+// later command. Without it, `init --path ./quality` wrote a configuration that
+// `run` then looked for under ./evals and reported as missing -- while
+// azure.yaml's $ref pointed at it correctly the whole time.
+func (ec *evalContext) evalDir(ctx context.Context, flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	if recorded := ec.getEnvValue(ctx, envKeyEvalPath); recorded != "" {
+		return recorded
+	}
+	return project.DefaultEvalDir
+}

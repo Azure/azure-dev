@@ -78,6 +78,7 @@ func buildRunCommand(use, short string) *cobra.Command {
 		wait        bool
 		failOn      string
 		endpointFlg string
+		evalPath    string
 	)
 
 	cmd := &cobra.Command{
@@ -103,7 +104,7 @@ func buildRunCommand(use, short string) *cobra.Command {
 			// One flag takes a name or an id. A declared name also brings the
 			// declaration, which is what says where rows come from; a bare id
 			// has none, so the pairing comes from the eval's previous run.
-			ref, err := ec.resolveEvalRef(ctx, project.DefaultEvalDir, groupName)
+			ref, err := ec.resolveEvalRef(ctx, ec.evalDir(ctx, evalPath), groupName)
 			if err != nil {
 				return err
 			}
@@ -236,6 +237,7 @@ func buildRunCommand(use, short string) *cobra.Command {
 	}
 	cmd.MarkFlagsMutuallyExclusive("wait", "no-wait")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
+	addEvalPathFlag(cmd, &evalPath)
 
 	return cmd
 }

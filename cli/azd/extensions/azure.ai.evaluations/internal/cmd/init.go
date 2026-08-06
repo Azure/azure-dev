@@ -144,6 +144,8 @@ func newInitCommand() *cobra.Command {
 				return err
 			}
 
+			recordEvalPath(cmd.Context(), path)
+
 			if isJSON(cmd) {
 				return emitJSON(out, map[string]any{
 					"eval":          evalName,
@@ -486,6 +488,33 @@ func detectModelDeployment(proj *azdext.ProjectConfig) string {
 		return name
 	}
 	return ""
+}
+
+// recordEvalPath remembers where the configuration was written, so the commands
+// that read it afterwards do not need --path repeated.
+//
+// Best effort: `init` works outside an azd environment, and a path that could
+// not be recorded only costs the caller a flag later. It is never a reason to
+// fail a scaffold that already succeeded.
+func recordEvalPath(ctx context.Context, path string) {
+	if path == "" || path == project.DefaultEvalDir {
+		return
+	}
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return
+	}
+	defer azdClient.Close()
+
+	env, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil || env.GetEnvironment() == nil {
+		return
+	}
+	_, _ = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: env.GetEnvironment().GetName(),
+		Key:     envKeyEvalPath,
+		Value:   filepath.ToSlash(path),
+	})
 }
 
 // ensureRootEvalService declares the eval service in azd's project file.

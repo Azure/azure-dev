@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"azureaieval/internal/pkg/eval_api"
-	"azureaieval/internal/project"
 
 	"github.com/spf13/cobra"
 )
@@ -250,7 +249,7 @@ func resolveEvalID(
 	}
 
 	if groupName != "" {
-		ref, err := ec.resolveEvalRef(cmd.Context(), project.DefaultEvalDir, groupName)
+		ref, err := ec.resolveEvalRef(cmd.Context(), ec.evalDir(cmd.Context(), ""), groupName)
 		if err != nil {
 			return "", err
 		}
@@ -270,6 +269,16 @@ func resolveEvalID(
 func addEvalFlag(cmd *cobra.Command, target *string) {
 	cmd.Flags().StringVar(target, "eval", "",
 		"Name of the eval declared in the configuration, or its id.")
+}
+
+// addEvalPathFlag registers --path on a command that reads the configuration.
+//
+// It defaults to empty rather than to ./evals so that "not given" stays
+// distinguishable from "given the default", which is what lets the path `init`
+// recorded take effect in between.
+func addEvalPathFlag(cmd *cobra.Command, target *string) {
+	cmd.Flags().StringVar(target, "path", "",
+		"Directory holding eval.yaml. Defaults to the path `init` used, then ./evals.")
 }
 
 // latestOrNamedRun returns the named run, or the most recent one for the eval.

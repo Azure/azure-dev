@@ -7,9 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
+	"log"
 	"strings"
 
+	"azureaidataset/internal/foundry/projectctx"
 	"azureaidataset/internal/pkg/dataset_api"
 	"azureaidataset/internal/pkg/gen_api"
 
@@ -56,24 +57,15 @@ func newDatasetContext(ctx context.Context, endpointFlag string) (*datasetContex
 
 	// The environment name is resolved regardless of where the endpoint came
 	// from: it is what cached version numbers are read from and written to.
-	azdEndpoint, envName := lookupEndpointFromAzd(ctx, azdClient)
+	_, envName := lookupEndpointFromAzd(ctx, azdClient)
 	dc.envName = envName
 
-	if endpointFlag != "" {
-		dc.endpoint = endpointFlag
-	} else {
-		dc.endpoint = azdEndpoint
+	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{FlagValue: endpointFlag})
+	if err != nil {
+		return nil, err
 	}
-	if dc.endpoint == "" {
-		dc.endpoint = os.Getenv(projectEndpointEnvKey)
-	}
-	if dc.endpoint == "" {
-		return nil, fmt.Errorf(
-			"no Foundry project endpoint found; pass --project-endpoint or set %s "+
-				"in the azd environment (azd env set %s <url>)",
-			projectEndpointEnvKey, projectEndpointEnvKey)
-	}
-	dc.endpoint = strings.TrimSuffix(dc.endpoint, "/")
+	dc.endpoint = strings.TrimSuffix(resolved.Endpoint, "/")
+	log.Printf("[endpoint] resolved from %s", resolved.Source)
 
 	cred, err := azidentity.NewAzureDeveloperCLICredential(
 		&azidentity.AzureDeveloperCLICredentialOptions{},

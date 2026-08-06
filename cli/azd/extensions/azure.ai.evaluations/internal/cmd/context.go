@@ -8,9 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 
+	"azureaieval/internal/foundry/projectctx"
 	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
@@ -53,24 +53,15 @@ func newEvalContext(ctx context.Context, endpointFlag string) (*evalContext, err
 	// from: it is what the cached eval and run ids are read from and
 	// written to. Deriving it only when the endpoint came from azd meant
 	// --project-endpoint silently disabled that cache.
-	azdEndpoint, envName := lookupEndpointFromAzd(ctx, azdClient)
+	_, envName := lookupEndpointFromAzd(ctx, azdClient)
 	ec.envName = envName
 
-	if endpointFlag != "" {
-		ec.endpoint = endpointFlag
-	} else {
-		ec.endpoint = azdEndpoint
+	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{FlagValue: endpointFlag})
+	if err != nil {
+		return nil, err
 	}
-	if ec.endpoint == "" {
-		ec.endpoint = os.Getenv(projectEndpointEnvKey)
-	}
-	if ec.endpoint == "" {
-		return nil, fmt.Errorf(
-			"no Foundry project endpoint found; pass --project-endpoint or set %s "+
-				"in the azd environment (azd env set %s <url>)",
-			projectEndpointEnvKey, projectEndpointEnvKey)
-	}
-	ec.endpoint = strings.TrimSuffix(ec.endpoint, "/")
+	ec.endpoint = strings.TrimSuffix(resolved.Endpoint, "/")
+	log.Printf("[endpoint] resolved from %s", resolved.Source)
 
 	cred, err := azidentity.NewAzureDeveloperCLICredential(
 		&azidentity.AzureDeveloperCLICredentialOptions{},

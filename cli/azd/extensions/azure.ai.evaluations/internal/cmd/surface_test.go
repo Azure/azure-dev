@@ -407,6 +407,14 @@ func TestSuggestedFlagsExist(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// siblingNamespaces are the other Foundry extensions this one points users at.
+// Listed rather than wildcarded so a typo in a namespace still fails.
+var siblingNamespaces = map[string]bool{
+	"project": true, // `azd ai project set` owns the shared endpoint context
+	"dataset": true, // where the dataset commands go once they move
+	"agent":   true,
+}
+
 // find resolves a command path, failing the test when it does not exist.
 func find(t *testing.T, path string) *cobra.Command {
 	t.Helper()
@@ -457,14 +465,23 @@ func TestSuggestedCommandsExist(t *testing.T) {
 			}
 			for _, m := range pattern.FindAllStringSubmatch(line, -1) {
 				words := strings.Fields(m[1])
+				if len(words) == 0 {
+					continue
+				}
+
+				// A suggestion under a sibling's namespace is that extension's
+				// contract and cannot be resolved from here. Only the ones this
+				// extension actually points at are allowed, so a typo still
+				// fails rather than passing as "probably somebody else's".
+				if siblingNamespaces[words[0]] {
+					continue
+				}
 
 				// `ai.eval` is this extension's namespace, so it is the only
-				// thing under `azd ai` that resolves here. Another namespace is
-				// a command this extension cannot suggest, whether or not some
-				// future extension serves it.
-				if len(words) == 0 || words[0] != "eval" {
-					t.Errorf("%s suggests `azd ai %s`, which is not this extension's "+
-						"namespace; commands here are `azd ai eval ...`", path, m[1])
+				// other thing under `azd ai` that can resolve.
+				if words[0] != "eval" {
+					t.Errorf("%s suggests `azd ai %s`, which is neither this "+
+						"extension's namespace nor a sibling it knows about", path, m[1])
 					continue
 				}
 				words = words[1:]

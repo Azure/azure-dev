@@ -158,8 +158,9 @@ func TestSuggestedCommandsExist(t *testing.T) {
 				}
 				// A suggestion pointing at a sibling extension is that
 				// extension's contract, not this one's, and cannot be resolved
-				// from here. `eval` is the only one this extension names.
-				if words[0] == "eval" {
+				// from here. Listed rather than wildcarded so a typo in a
+				// namespace still fails.
+				if siblingNamespaces[words[0]] {
 					continue
 				}
 				assert.Equalf(t, "dataset", words[0],
@@ -184,6 +185,12 @@ func TestSuggestedCommandsExist(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+}
+
+// siblingNamespaces are the other Foundry extensions this one points users at.
+var siblingNamespaces = map[string]bool{
+	"eval":    true, // registering a generated dataset in an eval configuration
+	"project": true, // `azd ai project set` owns the shared endpoint context
 }
 
 func find(t *testing.T, path string) *cobra.Command {

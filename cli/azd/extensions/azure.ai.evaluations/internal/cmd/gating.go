@@ -95,6 +95,14 @@ func (g gate) breach(counts *eval_api.EvalRunResultCounts) string {
 	return ""
 }
 
+// gateBreachMessage is what a breached gate prints, kept separate from the
+// exit so the wording can be tested: it is the block the spec's CI scenario
+// shows, and a pipeline's logs are where it is read.
+func gateBreachMessage(reason string) string {
+	return fmt.Sprintf("%s Evaluation gate: %s\n\nERROR: evaluation quality gate not met.\n",
+		failedMark, reason)
+}
+
 // applyGate ends the process with exit code 2 when the run missed its
 // threshold.
 //
@@ -109,8 +117,7 @@ func applyGate(cmd *cobra.Command, g gate, run *eval_api.OpenAIEvalRun) {
 	if reason == "" {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "(x) Failed: Evaluation gate: %s\n\n", reason)
-	fmt.Fprintln(os.Stderr, "ERROR: evaluation quality gate not met.")
+	fmt.Fprint(os.Stderr, gateBreachMessage(reason))
 	os.Exit(exitCodeGateBreached)
 }
 

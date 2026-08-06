@@ -88,39 +88,6 @@ func TestCLIGenerateNamesTheArtifact(t *testing.T) {
 func TestCLIGenerateNoPromptNamesWhatIsMissing(t *testing.T) {
 	r := requireFailure(t, runIn(t, t.TempDir(), "dataset", "generate", "d", "--no-prompt"))
 	require.Contains(t, r.Combined(), "--generation-model")
-	require.Contains(t, r.Combined(), "generationModel",
-		"the message must name both ways of supplying it")
-}
-
-// TestCLIGenerateReadsTheSpec proves the config file is loaded and that its
-// entries are looked up by artifact name, rather than only the flags being read.
-//
-// The sample size is the clearest evidence: a value the service would reject is
-// refused before any job is submitted, and it can only have come from the file.
-func TestCLIGenerateReadsTheSpec(t *testing.T) {
-	dir := t.TempDir()
-	spec := filepath.Join(dir, "generate.yaml")
-	require.NoError(t, os.WriteFile(spec, []byte(`
-generationModel: gpt-4o-mini
-dataset:
-  spec-dataset:
-    sampleSize: 5
-`), 0o600))
-
-	r := requireFailure(t, runIn(t, dir, "dataset", "generate", "spec-dataset", "--config", spec))
-	require.Contains(t, r.Combined(), "between 15 and 1000",
-		"the spec's sampleSize must be validated before a job is billed")
-}
-
-// A spec that cannot be parsed has to name itself, or the caller is left
-// guessing which of several YAML files the command choked on.
-func TestCLIGenerateReportsAnUnparseableSpec(t *testing.T) {
-	dir := t.TempDir()
-	spec := filepath.Join(dir, "generate.yaml")
-	require.NoError(t, os.WriteFile(spec, []byte("dataset: [not-a-mapping\n"), 0o600))
-
-	r := requireFailure(t, runIn(t, dir, "dataset", "generate", "d", "--config", spec))
-	require.Contains(t, r.Combined(), "generate.yaml")
 }
 
 // TestCLIGenerateFlagsAreScopedToTheirArtifact asserts the two commands do not

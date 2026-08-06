@@ -303,6 +303,54 @@ func TestEveryRunCommandTakesEval(t *testing.T) {
 	})
 }
 
+// The tagged suites drive the binary by writing flags as strings, so a flag
+// that is renamed or removed still compiles there and only fails when someone
+// has the credentials to run them.
+//
+// That is not hypothetical. Removing `--eval-id` and the generation spec file
+// left 28 uses of `--eval-id` and two `--config` tests behind in tests/cli,
+// every one of which would have failed at the first live run — under `live` and
+// `hero` tags that `go test ./...` never builds. This checks them from the
+// default suite, where a rename is caught by the person doing the renaming.
+func TestTaggedSuitesNameFlagsThatExist(t *testing.T) {
+	// Every flag any command declares, plus the globals azd contributes.
+	known := map[string]bool{
+		"output": true, "no-prompt": true, "environment": true,
+		"cwd": true, "debug": true, "help": true,
+	}
+	walk(t, NewRootCommand(), nil, func(_ string, cmd *cobra.Command) {
+		cmd.Flags().VisitAll(func(f *pflag.Flag) { known[f.Name] = true })
+	})
+
+	// Only string literals, which is how a test spells a flag it passes to the
+	// binary. Prose in a comment is not a flag.
+	literal := regexp.MustCompile(`"--([a-z][a-z0-9-]*)"`)
+
+	err := filepath.WalkDir("../../tests", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for i, line := range strings.Split(string(body), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "//") {
+				continue
+			}
+			for _, m := range literal.FindAllStringSubmatch(line, -1) {
+				assert.Truef(t, known[m[1]],
+					"%s:%d passes --%s, which no command declares", path, i+1, m[1])
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+}
+
 // find resolves a command path, failing the test when it does not exist.
 func find(t *testing.T, path string) *cobra.Command {
 	t.Helper()

@@ -56,7 +56,7 @@ type resultsPayload struct {
 func TestCLIResultsShowRendersTheRows(t *testing.T) {
 	f := sharedEval(t)
 
-	r := requireSuccess(t, run(t, "run", "output", "list", f.FirstRunID, "--eval-id", f.EvalID))
+	r := requireSuccess(t, run(t, "run", "output", "list", f.FirstRunID, "--eval", f.EvalID))
 
 	require.Contains(t, r.Stdout, f.FirstRunID)
 	require.Contains(t, r.Stdout, "Totals:")
@@ -133,7 +133,7 @@ func TestCLIResultsShowFailedOnly(t *testing.T) {
 	}
 
 	r := requireSuccess(t, run(t, "run", "output", "list", f.FirstRunID,
-		"--eval-id", f.EvalID, "--failed-only"))
+		"--eval", f.EvalID, "--failed-only"))
 
 	if failing == 0 {
 		// Saying so is not the same as printing an empty table.
@@ -155,7 +155,7 @@ func TestCLIResultsShowFailedOnly(t *testing.T) {
 // they can decide what the rendered output should say.
 func resultsFor(t *testing.T, evalID, runID string) resultsPayload {
 	t.Helper()
-	r := requireSuccess(t, run(t, "run", "output", "list", runID, "--eval-id", evalID, "-o", "json"))
+	r := requireSuccess(t, run(t, "run", "output", "list", runID, "--eval", evalID, "-o", "json"))
 	var payload resultsPayload
 	r.JSON(t, &payload)
 	return payload
@@ -166,7 +166,7 @@ func TestCLIResultsExport(t *testing.T) {
 
 	t.Run("json to stdout", func(t *testing.T) {
 		r := requireSuccess(t, run(t, "run", "output", "export", f.FirstRunID,
-			"--eval-id", f.EvalID, "--format", "json"))
+			"--eval", f.EvalID, "--format", "json"))
 
 		var exported struct {
 			ID           string `json:"id"`
@@ -185,7 +185,7 @@ func TestCLIResultsExport(t *testing.T) {
 
 	t.Run("csv to stdout", func(t *testing.T) {
 		r := requireSuccess(t, run(t, "run", "output", "export", f.FirstRunID,
-			"--eval-id", f.EvalID, "--format", "csv"))
+			"--eval", f.EvalID, "--format", "csv"))
 
 		rows, err := csv.NewReader(strings.NewReader(r.Stdout)).ReadAll()
 		require.NoError(t, err, "--format csv must emit parseable CSV:\n%s", r.Stdout)
@@ -202,7 +202,7 @@ func TestCLIResultsExport(t *testing.T) {
 		path := filepath.Join(dir, "results.csv")
 
 		r := requireSuccess(t, runIn(t, dir, "run", "output", "export", f.FirstRunID,
-			"--eval-id", f.EvalID, "--format", "csv", "--output-file", path))
+			"--eval", f.EvalID, "--format", "csv", "--output-file", path))
 		require.Empty(t, strings.TrimSpace(r.Stdout),
 			"--output-file redirects the payload; leaving it on stdout too would double it")
 
@@ -214,13 +214,13 @@ func TestCLIResultsExport(t *testing.T) {
 
 	t.Run("an unknown format is refused", func(t *testing.T) {
 		r := requireFailure(t, run(t, "run", "output", "export", f.FirstRunID,
-			"--eval-id", f.EvalID, "--format", "xml"))
+			"--eval", f.EvalID, "--format", "xml"))
 		require.Contains(t, r.Combined(), "json or csv")
 	})
 }
 
 func TestCLIResultsUnknownEvalIsBrief(t *testing.T) {
-	r := requireFailure(t, run(t, "run", "output", "list", "--eval-id", "eval_does_not_exist"))
+	r := requireFailure(t, run(t, "run", "output", "list", "--eval", "eval_does_not_exist"))
 	require.Contains(t, r.Combined(), "eval_does_not_exist")
 	require.NotContains(t, r.Combined(), "RESPONSE 404")
 }

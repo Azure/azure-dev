@@ -184,26 +184,61 @@ func normalize(s string) string {
 func TestHeroScenario1ColdStart(t *testing.T) {
 	const (
 		agent = "support-agent"
-		model = "gpt-5.6-luna"
+		judge = "gpt-5.6-luna"
 	)
 	dir := project(t, agent)
 
-	out, code := azdEval(t, dir, "init", "--target", agent, "--generation-model", model)
+	// The evaluator and judge are passed rather than prompted for, because the
+	// spec's two `?` lines are answers to prompts and a test has no terminal to
+	// answer them at.
+	out, code := azdEval(t, dir, "init",
+		"--target", agent, "--source", "traces",
+		"--evaluator", "builtin.task_adherence", "--judge-model", judge)
 	require.Zero(t, code, "init makes no service calls, so nothing can fail it here")
 
 	want := `(✓) Done: Detected agent target: support-agent
-(✓) Done: Detected model deployment: gpt-5.6-luna
-(✓) Done: Planned evaluators: builtin.task_adherence, support-agent-quality (rubric)
+(✓) Done: Using data source: traces (Application Insights)
+(✓) Done: Judge model deployment: gpt-5.6-luna
 
 Created
-  evals/support-agent-smoke.yaml    eval definition
-  evals/generate.yaml               generation settings (15 samples, 1 rubric)
-  azure.yaml                        added service 'support-agent-smoke'
+  evals/eval.yaml                   evaluation configuration
+  azure.yaml                        added service 'support-agent-evals'
 
-Next: azd ai eval dataset generate support-agent-smoke
-      azd ai eval evaluator generate support-agent-quality`
+Next: azd up
+      azd ai eval run start`
 
 	require.Equal(t, want, normalize(out))
+}
+
+// Scenario 1's second half: the eval.yaml the terminal block promised. The spec
+// prints this file, so its shape is as much a promise as the output above —
+// and it is the file a reader reviews before running `azd up`.
+func TestHeroScenario1WritesTheDocumentedConfig(t *testing.T) {
+	dir := project(t, "support-agent")
+
+	_, code := azdEval(t, dir, "init",
+		"--target", "support-agent", "--source", "traces",
+		"--evaluator", "builtin.task_adherence", "--judge-model", "gpt-5.6-luna")
+	require.Zero(t, code)
+
+	body, err := os.ReadFile(filepath.Join(dir, "evals", "eval.yaml"))
+	require.NoError(t, err)
+	text := string(body)
+
+	require.Contains(t, text, "name: support-agent-trace-eval")
+	require.Contains(t, text, "type: traces")
+	require.Contains(t, text, "agent_name: support-agent",
+		"a trace run has no target, so agent_name is what scopes it")
+	require.Contains(t, text, "max_traces: 20",
+		"a first run is bounded rather than taking the service default of 1000")
+	require.Contains(t, text, "evaluator: builtin.task_adherence")
+	require.Contains(t, text, "model: gpt-5.6-luna",
+		"the judge is written per evaluator reference as initialization_parameters.model")
+
+	require.NotContains(t, text, "datasets:",
+		"there is no file to register, so the catalog is absent rather than empty")
+	require.NotContains(t, text, "target:",
+		"a trace run invokes nothing")
 }
 
 // `init` is offline, and being offline is the property that makes its output a
@@ -213,7 +248,8 @@ func TestHeroInitMakesNoServiceCalls(t *testing.T) {
 	dir := project(t, "support-agent")
 
 	cmd := exec.Command("azd", "ai", "eval", "init",
-		"--target", "support-agent", "--generation-model", "m")
+		"--target", "support-agent", "--evaluator", "builtin.task_adherence",
+		"--judge-model", "m")
 	cmd.Dir = dir
 	// A proxy pointing nowhere fails any outbound request, so a command that
 	// stays offline is unaffected and one that does not cannot be mistaken for
@@ -234,17 +270,18 @@ func TestHeroInitMakesNoServiceCalls(t *testing.T) {
 func TestHeroInitWiresTheServiceIntoTheProject(t *testing.T) {
 	dir := project(t, "support-agent")
 
-	_, code := azdEval(t, dir, "init", "--target", "support-agent", "--generation-model", "m")
+	_, code := azdEval(t, dir, "init", "--target", "support-agent",
+		"--evaluator", "builtin.task_adherence", "--judge-model", "m")
 	require.Zero(t, code)
 
 	root, err := os.ReadFile(filepath.Join(dir, "azure.yaml"))
 	require.NoError(t, err)
 	text := string(root)
 
-	require.Contains(t, text, "support-agent-smoke:",
-		"the service key is the eval's name")
+	require.Contains(t, text, "support-agent-evals:",
+		"the service is named for the agent it evaluates")
 	require.Contains(t, text, "host: azure.ai.eval")
-	require.Contains(t, text, "$ref: ./evals/support-agent-smoke.yaml")
+	require.Contains(t, text, "$ref: ./evals/eval.yaml")
 
 	// azd owns the edit, so everything the project already declared survives it.
 	require.Contains(t, text, "name: support-app")
@@ -252,14 +289,15 @@ func TestHeroInitWiresTheServiceIntoTheProject(t *testing.T) {
 	require.Contains(t, text, "host: azure.ai.agent")
 
 	// The eval reads both, so azd has to deploy both first.
-	require.Regexp(t, `(?s)support-agent-smoke:.*uses:.*ai-project.*support-agent`, text)
+	require.Regexp(t, `(?s)support-agent-evals:.*uses:.*ai-project.*support-agent`, text)
 }
 
 // Running `init` twice must not deploy the same eval twice. The service key is
 // the eval's name, so the second run recognizes its own work.
 func TestHeroInitIsIdempotent(t *testing.T) {
 	dir := project(t, "support-agent")
-	args := []string{"init", "--target", "support-agent", "--generation-model", "m"}
+	args := []string{"init", "--target", "support-agent",
+		"--evaluator", "builtin.task_adherence", "--judge-model", "m"}
 
 	_, code := azdEval(t, dir, args...)
 	require.Zero(t, code)
@@ -284,7 +322,7 @@ func TestHeroInitIsIdempotent(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, strings.Count(string(third), "host: azure.ai.eval"),
 		"a second eval service would deploy the same eval twice")
-	require.Contains(t, normalize(out), "already declares service 'support-agent-smoke'")
+	require.Contains(t, normalize(out), "already declares service 'support-agent-evals'")
 }
 
 // Evals attach to a project; they do not create one. Naming the command that
@@ -310,16 +348,19 @@ func TestHeroInitExplicitEvaluatorsOptOutOfGeneration(t *testing.T) {
 	dir := project(t, "support-agent")
 
 	out, code := azdEval(t, dir, "init",
-		"--target", "support-agent", "--generation-model", "m",
+		"--target", "support-agent", "--judge-model", "m",
 		"--evaluator", "builtin.task_adherence")
 	require.Zero(t, code, out)
 
 	text := normalize(out)
-	require.Contains(t, text, "Planned evaluators: builtin.task_adherence")
-	require.NotContains(t, text, "(rubric)")
 	require.NotContains(t, text, "evaluator generate",
 		"nothing was scheduled to be generated, so nothing should be suggested")
-	require.Contains(t, text, "generation settings (15 samples, 0 rubric)")
+
+	body, err := os.ReadFile(filepath.Join(dir, "evals", "eval.yaml"))
+	require.NoError(t, err)
+	require.Contains(t, string(body), "evaluator: builtin.task_adherence")
+	require.NotContains(t, string(body), "support-agent-quality",
+		"the default rubric was replaced, not added to")
 }
 
 // A supplied dataset is not generated either, so `init` has nothing left to
@@ -329,20 +370,19 @@ func TestHeroInitSuppliedDatasetIsNotGenerated(t *testing.T) {
 	dir := project(t, "support-agent")
 
 	out, code := azdEval(t, dir, "init",
-		"--target", "support-agent", "--generation-model", "m",
+		"--target", "support-agent", "--judge-model", "m",
 		"--dataset", "prod-golden",
 		"--evaluator", "builtin.task_adherence")
 	require.Zero(t, code, out)
-	require.NotContains(t, normalize(out), "dataset generate")
 
-	body, err := os.ReadFile(filepath.Join(dir, "evals", "generate.yaml"))
-	require.NoError(t, err)
-	require.NotContains(t, string(body), "dataset:",
-		"nothing is left to generate, so the spec declares nothing")
+	text := normalize(out)
+	require.NotContains(t, text, "dataset generate")
+	require.Contains(t, text, "Next: azd up",
+		"with nothing left to generate, the next step is the deploy")
 
-	eval, err := os.ReadFile(filepath.Join(dir, "evals", "support-agent-smoke.yaml"))
+	body, err := os.ReadFile(filepath.Join(dir, "evals", "eval.yaml"))
 	require.NoError(t, err)
-	require.Contains(t, string(eval), "name: prod-golden")
-	require.NotContains(t, string(eval), "source:",
+	require.Contains(t, string(body), "dataset: prod-golden")
+	require.NotContains(t, string(body), "source:",
 		"a registered dataset has nothing to upload")
 }

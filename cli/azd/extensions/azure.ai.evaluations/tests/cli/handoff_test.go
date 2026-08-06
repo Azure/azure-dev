@@ -26,7 +26,7 @@ func TestCLIStartNoWaitEmitsTheHandoff(t *testing.T) {
 	f := sharedEval(t)
 
 	r := requireSuccess(t, run(t,
-		"run", "start", "--eval-id", f.EvalID, "--no-wait", "-o", "json"))
+		"run", "start", "--eval", f.EvalID, "--no-wait", "-o", "json"))
 
 	var handoff struct {
 		RunID     string `json:"run_id"`
@@ -45,12 +45,12 @@ func TestCLIStartNoWaitEmitsTheHandoff(t *testing.T) {
 	assert.NotEqual(t, "completed", handoff.Status)
 
 	deferTeardown(func() {
-		runQuietly("run", "cancel", handoff.RunID, "--eval-id", f.EvalID)
+		runQuietly("run", "cancel", handoff.RunID, "--eval", f.EvalID)
 	})
 
 	// The id it handed back has to be one the next step can use.
 	shown := requireSuccess(t, run(t,
-		"run", "show", handoff.RunID, "--eval-id", f.EvalID, "-o", "json"))
+		"run", "show", handoff.RunID, "--eval", f.EvalID, "-o", "json"))
 	var reattached struct {
 		ID string `json:"id"`
 	}
@@ -65,7 +65,7 @@ func TestCLIStartNoWaitEmitsTheHandoff(t *testing.T) {
 func TestCLIStartNoWaitTellsAPersonHowToReattach(t *testing.T) {
 	f := sharedEval(t)
 
-	r := requireSuccess(t, run(t, "run", "start", "--eval-id", f.EvalID, "--no-wait"))
+	r := requireSuccess(t, run(t, "run", "start", "--eval", f.EvalID, "--no-wait"))
 
 	assert.Contains(t, r.Stdout, "Reattach with: azd ai eval run show")
 	assert.Contains(t, r.Stdout, f.EvalID,
@@ -81,5 +81,5 @@ func TestCLIStartNoWaitTellsAPersonHowToReattach(t *testing.T) {
 		}
 	}
 	require.NotEmpty(t, runID, "the run id must be printed:\n%s", r.Stdout)
-	deferTeardown(func() { runQuietly("run", "cancel", runID, "--eval-id", f.EvalID) })
+	deferTeardown(func() { runQuietly("run", "cancel", runID, "--eval", f.EvalID) })
 }

@@ -73,23 +73,26 @@ description: Sample job created by 'azd ai training init'
 command: echo "hello world"
 environment: <user to add>
 compute: <user to add>
+
+# Optional: choose one of the two ways to size the job.
+#   capacity_unit_count — total cores across the allocation (1, 2, 4, 8 or multiple of 8).
+#     The service picks the smallest SKU that fits and slices nodes as needed (partial SKU).
+#   resources.instance_count — whole nodes of the compute cluster's full SKU.
+#     Default when nothing is set: instance_count = 1.
+# capacity_unit_count: 4
 resources:
   instance_count: 1
-  instance_type: <user to add>
-  properties:
-    AISuperComputer:
-      imageVersion: ""
-      slaTier: <user to add>
-      priority: <user to add>
+
+# Optional: job scheduling priority (Regular | Low | High). Default: Regular.
+# priority: Regular
 `
 
 // scaffoldDefaultJobYaml writes a starter commandJob template to
 // <workingDir>/config/job.yaml. The template contains <user to add>
 // placeholders for fields that are environment-specific (compute,
-// environment image, instance_type, slaTier, priority); the user is
-// expected to edit these before running 'job submit'. No-op (with a
-// notice) if the file already exists, so re-running 'init' doesn't
-// clobber user edits.
+// environment); the user is expected to edit these before running
+// 'job submit'. No-op (with a notice) if the file already exists, so
+// re-running 'init' doesn't clobber user edits.
 func scaffoldDefaultJobYaml(workingDir string) error {
 	yamlPath := filepath.Join(workingDir, "config", "job.yaml")
 

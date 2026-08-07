@@ -162,7 +162,8 @@ func buildJobResource(def *utils.JobDefinition) *models.JobResource {
 		Command:                   def.Command,
 		EnvironmentImageReference: def.Environment,
 		ComputeID:                 def.Compute,
-		GPUCount:                  def.GPUCount,
+		CapacityUnitCount:         def.CapacityUnitCount,
+		Priority:                  def.Priority,
 		UserAssignedIdentityID:    def.Identity,
 		CodeID:                    def.Code,
 		EnvironmentVariables:      def.EnvironmentVariables,
@@ -209,14 +210,14 @@ func buildJobResource(def *utils.JobDefinition) *models.JobResource {
 		job.Distribution = buildDistribution(def.Distribution)
 	}
 
-	// Resources — prefer structured resources block, fall back to flat instance_count
-	if def.Resources != nil {
+	// Resources — only instance_count survives on the wire. instance_type, slaTier and the
+	// AISuperComputer sub-block are now inferred by the service from the compute cluster;
+	// priority is a top-level CommandJob field; partial-SKU is expressed via top-level
+	// capacity_unit_count. Accept instance_count from either the structured resources block
+	// or the flat top-level field.
+	if def.Resources != nil && def.Resources.InstanceCount > 0 {
 		job.Resources = &models.ResourceConfig{
 			InstanceCount: def.Resources.InstanceCount,
-			InstanceType:  def.Resources.InstanceType,
-			ShmSize:       def.Resources.ShmSize,
-			DockerArgs:    def.Resources.DockerArgs,
-			Properties:    def.Resources.Properties,
 		}
 	} else if def.InstanceCount > 0 {
 		job.Resources = &models.ResourceConfig{

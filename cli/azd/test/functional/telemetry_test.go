@@ -240,7 +240,7 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 	// set environment modifiers
 	cli.Env = append(
 		cli.Env,
-		"AZURE_DEV_USER_AGENT=azure_app_space_portal:v1.0.0 microsoft_foundry_skill",
+		"AZURE_DEV_USER_AGENT=azure_app_space_portal:v1.0.0 microsoft_foundry_canvas microsoft_foundry_skill",
 	)
 
 	// set a fixed traceparent to verify trace ID propagation for commands and nested commands
@@ -441,6 +441,9 @@ func verifyResource(
 
 		if strings.Contains(env, "azure_app_space_portal") {
 			require.Contains(t, m[fields.ExecutionEnvironmentKey.Key], ";"+fields.EnvModifierAzureSpace)
+		}
+		if strings.Contains(env, "microsoft_foundry_canvas") {
+			require.Contains(t, m[fields.ExecutionEnvironmentKey.Key], ";"+fields.EnvModifierMicrosoftFoundryCanvas)
 		}
 		if strings.Contains(env, "microsoft_foundry_skill") {
 			require.Contains(t, m[fields.ExecutionEnvironmentKey.Key], ";"+fields.EnvModifierMicrosoftFoundrySkill)

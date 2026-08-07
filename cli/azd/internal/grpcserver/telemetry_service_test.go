@@ -157,6 +157,16 @@ func requireCode(t *testing.T, err error, expected codes.Code) {
 	require.Equal(t, expected, st.Code())
 }
 
+func TestNewTelemetryService(t *testing.T) {
+	manager := &extensions.Manager{}
+
+	service := NewTelemetryService(manager)
+
+	telemetry, ok := service.(*telemetryService)
+	require.True(t, ok)
+	require.Same(t, manager, telemetry.extensions)
+}
+
 func Test_TelemetryService_RecordsEventWithAttributes(t *testing.T) {
 	t.Parallel()
 

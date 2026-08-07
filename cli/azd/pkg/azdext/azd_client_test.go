@@ -133,3 +133,14 @@ func Test_IsLocalhostAddress(t *testing.T) {
 		})
 	}
 }
+
+func Test_AzdClient_Telemetry(t *testing.T) {
+	client := &AzdClient{}
+
+	first := client.Telemetry()
+	second := client.Telemetry()
+
+	require.NotNil(t, first)
+	require.NotNil(t, second)
+	require.NotSame(t, first, second)
+}

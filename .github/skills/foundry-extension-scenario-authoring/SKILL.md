@@ -56,6 +56,10 @@ The consequences for how you write goals:
 - **Key interactive pickers off stable text labels, not positions.** The driver prefers
   `choice_text` over `choice_index`, so phrase picker goals around the label (e.g. *select "Use
   the code in the current directory"*) — indices shift between releases.
+- **Enumerate expected product prompts.** Goals define every product prompt allowed during the
+  scenario. Name each prompt with stable user-visible text and state the response. Use "if
+  asked" only for a genuinely optional prompt. Never write "follow the prompts" or another
+  catch-all; an unlisted product prompt must fail the scenario.
 - **Guard pre-filled prompts.** When a prompt comes pre-populated (e.g. the agent name), the
   goal must tell the driver to **clear the field first** before typing, or the typed value
   appends to the default. See the RESOURCE NAMING / AGENT NAME goals in
@@ -163,9 +167,10 @@ Field references (do not restate these — link to them):
    checkable product behavior, stable-label picks, clear-field-before-typing, best-effort
    screenshot evidence, and a final "report a finding if …" goal. Screenshot errors and timeouts
    are observations and do not block later product goals; all product expectations remain strict.
-   For multi-select prompts, describe which current selections must change. If the desired values
-   are already selected, explicitly use `multi_select` with `toggle_indices: []` to accept them
-   unchanged; toggle indices are state changes, not the final selected set.
+   For multi-select prompts, name the prompt, list the choices that should be selected, state
+   whether other choices should remain unselected, and separately describe any expected default
+   selection. Keep action names, indices, payloads, and keystrokes out of scenario goals; the
+   worker owns those mechanics.
    For resource-creating flows, include the RESOURCE NAMING and AGENT NAME goals (prefix
    `{prefix}-`, suffix `-{instance}`) so parallel runs don't collide.
 

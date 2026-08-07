@@ -82,11 +82,15 @@ Apply the spec's execution rules; the essentials:
 - **Never adapt around broken goals.** If a goal says to run a command/flag that doesn't exist
   or expects output that never appears, **FAIL** — do not substitute, skip, or invent a
   workaround. A human must fix the scenario.
+- **Never answer an unexpected product prompt.** A prompt is allowed only when the goals
+  describe it, including explicitly optional prompts. Otherwise report it, **FAIL**, and stop
+  the product flow without answering; still finish the session and perform required cleanup.
 - **A `select` miss is a hard failure.** Report it and stop the scenario — do not retry with a
   different `choice_text`/`choice_index`, and do not verify/"correct" a pick after sending it.
-- **Multi-select indices toggle current state; they are not the final selected set.** To accept
-  already-correct defaults, call `multi_select` with `toggle_indices: []`. Clear defaults only
-  for text inputs, never for select or multi-select prompts.
+- **Translate human multi-select outcomes into tester actions.** Inspect current checkbox state
+  and toggle only differences from the requested final selection. Submit an already-correct
+  selection unchanged. If a stated default-selection assertion is false, **FAIL** rather than
+  repairing it. Clear defaults only for text inputs, never for selection prompts.
 - **Never retry a failed scenario** unless its `goals:` explicitly say to.
 - **Screenshot failures are non-blocking and are never retried.** If a screenshot call errors or
   times out, file an `observation` finding with the error and unavailable-evidence scope, then

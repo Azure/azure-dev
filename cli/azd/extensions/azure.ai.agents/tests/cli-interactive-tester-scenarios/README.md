@@ -234,6 +234,13 @@ contract; the operational rules the executor follows (select handling, retries,
   verifiable* spec of correct behavior — the driver's job is to **verify** them, not to
   **rationalize** why they weren't met, and it will not mark a scenario PASSED with an
   "observation" when the goals were not achieved.
+- **Every product prompt must be expected.** The goals define the complete set of interactive
+  product prompts allowed during the flow. A prompt is expected only when a goal describes it,
+  including explicitly optional prompts written as "if asked." Any other product prompt is a
+  behavior mismatch: the driver reports it, fails the scenario, and does not answer it
+  speculatively. Shell prompts and the interactive tester's own UI are not product prompts.
+  Avoid open-ended directions such as "follow the prompts," which make the expected UX
+  unverifiable.
 - **Capture directives are the narrow exception.** Screenshots are best-effort supporting
   evidence, not product behavior. A screenshot error or timeout must produce an observation
   identifying the capture error and unavailable evidence, but it does not block later goals or
@@ -246,6 +253,10 @@ contract; the operational rules the executor follows (select handling, retries,
 - **Prefer stable labels.** When a goal drives an interactive picker, key it off a stable text
   label rather than a positional index — the driver prefers `choice_text` over `choice_index`
   because indices shift between releases.
+- **Describe multi-select outcomes, not driving mechanics.** Name the user-visible prompt and
+  the choices that should be selected. If the default selection is part of the expected UX,
+  assert it separately. The driver is responsible for translating that human-readable outcome
+  into interactions with the prompt.
 - **Pause before the first cloud-creating action.** Provisioning is expensive and
   irreversible-ish; a run must have explicit cost consent before entering any `init` /
   `provision` flow that creates real resources (especially in parallel).

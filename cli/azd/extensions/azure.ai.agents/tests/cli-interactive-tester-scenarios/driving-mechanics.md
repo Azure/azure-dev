@@ -92,6 +92,12 @@ operational form of the README's **authoring contract** — see
   doesn't exist, or expect output that doesn't appear, **FAIL** the scenario. Do not substitute
   an alternative command, skip the broken step, or invent a workaround — a human must update
   the scenario.
+- **Never answer an unexpected product prompt.** Before responding, match the prompt to one
+  explicitly described by the scenario goals (including a goal that marks it optional with
+  wording such as "if asked"). If no goal permits it, capture and report the unexpected prompt,
+  **FAIL** the scenario, and do not answer or continue the product flow. A vaguely related goal
+  is not permission to proceed. Always finish the tester session and run any required cleanup or
+  post hooks. Shell prompts and the interactive tester's own UI are not product prompts.
 - **Never retry a failed scenario.** On failure (command error, unexpected output, non-zero
   exit) report the finding and move on. Do **not** re-run hoping for a different result unless
   the scenario's `goals:` explicitly instruct a retry — retrying masks flakiness.
@@ -113,10 +119,12 @@ operational form of the README's **authoring contract** — see
 - **Clear a pre-filled text field before typing** (e.g. the agent-name prompt): select-all then
   delete/backspace first, otherwise your value *appends* to the default (`defaultyourvalue`).
   This applies only to text input, not select or multi-select prompts.
-- **Treat multi-select toggle indices as state changes, not the final selection.** If every
-  desired value is already selected, call `multi_select` with `toggle_indices: []`; the tester
-  presses Enter without changing any checkboxes. Otherwise toggle only selected entries that
-  must be removed or unselected entries that must be added.
+- **Translate multi-select goals into state changes.** Read the human-described final selection,
+  inspect the visible checkbox state, and toggle only entries whose current state differs. If
+  the current selection already matches, call `multi_select` with `toggle_indices: []` to submit
+  it unchanged. If the goal separately asserts a default selection and the visible default does
+  not match, report and **FAIL** instead of silently repairing it. Toggle indices describe state
+  changes, not the final selected set.
 - **Pause before the first cloud-creating action.** Provisioning is expensive and
   irreversible-ish; the orchestrator's cost/consent gate must be satisfied before entering any
   `init` / `provision` flow that creates real resources (especially in parallel).

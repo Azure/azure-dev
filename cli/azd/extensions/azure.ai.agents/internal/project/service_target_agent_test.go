@@ -97,6 +97,37 @@ func TestWriteExistingAgentVersionWarningIfPresentSkipsErrors(t *testing.T) {
 	require.False(t, wroteWarning)
 }
 
+func TestAgentDeploymentFailedErrorPreservesServiceDetails(t *testing.T) {
+	t.Parallel()
+
+	err := agentDeploymentFailedError(&agent_api.AgentVersionObject{
+		Error: &agent_api.AgentVersionError{
+			Code:    string(nextstep.UserErrorImage),
+			Message: "the image could not be started",
+		},
+		RequestID: "request-id",
+	}, "sample.services.ai.azure.com")
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Equal(t, "create_agent.ImageError", serviceErr.ErrorCode)
+	require.Equal(t, "sample.services.ai.azure.com", serviceErr.ServiceName)
+	require.Contains(t, serviceErr.Message, "[ImageError] the image could not be started")
+	require.Contains(t, serviceErr.Message, "request-id")
+	require.Contains(t, serviceErr.Suggestion, "azd ai agent monitor --type system --follow")
+}
+
+func TestAgentDeploymentFailedErrorUsesFallbackCode(t *testing.T) {
+	t.Parallel()
+
+	err := agentDeploymentFailedError(&agent_api.AgentVersionObject{}, "sample.services.ai.azure.com")
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Equal(t, "create_agent.failed", serviceErr.ErrorCode)
+	require.Contains(t, serviceErr.Suggestion, "azd ai agent show")
+}
+
 func TestGetServiceKey_NormalizesToolboxNames(t *testing.T) {
 	t.Parallel()
 
@@ -1817,6 +1848,26 @@ func TestPublish_PreservesNonACRHostActionableGuidance(t *testing.T) {
 	actionable := azdext.ActionableErrorDetailFromError(err)
 	require.NotNil(t, actionable)
 	require.Equal(t, suggestion, actionable.GetSuggestion())
+}
+
+func TestPublish_PreservesHostServiceDetails(t *testing.T) {
+	t.Parallel()
+
+	st := status.New(codes.Unknown, "registry request failed")
+	withDetails, err := st.WithDetails(&azdext.ServiceErrorDetail{
+		ErrorCode:   "TooManyRequests",
+		StatusCode:  429,
+		ServiceName: "management.azure.com",
+	})
+	require.NoError(t, err)
+
+	publishErr := publishWithContainerError(t, withDetails.Err())
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](publishErr)
+	require.True(t, ok)
+	require.Equal(t, "container_publish.TooManyRequests", serviceErr.ErrorCode)
+	require.Equal(t, 429, serviceErr.StatusCode)
+	require.Equal(t, "management.azure.com", serviceErr.ServiceName)
 }
 
 func publishWithContainerError(t *testing.T, publishErr error) error {

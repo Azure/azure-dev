@@ -230,7 +230,7 @@ func TestConfirmSourceChange(t *testing.T) {
 			`azure.ai.agents 1.0.0 is already installed from source "azd". Reinstall from bundle?`)
 	})
 
-	t.Run("UpgradeShowsTargetVersion", func(t *testing.T) {
+	t.Run("UpdateShowsTargetVersion", func(t *testing.T) {
 		console := mockinput.NewMockConsole()
 		console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(true)
 		action := newConfirmTestAction(console, false)
@@ -241,7 +241,7 @@ func TestConfirmSourceChange(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, proceed)
 		require.Contains(t, lastConfirmMessage(console),
-			`azure.ai.agents 1.0.0 is already installed from source "azd". Upgrade to 2.0.0 from bundle?`)
+			`azure.ai.agents 1.0.0 is already installed from source "azd". Update to 2.0.0 from bundle?`)
 	})
 
 	t.Run("DowngradeDeclined", func(t *testing.T) {
@@ -352,9 +352,9 @@ func TestVersionTransitionVerb(t *testing.T) {
 		expected  string
 	}{
 		{"1.0.0", "1.0.0", "Reinstall"},
-		{"1.0.0", "2.0.0", "Upgrade to 2.0.0"},
+		{"1.0.0", "2.0.0", "Update to 2.0.0"},
 		{"1.0.0", "0.9.0", "Downgrade to 0.9.0"},
-		{"1.0.0-preview", "1.0.0", "Upgrade to 1.0.0"},
+		{"1.0.0-preview", "1.0.0", "Update to 1.0.0"},
 		// Non-semver tags have no defined ordering -> neutral verb.
 		{"nightly", "1.0.0", "Replace with 1.0.0"},
 		{"1.0.0", "nightly", "Replace with nightly"},

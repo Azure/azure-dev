@@ -28,9 +28,9 @@ import (
 )
 
 // singleResultCommonAttrs returns the usage attributes shared by single-target
-// `azd tool install` and `azd tool upgrade`: success, tool.id, and the
-// installation strategy. Callers append upgrade-specific version attrs
-// (tool.upgrade.{from,to}_version) on top.
+// `azd tool install` and `azd tool update`: success, tool.id, and the
+// installation strategy. Callers append update-specific version attrs
+// (tool.update.{from,to}_version) on top.
 //
 // Returns nil if r is nil so callers can safely pass through results without
 // pre-validating the slice element.
@@ -53,7 +53,7 @@ func singleResultCommonAttrs(r *tool.InstallResult) []attribute.KeyValue {
 // emitToolInstallTelemetry emits aggregate telemetry attributes for a batch
 // install or upgrade operation. When the batch contains exactly one tool the
 // caller is responsible for also emitting tool.id, tool.install.strategy, and
-// tool.install.success (and, for upgrades, tool.upgrade.{from,to}_version).
+// tool.install.success (and, for updates, tool.update.{from,to}_version).
 //
 // When the batch infrastructure itself fails (opErr != nil and results is
 // empty) every requested tool is counted as a failure and its ID is added to
@@ -93,7 +93,7 @@ func toolActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	toolCmd := &cobra.Command{
 		Use:   "tool",
 		Short: "Manage Azure development tools.",
-		Long:  "Discover, install, upgrade, and check status of Azure development tools.",
+		Long:  "Discover, install, update, and check status of Azure development tools.",
 	}
 
 	group := root.Add("tool", &actions.ActionDescriptorOptions{
@@ -127,11 +127,12 @@ func toolActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		FlagsResolver:  newToolInstallFlags,
 	})
 
-	// azd tool upgrade [tool-name...]
-	group.Add("upgrade", &actions.ActionDescriptorOptions{
+	// azd tool update [tool-name...]
+	group.Add("update", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "upgrade [tool-name...]",
-			Short: "Upgrade installed tools.",
+			Use:     "update [tool-name...]",
+			Aliases: []string{"upgrade"},
+			Short:   "Update installed tools.",
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
@@ -155,7 +156,7 @@ func toolActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group.Add("check", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "check",
-			Short: "Check for tool upgrades.",
+			Short: "Check for tool updates.",
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
 		DefaultFormat:  output.TableFormat,
@@ -1161,7 +1162,7 @@ func (a *toolInstallAction) resolveToolIds(ctx context.Context) ([]string, error
 }
 
 // ---------------------------------------------------------------------------
-// azd tool upgrade [tool-name...]
+// azd tool update [tool-name...]
 // ---------------------------------------------------------------------------
 
 type toolUpgradeFlags struct {
@@ -1174,15 +1175,15 @@ func newToolUpgradeFlags(cmd *cobra.Command) *toolUpgradeFlags {
 	flags := &toolUpgradeFlags{}
 	cmd.Flags().BoolVar(
 		&flags.all, "all", false,
-		"Upgrade all installed tools",
+		"Update all installed tools",
 	)
 	cmd.Flags().BoolVar(
 		&flags.dryRun, "dry-run", false,
-		"Preview what would be upgraded without making changes",
+		"Preview what would be updated without making changes",
 	)
 	cmd.Flags().StringSliceVar(
 		&flags.agents, "agent", nil,
-		"Upgrade the skill for the specified agent(s): copilot, claude. "+
+		"Update the skill for the specified agent(s): copilot, claude. "+
 			"Use --agent all for every detected agent (skill tools only)",
 	)
 	return flags
@@ -1222,7 +1223,7 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 	var toolsToUpgrade []*tool.ToolDefinition
 
 	// fromVersions captures the pre-upgrade installed version per tool ID,
-	// populated on both branches so that tool.upgrade.from_version is
+	// populated on both branches so that tool.update.from_version is
 	// emitted on the single-tool path regardless of whether the user
 	// supplied explicit args. Detection failures are non-fatal here —
 	// from_version is a best-effort telemetry signal, not a precondition
@@ -1230,7 +1231,7 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 	fromVersions := make(map[string]string)
 
 	if len(a.args) > 0 && a.flags.all {
-		return nil, toolIDsWithAllError("upgrade")
+		return nil, toolIDsWithAllError("update")
 	}
 
 	switch {
@@ -1278,7 +1279,7 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		// can't run (or would corrupt JSON), so require an explicit target
 		// (tool IDs or --all) rather than implicitly upgrading every tool.
 		if len(installed) > 0 && !promptAllowed(a.console, a.formatter) {
-			return nil, noToolTargetError("upgrade")
+			return nil, noToolTargetError("update")
 		}
 		chosen := installed
 		if promptAllowed(a.console, a.formatter) && len(installed) > 0 {
@@ -1302,7 +1303,7 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 			return nil, a.formatter.Format([]*toolInstallResultItem{}, a.writer, nil)
 		}
 		a.console.Message(ctx, output.WithGrayFormat(
-			"No installed tools to upgrade.",
+			"No installed tools to update.",
 		))
 		return nil, nil
 	}
@@ -1323,8 +1324,8 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	if a.formatter.Kind() != output.JsonFormat {
 		a.console.MessageUxItem(ctx, &ux.MessageTitle{
-			Title:     "Upgrade Azure development tools (azd tool upgrade)",
-			TitleNote: "Upgrades installed tools to their latest versions",
+			Title:     "Update Azure development tools (azd tool update)",
+			TitleNote: "Updates installed tools to their latest versions",
 		})
 	}
 
@@ -1358,7 +1359,7 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
 			return a.manager.UpgradeTools(ctx, allIDs, agentOpts...)
 		}
-		outcome := runToolOperation(ctx, toolsToUpgrade, operationFn, "Upgrading", "upgrade", a.console,
+		outcome := runToolOperation(ctx, toolsToUpgrade, operationFn, "Updating", "update", a.console,
 			a.formatter.Kind() == output.JsonFormat)
 		upgradeResults = outcome.Items
 		rawResults = outcome.Results
@@ -1371,11 +1372,11 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		singleAttrs := singleResultCommonAttrs(r)
 		if r.Tool != nil {
 			if from, ok := fromVersions[r.Tool.Id]; ok && from != "" {
-				singleAttrs = append(singleAttrs, fields.ToolUpgradeFromVersionKey.String(from))
+				singleAttrs = append(singleAttrs, fields.ToolUpdateFromVersionKey.String(from))
 			}
 		}
 		if r.Success && r.InstalledVersion != "" {
-			singleAttrs = append(singleAttrs, fields.ToolUpgradeToVersionKey.String(r.InstalledVersion))
+			singleAttrs = append(singleAttrs, fields.ToolUpdateToVersionKey.String(r.InstalledVersion))
 		}
 		tracing.SetUsageAttributes(singleAttrs...)
 	}
@@ -1414,25 +1415,25 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	header := "Tool is upgraded."
+	header := "Tool is updated."
 	if allUpToDate {
 		header = "Tool is already up to date."
 	}
 	if len(rawResults) > 1 {
-		header = "Tools are upgraded."
+		header = "Tools are updated."
 		if allUpToDate {
 			header = "Tools are already up to date."
 		}
 	}
 	// For a single tool, include the resulting version in the done message,
-	// e.g. "Tool is upgraded to v2.0.0." or
+	// e.g. "Tool is updated to v2.0.0." or
 	// "Tool is already up to date (v1.1.75).".
 	if len(rawResults) == 1 && rawResults[0].InstalledVersion != "" {
 		version := rawResults[0].InstalledVersion
 		if allUpToDate {
 			header = fmt.Sprintf("Tool is already up to date (v%s).", version)
 		} else {
-			header = fmt.Sprintf("Tool is upgraded to v%s.", version)
+			header = fmt.Sprintf("Tool is updated to v%s.", version)
 		}
 	}
 
@@ -1472,7 +1473,7 @@ func (a *toolUpgradeAction) promptForUpgradeTools(
 	multiSelect := uxlib.NewMultiSelect(&uxlib.MultiSelectOptions{
 		Writer:  a.console.Handles().Stdout,
 		Reader:  a.console.Handles().Stdin,
-		Message: "Select tools to upgrade",
+		Message: "Select tools to update",
 		Choices: choices,
 	})
 
@@ -1518,7 +1519,7 @@ func (a *toolUpgradeAction) resolveAgentOptions(
 }
 
 // dryRun detects the current status of the tools and displays what
-// the upgrade command would do without making changes.
+// the update command would do without making changes.
 func (a *toolUpgradeAction) dryRun(
 	ctx context.Context,
 	tools []*tool.ToolDefinition,
@@ -1533,7 +1534,7 @@ func (a *toolUpgradeAction) dryRun(
 			)
 		}
 
-		action := "upgrade"
+		action := "update"
 		currentVersion := ""
 		if status.Installed {
 			currentVersion = status.InstalledVersion
@@ -1925,7 +1926,7 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 	var results []*tool.UpdateCheckResult
 	if a.formatter.Kind() != output.JsonFormat {
 		spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
-			Text:        "Checking for upgrades...",
+			Text:        "Checking for updates...",
 			ClearOnStop: true,
 			Writer:      a.writer,
 		})
@@ -1934,13 +1935,13 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 			results, detectErr = a.manager.CheckForUpdates(ctx)
 			return detectErr
 		}); err != nil {
-			return nil, fmt.Errorf("checking for upgrades: %w", err)
+			return nil, fmt.Errorf("checking for updates: %w", err)
 		}
 	} else {
 		var err error
 		results, err = a.manager.CheckForUpdates(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("checking for upgrades: %w", err)
+			return nil, fmt.Errorf("checking for updates: %w", err)
 		}
 	}
 
@@ -2049,12 +2050,12 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 			if hasUpdates {
 				a.console.Message(ctx, "")
 				a.console.Message(ctx, fmt.Sprintf(
-					"To upgrade: %s",
-					output.WithHighLightFormat("azd tool upgrade <tool-id>"),
+					"To update: %s",
+					output.WithHighLightFormat("azd tool update <tool-id>"),
 				))
 				a.console.Message(ctx, fmt.Sprintf(
-					"To upgrade all: %s",
-					output.WithHighLightFormat("azd tool upgrade --all"),
+					"To update all: %s",
+					output.WithHighLightFormat("azd tool update --all"),
 				))
 			}
 		}
@@ -2355,8 +2356,8 @@ type toolOpOutcome struct {
 // Parameters:
 //   - tools: the resolved ToolDefinition slice to operate on
 //   - operationFn: either InstallTools or UpgradeTools
-//   - title: verb for task titles (e.g. "Installing", "Upgrading")
-//   - action: action label for result items (e.g. "install", "upgrade")
+//   - title: verb for task titles (e.g. "Installing", "Updating")
+//   - action: action label for result items (e.g. "install", "update")
 //   - console: for displaying warnings on partial failure
 //   - quiet: when true (JSON output) the per-tool TaskList is routed to
 //     io.Discard so its progress/control bytes never corrupt the
@@ -2516,7 +2517,7 @@ func runToolOperation(
 	taskErr := taskList.Run()
 	if taskErr != nil && !quiet {
 		// Build the past participle: "install" -> "installed",
-		// "upgrade" -> "upgraded". Appending only "d" would be wrong,
+		// "update" -> "updated". Appending only "d" would be wrong,
 		// so append "ed" unless the verb already ends in "e".
 		participle := action + "ed"
 		if strings.HasSuffix(action, "e") {

@@ -28,15 +28,15 @@ func (e *ErrUnsupportedRegistrySchema) Error() string {
 }
 
 // NewUnsupportedRegistrySchemaError wraps an ErrUnsupportedRegistrySchema in an
-// ErrorWithSuggestion that guides the user to upgrade azd.
+// ErrorWithSuggestion that guides the user to update azd.
 func NewUnsupportedRegistrySchemaError(schemaErr *ErrUnsupportedRegistrySchema) error {
 	return &errorhandler.ErrorWithSuggestion{
 		Err:        schemaErr,
 		Message:    schemaErr.Error(),
-		Suggestion: "Upgrade azd to the latest version to use this registry",
+		Suggestion: "Update azd to the latest version to use this registry",
 		Links: []errorhandler.ErrorLink{{
 			URL:   "https://aka.ms/azd/install",
-			Title: "Install/upgrade azd",
+			Title: "Install/update azd",
 		}},
 	}
 }

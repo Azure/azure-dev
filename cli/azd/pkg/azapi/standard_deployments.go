@@ -579,10 +579,7 @@ func (ds *StandardDeployments) voidSubscriptionDeploymentState(
 	if has {
 		var emptyTemplate json.RawMessage = []byte(emptySubscriptionArmTemplate)
 		emptyDeploymentName := ds.GenerateDeploymentName(*envName)
-		tags := map[string]*string{
-			azure.TagKeyAzdEnvName: envName,
-			"azd-deploy-reason":    new("down"),
-		}
+		tags := voidDeploymentTags(deployment)
 
 		_, err = ds.DeployToSubscription(
 			ctx,
@@ -601,6 +598,22 @@ func (ds *StandardDeployments) voidSubscriptionDeploymentState(
 	}
 
 	return nil
+}
+
+func voidDeploymentTags(deployment *ResourceDeployment) map[string]*string {
+	tags := map[string]*string{
+		azure.TagKeyAzdEnvName: deployment.Tags[azure.TagKeyAzdEnvName],
+		"azd-deploy-reason":    new("down"),
+	}
+
+	if projectName, has := deployment.Tags[azure.TagKeyAzdProjectName]; has {
+		tags[azure.TagKeyAzdProjectName] = projectName
+	}
+	if layerName, has := deployment.Tags[azure.TagKeyAzdLayerName]; has {
+		tags[azure.TagKeyAzdLayerName] = layerName
+	}
+
+	return tags
 }
 
 func (ds *StandardDeployments) DeleteResourceGroupDeployment(

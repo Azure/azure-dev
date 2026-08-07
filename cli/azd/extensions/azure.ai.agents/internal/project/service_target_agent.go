@@ -2655,7 +2655,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 	}
 
 	// Timeout
-	if lastVersion == nil && lastPollErr != nil {
+	if lastPollErr != nil {
 		return nil, exterrors.ServiceFromAzure(lastPollErr, exterrors.OpCreateAgent)
 	}
 	lastStatus := "unknown"
@@ -2674,7 +2674,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 func agentDeploymentFailedError(versionResp *agent_api.AgentVersionObject, serviceName string) error {
 	code := "failed"
 	errMsg := "agent deployment failed"
-	suggestion := "run `azd ai agent show` to view the structured deploy error and follow the linked troubleshooting guide"
+	suggestion := "run `azd ai agent show` to inspect the latest deployment status"
 	if versionResp.Error != nil {
 		code = versionResp.Error.Code
 		errMsg = fmt.Sprintf("agent deployment failed: [%s] %s", code, versionResp.Error.Message)

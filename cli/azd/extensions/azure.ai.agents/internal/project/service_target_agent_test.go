@@ -125,7 +125,11 @@ func TestAgentDeploymentFailedErrorUsesFallbackCode(t *testing.T) {
 	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
 	require.True(t, ok)
 	require.Equal(t, "create_agent.failed", serviceErr.ErrorCode)
-	require.Contains(t, serviceErr.Suggestion, "azd ai agent show")
+	require.Equal(
+		t,
+		"run `azd ai agent show` to inspect the latest deployment status",
+		serviceErr.Suggestion,
+	)
 }
 
 func TestGetServiceKey_NormalizesToolboxNames(t *testing.T) {

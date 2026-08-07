@@ -5,9 +5,11 @@ package azapi
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
@@ -15,6 +17,21 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
+
+func TestAppServiceRuntimeStatusTimeoutResult(t *testing.T) {
+	result, ok := appServiceRuntimeStatusTimeoutResult(&azsdk.DeploymentStatusTimeoutError{
+		Timeout: 5 * time.Minute,
+	})
+
+	require.True(t, ok)
+	require.Equal(t, "OK", result.Status)
+	require.Contains(t, result.RuntimeStatusWarning, "Deployment completed")
+	require.Contains(t, result.RuntimeStatusWarning, "unable to verify that the app started within 5m0s")
+
+	result, ok = appServiceRuntimeStatusTimeoutResult(errors.New("runtime failed"))
+	require.False(t, ok)
+	require.Nil(t, result)
+}
 
 // Test deployment status api (linux web app only)
 func Test_DeployTrackLinuxWebAppStatus(t *testing.T) {

@@ -618,6 +618,10 @@ func (u *UpGraphAction) Run(
 		return nil, result.Error
 	}
 
+	if u.formatter.Kind() != output.JsonFormat {
+		displayDeployWarnings(ctx, u.console, stableServices, state)
+	}
+
 	// Display service endpoint artifacts collected during deploy steps.
 	for _, svc := range stableServices {
 		if dr := state.GetResult(svc.Name); dr != nil && len(dr.Artifacts) > 0 {

@@ -17,7 +17,8 @@ pre:
 
 goals:
   - "Ensure recent activity: run 'azd ai agent invoke \"generate some output\"' so the session has console logs."
+  - "Immediately before running monitor, run `date '+%H:%M:%S %Z (%z)'` in the same terminal session and note the machine's local time and UTC offset."
   - "Run: azd ai agent monitor --tail 50. Confirm recent console (stdout/stderr) log lines are fetched and printed, then the command exits (no --follow)."
-  - "Confirm timestamps are shown in local time by default and the output is readable."
+  - "Confirm recent log timestamps align with the machine-local clock reported by `date`, allowing for normal command elapsed time. If the machine reports UTC as its local time zone, UTC-looking timestamps are expected."
   - "Take a screenshot of the log output."
   - "Report a finding if no session can be auto-resolved, if logs are empty despite recent activity, or if the output is garbled."

@@ -23,7 +23,7 @@ pre:
       if [ -f "$f" ] && ! grep -q 'agentCard:' "$f"; then
         # Insert agentCard block after the "config:" line using awk.
         # awk is more reliable than sed for multi-line insertion.
-        awk '/^    config:/{print; print "      agentCard:"; print "        description: \"{prefix} endpoint-update test card\""; print "        skills:"; print "          - id: \"{prefix}-echo\""; print "            name: \"Echo\""; print "            description: \"Echoes input back\""; next}1' "$f" > "${f}.tmp" && mv "${f}.tmp" "$f"
+        awk '/^    config:/{print; print "      agentCard:"; print "        description: \"{prefix} endpoint-update test card\""; print "        skills:"; print "          - id: \"{prefix}-echo\""; print "            name: \"Echo\""; print "            description: \"Echoes input back\""; next}1' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
         echo "Injected agentCard into azure.yaml"
       else
         echo "agentCard already present or azure.yaml not found"

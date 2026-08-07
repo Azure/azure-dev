@@ -223,7 +223,7 @@
       "description": "Browser-based inspector UI for locally running Foundry agents. (Beta)",
       "versions": [
         {
-          "version": "1.0.0-beta.3.nightly.6666809",
+          "version": "1.0.0-beta.3.nightly.6672223",
           "requiredAzdVersion": ">=1.27.0",
           "capabilities": [
             "custom-commands",
@@ -246,7 +246,7 @@
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "81c05913431797ce111af13895fcfe90cad0bc5ebdb11d38b4041b7055ec34ce"
+                "value": "1a1ce8e83303a0a735ee0157751757074ef34e63391563d1c3be4b784b2edb59"
               },
               "entryPoint": "azure-ai-inspector-darwin-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-inspector/nightly/azure-ai-inspector-darwin-amd64.zip"
@@ -254,7 +254,7 @@
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "d6b037e7ced279195817a4762597e17902a22b7e1070a63f7aadce9b3e399648"
+                "value": "f89304134a13a25fbd71db5878b08994b2dfe8910b5db11b1b1c260e30a1793c"
               },
               "entryPoint": "azure-ai-inspector-darwin-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-inspector/nightly/azure-ai-inspector-darwin-arm64.zip"
@@ -262,7 +262,7 @@
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "4bac46b7913966cf142b5b0868f6c16cffa4a471b92861b84ac159ca94fca91f"
+                "value": "5bc45338857fdaedd44f4305288f6f9f059305367f73eca74616af4e4b2e77cd"
               },
               "entryPoint": "azure-ai-inspector-linux-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-inspector/nightly/azure-ai-inspector-linux-amd64.tar.gz"
@@ -270,7 +270,7 @@
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "0308cc9ffab58fe31d3904e1ede9b7944aac76bed7e8f034b11c08be8969bfc5"
+                "value": "b451635ba3b1a194a635c9613bc0e4d7137c65efdf100ceb4625806bf79d5b3b"
               },
               "entryPoint": "azure-ai-inspector-linux-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-inspector/nightly/azure-ai-inspector-linux-arm64.tar.gz"
@@ -278,7 +278,7 @@
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "10b4c3a2a44f5fe45e613728403721132e6a79be14c76d66f2fb09916c3989c1"
+                "value": "22b2790fac3837f325d8b0953ac71ff2271dbbb3be2d1fa76316ef724943f978"
               },
               "entryPoint": "azure-ai-inspector-windows-amd64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-inspector/nightly/azure-ai-inspector-windows-amd64.zip"
@@ -286,7 +286,7 @@
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "86de182a5d9f84819435d59e2e5ab9cce33e2bc39450b9bc77e571b689792b6c"
+                "value": "52cb4e5587ae88ed075a821b07172b103aca468b59003305b294850c6be4ea0c"
               },
               "entryPoint": "azure-ai-inspector-windows-arm64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-inspector/nightly/azure-ai-inspector-windows-arm64.zip"

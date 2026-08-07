@@ -1401,6 +1401,9 @@ func sortModelDeploymentCandidates(candidates []*azdext.AiModelDeployment, defau
 // "Create a new Foundry project" or no projects exist.
 // When a project is selected, configures all project-related environment variables.
 // skipACR skips ACR connection discovery (used for code deploy);
+// filterHostedRegions restricts the project list to regions that support hosted
+// agents (code deploy or --image). These are separate decisions: a prompt-voice
+// (managed) agent skips ACR but is not hosted, so it must not be region-filtered.
 // bicepless skips both ACR and AppInsights prompts (see
 // configureFoundryProjectEnv).
 func selectFoundryProject(
@@ -1412,6 +1415,7 @@ func selectFoundryProject(
 	subscriptionId string,
 	projectResourceId string,
 	skipACR bool,
+	filterHostedRegions bool,
 	bicepless bool,
 ) (*FoundryProjectInfo, error) {
 	spinnerText := "Searching for Foundry projects in your subscription..."
@@ -1450,9 +1454,11 @@ func selectFoundryProject(
 		return nil, fmt.Errorf("failed to list Foundry projects: %w", err)
 	}
 
-	// When ACR is skipped (code deploy, or a pre-built --image), the agent runs as a
-	// hosted agent, so restrict to regions that support hosted agents.
-	if skipACR {
+	// Hosted agents (code deploy or a pre-built --image) must run in a region that
+	// supports hosted agents, so restrict the project list to those regions. This
+	// is intentionally gated on filterHostedRegions rather than skipACR: a managed
+	// prompt-voice agent also skips ACR but is not hosted and must not be filtered.
+	if filterHostedRegions {
 		supportedRegions, regErr := supportedRegionsForInit(ctx)
 		if regErr != nil {
 			// Propagate context cancellation/timeout — these are not recoverable fetch failures.

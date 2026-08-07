@@ -40,6 +40,7 @@ func configureFoundryProject(
 	projectResourceId string,
 	noPrompt bool,
 	skipACR bool,
+	filterHostedRegions bool,
 ) (*foundryProjectSetupResult, error) {
 	result := &foundryProjectSetupResult{}
 
@@ -71,6 +72,7 @@ func configureFoundryProject(
 			ctx, azdClient, newCred, azureContext, envName,
 			azureContext.Scope.SubscriptionId, projectResourceId,
 			skipACR,
+			filterHostedRegions,
 			true, // bicepless
 		)
 		if err != nil {
@@ -144,6 +146,7 @@ func configureFoundryProject(
 				ctx, azdClient, newCred, azureContext, envName,
 				azureContext.Scope.SubscriptionId, "",
 				skipACR,
+				filterHostedRegions,
 				true, // bicepless
 			)
 			if err != nil {

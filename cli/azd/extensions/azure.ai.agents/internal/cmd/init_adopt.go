@@ -969,11 +969,16 @@ func runInitFromAzureYaml(
 	// manages. Code deploy and --image (bring your own registry) both
 	// skip ACR.
 	skipACR := !usesContainer || flags.image != ""
+	// The adopt path only supports hosted agents today. Hosted-region filtering
+	// is independent from ACR setup; prompt-voice has its own region/onboarding
+	// constraints and does not flow through this path.
+	filterHostedRegions := true
 
 	result, err := configureFoundryProject(
 		ctx, azdClient, azureContext, env.Name,
 		flags.projectResourceId, flags.noPrompt,
 		skipACR,
+		filterHostedRegions,
 	)
 	if err != nil {
 		if exterrors.IsCancellation(err) {

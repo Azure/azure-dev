@@ -132,6 +132,16 @@ type Dependencies struct {
 		serviceName string,
 	) (name string, version string, err error)
 
+	// filterHostedAgentServicesFn is a test seam for the hosted-agent status
+	// check. Production uses project config to remove prompt-voice services from
+	// the hosted NAME/VERSION probe; tests can keep the historical service list
+	// without standing up a project gRPC server.
+	filterHostedAgentServicesFn func(
+		ctx context.Context,
+		azdClient *azdext.AzdClient,
+		services []string,
+	) []string
+
 	// lookupToolboxEnv is a test seam for the `local.toolboxes`
 	// check (Phase 5 C14). When non-nil it replaces the production
 	// `makeRealToolboxEnvLookup` closure inside the check, letting

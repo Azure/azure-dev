@@ -167,5 +167,8 @@ func (c *AgentClient) PublishTeamsApp(
 	if result.TitleID == "" {
 		return nil, fmt.Errorf("Teams app publish response was missing titleId")
 	}
+	if result.TeamsAppID == "" {
+		return nil, fmt.Errorf("Teams app publish response was missing teamsAppId")
+	}
 	return &result, nil
 }

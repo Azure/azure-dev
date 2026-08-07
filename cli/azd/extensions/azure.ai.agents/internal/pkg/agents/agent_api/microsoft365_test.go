@@ -135,3 +135,13 @@ func TestPublishTeamsApp_MissingTitleID(t *testing.T) {
 		})
 	}
 }
+
+func TestPublishTeamsApp_MissingTeamsAppID(t *testing.T) {
+	client, _ := newCaptureClient(http.StatusOK, `{"titleId":"T_123"}`)
+
+	_, err := client.PublishTeamsApp(
+		t.Context(), "my-agent", TeamsAppPackageRequest{}, Microsoft365APIVersion,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "teamsAppId")
+}

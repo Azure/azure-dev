@@ -916,6 +916,11 @@ func runInitFromAzureYaml(
 				"'azd ai agent init -m <agent.manifest.yaml>'",
 		)
 	}
+	if agentNameOverride != "" {
+		if err := validateAdoptedAgentNameOverride(content); err != nil {
+			return err
+		}
+	}
 
 	// Stage the sample as a local template directory (azure.yaml at its root
 	// alongside referenced files) that azd-core can adopt with `azd init -t`.
@@ -1073,6 +1078,64 @@ func runInitFromAzureYaml(
 
 	printAdoptionNextSteps(ctx, azdClient, folderDisplay)
 	return nil
+}
+
+type adoptedAgentNameOverrideAzureYaml struct {
+	Services map[string]adoptedAgentNameOverrideService `yaml:"services"`
+}
+
+type adoptedAgentNameOverrideService struct {
+	Host   string `yaml:"host"`
+	Kind   string `yaml:"kind"`
+	Name   string `yaml:"name"`
+	Config struct {
+		Kind string `yaml:"kind"`
+		Name string `yaml:"name"`
+	} `yaml:"config"`
+}
+
+func validateAdoptedAgentNameOverride(content []byte) error {
+	var doc adoptedAgentNameOverrideAzureYaml
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		return fmt.Errorf("parsing adopted azure.yaml for agent name override: %w", err)
+	}
+
+	namedAgents := 0
+	for _, svc := range doc.Services {
+		if svc.Host != AiAgentHost {
+			continue
+		}
+		if adoptedAgentNameOverrideServiceName(svc) == "" {
+			continue
+		}
+		namedAgents++
+		if namedAgents > 1 {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--agent-name cannot be applied to an adopted azure.yaml with multiple agent services",
+				"update each agent service's `name` in azure.yaml after init, or use a sample with a single agent service",
+			)
+		}
+	}
+	if namedAgents == 0 {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--agent-name could not be applied because the adopted azure.yaml has no named agent service",
+			"update the agent service's `name` in azure.yaml after init, or use a sample with a named agent service",
+		)
+	}
+
+	return nil
+}
+
+func adoptedAgentNameOverrideServiceName(svc adoptedAgentNameOverrideService) string {
+	if strings.TrimSpace(svc.Kind) != "" {
+		return strings.TrimSpace(svc.Name)
+	}
+	if strings.TrimSpace(svc.Config.Kind) != "" {
+		return strings.TrimSpace(svc.Config.Name)
+	}
+	return ""
 }
 
 func adoptedAgentNameOverride(flags *initFlags) (string, error) {

@@ -909,6 +909,72 @@ func TestAdoptedAgentNameOverride_UsesExplicitFlag(t *testing.T) {
 	require.Equal(t, "test0804", flags.agentName)
 }
 
+func TestValidateAdoptedAgentNameOverride_AllowsSingleNamedAgent(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`name: sample
+services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: echo-activity
+`)
+
+	require.NoError(t, validateAdoptedAgentNameOverride(content))
+}
+
+func TestValidateAdoptedAgentNameOverride_AllowsSingleLegacyNamedAgent(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`name: sample
+services:
+  agent:
+    host: azure.ai.agent
+    config:
+      kind: hosted
+      name: echo-activity
+`)
+
+	require.NoError(t, validateAdoptedAgentNameOverride(content))
+}
+
+func TestValidateAdoptedAgentNameOverride_RejectsMultipleNamedAgents(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`name: sample
+services:
+  agent-a:
+    host: azure.ai.agent
+    kind: hosted
+    name: agent-a
+  agent-b:
+    host: azure.ai.agent
+    kind: hosted
+    name: agent-b
+`)
+
+	err := validateAdoptedAgentNameOverride(content)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "multiple agent services")
+}
+
+func TestValidateAdoptedAgentNameOverride_RejectsNoNamedAgent(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`name: sample
+services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+  project:
+    host: azure.ai.project
+`)
+
+	err := validateAdoptedAgentNameOverride(content)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no named agent service")
+}
+
 // TestStampProjectEndpoint_WritesEndpoint verifies that stampProjectEndpoint
 // writes the endpoint to the existing azure.ai.project service via
 // SetServiceConfigValue when a valid project is provided.

@@ -80,6 +80,7 @@ carries `config: env:` gets a warning naming the affected variables on both
 
 Move them up one level to fix it:
 
+<!-- azd:doc-example partial -->
 ```yaml
 services:
   my-agent:

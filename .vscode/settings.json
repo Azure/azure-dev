@@ -4,5 +4,9 @@
     "-timeout",
     "30m"
   ],
-  "aspire.enableSettingsFileCreationPromptOnStartup": false
+  "aspire.enableSettingsFileCreationPromptOnStartup": false,
+  "azureFunctions.projectSubpath": "cli/azd/test/functional/testdata/samples/gofuncapp",
+  "azureFunctions.projectLanguage": "Go",
+  "azureFunctions.projectRuntime": "~4",
+  "debug.internalConsoleOptions": "neverOpen"
 }

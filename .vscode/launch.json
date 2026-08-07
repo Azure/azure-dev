@@ -9,8 +9,6 @@
     // to ensure git tracks changes to this file again.
     "version": "0.2.0",
     "configurations": [
-        // If you set `AZD_DEBUG=true` in your environment, `azd` will pause early in start up and allow you to attach
-        // to it. Use the Attach to Process configuration and pick the corresponding `azd` process.
         {
             "name": "Attach to Process",
             "type": "go",
@@ -18,7 +16,6 @@
             "mode": "local",
             "processId": "${command:pickGoProcess}"
         },
-        // This will launch azd cli (starting from cli/azd/main.go), under the debugger.
         {
             "name": "Debug azd cli",
             "type": "go",
@@ -26,7 +23,17 @@
             "mode": "debug",
             "program": "${workspaceFolder}/cli/azd",
             "args": "${input:cliArgs}",
-            "console": "integratedTerminal",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Attach to Go Functions",
+            "type": "go",
+            "request": "attach",
+            "mode": "remote",
+            "host": "127.0.0.1",
+            "port": 2345,
+            "preLaunchTask": "func: host start",
+            "postDebugTask": "cleanup gofuncapp debug"
         }
     ],
     "inputs": [

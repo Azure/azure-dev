@@ -3,6 +3,8 @@
     // for the documentation about the extensions.json format
     "recommendations": [
         "streetsidesoftware.code-spell-checker",
-        "redhat.vscode-yaml"
+        "redhat.vscode-yaml",
+        "ms-azuretools.vscode-azurefunctions",
+        "golang.go"
     ]
 }

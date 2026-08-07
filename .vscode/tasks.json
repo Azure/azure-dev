@@ -1,0 +1,50 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "prepare gofuncapp debug",
+			"type": "shell",
+			"windows": {
+				"command": "cmd.exe /c \"if not exist go.mod copy /Y go.mod.txt go.mod >nul && if not exist go.sum copy /Y go.sum.txt go.sum >nul\""
+			},
+			"osx": {
+				"command": "[ -f go.mod ] || cp go.mod.txt go.mod; [ -f go.sum ] || cp go.sum.txt go.sum"
+			},
+			"linux": {
+				"command": "[ -f go.mod ] || cp go.mod.txt go.mod; [ -f go.sum ] || cp go.sum.txt go.sum"
+			},
+			"problemMatcher": [],
+			"options": {
+				"cwd": "${workspaceFolder}/cli/azd/test/functional/testdata/samples/gofuncapp"
+			}
+		},
+		{
+			"type": "func",
+			"label": "func: host start",
+			"command": "host start",
+			"problemMatcher": "$func-golang-watch",
+			"isBackground": true,
+			"dependsOn": "prepare gofuncapp debug",
+			"options": {
+				"cwd": "${workspaceFolder}/cli/azd/test/functional/testdata/samples/gofuncapp"
+			}
+		},
+		{
+			"label": "cleanup gofuncapp debug",
+			"type": "shell",
+			"windows": {
+				"command": "cmd.exe /c \"if exist go.mod del go.mod & if exist go.sum del go.sum\""
+			},
+			"osx": {
+				"command": "rm -f go.mod go.sum"
+			},
+			"linux": {
+				"command": "rm -f go.mod go.sum"
+			},
+			"problemMatcher": [],
+			"options": {
+				"cwd": "${workspaceFolder}/cli/azd/test/functional/testdata/samples/gofuncapp"
+			}
+		}
+	]
+}

@@ -4,8 +4,10 @@
 package ux
 
 import (
+	"bytes"
 	"testing"
 
+	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -30,6 +32,37 @@ func TestFormatPromptMessage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.want, formatPromptMessage(tt.message))
+		})
+	}
+}
+
+// renderPromptMessage is the integration point shared by every prompt
+// primitive, so these cases pin the full rendered header rather than just the
+// separator. Color is forced on because the styling sequences are part of what
+// is being asserted.
+func TestRenderPromptMessage(t *testing.T) {
+	tests := []struct {
+		name    string
+		message string
+		want    string
+	}{
+		{name: "plain gets colon", message: "Continue", want: "\x1b[94m? \x1b[0m\x1b[1mContinue: \x1b[22m"},
+		{name: "question keeps mark", message: "Continue?", want: "\x1b[94m? \x1b[0m\x1b[1mContinue? \x1b[22m"},
+		// A blank message writes the marker alone, with no empty bold pair.
+		{name: "empty writes marker only", message: "", want: "\x1b[94m? \x1b[0m"},
+		{name: "whitespace writes marker only", message: "  \t", want: "\x1b[94m? \x1b[0m"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			previous := color.NoColor
+			color.NoColor = false
+			t.Cleanup(func() { color.NoColor = previous })
+
+			var buf bytes.Buffer
+			renderPromptMessage(NewPrinter(&buf), tt.message)
+
+			assert.Equal(t, tt.want, buf.String())
 		})
 	}
 }

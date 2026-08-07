@@ -20,7 +20,12 @@ const promptTerminalPunctuation = "?:.!;"
 // bolding, and the trailing separator all live here.
 func renderPromptMessage(printer Printer, message string) {
 	printer.Fprintf("%s", output.WithHighLightFormat("? "))
-	printer.Fprintf("%s", BoldString("%s", formatPromptMessage(message)))
+
+	// Skip the bold write for a blank message so it does not emit an empty
+	// pair of styling sequences wrapping no visible text.
+	if formatted := formatPromptMessage(message); formatted != "" {
+		printer.Fprintf("%s", BoldString("%s", formatted))
+	}
 }
 
 // formatPromptMessage returns the prompt message with the separator that

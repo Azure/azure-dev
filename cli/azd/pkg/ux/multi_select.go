@@ -422,10 +422,7 @@ func (p *MultiSelect) renderValidation(printer Printer) {
 }
 
 func (p *MultiSelect) renderMessage(printer Printer) {
-	printer.Fprintf("%s", output.WithHighLightFormat("? "))
-
-	// Message
-	printer.Fprintf("%s", BoldString("%s: ", p.options.Message))
+	renderPromptMessage(printer, p.options.Message)
 
 	// Cancelled
 	if p.cancelled {

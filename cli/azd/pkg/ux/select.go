@@ -337,10 +337,7 @@ func (p *Select) renderValidation(printer Printer) {
 }
 
 func (p *Select) renderMessage(printer Printer) {
-	printer.Fprintf("%s", output.WithHighLightFormat("? "))
-
-	// Message
-	printer.Fprintf("%s", BoldString("%s: ", p.options.Message))
+	renderPromptMessage(printer, p.options.Message)
 
 	// Cancelled
 	if p.cancelled {

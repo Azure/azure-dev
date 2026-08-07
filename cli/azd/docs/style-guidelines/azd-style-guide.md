@@ -211,6 +211,8 @@ Certain azd commands require the user to input text, select yes/no, or select an
 
 All input requests are in bold and begin with a blue `?`. This helps ensure that they stand out to users as different from other plain text logs and CLI outputs.
 
+Prompt messages carry their own terminal punctuation. Trailing whitespace is trimmed, and a message that already ends in `?`, `:`, `.`, `!`, or `;` keeps that punctuation; any other message has `:` appended. `Enter a unique environment name` and `Enter a unique environment name:` therefore render identically, so either form is fine. Question-style prompts must supply their own `?`.
+
 #### Text Input
 
 Text input captures a single line of input from the user.
@@ -238,11 +240,12 @@ Hint: This is a help message
 
 #### Yes or No Input
 
-- Yes/no inputs include a `(Y/n)` delineator at the end of the input request (before the colon).
-- Users can either input `y`/`n` or hit the return key which will select the capitalized choice in the `(Y/n)` delineator.
+- Yes/no inputs include a `[Y/n]` delineator after the message. The message's own punctuation comes first (see General Guidelines above), then the delineator. When a default is set, the resolved value (`Yes` or `No`) renders after the delineator.
+- Users can either input `y`/`n` or hit the return key which will select the capitalized choice in the `[Y/n]` delineator.
+- The capitalized letter reflects the default value: `[Y/n]` when the default is yes, `[y/N]` when it is no, and `[y/n]` when no default is set.
 
 ```
-? Do you want to initialize a new Git repository in this directory? (Y/n):
+? Do you want to initialize a new Git repository in this directory? [Y/n] Yes
 ```
 
 > Colors: `?` → `WithHighLightFormat` + `WithBold`.

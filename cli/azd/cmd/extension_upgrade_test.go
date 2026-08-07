@@ -262,8 +262,8 @@ func TestDisplayDependencyUpgradeResultsChangesAndSkips(t *testing.T) {
 			{
 				ExtensionId: "skipped",
 				Status:      extensions.UpgradeStatusSkipped,
-				SkipReason:  "dependency upgrades disabled",
-				Suggestion:  "Retry without --no-dependency-upgrades.",
+				SkipReason:  "dependency updates disabled",
+				Suggestion:  "Retry without --no-dependency-updates.",
 			},
 		},
 		"  ",
@@ -272,13 +272,13 @@ func TestDisplayDependencyUpgradeResultsChangesAndSkips(t *testing.T) {
 	rendered := strings.Join(console.Output(), "\n")
 	require.Contains(t, rendered, "Downgraded downgraded dependency")
 	require.Contains(t, rendered, "Updated non-semver dependency")
-	require.Contains(t, rendered, "dependency upgrades disabled")
-	require.Contains(t, rendered, "Retry without --no-dependency-upgrades.")
+	require.Contains(t, rendered, "dependency updates disabled")
+	require.Contains(t, rendered, "Retry without --no-dependency-updates.")
 	require.Contains(
 		t,
 		console.Output(),
 		"  "+strings.Repeat(" ", len("(-) Skipped: "))+
-			"Retry without --no-dependency-upgrades.",
+			"Retry without --no-dependency-updates.",
 	)
 }
 

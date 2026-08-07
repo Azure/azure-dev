@@ -142,7 +142,7 @@ do not prevent the remaining extensions from being updated.
 When updating an extension that has dependencies, any installed
 dependencies are automatically updated too, to the highest version
 satisfying the extension's declared constraints. Use
---no-dependency-upgrades to opt out and update only the named
+--no-dependency-updates to opt out and update only the named
 extension.
 
 Use --output json for a structured report of all update results.`,
@@ -2067,11 +2067,11 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 }
 
 type extensionUpgradeFlags struct {
-	version              string
-	source               string
-	all                  bool
-	noDependencyUpgrades bool
-	global               *internal.GlobalCommandOptions
+	version             string
+	source              string
+	all                 bool
+	noDependencyUpdates bool
+	global              *internal.GlobalCommandOptions
 }
 
 func newExtensionUpgradeFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *extensionUpgradeFlags {
@@ -2082,8 +2082,11 @@ func newExtensionUpgradeFlags(cmd *cobra.Command, global *internal.GlobalCommand
 	cmd.Flags().StringVarP(&flags.source, "source", "s", "",
 		"The registered source name or registry location (URL or file path) to use for updates.")
 	cmd.Flags().BoolVar(&flags.all, "all", false, "Update all installed extensions")
-	cmd.Flags().BoolVar(&flags.noDependencyUpgrades, "no-dependency-upgrades", false,
+	cmd.Flags().BoolVar(&flags.noDependencyUpdates, "no-dependency-updates", false,
 		"Do not update dependencies when updating an extension that has dependencies")
+	cmd.Flags().BoolVar(&flags.noDependencyUpdates, "no-dependency-upgrades", false,
+		"Do not update dependencies when updating an extension that has dependencies")
+	_ = cmd.Flags().MarkHidden("no-dependency-upgrades")
 
 	return flags
 }
@@ -2647,7 +2650,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		reconciledVersion, depUpgrades, err := a.extensionManager.ReconcileDependencies(
 			ctx, compatExt, extensions.UpgradeOptions{
 				VersionPreference:   a.flags.version,
-				UpgradeDependencies: !a.flags.noDependencyUpgrades,
+				UpgradeDependencies: !a.flags.noDependencyUpdates,
 				AzdVersion:          azdVersion,
 			},
 		)
@@ -2679,7 +2682,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	extVersion, depUpgrades, err := a.extensionManager.Upgrade(
 		ctx, compatExt, extensions.UpgradeOptions{
 			VersionPreference:   a.flags.version,
-			UpgradeDependencies: !a.flags.noDependencyUpgrades,
+			UpgradeDependencies: !a.flags.noDependencyUpdates,
 			AzdVersion:          azdVersion,
 		},
 	)

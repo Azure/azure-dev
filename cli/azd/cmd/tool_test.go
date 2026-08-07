@@ -1445,6 +1445,38 @@ func TestToolUpgradeAction_All_JsonFormat_EmitsCleanJson(t *testing.T) {
 	require.Equal(t, "update", items[0].Action)
 }
 
+func TestToolUpgradeAction_DryRun_JsonUsesUpdateAction(t *testing.T) {
+	detector := &cmdMockDetector{
+		detectTool: func(_ context.Context, td *tool.ToolDefinition) (*tool.ToolStatus, error) {
+			return &tool.ToolStatus{
+				Tool:             td,
+				Installed:        td.Id == "az-cli",
+				InstalledVersion: "1.0.0",
+			}, nil
+		},
+	}
+	manager := tool.NewManager(detector, &cmdMockInstaller{}, nil)
+
+	var buf bytes.Buffer
+	action := newToolUpgradeAction(
+		[]string{"az-cli", "github-copilot-cli"},
+		&toolUpgradeFlags{dryRun: true},
+		manager,
+		mockinput.NewMockConsole(),
+		&output.JsonFormatter{},
+		&buf,
+	)
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+
+	var items []toolDryRunItem
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &items))
+	require.Len(t, items, 2)
+	assert.Equal(t, "update", items[0].Action)
+	assert.Equal(t, "skip (not installed)", items[1].Action)
+}
+
 // TestToolUpgradeAction_All_JsonFormat_EmptyEmitsArray verifies that when there
 // is nothing to update, `azd tool update --all --output json` still emits an
 // empty result array ([]) rather than a consoleMessage object, so automation

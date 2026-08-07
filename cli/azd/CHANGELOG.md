@@ -6,6 +6,9 @@
 
 ### Breaking Changes
 
+- `azd tool update --output json` now reports `"action": "update"` instead of `"action": "upgrade"` for update and dry-run results, including when invoked through the legacy `azd tool upgrade` alias. Update scripts that inspect the `action` field.
+- Telemetry identifiers for extension and tool updates now use `update` terminology, including `ext.update`, `extension.update.*`, `extension.dependency_update_count`, and `tool.update.*`. Update custom telemetry queries that use the former `upgrade` names.
+
 ### Bugs Fixed
 
 ### Other Changes
@@ -31,10 +34,7 @@
 ### Other Changes
 
 - [[#9380]](https://github.com/Azure/azure-dev/pull/9380) Update the bundled GitHub CLI to v2.97.0.
-
-### Other Changes
-
-- Rename the `azd extension upgrade` and `azd tool upgrade` commands to `azd extension update` and `azd tool update`. The former `upgrade` names continue to work as aliases for backward compatibility.
+- Rename the `azd extension upgrade` and `azd tool upgrade` commands to `azd extension update` and `azd tool update`. The former command names remain aliases. The extension dependency opt-out flag is now `--no-dependency-updates`; `--no-dependency-upgrades` remains available as a hidden alias for existing scripts.
 
 ## 1.29.0 (2026-07-29)
 

@@ -1148,7 +1148,7 @@ func (m *Manager) evaluateDependencyChanges(
 			continue
 		}
 
-		// Surface disabled dependency upgrades as Skipped entries.
+		// Surface disabled dependency updates as Skipped entries.
 		if !opts.UpgradeDependencies {
 			results = append(results, UpgradeResult{
 				ExtensionId: dep.Id,
@@ -1156,7 +1156,7 @@ func (m *Manager) evaluateDependencyChanges(
 				FromVersion: installed.Version,
 				FromSource:  installed.Source,
 				SkipReason: fmt.Sprintf(
-					"dependency upgrades disabled; %s available",
+					"dependency updates disabled; %s available",
 					bestVersion.Version,
 				),
 			})

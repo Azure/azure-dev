@@ -6026,7 +6026,7 @@ const completionSpec: Fig.Spec = {
 							description: 'Update all installed extensions',
 						},
 						{
-							name: ['--no-dependency-upgrades'],
+							name: ['--no-dependency-updates'],
 							description: 'Do not update dependencies when updating an extension that has dependencies',
 						},
 						{

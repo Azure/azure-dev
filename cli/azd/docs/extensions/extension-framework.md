@@ -157,7 +157,7 @@ Updates one or more extensions to the latest versions.
 - `--all` Updates all previously installed extensions when specified.
 - `-v, --version` Updates a specified extension to an exact version, if provided.
 - `-s, --source` Specifies the source used for the update. In addition to registered source names, this accepts a registry location (URL or file path). `azd` registers the location as a source before resolving the extension, updates the extension's stored source after a successful update, and rejects locations under `--no-prompt`; add the source first with `azd extension source add`.
-- `--no-dependency-upgrades` Skips updating dependencies declared by extension packs.
+- `--no-dependency-updates` Skips updating dependencies declared by extension packs.
 
 ## Developing Extensions
 
@@ -1213,7 +1213,7 @@ dependencies:
 
 Pack manifests must include at least one dependency. They may omit `capabilities`, `namespace`, `entryPoint`, `usage`, and `examples` when the pack has no commands of its own. Installing a pack installs its dependencies recursively from the same extension source as the pack. Dependency versions in the manifest support semver constraints, but command-line `--version` values for `azd extension install` and `azd extension update` are exact versions.
 
-Updating a pack updates the pack and, by default, reconciles installed dependencies to the highest published versions that satisfy the pack's declared dependency constraints. This dependency reconciliation still runs when the pack itself is already current, because an unchanged pack can point to a dependency range with newer matching versions. Users can disable automatic dependency updates with `azd extension update <pack-id> --no-dependency-upgrades`.
+Updating a pack updates the pack and, by default, reconciles installed dependencies to the highest published versions that satisfy the pack's declared dependency constraints. This dependency reconciliation still runs when the pack itself is already current, because an unchanged pack can point to a dependency range with newer matching versions. Users can disable automatic dependency updates with `azd extension update <pack-id> --no-dependency-updates`.
 
 #### Provider Registration
 

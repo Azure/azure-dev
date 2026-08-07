@@ -1211,11 +1211,37 @@ func Test_NewExtensionUninstallFlags_Constructor(t *testing.T) {
 
 func Test_NewExtensionUpgradeFlags_Constructor(t *testing.T) {
 	t.Parallel()
-	cmd := &cobra.Command{Use: "test"}
-	global := &internal.GlobalCommandOptions{}
-	flags := newExtensionUpgradeFlags(cmd, global)
-	require.NotNil(t, flags)
-	assert.Equal(t, global, flags.global)
+
+	tests := []struct {
+		name string
+		flag string
+	}{
+		{name: "canonical", flag: "--no-dependency-updates"},
+		{name: "legacy alias", flag: "--no-dependency-upgrades"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := &cobra.Command{Use: "test"}
+			global := &internal.GlobalCommandOptions{}
+			flags := newExtensionUpgradeFlags(cmd, global)
+
+			require.NoError(t, cmd.Flags().Parse([]string{tt.flag}))
+			assert.Equal(t, global, flags.global)
+			assert.True(t, flags.noDependencyUpdates)
+
+			canonical := cmd.Flags().Lookup("no-dependency-updates")
+			require.NotNil(t, canonical)
+			assert.False(t, canonical.Hidden)
+
+			legacy := cmd.Flags().Lookup("no-dependency-upgrades")
+			require.NotNil(t, legacy)
+			assert.True(t, legacy.Hidden)
+			assert.Empty(t, legacy.Deprecated)
+		})
+	}
 }
 
 func Test_NewExtensionSourceAddFlags_Constructor(t *testing.T) {

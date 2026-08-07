@@ -1140,7 +1140,7 @@ func TestFindCompletedDeployments(t *testing.T) {
 		*mockContext.Context, &mockedScope{
 			baseDate: baseDate,
 			envTag:   envTag,
-		}, envTag, layerName, "")
+		}, bicepProvider.projectName, envTag, layerName, "")
 	require.NoError(t, err)
 	require.Equal(t, 1, len(deployments))
 	// should take the base date + 2 years
@@ -3340,6 +3340,25 @@ func TestDeploymentStateErrors(t *testing.T) {
 			"hash",
 		)
 		require.Error(t, err)
+	})
+
+	t.Run("legacyDeploymentDoesNotSkipProvision", func(t *testing.T) {
+		t.Parallel()
+		mockContext := mocks.NewMockContext(t.Context())
+		prepareBicepMocks(mockContext)
+		p := createBicepProvider(t, mockContext)
+
+		_, err := p.deploymentState(
+			t.Context(),
+			&compileBicepResult{},
+			&mockedScope{
+				baseDate: "1989-10-31",
+				envTag:   p.env.Name(),
+			},
+			"hash",
+		)
+
+		require.ErrorContains(t, err, "does not contain matching azd project identity")
 	})
 }
 

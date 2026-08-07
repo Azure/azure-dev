@@ -13,20 +13,30 @@ pre:
     cwd: "~/working/azd-agents-shared/{shared_agent_name}"
     name: "assert shared agent is deployed"
     continue_on_error: true
-  # `endpoint update` reads agentEndpoint/agentCard from the azure.yaml service
+  # `endpoint update` reads agentEndpoint/agentCard from the unified service-level
   # properties (via LoadAgentDefinition) and errors ("nothing to update") if
   # neither is defined. The Basic Responses template defines neither, so inject a
-  # minimal agentCard into the azure.yaml service properties (idempotently) before
-  # the run so there is something to patch.
+  # minimal agentCard beside the inline `kind: hosted` definition (idempotently)
+  # before the run so there is something to patch.
   - run: |
       f="$HOME/working/azd-agents-shared/{shared_agent_name}/azure.yaml"
-      if [ -f "$f" ] && ! grep -q 'agentCard:' "$f"; then
-        # Insert agentCard block after the "config:" line using awk.
-        # awk is more reliable than sed for multi-line insertion.
-        awk '/^    config:/{print; print "      agentCard:"; print "        description: \"{prefix} endpoint-update test card\""; print "        skills:"; print "          - id: \"{prefix}-echo\""; print "            name: \"Echo\""; print "            description: \"Echoes input back\""; next}1' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
-        echo "Injected agentCard into azure.yaml"
+      if [ ! -f "$f" ]; then
+        echo "PRECONDITION FAILED: azure.yaml not found"
+        exit 1
+      fi
+      if ! grep -q '^    agentCard:' "$f"; then
+        if ! awk '/^    kind: hosted$/ && !inserted {print; print "    agentCard:"; print "      description: \"{prefix} endpoint-update test card\""; print "      skills:"; print "        - id: \"{prefix}-echo\""; print "          name: \"Echo\""; print "          description: \"Echoes input back\""; inserted=1; next} {print} END {if (!inserted) exit 1}' "$f" > "$f.tmp"; then
+          rm -f "$f.tmp"
+          echo "PRECONDITION FAILED: inline hosted-agent definition not found"
+          exit 1
+        fi
+        mv "$f.tmp" "$f"
+      fi
+      if grep -q '^    agentCard:' "$f"; then
+        echo "Verified service-level agentCard in azure.yaml"
       else
-        echo "agentCard already present or azure.yaml not found"
+        echo "PRECONDITION FAILED: service-level agentCard was not inserted"
+        exit 1
       fi
     cwd: "~/working/azd-agents-shared/{shared_agent_name}"
     name: "inject agentCard into azure.yaml so there is something to patch"

@@ -67,7 +67,7 @@ For each selected scenario:
 2. If it has `pre` hooks: `run_pre_hooks(path=…, session_vars=…)`. Hooks run host-side,
    sequentially, fail-fast (unless a hook sets `continue_on_error: true`).
 3. `start_session(scenario_path=…, session_vars=…, run_name=<scenario-stem>, output_dir=<wsl .reports path>)`.
-4. Drive the scenario's `goals:` with `send_action` / `select` / screenshots, then
+4. Drive the scenario's `goals:` with `send_action` / `select` / best-effort screenshots, then
    `finish_session` (this releases ports and generates the HTML report).
 5. If it has `post` hooks: `run_post_hooks(path=…, session_vars=…)`.
 
@@ -95,6 +95,13 @@ operational form of the README's **authoring contract** — see
 - **Never retry a failed scenario.** On failure (command error, unexpected output, non-zero
   exit) report the finding and move on. Do **not** re-run hoping for a different result unless
   the scenario's `goals:` explicitly instruct a retry — retrying masks flakiness.
+- **Screenshot capture is non-blocking and is never retried.** A screenshot is supporting
+  evidence, not product behavior. If a screenshot call errors or times out, immediately file a
+  `report_finding` with category `observation`, including the capture error and which expected
+  evidence is unavailable. Continue every remaining product-verification and cleanup step. If
+  all product goals pass and capture is the only issue, return **PASS-with-finding**, not FAIL.
+  A terminal/session failure that prevents observing or driving the product remains an
+  infrastructure **FAIL**; this exception applies only to the screenshot operation.
 - **Don't verify/retry after a `select`.** Reading back the echo and "correcting" a pick hides
   the very picker defect these runs exist to catch. Send the action; let downstream prompts
   surface any failure.
@@ -169,8 +176,9 @@ Every sub-agent spawned for a wave must obey:
   `<scenarios-dir>/.reports/<run-timestamp>/tester-reports`. Pick **one** `<run-timestamp>`
   (form `YYYYMMDD-HHMMSS`) per suite run and **reuse it across every session**, so all scenarios
   from one run group under a single folder.
-- **Screenshot key steps** and file `report_finding` for any confusing UX, error, or doc
-  mismatch.
+- **Screenshot key steps on a best-effort basis** and file `report_finding` for any confusing
+  UX, error, or doc mismatch. A screenshot error or timeout follows the non-blocking observation
+  policy above and must identify the evidence that could not be captured.
 - **Record per scenario** for the report: scenario stem, tier, **PASS / FAIL / ⏭️ SKIPPED**,
   wall-clock **duration** (`start_session` → `finish_session`, including hooks; formatted
   `Hh Mm Ss`, e.g. `3m 21s`, `1h 04m 12s`; `—` for SKIPPED), and any `report_finding` text.

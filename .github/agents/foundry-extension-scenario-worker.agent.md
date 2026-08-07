@@ -69,8 +69,8 @@ Your caller gives you everything you need — do not go looking for it yourself:
    `load_scenario` → (if present) `run_pre_hooks` → `start_session` (with `run_name`,
    `output_dir`, `session_id`, and `instance_id` if given) → drive the `goals:` with
    `send_action` / `select` / screenshots → `finish_session` → (if present) `run_post_hooks`.
-   Always `finish_session` for every session you start. Screenshot key steps and
-   `report_finding` for any confusing UX, error, or doc mismatch.
+   Always `finish_session` for every session you start. Screenshot key steps on a best-effort
+   basis and `report_finding` for any confusing UX, error, or doc mismatch.
 
 ## Verdict rules (fail-loud — do not soften)
 
@@ -85,6 +85,11 @@ Apply the spec's execution rules; the essentials:
 - **A `select` miss is a hard failure.** Report it and stop the scenario — do not retry with a
   different `choice_text`/`choice_index`, and do not verify/"correct" a pick after sending it.
 - **Never retry a failed scenario** unless its `goals:` explicitly say to.
+- **Screenshot failures are non-blocking and are never retried.** If a screenshot call errors or
+  times out, file an `observation` finding with the error and unavailable-evidence scope, then
+  continue all remaining product checks and cleanup. If capture is the only issue, return
+  **PASS-with-finding**. A terminal/session failure that prevents product verification is still an
+  infrastructure **FAIL**.
 - **Never work around a broken environment.** Wrong binary, file-locking, missing tool, path
   failure → **FAIL** with an infrastructure finding and return. You have no `edit`/`shell`
   tools by design: do not attempt to install, replace, or modify anything.

@@ -73,7 +73,7 @@ One file targets **one** command or flow. The taxonomy behind each field is sing
 the README — this is the annotated skeleton; follow the links for the rules:
 
 ```yaml
-# One-line comment: tier, what it targets, and any cost/prereq note.
+# One-line comment: tier, what it targets, and any cost/prerequisite note.
 name: "short-kebab-name"                 # tester run label; keep it short and unique-ish
 command: "azd ai agent <subcommand> …"   # the installed extension entry point
 cwd: "~/working/azd-agents-<slug>-{instance}"   # see cwd + idempotency below; /tmp for read-only
@@ -89,9 +89,9 @@ pre:                                      # optional host-side setup (reset dir,
 post:                                     # optional host-side cleanup
   - run: "…"
     name: "cleanup"
-goals:                                    # the CONTRACT — literal, checkable steps
+goals:                                    # product behavior is the literal, checkable contract
   - "Wait for … and confirm …."
-  - "Take a screenshot of the final output."
+  - "Take a screenshot of the final output." # best-effort evidence; capture failure is an observation
   - "Report a finding if …."
 ```
 
@@ -160,9 +160,11 @@ Field references (do not restate these — link to them):
    multiple `cmd:*` tags.
 
 8. **Write the `goals:` as the contract.** Follow the authoring-contract rules above: literal,
-   checkable, stable-label picks, clear-field-before-typing, screenshot key steps, and a final
-   "report a finding if …" goal. For resource-creating flows, include the RESOURCE NAMING and
-   AGENT NAME goals (prefix `{prefix}-`, suffix `-{instance}`) so parallel runs don't collide.
+   checkable product behavior, stable-label picks, clear-field-before-typing, best-effort
+   screenshot evidence, and a final "report a finding if …" goal. Screenshot errors and timeouts
+   are observations and do not block later product goals; all product expectations remain strict.
+   For resource-creating flows, include the RESOURCE NAMING and AGENT NAME goals (prefix
+   `{prefix}-`, suffix `-{instance}`) so parallel runs don't collide.
 
 ## Validation loop (no execution)
 

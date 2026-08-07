@@ -234,6 +234,11 @@ contract; the operational rules the executor follows (select handling, retries,
   verifiable* spec of correct behavior — the driver's job is to **verify** them, not to
   **rationalize** why they weren't met, and it will not mark a scenario PASSED with an
   "observation" when the goals were not achieved.
+- **Capture directives are the narrow exception.** Screenshots are best-effort supporting
+  evidence, not product behavior. A screenshot error or timeout must produce an observation
+  identifying the capture error and unavailable evidence, but it does not block later goals or
+  fail an otherwise passing scenario. The executor does not retry screenshot capture. A broken
+  terminal/session that prevents product verification remains an infrastructure failure.
 - **Never adapt around broken goals.** If a goal instructs a command or flag that does not
   exist, or expects output that does not appear, the driver **fails** the scenario rather than
   substituting an alternative, skipping the step, or inventing a workaround. Keep goals current
@@ -496,8 +501,9 @@ the run will execute against literal placeholder strings.
 - `command:` invokes the installed extension as `azd ai agent …`.
 - Init scenarios set `env: AZD_DISABLE_AGENT_DETECT: "1"` to disable agent
   auto-detection prompts.
-- Every scenario asks the driver to screenshot key steps and file a finding
-  (`report_finding`) for any confusing UX, error, or doc mismatch.
+- Every scenario asks the driver to screenshot key steps on a best-effort basis and file a
+  finding (`report_finding`) for any confusing UX, error, or doc mismatch. Screenshot capture
+  failures are recorded as observations and do not block the remaining scenario steps.
 
 ## Pre/post hooks
 

@@ -43,7 +43,7 @@ goals:
   - "Wait for 'azd provision' to complete. This creates the Azure infrastructure (Foundry project, model deployment, resource group) defined by the Tier 1 scaffold."
   - "After provision succeeds, run 'azd deploy' and wait for it to complete. This deploys the agent to the provisioned Foundry project."
   - "Run 'azd ai agent show' and verify the agent is accessible — confirm it reports an agent name and endpoint URL."
-  - "Run 'azd ai agent invoke' and send a simple test message (e.g. 'Hello, are you there?'). Confirm the agent responds with a non-empty reply. This validates the agent is functional, not just deployed."
+  - "Run `azd ai agent invoke \"Hello, are you there?\"` and confirm the agent responds with a non-empty reply containing no authentication or endpoint errors. This validates the agent is functional, not just deployed."
   - "Take a screenshot of the successful provision, deploy, show, and invoke output."
   - "Run 'azd down --force --purge' to tear down all Azure resources created by this scenario."
   - "Confirm the teardown succeeds (exit 0)."

@@ -76,7 +76,7 @@ These commands emit attributes or events beyond the global middleware span.
 | `package` | — | ✅ | ✅ | ✅ | Via hooks middleware; container service targets emit `container.credentials`, `container.publish`, `container.remotebuild` events |
 | `deploy` | — | ✅ | ✅ | ✅ | App Service zip-deploy emits `deploy.appservice.zip` (`deploy.appservice.linux`, `deploy.appservice.attempt`); container service targets emit `container.*` events |
 | `publish` | — | ✅ | ✅ | ✅ | Same as `deploy` (alias behavior) |
-| `up` | — | ✅ | ✅ | ✅ | Composes provision+deploy and inherits all their events; sets `infra.provider` (resolved IaC provider slice) directly on the `cmd.up` span; the up-graph runner emits `perf.provision_duration_ms`, `perf.deploy_duration_ms`, `perf.total_duration_ms` (`internal/cmd/up_graph.go`) |
+| `up` | — | ✅ | ✅ | ✅ | Composes provision+deploy and inherits all their events; sets `infra.provider` (resolved IaC provider slice) directly on the `cmd.up` span; the up-graph runner emits `perf.provision_duration_ms`, `perf.deploy_duration_ms`, `perf.total_duration_ms` (`internal/cmd/up_graph.go`). Emits synthetic `cmd.provision`/`cmd.package`/`cmd.deploy` child spans that carry the real per-phase status + ResultCode via `cmd.MapError`; `cmd.deploy` is emitted only when the deploy phase runs (issue #9054) |
 | `down` | — | ✅ | ✅ | ❌ | Teardown flow; pre/postdown lifecycle hooks emit `hooks.exec` via the hooks middleware; sets `infra.provider` (resolved IaC provider slice) directly on the command span |
 | **Add** | | | | | |
 | `add` | — | ✅ | ❌ | ❌ | Low priority |

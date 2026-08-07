@@ -653,6 +653,37 @@ OperationId: 28ce1f2898a4fec84522107e36c22038
 | summarize arg_min(TimeGenerated, *) by OperationId
 ```
 
+### `azd up` Synthetic `cmd.provision` / `cmd.package` / `cmd.deploy` Spans
+
+Since **v1.25.0** the unified `azd up` graph runs provision, package, publish, and
+deploy in-process as `exegraph.step`s rather than as child `azd provision` /
+`azd package` / `azd deploy` commands. To preserve the historical nested-span
+shape, `up` emits **synthetic** `cmd.provision`, `cmd.package`, and `cmd.deploy`
+spans as children of `cmd.up`.
+
+**Success/ResultCode behavior differs by version — mind the window when reading dashboards:**
+
+- **v1.25.0 → the release containing the issue #9054 fix (exclusive):** the
+  synthetic `cmd.provision` and `cmd.package` spans were always closed with an
+  Unset status, which the AppInsights exporter reads as **Success**. In this
+  window their under-`up` success rate is **over-reported** (a failing provision
+  or package still shows Success and drops its ARM/Bicep ResultCode), and **no
+  `cmd.deploy` span is emitted under `up` at all**, so the `cmd.deploy` success
+  rate is **deflated** (it misses the high-success under-`up` deploy population).
+- **From the #9054 fix onward:** each synthetic span carries the **real**
+  per-phase outcome — on failure it gets the same status + ResultCode a
+  stand-alone `azd provision` / `azd package` / `azd deploy` would report (via
+  `cmd.MapError`). `cmd.deploy` is emitted **only when the deploy phase actually
+  ran**; when provision/package fails first (FailFast skips deploy) no
+  `cmd.deploy` span is emitted, matching legacy `azd up` where the deploy
+  sub-command never ran.
+
+**Correcting historical dashboards for the affected window:** repoint provision
+and deploy panels at the underlying `exegraph.step` spans (tagged `provision`,
+and named `deploy-<svc>` / `publish-<svc>`), which recorded the correct status
+throughout, or exclude under-`up` `cmd.provision`/`cmd.package` Success from
+reliability aggregates for that version range.
+
 ### `validation.provision` Emitted Twice Per Bicep Provision
 
 The `validation.provision` event is emitted from **two** dispatch sites:

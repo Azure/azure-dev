@@ -34,6 +34,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/pflag"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // UpGraphAction is the single implementation of `azd up`'s default path: it
@@ -167,15 +169,51 @@ func (u *UpGraphAction) Run(
 	// `azd provision` span). It is deliberately not copied onto cmd.package, and it is set on the
 	// span directly rather than via the process-global usage bag so it does not leak across spans.
 	u.provisionManager.RecordInfraProviderUsage(provisionSpanCtx, layers)
+
+	// graphResult is populated once the unified graph finishes executing (see
+	// exegraph.RunWithResult below). The deferred span finalizer reads it to
+	// stamp the *real* per-phase outcome onto the synthetic cmd.package /
+	// cmd.provision / cmd.deploy spans. It stays nil on the early-return setup
+	// paths (before the graph runs), where those phases never executed and the
+	// spans close as success — matching the pre-graph shape.
+	var graphResult *exegraph.RunResult
 	defer func() {
 		// Apply usage attributes (e.g. EnvNameKey) at end so they include
 		// any values set during Run. Globals (e.g. SubscriptionIdKey) are
 		// applied automatically by wrapperSpan.End().
 		usageAttrs := tracing.GetUsageAttributes()
+
+		// Reflect the real package-phase outcome. Before this, the synthetic
+		// span always closed with an Unset status (=> Success in the AppInsights
+		// exporter), masking package failures under `azd up` (issue #9054).
+		// MapError stamps the same status + ResultCode a stand-alone
+		// `azd package` would report.
 		packageSpan.SetAttributes(usageAttrs...)
+		if err := aggregatePhaseError(graphResult, "package"); err != nil {
+			MapError(err, packageSpan)
+		}
 		packageSpan.End()
+
+		// Reflect the real provision-phase outcome (same rationale as package).
+		// The raw provision-step error is used directly — not the wrapped error
+		// returned by wrapProvisionError — so the ARM/Bicep ResultCodes
+		// (service.arm.deployment.failed, tool.bicep.failed, …) land on the
+		// span, and so wrapProvisionError's side effects (JSON state dump,
+		// console messages) are not re-triggered here.
 		provisionSpan.SetAttributes(usageAttrs...)
+		if err := aggregatePhaseError(graphResult, "provision"); err != nil {
+			MapError(err, provisionSpan)
+		}
 		provisionSpan.End()
+
+		// Emit a synthetic cmd.deploy span carrying the aggregated
+		// deploy/publish outcome, but only when the deploy phase actually ran.
+		// Under FailFast a provision/package failure skips every deploy step,
+		// and legacy `azd up` likewise never launched the deploy sub-command in
+		// that case — so emitting nothing keeps the cmd.deploy population (and
+		// its success rate) faithful rather than inflating it with a no-op
+		// Success span.
+		emitDeploySpan(ctx, graphResult, parentChangedFlags, usageAttrs)
 	}()
 
 	// 1. Analyze provision layer dependencies. Empty layers → empty graph.
@@ -583,6 +621,11 @@ func (u *UpGraphAction) Run(
 
 	result := exegraph.RunWithResult(ctx, g, opts)
 
+	// Hand the result to the deferred span finalizer so the synthetic
+	// cmd.package / cmd.provision / cmd.deploy spans reflect the real
+	// per-phase outcome (issue #9054).
+	graphResult = result
+
 	// Stop the progress ticker and render a final summary table.
 	if stopTicker != nil {
 		stopTicker()
@@ -923,4 +966,85 @@ func provisionStepFailed(result *exegraph.RunResult) bool {
 		}
 	}
 	return false
+}
+
+// aggregatePhaseError returns the error of the first failed step whose Tags
+// include any of the given phase tags, in step-completion order, or nil when no
+// such step failed. Only genuine failures (StepFailed) are considered; steps
+// the FailFast scheduler skipped (StepSkipped, carrying a StepSkippedError) are
+// ignored so a downstream phase is never blamed for an upstream failure.
+// Returning a single underlying error — rather than a join of every concurrent
+// failure — keeps the ResultCode that MapError derives identical to what the
+// equivalent stand-alone command (azd package / provision / deploy) reports.
+func aggregatePhaseError(result *exegraph.RunResult, tags ...string) error {
+	if result == nil {
+		return nil
+	}
+	for _, st := range result.Steps {
+		if st.Status != exegraph.StepFailed || st.Err == nil {
+			continue
+		}
+		for _, tag := range tags {
+			if slices.Contains(st.Tags, tag) {
+				return st.Err
+			}
+		}
+	}
+	return nil
+}
+
+// deployPhaseSpanTiming reports the wall-clock envelope of the deploy phase —
+// the earliest start and latest end across every executed step tagged "deploy"
+// or "publish" — together with whether any such step actually ran. Skipped
+// steps are excluded so a deploy phase that never executed (e.g. provisioning
+// failed first) reports ran=false, signalling the caller to emit no cmd.deploy
+// span.
+func deployPhaseSpanTiming(steps []exegraph.StepTiming) (start, end time.Time, ran bool) {
+	for _, st := range steps {
+		if st.Status == exegraph.StepSkipped {
+			continue
+		}
+		if !slices.Contains(st.Tags, "deploy") && !slices.Contains(st.Tags, "publish") {
+			continue
+		}
+		ran = true
+		if start.IsZero() || st.Start.Before(start) {
+			start = st.Start
+		}
+		if st.End.After(end) {
+			end = st.End
+		}
+	}
+	return start, end, ran
+}
+
+// emitDeploySpan emits the synthetic cmd.deploy span for `azd up`, mirroring
+// the stand-alone `azd deploy --all` span the legacy workflow runner produced.
+// It is a no-op unless at least one deploy/publish step executed, so runs where
+// the deploy phase was skipped by an earlier failure contribute no cmd.deploy
+// row (see the deferred finalizer in Run for the rationale). The span is
+// time-boxed to the real deploy phase and, on failure, carries the same status
+// + ResultCode a stand-alone `azd deploy` would via MapError.
+func emitDeploySpan(
+	ctx context.Context,
+	result *exegraph.RunResult,
+	changedFlags []string,
+	usageAttrs []attribute.KeyValue,
+) {
+	if result == nil {
+		return
+	}
+	start, end, ran := deployPhaseSpanTiming(result.Steps)
+	if !ran {
+		return
+	}
+
+	deployFlags := append([]string{"all"}, changedFlags...)
+	_, deploySpan := tracing.Start(ctx, "cmd.deploy", trace.WithTimestamp(start))
+	deploySpan.SetAttributes(fields.CmdFlags.StringSlice(deployFlags))
+	deploySpan.SetAttributes(usageAttrs...)
+	if err := aggregatePhaseError(result, "deploy", "publish"); err != nil {
+		MapError(err, deploySpan)
+	}
+	deploySpan.End(trace.WithTimestamp(end))
 }

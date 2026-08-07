@@ -142,6 +142,10 @@ Details:
   falls back to the default behavior and the next invoke starts a fresh session
   on the new version.
 
+## Customize infrastructure
+
+Use `azd ai agent init --infra` to generate editable Foundry Bicep or Terraform. Existing project infrastructure is preserved as a separate layer. See [Customize Foundry infrastructure with `--infra`](docs/infrastructure-eject.md) for migration behavior, file-conflict rules, resource-group ownership, layer dependencies, and limitations.
+
 ## Private networking for `host: azure.ai.project`
 
 Foundry project services can be provisioned as network-secured, VNet-bound accounts by adding a `network:` block to the `host: azure.ai.project` service in `azure.yaml`. The `azure.ai.projects` extension owns that service and the `microsoft.foundry` provider; this extension still authors the block during agent init. See [Private networking for `host: azure.ai.project`](docs/private-networking.md) for the schema reference, BYO-image requirements, and VNet deployment cheatsheet.

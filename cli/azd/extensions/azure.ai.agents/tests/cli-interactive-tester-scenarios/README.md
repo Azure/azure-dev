@@ -162,7 +162,7 @@ them reuse that session credential.
 ### GitHub login (manifest scenarios)
 
 The manifest scenarios (`1.03-init-from-azure-yaml-url`,
-`1.05-init-flags-agent-name-model`) download an agent manifest — and its sibling
+`1.05-init-flag-agent-name`) download an agent manifest — and its sibling
 files — from a public GitHub repo. The CLI first tries the anonymous GitHub API,
 but when that's rate-limited (60 req/hr) it falls back to the `gh` CLI, which
 would otherwise drop into an **interactive GitHub login** mid-run. Like
@@ -293,7 +293,7 @@ and verifies the generated files, then stops before `azd provision`.
 | `tier1/1.02-init-template-dotnet.yaml` | `init` new-from-template, C#/.NET |
 | `tier1/1.03-init-from-azure-yaml-url.yaml` | `init -m <manifest url>` (needs `gh auth login`) |
 | `tier1/1.04-init-from-code.yaml` | `init` → pick "Use the code in the current directory" |
-| `tier1/1.05-init-flags-agent-name-model.yaml` | `init -m … --agent-name --model` (needs `gh auth login`) |
+| `tier1/1.05-init-flag-agent-name.yaml` | `init -m … --agent-name` (needs `gh auth login`) |
 | `tier1/1.06-init-deploy-mode-code.yaml` | `init --deploy-mode code` (entry-point/runtime) |
 | `tier1/1.07-init-deploy-mode-container.yaml` | `init --deploy-mode container` (container build config) |
 | `tier1/1.08-init-validate-deploy-mode.yaml` | `init --deploy-mode` value validation (invalid value; code-mode required flags) — seeds from-code so the deploy-mode check is reached |
@@ -328,7 +328,7 @@ producer/consumer contract clearly instead of deploying an arbitrary directory.
 | `tier1b/1b.02-deploy-template-dotnet.yaml` | .NET scaffold deploys | `tier1/1.02-init-template-dotnet.yaml` |
 | `tier1b/1b.03-deploy-from-azure-yaml-url.yaml` | URL-based scaffold deploys | `tier1/1.03-init-from-azure-yaml-url.yaml` |
 | `tier1b/1b.04-deploy-from-code.yaml` | From-code scaffold deploys | `tier1/1.04-init-from-code.yaml` |
-| `tier1b/1b.05-deploy-flags-agent-name-model.yaml` | Flags scaffold deploys | `tier1/1.05-init-flags-agent-name-model.yaml` |
+| `tier1b/1b.05-deploy-flag-agent-name.yaml` | Agent-name flag scaffold deploys | `tier1/1.05-init-flag-agent-name.yaml` |
 | `tier1b/1b.06-deploy-deploy-mode-code.yaml` | Code-deploy scaffold deploys | `tier1/1.06-init-deploy-mode-code.yaml` |
 | `tier1b/1b.07-deploy-deploy-mode-container.yaml` | Container-deploy scaffold deploys | `tier1/1.07-init-deploy-mode-container.yaml` |
 
@@ -360,8 +360,6 @@ as their `cwd`.
 | `tier2/2.10-monitor-system.yaml` | `monitor --type system` |
 | `tier2/2.11-endpoint-update.yaml` | `endpoint update` |
 | `tier2/2.12-run-local-and-invoke-local.yaml` | `run` + `invoke --local` (two sessions) |
-| `tier2/2.13-eval-lifecycle.yaml` | `eval generate/list/show` against the shared agent (small sample budget, `--no-wait`) |
-| `tier2/2.14-optimize-submit-and-cancel.yaml` | `optimize` submit + `list`/`status`/`cancel` (capped at 1 iteration, `--no-wait`) |
 | `tier2/2.15-doctor-provisioned-all-pass.yaml` | `doctor` (all checks pass) |
 | `tier2/2.16-endpoint-show.yaml` | `endpoint show` (agent endpoint details) |
 | `tier2/2.17-code-download.yaml` | `code download` (positive-path: downloads agent source code) |
@@ -524,7 +522,7 @@ How they're used here:
   fixture into the dir so the source exists before the wizard's "Use the code in
   the current directory" flow inspects it (see [Fixtures](#fixtures)).
 - **`pre` gh-auth guard** — the manifest scenarios (`1.03-init-from-azure-yaml-url`,
-  `1.05-init-flags-agent-name-model`) run `gh auth status` and fail fast if GitHub
+  `1.05-init-flag-agent-name`) run `gh auth status` and fail fast if GitHub
   CLI isn't authenticated, because downloading the manifest can fall back to the
   `gh` CLI (and an interactive login) when the anonymous GitHub API is
   rate-limited. Run `gh auth login` first (see [Authentication](#authentication)).

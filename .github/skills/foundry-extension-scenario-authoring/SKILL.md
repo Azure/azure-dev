@@ -163,6 +163,9 @@ Field references (do not restate these — link to them):
    checkable product behavior, stable-label picks, clear-field-before-typing, best-effort
    screenshot evidence, and a final "report a finding if …" goal. Screenshot errors and timeouts
    are observations and do not block later product goals; all product expectations remain strict.
+   For multi-select prompts, describe which current selections must change. If the desired values
+   are already selected, explicitly use `multi_select` with `toggle_indices: []` to accept them
+   unchanged; toggle indices are state changes, not the final selected set.
    For resource-creating flows, include the RESOURCE NAMING and AGENT NAME goals (prefix
    `{prefix}-`, suffix `-{instance}`) so parallel runs don't collide.
 

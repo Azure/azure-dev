@@ -31,6 +31,7 @@ goals:
   - "If asked to select a subscription, search for and select the '{subscription}' subscription."
   - "If asked for a location/region, search for and select '{region}'."
   - "If asked to select a model, choose '{model}' and accept the remaining model defaults."
+  - "When the protocol multi-select appears, confirm `responses` is already selected, then submit that unchanged default with the tester's `multi_select` action using `toggle_indices: []`. Do not toggle index 0 — toggle indices change the current selection, so `[0]` would deselect `responses`."
   - "Wait for initialization to complete — look for 'Next:' in the output."
   - "Verify the scaffold: confirm azure.yaml was created in the current working directory to reference the local code as an azure.ai.agent service, and that a .agentignore file was generated."
   - "Take a screenshot of the completed init output."

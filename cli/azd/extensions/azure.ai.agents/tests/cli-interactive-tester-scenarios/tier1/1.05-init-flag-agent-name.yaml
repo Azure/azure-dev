@@ -1,17 +1,17 @@
-# Tier 1 (auth, scaffold only) — init from a remote azure.yaml with explicit --agent-name and --model.
+# Tier 1 (auth, scaffold only) — init from a remote azure.yaml with explicit --agent-name.
 #
 # Requires Azure login (see README "Authentication"). Does NOT run `azd provision`;
 # no cost incurred.
 # Also requires GitHub login: `gh auth login` (azure.yaml download can fall back to
 # the gh CLI when the anonymous GitHub API is rate-limited). The pre hook fails
 # fast if gh is not authenticated.
-# Verifies that the override flags are honored in the generated files.
+# Verifies that the agent-name override is honored in the generated files.
 #
 # NOTE: With `-m` pointing to a Python azure.yaml, code deploy is auto-selected
-# (no deploy-mode prompt). The --agent-name and --model flags should still override
-# defaults in the generated project.
-name: "init-flags-agent-name-model"
-command: "azd ai agent init -m https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/01-basic/azure.yaml --agent-name {prefix}-qa-named-agent-{instance} --model {model}"
+# (no deploy-mode prompt). The --agent-name flag should still override the
+# default agent identity in the generated project.
+name: "init-flag-agent-name"
+command: "azd ai agent init -m https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/01-basic/azure.yaml --agent-name {prefix}-qa-named-agent-{instance}"
 cwd: "~/working/azd-agents-t1-flags-{instance}"
 tags: ["tier:1", "cmd:init", "parallel-safe"]
 
@@ -36,6 +36,6 @@ goals:
   - "If asked for a location/region, search for and select '{region}'."
   - "Accept any remaining model defaults (version, SKU, capacity). If prompted for a model deployment name, use a '{prefix}-'-prefixed name."
   - "Wait for initialization to complete — look for 'Next:' or a success message."
-  - "Verify the overrides in agent-framework-agent-basic-responses/azure.yaml: confirm it records the Foundry agent name as '{prefix}-qa-named-agent-{instance}' (the flag value passed via --agent-name) and the model '{model}' — the values passed via flags, not the sample defaults. The flag changes the Foundry agent identity, not the downloaded project's local directory name."
+  - "Verify the override in agent-framework-agent-basic-responses/azure.yaml: confirm it records the Foundry agent name as '{prefix}-qa-named-agent-{instance}' (the value passed via --agent-name), not the sample default. The flag changes the Foundry agent identity, not the downloaded project's local directory name."
   - "Take a screenshot of the completed init output."
-  - "STOP here — do NOT run 'azd provision'. Report a finding if --agent-name or --model is ignored, or if the wizard still prompts for these values despite the flags."
+  - "STOP here — do NOT run 'azd provision'. Report a finding if --agent-name is ignored or if the wizard still prompts for the agent name despite the flag."

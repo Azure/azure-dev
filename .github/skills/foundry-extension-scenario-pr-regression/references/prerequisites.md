@@ -31,7 +31,7 @@ the user exactly what to fix — do **not** try to work around it.
 - **Tier 1 / Tier 2** read from / write to Azure. A human must `az login` inside WSL
   **before** the run (the agent cannot complete the browser sign-in). If the selected set
   includes Tier 1/2, remind the user to `az login` first.
-- **Manifest scenarios** (`1.03-init-from-azure-yaml-url`, `1.05-init-flags-agent-name-model`)
+- **Manifest scenarios** (`1.03-init-from-azure-yaml-url`, `1.05-init-flag-agent-name`)
   download from GitHub and can fall back to the `gh` CLI; they need `gh auth login` inside
   WSL. Their `pre` hook fails fast if it isn't set up.
 

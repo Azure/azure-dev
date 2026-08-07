@@ -112,6 +112,11 @@ operational form of the README's **authoring contract** — see
   releases).
 - **Clear a pre-filled text field before typing** (e.g. the agent-name prompt): select-all then
   delete/backspace first, otherwise your value *appends* to the default (`defaultyourvalue`).
+  This applies only to text input, not select or multi-select prompts.
+- **Treat multi-select toggle indices as state changes, not the final selection.** If every
+  desired value is already selected, call `multi_select` with `toggle_indices: []`; the tester
+  presses Enter without changing any checkboxes. Otherwise toggle only selected entries that
+  must be removed or unselected entries that must be added.
 - **Pause before the first cloud-creating action.** Provisioning is expensive and
   irreversible-ish; the orchestrator's cost/consent gate must be satisfied before entering any
   `init` / `provision` flow that creates real resources (especially in parallel).

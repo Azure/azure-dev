@@ -84,6 +84,9 @@ Apply the spec's execution rules; the essentials:
   workaround. A human must fix the scenario.
 - **A `select` miss is a hard failure.** Report it and stop the scenario — do not retry with a
   different `choice_text`/`choice_index`, and do not verify/"correct" a pick after sending it.
+- **Multi-select indices toggle current state; they are not the final selected set.** To accept
+  already-correct defaults, call `multi_select` with `toggle_indices: []`. Clear defaults only
+  for text inputs, never for select or multi-select prompts.
 - **Never retry a failed scenario** unless its `goals:` explicitly say to.
 - **Screenshot failures are non-blocking and are never retried.** If a screenshot call errors or
   times out, file an `observation` finding with the error and unavailable-evidence scope, then

@@ -240,12 +240,12 @@ Hint: This is a help message
 
 #### Yes or No Input
 
-- Yes/no inputs include a `[Y/n]` delineator after the message. The message's own punctuation comes first (see General Guidelines above), then the delineator, with nothing after it.
+- Yes/no inputs include a `[Y/n]` delineator after the message. The message's own punctuation comes first (see General Guidelines above), then the delineator. When a default is set, the resolved value (`Yes` or `No`) renders after the delineator.
 - Users can either input `y`/`n` or hit the return key which will select the capitalized choice in the `[Y/n]` delineator.
 - The capitalized letter reflects the default value: `[Y/n]` when the default is yes, `[y/N]` when it is no, and `[y/n]` when no default is set.
 
 ```
-? Do you want to initialize a new Git repository in this directory? [Y/n]
+? Do you want to initialize a new Git repository in this directory? [Y/n] Yes
 ```
 
 > Colors: `?` → `WithHighLightFormat` + `WithBold`.

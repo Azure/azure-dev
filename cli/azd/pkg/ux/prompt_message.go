@@ -5,6 +5,7 @@ package ux
 
 import (
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -32,7 +33,7 @@ func renderPromptMessage(printer Printer, message string) {
 // precedes the hint, value, or selection. A message that already ends in
 // terminal punctuation gets only a trailing space; anything else gets ": ".
 func formatPromptMessage(message string) string {
-	trimmed := strings.TrimRight(message, " \t\r\n")
+	trimmed := strings.TrimRightFunc(message, unicode.IsSpace)
 	if trimmed == "" {
 		return ""
 	}

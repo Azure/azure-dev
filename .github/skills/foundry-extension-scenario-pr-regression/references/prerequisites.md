@@ -37,8 +37,10 @@ the user exactly what to fix — do **not** try to work around it.
 
 ### Profiles
 
-The scenarios reference `{prefix}`, `{subscription}`, `{region}`, `{model}`, `{tenant}`
-(optional) and `{shared_agent_name}` via placeholders. You must:
+The scenarios use `{prefix}`, `{subscription}`, `{region}`, `{model}`, and
+`{shared_agent_name}` placeholders, plus an optional `tenant` session value.
+Tenant-aware goals deliberately avoid a literal `{tenant}` placeholder so a
+missing optional value does not prevent a scenario from loading. You must:
 
 1. Read both `profile.yaml` (checked-in defaults) and `profile.local.yaml` (developer
    overrides) and **merge them, local overriding shared**.

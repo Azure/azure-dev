@@ -155,6 +155,12 @@ This opens the interactive sign-in flow and then:
 2. **Subscription selection** — back in the terminal, select the
    `{subscription}` subscription.
 
+During a scenario, the product may also show a terminal `Select a tenant`
+prompt when the signed-in user can access multiple tenants. The worker selects
+the tenant configured in `profile.local.yaml`. If no tenant is configured, the
+scenario fails without answering rather than guessing; users with only one
+tenant remain supported because the prompt does not appear.
+
 Tier 0 (`tier0/`) scenarios need no auth. Run this `az login` step once per WSL
 session **before** asking the agent to drive any Tier 1/Tier 2 scenario; all of
 them reuse that session credential.
@@ -456,8 +462,10 @@ scaffold that failed to initialize.
 
 Developer- and environment-specific values (subscription, region, model,
 resource-name prefix, optional tenant) are **not** hardcoded in the scenario
-YAMLs. Instead, the scenarios reference them via `{name}` placeholders, and
-the orchestrator supplies the values as `session_vars` on every tester call.
+YAMLs. Most are referenced via `{name}` placeholders. The optional tenant is
+passed in `session_vars`, but goals refer to the tenant provided with the
+scenario run without a literal placeholder so scenarios still load when tenant
+is omitted. The orchestrator supplies the merged values on every tester call.
 
 Two files in this directory drive the values:
 
@@ -469,11 +477,11 @@ Two files in this directory drive the values:
 
 Variables exposed to scenarios via `session_vars`:
 
-| Placeholder | Source | Default | Notes |
+| Variable | Source | Default | Notes |
 |---|---|---|---|
 | `{prefix}` | `profile.local.yaml` | **required** | resource-name prefix; should be lowercase + hyphen-friendly so `sanitizeAgentName` doesn't mutate it |
 | `{subscription}` | `profile.local.yaml` | **required** | subscription display name |
-| `{tenant}` | `profile.local.yaml` | optional, no default | only consumed by the `az login` guidance above; when unset, drop `--tenant` and rely on the user's default tenant |
+| `{tenant}` | `profile.local.yaml` | optional, no default | scopes `az login` when provided and supplies product tenant pickers; when unset, omit `--tenant`, but fail without answering if a picker appears |
 | `{region}` | `profile.yaml` | `East US 2` | |
 | `{model}` | `profile.yaml` | `gpt-5.4-mini` | cheap/fast for tests |
 | `{shared_agent_suffix}` | `profile.yaml` | `basic-responses` | |

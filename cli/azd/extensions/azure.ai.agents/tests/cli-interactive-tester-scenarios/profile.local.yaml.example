@@ -20,8 +20,9 @@ prefix: "your-alias"
 # prompt for one. Tier 1 and Tier 2 scenarios both read this.
 subscription: "azd ai agent development"
 
-# OPTIONAL. Tenant for `az login --tenant <value>`.
-# When unset, the driving agent omits the --tenant flag entirely and relies
-# on your default tenant. Set this only if you actually need to scope to a
-# specific tenant.
+# OPTIONAL. Tenant for `az login --tenant <value>` and for any `Select a
+# tenant` prompt shown by a scenario. When unset, the driving agent omits the
+# --tenant login flag and relies on your default tenant. Scenarios still work
+# if no tenant picker appears, but fail without answering if one appears and
+# this value is not configured.
 # tenant: "azdaiagent.onmicrosoft.com"

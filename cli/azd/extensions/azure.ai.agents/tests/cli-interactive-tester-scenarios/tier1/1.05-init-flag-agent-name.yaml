@@ -32,6 +32,7 @@ goals:
   - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with '{prefix}-' and suffixed with this run's instance id '-{instance}' (e.g. '{prefix}-basic-responses-{instance}') so concurrent instances don't collide on resource names. Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected. If a name prompt comes pre-filled with a default value, CLEAR it first (select-all then delete, or backspaces) before typing so your name replaces the default instead of appending to it."
   - "Wait for the azure.yaml to download and parse."
   - "If asked to select an Azure AI Foundry project, choose to create a new one and name it with the '{prefix}-' prefix."
+  - "A 'Select a tenant' prompt may not appear when the signed-in user has access to only one tenant. If it appears, select the tenant provided with this scenario run. If no tenant was provided, report a failure and do not answer the prompt."
   - "If asked to select a subscription, search for and select the '{subscription}' subscription."
   - "If asked for a location/region, search for and select '{region}'."
   - "Accept any remaining model defaults (version, SKU, capacity). If prompted for a model deployment name, use a '{prefix}-'-prefixed name."

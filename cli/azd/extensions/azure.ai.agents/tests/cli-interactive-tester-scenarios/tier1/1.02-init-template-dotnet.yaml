@@ -24,6 +24,7 @@ goals:
   - "At the starter-template prompt, select 'Hello World agent (Responses, Agent Framework, C#)'."
   - "Deploy mode is auto-selected as 'code' for .NET templates — no deploy-mode prompt should appear. Report a finding if one does."
   - "If asked to select an Azure AI Foundry project, choose to create a new one and name it with the '{prefix}-' prefix."
+  - "A 'Select a tenant' prompt may not appear when the signed-in user has access to only one tenant. If it appears, select the tenant provided with this scenario run. If no tenant was provided, report a failure and do not answer the prompt."
   - "If asked to select a subscription, search for and select the '{subscription}' subscription."
   - "If asked for a location/region, search for and select '{region}'."
   - "When asked to select a model, choose '{model}'."

@@ -88,6 +88,14 @@ func buildResponsesProtocolURL(projectEndpoint, agentName string) string {
 	)
 }
 
+func endpointHost(endpoint string) string {
+	u, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
+}
+
 // buildInvocationsProtocolURL builds the per-agent HTTPS URL for the "invocations" protocol.
 func buildInvocationsProtocolURL(projectEndpoint, agentName string) string {
 	return fmt.Sprintf(
@@ -636,7 +644,7 @@ func (p *AgentServiceTargetProvider) Package(
 		progress("Packaging code")
 		zipPath, sha256Hex, err := p.packageCodeDeploy(ctx, serviceConfig)
 		if err != nil {
-			return nil, exterrors.Internal(exterrors.OpContainerPackage, fmt.Sprintf("code packaging failed: %s", err))
+			return nil, exterrors.InternalFromError(err, exterrors.OpContainerPackage, "code packaging failed")
 		}
 
 		return &azdext.ServicePackageResult{
@@ -701,7 +709,7 @@ func (p *AgentServiceTargetProvider) Package(
 				Container().
 				Build(ctx, buildRequest)
 			if err != nil {
-				return nil, exterrors.Internal(exterrors.OpContainerBuild, fmt.Sprintf("container build failed: %s", err))
+				return nil, exterrors.FromHost(err, exterrors.OpContainerBuild, "container build failed")
 			}
 
 			serviceContext.Build = append(serviceContext.Build, buildResponse.Result.Artifacts...)
@@ -715,7 +723,7 @@ func (p *AgentServiceTargetProvider) Package(
 			Container().
 			Package(ctx, packageRequest)
 		if err != nil {
-			return nil, exterrors.Internal(exterrors.OpContainerPackage, fmt.Sprintf("container package failed: %s", err))
+			return nil, exterrors.FromHost(err, exterrors.OpContainerPackage, "container package failed")
 		}
 
 		newArtifacts = append(newArtifacts, packageResponse.Result.Artifacts...)
@@ -807,11 +815,7 @@ func classifyContainerPublishError(err error) error {
 		)
 	}
 
-	if actionable := azdext.ActionableErrorDetailFromError(err); actionable != nil && actionable.GetSuggestion() != "" {
-		return err
-	}
-
-	return exterrors.Internal(exterrors.OpContainerPublish, fmt.Sprintf("container publish failed: %s", err))
+	return exterrors.FromHost(err, exterrors.OpContainerPublish, "container publish failed")
 }
 
 // acrPermissionSuggestionFor is the user-facing remediation text for
@@ -1215,12 +1219,18 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	// Poll until agent version is active
 	if result.agentVersion.Status != "active" {
+		projectEndpoint := azdEnv["FOUNDRY_PROJECT_ENDPOINT"]
 		agentClient := agent_api.NewAgentClient(
-			azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
+			projectEndpoint,
 			p.credential,
 		)
 		polledVersion, pollErr := p.waitForAgentActive(
-			ctx, agentClient, result.agentName, result.agentVersion.Version, progress,
+			ctx,
+			agentClient,
+			endpointHost(projectEndpoint),
+			result.agentName,
+			result.agentVersion.Version,
+			progress,
 		)
 		if pollErr != nil {
 			return nil, pollErr
@@ -2258,9 +2268,9 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	var agentResp *agent_api.AgentObject
 
 	if getErr != nil {
-		// Only fall back to create on 404; propagate other errors (auth, 5xx, network)
+		// Only fall back to create on 404; classify every other service response.
 		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok || respErr.StatusCode != http.StatusNotFound {
-			return nil, fmt.Errorf("failed to check if agent exists: %w", getErr)
+			return nil, exterrors.ServiceFromAzure(getErr, exterrors.OpCreateAgent)
 		}
 		// Agent doesn't exist — create
 		fmt.Fprintf(os.Stderr, "Creating new agent: %s\n", agentDef.Name)
@@ -2268,10 +2278,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
 		)
 		if err != nil {
-			return nil, exterrors.Internal(
-				exterrors.CodeAgentCreateFailed,
-				fmt.Sprintf("failed to create agent from ZIP: %s; check the agent definition and try again", err),
-			)
+			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 		}
 	} else {
 		// Agent exists — update
@@ -2280,10 +2287,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
 		)
 		if err != nil {
-			return nil, exterrors.Internal(
-				exterrors.CodeAgentCreateFailed,
-				fmt.Sprintf("failed to update agent from ZIP: %s; check the agent definition and try again", err),
-			)
+			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 		}
 	}
 
@@ -2586,6 +2590,7 @@ func AgentPlaygroundURL(projectResourceID, agentName, agentVersion string) (stri
 func (p *AgentServiceTargetProvider) waitForAgentActive(
 	ctx context.Context,
 	agentClient *agent_api.AgentClient,
+	serviceName string,
 	agentName string,
 	version string,
 	progress azdext.ProgressReporter,
@@ -2602,6 +2607,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 	var consecutiveActive int
 	var consecutiveFailed int
 	var lastVersion *agent_api.AgentVersionObject
+	var lastPollErr error
 
 	for time.Now().Before(deadline) {
 		select {
@@ -2615,12 +2621,14 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 
 		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agent_api.AgentEndpointAPIVersion)
 		if err != nil {
+			lastPollErr = err
 			fmt.Fprintf(os.Stderr, "  Warning: poll failed: %s\n", err)
 			// Reset counters on error — don't count transient failures
 			consecutiveActive = 0
 			consecutiveFailed = 0
 			continue
 		}
+		lastPollErr = nil
 		lastVersion = versionResp
 
 		switch versionResp.Status {
@@ -2636,14 +2644,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 			consecutiveFailed++
 			consecutiveActive = 0
 			if consecutiveFailed >= confirmCount {
-				errMsg := "agent deployment failed"
-				if versionResp.Error != nil {
-					errMsg = fmt.Sprintf("agent deployment failed: [%s] %s", versionResp.Error.Code, versionResp.Error.Message)
-				}
-				if versionResp.RequestID != "" {
-					errMsg += fmt.Sprintf(" (request-id: %s)", versionResp.RequestID)
-				}
-				return nil, exterrors.Internal(exterrors.CodeAgentCreateFailed, errMsg)
+				return nil, agentDeploymentFailedError(versionResp, serviceName)
 			}
 			fmt.Fprintf(os.Stderr, "  Status: failed (confirming...)\n")
 		default:
@@ -2654,14 +2655,38 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 	}
 
 	// Timeout
+	if lastPollErr != nil {
+		return nil, exterrors.ServiceFromAzure(lastPollErr, exterrors.OpCreateAgent)
+	}
 	lastStatus := "unknown"
 	if lastVersion != nil {
 		lastStatus = lastVersion.Status
 	}
-	return nil, exterrors.Internal(
-		exterrors.CodeAgentCreateFailed,
+	return nil, exterrors.Service(
+		exterrors.OpCreateAgent,
+		"timeout",
 		fmt.Sprintf("agent deployment timed out (last status: %s); check agent status manually", lastStatus),
+		serviceName,
+		"run `azd ai agent show` to inspect the latest deployment status",
 	)
+}
+
+func agentDeploymentFailedError(versionResp *agent_api.AgentVersionObject, serviceName string) error {
+	code := "failed"
+	errMsg := "agent deployment failed"
+	suggestion := "run `azd ai agent show` to inspect the latest deployment status"
+	if versionResp.Error != nil {
+		code = versionResp.Error.Code
+		errMsg = fmt.Sprintf("agent deployment failed: [%s] %s", code, versionResp.Error.Message)
+		if remediation, ok := nextstep.RemediationForUserErrorCode(nextstep.UserErrorCode(code)); ok {
+			suggestion = fmt.Sprintf("run `%s` to %s", remediation.Command, remediation.Description)
+		}
+	}
+	if versionResp.RequestID != "" {
+		errMsg += fmt.Sprintf(" (request-id: %s)", versionResp.RequestID)
+	}
+
+	return exterrors.Service(exterrors.OpCreateAgent, code, errMsg, serviceName, suggestion)
 }
 
 // createAgent creates a new version of the agent using the API

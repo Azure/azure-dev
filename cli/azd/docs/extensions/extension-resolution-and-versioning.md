@@ -410,7 +410,7 @@ When `latest` is specified (or the version is omitted), `azd` selects the **high
 
 ## Dev/Experimental Extension Registry
 
-The dev (experimental) registry is a separate extension source for bleeding-edge, pre-release, and community-contributed extensions that have not yet been promoted to the official `azd` registry. It lives alongside the main registry in the `azure-dev` repository and is served via a dedicated aka.ms link. While `azd` and `dev` are the official source names, the extension source system supports adding custom sources with any name via `azd extension source add`.
+The dev (experimental) registry is a separate extension source for bleeding-edge, pre-release, and community-contributed extensions that have not yet been promoted to the official `azd` registry. It lives alongside the main registry in the `azure-dev` repository and is served via a dedicated aka.ms link. While `azd` and `dev` are the official source names, the extension source system supports adding custom sources with any other name via `azd extension source add`.
 
 | Property | Main Registry | Dev Registry |
 |----------|---------------|--------------|

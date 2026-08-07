@@ -44,6 +44,7 @@ type Server struct {
 	copilotService       azdext.CopilotServiceServer
 	provisioningService  azdext.ProvisioningServiceServer
 	validationService    azdext.ValidationServiceServer
+	telemetryService     azdext.TelemetryServiceServer
 }
 
 func NewServer(
@@ -64,6 +65,7 @@ func NewServer(
 	copilotService azdext.CopilotServiceServer,
 	provisioningService azdext.ProvisioningServiceServer,
 	validationService azdext.ValidationServiceServer,
+	telemetryService azdext.TelemetryServiceServer,
 ) *Server {
 	return &Server{
 		projectService:       projectService,
@@ -83,6 +85,7 @@ func NewServer(
 		copilotService:       copilotService,
 		provisioningService:  provisioningService,
 		validationService:    validationService,
+		telemetryService:     telemetryService,
 	}
 }
 
@@ -98,10 +101,12 @@ func (s *Server) Start() (*ServerInfo, error) {
 		grpc.ChainUnaryInterceptor(
 			s.errorWrappingInterceptor(),
 			s.tokenAuthInterceptor(&serverInfo),
+			s.traceContextInterceptor(),
 		),
 		grpc.ChainStreamInterceptor(
 			s.errorWrappingStreamInterceptor(),
 			s.tokenAuthStreamInterceptor(&serverInfo),
+			s.traceContextStreamInterceptor(),
 		),
 	)
 
@@ -132,6 +137,7 @@ func (s *Server) Start() (*ServerInfo, error) {
 	azdext.RegisterCopilotServiceServer(s.grpcServer, s.copilotService)
 	azdext.RegisterProvisioningServiceServer(s.grpcServer, s.provisioningService)
 	azdext.RegisterValidationServiceServer(s.grpcServer, s.validationService)
+	azdext.RegisterTelemetryServiceServer(s.grpcServer, s.telemetryService)
 
 	serverInfo.Address = fmt.Sprintf("127.0.0.1:%d", randomPort)
 	serverInfo.Port = randomPort
@@ -248,7 +254,7 @@ func (s *Server) tokenAuthStreamInterceptor(serverInfo *ServerInfo) grpc.StreamS
 		}
 
 		// Wrap the stream to inject validated claims into its context
-		wrappedStream := &authenticatedStream{
+		wrappedStream := &contextStream{
 			ServerStream: ss,
 			ctx:          ctx,
 		}
@@ -257,13 +263,14 @@ func (s *Server) tokenAuthStreamInterceptor(serverInfo *ServerInfo) grpc.StreamS
 	}
 }
 
-// authenticatedStream wraps a grpc.ServerStream to provide a context with validated claims.
-type authenticatedStream struct {
+// contextStream wraps a grpc.ServerStream to override the context seen by the
+// handler, for example to carry validated claims or trace context.
+type contextStream struct {
 	grpc.ServerStream
 	ctx context.Context
 }
 
-func (s *authenticatedStream) Context() context.Context {
+func (s *contextStream) Context() context.Context {
 	return s.ctx
 }
 

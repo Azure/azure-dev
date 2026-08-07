@@ -1,0 +1,38 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
+
+// TelemetryService accepts usage events from authenticated extensions. The
+// extension owns the event name and the attribute values; the host owns the
+// span, stamps the calling extension's identity onto it, and namespaces every
+// caller-supplied attribute so it cannot collide with a host field.
+//
+// Values are not reviewed at runtime, so the host only records events from
+// extensions installed from the official azd registry.
+service TelemetryService {
+  // ReportUsage records one usage event for the calling extension.
+  rpc ReportUsage(ReportUsageRequest) returns (ReportUsageResponse);
+}
+
+message ReportUsageRequest {
+  // Event name owned by the extension. Recorded as extension.event so
+  // queries can filter an extension's events without parsing attributes.
+  string event_name = 1;
+
+  // Attributes recorded individually on the event, each namespaced by the
+  // host. Values should be low cardinality and must never carry customer
+  // content.
+  map<string, string> attributes = 2;
+}
+
+message ReportUsageResponse {
+  // Accepted reports whether the host recorded the event. A false value is
+  // not an error: the extension was not installed from the official azd
+  // registry, or the per-invocation event budget is already spent. Callers
+  // should not branch on it.
+  bool accepted = 1;
+}

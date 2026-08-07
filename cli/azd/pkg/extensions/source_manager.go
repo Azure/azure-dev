@@ -97,9 +97,8 @@ func (sm *SourceManager) Add(ctx context.Context, name string, source *SourceCon
 		)
 	}
 
-	existing, err := sm.Get(ctx, newKey)
-	if existing != nil && err == nil {
-		return fmt.Errorf("extension source '%s' already exists, %w", name, ErrSourceExists)
+	if source == nil {
+		return errors.New("extension source configuration is required")
 	}
 
 	if source.Name == "" {
@@ -108,12 +107,30 @@ func (sm *SourceManager) Add(ctx context.Context, name string, source *SourceCon
 
 	source.Name = newKey
 
+	if strings.EqualFold(newKey, MainRegistryName) &&
+		!IsOfficialMainRegistrySource(source) {
+		return fmt.Errorf(
+			"'%s' is reserved for the official azd registry, %w",
+			MainRegistryName, ErrSourceReserved)
+	}
+
+	existing, err := sm.Get(ctx, newKey)
+	if existing != nil && err == nil {
+		return fmt.Errorf("extension source '%s' already exists, %w", name, ErrSourceExists)
+	}
+
 	return sm.addInternal(source)
 }
 
 // Remove removes an extension source.
 func (sm *SourceManager) Remove(ctx context.Context, name string) error {
 	name = NormalizeSourceKey(name)
+
+	if strings.EqualFold(name, MainRegistryName) {
+		return fmt.Errorf(
+			"'%s' is reserved and cannot be removed, %w",
+			MainRegistryName, ErrSourceReserved)
+	}
 
 	_, err := sm.Get(ctx, name)
 	if err != nil && errors.Is(err, ErrSourceNotFound) {
@@ -173,7 +190,7 @@ func (sm *SourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 		}
 	} else {
 		defaultSource := &SourceConfig{
-			Name:     "azd",
+			Name:     MainRegistryName,
 			Type:     SourceKindUrl,
 			Location: extensionRegistryUrl,
 		}
@@ -197,12 +214,23 @@ func (sm *SourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 	var source Source
 	var err error
 
+	if config == nil {
+		return nil, errors.New("extension source configuration is required")
+	}
+
 	if config.Name == "" {
 		return nil, errors.New("extension source name is required")
 	}
 
 	if config.Location == "" {
 		return nil, errors.New("extension source location is required")
+	}
+
+	if strings.EqualFold(NormalizeSourceKey(config.Name), MainRegistryName) &&
+		!IsOfficialMainRegistrySource(config) {
+		return nil, fmt.Errorf(
+			"'%s' is reserved for the official azd registry, %w",
+			MainRegistryName, ErrSourceReserved)
 	}
 
 	switch config.Type {

@@ -1105,6 +1105,11 @@ Extensions can declare the following capabilities in their manifest:
 - **`validation-provider`**: Contribute validation checks to azd's provision validation and future validation pipelines
 - **`metadata`**: Provide comprehensive metadata about commands and configuration schemas
 
+Telemetry is not a capability. Any extension can call the telemetry gRPC
+service, and events are recorded when its configured source matches the
+verified official `azd` registry name, type, and normalized URL — see
+[Extension Telemetry](./extension-telemetry.md).
+
 #### Complete Extension Manifest Example
 
 ```yaml

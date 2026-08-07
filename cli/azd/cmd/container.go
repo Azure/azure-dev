@@ -1035,6 +1035,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 	container.MustRegisterSingleton(grpcserver.NewAiModelService)
 	container.MustRegisterScoped(grpcserver.NewCopilotService)
+	container.MustRegisterSingleton(grpcserver.NewTelemetryService)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")

@@ -25,8 +25,19 @@ import (
 )
 
 const (
-	deployStatusInterval = 10 * time.Second
+	deployStatusInterval       = 10 * time.Second
+	deployRuntimeStatusTimeout = 5 * time.Minute
 )
+
+// DeploymentStatusTimeoutError indicates that App Service did not report a terminal deployment
+// status within the verification timeout.
+type DeploymentStatusTimeoutError struct {
+	Timeout time.Duration
+}
+
+func (e *DeploymentStatusTimeoutError) Error() string {
+	return fmt.Sprintf("app service did not report a terminal deployment status within %s", e.Timeout)
+}
 
 // ZipDeployClient wraps usage of app service zip deploy used for application deployments
 // More info can be found at the following:
@@ -286,6 +297,28 @@ func (c *ZipDeployClient) DeployTrackStatus(
 	resourceGroup string,
 	appName string,
 	progressLog func(string)) error {
+	return c.deployTrackStatus(
+		ctx,
+		zipFile,
+		subscriptionId,
+		resourceGroup,
+		appName,
+		deployRuntimeStatusTimeout,
+		3*time.Second,
+		progressLog,
+	)
+}
+
+func (c *ZipDeployClient) deployTrackStatus(
+	ctx context.Context,
+	zipFile io.ReadSeeker,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+	statusTrackingTimeout time.Duration,
+	pollInterval time.Duration,
+	progressLog func(string),
+) error {
 	var response armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse
 
 	poller, err := c.BeginDeployTrackStatus(ctx, zipFile, subscriptionId, resourceGroup, appName)
@@ -293,13 +326,23 @@ func (c *ZipDeployClient) DeployTrackStatus(
 		return err
 	}
 
-	delay := 3 * time.Second
+	delay := pollInterval
 	pollCount := 0
+	lastStatus := armappservice.DeploymentBuildStatus("")
+	statusTrackingDeadline := time.Now().Add(statusTrackingTimeout)
 	for {
 		var resp *http.Response
 
-		resp, err = poller.Poll(ctx)
+		pollCtx, cancelPoll := context.WithDeadline(ctx, statusTrackingDeadline)
+		resp, err = poller.Poll(pollCtx)
+		cancelPoll()
 		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if !time.Now().Before(statusTrackingDeadline) {
+				return &DeploymentStatusTimeoutError{Timeout: statusTrackingTimeout}
+			}
 			return err
 		}
 
@@ -309,6 +352,13 @@ func (c *ZipDeployClient) DeployTrackStatus(
 
 		if err := runtime.UnmarshalAsJSON(resp, &response); err != nil {
 			return err
+		}
+
+		if response.Properties != nil &&
+			response.Properties.Status != nil &&
+			*response.Properties.Status != lastStatus {
+			lastStatus = *response.Properties.Status
+			statusTrackingDeadline = time.Now().Add(statusTrackingTimeout)
 		}
 
 		if poller.Done() {
@@ -342,11 +392,22 @@ func (c *ZipDeployClient) DeployTrackStatus(
 			delay = 20 * time.Second
 		}
 
+		remaining := time.Until(statusTrackingDeadline)
+		if remaining <= 0 {
+			return &DeploymentStatusTimeoutError{Timeout: statusTrackingTimeout}
+		}
+
+		timer := time.NewTimer(min(delay, remaining))
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return ctx.Err()
-		case <-time.After(delay):
+		case <-timer.C:
 			pollCount++
+		}
+
+		if !time.Now().Before(statusTrackingDeadline) {
+			return &DeploymentStatusTimeoutError{Timeout: statusTrackingTimeout}
 		}
 	}
 

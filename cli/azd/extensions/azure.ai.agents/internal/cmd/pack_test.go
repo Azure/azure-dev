@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 func TestWriteTeamsAppPackOutput_PreservesUnownedPackage(t *testing.T) {
@@ -50,5 +52,51 @@ func TestWriteTeamsAppPackOutput_OverwritesOwnedPackage(t *testing.T) {
 	}
 	if !teamsAppPackageIsOwned(outputPath, markerPath) {
 		t.Errorf("marker must be updated for the new package")
+	}
+}
+
+func TestPackResolveOutputPath_RejectsSharedDefaultDestination(t *testing.T) {
+	root := t.TempDir()
+	svc := &azdext.ServiceConfig{Name: "agent-a", Host: AiAgentHost, RelativePath: "."}
+	proj := &azdext.ProjectConfig{
+		Path: root,
+		Services: map[string]*azdext.ServiceConfig{
+			"agent-a": svc,
+			"agent-b": {Name: "agent-b", Host: AiAgentHost, RelativePath: "."},
+		},
+	}
+	action := &PackAction{flags: &packFlags{}}
+
+	_, err := action.resolveOutputPath(&teamsPackContext{proj: proj, svc: svc})
+
+	if err == nil {
+		t.Fatal("expected shared default destination error")
+	}
+	if !strings.Contains(err.Error(), "shares its source directory") {
+		t.Fatalf("expected shared source directory error, got %v", err)
+	}
+}
+
+func TestPackResolveOutputPath_AllowsExplicitOutputDirForSharedSourceDirectory(t *testing.T) {
+	root := t.TempDir()
+	outputDir := filepath.Join(root, "dist")
+	svc := &azdext.ServiceConfig{Name: "agent-a", Host: AiAgentHost, RelativePath: "."}
+	proj := &azdext.ProjectConfig{
+		Path: root,
+		Services: map[string]*azdext.ServiceConfig{
+			"agent-a": svc,
+			"agent-b": {Name: "agent-b", Host: AiAgentHost, RelativePath: "."},
+		},
+	}
+	action := &PackAction{flags: &packFlags{outputDir: outputDir}}
+
+	got, err := action.resolveOutputPath(&teamsPackContext{proj: proj, svc: svc})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := filepath.Join(outputDir, teamsAppPackageFile)
+	if got != want {
+		t.Errorf("output path = %q, want %q", got, want)
 	}
 }

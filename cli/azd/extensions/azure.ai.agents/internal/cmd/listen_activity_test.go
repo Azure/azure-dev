@@ -85,6 +85,75 @@ func TestWriteTeamsSetupGuide(t *testing.T) {
 	}
 }
 
+func TestWriteTeamsSetupGuide_SkipsSharedAgentSourceDirectory(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	svc := &azdext.ServiceConfig{Name: "agent-a", Host: AiAgentHost, RelativePath: "src"}
+	proj := &azdext.ProjectConfig{
+		Path: root,
+		Services: map[string]*azdext.ServiceConfig{
+			"agent-a": svc,
+			"agent-b": {Name: "agent-b", Host: AiAgentHost, RelativePath: "src"},
+		},
+	}
+
+	path := writeTeamsSetupGuide(proj, svc, "agent-a", "bot-a", "app-id", "")
+
+	if path != "" {
+		t.Errorf("guide path = %q, want empty for shared source directory", path)
+	}
+	if _, err := os.Stat(filepath.Join(root, "src", teamsSetupGuideFile)); !os.IsNotExist(err) {
+		t.Errorf("setup guide must not be written for a shared source directory")
+	}
+}
+
+func TestWriteTeamsAppPackage_SkipsSharedAgentSourceDirectory(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	svc := &azdext.ServiceConfig{Name: "agent-a", Host: AiAgentHost, RelativePath: "src"}
+	proj := &azdext.ProjectConfig{
+		Path: root,
+		Services: map[string]*azdext.ServiceConfig{
+			"agent-a": svc,
+			"agent-b": {Name: "agent-b", Host: AiAgentHost, RelativePath: "src"},
+		},
+	}
+
+	path := writeTeamsAppPackage(t.Context(), nil, proj, svc, "agent-a", "sub", "rg", "bot-a")
+
+	if path != "" {
+		t.Errorf("package path = %q, want empty for shared source directory", path)
+	}
+	if _, err := os.Stat(filepath.Join(root, "src", teamsAppPackageFile)); !os.IsNotExist(err) {
+		t.Errorf("Teams app package must not be written for a shared source directory")
+	}
+}
+
+func TestHasSharedTeamsArtifactDestination(t *testing.T) {
+	sharedSvc := &azdext.ServiceConfig{Name: "agent-a", Host: AiAgentHost, RelativePath: "."}
+	proj := &azdext.ProjectConfig{
+		Services: map[string]*azdext.ServiceConfig{
+			"agent-a": sharedSvc,
+			"agent-b": {Name: "agent-b", Host: AiAgentHost, RelativePath: ""},
+			"web":     {Name: "web", Host: "containerapp", RelativePath: "."},
+		},
+	}
+
+	if !hasSharedTeamsArtifactDestination(proj, sharedSvc) {
+		t.Fatal("expected shared artifact destination for agent services with the same source directory")
+	}
+
+	uniqueSvc := &azdext.ServiceConfig{Name: "agent-c", Host: AiAgentHost, RelativePath: "src"}
+	proj.Services["agent-c"] = uniqueSvc
+	if hasSharedTeamsArtifactDestination(proj, uniqueSvc) {
+		t.Fatal("unique agent source directory must not be treated as shared")
+	}
+}
+
 func TestCommitTeamsAppPackage_PreservesUnownedFile(t *testing.T) {
 	dir := t.TempDir()
 	pkg := filepath.Join(dir, teamsAppPackageFile)

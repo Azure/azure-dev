@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -191,6 +192,17 @@ func writeTeamsAppPackage(
 	svc *azdext.ServiceConfig,
 	agentName, subscriptionID, resourceGroup, botName string,
 ) string {
+	if hasSharedTeamsArtifactDestination(proj, svc) {
+		log.Printf(
+			"postdeploy: skipping Teams app package for service %q because multiple agent services share %q; "+
+				"run 'azd ai agent pack %s --output-dir <directory>' to choose a distinct package location",
+			svc.GetName(),
+			svc.GetRelativePath(),
+			svc.GetName(),
+		)
+		return ""
+	}
+
 	packagePath, err := paths.JoinAllowRoot(proj.GetPath(), svc.GetRelativePath(), teamsAppPackageFile)
 	if err != nil {
 		log.Printf("postdeploy: skipping Teams app package: %v", err)
@@ -230,6 +242,35 @@ func writeTeamsAppPackage(
 		return ""
 	}
 	return written
+}
+
+func hasSharedTeamsArtifactDestination(proj *azdext.ProjectConfig, svc *azdext.ServiceConfig) bool {
+	if proj == nil || svc == nil {
+		return false
+	}
+	targetPath := normalizedTeamsArtifactRelativePath(svc.GetRelativePath())
+	sharedCount := 0
+	for _, other := range proj.GetServices() {
+		if other.GetHost() != AiAgentHost {
+			continue
+		}
+		if normalizedTeamsArtifactRelativePath(other.GetRelativePath()) != targetPath {
+			continue
+		}
+		sharedCount++
+		if sharedCount > 1 {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizedTeamsArtifactRelativePath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		path = "."
+	}
+	return filepath.ToSlash(filepath.Clean(path))
 }
 
 // teamsAppPackageIsOwned reports whether appPackage.zip is still the same file
@@ -379,6 +420,15 @@ const teamsSetupGuideFile = "TEAMS_APP_SETUP.md"
 func writeTeamsSetupGuide(
 	proj *azdext.ProjectConfig, svc *azdext.ServiceConfig, agentName, botName, msaAppID, packagePath string,
 ) string {
+	if hasSharedTeamsArtifactDestination(proj, svc) {
+		log.Printf(
+			"postdeploy: skipping Teams setup guide for service %q because multiple agent services share %q",
+			svc.GetName(),
+			svc.GetRelativePath(),
+		)
+		return ""
+	}
+
 	guidePath, err := paths.JoinAllowRoot(proj.GetPath(), svc.GetRelativePath(), teamsSetupGuideFile)
 	if err != nil {
 		log.Printf("postdeploy: skipping Teams setup guide: %v", err)

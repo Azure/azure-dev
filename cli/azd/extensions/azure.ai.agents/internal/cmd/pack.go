@@ -169,6 +169,17 @@ func (a *PackAction) resolveOutputPath(packCtx *teamsPackContext) (string, error
 		}
 		return abs, nil
 	}
+	if hasSharedTeamsArtifactDestination(packCtx.proj, packCtx.svc) {
+		return "", exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			fmt.Sprintf(
+				"agent service %q shares its source directory %q with another agent service",
+				packCtx.svc.GetName(),
+				packCtx.svc.GetRelativePath(),
+			),
+			"pass --output-dir <directory> to choose a distinct Teams app package location",
+		)
+	}
 	outputPath, err := paths.JoinAllowRoot(
 		packCtx.proj.GetPath(), packCtx.svc.GetRelativePath(), teamsAppPackageFile,
 	)

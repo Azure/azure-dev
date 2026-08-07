@@ -15,6 +15,8 @@ Extension sources are manifests that describe the extensions available for insta
 
 In addition, extensions installed from a [self-contained bundle](#self-contained-bundles) are tagged with a reserved `bundle` source. `bundle` is not a configurable source type and never appears in `azd extension source list` — it simply marks an extension that has no live registry to track updates against. Such extensions are listed with their `bundle` source in `azd extension list` and are skipped by `azd extension upgrade`. The name `bundle` is reserved, so it cannot be used as a user-configured source name.
 
+Source names must contain 1 to 64 lowercase ASCII letters, digits, hyphens, or underscores, and must begin and end with a letter or digit. Invalid names are rejected rather than normalized. If an older configuration contains an invalid name, extension source loading reports the exact entry to remove and re-add.
+
 Sources are configured in `~/.azd/config.json`. You can manage them with the following commands:
 
 ```bash
@@ -298,7 +300,7 @@ An extension only qualifies when the version `azd` would select publishes the pr
 ~/.azd/cache/extensions/<source-name>.json
 ```
 
-Each source has its own cache file. The filename is derived from the source name by lowercasing it and replacing any characters outside `[a-zA-Z0-9._-]` with `_`. For example, a source named `"My Source!"` would be cached as `my_source_.json`.
+Each source has its own cache file. Because configured source names use the canonical format described above, the source name maps directly to a unique cache filename.
 
 ### Default TTL
 
@@ -410,7 +412,7 @@ When `latest` is specified (or the version is omitted), `azd` selects the **high
 
 ## Dev/Experimental Extension Registry
 
-The dev (experimental) registry is a separate extension source for bleeding-edge, pre-release, and community-contributed extensions that have not yet been promoted to the official `azd` registry. It lives alongside the main registry in the `azure-dev` repository and is served via a dedicated aka.ms link. While `azd` and `dev` are the official source names, the extension source system supports adding custom sources with any name via `azd extension source add`.
+The dev (experimental) registry is a separate extension source for bleeding-edge, pre-release, and community-contributed extensions that have not yet been promoted to the official `azd` registry. It lives alongside the main registry in the `azure-dev` repository and is served via a dedicated aka.ms link. While `azd` and `dev` are the official source names, custom source names must follow the canonical source-name format.
 
 | Property | Main Registry | Dev Registry |
 |----------|---------------|--------------|

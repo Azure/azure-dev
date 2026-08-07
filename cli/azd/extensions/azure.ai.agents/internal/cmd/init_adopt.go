@@ -717,7 +717,8 @@ func updateAzureYamlDeployments(
 type adoptedAgentNameResolver func(context.Context, string) (string, error)
 
 func adoptedAgentNameConflictSuggestion() string {
-	return "To create a separate agent, update the agent service's `name` in the adopted azure.yaml before deploying.\n"
+	return "To create a separate agent, re-run init with --agent-name <unique-name> for single-agent samples, " +
+		"or update each agent service's `name` in the adopted azure.yaml.\n"
 }
 
 // confirmAdoptedAgentNameConflicts checks every agent definition embedded in an
@@ -790,6 +791,64 @@ func updateAdoptedAgentNames(
 		}); err != nil {
 			return fmt.Errorf("updating agent name in azure.yaml for service %q: %w", serviceName, err)
 		}
+	}
+
+	return nil
+}
+
+func applyAdoptedAgentNameOverride(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentName string,
+) error {
+	agentName, err := validateInitAgentName(agentName)
+	if err != nil {
+		return err
+	}
+
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("reading adopted project for agent name override: %w", err)
+	}
+
+	var serviceName string
+	var configPath string
+	for name, svc := range resp.GetProject().GetServices() {
+		if svc.GetHost() != AiAgentHost {
+			continue
+		}
+		currentName, path := adoptedAgentNameConfig(svc)
+		if currentName == "" {
+			continue
+		}
+		if serviceName != "" {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--agent-name cannot be applied to an adopted azure.yaml with multiple agent services",
+				"update each agent service's `name` in azure.yaml after init, or use a sample with a single agent service",
+			)
+		}
+		serviceName = name
+		configPath = path
+	}
+	if serviceName == "" {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--agent-name could not be applied because the adopted azure.yaml has no named agent service",
+			"update the agent service's `name` in azure.yaml after init, or use a sample with a named agent service",
+		)
+	}
+
+	value, err := structpb.NewValue(agentName)
+	if err != nil {
+		return fmt.Errorf("encoding agent name override for agent service %q: %w", serviceName, err)
+	}
+	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        configPath,
+		Value:       value,
+	}); err != nil {
+		return fmt.Errorf("updating agent name in adopted azure.yaml for service %q: %w", serviceName, err)
 	}
 
 	return nil
@@ -893,7 +952,16 @@ func runInitFromAzureYaml(
 	httpClient *http.Client,
 	content []byte,
 ) error {
-	targetDir, folderDisplay := adoptTargetDir(flags, foundryProjectName(content))
+	projectName := foundryProjectName(content)
+	agentNameOverride, err := adoptedAgentNameOverride(flags)
+	if err != nil {
+		return err
+	}
+	if agentNameOverride != "" {
+		projectName = agentNameOverride
+	}
+
+	targetDir, folderDisplay := adoptTargetDir(flags, projectName)
 
 	// Adoption is a fresh-project operation: it lays down the project-root
 	// azure.yaml. When the target already contains an azd project manifest we
@@ -908,6 +976,11 @@ func runInitFromAzureYaml(
 				"adopt the sample, or add an individual agent to this project with "+
 				"'azd ai agent init -m <agent.manifest.yaml>'",
 		)
+	}
+	if agentNameOverride != "" {
+		if err := validateAdoptedAgentNameOverride(content); err != nil {
+			return err
+		}
 	}
 
 	// Stage the sample as a local template directory (azure.yaml at its root
@@ -934,6 +1007,11 @@ func runInitFromAzureYaml(
 	// bicep-less by default.
 	if err := ensureFoundryProviderDeclared(ctx, azdClient); err != nil {
 		return err
+	}
+	if agentNameOverride != "" {
+		if err := applyAdoptedAgentNameOverride(ctx, azdClient, agentNameOverride); err != nil {
+			return err
+		}
 	}
 
 	// --- Interactive Azure context setup (subscription, Foundry project) ---
@@ -1065,6 +1143,80 @@ func runInitFromAzureYaml(
 
 	printAdoptionNextSteps(ctx, azdClient, folderDisplay)
 	return nil
+}
+
+type adoptedAgentNameOverrideAzureYaml struct {
+	Services map[string]adoptedAgentNameOverrideService `yaml:"services"`
+}
+
+type adoptedAgentNameOverrideService struct {
+	Host   string `yaml:"host"`
+	Kind   string `yaml:"kind"`
+	Name   string `yaml:"name"`
+	Config struct {
+		Kind string `yaml:"kind"`
+		Name string `yaml:"name"`
+	} `yaml:"config"`
+}
+
+func validateAdoptedAgentNameOverride(content []byte) error {
+	var doc adoptedAgentNameOverrideAzureYaml
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		return fmt.Errorf("parsing adopted azure.yaml for agent name override: %w", err)
+	}
+
+	namedAgents := 0
+	for _, svc := range doc.Services {
+		if svc.Host != AiAgentHost {
+			continue
+		}
+		if adoptedAgentNameOverrideServiceName(svc) == "" {
+			continue
+		}
+		namedAgents++
+		if namedAgents > 1 {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--agent-name cannot be applied to an adopted azure.yaml with multiple agent services",
+				"update each agent service's `name` in azure.yaml after init, or use a sample with a single agent service",
+			)
+		}
+	}
+	if namedAgents == 0 {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--agent-name could not be applied because the adopted azure.yaml has no named agent service",
+			"update the agent service's `name` in azure.yaml after init, or use a sample with a named agent service",
+		)
+	}
+
+	return nil
+}
+
+func adoptedAgentNameOverrideServiceName(svc adoptedAgentNameOverrideService) string {
+	if strings.TrimSpace(svc.Kind) != "" {
+		return strings.TrimSpace(svc.Name)
+	}
+	if strings.TrimSpace(svc.Config.Kind) != "" {
+		return strings.TrimSpace(svc.Config.Name)
+	}
+	return ""
+}
+
+func adoptedAgentNameOverride(flags *initFlags) (string, error) {
+	if !flags.agentNameExplicit {
+		return "", nil
+	}
+	agentNameOverride := strings.TrimSpace(flags.agentName)
+	if agentNameOverride == "" {
+		return "", nil
+	}
+	validatedName, err := validateInitAgentName(agentNameOverride)
+	if err != nil {
+		return "", err
+	}
+	flags.agentName = validatedName
+	return validatedName, nil
 }
 
 // adoptTargetDir resolves the directory the adopted project is created in and

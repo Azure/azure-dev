@@ -25,6 +25,12 @@ const (
 // Generated from DefaultAgentIgnoreContent() to maintain a single source of truth.
 var defaultExclusionsContent = DefaultAgentIgnoreContent()
 
+const generatedTeamsArtifactsIgnoreContent = `# azd-generated Teams app artifacts
+appPackage.zip
+.appPackage.zip.azd-generated
+TEAMS_APP_SETUP.md
+`
+
 // utf8BOM is the byte order mark that some Windows editors prepend to UTF-8 files.
 var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 
@@ -107,6 +113,7 @@ func loadAgentIgnore(ctx context.Context, srcDir string) (gitignore.GitIgnore, e
 
 	// Strip UTF-8 BOM
 	data = bytes.TrimPrefix(data, utf8BOM)
+	data = append([]byte(generatedTeamsArtifactsIgnoreContent+"\n"), data...)
 
 	return gitignore.New(bytes.NewReader(data), srcDir, nil), nil
 }
@@ -125,6 +132,9 @@ agent.yaml
 agent.manifest.yaml
 azure.yaml
 .agentignore
+appPackage.zip
+.appPackage.zip.azd-generated
+TEAMS_APP_SETUP.md
 
 # Security / secrets
 .env

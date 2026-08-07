@@ -273,29 +273,25 @@ func TestAgentDefinitionFromService_NoDefinition(t *testing.T) {
 	require.False(t, found)
 }
 
-func TestSetAgentContainerSettings_ReturnsPersistenceTarget(t *testing.T) {
+func TestSetAgentContainerSettings_PreservesServiceProperties(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name            string
 		legacy          bool
 		unrelatedInline bool
-		wantPath        string
 	}{
 		{
-			name:     "inline service properties",
-			wantPath: "container",
+			name: "inline service properties",
 		},
 		{
-			name:     "legacy config properties",
-			legacy:   true,
-			wantPath: "config.container",
+			name:   "legacy config properties",
+			legacy: true,
 		},
 		{
 			name:            "legacy config properties with unrelated inline properties",
 			legacy:          true,
 			unrelatedInline: true,
-			wantPath:        "config.container",
 		},
 	}
 
@@ -322,21 +318,19 @@ func TestSetAgentContainerSettings_ReturnsPersistenceTarget(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			path, value, err := SetAgentContainerSettings(svc, &ContainerSettings{
+			err = SetAgentContainerSettings(svc, &ContainerSettings{
 				Resources: &ResourceSettings{Cpu: "1", Memory: "2Gi"},
 			})
 			require.NoError(t, err)
-			require.Equal(t, tt.wantPath, path)
+
+			storedProps := ServiceConfigProps(svc)
+			require.Equal(t, "preserved", storedProps.GetFields()["customField"].GetStringValue())
 			require.Equal(t, map[string]any{
 				"resources": map[string]any{
 					"cpu":    "1",
 					"memory": "2Gi",
 				},
-			}, value.AsInterface())
-
-			storedProps := ServiceConfigProps(svc)
-			require.Equal(t, "preserved", storedProps.GetFields()["customField"].GetStringValue())
-			require.Same(t, value, storedProps.GetFields()["container"])
+			}, storedProps.GetFields()["container"].AsInterface())
 		})
 	}
 }

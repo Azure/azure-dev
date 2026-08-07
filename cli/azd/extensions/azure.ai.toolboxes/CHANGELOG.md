@@ -1,5 +1,15 @@
 # Release History
 
+## 1.0.0-beta.5 (2026-08-06)
+
+### Features Added
+
+- [[#9079]](https://github.com/Azure/azure-dev/pull/9079) Add service-scoped environment support for Foundry toolbox services while preserving project-wide fallback behavior.
+
+### Bugs Fixed
+
+- [[#9326]](https://github.com/Azure/azure-dev/pull/9326) Track toolbox readiness and cleanup state so dependent agent deployments fail early with actionable guidance.
+
 ## 1.0.0-beta.4 (2026-07-23)
 
 ### Features Added

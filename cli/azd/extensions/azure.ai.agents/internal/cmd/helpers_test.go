@@ -484,6 +484,13 @@ func (s *helpersProjectServer) Get(
 	return &azdext.GetProjectResponse{Project: s.project}, nil
 }
 
+func (s *helpersProjectServer) GetServiceConfigValue(
+	_ context.Context,
+	_ *azdext.GetServiceConfigValueRequest,
+) (*azdext.GetServiceConfigValueResponse, error) {
+	return &azdext.GetServiceConfigValueResponse{}, nil
+}
+
 // helpersPromptServer is a fake PromptServiceServer that records Select calls
 // and returns a canned choice index.
 type helpersPromptServer struct {

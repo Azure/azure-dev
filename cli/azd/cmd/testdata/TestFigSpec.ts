@@ -892,7 +892,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--infra'],
-									description: 'Eject infrastructure-as-code from azure.yaml into ./infra/. A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets infra.provider: terraform; --infra=bicep is explicit Bicep. When azure.yaml already exists, runs as a standalone eject and skips the init prompts.',
+									description: 'Eject infrastructure-as-code from azure.yaml into ./infra/. A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets infra.provider: terraform; --infra=bicep is explicit Bicep. When azure.yaml already declares a Foundry project service, runs as a standalone eject and skips the init prompts; otherwise init runs first and the eject follows it.',
 									args: [
 										{
 											name: 'infra',
@@ -1457,6 +1457,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'channel',
+										},
+									],
+								},
+								{
+									name: ['--inspector-port'],
+									description: 'Port the Agent Inspector UI listens on (default: 8087)',
+									args: [
+										{
+											name: 'inspector-port',
 										},
 									],
 								},

@@ -16,34 +16,47 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type rleDeployFlags struct {
-	dockerfile string
+type rlePublishFlags struct {
+	dockerfile  string
+	versionBump string
 }
 
-type deployAction struct {
+type publishAction struct {
 	cmd   *cobra.Command
-	flags *rleDeployFlags
+	flags *rlePublishFlags
 }
 
-func newDeployCommand() *cobra.Command {
-	flags := &rleDeployFlags{}
+func newPublishCommand() *cobra.Command {
+	flags := &rlePublishFlags{}
+	flags.versionBump = "major"
 
 	cmd := &cobra.Command{
-		Use:   "deploy",
-		Short: "Create or update the RLE environment",
+		Use:   "publish",
+		Short: "Build, push, and create or update the RLE environment",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return (&deployAction{cmd: cmd, flags: flags}).Run()
+			return (&publishAction{cmd: cmd, flags: flags}).Run()
 		},
 	}
 
 	cmd.Flags().StringVar(&flags.dockerfile, "dockerfile", "",
 		"Dockerfile path relative to the current folder. Defaults to Dockerfile at the source root or server/Dockerfile.")
+	cmd.Flags().StringVar(
+		&flags.versionBump,
+		"version-bump",
+		flags.versionBump,
+		"Version bump to apply when creating or updating the environment: major, minor, or patch.",
+	)
 	return cmd
 }
 
-func (a *deployAction) Run() error {
-	state, initialized, err := resolveDeployState(a.flags)
+func (a *publishAction) Run() error {
+	versionBump, err := normalizeVersionBumpFlag(a.flags.versionBump)
+	if err != nil {
+		return err
+	}
+
+	state, initialized, err := resolvePublishState()
 	if err != nil {
 		return err
 	}
@@ -56,23 +69,23 @@ func (a *deployAction) Run() error {
 
 	if state.ProjectEndpoint == "" {
 		return &azdext.LocalError{
-			Message:    "Foundry project endpoint is required for deploy.",
+			Message:    "Foundry project endpoint is required for publish.",
 			Code:       "rle_project_required",
 			Category:   azdext.LocalErrorCategoryUser,
 			Suggestion: fmt.Sprintf("Set %s=https://<account>.services.ai.azure.com/api/projects/<project>.", foundryProjectEndpointEnvVar),
 		}
 	}
 
-	image, err := resolveDeployImage(a.flags, state)
+	image, err := resolvePublishImage(state)
 	if err != nil {
 		return err
 	}
 	if !project.IsAcrImageReference(image) {
 		return &azdext.LocalError{
-			Message:    fmt.Sprintf("RLE deploy image must be an ACR image reference, got %q.", image),
+			Message:    fmt.Sprintf("RLE publish image must be an ACR image reference, got %q.", image),
 			Code:       "rle_acr_image_required",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Set AZURE_CONTAINER_REGISTRY_ENDPOINT=<registry>.azurecr.io, then run deploy again.",
+			Suggestion: "Set AZURE_CONTAINER_REGISTRY_ENDPOINT=<registry>.azurecr.io, then run publish again.",
 		}
 	}
 	if err := project.BuildRuntimeImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image, project.BuildOptions{
@@ -84,16 +97,11 @@ func (a *deployAction) Run() error {
 	if err := project.PushImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image); err != nil {
 		return err
 	}
-	projectName, err := projectRouteSegment(state)
+	client, err := createRleClient(state.ProjectEndpoint)
 	if err != nil {
 		return err
 	}
-	environmentId := firstNonEmpty(state.EnvironmentId, project.Slug(state.Name))
-	client := newRleClient(resolveControlPlaneEndpoint())
-	request := v1EnvironmentRequest{
-		Name:         state.Name,
-		AcrImagePath: image,
-	}
+	request := buildEnvironmentCreateRequest(state.Name, image, versionBump)
 
 	var environment *environmentResource
 	created := state.EnvironmentId == ""
@@ -111,28 +119,11 @@ func (a *deployAction) Run() error {
 	); err != nil {
 		return err
 	}
-	if state.EnvironmentId == "" {
-		environment, err = client.createV1Environment(a.cmd.Context(), projectName, request)
-	} else {
-		environment, err = client.updateV1Environment(a.cmd.Context(), projectName, environmentId, request)
-		if isNotFoundError(err) {
-			// The recorded environment no longer exists in the target project
-			// (e.g. the project changed or the control plane was reset). Recreate it.
-			if _, msgErr := fmt.Fprintf(
-				a.cmd.OutOrStdout(),
-				"Environment '%s' not found in project '%s'; creating a new one.\n",
-				environmentId,
-				projectName,
-			); msgErr != nil {
-				return msgErr
-			}
-			created = true
-			environment, err = client.createV1Environment(a.cmd.Context(), projectName, request)
-		}
-	}
+	environment, err = client.createV1Environment(a.cmd.Context(), request)
 	if err != nil {
 		return serviceError(err)
 	}
+	state.Name = environment.Name
 	state.EnvironmentId = environment.Id
 	state.EnvironmentVersion = environment.Version
 	if err := saveRleState(state); err != nil {
@@ -170,7 +161,33 @@ func (a *deployAction) Run() error {
 	return nil
 }
 
-func resolveDeployState(flags *rleDeployFlags) (rleState, bool, error) {
+func normalizeVersionBumpFlag(value string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "major":
+		return "Major", nil
+	case "minor":
+		return "Minor", nil
+	case "patch":
+		return "Patch", nil
+	default:
+		return "", &azdext.LocalError{
+			Message:    fmt.Sprintf("Invalid version bump %q.", value),
+			Code:       "rle_invalid_version_bump",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Use --version-bump major, --version-bump minor, or --version-bump patch.",
+		}
+	}
+}
+
+func buildEnvironmentCreateRequest(name string, image string, versionBump string) v1EnvironmentRequest {
+	return v1EnvironmentRequest{
+		Name:         name,
+		AcrImagePath: image,
+		VersionBump:  versionBump,
+	}
+}
+
+func resolvePublishState() (rleState, bool, error) {
 	state, err := loadRleState()
 	initialized := err == nil
 	if err != nil {
@@ -187,19 +204,21 @@ func resolveDeployState(flags *rleDeployFlags) (rleState, bool, error) {
 	if err != nil {
 		return rleState{}, false, err
 	}
-	state.ProjectEndpoint = projectEndpoint
+	if projectEndpoint != "" {
+		state.ProjectEndpoint = projectEndpoint
+	}
 
 	return state, initialized, nil
 }
 
-func resolveDeployImage(flags *rleDeployFlags, state rleState) (string, error) {
+func resolvePublishImage(state rleState) (string, error) {
 	registry := strings.Trim(strings.TrimSpace(os.Getenv("AZURE_CONTAINER_REGISTRY_ENDPOINT")), "/")
 	if registry == "" {
 		return "", &azdext.LocalError{
-			Message:    "ACR registry is required for deploy.",
+			Message:    "ACR registry is required for publish.",
 			Code:       "rle_acr_registry_required",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Set AZURE_CONTAINER_REGISTRY_ENDPOINT=<registry>.azurecr.io, then run deploy again.",
+			Suggestion: "Set AZURE_CONTAINER_REGISTRY_ENDPOINT=<registry>.azurecr.io, then run publish again.",
 		}
 	}
 	projectName, err := projectRouteSegment(state)

@@ -124,6 +124,14 @@ func TestGetServiceKey_NormalizesToolboxNames(t *testing.T) {
 	}
 }
 
+func TestDependencyConditionLookupPrefersAzdEnvironment(t *testing.T) {
+	t.Setenv("DEPLOY_TOOLS", "true")
+	provider := &AgentServiceTargetProvider{dependencyEnv: map[string]string{"DEPLOY_TOOLS": "false"}}
+	require.Equal(t, "false", provider.dependencyEnvValue("DEPLOY_TOOLS"))
+	provider.dependencyEnv = nil
+	require.Equal(t, "true", provider.dependencyEnvValue("DEPLOY_TOOLS"))
+}
+
 // --- helpers for Package tests ---
 
 // writeHostedAgentYAML creates a minimal hosted-kind agent.yaml in dir.
@@ -244,7 +252,39 @@ func newServiceTargetTestClient(
 
 type stubProjectServer struct {
 	azdext.UnimplementedProjectServiceServer
-	project *azdext.ProjectConfig
+	project     *azdext.ProjectConfig
+	configValue *structpb.Value
+}
+
+func (s *stubProjectServer) GetServiceConfigValue(
+	context.Context, *azdext.GetServiceConfigValueRequest,
+) (*azdext.GetServiceConfigValueResponse, error) {
+	return &azdext.GetServiceConfigValueResponse{Value: s.configValue, Found: s.configValue != nil}, nil
+}
+
+func TestDependencyConditionScalarValues(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   any
+		enabled bool
+	}{
+		{name: "boolean false", value: false, enabled: false},
+		{name: "boolean true", value: true, enabled: true},
+		{name: "number zero", value: 0, enabled: false},
+		{name: "number one", value: 1, enabled: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			value, err := structpb.NewValue(tt.value)
+			require.NoError(t, err)
+			client := newServiceTargetTestClient(t, nil, nil, &stubProjectServer{configValue: value})
+			provider := &AgentServiceTargetProvider{azdClient: client}
+
+			enabled, err := provider.isDependencyEnabled(t.Context(), "tools")
+			require.NoError(t, err)
+			require.Equal(t, tt.enabled, enabled)
+		})
+	}
 }
 
 func (s *stubProjectServer) Get(
@@ -509,6 +549,7 @@ func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
 type stubEnvServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 	values map[string]string
+	writes []*azdext.SetEnvRequest
 }
 
 func (s *stubEnvServer) SetValue(
@@ -518,6 +559,7 @@ func (s *stubEnvServer) SetValue(
 		s.values = make(map[string]string)
 	}
 	s.values[req.Key] = req.Value
+	s.writes = append(s.writes, req)
 	return &azdext.EmptyResponse{}, nil
 }
 
@@ -603,6 +645,11 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 	// Base agent endpoint for session management
 	require.Contains(t, envStub.values, "AGENT_MY_SVC_ENDPOINT")
 	require.Equal(t, "https://proj.azure.com/agents/my-agent/versions/1.0.0", envStub.values["AGENT_MY_SVC_ENDPOINT"])
+	require.Equal(t, "https://proj.azure.com", envStub.values["AGENT_MY_SVC_PROJECT_ENDPOINT"])
+	require.Equal(t, "AGENT_MY_SVC_VERSION", envStub.writes[0].Key)
+	require.Empty(t, envStub.writes[0].Value)
+	require.Equal(t, "AGENT_MY_SVC_VERSION", envStub.writes[len(envStub.writes)-1].Key)
+	require.Equal(t, "1.0.0", envStub.writes[len(envStub.writes)-1].Value)
 }
 
 func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {

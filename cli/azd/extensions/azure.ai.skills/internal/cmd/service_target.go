@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"azureaiskills/internal/foundry/envkey"
 	"azureaiskills/internal/pkg/skill_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -38,11 +39,30 @@ type skillServiceConfig struct {
 type skillServiceTarget struct {
 	azdClient     *azdext.AzdClient
 	serviceConfig *azdext.ServiceConfig
+	setEnvValue   func(context.Context, string, string, string) error
+	currentEnv    func(context.Context) (string, error)
 }
 
 // newSkillServiceTarget creates the azure.ai.skill service-target provider.
 func newSkillServiceTarget(azdClient *azdext.AzdClient) azdext.ServiceTargetProvider {
-	return &skillServiceTarget{azdClient: azdClient}
+	return &skillServiceTarget{
+		azdClient: azdClient,
+		currentEnv: func(ctx context.Context) (string, error) {
+			env, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+			if err != nil {
+				return "", fmt.Errorf("get current azd environment: %w", err)
+			}
+			return env.Environment.GetName(), nil
+		},
+		setEnvValue: func(ctx context.Context, envName, key, value string) error {
+			_, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+				EnvName: envName,
+				Key:     key,
+				Value:   value,
+			})
+			return err
+		},
+	}
 }
 
 // Initialize stores the service configuration; no other setup is required.
@@ -131,7 +151,7 @@ func (p *skillServiceTarget) Deploy(
 		return nil, err
 	}
 
-	if _, err := skillCtx.client.CreateVersionInline(
+	version, err := skillCtx.client.CreateVersionInline(
 		ctx,
 		serviceConfig.GetName(),
 		skill_api.CreateVersionRequest{
@@ -142,11 +162,50 @@ func (p *skillServiceTarget) Deploy(
 			},
 			Default: true,
 		},
-	); err != nil {
+	)
+	if err != nil {
 		return nil, fmt.Errorf("upserting skill %q: %w", serviceConfig.GetName(), err)
+	}
+	envName, err := p.currentEnv(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := publishSkillMarkers(
+		ctx,
+		serviceConfig.GetName(),
+		version.Version,
+		skillCtx.endpoint,
+		envName,
+		p.setEnvValue,
+	); err != nil {
+		return nil, err
 	}
 
 	return &azdext.ServiceDeployResult{}, nil
+}
+
+func publishSkillMarkers(
+	ctx context.Context,
+	skillName string,
+	version string,
+	projectEndpoint string,
+	envName string,
+	setValue func(context.Context, string, string, string) error,
+) error {
+	if strings.TrimSpace(version) == "" {
+		return fmt.Errorf("skill %q deployment returned an empty version", skillName)
+	}
+	versionKey := envkey.SkillVersion(skillName)
+	if err := setValue(ctx, envName, versionKey, ""); err != nil {
+		return fmt.Errorf("clearing skill version marker in the azd environment: %w", err)
+	}
+	if err := setValue(ctx, envName, envkey.SkillProjectEndpoint(skillName), projectEndpoint); err != nil {
+		return fmt.Errorf("publishing skill project endpoint to the azd environment: %w", err)
+	}
+	if err := setValue(ctx, envName, versionKey, version); err != nil {
+		return fmt.Errorf("publishing skill version to the azd environment: %w", err)
+	}
+	return nil
 }
 
 // parseSkillServiceConfig reads the service-level (inline) skill properties,

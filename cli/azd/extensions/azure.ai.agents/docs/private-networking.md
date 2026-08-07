@@ -8,6 +8,7 @@ The `azure.ai.projects` extension owns the project service and the `microsoft.fo
 
 When `network:` is present, azd always provisions an **account private endpoint** and disables public data-plane access. Dependent stores (Cosmos DB, AI Search, Storage) stay platform-managed.
 
+<!-- azd:doc-example partial -->
 ```yaml
 infra:
   provider: microsoft.foundry
@@ -98,6 +99,7 @@ azd env set AZURE_DNS_SUBSCRIPTION_ID "<subscription-id>"
 
 Omit `agentSubnet` so the hosted-agent runtime uses a Microsoft-managed network. `peSubnet` is still required: the account data plane stays private behind an account private endpoint in your VNet, reachable from inside the VNet, a peered VNet, or VPN.
 
+<!-- azd:doc-example partial -->
 ```yaml
 infra:
   provider: microsoft.foundry
@@ -142,6 +144,7 @@ azd ai agent invoke --new-session "hello"
 
 Set `agentSubnet` to inject the hosted-agent runtime into your customer subnet. `agentSubnet` and `peSubnet` must reference the same VNet in v1.
 
+<!-- azd:doc-example partial -->
 ```yaml
 services:
   my-agent:

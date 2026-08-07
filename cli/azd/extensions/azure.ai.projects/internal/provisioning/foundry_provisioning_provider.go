@@ -522,7 +522,8 @@ func (p *FoundryProvisioningProvider) resolveEnvName(ctx context.Context) error 
 // parsed from it when present.
 func brownfieldOutputs(endpoint string) map[string]*azdext.ProvisioningOutputParameter {
 	outputs := map[string]*azdext.ProvisioningOutputParameter{
-		"FOUNDRY_PROJECT_ENDPOINT": {Type: "string", Value: endpoint},
+		"FOUNDRY_PROJECT_ENDPOINT":                      {Type: "string", Value: endpoint},
+		"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT": {Type: "string", Value: endpoint},
 	}
 	if name := projectNameFromEndpoint(endpoint); name != "" {
 		outputs["AZURE_AI_PROJECT_NAME"] = &azdext.ProvisioningOutputParameter{Type: "string", Value: name}
@@ -544,14 +545,18 @@ func defaultResourceGroupName(envName string) string {
 func (p *FoundryProvisioningProvider) withTenantOutput(
 	outputs map[string]*azdext.ProvisioningOutputParameter,
 ) map[string]*azdext.ProvisioningOutputParameter {
-	if p.tenantID == "" {
-		return outputs
-	}
 	if outputs == nil {
 		outputs = map[string]*azdext.ProvisioningOutputParameter{}
 	}
-	if _, ok := outputs[envKeyTenantID]; !ok {
-		outputs[envKeyTenantID] = &azdext.ProvisioningOutputParameter{Type: "string", Value: p.tenantID}
+	if p.tenantID != "" {
+		if _, ok := outputs[envKeyTenantID]; !ok {
+			outputs[envKeyTenantID] = &azdext.ProvisioningOutputParameter{Type: "string", Value: p.tenantID}
+		}
+	}
+	if endpoint, ok := outputs["FOUNDRY_PROJECT_ENDPOINT"]; ok && endpoint != nil {
+		outputs["AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT"] = &azdext.ProvisioningOutputParameter{
+			Type: "string", Value: endpoint.Value,
+		}
 	}
 	return outputs
 }
@@ -1813,6 +1818,8 @@ func invalidatedEnvKeysResult() *azdext.ProvisioningDestroyResult {
 			"AZURE_CONTAINER_REGISTRY_ENDPOINT",
 			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
 			"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+			"AZURE_AI_PROJECT_CONNECTION_NAMES",
+			"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT",
 		},
 	}
 }
@@ -1870,6 +1877,7 @@ var canonicalOutputNames = []string{
 	"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
 	"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
 	"AZURE_AI_PROJECT_CONNECTION_NAMES",
+	"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT",
 	"AZURE_FOUNDRY_NETWORK_MODE",
 	"AZURE_FOUNDRY_MANAGED_ISOLATION_MODE",
 }

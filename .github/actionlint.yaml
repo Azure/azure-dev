@@ -14,3 +14,7 @@ paths:
   .github/workflows/vally-ci.yml:
     ignore:
       - 'unknown permission scope "copilot-requests"'
+
+  .github/workflows/vally-foundry-ci.yml:
+    ignore:
+      - 'unknown permission scope "copilot-requests"'

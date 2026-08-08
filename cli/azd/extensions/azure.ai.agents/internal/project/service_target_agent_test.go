@@ -18,6 +18,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/envkey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
@@ -654,6 +655,7 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 		&azdext.ServiceConfig{Name: "my-svc"},
 		agentVersion,
 		protocols,
+		"",
 	)
 	require.NoError(t, err)
 
@@ -714,11 +716,33 @@ func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
 		&azdext.ServiceConfig{Name: "my-svc"},
 		agentVersion,
 		protocols,
+		"",
 	)
 	require.NoError(t, err)
 
 	// Trailing slash must not produce a double-slash in the base endpoint
 	require.Equal(t, "https://proj.azure.com/agents/my-agent/versions/2.0.0", envStub.values["AGENT_MY_SVC_ENDPOINT"])
+}
+
+func TestRegisterAgentEnvironmentVariables_PersistsActivityBotName(t *testing.T) {
+	t.Parallel()
+
+	envStub := &stubEnvServer{}
+	provider := &AgentServiceTargetProvider{
+		azdClient: newEnvTestClient(t, envStub),
+		env:       &azdext.Environment{Name: "test-env"},
+	}
+
+	err := provider.registerAgentEnvironmentVariables(
+		t.Context(),
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://proj.azure.com"},
+		&azdext.ServiceConfig{Name: "my-svc"},
+		&agent_api.AgentVersionObject{Name: "my-agent", Version: "1.0.0"},
+		nil,
+		"published-bot",
+	)
+	require.NoError(t, err)
+	require.Equal(t, "published-bot", envStub.values[envkey.AgentBotName("my-svc")])
 }
 
 func TestRegisterAgentEnvironmentVariables_EmptyName(t *testing.T) {
@@ -738,6 +762,7 @@ func TestRegisterAgentEnvironmentVariables_EmptyName(t *testing.T) {
 		&azdext.ServiceConfig{Name: "my-svc"},
 		&agent_api.AgentVersionObject{Name: "", Version: "1.0.0"},
 		nil,
+		"",
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agent name is empty")
@@ -760,6 +785,7 @@ func TestRegisterAgentEnvironmentVariables_EmptyVersion(t *testing.T) {
 		&azdext.ServiceConfig{Name: "my-svc"},
 		&agent_api.AgentVersionObject{Name: "my-agent", Version: ""},
 		nil,
+		"",
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agent version is empty")

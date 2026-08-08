@@ -32,6 +32,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
+	"azureaiagent/internal/pkg/botservice"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
 
@@ -1121,6 +1122,43 @@ func (p *AgentServiceTargetProvider) loadContainerAgentDefinition() (agent_yaml.
 	)
 }
 
+func (p *AgentServiceTargetProvider) resolveActivityBotName(
+	ctx context.Context,
+	serviceName string,
+	agentName string,
+	azdEnv map[string]string,
+) (string, error) {
+	key := envkey.AgentBotName(serviceName)
+	defaultName := azdEnv[key]
+	if defaultName == "" {
+		defaultName = botservice.BotName(
+			agentName,
+			botservice.BotScopeSalt(azdEnv["AZURE_SUBSCRIPTION_ID"], p.foundryProject.ResourceGroupName),
+		)
+	}
+	response, err := p.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:         "Azure Bot name",
+			HelpMessage:     "The Azure Bot resource used by this Activity agent.",
+			DefaultValue:    defaultName,
+			Required:        true,
+			RequiredMessage: "Azure Bot name is required.",
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("prompting for Azure Bot name: %w", err)
+	}
+	name := strings.TrimSpace(response.Value)
+	if name == "" {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"Azure Bot name is required for Activity agents",
+			"provide a Bot name and retry the deployment",
+		)
+	}
+	return name, nil
+}
+
 // Deploy performs the deployment operation for the agent service
 func (p *AgentServiceTargetProvider) Deploy(
 	ctx context.Context,
@@ -1176,6 +1214,14 @@ func (p *AgentServiceTargetProvider) Deploy(
 		azdEnv[kval.Key] = kval.Value
 	}
 	p.dependencyEnv = azdEnv
+
+	activityBotName := ""
+	if ResolveActivityProfile(agentDef).IsActivity {
+		activityBotName, err = p.resolveActivityBotName(ctx, serviceConfig.Name, agentDef.Name, azdEnv)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	serviceTargetConfig, err := LoadServiceTargetAgentConfig(serviceConfig)
 	if err != nil {
@@ -1247,7 +1293,40 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, err
 	}
 
-	return p.finalizeDeploy(ctx, progress, serviceConfig, azdEnv, result.agentVersion, result.protocols)
+	if activityBotName != "" {
+		identity := result.agentVersion.InstanceIdentity
+		if identity == nil || identity.ClientID == "" {
+			return nil, exterrors.Dependency(
+				exterrors.CodeAgentCreateFailed,
+				"Activity agent deployment did not return an instance identity",
+				"wait for the agent version to become active and retry",
+			)
+		}
+		client, err := botservice.NewClient(azdEnv["AZURE_SUBSCRIPTION_ID"], p.credential, nil)
+		if err != nil {
+			return nil, err
+		}
+		botResourceGroup := p.foundryProject.ResourceGroupName
+		if existing, findErr := client.FindByMsaAppID(ctx, identity.ClientID); findErr != nil {
+			return nil, findErr
+		} else if existing != nil {
+			activityBotName = existing.Name
+			botResourceGroup = existing.ResourceGroup
+			fmt.Fprintf(os.Stderr, "Reusing Azure Bot %q bound to the agent identity.\n", activityBotName)
+		}
+		if err := client.EnsureBot(ctx, botservice.BotConfig{
+			ResourceGroup:     botResourceGroup,
+			BotName:           activityBotName,
+			MsaAppID:          identity.ClientID,
+			TenantID:          p.tenantId,
+			MessagingEndpoint: botservice.MessagingEndpoint(azdEnv["FOUNDRY_PROJECT_ENDPOINT"], result.agentName),
+			DisplayName:       result.agentName,
+		}); err != nil {
+			return nil, err
+		}
+	}
+
+	return p.finalizeDeploy(ctx, progress, serviceConfig, azdEnv, result.agentVersion, result.protocols, activityBotName)
 }
 
 // provisionMemoryStores creates any Foundry memory stores declared in the service target
@@ -1705,10 +1784,11 @@ func (p *AgentServiceTargetProvider) finalizeDeploy(
 	azdEnv map[string]string,
 	agentVersion *agent_api.AgentVersionObject,
 	protocols []agent_yaml.ProtocolVersionRecord,
+	activityBotName string,
 ) (*azdext.ServiceDeployResult, error) {
 	progress("Registering agent environment variables")
 
-	err := p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, agentVersion, protocols)
+	err := p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, agentVersion, protocols, activityBotName)
 	if err != nil {
 		return nil, err
 	}
@@ -2758,6 +2838,7 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	serviceConfig *azdext.ServiceConfig,
 	agentVersionResponse *agent_api.AgentVersionObject,
 	protocols []agent_yaml.ProtocolVersionRecord,
+	activityBotName string,
 ) error {
 	if agentVersionResponse.Name == "" {
 		return fmt.Errorf("agent name is empty; cannot register environment variables")
@@ -2794,6 +2875,13 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 		azdext.SetEnvRequest{EnvName: p.env.Name, Key: envkey.AgentProjectEndpoint(serviceConfig.Name), Value: projectEndpoint},
 		azdext.SetEnvRequest{EnvName: p.env.Name, Key: versionKey, Value: agentVersionResponse.Version},
 	)
+	if activityBotName != "" {
+		envVars = append(envVars, azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     envkey.AgentBotName(serviceConfig.Name),
+			Value:   activityBotName,
+		})
+	}
 
 	for i := range envVars {
 		_, err := p.azdClient.Environment().SetValue(ctx, &envVars[i])

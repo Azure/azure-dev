@@ -45,6 +45,9 @@ const (
 	// botNameMaxLen caps the bot resource name length (Azure BotService handle
 	// limit) so a long agent name cannot push it over the limit.
 	botNameMaxLen = 42
+	// defaultBotNameSuffix is the readable suffix used when azd needs a default
+	// user-facing bot name before a deployment scope is available.
+	defaultBotNameSuffix = "-bot"
 )
 
 // botsAPI and channelsAPI are the narrow slices of the armbotservice clients this
@@ -74,6 +77,7 @@ type channelsAPI interface {
 type Client struct {
 	bots     botsAPI
 	channels channelsAPI
+	listBots func(context.Context) ([]*armbotservice.Bot, error)
 }
 
 // NewClient builds a Client backed by the armbotservice SDK for a subscription.
@@ -88,7 +92,22 @@ func NewClient(
 	if err != nil {
 		return nil, fmt.Errorf("botservice: creating channels client: %w", err)
 	}
-	return &Client{bots: bots, channels: channels}, nil
+	return &Client{
+		bots:     bots,
+		channels: channels,
+		listBots: func(ctx context.Context) ([]*armbotservice.Bot, error) {
+			var result []*armbotservice.Bot
+			pager := bots.NewListPager(nil)
+			for pager.More() {
+				page, err := pager.NextPage(ctx)
+				if err != nil {
+					return nil, err
+				}
+				result = append(result, page.Value...)
+			}
+			return result, nil
+		},
+	}, nil
 }
 
 // BotName returns a deterministic Azure Bot resource name for an agent. Because
@@ -105,6 +124,21 @@ func BotName(agentName, scopeSalt string) string {
 	}
 	// Avoid a doubled hyphen if truncation (or the agent name) leaves a trailing '-'.
 	return strings.TrimRight(agentName, "-") + suffix
+}
+
+// DefaultBotName returns a readable default Azure Bot resource name for an agent.
+// It is used when prompting before provisioning, where a stable deployment-scope
+// salt may not yet be available. The final BotService resource remains bound to
+// the deployed agent identity during deploy.
+func DefaultBotName(agentName string) string {
+	agentName = strings.TrimSpace(agentName)
+	if agentName == "" {
+		agentName = "agent"
+	}
+	if maxAgent := botNameMaxLen - len(defaultBotNameSuffix); len(agentName) > maxAgent {
+		agentName = agentName[:maxAgent]
+	}
+	return strings.TrimRight(agentName, "-") + defaultBotNameSuffix
 }
 
 // BotScopeSalt builds the deployment-scope salt for BotName from the subscription
@@ -164,6 +198,52 @@ func (cfg BotConfig) displayName() string {
 		return cfg.DisplayName
 	}
 	return cfg.BotName
+}
+
+// BotReference identifies an existing Azure Bot bound to an agent identity.
+type BotReference struct {
+	ResourceGroup string
+	Name          string
+}
+
+// FindByMsaAppID returns the unique accessible Bot whose MsaAppID matches the
+// agent instance identity. A nil result means no matching Bot was found.
+func (c *Client) FindByMsaAppID(ctx context.Context, msaAppID string) (*BotReference, error) {
+	if strings.TrimSpace(msaAppID) == "" || c.listBots == nil {
+		return nil, nil
+	}
+
+	var matches []BotReference
+	collect := func(response []*armbotservice.Bot) {
+		for _, bot := range response {
+			if bot == nil || bot.Name == nil || bot.ID == nil || bot.Properties == nil || bot.Properties.MsaAppID == nil ||
+				!strings.EqualFold(strings.TrimSpace(*bot.Properties.MsaAppID), strings.TrimSpace(msaAppID)) {
+				continue
+			}
+			resourceID, err := arm.ParseResourceID(*bot.ID)
+			if err != nil || resourceID.ResourceGroupName == "" {
+				continue
+			}
+			matches = append(matches, BotReference{
+				ResourceGroup: resourceID.ResourceGroupName,
+				Name:          *bot.Name,
+			})
+		}
+	}
+
+	bots, err := c.listBots(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("botservice: listing bots: %w", err)
+	}
+	collect(bots)
+
+	if len(matches) == 0 {
+		return nil, nil
+	}
+	if len(matches) > 1 {
+		return nil, fmt.Errorf("botservice: multiple Azure Bots are bound to MsaAppID %q", msaAppID)
+	}
+	return &matches[0], nil
 }
 
 // EnsureBot idempotently creates (or updates) the single-tenant Azure Bot bound

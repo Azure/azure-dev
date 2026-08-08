@@ -173,3 +173,25 @@ func TestMessagingEndpoint(t *testing.T) {
 		t.Errorf("MessagingEndpoint = %q, want %q", got, want)
 	}
 }
+
+func TestFindByMsaAppID(t *testing.T) {
+	c := &Client{
+		listBots: func(context.Context) ([]*armbotservice.Bot, error) {
+			return []*armbotservice.Bot{{
+				ID:   new("/subscriptions/sub/resourceGroups/m365-rg/providers/Microsoft.BotService/botServices/published-bot"),
+				Name: new("published-bot"),
+				Properties: &armbotservice.BotProperties{
+					MsaAppID: new("client-id-123"),
+				},
+			}}, nil
+		},
+	}
+
+	got, err := c.FindByMsaAppID(context.Background(), "CLIENT-ID-123")
+	if err != nil {
+		t.Fatalf("FindByMsaAppID returned error: %v", err)
+	}
+	if got == nil || got.Name != "published-bot" || got.ResourceGroup != "m365-rg" {
+		t.Fatalf("FindByMsaAppID = %+v, want published-bot in m365-rg", got)
+	}
+}

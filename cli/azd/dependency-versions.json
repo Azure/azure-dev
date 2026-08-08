@@ -1,0 +1,130 @@
+{
+  "overrides": [
+    {
+      "module": "extensions/azure.ai.agents",
+      "dependency": "github.com/Azure/azure-sdk-for-go/sdk/azcore",
+      "version": "v1.21.0",
+      "reason": "Pre-existing direct dependency drift pending repository-wide alignment.",
+      "issue": "https://github.com/Azure/azure-dev/issues/9297"
+    },
+    {
+      "module": "extensions/azure.ai.agents",
+      "dependency": "github.com/Azure/azure-sdk-for-go/sdk/azidentity",
+      "version": "v1.14.0-beta.3",
+      "reason": "The extension temporarily requires the prerelease credential error-reporting behavior.",
+      "issue": "https://github.com/Azure/azure-dev/issues/7732"
+    },
+    {
+      "module": "extensions/azure.ai.agents",
+      "dependency": "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry",
+      "version": "v1.3.0-beta.3",
+      "reason": "Pre-existing direct dependency drift pending repository-wide alignment.",
+      "issue": "https://github.com/Azure/azure-dev/issues/9297"
+    },
+    {
+      "module": "extensions/azure.ai.agents",
+      "dependency": "github.com/mark3labs/mcp-go",
+      "version": "v0.43.2",
+      "reason": "Pre-existing direct dependency drift pending repository-wide alignment.",
+      "issue": "https://github.com/Azure/azure-dev/issues/9297"
+    },
+    {
+      "module": "extensions/azure.ai.agents",
+      "dependency": "github.com/spf13/cobra",
+      "version": "v1.10.2",
+      "reason": "Pre-existing direct dependency drift pending repository-wide alignment.",
+      "issue": "https://github.com/Azure/azure-dev/issues/9297"
+    },
+    {
+      "module": "extensions/azure.ai.finetune",
+      "dependency": "github.com/Azure/azure-sdk-for-go/sdk/azcore",
+      "version": "v1.21.0",
+      "reason": "Pre-existing direct dependency drift pending repository-wide alignment.",
+      "issue": "https://github.com/Azure/azure-dev/issues/9297"
+    },
+    {
+      "module": "extensions/azure.ai.finetune",
+      "dependency": "github.com/spf13/cobra",
+      "version": "v1.10.2",
+      "reason": "Pre-existing direct dependency drift pending repository-wide alignment.",
+      "issue": "https://github.com/Azure/azure-dev/issues/9297"
+    },
+    {
+      "module": "extensions/azure.ai.inspector",
+      "dependency": "github.com/spf13/cobra",
+      "version": "v1.10.2",
+      "reason": "Pre-existing direct dependency drift pending repository-wide alignment.",
+      "issue": "https://github.com/Azure/azure-dev/issues/9297"
+    },
+    {
+      "module": "extensions/azure.ai.models",
+      "dependency": "github.com/spf13/cobra",
+      "version": "v1.10.2",
+      "reason": "Pre-existing direct dependency drift pending repository-wide alignment.",
+      "issue": "https://github.com/Azure/azure-dev/issues/9297"
+    },
+    {
+      "module": "extensions/azure.ai.projects",
+      "dependency": "github.com/Azure/azure-sdk-for-go/sdk/azcore",
+      "version": "v1.21.0",
+      "reason": "Pre-existing direct dependency drift pending repository-wide alignment.",
+      "issue": "https://github.com/Azure/azure-dev/issues/9297"
+    },
+    {
+      "module": "extensions/azure.ai.projects",
+      "dependency": "github.com/Azure/azure-sdk-for-go/sdk/azidentity",
+      "version": "v1.14.0-beta.3",
+      "reason": "Pre-existing prerelease usage pending alignment to the stable core version.",
+      "issue": "https://github.com/Azure/azure-dev/issues/9297"
+    },
+    {
+      "module": "extensions/azure.ai.skills",
+      "dependency": "github.com/Azure/azure-sdk-for-go/sdk/azcore",
+      "version": "v1.21.0",
+      "reason": "Pre-existing direct dependency drift pending repository-wide alignment.",
+      "issue": "https://github.com/Azure/azure-dev/issues/9297"
+    },
+    {
+      "module": "extensions/azure.ai.skills",
+      "dependency": "github.com/Azure/azure-sdk-for-go/sdk/azidentity",
+      "version": "v1.14.0-beta.3",
+      "reason": "Pre-existing prerelease usage pending alignment to the stable core version.",
+      "issue": "https://github.com/Azure/azure-dev/issues/9297"
+    },
+    {
+      "module": "extensions/azure.ai.skills",
+      "dependency": "github.com/spf13/cobra",
+      "version": "v1.10.2",
+      "reason": "Pre-existing direct dependency drift pending repository-wide alignment.",
+      "issue": "https://github.com/Azure/azure-dev/issues/9297"
+    },
+    {
+      "module": "extensions/azure.appservice",
+      "dependency": "github.com/Azure/azure-sdk-for-go/sdk/azcore",
+      "version": "v1.21.0",
+      "reason": "Pre-existing direct dependency drift pending repository-wide alignment.",
+      "issue": "https://github.com/Azure/azure-dev/issues/9297"
+    },
+    {
+      "module": "extensions/azure.appservice",
+      "dependency": "github.com/spf13/cobra",
+      "version": "v1.10.2",
+      "reason": "Pre-existing direct dependency drift pending repository-wide alignment.",
+      "issue": "https://github.com/Azure/azure-dev/issues/9297"
+    },
+    {
+      "module": "extensions/azure.coding-agent",
+      "dependency": "google.golang.org/grpc",
+      "version": "v1.79.3",
+      "reason": "Pre-existing direct dependency drift pending repository-wide alignment.",
+      "issue": "https://github.com/Azure/azure-dev/issues/9297"
+    },
+    {
+      "module": "extensions/microsoft.azd.concurx",
+      "dependency": "github.com/spf13/cobra",
+      "version": "v1.10.2",
+      "reason": "Pre-existing direct dependency drift pending repository-wide alignment.",
+      "issue": "https://github.com/Azure/azure-dev/issues/9297"
+    }
+  ]
+}

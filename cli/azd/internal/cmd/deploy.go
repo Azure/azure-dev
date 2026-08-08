@@ -436,6 +436,10 @@ func (da *DeployAction) deployServicesGraph(
 		return nil, err
 	}
 
+	if da.formatter.Kind() != output.JsonFormat {
+		displayDeployWarnings(ctx, da.console, stableServices, state)
+	}
+
 	// Display service endpoint artifacts collected during deploy steps.
 	if da.formatter.Kind() != output.JsonFormat {
 		for _, svc := range stableServices {

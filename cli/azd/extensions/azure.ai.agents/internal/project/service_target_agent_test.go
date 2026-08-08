@@ -746,6 +746,43 @@ func TestRegisterAgentEnvironmentVariables_PersistsActivityBotName(t *testing.T)
 	require.Equal(t, "published-bot", envStub.values[envkey.AgentBotName("my-svc")])
 }
 
+func TestRegisterAgentEnvironmentVariables_PersistsInstanceIdentity(t *testing.T) {
+	t.Parallel()
+
+	envStub := &stubEnvServer{}
+	provider := &AgentServiceTargetProvider{
+		azdClient: newEnvTestClient(t, envStub),
+		env:       &azdext.Environment{Name: "test-env"},
+	}
+
+	err := provider.registerAgentEnvironmentVariables(
+		t.Context(),
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://proj.azure.com"},
+		&azdext.ServiceConfig{Name: "my-svc"},
+		&agent_api.AgentVersionObject{
+			Name:    "my-agent",
+			Version: "1.0.0",
+			InstanceIdentity: &agent_api.AgentIdentityInfo{
+				ClientID:    "client-id-123",
+				PrincipalID: "principal-id-456",
+			},
+		},
+		nil,
+		"",
+	)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		"client-id-123",
+		envStub.values[envkey.AgentInstanceIdentityClientID("my-svc")],
+	)
+	require.Equal(
+		t,
+		"principal-id-456",
+		envStub.values[envkey.AgentInstanceIdentityPrincipalID("my-svc")],
+	)
+}
+
 type fakeActivityBotFinder struct {
 	ref *botservice.BotReference
 	err error

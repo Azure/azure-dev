@@ -252,6 +252,11 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
+	// Command title
+	da.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: "Deploying services (azd deploy)",
+	})
+
 	startTime := time.Now()
 
 	stableServices, err := da.importManager.ServiceStableFiltered(ctx, da.projectConfig, targetServiceName, da.env.Getenv)
@@ -393,20 +398,13 @@ func (da *DeployAction) deployServicesGraph(
 		Project: da.projectConfig,
 	}
 
-	// Start the progress ticker only after project predeploy handlers finish.
-	// Those handlers can prompt for input through extensions, and a running
-	// ticker would continuously overwrite that prompt in an interactive terminal.
+	// Start the progress ticker if the tracker is active.
 	var stopTicker func()
+	if da.progressTracker != nil {
+		stopTicker = da.progressTracker.StartTicker(ctx)
+	}
 
 	err = da.projectConfig.Invoke(ctx, project.ProjectEventDeploy, projectEventArgs, func() error {
-		// Project predeploy handlers may prompt for input. Render the title and
-		// progress table only after those prompts complete so they stay visible.
-		da.console.MessageUxItem(ctx, &ux.MessageTitle{
-			Title: "Deploying services (azd deploy)",
-		})
-		if da.progressTracker != nil {
-			stopTicker = da.progressTracker.StartTicker(ctx)
-		}
 		result := exegraph.RunWithResult(ctx, g, opts)
 		// Log per-step timing for diagnostics and benchmarking.
 		for _, st := range result.Steps {

@@ -37,6 +37,15 @@ type Span struct {
 	SpanContext SpanContext
 	Resource    []Attribute
 	Attributes  []Attribute
+	Status      SpanStatus
+}
+
+// SpanStatus mirrors the status block the stdouttrace exporter writes for each
+// span. Code is the OTel status ("Unset", "Error", or "Ok") and Description
+// carries the AppInsights ResultCode that cmd.MapError stamps on failure.
+type SpanStatus struct {
+	Code        string
+	Description string
 }
 
 // Like [trace.SpanContext], except uses string representations of IDs.
@@ -348,6 +357,27 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 		"cmd.provision should carry the resolved infra.provider")
 	require.ElementsMatch(t, []string{"bicep"}, upAttrs[fields.InfraProviderKey.Key],
 		"cmd.up should carry the resolved infra.provider")
+
+	// Issue #9054: the synthetic cmd.provision span must reflect the *real*
+	// provision outcome. This scenario forces a provisioning failure (the infra
+	// folder holds only a bogus main.something), so cmd.provision must report
+	// Error with a non-empty ResultCode — not the pre-fix Unset status that the
+	// AppInsights exporter reads as Success.
+	require.Equal(t, "Error", cmdSpans["cmd.provision"].Status.Code,
+		"cmd.provision must report Error when provisioning fails under azd up")
+	require.NotEmpty(t, cmdSpans["cmd.provision"].Status.Description,
+		"cmd.provision must carry a ResultCode describing the failure")
+
+	// The minimal project has no services, so packaging has nothing to fail on;
+	// cmd.package must not be misreported as an error.
+	require.NotEqual(t, "Error", cmdSpans["cmd.package"].Status.Code,
+		"cmd.package must not report Error when no package step failed")
+
+	// Deploy never runs once provisioning fails (FailFast skips the deploy
+	// steps), so — mirroring legacy `azd up` — no synthetic cmd.deploy span is
+	// emitted rather than a misleading Success one.
+	require.NotContains(t, cmdSpans, "cmd.deploy",
+		"cmd.deploy must not be emitted when the deploy phase is skipped")
 }
 
 func Test_Telemetry_AlphaFeatures_Enabled(t *testing.T) {

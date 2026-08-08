@@ -678,8 +678,8 @@ spans as children of `cmd.up`.
   `cmd.deploy` span is emitted, matching legacy `azd up` where the deploy
   sub-command never ran.
 
-**Correcting historical dashboards for the affected window:** repoint provision
-and deploy panels at the underlying `exegraph.step` spans (tagged `provision`,
+**Correcting historical dashboards for the affected window:** redirect provision
+and deploy panels to the underlying `exegraph.step` spans (tagged `provision`,
 and named `deploy-<svc>` / `publish-<svc>`), which recorded the correct status
 throughout, or exclude under-`up` `cmd.provision`/`cmd.package` Success from
 reliability aggregates for that version range.

@@ -678,11 +678,17 @@ spans as children of `cmd.up`.
   `cmd.deploy` span is emitted, matching legacy `azd up` where the deploy
   sub-command never ran.
 
-**Correcting historical dashboards for the affected window:** redirect provision
-and deploy panels to the underlying `exegraph.step` spans (tagged `provision`,
-and named `deploy-<svc>` / `publish-<svc>`), which recorded the correct status
-throughout, or exclude under-`up` `cmd.provision`/`cmd.package` Success from
-reliability aggregates for that version range.
+**Correcting historical dashboards for the affected window:** the underlying
+`exegraph.step` spans recorded the correct per-step status throughout, so an
+**approximate** correction is to redirect the provision, package, and deploy
+panels to them, matched on their raw `exegraph.step.tags` (`provision`,
+`package`, `deploy`, `publish`) — **not** on `exegraph.step.name`, which is
+SHA-256 hashed and cannot be filtered by phase. This is only approximate:
+pre/post lifecycle hook and event failures are tagged `cmdhook`/`event` rather
+than a phase tag, and a step canceled by a fail-fast teardown ends its own span
+as an error even when the synthetic phase span deliberately does not blame it.
+For an exact figure, exclude under-`up` `cmd.provision` / `cmd.package` Success
+from reliability aggregates for that version range.
 
 ### `validation.provision` Emitted Twice Per Bicep Provision
 

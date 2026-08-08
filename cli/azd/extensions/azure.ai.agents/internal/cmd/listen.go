@@ -42,6 +42,9 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return postprovisionHandler(ctx, azdClient, args)
 		}).
+		WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			return predeployActivityBotNames(ctx, azdClient, args)
+		}).
 		WithServiceEventHandler("predeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			return predeployHandler(ctx, azdClient, args)
 		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).

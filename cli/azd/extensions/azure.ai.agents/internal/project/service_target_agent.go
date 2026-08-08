@@ -167,14 +167,16 @@ type AgentServiceTargetProvider struct {
 	// serviceConfigResolved tracks whether serviceConfig has had
 	// its local $ref includes expanded. Cleared whenever a newer
 	// config is adopted.
-	serviceConfigResolved bool
-	credential            *azidentity.AzureDeveloperCLICredential
-	tenantId              string
-	env                   *azdext.Environment
-	foundryProject        *arm.ResourceID
-	projectServices       map[string]*azdext.ServiceConfig
-	dependencyEnabled     dependencyEnabled
-	dependencyEnv         map[string]string
+	serviceConfigResolved    bool
+	credential               *azidentity.AzureDeveloperCLICredential
+	tenantId                 string
+	env                      *azdext.Environment
+	foundryProject           *arm.ResourceID
+	projectServices          map[string]*azdext.ServiceConfig
+	dependencyEnabled        dependencyEnabled
+	dependencyEnv            map[string]string
+	activityBotName          string
+	activityBotResourceGroup string
 }
 
 const (
@@ -744,8 +746,9 @@ func (p *AgentServiceTargetProvider) Publish(
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
-	// Pre-built image: nothing to package or push. Skip deploy-context
-	// resolution so this path stays cheap and doesn't require agent.yaml.
+	// A pre-built image does not start a container publish operation. Preserve
+	// this fast path; its Activity Bot selection remains in Deploy because
+	// there is no publish phase in which to surface a prompt.
 	if preBuiltArtifact := findPreBuiltImageArtifact(serviceContext.Package); preBuiltArtifact != nil {
 		progress("Using pre-built container image, skipping publish")
 		return &azdext.ServicePublishResult{
@@ -763,12 +766,47 @@ func (p *AgentServiceTargetProvider) Publish(
 		return &azdext.ServicePublishResult{}, nil
 	}
 
-	_, isContainerAgent, err := p.loadContainerAgentDefinition()
+	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
 	if err != nil {
 		return nil, err
 	}
 	if !isContainerAgent {
 		return &azdext.ServicePublishResult{}, nil
+	}
+
+	p.activityBotName = ""
+	p.activityBotResourceGroup = ""
+	if ResolveActivityProfile(agentDef).IsActivity {
+		progress("Resolving Activity bot configuration")
+		if err := p.ensureFoundryProject(ctx); err != nil {
+			return nil, err
+		}
+
+		resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+			Name: p.env.Name,
+		})
+		if err != nil {
+			return nil, exterrors.Dependency(
+				exterrors.CodeEnvironmentValuesFailed,
+				fmt.Sprintf("failed to get environment values: %s", err),
+				"run 'azd env get-values' to verify environment state",
+			)
+		}
+
+		azdEnv := make(map[string]string, len(resp.KeyValues))
+		for _, kval := range resp.KeyValues {
+			azdEnv[kval.Key] = kval.Value
+		}
+		p.dependencyEnv = azdEnv
+		p.activityBotName, p.activityBotResourceGroup, err = p.resolveActivityBotName(
+			ctx,
+			serviceConfig.Name,
+			agentDef.Name,
+			azdEnv,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	progress("Publishing container")
@@ -1127,36 +1165,101 @@ func (p *AgentServiceTargetProvider) resolveActivityBotName(
 	serviceName string,
 	agentName string,
 	azdEnv map[string]string,
-) (string, error) {
+) (string, string, error) {
 	key := envkey.AgentBotName(serviceName)
-	defaultName := azdEnv[key]
-	if defaultName == "" {
-		defaultName = botservice.BotName(
+	name := strings.TrimSpace(azdEnv[key])
+	if name == "" {
+		defaultName := botservice.BotName(
 			agentName,
 			botservice.BotScopeSalt(azdEnv["AZURE_SUBSCRIPTION_ID"], p.foundryProject.ResourceGroupName),
 		)
+
+		agentClient := agent_api.NewAgentClient(
+			azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
+			p.credential,
+		)
+		existingAgent, getErr := agentClient.GetAgent(ctx, agentName, agent_api.AgentEndpointAPIVersion)
+		if getErr != nil {
+			// Not found means this is a new agent and we should prompt for the bot name.
+			if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok || respErr.StatusCode != http.StatusNotFound {
+				return "", "", exterrors.ServiceFromAzure(getErr, exterrors.OpCreateAgent)
+			}
+
+			response, err := p.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+				Options: &azdext.PromptOptions{
+					Message:         "Azure Bot name",
+					HelpMessage:     "New agent detected. Enter the Azure Bot resource name to create/use.",
+					DefaultValue:    defaultName,
+					Required:        true,
+					RequiredMessage: "Azure Bot name is required.",
+				},
+			})
+			if err != nil {
+				return "", "", fmt.Errorf("prompting for Azure Bot name: %w", err)
+			}
+			name = strings.TrimSpace(response.Value)
+		} else {
+			identityClientID := ""
+			if existingAgent.InstanceIdentity != nil {
+				identityClientID = strings.TrimSpace(existingAgent.InstanceIdentity.ClientID)
+			}
+			if identityClientID == "" && existingAgent.Versions.Latest.InstanceIdentity != nil {
+				identityClientID = strings.TrimSpace(existingAgent.Versions.Latest.InstanceIdentity.ClientID)
+			}
+
+			if identityClientID != "" {
+				botClient, err := botservice.NewClient(azdEnv["AZURE_SUBSCRIPTION_ID"], p.credential, nil)
+				if err != nil {
+					return "", "", err
+				}
+				existingBot, err := botClient.FindByMsaAppID(ctx, identityClientID)
+				if err != nil {
+					return "", "", err
+				}
+				if existingBot != nil {
+					fmt.Fprintf(
+						os.Stderr,
+						"Using Azure Bot %q matched by existing agent identity. To override, set %s and redeploy.\n",
+						existingBot.Name,
+						key,
+					)
+					return existingBot.Name, existingBot.ResourceGroup, nil
+				}
+			}
+
+			response, err := p.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+				Options: &azdext.PromptOptions{
+					Message: "Azure Bot name",
+					HelpMessage: "Existing agent detected, but no Azure Bot matched its identity. " +
+						"Enter the Azure Bot resource name to use.",
+					DefaultValue:    defaultName,
+					Required:        true,
+					RequiredMessage: "Azure Bot name is required.",
+				},
+			})
+			if err != nil {
+				return "", "", fmt.Errorf("prompting for Azure Bot name: %w", err)
+			}
+			name = strings.TrimSpace(response.Value)
+		}
+	} else {
+		fmt.Fprintf(
+			os.Stderr,
+			"Using Azure Bot name from environment key %s: %q\n",
+			key,
+			name,
+		)
 	}
-	response, err := p.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:         "Azure Bot name",
-			HelpMessage:     "The Azure Bot resource used by this Activity agent.",
-			DefaultValue:    defaultName,
-			Required:        true,
-			RequiredMessage: "Azure Bot name is required.",
-		},
-	})
-	if err != nil {
-		return "", fmt.Errorf("prompting for Azure Bot name: %w", err)
-	}
-	name := strings.TrimSpace(response.Value)
+
 	if name == "" {
-		return "", exterrors.Validation(
+		return "", "", exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			"Azure Bot name is required for Activity agents",
 			"provide a Bot name and retry the deployment",
 		)
 	}
-	return name, nil
+
+	return name, "", nil
 }
 
 // Deploy performs the deployment operation for the agent service
@@ -1193,11 +1296,13 @@ func (p *AgentServiceTargetProvider) Deploy(
 	}
 
 	// Ensure Foundry project is loaded
+	progress("Loading Foundry project")
 	if err := p.ensureFoundryProject(ctx); err != nil {
 		return nil, err
 	}
 
 	// Get environment variables from azd
+	progress("Loading deployment environment")
 	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
 		Name: p.env.Name,
 	})
@@ -1216,10 +1321,28 @@ func (p *AgentServiceTargetProvider) Deploy(
 	p.dependencyEnv = azdEnv
 
 	activityBotName := ""
+	activityBotResourceGroup := ""
 	if ResolveActivityProfile(agentDef).IsActivity {
-		activityBotName, err = p.resolveActivityBotName(ctx, serviceConfig.Name, agentDef.Name, azdEnv)
-		if err != nil {
-			return nil, err
+		if agentDef.CodeConfiguration == nil {
+			activityBotName = p.activityBotName
+			activityBotResourceGroup = p.activityBotResourceGroup
+			if activityBotName == "" {
+				return nil, exterrors.Internal(
+					exterrors.CodeAgentCreateFailed,
+					"Activity Bot configuration was not resolved during container publish",
+				)
+			}
+		} else {
+			progress("Resolving Activity bot configuration")
+			activityBotName, activityBotResourceGroup, err = p.resolveActivityBotName(
+				ctx,
+				serviceConfig.Name,
+				agentDef.Name,
+				azdEnv,
+			)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -1236,6 +1359,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		fmt.Println("Loaded custom service target configuration")
 	}
 
+	progress("Validating service dependencies")
 	if err := validateFoundryDependencies(
 		ctx, serviceConfig, serviceTargetConfig, p.projectServices, azdEnv, p.dependencyEnabled,
 	); err != nil {
@@ -1265,6 +1389,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	// Poll until agent version is active
 	if result.agentVersion.Status != "active" {
+		progress("Agent version created; waiting for activation")
 		projectEndpoint := azdEnv["FOUNDRY_PROJECT_ENDPOINT"]
 		agentClient := agent_api.NewAgentClient(
 			projectEndpoint,
@@ -1287,6 +1412,9 @@ func (p *AgentServiceTargetProvider) Deploy(
 	}
 
 	// Patch agent-level endpoint/card fields
+	if result.request.AgentEndpoint != nil || result.request.AgentCard != nil {
+		progress("Updating agent endpoint settings")
+	}
 	if err := p.patchAgentEndpointFields(
 		ctx, result.agentName, result.request.AgentEndpoint, result.request.AgentCard, azdEnv,
 	); err != nil {
@@ -1306,14 +1434,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 		if err != nil {
 			return nil, err
 		}
-		botResourceGroup := p.foundryProject.ResourceGroupName
-		if existing, findErr := client.FindByMsaAppID(ctx, identity.ClientID); findErr != nil {
-			return nil, findErr
-		} else if existing != nil {
-			activityBotName = existing.Name
-			botResourceGroup = existing.ResourceGroup
-			fmt.Fprintf(os.Stderr, "Reusing Azure Bot %q bound to the agent identity.\n", activityBotName)
+		botResourceGroup := activityBotResourceGroup
+		if strings.TrimSpace(botResourceGroup) == "" {
+			botResourceGroup = p.foundryProject.ResourceGroupName
 		}
+		progress("Ensuring Azure Bot resource")
 		if err := client.EnsureBot(ctx, botservice.BotConfig{
 			ResourceGroup:     botResourceGroup,
 			BotName:           activityBotName,
@@ -1873,6 +1998,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		}
 	}
 
+	progress("Preparing hosted agent configuration")
 	prep, err := p.prepareDeploy(serviceConfig, agentDef, azdEnv, []agent_yaml.AgentBuildOption{
 		agent_yaml.WithImageURL(fullImageURL),
 	})
@@ -1884,7 +2010,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	p.displayAgentInfo(prep.request)
 
 	// Create agent
-	progress("Creating agent")
+	progress("Submitting agent version creation request")
 	agentVersionResponse, err := p.createAgent(ctx, prep.request, azdEnv)
 	if err != nil {
 		return nil, err
@@ -2303,6 +2429,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		)
 	}
 
+	progress("Loading code package artifact")
 	zipData, err := os.ReadFile(zipPath) //nolint:gosec // zipPath comes from the artifact location set during packaging
 	if err != nil {
 		return nil, fmt.Errorf("failed to read ZIP artifact: %w", err)
@@ -2310,6 +2437,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	// Clean up temp file
 	defer os.Remove(zipPath)
 
+	progress("Preparing code agent configuration")
 	prep, err := p.prepareDeploy(serviceConfig, agentDef, azdEnv, nil)
 	if err != nil {
 		return nil, err
@@ -2343,7 +2471,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	)
 
 	// Check if agent already exists (GET /agents/{name})
-	progress("Creating agent")
+	progress("Checking existing agent")
 	_, getErr := agentClient.GetAgent(ctx, agentDef.Name, agent_api.AgentEndpointAPIVersion)
 	var agentResp *agent_api.AgentObject
 
@@ -2353,6 +2481,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 			return nil, exterrors.ServiceFromAzure(getErr, exterrors.OpCreateAgent)
 		}
 		// Agent doesn't exist — create
+		progress("Creating new agent from code package")
 		fmt.Fprintf(os.Stderr, "Creating new agent: %s\n", agentDef.Name)
 		agentResp, err = agentClient.CreateAgentFromZip(
 			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
@@ -2362,6 +2491,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		}
 	} else {
 		// Agent exists — update
+		progress("Updating existing agent from code package")
 		writeExistingAgentVersionWarning(agentDef.Name)
 		agentResp, err = agentClient.UpdateAgentFromZip(
 			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,

@@ -81,9 +81,9 @@ adding new events for extension and hook lifecycle telemetry.
 | Event | Lifecycle | Attributes to expect | Sample row |
 | ----- | --------- | -------------------- | ---------- |
 | `ext.run` | Running an installed extension command through `azd`. | Command attributes such as `cmd.entry`, `cmd.flags`, `cmd.args.count`, plus `extension.installed` on the root span. | `name=ext.run`, `cmd.entry=cmd.ai.chat`, `cmd.flags=["model"]`, `cmd.args.count=0` |
-| `ext.install` | Installing one extension version. | `extension.id` (set as soon as installation begins); `extension.version` (set after the version is resolved). On failure the span uses OpenTelemetry status `Error`; `EndWithStatus` derives the status description from the error type. | `name=ext.install`, `extension.id=microsoft.azd.ai`, `extension.version=1.2.0`, `status=Ok` |
-| `ext.upgrade` | Upgrading one extension attempt. | `extension.id`, `extension.version.from`, `extension.version.to`, `extension.source`, `extension.upgrade.duration_ms`, `extension.upgrade.outcome`. | `name=ext.upgrade`, `extension.id=microsoft.azd.ai`, `extension.version.from=1.1.0`, `extension.version.to=1.2.0`, `extension.upgrade.outcome=upgraded` |
-| `ext.promote` | Promoting an extension registry entry, such as dev to main. | `extension.id`, `extension.version.from`, `extension.version.to`, `extension.source.from`, `extension.source.to`. | `name=ext.promote`, `extension.id=microsoft.azd.ai`, `extension.source.from=dev`, `extension.source.to=main`, `status=Ok` |
+| `ext.install` | Installing one extension version. | `extension.id`, `extension.version`, and `extension.source.category`. On failure the span uses OpenTelemetry status `Error`; `EndWithStatus` derives the status description from the error type. | `name=ext.install`, `extension.id=microsoft.azd.ai`, `extension.version=1.2.0`, `extension.source.category=azd`, `status=Ok` |
+| `ext.upgrade` | Upgrading one extension attempt. | `extension.id`, `extension.version.from`, `extension.version.to`, `extension.source.category`, `extension.upgrade.duration_ms`, `extension.upgrade.outcome`. | `name=ext.upgrade`, `extension.id=microsoft.azd.ai`, `extension.version.from=1.1.0`, `extension.version.to=1.2.0`, `extension.source.category=azd`, `extension.upgrade.outcome=upgraded` |
+| `ext.promote` | Promoting an extension registry entry, such as dev to main. | `extension.id`, `extension.version.from`, `extension.version.to`, `extension.source.category.from`, `extension.source.category.to`. | `name=ext.promote`, `extension.id=microsoft.azd.ai`, `extension.source.category.from=dev`, `extension.source.category.to=azd`, `status=Ok` |
 | `hooks.exec` | Executing a project, layer, or service lifecycle hook. | `hooks.name`, `hooks.type`, `hooks.kind`; status description uses hook-specific codes such as `hook.validation_failed`. | `name=hooks.exec`, `hooks.name=predeploy`, `hooks.type=service`, `hooks.kind=sh`, `status=Ok` |
 
 ### Extension Attributes
@@ -95,11 +95,12 @@ Extension telemetry attributes are defined in [`fields.go`](../internal/tracing/
 | `extension.id` | Extension identifier. | `microsoft.azd.ai` |
 | `extension.version` | Installed extension version. | `1.2.0` |
 | `extension.installed` | Installed extensions on a command span, each formatted as `id@version`. | `["microsoft.azd.ai@1.2.0"]` |
+| `extension.installed.source.category` | Installed extension source categories, each formatted as `id@category`. | `["microsoft.azd.ai@azd"]` |
 | `extension.version.from` | Version before an upgrade or promotion. | `1.1.0` |
 | `extension.version.to` | Version after an upgrade or promotion. | `1.2.0` |
-| `extension.source` | Registry source used for an upgrade. | `main` |
-| `extension.source.from` | Registry source before a promotion. | `dev` |
-| `extension.source.to` | Registry source after a promotion. | `main` |
+| `extension.source.category` | Fixed source category used for an install, upgrade, or source registration. | `azd` |
+| `extension.source.category.from` | Fixed source category before a promotion. | `dev` |
+| `extension.source.category.to` | Fixed source category after a promotion. | `azd` |
 | `extension.upgrade.duration_ms` | Upgrade duration in milliseconds. | `1532` |
 | `extension.upgrade.outcome` | Upgrade result status. | `upgraded` |
 

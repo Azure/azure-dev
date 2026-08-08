@@ -229,7 +229,7 @@ func (sm *SourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 		return nil, fmt.Errorf("unable to create extension source '%s': %w", config.Name, err)
 	}
 
-	return source, nil
+	return newCategorizedSource(source, ClassifySource(config)), nil
 }
 
 // addInternal adds a new extension source to the user configuration.

@@ -27,6 +27,54 @@ type RegistryProvider interface {
 	GetRegistry() *Registry
 }
 
+type categorizedSource struct {
+	Source
+	category SourceCategory
+}
+
+func newCategorizedSource(source Source, category SourceCategory) Source {
+	categorized := &categorizedSource{
+		Source:   source,
+		category: category,
+	}
+	if provider, ok := source.(RegistryProvider); ok {
+		return &categorizedRegistrySource{
+			categorizedSource: categorized,
+			provider:          provider,
+		}
+	}
+	return categorized
+}
+
+func (s *categorizedSource) ListExtensions(ctx context.Context) ([]*ExtensionMetadata, error) {
+	extensions, err := s.Source.ListExtensions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, extension := range extensions {
+		extension.SourceCategory = s.category
+	}
+	return extensions, nil
+}
+
+func (s *categorizedSource) GetExtension(ctx context.Context, extensionId string) (*ExtensionMetadata, error) {
+	extension, err := s.Source.GetExtension(ctx, extensionId)
+	if err != nil {
+		return nil, err
+	}
+	extension.SourceCategory = s.category
+	return extension, nil
+}
+
+type categorizedRegistrySource struct {
+	*categorizedSource
+	provider RegistryProvider
+}
+
+func (s *categorizedRegistrySource) GetRegistry() *Registry {
+	return s.provider.GetRegistry()
+}
+
 type registrySource struct {
 	name     string
 	registry *Registry

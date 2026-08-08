@@ -53,6 +53,22 @@ azd extension source add -n azd -t url -l "https://aka.ms/azd/extensions/registr
 
 Sources are sorted **alphabetically by name** — not by insertion order. This means a source named `"alpha"` is always consulted before `"beta"`, regardless of when each was added.
 
+### Source Categories
+
+For telemetry, `azd` classifies sources by type and location rather than by the user-defined name:
+
+| Category | Source |
+|----------|--------|
+| `azd` | Main aka.ms registry or its resolved GitHub URL |
+| `dev` | Dev aka.ms registry or its resolved GitHub URL |
+| `nightly` | Nightly aka.ms registry or its resolved GitHub URL |
+| `local` | File source |
+| `bundle` | Self-contained extension bundle |
+| `other` | Other URL or custom source type |
+| `unknown` | Legacy installed record without a persisted category |
+
+The category is stored with an installed extension so it remains available if the configured source is later removed or changed. Source names, URLs, paths, and hosts are not emitted.
+
 ## Resolution Algorithm
 
 When you run a command like `azd extension install <id>`, `azd` resolves the extension through the following steps:

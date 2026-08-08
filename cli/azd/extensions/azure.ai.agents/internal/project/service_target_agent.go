@@ -167,16 +167,14 @@ type AgentServiceTargetProvider struct {
 	// serviceConfigResolved tracks whether serviceConfig has had
 	// its local $ref includes expanded. Cleared whenever a newer
 	// config is adopted.
-	serviceConfigResolved    bool
-	credential               *azidentity.AzureDeveloperCLICredential
-	tenantId                 string
-	env                      *azdext.Environment
-	foundryProject           *arm.ResourceID
-	projectServices          map[string]*azdext.ServiceConfig
-	dependencyEnabled        dependencyEnabled
-	dependencyEnv            map[string]string
-	activityBotName          string
-	activityBotResourceGroup string
+	serviceConfigResolved bool
+	credential            *azidentity.AzureDeveloperCLICredential
+	tenantId              string
+	env                   *azdext.Environment
+	foundryProject        *arm.ResourceID
+	projectServices       map[string]*azdext.ServiceConfig
+	dependencyEnabled     dependencyEnabled
+	dependencyEnv         map[string]string
 }
 
 const (
@@ -747,8 +745,8 @@ func (p *AgentServiceTargetProvider) Publish(
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
 	// A pre-built image does not start a container publish operation. Preserve
-	// this fast path; its Activity Bot selection remains in Deploy because
-	// there is no publish phase in which to surface a prompt.
+	// this fast path; Activity Bot selection still runs in Deploy because the
+	// deployed agent identity is required to prefer an already-bound bot.
 	if preBuiltArtifact := findPreBuiltImageArtifact(serviceContext.Package); preBuiltArtifact != nil {
 		progress("Using pre-built container image, skipping publish")
 		return &azdext.ServicePublishResult{
@@ -766,47 +764,12 @@ func (p *AgentServiceTargetProvider) Publish(
 		return &azdext.ServicePublishResult{}, nil
 	}
 
-	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
+	_, isContainerAgent, err := p.loadContainerAgentDefinition()
 	if err != nil {
 		return nil, err
 	}
 	if !isContainerAgent {
 		return &azdext.ServicePublishResult{}, nil
-	}
-
-	p.activityBotName = ""
-	p.activityBotResourceGroup = ""
-	if ResolveActivityProfile(agentDef).IsActivity {
-		progress("Resolving Activity bot configuration")
-		if err := p.ensureFoundryProject(ctx); err != nil {
-			return nil, err
-		}
-
-		resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
-			Name: p.env.Name,
-		})
-		if err != nil {
-			return nil, exterrors.Dependency(
-				exterrors.CodeEnvironmentValuesFailed,
-				fmt.Sprintf("failed to get environment values: %s", err),
-				"run 'azd env get-values' to verify environment state",
-			)
-		}
-
-		azdEnv := make(map[string]string, len(resp.KeyValues))
-		for _, kval := range resp.KeyValues {
-			azdEnv[kval.Key] = kval.Value
-		}
-		p.dependencyEnv = azdEnv
-		p.activityBotName, p.activityBotResourceGroup, err = p.resolveActivityBotName(
-			ctx,
-			serviceConfig.Name,
-			agentDef.Name,
-			azdEnv,
-		)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	progress("Publishing container")
@@ -1162,86 +1125,40 @@ func (p *AgentServiceTargetProvider) loadContainerAgentDefinition() (agent_yaml.
 
 func (p *AgentServiceTargetProvider) resolveActivityBotName(
 	ctx context.Context,
+	botFinder interface {
+		FindByMsaAppID(context.Context, string) (*botservice.BotReference, error)
+	},
 	serviceName string,
 	agentName string,
+	agentIdentityClientID string,
 	azdEnv map[string]string,
 ) (string, string, error) {
+	if botFinder != nil && strings.TrimSpace(agentIdentityClientID) != "" {
+		boundBot, err := botFinder.FindByMsaAppID(ctx, agentIdentityClientID)
+		if err != nil {
+			return "", "", err
+		}
+		if boundBot != nil && strings.TrimSpace(boundBot.Name) != "" {
+			fmt.Fprintf(
+				os.Stderr,
+				"Using Azure Bot already bound to the deployed agent identity: %q (resource group: %q)\n",
+				boundBot.Name,
+				boundBot.ResourceGroup,
+			)
+			return boundBot.Name, strings.TrimSpace(boundBot.ResourceGroup), nil
+		}
+	}
+
 	key := envkey.AgentBotName(serviceName)
 	name := strings.TrimSpace(azdEnv[key])
 	if name == "" {
-		defaultName := botservice.BotName(
-			agentName,
-			botservice.BotScopeSalt(azdEnv["AZURE_SUBSCRIPTION_ID"], p.foundryProject.ResourceGroupName),
+		name = botservice.DefaultBotName(agentName)
+		fmt.Fprintf(
+			os.Stderr,
+			"Azure Bot name was not set in %s; using default %q. Run `azd provision` to save a custom value.\n",
+			key,
+			name,
 		)
-
-		agentClient := agent_api.NewAgentClient(
-			azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
-			p.credential,
-		)
-		existingAgent, getErr := agentClient.GetAgent(ctx, agentName, agent_api.AgentEndpointAPIVersion)
-		if getErr != nil {
-			// Not found means this is a new agent and we should prompt for the bot name.
-			if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok || respErr.StatusCode != http.StatusNotFound {
-				return "", "", exterrors.ServiceFromAzure(getErr, exterrors.OpCreateAgent)
-			}
-
-			response, err := p.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-				Options: &azdext.PromptOptions{
-					Message:         "Azure Bot name",
-					HelpMessage:     "New agent detected. Enter the Azure Bot resource name to create/use.",
-					DefaultValue:    defaultName,
-					Required:        true,
-					RequiredMessage: "Azure Bot name is required.",
-				},
-			})
-			if err != nil {
-				return "", "", fmt.Errorf("prompting for Azure Bot name: %w", err)
-			}
-			name = strings.TrimSpace(response.Value)
-		} else {
-			identityClientID := ""
-			if existingAgent.InstanceIdentity != nil {
-				identityClientID = strings.TrimSpace(existingAgent.InstanceIdentity.ClientID)
-			}
-			if identityClientID == "" && existingAgent.Versions.Latest.InstanceIdentity != nil {
-				identityClientID = strings.TrimSpace(existingAgent.Versions.Latest.InstanceIdentity.ClientID)
-			}
-
-			if identityClientID != "" {
-				botClient, err := botservice.NewClient(azdEnv["AZURE_SUBSCRIPTION_ID"], p.credential, nil)
-				if err != nil {
-					return "", "", err
-				}
-				existingBot, err := botClient.FindByMsaAppID(ctx, identityClientID)
-				if err != nil {
-					return "", "", err
-				}
-				if existingBot != nil {
-					fmt.Fprintf(
-						os.Stderr,
-						"Using Azure Bot %q matched by existing agent identity. To override, set %s and redeploy.\n",
-						existingBot.Name,
-						key,
-					)
-					return existingBot.Name, existingBot.ResourceGroup, nil
-				}
-			}
-
-			response, err := p.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-				Options: &azdext.PromptOptions{
-					Message: "Azure Bot name",
-					HelpMessage: "Existing agent detected, but no Azure Bot matched its identity. " +
-						"Enter the Azure Bot resource name to use.",
-					DefaultValue:    defaultName,
-					Required:        true,
-					RequiredMessage: "Azure Bot name is required.",
-				},
-			})
-			if err != nil {
-				return "", "", fmt.Errorf("prompting for Azure Bot name: %w", err)
-			}
-			name = strings.TrimSpace(response.Value)
-		}
 	} else {
 		fmt.Fprintf(
 			os.Stderr,
@@ -1260,6 +1177,15 @@ func (p *AgentServiceTargetProvider) resolveActivityBotName(
 	}
 
 	return name, "", nil
+}
+
+func isMsaAppIDAlreadyInUseError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "msaappid is already in use") ||
+		strings.Contains(msg, "msaapp id is already in use")
 }
 
 // Deploy performs the deployment operation for the agent service
@@ -1322,29 +1248,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	activityBotName := ""
 	activityBotResourceGroup := ""
-	if ResolveActivityProfile(agentDef).IsActivity {
-		if agentDef.CodeConfiguration == nil {
-			activityBotName = p.activityBotName
-			activityBotResourceGroup = p.activityBotResourceGroup
-			if activityBotName == "" {
-				return nil, exterrors.Internal(
-					exterrors.CodeAgentCreateFailed,
-					"Activity Bot configuration was not resolved during container publish",
-				)
-			}
-		} else {
-			progress("Resolving Activity bot configuration")
-			activityBotName, activityBotResourceGroup, err = p.resolveActivityBotName(
-				ctx,
-				serviceConfig.Name,
-				agentDef.Name,
-				azdEnv,
-			)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
+	isActivityAgent := ResolveActivityProfile(agentDef).IsActivity
 
 	serviceTargetConfig, err := LoadServiceTargetAgentConfig(serviceConfig)
 	if err != nil {
@@ -1421,7 +1325,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, err
 	}
 
-	if activityBotName != "" {
+	if isActivityAgent {
 		identity := result.agentVersion.InstanceIdentity
 		if identity == nil || identity.ClientID == "" {
 			return nil, exterrors.Dependency(
@@ -1434,20 +1338,60 @@ func (p *AgentServiceTargetProvider) Deploy(
 		if err != nil {
 			return nil, err
 		}
+		progress("Resolving Activity bot configuration")
+		activityBotName, activityBotResourceGroup, err = p.resolveActivityBotName(
+			ctx,
+			client,
+			serviceConfig.Name,
+			agentDef.Name,
+			identity.ClientID,
+			azdEnv,
+		)
+		if err != nil {
+			return nil, err
+		}
 		botResourceGroup := activityBotResourceGroup
 		if strings.TrimSpace(botResourceGroup) == "" {
 			botResourceGroup = p.foundryProject.ResourceGroupName
 		}
 		progress("Ensuring Azure Bot resource")
-		if err := client.EnsureBot(ctx, botservice.BotConfig{
+		ensureCfg := botservice.BotConfig{
 			ResourceGroup:     botResourceGroup,
 			BotName:           activityBotName,
 			MsaAppID:          identity.ClientID,
 			TenantID:          p.tenantId,
 			MessagingEndpoint: botservice.MessagingEndpoint(azdEnv["FOUNDRY_PROJECT_ENDPOINT"], result.agentName),
 			DisplayName:       result.agentName,
-		}); err != nil {
-			return nil, err
+		}
+		if err := client.EnsureBot(ctx, ensureCfg); err != nil {
+			// Recovery path: BotService enforces MsaAppID uniqueness. If a different
+			// bot name is already bound to this identity, switch to that bot and retry.
+			if isMsaAppIDAlreadyInUseError(err) {
+				if boundBot, findErr := client.FindByMsaAppID(ctx, identity.ClientID); findErr == nil &&
+					boundBot != nil && strings.TrimSpace(boundBot.Name) != "" {
+					activityBotName = strings.TrimSpace(boundBot.Name)
+					if strings.TrimSpace(boundBot.ResourceGroup) != "" {
+						botResourceGroup = strings.TrimSpace(boundBot.ResourceGroup)
+					}
+					fmt.Fprintf(
+						os.Stderr,
+						"Azure Bot name %q conflicts for MsaAppID; reusing already-bound bot %q (resource group: %q).\n",
+						ensureCfg.BotName,
+						activityBotName,
+						botResourceGroup,
+					)
+					ensureCfg.BotName = activityBotName
+					ensureCfg.ResourceGroup = botResourceGroup
+					if retryErr := client.EnsureBot(ctx, ensureCfg); retryErr == nil {
+						err = nil
+					} else {
+						return nil, retryErr
+					}
+				}
+			}
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 

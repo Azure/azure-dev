@@ -22,6 +22,8 @@ package messages
 import (
 	"errors"
 	"fmt"
+	"net/http"
+	"strings"
 
 	"azureaidataset/internal/exterrors"
 )
@@ -325,8 +327,48 @@ func SettingRequestBody(err error) error {
 }
 
 // RequestFailed reports a request that never reached an answer.
+//
+// A credential that cannot mint a token fails here rather than as a 401, and
+// the SDK's own text for it names neither azd nor the way out. Matched on the
+// credential type's name because that is what the SDK puts in the message;
+// anything else is passed through unchanged.
 func RequestFailed(err error) error {
+	if isCredentialFailure(err) {
+		return exterrors.Auth(
+			exterrors.CodeLoginExpired,
+			fmt.Sprintf("could not get a token for the Foundry project: %v", err),
+			"run `azd auth login`, then try again")
+	}
 	return fmt.Errorf("HTTP request failed: %w", err)
+}
+
+// ServiceRefused turns an unauthorised answer into one that says what to do.
+// Every other status is left as the service reported it.
+func ServiceRefused(status int, err error) error {
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		return exterrors.Auth(
+			exterrors.CodeAuthFailed,
+			fmt.Sprintf("the Foundry project refused the request (HTTP %d): %v", status, err),
+			"run `azd auth login`, and check you have access to this project")
+	}
+	return err
+}
+
+func isCredentialFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	for _, marker := range []string{
+		"AzureDeveloperCLICredential",
+		"DefaultAzureCredential",
+		"failed to acquire a token",
+	} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // ReadingResponseBody reports a response that could not be read.

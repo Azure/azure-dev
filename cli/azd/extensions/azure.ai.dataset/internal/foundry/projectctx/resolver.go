@@ -36,13 +36,13 @@ func readAzdHostedSources(ctx context.Context) (AzdHostedSources, error) {
 
 	if envResp, err := azdClient.Environment().GetCurrent(
 		ctx, &azdext.EmptyRequest{},
-	); err == nil {
+	); err == nil && envResp.GetEnvironment() != nil {
 		for _, key := range []string{foundryEnvKey, azureAiEnvKey} {
 			envVal, valErr := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 				EnvName: envResp.Environment.Name,
 				Key:     key,
 			})
-			if valErr == nil && envVal.Value != "" {
+			if valErr == nil && envVal.GetValue() != "" {
 				out.EnvValue = envVal.Value
 				out.EnvName = envResp.Environment.Name
 				break

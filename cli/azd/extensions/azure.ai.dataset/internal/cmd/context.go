@@ -55,6 +55,9 @@ func newDatasetContext(ctx context.Context, endpointFlag string) (*datasetContex
 
 	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{FlagValue: endpointFlag})
 	if err != nil {
+		// The caller only defers Close on a context it was handed, so every
+		// path that abandons this one has to close it here.
+		dc.Close()
 		return nil, err
 	}
 	dc.endpoint = strings.TrimSuffix(resolved.Endpoint, "/")
@@ -64,6 +67,7 @@ func newDatasetContext(ctx context.Context, endpointFlag string) (*datasetContex
 		&azidentity.AzureDeveloperCLICredentialOptions{},
 	)
 	if err != nil {
+		dc.Close()
 		return nil, messages.CreatingCredential(err)
 	}
 	dc.cred = cred

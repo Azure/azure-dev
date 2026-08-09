@@ -73,32 +73,60 @@ var evaluatorJobs = jobKind{
 	},
 }
 
-func newJobCommand(kind jobKind) *cobra.Command {
+// jobSelector binds a command to one of the two generation collections.
+//
+// Required here, unlike on `generate`: an id alone does not say which
+// collection to call, and the two share an id shape, so guessing would mean
+// trying both and reporting whichever answered.
+type jobSelector struct {
+	dataset   bool
+	evaluator bool
+}
+
+func (s *jobSelector) bind(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&s.dataset, "dataset", false, "Act on dataset generation jobs.")
+	cmd.Flags().BoolVar(&s.evaluator, "evaluator", false, "Act on evaluator generation jobs.")
+	cmd.MarkFlagsMutuallyExclusive("dataset", "evaluator")
+	cmd.MarkFlagsOneRequired("dataset", "evaluator")
+}
+
+func (s *jobSelector) kind() jobKind {
+	if s.evaluator {
+		return evaluatorJobs
+	}
+	return datasetJobs
+}
+
+func newJobCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "job",
-		Short: fmt.Sprintf("Inspect, cancel and delete %s generation jobs.", kind.name),
-		Long: fmt.Sprintf("Inspect, cancel and delete %s generation jobs.\n\n", kind.name) +
-			fmt.Sprintf("This is the resume path for `%s generate`: a job started with ", kind.name) +
-			"--no-wait, or one whose client was interrupted, is reattached to here " +
-			"rather than restarted.",
+		Short: "Inspect, cancel and delete generation jobs.",
+		Long: "Inspect, cancel and delete generation jobs.\n\n" +
+			"This is the resume path for `generate`: a job started with --no-wait, " +
+			"or one whose client was interrupted, is reattached to here rather than " +
+			"restarted.\n\n" +
+			"Pass --dataset or --evaluator to say which generation to act on. " +
+			"The two are separate service collections, so it is required.",
 	}
 	cmd.AddCommand(
-		newJobListCommand(kind),
-		newJobShowCommand(kind),
-		newJobCancelCommand(kind),
-		newJobDeleteCommand(kind),
+		newJobListCommand(),
+		newJobShowCommand(),
+		newJobCancelCommand(),
+		newJobDeleteCommand(),
 	)
 	return cmd
 }
 
-func newJobListCommand(kind jobKind) *cobra.Command {
+func newJobListCommand() *cobra.Command {
 	var endpointFlg string
+	sel := &jobSelector{}
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: fmt.Sprintf("List the project's %s generation jobs.", kind.name),
+		Short: "List the project's generation jobs.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			kind := sel.kind()
 			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
 			if err != nil {
@@ -126,19 +154,22 @@ func newJobListCommand(kind jobKind) *cobra.Command {
 		},
 	}
 
+	sel.bind(cmd)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
 
-func newJobShowCommand(kind jobKind) *cobra.Command {
+func newJobShowCommand() *cobra.Command {
 	var endpointFlg string
+	sel := &jobSelector{}
 
 	cmd := &cobra.Command{
 		Use:   "show <job-id>",
-		Short: fmt.Sprintf("Show a %s generation job.", kind.name),
+		Short: "Show a generation job.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			jobID := args[0]
+			kind := sel.kind()
 
 			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
@@ -163,19 +194,22 @@ func newJobShowCommand(kind jobKind) *cobra.Command {
 		},
 	}
 
+	sel.bind(cmd)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
 
-func newJobCancelCommand(kind jobKind) *cobra.Command {
+func newJobCancelCommand() *cobra.Command {
 	var endpointFlg string
+	sel := &jobSelector{}
 
 	cmd := &cobra.Command{
 		Use:   "cancel <job-id>",
-		Short: fmt.Sprintf("Cancel an in-flight %s generation job.", kind.name),
+		Short: "Cancel an in-flight generation job.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			jobID := args[0]
+			kind := sel.kind()
 
 			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
@@ -198,22 +232,25 @@ func newJobCancelCommand(kind jobKind) *cobra.Command {
 		},
 	}
 
+	sel.bind(cmd)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
 
-func newJobDeleteCommand(kind jobKind) *cobra.Command {
+func newJobDeleteCommand() *cobra.Command {
 	var endpointFlg string
+	sel := &jobSelector{}
 
 	cmd := &cobra.Command{
 		Use:   "delete <job-id>",
-		Short: fmt.Sprintf("Delete a %s generation job record.", kind.name),
-		Long: fmt.Sprintf("Delete a %s generation job record.\n\n", kind.name) +
+		Short: "Delete a generation job record.",
+		Long: "Delete a generation job record.\n\n" +
 			"The artifact the job produced is already registered as its own version " +
 			"and is not affected.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			jobID := args[0]
+			kind := sel.kind()
 
 			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
@@ -236,6 +273,7 @@ func newJobDeleteCommand(kind jobKind) *cobra.Command {
 		},
 	}
 
+	sel.bind(cmd)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }

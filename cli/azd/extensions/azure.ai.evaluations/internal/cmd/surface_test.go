@@ -51,33 +51,29 @@ func TestCommandTreeMatchesTheSpec(t *testing.T) {
 		"dataset",
 		"dataset create",
 		"dataset delete",
-		"dataset generate",
 		"dataset list",
 		"dataset show",
 		"dataset update",
 		"dataset versions",
 		"dataset versions list",
-		"dataset job",
-		"dataset job cancel",
-		"dataset job delete",
-		"dataset job list",
-		"dataset job show",
 		"create",
 		"delete",
 		"evaluator",
 		"evaluator create",
 		"evaluator delete",
-		"evaluator generate",
 		"evaluator list",
 		"evaluator show",
 		"evaluator update",
 		"evaluator versions",
 		"evaluator versions list",
-		"evaluator job",
-		"evaluator job cancel",
-		"evaluator job delete",
-		"evaluator job list",
-		"evaluator job show",
+		// One generate for both artifacts, and one job group for both
+		// collections, selected by --dataset / --evaluator.
+		"generate",
+		"job",
+		"job cancel",
+		"job delete",
+		"job list",
+		"job show",
 		"init",
 		"list",
 		"run",
@@ -216,9 +212,9 @@ func TestServiceCommandsTakeProjectEndpoint(t *testing.T) {
 // be repeatable. Declared as a plain string it would still accept every
 // documented single-source invocation and silently keep only the last of a
 // repeated one, which is the kind of difference no example in the spec shows.
-func TestDatasetGenerateFromTakesMoreThanOneSource(t *testing.T) {
-	flag := find(t, "dataset generate").Flags().Lookup("from")
-	require.NotNil(t, flag, "dataset generate must offer --from")
+func TestGenerateFromTakesMoreThanOneSource(t *testing.T) {
+	flag := find(t, "generate").Flags().Lookup("from")
+	require.NotNil(t, flag, "generate must offer --from")
 
 	assert.Equal(t, "stringSlice", flag.Value.Type(),
 		"--from selects one or more sources, so it cannot be a single string")
@@ -226,8 +222,8 @@ func TestDatasetGenerateFromTakesMoreThanOneSource(t *testing.T) {
 
 // `--from` names sources; the set it accepts is the set the service has a path
 // for, and the help has to list exactly that set.
-func TestDatasetGenerateFromListsEverySource(t *testing.T) {
-	usage := find(t, "dataset generate").Flags().Lookup("from").Usage
+func TestGenerateFromListsEverySource(t *testing.T) {
+	usage := find(t, "generate").Flags().Lookup("from").Usage
 
 	for _, source := range project.GenerateSources {
 		assert.Containsf(t, usage, source,
@@ -235,11 +231,31 @@ func TestDatasetGenerateFromListsEverySource(t *testing.T) {
 	}
 }
 
-// `--from` is the only place a source is named, so `evaluator generate`, which
-// has no such flag, must not be left half-wired to one.
-func TestEvaluatorGenerateHasNoFromFlag(t *testing.T) {
-	assert.Nil(t, find(t, "evaluator generate").Flags().Lookup("from"),
-		"the spec gives --from to dataset generate only")
+// One command now generates both artifacts, but --from and --max-samples shape
+// the dataset only. The help has to say so, or they read as applying to the
+// rubric as well.
+func TestGenerateSaysWhichFlagsAreDatasetOnly(t *testing.T) {
+	flags := find(t, "generate").Flags()
+
+	for _, name := range []string{"from", "max-samples"} {
+		flag := flags.Lookup(name)
+		require.NotNilf(t, flag, "generate must offer --%s", name)
+		assert.Containsf(t, flag.Usage, "Dataset only",
+			"--%s shapes the dataset only, so its help has to say so", name)
+	}
+}
+
+// The selector narrows generation; omitting both is the zero-to-first-eval
+// path, so neither flag may be required.
+func TestGenerateSelectorIsOptional(t *testing.T) {
+	cmd := find(t, "generate")
+
+	for _, name := range []string{"dataset", "evaluator"} {
+		flag := cmd.Flags().Lookup(name)
+		require.NotNilf(t, flag, "generate must offer --%s", name)
+		assert.Equal(t, "false", flag.DefValue,
+			"--%s is off by default, which is what generates both", name)
+	}
 }
 
 // The spec's run table says which commands carry which flag. Where it says

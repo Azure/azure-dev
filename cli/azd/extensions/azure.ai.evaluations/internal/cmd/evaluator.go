@@ -25,12 +25,10 @@ func newEvaluatorCommand() *cobra.Command {
 	cmd.AddCommand(
 		newEvaluatorCreateCommand(),
 		newEvaluatorUpdateCommand(),
-		newEvaluatorGenerateCommand(),
 		newEvaluatorListCommand(),
 		newEvaluatorShowCommand(),
 		newEvaluatorDeleteCommand(),
 		newEvaluatorVersionsCommand(),
-		newJobCommand(evaluatorJobs),
 	)
 	return cmd
 }

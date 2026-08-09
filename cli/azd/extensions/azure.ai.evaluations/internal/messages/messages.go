@@ -397,6 +397,31 @@ func GateBreached(reason string) string {
 // Generation
 // ---------------------------------------------------------------------------
 
+// GeneratedNameNeedsATarget reports a generation that can name neither the
+// artifact nor the agent to derive its name from.
+func GeneratedNameNeedsATarget(kind string) error {
+return fmt.Errorf(
+"no name for the generated %s and no target to derive one from: "+
+"pass --%s-name, or --target", kind, kind)
+}
+
+// GenerationFailed labels one half of a composite generate that did not finish.
+func GenerationFailed(kind string, err error) error {
+return fmt.Errorf("generating the %s: %w", kind, err)
+}
+
+// SomeGenerationsFailed reports a composite generate where at least one job
+// did not finish. The others may well have.
+func SomeGenerationsFailed(failures []error) error {
+if len(failures) == 1 {
+return failures[0]
+}
+parts := make([]string, 0, len(failures))
+for _, f := range failures {
+parts = append(parts, f.Error())
+}
+return errors.New(strings.Join(parts, "; "))
+}
 // GenerationModelRequired reports a generation with no deployment to run on.
 //
 // Reached only when the target agent could not supply one either, so the flag

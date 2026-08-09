@@ -29,12 +29,10 @@ func newDatasetCommand() *cobra.Command {
 	cmd.AddCommand(
 		newDatasetCreateCommand(),
 		newDatasetUpdateCommand(),
-		newDatasetGenerateCommand(),
 		newDatasetListCommand(),
 		newDatasetShowCommand(),
 		newDatasetDeleteCommand(),
 		newDatasetVersionsCommand(),
-		newJobCommand(datasetJobs),
 	)
 	return cmd
 }

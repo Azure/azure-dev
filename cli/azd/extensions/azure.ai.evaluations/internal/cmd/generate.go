@@ -52,7 +52,17 @@ type generationPlan struct {
 	From []string
 	// TraceDays seeds generation from that many days of recent traces.
 	TraceDays int
+	// Kind is which artifact this plan produces, so one runner can submit both.
+	Kind generateKind
 }
+
+// generateKind names the two generation resources, which share no collection.
+type generateKind string
+
+const (
+	generateKindDataset   generateKind = "dataset"
+	generateKindEvaluator generateKind = "evaluator"
+)
 
 // traceOptions converts the plan's trace window into the generation client's
 // day count. Traces seed generation only; they are never a run's data source.

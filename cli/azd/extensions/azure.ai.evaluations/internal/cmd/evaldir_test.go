@@ -31,7 +31,7 @@ func TestEvalDirCascade(t *testing.T) {
 // Every command that reads the configuration has to be able to say where it is,
 // or a project scaffolded with --path is unreachable from that command.
 func TestCommandsReadingTheConfigTakePath(t *testing.T) {
-	for _, path := range []string{"run start", "init", "dataset generate", "evaluator generate"} {
+	for _, path := range []string{"run start", "init", "generate"} {
 		cmd := find(t, path)
 		assert.NotNilf(t, cmd.Flags().Lookup("path"),
 			"%s reads the configuration, so it must accept --path", path)

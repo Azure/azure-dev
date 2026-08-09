@@ -201,6 +201,16 @@ func buildRunCommand(use, short string) *cobra.Command {
 			}
 
 			final, err := ec.pollRun(ctx, evalID, run.ID, out, isJSON(cmd))
+			if errors.Is(err, errWaitBudgetSpent) {
+				// The run did not fail, the wait ran out. Same contract as
+				// --no-wait: exit 0 and say how to pick it back up.
+				if isJSON(cmd) {
+					return emitJSON(out, startedRun(run, evalID, group))
+				}
+				fmt.Fprint(out, messages.WaitBudgetSpent(run.ID, waitBudget))
+				fmt.Fprint(out, messages.ReattachToRun(run.ID, evalID))
+				return nil
+			}
 			if err != nil {
 				return err
 			}
@@ -660,6 +670,20 @@ func resolveMaxSamples(flag int, group *project.Eval) int {
 	return 0
 }
 
+// errWaitBudgetSpent says the run outlived the wait, not that anything failed.
+//
+// It is handled where --no-wait is: the run is still going server-side, so the
+// caller is handed the same reattach line and the same exit code.
+var errWaitBudgetSpent = errors.New("wait budget spent")
+
+// waitBudget bounds a foreground wait.
+//
+// Not a policy about how long an evaluation may take -- it is a guard against
+// waiting on a run that will never reach a terminal state. Runs are scored
+// sequentially at roughly 40s a sample, so this clears a few hundred samples
+// before it ever fires.
+const waitBudget = 2 * time.Hour
+
 // pollRun waits for the run to reach a terminal state, reporting status changes.
 func (ec *evalContext) pollRun(
 	ctx context.Context,
@@ -669,6 +693,7 @@ func (ec *evalContext) pollRun(
 ) (*eval_api.OpenAIEvalRun, error) {
 	const interval = 5 * time.Second
 	lastStatus := ""
+	deadline := time.Now().Add(waitBudget)
 
 	for {
 		run, err := ec.evalClient.GetOpenAIEvalRun(ctx, evalID, runID)
@@ -684,9 +709,14 @@ func (ec *evalContext) pollRun(
 		if terminalRunStates[strings.ToLower(run.Status)] {
 			return run, nil
 		}
+		if time.Now().After(deadline) {
+			return nil, errWaitBudgetSpent
+		}
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			// Name what is still running, or the run is lost to whoever
+			// interrupted the wait.
+			return nil, messages.WaitInterrupted(runID, ctx.Err())
 		case <-time.After(interval):
 		}
 	}

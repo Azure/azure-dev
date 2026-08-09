@@ -19,8 +19,10 @@ package messages
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"azureaieval/internal/exterrors"
 )
@@ -130,6 +132,21 @@ func EvalHasNoPreviousRun(evalID string) error {
 // PollingRun reports a failure while waiting for a run to finish.
 func PollingRun(runID string, err error) error {
 	return fmt.Errorf("polling run %s: %w", runID, err)
+}
+
+// WaitBudgetSpent reports a run that outlived the foreground wait.
+func WaitBudgetSpent(runID string, budget time.Duration) string {
+	return fmt.Sprintf(
+		"Run %s is still going after %s, so the wait stopped, not the run.\n",
+		runID, budget)
+}
+
+// WaitInterrupted reports a wait cut short, naming the run still in flight.
+func WaitInterrupted(runID string, err error) error {
+	return fmt.Errorf(
+		"stopped waiting on run %s, which is still running: %w. "+
+			"Pick it back up with `azd ai eval run show %s`",
+		runID, err, runID)
 }
 
 // RunStatusLine reports a status change seen while polling.
@@ -1652,8 +1669,48 @@ func SettingRequestBody(err error) error {
 }
 
 // RequestFailed reports a request that never reached an answer.
+//
+// A credential that cannot mint a token fails here rather than as a 401, and
+// the SDK's own text for it names neither azd nor the way out. Matched on the
+// credential type's name because that is what the SDK puts in the message;
+// anything else is passed through unchanged.
 func RequestFailed(err error) error {
+	if isCredentialFailure(err) {
+		return exterrors.Auth(
+			exterrors.CodeLoginExpired,
+			fmt.Sprintf("could not get a token for the Foundry project: %v", err),
+			"run `azd auth login`, then try again")
+	}
 	return fmt.Errorf("HTTP request failed: %w", err)
+}
+
+// ServiceRefused turns an unauthorised answer into one that says what to do.
+// Every other status is left as the service reported it.
+func ServiceRefused(status int, err error) error {
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		return exterrors.Auth(
+			exterrors.CodeAuthFailed,
+			fmt.Sprintf("the Foundry project refused the request (HTTP %d): %v", status, err),
+			"run `azd auth login`, and check you have access to this project")
+	}
+	return err
+}
+
+func isCredentialFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	for _, marker := range []string{
+		"AzureDeveloperCLICredential",
+		"DefaultAzureCredential",
+		"failed to acquire a token",
+	} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // ReadingResponseBody reports a response that could not be read.

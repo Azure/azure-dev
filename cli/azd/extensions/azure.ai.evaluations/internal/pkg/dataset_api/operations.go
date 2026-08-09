@@ -598,7 +598,7 @@ func (c *DatasetClient) doRequest(
 	if !runtime.HasStatusCode(resp,
 		http.StatusOK, http.StatusCreated, http.StatusAccepted, http.StatusNoContent) {
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
-		return nil, runtime.NewResponseError(resp)
+		return nil, messages.ServiceRefused(resp.StatusCode, runtime.NewResponseError(resp))
 	}
 
 	return respBody, nil

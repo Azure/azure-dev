@@ -292,7 +292,17 @@ func (c *EvalConfig) validateEval(i int, eval Eval) error {
 	}
 	if eval.Source != nil {
 		switch eval.Source.Type {
-		case SourceTypeTraces, SourceTypeResponses:
+		case SourceTypeTraces:
+			// The run needs one of these to say whose traces to read. Refusing
+			// here rather than at run time keeps a config that cannot run from
+			// deploying.
+			if eval.Source.AgentName == "" && (eval.Target == nil || eval.Target.Name == "") {
+				return messages.TracesSourceNeedsAgentName(i, eval.Name)
+			}
+		case SourceTypeResponses:
+			if len(eval.Source.ResponseIDs) == 0 {
+				return messages.ResponsesSourceNeedsIDs(i, eval.Name)
+			}
 		case "":
 			return messages.SourceTypeRequired(i, eval.Name)
 		default:

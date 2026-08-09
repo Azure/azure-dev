@@ -195,6 +195,26 @@ func TestBuildRunDataSource_NoRowsFromAnywhere(t *testing.T) {
 	assert.Contains(t, err.Error(), "source:")
 }
 
+// A misspelled source.type used to fall through to the dataset path, which
+// scored the wrong rows and then blamed the eval for declaring no source.
+// Config validation catches it first, but a run reached by id has no config to
+// have been validated.
+func TestBuildRunDataSource_UnknownSourceTypeIsRefused(t *testing.T) {
+	ec := &evalContext{}
+	group := &project.Eval{
+		Name:    "typo",
+		Dataset: "d",
+		Source:  &project.SourceDecl{Type: "trace"},
+	}
+
+	_, err := ec.buildRunDataSource(context.Background(), group, "", 0)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "trace")
+	assert.NotContains(t, err.Error(), "references no dataset",
+		"a declared source must not be reported as no source at all")
+}
+
 // --max-samples has to mean the same thing wherever the rows come from.
 func TestBuildRunDataSource_MaxSamplesCapsLocalRows(t *testing.T) {
 	ec := &evalContext{}

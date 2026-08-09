@@ -215,6 +215,21 @@ func TestValidate_Rejects(t *testing.T) {
 		wantErr string
 	}{
 		{
+			// The run path refuses a trace source that does not say whose
+			// conversations to read. Accepting it here would deploy a config
+			// that cannot run.
+			name: "trace source naming no agent",
+			body: "evals:\n  - name: e\n    source:\n      type: traces\n" +
+				"    evaluators:\n      - evaluator: builtin.relevance\n",
+			wantErr: "source.agent_name is required",
+		},
+		{
+			name: "responses source listing no ids",
+			body: "evals:\n  - name: e\n    source:\n      type: responses\n" +
+				"    evaluators:\n      - evaluator: builtin.relevance\n",
+			wantErr: "source.response_ids is required",
+		},
+		{
 			name:    "dataset without a name",
 			body:    "datasets:\n  - source: ./d.jsonl\n" + oneEval,
 			wantErr: "'name' is required",

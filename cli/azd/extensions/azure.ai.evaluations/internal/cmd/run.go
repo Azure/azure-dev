@@ -160,8 +160,9 @@ func buildRunCommand(use, short string) *cobra.Command {
 			}
 			// Recorded per run, not read from the configuration at list time:
 			// comparing two runs is the point of that listing, and the dataset
-			// under an eval can change between them.
-			if group != nil && group.Dataset != "" {
+			// under an eval can change between them. A source-backed run scored
+			// no dataset, so it records none.
+			if group != nil && group.Dataset != "" && group.Source == nil {
 				metadata[metaDataset] = group.Dataset
 				if v := ec.getEnvValue(ctx, versionKey("dataset", group.Dataset)); v != "" {
 					metadata[metaDatasetVersion] = v
@@ -411,6 +412,13 @@ func (ec *evalContext) buildRunDataSource(
 			return tracesDataSource(group)
 		case project.SourceTypeResponses:
 			return responsesDataSource(group)
+		default:
+			// Config validation rejects this first, but a run reached by id has no
+			// config to have been validated. Falling through would score the wrong
+			// rows and say the eval declared no source.
+			return nil, messages.SourceTypeUnsupported(
+				0, group.Name, group.Source.Type,
+				project.SourceTypeTraces, project.SourceTypeResponses)
 		}
 	}
 

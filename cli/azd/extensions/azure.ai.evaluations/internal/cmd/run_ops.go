@@ -6,6 +6,7 @@ package cmd
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
@@ -224,8 +225,9 @@ func newRunCancelCommand() *cobra.Command {
 				return err
 			}
 			// Cancelling a run that already finished is a no-op worth naming,
-			// since the service reports success either way.
-			if terminalRunStates[target.Status] {
+			// since the service reports success either way. Lowercased to match
+			// the polling path: the service's casing is not guaranteed.
+			if terminalRunStates[strings.ToLower(target.Status)] {
 				return messages.RunAlreadyFinished(target.ID, target.Status)
 			}
 

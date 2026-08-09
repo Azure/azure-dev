@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,7 +111,7 @@ func prepareGeneration(
 	}
 
 	if plan.Model == "" {
-		plan.Model = ec.agentDeployment(ctx, plan.Agent)
+		plan.Model = ec.agentDeployment(ctx, plan.Agent, cmd.OutOrStdout(), isJSON(cmd))
 	}
 	if plan.Model == "" {
 		ec.Close()
@@ -121,14 +122,23 @@ func prepareGeneration(
 
 // agentDeployment reads the deployment the target agent answers with.
 //
-// Best effort: a caller who named no model gets one error naming the flag, not
-// two errors about an agent they never mentioned.
-func (ec *evalContext) agentDeployment(ctx context.Context, agentName string) string {
+// Best effort, but not silent: a misspelled --target and an agent with no
+// published version both end in "pass --generation-model", which names neither.
+// The warning is what tells those two apart.
+func (ec *evalContext) agentDeployment(
+	ctx context.Context,
+	agentName string,
+	out io.Writer,
+	quiet bool,
+) string {
 	if agentName == "" {
 		return ""
 	}
 	agent, err := ec.evalClient.GetAgent(ctx, agentName, ProjectEndpointAPIVersion)
 	if err != nil {
+		if !quiet {
+			fmt.Fprint(out, messages.CouldNotReadAgentForModel(agentName, err))
+		}
 		return ""
 	}
 	return agent.Model()

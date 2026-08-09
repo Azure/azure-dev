@@ -1376,6 +1376,22 @@ func SourceTypeUnsupported(index int, eval, got, traces, responses string) error
 		index, eval, got, traces, responses)
 }
 
+// TracesSourceNeedsAgentName reports a trace source that does not say whose
+// conversations to read.
+func TracesSourceNeedsAgentName(index int, eval string) error {
+	return fmt.Errorf(
+		"evals[%d] (%s): source.agent_name is required for a trace source, "+
+			"or declare target.name", index, eval)
+}
+
+// ResponsesSourceNeedsIDs reports a stored-response source with nothing to
+// retrieve.
+func ResponsesSourceNeedsIDs(index int, eval string) error {
+	return fmt.Errorf(
+		"evals[%d] (%s): source.response_ids is required for a responses source",
+		index, eval)
+}
+
 // AtLeastOneEvaluatorRequired reports an eval that scores nothing.
 func AtLeastOneEvaluatorRequired(index int, eval string) error {
 	return fmt.Errorf("evals[%d] (%s): at least one evaluator is required", index, eval)
@@ -1755,4 +1771,10 @@ func NotAFoundryProjectResourceID(resourceID string) error {
 // InvalidSubscriptionID reports a subscription id that is not a GUID.
 func InvalidSubscriptionID(err error) error {
 	return fmt.Errorf("invalid subscription ID format: %w", err)
+}
+
+// CouldNotReadAgentForModel reports a target agent whose deployment could not
+// be read, leaving generation without a default model.
+func CouldNotReadAgentForModel(agent string, err error) string {
+	return fmt.Sprintf("  warning: could not read agent %q for its deployment: %v\n", agent, err)
 }

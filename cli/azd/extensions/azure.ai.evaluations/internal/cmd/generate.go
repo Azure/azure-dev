@@ -200,6 +200,8 @@ func (ec *evalContext) generateRubric(
 	plan generationPlan,
 	out io.Writer,
 	noWait bool,
+	// jobID receives the submitted job's id, for the same reason as above.
+	jobID *string,
 ) (*project.ArtifactRef, error) {
 	fmt.Fprint(out, messages.GeneratingRubric(plan.Name))
 
@@ -214,6 +216,9 @@ func (ec *evalContext) generateRubric(
 	job, err := ec.evalClient.CreateEvaluatorGenerationJob(ctx, req, ProjectEndpointAPIVersion)
 	if err != nil {
 		return nil, messages.SubmittingRubricJob(err)
+	}
+	if jobID != nil {
+		*jobID = job.ID
 	}
 	if noWait {
 		reportSubmitted(out, "evaluator", job.ID)
@@ -282,6 +287,10 @@ func (ec *evalContext) generateDataset(
 	plan generationPlan,
 	out io.Writer,
 	noWait bool,
+	// jobID receives the submitted job's id. Under --no-wait nothing is
+	// downloaded and there is no artifact to return, so this is the only thing
+	// the caller can report or reattach to.
+	jobID *string,
 ) (*project.ArtifactRef, error) {
 	fmt.Fprint(out, messages.GeneratingDataset(plan.Name, plan.SampleSize))
 
@@ -296,6 +305,9 @@ func (ec *evalContext) generateDataset(
 	job, err := ec.evalClient.CreateDataGenerationJob(ctx, req, DataGenerationAPIVersion)
 	if err != nil {
 		return nil, messages.SubmittingDataJob(err)
+	}
+	if jobID != nil {
+		*jobID = job.ID
 	}
 	if noWait {
 		reportSubmitted(out, "dataset", job.ID)

@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -428,6 +429,19 @@ func GenerationFailed(kind string, err error) error {
 // Two structured failures of the same category stay structured, so an expired
 // login still arrives as an auth error carrying its suggestion rather than as
 // a flat string.
+// multiError presents several failures as one line while keeping every cause
+// reachable through errors.Is and errors.As.
+//
+// errors.Join would keep the causes but renders them one per line, and this is
+// a single error the CLI prints after "ERROR: ".
+type multiError struct {
+	msg    string
+	causes []error
+}
+
+func (m *multiError) Error() string   { return m.msg }
+func (m *multiError) Unwrap() []error { return m.causes }
+
 func SomeGenerationsFailed(failures []error) error {
 	if len(failures) == 1 {
 		return failures[0]
@@ -441,12 +455,12 @@ func SomeGenerationsFailed(failures []error) error {
 
 	var first *azdext.LocalError
 	if !errors.As(failures[0], &first) {
-		return errors.New(joined)
+		return &multiError{msg: joined, causes: failures}
 	}
 	for _, f := range failures[1:] {
 		var other *azdext.LocalError
 		if !errors.As(f, &other) || other.Category != first.Category {
-			return errors.New(joined)
+			return &multiError{msg: joined, causes: failures}
 		}
 	}
 	merged := *first
@@ -1523,6 +1537,21 @@ func EvaluationLevelInvalid(index int, eval, got, turn, conversation string) err
 	return fmt.Errorf(
 		"evals[%d] (%s): evaluation_level %q is invalid; expected %q or %q",
 		index, eval, got, turn, conversation)
+}
+
+// TargetNameRequired reports a declared target that names nothing to invoke.
+func TargetNameRequired(index int, eval string) error {
+	return fmt.Errorf(
+		"evals[%d] (%s): target.name is required; remove the target: to score the "+
+			"dataset as it stands", index, eval)
+}
+
+// AmbiguousEvalConfig reports a directory holding both configuration names.
+func AmbiguousEvalConfig(current, legacy string) error {
+	return fmt.Errorf(
+		"%s and %s are both present, and azure.yaml can reference only one of them. "+
+			"Keep %s and delete the other, or point the service's $ref at the one you want",
+		filepath.ToSlash(current), filepath.ToSlash(legacy), filepath.ToSlash(current))
 }
 
 // ReadingEvalConfig reports a configuration file that would not read.

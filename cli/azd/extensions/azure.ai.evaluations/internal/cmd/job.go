@@ -33,23 +33,26 @@ type jobKind struct {
 	remove func(context.Context, *evalContext, string) error
 }
 
+// Data generation is the one collection on its own API version, so the job
+// commands have to ask for it the same way generate does. Evaluator generation
+// is on the project endpoint version, which is why only these four differ.
 var datasetJobs = jobKind{
 	name: jobKindDataset,
 	list: func(ctx context.Context, ec *evalContext) ([]eval_api.GenerationJob, error) {
-		out, err := ec.evalClient.ListDataGenerationJobs(ctx, ProjectEndpointAPIVersion)
+		out, err := ec.evalClient.ListDataGenerationJobs(ctx, DataGenerationAPIVersion)
 		if err != nil {
 			return nil, err
 		}
 		return out.Data, nil
 	},
 	get: func(ctx context.Context, ec *evalContext, id string) (*eval_api.GenerationJob, error) {
-		return ec.evalClient.GetDataGenerationJob(ctx, id, ProjectEndpointAPIVersion)
+		return ec.evalClient.GetDataGenerationJob(ctx, id, DataGenerationAPIVersion)
 	},
 	cancel: func(ctx context.Context, ec *evalContext, id string) (*eval_api.GenerationJob, error) {
-		return ec.evalClient.CancelDataGenerationJob(ctx, id, ProjectEndpointAPIVersion)
+		return ec.evalClient.CancelDataGenerationJob(ctx, id, DataGenerationAPIVersion)
 	},
 	remove: func(ctx context.Context, ec *evalContext, id string) error {
-		return ec.evalClient.DeleteDataGenerationJob(ctx, id, ProjectEndpointAPIVersion)
+		return ec.evalClient.DeleteDataGenerationJob(ctx, id, DataGenerationAPIVersion)
 	},
 }
 

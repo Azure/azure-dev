@@ -213,6 +213,7 @@ func generatedName(explicit, target, suffix string) (string, error) {
 type generationOutcome struct {
 	plan   generationPlan
 	ref    *project.ArtifactRef
+	jobID  string
 	output bytes.Buffer
 	err    error
 }
@@ -244,26 +245,29 @@ func (ec *evalContext) runGenerations(
 			switch o.plan.Kind {
 			case generateKindDataset:
 				o.ref, o.err = ec.generateDataset(
-					cmd.Context(), o.plan, &o.output, flags.noWait)
+					cmd.Context(), o.plan, &o.output, flags.noWait, &o.jobID)
 			default:
 				o.ref, o.err = ec.generateRubric(
-					cmd.Context(), o.plan, &o.output, flags.noWait)
+					cmd.Context(), o.plan, &o.output, flags.noWait, &o.jobID)
 			}
 		}(&outcomes[i])
 	}
 	wg.Wait()
 
+	// A failed write must not cost the caller the catalog entries for work the
+	// service already billed them for, so it is carried rather than returned.
+	var failures []error
 	if !isJSON(cmd) {
 		for i := range outcomes {
 			if _, err := out.Write(outcomes[i].output.Bytes()); err != nil {
-				return err
+				failures = append(failures, err)
+				break
 			}
 		}
 	}
 
 	// Catalog entries land in one file, so they are written here rather than
 	// from the goroutines that produced them.
-	var failures []error
 	for i := range outcomes {
 		o := &outcomes[i]
 		if o.err != nil {
@@ -287,11 +291,21 @@ func (ec *evalContext) runGenerations(
 	}
 
 	// One document, keyed by artifact: two bare objects on stdout is not
-	// something a caller can parse.
+	// something a caller can parse. Under --no-wait there is no artifact yet,
+	// so the job id is what the caller gets and what they reattach with.
 	if isJSON(cmd) {
-		produced := map[string]*project.ArtifactRef{}
+		produced := map[string]any{}
 		for i := range outcomes {
-			produced[string(outcomes[i].plan.Kind)] = outcomes[i].ref
+			o := &outcomes[i]
+			if o.ref != nil {
+				produced[string(o.plan.Kind)] = o.ref
+				continue
+			}
+			if o.jobID != "" {
+				produced[string(o.plan.Kind)] = map[string]string{"job_id": o.jobID}
+				continue
+			}
+			produced[string(o.plan.Kind)] = nil
 		}
 		return emitJSON(out, produced)
 	}

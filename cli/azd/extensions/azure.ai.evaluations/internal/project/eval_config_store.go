@@ -55,11 +55,31 @@ func ResolveEvalConfigPath(evalDir string) string {
 	return current
 }
 
+// checkOneConfig refuses a directory holding both names.
+//
+// Preferring one silently is the dangerous answer: `azure.yaml` `$ref`s a
+// single file by name, so the CLI would edit one configuration while `azd up`
+// deployed the other, and nothing would say so.
+func checkOneConfig(evalDir string) error {
+	current := EvalConfigPath(evalDir)
+	legacy := filepath.Join(evalDir, LegacyEvalConfigBase)
+	if _, err := os.Stat(current); err != nil {
+		return nil
+	}
+	if _, err := os.Stat(legacy); err != nil {
+		return nil
+	}
+	return messages.AmbiguousEvalConfig(current, legacy)
+}
+
 // OpenEvalConfig reads the configuration under evalDir.
 //
 // A missing file returns (nil, nil): generate runs before init, so "no
 // configuration yet" is an ordinary state rather than a failure.
 func OpenEvalConfig(evalDir string) (*EvalConfig, error) {
+	if err := checkOneConfig(evalDir); err != nil {
+		return nil, err
+	}
 	cfg, err := LoadEvalConfig(ResolveEvalConfigPath(evalDir))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
@@ -89,6 +109,9 @@ func LoadEvalConfig(path string) (*EvalConfig, error) {
 // a generate into an existing project updates the configuration it already
 // references rather than leaving an inert second one beside it.
 func SaveEvalConfig(evalDir string, cfg *EvalConfig) error {
+	if err := checkOneConfig(evalDir); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(evalDir, 0o750); err != nil {
 		return messages.Creating(evalDir, err)
 	}

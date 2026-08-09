@@ -335,10 +335,17 @@ func (c *EvalConfig) validateEval(i int, eval Eval) error {
 		}
 	}
 
-	if eval.Target != nil && eval.Target.Type != "" &&
-		eval.Target.Type != TargetTypeAgent && eval.Target.Type != TargetTypeModel {
-		return messages.TargetTypeUnsupported(
-			i, eval.Name, eval.Target.Type, TargetTypeAgent, TargetTypeModel)
+	if eval.Target != nil {
+		if eval.Target.Type != "" &&
+			eval.Target.Type != TargetTypeAgent && eval.Target.Type != TargetTypeModel {
+			return messages.TargetTypeUnsupported(
+				i, eval.Name, eval.Target.Type, TargetTypeAgent, TargetTypeModel)
+		}
+		// A target with no name is scored as though nothing were invoked, which
+		// is a different evaluation from the one that was written down.
+		if eval.Target.Name == "" {
+			return messages.TargetNameRequired(i, eval.Name)
+		}
 	}
 	switch eval.EvaluationLevel {
 	case "", EvaluationLevelTurn, EvaluationLevelConversation:

@@ -190,6 +190,10 @@ func NextVersion(current string) string {
 }
 
 // ReadFirstJSONLFile finds and reads the first .jsonl file in a directory.
+//
+// An empty file is refused here rather than uploaded: registering it succeeds,
+// and the failure then surfaces at the run that tries to score it, which is a
+// long way from the command that caused it.
 func ReadFirstJSONLFile(dir string) (string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -203,6 +207,9 @@ func ReadFirstJSONLFile(dir string) (string, error) {
 			data, err := os.ReadFile(filepath.Join(dir, e.Name())) //nolint:gosec // local artifact path
 			if err != nil {
 				return "", messages.ReadingPath(e.Name(), err)
+			}
+			if strings.TrimSpace(string(data)) == "" {
+				return "", messages.DatasetFileHasNoRows(e.Name())
 			}
 			return string(data), nil
 		}

@@ -312,7 +312,7 @@ func (ec *evalContext) latestOrNamedRun(
 		}
 		return nil, messages.ListingRuns(evalID, err)
 	}
-	if len(list.Data) == 0 {
+	if list == nil || len(list.Data) == 0 {
 		return nil, messages.EvalHasNoRuns(evalID)
 	}
 	return &list.Data[0], nil

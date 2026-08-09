@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
@@ -391,8 +392,12 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 	return list.Data[0].DataSource, nil
 }
 
-// buildRunDataSource binds the dataset to the run. The eval carries no
-// dataset today, so it is supplied here.
+// buildRunDataSource binds the eval's rows to the run.
+//
+// Three shapes, in the order the configuration decides them. A `source:` block
+// hands the gathering to the service and sends nothing local. Otherwise the
+// rows come from a dataset, and `target:` says what to invoke for each one —
+// including nothing at all, when the rows already hold both sides.
 func (ec *evalContext) buildRunDataSource(
 	ctx context.Context,
 	group *project.Eval,
@@ -400,16 +405,31 @@ func (ec *evalContext) buildRunDataSource(
 	maxSamples int,
 ) (*eval_api.EvalRunDataSource, error) {
 	if group == nil {
-		return nil, fmt.Errorf("no eval to run")
-	}
-	if group.Target == nil || group.Target.Name == "" {
-		return nil, fmt.Errorf("eval %q does not name a target agent", group.Name)
+		return nil, messages.NoEvalToRun()
 	}
 
-	ds := eval_api.NewAgentTargetDataSource(group.Target.Name, nil)
+	if group.Source != nil {
+		switch group.Source.Type {
+		case project.SourceTypeTraces:
+			return tracesDataSource(group)
+		case project.SourceTypeResponses:
+			return responsesDataSource(group)
+		}
+	}
+
+	var ds *eval_api.EvalRunDataSource
+	switch {
+	case group.Target == nil || group.Target.Name == "":
+		// Nothing to invoke: the dataset is scored as it stands.
+		ds = eval_api.NewDatasetOnlyDataSource()
+	case group.Target.Type == project.TargetTypeModel:
+		ds = eval_api.NewModelTargetDataSource(group.Target.Name)
+	default:
+		ds = eval_api.NewAgentTargetDataSource(group.Target.Name, nil)
+	}
 
 	if group.Dataset == "" {
-		return nil, fmt.Errorf("eval %q does not reference a dataset", group.Name)
+		return nil, messages.EvalHasNoDataset(group.Name)
 	}
 
 	// A local source is read from disk; anything else is already registered and
@@ -431,10 +451,40 @@ func (ec *evalContext) buildRunDataSource(
 		return nil, err
 	}
 	if len(items) == 0 {
-		return nil, fmt.Errorf("dataset file %q has no rows", localPath)
+		return nil, messages.DatasetFileEmpty(localPath)
 	}
 	ds.SetFileContent(items)
 	return ds, nil
+}
+
+// tracesDataSource evaluates conversations the agent already had.
+//
+// The service reads them from Application Insights, so the agent has to be
+// emitting gen_ai.input.messages / gen_ai.output.messages for anything to be
+// found. `agent_name` filters the traces; it is not a target, because a trace
+// run invokes nothing.
+func tracesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) {
+	agent := group.Source.AgentName
+	if agent == "" && group.Target != nil {
+		agent = group.Target.Name
+	}
+	if agent == "" {
+		return nil, messages.TracesNeedAgentName(group.Name)
+	}
+	return eval_api.NewTracesDataSource(
+		agent,
+		group.Source.LookbackHours,
+		time.Time{},
+		group.Source.MaxTraces,
+	), nil
+}
+
+// responsesDataSource evaluates responses the project already stored.
+func responsesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) {
+	if len(group.Source.ResponseIDs) == 0 {
+		return nil, messages.ResponsesNeedIDs(group.Name)
+	}
+	return eval_api.NewResponsesDataSource(group.Source.ResponseIDs, group.Source.MaxTurns), nil
 }
 
 // readRegisteredDataset fetches a published dataset's rows, optionally keeping

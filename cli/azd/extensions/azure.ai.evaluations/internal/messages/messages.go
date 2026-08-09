@@ -1674,12 +1674,19 @@ func SettingRequestBody(err error) error {
 // the SDK's own text for it names neither azd nor the way out. Matched on the
 // credential type's name because that is what the SDK puts in the message;
 // anything else is passed through unchanged.
+//
+// The hint is in the message as well as the suggestion because the suggestion
+// is not rendered on every surface, and it offers a retry first: this call
+// shells out to `azd auth token`, which has been seen to fail transiently
+// against a login that was perfectly valid.
 func RequestFailed(err error) error {
 	if isCredentialFailure(err) {
 		return exterrors.Auth(
 			exterrors.CodeLoginExpired,
-			fmt.Sprintf("could not get a token for the Foundry project: %v", err),
-			"run `azd auth login`, then try again")
+			fmt.Sprintf(
+				"could not get a token for the Foundry project: %v. "+
+					"Try again; if it keeps failing, run `azd auth login`", err),
+			"try the command again, then `azd auth login` if it keeps failing")
 	}
 	return fmt.Errorf("HTTP request failed: %w", err)
 }
@@ -1690,7 +1697,10 @@ func ServiceRefused(status int, err error) error {
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {
 		return exterrors.Auth(
 			exterrors.CodeAuthFailed,
-			fmt.Sprintf("the Foundry project refused the request (HTTP %d): %v", status, err),
+			fmt.Sprintf(
+				"the Foundry project refused the request (HTTP %d): %v. "+
+					"Run `azd auth login`, and check you have access to this project",
+				status, err),
 			"run `azd auth login`, and check you have access to this project")
 	}
 	return err

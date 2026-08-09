@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	"azureaidataset/internal/exterrors"
+	"azureaidataset/internal/messages"
 )
 
 // foundryHostSuffixes is the authoritative list of accepted Foundry host suffixes.
@@ -41,49 +41,25 @@ func isFoundryHost(hostname string) bool {
 func Validate(raw string) (normalized string, pathWarning bool, err error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return "", false, exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"project endpoint must not be empty",
-			"provide a Foundry project endpoint URL "+
-				"(e.g. https://<account>.services.ai.azure.com/api/projects/<project>)",
-		)
+		return "", false, messages.EndpointEmpty()
 	}
 
 	u, parseErr := url.Parse(raw)
 	if parseErr != nil {
-		return "", false, exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("invalid project endpoint URL: %v", parseErr),
-			"provide a valid https:// Foundry project endpoint URL",
-		)
+		return "", false, messages.EndpointUnparseable(parseErr)
 	}
 
 	if !strings.EqualFold(u.Scheme, "https") {
-		return "", false, exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"project endpoint must use https",
-			"provide an https:// URL",
-		)
+		return "", false, messages.EndpointNotHTTPS()
 	}
 
 	host := u.Hostname()
 	if host == "" || !isFoundryHost(host) {
-		return "", false, exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf(
-				"project endpoint host %q is not a recognized Foundry host (*%s)",
-				host, foundryHostSuffixes[0],
-			),
-			"the host must end with "+foundryHostSuffixes[0],
-		)
+		return "", false, messages.EndpointNotFoundryHost(host, foundryHostSuffixes[0])
 	}
 
 	if u.Port() != "" {
-		return "", false, exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("project endpoint host %q must not include a port", u.Host),
-			"remove the explicit port from the URL",
-		)
+		return "", false, messages.EndpointHasPort(u.Host)
 	}
 
 	// Normalize: lowercase host, strip trailing slash.
@@ -102,12 +78,5 @@ func Validate(raw string) (normalized string, pathWarning bool, err error) {
 // NoEndpointError returns the structured dependency error used when no project
 // endpoint could be resolved from any source.
 func NoEndpointError() error {
-	return exterrors.Dependency(
-		exterrors.CodeMissingProjectEndpoint,
-		"no Foundry project endpoint resolved",
-		"persist a workspace default with `azd ai project set <endpoint>`, "+
-			"or set FOUNDRY_PROJECT_ENDPOINT (or AZURE_AI_PROJECT_ENDPOINT) "+
-			"in the active azd environment, "+
-			"or export FOUNDRY_PROJECT_ENDPOINT (or AZURE_AI_PROJECT_ENDPOINT) in your shell",
-	)
+	return messages.NoEndpoint()
 }

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"azureaidataset/internal/messages"
 	"azureaidataset/internal/pkg/dataset_api"
 
 	"github.com/spf13/cobra"
@@ -87,7 +88,7 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 				ctx, name, version, localDir, ProjectEndpointAPIVersion,
 			)
 			if err != nil {
-				return fmt.Errorf("registering dataset %q: %w", name, err)
+				return messages.RegisteringDataset(name, err)
 			}
 
 			if err := ec.setEnvValue(ctx, envKeyDatasetVersion, ds.Version); err != nil {
@@ -96,14 +97,14 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 				// stderr, and is skipped outside a project, where having nowhere
 				// to persist is expected rather than notable.
 				if !errors.Is(err, errNoAzdEnvironment) && !isJSON(cmd) {
-					fmt.Fprintf(cmd.OutOrStdout(), "warning: %v\n", err)
+					fmt.Fprint(cmd.OutOrStdout(), messages.Warning(err))
 				}
 			}
 
 			if isJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), ds)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Registered dataset %s version %s\n", ds.Name, ds.Version)
+			fmt.Fprint(cmd.OutOrStdout(), messages.DatasetRegistered(ds.Name, ds.Version))
 			return nil
 		},
 	}
@@ -120,14 +121,13 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 func datasetUploadDir(path string) (string, error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return "", fmt.Errorf("reading --from-file %q: %w", path, err)
+		return "", messages.ReadingFromFile(path, err)
 	}
 	if info.IsDir() {
 		return path, nil
 	}
 	if !strings.EqualFold(filepath.Ext(path), ".jsonl") {
-		return "", fmt.Errorf(
-			"--from-file must be a .jsonl file or a directory containing one, got %q", path)
+		return "", messages.FromFileMustBeJSONL(path)
 	}
 	return filepath.Dir(path), nil
 }
@@ -149,7 +149,7 @@ func newDatasetListCommand() *cobra.Command {
 
 			list, err := ec.datasetClient.ListDatasets(ctx, ProjectEndpointAPIVersion)
 			if err != nil {
-				return fmt.Errorf("listing datasets: %w", err)
+				return messages.ListingDatasets(err)
 			}
 			return renderDatasets(cmd, list)
 		},
@@ -189,7 +189,7 @@ func newDatasetVersionsListCommand() *cobra.Command {
 
 			list, err := ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
 			if err != nil {
-				return fmt.Errorf("listing versions of dataset %q: %w", name, err)
+				return messages.ListingDatasetVersions(name, err)
 			}
 			return renderDatasets(cmd, list)
 		},
@@ -208,7 +208,7 @@ func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList) error {
 		rows = append(rows, []string{d.Name, d.Version, d.Format})
 	}
 	if len(rows) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No datasets found.")
+		fmt.Fprint(cmd.OutOrStdout(), messages.NoDatasets())
 		return nil
 	}
 	return emitTable(cmd.OutOrStdout(), []string{"NAME", "VERSION", "FORMAT"}, rows)
@@ -237,10 +237,10 @@ func newDatasetShowCommand() *cobra.Command {
 			if version == "" {
 				list, err := ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
 				if err != nil {
-					return fmt.Errorf("resolving the latest version of %q: %w", name, err)
+					return messages.ResolvingLatestDatasetVersion(name, err)
 				}
 				if len(list.Value) == 0 {
-					return fmt.Errorf("dataset %q has no versions", name)
+					return messages.DatasetHasNoVersions(name)
 				}
 				version = dataset_api.LatestVersion(list.Value)
 			}
@@ -248,11 +248,9 @@ func newDatasetShowCommand() *cobra.Command {
 			ds, err := ec.datasetClient.GetDataset(ctx, name, version, ProjectEndpointAPIVersion)
 			if err != nil {
 				if dataset_api.IsNotFound(err) {
-					return fmt.Errorf(
-						"no dataset %q at version %q in this project; "+
-							"`azd ai dataset list` shows the ones there are", name, version)
+					return messages.DatasetVersionNotFoundWithHint(name, version)
 				}
-				return fmt.Errorf("reading dataset %q version %q: %w", name, version, err)
+				return messages.ReadingDatasetVersion(name, version, err)
 			}
 
 			if isJSON(cmd) {
@@ -299,10 +297,9 @@ func newDatasetDeleteCommand() *cobra.Command {
 				ctx, name, version, ProjectEndpointAPIVersion,
 			); err != nil {
 				if dataset_api.IsNotFound(err) {
-					return fmt.Errorf(
-						"no dataset %q at version %q in this project", name, version)
+					return messages.DatasetVersionNotFound(name, version)
 				}
-				return fmt.Errorf("deleting dataset %q version %q: %w", name, version, err)
+				return messages.DeletingDatasetVersion(name, version, err)
 			}
 
 			if isJSON(cmd) {
@@ -310,7 +307,7 @@ func newDatasetDeleteCommand() *cobra.Command {
 					"name": name, "version": version, "status": "deleted",
 				})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Deleted dataset %s version %s\n", name, version)
+			fmt.Fprint(cmd.OutOrStdout(), messages.DatasetDeleted(name, version))
 			return nil
 		},
 	}

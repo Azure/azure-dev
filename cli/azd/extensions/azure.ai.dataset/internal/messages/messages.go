@@ -1,0 +1,420 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+// Package messages holds every string this extension shows a user.
+//
+// One file, so the whole voice of the CLI can be reviewed in one sitting and a
+// wording change never has to be hunted through the command tree. The only
+// extension package it imports is exterrors, which holds no wording of its own,
+// so every other package can use this one.
+//
+// Conventions, so the set stays consistent:
+//
+//   - Errors state what went wrong and, where there is one, the way out.
+//     Lowercase, no trailing period: azd renders them after "ERROR: ".
+//   - A name the user chose is quoted with %q; an identifier the service
+//     assigned is not, because it is already unmistakable.
+//   - Progress and success lines are sentences with a capital and no period.
+//   - A printed line carries its own newlines, so a call site is a bare Fprint.
+//   - Nothing here decides *whether* to print. That stays at the call site.
+package messages
+
+import (
+	"errors"
+	"fmt"
+
+	"azureaidataset/internal/exterrors"
+)
+
+// ---------------------------------------------------------------------------
+// Datasets
+// ---------------------------------------------------------------------------
+
+// AssetAlreadyExists reports `create` asked of a name already in use.
+func AssetAlreadyExists(kind, name string) error {
+	return fmt.Errorf("%s %q already exists: use `update` to publish a new version", kind, name)
+}
+
+// AssetDoesNotExist reports `update` asked of a name nobody registered.
+func AssetDoesNotExist(kind, name string) error {
+	return fmt.Errorf("%s %q does not exist: use `create` to register it", kind, name)
+}
+
+// ReadingFromFile reports a --from-file that would not stat.
+func ReadingFromFile(path string, err error) error {
+	return fmt.Errorf("reading --from-file %q: %w", path, err)
+}
+
+// FromFileMustBeJSONL reports a --from-file that is not a dataset.
+func FromFileMustBeJSONL(path string) error {
+	return fmt.Errorf(
+		"--from-file must be a .jsonl file or a directory containing one, got %q", path)
+}
+
+// ReadingDatasetDirectory reports the upload scan failing to read the directory.
+func ReadingDatasetDirectory(err error) error {
+	return fmt.Errorf("reading directory: %w", err)
+}
+
+// NoJSONLInDirectory reports an upload directory holding no dataset.
+func NoJSONLInDirectory(dir string) error {
+	return fmt.Errorf("no .jsonl file found in %s", dir)
+}
+
+// ReadingDatasetFromDir reports the upload failing to gather the local rows.
+func ReadingDatasetFromDir(dir string, err error) error {
+	return fmt.Errorf("reading dataset from %s: %w", dir, err)
+}
+
+// StartingPendingUpload reports the service refusing to open an upload.
+func StartingPendingUpload(err error) error {
+	return fmt.Errorf("starting pending upload: %w", err)
+}
+
+// NoUploadURI reports an accepted upload the service gave nowhere to write to.
+func NoUploadURI() error {
+	return errors.New("no upload SAS URI returned from startPendingUpload")
+}
+
+// UploadingBlob reports the dataset content failing to upload.
+func UploadingBlob(err error) error {
+	return fmt.Errorf("uploading blob: %w", err)
+}
+
+// RegisteringDataset reports the service refusing to publish the dataset.
+func RegisteringDataset(dataset string, err error) error {
+	return fmt.Errorf("registering dataset %q: %w", dataset, err)
+}
+
+// DatasetRegistered confirms a published dataset version.
+func DatasetRegistered(dataset, version string) string {
+	return fmt.Sprintf("Registered dataset %s version %s\n", dataset, version)
+}
+
+// ListingDatasets reports a failure to list the project's datasets.
+func ListingDatasets(err error) error {
+	return fmt.Errorf("listing datasets: %w", err)
+}
+
+// ListingDatasetVersions reports a failure to list one dataset's versions.
+func ListingDatasetVersions(dataset string, err error) error {
+	return fmt.Errorf("listing versions of dataset %q: %w", dataset, err)
+}
+
+// NoDatasets reports a project with no datasets to list.
+func NoDatasets() string {
+	return "No datasets found.\n"
+}
+
+// ResolvingLatestDatasetVersion reports a failure to find what "latest" means.
+func ResolvingLatestDatasetVersion(dataset string, err error) error {
+	return fmt.Errorf("resolving the latest version of %q: %w", dataset, err)
+}
+
+// DatasetHasNoVersions reports a dataset nothing was ever published under.
+func DatasetHasNoVersions(dataset string) error {
+	return fmt.Errorf("dataset %q has no versions", dataset)
+}
+
+// DatasetVersionNotFoundWithHint reports a dataset version the project does not
+// hold, to a reader who may have meant a different one.
+//
+// Kept apart from DatasetVersionNotFound because the listing only helps someone
+// looking for a version; a delete already named the one it meant.
+func DatasetVersionNotFoundWithHint(dataset, version string) error {
+	return fmt.Errorf(
+		"no dataset %q at version %q in this project; "+
+			"`azd ai dataset list` shows the ones there are", dataset, version)
+}
+
+// ReadingDatasetVersion reports one version of a dataset failing to read.
+func ReadingDatasetVersion(dataset, version string, err error) error {
+	return fmt.Errorf("reading dataset %q version %q: %w", dataset, version, err)
+}
+
+// DatasetVersionNotFound reports a dataset version there is nothing to delete at.
+func DatasetVersionNotFound(dataset, version string) error {
+	return fmt.Errorf("no dataset %q at version %q in this project", dataset, version)
+}
+
+// DeletingDatasetVersion reports the service refusing the delete.
+func DeletingDatasetVersion(dataset, version string, err error) error {
+	return fmt.Errorf("deleting dataset %q version %q: %w", dataset, version, err)
+}
+
+// DatasetDeleted confirms a deleted dataset version.
+func DatasetDeleted(dataset, version string) string {
+	return fmt.Sprintf("Deleted dataset %s version %s\n", dataset, version)
+}
+
+// ReadingDownloadCredentials reports the service refusing to hand out a read URI.
+func ReadingDownloadCredentials(dataset string, err error) error {
+	return fmt.Errorf("reading download credentials for %q: %w", dataset, err)
+}
+
+// NoDownloadURI reports a dataset the service gave nowhere to read from.
+func NoDownloadURI(dataset string) error {
+	return fmt.Errorf("no download URI returned for dataset %q", dataset)
+}
+
+// ListingDatasetContent reports a failure to list what a dataset version holds.
+func ListingDatasetContent(dataset string, err error) error {
+	return fmt.Errorf("listing the content of dataset %q: %w", dataset, err)
+}
+
+// DatasetHasNoFile reports a dataset version with nothing to download.
+func DatasetHasNoFile(dataset string) error {
+	return fmt.Errorf("dataset %q holds no downloadable file", dataset)
+}
+
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+// ConnectingToAzd reports the azd daemon being unreachable.
+func ConnectingToAzd(err error) error {
+	return fmt.Errorf("connecting to azd: %w", err)
+}
+
+// CreatingCredential reports the Azure credential failing to build.
+func CreatingCredential(err error) error {
+	return fmt.Errorf("creating Azure credential: %w", err)
+}
+
+// ErrNoAzdEnvironment reports that there is no azd environment to persist into.
+//
+// These commands work standalone against the data plane, so running outside a
+// project is ordinary rather than a problem worth reporting.
+var ErrNoAzdEnvironment = errors.New("no active azd environment")
+
+// NoAzdEnvironmentToWrite reports a value with nowhere to be remembered.
+func NoAzdEnvironmentToWrite(key string) error {
+	return fmt.Errorf("%w to write %s into", ErrNoAzdEnvironment, key)
+}
+
+// WritingEnvValue reports the azd environment refusing a write.
+func WritingEnvValue(key string, err error) error {
+	return fmt.Errorf("writing %s to the azd environment: %w", key, err)
+}
+
+// EndpointEmpty reports a project endpoint given as blank.
+func EndpointEmpty() error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		"project endpoint must not be empty",
+		"provide a Foundry project endpoint URL "+
+			"(e.g. https://<account>.services.ai.azure.com/api/projects/<project>)",
+	)
+}
+
+// EndpointUnparseable reports a project endpoint that is not a URL.
+func EndpointUnparseable(err error) error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		fmt.Sprintf("invalid project endpoint URL: %v", err),
+		"provide a valid https:// Foundry project endpoint URL",
+	)
+}
+
+// EndpointNotHTTPS reports a project endpoint on the wrong scheme.
+func EndpointNotHTTPS() error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		"project endpoint must use https",
+		"provide an https:// URL",
+	)
+}
+
+// EndpointNotFoundryHost reports a project endpoint pointing somewhere else.
+func EndpointNotFoundryHost(host, suffix string) error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		fmt.Sprintf(
+			"project endpoint host %q is not a recognized Foundry host (*%s)",
+			host, suffix,
+		),
+		"the host must end with "+suffix,
+	)
+}
+
+// EndpointHasPort reports a project endpoint carrying an explicit port.
+func EndpointHasPort(host string) error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		fmt.Sprintf("project endpoint host %q must not include a port", host),
+		"remove the explicit port from the URL",
+	)
+}
+
+// NoEndpoint reports a project endpoint that no source could supply.
+func NoEndpoint() error {
+	return exterrors.Dependency(
+		exterrors.CodeMissingProjectEndpoint,
+		"no Foundry project endpoint resolved",
+		"persist a workspace default with `azd ai project set <endpoint>`, "+
+			"or set FOUNDRY_PROJECT_ENDPOINT (or AZURE_AI_PROJECT_ENDPOINT) "+
+			"in the active azd environment, "+
+			"or export FOUNDRY_PROJECT_ENDPOINT (or AZURE_AI_PROJECT_ENDPOINT) in your shell",
+	)
+}
+
+// ProjectContextClient reports the config helper failing to build.
+func ProjectContextClient(err error) error {
+	return fmt.Errorf("getProjectContext: %w", err)
+}
+
+// ProjectContextRead reports the persisted project context failing to read.
+func ProjectContextRead(err error) error {
+	return fmt.Errorf("getProjectContext: failed to read config: %w", err)
+}
+
+// ---------------------------------------------------------------------------
+// Output
+// ---------------------------------------------------------------------------
+
+// Progress markers from the azd style guide, so the extension's lines sit
+// alongside core's without a second vocabulary.
+const (
+	DoneMark    = "(✓) Done:"    // finished successfully
+	SkippedMark = "(-) Skipped:" // intentionally not done, not a failure
+	FailedMark  = "(x) Failed:"  // the step did not complete
+)
+
+// Warning reports a problem that is not worth failing the command over.
+func Warning(err error) string {
+	return fmt.Sprintf("warning: %v\n", err)
+}
+
+// FlagRequired reports a value that cannot be prompted for.
+func FlagRequired(name string) error {
+	return fmt.Errorf("--%s is required (running with --no-prompt)", name)
+}
+
+// ReadingPath reports a file or directory that could not be read.
+func ReadingPath(path string, err error) error {
+	return fmt.Errorf("reading %s: %w", path, err)
+}
+
+// ---------------------------------------------------------------------------
+// Talking to the service
+// ---------------------------------------------------------------------------
+
+// InvalidEndpointURL reports a client built on an endpoint that will not parse.
+func InvalidEndpointURL(err error) error {
+	return fmt.Errorf("invalid endpoint URL: %w", err)
+}
+
+// InvalidRequestPath reports a request path that will not parse.
+func InvalidRequestPath(path string, err error) error {
+	return fmt.Errorf("invalid request path %q: %w", path, err)
+}
+
+// CreatingRequest reports a request that could not be built.
+func CreatingRequest(err error) error {
+	return fmt.Errorf("failed to create request: %w", err)
+}
+
+// MarshalingRequest reports a request body that would not serialize.
+func MarshalingRequest(err error) error {
+	return fmt.Errorf("failed to marshal request: %w", err)
+}
+
+// SettingRequestBody reports a request body that would not attach.
+func SettingRequestBody(err error) error {
+	return fmt.Errorf("failed to set request body: %w", err)
+}
+
+// RequestFailed reports a request that never reached an answer.
+func RequestFailed(err error) error {
+	return fmt.Errorf("HTTP request failed: %w", err)
+}
+
+// ReadingResponseBody reports a response that could not be read.
+func ReadingResponseBody(err error) error {
+	return fmt.Errorf("failed to read response body: %w", err)
+}
+
+// ParsingResponse reports a response that could not be parsed.
+func ParsingResponse(err error) error {
+	return fmt.Errorf("failed to parse response: %w", err)
+}
+
+// InvalidContainerURI reports a storage URI the service handed back unusable.
+func InvalidContainerURI(err error) error {
+	return fmt.Errorf("invalid container SAS URI: %w", err)
+}
+
+// CreatingUploadRequest reports the blob upload request failing to build.
+func CreatingUploadRequest(err error) error {
+	return fmt.Errorf("failed to create upload request: %w", err)
+}
+
+// UploadingBlobFailed reports the blob upload never reaching an answer.
+func UploadingBlobFailed(err error) error {
+	return fmt.Errorf("failed to upload blob: %w", err)
+}
+
+// BlobUploadStatus reports storage refusing the upload.
+func BlobUploadStatus(status int, body string) error {
+	return fmt.Errorf("blob upload failed with status %d: %s", status, body)
+}
+
+// CreatingDownloadRequest reports the dataset download request failing to build.
+func CreatingDownloadRequest(err error) error {
+	return fmt.Errorf("failed to create download request: %w", err)
+}
+
+// DownloadingDatasetBlob reports the dataset download never reaching an answer.
+func DownloadingDatasetBlob(err error) error {
+	return fmt.Errorf("failed to download dataset from blob: %w", err)
+}
+
+// BlobDownloadStatus reports storage refusing the download.
+func BlobDownloadStatus(status int) error {
+	return fmt.Errorf("blob download failed with status %d", status)
+}
+
+// ReadingDatasetContent reports a downloaded dataset that could not be read.
+func ReadingDatasetContent(err error) error {
+	return fmt.Errorf("failed to read dataset content: %w", err)
+}
+
+// CreatingListRequest reports the container listing request failing to build.
+func CreatingListRequest(err error) error {
+	return fmt.Errorf("failed to create list request: %w", err)
+}
+
+// ListingContainerBlobs reports the container listing never reaching an answer.
+func ListingContainerBlobs(err error) error {
+	return fmt.Errorf("failed to list container blobs: %w", err)
+}
+
+// ContainerListStatus reports storage refusing the listing.
+func ContainerListStatus(status int) error {
+	return fmt.Errorf("container list failed with status %d", status)
+}
+
+// ReadingListResponse reports a container listing that could not be read.
+func ReadingListResponse(err error) error {
+	return fmt.Errorf("failed to read list response: %w", err)
+}
+
+// CreatingBlobDownloadRequest reports the blob download request failing to build.
+func CreatingBlobDownloadRequest(err error) error {
+	return fmt.Errorf("failed to create blob download request: %w", err)
+}
+
+// DownloadingBlob reports one blob's download never reaching an answer.
+func DownloadingBlob(err error) error {
+	return fmt.Errorf("failed to download blob: %w", err)
+}
+
+// BlobDownloadStatusFor reports storage refusing one named blob.
+func BlobDownloadStatusFor(status int, blobName string) error {
+	return fmt.Errorf("blob download failed with status %d for %s", status, blobName)
+}
+
+// ReadingBlobContent reports a downloaded blob that could not be read.
+func ReadingBlobContent(err error) error {
+	return fmt.Errorf("failed to read blob content: %w", err)
+}

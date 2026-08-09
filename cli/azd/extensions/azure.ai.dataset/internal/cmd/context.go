@@ -5,12 +5,11 @@ package cmd
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log"
 	"strings"
 
 	"azureaidataset/internal/foundry/projectctx"
+	"azureaidataset/internal/messages"
 	"azureaidataset/internal/pkg/dataset_api"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -44,7 +43,7 @@ type datasetContext struct {
 func newDatasetContext(ctx context.Context, endpointFlag string) (*datasetContext, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
-		return nil, fmt.Errorf("connecting to azd: %w", err)
+		return nil, messages.ConnectingToAzd(err)
 	}
 
 	dc := &datasetContext{azdClient: azdClient}
@@ -65,7 +64,7 @@ func newDatasetContext(ctx context.Context, endpointFlag string) (*datasetContex
 		&azidentity.AzureDeveloperCLICredentialOptions{},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("creating Azure credential: %w", err)
+		return nil, messages.CreatingCredential(err)
 	}
 	dc.cred = cred
 
@@ -95,14 +94,14 @@ func lookupEndpointFromAzd(ctx context.Context, azdClient *azdext.AzdClient) (en
 //
 // These commands work standalone against the data plane, so running outside a
 // project is ordinary rather than a problem worth reporting.
-var errNoAzdEnvironment = errors.New("no active azd environment")
+var errNoAzdEnvironment = messages.ErrNoAzdEnvironment
 
 // setEnvValue persists a value into the active azd environment.
 func (dc *datasetContext) setEnvValue(ctx context.Context, key, value string) error {
 	if dc.envName == "" {
 		envResp, err := dc.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 		if err != nil || envResp == nil || envResp.Environment == nil {
-			return fmt.Errorf("%w to write %s into", errNoAzdEnvironment, key)
+			return messages.NoAzdEnvironmentToWrite(key)
 		}
 		dc.envName = envResp.Environment.Name
 	}
@@ -112,7 +111,7 @@ func (dc *datasetContext) setEnvValue(ctx context.Context, key, value string) er
 		Value:   value,
 	})
 	if err != nil {
-		return fmt.Errorf("writing %s to the azd environment: %w", key, err)
+		return messages.WritingEnvValue(key, err)
 	}
 	return nil
 }

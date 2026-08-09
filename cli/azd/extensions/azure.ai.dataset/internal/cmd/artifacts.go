@@ -3,7 +3,7 @@
 
 package cmd
 
-import "fmt"
+import "azureaidataset/internal/messages"
 
 // envKeyDatasetVersion caches the version resolved at the last publish, so a
 // later read does not have to list every version to find the newest.
@@ -13,11 +13,9 @@ const envKeyDatasetVersion = "EVAL_DATASET_VERSION"
 func checkAssetExistence(verb, kind, name string, exists bool) error {
 	switch {
 	case verb == "create" && exists:
-		return fmt.Errorf(
-			"%s %q already exists: use `update` to publish a new version", kind, name)
+		return messages.AssetAlreadyExists(kind, name)
 	case verb == "update" && !exists:
-		return fmt.Errorf(
-			"%s %q does not exist: use `create` to register it", kind, name)
+		return messages.AssetDoesNotExist(kind, name)
 	}
 	return nil
 }

@@ -10,18 +10,12 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"azureaidataset/internal/messages"
+
 	"github.com/spf13/cobra"
 )
 
 const outputJSON = "json"
-
-// Progress markers from the azd style guide, so the extension's lines sit
-// alongside core's without a second vocabulary.
-const (
-	doneMark    = "(✓) Done:"    // finished successfully
-	skippedMark = "(-) Skipped:" // intentionally not done, not a failure
-	failedMark  = "(x) Failed:"  // the step did not complete
-)
 
 // outputFormat reads the inherited -o/--output flag.
 func outputFormat(cmd *cobra.Command) string {
@@ -117,5 +111,5 @@ func emitDetail(w io.Writer, fields []field) error {
 // requireFlag returns an error naming the missing flag, used when --no-prompt
 // prevents asking for a required value.
 func requireFlag(name string) error {
-	return fmt.Errorf("--%s is required (running with --no-prompt)", name)
+	return messages.FlagRequired(name)
 }

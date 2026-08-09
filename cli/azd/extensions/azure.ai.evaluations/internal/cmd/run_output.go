@@ -274,7 +274,7 @@ func addEvalFlag(cmd *cobra.Command, target *string) {
 // recorded take effect in between.
 func addEvalPathFlag(cmd *cobra.Command, target *string) {
 	cmd.Flags().StringVar(target, "path", "",
-		"Directory holding eval.yaml. Defaults to the path `init` used, then ./evals.")
+		"Directory holding azure.eval.yaml. Defaults to the path `init` used, then ./evals.")
 }
 
 // latestOrNamedRun returns the named run, or the most recent one for the eval.

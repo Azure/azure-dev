@@ -92,7 +92,7 @@ func newInitCommand() *cobra.Command {
 				judgeModel = detectModelDeployment(azdProject)
 			}
 
-			configPath := project.EvalConfigPath(path)
+			configPath := project.ResolveEvalConfigPath(path)
 			cfg, err := project.OpenEvalConfig(path)
 			if err != nil {
 				return err

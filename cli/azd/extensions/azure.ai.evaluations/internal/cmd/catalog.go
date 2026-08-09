@@ -95,7 +95,10 @@ func updateCatalog(
 		return err
 	}
 	if !isJSON(cmd) {
-		path := filepath.ToSlash(project.EvalConfigPath(evalDir))
+		// Resolved, not the current name: SaveEvalConfig writes back over a
+		// legacy file when that is what the project has, and the line has to
+		// name the file it actually wrote.
+		path := filepath.ToSlash(project.ResolveEvalConfigPath(evalDir))
 		if created {
 			fmt.Fprint(cmd.OutOrStdout(), messages.CreatedCatalogFile(path))
 		}

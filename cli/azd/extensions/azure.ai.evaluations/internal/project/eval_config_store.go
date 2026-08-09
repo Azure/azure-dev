@@ -23,7 +23,16 @@ import (
 const DefaultEvalDir = "evals"
 
 // EvalConfigBase is the single configuration file inside that directory.
-const EvalConfigBase = "eval.yaml"
+//
+// Prefixed for azd, the way azure.yaml is: eval.yaml is generic enough to
+// collide with an unrelated tool's file in the same folder, and the prefix says
+// whose it is.
+const EvalConfigBase = "azure.eval.yaml"
+
+// LegacyEvalConfigBase is what the file was called before it was named for azd.
+// Read, never written: a project that already has one keeps working, and does
+// not silently grow a second configuration beside it.
+const LegacyEvalConfigBase = "eval.yaml"
 
 // EvalConfigPath is the configuration file inside an eval directory. It is
 // exported for error messages and for the azure.yaml $ref; readers should
@@ -32,12 +41,26 @@ func EvalConfigPath(evalDir string) string {
 	return filepath.Join(evalDir, EvalConfigBase)
 }
 
+// ResolveEvalConfigPath is the configuration this directory actually holds:
+// the current name, or the legacy one when that is the only file there.
+func ResolveEvalConfigPath(evalDir string) string {
+	current := EvalConfigPath(evalDir)
+	if _, err := os.Stat(current); err == nil {
+		return current
+	}
+	legacy := filepath.Join(evalDir, LegacyEvalConfigBase)
+	if _, err := os.Stat(legacy); err == nil {
+		return legacy
+	}
+	return current
+}
+
 // OpenEvalConfig reads the configuration under evalDir.
 //
 // A missing file returns (nil, nil): generate runs before init, so "no
 // configuration yet" is an ordinary state rather than a failure.
 func OpenEvalConfig(evalDir string) (*EvalConfig, error) {
-	cfg, err := LoadEvalConfig(EvalConfigPath(evalDir))
+	cfg, err := LoadEvalConfig(ResolveEvalConfigPath(evalDir))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -61,11 +84,15 @@ func LoadEvalConfig(path string) (*EvalConfig, error) {
 
 // SaveEvalConfig writes cfg as the configuration under evalDir, creating the
 // directory when it does not exist yet.
+//
+// Writes back over a legacy eval.yaml when that is the file the project has, so
+// a generate into an existing project updates the configuration it already
+// references rather than leaving an inert second one beside it.
 func SaveEvalConfig(evalDir string, cfg *EvalConfig) error {
 	if err := os.MkdirAll(evalDir, 0o750); err != nil {
 		return messages.Creating(evalDir, err)
 	}
-	return SaveEvalConfigTo(EvalConfigPath(evalDir), cfg)
+	return SaveEvalConfigTo(ResolveEvalConfigPath(evalDir), cfg)
 }
 
 // SaveEvalConfigTo writes cfg over an explicit path, for callers that already

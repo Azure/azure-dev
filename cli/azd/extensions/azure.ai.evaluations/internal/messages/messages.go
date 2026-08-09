@@ -513,7 +513,7 @@ func FromPromptNeedsInstruction() string {
 // FromAgentNeedsTarget reports --from agent with no agent to read.
 func FromAgentNeedsTarget() string {
 	return "--from agent needs a target agent; pass --target, " +
-		"or declare one under target: in eval.yaml"
+		"or declare one under target: in azure.eval.yaml"
 }
 
 // FromFileNotASource reports --from file, which generation has no path for.

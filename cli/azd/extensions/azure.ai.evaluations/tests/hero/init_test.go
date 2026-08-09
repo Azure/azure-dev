@@ -201,7 +201,7 @@ func TestHeroScenario1ColdStart(t *testing.T) {
 (✓) Done: Judge model deployment: gpt-5.6-luna
 
 Created
-  evals/eval.yaml                   evaluation configuration
+  evals/azure.eval.yaml             evaluation configuration
   azure.yaml                        added service 'support-agent-evals'
 
 Next: azd up
@@ -210,7 +210,7 @@ Next: azd up
 	require.Equal(t, want, normalize(out))
 }
 
-// Scenario 1's second half: the eval.yaml the terminal block promised. The spec
+// Scenario 1's second half: the azure.eval.yaml the terminal block promised. The spec
 // prints this file, so its shape is as much a promise as the output above —
 // and it is the file a reader reviews before running `azd up`.
 func TestHeroScenario1WritesTheDocumentedConfig(t *testing.T) {
@@ -221,7 +221,7 @@ func TestHeroScenario1WritesTheDocumentedConfig(t *testing.T) {
 		"--evaluator", "builtin.task_adherence", "--judge-model", "gpt-5.6-luna")
 	require.Zero(t, code)
 
-	body, err := os.ReadFile(filepath.Join(dir, "evals", "eval.yaml"))
+	body, err := os.ReadFile(filepath.Join(dir, "evals", "azure.eval.yaml"))
 	require.NoError(t, err)
 	text := string(body)
 
@@ -281,7 +281,7 @@ func TestHeroInitWiresTheServiceIntoTheProject(t *testing.T) {
 	require.Contains(t, text, "support-agent-evals:",
 		"the service is named for the agent it evaluates")
 	require.Contains(t, text, "host: azure.ai.eval")
-	require.Contains(t, text, "$ref: ./evals/eval.yaml")
+	require.Contains(t, text, "$ref: ./evals/azure.eval.yaml")
 
 	// azd owns the edit, so everything the project already declared survives it.
 	require.Contains(t, text, "name: support-app")
@@ -356,7 +356,7 @@ func TestHeroInitExplicitEvaluatorsOptOutOfGeneration(t *testing.T) {
 	require.NotContains(t, text, "evaluator generate",
 		"nothing was scheduled to be generated, so nothing should be suggested")
 
-	body, err := os.ReadFile(filepath.Join(dir, "evals", "eval.yaml"))
+	body, err := os.ReadFile(filepath.Join(dir, "evals", "azure.eval.yaml"))
 	require.NoError(t, err)
 	require.Contains(t, string(body), "evaluator: builtin.task_adherence")
 	require.NotContains(t, string(body), "support-agent-quality",
@@ -380,7 +380,7 @@ func TestHeroInitSuppliedDatasetIsNotGenerated(t *testing.T) {
 	require.Contains(t, text, "Next: azd up",
 		"with nothing left to generate, the next step is the deploy")
 
-	body, err := os.ReadFile(filepath.Join(dir, "evals", "eval.yaml"))
+	body, err := os.ReadFile(filepath.Join(dir, "evals", "azure.eval.yaml"))
 	require.NoError(t, err)
 	require.Contains(t, string(body), "dataset: prod-golden")
 	require.NotContains(t, string(body), "source:",

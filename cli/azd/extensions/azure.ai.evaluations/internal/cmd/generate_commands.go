@@ -22,7 +22,7 @@ import (
 // partial failure undefined, cannot regenerate one artifact after the other has
 // been hand-edited, and gives --no-wait nothing to reattach to.
 //
-// Neither command edits azure.yaml. Both add a catalog entry to eval.yaml for
+// Neither command edits azure.yaml. Both add a catalog entry to azure.eval.yaml for
 // what they produced, so the artifact is referenceable without a hand edit.
 
 // generateFlags are the settings both generate commands share.

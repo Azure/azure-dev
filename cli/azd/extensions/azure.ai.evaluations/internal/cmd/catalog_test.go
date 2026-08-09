@@ -74,8 +74,8 @@ func TestCatalogLineWithoutAVersion(t *testing.T) {
 	}
 }
 
-// The first generate in a repository has no eval.yaml to append to, so it says
-// the file was created as well as what went into it.
+// The first generate in a repository has no configuration to append to, so it
+// says the file was created as well as what went into it.
 func TestCatalogLineWhenTheFileIsCreated(t *testing.T) {
 	dir := t.TempDir()
 	var buf bytes.Buffer
@@ -90,7 +90,7 @@ func TestCatalogLineWhenTheFileIsCreated(t *testing.T) {
 		"creating the file still has to say what was put in it")
 
 	// The entry is really on disk, not just announced.
-	body, err := os.ReadFile(filepath.Join(dir, "eval.yaml"))
+	body, err := os.ReadFile(filepath.Join(dir, project.EvalConfigBase))
 	require.NoError(t, err)
 	assert.Contains(t, string(body), "golden")
 }

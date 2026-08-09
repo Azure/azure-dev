@@ -205,13 +205,15 @@ func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList) error {
 	}
 	rows := make([][]string, 0, len(list.Value))
 	for _, d := range list.Value {
-		rows = append(rows, []string{d.Name, d.Version, d.Format})
+		rows = append(rows, []string{d.Name, d.Version, d.Type})
 	}
 	if len(rows) == 0 {
 		fmt.Fprint(cmd.OutOrStdout(), messages.NoDatasets())
 		return nil
 	}
-	return emitTable(cmd.OutOrStdout(), []string{"NAME", "VERSION", "FORMAT"}, rows)
+	// TYPE, not FORMAT: format is a field this API accepts on upload and never
+	// returns, so the column it filled was empty for every dataset ever listed.
+	return emitTable(cmd.OutOrStdout(), []string{"NAME", "VERSION", "TYPE"}, rows)
 }
 
 func newDatasetShowCommand() *cobra.Command {
@@ -259,7 +261,7 @@ func newDatasetShowCommand() *cobra.Command {
 			return emitDetail(cmd.OutOrStdout(), []field{
 				{"Name", ds.Name},
 				{"Version", ds.Version},
-				{"Format", ds.Format},
+				{"Type", ds.Type},
 				{"URI", ds.ResolvedBlobURI()},
 			})
 		},

@@ -38,7 +38,7 @@ type DatasetClient struct {
 
 // NewDatasetClient creates a new DatasetClient.
 func NewDatasetClient(endpoint string, cred azcore.TokenCredential) *DatasetClient {
-	userAgent := fmt.Sprintf("azd-ext-azure-ai-evaluations/%s", version.Version)
+	userAgent := fmt.Sprintf("azd-ext-azure-ai-dataset/%s", version.Version)
 
 	clientOptions := &policy.ClientOptions{
 		Logging: policy.LogOptions{

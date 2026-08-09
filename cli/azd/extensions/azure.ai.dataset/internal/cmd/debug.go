@@ -28,7 +28,7 @@ func setupDebugLogging(flags *pflag.FlagSet) func() {
 		return func() {}
 	}
 
-	logFileName := fmt.Sprintf("azd-ai-eval-%s.log", time.Now().Format("2006-01-02"))
+	logFileName := fmt.Sprintf("azd-ai-dataset-%s.log", time.Now().Format("2006-01-02"))
 
 	//nolint:gosec // the name is generated locally from the date, not user input
 	logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)

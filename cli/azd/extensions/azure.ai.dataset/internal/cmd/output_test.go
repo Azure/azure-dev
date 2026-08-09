@@ -87,18 +87,21 @@ func TestRenderDatasetsTable(t *testing.T) {
 	cmd.SetOut(&buf)
 
 	require.NoError(t, renderDatasets(cmd, &dataset_api.DatasetList{Value: []dataset_api.Dataset{
-		{Name: "golden", Version: "2.0", Format: "jsonl"},
-		{Name: "smoke", Version: "1.0", Format: "jsonl"},
+		{Name: "golden", Version: "2.0", Type: "uri_file"},
+		{Name: "smoke", Version: "1.0", Type: "uri_file"},
 	}}))
 
 	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
 	require.Len(t, lines, 4, "a header, its rule, and one line per dataset")
 	assert.Contains(t, lines[0], "NAME")
 	assert.Contains(t, lines[0], "VERSION")
-	assert.Contains(t, lines[0], "FORMAT")
+	// The API accepts format on upload and never returns it, so a FORMAT column
+	// was blank for every dataset. Type is what the service actually sends.
+	assert.Contains(t, lines[0], "TYPE")
 	assert.True(t, strings.HasPrefix(strings.TrimSpace(lines[1]), "----"),
 		"the rule under the header is the convention, got %q", lines[1])
 	assert.Contains(t, lines[2], "golden")
+	assert.Contains(t, lines[2], "uri_file")
 	assert.Contains(t, lines[3], "smoke")
 }
 

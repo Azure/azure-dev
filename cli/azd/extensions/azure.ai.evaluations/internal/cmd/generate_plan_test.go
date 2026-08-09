@@ -70,11 +70,23 @@ func TestResolvePlan_OutputDirDefaultsPerArtifact(t *testing.T) {
 	require.Equal(t, "./from-flag", override.OutputDir)
 }
 
-// Without a model there is nothing to bill the job against, and the refusal has
-// to name the flag that supplies one.
-func TestResolvePlan_RequiresAGenerationModel(t *testing.T) {
+// A named target carries a deployment, and the spec makes it the default, so
+// the plan settles without one and lets prepareGeneration read it. Refusing
+// here would ask the caller for something the project already knows.
+func TestResolvePlan_DefersToTheAgentForTheModel(t *testing.T) {
 	f := evalsDir(t)
 	f.target = "shop-agent"
+
+	plan, err := resolvePlan(f, "d", project.DefaultDatasetsDir)
+	require.NoError(t, err)
+	require.Empty(t, plan.Model, "the deployment is read from the agent, not guessed here")
+	require.Equal(t, "shop-agent", plan.Agent)
+}
+
+// With no target either there is nothing to read a deployment from, so the
+// refusal happens before authentication and names the flag that supplies one.
+func TestResolvePlan_RequiresAGenerationModelWithNoAgent(t *testing.T) {
+	f := evalsDir(t)
 
 	_, err := resolvePlan(f, "d", project.DefaultDatasetsDir)
 	require.Error(t, err)

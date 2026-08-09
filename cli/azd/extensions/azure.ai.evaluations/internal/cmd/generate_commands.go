@@ -4,11 +4,13 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
 
 	"github.com/spf13/cobra"
@@ -79,15 +81,15 @@ func resolvePlan(f *generateFlags, name string, defaultOutputDir string) (genera
 		BaseDir:     f.path,
 		OutputDir:   firstNonEmpty(f.outputDir, "./"+defaultOutputDir),
 	}
-	if plan.Model == "" {
-		return plan, fmt.Errorf(
-			"a model deployment is required to generate: pass --generation-model")
+	if plan.Model == "" && plan.Agent == "" {
+		return plan, messages.GenerationModelRequired()
 	}
 	return plan, nil
 }
 
-// prepareGeneration builds the client and settles the one input that needs it:
-// the agent's published instructions, which only the service can supply.
+// prepareGeneration builds the client and settles the two inputs that need it:
+// the agent's published instructions, and its deployment when the caller named
+// no model of its own. Only the service can supply either.
 func prepareGeneration(
 	cmd *cobra.Command,
 	f *generateFlags,
@@ -106,7 +108,30 @@ func prepareGeneration(
 		ec.Close()
 		return nil, plan, err
 	}
+
+	if plan.Model == "" {
+		plan.Model = ec.agentDeployment(ctx, plan.Agent)
+	}
+	if plan.Model == "" {
+		ec.Close()
+		return nil, plan, messages.GenerationModelRequired()
+	}
 	return ec, plan, nil
+}
+
+// agentDeployment reads the deployment the target agent answers with.
+//
+// Best effort: a caller who named no model gets one error naming the flag, not
+// two errors about an agent they never mentioned.
+func (ec *evalContext) agentDeployment(ctx context.Context, agentName string) string {
+	if agentName == "" {
+		return ""
+	}
+	agent, err := ec.evalClient.GetAgent(ctx, agentName, ProjectEndpointAPIVersion)
+	if err != nil {
+		return ""
+	}
+	return agent.Model()
 }
 
 // declaredTarget reads the agent from the evaluation configuration, which is

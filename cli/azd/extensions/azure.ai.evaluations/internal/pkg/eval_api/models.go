@@ -78,6 +78,17 @@ func (a *Agent) Instructions() string {
 	return strings.TrimSpace(a.Versions.Latest.Definition.Instructions)
 }
 
+// Model returns the newest version's deployment, or "" when the agent has no
+// published version. It is what generation falls back to when the caller names
+// no deployment of its own: the model already judged good enough to answer as
+// this agent is the sensible default for writing its test cases.
+func (a *Agent) Model() string {
+	if a == nil || a.Versions.Latest == nil {
+		return ""
+	}
+	return strings.TrimSpace(a.Versions.Latest.Definition.Model)
+}
+
 // GenerationJob is the response for data and evaluator generation job operations.
 type GenerationJob struct {
 	ID     string          `json:"id"`

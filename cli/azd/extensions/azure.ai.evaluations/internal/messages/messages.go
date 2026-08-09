@@ -59,3 +59,15 @@ func ResponsesNeedIDs(eval string) error {
 		"eval %q evaluates stored responses but lists none. Set source.response_ids",
 		eval)
 }
+
+// ---------------------------------------------------------------------------
+// Generation
+// ---------------------------------------------------------------------------
+
+// GenerationModelRequired reports a generation with no deployment to run on.
+//
+// Reached only when the target agent could not supply one either, so the flag
+// is the whole of the way out.
+func GenerationModelRequired() error {
+	return errors.New("a model deployment is required to generate: pass --generation-model")
+}

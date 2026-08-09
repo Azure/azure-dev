@@ -17,8 +17,8 @@ import (
 )
 
 // provisionActivityBotNames resolves and persists Activity Bot names during
-// provision. When the value is missing, it writes a deterministic default name
-// so users can run provision/deploy without an extra prompt.
+// provision when the deployment scope is already known. Deploy resolves the
+// final bot name again using the deployed agent identity as the source of truth.
 func provisionActivityBotNames(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -56,7 +56,13 @@ func provisionActivityBotNames(
 			continue
 		}
 
-		botName := strings.TrimSpace(botservice.DefaultBotName(agent.Name))
+		subscriptionID := strings.TrimSpace(values["AZURE_SUBSCRIPTION_ID"])
+		resourceGroup := strings.TrimSpace(values["AZURE_RESOURCE_GROUP"])
+		if subscriptionID == "" || resourceGroup == "" {
+			continue
+		}
+
+		botName := strings.TrimSpace(botservice.BotName(agent.Name, botservice.BotScopeSalt(subscriptionID, resourceGroup)))
 		if botName == "" {
 			return fmt.Errorf("%s is required", key)
 		}

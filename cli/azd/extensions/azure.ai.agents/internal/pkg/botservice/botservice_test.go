@@ -187,7 +187,7 @@ func TestFindByMsaAppID(t *testing.T) {
 		},
 	}
 
-	got, err := c.FindByMsaAppID(context.Background(), "CLIENT-ID-123")
+	got, err := c.FindByMsaAppID(t.Context(), "CLIENT-ID-123")
 	if err != nil {
 		t.Fatalf("FindByMsaAppID returned error: %v", err)
 	}

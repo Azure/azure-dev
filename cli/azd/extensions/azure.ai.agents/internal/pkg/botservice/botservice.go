@@ -45,9 +45,6 @@ const (
 	// botNameMaxLen caps the bot resource name length (Azure BotService handle
 	// limit) so a long agent name cannot push it over the limit.
 	botNameMaxLen = 42
-	// defaultBotNameSuffix is the readable suffix used when azd needs a default
-	// user-facing bot name before a deployment scope is available.
-	defaultBotNameSuffix = "-bot"
 )
 
 // botsAPI and channelsAPI are the narrow slices of the armbotservice clients this
@@ -124,21 +121,6 @@ func BotName(agentName, scopeSalt string) string {
 	}
 	// Avoid a doubled hyphen if truncation (or the agent name) leaves a trailing '-'.
 	return strings.TrimRight(agentName, "-") + suffix
-}
-
-// DefaultBotName returns a readable default Azure Bot resource name for an agent.
-// It is used when prompting before provisioning, where a stable deployment-scope
-// salt may not yet be available. The final BotService resource remains bound to
-// the deployed agent identity during deploy.
-func DefaultBotName(agentName string) string {
-	agentName = strings.TrimSpace(agentName)
-	if agentName == "" {
-		agentName = "agent"
-	}
-	if maxAgent := botNameMaxLen - len(defaultBotNameSuffix); len(agentName) > maxAgent {
-		agentName = agentName[:maxAgent]
-	}
-	return strings.TrimRight(agentName, "-") + defaultBotNameSuffix
 }
 
 // BotScopeSalt builds the deployment-scope salt for BotName from the subscription

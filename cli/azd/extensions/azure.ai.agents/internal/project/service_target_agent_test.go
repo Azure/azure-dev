@@ -808,6 +808,7 @@ func TestResolveActivityBotName_PrefersIdentityBoundBot(t *testing.T) {
 		"my-svc",
 		"agent-a",
 		"client-id-1",
+		"fallback-rg",
 		map[string]string{envkey.AgentBotName("my-svc"): "env-bot"},
 	)
 
@@ -826,6 +827,7 @@ func TestResolveActivityBotName_FallsBackToEnvValue(t *testing.T) {
 		"my-svc",
 		"agent-a",
 		"client-id-1",
+		"fallback-rg",
 		map[string]string{envkey.AgentBotName("my-svc"): "env-bot"},
 	)
 
@@ -844,11 +846,31 @@ func TestResolveActivityBotName_FallsBackToDefaultName(t *testing.T) {
 		"my-svc",
 		"agent-a",
 		"client-id-1",
-		map[string]string{},
+		"fallback-rg",
+		map[string]string{"AZURE_SUBSCRIPTION_ID": "sub-1"},
 	)
 
 	require.NoError(t, err)
-	require.Equal(t, "agent-a-bot", name)
+	require.True(t, strings.HasPrefix(name, "agent-a-bot-"), name)
+	require.Equal(t, "", rg)
+}
+
+func TestResolveActivityBotName_FallsBackWhenIdentityLookupFails(t *testing.T) {
+	t.Parallel()
+
+	p := &AgentServiceTargetProvider{}
+	name, rg, err := p.resolveActivityBotName(
+		t.Context(),
+		fakeActivityBotFinder{err: errors.New("list not authorized")},
+		"my-svc",
+		"agent-a",
+		"client-id-1",
+		"fallback-rg",
+		map[string]string{envkey.AgentBotName("my-svc"): "env-bot"},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "env-bot", name)
 	require.Equal(t, "", rg)
 }
 

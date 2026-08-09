@@ -17,6 +17,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
+	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -402,6 +403,23 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 	// (single source of truth), so postdeploy no longer performs a second bot
 	// configuration pass that can conflict with the deploy-time bot name.
 	envName, endpoint, _, cred, inputErr := gatherPostdeployInputs(ctx, azdClient)
+
+	if ca, isHosted, _, defErr := project.LoadAgentDefinition(svc, args.Project.Path); defErr == nil &&
+		isHosted && project.ResolveActivityProfile(ca).IsActivity {
+		serviceKey := toServiceKey(svc.Name)
+		agentName, nameErr := readEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_NAME", serviceKey))
+		botName, botErr := readEnvValue(ctx, azdClient, envName, envkey.AgentBotName(svc.Name))
+		msaAppID, idErr := readEnvValue(ctx, azdClient, envName, envkey.AgentInstanceIdentityClientID(svc.Name))
+		if nameErr == nil && botErr == nil && idErr == nil {
+			guidePath := writeTeamsSetupGuide(args.Project, svc, agentName, botName, msaAppID)
+			printTeamsNextSteps(botName, msaAppID, guidePath)
+		} else {
+			log.Printf(
+				"postdeploy: skipping Teams setup guide for %s: agent name: %v, bot name: %v, instance identity: %v",
+				svc.Name, nameErr, botErr, idErr,
+			)
+		}
+	}
 
 	// Optimization reporting is best-effort and skipped on missing inputs. A
 	// missing input only logs and skips; it never fails an otherwise-successful

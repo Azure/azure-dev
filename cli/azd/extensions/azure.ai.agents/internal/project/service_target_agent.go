@@ -1131,12 +1131,17 @@ func (p *AgentServiceTargetProvider) resolveActivityBotName(
 	serviceName string,
 	agentName string,
 	agentIdentityClientID string,
+	defaultResourceGroup string,
 	azdEnv map[string]string,
 ) (string, string, error) {
 	if botFinder != nil && strings.TrimSpace(agentIdentityClientID) != "" {
 		boundBot, err := botFinder.FindByMsaAppID(ctx, agentIdentityClientID)
 		if err != nil {
-			return "", "", err
+			fmt.Fprintf(
+				os.Stderr,
+				"Unable to search for an Azure Bot already bound to the deployed agent identity: %v\n",
+				err,
+			)
 		}
 		if boundBot != nil && strings.TrimSpace(boundBot.Name) != "" {
 			fmt.Fprintf(
@@ -1152,12 +1157,17 @@ func (p *AgentServiceTargetProvider) resolveActivityBotName(
 	key := envkey.AgentBotName(serviceName)
 	name := strings.TrimSpace(azdEnv[key])
 	if name == "" {
-		name = botservice.DefaultBotName(agentName)
+		resourceGroup := strings.TrimSpace(azdEnv["AZURE_RESOURCE_GROUP"])
+		if resourceGroup == "" {
+			resourceGroup = strings.TrimSpace(defaultResourceGroup)
+		}
+		name = botservice.BotName(agentName, botservice.BotScopeSalt(azdEnv["AZURE_SUBSCRIPTION_ID"], resourceGroup))
 		fmt.Fprintf(
 			os.Stderr,
-			"Azure Bot name was not set in %s; using default %q. Run `azd provision` to save a custom value.\n",
+			"Azure Bot name was not set in %s; using scope-qualified default %q. Set %s explicitly to use a custom bot name.\n",
 			key,
 			name,
+			key,
 		)
 	} else {
 		fmt.Fprintf(
@@ -1345,6 +1355,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 			serviceConfig.Name,
 			agentDef.Name,
 			identity.ClientID,
+			p.foundryProject.ResourceGroupName,
 			azdEnv,
 		)
 		if err != nil {

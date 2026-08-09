@@ -60,6 +60,9 @@ func newEvalContext(ctx context.Context, endpointFlag string) (*evalContext, err
 
 	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{FlagValue: endpointFlag})
 	if err != nil {
+		// The caller only defers Close on a context it was handed, so every
+		// path that abandons this one has to close it here.
+		ec.Close()
 		return nil, err
 	}
 	ec.endpoint = strings.TrimSuffix(resolved.Endpoint, "/")
@@ -69,6 +72,7 @@ func newEvalContext(ctx context.Context, endpointFlag string) (*evalContext, err
 		&azidentity.AzureDeveloperCLICredentialOptions{},
 	)
 	if err != nil {
+		ec.Close()
 		return nil, messages.CreatingCredential(err)
 	}
 	ec.cred = cred

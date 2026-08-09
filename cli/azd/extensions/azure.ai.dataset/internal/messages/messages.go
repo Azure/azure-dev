@@ -58,6 +58,11 @@ func ReadingDatasetDirectory(err error) error {
 	return fmt.Errorf("reading directory: %w", err)
 }
 
+// DatasetFileHasNoRows reports an empty dataset file, refused before upload.
+func DatasetFileHasNoRows(name string) error {
+return fmt.Errorf(
+"dataset file %q has no rows, so there would be nothing to evaluate", name)
+}
 // NoJSONLInDirectory reports an upload directory holding no dataset.
 func NoJSONLInDirectory(dir string) error {
 	return fmt.Errorf("no .jsonl file found in %s", dir)

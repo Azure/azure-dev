@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"azureaidataset/internal/messages"
 	"azureaidataset/internal/version"
@@ -249,6 +250,14 @@ func (c *DatasetClient) StartPendingUpload(
 	return doRequestTyped[PendingUploadResponse](c, ctx, http.MethodPost, path, nil, json.RawMessage(`{}`), apiVersion)
 }
 
+// blobHTTPClient is the client used for direct blob calls.
+//
+// Bounded: these bypass the SDK pipeline, so nothing else stops a hung storage
+// endpoint from holding the command open until someone kills it. Generous, so
+// a large dataset over a slow link still finishes.
+func blobHTTPClient() *http.Client {
+return &http.Client{Timeout: 10 * time.Minute}
+}
 // UploadBlob uploads data to a container SAS URI as a block blob.
 func (c *DatasetClient) UploadBlob(ctx context.Context, containerSASUri, blobName string, data []byte) error {
 	u, err := url.Parse(containerSASUri)
@@ -266,7 +275,7 @@ func (c *DatasetClient) UploadBlob(ctx context.Context, containerSASUri, blobNam
 	req.Header.Set("x-ms-blob-type", "BlockBlob")
 	req.Header.Set("Content-Type", "application/octet-stream")
 
-	httpClient := &http.Client{}
+	httpClient := blobHTTPClient()
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return messages.UploadingBlobFailed(err)
@@ -411,7 +420,7 @@ func (c *DatasetClient) DownloadDataset(ctx context.Context, downloadURL string)
 	// Use a plain HTTP client for blob downloads — the SAS token in the URL provides
 	// authentication, and Azure SDK pipeline policies (bearer token, correlation ID)
 	// should not be sent to Azure Blob Storage endpoints.
-	httpClient := &http.Client{}
+	httpClient := blobHTTPClient()
 	resp, err := httpClient.Do(req.Raw())
 	if err != nil {
 		return nil, messages.DownloadingDatasetBlob(err)
@@ -453,7 +462,7 @@ func (c *DatasetClient) ListContainerBlobs(ctx context.Context, containerSASUri 
 		return nil, messages.CreatingListRequest(err)
 	}
 
-	httpClient := &http.Client{}
+	httpClient := blobHTTPClient()
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, messages.ListingContainerBlobs(err)
@@ -491,7 +500,7 @@ func (c *DatasetClient) DownloadBlob(ctx context.Context, containerSASUri, blobN
 		return nil, messages.CreatingBlobDownloadRequest(err)
 	}
 
-	httpClient := &http.Client{}
+	httpClient := blobHTTPClient()
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, messages.DownloadingBlob(err)

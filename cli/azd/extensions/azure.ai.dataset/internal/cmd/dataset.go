@@ -200,6 +200,10 @@ func newDatasetVersionsListCommand() *cobra.Command {
 }
 
 func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList) error {
+	if list == nil {
+		fmt.Fprint(cmd.OutOrStdout(), messages.NoDatasets())
+		return nil
+	}
 	if isJSON(cmd) {
 		return emitJSONList(cmd.OutOrStdout(), list.Value)
 	}

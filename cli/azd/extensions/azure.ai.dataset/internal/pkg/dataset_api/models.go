@@ -204,6 +204,11 @@ func ReadFirstJSONLFile(dir string) (string, error) {
 			if err != nil {
 				return "", messages.ReadingPath(e.Name(), err)
 			}
+			// Refused here rather than uploaded: registering an empty dataset
+			// succeeds, and the failure surfaces at the run that scores it.
+			if strings.TrimSpace(string(data)) == "" {
+				return "", messages.DatasetFileHasNoRows(e.Name())
+			}
 			return string(data), nil
 		}
 	}

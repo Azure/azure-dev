@@ -226,6 +226,16 @@ func (ec *evalContext) runGenerations(
 	outcomes := make([]generationOutcome, len(plans))
 	var wg sync.WaitGroup
 
+	// The announcements go out before the goroutines start, so a long
+	// generation is not silent while it runs. Only the per-job progress is
+	// buffered, which is what would interleave.
+	out := cmd.OutOrStdout()
+	if !isJSON(cmd) {
+		for i := range plans {
+			fmt.Fprint(out, messages.GenerationStarting(string(plans[i].Kind), plans[i].Name))
+		}
+	}
+
 	for i := range plans {
 		outcomes[i].plan = plans[i]
 		wg.Add(1)
@@ -243,10 +253,11 @@ func (ec *evalContext) runGenerations(
 	}
 	wg.Wait()
 
-	out := cmd.OutOrStdout()
-	for i := range outcomes {
-		if _, err := out.Write(outcomes[i].output.Bytes()); err != nil {
-			return err
+	if !isJSON(cmd) {
+		for i := range outcomes {
+			if _, err := out.Write(outcomes[i].output.Bytes()); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -275,10 +286,14 @@ func (ec *evalContext) runGenerations(
 		return messages.SomeGenerationsFailed(failures)
 	}
 
-	for i := range outcomes {
-		if err := reportGenerated(cmd, outcomes[i].ref, flags.noWait); err != nil {
-			return err
+	// One document, keyed by artifact: two bare objects on stdout is not
+	// something a caller can parse.
+	if isJSON(cmd) {
+		produced := map[string]*project.ArtifactRef{}
+		for i := range outcomes {
+			produced[string(outcomes[i].plan.Kind)] = outcomes[i].ref
 		}
+		return emitJSON(out, produced)
 	}
 	return nil
 }

@@ -387,11 +387,16 @@ func (s scaffold) evaluatorNames() []string {
 // for an artifact they already have.
 func (s scaffold) nextSteps() []string {
 	var steps []string
-	if s.generateDataset {
-		steps = append(steps, "azd ai eval dataset generate "+s.datasetName)
-	}
-	if s.generateRubric {
-		steps = append(steps, "azd ai eval evaluator generate "+s.rubricName)
+	switch {
+	case s.generateDataset && s.generateRubric:
+		// One command produces both, which is the whole point of the composite.
+		steps = append(steps, "azd ai eval generate")
+	case s.generateDataset:
+		steps = append(steps,
+			"azd ai eval generate --dataset --dataset-name "+s.datasetName)
+	case s.generateRubric:
+		steps = append(steps,
+			"azd ai eval generate --evaluator --evaluator-name "+s.rubricName)
 	}
 	if len(steps) == 0 {
 		steps = append(steps, "azd up", "azd ai eval run start")

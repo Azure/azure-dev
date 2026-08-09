@@ -216,7 +216,7 @@ func (ec *evalContext) generateRubric(
 		return nil, messages.SubmittingRubricJob(err)
 	}
 	if noWait {
-		reportSubmitted(out, "azd ai eval evaluator", job.ID)
+		reportSubmitted(out, "evaluator", job.ID)
 		return nil, nil
 	}
 
@@ -298,7 +298,7 @@ func (ec *evalContext) generateDataset(
 		return nil, messages.SubmittingDataJob(err)
 	}
 	if noWait {
-		reportSubmitted(out, "azd ai eval dataset", job.ID)
+		reportSubmitted(out, "dataset", job.ID)
 		return nil, nil
 	}
 

@@ -90,11 +90,18 @@ func (s *jobSelector) bind(cmd *cobra.Command) {
 	cmd.MarkFlagsOneRequired("dataset", "evaluator")
 }
 
-func (s *jobSelector) kind() jobKind {
-	if s.evaluator {
-		return evaluatorJobs
+// kind resolves the selector. Total rather than defaulting: cobra enforces
+// that one flag is set, and if that enforcement is ever dropped a silent
+// default would query the wrong collection and report "not found".
+func (s *jobSelector) kind() (jobKind, error) {
+	switch {
+	case s.dataset && !s.evaluator:
+		return datasetJobs, nil
+	case s.evaluator && !s.dataset:
+		return evaluatorJobs, nil
+	default:
+		return jobKind{}, messages.JobKindRequired()
 	}
-	return datasetJobs
 }
 
 func newJobCommand() *cobra.Command {
@@ -126,7 +133,10 @@ func newJobListCommand() *cobra.Command {
 		Short: "List the project's generation jobs.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			kind := sel.kind()
+			kind, err := sel.kind()
+			if err != nil {
+				return err
+			}
 			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
 			if err != nil {
@@ -169,7 +179,10 @@ func newJobShowCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			jobID := args[0]
-			kind := sel.kind()
+			kind, err := sel.kind()
+			if err != nil {
+				return err
+			}
 
 			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
@@ -209,7 +222,10 @@ func newJobCancelCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			jobID := args[0]
-			kind := sel.kind()
+			kind, err := sel.kind()
+			if err != nil {
+				return err
+			}
 
 			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)
@@ -250,7 +266,10 @@ func newJobDeleteCommand() *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			jobID := args[0]
-			kind := sel.kind()
+			kind, err := sel.kind()
+			if err != nil {
+				return err
+			}
 
 			ctx := cmd.Context()
 			ec, err := newEvalContext(ctx, endpointFlg)

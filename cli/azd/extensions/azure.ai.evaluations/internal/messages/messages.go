@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"azureaieval/internal/exterrors"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 // ---------------------------------------------------------------------------
@@ -400,28 +402,64 @@ func GateBreached(reason string) string {
 // GeneratedNameNeedsATarget reports a generation that can name neither the
 // artifact nor the agent to derive its name from.
 func GeneratedNameNeedsATarget(kind string) error {
-return fmt.Errorf(
-"no name for the generated %s and no target to derive one from: "+
-"pass --%s-name, or --target", kind, kind)
+	return fmt.Errorf(
+		"no name for the generated %s and no target to derive one from: "+
+			"pass --%s-name, or --target", kind, kind)
 }
 
 // GenerationFailed labels one half of a composite generate that did not finish.
+//
+// The label goes inside a structured error rather than around it: azd
+// serializes a LocalError's own message and drops any wrapper, so wrapping
+// would throw away the one word saying which job failed.
 func GenerationFailed(kind string, err error) error {
-return fmt.Errorf("generating the %s: %w", kind, err)
+	var local *azdext.LocalError
+	if errors.As(err, &local) {
+		labelled := *local
+		labelled.Message = "generating the " + kind + ": " + local.Message
+		return &labelled
+	}
+	return fmt.Errorf("generating the %s: %w", kind, err)
 }
 
 // SomeGenerationsFailed reports a composite generate where at least one job
 // did not finish. The others may well have.
+//
+// Two structured failures of the same category stay structured, so an expired
+// login still arrives as an auth error carrying its suggestion rather than as
+// a flat string.
 func SomeGenerationsFailed(failures []error) error {
-if len(failures) == 1 {
-return failures[0]
+	if len(failures) == 1 {
+		return failures[0]
+	}
+
+	parts := make([]string, 0, len(failures))
+	for _, f := range failures {
+		parts = append(parts, f.Error())
+	}
+	joined := strings.Join(parts, "; ")
+
+	var first *azdext.LocalError
+	if !errors.As(failures[0], &first) {
+		return errors.New(joined)
+	}
+	for _, f := range failures[1:] {
+		var other *azdext.LocalError
+		if !errors.As(f, &other) || other.Category != first.Category {
+			return errors.New(joined)
+		}
+	}
+	merged := *first
+	merged.Message = joined
+	return &merged
 }
-parts := make([]string, 0, len(failures))
-for _, f := range failures {
-parts = append(parts, f.Error())
+
+// GenerationStarting announces a job before it is submitted, so a long
+// generation is not silent while it runs.
+func GenerationStarting(kind, name string) string {
+	return fmt.Sprintf("  Starting %s generation for %q...\n", kind, name)
 }
-return errors.New(strings.Join(parts, "; "))
-}
+
 // GenerationModelRequired reports a generation with no deployment to run on.
 //
 // Reached only when the target agent could not supply one either, so the flag
@@ -563,8 +601,12 @@ func JobSubmitted(jobID string) string {
 }
 
 // ReattachToJob says how to come back to a job started with --no-wait.
-func ReattachToJob(group, jobID string) string {
-	return fmt.Sprintf("\nReattach with: %s job show %s\n", group, jobID)
+// ReattachToJob says how to come back to a job started with --no-wait.
+//
+// The selector is part of the line because `job` requires it: the two
+// collections share an id shape, so an id alone does not say which to call.
+func ReattachToJob(selector, jobID string) string {
+	return fmt.Sprintf("\nReattach with: azd ai eval job show %s --%s\n", jobID, selector)
 }
 
 // WroteArtifact reports where a generated artifact landed.
@@ -582,6 +624,11 @@ func ArtifactExists(path string) error {
 // NothingGenerated reports a generation that produced no artifact.
 func NothingGenerated() string {
 	return "Nothing was generated.\n"
+}
+
+// JobKindRequired reports a job command that does not say which collection.
+func JobKindRequired() error {
+	return errors.New("pass --dataset or --evaluator to say which generation jobs to act on")
 }
 
 // ListingJobs reports a failure to list one kind of generation job.
@@ -810,9 +857,10 @@ func ReadingDatasetDirectory(err error) error {
 
 // DatasetFileHasNoRows reports an empty dataset file, refused before upload.
 func DatasetFileHasNoRows(name string) error {
-return fmt.Errorf(
-"dataset file %q has no rows, so there would be nothing to evaluate", name)
+	return fmt.Errorf(
+		"dataset file %q has no rows, so there would be nothing to evaluate", name)
 }
+
 // NoJSONLInDirectory reports an upload directory holding no dataset.
 func NoJSONLInDirectory(dir string) error {
 	return fmt.Errorf("no .jsonl file found in %s", dir)

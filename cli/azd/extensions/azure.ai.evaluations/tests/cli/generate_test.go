@@ -34,29 +34,33 @@ func TestCLIGenerateRefusesBadFlagCombinations(t *testing.T) {
 		want string
 	}{{
 		name: "the two instruction sources are mutually exclusive",
-		args: []string{"dataset", "generate", "d", "--target", "a",
+		args: []string{"generate", "--dataset", "--dataset-name", "d", "--target", "a",
 			"--agent-instruction", "inline", "--agent-instruction-file", instruction},
 		want: "agent-instruction-file",
 	}, {
 		name: "below the minimum sample size",
-		args: []string{"dataset", "generate", "d", "--target", "a", "--max-samples", "14"},
+		args: []string{"generate", "--dataset", "--dataset-name", "d", "--target", "a",
+			"--max-samples", "14"},
 		want: "between 15 and 1000",
 	}, {
 		name: "above the maximum sample size",
-		args: []string{"dataset", "generate", "d", "--target", "a", "--max-samples", "1001"},
+		args: []string{"generate", "--dataset", "--dataset-name", "d", "--target", "a",
+			"--max-samples", "1001"},
 		want: "between 15 and 1000",
 	}, {
 		name: "a missing instruction file names the flag",
-		args: []string{"dataset", "generate", "d", "--target", "a",
+		args: []string{"generate", "--dataset", "--dataset-name", "d", "--target", "a",
 			"--agent-instruction-file", filepath.Join(dir, "absent.md")},
 		want: "--agent-instruction-file",
 	}, {
 		name: "generating a dataset needs a model deployment",
-		args: []string{"dataset", "generate", "d", "--target", "a", "--agent-instruction", "inline"},
+		args: []string{"generate", "--dataset", "--dataset-name", "d",
+			"--agent-instruction", "inline"},
 		want: "--generation-model",
 	}, {
 		name: "generating an evaluator needs a model deployment",
-		args: []string{"evaluator", "generate", "e", "--target", "a", "--agent-instruction", "inline"},
+		args: []string{"generate", "--evaluator", "--evaluator-name", "e",
+			"--agent-instruction", "inline"},
 		want: "--generation-model",
 	}}
 	for _, tc := range cases {
@@ -67,16 +71,14 @@ func TestCLIGenerateRefusesBadFlagCombinations(t *testing.T) {
 	}
 }
 
-// TestCLIGenerateNamesTheArtifact pins the positional argument. Without it the
-// name would come from the spec, and two runs would quietly overwrite the same
-// artifact.
+// TestCLIGenerateNamesTheArtifact pins where the name comes from. The composite
+// takes no positional, so with neither a name nor a target there is nothing to
+// call the artifact, and the refusal has to name both ways out.
 func TestCLIGenerateNamesTheArtifact(t *testing.T) {
-	for _, group := range []string{"dataset", "evaluator"} {
-		t.Run(group, func(t *testing.T) {
-			r := requireFailure(t, runIn(t, t.TempDir(), group, "generate"))
-			require.Contains(t, r.Combined(), "accepts 1 arg")
-		})
-	}
+	r := requireFailure(t, runIn(t, t.TempDir(), "generate", "--dataset"))
+
+	require.Contains(t, r.Combined(), "--dataset-name")
+	require.Contains(t, r.Combined(), "--target")
 }
 
 // TestCLIGenerateNoPromptNamesWhatIsMissing is the CI case: with nothing to
@@ -86,24 +88,25 @@ func TestCLIGenerateNamesTheArtifact(t *testing.T) {
 // but the generation model has no other source, so it is the one input a bare
 // directory cannot supply.
 func TestCLIGenerateNoPromptNamesWhatIsMissing(t *testing.T) {
-	r := requireFailure(t, runIn(t, t.TempDir(), "dataset", "generate", "d", "--no-prompt"))
+	r := requireFailure(t, runIn(t, t.TempDir(),
+		"generate", "--dataset", "--dataset-name", "d", "--target", "a", "--no-prompt"))
 	require.Contains(t, r.Combined(), "--generation-model")
 }
 
-// TestCLIGenerateFlagsAreScopedToTheirArtifact asserts the two commands do not
-// share settings that only one of them can honour. A sample count means nothing
-// to a rubric, and a trace window means nothing to a synthetic dataset; either
-// would be accepted and dropped.
-func TestCLIGenerateFlagsAreScopedToTheirArtifact(t *testing.T) {
-	dir := t.TempDir()
+// TestCLIGenerateDatasetFlagsDoNotApplyToTheEvaluator asserts the scoping the
+// help promises is real.
+//
+// One command now carries both artifacts' settings, so cobra can no longer
+// refuse --max-samples on a rubric. What must still hold is that it is not
+// *validated* against a generation that does not use it: narrowing to the
+// evaluator has to get past the sample-size check, and fail on the model it
+// genuinely lacks instead.
+func TestCLIGenerateDatasetFlagsDoNotApplyToTheEvaluator(t *testing.T) {
+	r := requireFailure(t, runIn(t, t.TempDir(), "generate", "--evaluator",
+		"--evaluator-name", "e", "--target", "a", "--max-samples", "20"))
 
-	r := requireFailure(t, runIn(t, dir, "evaluator", "generate", "e",
-		"--target", "a", "--max-samples", "20"))
-	require.Contains(t, r.Combined(), "max-samples",
-		"--max-samples belongs to dataset generate")
-
-	r = requireFailure(t, runIn(t, dir, "dataset", "generate", "d",
-		"--target", "a", "--trace-days", "7"))
-	require.Contains(t, r.Combined(), "trace-days",
-		"--trace-days belongs to evaluator generate")
+	require.NotContains(t, r.Combined(), "between 15 and 1000",
+		"--max-samples shapes the dataset, so it must not be validated for a rubric")
+	require.Contains(t, r.Combined(), "--generation-model",
+		"it should get as far as the input it actually lacks")
 }

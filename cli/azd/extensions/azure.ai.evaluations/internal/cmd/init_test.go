@@ -6,6 +6,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaieval/internal/project"
@@ -143,10 +144,8 @@ func TestScaffold_NextStepsOfferOnlyWhatIsScheduled(t *testing.T) {
 		plan, _ := scaffoldFor(t, scaffoldInput{
 			evalName: "support-agent-smoke", target: "support-agent", judgeModel: "m",
 		})
-		require.Equal(t, []string{
-			"azd ai eval dataset generate support-agent-smoke",
-			"azd ai eval evaluator generate support-agent-quality",
-		}, plan.nextSteps())
+		// One command produces both, so there is one step, not two.
+		require.Equal(t, []string{"azd ai eval generate"}, plan.nextSteps())
 	})
 
 	t.Run("dataset supplied", func(t *testing.T) {
@@ -154,7 +153,7 @@ func TestScaffold_NextStepsOfferOnlyWhatIsScheduled(t *testing.T) {
 			evalName: "smoke", target: "support-agent", dataset: "prod-golden", judgeModel: "m",
 		})
 		require.Equal(t,
-			[]string{"azd ai eval evaluator generate support-agent-quality"},
+			[]string{"azd ai eval generate --evaluator --evaluator-name support-agent-quality"},
 			plan.nextSteps())
 	})
 
@@ -169,6 +168,41 @@ func TestScaffold_NextStepsOfferOnlyWhatIsScheduled(t *testing.T) {
 		require.Equal(t, []string{"azd up", "azd ai eval run start"}, plan.nextSteps(),
 			"with every artifact in place the next step is to deploy")
 	})
+}
+
+// The literals above are only as good as the surface they name. This resolves
+// every step against the real command tree, so a step naming a command that has
+// been renamed or removed fails here rather than in a user's terminal — which
+// is how `azd ai eval dataset generate` survived being deleted.
+func TestScaffold_NextStepsNameCommandsThatExist(t *testing.T) {
+	inputs := []scaffoldInput{
+		{evalName: "smoke", target: "support-agent", judgeModel: "m"},
+		{evalName: "smoke", target: "support-agent", dataset: "prod-golden", judgeModel: "m"},
+	}
+
+	for _, in := range inputs {
+		plan, _ := scaffoldFor(t, in)
+		for _, step := range plan.nextSteps() {
+			words := strings.Fields(strings.TrimPrefix(step, "azd ai eval "))
+			if len(words) == 0 || strings.HasPrefix(step, "azd up") {
+				continue
+			}
+			// Stop at the first flag: what follows is arguments, not commands.
+			var path []string
+			for _, w := range words {
+				if strings.HasPrefix(w, "-") {
+					break
+				}
+				path = append(path, w)
+			}
+
+			cmd, rest, err := NewRootCommand().Find(path)
+			require.NoErrorf(t, err, "%q names no command", step)
+			require.Emptyf(t, rest, "%q left %v unresolved, so it is not a command", step, rest)
+			require.Equalf(t, path[len(path)-1], strings.Fields(cmd.Use)[0],
+				"%q resolved to %q, not the command it names", step, cmd.Use)
+		}
+	}
 }
 
 // Built-ins are referenced but never declared, so the scaffold must not give

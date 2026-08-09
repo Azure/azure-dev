@@ -161,6 +161,15 @@ func buildRunCommand(use, short string) *cobra.Command {
 			if lvl := resolveLevel(group); lvl != "" {
 				metadata["evaluation_level"] = lvl
 			}
+			// Recorded per run, not read from the configuration at list time:
+			// comparing two runs is the point of that listing, and the dataset
+			// under an eval can change between them.
+			if group != nil && group.Dataset != "" {
+				metadata[metaDataset] = group.Dataset
+				if v := ec.getEnvValue(ctx, versionKey("dataset", group.Dataset)); v != "" {
+					metadata[metaDatasetVersion] = v
+				}
+			}
 
 			run, err := ec.evalClient.CreateOpenAIEvalRun(ctx, evalID, &eval_api.CreateOpenAIEvalRunRequest{
 				Name:       runName,

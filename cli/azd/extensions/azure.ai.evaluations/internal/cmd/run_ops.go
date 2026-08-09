@@ -76,6 +76,7 @@ func newRunListCommand() *cobra.Command {
 			for _, run := range list.Data {
 				rows = append(rows, []string{
 					run.ID,
+					runDataset(run.Metadata),
 					timestampString(run.CreatedAt),
 					run.Status,
 					sampleCount(run.ResultCounts),
@@ -83,7 +84,7 @@ func newRunListCommand() *cobra.Command {
 				})
 			}
 			return emitTable(cmd.OutOrStdout(),
-				[]string{"RUN", "STARTED", "STATUS", "SAMPLES", "PASS RATE"}, rows)
+				[]string{"RUN", "DATASET", "STARTED", "STATUS", "SAMPLES", "PASS RATE"}, rows)
 		},
 	}
 	addEvalFlag(cmd, &groupName)
@@ -307,6 +308,31 @@ func summarizeCounts(counts *eval_api.EvalRunResultCounts) string {
 	}
 	return fmt.Sprintf("%d passed, %d failed, %d errored",
 		counts.Passed, counts.Failed, counts.Errored)
+}
+
+// metaDataset and metaDatasetVersion record which rows a run scored. The run's
+// own data source cannot answer it: the rows travel inline, so the name that
+// selected them is not in the request the service keeps.
+const (
+	metaDataset        = "azd_dataset"
+	metaDatasetVersion = "azd_dataset_version"
+)
+
+// runDataset renders the dataset a run scored, versioned when a version was
+// recorded with it.
+//
+// A run started before this was recorded shows nothing rather than the name in
+// the configuration today, which is the one thing the column exists to detect
+// having changed.
+func runDataset(metadata map[string]string) string {
+	name := metadata[metaDataset]
+	if name == "" {
+		return ""
+	}
+	if version := metadata[metaDatasetVersion]; version != "" {
+		return fmt.Sprintf("%s (v%s)", name, version)
+	}
+	return name
 }
 
 // sampleCount is how many rows the run scored, which is what makes two rows of

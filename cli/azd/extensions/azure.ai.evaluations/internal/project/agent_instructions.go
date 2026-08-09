@@ -4,12 +4,12 @@
 package project
 
 import (
-	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"azureaieval/internal/messages"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"go.yaml.in/yaml/v3"
@@ -41,7 +41,7 @@ type agentConfigMetadata struct {
 
 // ErrAmbiguousAgentService reports that a target name matched more than one
 // service, so there is no single set of instructions to read.
-var ErrAmbiguousAgentService = errors.New("more than one agent service matches")
+var ErrAmbiguousAgentService = messages.ErrAmbiguousAgentService
 
 // AgentInstructionsFromProject reads the target agent's instructions out of the
 // project, returning empty when the project does not hold them.
@@ -75,8 +75,7 @@ func AgentInstructionsFromProject(
 
 	var meta agentConfigMetadata
 	if err := yaml.Unmarshal(data, &meta); err != nil {
-		return "", "", fmt.Errorf(
-			"reading %s: %w", filepath.Join(configDir, agentMetadataFile), err)
+		return "", "", messages.ReadingPath(filepath.Join(configDir, agentMetadataFile), err)
 	}
 	if meta.InstructionFile == "" {
 		return "", "", nil
@@ -90,8 +89,7 @@ func AgentInstructionsFromProject(
 	if err != nil {
 		// The metadata named a file that is not there. That is worth saying:
 		// something wrote the pointer and not the target.
-		return "", "", fmt.Errorf(
-			"%s names instruction_file %q, which could not be read: %w",
+		return "", "", messages.InstructionFileUnreadable(
 			filepath.Join(configDir, agentMetadataFile), meta.InstructionFile, err)
 	}
 
@@ -131,10 +129,7 @@ func findAgentService(
 		return services[matched[0]], nil
 	default:
 		sort.Strings(matched)
-		return nil, fmt.Errorf(
-			"%w %q: %s. Name one of them with --target, or pass the text with "+
-				"--agent-instruction",
-			ErrAmbiguousAgentService, agentName, strings.Join(matched, ", "))
+		return nil, messages.AmbiguousAgentService(agentName, matched)
 	}
 }
 

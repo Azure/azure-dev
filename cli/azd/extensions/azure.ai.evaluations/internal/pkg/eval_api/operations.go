@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"time"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/version"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -322,12 +323,8 @@ func (c *EvalClient) publishEvaluatorVersion(
 			return created, nil
 		}
 		if time.Now().After(deadline) {
-			return nil, fmt.Errorf(
-				"publishing evaluator %q kept returning version %s, which already "+
-					"existed. The service was still assigning that version after %s, so "+
-					"version %s now holds what was just published and any eval bound to "+
-					"it is scoring against it",
-				name, created.Version, versionSettleTimeout, created.Version)
+			return nil, messages.EvaluatorVersionNotAdvancing(
+				name, created.Version, versionSettleTimeout)
 		}
 		select {
 		case <-ctx.Done():
@@ -372,11 +369,11 @@ func (c *EvalClient) LatestEvaluatorVersion(
 		return "", err
 	}
 	if list == nil || len(list.Value) == 0 {
-		return "", fmt.Errorf("evaluator %q has no versions", name)
+		return "", messages.EvaluatorHasNoVersions(name)
 	}
 	latest := pickLatestVersion(list.Value)
 	if latest == "" {
-		return "", fmt.Errorf("evaluator %q has no usable version", name)
+		return "", messages.EvaluatorHasNoUsableVersion(name)
 	}
 	return latest, nil
 }
@@ -514,7 +511,7 @@ func (c *EvalClient) doRequestWithHeaders(
 ) ([]byte, error) {
 	u, err := url.Parse(c.endpoint)
 	if err != nil {
-		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
+		return nil, messages.InvalidEndpointURL(err)
 	}
 
 	// Callers escape the ids they interpolate, so the path is set as the raw
@@ -523,7 +520,7 @@ func (c *EvalClient) doRequestWithHeaders(
 	escapedPath := u.EscapedPath() + path
 	decodedPath, err := url.PathUnescape(escapedPath)
 	if err != nil {
-		return nil, fmt.Errorf("invalid request path %q: %w", escapedPath, err)
+		return nil, messages.InvalidRequestPath(escapedPath, err)
 	}
 	u.Path, u.RawPath = decodedPath, escapedPath
 
@@ -538,7 +535,7 @@ func (c *EvalClient) doRequestWithHeaders(
 
 	req, err := runtime.NewRequest(ctx, method, u.String())
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, messages.CreatingRequest(err)
 	}
 	for k, v := range headers {
 		req.Raw().Header.Set(k, v)
@@ -549,22 +546,22 @@ func (c *EvalClient) doRequestWithHeaders(
 	if body != nil {
 		payload, err := json.Marshal(body)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request: %w", err)
+			return nil, messages.MarshalingRequest(err)
 		}
 		if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
-			return nil, fmt.Errorf("failed to set request body: %w", err)
+			return nil, messages.SettingRequestBody(err)
 		}
 	}
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, messages.RequestFailed(err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, messages.ReadingResponseBody(err)
 	}
 
 	log.Printf("[eval_api] response status: %d", resp.StatusCode)
@@ -603,7 +600,7 @@ func doRequestTyped[T any](
 
 	var result T
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, messages.ParsingResponse(err)
 	}
 
 	return &result, nil

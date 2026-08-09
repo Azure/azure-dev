@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"azureaieval/internal/messages"
 )
 
 // InsightTypeEvaluationComparison compares evaluation runs. The service also
@@ -65,7 +67,7 @@ func (f *LenientFloat) UnmarshalJSON(data []byte) error {
 	}
 	v, err := strconv.ParseFloat(s, 64)
 	if err != nil {
-		return fmt.Errorf("parsing number %s: %w", data, err)
+		return messages.ParsingNumber(string(data), err)
 	}
 	*f = LenientFloat(v)
 	return nil

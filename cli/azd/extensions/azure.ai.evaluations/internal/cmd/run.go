@@ -51,7 +51,7 @@ func runCompleted(run *eval_api.OpenAIEvalRun) error {
 	case "completed", "":
 		return nil
 	}
-	return fmt.Errorf("run %s finished with status %s", run.ID, run.Status)
+	return messages.RunFinishedWithStatus(run.ID, run.Status)
 }
 
 // newRunCommand builds the run group.
@@ -115,13 +115,10 @@ func buildRunCommand(use, short string) *cobra.Command {
 
 			if datasetName != "" {
 				if !ref.Declared() {
-					return errors.New(
-						"--dataset overrides the dataset an eval declares, so it needs a " +
-							"declared eval; pass --eval with a name from the configuration")
+					return messages.DatasetOverrideNeedsDeclaredEval()
 				}
 				if _, ok := ref.Config.DatasetDeclaration(datasetName); !ok {
-					return fmt.Errorf(
-						"dataset %q is not in the catalog in %s",
+					return messages.DatasetNotInCatalog(
 						datasetName, filepath.ToSlash(configPath))
 				}
 				// The eval keeps its own declaration; only this run reads elsewhere.
@@ -177,7 +174,7 @@ func buildRunCommand(use, short string) *cobra.Command {
 				Metadata:   metadata,
 			})
 			if err != nil {
-				return fmt.Errorf("starting the evaluation run: %w", err)
+				return messages.StartingRun(err)
 			}
 
 			// Remembered per group as well as globally: a single shared key
@@ -189,7 +186,7 @@ func buildRunCommand(use, short string) *cobra.Command {
 				// Reported on stdout because azd does not surface an
 				// extension's stderr, and skipped outside a project.
 				if !errors.Is(err, errNoAzdEnvironment) && !isJSON(cmd) {
-					fmt.Fprintf(out, "warning: %v\n", err)
+					fmt.Fprint(out, messages.Warning(err))
 				}
 			}
 
@@ -197,8 +194,8 @@ func buildRunCommand(use, short string) *cobra.Command {
 				if isJSON(cmd) {
 					return emitJSON(out, startedRun(run, evalID, group))
 				}
-				fmt.Fprintf(out, "Started run %s (status: %s)\n", run.ID, run.Status)
-				fmt.Fprintf(out, "Reattach with: azd ai eval run show %s --eval %s\n", run.ID, evalID)
+				fmt.Fprint(out, messages.RunStarted(run.ID, run.Status))
+				fmt.Fprint(out, messages.ReattachToRun(run.ID, evalID))
 				return nil
 			}
 
@@ -279,7 +276,7 @@ func (ec *evalContext) resolveEvalIDFromConfig(
 	}
 
 	if !jsonMode {
-		fmt.Fprintf(out, "Creating eval %q...\n", group.Name)
+		fmt.Fprint(out, messages.CreatingEval(group.Name))
 	}
 
 	// The level from the flag wins over the eval's own declaration, so it has
@@ -299,10 +296,10 @@ func (ec *evalContext) resolveEvalIDFromConfig(
 	}
 	created, err := ec.evalClient.CreateOpenAIEval(ctx, req)
 	if err != nil {
-		return "", fmt.Errorf("creating eval %q: %w", group.Name, err)
+		return "", messages.CreatingEvalFailed(group.Name, err)
 	}
 	if err := ec.setEnvValue(ctx, idKey("eval", group.Name), created.ID); err != nil {
-		fmt.Fprintf(out, "warning: %v\n", err)
+		fmt.Fprint(out, messages.Warning(err))
 	}
 	_ = ec.setEnvValue(ctx, envKeyEvalID, created.ID)
 	return created.ID, nil
@@ -367,11 +364,7 @@ func (ec *evalContext) checkDatasetRegistered(
 		return nil
 	}
 
-	return fmt.Errorf(
-		"dataset %q has local edits that are not registered.\n"+
-			"  Run `azd up` to register them, or `--eval-id <id>` to run against "+
-			"an existing eval",
-		decl.Name)
+	return messages.DatasetHasUnregisteredEdits(decl.Name)
 }
 
 // reuseDataSourceFromLastRun rebuilds a run's data source from the group's most
@@ -388,15 +381,10 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 ) (*eval_api.EvalRunDataSource, error) {
 	list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 1)
 	if err != nil {
-		return nil, fmt.Errorf("reading previous runs of eval %s: %w", evalID, err)
+		return nil, messages.ReadingPreviousRuns(evalID, err)
 	}
 	if list == nil || len(list.Data) == 0 || list.Data[0].DataSource == nil {
-		return nil, fmt.Errorf(
-			"eval %s has no previous run to repeat, so there is no target or dataset "+
-				"to reuse.\n"+
-				"  Run it from the config once with `azd ai eval run start`, or name an "+
-				"eval that declares one with `--eval`",
-			evalID)
+		return nil, messages.EvalHasNoPreviousRun(evalID)
 	}
 	return list.Data[0].DataSource, nil
 }
@@ -513,28 +501,28 @@ func (ec *evalContext) readRegisteredDataset(
 	if version == "" {
 		versions, err := ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
 		if err != nil {
-			return nil, fmt.Errorf("reading dataset %q: %w", name, err)
+			return nil, messages.ReadingDataset(name, err)
 		}
 		if versions != nil {
 			version = dataset_api.LatestVersion(versions.Value)
 		}
 	}
 	if version == "" {
-		return nil, fmt.Errorf("dataset %q has no versions to read", name)
+		return nil, messages.DatasetHasNoVersionsToRead(name)
 	}
 
 	content, err := ec.datasetClient.DownloadDatasetContent(
 		ctx, name, version, ProjectEndpointAPIVersion)
 	if err != nil {
-		return nil, fmt.Errorf("reading dataset %q version %s: %w", name, version, err)
+		return nil, messages.ReadingDatasetVersion(name, version, err)
 	}
 
 	items, err := readJSONLBytes(content, maxSamples)
 	if err != nil {
-		return nil, fmt.Errorf("reading dataset %q version %s: %w", name, version, err)
+		return nil, messages.ReadingDatasetVersion(name, version, err)
 	}
 	if len(items) == 0 {
-		return nil, fmt.Errorf("dataset %q version %s has no rows", name, version)
+		return nil, messages.DatasetVersionEmpty(name, version)
 	}
 	return items, nil
 }
@@ -589,13 +577,13 @@ func localDatasetPath(configPath string, group *project.Eval) string {
 func readJSONL(path string, limit int) ([]map[string]any, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading dataset %q: %w", path, err)
+		return nil, messages.ReadingDataset(path, err)
 	}
 	defer f.Close()
 
 	items, err := scanJSONL(f, limit)
 	if err != nil {
-		return nil, fmt.Errorf("reading dataset %q: %w", path, err)
+		return nil, messages.ReadingDataset(path, err)
 	}
 	return items, nil
 }
@@ -621,7 +609,7 @@ func scanJSONL(r io.Reader, limit int) ([]map[string]any, error) {
 		}
 		var row map[string]any
 		if err := json.Unmarshal([]byte(text), &row); err != nil {
-			return nil, fmt.Errorf("line %d is not valid JSON: %w", line, err)
+			return nil, messages.JSONLLineInvalid(line, err)
 		}
 		items = append(items, row)
 		if limit > 0 && len(items) >= limit {
@@ -677,12 +665,12 @@ func (ec *evalContext) pollRun(
 	for {
 		run, err := ec.evalClient.GetOpenAIEvalRun(ctx, evalID, runID)
 		if err != nil {
-			return nil, fmt.Errorf("polling run %s: %w", runID, err)
+			return nil, messages.PollingRun(runID, err)
 		}
 		if run.Status != lastStatus {
 			lastStatus = run.Status
 			if !jsonMode {
-				fmt.Fprintf(out, "  status: %s\n", run.Status)
+				fmt.Fprint(out, messages.RunStatusLine(run.Status))
 			}
 		}
 		if terminalRunStates[strings.ToLower(run.Status)] {
@@ -817,19 +805,17 @@ func renderRun(
 	// evaluators is one sample to go and look at, and reporting it as two
 	// overstates how much is wrong.
 	if c := run.ResultCounts; c != nil && c.Total > 0 {
-		fmt.Fprintf(out, "\nOverall pass rate: %s  (%d/%d samples passed every evaluator)\n",
-			formatRate(c.Passed, c.Total), c.Passed, c.Total)
+		fmt.Fprint(out, messages.OverallPassRate(formatRate(c.Passed, c.Total), c.Passed, c.Total))
 		if c.Errored > 0 {
-			fmt.Fprintf(out, "%d sample(s) errored and were not scored.\n", c.Errored)
+			fmt.Fprint(out, messages.SamplesErrored(c.Errored))
 		}
 		if c.Failed > 0 {
-			fmt.Fprintln(out,
-				"\nView failing samples: azd ai eval run output list --failed-only")
+			fmt.Fprint(out, messages.ViewFailingSamples())
 		}
 	}
 
 	if run.ReportURL != "" {
-		fmt.Fprintf(out, "Report: %s\n", run.ReportURL)
+		fmt.Fprint(out, messages.ReportLink(run.ReportURL))
 	}
 	writePortalLink(out, run.PortalURL)
 	return nil
@@ -968,7 +954,7 @@ func criteriaMeans(items []eval_api.OutputItem) map[string]float64 {
 
 // errorNote describes rows an evaluator could not score.
 func errorNote(errored int) string {
-	return fmt.Sprintf("(%d errored, not scored)", errored)
+	return messages.ErroredNotScored(errored)
 }
 
 // formatRate renders a share as a percentage, and a rate over nothing as a

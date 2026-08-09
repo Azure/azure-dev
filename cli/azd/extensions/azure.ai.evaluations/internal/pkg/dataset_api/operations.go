@@ -17,6 +17,7 @@ import (
 	"path"
 	"strings"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/version"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -197,7 +198,7 @@ func (c *DatasetClient) UploadVersion(
 ) (*Dataset, error) {
 	content, err := ReadFirstJSONLFile(localDir)
 	if err != nil {
-		return nil, fmt.Errorf("reading dataset from %s: %w", localDir, err)
+		return nil, messages.ReadingDatasetFromDir(localDir, err)
 	}
 
 	newVersion := version
@@ -205,18 +206,18 @@ func (c *DatasetClient) UploadVersion(
 	// Step 1: Start pending upload to get a SAS URI.
 	pending, err := c.StartPendingUpload(ctx, name, newVersion, apiVersion)
 	if err != nil {
-		return nil, fmt.Errorf("starting pending upload: %w", err)
+		return nil, messages.StartingPendingUpload(err)
 	}
 
 	uploadURI := pending.ResolvedUploadURI()
 	if uploadURI == "" {
-		return nil, fmt.Errorf("no upload SAS URI returned from startPendingUpload")
+		return nil, messages.NoUploadURI()
 	}
 
 	// Step 2: Upload the JSONL file to blob storage.
 	blobName := name + ".jsonl"
 	if err := c.UploadBlob(ctx, uploadURI, blobName, []byte(content)); err != nil {
-		return nil, fmt.Errorf("uploading blob: %w", err)
+		return nil, messages.UploadingBlob(err)
 	}
 
 	// Step 3: Finalize the dataset version with the full blob URI.
@@ -243,7 +244,7 @@ func (c *DatasetClient) StartPendingUpload(
 func (c *DatasetClient) UploadBlob(ctx context.Context, containerSASUri, blobName string, data []byte) error {
 	u, err := url.Parse(containerSASUri)
 	if err != nil {
-		return fmt.Errorf("invalid container SAS URI: %w", err)
+		return messages.InvalidContainerURI(err)
 	}
 
 	// Append blob name to the container path.
@@ -251,7 +252,7 @@ func (c *DatasetClient) UploadBlob(ctx context.Context, containerSASUri, blobNam
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, u.String(), bytes.NewReader(data))
 	if err != nil {
-		return fmt.Errorf("failed to create upload request: %w", err)
+		return messages.CreatingUploadRequest(err)
 	}
 	req.Header.Set("x-ms-blob-type", "BlockBlob")
 	req.Header.Set("Content-Type", "application/octet-stream")
@@ -259,13 +260,13 @@ func (c *DatasetClient) UploadBlob(ctx context.Context, containerSASUri, blobNam
 	httpClient := &http.Client{}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to upload blob: %w", err)
+		return messages.UploadingBlobFailed(err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("blob upload failed with status %d: %s", resp.StatusCode, string(body))
+		return messages.BlobUploadStatus(resp.StatusCode, string(body))
 	}
 
 	return nil
@@ -334,12 +335,12 @@ func (c *DatasetClient) DownloadDatasetContent(
 ) ([]byte, error) {
 	cred, err := c.GetDatasetCredential(ctx, name, version, apiVersion)
 	if err != nil {
-		return nil, fmt.Errorf("reading download credentials for %q: %w", name, err)
+		return nil, messages.ReadingDownloadCredentials(name, err)
 	}
 
 	sasURI := cred.ResolvedDownloadURI()
 	if sasURI == "" {
-		return nil, fmt.Errorf("no download URI returned for dataset %q", name)
+		return nil, messages.NoDownloadURI(name)
 	}
 
 	// A URI whose last path segment carries a file extension is the blob
@@ -354,11 +355,11 @@ func (c *DatasetClient) DownloadDatasetContent(
 
 	names, err := c.ListContainerBlobs(ctx, sasURI)
 	if err != nil {
-		return nil, fmt.Errorf("listing the content of dataset %q: %w", name, err)
+		return nil, messages.ListingDatasetContent(name, err)
 	}
 	blobName := pickDatasetBlob(names)
 	if blobName == "" {
-		return nil, fmt.Errorf("dataset %q holds no downloadable file", name)
+		return nil, messages.DatasetHasNoFile(name)
 	}
 	return c.DownloadBlob(ctx, sasURI, blobName)
 }
@@ -395,7 +396,7 @@ func pickDatasetBlob(names []string) string {
 func (c *DatasetClient) DownloadDataset(ctx context.Context, downloadURL string) ([]byte, error) {
 	req, err := runtime.NewRequest(ctx, http.MethodGet, downloadURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create download request: %w", err)
+		return nil, messages.CreatingDownloadRequest(err)
 	}
 
 	// Use a plain HTTP client for blob downloads — the SAS token in the URL provides
@@ -404,17 +405,17 @@ func (c *DatasetClient) DownloadDataset(ctx context.Context, downloadURL string)
 	httpClient := &http.Client{}
 	resp, err := httpClient.Do(req.Raw())
 	if err != nil {
-		return nil, fmt.Errorf("failed to download dataset from blob: %w", err)
+		return nil, messages.DownloadingDatasetBlob(err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("blob download failed with status %d", resp.StatusCode)
+		return nil, messages.BlobDownloadStatus(resp.StatusCode)
 	}
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read dataset content: %w", err)
+		return nil, messages.ReadingDatasetContent(err)
 	}
 
 	log.Printf("[dataset_api] downloaded %d bytes", len(data))
@@ -428,7 +429,7 @@ func (c *DatasetClient) ListContainerBlobs(ctx context.Context, containerSASUri 
 	// Parse the container URI and append list query parameters.
 	u, err := url.Parse(containerSASUri)
 	if err != nil {
-		return nil, fmt.Errorf("invalid container SAS URI: %w", err)
+		return nil, messages.InvalidContainerURI(err)
 	}
 
 	q := u.Query()
@@ -440,23 +441,23 @@ func (c *DatasetClient) ListContainerBlobs(ctx context.Context, containerSASUri 
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create list request: %w", err)
+		return nil, messages.CreatingListRequest(err)
 	}
 
 	httpClient := &http.Client{}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list container blobs: %w", err)
+		return nil, messages.ListingContainerBlobs(err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("container list failed with status %d", resp.StatusCode)
+		return nil, messages.ContainerListStatus(resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read list response: %w", err)
+		return nil, messages.ReadingListResponse(err)
 	}
 
 	// Parse XML blob listing to extract blob names.
@@ -470,7 +471,7 @@ func (c *DatasetClient) ListContainerBlobs(ctx context.Context, containerSASUri 
 func (c *DatasetClient) DownloadBlob(ctx context.Context, containerSASUri, blobName string) ([]byte, error) {
 	u, err := url.Parse(containerSASUri)
 	if err != nil {
-		return nil, fmt.Errorf("invalid container SAS URI: %w", err)
+		return nil, messages.InvalidContainerURI(err)
 	}
 
 	// Append blob name to the container path.
@@ -478,23 +479,23 @@ func (c *DatasetClient) DownloadBlob(ctx context.Context, containerSASUri, blobN
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create blob download request: %w", err)
+		return nil, messages.CreatingBlobDownloadRequest(err)
 	}
 
 	httpClient := &http.Client{}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to download blob: %w", err)
+		return nil, messages.DownloadingBlob(err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("blob download failed with status %d for %s", resp.StatusCode, blobName)
+		return nil, messages.BlobDownloadStatusFor(resp.StatusCode, blobName)
 	}
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read blob content: %w", err)
+		return nil, messages.ReadingBlobContent(err)
 	}
 
 	log.Printf("[dataset_api] downloaded blob %s (%d bytes)", blobName, len(data))
@@ -539,7 +540,7 @@ func (c *DatasetClient) doRequest(
 ) ([]byte, error) {
 	u, err := url.Parse(c.endpoint)
 	if err != nil {
-		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
+		return nil, messages.InvalidEndpointURL(err)
 	}
 
 	// Callers escape the name and version they interpolate, so the path is set
@@ -548,7 +549,7 @@ func (c *DatasetClient) doRequest(
 	escapedPath := u.EscapedPath() + path
 	decodedPath, err := url.PathUnescape(escapedPath)
 	if err != nil {
-		return nil, fmt.Errorf("invalid request path %q: %w", escapedPath, err)
+		return nil, messages.InvalidRequestPath(escapedPath, err)
 	}
 	u.Path, u.RawPath = decodedPath, escapedPath
 
@@ -563,7 +564,7 @@ func (c *DatasetClient) doRequest(
 
 	req, err := runtime.NewRequest(ctx, method, u.String())
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, messages.CreatingRequest(err)
 	}
 
 	log.Printf("[dataset_api] %s %s", method, u.Redacted())
@@ -571,22 +572,22 @@ func (c *DatasetClient) doRequest(
 	if body != nil {
 		payload, err := json.Marshal(body)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request: %w", err)
+			return nil, messages.MarshalingRequest(err)
 		}
 		if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
-			return nil, fmt.Errorf("failed to set request body: %w", err)
+			return nil, messages.SettingRequestBody(err)
 		}
 	}
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, messages.RequestFailed(err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, messages.ReadingResponseBody(err)
 	}
 
 	log.Printf("[dataset_api] response status: %d", resp.StatusCode)
@@ -624,7 +625,7 @@ func doRequestTyped[T any](
 
 	var result T
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, messages.ParsingResponse(err)
 	}
 
 	return &result, nil

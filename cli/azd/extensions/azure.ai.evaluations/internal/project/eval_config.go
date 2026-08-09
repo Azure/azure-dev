@@ -6,9 +6,9 @@
 package project
 
 import (
-	"fmt"
 	"strings"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/evalcore"
 )
 
@@ -120,13 +120,11 @@ func (c *EvalConfig) Eval(name string) (*Eval, error) {
 	if name == "" {
 		switch len(c.Evals) {
 		case 0:
-			return nil, fmt.Errorf("no evals are declared")
+			return nil, messages.NoEvalsDeclared()
 		case 1:
 			return &c.Evals[0], nil
 		default:
-			return nil, fmt.Errorf(
-				"this configuration declares %d evals (%s); choose one with --eval",
-				len(c.Evals), strings.Join(c.EvalNames(), ", "))
+			return nil, messages.SeveralEvalsDeclared(len(c.Evals), c.EvalNames())
 		}
 	}
 
@@ -135,9 +133,7 @@ func (c *EvalConfig) Eval(name string) (*Eval, error) {
 			return &c.Evals[i], nil
 		}
 	}
-	return nil, fmt.Errorf(
-		"eval %q is not declared; this configuration has %s",
-		name, strings.Join(c.EvalNames(), ", "))
+	return nil, messages.EvalNotDeclared(name, c.EvalNames())
 }
 
 // HasEval reports whether the named eval is declared. Unlike Eval it never
@@ -215,17 +211,17 @@ func (c *EvalConfig) Validate() error {
 		return err
 	}
 	if len(c.Evals) == 0 {
-		return fmt.Errorf("at least one eval is required")
+		return messages.AtLeastOneEvalRequired()
 	}
 
 	seen := map[string]bool{}
 	substance := map[string]string{}
 	for i, eval := range c.Evals {
 		if eval.Name == "" {
-			return fmt.Errorf("evals[%d]: 'name' is required", i)
+			return messages.EvalNameRequired(i)
 		}
 		if seen[eval.Name] {
-			return fmt.Errorf("evals[%d]: duplicate eval name %q", i, eval.Name)
+			return messages.DuplicateEvalName(i, eval.Name)
 		}
 		seen[eval.Name] = true
 
@@ -242,10 +238,7 @@ func (c *EvalConfig) Validate() error {
 			return err
 		}
 		if first, clash := substance[digest]; clash {
-			return fmt.Errorf(
-				"evals[%d] (%s): identical to %q apart from its name and description; "+
-					"give them different evaluators, datasets or settings, or declare one",
-				i, eval.Name, first)
+			return messages.EvalsIdenticalApartFromName(i, eval.Name, first)
 		}
 		substance[digest] = eval.Name
 	}
@@ -256,10 +249,10 @@ func (c *EvalConfig) validateCatalogs() error {
 	datasets := map[string]bool{}
 	for i, d := range c.Datasets {
 		if d.Name == "" {
-			return fmt.Errorf("datasets[%d]: 'name' is required", i)
+			return messages.DatasetNameRequired(i)
 		}
 		if datasets[d.Name] {
-			return fmt.Errorf("datasets[%d]: duplicate dataset name %q", i, d.Name)
+			return messages.DuplicateDatasetName(i, d.Name)
 		}
 		datasets[d.Name] = true
 	}
@@ -267,28 +260,22 @@ func (c *EvalConfig) validateCatalogs() error {
 	evaluators := map[string]bool{}
 	for i, e := range c.Evaluators {
 		if e.Name == "" {
-			return fmt.Errorf("evaluators[%d]: 'name' is required", i)
+			return messages.EvaluatorNameRequired(i)
 		}
 		if evaluators[e.Name] {
-			return fmt.Errorf("evaluators[%d]: duplicate evaluator name %q", i, e.Name)
+			return messages.DuplicateEvaluatorName(i, e.Name)
 		}
 		evaluators[e.Name] = true
 
 		if strings.HasPrefix(e.Name, evalcore.BuiltinPrefix) {
-			return fmt.Errorf(
-				"evaluators[%d] (%s): a built-in needs no catalog entry; reference it "+
-					"straight from an eval", i, e.Name)
+			return messages.BuiltinNeedsNoCatalogEntry(i, e.Name)
 		}
 		// The service assigns an evaluator's version on publish, so a declared
 		// one cannot be honoured alongside a source: the upload lands on
 		// whatever comes next and the eval binds that, leaving the pin
 		// describing a version nothing uses.
 		if e.Source != "" && e.Version != "" {
-			return fmt.Errorf(
-				"evaluators[%d] (%s): `version` cannot be set with `source`, because the "+
-					"service assigns the version when it publishes. Drop `version` to "+
-					"publish this file, or drop `source` to reference a version already "+
-					"on the project", i, e.Name)
+			return messages.EvaluatorVersionWithSource(i, e.Name)
 		}
 	}
 	return nil
@@ -296,44 +283,37 @@ func (c *EvalConfig) validateCatalogs() error {
 
 func (c *EvalConfig) validateEval(i int, eval Eval) error {
 	if eval.Dataset != "" && eval.Source != nil {
-		return fmt.Errorf(
-			"evals[%d] (%s): `dataset` and `source` both say where rows come from; "+
-				"declare one", i, eval.Name)
+		return messages.DatasetAndSourceBothDeclared(i, eval.Name)
 	}
 	if eval.Dataset != "" {
 		if _, ok := c.DatasetDeclaration(eval.Dataset); !ok {
-			return fmt.Errorf(
-				"evals[%d] (%s): dataset %q is not in the datasets catalog",
-				i, eval.Name, eval.Dataset)
+			return messages.DatasetNotInDatasetsCatalog(i, eval.Name, eval.Dataset)
 		}
 	}
 	if eval.Source != nil {
 		switch eval.Source.Type {
 		case SourceTypeTraces, SourceTypeResponses:
 		case "":
-			return fmt.Errorf("evals[%d] (%s): source.type is required", i, eval.Name)
+			return messages.SourceTypeRequired(i, eval.Name)
 		default:
-			return fmt.Errorf(
-				"evals[%d] (%s): source.type %q is not supported; use %q or %q",
+			return messages.SourceTypeUnsupported(
 				i, eval.Name, eval.Source.Type, SourceTypeTraces, SourceTypeResponses)
 		}
 	}
 
 	if len(eval.Evaluators) == 0 {
-		return fmt.Errorf("evals[%d] (%s): at least one evaluator is required", i, eval.Name)
+		return messages.AtLeastOneEvaluatorRequired(i, eval.Name)
 	}
 	criteria := map[string]bool{}
 	for j, ref := range eval.Evaluators {
 		if ref.Evaluator == "" {
-			return fmt.Errorf("evals[%d].evaluators[%d]: 'evaluator' is required", i, j)
+			return messages.EvaluatorFieldRequired(i, j)
 		}
 		// The criterion name is what identifies a result row, so two rows that
 		// cannot be told apart are refused here rather than in the results.
 		criterion := ref.CriterionName()
 		if criteria[criterion] {
-			return fmt.Errorf(
-				"evals[%d].evaluators[%d]: duplicate criterion %q; give one a `name`",
-				i, j, criterion)
+			return messages.DuplicateCriterion(i, j, criterion)
 		}
 		criteria[criterion] = true
 
@@ -341,23 +321,19 @@ func (c *EvalConfig) validateEval(i int, eval Eval) error {
 			continue
 		}
 		if _, ok := c.EvaluatorDeclaration(ref.Evaluator); !ok {
-			return fmt.Errorf(
-				"evals[%d].evaluators[%d]: evaluator %q is not in the evaluators catalog",
-				i, j, ref.Evaluator)
+			return messages.EvaluatorNotInCatalog(i, j, ref.Evaluator)
 		}
 	}
 
 	if eval.Target != nil && eval.Target.Type != "" &&
 		eval.Target.Type != TargetTypeAgent && eval.Target.Type != TargetTypeModel {
-		return fmt.Errorf(
-			"evals[%d] (%s): target.type %q is not supported; use %q or %q",
+		return messages.TargetTypeUnsupported(
 			i, eval.Name, eval.Target.Type, TargetTypeAgent, TargetTypeModel)
 	}
 	switch eval.EvaluationLevel {
 	case "", EvaluationLevelTurn, EvaluationLevelConversation:
 	default:
-		return fmt.Errorf(
-			"evals[%d] (%s): evaluation_level %q is invalid; expected %q or %q",
+		return messages.EvaluationLevelInvalid(
 			i, eval.Name, eval.EvaluationLevel, EvaluationLevelTurn, EvaluationLevelConversation)
 	}
 	return nil

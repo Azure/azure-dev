@@ -5,12 +5,11 @@ package cmd
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log"
 	"strings"
 
 	"azureaieval/internal/foundry/projectctx"
+	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
@@ -47,7 +46,7 @@ type evalContext struct {
 func newEvalContext(ctx context.Context, endpointFlag string) (*evalContext, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
-		return nil, fmt.Errorf("connecting to azd: %w", err)
+		return nil, messages.ConnectingToAzd(err)
 	}
 
 	ec := &evalContext{azdClient: azdClient}
@@ -70,7 +69,7 @@ func newEvalContext(ctx context.Context, endpointFlag string) (*evalContext, err
 		&azidentity.AzureDeveloperCLICredentialOptions{},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("creating Azure credential: %w", err)
+		return nil, messages.CreatingCredential(err)
 	}
 	ec.cred = cred
 
@@ -102,7 +101,7 @@ func lookupEndpointFromAzd(ctx context.Context, azdClient *azdext.AzdClient) (en
 // The atomic commands are meant to work standalone against the data plane, so
 // running outside a project is ordinary rather than a problem worth reporting.
 // A write that fails for any other reason still is.
-var errNoAzdEnvironment = errors.New("no active azd environment")
+var errNoAzdEnvironment = messages.ErrNoAzdEnvironment
 
 // setEnvValue persists a value into the active azd environment. azd itself
 // writes none of these keys — the extension owns them.
@@ -110,7 +109,7 @@ func (ec *evalContext) setEnvValue(ctx context.Context, key, value string) error
 	if ec.envName == "" {
 		envResp, err := ec.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 		if err != nil || envResp == nil || envResp.Environment == nil {
-			return fmt.Errorf("%w to write %s into", errNoAzdEnvironment, key)
+			return messages.NoAzdEnvironmentToWrite(key)
 		}
 		ec.envName = envResp.Environment.Name
 	}
@@ -120,7 +119,7 @@ func (ec *evalContext) setEnvValue(ctx context.Context, key, value string) error
 		Value:   value,
 	})
 	if err != nil {
-		return fmt.Errorf("writing %s to the azd environment: %w", key, err)
+		return messages.WritingEnvValue(key, err)
 	}
 	return nil
 }

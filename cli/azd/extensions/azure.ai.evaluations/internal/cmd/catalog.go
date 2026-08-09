@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
 
 	"github.com/spf13/cobra"
@@ -96,11 +97,10 @@ func updateCatalog(
 	if !isJSON(cmd) {
 		path := filepath.ToSlash(project.EvalConfigPath(evalDir))
 		if created {
-			fmt.Fprintf(cmd.OutOrStdout(),
-				"%s Created %s with the catalog entry\n", doneMark, path)
+			fmt.Fprint(cmd.OutOrStdout(), messages.CreatedCatalogFile(path))
 		}
-		fmt.Fprintf(cmd.OutOrStdout(),
-			"%s Added %s %s to %s\n", doneMark, kind, describeArtifact(ref), path)
+		fmt.Fprint(cmd.OutOrStdout(),
+			messages.AddedToCatalog(kind, describeArtifact(ref), path))
 	}
 	return nil
 }
@@ -111,8 +111,5 @@ func updateCatalog(
 // Single-quoted to match the spec's transcripts; the surrounding Done: lines
 // carry bare values, but a dataset name can hold a space and these cannot.
 func describeArtifact(ref *project.ArtifactRef) string {
-	if ref.Version == "" || ref.Version == "latest" {
-		return fmt.Sprintf("'%s'", ref.Name)
-	}
-	return fmt.Sprintf("'%s' (version %s)", ref.Name, ref.Version)
+	return messages.ArtifactDescription(ref.Name, ref.Version)
 }

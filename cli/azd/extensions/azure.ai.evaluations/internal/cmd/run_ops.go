@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 
 	"github.com/spf13/cobra"
@@ -54,11 +55,9 @@ func newRunListCommand() *cobra.Command {
 			list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, limit)
 			if err != nil {
 				if eval_api.IsNotFound(err) {
-					return fmt.Errorf(
-						"no eval %q in this project; "+
-							"`azd up` creates the ones your config declares", evalID)
+					return messages.EvalNotDeployed(evalID)
 				}
-				return fmt.Errorf("listing runs for %q: %w", evalID, err)
+				return messages.ListingRuns(evalID, err)
 			}
 			if isJSON(cmd) {
 				var runs []eval_api.OpenAIEvalRun
@@ -68,7 +67,7 @@ func newRunListCommand() *cobra.Command {
 				return emitJSONList(cmd.OutOrStdout(), runs)
 			}
 			if list == nil || len(list.Data) == 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "Eval %s has no runs yet.\n", evalID)
+				fmt.Fprint(cmd.OutOrStdout(), messages.EvalHasNoRunsLine(evalID))
 				return nil
 			}
 
@@ -161,14 +160,14 @@ func newRunShowCommand() *cobra.Command {
 			}
 
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "Run %s\n", run.ID)
-			fmt.Fprintf(out, "  name    : %s\n", run.Name)
-			fmt.Fprintf(out, "  status  : %s\n", run.Status)
+			fmt.Fprint(out, messages.RunHeading(run.ID))
+			fmt.Fprint(out, messages.RunNameLine(run.Name))
+			fmt.Fprint(out, messages.RunStatusDetail(run.Status))
 			if counts := summarizeCounts(run.ResultCounts); counts != "" {
-				fmt.Fprintf(out, "  results : %s\n", counts)
+				fmt.Fprint(out, messages.RunResultsLine(counts))
 			}
 			if run.ReportURL != "" {
-				fmt.Fprintf(out, "  report  : %s\n", run.ReportURL)
+				fmt.Fprint(out, messages.RunReportLine(run.ReportURL))
 			}
 			writePortalLink(out, run.PortalURL)
 			if gateOnStatus {
@@ -227,13 +226,12 @@ func newRunCancelCommand() *cobra.Command {
 			// Cancelling a run that already finished is a no-op worth naming,
 			// since the service reports success either way.
 			if terminalRunStates[target.Status] {
-				return fmt.Errorf("run %s already finished with status %q",
-					target.ID, target.Status)
+				return messages.RunAlreadyFinished(target.ID, target.Status)
 			}
 
 			canceled, err := ec.evalClient.CancelOpenAIEvalRun(ctx, evalID, target.ID)
 			if err != nil {
-				return fmt.Errorf("cancelling run %s: %w", target.ID, err)
+				return messages.CancellingRun(target.ID, err)
 			}
 			if isJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), canceled)
@@ -242,7 +240,7 @@ func newRunCancelCommand() *cobra.Command {
 			if status == "" {
 				status = "cancelling"
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Run %s is now %s\n", target.ID, status)
+			fmt.Fprint(cmd.OutOrStdout(), messages.RunIsNow(target.ID, status))
 			return nil
 		},
 	}
@@ -283,9 +281,9 @@ func newRunDeleteCommand() *cobra.Command {
 
 			if err := ec.evalClient.DeleteOpenAIEvalRun(ctx, evalID, runID); err != nil {
 				if eval_api.IsNotFound(err) {
-					return fmt.Errorf("no run %q on eval %q", runID, evalID)
+					return messages.RunNotFound(runID, evalID)
 				}
-				return fmt.Errorf("deleting run %s: %w", runID, err)
+				return messages.DeletingRun(runID, err)
 			}
 
 			if isJSON(cmd) {
@@ -293,7 +291,7 @@ func newRunDeleteCommand() *cobra.Command {
 					"id": runID, "eval_id": evalID, "status": "deleted",
 				})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Deleted run %s\n", runID)
+			fmt.Fprint(cmd.OutOrStdout(), messages.RunDeleted(runID))
 			return nil
 		},
 	}
@@ -306,8 +304,7 @@ func summarizeCounts(counts *eval_api.EvalRunResultCounts) string {
 	if counts == nil {
 		return ""
 	}
-	return fmt.Sprintf("%d passed, %d failed, %d errored",
-		counts.Passed, counts.Failed, counts.Errored)
+	return messages.CountsSummary(counts.Passed, counts.Failed, counts.Errored)
 }
 
 // metaDataset and metaDatasetVersion record which rows a run scored. The run's

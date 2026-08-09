@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
 
@@ -79,7 +80,7 @@ func newEvalCreateCommand() *cobra.Command {
 					"id": id, "name": eval.Name,
 				})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s Created eval: %s (%s)\n", doneMark, eval.Name, id)
+			fmt.Fprint(cmd.OutOrStdout(), messages.EvalCreated(eval.Name, id))
 			return nil
 		},
 	}
@@ -112,14 +113,14 @@ func newEvalListCommand() *cobra.Command {
 
 			list, err := ec.evalClient.ListOpenAIEvals(ctx, limit)
 			if err != nil {
-				return fmt.Errorf("listing evals: %w", err)
+				return messages.ListingEvals(err)
 			}
 
 			if isJSON(cmd) {
 				return emitJSONList(cmd.OutOrStdout(), list.Data)
 			}
 			if len(list.Data) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "No evals found.")
+				fmt.Fprint(cmd.OutOrStdout(), messages.NoEvals())
 				return nil
 			}
 			rows := make([][]string, 0, len(list.Data))
@@ -155,11 +156,9 @@ func newEvalShowCommand() *cobra.Command {
 			group, err := ec.evalClient.GetOpenAIEval(ctx, evalID)
 			if err != nil {
 				if eval_api.IsNotFound(err) {
-					return fmt.Errorf(
-						"no eval %q in this project; "+
-							"`azd ai eval list` shows the ones there are", evalID)
+					return messages.EvalNotFound(evalID)
 				}
-				return fmt.Errorf("reading eval %q: %w", evalID, err)
+				return messages.ReadingEval(evalID, err)
 			}
 			if isJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), group)
@@ -198,9 +197,9 @@ func newEvalDeleteCommand() *cobra.Command {
 
 			if err := ec.evalClient.DeleteOpenAIEval(ctx, evalID); err != nil {
 				if eval_api.IsNotFound(err) {
-					return fmt.Errorf("no eval %q in this project", evalID)
+					return messages.EvalGone(evalID)
 				}
-				return fmt.Errorf("deleting eval %q: %w", evalID, err)
+				return messages.DeletingEval(evalID, err)
 			}
 
 			if isJSON(cmd) {
@@ -208,7 +207,7 @@ func newEvalDeleteCommand() *cobra.Command {
 					"id": evalID, "status": "deleted",
 				})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Deleted eval %s\n", evalID)
+			fmt.Fprint(cmd.OutOrStdout(), messages.EvalDeleted(evalID))
 			return nil
 		},
 	}

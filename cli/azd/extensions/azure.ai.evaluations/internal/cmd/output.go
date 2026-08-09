@@ -10,6 +10,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"azureaieval/internal/messages"
+
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -17,11 +19,12 @@ import (
 const outputJSON = "json"
 
 // Progress markers from the azd style guide, so the extension's lines sit
-// alongside core's without a second vocabulary.
+// alongside core's without a second vocabulary. The wording lives in messages
+// with everything else the CLI says.
 const (
-	doneMark    = "(✓) Done:"    // finished successfully
-	skippedMark = "(-) Skipped:" // intentionally not done, not a failure
-	failedMark  = "(x) Failed:"  // the step did not complete
+	doneMark    = messages.DoneMark
+	skippedMark = messages.SkippedMark
+	failedMark  = messages.FailedMark
 )
 
 // writePortalLink closes a detail view with the asset's portal URL.
@@ -33,7 +36,7 @@ func writePortalLink(w io.Writer, url string) {
 	if url == "" {
 		return
 	}
-	fmt.Fprintf(w, "Portal: %s\n", color.CyanString(url))
+	fmt.Fprint(w, messages.PortalLink(color.CyanString(url)))
 }
 
 // outputFormat reads the inherited -o/--output flag.
@@ -130,5 +133,5 @@ func emitDetail(w io.Writer, fields []field) error {
 // requireFlag returns an error naming the missing flag, used when --no-prompt
 // prevents asking for a required value.
 func requireFlag(name string) error {
-	return fmt.Errorf("--%s is required (running with --no-prompt)", name)
+	return messages.FlagRequired(name)
 }

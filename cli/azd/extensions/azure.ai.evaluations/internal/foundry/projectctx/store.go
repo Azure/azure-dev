@@ -5,7 +5,8 @@ package projectctx
 
 import (
 	"context"
-	"fmt"
+
+	"azureaieval/internal/messages"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -22,14 +23,13 @@ func getProjectContext(
 ) (State, bool, error) {
 	ch, err := azdext.NewConfigHelper(azdClient)
 	if err != nil {
-		return State{}, false, fmt.Errorf("getProjectContext: %w", err)
+		return State{}, false, messages.ProjectContextClient(err)
 	}
 
 	var state State
 	found, err := ch.GetUserJSON(ctx, projectContextConfigPath, &state)
 	if err != nil {
-		return State{}, false,
-			fmt.Errorf("getProjectContext: failed to read config: %w", err)
+		return State{}, false, messages.ProjectContextRead(err)
 	}
 
 	if !found || state.Endpoint == "" {

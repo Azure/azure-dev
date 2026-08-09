@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 
 	"github.com/spf13/cobra"
@@ -107,14 +108,14 @@ func newJobListCommand(kind jobKind) *cobra.Command {
 
 			jobs, err := kind.list(ctx, ec)
 			if err != nil {
-				return fmt.Errorf("listing %s generation jobs: %w", kind.name, err)
+				return messages.ListingJobs(kind.name, err)
 			}
 
 			if isJSON(cmd) {
 				return emitJSONList(cmd.OutOrStdout(), jobs)
 			}
 			if len(jobs) == 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "No %s generation jobs found.\n", kind.name)
+				fmt.Fprint(cmd.OutOrStdout(), messages.NoJobs(kind.name))
 				return nil
 			}
 			table := make([][]string, 0, len(jobs))
@@ -154,9 +155,9 @@ func newJobShowCommand(kind jobKind) *cobra.Command {
 			if isJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), job)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s\n", job.ID, job.Status)
+			fmt.Fprint(cmd.OutOrStdout(), messages.JobLine(job.ID, job.Status))
 			if job.Error != nil && job.Error.Message != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "error: %s\n", job.Error.Message)
+				fmt.Fprint(cmd.OutOrStdout(), messages.JobErrorLine(job.Error.Message))
 			}
 			return nil
 		},
@@ -191,8 +192,8 @@ func newJobCancelCommand(kind jobKind) *cobra.Command {
 			if isJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), canceled)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Cancelled %s generation job %s (%s)\n",
-				kind.name, jobID, canceled.Status)
+			fmt.Fprint(cmd.OutOrStdout(),
+				messages.JobCancelled(kind.name, jobID, canceled.Status))
 			return nil
 		},
 	}
@@ -230,7 +231,7 @@ func newJobDeleteCommand(kind jobKind) *cobra.Command {
 					"id": jobID, "kind": kind.name, "status": "deleted",
 				})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Deleted %s generation job %s\n", kind.name, jobID)
+			fmt.Fprint(cmd.OutOrStdout(), messages.JobDeleted(kind.name, jobID))
 			return nil
 		},
 	}
@@ -247,9 +248,7 @@ func jobLookupError(kind jobKind, jobID string, err error) error {
 		if kind.name == jobKindEvaluator {
 			other = jobKindDataset
 		}
-		return fmt.Errorf(
-			"no %s generation job %q in this project; if it generated a %s, "+
-				"use the %s job group instead", kind.name, jobID, other, other)
+		return messages.JobNotFound(kind.name, jobID, other)
 	}
-	return fmt.Errorf("reading %s generation job %s: %w", kind.name, jobID, err)
+	return messages.ReadingJob(kind.name, jobID, err)
 }

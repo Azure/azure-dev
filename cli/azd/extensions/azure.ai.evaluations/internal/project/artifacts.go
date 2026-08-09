@@ -4,9 +4,10 @@
 package project
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
+
+	"azureaieval/internal/messages"
 )
 
 // Conventional artifact locations, relative to the eval directory.
@@ -51,9 +52,7 @@ func ValidateGenerateSource(from string) error {
 	case "", GenerateFromTraces, GenerateFromAgent, GenerateFromPrompt, GenerateFromFile:
 		return nil
 	default:
-		return fmt.Errorf(
-			"--from %q is not a source; use one of %s",
-			from, strings.Join(GenerateSources, ", "))
+		return messages.FromNotASource(from, GenerateSources)
 	}
 }
 
@@ -61,9 +60,7 @@ func ValidateGenerateSource(from string) error {
 // generation job is submitted and billed.
 func ValidateSampleSize(n int) error {
 	if n != 0 && (n < MinSampleSize || n > MaxSampleSize) {
-		return fmt.Errorf(
-			"sample size must be between %d and %d, got %d",
-			MinSampleSize, MaxSampleSize, n)
+		return messages.SampleSizeOutOfRange(MinSampleSize, MaxSampleSize, n)
 	}
 	return nil
 }

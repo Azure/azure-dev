@@ -4,12 +4,13 @@
 package dataset_api
 
 import (
-	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"azureaieval/internal/messages"
 )
 
 // CreateDatasetRequest is the request body for creating (uploading) a dataset.
@@ -192,7 +193,7 @@ func NextVersion(current string) string {
 func ReadFirstJSONLFile(dir string) (string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return "", fmt.Errorf("reading directory: %w", err)
+		return "", messages.ReadingDatasetDirectory(err)
 	}
 	for _, e := range entries {
 		if e.IsDir() {
@@ -201,10 +202,10 @@ func ReadFirstJSONLFile(dir string) (string, error) {
 		if filepath.Ext(e.Name()) == ".jsonl" {
 			data, err := os.ReadFile(filepath.Join(dir, e.Name())) //nolint:gosec // local artifact path
 			if err != nil {
-				return "", fmt.Errorf("reading %s: %w", e.Name(), err)
+				return "", messages.ReadingPath(e.Name(), err)
 			}
 			return string(data), nil
 		}
 	}
-	return "", fmt.Errorf("no .jsonl file found in %s", dir)
+	return "", messages.NoJSONLInDirectory(dir)
 }

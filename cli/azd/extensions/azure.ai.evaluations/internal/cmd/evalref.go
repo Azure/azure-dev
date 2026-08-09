@@ -5,8 +5,8 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
 )
 
@@ -55,9 +55,7 @@ func (ec *evalContext) resolveEvalRef(
 		case err == nil:
 			id := ec.recordedEvalID(ctx, eval.Name)
 			if id == "" {
-				return evalRef{}, fmt.Errorf(
-					"eval %q is declared but has not been deployed to this environment yet; "+
-						"run `azd up` first", eval.Name)
+				return evalRef{}, messages.EvalNotDeployedYet(eval.Name)
 			}
 			return evalRef{ID: id, Eval: eval, Config: cfg, ConfigPath: configPath}, nil
 		case nameOrID == "":
@@ -68,9 +66,7 @@ func (ec *evalContext) resolveEvalRef(
 	}
 
 	if nameOrID == "" {
-		return evalRef{}, fmt.Errorf(
-			"no eval was named and none is declared in %s; pass --eval with a name or an id",
-			configPath)
+		return evalRef{}, messages.NoEvalNamedOrDeclared(configPath)
 	}
 	// Not a declared name, so it is an id.
 	return evalRef{ID: nameOrID}, nil

@@ -5,11 +5,11 @@ package eval_api
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"strings"
 	"time"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/evalcore"
 )
 
@@ -73,9 +73,9 @@ type JobFailedError struct {
 
 func (e *JobFailedError) Error() string {
 	if e.Job != nil && e.Job.Error != nil && e.Job.Error.Message != "" {
-		return fmt.Sprintf("job failed with status %q: %s", e.Status, e.Job.Error.Message)
+		return messages.JobFailedWithReason(string(e.Status), e.Job.Error.Message)
 	}
-	return fmt.Sprintf("job failed with status %q", e.Status)
+	return messages.JobFailed(string(e.Status))
 }
 
 // ---------------------------------------------------------------------------
@@ -90,10 +90,7 @@ type PollerTimeoutError struct {
 }
 
 func (e *PollerTimeoutError) Error() string {
-	return fmt.Sprintf(
-		"operation %s did not complete within %d attempts",
-		e.OperationID, e.Attempts,
-	)
+	return messages.PollerTimedOut(e.OperationID, e.Attempts)
 }
 
 // ---------------------------------------------------------------------------
@@ -154,7 +151,7 @@ func NewPoller(operationID, apiVersion string, getJob GetJobFunc) *Poller {
 // On timeout it returns a plain error.
 func (p *Poller) Poll(ctx context.Context) (*GenerationJob, error) {
 	if p.OperationID == "" {
-		return nil, fmt.Errorf("operation ID is empty")
+		return nil, messages.OperationIDEmpty()
 	}
 
 	for range p.Options.MaxAttempts {

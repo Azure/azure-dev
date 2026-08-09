@@ -167,9 +167,7 @@ func refuseExistingArtifact(path string, force bool) error {
 		return nil
 	}
 	if _, err := os.Stat(path); err == nil {
-		return fmt.Errorf(
-			"%s already exists; pass --force to overwrite it, or --output-dir to write elsewhere",
-			filepath.ToSlash(path))
+		return messages.ArtifactExists(filepath.ToSlash(path))
 	}
 	return nil
 }
@@ -310,7 +308,7 @@ func reportGenerated(cmd *cobra.Command, ref *project.ArtifactRef, noWait bool) 
 	out := cmd.OutOrStdout()
 	if ref == nil {
 		if !noWait {
-			fmt.Fprintln(out, "Nothing was generated.")
+			fmt.Fprint(out, messages.NothingGenerated())
 		}
 		return nil
 	}

@@ -5,13 +5,13 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
 
@@ -59,18 +59,17 @@ func newInitCommand() *cobra.Command {
 			switch source {
 			case "", initSourceDataset, initSourceTraces:
 			default:
-				return fmt.Errorf(
-					"--source %q is not a data source; use %q or %q",
+				return messages.SourceNotADataSource(
 					source, initSourceDataset, initSourceTraces)
 			}
 			if source == initSourceTraces && dataset != "" {
-				return errors.New("--source traces reads production traces, so it takes no --dataset")
+				return messages.TracesTakesNoDataset()
 			}
 			if cmd.Flags().Changed("max-traces") && source != initSourceTraces {
-				return errors.New("--max-traces caps a trace-backed eval; pass --source traces")
+				return messages.MaxTracesNeedsTraceSource()
 			}
 			if maxTraces < 0 {
-				return errors.New("--max-traces must be positive")
+				return messages.MaxTracesMustBePositive()
 			}
 			if source == "" {
 				source = initSourceDataset
@@ -103,19 +102,17 @@ func newInitCommand() *cobra.Command {
 			}
 			if cfg.HasEval(evalName) {
 				if !force {
-					return fmt.Errorf(
-						"an eval named %q already exists in %s; choose another name with --name, "+
-							"or pass --force to replace it. `init` only adds: editing an eval is a file edit",
+					return messages.EvalAlreadyDeclared(
 						evalName, filepath.ToSlash(configPath))
 				}
 				cfg.RemoveEval(evalName)
 			}
 
 			if err := os.MkdirAll(filepath.Join(path, project.DefaultDatasetsDir), 0o750); err != nil {
-				return fmt.Errorf("creating the datasets directory: %w", err)
+				return messages.CreatingDatasetsDir(err)
 			}
 			if err := os.MkdirAll(filepath.Join(path, project.DefaultEvaluatorsDir), 0o750); err != nil {
-				return fmt.Errorf("creating the evaluators directory: %w", err)
+				return messages.CreatingEvaluatorsDir(err)
 			}
 
 			plan := planScaffold(scaffoldInput{
@@ -161,30 +158,30 @@ func newInitCommand() *cobra.Command {
 				})
 			}
 
-			fmt.Fprintf(out, "%s Detected agent target: %s\n", doneMark, target)
+			fmt.Fprint(out, messages.DetectedTarget(target))
 			if source == initSourceTraces {
-				fmt.Fprintf(out, "%s Using data source: traces (Application Insights)\n", doneMark)
+				fmt.Fprint(out, messages.UsingTraceSource())
 			}
 			if judgeModel != "" {
-				fmt.Fprintf(out, "%s Judge model deployment: %s\n", doneMark, judgeModel)
+				fmt.Fprint(out, messages.JudgeModelDeployment(judgeModel))
 			}
 
-			fmt.Fprintln(out, "\nCreated")
-			fmt.Fprintf(out, "  %-33s evaluation configuration\n", filepath.ToSlash(configPath))
+			fmt.Fprint(out, messages.CreatedHeading())
+			fmt.Fprint(out, messages.CreatedConfigLine(filepath.ToSlash(configPath)))
 			switch rootWiring {
 			case wiringAdded:
-				fmt.Fprintf(out, "  %-33s added service '%s'\n", rootConfigName, serviceName)
+				fmt.Fprint(out, messages.AddedServiceLine(rootConfigName, serviceName))
 			case wiringPresent:
-				fmt.Fprintf(out, "  %-33s already declares service '%s'\n", rootConfigName, serviceName)
+				fmt.Fprint(out, messages.AlreadyDeclaresServiceLine(rootConfigName, serviceName))
 			}
 
 			// Only what was actually scheduled is offered. Suggesting
 			// `dataset generate` for a dataset the caller supplied sends them
 			// to submit a billed job for an artifact they already have.
 			next := plan.nextSteps()
-			fmt.Fprintf(out, "\nNext: %s\n", next[0])
+			fmt.Fprint(out, messages.FirstNextStep(next[0]))
 			for _, step := range next[1:] {
-				fmt.Fprintf(out, "      %s\n", step)
+				fmt.Fprint(out, messages.FurtherNextStep(step))
 			}
 			return nil
 		},
@@ -443,22 +440,17 @@ const (
 	wiringPresent = "present" // an eval service was already declared
 )
 
-// noAzdProject is what init reports when there is nothing to attach to.
-const noAzdProject = "no azd project found in this directory. Run `azd init` first, " +
-	"or run this from the root of an existing one; the eval service is added to " +
-	"its azure.yaml"
-
 // readAzdProject returns the project, without changing it.
 func readAzdProject(ctx context.Context) (*azdext.ProjectConfig, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
-		return nil, errors.New(noAzdProject)
+		return nil, messages.NoAzdProject()
 	}
 	defer azdClient.Close()
 
 	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil || resp.GetProject() == nil {
-		return nil, errors.New(noAzdProject)
+		return nil, messages.NoAzdProject()
 	}
 	return resp.GetProject(), nil
 }
@@ -529,13 +521,13 @@ func ensureRootEvalService(
 ) (string, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
-		return "", fmt.Errorf("connecting to azd: %w", err)
+		return "", messages.ConnectingToAzd(err)
 	}
 	defer azdClient.Close()
 
 	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil || resp.GetProject() == nil {
-		return "", errors.New(noAzdProject)
+		return "", messages.NoAzdProject()
 	}
 
 	// A service already pointing at this configuration is left alone:
@@ -548,7 +540,7 @@ func ensureRootEvalService(
 		"$ref": "./" + filepath.ToSlash(configPath),
 	})
 	if err != nil {
-		return "", fmt.Errorf("building the eval service entry: %w", err)
+		return "", messages.BuildingServiceEntry(err)
 	}
 
 	_, err = azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{
@@ -560,7 +552,7 @@ func ensureRootEvalService(
 		},
 	})
 	if err != nil {
-		return "", fmt.Errorf("adding the eval service to %s: %w", rootConfigName, err)
+		return "", messages.AddingServiceTo(rootConfigName, err)
 	}
 	return wiringAdded, nil
 }
@@ -599,14 +591,14 @@ func looksLikeLocalDataset(v string) bool {
 
 func writeYAML(path string, v any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return fmt.Errorf("creating %q: %w", filepath.Dir(path), err)
+		return messages.Creating(filepath.Dir(path), err)
 	}
 	data, err := yaml.Marshal(v)
 	if err != nil {
-		return fmt.Errorf("serializing %q: %w", path, err)
+		return messages.Serializing(path, err)
 	}
 	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return fmt.Errorf("writing %q: %w", path, err)
+		return messages.Writing(path, err)
 	}
 	return nil
 }

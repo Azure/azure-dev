@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 
+	"azureaieval/internal/messages"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/google/uuid"
 )
@@ -23,20 +25,17 @@ type PortalPrefix struct {
 func NewPortalPrefix(projectResourceID string) (*PortalPrefix, error) {
 	resourceID, err := arm.ParseResourceID(projectResourceID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse project resource ID: %w", err)
+		return nil, messages.ParsingProjectResourceID(err)
 	}
 
 	encodedSub, err := encodeSubscriptionForURL(resourceID.SubscriptionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode subscription ID: %w", err)
+		return nil, messages.EncodingSubscriptionID(err)
 	}
 
 	if resourceID.Parent == nil ||
 		!strings.Contains(string(resourceID.ResourceType.Type), "/") {
-		return nil, fmt.Errorf(
-			"resource ID does not represent a Foundry project (missing parent account): %s",
-			projectResourceID,
-		)
+		return nil, messages.NotAFoundryProjectResourceID(projectResourceID)
 	}
 
 	prefix := fmt.Sprintf(
@@ -72,7 +71,7 @@ func (p *PortalPrefix) OptimizationURL(agentName, operationID string) string {
 func encodeSubscriptionForURL(subscriptionID string) (string, error) {
 	guid, err := uuid.Parse(subscriptionID)
 	if err != nil {
-		return "", fmt.Errorf("invalid subscription ID format: %w", err)
+		return "", messages.InvalidSubscriptionID(err)
 	}
 	guidBytes, _ := guid.MarshalBinary()
 	return strings.TrimRight(base64.URLEncoding.EncodeToString(guidBytes), "="), nil

@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 
 	"github.com/spf13/cobra"
@@ -71,12 +72,12 @@ func newEvaluatorWriteCommand(verb, short string) *cobra.Command {
 
 			raw, err := os.ReadFile(fromFile)
 			if err != nil {
-				return fmt.Errorf("reading evaluator %q: %w", fromFile, err)
+				return messages.ReadingEvaluator(fromFile, err)
 			}
 
 			body, err := normalizeRubricBody(name, raw)
 			if err != nil {
-				return fmt.Errorf("evaluator %q: %w", fromFile, err)
+				return messages.EvaluatorProblem(fromFile, err)
 			}
 
 			ctx := cmd.Context()
@@ -94,7 +95,7 @@ func newEvaluatorWriteCommand(verb, short string) *cobra.Command {
 				ctx, name, "", ProjectEndpointAPIVersion,
 			)
 			if readErr != nil && !eval_api.IsNotFound(readErr) {
-				return fmt.Errorf("checking whether evaluator %q exists: %w", name, readErr)
+				return messages.CheckingEvaluatorExists(name, readErr)
 			}
 			if err := checkAssetExistence(verb, "evaluator", name, readErr == nil); err != nil {
 				return err
@@ -110,14 +111,14 @@ func newEvaluatorWriteCommand(verb, short string) *cobra.Command {
 				ctx, name, body, existing, ProjectEndpointAPIVersion,
 			)
 			if err != nil {
-				return fmt.Errorf("registering evaluator %q: %w", name, err)
+				return messages.RegisteringEvaluator(name, err)
 			}
 
 			if isJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), created)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(),
-				"Registered evaluator %s version %s\n", created.Name, created.Version)
+			fmt.Fprint(cmd.OutOrStdout(),
+				messages.EvaluatorRegistered(created.Name, created.Version))
 			return nil
 		},
 	}
@@ -131,11 +132,9 @@ func newEvaluatorWriteCommand(verb, short string) *cobra.Command {
 func checkAssetExistence(verb, kind, name string, exists bool) error {
 	switch {
 	case verb == "create" && exists:
-		return fmt.Errorf(
-			"%s %q already exists: use `update` to publish a new version", kind, name)
+		return messages.AssetAlreadyExists(kind, name)
 	case verb == "update" && !exists:
-		return fmt.Errorf(
-			"%s %q does not exist: use `create` to register it", kind, name)
+		return messages.AssetDoesNotExist(kind, name)
 	}
 	return nil
 }
@@ -154,7 +153,7 @@ const rubricDefinitionType = "rubric"
 func ensureDefinitionType(definition json.RawMessage) (json.RawMessage, error) {
 	var doc map[string]json.RawMessage
 	if err := json.Unmarshal(definition, &doc); err != nil {
-		return nil, fmt.Errorf("the definition is not a JSON object: %w", err)
+		return nil, messages.DefinitionNotJSONObject(err)
 	}
 	if _, ok := doc["type"]; ok {
 		return definition, nil
@@ -168,7 +167,7 @@ func ensureDefinitionType(definition json.RawMessage) (json.RawMessage, error) {
 func normalizeRubricBody(name string, raw []byte) (json.RawMessage, error) {
 	var probe map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &probe); err != nil {
-		return nil, fmt.Errorf("not valid JSON: %w", err)
+		return nil, messages.NotValidJSON(err)
 	}
 
 	if definition, hasDefinition := probe["definition"]; hasDefinition {
@@ -187,8 +186,7 @@ func normalizeRubricBody(name string, raw []byte) (json.RawMessage, error) {
 	}
 
 	if _, hasDimensions := probe["dimensions"]; !hasDimensions {
-		return nil, fmt.Errorf(
-			"expected a rubric definition with 'dimensions', or a document with 'definition'")
+		return nil, messages.RubricMissingDimensions()
 	}
 
 	typed, err := ensureDefinitionType(raw)
@@ -232,7 +230,7 @@ func newEvaluatorListCommand() *cobra.Command {
 			}
 			list, err := ec.evalClient.ListEvaluators(ctx, filter, ProjectEndpointAPIVersion)
 			if err != nil {
-				return fmt.Errorf("listing evaluators: %w", err)
+				return messages.ListingEvaluators(err)
 			}
 			return renderEvaluators(cmd, list)
 		},
@@ -275,7 +273,7 @@ func newEvaluatorVersionsListCommand() *cobra.Command {
 
 			list, err := ec.evalClient.ListEvaluatorVersions(ctx, name, ProjectEndpointAPIVersion)
 			if err != nil {
-				return fmt.Errorf("listing versions of evaluator %q: %w", name, err)
+				return messages.ListingEvaluatorVersions(name, err)
 			}
 			return renderEvaluators(cmd, list)
 		},
@@ -290,7 +288,7 @@ func renderEvaluators(cmd *cobra.Command, list *eval_api.EvaluatorListResponse) 
 		return emitJSONList(cmd.OutOrStdout(), list.Value)
 	}
 	if len(list.Value) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No evaluators found.")
+		fmt.Fprint(cmd.OutOrStdout(), messages.NoEvaluators())
 		return nil
 	}
 	rows := make([][]string, 0, len(list.Value))
@@ -323,11 +321,9 @@ func newEvaluatorShowCommand() *cobra.Command {
 			raw, err := ec.evalClient.GetEvaluatorRaw(ctx, name, version, ProjectEndpointAPIVersion)
 			if err != nil {
 				if eval_api.IsNotFound(err) {
-					return fmt.Errorf(
-						"no evaluator %q in this project; "+
-							"`azd ai eval evaluator list` shows the ones there are", name)
+					return messages.EvaluatorNotFound(name)
 				}
-				return fmt.Errorf("reading evaluator %q: %w", name, err)
+				return messages.ReadingEvaluator(name, err)
 			}
 
 			// -o json answers with the service's document untouched, because a
@@ -411,10 +407,9 @@ func newEvaluatorDeleteCommand() *cobra.Command {
 				ctx, name, version, ProjectEndpointAPIVersion,
 			); err != nil {
 				if eval_api.IsNotFound(err) {
-					return fmt.Errorf(
-						"no evaluator %q at version %q in this project", name, version)
+					return messages.EvaluatorVersionNotFound(name, version)
 				}
-				return fmt.Errorf("deleting evaluator %q version %q: %w", name, version, err)
+				return messages.DeletingEvaluatorVersion(name, version, err)
 			}
 
 			if isJSON(cmd) {
@@ -422,7 +417,7 @@ func newEvaluatorDeleteCommand() *cobra.Command {
 					"name": name, "version": version, "status": "deleted",
 				})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Deleted evaluator %s version %s\n", name, version)
+			fmt.Fprint(cmd.OutOrStdout(), messages.EvaluatorDeleted(name, version))
 			return nil
 		},
 	}

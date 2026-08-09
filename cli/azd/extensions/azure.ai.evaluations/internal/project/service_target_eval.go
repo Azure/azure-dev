@@ -8,10 +8,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"azureaieval/internal/messages"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
@@ -135,7 +136,7 @@ func (p *EvalServiceTargetProvider) Deploy(
 		return nil, err
 	}
 	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("eval config is invalid: %w", err)
+		return nil, messages.EvalConfigInvalid(err)
 	}
 
 	reconciler, err := p.newReconciler(ctx)
@@ -153,12 +154,12 @@ func (p *EvalServiceTargetProvider) Deploy(
 		if decl.Source == "" {
 			continue
 		}
-		report(progress, fmt.Sprintf("Reconciling dataset %s", decl.Name))
+		report(progress, messages.ReconcilingDataset(decl.Name))
 		localPath := resolveSource(baseDir, decl.Source)
 		datasetPaths[decl.Name] = localPath
 		version, changed, err := reconciler.EnsureDataset(ctx, decl, localPath)
 		if err != nil {
-			return nil, fmt.Errorf("dataset %q: %w", decl.Name, err)
+			return nil, messages.DatasetProblem(decl.Name, err)
 		}
 		anyChanged = anyChanged || changed
 		report(progress, describeResult("dataset", decl.Name, version, changed))
@@ -167,11 +168,11 @@ func (p *EvalServiceTargetProvider) Deploy(
 	// 2. Evaluators this configuration owns. Built-ins and already-registered
 	// ones need no publish.
 	for _, decl := range cfg.CustomEvaluators() {
-		report(progress, fmt.Sprintf("Reconciling evaluator %s", decl.Name))
+		report(progress, messages.ReconcilingEvaluator(decl.Name))
 		localPath := resolveSource(baseDir, decl.Source)
 		version, changed, err := reconciler.EnsureEvaluator(ctx, decl, localPath)
 		if err != nil {
-			return nil, fmt.Errorf("evaluator %q: %w", decl.Name, err)
+			return nil, messages.EvaluatorProblem(decl.Name, err)
 		}
 		anyChanged = anyChanged || changed
 		report(progress, describeResult("evaluator", decl.Name, version, changed))
@@ -181,12 +182,12 @@ func (p *EvalServiceTargetProvider) Deploy(
 	// must be created and the stored id replaced.
 	for i := range cfg.Evals {
 		eval := cfg.Evals[i]
-		report(progress, fmt.Sprintf("Reconciling eval %s", eval.Name))
+		report(progress, messages.ReconcilingEval(eval.Name))
 		id, err := reconciler.EnsureEval(ctx, eval, datasetPaths[eval.Dataset], anyChanged)
 		if err != nil {
-			return nil, fmt.Errorf("eval %q: %w", eval.Name, err)
+			return nil, messages.EvalProblem(eval.Name, err)
 		}
-		report(progress, fmt.Sprintf("Eval %s is %s", eval.Name, id))
+		report(progress, messages.EvalIs(eval.Name, id))
 	}
 
 	return &azdext.ServiceDeployResult{}, nil
@@ -209,9 +210,9 @@ func (p *EvalServiceTargetProvider) projectRoot(ctx context.Context) string {
 // no-op deploy is visibly a no-op.
 func describeResult(kind, name, version string, changed bool) string {
 	if changed {
-		return fmt.Sprintf("Published %s %s version %s", kind, name, version)
+		return messages.PublishedVersion(kind, name, version)
 	}
-	return fmt.Sprintf("%s %s is unchanged at version %s", strings.ToUpper(kind[:1])+kind[1:], name, version)
+	return messages.UnchangedAtVersion(kind, name, version)
 }
 
 func report(progress azdext.ProgressReporter, message string) {
@@ -232,28 +233,26 @@ func report(progress azdext.ProgressReporter, message string) {
 func EvalConfigFromService(svc *azdext.ServiceConfig, projectRoot string) (*EvalConfig, error) {
 	props := serviceProps(svc)
 	if props == nil || len(props.GetFields()) == 0 {
-		return nil, fmt.Errorf(
-			"service %q carries no eval configuration; expected evaluators, datasets, or evals",
-			svc.GetName())
+		return nil, messages.ServiceCarriesNoConfig(svc.GetName())
 	}
 
 	values := props.AsMap()
 	if projectRoot != "" {
 		resolved, err := foundry.ResolveFileRefs(values, projectRoot)
 		if err != nil {
-			return nil, fmt.Errorf("resolving $ref in the eval service configuration: %w", err)
+			return nil, messages.ResolvingServiceRefs(err)
 		}
 		values = resolved
 	}
 
 	raw, err := json.Marshal(values)
 	if err != nil {
-		return nil, fmt.Errorf("reading the eval service configuration: %w", err)
+		return nil, messages.ReadingServiceConfig(err)
 	}
 
 	var cfg EvalConfig
 	if err := json.Unmarshal(raw, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing the eval service configuration: %w", err)
+		return nil, messages.ParsingServiceConfig(err)
 	}
 	return &cfg, nil
 }
@@ -312,7 +311,7 @@ func resolveSource(baseDir, source string) string {
 func Fingerprint(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("hashing %q: %w", path, err)
+		return "", messages.Hashing(path, err)
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil
@@ -338,7 +337,7 @@ func FingerprintGroup(group Eval) (string, error) {
 
 	data, err := json.Marshal(group)
 	if err != nil {
-		return "", fmt.Errorf("hashing eval %q: %w", name, err)
+		return "", messages.HashingEval(name, err)
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 
 	"github.com/spf13/cobra"
@@ -71,7 +72,7 @@ func newRunOutputListCommand() *cobra.Command {
 			// totals rather than failing.
 			items, err := ec.evalClient.ListOutputItems(ctx, evalID, run.ID, 0)
 			if err != nil {
-				return fmt.Errorf("reading the results of run %s: %w", run.ID, err)
+				return messages.ReadingRunResults(run.ID, err)
 			}
 			rows := items.Data
 			if failedOnly {
@@ -88,7 +89,7 @@ func newRunOutputListCommand() *cobra.Command {
 			if outFile != "" {
 				f, err := os.Create(outFile)
 				if err != nil {
-					return fmt.Errorf("creating %q: %w", outFile, err)
+					return messages.Creating(outFile, err)
 				}
 				defer f.Close()
 				return emitJSON(f, payload)
@@ -145,12 +146,9 @@ func newRunOutputShowCommand() *cobra.Command {
 			item, err := ec.evalClient.GetOutputItem(ctx, evalID, run.ID, itemID)
 			if err != nil {
 				if eval_api.IsNotFound(err) {
-					return fmt.Errorf(
-						"no output item %q on run %s; "+
-							"`azd ai eval run output list` shows the ones there are",
-						itemID, run.ID)
+					return messages.OutputItemNotFound(itemID, run.ID)
 				}
-				return fmt.Errorf("reading output item %q: %w", itemID, err)
+				return messages.ReadingOutputItem(itemID, err)
 			}
 			return emitJSON(cmd.OutOrStdout(), item)
 		},
@@ -177,7 +175,7 @@ func newRunOutputExportCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			format = strings.ToLower(format)
 			if format != "json" && format != "csv" {
-				return fmt.Errorf("--format must be json or csv, got %q", format)
+				return messages.ExportFormatInvalid(format)
 			}
 
 			ctx := cmd.Context()
@@ -202,7 +200,7 @@ func newRunOutputExportCommand() *cobra.Command {
 			if outFile != "" {
 				f, err := os.Create(outFile)
 				if err != nil {
-					return fmt.Errorf("creating %q: %w", outFile, err)
+					return messages.Creating(outFile, err)
 				}
 				defer f.Close()
 				w = f
@@ -216,8 +214,7 @@ func newRunOutputExportCommand() *cobra.Command {
 			case formatJSONL:
 				return writeResultsJSONL(w, run)
 			default:
-				return fmt.Errorf(
-					"--format %q is not supported; use %s, %s or %s",
+				return messages.ExportFormatUnsupported(
 					format, formatCSV, formatJSON, formatJSONL)
 			}
 		},
@@ -259,8 +256,7 @@ func resolveEvalID(
 	if cached := ec.getEnvValue(cmd.Context(), envKeyEvalID); cached != "" {
 		return cached, nil
 	}
-	return "", fmt.Errorf(
-		"no eval given; pass its id as an argument, or name one with --eval")
+	return "", messages.NoEvalGiven()
 }
 
 // addEvalFlag registers the flag that says which eval a command acts on. It
@@ -305,21 +301,19 @@ func (ec *evalContext) latestOrNamedRun(
 			return run, nil
 		}
 		if explicit {
-			return nil, fmt.Errorf("reading run %s: %w", runID, err)
+			return nil, messages.ReadingRun(runID, err)
 		}
 	}
 
 	list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 1)
 	if err != nil {
 		if eval_api.IsNotFound(err) {
-			return nil, fmt.Errorf(
-				"no eval %q in this project; "+
-					"`azd up` creates the ones your config declares", evalID)
+			return nil, messages.EvalNotDeployed(evalID)
 		}
-		return nil, fmt.Errorf("listing runs for eval %s: %w", evalID, err)
+		return nil, messages.ListingRuns(evalID, err)
 	}
 	if len(list.Data) == 0 {
-		return nil, fmt.Errorf("eval %s has no runs yet", evalID)
+		return nil, messages.EvalHasNoRuns(evalID)
 	}
 	return &list.Data[0], nil
 }
@@ -330,11 +324,10 @@ func renderResults(
 	items []eval_api.OutputItem,
 	failedOnly bool,
 ) error {
-	fmt.Fprintf(w, "Run %s  status: %s\n", run.ID, run.Status)
+	fmt.Fprint(w, messages.RunStatusHeading(run.ID, run.Status))
 
 	if c := run.ResultCounts; c != nil {
-		fmt.Fprintf(w, "Totals: %d passed, %d failed, %d errored\n\n",
-			c.Passed, c.Failed, c.Errored)
+		fmt.Fprint(w, messages.ResultTotals(c.Passed, c.Failed, c.Errored))
 	}
 
 	if len(run.PerTestingCriteria) > 0 {
@@ -360,9 +353,9 @@ func renderResults(
 	// these say which and why.
 	if len(items) == 0 {
 		if failedOnly {
-			fmt.Fprintln(w, "\nNo failing rows.")
+			fmt.Fprint(w, messages.NoFailingRows())
 		} else {
-			fmt.Fprintln(w, "\nNo rows have been scored yet.")
+			fmt.Fprint(w, messages.NoRowsScored())
 		}
 	} else {
 		fmt.Fprintln(w)
@@ -402,12 +395,12 @@ func renderResults(
 			return err
 		}
 		if n := len(rows); failedOnly && n > 0 {
-			fmt.Fprintf(w, "\n%d sample(s) failed at least one evaluator.\n", n)
+			fmt.Fprint(w, messages.SamplesFailedAtLeastOne(n))
 		}
 	}
 
 	if run.ReportURL != "" {
-		fmt.Fprintf(w, "\nReport: %s\n", run.ReportURL)
+		fmt.Fprint(w, messages.ReportLinkAfterRows(run.ReportURL))
 	}
 	return nil
 }

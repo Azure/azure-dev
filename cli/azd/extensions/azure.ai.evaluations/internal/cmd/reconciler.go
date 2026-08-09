@@ -7,7 +7,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -15,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
@@ -54,13 +54,10 @@ func (r *evalReconciler) EnsureDataset(
 				ctx, decl.Name, ProjectEndpointAPIVersion,
 			)
 			if err != nil {
-				return "", false, fmt.Errorf(
-					"dataset %q has no local source and could not be found on the project: %w",
-					decl.Name, err)
+				return "", false, messages.DatasetNotLocalNorFound(decl.Name, err)
 			}
 			if len(list.Value) == 0 {
-				return "", false, fmt.Errorf(
-					"dataset %q has no local source and is not registered on the project", decl.Name)
+				return "", false, messages.DatasetNotLocalNorRegistered(decl.Name)
 			}
 			version = dataset_api.LatestVersion(list.Value)
 		}
@@ -68,14 +65,14 @@ func (r *evalReconciler) EnsureDataset(
 	}
 
 	if _, err := os.Stat(localPath); err != nil {
-		return "", false, fmt.Errorf("dataset source %q: %w", localPath, err)
+		return "", false, messages.DatasetSource(localPath, err)
 	}
 
 	// A malformed row is only noticed once the service tries to evaluate it,
 	// by which point a version has been published and the eval points at
 	// it. Reading the file here costs nothing and names the offending line.
 	if err := validateJSONL(localPath); err != nil {
-		return "", false, fmt.Errorf("dataset %q: %w", decl.Name, err)
+		return "", false, messages.DatasetProblem(decl.Name, err)
 	}
 
 	digest, err := project.Fingerprint(localPath)
@@ -115,11 +112,7 @@ func (r *evalReconciler) EnsureDataset(
 		)
 		if err != nil {
 			if dataset_api.IsVersionConflict(err) {
-				return "", false, fmt.Errorf(
-					"dataset %q version %s already exists and the local file differs from it. "+
-						"Raise `version:` to publish the change, or drop it to let each "+
-						"deploy take the next version",
-					decl.Name, decl.Version)
+				return "", false, messages.DatasetVersionConflict(decl.Name, decl.Version)
 			}
 			return "", false, err
 		}
@@ -161,7 +154,7 @@ func (r *evalReconciler) EnsureDataset(
 func validateJSONL(path string) error {
 	f, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("reading %s: %w", path, err)
+		return messages.ReadingPath(path, err)
 	}
 	defer f.Close()
 
@@ -177,21 +170,18 @@ func validateJSONL(path string) error {
 		}
 		var row map[string]any
 		if err := json.Unmarshal([]byte(text), &row); err != nil {
-			return fmt.Errorf(
-				"%s line %d is not valid JSON: %w. Every line must be one JSON object",
-				path, line, err)
+			return messages.JSONLRowInvalid(path, line, err)
 		}
 		if len(row) == 0 {
-			return fmt.Errorf(
-				"%s line %d is an empty object, which evaluates to nothing", path, line)
+			return messages.JSONLRowEmpty(path, line)
 		}
 		rows++
 	}
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("reading %s: %w", path, err)
+		return messages.ReadingPath(path, err)
 	}
 	if rows == 0 {
-		return fmt.Errorf("%s has no rows to evaluate", path)
+		return messages.JSONLNoRows(path)
 	}
 	return nil
 }
@@ -207,12 +197,7 @@ func (r *evalReconciler) checkDatasetDrift(
 	if !dataset_api.VersionGreater(latest, recorded) {
 		return nil
 	}
-	return fmt.Errorf(
-		"dataset %q is at version %s on the project but %s was recorded at the last deploy; "+
-			"someone published a version outside this repo. "+
-			"Pin it with `version: %s` on the dataset, or pull the newer content locally, "+
-			"then deploy again",
-		name, latest, recorded, latest)
+	return messages.DatasetDrifted(name, latest, recorded)
 }
 
 // latestDatasetVersion reports the newest registered version, or empty when the
@@ -244,25 +229,23 @@ func (r *evalReconciler) EnsureEvaluator(
 			ctx, decl.Name, decl.Version, ProjectEndpointAPIVersion,
 		)
 		if err != nil {
-			return "", false, fmt.Errorf(
-				"evaluator %q has no local source and could not be found on the project: %w",
-				decl.Name, err)
+			return "", false, messages.EvaluatorNotLocalNorFound(decl.Name, err)
 		}
 		return versionFromRaw(raw, decl.Version), false, nil
 	}
 
 	if _, err := os.Stat(localPath); err != nil {
-		return "", false, fmt.Errorf("evaluator source %q: %w", localPath, err)
+		return "", false, messages.EvaluatorSource(localPath, err)
 	}
 
 	raw, err := os.ReadFile(localPath)
 	if err != nil {
-		return "", false, fmt.Errorf("evaluator source %q: %w", localPath, err)
+		return "", false, messages.EvaluatorSource(localPath, err)
 	}
 
 	body, err := normalizeRubricBody(decl.Name, raw)
 	if err != nil {
-		return "", false, fmt.Errorf("evaluator %q: %w", decl.Name, err)
+		return "", false, messages.EvaluatorProblem(decl.Name, err)
 	}
 
 	// Compare against the definition already on the service.
@@ -331,13 +314,7 @@ func checkEvaluatorDrift(name, recorded, remote string) error {
 	if err != nil || remoteNumber <= recordedNumber {
 		return nil
 	}
-	return fmt.Errorf(
-		"evaluator %q is at version %s on the project but %s was recorded at the last "+
-			"deploy, and the local definition does not match it: someone published a "+
-			"version outside this repo. Publishing over it would leave their change "+
-			"behind, so bring version %s into the declared source and deploy again, or "+
-			"delete that version if it was a mistake",
-		name, remote, recorded, remote)
+	return messages.EvaluatorDrifted(name, remote, recorded)
 }
 
 // evaluatorPropagation bounds the wait for a freshly published evaluator to

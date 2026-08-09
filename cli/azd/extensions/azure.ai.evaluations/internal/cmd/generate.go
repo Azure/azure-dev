@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
 
@@ -74,11 +75,11 @@ func resolveInstruction(inline, path string) (string, error) {
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("reading --agent-instruction-file %q: %w", path, err)
+		return "", messages.ReadingInstructionFile(path, err)
 	}
 	text := strings.TrimSpace(string(raw))
 	if text == "" {
-		return "", fmt.Errorf("--agent-instruction-file %q is empty", path)
+		return "", messages.InstructionFileEmpty(path)
 	}
 	return text, nil
 }
@@ -103,7 +104,7 @@ func declaredInstructions(named, configPath string) (string, error) {
 		return "", nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("reading instructions %q: %w", named, err)
+		return "", messages.ReadingInstructions(named, err)
 	}
 	return strings.TrimSpace(string(raw)), nil
 }
@@ -142,7 +143,7 @@ func (ec *evalContext) resolveGenerationInstruction(
 	}
 	if local != "" {
 		if !quiet {
-			fmt.Fprintf(out, "  Seeding generation from %s.\n", filepath.ToSlash(path))
+			fmt.Fprint(out, messages.SeedingFromFile(filepath.ToSlash(path)))
 		}
 		return local, nil
 	}
@@ -152,14 +153,13 @@ func (ec *evalContext) resolveGenerationInstruction(
 		// Generation can still proceed from the agent source alone, so a
 		// failure to read the agent is reported without stopping.
 		if !quiet {
-			fmt.Fprintf(out, "  warning: could not read agent %q for generation context: %v\n",
-				agentName, err)
+			fmt.Fprint(out, messages.WarningAgentUnreadable(agentName, err))
 		}
 		return "", nil
 	}
 	instructions := agent.Instructions()
 	if instructions != "" && !quiet {
-		fmt.Fprintf(out, "  Seeding generation from the instructions of agent %q.\n", agentName)
+		fmt.Fprint(out, messages.SeedingFromAgent(agentName))
 	}
 	return instructions, nil
 }
@@ -191,7 +191,7 @@ func (ec *evalContext) generateRubric(
 	out io.Writer,
 	noWait bool,
 ) (*project.ArtifactRef, error) {
-	fmt.Fprintf(out, "Generating rubric %s...\n", plan.Name)
+	fmt.Fprint(out, messages.GeneratingRubric(plan.Name))
 
 	sources, unbuildable := eval_api.BuildGenerationSources(
 		plan.From, plan.Agent, "", plan.Instruction, plan.traceOptions(),
@@ -203,7 +203,7 @@ func (ec *evalContext) generateRubric(
 
 	job, err := ec.evalClient.CreateEvaluatorGenerationJob(ctx, req, ProjectEndpointAPIVersion)
 	if err != nil {
-		return nil, fmt.Errorf("submitting the rubric generation job: %w", err)
+		return nil, messages.SubmittingRubricJob(err)
 	}
 	if noWait {
 		reportSubmitted(out, "azd ai eval evaluator", job.ID)
@@ -213,14 +213,14 @@ func (ec *evalContext) generateRubric(
 	completed, err := ec.pollGeneration(ctx, job.ID, ProjectEndpointAPIVersion,
 		ec.evalClient.GetEvaluatorGenerationJob)
 	if err != nil {
-		return nil, fmt.Errorf("rubric generation: %w", err)
+		return nil, messages.RubricGeneration(err)
 	}
 
 	path := project.ArtifactPath(plan.BaseDir, plan.OutputDir, plan.Name, ".json")
 	if err := writeRubric(path, completed.Result); err != nil {
 		return nil, err
 	}
-	fmt.Fprintf(out, "  wrote %s\n", path)
+	fmt.Fprint(out, messages.WroteArtifact(path))
 
 	_, version := completed.ResolvedNameVersion()
 	return &project.ArtifactRef{
@@ -240,21 +240,19 @@ func refuseUnbuildableSources(kinds []string) error {
 		return nil
 	}
 	reasons := map[string]string{
-		"prompt": "--from prompt needs --agent-instruction or --agent-instruction-file",
-		"agent": "--from agent needs a target agent; pass --target, " +
-			"or declare one under target: in eval.yaml",
-		"file": "--from file is not a generation source; " +
-			"register the file with `azd ai eval dataset create` instead",
+		"prompt": messages.FromPromptNeedsInstruction(),
+		"agent":  messages.FromAgentNeedsTarget(),
+		"file":   messages.FromFileNotASource(),
 	}
-	messages := make([]string, 0, len(kinds))
+	reasonsForKinds := make([]string, 0, len(kinds))
 	for _, k := range kinds {
 		if reason, ok := reasons[k]; ok {
-			messages = append(messages, reason)
+			reasonsForKinds = append(reasonsForKinds, reason)
 			continue
 		}
-		messages = append(messages, fmt.Sprintf("--from %s cannot be built from this plan", k))
+		reasonsForKinds = append(reasonsForKinds, messages.FromNotBuildable(k))
 	}
-	return errors.New(strings.Join(messages, "; "))
+	return messages.UnbuildableSources(reasonsForKinds)
 }
 
 // reportSubmitted says what was started and how to get back to it.
@@ -264,8 +262,8 @@ func refuseUnbuildableSources(kinds []string) error {
 // with has to be the one they can paste when they come back. The group is named
 // too, because the two job types share no collection.
 func reportSubmitted(out io.Writer, group, jobID string) {
-	fmt.Fprintf(out, "  submitted job %s\n", jobID)
-	fmt.Fprintf(out, "\nReattach with: %s job show %s\n", group, jobID)
+	fmt.Fprint(out, messages.JobSubmitted(jobID))
+	fmt.Fprint(out, messages.ReattachToJob(group, jobID))
 }
 
 // generateDataset submits the data generation job and downloads the result.
@@ -275,7 +273,7 @@ func (ec *evalContext) generateDataset(
 	out io.Writer,
 	noWait bool,
 ) (*project.ArtifactRef, error) {
-	fmt.Fprintf(out, "Generating dataset %s (%d samples)...\n", plan.Name, plan.SampleSize)
+	fmt.Fprint(out, messages.GeneratingDataset(plan.Name, plan.SampleSize))
 
 	sources, unbuildable := eval_api.BuildGenerationSources(
 		plan.From, plan.Agent, "", plan.Instruction, plan.traceOptions(),
@@ -287,7 +285,7 @@ func (ec *evalContext) generateDataset(
 
 	job, err := ec.evalClient.CreateDataGenerationJob(ctx, req, DataGenerationAPIVersion)
 	if err != nil {
-		return nil, fmt.Errorf("submitting the data generation job: %w", err)
+		return nil, messages.SubmittingDataJob(err)
 	}
 	if noWait {
 		reportSubmitted(out, "azd ai eval dataset", job.ID)
@@ -303,27 +301,25 @@ func (ec *evalContext) generateDataset(
 		// do anything about, so retry without the agent and say so.
 		promptOnly := eval_api.WithoutAgentSource(sources)
 		if eval_api.HasPromptSource(promptOnly) {
-			fmt.Fprintf(out,
-				"  warning: generating from agent %q failed in the service; "+
-					"retrying from the instruction alone.\n", plan.Agent)
+			fmt.Fprint(out, messages.WarningAgentSeedFailedRetrying(plan.Agent))
 
 			req = eval_api.NewDataGenerationJobRequest(
 				plan.Name, plan.Model, plan.SampleSize, promptOnly)
 			job, err = ec.evalClient.CreateDataGenerationJob(ctx, req, DataGenerationAPIVersion)
 			if err != nil {
-				return nil, fmt.Errorf("submitting the data generation job: %w", err)
+				return nil, messages.SubmittingDataJob(err)
 			}
 			completed, err = ec.pollGeneration(ctx, job.ID, DataGenerationAPIVersion,
 				ec.evalClient.GetDataGenerationJob)
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("data generation: %w", explainDataGenerationFailure(err, plan.Agent))
+		return nil, messages.DataGeneration(explainDataGenerationFailure(err, plan.Agent))
 	}
 
 	name, version := completed.ResolvedNameVersion()
 	if name == "" {
-		return nil, fmt.Errorf("the data generation job returned no dataset reference")
+		return nil, messages.DataJobReturnedNoDataset()
 	}
 
 	// Confirm the version exists before reading it, so a missing dataset is
@@ -331,21 +327,21 @@ func (ec *evalContext) generateDataset(
 	if _, err := ec.datasetClient.GetDataset(
 		ctx, name, version, ProjectEndpointAPIVersion,
 	); err != nil {
-		return nil, fmt.Errorf("reading the generated dataset %q: %w", name, err)
+		return nil, messages.ReadingGeneratedDataset(name, err)
 	}
 	content, err := ec.datasetClient.DownloadDatasetContent(ctx, name, version, ProjectEndpointAPIVersion)
 	if err != nil {
-		return nil, fmt.Errorf("downloading the generated dataset %q: %w", name, err)
+		return nil, messages.DownloadingGeneratedDataset(name, err)
 	}
 
 	path := project.ArtifactPath(plan.BaseDir, plan.OutputDir, plan.Name, ".jsonl")
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return nil, fmt.Errorf("creating %q: %w", filepath.Dir(path), err)
+		return nil, messages.Creating(filepath.Dir(path), err)
 	}
 	if err := os.WriteFile(path, content, 0o600); err != nil {
-		return nil, fmt.Errorf("writing %q: %w", path, err)
+		return nil, messages.Writing(path, err)
 	}
-	fmt.Fprintf(out, "  wrote %s\n", path)
+	fmt.Fprint(out, messages.WroteArtifact(path))
 
 	return &project.ArtifactRef{
 		Name:    plan.Name,
@@ -383,13 +379,7 @@ func explainDataGenerationFailure(err error, agentName string) error {
 		!strings.Contains(text, "Something went wrong during data generation") {
 		return err
 	}
-	return fmt.Errorf(
-		"%w\n\n"+
-			"This job seeded generation from agent %q. Agent-seeded data generation is "+
-			"currently failing in the service for every agent, so retrying will not help.\n"+
-			"Workarounds: supply your own dataset with --dataset, or run without --target "+
-			"to generate from the instruction alone.",
-		err, agentName)
+	return messages.AgentSeededGenerationFailing(err, agentName)
 }
 
 // pollGeneration waits for a generation job using the raised budget.
@@ -407,10 +397,10 @@ func (ec *evalContext) pollGeneration(
 // weights and descriptions and publish a new version.
 func writeRubric(path string, result json.RawMessage) error {
 	if len(result) == 0 {
-		return fmt.Errorf("the rubric generation job returned no result")
+		return messages.RubricJobReturnedNoResult()
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return fmt.Errorf("creating %q: %w", filepath.Dir(path), err)
+		return messages.Creating(filepath.Dir(path), err)
 	}
 
 	var parsed eval_api.EvaluatorResult

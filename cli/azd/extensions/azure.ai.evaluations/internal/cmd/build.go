@@ -7,9 +7,9 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"sort"
 	"strings"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
@@ -197,18 +197,12 @@ func planCriterion(
 		}
 	}
 	if len(missing) > 0 {
-		return nil, fmt.Errorf(
-			"evaluator %q requires %s, which the dataset does not provide; "+
-				"add %s to the dataset, or bind it with `data_mapping`",
-			ref.Evaluator, quoteList(missing), pluralColumns(missing),
-		)
+		return nil, messages.EvaluatorNeedsFields(ref.Evaluator, missing)
 	}
 
 	if !schema.SupportsLevel(level) {
-		return nil, fmt.Errorf(
-			"evaluator %q does not support evaluation level %q; it supports %s",
-			ref.Evaluator, level, quoteList(schema.SupportedEvaluationLevels),
-		)
+		return nil, messages.EvaluatorLevelUnsupported(
+			ref.Evaluator, level, schema.SupportedEvaluationLevels)
 	}
 
 	initSchema := schema.InitSchema()
@@ -246,11 +240,7 @@ func planCriterion(
 			}
 		}
 		if len(missingInit) > 0 {
-			return nil, fmt.Errorf(
-				"evaluator %q requires %s; set it under the evaluator's "+
-					"`initialization_parameters` in the eval config",
-				ref.Evaluator, quoteList(missingInit),
-			)
+			return nil, messages.EvaluatorNeedsInitParams(ref.Evaluator, missingInit)
 		}
 	}
 
@@ -381,26 +371,4 @@ func itemSchema(fields map[string]bool) map[string]any {
 		"type":       "object",
 		"properties": properties,
 	}
-}
-
-func quoteList(values []string) string {
-	if len(values) == 0 {
-		return "nothing"
-	}
-	quoted := make([]string, 0, len(values))
-	for _, value := range values {
-		quoted = append(quoted, fmt.Sprintf("%q", value))
-	}
-	sort.Strings(quoted)
-	if len(quoted) == 1 {
-		return quoted[0]
-	}
-	return strings.Join(quoted[:len(quoted)-1], ", ") + " and " + quoted[len(quoted)-1]
-}
-
-func pluralColumns(values []string) string {
-	if len(values) == 1 {
-		return "that column"
-	}
-	return "those columns"
 }

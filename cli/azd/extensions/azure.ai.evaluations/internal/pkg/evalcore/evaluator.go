@@ -6,8 +6,9 @@ package evalcore
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"strings"
+
+	"azureaieval/internal/messages"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -74,12 +75,9 @@ func (e EvaluatorRef) CriterionName() string {
 // same entry also carries.
 type EvaluatorList []EvaluatorRef
 
-const bareEvaluatorRemedy = "an evaluator entry is a mapping, not a bare string: " +
-	"write `- evaluator: %s`"
-
 func (el *EvaluatorList) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind != yaml.SequenceNode {
-		return fmt.Errorf("evaluators must be a sequence, got %v", value.Kind)
+		return messages.EvaluatorsMustBeSequence(value.Kind)
 	}
 
 	result := make([]EvaluatorRef, 0, len(value.Content))
@@ -88,20 +86,20 @@ func (el *EvaluatorList) UnmarshalYAML(value *yaml.Node) error {
 		case yaml.ScalarNode:
 			var name string
 			if err := node.Decode(&name); err != nil {
-				return fmt.Errorf("decoding evaluator name: %w", err)
+				return messages.DecodingEvaluatorName(err)
 			}
-			return fmt.Errorf(bareEvaluatorRemedy, name)
+			return messages.BareEvaluatorEntry(name)
 		case yaml.MappingNode:
 			var ref EvaluatorRef
 			if err := node.Decode(&ref); err != nil {
-				return fmt.Errorf("decoding evaluator: %w", err)
+				return messages.DecodingEvaluator(err)
 			}
 			if ref.Evaluator == "" {
-				return fmt.Errorf("evaluator entry is missing 'evaluator'")
+				return messages.EvaluatorEntryMissingEvaluator()
 			}
 			result = append(result, ref)
 		default:
-			return fmt.Errorf("evaluator entry must be a mapping, got %v", node.Kind)
+			return messages.EvaluatorEntryMustBeMapping(node.Kind)
 		}
 	}
 
@@ -118,7 +116,7 @@ func (el *EvaluatorList) UnmarshalYAML(value *yaml.Node) error {
 func (el *EvaluatorList) UnmarshalJSON(data []byte) error {
 	var entries []json.RawMessage
 	if err := json.Unmarshal(data, &entries); err != nil {
-		return fmt.Errorf("evaluators must be a list: %w", err)
+		return messages.EvaluatorsMustBeList(err)
 	}
 
 	result := make([]EvaluatorRef, 0, len(entries))
@@ -127,17 +125,17 @@ func (el *EvaluatorList) UnmarshalJSON(data []byte) error {
 		if len(trimmed) > 0 && trimmed[0] == '"' {
 			var name string
 			if err := json.Unmarshal(trimmed, &name); err != nil {
-				return fmt.Errorf("decoding evaluator name: %w", err)
+				return messages.DecodingEvaluatorName(err)
 			}
-			return fmt.Errorf(bareEvaluatorRemedy, name)
+			return messages.BareEvaluatorEntry(name)
 		}
 
 		var ref EvaluatorRef
 		if err := json.Unmarshal(trimmed, &ref); err != nil {
-			return fmt.Errorf("decoding evaluator: %w", err)
+			return messages.DecodingEvaluator(err)
 		}
 		if ref.Evaluator == "" {
-			return fmt.Errorf("evaluator entry is missing 'evaluator'")
+			return messages.EvaluatorEntryMissingEvaluator()
 		}
 		result = append(result, ref)
 	}

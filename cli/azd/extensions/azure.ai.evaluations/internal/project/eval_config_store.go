@@ -5,10 +5,11 @@ package project
 
 import (
 	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"azureaieval/internal/messages"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -48,12 +49,12 @@ func OpenEvalConfig(evalDir string) (*EvalConfig, error) {
 func LoadEvalConfig(path string) (*EvalConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading eval config %q: %w", path, err)
+		return nil, messages.ReadingEvalConfig(path, err)
 	}
 
 	var cfg EvalConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing eval config %q: %w", path, err)
+		return nil, messages.ParsingEvalConfig(path, err)
 	}
 	return &cfg, nil
 }
@@ -62,7 +63,7 @@ func LoadEvalConfig(path string) (*EvalConfig, error) {
 // directory when it does not exist yet.
 func SaveEvalConfig(evalDir string, cfg *EvalConfig) error {
 	if err := os.MkdirAll(evalDir, 0o750); err != nil {
-		return fmt.Errorf("creating %q: %w", evalDir, err)
+		return messages.Creating(evalDir, err)
 	}
 	return SaveEvalConfigTo(EvalConfigPath(evalDir), cfg)
 }
@@ -72,10 +73,10 @@ func SaveEvalConfig(evalDir string, cfg *EvalConfig) error {
 func SaveEvalConfigTo(path string, cfg *EvalConfig) error {
 	body, err := yaml.Marshal(cfg)
 	if err != nil {
-		return fmt.Errorf("serializing eval config: %w", err)
+		return messages.SerializingEvalConfig(err)
 	}
 	if err := os.WriteFile(path, body, 0o600); err != nil {
-		return fmt.Errorf("writing eval config %q: %w", path, err)
+		return messages.WritingEvalConfig(path, err)
 	}
 	return nil
 }

@@ -1,8 +1,9 @@
 // Package messages holds every string this extension shows a user.
 //
 // One file, so the whole voice of the CLI can be reviewed in one sitting and a
-// wording change never has to be hunted through the command tree. Nothing here
-// imports anything from the extension, so any package can use it.
+// wording change never has to be hunted through the command tree. The only
+// extension package it imports is exterrors, which holds no wording of its own,
+// so every other package can use this one.
 //
 // Conventions, so the set stays consistent:
 //
@@ -11,12 +12,17 @@
 //   - A name the user chose is quoted with %q; an identifier the service
 //     assigned is not, because it is already unmistakable.
 //   - Progress and success lines are sentences with a capital and no period.
+//   - A printed line carries its own newlines, so a call site is a bare Fprint.
 //   - Nothing here decides *whether* to print. That stays at the call site.
 package messages
 
 import (
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
+
+	"azureaieval/internal/exterrors"
 )
 
 // ---------------------------------------------------------------------------
@@ -60,6 +66,316 @@ func ResponsesNeedIDs(eval string) error {
 		eval)
 }
 
+// DatasetOverrideNeedsDeclaredEval reports --dataset passed against a bare id.
+func DatasetOverrideNeedsDeclaredEval() error {
+	return errors.New(
+		"--dataset overrides the dataset an eval declares, so it needs a " +
+			"declared eval; pass --eval with a name from the configuration")
+}
+
+// DatasetNotInCatalog reports a --dataset the configuration does not declare.
+func DatasetNotInCatalog(dataset, configPath string) error {
+	return fmt.Errorf("dataset %q is not in the catalog in %s", dataset, configPath)
+}
+
+// DatasetHasUnregisteredEdits reports local rows no deployed version holds.
+func DatasetHasUnregisteredEdits(dataset string) error {
+	return fmt.Errorf(
+		"dataset %q has local edits that are not registered.\n"+
+			"  Run `azd up` to register them, or `--eval-id <id>` to run against "+
+			"an existing eval",
+		dataset)
+}
+
+// CreatingEval reports an eval being created because it has never been deployed.
+func CreatingEval(eval string) string {
+	return fmt.Sprintf("Creating eval %q...\n", eval)
+}
+
+// CreatingEvalFailed reports the service refusing to create the eval.
+func CreatingEvalFailed(eval string, err error) error {
+	return fmt.Errorf("creating eval %q: %w", eval, err)
+}
+
+// StartingRun reports the service refusing to start the run.
+func StartingRun(err error) error {
+	return fmt.Errorf("starting the evaluation run: %w", err)
+}
+
+// RunStarted reports a submitted run that was not waited on.
+func RunStarted(runID, status string) string {
+	return fmt.Sprintf("Started run %s (status: %s)\n", runID, status)
+}
+
+// ReattachToRun says how to come back to a run started with --no-wait.
+func ReattachToRun(runID, evalID string) string {
+	return fmt.Sprintf("Reattach with: azd ai eval run show %s --eval %s\n", runID, evalID)
+}
+
+// ReadingPreviousRuns reports a failure to look up what an eval last ran.
+func ReadingPreviousRuns(evalID string, err error) error {
+	return fmt.Errorf("reading previous runs of eval %s: %w", evalID, err)
+}
+
+// EvalHasNoPreviousRun reports an eval named by id that has nothing to repeat.
+func EvalHasNoPreviousRun(evalID string) error {
+	return fmt.Errorf(
+		"eval %s has no previous run to repeat, so there is no target or dataset "+
+			"to reuse.\n"+
+			"  Run it from the config once with `azd ai eval run start`, or name an "+
+			"eval that declares one with `--eval`",
+		evalID)
+}
+
+// PollingRun reports a failure while waiting for a run to finish.
+func PollingRun(runID string, err error) error {
+	return fmt.Errorf("polling run %s: %w", runID, err)
+}
+
+// RunStatusLine reports a status change seen while polling.
+func RunStatusLine(status string) string {
+	return fmt.Sprintf("  status: %s\n", status)
+}
+
+// RunFinishedWithStatus reports a run that ended in something other than completed.
+func RunFinishedWithStatus(runID, status string) error {
+	return fmt.Errorf("run %s finished with status %s", runID, status)
+}
+
+// OverallPassRate reports the share of samples that passed every evaluator.
+func OverallPassRate(rate string, passed, total int) string {
+	return fmt.Sprintf("\nOverall pass rate: %s  (%d/%d samples passed every evaluator)\n",
+		rate, passed, total)
+}
+
+// SamplesErrored reports rows the run could not score at all.
+func SamplesErrored(errored int) string {
+	return fmt.Sprintf("%d sample(s) errored and were not scored.\n", errored)
+}
+
+// ViewFailingSamples points at the command that lists the rows that failed.
+func ViewFailingSamples() string {
+	return "\nView failing samples: azd ai eval run output list --failed-only\n"
+}
+
+// ErroredNotScored annotates an evaluator's row with what it could not score.
+func ErroredNotScored(errored int) string {
+	return fmt.Sprintf("(%d errored, not scored)", errored)
+}
+
+// ReportLink closes a run summary with the service's own report.
+func ReportLink(url string) string {
+	return fmt.Sprintf("Report: %s\n", url)
+}
+
+// EvalNotDeployed reports an eval id the project does not hold.
+func EvalNotDeployed(evalID string) error {
+	return fmt.Errorf(
+		"no eval %q in this project; "+
+			"`azd up` creates the ones your config declares", evalID)
+}
+
+// EvalNotDeployedYet reports a declared eval that no deploy has created.
+func EvalNotDeployedYet(eval string) error {
+	return fmt.Errorf(
+		"eval %q is declared but has not been deployed to this environment yet; "+
+			"run `azd up` first", eval)
+}
+
+// NoEvalNamedOrDeclared reports a command with no eval to act on.
+func NoEvalNamedOrDeclared(configPath string) error {
+	return fmt.Errorf(
+		"no eval was named and none is declared in %s; pass --eval with a name or an id",
+		configPath)
+}
+
+// NoEvalGiven reports a command run outside a project with no eval id.
+func NoEvalGiven() error {
+	return errors.New("no eval given; pass its id as an argument, or name one with --eval")
+}
+
+// ListingRuns reports a failure to list an eval's runs.
+func ListingRuns(evalID string, err error) error {
+	return fmt.Errorf("listing runs for %q: %w", evalID, err)
+}
+
+// EvalHasNoRunsLine reports an eval with no runs to list.
+func EvalHasNoRunsLine(evalID string) string {
+	return fmt.Sprintf("Eval %s has no runs yet.\n", evalID)
+}
+
+// EvalHasNoRuns reports an eval with no run to fall back on.
+func EvalHasNoRuns(evalID string) error {
+	return fmt.Errorf("eval %s has no runs yet", evalID)
+}
+
+// ReadingRun reports a failure to read the run the caller named.
+func ReadingRun(runID string, err error) error {
+	return fmt.Errorf("reading run %s: %w", runID, err)
+}
+
+// RunHeading opens the detail view of one run.
+func RunHeading(runID string) string {
+	return fmt.Sprintf("Run %s\n", runID)
+}
+
+// RunNameLine reports the run's name in the detail view.
+func RunNameLine(name string) string {
+	return fmt.Sprintf("  name    : %s\n", name)
+}
+
+// RunStatusDetail reports the run's status in the detail view.
+func RunStatusDetail(status string) string {
+	return fmt.Sprintf("  status  : %s\n", status)
+}
+
+// RunResultsLine reports the run's counts in the detail view.
+func RunResultsLine(counts string) string {
+	return fmt.Sprintf("  results : %s\n", counts)
+}
+
+// RunReportLine reports the run's report URL in the detail view.
+func RunReportLine(url string) string {
+	return fmt.Sprintf("  report  : %s\n", url)
+}
+
+// CountsSummary renders a run's verdict counts on one line.
+func CountsSummary(passed, failed, errored int) string {
+	return fmt.Sprintf("%d passed, %d failed, %d errored", passed, failed, errored)
+}
+
+// RunAlreadyFinished reports a cancel asked of a run that already ended.
+func RunAlreadyFinished(runID, status string) error {
+	return fmt.Errorf("run %s already finished with status %q", runID, status)
+}
+
+// CancellingRun reports the service refusing to cancel the run.
+func CancellingRun(runID string, err error) error {
+	return fmt.Errorf("cancelling run %s: %w", runID, err)
+}
+
+// RunIsNow reports the state a cancelled run moved to.
+func RunIsNow(runID, status string) string {
+	return fmt.Sprintf("Run %s is now %s\n", runID, status)
+}
+
+// RunNotFound reports a run id the eval does not hold.
+func RunNotFound(runID, evalID string) error {
+	return fmt.Errorf("no run %q on eval %q", runID, evalID)
+}
+
+// DeletingRun reports the service refusing to delete the run.
+func DeletingRun(runID string, err error) error {
+	return fmt.Errorf("deleting run %s: %w", runID, err)
+}
+
+// RunDeleted confirms a deleted run.
+func RunDeleted(runID string) string {
+	return fmt.Sprintf("Deleted run %s\n", runID)
+}
+
+// ReadingRunResults reports a failure to read a run's per-sample rows.
+func ReadingRunResults(runID string, err error) error {
+	return fmt.Errorf("reading the results of run %s: %w", runID, err)
+}
+
+// OutputItemNotFound reports an output item the run does not hold.
+func OutputItemNotFound(itemID, runID string) error {
+	return fmt.Errorf(
+		"no output item %q on run %s; "+
+			"`azd ai eval run output list` shows the ones there are",
+		itemID, runID)
+}
+
+// ReadingOutputItem reports a failure to read one evaluated row.
+func ReadingOutputItem(itemID string, err error) error {
+	return fmt.Errorf("reading output item %q: %w", itemID, err)
+}
+
+// RunStatusHeading opens the per-sample view of a run.
+func RunStatusHeading(runID, status string) string {
+	return fmt.Sprintf("Run %s  status: %s\n", runID, status)
+}
+
+// ResultTotals reports a run's verdict counts above the rows.
+func ResultTotals(passed, failed, errored int) string {
+	return fmt.Sprintf("Totals: %d passed, %d failed, %d errored\n\n", passed, failed, errored)
+}
+
+// NoFailingRows reports a --failed-only listing with nothing in it.
+func NoFailingRows() string {
+	return "\nNo failing rows.\n"
+}
+
+// NoRowsScored reports a run that has produced no rows yet.
+func NoRowsScored() string {
+	return "\nNo rows have been scored yet.\n"
+}
+
+// SamplesFailedAtLeastOne closes a --failed-only listing with its count.
+func SamplesFailedAtLeastOne(samples int) string {
+	return fmt.Sprintf("\n%d sample(s) failed at least one evaluator.\n", samples)
+}
+
+// ReportLinkAfterRows closes a per-sample listing with the service's report.
+func ReportLinkAfterRows(url string) string {
+	return fmt.Sprintf("\nReport: %s\n", url)
+}
+
+// ExportFormatInvalid reports an --format the export command cannot write.
+func ExportFormatInvalid(format string) error {
+	return fmt.Errorf("--format must be json or csv, got %q", format)
+}
+
+// ExportFormatUnsupported reports an --format that got past the flag check.
+func ExportFormatUnsupported(format, csv, json, jsonl string) error {
+	return fmt.Errorf(
+		"--format %q is not supported; use %s, %s or %s",
+		format, csv, json, jsonl)
+}
+
+// FailOnInvalid reports a --fail-on value that is neither form of threshold.
+func FailOnInvalid(spec string) error {
+	return fmt.Errorf("--fail-on must be any-failure or pass-rate=<0..1>, got %q", spec)
+}
+
+// FailOnRateNotNumber reports a --fail-on pass rate that will not parse.
+func FailOnRateNotNumber(rate string) error {
+	return fmt.Errorf("--fail-on pass-rate must be a number, got %q", rate)
+}
+
+// FailOnRateOutOfRange reports a --fail-on pass rate outside 0..1.
+func FailOnRateOutOfRange(value float64) error {
+	return fmt.Errorf("--fail-on pass-rate must be between 0 and 1, got %v", value)
+}
+
+// GateNoResultCounts reports a gate that has nothing to measure against.
+func GateNoResultCounts() string {
+	return "the run reported no result counts, so the threshold cannot be checked"
+}
+
+// GateSamplesDidNotPass reports an any-failure gate that was breached.
+func GateSamplesDidNotPass(unpassed, total int) string {
+	return fmt.Sprintf("%d of %d samples did not pass", unpassed, total)
+}
+
+// GateNoRowsScored reports a pass-rate gate over a run that scored nothing.
+func GateNoRowsScored() string {
+	return "the run scored no rows, so its pass rate is below any threshold"
+}
+
+// GatePassRateBelow reports a pass-rate gate that was breached.
+func GatePassRateBelow(actual, required float64) string {
+	return fmt.Sprintf("pass rate %.1f%% is below the required %.1f%%",
+		actual*100, required*100)
+}
+
+// GateBreached is the block a breached gate leaves in a pipeline's log.
+func GateBreached(reason string) string {
+	return fmt.Sprintf("%s Evaluation gate: %s\n\nERROR: evaluation quality gate not met.\n",
+		FailedMark, reason)
+}
+
 // ---------------------------------------------------------------------------
 // Generation
 // ---------------------------------------------------------------------------
@@ -70,4 +386,1373 @@ func ResponsesNeedIDs(eval string) error {
 // is the whole of the way out.
 func GenerationModelRequired() error {
 	return errors.New("a model deployment is required to generate: pass --generation-model")
+}
+
+// ReadingInstructionFile reports an --agent-instruction-file that would not read.
+func ReadingInstructionFile(path string, err error) error {
+	return fmt.Errorf("reading --agent-instruction-file %q: %w", path, err)
+}
+
+// InstructionFileEmpty reports an --agent-instruction-file with nothing in it.
+func InstructionFileEmpty(path string) error {
+	return fmt.Errorf("--agent-instruction-file %q is empty", path)
+}
+
+// ReadingInstructions reports a declared instructions file that would not read.
+func ReadingInstructions(named string, err error) error {
+	return fmt.Errorf("reading instructions %q: %w", named, err)
+}
+
+// SeedingFromFile names the local file generation was seeded from.
+func SeedingFromFile(path string) string {
+	return fmt.Sprintf("  Seeding generation from %s.\n", path)
+}
+
+// SeedingFromAgent names the agent whose published instructions seeded generation.
+func SeedingFromAgent(agent string) string {
+	return fmt.Sprintf("  Seeding generation from the instructions of agent %q.\n", agent)
+}
+
+// WarningAgentUnreadable reports an agent that could not supply context.
+func WarningAgentUnreadable(agent string, err error) string {
+	return fmt.Sprintf("  warning: could not read agent %q for generation context: %v\n",
+		agent, err)
+}
+
+// WarningAgentSeedFailedRetrying reports the retry that drops the agent source.
+func WarningAgentSeedFailedRetrying(agent string) string {
+	return fmt.Sprintf(
+		"  warning: generating from agent %q failed in the service; "+
+			"retrying from the instruction alone.\n", agent)
+}
+
+// GeneratingRubric reports a rubric generation job about to be submitted.
+func GeneratingRubric(name string) string {
+	return fmt.Sprintf("Generating rubric %s...\n", name)
+}
+
+// GeneratingDataset reports a dataset generation job about to be submitted.
+func GeneratingDataset(name string, samples int) string {
+	return fmt.Sprintf("Generating dataset %s (%d samples)...\n", name, samples)
+}
+
+// SubmittingRubricJob reports the service refusing the rubric job.
+func SubmittingRubricJob(err error) error {
+	return fmt.Errorf("submitting the rubric generation job: %w", err)
+}
+
+// SubmittingDataJob reports the service refusing the data generation job.
+func SubmittingDataJob(err error) error {
+	return fmt.Errorf("submitting the data generation job: %w", err)
+}
+
+// RubricGeneration reports a rubric job that did not finish successfully.
+func RubricGeneration(err error) error {
+	return fmt.Errorf("rubric generation: %w", err)
+}
+
+// DataGeneration reports a data job that did not finish successfully.
+func DataGeneration(err error) error {
+	return fmt.Errorf("data generation: %w", err)
+}
+
+// RubricJobReturnedNoResult reports a completed rubric job with nothing to write.
+func RubricJobReturnedNoResult() error {
+	return errors.New("the rubric generation job returned no result")
+}
+
+// DataJobReturnedNoDataset reports a completed data job with nothing to fetch.
+func DataJobReturnedNoDataset() error {
+	return errors.New("the data generation job returned no dataset reference")
+}
+
+// ReadingGeneratedDataset reports the generated dataset not being there to read.
+func ReadingGeneratedDataset(name string, err error) error {
+	return fmt.Errorf("reading the generated dataset %q: %w", name, err)
+}
+
+// DownloadingGeneratedDataset reports a failure to fetch the generated rows.
+func DownloadingGeneratedDataset(name string, err error) error {
+	return fmt.Errorf("downloading the generated dataset %q: %w", name, err)
+}
+
+// AgentSeededGenerationFailing explains the service-side failure that hits
+// every agent, so the caller does not retry against a deterministic failure.
+func AgentSeededGenerationFailing(err error, agent string) error {
+	return fmt.Errorf(
+		"%w\n\n"+
+			"This job seeded generation from agent %q. Agent-seeded data generation is "+
+			"currently failing in the service for every agent, so retrying will not help.\n"+
+			"Workarounds: supply your own dataset with --dataset, or run without --target "+
+			"to generate from the instruction alone.",
+		err, agent)
+}
+
+// FromPromptNeedsInstruction reports --from prompt with nothing to prompt with.
+func FromPromptNeedsInstruction() string {
+	return "--from prompt needs --agent-instruction or --agent-instruction-file"
+}
+
+// FromAgentNeedsTarget reports --from agent with no agent to read.
+func FromAgentNeedsTarget() string {
+	return "--from agent needs a target agent; pass --target, " +
+		"or declare one under target: in eval.yaml"
+}
+
+// FromFileNotASource reports --from file, which generation has no path for.
+func FromFileNotASource() string {
+	return "--from file is not a generation source; " +
+		"register the file with `azd ai eval dataset create` instead"
+}
+
+// FromNotBuildable reports a --from this plan cannot satisfy.
+func FromNotBuildable(kind string) string {
+	return fmt.Sprintf("--from %s cannot be built from this plan", kind)
+}
+
+// UnbuildableSources reports every --from the plan could not honour at once.
+func UnbuildableSources(reasons []string) error {
+	return errors.New(strings.Join(reasons, "; "))
+}
+
+// JobSubmitted reports the id of a job started with --no-wait.
+func JobSubmitted(jobID string) string {
+	return fmt.Sprintf("  submitted job %s\n", jobID)
+}
+
+// ReattachToJob says how to come back to a job started with --no-wait.
+func ReattachToJob(group, jobID string) string {
+	return fmt.Sprintf("\nReattach with: %s job show %s\n", group, jobID)
+}
+
+// WroteArtifact reports where a generated artifact landed.
+func WroteArtifact(path string) string {
+	return fmt.Sprintf("  wrote %s\n", path)
+}
+
+// ArtifactExists reports a generation that would overwrite a checked-in file.
+func ArtifactExists(path string) error {
+	return fmt.Errorf(
+		"%s already exists; pass --force to overwrite it, or --output-dir to write elsewhere",
+		path)
+}
+
+// NothingGenerated reports a generation that produced no artifact.
+func NothingGenerated() string {
+	return "Nothing was generated.\n"
+}
+
+// ListingJobs reports a failure to list one kind of generation job.
+func ListingJobs(kind string, err error) error {
+	return fmt.Errorf("listing %s generation jobs: %w", kind, err)
+}
+
+// NoJobs reports a project with no generation jobs of that kind.
+func NoJobs(kind string) string {
+	return fmt.Sprintf("No %s generation jobs found.\n", kind)
+}
+
+// JobLine renders one generation job in a listing or a detail view.
+func JobLine(jobID, status string) string {
+	return fmt.Sprintf("%s  %s\n", jobID, status)
+}
+
+// JobErrorLine reports why a generation job failed.
+func JobErrorLine(message string) string {
+	return fmt.Sprintf("error: %s\n", message)
+}
+
+// JobCancelled confirms a cancelled generation job.
+func JobCancelled(kind, jobID, status string) string {
+	return fmt.Sprintf("Cancelled %s generation job %s (%s)\n", kind, jobID, status)
+}
+
+// JobDeleted confirms a deleted generation job record.
+func JobDeleted(kind, jobID string) string {
+	return fmt.Sprintf("Deleted %s generation job %s\n", kind, jobID)
+}
+
+// JobNotFound reports a job id that is not in this group, naming the other one.
+func JobNotFound(kind, jobID, other string) error {
+	return fmt.Errorf(
+		"no %s generation job %q in this project; if it generated a %s, "+
+			"use the %s job group instead", kind, jobID, other, other)
+}
+
+// ReadingJob reports a failure to read a generation job.
+func ReadingJob(kind, jobID string, err error) error {
+	return fmt.Errorf("reading %s generation job %s: %w", kind, jobID, err)
+}
+
+// JobFailedWithReason reports a polled job that failed and said why.
+func JobFailedWithReason(status, message string) string {
+	return fmt.Sprintf("job failed with status %q: %s", status, message)
+}
+
+// JobFailed reports a polled job that failed without saying why.
+func JobFailed(status string) string {
+	return fmt.Sprintf("job failed with status %q", status)
+}
+
+// PollerTimedOut reports a job that was still running when polling gave up.
+func PollerTimedOut(operationID string, attempts int) string {
+	return fmt.Sprintf("operation %s did not complete within %d attempts",
+		operationID, attempts)
+}
+
+// OperationIDEmpty reports a poll with nothing to poll for.
+func OperationIDEmpty() error {
+	return errors.New("operation ID is empty")
+}
+
+// ---------------------------------------------------------------------------
+// Datasets
+// ---------------------------------------------------------------------------
+
+// ReadingDataset reports a dataset that could not be read, by name or by path.
+func ReadingDataset(dataset string, err error) error {
+	return fmt.Errorf("reading dataset %q: %w", dataset, err)
+}
+
+// DatasetHasNoVersionsToRead reports a registered dataset with nothing published.
+func DatasetHasNoVersionsToRead(dataset string) error {
+	return fmt.Errorf("dataset %q has no versions to read", dataset)
+}
+
+// ReadingDatasetVersion reports one version of a dataset failing to read.
+func ReadingDatasetVersion(dataset, version string, err error) error {
+	return fmt.Errorf("reading dataset %q version %s: %w", dataset, version, err)
+}
+
+// DatasetVersionEmpty reports a published version that holds no rows.
+func DatasetVersionEmpty(dataset, version string) error {
+	return fmt.Errorf("dataset %q version %s has no rows", dataset, version)
+}
+
+// JSONLLineInvalid reports a row that is not JSON, by line.
+func JSONLLineInvalid(line int, err error) error {
+	return fmt.Errorf("line %d is not valid JSON: %w", line, err)
+}
+
+// JSONLRowInvalid reports a row that is not JSON before the file is published.
+func JSONLRowInvalid(path string, line int, err error) error {
+	return fmt.Errorf(
+		"%s line %d is not valid JSON: %w. Every line must be one JSON object",
+		path, line, err)
+}
+
+// JSONLRowEmpty reports a row that parses to nothing to evaluate.
+func JSONLRowEmpty(path string, line int) error {
+	return fmt.Errorf("%s line %d is an empty object, which evaluates to nothing", path, line)
+}
+
+// JSONLNoRows reports a dataset file with nothing in it to evaluate.
+func JSONLNoRows(path string) error {
+	return fmt.Errorf("%s has no rows to evaluate", path)
+}
+
+// ReadingFromFile reports a --from-file that would not stat.
+func ReadingFromFile(path string, err error) error {
+	return fmt.Errorf("reading --from-file %q: %w", path, err)
+}
+
+// FromFileMustBeJSONL reports a --from-file that is not a dataset.
+func FromFileMustBeJSONL(path string) error {
+	return fmt.Errorf(
+		"--from-file must be a .jsonl file or a directory containing one, got %q", path)
+}
+
+// RegisteringDataset reports the service refusing to publish the dataset.
+func RegisteringDataset(dataset string, err error) error {
+	return fmt.Errorf("registering dataset %q: %w", dataset, err)
+}
+
+// DatasetRegistered confirms a published dataset version.
+func DatasetRegistered(dataset, version string) string {
+	return fmt.Sprintf("Registered dataset %s version %s\n", dataset, version)
+}
+
+// ListingDatasets reports a failure to list the project's datasets.
+func ListingDatasets(err error) error {
+	return fmt.Errorf("listing datasets: %w", err)
+}
+
+// ListingDatasetVersions reports a failure to list one dataset's versions.
+func ListingDatasetVersions(dataset string, err error) error {
+	return fmt.Errorf("listing versions of dataset %q: %w", dataset, err)
+}
+
+// NoDatasets reports a project with no datasets to list.
+func NoDatasets() string {
+	return "No datasets found.\n"
+}
+
+// ResolvingLatestDatasetVersion reports a failure to find what "latest" means.
+func ResolvingLatestDatasetVersion(dataset string, err error) error {
+	return fmt.Errorf("resolving the latest version of %q: %w", dataset, err)
+}
+
+// DatasetHasNoVersions reports a dataset nothing was ever published under.
+func DatasetHasNoVersions(dataset string) error {
+	return fmt.Errorf("dataset %q has no versions", dataset)
+}
+
+// DatasetVersionNotFoundWithHint reports a dataset version the project does not hold.
+func DatasetVersionNotFoundWithHint(dataset, version string) error {
+	return fmt.Errorf(
+		"no dataset %q at version %q in this project; "+
+			"`azd ai eval dataset list` shows the ones there are", dataset, version)
+}
+
+// DatasetVersionNotFound reports a dataset version there is nothing to delete at.
+func DatasetVersionNotFound(dataset, version string) error {
+	return fmt.Errorf("no dataset %q at version %q in this project", dataset, version)
+}
+
+// DeletingDatasetVersion reports the service refusing the delete.
+func DeletingDatasetVersion(dataset, version string, err error) error {
+	return fmt.Errorf("deleting dataset %q version %q: %w", dataset, version, err)
+}
+
+// DatasetDeleted confirms a deleted dataset version.
+func DatasetDeleted(dataset, version string) string {
+	return fmt.Sprintf("Deleted dataset %s version %s\n", dataset, version)
+}
+
+// DatasetProblem attributes a failure to the dataset it happened under.
+func DatasetProblem(dataset string, err error) error {
+	return fmt.Errorf("dataset %q: %w", dataset, err)
+}
+
+// DatasetSource reports a declared source that is not on disk.
+func DatasetSource(path string, err error) error {
+	return fmt.Errorf("dataset source %q: %w", path, err)
+}
+
+// DatasetNotLocalNorFound reports a source-less dataset the project rejected.
+func DatasetNotLocalNorFound(dataset string, err error) error {
+	return fmt.Errorf(
+		"dataset %q has no local source and could not be found on the project: %w",
+		dataset, err)
+}
+
+// DatasetNotLocalNorRegistered reports a source-less dataset nobody published.
+func DatasetNotLocalNorRegistered(dataset string) error {
+	return fmt.Errorf(
+		"dataset %q has no local source and is not registered on the project", dataset)
+}
+
+// DatasetVersionConflict reports a pinned version the local file disagrees with.
+func DatasetVersionConflict(dataset, version string) error {
+	return fmt.Errorf(
+		"dataset %q version %s already exists and the local file differs from it. "+
+			"Raise `version:` to publish the change, or drop it to let each "+
+			"deploy take the next version",
+		dataset, version)
+}
+
+// DatasetDrifted reports a version published outside the repo since the last deploy.
+func DatasetDrifted(dataset, latest, recorded string) error {
+	return fmt.Errorf(
+		"dataset %q is at version %s on the project but %s was recorded at the last deploy; "+
+			"someone published a version outside this repo. "+
+			"Pin it with `version: %s` on the dataset, or pull the newer content locally, "+
+			"then deploy again",
+		dataset, latest, recorded, latest)
+}
+
+// ReadingDatasetDirectory reports the upload scan failing to read the directory.
+func ReadingDatasetDirectory(err error) error {
+	return fmt.Errorf("reading directory: %w", err)
+}
+
+// NoJSONLInDirectory reports an upload directory holding no dataset.
+func NoJSONLInDirectory(dir string) error {
+	return fmt.Errorf("no .jsonl file found in %s", dir)
+}
+
+// ReadingDatasetFromDir reports the upload failing to gather the local rows.
+func ReadingDatasetFromDir(dir string, err error) error {
+	return fmt.Errorf("reading dataset from %s: %w", dir, err)
+}
+
+// StartingPendingUpload reports the service refusing to open an upload.
+func StartingPendingUpload(err error) error {
+	return fmt.Errorf("starting pending upload: %w", err)
+}
+
+// NoUploadURI reports an accepted upload the service gave nowhere to write to.
+func NoUploadURI() error {
+	return errors.New("no upload SAS URI returned from startPendingUpload")
+}
+
+// UploadingBlob reports the dataset content failing to upload.
+func UploadingBlob(err error) error {
+	return fmt.Errorf("uploading blob: %w", err)
+}
+
+// ReadingDownloadCredentials reports the service refusing to hand out a read URI.
+func ReadingDownloadCredentials(dataset string, err error) error {
+	return fmt.Errorf("reading download credentials for %q: %w", dataset, err)
+}
+
+// NoDownloadURI reports a dataset the service gave nowhere to read from.
+func NoDownloadURI(dataset string) error {
+	return fmt.Errorf("no download URI returned for dataset %q", dataset)
+}
+
+// ListingDatasetContent reports a failure to list what a dataset version holds.
+func ListingDatasetContent(dataset string, err error) error {
+	return fmt.Errorf("listing the content of dataset %q: %w", dataset, err)
+}
+
+// DatasetHasNoFile reports a dataset version with nothing to download.
+func DatasetHasNoFile(dataset string) error {
+	return fmt.Errorf("dataset %q holds no downloadable file", dataset)
+}
+
+// ---------------------------------------------------------------------------
+// Evaluators
+// ---------------------------------------------------------------------------
+
+// EvaluatorNeedsFields reports required inputs the dataset does not carry.
+func EvaluatorNeedsFields(evaluator string, missing []string) error {
+	return fmt.Errorf(
+		"evaluator %q requires %s, which the dataset does not provide; "+
+			"add %s to the dataset, or bind it with `data_mapping`",
+		evaluator, quoteList(missing), pluralColumns(missing))
+}
+
+// EvaluatorLevelUnsupported reports an evaluation level the evaluator refuses.
+func EvaluatorLevelUnsupported(evaluator, level string, supported []string) error {
+	return fmt.Errorf(
+		"evaluator %q does not support evaluation level %q; it supports %s",
+		evaluator, level, quoteList(supported))
+}
+
+// EvaluatorNeedsInitParams reports required initialization parameters left unset.
+func EvaluatorNeedsInitParams(evaluator string, missing []string) error {
+	return fmt.Errorf(
+		"evaluator %q requires %s; set it under the evaluator's "+
+			"`initialization_parameters` in the eval config",
+		evaluator, quoteList(missing))
+}
+
+// ReadingEvaluator reports an evaluator that could not be read, by name or path.
+func ReadingEvaluator(evaluator string, err error) error {
+	return fmt.Errorf("reading evaluator %q: %w", evaluator, err)
+}
+
+// EvaluatorProblem attributes a failure to the evaluator it happened under.
+func EvaluatorProblem(evaluator string, err error) error {
+	return fmt.Errorf("evaluator %q: %w", evaluator, err)
+}
+
+// EvaluatorSource reports a declared source that is not on disk.
+func EvaluatorSource(path string, err error) error {
+	return fmt.Errorf("evaluator source %q: %w", path, err)
+}
+
+// CheckingEvaluatorExists reports a failure to tell create from update.
+func CheckingEvaluatorExists(evaluator string, err error) error {
+	return fmt.Errorf("checking whether evaluator %q exists: %w", evaluator, err)
+}
+
+// RegisteringEvaluator reports the service refusing to publish the evaluator.
+func RegisteringEvaluator(evaluator string, err error) error {
+	return fmt.Errorf("registering evaluator %q: %w", evaluator, err)
+}
+
+// EvaluatorRegistered confirms a published evaluator version.
+func EvaluatorRegistered(evaluator, version string) string {
+	return fmt.Sprintf("Registered evaluator %s version %s\n", evaluator, version)
+}
+
+// AssetAlreadyExists reports `create` asked of a name already in use.
+func AssetAlreadyExists(kind, name string) error {
+	return fmt.Errorf("%s %q already exists: use `update` to publish a new version", kind, name)
+}
+
+// AssetDoesNotExist reports `update` asked of a name nobody registered.
+func AssetDoesNotExist(kind, name string) error {
+	return fmt.Errorf("%s %q does not exist: use `create` to register it", kind, name)
+}
+
+// DefinitionNotJSONObject reports an evaluator definition that is not an object.
+func DefinitionNotJSONObject(err error) error {
+	return fmt.Errorf("the definition is not a JSON object: %w", err)
+}
+
+// NotValidJSON reports an evaluator file that will not parse at all.
+func NotValidJSON(err error) error {
+	return fmt.Errorf("not valid JSON: %w", err)
+}
+
+// RubricMissingDimensions reports a file that is neither rubric nor document.
+func RubricMissingDimensions() error {
+	return errors.New(
+		"expected a rubric definition with 'dimensions', or a document with 'definition'")
+}
+
+// ListingEvaluators reports a failure to list the project's evaluators.
+func ListingEvaluators(err error) error {
+	return fmt.Errorf("listing evaluators: %w", err)
+}
+
+// ListingEvaluatorVersions reports a failure to list one evaluator's versions.
+func ListingEvaluatorVersions(evaluator string, err error) error {
+	return fmt.Errorf("listing versions of evaluator %q: %w", evaluator, err)
+}
+
+// NoEvaluators reports a project with no evaluators to list.
+func NoEvaluators() string {
+	return "No evaluators found.\n"
+}
+
+// EvaluatorNotFound reports an evaluator the project does not hold.
+func EvaluatorNotFound(evaluator string) error {
+	return fmt.Errorf(
+		"no evaluator %q in this project; "+
+			"`azd ai eval evaluator list` shows the ones there are", evaluator)
+}
+
+// EvaluatorVersionNotFound reports an evaluator version there is nothing to delete at.
+func EvaluatorVersionNotFound(evaluator, version string) error {
+	return fmt.Errorf("no evaluator %q at version %q in this project", evaluator, version)
+}
+
+// DeletingEvaluatorVersion reports the service refusing the delete.
+func DeletingEvaluatorVersion(evaluator, version string, err error) error {
+	return fmt.Errorf("deleting evaluator %q version %q: %w", evaluator, version, err)
+}
+
+// EvaluatorDeleted confirms a deleted evaluator version.
+func EvaluatorDeleted(evaluator, version string) string {
+	return fmt.Sprintf("Deleted evaluator %s version %s\n", evaluator, version)
+}
+
+// EvaluatorNotLocalNorFound reports a source-less evaluator the project rejected.
+func EvaluatorNotLocalNorFound(evaluator string, err error) error {
+	return fmt.Errorf(
+		"evaluator %q has no local source and could not be found on the project: %w",
+		evaluator, err)
+}
+
+// EvaluatorDrifted reports a version published outside the repo since the last deploy.
+func EvaluatorDrifted(evaluator, remote, recorded string) error {
+	return fmt.Errorf(
+		"evaluator %q is at version %s on the project but %s was recorded at the last "+
+			"deploy, and the local definition does not match it: someone published a "+
+			"version outside this repo. Publishing over it would leave their change "+
+			"behind, so bring version %s into the declared source and deploy again, or "+
+			"delete that version if it was a mistake",
+		evaluator, remote, recorded, remote)
+}
+
+// EvaluatorVersionNotAdvancing reports a publish the service kept answering with
+// a version that already existed.
+func EvaluatorVersionNotAdvancing(evaluator, version string, waited fmt.Stringer) error {
+	return fmt.Errorf(
+		"publishing evaluator %q kept returning version %s, which already "+
+			"existed. The service was still assigning that version after %s, so "+
+			"version %s now holds what was just published and any eval bound to "+
+			"it is scoring against it",
+		evaluator, version, waited, version)
+}
+
+// EvaluatorHasNoVersions reports an evaluator nothing was ever published under.
+func EvaluatorHasNoVersions(evaluator string) error {
+	return fmt.Errorf("evaluator %q has no versions", evaluator)
+}
+
+// EvaluatorHasNoUsableVersion reports versions none of which can be resolved.
+func EvaluatorHasNoUsableVersion(evaluator string) error {
+	return fmt.Errorf("evaluator %q has no usable version", evaluator)
+}
+
+// BareEvaluatorEntry reports an evaluators: entry written as a plain string.
+func BareEvaluatorEntry(name string) error {
+	return fmt.Errorf(
+		"an evaluator entry is a mapping, not a bare string: "+
+			"write `- evaluator: %s`", name)
+}
+
+// EvaluatorsMustBeSequence reports an evaluators: block that is not a list.
+func EvaluatorsMustBeSequence(kind any) error {
+	return fmt.Errorf("evaluators must be a sequence, got %v", kind)
+}
+
+// EvaluatorsMustBeList reports an evaluators: block that is not a JSON array.
+func EvaluatorsMustBeList(err error) error {
+	return fmt.Errorf("evaluators must be a list: %w", err)
+}
+
+// DecodingEvaluatorName reports an evaluator entry whose name will not decode.
+func DecodingEvaluatorName(err error) error {
+	return fmt.Errorf("decoding evaluator name: %w", err)
+}
+
+// DecodingEvaluator reports an evaluator entry that will not decode.
+func DecodingEvaluator(err error) error {
+	return fmt.Errorf("decoding evaluator: %w", err)
+}
+
+// EvaluatorEntryMissingEvaluator reports an entry that names no evaluator.
+func EvaluatorEntryMissingEvaluator() error {
+	return errors.New("evaluator entry is missing 'evaluator'")
+}
+
+// EvaluatorEntryMustBeMapping reports an entry that is neither map nor string.
+func EvaluatorEntryMustBeMapping(kind any) error {
+	return fmt.Errorf("evaluator entry must be a mapping, got %v", kind)
+}
+
+// ---------------------------------------------------------------------------
+// Deploy and reconcile
+// ---------------------------------------------------------------------------
+
+// EvalConfigInvalid reports a configuration a deploy will not act on.
+func EvalConfigInvalid(err error) error {
+	return fmt.Errorf("eval config is invalid: %w", err)
+}
+
+// ServiceCarriesNoConfig reports an azure.yaml entry with nothing to deploy.
+func ServiceCarriesNoConfig(service string) error {
+	return fmt.Errorf(
+		"service %q carries no eval configuration; expected evaluators, datasets, or evals",
+		service)
+}
+
+// ResolvingServiceRefs reports a $ref that could not be followed.
+func ResolvingServiceRefs(err error) error {
+	return fmt.Errorf("resolving $ref in the eval service configuration: %w", err)
+}
+
+// ReadingServiceConfig reports the service entry failing to serialize.
+func ReadingServiceConfig(err error) error {
+	return fmt.Errorf("reading the eval service configuration: %w", err)
+}
+
+// ParsingServiceConfig reports the service entry failing to parse.
+func ParsingServiceConfig(err error) error {
+	return fmt.Errorf("parsing the eval service configuration: %w", err)
+}
+
+// ReconcilingDataset reports the dataset a deploy has reached.
+func ReconcilingDataset(dataset string) string {
+	return fmt.Sprintf("Reconciling dataset %s", dataset)
+}
+
+// ReconcilingEvaluator reports the evaluator a deploy has reached.
+func ReconcilingEvaluator(evaluator string) string {
+	return fmt.Sprintf("Reconciling evaluator %s", evaluator)
+}
+
+// ReconcilingEval reports the eval a deploy has reached.
+func ReconcilingEval(eval string) string {
+	return fmt.Sprintf("Reconciling eval %s", eval)
+}
+
+// PublishedVersion reports an artifact a deploy published.
+func PublishedVersion(kind, name, version string) string {
+	return fmt.Sprintf("Published %s %s version %s", kind, name, version)
+}
+
+// UnchangedAtVersion reports an artifact a deploy left alone.
+func UnchangedAtVersion(kind, name, version string) string {
+	return fmt.Sprintf("%s %s is unchanged at version %s",
+		strings.ToUpper(kind[:1])+kind[1:], name, version)
+}
+
+// EvalProblem attributes a failure to the eval it happened under.
+func EvalProblem(eval string, err error) error {
+	return fmt.Errorf("eval %q: %w", eval, err)
+}
+
+// EvalIs reports the id a deployed eval resolved to.
+func EvalIs(eval, id string) string {
+	return fmt.Sprintf("Eval %s is %s", eval, id)
+}
+
+// EvalCreated confirms a single eval created outside a full deploy.
+func EvalCreated(eval, id string) string {
+	return fmt.Sprintf("%s Created eval: %s (%s)\n", DoneMark, eval, id)
+}
+
+// ListingEvals reports a failure to list the project's evals.
+func ListingEvals(err error) error {
+	return fmt.Errorf("listing evals: %w", err)
+}
+
+// NoEvals reports a project with no evals to list.
+func NoEvals() string {
+	return "No evals found.\n"
+}
+
+// EvalNotFound reports an eval id the project does not hold.
+func EvalNotFound(evalID string) error {
+	return fmt.Errorf(
+		"no eval %q in this project; "+
+			"`azd ai eval list` shows the ones there are", evalID)
+}
+
+// EvalGone reports an eval id there is nothing to delete at.
+func EvalGone(evalID string) error {
+	return fmt.Errorf("no eval %q in this project", evalID)
+}
+
+// ReadingEval reports a failure to read one eval.
+func ReadingEval(evalID string, err error) error {
+	return fmt.Errorf("reading eval %q: %w", evalID, err)
+}
+
+// DeletingEval reports the service refusing the delete.
+func DeletingEval(evalID string, err error) error {
+	return fmt.Errorf("deleting eval %q: %w", evalID, err)
+}
+
+// EvalDeleted confirms a deleted eval.
+func EvalDeleted(evalID string) string {
+	return fmt.Sprintf("Deleted eval %s\n", evalID)
+}
+
+// Hashing reports a local artifact that could not be fingerprinted.
+func Hashing(path string, err error) error {
+	return fmt.Errorf("hashing %q: %w", path, err)
+}
+
+// HashingEval reports an eval declaration that could not be fingerprinted.
+func HashingEval(eval string, err error) error {
+	return fmt.Errorf("hashing eval %q: %w", eval, err)
+}
+
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+// NoAzdProject reports a command that found no project to attach to.
+func NoAzdProject() error {
+	return errors.New(
+		"no azd project found in this directory. Run `azd init` first, " +
+			"or run this from the root of an existing one; the eval service is added to " +
+			"its azure.yaml")
+}
+
+// ConnectingToAzd reports the azd daemon being unreachable.
+func ConnectingToAzd(err error) error {
+	return fmt.Errorf("connecting to azd: %w", err)
+}
+
+// CreatingCredential reports the Azure credential failing to build.
+func CreatingCredential(err error) error {
+	return fmt.Errorf("creating Azure credential: %w", err)
+}
+
+// ErrNoAzdEnvironment reports that there is no azd environment to persist into.
+var ErrNoAzdEnvironment = errors.New("no active azd environment")
+
+// NoAzdEnvironmentToWrite reports a value with nowhere to be remembered.
+func NoAzdEnvironmentToWrite(key string) error {
+	return fmt.Errorf("%w to write %s into", ErrNoAzdEnvironment, key)
+}
+
+// WritingEnvValue reports the azd environment refusing a write.
+func WritingEnvValue(key string, err error) error {
+	return fmt.Errorf("writing %s to the azd environment: %w", key, err)
+}
+
+// BuildingServiceEntry reports the eval service entry failing to build.
+func BuildingServiceEntry(err error) error {
+	return fmt.Errorf("building the eval service entry: %w", err)
+}
+
+// AddingServiceTo reports azd refusing to add the eval service.
+func AddingServiceTo(rootConfig string, err error) error {
+	return fmt.Errorf("adding the eval service to %s: %w", rootConfig, err)
+}
+
+// SourceNotADataSource reports an --source that names nothing rows come from.
+func SourceNotADataSource(source, dataset, traces string) error {
+	return fmt.Errorf("--source %q is not a data source; use %q or %q", source, dataset, traces)
+}
+
+// TracesTakesNoDataset reports --dataset paired with a trace-backed eval.
+func TracesTakesNoDataset() error {
+	return errors.New("--source traces reads production traces, so it takes no --dataset")
+}
+
+// MaxTracesNeedsTraceSource reports --max-traces without a trace-backed eval.
+func MaxTracesNeedsTraceSource() error {
+	return errors.New("--max-traces caps a trace-backed eval; pass --source traces")
+}
+
+// MaxTracesMustBePositive reports a negative --max-traces.
+func MaxTracesMustBePositive() error {
+	return errors.New("--max-traces must be positive")
+}
+
+// EvalAlreadyDeclared reports an init that would overwrite a hand-tuned eval.
+func EvalAlreadyDeclared(eval, configPath string) error {
+	return fmt.Errorf(
+		"an eval named %q already exists in %s; choose another name with --name, "+
+			"or pass --force to replace it. `init` only adds: editing an eval is a file edit",
+		eval, configPath)
+}
+
+// CreatingDatasetsDir reports the datasets directory failing to be created.
+func CreatingDatasetsDir(err error) error {
+	return fmt.Errorf("creating the datasets directory: %w", err)
+}
+
+// CreatingEvaluatorsDir reports the evaluators directory failing to be created.
+func CreatingEvaluatorsDir(err error) error {
+	return fmt.Errorf("creating the evaluators directory: %w", err)
+}
+
+// DetectedTarget reports the agent the scaffolded eval will evaluate.
+func DetectedTarget(target string) string {
+	return fmt.Sprintf("%s Detected agent target: %s\n", DoneMark, target)
+}
+
+// UsingTraceSource reports a scaffold that reads production traces.
+func UsingTraceSource() string {
+	return fmt.Sprintf("%s Using data source: traces (Application Insights)\n", DoneMark)
+}
+
+// JudgeModelDeployment reports the deployment the graders will judge with.
+func JudgeModelDeployment(model string) string {
+	return fmt.Sprintf("%s Judge model deployment: %s\n", DoneMark, model)
+}
+
+// CreatedHeading opens the list of what a scaffold wrote.
+func CreatedHeading() string {
+	return "\nCreated\n"
+}
+
+// CreatedConfigLine names the configuration a scaffold wrote.
+func CreatedConfigLine(configPath string) string {
+	return fmt.Sprintf("  %-33s evaluation configuration\n", configPath)
+}
+
+// AddedServiceLine reports the eval service being added to the root config.
+func AddedServiceLine(rootConfig, service string) string {
+	return fmt.Sprintf("  %-33s added service '%s'\n", rootConfig, service)
+}
+
+// AlreadyDeclaresServiceLine reports a root config that already referenced the eval.
+func AlreadyDeclaresServiceLine(rootConfig, service string) string {
+	return fmt.Sprintf("  %-33s already declares service '%s'\n", rootConfig, service)
+}
+
+// FirstNextStep opens the list of commands to run after a scaffold.
+func FirstNextStep(step string) string {
+	return fmt.Sprintf("\nNext: %s\n", step)
+}
+
+// FurtherNextStep continues the list of commands to run after a scaffold.
+func FurtherNextStep(step string) string {
+	return fmt.Sprintf("      %s\n", step)
+}
+
+// CreatedCatalogFile reports a configuration created to hold a catalog entry.
+func CreatedCatalogFile(configPath string) string {
+	return fmt.Sprintf("%s Created %s with the catalog entry\n", DoneMark, configPath)
+}
+
+// AddedToCatalog reports a generated artifact recorded in the configuration.
+func AddedToCatalog(kind, artifact, configPath string) string {
+	return fmt.Sprintf("%s Added %s %s to %s\n", DoneMark, kind, artifact, configPath)
+}
+
+// ArtifactDescription names a catalogued artifact, with its version when there is one.
+func ArtifactDescription(name, version string) string {
+	if version == "" || version == "latest" {
+		return fmt.Sprintf("'%s'", name)
+	}
+	return fmt.Sprintf("'%s' (version %s)", name, version)
+}
+
+// NoEvalsDeclared reports a configuration with nothing to act on.
+func NoEvalsDeclared() error {
+	return errors.New("no evals are declared")
+}
+
+// SeveralEvalsDeclared reports an unnamed eval where guessing would be wrong.
+func SeveralEvalsDeclared(count int, names []string) error {
+	return fmt.Errorf(
+		"this configuration declares %d evals (%s); choose one with --eval",
+		count, strings.Join(names, ", "))
+}
+
+// EvalNotDeclared reports a name the configuration does not carry.
+func EvalNotDeclared(eval string, names []string) error {
+	return fmt.Errorf(
+		"eval %q is not declared; this configuration has %s",
+		eval, strings.Join(names, ", "))
+}
+
+// AtLeastOneEvalRequired reports a configuration that declares no eval.
+func AtLeastOneEvalRequired() error {
+	return errors.New("at least one eval is required")
+}
+
+// EvalNameRequired reports an eval entry with no name.
+func EvalNameRequired(index int) error {
+	return fmt.Errorf("evals[%d]: 'name' is required", index)
+}
+
+// DuplicateEvalName reports two evals answering to the same name.
+func DuplicateEvalName(index int, eval string) error {
+	return fmt.Errorf("evals[%d]: duplicate eval name %q", index, eval)
+}
+
+// EvalsIdenticalApartFromName reports two evals nothing can tell apart once deployed.
+func EvalsIdenticalApartFromName(index int, eval, first string) error {
+	return fmt.Errorf(
+		"evals[%d] (%s): identical to %q apart from its name and description; "+
+			"give them different evaluators, datasets or settings, or declare one",
+		index, eval, first)
+}
+
+// DatasetNameRequired reports a catalog entry with no name.
+func DatasetNameRequired(index int) error {
+	return fmt.Errorf("datasets[%d]: 'name' is required", index)
+}
+
+// DuplicateDatasetName reports two catalog entries answering to the same name.
+func DuplicateDatasetName(index int, dataset string) error {
+	return fmt.Errorf("datasets[%d]: duplicate dataset name %q", index, dataset)
+}
+
+// EvaluatorNameRequired reports a catalog entry with no name.
+func EvaluatorNameRequired(index int) error {
+	return fmt.Errorf("evaluators[%d]: 'name' is required", index)
+}
+
+// DuplicateEvaluatorName reports two catalog entries answering to the same name.
+func DuplicateEvaluatorName(index int, evaluator string) error {
+	return fmt.Errorf("evaluators[%d]: duplicate evaluator name %q", index, evaluator)
+}
+
+// BuiltinNeedsNoCatalogEntry reports a built-in declared as though it were custom.
+func BuiltinNeedsNoCatalogEntry(index int, evaluator string) error {
+	return fmt.Errorf(
+		"evaluators[%d] (%s): a built-in needs no catalog entry; reference it "+
+			"straight from an eval", index, evaluator)
+}
+
+// EvaluatorVersionWithSource reports a pin the service would assign anyway.
+func EvaluatorVersionWithSource(index int, evaluator string) error {
+	return fmt.Errorf(
+		"evaluators[%d] (%s): `version` cannot be set with `source`, because the "+
+			"service assigns the version when it publishes. Drop `version` to "+
+			"publish this file, or drop `source` to reference a version already "+
+			"on the project", index, evaluator)
+}
+
+// DatasetAndSourceBothDeclared reports two answers to where rows come from.
+func DatasetAndSourceBothDeclared(index int, eval string) error {
+	return fmt.Errorf(
+		"evals[%d] (%s): `dataset` and `source` both say where rows come from; "+
+			"declare one", index, eval)
+}
+
+// DatasetNotInDatasetsCatalog reports an eval naming a dataset nobody declared.
+func DatasetNotInDatasetsCatalog(index int, eval, dataset string) error {
+	return fmt.Errorf(
+		"evals[%d] (%s): dataset %q is not in the datasets catalog",
+		index, eval, dataset)
+}
+
+// SourceTypeRequired reports a source: block that does not say what it reads.
+func SourceTypeRequired(index int, eval string) error {
+	return fmt.Errorf("evals[%d] (%s): source.type is required", index, eval)
+}
+
+// SourceTypeUnsupported reports a source.type the extension has no path for.
+func SourceTypeUnsupported(index int, eval, got, traces, responses string) error {
+	return fmt.Errorf(
+		"evals[%d] (%s): source.type %q is not supported; use %q or %q",
+		index, eval, got, traces, responses)
+}
+
+// AtLeastOneEvaluatorRequired reports an eval that scores nothing.
+func AtLeastOneEvaluatorRequired(index int, eval string) error {
+	return fmt.Errorf("evals[%d] (%s): at least one evaluator is required", index, eval)
+}
+
+// EvaluatorFieldRequired reports an evaluators: entry with no evaluator named.
+func EvaluatorFieldRequired(evalIndex, refIndex int) error {
+	return fmt.Errorf("evals[%d].evaluators[%d]: 'evaluator' is required", evalIndex, refIndex)
+}
+
+// DuplicateCriterion reports two result rows nothing could tell apart.
+func DuplicateCriterion(evalIndex, refIndex int, criterion string) error {
+	return fmt.Errorf(
+		"evals[%d].evaluators[%d]: duplicate criterion %q; give one a `name`",
+		evalIndex, refIndex, criterion)
+}
+
+// EvaluatorNotInCatalog reports a reference to an evaluator nobody declared.
+func EvaluatorNotInCatalog(evalIndex, refIndex int, evaluator string) error {
+	return fmt.Errorf(
+		"evals[%d].evaluators[%d]: evaluator %q is not in the evaluators catalog",
+		evalIndex, refIndex, evaluator)
+}
+
+// TargetTypeUnsupported reports a target.type the extension cannot invoke.
+func TargetTypeUnsupported(index int, eval, got, agent, model string) error {
+	return fmt.Errorf(
+		"evals[%d] (%s): target.type %q is not supported; use %q or %q",
+		index, eval, got, agent, model)
+}
+
+// EvaluationLevelInvalid reports a scoring granularity the service does not accept.
+func EvaluationLevelInvalid(index int, eval, got, turn, conversation string) error {
+	return fmt.Errorf(
+		"evals[%d] (%s): evaluation_level %q is invalid; expected %q or %q",
+		index, eval, got, turn, conversation)
+}
+
+// ReadingEvalConfig reports a configuration file that would not read.
+func ReadingEvalConfig(path string, err error) error {
+	return fmt.Errorf("reading eval config %q: %w", path, err)
+}
+
+// ParsingEvalConfig reports a configuration file that would not parse.
+func ParsingEvalConfig(path string, err error) error {
+	return fmt.Errorf("parsing eval config %q: %w", path, err)
+}
+
+// SerializingEvalConfig reports a configuration that would not serialize.
+func SerializingEvalConfig(err error) error {
+	return fmt.Errorf("serializing eval config: %w", err)
+}
+
+// WritingEvalConfig reports a configuration file that would not be written.
+func WritingEvalConfig(path string, err error) error {
+	return fmt.Errorf("writing eval config %q: %w", path, err)
+}
+
+// ErrAmbiguousAgentService reports that a target name matched more than one service.
+var ErrAmbiguousAgentService = errors.New("more than one agent service matches")
+
+// AmbiguousAgentService reports a --target that names no single set of instructions.
+func AmbiguousAgentService(agent string, matched []string) error {
+	return fmt.Errorf(
+		"%w %q: %s. Name one of them with --target, or pass the text with "+
+			"--agent-instruction",
+		ErrAmbiguousAgentService, agent, strings.Join(matched, ", "))
+}
+
+// InstructionFileUnreadable reports optimize metadata pointing at a missing file.
+func InstructionFileUnreadable(metadataPath, named string, err error) error {
+	return fmt.Errorf(
+		"%s names instruction_file %q, which could not be read: %w",
+		metadataPath, named, err)
+}
+
+// FromNotASource reports a --from value the generation service has no path for.
+func FromNotASource(from string, sources []string) error {
+	return fmt.Errorf(
+		"--from %q is not a source; use one of %s",
+		from, strings.Join(sources, ", "))
+}
+
+// SampleSizeOutOfRange reports a row count the generation service would reject.
+func SampleSizeOutOfRange(min, max, got int) error {
+	return fmt.Errorf("sample size must be between %d and %d, got %d", min, max, got)
+}
+
+// EndpointEmpty reports a project endpoint given as blank.
+func EndpointEmpty() error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		"project endpoint must not be empty",
+		"provide a Foundry project endpoint URL "+
+			"(e.g. https://<account>.services.ai.azure.com/api/projects/<project>)",
+	)
+}
+
+// EndpointUnparseable reports a project endpoint that is not a URL.
+func EndpointUnparseable(err error) error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		fmt.Sprintf("invalid project endpoint URL: %v", err),
+		"provide a valid https:// Foundry project endpoint URL",
+	)
+}
+
+// EndpointNotHTTPS reports a project endpoint on the wrong scheme.
+func EndpointNotHTTPS() error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		"project endpoint must use https",
+		"provide an https:// URL",
+	)
+}
+
+// EndpointNotFoundryHost reports a project endpoint pointing somewhere else.
+func EndpointNotFoundryHost(host, suffix string) error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		fmt.Sprintf(
+			"project endpoint host %q is not a recognized Foundry host (*%s)",
+			host, suffix,
+		),
+		"the host must end with "+suffix,
+	)
+}
+
+// EndpointHasPort reports a project endpoint carrying an explicit port.
+func EndpointHasPort(host string) error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		fmt.Sprintf("project endpoint host %q must not include a port", host),
+		"remove the explicit port from the URL",
+	)
+}
+
+// NoEndpoint reports a project endpoint that no source could supply.
+func NoEndpoint() error {
+	return exterrors.Dependency(
+		exterrors.CodeMissingProjectEndpoint,
+		"no Foundry project endpoint resolved",
+		"persist a workspace default with `azd ai project set <endpoint>`, "+
+			"or set FOUNDRY_PROJECT_ENDPOINT (or AZURE_AI_PROJECT_ENDPOINT) "+
+			"in the active azd environment, "+
+			"or export FOUNDRY_PROJECT_ENDPOINT (or AZURE_AI_PROJECT_ENDPOINT) in your shell",
+	)
+}
+
+// ProjectContextClient reports the config helper failing to build.
+func ProjectContextClient(err error) error {
+	return fmt.Errorf("getProjectContext: %w", err)
+}
+
+// ProjectContextRead reports the persisted project context failing to read.
+func ProjectContextRead(err error) error {
+	return fmt.Errorf("getProjectContext: failed to read config: %w", err)
+}
+
+// ---------------------------------------------------------------------------
+// Output
+// ---------------------------------------------------------------------------
+
+// Progress markers from the azd style guide, so the extension's lines sit
+// alongside core's without a second vocabulary.
+const (
+	DoneMark    = "(✓) Done:"    // finished successfully
+	SkippedMark = "(-) Skipped:" // intentionally not done, not a failure
+	FailedMark  = "(x) Failed:"  // the step did not complete
+)
+
+// Warning reports a problem that is not worth failing the command over.
+func Warning(err error) string {
+	return fmt.Sprintf("warning: %v\n", err)
+}
+
+// PortalLink closes a detail view with the asset's portal URL.
+func PortalLink(url string) string {
+	return fmt.Sprintf("Portal: %s\n", url)
+}
+
+// FlagRequired reports a value that cannot be prompted for.
+func FlagRequired(name string) error {
+	return fmt.Errorf("--%s is required (running with --no-prompt)", name)
+}
+
+// Creating reports a directory or file that could not be created.
+func Creating(path string, err error) error {
+	return fmt.Errorf("creating %q: %w", path, err)
+}
+
+// Serializing reports a value that could not be written out.
+func Serializing(path string, err error) error {
+	return fmt.Errorf("serializing %q: %w", path, err)
+}
+
+// Writing reports a file that could not be written.
+func Writing(path string, err error) error {
+	return fmt.Errorf("writing %q: %w", path, err)
+}
+
+// ReadingPath reports a file or directory that could not be read.
+func ReadingPath(path string, err error) error {
+	return fmt.Errorf("reading %s: %w", path, err)
+}
+
+// quoteList renders names as a readable "a", "b" and "c".
+func quoteList(values []string) string {
+	if len(values) == 0 {
+		return "nothing"
+	}
+	quoted := make([]string, 0, len(values))
+	for _, value := range values {
+		quoted = append(quoted, fmt.Sprintf("%q", value))
+	}
+	sort.Strings(quoted)
+	if len(quoted) == 1 {
+		return quoted[0]
+	}
+	return strings.Join(quoted[:len(quoted)-1], ", ") + " and " + quoted[len(quoted)-1]
+}
+
+// pluralColumns agrees with however many columns are missing.
+func pluralColumns(values []string) string {
+	if len(values) == 1 {
+		return "that column"
+	}
+	return "those columns"
+}
+
+// ---------------------------------------------------------------------------
+// Talking to the service
+// ---------------------------------------------------------------------------
+
+// InvalidEndpointURL reports a client built on an endpoint that will not parse.
+func InvalidEndpointURL(err error) error {
+	return fmt.Errorf("invalid endpoint URL: %w", err)
+}
+
+// InvalidRequestPath reports a request path that will not parse.
+func InvalidRequestPath(path string, err error) error {
+	return fmt.Errorf("invalid request path %q: %w", path, err)
+}
+
+// CreatingRequest reports a request that could not be built.
+func CreatingRequest(err error) error {
+	return fmt.Errorf("failed to create request: %w", err)
+}
+
+// MarshalingRequest reports a request body that would not serialize.
+func MarshalingRequest(err error) error {
+	return fmt.Errorf("failed to marshal request: %w", err)
+}
+
+// SettingRequestBody reports a request body that would not attach.
+func SettingRequestBody(err error) error {
+	return fmt.Errorf("failed to set request body: %w", err)
+}
+
+// RequestFailed reports a request that never reached an answer.
+func RequestFailed(err error) error {
+	return fmt.Errorf("HTTP request failed: %w", err)
+}
+
+// ReadingResponseBody reports a response that could not be read.
+func ReadingResponseBody(err error) error {
+	return fmt.Errorf("failed to read response body: %w", err)
+}
+
+// ParsingResponse reports a response that could not be parsed.
+func ParsingResponse(err error) error {
+	return fmt.Errorf("failed to parse response: %w", err)
+}
+
+// ParsingNumber reports a numeric field that did not arrive as a number.
+func ParsingNumber(data string, err error) error {
+	return fmt.Errorf("parsing number %s: %w", data, err)
+}
+
+// InvalidContainerURI reports a storage URI the service handed back unusable.
+func InvalidContainerURI(err error) error {
+	return fmt.Errorf("invalid container SAS URI: %w", err)
+}
+
+// CreatingUploadRequest reports the blob upload request failing to build.
+func CreatingUploadRequest(err error) error {
+	return fmt.Errorf("failed to create upload request: %w", err)
+}
+
+// UploadingBlobFailed reports the blob upload never reaching an answer.
+func UploadingBlobFailed(err error) error {
+	return fmt.Errorf("failed to upload blob: %w", err)
+}
+
+// BlobUploadStatus reports storage refusing the upload.
+func BlobUploadStatus(status int, body string) error {
+	return fmt.Errorf("blob upload failed with status %d: %s", status, body)
+}
+
+// CreatingDownloadRequest reports the dataset download request failing to build.
+func CreatingDownloadRequest(err error) error {
+	return fmt.Errorf("failed to create download request: %w", err)
+}
+
+// DownloadingDatasetBlob reports the dataset download never reaching an answer.
+func DownloadingDatasetBlob(err error) error {
+	return fmt.Errorf("failed to download dataset from blob: %w", err)
+}
+
+// BlobDownloadStatus reports storage refusing the download.
+func BlobDownloadStatus(status int) error {
+	return fmt.Errorf("blob download failed with status %d", status)
+}
+
+// ReadingDatasetContent reports a downloaded dataset that could not be read.
+func ReadingDatasetContent(err error) error {
+	return fmt.Errorf("failed to read dataset content: %w", err)
+}
+
+// CreatingListRequest reports the container listing request failing to build.
+func CreatingListRequest(err error) error {
+	return fmt.Errorf("failed to create list request: %w", err)
+}
+
+// ListingContainerBlobs reports the container listing never reaching an answer.
+func ListingContainerBlobs(err error) error {
+	return fmt.Errorf("failed to list container blobs: %w", err)
+}
+
+// ContainerListStatus reports storage refusing the listing.
+func ContainerListStatus(status int) error {
+	return fmt.Errorf("container list failed with status %d", status)
+}
+
+// ReadingListResponse reports a container listing that could not be read.
+func ReadingListResponse(err error) error {
+	return fmt.Errorf("failed to read list response: %w", err)
+}
+
+// CreatingBlobDownloadRequest reports the blob download request failing to build.
+func CreatingBlobDownloadRequest(err error) error {
+	return fmt.Errorf("failed to create blob download request: %w", err)
+}
+
+// DownloadingBlob reports one blob's download never reaching an answer.
+func DownloadingBlob(err error) error {
+	return fmt.Errorf("failed to download blob: %w", err)
+}
+
+// BlobDownloadStatusFor reports storage refusing one named blob.
+func BlobDownloadStatusFor(status int, blobName string) error {
+	return fmt.Errorf("blob download failed with status %d for %s", status, blobName)
+}
+
+// ReadingBlobContent reports a downloaded blob that could not be read.
+func ReadingBlobContent(err error) error {
+	return fmt.Errorf("failed to read blob content: %w", err)
+}
+
+// ParsingProjectResourceID reports a project ARM id that will not parse.
+func ParsingProjectResourceID(err error) error {
+	return fmt.Errorf("failed to parse project resource ID: %w", err)
+}
+
+// EncodingSubscriptionID reports a subscription that would not encode for a URL.
+func EncodingSubscriptionID(err error) error {
+	return fmt.Errorf("failed to encode subscription ID: %w", err)
+}
+
+// NotAFoundryProjectResourceID reports an ARM id that names something else.
+func NotAFoundryProjectResourceID(resourceID string) error {
+	return fmt.Errorf(
+		"resource ID does not represent a Foundry project (missing parent account): %s",
+		resourceID)
+}
+
+// InvalidSubscriptionID reports a subscription id that is not a GUID.
+func InvalidSubscriptionID(err error) error {
+	return fmt.Errorf("invalid subscription ID format: %w", err)
 }

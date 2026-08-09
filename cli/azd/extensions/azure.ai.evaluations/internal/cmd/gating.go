@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 
 	"github.com/spf13/cobra"
@@ -47,15 +48,14 @@ func parseGate(spec string) (gate, error) {
 
 	rate, ok := strings.CutPrefix(spec, "pass-rate=")
 	if !ok {
-		return gate{}, fmt.Errorf(
-			"--fail-on must be any-failure or pass-rate=<0..1>, got %q", spec)
+		return gate{}, messages.FailOnInvalid(spec)
 	}
 	value, err := strconv.ParseFloat(rate, 64)
 	if err != nil {
-		return gate{}, fmt.Errorf("--fail-on pass-rate must be a number, got %q", rate)
+		return gate{}, messages.FailOnRateNotNumber(rate)
 	}
 	if value < 0 || value > 1 {
-		return gate{}, fmt.Errorf("--fail-on pass-rate must be between 0 and 1, got %v", value)
+		return gate{}, messages.FailOnRateOutOfRange(value)
 	}
 	return gate{set: true, passRate: value}, nil
 }
@@ -75,22 +75,21 @@ func (g gate) breach(counts *eval_api.EvalRunResultCounts) string {
 		return ""
 	}
 	if counts == nil {
-		return "the run reported no result counts, so the threshold cannot be checked"
+		return messages.GateNoResultCounts()
 	}
 	if g.anyFailure {
 		unpassed := counts.Total - counts.Passed
 		if unpassed > 0 {
-			return fmt.Sprintf("%d of %d samples did not pass", unpassed, counts.Total)
+			return messages.GateSamplesDidNotPass(unpassed, counts.Total)
 		}
 		return ""
 	}
 	if counts.Total == 0 {
-		return "the run scored no rows, so its pass rate is below any threshold"
+		return messages.GateNoRowsScored()
 	}
 	actual := float64(counts.Passed) / float64(counts.Total)
 	if actual < g.passRate {
-		return fmt.Sprintf("pass rate %.1f%% is below the required %.1f%%",
-			actual*100, g.passRate*100)
+		return messages.GatePassRateBelow(actual, g.passRate)
 	}
 	return ""
 }
@@ -99,8 +98,7 @@ func (g gate) breach(counts *eval_api.EvalRunResultCounts) string {
 // exit so the wording can be tested: it is the block the spec's CI scenario
 // shows, and a pipeline's logs are where it is read.
 func gateBreachMessage(reason string) string {
-	return fmt.Sprintf("%s Evaluation gate: %s\n\nERROR: evaluation quality gate not met.\n",
-		failedMark, reason)
+	return messages.GateBreached(reason)
 }
 
 // applyGate ends the process with exit code 2 when the run missed its

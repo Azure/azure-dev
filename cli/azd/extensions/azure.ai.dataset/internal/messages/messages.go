@@ -53,6 +53,19 @@ func FromFileMustBeJSONL(path string) error {
 		"--from-file must be a .jsonl file or a directory containing one, got %q", path)
 }
 
+// DatasetNotFound reports a name that is not a dataset in this project.
+func DatasetNotFound(name string) error {
+	return fmt.Errorf(
+		"no dataset %q in this project; `azd ai dataset list` shows the ones there are",
+		name)
+}
+
+// InvalidDatasetName reports a name the service will not accept.
+func InvalidDatasetName(name string) error {
+return fmt.Errorf(
+"dataset name %q is invalid: use letters, digits, dashes and underscores, "+
+"up to 255 characters", name)
+}
 // ReadingDatasetDirectory reports the upload scan failing to read the directory.
 func ReadingDatasetDirectory(err error) error {
 	return fmt.Errorf("reading directory: %w", err)

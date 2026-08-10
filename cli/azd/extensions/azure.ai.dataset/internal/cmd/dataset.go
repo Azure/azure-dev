@@ -49,6 +49,9 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
+			if !validAssetName(name) {
+				return messages.InvalidDatasetName(name)
+			}
 			if fromFile == "" {
 				return requireFlag("from-file")
 			}
@@ -191,6 +194,11 @@ func newDatasetVersionsListCommand() *cobra.Command {
 			if err != nil {
 				return messages.ListingDatasetVersions(name, err)
 			}
+			// An unknown name comes back as an empty list, and "No datasets
+			// found" reads as though the project had none at all.
+			if len(list.Value) == 0 {
+				return messages.DatasetNotFound(name)
+			}
 			return renderDatasets(cmd, list)
 		},
 	}
@@ -245,8 +253,11 @@ func newDatasetShowCommand() *cobra.Command {
 				if err != nil {
 					return messages.ResolvingLatestDatasetVersion(name, err)
 				}
+				// The service answers an unknown name with an empty list rather
+				// than a 404, so this is what "no such dataset" looks like. A
+				// dataset cannot exist with no versions.
 				if len(list.Value) == 0 {
-					return messages.DatasetHasNoVersions(name)
+					return messages.DatasetNotFound(name)
 				}
 				version = dataset_api.LatestVersion(list.Value)
 			}

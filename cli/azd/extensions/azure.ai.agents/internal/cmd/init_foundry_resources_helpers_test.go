@@ -280,6 +280,9 @@ func newTestAzdClient(
 	grpcServer := grpc.NewServer()
 	azdext.RegisterEnvironmentServiceServer(grpcServer, envServer)
 	azdext.RegisterWorkflowServiceServer(grpcServer, workflowServer)
+	if projectServer, ok := workflowServer.(azdext.ProjectServiceServer); ok {
+		azdext.RegisterProjectServiceServer(grpcServer, projectServer)
+	}
 	if len(promptServers) > 0 {
 		azdext.RegisterPromptServiceServer(grpcServer, promptServers[0])
 	}

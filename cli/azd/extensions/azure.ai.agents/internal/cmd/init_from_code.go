@@ -183,12 +183,12 @@ func (a *InitFromCodeAction) delegateProjectOwnership(ctx context.Context) error
 	if err != nil {
 		return err
 	}
-	initResult, err := delegated.delegateProjectInit(ctx, allowedLocations)
+	initState, err := delegated.delegateProjectInit(ctx, allowedLocations)
 	if err != nil {
 		return err
 	}
-	projectInfo, err := projectInfoFromDelegatedResult(
-		ctx, a.azdClient, delegated.delegatedEnvironmentName(), initResult,
+	projectInfo, err := projectInfoFromDelegatedState(
+		ctx, a.azdClient, delegated.delegatedEnvironmentName(), initState,
 	)
 	if err != nil {
 		return err
@@ -196,19 +196,28 @@ func (a *InitFromCodeAction) delegateProjectOwnership(ctx context.Context) error
 	defaultName, _ := getEnvValue(ctx, a.azdClient, a.environment.Name, "AZURE_AI_MODEL_DEPLOYMENT_NAME")
 	firstManaged := strings.TrimSpace(defaultName) == ""
 	for _, deployment := range a.deploymentDetails {
-		result, err := delegated.delegateProjectDeployment(
+		deploymentState, err := delegated.delegateProjectDeployment(
 			ctx, deployment.Model.Name, deployment.Name, firstManaged, allowedLocations,
 		)
 		if err != nil {
 			return err
 		}
 		if firstManaged {
-			defaultName = result.DeploymentName
+			defaultName = deployment.Name
+			if strings.TrimSpace(defaultName) == "" {
+				resolved, resolveErr := deploymentState.deployment(
+					delegatedModelName(deployment.Model.Name),
+				)
+				if resolveErr != nil {
+					return resolveErr
+				}
+				defaultName = resolved.Name
+			}
 			firstManaged = false
 		}
 	}
 	if err := delegated.configureDelegatedAgentResources(
-		ctx, projectInfo, initResult.Mode,
+		ctx, projectInfo, initState.Mode,
 	); err != nil {
 		return err
 	}

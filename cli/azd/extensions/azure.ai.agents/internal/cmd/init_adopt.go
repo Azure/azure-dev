@@ -1111,25 +1111,25 @@ func delegateAdoptedProject(
 	if err != nil {
 		return false, err
 	}
-	result, err := action.delegateProjectInit(ctx, allowedLocations)
+	state, err := action.delegateProjectInit(ctx, allowedLocations)
 	if errors.Is(err, errDelegatedProjectsUnavailable) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	projectInfo, err := projectInfoFromDelegatedResult(
-		ctx, azdClient, environment.Name, result,
+	projectInfo, err := projectInfoFromDelegatedState(
+		ctx, azdClient, environment.Name, state,
 	)
 	if err != nil {
 		return false, err
 	}
 	if err := action.configureDelegatedAgentResources(
-		ctx, projectInfo, result.Mode,
+		ctx, projectInfo, state.Mode,
 	); err != nil {
 		return false, err
 	}
-	if err := mergeProjectServiceUses(ctx, azdClient, result.ServiceName); err != nil {
+	if err := mergeProjectServiceUses(ctx, azdClient, state.ServiceName); err != nil {
 		return false, err
 	}
 	if err := confirmAdoptedAgentNameConflicts(

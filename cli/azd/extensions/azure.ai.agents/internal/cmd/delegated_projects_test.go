@@ -6,13 +6,14 @@ package cmd
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
@@ -20,11 +21,15 @@ import (
 
 type delegatedWorkflowRecorder struct {
 	azdext.UnimplementedWorkflowServiceServer
+	azdext.UnimplementedProjectServiceServer
 	commands        [][]string
 	tempDirs        []string
 	requests        []map[string]any
 	projectMode     string
 	deploymentCount int
+	service         *azdext.ServiceConfig
+	env             *testEnvironmentServiceServer
+	runErr          error
 }
 
 func (s *delegatedWorkflowRecorder) Run(
@@ -34,16 +39,17 @@ func (s *delegatedWorkflowRecorder) Run(
 	args := request.GetWorkflow().GetSteps()[0].GetCommand().GetArgs()
 	s.commands = append(s.commands, args)
 
-	var requestPath, resultPath string
+	var requestPath string
 	for _, arg := range args {
 		switch {
 		case strings.HasPrefix(arg, "--request-file="):
 			requestPath = strings.TrimPrefix(arg, "--request-file=")
-		case strings.HasPrefix(arg, "--result-file="):
-			resultPath = strings.TrimPrefix(arg, "--result-file=")
 		}
 	}
 	s.tempDirs = append(s.tempDirs, filepath.Dir(requestPath))
+	if s.runErr != nil {
+		return nil, s.runErr
+	}
 	data, err := os.ReadFile(requestPath)
 	if err != nil {
 		return nil, err
@@ -54,57 +60,92 @@ func (s *delegatedWorkflowRecorder) Run(
 	}
 	s.requests = append(s.requests, envelope)
 
-	var result any
 	if strings.Contains(strings.Join(args, " "), "deployment") {
 		s.deploymentCount++
-		result = delegatedProjectDeploymentResult{
-			SchemaVersion:   1,
-			ProducerVersion: "projects-test",
-			ServiceName:     "custom-project",
-			DeploymentName:  fmt.Sprintf("deployment-%d", s.deploymentCount),
-			Model: delegatedProjectResultModel{
+		var requestBody delegatedProjectDeploymentRequest
+		if err := json.Unmarshal(data, &requestBody); err != nil {
+			return nil, err
+		}
+		name := requestBody.Model.DeploymentName
+		if name == "" {
+			name = delegatedModelName(requestBody.Model.Name)
+		}
+		config := project.ServiceTargetAgentConfig{}
+		if s.service != nil && s.service.GetAdditionalProperties() != nil {
+			if err := project.UnmarshalStruct(
+				s.service.GetAdditionalProperties(), &config,
+			); err != nil {
+				return nil, err
+			}
+		}
+		config.Deployments = append(config.Deployments, project.Deployment{
+			Name: name,
+			Model: project.DeploymentModel{
+				Name:    requestBody.Model.Name,
 				Format:  "OpenAI",
-				Name:    "gpt-4.1",
 				Version: "2025-04-14",
 			},
-			SKU:      delegatedProjectResultSKU{Name: "GlobalStandard", Capacity: 10},
-			Mutation: "created",
+			Sku: project.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
+		})
+		properties, err := project.MarshalStruct(&config)
+		if err != nil {
+			return nil, err
+		}
+		s.service = &azdext.ServiceConfig{
+			Name:                 "custom-project",
+			Host:                 AiProjectHost,
+			AdditionalProperties: properties,
 		}
 	} else {
 		mode := s.projectMode
 		if mode == "" {
 			mode = "existing-id"
 		}
-		result = delegatedProjectInitResult{
-			SchemaVersion:   1,
-			ProducerVersion: "projects-test",
-			ServiceName:     "custom-project",
-			Mode:            mode,
-			Mutation:        "created",
-			Endpoint:        "https://account.services.ai.azure.com/api/projects/chat",
-			ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/" +
-				"Microsoft.CognitiveServices/accounts/account/projects/chat",
+		config := project.ServiceTargetAgentConfig{}
+		if mode == "existing-endpoint" {
+			config.Endpoint = "https://account.services.ai.azure.com/api/projects/chat"
 		}
-		if mode == "new" {
-			result = delegatedProjectInitResult{
-				SchemaVersion:   1,
-				ProducerVersion: "projects-test",
-				ServiceName:     "custom-project",
-				Mode:            mode,
-				Mutation:        "created",
+		properties, err := project.MarshalStruct(&config)
+		if err != nil {
+			return nil, err
+		}
+		s.service = &azdext.ServiceConfig{
+			Name:                 "custom-project",
+			Host:                 AiProjectHost,
+			AdditionalProperties: properties,
+		}
+		if s.env != nil {
+			if s.env.values == nil {
+				s.env.values = map[string]map[string]string{}
+			}
+			if s.env.values["dev"] == nil {
+				s.env.values["dev"] = map[string]string{}
+			}
+			if mode == "existing-id" {
+				s.env.values["dev"]["AZURE_AI_PROJECT_ID"] =
+					"/subscriptions/sub/resourceGroups/rg/providers/" +
+						"Microsoft.CognitiveServices/accounts/account/projects/chat"
 			}
 		}
 	}
-
-	encoded, err := json.Marshal(result)
-	if err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(resultPath, encoded, 0600); err != nil {
-		return nil, err
-	}
-	_ = envelope
 	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *delegatedWorkflowRecorder) Get(
+	_ context.Context, _ *azdext.EmptyRequest,
+) (*azdext.GetProjectResponse, error) {
+	if s.service == nil {
+		return &azdext.GetProjectResponse{
+			Project: &azdext.ProjectConfig{},
+		}, nil
+	}
+	return &azdext.GetProjectResponse{
+		Project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				s.service.GetName(): s.service,
+			},
+		},
+	}, nil
 }
 
 func TestConfigureModelChoiceDelegated_MultipleModels(t *testing.T) {
@@ -112,7 +153,7 @@ func TestConfigureModelChoiceDelegated_MultipleModels(t *testing.T) {
 	envServer := &testEnvironmentServiceServer{
 		values: map[string]map[string]string{envName: {}},
 	}
-	recorder := &delegatedWorkflowRecorder{projectMode: "new"}
+	recorder := &delegatedWorkflowRecorder{projectMode: "new", env: envServer}
 	client := newTestAzdClient(t, envServer, recorder)
 	root := t.TempDir()
 	action := &InitAction{
@@ -151,10 +192,14 @@ func TestConfigureModelChoiceDelegated_MultipleModels(t *testing.T) {
 }
 
 func TestDelegatedProjectWorkflowMappingAndCleanup(t *testing.T) {
-	recorder := &delegatedWorkflowRecorder{}
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{"dev": {}},
+	}
+
+	recorder := &delegatedWorkflowRecorder{env: envServer}
 	client := newTestAzdClient(
 		t,
-		&testEnvironmentServiceServer{},
+		envServer,
 		recorder,
 	)
 	root := t.TempDir()
@@ -180,7 +225,7 @@ func TestDelegatedProjectWorkflowMappingAndCleanup(t *testing.T) {
 		t.Context(), "gpt-4.1", "chat", true, []string{"eastus2"},
 	)
 	require.NoError(t, err)
-	require.Equal(t, "deployment-1", deploymentResult.DeploymentName)
+	require.Equal(t, "chat", deploymentResult.Deployments[0].Name)
 	require.Len(t, recorder.commands, 2)
 
 	for _, args := range recorder.commands {
@@ -188,7 +233,6 @@ func TestDelegatedProjectWorkflowMappingAndCleanup(t *testing.T) {
 		assertArgContains(t, args, "--cwd="+root)
 		assertArgContains(t, args, "--environment=dev")
 		assertArgPrefix(t, args, "--request-file=")
-		assertArgPrefix(t, args, "--result-file=")
 	}
 	require.Equal(t, []string{"ai", "project", "init"}, recorder.commands[0][:3])
 	require.Equal(t, []string{"ai", "project", "deployment", "add"}, recorder.commands[1][:4])
@@ -205,6 +249,83 @@ func TestDelegatedProjectWorkflowMappingAndCleanup(t *testing.T) {
 		_, err := os.Stat(dir)
 		require.ErrorIs(t, err, os.ErrNotExist)
 	}
+}
+
+func TestDelegatedProjectStateModes(t *testing.T) {
+	const resourceID = "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.CognitiveServices/accounts/account/projects/chat"
+	for _, mode := range []string{"new", "existing-id", "existing-endpoint"} {
+		t.Run(mode, func(t *testing.T) {
+			envServer := &testEnvironmentServiceServer{
+				values: map[string]map[string]string{"dev": {}},
+			}
+			recorder := &delegatedWorkflowRecorder{
+				projectMode: mode,
+				env:         envServer,
+			}
+			client := newTestAzdClient(t, envServer, recorder)
+			action := &InitAction{
+				azdClient:   client,
+				environment: &azdext.Environment{Name: "dev"},
+				flags:       &initFlags{env: "dev"},
+			}
+			state, err := action.delegateProjectInit(t.Context(), nil)
+			require.NoError(t, err)
+			require.Equal(t, mode, state.Mode)
+			if mode == "existing-id" {
+				require.Equal(t, resourceID, state.ResourceID)
+			}
+			if mode == "existing-endpoint" {
+				require.NotEmpty(t, state.Endpoint)
+			}
+		})
+	}
+}
+
+func TestDelegatedProjectWorkflowFailureAndCancellation(t *testing.T) {
+	t.Run("failure", func(t *testing.T) {
+		recorder := &delegatedWorkflowRecorder{runErr: errors.New("workflow failed")}
+		client := newTestAzdClient(
+			t, &testEnvironmentServiceServer{}, recorder,
+		)
+		action := &InitAction{
+			azdClient:     client,
+			projectConfig: &azdext.ProjectConfig{Path: t.TempDir()},
+			environment:   &azdext.Environment{Name: "dev"},
+			flags:         &initFlags{env: "dev"},
+		}
+		err := action.runDelegatedProjectStep(
+			t.Context(), strings.Fields(delegatedProjectsInit),
+			delegatedProjectInitRequest{SchemaVersion: 1},
+		)
+		require.ErrorContains(t, err, "workflow failed")
+		require.NotEmpty(t, recorder.tempDirs)
+		for _, dir := range recorder.tempDirs {
+			_, statErr := os.Stat(dir)
+			require.ErrorIs(t, statErr, os.ErrNotExist)
+		}
+	})
+
+	t.Run("cancellation", func(t *testing.T) {
+		recorder := &delegatedWorkflowRecorder{}
+		client := newTestAzdClient(
+			t, &testEnvironmentServiceServer{}, recorder,
+		)
+		action := &InitAction{
+			azdClient:     client,
+			projectConfig: &azdext.ProjectConfig{Path: t.TempDir()},
+			environment:   &azdext.Environment{Name: "dev"},
+			flags:         &initFlags{env: "dev"},
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		err := action.runDelegatedProjectStep(
+			ctx, strings.Fields(delegatedProjectsInit),
+			delegatedProjectInitRequest{SchemaVersion: 1},
+		)
+		require.Error(t, err)
+		require.Empty(t, recorder.tempDirs)
+	})
 }
 
 func assertArgContains(t *testing.T, args []string, want string) {

@@ -236,23 +236,11 @@ func (a *ProjectInitAction) Run(ctx context.Context) error {
 		}
 	}
 
-	result := projectInitOutput{
-		SchemaVersion:   delegatedSchemaVersion,
-		ProducerVersion: delegatedProducerVersion(),
-		ServiceName:     serviceName,
-		Mode:            string(target.Mode),
-		Mutation:        mutation,
-		Endpoint:        target.Endpoint,
-		ResourceID:      target.ResourceId,
-	}
 	if request != nil {
 		return nil
 	}
 	if a.flags.output == "none" {
 		return nil
-	}
-	if a.flags.output == "json" {
-		return json.NewEncoder(os.Stdout).Encode(result)
 	}
 	if mutation == "unchanged" {
 		fmt.Printf("Foundry project configuration unchanged (%s).\n", serviceName)

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,10 +21,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/protowire"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/types/known/anypb"
 	"gopkg.in/yaml.v3"
 )
 
@@ -36,6 +31,15 @@ const (
 	delegatedProjectsInit   = "ai project init"
 	delegatedProjectsAdd    = "ai project deployment add"
 )
+
+func delegatedModelName(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if slash := strings.IndexByte(raw, '/'); slash >= 0 &&
+		slash < len(raw)-1 {
+		return raw[slash+1:]
+	}
+	return raw
+}
 
 type delegatedProjectTarget struct {
 	ResourceID string `json:"resourceId,omitempty"`
@@ -78,35 +82,12 @@ type delegatedProjectDeploymentRequest struct {
 	Force         bool                  `json:"force"`
 }
 
-type delegatedProjectInitResult struct {
-	SchemaVersion   int    `json:"schemaVersion"`
-	ProducerVersion string `json:"producerVersion"`
-	ServiceName     string `json:"serviceName"`
-	Mode            string `json:"mode"`
-	Mutation        string `json:"mutation"`
-	Endpoint        string `json:"endpoint,omitempty"`
-	ResourceID      string `json:"resourceId,omitempty"`
-}
-
-type delegatedProjectDeploymentResult struct {
-	SchemaVersion   int                         `json:"schemaVersion"`
-	ProducerVersion string                      `json:"producerVersion"`
-	ServiceName     string                      `json:"serviceName"`
-	DeploymentName  string                      `json:"deploymentName"`
-	Model           delegatedProjectResultModel `json:"model"`
-	SKU             delegatedProjectResultSKU   `json:"sku"`
-	Mutation        string                      `json:"mutation"`
-}
-
-type delegatedProjectResultModel struct {
-	Format  string `json:"format"`
-	Name    string `json:"name"`
-	Version string `json:"version"`
-}
-
-type delegatedProjectResultSKU struct {
-	Name     string `json:"name"`
-	Capacity int    `json:"capacity"`
+type delegatedProjectState struct {
+	ServiceName string
+	Mode        string
+	ResourceID  string
+	Endpoint    string
+	Deployments []project.Deployment
 }
 
 var errDelegatedProjectsUnavailable = errors.New("azure.ai.projects delegated commands are unavailable")
@@ -150,46 +131,6 @@ func validateDelegatedProjectDeploymentRequest(request delegatedProjectDeploymen
 	return nil
 }
 
-func validateDelegatedProjectInitResult(result delegatedProjectInitResult) error {
-	if result.SchemaVersion != delegatedProjectsSchemaVersion ||
-		strings.TrimSpace(result.ProducerVersion) == "" ||
-		strings.TrimSpace(result.ServiceName) == "" {
-		return fmt.Errorf("delegated project init result is missing required fields")
-	}
-	if result.Mode != "new" && result.Mode != "existing-id" && result.Mode != "existing-endpoint" {
-		return fmt.Errorf("invalid delegated project mode %q", result.Mode)
-	}
-	if result.Mutation != "created" && result.Mutation != "updated" &&
-		result.Mutation != "migrated" && result.Mutation != "unchanged" {
-		return fmt.Errorf("invalid delegated project mutation %q", result.Mutation)
-	}
-	if result.Mode == "existing-id" && result.ResourceID == "" {
-		return fmt.Errorf("delegated existing-id result is missing resourceId")
-	}
-	if result.Mode != "new" && result.Endpoint == "" {
-		return fmt.Errorf("delegated existing project result is missing endpoint")
-	}
-	return nil
-}
-
-func validateDelegatedProjectDeploymentResult(result delegatedProjectDeploymentResult) error {
-	if result.SchemaVersion != delegatedProjectsSchemaVersion ||
-		strings.TrimSpace(result.ProducerVersion) == "" ||
-		strings.TrimSpace(result.ServiceName) == "" ||
-		strings.TrimSpace(result.DeploymentName) == "" ||
-		strings.TrimSpace(result.Model.Name) == "" ||
-		strings.TrimSpace(result.Model.Format) == "" ||
-		strings.TrimSpace(result.Model.Version) == "" ||
-		strings.TrimSpace(result.SKU.Name) == "" ||
-		result.SKU.Capacity <= 0 {
-		return fmt.Errorf("delegated deployment result is missing required fields")
-	}
-	if result.Mutation != "created" && result.Mutation != "replaced" && result.Mutation != "unchanged" {
-		return fmt.Errorf("invalid delegated deployment mutation %q", result.Mutation)
-	}
-	return nil
-}
-
 func (a *InitAction) delegatedProjectRoot() (string, error) {
 	root := ""
 	if a.projectConfig != nil {
@@ -223,7 +164,6 @@ func (a *InitAction) runDelegatedProjectStep(
 	ctx context.Context,
 	command []string,
 	request any,
-	result any,
 ) error {
 	root, err := a.delegatedProjectRoot()
 	if err != nil {
@@ -241,9 +181,7 @@ func (a *InitAction) runDelegatedProjectStep(
 	if err := os.Chmod(tempDir, 0700); err != nil {
 		return fmt.Errorf("protecting delegated project workspace: %w", err)
 	}
-
 	requestPath := filepath.Join(tempDir, "request.json")
-	resultPath := filepath.Join(tempDir, "result.json")
 	if err := writeDelegatedJSON(requestPath, request); err != nil {
 		return err
 	}
@@ -251,7 +189,6 @@ func (a *InitAction) runDelegatedProjectStep(
 	args := append([]string{}, command...)
 	args = append(args,
 		"--request-file="+requestPath,
-		"--result-file="+resultPath,
 		"--output=none",
 		"--cwd="+root,
 	)
@@ -269,13 +206,6 @@ func (a *InitAction) runDelegatedProjectStep(
 		// Older projects extensions do not know these commands. Stage A keeps
 		// the old path for that case only.
 		if isDelegatedProjectsUnavailable(err) {
-			return errDelegatedProjectsUnavailable
-		}
-		return unwrapDelegatedWorkflowError(err)
-	}
-
-	if err := readDelegatedJSON(resultPath, result); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
 			return errDelegatedProjectsUnavailable
 		}
 		return err
@@ -296,60 +226,6 @@ func isDelegatedProjectsUnavailable(err error) bool {
 		strings.Contains(message, "command not found") ||
 		strings.Contains(message, "not installed") ||
 		strings.Contains(message, "unimplemented")
-}
-
-// unwrapDelegatedWorkflowError preserves structured workflow errors.
-// It also reads the wire shape used by older azd modules.
-func unwrapDelegatedWorkflowError(err error) error {
-	st, ok := status.FromError(err)
-	if !ok {
-		return err
-	}
-	for _, detail := range st.Details() {
-		if anyDetail, ok := detail.(*anypb.Any); ok &&
-			strings.HasSuffix(anyDetail.GetTypeUrl(), "WorkflowErrorDetail") {
-			if extensionError := extensionErrorFromWorkflowDetail(anyDetail.Value); extensionError != nil {
-				return azdext.UnwrapError(extensionError)
-			}
-		}
-		if message, ok := detail.(protoreflect.ProtoMessage); ok &&
-			strings.HasSuffix(string(message.ProtoReflect().Descriptor().FullName()), "WorkflowErrorDetail") {
-			field := message.ProtoReflect().Get(message.ProtoReflect().Descriptor().Fields().ByName("error"))
-			if field.IsValid() {
-				if extensionError, ok := field.Message().Interface().(*azdext.ExtensionError); ok {
-					return azdext.UnwrapError(extensionError)
-				}
-			}
-		}
-	}
-	return err
-}
-
-func extensionErrorFromWorkflowDetail(data []byte) *azdext.ExtensionError {
-	for len(data) > 0 {
-		fieldNumber, wireType, n := protowire.ConsumeTag(data)
-		if n < 0 {
-			return nil
-		}
-		data = data[n:]
-		if fieldNumber == 1 && wireType == protowire.BytesType {
-			value, consumed := protowire.ConsumeBytes(data)
-			if consumed < 0 {
-				return nil
-			}
-			result := &azdext.ExtensionError{}
-			if err := proto.Unmarshal(value, result); err != nil {
-				return nil
-			}
-			return result
-		}
-		consumed := protowire.ConsumeFieldValue(fieldNumber, wireType, data)
-		if consumed < 0 {
-			return nil
-		}
-		data = data[consumed:]
-	}
-	return nil
 }
 
 func writeDelegatedJSON(path string, value any) error {
@@ -378,27 +254,125 @@ func writeDelegatedJSON(path string, value any) error {
 	return nil
 }
 
-func readDelegatedJSON(path string, value any) error {
-	file, err := os.Open(path)
+func (s delegatedProjectState) deployment(name string) (*project.Deployment, error) {
+	for index := range s.Deployments {
+		if strings.EqualFold(s.Deployments[index].Name, name) {
+			return &s.Deployments[index], nil
+		}
+	}
+	return nil, exterrors.Compatibility(
+		exterrors.CodeIncompatibleAzdVersion,
+		fmt.Sprintf("project state is missing deployment %q", name),
+		"upgrade azure.ai.agents and azure.ai.projects to compatible versions",
+	)
+}
+
+func (a *InitAction) readDelegatedProjectState(
+	ctx context.Context,
+) (delegatedProjectState, error) {
+	response, err := a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		return err
+		if isDelegatedProjectsUnavailable(err) {
+			return delegatedProjectState{}, errDelegatedProjectsUnavailable
+		}
+		return delegatedProjectState{}, fmt.Errorf("read delegated project state: %w", err)
 	}
-	defer file.Close()
-	decoder := json.NewDecoder(file)
-	if err := decoder.Decode(value); err != nil {
-		return fmt.Errorf("reading delegated result file: %w", err)
+	if response.GetProject() == nil {
+		return delegatedProjectState{}, exterrors.Dependency(
+			exterrors.CodeProjectNotFound,
+			"the azd project disappeared after delegated initialization",
+			"restore the project manifest and retry",
+		)
 	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return fmt.Errorf("delegated result file contains multiple JSON documents")
+
+	var services []*azdext.ServiceConfig
+	for _, service := range response.GetProject().GetServices() {
+		if service != nil && service.GetHost() == AiProjectHost {
+			services = append(services, service)
+		}
 	}
-	return nil
+	if len(services) == 0 {
+		return delegatedProjectState{}, exterrors.Validation(
+			"project_service_missing",
+			"delegated initialization completed without an azure.ai.project service",
+			"upgrade azure.ai.projects and retry",
+		)
+	}
+	if len(services) > 1 {
+		return delegatedProjectState{}, exterrors.Validation(
+			"project_service_ambiguous",
+			"delegated initialization produced multiple azure.ai.project services",
+			"keep exactly one azure.ai.project service and retry",
+		)
+	}
+
+	properties := services[0].GetAdditionalProperties()
+	config := project.ServiceTargetAgentConfig{}
+	if properties != nil {
+		if err := project.UnmarshalStruct(properties, &config); err != nil {
+			return delegatedProjectState{}, fmt.Errorf(
+				"decode delegated project service state: %w", err,
+			)
+		}
+	}
+	values, err := a.readDelegatedEnvironment(ctx)
+	if err != nil {
+		return delegatedProjectState{}, err
+	}
+	resourceID := strings.TrimSpace(values["AZURE_AI_PROJECT_ID"])
+	endpoint := strings.TrimSpace(config.Endpoint)
+	if endpoint == "" {
+		endpoint = strings.TrimSpace(values["FOUNDRY_PROJECT_ENDPOINT"])
+	}
+	mode := "new"
+	if resourceID != "" {
+		mode = "existing-id"
+	} else if endpoint != "" {
+		mode = "existing-endpoint"
+	}
+	return delegatedProjectState{
+		ServiceName: services[0].GetName(),
+		Mode:        mode,
+		ResourceID:  resourceID,
+		Endpoint:    endpoint,
+		Deployments: config.Deployments,
+	}, nil
+}
+
+func (a *InitAction) readDelegatedEnvironment(
+	ctx context.Context,
+) (map[string]string, error) {
+	envName := a.delegatedEnvironmentName()
+	if envName == "" {
+		current, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		if err != nil || current.GetEnvironment() == nil {
+			return nil, exterrors.Dependency(
+				exterrors.CodeEnvironmentNotFound,
+				"no environment is selected for delegated project state",
+				"select an azd environment and retry",
+			)
+		}
+		envName = current.GetEnvironment().GetName()
+	}
+	response, err := a.azdClient.Environment().GetValues(
+		ctx, &azdext.GetEnvironmentRequest{Name: envName},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("read delegated environment state: %w", err)
+	}
+	values := make(map[string]string, len(response.GetKeyValues()))
+	for _, pair := range response.GetKeyValues() {
+		if pair != nil {
+			values[pair.GetKey()] = pair.GetValue()
+		}
+	}
+	return values, nil
 }
 
 func (a *InitAction) delegateProjectInit(
 	ctx context.Context,
 	allowedLocations []string,
-) (delegatedProjectInitResult, error) {
+) (delegatedProjectState, error) {
 	request := delegatedProjectInitRequest{
 		SchemaVersion:       delegatedProjectsSchemaVersion,
 		Source:              delegatedProjectsSource,
@@ -410,28 +384,24 @@ func (a *InitAction) delegateProjectInit(
 		Force:               a.flags.force,
 	}
 	if err := validateDelegatedProjectInitRequest(request); err != nil {
-		return delegatedProjectInitResult{}, exterrors.Validation(
+		return delegatedProjectState{}, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("invalid delegated project init request: %s", err),
 			"upgrade azure.ai.agents and azure.ai.projects to compatible versions",
 		)
 	}
-	var result delegatedProjectInitResult
-	if err := a.runDelegatedProjectStep(ctx, strings.Fields(delegatedProjectsInit), request, &result); err != nil {
-		return result, err
+	if err := a.runDelegatedProjectStep(ctx, strings.Fields(delegatedProjectsInit), request); err != nil {
+		return delegatedProjectState{}, err
 	}
-	if err := validateDelegatedProjectInitResult(result); err != nil {
-		return result, exterrors.Compatibility(
-			exterrors.CodeIncompatibleAzdVersion,
-			fmt.Sprintf("azure.ai.projects returned an invalid project init result: %s", err),
-			"upgrade azure.ai.agents and azure.ai.projects to compatible versions",
-		)
+	state, err := a.readDelegatedProjectState(ctx)
+	if err != nil {
+		return delegatedProjectState{}, err
 	}
-	a.projectServiceName = result.ServiceName
+	a.projectServiceName = state.ServiceName
 	if a.flags != nil {
 		a.flags.delegatedProjectInit = true
 	}
-	return result, nil
+	return state, nil
 }
 
 func (a *InitAction) delegateProjectDeployment(
@@ -439,7 +409,10 @@ func (a *InitAction) delegateProjectDeployment(
 	model, deploymentName string,
 	setAsDefault bool,
 	allowedLocations []string,
-) (delegatedProjectDeploymentResult, error) {
+) (delegatedProjectState, error) {
+	if strings.TrimSpace(deploymentName) == "" {
+		deploymentName = delegatedModelName(model)
+	}
 	request := delegatedProjectDeploymentRequest{
 		SchemaVersion: delegatedProjectsSchemaVersion,
 		Source:        delegatedProjectsSource,
@@ -454,27 +427,24 @@ func (a *InitAction) delegateProjectDeployment(
 		Force:        a.flags.force,
 	}
 	if err := validateDelegatedProjectDeploymentRequest(request); err != nil {
-		return delegatedProjectDeploymentResult{}, exterrors.Validation(
+		return delegatedProjectState{}, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("invalid delegated deployment request: %s", err),
 			"upgrade azure.ai.agents and azure.ai.projects to compatible versions",
 		)
 	}
-	var result delegatedProjectDeploymentResult
-	if err := a.runDelegatedProjectStep(ctx, strings.Fields(delegatedProjectsAdd), request, &result); err != nil {
-		return result, err
+	if err := a.runDelegatedProjectStep(ctx, strings.Fields(delegatedProjectsAdd), request); err != nil {
+		return delegatedProjectState{}, err
 	}
-	if err := validateDelegatedProjectDeploymentResult(result); err != nil {
-		return result, exterrors.Compatibility(
-			exterrors.CodeIncompatibleAzdVersion,
-			fmt.Sprintf("azure.ai.projects returned an invalid deployment result: %s", err),
-			"upgrade azure.ai.agents and azure.ai.projects to compatible versions",
-		)
+	state, err := a.readDelegatedProjectState(ctx)
+	if err != nil {
+		return delegatedProjectState{}, err
 	}
-	if a.projectServiceName == "" {
-		a.projectServiceName = result.ServiceName
+	if _, err := state.deployment(deploymentName); err != nil {
+		return delegatedProjectState{}, err
 	}
-	return result, nil
+	a.projectServiceName = state.ServiceName
+	return state, nil
 }
 
 func (a *InitAction) hostedAgentAllowedLocations(ctx context.Context) ([]string, error) {
@@ -497,16 +467,16 @@ func modelResourceFromManifest(resource any) (agent_yaml.ModelResource, bool) {
 	return model, ok
 }
 
-func projectInfoFromDelegatedResult(
+func projectInfoFromDelegatedState(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	envName string,
-	result delegatedProjectInitResult,
+	state delegatedProjectState,
 ) (*FoundryProjectInfo, error) {
-	if result.Mode != "existing-id" || result.ResourceID == "" {
+	if state.Mode != "existing-id" || state.ResourceID == "" {
 		return nil, nil
 	}
-	projectInfo, err := extractProjectDetails(result.ResourceID)
+	projectInfo, err := extractProjectDetails(state.ResourceID)
 	if err != nil {
 		return nil, err
 	}
@@ -547,12 +517,12 @@ func (a *InitAction) configureModelChoiceDelegated(
 	if err != nil {
 		return nil, err
 	}
-	initResult, err := a.delegateProjectInit(ctx, allowedLocations)
+	initState, err := a.delegateProjectInit(ctx, allowedLocations)
 	if err != nil {
 		return nil, err
 	}
-	projectInfo, err := projectInfoFromDelegatedResult(
-		ctx, a.azdClient, a.delegatedEnvironmentName(), initResult,
+	projectInfo, err := projectInfoFromDelegatedState(
+		ctx, a.azdClient, a.delegatedEnvironmentName(), initState,
 	)
 	if err != nil {
 		return nil, err
@@ -611,26 +581,20 @@ func (a *InitAction) configureModelChoiceDelegated(
 		finalName := modelDeployment.Name
 		if isNew {
 			setAsDefault := firstResolved == nil
-			result, err := a.delegateProjectDeployment(
+			deploymentState, err := a.delegateProjectDeployment(
 				ctx, modelDeployment.Model.Name, "",
 				setAsDefault, allowedLocations,
 			)
 			if err != nil {
 				return nil, err
 			}
-			finalName = result.DeploymentName
-			modelDeployment = &project.Deployment{
-				Name: finalName,
-				Model: project.DeploymentModel{
-					Format:  result.Model.Format,
-					Name:    result.Model.Name,
-					Version: result.Model.Version,
-				},
-				Sku: project.DeploymentSku{
-					Name:     result.SKU.Name,
-					Capacity: result.SKU.Capacity,
-				},
+			defaultName := delegatedModelName(modelDeployment.Model.Name)
+			resolved, err := deploymentState.deployment(defaultName)
+			if err != nil {
+				return nil, err
 			}
+			finalName = resolved.Name
+			modelDeployment = resolved
 			anyNewDeployment = true
 		}
 		if firstResolved == nil {
@@ -652,7 +616,7 @@ func (a *InitAction) configureModelChoiceDelegated(
 		return nil, fmt.Errorf("injecting deployment names into manifest: %w", err)
 	}
 	if err := a.configureDelegatedAgentResources(
-		ctx, projectInfo, initResult.Mode,
+		ctx, projectInfo, initState.Mode,
 	); err != nil {
 		return nil, err
 	}

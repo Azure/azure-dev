@@ -4,6 +4,7 @@
 package dataset_api
 
 import (
+	"bytes"
 	"math"
 	"os"
 	"path/filepath"
@@ -189,6 +190,10 @@ func NextVersion(current string) string {
 	return current + ".1"
 }
 
+// utf8BOM is what Windows editors and PowerShell's Set-Content write ahead of
+// otherwise valid UTF-8.
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
 // ReadFirstJSONLFile finds and reads the first .jsonl file in a directory.
 func ReadFirstJSONLFile(dir string) (string, error) {
 	entries, err := os.ReadDir(dir)
@@ -204,6 +209,10 @@ func ReadFirstJSONLFile(dir string) (string, error) {
 			if err != nil {
 				return "", messages.ReadingPath(e.Name(), err)
 			}
+			// Windows editors write a BOM. Uploaded as-is it becomes part of the
+			// first row's first key, so every consumer of the dataset sees one
+			// malformed record.
+			data = bytes.TrimPrefix(data, utf8BOM)
 			// Refused here rather than uploaded: registering an empty dataset
 			// succeeds, and the failure surfaces at the run that scores it.
 			if strings.TrimSpace(string(data)) == "" {

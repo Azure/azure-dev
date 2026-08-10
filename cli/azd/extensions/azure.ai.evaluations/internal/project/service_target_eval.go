@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"azureaieval/internal/messages"
+	"azureaieval/internal/pkg/evalcore"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
@@ -148,7 +149,15 @@ func (p *EvalServiceTargetProvider) Deploy(
 
 	// 1. Datasets the configuration owns. Paths are kept so an eval that names
 	// one can derive its columns without reading the blob back.
-	anyChanged := false
+	//
+	// What changed is tracked per artifact, not as one flag for the file. Evals
+	// are immutable, so recreating one discards the id its run history hangs
+	// off; a single flag would do that to every eval in the file because one
+	// unrelated dataset gained a row.
+	changedArtifacts := changeSet{
+		datasets:   map[string]bool{},
+		evaluators: map[string]bool{},
+	}
 	datasetPaths := map[string]string{}
 	for _, decl := range cfg.Datasets {
 		if decl.Source == "" {
@@ -161,7 +170,7 @@ func (p *EvalServiceTargetProvider) Deploy(
 		if err != nil {
 			return nil, messages.DatasetProblem(decl.Name, err)
 		}
-		anyChanged = anyChanged || changed
+		changedArtifacts.datasets[decl.Name] = changed
 		report(progress, describeResult("dataset", decl.Name, version, changed))
 	}
 
@@ -174,7 +183,7 @@ func (p *EvalServiceTargetProvider) Deploy(
 		if err != nil {
 			return nil, messages.EvaluatorProblem(decl.Name, err)
 		}
-		anyChanged = anyChanged || changed
+		changedArtifacts.evaluators[decl.Name] = changed
 		report(progress, describeResult("evaluator", decl.Name, version, changed))
 	}
 
@@ -183,7 +192,8 @@ func (p *EvalServiceTargetProvider) Deploy(
 	for i := range cfg.Evals {
 		eval := cfg.Evals[i]
 		report(progress, messages.ReconcilingEval(eval.Name))
-		id, err := reconciler.EnsureEval(ctx, eval, datasetPaths[eval.Dataset], anyChanged)
+		id, err := reconciler.EnsureEval(
+			ctx, eval, datasetPaths[eval.Dataset], changedArtifacts.reaches(eval))
 		if err != nil {
 			return nil, messages.EvalProblem(eval.Name, err)
 		}
@@ -191,6 +201,35 @@ func (p *EvalServiceTargetProvider) Deploy(
 	}
 
 	return &azdext.ServiceDeployResult{}, nil
+}
+
+// changeSet records which artifacts this deploy republished.
+type changeSet struct {
+	datasets   map[string]bool
+	evaluators map[string]bool
+}
+
+// reaches reports whether anything this eval is built from was republished.
+//
+// Only what the eval names counts. An eval is immutable, so recreating it
+// abandons the id its runs are recorded against, and Scenario 3 is a developer
+// comparing this run to the last one under that id — a sibling eval gaining a
+// row is not a reason to break that.
+func (c changeSet) reaches(eval Eval) bool {
+	if c.datasets[eval.Dataset] {
+		return true
+	}
+	for _, ref := range eval.Evaluators {
+		// Built-ins are the service's, so this configuration never republishes
+		// one and never has to recreate an eval for it.
+		if strings.HasPrefix(ref.Evaluator, evalcore.BuiltinPrefix) {
+			continue
+		}
+		if c.evaluators[ref.Evaluator] {
+			return true
+		}
+	}
+	return false
 }
 
 // projectRoot is the directory `$ref` paths resolve against. It is the

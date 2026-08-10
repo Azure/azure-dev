@@ -139,6 +139,7 @@ func runCommand() error {
 Prefer the dedicated helpers instead of hand-rolling conversions:
 
 - `exterrors.ServiceFromAzure(err, operation)` for `azcore.ResponseError`
+- `exterrors.FromHost(err, operation, context)` for azd host gRPC service calls
 - `exterrors.FromAiService(err, fallbackCode)` for azd host AI service calls
 - `exterrors.FromPrompt(err, contextMessage)` for prompt failures
 

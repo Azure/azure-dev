@@ -102,7 +102,7 @@ Displays a list of installed extension sources.
 Adds a new named extension source to the global `azd` configuration.
 
 - `-l, --location` The location of the extension source.
-- `-n, --name` The name of the extension source.
+- `-n, --name` The name of the extension source. Names must contain 1 to 64 lowercase ASCII letters, digits, hyphens, or underscores, and must begin and end with a letter or digit. `bundle` is reserved.
 - `-t, --type` The type of extension source. Supported types are `file` and `url`.
 
 #### `azd extension source remove <name>`

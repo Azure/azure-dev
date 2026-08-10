@@ -1388,6 +1388,14 @@ func Test_ExtensionSourceRemoveAction_TooManyArgs(t *testing.T) {
 	assert.ErrorIs(t, err, internal.ErrInvalidFlagCombination)
 }
 
+func TestExtensionSourceDisplayName(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "valid-source", extensionSourceDisplayName("valid-source"))
+	require.Equal(t, `"legacy\nsource"`, extensionSourceDisplayName("legacy\nsource"))
+	require.Equal(t, `"\x1b[31mspoof"`, extensionSourceDisplayName("\x1b[31mspoof"))
+}
+
 func Test_ExtensionSourceValidateAction_NoArgs(t *testing.T) {
 	t.Parallel()
 	action := &extensionSourceValidateAction{args: []string{}}

@@ -238,7 +238,7 @@ func (r *evalReconciler) EnsureEvaluator(
 		return "", false, messages.EvaluatorSource(localPath, err)
 	}
 
-	raw, err := os.ReadFile(localPath)
+	raw, err := project.ReadFileNoBOM(localPath)
 	if err != nil {
 		return "", false, messages.EvaluatorSource(localPath, err)
 	}

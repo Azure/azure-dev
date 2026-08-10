@@ -737,7 +737,7 @@ func (ec *evalContext) pollRun(
 // API happens to return, so a script reading it would depend on a shape this
 // extension does not control.
 type startedRunHandoff struct {
-	RunID string `json:"run_id"`
+	RunID    string `json:"run_id"`
 	EvalID   string `json:"eval_id"`
 	EvalName string `json:"eval_name,omitempty"`
 	// Which rows the run scored. A pipeline that records only a pass rate
@@ -786,6 +786,12 @@ func timestampString(value any) string {
 	case nil:
 		return ""
 	case string:
+		// Normalised, not passed through: the service returns sub-second
+		// precision and an offset here and epoch seconds elsewhere, so two
+		// listings would otherwise spell the same instant differently.
+		if parsed, err := time.Parse(time.RFC3339, t); err == nil {
+			return parsed.UTC().Format(time.RFC3339)
+		}
 		return t
 	case float64:
 		return time.Unix(int64(t), 0).UTC().Format(time.RFC3339)

@@ -61,6 +61,7 @@ type EvaluatorSummary struct {
 	Name        string `json:"name"`
 	Version     string `json:"version,omitempty"`
 	Description string `json:"description,omitempty"`
+	CreatedAt   string `json:"created_at,omitempty"`
 
 	// The listing spells this evaluator_type; `type` is accepted too because
 	// other evaluator payloads use it.

@@ -8,11 +8,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
+	"azureaieval/internal/project"
 
 	"github.com/spf13/cobra"
 )
@@ -68,7 +68,7 @@ func newEvaluatorWriteCommand(verb, short string) *cobra.Command {
 				return requireFlag("from-file")
 			}
 
-			raw, err := os.ReadFile(fromFile)
+			raw, err := project.ReadFileNoBOM(fromFile)
 			if err != nil {
 				return messages.ReadingEvaluator(fromFile, err)
 			}
@@ -273,7 +273,7 @@ func newEvaluatorVersionsListCommand() *cobra.Command {
 			if err != nil {
 				return messages.ListingEvaluatorVersions(name, err)
 			}
-			return renderEvaluators(cmd, list)
+			return renderEvaluatorVersions(cmd, list)
 		},
 	}
 
@@ -294,6 +294,26 @@ func renderEvaluators(cmd *cobra.Command, list *eval_api.EvaluatorListResponse) 
 		rows = append(rows, []string{e.Name, e.Version, e.Type()})
 	}
 	return emitTable(cmd.OutOrStdout(), []string{"NAME", "VERSION", "TYPE"}, rows)
+}
+
+// renderEvaluatorVersions lists one evaluator's history.
+//
+// Name and type are the same on every row here, so they say nothing. What the
+// scenario reads a version list for is how the rubric changed, which is the
+// date and the description the author left.
+func renderEvaluatorVersions(cmd *cobra.Command, list *eval_api.EvaluatorListResponse) error {
+	if isJSON(cmd) {
+		return emitJSONList(cmd.OutOrStdout(), list.Value)
+	}
+	if len(list.Value) == 0 {
+		fmt.Fprint(cmd.OutOrStdout(), messages.NoEvaluators())
+		return nil
+	}
+	rows := make([][]string, 0, len(list.Value))
+	for _, e := range list.Value {
+		rows = append(rows, []string{e.Version, timestampString(e.CreatedAt), e.Description})
+	}
+	return emitTable(cmd.OutOrStdout(), []string{"VERSION", "CREATED AT", "DESCRIPTION"}, rows)
 }
 
 func newEvaluatorShowCommand() *cobra.Command {

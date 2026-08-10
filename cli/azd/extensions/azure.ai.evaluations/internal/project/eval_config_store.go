@@ -90,7 +90,7 @@ func OpenEvalConfig(evalDir string) (*EvalConfig, error) {
 // LoadEvalConfig reads a configuration from an explicit path. The path is used
 // verbatim, relative to the process working directory — never re-rooted.
 func LoadEvalConfig(path string) (*EvalConfig, error) {
-	data, err := os.ReadFile(path)
+	data, err := ReadFileNoBOM(path)
 	if err != nil {
 		return nil, messages.ReadingEvalConfig(path, err)
 	}

@@ -70,7 +70,7 @@ func newEvalCreateCommand() *cobra.Command {
 			}
 
 			reconciler := &evalReconciler{ec: ec}
-			id, err := reconciler.EnsureEval(ctx, *eval, datasetPath, false)
+			id, err := reconciler.EnsureEval(ctx, *eval, datasetPath)
 			if err != nil {
 				return err
 			}

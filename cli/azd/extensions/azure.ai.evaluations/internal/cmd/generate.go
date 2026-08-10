@@ -365,6 +365,12 @@ func (ec *evalContext) generateDataset(
 	}
 	fmt.Fprint(out, messages.WroteArtifact(path))
 
+	// The job registered the version and this file is a copy of it, so the
+	// state a deploy would have left behind is recorded now. Without it the
+	// next `azd up` finds no fingerprint for this dataset, reads the file as
+	// new, and publishes a second version identical to the one just generated.
+	ec.recordDeployedDataset(ctx, plan.Name, path, version)
+
 	return &project.ArtifactRef{
 		Name:    plan.Name,
 		Source:  relativeSource(plan.BaseDir, path),

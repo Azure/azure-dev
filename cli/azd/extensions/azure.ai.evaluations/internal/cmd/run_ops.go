@@ -318,6 +318,11 @@ const (
 	// metaEvalName is the eval's declared name, recorded on the run because a
 	// run is read on its own and an id is not what the author called it.
 	metaEvalName = "azd_eval"
+	// metaAgent is the agent an eval targets.
+	metaAgent = "azd_agent"
+	// metaDescription carries an eval's description: the create request has no
+	// field of its own for it.
+	metaDescription = "azd_description"
 )
 
 // runDataset renders the dataset a run scored, versioned when a version was

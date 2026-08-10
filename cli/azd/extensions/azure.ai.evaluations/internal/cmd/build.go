@@ -293,18 +293,18 @@ func buildEvalRequest(
 	hasTarget := group.Target != nil && group.Target.Name != ""
 	targetType := ""
 	if hasTarget {
-		metadata["azd_agent"] = group.Target.Name
+		metadata[metaAgent] = group.Target.Name
 		targetType = group.Target.Type
 		if targetType == "" {
 			targetType = project.TargetTypeAgent
 		}
 	}
 	targetBindings := sampleBindingsFor(targetType)
-	metadata["azd_eval"] = group.Name
+	metadata[metaEvalName] = group.Name
 	// The create request has no description field, so the group's own
 	// description rides in metadata rather than being dropped.
 	if group.Description != "" {
-		metadata["azd_description"] = group.Description
+		metadata[metaDescription] = group.Description
 	}
 
 	level := group.EvaluationLevel

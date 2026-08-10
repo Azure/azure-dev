@@ -21,8 +21,10 @@ const (
 type ArtifactRef struct {
 	Name   string `json:"name"`
 	Source string `json:"source"`
-	// Version is what the generation job published, which the catalog line
-	// names so a reader can pin it without going to look.
+	// Version is what the generation job published. It is reported to the
+	// author rather than written into the catalog: an evaluator cannot carry
+	// both a `source:` and a `version:`, and pinning a generated dataset would
+	// freeze it against the very edit it exists to be the starting point for.
 	Version string `json:"version,omitempty"`
 }
 

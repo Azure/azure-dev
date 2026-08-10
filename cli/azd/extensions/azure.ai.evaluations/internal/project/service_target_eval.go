@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"azureaieval/internal/messages"
-	"azureaieval/internal/pkg/evalcore"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
@@ -43,7 +42,7 @@ type Reconciler interface {
 	// evaluators or options changed, returning its id. datasetPath is the local
 	// dataset backing the group, or empty when it is already registered; it lets
 	// the reconciler bind criteria to the columns that actually exist.
-	EnsureEval(ctx context.Context, group Eval, datasetPath string, recreate bool) (id string, err error)
+	EnsureEval(ctx context.Context, group Eval, datasetPath string) (id string, err error)
 }
 
 // EvalServiceTargetProvider deploys eval resources during `azd up`. azd owns
@@ -150,19 +149,12 @@ func (p *EvalServiceTargetProvider) Deploy(
 	// 1. Datasets the configuration owns. Paths are kept so an eval that names
 	// one can derive its columns without reading the blob back.
 	//
-	// What changed is tracked per artifact, not as one flag for the file. Evals
-	// are immutable, so recreating one discards the id its run history hangs
-	// off; a single flag would do that to every eval in the file because one
-	// unrelated dataset gained a row.
-	changedArtifacts := changeSet{
-		datasets:   map[string]bool{},
-		evaluators: map[string]bool{},
-	}
+	// A declaration with no `source:` is included rather than skipped: it names
+	// a dataset that is already registered, and reconciling it is what confirms
+	// it is really there and settles which version a `version:` pin selected.
+	// Skipping it would leave a misspelled name to surface as a failed run.
 	datasetPaths := map[string]string{}
 	for _, decl := range cfg.Datasets {
-		if decl.Source == "" {
-			continue
-		}
 		report(progress, messages.ReconcilingDataset(decl.Name))
 		localPath := resolveSource(baseDir, decl.Source)
 		datasetPaths[decl.Name] = localPath
@@ -170,7 +162,6 @@ func (p *EvalServiceTargetProvider) Deploy(
 		if err != nil {
 			return nil, messages.DatasetProblem(decl.Name, err)
 		}
-		changedArtifacts.datasets[decl.Name] = changed
 		report(progress, describeResult("dataset", decl.Name, version, changed))
 	}
 
@@ -183,17 +174,18 @@ func (p *EvalServiceTargetProvider) Deploy(
 		if err != nil {
 			return nil, messages.EvaluatorProblem(decl.Name, err)
 		}
-		changedArtifacts.evaluators[decl.Name] = changed
 		report(progress, describeResult("evaluator", decl.Name, version, changed))
 	}
 
-	// 3. The evals. Evals are immutable, so a change upstream means a new one
-	// must be created and the stored id replaced.
+	// 3. The evals. An eval is recreated only when its own declaration changed:
+	// the comparison covers what the entry declares, not what its references
+	// resolve to. An evaluator tracking latest that publishes a new version
+	// leaves every eval that runs it alone, which is what keeps a rubric edit
+	// comparable against the runs before it.
 	for i := range cfg.Evals {
 		eval := cfg.Evals[i]
 		report(progress, messages.ReconcilingEval(eval.Name))
-		id, err := reconciler.EnsureEval(
-			ctx, eval, datasetPaths[eval.Dataset], changedArtifacts.reaches(eval))
+		id, err := reconciler.EnsureEval(ctx, eval, datasetPaths[eval.Dataset])
 		if err != nil {
 			return nil, messages.EvalProblem(eval.Name, err)
 		}
@@ -201,35 +193,6 @@ func (p *EvalServiceTargetProvider) Deploy(
 	}
 
 	return &azdext.ServiceDeployResult{}, nil
-}
-
-// changeSet records which artifacts this deploy republished.
-type changeSet struct {
-	datasets   map[string]bool
-	evaluators map[string]bool
-}
-
-// reaches reports whether anything this eval is built from was republished.
-//
-// Only what the eval names counts. An eval is immutable, so recreating it
-// abandons the id its runs are recorded against, and Scenario 3 is a developer
-// comparing this run to the last one under that id — a sibling eval gaining a
-// row is not a reason to break that.
-func (c changeSet) reaches(eval Eval) bool {
-	if c.datasets[eval.Dataset] {
-		return true
-	}
-	for _, ref := range eval.Evaluators {
-		// Built-ins are the service's, so this configuration never republishes
-		// one and never has to recreate an eval for it.
-		if strings.HasPrefix(ref.Evaluator, evalcore.BuiltinPrefix) {
-			continue
-		}
-		if c.evaluators[ref.Evaluator] {
-			return true
-		}
-	}
-	return false
 }
 
 // projectRoot is the directory `$ref` paths resolve against. It is the

@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"maps"
 	"os"
 	"reflect"
 	"strconv"
@@ -406,23 +407,27 @@ func (r *evalReconciler) evaluatorVersionResolvable(
 	return false
 }
 
-// EnsureEval creates the group when it has never been deployed, or when an
-// upstream artifact changed. Groups are immutable, so a change means a new
-// group and a new id.
+// EnsureEval creates the eval when it has never been deployed, or when its own
+// declaration changed. Evals are immutable, so a declaration change means a new
+// eval and a new id.
+//
+// What an eval's references *resolve to* is deliberately not a reason to
+// recreate it: an evaluator tracking latest that publishes a new version leaves
+// every eval that runs it alone, which is what keeps a rubric edit comparable
+// against the runs taken before it.
 func (r *evalReconciler) EnsureEval(
 	ctx context.Context,
 	group project.Eval,
 	datasetPath string,
-	recreate bool,
 ) (string, error) {
 	if group.ID != "" {
 		return group.ID, nil
 	}
 
 	// Evals are immutable, so a change to the eval's own substance — evaluators,
-	// dataset, source, target, level — needs a new eval just as much as a change
-	// to an upstream artifact does. Name and description are excluded from the
-	// digest and pushed in place instead.
+	// dataset, source, target, level — needs a new eval. Name and description are
+	// excluded from the digest and pushed in place instead.
+	recreate := false
 	digest, err := project.FingerprintGroup(group)
 	if err != nil {
 		return "", err
@@ -443,7 +448,13 @@ func (r *evalReconciler) EnsureEval(
 		}
 	}
 	if cached != "" && !recreate {
-		if _, err := r.ec.evalClient.GetOpenAIEval(ctx, cached); err == nil {
+		if remote, err := r.ec.evalClient.GetOpenAIEval(ctx, cached); err == nil {
+			// Reusing the eval is not the same as leaving it alone: name and
+			// description are excluded from the digest because they must not
+			// split a history, which makes this the only place an edit to
+			// either of them can reach the service.
+			r.pushMutable(ctx, cached, group, remote)
+
 			// Record the digest on reuse as well, otherwise an eval deployed
 			// before fingerprinting existed never establishes a baseline and
 			// later edits go undetected.
@@ -480,9 +491,7 @@ func (r *evalReconciler) EnsureEval(
 // rename keeps the id and every run under it rather than forking the history.
 //
 // The name is what UpdateEvalParametersBody reaches, so the new one is pushed
-// to the service. A failure there is not fatal: the eval is still the right one
-// and the declaration still resolves, it just reads under its old name in the
-// portal until the next deploy.
+// to the service.
 func (r *evalReconciler) adoptRenamed(
 	ctx context.Context,
 	group project.Eval,
@@ -496,13 +505,52 @@ func (r *evalReconciler) adoptRenamed(
 	if err != nil {
 		return ""
 	}
-	if remote.Name == group.Name {
-		return id
+	r.pushMutable(ctx, id, group, remote)
+	return id
+}
+
+// pushMutable sends the half of a declaration the service treats as mutable.
+//
+// Substance never travels this way — an edit that touches it is a new eval.
+// Name and description are left out of the fingerprint precisely because they
+// cost nothing to change and must not split a run history, so they are
+// reconciled here rather than ignored, and the eval keeps its id and every run
+// under it.
+//
+// A failure is not fatal. The eval is still the right one and the declaration
+// still resolves; it just reads under its old wording in the portal until the
+// next deploy.
+func (r *evalReconciler) pushMutable(
+	ctx context.Context,
+	id string,
+	group project.Eval,
+	remote *eval_api.OpenAIEval,
+) {
+	if remote == nil {
+		return
+	}
+	desired := withDescription(remote.Metadata, group.Description)
+	if remote.Name == group.Name && maps.Equal(remote.Metadata, desired) {
+		return
 	}
 	_, _ = r.ec.evalClient.UpdateOpenAIEval(ctx, id, &eval_api.UpdateOpenAIEvalRequest{
-		Name: group.Name,
+		Name:     group.Name,
+		Metadata: desired,
 	})
-	return id
+}
+
+// withDescription applies the declaration's description to the metadata the
+// service already holds, leaving every other key alone — including any the
+// service added itself, which a replacing update would otherwise drop.
+func withDescription(held map[string]string, description string) map[string]string {
+	merged := make(map[string]string, len(held)+1)
+	maps.Copy(merged, held)
+	if description == "" {
+		delete(merged, metaDescription)
+	} else {
+		merged[metaDescription] = description
+	}
+	return merged
 }
 
 // sameDefinition reports whether the locally authored definition already
@@ -570,6 +618,31 @@ func versionFromRaw(raw []byte, fallback string) string {
 // versionKey holds the version resolved for an artifact at the last deploy.
 func versionKey(kind, name string) string {
 	return project.FingerprintKey(kind, name) + "_VERSION"
+}
+
+// recordDeployedDataset records the state a deploy would have left behind for a
+// dataset that the service has already registered and that already has a local
+// copy.
+//
+// `azd up` decides whether to publish by comparing the local file against a
+// fingerprint held in the environment. A generated dataset arrives with no such
+// fingerprint, so without this the first deploy after `generate` reads the file
+// as new and publishes a second version identical to the one the job just
+// registered. Only a local edit should produce version 2.
+//
+// Best effort: failing to record costs a redundant version, not correctness.
+func (ec *evalContext) recordDeployedDataset(
+	ctx context.Context,
+	name, localPath, version string,
+) {
+	digest, err := project.Fingerprint(localPath)
+	if err != nil {
+		return
+	}
+	_ = ec.setEnvValue(ctx, project.FingerprintKey("dataset", name), digest)
+	if version != "" {
+		_ = ec.setEnvValue(ctx, versionKey("dataset", name), version)
+	}
 }
 
 // idKey names the env entry holding a resolved id.

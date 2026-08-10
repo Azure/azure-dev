@@ -75,10 +75,6 @@ Extensions can access these azd services via gRPC:
 - **Framework** — Framework service operations
 - **Service Target** — Deployment target operations
 
-`Environment.UnsetValue` removes a key from the active environment rather
-than writing an empty value. Extensions should use it when a project identity
-transition makes a previously persisted value invalid.
-
 ## Error Handling
 
 Extensions use two structured error types:
@@ -88,11 +84,11 @@ Extensions use two structured error types:
 
 Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC auth → fallback
 
-Workflow execution preserves structured extension errors in
-`WorkflowErrorDetail`, so a parent extension can distinguish compatibility,
-validation, and Azure service failures without parsing human-readable output.
-Delegated extension commands use versioned request/result files and keep the
-parent command as the sole JSON producer.
+Delegated commands use the existing `WorkflowService.Run` completion contract:
+a successful call means the command completed, and failures are returned by the
+service. The parent extension writes an input-only, versioned `request.json`;
+after success, it rereads state through the `Project` and `Environment` APIs
+instead of consuming a result file or a second JSON stream.
 
 ## First-Party Extensions
 

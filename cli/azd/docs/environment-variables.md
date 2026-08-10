@@ -151,6 +151,10 @@ The `azure.ai.projects` extension is the owner of Foundry project identity
 values. The `azure.ai.agents` extension consumes those values when it creates
 agent services and keeps its own agent-specific values.
 
+When project identity changes, `azure.ai.projects` writes an empty string as a
+tombstone for stale project-owned keys. Consumers treat an empty value as not
+configured and resolve current project state instead.
+
 | Variable | Description |
 | --- | --- |
 | `AZURE_AI_PROJECT_ID` | The Microsoft Foundry project resource ID resolved and persisted by `azure.ai.projects`. |

@@ -64,6 +64,10 @@ For details on the external authentication protocol, see [cli/azd/docs/external-
 The `azure.ai.projects` extension owns the project identity values below.
 `azure.ai.agents` consumes them for agent workflows.
 
+When project identity changes, `azure.ai.projects` writes an empty string as a
+tombstone for stale project-owned keys. Consumers treat an empty value as not
+configured and resolve current project state instead.
+
 | Variable | Description |
 |---|---|
 | `AZURE_AI_PROJECT_ID` | Microsoft Foundry project resource ID |

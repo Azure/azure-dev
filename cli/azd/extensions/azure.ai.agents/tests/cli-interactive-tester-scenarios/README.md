@@ -256,6 +256,11 @@ contract; the operational rules the executor follows (select handling, retries,
   exist, or expects output that does not appear, the driver **fails** the scenario rather than
   substituting an alternative, skipping the step, or inventing a workaround. Keep goals current
   so this doesn't happen — a broken goal must be fixed by a human, not patched over at run time.
+- **Give every executed invoke explicit input.** Write the literal command with a quoted
+  positional message, such as `azd ai agent invoke "Hello, are you there?"`. Use
+  `--input-file` only when file input is the behavior under test, and define the file contents
+  before invoking. Do not tell the driver to run bare `invoke` and then "send a message": the
+  CLI requires the message or input-file argument in the command and does not prompt for it.
 - **Prefer stable labels.** When a goal drives an interactive picker, key it off a stable text
   label rather than a positional index — the driver prefers `choice_text` over `choice_index`
   because indices shift between releases.
@@ -509,6 +514,12 @@ Linux/macOS), and pass the merged map as `session_vars=` on every
 `load_scenario` / `run_pre_hooks` / `start_session` / `run_post_hooks` call.
 Failing to thread `session_vars` leaves `{prefix}` etc. unresolved in goals and
 the run will execute against literal placeholder strings.
+
+Every `{name}`-shaped token in a scenario command, path, hook, or goal is
+interpreted as a placeholder. Embedded shell syntax must not accidentally use
+that shape: for example, write an awk action as `{ print }`, not `{print}`.
+Static validation should reject every brace-delimited token that is not a known
+profile/session variable.
 
 ## Conventions
 

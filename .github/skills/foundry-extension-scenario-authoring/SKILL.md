@@ -2,11 +2,12 @@
 name: foundry-extension-scenario-authoring
 license: MIT
 metadata:
-  version: "1.0"
+  version: "1.1"
   # Bump major on breaking prompt/trigger changes; bump minor on new references or authoring rules.
   # 1.0: initial authoring + validation skill for the azure.ai.agents cli-interactive-tester
   # scenarios. Taxonomy (tiers/tags/profile/hooks/fixtures/requires) is single-sourced in the
   # scenarios README; this skill adds the authoring procedure and a no-execution validation loop.
+  # 1.1: require deterministic input for every executed invoke command.
 description: >-
   **WORKFLOW SKILL** — Authors and validates cli-interactive-tester **scenarios** for the
   azure.ai.agents extension: writes a new goal-based scenario YAML (or edits an existing one) so
@@ -60,6 +61,10 @@ The consequences for how you write goals:
   scenario. Name each prompt with stable user-visible text and state the response. Use "if
   asked" only for a genuinely optional prompt. Never write "follow the prompts" or another
   catch-all; an unlisted product prompt must fail the scenario.
+- **Give every executed invoke explicit input.** Write the literal command with a quoted
+  positional message. Use `--input-file` only when file input is what the scenario tests, and
+  define the file contents first. Never leave command construction to the worker with wording
+  such as "run invoke and send a simple message"; bare invoke does not prompt for a message.
 - **Guard pre-filled prompts.** When a prompt comes pre-populated (e.g. the agent name), the
   goal must tell the driver to **clear the field first** before typing, or the typed value
   appends to the default. See the RESOURCE NAMING / AGENT NAME goals in
@@ -192,10 +197,16 @@ Validate **statically** — never `start_session`, never drive the scenario, nev
    to the scenarios root and points at the intended prerequisite.
 4. **Fixture / hook paths resolve.** If a `pre` hook seeds a fixture, confirm the referenced
    `fixtures/<name>/` tree exists and the hook uses `{fixtures_dir}` (not a hardcoded path).
-5. **Placeholders only reference known variables.** Every `{name}` in `command` / `cwd` / hooks /
-   goals must be one of the profile placeholders or `{instance}` — a typo'd placeholder would run
-   against a literal string.
-6. **Coverage cross-check.** If this scenario closes a coverage gap flagged by a PR regression
+5. **Placeholders only reference known variables.** Every `{name}`-shaped token in `command` /
+   `cwd` / hooks / goals is processed as a placeholder and must be a profile placeholder or
+   `{instance}`. This includes embedded shell syntax: format an awk action as `{ print }`, not
+   `{print}`, so it cannot be mistaken for an unknown placeholder. Reject every unknown
+   brace-delimited token during static validation.
+6. **Invoke input is explicit.** For every goal or `command` that executes
+   `azd ai agent invoke`, confirm the literal command includes a positional message or an
+   intentional `--input-file` whose contents are defined by the scenario. Command-list and help
+   assertions that only mention `invoke` are not executable calls.
+7. **Coverage cross-check.** If this scenario closes a coverage gap flagged by a PR regression
    run, confirm its `cmd:*` tag matches the changed command so future impact-mapping picks it up.
 
 Report the validation result to the user. If they then want to *run* the new scenario to confirm

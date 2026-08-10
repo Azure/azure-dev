@@ -25,7 +25,7 @@ pre:
         exit 1
       fi
       if ! grep -q '^    agentCard:' "$f"; then
-        if ! awk '/^    kind: hosted$/ && !inserted {print; print "    agentCard:"; print "      description: \"{prefix} endpoint-update test card\""; print "      skills:"; print "        - id: \"{prefix}-echo\""; print "          name: \"Echo\""; print "          description: \"Echoes input back\""; inserted=1; next} {print} END {if (!inserted) exit 1}' "$f" > "$f.tmp"; then
+        if ! awk '/^    kind: hosted$/ && !inserted { print; print "    agentCard:"; print "      description: \"{prefix} endpoint-update test card\""; print "      skills:"; print "        - id: \"{prefix}-echo\""; print "          name: \"Echo\""; print "          description: \"Echoes input back\""; inserted=1; next } { print } END { if (!inserted) exit 1 }' "$f" > "$f.tmp"; then
           rm -f "$f.tmp"
           echo "PRECONDITION FAILED: inline hosted-agent definition not found"
           exit 1

@@ -1,1 +1,4 @@
-*.go.tmpl text eol=lf
+# Scaffolding templates and the Go scaffold's go.sum are written verbatim into
+# generated extension projects, so keep them LF regardless of checkout platform.
+*.tmpl text eol=lf
+internal/resources/languages/go/go.sum text eol=lf

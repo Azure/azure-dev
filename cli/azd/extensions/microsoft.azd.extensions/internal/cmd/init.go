@@ -675,7 +675,7 @@ func collectExtensionMetadata(
 	} else {
 		languageChoices := []*azdext.SelectChoice{
 			{
-				Label: "Go",
+				Label: "Go (recommended)",
 				Value: "go",
 			},
 			{
@@ -696,10 +696,11 @@ func collectExtensionMetadata(
 			Options: &azdext.SelectOptions{
 				Message:         "Select a programming language for your extension",
 				Choices:         languageChoices,
+				SelectedIndex:   new(int32(0)),
 				EnableFiltering: new(false),
 				DisplayNumbers:  new(false),
 				HelpMessage: "Programming language is used to define the language in which your extension is written. " +
-					"You can select one programming language.",
+					"Go is recommended: it has the most complete and actively maintained extension template.",
 			},
 		})
 		if err != nil {

@@ -828,6 +828,31 @@ func TestApplyAdoptedAgentNameOverride_PersistsFlagName(t *testing.T) {
 	require.Equal(t, "test0804", server.configValues["name"].value)
 }
 
+func TestApplyAdoptedAgentNameOverride_PersistsFlagNameForRefService(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"agent-service": {
+				Name: "agent-service",
+				Host: AiAgentHost,
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"$ref": structpb.NewStringValue("./agent.yaml"),
+				}},
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	err := applyAdoptedAgentNameOverride(t.Context(), client, "test0804")
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Equal(t, "agent-service", server.configValues["name"].serviceName)
+	require.Equal(t, "test0804", server.configValues["name"].value)
+}
+
 func TestApplyAdoptedAgentNameOverride_RejectsMultipleAgents(t *testing.T) {
 	t.Parallel()
 
@@ -862,17 +887,14 @@ func TestApplyAdoptedAgentNameOverride_RejectsMultipleAgents(t *testing.T) {
 	require.Empty(t, server.configValues)
 }
 
-func TestApplyAdoptedAgentNameOverride_RejectsNoNamedAgent(t *testing.T) {
+func TestApplyAdoptedAgentNameOverride_RejectsNoAgentService(t *testing.T) {
 	t.Parallel()
 
 	server := &recordingProjectServer{
 		existing: map[string]*azdext.ServiceConfig{
-			"agent-service": {
-				Name: "agent-service",
-				Host: AiAgentHost,
-				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
-					"kind": structpb.NewStringValue("hosted"),
-				}},
+			"ai-project": {
+				Name: "ai-project",
+				Host: AiProjectHost,
 			},
 		},
 	}
@@ -880,7 +902,7 @@ func TestApplyAdoptedAgentNameOverride_RejectsNoNamedAgent(t *testing.T) {
 
 	err := applyAdoptedAgentNameOverride(t.Context(), client, "test0804")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "no named agent service")
+	require.Contains(t, err.Error(), "no agent service")
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
@@ -923,6 +945,19 @@ services:
 	require.NoError(t, validateAdoptedAgentNameOverride(content))
 }
 
+func TestValidateAdoptedAgentNameOverride_AllowsSingleRefAgent(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`name: sample
+services:
+  agent:
+    host: azure.ai.agent
+    $ref: ./agent.yaml
+`)
+
+	require.NoError(t, validateAdoptedAgentNameOverride(content))
+}
+
 func TestValidateAdoptedAgentNameOverride_AllowsSingleLegacyNamedAgent(t *testing.T) {
 	t.Parallel()
 
@@ -938,7 +973,7 @@ services:
 	require.NoError(t, validateAdoptedAgentNameOverride(content))
 }
 
-func TestValidateAdoptedAgentNameOverride_RejectsMultipleNamedAgents(t *testing.T) {
+func TestValidateAdoptedAgentNameOverride_RejectsMultipleAgents(t *testing.T) {
 	t.Parallel()
 
 	content := []byte(`name: sample
@@ -958,21 +993,37 @@ services:
 	require.Contains(t, err.Error(), "multiple agent services")
 }
 
-func TestValidateAdoptedAgentNameOverride_RejectsNoNamedAgent(t *testing.T) {
+func TestValidateAdoptedAgentNameOverride_RejectsInlineAndRefAgents(t *testing.T) {
 	t.Parallel()
 
 	content := []byte(`name: sample
 services:
-  agent:
+  agent-a:
     host: azure.ai.agent
     kind: hosted
+    name: agent-a
+  agent-b:
+    host: azure.ai.agent
+    $ref: ./agent.yaml
+`)
+
+	err := validateAdoptedAgentNameOverride(content)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "multiple agent services")
+}
+
+func TestValidateAdoptedAgentNameOverride_RejectsNoAgentService(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`name: sample
+services:
   project:
     host: azure.ai.project
 `)
 
 	err := validateAdoptedAgentNameOverride(content)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "no named agent service")
+	require.Contains(t, err.Error(), "no agent service")
 }
 
 // TestStampProjectEndpoint_WritesEndpoint verifies that stampProjectEndpoint

@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -149,7 +151,19 @@ func (a *PublishAction) Run(ctx context.Context) error {
 
 	deepLink := teamsAppDeepLink(result.TitleID)
 
-	if a.flags.output == "json" {
+	return writePublishResult(os.Stdout, a.flags.output, result, scope, displayName, packCtx.agentName, deepLink)
+}
+
+func writePublishResult(
+	w io.Writer,
+	output string,
+	result *agent_api.TeamsAppPublishResult,
+	scope teamsPackScope,
+	displayName string,
+	agentName string,
+	deepLink string,
+) error {
+	if output == "json" {
 		payload := map[string]string{
 			"titleId":     result.TitleID,
 			"teamsAppId":  result.TeamsAppID,
@@ -161,19 +175,19 @@ func (a *PublishAction) Run(ctx context.Context) error {
 		if jsonErr != nil {
 			return fmt.Errorf("failed to marshal response: %w", jsonErr)
 		}
-		fmt.Println(string(data))
-		return nil
+		_, err := fmt.Fprintln(w, string(data))
+		return err
 	}
 
-	fmt.Printf("Published Teams app %q for agent %q (scope: %s)\n", displayName, packCtx.agentName, scope.flag)
-	fmt.Printf("  Title ID:     %s\n", result.TitleID)
-	fmt.Printf("  Teams App ID: %s\n", result.TeamsAppID)
-	fmt.Printf("  Install link: %s\n", deepLink)
+	fmt.Fprintf(w, "Published Teams app %q for agent %q (scope: %s)\n", displayName, agentName, scope.flag)
+	fmt.Fprintf(w, "  Title ID:     %s\n", result.TitleID)
+	fmt.Fprintf(w, "  Teams App ID: %s\n", result.TeamsAppID)
+	fmt.Fprintf(w, "  Install link: %s\n", deepLink)
 	switch scope.flag {
 	case "tenant":
-		fmt.Println("The app is submitted to the organization catalog and awaits IT-admin approval.")
+		fmt.Fprintln(w, "The app is submitted to the organization catalog and awaits IT-admin approval.")
 	default:
-		fmt.Println("Share the install link above; recipients can add the app without tenant-admin approval.")
+		fmt.Fprintln(w, "Share the install link above; recipients can add the app without tenant-admin approval.")
 	}
 	return nil
 }

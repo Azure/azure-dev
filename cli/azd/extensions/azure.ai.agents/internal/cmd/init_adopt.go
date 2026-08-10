@@ -756,10 +756,6 @@ func applyAdoptedAgentNameOverride(
 		if svc.GetHost() != AiAgentHost {
 			continue
 		}
-		currentName, path := adoptedAgentNameConfig(svc)
-		if currentName == "" {
-			continue
-		}
 		if serviceName != "" {
 			return exterrors.Validation(
 				exterrors.CodeConflictingArguments,
@@ -768,13 +764,13 @@ func applyAdoptedAgentNameOverride(
 			)
 		}
 		serviceName = name
-		configPath = path
+		configPath = adoptedAgentNameOverrideConfigPath(svc)
 	}
 	if serviceName == "" {
 		return exterrors.Validation(
 			exterrors.CodeConflictingArguments,
-			"--agent-name could not be applied because the adopted azure.yaml has no named agent service",
-			"update the agent service's `name` in azure.yaml after init, or use a sample with a named agent service",
+			"--agent-name could not be applied because the adopted azure.yaml has no agent service",
+			"update the agent service's `name` in azure.yaml after init, or use a sample with an agent service",
 		)
 	}
 
@@ -791,6 +787,16 @@ func applyAdoptedAgentNameOverride(
 	}
 
 	return nil
+}
+
+func adoptedAgentNameOverrideConfigPath(svc *azdext.ServiceConfig) string {
+	if svc == nil {
+		return "name"
+	}
+	if legacy := svc.GetConfig(); legacy != nil && legacy.GetFields()["kind"].GetStringValue() != "" {
+		return "config.name"
+	}
+	return "name"
 }
 
 // adoptedAgentNameConfig returns the Foundry agent name and its service-relative
@@ -1100,16 +1106,13 @@ func validateAdoptedAgentNameOverride(content []byte) error {
 		return fmt.Errorf("parsing adopted azure.yaml for agent name override: %w", err)
 	}
 
-	namedAgents := 0
+	agentServices := 0
 	for _, svc := range doc.Services {
 		if svc.Host != AiAgentHost {
 			continue
 		}
-		if adoptedAgentNameOverrideServiceName(svc) == "" {
-			continue
-		}
-		namedAgents++
-		if namedAgents > 1 {
+		agentServices++
+		if agentServices > 1 {
 			return exterrors.Validation(
 				exterrors.CodeConflictingArguments,
 				"--agent-name cannot be applied to an adopted azure.yaml with multiple agent services",
@@ -1117,25 +1120,15 @@ func validateAdoptedAgentNameOverride(content []byte) error {
 			)
 		}
 	}
-	if namedAgents == 0 {
+	if agentServices == 0 {
 		return exterrors.Validation(
 			exterrors.CodeConflictingArguments,
-			"--agent-name could not be applied because the adopted azure.yaml has no named agent service",
-			"update the agent service's `name` in azure.yaml after init, or use a sample with a named agent service",
+			"--agent-name could not be applied because the adopted azure.yaml has no agent service",
+			"update the agent service's `name` in azure.yaml after init, or use a sample with an agent service",
 		)
 	}
 
 	return nil
-}
-
-func adoptedAgentNameOverrideServiceName(svc adoptedAgentNameOverrideService) string {
-	if strings.TrimSpace(svc.Kind) != "" {
-		return strings.TrimSpace(svc.Name)
-	}
-	if strings.TrimSpace(svc.Config.Kind) != "" {
-		return strings.TrimSpace(svc.Config.Name)
-	}
-	return ""
 }
 
 func adoptedAgentNameOverride(flags *initFlags) (string, error) {

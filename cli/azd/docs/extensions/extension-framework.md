@@ -656,7 +656,10 @@ Usage: `azd x init`
 - Publishes extension to local extension source
 - Installs the extension locally for immediate use
 
-Flags (all values are prompted for when omitted; `--no-prompt` requires `--id`, `--name`, `--capabilities` and `--language`):
+Flags (all values are prompted for when omitted):
+
+- `--no-prompt` requires `--id`, `--name`, `--capabilities` and `--language`.
+- `--internal --no-prompt` requires `--id`, `--name`, `--capabilities` and `--codeowners`; the language defaults to Go.
 
 - `--id` - The extension identifier, for example `contoso.extension`.
 - `--name` - The display name for the extension.

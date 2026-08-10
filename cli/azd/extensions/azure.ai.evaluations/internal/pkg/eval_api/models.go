@@ -556,6 +556,11 @@ type OpenAIEvalRunList struct {
 // OutputItemList is a page of a run's per-sample results.
 type OutputItemList struct {
 	Data []OutputItem `json:"data"`
+	// HasMore and LastID are the OpenAI list envelope's cursor. They are only
+	// read, never required: a service that returns neither yields one page,
+	// which is what this client did before it could see them at all.
+	HasMore bool   `json:"has_more"`
+	LastID  string `json:"last_id"`
 }
 
 // OutputItem is one evaluated row: the dataset item, and every evaluator's

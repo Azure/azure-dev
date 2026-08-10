@@ -243,16 +243,40 @@ func (c *EvalClient) ListOutputItems(
 	evalID, runID string,
 	limit int,
 ) (*OutputItemList, error) {
-	query := map[string]string{}
-	if limit > 0 {
-		query["limit"] = strconv.Itoa(limit)
-	}
-
 	path := fmt.Sprintf(
 		"%s/%s/runs/%s/output_items",
 		pathOpenAIEvals, url.PathEscape(evalID), url.PathEscape(runID),
 	)
-	return doRequestTyped[OutputItemList](c, ctx, http.MethodGet, path, query, nil, "")
+
+	// Pages are followed only when the service says there are more. A run of
+	// 200 samples answered one page at a time would otherwise be reported as
+	// however many rows fit in the first, and the mean scores computed from
+	// them would be a sample of the run rather than the run.
+	all := &OutputItemList{}
+	after := ""
+	for {
+		query := map[string]string{}
+		if limit > 0 {
+			query["limit"] = strconv.Itoa(limit - len(all.Data))
+		}
+		if after != "" {
+			query["after"] = after
+		}
+
+		page, err := doRequestTyped[OutputItemList](c, ctx, http.MethodGet, path, query, nil, "")
+		if err != nil {
+			return nil, err
+		}
+		all.Data = append(all.Data, page.Data...)
+
+		if !page.HasMore || page.LastID == "" || len(page.Data) == 0 {
+			return all, nil
+		}
+		if limit > 0 && len(all.Data) >= limit {
+			return all, nil
+		}
+		after = page.LastID
+	}
 }
 
 // GetOutputItem reads a single evaluated row.

@@ -1280,6 +1280,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						fmt.Sprintf("the only supported --kind value is %q", kindFlagPromptVoice),
 					)
 				}
+				if !promptVoicePreviewEnabled() {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"prompt voice agent init is private preview",
+						fmt.Sprintf("set %s=true to enable prompt voice init", promptVoicePreviewEnvVar),
+					)
+				}
 				if flags.image != "" {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,

@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"text/template"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/botservice"
+	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 
@@ -225,6 +227,35 @@ func readEnvValue(
 	return resp.Value, nil
 }
 
+func readOptionalEnvValue(ctx context.Context, azdClient *azdext.AzdClient, envName, key string) string {
+	resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     key,
+	})
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(resp.Value)
+}
+
+func activityBotTeardownTarget(
+	agentName string,
+	subscriptionID string,
+	defaultResourceGroup string,
+	persistedBotName string,
+	persistedResourceGroup string,
+) (string, string) {
+	resourceGroup := strings.TrimSpace(persistedResourceGroup)
+	if resourceGroup == "" {
+		resourceGroup = defaultResourceGroup
+	}
+	botName := strings.TrimSpace(persistedBotName)
+	if botName == "" {
+		botName = botservice.BotName(agentName, botservice.BotScopeSalt(subscriptionID, resourceGroup))
+	}
+	return botName, resourceGroup
+}
+
 // teardownActivityBots deletes the Azure Bot created for each activity-protocol
 // agent during teardown. BotService resource names are globally unique, so an
 // orphaned bot would collide with a future redeploy. It is best-effort: missing
@@ -283,8 +314,14 @@ func teardownActivityBots(
 	}
 
 	for _, agentName := range activityAgents {
-		botName := botservice.BotName(agentName, botservice.BotScopeSalt(subscriptionID, resourceGroup))
-		if err := botClient.DeleteBot(ctx, resourceGroup, botName); err != nil {
+		botName, botResourceGroup := activityBotTeardownTarget(
+			agentName,
+			subscriptionID,
+			resourceGroup,
+			readOptionalEnvValue(ctx, azdClient, envName, envkey.AgentBotName(agentName)),
+			readOptionalEnvValue(ctx, azdClient, envName, envkey.AgentBotResourceGroup(agentName)),
+		)
+		if err := botClient.DeleteBot(ctx, botResourceGroup, botName); err != nil {
 			log.Printf("postdown: failed to delete Azure Bot %q: %v", botName, err)
 			continue
 		}

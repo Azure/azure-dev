@@ -657,6 +657,7 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 		agentVersion,
 		protocols,
 		"",
+		"",
 	)
 	require.NoError(t, err)
 
@@ -718,6 +719,7 @@ func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
 		agentVersion,
 		protocols,
 		"",
+		"",
 	)
 	require.NoError(t, err)
 
@@ -741,9 +743,11 @@ func TestRegisterAgentEnvironmentVariables_PersistsActivityBotName(t *testing.T)
 		&agent_api.AgentVersionObject{Name: "my-agent", Version: "1.0.0"},
 		nil,
 		"published-bot",
+		"bot-rg",
 	)
 	require.NoError(t, err)
 	require.Equal(t, "published-bot", envStub.values[envkey.AgentBotName("my-svc")])
+	require.Equal(t, "bot-rg", envStub.values[envkey.AgentBotResourceGroup("my-svc")])
 }
 
 func TestRegisterAgentEnvironmentVariables_PersistsInstanceIdentity(t *testing.T) {
@@ -768,6 +772,7 @@ func TestRegisterAgentEnvironmentVariables_PersistsInstanceIdentity(t *testing.T
 			},
 		},
 		nil,
+		"",
 		"",
 	)
 	require.NoError(t, err)
@@ -892,6 +897,7 @@ func TestRegisterAgentEnvironmentVariables_EmptyName(t *testing.T) {
 		&agent_api.AgentVersionObject{Name: "", Version: "1.0.0"},
 		nil,
 		"",
+		"",
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agent name is empty")
@@ -914,6 +920,7 @@ func TestRegisterAgentEnvironmentVariables_EmptyVersion(t *testing.T) {
 		&azdext.ServiceConfig{Name: "my-svc"},
 		&agent_api.AgentVersionObject{Name: "my-agent", Version: ""},
 		nil,
+		"",
 		"",
 	)
 	require.Error(t, err)

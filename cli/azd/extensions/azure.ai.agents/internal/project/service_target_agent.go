@@ -1365,6 +1365,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		if strings.TrimSpace(botResourceGroup) == "" {
 			botResourceGroup = p.foundryProject.ResourceGroupName
 		}
+		activityBotResourceGroup = botResourceGroup
 		progress("Ensuring Azure Bot resource")
 		ensureCfg := botservice.BotConfig{
 			ResourceGroup:     botResourceGroup,
@@ -1383,6 +1384,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 					activityBotName = strings.TrimSpace(boundBot.Name)
 					if strings.TrimSpace(boundBot.ResourceGroup) != "" {
 						botResourceGroup = strings.TrimSpace(boundBot.ResourceGroup)
+						activityBotResourceGroup = botResourceGroup
 					}
 					fmt.Fprintf(
 						os.Stderr,
@@ -1406,7 +1408,16 @@ func (p *AgentServiceTargetProvider) Deploy(
 		}
 	}
 
-	return p.finalizeDeploy(ctx, progress, serviceConfig, azdEnv, result.agentVersion, result.protocols, activityBotName)
+	return p.finalizeDeploy(
+		ctx,
+		progress,
+		serviceConfig,
+		azdEnv,
+		result.agentVersion,
+		result.protocols,
+		activityBotName,
+		activityBotResourceGroup,
+	)
 }
 
 // provisionMemoryStores creates any Foundry memory stores declared in the service target
@@ -1865,10 +1876,19 @@ func (p *AgentServiceTargetProvider) finalizeDeploy(
 	agentVersion *agent_api.AgentVersionObject,
 	protocols []agent_yaml.ProtocolVersionRecord,
 	activityBotName string,
+	activityBotResourceGroup string,
 ) (*azdext.ServiceDeployResult, error) {
 	progress("Registering agent environment variables")
 
-	err := p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, agentVersion, protocols, activityBotName)
+	err := p.registerAgentEnvironmentVariables(
+		ctx,
+		azdEnv,
+		serviceConfig,
+		agentVersion,
+		protocols,
+		activityBotName,
+		activityBotResourceGroup,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -2924,6 +2944,7 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	agentVersionResponse *agent_api.AgentVersionObject,
 	protocols []agent_yaml.ProtocolVersionRecord,
 	activityBotName string,
+	activityBotResourceGroup string,
 ) error {
 	if agentVersionResponse.Name == "" {
 		return fmt.Errorf("agent name is empty; cannot register environment variables")
@@ -2969,11 +2990,18 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 		azdext.SetEnvRequest{EnvName: p.env.Name, Key: versionKey, Value: agentVersionResponse.Version},
 	)
 	if activityBotName != "" {
-		envVars = append(envVars, azdext.SetEnvRequest{
-			EnvName: p.env.Name,
-			Key:     envkey.AgentBotName(serviceConfig.Name),
-			Value:   activityBotName,
-		})
+		envVars = append(envVars,
+			azdext.SetEnvRequest{
+				EnvName: p.env.Name,
+				Key:     envkey.AgentBotName(serviceConfig.Name),
+				Value:   activityBotName,
+			},
+			azdext.SetEnvRequest{
+				EnvName: p.env.Name,
+				Key:     envkey.AgentBotResourceGroup(serviceConfig.Name),
+				Value:   activityBotResourceGroup,
+			},
+		)
 	}
 
 	for i := range envVars {

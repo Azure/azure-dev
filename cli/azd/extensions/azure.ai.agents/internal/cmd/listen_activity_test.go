@@ -9,8 +9,59 @@ import (
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/pkg/botservice"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/require"
 )
+
+func TestActivityBotTeardownTarget(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                   string
+		persistedBotName       string
+		persistedResourceGroup string
+		wantBotName            string
+		wantResourceGroup      string
+	}{
+		{
+			name:                   "uses persisted deployment target",
+			persistedBotName:       "adopted-bot",
+			persistedResourceGroup: "adopted-rg",
+			wantBotName:            "adopted-bot",
+			wantResourceGroup:      "adopted-rg",
+		},
+		{
+			name:              "uses custom name in default resource group",
+			persistedBotName:  "custom-bot",
+			wantBotName:       "custom-bot",
+			wantResourceGroup: "default-rg",
+		},
+		{
+			name:              "recomputes default for legacy environment",
+			wantBotName:       botservice.BotName("my-agent", botservice.BotScopeSalt("sub-1", "default-rg")),
+			wantResourceGroup: "default-rg",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			botName, resourceGroup := activityBotTeardownTarget(
+				"my-agent",
+				"sub-1",
+				"default-rg",
+				test.persistedBotName,
+				test.persistedResourceGroup,
+			)
+
+			require.Equal(t, test.wantBotName, botName)
+			require.Equal(t, test.wantResourceGroup, resourceGroup)
+		})
+	}
+}
 
 func TestTeamsSetupGuideContent(t *testing.T) {
 	const msaAppID = "11111111-2222-3333-4444-555555555555"

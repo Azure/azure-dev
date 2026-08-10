@@ -238,11 +238,9 @@ func migrateLegacyModelDeploymentEnvReferences(projectDir string) error {
 		}
 
 		for _, refPath := range localAzureYamlRefPaths(service, projectDir) {
-			refChanged, err := migrateLegacyModelDeploymentEnvFile(refPath, visited)
-			if err != nil {
+			if _, err := migrateLegacyModelDeploymentEnvFile(refPath, visited); err != nil {
 				return err
 			}
-			changed = changed || refChanged
 		}
 	}
 
@@ -316,11 +314,9 @@ func migrateLegacyModelDeploymentEnvFile(
 			document.Content[0],
 			filepath.Dir(path),
 		) {
-			refChanged, err := migrateLegacyModelDeploymentEnvFile(refPath, visited)
-			if err != nil {
+			if _, err := migrateLegacyModelDeploymentEnvFile(refPath, visited); err != nil {
 				return false, err
 			}
-			changed = changed || refChanged
 		}
 	}
 
@@ -396,6 +392,10 @@ func migrateLegacyModelDeploymentEnvNode(node *yaml.Node) bool {
 				changed = migrateLegacyModelDeploymentEnvVariables(value) || changed
 				continue
 			}
+			if key.Value == "env" {
+				changed = migrateLegacyModelDeploymentEnvMap(value) || changed
+				continue
+			}
 			changed = migrateLegacyModelDeploymentEnvNode(value) || changed
 		}
 		return changed
@@ -444,6 +444,46 @@ func migrateLegacyModelDeploymentEnvVariables(node *yaml.Node) bool {
 			}
 		}
 		i++
+	}
+	return changed
+}
+
+func migrateLegacyModelDeploymentEnvMap(node *yaml.Node) bool {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return false
+	}
+
+	hasNewName := false
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == modelDeploymentNameEnvVar {
+			hasNewName = true
+			break
+		}
+	}
+
+	changed := false
+	for i := 0; i < len(node.Content); {
+		key := node.Content[i]
+		value := node.Content[i+1]
+		if key.Value == legacyModelDeploymentNameEnvVar {
+			if hasNewName {
+				node.Content = slices.Delete(node.Content, i, i+2)
+				changed = true
+				continue
+			}
+			key.Value = modelDeploymentNameEnvVar
+			hasNewName = true
+			changed = true
+		}
+
+		if value.Kind == yaml.ScalarNode {
+			migrated, replaced := replaceLegacyModelDeploymentEnvReferences(value.Value)
+			if replaced {
+				value.Value = migrated
+				changed = true
+			}
+		}
+		i += 2
 	}
 	return changed
 }

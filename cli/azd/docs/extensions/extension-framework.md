@@ -649,11 +649,24 @@ Once installed the extension registers a suite of commands under the `x` namespa
 Usage: `azd x init`
 
 - Collects information for the extension and scaffolds and extension in a specified language of choice.
+- Go is the recommended language and is preselected in the language prompt; it has the most complete and actively maintained template.
 - Creates local extension source if it doesn't already exist
 - Builds initial binaries for extension
 - Packs extension
 - Publishes extension to local extension source
 - Installs the extension locally for immediate use
+
+Flags (all values are prompted for when omitted; `--no-prompt` requires `--id`, `--name`, `--capabilities` and `--language`):
+
+- `--id` - The extension identifier, for example `contoso.extension`.
+- `--name` - The display name for the extension.
+- `--namespace` - The namespace used to invoke the extension commands.
+- `--capabilities` - Comma-separated list of extension capabilities.
+- `--language` - The programming language for the extension: `go` (recommended), `dotnet`, `javascript` or `python`.
+- `--tags` - Optional tags for the extension (max 10 tags, 64 characters each).
+- `--registry, -r` - When set will create a local extension source registry.
+- `--internal` - Scaffolds the additional files required by first-party `Azure/azure-dev` extensions (CI build/test scripts, lint workflow, release pipeline and a CODEOWNERS entry). Must be run from inside a clone of `Azure/azure-dev` and currently supports Go only.
+- `--codeowners` - GitHub handles or teams used for the generated CODEOWNERS entry when `--internal` is set.
 
 ---
 

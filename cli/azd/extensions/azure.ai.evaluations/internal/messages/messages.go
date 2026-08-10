@@ -666,7 +666,7 @@ func ReattachToJob(selector, jobID string) string {
 
 // WroteArtifact reports where a generated artifact landed.
 func WroteArtifact(path string) string {
-	return fmt.Sprintf("  wrote %s\n", path)
+	return fmt.Sprintf("%s Downloaded %s\n", DoneMark, path)
 }
 
 // ArtifactExists reports a generation that would overwrite a checked-in file.

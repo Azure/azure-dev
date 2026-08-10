@@ -5,6 +5,7 @@ package agentdetect
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -254,13 +255,11 @@ func TestMatchProcessToAgent(t *testing.T) {
 		name          string
 		processInfo   parentProcessInfo
 		expectedAgent AgentType
-		detected      bool
 	}{
 		{
 			name:          "Empty process info",
 			processInfo:   parentProcessInfo{},
 			expectedAgent: AgentTypeUnknown,
-			detected:      false,
 		},
 		{
 			name: "Claude process name",
@@ -268,7 +267,6 @@ func TestMatchProcessToAgent(t *testing.T) {
 				Name: "claude",
 			},
 			expectedAgent: AgentTypeClaudeCode,
-			detected:      true,
 		},
 		{
 			name: "Claude Code process name",
@@ -276,15 +274,27 @@ func TestMatchProcessToAgent(t *testing.T) {
 				Name: "claude-code",
 			},
 			expectedAgent: AgentTypeClaudeCode,
-			detected:      true,
 		},
 		{
-			name: "GitHub Copilot CLI",
+			name: "GitHub Copilot CLI process name",
 			processInfo: parentProcessInfo{
 				Name: "gh-copilot",
 			},
 			expectedAgent: AgentTypeGitHubCopilotCLI,
-			detected:      true,
+		},
+		{
+			name: "GitHub Copilot CLI Windows executable",
+			processInfo: parentProcessInfo{
+				Executable: `C:\Users\example\AppData\Local\Programs\GitHub CLI\gh-copilot.exe`,
+			},
+			expectedAgent: AgentTypeGitHubCopilotCLI,
+		},
+		{
+			name: "GitHub Copilot CLI executable variants",
+			processInfo: parentProcessInfo{
+				Executable: "/usr/local/bin/github-copilot-cli",
+			},
+			expectedAgent: AgentTypeGitHubCopilotCLI,
 		},
 		{
 			name: "Gemini process",
@@ -292,7 +302,6 @@ func TestMatchProcessToAgent(t *testing.T) {
 				Name: "gemini",
 			},
 			expectedAgent: AgentTypeGemini,
-			detected:      true,
 		},
 		{
 			name: "OpenCode process",
@@ -300,7 +309,6 @@ func TestMatchProcessToAgent(t *testing.T) {
 				Name: "opencode",
 			},
 			expectedAgent: AgentTypeOpenCode,
-			detected:      true,
 		},
 		{
 			name: "Unknown process",
@@ -309,7 +317,29 @@ func TestMatchProcessToAgent(t *testing.T) {
 				Executable: "/bin/bash",
 			},
 			expectedAgent: AgentTypeUnknown,
-			detected:      false,
+		},
+		{
+			name: "GitHub Copilot desktop app is not Copilot CLI",
+			processInfo: parentProcessInfo{
+				Name:       "GitHub Copilot.exe",
+				Executable: `C:\Users\example\AppData\Local\GitHub Copilot\GitHub Copilot.exe`,
+			},
+			expectedAgent: AgentTypeUnknown,
+		},
+		{
+			name: "Agent name in host path does not match",
+			processInfo: parentProcessInfo{
+				Name:       "pwsh.exe",
+				Executable: `C:\Users\example\copilot-workspace\pwsh.exe`,
+			},
+			expectedAgent: AgentTypeUnknown,
+		},
+		{
+			name: "Agent name substring does not match",
+			processInfo: parentProcessInfo{
+				Name: "my-claude-wrapper",
+			},
+			expectedAgent: AgentTypeUnknown,
 		},
 	}
 
@@ -317,12 +347,44 @@ func TestMatchProcessToAgent(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := matchProcessToAgent(tt.processInfo)
 
-			assert.Equal(t, tt.detected, result.Detected)
+			assert.Equal(t, tt.expectedAgent != AgentTypeUnknown, result.Detected)
 			assert.Equal(t, tt.expectedAgent, result.Type)
 
-			if tt.detected {
+			if result.Detected {
 				assert.Equal(t, DetectionSourceParentProcess, result.Source)
 			}
+		})
+	}
+}
+
+func TestMatchProcessToAgent_ExactExecutableNames(t *testing.T) {
+	tests := []struct {
+		processName   string
+		expectedAgent AgentType
+	}{
+		{"claude", AgentTypeClaudeCode},
+		{"claude-code", AgentTypeClaudeCode},
+		{"copilot", AgentTypeGitHubCopilotCLI},
+		{"copilot-cli", AgentTypeGitHubCopilotCLI},
+		{"gh-copilot", AgentTypeGitHubCopilotCLI},
+		{"github-copilot", AgentTypeGitHubCopilotCLI},
+		{"github-copilot-cli", AgentTypeGitHubCopilotCLI},
+		{"gemini", AgentTypeGemini},
+		{"gemini-code", AgentTypeGemini},
+		{"google-gemini", AgentTypeGemini},
+		{"opencode", AgentTypeOpenCode},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.processName, func(t *testing.T) {
+			result := matchProcessToAgent(parentProcessInfo{
+				Name:       strings.ToUpper(tt.processName) + ".EXE",
+				Executable: `C:\tools\` + tt.processName + ".exe",
+			})
+
+			assert.True(t, result.Detected)
+			assert.Equal(t, tt.expectedAgent, result.Type)
+			assert.Equal(t, DetectionSourceParentProcess, result.Source)
 		})
 	}
 }

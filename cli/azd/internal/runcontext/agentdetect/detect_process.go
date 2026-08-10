@@ -6,14 +6,13 @@ package agentdetect
 import (
 	"log"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
-// processNamePatterns maps process name patterns to agent types.
-// Patterns are matched case-insensitively against process names and executable paths.
+// processNamePatterns maps exact process executable names to agent types.
+// Names are matched case-insensitively after removing a Windows executable extension.
 var processNamePatterns = []struct {
-	patterns  []string // lowercase patterns to match
+	patterns  []string // lowercase executable names to match
 	agentType AgentType
 }{
 	// Claude Code (Anthropic) - installed via npm, homebrew, or direct download
@@ -86,18 +85,12 @@ func matchProcessToAgent(info parentProcessInfo) AgentInfo {
 		return NoAgent()
 	}
 
-	nameLower := strings.ToLower(info.Name)
-	execLower := strings.ToLower(info.Executable)
-	execBaseLower := strings.ToLower(filepath.Base(info.Executable))
-
-	// Remove common executable extensions for matching
-	nameLower = strings.TrimSuffix(nameLower, ".exe")
-	execBaseLower = strings.TrimSuffix(execBaseLower, ".exe")
+	nameLower := normalizeProcessName(info.Name)
+	execBaseLower := normalizeProcessName(info.Executable)
 
 	for _, entry := range processNamePatterns {
 		for _, pattern := range entry.patterns {
-			// Check against process name
-			if nameLower == pattern || strings.Contains(nameLower, pattern) {
+			if nameLower == pattern {
 				return AgentInfo{
 					Type:     entry.agentType,
 					Name:     entry.agentType.DisplayName(),
@@ -107,19 +100,7 @@ func matchProcessToAgent(info parentProcessInfo) AgentInfo {
 				}
 			}
 
-			// Check against executable base name
-			if execBaseLower == pattern || strings.Contains(execBaseLower, pattern) {
-				return AgentInfo{
-					Type:     entry.agentType,
-					Name:     entry.agentType.DisplayName(),
-					Source:   DetectionSourceParentProcess,
-					Detected: true,
-					Details:  info.Executable,
-				}
-			}
-
-			// Check if pattern appears in full executable path (for detection via install paths)
-			if strings.Contains(execLower, pattern) {
+			if execBaseLower == pattern {
 				return AgentInfo{
 					Type:     entry.agentType,
 					Name:     entry.agentType.DisplayName(),
@@ -132,4 +113,13 @@ func matchProcessToAgent(info parentProcessInfo) AgentInfo {
 	}
 
 	return NoAgent()
+}
+
+func normalizeProcessName(processPath string) string {
+	normalizedPath := strings.ReplaceAll(processPath, "\\", "/")
+	if index := strings.LastIndex(normalizedPath, "/"); index >= 0 {
+		normalizedPath = normalizedPath[index+1:]
+	}
+
+	return strings.TrimSuffix(strings.ToLower(normalizedPath), ".exe")
 }

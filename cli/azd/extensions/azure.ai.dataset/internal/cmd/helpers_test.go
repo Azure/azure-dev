@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -23,4 +25,29 @@ func TestCheckAssetExistence(t *testing.T) {
 	err = checkAssetExistence("update", "dataset", "x", false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "create")
+}
+
+// A mistyped --from-file is the common way to get here, and the syscall that
+// discovered it says nothing to the person who mistyped it.
+func TestDatasetUploadDirOnAMissingPath(t *testing.T) {
+	_, err := datasetUploadDir(filepath.Join(t.TempDir(), "nope.jsonl"))
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "does not exist")
+	assert.NotContains(t, err.Error(), "GetFileAttributesEx")
+	assert.NotContains(t, err.Error(), "stat ")
+}
+
+func TestDatasetUploadDirResolvesWhatWasNamed(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "rows.jsonl")
+	require.NoError(t, os.WriteFile(file, []byte("{}\n"), 0o600))
+
+	resolved, err := datasetUploadDir(file)
+	require.NoError(t, err)
+	assert.Equal(t, dir, resolved, "a file resolves to the directory the upload scans")
+
+	resolved, err = datasetUploadDir(dir)
+	require.NoError(t, err)
+	assert.Equal(t, dir, resolved)
 }

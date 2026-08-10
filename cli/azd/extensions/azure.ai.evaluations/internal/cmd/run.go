@@ -732,11 +732,15 @@ func (ec *evalContext) pollRun(
 // API happens to return, so a script reading it would depend on a shape this
 // extension does not control.
 type startedRunHandoff struct {
-	RunID     string `json:"run_id"`
-	EvalID    string `json:"eval_id"`
-	EvalName  string `json:"eval_name,omitempty"`
-	Status    string `json:"status,omitempty"`
-	CreatedAt string `json:"created_at,omitempty"`
+	RunID string `json:"run_id"`
+	EvalID   string `json:"eval_id"`
+	EvalName string `json:"eval_name,omitempty"`
+	// Which rows the run scored. A pipeline that records only a pass rate
+	// cannot say later what the rate was measured against.
+	Dataset        string `json:"dataset,omitempty"`
+	DatasetVersion string `json:"dataset_version,omitempty"`
+	Status         string `json:"status,omitempty"`
+	CreatedAt      string `json:"created_at,omitempty"`
 }
 
 // startedRun builds the handoff.
@@ -751,9 +755,18 @@ func startedRun(
 		Status:    run.Status,
 		CreatedAt: timestampString(run.CreatedAt),
 	}
+	// Read back from the run rather than the configuration, so the handoff
+	// names what this run scored and not what the file says today. The create
+	// response does not always echo metadata, so the declaration is the
+	// fallback for the name.
+	handoff.Dataset = run.Metadata[metaDataset]
+	handoff.DatasetVersion = run.Metadata[metaDatasetVersion]
 	// Absent with --eval-id, where there is no config to take a name from.
 	if group != nil {
 		handoff.EvalName = group.Name
+		if handoff.Dataset == "" {
+			handoff.Dataset = group.Dataset
+		}
 	}
 	return handoff
 }
@@ -871,6 +884,9 @@ func renderRunHeader(out interface{ Write([]byte) (int, error) }, run *eval_api.
 		fmt.Fprintf(out, "%-10s %s\n", "Eval", run.EvalID)
 	}
 	fmt.Fprintf(out, "%-10s %s\n", "Status", run.Status)
+	if ds := runDatasetLine(run.Metadata); ds != "" {
+		fmt.Fprintf(out, "%-10s %s\n", "Dataset", ds)
+	}
 	if c := run.ResultCounts; c != nil && c.Total > 0 {
 		fmt.Fprintf(out, "%-10s %d\n", "Samples", c.Total)
 	}

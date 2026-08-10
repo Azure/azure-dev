@@ -334,6 +334,19 @@ func runDataset(metadata map[string]string) string {
 	return name
 }
 
+// runDatasetLine is the same fact spelled for a detail view, where there is
+// room for the whole word.
+func runDatasetLine(metadata map[string]string) string {
+	name := metadata[metaDataset]
+	if name == "" {
+		return ""
+	}
+	if version := metadata[metaDatasetVersion]; version != "" {
+		return fmt.Sprintf("%s (version %s)", name, version)
+	}
+	return name
+}
+
 // sampleCount is how many rows the run scored, which is what makes two rows of
 // `run list` comparable: a rate over 15 samples and one over 200 are not the
 // same claim.

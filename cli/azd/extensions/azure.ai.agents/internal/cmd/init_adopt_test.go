@@ -342,6 +342,112 @@ func TestProjectManifestExists(t *testing.T) {
 	})
 }
 
+func TestMigrateLegacyModelDeploymentEnvReferences(t *testing.T) {
+	projectDir := t.TempDir()
+	manifest := `name: foundry-legacy
+notes: AZURE_AI_MODEL_DEPLOYMENT_NAME
+services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    environmentVariables:
+      - name: AZURE_AI_MODEL_DEPLOYMENT_NAME
+        value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+      - name: MODEL_WITH_DEFAULT
+        value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
+  connection:
+    host: azure.ai.connection
+    metadata:
+      model: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+`
+	manifestPath := filepath.Join(projectDir, "azure.yaml")
+	require.NoError(t, os.WriteFile(manifestPath, []byte(manifest), 0600))
+
+	require.NoError(t, migrateLegacyModelDeploymentEnvReferences(projectDir))
+	migrated, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+	migratedText := string(migrated)
+	require.Contains(t, migratedText, "name: MODEL_DEPLOYMENT_NAME")
+	require.Contains(t, migratedText, "value: ${MODEL_DEPLOYMENT_NAME}")
+	require.Contains(t, migratedText, "value: ${MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}")
+	require.Contains(t, migratedText, "notes: AZURE_AI_MODEL_DEPLOYMENT_NAME")
+	require.Contains(t, migratedText, "model: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}")
+	require.NotContains(t, migratedText, "name: AZURE_AI_MODEL_DEPLOYMENT_NAME")
+
+	require.NoError(t, migrateLegacyModelDeploymentEnvReferences(projectDir))
+	migratedAgain, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+	require.Equal(t, migrated, migratedAgain)
+}
+
+func TestMigrateLegacyModelDeploymentEnvReferences_RefFile(t *testing.T) {
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectDir, "agent.yaml"),
+		[]byte(`kind: hosted
+environmentVariables:
+  - name: AZURE_AI_MODEL_DEPLOYMENT_NAME
+    value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
+`),
+		0600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectDir, "azure.yaml"),
+		[]byte(`name: foundry-legacy
+services:
+  agent:
+    host: azure.ai.agent
+    $ref: ./agent.yaml
+`),
+		0600,
+	))
+
+	require.NoError(t, migrateLegacyModelDeploymentEnvReferences(projectDir))
+	refContent, err := os.ReadFile(filepath.Join(projectDir, "agent.yaml"))
+	require.NoError(t, err)
+	require.Contains(t, string(refContent), "name: MODEL_DEPLOYMENT_NAME")
+	require.Contains(t, string(refContent), "${MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}")
+}
+
+func TestMigrateLegacyModelDeploymentEnvReferences_ConfiguresNewName(t *testing.T) {
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectDir, "azure.yaml"),
+		[]byte(`name: foundry-legacy
+services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    environmentVariables:
+      - name: AZURE_AI_MODEL_DEPLOYMENT_NAME
+        value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+`),
+		0600,
+	))
+	require.NoError(t, migrateLegacyModelDeploymentEnvReferences(projectDir))
+
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{
+			"dev": {
+				modelDeploymentNameEnvVar: "gpt-4o-mini",
+			},
+		},
+	}
+	promptServer := &testPromptServiceServer{}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{}, promptServer)
+
+	require.NoError(t, configureAzureYamlEnvironmentVariables(
+		t.Context(),
+		azdClient,
+		"dev",
+		projectDir,
+		false,
+	))
+	require.Empty(t, promptServer.promptRequests)
+	require.Equal(t, "gpt-4o-mini", envServer.values["dev"][modelDeploymentNameEnvVar])
+	require.NotContains(t, envServer.values["dev"], legacyModelDeploymentNameEnvVar)
+}
+
 func TestEnsureStagedAzureYaml_NormalizesAzureYml(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.yml"), []byte("name: foundry-simple\n"), 0600))

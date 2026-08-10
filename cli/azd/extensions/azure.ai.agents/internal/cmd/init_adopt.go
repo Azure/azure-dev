@@ -929,6 +929,10 @@ func runInitFromAzureYaml(
 		return err
 	}
 
+	if err := migrateLegacyModelDeploymentEnvReferences("."); err != nil {
+		return err
+	}
+
 	// Defensive: the sample should already declare `infra.provider:
 	// microsoft.foundry`, but stamp it if missing so provisioning stays
 	// bicep-less by default.

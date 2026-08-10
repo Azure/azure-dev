@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -191,6 +192,287 @@ func configureAzureYamlEnvironmentVariables(
 	}
 
 	return nil
+}
+
+// migrateLegacyModelDeploymentEnvReferences migrates agent configs.
+func migrateLegacyModelDeploymentEnvReferences(projectDir string) error {
+	manifestPath := filepath.Join(projectDir, "azure.yaml")
+	//nolint:gosec // trusted project root
+	content, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("reading adopted azure.yaml for migration: %w", err)
+	}
+
+	var document yaml.Node
+	if err := yaml.Unmarshal(content, &document); err != nil {
+		return fmt.Errorf("parsing adopted azure.yaml for migration: %w", err)
+	}
+	if len(document.Content) == 0 {
+		return nil
+	}
+
+	services := yamlMappingValue(document.Content[0], "services")
+	if services == nil || services.Kind != yaml.MappingNode {
+		return nil
+	}
+
+	manifestPath, err = filepath.Abs(manifestPath)
+	if err != nil {
+		return fmt.Errorf("resolving adopted azure.yaml path: %w", err)
+	}
+	visited := map[string]struct{}{manifestPath: {}}
+	changed := false
+
+	for i := 0; i+1 < len(services.Content); i += 2 {
+		service := services.Content[i+1]
+		isAgent, err := isAzureYamlAgentService(service, projectDir)
+		if err != nil {
+			return fmt.Errorf("inspecting adopted agent service: %w", err)
+		}
+		if !isAgent {
+			continue
+		}
+
+		if migrateLegacyModelDeploymentEnvNode(service) {
+			changed = true
+		}
+
+		for _, refPath := range localAzureYamlRefPaths(service, projectDir) {
+			refChanged, err := migrateLegacyModelDeploymentEnvFile(refPath, visited)
+			if err != nil {
+				return err
+			}
+			changed = changed || refChanged
+		}
+	}
+
+	if !changed {
+		return nil
+	}
+
+	updated, err := yaml.Marshal(&document)
+	if err != nil {
+		return fmt.Errorf("encoding migrated azure.yaml: %w", err)
+	}
+	//nolint:gosec // trusted project manifest
+	if err := os.WriteFile(manifestPath, updated, 0o600); err != nil {
+		return fmt.Errorf("writing migrated azure.yaml: %w", err)
+	}
+	return nil
+}
+
+func isAzureYamlAgentService(service *yaml.Node, projectDir string) (bool, error) {
+	if service == nil || service.Kind != yaml.MappingNode {
+		return false, nil
+	}
+
+	if host, ok := foundryAzureYamlServiceHost(service); ok {
+		return host == AiAgentHost, nil
+	}
+	if !hasAzureYamlFileRef(service) {
+		return false, nil
+	}
+
+	var raw map[string]any
+	if err := service.Decode(&raw); err != nil {
+		return false, fmt.Errorf("decoding service for migration: %w", err)
+	}
+	resolved, err := foundry.ResolveFileRefs(raw, projectDir)
+	if err != nil {
+		return false, fmt.Errorf("resolving service references for migration: %w", err)
+	}
+	host, _ := resolved["host"].(string)
+	return host == AiAgentHost, nil
+}
+
+func migrateLegacyModelDeploymentEnvFile(
+	path string,
+	visited map[string]struct{},
+) (bool, error) {
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return false, fmt.Errorf("resolving referenced agent config %q: %w", path, err)
+	}
+	if _, ok := visited[path]; ok {
+		return false, nil
+	}
+	visited[path] = struct{}{}
+
+	//nolint:gosec // trusted project configuration
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return false, fmt.Errorf("reading referenced agent config %q: %w", path, err)
+	}
+
+	var document yaml.Node
+	if err := yaml.Unmarshal(content, &document); err != nil {
+		return false, fmt.Errorf("parsing referenced agent config %q: %w", path, err)
+	}
+
+	changed := false
+	if len(document.Content) > 0 {
+		changed = migrateLegacyModelDeploymentEnvNode(document.Content[0])
+		for _, refPath := range localAzureYamlRefPaths(
+			document.Content[0],
+			filepath.Dir(path),
+		) {
+			refChanged, err := migrateLegacyModelDeploymentEnvFile(refPath, visited)
+			if err != nil {
+				return false, err
+			}
+			changed = changed || refChanged
+		}
+	}
+
+	if !changed {
+		return false, nil
+	}
+
+	updated, err := yaml.Marshal(&document)
+	if err != nil {
+		return false, fmt.Errorf("encoding referenced agent config %q: %w", path, err)
+	}
+	//nolint:gosec // trusted project $ref
+	if err := os.WriteFile(path, updated, 0o600); err != nil {
+		return false, fmt.Errorf("writing referenced agent config %q: %w", path, err)
+	}
+	return true, nil
+}
+
+func localAzureYamlRefPaths(node *yaml.Node, baseDir string) []string {
+	var paths []string
+	collectLocalAzureYamlRefPaths(node, baseDir, &paths)
+	return paths
+}
+
+func collectLocalAzureYamlRefPaths(node *yaml.Node, baseDir string, paths *[]string) {
+	if node == nil {
+		return
+	}
+
+	switch node.Kind {
+	case yaml.DocumentNode, yaml.SequenceNode:
+		for _, child := range node.Content {
+			collectLocalAzureYamlRefPaths(child, baseDir, paths)
+		}
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			key := node.Content[i]
+			value := node.Content[i+1]
+			if key.Value == "$ref" && value.Kind == yaml.ScalarNode {
+				ref := strings.TrimSpace(value.Value)
+				if ref != "" && !strings.Contains(ref, "://") {
+					if !filepath.IsAbs(ref) {
+						ref = filepath.Join(baseDir, ref)
+					}
+					*paths = append(*paths, filepath.Clean(ref))
+				}
+			}
+			collectLocalAzureYamlRefPaths(value, baseDir, paths)
+		}
+	case yaml.AliasNode:
+		collectLocalAzureYamlRefPaths(node.Alias, baseDir, paths)
+	}
+}
+
+func migrateLegacyModelDeploymentEnvNode(node *yaml.Node) bool {
+	if node == nil {
+		return false
+	}
+
+	switch node.Kind {
+	case yaml.DocumentNode, yaml.SequenceNode:
+		changed := false
+		for _, child := range node.Content {
+			changed = migrateLegacyModelDeploymentEnvNode(child) || changed
+		}
+		return changed
+	case yaml.MappingNode:
+		changed := false
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			key := node.Content[i]
+			value := node.Content[i+1]
+			if key.Value == "environmentVariables" {
+				changed = migrateLegacyModelDeploymentEnvVariables(value) || changed
+				continue
+			}
+			changed = migrateLegacyModelDeploymentEnvNode(value) || changed
+		}
+		return changed
+	case yaml.AliasNode:
+		return migrateLegacyModelDeploymentEnvNode(node.Alias)
+	default:
+		return false
+	}
+}
+
+func migrateLegacyModelDeploymentEnvVariables(node *yaml.Node) bool {
+	if node == nil || node.Kind != yaml.SequenceNode {
+		return false
+	}
+
+	hasNewName := false
+	for _, item := range node.Content {
+		name := yamlMappingValue(item, "name")
+		if name != nil && name.Value == modelDeploymentNameEnvVar {
+			hasNewName = true
+			break
+		}
+	}
+
+	changed := false
+	for i := 0; i < len(node.Content); {
+		item := node.Content[i]
+		name := yamlMappingValue(item, "name")
+		if name != nil && name.Value == legacyModelDeploymentNameEnvVar {
+			if hasNewName {
+				node.Content = slices.Delete(node.Content, i, i+1)
+				changed = true
+				continue
+			}
+			name.Value = modelDeploymentNameEnvVar
+			hasNewName = true
+			changed = true
+		}
+
+		value := yamlMappingValue(item, "value")
+		if value != nil && value.Kind == yaml.ScalarNode {
+			migrated, replaced := replaceLegacyModelDeploymentEnvReferences(value.Value)
+			if replaced {
+				value.Value = migrated
+				changed = true
+			}
+		}
+		i++
+	}
+	return changed
+}
+
+func replaceLegacyModelDeploymentEnvReferences(value string) (string, bool) {
+	references := findEnvironmentReferences(value)
+	var builder strings.Builder
+	last := 0
+	replaced := false
+	for _, reference := range references {
+		if reference.Name != legacyModelDeploymentNameEnvVar {
+			continue
+		}
+		builder.WriteString(value[last:reference.Start])
+		original := value[reference.Start:reference.End]
+		builder.WriteString(strings.Replace(
+			original,
+			"${"+legacyModelDeploymentNameEnvVar,
+			"${"+modelDeploymentNameEnvVar,
+			1,
+		))
+		last = reference.End
+		replaced = true
+	}
+	if !replaced {
+		return value, false
+	}
+	builder.WriteString(value[last:])
+	return builder.String(), true
 }
 
 func findAzureYamlEnvironmentReferences(content []byte, projectDir string) ([]azureYamlEnvironmentReference, error) {

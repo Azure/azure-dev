@@ -62,10 +62,11 @@ func DatasetNotFound(name string) error {
 
 // InvalidDatasetName reports a name the service will not accept.
 func InvalidDatasetName(name string) error {
-return fmt.Errorf(
-"dataset name %q is invalid: use letters, digits, dashes and underscores, "+
-"up to 255 characters", name)
+	return fmt.Errorf(
+		"dataset name %q is invalid: use letters, digits, dashes and underscores, "+
+			"up to 255 characters", name)
 }
+
 // ReadingDatasetDirectory reports the upload scan failing to read the directory.
 func ReadingDatasetDirectory(err error) error {
 	return fmt.Errorf("reading directory: %w", err)
@@ -73,9 +74,10 @@ func ReadingDatasetDirectory(err error) error {
 
 // DatasetFileHasNoRows reports an empty dataset file, refused before upload.
 func DatasetFileHasNoRows(name string) error {
-return fmt.Errorf(
-"dataset file %q has no rows, so there would be nothing to evaluate", name)
+	return fmt.Errorf(
+		"dataset file %q has no rows, so there would be nothing to evaluate", name)
 }
+
 // NoJSONLInDirectory reports an upload directory holding no dataset.
 func NoJSONLInDirectory(dir string) error {
 	return fmt.Errorf("no .jsonl file found in %s", dir)

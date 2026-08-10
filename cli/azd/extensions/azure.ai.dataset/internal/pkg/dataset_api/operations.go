@@ -256,8 +256,9 @@ func (c *DatasetClient) StartPendingUpload(
 // endpoint from holding the command open until someone kills it. Generous, so
 // a large dataset over a slow link still finishes.
 func blobHTTPClient() *http.Client {
-return &http.Client{Timeout: 10 * time.Minute}
+	return &http.Client{Timeout: 10 * time.Minute}
 }
+
 // UploadBlob uploads data to a container SAS URI as a block blob.
 func (c *DatasetClient) UploadBlob(ctx context.Context, containerSASUri, blobName string, data []byte) error {
 	u, err := url.Parse(containerSASUri)

@@ -28,17 +28,28 @@ import (
 // query/response and so looks right for the common evaluators while quietly
 // dropping the fields anything else needs.
 func (ec *evalContext) evaluatorSchemas(ctx context.Context) map[string]*eval_api.EvaluatorSummary {
-	index := map[string]*eval_api.EvaluatorSummary{}
+	if ec.schemas != nil {
+		return ec.schemas
+	}
 
+	index := map[string]*eval_api.EvaluatorSummary{}
+	complete := true
 	for _, filter := range []string{"", eval_api.EvaluatorTypeBuiltin} {
 		list, err := ec.evalClient.ListEvaluators(ctx, filter, ProjectEndpointAPIVersion)
 		if err != nil {
+			complete = false
 			continue
 		}
 		maps.Copy(index, list.ByName())
 	}
 	if len(index) == 0 {
 		return nil
+	}
+	// Only a complete read is worth keeping. Caching a half of it would leave
+	// every later eval validating against legacyInputs, which accepts fields
+	// the evaluator never declared.
+	if complete {
+		ec.schemas = index
 	}
 	return index
 }

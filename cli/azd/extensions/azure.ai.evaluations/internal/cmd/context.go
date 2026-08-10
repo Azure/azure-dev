@@ -32,6 +32,9 @@ type evalContext struct {
 
 	evalClient    *eval_api.EvalClient
 	datasetClient *dataset_api.DatasetClient
+
+	// Held only once both listings succeed; a partial read is not reusable.
+	schemas map[string]*eval_api.EvaluatorSummary
 }
 
 // newEvalContext resolves the project endpoint and builds the data-plane

@@ -60,7 +60,16 @@ func (r *evalReconciler) EnsureDataset(
 				return "", false, messages.DatasetNotLocalNorRegistered(decl.Name)
 			}
 			version = dataset_api.LatestVersion(list.Value)
+		} else if _, err := r.ec.datasetClient.GetDataset(
+			ctx, decl.Name, version, ProjectEndpointAPIVersion,
+		); err != nil {
+			return "", false, messages.DatasetVersionNotFoundWithHint(decl.Name, version)
 		}
+
+		// Recorded so a run reads the version reconciliation settled on. Without
+		// this a pin is honoured at deploy and then ignored at run time, which
+		// scores different rows than the ones the author asked for.
+		_ = r.ec.setEnvValue(ctx, versionKey("dataset", decl.Name), version)
 		return version, false, nil
 	}
 
@@ -437,6 +446,19 @@ func (r *evalReconciler) EnsureEval(
 		recreate = true
 	}
 
+	// Building the request is also what checks the declaration against the
+	// dataset's columns, so it happens before the reuse decision: a dataset can
+	// lose a column an evaluator needs without the eval's own declaration
+	// changing, and reusing the eval would let that reach a run unreported.
+	req, err := buildEvalRequest(
+		&group,
+		r.ec.evaluatorSchemas(ctx),
+		datasetColumnsFromPath(datasetPath),
+	)
+	if err != nil {
+		return "", err
+	}
+
 	cached := r.ec.getEnvValue(ctx, idKey("eval", group.Name))
 	if cached == "" && !recreate {
 		// Nothing recorded under this name, but the substance may already be
@@ -466,14 +488,6 @@ func (r *evalReconciler) EnsureEval(
 		}
 	}
 
-	req, err := buildEvalRequest(
-		&group,
-		r.ec.evaluatorSchemas(ctx),
-		datasetColumnsFromPath(datasetPath),
-	)
-	if err != nil {
-		return "", err
-	}
 	created, err := r.ec.evalClient.CreateOpenAIEval(ctx, req)
 	if err != nil {
 		return "", err

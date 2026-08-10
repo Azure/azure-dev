@@ -220,9 +220,10 @@ func newDatasetVersionsListCommand() *cobra.Command {
 }
 
 func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList) error {
+	// JSON is decided before emptiness: a caller piping this into a parser needs
+	// an empty array, not the sentence a human would read.
 	if list == nil {
-		fmt.Fprint(cmd.OutOrStdout(), messages.NoDatasets())
-		return nil
+		list = &dataset_api.DatasetList{}
 	}
 	if isJSON(cmd) {
 		return emitJSONList(cmd.OutOrStdout(), list.Value)

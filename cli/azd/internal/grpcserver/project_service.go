@@ -817,10 +817,17 @@ func (s *projectService) UnsetServiceConfig(
 		return nil, err
 	}
 
-	// Construct path to service config: "services.<serviceName>.<path>"
-	servicePath := fmt.Sprintf("services.%s.%s", req.ServiceName, req.Path)
+	services, ok := cfg.Raw()["services"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("services configuration not found")
+	}
 
-	if err := cfg.Unset(servicePath); err != nil {
+	serviceConfig, ok := services[req.ServiceName].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("service configuration for '%s' not found", req.ServiceName)
+	}
+
+	if err := config.NewConfig(serviceConfig).Unset(req.Path); err != nil {
 		return nil, fmt.Errorf("failed to unset service config: %w", err)
 	}
 

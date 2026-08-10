@@ -337,7 +337,7 @@ func Test_EnvironmentService_ResolveEnvironment(t *testing.T) {
 	})
 }
 
-// Test_EnvironmentService_EmptyKeyValidation verifies that GetValue and SetValue
+// Test_EnvironmentService_EmptyKeyValidation verifies that GetValue, SetValue, and UnsetValue
 // return InvalidArgument when called with an empty key.
 func Test_EnvironmentService_EmptyKeyValidation(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
@@ -371,6 +371,7 @@ func Test_EnvironmentService_EmptyKeyValidation(t *testing.T) {
 	}{
 		{"GetValue_empty_key", "GetValue"},
 		{"SetValue_empty_key", "SetValue"},
+		{"UnsetValue_empty_key", "UnsetValue"},
 	}
 
 	for _, tt := range tests {
@@ -383,6 +384,8 @@ func Test_EnvironmentService_EmptyKeyValidation(t *testing.T) {
 				_, callErr = service.SetValue(
 					ctx, &azdext.SetEnvRequest{Key: "", Value: "v"},
 				)
+			case "UnsetValue":
+				_, callErr = service.UnsetValue(ctx, &azdext.UnsetEnvRequest{Key: ""})
 			}
 
 			require.Error(t, callErr)
@@ -758,6 +761,46 @@ func TestEnvironmentService_SetValue_SaveError(t *testing.T) {
 	_, err := svc.SetValue(t.Context(), &azdext.SetEnvRequest{Key: "K", Value: "V", EnvName: "dev"})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "save failed")
+}
+
+func TestEnvironmentService_UnsetValue_SuccessAndMissingKey(t *testing.T) {
+	t.Parallel()
+	env := environment.NewWithValues("dev", map[string]string{
+		"REMOVE": "value",
+		"KEEP":   "value",
+	})
+	saveCount := 0
+	mockMgr := &mockEnvManager{
+		getFunc: func(_ context.Context, _ string) (*environment.Environment, error) {
+			return env, nil
+		},
+		saveFunc: func(_ context.Context, savedEnv *environment.Environment) error {
+			saveCount++
+			require.Same(t, env, savedEnv)
+			return nil
+		},
+	}
+	lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
+		return mockMgr, nil
+	})
+	svc := NewEnvironmentService(nil, lazyEnvManager)
+
+	_, err := svc.UnsetValue(t.Context(), &azdext.UnsetEnvRequest{
+		Key:     "REMOVE",
+		EnvName: "dev",
+	})
+	require.NoError(t, err)
+	_, found := env.Dotenv()["REMOVE"]
+	require.False(t, found)
+	_, found = env.Dotenv()["KEEP"]
+	require.True(t, found)
+
+	_, err = svc.UnsetValue(t.Context(), &azdext.UnsetEnvRequest{
+		Key:     "MISSING",
+		EnvName: "dev",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, saveCount)
 }
 
 func TestEnvironmentService_GetValues_LazyEnvManagerError(t *testing.T) {

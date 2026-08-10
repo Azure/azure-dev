@@ -195,6 +195,33 @@ func (s *environmentService) SetValue(ctx context.Context, req *azdext.SetEnvReq
 	return &azdext.EmptyResponse{}, nil
 }
 
+// UnsetValue removes a key from the specified environment.
+func (s *environmentService) UnsetValue(
+	ctx context.Context,
+	req *azdext.UnsetEnvRequest,
+) (*azdext.EmptyResponse, error) {
+	if req == nil || req.Key == "" {
+		return nil, status.Error(codes.InvalidArgument, "key is required")
+	}
+
+	envManager, err := s.lazyEnvManager.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
+	env, err := s.resolveEnvironment(ctx, req.EnvName)
+	if err != nil {
+		return nil, err
+	}
+
+	env.DotenvDelete(req.Key)
+	if err := envManager.Save(ctx, env); err != nil {
+		return nil, fmt.Errorf("failed to save environment: %w", err)
+	}
+
+	return &azdext.EmptyResponse{}, nil
+}
+
 func (s *environmentService) currentEnvironment(ctx context.Context) (*environment.Environment, error) {
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {

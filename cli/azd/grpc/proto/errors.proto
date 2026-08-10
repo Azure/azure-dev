@@ -50,6 +50,11 @@ message ActionableErrorDetail {
   repeated ErrorLink links = 2;  // Optional reference links rendered alongside the suggestion
 }
 
+// WorkflowErrorDetail carries an extension error from a delegated workflow.
+message WorkflowErrorDetail {
+  ExtensionError error = 1;
+}
+
 // ExtensionError is a unified error message that can represent errors from different sources.
 // It provides structured error information for telemetry and error handling.
 //

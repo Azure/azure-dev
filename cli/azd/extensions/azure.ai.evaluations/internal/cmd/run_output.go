@@ -150,7 +150,10 @@ func newRunOutputShowCommand() *cobra.Command {
 				}
 				return messages.ReadingOutputItem(itemID, err)
 			}
-			return emitJSON(cmd.OutOrStdout(), item)
+			if isJSON(cmd) {
+				return emitJSON(cmd.OutOrStdout(), item)
+			}
+			return renderOutputItem(cmd.OutOrStdout(), item)
 		},
 	}
 
@@ -324,6 +327,83 @@ func (ec *evalContext) latestOrNamedRun(
 	return &list.Data[0], nil
 }
 
+// renderOutputItem is the detail view for one evaluated row.
+//
+// This was the one `show` that emitted raw JSON whatever was asked for, which
+// made the command a person reaches for after a failing listing the hardest one
+// to read. The listing truncates the reason to a cell; this is where the whole
+// of it lives, so the reasons are printed in full rather than wrapped or cut.
+//
+// Results are grouped by evaluator: a rubric reports one result per dimension,
+// all carrying the evaluator's name, and printing them flat would read as
+// several evaluators that happen to share a name.
+func renderOutputItem(w io.Writer, item *eval_api.OutputItem) error {
+	if item == nil {
+		return messages.OutputItemEmpty()
+	}
+	if err := emitDetail(w, []field{
+		{"Item", item.ID},
+		{"Run", item.RunID},
+		{"Status", item.Status},
+	}); err != nil {
+		return err
+	}
+
+	order := make([]string, 0, len(item.Results))
+	byName := make(map[string][]eval_api.OutputResult, len(item.Results))
+	for _, r := range item.Results {
+		if _, seen := byName[r.Name]; !seen {
+			order = append(order, r.Name)
+		}
+		byName[r.Name] = append(byName[r.Name], r)
+	}
+
+	for _, name := range order {
+		results := byName[name]
+		fmt.Fprintln(w)
+
+		// The service repeats the evaluator's name in `metric` for a
+		// single-score evaluator, so a group is only worth nesting when its
+		// results name dimensions of their own.
+		if len(results) == 1 && (results[0].Metric == "" || results[0].Metric == name) {
+			r := results[0]
+			fmt.Fprint(w, messages.OutputItemVerdict(
+				name, formatScore(r.Score), verdictWord(r.Passed)))
+			if r.Reason != "" {
+				fmt.Fprint(w, messages.OutputItemReason(r.Reason))
+			}
+			continue
+		}
+
+		fmt.Fprint(w, messages.OutputItemEvaluator(name))
+		for _, r := range results {
+			label := r.Metric
+			if label == "" {
+				label = r.Name
+			}
+			fmt.Fprint(w, messages.OutputItemMetric(
+				label, formatScore(r.Score), verdictWord(r.Passed)))
+			if r.Reason != "" {
+				fmt.Fprint(w, messages.OutputItemReason(r.Reason))
+			}
+		}
+	}
+	return nil
+}
+
+// verdictWord spells a boolean the way the rest of the output does.
+func verdictWord(passed bool) string {
+	if passed {
+		return "pass"
+	}
+	return "fail"
+}
+
+// formatScore prints a judge's score at the two decimals the scale carries.
+func formatScore(score eval_api.LenientFloat) string {
+	return strconv.FormatFloat(float64(score), 'f', 2, 64)
+}
+
 func renderResults(
 	w io.Writer,
 	run *eval_api.OpenAIEvalRun,
@@ -395,8 +475,10 @@ func renderResults(
 				truncate(reason, 44),
 			})
 		}
+		// Only the first failure's reason fits a cell; `run output show` has
+		// the rest.
 		if err := emitTable(w,
-			[]string{"ITEM", "SAMPLE", "FAILED EVALUATORS", "REASON (first failure)"},
+			[]string{"ITEM", "SAMPLE", "FAILED EVALUATORS", "REASON"},
 			rows); err != nil {
 			return err
 		}

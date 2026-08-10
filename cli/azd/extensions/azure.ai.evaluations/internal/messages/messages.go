@@ -163,8 +163,12 @@ func RunFinishedWithStatus(runID, status string) error {
 }
 
 // OverallPassRate reports the share of samples that passed every evaluator.
+//
+// The parenthetical is the bare fraction the spec prints. Spelling out "samples
+// passed every evaluator" on every run reads as a caveat on the number rather
+// than a definition of it; the doc comment above is where that belongs.
 func OverallPassRate(rate string, passed, total int) string {
-	return fmt.Sprintf("\nOverall pass rate: %s  (%d/%d samples passed every evaluator)\n",
+	return fmt.Sprintf("\nOverall pass rate: %s  (%d/%d)\n",
 		rate, passed, total)
 }
 
@@ -335,6 +339,37 @@ func NoRowsScored() string {
 // SamplesFailedAtLeastOne closes a --failed-only listing with its count.
 func SamplesFailedAtLeastOne(samples int) string {
 	return fmt.Sprintf("\n%d sample(s) failed at least one evaluator.\n", samples)
+}
+
+// OutputItemEmpty reports a row the service acknowledged but returned nothing
+// for, which is a service fault rather than a missing item.
+func OutputItemEmpty() error {
+	return errors.New("the service returned no content for this output item")
+}
+
+// NotARegularFile reports an --output-file that names a directory or a device.
+func NotARegularFile(path string) error {
+	return fmt.Errorf("%s is not a regular file, so it will not be overwritten", path)
+}
+
+// OutputItemVerdict is one evaluator's line in `run output show`.
+func OutputItemVerdict(evaluator, score, verdict string) string {
+	return fmt.Sprintf("%s  %s  %s\n", evaluator, score, verdict)
+}
+
+// OutputItemEvaluator heads the dimensions of a rubric that scored per metric.
+func OutputItemEvaluator(evaluator string) string {
+	return evaluator + "\n"
+}
+
+// OutputItemMetric is one scored dimension under its evaluator.
+func OutputItemMetric(metric, score, verdict string) string {
+	return fmt.Sprintf("  %s  %s  %s\n", metric, score, verdict)
+}
+
+// OutputItemReason is the judge's explanation, indented under its verdict.
+func OutputItemReason(reason string) string {
+	return fmt.Sprintf("  %s\n", reason)
 }
 
 // ReportLinkAfterRows closes a per-sample listing with the service's report.

@@ -5,8 +5,11 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
@@ -146,4 +149,46 @@ func emitDetail(w io.Writer, fields []field) error {
 // prevents asking for a required value.
 func requireFlag(name string) error {
 	return messages.FlagRequired(name)
+}
+
+// writeFileAtomic replaces a file's contents in one step.
+//
+// The caller is usually overwriting a definition the developer already has and
+// wants to keep working with, so a half-written file is worse than no write at
+// all: os.WriteFile truncates first, and a failure after that leaves the good
+// local copy destroyed.
+func writeFileAtomic(path string, body []byte) error {
+	// The rename below needs the destination gone on Windows, so refuse
+	// anything that is not a regular file rather than removing it: pointed at a
+	// directory, this would otherwise delete it.
+	switch info, err := os.Stat(path); {
+	case err == nil && !info.Mode().IsRegular():
+		return messages.NotARegularFile(path)
+	case err != nil && !errors.Is(err, os.ErrNotExist):
+		return err
+	}
+
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".azd-eval-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+
+	if _, err := tmp.Write(body); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }

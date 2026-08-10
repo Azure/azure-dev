@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 
@@ -376,7 +375,7 @@ func newEvaluatorShowCommand() *cobra.Command {
 						body = append(indented, '\n')
 					}
 				}
-				if err := os.WriteFile(outFile, body, 0o600); err != nil {
+				if err := writeFileAtomic(outFile, body); err != nil {
 					return messages.Creating(outFile, err)
 				}
 				if !isJSON(cmd) {

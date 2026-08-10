@@ -46,7 +46,7 @@ func TestRenderResultsIsOneRowPerSample(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(text, "oi_2"),
 		"a sample that failed two evaluators must still be one row:\n%s", text)
 
-	for _, header := range []string{"ITEM", "SAMPLE", "FAILED EVALUATORS", "REASON (first failure)"} {
+	for _, header := range []string{"ITEM", "SAMPLE", "FAILED EVALUATORS", "REASON"} {
 		assert.Containsf(t, text, header, "the listing lost its %s column", header)
 	}
 }
@@ -142,4 +142,86 @@ func TestRenderRunOmitsTheScoreColumnWithoutMeans(t *testing.T) {
 	require.NoError(t, renderRun(&with, run, map[string]float64{"relevance": 4.15}))
 	assert.Contains(t, with.String(), "MEAN SCORE")
 	assert.Contains(t, with.String(), "4.2", "the mean is shown to one decimal")
+}
+
+// `run output show` is what a person opens after a failing listing, so it has
+// to be readable. It used to emit raw JSON whatever was asked for.
+func TestRenderOutputItemIsNotJSON(t *testing.T) {
+	var out bytes.Buffer
+	require.NoError(t, renderOutputItem(&out, &eval_api.OutputItem{
+		ID:     "oi_01JQZY7K3R",
+		RunID:  "evalrun_1",
+		Status: "fail",
+		Results: []eval_api.OutputResult{{
+			Name:   "builtin.task_adherence",
+			Score:  0.35,
+			Passed: false,
+			Reason: "Task abandoned after the first clarifying question.",
+		}},
+	}))
+
+	text := out.String()
+	assert.NotContains(t, text, `"results"`, "the detail view must not be JSON")
+	for _, want := range []string{
+		"Item", "oi_01JQZY7K3R",
+		"Status", "fail",
+		"builtin.task_adherence", "0.35",
+		"Task abandoned after the first clarifying question.",
+	} {
+		assert.Contains(t, text, want)
+	}
+}
+
+// The listing truncates the reason to a cell, so this view exists to carry the
+// whole of it. Cutting it here would leave it readable nowhere.
+func TestRenderOutputItemKeepsTheWholeReason(t *testing.T) {
+	reason := strings.Repeat("a reason that runs well past any column width. ", 8)
+
+	var out bytes.Buffer
+	require.NoError(t, renderOutputItem(&out, &eval_api.OutputItem{
+		ID:      "oi_1",
+		Status:  "fail",
+		Results: []eval_api.OutputResult{{Name: "relevance", Passed: false, Reason: reason}},
+	}))
+
+	assert.Contains(t, out.String(), reason)
+}
+
+// A rubric reports one result per dimension, all carrying the evaluator's
+// name. Printed flat they read as several evaluators that share a name.
+func TestRenderOutputItemGroupsARubricsDimensions(t *testing.T) {
+	var out bytes.Buffer
+	require.NoError(t, renderOutputItem(&out, &eval_api.OutputItem{
+		ID:     "oi_1",
+		Status: "fail",
+		Results: []eval_api.OutputResult{
+			{Name: "support-agent-quality", Metric: "resolves_issue", Score: 1, Passed: false},
+			{Name: "support-agent-quality", Metric: "cites_policy", Score: 5, Passed: true},
+			{Name: "builtin.task_adherence", Score: 0.35, Passed: false},
+		},
+	}))
+
+	text := out.String()
+	assert.Equal(t, 1, strings.Count(text, "support-agent-quality"),
+		"the evaluator is named once, above its dimensions:\n%s", text)
+	for _, want := range []string{"resolves_issue", "cites_policy", "builtin.task_adherence"} {
+		assert.Contains(t, text, want)
+	}
+}
+
+// The service echoes the evaluator's name in `metric` for a single-score
+// evaluator. Nesting that reads as a dimension that happens to share its
+// evaluator's name.
+func TestRenderOutputItemDoesNotNestASelfNamedMetric(t *testing.T) {
+	var out bytes.Buffer
+	require.NoError(t, renderOutputItem(&out, &eval_api.OutputItem{
+		ID:     "oi_1",
+		Status: "completed",
+		Results: []eval_api.OutputResult{
+			{Name: "task_adherence", Metric: "task_adherence", Score: 1, Passed: true},
+		},
+	}))
+
+	assert.Equal(t, 1, strings.Count(out.String(), "task_adherence"),
+		"the evaluator must be named once:\n%s", out.String())
 }

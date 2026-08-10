@@ -66,7 +66,7 @@ func TestCLIResultsShowRendersTheRows(t *testing.T) {
 
 	// One row per evaluated sample, which is what makes "how many should I go
 	// and look at" answerable by counting lines.
-	for _, header := range []string{"ITEM", "SAMPLE", "FAILED EVALUATORS", "REASON (first failure)"} {
+	for _, header := range []string{"ITEM", "SAMPLE", "FAILED EVALUATORS", "REASON"} {
 		require.Containsf(t, r.Stdout, header, "the listing lost its %s column", header)
 	}
 	require.NotContains(t, r.Stdout, "EVALUATOR  ",

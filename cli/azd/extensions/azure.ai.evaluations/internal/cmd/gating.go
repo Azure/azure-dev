@@ -120,6 +120,9 @@ func applyGate(cmd *cobra.Command, g gate, run *eval_api.OpenAIEvalRun) {
 }
 
 func addFailOnFlag(cmd *cobra.Command, target *string) {
+	// The caveat is here because a pipeline author reads this line and then
+	// writes `if ($LASTEXITCODE -eq 2)`, which does not fire today.
 	cmd.Flags().StringVar(target, "fail-on", "",
-		"Exit 2 when the run misses this threshold: any-failure, or pass-rate=<0..1>.")
+		"Fail when the run misses this threshold: any-failure, or pass-rate=<0..1>. "+
+			"Exits 2, which azd currently reports as 1.")
 }

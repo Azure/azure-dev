@@ -195,7 +195,8 @@ func newInitCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&evalName, "name", "",
 		"Name of the eval. Defaults to <target>-eval, or <target>-trace-eval under --source traces.")
-	cmd.Flags().StringVar(&target, "target", "", "Name of the agent to evaluate.")
+	cmd.Flags().StringVar(&target, "target", "",
+		"Name of the agent to evaluate. Detected when the project has one agent; prompts when it has several.")
 	cmd.Flags().StringVar(&source, "source", "",
 		"Where rows come from: dataset or traces. Defaults to dataset.")
 	cmd.Flags().StringVar(&dataset, "dataset", "",

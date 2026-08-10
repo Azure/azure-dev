@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"slices"
 	"strings"
 
@@ -118,27 +117,15 @@ func (dm *DeploymentManager) CompletedDeployments(
 			continue
 		}
 
-		projectTag, projectTagHas := deployment.Tags[azure.TagKeyAzdProjectName]
-		if projectName != "" && projectTagHas {
-			if projectTag == nil || *projectTag != projectName {
-				// A deployment explicitly owned by another project must never be
-				// considered by the legacy matching strategies below.
-				continue
-			}
+		projectTag, projectTagHas := deploymentTag(deployment, azure.TagKeyAzdProjectName)
+		if projectName != "" && projectTagHas && projectTag != projectName {
+			// A deployment explicitly owned by another project must never be
+			// considered by the legacy matching strategies below.
+			continue
 		}
 
-		envTag, envTagHas := deployment.Tags[azure.TagKeyAzdEnvName]
-		layerTag, layerTagHas := deployment.Tags[azure.TagKeyAzdLayerName]
-
-		tagsMatch := envTagHas && envTag != nil && *envTag == envName &&
-			((layerTagHas && layerTag != nil && *layerTag == layerName) ||
-				(layerName == "" && !layerTagHas))
-
-		if tagsMatch {
+		if deploymentTagsMatch(deployment, envName, layerName) {
 			if projectName == "" || projectTagHas {
-				log.Printf(
-					"completedDeployments: matched deployment '%s' using projectName: %s, envName: %s, layerName: %s",
-					deployment.Name, projectName, envName, layerName)
 				return []*azapi.ResourceDeployment{deployment}, nil
 			}
 
@@ -161,9 +148,6 @@ func (dm *DeploymentManager) CompletedDeployments(
 	}
 
 	if legacyDeployment != nil {
-		log.Printf(
-			"completedDeployments: matched legacy deployment '%s' using envName: %s, layerName: %s",
-			legacyDeployment.Name, envName, layerName)
 		return []*azapi.ResourceDeployment{legacyDeployment}, nil
 	}
 
@@ -172,4 +156,27 @@ func (dm *DeploymentManager) CompletedDeployments(
 	}
 
 	return matchingDeployments, nil
+}
+
+func deploymentTag(deployment *azapi.ResourceDeployment, key string) (string, bool) {
+	value, hasTag := deployment.Tags[key]
+	if !hasTag || value == nil {
+		return "", false
+	}
+
+	return *value, true
+}
+
+func deploymentTagsMatch(deployment *azapi.ResourceDeployment, envName string, layerName string) bool {
+	envTag, hasEnvTag := deploymentTag(deployment, azure.TagKeyAzdEnvName)
+	if !hasEnvTag || envTag != envName {
+		return false
+	}
+
+	layerTag, hasLayerTag := deploymentTag(deployment, azure.TagKeyAzdLayerName)
+	if hasLayerTag {
+		return layerTag == layerName
+	}
+
+	return layerName == ""
 }

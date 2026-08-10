@@ -157,6 +157,9 @@ func requireFlag(name string) error {
 // wants to keep working with, so a half-written file is worse than no write at
 // all: os.WriteFile truncates first, and a failure after that leaves the good
 // local copy destroyed.
+//
+// Every error names the path the caller passed. The temporary file is this
+// function's business and appears nowhere the caller asked for.
 func writeFileAtomic(path string, body []byte) error {
 	// The rename below needs the destination gone on Windows, so refuse
 	// anything that is not a regular file rather than removing it: pointed at a
@@ -165,30 +168,33 @@ func writeFileAtomic(path string, body []byte) error {
 	case err == nil && !info.Mode().IsRegular():
 		return messages.NotARegularFile(path)
 	case err != nil && !errors.Is(err, os.ErrNotExist):
-		return err
+		return messages.Creating(path, err)
 	}
 
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".azd-eval-*")
 	if err != nil {
-		return err
+		return messages.CannotWriteInDirectory(dir, err)
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 
 	if _, err := tmp.Write(body); err != nil {
 		tmp.Close()
-		return err
+		return messages.Creating(path, err)
 	}
 	if err := tmp.Chmod(0o600); err != nil {
 		tmp.Close()
-		return err
+		return messages.Creating(path, err)
 	}
 	if err := tmp.Close(); err != nil {
-		return err
+		return messages.Creating(path, err)
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+		return messages.Creating(path, err)
 	}
-	return os.Rename(tmpName, path)
+	if err := os.Rename(tmpName, path); err != nil {
+		return messages.Creating(path, err)
+	}
+	return nil
 }

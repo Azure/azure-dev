@@ -208,6 +208,9 @@ func newDatasetVersionsListCommand() *cobra.Command {
 			if err != nil {
 				return messages.ListingDatasetVersions(name, err)
 			}
+			// An unknown name lists nothing and succeeds; it is not an error.
+			// `-o json` callers range over the array, and `dataset delete` is
+			// checked for idempotence by listing what is left.
 			return renderDatasets(cmd, list)
 		},
 	}

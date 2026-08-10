@@ -19,6 +19,7 @@ package messages
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"path/filepath"
 	"sort"
@@ -350,6 +351,16 @@ func OutputItemEmpty() error {
 // NotARegularFile reports an --output-file that names a directory or a device.
 func NotARegularFile(path string) error {
 	return fmt.Errorf("%s is not a regular file, so it will not be overwritten", path)
+}
+
+// CannotWriteInDirectory reports a destination directory that cannot be written
+// to. A missing directory is reported as such: the wrapped error names the
+// temporary file the writer chose, which the caller never asked for.
+func CannotWriteInDirectory(dir string, err error) error {
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("%s does not exist", dir)
+	}
+	return fmt.Errorf("cannot write in %s: %w", dir, err)
 }
 
 // OutputItemVerdict is one evaluator's line in `run output show`.
@@ -706,10 +717,13 @@ func JobDeleted(kind, jobID string) string {
 }
 
 // JobNotFound reports a job id that is not in this group, naming the other one.
+//
+// Phrased to avoid an article before the kind: "a evaluator" is what the
+// obvious wording produces.
 func JobNotFound(kind, jobID, other string) error {
 	return fmt.Errorf(
-		"no %s generation job %q in this project; if it generated a %s, "+
-			"use the %s job group instead", kind, jobID, other, other)
+		"no %s generation job %q in this project; try the %s job group",
+		kind, jobID, other)
 }
 
 // ReadingJob reports a failure to read a generation job.

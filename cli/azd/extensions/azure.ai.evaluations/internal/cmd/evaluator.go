@@ -272,6 +272,11 @@ func newEvaluatorVersionsListCommand() *cobra.Command {
 
 			list, err := ec.evalClient.ListEvaluatorVersions(ctx, name, ProjectEndpointAPIVersion)
 			if err != nil {
+				// A name nobody published is the ordinary way to get here, and
+				// it does not need the whole 404 body to explain it.
+				if eval_api.IsNotFound(err) {
+					return messages.EvaluatorNotFound(name)
+				}
 				return messages.ListingEvaluatorVersions(name, err)
 			}
 			return renderEvaluatorVersions(cmd, list)
@@ -376,7 +381,7 @@ func newEvaluatorShowCommand() *cobra.Command {
 					}
 				}
 				if err := writeFileAtomic(outFile, body); err != nil {
-					return messages.Creating(outFile, err)
+					return err
 				}
 				if !isJSON(cmd) {
 					fmt.Fprint(cmd.OutOrStdout(), messages.WroteArtifact(outFile))

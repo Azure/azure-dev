@@ -63,12 +63,24 @@ func TestGoScaffoldPinsReleasedAzdModule(t *testing.T) {
 
 	match := azdModuleRequirePattern.FindStringSubmatch(goMod)
 	require.NotNil(t, match, "the scaffolded go.mod must require github.com/azure/azure-dev/cli/azd")
+
+	version := match[1]
 	require.Regexpf(t,
 		`^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$`,
-		match[1],
+		version,
 		"the scaffolded go.mod must pin a released cli/azd module tag, got %q",
-		match[1],
+		version,
+	)
+	require.NotRegexpf(t,
+		pseudoVersionPattern,
+		version,
+		"the scaffolded go.mod must pin a released cli/azd module tag, not a pseudo-version, got %q",
+		version,
 	)
 }
 
 var azdModuleRequirePattern = regexp.MustCompile(`github\.com/azure/azure-dev/cli/azd (\S+)`)
+
+// pseudoVersionPattern matches the trailing "<yyyymmddhhmmss>-<12 hex digits>" that the Go
+// toolchain appends when a module is referenced by commit rather than by a published tag.
+var pseudoVersionPattern = regexp.MustCompile(`\d{14}-[0-9a-f]{12}$`)

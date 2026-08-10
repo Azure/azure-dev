@@ -42,20 +42,14 @@ stages:
                   inputs:
                     versionSpec: 20.x
 
-                # TfxInstaller acquires tfx-cli by shelling out to `npm show` and
-                # `npm install`, and the 1ES network isolation policy (CFSClean, set
-                # in eng/pipelines/templates/stages/1es-redirect.yml) blocks
-                # registry.npmjs.org. Point npm at the authenticated mirror feed first.
                 - template: /eng/common/pipelines/templates/steps/create-authenticated-npmrc.yml
 
                 - task: TfxInstaller@5
                   displayName: Install tfx-cli for release
                   inputs:
                     version: 0.23.x
-                  # TfxInstaller has no registry input, but it spawns npm with the
-                  # task's environment, so NPM_CONFIG_USERCONFIG points npm at the
-                  # .npmrc written above (which carries the registry URL and token).
                   env:
+                    # As exported by create-authenticated-npmrc.yml
                     NPM_CONFIG_USERCONFIG: $(resolvedNpmrcPath)
 
                 - pwsh: |

@@ -246,19 +246,33 @@ func (r *evalReconciler) EnsureEvaluator(
 		return "", false, messages.EvaluatorProblem(decl.Name, err)
 	}
 
+	// The author's own file decides whether there is anything to publish.
+	// Comparing against the service cannot: it enriches a definition with
+	// fields nobody authored, so sameDefinition only looks for authored keys on
+	// the service and a key the author *deleted* — a pass_threshold, say — is
+	// still there to be found, and the deletion never publishes.
+	digest, err := project.Fingerprint(localPath)
+	if err != nil {
+		return "", false, messages.EvaluatorSource(localPath, err)
+	}
+	digestKey := project.FingerprintKey("evaluator", decl.Name)
+	prior := r.ec.getEnvValue(ctx, digestKey)
+	authorEdited := prior != "" && prior != digest
+
 	// Compare against the definition already on the service.
 	var known json.RawMessage
 	if existing, err := r.ec.evalClient.GetEvaluatorRaw(
 		ctx, decl.Name, "", ProjectEndpointAPIVersion,
 	); err == nil {
 		remote := versionFromRaw(existing, "")
-		if sameDefinition(existing, body) {
+		if !authorEdited && sameDefinition(existing, body) {
 			// Nothing to publish, but the version is still worth recording:
 			// it is what a later deploy compares against to notice that
 			// someone moved the evaluator on from here.
 			if remote != "" {
 				_ = r.ec.setEnvValue(ctx, versionKey("evaluator", decl.Name), remote)
 			}
+			_ = r.ec.setEnvValue(ctx, digestKey, digest)
 			return versionFromRaw(existing, decl.Version), false, nil
 		}
 
@@ -286,6 +300,7 @@ func (r *evalReconciler) EnsureEvaluator(
 	}
 	r.awaitEvaluatorReadable(ctx, decl.Name, created.Version)
 	_ = r.ec.setEnvValue(ctx, versionKey("evaluator", decl.Name), created.Version)
+	_ = r.ec.setEnvValue(ctx, digestKey, digest)
 	return created.Version, true, nil
 }
 

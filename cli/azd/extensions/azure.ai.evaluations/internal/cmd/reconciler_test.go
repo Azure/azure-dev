@@ -61,3 +61,21 @@ func TestSameDefinitionRejectsMalformed(t *testing.T) {
 	require.False(t, sameDefinition(good, []byte(`not json`)))
 	require.False(t, sameDefinition([]byte(`{"no":"definition"}`), good))
 }
+
+// What sameDefinition cannot see, and why EnsureEvaluator digests the author's
+// file instead of relying on it.
+//
+// The comparison walks the authored keys and looks for each on the service. A
+// key the author *deleted* is not among them, so its survival on the service
+// goes unnoticed and the definitions are called equal. Deleting a
+// pass_threshold — the spec's own Scenario 4 edit, in reverse — would publish
+// nothing and leave the old threshold grading every run.
+func TestSameDefinitionCannotSeeARemovedField(t *testing.T) {
+	authored := []byte(`{"definition":{"type":"rubric","dimensions":[{"id":"a","weight":5}]}}`)
+	onService := []byte(
+		`{"definition":{"type":"rubric","pass_threshold":0.7,` +
+			`"dimensions":[{"id":"a","weight":5}]}}`)
+
+	require.True(t, sameDefinition(onService, authored),
+		"this is the blind spot the digest exists to cover, not a property to rely on")
+}

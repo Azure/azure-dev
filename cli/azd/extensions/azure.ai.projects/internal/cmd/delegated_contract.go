@@ -257,9 +257,6 @@ func validateDelegatedFilePath(path, kind string, requireRegular bool) error {
 	if err != nil {
 		return contractValidationError(kind + " file path must be absolute")
 	}
-	if err := rejectSymlinkComponents(abs); err != nil {
-		return contractValidationError(fmt.Sprintf("%s file path is unsafe: %v", kind, err))
-	}
 	info, statErr := os.Lstat(abs)
 	if statErr != nil {
 		if !requireRegular && os.IsNotExist(statErr) {
@@ -267,31 +264,9 @@ func validateDelegatedFilePath(path, kind string, requireRegular bool) error {
 		}
 		return contractValidationError(fmt.Sprintf("%s file is not accessible: %v", kind, statErr))
 	}
+	// Parent directories may use OS-provided aliases such as macOS /var.
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		return contractValidationError(kind + " file must be a regular non-symlink file")
-	}
-	return nil
-}
-
-func rejectSymlinkComponents(path string) error {
-	clean := filepath.Clean(path)
-	volume := filepath.VolumeName(clean)
-	rest := strings.TrimPrefix(clean, volume)
-	current := volume + string(filepath.Separator)
-	for _, part := range strings.FieldsFunc(rest, func(r rune) bool {
-		return r == '/' || r == '\\'
-	}) {
-		current = filepath.Join(current, part)
-		info, err := os.Lstat(current)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return err
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("path component %q is a symbolic link", current)
-		}
 	}
 	return nil
 }

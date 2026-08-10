@@ -637,8 +637,9 @@ func selectRequirementSource(
 	}
 
 	choice, err := console.Select(ctx, input.ConsoleOptions{
-		Message: fmt.Sprintf("Select a source for %s", requirement.extension.DisplayName),
-		Options: options,
+		Message:         fmt.Sprintf("Select a source for %s", requirement.extension.DisplayName),
+		Options:         options,
+		EnableFiltering: new(false),
 	})
 	if err != nil {
 		return nil, err

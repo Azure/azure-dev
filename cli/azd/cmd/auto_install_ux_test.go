@@ -191,6 +191,7 @@ func TestInteractiveSingleInstallPlan(t *testing.T) {
 		}).Respond(1)
 		console.WhenSelect(func(options input.ConsoleOptions) bool {
 			return options.Message == "Select a source for Demo Extension" &&
+				options.EnableFiltering != nil && !*options.EnableFiltering &&
 				assert.Equal(t, []string{"azd", "local"}, options.Options)
 		}).Respond(1)
 

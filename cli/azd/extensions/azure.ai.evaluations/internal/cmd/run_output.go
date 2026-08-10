@@ -170,12 +170,18 @@ func newRunOutputExportCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "export [run]",
-		Short: "Export run results as JSON or CSV.",
+		Short: "Export run results as CSV, JSON or JSONL.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			format = strings.ToLower(format)
-			if format != "json" && format != "csv" {
-				return messages.ExportFormatInvalid(format)
+			// Checked against the same set the writer switches on: this guard
+			// used to name only json and csv, so --format jsonl was refused by a
+			// CLI whose own help offered it.
+			switch format {
+			case formatCSV, formatJSON, formatJSONL:
+			default:
+				return messages.ExportFormatUnsupported(
+					format, formatCSV, formatJSON, formatJSONL)
 			}
 
 			ctx := cmd.Context()

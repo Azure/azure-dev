@@ -62,7 +62,7 @@ func TestCLIRubricRoundTrip(t *testing.T) {
 		run(t, "evaluator", "delete", name, "--version", "1")
 	})
 
-	shown := requireSuccess(t, run(t, "evaluator", "show", name))
+	shown := requireSuccess(t, run(t, "evaluator", "show", name, "-o", "json"))
 	var doc evaluatorDocument
 	shown.JSON(t, &doc)
 
@@ -102,7 +102,7 @@ func TestCLIRubricRoundTrip(t *testing.T) {
 
 	// The earlier version stays reachable, which is what makes a published
 	// version safe to reference from a config.
-	pinned := requireSuccess(t, run(t, "evaluator", "show", name, "--version", "1"))
+	pinned := requireSuccess(t, run(t, "evaluator", "show", name, "--version", "1", "-o", "json"))
 	var first evaluatorDocument
 	pinned.JSON(t, &first)
 	require.Equal(t, "1", first.Version)
@@ -158,9 +158,10 @@ func TestCLIRubricNeedsDimensions(t *testing.T) {
 	require.Contains(t, r.Combined(), "dimensions")
 }
 
-// TestCLIEvaluatorShowAcceptsAFullDocument proves `evaluator show` emits JSON a
-// script can consume, whatever the definition kind. It renders the service's
-// body rather than a typed struct, so nothing else pins that it stays parseable.
+// TestCLIEvaluatorShowAcceptsAFullDocument proves `evaluator show -o json`
+// emits JSON a script can consume, whatever the definition kind. It renders the
+// service's body rather than a typed struct, so nothing else pins that it stays
+// parseable. The bare command renders the human detail view instead.
 func TestCLIEvaluatorShowAcceptsAFullDocument(t *testing.T) {
 	name := uniqueName("azdcli_rubricdoc")
 
@@ -176,7 +177,7 @@ func TestCLIEvaluatorShowAcceptsAFullDocument(t *testing.T) {
 		run(t, "evaluator", "delete", name, "--version", "1")
 	})
 
-	shown := requireSuccess(t, run(t, "evaluator", "show", name))
+	shown := requireSuccess(t, run(t, "evaluator", "show", name, "-o", "json"))
 	var raw map[string]any
 	require.NoError(t, json.Unmarshal([]byte(shown.Stdout), &raw),
 		"evaluator show must emit parseable JSON:\n%s", shown.Stdout)
@@ -185,4 +186,19 @@ func TestCLIEvaluatorShowAcceptsAFullDocument(t *testing.T) {
 	require.Equal(t, name, raw["name"],
 		"--name must decide the evaluator's name, not the document's own field")
 	require.NotContains(t, strings.ToLower(shown.Stdout), `"name": "ignored"`)
+
+	// Reconciliation tells people to adopt a remote change by writing it over
+	// the local definition with --output-file, so the flag has to exist and has
+	// to land the same document the service holds.
+	adopted := filepath.Join(t.TempDir(), "adopted.json")
+	requireSuccess(t, run(t, "evaluator", "show", name, "--output-file", adopted))
+
+	body, err := os.ReadFile(adopted)
+	require.NoError(t, err)
+	var written map[string]any
+	require.NoError(t, json.Unmarshal(body, &written),
+		"--output-file must write parseable JSON:\n%s", string(body))
+	require.Equal(t, name, written["name"])
+	require.Contains(t, written, "definition",
+		"adopting a remote change needs the definition, not just its identity")
 }

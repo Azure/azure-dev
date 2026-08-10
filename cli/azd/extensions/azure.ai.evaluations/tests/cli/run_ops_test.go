@@ -29,13 +29,17 @@ func TestCLIRunList(t *testing.T) {
 
 	t.Run("table", func(t *testing.T) {
 		r := requireSuccess(t, run(t, "run", "list", "--eval", f.EvalID))
-		for _, header := range []string{"RUN ID", "NAME", "STATUS", "RESULTS"} {
+		// These are the columns the spec's `run list` sample prints, in the
+		// spec's own wording. The old RUN ID/NAME/RESULTS set predates it.
+		for _, header := range []string{
+			"RUN", "DATASET", "STARTED", "STATUS", "SAMPLES", "PASS RATE",
+		} {
 			require.Containsf(t, r.Stdout, header, "the listing lost its %s column", header)
 		}
 		require.Contains(t, r.Stdout, f.FirstRunID)
 		require.Contains(t, r.Stdout, f.SecondRunID)
-		require.Regexp(t, `\d+ passed, \d+ failed, \d+ errored`, r.Stdout,
-			"the listing must summarise each run's counts, not just its status")
+		require.Regexp(t, `\d+\.\d+%`, r.Stdout,
+			"the listing must summarise each run's pass rate, not just its status")
 	})
 
 	t.Run("json", func(t *testing.T) {

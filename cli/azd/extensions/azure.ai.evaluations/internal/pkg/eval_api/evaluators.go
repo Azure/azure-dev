@@ -48,7 +48,11 @@ func (s *JSONSchema) Accepts(name string) bool {
 // EvaluatorContract is the published input contract for an evaluator: which
 // data fields it consumes and which initialization parameters it takes.
 type EvaluatorContract struct {
-	Type           string      `json:"type,omitempty"`
+	Type string `json:"type,omitempty"`
+	// PassThreshold is a pointer because an absent threshold and a zero one are
+	// different claims: zero passes every sample, absent defers to the
+	// `threshold:` init parameter on the criterion that uses this evaluator.
+	PassThreshold  *float64    `json:"pass_threshold,omitempty"`
 	DataSchema     *JSONSchema `json:"data_schema,omitempty"`
 	InitParameters *JSONSchema `json:"init_parameters,omitempty"`
 }

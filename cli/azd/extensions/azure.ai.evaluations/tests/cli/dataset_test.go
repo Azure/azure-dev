@@ -166,8 +166,11 @@ func TestCLIDatasetShow(t *testing.T) {
 
 	t.Run("table", func(t *testing.T) {
 		r := requireSuccess(t, run(t, "dataset", "show", ds.Name))
-		for _, header := range []string{"NAME", "VERSION", "FORMAT", "URI"} {
-			require.Containsf(t, r.Stdout, header, "the table lost its %s column", header)
+		// `show` reads one dataset, so it renders a detail view keyed by label
+		// rather than a one-row table with a header. The labels are what is
+		// under test; the column-header form belongs to `dataset list`.
+		for _, label := range []string{"Name", "Version", "URI"} {
+			require.Containsf(t, r.Stdout, label, "the detail view lost its %s line", label)
 		}
 		require.Contains(t, r.Stdout, ds.Name)
 	})

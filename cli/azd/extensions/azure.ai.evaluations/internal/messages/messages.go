@@ -342,12 +342,7 @@ func ReportLinkAfterRows(url string) string {
 	return fmt.Sprintf("\nReport: %s\n", url)
 }
 
-// ExportFormatInvalid reports an --format the export command cannot write.
-func ExportFormatInvalid(format string) error {
-	return fmt.Errorf("--format must be json or csv, got %q", format)
-}
-
-// ExportFormatUnsupported reports an --format that got past the flag check.
+// ExportFormatUnsupported reports an --format the export command cannot write.
 func ExportFormatUnsupported(format, csv, json, jsonl string) error {
 	return fmt.Errorf(
 		"--format %q is not supported; use %s, %s or %s",

@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"strconv"
 	"strings"
 
 	"azureaieval/internal/messages"
@@ -296,11 +298,23 @@ func renderEvaluators(cmd *cobra.Command, list *eval_api.EvaluatorListResponse) 
 	return emitTable(cmd.OutOrStdout(), []string{"NAME", "VERSION", "TYPE"}, rows)
 }
 
+// evaluatorPassThreshold renders the rubric's pass mark for a table cell,
+// empty when the evaluator does not carry one.
+//
+// Two decimals because the scale is normalized 0.0-1.0, where the difference
+// between 0.7 and 0.75 is a real change in what passes.
+func evaluatorPassThreshold(e *eval_api.EvaluatorSummary) string {
+	if e == nil || e.Definition == nil || e.Definition.PassThreshold == nil {
+		return ""
+	}
+	return strconv.FormatFloat(*e.Definition.PassThreshold, 'f', 2, 64)
+}
+
 // renderEvaluatorVersions lists one evaluator's history.
 //
 // Name and type are the same on every row here, so they say nothing. What the
 // scenario reads a version list for is how the rubric changed, which is the
-// date and the description the author left.
+// date, the pass mark and the description the author left.
 func renderEvaluatorVersions(cmd *cobra.Command, list *eval_api.EvaluatorListResponse) error {
 	if isJSON(cmd) {
 		return emitJSONList(cmd.OutOrStdout(), list.Value)
@@ -311,14 +325,21 @@ func renderEvaluatorVersions(cmd *cobra.Command, list *eval_api.EvaluatorListRes
 	}
 	rows := make([][]string, 0, len(list.Value))
 	for _, e := range list.Value {
-		rows = append(rows, []string{e.Version, timestampString(e.CreatedAt), e.Description})
+		rows = append(rows, []string{
+			e.Version,
+			timestampString(e.CreatedAt),
+			evaluatorPassThreshold(&e),
+			e.Description,
+		})
 	}
-	return emitTable(cmd.OutOrStdout(), []string{"VERSION", "CREATED AT", "DESCRIPTION"}, rows)
+	return emitTable(cmd.OutOrStdout(),
+		[]string{"VERSION", "CREATED AT", "PASS THRESHOLD", "DESCRIPTION"}, rows)
 }
 
 func newEvaluatorShowCommand() *cobra.Command {
 	var (
 		version     string
+		outFile     string
 		endpointFlg string
 	)
 
@@ -344,6 +365,26 @@ func newEvaluatorShowCommand() *cobra.Command {
 				return messages.ReadingEvaluator(name, err)
 			}
 
+			// --output-file writes the service's document verbatim, because
+			// reconciliation points here to adopt a remote change over the local
+			// definition: anything this view dropped would be lost on adoption.
+			if outFile != "" {
+				body := raw
+				var pretty any
+				if err := json.Unmarshal(raw, &pretty); err == nil {
+					if indented, err := json.MarshalIndent(pretty, "", "  "); err == nil {
+						body = append(indented, '\n')
+					}
+				}
+				if err := os.WriteFile(outFile, body, 0o600); err != nil {
+					return messages.Creating(outFile, err)
+				}
+				if !isJSON(cmd) {
+					fmt.Fprint(cmd.OutOrStdout(), messages.WroteArtifact(outFile))
+				}
+				return nil
+			}
+
 			// -o json answers with the service's document untouched, because a
 			// caller asking for JSON wants the evaluator, not this view of it.
 			if isJSON(cmd) {
@@ -367,6 +408,8 @@ func newEvaluatorShowCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&version, "version", "", "Version to show. Omit for the latest.")
+	cmd.Flags().StringVar(&outFile, "output-file", "",
+		"Write the evaluator document to this path instead of stdout.")
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -386,6 +429,7 @@ func (ec *evalContext) renderEvaluator(
 		{"Name", e.Name},
 		{"Version", e.Version},
 		{"Type", e.Type()},
+		{"Pass Threshold", evaluatorPassThreshold(e)},
 		{"Description", e.Description},
 		{"Categories", strings.Join(e.Categories, ", ")},
 		{"Evaluation Levels", strings.Join(e.SupportedEvaluationLevels, ", ")},

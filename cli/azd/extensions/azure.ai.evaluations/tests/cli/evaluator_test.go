@@ -84,9 +84,11 @@ func TestCLIInitNeedsAnAzdProject(t *testing.T) {
 
 	r := requireFailure(t, runIn(t, dir, "init",
 		"--target", "probe-agent",
-		"--generation-model", "gpt-4o-mini",
+		"--judge-model", "gpt-4o-mini",
 		"--no-prompt"))
 
+	require.NotContains(t, r.Combined(), "unknown flag",
+		"the probe must use init's real flags, or it asserts nothing about projects")
 	require.Contains(t, r.Combined(), "azd init",
 		"the refusal must name the command that makes a project")
 	require.NotContains(t, strings.ToLower(r.Combined()), "grpc",

@@ -13,6 +13,7 @@ import (
 
 	"azureaieval/internal/pkg/eval_api"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -159,4 +160,85 @@ func TestPortalEvaluatorURLShape(t *testing.T) {
 	assert.True(t, strings.HasSuffix(
 		prefix.EvaluatorURL("support-quality", "3"),
 		"/build/evaluations/catalog/support-quality/3"))
+}
+
+// The pass mark is what Scenario 4 changes between versions, so a version
+// listing that omits it cannot answer the question it is read for.
+func TestEvaluatorPassThreshold(t *testing.T) {
+	threshold := func(v float64) *eval_api.EvaluatorContract {
+		return &eval_api.EvaluatorContract{PassThreshold: &v}
+	}
+
+	cases := []struct {
+		name string
+		in   *eval_api.EvaluatorSummary
+		want string
+	}{
+		{"absent evaluator", nil, ""},
+		{"no definition", &eval_api.EvaluatorSummary{}, ""},
+		{
+			"definition without a threshold",
+			&eval_api.EvaluatorSummary{Definition: &eval_api.EvaluatorContract{}},
+			"",
+		},
+		{
+			"a threshold of zero is a real threshold, not an absent one",
+			&eval_api.EvaluatorSummary{Definition: threshold(0)},
+			"0.00",
+		},
+		{
+			"two decimals, because 0.7 and 0.75 pass different samples",
+			&eval_api.EvaluatorSummary{Definition: threshold(0.75)},
+			"0.75",
+		},
+		{
+			"a trailing zero is kept so the column stays aligned",
+			&eval_api.EvaluatorSummary{Definition: threshold(0.8)},
+			"0.80",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, evaluatorPassThreshold(tc.in))
+		})
+	}
+}
+
+func TestRenderEvaluatorVersionsShowsTheThreshold(t *testing.T) {
+	raised, held := 0.80, 0.70
+	var buf bytes.Buffer
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(&buf)
+
+	require.NoError(t, renderEvaluatorVersions(cmd, &eval_api.EvaluatorListResponse{
+		Value: []eval_api.EvaluatorSummary{
+			{
+				Version:     "3",
+				CreatedAt:   "2026-08-03T11:22:04Z",
+				Description: "Raised threshold, split cites_policy",
+				Definition:  &eval_api.EvaluatorContract{PassThreshold: &raised},
+			},
+			{
+				Version:     "2",
+				CreatedAt:   "2026-08-01T14:07:33Z",
+				Description: "Tightened offers_next_step criteria",
+				Definition:  &eval_api.EvaluatorContract{PassThreshold: &held},
+			},
+		},
+	}))
+
+	out := buf.String()
+	for _, want := range []string{
+		"VERSION", "CREATED AT", "PASS THRESHOLD", "DESCRIPTION",
+		"0.80", "0.70",
+		"Raised threshold, split cites_policy",
+	} {
+		assert.Contains(t, out, want)
+	}
+
+	// Name and type are constant down the listing, so printing them would cost
+	// width and say nothing.
+	assert.NotContains(t, out, "NAME")
 }

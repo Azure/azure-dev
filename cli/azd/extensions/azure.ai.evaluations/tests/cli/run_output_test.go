@@ -7,6 +7,7 @@ package cli
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -215,7 +216,27 @@ func TestCLIResultsExport(t *testing.T) {
 	t.Run("an unknown format is refused", func(t *testing.T) {
 		r := requireFailure(t, run(t, "run", "output", "export", f.FirstRunID,
 			"--eval", f.EvalID, "--format", "xml"))
-		require.Contains(t, r.Combined(), "json or csv")
+		require.Contains(t, r.Combined(), `--format "xml" is not supported`)
+		// The refusal has to name jsonl too, or it repeats the bug where the
+		// guard advertised a narrower set than the exporter can write.
+		require.Contains(t, r.Combined(), "use csv, json or jsonl")
+	})
+
+	t.Run("jsonl is accepted, not just advertised", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "results.jsonl")
+		requireSuccess(t, run(t, "run", "output", "export", f.FirstRunID,
+			"--eval", f.EvalID, "--format", "jsonl", "--output-file", path))
+
+		body, err := os.ReadFile(path)
+		require.NoError(t, err)
+		lines := strings.Split(strings.TrimSpace(string(body)), "\n")
+		require.NotEmpty(t, lines)
+		// Every line has to stand alone as an object, otherwise it is JSON
+		// wearing a .jsonl name.
+		for _, line := range lines {
+			var row map[string]any
+			require.NoError(t, json.Unmarshal([]byte(line), &row))
+		}
 	})
 }
 

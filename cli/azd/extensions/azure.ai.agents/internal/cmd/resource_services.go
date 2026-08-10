@@ -37,11 +37,9 @@ const (
 	aiProjectServiceName = "ai-project"
 )
 
-// emitResourceServices writes the Foundry resource sibling services that the
-// agent depends on (one azure.ai.project carrying the model deployments, one
-// azure.ai.connection per connection, one azure.ai.toolbox per toolbox) and
-// wires the agent service's uses: list to them for ordering. Each resource is
-// its own azure.yaml service entry so a different extension can own each host.
+// emitResourceServices is the Stage A compatibility writer used only when an
+// older projects extension does not expose delegated commands. The delegated
+// path uses emitAgentResourceServices and never authors the project service.
 //
 // projectEndpoint, when non-empty, is written as endpoint: on the project
 // service to mark an existing (brownfield) Foundry project so provision
@@ -162,6 +160,76 @@ func emitResourceServices(
 	}
 
 	return nil
+}
+
+// emitAgentResourceServices writes only the agent-owned sibling resources. The
+// project service and its managed deployments are created by azure.ai.projects;
+// projectServiceName is returned by that extension and is treated as opaque.
+func emitAgentResourceServices(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentServiceName string,
+	projectServiceName string,
+	connections []project.Connection,
+	toolboxes []project.Toolbox,
+) error {
+	if projectServiceName == "" {
+		return fmt.Errorf("delegated project result did not include a service name")
+	}
+	siblingUses := []string{projectServiceName}
+	agentUses := []string{projectServiceName}
+	usedNames := map[string]string{
+		agentServiceName:   "agent service",
+		projectServiceName: "project service",
+	}
+
+	for i := range connections {
+		connection := connections[i]
+		name := sanitizeServiceName(connection.Name)
+		if name == "" {
+			fmt.Fprintf(os.Stderr,
+				"warning: connection %q has no characters usable as an azure.yaml service key; "+
+					"skipping it. Rename the connection so it is written to azure.yaml.\n",
+				connection.Name)
+			continue
+		}
+		if err := reserveServiceName(usedNames, name, fmt.Sprintf("connection %q", connection.Name)); err != nil {
+			return err
+		}
+		config, err := project.MarshalStruct(&connection)
+		if err != nil {
+			return fmt.Errorf("marshaling connection service %q config: %w", name, err)
+		}
+		if err := addResourceService(ctx, azdClient, name, AiConnectionHost, config, siblingUses); err != nil {
+			return err
+		}
+		agentUses = append(agentUses, name)
+	}
+
+	for i := range toolboxes {
+		toolbox := toolboxes[i]
+		name := sanitizeServiceName(toolbox.Name)
+		if name == "" {
+			fmt.Fprintf(os.Stderr,
+				"warning: toolbox %q has no characters usable as an azure.yaml service key; "+
+					"skipping it. Rename the toolbox so it is written to azure.yaml.\n",
+				toolbox.Name)
+			continue
+		}
+		if err := reserveServiceName(usedNames, name, fmt.Sprintf("toolbox %q", toolbox.Name)); err != nil {
+			return err
+		}
+		config, err := project.MarshalStruct(&toolbox)
+		if err != nil {
+			return fmt.Errorf("marshaling toolbox service %q config: %w", name, err)
+		}
+		if err := addResourceService(ctx, azdClient, name, AiToolboxHost, config, siblingUses); err != nil {
+			return err
+		}
+		agentUses = append(agentUses, name)
+	}
+
+	return setServiceUses(ctx, azdClient, agentServiceName, agentUses)
 }
 
 // resolveProjectServiceKey picks the azure.yaml service key for the single
@@ -426,8 +494,19 @@ func setServiceEnvironment(
 // core ServiceConfig field, so it is written via SetServiceConfigValue (a raw
 // map path) rather than AddService's inlined config map, which cannot carry it.
 func setServiceUses(ctx context.Context, azdClient *azdext.AzdClient, serviceName string, uses []string) error {
-	usesItems := make([]any, len(uses))
-	for i, u := range uses {
+	existing, err := getServiceUses(ctx, azdClient, serviceName)
+	if err != nil {
+		return fmt.Errorf("reading uses for service %q: %w", serviceName, err)
+	}
+	merged := slices.Clone(existing)
+	for _, use := range uses {
+		if slices.Contains(merged, use) {
+			continue
+		}
+		merged = append(merged, use)
+	}
+	usesItems := make([]any, len(merged))
+	for i, u := range merged {
 		usesItems[i] = u
 	}
 
@@ -445,6 +524,25 @@ func setServiceUses(ctx context.Context, azdClient *azdext.AzdClient, serviceNam
 	}
 
 	return nil
+}
+
+func getServiceUses(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+) ([]string, error) {
+	response, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return nil, err
+	}
+	if response.GetProject() == nil {
+		return nil, nil
+	}
+	service, ok := response.GetProject().GetServices()[serviceName]
+	if !ok || service == nil {
+		return nil, nil
+	}
+	return slices.Clone(service.GetUses()), nil
 }
 
 // sanitizeServiceName converts a resource name into an azure.yaml service key by

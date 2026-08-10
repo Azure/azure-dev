@@ -439,3 +439,25 @@ func TestActionableErrorDetailFromError(t *testing.T) {
 		assert.Equal(t, "try harder", actionable.GetSuggestion())
 	})
 }
+
+func TestUnwrapWorkflowError(t *testing.T) {
+	t.Parallel()
+
+	workflowErr := &LocalError{
+		Message:    "invalid project",
+		Code:       "invalid_project",
+		Category:   LocalErrorCategoryValidation,
+		Suggestion: "Select a valid project",
+	}
+	statusErr := mustStatusErrorWithDetails(codes.Internal, "workflow failed", &WorkflowErrorDetail{
+		Error: WrapError(workflowErr),
+	})
+
+	unwrapped := UnwrapWorkflowError(fmt.Errorf("run workflow: %w", statusErr))
+
+	localErr, ok := errors.AsType[*LocalError](unwrapped)
+	require.True(t, ok)
+	require.Equal(t, "invalid_project", localErr.Code)
+	require.Equal(t, LocalErrorCategoryValidation, localErr.Category)
+	require.Equal(t, "Select a valid project", localErr.Suggestion)
+}

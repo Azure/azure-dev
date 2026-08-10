@@ -31,6 +31,9 @@ service EnvironmentService {
   // SetValue sets the value of a key in the specified environment.
   rpc SetValue (SetEnvRequest) returns (EmptyResponse);
 
+  // UnsetValue removes a key from the specified environment.
+  rpc UnsetValue (UnsetEnvRequest) returns (EmptyResponse);
+
   // GetConfig retrieves a config value by path
   rpc GetConfig (GetConfigRequest) returns (GetConfigResponse);
 
@@ -67,6 +70,11 @@ message SetEnvRequest {
   string env_name = 1; // Optional: Name of the environment. If empty, uses default.
   string key = 2;      // Key to set.
   string value = 3;    // Value to set for the key.
+}
+
+message UnsetEnvRequest {
+  string env_name = 1; // Optional: Name of the environment. If empty, uses default.
+  string key = 2;      // Key to remove.
 }
 
 // Response containing details of an environment.

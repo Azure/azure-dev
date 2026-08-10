@@ -450,6 +450,13 @@ func ejectInfraAfterInit(provider string) error {
 	return ejectInfra(projectRoot, provider)
 }
 
+func finishInfraEject(flags *initFlags, provider string) error {
+	if flags != nil && flags.delegatedProjectInit {
+		return nil
+	}
+	return ejectInfraAfterInit(provider)
+}
+
 // ejectInfra synthesizes the embedded Bicep templates from azure.yaml and
 // ejectInfra synthesizes infrastructure templates from azure.yaml and writes
 // them into projectRoot/infra/. Invoked by `azd ai agent init --infra[=<provider>]`

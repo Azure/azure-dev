@@ -15,6 +15,8 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | `help` | Stable |
 | `infra generate` | Beta |
 | `init` | Stable |
+| `ai project init` | Beta |
+| `ai project deployment add` | Beta |
 | `monitor` | Beta |
 | `package` | Beta |
 | `pipeline` | Beta |

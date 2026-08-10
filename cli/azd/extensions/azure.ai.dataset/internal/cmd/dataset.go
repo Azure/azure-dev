@@ -125,18 +125,39 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 // A named file is returned as itself. Returning its directory would upload
 // whichever .jsonl sorts first, so pointing --from-file at one dataset in a
 // folder holding several would register a different one under that name.
+//
+// A directory is resolved to the single .jsonl inside it, which is what the
+// flag offers. Several is not that, and picking one would be a guess.
 func datasetUploadSource(path string) (string, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return "", messages.ReadingFromFile(path, err)
 	}
-	if info.IsDir() {
+	if !info.IsDir() {
+		if !strings.EqualFold(filepath.Ext(path), ".jsonl") {
+			return "", messages.FromFileMustBeJSONL(path)
+		}
 		return path, nil
 	}
-	if !strings.EqualFold(filepath.Ext(path), ".jsonl") {
-		return "", messages.FromFileMustBeJSONL(path)
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return "", messages.ReadingFromFile(path, err)
 	}
-	return path, nil
+	var found []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.EqualFold(filepath.Ext(e.Name()), ".jsonl") {
+			found = append(found, e.Name())
+		}
+	}
+	switch len(found) {
+	case 0:
+		return "", messages.FromFileDirectoryHasNoJSONL(path)
+	case 1:
+		return filepath.Join(path, found[0]), nil
+	default:
+		return "", messages.FromFileDirectoryIsAmbiguous(path, found)
+	}
 }
 
 func newDatasetListCommand() *cobra.Command {
@@ -212,9 +233,10 @@ func newDatasetVersionsListCommand() *cobra.Command {
 }
 
 func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList) error {
+	// JSON is decided before emptiness: a caller piping this into a parser needs
+	// an empty array, not the sentence a human would read.
 	if list == nil {
-		fmt.Fprint(cmd.OutOrStdout(), messages.NoDatasets())
-		return nil
+		list = &dataset_api.DatasetList{}
 	}
 	if isJSON(cmd) {
 		return emitJSONList(cmd.OutOrStdout(), list.Value)

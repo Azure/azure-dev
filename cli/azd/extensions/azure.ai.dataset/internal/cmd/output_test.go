@@ -167,7 +167,8 @@ func TestDatasetUploadSource(t *testing.T) {
 
 	got, err = datasetUploadSource(dir)
 	require.NoError(t, err)
-	assert.Equal(t, dir, got)
+	assert.Equal(t, rows, got,
+		"a directory resolves to the one .jsonl in it, named rather than scanned later")
 
 	notJSONL := filepath.Join(dir, "rows.csv")
 	require.NoError(t, os.WriteFile(notJSONL, []byte("a,b\n"), 0o600))

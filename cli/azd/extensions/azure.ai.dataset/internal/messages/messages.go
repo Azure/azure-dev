@@ -60,6 +60,18 @@ func FromFileMustBeJSONL(path string) error {
 		"--from-file must be a .jsonl file or a directory containing one, got %q", path)
 }
 
+// FromFileDirectoryHasNoJSONL reports a directory with nothing to upload.
+func FromFileDirectoryHasNoJSONL(dir string) error {
+	return fmt.Errorf("no .jsonl file in %q; --from-file needs one to upload", dir)
+}
+
+// FromFileDirectoryIsAmbiguous refuses to guess which dataset was meant.
+func FromFileDirectoryIsAmbiguous(dir string, names []string) error {
+	return fmt.Errorf(
+		"%q holds %d .jsonl files (%s); name the one to upload with --from-file",
+		dir, len(names), strings.Join(names, ", "))
+}
+
 // DatasetNotFound reports a name that is not a dataset in this project.
 func DatasetNotFound(name string) error {
 	return fmt.Errorf(

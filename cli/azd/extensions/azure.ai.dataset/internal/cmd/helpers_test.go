@@ -51,7 +51,10 @@ func TestDatasetUploadSourceKeepsTheNamedFile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, chosen, resolved)
 
-	resolved, err = datasetUploadSource(dir)
-	require.NoError(t, err)
-	assert.Equal(t, dir, resolved)
+	// The directory on its own is a guess between the two, so it is refused
+	// rather than resolved to whichever sorts first.
+	_, err = datasetUploadSource(dir)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "zebra.jsonl")
+	assert.Contains(t, err.Error(), "alpha.jsonl")
 }

@@ -59,6 +59,26 @@ Set by IDE hosts (VS Code, Visual Studio) when spawning azd as a subprocess. Use
 
 For details on the external authentication protocol, see [cli/azd/docs/external-authentication.md](../../cli/azd/docs/external-authentication.md).
 
+## Microsoft Foundry extensions
+
+The `azure.ai.projects` extension owns the project identity values below.
+`azure.ai.agents` consumes them for agent workflows.
+
+When project identity changes, `azure.ai.projects` writes an empty string as a
+tombstone for stale project-owned keys. Consumers treat an empty value as not
+configured and resolve current project state instead.
+
+| Variable | Description |
+|---|---|
+| `AZURE_AI_PROJECT_ID` | Microsoft Foundry project resource ID |
+| `FOUNDRY_PROJECT_ENDPOINT` | Microsoft Foundry project endpoint |
+| `AZURE_AI_ACCOUNT_NAME` | Microsoft Foundry account name |
+| `AZURE_AI_PROJECT_NAME` | Microsoft Foundry project name |
+| `AZURE_AI_DEPLOYMENTS_LOCATION` | Managed deployment location |
+| `AZURE_AI_MODEL_DEPLOYMENT_NAME` | Default managed model deployment name |
+| `AZURE_AI_PROJECT_CONNECTION_NAMES` | Comma-separated project connection names |
+| `AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT` | Project endpoint used by connection services |
+
 ## See Also
 
 For the full reference with implementation details, see [cli/azd/docs/environment-variables.md](../../cli/azd/docs/environment-variables.md).

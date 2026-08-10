@@ -46,6 +46,24 @@ System overviews, design context, and decision records.
 - [Telemetry Architecture](architecture/telemetry.md) — How azd collects and exports telemetry
 - [ADR Template](architecture/adr-template.md) — Template for lightweight architecture decision records
 
+## Microsoft Foundry project ownership
+
+The `azure.ai.projects` extension owns Foundry project identity and managed
+model deployments:
+
+```text
+azd ai project init
+azd ai project deployment add --model <model>
+```
+
+`azure.ai.agents` delegates project initialization and managed deployment
+selection to those commands. It continues to own agent services and external
+deployment references. Endpoint-only projects are valid for data-plane use,
+but operations that need ARM identity, such as infrastructure ejection or
+managed deployment creation, require a verified project resource ID.
+When project identity changes, stale project-owned environment keys are written
+as empty-string tombstones; consumers treat empty values as not configured.
+
 ---
 
 ## Where do new docs go?

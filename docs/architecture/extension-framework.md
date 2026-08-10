@@ -84,6 +84,12 @@ Extensions use two structured error types:
 
 Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC auth → fallback
 
+Delegated commands use the existing `WorkflowService.Run` completion contract:
+a successful call means the command completed, and failures are returned by the
+service. The parent extension writes an input-only, versioned `request.json`;
+after success, it rereads state through the `Project` and `Environment` APIs
+instead of consuming a result file or a second JSON stream.
+
 ## First-Party Extensions
 
 First-party extensions live in `cli/azd/extensions/` and are registered in `cli/azd/extensions/registry.json`.

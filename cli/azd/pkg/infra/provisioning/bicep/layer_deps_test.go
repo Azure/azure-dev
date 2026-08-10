@@ -863,6 +863,48 @@ func TestAnalyzeLayerDependencies_MixedProviders(t *testing.T) {
 	require.Contains(t, result.Edges[1], 0)
 }
 
+func TestAnalyzeLayerDependencies_FoundryConsumesBicepOutput(t *testing.T) {
+	dir := t.TempDir()
+	networkDir := filepath.Join(dir, "network")
+	foundryDir := filepath.Join(dir, "foundry")
+	mkTestDir(t, networkDir)
+	mkTestDir(t, foundryDir)
+	writeTestFile(t, filepath.Join(networkDir, "main.bicep"),
+		"output AZURE_VNET_ID string = 'id'\n")
+	writeTestFile(t, filepath.Join(foundryDir, "main.parameters.json"),
+		`{"parameters":{"vnetId":{"value":"${AZURE_VNET_ID}"}}}`)
+
+	layers := []provisioning.Options{
+		{Name: "network", Path: "network", Module: "main", Provider: provisioning.Bicep},
+		{Name: "foundry", Path: "foundry", Module: "main", Provider: "microsoft.foundry"},
+	}
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
+	require.NoError(t, err)
+	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
+	require.Equal(t, []int{0}, result.Edges[1])
+}
+
+func TestAnalyzeLayerDependencies_TerraformTfvarsRemainOpaque(t *testing.T) {
+	dir := t.TempDir()
+	networkDir := filepath.Join(dir, "network")
+	terraformDir := filepath.Join(dir, "terraform")
+	mkTestDir(t, networkDir)
+	mkTestDir(t, terraformDir)
+	writeTestFile(t, filepath.Join(networkDir, "main.bicep"),
+		"output AZURE_VNET_ID string = 'id'\n")
+	writeTestFile(t, filepath.Join(terraformDir, "main.tfvars.json"),
+		`{"vnet_id":"${AZURE_VNET_ID}"}`)
+
+	layers := []provisioning.Options{
+		{Name: "network", Path: "network", Module: "main", Provider: provisioning.Bicep},
+		{Name: "terraform", Path: "terraform", Module: "main", Provider: provisioning.Terraform},
+	}
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
+	require.NoError(t, err)
+	require.Equal(t, [][]int{{0, 1}}, result.Levels)
+	require.Empty(t, result.Edges)
+}
+
 // TestIsBicepLayer verifies the helper classifies providers correctly.
 func TestIsBicepLayer(t *testing.T) {
 	t.Parallel()

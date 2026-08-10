@@ -160,7 +160,7 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 	initCmd.Flags().StringVar(
 		&flags.language,
 		"language", "",
-		"The programming language for the extension (go, dotnet, javascript, python).",
+		"The programming language for the extension (go (recommended), dotnet, javascript, python).",
 	)
 
 	initCmd.Flags().StringVar(

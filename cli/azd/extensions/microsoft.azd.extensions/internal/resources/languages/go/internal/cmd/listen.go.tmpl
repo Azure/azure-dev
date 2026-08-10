@@ -6,30 +6,34 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
+// newListenCommand creates the hidden "listen" command that azd invokes to start the
+// extension host. Event handlers registered here run in-line with the matching azd
+// lifecycle event, so anything written to stdout is surfaced to the user.
 func newListenCommand() *cobra.Command {
 	return azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
 		host.
-			WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-				for i := 1; i <= 20; i++ {
-					fmt.Printf("%d. Doing important work in extension...\n", i)
-					time.Sleep(250 * time.Millisecond)
-				}
-
-				return nil
-			}).
-			WithServiceEventHandler("prepackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
-				for i := 1; i <= 20; i++ {
-					fmt.Printf("%d. Doing important work in extension...\n", i)
-					time.Sleep(250 * time.Millisecond)
-				}
-
-				return nil
-			}, nil)
+			// Project events fire once per azd invocation.
+			WithProjectEventHandler(
+				"preprovision",
+				func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+					fmt.Printf("Running preprovision work for project %s...\n", args.Project.Name)
+					return nil
+				},
+			).
+			// Service events fire once per service. Pass a *azdext.ServiceEventOptions
+			// to filter by service host or language instead of nil.
+			WithServiceEventHandler(
+				"prepackage",
+				func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+					fmt.Printf("Running prepackage work for service %s...\n", args.Service.Name)
+					return nil
+				},
+				nil,
+			)
 	})
 }

@@ -4,6 +4,7 @@
 package resources
 
 import (
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -30,3 +31,44 @@ func TestGoGitignoreExcludesBin(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(contents), "bin/")
 }
+
+// goScaffoldVerbatimFiles are shipped verbatim (or nearly so) into generated Go
+// extension projects, where Go tooling always writes LF. Committing them with CRLF
+// leaves generated projects with mixed line endings that `go mod tidy` immediately
+// rewrites, producing spurious diffs on the developer's first build.
+var goScaffoldVerbatimFiles = []string{
+	"languages/go/go.mod.tmpl",
+	"languages/go/go.sum",
+}
+
+func TestGoScaffoldModuleFilesUseLFLineEndings(t *testing.T) {
+	for _, name := range goScaffoldVerbatimFiles {
+		t.Run(name, func(t *testing.T) {
+			contents, err := Languages.ReadFile(name)
+			require.NoError(t, err)
+			require.NotContains(t, string(contents), "\r", "%s must use LF line endings", name)
+		})
+	}
+}
+
+// TestGoScaffoldPinsReleasedAzdModule guards against the generated go.mod pointing at
+// an unreleased pseudo-version or a local replace directive, either of which breaks
+// `go build` for anyone scaffolding an extension outside this repository.
+func TestGoScaffoldPinsReleasedAzdModule(t *testing.T) {
+	contents, err := Languages.ReadFile("languages/go/go.mod.tmpl")
+	require.NoError(t, err)
+
+	goMod := string(contents)
+	require.NotContains(t, goMod, "replace ", "the scaffolded go.mod must not contain replace directives")
+
+	match := azdModuleRequirePattern.FindStringSubmatch(goMod)
+	require.NotNil(t, match, "the scaffolded go.mod must require github.com/azure/azure-dev/cli/azd")
+	require.Regexpf(t,
+		`^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$`,
+		match[1],
+		"the scaffolded go.mod must pin a released cli/azd module tag, got %q",
+		match[1],
+	)
+}
+
+var azdModuleRequirePattern = regexp.MustCompile(`github\.com/azure/azure-dev/cli/azd (\S+)`)

@@ -129,7 +129,7 @@ func newPromptCommand() *cobra.Command {
 						return err
 					}
 
-					for _, provider := range page.ProviderListResult.Value {
+					for _, provider := range page.Value {
 						if *provider.RegistrationState == "Registered" {
 							providerList = append(providerList, provider)
 						}
@@ -265,21 +265,26 @@ func newPromptCommand() *cobra.Command {
 
 			fmt.Println()
 			color.Cyan("Selected resource:")
-			values := map[string]string{
-				"Subscription ID": parsedResource.SubscriptionID,
-				"Resource Group":  parsedResource.ResourceGroupName,
-				"Name":            parsedResource.Name,
-				"Type":            selectedResource.Type,
-				"Location":        parsedResource.Location,
-				"Kind":            selectedResource.Kind,
+			// A slice keeps the output order stable; ranging over a map would shuffle it.
+			values := []struct {
+				key   string
+				value string
+			}{
+				{"Subscription ID", parsedResource.SubscriptionID},
+				{"Resource Group", parsedResource.ResourceGroupName},
+				{"Name", parsedResource.Name},
+				{"Type", selectedResource.Type},
+				{"Location", parsedResource.Location},
+				{"Kind", selectedResource.Kind},
 			}
 
-			for key, value := range values {
+			for _, item := range values {
+				value := item.value
 				if value == "" {
 					value = "N/A"
 				}
 
-				fmt.Printf("%s: %s\n", color.HiWhiteString(key), color.HiBlackString(value))
+				fmt.Printf("%s: %s\n", color.HiWhiteString(item.key), color.HiBlackString(value))
 			}
 
 			return nil

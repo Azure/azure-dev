@@ -30,6 +30,7 @@ const (
 	CodeAzdClientFailed             = "azd_client_failed"
 	CodeEnvironmentNotFound         = "environment_not_found"
 	CodeEnvironmentValuesFailed     = "environment_values_failed"
+	CodeEnvironmentUnsetUnsupported = "environment_unset_unsupported"
 	CodeMissingAzureSubscription    = "missing_azure_subscription_id"
 	CodeMissingAzureLocation        = "missing_azure_location"
 	CodeProvisioningServiceNotFound = "provisioning_service_not_found"

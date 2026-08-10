@@ -49,6 +49,16 @@ func Dependency(code, message, suggestion string) error {
 	}
 }
 
+// Compatibility returns a compatibility error for version mismatches.
+func Compatibility(code, message, suggestion string) error {
+	return &azdext.LocalError{
+		Message:    message,
+		Code:       code,
+		Category:   azdext.LocalErrorCategoryCompatibility,
+		Suggestion: suggestion,
+	}
+}
+
 // Auth returns an authentication or authorization error.
 func Auth(code, message, suggestion string) error {
 	return &azdext.LocalError{

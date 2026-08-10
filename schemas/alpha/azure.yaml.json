@@ -94,9 +94,26 @@
                                 "title": "Name of the default module within the Azure provisioning templates",
                                 "description": "Optional. The name of the Azure provisioning module used when provisioning resources. (Default: main)"
                             },
+                            "provider": {
+                                "type": "string",
+                                "title": "Type of infrastructure provisioning provider",
+                                "description": "Optional. The infrastructure provisioning provider for this layer. Inherits infra.provider when omitted. Built-in values are 'bicep' and 'terraform'; extensions may register additional providers.",
+                                "pattern": "^[a-z0-9.]+$",
+                                "examples": [
+                                    "bicep",
+                                    "terraform",
+                                    "microsoft.foundry"
+                                ]
+                            },
                              "deploymentStacks": {
                                  "$ref": "#/definitions/deploymentStacksConfig"
                              },
+                            "config": {
+                                "type": "object",
+                                "title": "Provider-specific configuration",
+                                "description": "Optional. Configuration passed to the infrastructure provisioning provider.",
+                                "additionalProperties": true
+                            },
                             "dependsOn": {
                                 "type": "array",
                                 "title": "Layer names this layer must wait for",

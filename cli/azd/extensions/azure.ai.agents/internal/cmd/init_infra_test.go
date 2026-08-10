@@ -67,26 +67,785 @@ func TestEjectInfra_RefusesWhenAzureYamlMissing(t *testing.T) {
 	assert.True(t, os.IsNotExist(statErr), "infra/ must not be created on refusal")
 }
 
-func TestEjectInfra_RefusesWhenInfraExists(t *testing.T) {
+func TestEjectInfra_MigratesExistingInfraToLayers(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
-	// Pre-create infra/ -- contents don't matter, even an empty dir refuses.
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"),
+		strings.Replace(validFoundryAzureYAML, "provider: microsoft.foundry", "provider: bicep", 1))
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), 0o750))
+	mustWriteFile(t, filepath.Join(dir, "infra", "main.bicep"), "// existing infrastructure\n")
+
+	err := ejectInfra(dir, "bicep")
+	require.NoError(t, err)
+
+	existing, err := os.ReadFile(filepath.Join(dir, "infra", "main.bicep")) //nolint:gosec // temp test path
+	require.NoError(t, err)
+	assert.Equal(t, "// existing infrastructure\n", string(existing))
+	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", "main.bicep"))
+
+	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // temp test path
+	require.NoError(t, err)
+	var doc struct {
+		Infra struct {
+			Provider string `yaml:"provider"`
+			Layers   []struct {
+				Name      string   `yaml:"name"`
+				Path      string   `yaml:"path"`
+				Provider  string   `yaml:"provider"`
+				DependsOn []string `yaml:"dependsOn"`
+			} `yaml:"layers"`
+		} `yaml:"infra"`
+	}
+	require.NoError(t, yaml.Unmarshal(raw, &doc))
+	assert.Empty(t, doc.Infra.Provider)
+	require.Len(t, doc.Infra.Layers, 2)
+	assert.Equal(t, "infra", doc.Infra.Layers[0].Name)
+	assert.Equal(t, "infra", doc.Infra.Layers[0].Path)
+	assert.Equal(t, "bicep", doc.Infra.Layers[0].Provider)
+	assert.Equal(t, "foundry", doc.Infra.Layers[1].Name)
+	assert.Equal(t, "infra/foundry", doc.Infra.Layers[1].Path)
+	assert.Equal(t, "microsoft.foundry", doc.Infra.Layers[1].Provider)
+	assert.Empty(t, doc.Infra.Layers[0].DependsOn)
+	assert.Empty(t, doc.Infra.Layers[1].DependsOn)
+
+	params, err := os.ReadFile(filepath.Join(dir, "infra", "foundry", "main.parameters.json")) //nolint:gosec
+	require.NoError(t, err)
+	var paramsDoc struct {
+		Parameters map[string]struct {
+			Value any `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(params, &paramsDoc))
+	assert.Equal(t, "${AZURE_LOCATION}", paramsDoc.Parameters["location"].Value)
+	assert.Equal(t, "${AZURE_AI_PROJECT_NAME=${AZURE_ENV_NAME}}", paramsDoc.Parameters["foundryProjectName"].Value)
+	assert.Equal(t, "${AZURE_FOUNDRY_RESOURCE_GROUP=rg-${AZURE_ENV_NAME}-foundry}",
+		paramsDoc.Parameters["resourceGroupName"].Value)
+	assert.Equal(t, "${AZD_RESOURCE_TOKEN_SALT}", paramsDoc.Parameters["resourceTokenSalt"].Value)
+}
+
+func TestEjectInfra_PreservesExistingInfraNameWhenMigratingToLayers(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+infra:
+  name: existing
+  provider: bicep
+  path: infra/existing
+services:
+  my-foundry:
+    host: azure.ai.project
+`)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra", "existing"), 0o750))
+	mustWriteFile(t, filepath.Join(dir, "infra", "existing", "main.bicep"), "// existing\n")
+
+	require.NoError(t, ejectInfra(dir, "bicep"))
+	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec
+	require.NoError(t, err)
+	var doc struct {
+		Infra struct {
+			Layers []struct {
+				Name      string   `yaml:"name"`
+				Provider  string   `yaml:"provider"`
+				DependsOn []string `yaml:"dependsOn"`
+			} `yaml:"layers"`
+		} `yaml:"infra"`
+	}
+	require.NoError(t, yaml.Unmarshal(raw, &doc))
+	require.Len(t, doc.Infra.Layers, 2)
+	assert.Equal(t, "existing", doc.Infra.Layers[0].Name)
+	assert.Equal(t, "foundry", doc.Infra.Layers[1].Name)
+	assert.Equal(t, "microsoft.foundry", doc.Infra.Layers[1].Provider)
+	assert.Empty(t, doc.Infra.Layers[1].DependsOn)
+}
+
+func TestEjectInfra_PreservesAllRootInfraProperties(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+infra:
+  name: existing
+  provider: custom.platform
+  path: infra/existing
+  module: platform
+  deploymentStacks:
+    actionOnUnmanage:
+      resources: delete
+  config:
+    nested:
+      enabled: true
+  futureProperty:
+    value: preserved
+services:
+  my-foundry:
+    host: azure.ai.project
+`)
+
+	require.NoError(t, ejectInfra(dir, "bicep"))
+	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, yaml.Unmarshal(raw, &doc))
+	layers := doc["infra"].(map[string]any)["layers"].([]any)
+	existing := layers[0].(map[string]any)
+	assert.Equal(t, "existing", existing["name"])
+	assert.Equal(t, "infra/existing", existing["path"])
+	assert.Equal(t, "custom.platform", existing["provider"])
+	assert.Equal(t, "platform", existing["module"])
+	assert.Equal(t, "delete", existing["deploymentStacks"].(map[string]any)["actionOnUnmanage"].(map[string]any)["resources"])
+	assert.Equal(t, true, existing["config"].(map[string]any)["nested"].(map[string]any)["enabled"])
+	assert.Equal(t, "preserved", existing["futureProperty"].(map[string]any)["value"])
+}
+
+func TestEjectInfra_ExistingFoundryLayerReportsAlreadyExists(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	yamlBody := `name: my-project
+infra:
+  provider: bicep
+  layers:
+    - name: app
+      path: infra/app
+    - name: foundry
+      path: infra/foundry
+      provider: microsoft.foundry
+services:
+  my-foundry:
+    host: azure.ai.project
+`
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), yamlBody)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra", "foundry"), 0o750))
+	mustWriteFile(t, filepath.Join(dir, "infra", "foundry", "main.bicep"), "// existing Foundry\n")
 
 	err := ejectInfra(dir, "bicep")
 	require.Error(t, err)
-
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok, "expected structured azdext.LocalError, got %T", err)
+	require.True(t, ok)
 	assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
-	assert.Contains(t, localErr.Message, "./infra/")
-	assert.Contains(t, localErr.Suggestion, "delete ./infra/")
+	assert.Contains(t, localErr.Message, "Foundry infrastructure layer \"foundry\" already exists")
+	assert.Contains(t, localErr.Message, "./infra/foundry")
+}
 
-	// Pre-existing infra/ must not be wiped by the refusal.
-	info, err := os.Stat(filepath.Join(dir, "infra"))
-	require.NoError(t, err, "pre-existing infra/ must survive refusal")
-	assert.True(t, info.IsDir())
+func TestEjectInfra_RefusesFoundryProviderUnderDifferentLayerName(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	yamlBody := `name: my-project
+infra:
+  provider: bicep
+  layers:
+    - name: app
+      path: infra/app
+    - name: ai
+      path: infra/ai
+      provider: microsoft.foundry
+services:
+  my-foundry:
+    host: azure.ai.project
+`
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), yamlBody)
+
+	err := ejectInfra(dir, "bicep")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Contains(t, localErr.Message, "already exists as layer \"ai\"")
+	assert.NoDirExists(t, filepath.Join(dir, "infra", "foundry"))
+}
+
+func TestEjectInfra_RefusesEditedGeneratedTerraformRoot(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	yamlBody := `name: my-project
+infra:
+  provider: terraform
+services:
+  my-foundry:
+    host: azure.ai.project
+`
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), yamlBody)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), 0o750))
+	mustWriteFile(t, filepath.Join(dir, "infra", "main.tf"), "# edited generated terraform\n")
+	mustWriteFile(t, filepath.Join(dir, "infra", "main.tfvars.json"), "{}\n")
+	mustWriteFile(t, filepath.Join(dir, "infra", foundryTerraformMarker), foundryTerraformV1)
+
+	err := ejectInfra(dir, "terraform")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
+	assert.Contains(t, localErr.Message, "Foundry infrastructure already exists")
+	assert.NoDirExists(t, filepath.Join(dir, "infra", "foundry"))
+}
+
+func TestEjectInfra_MigratesOrdinaryTerraformProjectWithTfvars(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+infra:
+  provider: terraform
+services:
+  my-foundry:
+    host: azure.ai.project
+`)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), 0o750))
+	mustWriteFile(t, filepath.Join(dir, "infra", "main.tf"), "resource \"azurerm_resource_group\" \"app\" {}\n")
+	mustWriteFile(t, filepath.Join(dir, "infra", "main.tfvars.json"), "{}\n")
+
+	require.NoError(t, ejectInfra(dir, "terraform"))
+	assert.FileExists(t, filepath.Join(dir, "infra", "main.tf"))
+	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", "main.tf"))
+	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", foundryTerraformMarker))
+	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), "provider: terraform")
+	assert.Contains(t, string(raw), "path: infra/foundry")
+}
+
+func TestEjectInfra_RefusesUnknownTerraformMarker(t *testing.T) {
+	for _, marker := range []string{"terraform-v2\n", "edited\n", ""} {
+		t.Run(strings.TrimSpace(marker), func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			yamlBody := `name: my-project
+infra:
+  provider: terraform
+services:
+  my-foundry:
+    host: azure.ai.project
+`
+			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), yamlBody)
+			require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), 0o750))
+			mustWriteFile(t, filepath.Join(dir, "infra", "main.tf"), "# user edited\n")
+			mustWriteFile(t, filepath.Join(dir, "infra", foundryTerraformMarker), marker)
+
+			err := ejectInfra(dir, "terraform")
+			require.Error(t, err)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, exterrors.CodeInfraEjectMarkerInvalid, localErr.Code)
+			assert.Contains(t, localErr.Message, "unsupported or edited")
+			assert.NoDirExists(t, filepath.Join(dir, "infra", "foundry"))
+			raw, readErr := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec
+			require.NoError(t, readErr)
+			assert.Equal(t, yamlBody, string(raw))
+		})
+	}
+}
+
+func TestEjectInfra_RefusesNonRegularTerraformMarker(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+infra:
+  provider: terraform
+services:
+  my-foundry:
+    host: azure.ai.project
+`)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra", foundryTerraformMarker), 0o750))
+	mustWriteFile(t, filepath.Join(dir, "infra", "main.tf"), "# user edited\n")
+
+	err := ejectInfra(dir, "terraform")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInfraEjectMarkerInvalid, localErr.Code)
+	assert.Contains(t, localErr.Message, "not a regular file")
+}
+
+func TestEjectInfra_RefusesExplicitFilelessBuiltInProvider(t *testing.T) {
+	for _, provider := range []string{"bicep", "terraform"} {
+		t.Run(provider, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			yamlBody := `name: my-project
+infra:
+  provider: ` + provider + `
+services:
+  my-foundry:
+    host: azure.ai.project
+`
+			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), yamlBody)
+
+			err := ejectInfra(dir, "bicep")
+			require.Error(t, err)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, exterrors.CodeInvalidAzureYaml, localErr.Code)
+			assert.Contains(t, localErr.Message, "contains no matching entry point")
+			assert.NoDirExists(t, filepath.Join(dir, "infra", "foundry"))
+			raw, readErr := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec
+			require.NoError(t, readErr)
+			assert.Equal(t, yamlBody, string(raw))
+		})
+	}
+}
+
+func TestEjectInfra_RefusesExistingFoundryEject(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), 0o750))
+	mustWriteFile(t, filepath.Join(dir, "infra", "main.bicep"), "// existing project bicep\n")
+
+	err := ejectInfra(dir, "bicep")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
+	assert.Contains(t, localErr.Message, "Foundry infrastructure already exists")
+	assert.Contains(t, localErr.Message, "./infra")
+	existing, err := os.ReadFile(filepath.Join(dir, "infra", "main.bicep")) //nolint:gosec // temp test path
+	require.NoError(t, err)
+	assert.Equal(t, "// existing project bicep\n", string(existing))
+	assert.NoDirExists(t, filepath.Join(dir, "infra", "foundry"))
+}
+
+func TestEjectInfra_FoundryProjectWithEmptyInfraDirectoryUsesLegacyLayout(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), 0o750))
+
+	require.NoError(t, ejectInfra(dir, "bicep"))
+	assert.FileExists(t, filepath.Join(dir, "infra", "main.bicep"))
+	assert.NoDirExists(t, filepath.Join(dir, "infra", "foundry"))
+
+	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // temp test path
+	require.NoError(t, err)
+	assert.Equal(t, validFoundryAzureYAML, string(raw))
+}
+
+func TestEjectInfra_RefusesNonEmptyInfraWithoutEntrypoint(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), 0o750))
+	mustWriteFile(t, filepath.Join(dir, "infra", "README.md"), "user-owned infrastructure notes\n")
+
+	err := ejectInfra(dir, "bicep")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidAzureYaml, localErr.Code)
+	assert.Contains(t, localErr.Message, "no detectable entry point")
+	assert.NoFileExists(t, filepath.Join(dir, "infra", "main.bicep"))
+}
+
+func TestEjectInfra_AppendsFoundryLayer(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+infra:
+  provider: bicep
+  layers:
+    - name: platform
+      path: infra/platform
+      module: platform
+services:
+  my-foundry:
+    host: azure.ai.project
+`)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra", "platform"), 0o750))
+	mustWriteFile(t, filepath.Join(dir, "infra", "platform", "platform.bicep"), "// platform\n")
+
+	require.NoError(t, ejectInfra(dir, "bicep"))
+	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", "main.bicep"))
+
+	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // temp test path
+	require.NoError(t, err)
+	var doc struct {
+		Infra struct {
+			Provider string `yaml:"provider"`
+			Layers   []struct {
+				Name      string   `yaml:"name"`
+				Path      string   `yaml:"path"`
+				Module    string   `yaml:"module"`
+				Provider  string   `yaml:"provider"`
+				DependsOn []string `yaml:"dependsOn"`
+			} `yaml:"layers"`
+		} `yaml:"infra"`
+	}
+	require.NoError(t, yaml.Unmarshal(raw, &doc))
+	assert.Equal(t, "bicep", doc.Infra.Provider)
+	require.Len(t, doc.Infra.Layers, 2)
+	assert.Equal(t, "platform", doc.Infra.Layers[0].Name)
+	assert.Equal(t, "platform", doc.Infra.Layers[0].Module)
+	assert.Equal(t, "foundry", doc.Infra.Layers[1].Name)
+	assert.Equal(t, "infra/foundry", doc.Infra.Layers[1].Path)
+	assert.Equal(t, "microsoft.foundry", doc.Infra.Layers[1].Provider)
+	assert.Empty(t, doc.Infra.Layers[0].DependsOn)
+	assert.Empty(t, doc.Infra.Layers[1].DependsOn)
+}
+
+func TestEjectInfra_RefusesExistingLayerWithoutPath(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	yamlBody := `name: my-project
+infra:
+  provider: bicep
+  layers:
+    - name: app
+services:
+  my-foundry:
+    host: azure.ai.project
+`
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), yamlBody)
+
+	err := ejectInfra(dir, "bicep")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidAzureYaml, localErr.Code)
+	assert.Contains(t, localErr.Message, "must declare path")
+	assert.NoDirExists(t, filepath.Join(dir, "infra", "foundry"))
+	raw, readErr := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec
+	require.NoError(t, readErr)
+	assert.Equal(t, yamlBody, string(raw))
+}
+
+func TestEjectInfra_MigratesFilelessCustomProviderToLayer(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+infra:
+  provider: custom.platform
+services:
+  my-foundry:
+    host: azure.ai.project
+`)
+
+	require.NoError(t, ejectInfra(dir, "bicep"))
+	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), "provider: custom.platform")
+	assert.Contains(t, string(raw), "provider: microsoft.foundry")
+	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", "main.bicep"))
+}
+
+func TestEjectInfra_HonorsExistingBicepLayerPathAndModule(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+infra:
+  provider: bicep
+  layers:
+    - name: app
+      path: infra/app
+    - name: foundry
+      path: custom/foundry
+      module: project
+      provider: microsoft.foundry
+      dependsOn: [app]
+services:
+  my-foundry:
+    host: azure.ai.project
+`)
+
+	require.NoError(t, ejectInfra(dir, "bicep"))
+	assert.FileExists(t, filepath.Join(dir, "custom", "foundry", "project.bicep"))
+	assert.FileExists(t, filepath.Join(dir, "custom", "foundry", "project.parameters.json"))
+	assert.NoFileExists(t, filepath.Join(dir, "custom", "foundry", "main.bicep"))
+}
+
+func TestEjectInfra_RefusesNonEmptyDeclaredFoundryTarget(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	yamlBody := `name: my-project
+infra:
+  provider: bicep
+  layers:
+    - name: app
+      path: infra/app
+    - name: foundry
+      path: custom/foundry
+      provider: microsoft.foundry
+services:
+  my-foundry:
+    host: azure.ai.project
+`
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), yamlBody)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "custom", "foundry"), 0o750))
+	mustWriteFile(t, filepath.Join(dir, "custom", "foundry", "README.md"), "user content\n")
+
+	err := ejectInfra(dir, "bicep")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
+	assert.Contains(t, localErr.Message, "Foundry infrastructure layer \"foundry\" already exists")
+	assert.NoFileExists(t, filepath.Join(dir, "custom", "foundry", "main.bicep"))
+}
+
+func TestAzureYAMLUnchanged(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "azure.yaml")
+	mustWriteFile(t, path, "name: original\n")
+
+	unchanged, err := azureYAMLUnchanged(path, []byte("name: original\n"))
+	require.NoError(t, err)
+	assert.True(t, unchanged)
+
+	mustWriteFile(t, path, "name: changed\n")
+	unchanged, err = azureYAMLUnchanged(path, []byte("name: original\n"))
+	require.NoError(t, err)
+	assert.False(t, unchanged)
+}
+
+func TestEjectInfra_RefusesInheritedBicepFoundryLayerProvider(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+infra:
+  provider: bicep
+  layers:
+    - name: app
+      path: infra/app
+    - name: foundry
+      path: infra/foundry
+services:
+  my-foundry:
+    host: azure.ai.project
+`)
+
+	err := ejectInfra(dir, "bicep")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Contains(t, localErr.Message, "already uses provider \"bicep\"")
+	assert.NoDirExists(t, filepath.Join(dir, "infra", "foundry"))
+	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "microsoft.foundry")
+}
+
+func TestEjectInfra_AppendsIndependentFoundryLayer(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+infra:
+  provider: bicep
+  layers:
+    - name: network
+      path: infra/network
+    - name: app
+      path: infra/app
+      dependsOn: [network]
+services:
+  my-foundry:
+    host: azure.ai.project
+`)
+
+	require.NoError(t, ejectInfra(dir, "bicep"))
+	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // temp test path
+	require.NoError(t, err)
+	var doc struct {
+		Infra struct {
+			Layers []struct {
+				Name      string   `yaml:"name"`
+				DependsOn []string `yaml:"dependsOn"`
+			} `yaml:"layers"`
+		} `yaml:"infra"`
+	}
+	require.NoError(t, yaml.Unmarshal(raw, &doc))
+	require.Len(t, doc.Infra.Layers, 3)
+	assert.Empty(t, doc.Infra.Layers[0].DependsOn)
+	assert.Equal(t, []string{"network"}, doc.Infra.Layers[1].DependsOn)
+	assert.Empty(t, doc.Infra.Layers[2].DependsOn)
+}
+
+func TestEjectInfra_PreservesExistingLayerHooksAndDependencies(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+infra:
+  provider: bicep
+  layers:
+    - name: network
+      path: infra/network
+      hooks:
+        postprovision:
+          - run: azd env set VNET_ID value
+    - name: app
+      path: infra/app
+      dependsOn: [network]
+services:
+  my-foundry:
+    host: azure.ai.project
+`)
+
+	require.NoError(t, ejectInfra(dir, "bicep"))
+	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // temp test path
+	require.NoError(t, err)
+	var doc struct {
+		Infra struct {
+			Layers []struct {
+				Name      string   `yaml:"name"`
+				DependsOn []string `yaml:"dependsOn"`
+				Hooks     map[string][]struct {
+					Run string `yaml:"run"`
+				} `yaml:"hooks"`
+			} `yaml:"layers"`
+		} `yaml:"infra"`
+	}
+	require.NoError(t, yaml.Unmarshal(raw, &doc))
+	require.Len(t, doc.Infra.Layers, 3)
+	assert.Equal(t, "azd env set VNET_ID value", doc.Infra.Layers[0].Hooks["postprovision"][0].Run)
+	assert.Empty(t, doc.Infra.Layers[0].DependsOn)
+	assert.Equal(t, []string{"network"}, doc.Infra.Layers[1].DependsOn)
+	assert.Empty(t, doc.Infra.Layers[2].DependsOn)
+}
+
+func TestEjectInfra_RefusesChangingExistingBicepLayerProvider(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	yamlBody := `name: my-project
+infra:
+  provider: bicep
+  layers:
+    - name: app
+      path: infra/app
+    - name: foundry
+      path: infra/foundry
+      provider: bicep
+services:
+  my-foundry:
+    host: azure.ai.project
+`
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), yamlBody)
+
+	err := ejectInfra(dir, "terraform")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidAzureYaml, localErr.Code)
+	assert.Contains(t, localErr.Message, "already uses provider")
+	assert.NoDirExists(t, filepath.Join(dir, "infra", "foundry"))
+}
+
+func TestEjectInfra_RefusesExistingBicepFoundryLayer(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+infra:
+  provider: bicep
+  layers:
+    - name: app
+      path: infra/app
+    - name: foundry
+      path: infra/foundry
+      provider: bicep
+services:
+  my-foundry:
+    host: azure.ai.project
+`)
+
+	err := ejectInfra(dir, "bicep")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Contains(t, localErr.Message, "already uses provider \"bicep\"")
+	assert.NoDirExists(t, filepath.Join(dir, "infra", "foundry"))
+}
+
+func TestEjectInfra_AllowsNestedFoundryLayerPath(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+infra:
+  provider: bicep
+  layers:
+    - name: app
+      path: infra
+services:
+  my-foundry:
+    host: azure.ai.project
+`)
+
+	require.NoError(t, ejectInfra(dir, "bicep"))
+	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", "main.bicep"))
+}
+
+func TestEjectInfra_MergesNonConflictingUndeclaredFoundryDirectory(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	yamlBody := `name: my-project
+infra:
+  provider: bicep
+  layers:
+    - name: app
+      path: infra/app
+services:
+  my-foundry:
+    host: azure.ai.project
+`
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), yamlBody)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra", "foundry"), 0o750))
+	mustWriteFile(t, filepath.Join(dir, "infra", "foundry", "README.md"), "keep me\n")
+
+	require.NoError(t, ejectInfra(dir, "bicep"))
+	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", "main.bicep"))
+	readme, err := os.ReadFile(filepath.Join(dir, "infra", "foundry", "README.md")) //nolint:gosec
+	require.NoError(t, err)
+	assert.Equal(t, "keep me\n", string(readme))
+}
+
+func TestEjectInfra_RefusesGeneratedFileConflictWithoutUpdatingAzureYaml(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	yamlBody := `name: my-project
+infra:
+  provider: bicep
+  layers:
+    - name: app
+      path: infra/app
+services:
+  my-foundry:
+    host: azure.ai.project
+`
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), yamlBody)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra", "foundry"), 0o750))
+	mustWriteFile(t, filepath.Join(dir, "infra", "foundry", "main.bicep"), "// conflict\n")
+
+	err := ejectInfra(dir, "bicep")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
+	assert.Contains(t, localErr.Message, "./infra/foundry/main.bicep")
+
+	raw, readErr := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // temp test path
+	require.NoError(t, readErr)
+	assert.Equal(t, yamlBody, string(raw))
+	conflict, readErr := os.ReadFile(filepath.Join(dir, "infra", "foundry", "main.bicep")) //nolint:gosec
+	require.NoError(t, readErr)
+	assert.Equal(t, "// conflict\n", string(conflict))
+}
+
+func TestEjectInfra_RefusesFoundryLayerOutsideProject(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+infra:
+  layers:
+    - name: app
+      path: infra/app
+      provider: bicep
+    - name: foundry
+      path: ../foundry
+      provider: microsoft.foundry
+      dependsOn: [app]
+services:
+  my-foundry:
+    host: azure.ai.project
+`)
+
+	err := ejectInfra(dir, "bicep")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidAzureYaml, localErr.Code)
+	assert.Contains(t, localErr.Message, "must not contain '..'")
+	assert.NoDirExists(t, filepath.Join(filepath.Dir(dir), "foundry"))
 }
 
 func TestEjectInfra_RefusesWhenNoFoundryService(t *testing.T) {
@@ -227,7 +986,7 @@ func TestEjectInfra_HappyPath_WritesExpectedFiles(t *testing.T) {
 	assert.Contains(t, stdout, "infra/main.bicep")
 	assert.Contains(t, stdout, "infra/modules/acr.bicep")
 	assert.Contains(t, stdout, "infra/main.parameters.json")
-	assert.Contains(t, stdout, "Future provisions will read from ./infra/")
+	assert.Contains(t, stdout, "Future provisions will read the Foundry layer from ./infra/")
 	assert.Contains(t, stdout, "Next steps:")
 	assert.Contains(t, stdout, "azd provision")
 
@@ -517,10 +1276,8 @@ services:
 
 func TestEjectInfra_RefusesWhenInfraIsAFile(t *testing.T) {
 	t.Parallel()
-	// Pre-existing `infra` as a regular file (not a directory) hits the
-	// same "already exists" refusal as a pre-existing directory. os.Stat
-	// can't tell the caller's intent apart, and overwriting a user file
-	// silently would violate "no implicit destruction of user-owned files".
+	// Pre-existing `infra` as a regular file cannot be used as the generated
+	// directory and must never be overwritten.
 	dir := t.TempDir()
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
 	mustWriteFile(t, filepath.Join(dir, "infra"), "this is a file, not a dir")
@@ -538,6 +1295,34 @@ func TestEjectInfra_RefusesWhenInfraIsAFile(t *testing.T) {
 	got, err := os.ReadFile(filepath.Join(dir, "infra")) //nolint:gosec // G304: test file path from t.TempDir()
 	require.NoError(t, err)
 	assert.Equal(t, "this is a file, not a dir", string(got))
+}
+
+func TestEjectInfra_RefusesSymlinkedFoundryPath(t *testing.T) {
+	t.Parallel()
+	projectRoot := t.TempDir()
+	outside := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
+	if err := os.Symlink(outside, filepath.Join(projectRoot, "infra", "foundry")); err != nil {
+		t.Skipf("symlink creation unavailable: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), `name: my-project
+infra:
+  layers:
+    - name: app
+      path: infra/app
+      provider: bicep
+services:
+  my-foundry:
+    host: azure.ai.project
+`)
+
+	err := ejectInfra(projectRoot, "bicep")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidAzureYaml, localErr.Code)
+	assert.Contains(t, localErr.Message, "escapes project root")
+	assert.NoFileExists(t, filepath.Join(outside, "main.bicep"))
 }
 
 func TestValidateStandaloneEjectArgs(t *testing.T) {
@@ -1134,9 +1919,7 @@ func TestEnsureCompatibleInfraProvider(t *testing.T) {
 	}
 }
 
-// The gate refuses a project that keeps its IaC elsewhere on both branches:
-// standalone eject and the init fall-through both end in ejectInfra.
-func TestResolveInfraGate_RefusesCustomInfraPath(t *testing.T) {
+func TestResolveInfraGate_AllowsCustomInfraPath(t *testing.T) {
 	tests := []struct {
 		name string
 		yaml string
@@ -1172,19 +1955,14 @@ services:
 			require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "myinfra"), 0o750))
 			t.Chdir(projectRoot)
 
-			_, err := resolveInfraGate("bicep")
-			require.Error(t, err)
-			localErr, ok := errors.AsType[*azdext.LocalError](err)
-			require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-			assert.Equal(t, exterrors.CodeInfraEjectCustomInfraPath, localErr.Code)
-			assert.Contains(t, localErr.Message, "myinfra")
+			gate, err := resolveInfraGate("bicep")
+			require.NoError(t, err)
+			assert.Equal(t, tt.name == "project that already declares a foundry service", gate.standaloneEject)
 		})
 	}
 }
 
-// Terraform eject stamps infra.provider and removes infra.path. Refusing before
-// anything is written is what keeps a project's own IaC from being orphaned.
-func TestEjectInfra_Terraform_RefusesCustomInfraPath(t *testing.T) {
+func TestEjectInfra_Terraform_HonorsCustomInfraPath(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	azureYAML := `name: my-project
@@ -1196,20 +1974,12 @@ services:
 `
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), azureYAML)
 
-	err := ejectInfra(dir, "terraform")
-	require.Error(t, err)
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-	assert.Equal(t, exterrors.CodeInfraEjectCustomInfraPath, localErr.Code)
-
-	assert.NoDirExists(t, filepath.Join(dir, "infra"))
-	raw, readErr := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // G304: test path from t.TempDir()
-	require.NoError(t, readErr)
-	assert.Equal(t, azureYAML, string(raw),
-		"a refused eject must not stamp infra.provider or drop the declared infra.path")
+	require.NoError(t, ejectInfra(dir, "terraform"))
+	assert.FileExists(t, filepath.Join(dir, "myinfra", "main.tf"))
+	assert.FileExists(t, filepath.Join(dir, "myinfra", "main.tfvars.json"))
 }
 
-func TestResolveInfraGate_RefusesInfraLayers(t *testing.T) {
+func TestResolveInfraGate_AllowsInfraLayers(t *testing.T) {
 	tests := []struct {
 		name string
 		host string
@@ -1234,17 +2004,14 @@ services:
 `, tt.host))
 			t.Chdir(projectRoot)
 
-			_, err := resolveInfraGate("terraform")
-			require.Error(t, err)
-			localErr, ok := errors.AsType[*azdext.LocalError](err)
-			require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-			assert.Equal(t, exterrors.CodeInfraEjectLayersUnsupported, localErr.Code)
-			assert.NoDirExists(t, filepath.Join(projectRoot, "infra"))
+			gate, err := resolveInfraGate("terraform")
+			require.NoError(t, err)
+			assert.Equal(t, tt.host == "azure.ai.project", gate.standaloneEject)
 		})
 	}
 }
 
-func TestResolveInfraGate_RefusesBicepWithTerraformProvider(t *testing.T) {
+func TestResolveInfraGate_DefersProviderCompatibility(t *testing.T) {
 	tests := []struct {
 		name string
 		host string
@@ -1266,17 +2033,14 @@ services:
 `, tt.host))
 			t.Chdir(projectRoot)
 
-			_, err := resolveInfraGate("bicep")
-			require.Error(t, err)
-			localErr, ok := errors.AsType[*azdext.LocalError](err)
-			require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-			assert.Equal(t, exterrors.CodeInfraEjectProviderConflict, localErr.Code)
-			assert.NoDirExists(t, filepath.Join(projectRoot, "infra"))
+			gate, err := resolveInfraGate("bicep")
+			require.NoError(t, err)
+			assert.Equal(t, tt.host == "azure.ai.project", gate.standaloneEject)
 		})
 	}
 }
 
-func TestResolveInfraGate_RefusesCustomInfraModule(t *testing.T) {
+func TestResolveInfraGate_AllowsCustomInfraModule(t *testing.T) {
 	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
 	projectRoot := t.TempDir()
 	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), `name: my-project
@@ -1288,15 +2052,12 @@ services:
 `)
 	t.Chdir(projectRoot)
 
-	_, err := resolveInfraGate("bicep")
-	require.Error(t, err)
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-	assert.Equal(t, exterrors.CodeInfraEjectCustomModule, localErr.Code)
-	assert.NoDirExists(t, filepath.Join(projectRoot, "infra"))
+	gate, err := resolveInfraGate("bicep")
+	require.NoError(t, err)
+	assert.False(t, gate.standaloneEject)
 }
 
-func TestEjectInfra_RefusesInfraLayers(t *testing.T) {
+func TestEjectInfra_RefusesOnlyFoundryLayer(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	azureYAML := `name: my-project
@@ -1315,7 +2076,7 @@ services:
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-	assert.Equal(t, exterrors.CodeInfraEjectLayersUnsupported, localErr.Code)
+	assert.Equal(t, exterrors.CodeInvalidAzureYaml, localErr.Code)
 	assert.NoDirExists(t, filepath.Join(dir, "infra"))
 
 	raw, readErr := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // G304: test path from t.TempDir()
@@ -1323,7 +2084,7 @@ services:
 	assert.Equal(t, azureYAML, string(raw), "a refused eject must not rewrite the provider or layers")
 }
 
-func TestEjectInfra_RefusesCustomInfraModule(t *testing.T) {
+func TestEjectInfra_HonorsCustomInfraModule(t *testing.T) {
 	t.Parallel()
 	for _, provider := range []string{"bicep", "terraform"} {
 		t.Run(provider, func(t *testing.T) {
@@ -1338,16 +2099,13 @@ services:
 `
 			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), azureYAML)
 
-			err := ejectInfra(dir, provider)
-			require.Error(t, err)
-			localErr, ok := errors.AsType[*azdext.LocalError](err)
-			require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-			assert.Equal(t, exterrors.CodeInfraEjectCustomModule, localErr.Code)
-			assert.NoDirExists(t, filepath.Join(dir, "infra"))
-
-			raw, readErr := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // G304: test path
-			require.NoError(t, readErr)
-			assert.Equal(t, azureYAML, string(raw), "a refused eject must not rewrite infra.module")
+			require.NoError(t, ejectInfra(dir, provider))
+			if provider == "bicep" {
+				assert.FileExists(t, filepath.Join(dir, "infra", "platform.bicep"))
+				assert.FileExists(t, filepath.Join(dir, "infra", "platform.parameters.json"))
+			} else {
+				assert.FileExists(t, filepath.Join(dir, "infra", "platform.tfvars.json"))
+			}
 		})
 	}
 }
@@ -1368,7 +2126,7 @@ services:
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-	assert.Equal(t, exterrors.CodeInfraEjectProviderConflict, localErr.Code)
+	assert.Equal(t, exterrors.CodeInvalidAzureYaml, localErr.Code)
 	assert.NoDirExists(t, filepath.Join(dir, "infra"))
 }
 
@@ -1415,11 +2173,7 @@ func TestResolveInfraGate_NoProjectRunsInit(t *testing.T) {
 	assert.Empty(t, gate.projectRoot, "no project root to eject from yet")
 }
 
-// A project with no Foundry service now runs the whole init flow before
-// ejecting, so the ./infra/ conflict has to surface up front instead of after
-// the user has answered every prompt. The existing tree usually belongs to the
-// project's own services, so the refusal must offer the non-destructive path.
-func TestResolveInfraGate_RefusesExistingInfraBeforeRunningInit(t *testing.T) {
+func TestResolveInfraGate_AllowsExistingInfraBeforeRunningInit(t *testing.T) {
 	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
 	projectRoot := t.TempDir()
 	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), `name: my-project
@@ -1430,17 +2184,10 @@ services:
 	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
 	t.Chdir(projectRoot)
 
-	_, err := resolveInfraGate("bicep")
-	require.Error(t, err)
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-	assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
-	assert.Contains(t, localErr.Suggestion, "without --infra",
-		"the non-destructive path has to be offered, and offered first")
-	assert.Less(t,
-		strings.Index(localErr.Suggestion, "without --infra"),
-		strings.Index(localErr.Suggestion, "delete ./infra/"),
-		"never lead with deleting IaC the extension may not have authored")
+	gate, err := resolveInfraGate("bicep")
+	require.NoError(t, err)
+	assert.False(t, gate.standaloneEject)
+	assert.Equal(t, projectRoot, gate.projectRoot)
 }
 
 func TestResolveInfraGate_PropagatesInvalidFoundryConfiguration(t *testing.T) {
@@ -1573,38 +2320,6 @@ services:
 	assert.Contains(t, string(raw), "host: azure.ai.project")
 }
 
-// The pre-existing ./infra/ refusal moved into the gate, so it now fires before
-// the user is walked through init. Asserted at the command level because the
-// ordering is what the gate exists for.
-func TestInitInfra_ExistingProjectWithPreexistingInfraRefusesUpFront(t *testing.T) {
-	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
-	projectRoot := t.TempDir()
-	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), `name: my-project
-services:
-  web:
-    host: containerapp
-`)
-	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
-	t.Chdir(projectRoot)
-
-	cmd := newInitCommand(&azdext.ExtensionContext{})
-	cmd.SetArgs([]string{"--infra"})
-	cmd.SetOut(io.Discard)
-	cmd.SetErr(io.Discard)
-
-	var execErr error
-	withCapturedStdout(t, func() {
-		execErr = cmd.Execute()
-	})
-
-	require.Error(t, execErr)
-	localErr, ok := errors.AsType[*azdext.LocalError](execErr)
-	require.True(t, ok, "expected *azdext.LocalError, got %T", execErr)
-	assert.NotEqual(t, exterrors.CodeInfraEjectNoFoundryService, localErr.Code,
-		"--infra must no longer refuse a project that simply has no agent service yet")
-	assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
-}
-
 func TestEjectInfra_Terraform_HappyPath_WritesExpectedFiles(t *testing.T) {
 	// Not parallel: captures os.Stdout (see TestEjectInfra_HappyPath_WritesExpectedFiles).
 	dir := t.TempDir()
@@ -1615,7 +2330,7 @@ func TestEjectInfra_Terraform_HappyPath_WritesExpectedFiles(t *testing.T) {
 	})
 
 	// Every embedded .tf under templates/terraform/ should be on disk under
-	// ./infra/, plus the generated main.tfvars.json. Bicep artifacts must NOT
+	// ./infra/, plus the generated marker and main.tfvars.json. Bicep artifacts must NOT
 	// be present.
 	expected := []string{
 		filepath.Join("infra", "provider.tf"),
@@ -1625,6 +2340,7 @@ func TestEjectInfra_Terraform_HappyPath_WritesExpectedFiles(t *testing.T) {
 		filepath.Join("infra", "connections.tf"),
 		filepath.Join("infra", "outputs.tf"),
 		filepath.Join("infra", "main.tfvars.json"),
+		filepath.Join("infra", foundryTerraformMarker),
 	}
 	for _, rel := range expected {
 		info, err := os.Stat(filepath.Join(dir, rel))
@@ -1648,6 +2364,18 @@ func TestEjectInfra_Terraform_HappyPath_WritesExpectedFiles(t *testing.T) {
 	assert.Contains(t, stdout, "infra/main.tfvars.json")
 	assert.Contains(t, stdout, "infra.provider: terraform")
 	assert.Contains(t, stdout, "azd provision")
+
+	rawYAML, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // G304: test path from t.TempDir()
+	require.NoError(t, err)
+	var projectDoc struct {
+		Infra struct {
+			Provider string `yaml:"provider"`
+			Layers   []any  `yaml:"layers"`
+		} `yaml:"infra"`
+	}
+	require.NoError(t, yaml.Unmarshal(rawYAML, &projectDoc))
+	assert.Equal(t, "terraform", projectDoc.Infra.Provider)
+	assert.Empty(t, projectDoc.Infra.Layers)
 
 	// This fixture has a docker: agent, so acr.tf is present and the generated
 	// outputs.tf must reference the registry resources (not empty strings).
@@ -1708,6 +2436,7 @@ func TestEjectInfra_Terraform_TfvarsShape(t *testing.T) {
 	assert.Equal(t, "${AZURE_AI_PROJECT_NAME}", doc["foundry_project_name"])
 	assert.Equal(t, "${AZURE_SUBSCRIPTION_ID}", doc["subscription_id"])
 	assert.Equal(t, "${AZURE_PRINCIPAL_ID}", doc["principal_id"])
+	assert.NotContains(t, doc, "create_resource_group")
 
 	// include_acr is NOT written to tfvars; the ACR decision is the presence of
 	// acr.tf at eject time, not a Terraform variable.
@@ -1822,7 +2551,7 @@ services:
 	assert.NotContains(t, string(outputs), "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
 	assert.NotContains(t, string(outputs), "AZURE_AI_PROJECT_ACR_CONNECTION_NAME")
 	// The non-ACR outputs are still present.
-	assert.Contains(t, string(outputs), "AZURE_RESOURCE_GROUP")
+	assert.Contains(t, string(outputs), "AZURE_FOUNDRY_RESOURCE_GROUP")
 	assert.Contains(t, string(outputs), "FOUNDRY_PROJECT_ENDPOINT")
 
 	// main.tf must not carry any ACR leftovers (e.g. container_registry_name).
@@ -1839,23 +2568,31 @@ services:
 	assert.NotContains(t, doc, "include_acr")
 }
 
-func TestEjectInfra_Terraform_RefusesWhenInfraExists(t *testing.T) {
+func TestEjectInfra_Terraform_MigratesExistingInfraToLayers(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"),
+		strings.Replace(validFoundryAzureYAML, "provider: microsoft.foundry", "provider: bicep", 1))
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), 0o750))
+	mustWriteFile(t, filepath.Join(dir, "infra", "main.bicep"), "// existing infrastructure\n")
 
 	err := ejectInfra(dir, "terraform")
-	require.Error(t, err)
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok, "expected structured azdext.LocalError, got %T", err)
-	assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
+	require.NoError(t, err)
+	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", "main.tf"))
+	tfvars, err := os.ReadFile(filepath.Join(dir, "infra", "foundry", "main.tfvars.json")) //nolint:gosec
+	require.NoError(t, err)
+	var tfvarsDoc map[string]any
+	require.NoError(t, json.Unmarshal(tfvars, &tfvarsDoc))
+	assert.NotContains(t, tfvarsDoc, "create_resource_group")
+	assert.Equal(t, "${AZURE_FOUNDRY_RESOURCE_GROUP=rg-${AZURE_ENV_NAME}-foundry}",
+		tfvarsDoc["resource_group_name"])
+	assert.Equal(t, "${AZURE_AI_PROJECT_NAME=}", tfvarsDoc["foundry_project_name"])
+	assert.Equal(t, "${AZD_RESOURCE_TOKEN_SALT}", tfvarsDoc["resource_token_salt"])
 
-	// The refusal must fire before azure.yaml is touched: provider stays foundry.
 	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // G304: test file path from t.TempDir()
 	require.NoError(t, err)
-	assert.Contains(t, string(raw), "provider: microsoft.foundry",
-		"azure.yaml must not be stamped when eject refuses")
+	assert.Contains(t, string(raw), "path: infra/foundry")
+	assert.Contains(t, string(raw), "provider: terraform")
 }
 
 func TestEjectInfra_Terraform_RefusesWhenNetworkDeclared(t *testing.T) {

@@ -160,7 +160,8 @@ module resources 'modules/resources.bicep' = {
 
 // Outputs
 
-output AZURE_RESOURCE_GROUP string = resourceGroup.name
+output AZURE_RESOURCE_GROUP string = resourceGroupName
+output AZURE_FOUNDRY_RESOURCE_GROUP string = resourceGroupName
 output AZURE_AI_PROJECT_ID string = resources.outputs.AZURE_AI_PROJECT_ID
 output AZURE_AI_ACCOUNT_NAME string = resources.outputs.AZURE_AI_ACCOUNT_NAME
 output AZURE_AI_PROJECT_NAME string = resources.outputs.AZURE_AI_PROJECT_NAME

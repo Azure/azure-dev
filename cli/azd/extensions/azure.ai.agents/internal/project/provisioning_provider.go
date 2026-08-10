@@ -5,14 +5,13 @@ package project
 
 import "slices"
 
-// FoundryProviderName is the value written to `infra.provider` in
-// azure.yaml by `azd ai agent init` and looked up by azd's provider
-// resolver to dispatch provisioning to azure.ai.projects.
+// FoundryProviderName is the value written to an infra provider field in
+// azure.yaml by `azd ai agent init` and looked up by azd's provider resolver.
 const FoundryProviderName = "microsoft.foundry"
 
 // BicepProviderName and TerraformProviderName are azd-core's built-in
-// provisioning providers. `azd ai agent init --infra=terraform` stamps
-// TerraformProviderName onto azure.yaml so azd-core's Terraform provider
+// provisioning providers. `azd ai agent init --infra=terraform` uses
+// TerraformProviderName for the Foundry layer so azd-core's Terraform provider
 // (not this extension's microsoft.foundry provider) handles provisioning.
 const (
 	BicepProviderName     = "bicep"

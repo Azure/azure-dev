@@ -96,6 +96,11 @@ func autoInstallExtensionRequirements(
 		return autoInstallResult{declined: true}, nil
 	}
 
+	selections, err = orderInstallSelections(selections)
+	if err != nil {
+		return autoInstallResult{}, err
+	}
+
 	console.Message(ctx, "")
 	installedAny := false
 	for _, selection := range selections {
@@ -116,6 +121,62 @@ func autoInstallExtensionRequirements(
 	}
 
 	return autoInstallResult{installed: installedAny}, nil
+}
+
+func orderInstallSelections(
+	selections []extensionInstallSelection,
+) ([]extensionInstallSelection, error) {
+	byID := make(map[string]extensionInstallSelection, len(selections))
+	for _, selection := range selections {
+		byID[strings.ToLower(selection.extension.Id)] = selection
+	}
+
+	const (
+		selectionVisiting = iota + 1
+		selectionVisited
+	)
+	state := make(map[string]int, len(selections))
+	ordered := make([]extensionInstallSelection, 0, len(selections))
+	var visit func(extensionInstallSelection) error
+	visit = func(selection extensionInstallSelection) error {
+		id := strings.ToLower(selection.extension.Id)
+		switch state[id] {
+		case selectionVisited:
+			return nil
+		case selectionVisiting:
+			// Installation reports dependency cycles. Avoid recursing forever while
+			// preserving a deterministic plan for the manager to validate.
+			return nil
+		}
+		state[id] = selectionVisiting
+
+		version, err := extensions.ResolveExtensionVersion(
+			selection.extension,
+			selection.requirement.versionPreference,
+			nil,
+		)
+		if err != nil {
+			return fmt.Errorf("resolving required extension %s: %w", selection.extension.Id, err)
+		}
+		for _, dependency := range version.Dependencies {
+			if dependencySelection, selected := byID[strings.ToLower(dependency.Id)]; selected {
+				if err := visit(dependencySelection); err != nil {
+					return err
+				}
+			}
+		}
+
+		state[id] = selectionVisited
+		ordered = append(ordered, selection)
+		return nil
+	}
+
+	for _, selection := range selections {
+		if err := visit(selection); err != nil {
+			return nil, err
+		}
+	}
+	return ordered, nil
 }
 
 func displayExtensionRequirements(
@@ -275,11 +336,24 @@ func manualInstallError(
 			fmt.Fprintf(&suggestion, "\n\nChoose one source for %s:", requirement.extension.Id)
 		}
 		for _, candidate := range candidates {
+			versionArg := ""
+			if requirement.versionPreference != "" {
+				version, err := extensions.ResolveExtensionVersion(
+					candidate,
+					requirement.versionPreference,
+					nil,
+				)
+				if err != nil {
+					return fmt.Errorf("resolving required extension %s: %w", candidate.Id, err)
+				}
+				versionArg = fmt.Sprintf(" --version %s", version.Version)
+			}
 			fmt.Fprintf(
 				&suggestion,
-				"\n  azd extension install %s --source %s",
+				"\n  azd extension install %s --source %s%s",
 				candidate.Id,
 				candidate.Source,
+				versionArg,
 			)
 		}
 	}

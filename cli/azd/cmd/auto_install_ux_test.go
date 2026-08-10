@@ -472,6 +472,70 @@ func TestAutoInstallExtensionRequirementsNoPromptAmbiguous(t *testing.T) {
 	assert.Empty(t, manager.installed)
 }
 
+func TestManualInstallErrorIncludesResolvedVersion(t *testing.T) {
+	t.Parallel()
+
+	candidate := autoInstallTestExtension(
+		"demo",
+		"Demo Extension",
+		"azd",
+		extensions.SourceCategoryAzd,
+	)
+	candidate.Versions = append(candidate.Versions, extensions.ExtensionVersion{Version: "2.0.0"})
+	requirement := autoInstallTestRequirement(candidate)
+	requirement.versionPreference = ">=1.0.0 <2.0.0"
+
+	err := manualInstallError(
+		[]projectExtensionRequirement{requirement},
+		"Manual installation required.",
+	)
+
+	suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+	require.True(t, ok)
+	require.Contains(
+		t,
+		suggestionErr.Suggestion,
+		"azd extension install demo --source azd --version 1.2.3",
+	)
+}
+
+func TestAutoInstallExtensionRequirementsHonorsSelectedDependencySource(t *testing.T) {
+	clearAgentEnvVarsForTest(t)
+	parent := autoInstallTestExtension("parent", "Parent", "azd", extensions.SourceCategoryAzd)
+	parent.Versions[0].Dependencies = []extensions.ExtensionDependency{{Id: "child"}}
+	child := autoInstallTestExtension("child", "Child", "local", extensions.SourceCategoryLocal)
+
+	console := mockinput.NewMockConsole()
+	console.SetNoPromptMode(true)
+	manager := &fakeExtensionAutoInstallManager{installed: map[string]*extensions.Extension{}}
+	var installOrder []string
+	manager.installFn = func(extension *extensions.ExtensionMetadata) (*extensions.ExtensionVersion, error) {
+		installOrder = append(installOrder, extension.Id+"@"+extension.Source)
+		version := &extension.Versions[0]
+		manager.installed[extension.Id] = &extensions.Extension{
+			Id:      extension.Id,
+			Version: version.Version,
+			Source:  extension.Source,
+		}
+		return version, nil
+	}
+
+	result, err := autoInstallExtensionRequirements(
+		t.Context(),
+		console,
+		manager,
+		[]projectExtensionRequirement{
+			autoInstallTestRequirement(parent),
+			autoInstallTestRequirement(child),
+		},
+		autoInstallDisplayContext{requiredByProject: true},
+	)
+
+	require.NoError(t, err)
+	require.True(t, result.installed)
+	require.Equal(t, []string{"child@local", "parent@azd"}, installOrder)
+}
+
 func TestAutoInstallExtensionRequirementsShowsSourceForMultiSourcePlan(t *testing.T) {
 	clearAgentEnvVarsForTest(t)
 

@@ -386,7 +386,7 @@ func TestMissingProjectExtensionsSkipsExtensionPackDependencies(t *testing.T) {
 	require.Equal(t, "microsoft.foundry", requirements[0].extension.Id)
 }
 
-func TestMissingProjectExtensionsKeepsProviderWhenDependencyDiffersBySource(t *testing.T) {
+func TestMissingProjectExtensionsNarrowsParentToSourceWhoseDependencyProvidesProvider(t *testing.T) {
 	manager := &fakeExtensionAutoInstallManager{
 		available: []*extensions.ExtensionMetadata{
 			{
@@ -398,9 +398,12 @@ func TestMissingProjectExtensionsKeepsProviderWhenDependencyDiffersBySource(t *t
 				}},
 			},
 			{
-				Id:       "test.pack",
-				Source:   "local",
-				Versions: []extensions.ExtensionVersion{{Version: "1.0.0"}},
+				Id:     "test.pack",
+				Source: "local",
+				Versions: []extensions.ExtensionVersion{{
+					Version:      "1.0.0",
+					Dependencies: []extensions.ExtensionDependency{{Id: "test.provider"}},
+				}},
 			},
 			{
 				Id:     "test.provider",
@@ -412,6 +415,13 @@ func TestMissingProjectExtensionsKeepsProviderWhenDependencyDiffersBySource(t *t
 						Name: "demo",
 						Type: extensions.ServiceTargetProviderType,
 					}},
+				}},
+			},
+			{
+				Id:     "test.provider",
+				Source: "local",
+				Versions: []extensions.ExtensionVersion{{
+					Version: "1.0.0",
 				}},
 			},
 		},
@@ -432,9 +442,10 @@ func TestMissingProjectExtensionsKeepsProviderWhenDependencyDiffersBySource(t *t
 	)
 
 	require.NoError(t, err)
-	require.Len(t, requirements, 2)
+	require.Len(t, requirements, 1)
 	assert.Equal(t, "test.pack", requirements[0].extension.Id)
-	assert.Equal(t, "test.provider", requirements[1].extension.Id)
+	require.Len(t, requirements[0].candidates, 1)
+	assert.Equal(t, "azd", requirements[0].candidates[0].Source)
 }
 
 // A pack pins the version of its dependency, so a later version of that dependency that publishes

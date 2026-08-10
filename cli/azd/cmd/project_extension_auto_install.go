@@ -485,6 +485,40 @@ func resolvedDependencyProvidesProvider(
 	)
 }
 
+func extensionCandidateProvidesProvider(
+	ctx context.Context,
+	extensionManager extensionAutoInstallManager,
+	candidate *extensions.ExtensionMetadata,
+	versionPreference string,
+	capability extensions.CapabilityType,
+	provider string,
+) (bool, error) {
+	version, err := extensions.ResolveExtensionVersion(candidate, versionPreference, nil)
+	if err != nil {
+		return false, err
+	}
+	if extensionVersionProvidesProvider(version, capability, provider) {
+		return true, nil
+	}
+
+	resolved := map[string]resolvedExtensionDependency{}
+	key := newExtensionRef(candidate.Source, candidate.Id)
+	resolveExtensionDependencies(
+		ctx,
+		extensionManager,
+		candidate,
+		version.Dependencies,
+		resolved,
+		map[extensionRef]struct{}{key: {}},
+	)
+	for dependency := range maps.Values(resolved) {
+		if resolvedDependencyProvidesProvider(dependency, capability, provider) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // extensionForProvider narrows an extension to every version supplying the provider. Unlike
 // filterExtensionsForProvider this ignores which version would be selected, so callers can tell an
 // extension that cannot supply the provider from one whose selected version happens not to.
@@ -568,17 +602,23 @@ func missingProjectExtensions(
 		requirementConflicts := map[string]error{}
 		for _, extensionId := range slices.Sorted(maps.Keys(requirements)) {
 			requirement := requirements[extensionId]
-			providingCandidates := slices.DeleteFunc(
-				slices.Clone(requirementCandidates(requirement)),
-				func(candidate *extensions.ExtensionMetadata) bool {
-					selectedVersion, err := extensions.ResolveExtensionVersion(
-						candidate,
-						requirement.versionPreference,
-						nil,
-					)
-					return err != nil || !extensionVersionProvidesProvider(selectedVersion, capability, provider)
-				},
-			)
+			var providingCandidates []*extensions.ExtensionMetadata
+			for _, candidate := range requirementCandidates(requirement) {
+				provides, err := extensionCandidateProvidesProvider(
+					ctx,
+					extensionManager,
+					candidate,
+					requirement.versionPreference,
+					capability,
+					provider,
+				)
+				if err != nil {
+					return fmt.Errorf("resolving required extension %s: %w", extensionId, err)
+				}
+				if provides {
+					providingCandidates = append(providingCandidates, candidate)
+				}
+			}
 			if len(providingCandidates) > 0 {
 				requirement.candidates = providingCandidates
 				requirement.extension = providingCandidates[0]

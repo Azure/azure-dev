@@ -28,11 +28,19 @@ func TestIDKey_IsPerName(t *testing.T) {
 
 // Names that are not valid env identifiers still have to produce distinct,
 // stable keys.
+//
+// The readable half of the key cannot tell "my group" from "my-group" — both
+// sanitize to MY_GROUP. Letting them share a key is the collision the test
+// above describes: the second declaration finds the first's id cached and
+// scores the wrong group.
 func TestIDKey_NormalizesNames(t *testing.T) {
-	assert.Equal(t, idKey("eval", "my group"), idKey("eval", "my-group"),
-		"characters that cannot appear in an env name normalize the same way")
+	assert.NotEqual(t, idKey("eval", "my group"), idKey("eval", "my-group"),
+		"names that sanitize alike are still different names")
 	assert.NotEqual(t, idKey("eval", "a"), idKey("dataset", "a"),
 		"the kind keeps different resources apart")
+
+	assert.Equal(t, idKey("eval", "my group"), idKey("eval", "my group"),
+		"the same name must key the same way on every deploy")
 }
 
 // The id and version keys for the same declaration must not collide.

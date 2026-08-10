@@ -93,3 +93,46 @@ func TestBuildGeneratePlans_NarrowedToOne(t *testing.T) {
 	require.Len(t, plans, 1)
 	assert.Equal(t, generateKindDataset, plans[0].Kind)
 }
+
+// The name becomes a filename, so one carrying a separator would write outside
+// the directory generation was pointed at, and --force would overwrite it.
+func TestGeneratedName_RefusesANameThatWouldLeaveTheDirectory(t *testing.T) {
+	escapes := []string{
+		"../outside",
+		"..\\outside",
+		"sub/dir",
+		"sub\\dir",
+		"..",
+		".",
+		"C:\\Windows\\System32\\drivers\\etc\\hosts",
+		"/etc/passwd",
+	}
+
+	for _, name := range escapes {
+		t.Run(name, func(t *testing.T) {
+			_, err := generatedName(name, "support-agent", "dataset")
+
+			require.Errorf(t, err, "%q must not be accepted as a file name", name)
+			assert.Contains(t, err.Error(), "file name")
+		})
+	}
+}
+
+// The service decides its own character set. Refusing everything it might
+// accept would block names that work.
+func TestGeneratedName_AllowsOrdinaryNames(t *testing.T) {
+	for _, name := range []string{
+		"golden",
+		"support-agent-dataset",
+		"support_agent.v2",
+		"caf\u00e9-dataset",
+		"dataset 2",
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := generatedName(name, "support-agent", "dataset")
+
+			require.NoError(t, err)
+			assert.Equal(t, name, got)
+		})
+	}
+}

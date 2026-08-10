@@ -54,7 +54,7 @@ func TestFingerprint_MissingFileNamesIt(t *testing.T) {
 // every deploy.
 func TestFingerprintKey_IsAValidEnvironmentKey(t *testing.T) {
 	tests := []struct {
-		kind, name, want string
+		kind, name, readable string
 	}{
 		{"dataset", "support-regression", "DATASET_SUPPORT_REGRESSION"},
 		{"evaluator", "quality.v2", "EVALUATOR_QUALITY_V2"},
@@ -65,10 +65,12 @@ func TestFingerprintKey_IsAValidEnvironmentKey(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.want, func(t *testing.T) {
+		t.Run(tt.readable, func(t *testing.T) {
 			key := FingerprintKey(tt.kind, tt.name)
 
-			assert.Equal(t, EnvKeyFingerprintPrefix+tt.want, key)
+			assert.True(t,
+				strings.HasPrefix(key, EnvKeyFingerprintPrefix+tt.readable+"_"),
+				"the key stays readable: %q", key)
 			for _, r := range strings.TrimPrefix(key, EnvKeyFingerprintPrefix) {
 				assert.Truef(t,
 					(r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_',
@@ -84,4 +86,37 @@ func TestFingerprintKey_KindSeparatesTheNamespaces(t *testing.T) {
 	assert.NotEqual(t,
 		FingerprintKey("dataset", "quality"),
 		FingerprintKey("evaluator", "quality"))
+}
+
+// The readable half of the key maps every character outside [A-Z0-9] to an
+// underscore, so these names are indistinguishable in it. Sharing a key means
+// sharing a recorded fingerprint, version and id: both artifacts then look
+// changed on every deploy and republish forever.
+func TestFingerprintKey_NamesThatSanitizeAlikeStillDiffer(t *testing.T) {
+	collidingNames := []string{
+		"quality-a",
+		"quality_a",
+		"quality a",
+		"quality.a",
+		"quality/a",
+		"quality\u00e9a",
+		"qualityXa",
+	}
+
+	seen := make(map[string]string, len(collidingNames))
+	for _, name := range collidingNames {
+		key := FingerprintKey("evaluator", name)
+		if previous, clash := seen[key]; clash {
+			t.Fatalf("%q and %q share the key %q", previous, name, key)
+		}
+		seen[key] = name
+	}
+}
+
+// The digest covers the kind and the name separately, so moving a character
+// across the boundary is not the same artifact.
+func TestFingerprintKey_TheKindBoundaryIsNotAmbiguous(t *testing.T) {
+	assert.NotEqual(t,
+		FingerprintKey("dataset_a", "b"),
+		FingerprintKey("dataset", "a_b"))
 }

@@ -4,6 +4,7 @@
 package dataset_api
 
 import (
+	"bytes"
 	"math"
 	"os"
 	"path/filepath"
@@ -189,12 +190,27 @@ func NextVersion(current string) string {
 	return current + ".1"
 }
 
-// ReadFirstJSONLFile finds and reads the first .jsonl file in a directory.
+// ReadFirstJSONLFile reads the rows to upload from a .jsonl file, or from the
+// first .jsonl in a directory.
+//
+// A file path is read as itself. Resolving it to its directory and scanning
+// would upload whichever .jsonl sorts first, so a project with one file per
+// dataset would register the wrong rows under a name while recording the
+// fingerprint of the declared file — the two would then agree forever.
 //
 // An empty file is refused here rather than uploaded: registering it succeeds,
 // and the failure then surfaces at the run that tries to score it, which is a
 // long way from the command that caused it.
-func ReadFirstJSONLFile(dir string) (string, error) {
+func ReadFirstJSONLFile(path string) (string, error) {
+	if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		data, err := os.ReadFile(path) //nolint:gosec // local artifact path
+		if err != nil {
+			return "", messages.ReadingPath(path, err)
+		}
+		return jsonlContent(filepath.Base(path), data)
+	}
+
+	dir := path
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", messages.ReadingDatasetDirectory(err)
@@ -208,11 +224,23 @@ func ReadFirstJSONLFile(dir string) (string, error) {
 			if err != nil {
 				return "", messages.ReadingPath(e.Name(), err)
 			}
-			if strings.TrimSpace(string(data)) == "" {
-				return "", messages.DatasetFileHasNoRows(e.Name())
-			}
-			return string(data), nil
+			return jsonlContent(e.Name(), data)
 		}
 	}
 	return "", messages.NoJSONLInDirectory(dir)
+}
+
+// utf8BOM is what Windows editors and PowerShell's Set-Content write ahead of
+// otherwise valid UTF-8.
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
+// jsonlContent prepares one file's bytes for upload.
+func jsonlContent(name string, data []byte) (string, error) {
+	// Uploaded as-is a BOM becomes part of the first row's first key, so every
+	// consumer of the dataset sees one malformed record.
+	data = bytes.TrimPrefix(data, utf8BOM)
+	if strings.TrimSpace(string(data)) == "" {
+		return "", messages.DatasetFileHasNoRows(name)
+	}
+	return string(data), nil
 }

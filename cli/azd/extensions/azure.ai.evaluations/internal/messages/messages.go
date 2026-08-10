@@ -342,6 +342,14 @@ func SamplesFailedAtLeastOne(samples int) string {
 	return fmt.Sprintf("\n%d sample(s) failed at least one evaluator.\n", samples)
 }
 
+// GeneratedNameNotAFileName reports a generated artifact name that would not
+// stay inside the output directory.
+func GeneratedNameNotAFileName(kind, name string) error {
+	return fmt.Errorf(
+		"%s name %q cannot be used as a file name: remove any of / \\ : and do not use . or ..",
+		kind, name)
+}
+
 // OutputItemEmpty reports a row the service acknowledged but returned nothing
 // for, which is a service fault rather than a missing item.
 func OutputItemEmpty() error {

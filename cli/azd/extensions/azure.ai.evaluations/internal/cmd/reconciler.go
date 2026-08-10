@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -97,11 +96,10 @@ func (r *evalReconciler) EnsureDataset(
 		}
 	}
 
-	// The upload helper scans a directory for the first .jsonl.
+	// Uploaded by the path the author declared. Collapsing a file to its
+	// directory would upload whichever .jsonl sorts first, while the
+	// fingerprint below still describes the declared one.
 	dir := localPath
-	if info, err := os.Stat(localPath); err == nil && !info.IsDir() {
-		dir = filepath.Dir(localPath)
-	}
 
 	// A declared version is the version to publish, not one to count from.
 	// Reaching here means the content differs from what that version holds, so

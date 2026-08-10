@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -200,14 +201,37 @@ func buildGeneratePlans(req generateRequest) ([]generationPlan, error) {
 }
 
 // generatedName is the explicit name, or one derived from the target.
+//
+// The name becomes a filename as well as a service asset name, so it is
+// checked here: `--dataset-name ../../x` would otherwise write outside the
+// directory the caller pointed generation at, and `--force` would overwrite
+// whatever is there.
 func generatedName(explicit, target, suffix string) (string, error) {
-	if explicit != "" {
-		return explicit, nil
+	name := explicit
+	if name == "" {
+		if target == "" {
+			return "", messages.GeneratedNameNeedsATarget(suffix)
+		}
+		name = target + "-" + suffix
 	}
-	if target == "" {
-		return "", messages.GeneratedNameNeedsATarget(suffix)
+	if !nameIsAPathComponent(name) {
+		return "", messages.GeneratedNameNotAFileName(suffix, name)
 	}
-	return target + "-" + suffix, nil
+	return name, nil
+}
+
+// nameIsAPathComponent reports whether a name stays where it is put.
+//
+// Only the filesystem's objections are checked. The service enforces its own
+// character set, and duplicating it here would refuse names it accepts.
+func nameIsAPathComponent(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	if strings.ContainsAny(name, `/\:`) || filepath.IsAbs(name) {
+		return false
+	}
+	return true
 }
 
 type generationOutcome struct {

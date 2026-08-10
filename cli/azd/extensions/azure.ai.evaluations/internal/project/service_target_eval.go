@@ -344,8 +344,14 @@ func FingerprintGroup(group Eval) (string, error) {
 }
 
 // FingerprintKey is the azd environment key holding an artifact's fingerprint.
+//
+// The readable half is lossy: everything outside [A-Z0-9] becomes an
+// underscore, so `quality-a`, `quality_a` and `quality a` all sanitize alike,
+// as does any pair of names differing only outside ASCII. Two artifacts sharing
+// a key overwrite each other's recorded fingerprint, version and id, which
+// makes every deploy republish both. The trailing digest keeps them apart.
 func FingerprintKey(kind, name string) string {
-	safe := strings.Map(func(r rune) rune {
+	readable := strings.Map(func(r rune) rune {
 		switch {
 		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
 			return r
@@ -355,5 +361,7 @@ func FingerprintKey(kind, name string) string {
 			return '_'
 		}
 	}, kind+"_"+name)
-	return EnvKeyFingerprintPrefix + safe
+
+	sum := sha256.Sum256([]byte(kind + "\x00" + name))
+	return EnvKeyFingerprintPrefix + readable + "_" + strings.ToUpper(hex.EncodeToString(sum[:4]))
 }

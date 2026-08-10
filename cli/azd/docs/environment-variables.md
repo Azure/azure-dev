@@ -145,17 +145,24 @@ specific version of the tool installed on the machine.
 > **Note**: These variables are defined and consumed by individual azd extensions. As the extension
 > ecosystem grows, extension-specific variables may move to each extension's own documentation.
 
-### azure.ai.agents
+### Microsoft Foundry extensions
+
+The `azure.ai.projects` extension is the owner of Foundry project identity
+values. The `azure.ai.agents` extension consumes those values when it creates
+agent services and keeps its own agent-specific values.
 
 | Variable | Description |
 | --- | --- |
-| `AZURE_AI_PROJECT_ID` | The Microsoft Foundry project resource ID used by the `azure.ai.agents` extension. |
-| `FOUNDRY_PROJECT_ENDPOINT` | The Microsoft Foundry project endpoint used by the `azure.ai.agents` extension. Read first from the active azd environment and, if not present, from the host shell environment as an endpoint-resolution fallback. |
+| `AZURE_AI_PROJECT_ID` | The Microsoft Foundry project resource ID resolved and persisted by `azure.ai.projects`. |
+| `FOUNDRY_PROJECT_ENDPOINT` | The Microsoft Foundry project endpoint resolved and persisted by `azure.ai.projects`. `azure.ai.agents` reads it for agent workflows and endpoint-only compatibility. |
 | `AZURE_AI_PROJECT_PRINCIPAL_ID` | The principal ID associated with the Microsoft Foundry project identity. |
 | `AZURE_AI_ACCOUNT_NAME` | The Microsoft Foundry account name associated with the project. |
 | `AZURE_AI_PROJECT_NAME` | The Microsoft Foundry project name. |
+| `AZURE_AI_DEPLOYMENTS_LOCATION` | The location used to resolve and provision managed model deployments. |
 | `AZURE_AI_MODEL_DEPLOYMENT_NAME` | The default model deployment name used for generated agent code and templates. |
-| `AZURE_AI_PROJECT_ACR_CONNECTION_NAME` | The Azure Container Registry connection name used by the extension for hosted agents. |
+| `AZURE_AI_PROJECT_CONNECTION_NAMES` | Comma-separated project connection names emitted by Foundry provisioning. |
+| `AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT` | The project endpoint used by connection services. |
+| `AZURE_AI_PROJECT_ACR_CONNECTION_NAME` | The Azure Container Registry connection name used by hosted agents. |
 | `AI_PROJECT_DEPLOYMENTS` | JSON-encoded deployment metadata populated by the extension for agent workflows. |
 | `AI_PROJECT_DEPENDENT_RESOURCES` | JSON-encoded dependent resource metadata populated by the extension for agent workflows. |
 | `AZD_AGENT_SKIP_ACR` | If `true`, signals the Bicep template to skip Azure Container Registry creation during provisioning. Automatically set by `azd agent init` for code-deploy scenarios (where no container image is built). |

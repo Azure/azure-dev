@@ -87,10 +87,13 @@ Apply the spec's execution rules; the essentials:
   the product flow without answering; still finish the session and perform required cleanup.
 - **A `select` miss is a hard failure.** Report it and stop the scenario — do not retry with a
   different `choice_text`/`choice_index`, and do not verify/"correct" a pick after sending it.
-- **Translate human multi-select outcomes into tester actions.** Inspect current checkbox state
-  and toggle only differences from the requested final selection. Submit an already-correct
-  selection unchanged. If a stated default-selection assertion is false, **FAIL** rather than
-  repairing it. Clear defaults only for text inputs, never for selection prompts.
+- **Translate human multi-select outcomes according to intent.** Inspect the visible checkbox
+  state. If a stated default-selection assertion is false, **FAIL** without repairing or
+  submitting it. If the current state already equals the requested final state, continue with
+  `key: "Enter"` and do not call `multi_select`. Otherwise, only when the goal permits changes,
+  toggle the exact state differences. Toggle indices are changes, never the desired selected
+  set. Findings must match the action payload actually recorded by the tester. Clear defaults
+  only for text inputs, never for selection prompts.
 - **Never retry a failed scenario** unless its `goals:` explicitly say to.
 - **Screenshot failures are non-blocking and are never retried.** If a screenshot call errors or
   times out, file an `observation` finding with the error and unavailable-evidence scope, then

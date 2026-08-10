@@ -119,12 +119,16 @@ operational form of the README's **authoring contract** — see
 - **Clear a pre-filled text field before typing** (e.g. the agent-name prompt): select-all then
   delete/backspace first, otherwise your value *appends* to the default (`defaultyourvalue`).
   This applies only to text input, not select or multi-select prompts.
-- **Translate multi-select goals into state changes.** Read the human-described final selection,
-  inspect the visible checkbox state, and toggle only entries whose current state differs. If
-  the current selection already matches, call `multi_select` with `toggle_indices: []` to submit
-  it unchanged. If the goal separately asserts a default selection and the visible default does
-  not match, report and **FAIL** instead of silently repairing it. Toggle indices describe state
-  changes, not the final selected set.
+- **Translate multi-select goals according to intent.** Read the human-described final selection,
+  identify whether the goal separately asserts the initial/default selection, and inspect the
+  visible checkbox state before acting. If an asserted default does not match, report and
+  **FAIL** without repairing or submitting the prompt. If the visible state already equals the
+  requested final state, use the `key` action with `key: "Enter"` to continue without changing
+  any option; do **not** call `multi_select`. Otherwise, when the goal permits changing the
+  selection, call `multi_select` with only the indices whose checked state must change. Toggle
+  indices are state changes, not the final selected set: never include an already-selected item
+  merely because it should remain selected. Findings must describe the action payload actually
+  recorded by the tester; never claim an unchanged submission when an option was toggled.
 - **Pause before the first cloud-creating action.** Provisioning is expensive and
   irreversible-ish; the orchestrator's cost/consent gate must be satisfied before entering any
   `init` / `provision` flow that creates real resources (especially in parallel).

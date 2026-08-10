@@ -167,10 +167,13 @@ Field references (do not restate these — link to them):
    checkable product behavior, stable-label picks, clear-field-before-typing, best-effort
    screenshot evidence, and a final "report a finding if …" goal. Screenshot errors and timeouts
    are observations and do not block later product goals; all product expectations remain strict.
-   For multi-select prompts, name the prompt, list the choices that should be selected, state
-   whether other choices should remain unselected, and separately describe any expected default
-   selection. Keep action names, indices, payloads, and keystrokes out of scenario goals; the
-   worker owns those mechanics.
+   For multi-select prompts, choose one explicit intent:
+   - A **default assertion** lists what must already be selected and unselected, then says to
+     leave that selection unchanged and continue. A mismatch must fail without repair.
+   - A **final-state instruction** lists what should end selected and unselected without
+     asserting the initial state, allowing the worker to change only the differences.
+   An already-correct selection advances without changing any choice. Keep action names, indices,
+   payloads, and keystrokes out of scenario goals; the worker owns those mechanics.
    For resource-creating flows, include the RESOURCE NAMING and AGENT NAME goals (prefix
    `{prefix}-`, suffix `-{instance}`) so parallel runs don't collide.
 

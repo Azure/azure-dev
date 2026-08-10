@@ -260,9 +260,15 @@ contract; the operational rules the executor follows (select handling, retries,
   label rather than a positional index — the driver prefers `choice_text` over `choice_index`
   because indices shift between releases.
 - **Describe multi-select outcomes, not driving mechanics.** Name the user-visible prompt and
-  the choices that should be selected. If the default selection is part of the expected UX,
-  assert it separately. The driver is responsible for translating that human-readable outcome
-  into interactions with the prompt.
+  use one of two explicit goal forms:
+  - A **default assertion** states which choices must already be selected and unselected, then
+    instructs the user to leave that selection unchanged and continue. A mismatch fails without
+    repair because the default itself is product behavior under test.
+  - A **final-state instruction** states which choices should end selected and unselected without
+    asserting their initial state. The driver may change only the differences needed to reach
+    that outcome.
+  An already-correct selection always advances without changing any choice. Keep action names,
+  indices, payloads, and keystrokes out of scenario goals; the driver owns those mechanics.
 - **Pause before the first cloud-creating action.** Provisioning is expensive and
   irreversible-ish; a run must have explicit cost consent before entering any `init` /
   `provision` flow that creates real resources (especially in parallel).

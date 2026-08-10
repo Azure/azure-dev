@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -730,7 +731,7 @@ func filterHostedAgentServices(ctx context.Context, azdClient *azdext.AzdClient,
 			hosted = append(hosted, name)
 			continue
 		}
-		isVoice, err := agentkind.IsPromptVoice(svc, resp.Project.GetPath(), "")
+		isVoice, err := agentkind.IsPromptVoice(svc, resp.Project.GetPath(), os.Getenv("AGENT_DEFINITION_PATH"))
 		if err == nil && isVoice {
 			continue
 		}

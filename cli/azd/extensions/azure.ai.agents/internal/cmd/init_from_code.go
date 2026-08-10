@@ -335,7 +335,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		a.credential = newCred
 
 		skipACR := deployMode == "code"
-		filterHostedRegions := true
+		filterHostedRegions := deployMode == "code"
 		proj, err := selectFoundryProject(
 			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,

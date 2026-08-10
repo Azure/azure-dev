@@ -262,9 +262,7 @@ func TestPromptInitMode_HidesVoiceChoiceByDefault(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, initModeTemplate, mode)
-	require.NotNil(t, prompts.lastSelect)
-	require.Len(t, prompts.lastSelect.Options.Choices, 1)
-	require.Equal(t, "Start new from a template", prompts.lastSelect.Options.Choices[0].Label)
+	require.Nil(t, prompts.lastSelect)
 }
 
 func TestPromptInitMode_ShowsVoiceChoiceWhenPreviewEnabled(t *testing.T) {

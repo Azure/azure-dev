@@ -138,6 +138,10 @@ func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt b
 		}
 		return initModeFromCode, nil
 	}
+	voicePreviewEnabled := promptVoicePreviewEnabled()
+	if empty && !voicePreviewEnabled {
+		return initModeTemplate, nil
+	}
 
 	var choices []*azdext.SelectChoice
 	if empty {
@@ -151,7 +155,7 @@ func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt b
 			{Label: "Start new from a template", Value: initModeTemplate},
 		}
 	}
-	if promptVoicePreviewEnabled() {
+	if voicePreviewEnabled {
 		choices = append(choices, voiceInitChoice)
 	}
 

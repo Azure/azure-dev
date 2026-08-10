@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -101,6 +103,43 @@ func TestCheckAgentStatus_SkipsPromptVoiceServices(t *testing.T) {
 		filterHostedAgentServicesFn: filterHostedAgentServices,
 		readAgentNameVersionFn: func(context.Context, *azdext.AzdClient, string) (string, string, error) {
 			t.Fatal("prompt-voice service should not use the hosted NAME/VERSION probe")
+			return "", "", nil
+		},
+	}, healthyPriorResults([]string{"voice"}, "https://example.test"))
+
+	require.Equal(t, StatusSkip, res.Status)
+	require.Contains(t, res.Message, "no hosted agent services")
+	require.Contains(t, res.Message, "prompt-voice")
+}
+
+func TestCheckAgentStatus_SkipsPromptVoiceOverride(t *testing.T) {
+	projectRoot := t.TempDir()
+	override := filepath.Join(projectRoot, "voice.yaml")
+	require.NoError(t, os.WriteFile(override, []byte("kind: prompt-voice\nname: voice\n"), 0600))
+	t.Setenv("AGENT_DEFINITION_PATH", override)
+
+	props, err := structpb.NewStruct(map[string]any{"kind": "hosted"})
+	require.NoError(t, err)
+	client := newTestAzdClient(t,
+		&fakeProjectServer{resp: &azdext.GetProjectResponse{
+			Project: &azdext.ProjectConfig{
+				Path: projectRoot,
+				Services: map[string]*azdext.ServiceConfig{
+					"voice": {
+						Name:                 "voice",
+						Host:                 agentHost,
+						AdditionalProperties: props,
+					},
+				},
+			},
+		}},
+		&fakeEnvironmentServer{})
+
+	res := runCheckWithDeps(t, Dependencies{
+		AzdClient:                   client,
+		filterHostedAgentServicesFn: filterHostedAgentServices,
+		readAgentNameVersionFn: func(context.Context, *azdext.AzdClient, string) (string, string, error) {
+			t.Fatal("prompt-voice override should not use the hosted NAME/VERSION probe")
 			return "", "", nil
 		},
 	}, healthyPriorResults([]string{"voice"}, "https://example.test"))

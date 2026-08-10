@@ -23,6 +23,7 @@ import (
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
@@ -965,50 +966,21 @@ func runInitFromAzureYaml(
 		return err
 	}
 
-	// skipACR is false only for a container deploy whose registry azd
-	// manages. Code deploy and --image (bring your own registry) both
-	// skip ACR.
-	skipACR := !usesContainer || flags.image != ""
-
-	result, err := configureFoundryProject(
-		ctx, azdClient, azureContext, env.Name,
-		flags.projectResourceId, flags.noPrompt,
-		skipACR,
+	delegated, err := delegateAdoptedProject(
+		ctx, flags, azdClient, env, azureContext,
 	)
 	if err != nil {
-		if exterrors.IsCancellation(err) {
-			return exterrors.Cancelled("initialization was cancelled")
-		}
-		return err
-	}
-
-	// When an existing project was selected, stamp its endpoint onto the
-	// azure.ai.project service so the provisioning provider recognizes the
-	// brownfield signal and reuses the project instead of creating a new one.
-	if result.FoundryProject != nil {
-		if err := stampProjectEndpoint(ctx, azdClient, result.FoundryProject); err != nil {
+		if !errors.Is(err, errDelegatedProjectsUnavailable) {
 			return err
 		}
-		if err := confirmAdoptedAgentNameConflicts(
-			ctx,
-			azdClient,
-			env,
-			result.Credential,
-			flags.noPrompt,
-		); err != nil {
-			return err
-		}
+		delegated = false
 	}
-
-	// --- Model deployment verification ---
-	// Parse deployments from the azure.yaml and verify them against the
-	// selected Foundry project. If the user opts to use existing deployments
-	// or skip, we update the on-disk azure.yaml accordingly.
-	deploymentEntries := foundryDeployments(content)
-	if len(deploymentEntries) > 0 && result != nil && result.Credential != nil {
-		keptEntries, referencedDeployments, deploymentsModified, err := verifyAzureYamlDeployments(
-			ctx, azdClient, result.Credential, azureContext, env.Name,
-			deploymentEntries, flags.noPrompt, flags.modelDeployment, flags.model,
+	if !delegated {
+		skipACR := !usesContainer || flags.image != ""
+		result, err := configureFoundryProject(
+			ctx, azdClient, azureContext, env.Name,
+			flags.projectResourceId, flags.noPrompt,
+			skipACR,
 		)
 		if err != nil {
 			if exterrors.IsCancellation(err) {
@@ -1017,33 +989,69 @@ func runInitFromAzureYaml(
 			return err
 		}
 
-		// Update the azure.yaml if deployments were modified.
-		if deploymentsModified {
-			// Group kept deployments by their originating service name.
-			byService := make(map[string][]project.Deployment)
-			for _, entry := range deploymentEntries {
-				// Initialize to empty — ensures services with all removed get an empty list.
-				if _, ok := byService[entry.ServiceName]; !ok {
-					byService[entry.ServiceName] = nil
-				}
+		// When an existing project was selected, stamp its endpoint onto the
+		// azure.ai.project service so the provisioning provider recognizes the
+		// brownfield signal and reuses the project instead of creating a new one.
+		if result.FoundryProject != nil {
+			if err := stampProjectEndpoint(ctx, azdClient, result.FoundryProject); err != nil {
+				return err
 			}
-			for _, kept := range keptEntries {
-				byService[kept.ServiceName] = append(byService[kept.ServiceName], kept.Deployment)
-			}
-
-			for svcName, deps := range byService {
-				if err := updateAzureYamlDeployments(ctx, azdClient, svcName, deps); err != nil {
-					return err
-				}
+			if err := confirmAdoptedAgentNameConflicts(
+				ctx,
+				azdClient,
+				env,
+				result.Credential,
+				flags.noPrompt,
+			); err != nil {
+				return err
 			}
 		}
 
-		// Persist the first referenced deployment name as AZURE_AI_MODEL_DEPLOYMENT_NAME.
-		setEnv := func(ctx context.Context, key, value string) error {
-			return setEnvValue(ctx, azdClient, env.Name, key, value)
-		}
-		if err := persistFirstDeploymentName(ctx, setEnv, referencedDeployments); err != nil {
-			return fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
+		// --- Model deployment verification ---
+		// Parse deployments from the azure.yaml and verify them against the
+		// selected Foundry project. If the user opts to use existing deployments
+		// or skip, we update the on-disk azure.yaml accordingly.
+		deploymentEntries := foundryDeployments(content)
+		if len(deploymentEntries) > 0 && result != nil && result.Credential != nil {
+			keptEntries, referencedDeployments, deploymentsModified, err := verifyAzureYamlDeployments(
+				ctx, azdClient, result.Credential, azureContext, env.Name,
+				deploymentEntries, flags.noPrompt, flags.modelDeployment, flags.model,
+			)
+			if err != nil {
+				if exterrors.IsCancellation(err) {
+					return exterrors.Cancelled("initialization was cancelled")
+				}
+				return err
+			}
+
+			// Update the azure.yaml if deployments were modified.
+			if deploymentsModified {
+				// Group kept deployments by their originating service name.
+				byService := make(map[string][]project.Deployment)
+				for _, entry := range deploymentEntries {
+					// Initialize to empty — ensures services with all removed get an empty list.
+					if _, ok := byService[entry.ServiceName]; !ok {
+						byService[entry.ServiceName] = nil
+					}
+				}
+				for _, kept := range keptEntries {
+					byService[kept.ServiceName] = append(byService[kept.ServiceName], kept.Deployment)
+				}
+
+				for svcName, deps := range byService {
+					if err := updateAzureYamlDeployments(ctx, azdClient, svcName, deps); err != nil {
+						return err
+					}
+				}
+			}
+
+			// Persist the first referenced deployment name as AZURE_AI_MODEL_DEPLOYMENT_NAME.
+			setEnv := func(ctx context.Context, key, value string) error {
+				return setEnvValue(ctx, azdClient, env.Name, key, value)
+			}
+			if err := persistFirstDeploymentName(ctx, setEnv, referencedDeployments); err != nil {
+				return fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
+			}
 		}
 	}
 
@@ -1064,6 +1072,91 @@ func runInitFromAzureYaml(
 	)
 
 	printAdoptionNextSteps(ctx, azdClient, folderDisplay)
+	return nil
+}
+
+func delegateAdoptedProject(
+	ctx context.Context,
+	flags *initFlags,
+	azdClient *azdext.AzdClient,
+	environment *azdext.Environment,
+	azureContext *azdext.AzureContext,
+) (bool, error) {
+	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || projectResponse.Project == nil {
+		return false, errDelegatedProjectsUnavailable
+	}
+	credential, err := azidentity.NewAzureDeveloperCLICredential(
+		&azidentity.AzureDeveloperCLICredentialOptions{
+			TenantID:                   azureContext.Scope.TenantId,
+			AdditionallyAllowedTenants: []string{"*"},
+		},
+	)
+	if err != nil {
+		return false, exterrors.Auth(
+			exterrors.CodeCredentialCreationFailed,
+			fmt.Sprintf("failed to create Azure credential: %s", err),
+			"run 'azd auth login' to authenticate",
+		)
+	}
+	action := &InitAction{
+		azdClient:     azdClient,
+		azureContext:  azureContext,
+		credential:    credential,
+		projectConfig: projectResponse.Project,
+		environment:   environment,
+		flags:         flags,
+	}
+	allowedLocations, err := action.hostedAgentAllowedLocations(ctx)
+	if err != nil {
+		return false, err
+	}
+	state, err := action.delegateProjectInit(ctx, allowedLocations)
+	if errors.Is(err, errDelegatedProjectsUnavailable) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	projectInfo, err := projectInfoFromDelegatedState(
+		ctx, azdClient, environment.Name, state,
+	)
+	if err != nil {
+		return false, err
+	}
+	if err := action.configureDelegatedAgentResources(
+		ctx, projectInfo, state.Mode,
+	); err != nil {
+		return false, err
+	}
+	if err := mergeProjectServiceUses(ctx, azdClient, state.ServiceName); err != nil {
+		return false, err
+	}
+	if err := confirmAdoptedAgentNameConflicts(
+		ctx, azdClient, environment, credential, flags.noPrompt,
+	); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func mergeProjectServiceUses(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	projectServiceName string,
+) error {
+	response, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("discovering adopted agent services: %w", err)
+	}
+	for name, service := range response.GetProject().GetServices() {
+		if service.GetHost() != AiAgentHost {
+			continue
+		}
+		if err := setServiceUses(ctx, azdClient, name, []string{projectServiceName}); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

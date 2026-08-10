@@ -509,6 +509,56 @@ func configureExistingProjectAcr(
 	return configureAcrConnection(ctx, azdClient, credential, envName, subscriptionId, acrConnections)
 }
 
+// configureExistingProjectAgentConnections preserves the agent-owned
+// connection selection that runs after project identity has been delegated.
+// The projects extension owns only project identity and managed deployments;
+// registry and Application Insights choices remain agent concerns.
+func configureExistingProjectAgentConnections(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	credential azcore.TokenCredential,
+	envName string,
+	project FoundryProjectInfo,
+	subscriptionId string,
+	skipACR bool,
+) error {
+	foundryClient, err := azure.NewFoundryProjectsClient(project.AccountName, project.ProjectName, credential)
+	if err != nil {
+		return fmt.Errorf("creating Foundry client: %w", err)
+	}
+	connections, err := foundryClient.GetAllConnections(ctx)
+	if err != nil {
+		fmt.Printf(
+			"Could not get Microsoft Foundry project connections: %v. "+
+				"Please set agent connection environment variables manually.\n", err)
+		return nil
+	}
+
+	var acrConnections []azure.Connection
+	var appInsightsConnections []azure.Connection
+	for _, connection := range connections {
+		switch connection.Type {
+		case azure.ConnectionTypeContainerRegistry:
+			if !skipACR {
+				acrConnections = append(acrConnections, connection)
+			}
+		case azure.ConnectionTypeAppInsights:
+			if full, getErr := foundryClient.GetConnectionWithCredentials(ctx, connection.Name); getErr == nil && full != nil {
+				connection = *full
+			}
+			appInsightsConnections = append(appInsightsConnections, connection)
+		}
+	}
+	if !skipACR {
+		if err := configureAcrConnection(
+			ctx, azdClient, credential, envName, subscriptionId, acrConnections,
+		); err != nil {
+			return err
+		}
+	}
+	return configureAppInsightsConnection(ctx, azdClient, envName, appInsightsConnections)
+}
+
 // configureAcrConnection handles ACR connection selection and env var setting.
 func configureAcrConnection(
 	ctx context.Context,

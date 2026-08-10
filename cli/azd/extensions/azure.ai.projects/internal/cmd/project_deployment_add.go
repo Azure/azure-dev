@@ -5,9 +5,7 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
@@ -232,30 +230,11 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 			return fmt.Errorf("set default model deployment: %w", err)
 		}
 	}
-	result := projectDeploymentAddOutput{
-		SchemaVersion:   delegatedSchemaVersion,
-		ProducerVersion: delegatedProducerVersion(),
-		ServiceName:     service.Name,
-		DeploymentName:  selected.Deployment.Name,
-		Model: deploymentOutputModel{
-			Format:  selected.Deployment.Model.Format,
-			Name:    selected.Deployment.Model.Name,
-			Version: selected.Deployment.Model.Version,
-		},
-		SKU: deploymentOutputSKU{
-			Name:     selected.Deployment.Sku.Name,
-			Capacity: selected.Deployment.Sku.Capacity,
-		},
-		Mutation: string(mutation),
-	}
 	if request != nil {
 		return nil
 	}
 	if a.flags.output == "none" {
 		return nil
-	}
-	if a.flags.output == "json" {
-		return json.NewEncoder(os.Stdout).Encode(result)
 	}
 	switch mutation {
 	case deploymentUnchanged:

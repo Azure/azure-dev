@@ -93,16 +93,14 @@ func (sm *SourceManager) Get(ctx context.Context, name string) (*SourceConfig, e
 
 // Add adds a new extension source.
 func (sm *SourceManager) Add(ctx context.Context, name string, source *SourceConfig) error {
-	newKey := NormalizeSourceKey(name)
-
-	if strings.EqualFold(newKey, BundleSourceName) {
+	if strings.EqualFold(name, BundleSourceName) {
 		return fmt.Errorf(
 			"'%s' is reserved for extensions installed from a self-contained bundle, %w",
 			BundleSourceName, ErrSourceReserved,
 		)
 	}
 
-	if err := ValidateSourceName(newKey); err != nil {
+	if err := ValidateSourceName(name); err != nil {
 		return err
 	}
 
@@ -114,20 +112,21 @@ func (sm *SourceManager) Add(ctx context.Context, name string, source *SourceCon
 		source.Name = name
 	}
 
-	source.Name = newKey
+	source.Name = name
 
-	existing, err := sm.Get(ctx, newKey)
+	if strings.EqualFold(name, MainRegistryName) &&
+		!IsOfficialMainRegistrySource(source) {
+		return fmt.Errorf(
+			"'%s' is reserved for the official azd registry, %w",
+			MainRegistryName, ErrSourceReserved)
+	}
+
+	existing, err := sm.Get(ctx, name)
 	if existing != nil && err == nil {
 		return fmt.Errorf("extension source '%s' already exists, %w", name, ErrSourceExists)
 	}
 	if err != nil && !errors.Is(err, ErrSourceNotFound) {
 		return fmt.Errorf("checking extension source '%s': %w", name, err)
-	}
-	if strings.EqualFold(newKey, MainRegistryName) &&
-		!IsOfficialMainRegistrySource(source) {
-		return fmt.Errorf(
-			"'%s' is reserved for the official azd registry, %w",
-			MainRegistryName, ErrSourceReserved)
 	}
 
 	return sm.addInternal(source)

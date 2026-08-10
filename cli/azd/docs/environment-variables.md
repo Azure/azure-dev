@@ -154,7 +154,8 @@ specific version of the tool installed on the machine.
 | `AZURE_AI_PROJECT_PRINCIPAL_ID` | The principal ID associated with the Microsoft Foundry project identity. |
 | `AZURE_AI_ACCOUNT_NAME` | The Microsoft Foundry account name associated with the project. |
 | `AZURE_AI_PROJECT_NAME` | The Microsoft Foundry project name. |
-| `AZURE_AI_MODEL_DEPLOYMENT_NAME` | The default model deployment name used for generated agent code and templates. |
+| `MODEL_DEPLOYMENT_NAME` | The default model deployment name used for generated agent code and templates. |
+| `AZURE_AI_MODEL_DEPLOYMENT_NAME` | Deprecated legacy name read as a fallback when `MODEL_DEPLOYMENT_NAME` is unset, so existing projects continue to work. New projects use `MODEL_DEPLOYMENT_NAME`. |
 | `AZURE_AI_PROJECT_ACR_CONNECTION_NAME` | The Azure Container Registry connection name used by the extension for hosted agents. |
 | `AI_PROJECT_DEPLOYMENTS` | JSON-encoded deployment metadata populated by the extension for agent workflows. |
 | `AI_PROJECT_DEPENDENT_RESOURCES` | JSON-encoded dependent resource metadata populated by the extension for agent workflows. |

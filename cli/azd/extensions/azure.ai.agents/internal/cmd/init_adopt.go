@@ -1038,12 +1038,12 @@ func runInitFromAzureYaml(
 			}
 		}
 
-		// Persist the first referenced deployment name as AZURE_AI_MODEL_DEPLOYMENT_NAME.
+		// Persist the first referenced deployment name for agent code.
 		setEnv := func(ctx context.Context, key, value string) error {
 			return setEnvValue(ctx, azdClient, env.Name, key, value)
 		}
 		if err := persistFirstDeploymentName(ctx, setEnv, referencedDeployments); err != nil {
-			return fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
+			return fmt.Errorf("failed to set %s: %w", modelDeploymentNameEnvVar, err)
 		}
 	}
 

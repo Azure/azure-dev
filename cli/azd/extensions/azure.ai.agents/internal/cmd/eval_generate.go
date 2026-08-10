@@ -176,11 +176,12 @@ func runEvalGenerate(ctx context.Context, flags *evalGenerateFlags, noPrompt boo
 
 	// When the user hasn't explicitly set --eval-model, use the deployed model.
 	if !flags.evalModelSet && resolved.envName != "" {
-		if v, err := resolved.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: resolved.envName,
-			Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-		}); err == nil && v.Value != "" {
-			flags.evalModel = v.Value
+		if deployedModel := getDeployedModelFromEnv(
+			ctx,
+			resolved.azdClient,
+			resolved.envName,
+		); deployedModel != "" {
+			flags.evalModel = deployedModel
 		}
 	}
 

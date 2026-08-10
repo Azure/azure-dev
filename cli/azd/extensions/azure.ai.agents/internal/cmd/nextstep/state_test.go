@@ -927,7 +927,7 @@ environment_variables:
 			manifest: `kind: hostedAgent
 environment_variables:
   - name: MODEL
-    value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
+    value: ${MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
 `,
 			wantRefs: nil,
 		},
@@ -938,7 +938,7 @@ environment_variables:
   - name: ENDPOINT
     value: ${FOUNDRY_PROJECT_ENDPOINT}
   - name: MODEL
-    value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
+    value: ${MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
 `,
 			wantRefs: []string{"FOUNDRY_PROJECT_ENDPOINT"},
 		},
@@ -1156,7 +1156,7 @@ environment_variables:
   - name: ENDPOINT
     value: ${FOUNDRY_PROJECT_ENDPOINT}
   - name: MODEL
-    value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+    value: ${MODEL_DEPLOYMENT_NAME}
   - name: KEY
     value: ${MY_API_KEY}
   - name: STATIC
@@ -1171,7 +1171,7 @@ environment_variables:
 	require.NoError(t, os.WriteFile(
 		filepath.Join(projectRoot, "infra", "main.bicep"),
 		[]byte(`output FOUNDRY_PROJECT_ENDPOINT string = ''
-output AZURE_AI_MODEL_DEPLOYMENT_NAME string = ''
+output MODEL_DEPLOYMENT_NAME string = ''
 `),
 		0o600,
 	))
@@ -1185,8 +1185,8 @@ output AZURE_AI_MODEL_DEPLOYMENT_NAME string = ''
 			},
 		},
 		values: map[string]string{
-			// AZURE_AI_MODEL_DEPLOYMENT_NAME is set; the other two are not.
-			"dev/AZURE_AI_MODEL_DEPLOYMENT_NAME": "gpt-4o-mini",
+			// MODEL_DEPLOYMENT_NAME is set; the other two are not.
+			"dev/MODEL_DEPLOYMENT_NAME": "gpt-4o-mini",
 		},
 	}
 
@@ -1292,7 +1292,7 @@ environment_variables:
   - name: ENDPOINT
     value: ${FOUNDRY_PROJECT_ENDPOINT}
   - name: MODEL
-    value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
+    value: ${MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
   - name: KEY
     value: ${MY_API_KEY:-dev-fallback}
 `),
@@ -1314,8 +1314,8 @@ environment_variables:
 				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
 			},
 		},
-		// Intentionally leave AZURE_AI_MODEL_DEPLOYMENT_NAME and MY_API_KEY
-		// unset; defaulted refs must not surface them as missing.
+		// MODEL_DEPLOYMENT_NAME and MY_API_KEY are intentionally unset.
+		// Defaulted refs must not surface them as missing.
 		values: map[string]string{},
 	}
 

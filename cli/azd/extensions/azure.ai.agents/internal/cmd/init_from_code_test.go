@@ -497,7 +497,7 @@ func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *tes
 	}
 	if definition.EnvironmentVariables != nil {
 		for _, envVar := range *definition.EnvironmentVariables {
-			if envVar.Name == "AZURE_AI_MODEL_DEPLOYMENT_NAME" {
+			if envVar.Name == "MODEL_DEPLOYMENT_NAME" {
 				t.Fatalf("deferred model configuration should not add %s", envVar.Name)
 			}
 		}

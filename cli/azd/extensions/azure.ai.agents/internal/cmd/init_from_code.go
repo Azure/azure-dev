@@ -564,12 +564,18 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		// (azd does not create/upsert it) — it is referenced via the agent env
 		// var and verified at deploy time. So do not append to a.deploymentDetails.
 		definition.EnvironmentVariables = appendEnvVar(definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
-			Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-			Value: "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
+			Name:  modelDeploymentNameEnvVar,
+			Value: modelDeploymentNameEnvRef,
 		})
 
-		if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "AZURE_AI_MODEL_DEPLOYMENT_NAME", existingDeployment.Name); err != nil {
-			return nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
+		if err := setEnvValue(
+			ctx,
+			a.azdClient,
+			a.environment.Name,
+			modelDeploymentNameEnvVar,
+			existingDeployment.Name,
+		); err != nil {
+			return nil, fmt.Errorf("failed to set %s: %w", modelDeploymentNameEnvVar, err)
 		}
 
 		// Existing deployment chosen — clear any prior
@@ -602,12 +608,18 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		a.needsProvision = true
 
 		definition.EnvironmentVariables = appendEnvVar(definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
-			Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-			Value: "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
+			Name:  modelDeploymentNameEnvVar,
+			Value: modelDeploymentNameEnvRef,
 		})
 
-		if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "AZURE_AI_MODEL_DEPLOYMENT_NAME", modelDetails.ModelName); err != nil {
-			return nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
+		if err := setEnvValue(
+			ctx,
+			a.azdClient,
+			a.environment.Name,
+			modelDeploymentNameEnvVar,
+			modelDetails.ModelName,
+		); err != nil {
+			return nil, fmt.Errorf("failed to set %s: %w", modelDeploymentNameEnvVar, err)
 		}
 
 		// New model deployment configured — record that the

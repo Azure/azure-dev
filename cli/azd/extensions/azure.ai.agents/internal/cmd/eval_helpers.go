@@ -428,21 +428,33 @@ func promptAllDeployments(ctx context.Context, azdClient *azdext.AzdClient, envN
 	return choices[int(*resp.Value)].Value, nil
 }
 
-// getDeployedModelFromEnv reads the AZURE_AI_MODEL_DEPLOYMENT_NAME from
-// the specified (or current) azd environment. Returns empty string if not available.
+// getDeployedModelFromEnv reads the model deployment name from the
+// specified or current azd environment. The legacy name remains a
+// fallback for projects created by older extension versions.
 func getDeployedModelFromEnv(ctx context.Context, azdClient *azdext.AzdClient, envName string) string {
 	env := getExistingEnvironment(ctx, envName, azdClient)
 	if env == nil {
 		return ""
 	}
-	v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: env.Name,
-		Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-	})
-	if err != nil || v.Value == "" {
-		return ""
+
+	for _, key := range []string{
+		modelDeploymentNameEnvVar,
+		legacyModelDeploymentNameEnvVar,
+	} {
+		value, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: env.Name,
+			Key:     key,
+		})
+		if err != nil {
+			log.Printf("[debug] could not read %s: %v", key, err)
+			continue
+		}
+		if value.Value != "" {
+			return value.Value
+		}
 	}
-	return v.Value
+
+	return ""
 }
 
 // promptDatasetSelection prompts the user to enter a dataset file path or

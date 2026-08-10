@@ -224,7 +224,7 @@ func TestPersistFirstDeploymentName(t *testing.T) {
 				{Name: "gpt-4o"},
 			},
 			wantCalled: true,
-			wantKey:    "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+			wantKey:    "MODEL_DEPLOYMENT_NAME",
 			wantValue:  "gpt-4o",
 		},
 		{
@@ -234,7 +234,7 @@ func TestPersistFirstDeploymentName(t *testing.T) {
 				{Name: "text-embedding-ada-002"},
 			},
 			wantCalled: true,
-			wantKey:    "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+			wantKey:    "MODEL_DEPLOYMENT_NAME",
 			wantValue:  "gpt-4o",
 		},
 		{
@@ -244,7 +244,7 @@ func TestPersistFirstDeploymentName(t *testing.T) {
 			},
 			setEnvErr:  errors.New("grpc unavailable"),
 			wantCalled: true,
-			wantKey:    "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+			wantKey:    "MODEL_DEPLOYMENT_NAME",
 			wantValue:  "gpt-4o",
 			wantErr:    true,
 		},

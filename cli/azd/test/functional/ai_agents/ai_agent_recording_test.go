@@ -201,14 +201,14 @@ func Test_AIAgent_Init_NoPrompt_WithProject(t *testing.T) {
 	require.NoError(t, err)
 	envStr := string(envContent)
 	// Pin to the exact value produced by manifest resources[0].id resolution.
-	require.Contains(t, envStr, `AZURE_AI_MODEL_DEPLOYMENT_NAME="gpt-4.1"`,
+	require.Contains(t, envStr, `MODEL_DEPLOYMENT_NAME="gpt-4.1"`,
 		"model deployment should be resolved from manifest resource id via ARM catalog")
 
 	// Cross-check: azure.yaml should have the resolved model value inline, not ${...} placeholder.
 	azureYamlContent, err := os.ReadFile(filepath.Join(projectDir, "azure.yaml"))
 	require.NoError(t, err)
 	azureYamlStr := string(azureYamlContent)
-	require.NotContains(t, azureYamlStr, "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
+	require.NotContains(t, azureYamlStr, "${MODEL_DEPLOYMENT_NAME}",
 		"azure.yaml should have resolved model name, not azd env placeholder")
 }
 

@@ -60,7 +60,14 @@ type FoundryDeploymentInfo struct {
 	SkuCapacity int
 }
 
-const foundryProjectResourceType = "Microsoft.CognitiveServices/accounts/projects"
+const (
+	foundryProjectResourceType = "Microsoft.CognitiveServices/accounts/projects"
+	modelDeploymentNameEnvVar  = "MODEL_DEPLOYMENT_NAME"
+	modelDeploymentNameEnvRef  = "${" + modelDeploymentNameEnvVar + "}"
+
+	// Read fallback for projects created by older versions.
+	legacyModelDeploymentNameEnvVar = "AZURE_AI_MODEL_DEPLOYMENT_NAME"
+)
 
 // setEnvValue sets a single environment variable in the azd environment.
 func setEnvValue(ctx context.Context, azdClient *azdext.AzdClient, envName, key, value string) error {

@@ -1072,10 +1072,10 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 	}
 
 	deploymentDetails := []project.Deployment{}
-	// referencedDeployments holds every selected deployment (new AND existing).
-	// It drives the env-var reference (AZURE_AI_MODEL_DEPLOYMENT_NAME) so an
-	// existing-only selection still records the model name, while only NEW
-	// deployments land in deploymentDetails (azure.yaml declarations).
+	// referencedDeployments includes every selected deployment.
+	// It drives the MODEL_DEPLOYMENT_NAME reference so existing-only
+	// selections still record the model name. Only new deployments
+	// land in deploymentDetails (azure.yaml declarations).
 	referencedDeployments := []project.Deployment{}
 	paramValues := agent_yaml.ParameterValues{}
 	// anyModelProcessed tracks whether we encountered at least one
@@ -1159,7 +1159,7 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 		return setEnvValue(ctx, a.azdClient, a.environment.Name, key, value)
 	}
 	if err := persistFirstDeploymentName(ctx, setEnv, referencedDeployments); err != nil {
-		return nil, nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
+		return nil, nil, fmt.Errorf("failed to set %s: %w", modelDeploymentNameEnvVar, err)
 	}
 
 	// Update the AI_AGENT_PENDING_PROVISION signal based on the
@@ -1183,9 +1183,8 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 // envValueSetter writes a single key-value pair to the azd environment.
 type envValueSetter func(ctx context.Context, key, value string) error
 
-// persistFirstDeploymentName persists the first deployment's name as
-// AZURE_AI_MODEL_DEPLOYMENT_NAME so templates and agent code can reference it.
-// It is a no-op when the deployments slice is empty.
+// persistFirstDeploymentName stores the first deployment name for
+// templates and agent code. It is a no-op for an empty slice.
 func persistFirstDeploymentName(
 	ctx context.Context,
 	setEnv envValueSetter,
@@ -1195,5 +1194,5 @@ func persistFirstDeploymentName(
 		return nil
 	}
 
-	return setEnv(ctx, "AZURE_AI_MODEL_DEPLOYMENT_NAME", deployments[0].Name)
+	return setEnv(ctx, modelDeploymentNameEnvVar, deployments[0].Name)
 }

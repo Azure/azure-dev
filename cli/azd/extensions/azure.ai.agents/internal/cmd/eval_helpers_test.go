@@ -11,6 +11,7 @@ import (
 
 	"azureaiagent/internal/pkg/agents/opt_eval"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -91,6 +92,69 @@ func TestReconcileConfigAgent(t *testing.T) {
 		assert.True(t, changed)
 		assert.Equal(t, "new-v", agent.Version)
 	})
+}
+
+func TestGetDeployedModelFromEnv(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		values map[string]string
+		want   string
+	}{
+		{
+			name: "new name takes precedence",
+			values: map[string]string{
+				"MODEL_DEPLOYMENT_NAME":          "new-deployment",
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME": "legacy-deployment",
+			},
+			want: "new-deployment",
+		},
+		{
+			name: "legacy name remains a fallback",
+			values: map[string]string{
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME": "legacy-deployment",
+			},
+			want: "legacy-deployment",
+		},
+		{
+			name: "empty new value uses legacy value",
+			values: map[string]string{
+				"MODEL_DEPLOYMENT_NAME":          "",
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME": "legacy-deployment",
+			},
+			want: "legacy-deployment",
+		},
+		{
+			name:   "missing names return empty",
+			values: map[string]string{},
+			want:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			env := &azdext.Environment{Name: "dev"}
+			envServer := &testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{"dev": env},
+				current:      env,
+				values:       map[string]map[string]string{"dev": tt.values},
+			}
+			azdClient := newTestAzdClient(
+				t,
+				envServer,
+				&testWorkflowServiceServer{},
+			)
+
+			assert.Equal(
+				t,
+				tt.want,
+				getDeployedModelFromEnv(t.Context(), azdClient, "dev"),
+			)
+		})
+	}
 }
 
 // ---- statusLabelAndColor ----

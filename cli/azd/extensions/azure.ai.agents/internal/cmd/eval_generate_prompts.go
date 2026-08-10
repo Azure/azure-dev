@@ -141,15 +141,11 @@ func promptEvalGenerateOptions(ctx context.Context, resolved *evalResolvedContex
 
 	if !flags.evalModelSet {
 		// Read the deployed model name from the azd environment to use as default.
-		var deployedModel string
-		if resolved.envName != "" {
-			if v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-				EnvName: resolved.envName,
-				Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-			}); err == nil && v.Value != "" {
-				deployedModel = v.Value
-			}
-		}
+		deployedModel := getDeployedModelFromEnv(
+			ctx,
+			azdClient,
+			resolved.envName,
+		)
 
 		selected, err := promptModelSelection(ctx, azdClient, "Select the model for evaluation and generation", deployedModel, resolved.envName)
 		if err != nil {

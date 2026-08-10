@@ -146,33 +146,55 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 	resourceGroup,
 	appName string,
 ) (*runtime.Poller[armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse], error) {
-	request, err := c.createDeployRequest(ctx, zipFile)
+	client, deploymentStatusId, err := c.beginDeployTrackStatusRequest(ctx, zipFile, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
+	return beginProductionSiteDeploymentStatus(ctx, client, resourceGroup, appName, deploymentStatusId)
+}
+
+func (c *ZipDeployClient) beginDeployTrackStatusRequest(
+	ctx context.Context,
+	zipFile io.ReadSeeker,
+	subscriptionId string,
+) (*armappservice.WebAppsClient, string, error) {
+	request, err := c.createDeployRequest(ctx, zipFile)
+	if err != nil {
+		return nil, "", err
+	}
+
 	response, err := c.pipeline.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	defer response.Body.Close()
 
 	if !runtime.HasStatusCode(response, http.StatusAccepted) {
-		return nil, runtime.NewResponseError(response)
+		return nil, "", runtime.NewResponseError(response)
 	}
 
 	client, err := armappservice.NewWebAppsClient(subscriptionId, c.cred, c.armClientOptions)
-
 	if err != nil {
-		return nil, fmt.Errorf("creating web app client: %w", err)
+		return nil, "", fmt.Errorf("creating web app client: %w", err)
 	}
 
 	deploymentStatusId := response.Header.Get("Scm-Deployment-Id")
 	if deploymentStatusId == "" {
-		return nil, fmt.Errorf("empty deployment status id")
+		return nil, "", fmt.Errorf("empty deployment status id")
 	}
 
+	return client, deploymentStatusId, nil
+}
+
+func beginProductionSiteDeploymentStatus(
+	ctx context.Context,
+	client *armappservice.WebAppsClient,
+	resourceGroup string,
+	appName string,
+	deploymentStatusId string,
+) (*runtime.Poller[armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse], error) {
 	// Add 404 to default retry errors in azure-sdk-for-go. We get temporary 404s when the KUDO API received the request
 	// and created a temp deployment id as a intermediate step before deployed with actual deployment id
 	retryCtx := policy.WithRetryOptions(ctx, policy.RetryOptions{
@@ -321,7 +343,7 @@ func (c *ZipDeployClient) deployTrackStatus(
 ) error {
 	var response armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse
 
-	poller, err := c.BeginDeployTrackStatus(ctx, zipFile, subscriptionId, resourceGroup, appName)
+	client, deploymentStatusId, err := c.beginDeployTrackStatusRequest(ctx, zipFile, subscriptionId)
 	if err != nil {
 		return err
 	}
@@ -330,6 +352,26 @@ func (c *ZipDeployClient) deployTrackStatus(
 	pollCount := 0
 	lastStatus := armappservice.DeploymentBuildStatus("")
 	statusTrackingDeadline := time.Now().Add(statusTrackingTimeout)
+
+	beginCtx, cancelBegin := context.WithDeadline(ctx, statusTrackingDeadline)
+	poller, err := beginProductionSiteDeploymentStatus(
+		beginCtx,
+		client,
+		resourceGroup,
+		appName,
+		deploymentStatusId,
+	)
+	cancelBegin()
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if !time.Now().Before(statusTrackingDeadline) {
+			return &DeploymentStatusTimeoutError{Timeout: statusTrackingTimeout}
+		}
+		return err
+	}
+
 	for {
 		var resp *http.Response
 

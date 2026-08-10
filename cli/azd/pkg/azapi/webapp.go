@@ -32,7 +32,7 @@ type AppServiceZipDeployResult struct {
 	RuntimeStatusWarning string
 }
 
-func appServiceRuntimeStatusTimeoutResult(err error) (*AppServiceZipDeployResult, bool) {
+func appServiceStatusTimeoutResult(err error) (*AppServiceZipDeployResult, bool) {
 	timeoutErr, ok := errors.AsType[*azsdk.DeploymentStatusTimeoutError](err)
 	if !ok {
 		return nil, false
@@ -41,7 +41,7 @@ func appServiceRuntimeStatusTimeoutResult(err error) (*AppServiceZipDeployResult
 	return &AppServiceZipDeployResult{
 		Status: "OK",
 		RuntimeStatusWarning: fmt.Sprintf(
-			"Deployment completed, but azd was unable to verify that the app started within %s. "+
+			"Deployment completed, but azd observed no App Service deployment status change for %s. "+
 				"Check the app's runtime status and startup logs in the Azure Portal.",
 			timeoutErr.Timeout,
 		),
@@ -256,7 +256,7 @@ func (cli *AzureClient) DeployAppServiceZip(
 			err = client.DeployTrackStatus(
 				ctx, deployZipFile, subscriptionId, resourceGroup, appName, progressLog)
 			if err != nil {
-				if timeoutResult, ok := appServiceRuntimeStatusTimeoutResult(err); ok {
+				if timeoutResult, ok := appServiceStatusTimeoutResult(err); ok {
 					return timeoutResult, nil
 				}
 				if isBuildFailure(err) && attempt < maxBuildRetries {

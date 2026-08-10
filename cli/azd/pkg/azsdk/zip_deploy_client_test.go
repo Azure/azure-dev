@@ -505,6 +505,37 @@ func TestDeployTrackStatus_StatusTrackingTimeout(t *testing.T) {
 	require.Equal(t, time.Millisecond, timeoutErr.Timeout)
 }
 
+func TestDeployTrackStatus_InitialStatusRequestTimeout(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	registerTrackedDeployMocks(mockContext)
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.Contains(request.URL.Path, "/deploymentStatus/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		<-request.Context().Done()
+		return nil, request.Context().Err()
+	})
+
+	client, err := NewZipDeployClient("HOSTNAME", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
+	require.NoError(t, err)
+
+	err = client.deployTrackStatus(
+		*mockContext.Context,
+		bytes.NewReader(nil),
+		"SUBSCRIPTION_ID",
+		"RESOURCE_GROUP_ID",
+		"APP_NAME",
+		time.Millisecond,
+		time.Millisecond,
+		func(string) {},
+	)
+
+	timeoutErr, ok := errors.AsType[*DeploymentStatusTimeoutError](err)
+	require.True(t, ok)
+	require.Equal(t, time.Millisecond, timeoutErr.Timeout)
+}
+
 func TestDeployTrackStatus_StatusChangeResetsTimeout(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	registerTrackedDeployMocks(mockContext)

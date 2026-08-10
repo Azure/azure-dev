@@ -620,12 +620,20 @@ func (u *UpGraphAction) Run(
 
 	if u.formatter.Kind() != output.JsonFormat {
 		displayDeployWarnings(ctx, u.console, stableServices, state)
-	}
 
-	// Display service endpoint artifacts collected during deploy steps.
-	for _, svc := range stableServices {
-		if dr := state.GetResult(svc.Name); dr != nil && len(dr.Artifacts) > 0 {
-			u.console.MessageUxItem(ctx, dr.Artifacts)
+		// Display service endpoint artifacts collected during deploy steps.
+		for _, svc := range stableServices {
+			if dr := state.GetResult(svc.Name); dr != nil && len(dr.Artifacts) > 0 {
+				u.console.MessageUxItem(ctx, dr.Artifacts)
+			}
+		}
+	} else {
+		deployResult := DeploymentResult{
+			Timestamp: time.Now(),
+			Services:  state.ResultsSnapshot(),
+		}
+		if err := u.formatter.Format(deployResult, u.writer, nil); err != nil {
+			return nil, fmt.Errorf("up result could not be displayed: %w", err)
 		}
 	}
 

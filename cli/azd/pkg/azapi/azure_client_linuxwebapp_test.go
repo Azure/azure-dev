@@ -18,17 +18,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAppServiceRuntimeStatusTimeoutResult(t *testing.T) {
-	result, ok := appServiceRuntimeStatusTimeoutResult(&azsdk.DeploymentStatusTimeoutError{
+func TestAppServiceStatusTimeoutResult(t *testing.T) {
+	result, ok := appServiceStatusTimeoutResult(&azsdk.DeploymentStatusTimeoutError{
 		Timeout: 5 * time.Minute,
 	})
 
 	require.True(t, ok)
 	require.Equal(t, "OK", result.Status)
 	require.Contains(t, result.RuntimeStatusWarning, "Deployment completed")
-	require.Contains(t, result.RuntimeStatusWarning, "unable to verify that the app started within 5m0s")
+	require.Contains(t, result.RuntimeStatusWarning, "no App Service deployment status change for 5m0s")
 
-	result, ok = appServiceRuntimeStatusTimeoutResult(errors.New("runtime failed"))
+	result, ok = appServiceStatusTimeoutResult(errors.New("runtime failed"))
 	require.False(t, ok)
 	require.Nil(t, result)
 }

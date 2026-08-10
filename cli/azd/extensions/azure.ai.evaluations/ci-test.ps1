@@ -18,10 +18,15 @@
 
 $gopath = go env GOPATH
 $gotestsumBinary = "gotestsum"
-if ($IsWindows) {
+# $IsWindows only exists on PowerShell 6 and later. On Windows PowerShell 5.1 it
+# is undefined, so the suffix was never appended, the binary was never found,
+# and the run silently fell back to `go test` with no JUnit report.
+if ($env:OS -eq "Windows_NT") {
     $gotestsumBinary += ".exe"
 }
-$gotestsum = Join-Path $gopath "bin" $gotestsumBinary
+# Windows PowerShell 5.1 takes a single child path, so the three-argument form
+# fails outright there. Nesting is what every version accepts.
+$gotestsum = Join-Path (Join-Path $gopath "bin") $gotestsumBinary
 
 Write-Host "Running unit tests..."
 

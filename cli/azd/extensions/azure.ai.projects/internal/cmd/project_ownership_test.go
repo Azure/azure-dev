@@ -4,7 +4,8 @@
 package cmd
 
 import (
-	"encoding/json"
+	"context"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 )
 
 func TestDelegatedProjectInitRequestValidation(t *testing.T) {
@@ -35,28 +37,28 @@ func TestDelegatedProjectInitRequestValidation(t *testing.T) {
 func TestDelegatedRequestRejectsUnknownFields(t *testing.T) {
 	dir := t.TempDir()
 	requestPath := filepath.Join(dir, "request.json")
-	resultPath := filepath.Join(dir, "result.json")
 	require.NoError(t, os.WriteFile(requestPath, []byte(`{
 		"schemaVersion": 1,
-		"source": "azure.ai.projects/direct",
+		"source": "azure.ai.agents/init",
+		"sourceVersion": "1.0.0",
 		"unknown": true
 	}`), 0600))
 	request := &projectInitRequest{}
-	require.NoError(t, validateDelegatedPathPair(requestPath, resultPath))
 	require.Error(t, decodeDelegatedJSON(requestPath, request))
 }
 
-func TestDelegatedResultWritesAtomically(t *testing.T) {
+func TestDelegatedRequestIsInputOnly(t *testing.T) {
 	dir := t.TempDir()
 	requestPath := filepath.Join(dir, "request.json")
-	resultPath := filepath.Join(dir, "result.json")
 	require.NoError(t, os.WriteFile(requestPath, []byte(`{}`), 0600))
-	require.NoError(t, writeDelegatedResult(resultPath, map[string]any{"ok": true}))
-	var decoded map[string]any
-	data, err := os.ReadFile(resultPath)
+	root := NewRootCommand()
+	initCommand, _, err := root.Find([]string{"init"})
 	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal(data, &decoded))
-	assert.Equal(t, true, decoded["ok"])
+	deploymentCommand, _, err := root.Find([]string{"deployment", "add"})
+	require.NoError(t, err)
+	assert.Nil(t, initCommand.Flags().Lookup("result-file"))
+	assert.Nil(t, deploymentCommand.Flags().Lookup("result-file"))
+	assert.NoError(t, validateDelegatedFilePath(requestPath, "request", true))
 }
 
 func TestProjectCommandsRegistered(t *testing.T) {
@@ -69,7 +71,7 @@ func TestProjectCommandsRegistered(t *testing.T) {
 	assert.Equal(t, "add", deploymentCommand.Name())
 	assert.Equal(t, "bicep", initCommand.Flags().Lookup("infra").NoOptDefVal)
 	assert.True(t, initCommand.Flags().Lookup("request-file").Hidden)
-	assert.True(t, deploymentCommand.Flags().Lookup("result-file").Hidden)
+	assert.True(t, deploymentCommand.Flags().Lookup("request-file").Hidden)
 }
 
 func TestProjectFileExists(t *testing.T) {
@@ -157,6 +159,65 @@ func TestProjectEnvironmentTransitions(t *testing.T) {
 		"AZURE_OPENAI_ENDPOINT",
 		"AZURE_RESOURCE_GROUP",
 	}, plan.Unsets)
+}
+
+func TestProjectEnvironmentClearsOnlyNonEmptyValues(t *testing.T) {
+	old := map[string]string{
+		"AZURE_AI_PROJECT_ID":   "old-id",
+		"AZURE_RESOURCE_GROUP":  "",
+		"AZURE_OPENAI_ENDPOINT": "https://old.openai.azure.com/",
+	}
+	plan := planProjectEnvironment(old, projectModeExistingEndpoint, &resolvedProject{
+		Endpoint: "https://new.services.ai.azure.com/api/projects/new",
+	}, false)
+
+	assert.Contains(t, plan.Unsets, "AZURE_AI_PROJECT_ID")
+	assert.Contains(t, plan.Unsets, "AZURE_OPENAI_ENDPOINT")
+	assert.NotContains(t, plan.Unsets, "AZURE_RESOURCE_GROUP")
+}
+
+func TestProjectServiceEndpointUsesExactKeyTombstone(t *testing.T) {
+	server := grpc.NewServer()
+	projectServer := &recordingProjectServiceServer{}
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(
+		azdext.WithAddress(listener.Addr().String()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		client.Close()
+	})
+
+	require.NoError(t, setProjectServiceEndpoint(
+		t.Context(), client, "project", "",
+	))
+	require.NotNil(t, projectServer.request)
+	assert.Equal(t, "project", projectServer.request.ServiceName)
+	assert.Equal(t, "endpoint", projectServer.request.Path)
+	assert.Equal(t, "", projectServer.request.Value.GetStringValue())
+}
+
+type recordingProjectServiceServer struct {
+	azdext.UnimplementedProjectServiceServer
+	request *azdext.SetServiceConfigValueRequest
+}
+
+func (s *recordingProjectServiceServer) SetServiceConfigValue(
+	_ context.Context,
+	request *azdext.SetServiceConfigValueRequest,
+) (*azdext.EmptyResponse, error) {
+	s.request = request
+	return &azdext.EmptyResponse{}, nil
 }
 
 func TestProjectEnvironmentPreservesLocationWhenProjectLocationIsUnknown(t *testing.T) {

@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
@@ -22,8 +21,7 @@ import (
 const delegatedSchemaVersion = 1
 
 const (
-	projectInitSourceAgents   = "azure.ai.agents/init"
-	projectInitSourceProjects = "azure.ai.projects/direct"
+	projectInitSourceAgents = "azure.ai.agents/init"
 )
 
 type delegatedProject struct {
@@ -71,7 +69,7 @@ type projectDeploymentAddRequest struct {
 
 type deploymentAddRequest = projectDeploymentAddRequest
 
-type projectInitResult struct {
+type projectInitOutput struct {
 	SchemaVersion   int    `json:"schemaVersion"`
 	ProducerVersion string `json:"producerVersion"`
 	ServiceName     string `json:"serviceName"`
@@ -81,25 +79,23 @@ type projectInitResult struct {
 	ResourceID      string `json:"resourceId,omitempty"`
 }
 
-type projectDeploymentAddResult struct {
-	SchemaVersion   int                  `json:"schemaVersion"`
-	ProducerVersion string               `json:"producerVersion"`
-	ServiceName     string               `json:"serviceName"`
-	DeploymentName  string               `json:"deploymentName"`
-	Model           delegatedResultModel `json:"model"`
-	SKU             delegatedResultSKU   `json:"sku"`
-	Mutation        string               `json:"mutation"`
+type projectDeploymentAddOutput struct {
+	SchemaVersion   int                   `json:"schemaVersion"`
+	ProducerVersion string                `json:"producerVersion"`
+	ServiceName     string                `json:"serviceName"`
+	DeploymentName  string                `json:"deploymentName"`
+	Model           deploymentOutputModel `json:"model"`
+	SKU             deploymentOutputSKU   `json:"sku"`
+	Mutation        string                `json:"mutation"`
 }
 
-type deploymentAddResult = projectDeploymentAddResult
-
-type delegatedResultModel struct {
+type deploymentOutputModel struct {
 	Format  string `json:"format"`
 	Name    string `json:"name"`
 	Version string `json:"version"`
 }
 
-type delegatedResultSKU struct {
+type deploymentOutputSKU struct {
 	Name     string `json:"name"`
 	Capacity int    `json:"capacity"`
 }
@@ -111,8 +107,8 @@ func (r *projectInitRequest) validate() error {
 	if r.SchemaVersion != delegatedSchemaVersion {
 		return contractCompatibilityError(r.SchemaVersion)
 	}
-	if r.Source != projectInitSourceAgents && r.Source != projectInitSourceProjects {
-		return contractValidationError("source must be azure.ai.agents/init or azure.ai.projects/direct")
+	if r.Source != projectInitSourceAgents {
+		return contractValidationError("source must be azure.ai.agents/init")
 	}
 	if r.Source == projectInitSourceAgents && strings.TrimSpace(r.SourceVersion) == "" {
 		return contractValidationError("sourceVersion is required for delegated requests")
@@ -147,8 +143,8 @@ func (r *projectDeploymentAddRequest) validate() error {
 	if r.SchemaVersion != delegatedSchemaVersion {
 		return contractCompatibilityError(r.SchemaVersion)
 	}
-	if r.Source != projectInitSourceAgents && r.Source != projectInitSourceProjects {
-		return contractValidationError("source must be azure.ai.agents/init or azure.ai.projects/direct")
+	if r.Source != projectInitSourceAgents {
+		return contractValidationError("source must be azure.ai.agents/init")
 	}
 	if r.Source == projectInitSourceAgents && strings.TrimSpace(r.SourceVersion) == "" {
 		return contractValidationError("sourceVersion is required for delegated requests")
@@ -176,47 +172,6 @@ func (r *projectDeploymentAddRequest) validate() error {
 
 func validateProjectDeploymentAddRequest(request projectDeploymentAddRequest) error {
 	return request.validate()
-}
-
-func validateProjectInitResult(result projectInitResult) error {
-	if result.SchemaVersion != delegatedSchemaVersion {
-		return contractCompatibilityError(result.SchemaVersion)
-	}
-	if result.ProducerVersion == "" {
-		return contractValidationError("producerVersion is required in delegated results")
-	}
-	if result.ServiceName == "" {
-		return contractValidationError("serviceName is required")
-	}
-	if !slices.Contains([]string{"new", "existing-id", "existing-endpoint"}, result.Mode) {
-		return contractValidationError(fmt.Sprintf("invalid project mode %q", result.Mode))
-	}
-	if !slices.Contains([]string{"created", "updated", "migrated", "unchanged"}, result.Mutation) {
-		return contractValidationError(fmt.Sprintf("invalid project mutation %q", result.Mutation))
-	}
-	if result.Mode == "existing-id" && result.ResourceID == "" {
-		return contractValidationError("resourceId is required for existing-id results")
-	}
-	if result.Mode != "new" && result.Endpoint == "" {
-		return contractValidationError("endpoint is required for existing project results")
-	}
-	return nil
-}
-
-func validateProjectDeploymentAddResult(result projectDeploymentAddResult) error {
-	if result.SchemaVersion != delegatedSchemaVersion {
-		return contractCompatibilityError(result.SchemaVersion)
-	}
-	if result.ProducerVersion == "" || result.ServiceName == "" ||
-		result.DeploymentName == "" || result.Model.Name == "" ||
-		result.Model.Format == "" || result.Model.Version == "" ||
-		result.SKU.Name == "" || result.SKU.Capacity <= 0 {
-		return contractValidationError("deployment result is missing a required value")
-	}
-	if !slices.Contains([]string{"created", "replaced", "unchanged"}, result.Mutation) {
-		return contractValidationError(fmt.Sprintf("invalid deployment mutation %q", result.Mutation))
-	}
-	return nil
 }
 
 func contractCompatibilityError(got int) error {
@@ -291,64 +246,6 @@ func decodeDelegatedJSON(path string, value any) error {
 	return nil
 }
 
-func decodeDelegatedResultJSON(path string, value any) error {
-	if err := validateDelegatedFilePath(path, "result", true); err != nil {
-		return err
-	}
-	file, err := os.Open(path) // #nosec G304 -- path is validated as a delegated file.
-	if err != nil {
-		return contractValidationError(fmt.Sprintf("read delegated result: %v", err))
-	}
-	defer file.Close()
-	decoder := json.NewDecoder(file)
-	if err := decoder.Decode(value); err != nil {
-		return contractValidationError(fmt.Sprintf("decode delegated result: %v", err))
-	}
-	return nil
-}
-
-func writeDelegatedResult(path string, value any) error {
-	if err := validateDelegatedFilePath(path, "result", false); err != nil {
-		return err
-	}
-	dir := filepath.Dir(path)
-	temp, err := os.CreateTemp(dir, ".azd-project-result-*")
-	if err != nil {
-		return fmt.Errorf("create delegated result: %w", err)
-	}
-	tempName := temp.Name()
-	cleanup := func() {
-		_ = temp.Close()
-		_ = os.Remove(tempName)
-	}
-	defer cleanup()
-	if err := temp.Chmod(0600); err != nil {
-		return fmt.Errorf("protect delegated result: %w", err)
-	}
-	encoder := json.NewEncoder(temp)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(value); err != nil {
-		return fmt.Errorf("encode delegated result: %w", err)
-	}
-	if err := temp.Sync(); err != nil {
-		return fmt.Errorf("flush delegated result: %w", err)
-	}
-	if err := temp.Close(); err != nil {
-		return fmt.Errorf("close delegated result: %w", err)
-	}
-	if err := os.Rename(tempName, path); err != nil {
-		// Windows does not replace an existing file with Rename. The path was
-		// validated above and is still in the same private directory.
-		if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
-			return fmt.Errorf("replace delegated result: %w", err)
-		}
-		if renameErr := os.Rename(tempName, path); renameErr != nil {
-			return fmt.Errorf("replace delegated result: %w", renameErr)
-		}
-	}
-	return nil
-}
-
 func validateDelegatedFilePath(path, kind string, requireRegular bool) error {
 	if path == "" {
 		return contractValidationError(kind + " file path is required")
@@ -372,21 +269,6 @@ func validateDelegatedFilePath(path, kind string, requireRegular bool) error {
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		return contractValidationError(kind + " file must be a regular non-symlink file")
-	}
-	return nil
-}
-
-func validateDelegatedPathPair(requestPath, resultPath string) error {
-	if err := validateDelegatedFilePath(requestPath, "request", true); err != nil {
-		return err
-	}
-	if err := validateDelegatedFilePath(resultPath, "result", false); err != nil {
-		return err
-	}
-	requestAbs, _ := filepath.Abs(requestPath)
-	resultAbs, _ := filepath.Abs(resultPath)
-	if !strings.EqualFold(filepath.Dir(requestAbs), filepath.Dir(resultAbs)) {
-		return contractValidationError("request and result files must be siblings in the delegated temporary directory")
 	}
 	return nil
 }
@@ -421,10 +303,7 @@ func delegatedProducerVersion() string {
 func registerDelegatedContractFlags(
 	cmd *cobra.Command,
 	requestFile *string,
-	resultFile *string,
 ) {
 	cmd.Flags().StringVar(requestFile, "request-file", "", "Delegated request file")
-	cmd.Flags().StringVar(resultFile, "result-file", "", "Delegated result file")
 	_ = cmd.Flags().MarkHidden("request-file")
-	_ = cmd.Flags().MarkHidden("result-file")
 }

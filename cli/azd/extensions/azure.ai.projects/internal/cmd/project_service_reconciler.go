@@ -194,25 +194,32 @@ func (r *projectServiceReconciler) reconcileEndpoint(
 		if _, ok := service.Raw["endpoint"]; !ok {
 			return service.Name, "unchanged", nil
 		}
-		_, err = r.client.Project().UnsetServiceConfig(ctx,
-			&azdext.UnsetServiceConfigRequest{ServiceName: service.Name, Path: "endpoint"})
-	} else {
-		value, valueErr := structpb.NewValue(endpoint)
-		if valueErr != nil {
-			return "", "", valueErr
-		}
-		_, err = r.client.Project().SetServiceConfigValue(ctx,
-			&azdext.SetServiceConfigValueRequest{
-				ServiceName: service.Name,
-				Path:        "endpoint",
-				Value:       value,
-			})
 	}
-	if err != nil {
-		return "", "", fmt.Errorf("update project service %q endpoint: %w", service.Name, err)
+	if err := setProjectServiceEndpoint(ctx, r.client, service.Name, endpoint); err != nil {
+		return "", "", err
 	}
 	_ = mode
 	return service.Name, "updated", nil
+}
+
+func setProjectServiceEndpoint(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	serviceName, endpoint string,
+) error {
+	value, err := structpb.NewValue(endpoint)
+	if err != nil {
+		return err
+	}
+	if _, err := client.Project().SetServiceConfigValue(ctx,
+		&azdext.SetServiceConfigValueRequest{
+			ServiceName: serviceName,
+			Path:        "endpoint",
+			Value:       value,
+		}); err != nil {
+		return fmt.Errorf("update project service %q endpoint: %w", serviceName, err)
+	}
+	return nil
 }
 
 func legacyProjectServiceBody(

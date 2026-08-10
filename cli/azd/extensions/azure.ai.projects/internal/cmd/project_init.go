@@ -35,7 +35,6 @@ type projectInitFlags struct {
 	force           bool
 	noPrompt        bool
 	requestFile     string
-	resultFile      string
 	output          string
 }
 
@@ -97,7 +96,7 @@ func newProjectInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	_ = cmd.Flags().Lookup("infra").NoOptDefVal
 	cmd.Flags().Lookup("infra").NoOptDefVal = provisioning.BicepProviderName
 	cmd.Flags().BoolVar(&flags.force, "force", false, "Replace a different configured project")
-	registerDelegatedContractFlags(cmd, &flags.requestFile, &flags.resultFile)
+	registerDelegatedContractFlags(cmd, &flags.requestFile)
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
 		AllowedValues: []string{"default", "json", "none"},
@@ -237,7 +236,7 @@ func (a *ProjectInitAction) Run(ctx context.Context) error {
 		}
 	}
 
-	result := projectInitResult{
+	result := projectInitOutput{
 		SchemaVersion:   delegatedSchemaVersion,
 		ProducerVersion: delegatedProducerVersion(),
 		ServiceName:     serviceName,
@@ -246,11 +245,8 @@ func (a *ProjectInitAction) Run(ctx context.Context) error {
 		Endpoint:        target.Endpoint,
 		ResourceID:      target.ResourceId,
 	}
-	if err := validateProjectInitResult(result); err != nil {
-		return err
-	}
 	if request != nil {
-		return writeDelegatedResult(a.flags.resultFile, result)
+		return nil
 	}
 	if a.flags.output == "none" {
 		return nil
@@ -270,10 +266,7 @@ func (a *ProjectInitAction) loadRequest() (*projectInitRequest, error) {
 	if a.flags.requestFile == "" {
 		return nil, nil
 	}
-	if a.flags.resultFile == "" {
-		return nil, contractValidationError("--result-file is required with --request-file")
-	}
-	if err := validateDelegatedPathPair(a.flags.requestFile, a.flags.resultFile); err != nil {
+	if err := validateDelegatedFilePath(a.flags.requestFile, "request", true); err != nil {
 		return nil, err
 	}
 	request := &projectInitRequest{}

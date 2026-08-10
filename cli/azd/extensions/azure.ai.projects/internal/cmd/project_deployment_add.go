@@ -25,7 +25,6 @@ type projectDeploymentFlags struct {
 	location    string
 	force       bool
 	requestFile string
-	resultFile  string
 	output      string
 }
 
@@ -75,7 +74,7 @@ func newProjectDeploymentAddCommand(extCtx *azdext.ExtensionContext) *cobra.Comm
 	cmd.Flags().Int32Var(&flags.capacity, "capacity", 0, "Deployment capacity")
 	cmd.Flags().StringVar(&flags.location, "location", "", "Deployment location")
 	cmd.Flags().BoolVar(&flags.force, "force", false, "Replace a conflicting inline declaration")
-	registerDelegatedContractFlags(cmd, &flags.requestFile, &flags.resultFile)
+	registerDelegatedContractFlags(cmd, &flags.requestFile)
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
 		AllowedValues: []string{"default", "json", "none"},
@@ -233,27 +232,24 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 			return fmt.Errorf("set default model deployment: %w", err)
 		}
 	}
-	result := projectDeploymentAddResult{
+	result := projectDeploymentAddOutput{
 		SchemaVersion:   delegatedSchemaVersion,
 		ProducerVersion: delegatedProducerVersion(),
 		ServiceName:     service.Name,
 		DeploymentName:  selected.Deployment.Name,
-		Model: delegatedResultModel{
+		Model: deploymentOutputModel{
 			Format:  selected.Deployment.Model.Format,
 			Name:    selected.Deployment.Model.Name,
 			Version: selected.Deployment.Model.Version,
 		},
-		SKU: delegatedResultSKU{
+		SKU: deploymentOutputSKU{
 			Name:     selected.Deployment.Sku.Name,
 			Capacity: selected.Deployment.Sku.Capacity,
 		},
 		Mutation: string(mutation),
 	}
-	if err := validateProjectDeploymentAddResult(result); err != nil {
-		return err
-	}
 	if request != nil {
-		return writeDelegatedResult(a.flags.resultFile, result)
+		return nil
 	}
 	if a.flags.output == "none" {
 		return nil
@@ -274,10 +270,7 @@ func (a *ProjectDeploymentAddAction) loadRequest() (*projectDeploymentAddRequest
 	if a.flags.requestFile == "" {
 		return nil, nil
 	}
-	if a.flags.resultFile == "" {
-		return nil, contractValidationError("--result-file is required with --request-file")
-	}
-	if err := validateDelegatedPathPair(a.flags.requestFile, a.flags.resultFile); err != nil {
+	if err := validateDelegatedFilePath(a.flags.requestFile, "request", true); err != nil {
 		return nil, err
 	}
 	request := &projectDeploymentAddRequest{}

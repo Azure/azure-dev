@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"slices"
 	"strings"
 
@@ -122,7 +121,7 @@ func planProjectEnvironment(
 	}
 	unsets := make([]string, 0, len(deleteKeys))
 	for key := range deleteKeys {
-		if _, exists := oldValues[key]; exists {
+		if value, exists := oldValues[key]; exists && value != "" {
 			unsets = append(unsets, key)
 		}
 	}
@@ -169,76 +168,15 @@ func reconcileProjectEnvironment(
 		}
 	}
 	for _, key := range plan.Unsets {
-		if err := unsetEnvironmentValue(ctx, client.Environment(), envName, key); err != nil {
-			return fmt.Errorf("unset project environment value %s: %w", key, err)
+		if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: envName,
+			Key:     key,
+			Value:   "",
+		}); err != nil {
+			return fmt.Errorf("clear project environment value %s: %w", key, err)
 		}
 	}
 	return nil
-}
-
-// unsetEnvironmentValue calls the versioned UnsetValue RPC.
-func unsetEnvironmentValue(
-	ctx context.Context,
-	client azdext.EnvironmentServiceClient,
-	envName, key string,
-) error {
-	method := reflect.ValueOf(client).MethodByName("UnsetValue")
-	if method.IsValid() {
-		methodType := method.Type()
-		if methodType.NumIn() >= 2 {
-			requestType := methodType.In(1)
-			if requestType.Kind() != reflect.Pointer {
-				return unsupportedEnvironmentUnset()
-			}
-			request := reflect.New(requestType.Elem())
-			envField := request.Elem().FieldByName("EnvName")
-			keyField := request.Elem().FieldByName("Key")
-			if envField.IsValid() && envField.CanSet() && envField.Kind() == reflect.String &&
-				keyField.IsValid() && keyField.CanSet() && keyField.Kind() == reflect.String {
-				envField.SetString(envName)
-				keyField.SetString(key)
-				args := []reflect.Value{reflect.ValueOf(ctx), request}
-				if methodType.IsVariadic() {
-					args = append(args, reflect.Zero(methodType.In(methodType.NumIn()-1)))
-					return reflectCallError(method.Call(args))
-				}
-				return reflectCallError(method.Call(args))
-			}
-		}
-	}
-	return unsupportedEnvironmentUnset()
-}
-
-func unsupportedEnvironmentUnset() error {
-	return exterrors.Compatibility(
-		exterrors.CodeEnvironmentUnsetUnsupported,
-		"the azd host does not support environment key deletion",
-		"upgrade azd to the coordinated core version and retry",
-	)
-}
-
-func reflectCallError(results []reflect.Value) error {
-	if len(results) == 0 {
-		return nil
-	}
-	result := results[len(results)-1]
-	switch result.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map,
-		reflect.Pointer, reflect.Slice:
-		if result.IsNil() {
-			return nil
-		}
-	default:
-		return fmt.Errorf("environment unset returned %s instead of an error", result.Type())
-	}
-	if result.IsNil() {
-		return nil
-	}
-	err, ok := result.Interface().(error)
-	if !ok {
-		return fmt.Errorf("environment unset returned %s instead of an error", result.Type())
-	}
-	return err
 }
 
 func currentProjectEnvironment(

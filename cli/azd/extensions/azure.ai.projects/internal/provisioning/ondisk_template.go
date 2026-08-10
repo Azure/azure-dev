@@ -19,15 +19,14 @@ import (
 	"github.com/drone/envsubst"
 )
 
-// Hard-coded relative locations for the on-disk Bicep tree the user owns
-// after running `azd ai agent init --infra`. azure.yaml's infra.path /
-// infra.module overrides are deliberately not honored; the eject writer
-// hard-codes these same paths.
+// Default locations for the on-disk Bicep tree. A provisioning layer can
+// override both through its path and module options.
 const (
 	onDiskInfraDir       = "infra"
-	onDiskBicepFile      = "main.bicep"
-	onDiskBicepParamFile = "main.bicepparam"
-	onDiskParamsFile     = "main.parameters.json"
+	onDiskModule         = "main"
+	onDiskBicepFile      = onDiskModule + ".bicep"
+	onDiskBicepParamFile = onDiskModule + ".bicepparam"
+	onDiskParamsFile     = onDiskModule + ".parameters.json"
 )
 
 // templateMode records which on-disk source was used, for telemetry /
@@ -115,9 +114,45 @@ func loadOnDiskTemplateWithEnvironment(
 	compiler bicepCompiler,
 	environment onDiskEnvironment,
 ) (*templateSource, error) {
-	infraDir := filepath.Join(projectPath, onDiskInfraDir)
-	bicepparamPath := filepath.Join(infraDir, onDiskBicepParamFile)
-	bicepPath := filepath.Join(infraDir, onDiskBicepFile)
+	return loadOnDiskTemplateAtWithEnvironment(
+		ctx,
+		filepath.Join(projectPath, onDiskInfraDir),
+		onDiskModule,
+		compiler,
+		environment,
+	)
+}
+
+// loadOnDiskTemplateAt loads a Bicep module from an explicit provisioning
+// layer path and module name.
+func loadOnDiskTemplateAt(
+	ctx context.Context,
+	infraDir string,
+	module string,
+	compiler bicepCompiler,
+	envValues map[string]string,
+) (*templateSource, error) {
+	return loadOnDiskTemplateAtWithEnvironment(
+		ctx,
+		infraDir,
+		module,
+		compiler,
+		onDiskEnvironment{project: envValues},
+	)
+}
+
+func loadOnDiskTemplateAtWithEnvironment(
+	ctx context.Context,
+	infraDir string,
+	module string,
+	compiler bicepCompiler,
+	environment onDiskEnvironment,
+) (*templateSource, error) {
+	if module == "" {
+		module = onDiskModule
+	}
+	bicepparamPath := filepath.Join(infraDir, module+".bicepparam")
+	bicepPath := filepath.Join(infraDir, module+".bicep")
 
 	switch {
 	case fileExistsAt(bicepparamPath):
@@ -128,7 +163,7 @@ func loadOnDiskTemplateWithEnvironment(
 			environment.project,
 		)
 	case fileExistsAt(bicepPath):
-		paramsPath := filepath.Join(infraDir, onDiskParamsFile)
+		paramsPath := filepath.Join(infraDir, module+".parameters.json")
 		return loadFromBicep(
 			ctx,
 			bicepPath,

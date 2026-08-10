@@ -17,9 +17,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -98,18 +100,55 @@ func Internal(code, message string) error {
 	}
 }
 
+// Service returns a structured service failure with operation-specific telemetry context.
+func Service(operation, code, message, serviceName, suggestion string) *azdext.ServiceError {
+	if code == "" {
+		code = "failed"
+	}
+	return &azdext.ServiceError{
+		Message:     message,
+		ErrorCode:   fmt.Sprintf("%s.%s", operation, code),
+		ServiceName: serviceName,
+		Suggestion:  suggestion,
+	}
+}
+
+// InternalFromError preserves an existing structured error or cancellation and otherwise
+// classifies err as an internal failure with operation context.
+func InternalFromError(err error, code, contextMessage string) error {
+	if err == nil {
+		return nil
+	}
+	if structured := structuredError(err); structured != nil {
+		return structured
+	}
+	if IsCancellation(err) {
+		return Cancelled(fmt.Sprintf("%s was cancelled", contextMessage))
+	}
+	return Internal(code, fmt.Sprintf("%s: %s", contextMessage, err))
+}
+
 // ---------------------------------------------------------------------------
 // Azure / gRPC error converters
 // ---------------------------------------------------------------------------
 
 // ServiceFromAzure wraps an [azcore.ResponseError] into an [azdext.ServiceError] with operation context.
-// If the error is not an azcore.ResponseError, it returns a generic internal [azdext.LocalError].
+// It also preserves existing structured errors and authentication failures.
 func ServiceFromAzure(err error, operation string) error {
+	if err == nil {
+		return nil
+	}
+	if structured := structuredError(err); structured != nil {
+		return structured
+	}
 	var respErr *azcore.ResponseError
 	if errors.As(err, &respErr) {
 		serviceName := ""
 		if respErr.RawResponse != nil && respErr.RawResponse.Request != nil {
 			serviceName = respErr.RawResponse.Request.Host
+			if serviceName == "" && respErr.RawResponse.Request.URL != nil {
+				serviceName = respErr.RawResponse.Request.URL.Hostname()
+			}
 		}
 		code := respErr.ErrorCode
 		if code == "" {
@@ -125,7 +164,59 @@ func ServiceFromAzure(err error, operation string) error {
 	if IsCancellation(err) {
 		return Cancelled(fmt.Sprintf("%s was cancelled", operation))
 	}
+	if _, ok := errors.AsType[*azidentity.AuthenticationFailedError](err); ok {
+		return Auth(CodeAuthFailed, err.Error(), "run `azd auth login` to authenticate")
+	}
 	return Internal(operation, fmt.Sprintf("%s: %s", operation, err.Error()))
+}
+
+// FromHost converts an error returned by an azd host gRPC service. Service metadata
+// transported in gRPC details is preserved and prefixed with the current operation.
+func FromHost(err error, operation, contextMessage string) error {
+	if err == nil {
+		return nil
+	}
+	if structured := structuredError(err); structured != nil {
+		return structured
+	}
+	if IsCancellation(err) {
+		return Cancelled(fmt.Sprintf("%s was cancelled", contextMessage))
+	}
+
+	st, ok := azdext.GRPCStatusFromError(err)
+	if !ok {
+		return Internal(operation, fmt.Sprintf("%s: %s", contextMessage, err))
+	}
+	if st.Code() == codes.Unauthenticated {
+		return authFromGrpcMessage(st.Message())
+	}
+
+	actionable := azdext.ActionableErrorDetailFromError(err)
+	if serviceDetail := serviceErrorDetailFromStatus(st); serviceDetail != nil {
+		code := serviceDetail.GetErrorCode()
+		if code == "" && serviceDetail.GetStatusCode() > 0 {
+			code = strconv.Itoa(int(serviceDetail.GetStatusCode()))
+		}
+
+		serviceErr := Service(
+			operation,
+			code,
+			fmt.Sprintf("%s: %s", contextMessage, st.Message()),
+			serviceDetail.GetServiceName(),
+			"",
+		)
+		serviceErr.StatusCode = int(serviceDetail.GetStatusCode())
+		if actionable != nil {
+			serviceErr.Suggestion = actionable.GetSuggestion()
+			serviceErr.Links = azdext.UnwrapErrorLinks(actionable.GetLinks())
+		}
+		return serviceErr
+	}
+	if actionable != nil {
+		return err
+	}
+
+	return Internal(operation, fmt.Sprintf("%s: %s", contextMessage, st.Message()))
 }
 
 // FromAiService wraps a gRPC error returned by an azd host AI service call
@@ -194,6 +285,30 @@ func authFromGrpcMessage(msg string) error {
 		return Auth(CodeLoginExpired, msg, "run `azd auth login` to acquire a new token")
 	}
 	return Auth(CodeAuthFailed, msg, "run `azd auth login` to authenticate")
+}
+
+func structuredError(err error) error {
+	if serviceErr, ok := errors.AsType[*azdext.ServiceError](err); ok {
+		return serviceErr
+	}
+	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+		return localErr
+	}
+	return nil
+}
+
+// serviceErrorDetailFromStatus is kept local until azure.ai.agents can consume an
+// azd version that includes azdext.ServiceErrorDetailFromStatus.
+func serviceErrorDetailFromStatus(st *status.Status) *azdext.ServiceErrorDetail {
+	if st == nil {
+		return nil
+	}
+	for _, detail := range st.Details() {
+		if serviceErr, ok := detail.(*azdext.ServiceErrorDetail); ok {
+			return serviceErr
+		}
+	}
+	return nil
 }
 
 // IsCancellation checks if an error represents user cancellation

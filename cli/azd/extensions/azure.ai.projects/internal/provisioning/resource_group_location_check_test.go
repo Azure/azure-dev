@@ -18,19 +18,22 @@ func TestEvaluateResourceGroupLocation(t *testing.T) {
 	)
 
 	t.Run("matching regions produce no results", func(t *testing.T) {
-		resp := evaluateResourceGroupLocation(resourceGroup, "eastus", "eastus", subscriptionID)
+		resp := evaluateResourceGroupLocation(
+			resourceGroup, "eastus", "eastus", subscriptionID, envKeyResourceGroup)
 		require.NotNil(t, resp)
 		assert.Empty(t, resp.Results)
 	})
 
 	t.Run("region comparison is case-insensitive", func(t *testing.T) {
-		resp := evaluateResourceGroupLocation(resourceGroup, "EastUS", "eastus", subscriptionID)
+		resp := evaluateResourceGroupLocation(
+			resourceGroup, "EastUS", "eastus", subscriptionID, envKeyResourceGroup)
 		require.NotNil(t, resp)
 		assert.Empty(t, resp.Results)
 	})
 
 	t.Run("mismatched regions produce a blocking error result with guidance", func(t *testing.T) {
-		resp := evaluateResourceGroupLocation(resourceGroup, "eastus", "westus2", subscriptionID)
+		resp := evaluateResourceGroupLocation(
+			resourceGroup, "eastus", "westus2", subscriptionID, envKeyResourceGroup)
 		require.NotNil(t, resp)
 		require.Len(t, resp.Results, 1)
 
@@ -58,11 +61,21 @@ func TestEvaluateResourceGroupLocation(t *testing.T) {
 
 	t.Run("resource group name with shell metacharacters is quoted in the delete command", func(t *testing.T) {
 		const parenRG = "rg(test)"
-		resp := evaluateResourceGroupLocation(parenRG, "eastus", "westus2", subscriptionID)
+		resp := evaluateResourceGroupLocation(
+			parenRG, "eastus", "westus2", subscriptionID, envKeyResourceGroup)
 		require.NotNil(t, resp)
 		require.Len(t, resp.Results, 1)
 
 		// Without quoting, "az group delete --name rg(test)" is a shell syntax error.
 		assert.Contains(t, resp.Results[0].Suggestion, `az group delete --name "rg(test)"`)
+	})
+
+	t.Run("layer guidance uses the Foundry resource group key", func(t *testing.T) {
+		resp := evaluateResourceGroupLocation(
+			resourceGroup, "eastus", "westus2", subscriptionID, envKeyFoundryRG)
+		require.NotNil(t, resp)
+		require.Len(t, resp.Results, 1)
+		assert.Contains(t, resp.Results[0].Suggestion, "azd env set "+envKeyFoundryRG)
+		assert.NotContains(t, resp.Results[0].Suggestion, "azd env set "+envKeyResourceGroup+" ")
 	})
 }

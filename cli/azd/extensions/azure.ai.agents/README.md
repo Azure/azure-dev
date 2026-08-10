@@ -80,6 +80,7 @@ carries `config: env:` gets a warning naming the affected variables on both
 
 Move them up one level to fix it:
 
+<!-- azd:doc-example partial -->
 ```yaml
 services:
   my-agent:
@@ -161,6 +162,10 @@ Details:
   fails (for example, the previous session was already deleted), azd silently
   falls back to the default behavior and the next invoke starts a fresh session
   on the new version.
+
+## Customize infrastructure
+
+Use `azd ai agent init --infra` to generate editable Foundry Bicep or Terraform. Existing project infrastructure is preserved as a separate layer. See [Customize Foundry infrastructure with `--infra`](docs/infrastructure-eject.md) for migration behavior, file-conflict rules, resource-group ownership, layer dependencies, and limitations.
 
 ## Private networking for `host: azure.ai.project`
 

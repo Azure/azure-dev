@@ -35,6 +35,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -79,7 +80,8 @@ type initFlags struct {
 	// noPrompt is resolved from the extension context (--no-prompt / AZD_NO_PROMPT)
 	// and is not registered as a CLI flag on the init command itself.
 	noPrompt bool
-	// infra selects the IaC flavor to eject from azure.yaml into ./infra/.
+	// infra selects the IaC flavor to eject from azure.yaml. Existing projects
+	// may receive a dedicated infra/foundry provisioning layer.
 	// Empty means the flag was not passed (bicepless default, no files). A bare
 	// `--infra` resolves to "bicep" via the flag's NoOptDefVal; `--infra=terraform`
 	// and `--infra=bicep` are explicit. The eject runs after a fresh init or
@@ -1707,9 +1709,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"Required together with --no-prompt when init would otherwise need confirmation.")
 
 	cmd.Flags().StringVar(&flags.infra, "infra", "",
-		"Eject infrastructure-as-code from azure.yaml into ./infra/. "+
+		"Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and "+
+			"Foundry files are generated as a separate infra/foundry layer. "+
 			"A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets "+
-			"infra.provider: terraform; --infra=bicep is explicit Bicep. "+
+			"the Foundry layer provider to terraform; Bicep keeps the microsoft.foundry provider. "+
+			"--infra=bicep is explicit Bicep. "+
 			"When azure.yaml already declares a Foundry project service, runs as a standalone "+
 			"eject and skips the init prompts; otherwise init runs first and the eject follows it.")
 	// NoOptDefVal makes a bare `--infra` resolve to "bicep" while still allowing
@@ -1952,8 +1956,8 @@ func ensureProject(
 			if _, statErr := os.Stat(infraDir); os.IsNotExist(statErr) {
 				fmt.Printf("%s", output.WithWarningFormat(
 					"No infra/ directory found in the project, and azure.yaml does not declare "+
-						"'infra.provider: %s'. If you need Azure infrastructure for deployment, "+
-						"set that provider in azure.yaml, or run "+
+						"the '%s' provider. If you need Azure infrastructure for deployment, "+
+						"declare that provider in azure.yaml, or run "+
 						"'azd ai agent init --infra' to generate an infra/ directory.\n",
 					project.FoundryProviderName,
 				))
@@ -2098,13 +2102,55 @@ func writeFoundryProvider(ctx context.Context, azdClient *azdext.AzdClient) erro
 	return nil
 }
 
-// hasFoundryProviderDeclared reports whether azure.yaml already
-// declares this extension's provisioning provider.
+// hasFoundryProviderDeclared reports whether azure.yaml declares the Foundry
+// provider at the root or on an infrastructure layer. Project().Get exposes
+// only root infra options today, so inspect the project file for layers.
 func hasFoundryProviderDeclared(proj *azdext.ProjectConfig) bool {
 	if proj == nil || proj.Infra == nil {
 		return false
 	}
-	return proj.Infra.Provider == project.FoundryProviderName
+	if proj.Path == "" {
+		return proj.Infra.Provider == project.FoundryProviderName
+	}
+
+	var raw []byte
+	for _, name := range azdcontext.ProjectFileNames {
+		data, err := os.ReadFile(filepath.Join(proj.Path, name)) //nolint:gosec // project path is from azd
+		if err == nil {
+			raw = data
+			break
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return proj.Infra.Provider == project.FoundryProviderName
+		}
+	}
+	if raw == nil {
+		return proj.Infra.Provider == project.FoundryProviderName
+	}
+	var doc struct {
+		Infra struct {
+			Provider string `yaml:"provider"`
+			Layers   []struct {
+				Provider string `yaml:"provider"`
+			} `yaml:"layers"`
+		} `yaml:"infra"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return proj.Infra.Provider == project.FoundryProviderName
+	}
+	if doc.Infra.Provider == project.FoundryProviderName && len(doc.Infra.Layers) == 0 {
+		return true
+	}
+	for _, layer := range doc.Infra.Layers {
+		provider := layer.Provider
+		if provider == "" {
+			provider = doc.Infra.Provider
+		}
+		if provider == project.FoundryProviderName {
+			return true
+		}
+	}
+	return false
 }
 
 func getExistingEnvironment(ctx context.Context, envName string, azdClient *azdext.AzdClient) *azdext.Environment {

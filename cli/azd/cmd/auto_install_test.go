@@ -32,6 +32,7 @@ type fakeExtensionAutoInstallManager struct {
 	installed  map[string]*extensions.Extension
 	findErr    error
 	installErr error
+	installFn  func(*extensions.ExtensionMetadata) (*extensions.ExtensionVersion, error)
 }
 
 func (m *fakeExtensionAutoInstallManager) FindExtensions(
@@ -94,6 +95,9 @@ func (m *fakeExtensionAutoInstallManager) Install(
 ) (*extensions.ExtensionVersion, error) {
 	if m.installErr != nil {
 		return nil, m.installErr
+	}
+	if m.installFn != nil {
+		return m.installFn(extension)
 	}
 	version := &extension.Versions[0]
 	m.installed[extension.Id] = &extensions.Extension{

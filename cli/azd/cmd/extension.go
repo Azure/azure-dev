@@ -3249,10 +3249,18 @@ func displayExtensionUsageAndExamples(
 
 // displayInstalledDependencies renders newly installed and skipped dependencies
 // as flat rows aligned with the parent step.
+type installedDependencyManager interface {
+	GetInstalled(options extensions.FilterOptions) (*extensions.Extension, error)
+	FindExtensions(
+		ctx context.Context,
+		options *extensions.FilterOptions,
+	) ([]*extensions.ExtensionMetadata, error)
+}
+
 func displayInstalledDependencies(
 	ctx context.Context,
 	console input.Console,
-	manager *extensions.Manager,
+	manager installedDependencyManager,
 	deps []extensions.ExtensionDependency,
 	preInstalledIds map[string]struct{},
 	indent string,

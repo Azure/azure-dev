@@ -420,6 +420,15 @@ func tryAutoInstallExtensionVersion(
 		return false, nil
 	}
 
+	installedBefore, err := extensionManager.ListInstalled()
+	if err != nil {
+		return false, fmt.Errorf("listing installed extensions: %w", err)
+	}
+	preInstalledIds := make(map[string]struct{}, len(installedBefore))
+	for id := range installedBefore {
+		preInstalledIds[id] = struct{}{}
+	}
+
 	stepMessage := fmt.Sprintf("Installing extension '%s'", extension.Id)
 	console.ShowSpinner(ctx, stepMessage, input.Step)
 	installedVersion, err := extensionManager.Install(ctx, &extension, versionPreference)
@@ -433,6 +442,17 @@ func tryAutoInstallExtensionVersion(
 		stepMessage += fmt.Sprintf(" from '%s'", extension.Source)
 	}
 	console.StopSpinner(ctx, stepMessage, input.StepDone)
+	if len(installedVersion.Dependencies) > 0 {
+		displayInstalledDependencies(
+			ctx,
+			console,
+			extensionManager,
+			installedVersion.Dependencies,
+			preInstalledIds,
+			"  ",
+			map[string]struct{}{extension.Id: {}},
+		)
+	}
 	return true, nil
 }
 

@@ -387,6 +387,60 @@ func TestAutoInstallExtensionRequirementsInstallFailure(t *testing.T) {
 	assert.Equal(t, "Installing extension 'demo'", console.SpinnerOps()[1].Message)
 }
 
+func TestAutoInstallExtensionRequirementsDisplaysInstalledDependencies(t *testing.T) {
+	clearAgentEnvVarsForTest(t)
+
+	parent := autoInstallTestExtension("parent", "Parent", "azd", extensions.SourceCategoryAzd)
+	parent.Versions[0].Dependencies = []extensions.ExtensionDependency{{Id: "child", Version: "2.0.0"}}
+	child := autoInstallTestExtension("child", "Child", "azd", extensions.SourceCategoryAzd)
+	child.Versions[0].Version = "2.0.0"
+	child.Versions[0].Dependencies = []extensions.ExtensionDependency{{Id: "grandchild", Version: "3.0.0"}}
+	grandchild := autoInstallTestExtension("grandchild", "Grandchild", "azd", extensions.SourceCategoryAzd)
+	grandchild.Versions[0].Version = "3.0.0"
+
+	console := mockinput.NewMockConsole()
+	console.SetNoPromptMode(true)
+	manager := &fakeExtensionAutoInstallManager{
+		available: []*extensions.ExtensionMetadata{parent, child, grandchild},
+		installed: map[string]*extensions.Extension{},
+	}
+	manager.installFn = func(extension *extensions.ExtensionMetadata) (*extensions.ExtensionVersion, error) {
+		manager.installed[parent.Id] = &extensions.Extension{
+			Id:      parent.Id,
+			Version: parent.Versions[0].Version,
+			Source:  parent.Source,
+		}
+		manager.installed[child.Id] = &extensions.Extension{
+			Id:      child.Id,
+			Version: child.Versions[0].Version,
+			Source:  child.Source,
+		}
+		manager.installed[grandchild.Id] = &extensions.Extension{
+			Id:      grandchild.Id,
+			Version: grandchild.Versions[0].Version,
+			Source:  grandchild.Source,
+		}
+		return &extension.Versions[0], nil
+	}
+
+	result, err := autoInstallExtensionRequirements(
+		t.Context(),
+		console,
+		manager,
+		[]projectExtensionRequirement{autoInstallTestRequirement(parent)},
+		autoInstallDisplayContext{requiredByProject: true},
+	)
+
+	require.NoError(t, err)
+	require.True(t, result.installed)
+	rendered := strings.Join(console.Output(), "\n")
+	require.Contains(t, rendered, "Installing child dependency")
+	require.Contains(t, rendered, "(2.0.0)")
+	require.Contains(t, rendered, "Installing grandchild dependency")
+	require.Contains(t, rendered, "(3.0.0)")
+	require.Less(t, strings.Index(rendered, "child dependency"), strings.Index(rendered, "grandchild dependency"))
+}
+
 func TestAutoInstallExtensionRequirementsNoPromptAmbiguous(t *testing.T) {
 	clearAgentEnvVarsForTest(t)
 

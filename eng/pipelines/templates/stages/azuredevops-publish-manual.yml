@@ -42,6 +42,8 @@ stages:
                   inputs:
                     versionSpec: 20.x
 
+                - template: /eng/common/pipelines/templates/steps/create-authenticated-npmrc.yml
+                  
                 - task: TfxInstaller@5
                   displayName: Install tfx-cli for release
                   inputs:

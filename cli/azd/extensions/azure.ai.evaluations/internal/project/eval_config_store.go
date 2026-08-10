@@ -4,7 +4,9 @@
 package project
 
 import (
+	"bytes"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -89,14 +91,27 @@ func OpenEvalConfig(evalDir string) (*EvalConfig, error) {
 
 // LoadEvalConfig reads a configuration from an explicit path. The path is used
 // verbatim, relative to the process working directory — never re-rooted.
+//
+// Decoded strictly: a key this extension does not know is a typo, and reading
+// it as nothing leaves a configuration that looks fine and fails later
+// somewhere else. `agent:` written under `target:` instead of `type:`/`name:`
+// used to produce an empty target and a run that complained about the target.
 func LoadEvalConfig(path string) (*EvalConfig, error) {
 	data, err := ReadFileNoBOM(path)
 	if err != nil {
 		return nil, messages.ReadingEvalConfig(path, err)
 	}
 
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+
 	var cfg EvalConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := decoder.Decode(&cfg); err != nil {
+		// An empty file is a configuration with nothing in it, not a parse
+		// failure: `generate` writes one before it has anything to record.
+		if errors.Is(err, io.EOF) {
+			return &cfg, nil
+		}
 		return nil, messages.ParsingEvalConfig(path, err)
 	}
 	return &cfg, nil

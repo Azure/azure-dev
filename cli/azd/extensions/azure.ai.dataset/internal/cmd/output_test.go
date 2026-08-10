@@ -155,26 +155,27 @@ func TestRequireFlag(t *testing.T) {
 
 // --from-file takes either the file or the directory holding it, because both
 // are what a caller has to hand. Anything else is worth refusing by name.
-func TestDatasetUploadDir(t *testing.T) {
+func TestDatasetUploadSource(t *testing.T) {
 	dir := t.TempDir()
 	rows := filepath.Join(dir, "rows.jsonl")
 	require.NoError(t, os.WriteFile(rows, []byte("{\"query\":\"q\"}\n"), 0o600))
 
-	got, err := datasetUploadDir(rows)
+	got, err := datasetUploadSource(rows)
 	require.NoError(t, err)
-	assert.Equal(t, dir, got, "a file resolves to the directory the upload scans")
+	assert.Equal(t, rows, got,
+		"a named file is uploaded, not whichever .jsonl its directory sorts first")
 
-	got, err = datasetUploadDir(dir)
+	got, err = datasetUploadSource(dir)
 	require.NoError(t, err)
 	assert.Equal(t, dir, got)
 
 	notJSONL := filepath.Join(dir, "rows.csv")
 	require.NoError(t, os.WriteFile(notJSONL, []byte("a,b\n"), 0o600))
-	_, err = datasetUploadDir(notJSONL)
+	_, err = datasetUploadSource(notJSONL)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), ".jsonl")
 
-	_, err = datasetUploadDir(filepath.Join(dir, "missing.jsonl"))
+	_, err = datasetUploadSource(filepath.Join(dir, "missing.jsonl"))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--from-file")
 }

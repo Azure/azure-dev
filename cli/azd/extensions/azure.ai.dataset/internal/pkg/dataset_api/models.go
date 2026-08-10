@@ -194,8 +194,22 @@ func NextVersion(current string) string {
 // otherwise valid UTF-8.
 var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 
-// ReadFirstJSONLFile finds and reads the first .jsonl file in a directory.
-func ReadFirstJSONLFile(dir string) (string, error) {
+// ReadFirstJSONLFile reads the rows to upload from a .jsonl file, or from the
+// first .jsonl in a directory.
+//
+// A file path is read as itself. Resolving it to its directory and scanning
+// would upload whichever .jsonl sorts first, so pointing at one dataset in a
+// folder holding several would register a different one under that name.
+func ReadFirstJSONLFile(path string) (string, error) {
+	if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		data, err := os.ReadFile(path) //nolint:gosec // local artifact path
+		if err != nil {
+			return "", messages.ReadingPath(filepath.Base(path), err)
+		}
+		return jsonlContent(filepath.Base(path), data)
+	}
+
+	dir := path
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", messages.ReadingDatasetDirectory(err)
@@ -209,17 +223,22 @@ func ReadFirstJSONLFile(dir string) (string, error) {
 			if err != nil {
 				return "", messages.ReadingPath(e.Name(), err)
 			}
-			// Windows editors write a BOM. Uploaded as-is it becomes part of the
-			// first row's first key, so every consumer of the dataset sees one
-			// malformed record.
-			data = bytes.TrimPrefix(data, utf8BOM)
-			// Refused here rather than uploaded: registering an empty dataset
-			// succeeds, and the failure surfaces at the run that scores it.
-			if strings.TrimSpace(string(data)) == "" {
-				return "", messages.DatasetFileHasNoRows(e.Name())
-			}
-			return string(data), nil
+			return jsonlContent(e.Name(), data)
 		}
 	}
 	return "", messages.NoJSONLInDirectory(dir)
+}
+
+// jsonlContent prepares one file's bytes for upload.
+func jsonlContent(name string, data []byte) (string, error) {
+	// Windows editors write a BOM. Uploaded as-is it becomes part of the first
+	// row's first key, so every consumer of the dataset sees one malformed
+	// record.
+	data = bytes.TrimPrefix(data, utf8BOM)
+	// Refused here rather than uploaded: registering an empty dataset succeeds,
+	// and the failure surfaces at the run that scores it.
+	if strings.TrimSpace(string(data)) == "" {
+		return "", messages.DatasetFileHasNoRows(name)
+	}
+	return string(data), nil
 }

@@ -29,8 +29,8 @@ func TestCheckAssetExistence(t *testing.T) {
 
 // A mistyped --from-file is the common way to get here, and the syscall that
 // discovered it says nothing to the person who mistyped it.
-func TestDatasetUploadDirOnAMissingPath(t *testing.T) {
-	_, err := datasetUploadDir(filepath.Join(t.TempDir(), "nope.jsonl"))
+func TestDatasetUploadSourceOnAMissingPath(t *testing.T) {
+	_, err := datasetUploadSource(filepath.Join(t.TempDir(), "nope.jsonl"))
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "does not exist")
@@ -38,16 +38,20 @@ func TestDatasetUploadDirOnAMissingPath(t *testing.T) {
 	assert.NotContains(t, err.Error(), "stat ")
 }
 
-func TestDatasetUploadDirResolvesWhatWasNamed(t *testing.T) {
+// Pointing at one dataset in a folder holding several must upload that one.
+func TestDatasetUploadSourceKeepsTheNamedFile(t *testing.T) {
 	dir := t.TempDir()
-	file := filepath.Join(dir, "rows.jsonl")
-	require.NoError(t, os.WriteFile(file, []byte("{}\n"), 0o600))
+	chosen := filepath.Join(dir, "zebra.jsonl")
+	require.NoError(t, os.WriteFile(chosen, []byte("{\"pick\":\"me\"}\n"), 0o600))
+	// Sorts first, so a directory scan would take it instead.
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "alpha.jsonl"), []byte("{\"pick\":\"not me\"}\n"), 0o600))
 
-	resolved, err := datasetUploadDir(file)
+	resolved, err := datasetUploadSource(chosen)
 	require.NoError(t, err)
-	assert.Equal(t, dir, resolved, "a file resolves to the directory the upload scans")
+	assert.Equal(t, chosen, resolved)
 
-	resolved, err = datasetUploadDir(dir)
+	resolved, err = datasetUploadSource(dir)
 	require.NoError(t, err)
 	assert.Equal(t, dir, resolved)
 }

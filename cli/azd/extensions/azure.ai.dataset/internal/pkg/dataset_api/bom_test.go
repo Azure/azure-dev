@@ -51,3 +51,44 @@ func TestReadFirstJSONLFile_BOMOnlyFileIsStillEmpty(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no rows")
 }
+
+// One .jsonl per dataset in one folder is the ordinary layout. Scanning the
+// directory instead of reading the named file registers the rows of whichever
+// sorts first under the other one's name.
+func TestReadFirstJSONLFile_ReadsTheNamedFileNotItsNeighbour(t *testing.T) {
+	dir := t.TempDir()
+	named := filepath.Join(dir, "zebra.jsonl")
+	require.NoError(t, os.WriteFile(named, []byte("{\"pick\":\"me\"}\n"), 0o600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "alpha.jsonl"), []byte("{\"pick\":\"not me\"}\n"), 0o600))
+
+	content, err := ReadFirstJSONLFile(named)
+	require.NoError(t, err)
+	assert.Contains(t, content, `"me"`)
+	assert.NotContains(t, content, "not me")
+
+	// A directory still scans, which is what --from-file <dir> means.
+	content, err = ReadFirstJSONLFile(dir)
+	require.NoError(t, err)
+	assert.Contains(t, content, "not me", "the directory form takes the first .jsonl")
+}
+
+// The BOM and empty-file guards have to apply to the named-file path too.
+func TestReadFirstJSONLFile_NamedFileGetsTheSameGuards(t *testing.T) {
+	dir := t.TempDir()
+
+	withBOM := filepath.Join(dir, "bom.jsonl")
+	body := append([]byte{0xEF, 0xBB, 0xBF}, []byte("{\"query\":\"q\"}\n")...)
+	require.NoError(t, os.WriteFile(withBOM, body, 0o600))
+
+	content, err := ReadFirstJSONLFile(withBOM)
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(content, `{"query"`), "got %q", content)
+
+	empty := filepath.Join(dir, "empty.jsonl")
+	require.NoError(t, os.WriteFile(empty, []byte("  \n"), 0o600))
+
+	_, err = ReadFirstJSONLFile(empty)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no rows")
+}

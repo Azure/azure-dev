@@ -56,7 +56,7 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 				return requireFlag("from-file")
 			}
 
-			localDir, err := datasetUploadDir(fromFile)
+			localDir, err := datasetUploadSource(fromFile)
 			if err != nil {
 				return err
 			}
@@ -120,8 +120,12 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 	return cmd
 }
 
-// datasetUploadDir resolves what was named into the directory the upload scans.
-func datasetUploadDir(path string) (string, error) {
+// datasetUploadSource resolves what was named into the path the upload reads.
+//
+// A named file is returned as itself. Returning its directory would upload
+// whichever .jsonl sorts first, so pointing --from-file at one dataset in a
+// folder holding several would register a different one under that name.
+func datasetUploadSource(path string) (string, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return "", messages.ReadingFromFile(path, err)
@@ -132,7 +136,7 @@ func datasetUploadDir(path string) (string, error) {
 	if !strings.EqualFold(filepath.Ext(path), ".jsonl") {
 		return "", messages.FromFileMustBeJSONL(path)
 	}
-	return filepath.Dir(path), nil
+	return path, nil
 }
 
 func newDatasetListCommand() *cobra.Command {

@@ -196,6 +196,18 @@ func TestCLIUnknownDatasetIsBrief(t *testing.T) {
 		"a missing name does not need the whole HTTP body to explain it")
 }
 
+// A list is a filter, not a lookup, so an unknown name lists nothing and
+// succeeds. `show` is the lookup and still refuses. The eval extension answers
+// both the same way, and a caller moving between the two should not have to
+// learn which one errors.
+func TestCLIVersionsListOfAnUnknownNameSucceeds(t *testing.T) {
+	r := requireSuccess(t, run(t, "versions", "list", "azdcli-no-such-dataset", "-o", "json"))
+
+	var versions []map[string]any
+	r.JSON(t, &versions)
+	require.Empty(t, versions, "an unknown name lists nothing rather than failing")
+}
+
 // Required arguments must end the process rather than wait on a terminal
 // nobody is watching.
 func TestCLIRequiredValuesFailInsteadOfHanging(t *testing.T) {

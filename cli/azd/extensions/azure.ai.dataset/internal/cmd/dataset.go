@@ -219,11 +219,9 @@ func newDatasetVersionsListCommand() *cobra.Command {
 			if err != nil {
 				return messages.ListingDatasetVersions(name, err)
 			}
-			// An unknown name comes back as an empty list, and "No datasets
-			// found" reads as though the project had none at all.
-			if len(list.Value) == 0 {
-				return messages.DatasetNotFound(name)
-			}
+			// An unknown name lists nothing and succeeds; it is not an error.
+			// `-o json` callers range over the array, and a delete is checked
+			// for idempotence by listing what is left.
 			return renderDatasets(cmd, list)
 		},
 	}

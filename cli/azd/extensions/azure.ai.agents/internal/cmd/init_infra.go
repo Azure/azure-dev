@@ -470,6 +470,13 @@ func ejectInfraAfterInit(provider string) error {
 	return ejectInfra(projectRoot, provider)
 }
 
+func finishInfraEject(flags *initFlags, provider string) error {
+	if flags != nil && flags.delegatedProjectInit {
+		return nil
+	}
+	return ejectInfraAfterInit(provider)
+}
+
 // ejectInfra synthesizes infrastructure templates from azure.yaml. A project
 // that already owns infrastructure is migrated to infra.layers and receives a
 // dedicated Foundry layer under infra/foundry; a Foundry-only project keeps the

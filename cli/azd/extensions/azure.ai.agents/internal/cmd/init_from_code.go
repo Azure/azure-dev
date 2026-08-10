@@ -9,6 +9,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -40,6 +41,8 @@ type InitFromCodeAction struct {
 	// addToProject can disable remote build for VNET-injected accounts
 	// without issuing a second account read.
 	selectedFoundryProject *FoundryProjectInfo
+
+	projectServiceName string
 }
 
 func (a *InitFromCodeAction) Run(ctx context.Context) error {
@@ -125,6 +128,10 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	}
 
 	if localDefinition != nil {
+		if err := a.delegateProjectOwnership(ctx); err != nil &&
+			!errors.Is(err, errDelegatedProjectsUnavailable) {
+			return err
+		}
 
 		// Generate .agentignore. The agent definition is written into the
 		// azure.yaml service entry below, not to an on-disk agent.yaml.
@@ -160,6 +167,54 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state, readmeExistsForProject(ctx, a.azdClient)))
 	}
 
+	return nil
+}
+
+func (a *InitFromCodeAction) delegateProjectOwnership(ctx context.Context) error {
+	delegated := &InitAction{
+		azdClient:     a.azdClient,
+		credential:    a.credential,
+		projectConfig: a.projectConfig,
+		azureContext:  a.azureContext,
+		environment:   a.environment,
+		flags:         a.flags,
+	}
+	allowedLocations, err := delegated.hostedAgentAllowedLocations(ctx)
+	if err != nil {
+		return err
+	}
+	initResult, err := delegated.delegateProjectInit(ctx, allowedLocations)
+	if err != nil {
+		return err
+	}
+	projectInfo, err := projectInfoFromDelegatedResult(
+		ctx, a.azdClient, delegated.delegatedEnvironmentName(), initResult,
+	)
+	if err != nil {
+		return err
+	}
+	defaultName, _ := getEnvValue(ctx, a.azdClient, a.environment.Name, "AZURE_AI_MODEL_DEPLOYMENT_NAME")
+	firstManaged := strings.TrimSpace(defaultName) == ""
+	for _, deployment := range a.deploymentDetails {
+		result, err := delegated.delegateProjectDeployment(
+			ctx, deployment.Model.Name, deployment.Name, firstManaged, allowedLocations,
+		)
+		if err != nil {
+			return err
+		}
+		if firstManaged {
+			defaultName = result.DeploymentName
+			firstManaged = false
+		}
+	}
+	if err := delegated.configureDelegatedAgentResources(
+		ctx, projectInfo, initResult.Mode,
+	); err != nil {
+		return err
+	}
+	a.deploymentDetails = nil
+	a.projectServiceName = delegated.projectServiceName
+	a.selectedFoundryProject = delegated.selectedFoundryProject
 	return nil
 }
 
@@ -819,8 +874,9 @@ func (a *InitFromCodeAction) addToProject(
 		agentConfig.StartupCommand = startupCmd
 	}
 
-	// Move the model deployments out of the agent config into a sibling
-	// azure.ai.project service, emitted after the agent service below.
+	// Managed deployments are delegated to azure.ai.projects before this
+	// service is authored. The legacy compatibility path still carries the
+	// selected declarations through the old sibling writer.
 	resourceDeployments := agentConfig.Deployments
 	agentConfig.Deployments = nil
 
@@ -850,6 +906,10 @@ func (a *InitFromCodeAction) addToProject(
 		Image:                definition.Image,
 		AdditionalProperties: agentProps,
 	}
+	preservedUses, err := getServiceUses(ctx, a.azdClient, agentServiceName)
+	if err != nil {
+		return err
+	}
 
 	// For hosted container-based agents, enable remote build by default. It is
 	// silently disabled when the target Foundry account has VNET network injection
@@ -878,17 +938,27 @@ func (a *InitFromCodeAction) addToProject(
 	); err != nil {
 		return err
 	}
+	if len(preservedUses) > 0 {
+		if err := setServiceUses(ctx, a.azdClient, agentServiceName, preservedUses); err != nil {
+			return err
+		}
+	}
 
-	// Emit the sibling azure.ai.project service carrying the model deployments
-	// and wire the agent's uses: to it. A selected existing project contributes
-	// its endpoint so provision reuses it instead of creating a new project.
-	if err := emitResourceServices(
-		ctx, a.azdClient, agentServiceName,
-		projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),
-		a.selectedFoundryProject.Endpoint(),
-		resourceDeployments, nil, nil,
-	); err != nil {
-		return err
+	if a.projectServiceName != "" {
+		if err := emitAgentResourceServices(
+			ctx, a.azdClient, agentServiceName, a.projectServiceName, nil, nil,
+		); err != nil {
+			return err
+		}
+	} else {
+		if err := emitResourceServices(
+			ctx, a.azdClient, agentServiceName,
+			projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),
+			a.selectedFoundryProject.Endpoint(),
+			resourceDeployments, nil, nil,
+		); err != nil {
+			return err
+		}
 	}
 
 	printAgentAddedMessage(agentName)

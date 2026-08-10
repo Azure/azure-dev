@@ -87,6 +87,10 @@ type initFlags struct {
 	// and `--infra=bicep` are explicit. The eject runs after a fresh init or
 	// standalone when azure.yaml already exists.
 	infra string
+
+	// delegatedProjectInit prevents the legacy post-init infrastructure writer
+	// from running after azure.ai.projects handled --infra.
+	delegatedProjectInit bool
 }
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
@@ -124,6 +128,10 @@ type InitAction struct {
 	// interactively selects a template that resolves to a manifest. When true,
 	// the init flow applies opinionated defaults to minimize interactive prompts.
 	userProvidedManifest bool
+
+	// projectServiceName is returned by delegated project initialization. It is
+	// intentionally not assumed to be "ai-project".
+	projectServiceName string
 }
 
 // skipACR returns true when ACR provisioning and configuration should be skipped.
@@ -983,26 +991,36 @@ func runInitFromManifest(
 	createdFolderDisplay string,
 	userProvidedManifest bool,
 ) error {
-	// Ensure project and environment exist (no subscription/location prompting yet)
-	projectConfig, err := ensureProject(ctx, flags, azdClient, targetDir)
-	if err != nil {
-		return err
+	// Do not scaffold or mutate the project before the manifest is resolved.
+	// The delegated projects command owns project creation and environment
+	// reconciliation. A synthetic config is used until that command runs.
+	projectResponse, projectErr := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	projectConfig := projectResponse.GetProject()
+	if projectErr != nil || projectConfig == nil {
+		projectRoot, absErr := filepath.Abs(targetDir)
+		if absErr != nil {
+			return fmt.Errorf("resolving target project root: %w", absErr)
+		}
+		projectConfig = &azdext.ProjectConfig{Path: projectRoot}
 	}
 
-	// Get or create environment
+	// Resolve the environment name without creating it. The delegated project
+	// action creates the environment when this is a new workspace.
 	env := getExistingEnvironment(ctx, flags.env, azdClient)
 	if env == nil {
-		fmt.Println("Lets create a new default azd environment for your project.")
-		env, err = createNewEnvironment(ctx, azdClient, flags.env)
-		if err != nil {
-			return err
+		if flags.env == "" {
+			flags.env = deriveEnvName(flags, targetDir)
 		}
+		env = &azdext.Environment{Name: flags.env}
 	}
 
 	// Load whatever Azure context values already exist in the environment
 	azureContext, err := loadAzureContext(ctx, azdClient, env.Name)
 	if err != nil {
-		return err
+		azureContext = &azdext.AzureContext{
+			Scope:     &azdext.AzureScope{},
+			Resources: []string{},
+		}
 	}
 	// Create credential with whatever tenant is available (may be empty → default tenant)
 	credential, err := azidentity.NewAzureDeveloperCLICredential(
@@ -1184,10 +1202,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if gateErr != nil {
 					return gateErr
 				}
-				if gate.standaloneEject {
-					// Reject init inputs the eject path would silently ignore
-					// instead of pretending they were honored. They stay valid
-					// on the init fall-through, where they do drive the flow.
+				if gate.standaloneEject && flags.manifestPointer == "" &&
+					flags.src == "" && flags.agentName == "" &&
+					flags.model == "" && flags.modelDeployment == "" &&
+					flags.image == "" && flags.deployMode == "" &&
+					flags.runtime == "" && flags.entryPoint == "" &&
+					flags.depResolution == "" && len(flags.protocols) == 0 {
 					if err := validateStandaloneEjectArgs(cmd, args); err != nil {
 						return err
 					}
@@ -1356,7 +1376,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						); err != nil {
 							return err
 						}
-						return ejectInfraAfterInit(infraProvider)
+						return finishInfraEject(flags, infraProvider)
 					}
 				}
 			}
@@ -1405,7 +1425,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						if err := runReuseDefinition(ctx, flags, azdClient, httpClient, checkDir, existing); err != nil {
 							return err
 						}
-						return ejectInfraAfterInit(infraProvider)
+						return finishInfraEject(flags, infraProvider)
 					}
 				}
 			}
@@ -1450,7 +1470,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 								}
 								return err
 							}
-							return ejectInfraAfterInit(infraProvider)
+							return finishInfraEject(flags, infraProvider)
 						}
 						return missingAgentServiceError(flags.manifestPointer)
 					}
@@ -1656,7 +1676,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// wrote azure.yaml, chain the eject step. Skip silently when init
 			// didn't produce a foundry-bearing azure.yaml (cancelled or
 			// non-foundry flow) to avoid a confusing "nothing to eject" error.
-			return ejectInfraAfterInit(infraProvider)
+			return finishInfraEject(flags, infraProvider)
 		},
 	}
 
@@ -1728,11 +1748,17 @@ func (a *InitAction) Run(ctx context.Context) error {
 	// If src path is absolute, convert it to relative path compared to the azd project path
 	if a.flags.src != "" && filepath.IsAbs(a.flags.src) {
 		projectResponse, err := a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-		if err != nil {
+		projectRoot := ""
+		if err == nil && projectResponse.GetProject() != nil {
+			projectRoot = projectResponse.GetProject().Path
+		} else if a.projectConfig != nil {
+			projectRoot = a.projectConfig.Path
+		}
+		if projectRoot == "" {
 			return fmt.Errorf("failed to get project path: %w", err)
 		}
 
-		relPath, err := filepath.Rel(projectResponse.Project.Path, a.flags.src)
+		relPath, err := filepath.Rel(projectRoot, a.flags.src)
 		if err != nil {
 			return fmt.Errorf("failed to convert src path to relative path: %w", err)
 		}
@@ -2184,11 +2210,60 @@ func manifestHasModelResources(manifest *agent_yaml.AgentManifest) bool {
 	return false
 }
 
-// configureModelChoice presents the "use existing / deploy new" model configuration choice
-// and establishes the necessary Azure context (subscription, location, project) before
-// ProcessModels is called. This defers subscription/location prompting until we know
-// which path the user wants.
+// configureModelChoice delegates project and managed deployment ownership to
+// azure.ai.projects. The legacy implementation remains available only when the
+// installed projects extension predates the delegated commands.
 func (a *InitAction) configureModelChoice(
+	ctx context.Context, agentManifest *agent_yaml.AgentManifest,
+) (*agent_yaml.AgentManifest, error) {
+	updated, err := a.configureModelChoiceDelegated(ctx, agentManifest)
+	if !errors.Is(err, errDelegatedProjectsUnavailable) {
+		return updated, err
+	}
+	if a.projectConfig != nil {
+		if err := a.ensureLegacyProjectContext(ctx); err != nil {
+			return nil, err
+		}
+	}
+	return a.configureModelChoiceLegacy(ctx, agentManifest)
+}
+
+func (a *InitAction) ensureLegacyProjectContext(ctx context.Context) error {
+	if _, err := a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{}); err != nil {
+		projectConfig, projectErr := ensureProject(
+			ctx, a.flags, a.azdClient, a.projectConfig.Path,
+		)
+		if projectErr != nil {
+			return projectErr
+		}
+		a.projectConfig = projectConfig
+	}
+	if a.environment == nil || a.environment.Name == "" {
+		if a.flags.env == "" {
+			a.flags.env = deriveEnvName(a.flags, a.projectConfig.Path)
+		}
+		a.environment = getExistingEnvironment(ctx, a.flags.env, a.azdClient)
+		if a.environment == nil {
+			environment, err := createNewEnvironment(ctx, a.azdClient, a.flags.env)
+			if err != nil {
+				return err
+			}
+			a.environment = environment
+		}
+	}
+	if a.azureContext == nil {
+		azureContext, err := loadAzureContext(ctx, a.azdClient, a.environment.Name)
+		if err != nil {
+			return err
+		}
+		a.azureContext = azureContext
+	}
+	return nil
+}
+
+// configureModelChoiceLegacy is the Stage A compatibility path for projects
+// extension versions that do not expose delegated project commands.
+func (a *InitAction) configureModelChoiceLegacy(
 	ctx context.Context, agentManifest *agent_yaml.AgentManifest,
 ) (*agent_yaml.AgentManifest, error) {
 	// When no --project-id flag was given, check whether the azd environment already
@@ -3078,12 +3153,9 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		agentConfig.StartupCommand = startupCmd
 	}
 
-	// Each Foundry resource is written as its own azure.yaml service entry, so
-	// the deployments, connections, and toolboxes move out of the agent config
-	// into sibling azure.ai.project/connection/toolbox services emitted below.
-	// The agent keeps its container, resources, tool connections, and startup
-	// command. The provisioning handlers re-source the moved data from the
-	// sibling services.
+	// Connections and toolboxes are agent-owned sibling services. Managed model
+	// declarations are owned by azure.ai.projects and are never copied into the
+	// agent service or authored here after delegated initialization.
 	resourceDeployments := agentConfig.Deployments
 	resourceConnections := agentConfig.Connections
 	resourceToolboxes := agentConfig.Toolboxes
@@ -3119,6 +3191,10 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		Image:                preBuiltImage,
 		AdditionalProperties: agentProps,
 	}
+	preservedUses, err := getServiceUses(ctx, a.azdClient, a.serviceNameOverride)
+	if err != nil {
+		return err
+	}
 
 	// For hosted agents, configure Docker or code deploy settings
 	if agentDef.Kind == agent_yaml.AgentKindHosted {
@@ -3151,17 +3227,30 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	); err != nil {
 		return err
 	}
+	if len(preservedUses) > 0 {
+		if err := setServiceUses(ctx, a.azdClient, a.serviceNameOverride, preservedUses); err != nil {
+			return err
+		}
+	}
 
-	// Emit the sibling Foundry resource services (project + deployments,
-	// connections, toolboxes) and wire the agent's uses: to them. A selected
-	// existing project contributes its endpoint so provision reuses it.
-	if err := emitResourceServices(
-		ctx, a.azdClient, a.serviceNameOverride,
-		projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),
-		a.selectedFoundryProject.Endpoint(),
-		resourceDeployments, resourceConnections, resourceToolboxes,
-	); err != nil {
-		return err
+	if a.projectServiceName != "" {
+		if err := emitAgentResourceServices(
+			ctx, a.azdClient, a.serviceNameOverride, a.projectServiceName,
+			resourceConnections, resourceToolboxes,
+		); err != nil {
+			return err
+		}
+	} else {
+		// Stage A compatibility for an older projects extension. This branch
+		// retains the pre-delegation writer only when delegation was unavailable.
+		if err := emitResourceServices(
+			ctx, a.azdClient, a.serviceNameOverride,
+			projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),
+			a.selectedFoundryProject.Endpoint(),
+			resourceDeployments, resourceConnections, resourceToolboxes,
+		); err != nil {
+			return err
+		}
 	}
 
 	printAgentAddedMessage(agentDef.Name)

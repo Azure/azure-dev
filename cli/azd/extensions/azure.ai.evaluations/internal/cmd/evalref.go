@@ -76,3 +76,21 @@ func (ec *evalContext) resolveEvalRef(
 func (ec *evalContext) recordedEvalID(ctx context.Context, evalName string) string {
 	return ec.getEnvValue(ctx, idKey("eval", evalName))
 }
+
+// evalIDNamed finds the id of the eval the service lists under this name.
+//
+// Evals are addressed by id, but every listing reports a name, so a name is
+// what a reader has to hand. Returns empty when nothing matches, leaving the
+// caller's not-found reporting alone.
+func (ec *evalContext) evalIDNamed(ctx context.Context, name string) string {
+	list, err := ec.evalClient.ListOpenAIEvals(ctx, 0)
+	if err != nil || list == nil {
+		return ""
+	}
+	for _, e := range list.Data {
+		if e.Name == name {
+			return e.ID
+		}
+	}
+	return ""
+}

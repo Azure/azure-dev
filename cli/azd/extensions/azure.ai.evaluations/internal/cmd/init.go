@@ -406,6 +406,8 @@ func (s scaffold) nextSteps() []string {
 			"azd ai eval generate --evaluator --evaluator-name "+s.rubricName)
 	}
 	if len(steps) == 0 {
+		// TODO: suggest `azd deploy`, not `azd up`. Eval resources are data-plane
+		// only, so a project with no infra/ fails provision before reaching us.
 		steps = append(steps, "azd up", "azd ai eval run start")
 	}
 	return steps

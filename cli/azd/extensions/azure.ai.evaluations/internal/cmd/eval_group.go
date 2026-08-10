@@ -70,6 +70,33 @@ func newEvalCreateCommand() *cobra.Command {
 			}
 
 			reconciler := &evalReconciler{ec: ec}
+
+			// The eval names its dataset and evaluators, and the service resolves
+			// those names when the eval is created, so they have to be published
+			// first. `azd up` reconciles the whole file; this reconciles only what
+			// this eval refers to, which is also what makes a rubric edit reach
+			// the service without a full deploy.
+			baseDir := filepath.Dir(path)
+			if decl, ok := cfg.DatasetDeclaration(eval.Dataset); ok {
+				if _, _, err := reconciler.EnsureDataset(ctx, *decl, datasetPath); err != nil {
+					return messages.DatasetProblem(decl.Name, err)
+				}
+			}
+			for _, ref := range eval.Evaluators {
+				decl, ok := cfg.EvaluatorDeclaration(ref.Evaluator)
+				// A built-in, or one already registered, has nothing local to publish.
+				if !ok || decl.Source == "" {
+					continue
+				}
+				local := decl.Source
+				if !filepath.IsAbs(local) {
+					local = filepath.Join(baseDir, local)
+				}
+				if _, _, err := reconciler.EnsureEvaluator(ctx, *decl, local); err != nil {
+					return messages.EvaluatorProblem(decl.Name, err)
+				}
+			}
+
 			id, err := reconciler.EnsureEval(ctx, *eval, datasetPath)
 			if err != nil {
 				return err
@@ -154,6 +181,14 @@ func newEvalShowCommand() *cobra.Command {
 			defer ec.Close()
 
 			group, err := ec.evalClient.GetOpenAIEval(ctx, evalID)
+			if err != nil && eval_api.IsNotFound(err) {
+				// The argument reads as an id. `list` reports names, and this
+				// refused the very name it points the reader at, so a name is
+				// resolved before giving up.
+				if resolved := ec.evalIDNamed(ctx, evalID); resolved != "" {
+					group, err = ec.evalClient.GetOpenAIEval(ctx, resolved)
+				}
+			}
 			if err != nil {
 				if eval_api.IsNotFound(err) {
 					return messages.EvalNotFound(evalID)

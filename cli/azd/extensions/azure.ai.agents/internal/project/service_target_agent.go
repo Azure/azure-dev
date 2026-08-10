@@ -1189,6 +1189,7 @@ func (p *AgentServiceTargetProvider) resolveActivityBotName(
 	return name, "", nil
 }
 
+// cSpell:ignore msaappid msaapp
 func isMsaAppIDAlreadyInUseError(err error) bool {
 	if err == nil {
 		return false

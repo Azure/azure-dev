@@ -173,10 +173,6 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
-  - filename: extensions/azure.ai.agents/internal/project/service_target_agent.go
-    words:
-      - msaappid
-      - msaapp
   - filename: internal/appdetect/aspire_polyglot.go
     words:
       - pylock

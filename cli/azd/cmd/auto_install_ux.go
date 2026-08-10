@@ -98,9 +98,6 @@ func autoInstallExtensionRequirements(
 
 	console.Message(ctx, "")
 	installedAny := false
-	displaySource := slices.ContainsFunc(requirements, func(requirement projectExtensionRequirement) bool {
-		return len(requirementCandidates(requirement)) > 1
-	})
 	for _, selection := range selections {
 		installed, err := tryAutoInstallExtensionVersion(
 			ctx,
@@ -108,7 +105,6 @@ func autoInstallExtensionRequirements(
 			extensionManager,
 			*selection.extension,
 			selection.requirement.versionPreference,
-			displaySource,
 		)
 		if err != nil {
 			return autoInstallResult{installed: installedAny}, err

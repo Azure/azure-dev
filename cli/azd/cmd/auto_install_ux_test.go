@@ -384,7 +384,11 @@ func TestAutoInstallExtensionRequirementsInstallFailure(t *testing.T) {
 	assert.False(t, result.installed)
 	require.Len(t, console.SpinnerOps(), 2)
 	assert.Equal(t, input.StepFailed, console.SpinnerOps()[1].Format)
-	assert.Equal(t, "Installing extension 'demo'", console.SpinnerOps()[1].Message)
+	assert.Equal(
+		t,
+		"Installing "+output.WithHighLightFormat("demo")+" extension",
+		console.SpinnerOps()[1].Message,
+	)
 }
 
 func TestAutoInstallExtensionRequirementsDisplaysInstalledDependencies(t *testing.T) {
@@ -490,7 +494,12 @@ func TestAutoInstallExtensionRequirementsShowsSourceForMultiSourcePlan(t *testin
 	require.NoError(t, err)
 	assert.True(t, result.installed)
 	require.Len(t, console.SpinnerOps(), 2)
-	assert.Contains(t, console.SpinnerOps()[1].Message, "(1.2.3) from 'azd'")
+	assert.Equal(
+		t,
+		"Installing "+output.WithHighLightFormat("demo")+" extension"+
+			output.WithGrayFormat(" (1.2.3)"),
+		console.SpinnerOps()[1].Message,
+	)
 }
 
 func TestDisplayExtensionRequirements(t *testing.T) {

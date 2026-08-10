@@ -50,7 +50,8 @@ func TestIsBundleArg(t *testing.T) {
 	require.True(t, isBundleArg([]string{"http://example.com/path/my-ext.ZIP"}))
 	require.True(t, isBundleArg([]string{"https://example.com/my-ext.zip?token=abc"}))
 	require.True(t, isBundleArg([]string{"https://example.com/%ZZ/my-ext.zip?token=abc"}))
-	require.False(t, isBundleArg([]string{"https://example.com/registry.json"}))
+	require.True(t, isBundleArg([]string{"https://aka.ms/azd-extension-bundle-example"}))
+	require.True(t, isBundleArg([]string{"https://example.com/registry.json"}))
 	require.True(t, isBundleArg([]string{"https:///my-ext.zip"}))
 	require.False(t, isBundleArg([]string{"ftp://example.com/my-ext.zip"}))
 	require.False(t, isBundleArg([]string{"https://example.com/my-ext_1.0.0.zip", "other"}))
@@ -561,6 +562,31 @@ func TestPrepareBundleInstall_RemoteURL(t *testing.T) {
 	require.NoFileExists(t, downloadedZip)
 	require.Empty(t, action.bundleTempZip)
 	require.Empty(t, action.bundleTempDir)
+}
+
+func TestPrepareBundleInstall_RemoteShortLink(t *testing.T) {
+	t.Parallel()
+
+	const bundleURL = "https://aka.ms/azd-extension-bundle-example"
+
+	action, _, mockContext := newBundleInstallTestActionWithMocks(t)
+	zipPath := makeBundleZip(t, []*extensions.ExtensionMetadata{
+		{
+			Id:          "test.ext",
+			DisplayName: "Test Extension",
+			Versions: []extensions.ExtensionVersion{
+				{Version: "1.0.0", Artifacts: map[string]extensions.ExtensionArtifact{
+					"linux/amd64": {URL: "artifacts/ext.tar.gz"},
+				}},
+			},
+		},
+	})
+	respondWithBundleZip(t, mockContext, bundleURL, zipPath)
+
+	require.NoError(t, action.prepareBundleInstall(t.Context(), bundleURL))
+	require.Equal(t, []string{"test.ext"}, action.args)
+	require.Regexp(t, `^bundle-[0-9a-f]{8}$`, action.bundleSourceName)
+	action.cleanupBundleInstall(t.Context())
 }
 
 func TestPrepareBundleInstall_RejectsHTTPURL(t *testing.T) {

@@ -315,6 +315,9 @@ func summarizeCounts(counts *eval_api.EvalRunResultCounts) string {
 const (
 	metaDataset        = "azd_dataset"
 	metaDatasetVersion = "azd_dataset_version"
+	// metaEvalName is the eval's declared name, recorded on the run because a
+	// run is read on its own and an id is not what the author called it.
+	metaEvalName = "azd_eval"
 )
 
 // runDataset renders the dataset a run scored, versioned when a version was

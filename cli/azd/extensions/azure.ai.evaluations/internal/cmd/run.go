@@ -158,6 +158,11 @@ func buildRunCommand(use, short string) *cobra.Command {
 			if lvl := resolveLevel(group); lvl != "" {
 				metadata["evaluation_level"] = lvl
 			}
+			// The eval carries its name in its own metadata, but a run is read
+			// on its own, and an id is not what the author called it.
+			if group != nil && group.Name != "" {
+				metadata[metaEvalName] = group.Name
+			}
 			// Recorded per run, not read from the configuration at list time:
 			// comparing two runs is the point of that listing, and the dataset
 			// under an eval can change between them. A source-backed run scored
@@ -878,15 +883,15 @@ func renderRun(
 // because the run carries only an id and the id is not what anyone declared.
 func renderRunHeader(out interface{ Write([]byte) (int, error) }, run *eval_api.OpenAIEvalRun) {
 	fmt.Fprintf(out, "%-10s %s\n", "Run", run.ID)
-	if name := run.Metadata["azd_eval"]; name != "" {
+	if name := run.Metadata[metaEvalName]; name != "" {
 		fmt.Fprintf(out, "%-10s %s\n", "Eval", name)
 	} else if run.EvalID != "" {
 		fmt.Fprintf(out, "%-10s %s\n", "Eval", run.EvalID)
 	}
-	fmt.Fprintf(out, "%-10s %s\n", "Status", run.Status)
 	if ds := runDatasetLine(run.Metadata); ds != "" {
 		fmt.Fprintf(out, "%-10s %s\n", "Dataset", ds)
 	}
+	fmt.Fprintf(out, "%-10s %s\n", "Status", run.Status)
 	if c := run.ResultCounts; c != nil && c.Total > 0 {
 		fmt.Fprintf(out, "%-10s %d\n", "Samples", c.Total)
 	}

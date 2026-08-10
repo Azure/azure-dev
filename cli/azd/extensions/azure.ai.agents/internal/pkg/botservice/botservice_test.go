@@ -19,6 +19,14 @@ type fakeBots struct {
 	createErr   error
 	deleteCalls int
 	deleteErr   error
+	getResponse armbotservice.Bot
+	getErr      error
+}
+
+func (f *fakeBots) Get(
+	_ context.Context, _, _ string, _ *armbotservice.BotsClientGetOptions,
+) (armbotservice.BotsClientGetResponse, error) {
+	return armbotservice.BotsClientGetResponse{Bot: f.getResponse}, f.getErr
 }
 
 func (f *fakeBots) Create(
@@ -143,6 +151,34 @@ func TestDeleteBotPropagatesOtherErrors(t *testing.T) {
 
 	if err := c.DeleteBot(context.Background(), "rg1", "echo-bot-uai"); err == nil {
 		t.Fatal("expected error to propagate")
+	}
+}
+
+func TestGetBotTreatsNotFoundAsMissing(t *testing.T) {
+	t.Parallel()
+
+	c := &Client{bots: &fakeBots{getErr: &azcore.ResponseError{StatusCode: http.StatusNotFound}}}
+	bot, err := c.GetBot(t.Context(), "rg1", "missing-bot")
+	if err != nil || bot != nil {
+		t.Fatalf("GetBot() = (%v, %v), want (nil, nil)", bot, err)
+	}
+}
+
+func TestIsOwnedRequiresAzdCreatedTag(t *testing.T) {
+	t.Parallel()
+
+	c := &Client{bots: &fakeBots{getResponse: armbotservice.Bot{
+		Tags: map[string]*string{OwnershipTag: new(OwnershipTagValue)},
+	}}}
+
+	owned, err := c.IsOwned(t.Context(), "rg1", "owned-bot")
+	if err != nil || !owned {
+		t.Fatalf("IsOwned() = (%v, %v), want (true, nil)", owned, err)
+	}
+	c.bots = &fakeBots{getResponse: armbotservice.Bot{Tags: map[string]*string{OwnershipTag: new("false")}}}
+	owned, err = c.IsOwned(t.Context(), "rg1", "external-bot")
+	if err != nil || owned {
+		t.Fatalf("IsOwned() = (%v, %v), want (false, nil)", owned, err)
 	}
 }
 

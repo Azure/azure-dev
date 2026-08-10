@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"azureaiagent/internal/pkg/botservice"
-
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
@@ -22,26 +20,27 @@ func TestActivityBotTeardownTarget(t *testing.T) {
 		name                   string
 		persistedBotName       string
 		persistedResourceGroup string
+		persistedOwned         string
 		wantBotName            string
 		wantResourceGroup      string
+		wantTracked            bool
 	}{
 		{
 			name:                   "uses persisted deployment target",
 			persistedBotName:       "adopted-bot",
 			persistedResourceGroup: "adopted-rg",
-			wantBotName:            "adopted-bot",
-			wantResourceGroup:      "adopted-rg",
 		},
 		{
-			name:              "uses custom name in default resource group",
-			persistedBotName:  "custom-bot",
-			wantBotName:       "custom-bot",
-			wantResourceGroup: "default-rg",
+			name:                   "uses azd-owned deployment target",
+			persistedBotName:       "owned-bot",
+			persistedResourceGroup: "owned-rg",
+			persistedOwned:         "true",
+			wantBotName:            "owned-bot",
+			wantResourceGroup:      "owned-rg",
+			wantTracked:            true,
 		},
 		{
-			name:              "recomputes default for legacy environment",
-			wantBotName:       botservice.BotName("my-agent", botservice.BotScopeSalt("sub-1", "default-rg")),
-			wantResourceGroup: "default-rg",
+			name: "does not delete bot without ownership marker",
 		},
 	}
 
@@ -49,16 +48,15 @@ func TestActivityBotTeardownTarget(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			botName, resourceGroup := activityBotTeardownTarget(
-				"my-agent",
-				"sub-1",
-				"default-rg",
+			botName, resourceGroup, tracked := activityBotTeardownTarget(
 				test.persistedBotName,
 				test.persistedResourceGroup,
+				test.persistedOwned,
 			)
 
 			require.Equal(t, test.wantBotName, botName)
 			require.Equal(t, test.wantResourceGroup, resourceGroup)
+			require.Equal(t, test.wantTracked, tracked)
 		})
 	}
 }

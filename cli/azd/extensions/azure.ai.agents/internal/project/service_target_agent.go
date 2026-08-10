@@ -1258,6 +1258,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	activityBotName := ""
 	activityBotResourceGroup := ""
+	activityBotOwned := false
 	isActivityAgent := ResolveActivityProfile(agentDef).IsActivity
 
 	serviceTargetConfig, err := LoadServiceTargetAgentConfig(serviceConfig)
@@ -1366,6 +1367,19 @@ func (p *AgentServiceTargetProvider) Deploy(
 			botResourceGroup = p.foundryProject.ResourceGroupName
 		}
 		activityBotResourceGroup = botResourceGroup
+		existingBot, err := client.GetBot(ctx, botResourceGroup, activityBotName)
+		if err != nil {
+			return nil, err
+		}
+		var existingTags map[string]*string
+		if existingBot != nil {
+			existingTags = existingBot.Tags
+		}
+		var botTags map[string]*string
+		activityBotOwned, botTags = activityBotOwnership(
+			existingBot != nil,
+			existingTags,
+		)
 		progress("Ensuring Azure Bot resource")
 		ensureCfg := botservice.BotConfig{
 			ResourceGroup:     botResourceGroup,
@@ -1374,6 +1388,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 			TenantID:          p.tenantId,
 			MessagingEndpoint: botservice.MessagingEndpoint(azdEnv["FOUNDRY_PROJECT_ENDPOINT"], result.agentName),
 			DisplayName:       result.agentName,
+			Tags:              botTags,
 		}
 		if err := client.EnsureBot(ctx, ensureCfg); err != nil {
 			// Recovery path: BotService enforces MsaAppID uniqueness. If a different
@@ -1395,6 +1410,18 @@ func (p *AgentServiceTargetProvider) Deploy(
 					)
 					ensureCfg.BotName = activityBotName
 					ensureCfg.ResourceGroup = botResourceGroup
+					existingBot, getErr := client.GetBot(ctx, botResourceGroup, activityBotName)
+					if getErr != nil {
+						return nil, getErr
+					}
+					var existingTags map[string]*string
+					if existingBot != nil {
+						existingTags = existingBot.Tags
+					}
+					activityBotOwned, ensureCfg.Tags = activityBotOwnership(
+						existingBot != nil,
+						existingTags,
+					)
 					if retryErr := client.EnsureBot(ctx, ensureCfg); retryErr == nil {
 						err = nil
 					} else {
@@ -1417,7 +1444,24 @@ func (p *AgentServiceTargetProvider) Deploy(
 		result.protocols,
 		activityBotName,
 		activityBotResourceGroup,
+		activityBotOwned,
 	)
+}
+
+func activityBotOwnership(
+	botExists bool,
+	existingTags map[string]*string,
+) (bool, map[string]*string) {
+	tags := maps.Clone(existingTags)
+	if !botExists {
+		if tags == nil {
+			tags = make(map[string]*string)
+		}
+		tags[botservice.OwnershipTag] = new(botservice.OwnershipTagValue)
+		return true, tags
+	}
+	value := tags[botservice.OwnershipTag]
+	return value != nil && strings.EqualFold(*value, botservice.OwnershipTagValue), tags
 }
 
 // provisionMemoryStores creates any Foundry memory stores declared in the service target
@@ -1877,6 +1921,7 @@ func (p *AgentServiceTargetProvider) finalizeDeploy(
 	protocols []agent_yaml.ProtocolVersionRecord,
 	activityBotName string,
 	activityBotResourceGroup string,
+	activityBotOwned bool,
 ) (*azdext.ServiceDeployResult, error) {
 	progress("Registering agent environment variables")
 
@@ -1888,6 +1933,7 @@ func (p *AgentServiceTargetProvider) finalizeDeploy(
 		protocols,
 		activityBotName,
 		activityBotResourceGroup,
+		activityBotOwned,
 	)
 	if err != nil {
 		return nil, err
@@ -2945,6 +2991,7 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	protocols []agent_yaml.ProtocolVersionRecord,
 	activityBotName string,
 	activityBotResourceGroup string,
+	activityBotOwned bool,
 ) error {
 	if agentVersionResponse.Name == "" {
 		return fmt.Errorf("agent name is empty; cannot register environment variables")
@@ -3000,6 +3047,11 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 				EnvName: p.env.Name,
 				Key:     envkey.AgentBotResourceGroup(serviceConfig.Name),
 				Value:   activityBotResourceGroup,
+			},
+			azdext.SetEnvRequest{
+				EnvName: p.env.Name,
+				Key:     envkey.AgentBotOwned(serviceConfig.Name),
+				Value:   strconv.FormatBool(activityBotOwned),
 			},
 		)
 	}

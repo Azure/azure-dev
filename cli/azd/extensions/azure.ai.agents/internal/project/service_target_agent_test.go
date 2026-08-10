@@ -658,6 +658,7 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 		protocols,
 		"",
 		"",
+		false,
 	)
 	require.NoError(t, err)
 
@@ -720,6 +721,7 @@ func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
 		protocols,
 		"",
 		"",
+		false,
 	)
 	require.NoError(t, err)
 
@@ -744,10 +746,12 @@ func TestRegisterAgentEnvironmentVariables_PersistsActivityBotName(t *testing.T)
 		nil,
 		"published-bot",
 		"bot-rg",
+		true,
 	)
 	require.NoError(t, err)
 	require.Equal(t, "published-bot", envStub.values[envkey.AgentBotName("my-svc")])
 	require.Equal(t, "bot-rg", envStub.values[envkey.AgentBotResourceGroup("my-svc")])
+	require.Equal(t, "true", envStub.values[envkey.AgentBotOwned("my-svc")])
 }
 
 func TestRegisterAgentEnvironmentVariables_PersistsInstanceIdentity(t *testing.T) {
@@ -774,6 +778,7 @@ func TestRegisterAgentEnvironmentVariables_PersistsInstanceIdentity(t *testing.T
 		nil,
 		"",
 		"",
+		false,
 	)
 	require.NoError(t, err)
 	require.Equal(
@@ -879,6 +884,40 @@ func TestResolveActivityBotName_FallsBackWhenIdentityLookupFails(t *testing.T) {
 	require.Equal(t, "", rg)
 }
 
+func TestActivityBotOwnership(t *testing.T) {
+	t.Parallel()
+
+	t.Run("marks a newly created bot as azd-owned", func(t *testing.T) {
+		t.Parallel()
+
+		owned, tags := activityBotOwnership(false, nil)
+
+		require.True(t, owned)
+		require.Equal(t, botservice.OwnershipTagValue, *tags[botservice.OwnershipTag])
+	})
+
+	t.Run("preserves tags on an adopted bot", func(t *testing.T) {
+		t.Parallel()
+
+		existingTags := map[string]*string{"external": new("value")}
+		owned, tags := activityBotOwnership(true, existingTags)
+
+		require.False(t, owned)
+		require.Equal(t, "value", *tags["external"])
+		require.NotContains(t, tags, botservice.OwnershipTag)
+	})
+
+	t.Run("preserves azd ownership across redeploys", func(t *testing.T) {
+		t.Parallel()
+
+		existingTags := map[string]*string{botservice.OwnershipTag: new(botservice.OwnershipTagValue)}
+		owned, tags := activityBotOwnership(true, existingTags)
+
+		require.True(t, owned)
+		require.Equal(t, botservice.OwnershipTagValue, *tags[botservice.OwnershipTag])
+	})
+}
+
 func TestRegisterAgentEnvironmentVariables_EmptyName(t *testing.T) {
 	t.Parallel()
 
@@ -898,6 +937,7 @@ func TestRegisterAgentEnvironmentVariables_EmptyName(t *testing.T) {
 		nil,
 		"",
 		"",
+		false,
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agent name is empty")
@@ -922,6 +962,7 @@ func TestRegisterAgentEnvironmentVariables_EmptyVersion(t *testing.T) {
 		nil,
 		"",
 		"",
+		false,
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agent version is empty")

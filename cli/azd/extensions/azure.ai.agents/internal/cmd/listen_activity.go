@@ -239,21 +239,17 @@ func readOptionalEnvValue(ctx context.Context, azdClient *azdext.AzdClient, envN
 }
 
 func activityBotTeardownTarget(
-	agentName string,
-	subscriptionID string,
-	defaultResourceGroup string,
 	persistedBotName string,
 	persistedResourceGroup string,
-) (string, string) {
-	resourceGroup := strings.TrimSpace(persistedResourceGroup)
-	if resourceGroup == "" {
-		resourceGroup = defaultResourceGroup
-	}
+	persistedOwned string,
+) (string, string, bool) {
 	botName := strings.TrimSpace(persistedBotName)
-	if botName == "" {
-		botName = botservice.BotName(agentName, botservice.BotScopeSalt(subscriptionID, resourceGroup))
+	resourceGroup := strings.TrimSpace(persistedResourceGroup)
+	owned := strings.EqualFold(strings.TrimSpace(persistedOwned), "true")
+	if botName == "" || resourceGroup == "" || !owned {
+		return "", "", false
 	}
-	return botName, resourceGroup
+	return botName, resourceGroup, true
 }
 
 // teardownActivityBots deletes the Azure Bot created for each activity-protocol
@@ -285,11 +281,6 @@ func teardownActivityBots(
 		log.Printf("postdown: skipping Teams bot cleanup: %v", err)
 		return
 	}
-	resourceGroup, err := readEnvValue(ctx, azdClient, envName, "AZURE_RESOURCE_GROUP")
-	if err != nil {
-		log.Printf("postdown: skipping Teams bot cleanup: %v", err)
-		return
-	}
 	tenantID, err := readEnvValue(ctx, azdClient, envName, "AZURE_TENANT_ID")
 	if err != nil {
 		log.Printf("postdown: skipping Teams bot cleanup: %v", err)
@@ -314,13 +305,23 @@ func teardownActivityBots(
 	}
 
 	for _, agentName := range activityAgents {
-		botName, botResourceGroup := activityBotTeardownTarget(
-			agentName,
-			subscriptionID,
-			resourceGroup,
+		botName, botResourceGroup, tracked := activityBotTeardownTarget(
 			readOptionalEnvValue(ctx, azdClient, envName, envkey.AgentBotName(agentName)),
 			readOptionalEnvValue(ctx, azdClient, envName, envkey.AgentBotResourceGroup(agentName)),
+			readOptionalEnvValue(ctx, azdClient, envName, envkey.AgentBotOwned(agentName)),
 		)
+		if !tracked {
+			continue
+		}
+		owned, ownershipErr := botClient.IsOwned(ctx, botResourceGroup, botName)
+		if ownershipErr != nil {
+			log.Printf("postdown: failed to verify ownership of Azure Bot %q: %v", botName, ownershipErr)
+			continue
+		}
+		if !owned {
+			log.Printf("postdown: leaving Azure Bot %q because it is not marked as created by azd", botName)
+			continue
+		}
 		if err := botClient.DeleteBot(ctx, botResourceGroup, botName); err != nil {
 			log.Printf("postdown: failed to delete Azure Bot %q: %v", botName, err)
 			continue

@@ -28,7 +28,7 @@ func TestCustomizations_GetCommandArgGenerator(t *testing.T) {
 		// install is handled via GetCommandArgs (combined id|zip arg), not here.
 		{"ext_install", "azd extension install", "extension-id", ""},
 		{"ext_show", "azd extension show", "extension-id", FigGenListExtensions},
-		{"ext_upgrade", "azd extension upgrade", "extension-id", FigGenListInstalledExtensions},
+		{"ext_update", "azd extension update", "extension-id", FigGenListInstalledExtensions},
 		{"ext_uninstall", "azd extension uninstall", "extension-id", FigGenListInstalledExtensions},
 		{"config_get", "azd config get", "path", FigGenListConfigKeys},
 		{"config_set", "azd config set", "path", FigGenListConfigKeys},

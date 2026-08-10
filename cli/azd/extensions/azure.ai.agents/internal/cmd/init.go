@@ -187,7 +187,7 @@ func checkAiModelServiceAvailable(ctx context.Context, azdClient *azdext.AzdClie
 		return exterrors.Compatibility(
 			exterrors.CodeIncompatibleAzdVersion,
 			"this version of the azure.ai.agents extension is incompatible with your installed version of azd.",
-			"upgrade azd to the latest version (https://aka.ms/azd/upgrade) and retry",
+			"update azd to the latest version (https://aka.ms/azd/upgrade) and retry",
 		)
 	}
 

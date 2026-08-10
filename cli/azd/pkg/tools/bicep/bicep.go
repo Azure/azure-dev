@@ -72,7 +72,7 @@ func newCliWithTransporter(
 	}
 }
 
-// ensureInstalledOnce checks if bicep is available and downloads/upgrades if needed.
+// ensureInstalledOnce checks if bicep is available and downloads or updates it if needed.
 // This is safe to call multiple times; successful installation is cached and failed attempts are retried.
 func (cli *Cli) ensureInstalledOnce(ctx context.Context) error {
 	return cli.installInit.Do(func() error {
@@ -123,11 +123,11 @@ func (cli *Cli) ensureInstalled(ctx context.Context) error {
 		log.Printf("installed bicep version %s is older than %s; updating.", ver.String(), Version.String())
 
 		if err := runStep(
-			ctx, cli.console, "Upgrading Bicep", func() error {
+			ctx, cli.console, "Updating Bicep", func() error {
 				return downloadBicep(ctx, cli.transporter, Version, bicepPath)
 			},
 		); err != nil {
-			return fmt.Errorf("upgrading bicep: %w", err)
+			return fmt.Errorf("updating bicep: %w", err)
 		}
 	}
 

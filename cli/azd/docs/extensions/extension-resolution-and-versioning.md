@@ -13,7 +13,7 @@ Extension sources are manifests that describe the extensions available for insta
 | `url` | HTTP/HTTPS endpoint | Remote JSON manifest fetched over the network. |
 | `file` | Local filesystem path | Local JSON file, useful for development and offline scenarios. |
 
-In addition, extensions installed from a [self-contained bundle](#self-contained-bundles) are tagged with a reserved `bundle` source. `bundle` is not a configurable source type and never appears in `azd extension source list` — it simply marks an extension that has no live registry to track updates against. Such extensions are listed with their `bundle` source in `azd extension list` and are skipped by `azd extension upgrade`. The name `bundle` is reserved, so it cannot be used as a user-configured source name.
+In addition, extensions installed from a [self-contained bundle](#self-contained-bundles) are tagged with a reserved `bundle` source. `bundle` is not a configurable source type and never appears in `azd extension source list` — it simply marks an extension that has no live registry to track updates against. Such extensions are listed with their `bundle` source in `azd extension list` and are skipped by `azd extension update`. The name `bundle` is reserved, so it cannot be used as a user-configured source name.
 
 Source names must contain 1 to 64 lowercase ASCII letters, digits, hyphens, or underscores, and must begin and end with a letter or digit. Invalid names are rejected rather than normalized. If an older configuration contains an invalid name, extension source loading reports the exact entry to remove and re-add.
 
@@ -141,8 +141,8 @@ When `azd` resolves versions, it filters them into compatible and incompatible s
 ### Behavior
 
 - `azd` filters out all versions whose `requiredAzdVersion` constraint is not satisfied by the running `azd` version, then selects the **highest remaining compatible version** that also matches the user's version constraint.
-- If a **newer incompatible version** exists beyond the selected version, `azd` shows a **warning** suggesting the user upgrade `azd`.
-- If **no compatible versions** remain after filtering, the install **fails** with guidance to upgrade `azd`. The install also fails if the user explicitly requests a specific version that is incompatible.
+- If a **newer incompatible version** exists beyond the selected version, `azd` shows a **warning** suggesting the user update `azd`.
+- If **no compatible versions** remain after filtering, the install **fails** with guidance to update `azd`. The install also fails if the user explicitly requests a specific version that is incompatible.
 - If `requiredAzdVersion` is **empty or cannot be parsed**, the version is treated as compatible (fail-open). This ensures that extensions without the field remain installable.
 
 ## Install Flow
@@ -168,10 +168,10 @@ Once a version is resolved, installation proceeds through these steps:
 When the source is **not** changing (same source as the installed extension):
 
 - **Same version** — a no-op; the install is skipped.
-- **Newer version** — upgraded in place.
+- **Newer version** — updated in place.
 - **Older version** — a downgrade; `azd` **prompts for confirmation** before replacing the newer install with an older one. Declining skips the install. In `--no-prompt` mode `azd` skips with guidance to pass `--force`, and `--force` proceeds without prompting.
 
-When the source **is** changing (for example installing a bundle build over a registry build, or vice versa), the artifacts may differ, so `azd` does not silently proceed, no-op, or block a downgrade. Instead it **prompts for confirmation** before replacing the installed extension. The prompt states the version transition explicitly — *Reinstall*, *Upgrade to `<version>`*, or *Downgrade to `<version>`* — and the target source. Declining skips the install; confirming reinstalls and re-points the extension to the new source. In `--no-prompt` mode `azd` skips with guidance to pass `--force`, and `--force` proceeds without prompting.
+When the source **is** changing (for example installing a bundle build over a registry build, or vice versa), the artifacts may differ, so `azd` does not silently proceed, no-op, or block a downgrade. Instead it **prompts for confirmation** before replacing the installed extension. The prompt states the version transition explicitly — *Reinstall*, *Update to `<version>`*, or *Downgrade to `<version>`* — and the target source. Declining skips the install; confirming reinstalls and re-points the extension to the new source. In `--no-prompt` mode `azd` skips with guidance to pass `--force`, and `--force` proceeds without prompting.
 
 Because each bundle install registers a unique transient source, installing from **any** bundle over an already-installed extension is always treated as a source change — so it prompts even when the bundled version matches the installed one (the two builds may not be byte-identical).
 
@@ -218,7 +218,7 @@ The install flow treats the bundle as an **installer, not a registry** — nothi
 Because a bundle does not register a lasting source, a bundle-installed extension is tracked under the reserved `bundle` source:
 
 - `azd extension list` shows it with its `bundle` source and a normal `✓ Up to date` status. It has no "latest" version to compare against, so no update is ever reported.
-- `azd extension upgrade` skips bundle-installed extensions with a note that they were installed from a self-contained bundle.
+- `azd extension update` skips bundle-installed extensions with a note that they were installed from a self-contained bundle.
 - `azd extension source list` does **not** show an entry for the bundle — there is no leftover source to clean up.
 
 To update a bundle-installed extension, install a newer bundle:
@@ -491,9 +491,9 @@ azd extension install my.experimental.extension --version 2.0.0-beta.1 --source 
 
 If an extension exists in both the `azd` and `dev` sources and you do not specify `--source`, `azd` will prompt you to choose (in interactive mode) or return an error (in non-interactive mode). See [Handle Conflicts](#3-handle-conflicts) for details.
 
-### Upgrade and Dev→Main Promotion
+### Update and Dev→Main Promotion
 
-When you run `azd extension upgrade`, extensions installed from the dev registry are evaluated for **one-way promotion** to the main registry. Promotion occurs automatically when:
+When you run `azd extension update`, extensions installed from the dev registry are evaluated for **one-way promotion** to the main registry. Promotion occurs automatically when:
 
 1. **The extension is no longer in the dev registry** — it was removed from `registry.dev.json` after being promoted to `registry.json`.
 2. **The main registry has a newer version** — the latest version in the main registry is strictly greater than the latest version in the dev registry.
@@ -503,13 +503,13 @@ When promotion happens, the extension's stored source switches from `dev` to `az
 > [!NOTE]
 > If the main and dev registries have the **same** latest version, the extension stays on its current (dev) source. Equal versions are source-sticky.
 
-The upgrade priority chain is:
+The update priority chain is:
 
 1. **Explicit `--source` flag** — always wins if provided
 2. **Stored source** — the source the extension was originally installed from
 3. **Main registry fallback** — `azd` checks the main registry for promotion opportunities
 
-Promotion events are tracked via `ext.promote` telemetry. Upgrade events (regardless of promotion) are tracked via `ext.upgrade`.
+Promotion events are tracked via `ext.promote` telemetry. Update events (regardless of promotion) are tracked via `ext.update`.
 
 #### Example: Dev→Main Promotion in Action
 
@@ -518,9 +518,9 @@ Promotion events are tracked via `ext.promote` telemetry. Upgrade events (regard
 azd extension install my.extension --source dev
 
 # Later, the extension graduates to the main registry with a newer version.
-# Running upgrade will auto-promote:
-azd extension upgrade my.extension
-# Output: my.extension upgraded from 1.0.0-beta.2 (dev) → 1.0.0 (azd)
+# Running update will auto-promote:
+azd extension update my.extension
+# Output: my.extension updated from 1.0.0-beta.2 (dev) → 1.0.0 (azd)
 ```
 
 ### Submitting an Extension to the Dev Registry
@@ -619,7 +619,7 @@ When the same extension ID is present in both `azd` and `dev`:
 
 #### Source ordering affects resolution
 
-Sources are sorted **alphabetically by name**. With the default naming (`azd` and `dev`), `azd` is consulted first because `"azd"` sorts before `"dev"`. If you name your dev source `"aaa-dev"`, it would be consulted first. The name only affects the order in which sources are searched — it does not affect upgrade or promotion behavior.
+Sources are sorted **alphabetically by name**. With the default naming (`azd` and `dev`), `azd` is consulted first because `"azd"` sorts before `"dev"`. If you name your dev source `"aaa-dev"`, it would be consulted first. The name only affects the order in which sources are searched — it does not affect update or promotion behavior.
 
 #### Stale cache after registry updates
 
@@ -690,12 +690,12 @@ To remove the nightly registry later:
 azd extension source remove nightly
 ```
 
-### Upgrade and Nightly→Main Promotion
+### Update and Nightly→Main Promotion
 
-Nightly versions use semver prerelease labels, so the standard `azd extension upgrade` flow works:
+Nightly versions use semver prerelease labels, so the standard `azd extension update` flow works:
 
-- A newer nightly (higher build id, or a higher base version) supersedes an older one, so `azd extension upgrade` pulls the latest nightly.
-- When the extension ships a **stable** release whose base version matches your nightly (for example stable `1.2.3` versus `1.2.3-nightly.200`), the stable release outranks the nightly and you are **automatically promoted** to the `azd` registry on your next upgrade.
+- A newer nightly (higher build id, or a higher base version) supersedes an older one, so `azd extension update` pulls the latest nightly.
+- When the extension ships a **stable** release whose base version matches your nightly (for example stable `1.2.3` versus `1.2.3-nightly.200`), the stable release outranks the nightly and you are **automatically promoted** to the `azd` registry on your next update.
 
 > [!NOTE]
 > If your nightly was built from a **prerelease** base (for example `1.2.3-preview.nightly.60`), it sorts **above** the matching stable prerelease `1.2.3-preview`. In that case you are not promoted until the stable registry advances to a higher base version. This is expected semver precedence behavior.

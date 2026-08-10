@@ -1323,6 +1323,30 @@ func DetectedTarget(target string) string {
 	return fmt.Sprintf("%s Detected agent target: %s\n", DoneMark, target)
 }
 
+// NoAgentToEvaluate reports a project declaring no agent service.
+func NoAgentToEvaluate() error {
+	return errors.New(
+		"this project declares no agent service to evaluate. Add one, or name an " +
+			"existing agent with --target")
+}
+
+// AmbiguousAgentTarget reports several agents where only one can be scaffolded.
+func AmbiguousAgentTarget(agents []string) error {
+	return fmt.Errorf(
+		"this project declares more than one agent (%s), so --target says which to "+
+			"evaluate", strings.Join(agents, ", "))
+}
+
+// SelectAgentPrompt asks which agent the eval is for.
+func SelectAgentPrompt() string {
+	return "Select the agent to evaluate:"
+}
+
+// SelectingAgent reports a failed agent prompt.
+func SelectingAgent(err error) error {
+	return fmt.Errorf("selecting an agent to evaluate: %w", err)
+}
+
 // UsingTraceSource reports a scaffold that reads production traces.
 func UsingTraceSource() string {
 	return fmt.Sprintf("%s Using data source: traces (Application Insights)\n", DoneMark)

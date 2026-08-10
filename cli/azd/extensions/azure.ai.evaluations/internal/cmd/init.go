@@ -53,9 +53,6 @@ func newInitCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 
-			if target == "" {
-				return requireFlag("target")
-			}
 			switch source {
 			case "", initSourceDataset, initSourceTraces:
 			default:
@@ -77,9 +74,6 @@ func newInitCommand() *cobra.Command {
 			if path == "" {
 				path = project.DefaultEvalDir
 			}
-			if evalName == "" {
-				evalName = defaultEvalName(target, source)
-			}
 
 			// Asked before anything is written: the project is the one thing
 			// init cannot supply for itself, and failing after creating
@@ -87,6 +81,18 @@ func newInitCommand() *cobra.Command {
 			azdProject, err := readAzdProject(cmd.Context())
 			if err != nil {
 				return err
+			}
+
+			// The target is what the whole scaffold is named and shaped around,
+			// so it is settled before anything derived from it.
+			if target == "" {
+				target, err = resolveAgentTarget(cmd, azdProject)
+				if err != nil {
+					return err
+				}
+			}
+			if evalName == "" {
+				evalName = defaultEvalName(target, source)
 			}
 			if judgeModel == "" {
 				judgeModel = detectModelDeployment(azdProject)

@@ -40,13 +40,6 @@ type deploymentSelectionOptions struct {
 	Location string
 }
 
-type deploymentItem struct {
-	Raw        map[string]any
-	Resolved   map[string]any
-	Referenced bool
-	Index      int
-}
-
 func splitModelReference(raw string) (format, name string) {
 	raw = strings.TrimSpace(raw)
 	if slash := strings.IndexByte(raw, '/'); slash > 0 && slash < len(raw)-1 {

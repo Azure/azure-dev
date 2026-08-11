@@ -266,18 +266,18 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 	return nil
 }
 
-func (a *ProjectDeploymentAddAction) loadRequest() (*projectDeploymentAddRequest, error) {
+func (a *ProjectDeploymentAddAction) loadRequest() (*deploymentAddRequest, error) {
 	if a.flags.requestFile == "" {
 		return nil, nil
 	}
 	if err := validateDelegatedFilePath(a.flags.requestFile, "request", true); err != nil {
 		return nil, err
 	}
-	request := &projectDeploymentAddRequest{}
+	request := &deploymentAddRequest{}
 	if err := decodeDelegatedJSON(a.flags.requestFile, request); err != nil {
 		return nil, err
 	}
-	if err := request.validate(); err != nil {
+	if err := validateProjectDeploymentAddRequest(*request); err != nil {
 		return nil, err
 	}
 	a.flags.model = request.Model.Name

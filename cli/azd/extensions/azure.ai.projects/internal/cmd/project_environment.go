@@ -14,22 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-var projectEnvironmentKeys = []string{
-	"AZURE_AI_ACCOUNT_NAME",
-	"AZURE_AI_DEPLOYMENTS_LOCATION",
-	"AZURE_AI_MODEL_DEPLOYMENT_NAME",
-	"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT",
-	"AZURE_AI_PROJECT_ID",
-	"AZURE_AI_PROJECT_NAME",
-	"AZURE_LOCATION",
-	"AZURE_OPENAI_ENDPOINT",
-	"AZURE_RESOURCE_GROUP",
-	"AZURE_SUBSCRIPTION_ID",
-	"AZURE_TENANT_ID",
-	"FOUNDRY_PROJECT_ENDPOINT",
-	"USE_EXISTING_AI_PROJECT",
-}
-
 type environmentPlan struct {
 	Sets   map[string]string
 	Unsets []string

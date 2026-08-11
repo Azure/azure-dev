@@ -128,7 +128,7 @@ func TestWriteTerraformEjectedInfra(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			infraDir := filepath.Join(t.TempDir(), "infra")
-			require.NoError(t, os.MkdirAll(infraDir, 0755))
+			require.NoError(t, os.MkdirAll(infraDir, 0750))
 			parameters := map[string]any{
 				"includeAcr": test.includeAcr,
 				"deployments": []synthesis.Deployment{{
@@ -153,6 +153,7 @@ func TestWriteTerraformEjectedInfra(t *testing.T) {
 
 			require.NoError(t, writeTerraformEjectedInfra(infraDir, parameters))
 
+			//nolint:gosec // test-owned temporary output
 			outputs, err := os.ReadFile(filepath.Join(infraDir, "outputs.tf"))
 			require.NoError(t, err)
 			assert.Contains(t, string(outputs), "AZURE_AI_PROJECT_ID")
@@ -166,6 +167,7 @@ func TestWriteTerraformEjectedInfra(t *testing.T) {
 				assert.ErrorIs(t, err, os.ErrNotExist)
 			}
 
+			//nolint:gosec // test-owned temporary output
 			rawTfvars, err := os.ReadFile(filepath.Join(infraDir, "main.tfvars.json"))
 			require.NoError(t, err)
 			tfvars := map[string]any{}

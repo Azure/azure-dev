@@ -43,8 +43,8 @@ type projectInitRequest struct {
 	Source              string                `json:"source"`
 	SourceVersion       string                `json:"sourceVersion,omitempty"`
 	Project             delegatedProject      `json:"project"`
-	Infra               delegatedInfra        `json:"infra,omitempty"`
-	Requirements        delegatedRequirements `json:"requirements,omitempty"`
+	Infra               delegatedInfra        `json:"infra"`
+	Requirements        delegatedRequirements `json:"requirements"`
 	ResolveAzureContext bool                  `json:"resolveAzureContext"`
 	Force               bool                  `json:"force"`
 }

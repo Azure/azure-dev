@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"azureaidataset/internal/exterrors"
@@ -49,27 +50,28 @@ func AssetDoesNotExist(kind, name string) error {
 // syscall name that says nothing to the person who mistyped it.
 func ReadingFromFile(path string, err error) error {
 	if errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("--from-file %q does not exist", path)
+		return fmt.Errorf("--from-file %q does not exist", filepath.ToSlash(path))
 	}
-	return fmt.Errorf("reading --from-file %q: %w", path, err)
+	return fmt.Errorf("reading --from-file %q: %w", filepath.ToSlash(path), err)
 }
 
 // FromFileMustBeJSONL reports a --from-file that is not a dataset.
 func FromFileMustBeJSONL(path string) error {
 	return fmt.Errorf(
-		"--from-file must be a .jsonl file or a directory containing one, got %q", path)
+		"--from-file must be a .jsonl file or a directory containing one, got %q",
+		filepath.ToSlash(path))
 }
 
 // FromFileDirectoryHasNoJSONL reports a directory with nothing to upload.
 func FromFileDirectoryHasNoJSONL(dir string) error {
-	return fmt.Errorf("no .jsonl file in %q; --from-file needs one to upload", dir)
+	return fmt.Errorf("no .jsonl file in %q; --from-file needs one to upload", filepath.ToSlash(dir))
 }
 
 // FromFileDirectoryIsAmbiguous refuses to guess which dataset was meant.
 func FromFileDirectoryIsAmbiguous(dir string, names []string) error {
 	return fmt.Errorf(
 		"%q holds %d .jsonl files (%s); name the one to upload with --from-file",
-		dir, len(names), strings.Join(names, ", "))
+		filepath.ToSlash(dir), len(names), strings.Join(names, ", "))
 }
 
 // DatasetNotFound reports a name that is not a dataset in this project.

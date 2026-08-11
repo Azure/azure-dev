@@ -416,6 +416,12 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 				subscriptionID, subErr := readEnvValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID")
 				resourceGroup, rgErr := readEnvValue(ctx, azdClient, envName, "AZURE_RESOURCE_GROUP")
 				if subErr == nil && rgErr == nil {
+					botResourceGroup := readOptionalEnvValue(
+						ctx, azdClient, envName, envkey.AgentBotResourceGroup(svc.Name),
+					)
+					if botResourceGroup != "" {
+						resourceGroup = botResourceGroup
+					}
 					agentClient := agent_api.NewAgentClient(endpoint, cred)
 					packagePath = writeTeamsAppPackage(
 						ctx, agentClient, args.Project, svc, agentName, subscriptionID, resourceGroup, botName,

@@ -208,6 +208,17 @@ func TestCLIVersionsListOfAnUnknownNameSucceeds(t *testing.T) {
 	require.Empty(t, versions, "an unknown name lists nothing rather than failing")
 }
 
+// Succeeding quietly is right for a parser and wrong for a reader. The project
+// holds other datasets, so "No datasets found." answers a question nobody
+// asked; the line has to be about the name that was typed.
+func TestCLIVersionsListOfAnUnknownNameNamesIt(t *testing.T) {
+	r := requireSuccess(t, run(t, "versions", "list", "azdcli-no-such-dataset"))
+
+	require.Contains(t, r.Stdout, `No versions of dataset "azdcli-no-such-dataset"`)
+	require.NotContains(t, r.Stdout, "No datasets found.",
+		"the project has datasets; this name just has no versions")
+}
+
 // Required arguments must end the process rather than wait on a terminal
 // nobody is watching.
 func TestCLIRequiredValuesFailInsteadOfHanging(t *testing.T) {

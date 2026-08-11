@@ -163,6 +163,16 @@ func NoDatasets() string {
 	return "No datasets found.\n"
 }
 
+// NoDatasetVersions reports a name nothing is published under.
+//
+// Listing a name that does not exist is not an error — a delete is checked for
+// idempotence this way — so this has to read as an answer about that name
+// rather than as a report about the project, which holds other datasets.
+func NoDatasetVersions(dataset string) string {
+	return fmt.Sprintf("No versions of dataset %q. Publish one with "+
+		"`azd ai dataset create %s --from-file <path>`.\n", dataset, dataset)
+}
+
 // ResolvingLatestDatasetVersion reports a failure to find what "latest" means.
 func ResolvingLatestDatasetVersion(dataset string, err error) error {
 	return fmt.Errorf("resolving the latest version of %q: %w", dataset, err)

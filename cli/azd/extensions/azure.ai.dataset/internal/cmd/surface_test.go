@@ -178,8 +178,71 @@ func TestSuggestedCommandsExist(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// A message pointing at `azd ai eval dataset ...` is almost always the copy
-// these commands came from rather than a deliberate cross-extension pointer.
+// A suggestion is only as good as its flags. TestSuggestedCommandsExist stops
+// at the command, so `azd ai dataset create <name> --file <path>` passed it
+// while `--file` did not exist: the real flag is `--from-file`, and a reader
+// following the advice got "unknown flag". Checking the command without its
+// flags checks the easy half.
+func TestSuggestedFlagsExist(t *testing.T) {
+	// A suggestion is inside backticks, so the flags belonging to it end where
+	// the quoting does and prose afterwards is not mistaken for one.
+	quoted := regexp.MustCompile("`azd ai ([^`]*)`")
+
+	err := filepath.WalkDir("../..", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, line := range strings.Split(string(body), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "//") {
+				continue
+			}
+			for _, m := range quoted.FindAllStringSubmatch(line, -1) {
+				fields := strings.Fields(m[1])
+				if len(fields) == 0 || fields[0] != "dataset" {
+					continue // a sibling's contract, checked by the test above
+				}
+
+				// The command is the leading run of plain words; a placeholder
+				// like <name> or a %q verb ends it.
+				var words, flags []string
+				for _, f := range fields[1:] {
+					switch {
+					case strings.HasPrefix(f, "--"):
+						flags = append(flags, strings.TrimPrefix(strings.SplitN(f, "=", 2)[0], "--"))
+					case len(flags) == 0 && regexp.MustCompile(`^[a-z][a-z0-9-]*$`).MatchString(f):
+						words = append(words, f)
+					}
+				}
+				if len(flags) == 0 {
+					continue
+				}
+
+				// NewRootCommand() is the `dataset` command itself, so the
+				// namespace word is not part of the path to look up.
+				resolved, _, e := NewRootCommand().Find(words)
+				if !assert.NoErrorf(t, e, "%s suggests `azd ai %s`, which is not a command", path, m[1]) {
+					continue
+				}
+				for _, name := range flags {
+					assert.NotNilf(t, resolved.Flags().Lookup(name),
+						"%s suggests `azd ai %s`, but `%s` has no --%s flag",
+						path, m[1], resolved.CommandPath(), name)
+				}
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+// A message pointing at `azd ai eval dataset ...` is almost always the copy// these commands came from rather than a deliberate cross-extension pointer.
 // `dataset` is this extension's own namespace, so telling a user to run the
 // eval extension's version of a command it serves itself sends them somewhere
 // they may not have installed.

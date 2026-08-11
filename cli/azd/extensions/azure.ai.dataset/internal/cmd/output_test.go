@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"azureaidataset/internal/messages"
 	"azureaidataset/internal/pkg/dataset_api"
 
 	"github.com/spf13/cobra"
@@ -71,7 +72,7 @@ func TestEmitJSONListDropsTheEnvelope(t *testing.T) {
 	require.NoError(t, renderDatasets(cmd, &dataset_api.DatasetList{
 		Value:    []dataset_api.Dataset{{Name: "a", Version: "1.0"}},
 		NextLink: "https://example/page2",
-	}))
+	}, messages.NoDatasets()))
 
 	assert.True(t, strings.HasPrefix(strings.TrimSpace(buf.String()), "["),
 		"a list answers with an array")
@@ -89,7 +90,7 @@ func TestRenderDatasetsTable(t *testing.T) {
 	require.NoError(t, renderDatasets(cmd, &dataset_api.DatasetList{Value: []dataset_api.Dataset{
 		{Name: "golden", Version: "2.0", Type: "uri_file"},
 		{Name: "smoke", Version: "1.0", Type: "uri_file"},
-	}}))
+	}}, messages.NoDatasets()))
 
 	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
 	require.Len(t, lines, 4, "a header, its rule, and one line per dataset")
@@ -112,9 +113,39 @@ func TestRenderDatasetsSaysWhenThereAreNone(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 
-	require.NoError(t, renderDatasets(cmd, &dataset_api.DatasetList{}))
+	require.NoError(t, renderDatasets(cmd, &dataset_api.DatasetList{}, messages.NoDatasets()))
 	assert.Contains(t, buf.String(), "No datasets found.")
 	assert.NotContains(t, buf.String(), "NAME")
+}
+
+// Listing one name's versions and listing every dataset share a renderer but
+// not a question. "No datasets found." in a project holding a dozen datasets
+// reads as though the lookup failed rather than as an answer about that name.
+func TestRenderDatasetsSaysWhichNameHasNoVersions(t *testing.T) {
+	cmd := commandWithOutput(t, "")
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	require.NoError(t, renderDatasets(cmd, &dataset_api.DatasetList{},
+		messages.NoDatasetVersions("golden")))
+
+	assert.Contains(t, buf.String(), `No versions of dataset "golden"`)
+	assert.NotContains(t, buf.String(), "No datasets found.")
+	assert.NotContains(t, buf.String(), "NAME")
+}
+
+// The empty result is still a success with an empty array: a delete is checked
+// for idempotence by listing what is left, and `-o json` callers range over it.
+func TestVersionsListEmptyIsStillAnEmptyJSONArray(t *testing.T) {
+	cmd := commandWithOutput(t, "json")
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	require.NoError(t, renderDatasets(cmd, &dataset_api.DatasetList{},
+		messages.NoDatasetVersions("golden")))
+
+	assert.Equal(t, "[]", strings.TrimSpace(buf.String()),
+		"the sentence is for a reader; a parser still gets an array")
 }
 
 // A detail view is Title Case key/value, the shape `show` uses, and a blank

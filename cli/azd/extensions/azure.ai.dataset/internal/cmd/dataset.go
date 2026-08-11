@@ -179,7 +179,7 @@ func newDatasetListCommand() *cobra.Command {
 			if err != nil {
 				return messages.ListingDatasets(err)
 			}
-			return renderDatasets(cmd, list)
+			return renderDatasets(cmd, list, messages.NoDatasets())
 		},
 	}
 
@@ -224,8 +224,10 @@ func newDatasetVersionsListCommand() *cobra.Command {
 			}
 			// An unknown name lists nothing and succeeds; it is not an error.
 			// `-o json` callers range over the array, and a delete is checked
-			// for idempotence by listing what is left.
-			return renderDatasets(cmd, list)
+			// for idempotence by listing what is left. The empty sentence names
+			// the dataset, though: the project may hold plenty of others, so
+			// "No datasets found." would be answering a different question.
+			return renderDatasets(cmd, list, messages.NoDatasetVersions(name))
 		},
 	}
 
@@ -233,7 +235,10 @@ func newDatasetVersionsListCommand() *cobra.Command {
 	return cmd
 }
 
-func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList) error {
+// renderDatasets prints a dataset list, or, when it is empty, whatever the
+// caller says an empty result means: listing every dataset and listing one
+// name's versions come to the same renderer but not to the same sentence.
+func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList, whenEmpty string) error {
 	// JSON is decided before emptiness: a caller piping this into a parser needs
 	// an empty array, not the sentence a human would read.
 	if list == nil {
@@ -247,7 +252,7 @@ func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList) error {
 		rows = append(rows, []string{d.Name, d.Version, d.Type})
 	}
 	if len(rows) == 0 {
-		fmt.Fprint(cmd.OutOrStdout(), messages.NoDatasets())
+		fmt.Fprint(cmd.OutOrStdout(), whenEmpty)
 		return nil
 	}
 	// TYPE, not FORMAT: format is a field this API accepts on upload and never

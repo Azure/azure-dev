@@ -2749,6 +2749,148 @@ func Test_Upgrade_DependencyUpgrade_ReconcilesWhenParentCurrent(t *testing.T) {
 	require.Equal(t, "2.0.0", depUpgrades[0].ToVersion)
 }
 
+func Test_Upgrade_DependencyUpgrade_FallsBackToMainRegistry(t *testing.T) {
+	t.Parallel()
+
+	parent := &ExtensionMetadata{
+		Id:     "test.pack",
+		Source: "local",
+		Versions: []ExtensionVersion{{
+			Version:      "1.0.0",
+			Dependencies: []ExtensionDependency{{Id: "test.child", Version: ">=2.0.0"}},
+		}},
+	}
+	localChild := &ExtensionMetadata{
+		Id:     "test.child",
+		Source: parent.Source,
+		Versions: []ExtensionVersion{{
+			Version:      "1.0.0",
+			Dependencies: []ExtensionDependency{{Id: "test.leaf", Version: "1.0.0"}},
+		}},
+	}
+	mainChild := &ExtensionMetadata{
+		Id:     "test.child",
+		Source: MainRegistryName,
+		Versions: []ExtensionVersion{{
+			Version:      "2.0.0",
+			Dependencies: []ExtensionDependency{{Id: "test.leaf", Version: "1.0.0"}},
+		}},
+	}
+
+	manager := newTestManager(t)
+	manager.sources = []Source{
+		&mockSource{name: parent.Source, extensions: []*ExtensionMetadata{parent, localChild}},
+		&mockSource{name: MainRegistryName, extensions: []*ExtensionMetadata{mainChild}},
+	}
+	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+		"test.child": {
+			Id:      "test.child",
+			Version: "1.0.0",
+			Source:  parent.Source,
+		},
+		"test.leaf": {
+			Id:      "test.leaf",
+			Version: "1.0.0",
+			Source:  MainRegistryName,
+		},
+	}))
+	manager.installed = nil
+
+	_, depUpgrades, err := manager.ReconcileDependencies(
+		t.Context(),
+		parent,
+		DefaultUpgradeOptions(""),
+	)
+	require.NoError(t, err)
+	require.Len(t, depUpgrades, 1)
+	require.Equal(t, UpgradeStatusUpgraded, depUpgrades[0].Status)
+	require.Equal(t, MainRegistryName, depUpgrades[0].ToSource)
+	require.Equal(t, "2.0.0", depUpgrades[0].ToVersion)
+}
+
+func Test_Upgrade_DependencyUpgrade_BundleIsolationPropagatesToNestedDependencies(t *testing.T) {
+	t.Parallel()
+
+	parent := &ExtensionMetadata{
+		Id:     "test.pack",
+		Source: "test-bundle",
+		Versions: []ExtensionVersion{{
+			Version:      "1.0.0",
+			Dependencies: []ExtensionDependency{{Id: "test.child", Version: ">=2.0.0"}},
+		}},
+	}
+	bundleChild := &ExtensionMetadata{
+		Id:     "test.child",
+		Source: parent.Source,
+		Versions: []ExtensionVersion{
+			{
+				Version:      "1.0.0",
+				Dependencies: []ExtensionDependency{{Id: "test.leaf", Version: "1.0.0"}},
+			},
+			{
+				Version:      "2.0.0",
+				Dependencies: []ExtensionDependency{{Id: "test.leaf", Version: ">=2.0.0"}},
+			},
+		},
+	}
+	bundleLeaf := &ExtensionMetadata{
+		Id:     "test.leaf",
+		Source: parent.Source,
+		Versions: []ExtensionVersion{{
+			Version:      "1.0.0",
+			Dependencies: []ExtensionDependency{{Id: "test.anchor", Version: "1.0.0"}},
+		}},
+	}
+	mainLeaf := &ExtensionMetadata{
+		Id:     "test.leaf",
+		Source: MainRegistryName,
+		Versions: []ExtensionVersion{{
+			Version:      "2.0.0",
+			Dependencies: []ExtensionDependency{{Id: "test.anchor", Version: "1.0.0"}},
+		}},
+	}
+
+	manager := newTestManager(t)
+	manager.sources = []Source{
+		&mockSource{name: parent.Source, extensions: []*ExtensionMetadata{parent, bundleChild, bundleLeaf}},
+		&mockSource{name: MainRegistryName, extensions: []*ExtensionMetadata{mainLeaf}},
+	}
+	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+		"test.child": {
+			Id:      "test.child",
+			Version: "1.0.0",
+			Source:  parent.Source,
+		},
+		"test.leaf": {
+			Id:      "test.leaf",
+			Version: "1.0.0",
+			Source:  parent.Source,
+		},
+		"test.anchor": {
+			Id:      "test.anchor",
+			Version: "1.0.0",
+			Source:  parent.Source,
+		},
+	}))
+	manager.installed = nil
+
+	_, depUpgrades, err := manager.ReconcileDependencies(t.Context(), parent, UpgradeOptions{
+		UpgradeDependencies:                true,
+		SkipMainRegistryDependencyFallback: true,
+	})
+	require.NoError(t, err)
+	require.Len(t, depUpgrades, 1)
+	require.Equal(t, UpgradeStatusUpgraded, depUpgrades[0].Status)
+	require.Len(t, depUpgrades[0].DependencyUpgrades, 1)
+	require.Equal(t, UpgradeStatusFailed, depUpgrades[0].DependencyUpgrades[0].Status)
+	require.ErrorAs(t, depUpgrades[0].DependencyUpgrades[0].Error, new(*DependencyVersionNotFoundError))
+
+	leaf, err := manager.GetInstalled(FilterOptions{Id: "test.leaf"})
+	require.NoError(t, err)
+	require.Equal(t, "1.0.0", leaf.Version)
+	require.Equal(t, parent.Source, leaf.Source)
+}
+
 func Test_Upgrade_DependencyUpgrade_RefusesToDowngradeOutsideConstraint(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 

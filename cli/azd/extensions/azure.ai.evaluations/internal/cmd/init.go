@@ -95,7 +95,10 @@ func newInitCommand() *cobra.Command {
 				evalName = defaultEvalName(target, source)
 			}
 			if judgeModel == "" {
-				judgeModel = detectModelDeployment(azdProject)
+				judgeModel, err = resolveJudgeModel(cmd, azdProject)
+				if err != nil {
+					return err
+				}
 			}
 
 			configPath := project.ResolveEvalConfigPath(path)
@@ -478,7 +481,8 @@ const aiModelHost = "azure.ai.model"
 // the project already declares.
 //
 // `init` makes no service calls, so detection is limited to the project file.
-// Coming back empty is not a failure: --judge-model supplies it.
+// Coming back empty leaves it to resolveJudgeModel, which reads the Foundry
+// project's deployments: and then asks or names --judge-model.
 func detectModelDeployment(proj *azdext.ProjectConfig) string {
 	for name, svc := range proj.GetServices() {
 		if svc.GetHost() != aiModelHost {

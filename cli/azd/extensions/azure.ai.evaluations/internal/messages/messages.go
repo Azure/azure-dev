@@ -1399,6 +1399,35 @@ func SelectingAgent(err error) error {
 	return fmt.Errorf("selecting an agent to evaluate: %w", err)
 }
 
+// JudgeModelRequired reports a scaffold that has no deployment to judge with.
+//
+// Reached when the project declares no model deployment to read one from, so
+// the flag is the whole of the way out. Failing here is deliberate: the judging
+// built-ins declare the deployment as required, so a config written without one
+// is rejected by the service later, far from the command that wrote it.
+func JudgeModelRequired() error {
+	return errors.New(
+		"a model deployment is required to judge with: pass --judge-model. " +
+			"This project declares no deployments: to read one from")
+}
+
+// AmbiguousJudgeModel reports several deployments where only one can be used.
+func AmbiguousJudgeModel(models []string) error {
+	return fmt.Errorf(
+		"this project declares more than one model deployment (%s), so "+
+			"--judge-model says which the graders judge with", strings.Join(models, ", "))
+}
+
+// SelectJudgeModelPrompt asks which deployment the graders judge with.
+func SelectJudgeModelPrompt() string {
+	return "Select the model deployment the graders judge with:"
+}
+
+// SelectingJudgeModel reports a failed judge model prompt.
+func SelectingJudgeModel(err error) error {
+	return fmt.Errorf("selecting a judge model deployment: %w", err)
+}
+
 // UsingTraceSource reports a scaffold that reads production traces.
 func UsingTraceSource() string {
 	return fmt.Sprintf("%s Using data source: traces (Application Insights)\n", DoneMark)

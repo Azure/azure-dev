@@ -6,6 +6,7 @@ package grpcserver
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -145,7 +146,8 @@ func (s *Server) Start() (*ServerInfo, error) {
 
 	go func() {
 		// Start the gRPC server
-		if err := s.grpcServer.Serve(listener); err != nil {
+		if err := s.grpcServer.Serve(listener); err != nil &&
+			!errors.Is(err, grpc.ErrServerStopped) {
 			log.Fatalf("failed to serve: %v", err)
 		}
 	}()

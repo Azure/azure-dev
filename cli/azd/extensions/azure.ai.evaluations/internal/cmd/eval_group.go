@@ -255,7 +255,22 @@ func newEvalDeleteCommand() *cobra.Command {
 			}
 			defer ec.Close()
 
-			if err := ec.evalClient.DeleteOpenAIEval(ctx, evalID); err != nil {
+			err = ec.evalClient.DeleteOpenAIEval(ctx, evalID)
+			if err != nil && eval_api.IsNotFound(err) {
+				// `list` reports names, so a name is what a reader has to hand.
+				// An eval is immutable, though, so editing a declaration leaves
+				// another under the same name, and this deletes the runs under
+				// whichever it picks: with more than one it asks rather than guesses.
+				switch ids := ec.evalIDsNamed(ctx, evalID); len(ids) {
+				case 0:
+				case 1:
+					evalID = ids[0]
+					err = ec.evalClient.DeleteOpenAIEval(ctx, evalID)
+				default:
+					return messages.AmbiguousEvalName(evalID, ids)
+				}
+			}
+			if err != nil {
 				if eval_api.IsNotFound(err) {
 					return messages.EvalGone(evalID)
 				}

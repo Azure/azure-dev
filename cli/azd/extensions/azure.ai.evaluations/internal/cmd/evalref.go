@@ -82,15 +82,30 @@ func (ec *evalContext) recordedEvalID(ctx context.Context, evalName string) stri
 // Evals are addressed by id, but every listing reports a name, so a name is
 // what a reader has to hand. Returns empty when nothing matches, leaving the
 // caller's not-found reporting alone.
+//
+// The newest match wins when a name is carried by several. An eval is
+// immutable, so editing a declaration creates another one under the same name,
+// and the newest is the one the configuration currently describes.
 func (ec *evalContext) evalIDNamed(ctx context.Context, name string) string {
-	list, err := ec.evalClient.ListOpenAIEvals(ctx, 0)
-	if err != nil || list == nil {
+	ids := ec.evalIDsNamed(ctx, name)
+	if len(ids) == 0 {
 		return ""
 	}
+	return ids[0]
+}
+
+// evalIDsNamed finds every eval the service lists under this name, newest
+// first, so a caller that must not guess can see the ambiguity.
+func (ec *evalContext) evalIDsNamed(ctx context.Context, name string) []string {
+	list, err := ec.evalClient.ListOpenAIEvals(ctx, 0)
+	if err != nil || list == nil {
+		return nil
+	}
+	var ids []string
 	for _, e := range list.Data {
 		if e.Name == name {
-			return e.ID
+			ids = append(ids, e.ID)
 		}
 	}
-	return ""
+	return ids
 }

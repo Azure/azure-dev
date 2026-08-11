@@ -1330,6 +1330,17 @@ func EvalNotFound(evalID string) error {
 			"`azd ai eval list` shows the ones there are", evalID)
 }
 
+// AmbiguousEvalName reports a name carried by more than one eval.
+//
+// An eval is immutable, so editing a declaration creates another under the same
+// name and leaves the previous one holding its run history. Deleting takes the
+// runs with it, so which one is meant has to be said rather than guessed.
+func AmbiguousEvalName(name string, ids []string) error {
+	return fmt.Errorf(
+		"%d evals are named %q, and deleting one discards its runs, so name the "+
+			"id instead: %s", len(ids), name, strings.Join(ids, ", "))
+}
+
 // EvalGone reports an eval id there is nothing to delete at.
 func EvalGone(evalID string) error {
 	return fmt.Errorf("no eval %q in this project", evalID)

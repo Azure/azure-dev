@@ -3327,8 +3327,9 @@ func (a *InitAction) addVoiceAgentToProject(
 	}
 
 	// Emit the sibling Foundry project service so provision reuses/creates the
-	// project. Voice v1 uses a managed model with no tool connections or
-	// toolboxes, so no deployment/connection/toolbox siblings are emitted.
+	// project. Voice init emits no deployment/connection/toolbox siblings; managed
+	// models are service-hosted, and BYOM model deployments are referenced from
+	// azure.yaml and must already exist.
 	if err := emitResourceServices(
 		ctx, a.azdClient, a.serviceNameOverride,
 		projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),

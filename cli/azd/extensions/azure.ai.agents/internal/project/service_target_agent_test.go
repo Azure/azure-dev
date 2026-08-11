@@ -27,6 +27,44 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
+func TestVoiceAgentInlineServicePropertiesRoundTrip_BYOM(t *testing.T) {
+	instructions := "Route callers to the right team."
+	voice := "alloy"
+	store := true
+	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindPromptVoice,
+			Name: "voice-agent",
+		},
+		ModelType:    agent_yaml.VoiceModelTypeSelfDeployed,
+		Model:        &agent_yaml.Model{Id: "my-realtime-deployment"},
+		Instructions: &instructions,
+		Voice:        &voice,
+		Store:        &store,
+	}, nil)
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "voice-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+	got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.AgentKindPromptVoice, got.Kind)
+	require.Equal(t, "voice-agent", got.Name)
+	require.Equal(t, agent_yaml.VoiceModelTypeSelfDeployed, got.ModelType)
+	require.NotNil(t, got.Model)
+	require.Equal(t, "my-realtime-deployment", got.Model.Id)
+	require.NotNil(t, got.Instructions)
+	require.Equal(t, instructions, *got.Instructions)
+	require.NotNil(t, got.Voice)
+	require.Equal(t, voice, *got.Voice)
+	require.NotNil(t, got.Store)
+	require.Equal(t, store, *got.Store)
+}
+
 func TestApplyAgentMetadata(t *testing.T) {
 	tests := []struct {
 		name         string

@@ -48,14 +48,14 @@
     },
     "modelType": {
       "type": "string",
-      "description": "Voice agent (kind: prompt-voice) model-inference mode. Only 'managed' (Voice Live-hosted) is supported in v1.",
-      "enum": ["managed"]
+      "description": "Voice agent (kind: prompt-voice) model-inference mode. 'managed' uses a Voice Live-hosted model; 'self_deployed' (BYOM) references an existing Foundry model deployment.",
+      "enum": ["managed", "self_deployed"]
     },
     "model": {
       "type": "object",
       "description": "Voice agent (kind: prompt-voice) speech-to-speech model (e.g. id: gpt-realtime).",
       "properties": {
-        "id": { "type": "string", "description": "Model name (e.g. 'gpt-realtime')." }
+        "id": { "type": "string", "minLength": 1, "description": "Model name for managed mode (e.g. 'gpt-realtime') or existing Foundry deployment name for self_deployed mode." }
       },
       "required": ["id"],
       "additionalProperties": true

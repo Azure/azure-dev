@@ -433,12 +433,12 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 					if agent.Model == nil || agent.Model.Id == "" {
 						errors = append(errors, "template.model.id is required for a prompt-voice agent")
 					}
-					// v1 only supports managed inference. An explicit self_deployed
-					// (BYOM) value is rejected until BYOM ships.
-					if agent.ModelType != "" && agent.ModelType != VoiceModelTypeManaged {
+					if agent.ModelType != "" &&
+						agent.ModelType != VoiceModelTypeManaged &&
+						agent.ModelType != VoiceModelTypeSelfDeployed {
 						errors = append(errors, fmt.Sprintf(
-							"template.model_type '%s' is not supported; only '%s' is available",
-							agent.ModelType, VoiceModelTypeManaged))
+							"template.model_type '%s' is not supported; use '%s' or '%s'",
+							agent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed))
 					}
 				} else {
 					errors = append(errors, fmt.Sprintf("failed to unmarshal to VoiceAgent: %v", err))

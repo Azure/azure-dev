@@ -77,18 +77,31 @@ name: voice-agent
 	}
 }
 
-// TestValidateAgentDefinition_PromptVoice_BYOMRejected rejects self_deployed
-// (BYOM) model_type in v1.
-func TestValidateAgentDefinition_PromptVoice_BYOMRejected(t *testing.T) {
+// TestValidateAgentDefinition_PromptVoice_BYOMAccepted accepts self_deployed
+// (BYOM) model_type.
+func TestValidateAgentDefinition_PromptVoice_BYOMAccepted(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-agent
+model:
+  id: my-realtime-deployment
+model_type: self_deployed
+`)
+	if err := ValidateAgentDefinition(yamlContent); err != nil {
+		t.Fatalf("expected self_deployed to be valid, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_PromptVoice_InvalidModelType(t *testing.T) {
 	yamlContent := []byte(`
 kind: prompt-voice
 name: voice-agent
 model:
   id: gpt-realtime
-model_type: self_deployed
+model_type: unsupported
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "not supported") {
-		t.Fatalf("expected self_deployed rejection, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "model_type 'unsupported' is not supported") {
+		t.Fatalf("expected invalid model_type error, got: %v", err)
 	}
 }

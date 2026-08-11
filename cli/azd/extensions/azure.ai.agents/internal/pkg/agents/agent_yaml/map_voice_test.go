@@ -203,16 +203,36 @@ func TestCreateVoiceAgentAPIRequest_MissingModel(t *testing.T) {
 	}
 }
 
-// TestCreateVoiceAgentAPIRequest_SelfDeployedRejected verifies BYOM is rejected
-// in v1 (only managed is available).
-func TestCreateVoiceAgentAPIRequest_SelfDeployedRejected(t *testing.T) {
+// TestCreateVoiceAgentAPIRequest_SelfDeployedMapped verifies BYOM model_type is
+// passed through to the voice agent API request.
+func TestCreateVoiceAgentAPIRequest_SelfDeployedMapped(t *testing.T) {
+	t.Parallel()
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "v"},
+		Model:           &Model{Id: "my-realtime-deployment"},
+		ModelType:       VoiceModelTypeSelfDeployed,
+	}
+	req, err := CreateVoiceAgentAPIRequest(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	def := req.Definition.(agent_api.VoiceAgentDefinition)
+	if def.ModelType != agent_api.VoiceModelTypeSelfDeployed {
+		t.Errorf("ModelType = %q, want self_deployed", def.ModelType)
+	}
+	if def.Model != "my-realtime-deployment" {
+		t.Errorf("Model = %q, want deployment name", def.Model)
+	}
+}
+
+func TestCreateVoiceAgentAPIRequest_InvalidModelType(t *testing.T) {
 	t.Parallel()
 	agent := VoiceAgent{
 		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "v"},
 		Model:           &Model{Id: "gpt-realtime"},
-		ModelType:       VoiceModelTypeSelfDeployed,
+		ModelType:       VoiceModelType("unsupported"),
 	}
 	if _, err := CreateVoiceAgentAPIRequest(agent); err == nil {
-		t.Error("expected error for self_deployed (BYOM) model_type")
+		t.Error("expected error for unsupported model_type")
 	}
 }

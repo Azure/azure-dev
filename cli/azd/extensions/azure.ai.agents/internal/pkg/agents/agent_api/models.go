@@ -291,8 +291,6 @@ func (d *HostedAgentDefinition) UnmarshalJSON(data []byte) error {
 // VoiceModelType selects the model-inference mode for a voice agent.
 //   - "managed": Voice Live-hosted — the service runs the model on its own infra.
 //   - "self_deployed": BYOM — the service calls the customer's own Foundry deployment.
-//
-// In v1 azd only emits "managed"; "self_deployed" is defined for forward-compat.
 type VoiceModelType string
 
 const (

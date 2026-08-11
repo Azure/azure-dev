@@ -523,19 +523,21 @@ func buildVoiceConfig(name string) *agent_api.VoiceConfig {
 }
 
 // CreateVoiceAgentAPIRequest builds a CreateAgentRequest for a declarative
-// (managed) voice agent. It translates the authoring kind "prompt-voice" into
-// the data-plane service kind "voice" and defaults the audio pipeline.
+// voice agent. It translates the authoring kind "prompt-voice" into the
+// data-plane service kind "voice" and defaults the audio pipeline.
 func CreateVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
 	if voiceAgent.Model == nil || voiceAgent.Model.Id == "" {
 		return nil, fmt.Errorf("model.id is required for a prompt-voice agent")
 	}
 
-	// v1 only supports managed inference; default and enforce it.
 	modelType := agent_api.VoiceModelTypeManaged
-	if voiceAgent.ModelType != "" && voiceAgent.ModelType != VoiceModelTypeManaged {
+	if voiceAgent.ModelType != "" {
+		modelType = agent_api.VoiceModelType(voiceAgent.ModelType)
+	}
+	if modelType != agent_api.VoiceModelTypeManaged && modelType != agent_api.VoiceModelTypeSelfDeployed {
 		return nil, fmt.Errorf(
-			"model_type '%s' is not supported; only '%s' is available",
-			voiceAgent.ModelType, VoiceModelTypeManaged)
+			"model_type '%s' is not supported; use '%s' or '%s'",
+			voiceAgent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed)
 	}
 
 	instructions := defaultVoiceInstructions

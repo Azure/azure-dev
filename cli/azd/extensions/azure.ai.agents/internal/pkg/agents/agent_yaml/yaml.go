@@ -25,8 +25,6 @@ const (
 )
 
 // VoiceModelType selects the model-inference mode for a voice agent.
-// v1 only supports (and implicitly defaults to) managed; self_deployed (BYOM)
-// is reserved for a future release.
 type VoiceModelType string
 
 const (
@@ -200,14 +198,13 @@ type Workflow struct {
 // whose service kind is "voice".
 //
 // v1 keeps authoring lightweight: only the model and (optionally) a voice name,
-// instructions, and store flag are author-facing. ModelType is implicitly
-// "managed" and BYOM is intentionally not surfaced. The audio pipeline (PCM16 @
+// instructions, model type, and store flag are author-facing. ModelType defaults
+// to "managed" when omitted; BYOM uses "self_deployed". The audio pipeline (PCM16 @
 // 24 kHz, server VAD turn detection, input transcription) is defaulted by the
 // map layer so authors don't have to specify it.
 type VoiceAgent struct {
 	AgentDefinition `json:",inline" yaml:",inline"`
-	// ModelType selects managed vs self_deployed (BYOM). Optional; defaults to
-	// managed. v1 only emits/accepts managed.
+	// ModelType selects managed vs self_deployed (BYOM). Optional; defaults to managed.
 	ModelType VoiceModelType `json:"modelType,omitempty" yaml:"model_type,omitempty"`
 	// Model names the speech-to-speech model (e.g. "gpt-realtime"). Reuses the
 	// shared Model struct; only Id is required for voice.

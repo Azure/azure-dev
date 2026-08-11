@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -81,39 +84,13 @@ func selectModelDeployment(
 		return nil, contractValidationError("model.name is required")
 	}
 
-	locations, err := normalizeLocations(model.AllowedLocations)
+	locations, err := deploymentLocations(
+		model.AllowedLocations,
+		azureContextLocation(azureContext),
+		selection.Location,
+	)
 	if err != nil {
 		return nil, err
-	}
-	if len(locations) == 0 && azureContext != nil && azureContext.Scope != nil &&
-		azureContext.Scope.Location != "" {
-		locations = []string{azureContext.Scope.Location}
-	} else if len(locations) > 0 && azureContext != nil &&
-		azureContext.Scope != nil && azureContext.Scope.Location != "" {
-		if !locationAllowed(azureContext.Scope.Location, locations) {
-			return nil, exterrors.Validation(
-				"model_deployment_location_not_allowed",
-				fmt.Sprintf(
-					"the project location %q is outside the model's allowed locations",
-					azureContext.Scope.Location,
-				),
-				"choose a model location that includes the project location",
-			)
-		}
-		locations = []string{azureContext.Scope.Location}
-	}
-	if selection.Location != "" {
-		if len(locations) > 0 && !locationAllowed(selection.Location, locations) {
-			return nil, exterrors.Validation(
-				"model_deployment_location_not_allowed",
-				fmt.Sprintf(
-					"deployment location %q is outside the allowed locations",
-					selection.Location,
-				),
-				"choose a deployment location from the allowed locations",
-			)
-		}
-		locations = []string{selection.Location}
 	}
 	if len(model.RequiredCapabilities) > 0 || len(model.ExcludedModelNames) > 0 {
 		catalog, catalogErr := client.Ai().ListModels(ctx, &azdext.ListModelsRequest{
@@ -230,6 +207,51 @@ func selectModelDeployment(
 	}, nil
 }
 
+func deploymentLocations(
+	allowed []string,
+	projectLocation string,
+	explicitLocation string,
+) ([]string, error) {
+	locations, err := normalizeLocations(allowed)
+	if err != nil {
+		return nil, err
+	}
+	if explicitLocation != "" {
+		if len(locations) > 0 && !locationAllowed(explicitLocation, locations) {
+			return nil, exterrors.Validation(
+				"model_deployment_location_not_allowed",
+				fmt.Sprintf(
+					"deployment location %q is outside the allowed locations",
+					explicitLocation,
+				),
+				"choose a deployment location from the allowed locations",
+			)
+		}
+		return []string{explicitLocation}, nil
+	}
+	if projectLocation == "" {
+		return locations, nil
+	}
+	if len(locations) > 0 && !locationAllowed(projectLocation, locations) {
+		return nil, exterrors.Validation(
+			"model_deployment_location_not_allowed",
+			fmt.Sprintf(
+				"the project location %q is outside the model's allowed locations",
+				projectLocation,
+			),
+			"choose a model location that includes the project location",
+		)
+	}
+	return []string{projectLocation}, nil
+}
+
+func azureContextLocation(azureContext *azdext.AzureContext) string {
+	if azureContext == nil || azureContext.Scope == nil {
+		return ""
+	}
+	return azureContext.Scope.Location
+}
+
 func nonEmptyStringSlice(value string) []string {
 	if value == "" {
 		return nil
@@ -253,6 +275,7 @@ func resolveDeploymentCandidates(
 	}
 
 	var candidates []*azdext.AiModelDeployment
+	var lastNoMatch error
 	for _, location := range locations {
 		locationOptions := *options
 		locationOptions.Locations = []string{location}
@@ -260,11 +283,36 @@ func resolveDeploymentCandidates(
 			ctx, client, azureContext, modelName, &locationOptions, true,
 		)
 		if err != nil {
+			if isDeploymentNoMatchError(err) {
+				lastNoMatch = err
+				continue
+			}
 			return nil, err
 		}
 		candidates = append(candidates, locationCandidates...)
 	}
+	if len(candidates) == 0 && lastNoMatch != nil {
+		return nil, lastNoMatch
+	}
 	return candidates, nil
+}
+
+func isDeploymentNoMatchError(err error) bool {
+	for current := err; current != nil; current = errors.Unwrap(current) {
+		st, ok := status.FromError(current)
+		if !ok {
+			continue
+		}
+		for _, detail := range st.Details() {
+			info, ok := detail.(*errdetails.ErrorInfo)
+			if ok && info.Domain == azdext.AiErrorDomain &&
+				(info.Reason == azdext.AiErrorReasonModelNotFound ||
+					info.Reason == azdext.AiErrorReasonNoDeploymentMatch) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func resolveDeploymentCandidatesAtLocation(

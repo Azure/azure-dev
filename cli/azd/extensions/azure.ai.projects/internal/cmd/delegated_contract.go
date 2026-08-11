@@ -175,7 +175,7 @@ func validateProjectDeploymentAddRequest(request projectDeploymentAddRequest) er
 }
 
 func contractCompatibilityError(got int) error {
-	return exterrors.Validation(
+	return exterrors.Compatibility(
 		"project_contract_incompatible",
 		fmt.Sprintf(
 			"unsupported delegated contract schemaVersion %d (projects extension supports %d)",

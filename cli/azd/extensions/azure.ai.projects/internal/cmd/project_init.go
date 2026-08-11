@@ -205,6 +205,17 @@ func (a *ProjectInitAction) Run(ctx context.Context) error {
 	} else if err := validateFoundryProvider(projectConfig); err != nil {
 		return err
 	}
+	serviceProjectName := target.ProjectName
+	if serviceProjectName == "" {
+		serviceProjectName = projectConfig.GetName()
+	}
+	if err := validateProjectServiceMutation(
+		service,
+		target.Endpoint,
+		infraFromRequest(request, a.flags),
+	); err != nil {
+		return err
+	}
 	oldEndpoint := serviceEndpoint(nil)
 	if service != nil {
 		oldEndpoint = serviceEndpoint(service.Resolved)
@@ -221,10 +232,6 @@ func (a *ProjectInitAction) Run(ctx context.Context) error {
 		if err := writeFoundryProvider(ctx, client, projectConfig); err != nil {
 			return err
 		}
-	}
-	serviceProjectName := target.ProjectName
-	if serviceProjectName == "" {
-		serviceProjectName = projectConfig.GetName()
 	}
 	serviceName, mutation, err := reconciler.reconcileEndpoint(
 		ctx, serviceProjectName, target.Endpoint, target.Mode,

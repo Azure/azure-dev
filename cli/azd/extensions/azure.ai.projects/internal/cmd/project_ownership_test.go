@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -14,9 +15,13 @@ import (
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestDelegatedProjectInitRequestValidation(t *testing.T) {
@@ -32,7 +37,11 @@ func TestDelegatedProjectInitRequestValidation(t *testing.T) {
 	require.Error(t, request.validate())
 	request.Project.Endpoint = ""
 	request.SchemaVersion = 2
-	require.Error(t, request.validate())
+	err := request.validate()
+	require.Error(t, err)
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, azdext.LocalErrorCategoryCompatibility, localErr.Category)
 }
 
 func TestDelegatedRequestRejectsUnknownFields(t *testing.T) {
@@ -225,6 +234,90 @@ func TestLegacyProjectServiceBodyRemovesEndpointForNewProject(t *testing.T) {
 	assert.Contains(t, body, "hooks")
 }
 
+func TestDeploymentLocationsExplicitSelectionWins(t *testing.T) {
+	locations, err := deploymentLocations(
+		[]string{"eastus", "westus"},
+		"eastus",
+		"westus",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"westus"}, locations)
+
+	_, err = deploymentLocations(
+		[]string{"eastus"},
+		"eastus",
+		"westus",
+	)
+	require.Error(t, err)
+}
+
+func TestDeploymentLocationsUsesProjectLocationByDefault(t *testing.T) {
+	locations, err := deploymentLocations(
+		[]string{"eastus", "westus"},
+		"westus",
+		"",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"westus"}, locations)
+}
+
+func TestDeploymentNoMatchErrorsAreRecoverable(t *testing.T) {
+	detail := &errdetails.ErrorInfo{
+		Domain: azdext.AiErrorDomain,
+		Reason: azdext.AiErrorReasonNoDeploymentMatch,
+	}
+	st, detailErr := status.New(
+		codes.FailedPrecondition,
+		"no match",
+	).WithDetails(detail)
+	require.NoError(t, detailErr)
+	err := st.Err()
+	assert.True(t, isDeploymentNoMatchError(err))
+	assert.True(t, isDeploymentNoMatchError(
+		fmt.Errorf("resolve: %w", err),
+	))
+	assert.False(t, isDeploymentNoMatchError(status.Error(
+		codes.PermissionDenied,
+		"permission denied",
+	)))
+}
+
+func TestProjectServiceReferenceMutationPreflight(t *testing.T) {
+	service := &projectServiceInfo{
+		Name: "foundry",
+		Raw: map[string]any{
+			"endpoint": "https://account.services.ai.azure.com/api/projects/old",
+		},
+		Resolved: map[string]any{
+			"endpoint": "https://account.services.ai.azure.com/api/projects/old",
+		},
+		ServiceRef: "./services/foundry.yaml",
+	}
+
+	require.NoError(t, validateProjectServiceMutation(
+		service,
+		"https://account.services.ai.azure.com/api/projects/old",
+		"",
+	))
+	require.Error(t, validateProjectServiceMutation(
+		service,
+		"https://account.services.ai.azure.com/api/projects/new",
+		"",
+	))
+	require.Error(t, validateProjectServiceMutation(
+		service,
+		"https://account.services.ai.azure.com/api/projects/old",
+		"bicep",
+	))
+
+	service.Legacy = true
+	require.Error(t, validateProjectServiceMutation(
+		service,
+		"https://account.services.ai.azure.com/api/projects/old",
+		"",
+	))
+}
+
 func TestProjectEnvironmentTransitions(t *testing.T) {
 	old := map[string]string{
 		"AZURE_AI_PROJECT_ID":            "old-id",
@@ -297,9 +390,79 @@ func TestProjectServiceEndpointUsesExactKeyTombstone(t *testing.T) {
 	assert.Equal(t, "", projectServer.request.Value.GetStringValue())
 }
 
+func TestAddServicePersistsCompleteBodyThroughConfigSection(t *testing.T) {
+	server := grpc.NewServer()
+	projectServer := &recordingProjectServiceServer{}
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(
+		azdext.WithAddress(listener.Addr().String()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		client.Close()
+	})
+
+	reconciler := &projectServiceReconciler{client: client}
+	require.NoError(t, reconciler.addService(
+		t.Context(),
+		"foundry",
+		map[string]any{
+			"endpoint":    "https://account.services.ai.azure.com/api/projects/p",
+			"deployments": []any{map[string]any{"name": "chat"}},
+			"hooks": map[string]any{
+				"predeploy": map[string]any{"kind": "sh", "run": "echo ok"},
+			},
+			"uses":        []any{"connection"},
+			"env":         map[string]any{"PROJECT_MODE": "managed"},
+			"customField": "preserve-me",
+		},
+	))
+
+	require.NotNil(t, projectServer.addRequest)
+	assert.Nil(t, projectServer.addRequest.Service.AdditionalProperties)
+	require.NotNil(t, projectServer.sectionRequest)
+	assert.Equal(t, "foundry", projectServer.sectionRequest.ServiceName)
+	assert.Empty(t, projectServer.sectionRequest.Path)
+	section := projectServer.sectionRequest.Section.AsMap()
+	assert.Equal(t, "azure.ai.project", section["host"])
+	assert.Contains(t, section, "deployments")
+	assert.Contains(t, section, "hooks")
+	assert.Contains(t, section, "uses")
+	assert.Contains(t, section, "env")
+	assert.Equal(t, "preserve-me", section["customField"])
+}
+
 type recordingProjectServiceServer struct {
 	azdext.UnimplementedProjectServiceServer
-	request *azdext.SetServiceConfigValueRequest
+	request        *azdext.SetServiceConfigValueRequest
+	addRequest     *azdext.AddServiceRequest
+	sectionRequest *azdext.SetServiceConfigSectionRequest
+}
+
+func (s *recordingProjectServiceServer) AddService(
+	_ context.Context,
+	request *azdext.AddServiceRequest,
+) (*azdext.EmptyResponse, error) {
+	s.addRequest = request
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *recordingProjectServiceServer) SetServiceConfigSection(
+	_ context.Context,
+	request *azdext.SetServiceConfigSectionRequest,
+) (*azdext.EmptyResponse, error) {
+	s.sectionRequest = request
+	return &azdext.EmptyResponse{}, nil
 }
 
 func (s *recordingProjectServiceServer) SetServiceConfigValue(

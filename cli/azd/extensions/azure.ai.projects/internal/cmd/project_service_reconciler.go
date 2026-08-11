@@ -252,20 +252,34 @@ func (r *projectServiceReconciler) addService(
 	if err != nil {
 		return fmt.Errorf("copy project service %q: %w", name, err)
 	}
-	delete(body, "host")
+	if body == nil {
+		body = map[string]any{}
+	}
+	body["host"] = provisioning.FoundryProjectHost
 	properties, err := structpb.NewStruct(body)
 	if err != nil {
 		return fmt.Errorf("encode project service %q: %w", name, err)
 	}
 	_, err = r.client.Project().AddService(ctx, &azdext.AddServiceRequest{
 		Service: &azdext.ServiceConfig{
-			Name:                 name,
-			Host:                 provisioning.FoundryProjectHost,
-			AdditionalProperties: properties,
+			Name: name,
+			Host: provisioning.FoundryProjectHost,
 		},
 	})
 	if err != nil {
 		return fmt.Errorf("add project service %q: %w", name, err)
+	}
+	if len(body) == 1 {
+		return nil
+	}
+	if _, err := r.client.Project().SetServiceConfigSection(
+		ctx,
+		&azdext.SetServiceConfigSectionRequest{
+			ServiceName: name,
+			Section:     properties,
+		},
+	); err != nil {
+		return fmt.Errorf("persist project service %q configuration: %w", name, err)
 	}
 	return nil
 }
@@ -319,6 +333,35 @@ func projectServiceRefError(name, ref string) error {
 		fmt.Sprintf("project service %q is referenced from %q and cannot be updated safely", name, ref),
 		fmt.Sprintf("edit %q directly or inline the service before retrying", ref),
 	)
+}
+
+func validateProjectServiceMutation(
+	service *projectServiceInfo,
+	endpoint string,
+	infra string,
+) error {
+	if service == nil || service.ServiceRef == "" {
+		return nil
+	}
+	if service.Legacy || infra != "" {
+		return projectServiceRefError(service.Name, service.ServiceRef)
+	}
+	if endpoint != "" {
+		normalized, _, err := validateProjectEndpoint(endpoint)
+		if err != nil {
+			return err
+		}
+		endpoint = normalized
+	}
+	if equalProjectEndpoint(serviceEndpoint(service.Resolved), endpoint) {
+		return nil
+	}
+	if endpoint == "" {
+		if _, exists := service.Raw["endpoint"]; !exists {
+			return nil
+		}
+	}
+	return projectServiceRefError(service.Name, service.ServiceRef)
 }
 
 var serviceNameInvalid = regexp.MustCompile(`[^a-z0-9-]+`)

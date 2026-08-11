@@ -20,6 +20,8 @@ import (
 	"testing"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -27,6 +29,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func Test_ValidateChecksum_Success_SHA256(t *testing.T) {
@@ -175,6 +181,7 @@ func Test_List_Install_Uninstall_Flow(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, extensions)
 	require.Greater(t, len(extensions), 0)
+	require.Equal(t, SourceCategoryAzd, extensions[0].SourceCategory)
 
 	// Install the first extension
 	extensionVersion, err := manager.Install(*mockContext.Context, extensions[0], "")
@@ -186,6 +193,7 @@ func Test_List_Install_Uninstall_Flow(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, installed)
 	require.Greater(t, len(installed), 0)
+	require.Equal(t, SourceCategoryAzd, installed[extensions[0].Id].SourceCategory)
 
 	// Uninstall the first extension
 	err = manager.Uninstall(t.Context(), extensions[0].Id)
@@ -196,6 +204,73 @@ func Test_List_Install_Uninstall_Flow(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, installed)
 	require.Equal(t, 0, len(installed))
+}
+
+func TestInstallEmitsSourceCategoryTelemetry(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(recorder))
+	previousProvider := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() { otel.SetTracerProvider(previousProvider) })
+
+	mockContext := mocks.NewMockContext(t.Context())
+	createRegistryMocks(mockContext)
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	userConfig, err := userConfigManager.Load()
+	require.NoError(t, err)
+	require.NoError(t, userConfig.Set("extension.sources.private-source", SourceConfig{
+		Name:     "private-source",
+		Type:     SourceKindUrl,
+		Location: extensionRegistryUrl,
+	}))
+	require.NoError(t, userConfigManager.Save(userConfig))
+
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	available, err := manager.FindExtensions(t.Context(), &FilterOptions{Id: "test.extension"})
+	require.NoError(t, err)
+	require.Len(t, available, 1)
+	_, err = manager.Install(t.Context(), available[0], "")
+	require.NoError(t, err)
+
+	var installAttributes []attribute.KeyValue
+	for _, span := range recorder.Ended() {
+		if span.Name() == events.ExtensionInstallEvent {
+			installAttributes = span.Attributes()
+			break
+		}
+	}
+	require.NotNil(t, installAttributes)
+	require.Equal(
+		t,
+		string(SourceCategoryAzd),
+		extensionTelemetryAttribute(t, installAttributes, fields.ExtensionSourceCategory.Key).Value.AsString(),
+	)
+	for _, attr := range installAttributes {
+		require.NotContains(t, attr.Value.Emit(), "private-source")
+		require.NotContains(t, attr.Value.Emit(), extensionRegistryUrl)
+	}
+}
+
+func extensionTelemetryAttribute(
+	t *testing.T,
+	attributes []attribute.KeyValue,
+	key attribute.Key,
+) attribute.KeyValue {
+	t.Helper()
+	for _, attr := range attributes {
+		if attr.Key == key {
+			return attr
+		}
+	}
+	require.FailNow(t, "telemetry attribute not found", "key: %s", key)
+	return attribute.KeyValue{}
 }
 
 func Test_ReloadUserConfig_PicksUpOutOfBandChanges(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -97,6 +98,63 @@ func Test_EnsureProvisioningProviders_NoMatchingExtension(t *testing.T) {
 
 	cleanup, err := activator.EnsureProvisioningProviders(t.Context(), []string{"microsoft.foundry"}, "env1")
 	require.NoError(t, err)
+	require.NotNil(t, cleanup)
+	cleanup()
+}
+
+func Test_EnsureProvisioningProviders_EmptyRequest(t *testing.T) {
+	t.Parallel()
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	activator := newTestExtensionActivator(t, mockCtx, nil)
+
+	cleanup, err := activator.EnsureProvisioningProviders(t.Context(), []string{"", ""}, "env1")
+	require.NoError(t, err)
+	require.NotNil(t, cleanup)
+	cleanup()
+}
+
+func Test_EnsureProvisioningProviders_InvalidInstalledConfig(t *testing.T) {
+	t.Parallel()
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	userConfigManager := config.NewUserConfigManager(mockCtx.ConfigManager)
+	userConfig, err := userConfigManager.Load()
+	require.NoError(t, err)
+	require.NoError(t, userConfig.Set("extension.installed", "not-a-map"))
+
+	activator := newTestExtensionActivator(t, mockCtx, nil)
+	cleanup, err := activator.EnsureProvisioningProviders(
+		t.Context(),
+		[]string{"microsoft.foundry"},
+		"env1",
+	)
+
+	require.ErrorContains(t, err, "failed to get extensions section")
+	require.NotNil(t, cleanup)
+	cleanup()
+}
+
+func Test_EnsureProvisioningProviders_MissingGrpcServer(t *testing.T) {
+	t.Parallel()
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	installed := map[string]*extensions.Extension{
+		"azure.ai.agents": {
+			Id:           "azure.ai.agents",
+			Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
+			Providers:    []extensions.Provider{{Name: "microsoft.foundry"}},
+		},
+	}
+	activator := newTestExtensionActivator(t, mockCtx, installed)
+
+	cleanup, err := activator.EnsureProvisioningProviders(
+		t.Context(),
+		[]string{"microsoft.foundry"},
+		"env1",
+	)
+
+	require.ErrorContains(t, err, "container:")
 	require.NotNil(t, cleanup)
 	cleanup()
 }

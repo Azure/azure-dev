@@ -639,7 +639,10 @@ func (m *Manager) installInternal(
 	ctx, span := tracing.Start(ctx, events.ExtensionInstallEvent)
 	// Set the extension id immediately so failure spans can be correlated to the
 	// extension being installed. The version is added later, once it has been resolved.
-	span.SetAttributes(fields.ExtensionId.String(extension.Id))
+	span.SetAttributes(
+		fields.ExtensionId.String(extension.Id),
+		fields.ExtensionSourceCategory.String(string(extension.SourceCategoryOrUnknown())),
+	)
 	defer func() {
 		span.EndWithStatus(err)
 	}()
@@ -832,17 +835,18 @@ func (m *Manager) installInternal(
 	}
 
 	extensions[extension.Id] = &Extension{
-		Id:           extension.Id,
-		Capabilities: selectedVersion.Capabilities,
-		Namespace:    extension.Namespace,
-		DisplayName:  extension.DisplayName,
-		Description:  extension.Description,
-		Version:      selectedVersion.Version,
-		Usage:        selectedVersion.Usage,
-		Path:         relativeExtensionPath,
-		Source:       extension.Source,
-		Providers:    selectedVersion.Providers,
-		McpConfig:    selectedVersion.McpConfig,
+		Id:             extension.Id,
+		Capabilities:   selectedVersion.Capabilities,
+		Namespace:      extension.Namespace,
+		DisplayName:    extension.DisplayName,
+		Description:    extension.Description,
+		Version:        selectedVersion.Version,
+		Usage:          selectedVersion.Usage,
+		Path:           relativeExtensionPath,
+		Source:         extension.Source,
+		SourceCategory: extension.SourceCategoryOrUnknown(),
+		Providers:      selectedVersion.Providers,
+		McpConfig:      selectedVersion.McpConfig,
 	}
 
 	if err := m.userConfig.Set(installedConfigKey, extensions); err != nil {
@@ -1046,11 +1050,12 @@ func (m *Manager) evaluateDependencyChanges(
 				dep.Id, parentExtension.Id, dep.Version, installed.Version,
 			)
 			results = append(results, UpgradeResult{
-				ExtensionId: dep.Id,
-				Status:      UpgradeStatusFailed,
-				FromVersion: installed.Version,
-				FromSource:  installed.Source,
-				Error:       conflictErr,
+				ExtensionId:        dep.Id,
+				Status:             UpgradeStatusFailed,
+				FromVersion:        installed.Version,
+				FromSource:         installed.Source,
+				FromSourceCategory: installed.SourceCategoryOrUnknown(),
+				Error:              conflictErr,
 			})
 			continue
 		}
@@ -1069,11 +1074,12 @@ func (m *Manager) evaluateDependencyChanges(
 				continue
 			}
 			results = append(results, UpgradeResult{
-				ExtensionId: dep.Id,
-				Status:      UpgradeStatusFailed,
-				FromVersion: installed.Version,
-				FromSource:  installed.Source,
-				Error:       findErr,
+				ExtensionId:        dep.Id,
+				Status:             UpgradeStatusFailed,
+				FromVersion:        installed.Version,
+				FromSource:         installed.Source,
+				FromSourceCategory: installed.SourceCategoryOrUnknown(),
+				Error:              findErr,
 			})
 			continue
 		}
@@ -1106,12 +1112,13 @@ func (m *Manager) evaluateDependencyChanges(
 				suggestion = compatibilityErr.Suggestion()
 			}
 			results = append(results, UpgradeResult{
-				ExtensionId: dep.Id,
-				Status:      UpgradeStatusFailed,
-				FromVersion: installed.Version,
-				FromSource:  installed.Source,
-				Error:       resultErr,
-				Suggestion:  suggestion,
+				ExtensionId:        dep.Id,
+				Status:             UpgradeStatusFailed,
+				FromVersion:        installed.Version,
+				FromSource:         installed.Source,
+				FromSourceCategory: installed.SourceCategoryOrUnknown(),
+				Error:              resultErr,
+				Suggestion:         suggestion,
 			})
 			continue
 		}
@@ -1129,10 +1136,11 @@ func (m *Manager) evaluateDependencyChanges(
 				continue
 			}
 			results = append(results, UpgradeResult{
-				ExtensionId: dep.Id,
-				Status:      UpgradeStatusSkipped,
-				FromVersion: installed.Version,
-				FromSource:  installed.Source,
+				ExtensionId:        dep.Id,
+				Status:             UpgradeStatusSkipped,
+				FromVersion:        installed.Version,
+				FromSource:         installed.Source,
+				FromSourceCategory: installed.SourceCategoryOrUnknown(),
 				SkipReason: fmt.Sprintf(
 					"current %s is outside %s's constraint %q",
 					installed.Version, parentExtension.Id, dep.Version,
@@ -1151,10 +1159,11 @@ func (m *Manager) evaluateDependencyChanges(
 		// Surface disabled dependency updates as Skipped entries.
 		if !opts.UpgradeDependencies {
 			results = append(results, UpgradeResult{
-				ExtensionId: dep.Id,
-				Status:      UpgradeStatusSkipped,
-				FromVersion: installed.Version,
-				FromSource:  installed.Source,
+				ExtensionId:        dep.Id,
+				Status:             UpgradeStatusSkipped,
+				FromVersion:        installed.Version,
+				FromSource:         installed.Source,
+				FromSourceCategory: installed.SourceCategoryOrUnknown(),
 				SkipReason: fmt.Sprintf(
 					"dependency updates disabled; %s available",
 					bestVersion.Version,
@@ -1164,9 +1173,12 @@ func (m *Manager) evaluateDependencyChanges(
 		}
 
 		childResult := UpgradeResult{
-			ExtensionId: dep.Id,
-			FromVersion: installed.Version,
-			FromSource:  installed.Source,
+			ExtensionId:        dep.Id,
+			FromVersion:        installed.Version,
+			FromSource:         installed.Source,
+			FromSourceCategory: installed.SourceCategoryOrUnknown(),
+			ToSource:           childMetadata.Source,
+			ToSourceCategory:   childMetadata.SourceCategoryOrUnknown(),
 		}
 
 		// Correlate the child update with its triggering parent.
@@ -1174,6 +1186,7 @@ func (m *Manager) evaluateDependencyChanges(
 		span.SetAttributes(
 			fields.ExtensionId.String(dep.Id),
 			fields.ExtensionDependencyOf.String(parentExtension.Id),
+			fields.ExtensionSourceCategory.String(string(childMetadata.SourceCategoryOrUnknown())),
 		)
 
 		childOpts := UpgradeOptions{
@@ -1193,12 +1206,10 @@ func (m *Manager) evaluateDependencyChanges(
 
 		childResult.Status = UpgradeStatusUpgraded
 		childResult.ToVersion = childVersion.Version
-		childResult.ToSource = childMetadata.Source
 		childResult.DependencyUpgrades = nested
 		span.SetAttributes(
 			fields.ExtensionVersionFrom.String(installed.Version),
 			fields.ExtensionVersionTo.String(childVersion.Version),
-			fields.ExtensionSource.String(childMetadata.Source),
 		)
 		span.EndWithStatus(nil)
 		results = append(results, childResult)

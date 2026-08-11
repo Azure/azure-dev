@@ -1440,6 +1440,7 @@ func (a *extensionInstallAction) cleanupBundleInstall(ctx context.Context) {
 					continue
 				}
 				ext.Source = extensions.BundleSourceName
+				ext.SourceCategory = extensions.SourceCategoryBundle
 				if err := a.extensionManager.UpdateInstalled(ext); err != nil {
 					log.Printf("failed to mark extension %q as bundle-installed: %v", ext.Id, err)
 				}
@@ -2316,7 +2317,11 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	isJsonOutput bool,
 ) extensions.UpgradeResult {
 	startTime := time.Now()
-	baseResult := extensions.UpgradeResult{ExtensionId: extensionId}
+	baseResult := extensions.UpgradeResult{
+		ExtensionId:        extensionId,
+		FromSourceCategory: extensions.SourceCategoryUnknown,
+		ToSourceCategory:   extensions.SourceCategoryUnknown,
+	}
 
 	// Start a telemetry span for this individual extension update.
 	ctx, span := tracing.Start(ctx, events.ExtensionUpdateEvent)
@@ -2330,8 +2335,8 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			fields.ExtensionVersionTo.String(
 				baseResult.ToVersion,
 			),
-			fields.ExtensionSource.String(
-				baseResult.ToSource,
+			fields.ExtensionSourceCategory.String(
+				string(baseResult.ToSourceCategory),
 			),
 			fields.ExtensionUpdateDurationMs.Int64(elapsed),
 			fields.ExtensionUpdateOutcome.String(
@@ -2402,6 +2407,8 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	}
 	baseResult.FromVersion = installed.Version
 	baseResult.FromSource = installed.Source
+	baseResult.FromSourceCategory = installed.SourceCategoryOrUnknown()
+	baseResult.ToSourceCategory = baseResult.FromSourceCategory
 
 	// Extensions installed from a self-contained bundle have no live registry to
 	// upgrade against. Skip them gracefully and direct the user to reinstall with
@@ -2607,6 +2614,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	targetSemver, targetErr := semver.NewVersion(targetVersionStr)
 
 	baseResult.ToSource = newSource
+	baseResult.ToSourceCategory = selectedExt.SourceCategoryOrUnknown()
 
 	// Compare versions
 	if installedErr == nil && targetErr == nil && installedSemver.GreaterThan(targetSemver) {
@@ -2693,7 +2701,8 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		emitPromotionEvent(
 			ctx, extensionId,
 			installed.Version, extVersion.Version,
-			oldSource, newSource,
+			installed.SourceCategoryOrUnknown(),
+			selectedExt.SourceCategoryOrUnknown(),
 		)
 		if !isJsonOutput {
 			a.displayPromotionWarning(
@@ -2946,16 +2955,16 @@ func emitPromotionEvent(
 	extensionId string,
 	fromVersion string,
 	toVersion string,
-	oldSource string,
-	newSource string,
+	oldSourceCategory extensions.SourceCategory,
+	newSourceCategory extensions.SourceCategory,
 ) {
 	_, promSpan := tracing.Start(ctx, events.ExtensionPromoteEvent)
 	promSpan.SetAttributes(
 		fields.ExtensionId.String(extensionId),
 		fields.ExtensionVersionFrom.String(fromVersion),
 		fields.ExtensionVersionTo.String(toVersion),
-		fields.ExtensionSourceFrom.String(oldSource),
-		fields.ExtensionSourceTo.String(newSource),
+		fields.ExtensionSourceCategoryFrom.String(string(oldSourceCategory)),
+		fields.ExtensionSourceCategoryTo.String(string(newSourceCategory)),
 	)
 	promSpan.SetStatus(codes.Ok, "")
 	promSpan.End()
@@ -3138,6 +3147,9 @@ func (a *extensionSourceAddAction) Run(ctx context.Context) (*actions.ActionResu
 	if err != nil {
 		return nil, fmt.Errorf("failed adding extension source: %w", err)
 	}
+	tracing.SetUsageAttributes(
+		fields.ExtensionSourceCategory.String(string(extensions.ClassifySource(sourceConfig))),
+	)
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{

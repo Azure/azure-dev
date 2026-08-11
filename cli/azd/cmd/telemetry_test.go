@@ -180,6 +180,20 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		require.Equal(t, "extension.source.kind", string(kv.Key))
 		require.Equal(t, "location", kv.Value.AsString())
 
+		category := fields.ExtensionSourceCategory.String("local")
+		require.Equal(t, "extension.source.category", string(category.Key))
+
+		categoryFrom := fields.ExtensionSourceCategoryFrom.String("dev")
+		require.Equal(t, "extension.source.category.from", string(categoryFrom.Key))
+
+		categoryTo := fields.ExtensionSourceCategoryTo.String("azd")
+		require.Equal(t, "extension.source.category.to", string(categoryTo.Key))
+
+		installedCategories := fields.ExtensionsInstalledSourceCategories.StringSlice(
+			[]string{"example@local"},
+		)
+		require.Equal(t, "extension.installed.source.category", string(installedCategories.Key))
+
 		duration := fields.ExtensionUpdateDurationMs.Int64(1234)
 		require.Equal(t, "extension.update.duration_ms", string(duration.Key))
 
@@ -266,49 +280,55 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 		"extension install", // extension.source.kind
 		"extension list",    // extension.source.kind
 		"extension show",    // extension.source.kind
-		"extension update",  // extension.source.kind + extension update spans
-		"hooks run",         // hooks.name, hooks.type
-		"infra generate",    // infra.provider
-		"init",              // init.method, appinit.* fields
-		"package",           // (via hooks middleware)
-		"pipeline config",   // pipeline.provider, pipeline.auth
-		"provision",         // infra.provider (resolved provider, via provisioning manager)
-		"restore",           // (via hooks middleware)
-		"tool check",        // tool.check.updates_available
-		"tool install",      // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
-		"tool show",         // tool.id
-		"tool uninstall",    // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
-		"tool update",       // tool.id(s), tool.dry_run, tool.install.* aggregate + tool.update.* versions
-		"up",                // infra.provider (via provisioning manager; composes provision+deploy)
-		"update",            // update.* fields
+		// extension.source.category
+		"extension source add",
+		"extension update", // extension.source.kind + extension update spans
+		"hooks run",        // hooks.name, hooks.type
+		"infra generate",   // infra.provider
+		"init",             // init.method, appinit.* fields
+		"package",          // (via hooks middleware)
+		"pipeline config",  // pipeline.provider, pipeline.auth
+		"provision",        // infra.provider (resolved provider, via provisioning manager)
+		"restore",          // (via hooks middleware)
+		"tool check",       // tool.check.updates_available
+		"tool install",     // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
+		"tool show",        // tool.id
+		"tool uninstall",   // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
+		"tool update",      // tool.id(s), tool.dry_run, tool.install.* aggregate + tool.update.* versions
+		"up",               // infra.provider (via provisioning manager; composes provision+deploy)
+		"update",           // update.* fields
 	}
 
 	// Commands that rely ONLY on global middleware telemetry (command name, flags,
 	// duration, errors) and do NOT emit command-specific attributes. Each entry
 	// includes a justification for why command-specific telemetry is not needed.
 	commandsWithOnlyGlobalTelemetry := []string{
-		"auth logout",            // No command-specific telemetry — logout is a simple operation
-		"auth status",            // Global telemetry sufficient — auth check is simple pass/fail
-		"completion",             // Shell completion script generation — no meaningful usage signal
-		"config get",             // Global telemetry sufficient — low cardinality
-		"config list",            // Global telemetry sufficient — low cardinality
-		"config list-alpha",      // Simple list of alpha features — no operational variance
-		"config reset",           // Global telemetry sufficient — low cardinality
-		"config set",             // Global telemetry sufficient — low cardinality
-		"config show",            // Global telemetry sufficient — low cardinality
-		"config unset",           // Global telemetry sufficient — low cardinality
-		"copilot",                // Copilot session telemetry handled by copilot.* fields at session level
-		"env config get",         // Thin wrapper — low cardinality, global telemetry sufficient
-		"env config set",         // Thin wrapper — low cardinality, global telemetry sufficient
-		"env config unset",       // Thin wrapper — low cardinality, global telemetry sufficient
-		"env get-value",          // Global telemetry sufficient — command name captures operation
-		"env get-values",         // Global telemetry sufficient — command name captures operation
-		"env new",                // Global telemetry sufficient — command name captures operation
-		"env refresh",            // Global telemetry sufficient — command name captures operation
-		"env remove",             // Destructive but simple — global telemetry captures usage
-		"env select",             // Global telemetry sufficient — command name captures operation
-		"env set",                // Global telemetry sufficient — command name captures operation
-		"env set-secret",         // Global telemetry sufficient — command name captures operation
+		"auth logout",       // No command-specific telemetry — logout is a simple operation
+		"auth status",       // Global telemetry sufficient — auth check is simple pass/fail
+		"completion",        // Shell completion script generation — no meaningful usage signal
+		"config get",        // Global telemetry sufficient — low cardinality
+		"config list",       // Global telemetry sufficient — low cardinality
+		"config list-alpha", // Simple list of alpha features — no operational variance
+		"config reset",      // Global telemetry sufficient — low cardinality
+		"config set",        // Global telemetry sufficient — low cardinality
+		"config show",       // Global telemetry sufficient — low cardinality
+		"config unset",      // Global telemetry sufficient — low cardinality
+		"copilot",           // Copilot session telemetry handled by copilot.* fields at session level
+		"env config get",    // Thin wrapper — low cardinality, global telemetry sufficient
+		"env config set",    // Thin wrapper — low cardinality, global telemetry sufficient
+		"env config unset",  // Thin wrapper — low cardinality, global telemetry sufficient
+		"env get-value",     // Global telemetry sufficient — command name captures operation
+		"env get-values",    // Global telemetry sufficient — command name captures operation
+		"env new",           // Global telemetry sufficient — command name captures operation
+		"env refresh",       // Global telemetry sufficient — command name captures operation
+		"env remove",        // Destructive but simple — global telemetry captures usage
+		"env select",        // Global telemetry sufficient — command name captures operation
+		"env set",           // Global telemetry sufficient — command name captures operation
+		"env set-secret",    // Global telemetry sufficient — command name captures operation
+		// Global telemetry is sufficient because configured values are not emitted.
+		"extension source list",
+		"extension source remove",
+		"extension source validate",
 		"mcp",                    // MCP tool telemetry handled by mcp.* fields at invocation level
 		"monitor",                // Global telemetry sufficient — command name captures usage
 		"show",                   // Global telemetry sufficient — output format not analytically useful

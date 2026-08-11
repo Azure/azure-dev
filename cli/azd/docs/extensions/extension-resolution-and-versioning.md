@@ -191,7 +191,7 @@ When the source **is** changing (for example installing a bundle build over a re
 
 Because each bundle install registers a unique transient source, installing from **any** bundle over an already-installed extension is always treated as a source change — so it prompts even when the bundled version matches the installed one (the two builds may not be byte-identical).
 
-If a required dependency cannot be resolved from the parent's source or the main `azd` registry and is not already installed, the install fails with an actionable error directing you to install the dependency first.
+For registry-backed installs, a required dependency must resolve from the parent's source or the main `azd` registry. For self-contained bundles, it must resolve from the bundle itself. If the dependency is not already installed and cannot be resolved from the applicable sources, the install fails with actionable guidance.
 
 ## Self-Contained Bundles
 
@@ -403,8 +403,8 @@ When `latest` is specified (or the version is omitted), `azd` selects the **high
 | *"extension X not found"* | The extension ID is not present in any configured source. | Verify your sources with `azd extension source list`. Check the extension ID spelling. |
 | *"found in multiple sources, specify exact source"* | The extension exists in two or more configured sources. | Use `azd extension install X --source <name>` to specify which source to use. |
 | *"no matching version found"* | The version constraint excludes all available versions. | Check available versions with `azd extension show X`. Relax the constraint. |
-| *"dependency X not found"* | A recursive dependency is not installed and is missing from both the parent extension's source and the main `azd` registry. | Publish the dependency to either source or install it explicitly before installing the parent. |
-| *"no version satisfies constraint"* | The dependency exists in the parent source or main `azd` registry, but none of its versions match the parent extension's constraint. | Publish a compatible dependency version or update the parent extension's constraint. |
+| *"dependency X not found"* | A recursive dependency is not installed and is missing from the applicable sources: the parent source and main `azd` registry for registry-backed installs, or the bundle for a bundle install. | Include the dependency in the parent source or bundle, publish it to `azd` for a registry-backed install, or install it explicitly before installing the parent. |
+| *"no version satisfies constraint"* | The applicable sources contain the dependency, but none of its versions match the parent extension's constraint. | Include or publish a compatible dependency version, install one explicitly, or update the parent extension's constraint. |
 | Stale version installed | The source cache has not expired yet, so `azd` is using an older manifest. | Set `AZD_EXTENSION_CACHE_TTL=0s` or delete files in `~/.azd/cache/extensions/`. |
 
 ### Diagnostic Steps

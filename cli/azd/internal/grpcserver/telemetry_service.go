@@ -142,8 +142,8 @@ func (s *telemetryService) ReportUsage(
 	// even when a composite command such as up runs several actions.
 	if s.recorded.Add(1) > maxUsageEventsPerInvocation {
 		log.Printf(
-			"telemetry: dropping usage event from %s, limit of %d reached",
-			extension.Id, maxUsageEventsPerInvocation)
+			"telemetry: dropping usage event %q from %s, limit of %d reached",
+			req.EventName, extension.Id, maxUsageEventsPerInvocation)
 
 		return &azdext.ReportUsageResponse{Accepted: false}, nil
 	}
@@ -179,8 +179,8 @@ func validateUsageRequest(req *azdext.ReportUsageRequest) error {
 
 		if len(value) > maxUsageValueBytes {
 			return status.Errorf(codes.InvalidArgument,
-				"attribute values must be at most %d UTF-8 bytes",
-				maxUsageValueBytes)
+				"attribute value for key %q must be at most %d UTF-8 bytes",
+				key, maxUsageValueBytes)
 		}
 	}
 

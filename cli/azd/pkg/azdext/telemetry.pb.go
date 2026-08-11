@@ -28,10 +28,12 @@ type ReportUsageRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Event name owned by the extension. Recorded as extension.event so
 	// queries can filter an extension's events without parsing attributes.
+	// Must be 1-128 UTF-8 bytes.
 	EventName string `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
 	// Attributes recorded individually on the event, each namespaced by the
 	// host. Values should be low cardinality and must never carry customer
-	// content.
+	// content. At most 32 attributes are accepted. Each key must be 1-128
+	// UTF-8 bytes and each value must be at most 512 UTF-8 bytes.
 	Attributes    map[string]string `protobuf:"bytes,2,rep,name=attributes,proto3" json:"attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

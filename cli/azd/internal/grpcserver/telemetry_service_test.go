@@ -588,3 +588,18 @@ func Test_TelemetryService_DoesNotEchoCallerText(t *testing.T) {
 	requireCode(t, err, codes.InvalidArgument)
 	require.NotContains(t, err.Error(), "secret")
 }
+
+func Test_TelemetryService_IdentifiesOversizedValueKey(t *testing.T) {
+	t.Parallel()
+
+	key := "deploy.mode"
+	value := strings.Repeat("v", maxUsageValueBytes+1)
+	_, err := callWith(t, testExtension(), &azdext.ReportUsageRequest{
+		EventName:  "deploy.completed",
+		Attributes: map[string]string{key: value},
+	})
+
+	requireCode(t, err, codes.InvalidArgument)
+	require.Contains(t, err.Error(), key)
+	require.NotContains(t, err.Error(), value)
+}

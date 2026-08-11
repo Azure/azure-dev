@@ -547,11 +547,14 @@ so the same code path runs during local development and in production. Run
 `azd --debug` to see which applied.
 
 ```go
-if _, err := client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
+resp, err := client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
     EventName:  "deploy.completed",
     Attributes: map[string]string{"deploy.mode": "container"},
-}); err != nil {
+})
+if err != nil {
     log.Printf("telemetry unavailable: %v", err)
+} else if !resp.Accepted {
+    log.Printf("telemetry was not accepted by the azd host")
 }
 ```
 
@@ -563,8 +566,13 @@ the extension author's responsibility. See
 process.
 
 The call is best-effort. An older azd host returns `Unimplemented`. Treat any
-failure as a no-op and never let it change command behavior. Report a value as
-soon as it is known so a later failure still retains it.
+failure as a no-op and never let it change command behavior. Report an event
+immediately after the fact it represents is known, rather than waiting until
+the command completes, so a later unrelated failure does not lose the signal.
+For a published extension that requires this service, set `requiredAzdVersion`
+to the first azd release that includes `TelemetryService`. Still treat
+`Unimplemented` as a no-op for already-installed extensions and hosts outside
+that constraint.
 
 ### ConfigHelper
 

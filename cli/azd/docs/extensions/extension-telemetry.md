@@ -2,8 +2,15 @@
 
 <!-- cspell:ignore tostring -->
 
-This guide is for extension authors who need `azd` to record a usage signal on
-their behalf — for example, which deployment mode a user picked.
+This guide is for extension authors whose telemetry has passed privacy review
+and whose extension is published to the official `azd` registry. It explains
+how to ask `azd` to record a usage signal on the extension's behalf — for
+example, which deployment mode a user picked.
+
+> [!IMPORTANT]
+> Any telemetry must go through a privacy review to ensure that it respects
+> user privacy before you start collecting it. See [Your responsibility for
+> content](#your-responsibility-for-content) below.
 
 Telemetry is a service `azd` offers to extensions installed from the verified
 official `azd` registry source. Call `ReportUsage` with an event name and the
@@ -18,13 +25,19 @@ admission check, not a cryptographic provenance guarantee.
 See [ADR-001](../../../../docs/architecture/adr-001-extension-telemetry-events.md)
 for the reasoning behind this design.
 
-## What you own and what `azd` owns
+## What `azd` records
 
-| | |
+| Attribute name | Attribute value |
 |---|---|
-| You choose | The event name and every attribute key and value |
-| `azd` writes | `extension.id`, `extension.version`, `extension.source`, `extension.event` |
-| `azd` enforces | The `ext.` prefix on your keys, the bounds below, and the official-registry requirement |
+| `extension.id` | ID of the current extension, added automatically |
+| `extension.version` | Version of the current extension, added automatically |
+| `extension.source` | Source of the current extension, added automatically |
+| `extension.event` | Event name chosen by the extension |
+| `ext.*` | Unstructured collection of extension-chosen keys and values |
+
+The extension chooses the event name and every `ext.*` key and value. `azd`
+enforces the `ext.` prefix, the bounds below, and the official-registry
+requirement.
 
 `azd` cannot write your attribute keys unprefixed, and you cannot overwrite the
 identity fields — a key of `extension.id` is recorded as `ext.extension.id`.
@@ -48,8 +61,9 @@ if _, err := client.Telemetry().ReportUsage(
 
 Treat the call as best-effort. Older `azd` hosts return `Unimplemented`, and a
 malformed request is a plain error. Log the error, but never let it change
-command behavior or retry. Report as soon as the values are known so a later
-failure in your command still keeps the signal.
+command behavior or retry. Report the event immediately after the fact it
+represents is known, rather than waiting until the command completes, so a
+later unrelated failure does not lose the signal.
 
 An event with no attributes is valid — "this happened" is a legitimate signal.
 
@@ -80,7 +94,7 @@ extension author:
 
 - **Never send customer content.** No file paths, resource names, connection
   strings, prompts, URLs, or anything a user typed. If you are unsure whether a
-  value qualifies, it does.
+  value qualifies as customer content, always assume that it does to be safe.
 - **Keep values low cardinality.** Prefer a small enum such as
   `code | container | unknown`. Unbounded values make the data expensive and
   unusable for aggregation.
@@ -98,8 +112,9 @@ extension author:
 | `InvalidArgument` | The event name is missing, or a per-event bound was exceeded |
 | `Unimplemented` | The `azd` host predates this service |
 
-Error messages never echo the event name, key, or value you sent, so use the
-status code plus your own call site to diagnose.
+Error messages do not echo attribute values. When a valid key has an oversized
+value, the key is included so you can identify the failing field; invalid keys
+are not echoed. Use the status code plus your own call site to diagnose.
 
 ## When your event is not recorded
 

@@ -29,8 +29,8 @@ core governs its own fields.
 That last part only works if there is a review to govern content. `ext.usage` is
 the first path where an extension supplies the strings rather than the host
 authoring every attribute, so the design also has to say which extensions get to
-use it — otherwise unchecked third-party text lands in a pipeline covered by
-`azd`'s privacy statement.
+use it — otherwise unexpected text from an official extension lands in a
+pipeline covered by `azd`'s privacy statement.
 
 ## Decision
 

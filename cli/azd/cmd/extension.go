@@ -3407,7 +3407,6 @@ func extensionVersionNotFoundError(
 		)
 		return &internal.ErrorWithSuggestion{
 			Err:        errors.New(message),
-			Message:    message,
 			Suggestion: fmt.Sprintf("Run '%s' to install the latest version.", command),
 		}
 	}
@@ -3418,7 +3417,6 @@ func extensionVersionNotFoundError(
 	)
 	return &internal.ErrorWithSuggestion{
 		Err:        errors.New(message),
-		Message:    message,
 		Suggestion: "Specify the extension source using the --source flag, or choose an available version.",
 	}
 }

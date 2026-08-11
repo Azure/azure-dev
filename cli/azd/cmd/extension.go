@@ -1063,10 +1063,11 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			a.console.ShowSpinner(ctx, stepMessage, input.Step)
 			extensionVersion, _, err = a.extensionManager.Upgrade(
 				ctx, compatibleExtension, extensions.UpgradeOptions{
-					VersionPreference:   a.flags.version,
-					UpgradeDependencies: !a.flags.noDependencies,
-					SkipDependencies:    a.flags.noDependencies,
-					AzdVersion:          azdVersion,
+					VersionPreference:                  a.flags.version,
+					UpgradeDependencies:                !a.flags.noDependencies,
+					SkipDependencies:                   a.flags.noDependencies,
+					AzdVersion:                         azdVersion,
+					SkipMainRegistryDependencyFallback: a.bundleSourceName != "",
 				},
 			)
 			if err != nil {
@@ -1084,9 +1085,10 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 				ctx,
 				compatibleExtension,
 				extensions.InstallOptions{
-					VersionPreference: a.flags.version,
-					AzdVersion:        azdVersion,
-					SkipDependencies:  a.flags.noDependencies,
+					VersionPreference:                  a.flags.version,
+					AzdVersion:                         azdVersion,
+					SkipDependencies:                   a.flags.noDependencies,
+					SkipMainRegistryDependencyFallback: a.bundleSourceName != "",
 				},
 			)
 			if err != nil {

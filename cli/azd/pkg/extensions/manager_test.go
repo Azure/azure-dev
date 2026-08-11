@@ -700,6 +700,254 @@ func Test_Install_PackDependency_ErrorClassification(t *testing.T) {
 	}
 }
 
+func Test_ResolveDependency_SourceFallback(t *testing.T) {
+	t.Parallel()
+
+	parent := &ExtensionMetadata{Id: "test.pack", Source: "local"}
+	dependency := ExtensionDependency{Id: "test.child", Version: ">=2.0.0"}
+
+	tests := []struct {
+		name        string
+		local       *ExtensionMetadata
+		main        *ExtensionMetadata
+		wantSource  string
+		wantVersion bool
+		wantMissing bool
+	}{
+		{
+			name: "falls back to main registry",
+			main: &ExtensionMetadata{
+				Id:     dependency.Id,
+				Source: MainRegistryName,
+				Versions: []ExtensionVersion{
+					{Version: "2.0.0"},
+				},
+			},
+			wantSource: MainRegistryName,
+		},
+		{
+			name: "parent source wins",
+			local: &ExtensionMetadata{
+				Id:     dependency.Id,
+				Source: parent.Source,
+				Versions: []ExtensionVersion{
+					{Version: "2.1.0"},
+				},
+			},
+			main: &ExtensionMetadata{
+				Id:     dependency.Id,
+				Source: MainRegistryName,
+				Versions: []ExtensionVersion{
+					{Version: "2.2.0"},
+				},
+			},
+			wantSource: parent.Source,
+		},
+		{
+			name: "falls back when parent version is incompatible",
+			local: &ExtensionMetadata{
+				Id:     dependency.Id,
+				Source: parent.Source,
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0"},
+				},
+			},
+			main: &ExtensionMetadata{
+				Id:     dependency.Id,
+				Source: MainRegistryName,
+				Versions: []ExtensionVersion{
+					{Version: "2.0.0"},
+				},
+			},
+			wantSource: MainRegistryName,
+		},
+		{
+			name: "reports incompatible versions across both sources",
+			local: &ExtensionMetadata{
+				Id:     dependency.Id,
+				Source: parent.Source,
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0"},
+				},
+			},
+			main: &ExtensionMetadata{
+				Id:     dependency.Id,
+				Source: MainRegistryName,
+				Versions: []ExtensionVersion{
+					{Version: "1.5.0"},
+				},
+			},
+			wantVersion: true,
+		},
+		{
+			name:        "reports missing from both sources",
+			wantMissing: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			manager := newTestManager(t)
+			manager.sources = []Source{}
+			if test.local != nil {
+				manager.sources = append(manager.sources, &mockSource{
+					name:       parent.Source,
+					extensions: []*ExtensionMetadata{test.local},
+				})
+			}
+			if test.main != nil {
+				manager.sources = append(manager.sources, &mockSource{
+					name:       MainRegistryName,
+					extensions: []*ExtensionMetadata{test.main},
+				})
+			}
+
+			resolved, err := manager.ResolveDependency(t.Context(), parent, dependency)
+			switch {
+			case test.wantVersion:
+				require.ErrorAs(t, err, new(*DependencyVersionNotFoundError))
+			case test.wantMissing:
+				require.ErrorAs(t, err, new(*DependencyNotFoundError))
+			default:
+				require.NoError(t, err)
+				require.Equal(t, test.wantSource, resolved.Source)
+			}
+		})
+	}
+}
+
+func Test_ResolveDependency_SequentialConfiguredSourceLookups(t *testing.T) {
+	t.Parallel()
+
+	localRegistry := writeExtensionRegistryFile(t, Registry{
+		SchemaVersion: CurrentRegistrySchemaVersion,
+		Extensions: []*ExtensionMetadata{{
+			Id: "test.pack",
+			Versions: []ExtensionVersion{{
+				Version:      "1.0.0",
+				Dependencies: []ExtensionDependency{{Id: "test.child", Version: "1.0.0"}},
+			}},
+		}},
+	})
+	mainRegistry := writeExtensionRegistryFile(t, Registry{
+		SchemaVersion: CurrentRegistrySchemaVersion,
+		Extensions: []*ExtensionMetadata{{
+			Id:       "test.child",
+			Versions: []ExtensionVersion{{Version: "1.0.0"}},
+		}},
+	})
+
+	mockContext := mocks.NewMockContext(t.Context())
+	cfg, err := mockContext.ConfigManager.Load("")
+	require.NoError(t, err)
+	require.NoError(t, cfg.Set("extension.sources.local", &SourceConfig{
+		Name:     "local",
+		Type:     SourceKindFile,
+		Location: localRegistry,
+	}))
+	require.NoError(t, cfg.Set("extension.sources.azd", &SourceConfig{
+		Name:     MainRegistryName,
+		Type:     SourceKindFile,
+		Location: mainRegistry,
+	}))
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	parents, err := manager.FindExtensions(t.Context(), &FilterOptions{Id: "test.pack", Source: "local"})
+	require.NoError(t, err)
+	require.Len(t, parents, 1)
+
+	resolved, err := manager.ResolveDependency(
+		t.Context(),
+		parents[0],
+		ExtensionDependency{Id: "test.child", Version: "1.0.0"},
+	)
+	require.NoError(t, err)
+	require.Equal(t, MainRegistryName, resolved.Source)
+}
+
+func Test_Install_PackDependency_FallsBackToMainRegistry(t *testing.T) {
+	t.Parallel()
+
+	parent := &ExtensionMetadata{
+		Id:     "test.pack",
+		Source: "local",
+		Versions: []ExtensionVersion{{
+			Version:      "1.0.0",
+			Dependencies: []ExtensionDependency{{Id: "test.child", Version: "1.0.0"}},
+		}},
+	}
+	child := &ExtensionMetadata{
+		Id:     "test.child",
+		Source: MainRegistryName,
+		Versions: []ExtensionVersion{{
+			Version:      "1.0.0",
+			Dependencies: []ExtensionDependency{{Id: "test.leaf", Version: "1.0.0"}},
+		}},
+	}
+
+	manager := newTestManager(t)
+	manager.sources = []Source{
+		&mockSource{name: parent.Source, extensions: []*ExtensionMetadata{parent}},
+		&mockSource{name: MainRegistryName, extensions: []*ExtensionMetadata{child}},
+	}
+	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+		"test.leaf": {
+			Id:      "test.leaf",
+			Version: "1.0.0",
+			Source:  MainRegistryName,
+		},
+	}))
+	manager.installed = nil
+
+	_, err := manager.Install(t.Context(), parent, "")
+	require.NoError(t, err)
+
+	installed, err := manager.GetInstalled(FilterOptions{Id: child.Id})
+	require.NoError(t, err)
+	require.Equal(t, MainRegistryName, installed.Source)
+}
+
+func Test_Install_PackDependency_BundleDoesNotFallback(t *testing.T) {
+	t.Parallel()
+
+	parent := &ExtensionMetadata{
+		Id:     "test.pack",
+		Source: "test-bundle",
+		Versions: []ExtensionVersion{{
+			Version:      "1.0.0",
+			Dependencies: []ExtensionDependency{{Id: "test.child", Version: "1.0.0"}},
+		}},
+	}
+	child := &ExtensionMetadata{
+		Id:     "test.child",
+		Source: MainRegistryName,
+		Versions: []ExtensionVersion{{
+			Version:      "1.0.0",
+			Dependencies: []ExtensionDependency{{Id: "test.leaf", Version: "1.0.0"}},
+		}},
+	}
+
+	manager := newTestManager(t)
+	manager.sources = []Source{
+		&mockSource{name: parent.Source, extensions: []*ExtensionMetadata{parent}},
+		&mockSource{name: MainRegistryName, extensions: []*ExtensionMetadata{child}},
+	}
+
+	_, err := manager.InstallWithOptions(t.Context(), parent, InstallOptions{
+		SkipMainRegistryDependencyFallback: true,
+	})
+	require.ErrorAs(t, err, new(*DependencyNotFoundError))
+}
+
 func Test_Install_PackDependency_InstalledDependencyMustSatisfyConstraint(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 

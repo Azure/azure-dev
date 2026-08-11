@@ -22,9 +22,8 @@ import (
 )
 
 type guidanceAgentDefinition struct {
-	Kind                       string                           `json:"kind" yaml:"kind"`
-	EnvironmentVariables       []agent_yaml.EnvironmentVariable `json:"environmentVariables" yaml:"environmentVariables"`
-	LegacyEnvironmentVariables []agent_yaml.EnvironmentVariable `json:"environment_variables" yaml:"environment_variables"`
+	Kind                 string                           `json:"kind" yaml:"kind"`
+	EnvironmentVariables []agent_yaml.EnvironmentVariable `json:"environmentVariables" yaml:"environmentVariables"`
 }
 
 // loadEffectiveAgentEnvironment returns environment templates for an
@@ -123,10 +122,6 @@ func decodeDefinitionEnvironment(
 	}
 
 	environment := environmentVariablesToMap(definition.EnvironmentVariables)
-	maps.Copy(
-		environment,
-		environmentVariablesToMap(definition.LegacyEnvironmentVariables),
-	)
 	return environment, nil
 }
 

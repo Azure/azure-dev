@@ -109,6 +109,22 @@ func TestLoadEffectiveAgentEnvironment_DeprecatedConfigFallback(t *testing.T) {
 	}, got)
 }
 
+func TestLoadEffectiveAgentEnvironment_IgnoresLegacyKeyInServiceProperties(t *testing.T) {
+	t.Parallel()
+
+	svc := newAgentService(t, map[string]any{
+		"kind": "hostedAgent",
+		"environment_variables": []any{
+			map[string]any{"name": "LEGACY_VALUE", "value": "${LEGACY_VALUE}"},
+		},
+	})
+
+	got, err := loadEffectiveAgentEnvironment(svc, t.TempDir())
+
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
 func TestLoadEffectiveAgentEnvironment_LegacyFilesFallback(t *testing.T) {
 	t.Parallel()
 

@@ -6018,20 +6018,20 @@ const completionSpec: Fig.Spec = {
 					},
 				},
 				{
-					name: ['upgrade'],
-					description: 'Upgrade installed extensions to the latest version.',
+					name: ['update', 'upgrade'],
+					description: 'Update installed extensions to the latest version.',
 					options: [
 						{
 							name: ['--all'],
-							description: 'Upgrade all installed extensions',
+							description: 'Update all installed extensions',
 						},
 						{
-							name: ['--no-dependency-upgrades'],
-							description: 'Do not upgrade dependencies when upgrading an extension that has dependencies',
+							name: ['--no-dependency-updates'],
+							description: 'Do not update dependencies when updating an extension that has dependencies',
 						},
 						{
 							name: ['--source', '-s'],
-							description: 'The registered source name or registry location (URL or file path) to use for upgrades.',
+							description: 'The registered source name or registry location (URL or file path) to use for updates.',
 							args: [
 								{
 									name: 'source',
@@ -6040,7 +6040,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--version', '-v'],
-							description: 'The version of the extension to upgrade to',
+							description: 'The version of the extension to update to',
 							args: [
 								{
 									name: 'version',
@@ -6524,7 +6524,7 @@ const completionSpec: Fig.Spec = {
 			subcommands: [
 				{
 					name: ['check'],
-					description: 'Check for tool upgrades.',
+					description: 'Check for tool updates.',
 				},
 				{
 					name: ['install'],
@@ -6594,12 +6594,12 @@ const completionSpec: Fig.Spec = {
 					},
 				},
 				{
-					name: ['upgrade'],
-					description: 'Upgrade installed tools.',
+					name: ['update', 'upgrade'],
+					description: 'Update installed tools.',
 					options: [
 						{
 							name: ['--agent'],
-							description: 'Upgrade the skill for the specified agent(s): copilot, claude. Use --agent all for every detected agent (skill tools only)',
+							description: 'Update the skill for the specified agent(s): copilot, claude. Use --agent all for every detected agent (skill tools only)',
 							isRepeatable: true,
 							args: [
 								{
@@ -6609,11 +6609,11 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--all'],
-							description: 'Upgrade all installed tools',
+							description: 'Update all installed tools',
 						},
 						{
 							name: ['--dry-run'],
-							description: 'Preview what would be upgraded without making changes',
+							description: 'Preview what would be updated without making changes',
 						},
 					],
 					args: {

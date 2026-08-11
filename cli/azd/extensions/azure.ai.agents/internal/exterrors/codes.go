@@ -232,6 +232,8 @@ const (
 	CodeInfraEjectNoFoundryService        = "infra_eject_no_foundry_service"
 	CodeInfraEjectMultipleFoundryServices = "infra_eject_multiple_foundry_services"
 	CodeInfraEjectAzureYamlMissing        = "infra_eject_azure_yaml_missing"
+	CodeInfraEjectAzureYamlChanged        = "infra_eject_azure_yaml_changed"
+	CodeInfraEjectMarkerInvalid           = "infra_eject_marker_invalid"
 	CodeInfraEjectWriteFailed             = "infra_eject_write_failed"
 	CodeInfraEjectConflictingArguments    = "infra_eject_conflicting_arguments"
 	CodeInfraEjectNetworkUnsupported      = "infra_eject_network_unsupported"

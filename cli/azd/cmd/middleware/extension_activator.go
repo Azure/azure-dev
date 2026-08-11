@@ -136,7 +136,7 @@ func (a *ExtensionActivator) EnsureProvisioningProviders(
 			Suggestion: fmt.Sprintf(
 				"Run with %s for details, or check for an update with %s",
 				output.WithHighLightFormat("--debug"),
-				output.WithHighLightFormat("azd extension upgrade %s", ext.Id),
+				output.WithHighLightFormat("azd extension update %s", ext.Id),
 			),
 		}
 	}

@@ -33,8 +33,8 @@ const AspireUnsupportedAppHostEvent = "aspire.apphost.unsupported"
 const (
 	ExtensionRunEvent     = "ext.run"
 	ExtensionInstallEvent = "ext.install"
-	// ExtensionUpgradeEvent tracks a single extension upgrade attempt.
-	ExtensionUpgradeEvent = "ext.upgrade"
+	// ExtensionUpdateEvent tracks a single extension update attempt.
+	ExtensionUpdateEvent = "ext.update"
 	// ExtensionPromoteEvent tracks a registry promotion (e.g., dev → main).
 	ExtensionPromoteEvent = "ext.promote"
 	// ExtensionUsageEvent carries one usage event an extension reported

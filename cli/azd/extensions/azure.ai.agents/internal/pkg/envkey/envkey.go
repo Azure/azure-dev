@@ -68,5 +68,37 @@ func AgentProjectEndpoint(agentName string) string {
 	return fmt.Sprintf("AGENT_%s_PROJECT_ENDPOINT", sanitized)
 }
 
+// AgentBotName persists the Azure Bot resource name used by an Activity agent.
+func AgentBotName(agentName string) string {
+	sanitized := strings.NewReplacer(" ", "_", "-", "_").Replace(strings.ToUpper(agentName))
+	return fmt.Sprintf("AGENT_%s_BOT_NAME", sanitized)
+}
+
+// AgentBotResourceGroup persists the resource group containing an Activity agent's Azure Bot.
+func AgentBotResourceGroup(agentName string) string {
+	sanitized := strings.NewReplacer(" ", "_", "-", "_").Replace(strings.ToUpper(agentName))
+	return fmt.Sprintf("AGENT_%s_BOT_RESOURCE_GROUP", sanitized)
+}
+
+// AgentBotOwned records whether an Activity agent's Azure Bot was created by azd.
+func AgentBotOwned(agentName string) string {
+	sanitized := strings.NewReplacer(" ", "_", "-", "_").Replace(strings.ToUpper(agentName))
+	return fmt.Sprintf("AGENT_%s_BOT_OWNED", sanitized)
+}
+
+// AgentInstanceIdentityClientID stores the deployed agent version instance
+// identity client ID for diagnostics and downstream tooling.
+func AgentInstanceIdentityClientID(agentName string) string {
+	sanitized := strings.NewReplacer(" ", "_", "-", "_").Replace(strings.ToUpper(agentName))
+	return fmt.Sprintf("AGENT_%s_INSTANCE_IDENTITY_CLIENT_ID", sanitized)
+}
+
+// AgentInstanceIdentityPrincipalID stores the deployed agent version instance
+// identity principal ID for diagnostics and downstream tooling.
+func AgentInstanceIdentityPrincipalID(agentName string) string {
+	sanitized := strings.NewReplacer(" ", "_", "-", "_").Replace(strings.ToUpper(agentName))
+	return fmt.Sprintf("AGENT_%s_INSTANCE_IDENTITY_PRINCIPAL_ID", sanitized)
+}
+
 // ConnectionProjectEndpoint scopes provisioned connection names to a Foundry project.
 const ConnectionProjectEndpoint = "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT"

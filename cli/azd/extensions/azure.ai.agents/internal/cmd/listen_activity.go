@@ -10,132 +10,18 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"text/template"
 
-	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/botservice"
+	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
-
-// ensureActivityBot runs during postdeploy for an agent that speaks the Activity
-// protocol; it is a no-op for any other agent, so non-activity deployments are
-// completely unaffected.
-//
-// It provisions ONLY the Azure resource plane: create the Azure Bot, bind it to
-// the agent instance identity, enable the bot's Microsoft Teams *channel*, and
-// point the bot's messaging endpoint at the agent. That "Teams channel" is an
-// Azure Bot Service resource toggle — NOT a Teams app. Packaging and sideloading
-// the Teams *app* live on the M365/Graph plane, stay out of azd, and are left to
-// the user; postdeploy writes TEAMS_APP_SETUP.md with those manual steps.
-func ensureActivityBot(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	cred azcore.TokenCredential,
-	envName string,
-	svc *azdext.ServiceConfig,
-	proj *azdext.ProjectConfig,
-	projectEndpoint string,
-	tenantID string,
-) error {
-	ca, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
-	if err != nil || !isHosted {
-		return nil
-	}
-
-	profile := project.ResolveActivityProfile(ca)
-	if !profile.IsActivity {
-		return nil
-	}
-
-	// Only activity agents pay for the version lookup below; this keeps the base
-	// postdeploy path (slimmed on main) untouched for every other agent.
-	//
-	// Phase 1 supports the simple use case only: the bot msaAppId is the agent
-	// instance identity client id, which only exists after the agent version is
-	// created during deploy. Fetch the active version to read that identity.
-	serviceKey := toServiceKey(svc.Name)
-	versionResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envName,
-		Key:     fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to read AGENT_%s_VERSION for %q: %w", serviceKey, svc.Name, err)
-	}
-	if versionResp.Value == "" {
-		return fmt.Errorf(
-			"activity agent %q has no recorded version yet; cannot bind the Teams bot. "+
-				"Re-run 'azd deploy' once the agent version is active.",
-			svc.Name,
-		)
-	}
-
-	agentClient := agent_api.NewAgentClient(projectEndpoint, cred)
-	versionObj, err := agentClient.GetAgentVersion(
-		ctx, svc.Name, versionResp.Value, DefaultAgentAPIVersion,
-	)
-	if err != nil {
-		return fmt.Errorf(
-			"failed to fetch agent version for %s/%s: %w",
-			svc.Name, versionResp.Value, err,
-		)
-	}
-
-	if versionObj == nil || versionObj.InstanceIdentity == nil ||
-		versionObj.InstanceIdentity.ClientID == "" {
-		return fmt.Errorf(
-			"activity agent %q has no instance identity client id yet; cannot bind the "+
-				"Teams bot. Re-run 'azd deploy' once the agent version is active.",
-			svc.Name,
-		)
-	}
-	msaAppID := versionObj.InstanceIdentity.ClientID
-
-	subscriptionID, err := readEnvValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID")
-	if err != nil {
-		return err
-	}
-	resourceGroup, err := readEnvValue(ctx, azdClient, envName, "AZURE_RESOURCE_GROUP")
-	if err != nil {
-		return err
-	}
-
-	botClient, err := botservice.NewClient(subscriptionID, cred, nil)
-	if err != nil {
-		return err
-	}
-
-	// The API agent name is the service name (deploy fetched the version with it),
-	// so the messaging endpoint and bot name must use the same value.
-	agentName := svc.Name
-	botName := botservice.BotName(agentName, botservice.BotScopeSalt(subscriptionID, resourceGroup))
-
-	cfg := botservice.BotConfig{
-		ResourceGroup:     resourceGroup,
-		BotName:           botName,
-		MsaAppID:          msaAppID,
-		TenantID:          tenantID,
-		MessagingEndpoint: botservice.MessagingEndpoint(projectEndpoint, agentName),
-		DisplayName:       agentName,
-	}
-
-	fmt.Printf("Configuring Azure Bot %q for Teams (activity protocol)...\n", botName)
-	if err := botClient.EnsureBot(ctx, cfg); err != nil {
-		return err
-	}
-
-	// Write a persistent, generic setup guide next to the agent code (the azd
-	// progress UI swallows postdeploy stdout, so a file is the reliable way to
-	// hand the user the manual M365 steps) and print a short pointer to it.
-	guidePath := writeTeamsSetupGuide(proj, svc, agentName, botName, msaAppID)
-	printTeamsNextSteps(botName, msaAppID, guidePath)
-	return nil
-}
 
 // teamsSetupGuideFile is the name of the generated Teams onboarding guide.
 const teamsSetupGuideFile = "TEAMS_APP_SETUP.md"
@@ -225,6 +111,31 @@ func readEnvValue(
 	return resp.Value, nil
 }
 
+func readOptionalEnvValue(ctx context.Context, azdClient *azdext.AzdClient, envName, key string) string {
+	resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     key,
+	})
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(resp.Value)
+}
+
+func activityBotTeardownTarget(
+	persistedBotName string,
+	persistedResourceGroup string,
+	persistedOwned string,
+) (string, string, bool) {
+	botName := strings.TrimSpace(persistedBotName)
+	resourceGroup := strings.TrimSpace(persistedResourceGroup)
+	owned := strings.EqualFold(strings.TrimSpace(persistedOwned), "true")
+	if botName == "" || resourceGroup == "" || !owned {
+		return "", "", false
+	}
+	return botName, resourceGroup, true
+}
+
 // teardownActivityBots deletes the Azure Bot created for each activity-protocol
 // agent during teardown. BotService resource names are globally unique, so an
 // orphaned bot would collide with a future redeploy. It is best-effort: missing
@@ -254,11 +165,6 @@ func teardownActivityBots(
 		log.Printf("postdown: skipping Teams bot cleanup: %v", err)
 		return
 	}
-	resourceGroup, err := readEnvValue(ctx, azdClient, envName, "AZURE_RESOURCE_GROUP")
-	if err != nil {
-		log.Printf("postdown: skipping Teams bot cleanup: %v", err)
-		return
-	}
 	tenantID, err := readEnvValue(ctx, azdClient, envName, "AZURE_TENANT_ID")
 	if err != nil {
 		log.Printf("postdown: skipping Teams bot cleanup: %v", err)
@@ -283,8 +189,24 @@ func teardownActivityBots(
 	}
 
 	for _, agentName := range activityAgents {
-		botName := botservice.BotName(agentName, botservice.BotScopeSalt(subscriptionID, resourceGroup))
-		if err := botClient.DeleteBot(ctx, resourceGroup, botName); err != nil {
+		botName, botResourceGroup, tracked := activityBotTeardownTarget(
+			readOptionalEnvValue(ctx, azdClient, envName, envkey.AgentBotName(agentName)),
+			readOptionalEnvValue(ctx, azdClient, envName, envkey.AgentBotResourceGroup(agentName)),
+			readOptionalEnvValue(ctx, azdClient, envName, envkey.AgentBotOwned(agentName)),
+		)
+		if !tracked {
+			continue
+		}
+		owned, ownershipErr := botClient.IsOwned(ctx, botResourceGroup, botName)
+		if ownershipErr != nil {
+			log.Printf("postdown: failed to verify ownership of Azure Bot %q: %v", botName, ownershipErr)
+			continue
+		}
+		if !owned {
+			log.Printf("postdown: leaving Azure Bot %q because it is not marked as created by azd", botName)
+			continue
+		}
+		if err := botClient.DeleteBot(ctx, botResourceGroup, botName); err != nil {
 			log.Printf("postdown: failed to delete Azure Bot %q: %v", botName, err)
 			continue
 		}

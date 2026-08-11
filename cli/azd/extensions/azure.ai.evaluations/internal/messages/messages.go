@@ -11,6 +11,9 @@
 //     Lowercase, no trailing period: azd renders them after "ERROR: ".
 //   - A name the user chose is quoted with %q; an identifier the service
 //     assigned is not, because it is already unmistakable.
+//   - A filesystem path goes through filepath.ToSlash first. %q escapes a
+//     Windows separator, so `evals\eval.yaml` prints as "evals\\eval.yaml" and
+//     a reader who copies it back gets a path that does not exist.
 //   - Progress and success lines are sentences with a capital and no period.
 //   - A printed line carries its own newlines, so a call site is a bare Fprint.
 //   - Nothing here decides *whether* to print. That stays at the call site.
@@ -53,7 +56,7 @@ func EvalHasNoDataset(eval string) error {
 
 // DatasetFileEmpty reports a local dataset file that parsed but held no rows.
 func DatasetFileEmpty(path string) error {
-	return fmt.Errorf("dataset file %q has no rows", path)
+	return fmt.Errorf("dataset file %q has no rows", filepath.ToSlash(path))
 }
 
 // TracesNeedAgentName reports a trace-backed eval that does not say whose
@@ -533,12 +536,12 @@ func GenerationModelRequired() error {
 
 // ReadingInstructionFile reports an --agent-instruction-file that would not read.
 func ReadingInstructionFile(path string, err error) error {
-	return fmt.Errorf("reading --agent-instruction-file %q: %w", path, err)
+	return fmt.Errorf("reading --agent-instruction-file %q: %w", filepath.ToSlash(path), err)
 }
 
 // InstructionFileEmpty reports an --agent-instruction-file with nothing in it.
 func InstructionFileEmpty(path string) error {
-	return fmt.Errorf("--agent-instruction-file %q is empty", path)
+	return fmt.Errorf("--agent-instruction-file %q is empty", filepath.ToSlash(path))
 }
 
 // ReadingInstructions reports a declared instructions file that would not read.
@@ -808,13 +811,14 @@ func JSONLNoRows(path string) error {
 
 // ReadingFromFile reports a --from-file that would not stat.
 func ReadingFromFile(path string, err error) error {
-	return fmt.Errorf("reading --from-file %q: %w", path, err)
+	return fmt.Errorf("reading --from-file %q: %w", filepath.ToSlash(path), err)
 }
 
 // FromFileMustBeJSONL reports a --from-file that is not a dataset.
 func FromFileMustBeJSONL(path string) error {
 	return fmt.Errorf(
-		"--from-file must be a .jsonl file or a directory containing one, got %q", path)
+		"--from-file must be a .jsonl file or a directory containing one, got %q",
+		filepath.ToSlash(path))
 }
 
 // RegisteringDataset reports the service refusing to publish the dataset.
@@ -887,7 +891,7 @@ func DatasetProblem(dataset string, err error) error {
 
 // DatasetSource reports a declared source that is not on disk.
 func DatasetSource(path string, err error) error {
-	return fmt.Errorf("dataset source %q: %w", path, err)
+	return fmt.Errorf("dataset source %q: %w", filepath.ToSlash(path), err)
 }
 
 // DatasetNotLocalNorFound reports a source-less dataset the project rejected.
@@ -1017,7 +1021,7 @@ func EvaluatorProblem(evaluator string, err error) error {
 
 // EvaluatorSource reports a declared source that is not on disk.
 func EvaluatorSource(path string, err error) error {
-	return fmt.Errorf("evaluator source %q: %w", path, err)
+	return fmt.Errorf("evaluator source %q: %w", filepath.ToSlash(path), err)
 }
 
 // EvaluatorNotGeneratedYet reports a declared evaluator whose definition has
@@ -1303,7 +1307,7 @@ func EvalDeleted(evalID string) string {
 
 // Hashing reports a local artifact that could not be fingerprinted.
 func Hashing(path string, err error) error {
-	return fmt.Errorf("hashing %q: %w", path, err)
+	return fmt.Errorf("hashing %q: %w", filepath.ToSlash(path), err)
 }
 
 // HashingEval reports an eval declaration that could not be fingerprinted.
@@ -1685,12 +1689,12 @@ func AmbiguousEvalConfig(current, legacy string) error {
 
 // ReadingEvalConfig reports a configuration file that would not read.
 func ReadingEvalConfig(path string, err error) error {
-	return fmt.Errorf("reading eval config %q: %w", path, err)
+	return fmt.Errorf("reading eval config %q: %w", filepath.ToSlash(path), err)
 }
 
 // ParsingEvalConfig reports a configuration file that would not parse.
 func ParsingEvalConfig(path string, err error) error {
-	return fmt.Errorf("parsing eval config %q: %w", path, err)
+	return fmt.Errorf("parsing eval config %q: %w", filepath.ToSlash(path), err)
 }
 
 // SerializingEvalConfig reports a configuration that would not serialize.
@@ -1700,7 +1704,7 @@ func SerializingEvalConfig(err error) error {
 
 // WritingEvalConfig reports a configuration file that would not be written.
 func WritingEvalConfig(path string, err error) error {
-	return fmt.Errorf("writing eval config %q: %w", path, err)
+	return fmt.Errorf("writing eval config %q: %w", filepath.ToSlash(path), err)
 }
 
 // ErrAmbiguousAgentService reports that a target name matched more than one service.
@@ -1833,17 +1837,17 @@ func FlagRequired(name string) error {
 
 // Creating reports a directory or file that could not be created.
 func Creating(path string, err error) error {
-	return fmt.Errorf("creating %q: %w", path, err)
+	return fmt.Errorf("creating %q: %w", filepath.ToSlash(path), err)
 }
 
 // Serializing reports a value that could not be written out.
 func Serializing(path string, err error) error {
-	return fmt.Errorf("serializing %q: %w", path, err)
+	return fmt.Errorf("serializing %q: %w", filepath.ToSlash(path), err)
 }
 
 // Writing reports a file that could not be written.
 func Writing(path string, err error) error {
-	return fmt.Errorf("writing %q: %w", path, err)
+	return fmt.Errorf("writing %q: %w", filepath.ToSlash(path), err)
 }
 
 // ReadingPath reports a file or directory that could not be read.

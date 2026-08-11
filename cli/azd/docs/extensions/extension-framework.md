@@ -658,7 +658,7 @@ Usage: `azd x init`
 
 Flags (all values are prompted for when omitted):
 
-- `--no-prompt` requires `--id`, `--name`, `--capabilities` and `--language`.
+- `--no-prompt` requires `--id`, `--name`, `--capabilities` and `--language`, except with standalone `--registry`.
 - `--internal --no-prompt` requires `--id`, `--name`, `--capabilities` and `--codeowners`; the language defaults to Go.
 
 - `--id` - The extension identifier, for example `contoso.extension`.
@@ -667,7 +667,7 @@ Flags (all values are prompted for when omitted):
 - `--capabilities` - Comma-separated list of extension capabilities.
 - `--language` - The programming language for the extension: `go` (recommended), `dotnet`, `javascript` or `python`.
 - `--tags` - Optional tags for the extension (max 10 tags, 64 characters each).
-- `--registry, -r` - When set will create a local extension source registry.
+- `--registry, -r` - Creates the local extension source registry without scaffolding an extension.
 - `--internal` - Scaffolds the additional files required by Azure internal extension development (CI build/test scripts, lint workflow, release pipeline and a CODEOWNERS entry). Must be run from inside a clone of `Azure/azure-dev` and currently supports Go only.
 - `--codeowners` - GitHub handles or teams used for the generated CODEOWNERS entry when `--internal` is set.
 

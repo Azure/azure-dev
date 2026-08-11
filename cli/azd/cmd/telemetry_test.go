@@ -9,8 +9,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 )
+
+func TestTelemetryEventConstants(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "ext.update", events.ExtensionUpdateEvent)
+}
 
 // TestTelemetryFieldConstants verifies that all telemetry field constants added for
 // command-specific instrumentation are properly defined and produce valid attribute
@@ -158,11 +164,11 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		kvFRInstallDuration := fields.ToolFirstRunInstallDurationMsKey.Int64(1234)
 		require.Equal(t, "tool.firstrun.install_duration_ms", string(kvFRInstallDuration.Key))
 
-		kvFromVer := fields.ToolUpgradeFromVersionKey.String("1.0.0")
-		require.Equal(t, "tool.upgrade.from_version", string(kvFromVer.Key))
+		kvFromVer := fields.ToolUpdateFromVersionKey.String("1.0.0")
+		require.Equal(t, "tool.update.from_version", string(kvFromVer.Key))
 
-		kvToVer := fields.ToolUpgradeToVersionKey.String("1.1.0")
-		require.Equal(t, "tool.upgrade.to_version", string(kvToVer.Key))
+		kvToVer := fields.ToolUpdateToVersionKey.String("1.1.0")
+		require.Equal(t, "tool.update.to_version", string(kvToVer.Key))
 
 		kvUpdates := fields.ToolCheckUpdatesAvailableKey.Int(3)
 		require.Equal(t, "tool.check.updates_available", string(kvUpdates.Key))
@@ -173,6 +179,15 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		kv := fields.ExtensionSourceKind.String("location")
 		require.Equal(t, "extension.source.kind", string(kv.Key))
 		require.Equal(t, "location", kv.Value.AsString())
+
+		duration := fields.ExtensionUpdateDurationMs.Int64(1234)
+		require.Equal(t, "extension.update.duration_ms", string(duration.Key))
+
+		outcome := fields.ExtensionUpdateOutcome.String("upgraded")
+		require.Equal(t, "extension.update.outcome", string(outcome.Key))
+
+		dependencyCount := fields.ExtensionDependencyUpdateCount.Int(2)
+		require.Equal(t, "extension.dependency_update_count", string(dependencyCount.Key))
 	})
 
 	// Provision validation telemetry fields (emitted by both the Bicep
@@ -208,6 +223,19 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		require.Equal(t, "validation.provision.error.count", string(kvErrors.Key))
 		require.Equal(t, int64(1), kvErrors.Value.AsInt64())
 	})
+
+	// Aspire telemetry fields
+	t.Run("AspireFields", func(t *testing.T) {
+		t.Parallel()
+		kv := fields.AspireAppHostLanguageKey.String("typescript")
+		require.Equal(t, "aspire.apphost.language", string(kv.Key))
+		require.Equal(t, "typescript", kv.Value.AsString())
+
+		for _, language := range []string{"typescript", "python", "go", "java", "rust"} {
+			kv := fields.AspireAppHostLanguageKey.String(language)
+			require.NotEmpty(t, kv.Value.AsString())
+		}
+	})
 }
 
 // TestCommandTelemetryCoverage ensures every user-facing command is explicitly categorized
@@ -238,7 +266,7 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 		"extension install", // extension.source.kind
 		"extension list",    // extension.source.kind
 		"extension show",    // extension.source.kind
-		"extension upgrade", // extension.source.kind + extension upgrade spans
+		"extension update",  // extension.source.kind + extension update spans
 		"hooks run",         // hooks.name, hooks.type
 		"infra generate",    // infra.provider
 		"init",              // init.method, appinit.* fields
@@ -250,7 +278,7 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 		"tool install",      // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
 		"tool show",         // tool.id
 		"tool uninstall",    // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
-		"tool upgrade",      // tool.id(s), tool.dry_run, tool.install.* aggregate + tool.upgrade.* versions
+		"tool update",       // tool.id(s), tool.dry_run, tool.install.* aggregate + tool.update.* versions
 		"up",                // infra.provider (via provisioning manager; composes provision+deploy)
 		"update",            // update.* fields
 	}

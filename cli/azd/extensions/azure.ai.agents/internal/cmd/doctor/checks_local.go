@@ -234,7 +234,7 @@ func newCheckGRPCAndVersion(deps Dependencies) Check {
 					Message: fmt.Sprintf(
 						"Extension version %s is older than %s; the new hosted-agents backend requires the floor.",
 						ver, MinNewBackendVersion),
-					Suggestion: "Upgrade with `azd ext upgrade azure.ai.agents`.",
+					Suggestion: "Update with `azd ext update azure.ai.agents`.",
 					Links:      []string{"https://aka.ms/hostedagents/tsg/readme"},
 					Details: map[string]any{
 						"extensionVersion":  ver,

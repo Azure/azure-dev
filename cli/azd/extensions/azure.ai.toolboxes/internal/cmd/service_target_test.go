@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -135,13 +136,41 @@ func TestPublishReuseEndpoint_WritesExpandedEndpoint(t *testing.T) {
 	// client or creates a version (it holds no azd client or resolver).
 	tgt := &toolboxServiceTarget{}
 	cfg := &toolboxServiceConfig{Endpoint: "${RESEARCH_TOOLBOX_ENDPOINT}"}
-	env := map[string]string{"RESEARCH_TOOLBOX_ENDPOINT": wantURL}
+	env := map[string]string{
+		"RESEARCH_TOOLBOX_ENDPOINT": wantURL,
+		"FOUNDRY_PROJECT_ENDPOINT":  "https://active.services.ai.azure.com/api/projects/current",
+	}
 
 	res, err := tgt.publishReuseEndpoint(t.Context(), "research", cfg, env, nil)
 	require.NoError(t, err)
 	require.NotNil(t, res)
 	require.Len(t, *calls, 1)
 	assert.Equal(t, "research", (*calls)[0].name)
+	assert.Equal(t, wantURL, (*calls)[0].value)
+	assert.Equal(t, "https://active.services.ai.azure.com/api/projects/current", (*calls)[0].projectScope)
+}
+
+func TestDeployReuseUsesServiceEnvironment(t *testing.T) {
+	// No t.Parallel: stubToolboxEndpointEnv swaps a package-level seam.
+	calls := stubToolboxEndpointEnv(t)
+	const wantURL = "https://mcp.example.com/toolboxes/research"
+	serviceConfig := &azdext.ServiceConfig{
+		Environment: map[string]string{
+			"RESEARCH_TOOLBOX_ENDPOINT": wantURL,
+		},
+	}
+
+	result, err := (&toolboxServiceTarget{}).deployReuse(
+		t.Context(),
+		"research",
+		&toolboxServiceConfig{Endpoint: "${RESEARCH_TOOLBOX_ENDPOINT}"},
+		serviceConfig,
+		nil,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, *calls, 1)
 	assert.Equal(t, wantURL, (*calls)[0].value)
 }
 
@@ -174,16 +203,55 @@ func TestBuildToolEntries_ResolvesConnectionRef(t *testing.T) {
 func TestExpandToolboxValue(t *testing.T) {
 	t.Parallel()
 
-	env := map[string]string{"MCP_URL": "https://resolved.example.com"}
+	serviceConfig := &azdext.ServiceConfig{
+		Environment: map[string]string{
+			"MCP_URL": "https://resolved.example.com",
+		},
+	}
+	environment, err := (&toolboxServiceTarget{}).environmentValues(
+		t.Context(),
+		serviceConfig,
+	)
+	require.NoError(t, err)
 	in := map[string]any{
 		"type":       "mcp",
 		"server_url": "${MCP_URL}",
 		"headers":    []any{"x-secret: ${{secrets.token}}"},
 	}
 
-	out, ok := expandToolboxValue(in, env).(map[string]any)
+	out, ok := expandToolboxValue(
+		in,
+		environment,
+	).(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "https://resolved.example.com", out["server_url"])
 	// Foundry ${{...}} passes through untouched.
 	assert.Equal(t, []any{"x-secret: ${{secrets.token}}"}, out["headers"])
+}
+
+// fakeServiceConfigReader reports a fixed env-declared result.
+type fakeServiceConfigReader struct {
+	found bool
+}
+
+func (f fakeServiceConfigReader) GetServiceConfigValue(
+	context.Context,
+	*azdext.GetServiceConfigValueRequest,
+	...grpc.CallOption,
+) (*azdext.GetServiceConfigValueResponse, error) {
+	return &azdext.GetServiceConfigValueResponse{Found: f.found}, nil
+}
+
+func TestToolboxEnvironmentValuesEmptyDeclaredIsolates(t *testing.T) {
+	t.Parallel()
+
+	target := &toolboxServiceTarget{
+		projectClient: fakeServiceConfigReader{found: true},
+	}
+	env, err := target.environmentValues(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "research-tools"},
+	)
+	require.NoError(t, err)
+	require.Empty(t, env)
 }

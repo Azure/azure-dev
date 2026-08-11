@@ -8,6 +8,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 )
 
@@ -254,6 +256,46 @@ func TestExecEnvForHosts_no_host(t *testing.T) {
 	result := execEnvForHosts()
 	if result != "" {
 		t.Fatalf("execEnvForHosts() = %q, want empty string", result)
+	}
+}
+
+func TestGetExecutionEnvironment_GitHubCopilotHosts(t *testing.T) {
+	tests := []struct {
+		name      string
+		aiAgent   string
+		userAgent string
+		want      string
+	}{
+		{
+			name:    "GitHub Copilot App",
+			aiAgent: "github_copilot_app_agent",
+			want:    fields.EnvGitHubCopilotApp,
+		},
+		{
+			name:    "GitHub Copilot VSCode",
+			aiAgent: "github_copilot_vscode_agent",
+			want:    fields.EnvGitHubCopilotVSCode,
+		},
+		{
+			name:      "VS Code Azure GitHub Copilot",
+			userAgent: internal.VsCodeAzureCopilotAgentPrefix + "/1.0.0",
+			want:      fields.EnvVSCodeAzureCopilot,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AI_AGENT", tt.aiAgent)
+			t.Setenv(internal.AzdUserAgentEnvVar, tt.userAgent)
+			t.Setenv(agentdetect.DisableAgentDetectEnvVar, "")
+			os.Unsetenv(agentdetect.DisableAgentDetectEnvVar)
+			agentdetect.ResetDetection()
+			t.Cleanup(agentdetect.ResetDetection)
+
+			if got := getExecutionEnvironment(); got != tt.want {
+				t.Fatalf("getExecutionEnvironment() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

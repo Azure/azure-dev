@@ -235,7 +235,9 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 func Test_CLI_Up_Down_ContainerFuncApp(t *testing.T) {
 	t.Parallel()
 
-	if ciOS := os.Getenv("AZURE_DEV_CI_OS"); ciOS != "" && ciOS != "lin" {
+	if ciOS := os.Getenv("AZURE_DEV_CI_OS"); ciOS == "lin" {
+		t.Skip("Temporarily skipping on Linux CI due to npm registry connectivity failures during Docker builds")
+	} else if ciOS != "" {
 		t.Skip("Skipping due to docker limitations for non-linux systems on CI")
 	}
 

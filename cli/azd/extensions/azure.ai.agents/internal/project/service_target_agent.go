@@ -15,12 +15,14 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,8 +32,9 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
+	"azureaiagent/internal/pkg/botservice"
+	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
-	"azureaiagent/internal/pkg/projectconfig"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -84,6 +87,14 @@ func buildResponsesProtocolURL(projectEndpoint, agentName string) string {
 		"%s/agents/%s/endpoint/protocols/openai/responses?api-version=%s",
 		projectEndpoint, agentName, agent_api.AgentEndpointAPIVersion,
 	)
+}
+
+func endpointHost(endpoint string) string {
+	u, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
 }
 
 // buildInvocationsProtocolURL builds the per-agent HTTPS URL for the "invocations" protocol.
@@ -153,10 +164,17 @@ type AgentServiceTargetProvider struct {
 	// agentDefinitionPath is only set for the file-based and env-override paths
 	// (not the inline unified shape), so both are checked as the idempotency guard.
 	deployContextReady bool
-	credential         *azidentity.AzureDeveloperCLICredential
-	tenantId           string
-	env                *azdext.Environment
-	foundryProject     *arm.ResourceID
+	// serviceConfigResolved tracks whether serviceConfig has had
+	// its local $ref includes expanded. Cleared whenever a newer
+	// config is adopted.
+	serviceConfigResolved bool
+	credential            *azidentity.AzureDeveloperCLICredential
+	tenantId              string
+	env                   *azdext.Environment
+	foundryProject        *arm.ResourceID
+	projectServices       map[string]*azdext.ServiceConfig
+	dependencyEnabled     dependencyEnabled
+	dependencyEnv         map[string]string
 }
 
 const (
@@ -182,16 +200,56 @@ func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTa
 // agent.yaml, tenant lookup, credential) lives in ensureDeployContext and runs
 // only when a deploy-time entrypoint needs it.
 func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
+	p.adoptServiceConfig(serviceConfig)
+	return nil
+}
+
+// adoptServiceConfig stores the service config azd core supplied
+// for the current call. Core re-expands ${VAR} references against
+// the environment on every request, so a deploy-time config can
+// carry values the Initialize-time snapshot lacked, for example a
+// location the user was prompted for during provision. Keeping the
+// newest config avoids deploying with the empty strings that unset
+// variables expand to.
+func (p *AgentServiceTargetProvider) adoptServiceConfig(serviceConfig *azdext.ServiceConfig) {
+	if serviceConfig == nil || serviceConfig == p.serviceConfig {
+		return
+	}
 	p.serviceConfig = serviceConfig
+	p.serviceConfigResolved = false
+}
+
+// resolveServiceConfig expands local $ref includes on the current
+// service config. It is idempotent per config instance, so repeat
+// calls stay cheap while a freshly adopted config is always
+// re-resolved.
+func (p *AgentServiceTargetProvider) resolveServiceConfig() error {
+	if p.serviceConfigResolved || p.serviceConfig == nil || p.projectPath == "" {
+		return nil
+	}
+	if err := ResolveServiceConfigInPlace(p.serviceConfig, p.projectPath); err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf(
+				"failed to resolve service config for %s: %s",
+				p.serviceConfig.Name,
+				err,
+			),
+			"fix the agent service configuration in azure.yaml",
+		)
+	}
+	p.serviceConfigResolved = true
 	return nil
 }
 
 // ensureDeployContext lazily resolves the agent definition file, the azd
 // environment, the tenant, and the credential. Idempotent via the
-// agentDefinitionPath short-circuit.
+// agentDefinitionPath short-circuit. The short-circuit still resolves
+// the service config so a newer one adopted after the first
+// deploy-time call is expanded before consumers read it.
 func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) error {
 	if p.deployContextReady || p.agentDefinitionPath != "" {
-		return nil
+		return p.resolveServiceConfig()
 	}
 	if p.serviceConfig == nil {
 		return exterrors.Internal(
@@ -208,19 +266,11 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 			"run 'azd init' to initialize your project",
 		)
 	}
-	if err := ResolveServiceConfigInPlace(
-		p.serviceConfig,
-		proj.Project.Path,
-	); err != nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf(
-				"failed to resolve service config for %s: %s",
-				p.serviceConfig.Name,
-				err,
-			),
-			"fix the agent service configuration in azure.yaml",
-		)
+	p.projectPath = proj.Project.Path
+	p.projectServices = proj.GetProject().GetServices()
+	p.dependencyEnabled = p.isDependencyEnabled
+	if err := p.resolveServiceConfig(); err != nil {
+		return err
 	}
 	servicePath := p.serviceConfig.GetRelativePath()
 	fullPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath)
@@ -283,7 +333,6 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	}
 	p.credential = cred
 
-	p.projectPath = proj.Project.Path
 	p.servicePath = fullPath
 
 	// Check if user has specified agent definition path via environment variable
@@ -382,6 +431,65 @@ func (p *AgentServiceTargetProvider) ensureEnv(ctx context.Context) error {
 	return nil
 }
 
+func (p *AgentServiceTargetProvider) isDependencyEnabled(ctx context.Context, serviceName string) (bool, error) {
+	resp, err := p.azdClient.Project().GetServiceConfigValue(ctx, &azdext.GetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        "condition",
+	})
+	if err != nil {
+		return false, fmt.Errorf("read deployment condition for service %q: %w", serviceName, err)
+	}
+	if !resp.GetFound() {
+		return true, nil
+	}
+	conditionValue, err := dependencyConditionValue(resp.GetValue())
+	if err != nil {
+		return false, fmt.Errorf("read deployment condition for service %q: %w", serviceName, err)
+	}
+	if strings.TrimSpace(conditionValue) == "" {
+		return true, nil
+	}
+	condition, err := ExpandEnv(conditionValue, func(name string) string {
+		return p.dependencyEnvValue(name)
+	})
+	if err != nil {
+		return false, fmt.Errorf("malformed deployment condition for service %q: %w", serviceName, err)
+	}
+	// Keep this list aligned with pkg/project/service_config.go:isConditionTrue;
+	// extensions cannot import that unexported core helper.
+	switch condition {
+	case "1", "true", "TRUE", "True", "yes", "YES", "Yes":
+		return true, nil
+	default:
+		return false, nil
+	}
+}
+
+func dependencyConditionValue(value *structpb.Value) (string, error) {
+	if value == nil {
+		return "", nil
+	}
+	switch kind := value.Kind.(type) {
+	case *structpb.Value_StringValue:
+		return kind.StringValue, nil
+	case *structpb.Value_BoolValue:
+		return strconv.FormatBool(kind.BoolValue), nil
+	case *structpb.Value_NumberValue:
+		return strconv.FormatFloat(kind.NumberValue, 'g', -1, 64), nil
+	case *structpb.Value_NullValue:
+		return "", nil
+	default:
+		return "", fmt.Errorf("condition must be a string, boolean, or number")
+	}
+}
+
+func (p *AgentServiceTargetProvider) dependencyEnvValue(name string) string {
+	if value, ok := p.dependencyEnv[name]; ok {
+		return value
+	}
+	return os.Getenv(name)
+}
+
 // getServiceKey converts a service name into a standardized environment variable key format
 func (p *AgentServiceTargetProvider) getServiceKey(serviceName string) string {
 	serviceKey := strings.ReplaceAll(serviceName, " ", "_")
@@ -415,7 +523,6 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	for _, kval := range resp.KeyValues {
 		azdEnv[kval.Key] = kval.Value
 	}
-
 	// Check if required environment variables are set
 	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
 		return nil, exterrors.Dependency(
@@ -464,6 +571,7 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	serviceConfig *azdext.ServiceConfig,
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
+	p.adoptServiceConfig(serviceConfig)
 	if err := p.ensureDeployContext(ctx); err != nil {
 		return nil, err
 	}
@@ -527,15 +635,17 @@ func (p *AgentServiceTargetProvider) Package(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
+	p.adoptServiceConfig(serviceConfig)
 	if err := p.ensureDeployContext(ctx); err != nil {
 		return nil, err
 	}
+	serviceConfig = p.serviceConfig
 	// Code deploy: ZIP the source directory
 	if p.isCodeDeployAgent() {
 		progress("Packaging code")
 		zipPath, sha256Hex, err := p.packageCodeDeploy(ctx, serviceConfig)
 		if err != nil {
-			return nil, exterrors.Internal(exterrors.OpContainerPackage, fmt.Sprintf("code packaging failed: %s", err))
+			return nil, exterrors.InternalFromError(err, exterrors.OpContainerPackage, "code packaging failed")
 		}
 
 		return &azdext.ServicePackageResult{
@@ -600,7 +710,7 @@ func (p *AgentServiceTargetProvider) Package(
 				Container().
 				Build(ctx, buildRequest)
 			if err != nil {
-				return nil, exterrors.Internal(exterrors.OpContainerBuild, fmt.Sprintf("container build failed: %s", err))
+				return nil, exterrors.FromHost(err, exterrors.OpContainerBuild, "container build failed")
 			}
 
 			serviceContext.Build = append(serviceContext.Build, buildResponse.Result.Artifacts...)
@@ -614,7 +724,7 @@ func (p *AgentServiceTargetProvider) Package(
 			Container().
 			Package(ctx, packageRequest)
 		if err != nil {
-			return nil, exterrors.Internal(exterrors.OpContainerPackage, fmt.Sprintf("container package failed: %s", err))
+			return nil, exterrors.FromHost(err, exterrors.OpContainerPackage, "container package failed")
 		}
 
 		newArtifacts = append(newArtifacts, packageResponse.Result.Artifacts...)
@@ -634,8 +744,9 @@ func (p *AgentServiceTargetProvider) Publish(
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
-	// Pre-built image: nothing to package or push. Skip deploy-context
-	// resolution so this path stays cheap and doesn't require agent.yaml.
+	// A pre-built image does not start a container publish operation. Preserve
+	// this fast path; Activity Bot selection still runs in Deploy because the
+	// deployed agent identity is required to prefer an already-bound bot.
 	if preBuiltArtifact := findPreBuiltImageArtifact(serviceContext.Package); preBuiltArtifact != nil {
 		progress("Using pre-built container image, skipping publish")
 		return &azdext.ServicePublishResult{
@@ -643,9 +754,11 @@ func (p *AgentServiceTargetProvider) Publish(
 		}, nil
 	}
 
+	p.adoptServiceConfig(serviceConfig)
 	if err := p.ensureDeployContext(ctx); err != nil {
 		return nil, err
 	}
+	serviceConfig = p.serviceConfig
 	// Code deploy skips Publish (no ACR needed)
 	if p.isCodeDeployAgent() {
 		return &azdext.ServicePublishResult{}, nil
@@ -704,11 +817,7 @@ func classifyContainerPublishError(err error) error {
 		)
 	}
 
-	if actionable := azdext.ActionableErrorDetailFromError(err); actionable != nil && actionable.GetSuggestion() != "" {
-		return err
-	}
-
-	return exterrors.Internal(exterrors.OpContainerPublish, fmt.Sprintf("container publish failed: %s", err))
+	return exterrors.FromHost(err, exterrors.OpContainerPublish, "container publish failed")
 }
 
 // acrPermissionSuggestionFor is the user-facing remediation text for
@@ -1014,6 +1123,82 @@ func (p *AgentServiceTargetProvider) loadContainerAgentDefinition() (agent_yaml.
 	)
 }
 
+func (p *AgentServiceTargetProvider) resolveActivityBotName(
+	ctx context.Context,
+	botFinder interface {
+		FindByMsaAppID(context.Context, string) (*botservice.BotReference, error)
+	},
+	serviceName string,
+	agentName string,
+	agentIdentityClientID string,
+	defaultResourceGroup string,
+	azdEnv map[string]string,
+) (string, string, error) {
+	if botFinder != nil && strings.TrimSpace(agentIdentityClientID) != "" {
+		boundBot, err := botFinder.FindByMsaAppID(ctx, agentIdentityClientID)
+		if err != nil {
+			fmt.Fprintf(
+				os.Stderr,
+				"Unable to search for an Azure Bot already bound to the deployed agent identity: %v\n",
+				err,
+			)
+		}
+		if boundBot != nil && strings.TrimSpace(boundBot.Name) != "" {
+			fmt.Fprintf(
+				os.Stderr,
+				"Using Azure Bot already bound to the deployed agent identity: %q (resource group: %q)\n",
+				boundBot.Name,
+				boundBot.ResourceGroup,
+			)
+			return boundBot.Name, strings.TrimSpace(boundBot.ResourceGroup), nil
+		}
+	}
+
+	key := envkey.AgentBotName(serviceName)
+	name := strings.TrimSpace(azdEnv[key])
+	if name == "" {
+		resourceGroup := strings.TrimSpace(azdEnv["AZURE_RESOURCE_GROUP"])
+		if resourceGroup == "" {
+			resourceGroup = strings.TrimSpace(defaultResourceGroup)
+		}
+		name = botservice.BotName(agentName, botservice.BotScopeSalt(azdEnv["AZURE_SUBSCRIPTION_ID"], resourceGroup))
+		fmt.Fprintf(
+			os.Stderr,
+			"Azure Bot name was not set in %s; using scope-qualified default %q. Set %s explicitly to use a custom bot name.\n",
+			key,
+			name,
+			key,
+		)
+	} else {
+		fmt.Fprintf(
+			os.Stderr,
+			"Using Azure Bot name from environment key %s: %q\n",
+			key,
+			name,
+		)
+	}
+
+	if name == "" {
+		return "", "", exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"Azure Bot name is required for Activity agents",
+			"provide a Bot name and retry the deployment",
+		)
+	}
+
+	return name, "", nil
+}
+
+// cSpell:ignore msaappid msaapp
+func isMsaAppIDAlreadyInUseError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "msaappid is already in use") ||
+		strings.Contains(msg, "msaapp id is already in use")
+}
+
 // Deploy performs the deployment operation for the agent service
 func (p *AgentServiceTargetProvider) Deploy(
 	ctx context.Context,
@@ -1022,16 +1207,39 @@ func (p *AgentServiceTargetProvider) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
+	p.adoptServiceConfig(serviceConfig)
 	if err := p.ensureDeployContext(ctx); err != nil {
 		return nil, err
 	}
 	serviceConfig = p.serviceConfig
+
+	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
+	if err != nil {
+		return nil, err
+	}
+	if !isContainerAgent {
+		return nil, exterrors.Validation(
+			exterrors.CodeUnsupportedAgentKind,
+			"unsupported agent kind in agent.yaml",
+			"use a supported kind: 'hosted'",
+		)
+	}
+
+	if err := validateEnvironmentVariableNames(
+		serviceConfig.GetEnvironment(),
+		agentDef.EnvironmentVariables,
+	); err != nil {
+		return nil, err
+	}
+
 	// Ensure Foundry project is loaded
+	progress("Loading Foundry project")
 	if err := p.ensureFoundryProject(ctx); err != nil {
 		return nil, err
 	}
 
 	// Get environment variables from azd
+	progress("Loading deployment environment")
 	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
 		Name: p.env.Name,
 	})
@@ -1047,6 +1255,12 @@ func (p *AgentServiceTargetProvider) Deploy(
 	for _, kval := range resp.KeyValues {
 		azdEnv[kval.Key] = kval.Value
 	}
+	p.dependencyEnv = azdEnv
+
+	activityBotName := ""
+	activityBotResourceGroup := ""
+	activityBotOwned := false
+	isActivityAgent := ResolveActivityProfile(agentDef).IsActivity
 
 	serviceTargetConfig, err := LoadServiceTargetAgentConfig(serviceConfig)
 	if err != nil {
@@ -1061,6 +1275,13 @@ func (p *AgentServiceTargetProvider) Deploy(
 		fmt.Println("Loaded custom service target configuration")
 	}
 
+	progress("Validating service dependencies")
+	if err := validateFoundryDependencies(
+		ctx, serviceConfig, serviceTargetConfig, p.projectServices, azdEnv, p.dependencyEnabled,
+	); err != nil {
+		return nil, err
+	}
+
 	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
 
 	// Provision any declared Foundry memory stores before deploying the agent, since
@@ -1069,18 +1290,6 @@ func (p *AgentServiceTargetProvider) Deploy(
 		ctx, serviceTargetConfig, azdEnv["FOUNDRY_PROJECT_ENDPOINT"], progress,
 	); err != nil {
 		return nil, err
-	}
-
-	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
-	if err != nil {
-		return nil, err
-	}
-	if !isContainerAgent {
-		return nil, exterrors.Validation(
-			exterrors.CodeUnsupportedAgentKind,
-			"unsupported agent kind in agent.yaml",
-			"use a supported kind: 'hosted'",
-		)
 	}
 
 	// Branch: code deploy vs container deploy
@@ -1096,12 +1305,19 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	// Poll until agent version is active
 	if result.agentVersion.Status != "active" {
+		progress("Agent version created; waiting for activation")
+		projectEndpoint := azdEnv["FOUNDRY_PROJECT_ENDPOINT"]
 		agentClient := agent_api.NewAgentClient(
-			azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
+			projectEndpoint,
 			p.credential,
 		)
 		polledVersion, pollErr := p.waitForAgentActive(
-			ctx, agentClient, result.agentName, result.agentVersion.Version, progress,
+			ctx,
+			agentClient,
+			endpointHost(projectEndpoint),
+			result.agentName,
+			result.agentVersion.Version,
+			progress,
 		)
 		if pollErr != nil {
 			return nil, pollErr
@@ -1112,13 +1328,141 @@ func (p *AgentServiceTargetProvider) Deploy(
 	}
 
 	// Patch agent-level endpoint/card fields
+	if result.request.AgentEndpoint != nil || result.request.AgentCard != nil {
+		progress("Updating agent endpoint settings")
+	}
 	if err := p.patchAgentEndpointFields(
 		ctx, result.agentName, result.request.AgentEndpoint, result.request.AgentCard, azdEnv,
 	); err != nil {
 		return nil, err
 	}
 
-	return p.finalizeDeploy(ctx, progress, serviceConfig, azdEnv, result.agentVersion, result.protocols)
+	if isActivityAgent {
+		identity := result.agentVersion.InstanceIdentity
+		if identity == nil || identity.ClientID == "" {
+			return nil, exterrors.Dependency(
+				exterrors.CodeAgentCreateFailed,
+				"Activity agent deployment did not return an instance identity",
+				"wait for the agent version to become active and retry",
+			)
+		}
+		client, err := botservice.NewClient(azdEnv["AZURE_SUBSCRIPTION_ID"], p.credential, nil)
+		if err != nil {
+			return nil, err
+		}
+		progress("Resolving Activity bot configuration")
+		activityBotName, activityBotResourceGroup, err = p.resolveActivityBotName(
+			ctx,
+			client,
+			serviceConfig.Name,
+			agentDef.Name,
+			identity.ClientID,
+			p.foundryProject.ResourceGroupName,
+			azdEnv,
+		)
+		if err != nil {
+			return nil, err
+		}
+		botResourceGroup := activityBotResourceGroup
+		if strings.TrimSpace(botResourceGroup) == "" {
+			botResourceGroup = p.foundryProject.ResourceGroupName
+		}
+		activityBotResourceGroup = botResourceGroup
+		existingBot, err := client.GetBot(ctx, botResourceGroup, activityBotName)
+		if err != nil {
+			return nil, err
+		}
+		var existingTags map[string]*string
+		if existingBot != nil {
+			existingTags = existingBot.Tags
+		}
+		var botTags map[string]*string
+		activityBotOwned, botTags = activityBotOwnership(
+			existingBot != nil,
+			existingTags,
+		)
+		progress("Ensuring Azure Bot resource")
+		ensureCfg := botservice.BotConfig{
+			ResourceGroup:     botResourceGroup,
+			BotName:           activityBotName,
+			MsaAppID:          identity.ClientID,
+			TenantID:          p.tenantId,
+			MessagingEndpoint: botservice.MessagingEndpoint(azdEnv["FOUNDRY_PROJECT_ENDPOINT"], result.agentName),
+			DisplayName:       result.agentName,
+			Tags:              botTags,
+		}
+		if err := client.EnsureBot(ctx, ensureCfg); err != nil {
+			// Recovery path: BotService enforces MsaAppID uniqueness. If a different
+			// bot name is already bound to this identity, switch to that bot and retry.
+			if isMsaAppIDAlreadyInUseError(err) {
+				if boundBot, findErr := client.FindByMsaAppID(ctx, identity.ClientID); findErr == nil &&
+					boundBot != nil && strings.TrimSpace(boundBot.Name) != "" {
+					activityBotName = strings.TrimSpace(boundBot.Name)
+					if strings.TrimSpace(boundBot.ResourceGroup) != "" {
+						botResourceGroup = strings.TrimSpace(boundBot.ResourceGroup)
+						activityBotResourceGroup = botResourceGroup
+					}
+					fmt.Fprintf(
+						os.Stderr,
+						"Azure Bot name %q conflicts for MsaAppID; reusing already-bound bot %q (resource group: %q).\n",
+						ensureCfg.BotName,
+						activityBotName,
+						botResourceGroup,
+					)
+					ensureCfg.BotName = activityBotName
+					ensureCfg.ResourceGroup = botResourceGroup
+					existingBot, getErr := client.GetBot(ctx, botResourceGroup, activityBotName)
+					if getErr != nil {
+						return nil, getErr
+					}
+					var existingTags map[string]*string
+					if existingBot != nil {
+						existingTags = existingBot.Tags
+					}
+					activityBotOwned, ensureCfg.Tags = activityBotOwnership(
+						existingBot != nil,
+						existingTags,
+					)
+					if retryErr := client.EnsureBot(ctx, ensureCfg); retryErr == nil {
+						err = nil
+					} else {
+						return nil, retryErr
+					}
+				}
+			}
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return p.finalizeDeploy(
+		ctx,
+		progress,
+		serviceConfig,
+		azdEnv,
+		result.agentVersion,
+		result.protocols,
+		activityBotName,
+		activityBotResourceGroup,
+		activityBotOwned,
+	)
+}
+
+func activityBotOwnership(
+	botExists bool,
+	existingTags map[string]*string,
+) (bool, map[string]*string) {
+	tags := maps.Clone(existingTags)
+	if !botExists {
+		if tags == nil {
+			tags = make(map[string]*string)
+		}
+		tags[botservice.OwnershipTag] = new(botservice.OwnershipTagValue)
+		return true, tags
+	}
+	value := tags[botservice.OwnershipTag]
+	return value != nil && strings.EqualFold(*value, botservice.OwnershipTagValue), tags
 }
 
 // provisionMemoryStores creates any Foundry memory stores declared in the service target
@@ -1442,6 +1786,25 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["FOUNDRY_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
+	// Seed core-expanded values before resolving legacy variables.
+	resolvedEnvVars := maps.Clone(serviceConfig.GetEnvironment())
+	if resolvedEnvVars == nil {
+		resolvedEnvVars = make(map[string]string)
+	}
+	if agentDef.EnvironmentVariables != nil {
+		for _, envVar := range *agentDef.EnvironmentVariables {
+			if _, found := resolvedEnvVars[envVar.Name]; found {
+				continue
+			}
+			resolvedEnvVars[envVar.Name] = p.resolveEnvironmentVariables(
+				envVar.Name,
+				envVar.Value,
+				serviceConfig.GetEnvironment(),
+				azdEnv,
+			)
+		}
+	}
+
 	// Parse service config for container resource overrides
 	foundryAgentConfig, err := LoadServiceTargetAgentConfig(serviceConfig)
 	if err != nil {
@@ -1451,35 +1814,8 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 			"check the service configuration in azure.yaml",
 		)
 	}
-	serviceEnv, err := p.serviceEnvironment(serviceConfig)
-	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf(
-				"failed to load service environment: %s",
-				err,
-			),
-			"fix the service env configuration in azure.yaml",
-		)
-	}
-
-	resolvedEnvVars := make(map[string]string)
-	if agentDef.EnvironmentVariables != nil {
-		for _, envVar := range *agentDef.EnvironmentVariables {
-			resolvedEnvVars[envVar.Name] =
-				p.resolveEnvironmentVariables(envVar.Value, azdEnv)
-		}
-	}
-	for name, value := range foundryAgentConfig.Environment {
-		resolvedEnvVars[name] =
-			p.resolveEnvironmentVariables(value, azdEnv)
-	}
-	for name, value := range serviceEnv {
-		resolvedEnvVars[name] =
-			p.resolveEnvironmentVariables(value, azdEnv)
-	}
-
 	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
+	WarnOrphanedConfigEnv(serviceConfig)
 
 	var cpu, memory string
 	if foundryAgentConfig != nil && foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
@@ -1534,22 +1870,6 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	}, nil
 }
 
-func (p *AgentServiceTargetProvider) serviceEnvironment(
-	serviceConfig *azdext.ServiceConfig,
-) (map[string]string, error) {
-	raw, err := projectconfig.LoadServiceEnvironment(
-		p.projectPath,
-		serviceConfig.GetName(),
-	)
-	if err != nil {
-		return nil, err
-	}
-	if raw != nil {
-		return raw, nil
-	}
-	return serviceConfig.GetEnvironment(), nil
-}
-
 // deployResult holds the intermediate results from a deploy method (code or container)
 // before the common post-deploy steps (polling, patching, finalization) are applied.
 type deployResult struct {
@@ -1600,10 +1920,22 @@ func (p *AgentServiceTargetProvider) finalizeDeploy(
 	azdEnv map[string]string,
 	agentVersion *agent_api.AgentVersionObject,
 	protocols []agent_yaml.ProtocolVersionRecord,
+	activityBotName string,
+	activityBotResourceGroup string,
+	activityBotOwned bool,
 ) (*azdext.ServiceDeployResult, error) {
 	progress("Registering agent environment variables")
 
-	err := p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, agentVersion, protocols)
+	err := p.registerAgentEnvironmentVariables(
+		ctx,
+		azdEnv,
+		serviceConfig,
+		agentVersion,
+		protocols,
+		activityBotName,
+		activityBotResourceGroup,
+		activityBotOwned,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1688,6 +2020,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		}
 	}
 
+	progress("Preparing hosted agent configuration")
 	prep, err := p.prepareDeploy(serviceConfig, agentDef, azdEnv, []agent_yaml.AgentBuildOption{
 		agent_yaml.WithImageURL(fullImageURL),
 	})
@@ -1699,7 +2032,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	p.displayAgentInfo(prep.request)
 
 	// Create agent
-	progress("Creating agent")
+	progress("Submitting agent version creation request")
 	agentVersionResponse, err := p.createAgent(ctx, prep.request, azdEnv)
 	if err != nil {
 		return nil, err
@@ -2118,6 +2451,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		)
 	}
 
+	progress("Loading code package artifact")
 	zipData, err := os.ReadFile(zipPath) //nolint:gosec // zipPath comes from the artifact location set during packaging
 	if err != nil {
 		return nil, fmt.Errorf("failed to read ZIP artifact: %w", err)
@@ -2125,6 +2459,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	// Clean up temp file
 	defer os.Remove(zipPath)
 
+	progress("Preparing code agent configuration")
 	prep, err := p.prepareDeploy(serviceConfig, agentDef, azdEnv, nil)
 	if err != nil {
 		return nil, err
@@ -2158,37 +2493,33 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	)
 
 	// Check if agent already exists (GET /agents/{name})
-	progress("Creating agent")
+	progress("Checking existing agent")
 	_, getErr := agentClient.GetAgent(ctx, agentDef.Name, agent_api.AgentEndpointAPIVersion)
 	var agentResp *agent_api.AgentObject
 
 	if getErr != nil {
-		// Only fall back to create on 404; propagate other errors (auth, 5xx, network)
+		// Only fall back to create on 404; classify every other service response.
 		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok || respErr.StatusCode != http.StatusNotFound {
-			return nil, fmt.Errorf("failed to check if agent exists: %w", getErr)
+			return nil, exterrors.ServiceFromAzure(getErr, exterrors.OpCreateAgent)
 		}
 		// Agent doesn't exist — create
+		progress("Creating new agent from code package")
 		fmt.Fprintf(os.Stderr, "Creating new agent: %s\n", agentDef.Name)
 		agentResp, err = agentClient.CreateAgentFromZip(
 			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
 		)
 		if err != nil {
-			return nil, exterrors.Internal(
-				exterrors.CodeAgentCreateFailed,
-				fmt.Sprintf("failed to create agent from ZIP: %s; check the agent definition and try again", err),
-			)
+			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 		}
 	} else {
 		// Agent exists — update
+		progress("Updating existing agent from code package")
 		writeExistingAgentVersionWarning(agentDef.Name)
 		agentResp, err = agentClient.UpdateAgentFromZip(
 			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
 		)
 		if err != nil {
-			return nil, exterrors.Internal(
-				exterrors.CodeAgentCreateFailed,
-				fmt.Sprintf("failed to update agent from ZIP: %s; check the agent definition and try again", err),
-			)
+			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 		}
 	}
 
@@ -2491,6 +2822,7 @@ func AgentPlaygroundURL(projectResourceID, agentName, agentVersion string) (stri
 func (p *AgentServiceTargetProvider) waitForAgentActive(
 	ctx context.Context,
 	agentClient *agent_api.AgentClient,
+	serviceName string,
 	agentName string,
 	version string,
 	progress azdext.ProgressReporter,
@@ -2507,6 +2839,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 	var consecutiveActive int
 	var consecutiveFailed int
 	var lastVersion *agent_api.AgentVersionObject
+	var lastPollErr error
 
 	for time.Now().Before(deadline) {
 		select {
@@ -2520,12 +2853,14 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 
 		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agent_api.AgentEndpointAPIVersion)
 		if err != nil {
+			lastPollErr = err
 			fmt.Fprintf(os.Stderr, "  Warning: poll failed: %s\n", err)
 			// Reset counters on error — don't count transient failures
 			consecutiveActive = 0
 			consecutiveFailed = 0
 			continue
 		}
+		lastPollErr = nil
 		lastVersion = versionResp
 
 		switch versionResp.Status {
@@ -2541,14 +2876,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 			consecutiveFailed++
 			consecutiveActive = 0
 			if consecutiveFailed >= confirmCount {
-				errMsg := "agent deployment failed"
-				if versionResp.Error != nil {
-					errMsg = fmt.Sprintf("agent deployment failed: [%s] %s", versionResp.Error.Code, versionResp.Error.Message)
-				}
-				if versionResp.RequestID != "" {
-					errMsg += fmt.Sprintf(" (request-id: %s)", versionResp.RequestID)
-				}
-				return nil, exterrors.Internal(exterrors.CodeAgentCreateFailed, errMsg)
+				return nil, agentDeploymentFailedError(versionResp, serviceName)
 			}
 			fmt.Fprintf(os.Stderr, "  Status: failed (confirming...)\n")
 		default:
@@ -2559,14 +2887,38 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 	}
 
 	// Timeout
+	if lastPollErr != nil {
+		return nil, exterrors.ServiceFromAzure(lastPollErr, exterrors.OpCreateAgent)
+	}
 	lastStatus := "unknown"
 	if lastVersion != nil {
 		lastStatus = lastVersion.Status
 	}
-	return nil, exterrors.Internal(
-		exterrors.CodeAgentCreateFailed,
+	return nil, exterrors.Service(
+		exterrors.OpCreateAgent,
+		"timeout",
 		fmt.Sprintf("agent deployment timed out (last status: %s); check agent status manually", lastStatus),
+		serviceName,
+		"run `azd ai agent show` to inspect the latest deployment status",
 	)
+}
+
+func agentDeploymentFailedError(versionResp *agent_api.AgentVersionObject, serviceName string) error {
+	code := "failed"
+	errMsg := "agent deployment failed"
+	suggestion := "run `azd ai agent show` to inspect the latest deployment status"
+	if versionResp.Error != nil {
+		code = versionResp.Error.Code
+		errMsg = fmt.Sprintf("agent deployment failed: [%s] %s", code, versionResp.Error.Message)
+		if remediation, ok := nextstep.RemediationForUserErrorCode(nextstep.UserErrorCode(code)); ok {
+			suggestion = fmt.Sprintf("run `%s` to %s", remediation.Command, remediation.Description)
+		}
+	}
+	if versionResp.RequestID != "" {
+		errMsg += fmt.Sprintf(" (request-id: %s)", versionResp.RequestID)
+	}
+
+	return exterrors.Service(exterrors.OpCreateAgent, code, errMsg, serviceName, suggestion)
 }
 
 // createAgent creates a new version of the agent using the API
@@ -2638,6 +2990,9 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	serviceConfig *azdext.ServiceConfig,
 	agentVersionResponse *agent_api.AgentVersionObject,
 	protocols []agent_yaml.ProtocolVersionRecord,
+	activityBotName string,
+	activityBotResourceGroup string,
+	activityBotOwned bool,
 ) error {
 	if agentVersionResponse.Name == "" {
 		return fmt.Errorf("agent name is empty; cannot register environment variables")
@@ -2647,17 +3002,26 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	}
 
 	serviceKey := p.getServiceKey(serviceConfig.Name)
-	envVars := map[string]string{
-		fmt.Sprintf("AGENT_%s_NAME", serviceKey):    agentVersionResponse.Name,
-		fmt.Sprintf("AGENT_%s_VERSION", serviceKey): agentVersionResponse.Version,
+	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
+	identityClientID := ""
+	identityPrincipalID := ""
+	if agentVersionResponse.InstanceIdentity != nil {
+		identityClientID = strings.TrimSpace(agentVersionResponse.InstanceIdentity.ClientID)
+		identityPrincipalID = strings.TrimSpace(agentVersionResponse.InstanceIdentity.PrincipalID)
+	}
+	envVars := []azdext.SetEnvRequest{
+		{EnvName: p.env.Name, Key: versionKey, Value: ""},
+		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_NAME", serviceKey), Value: agentVersionResponse.Name},
+		{EnvName: p.env.Name, Key: envkey.AgentInstanceIdentityClientID(serviceConfig.Name), Value: identityClientID},
+		{EnvName: p.env.Name, Key: envkey.AgentInstanceIdentityPrincipalID(serviceConfig.Name), Value: identityPrincipalID},
 	}
 
 	// Set the base agent endpoint used for session management (not protocol-specific).
 	baseEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
 	projectEndpoint := strings.TrimRight(azdEnv["FOUNDRY_PROJECT_ENDPOINT"], "/")
-	envVars[baseEndpointKey] = fmt.Sprintf(
+	envVars = append(envVars, azdext.SetEnvRequest{EnvName: p.env.Name, Key: baseEndpointKey, Value: fmt.Sprintf(
 		"%s/agents/%s/versions/%s", projectEndpoint, agentVersionResponse.Name, agentVersionResponse.Version,
-	)
+	)})
 
 	endpoints := agentInvocationEndpoints(
 		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
@@ -2667,29 +3031,57 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	for _, ep := range endpoints {
 		suffix := strings.ToUpper(ep.Protocol)
 		key := fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, suffix)
-		envVars[key] = ep.URL
+		envVars = append(envVars, azdext.SetEnvRequest{EnvName: p.env.Name, Key: key, Value: ep.URL})
+	}
+	envVars = append(envVars,
+		azdext.SetEnvRequest{EnvName: p.env.Name, Key: envkey.AgentProjectEndpoint(serviceConfig.Name), Value: projectEndpoint},
+		azdext.SetEnvRequest{EnvName: p.env.Name, Key: versionKey, Value: agentVersionResponse.Version},
+	)
+	if activityBotName != "" {
+		envVars = append(envVars,
+			azdext.SetEnvRequest{
+				EnvName: p.env.Name,
+				Key:     envkey.AgentBotName(serviceConfig.Name),
+				Value:   activityBotName,
+			},
+			azdext.SetEnvRequest{
+				EnvName: p.env.Name,
+				Key:     envkey.AgentBotResourceGroup(serviceConfig.Name),
+				Value:   activityBotResourceGroup,
+			},
+			azdext.SetEnvRequest{
+				EnvName: p.env.Name,
+				Key:     envkey.AgentBotOwned(serviceConfig.Name),
+				Value:   strconv.FormatBool(activityBotOwned),
+			},
+		)
 	}
 
-	for key, value := range envVars {
-		_, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-			EnvName: p.env.Name,
-			Key:     key,
-			Value:   value,
-		})
+	for i := range envVars {
+		_, err := p.azdClient.Environment().SetValue(ctx, &envVars[i])
 		if err != nil {
-			return fmt.Errorf("failed to set environment variable %s: %w", key, err)
+			return fmt.Errorf("failed to set environment variable %s: %w", envVars[i].Key, err)
 		}
 	}
 
 	return nil
 }
 
-// resolveEnvironmentVariables resolves ${ENV_VAR} style references in value using azd environment variables.
-// Supports default values (e.g., "${VAR:-default}") and multiple expressions (e.g., "${VAR1}-${VAR2}").
-func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(value string, azdEnv map[string]string) string {
-	resolved, err := ExpandEnv(value, func(varName string) string {
-		return azdEnv[varName]
-	})
+// resolveEnvironmentVariables expands legacy inline templates.
+func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(
+	name string,
+	value string,
+	serviceEnvironment map[string]string,
+	azdEnv map[string]string,
+) string {
+	resolved, err := ResolveAgentEnvironmentVariable(
+		name,
+		value,
+		serviceEnvironment,
+		func(varName string) string {
+			return azdEnv[varName]
+		},
+	)
 	if err != nil {
 		// If resolution fails, return original value
 		return value

@@ -17,7 +17,7 @@ OpenTelemetry span name or event name.
 | `AgentTroubleshootEvent` | `agent.troubleshoot` | Agent troubleshooting event |
 | `ExtensionRunEvent` | `ext.run` | Extension execution event |
 | `ExtensionInstallEvent` | `ext.install` | Extension install/upgrade event |
-| `ExtensionUpgradeEvent` | `ext.upgrade` | Single extension upgrade attempt |
+| `ExtensionUpdateEvent` | `ext.update` | Single extension update attempt |
 | `ExtensionPromoteEvent` | `ext.promote` | Extension registry promotion (e.g., dev → main) |
 | `CopilotInitializeEvent` | `copilot.initialize` | Copilot initialization event |
 | `CopilotSessionEvent` | `copilot.session` | Copilot session lifecycle event |
@@ -38,6 +38,7 @@ OpenTelemetry span name or event name.
 | `ContainerRemoteBuildEvent` | `container.remotebuild` | Azure-side remote container build |
 | `ExeGraphRunEvent` | `exegraph.run` | Root span for executing an entire graph |
 | `ExeGraphStepEvent` | `exegraph.step` | Single step execution within the graph |
+| `AspireUnsupportedAppHostEvent` | `aspire.apphost.unsupported` | Detected an unsupported Aspire polyglot (non-C#) AppHost during app detection |
 
 ## Fields
 
@@ -157,6 +158,12 @@ not emitted by azd spans.
 | Builder image | `pack.builder.image` | SystemMetadata | FeatureInsight |
 | Builder tag | `pack.builder.tag` | SystemMetadata | FeatureInsight |
 
+### Aspire
+
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| AppHost language | `aspire.apphost.language` | SystemMetadata | FeatureInsight | Fixed enum (`typescript`/`python`/`go`/`java`/`rust`); not hashed; not a measurement. Emitted on `aspire.apphost.unsupported`. |
+
 ### MCP
 
 | Field | OTel Key | Classification | Purpose |
@@ -210,10 +217,10 @@ not emitted by azd spans.
 | Extension source kind | `extension.source.kind` | SystemMetadata | FeatureInsight | Allowed values: `none`, `registered`, `location` |
 | Extension source from | `extension.source.from` | SystemMetadata | FeatureInsight | Registry source before a promotion |
 | Extension source to | `extension.source.to` | SystemMetadata | FeatureInsight | Registry source after a promotion |
-| Upgrade duration | `extension.upgrade.duration_ms` | SystemMetadata | PerformanceAndHealth | **Measurement** — time in ms for one upgrade |
-| Upgrade outcome | `extension.upgrade.outcome` | SystemMetadata | FeatureInsight | Upgrade result status |
+| Update duration | `extension.update.duration_ms` | SystemMetadata | PerformanceAndHealth | **Measurement** — time in ms for one update |
+| Update outcome | `extension.update.outcome` | SystemMetadata | FeatureInsight | Update result status |
 | Dependency of | `extension.dependency_of` | SystemMetadata | FeatureInsight | Parent extension for a dependency upgrade |
-| Dependency upgrade count | `extension.dependency_upgrade_count` | SystemMetadata | FeatureInsight | Recursive dependency upgrade count |
+| Dependency update count | `extension.dependency_update_count` | SystemMetadata | FeatureInsight | Recursive dependency update count |
 
 ### Update
 
@@ -322,8 +329,8 @@ remain defined to support a possible future redesign without changing the teleme
 | Install failure count | `tool.install.failure_count` | SystemMetadata | FeatureInsight | **Measurement** — number of tools that failed in a batch |
 | Install failed IDs | `tool.install.failed_ids` | SystemMetadata | FeatureInsight | Comma-separated built-in tool IDs whose install/upgrade failed. Per-tool error messages are intentionally not captured |
 | Install duration | `tool.install.duration_ms` | SystemMetadata | FeatureInsight | **Measurement** — total install/upgrade duration in ms |
-| Upgrade from version | `tool.upgrade.from_version` | SystemMetadata | FeatureInsight | Prior version (single-target upgrades) |
-| Upgrade to version | `tool.upgrade.to_version` | SystemMetadata | FeatureInsight | New version after a successful upgrade |
+| Update from version | `tool.update.from_version` | SystemMetadata | FeatureInsight | Prior version (single-target updates) |
+| Update to version | `tool.update.to_version` | SystemMetadata | FeatureInsight | New version after a successful update |
 | Updates available | `tool.check.updates_available` | SystemMetadata | FeatureInsight | **Measurement** — number of installed tools with an available upgrade |
 
 ### Provision Validation

@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+# A minimal, healthy Foundry hosted-agent project.
+name: support-triage
+
+services:
+  ai-project:
+    host: azure.ai.project
+    deployments:
+      - name: gpt-4o-mini
+        model:
+          format: OpenAI
+          name: gpt-4o-mini
+          version: "2024-07-18"
+        sku:
+          name: GlobalStandard
+          capacity: 50
+
+  triage-agent:
+    host: azure.ai.agent
+    project: ./src/triage-agent
+    uses:
+      - ai-project
+    kind: hosted
+    name: triage-agent
+    description: Triages inbound support tickets and routes them to the right queue.
+    runtime:
+      stack: python
+      version: "3.12"
+    startupCommand: python main.py

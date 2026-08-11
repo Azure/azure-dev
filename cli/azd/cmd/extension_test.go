@@ -494,7 +494,7 @@ func TestDisplayUpgradeSummary(t *testing.T) {
 				{Status: extensions.UpgradeStatusUpgraded},
 			},
 			wantMsgs: []string{
-				"2 upgraded",
+				"2 updated",
 			},
 		},
 		{
@@ -506,7 +506,7 @@ func TestDisplayUpgradeSummary(t *testing.T) {
 				{Status: extensions.UpgradeStatusFailed},
 			},
 			wantMsgs: []string{
-				"1 upgraded",
+				"1 updated",
 				"1 skipped",
 				"1 promoted",
 				"1 failed",
@@ -519,7 +519,7 @@ func TestDisplayUpgradeSummary(t *testing.T) {
 			},
 			wantMsgs: []string{
 				"1 failed",
-				"azd extension upgrade <name>",
+				"azd extension update <name>",
 			},
 		},
 		{
@@ -590,7 +590,7 @@ func TestUpgradeActionResult(t *testing.T) {
 		require.NotNil(t, actionResult)
 		assert.Equal(
 			t,
-			"Extensions upgraded successfully",
+			"Extensions updated successfully",
 			actionResult.Message.Header,
 		)
 	})
@@ -609,7 +609,7 @@ func TestUpgradeActionResult(t *testing.T) {
 			require.NotNil(t, actionResult)
 			assert.Contains(
 				t, err.Error(),
-				"2 of 3 extensions failed to upgrade",
+				"2 of 3 extensions failed to update",
 			)
 			assert.Contains(
 				t, actionResult.Message.Header,
@@ -643,7 +643,7 @@ func TestUpgradeActionResult_EmptyResults(t *testing.T) {
 	require.NotNil(t, actionResult)
 	assert.Equal(
 		t,
-		"Extensions upgraded successfully",
+		"Extensions updated successfully",
 		actionResult.Message.Header,
 	)
 }
@@ -916,6 +916,7 @@ func Test_NewExtensionInstallAction(t *testing.T) {
 		mockinput.NewMockConsole(),
 		nil, // extensionManager
 		nil, // sourceManager
+		nil, // transport
 	)
 	require.NotNil(t, action)
 }
@@ -1210,11 +1211,37 @@ func Test_NewExtensionUninstallFlags_Constructor(t *testing.T) {
 
 func Test_NewExtensionUpgradeFlags_Constructor(t *testing.T) {
 	t.Parallel()
-	cmd := &cobra.Command{Use: "test"}
-	global := &internal.GlobalCommandOptions{}
-	flags := newExtensionUpgradeFlags(cmd, global)
-	require.NotNil(t, flags)
-	assert.Equal(t, global, flags.global)
+
+	tests := []struct {
+		name string
+		flag string
+	}{
+		{name: "canonical", flag: "--no-dependency-updates"},
+		{name: "legacy alias", flag: "--no-dependency-upgrades"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := &cobra.Command{Use: "test"}
+			global := &internal.GlobalCommandOptions{}
+			flags := newExtensionUpgradeFlags(cmd, global)
+
+			require.NoError(t, cmd.Flags().Parse([]string{tt.flag}))
+			assert.Equal(t, global, flags.global)
+			assert.True(t, flags.noDependencyUpdates)
+
+			canonical := cmd.Flags().Lookup("no-dependency-updates")
+			require.NotNil(t, canonical)
+			assert.False(t, canonical.Hidden)
+
+			legacy := cmd.Flags().Lookup("no-dependency-upgrades")
+			require.NotNil(t, legacy)
+			assert.True(t, legacy.Hidden)
+			assert.Empty(t, legacy.Deprecated)
+		})
+	}
 }
 
 func Test_NewExtensionSourceAddFlags_Constructor(t *testing.T) {
@@ -1385,6 +1412,14 @@ func Test_ExtensionSourceRemoveAction_TooManyArgs(t *testing.T) {
 	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, internal.ErrInvalidFlagCombination)
+}
+
+func TestExtensionSourceDisplayName(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "valid-source", extensionSourceDisplayName("valid-source"))
+	require.Equal(t, `"legacy\nsource"`, extensionSourceDisplayName("legacy\nsource"))
+	require.Equal(t, `"\x1b[31mspoof"`, extensionSourceDisplayName("\x1b[31mspoof"))
 }
 
 func Test_ExtensionSourceValidateAction_NoArgs(t *testing.T) {

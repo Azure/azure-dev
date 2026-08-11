@@ -25,3 +25,5 @@ services:
     kind: hosted
     name: assistant
     description: A simple assistant.
+    env:
+      LOG_LEVEL: info

@@ -173,6 +173,13 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: internal/appdetect/aspire_polyglot.go
+    words:
+      - pylock
+  - filename: internal/appdetect/dotnet_apphost.go
+    words:
+      - buildpack
+      - upvote
   - filename: cmd/mcp.go
     words:
       - internalcmd

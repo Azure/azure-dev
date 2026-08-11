@@ -24,6 +24,10 @@ import (
 )
 
 const (
+	// OwnershipTag marks an Azure Bot as created and managed by azd.
+	OwnershipTag = "azd-created"
+	// OwnershipTagValue marks a resource as created and managed by azd.
+	OwnershipTagValue = "true"
 	// botLocation is the ARM location for Azure Bot resources. Bots are global
 	// and must be created at "global".
 	botLocation = "global"
@@ -50,6 +54,10 @@ const (
 // botsAPI and channelsAPI are the narrow slices of the armbotservice clients this
 // package uses, extracted as interfaces so tests can substitute fakes.
 type botsAPI interface {
+	Get(
+		ctx context.Context, resourceGroupName, resourceName string,
+		options *armbotservice.BotsClientGetOptions,
+	) (armbotservice.BotsClientGetResponse, error)
 	Create(
 		ctx context.Context, resourceGroupName, resourceName string,
 		parameters armbotservice.Bot, options *armbotservice.BotsClientCreateOptions,
@@ -74,6 +82,7 @@ type channelsAPI interface {
 type Client struct {
 	bots     botsAPI
 	channels channelsAPI
+	listBots func(context.Context) ([]*armbotservice.Bot, error)
 }
 
 // NewClient builds a Client backed by the armbotservice SDK for a subscription.
@@ -88,7 +97,22 @@ func NewClient(
 	if err != nil {
 		return nil, fmt.Errorf("botservice: creating channels client: %w", err)
 	}
-	return &Client{bots: bots, channels: channels}, nil
+	return &Client{
+		bots:     bots,
+		channels: channels,
+		listBots: func(ctx context.Context) ([]*armbotservice.Bot, error) {
+			var result []*armbotservice.Bot
+			pager := bots.NewListPager(nil)
+			for pager.More() {
+				page, err := pager.NextPage(ctx)
+				if err != nil {
+					return nil, err
+				}
+				result = append(result, page.Value...)
+			}
+			return result, nil
+		},
+	}, nil
 }
 
 // BotName returns a deterministic Azure Bot resource name for an agent. Because
@@ -144,6 +168,8 @@ type BotConfig struct {
 	MessagingEndpoint string
 	// DisplayName is optional; BotName is used when empty.
 	DisplayName string
+	// Tags are preserved when updating an existing Bot and carry ownership when azd creates one.
+	Tags map[string]*string
 }
 
 func (cfg BotConfig) validate() error {
@@ -176,6 +202,74 @@ func (cfg BotConfig) displayName() string {
 	return cfg.BotName
 }
 
+// BotReference identifies an existing Azure Bot bound to an agent identity.
+type BotReference struct {
+	ResourceGroup string
+	Name          string
+}
+
+// GetBot returns the Bot at the exact resource group and name, or nil when it does not exist.
+func (c *Client) GetBot(ctx context.Context, resourceGroup, name string) (*armbotservice.Bot, error) {
+	response, err := c.bots.Get(ctx, resourceGroup, name, nil)
+	if err != nil {
+		if isNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("botservice: getting bot %q: %w", name, err)
+	}
+	return &response.Bot, nil
+}
+
+// IsOwned reports whether the Bot is marked as created and managed by azd.
+func (c *Client) IsOwned(ctx context.Context, resourceGroup, name string) (bool, error) {
+	bot, err := c.GetBot(ctx, resourceGroup, name)
+	if err != nil || bot == nil {
+		return false, err
+	}
+	value, ok := bot.Tags[OwnershipTag]
+	return ok && value != nil && strings.EqualFold(*value, OwnershipTagValue), nil
+}
+
+// FindByMsaAppID returns the unique accessible Bot whose MsaAppID matches the
+// agent instance identity. A nil result means no matching Bot was found.
+func (c *Client) FindByMsaAppID(ctx context.Context, msaAppID string) (*BotReference, error) {
+	if strings.TrimSpace(msaAppID) == "" || c.listBots == nil {
+		return nil, nil
+	}
+
+	var matches []BotReference
+	collect := func(response []*armbotservice.Bot) {
+		for _, bot := range response {
+			if bot == nil || bot.Name == nil || bot.ID == nil || bot.Properties == nil || bot.Properties.MsaAppID == nil ||
+				!strings.EqualFold(strings.TrimSpace(*bot.Properties.MsaAppID), strings.TrimSpace(msaAppID)) {
+				continue
+			}
+			resourceID, err := arm.ParseResourceID(*bot.ID)
+			if err != nil || resourceID.ResourceGroupName == "" {
+				continue
+			}
+			matches = append(matches, BotReference{
+				ResourceGroup: resourceID.ResourceGroupName,
+				Name:          *bot.Name,
+			})
+		}
+	}
+
+	bots, err := c.listBots(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("botservice: listing bots: %w", err)
+	}
+	collect(bots)
+
+	if len(matches) == 0 {
+		return nil, nil
+	}
+	if len(matches) > 1 {
+		return nil, fmt.Errorf("botservice: multiple Azure Bots are bound to MsaAppID %q", msaAppID)
+	}
+	return &matches[0], nil
+}
+
 // EnsureBot idempotently creates (or updates) the single-tenant Azure Bot bound
 // to MsaAppID and ensures the Microsoft Teams channel is enabled. The bot Create
 // call is a PUT (create-or-update), so re-running after every deploy is a no-op
@@ -195,6 +289,7 @@ func (c *Client) EnsureBot(ctx context.Context, cfg BotConfig) error {
 		Location: new(botLocation),
 		Kind:     to.Ptr(armbotservice.KindAzurebot),
 		SKU:      &armbotservice.SKU{Name: to.Ptr(armbotservice.SKUNameF0)},
+		Tags:     cfg.Tags,
 		Properties: &armbotservice.BotProperties{
 			DisplayName:    new(cfg.displayName()),
 			Endpoint:       new(cfg.MessagingEndpoint),

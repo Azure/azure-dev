@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.3 (2026-08-06)
+
+### Other Changes
+
+- [[#9416]](https://github.com/Azure/azure-dev/pull/9416) Upgrade `google.golang.org/grpc` to v1.82.1 to address security advisories.
+
 ## 1.0.0-beta.2 (2026-07-09)
 
 ### Bugs Fixed

@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,50 +20,51 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-type containerSettingsProjectServer struct {
-	azdext.UnimplementedProjectServiceServer
-
-	mu                 sync.Mutex
-	addServiceCalls    int
-	setServiceRequests []*azdext.SetServiceConfigValueRequest
-}
-
-func (s *containerSettingsProjectServer) AddService(
-	_ context.Context,
-	_ *azdext.AddServiceRequest,
-) (*azdext.EmptyResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.addServiceCalls++
-	return &azdext.EmptyResponse{}, nil
-}
-
-func (s *containerSettingsProjectServer) SetServiceConfigValue(
-	_ context.Context,
-	req *azdext.SetServiceConfigValueRequest,
-) (*azdext.EmptyResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.setServiceRequests = append(s.setServiceRequests, req)
-	return &azdext.EmptyResponse{}, nil
-}
-
-func TestPrepareContainerSettings_UsesTargetedConfigUpdate(t *testing.T) {
+func TestPrepareContainerSettings_AppliesSettingsInMemory(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		legacy   bool
-		wantPath string
+		name       string
+		legacy     bool
+		resources  map[string]any
+		wantCPU    string
+		wantMemory string
 	}{
 		{
-			name:     "inline service properties",
-			wantPath: "container",
+			name: "inline explicit resources",
+			resources: map[string]any{
+				"cpu":    "0.25",
+				"memory": "0.5Gi",
+			},
+			wantCPU:    "0.25",
+			wantMemory: "0.5Gi",
 		},
 		{
-			name:     "legacy config properties",
-			legacy:   true,
-			wantPath: "config.container",
+			name:   "legacy explicit resources",
+			legacy: true,
+			resources: map[string]any{
+				"cpu":    "0.25",
+				"memory": "0.5Gi",
+			},
+			wantCPU:    "0.25",
+			wantMemory: "0.5Gi",
+		},
+		{
+			name: "inline missing memory",
+			resources: map[string]any{
+				"cpu": "1",
+			},
+			wantCPU:    "1",
+			wantMemory: project.DefaultMemory,
+		},
+		{
+			name:   "legacy missing memory",
+			legacy: true,
+			resources: map[string]any{
+				"cpu": "1",
+			},
+			wantCPU:    "1",
+			wantMemory: project.DefaultMemory,
 		},
 	}
 
@@ -77,9 +77,7 @@ func TestPrepareContainerSettings_UsesTargetedConfigUpdate(t *testing.T) {
 				"name":        "my-chat-agent",
 				"customField": "preserved",
 				"container": map[string]any{
-					"resources": map[string]any{
-						"cpu": "1",
-					},
+					"resources": tt.resources,
 				},
 			})
 			require.NoError(t, err)
@@ -95,28 +93,14 @@ func TestPrepareContainerSettings_UsesTargetedConfigUpdate(t *testing.T) {
 				svc.AdditionalProperties = props
 			}
 
-			server := &containerSettingsProjectServer{}
-			client := newProjectRecorderClient(t, server)
+			require.NoError(t, prepareContainerSettings(svc, t.TempDir()))
 
-			require.NoError(t, prepareContainerSettings(t.Context(), client, svc, t.TempDir()))
-
-			server.mu.Lock()
-			defer server.mu.Unlock()
-
-			require.Zero(t, server.addServiceCalls,
-				"full service replacement would drop fields that are not modeled by the extension")
-			require.Len(t, server.setServiceRequests, 1)
-
-			req := server.setServiceRequests[0]
-			require.Equal(t, "agent", req.ServiceName)
-			require.Equal(t, tt.wantPath, req.Path)
-			require.Equal(t, map[string]any{
-				"resources": map[string]any{
-					"cpu":    "1",
-					"memory": project.DefaultMemory,
-				},
-			}, req.Value.AsInterface())
-
+			cfg, err := project.LoadServiceTargetAgentConfig(svc)
+			require.NoError(t, err)
+			require.NotNil(t, cfg.Container)
+			require.NotNil(t, cfg.Container.Resources)
+			require.Equal(t, tt.wantCPU, cfg.Container.Resources.Cpu)
+			require.Equal(t, tt.wantMemory, cfg.Container.Resources.Memory)
 			require.Equal(t, "myregistry.azurecr.io/my-agent:${MY_TAG}", svc.Image)
 			require.Equal(t, "preserved",
 				project.ServiceConfigProps(svc).GetFields()["customField"].GetStringValue())
@@ -235,7 +219,7 @@ func TestIsHostedAgentServiceRejectsTraversal(t *testing.T) {
 	}
 }
 
-func TestPrepareContainerSettings_DoesNotPersistResolvedFileRef(
+func TestPrepareContainerSettings_ResolvesFileRefInMemory(
 	t *testing.T,
 ) {
 	t.Parallel()
@@ -263,10 +247,7 @@ func TestPrepareContainerSettings_DoesNotPersistResolvedFileRef(
 		RelativePath:         "src/echo",
 		AdditionalProperties: props,
 	}
-	server := &containerSettingsProjectServer{}
-	client := newProjectRecorderClient(t, server)
-
-	err = prepareContainerSettings(t.Context(), client, svc, root)
+	err = prepareContainerSettings(svc, root)
 
 	require.NoError(t, err)
 	require.Equal(t, "src/echo", svc.GetRelativePath())
@@ -276,7 +257,6 @@ func TestPrepareContainerSettings_DoesNotPersistResolvedFileRef(
 	require.NotNil(t, cfg.Container.Resources)
 	require.Equal(t, "2", cfg.Container.Resources.Cpu)
 	require.Equal(t, "4Gi", cfg.Container.Resources.Memory)
-	require.Empty(t, server.setServiceRequests)
 }
 
 func TestPrepareContainerSettings_PreservesNestedFileRef(t *testing.T) {
@@ -295,9 +275,7 @@ func TestPrepareContainerSettings_PreservesNestedFileRef(t *testing.T) {
 		Host:                 AiAgentHost,
 		AdditionalProperties: props,
 	}
-	client := newProjectRecorderClient(t, &containerSettingsProjectServer{})
-
-	err = prepareContainerSettings(t.Context(), client, svc, t.TempDir())
+	err = prepareContainerSettings(svc, t.TempDir())
 
 	require.NoError(t, err)
 	deployments, ok := svc.GetAdditionalProperties().
@@ -335,9 +313,7 @@ func TestPrepareContainerSettings_NormalizesInlineEnvironment(t *testing.T) {
 		Host:                 AiAgentHost,
 		AdditionalProperties: props,
 	}
-	client := newProjectRecorderClient(t, &containerSettingsProjectServer{})
-
-	err = prepareContainerSettings(t.Context(), client, svc, t.TempDir())
+	err = prepareContainerSettings(svc, t.TempDir())
 
 	require.NoError(t, err)
 	require.Equal(
@@ -352,15 +328,16 @@ func TestPrepareContainerSettings_NormalizesInlineEnvironment(t *testing.T) {
 func TestPrepareContainerSettings_WithoutProperties(t *testing.T) {
 	t.Parallel()
 
-	client := newProjectRecorderClient(t, &containerSettingsProjectServer{})
-	err := prepareContainerSettings(
-		t.Context(),
-		client,
-		&azdext.ServiceConfig{Name: "echo", Host: AiAgentHost},
-		t.TempDir(),
-	)
+	svc := &azdext.ServiceConfig{Name: "echo", Host: AiAgentHost}
+	err := prepareContainerSettings(svc, t.TempDir())
 
 	require.NoError(t, err)
+	cfg, err := project.LoadServiceTargetAgentConfig(svc)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Container)
+	require.NotNil(t, cfg.Container.Resources)
+	require.Equal(t, project.DefaultCpu, cfg.Container.Resources.Cpu)
+	require.Equal(t, project.DefaultMemory, cfg.Container.Resources.Memory)
 }
 
 func TestKindEnvUpdateRejectsTraversal(t *testing.T) {

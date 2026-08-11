@@ -294,7 +294,23 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		Trailing:    true,
 	})
 
+	if state.EnvironmentName != "" {
+		for i := range out {
+			out[i].Command = qualifyCommandEnvironment(out[i].Command, state.EnvironmentName)
+		}
+	}
+
 	return out
+}
+
+// qualifyCommandEnvironment targets an azd command at an explicitly selected
+// environment. Non-azd guidance (for example cd/edit/see commands) is returned
+// unchanged.
+func qualifyCommandEnvironment(command, environmentName string) string {
+	if environmentName == "" || !strings.HasPrefix(command, "azd ") {
+		return command
+	}
+	return fmt.Sprintf("azd --environment %q %s", environmentName, strings.TrimPrefix(command, "azd "))
 }
 
 // runFollowUpDescription picks the description for the

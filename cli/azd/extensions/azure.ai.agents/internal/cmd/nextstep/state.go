@@ -152,6 +152,10 @@ func (s *clientSource) EnvValue(ctx context.Context, envName, key string) (strin
 type Option func(*config)
 
 type config struct {
+	// environmentName, when non-empty, selects the environment to inspect
+	// without changing azd's active environment.
+	environmentName string
+
 	// openAPIAgent and openAPISuffix together enable a cache-only OpenAPI
 	// payload lookup. The zero value (empty strings) disables the probe.
 	openAPIAgent  string
@@ -169,6 +173,12 @@ type config struct {
 	// the folder created during init (e.g., "my-agent"). Empty when
 	// init did not create a new directory.
 	createdFolderDisplay string
+}
+
+// WithEnvironment selects the azd environment used to assemble next-step
+// state. It does not change the project's active environment.
+func WithEnvironment(name string) Option {
+	return func(c *config) { c.environmentName = name }
 }
 
 // WithOpenAPIProbe enables a cache-only OpenAPI lookup for (agentName, suffix).
@@ -241,11 +251,16 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 
 	state := &State{}
 	state.CreatedFolderDisplay = cfg.createdFolderDisplay
+	state.EnvironmentName = cfg.environmentName
 	var errs []error
 
-	envName, err := src.CurrentEnvName(ctx)
-	if err != nil {
-		errs = append(errs, fmt.Errorf("read current environment: %w", err))
+	envName := cfg.environmentName
+	if envName == "" {
+		var err error
+		envName, err = src.CurrentEnvName(ctx)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("read current environment: %w", err))
+		}
 	}
 
 	if envName != "" {

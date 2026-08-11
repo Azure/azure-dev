@@ -16,6 +16,121 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestDeleteMarkerCleanup(t *testing.T) {
+	t.Parallel()
+
+	t.Run("whole agent clears readiness and endpoint markers", func(t *testing.T) {
+		envServer := &testEnvironmentServiceServer{
+			current: &azdext.Environment{Name: "dev"},
+			values: map[string]map[string]string{
+				"dev": {"AGENT_MY_AGENT_PROJECT_ENDPOINT": "https://account.test/projects/current"},
+			},
+		}
+		client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+		action := &DeleteAction{}
+		action.cleanupEnvVars(t.Context(), client, "my-agent", "https://account.test/projects/current")
+		for _, key := range []string{
+			"AGENT_MY_AGENT_NAME",
+			"AGENT_MY_AGENT_VERSION",
+			"AGENT_MY_AGENT_ENDPOINT",
+			"AGENT_MY_AGENT_PROJECT_ENDPOINT",
+			"AGENT_MY_AGENT_RESPONSES_ENDPOINT",
+			"AGENT_MY_AGENT_INVOCATIONS_ENDPOINT",
+			"AGENT_MY_AGENT_INVOCATIONS_WS_ENDPOINT",
+		} {
+			got, ok := envServer.values["dev"][key]
+			require.True(t, ok, "%s was not cleared", key)
+			require.Equal(t, "", got, key)
+		}
+	})
+
+	t.Run("whole agent markers are preserved for another project", func(t *testing.T) {
+		envServer := &testEnvironmentServiceServer{
+			current: &azdext.Environment{Name: "dev"},
+			values: map[string]map[string]string{
+				"dev": {
+					"AGENT_MY_AGENT_VERSION":          "2",
+					"AGENT_MY_AGENT_PROJECT_ENDPOINT": "https://account.test/projects/other",
+				},
+			},
+		}
+		client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+		action := &DeleteAction{}
+		action.cleanupEnvVars(t.Context(), client, "my-agent", "https://account.test/projects/current")
+		require.Equal(t, "2", envServer.values["dev"]["AGENT_MY_AGENT_VERSION"])
+	})
+
+	t.Run("version marker clears only when matching", func(t *testing.T) {
+		envServer := &testEnvironmentServiceServer{
+			current: &azdext.Environment{Name: "dev"},
+			values: map[string]map[string]string{
+				"dev": {
+					"AGENT_MY_AGENT_VERSION":          "2",
+					"AGENT_MY_AGENT_PROJECT_ENDPOINT": "https://account.test/api/projects/current",
+				},
+			},
+		}
+		client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+		action := &DeleteAction{}
+		action.clearDeletedVersionMarker(
+			t.Context(), client, "my-agent", "1", "https://account.test/projects/current",
+		)
+		require.Equal(t, "2", envServer.values["dev"]["AGENT_MY_AGENT_VERSION"])
+		action.clearDeletedVersionMarker(
+			t.Context(), client, "my-agent", "2", "https://account.test/projects/current",
+		)
+		for _, key := range []string{
+			"AGENT_MY_AGENT_VERSION",
+			"AGENT_MY_AGENT_ENDPOINT",
+			"AGENT_MY_AGENT_RESPONSES_ENDPOINT",
+			"AGENT_MY_AGENT_INVOCATIONS_ENDPOINT",
+			"AGENT_MY_AGENT_INVOCATIONS_WS_ENDPOINT",
+		} {
+			got, ok := envServer.values["dev"][key]
+			require.True(t, ok, "%s was not cleared", key)
+			require.Equal(t, "", got, key)
+		}
+	})
+
+	t.Run("version marker uses legacy agent endpoint scope", func(t *testing.T) {
+		envServer := &testEnvironmentServiceServer{
+			current: &azdext.Environment{Name: "dev"},
+			values: map[string]map[string]string{
+				"dev": {
+					"AGENT_MY_AGENT_VERSION":  "2",
+					"AGENT_MY_AGENT_ENDPOINT": "https://account.test/api/projects/current/agents/my-agent/versions/2",
+				},
+			},
+		}
+		client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+		action := &DeleteAction{}
+		action.clearDeletedVersionMarker(
+			t.Context(), client, "my-agent", "2", "https://account.test/projects/current",
+		)
+		got, ok := envServer.values["dev"]["AGENT_MY_AGENT_VERSION"]
+		require.True(t, ok)
+		require.Empty(t, got)
+	})
+
+	t.Run("version marker is preserved for another project", func(t *testing.T) {
+		envServer := &testEnvironmentServiceServer{
+			current: &azdext.Environment{Name: "dev"},
+			values: map[string]map[string]string{
+				"dev": {
+					"AGENT_MY_AGENT_VERSION":          "2",
+					"AGENT_MY_AGENT_PROJECT_ENDPOINT": "https://account.test/projects/other",
+				},
+			},
+		}
+		client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+		action := &DeleteAction{}
+		action.clearDeletedVersionMarker(
+			t.Context(), client, "my-agent", "2", "https://account.test/projects/current",
+		)
+		require.Equal(t, "2", envServer.values["dev"]["AGENT_MY_AGENT_VERSION"])
+	})
+}
+
 func TestDeleteCommand_AcceptsPositionalArg(t *testing.T) {
 	cmd := newDeleteCommand(nil)
 	err := cmd.Args(cmd, []string{"my-agent"})

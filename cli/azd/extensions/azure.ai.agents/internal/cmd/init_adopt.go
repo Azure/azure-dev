@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -34,51 +35,111 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// foundryServiceHosts are the azure.yaml service `host` values that identify a
-// unified Microsoft Foundry project manifest. The legacy `microsoft.foundry`
-// host is included for backward compatibility with older non-split files.
-var foundryServiceHosts = map[string]struct{}{
-	"azure.ai.agent":      {},
-	"azure.ai.project":    {},
-	"azure.ai.connection": {},
-	"azure.ai.toolbox":    {},
-	"microsoft.foundry":   {},
+type azureYamlManifestInfo struct {
+	hasServices       bool
+	hasAgentService   bool
+	hasUnresolvedRefs bool
 }
 
-// looksLikeFoundryAzureYaml reports whether the given YAML content is a unified
-// Foundry `azure.yaml` project manifest rather than an agent manifest.
+// inspectAzureYaml identifies unified manifests and Agent services.
 //
-// It returns true when the document has a top-level `services:` map in which at
-// least one service declares a Foundry `host:`. Agent manifests have a top-level
-// `template:` and no `services:`, so they never match. This lets `azd ai agent
-// init -m <pointer>` route a unified `azure.yaml` to the adoption path and an
-// agent manifest to the legacy generate path unambiguously.
-func looksLikeFoundryAzureYaml(content []byte) bool {
+// Local references are resolved against projectRoot. Remote references
+// wait for the sample directory download.
+func inspectAzureYaml(content []byte, projectRoot string) (azureYamlManifestInfo, error) {
+	var info azureYamlManifestInfo
 	var top map[string]any
 	if err := yaml.Unmarshal(content, &top); err != nil {
-		return false
+		return info, nil
 	}
 
 	services, ok := top["services"].(map[string]any)
 	if !ok {
-		return false
+		return info, nil
 	}
+	info.hasServices = true
 
-	for _, svc := range services {
+	for serviceName, svc := range services {
 		svcMap, ok := svc.(map[string]any)
 		if !ok {
 			continue
 		}
-		host, ok := svcMap["host"].(string)
-		if !ok {
-			continue
+
+		if hasAzureYamlFileRef(svcMap) {
+			if projectRoot == "" {
+				info.hasUnresolvedRefs = true
+			} else {
+				resolved, err := foundry.ResolveFileRefs(svcMap, projectRoot)
+				if err != nil {
+					return info, fmt.Errorf(
+						"resolving $ref includes for service %q: %w",
+						serviceName,
+						err,
+					)
+				}
+				svcMap = resolved
+			}
 		}
-		if _, isFoundry := foundryServiceHosts[host]; isFoundry {
+
+		host, _ := svcMap["host"].(string)
+		if host == AiAgentHost {
+			info.hasAgentService = true
+		}
+	}
+
+	return info, nil
+}
+
+func hasAzureYamlFileRef(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		if _, ok := typed["$ref"]; ok {
+			return true
+		}
+		for _, child := range typed {
+			if hasAzureYamlFileRef(child) {
+				return true
+			}
+		}
+	case []any:
+		if slices.ContainsFunc(typed, hasAzureYamlFileRef) {
 			return true
 		}
 	}
 
 	return false
+}
+
+func missingAgentServiceError(manifestPointer string) error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidManifestPointer,
+		fmt.Sprintf(
+			"manifest %q is a unified azure.yaml but does not declare an agent service",
+			manifestPointer,
+		),
+		fmt.Sprintf(
+			"add a service with host: %s, or pass an agent manifest",
+			AiAgentHost,
+		),
+	)
+}
+
+func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
+	manifestPath := filepath.Join(stagingDir, "azure.yaml")
+	//nolint:gosec // stagingDir is created or selected by the init flow
+	content, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("reading staged azure.yaml: %w", err)
+	}
+
+	info, err := inspectAzureYaml(content, stagingDir)
+	if err != nil {
+		return err
+	}
+	if !info.hasServices || !info.hasAgentService {
+		return missingAgentServiceError(manifestPointer)
+	}
+
+	return nil
 }
 
 // foundryProjectName returns the top-level `name:` of a unified azure.yaml, used
@@ -935,6 +996,10 @@ func runInitFromAzureYaml(
 		return err
 	}
 	defer cleanup()
+
+	if err := validateStagedAzureYaml(stagingDir, flags.manifestPointer); err != nil {
+		return err
+	}
 
 	fmt.Println(output.WithGrayFormat("Adopting the sample's azure.yaml as your project manifest..."))
 

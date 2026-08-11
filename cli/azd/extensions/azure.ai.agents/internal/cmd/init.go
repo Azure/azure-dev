@@ -35,6 +35,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -80,7 +81,8 @@ type initFlags struct {
 	// noPrompt is resolved from the extension context (--no-prompt / AZD_NO_PROMPT)
 	// and is not registered as a CLI flag on the init command itself.
 	noPrompt bool
-	// infra selects the IaC flavor to eject from azure.yaml into ./infra/.
+	// infra selects the IaC flavor to eject from azure.yaml. Existing projects
+	// may receive a dedicated infra/foundry provisioning layer.
 	// Empty means the flag was not passed (bicepless default, no files). A bare
 	// `--infra` resolves to "bicep" via the flag's NoOptDefVal; `--infra=terraform`
 	// and `--infra=bicep` are explicit. The eject runs after a fresh init or
@@ -186,7 +188,7 @@ func checkAiModelServiceAvailable(ctx context.Context, azdClient *azdext.AzdClie
 		return exterrors.Compatibility(
 			exterrors.CodeIncompatibleAzdVersion,
 			"this version of the azure.ai.agents extension is incompatible with your installed version of azd.",
-			"upgrade azd to the latest version (https://aka.ms/azd/upgrade) and retry",
+			"update azd to the latest version (https://aka.ms/azd/upgrade) and retry",
 		)
 	}
 
@@ -1047,6 +1049,51 @@ func runInitFromManifest(
 	return action.Run(ctx)
 }
 
+// agentDefiningFlagsSet reports whether the caller passed any flag that
+// describes the agent to set up.
+//
+// Reusing an already-configured project is only safe when the command was not
+// told what to build. Each of these flags feeds a value init would otherwise
+// prompt for, so reusing while one is set would silently discard it — notably
+// under --no-prompt, where reuse is unconditional.
+//
+// srcBlocksReuse must come from cmd.Flags().Changed("src") for project reuse,
+// not from flags.src:
+// applyPositionalArg folds a positional directory into flags.src, so testing
+// the field would make `azd ai agent init .` — a documented form — skip reuse
+// and re-prompt, which is the very behavior issue #9154 reports.
+// Bare agent.yaml reuse passes false because it consumes --src as the directory
+// containing the definition instead of ignoring it.
+//
+// --env and --infra are deliberately absent: they describe the environment and
+// the IaC output rather than the agent, and both stay meaningful on a reuse run.
+func agentDefiningFlagsSet(flags *initFlags, srcBlocksReuse bool) bool {
+	return flags.agentName != "" ||
+		flags.deployMode != "" ||
+		flags.runtime != "" ||
+		flags.entryPoint != "" ||
+		flags.depResolution != "" ||
+		flags.model != "" ||
+		flags.modelDeployment != "" ||
+		flags.projectResourceId != "" ||
+		flags.image != "" ||
+		srcBlocksReuse ||
+		len(flags.protocols) > 0
+}
+
+// canReuseExistingAgentConfiguration reports whether init may reuse either a
+// project-owned definition or a bare agent.yaml without discarding caller
+// intent.
+func canReuseExistingAgentConfiguration(
+	flags *initFlags,
+	manifestDetectedButDeclined bool,
+	srcBlocksReuse bool,
+) bool {
+	return flags.manifestPointer == "" &&
+		!manifestDetectedButDeclined &&
+		!agentDefiningFlagsSet(flags, srcBlocksReuse)
+}
+
 func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &initFlags{}
 	extCtx = ensureExtensionContext(extCtx)
@@ -1057,10 +1104,10 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Initialize a new AI agent project.
 
 When -m points at a sample's unified azure.yaml (a project manifest that
-declares services with host: azure.ai.project / azure.ai.agent / ...), that
-azure.yaml is adopted as the project manifest and its referenced files are
-placed at the project root. When -m points at an agent manifest instead, the
-project's azure.yaml is generated from it.
+declares a service with host: azure.ai.agent), that azure.yaml is adopted as
+the project manifest and its referenced files are placed at the project root.
+When -m points at an agent manifest instead, the project's azure.yaml is
+generated from it.
 
 The agent name written to agent.yaml is the Foundry agent identity. Foundry
 agents are unique by name within a project, so deploying with an existing name
@@ -1124,23 +1171,28 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				infraProvider = p
 			}
 
-			// `--infra` within an existing azd agent project is a standalone
-			// eject: synthesize infra (Bicep or Terraform) from
+			// `--infra` inside a project that already declares a Foundry service
+			// is a standalone eject: synthesize infra (Bicep or Terraform) from
 			// the existing azure.yaml, write ./infra/, and return without
 			// prompting.
+			//
+			// Any other project — including one azd already manages that has no
+			// Foundry service yet — has nothing to eject, so `--infra` falls
+			// through to the normal init flow and ejects afterwards via
+			// ejectInfraAfterInit. See resolveInfraGate.
 			if infraProvider != "" {
-				projectRoot, projectRootErr := azdext.GetProjectDir()
-				if projectRootErr != nil && !errors.Is(projectRootErr, azdext.ErrProjectNotFound) {
-					return fmt.Errorf("resolve azd project directory: %w", projectRootErr)
+				gate, gateErr := resolveInfraGate(infraProvider)
+				if gateErr != nil {
+					return gateErr
 				}
-				if projectRootErr == nil {
-					// Reject inputs the eject path would silently ignore (a
-					// positional arg, -m, or --src) instead of pretending they
-					// were honored.
-					if err := validateStandaloneEjectArgs(args, flags); err != nil {
+				if gate.standaloneEject {
+					// Reject init inputs the eject path would silently ignore
+					// instead of pretending they were honored. They stay valid
+					// on the init fall-through, where they do drive the flow.
+					if err := validateStandaloneEjectArgs(cmd, args); err != nil {
 						return err
 					}
-					return ejectInfra(projectRoot, infraProvider)
+					return ejectInfra(gate.projectRoot, infraProvider)
 				}
 			}
 
@@ -1253,10 +1305,73 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			}
 
+			// When the project's own manifest already declares agent
+			// service(s), the values init would prompt for (agent name,
+			// protocols, deploy mode) are already recorded there. Offer to
+			// reuse that configuration instead of re-asking (issue #9154).
+			//
+			// This check runs before the bare agent.yaml scan below. A configured
+			// service may legitimately load its definition from agent.yaml; in
+			// that case project reuse must win so init does not add or replace a
+			// service that azure.yaml already owns.
+			//
+			// Any flag that describes the agent to set up states intent to
+			// configure that agent, so it opts out of reuse and falls through
+			// to the normal flow. Without that, a scripted
+			// `--no-prompt --deploy-mode code --runtime ...` in a repo that
+			// already declares an agent would silently no-op instead of
+			// honoring the flags the caller passed.
+			if canReuseExistingAgentConfiguration(
+				flags,
+				manifestDetectedButDeclined,
+				cmd.Flags().Changed("src"),
+			) {
+				detection := detectProjectAgentServices(ctx, azdClient)
+				if len(detection.services) > 0 &&
+					!positionalSourceOptsOutOfReuse(
+						flags.src,
+						detection.projectRoot,
+						detection.services,
+					) {
+					useExisting := flags.noPrompt
+					if !flags.noPrompt {
+						confirmResp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+							Options: &azdext.ConfirmOptions{
+								Message: fmt.Sprintf(
+									"This project already configures %s. Use it?",
+									describeProjectAgentServices(detection.services),
+								),
+								DefaultValue: new(true),
+							},
+						})
+						if promptErr != nil {
+							if exterrors.IsCancellation(promptErr) {
+								return exterrors.Cancelled("initialization was cancelled")
+							}
+							return fmt.Errorf("prompting for project agent reuse: %w", promptErr)
+						}
+						useExisting = *confirmResp.Value
+					}
+					if useExisting {
+						if err := runReuseProjectAgentServices(
+							ctx, flags, azdClient, detection.services,
+						); err != nil {
+							return err
+						}
+						return ejectInfraAfterInit(infraProvider)
+					}
+				}
+			}
+
 			// When no manifest was detected, look for a bare agent.yaml definition
 			// to reuse (issue #7268). Skips the init-mode prompt and from-code
-			// scaffolding. Bypassed when the user already declined a manifest above.
-			if flags.manifestPointer == "" && !manifestDetectedButDeclined {
+			// scaffolding. Bypassed when the user already declined a manifest
+			// above or supplied agent-defining flags that reuse would ignore.
+			if canReuseExistingAgentConfiguration(
+				flags,
+				manifestDetectedButDeclined,
+				false,
+			) {
 				checkDir := flags.src
 				if checkDir == "" {
 					checkDir = "."
@@ -1309,16 +1424,38 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				// (generate the project). For private GitHub URLs, the detector
 				// falls back to the authenticated gh CLI download path before
 				// deciding whether this is a unified azure.yaml. See #8798.
+				manifestRoot := ""
+				if isLocalFilePath(flags.manifestPointer) {
+					manifestRoot = filepath.Dir(flags.manifestPointer)
+				}
 				if content, ok := readManifestContentForInitDetection(
 					ctx, azdClient, flags.manifestPointer, httpClient,
-				); ok && looksLikeFoundryAzureYaml(content) {
-					if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content); err != nil {
-						if exterrors.IsCancellation(err) {
-							return exterrors.Cancelled("initialization was cancelled")
-						}
+				); ok {
+					manifestInfo, err := inspectAzureYaml(content, manifestRoot)
+					if err != nil {
 						return err
 					}
-					return ejectInfraAfterInit(infraProvider)
+					if manifestInfo.hasServices {
+						if manifestInfo.hasAgentService ||
+							manifestInfo.hasUnresolvedRefs {
+							if err := runInitFromAzureYaml(
+								ctx,
+								flags,
+								azdClient,
+								httpClient,
+								content,
+							); err != nil {
+								if exterrors.IsCancellation(err) {
+									return exterrors.Cancelled(
+										"initialization was cancelled",
+									)
+								}
+								return err
+							}
+							return ejectInfraAfterInit(infraProvider)
+						}
+						return missingAgentServiceError(flags.manifestPointer)
+					}
 				}
 
 				// Resolve the agent name BEFORE creating the project folder
@@ -1579,10 +1716,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"Required together with --no-prompt when init would otherwise need confirmation.")
 
 	cmd.Flags().StringVar(&flags.infra, "infra", "",
-		"Eject infrastructure-as-code from azure.yaml into ./infra/. "+
+		"Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and "+
+			"Foundry files are generated as a separate infra/foundry layer. "+
 			"A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets "+
-			"infra.provider: terraform; --infra=bicep is explicit Bicep. "+
-			"When azure.yaml already exists, runs as a standalone eject and skips the init prompts.")
+			"the Foundry layer provider to terraform; Bicep keeps the microsoft.foundry provider. "+
+			"--infra=bicep is explicit Bicep. "+
+			"When azure.yaml already declares a Foundry project service, runs as a standalone "+
+			"eject and skips the init prompts; otherwise init runs first and the eject follows it.")
 	// NoOptDefVal makes a bare `--infra` resolve to "bicep" while still allowing
 	// `--infra=terraform` / `--infra=bicep`. Absent flag stays "" (no eject).
 	cmd.Flags().Lookup("infra").NoOptDefVal = project.BicepProviderName
@@ -1823,8 +1963,8 @@ func ensureProject(
 			if _, statErr := os.Stat(infraDir); os.IsNotExist(statErr) {
 				fmt.Printf("%s", output.WithWarningFormat(
 					"No infra/ directory found in the project, and azure.yaml does not declare "+
-						"'infra.provider: %s'. If you need Azure infrastructure for deployment, "+
-						"set that provider in azure.yaml, or run "+
+						"the '%s' provider. If you need Azure infrastructure for deployment, "+
+						"declare that provider in azure.yaml, or run "+
 						"'azd ai agent init --infra' to generate an infra/ directory.\n",
 					project.FoundryProviderName,
 				))
@@ -1969,13 +2109,55 @@ func writeFoundryProvider(ctx context.Context, azdClient *azdext.AzdClient) erro
 	return nil
 }
 
-// hasFoundryProviderDeclared reports whether azure.yaml already
-// declares this extension's provisioning provider.
+// hasFoundryProviderDeclared reports whether azure.yaml declares the Foundry
+// provider at the root or on an infrastructure layer. Project().Get exposes
+// only root infra options today, so inspect the project file for layers.
 func hasFoundryProviderDeclared(proj *azdext.ProjectConfig) bool {
 	if proj == nil || proj.Infra == nil {
 		return false
 	}
-	return proj.Infra.Provider == project.FoundryProviderName
+	if proj.Path == "" {
+		return proj.Infra.Provider == project.FoundryProviderName
+	}
+
+	var raw []byte
+	for _, name := range azdcontext.ProjectFileNames {
+		data, err := os.ReadFile(filepath.Join(proj.Path, name)) //nolint:gosec // project path is from azd
+		if err == nil {
+			raw = data
+			break
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return proj.Infra.Provider == project.FoundryProviderName
+		}
+	}
+	if raw == nil {
+		return proj.Infra.Provider == project.FoundryProviderName
+	}
+	var doc struct {
+		Infra struct {
+			Provider string `yaml:"provider"`
+			Layers   []struct {
+				Provider string `yaml:"provider"`
+			} `yaml:"layers"`
+		} `yaml:"infra"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return proj.Infra.Provider == project.FoundryProviderName
+	}
+	if doc.Infra.Provider == project.FoundryProviderName && len(doc.Infra.Layers) == 0 {
+		return true
+	}
+	for _, layer := range doc.Infra.Layers {
+		provider := layer.Provider
+		if provider == "" {
+			provider = doc.Infra.Provider
+		}
+		if provider == project.FoundryProviderName {
+			return true
+		}
+	}
+	return false
 }
 
 func getExistingEnvironment(ctx context.Context, envName string, azdClient *azdext.AzdClient) *azdext.Environment {
@@ -2771,6 +2953,10 @@ func writeAgentIgnoreFile(targetDir string) error {
 	return nil
 }
 
+func printAgentAddedMessage(agentName string) {
+	fmt.Printf("\nAdded agent '%s' to azure.yaml.\n", agentName)
+}
+
 func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest) error {
 	// If targetDir is ".", resolve the actual relative path from the project root to cwd.
 	// This ensures azure.yaml gets the correct "project:" value when init is run from a subdirectory.
@@ -2930,6 +3116,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	if err != nil {
 		return err
 	}
+	agentEnvironment := project.AgentEnvironment(containerDef)
 
 	serviceConfig := &azdext.ServiceConfig{
 		Name:                 a.serviceNameOverride,
@@ -2963,6 +3150,14 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
+	if err := setServiceEnvironment(
+		ctx,
+		a.azdClient,
+		a.serviceNameOverride,
+		agentEnvironment,
+	); err != nil {
+		return err
+	}
 
 	// Emit the sibling Foundry resource services (project + deployments,
 	// connections, toolboxes) and wire the agent's uses: to them. A selected
@@ -2976,10 +3171,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		return err
 	}
 
-	fmt.Printf(
-		"\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n",
-		a.serviceNameOverride,
-	)
+	printAgentAddedMessage(agentDef.Name)
 
 	// Replace the legacy hardcoded `azd up` / `azd deploy` hint with the
 	// shared nextstep resolver. The resolver inspects the current azd

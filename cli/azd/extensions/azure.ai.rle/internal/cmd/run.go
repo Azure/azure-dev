@@ -190,7 +190,6 @@ func ensureLocalContainerEndpoint(cmd *cobra.Command, flags *localRunFlags) (str
 		"run", "-d",
 		"--name", container,
 		"--label", localContainerImageLabel + "=" + image,
-		"-e", "ENABLE_WEB_INTERFACE=true",
 		"-p", portMapping,
 		image,
 	}

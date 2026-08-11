@@ -136,10 +136,7 @@ func resolveTeamsPackContext(
 	// not exist, so fail loudly with a clear next step instead of producing a broken
 	// package.
 	serviceKey := toServiceKey(svc.Name)
-	agentName, err := readOptionalEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_NAME", serviceKey))
-	if err != nil {
-		return nil, err
-	}
+	agentName := readOptionalEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_NAME", serviceKey))
 	if strings.TrimSpace(agentName) == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeAgentNotDeployed,
@@ -148,10 +145,7 @@ func resolveTeamsPackContext(
 				"before packaging or publishing",
 		)
 	}
-	version, err := readOptionalEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_VERSION", serviceKey))
-	if err != nil {
-		return nil, err
-	}
+	version := readOptionalEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_VERSION", serviceKey))
 	if strings.TrimSpace(version) == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeAgentNotDeployed,

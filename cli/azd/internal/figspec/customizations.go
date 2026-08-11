@@ -92,7 +92,7 @@ func (c *Customizations) GetCommandArgGenerator(ctx *CommandContext, argName str
 		if argName == "extension-id" {
 			return FigGenListExtensions
 		}
-	case "azd extension upgrade", "azd extension uninstall":
+	case "azd extension update", "azd extension uninstall":
 		if argName == "extension-id" {
 			return FigGenListInstalledExtensions
 		}

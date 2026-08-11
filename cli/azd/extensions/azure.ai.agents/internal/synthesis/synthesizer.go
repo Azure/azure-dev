@@ -52,11 +52,15 @@ type Input struct {
 	// value is not checked (only existence and endpoint: are).
 	AcceptedHosts []string
 
-	// Env maps azd environment variable names to values. Used to resolve
-	// ${VAR} references in network fields (subnet vnet ids, dns.subscription).
-	// When a referenced variable is absent here, the synthesizer falls back
-	// to the process environment before failing. May be nil.
+	// Env maps project-wide azd values.
+	// Network fields always use it.
+	// Legacy connection services use it when service env is absent.
+	// Missing values may fall back to the process environment.
 	Env map[string]string
+
+	// ServiceEnvironments contains core-expanded values by service.
+	// Connection fields prefer these values over the legacy Env map.
+	ServiceEnvironments map[string]map[string]string
 
 	// PreserveVarRefs keeps ${VAR} references verbatim instead of resolving
 	// them. Used by the eject path, where the synthesized main.parameters.json
@@ -291,6 +295,7 @@ func Synthesize(in Input) (*Result, error) {
 	connections, err := collectConnections(
 		root.Services,
 		in.Env,
+		in.ServiceEnvironments,
 		!in.PreserveVarRefs,
 		in.ProjectRoot,
 	)
@@ -320,6 +325,39 @@ func Synthesize(in Input) (*Result, error) {
 		Parameters:  params,
 		NetworkMode: netMode,
 	}, nil
+}
+
+// ConnectionEnvironmentScopes returns services that declare env.
+// An empty env block still establishes an isolated service scope.
+func ConnectionEnvironmentScopes(
+	raw []byte,
+	projectRoot string,
+) (map[string]bool, error) {
+	if len(raw) == 0 {
+		return nil, errors.New("synthesis: raw azure.yaml is empty")
+	}
+
+	var root projectFile
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return nil, fmt.Errorf("parse azure.yaml: %w", err)
+	}
+
+	scopes := map[string]bool{}
+	for name, node := range root.Services {
+		node, matches, err := serviceForHost(
+			node,
+			projectRoot,
+			name,
+			aiConnectionHost,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if matches && connectionEnvDeclared(node) {
+			scopes[name] = true
+		}
+	}
+	return scopes, nil
 }
 
 // BrownfieldDeployments returns the model deployments declared on a brownfield
@@ -362,6 +400,7 @@ func BrownfieldDeployments(
 func BrownfieldConnections(
 	raw []byte,
 	env map[string]string,
+	serviceEnvironments map[string]map[string]string,
 	projectRoot string,
 ) ([]Connection, error) {
 	if len(raw) == 0 {
@@ -373,7 +412,13 @@ func BrownfieldConnections(
 		return nil, fmt.Errorf("parse azure.yaml: %w", err)
 	}
 
-	return collectConnections(root.Services, env, true, projectRoot)
+	return collectConnections(
+		root.Services,
+		env,
+		serviceEnvironments,
+		true,
+		projectRoot,
+	)
 }
 
 // ProjectEndpoint returns the endpoint configured on a Foundry project service.
@@ -629,12 +674,13 @@ func agentNeedsAcr(a agentBlock) bool {
 // (the service key is the connection name) and returns them sorted by name so
 // the synthesized parameter is deterministic regardless of YAML map order.
 //
-// ${VAR} in target/credentials/metadata is expanded from env when resolve is
-// true (provision path) and kept verbatim when false (eject path); Foundry
-// ${{...}} expressions are always preserved, mirroring synthesizeNetwork.
+// Provisioning resolves ${VAR} from service env when present.
+// Legacy services use project and process values.
+// Eject keeps references, and Foundry ${{...}} remains unchanged.
 func collectConnections(
 	services map[string]yaml.Node,
 	env map[string]string,
+	serviceEnvironments map[string]map[string]string,
 	resolve bool,
 	projectRoot string,
 ) ([]Connection, error) {
@@ -660,17 +706,27 @@ func collectConnections(
 			return nil, fmt.Errorf("services.%s: decode connection: %w", name, err)
 		}
 
-		target, err := maybeExpand(svc.Target, env, resolve)
+		declared := len(serviceEnvironments[name]) > 0 || connectionEnvDeclared(node)
+		mapping := connectionEnvironmentMapping(
+			env,
+			serviceEnvironments[name],
+			declared,
+		)
+		target, err := maybeExpand(svc.Target, mapping, resolve)
 		if err != nil {
 			return nil, fmt.Errorf("services.%s.target: %w", name, err)
 		}
 
-		credentials, err := expandCredentials(svc.Credentials, env, resolve)
+		credentials, err := expandCredentials(
+			svc.Credentials,
+			mapping,
+			resolve,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("services.%s.credentials: %w", name, err)
 		}
 
-		metadata, err := expandMetadata(svc.Metadata, env, resolve)
+		metadata, err := expandMetadata(svc.Metadata, mapping, resolve)
 		if err != nil {
 			return nil, fmt.Errorf("services.%s.metadata: %w", name, err)
 		}
@@ -691,20 +747,54 @@ func collectConnections(
 	return connections, nil
 }
 
+// connectionEnvDeclared reports whether the service node
+// declares an env: key, including an empty env: {}. Core
+// collapses an empty env to an omitted one, so the raw node
+// is the only signal that a service opted into an isolated
+// (possibly empty) scope.
+func connectionEnvDeclared(node yaml.Node) bool {
+	var fields map[string]yaml.Node
+	if err := node.Decode(&fields); err != nil {
+		return false
+	}
+	_, ok := fields["env"]
+	return ok
+}
+
+// Use scoped values when the service declares env.
+// Legacy services use the project and process environments.
+func connectionEnvironmentMapping(
+	env map[string]string,
+	serviceEnvironment map[string]string,
+	declared bool,
+) func(string) string {
+	if declared {
+		return func(name string) string {
+			return serviceEnvironment[name]
+		}
+	}
+
+	return func(name string) string {
+		if value, found := env[name]; found {
+			return value
+		}
+		value, _ := os.LookupEnv(name)
+		return value
+	}
+}
+
 // maybeExpand expands ${VAR} references in s when resolve is true, preserving
 // Foundry ${{...}} expressions; when resolve is false it returns s unchanged so
 // the eject path keeps references verbatim.
-func maybeExpand(s string, env map[string]string, resolve bool) (string, error) {
+func maybeExpand(
+	s string,
+	mapping func(string) string,
+	resolve bool,
+) (string, error) {
 	if !resolve || s == "" {
 		return s, nil
 	}
-	return foundry.ExpandEnv(s, func(name string) string {
-		if v, ok := env[name]; ok {
-			return v
-		}
-		v, _ := os.LookupEnv(name)
-		return v
-	})
+	return foundry.ExpandEnv(s, mapping)
 }
 
 // expandCredentials deep-copies a credentials map, expanding ${VAR} in every
@@ -713,7 +803,7 @@ func maybeExpand(s string, env map[string]string, resolve bool) (string, error) 
 // credentials entirely (e.g. None / identity auth).
 func expandCredentials(
 	creds map[string]any,
-	env map[string]string,
+	mapping func(string) string,
 	resolve bool,
 ) (map[string]any, error) {
 	if creds == nil {
@@ -721,7 +811,7 @@ func expandCredentials(
 	}
 	out := make(map[string]any, len(creds))
 	for k, v := range creds {
-		expanded, err := expandValue(v, env, resolve)
+		expanded, err := expandValue(v, mapping, resolve)
 		if err != nil {
 			return nil, err
 		}
@@ -732,14 +822,18 @@ func expandCredentials(
 
 // expandValue recursively expands ${VAR} in string values, map values, and
 // slice elements, leaving other types untouched.
-func expandValue(v any, env map[string]string, resolve bool) (any, error) {
+func expandValue(
+	v any,
+	mapping func(string) string,
+	resolve bool,
+) (any, error) {
 	switch val := v.(type) {
 	case string:
-		return maybeExpand(val, env, resolve)
+		return maybeExpand(val, mapping, resolve)
 	case map[string]any:
 		out := make(map[string]any, len(val))
 		for k, inner := range val {
-			expanded, err := expandValue(inner, env, resolve)
+			expanded, err := expandValue(inner, mapping, resolve)
 			if err != nil {
 				return nil, err
 			}
@@ -749,7 +843,7 @@ func expandValue(v any, env map[string]string, resolve bool) (any, error) {
 	case []any:
 		out := make([]any, len(val))
 		for i, inner := range val {
-			expanded, err := expandValue(inner, env, resolve)
+			expanded, err := expandValue(inner, mapping, resolve)
 			if err != nil {
 				return nil, err
 			}
@@ -765,7 +859,7 @@ func expandValue(v any, env map[string]string, resolve bool) (any, error) {
 // A nil map returns nil so the connection omits metadata entirely.
 func expandMetadata(
 	metadata map[string]string,
-	env map[string]string,
+	mapping func(string) string,
 	resolve bool,
 ) (map[string]string, error) {
 	if metadata == nil {
@@ -773,7 +867,7 @@ func expandMetadata(
 	}
 	out := make(map[string]string, len(metadata))
 	for k, v := range metadata {
-		expanded, err := maybeExpand(v, env, resolve)
+		expanded, err := maybeExpand(v, mapping, resolve)
 		if err != nil {
 			return nil, err
 		}
@@ -807,9 +901,6 @@ var guidPattern = regexp.MustCompile(
 
 // rgNamePattern matches a valid Azure resource group name.
 var rgNamePattern = regexp.MustCompile(`^[-\w._()]{1,90}$`)
-
-// varRefPattern matches a ${VAR} reference.
-var varRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 
 // synthesizeNetwork validates the network: block and returns the bicep
 // parameter set plus the telemetry mode. When net is nil the returned
@@ -923,6 +1014,12 @@ func synthesizeNetwork(
 			params["dnsZonesResourceGroup"] = rg
 		}
 		if sub := strings.TrimSpace(net.DNS.Subscription); sub != "" {
+			// Rejected before either path reads it: an unsupported '$' form is
+			// silently rewritten by the expander on the provision path, and
+			// written verbatim into the ejected template on the other.
+			if err := ValidateEnvReferences(sub); err != nil {
+				return nil, "", fmt.Errorf("%s.dns.subscription: %w", fp(""), err)
+			}
 			if resolve {
 				resolved, err := resolveVars(sub, env)
 				if err != nil {
@@ -930,9 +1027,12 @@ func synthesizeNetwork(
 				}
 				sub = resolved
 			}
-			// Normalize to a bare GUID only when concrete; an unexpanded ${VAR}
-			// (eject path) is normalized at provision time.
-			if containsVarRef(sub) {
+			// Normalize to a bare GUID only when the value is final. On the eject
+			// path an unexpanded ${VAR} is normalized at provision time; once
+			// resolveVars has run there is nothing left to expand, so anything
+			// still shaped like a reference (an escaped $${VAR} resolves to a
+			// literal ${VAR}) is a subscription id that never will be.
+			if !resolve && containsVarRef(sub) {
 				params["dnsZonesSubscription"] = sub
 			} else {
 				guid, err := normalizeSubscription(sub)
@@ -958,8 +1058,9 @@ func synthesizeNetwork(
 //	vnet + name + prefix  -> create subnet with that CIDR (create=true)
 //
 // vnet and name are required; ${VAR} references in vnet are expanded when
-// resolve is true and validated as a Microsoft.Network/virtualNetworks id only
-// when fully concrete.
+// resolve is true. The Microsoft.Network/virtualNetworks id shape is then
+// checked, except on the eject path (resolve false), where an unexpanded
+// reference is left for provision time to validate.
 func resolveSubnet(
 	s *subnetSpec, fieldPath string, env map[string]string, resolve bool,
 ) (vnetID, name, prefix string, create bool, err error) {
@@ -976,6 +1077,11 @@ func resolveSubnet(
 	if name == "" {
 		return "", "", "", false, fmt.Errorf("%s.name: required", fieldPath)
 	}
+	// Rejected on both paths: see the dns.subscription call for why this cannot
+	// wait for resolveVars.
+	if err := ValidateEnvReferences(vnetID); err != nil {
+		return "", "", "", false, fmt.Errorf("%s.vnet: %w", fieldPath, err)
+	}
 	if resolve {
 		resolved, rerr := resolveVars(vnetID, env)
 		if rerr != nil {
@@ -983,9 +1089,12 @@ func resolveSubnet(
 		}
 		vnetID = resolved
 	}
-	// Validate the ARM id shape only when fully concrete; an unexpanded ${VAR}
-	// (eject path) is validated at provision time.
-	if !containsVarRef(vnetID) && !vnetIDPattern.MatchString(vnetID) {
+	// Validate the ARM id shape unless the value can still change: on the eject
+	// path an unexpanded ${VAR} is validated at provision time. After
+	// resolveVars there is nothing left to expand, so a leftover ${VAR} (what an
+	// escaped $${VAR} resolves to) is checked now rather than deferred to a
+	// provision that can only fail.
+	if (resolve || !containsVarRef(vnetID)) && !vnetIDPattern.MatchString(vnetID) {
 		return "", "", "", false, fmt.Errorf(
 			"%s.vnet: %q is not a well-formed Microsoft.Network/virtualNetworks id", fieldPath, vnetID)
 	}
@@ -1010,29 +1119,57 @@ func sameVNet(a, b string) bool {
 	return strings.EqualFold(a, b)
 }
 
-// containsVarRef reports whether s still contains a ${VAR} reference.
+// containsVarRef reports whether s still carries an azd ${VAR} reference the
+// expander will resolve, including the ${VAR:-default} form.
+//
+// Escaped references and names reserved by a Foundry ${{...}} span do not count:
+// [foundry.ExpandEnv] leaves those alone, so the value is already as concrete as
+// it will ever be and the caller's own shape validation should run on it.
 func containsVarRef(s string) bool {
-	return varRefPattern.MatchString(s)
+	return len(FindEnvReferences(s)) > 0
 }
 
 // resolveVars expands ${VAR} references in s using env first, then the
 // process environment. An unresolved reference is an error naming the
 // variable.
+//
+// Expansion routes through foundry.ExpandEnv, the shared expander every other
+// Foundry field uses, so ${VAR:-default} and the $${VAR} escape behave here
+// exactly as they do elsewhere.
+//
+// ExpandEnv resolves through a mapping callback that only receives the variable
+// name, so the names that must resolve are collected up front from
+// [FindEnvReferences]: a name is required only where it occurs at least once
+// without a :- default, in a position the expander will actually act on. Reusing
+// that scanner is what keeps an escaped or ${{...}} reserved occurrence from
+// making a live, defaulted occurrence of the same name look unresolvable.
+//
+// Callers validate the value with [ValidateEnvReferences] first, so every
+// occurrence the expander acts on is one the scanner saw.
 func resolveVars(s string, env map[string]string) (string, error) {
+	required := map[string]struct{}{}
+	for _, reference := range FindEnvReferences(s) {
+		if !reference.HasDefault {
+			required[reference.Name] = struct{}{}
+		}
+	}
+
 	var unresolved string
-	out := varRefPattern.ReplaceAllStringFunc(s, func(match string) string {
-		name := varRefPattern.FindStringSubmatch(match)[1]
+	out, err := foundry.ExpandEnv(s, func(name string) string {
 		if v, ok := env[name]; ok {
 			return v
 		}
 		if v, ok := os.LookupEnv(name); ok {
 			return v
 		}
-		if unresolved == "" {
+		if _, ok := required[name]; ok && unresolved == "" {
 			unresolved = name
 		}
-		return match
+		return ""
 	})
+	if err != nil {
+		return "", err
+	}
 	if unresolved != "" {
 		return "", fmt.Errorf("unresolved environment variable ${%s}", unresolved)
 	}

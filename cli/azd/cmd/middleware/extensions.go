@@ -216,7 +216,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 				info.ext.Id, info.result.InstalledVersion, info.result.LatestVersion,
 			))
 			m.console.Message(ctx, fmt.Sprintf(
-				"To upgrade extension, run %s", output.WithHighLightFormat("azd extension upgrade %s", info.ext.Id),
+				"To update the extension, run %s", output.WithHighLightFormat("azd extension update %s", info.ext.Id),
 			))
 			m.console.Message(ctx, "")
 		} else if len(needsUpdate) > 1 {
@@ -230,9 +230,9 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 				))
 			}
 			m.console.Message(ctx, fmt.Sprintf(
-				"Run %s to upgrade a specific extension, or %s to upgrade all extensions.",
-				output.WithHighLightFormat("azd extension upgrade <extension-id>"),
-				output.WithHighLightFormat("azd extension upgrade --all"),
+				"Run %s to update a specific extension, or %s to update all extensions.",
+				output.WithHighLightFormat("azd extension update <extension-id>"),
+				output.WithHighLightFormat("azd extension update --all"),
 			))
 			m.console.Message(ctx, "")
 		}

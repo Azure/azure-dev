@@ -4,7 +4,7 @@ description: >-
   Gives us a general idea of what the state of the models are with regards to built-in azd knowledge.
 
 defaults:
-  runs: 1
+  runs: 3
   timeout: 5m
   executor: copilot-sdk
   model: claude-sonnet-4.6

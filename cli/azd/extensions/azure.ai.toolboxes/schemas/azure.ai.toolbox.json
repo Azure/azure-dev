@@ -8,7 +8,7 @@
   "properties": {
     "endpoint": {
       "type": "string",
-      "description": "MCP endpoint URL of an existing Foundry toolbox version, as shown by 'azd ai toolbox show' (e.g. https://my-account.services.ai.azure.com/api/projects/my-project/toolboxes/research/versions/3/mcp?api-version=v1). When set, azd reuses this existing toolbox and publishes the endpoint for agents instead of creating a new version, so 'tools' and 'description' must be omitted. May contain ${VAR} (azd env, resolved client-side)."
+      "description": "MCP endpoint URL of an existing Foundry toolbox version, as shown by 'azd ai toolbox show' (e.g. https://my-account.services.ai.azure.com/api/projects/my-project/toolboxes/research/versions/3/mcp?api-version=v1). When set, azd reuses this existing toolbox and publishes the endpoint for agents instead of creating a new version, so 'tools' and 'description' must be omitted. May contain ${VAR} declared in the service-level env object."
     },
     "description": {
       "type": "string",
@@ -16,7 +16,7 @@
     },
     "tools": {
       "type": "array",
-      "description": "List of tools in the toolbox.",
+      "description": "List of tools in the toolbox. Values may use ${VAR} declared in the service-level env object.",
       "items": {
         "type": "object",
         "required": ["type"],

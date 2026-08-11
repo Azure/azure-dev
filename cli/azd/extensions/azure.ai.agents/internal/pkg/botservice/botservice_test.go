@@ -19,6 +19,14 @@ type fakeBots struct {
 	createErr   error
 	deleteCalls int
 	deleteErr   error
+	getResponse armbotservice.Bot
+	getErr      error
+}
+
+func (f *fakeBots) Get(
+	_ context.Context, _, _ string, _ *armbotservice.BotsClientGetOptions,
+) (armbotservice.BotsClientGetResponse, error) {
+	return armbotservice.BotsClientGetResponse{Bot: f.getResponse}, f.getErr
 }
 
 func (f *fakeBots) Create(
@@ -146,6 +154,34 @@ func TestDeleteBotPropagatesOtherErrors(t *testing.T) {
 	}
 }
 
+func TestGetBotTreatsNotFoundAsMissing(t *testing.T) {
+	t.Parallel()
+
+	c := &Client{bots: &fakeBots{getErr: &azcore.ResponseError{StatusCode: http.StatusNotFound}}}
+	bot, err := c.GetBot(t.Context(), "rg1", "missing-bot")
+	if err != nil || bot != nil {
+		t.Fatalf("GetBot() = (%v, %v), want (nil, nil)", bot, err)
+	}
+}
+
+func TestIsOwnedRequiresAzdCreatedTag(t *testing.T) {
+	t.Parallel()
+
+	c := &Client{bots: &fakeBots{getResponse: armbotservice.Bot{
+		Tags: map[string]*string{OwnershipTag: new(OwnershipTagValue)},
+	}}}
+
+	owned, err := c.IsOwned(t.Context(), "rg1", "owned-bot")
+	if err != nil || !owned {
+		t.Fatalf("IsOwned() = (%v, %v), want (true, nil)", owned, err)
+	}
+	c.bots = &fakeBots{getResponse: armbotservice.Bot{Tags: map[string]*string{OwnershipTag: new("false")}}}
+	owned, err = c.IsOwned(t.Context(), "rg1", "external-bot")
+	if err != nil || owned {
+		t.Fatalf("IsOwned() = (%v, %v), want (false, nil)", owned, err)
+	}
+}
+
 func TestBotName(t *testing.T) {
 	salt := BotScopeSalt("sub-1", "rg-1")
 	got := BotName("echo", salt)
@@ -178,5 +214,27 @@ func TestBotArmID(t *testing.T) {
 	want := "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.BotService/botServices/echo-bot-uai"
 	if got := BotArmID("sub-1", "rg-1", "echo-bot-uai"); got != want {
 		t.Errorf("BotArmID = %q, want %q", got, want)
+	}
+}
+
+func TestFindByMsaAppID(t *testing.T) {
+	c := &Client{
+		listBots: func(context.Context) ([]*armbotservice.Bot, error) {
+			return []*armbotservice.Bot{{
+				ID:   new("/subscriptions/sub/resourceGroups/m365-rg/providers/Microsoft.BotService/botServices/published-bot"),
+				Name: new("published-bot"),
+				Properties: &armbotservice.BotProperties{
+					MsaAppID: new("client-id-123"),
+				},
+			}}, nil
+		},
+	}
+
+	got, err := c.FindByMsaAppID(t.Context(), "CLIENT-ID-123")
+	if err != nil {
+		t.Fatalf("FindByMsaAppID returned error: %v", err)
+	}
+	if got == nil || got.Name != "published-bot" || got.ResourceGroup != "m365-rg" {
+		t.Fatalf("FindByMsaAppID = %+v, want published-bot in m365-rg", got)
 	}
 }

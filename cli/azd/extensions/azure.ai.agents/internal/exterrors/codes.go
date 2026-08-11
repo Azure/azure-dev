@@ -43,6 +43,10 @@ const (
 	CodeInvalidPositionalArg      = "invalid_positional_arg"
 )
 
+// CodeInvalidEnvironmentVariableName identifies a hosted-agent
+// environment variable name rejected by the service contract.
+const CodeInvalidEnvironmentVariableName = "invalid_environment_variable_name"
+
 // Error codes commonly used for dependency errors.
 //
 // These are usually paired with [Dependency] when required external
@@ -58,6 +62,7 @@ const (
 	CodeMissingAiProjectId        = "missing_ai_project_id"
 	CodeMissingAzureSubscription  = "missing_azure_subscription_id"
 	CodeMissingAgentEnvVars       = "missing_agent_env_vars"
+	CodeFoundryDependencyNotReady = "foundry_dependency_not_ready"
 	CodeMissingProjectEndpoint    = "missing_project_endpoint"
 	CodeGitHubDownloadFailed      = "github_download_failed"
 	CodePromptFailed              = "prompt_failed"
@@ -236,10 +241,16 @@ const (
 	CodeInfraEjectNoFoundryService        = "infra_eject_no_foundry_service"
 	CodeInfraEjectMultipleFoundryServices = "infra_eject_multiple_foundry_services"
 	CodeInfraEjectAzureYamlMissing        = "infra_eject_azure_yaml_missing"
+	CodeInfraEjectAzureYamlChanged        = "infra_eject_azure_yaml_changed"
+	CodeInfraEjectMarkerInvalid           = "infra_eject_marker_invalid"
 	CodeInfraEjectWriteFailed             = "infra_eject_write_failed"
 	CodeInfraEjectConflictingArguments    = "infra_eject_conflicting_arguments"
 	CodeInfraEjectNetworkUnsupported      = "infra_eject_network_unsupported"
 	CodeInfraEjectBrownfieldUnsupported   = "infra_eject_brownfield_unsupported"
+	CodeInfraEjectCustomInfraPath         = "infra_eject_custom_infra_path"
+	CodeInfraEjectLayersUnsupported       = "infra_eject_layers_unsupported"
+	CodeInfraEjectProviderConflict        = "infra_eject_provider_conflict"
+	CodeInfraEjectCustomModule            = "infra_eject_custom_module"
 )
 
 // Operation names for the microsoft.foundry provisioning provider.

@@ -187,7 +187,7 @@ func runToolboxCreateWith(
 	mcpURL := buildToolboxMcpURL(endpoint, name, created.Version)
 
 	// Surface the endpoint to agents (and the developer) without re-running.
-	if err := setToolboxEndpointEnvFunc(ctx, name, mcpURL); err != nil {
+	if err := setToolboxEndpointEnvFunc(ctx, name, mcpURL, ""); err != nil {
 		return err
 	}
 

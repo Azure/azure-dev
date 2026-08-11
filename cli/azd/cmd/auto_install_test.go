@@ -2124,7 +2124,7 @@ func TestProjectExtensionErrorsCarrySuggestions(t *testing.T) {
 		suggestErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
 		require.True(t, ok, "expected an ErrorWithSuggestion")
 		assert.Contains(t, suggestErr.Error(), "does not satisfy constraint")
-		assert.Contains(t, suggestErr.Suggestion, "azd extension upgrade microsoft.foundry")
+		assert.Contains(t, suggestErr.Suggestion, "azd extension update microsoft.foundry")
 		assert.NotContains(t, suggestErr.Suggestion, "--version >=1.0.0")
 	})
 

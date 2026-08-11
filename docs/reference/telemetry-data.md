@@ -72,7 +72,7 @@ Commands follow the pattern `cmd.<command.path>` where spaces become dots.
 |-------|-------------|
 | `ext.run` | Extension command execution |
 | `ext.install` | Extension installation |
-| `ext.upgrade` | Extension upgrade attempt |
+| `ext.update` | Extension update attempt |
 | `ext.promote` | Registry promotion (e.g., dev → main) |
 
 ### Agent & Copilot Events
@@ -116,6 +116,7 @@ Commands follow the pattern `cmd.<command.path>` where spaces become dots.
 | `container.remotebuild` | Remote container build |
 | `exegraph.run` | Execution graph run (parallel operations) |
 | `exegraph.step` | Single step within execution graph |
+| `aspire.apphost.unsupported` | Detected an unsupported Aspire polyglot (non-C#) AppHost during app detection |
 
 ### VS Code Extension Events (`azure-dev.*`)
 
@@ -322,6 +323,14 @@ Set **only when an external command-line tool invocation fails**, during error c
 </details>
 
 <details>
+<summary><strong>Aspire</strong></summary>
+
+| Field Key | Type | Description |
+|-----------|------|-------------|
+| `aspire.apphost.language` | string | Language of a detected but unsupported Aspire polyglot (non-C#) AppHost. Emitted on `aspire.apphost.unsupported`. Values: `typescript`, `python`, `go`, `java`, `rust`. |
+</details>
+
+<details>
 <summary><strong>Hooks</strong></summary>
 
 | Field Key | Type | Description |
@@ -449,22 +458,22 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.id` | string | Extension identifier |
 | `extension.version` | string | Extension version |
 | `extension.installed` | string[] | List of installed extensions (`id@version`) |
-| `extension.version.from` | string | Version before an upgrade or promotion (`ext.upgrade`, `ext.promote`) |
-| `extension.version.to` | string | Version after an upgrade or promotion (`ext.upgrade`, `ext.promote`) |
-| `extension.source` | string | Registry source used for an upgrade (`ext.upgrade`) |
-| `extension.source.kind` | string | Kind of `--source` argument: `none`, `registered`, or `location` (`azd extension list`, `show`, `install`, `upgrade`) |
+| `extension.version.from` | string | Version before an update or promotion (`ext.update`, `ext.promote`) |
+| `extension.version.to` | string | Version after an update or promotion (`ext.update`, `ext.promote`) |
+| `extension.source` | string | Registry source used for an update (`ext.update`) |
+| `extension.source.kind` | string | Kind of `--source` argument: `none`, `registered`, or `location` (`azd extension list`, `show`, `install`, `update`) |
 | `extension.source.from` | string | Registry source before a promotion (`ext.promote`) |
 | `extension.source.to` | string | Registry source after a promotion (`ext.promote`) |
-| `extension.upgrade.duration_ms` | measurement | Duration (ms) of a single upgrade (`ext.upgrade`) |
-| `extension.upgrade.outcome` | string | Upgrade result status (`ext.upgrade`) |
-| `extension.dependency_of` | string | Parent extension ID when an extension is upgraded as a dependency (`ext.upgrade`) |
-| `extension.dependency_upgrade_count` | measurement | Number of dependency extensions upgraded recursively (`ext.upgrade`) |
+| `extension.update.duration_ms` | measurement | Duration (ms) of a single update (`ext.update`) |
+| `extension.update.outcome` | string | Update result status (`ext.update`) |
+| `extension.dependency_of` | string | Parent extension ID when an extension is updated as a dependency (`ext.update`) |
+| `extension.dependency_update_count` | measurement | Number of dependency extensions updated recursively (`ext.update`) |
 </details>
 
 <details>
 <summary><strong>Tool Management (<code>azd tool</code>)</strong><a id="tool-management"></a></summary>
 
-Fields for the `azd tool` feature, including active `install`/`upgrade`/`check` operations and the reserved first-run contract for azd-managed developer tools. These are **distinct** from the [Tool Invocation Attributes](#tool-invocation-attributes-external-cli-tools) above (which describe external processes azd shells out to).
+Fields for the `azd tool` feature, including active `install`/`update`/`check` operations and the reserved first-run contract for azd-managed developer tools. These are **distinct** from the [Tool Invocation Attributes](#tool-invocation-attributes-external-cli-tools) above (which describe external processes azd shells out to).
 
 > **Privacy:** only built-in tool IDs (e.g. `az-cli`, `vscode-bicep`) and version strings are captured. No file paths, no user-identifiable data, and no raw per-tool error text — failed tool IDs are recorded, but error detail stays with the global error middleware.
 
@@ -489,7 +498,7 @@ The first-run middleware is not currently registered, so these fields are not em
 | `tool.firstrun.install_failed_ids` | string | Comma-separated tool IDs that failed during first-run |
 | `tool.firstrun.install_duration_ms` | measurement | Total first-run install duration (ms) |
 
-**Install / upgrade / uninstall / check operations:**
+**Install / update / uninstall / check operations:**
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
@@ -497,14 +506,14 @@ The first-run middleware is not currently registered, so these fields are not em
 | `tool.ids` | string | Comma-separated tool IDs for a batch operation |
 | `tool.dry_run` | string | Whether `--dry-run` was specified |
 | `tool.install.strategy` | string | Install strategy used. Package-manager values come from the tool manifest (`winget`, `brew`, `apt`, `npm`, `code`); the installer may also report `direct-download`, `command`, or `manual` (no available manager) |
-| `tool.install.success` | string | Whether a single-target install, upgrade, or uninstall succeeded |
-| `tool.install.success_count` | measurement | Tools that succeeded in a batch install/upgrade/uninstall |
-| `tool.install.failure_count` | measurement | Tools that failed in a batch install/upgrade/uninstall |
-| `tool.install.failed_ids` | string | Comma-separated tool IDs whose install/upgrade/uninstall failed |
-| `tool.install.duration_ms` | measurement | Total install/upgrade/uninstall duration (ms) |
-| `tool.upgrade.from_version` | string | Previous version (single-target upgrade) |
-| `tool.upgrade.to_version` | string | New version after a successful upgrade (single-target) |
-| `tool.check.updates_available` | measurement | Installed tools with an available upgrade (`azd tool check`) |
+| `tool.install.success` | string | Whether a single-target install, update, or uninstall succeeded |
+| `tool.install.success_count` | measurement | Tools that succeeded in a batch install/update/uninstall |
+| `tool.install.failure_count` | measurement | Tools that failed in a batch install/update/uninstall |
+| `tool.install.failed_ids` | string | Comma-separated tool IDs whose install/update/uninstall failed |
+| `tool.install.duration_ms` | measurement | Total install/update/uninstall duration (ms) |
+| `tool.update.from_version` | string | Previous version (single-target update) |
+| `tool.update.to_version` | string | New version after a successful update (single-target) |
+| `tool.check.updates_available` | measurement | Installed tools with an available update (`azd tool check`) |
 </details>
 
 <details>
@@ -579,6 +588,7 @@ The `execution.environment` field identifies where azd is running. Format: `<env
 | `Visual Studio` | VS integration |
 | `Visual Studio Code` | VS Code integration |
 | `VS Code Azure GitHub Copilot` | Azure Copilot in VS Code |
+| `GitHub Copilot VSCode` | GitHub Copilot in VS Code |
 | `Azure CloudShell` | Azure Cloud Shell |
 | `Claude Code` | Claude Code AI agent |
 | `GitHub Copilot CLI` | GitHub Copilot CLI |
@@ -698,7 +708,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Provisioning (IaC)** | `cmd.provision`, `cmd.up`, `cmd.down`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`/`terraform`/`arm`/`pulumi`/custom; slice of each distinct provider for multi-layer projects) | Provision success, ARM errors, duration |
 | **Authentication** | `cmd.auth.login` | `auth.method` | Auth method usage, failure rates |
 | **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
-| **Extensions** | `ext.run`, `ext.install`, `ext.upgrade` | `extension.id`, `extension.version`, `extension.installed` | Extension adoption, errors |
+| **Extensions** | `ext.run`, `ext.install`, `ext.update` | `extension.id`, `extension.version`, `extension.installed` | Extension adoption, errors |
 | **MCP** | `mcp.<tool_name>` | `mcp.client.name`, `mcp.client.version` | Tool usage by client |
 | **Agentic (Copilot)** | `copilot.initialize`, `copilot.session` | `copilot.mode`, `copilot.init.model`, `copilot.message.*` | Session counts, token usage |
 | **Agent Troubleshooting** | `agent.troubleshoot` | `agent.fix.attempts` | Auto-fix adoption, retry counts |
@@ -707,7 +717,8 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Self-Update** | `cmd.update` | `update.installMethod`, `update.fromVersion` | Update adoption |
 | **Hooks** | `hooks.exec` | `hooks.name`, `hooks.type`, `hooks.kind` | Hook usage by type |
 | **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `pack.builder.image` | Build method usage, success rates |
-| **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.upgrade`, `cmd.tool.uninstall`, `cmd.tool.check` | `tool.id`, `tool.install.strategy` | Install/upgrade/uninstall success, upgrade availability |
+| **App Detection (Aspire polyglot)** | `aspire.apphost.unsupported` | `aspire.apphost.language` (`typescript`/`python`/`go`/`java`/`rust`) | How often an unsupported Aspire polyglot (non-C#) AppHost is encountered, by language. **Emitted only during app detection for `init` and fresh `up` (no existing `azure.yaml`)** — not for already-initialized projects, so absence does not mean zero unsupported AppHosts. |
+| **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.update`, `cmd.tool.uninstall`, `cmd.tool.check` | `tool.id`, `tool.install.strategy` | Install/update/uninstall success, update availability |
 
 ## See Also
 

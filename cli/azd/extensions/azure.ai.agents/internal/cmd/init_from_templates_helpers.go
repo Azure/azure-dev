@@ -141,12 +141,16 @@ func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt b
 
 // dirIsEmpty reports whether dir contains no entries at all.
 func dirIsEmpty(dir string) (bool, error) {
-	entries, err := os.ReadDir(dir)
+	f, err := os.Open(dir) //nolint:gosec // caller supplies a project directory
 	if err != nil {
 		return false, err
 	}
-
-	return len(entries) == 0, nil
+	defer f.Close()
+	_, err = f.Readdirnames(1)
+	if errors.Is(err, io.EOF) {
+		return true, nil
+	}
+	return false, err
 }
 
 // fetchAgentTemplates retrieves the agent template catalog from the remote

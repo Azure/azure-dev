@@ -222,8 +222,9 @@ var _ toolboxClient = (*mockToolboxClient)(nil)
 var _ connectionResolver = (*stubConnectionResolver)(nil)
 
 type toolboxEnvCall struct {
-	name  string
-	value string
+	name         string
+	value        string
+	projectScope string
 }
 
 // stubToolboxEndpointEnv records env-sync calls and returns nil.
@@ -231,8 +232,8 @@ func stubToolboxEndpointEnv(t *testing.T) *[]toolboxEnvCall {
 	t.Helper()
 	calls := &[]toolboxEnvCall{}
 	prev := setToolboxEndpointEnvFunc
-	setToolboxEndpointEnvFunc = func(_ context.Context, name, value string) error {
-		*calls = append(*calls, toolboxEnvCall{name: name, value: value})
+	setToolboxEndpointEnvFunc = func(_ context.Context, name, value, projectScope string) error {
+		*calls = append(*calls, toolboxEnvCall{name: name, value: value, projectScope: projectScope})
 		return nil
 	}
 	t.Cleanup(func() { setToolboxEndpointEnvFunc = prev })
@@ -244,8 +245,8 @@ func stubToolboxEndpointEnvErr(t *testing.T, err error) *[]toolboxEnvCall {
 	t.Helper()
 	calls := &[]toolboxEnvCall{}
 	prev := setToolboxEndpointEnvFunc
-	setToolboxEndpointEnvFunc = func(_ context.Context, name, value string) error {
-		*calls = append(*calls, toolboxEnvCall{name: name, value: value})
+	setToolboxEndpointEnvFunc = func(_ context.Context, name, value, projectScope string) error {
+		*calls = append(*calls, toolboxEnvCall{name: name, value: value, projectScope: projectScope})
 		return err
 	}
 	t.Cleanup(func() { setToolboxEndpointEnvFunc = prev })

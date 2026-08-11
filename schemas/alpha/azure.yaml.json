@@ -94,9 +94,26 @@
                                 "title": "Name of the default module within the Azure provisioning templates",
                                 "description": "Optional. The name of the Azure provisioning module used when provisioning resources. (Default: main)"
                             },
+                            "provider": {
+                                "type": "string",
+                                "title": "Type of infrastructure provisioning provider",
+                                "description": "Optional. The infrastructure provisioning provider for this layer. Inherits infra.provider when omitted. Built-in values are 'bicep' and 'terraform'; extensions may register additional providers.",
+                                "pattern": "^[a-z0-9.]+$",
+                                "examples": [
+                                    "bicep",
+                                    "terraform",
+                                    "microsoft.foundry"
+                                ]
+                            },
                              "deploymentStacks": {
                                  "$ref": "#/definitions/deploymentStacksConfig"
                              },
+                            "config": {
+                                "type": "object",
+                                "title": "Provider-specific configuration",
+                                "description": "Optional. Configuration passed to the infrastructure provisioning provider.",
+                                "additionalProperties": true
+                            },
                             "dependsOn": {
                                 "type": "array",
                                 "title": "Layer names this layer must wait for",
@@ -1685,13 +1702,22 @@
                     "title": "The action to take when when resources become unmanaged",
                     "description": "Defines the behavior of resources that are no longer managed after the Deployment stack is updated or deleted. Defaults to 'delete' for all resource scopes.",
                     "required": [
-                        "resourceGroups",
                         "resources"
                     ],
                     "properties": {
                         "resourceGroups": {
                             "type": "string",
-                            "title": "Required. The action on unmanage setting for resource groups",
+                            "title": "The action on unmanage setting for resource groups",
+                            "description": "Specifies an action for a newly unmanaged resource. Delete will attempt to delete the resource from Azure. Detach will leave the resource in it's current state.",
+                            "default": "delete",
+                            "enum": [
+                                "delete",
+                                "detach"
+                            ]
+                        },
+                        "managementGroups": {
+                            "type": "string",
+                            "title": "The action on unmanage setting for management groups",
                             "description": "Specifies an action for a newly unmanaged resource. Delete will attempt to delete the resource from Azure. Detach will leave the resource in it's current state.",
                             "default": "delete",
                             "enum": [
@@ -1736,11 +1762,19 @@
                         },
                         "excludedActions": {
                             "type": "array",
-                            "title": "List of role-based management operations that are excluded from the denySettings."
+                            "title": "List of role-based management operations that are excluded from the denySettings.",
+                            "description": "Each entry supports ${VAR} environment variable substitution, resolved at deployment time.",
+                            "items": {
+                                "type": "string"
+                            }
                         },
                         "excludedPrincipals": {
                             "type": "array",
-                            "title": "List of Entra ID principal IDs excluded from the lock. Up to 5 principals are permitted."
+                            "title": "List of Entra ID principal IDs excluded from the lock. Up to 5 principals are permitted.",
+                            "description": "Each entry supports ${VAR} environment variable substitution, resolved at deployment time.",
+                            "items": {
+                                "type": "string"
+                            }
                         }
                     }
                 }

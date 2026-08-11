@@ -2915,16 +2915,16 @@ func Test_Upgrade_DependencyUpgrade_DisabledByOpts(t *testing.T) {
 		UpgradeOptions{VersionPreference: "2.0.0", UpgradeDependencies: false},
 	)
 	require.NoError(t, err)
-	// Disabled dependency upgrades should surface as Skipped.
+	// Disabled dependency updates should surface as Skipped.
 	require.Len(t, depUpgrades, 1)
 	require.Equal(t, "test.child", depUpgrades[0].ExtensionId)
 	require.Equal(t, UpgradeStatusSkipped, depUpgrades[0].Status)
 	require.Equal(t, "1.0.0", depUpgrades[0].FromVersion)
-	require.Contains(t, depUpgrades[0].SkipReason, "dependency upgrades disabled")
+	require.Contains(t, depUpgrades[0].SkipReason, "dependency updates disabled")
 
 	child, err := manager.GetInstalled(FilterOptions{Id: "test.child"})
 	require.NoError(t, err)
-	require.Equal(t, "1.0.0", child.Version, "child must remain at 1.0.0 when dependency upgrades are disabled")
+	require.Equal(t, "1.0.0", child.Version, "child must remain at 1.0.0 when dependency updates are disabled")
 }
 
 func Test_Upgrade_DependencyUpgrade_CycleGuard(t *testing.T) {

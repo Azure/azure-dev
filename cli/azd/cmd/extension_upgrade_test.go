@@ -57,23 +57,23 @@ func TestUpgradeRetryCommand(t *testing.T) {
 	}{
 		{
 			name: "extension only",
-			want: "azd extension upgrade ext-a",
+			want: "azd extension update ext-a",
 		},
 		{
 			name:   "source",
 			source: "test",
-			want:   "azd extension upgrade ext-a --source test",
+			want:   "azd extension update ext-a --source test",
 		},
 		{
 			name:    "version",
 			version: "3.0.0",
-			want:    "azd extension upgrade ext-a --version 3.0.0",
+			want:    "azd extension update ext-a --version 3.0.0",
 		},
 		{
 			name:    "source and version",
 			source:  "test",
 			version: "3.0.0",
-			want:    "azd extension upgrade ext-a --source test --version 3.0.0",
+			want:    "azd extension update ext-a --source test --version 3.0.0",
 		},
 	}
 
@@ -209,7 +209,7 @@ func TestUpgradeOneExtension_InteractiveFailurePreservesRetryFlags(t *testing.T)
 
 	rendered := strings.Join(console.Output(), "\n")
 	require.Contains(t, rendered, result.Error.Error())
-	require.Contains(t, rendered, "azd extension upgrade ext-a --source test --version 3.0.0")
+	require.Contains(t, rendered, "azd extension update ext-a --source test --version 3.0.0")
 }
 
 func TestDisplayDependencyUpgradeResultsFailedSuggestion(t *testing.T) {
@@ -262,8 +262,8 @@ func TestDisplayDependencyUpgradeResultsChangesAndSkips(t *testing.T) {
 			{
 				ExtensionId: "skipped",
 				Status:      extensions.UpgradeStatusSkipped,
-				SkipReason:  "dependency upgrades disabled",
-				Suggestion:  "Retry without --no-dependency-upgrades.",
+				SkipReason:  "dependency updates disabled",
+				Suggestion:  "Retry without --no-dependency-updates.",
 			},
 		},
 		"  ",
@@ -272,13 +272,13 @@ func TestDisplayDependencyUpgradeResultsChangesAndSkips(t *testing.T) {
 	rendered := strings.Join(console.Output(), "\n")
 	require.Contains(t, rendered, "Downgraded downgraded dependency")
 	require.Contains(t, rendered, "Updated non-semver dependency")
-	require.Contains(t, rendered, "dependency upgrades disabled")
-	require.Contains(t, rendered, "Retry without --no-dependency-upgrades.")
+	require.Contains(t, rendered, "dependency updates disabled")
+	require.Contains(t, rendered, "Retry without --no-dependency-updates.")
 	require.Contains(
 		t,
 		console.Output(),
 		"  "+strings.Repeat(" ", len("(-) Skipped: "))+
-			"Retry without --no-dependency-upgrades.",
+			"Retry without --no-dependency-updates.",
 	)
 }
 
@@ -291,7 +291,7 @@ func TestDependencyChangeVerb(t *testing.T) {
 		toVersion   string
 		want        string
 	}{
-		{name: "upgrade", fromVersion: "1.0.0", toVersion: "2.0.0", want: "Upgraded"},
+		{name: "update", fromVersion: "1.0.0", toVersion: "2.0.0", want: "Updated"},
 		{name: "downgrade", fromVersion: "2.0.0", toVersion: "1.0.0", want: "Downgraded"},
 		{name: "non-semver", fromVersion: "nightly", toVersion: "dev", want: "Updated"},
 	}
@@ -407,7 +407,7 @@ func TestUpgradeAction_ContextCancellation(t *testing.T) {
 	// All extensions should be marked as failed
 	require.Error(t, err)
 	require.NotNil(t, result)
-	assert.Contains(t, err.Error(), "extensions failed to upgrade")
+	assert.Contains(t, err.Error(), "extensions failed to update")
 
 	// Parse the JSON output to verify all have failed status
 	var report struct {

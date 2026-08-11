@@ -186,10 +186,7 @@ func (p *Confirm) Ask(ctx context.Context) (*bool, error) {
 
 // Render renders the Confirm component.
 func (p *Confirm) Render(printer Printer) error {
-	printer.Fprintf("%s", output.WithHighLightFormat("? "))
-
-	// Message
-	printer.Fprintf("%s", BoldString("%s: ", p.options.Message))
+	renderPromptMessage(printer, p.options.Message)
 
 	// Hint indicator
 	if !p.cancelled && !p.complete && p.options.HelpMessage != "" {

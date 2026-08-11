@@ -62,7 +62,7 @@ type UpgradeResult struct {
 	Suggestion string
 	// DependencyUpgrades captures upgrade results for dependent extensions
 	// that were upgraded as a side effect of upgrading this extension. Empty
-	// for leaf extensions or when --no-dependency-upgrades is set.
+	// for leaf extensions or when --no-dependency-updates is set.
 	DependencyUpgrades []UpgradeResult
 }
 

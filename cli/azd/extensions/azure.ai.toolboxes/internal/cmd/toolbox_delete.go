@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"azure.ai.toolboxes/internal/exterrors"
 
@@ -119,17 +120,16 @@ func runDeleteToolbox(
 				return exterrors.ServiceFromAzure(err, exterrors.OpDeleteToolbox)
 			}
 			// Whole-toolbox delete clears the endpoint; version delete does not.
-			if err := setToolboxEndpointEnvFunc(ctx, name, ""); err != nil {
-				return err
+			if err := setToolboxEndpointEnvFunc(ctx, name, "", client.Endpoint()); err != nil {
+				log.Printf("toolbox deleted remotely; marker cleanup failed: %v", err)
 			}
 			return emitDeleteResult(name, "", "deleted", parent.output)
 
 		case isAzureNotFound(getErr):
-			return exterrors.Dependency(
-				exterrors.CodeToolboxNotFound,
-				fmt.Sprintf("toolbox %q not found", name),
-				"run 'azd ai toolbox list' to see available toolboxes",
-			)
+			if err := setToolboxEndpointEnvFunc(ctx, name, "", client.Endpoint()); err != nil {
+				log.Printf("toolbox absent remotely; marker cleanup failed: %v", err)
+			}
+			return emitDeleteResult(name, "", "already_deleted", parent.output)
 
 		default:
 			return exterrors.ServiceFromAzure(getErr, exterrors.OpGetToolbox)
@@ -190,6 +190,9 @@ func runDeleteToolboxVersion(
 	}
 
 	if cascaded {
+		if err := setToolboxEndpointEnvFunc(ctx, name, "", client.Endpoint()); err != nil {
+			log.Printf("toolbox deleted remotely; marker cleanup failed: %v", err)
+		}
 		if parent.output == "json" {
 			return emitDeleteResult(name, verb.version, "toolbox_cascaded", parent.output)
 		}

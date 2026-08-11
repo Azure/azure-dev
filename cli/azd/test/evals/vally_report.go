@@ -213,7 +213,7 @@ func filteredEntries(records []indexedRecord) (passed []reportEntry, failed []re
 			model:             nonEmpty(rec.Model, "unknown-model"),
 			experimentVariant: rec.ExperimentVariant,
 			trialIndex:        max(rec.TrialIndex, 0),
-			totalTrials:       max(rec.TotalTrials, 0),
+			totalTrials:       max(rec.TotalTrials, 1),
 			checks:            checks,
 			skillsLoaded:      skillsLoaded,
 			toolCalls:         toolCalls,

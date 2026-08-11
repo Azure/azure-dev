@@ -218,7 +218,9 @@ func TestOptionsValidate(t *testing.T) {
 		"layers with DeploymentStacks set at top level is invalid",
 		func(t *testing.T) {
 			opts := &Options{
-				DeploymentStacks: map[string]any{"k": "v"},
+				DeploymentStacks: &DeploymentStacksConfig{
+					DenySettings: &DenySettingsConfig{Mode: "none"},
+				},
 				Layers: []Options{
 					{Name: "l1", Path: "infra/l1"},
 				},

@@ -17,6 +17,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
+	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -54,6 +55,12 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	// Prompt for Activity bot names at the start of preprovision so the input
+	// appears before longer setup/update steps in this handler.
+	if err := provisionActivityBotNames(ctx, azdClient, args); err != nil {
+		return err
+	}
+
 	if err := updateLegacyProjectDeployments(
 		ctx,
 		azdClient,
@@ -73,12 +80,7 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 	for _, svc := range args.Project.Services {
 		switch svc.Host {
 		case AiAgentHost:
-			if err := prepareContainerSettings(
-				ctx,
-				azdClient,
-				svc,
-				args.Project.Path,
-			); err != nil {
+			if err := prepareContainerSettings(svc, args.Project.Path); err != nil {
 				return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
 			}
 			if err := envUpdate(
@@ -246,12 +248,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		return err
 	}
 
-	if err := prepareContainerSettings(
-		ctx,
-		azdClient,
-		svc,
-		args.Project.Path,
-	); err != nil {
+	if err := prepareContainerSettings(svc, args.Project.Path); err != nil {
 		return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
 	}
 	if err := envUpdate(
@@ -401,46 +398,48 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		return nil
 	}
 
-	// Whether this service is an activity agent decides how the shared inputs below
-	// are treated: an activity agent requires the Teams bot connector, so a missing
-	// input must fail the deploy; every other agent only feeds best-effort
-	// optimization reporting, which is safe to skip.
-	isActivity := false
-	if ca, isHosted, _, defErr := project.LoadAgentDefinition(svc, args.Project.Path); defErr == nil && isHosted {
-		isActivity = project.ResolveActivityProfile(ca).IsActivity
-	}
+	// Read the inputs used by best-effort optimization reporting.
+	// Activity bot provisioning is performed in the service target deploy path
+	// (single source of truth), so postdeploy no longer performs a second bot
+	// configuration pass that can conflict with the deploy-time bot name.
+	envName, endpoint, _, cred, inputErr := gatherPostdeployInputs(ctx, azdClient)
 
-	// Read the inputs both steps draw from once. Gathering does not decide
-	// skip-vs-fail; each step below applies its own policy to inputErr, so the
-	// required Teams bot never inherits optimization reporting's "log and skip"
-	// preconditions and vice versa.
-	envName, endpoint, tenant, cred, inputErr := gatherPostdeployInputs(ctx, azdClient)
-
-	// Step 1 — activity bot: a required connector, provisioned and validated on its
-	// own terms. A missing prerequisite fails the deploy rather than being skipped,
-	// consistent with the EnsureBot failure handled just below. No-op for other agents.
-	if isActivity {
-		if inputErr != nil {
-			return fmt.Errorf(
-				"agent %q deployed successfully, but its required Microsoft Teams bot could not be "+
-					"configured: %w\n"+
-					"  Ensure the agent is provisioned in this environment, then re-run 'azd deploy'.",
-				svc.Name, inputErr,
+	if ca, isHosted, _, defErr := project.LoadAgentDefinition(svc, args.Project.Path); defErr == nil &&
+		isHosted && project.ResolveActivityProfile(ca).IsActivity {
+		serviceKey := toServiceKey(svc.Name)
+		agentName, nameErr := readEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_NAME", serviceKey))
+		botName, botErr := readEnvValue(ctx, azdClient, envName, envkey.AgentBotName(svc.Name))
+		msaAppID, idErr := readEnvValue(ctx, azdClient, envName, envkey.AgentInstanceIdentityClientID(svc.Name))
+		if nameErr == nil && botErr == nil && idErr == nil {
+			packagePath := ""
+			if inputErr == nil {
+				subscriptionID, subErr := readEnvValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID")
+				resourceGroup, rgErr := readEnvValue(ctx, azdClient, envName, "AZURE_RESOURCE_GROUP")
+				if subErr == nil && rgErr == nil {
+					agentClient := agent_api.NewAgentClient(endpoint, cred)
+					packagePath = writeTeamsAppPackage(
+						ctx, agentClient, args.Project, svc, agentName, subscriptionID, resourceGroup, botName,
+					)
+				} else {
+					log.Printf(
+						"postdeploy: skipping Teams app package for %s: subscription: %v, resource group: %v",
+						svc.Name, subErr, rgErr,
+					)
+				}
+			} else {
+				log.Printf("postdeploy: skipping Teams app package for %s: %v", svc.Name, inputErr)
+			}
+			guidePath := writeTeamsSetupGuide(args.Project, svc, agentName, botName, msaAppID, packagePath)
+			printTeamsNextSteps(botName, msaAppID, guidePath, packagePath)
+		} else {
+			log.Printf(
+				"postdeploy: skipping Teams setup guide for %s: agent name: %v, bot name: %v, instance identity: %v",
+				svc.Name, nameErr, botErr, idErr,
 			)
 		}
-		if err := ensureActivityBot(
-			ctx, azdClient, cred, envName, svc, args.Project, endpoint, tenant,
-		); err != nil {
-			return fmt.Errorf(
-				"agent %q deployed successfully, but configuring its Microsoft Teams bot failed: %w\n"+
-					"  The agent version is active — only the Teams channel binding is missing "+
-					"(commonly Azure Bot permissions or quota). Resolve the cause and re-run 'azd deploy'.",
-				svc.Name, err,
-			)
-		}
 	}
 
-	// Step 2 — optimization reporting: best-effort, skipped on its own terms. A
+	// Optimization reporting is best-effort and skipped on missing inputs. A
 	// missing input only logs and skips; it never fails an otherwise-successful
 	// deploy (the client-side agent-identity RBAC assignment was removed).
 	if inputErr != nil {
@@ -761,8 +760,6 @@ func setEnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string,
 }
 
 func prepareContainerSettings(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) error {
@@ -811,24 +808,13 @@ func prepareContainerSettings(
 		result.Cpu = project.DefaultCpu
 	}
 
-	// Persist the resolved container settings back onto the service's inline
-	// properties, preserving the agent definition and other config keys.
-	containerPath, containerValue, err := project.SetAgentContainerSettings(
+	// Defaults are runtime values. Do not persist them here:
+	// lifecycle hooks must not rewrite user-authored azure.yaml.
+	if err := project.SetAgentContainerSettings(
 		svc,
 		&project.ContainerSettings{Resources: result},
-	)
-	if err != nil {
+	); err != nil {
 		return fmt.Errorf("failed to update agent container settings: %w", err)
-	}
-
-	if !hasRootFileRef {
-		if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
-			ServiceName: svc.GetName(),
-			Path:        containerPath,
-			Value:       containerValue,
-		}); err != nil {
-			return fmt.Errorf("persisting agent container settings: %w", err)
-		}
 	}
 
 	return nil

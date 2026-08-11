@@ -334,6 +334,7 @@ func Test_Cli_PublishAppHostManifest(t *testing.T) {
 		require.Contains(t, captured.Env, "DOTNET_ENVIRONMENT=Development")
 		// Node reuse must be disabled to avoid the os/exec pipe-inheritance hang (issue #9295).
 		require.Contains(t, captured.Env, "MSBUILDDISABLENODEREUSE=1")
+		require.Contains(t, captured.Env, "ASPIRE_SUPPRESS_CLI_RUN_HOOK=true")
 	})
 
 	t.Run("single file apphost", func(t *testing.T) {
@@ -352,6 +353,7 @@ func Test_Cli_PublishAppHostManifest(t *testing.T) {
 		require.Equal(t, "apphost.cs", captured.Args[1])
 		require.NotContains(t, captured.Args, "--project")
 		require.Contains(t, captured.Env, "MSBUILDDISABLENODEREUSE=1")
+		require.Contains(t, captured.Env, "ASPIRE_SUPPRESS_CLI_RUN_HOOK=true")
 	})
 
 	t.Run("run error", func(t *testing.T) {

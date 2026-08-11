@@ -13,6 +13,26 @@ Use `--no-inspector` to run only the local agent process:
 azd ai agent run --no-inspector
 ```
 
+The Agent Inspector UI binds port `8087` by default. Use `--inspector-port` to
+move it, which is what you need when running two agents side by side or when a
+stale process still holds the default port:
+
+```bash
+azd ai agent run --port 9091 --inspector-port 9002
+```
+
+`--inspector-port` is rejected when it cannot be honored:
+
+- with `--no-client` (or the deprecated `--no-inspector`), since no local client
+  is opened and the port would go unused; and
+- for agents that use Agent Inspector, when it matches `--port`, since the agent
+  binds that address first and the inspector would then fail to bind it.
+
+azd also warns, without failing the run, when `--inspector-port` cannot take
+effect: activity-protocol agents open the Microsoft 365 Agents Playground rather
+than the Agent Inspector, and `--port 8087` on its own collides with the
+inspector's own default UI port.
+
 ## Migrating Legacy Agent Configuration
 
 New Foundry agent projects keep the agent definition directly on the
@@ -49,6 +69,32 @@ services:
     name: my-agent
     description: My hosted agent
 ```
+
+### Environment variables under `config:`
+
+Older projects could also set environment variables in an `env:` block nested
+under the service's `config:`. That position is no longer read: azd takes the
+service environment only from the service-level `env:`. A service that still
+carries `config: env:` gets a warning naming the affected variables on both
+`azd ai agent run` and `azd deploy`.
+
+Move them up one level to fix it:
+
+<!-- azd:doc-example partial -->
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    env:
+      API_KEY: ${SECRET}
+      LOG_LEVEL: debug
+```
+
+Hosted Agent Service environment variable names must start with a letter or
+underscore and contain only letters, digits, or underscores. For example,
+`API_KEY` is valid, while `api-key` is not. `azd deploy` validates these names
+before contacting Foundry Agent Service.
 
 ## Content safety policies
 
@@ -116,6 +162,10 @@ Details:
   fails (for example, the previous session was already deleted), azd silently
   falls back to the default behavior and the next invoke starts a fresh session
   on the new version.
+
+## Customize infrastructure
+
+Use `azd ai agent init --infra` to generate editable Foundry Bicep or Terraform. Existing project infrastructure is preserved as a separate layer. See [Customize Foundry infrastructure with `--infra`](docs/infrastructure-eject.md) for migration behavior, file-conflict rules, resource-group ownership, layer dependencies, and limitations.
 
 ## Private networking for `host: azure.ai.project`
 

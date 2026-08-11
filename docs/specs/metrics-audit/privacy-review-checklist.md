@@ -166,7 +166,8 @@ A new field **must** be hashed if any of the following are true:
 
 A new field should **not** be hashed if:
 
-- The value is from a fixed enum (e.g., `auth.method` = `"browser"`).
+- The value is from a fixed enum (e.g., `auth.method` = `"browser"`, or
+  `aspire.apphost.language` = `"typescript"` / `"python"` / `"go"` / `"java"` / `"rust"`).
 - The value is a count or duration (measurements).
 - The value is system-generated metadata (e.g., OS type).
 - The value is a hardcoded literal in source code (e.g., `exegraph.step.tags`, which

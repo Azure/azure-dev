@@ -135,7 +135,7 @@ services:
 			},
 		},
 		{
-			name: "project scans only expanded network fields",
+			name: "project scans only expanded network fields and honors escaping",
 			content: `name: sample
 services:
   project:
@@ -151,12 +151,14 @@ services:
       agentSubnet:
         vnet: $${AGENT_VNET_ID}
       peSubnet:
-        vnet: $${PE_VNET_ID}
+        vnet: ${PE_VNET_ID}
       dns:
         subscription: ${DNS_SUBSCRIPTION_ID}
 `,
+			// The network fields expand through foundry.ExpandEnv, so an escaped
+			// $${VAR} stays literal and needs no environment value; only the
+			// unescaped references are required.
 			want: []azureYamlEnvironmentReference{
-				{Name: "AGENT_VNET_ID"},
 				{Name: "PE_VNET_ID"},
 				{Name: "DNS_SUBSCRIPTION_ID"},
 			},
@@ -236,6 +238,20 @@ services:
     $ref: ./missing-skill.yaml
 `,
 			want: nil,
+		},
+		{
+			name: "deprecated Foundry host refs are scanned",
+			content: `name: sample
+services:
+  project:
+    host: microsoft.foundry
+    network:
+      agentSubnet:
+        vnet: ${FOUNDRY_HOST_NETWORK}
+`,
+			want: []azureYamlEnvironmentReference{
+				{Name: "FOUNDRY_HOST_NETWORK"},
+			},
 		},
 		{
 			name: "deprecated toolbox and routine config fields are scanned",

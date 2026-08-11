@@ -153,7 +153,7 @@ func TestWriteTerraformEjectedInfra(t *testing.T) {
 
 			require.NoError(t, writeTerraformEjectedInfra(infraDir, parameters))
 
-			//nolint:gosec // test-owned temporary output
+			// #nosec G304
 			outputs, err := os.ReadFile(filepath.Join(infraDir, "outputs.tf"))
 			require.NoError(t, err)
 			assert.Contains(t, string(outputs), "AZURE_AI_PROJECT_ID")
@@ -167,7 +167,7 @@ func TestWriteTerraformEjectedInfra(t *testing.T) {
 				assert.ErrorIs(t, err, os.ErrNotExist)
 			}
 
-			//nolint:gosec // test-owned temporary output
+			// #nosec G304
 			rawTfvars, err := os.ReadFile(filepath.Join(infraDir, "main.tfvars.json"))
 			require.NoError(t, err)
 			tfvars := map[string]any{}

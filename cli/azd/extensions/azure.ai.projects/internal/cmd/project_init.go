@@ -1054,7 +1054,7 @@ func ejectProjectInfra(
 	if err != nil {
 		return err
 	}
-	//nolint:gosec // validated project file path
+	// #nosec G304
 	raw, err := os.ReadFile(projectFile)
 	if err != nil {
 		return fmt.Errorf("read %s for infrastructure ejection: %w", projectFile, err)
@@ -1083,7 +1083,7 @@ func ejectProjectInfra(
 		)
 	}
 	infraDir := filepath.Join(projectRoot, "infra")
-	//nolint:gosec // generated project directory
+	// #nosec G301
 	if err := os.MkdirAll(infraDir, 0755); err != nil {
 		return fmt.Errorf("create infra directory: %w", err)
 	}
@@ -1199,7 +1199,7 @@ func terraformEjectionVariables(parameters map[string]any) (map[string]any, bool
 			parameters["connectionCredentials"],
 		)
 	}
-	//nolint:gosec // placeholders are environment names
+	// #nosec G101
 	return map[string]any{
 		"subscription_id":      "${AZURE_SUBSCRIPTION_ID}",
 		"location":             "${AZURE_LOCATION}",
@@ -1239,7 +1239,7 @@ func renderTerraformOutputs(destination string, includeAcr bool) error {
 	}{IncludeAcr: includeAcr}); err != nil {
 		return fmt.Errorf("render Terraform outputs template: %w", err)
 	}
-	//nolint:gosec // generated Terraform file
+	// #nosec G306
 	return os.WriteFile(filepath.Join(destination, "outputs.tf"), output.Bytes(), 0644)
 }
 
@@ -1257,7 +1257,7 @@ func copyEmbeddedTree(files fs.FS, root, destination string, skip map[string]str
 		}
 		target := filepath.Join(destination, relative)
 		if entry.IsDir() {
-			//nolint:gosec // generated project tree
+			// #nosec G301
 			return os.MkdirAll(target, 0755)
 		}
 		if _, excluded := skip[filepath.Base(path)]; excluded {
@@ -1267,7 +1267,7 @@ func copyEmbeddedTree(files fs.FS, root, destination string, skip map[string]str
 		if err != nil {
 			return err
 		}
-		//nolint:gosec // generated project file
+		// #nosec G306
 		return os.WriteFile(target, data, 0644)
 	})
 }
@@ -1277,6 +1277,6 @@ func writeJSONFile(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	//nolint:gosec // generated JSON file
+	// #nosec G306
 	return os.WriteFile(path, append(data, '\n'), 0644)
 }

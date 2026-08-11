@@ -4,6 +4,7 @@
 package project
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -22,6 +23,14 @@ func explainUnknownKeys(err error) error {
 	text := err.Error()
 	if !goTypeInField.MatchString(text) {
 		return err
+	}
+
+	// Nothing at the top level was recognised, so this is another tool's file
+	// rather than a typo in one of ours. `azd ai agent eval` writes an eval.yaml
+	// of its own, and suggesting a near-miss for each of its keys in turn would
+	// walk the reader into rewriting it a line at a time.
+	if topLevelKeysAllUnknown(text) {
+		return errUnrecognisedEvalConfig
 	}
 
 	lines := make([]string, 0, 4)
@@ -45,6 +54,31 @@ func explainUnknownKeys(err error) error {
 		return err
 	}
 	return fmt.Errorf("%s", strings.Join(lines, "\n"))
+}
+
+var errUnrecognisedEvalConfig = errors.New(
+	"none of this file's top-level keys are ones an eval configuration declares, " +
+		"so this is not one. `azd ai agent eval` writes an eval.yaml of its own with " +
+		"a different shape, and runs it with `azd ai agent eval run`")
+
+// topLevelKeysAllUnknown reports a file whose top-level shape is not this one.
+//
+// Only top-level rejections count. A nested one does not disqualify the check:
+// another tool's file can still have a key named like one of ours, and the
+// mismatch inside it then reports against the nested type rather than the
+// config. The threshold is the number of keys a configuration declares, so one
+// stray key beside recognised ones stays a typo.
+func topLevelKeysAllUnknown(text string) bool {
+	known := keysOfType("project.EvalConfig")
+	rejected := 0
+	for _, line := range strings.Split(text, "\n") {
+		m := goTypeInField.FindStringSubmatch(line)
+		if m == nil || m[2] != "project.EvalConfig" {
+			continue
+		}
+		rejected++
+	}
+	return rejected > 0 && rejected >= len(known)
 }
 
 // keysOfType lists the YAML keys a declaration accepts.

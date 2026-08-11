@@ -44,3 +44,34 @@ func TestKeysOfTypeCoversTheDeclarations(t *testing.T) {
 	assert.Contains(t, keysOfType("project.DatasetDecl"), "source")
 	assert.Empty(t, keysOfType("project.Unknown"))
 }
+
+// `azd ai agent eval` writes an eval.yaml of its own with an entirely different
+// shape. Suggesting a near-miss for each of its keys in turn would walk the
+// reader into rewriting another tool's file a line at a time.
+//
+// Its `evaluators` key happens to share a name with ours, so the mismatch
+// inside it reports against the nested type. That must not disqualify the check.
+func TestExplainUnknownKeys_AnotherToolsFile(t *testing.T) {
+	got := explainUnknownKeys(errors.New(
+		"yaml: unmarshal errors:\n" +
+			"  line 1: field name not found in type project.EvalConfig\n" +
+			"  line 2: field agent not found in type project.EvalConfig\n" +
+			"  line 6: field dataset not found in type project.EvalConfig\n" +
+			"  line 13: field local_uri not found in type project.EvaluatorDecl\n" +
+			"  line 14: field options not found in type project.EvalConfig\n" +
+			"  line 16: field max_samples not found in type project.EvalConfig")).Error()
+
+	assert.Contains(t, got, "not one")
+	assert.Contains(t, got, "azd ai agent eval run", "the reader is told where the file does belong")
+	assert.NotContains(t, got, "did you mean",
+		"suggesting a fix per key sends the reader down the wrong path entirely")
+}
+
+// One stray key beside recognised ones is still a typo, so the suggestion stands.
+func TestExplainUnknownKeys_OneStrayTopLevelKey(t *testing.T) {
+	got := explainUnknownKeys(errors.New(
+		"yaml: unmarshal errors:\n  line 1: field datsets not found in type project.EvalConfig")).Error()
+
+	assert.Contains(t, got, `did you mean "datasets"?`)
+	assert.NotContains(t, got, "does not look like")
+}

@@ -84,7 +84,7 @@ func DatasetOverrideNeedsDeclaredEval() error {
 
 // DatasetNotInCatalog reports a --dataset the configuration does not declare.
 func DatasetNotInCatalog(dataset, configPath string) error {
-	return fmt.Errorf("dataset %q is not in the catalog in %s", dataset, configPath)
+	return fmt.Errorf("dataset %q is not in the catalog in %s", dataset, filepath.ToSlash(configPath))
 }
 
 // DatasetHasUnregisteredEdits reports local rows no deployed version holds.
@@ -214,7 +214,7 @@ func EvalNotDeployedYet(eval string) error {
 func NoEvalNamedOrDeclared(configPath string) error {
 	return fmt.Errorf(
 		"no eval was named and none is declared in %s; pass --eval with a name or an id",
-		configPath)
+		filepath.ToSlash(configPath))
 }
 
 // NoEvalGiven reports a command run outside a project with no eval id.
@@ -361,7 +361,7 @@ func OutputItemEmpty() error {
 
 // NotARegularFile reports an --output-file that names a directory or a device.
 func NotARegularFile(path string) error {
-	return fmt.Errorf("%s is not a regular file, so it will not be overwritten", path)
+	return fmt.Errorf("%s is not a regular file, so it will not be overwritten", filepath.ToSlash(path))
 }
 
 // CannotWriteInDirectory reports a destination directory that cannot be written
@@ -369,7 +369,7 @@ func NotARegularFile(path string) error {
 // temporary file the writer chose, which the caller never asked for.
 func CannotWriteInDirectory(dir string, err error) error {
 	if errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("%s does not exist", dir)
+		return fmt.Errorf("%s does not exist", filepath.ToSlash(dir))
 	}
 	return fmt.Errorf("cannot write in %s: %w", dir, err)
 }
@@ -551,7 +551,7 @@ func ReadingInstructions(named string, err error) error {
 
 // SeedingFromFile names the local file generation was seeded from.
 func SeedingFromFile(path string) string {
-	return fmt.Sprintf("  Seeding generation from %s.\n", path)
+	return fmt.Sprintf("  Seeding generation from %s.\n", filepath.ToSlash(path))
 }
 
 // SeedingFromAgent names the agent whose published instructions seeded generation.
@@ -677,7 +677,7 @@ func ReattachToJob(selector, jobID string) string {
 
 // WroteArtifact reports where a generated artifact landed.
 func WroteArtifact(path string) string {
-	return fmt.Sprintf("%s Downloaded %s\n", DoneMark, path)
+	return fmt.Sprintf("%s Downloaded %s\n", DoneMark, filepath.ToSlash(path))
 }
 
 // ArtifactExists reports a generation that would overwrite a checked-in file.
@@ -806,7 +806,7 @@ func JSONLRowEmpty(path string, line int) error {
 
 // JSONLNoRows reports a dataset file with nothing in it to evaluate.
 func JSONLNoRows(path string) error {
-	return fmt.Errorf("%s has no rows to evaluate", path)
+	return fmt.Errorf("%s has no rows to evaluate", filepath.ToSlash(path))
 }
 
 // ReadingFromFile reports a --from-file that would not stat.
@@ -939,7 +939,7 @@ func DatasetFileHasNoRows(name string) error {
 
 // NoJSONLInDirectory reports an upload directory holding no dataset.
 func NoJSONLInDirectory(dir string) error {
-	return fmt.Errorf("no .jsonl file found in %s", dir)
+	return fmt.Errorf("no .jsonl file found in %s", filepath.ToSlash(dir))
 }
 
 // ReadingDatasetFromDir reports the upload failing to gather the local rows.
@@ -1498,12 +1498,12 @@ func FurtherNextStep(step string) string {
 
 // CreatedCatalogFile reports a configuration created to hold a catalog entry.
 func CreatedCatalogFile(configPath string) string {
-	return fmt.Sprintf("%s Created %s with the catalog entry\n", DoneMark, configPath)
+	return fmt.Sprintf("%s Created %s with the catalog entry\n", DoneMark, filepath.ToSlash(configPath))
 }
 
 // AddedToCatalog reports a generated artifact recorded in the configuration.
 func AddedToCatalog(kind, artifact, configPath string) string {
-	return fmt.Sprintf("%s Added %s %s to %s\n", DoneMark, kind, artifact, configPath)
+	return fmt.Sprintf("%s Added %s %s to %s\n", DoneMark, kind, artifact, filepath.ToSlash(configPath))
 }
 
 // ArtifactDescription names a catalogued artifact, with its version when there is one.

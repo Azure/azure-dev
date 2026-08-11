@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -421,8 +422,14 @@ func (ec *evalContext) pollGeneration(
 	return poller.Poll(ctx)
 }
 
-// writeRubric persists only the rubric dimensions so the developer can edit
-// weights and descriptions and publish a new version.
+// writeRubric persists the rubric so the developer can edit weights and
+// descriptions and publish a new version.
+//
+// The definition is written through as it arrived rather than re-marshalled
+// from a struct. Re-marshalling keeps only the fields the struct models, and
+// dropped pass_threshold: the file then differed from the version that had just
+// been published, so the next deploy republished it, silently without a
+// threshold. Anything the service adds later would have been lost the same way.
 func writeRubric(path string, result json.RawMessage) error {
 	if len(result) == 0 {
 		return messages.RubricJobReturnedNoResult()
@@ -431,13 +438,20 @@ func writeRubric(path string, result json.RawMessage) error {
 		return messages.Creating(filepath.Dir(path), err)
 	}
 
-	var parsed eval_api.EvaluatorResult
-	if err := json.Unmarshal(result, &parsed); err == nil && len(parsed.Definition.Dimensions) > 0 {
-		body, err := json.MarshalIndent(parsed.Definition, "", "  ")
-		if err != nil {
-			return err
+	var envelope struct {
+		Definition json.RawMessage `json:"definition"`
+	}
+	if err := json.Unmarshal(result, &envelope); err == nil && len(envelope.Definition) > 0 {
+		var probe struct {
+			Dimensions []json.RawMessage `json:"dimensions"`
 		}
-		return os.WriteFile(path, body, 0o600)
+		if json.Unmarshal(envelope.Definition, &probe) == nil && len(probe.Dimensions) > 0 {
+			var pretty bytes.Buffer
+			if err := json.Indent(&pretty, envelope.Definition, "", "  "); err != nil {
+				return messages.Serializing(path, err)
+			}
+			return os.WriteFile(path, pretty.Bytes(), 0o600)
+		}
 	}
 
 	// Fall back to the raw payload rather than losing the result.

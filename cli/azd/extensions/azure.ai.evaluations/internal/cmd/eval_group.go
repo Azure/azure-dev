@@ -70,6 +70,20 @@ func newEvalCreateCommand() *cobra.Command {
 			}
 
 			reconciler := &evalReconciler{ec: ec}
+			out := cmd.OutOrStdout()
+			// Reported per artifact, because "publishes nothing when nothing
+			// changed" is the contract a reader is checking here and a single
+			// closing line cannot show it. Silent under -o json.
+			say := func(kind, name, version string, changed bool) {
+				if isJSON(cmd) {
+					return
+				}
+				if changed {
+					fmt.Fprintln(out, messages.PublishedVersion(kind, name, version))
+				} else {
+					fmt.Fprintln(out, messages.UnchangedAtVersion(kind, name, version))
+				}
+			}
 
 			// The eval names its dataset and evaluators, and the service resolves
 			// those names when the eval is created, so they have to be published
@@ -78,9 +92,11 @@ func newEvalCreateCommand() *cobra.Command {
 			// the service without a full deploy.
 			baseDir := filepath.Dir(path)
 			if decl, ok := cfg.DatasetDeclaration(eval.Dataset); ok {
-				if _, _, err := reconciler.EnsureDataset(ctx, *decl, datasetPath); err != nil {
+				version, changed, err := reconciler.EnsureDataset(ctx, *decl, datasetPath)
+				if err != nil {
 					return messages.DatasetProblem(decl.Name, err)
 				}
+				say("dataset", decl.Name, version, changed)
 			}
 			for _, ref := range eval.Evaluators {
 				decl, ok := cfg.EvaluatorDeclaration(ref.Evaluator)
@@ -92,11 +108,16 @@ func newEvalCreateCommand() *cobra.Command {
 				if !filepath.IsAbs(local) {
 					local = filepath.Join(baseDir, local)
 				}
-				if _, _, err := reconciler.EnsureEvaluator(ctx, *decl, local); err != nil {
+				version, changed, err := reconciler.EnsureEvaluator(ctx, *decl, local)
+				if err != nil {
 					return messages.EvaluatorProblem(decl.Name, err)
 				}
+				say("evaluator", decl.Name, version, changed)
 			}
 
+			// Read before the call so a reused eval is not announced as a new one.
+			// An eval is immutable, so the same id back means nothing was created.
+			existing := ec.recordedEvalID(ctx, eval.Name)
 			id, err := reconciler.EnsureEval(ctx, *eval, datasetPath)
 			if err != nil {
 				return err
@@ -107,7 +128,11 @@ func newEvalCreateCommand() *cobra.Command {
 					"id": id, "name": eval.Name,
 				})
 			}
-			fmt.Fprint(cmd.OutOrStdout(), messages.EvalCreated(eval.Name, id))
+			if id == existing {
+				fmt.Fprint(out, messages.EvalUnchanged(eval.Name, id))
+			} else {
+				fmt.Fprint(out, messages.EvalCreated(eval.Name, id))
+			}
 			return nil
 		},
 	}

@@ -1268,6 +1268,16 @@ func EvalCreated(eval, id string) string {
 	return fmt.Sprintf("%s Created eval: %s (%s)\n", DoneMark, eval, id)
 }
 
+// EvalUnchanged reports an eval a create found already in place.
+//
+// An eval is immutable, so re-running create against an unedited declaration
+// creates nothing. Saying "Created" there claims work that did not happen, and
+// hides the one thing worth checking: that the id, and so the run history
+// hanging off it, survived.
+func EvalUnchanged(eval, id string) string {
+	return fmt.Sprintf("%s Eval %s is unchanged (%s)\n", SkippedMark, eval, id)
+}
+
 // ListingEvals reports a failure to list the project's evals.
 func ListingEvals(err error) error {
 	return fmt.Errorf("listing evals: %w", err)

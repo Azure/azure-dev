@@ -230,13 +230,15 @@ func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList) error {
 	}
 	rows := make([][]string, 0, len(list.Value))
 	for _, d := range list.Value {
-		rows = append(rows, []string{d.Name, d.Version, d.Format})
+		rows = append(rows, []string{d.Name, d.Version, d.Type})
 	}
 	if len(rows) == 0 {
 		fmt.Fprint(cmd.OutOrStdout(), messages.NoDatasets())
 		return nil
 	}
-	return emitTable(cmd.OutOrStdout(), []string{"NAME", "VERSION", "FORMAT"}, rows)
+	// TYPE, not FORMAT: the service populates type (`uri_file`) and leaves
+	// format empty, so the column was blank on every row.
+	return emitTable(cmd.OutOrStdout(), []string{"NAME", "VERSION", "TYPE"}, rows)
 }
 
 func newDatasetShowCommand() *cobra.Command {
@@ -265,7 +267,10 @@ func newDatasetShowCommand() *cobra.Command {
 					return messages.ResolvingLatestDatasetVersion(name, err)
 				}
 				if len(list.Value) == 0 {
-					return messages.DatasetHasNoVersions(name)
+					// The service answers an unknown name with an empty list
+					// rather than a 404, and a dataset cannot exist with no
+					// versions, so this is what "no such dataset" looks like.
+					return messages.DatasetNotFound(name)
 				}
 				version = dataset_api.LatestVersion(list.Value)
 			}
@@ -284,7 +289,7 @@ func newDatasetShowCommand() *cobra.Command {
 			if err := emitDetail(cmd.OutOrStdout(), []field{
 				{"Name", ds.Name},
 				{"Version", ds.Version},
-				{"Format", ds.Format},
+				{"Type", ds.Type},
 				{"URI", ds.ResolvedBlobURI()},
 			}); err != nil {
 				return err

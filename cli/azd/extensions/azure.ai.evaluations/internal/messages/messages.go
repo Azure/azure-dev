@@ -847,9 +847,15 @@ func ResolvingLatestDatasetVersion(dataset string, err error) error {
 	return fmt.Errorf("resolving the latest version of %q: %w", dataset, err)
 }
 
-// DatasetHasNoVersions reports a dataset nothing was ever published under.
-func DatasetHasNoVersions(dataset string) error {
-	return fmt.Errorf("dataset %q has no versions", dataset)
+// DatasetNotFound reports a name the project does not hold.
+//
+// The service answers an unknown name with an empty version list rather than a
+// 404, and a dataset cannot exist with no versions, so an empty list means the
+// dataset is absent rather than empty.
+func DatasetNotFound(dataset string) error {
+	return fmt.Errorf(
+		"no dataset %q in this project; "+
+			"`azd ai eval dataset list` shows the ones there are", dataset)
 }
 
 // DatasetVersionNotFoundWithHint reports a dataset version the project does not hold.

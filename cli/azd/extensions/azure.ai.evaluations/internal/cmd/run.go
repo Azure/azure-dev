@@ -397,6 +397,11 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 ) (*eval_api.EvalRunDataSource, error) {
 	list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 1)
 	if err != nil {
+		if eval_api.IsNotFound(err) {
+			// The eval itself is missing, which is worth saying plainly rather
+			// than as forty lines of the 404 that discovered it.
+			return nil, messages.EvalNotFound(evalID)
+		}
 		return nil, messages.ReadingPreviousRuns(evalID, err)
 	}
 	if list == nil || len(list.Data) == 0 || list.Data[0].DataSource == nil {

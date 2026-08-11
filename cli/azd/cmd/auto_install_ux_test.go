@@ -356,8 +356,9 @@ func TestAutoInstallExtensionRequirementsNoPrompt(t *testing.T) {
 	require.Len(t, console.SpinnerOps(), 4)
 	assert.Equal(t, input.StepDone, console.SpinnerOps()[1].Format)
 	assert.Contains(t, console.SpinnerOps()[1].Message, "(1.2.3)")
-	assert.NotContains(t, console.SpinnerOps()[1].Message, " from ")
+	assert.Contains(t, console.SpinnerOps()[1].Message, " from 'azd'")
 	assert.Equal(t, input.StepDone, console.SpinnerOps()[3].Format)
+	assert.Contains(t, console.SpinnerOps()[3].Message, " from 'local'")
 	require.NotEmpty(t, console.Output())
 	assert.Empty(t, console.Output()[len(console.Output())-1])
 }
@@ -537,7 +538,7 @@ func TestAutoInstallExtensionRequirementsHonorsSelectedDependencySource(t *testi
 	require.Equal(t, []string{"child@local", "parent@azd"}, installOrder)
 }
 
-func TestAutoInstallExtensionRequirementsShowsSourceForMultiSourcePlan(t *testing.T) {
+func TestAutoInstallExtensionRequirementsOmitsSourceWhenSelectionUsesOneSource(t *testing.T) {
 	clearAgentEnvVarsForTest(t)
 
 	azd := autoInstallTestExtension("demo", "Demo Extension", "azd", extensions.SourceCategoryAzd)
@@ -565,6 +566,44 @@ func TestAutoInstallExtensionRequirementsShowsSourceForMultiSourcePlan(t *testin
 			output.WithGrayFormat(" (1.2.3)"),
 		console.SpinnerOps()[1].Message,
 	)
+}
+
+func TestInstallSelectionsUseMultipleSources(t *testing.T) {
+	t.Parallel()
+
+	selection := func(id string, source string) extensionInstallSelection {
+		return extensionInstallSelection{
+			extension: autoInstallTestExtension(id, id, source, extensions.SourceCategoryOther),
+		}
+	}
+
+	tests := []struct {
+		name       string
+		selections []extensionInstallSelection
+		expected   bool
+	}{
+		{name: "empty"},
+		{
+			name:       "single source",
+			selections: []extensionInstallSelection{selection("one", "azd"), selection("two", "azd")},
+		},
+		{
+			name:       "source names are case insensitive",
+			selections: []extensionInstallSelection{selection("one", "azd"), selection("two", "AZD")},
+		},
+		{
+			name:       "multiple sources",
+			selections: []extensionInstallSelection{selection("one", "azd"), selection("two", "local")},
+			expected:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.expected, installSelectionsUseMultipleSources(tt.selections))
+		})
+	}
 }
 
 func TestDisplayExtensionRequirements(t *testing.T) {

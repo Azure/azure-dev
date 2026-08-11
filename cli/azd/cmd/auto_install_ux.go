@@ -100,6 +100,7 @@ func autoInstallExtensionRequirements(
 	if err != nil {
 		return autoInstallResult{}, err
 	}
+	displaySources := installSelectionsUseMultipleSources(selections)
 
 	console.Message(ctx, "")
 	installedAny := false
@@ -110,6 +111,7 @@ func autoInstallExtensionRequirements(
 			extensionManager,
 			*selection.extension,
 			selection.requirement.versionPreference,
+			displaySources,
 		)
 		if err != nil {
 			return autoInstallResult{installed: installedAny}, err
@@ -121,6 +123,17 @@ func autoInstallExtensionRequirements(
 	}
 
 	return autoInstallResult{installed: installedAny}, nil
+}
+
+func installSelectionsUseMultipleSources(selections []extensionInstallSelection) bool {
+	sources := make(map[string]struct{}, len(selections))
+	for _, selection := range selections {
+		sources[strings.ToLower(selection.extension.Source)] = struct{}{}
+		if len(sources) >= 2 {
+			return true
+		}
+	}
+	return false
 }
 
 func orderInstallSelections(

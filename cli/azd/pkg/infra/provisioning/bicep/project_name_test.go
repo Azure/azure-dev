@@ -6,7 +6,9 @@ package bicep
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 )
@@ -70,5 +72,30 @@ func TestResolveProjectName(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Equal(t, "yaml-project", projectName)
+	})
+
+	t.Run("preserves project name within ARM tag limit", func(t *testing.T) {
+		projectName := strings.Repeat("a", maxProjectTagValueLength)
+
+		require.Equal(t, projectName, normalizeProjectName(projectName))
+	})
+
+	t.Run("shortens long project name deterministically", func(t *testing.T) {
+		projectName := strings.Repeat("a", maxProjectTagValueLength+1)
+
+		normalized := normalizeProjectName(projectName)
+
+		require.Len(t, []rune(normalized), maxProjectTagValueLength)
+		require.Equal(t, normalized, normalizeProjectName(projectName))
+		require.NotEqual(t, normalized, normalizeProjectName(projectName+"b"))
+	})
+
+	t.Run("does not split unicode project name", func(t *testing.T) {
+		projectName := strings.Repeat("界", maxProjectTagValueLength+1)
+
+		normalized := normalizeProjectName(projectName)
+
+		require.Len(t, []rune(normalized), maxProjectTagValueLength)
+		require.True(t, utf8.ValidString(normalized))
 	})
 }

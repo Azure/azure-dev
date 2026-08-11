@@ -4,6 +4,7 @@
 package bicep
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 )
+
+const maxProjectTagValueLength = 256
 
 func resolveProjectName(projectPath string) (string, error) {
 	absoluteProjectPath, err := filepath.Abs(projectPath)
@@ -39,11 +42,22 @@ func resolveProjectName(projectPath string) (string, error) {
 		}
 
 		if projectName := strings.TrimSpace(config.Name); projectName != "" {
-			return projectName, nil
+			return normalizeProjectName(projectName), nil
 		}
 
 		break
 	}
 
-	return filepath.Base(absoluteProjectPath), nil
+	return normalizeProjectName(filepath.Base(absoluteProjectPath)), nil
+}
+
+func normalizeProjectName(projectName string) string {
+	projectNameRunes := []rune(projectName)
+	if len(projectNameRunes) <= maxProjectTagValueLength {
+		return projectName
+	}
+
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(projectName)))
+	prefixLength := maxProjectTagValueLength - len(hash) - 1
+	return string(projectNameRunes[:prefixLength]) + "-" + hash
 }

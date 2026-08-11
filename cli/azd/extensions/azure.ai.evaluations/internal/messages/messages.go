@@ -1699,8 +1699,34 @@ func AmbiguousEvalConfig(current, legacy string) error {
 
 // ReadingEvalConfig reports a configuration file that would not read.
 func ReadingEvalConfig(path string, err error) error {
+	if errors.Is(err, fs.ErrNotExist) {
+		return NoEvalConfig(path)
+	}
 	return fmt.Errorf("reading eval config %q: %w", filepath.ToSlash(path), err)
 }
+
+// NoEvalConfig reports a command run before anything scaffolded a config.
+//
+// The bare read failure underneath is a Windows syscall phrase about a path,
+// which describes the symptom of running `create` before `init` without naming
+// either command.
+//
+// Still unwraps to fs.ErrNotExist, because callers that tolerate an absent
+// configuration — OpenEvalConfig, and the reference resolution above it — decide
+// that by asking, and a nicer sentence that stopped answering would turn every
+// one of those into a failure.
+func NoEvalConfig(path string) error {
+	return &missingFileError{
+		msg: fmt.Sprintf(
+			"no eval configuration at %s; run `azd ai eval init` to scaffold one",
+			filepath.ToSlash(path)),
+	}
+}
+
+type missingFileError struct{ msg string }
+
+func (e *missingFileError) Error() string { return e.msg }
+func (e *missingFileError) Unwrap() error { return fs.ErrNotExist }
 
 // ParsingEvalConfig reports a configuration file that would not parse.
 func ParsingEvalConfig(path string, err error) error {

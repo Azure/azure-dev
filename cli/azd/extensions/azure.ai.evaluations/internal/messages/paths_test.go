@@ -5,13 +5,35 @@ package messages
 
 import (
 	"errors"
+	"fmt"
+	"io/fs"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-// %q escapes a Windows separator, so a path printed straight through comes back
+// Running `create` before `init` is the first thing anyone does wrong, and the
+// bare read failure underneath is a Windows syscall phrase naming neither
+// command.
+//
+// It must still unwrap to fs.ErrNotExist: the callers that tolerate an absent
+// configuration decide that by asking, so a nicer sentence that stopped
+// answering would turn every one of those into a failure.
+func TestNoEvalConfigStaysDetectable(t *testing.T) {
+	err := ReadingEvalConfig(`evals\azure.eval.yaml`, fmt.Errorf("open x: %w", fs.ErrNotExist))
+
+	assert.Contains(t, err.Error(), "no eval configuration at evals/azure.eval.yaml")
+	assert.Contains(t, err.Error(), "azd ai eval init")
+	assert.NotContains(t, err.Error(), "The system cannot find")
+	assert.True(t, errors.Is(err, fs.ErrNotExist),
+		"callers tolerate an absent config by asking, so it has to keep answering")
+
+	other := ReadingEvalConfig(`evals\azure.eval.yaml`, errors.New("permission denied"))
+	assert.Contains(t, other.Error(), "reading eval config")
+	assert.False(t, errors.Is(other, fs.ErrNotExist))
+}
+
 // as "evals\\azure.eval.yaml". A reader who copies that into a shell gets a path
 // that does not exist, which is the opposite of what naming the file is for.
 func TestPathsInMessagesStayCopyable(t *testing.T) {

@@ -884,7 +884,7 @@ func TestAnalyzeLayerDependencies_FoundryConsumesBicepOutput(t *testing.T) {
 	require.Equal(t, []int{0}, result.Edges[1])
 }
 
-func TestAnalyzeLayerDependencies_TerraformTfvarsRemainOpaque(t *testing.T) {
+func TestAnalyzeLayerDependencies_TerraformParametersRemainOpaque(t *testing.T) {
 	dir := t.TempDir()
 	networkDir := filepath.Join(dir, "network")
 	terraformDir := filepath.Join(dir, "terraform")
@@ -892,8 +892,8 @@ func TestAnalyzeLayerDependencies_TerraformTfvarsRemainOpaque(t *testing.T) {
 	mkTestDir(t, terraformDir)
 	writeTestFile(t, filepath.Join(networkDir, "main.bicep"),
 		"output AZURE_VNET_ID string = 'id'\n")
-	writeTestFile(t, filepath.Join(terraformDir, "main.tfvars.json"),
-		`{"vnet_id":"${AZURE_VNET_ID}"}`)
+	writeTestFile(t, filepath.Join(terraformDir, "main.parameters.json"),
+		`{"parameters":{"vnetId":{"value":"${AZURE_VNET_ID}"}}}`)
 
 	layers := []provisioning.Options{
 		{Name: "network", Path: "network", Module: "main", Provider: provisioning.Bicep},

@@ -55,7 +55,7 @@
       "type": "object",
       "description": "Voice agent (kind: prompt-voice) speech-to-speech model (e.g. id: gpt-realtime).",
       "properties": {
-        "id": { "type": "string", "minLength": 1, "description": "Model name for managed mode (e.g. 'gpt-realtime') or existing Foundry deployment name for self_deployed mode." }
+        "id": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "Model name for managed mode (e.g. 'gpt-realtime') or existing Foundry deployment name for self_deployed mode." }
       },
       "required": ["id"],
       "additionalProperties": true

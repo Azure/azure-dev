@@ -430,7 +430,7 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 			case AgentKindPromptVoice:
 				var agent VoiceAgent
 				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
-					if agent.Model == nil || agent.Model.Id == "" {
+					if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {
 						errors = append(errors, "template.model.id is required for a prompt-voice agent")
 					}
 					if agent.ModelType != "" &&

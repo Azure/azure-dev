@@ -526,7 +526,11 @@ func buildVoiceConfig(name string) *agent_api.VoiceConfig {
 // voice agent. It translates the authoring kind "prompt-voice" into the
 // data-plane service kind "voice" and defaults the audio pipeline.
 func CreateVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
-	if voiceAgent.Model == nil || voiceAgent.Model.Id == "" {
+	modelID := ""
+	if voiceAgent.Model != nil {
+		modelID = strings.TrimSpace(voiceAgent.Model.Id)
+	}
+	if modelID == "" {
 		return nil, fmt.Errorf("model.id is required for a prompt-voice agent")
 	}
 
@@ -561,7 +565,7 @@ func CreateVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRe
 			Kind: agent_api.AgentKindVoice,
 		},
 		ModelType:    modelType,
-		Model:        voiceAgent.Model.Id,
+		Model:        modelID,
 		Instructions: instructions,
 		Audio: &agent_api.VoiceAudioConfig{
 			Input: &agent_api.VoiceInputConfig{

@@ -77,6 +77,19 @@ name: voice-agent
 	}
 }
 
+func TestValidateAgentDefinition_PromptVoice_BlankModelID(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt-voice
+name: voice-agent
+model:
+  id: "   "
+`)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "model.id is required") {
+		t.Fatalf("expected model.id required error, got: %v", err)
+	}
+}
+
 // TestValidateAgentDefinition_PromptVoice_BYOMAccepted accepts self_deployed
 // (BYOM) model_type.
 func TestValidateAgentDefinition_PromptVoice_BYOMAccepted(t *testing.T) {

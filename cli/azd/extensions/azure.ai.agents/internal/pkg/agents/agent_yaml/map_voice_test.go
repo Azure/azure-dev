@@ -203,6 +203,33 @@ func TestCreateVoiceAgentAPIRequest_MissingModel(t *testing.T) {
 	}
 }
 
+func TestCreateVoiceAgentAPIRequest_TrimsModelID(t *testing.T) {
+	t.Parallel()
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "v"},
+		Model:           &Model{Id: "  my-realtime-deployment  "},
+	}
+	req, err := CreateVoiceAgentAPIRequest(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	def := req.Definition.(agent_api.VoiceAgentDefinition)
+	if def.Model != "my-realtime-deployment" {
+		t.Errorf("Model = %q, want trimmed model id", def.Model)
+	}
+}
+
+func TestCreateVoiceAgentAPIRequest_BlankModelID(t *testing.T) {
+	t.Parallel()
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "v"},
+		Model:           &Model{Id: "   "},
+	}
+	if _, err := CreateVoiceAgentAPIRequest(agent); err == nil {
+		t.Error("expected error for blank model.id")
+	}
+}
+
 // TestCreateVoiceAgentAPIRequest_SelfDeployedMapped verifies BYOM model_type is
 // passed through to the voice agent API request.
 func TestCreateVoiceAgentAPIRequest_SelfDeployedMapped(t *testing.T) {

@@ -207,6 +207,9 @@ func newDatasetVersionsListCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
+			if !validAssetName(name) {
+				return messages.InvalidDatasetName(name)
+			}
 
 			ctx := cmd.Context()
 			ec, err := newDatasetContext(ctx, endpointFlg)
@@ -264,6 +267,9 @@ func newDatasetShowCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
+			if !validAssetName(name) {
+				return messages.InvalidDatasetName(name)
+			}
 
 			ctx := cmd.Context()
 			ec, err := newDatasetContext(ctx, endpointFlg)
@@ -323,6 +329,9 @@ func newDatasetDeleteCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
+			if !validAssetName(name) {
+				return messages.InvalidDatasetName(name)
+			}
 			if version == "" {
 				return requireFlag("version")
 			}

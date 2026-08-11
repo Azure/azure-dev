@@ -97,6 +97,20 @@ func DatasetFileHasNoRows(name string) error {
 		"dataset file %q has no rows, so there would be nothing to evaluate", name)
 }
 
+// JSONLRowInvalid reports a row that is not JSON, named by line.
+//
+// Refused before upload: the service stores the file whatever is in it, so a
+// garbage row registers successfully and only fails much later, in the run that
+// scores it, against a line number nobody has any more.
+func JSONLRowInvalid(name string, line int, err error) error {
+	return fmt.Errorf("dataset file %q line %d is not valid JSON: %w", name, line, err)
+}
+
+// JSONLRowEmpty reports a row that parses but carries no fields.
+func JSONLRowEmpty(name string, line int) error {
+	return fmt.Errorf("dataset file %q line %d is an empty object, so it has nothing to score", name, line)
+}
+
 // NoJSONLInDirectory reports an upload directory holding no dataset.
 func NoJSONLInDirectory(dir string) error {
 	return fmt.Errorf("no .jsonl file found in %s", dir)

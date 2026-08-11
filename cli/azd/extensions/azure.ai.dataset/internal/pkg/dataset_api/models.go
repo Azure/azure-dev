@@ -4,7 +4,9 @@
 package dataset_api
 
 import (
+	"bufio"
 	"bytes"
+	"encoding/json"
 	"math"
 	"os"
 	"path/filepath"
@@ -240,5 +242,33 @@ func jsonlContent(name string, data []byte) (string, error) {
 	if strings.TrimSpace(string(data)) == "" {
 		return "", messages.DatasetFileHasNoRows(name)
 	}
+	if err := validateJSONLRows(name, data); err != nil {
+		return "", err
+	}
 	return string(data), nil
+}
+
+// validateJSONLRows refuses a file the service would happily store.
+//
+// Upload does not parse the rows, so one malformed line registers a version
+// that looks healthy and only fails in the run that reads it.
+func validateJSONLRows(name string, data []byte) error {
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	// A row carrying a whole conversation runs well past the 64KB default.
+	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+
+	for line := 1; scanner.Scan(); line++ {
+		text := strings.TrimSpace(scanner.Text())
+		if text == "" {
+			continue
+		}
+		var row map[string]any
+		if err := json.Unmarshal([]byte(text), &row); err != nil {
+			return messages.JSONLRowInvalid(name, line, err)
+		}
+		if len(row) == 0 {
+			return messages.JSONLRowEmpty(name, line)
+		}
+	}
+	return scanner.Err()
 }

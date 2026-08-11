@@ -112,7 +112,7 @@ func LoadEvalConfig(path string) (*EvalConfig, error) {
 		if errors.Is(err, io.EOF) {
 			return &cfg, nil
 		}
-		return nil, messages.ParsingEvalConfig(path, err)
+		return nil, messages.ParsingEvalConfig(path, explainUnknownKeys(err))
 	}
 	return &cfg, nil
 }

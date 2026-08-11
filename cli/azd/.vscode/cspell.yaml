@@ -318,6 +318,8 @@ overrides:
       - println
       - myext
       - Fatalf
+      - CODEOWNERS
+      - codeowners
   - filename: extensions/microsoft.azd.ai.builder/internal/cmd/start.go
     words:
       - dall

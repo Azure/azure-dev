@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -429,6 +430,122 @@ func TestCollectExtensionMetadataFromFlagsInvalidTags(t *testing.T) {
 	})
 
 	require.ErrorContains(t, err, "control characters")
+}
+
+func TestMissingInitParameters(t *testing.T) {
+	tests := []struct {
+		name     string
+		flags    *initFlags
+		expected []string
+	}{
+		{
+			name:     "interactive",
+			flags:    &initFlags{},
+			expected: nil,
+		},
+		{
+			name: "headless extension",
+			flags: &initFlags{
+				noPrompt: true,
+			},
+			expected: []string{"--id", "--name", "--capabilities", "--language"},
+		},
+		{
+			name: "headless internal extension",
+			flags: &initFlags{
+				noPrompt:         true,
+				internalScaffold: true,
+			},
+			expected: []string{"--id", "--name", "--capabilities", "--codeowners"},
+		},
+		{
+			name: "headless registry only",
+			flags: &initFlags{
+				createRegistry: true,
+				noPrompt:       true,
+			},
+			expected: nil,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.expected, missingInitParameters(test.flags))
+		})
+	}
+}
+
+func TestRunInitActionRegistryOnlyDoesNotRequireExtensionMetadata(t *testing.T) {
+	created := false
+	err := runInitActionWithRegistry(
+		t.Context(),
+		&initFlags{createRegistry: true},
+		func() (bool, error) { return false, nil },
+		func() error {
+			created = true
+			return nil
+		},
+	)
+
+	require.NoError(t, err)
+	require.True(t, created)
+}
+
+func TestEnsureLocalRegistry(t *testing.T) {
+	t.Run("existing registry is skipped", func(t *testing.T) {
+		created := false
+		state, err := ensureLocalRegistry(
+			func() (bool, error) { return true, nil },
+			func() error {
+				created = true
+				return nil
+			},
+		)
+
+		require.NoError(t, err)
+		require.Equal(t, ux.Skipped, state)
+		require.False(t, created)
+	})
+
+	t.Run("missing registry is created", func(t *testing.T) {
+		created := false
+		state, err := ensureLocalRegistry(
+			func() (bool, error) { return false, nil },
+			func() error {
+				created = true
+				return nil
+			},
+		)
+
+		require.NoError(t, err)
+		require.Equal(t, ux.Success, state)
+		require.True(t, created)
+	})
+
+	t.Run("lookup failure is returned without creation", func(t *testing.T) {
+		created := false
+		state, err := ensureLocalRegistry(
+			func() (bool, error) { return false, errors.New("lookup failed") },
+			func() error {
+				created = true
+				return nil
+			},
+		)
+
+		require.ErrorContains(t, err, "failed to check for local extension source")
+		require.Equal(t, ux.Error, state)
+		require.False(t, created)
+	})
+
+	t.Run("creation failure is returned", func(t *testing.T) {
+		state, err := ensureLocalRegistry(
+			func() (bool, error) { return false, nil },
+			func() error { return errors.New("create failed") },
+		)
+
+		require.ErrorContains(t, err, "failed to create local registry")
+		require.Equal(t, ux.Error, state)
+	})
 }
 
 func TestCreateInternalExtensionScaffold(t *testing.T) {

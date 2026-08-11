@@ -983,12 +983,6 @@ func runInitFromAzureYaml(
 				"'azd ai agent init -m <agent.manifest.yaml>'",
 		)
 	}
-	if agentNameOverride != "" {
-		if err := validateAdoptedAgentNameOverride(content); err != nil {
-			return err
-		}
-	}
-
 	// Stage the sample as a local template directory (azure.yaml at its root
 	// alongside referenced files) that azd-core can adopt with `azd init -t`.
 	stagingDir, cleanup, err := stageAzureYamlTemplate(ctx, flags, azdClient, httpClient)
@@ -999,6 +993,17 @@ func runInitFromAzureYaml(
 
 	if err := validateStagedAzureYaml(stagingDir, flags.manifestPointer); err != nil {
 		return err
+	}
+	if agentNameOverride != "" {
+		// Validate against the fully staged template so services whose host lives
+		// inside a local $ref are counted the same way azd-core will load them.
+		stagedContent, err := os.ReadFile(filepath.Join(stagingDir, "azure.yaml"))
+		if err != nil {
+			return fmt.Errorf("reading staged azure.yaml for agent name override: %w", err)
+		}
+		if err := validateAdoptedAgentNameOverride(stagedContent, stagingDir); err != nil {
+			return err
+		}
 	}
 
 	fmt.Println(output.WithGrayFormat("Adopting the sample's azure.yaml as your project manifest..."))
@@ -1151,29 +1156,33 @@ func runInitFromAzureYaml(
 	return nil
 }
 
-type adoptedAgentNameOverrideAzureYaml struct {
-	Services map[string]adoptedAgentNameOverrideService `yaml:"services"`
-}
-
-type adoptedAgentNameOverrideService struct {
-	Host   string `yaml:"host"`
-	Kind   string `yaml:"kind"`
-	Name   string `yaml:"name"`
-	Config struct {
-		Kind string `yaml:"kind"`
-		Name string `yaml:"name"`
-	} `yaml:"config"`
-}
-
-func validateAdoptedAgentNameOverride(content []byte) error {
-	var doc adoptedAgentNameOverrideAzureYaml
+func validateAdoptedAgentNameOverride(content []byte, projectRoot string) error {
+	var doc map[string]any
 	if err := yaml.Unmarshal(content, &doc); err != nil {
 		return fmt.Errorf("parsing adopted azure.yaml for agent name override: %w", err)
 	}
 
+	services, ok := doc["services"].(map[string]any)
+	if !ok {
+		services = map[string]any{}
+	}
+
 	agentServices := 0
-	for _, svc := range doc.Services {
-		if svc.Host != AiAgentHost {
+	for serviceName, svc := range services {
+		svcMap, ok := svc.(map[string]any)
+		if !ok {
+			continue
+		}
+		if hasAzureYamlFileRef(svcMap) && projectRoot != "" {
+			resolved, err := foundry.ResolveFileRefs(svcMap, projectRoot)
+			if err != nil {
+				return fmt.Errorf("resolving $ref includes for service %q: %w", serviceName, err)
+			}
+			svcMap = resolved
+		}
+
+		host, _ := svcMap["host"].(string)
+		if host != AiAgentHost {
 			continue
 		}
 		agentServices++

@@ -1078,7 +1078,7 @@ services:
     name: echo-activity
 `)
 
-	require.NoError(t, validateAdoptedAgentNameOverride(content))
+	require.NoError(t, validateAdoptedAgentNameOverride(content, ""))
 }
 
 func TestValidateAdoptedAgentNameOverride_AllowsSingleRefAgent(t *testing.T) {
@@ -1091,7 +1091,22 @@ services:
     $ref: ./agent.yaml
 `)
 
-	require.NoError(t, validateAdoptedAgentNameOverride(content))
+	require.NoError(t, validateAdoptedAgentNameOverride(content, ""))
+}
+
+func TestValidateAdoptedAgentNameOverride_AllowsSingleRefOnlyAgent(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	refPath := filepath.Join(root, "agent.yaml")
+	require.NoError(t, os.WriteFile(refPath, []byte("host: azure.ai.agent\nkind: hosted\n"), 0o600))
+	content := []byte(`name: sample
+services:
+  agent:
+    $ref: ./agent.yaml
+`)
+
+	require.NoError(t, validateAdoptedAgentNameOverride(content, root))
 }
 
 func TestValidateAdoptedAgentNameOverride_AllowsSingleLegacyNamedAgent(t *testing.T) {
@@ -1106,7 +1121,7 @@ services:
       name: echo-activity
 `)
 
-	require.NoError(t, validateAdoptedAgentNameOverride(content))
+	require.NoError(t, validateAdoptedAgentNameOverride(content, ""))
 }
 
 func TestValidateAdoptedAgentNameOverride_RejectsMultipleAgents(t *testing.T) {
@@ -1124,7 +1139,7 @@ services:
     name: agent-b
 `)
 
-	err := validateAdoptedAgentNameOverride(content)
+	err := validateAdoptedAgentNameOverride(content, "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "multiple agent services")
 }
@@ -1143,7 +1158,28 @@ services:
     $ref: ./agent.yaml
 `)
 
-	err := validateAdoptedAgentNameOverride(content)
+	err := validateAdoptedAgentNameOverride(content, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "multiple agent services")
+}
+
+func TestValidateAdoptedAgentNameOverride_RejectsInlineAndRefOnlyAgents(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	refPath := filepath.Join(root, "agent-b.yaml")
+	require.NoError(t, os.WriteFile(refPath, []byte("host: azure.ai.agent\nkind: hosted\n"), 0o600))
+	content := []byte(`name: sample
+services:
+  agent-a:
+    host: azure.ai.agent
+    kind: hosted
+    name: agent-a
+  agent-b:
+    $ref: ./agent-b.yaml
+`)
+
+	err := validateAdoptedAgentNameOverride(content, root)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "multiple agent services")
 }
@@ -1157,7 +1193,7 @@ services:
     host: azure.ai.project
 `)
 
-	err := validateAdoptedAgentNameOverride(content)
+	err := validateAdoptedAgentNameOverride(content, "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no agent service")
 }

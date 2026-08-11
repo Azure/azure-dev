@@ -4,8 +4,10 @@
 package resources
 
 import (
+	"bytes"
 	"regexp"
 	"testing"
+	"text/template"
 
 	"github.com/stretchr/testify/require"
 )
@@ -77,6 +79,77 @@ func TestGoScaffoldPinsReleasedAzdModule(t *testing.T) {
 		"the scaffolded go.mod must pin a released cli/azd module tag, not a pseudo-version, got %q",
 		version,
 	)
+}
+
+func TestGoScaffoldReadmeMatchesCapabilities(t *testing.T) {
+	contents, err := Languages.ReadFile("languages/go/README.md.tmpl")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name               string
+		hasCustomCommands  bool
+		hasLifecycleEvents bool
+		contains           []string
+		notContains        []string
+	}{
+		{
+			name:              "custom commands",
+			hasCustomCommands: true,
+			contains:          []string{"## Commands", "### `context`", "### `prompt`"},
+			notContains:       []string{"hidden `listen` command"},
+		},
+		{
+			name:               "lifecycle events",
+			hasLifecycleEvents: true,
+			contains:           []string{"hidden `listen` command", "internal/cmd/listen.go"},
+			notContains:        []string{"## Commands", "### `context`", "### `prompt`"},
+		},
+		{
+			name:        "provider only",
+			notContains: []string{"## Commands", "### `context`", "### `prompt`", "hidden `listen` command"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			tmpl, err := template.New("README.md").Parse(string(contents))
+			require.NoError(t, err)
+
+			var rendered bytes.Buffer
+			err = tmpl.Execute(&rendered, struct {
+				Metadata struct {
+					DisplayName string
+					Description string
+					Id          string
+					Usage       string
+				}
+				HasCustomCommands  bool
+				HasLifecycleEvents bool
+			}{
+				Metadata: struct {
+					DisplayName string
+					Description string
+					Id          string
+					Usage       string
+				}{
+					DisplayName: "Test Extension",
+					Description: "Test description",
+					Id:          "test.extension",
+					Usage:       "azd test <command>",
+				},
+				HasCustomCommands:  test.hasCustomCommands,
+				HasLifecycleEvents: test.hasLifecycleEvents,
+			})
+			require.NoError(t, err)
+
+			for _, expected := range test.contains {
+				require.Contains(t, rendered.String(), expected)
+			}
+			for _, unexpected := range test.notContains {
+				require.NotContains(t, rendered.String(), unexpected)
+			}
+		})
+	}
 }
 
 var azdModuleRequirePattern = regexp.MustCompile(`github\.com/azure/azure-dev/cli/azd (\S+)`)

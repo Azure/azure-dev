@@ -949,8 +949,10 @@ func createExtensionDirectory(
 	// Create project from template.
 	namespaceParts := strings.Split(extensionMetadata.Namespace, ".")
 	templateMetadata := &ExtensionTemplate{
-		Metadata:      extensionMetadata,
-		LeafNamespace: namespaceParts[len(namespaceParts)-1],
+		Metadata:           extensionMetadata,
+		LeafNamespace:      namespaceParts[len(namespaceParts)-1],
+		HasCustomCommands:  slices.Contains(extensionMetadata.Capabilities, extensions.CustomCommandCapability),
+		HasLifecycleEvents: slices.Contains(extensionMetadata.Capabilities, extensions.LifecycleEventsCapability),
 		DotNet: &DotNetTemplate{
 			Namespace: internal.ToPascalCase(extensionMetadata.Id),
 			ExeName:   extensionMetadata.SafeDashId(),
@@ -999,9 +1001,11 @@ func createInternalExtensionScaffold(
 
 	sanitizedId := strings.ReplaceAll(extensionMetadata.Id, ".", "-")
 	templateData := &ExtensionTemplate{
-		Metadata:      extensionMetadata,
-		SanitizedId:   sanitizedId,
-		LeafNamespace: path.Base(strings.ReplaceAll(extensionMetadata.Namespace, ".", "/")),
+		Metadata:           extensionMetadata,
+		SanitizedId:        sanitizedId,
+		LeafNamespace:      path.Base(strings.ReplaceAll(extensionMetadata.Namespace, ".", "/")),
+		HasCustomCommands:  slices.Contains(extensionMetadata.Capabilities, extensions.CustomCommandCapability),
+		HasLifecycleEvents: slices.Contains(extensionMetadata.Capabilities, extensions.LifecycleEventsCapability),
 		DotNet: &DotNetTemplate{
 			Namespace: internal.ToPascalCase(extensionMetadata.Id),
 			ExeName:   extensionMetadata.SafeDashId(),
@@ -1319,6 +1323,10 @@ type ExtensionTemplate struct {
 	Metadata *models.ExtensionSchema
 	// SanitizedId is the extension ID with dots replaced by dashes for CI file names.
 	SanitizedId string
+	// HasCustomCommands controls documentation for commands exposed through azd.
+	HasCustomCommands bool
+	// HasLifecycleEvents controls documentation for the hidden lifecycle event host.
+	HasLifecycleEvents bool
 	// LeafNamespace is the final dot-separated segment of Metadata.Namespace, used as the
 	// cobra Use/Name for the extension's root command. For nested namespaces like
 	// "ai.agents", users invoke the extension via "azd ai agents" (azd splits on '.'),

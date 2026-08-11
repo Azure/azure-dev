@@ -10,21 +10,25 @@ Run `azd ext install {{.Metadata.Id}}`
 
 `{{.Metadata.Usage}}`
 
+{{- if .HasCustomCommands}}
+
 ## Commands
 
 ### `context`
 
 Displays the current `azd` project, environment and deployment context.
 
-### `listen`
-
-Starts the extension host and listens for `azd` project and service lifecycle events.
-
 ### `prompt`
 
 Demonstrates the prompting capabilities available to extensions, including selecting an Azure subscription, resource group and resource.
+{{- end}}
 
 ## Development
+
+{{- if .HasLifecycleEvents}}
+
+The hidden `listen` command registers project and service lifecycle event handlers that `azd` invokes automatically. Customize the handlers in `internal/cmd/listen.go`.
+{{- end}}
 
 | Command | Description |
 | ------- | ----------- |

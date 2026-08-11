@@ -84,7 +84,7 @@ azd extension source add -n dev -t url -l "https://aka.ms/azd/extensions/registr
 
 Extensions installed from the dev registry are automatically promoted to the main registry when a newer version becomes available there. See the [Dev/Experimental Extension Registry](./extension-resolution-and-versioning.md#devexperimental-extension-registry) section for full details on stability expectations, submission guidelines, promotion behavior, and troubleshooting.
 
-A separate **nightly** registry distributes always-latest, automatically built snapshots of first-party extensions (signed on Windows/macOS, built from `main`). To opt in:
+A separate **nightly** registry distributes always-latest, automatically built snapshots of Azure internal extensions (signed on Windows/macOS, built from `main`). To opt in:
 
 ```bash
 # Add a new extension source name 'nightly' to your `azd` configuration.
@@ -668,7 +668,7 @@ Flags (all values are prompted for when omitted):
 - `--language` - The programming language for the extension: `go` (recommended), `dotnet`, `javascript` or `python`.
 - `--tags` - Optional tags for the extension (max 10 tags, 64 characters each).
 - `--registry, -r` - When set will create a local extension source registry.
-- `--internal` - Scaffolds the additional files required by first-party `Azure/azure-dev` extensions (CI build/test scripts, lint workflow, release pipeline and a CODEOWNERS entry). Must be run from inside a clone of `Azure/azure-dev` and currently supports Go only.
+- `--internal` - Scaffolds the additional files required by Azure internal extension development (CI build/test scripts, lint workflow, release pipeline and a CODEOWNERS entry). Must be run from inside a clone of `Azure/azure-dev` and currently supports Go only.
 - `--codeowners` - GitHub handles or teams used for the generated CODEOWNERS entry when `--internal` is set.
 
 ---

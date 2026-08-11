@@ -135,12 +135,43 @@ func SaveEvalConfig(evalDir string, cfg *EvalConfig) error {
 
 // SaveEvalConfigTo writes cfg over an explicit path, for callers that already
 // resolved one.
+//
+// The replacement is atomic because os.WriteFile truncates first, and this file
+// is read by other processes. A reader landing inside that window sees zero
+// bytes, and a zero-byte config parses as a valid empty one rather than as an
+// error, so it would go on to write back a configuration with every eval
+// missing. Renaming into place means a reader sees either the whole old file or
+// the whole new one.
 func SaveEvalConfigTo(path string, cfg *EvalConfig) error {
 	body, err := yaml.Marshal(cfg)
 	if err != nil {
 		return messages.SerializingEvalConfig(err)
 	}
-	if err := os.WriteFile(path, body, 0o600); err != nil {
+
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".azd-eval-config-*")
+	if err != nil {
+		return messages.WritingEvalConfig(path, err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+
+	if _, err := tmp.Write(body); err != nil {
+		tmp.Close()
+		return messages.WritingEvalConfig(path, err)
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return messages.WritingEvalConfig(path, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return messages.WritingEvalConfig(path, err)
+	}
+	// Windows will not rename onto an existing file.
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return messages.WritingEvalConfig(path, err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
 		return messages.WritingEvalConfig(path, err)
 	}
 	return nil

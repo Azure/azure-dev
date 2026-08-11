@@ -88,11 +88,36 @@ func DatasetNotInCatalog(dataset, configPath string) error {
 	return fmt.Errorf("dataset %q is not in the catalog in %s", dataset, filepath.ToSlash(configPath))
 }
 
+// NothingToGenerateFrom refuses a generation request carrying no sources.
+//
+// The service answers one with "At least one source is required", wrapped in a
+// 400 and thirty lines of JSON. Nothing about that names the two things a
+// reader can actually supply.
+func NothingToGenerateFrom() error {
+	return errors.New(
+		"nothing to generate from: pass --target <agent> to seed from an " +
+			"agent's instructions, or declare one under target: in the eval " +
+			"configuration. A trace-backed eval names its agent under source:, " +
+			"which selects traces to read and does not seed generation")
+}
+
+// GateNeedsTheWait refuses a gate on a run the command will not wait for.
+//
+// The two flags together read as "start it and tell me if it regressed", but
+// the verdict does not exist yet when --no-wait returns, so the gate was
+// silently dropped and the command exited 0 however the run turned out.
+func GateNeedsTheWait() error {
+	return errors.New(
+		"--fail-on needs a result to judge, and --no-wait returns before there " +
+			"is one. Drop --no-wait, or reattach with `azd ai eval run show " +
+			"<run> --wait --fail-on <gate>`")
+}
+
 // DatasetHasUnregisteredEdits reports local rows no deployed version holds.
 func DatasetHasUnregisteredEdits(dataset string) error {
 	return fmt.Errorf(
 		"dataset %q has local edits that are not registered.\n"+
-			"  Run `azd up` to register them, or `--eval-id <id>` to run against "+
+			"  Run `azd up` to register them, or `--eval <id>` to run against "+
 			"an existing eval",
 		dataset)
 }

@@ -522,6 +522,40 @@ func TestSuggestedCommandsExist(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// Every flag a message names has to exist on some command.
+//
+// TestSuggestedFlagsExist only looks inside a quoted `azd ai eval ...` command,
+// so a message that names a flag on its own escapes it. One did:
+// DatasetHasUnregisteredEdits told the reader to pass `--eval-id <id>`, a flag
+// removed long before, and the check above saw no command to attach it to.
+func TestBareFlagsInMessagesExist(t *testing.T) {
+	flagRef := regexp.MustCompile(`--([a-z][a-z0-9-]{1,})`)
+
+	known := map[string]bool{}
+	root := NewRootCommand()
+	root.PersistentFlags().VisitAll(func(f *pflag.Flag) { known[f.Name] = true })
+	walk(t, root, nil, func(_ string, c *cobra.Command) {
+		c.Flags().VisitAll(func(f *pflag.Flag) { known[f.Name] = true })
+	})
+	// azd's own, which messages legitimately name.
+	for _, global := range []string{"cwd", "debug", "environment", "no-prompt", "output", "help"} {
+		known[global] = true
+	}
+
+	body, err := os.ReadFile(filepath.Join("..", "messages", "messages.go"))
+	require.NoError(t, err)
+
+	for i, line := range strings.Split(string(body), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "//") {
+			continue
+		}
+		for _, m := range flagRef.FindAllStringSubmatch(line, -1) {
+			assert.Truef(t, known[m[1]],
+				"messages.go:%d names --%s, which no command accepts", i+1, m[1])
+		}
+	}
+}
+
 // A command suggested with an argument has to be suggested with the argument
 // filled in.
 //

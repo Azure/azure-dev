@@ -95,6 +95,13 @@ func buildRunCommand(use, short string) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// A gate is a verdict on a result. Returning before there is one
+			// used to drop the gate silently, so `--no-wait --fail-on ...`
+			// exited 0 however the run turned out -- a pipeline that believes
+			// it is gated and is not.
+			if !wait && threshold.set {
+				return messages.GateNeedsTheWait()
+			}
 
 			ec, err := newEvalContext(ctx, endpointFlg)
 			if err != nil {

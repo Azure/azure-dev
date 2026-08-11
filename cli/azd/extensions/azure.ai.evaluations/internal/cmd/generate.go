@@ -212,7 +212,7 @@ func (ec *evalContext) generateRubric(
 	sources, unbuildable := eval_api.BuildGenerationSources(
 		plan.From, plan.Agent, "", plan.Instruction, plan.traceOptions(),
 	)
-	if err := refuseUnbuildableSources(unbuildable); err != nil {
+	if err := refuseUnusableSources(sources, unbuildable); err != nil {
 		return nil, err
 	}
 	req := eval_api.NewEvaluatorGenerationJobRequest(plan.Name, plan.Model, sources)
@@ -254,6 +254,23 @@ func (ec *evalContext) generateRubric(
 // Submitting anyway would run a billed job seeded from less than was asked for
 // and return a plausible-looking artifact, which is the worst outcome: the
 // caller has no way to tell it apart from one built the way they intended.
+// refuseUnusableSources rejects a generation the service could only refuse.
+//
+// Unbuildable kinds each get their own reason. Beyond those, a request with no
+// sources at all is refused here rather than sent: a kind can be selected
+// without being asked for and without anything to build it from, which added to
+// neither list, so an empty request went out and came back as a 400 wrapping
+// thirty lines of JSON around one sentence.
+func refuseUnusableSources(sources []eval_api.GenerationSource, kinds []string) error {
+	if err := refuseUnbuildableSources(kinds); err != nil {
+		return err
+	}
+	if len(sources) == 0 {
+		return messages.NothingToGenerateFrom()
+	}
+	return nil
+}
+
 func refuseUnbuildableSources(kinds []string) error {
 	if len(kinds) == 0 {
 		return nil
@@ -301,7 +318,7 @@ func (ec *evalContext) generateDataset(
 	sources, unbuildable := eval_api.BuildGenerationSources(
 		plan.From, plan.Agent, "", plan.Instruction, plan.traceOptions(),
 	)
-	if err := refuseUnbuildableSources(unbuildable); err != nil {
+	if err := refuseUnusableSources(sources, unbuildable); err != nil {
 		return nil, err
 	}
 	req := eval_api.NewDataGenerationJobRequest(plan.Name, plan.Model, plan.SampleSize, sources)

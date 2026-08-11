@@ -90,7 +90,9 @@ func TestCLIDatasetList(t *testing.T) {
 
 	t.Run("table", func(t *testing.T) {
 		r := requireSuccess(t, run(t, "dataset", "versions", "list", ds.Name))
-		for _, header := range []string{"NAME", "VERSION", "FORMAT"} {
+		// TYPE, not FORMAT. The service populates `type` (`uri_file`) and leaves
+		// `format` empty, so the column this once pinned was blank on every row.
+		for _, header := range []string{"NAME", "VERSION", "TYPE"} {
 			require.Containsf(t, r.Stdout, header, "the listing lost its %s column", header)
 		}
 		require.Contains(t, r.Stdout, ds.Name)

@@ -143,12 +143,13 @@ func TestCLIRunCancelAndDelete(t *testing.T) {
 
 	// Delete is covered as far as the service honours it.
 	//
-	// The removal itself is not asserted, because it does not happen: the
-	// service accepts the DELETE and the run is still readable by id and still
-	// in the listing minutes later. What is asserted instead is that the
-	// command reaches the right resource — a real run is accepted, an unknown
-	// one is refused — which is the part that would break if the route or the
-	// id handling regressed.
+	// The removal itself is not asserted, because whether it happens is the
+	// service's to decide and it has changed under this test once already: it
+	// used to accept the DELETE and leave the run readable minutes later, and it
+	// now reaps a cancelled run promptly enough that the DELETE can even answer
+	// 404. What is asserted is that the command reaches the right resource — a
+	// real run is accepted, an unknown one is refused — which is the part that
+	// would break if the route or the id handling regressed.
 	t.Run("an in-flight run is cancelled, and the delete is accepted", func(t *testing.T) {
 		runID := startCancellableRun(t, f)
 
@@ -166,11 +167,19 @@ func TestCLIRunCancelAndDelete(t *testing.T) {
 		require.Contains(t, deleted.Stdout, "Deleted run")
 		require.Contains(t, deleted.Stdout, runID)
 
-		still := requireSuccess(t, run(t, "run", "show", runID, "--eval", f.EvalID, "-o", "json"))
-		var survivor runSummary
-		still.JSON(t, &survivor)
-		t.Logf("the run is still readable after a successful delete (status %q); "+
-			"the service accepts the request without removing anything", survivor.Status)
+		// Either outcome is the service's prerogative; what matters is that the
+		// answer is about this run and not a failure of some other kind.
+		still := run(t, "run", "show", runID, "--eval", f.EvalID, "-o", "json")
+		if still.ExitCode == 0 {
+			var survivor runSummary
+			still.JSON(t, &survivor)
+			t.Logf("still readable after delete (status %q); the service accepted "+
+				"the request without removing anything", survivor.Status)
+		} else {
+			require.Contains(t, still.Combined(), runID,
+				"a read of a deleted run must still name the run it could not find")
+			t.Log("gone after delete; the service removed it")
+		}
 	})
 
 	// Deleting is not undoable, so the id is required rather than defaulted to

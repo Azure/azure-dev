@@ -962,6 +962,19 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, fmt.Errorf("failed to find extension: %w", err)
 		}
+		if len(extensionMatches) == 0 {
+			unversionedOptions := *filterOptions
+			unversionedOptions.Version = ""
+			unversionedMatches, err := a.extensionManager.FindExtensions(ctx, &unversionedOptions)
+			if err != nil {
+				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return nil, fmt.Errorf("failed to find extension: %w", err)
+			}
+			if err := extensionVersionNotFoundError(extensionId, a.flags.source, a.flags.version, unversionedMatches); err != nil {
+				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return nil, err
+			}
+		}
 
 		selectedExtension, err := selectDistinctExtension(ctx, a.console, extensionId, extensionMatches, a.flags.global)
 		if err != nil {
@@ -3353,6 +3366,61 @@ func defaultExtensionSourceIndex(matches []*extensions.ExtensionMetadata) *int {
 	}
 
 	return new(0)
+}
+
+func extensionVersionNotFoundError(
+	extensionId string,
+	source string,
+	version string,
+	matches []*extensions.ExtensionMetadata,
+) error {
+	if version == "" || strings.EqualFold(version, "latest") || len(matches) == 0 {
+		return nil
+	}
+
+	latestVersions := make([]string, 0, len(matches))
+	for _, match := range matches {
+		latestVersion := extensions.LatestVersion(match.Versions)
+		if latestVersion == nil {
+			continue
+		}
+
+		if len(matches) == 1 {
+			latestVersions = append(latestVersions, latestVersion.Version)
+		} else {
+			latestVersions = append(latestVersions, fmt.Sprintf("%s: %s", match.Source, latestVersion.Version))
+		}
+	}
+	if len(latestVersions) == 0 {
+		return nil
+	}
+
+	if len(latestVersions) == 1 {
+		command := fmt.Sprintf("azd extension install %s --version %s", extensionId, latestVersions[0])
+		if source != "" {
+			command += fmt.Sprintf(" --source %s", source)
+		}
+
+		message := fmt.Sprintf(
+			"extension '%s' version '%s' was not found; latest version is '%s'",
+			extensionId, version, latestVersions[0],
+		)
+		return &internal.ErrorWithSuggestion{
+			Err:        errors.New(message),
+			Message:    message,
+			Suggestion: fmt.Sprintf("Run '%s' to install the latest version.", command),
+		}
+	}
+
+	message := fmt.Sprintf(
+		"extension '%s' version '%s' was not found; latest versions are %s",
+		extensionId, version, strings.Join(latestVersions, ", "),
+	)
+	return &internal.ErrorWithSuggestion{
+		Err:        errors.New(message),
+		Message:    message,
+		Suggestion: "Specify the extension source using the --source flag, or choose an available version.",
+	}
 }
 
 // checkNamespaceConflict checks if the given namespace conflicts with any installed extension.

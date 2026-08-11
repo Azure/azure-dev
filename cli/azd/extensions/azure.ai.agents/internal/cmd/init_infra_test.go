@@ -1501,7 +1501,7 @@ services:
 	assert.NoDirExists(t, filepath.Join(nestedDir, "infra"))
 }
 
-func TestInitInfra_StandaloneEjectResolvesParentProject(t *testing.T) {
+func TestInitInfra_StandaloneEjectDelegatesToProjects(t *testing.T) {
 	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
 	projectRoot := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(projectRoot, "azure.yaml"), []byte(`name: test
@@ -1512,6 +1512,9 @@ services:
 	nestedDir := filepath.Join(projectRoot, "src", "agent")
 	require.NoError(t, os.MkdirAll(nestedDir, 0750))
 	t.Chdir(nestedDir)
+	server := &recordingProjectServer{}
+	_, serverAddress := newProjectRecorderClientWithAddress(t, server)
+	t.Setenv("AZD_SERVER", serverAddress)
 
 	cmd := newInitCommand(&azdext.ExtensionContext{})
 	cmd.SetArgs([]string{"--infra"})
@@ -1524,7 +1527,12 @@ services:
 	})
 
 	require.NoError(t, execErr)
-	assert.FileExists(t, filepath.Join(projectRoot, "infra", "main.bicep"))
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Len(t, server.delegatedRequests, 1)
+	infra := server.delegatedRequests[0]["infra"].(map[string]any)
+	assert.Equal(t, "bicep", infra["ejectProvider"])
+	assert.NoDirExists(t, filepath.Join(projectRoot, "infra"))
 	assert.NoDirExists(t, filepath.Join(nestedDir, "infra"))
 }
 

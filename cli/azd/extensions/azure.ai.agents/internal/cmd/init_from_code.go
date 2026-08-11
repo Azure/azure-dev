@@ -819,8 +819,8 @@ func (a *InitFromCodeAction) addToProject(
 		agentConfig.StartupCommand = startupCmd
 	}
 
-	// Move the model deployments out of the agent config into a sibling
-	// azure.ai.project service, emitted after the agent service below.
+	// Move the model deployments out of the agent config into the
+	// project-owned azure.ai.project service.
 	resourceDeployments := agentConfig.Deployments
 	agentConfig.Deployments = nil
 
@@ -879,14 +879,16 @@ func (a *InitFromCodeAction) addToProject(
 		return err
 	}
 
-	// Emit the sibling azure.ai.project service carrying the model deployments
-	// and wire the agent's uses: to it. A selected existing project contributes
+	// Delegate the project service carrying model deployments and wire
+	// the agent's uses: to it. A selected existing project contributes
 	// its endpoint so provision reuses it instead of creating a new project.
 	if err := emitResourceServices(
 		ctx, a.azdClient, agentServiceName,
 		projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),
+		projectResourceIDHint(a.selectedFoundryProject),
 		a.selectedFoundryProject.Endpoint(),
 		resourceDeployments, nil, nil,
+		delegatedProjectConstraintsForContext(a.azureContext),
 	); err != nil {
 		return err
 	}

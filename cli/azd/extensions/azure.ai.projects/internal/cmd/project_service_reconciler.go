@@ -202,6 +202,58 @@ func (r *projectServiceReconciler) reconcileEndpoint(
 	return service.Name, "updated", nil
 }
 
+func (r *projectServiceReconciler) replaceDeployments(
+	ctx context.Context,
+	serviceName string,
+	deployments []delegatedDeployment,
+) error {
+	service, _, err := r.discoverProjectService(ctx)
+	if err != nil {
+		return err
+	}
+	if service == nil || service.Name != serviceName {
+		return exterrors.Dependency(
+			"project_service_not_found",
+			fmt.Sprintf("project service %q was not found", serviceName),
+			"run `azd ai project init` before updating deployments",
+		)
+	}
+	if service.ServiceRef != "" {
+		return projectServiceRefError(service.Name, service.ServiceRef)
+	}
+
+	values := make([]any, len(deployments))
+	for i, deployment := range deployments {
+		values[i] = map[string]any{
+			"name": deployment.Name,
+			"model": map[string]any{
+				"format":  deployment.Model.Format,
+				"name":    deployment.Model.Name,
+				"version": deployment.Model.Version,
+			},
+			"sku": map[string]any{
+				"name":     deployment.SKU.Name,
+				"capacity": deployment.SKU.Capacity,
+			},
+		}
+	}
+	value, err := structpb.NewValue(values)
+	if err != nil {
+		return fmt.Errorf("encode project deployments: %w", err)
+	}
+	if _, err := r.client.Project().SetServiceConfigValue(
+		ctx,
+		&azdext.SetServiceConfigValueRequest{
+			ServiceName: serviceName,
+			Path:        "deployments",
+			Value:       value,
+		},
+	); err != nil {
+		return fmt.Errorf("replace project service %q deployments: %w", serviceName, err)
+	}
+	return nil
+}
+
 func setProjectServiceEndpoint(
 	ctx context.Context,
 	client *azdext.AzdClient,
@@ -226,20 +278,25 @@ func legacyProjectServiceBody(
 	raw map[string]any,
 	endpoint string,
 ) (map[string]any, error) {
-	body, err := cloneMap(raw)
+	body := make(map[string]any, 3)
+	for _, key := range []string{"deployments", "network"} {
+		if value, ok := raw[key]; ok {
+			body[key] = value
+		}
+	}
+	cloned, err := cloneMap(body)
 	if err != nil {
 		return nil, err
 	}
-	if body == nil {
-		body = map[string]any{}
+	if cloned == nil {
+		cloned = map[string]any{}
 	}
-	delete(body, "host")
 	if endpoint != "" {
-		body["endpoint"] = endpoint
+		cloned["endpoint"] = endpoint
 	} else {
-		delete(body, "endpoint")
+		delete(cloned, "endpoint")
 	}
-	return body, nil
+	return cloned, nil
 }
 
 func (r *projectServiceReconciler) addService(
@@ -255,31 +312,19 @@ func (r *projectServiceReconciler) addService(
 	if body == nil {
 		body = map[string]any{}
 	}
-	body["host"] = provisioning.FoundryProjectHost
 	properties, err := structpb.NewStruct(body)
 	if err != nil {
 		return fmt.Errorf("encode project service %q: %w", name, err)
 	}
 	_, err = r.client.Project().AddService(ctx, &azdext.AddServiceRequest{
 		Service: &azdext.ServiceConfig{
-			Name: name,
-			Host: provisioning.FoundryProjectHost,
+			Name:                 name,
+			Host:                 provisioning.FoundryProjectHost,
+			AdditionalProperties: properties,
 		},
 	})
 	if err != nil {
 		return fmt.Errorf("add project service %q: %w", name, err)
-	}
-	if len(body) == 1 {
-		return nil
-	}
-	if _, err := r.client.Project().SetServiceConfigSection(
-		ctx,
-		&azdext.SetServiceConfigSectionRequest{
-			ServiceName: name,
-			Section:     properties,
-		},
-	); err != nil {
-		return fmt.Errorf("persist project service %q configuration: %w", name, err)
 	}
 	return nil
 }

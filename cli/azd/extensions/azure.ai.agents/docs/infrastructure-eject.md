@@ -1,16 +1,20 @@
-# Customize Foundry infrastructure with `--infra`
+# Customize Foundry infrastructure with `azd ai project init --infra`
 
-`azd ai agent init --infra` generates editable infrastructure-as-code for the
-`host: azure.ai.project` service in `azure.yaml`.
+`azd ai project init --infra` generates editable infrastructure-as-code for the
+`host: azure.ai.project` service in `azure.yaml`. The Projects extension owns
+this project service and the generated Foundry infrastructure.
 
 ```bash
 # Generate Bicep (default)
-azd ai agent init --infra
+azd ai project init --infra
 
 # Choose the format explicitly
-azd ai agent init --infra=bicep
-azd ai agent init --infra=terraform
+azd ai project init --infra=bicep
+azd ai project init --infra=terraform
 ```
+
+For compatibility, `azd ai agent init --infra` delegates to
+`azd ai project init --infra`.
 
 Use eject when you need to customize resources beyond the service-level
 configuration in `azure.yaml`. Future `azd provision` runs use the generated

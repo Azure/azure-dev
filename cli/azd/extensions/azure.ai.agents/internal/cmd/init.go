@@ -1191,7 +1191,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err := validateStandaloneEjectArgs(cmd, args); err != nil {
 						return err
 					}
-					return ejectInfra(gate.projectRoot, infraProvider)
+					return delegateFoundryInfra(
+						azdext.WithAccessToken(cmd.Context()), infraProvider,
+					)
 				}
 			}
 
@@ -1356,7 +1358,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						); err != nil {
 							return err
 						}
-						return ejectInfraAfterInit(infraProvider)
+						return delegateFoundryInfraAfterInit(ctx, azdClient, infraProvider)
 					}
 				}
 			}
@@ -1405,7 +1407,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						if err := runReuseDefinition(ctx, flags, azdClient, httpClient, checkDir, existing); err != nil {
 							return err
 						}
-						return ejectInfraAfterInit(infraProvider)
+						return delegateFoundryInfraAfterInit(ctx, azdClient, infraProvider)
 					}
 				}
 			}
@@ -1450,7 +1452,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 								}
 								return err
 							}
-							return ejectInfraAfterInit(infraProvider)
+							return delegateFoundryInfraAfterInit(ctx, azdClient, infraProvider)
 						}
 						return missingAgentServiceError(flags.manifestPointer)
 					}
@@ -1656,7 +1658,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// wrote azure.yaml, chain the eject step. Skip silently when init
 			// didn't produce a foundry-bearing azure.yaml (cancelled or
 			// non-foundry flow) to avoid a confusing "nothing to eject" error.
-			return ejectInfraAfterInit(infraProvider)
+			return delegateFoundryInfraAfterInit(ctx, azdClient, infraProvider)
 		},
 	}
 
@@ -3080,7 +3082,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 
 	// Each Foundry resource is written as its own azure.yaml service entry, so
 	// the deployments, connections, and toolboxes move out of the agent config
-	// into sibling azure.ai.project/connection/toolbox services emitted below.
+	// into sibling project/connection/toolbox services handled below.
 	// The agent keeps its container, resources, tool connections, and startup
 	// command. The provisioning handlers re-source the moved data from the
 	// sibling services.
@@ -3158,8 +3160,10 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	if err := emitResourceServices(
 		ctx, a.azdClient, a.serviceNameOverride,
 		projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),
+		projectResourceIDHint(a.selectedFoundryProject),
 		a.selectedFoundryProject.Endpoint(),
 		resourceDeployments, resourceConnections, resourceToolboxes,
+		delegatedProjectConstraintsForContext(a.azureContext),
 	); err != nil {
 		return err
 	}

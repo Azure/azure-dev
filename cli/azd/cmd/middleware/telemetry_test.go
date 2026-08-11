@@ -5,12 +5,16 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -298,6 +302,93 @@ func TestTelemetryMiddleware_extensionCmdInfo_WithMetadataCapability(t *testing.
 	eventName, flags := m.extensionCmdInfo("test.ext")
 	require.Empty(t, eventName)
 	require.Nil(t, flags)
+}
+
+func TestTelemetryMiddleware_extensionCmdInfo_ResolvesCommandAndFlags(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+
+	installed := map[string]*extensions.Extension{
+		"test.ext": {
+			Id:          "test.ext",
+			DisplayName: "Test Extension",
+			Version:     "1.0.0",
+			Namespace:   "test.ext",
+			Capabilities: []extensions.CapabilityType{
+				extensions.MetadataCapability,
+			},
+		},
+	}
+
+	metadata := extensions.ExtensionCommandMetadata{
+		SchemaVersion: "1.0",
+		ID:            "test.ext",
+		Commands: []extensions.Command{
+			{
+				Name: []string{"build"},
+				Flags: []extensions.Flag{
+					{Name: "verbose", Shorthand: "v", Type: "bool"},
+					{Name: "output", Type: "string"},
+				},
+			},
+		},
+	}
+	metadataBytes, err := json.Marshal(metadata)
+	require.NoError(t, err)
+	metadataDir := filepath.Join(configDir, "extensions", "test.ext")
+	require.NoError(t, os.MkdirAll(metadataDir, 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(metadataDir, "metadata.json"), metadataBytes, 0600))
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	manager := createExtensionsManager(t, mockCtx, installed)
+
+	t.Run("resolves command path and flags", func(t *testing.T) {
+		m := &TelemetryMiddleware{
+			options: &Options{
+				Args: []string{"build", "--verbose", "--output", "json"},
+			},
+			extensionManager: manager,
+		}
+
+		eventName, flags := m.extensionCmdInfo("test.ext")
+		require.Equal(t, events.GetCommandEventName("azd test ext build"), eventName)
+		require.ElementsMatch(t, []string{"verbose", "output"}, flags)
+	})
+
+	t.Run("returns flags without an unknown command event", func(t *testing.T) {
+		m := &TelemetryMiddleware{
+			options: &Options{
+				Args: []string{"unknown", "--verbose"},
+			},
+			extensionManager: manager,
+		}
+
+		eventName, flags := m.extensionCmdInfo("test.ext")
+		require.Empty(t, eventName)
+		require.Nil(t, flags)
+	})
+
+	t.Run("ignores extension without metadata capability", func(t *testing.T) {
+		managerWithoutMetadata := createExtensionsManager(
+			t,
+			mocks.NewMockContext(t.Context()),
+			map[string]*extensions.Extension{
+				"test.ext": {
+					Id:        "test.ext",
+					Version:   "1.0.0",
+					Namespace: "test.ext",
+				},
+			},
+		)
+		m := &TelemetryMiddleware{
+			options:          &Options{Args: []string{"build", "--verbose"}},
+			extensionManager: managerWithoutMetadata,
+		}
+
+		eventName, flags := m.extensionCmdInfo("test.ext")
+		require.Empty(t, eventName)
+		require.Nil(t, flags)
+	})
 }
 
 func TestTelemetryMiddleware_setInstalledExtensionsAttributes_Sorted(t *testing.T) {

@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -769,6 +770,32 @@ func TestExtensionLifecycleTelemetrySpans(t *testing.T) {
 			extensionSpanAttribute(t, span.Attributes(), fields.ExtensionSourceCategoryTo.Key).Value.AsString(),
 		)
 	})
+}
+
+func TestDisplayPromotionWarning(t *testing.T) {
+	t.Parallel()
+
+	console := mockinput.NewMockConsole()
+	action := &extensionUpgradeAction{console: console}
+	action.displayPromotionWarning(
+		t.Context(),
+		"Updating test.extension extension",
+		"test.extension",
+		"1.0.0",
+		"1.1.0",
+		"dev",
+		"azd",
+	)
+
+	require.Len(t, console.SpinnerOps(), 1)
+	require.Equal(t, input.StepWarning, console.SpinnerOps()[0].Format)
+	rendered := strings.Join(console.Output(), "\n")
+	require.Contains(t, rendered, "Updated test.extension extension")
+	require.Contains(t, rendered, "1.0.0")
+	require.Contains(t, rendered, "1.1.0")
+	require.Contains(t, rendered, "promoted from the dev registry")
+	require.Contains(t, rendered, "official azd registry")
+	require.Contains(t, rendered, "azd extension install test.extension --source dev")
 }
 
 func extensionEndedSpan(

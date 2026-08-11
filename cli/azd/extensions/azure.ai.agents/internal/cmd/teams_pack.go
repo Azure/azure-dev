@@ -13,6 +13,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/botservice"
+	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -163,9 +164,21 @@ func resolveTeamsPackContext(
 	if err != nil {
 		return nil, err
 	}
+	botName, err := readEnvValue(ctx, azdClient, envName, envkey.AgentBotName(svc.Name))
+	if err != nil {
+		return nil, exterrors.Dependency(
+			exterrors.CodeAgentNotDeployed,
+			fmt.Sprintf("agent %q has no recorded Teams bot name in environment %q", agentName, envName),
+			"run 'azd deploy' first; the Teams bot name is recorded during deploy and is required "+
+				"before packaging or publishing",
+		)
+	}
+	botResourceGroup := readOptionalEnvValue(ctx, azdClient, envName, envkey.AgentBotResourceGroup(svc.Name))
 
-	botName := botservice.BotName(agentName, botservice.BotScopeSalt(subscriptionID, resourceGroup))
-	botArmID := botservice.BotArmID(subscriptionID, resourceGroup, botName)
+	botArmID, err := teamsBotArmID(subscriptionID, resourceGroup, botName, botResourceGroup)
+	if err != nil {
+		return nil, err
+	}
 
 	endpoint, err := resolveAgentEndpoint(ctx, "", "")
 	if err != nil {
@@ -183,6 +196,23 @@ func resolveTeamsPackContext(
 		botArmID:    botArmID,
 		agentClient: agent_api.NewAgentClient(endpoint, credential),
 	}, nil
+}
+
+func teamsBotArmID(subscriptionID, defaultResourceGroup, botName, botResourceGroup string) (string, error) {
+	botName = strings.TrimSpace(botName)
+	if botName == "" {
+		return "", exterrors.Dependency(
+			exterrors.CodeAgentNotDeployed,
+			"the deployed Teams bot name is not recorded",
+			"run 'azd deploy' first; the Teams bot name is recorded during deploy and is required "+
+				"before packaging or publishing",
+		)
+	}
+	resourceGroup := strings.TrimSpace(botResourceGroup)
+	if resourceGroup == "" {
+		resourceGroup = strings.TrimSpace(defaultResourceGroup)
+	}
+	return botservice.BotArmID(subscriptionID, resourceGroup, botName), nil
 }
 
 // teamsAppRequestOptions carries the user-overridable display metadata for a Teams

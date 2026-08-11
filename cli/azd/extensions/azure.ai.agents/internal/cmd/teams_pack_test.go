@@ -76,6 +76,44 @@ func TestBuildTeamsAppPackageRequest(t *testing.T) {
 	}
 }
 
+func TestTeamsBotArmIDUsesPersistedBotTarget(t *testing.T) {
+	got, err := teamsBotArmID("sub-1", "default-rg", "adopted-bot", "published-rg")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := "/subscriptions/sub-1/resourceGroups/published-rg/providers/Microsoft.BotService/botServices/adopted-bot"
+	if got != want {
+		t.Errorf("teamsBotArmID = %q, want %q", got, want)
+	}
+}
+
+func TestTeamsBotArmIDFallsBackToEnvironmentResourceGroup(t *testing.T) {
+	got, err := teamsBotArmID("sub-1", "default-rg", "owned-bot", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := "/subscriptions/sub-1/resourceGroups/default-rg/providers/Microsoft.BotService/botServices/owned-bot"
+	if got != want {
+		t.Errorf("teamsBotArmID = %q, want %q", got, want)
+	}
+}
+
+func TestTeamsBotArmIDRequiresPersistedBotName(t *testing.T) {
+	_, err := teamsBotArmID("sub-1", "default-rg", " ", "published-rg")
+	if err == nil {
+		t.Fatal("expected missing bot name error")
+	}
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected *azdext.LocalError, got %T", err)
+	}
+	if localErr.Code != exterrors.CodeAgentNotDeployed {
+		t.Errorf("error code = %q, want %q", localErr.Code, exterrors.CodeAgentNotDeployed)
+	}
+}
+
 func TestTeamsAppDeepLink(t *testing.T) {
 	got := teamsAppDeepLink("T_abc 123")
 	want := "https://teams.microsoft.com/v2/#/l/app/?source=agent-details-page&titleId=T_abc+123&launchAgent=join_launcher_web"

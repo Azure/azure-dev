@@ -1014,6 +1014,24 @@ func EvaluatorSource(path string, err error) error {
 	return fmt.Errorf("evaluator source %q: %w", path, err)
 }
 
+// EvaluatorNotGeneratedYet reports a declared evaluator whose definition has
+// not been written yet.
+//
+// `init` declares the rubric it plans and names the command that produces it,
+// so reaching a deploy without one is an ordering mistake rather than a broken
+// configuration. Said plainly, because the bare stat failure underneath is a
+// Windows syscall name and a path with doubled separators.
+//
+// Both callers wrap this with EvaluatorProblem, which names the evaluator, so
+// this does not name it again.
+func EvaluatorNotGeneratedYet(evaluator, path string) error {
+	return fmt.Errorf(
+		"its definition %s has not been generated yet. "+
+			"Run `azd ai eval generate --evaluator --evaluator-name %s` to write it, "+
+			"or drop the evaluator from azure.eval.yaml",
+		filepath.ToSlash(path), evaluator)
+}
+
 // CheckingEvaluatorExists reports a failure to tell create from update.
 func CheckingEvaluatorExists(evaluator string, err error) error {
 	return fmt.Errorf("checking whether evaluator %q exists: %w", evaluator, err)

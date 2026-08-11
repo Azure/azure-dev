@@ -7,6 +7,8 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"maps"
 	"os"
 	"reflect"
@@ -243,6 +245,9 @@ func (r *evalReconciler) EnsureEvaluator(
 	}
 
 	if _, err := os.Stat(localPath); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", false, messages.EvaluatorNotGeneratedYet(decl.Name, localPath)
+		}
 		return "", false, messages.EvaluatorSource(localPath, err)
 	}
 

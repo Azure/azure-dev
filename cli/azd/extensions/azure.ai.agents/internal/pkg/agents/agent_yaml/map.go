@@ -466,7 +466,8 @@ const (
 	defaultVoiceTurnDetectionType = "server_vad"
 	defaultVoiceInstructions      = "You are a helpful voice assistant. Respond naturally and concisely."
 	// defaultVoiceInputTranscriptionModel enables user-speech transcription events.
-	defaultVoiceInputTranscriptionModel = "whisper-1"
+	// azure-speech is accepted by both realtime and cascaded voice pipelines.
+	defaultVoiceInputTranscriptionModel = "azure-speech"
 	// defaultVoiceName is a DragonHD (HD) Azure Neural voice used when the author
 	// omits a voice.
 	defaultVoiceName = "en-US-Ava:DragonHDLatestNeural"

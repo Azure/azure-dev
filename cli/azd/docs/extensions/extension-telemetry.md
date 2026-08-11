@@ -25,6 +25,25 @@ admission check, not a cryptographic provenance guarantee.
 See [ADR-001](../../../../docs/architecture/adr-001-extension-telemetry-events.md)
 for the reasoning behind this design.
 
+## Require a host with telemetry support
+
+A published extension version that depends on this service should declare the
+first `azd` release that includes `TelemetryService` in its `extension.yaml`:
+
+```yaml
+requiredAzdVersion: ">=1.31.0"
+```
+
+Use the first released `azd` version containing the service as the lower bound.
+`azd` uses this field while resolving extension installs and updates, so new
+installations do not select the extension on an older host. See
+[Extension Resolution and Versioning](./extension-resolution-and-versioning.md#azd-version-compatibility)
+for the compatibility behavior.
+
+This version requirement is the normal compatibility mechanism. Keep the RPC
+call best-effort for already-installed versions and non-registry sources, which
+may still run on an older host and receive `Unimplemented`.
+
 ## What `azd` records
 
 | Attribute name | Attribute value |
@@ -59,8 +78,9 @@ if _, err := client.Telemetry().ReportUsage(
 }
 ```
 
-Treat the call as best-effort. Older `azd` hosts return `Unimplemented`, and a
-malformed request is a plain error. Log the error, but never let it change
+Treat the call as best-effort. A malformed request is a plain error, and an
+older host can return `Unimplemented` when the extension was already installed
+or came from a non-registry source. Log the error, but never let it change
 command behavior or retry. Report the event immediately after the fact it
 represents is known, rather than waiting until the command completes, so a
 later unrelated failure does not lose the signal.

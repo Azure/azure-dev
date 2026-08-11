@@ -565,14 +565,21 @@ the extension author's responsibility. See
 [Extension Telemetry](./extension-telemetry.md) for the full rules and review
 process.
 
-The call is best-effort. An older azd host returns `Unimplemented`. Treat any
-failure as a no-op and never let it change command behavior. Report an event
-immediately after the fact it represents is known, rather than waiting until
-the command completes, so a later unrelated failure does not lose the signal.
-For a published extension that requires this service, set `requiredAzdVersion`
-to the first azd release that includes `TelemetryService`. Still treat
-`Unimplemented` as a no-op for already-installed extensions and hosts outside
-that constraint.
+For a published extension version that depends on this service, set
+`requiredAzdVersion` to the first azd release that includes `TelemetryService`.
+This is the normal compatibility mechanism used when resolving installs and
+updates:
+
+```yaml
+requiredAzdVersion: ">=1.31.0"
+```
+
+The call remains best-effort for already-installed extensions and extensions
+from non-registry sources, which may still run on an older host and receive
+`Unimplemented`. Treat any failure as a no-op and never let it change command
+behavior. Report an event immediately after the fact it represents is known,
+rather than waiting until the command completes, so a later unrelated failure
+does not lose the signal.
 
 ### ConfigHelper
 

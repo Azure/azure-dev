@@ -1112,7 +1112,9 @@ Microsoft-built extensions in this repository after a privacy review and
 publication to the official `azd` registry. Those extensions can call the
 telemetry gRPC service, and events are recorded when the configured source
 matches the verified official `azd` registry name, type, and normalized URL —
-see [Extension Telemetry](./extension-telemetry.md).
+see [Extension Telemetry](./extension-telemetry.md). Published versions that
+depend on the service should set `requiredAzdVersion` to the first `azd`
+release that includes it.
 
 #### Complete Extension Manifest Example
 

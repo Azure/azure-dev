@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"os"
 	"path/filepath"
@@ -91,6 +92,95 @@ func TestProjectFileExists(t *testing.T) {
 	exists, err = projectFileExists(root)
 	require.NoError(t, err)
 	assert.True(t, exists)
+}
+
+func TestResolvedProjectFromEndpoint(t *testing.T) {
+	project, err := resolvedProjectFromEndpoint(
+		"https://account.services.ai.azure.com/api/projects/foundry-project/",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, projectModeExistingEndpoint, project.Mode)
+	assert.Equal(t, "account", project.AccountName)
+	assert.Equal(t, "foundry-project", project.ProjectName)
+	assert.Equal(
+		t,
+		"https://account.services.ai.azure.com/api/projects/foundry-project",
+		project.Endpoint,
+	)
+}
+
+func TestWriteTerraformEjectedInfra(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		includeAcr bool
+	}{
+		{name: "without ACR", includeAcr: false},
+		{name: "with ACR", includeAcr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			infraDir := filepath.Join(t.TempDir(), "infra")
+			require.NoError(t, os.MkdirAll(infraDir, 0755))
+			parameters := map[string]any{
+				"includeAcr": test.includeAcr,
+				"deployments": []synthesis.Deployment{{
+					Name: "chat",
+					Model: synthesis.DeploymentModel{
+						Format:  "OpenAI",
+						Name:    "gpt-4.1",
+						Version: "2025-04-14",
+					},
+					Sku: synthesis.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
+				}},
+				"connections": []synthesis.Connection{{
+					Name:     "search",
+					Category: "CognitiveSearch",
+					Target:   "https://search.example.com",
+					AuthType: "ApiKey",
+				}},
+				"connectionCredentials": map[string]map[string]any{
+					"search": {"key": "${SEARCH_API_KEY}"},
+				},
+			}
+
+			require.NoError(t, writeTerraformEjectedInfra(infraDir, parameters))
+
+			outputs, err := os.ReadFile(filepath.Join(infraDir, "outputs.tf"))
+			require.NoError(t, err)
+			assert.Contains(t, string(outputs), "AZURE_AI_PROJECT_ID")
+			if test.includeAcr {
+				assert.Contains(t, string(outputs), "AZURE_CONTAINER_REGISTRY_ENDPOINT")
+				_, err := os.Stat(filepath.Join(infraDir, "acr.tf"))
+				assert.NoError(t, err)
+			} else {
+				assert.NotContains(t, string(outputs), "AZURE_CONTAINER_REGISTRY_ENDPOINT")
+				_, err := os.Stat(filepath.Join(infraDir, "acr.tf"))
+				assert.ErrorIs(t, err, os.ErrNotExist)
+			}
+
+			rawTfvars, err := os.ReadFile(filepath.Join(infraDir, "main.tfvars.json"))
+			require.NoError(t, err)
+			tfvars := map[string]any{}
+			require.NoError(t, json.Unmarshal(rawTfvars, &tfvars))
+			assert.Equal(t, "${AZURE_SUBSCRIPTION_ID}", tfvars["subscription_id"])
+			assert.Equal(t, "${AZURE_LOCATION}", tfvars["location"])
+			assert.Equal(t, "${AZURE_RESOURCE_GROUP}", tfvars["resource_group_name"])
+			assert.Equal(t, "${AZURE_ENV_NAME}", tfvars["environment_name"])
+			assert.Equal(t, "${AZURE_AI_PROJECT_NAME}", tfvars["foundry_project_name"])
+			assert.Equal(t, "${AZURE_PRINCIPAL_ID}", tfvars["principal_id"])
+			assert.Equal(t, "${AZD_RESOURCE_TOKEN_SALT}", tfvars["resource_token_salt"])
+			assert.NotContains(t, tfvars, "connectionCredentials")
+			assert.NotContains(t, tfvars, "includeAcr")
+
+			connections, ok := tfvars["connections"].([]any)
+			require.True(t, ok)
+			require.Len(t, connections, 1)
+			connection, ok := connections[0].(map[string]any)
+			require.True(t, ok)
+			credentials, ok := connection["credentials"].(map[string]any)
+			require.True(t, ok)
+			assert.Equal(t, "${SEARCH_API_KEY}", credentials["key"])
+		})
+	}
 }
 
 func TestProjectServiceNameDeterministic(t *testing.T) {

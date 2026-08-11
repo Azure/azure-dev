@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"text/template"
 
 	"azure.ai.projects/internal/azure"
 	"azure.ai.projects/internal/exterrors"
@@ -778,8 +780,12 @@ func resolvedProjectFromEndpoint(endpoint string) (*resolvedProject, error) {
 	host, path, _ := strings.Cut(parsed, "/")
 	account := strings.TrimSuffix(host, ".services.ai.azure.com")
 	projectName := ""
-	if index := strings.Index(path, "/api/projects/"); index >= 0 {
-		projectName = strings.Trim(strings.TrimPrefix(path[index:], "/api/projects/"), "/")
+	projectPath := "/" + path
+	if index := strings.Index(projectPath, projectEndpointPathPrefix); index >= 0 {
+		projectName = strings.Trim(
+			strings.TrimPrefix(projectPath[index:], projectEndpointPathPrefix),
+			"/",
+		)
 	}
 	return &resolvedProject{
 		Mode:        projectModeExistingEndpoint,
@@ -1081,11 +1087,7 @@ func ejectProjectInfra(
 				"eject Bicep instead",
 			)
 		}
-		if err := copyEmbeddedTerraform(infraDir); err != nil {
-			_ = os.RemoveAll(infraDir)
-			return err
-		}
-		if err := writeJSONFile(filepath.Join(infraDir, "main.tfvars.json"), result.Parameters); err != nil {
+		if err := writeTerraformEjectedInfra(infraDir, result.Parameters); err != nil {
 			_ = os.RemoveAll(infraDir)
 			return err
 		}
@@ -1142,9 +1144,92 @@ func copyEmbeddedBicep(destination string) error {
 		map[string]struct{}{"main.arm.json": {}, "brownfield.bicep": {}, "brownfield.arm.json": {}})
 }
 
-func copyEmbeddedTerraform(destination string) error {
+func writeTerraformEjectedInfra(infraDir string, parameters map[string]any) error {
+	variables, includeAcr, err := terraformEjectionVariables(parameters)
+	if err != nil {
+		return err
+	}
+	if err := copyEmbeddedTerraform(infraDir, includeAcr); err != nil {
+		return fmt.Errorf("copy Terraform templates: %w", err)
+	}
+	if err := renderTerraformOutputs(infraDir, includeAcr); err != nil {
+		return fmt.Errorf("render Terraform outputs: %w", err)
+	}
+	if err := writeJSONFile(filepath.Join(infraDir, "main.tfvars.json"), variables); err != nil {
+		return fmt.Errorf("write Terraform variables: %w", err)
+	}
+	return nil
+}
+
+func terraformEjectionVariables(parameters map[string]any) (map[string]any, bool, error) {
+	includeAcr, ok := parameters["includeAcr"].(bool)
+	if !ok {
+		return nil, false, fmt.Errorf(
+			"includeAcr parameter has unexpected type %T",
+			parameters["includeAcr"],
+		)
+	}
+	deployments, ok := parameters["deployments"].([]synthesis.Deployment)
+	if !ok {
+		return nil, false, fmt.Errorf(
+			"deployments parameter has unexpected type %T",
+			parameters["deployments"],
+		)
+	}
+	connections, ok := parameters["connections"].([]synthesis.Connection)
+	if !ok {
+		return nil, false, fmt.Errorf(
+			"connections parameter has unexpected type %T",
+			parameters["connections"],
+		)
+	}
+	credentials, ok := parameters["connectionCredentials"].(map[string]map[string]any)
+	if !ok {
+		return nil, false, fmt.Errorf(
+			"connectionCredentials parameter has unexpected type %T",
+			parameters["connectionCredentials"],
+		)
+	}
+	return map[string]any{
+		"subscription_id":      "${AZURE_SUBSCRIPTION_ID}",
+		"location":             "${AZURE_LOCATION}",
+		"resource_group_name":  "${AZURE_RESOURCE_GROUP}",
+		"environment_name":     "${AZURE_ENV_NAME}",
+		"foundry_project_name": "${AZURE_AI_PROJECT_NAME}",
+		"principal_id":         "${AZURE_PRINCIPAL_ID}",
+		"resource_token_salt":  "${AZD_RESOURCE_TOKEN_SALT}",
+		"deployments":          deployments,
+		"connections":          synthesis.JoinConnectionCredentials(connections, credentials),
+	}, includeAcr, nil
+}
+
+func copyEmbeddedTerraform(destination string, includeAcr bool) error {
+	skip := map[string]struct{}{"outputs.tf.tmpl": {}}
+	if !includeAcr {
+		skip["acr.tf"] = struct{}{}
+	}
 	return copyEmbeddedTree(synthesis.TerraformTemplatesFS(), "templates/terraform", destination,
-		map[string]struct{}{"outputs.tf.tmpl": {}})
+		skip)
+}
+
+func renderTerraformOutputs(destination string, includeAcr bool) error {
+	const templatePath = "templates/terraform/outputs.tf.tmpl"
+	source, err := fs.ReadFile(synthesis.TerraformTemplatesFS(), templatePath)
+	if err != nil {
+		return fmt.Errorf("read Terraform outputs template: %w", err)
+	}
+	tmpl, err := template.New("outputs.tf").Parse(string(source))
+	if err != nil {
+		return fmt.Errorf("parse Terraform outputs template: %w", err)
+	}
+	var output bytes.Buffer
+	if err := tmpl.Execute(&output, struct {
+		IncludeAcr bool
+		Layer      bool
+	}{IncludeAcr: includeAcr}); err != nil {
+		return fmt.Errorf("render Terraform outputs template: %w", err)
+	}
+	return os.WriteFile(filepath.Join(destination, "outputs.tf"), output.Bytes(), 0644)
 }
 
 func copyEmbeddedTree(files fs.FS, root, destination string, skip map[string]struct{}) error {

@@ -600,6 +600,38 @@ services:
 	assert.Contains(t, string(plan.updatedYAML), "name: foundry")
 }
 
+func TestPlanProjectInfraEjectCreatesExplicitProviderTarget(t *testing.T) {
+	for _, targetState := range []string{"missing", "empty"} {
+		t.Run(targetState, func(t *testing.T) {
+			projectRoot := t.TempDir()
+			raw := []byte(`name: test
+infra:
+  provider: bicep
+services:
+  foundry:
+    host: azure.ai.project
+`)
+			if targetState == "empty" {
+				require.NoError(t, os.MkdirAll(
+					filepath.Join(projectRoot, "infra"), 0750,
+				))
+			}
+
+			plan, err := planProjectInfraEject(
+				projectRoot, raw, provisioning.BicepProviderName,
+			)
+			require.NoError(t, err)
+			assert.False(t, plan.layer)
+			assert.Equal(
+				t,
+				filepath.Join(projectRoot, "infra"),
+				plan.targetDir,
+			)
+			assert.Contains(t, string(plan.updatedYAML), "microsoft.foundry")
+		})
+	}
+}
+
 func TestInstallProjectInfraStageMergesAndRollsBack(t *testing.T) {
 	projectRoot := t.TempDir()
 	targetDir := filepath.Join(projectRoot, "infra", "foundry")
@@ -752,6 +784,37 @@ Microsoft.CognitiveServices/accounts/projects
 	)
 	require.NoError(t, err)
 	assert.True(t, owned)
+}
+
+func TestPlanProjectInfraEjectMigratesExistingTerraform(t *testing.T) {
+	projectRoot := t.TempDir()
+	raw := []byte(`name: test
+infra:
+  provider: terraform
+services:
+  foundry:
+    host: azure.ai.project
+`)
+	infraDir := filepath.Join(projectRoot, "infra")
+	require.NoError(t, os.MkdirAll(infraDir, 0750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(infraDir, "main.tf"),
+		[]byte("resource \"azurerm_resource_group\" \"app\" {}\n"),
+		0600,
+	))
+
+	plan, err := planProjectInfraEject(
+		projectRoot, raw, provisioning.TerraformProviderName,
+	)
+	require.NoError(t, err)
+	assert.True(t, plan.layer)
+	assert.False(t, plan.mergeExisting)
+	assert.Equal(
+		t,
+		filepath.Join(projectRoot, "infra", "foundry"),
+		plan.targetDir,
+	)
+	assert.Contains(t, string(plan.updatedYAML), "name: foundry")
 }
 
 func TestPlanProjectInfraEjectRejectsUnsafePaths(t *testing.T) {

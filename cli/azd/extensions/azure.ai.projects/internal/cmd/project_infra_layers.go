@@ -180,17 +180,19 @@ func parseProjectInfraConfig(
 				"set name and path on every infrastructure layer",
 			)
 		}
-		if _, exists := names[name]; exists {
+		nameKey := strings.ToLower(name)
+		if _, exists := names[nameKey]; exists {
 			return nil, yaml.Node{}, exterrors.Validation(
 				exterrors.CodeInvalidAzureYaml,
 				fmt.Sprintf("infrastructure layer %q is duplicated", name),
 				"give each infrastructure layer a unique name",
 			)
 		}
-		names[name] = struct{}{}
+		names[nameKey] = struct{}{}
 
 		cleanPath := filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
-		if previous, exists := paths[cleanPath]; exists {
+		pathKey := strings.ToLower(cleanPath)
+		if previous, exists := paths[pathKey]; exists {
 			return nil, yaml.Node{}, exterrors.Validation(
 				exterrors.CodeInvalidAzureYaml,
 				fmt.Sprintf(
@@ -200,7 +202,7 @@ func parseProjectInfraConfig(
 				"use a unique path for every infrastructure layer",
 			)
 		}
-		paths[cleanPath] = name
+		paths[pathKey] = name
 
 		layerProvider := yamlMappingScalar(node, "provider")
 		effectiveProvider := layerProvider
@@ -328,6 +330,12 @@ func planProjectLayeredInfra(
 	config *projectInfraConfig,
 	infraProvider string,
 ) (*projectInfraEjectPlan, error) {
+	for _, layer := range config.layers {
+		if _, _, err := resolveProjectInfraPath(projectRoot, layer.path); err != nil {
+			return nil, err
+		}
+	}
+
 	var foundry *projectInfraLayer
 	for i := range config.layers {
 		layer := &config.layers[i]
@@ -477,6 +485,13 @@ func projectRootInfraUserOwned(
 		if err != nil {
 			return false, err
 		}
+		if provider == provisioning.TerraformProviderName &&
+			!hasEntrypoint {
+			hasEntrypoint, err = projectTerraformHasEntrypoint(target.dir)
+			if err != nil {
+				return false, err
+			}
+		}
 	}
 	if provider == provisioning.FoundryProviderName && hasEntrypoint {
 		return false, projectInfraExistsError(
@@ -500,7 +515,8 @@ func projectRootInfraUserOwned(
 	}
 	builtIn := provider == provisioning.BicepProviderName ||
 		provider == provisioning.TerraformProviderName
-	if provider != "" && builtIn && !hasEntrypoint {
+	if target.exists && !target.empty &&
+		provider != "" && builtIn && !hasEntrypoint {
 		return false, projectInfraProviderEntrypointError(
 			provider, targetPath,
 		)
@@ -737,6 +753,24 @@ func projectInfraHasEntrypoint(
 func projectBicepHasEntrypoint(dir, module string) bool {
 	return fileExists(filepath.Join(dir, module+".bicep")) ||
 		fileExists(filepath.Join(dir, module+".bicepparam"))
+}
+
+func projectTerraformHasEntrypoint(dir string) (bool, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false, err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := strings.ToLower(entry.Name())
+		if strings.HasSuffix(name, ".tf") ||
+			strings.HasSuffix(name, ".tf.json") {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func projectInfraMissingEntrypointError(path string) error {

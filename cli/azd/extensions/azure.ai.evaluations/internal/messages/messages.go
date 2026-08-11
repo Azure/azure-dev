@@ -31,6 +31,7 @@ import (
 
 	"azureaieval/internal/exterrors"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
@@ -560,9 +561,25 @@ func SeedingFromAgent(agent string) string {
 }
 
 // WarningAgentUnreadable reports an agent that could not supply context.
+//
+// A misspelled --target is the common cause and answers 404, whose body is ten
+// lines of URL, status rule and nested JSON for a fact that fits on one.
 func WarningAgentUnreadable(agent string, err error) string {
+	if notFound(err) {
+		return fmt.Sprintf("  warning: no agent %q in this project, so generation "+
+			"has no agent context to work from\n", agent)
+	}
 	return fmt.Sprintf("  warning: could not read agent %q for generation context: %v\n",
 		agent, err)
+}
+
+// notFound reports a service answer of 404.
+//
+// Written here rather than imported from eval_api, because that package imports
+// this one for its own wording and the dependency only goes one way.
+func notFound(err error) bool {
+	var respErr *azcore.ResponseError
+	return errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound
 }
 
 // WarningAgentSeedFailedRetrying reports the retry that drops the agent source.
@@ -892,6 +909,24 @@ func DatasetProblem(dataset string, err error) error {
 // DatasetSource reports a declared source that is not on disk.
 func DatasetSource(path string, err error) error {
 	return fmt.Errorf("dataset source %q: %w", filepath.ToSlash(path), err)
+}
+
+// DatasetNotGeneratedYet reports a declared dataset whose rows are not written
+// yet.
+//
+// `init` declares the dataset it plans and names the command that produces it,
+// so reaching a deploy without one is an ordering mistake rather than a broken
+// configuration. Said plainly, because the bare stat failure underneath is a
+// Windows syscall name and a path with doubled separators.
+//
+// Both callers wrap this with DatasetProblem, which names the dataset, so this
+// does not name it again.
+func DatasetNotGeneratedYet(dataset, path string) error {
+	return fmt.Errorf(
+		"its rows %s have not been generated yet. "+
+			"Run `azd ai eval generate --dataset --dataset-name %s` to write them, "+
+			"or point the declaration at a .jsonl you already have",
+		filepath.ToSlash(path), dataset)
 }
 
 // DatasetNotLocalNorFound reports a source-less dataset the project rejected.
@@ -2119,5 +2154,9 @@ func InvalidSubscriptionID(err error) error {
 // CouldNotReadAgentForModel reports a target agent whose deployment could not
 // be read, leaving generation without a default model.
 func CouldNotReadAgentForModel(agent string, err error) string {
+	if notFound(err) {
+		return fmt.Sprintf("  warning: no agent %q in this project, so there is no "+
+			"deployment to default to; pass --generation-model\n", agent)
+	}
 	return fmt.Sprintf("  warning: could not read agent %q for its deployment: %v\n", agent, err)
 }

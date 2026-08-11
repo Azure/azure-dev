@@ -161,8 +161,11 @@ func (ec *evalContext) resolveGenerationInstruction(
 
 	agent, err := ec.evalClient.GetAgent(ctx, agentName, ProjectEndpointAPIVersion)
 	if err != nil {
-		// Generation can still proceed from the agent source alone, so a
-		// failure to read the agent is reported without stopping.
+		// Reported without stopping, because the model can still be supplied by
+		// --generation-model and the caller has its own checks for what is left
+		// missing. Making an absent agent fatal here reads well for a typo but
+		// takes away the only path to "nothing supplied a model", which is the
+		// case the flag validation exists for.
 		if !quiet {
 			fmt.Fprint(out, messages.WarningAgentUnreadable(agentName, err))
 		}

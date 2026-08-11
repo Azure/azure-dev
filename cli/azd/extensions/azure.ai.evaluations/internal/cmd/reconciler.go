@@ -76,6 +76,9 @@ func (r *evalReconciler) EnsureDataset(
 	}
 
 	if _, err := os.Stat(localPath); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", false, messages.DatasetNotGeneratedYet(decl.Name, localPath)
+		}
 		return "", false, messages.DatasetSource(localPath, err)
 	}
 

@@ -87,6 +87,9 @@ func TestCLIGenerateNamesTheArtifact(t *testing.T) {
 // The target is no longer among them — it is read from the eval's declaration —
 // but the generation model has no other source, so it is the one input a bare
 // directory cannot supply.
+//
+// The target names an agent that does not exist, and that is load-bearing: a
+// real one supplies a deployment, and then nothing is missing to report.
 func TestCLIGenerateNoPromptNamesWhatIsMissing(t *testing.T) {
 	r := requireFailure(t, runIn(t, t.TempDir(),
 		"generate", "--dataset", "--dataset-name", "d", "--target", "a", "--no-prompt"))
